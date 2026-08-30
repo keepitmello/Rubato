@@ -1,0 +1,578 @@
+diff --git a/dist/core/cursor-exec-bridge.d.ts b/dist/core/cursor-exec-bridge.d.ts
+--- a/dist/core/cursor-exec-bridge.d.ts
++++ b/dist/core/cursor-exec-bridge.d.ts
+@@ -21,7 +21,7 @@
+  */
+ import type { AgentEvent, AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
+ import { type CursorExecHandlers } from "@earendil-works/pi-ai";
+-import type { CursorExecJournal } from "./cursor-exec-journal.ts";
++import type { CursorExecJournal, CursorExecRetryAuthorization } from "./cursor-exec-journal.ts";
+ import type { ToolCallEvent, ToolCallEventResult } from "./extensions/types.ts";
+ export interface CursorExecBridgeOptions {
+     /**
+@@ -57,6 +57,14 @@
+      * without it a repeat cannot be told from a first run.
+      */
+     getConversationLineageId?: () => string | undefined;
++    /**
++     * Explicit caller intent to retry one tool call, asked per `toolCallId`.
++     *
++     * The journal will not move an `unknown` back to `prepared` without this, no
++     * matter what the tool declares about its own idempotency. A tool advertising
++     * a key is a precondition; this is the authorization.
++     */
++    getRetryAuthorization?: (toolCallId: string) => CursorExecRetryAuthorization | undefined;
+     /** Journal override. Defaults to the process-wide journal for the profile. */
+     journal?: CursorExecJournal;
+ }
+diff --git a/dist/core/cursor-exec-bridge.js b/dist/core/cursor-exec-bridge.js
+--- a/dist/core/cursor-exec-bridge.js
++++ b/dist/core/cursor-exec-bridge.js
+@@ -81,9 +81,14 @@
+ /**
+  * The idempotency key a tool declares for these arguments, if any.
+  *
+- * Silence is the default: a tool that says nothing is non-idempotent, so an
+- * ambiguous prior attempt is never retried. Declaring the key is how a tool opts
+- * into being retried under it.
++ * This is a **precondition, not an authorization**. A tool saying "a retry of me
++ * under this key would be safe" is a property of the tool; it is not the user or
++ * the agent loop asking for a retry. Treating it as authorization meant an
++ * ordinary server redelivery silently re-ran a side effect whose outcome was
++ * unknowable, and a success turned that `unknown` into a successful turn.
++ *
++ * The journal requires this *and* a caller-supplied retry authorization for the
++ * specific `toolCallId` before it will move `unknown` back to `prepared`.
+  */
+ function declaredIdempotencyKey(tool, params) {
+     try {
+@@ -185,6 +190,17 @@
+         return errorResult(toolCallId, toolName, error instanceof Error ? error.message : String(error));
+     }
+     const journal = resolveJournal(options);
++    // Authorization comes from outside: the user or the agent loop asking for this
++    // exact toolCallId to be retried. Absent it, an `unknown` refuses — the same
++    // answer a non-idempotent tool already gets.
++    let retryAuthorization;
++    try {
++        retryAuthorization = options.getRetryAuthorization?.(toolCallId);
++    }
++    catch {
++        // A caller that throws while being asked has not authorized anything.
++        retryAuthorization = undefined;
++    }
+     let decision;
+     try {
+         decision = journal.prepare({
+@@ -192,6 +208,7 @@
+             toolCallId,
+             toolName,
+             idempotencyKey: declaredIdempotencyKey(tool, params),
++            retryAuthorization,
+         });
+     }
+     catch (error) {
+diff --git a/dist/core/cursor-exec-journal.d.ts b/dist/core/cursor-exec-journal.d.ts
+--- a/dist/core/cursor-exec-journal.d.ts
++++ b/dist/core/cursor-exec-journal.d.ts
+@@ -17,6 +17,9 @@
+ export declare const CURSOR_EXEC_JOURNAL_FILE = "cursor-exec-journal.json";
+ export declare const CURSOR_EXEC_JOURNAL_MAX_ENTRIES = 512;
+ export declare const CURSOR_EXEC_JOURNAL_TTL_MS: number;
++/** Dedup-identity bounds: far larger and longer than the rich-record bounds. */
++export declare const CURSOR_EXEC_LEDGER_MAX_IDS = 50000;
++export declare const CURSOR_EXEC_LEDGER_TTL_MS: number;
+ export declare const CURSOR_SIDE_EFFECT_NONE = "none";
+ export declare const CURSOR_SIDE_EFFECT_UNKNOWN = "unknown";
+ export declare const CURSOR_SIDE_EFFECT_HAPPENED = "happened";
+@@ -46,6 +49,10 @@
+     /** Human-readable explanation of a settlement, surfaced as an error. */
+     reason?: string;
+     retriedFrom?: CursorExecState;
++    /** Who authorized the retry that produced this attempt. */
++    retryAuthorizedBy?: string;
++    /** True when the rich record aged out and only dedup identity remained. */
++    recordEvicted?: boolean;
+     createdAt?: number;
+     updatedAt?: number;
+     executingAt?: number;
+@@ -72,13 +79,35 @@
+     /** Liveness probe for an entry's owning pid. Injectable for tests. */
+     isOwnerAlive?: (pid: number | undefined) => boolean;
+     pid?: number;
++    /** Dedup-identity bounds. Separate from the rich-record bounds by design. */
++    ledgerMaxIds?: number;
++    ledgerTtlMs?: number;
+ }
++/**
++ * A caller's explicit request to retry one specific tool call.
++ *
++ * This is the actor the design requires: the user or the agent loop, not the
++ * tool describing itself. Without one, `unknown` refuses.
++ */
++export interface CursorExecRetryAuthorization {
++    /** Must equal the toolCallId being prepared. A blanket retry is not a thing. */
++    toolCallId: string;
++    /** Optional pin to the recorded key, so a stale authorization cannot drift. */
++    idempotencyKey?: string;
++    /** Recorded on the entry for provenance, e.g. "user" or "agent-loop". */
++    actor?: string;
++}
+ export interface CursorExecPrepareInput {
+     lineageId: string;
+     toolCallId: string;
+     toolName?: string;
+-    /** Only a tool that declares this may be retried, and only under this key. */
++    /**
++     * The key the tool declares for these arguments. A precondition for retry,
++     * never an authorization on its own.
++     */
+     idempotencyKey?: string;
++    /** Explicit caller intent to retry this toolCallId. Required for any retry. */
++    retryAuthorization?: CursorExecRetryAuthorization;
+ }
+ export interface CursorExecCompleteInput {
+     isError?: boolean;
+@@ -96,8 +125,18 @@
+     markExecuting(lineageId: string, toolCallId: string): CursorExecJournalEntry | undefined;
+     complete(lineageId: string, toolCallId: string, input?: CursorExecCompleteInput): CursorExecJournalEntry | undefined;
+     markResultDelivered(lineageId: string, toolCallId: string): CursorExecJournalEntry | undefined;
++    /** Drops rich records only; dedup identity for the lineage is retained. */
+     forgetLineage(lineageId: string): number;
++    /** Drops dedup identity too. The only operation that re-permits execution. */
++    forgetLineageIdentity(lineageId: string): boolean;
++    ledgerStats(): {
++        lineages: number;
++        ids: number;
++        entries: number;
++    };
+ }
++/** One quiet, factual line naming the tools whose outcome is unknown. */
++export declare function formatCursorExecUnresolvedNotice(entries: CursorExecJournalEntry[]): string | undefined;
+ export declare function cursorExecJournalPath(agentDir?: string): string;
+ export declare function createCursorExecJournal(options?: CursorExecJournalOptions): CursorExecJournal;
+ //# sourceMappingURL=cursor-exec-journal.d.ts.map
+diff --git a/dist/core/cursor-exec-journal.js b/dist/core/cursor-exec-journal.js
+--- a/dist/core/cursor-exec-journal.js
++++ b/dist/core/cursor-exec-journal.js
+@@ -24,8 +24,21 @@
+  * - `unknown` is an error state. It surfaces to the user and the agent loop and
+  *   never becomes a successful turn.
+  * - Only a tool that explicitly declares an idempotency key may be retried, and
+- *   only under that same key.
++ *   only under that same key — **and only when a caller outside this journal
++ *   explicitly authorizes that specific retry**. See `retryOrRefuse`: a key the
++ *   tool advertises about itself is a precondition, never an authorization.
+  *
++ * Retention is split in two, because the two jobs have opposite lifetimes:
++ *
++ * - `entries` are rich diagnostic records (result payload, timestamps, pids).
++ *   They are expensive per row, so they are bounded aggressively.
++ * - `ledger` is the deduplication identity: per lineage, `toolCallId` → a
++ *   one-character outcome code. That is all `prepare` needs in order to answer
++ *   "have I run this key before", it costs a few dozen bytes per call, and it
++ *   is retained far longer. Evicting *this* is what would let a redelivered
++ *   frame execute a second time, so it is never dropped to make room for rich
++ *   records, and it outlives both the entry cap and `forgetLineage`.
++ *
+  * The state and the result are written **together**, in one atomic write. Two
+  * writes would open a window where the tool provably finished and its result
+  * provably exists, yet the record says only `completed` — and a restart reading
+@@ -61,9 +74,20 @@
+  */
+ export const CURSOR_EXEC_JOURNAL_MAX_ENTRIES = 512;
+ export const CURSOR_EXEC_JOURNAL_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+-/** Terminal states never move again on their own. */
+-const TERMINAL = new Set([CURSOR_EXEC_COMPLETED, CURSOR_EXEC_FAILED, CURSOR_EXEC_UNKNOWN]);
+ /**
++ * Dedup-identity retention. Deliberately far larger and far longer than the rich
++ * records above, because this is the bound whose exhaustion would permit a
++ * duplicate side effect rather than merely losing a diagnostic.
++ *
++ * A ledger row is `"<toolCallId>":"<code>"` — roughly 40-60 bytes of JSON for a
++ * UUID-shaped id. 50,000 ids is on the order of 3 MB, and that is the ceiling
++ * for an entire profile, not per session. Eviction is whole-lineage and
++ * oldest-first: a lineage is a conversation, so dropping the oldest conversation
++ * entire cannot split one live conversation's identity in half.
++ */
++export const CURSOR_EXEC_LEDGER_MAX_IDS = 50_000;
++export const CURSOR_EXEC_LEDGER_TTL_MS = 180 * 24 * 60 * 60 * 1000;
++/**
+  * What the journal knows about the side effect of an entry it settled.
+  *
+  * The distinction is not decoration: `none` and `happened` are facts a process
+@@ -73,6 +97,38 @@
+ export const CURSOR_SIDE_EFFECT_NONE = "none";
+ export const CURSOR_SIDE_EFFECT_UNKNOWN = "unknown";
+ export const CURSOR_SIDE_EFFECT_HAPPENED = "happened";
++/**
++ * Ledger outcome codes. One character, because this table is the thing we keep
++ * when we have thrown everything else away.
++ *
++ * `c`/`f` ran and produced a result. `u` is the unknowable case. `n` provably
++ * never ran (a `prepared` entry whose owner died before executing).
++ */
++const LEDGER_COMPLETED = "c";
++const LEDGER_FAILED = "f";
++const LEDGER_UNKNOWN = "u";
++const LEDGER_NOT_RUN = "n";
++const LEDGER_CODE = {
++    [CURSOR_EXEC_COMPLETED]: LEDGER_COMPLETED,
++    [CURSOR_EXEC_FAILED]: LEDGER_FAILED,
++    [CURSOR_EXEC_UNKNOWN]: LEDGER_UNKNOWN,
++};
++/** Ledger code → the refusal a caller sees when the rich record is long gone. */
++const LEDGER_REASON = {
++    [LEDGER_COMPLETED]: "this tool call already completed in an earlier session; its result is no longer retained",
++    [LEDGER_FAILED]: "this tool call already ran and failed in an earlier session; its result is no longer retained",
++    [LEDGER_UNKNOWN]: "an earlier session left this tool call's outcome unknown",
++    [LEDGER_NOT_RUN]: "an earlier session recorded this tool call but never executed it",
++};
++/** Ledger code → what we can still say about the side effect. */
++const LEDGER_SIDE_EFFECT = {
++    [LEDGER_COMPLETED]: CURSOR_SIDE_EFFECT_HAPPENED,
++    [LEDGER_FAILED]: CURSOR_SIDE_EFFECT_HAPPENED,
++    [LEDGER_UNKNOWN]: CURSOR_SIDE_EFFECT_UNKNOWN,
++    [LEDGER_NOT_RUN]: CURSOR_SIDE_EFFECT_NONE,
++};
++/** Terminal states never move again on their own. */
++const TERMINAL = new Set([CURSOR_EXEC_COMPLETED, CURSOR_EXEC_FAILED, CURSOR_EXEC_UNKNOWN]);
+ export function cursorExecJournalPath(agentDir) {
+     return join(agentDir ?? getAgentDir(), CURSOR_EXEC_JOURNAL_FILE);
+ }
+@@ -81,6 +137,23 @@
+     return `${lineageId}\u0000${toolCallId}`;
+ }
+ /**
++ * One factual line about tool calls whose outcome is unknown, or `undefined`.
++ *
++ * Deliberately quiet. The user is told a thing they need in order to decide
++ * whether to check something, not warned at. No counts of scary adjectives, no
++ * imperative — just which tools, and that it is unknown whether they ran.
++ */
++export function formatCursorExecUnresolvedNotice(entries) {
++    if (!Array.isArray(entries) || entries.length === 0)
++        return undefined;
++    const names = [...new Set(entries.map((entry) => entry?.toolName).filter((name) => typeof name === "string" && name !== ""))].sort();
++    const subject = names.length > 0 ? names.join(", ") : "a tool";
++    const count = entries.length;
++    const calls = count === 1 ? "1 tool call" : `${count} tool calls`;
++    return (`A previous session left ${calls} unresolved (${subject}). ` +
++        "Whether they ran cannot be determined, so they were not run again.");
++}
++/**
+  * Replace the journal without ever leaving a partial file behind.
+  *
+  * Same shape as the auth store's atomic write, and for the same reason: the lock
+@@ -162,7 +235,7 @@
+ }
+ /** An empty journal. Used for a missing file and for one we refuse to read. */
+ function emptyState() {
+-    return { version: CURSOR_EXEC_JOURNAL_VERSION, entries: {} };
++    return { version: CURSOR_EXEC_JOURNAL_VERSION, entries: {}, ledger: {} };
+ }
+ /**
+  * Parse the journal, or start over.
+@@ -194,12 +267,56 @@
+             continue;
+         clean[key] = value;
+     }
+-    return { version: CURSOR_EXEC_JOURNAL_VERSION, entries: clean };
++    // The ledger is the dedup identity, so a malformed row is dropped but a
++    // malformed *table* must not quietly become "nothing ever ran".
++    const rawLedger = typeof parsed.ledger === "object" && parsed.ledger !== null ? parsed.ledger : {};
++    const ledger = {};
++    for (const [lineageId, record] of Object.entries(rawLedger)) {
++        if (typeof record !== "object" || record === null)
++            continue;
++        const ids = typeof record.ids === "object" && record.ids !== null ? record.ids : {};
++        const clean_ids = {};
++        for (const [toolCallId, code] of Object.entries(ids)) {
++            if (typeof code === "string" && code.length > 0)
++                clean_ids[toolCallId] = code;
++        }
++        ledger[lineageId] = {
++            updatedAt: typeof record.updatedAt === "number" ? record.updatedAt : 0,
++            ids: clean_ids,
++        };
++    }
++    return { version: CURSOR_EXEC_JOURNAL_VERSION, entries: clean, ledger };
+ }
++/** Record dedup identity. Called on every state transition worth remembering. */
++function rememberInLedger(state, lineageId, toolCallId, code, now) {
++    const record = state.ledger[lineageId] ?? { updatedAt: 0, ids: {} };
++    record.ids[toolCallId] = code;
++    record.updatedAt = now;
++    state.ledger[lineageId] = record;
++}
++function ledgerCodeOf(state, lineageId, toolCallId) {
++    return state.ledger[lineageId]?.ids?.[toolCallId];
++}
+ /**
++ * The ledger code for a settled entry.
++ *
++ * A `failed` entry that never ran (`sideEffect: none`) is not the same fact as a
++ * tool that ran and returned an error, and the difference survives here because
++ * it is the difference between "nothing happened" and "something happened".
++ */
++function ledgerCodeForEntry(entry) {
++    if (entry.state === CURSOR_EXEC_FAILED && entry.sideEffect === CURSOR_SIDE_EFFECT_NONE)
++        return LEDGER_NOT_RUN;
++    return LEDGER_CODE[entry.state] ?? LEDGER_UNKNOWN;
++}
++/**
+  * Drop what a restart can no longer use: expired entries, then the oldest
+  * terminal ones. Live entries (`prepared`/`executing`) are never pruned — they
+  * are precisely the ones a restart must see in order to settle them.
++ *
++ * This prunes **rich records only**. The dedup ledger has its own, much longer
++ * bound (`pruneLedger`): if this function could evict identity, a redelivered
++ * frame past the cap would be read as new and the tool would run twice.
+  */
+ function prune(state, now, maxEntries, ttlMs) {
+     for (const [key, entry] of Object.entries(state.entries)) {
+@@ -223,6 +340,32 @@
+         excess -= 1;
+     }
+ }
++/**
++ * Bound the dedup ledger. Whole lineages, oldest-touched first.
++ *
++ * Never partial within a lineage: half a conversation's identity is worse than
++ * none, because it looks authoritative while silently permitting a repeat of the
++ * half that was dropped. A lineage that has not been touched in
++ * `ledgerTtlMs` is a conversation no server is going to redeliver a frame for.
++ */
++function pruneLedger(state, now, maxIds, ttlMs) {
++    for (const [lineageId, record] of Object.entries(state.ledger)) {
++        if (now - (record.updatedAt ?? 0) > ttlMs)
++            delete state.ledger[lineageId];
++    }
++    const lineages = Object.entries(state.ledger).sort((a, b) => (a[1].updatedAt ?? 0) - (b[1].updatedAt ?? 0));
++    let total = lineages.reduce((sum, [, record]) => sum + Object.keys(record.ids).length, 0);
++    for (const [lineageId, record] of lineages) {
++        if (total <= maxIds)
++            break;
++        // Keep at least the most recently touched lineage regardless of size: the
++        // live conversation's identity is the one that must not disappear.
++        if (Object.keys(state.ledger).length <= 1)
++            break;
++        total -= Object.keys(record.ids).length;
++        delete state.ledger[lineageId];
++    }
++}
+ /** Is the process that owns this entry still around? */
+ function ownerAlive(pid, self) {
+     if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0)
+@@ -253,6 +396,8 @@
+     const ttlMs = options.ttlMs ?? CURSOR_EXEC_JOURNAL_TTL_MS;
+     const isOwnerAlive = options.isOwnerAlive ?? ((pid) => ownerAlive(pid, options.pid ?? process.pid));
+     const pid = options.pid ?? process.pid;
++    const ledgerMaxIds = options.ledgerMaxIds ?? CURSOR_EXEC_LEDGER_MAX_IDS;
++    const ledgerTtlMs = options.ledgerTtlMs ?? CURSOR_EXEC_LEDGER_TTL_MS;
+     let settled = false;
+     function ensureParentDir() {
+         const dir = dirname(journalPath);
+@@ -307,6 +452,7 @@
+             });
+             if (changed) {
+                 prune(state, now(), maxEntries, ttlMs);
++                pruneLedger(state, now(), ledgerMaxIds, ledgerTtlMs);
+                 atomicWriteJournalSync(journalPath, JSON.stringify(state));
+             }
+             return result;
+@@ -355,6 +501,8 @@
+                 if (isOwnerAlive(entry.pid))
+                     continue;
+                 state.entries[key] = { ...entry, ...settlement(entry, stamp), updatedAt: stamp };
++                // Identity outlives the rich record, so it is written here too.
++                rememberInLedger(state, entry.lineageId, entry.toolCallId, ledgerCodeForEntry(state.entries[key]), stamp);
+                 out.push(state.entries[key]);
+                 markChanged();
+             }
+@@ -387,15 +535,17 @@
+          * Decide whether this `{lineageId, toolCallId}` may execute, and record the
+          * decision durably before returning. This is the only authorization point.
+          *
+-         * - no entry → `execute`, recorded as `prepared`.
++         * - no entry and no ledger row → `execute`, recorded as `prepared`.
+          * - terminal with a persisted result → `replay`, never a second run.
+-         * - terminal without one (`unknown`, or a settled `prepared`) → `refuse`,
+-         *   unless the caller presents the idempotency key the tool declared, in
+-         *   which case a fresh attempt is recorded under that same key.
++         * - a ledger row with no rich record → `refuse`. The rich record aged out,
++         *   but identity says this key already ran, so it must not run again.
++         * - terminal without a persisted result (`unknown`, or a settled `prepared`)
++         *   → `refuse`, unless a caller **outside this journal** authorized a retry
++         *   of this exact `toolCallId` and the tool declared a matching key.
+          * - live entry owned by any process → `refuse`. Two runs must not drive the
+          *   same call concurrently.
+          */
+-        prepare({ lineageId, toolCallId, toolName, idempotencyKey }) {
++        prepare({ lineageId, toolCallId, toolName, idempotencyKey, retryAuthorization }) {
+             ensureSettled();
+             return withLock((state, markChanged) => {
+                 const key = entryKey(lineageId, toolCallId);
+@@ -406,20 +556,40 @@
+                     return entry;
+                 };
+                 /**
+-                 * A terminal entry with no persisted result. Re-running is allowed only
+-                 * when the tool declared an idempotency key and the caller presents the
+-                 * same one — the design's single exception. Everything else refuses: a
+-                 * non-idempotent side effect that may already have happened must not
+-                 * happen again behind the user's back.
++                 * A terminal entry with no persisted result.
++                 *
++                 * Re-running requires **two independent things**, and conflating them
++                 * was a defect: a tool advertising `idempotencyKeyFor` would let an
++                 * ordinary server redelivery silently re-run a side effect whose
++                 * outcome was unknowable.
++                 *
++                 * 1. The tool declares an idempotency key matching the recorded one.
++                 *    This only establishes that a retry *could* be safe. A tool
++                 *    describing itself is not a request.
++                 * 2. A caller outside this journal authorizes a retry of this exact
++                 *    `toolCallId`. That is the user or the agent loop asking, and it
++                 *    is the only thing that can turn `unknown` back into work.
++                 *
++                 * Absent (2), `unknown` refuses exactly as a non-idempotent tool does.
+                  */
+                 const retryOrRefuse = (entry) => {
+-                    if (typeof idempotencyKey === "string" && idempotencyKey !== "" && entry.idempotencyKey === idempotencyKey) {
++                    const declaredKeyMatches = typeof idempotencyKey === "string" && idempotencyKey !== "" && entry.idempotencyKey === idempotencyKey;
++                    const authorized = retryAuthorization !== undefined
++                        && retryAuthorization !== null
++                        && retryAuthorization.toolCallId === toolCallId
++                        && (retryAuthorization.idempotencyKey === undefined
++                            || retryAuthorization.idempotencyKey === entry.idempotencyKey);
++                    if (declaredKeyMatches && authorized) {
+                         const next = write({
+                             ...entry,
+                             state: CURSOR_EXEC_PREPARED,
+                             pid,
+                             attempt: (typeof entry.attempt === "number" ? entry.attempt : 1) + 1,
+                             retriedFrom: entry.state,
++                            // The authorization is spent. A second redelivery of the same
++                            // frame is a new question and needs a new answer, so nothing
++                            // here may make the *next* prepare self-authorizing.
++                            retryAuthorizedBy: retryAuthorization.actor ?? "caller",
+                             settledFrom: undefined,
+                             sideEffect: undefined,
+                             reason: undefined,
+@@ -428,17 +598,43 @@
+                         });
+                         return { decision: "execute", entry: next };
+                     }
++                    const base = entry.reason
++                        ?? (entry.state === CURSOR_EXEC_UNKNOWN
++                            ? "the previous attempt's outcome is unknown"
++                            : `the previous attempt ${entry.state}`);
+                     return {
+                         decision: "refuse",
+                         entry,
+-                        reason: entry.reason
+-                            ?? (entry.state === CURSOR_EXEC_UNKNOWN
+-                                ? "the previous attempt's outcome is unknown"
+-                                : `the previous attempt ${entry.state}`),
++                        reason: declaredKeyMatches && !authorized
++                            ? `${base}; the tool permits retry but no caller authorized one`
++                            : base,
+                     };
+                 };
+                 const existing = state.entries[key];
+                 if (existing === undefined) {
++                    // No rich record. Identity is the authority here, and it is retained
++                    // far longer, so a repeat past the entry cap is still caught.
++                    const code = ledgerCodeOf(state, lineageId, toolCallId);
++                    if (code !== undefined) {
++                        const synthetic = {
++                            lineageId,
++                            toolCallId,
++                            toolName,
++                            state: code === LEDGER_UNKNOWN
++                                ? CURSOR_EXEC_UNKNOWN
++                                : code === LEDGER_COMPLETED
++                                    ? CURSOR_EXEC_COMPLETED
++                                    : CURSOR_EXEC_FAILED,
++                            sideEffect: LEDGER_SIDE_EFFECT[code] ?? CURSOR_SIDE_EFFECT_UNKNOWN,
++                            reason: LEDGER_REASON[code] ?? "this tool call was already recorded",
++                            recordEvicted: true,
++                        };
++                        // No `resultPersisted`, so this can never become a `replay`: the
++                        // payload is gone. Refusing is the only honest answer, and it is
++                        // still exactly-once — the tool does not run a second time.
++                        return retryOrRefuse(synthetic);
++                    }
++                    rememberInLedger(state, lineageId, toolCallId, LEDGER_NOT_RUN, stamp);
+                     return {
+                         decision: "execute",
+                         entry: write({
+@@ -471,7 +667,9 @@
+                     }
+                     // Owner is gone. Settle it now rather than reading a state no live
+                     // process stands behind, then apply the terminal rule to the result.
+-                    return retryOrRefuse(write({ ...existing, ...settlement(existing, stamp), updatedAt: stamp }));
++                    const settledEntry = write({ ...existing, ...settlement(existing, stamp), updatedAt: stamp });
++                    rememberInLedger(state, lineageId, toolCallId, ledgerCodeForEntry(settledEntry), stamp);
++                    return retryOrRefuse(settledEntry);
+                 }
+                 return retryOrRefuse(existing);
+             });
+@@ -527,6 +725,9 @@
+                     resultPersistedAt: stamp,
+                     updatedAt: stamp,
+                 };
++                // Identity is recorded alongside, under the same lock and the same
++                // atomic write, so it can never disagree with the rich record.
++                rememberInLedger(state, lineageId, toolCallId, ledgerCodeForEntry(state.entries[key]), stamp);
+                 markChanged();
+                 return state.entries[key];
+             });
+@@ -550,7 +751,14 @@
+                 return state.entries[key];
+             });
+         },
+-        /** Forget every entry of one lineage. Used when a session is disposed. */
++        /**
++         * Forget the rich records of one lineage. Used when a session is disposed.
++         *
++         * The dedup ledger for that lineage is **kept**. Disposing a session frees
++         * diagnostics; it does not make it safe to run its tool calls again, and a
++         * straggler frame from a disposed session's still-open stream is exactly the
++         * case that would otherwise execute a second time.
++         */
+         forgetLineage(lineageId) {
+             return withLock((state, markChanged) => {
+                 let removed = 0;
+@@ -565,6 +773,30 @@
+                 return removed;
+             });
+         },
++        /**
++         * Drop a lineage's dedup identity as well. Separate from `forgetLineage`
++         * because it is the one operation that re-permits execution, so it cannot be
++         * something a routine session teardown does by accident.
++         */
++        forgetLineageIdentity(lineageId) {
++            return withLock((state, markChanged) => {
++                if (state.ledger[lineageId] === undefined)
++                    return false;
++                delete state.ledger[lineageId];
++                markChanged();
++                return true;
++            });
++        },
++        /** Ledger size, for tests and diagnostics. Does not expose ids. */
++        ledgerStats() {
++            return withLock((state) => {
++                const lineages = Object.keys(state.ledger).length;
++                let ids = 0;
++                for (const record of Object.values(state.ledger))
++                    ids += Object.keys(record.ids).length;
++                return { lineages, ids, entries: Object.keys(state.entries).length };
++            });
++        },
+     };
+ }
+ //# sourceMappingURL=cursor-exec-journal.js.map

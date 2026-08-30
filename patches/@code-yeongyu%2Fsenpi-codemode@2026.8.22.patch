@@ -1,0 +1,70 @@
+diff --git a/src/extension/eval-notifier.ts b/src/extension/eval-notifier.ts
+--- a/src/extension/eval-notifier.ts
++++ b/src/extension/eval-notifier.ts
+@@ -5,8 +5,19 @@
+ 
+ export type EvalNotifyMode = "wake" | "next-turn" | "off";
+ 
++export const DETACHED_EVAL_MESSAGE_TYPE = "senpi-codemode:detached-eval";
++
++export interface EvalNotifierCustomMessage {
++	readonly customType: typeof DETACHED_EVAL_MESSAGE_TYPE;
++	readonly content: string;
++	readonly display: false;
++}
++
+ export interface EvalNotifierDeps {
+-	readonly sendUserMessage: (content: string, options?: { deliverAs?: "steer" | "followUp" }) => void;
++	readonly sendMessage: (
++		message: EvalNotifierCustomMessage,
++		options?: { deliverAs?: "steer" | "followUp"; triggerTurn?: boolean },
++	) => void;
+ 	readonly getContext: () => ExtensionContext | undefined;
+ 	readonly getMode: () => EvalNotifyMode;
+ }
+@@ -33,8 +44,18 @@
+ 		const pending = cells.filter((cell) => !this.#notified.has(cell.cellId));
+ 		if (pending.length === 0) return;
+ 		for (const cell of pending) this.#notified.add(cell.cellId);
+-		this.#deps.sendUserMessage(pending.map((cell) => cell.content).join("\n\n"), {
+-			deliverAs: mode === "wake" ? "steer" : "followUp",
+-		});
++		// sendUserMessage records a user turn and the TUI labels it Steering.
++		// Custom messages join the current assistant turn instead.
++		this.#deps.sendMessage(
++			{
++				customType: DETACHED_EVAL_MESSAGE_TYPE,
++				content: pending.map((cell) => cell.content).join("\n\n"),
++				display: false,
++			},
++			{
++				triggerTurn: true,
++				deliverAs: mode === "wake" ? "steer" : "followUp",
++			},
++		);
+ 	}
+ }
+diff --git a/src/index.ts b/src/index.ts
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -43,7 +43,10 @@
+ 	executeTool: AgentExecuteTool;
+ 	getActiveTools(): string[];
+ 	getAllTools(): readonly EvalSchemaToolInfo[];
+-	sendUserMessage(content: string, options?: { deliverAs?: "steer" | "followUp" }): void;
++	sendMessage(
++		message: { customType: string; content: string; display?: boolean; details?: unknown },
++		options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" },
++	): void;
+ 	/** Optional host event bus; a host without one turns extension event emission into a harmless no-op. */
+ 	events?: { emit(name: string, data: unknown): void };
+ 	/** Optional host RPC surface for forwarding extension-owned events to connected clients. */
+@@ -68,7 +71,7 @@
+ 	let activeContext: ExtensionContext | undefined;
+ 	let activeCells: EvalDetachedCellManager | undefined;
+ 	const notifier = new EvalNotifier({
+-		sendUserMessage: (content, notifyOptions) => pi.sendUserMessage(content, notifyOptions),
++		sendMessage: (message, notifyOptions) => pi.sendMessage(message, notifyOptions),
+ 		getContext: () => activeContext,
+ 		getMode: () => "wake",
+ 	});

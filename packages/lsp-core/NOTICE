@@ -1,0 +1,8 @@
+@rubato/lsp-core notice
+
+This package includes a Language Server Protocol client, transport, JSON-RPC,
+manager, server-resolution, project-trust, diagnostics, workspace-edit, and
+process execution engine adapted from pi-lsp-client / oh-my-pi by Yeongyu Kim.
+
+Upstream: https://github.com/code-yeongyu
+License: MIT. Copyright (c) Yeongyu Kim.

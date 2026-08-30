@@ -1,0 +1,52 @@
+diff --git a/dist/modes/interactive/components/turn-work-summary.js b/dist/modes/interactive/components/turn-work-summary.js
+--- a/dist/modes/interactive/components/turn-work-summary.js
++++ b/dist/modes/interactive/components/turn-work-summary.js
+@@ -1,4 +1,4 @@
+-import { Container, hyperlink } from "@earendil-works/pi-tui";
++import { Container, hyperlink, truncateToWidth } from "@earendil-works/pi-tui";
+ import { registerInternalAction } from "../internal-actions.js";
+ import { theme } from "../theme/theme.js";
+ 
+@@ -37,7 +37,7 @@
+     return { steps, thoughtMs };
+ }
+ 
+-function compactTools(groups) {
++function compactTools(groups, width) {
+     const seen = [];
+     for (const group of groups) {
+         for (const item of group.workItems?.() ?? []) {
+@@ -50,7 +50,20 @@
+             }
+         }
+     }
+-    return seen.map(({ name, failed, count }) => `${failed ? "✗" : "✓"} ${name}${count > 1 ? ` (${count})` : ""}`).join(" · ");
++    const labels = seen.map(({ name, failed, count }) => `${failed ? "✗" : "✓"} ${name}${count > 1 ? ` (${count})` : ""}`);
++    const full = labels.join(" · ");
++    if ([...full].length <= width)
++        return full;
++    const shown = [];
++    for (let index = 0; index < labels.length; index++) {
++        const suffix = ` · …+${labels.length - index - 1}`;
++        const candidate = `${[...shown, labels[index]].join(" · ")}${suffix}`;
++        if ([...candidate].length > width)
++            break;
++        shown.push(labels[index]);
++    }
++    const remaining = labels.length - shown.length;
++    return remaining > 0 ? `${shown.join(" · ")}${shown.length > 0 ? " · " : ""}…+${remaining}` : full;
+ }
+ 
+ export class TurnWorkSummaryComponent extends Container {
+@@ -103,8 +116,9 @@
+             parts.push(`thought ${compactDuration(thoughtMs)}`);
+         if (tools > 0)
+             parts.push(`${tools} ${tools === 1 ? "tool" : "tools"}`);
+-        const names = compactTools(this.toolGroups);
+-        const line = `• ${parts.join(" · ")}${names ? `: ${names}` : ""}`;
++        const head = `• ${parts.join(" · ")}`;
++        const names = compactTools(this.toolGroups, Math.max(0, width - [...head].length - 2));
++        const line = truncateToWidth(`${head}${names ? `: ${names}` : ""}`, width, "");
+         return [hyperlink(theme.fg("dim", line), this.toggleAction.url)];
+     }
+     dispose() {

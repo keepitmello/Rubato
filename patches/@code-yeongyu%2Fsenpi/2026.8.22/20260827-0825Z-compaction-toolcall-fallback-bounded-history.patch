@@ -1,0 +1,87 @@
+diff --git a/dist/core/compaction/compaction.js b/dist/core/compaction/compaction.js
+--- a/dist/core/compaction/compaction.js
++++ b/dist/core/compaction/compaction.js
+@@ -649,8 +649,55 @@
+  * throwing (compaction_end accepted:false, willRetry:false forever), and it must
+  * never be accepted by treating the tool call's arguments as summary text.
+  */
+-const TOOL_CALL_FALLBACK_SUMMARY = "[Automatic compaction summary unavailable: the summarization request returned a tool call instead of text, twice in a row. This segment of the conversation could not be summarized by the model; only its file operations are recorded below.]";
+-const TOOL_CALL_FALLBACK_TURN_PREFIX_SUMMARY = "[Automatic turn-prefix summary unavailable: the summarization request returned a tool call instead of text, twice in a row. The retained suffix below is authoritative; the discarded prefix could not be summarized by the model.]";
++const TOOL_CALL_FALLBACK_SUMMARY_MARKER = "[Automatic compaction summary unavailable: the summarization request returned a tool call instead of text, twice in a row. Preserving bounded raw context below instead of losing this segment.]";
++const TOOL_CALL_FALLBACK_TURN_PREFIX_MARKER = "[Automatic turn-prefix summary unavailable: the summarization request returned a tool call instead of text, twice in a row. The retained suffix below is authoritative; preserving a bounded raw excerpt of the discarded prefix instead of losing it.]";
++/** Chars kept per token of the summary's own output budget. Conservative (well under
++ * the ~4 chars/token average) so the excerpt undershoots the budget rather than
++ * overshoots it — this text replaces the LLM summary outright, so it must stay small
++ * enough that the fallback does not defeat the point of compacting. */
++const FALLBACK_CHARS_PER_TOKEN = 3;
++const FALLBACK_CHAR_BUDGET_FLOOR = 2000;
++const FALLBACK_CHAR_BUDGET_CEILING = 20000;
++function fallbackCharBudget(maxTokens) {
++    if (!Number.isFinite(maxTokens) || maxTokens <= 0)
++        return FALLBACK_CHAR_BUDGET_CEILING;
++    return Math.min(FALLBACK_CHAR_BUDGET_CEILING, Math.max(FALLBACK_CHAR_BUDGET_FLOOR, Math.floor(maxTokens * FALLBACK_CHARS_PER_TOKEN)));
++}
++const FALLBACK_ELISION_MARKER = "\n\n[... elided ...]\n\n";
++/**
++ * Head+tail excerpt of `text` within `charBudget`: keeps the start (original request /
++ * earliest context) and the end (most recent work), which carry the most locally-useful
++ * signal when an LLM summary could not be produced, and marks what was cut so the gap
++ * is visible instead of silently missing.
++ */
++function headTailExcerpt(text, charBudget) {
++    if (text.length <= charBudget)
++        return text;
++    const half = Math.floor((charBudget - FALLBACK_ELISION_MARKER.length) / 2);
++    if (half <= 0)
++        return text.slice(0, charBudget);
++    return `${text.slice(0, half)}${FALLBACK_ELISION_MARKER}${text.slice(text.length - half)}`;
++}
++/**
++ * Deterministic, non-LLM fallback summary: preserves the previous summary (if any) and
++ * a bounded head+tail excerpt of the messages being summarized, instead of discarding
++ * the segment outright. Never reads the failing response's content, so a tool call's
++ * arguments can never leak in here.
++ */
++function buildFallbackSummary(marker, transformedSource, maxTokens) {
++    const charBudget = fallbackCharBudget(maxTokens);
++    const parts = [marker];
++    if (transformedSource.previousSummary) {
++        const previousBudget = Math.floor(charBudget * 0.4);
++        parts.push(`<previous-summary>\n${headTailExcerpt(transformedSource.previousSummary, previousBudget)}\n</previous-summary>`);
++    }
++    const usedBudget = parts.reduce((sum, part) => sum + part.length, 0);
++    const conversationBudget = Math.max(FALLBACK_CHAR_BUDGET_FLOOR, charBudget - usedBudget);
++    const llmMessages = convertToLlm(transformedSource.messages);
++    const conversationExcerpt = headTailExcerpt(serializeConversation(llmMessages), conversationBudget);
++    parts.push(`<conversation-excerpt>\n${conversationExcerpt}\n</conversation-excerpt>`);
++    return parts.join("\n\n");
++}
+ export async function generateSummaryWithUsage(currentMessages, model, reserveTokens, apiKey, headers, signal, customInstructions, previousSummary, extraBody, thinkingLevel, streamFn, env, transformContext, retry, callbacks, sessionId, cacheFriendly) {
+     const maxTokens = Math.min(Math.floor(0.8 * reserveTokens), model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY);
+     let sourceContext = cacheFriendly?.sourceContext;
+@@ -717,7 +764,10 @@
+             throw new Error(`Summarization failed: ${response.errorMessage || "Unknown error"}`);
+         }
+         if (response.content.some((block) => block.type === "toolCall")) {
+-            return { text: TOOL_CALL_FALLBACK_SUMMARY, usage: response.usage };
++            return {
++                text: buildFallbackSummary(TOOL_CALL_FALLBACK_SUMMARY_MARKER, transformedSource, maxTokens),
++                usage: response.usage,
++            };
+         }
+     }
+     const textContent = contentTextForSummary(response.content);
+@@ -934,7 +984,12 @@
+             throw new Error(`Turn prefix summarization failed: ${response.errorMessage || "Unknown error"}`);
+         }
+         if (response.content.some((block) => block.type === "toolCall")) {
+-            return { text: TOOL_CALL_FALLBACK_TURN_PREFIX_SUMMARY, usage: response.usage };
++            const providerMessages = transformContext ? await transformContext(messages, signal) : messages;
++            const excerpt = headTailExcerpt(serializeConversation(convertToLlm(providerMessages)), fallbackCharBudget(maxTokens));
++            return {
++                text: `${TOOL_CALL_FALLBACK_TURN_PREFIX_MARKER}\n\n<turn-prefix-excerpt>\n${excerpt}\n</turn-prefix-excerpt>`,
++                usage: response.usage,
++            };
+         }
+     }
+     return {

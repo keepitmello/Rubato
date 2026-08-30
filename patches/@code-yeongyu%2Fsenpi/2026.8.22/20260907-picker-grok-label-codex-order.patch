@@ -1,0 +1,36 @@
+diff --git a/dist/modes/interactive/components/model-selector.js b/dist/modes/interactive/components/model-selector.js
+--- a/dist/modes/interactive/components/model-selector.js
++++ b/dist/modes/interactive/components/model-selector.js
+@@ -9,12 +9,12 @@
+ import { getModelFullId, isFavoriteModel, toggleFavoriteModel } from "./model-favorites.js";
+ const PROVIDER_ORDER = ["openai-codex", "anthropic", "xai", "google-antigravity", "kiro", "cursor"];
+ const MODEL_ORDER = {
+-    "openai-codex": ["gpt-5.6-sol", "gpt-5.6-sol-fast", "gpt-5.6-terra", "gpt-5.6-terra-fast", "gpt-5.6-luna", "gpt-5.6-luna-fast", "gpt-daybreak-blue-latest", "gpt-daybreak-blue-latest-fast"],
++    "openai-codex": ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.6-sol-fast", "gpt-5.6-terra-fast", "gpt-5.6-luna-fast", "gpt-daybreak-blue-latest", "gpt-daybreak-blue-latest-fast"],
+     anthropic: ["claude-fable-5", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"],
+     xai: ["grok-4.6"],
+     "google-antigravity": ["gemini-3.1-pro", "gemini-3.7-flash"],
+     kiro: ["gpt-5.6-sol", "claude-opus-5"],
+-    cursor: ["gpt-5.6-sol", "claude-fable-5", "claude-opus-5", "grok-4.6", "gemini-3.7-flash", "kimi-k3", "composer-2.5"],
++    cursor: ["gpt-5.6-sol", "claude-fable-5", "claude-opus-5", "cursor-grok-4.6", "gemini-3.7-flash", "kimi-k3", "composer-2.5"],
+ };
+ function rankedIndex(values, value) {
+     const index = values.indexOf(value);
+@@ -34,9 +34,14 @@
+     });
+ }
+ function modelPickerLabel(item) {
+-    return item.provider === "openai-codex" && item.id.startsWith("gpt-daybreak-blue-")
+-        ? item.model.name
+-        : item.id;
++    if (item.provider === "openai-codex" && item.id.startsWith("gpt-daybreak-blue-")) {
++        return item.model.name;
++    }
++    // Cursor Grok wire id is `cursor-grok-4.6`. Show the xAI name plus Fast.
++    if (item.provider === "cursor" && item.id === "cursor-grok-4.6") {
++        return "grok-4.6-fast";
++    }
++    return item.id;
+ }
+ /**
+  * Component that renders a model selector with search

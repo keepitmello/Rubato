@@ -1,0 +1,94 @@
+diff --git a/dist/modes/interactive/interactive-mode.js b/dist/modes/interactive/interactive-mode.js
+--- a/dist/modes/interactive/interactive-mode.js
++++ b/dist/modes/interactive/interactive-mode.js
+@@ -3509,10 +3509,17 @@
+                 if (this.streamingComponent && event.message.role === "assistant") {
+                     this.streamingMessage = event.message;
+                     this.streamingReveal.setTarget(assistantStreamingHeadMessage(event.message));
+-                    for (const content of this.streamingMessage.content) {
++                    for (const [contentIndex, content] of this.streamingMessage.content.entries()) {
+                         if (content.type === "toolCall") {
+                             let component = this.pendingTools.get(content.id);
+                             if (!component) {
++                                // 한 번의 업데이트가 "새 말 + 그 뒤 도구" 를 한꺼번에 실어 오면,
++                                // 도구가 먼저 달리는 말을 몰라 앞 뭉침에 붙는다. 말은 그 뒤에
++                                // 동기화되므로 그때 닫아봐야 이미 늦다. 내 앞에 말이 있으면
++                                // 붙기 전에 내가 직접 끊는다 — 순서는 본문이 정하지
++                                // 도착 시각이 정하는 게 아니다.
++                                if (this.streamingMessage.content[contentIndex - 1]?.type !== "toolCall" && contentIndex > 0)
++                                    this.closeToolGroup();
+                                 component = this.createToolExecutionComponent(content.name, content.id, content.arguments);
+                                 component.setExpanded(this.toolOutputExpanded);
+                                 this.attachToolComponent(content.name, component);
+@@ -4176,10 +4183,17 @@
+             const segment = new AssistantMessageComponent(runMessage, this.hideThinkingBlock, this.getMarkdownThemeWithSettings(), this.hiddenThinkingLabel, this.outputPad, this.getMarkdownTransformers());
+             segment.setExpanded(this.toolOutputExpanded);
+             this.assistantTextSegments.set(runStart, segment);
++            // 말이 끼었으니 열려 있던 뭉침은 여기서 끝난다. 닫지 않으면 이 말
++            // 뒤에 오는 도구가 말보다 위에 있는 앞 뭉침에 흡수돼서, 한 턴의
++            // 도구가 전부 맨 위 한 줄로 올라가고 말만 아래로 쌓인다.
++            this.closeToolGroup();
+             const followingToolCall = content.slice(index).find((block) => block.type === "toolCall");
+             const followingToolCallId = followingToolCall?.type === "toolCall" ? followingToolCall.id : undefined;
+             const followingToolComponent = followingToolCallId ? this.pendingTools.get(followingToolCallId) : undefined;
+-            const anchorIndex = followingToolComponent ? this.chatContainer.children.indexOf(followingToolComponent) : -1;
++            // 도구는 뭉침 안에 들어가 있을 수 있다. 그때 chatContainer 의 자식은
++            // 도구가 아니라 그 뭉침이므로, 앵커도 뭉침에서 찾아야 한다.
++            const anchor = followingToolComponent?.toolGroup ?? followingToolComponent;
++            const anchorIndex = anchor ? this.chatContainer.children.indexOf(anchor) : -1;
+             if (anchorIndex >= 0)
+                 this.chatContainer.children.splice(anchorIndex, 0, segment);
+             else
+@@ -4286,10 +4300,49 @@
+             // Assistant messages need special handling for tool calls
+             if (message.role === "assistant") {
+                 this.closeToolGroup();
+-                this.addMessageToChat(message);
++                // 첫 도구 앞의 머리말만 여기서 그린다. 그 뒤의 말은 도구 사이사이에
++                // 끼어 있으므로, 메시지를 통째로 그리면 한 턴의 말이 전부 도구 위로
++                // 올라가 순서가 뒤집힌다 — 스트리밍 경로와 같은 방식으로 갈라 그린다.
++                const firstToolIndex = message.content.findIndex((block) => block.type === "toolCall");
++                // 끝말(stopReason 꼬리표)은 마지막으로 그려지는 조각이 진다. 머리말에
++                // 남겨두면 "출력이 잘렸다" 같은 말이 도구들보다 앞에 나와 시간순이 어긋난다.
++                // 마지막 말 런이 시작하는 자리. 마지막 블록이 도구면 말 런이 없다.
++                let lastRunStart = -1;
++                if (firstToolIndex !== -1 && message.content[message.content.length - 1]?.type !== "toolCall") {
++                    lastRunStart = message.content.length - 1;
++                    while (lastRunStart > 0 && message.content[lastRunStart - 1]?.type !== "toolCall")
++                        lastRunStart -= 1;
++                }
++                // 말 런이 하나도 없으면(도구로 끝나면) 꼬리표를 받을 조각은 머리말뿐이다.
++                const tailReason = firstToolIndex === -1 || lastRunStart === -1 ? message.stopReason : "stop";
++                this.addMessageToChat(firstToolIndex === -1 ? message : { ...message, content: message.content.slice(0, firstToolIndex), stopReason: tailReason });
+                 // Render tool call components
+-                for (const content of message.content) {
+-                    if (content.type === "toolCall") {
++                for (const [contentIndex, content] of message.content.entries()) {
++                    // 도구와 도구 사이의 말을 그 자리에 그리고 뭉침을 끊는다.
++                    if (content.type !== "toolCall") {
++                        if (firstToolIndex === -1 || contentIndex < firstToolIndex)
++                            continue;
++                        const runBlocks = [];
++                        let runIndex = contentIndex;
++                        while (runIndex < message.content.length && message.content[runIndex]?.type !== "toolCall") {
++                            const runBlock = message.content[runIndex];
++                            if (runBlock)
++                                runBlocks.push(runBlock);
++                            runIndex += 1;
++                        }
++                        // 이 런의 첫 블록에서만 그린다 — 뒤 블록은 이미 실려 있다.
++                        if (message.content[contentIndex - 1]?.type === "toolCall") {
++                            this.closeToolGroup();
++                            // 꼬리표는 마지막 런 하나만 진다. 중간 런까지 지우면 같은 오류가
++                            // 말 뚝이마다 다시 붙고, 아예 안 지우면 시간순이 뒤집힌다.
++                            const runReason = runIndex >= message.content.length && contentIndex === lastRunStart
++                                ? message.stopReason
++                                : "stop";
++                            this.addMessageToChat({ ...message, content: runBlocks, stopReason: runReason });
++                        }
++                        continue;
++                    }
++                    {
+                         const component = this.createToolExecutionComponent(content.name, content.id, content.arguments);
+                         component.setExpanded(this.toolOutputExpanded);
+                         this.attachToolComponent(content.name, component);

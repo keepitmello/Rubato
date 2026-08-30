@@ -1,0 +1,27 @@
+# 정상 동작 기준: macOS arm64, CPython 3.13.2, 2026-08-25.
+# 직접 의존성뿐 아니라 그 전이 의존성도 고정한다. redis-py 8 응답 정규화는 별도로
+# 유지하며, 이 핀은 호환성 회피가 아니라 검증한 환경의 재현 기준이다. 갱신할 때는
+# msearch --doctor와 실제 색인/검색을 통과시킨 뒤 이 파일 전체를 함께 갱신한다.
+annotated-types==0.7.0
+anyio==4.12.1
+certifi==2026.1.4
+distro==1.9.0
+h11==0.16.0
+httpcore==1.0.9
+httpx==0.28.1
+idna==3.11
+jiter==0.13.0
+JPype1==1.6.0
+konlpy==0.6.0
+lxml==6.0.2
+numpy==2.4.2
+openai==2.16.0
+packaging==26.0
+pydantic==2.12.5
+pydantic_core==2.41.5
+python-dotenv==1.2.1
+redis==7.1.0
+sniffio==1.3.1
+tqdm==4.67.3
+typing-inspection==0.4.2
+typing_extensions==4.15.0

@@ -1,0 +1,67 @@
+diff --git a/dist/core/auth-storage.js b/dist/core/auth-storage.js
+--- a/dist/core/auth-storage.js
++++ b/dist/core/auth-storage.js
+@@ -40,7 +40,21 @@
+     try {
+         // wx = O_CREAT | O_EXCL | O_WRONLY. Fails rather than reusing a path.
+         fd = openSync(tempPath, "wx", 0o600);
+-        writeSync(fd, contents, 0, "utf-8");
++        // A single writeSync may write fewer bytes than asked — that is legal, not an
++        // error. Trusting one call silently truncates the credential file, which is the
++        // exact corruption this function exists to prevent. Loop on the returned count.
++        //
++        // Byte offsets, not string indices: a JS string index into UTF-8 output would
++        // resume mid-codepoint on any non-ASCII byte and corrupt the JSON.
++        const payload = Buffer.from(contents, "utf-8");
++        let written = 0;
++        while (written < payload.length) {
++            const count = writeSync(fd, payload, written, payload.length - written);
++            if (!(count > 0)) {
++                throw new Error(`auth storage write stalled after ${written} of ${payload.length} bytes`);
++            }
++            written += count;
++        }
+         // Force the bytes out before the rename publishes them. Without this the
+         // rename can land while the contents are still only in the page cache.
+         fsyncSync(fd);
+@@ -69,8 +83,13 @@
+         }
+         throw error;
+     }
+-    // Directory fsync makes the rename itself durable. Not fatal if the platform
+-    // refuses to open a directory for this purpose.
++    // Directory fsync makes the rename itself durable across power loss. Without it the
++    // rename can still be lost even though the file contents were fsynced.
++    //
++    // This is not best-effort. Swallowing the error would report success for a write
++    // whose durability was never established. POSIX (including macOS, verified) allows
++    // opening a directory read-only and fsyncing it; only Windows refuses, and only
++    // those errnos are tolerated.
+     try {
+         const dirFd = openSync(dirname(authPath), "r");
+         try {
+@@ -80,8 +99,22 @@
+             closeSync(dirFd);
+         }
+     }
+-    catch {
+-        // Best-effort: the rename already gives readers atomicity within this boot.
++    catch (error) {
++        const code = typeof error === "object" && error !== null && "code" in error
++            ? String(error.code)
++            : undefined;
++        // Windows cannot fsync a directory handle obtained this way. Nothing else is excused.
++        const unsupported = process.platform === "win32" && (code === "EPERM" || code === "EISDIR" || code === "EACCES");
++        if (!unsupported) {
++            // The rename already happened, so the target now holds the complete new JSON
++            // and cannot be rolled back. Say exactly that instead of claiming success:
++            // callers must not read this as "the credential was not written".
++            const reason = error instanceof Error ? error.message : String(error);
++            const failure = new Error(`auth storage replaced ${authPath} but could not fsync its directory: ${reason}`);
++            failure.cause = error;
++            failure.authFileReplaced = true;
++            throw failure;
++        }
+     }
+ }
+ let sharedAuthFileReadState;

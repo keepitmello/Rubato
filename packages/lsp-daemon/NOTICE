@@ -1,0 +1,7 @@
+@rubato/lsp-daemon notice
+
+This package does not duplicate the LSP client engine. Runtime LSP execution is
+provided by @rubato/lsp-core, which includes code adapted from pi-lsp-client /
+oh-my-pi by Yeongyu Kim.
+
+See packages/lsp-core/NOTICE and THIRD-PARTY-NOTICES.md.
