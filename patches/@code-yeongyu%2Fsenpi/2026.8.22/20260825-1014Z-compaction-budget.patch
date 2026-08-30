@@ -1,0 +1,24 @@
+diff --git a/dist/core/compaction/stream-watchdog.d.ts b/dist/core/compaction/stream-watchdog.d.ts
+--- a/dist/core/compaction/stream-watchdog.d.ts
++++ b/dist/core/compaction/stream-watchdog.d.ts
+@@ -29,7 +29,7 @@
+  * provider fails fast enough to keep the session interactive. Retries apply this
+  * budget per attempt.
+  */
+-export declare const DEFAULT_SUMMARIZATION_MAX_DURATION_MS = 120000;
++export declare const DEFAULT_SUMMARIZATION_MAX_DURATION_MS = 600000;
+ export interface ConsumeStreamWithIdleTimeoutOptions<T> {
+     /** Silence budget per read; the timer resets on every event. */
+     readonly idleTimeoutMs: number;
+diff --git a/dist/core/compaction/stream-watchdog.js b/dist/core/compaction/stream-watchdog.js
+--- a/dist/core/compaction/stream-watchdog.js
++++ b/dist/core/compaction/stream-watchdog.js
+@@ -35,7 +35,7 @@
+  * provider fails fast enough to keep the session interactive. Retries apply this
+  * budget per attempt.
+  */
+-export const DEFAULT_SUMMARIZATION_MAX_DURATION_MS = 120_000;
++export const DEFAULT_SUMMARIZATION_MAX_DURATION_MS = 600_000;
+ const IDLE_TRIP = "idle-trip";
+ const BUDGET_TRIP = "budget-trip";
+ const CALLER_ABORTED = "caller-aborted";

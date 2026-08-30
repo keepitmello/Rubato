@@ -1,0 +1,114 @@
+diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
+--- a/dist/core/agent-session.js
++++ b/dist/core/agent-session.js
+@@ -1441,7 +1441,17 @@
+             }
+             this._resolveRetry();
+             retryContinuationBlocked ||= retryOutcome === "blocked";
+-            if (!retryContinuationBlocked && !userAbortSuppressedQueuedContinuation) {
++            if (!retryContinuationBlocked && userAbortSuppressedQueuedContinuation) {
++                // User abort must not skip a still-required compact. Codex turns can
++                // tool-loop past the window without ever emitting overflow, so the
++                // only way out used to be: Escape (which skipped compact) then a
++                // new prompt (which finally ran pre_prompt compact). Compact here
++                // without retrying the aborted turn.
++                if (requiredAutoCompaction) {
++                    await this._checkCompaction(msg, true, undefined, false);
++                }
++            }
++            else if (!retryContinuationBlocked && !userAbortSuppressedQueuedContinuation) {
+                 if (compactedBeforeRetry && this.agent.hasQueuedMessages()) {
+                     // Accepted recovery supersedes the stored admission rejection: the
+                     // queued continuation is about to run, so the originating prompt must
+@@ -3148,7 +3158,13 @@
+         const joinedAgentEndBoundary = this._abortProvenance.hasOpenAgentEndBoundary;
+         this._hadClearedQueuedMessages = false;
+         const shouldEmitAbort = !joinedAgentEndBoundary && !wasMidRun && (hadRetryBackoff || hadCompactionOrPending || hadClearedQueues);
+-        this.abortCompaction();
++        // `/compact` claims a controller and then waits for this abort. Cancelling
++        // that pending compact here is why Escape during a looping Codex turn made
++        // `/compact` look dead: the command aborted the turn *and* the compact it
++        // had just queued. Only cancel summarization that is already running.
++        if (this._compactionLifecycle.state.status === "running") {
++            this.abortCompaction();
++        }
+         await this._abortActiveAgentAndRetry("user");
+         if (!shouldEmitAbort)
+             return;
+@@ -3601,7 +3617,31 @@
+         this._suppressQueuedContinuationAfterUserAbort = true;
+         this._userAbortGeneration += 1;
+     }
+-    async _abortActiveAgentAndRetry(source) {
++    async _waitForIdleWithTimeout(timeoutMs) {
++        if (this.isIdle)
++            return true;
++        let timer;
++        try {
++            await Promise.race([
++                this.waitForIdle(),
++                new Promise((_, reject) => {
++                    timer = setTimeout(() => reject(new Error("idle-timeout")), timeoutMs);
++                    timer.unref?.();
++                }),
++            ]);
++            return true;
++        }
++        catch (error) {
++            if (error instanceof Error && error.message === "idle-timeout")
++                return false;
++            throw error;
++        }
++        finally {
++            if (timer)
++                clearTimeout(timer);
++        }
++    }
++    async _abortActiveAgentAndRetry(source, idleTimeoutMs) {
+         this.abortRetry();
+         this.abortBranchSummary();
+         if (this._userAbortPromise === undefined) {
+@@ -3618,7 +3658,14 @@
+                 this._recordUserAbort();
+             if (joined.abortCurrentAgent)
+                 this.agent.abort();
+-            await this._userAbortPromise;
++            if (idleTimeoutMs === undefined) {
++                await this._userAbortPromise;
++                return;
++            }
++            const settled = await this._waitForIdleWithTimeout(idleTimeoutMs);
++            if (!settled) {
++                throw new Error("Turn did not stop after abort; compaction cannot start until the current turn ends. Press Escape, then retry /compact.");
++            }
+             return;
+         }
+         if (this.isStreaming && this._abortProvenance.begin(source))
+@@ -3629,7 +3676,14 @@
+         })();
+         this._userAbortPromise = abortPromise;
+         try {
+-            await abortPromise;
++            if (idleTimeoutMs === undefined) {
++                await abortPromise;
++                return;
++            }
++            const settled = await this._waitForIdleWithTimeout(idleTimeoutMs);
++            if (!settled) {
++                throw new Error("Turn did not stop after abort; compaction cannot start until the current turn ends. Press Escape, then retry /compact.");
++            }
+         }
+         finally {
+             if (this._userAbortPromise === abortPromise) {
+@@ -3708,8 +3762,9 @@
+         try {
+             // Keep the session subscriber attached until the aborted run emits
+             // agent_end. That event clears the active-run and retry state that
+-            // waitForIdle() depends on.
+-            await this._abortActiveAgentAndRetry("system");
++            // waitForIdle() depends on. Bound the wait: Codex streams that ignore
++            // abort used to pin `/compact` forever.
++            await this._abortActiveAgentAndRetry("system", 10_000);
+             this._disconnectFromAgent();
+             disconnected = true;
+             this._emit({ type: "compaction_start", reason: "manual", requestId });

@@ -1,0 +1,992 @@
+diff --git a/dist/core/cursor-exec-bridge-session.js b/dist/core/cursor-exec-bridge-session.js
+--- a/dist/core/cursor-exec-bridge-session.js
++++ b/dist/core/cursor-exec-bridge-session.js
+@@ -9,10 +9,16 @@
+  * still holds buffered exec frames) adopt the replacement run's signal, clear
+  * the ownership guard in `Agent.emitExternalEvent`, and execute a dead run's
+  * tool inside the new run.
++ *
++ * The session id doubles as the conversation lineage id the exec journal keys
++ * on. It is the identity that survives a process restart and a resume, which is
++ * exactly what a durable duplicate-execution record needs; the run signal is
++ * not, because it is recreated per run.
+  */
+ export function createSessionCursorExecBridge(sessionRef, getAgent, runSignal) {
+     return createCursorExecBridge({
+         getTool: (name) => sessionRef.current?.getRegisteredTool(name),
++        getConversationLineageId: () => sessionRef.current?.sessionId,
+         preflightToolCall: async (event) => sessionRef.current?.preflightToolCall({
+             type: "toolCall",
+             id: event.toolCallId,
+diff --git a/dist/core/cursor-exec-bridge.d.ts b/dist/core/cursor-exec-bridge.d.ts
+--- a/dist/core/cursor-exec-bridge.d.ts
++++ b/dist/core/cursor-exec-bridge.d.ts
+@@ -13,9 +13,15 @@
+  * The arg translations here MUST mirror the display blocks the API
+  * synthesizes (`synthesizeCursorExecToolCall` call sites): the transcript
+  * shows one operation, so a different one must not run.
++ *
++ * Duplicate suppression has two layers: an in-process in-flight map (the same
++ * ground `kCursorExecResolved` covers) and the durable `cursor-exec-journal`,
++ * whose single owner this module is. Exactly-once across a restart is not
++ * promised; an entry left `executing` settles to `unknown`, an error state.
+  */
+ import type { AgentEvent, AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
+ import { type CursorExecHandlers } from "@earendil-works/pi-ai";
++import type { CursorExecJournal } from "./cursor-exec-journal.ts";
+ import type { ToolCallEvent, ToolCallEventResult } from "./extensions/types.ts";
+ export interface CursorExecBridgeOptions {
+     /**
+@@ -43,7 +49,19 @@
+     preflightToolCall?: (event: ToolCallEvent) => Promise<ToolCallEventResult | undefined>;
+     /** Abort signal for in-flight bridge executions (the active run's signal). */
+     getAbortSignal: () => AbortSignal | undefined;
++    /**
++     * Durable identity of the conversation this call belongs to — the first half
++     * of the journal key `{conversationLineageId, toolCallId}`.
++     *
++     * Absent or empty fails the call closed rather than executing unjournaled:
++     * without it a repeat cannot be told from a first run.
++     */
++    getConversationLineageId?: () => string | undefined;
++    /** Journal override. Defaults to the process-wide journal for the profile. */
++    journal?: CursorExecJournal;
+ }
++/** Test seam: forget the process-wide in-flight map and journal handle. */
++export declare function resetCursorExecBridgeState(): void;
+ /**
+  * Build the exec handlers passed to the `cursor-agent` API through the agent
+  * loop config. Handlers return bare `ToolResultMessage`s; the API derives the
+diff --git a/dist/core/cursor-exec-bridge.js b/dist/core/cursor-exec-bridge.js
+--- a/dist/core/cursor-exec-bridge.js
++++ b/dist/core/cursor-exec-bridge.js
+@@ -13,11 +13,104 @@
+  * The arg translations here MUST mirror the display blocks the API
+  * synthesizes (`synthesizeCursorExecToolCall` call sites): the transcript
+  * shows one operation, so a different one must not run.
++ *
++ * Duplicate suppression has two layers, and they are not interchangeable:
++ *
++ * - In this process, `inFlight` maps `{lineageId, toolCallId}` onto the running
++ *   promise, so a redelivered exec frame joins the first execution instead of
++ *   starting a second one. `kCursorExecResolved` covers the same ground for the
++ *   display block the API synthesizes.
++ * - Across processes, `cursor-exec-journal` durably records
++ *   `prepared → executing → completed | failed | unknown`. This bridge is that
++ *   journal's single owner; nothing else may write it.
++ *
++ * Exactly-once across a restart is not promised and must not be simulated. A
++ * process killed between a side effect and its record leaves `executing`, which
++ * settles to `unknown` — an error state that never becomes a successful turn.
++ * Only a tool that declares an idempotency key is retried, under that key.
+  */
+ import { composeCursorShellCommand, cursorPiLimit, cursorPiLsPath, cursorPiReadArgs, cursorPiTimeout, omitUndefinedCursorArgs, validateToolArguments, } from "@earendil-works/pi-ai";
++import { createCursorExecJournal } from "./cursor-exec-journal.js";
+ function isRecord(value) {
+     return typeof value === "object" && value !== null && !Array.isArray(value);
+ }
++/**
++ * Process-wide in-flight executions, keyed by `{lineageId, toolCallId}`.
++ *
++ * Module level, not per bridge: a bridge is built per run, so a per-instance map
++ * would let a frame redelivered after a stream retry execute a second time in
++ * the same process. Single-process exactly-once is the one guarantee the design
++ * makes unconditionally, so it cannot depend on which bridge instance saw the
++ * frame.
++ */
++const inFlight = new Map();
++/** Bound the map: one long session must not accumulate entries without limit. */
++const IN_FLIGHT_MAX = 1024;
++function inFlightKey(lineageId, toolCallId) {
++    return `${lineageId}\u0000${toolCallId}`;
++}
++function rememberInFlight(key, promise) {
++    inFlight.set(key, promise);
++    if (inFlight.size <= IN_FLIGHT_MAX)
++        return;
++    // Map iterates in insertion order, so this drops the oldest first. An evicted
++    // entry that is still running stays protected by the journal, which refuses a
++    // second `prepare` while a live pid owns it.
++    for (const oldest of inFlight.keys()) {
++        if (inFlight.size <= IN_FLIGHT_MAX)
++            break;
++        if (oldest === key)
++            continue;
++        inFlight.delete(oldest);
++    }
++}
++/** Lazily created per-process journal for the resolved profile. */
++let processJournal;
++function resolveJournal(options) {
++    if (options.journal !== undefined)
++        return options.journal;
++    if (processJournal === undefined)
++        processJournal = createCursorExecJournal();
++    return processJournal;
++}
++/** Test seam: forget the process-wide state this module keeps. */
++export function resetCursorExecBridgeState() {
++    inFlight.clear();
++    processJournal = undefined;
++}
++/**
++ * The idempotency key a tool declares for these arguments, if any.
++ *
++ * Silence is the default: a tool that says nothing is non-idempotent, so an
++ * ambiguous prior attempt is never retried. Declaring the key is how a tool opts
++ * into being retried under it.
++ */
++function declaredIdempotencyKey(tool, params) {
++    try {
++        if (typeof tool?.idempotencyKeyFor === "function") {
++            const key = tool.idempotencyKeyFor(params);
++            return typeof key === "string" && key !== "" ? key : undefined;
++        }
++        if (typeof tool?.idempotencyKey === "string" && tool.idempotencyKey !== "")
++            return tool.idempotencyKey;
++    }
++    catch {
++        // A tool that throws while describing itself has declared nothing.
++        return undefined;
++    }
++    return undefined;
++}
++/** Restate a journal refusal in terms the user and the agent loop can act on. */
++function refusalMessage(toolName, entry, reason) {
++    const sideEffect = entry?.sideEffect;
++    const detail = sideEffect === "happened"
++        ? "It already ran, so it will not run again."
++        : sideEffect === "none"
++            ? "It did not run."
++            : "Whether it already ran cannot be determined, so it will not be run again.";
++    return (`Tool "${toolName}" was not executed: ${reason ?? "a previous attempt did not settle"}. ` +
++        `${detail} Re-run it explicitly if that is what you want.`);
++}
+ function errorResult(toolCallId, toolName, text) {
+     return {
+         role: "toolResult",
+@@ -38,7 +131,30 @@
+         timestamp: Date.now(),
+     };
+ }
++/**
++ * Journal-guarded execution. Every handler goes through here.
++ *
++ * The in-flight join happens before any journal write, so a redelivered frame
++ * never even asks the journal a second question — it awaits the answer the first
++ * one is already producing.
++ */
+ async function executeTool(options, toolName, toolCallId, args) {
++    const lineageId = options.getConversationLineageId?.();
++    if (typeof lineageId !== "string" || lineageId === "") {
++        // Fail closed. Without a lineage id there is no durable key, so a repeat
++        // cannot be told from a first run. Running anyway is how a tool executes
++        // twice across a restart.
++        return errorResult(toolCallId, toolName, `Tool "${toolName}" was not executed: the Cursor exec bridge has no conversation lineage id to journal it under.`);
++    }
++    const key = inFlightKey(lineageId, toolCallId);
++    const existing = inFlight.get(key);
++    if (existing !== undefined)
++        return await existing;
++    const run = runJournaledTool(options, toolName, toolCallId, args, lineageId);
++    rememberInFlight(key, run);
++    return await run;
++}
++async function runJournaledTool(options, toolName, toolCallId, args, lineageId) {
+     const runSignal = options.getAbortSignal();
+     if (!runSignal || runSignal.aborted) {
+         return errorResult(toolCallId, toolName, "Tool execution has no active run");
+@@ -65,11 +181,71 @@
+         }
+     }
+     catch (error) {
++        // Nothing ran and nothing is ambiguous, so no journal entry is opened.
+         return errorResult(toolCallId, toolName, error instanceof Error ? error.message : String(error));
+     }
++    const journal = resolveJournal(options);
++    let decision;
++    try {
++        decision = journal.prepare({
++            lineageId,
++            toolCallId,
++            toolName,
++            idempotencyKey: declaredIdempotencyKey(tool, params),
++        });
++    }
++    catch (error) {
++        // A journal we cannot write is a journal we cannot trust. Executing without
++        // it would drop the only record that could stop a second run later.
++        const reason = error instanceof Error ? error.message : String(error);
++        return errorResult(toolCallId, toolName, `Tool "${toolName}" was not executed: the exec journal could not be updated (${reason}).`);
++    }
++    if (decision.decision === "refuse") {
++        // `unknown` lands here. It is reported as an error so the turn cannot be
++        // read as a success, and the tool is not run again.
++        return errorResult(toolCallId, toolName, refusalMessage(toolName, decision.entry, decision.reason));
++    }
++    if (decision.decision === "replay") {
++        // `completed` plus a persisted result: never execute again. The stored
++        // result answers the frame. No tool_result is re-emitted when the previous
++        // process already delivered one — the transcript holds it.
++        const stored = decision.entry.result;
++        const replayed = {
++            role: "toolResult",
++            toolCallId,
++            toolName,
++            content: isRecord(stored) && Array.isArray(stored.content) ? stored.content : [],
++            details: isRecord(stored) ? stored.details : undefined,
++            usage: isRecord(stored) ? stored.usage : undefined,
++            isError: decision.entry.isError === true,
++            timestamp: Date.now(),
++        };
++        await options.emitEvent({ type: "tool_execution_start", toolCallId, toolName, args: cleanArgs }, runSignal);
++        await options.emitEvent({
++            type: "tool_execution_end",
++            toolCallId,
++            toolName,
++            result: { content: replayed.content, details: replayed.details },
++            isError: replayed.isError === true,
++        }, runSignal);
++        if (decision.entry.resultDelivered !== true && options.emitToolResult) {
++            // The side effect happened but its result never reached a transcript.
++            // Deliver it from the journal rather than running the tool again.
++            await options.emitToolResult({
++                toolName,
++                toolCallId,
++                args: params ?? cleanArgs,
++                result: { content: replayed.content, details: replayed.details, usage: replayed.usage },
++                isError: replayed.isError === true,
++            });
++            journal.markResultDelivered(lineageId, toolCallId);
++        }
++        return replayed;
++    }
+     await options.emitEvent({ type: "tool_execution_start", toolCallId, toolName, args: cleanArgs }, runSignal);
+     let toolResult;
+     let endEvent;
++    let executed = false;
+     try {
+         if (!isRecord(params)) {
+             throw new Error(`Tool "${toolName}" prepared non-object arguments`);
+@@ -103,6 +279,11 @@
+             };
+         }
+         else {
++            // The last durable write before the side effect. A process killed from
++            // here until `complete` leaves `executing`, which a restart settles to
++            // `unknown` instead of re-running.
++            journal.markExecuting(lineageId, toolCallId);
++            executed = true;
+             const result = await tool.execute(toolCallId, params, runSignal, undefined);
+             toolResult = {
+                 role: "toolResult",
+@@ -128,6 +309,18 @@
+             isError: true,
+         };
+     }
++    // The side effect is over, one way or the other, and this is its result. Both
++    // land in one atomic write: from here on the call is replayable and can never
++    // run again, even if everything after this line is lost.
++    journal.complete(lineageId, toolCallId, {
++        isError: toolResult.isError === true,
++        result: {
++            content: toolResult.content,
++            details: toolResult.details,
++            usage: toolResult.usage,
++        },
++        summary: executed ? undefined : "not executed",
++    });
+     await options.emitEvent(endEvent, runSignal);
+     if (options.emitToolResult) {
+         await options.emitToolResult({
+@@ -141,6 +334,7 @@
+             },
+             isError: toolResult.isError === true,
+         });
++        journal.markResultDelivered(lineageId, toolCallId);
+     }
+     return toolResult;
+ }
+diff --git a/dist/core/cursor-exec-journal.d.ts b/dist/core/cursor-exec-journal.d.ts
+new file mode 100644
+--- /dev/null
++++ b/dist/core/cursor-exec-journal.d.ts
+@@ -0,0 +1,103 @@
++/**
++ * Persistent execution journal for Cursor server-driven tool calls.
++ *
++ * See cursor-exec-journal.js for the contract. In short: a file keyed by
++ * `{conversationLineageId, toolCallId}` carrying
++ * `prepared → executing → completed | failed | unknown`, owned solely by
++ * `cursor-exec-bridge`, written under a multi-process lock with
++ * temp write → fsync → rename. Exactly-once across a restart is NOT promised;
++ * `unknown` is how that is admitted instead of guessed at.
++ */
++export declare const CURSOR_EXEC_PREPARED = "prepared";
++export declare const CURSOR_EXEC_EXECUTING = "executing";
++export declare const CURSOR_EXEC_COMPLETED = "completed";
++export declare const CURSOR_EXEC_FAILED = "failed";
++export declare const CURSOR_EXEC_UNKNOWN = "unknown";
++export declare const CURSOR_EXEC_JOURNAL_VERSION = 1;
++export declare const CURSOR_EXEC_JOURNAL_FILE = "cursor-exec-journal.json";
++export declare const CURSOR_EXEC_JOURNAL_MAX_ENTRIES = 512;
++export declare const CURSOR_EXEC_JOURNAL_TTL_MS: number;
++export declare const CURSOR_SIDE_EFFECT_NONE = "none";
++export declare const CURSOR_SIDE_EFFECT_UNKNOWN = "unknown";
++export declare const CURSOR_SIDE_EFFECT_HAPPENED = "happened";
++export type CursorExecState = "prepared" | "executing" | "completed" | "failed" | "unknown";
++/** What the journal knows about the side effect of a settled entry. */
++export type CursorExecSideEffect = "none" | "unknown" | "happened";
++export interface CursorExecJournalEntry {
++    lineageId: string;
++    toolCallId: string;
++    toolName?: string;
++    state: CursorExecState;
++    /** Process that owns the entry. Liveness of this pid decides staleness. */
++    pid?: number;
++    attempt?: number;
++    /** Present only when the tool declared one. Retries require the same value. */
++    idempotencyKey?: string;
++    /** True once state and result were written together. Gates replay. */
++    resultPersisted?: boolean;
++    result?: unknown;
++    isError?: boolean;
++    summary?: string;
++    /** Diagnostic: the host transcript also holds the result. */
++    resultDelivered?: boolean;
++    /** The state the entry held when a restart settled it. */
++    settledFrom?: CursorExecState;
++    sideEffect?: CursorExecSideEffect;
++    /** Human-readable explanation of a settlement, surfaced as an error. */
++    reason?: string;
++    retriedFrom?: CursorExecState;
++    createdAt?: number;
++    updatedAt?: number;
++    executingAt?: number;
++    completedAt?: number;
++    resultPersistedAt?: number;
++    resultDeliveredAt?: number;
++    settledAt?: number;
++}
++/** `execute` authorizes a run, `replay` returns the stored result, `refuse` is an error. */
++export type CursorExecDecisionKind = "execute" | "replay" | "refuse";
++export interface CursorExecDecision {
++    decision: CursorExecDecisionKind;
++    entry: CursorExecJournalEntry;
++    reason?: string;
++}
++export interface CursorExecJournalOptions {
++    /** Full path to the journal file. Overrides `agentDir`. */
++    journalPath?: string;
++    /** Profile directory. Defaults to the resolved agent dir. */
++    agentDir?: string;
++    now?: () => number;
++    maxEntries?: number;
++    ttlMs?: number;
++    /** Liveness probe for an entry's owning pid. Injectable for tests. */
++    isOwnerAlive?: (pid: number | undefined) => boolean;
++    pid?: number;
++}
++export interface CursorExecPrepareInput {
++    lineageId: string;
++    toolCallId: string;
++    toolName?: string;
++    /** Only a tool that declares this may be retried, and only under this key. */
++    idempotencyKey?: string;
++}
++export interface CursorExecCompleteInput {
++    isError?: boolean;
++    /** Stored with the state in one atomic write; this is what replay answers with. */
++    result?: unknown;
++    summary?: string;
++}
++export interface CursorExecJournal {
++    readonly path: string;
++    settleStale(): CursorExecJournalEntry[];
++    read(lineageId: string, toolCallId: string): CursorExecJournalEntry | undefined;
++    list(): CursorExecJournalEntry[];
++    unresolved(): CursorExecJournalEntry[];
++    prepare(input: CursorExecPrepareInput): CursorExecDecision;
++    markExecuting(lineageId: string, toolCallId: string): CursorExecJournalEntry | undefined;
++    complete(lineageId: string, toolCallId: string, input?: CursorExecCompleteInput): CursorExecJournalEntry | undefined;
++    markResultDelivered(lineageId: string, toolCallId: string): CursorExecJournalEntry | undefined;
++    forgetLineage(lineageId: string): number;
++}
++export declare function cursorExecJournalPath(agentDir?: string): string;
++export declare function createCursorExecJournal(options?: CursorExecJournalOptions): CursorExecJournal;
++//# sourceMappingURL=cursor-exec-journal.d.ts.map
+diff --git a/dist/core/cursor-exec-journal.js b/dist/core/cursor-exec-journal.js
+new file mode 100644
+--- /dev/null
++++ b/dist/core/cursor-exec-journal.js
+@@ -0,0 +1,570 @@
++/**
++ * Persistent execution journal for Cursor server-driven tool calls.
++ *
++ * Cursor executes tools server-drivenly: the server sends an exec frame and
++ * blocks until the client answers in band. That makes the client the only place
++ * that knows whether a side effect happened, and `kCursorExecResolved` only
++ * knows it for the current process and the current call. A restart erases that
++ * knowledge, so without a durable record the same `toolCallId` can run a second
++ * time — a second `write`, a second `bash`, a second MCP mutation.
++ *
++ * This is the layer beneath the in-memory symbol: a file keyed by
++ * `{conversationLineageId, toolCallId}` carrying
++ * `prepared → executing → completed | failed | unknown`.
++ *
++ * What it does NOT promise is exactly-once across a restart. An arbitrary
++ * external side effect and the transcript write cannot be made atomic, so a
++ * process killed between the side effect and its record leaves a question no
++ * amount of journalling can answer. The journal's job is to make that question
++ * *visible* rather than silently answering it with a re-execution:
++ *
++ * - `completed` plus a persisted tool result → never execute again, replay.
++ * - `executing` found at startup → settle to `unknown`. The side effect may or
++ *   may not have landed; that is unknowable, so nothing is re-run.
++ * - `unknown` is an error state. It surfaces to the user and the agent loop and
++ *   never becomes a successful turn.
++ * - Only a tool that explicitly declares an idempotency key may be retried, and
++ *   only under that same key.
++ *
++ * The state and the result are written **together**, in one atomic write. Two
++ * writes would open a window where the tool provably finished and its result
++ * provably exists, yet the record says only `completed` — and a restart reading
++ * that would have to report `unknown` for a turn that actually succeeded. The
++ * design speaks of `completed` *and* a persisted result as one fact, so it is
++ * stored as one fact.
++ *
++ * `cursor-exec-bridge` is the single owner. Writers are serialized with the same
++ * `proper-lockfile` policy the auth and settings stores use, and each write is a
++ * temp write → fsync → atomic rename, so a concurrent reader sees either the
++ * complete previous JSON or the complete new JSON, never a torn file. Mode 0600:
++ * the journal carries tool arguments and results.
++ */
++import { randomUUID } from "node:crypto";
++import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeSync } from "fs";
++import { dirname, join } from "path";
++import lockfile from "proper-lockfile";
++import { getAgentDir } from "../config.js";
++import { FILE_STORAGE_LOCK_OPTIONS } from "./lockfile-policy.js";
++/** Journal states. `prepared`/`executing` are transient; the rest are terminal. */
++export const CURSOR_EXEC_PREPARED = "prepared";
++export const CURSOR_EXEC_EXECUTING = "executing";
++export const CURSOR_EXEC_COMPLETED = "completed";
++export const CURSOR_EXEC_FAILED = "failed";
++export const CURSOR_EXEC_UNKNOWN = "unknown";
++/** On-disk shape version. A file from another version is not guessed at. */
++export const CURSOR_EXEC_JOURNAL_VERSION = 1;
++export const CURSOR_EXEC_JOURNAL_FILE = "cursor-exec-journal.json";
++/**
++ * Bounds. The journal is a crash-recovery record, not a transcript: entries stay
++ * only long enough for a restart to read them. Without a cap a long-lived
++ * profile would grow one entry per tool call forever.
++ */
++export const CURSOR_EXEC_JOURNAL_MAX_ENTRIES = 512;
++export const CURSOR_EXEC_JOURNAL_TTL_MS = 7 * 24 * 60 * 60 * 1000;
++/** Terminal states never move again on their own. */
++const TERMINAL = new Set([CURSOR_EXEC_COMPLETED, CURSOR_EXEC_FAILED, CURSOR_EXEC_UNKNOWN]);
++/**
++ * What the journal knows about the side effect of an entry it settled.
++ *
++ * The distinction is not decoration: `none` and `happened` are facts a process
++ * established before it died, and reporting them as `unknown` would throw away
++ * evidence the user needs in order to decide what to do.
++ */
++export const CURSOR_SIDE_EFFECT_NONE = "none";
++export const CURSOR_SIDE_EFFECT_UNKNOWN = "unknown";
++export const CURSOR_SIDE_EFFECT_HAPPENED = "happened";
++export function cursorExecJournalPath(agentDir) {
++    return join(agentDir ?? getAgentDir(), CURSOR_EXEC_JOURNAL_FILE);
++}
++function entryKey(lineageId, toolCallId) {
++    // NUL cannot occur in either id, so the join is unambiguous.
++    return `${lineageId}\u0000${toolCallId}`;
++}
++/**
++ * Replace the journal without ever leaving a partial file behind.
++ *
++ * Same shape as the auth store's atomic write, and for the same reason: the lock
++ * serializes writers but does not protect the bytes of one write. An in-place
++ * write truncates first, so a crash in that window leaves a file that parses as
++ * nothing — erasing exactly the record that says a tool already ran.
++ */
++function atomicWriteJournalSync(journalPath, contents) {
++    // Same directory as the target: rename is only atomic within one filesystem.
++    const tempPath = join(dirname(journalPath), `.${CURSOR_EXEC_JOURNAL_FILE}.${process.pid}.${randomUUID()}.tmp`);
++    let fd;
++    try {
++        // wx = O_CREAT | O_EXCL | O_WRONLY. Two writers can never share a temp path.
++        fd = openSync(tempPath, "wx", 0o600);
++        // A short write is legal, not an error. Trusting one call silently truncates
++        // the journal. Byte offsets, not string indices: a string index into UTF-8
++        // output would resume mid-codepoint on any non-ASCII byte.
++        const payload = Buffer.from(contents, "utf-8");
++        let written = 0;
++        while (written < payload.length) {
++            const count = writeSync(fd, payload, written, payload.length - written);
++            if (!(count > 0)) {
++                throw new Error(`cursor exec journal write stalled after ${written} of ${payload.length} bytes`);
++            }
++            written += count;
++        }
++        // Force the bytes out before the rename publishes them.
++        fsyncSync(fd);
++        closeSync(fd);
++        fd = undefined;
++        // umask cannot loosen an explicit chmod, so assert the mode we promise.
++        chmodSync(tempPath, 0o600);
++        renameSync(tempPath, journalPath);
++    }
++    catch (error) {
++        if (fd !== undefined) {
++            try {
++                closeSync(fd);
++            }
++            catch {
++                // Closing failed on an already-failing path; the unlink below still runs.
++            }
++        }
++        try {
++            if (existsSync(tempPath))
++                unlinkSync(tempPath);
++        }
++        catch {
++            // Cleanup is best-effort: the original error is what the caller needs.
++        }
++        throw error;
++    }
++    // Directory fsync makes the rename itself durable across power loss. Not
++    // best-effort: losing the rename means losing the record that a side effect
++    // happened. POSIX (including macOS) allows fsyncing a read-only directory
++    // handle; only Windows refuses, and only those errnos are tolerated.
++    try {
++        const dirFd = openSync(dirname(journalPath), "r");
++        try {
++            fsyncSync(dirFd);
++        }
++        finally {
++            closeSync(dirFd);
++        }
++    }
++    catch (error) {
++        const code = typeof error === "object" && error !== null && "code" in error
++            ? String(error.code)
++            : undefined;
++        const unsupported = process.platform === "win32" && (code === "EPERM" || code === "EISDIR" || code === "EACCES");
++        if (!unsupported) {
++            const reason = error instanceof Error ? error.message : String(error);
++            const failure = new Error(`cursor exec journal replaced ${journalPath} but could not fsync its directory: ${reason}`);
++            failure.cause = error;
++            failure.journalFileReplaced = true;
++            throw failure;
++        }
++    }
++}
++/** An empty journal. Used for a missing file and for one we refuse to read. */
++function emptyState() {
++    return { version: CURSOR_EXEC_JOURNAL_VERSION, entries: {} };
++}
++/**
++ * Parse the journal, or start over.
++ *
++ * A journal we cannot read is treated as absent rather than fatal. That is the
++ * safe direction *only* because an absent record never claims a tool already
++ * ran: the worst case is that a genuinely completed call is re-offered, which
++ * the in-process guard still catches for a live call. Guessing at a
++ * half-understood shape is the unsafe direction.
++ */
++function parseState(raw) {
++    let parsed;
++    try {
++        parsed = JSON.parse(raw);
++    }
++    catch {
++        return emptyState();
++    }
++    if (typeof parsed !== "object" || parsed === null)
++        return emptyState();
++    if (parsed.version !== CURSOR_EXEC_JOURNAL_VERSION)
++        return emptyState();
++    const entries = typeof parsed.entries === "object" && parsed.entries !== null ? parsed.entries : {};
++    const clean = {};
++    for (const [key, value] of Object.entries(entries)) {
++        if (typeof value !== "object" || value === null)
++            continue;
++        if (typeof value.state !== "string")
++            continue;
++        clean[key] = value;
++    }
++    return { version: CURSOR_EXEC_JOURNAL_VERSION, entries: clean };
++}
++/**
++ * Drop what a restart can no longer use: expired entries, then the oldest
++ * terminal ones. Live entries (`prepared`/`executing`) are never pruned — they
++ * are precisely the ones a restart must see in order to settle them.
++ */
++function prune(state, now, maxEntries, ttlMs) {
++    for (const [key, entry] of Object.entries(state.entries)) {
++        if (!TERMINAL.has(entry.state))
++            continue;
++        const stamp = typeof entry.updatedAt === "number" ? entry.updatedAt : 0;
++        if (now - stamp > ttlMs)
++            delete state.entries[key];
++    }
++    const keys = Object.keys(state.entries);
++    if (keys.length <= maxEntries)
++        return;
++    const terminal = keys
++        .filter((key) => TERMINAL.has(state.entries[key].state))
++        .sort((a, b) => (state.entries[a].updatedAt ?? 0) - (state.entries[b].updatedAt ?? 0));
++    let excess = keys.length - maxEntries;
++    for (const key of terminal) {
++        if (excess <= 0)
++            break;
++        delete state.entries[key];
++        excess -= 1;
++    }
++}
++/** Is the process that owns this entry still around? */
++function ownerAlive(pid, self) {
++    if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0)
++        return false;
++    if (pid === self)
++        return true;
++    try {
++        // Signal 0 checks existence without delivering anything.
++        process.kill(pid, 0);
++        return true;
++    }
++    catch (error) {
++        // EPERM means it exists and belongs to someone else.
++        return typeof error === "object" && error !== null && "code" in error && error.code === "EPERM";
++    }
++}
++/**
++ * The journal for one profile.
++ *
++ * Every mutation is one locked read-modify-write. A read outside the lock is
++ * allowed to be stale, because a stale read never authorizes an execution: that
++ * decision is made only inside `prepare`, under the lock.
++ */
++export function createCursorExecJournal(options = {}) {
++    const journalPath = options.journalPath ?? cursorExecJournalPath(options.agentDir);
++    const now = options.now ?? (() => Date.now());
++    const maxEntries = options.maxEntries ?? CURSOR_EXEC_JOURNAL_MAX_ENTRIES;
++    const ttlMs = options.ttlMs ?? CURSOR_EXEC_JOURNAL_TTL_MS;
++    const isOwnerAlive = options.isOwnerAlive ?? ((pid) => ownerAlive(pid, options.pid ?? process.pid));
++    const pid = options.pid ?? process.pid;
++    let settled = false;
++    function ensureParentDir() {
++        const dir = dirname(journalPath);
++        if (!existsSync(dir))
++            mkdirSync(dir, { recursive: true, mode: 0o700 });
++    }
++    function acquireLockSyncWithRetry() {
++        const maxAttempts = 60;
++        const delayMs = 25;
++        let lastError;
++        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
++            try {
++                return lockfile.lockSync(journalPath, { ...FILE_STORAGE_LOCK_OPTIONS });
++            }
++            catch (error) {
++                const code = typeof error === "object" && error !== null && "code" in error
++                    ? String(error.code)
++                    : undefined;
++                if (code !== "ELOCKED" || attempt === maxAttempts)
++                    throw error;
++                lastError = error;
++                // Sleep the thread instead of spinning: a contended journal must not
++                // burn a core per waiter (same root cause as the auth store's retry).
++                const sleeper = new Int32Array(new SharedArrayBuffer(4));
++                Atomics.wait(sleeper, 0, 0, delayMs);
++            }
++        }
++        throw lastError ?? new Error("Failed to acquire cursor exec journal lock");
++    }
++    function readUnlocked() {
++        if (!existsSync(journalPath))
++            return emptyState();
++        try {
++            return parseState(readFileSync(journalPath, "utf-8"));
++        }
++        catch {
++            return emptyState();
++        }
++    }
++    /** One locked read-modify-write. `fn` returns the value handed back. */
++    function withLock(fn) {
++        ensureParentDir();
++        // proper-lockfile locks a sibling `.lock` directory, so the target need not
++        // exist. Creating it up front would publish an empty journal on a pure read.
++        let release;
++        try {
++            release = acquireLockSyncWithRetry();
++            const state = readUnlocked();
++            let changed = false;
++            const result = fn(state, () => {
++                changed = true;
++            });
++            if (changed) {
++                prune(state, now(), maxEntries, ttlMs);
++                atomicWriteJournalSync(journalPath, JSON.stringify(state));
++            }
++            return result;
++        }
++        finally {
++            if (release)
++                release();
++        }
++    }
++    /** Settle one mid-flight entry left by a process that is gone. */
++    function settlement(entry, stamp) {
++        if (entry.state === CURSOR_EXEC_PREPARED) {
++            // The last durable write before the side effect had not happened yet, so
++            // this is a fact, not a guess: nothing ran.
++            return {
++                state: CURSOR_EXEC_FAILED,
++                sideEffect: CURSOR_SIDE_EFFECT_NONE,
++                reason: "the owning process ended before execution began; the tool did not run",
++                settledFrom: entry.state,
++                settledAt: stamp,
++            };
++        }
++        return {
++            state: CURSOR_EXEC_UNKNOWN,
++            sideEffect: CURSOR_SIDE_EFFECT_UNKNOWN,
++            reason: "the owning process ended while the tool was executing; whether the side effect happened is unknowable",
++            settledFrom: entry.state,
++            settledAt: stamp,
++        };
++    }
++    /**
++     * Settle what a previous process left mid-flight. Runs once, lazily, before
++     * the first decision this process makes.
++     *
++     * Entries owned by a live process are left alone: another Rubato process on
++     * this profile may be mid-execution right now, and settling its entry would
++     * both lie about it and invite a duplicate run.
++     */
++    function settleStale() {
++        return withLock((state, markChanged) => {
++            const out = [];
++            const stamp = now();
++            for (const [key, entry] of Object.entries(state.entries)) {
++                if (TERMINAL.has(entry.state))
++                    continue;
++                if (isOwnerAlive(entry.pid))
++                    continue;
++                state.entries[key] = { ...entry, ...settlement(entry, stamp), updatedAt: stamp };
++                out.push(state.entries[key]);
++                markChanged();
++            }
++            return out;
++        });
++    }
++    function ensureSettled() {
++        if (settled)
++            return [];
++        settled = true;
++        return settleStale();
++    }
++    return {
++        path: journalPath,
++        /** Settle mid-flight entries from dead processes. Idempotent per instance. */
++        settleStale: () => ensureSettled(),
++        /** Read one entry without deciding anything. */
++        read(lineageId, toolCallId) {
++            return withLock((state) => state.entries[entryKey(lineageId, toolCallId)]);
++        },
++        /** Every entry, for diagnostics and for surfacing `unknown` to the user. */
++        list() {
++            return withLock((state) => Object.values(state.entries));
++        },
++        /** Entries the user must be told about: settled `unknown`. */
++        unresolved() {
++            return withLock((state) => Object.values(state.entries).filter((entry) => entry.state === CURSOR_EXEC_UNKNOWN));
++        },
++        /**
++         * Decide whether this `{lineageId, toolCallId}` may execute, and record the
++         * decision durably before returning. This is the only authorization point.
++         *
++         * - no entry → `execute`, recorded as `prepared`.
++         * - terminal with a persisted result → `replay`, never a second run.
++         * - terminal without one (`unknown`, or a settled `prepared`) → `refuse`,
++         *   unless the caller presents the idempotency key the tool declared, in
++         *   which case a fresh attempt is recorded under that same key.
++         * - live entry owned by any process → `refuse`. Two runs must not drive the
++         *   same call concurrently.
++         */
++        prepare({ lineageId, toolCallId, toolName, idempotencyKey }) {
++            ensureSettled();
++            return withLock((state, markChanged) => {
++                const key = entryKey(lineageId, toolCallId);
++                const stamp = now();
++                const write = (entry) => {
++                    state.entries[key] = entry;
++                    markChanged();
++                    return entry;
++                };
++                /**
++                 * A terminal entry with no persisted result. Re-running is allowed only
++                 * when the tool declared an idempotency key and the caller presents the
++                 * same one — the design's single exception. Everything else refuses: a
++                 * non-idempotent side effect that may already have happened must not
++                 * happen again behind the user's back.
++                 */
++                const retryOrRefuse = (entry) => {
++                    if (typeof idempotencyKey === "string" && idempotencyKey !== "" && entry.idempotencyKey === idempotencyKey) {
++                        const next = write({
++                            ...entry,
++                            state: CURSOR_EXEC_PREPARED,
++                            pid,
++                            attempt: (typeof entry.attempt === "number" ? entry.attempt : 1) + 1,
++                            retriedFrom: entry.state,
++                            settledFrom: undefined,
++                            sideEffect: undefined,
++                            reason: undefined,
++                            settledAt: undefined,
++                            updatedAt: stamp,
++                        });
++                        return { decision: "execute", entry: next };
++                    }
++                    return {
++                        decision: "refuse",
++                        entry,
++                        reason: entry.reason
++                            ?? (entry.state === CURSOR_EXEC_UNKNOWN
++                                ? "the previous attempt's outcome is unknown"
++                                : `the previous attempt ${entry.state}`),
++                    };
++                };
++                const existing = state.entries[key];
++                if (existing === undefined) {
++                    return {
++                        decision: "execute",
++                        entry: write({
++                            lineageId,
++                            toolCallId,
++                            toolName,
++                            state: CURSOR_EXEC_PREPARED,
++                            pid,
++                            attempt: 1,
++                            idempotencyKey,
++                            createdAt: stamp,
++                            updatedAt: stamp,
++                        }),
++                    };
++                }
++                if (existing.resultPersisted === true) {
++                    // The authoritative case the design names: `completed` (or `failed`)
++                    // together with a persisted result means never execute again.
++                    return { decision: "replay", entry: existing };
++                }
++                if (!TERMINAL.has(existing.state)) {
++                    if (isOwnerAlive(existing.pid)) {
++                        return {
++                            decision: "refuse",
++                            entry: existing,
++                            reason: existing.pid === pid
++                                ? `tool call ${toolCallId} is already ${existing.state} in this process`
++                                : `tool call ${toolCallId} is ${existing.state} in process ${existing.pid}`,
++                        };
++                    }
++                    // Owner is gone. Settle it now rather than reading a state no live
++                    // process stands behind, then apply the terminal rule to the result.
++                    return retryOrRefuse(write({ ...existing, ...settlement(existing, stamp), updatedAt: stamp }));
++                }
++                return retryOrRefuse(existing);
++            });
++        },
++        /**
++         * The last durable write before the side effect. A process killed from here
++         * until `complete` is exactly the case that settles to `unknown`.
++         */
++        markExecuting(lineageId, toolCallId) {
++            return withLock((state, markChanged) => {
++                const key = entryKey(lineageId, toolCallId);
++                const entry = state.entries[key];
++                if (entry === undefined)
++                    return undefined;
++                const stamp = now();
++                state.entries[key] = {
++                    ...entry,
++                    state: CURSOR_EXEC_EXECUTING,
++                    pid,
++                    executingAt: stamp,
++                    updatedAt: stamp,
++                };
++                markChanged();
++                return state.entries[key];
++            });
++        },
++        /**
++         * The side effect is over and this is its result. State and result land in
++         * one atomic write, because "completed plus a persisted tool result" is the
++         * single fact that licenses replay — splitting it would create a window
++         * where a succeeded turn has to be reported as `unknown`.
++         *
++         * `isError` distinguishes `failed` from `completed`. Both are replayable:
++         * an error result is still the answer to that exec frame, and re-running a
++         * tool to reproduce a failure is a second side effect.
++         */
++        complete(lineageId, toolCallId, { isError = false, result, summary } = {}) {
++            return withLock((state, markChanged) => {
++                const key = entryKey(lineageId, toolCallId);
++                const entry = state.entries[key];
++                if (entry === undefined)
++                    return undefined;
++                const stamp = now();
++                state.entries[key] = {
++                    ...entry,
++                    state: isError ? CURSOR_EXEC_FAILED : CURSOR_EXEC_COMPLETED,
++                    isError,
++                    summary,
++                    result,
++                    resultPersisted: true,
++                    sideEffect: entry.state === CURSOR_EXEC_EXECUTING ? CURSOR_SIDE_EFFECT_HAPPENED : CURSOR_SIDE_EFFECT_NONE,
++                    completedAt: stamp,
++                    resultPersistedAt: stamp,
++                    updatedAt: stamp,
++                };
++                markChanged();
++                return state.entries[key];
++            });
++        },
++        /**
++         * The host transcript now holds the result too.
++         *
++         * Bookkeeping only: replay is already licensed by `complete`, so losing
++         * this write costs nothing but a diagnostic. It exists so a restart can
++         * tell "the journal answered for it" from "the transcript already had it".
++         */
++        markResultDelivered(lineageId, toolCallId) {
++            return withLock((state, markChanged) => {
++                const key = entryKey(lineageId, toolCallId);
++                const entry = state.entries[key];
++                if (entry === undefined)
++                    return undefined;
++                const stamp = now();
++                state.entries[key] = { ...entry, resultDelivered: true, resultDeliveredAt: stamp, updatedAt: stamp };
++                markChanged();
++                return state.entries[key];
++            });
++        },
++        /** Forget every entry of one lineage. Used when a session is disposed. */
++        forgetLineage(lineageId) {
++            return withLock((state, markChanged) => {
++                let removed = 0;
++                for (const [key, entry] of Object.entries(state.entries)) {
++                    if (entry.lineageId !== lineageId)
++                        continue;
++                    delete state.entries[key];
++                    removed += 1;
++                }
++                if (removed > 0)
++                    markChanged();
++                return removed;
++            });
++        },
++    };
++}
++//# sourceMappingURL=cursor-exec-journal.js.map

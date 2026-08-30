@@ -1,0 +1,142 @@
+diff --git a/dist/core/compaction/compaction.js b/dist/core/compaction/compaction.js
+--- a/dist/core/compaction/compaction.js
++++ b/dist/core/compaction/compaction.js
+@@ -646,40 +646,66 @@
+     if (!sourceContext) {
+         transformedSource = await transformSummarySource(currentMessages, previousSummary, transformContext, signal);
+     }
+-    const providerPreviousSummary = transformedSource.previousSummary;
+-    let basePrompt = providerPreviousSummary
+-        ? sourceContext
+-            ? SOURCE_CONTEXT_UPDATE_SUMMARIZATION_PROMPT
+-            : UPDATE_SUMMARIZATION_PROMPT
+-        : SUMMARIZATION_PROMPT;
+-    if (customInstructions) {
+-        basePrompt = `${basePrompt}\n\nAdditional focus: ${customInstructions}`;
+-    }
+-    if (sourceContext &&
+-        !cacheFriendlyContextFits(model, buildSummarizationContext(basePrompt, sourceContext), maxTokens)) {
++    const dropSourceContext = async () => {
+         sourceContext = undefined;
+         transformedSource = await transformSummarySource(currentMessages, previousSummary, transformContext, signal);
+-        basePrompt = transformedSource.previousSummary ? UPDATE_SUMMARIZATION_PROMPT : SUMMARIZATION_PROMPT;
+-        if (customInstructions)
+-            basePrompt = `${basePrompt}\n\nAdditional focus: ${customInstructions}`;
+-    }
+-    let promptText = "";
+-    if (!sourceContext) {
+-        const llmMessages = convertToLlm(transformedSource.messages);
+-        const conversationText = serializeConversation(llmMessages);
+-        promptText = `<conversation>\n${conversationText}\n</conversation>\n\n`;
+-        if (transformedSource.previousSummary) {
+-            promptText += `<previous-summary>\n${transformedSource.previousSummary}\n</previous-summary>\n\n`;
++    };
++    const buildBasePrompt = () => {
++        let prompt = transformedSource.previousSummary
++            ? sourceContext
++                ? SOURCE_CONTEXT_UPDATE_SUMMARIZATION_PROMPT
++                : UPDATE_SUMMARIZATION_PROMPT
++            : SUMMARIZATION_PROMPT;
++        if (customInstructions) {
++            prompt = `${prompt}\n\nAdditional focus: ${customInstructions}`;
+         }
++        return prompt;
++    };
++    let basePrompt = buildBasePrompt();
++    if (sourceContext &&
++        !cacheFriendlyContextFits(model, buildSummarizationContext(basePrompt, sourceContext), maxTokens)) {
++        await dropSourceContext();
++        basePrompt = buildBasePrompt();
+     }
+-    promptText += basePrompt;
+-    const completionOptions = createSummarizationOptions(model, maxTokens, apiKey, headers, env, signal, thinkingLevel, extraBody, sessionId, sourceContext ? cacheFriendly?.requestOptions : undefined, sourceContext ? "short" : undefined);
+-    const response = await completeSummarization(model, buildSummarizationContext(promptText, sourceContext), completionOptions, streamFn, retry, callbacks);
++    const buildPromptText = () => {
++        let promptText = "";
++        if (!sourceContext) {
++            const llmMessages = convertToLlm(transformedSource.messages);
++            const conversationText = serializeConversation(llmMessages);
++            promptText = `<conversation>\n${conversationText}\n</conversation>\n\n`;
++            if (transformedSource.previousSummary) {
++                promptText += `<previous-summary>\n${transformedSource.previousSummary}\n</previous-summary>\n\n`;
++            }
++        }
++        return promptText + basePrompt;
++    };
++    let promptText = buildPromptText();
++    let completionOptions = createSummarizationOptions(model, maxTokens, apiKey, headers, env, signal, thinkingLevel, extraBody, sessionId, sourceContext ? cacheFriendly?.requestOptions : undefined, sourceContext ? "short" : undefined);
++    let response = await completeSummarization(model, buildSummarizationContext(promptText, sourceContext), completionOptions, streamFn, retry, callbacks);
+     if (response.stopReason === "error") {
+         throw new Error(`Summarization failed: ${response.errorMessage || "Unknown error"}`);
+     }
++    // A cache-friendly sourceContext carries the live session's tool list, and some
++    // providers do not reliably honor toolChoice:"none" once tools are present in the
++    // request — they can still emit a toolCall for a summarization turn. Retry once
++    // without the tool-bearing sourceContext instead of treating the tool call's
++    // arguments as summary text, or leaving compaction permanently stuck rejecting
++    // with willRetry:false on every subsequent attempt.
+     if (response.content.some((block) => block.type === "toolCall")) {
+-        throw new Error("Summarization attempted to call a tool");
++        if (!sourceContext) {
++            throw new Error("Summarization attempted to call a tool");
++        }
++        await dropSourceContext();
++        basePrompt = buildBasePrompt();
++        promptText = buildPromptText();
++        completionOptions = createSummarizationOptions(model, maxTokens, apiKey, headers, env, signal, thinkingLevel, extraBody, sessionId, undefined, undefined);
++        response = await completeSummarization(model, buildSummarizationContext(promptText, undefined), completionOptions, streamFn, retry, callbacks);
++        if (response.stopReason === "error") {
++            throw new Error(`Summarization failed: ${response.errorMessage || "Unknown error"}`);
++        }
++        if (response.content.some((block) => block.type === "toolCall")) {
++            throw new Error("Summarization attempted to call a tool");
++        }
+     }
+     const textContent = contentTextForSummary(response.content);
+     return { text: textContent, usage: response.usage };
+@@ -869,22 +895,36 @@
+         !cacheFriendlyContextFits(model, buildSummarizationContext(SOURCE_CONTEXT_TURN_PREFIX_SUMMARIZATION_PROMPT, sourceContext), maxTokens)) {
+         sourceContext = undefined;
+     }
+-    let promptText;
+-    if (sourceContext) {
+-        promptText = SOURCE_CONTEXT_TURN_PREFIX_SUMMARIZATION_PROMPT;
+-    }
+-    else {
++    const buildPromptText = async () => {
++        if (sourceContext) {
++            return SOURCE_CONTEXT_TURN_PREFIX_SUMMARIZATION_PROMPT;
++        }
+         const providerMessages = transformContext ? await transformContext(messages, signal) : messages;
+         const llmMessages = convertToLlm(providerMessages);
+         const conversationText = serializeConversation(llmMessages);
+-        promptText = `<conversation>\n${conversationText}\n</conversation>\n\n${TURN_PREFIX_SUMMARIZATION_PROMPT}`;
+-    }
+-    const response = await completeSummarization(model, buildSummarizationContext(promptText, sourceContext), createSummarizationOptions(model, maxTokens, apiKey, headers, env, signal, thinkingLevel, extraBody, sessionId, sourceContext ? cacheFriendly?.requestOptions : undefined, sourceContext ? "short" : undefined), streamFn, retry, callbacks);
++        return `<conversation>\n${conversationText}\n</conversation>\n\n${TURN_PREFIX_SUMMARIZATION_PROMPT}`;
++    };
++    let promptText = await buildPromptText();
++    let response = await completeSummarization(model, buildSummarizationContext(promptText, sourceContext), createSummarizationOptions(model, maxTokens, apiKey, headers, env, signal, thinkingLevel, extraBody, sessionId, sourceContext ? cacheFriendly?.requestOptions : undefined, sourceContext ? "short" : undefined), streamFn, retry, callbacks);
+     if (response.stopReason === "error") {
+         throw new Error(`Turn prefix summarization failed: ${response.errorMessage || "Unknown error"}`);
+     }
++    // See generateSummaryWithUsage: a tool-bearing sourceContext can still produce a
++    // toolCall despite toolChoice:"none". Retry once without it rather than accepting
++    // tool arguments as the summary or leaving the split-turn compaction stuck.
+     if (response.content.some((block) => block.type === "toolCall")) {
+-        throw new Error("Turn prefix summarization attempted to call a tool");
++        if (!sourceContext) {
++            throw new Error("Turn prefix summarization attempted to call a tool");
++        }
++        sourceContext = undefined;
++        promptText = await buildPromptText();
++        response = await completeSummarization(model, buildSummarizationContext(promptText, undefined), createSummarizationOptions(model, maxTokens, apiKey, headers, env, signal, thinkingLevel, extraBody, sessionId, undefined, undefined), streamFn, retry, callbacks);
++        if (response.stopReason === "error") {
++            throw new Error(`Turn prefix summarization failed: ${response.errorMessage || "Unknown error"}`);
++        }
++        if (response.content.some((block) => block.type === "toolCall")) {
++            throw new Error("Turn prefix summarization attempted to call a tool");
++        }
+     }
+     return {
+         text: contentTextForSummary(response.content),

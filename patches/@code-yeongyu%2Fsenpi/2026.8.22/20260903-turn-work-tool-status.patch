@@ -1,0 +1,62 @@
+diff --git a/dist/modes/interactive/components/tool-group.js b/dist/modes/interactive/components/tool-group.js
+--- a/dist/modes/interactive/components/tool-group.js
++++ b/dist/modes/interactive/components/tool-group.js
+@@ -190,6 +190,12 @@
+         this.turnWorkCollapsed = collapsed;
+         this.invalidateGroup();
+     }
++    workItems() {
++        return this.tools.map((tool) => ({
++            name: tool.identity?.toolName ?? "?",
++            failed: tool.result?.isError === true,
++        }));
++    }
+ 
+     invalidateGroup() {
+         this.cachedLines = undefined;
+@@ -235,7 +241,7 @@
+     }
+ 
+     render(width) {
+-        if (this.turnWorkCollapsed && !this.tools.some((tool) => tool.result?.isError === true)) return [];
++        if (this.turnWorkCollapsed) return [];
+         if (this.expanded) return super.render(width);
+         if (this.tools.length === 0) return [];
+ 
+diff --git a/dist/modes/interactive/components/turn-work-summary.js b/dist/modes/interactive/components/turn-work-summary.js
+--- a/dist/modes/interactive/components/turn-work-summary.js
++++ b/dist/modes/interactive/components/turn-work-summary.js
+@@ -37,6 +37,22 @@
+     return { steps, thoughtMs };
+ }
+ 
++function compactTools(groups) {
++    const seen = [];
++    for (const group of groups) {
++        for (const item of group.workItems?.() ?? []) {
++            const last = seen[seen.length - 1];
++            if (last && last.name === item.name && last.failed === item.failed) {
++                last.count += 1;
++            }
++            else {
++                seen.push({ ...item, count: 1 });
++            }
++        }
++    }
++    return seen.map(({ name, failed, count }) => `${failed ? "✗" : "✓"} ${name}${count > 1 ? ` (${count})` : ""}`).join(" · ");
++}
++
+ export class TurnWorkSummaryComponent extends Container {
+     constructor(ui) {
+         super();
+@@ -87,7 +103,9 @@
+             parts.push(`thought ${compactDuration(thoughtMs)}`);
+         if (tools > 0)
+             parts.push(`${tools} ${tools === 1 ? "tool" : "tools"}`);
+-        return [hyperlink(theme.fg("dim", parts.join(" · ")), this.toggleAction.url)];
++        const names = compactTools(this.toolGroups);
++        const line = `• ${parts.join(" · ")}${names ? `: ${names}` : ""}`;
++        return [hyperlink(theme.fg("dim", line), this.toggleAction.url)];
+     }
+     dispose() {
+         this.toggleAction.dispose();

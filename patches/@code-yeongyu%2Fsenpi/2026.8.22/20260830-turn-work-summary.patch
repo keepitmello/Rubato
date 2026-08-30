@@ -1,0 +1,350 @@
+diff --git a/dist/modes/interactive/components/assistant-message.js b/dist/modes/interactive/components/assistant-message.js
+--- a/dist/modes/interactive/components/assistant-message.js
++++ b/dist/modes/interactive/components/assistant-message.js
+@@ -17,6 +17,7 @@
+         this.hasToolCalls = false;
+         this.expanded = false;
+         this.isStreaming = false;
++        this.turnWorkCollapsed = false;
+         this.thinkingExpanded = false;
+         // 런별 수동 선택. 키는 그 런의 startedAt — 메시지 단위로 두면 앞 런에서
+         // 누른 것이 뒤 런까지 짓눌러 새 사고가 통째로 안 보인다.
+@@ -68,6 +69,12 @@
+         this.expanded = expanded;
+         this.refreshContent();
+     }
++    setTurnWorkCollapsed(collapsed) {
++        if (this.turnWorkCollapsed === collapsed)
++            return;
++        this.turnWorkCollapsed = collapsed;
++        this.refreshContent();
++    }
+     setOutputPad(padding) {
+         this.outputPad = padding;
+         this.renderDescriptors = [];
+@@ -113,6 +120,7 @@
+                 ? (run) => !this.isThinkingRunExpanded(run.startedAt, !run.isDone)
+                 : false,
+             hasToolCalls: this.hasToolCalls,
++            hideTurnWork: this.turnWorkCollapsed,
+         });
+         this.reconcileRenderDescriptors(descriptors);
+     }
+@@ -236,4 +244,4 @@
+         this.updateContent(this.lastMessage);
+     }
+ }
+-//# sourceMappingURL=assistant-message.js.map
+\ No newline at end of file
++//# sourceMappingURL=assistant-message.js.map
+diff --git a/dist/modes/interactive/components/assistant-render-descriptors.js b/dist/modes/interactive/components/assistant-render-descriptors.js
+--- a/dist/modes/interactive/components/assistant-render-descriptors.js
++++ b/dist/modes/interactive/components/assistant-render-descriptors.js
+@@ -22,7 +22,8 @@
+ }
+ export function createAssistantRenderDescriptors(message, options) {
+     const descriptors = [];
+-    if (message.content.some((content) => isVisibleContent(content, true)))
++    const isTurnVisible = (content, providerNativeVisible) => !(options.hideTurnWork && content.type === "thinking") && isVisibleContent(content, providerNativeVisible);
++    if (message.content.some((content) => isTurnVisible(content, true)))
+         descriptors.push(SPACER_DESCRIPTOR);
+     for (let i = 0; i < message.content.length; i++) {
+         const content = message.content[i];
+@@ -62,6 +63,8 @@
+                 i--;
+                 if (thinkingBlocks.length === 0)
+                     break;
++                if (options.hideTurnWork)
++                    break;
+                 // 접힘은 메시지가 아니라 **사고 런 단위**로 정해진다. 한 메시지 안에
+                 // 끝난 런과 흐르는 런이 공존하므로(도구 호출 사이에 다시 생각할 때),
+                 // 불리언 하나로는 "앞은 접고 뒤는 펼침"을 표현할 수 없다.
+@@ -85,7 +88,7 @@
+                         descriptors.push({ kind: "thinking-label", text: label }, { kind: "thinking-md", text: thinkingBlocks.join("\n\n") });
+                     }
+                 }
+-                if (message.content.slice(i + 1).some((following) => isVisibleContent(following, false)))
++                if (message.content.slice(i + 1).some((following) => isTurnVisible(following, false)))
+                     descriptors.push(SPACER_DESCRIPTOR);
+                 break;
+             }
+@@ -97,7 +100,7 @@
+                     kind: "provider-native-body",
+                     text: theme.fg("dim", formatProviderNativeBody(content, options.expanded)),
+                 });
+-                if (message.content.slice(i + 1).some((following) => isVisibleContent(following, true)))
++                if (message.content.slice(i + 1).some((following) => isTurnVisible(following, true)))
+                     descriptors.push(SPACER_DESCRIPTOR);
+                 break;
+             case "toolCall":
+@@ -137,4 +140,4 @@
+     }
+     return descriptors;
+ }
+-//# sourceMappingURL=assistant-render-descriptors.js.map
+\ No newline at end of file
++//# sourceMappingURL=assistant-render-descriptors.js.map
+diff --git a/dist/modes/interactive/components/tool-group.js b/dist/modes/interactive/components/tool-group.js
+--- a/dist/modes/interactive/components/tool-group.js
++++ b/dist/modes/interactive/components/tool-group.js
+@@ -90,6 +90,7 @@
+         this.ui = ui;
+         this.tools = [];
+         this.expanded = false;
++        this.turnWorkCollapsed = false;
+         this.toggleAction = registerInternalAction(() => {
+             this.setExpanded(!this.expanded);
+             this.ui.requestRender();
+@@ -184,6 +185,11 @@
+         for (const tool of this.tools) tool.setExpanded(expanded);
+         this.invalidateGroup();
+     }
++    setTurnWorkCollapsed(collapsed) {
++        if (this.turnWorkCollapsed === collapsed) return;
++        this.turnWorkCollapsed = collapsed;
++        this.invalidateGroup();
++    }
+ 
+     invalidateGroup() {
+         this.cachedLines = undefined;
+@@ -229,6 +235,7 @@
+     }
+ 
+     render(width) {
++        if (this.turnWorkCollapsed && !this.tools.some((tool) => tool.result?.isError === true)) return [];
+         if (this.expanded) return super.render(width);
+         if (this.tools.length === 0) return [];
+ 
+diff --git a/dist/modes/interactive/components/turn-work-summary.js b/dist/modes/interactive/components/turn-work-summary.js
+new file mode 100644
+--- /dev/null
++++ b/dist/modes/interactive/components/turn-work-summary.js
+@@ -0,0 +1,96 @@
++import { Container, hyperlink } from "@earendil-works/pi-tui";
++import { registerInternalAction } from "../internal-actions.js";
++import { theme } from "../theme/theme.js";
++
++function compactDuration(ms) {
++    return `${Math.max(1, Math.round(ms / 1000))}s`;
++}
++
++function thinkingStats(message, now = Date.now()) {
++    let steps = 0;
++    let thoughtMs = 0;
++    let inRun = false;
++    let minStart = Number.POSITIVE_INFINITY;
++    let maxEnd = Number.NEGATIVE_INFINITY;
++    const closeRun = () => {
++        if (!inRun)
++            return;
++        steps += 1;
++        if (Number.isFinite(minStart))
++            thoughtMs += Math.max(0, (Number.isFinite(maxEnd) ? maxEnd : now) - minStart);
++        inRun = false;
++        minStart = Number.POSITIVE_INFINITY;
++        maxEnd = Number.NEGATIVE_INFINITY;
++    };
++    for (const content of message?.content ?? []) {
++        if (content.type !== "thinking") {
++            closeRun();
++            continue;
++        }
++        inRun = true;
++        if (Number.isFinite(content.startedAt))
++            minStart = Math.min(minStart, content.startedAt);
++        if (Number.isFinite(content.endedAt))
++            maxEnd = Math.max(maxEnd, content.endedAt);
++    }
++    closeRun();
++    return { steps, thoughtMs };
++}
++
++export class TurnWorkSummaryComponent extends Container {
++    constructor(ui) {
++        super();
++        this.ui = ui;
++        this.assistants = new Map();
++        this.toolGroups = new Set();
++        this.expanded = false;
++        this.toggleAction = registerInternalAction(() => {
++            this.setExpanded(!this.expanded);
++            this.ui.requestRender();
++        });
++    }
++    trackAssistant(component, message) {
++        this.assistants.set(component, message);
++        component.setTurnWorkCollapsed?.(!this.expanded);
++        this.invalidate();
++    }
++    trackToolGroup(group) {
++        this.toolGroups.add(group);
++        group.setTurnWorkCollapsed?.(!this.expanded);
++        this.invalidate();
++    }
++    setExpanded(expanded) {
++        if (this.expanded === expanded)
++            return;
++        this.expanded = expanded;
++        for (const component of this.assistants.keys())
++            component.setTurnWorkCollapsed?.(!expanded);
++        for (const group of this.toolGroups)
++            group.setTurnWorkCollapsed?.(!expanded);
++        this.invalidate();
++    }
++    render(width) {
++        let steps = 0;
++        let thoughtMs = 0;
++        for (const message of this.assistants.values()) {
++            const stats = thinkingStats(message);
++            steps += stats.steps;
++            thoughtMs += stats.thoughtMs;
++        }
++        let tools = 0;
++        for (const group of this.toolGroups)
++            tools += group.size;
++        if (steps === 0 && tools === 0)
++            return [];
++        const parts = [`Worked ${steps} ${steps === 1 ? "step" : "steps"}`];
++        if (thoughtMs > 0)
++            parts.push(`thought ${compactDuration(thoughtMs)}`);
++        if (tools > 0)
++            parts.push(`${tools} ${tools === 1 ? "tool" : "tools"}`);
++        return [hyperlink(theme.fg("dim", parts.join(" · ")), this.toggleAction.url)];
++    }
++    dispose() {
++        this.toggleAction.dispose();
++        super.dispose();
++    }
++}
+diff --git a/dist/modes/interactive/interactive-mode.js b/dist/modes/interactive/interactive-mode.js
+--- a/dist/modes/interactive/interactive-mode.js
++++ b/dist/modes/interactive/interactive-mode.js
+@@ -88,6 +88,7 @@
+ import { GrokChrome } from "./grok/chrome.js";
+ import { dispatchInternalAction } from "./internal-actions.js";
+ import { ToolGroupComponent } from "./components/tool-group.js";
++import { TurnWorkSummaryComponent } from "./components/turn-work-summary.js";
+ import { restoreInteractiveStderr, takeOverInteractiveStderr } from "./interactive-stderr-guard.js";
+ import { applyKeybindingsFileEdit, seedKeybindingsFile } from "./keybindings-command.js";
+ import { refreshModelCatalogs } from "./model-catalog-refresh.js";
+@@ -3438,6 +3439,7 @@
+                 this.clearToolHookStatuses();
+                 // Turn boundary: pick a fresh working tip next time the indicator shows.
+                 this.turnWorkingTip.resetForNewTurn();
++                this.startTurnWorkSummary();
+                 if (this.settingsManager.getShowTerminalProgress()) {
+                     this.ui.terminal.setProgress(true);
+                 }
+@@ -3501,6 +3503,7 @@
+                     this.streamingComponent.setExpanded(this.toolOutputExpanded);
+                     this.streamingMessage = event.message;
+                     this.chatContainer.addChild(this.streamingComponent);
++                    this.turnWorkSummary?.trackAssistant(this.streamingComponent, event.message);
+                     this.streamingReveal.begin(this.streamingComponent, assistantStreamingHeadMessage(this.streamingMessage));
+                     this.requestStreamingRender();
+                 }
+@@ -3508,6 +3511,7 @@
+             case "message_update":
+                 if (this.streamingComponent && event.message.role === "assistant") {
+                     this.streamingMessage = event.message;
++                    this.turnWorkSummary?.trackAssistant(this.streamingComponent, event.message);
+                     this.streamingReveal.setTarget(assistantStreamingHeadMessage(event.message));
+                     for (const [contentIndex, content] of this.streamingMessage.content.entries()) {
+                         if (content.type === "toolCall") {
+@@ -3663,6 +3667,7 @@
+                     this.streamingMessage = undefined;
+                 }
+                 this.closeToolGroup();
++                this.turnWorkSummary = undefined;
+                 // 턴이 끝나면 펼침을 되돌린다. ctrl+o 는 한 번 보려고 누르는 것이지
+                 // 세션 내내 펼쳐두겠다는 뜻이 아니다.
+                 if (this.toolOutputExpanded)
+@@ -4106,6 +4111,7 @@
+                 break;
+             }
+             case "user": {
++                this.turnWorkSummary = undefined;
+                 const textContent = this.getUserMessageText(message);
+                 if (textContent) {
+                     if (this.chatContainer.children.length > 0) {
+@@ -4135,10 +4141,12 @@
+                 break;
+             }
+             case "assistant": {
++                this.startTurnWorkSummary();
+                 const assistantComponent = new AssistantMessageComponent(message, this.hideThinkingBlock, this.getMarkdownThemeWithSettings(), this.hiddenThinkingLabel, this.outputPad, this.getMarkdownTransformers());
+                 assistantComponent.setExpanded(this.toolOutputExpanded);
+                 this.chatContainer.addChild(assistantComponent);
+-                break;
++                this.turnWorkSummary?.trackAssistant(assistantComponent, message);
++                return assistantComponent;
+             }
+             case "toolResult": {
+                 // Tool results are rendered inline with tool calls, handled separately
+@@ -4178,11 +4186,13 @@
+             const existing = this.assistantTextSegments.get(runStart);
+             if (existing) {
+                 existing.updateContent(runMessage, true);
++                this.turnWorkSummary?.trackAssistant(existing, runMessage);
+                 continue;
+             }
+             const segment = new AssistantMessageComponent(runMessage, this.hideThinkingBlock, this.getMarkdownThemeWithSettings(), this.hiddenThinkingLabel, this.outputPad, this.getMarkdownTransformers());
+             segment.setExpanded(this.toolOutputExpanded);
+             this.assistantTextSegments.set(runStart, segment);
++            this.turnWorkSummary?.trackAssistant(segment, runMessage);
+             // 말이 끼었으니 열려 있던 뭉침은 여기서 끝난다. 닫지 않으면 이 말
+             // 뒤에 오는 도구가 말보다 위에 있는 앞 뭉침에 흡수돼서, 한 턴의
+             // 도구가 전부 맨 위 한 줄로 올라가고 말만 아래로 쌓인다.
+@@ -4227,6 +4237,7 @@
+             this.activeToolGroup = new ToolGroupComponent(this.ui);
+             this.activeToolGroup.setExpanded(this.toolOutputExpanded);
+             this.chatContainer.addChild(this.activeToolGroup);
++            this.turnWorkSummary?.trackToolGroup(this.activeToolGroup);
+         }
+         this.activeToolGroup.addTool(component);
+     }
+@@ -4242,6 +4253,7 @@
+         const next = group.extractAt(component, this.chatContainer.children, () => {
+             const created = new ToolGroupComponent(this.ui);
+             created.setExpanded(this.toolOutputExpanded);
++            this.turnWorkSummary?.trackToolGroup(created);
+             return created;
+         });
+         if (wasActive)
+@@ -4251,6 +4263,13 @@
+     closeToolGroup() {
+         this.activeToolGroup = undefined;
+     }
++    startTurnWorkSummary() {
++        if (this.turnWorkSummary)
++            return this.turnWorkSummary;
++        this.turnWorkSummary = new TurnWorkSummaryComponent(this.ui);
++        this.chatContainer.addChild(this.turnWorkSummary);
++        return this.turnWorkSummary;
++    }
+     createToolExecutionComponent(toolName, toolCallId, args) {
+         const component = this.chrome
+             ? new ToolExecutionComponent(toolName, toolCallId, args, {
+@@ -4270,6 +4289,7 @@
+     }
+     renderSessionItems(items, options = {}) {
+         this.clearPendingTools();
++        this.turnWorkSummary = undefined;
+         // The rebuilt transcript re-derives continuity notices from persisted
+         // messages, so the tracker's suppression state must not survive the
+         // rebuild (or a session switch) — otherwise the first disabled notice
+@@ -4390,6 +4410,7 @@
+         for (const [toolCallId, component] of renderedPendingTools) {
+             this.pendingTools.set(toolCallId, component);
+         }
++        this.turnWorkSummary = undefined;
+         this.ui.requestRender();
+     }
+     /**
+@@ -7233,4 +7254,4 @@
+         this.unregisterSignalHandlers();
+     }
+ }
+-//# sourceMappingURL=interactive-mode.js.map
+\ No newline at end of file
++//# sourceMappingURL=interactive-mode.js.map

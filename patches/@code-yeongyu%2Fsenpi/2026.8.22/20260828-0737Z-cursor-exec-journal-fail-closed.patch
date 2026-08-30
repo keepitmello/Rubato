@@ -1,0 +1,372 @@
+diff --git a/dist/core/cursor-exec-journal.d.ts b/dist/core/cursor-exec-journal.d.ts
+--- a/dist/core/cursor-exec-journal.d.ts
++++ b/dist/core/cursor-exec-journal.d.ts
+@@ -115,12 +115,35 @@
+     result?: unknown;
+     summary?: string;
+ }
++export interface CursorExecSettleReport {
++    unreadable: boolean;
++    reason?: string;
++    settled: CursorExecJournalEntry[];
++    unresolved: CursorExecJournalEntry[];
++}
++export interface CursorExecResetResult {
++    reset: boolean;
++    reason: string;
++    quarantinedPath?: string;
++}
+ export interface CursorExecJournal {
+     readonly path: string;
+     settleStale(): CursorExecJournalEntry[];
++    /** Why this journal is sealed, or `undefined` if it is readable. */
++    unreadableReason(): string | undefined;
+     read(lineageId: string, toolCallId: string): CursorExecJournalEntry | undefined;
+     list(): CursorExecJournalEntry[];
+     unresolved(): CursorExecJournalEntry[];
++    /** Settle dead mid-flight entries and list unresolved ones under one lock. */
++    settleAndListUnresolved(): CursorExecSettleReport;
++    /**
++     * Explicit operator reset of a damaged journal. Quarantines existing bytes
++     * and publishes an empty journal. Requires
++     * `{ confirm: "reset-unreadable-journal" }`. A parse failure never does this.
++     */
++    resetUnreadable(input?: {
++        confirm?: string;
++    }): CursorExecResetResult;
+     prepare(input: CursorExecPrepareInput): CursorExecDecision;
+     markExecuting(lineageId: string, toolCallId: string): CursorExecJournalEntry | undefined;
+     complete(lineageId: string, toolCallId: string, input?: CursorExecCompleteInput): CursorExecJournalEntry | undefined;
+@@ -137,6 +160,8 @@
+ }
+ /** One quiet, factual line naming the tools whose outcome is unknown. */
+ export declare function formatCursorExecUnresolvedNotice(entries: CursorExecJournalEntry[]): string | undefined;
++/** One factual line when the journal file exists but cannot be trusted. */
++export declare function formatCursorExecUnreadableNotice(reason: string | undefined): string | undefined;
+ export declare function cursorExecJournalPath(agentDir?: string): string;
+ export declare function createCursorExecJournal(options?: CursorExecJournalOptions): CursorExecJournal;
+ //# sourceMappingURL=cursor-exec-journal.d.ts.map
+diff --git a/dist/core/cursor-exec-journal.js b/dist/core/cursor-exec-journal.js
+--- a/dist/core/cursor-exec-journal.js
++++ b/dist/core/cursor-exec-journal.js
+@@ -53,7 +53,7 @@
+  * the journal carries tool arguments and results.
+  */
+ import { randomUUID } from "node:crypto";
+-import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeSync } from "fs";
++import { chmodSync, closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeSync } from "fs";
+ import { dirname, join } from "path";
+ import lockfile from "proper-lockfile";
+ import { getAgentDir } from "../config.js";
+@@ -153,6 +153,13 @@
+     return (`A previous session left ${calls} unresolved (${subject}). ` +
+         "Whether they ran cannot be determined, so they were not run again.");
+ }
++/** One factual line when the journal file exists but cannot be trusted. */
++export function formatCursorExecUnreadableNotice(reason) {
++    if (typeof reason !== "string" || reason === "")
++        return undefined;
++    return (`A previous session's exec journal could not be read (${reason}). ` +
++        "Tool execution is refused until the journal is recoverable or an operator resets it.");
++}
+ /**
+  * Replace the journal without ever leaving a partial file behind.
+  *
+@@ -233,18 +240,34 @@
+         }
+     }
+ }
+-/** An empty journal. Used for a missing file and for one we refuse to read. */
++/** An empty journal. Used only when the file is genuinely absent. */
+ function emptyState() {
+     return { version: CURSOR_EXEC_JOURNAL_VERSION, entries: {}, ledger: {} };
+ }
+ /**
+- * Parse the journal, or start over.
++ * Marker on an in-memory envelope for a journal we must not treat as empty.
++ * Never serialized: withLock refuses to write an unreadable envelope back.
++ */
++const UNREADABLE = Symbol("cursor-exec-journal-unreadable");
++function unreadableState(reason) {
++    const state = emptyState();
++    state[UNREADABLE] = reason;
++    return state;
++}
++function unreadableReasonOf(state) {
++    const reason = state?.[UNREADABLE];
++    return typeof reason === "string" && reason !== "" ? reason : undefined;
++}
++function isPlainObject(value) {
++    return typeof value === "object" && value !== null && !Array.isArray(value);
++}
++/**
++ * Parse the journal, or refuse to guess.
+  *
+- * A journal we cannot read is treated as absent rather than fatal. That is the
+- * safe direction *only* because an absent record never claims a tool already
+- * ran: the worst case is that a genuinely completed call is re-offered, which
+- * the in-process guard still catches for a live call. Guessing at a
+- * half-understood shape is the unsafe direction.
++ * Absence is empty. A file that is present but unreadable, malformed, or from
++ * an unknown version is **not** empty: treating it as empty discards the dedup
++ * ledger and authorizes a completed tool call to run a second time. Row-level
++ * dirt is still dropped; table-level dirt fails closed.
+  */
+ function parseState(raw) {
+     let parsed;
+@@ -252,13 +275,23 @@
+         parsed = JSON.parse(raw);
+     }
+     catch {
+-        return emptyState();
++        return { ok: false, reason: "the exec journal is present but is not valid JSON" };
+     }
+-    if (typeof parsed !== "object" || parsed === null)
+-        return emptyState();
+-    if (parsed.version !== CURSOR_EXEC_JOURNAL_VERSION)
+-        return emptyState();
+-    const entries = typeof parsed.entries === "object" && parsed.entries !== null ? parsed.entries : {};
++    if (!isPlainObject(parsed))
++        return { ok: false, reason: "the exec journal is present but is not a JSON object" };
++    if (parsed.version !== CURSOR_EXEC_JOURNAL_VERSION) {
++        return {
++            ok: false,
++            reason: `the exec journal is version ${String(parsed.version)}, which this process does not read`,
++        };
++    }
++    if (parsed.entries !== undefined && !isPlainObject(parsed.entries)) {
++        return { ok: false, reason: "the exec journal entries table is malformed" };
++    }
++    if (parsed.ledger !== undefined && !isPlainObject(parsed.ledger)) {
++        return { ok: false, reason: "the exec journal ledger is malformed" };
++    }
++    const entries = parsed.entries ?? {};
+     const clean = {};
+     for (const [key, value] of Object.entries(entries)) {
+         if (typeof value !== "object" || value === null)
+@@ -269,7 +302,7 @@
+     }
+     // The ledger is the dedup identity, so a malformed row is dropped but a
+     // malformed *table* must not quietly become "nothing ever ran".
+-    const rawLedger = typeof parsed.ledger === "object" && parsed.ledger !== null ? parsed.ledger : {};
++    const rawLedger = parsed.ledger ?? {};
+     const ledger = {};
+     for (const [lineageId, record] of Object.entries(rawLedger)) {
+         if (typeof record !== "object" || record === null)
+@@ -285,7 +318,7 @@
+             ids: clean_ids,
+         };
+     }
+-    return { version: CURSOR_EXEC_JOURNAL_VERSION, entries: clean, ledger };
++    return { ok: true, state: { version: CURSOR_EXEC_JOURNAL_VERSION, entries: clean, ledger } };
+ }
+ /** Record dedup identity. Called on every state transition worth remembering. */
+ function rememberInLedger(state, lineageId, toolCallId, code, now) {
+@@ -430,12 +463,18 @@
+     function readUnlocked() {
+         if (!existsSync(journalPath))
+             return emptyState();
++        let raw;
+         try {
+-            return parseState(readFileSync(journalPath, "utf-8"));
++            raw = readFileSync(journalPath, "utf-8");
+         }
+-        catch {
+-            return emptyState();
++        catch (error) {
++            const detail = error instanceof Error ? error.message : String(error);
++            return unreadableState(`the exec journal exists but could not be read (${detail})`);
+         }
++        const parsed = parseState(raw);
++        if (!parsed.ok)
++            return unreadableState(parsed.reason);
++        return parsed.state;
+     }
+     /** One locked read-modify-write. `fn` returns the value handed back. */
+     function withLock(fn) {
+@@ -446,9 +485,13 @@
+         try {
+             release = acquireLockSyncWithRetry();
+             const state = readUnlocked();
++            const sealed = unreadableReasonOf(state) !== undefined;
+             let changed = false;
+             const result = fn(state, () => {
+-                changed = true;
++                // A damaged file is not an empty journal. Overwriting it would hide
++                // the only remaining bytes of identity. Operator reset is explicit.
++                if (!sealed)
++                    changed = true;
+             });
+             if (changed) {
+                 prune(state, now(), maxEntries, ttlMs);
+@@ -491,24 +534,41 @@
+      * this profile may be mid-execution right now, and settling its entry would
+      * both lie about it and invite a duplicate run.
+      */
++    function settleStaleUnlocked(state, markChanged) {
++        if (unreadableReasonOf(state) !== undefined)
++            return [];
++        const out = [];
++        const stamp = now();
++        for (const [key, entry] of Object.entries(state.entries)) {
++            if (TERMINAL.has(entry.state))
++                continue;
++            if (isOwnerAlive(entry.pid))
++                continue;
++            state.entries[key] = { ...entry, ...settlement(entry, stamp), updatedAt: stamp };
++            // Identity outlives the rich record, so it is written here too.
++            rememberInLedger(state, entry.lineageId, entry.toolCallId, ledgerCodeForEntry(state.entries[key]), stamp);
++            out.push(state.entries[key]);
++            markChanged();
++        }
++        return out;
++    }
+     function settleStale() {
+-        return withLock((state, markChanged) => {
+-            const out = [];
+-            const stamp = now();
+-            for (const [key, entry] of Object.entries(state.entries)) {
+-                if (TERMINAL.has(entry.state))
+-                    continue;
+-                if (isOwnerAlive(entry.pid))
+-                    continue;
+-                state.entries[key] = { ...entry, ...settlement(entry, stamp), updatedAt: stamp };
+-                // Identity outlives the rich record, so it is written here too.
+-                rememberInLedger(state, entry.lineageId, entry.toolCallId, ledgerCodeForEntry(state.entries[key]), stamp);
+-                out.push(state.entries[key]);
+-                markChanged();
+-            }
+-            return out;
+-        });
++        return withLock((state, markChanged) => settleStaleUnlocked(state, markChanged));
+     }
++    function refuseUnreadable(lineageId, toolCallId, toolName, reason) {
++        return {
++            decision: "refuse",
++            entry: {
++                lineageId,
++                toolCallId,
++                toolName,
++                state: CURSOR_EXEC_UNKNOWN,
++                sideEffect: CURSOR_SIDE_EFFECT_UNKNOWN,
++                reason,
++            },
++            reason,
++        };
++    }
+     function ensureSettled() {
+         if (settled)
+             return [];
+@@ -519,19 +579,90 @@
+         path: journalPath,
+         /** Settle mid-flight entries from dead processes. Idempotent per instance. */
+         settleStale: () => ensureSettled(),
++        /** Why this journal is sealed, or `undefined` if it is readable. */
++        unreadableReason() {
++            return withLock((state) => unreadableReasonOf(state));
++        },
+         /** Read one entry without deciding anything. */
+         read(lineageId, toolCallId) {
+-            return withLock((state) => state.entries[entryKey(lineageId, toolCallId)]);
++            return withLock((state) => {
++                if (unreadableReasonOf(state) !== undefined)
++                    return undefined;
++                return state.entries[entryKey(lineageId, toolCallId)];
++            });
+         },
+         /** Every entry, for diagnostics and for surfacing `unknown` to the user. */
+         list() {
+-            return withLock((state) => Object.values(state.entries));
++            return withLock((state) => {
++                if (unreadableReasonOf(state) !== undefined)
++                    return [];
++                return Object.values(state.entries);
++            });
+         },
+         /** Entries the user must be told about: settled `unknown`. */
+         unresolved() {
+-            return withLock((state) => Object.values(state.entries).filter((entry) => entry.state === CURSOR_EXEC_UNKNOWN));
++            return withLock((state) => {
++                if (unreadableReasonOf(state) !== undefined)
++                    return [];
++                return Object.values(state.entries).filter((entry) => entry.state === CURSOR_EXEC_UNKNOWN);
++            });
+         },
+         /**
++         * Settle dead mid-flight entries and list unresolved ones in one lock.
++         * Startup notice uses this so a crashed `executing` is visible without a
++         * later tool call. Live-PID owners are left alone.
++         */
++        settleAndListUnresolved() {
++            return withLock((state, markChanged) => {
++                const reason = unreadableReasonOf(state);
++                if (reason !== undefined) {
++                    return { unreadable: true, reason, settled: [], unresolved: [] };
++                }
++                const settled = settleStaleUnlocked(state, markChanged);
++                const unresolved = Object.values(state.entries).filter((entry) => entry.state === CURSOR_EXEC_UNKNOWN);
++                return { unreadable: false, settled, unresolved };
++            });
++        },
++        /**
++         * Explicit operator reset of a damaged journal. Quarantines the existing
++         * bytes (never overwrites them in place) and publishes an empty journal.
++         * A parse failure never does this on its own.
++         */
++        resetUnreadable({ confirm } = {}) {
++            if (confirm !== "reset-unreadable-journal") {
++                return {
++                    reset: false,
++                    reason: 'resetUnreadable requires confirm: "reset-unreadable-journal"',
++                };
++            }
++            ensureParentDir();
++            let release;
++            try {
++                release = acquireLockSyncWithRetry();
++                const state = readUnlocked();
++                const reason = unreadableReasonOf(state);
++                if (reason === undefined) {
++                    return { reset: false, reason: "journal is readable; refusing to reset" };
++                }
++                let quarantinedPath;
++                if (existsSync(journalPath)) {
++                    // Copy first. Renaming away then writing empty would, if we died
++                    // between the two, look like an absent journal and authorize a
++                    // duplicate run of whatever the damaged file had recorded.
++                    quarantinedPath = `${journalPath}.unreadable.${now()}`;
++                    copyFileSync(journalPath, quarantinedPath);
++                    chmodSync(quarantinedPath, 0o600);
++                }
++                atomicWriteJournalSync(journalPath, JSON.stringify(emptyState()));
++                settled = false;
++                return { reset: true, quarantinedPath, reason };
++            }
++            finally {
++                if (release)
++                    release();
++            }
++        },
++        /**
+          * Decide whether this `{lineageId, toolCallId}` may execute, and record the
+          * decision durably before returning. This is the only authorization point.
+          *
+@@ -544,10 +675,18 @@
+          *   of this exact `toolCallId` and the tool declared a matching key.
+          * - live entry owned by any process → `refuse`. Two runs must not drive the
+          *   same call concurrently.
++         * - journal present but unreadable / malformed / unknown version → `refuse`
++         *   for every lineage. The file is the whole identity store; guessing which
++         *   lineages are empty would re-authorize a completed call.
+          */
+         prepare({ lineageId, toolCallId, toolName, idempotencyKey, retryAuthorization }) {
+             ensureSettled();
+             return withLock((state, markChanged) => {
++                const sealed = unreadableReasonOf(state);
++                if (sealed !== undefined) {
++                    return refuseUnreadable(lineageId, toolCallId, toolName,
++                        `${sealed}; tool execution is refused until the journal is recoverable or an operator resets it`);
++                }
+                 const key = entryKey(lineageId, toolCallId);
+                 const stamp = now();
+                 const write = (entry) => {

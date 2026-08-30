@@ -1,0 +1,73 @@
+diff --git a/dist/core/compaction/compaction.js b/dist/core/compaction/compaction.js
+--- a/dist/core/compaction/compaction.js
++++ b/dist/core/compaction/compaction.js
+@@ -678,25 +678,46 @@
+         return text.slice(0, charBudget);
+     return `${text.slice(0, half)}${FALLBACK_ELISION_MARKER}${text.slice(text.length - half)}`;
+ }
++function wrapPreviousSummaryExcerpt(text) {
++    return `<previous-summary>\n${text}\n</previous-summary>`;
++}
++function wrapConversationExcerpt(text) {
++    return `<conversation-excerpt>\n${text}\n</conversation-excerpt>`;
++}
++function wrapTurnPrefixExcerpt(text) {
++    return `<turn-prefix-excerpt>\n${text}\n</turn-prefix-excerpt>`;
++}
++const FALLBACK_PART_SEPARATOR = "\n\n";
+ /**
+  * Deterministic, non-LLM fallback summary: preserves the previous summary (if any) and
+  * a bounded head+tail excerpt of the messages being summarized, instead of discarding
+  * the segment outright. Never reads the failing response's content, so a tool call's
+  * arguments can never leak in here.
++ *
++ * The excerpt budgets are sized so the *total* returned string (marker + wrapper tags +
++ * separators + both excerpts) stays within `fallbackCharBudget(maxTokens)`, not just the
++ * excerpt bodies in isolation — wrapper/marker overhead is fixed and known up front, so
++ * it is subtracted before splitting the remaining budget between previous-summary and
++ * conversation content.
+  */
+ function buildFallbackSummary(marker, transformedSource, maxTokens) {
+     const charBudget = fallbackCharBudget(maxTokens);
++    const hasPrevious = Boolean(transformedSource.previousSummary);
++    const separatorOverhead = FALLBACK_PART_SEPARATOR.length * (hasPrevious ? 2 : 1);
++    const fixedOverhead = marker.length +
++        separatorOverhead +
++        (hasPrevious ? wrapPreviousSummaryExcerpt("").length : 0) +
++        wrapConversationExcerpt("").length;
++    const contentBudget = Math.max(0, charBudget - fixedOverhead);
++    const previousBudget = hasPrevious ? Math.floor(contentBudget * 0.4) : 0;
++    const conversationBudget = contentBudget - previousBudget;
+     const parts = [marker];
+-    if (transformedSource.previousSummary) {
+-        const previousBudget = Math.floor(charBudget * 0.4);
+-        parts.push(`<previous-summary>\n${headTailExcerpt(transformedSource.previousSummary, previousBudget)}\n</previous-summary>`);
++    if (hasPrevious) {
++        parts.push(wrapPreviousSummaryExcerpt(headTailExcerpt(transformedSource.previousSummary, previousBudget)));
+     }
+-    const usedBudget = parts.reduce((sum, part) => sum + part.length, 0);
+-    const conversationBudget = Math.max(FALLBACK_CHAR_BUDGET_FLOOR, charBudget - usedBudget);
+     const llmMessages = convertToLlm(transformedSource.messages);
+-    const conversationExcerpt = headTailExcerpt(serializeConversation(llmMessages), conversationBudget);
+-    parts.push(`<conversation-excerpt>\n${conversationExcerpt}\n</conversation-excerpt>`);
+-    return parts.join("\n\n");
++    parts.push(wrapConversationExcerpt(headTailExcerpt(serializeConversation(llmMessages), conversationBudget)));
++    return parts.join(FALLBACK_PART_SEPARATOR);
+ }
+ export async function generateSummaryWithUsage(currentMessages, model, reserveTokens, apiKey, headers, signal, customInstructions, previousSummary, extraBody, thinkingLevel, streamFn, env, transformContext, retry, callbacks, sessionId, cacheFriendly) {
+     const maxTokens = Math.min(Math.floor(0.8 * reserveTokens), model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY);
+@@ -985,9 +1006,12 @@
+         }
+         if (response.content.some((block) => block.type === "toolCall")) {
+             const providerMessages = transformContext ? await transformContext(messages, signal) : messages;
+-            const excerpt = headTailExcerpt(serializeConversation(convertToLlm(providerMessages)), fallbackCharBudget(maxTokens));
++            const charBudget = fallbackCharBudget(maxTokens);
++            const fixedOverhead = TOOL_CALL_FALLBACK_TURN_PREFIX_MARKER.length + FALLBACK_PART_SEPARATOR.length + wrapTurnPrefixExcerpt("").length;
++            const excerptBudget = Math.max(0, charBudget - fixedOverhead);
++            const excerpt = headTailExcerpt(serializeConversation(convertToLlm(providerMessages)), excerptBudget);
+             return {
+-                text: `${TOOL_CALL_FALLBACK_TURN_PREFIX_MARKER}\n\n<turn-prefix-excerpt>\n${excerpt}\n</turn-prefix-excerpt>`,
++                text: [TOOL_CALL_FALLBACK_TURN_PREFIX_MARKER, wrapTurnPrefixExcerpt(excerpt)].join(FALLBACK_PART_SEPARATOR),
+                 usage: response.usage,
+             };
+         }

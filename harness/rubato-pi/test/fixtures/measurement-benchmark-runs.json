@@ -1,0 +1,7 @@
+[
+  {"totalDurationMs":100,"ttftMs":10,"modelDurationMs":70,"toolExecutionMs":5,"harnessMs":15,"cacheHitRate":0.1,"newInputTokens":100,"costUsd":0.01,"backgroundCalls":1},
+  {"totalDurationMs":200,"ttftMs":20,"modelDurationMs":140,"toolExecutionMs":10,"harnessMs":30,"cacheHitRate":0.2,"newInputTokens":200,"costUsd":0.02,"backgroundCalls":0},
+  {"totalDurationMs":300,"ttftMs":30,"modelDurationMs":210,"toolExecutionMs":15,"harnessMs":45,"cacheHitRate":0.3,"newInputTokens":300,"costUsd":0.03,"backgroundCalls":2},
+  {"totalDurationMs":400,"ttftMs":40,"modelDurationMs":280,"toolExecutionMs":20,"harnessMs":60,"cacheHitRate":0.4,"newInputTokens":400,"costUsd":0.04,"backgroundCalls":0},
+  {"totalDurationMs":1000,"ttftMs":100,"modelDurationMs":700,"toolExecutionMs":50,"harnessMs":150,"cacheHitRate":0.9,"newInputTokens":1000,"costUsd":0.10,"backgroundCalls":1}
+]

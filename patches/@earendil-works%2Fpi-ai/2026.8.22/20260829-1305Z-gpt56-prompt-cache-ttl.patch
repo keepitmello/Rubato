@@ -1,0 +1,56 @@
+diff --git a/dist/utils/prompt-cache-ttl.d.ts b/dist/utils/prompt-cache-ttl.d.ts
+--- a/dist/utils/prompt-cache-ttl.d.ts
++++ b/dist/utils/prompt-cache-ttl.d.ts
+@@ -1,6 +1,7 @@
+ import type { AnthropicMessagesCompat, Api, Model, OpenAICompletionsCompat, ProviderEnv } from "../types.ts";
+ export declare const PROMPT_CACHE_TTL_SHORT_SECONDS = 300;
+ export declare const PROMPT_CACHE_TTL_LONG_SECONDS = 3600;
++export declare const PROMPT_CACHE_TTL_GPT56_SECONDS = 1800;
+ export declare function isAnthropicApiBaseUrl(baseUrl: string): boolean;
+ export declare function getAnthropicCompat(model: Model<"anthropic-messages">): Required<Omit<AnthropicMessagesCompat, "forceAdaptiveThinking">>;
+ export type ResolvedOpenAICompletionsCompat = Omit<Required<OpenAICompletionsCompat>, "cacheControlFormat" | "toolCallFormat" | "deferredToolsMode" | "toolSchemaFlavor" | "supportsPromptCacheKey" | "chatTemplateArgs" | "supportsThinkingTokenBudget" | "thinkingTokenBudgetField"> & {
+diff --git a/dist/utils/prompt-cache-ttl.js b/dist/utils/prompt-cache-ttl.js
+--- a/dist/utils/prompt-cache-ttl.js
++++ b/dist/utils/prompt-cache-ttl.js
+@@ -1,6 +1,8 @@
+ import { getProviderEnvValue } from "./provider-env.js";
+ export const PROMPT_CACHE_TTL_SHORT_SECONDS = 300;
+ export const PROMPT_CACHE_TTL_LONG_SECONDS = 3600;
++/** GPT-5.6+ Responses/Codex prompt-cache contract: 30 minutes. */
++export const PROMPT_CACHE_TTL_GPT56_SECONDS = 1800;
+ export function isAnthropicApiBaseUrl(baseUrl) {
+     try {
+         return new URL(baseUrl).hostname === "api.anthropic.com";
+@@ -271,6 +273,17 @@
+     }
+     return "short";
+ }
++function gptVersionFromModelId(modelId) {
++    const match = String(modelId).toLowerCase().match(/(?:^|[/.:_])gpt-(\d+)(?:\.(\d+))?(?:$|[^a-z0-9])/);
++    if (!match)
++        return undefined;
++    return { major: Number(match[1]), minor: match[2] === undefined ? 0 : Number(match[2]) };
++}
++/** GPT-5.6 and later ids on OpenAI Responses / Codex Responses. */
++function isGpt56OrLaterModelId(modelId) {
++    const version = gptVersionFromModelId(modelId);
++    return !!version && (version.major > 5 || (version.major === 5 && version.minor >= 6));
++}
+ export function resolvePromptCacheTtlSeconds(model, env) {
+     switch (model.api) {
+         case "claude-sdk-oauth":
+@@ -313,7 +326,13 @@
+         case "openai-codex-responses":
+         case "azure-openai-responses": {
+             const retention = resolveOpenAIResponsesCacheRetention(model.cacheRetention, env);
+-            return retention === "none" ? undefined : PROMPT_CACHE_TTL_SHORT_SECONDS;
++            if (retention === "none")
++                return undefined;
++            // Azure stays on the 5-minute budget until its cache contract is verified.
++            if ((model.api === "openai-responses" || model.api === "openai-codex-responses") &&
++                isGpt56OrLaterModelId(model.id))
++                return PROMPT_CACHE_TTL_GPT56_SECONDS;
++            return PROMPT_CACHE_TTL_SHORT_SECONDS;
+         }
+         default:
+             return undefined;

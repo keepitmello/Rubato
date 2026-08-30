@@ -1,0 +1,46 @@
+# Dependencies and generated output
+node_modules/
+dist/
+*.bun-build
+.build-check/
+.build-extension-test-shared-*/
+harness/prompts/.build/
+
+# Runtime state and evidence
+.rubato/
+.ulw/
+plans/
+.debugging
+.debug-journal*.md
+session-ses_*.md
+pr-*.md
+notepad.md
+
+# Credentials and local environment
+.env
+.env.local
+credentials.json
+kiro-auth-token.json
+oauth-success.html
+test-injection/
+
+# Editors and operating systems
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs and package-manager residue
+*.log
+npm-debug.log*
+package-lock.json
+yarn.lock
+
+# Local agent workspaces
+.claude/
+.dori-sync/
+.dori/
+.dys/
+.playwright-mcp/

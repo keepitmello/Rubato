@@ -1,0 +1,251 @@
+diff --git a/dist/modes/interactive/components/tool-group.js b/dist/modes/interactive/components/tool-group.js
+--- a/dist/modes/interactive/components/tool-group.js
++++ b/dist/modes/interactive/components/tool-group.js
+@@ -7,6 +7,44 @@ import { registerInternalAction } from "../internal-actions.js";
+  */
+ export const UNGROUPED_TOOLS = new Set(["task", "dag", "team_create", "todo"]);
+ 
++/**
++ * 모델이 스킬을 쓰는 방법은 /skill:name 이 아니라 SKILL.md 를 read 하는 것이다.
++ * 도구 이름은 read 그대로라서 뭉침이 그걸 일반 조회와 같이 접어 버린다.
++ */
++export function isSkillRead(toolName, args) {
++    if (toolName !== "read" || args == null || typeof args !== "object") return false;
++    const raw = args.file_path ?? args.path;
++    if (typeof raw !== "string" || raw.length === 0) return false;
++    const file = raw.replace(/\\/g, "/").split("/").pop() ?? "";
++    return file.toLowerCase() === "skill.md";
++}
++
++/**
++ * bash 의 실제 명령이 git 이면 조회 뭉침에 넣지 않는다.
++ * env 대입과 sudo/command 접두만 걷고, 첫 토큰이 git 인지 본다.
++ */
++export function isGitWork(toolName, args) {
++    if (toolName !== "bash" || args == null || typeof args !== "object") return false;
++    const command = args.command;
++    if (typeof command !== "string" || command.length === 0) return false;
++    const token = firstCommandToken(command).replace(/\.exe$/i, "");
++    return token === "git" || /(?:^|[/\\])git$/.test(token);
++}
++
++function firstCommandToken(command) {
++    let rest = command.trim();
++    while (true) {
++        const env = /^(?:[A-Za-z_][A-Za-z0-9_]*=(?:'[^']*'|"[^"]*"|\S+)\s+)/.exec(rest);
++        if (!env)
++            break;
++        rest = rest.slice(env[0].length);
++    }
++    const prefix = /^(?:sudo|command)\s+/.exec(rest);
++    if (prefix)
++        rest = rest.slice(prefix[0].length);
++    return /^[A-Za-z0-9._+/-\\]+/.exec(rest)?.[0] ?? "";
++}
++
+ /** 실패한 도구 이름에 쓰는 색. 회색 목록에서 눈에는 걸리되 튀지 않는 벽돌빛. */
+ const FAILED_TOOL_COLOR = "\x1b[38;2;196;116;110m";
+ /** diff 증감. 실패색과 같은 채도로 맞춰 한 줄 안에서 따로 놀지 않게 한다. */
+@@ -59,18 +97,37 @@ export class ToolGroupComponent extends Container {
+     }
+ 
+     /** 이 도구를 뭉침에 넣을 수 있나. */
+-    static canGroup(toolName) {
+-        return !UNGROUPED_TOOLS.has(toolName);
++    static canGroup(toolName, args) {
++        if (UNGROUPED_TOOLS.has(toolName)) return false;
++        const nextArgs = args ?? undefined;
++        return !isSkillRead(toolName, nextArgs) && !isGitWork(toolName, nextArgs);
+     }
+ 
+     addTool(component) {
+         this.tools.push(component);
+         this.addChild(component);
++        component.toolGroup = this;
+         component.setExpanded(this.expanded);
+         this.invalidateGroup();
+         this.ui.requestRender();
+     }
+ 
++    /**
++     * args 가 늦게 와서 배치 뒤에야 스킬인 줄 알았을 때.
++     * detach 만 하고 dispose 는 하지 않는다 — 그 컴포넌트는 외부가 계속 그린다.
++     */
++    removeTool(component) {
++        const index = this.tools.indexOf(component);
++        if (index === -1) return false;
++        this.tools.splice(index, 1);
++        this.detachChild(component);
++        if (component.toolGroup === this)
++            component.toolGroup = undefined;
++        this.invalidateGroup();
++        this.ui.requestRender();
++        return true;
++    }
++
+     /**
+      * 도구가 끝날 때마다 불린다. 줄 자체는 그대로고 숫자와 색만 바뀜다.
+      */
+@@ -83,6 +140,44 @@ export class ToolGroupComponent extends Container {
+         return this.tools.length;
+     }
+ 
++    /**
++     * 배치 뒤에야 뭉치면 안 되는 도구인 줄 알았을 때.
++     * 앞 도구는 이 그룹에 남기고, 뒤 도구는 새 그룹으로 넘긴다.
++     * children 은 chatContainer.children 이다.
++     */
++    extractAt(component, children, createGroup) {
++        const at = this.tools.indexOf(component);
++        if (at === -1) return undefined;
++        const after = this.tools.slice(at + 1);
++        this.removeTool(component);
++        for (const tool of after)
++            this.removeTool(tool);
++        const groupAt = children.indexOf(this);
++        if (this.size === 0) {
++            if (groupAt >= 0)
++                children.splice(groupAt, 1, component);
++            else
++                children.push(component);
++            this.dispose();
++        }
++        else if (groupAt >= 0) {
++            children.splice(groupAt + 1, 0, component);
++        }
++        else {
++            children.push(component);
++        }
++        if (after.length === 0) return undefined;
++        const next = createGroup();
++        const insertAt = children.indexOf(component);
++        if (insertAt >= 0)
++            children.splice(insertAt + 1, 0, next);
++        else
++            children.push(next);
++        for (const tool of after)
++            next.addTool(tool);
++        return next;
++    }
++
+     setExpanded(expanded) {
+         if (this.expanded === expanded) return;
+         this.expanded = expanded;
+@@ -111,14 +206,18 @@ export class ToolGroupComponent extends Container {
+             const failed = tool.result?.isError === true;
+             const diff = name === "edit" ? countDiff(tool.result?.details?.patch) : undefined;
+             const last = seen[seen.length - 1];
+-            // 같은 도구가 연달아 나오면 한 번만 적는다. 단 실패나 diff 는 따로 남긴다.
+-            if (last && last.name === name && last.failed === failed && !diff && !last.diff) continue;
+-            seen.push({ name, failed, diff });
++            // 같은 도구가 연달아 나오면 횟수로 묶는다. 실패나 diff 는 따로 남긴다.
++            if (last && last.name === name && last.failed === failed && !diff && !last.diff) {
++                last.count += 1;
++                continue;
++            }
++            seen.push({ name, failed, diff, count: 1 });
+         }
+         const shown = seen.slice(0, MAX_NAMES);
+         const rest = seen.length - shown.length;
+-        const parts = shown.map(({ name, failed, diff }) => {
+-            const label = failed ? `${FAILED_TOOL_COLOR}${name}${RESET}` : dim(name);
++        const parts = shown.map(({ name, failed, diff, count }) => {
++            const counted = count > 1 ? `${name} (${count})` : name;
++            const label = failed ? `${FAILED_TOOL_COLOR}${counted}${RESET}` : dim(counted);
+             if (!diff) return label;
+             const plus = `${DIFF_ADDED_COLOR}+${diff.added}${RESET}`;
+             const minus = `${DIFF_REMOVED_COLOR}-${diff.removed}${RESET}`;
+diff --git a/dist/modes/interactive/interactive-mode.js b/dist/modes/interactive/interactive-mode.js
+--- a/dist/modes/interactive/interactive-mode.js
++++ b/dist/modes/interactive/interactive-mode.js
+@@ -3662,6 +3662,7 @@ export class InteractiveMode {
+                     this.setToolsExpanded(false);
+                 this.detachAssistantTextSegments();
+                 this.clearPendingTools();
++                this.chatContainer.markSettled();
+                 this.ui.requestRender();
+                 break;
+             case "agent_settled":
+@@ -4199,11 +4200,11 @@ export class InteractiveMode {
+     }
+     /**
+      * 도구를 화면에 붙인다. 뭉칠 수 있는 도구는 직전 뭉침에 이어 붙이고,
+-     * 아니면 새 뭉침을 연다. task/dag/team_create/todo 는 뭉치지 않으므로
+-     * 열려 있던 뭉침을 닫고 단독으로 붙인다.
++     * 아니면 새 뭉침을 연다. task/dag/team_create/todo, SKILL.md read, git bash 는
++     * 뭉치지 않으므로 열려 있던 뭉침을 닫고 단독으로 붙인다.
+      */
+     attachToolComponent(toolName, component) {
+-        if (!ToolGroupComponent.canGroup(toolName)) {
++        if (!ToolGroupComponent.canGroup(toolName, component.args)) {
+             this.activeToolGroup = undefined;
+             this.chatContainer.addChild(component);
+             return;
+@@ -4215,21 +4216,43 @@ export class InteractiveMode {
+         }
+         this.activeToolGroup.addTool(component);
+     }
++    /**
++     * args 가 늦게 와서 배치 뒤에야 스킬인 줄 알았을 때.
++     * 자기가 들어 있던 뭉침에서 빼서 단독으로 붙인다. 그룹이 비면 걷는다.
++     */
++    reconsiderToolGrouping(toolName, component) {
++        if (ToolGroupComponent.canGroup(toolName, component.args)) return;
++        const group = component.toolGroup;
++        if (!group) return;
++        const wasActive = this.activeToolGroup === group;
++        const next = group.extractAt(component, this.chatContainer.children, () => {
++            const created = new ToolGroupComponent(this.ui);
++            created.setExpanded(this.toolOutputExpanded);
++            return created;
++        });
++        if (wasActive)
++            this.activeToolGroup = next;
++    }
+     /** 어시스턴트 텍스트나 턴 종료가 끼면 뭉침을 끊는다. */
+     closeToolGroup() {
+         this.activeToolGroup = undefined;
+     }
+     createToolExecutionComponent(toolName, toolCallId, args) {
+-        if (this.chrome) {
+-            return new ToolExecutionComponent(toolName, toolCallId, args, {
++        const component = this.chrome
++            ? new ToolExecutionComponent(toolName, toolCallId, args, {
+                 showImages: this.settingsManager.getShowImages(),
+                 imageWidthCells: this.settingsManager.getImageWidthCells(),
+-            }, this.getRegisteredToolDefinition(toolName), this.ui, this.sessionManager.getCwd(), this.chrome.toolPresentation);
+-        }
+-        return new ToolExecutionComponent(toolName, toolCallId, args, {
+-            showImages: this.settingsManager.getShowImages(),
+-            imageWidthCells: this.settingsManager.getImageWidthCells(),
+-        }, this.getRegisteredToolDefinition(toolName), this.ui, this.sessionManager.getCwd());
++            }, this.getRegisteredToolDefinition(toolName), this.ui, this.sessionManager.getCwd(), this.chrome.toolPresentation)
++            : new ToolExecutionComponent(toolName, toolCallId, args, {
++                showImages: this.settingsManager.getShowImages(),
++                imageWidthCells: this.settingsManager.getImageWidthCells(),
++            }, this.getRegisteredToolDefinition(toolName), this.ui, this.sessionManager.getCwd());
++        const originalUpdateArgs = component.updateArgs.bind(component);
++        component.updateArgs = (nextArgs) => {
++            originalUpdateArgs(nextArgs);
++            this.reconsiderToolGrouping(toolName, component);
++        };
++        return component;
+     }
+     renderSessionItems(items, options = {}) {
+         this.clearPendingTools();
+@@ -4262,13 +4285,14 @@ export class InteractiveMode {
+             const message = item;
+             // Assistant messages need special handling for tool calls
+             if (message.role === "assistant") {
++                this.closeToolGroup();
+                 this.addMessageToChat(message);
+                 // Render tool call components
+                 for (const content of message.content) {
+                     if (content.type === "toolCall") {
+                         const component = this.createToolExecutionComponent(content.name, content.id, content.arguments);
+                         component.setExpanded(this.toolOutputExpanded);
+-                        this.chatContainer.addChild(component);
++                        this.attachToolComponent(content.name, component);
+                         if (message.stopReason === "aborted" || message.stopReason === "error") {
+                             let errorMessage;
+                             if (message.stopReason === "aborted") {

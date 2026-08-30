@@ -1,0 +1,71 @@
+diff --git a/dist/modes/interactive/components/assistant-message.js b/dist/modes/interactive/components/assistant-message.js
+--- a/dist/modes/interactive/components/assistant-message.js
++++ b/dist/modes/interactive/components/assistant-message.js
+@@ -232,6 +232,7 @@
+             thinkingOverrides: [...this.thinkingOverrides].flat(),
+             errorState: [message.diagnostics, message.errorMessage],
+             stopReason: message.stopReason,
++            turnWorkCollapsed: this.turnWorkCollapsed,
+         });
+     }
+     cacheRender(width, signature, lines) {
+diff --git a/dist/modes/interactive/components/tool-group.js b/dist/modes/interactive/components/tool-group.js
+--- a/dist/modes/interactive/components/tool-group.js
++++ b/dist/modes/interactive/components/tool-group.js
+@@ -78,7 +78,7 @@
+ /**
+  * 연속된 도구 호출을 한 줄로 접는다.
+  *
+- * 접힘:  ⋯ 도구 7개  ls·read·grep·edit·bash  +94줄
++ * 접힘:  • 1 tool  ls·read·grep·edit·bash
+  * 펼침:  각 도구가 자기 자신을 그린다.
+  *
+  * 실패한 도구는 줄을 늘리지 않고 이름만 색으로 표시한다 — 어디서
+@@ -249,7 +249,7 @@
+         const label = `${count} ${count === 1 ? "tool" : "tools"}`;
+         // 숨긴 줄 수는 적지 않는다 — 펼칠지 말지를 그 숫자로 정하지는 않았다.
+         // edit 의 증감만 예외로, 바뀜 양은 클릭 전에도 알아야 한다.
+-        const line = `${dim(`  ⋯ ${label}`)}  ${this.formatNames()}`;
++        const line = `${dim(`  • ${label}`)}  ${this.formatNames()}`;
+         return [hyperlink(line, this.toggleAction.url)];
+     }
+ }
+diff --git a/dist/modes/interactive/interactive-mode.js b/dist/modes/interactive/interactive-mode.js
+--- a/dist/modes/interactive/interactive-mode.js
++++ b/dist/modes/interactive/interactive-mode.js
+@@ -3439,6 +3439,9 @@
+                 this.clearToolHookStatuses();
+                 // Turn boundary: pick a fresh working tip next time the indicator shows.
+                 this.turnWorkingTip.resetForNewTurn();
++                // 직전 턴 요약은 트리에 남기고 포인터만 끊는다. 재사용하면
++                // 다음 턴 도구가 앞 턴 불릿에 섞인다.
++                this.turnWorkSummary = undefined;
+                 this.startTurnWorkSummary();
+                 if (this.settingsManager.getShowTerminalProgress()) {
+                     this.ui.terminal.setProgress(true);
+@@ -3499,6 +3502,7 @@
+                     this.ui.requestRender();
+                 }
+                 else if (event.message.role === "assistant") {
++                    this.startTurnWorkSummary();
+                     this.streamingComponent = new AssistantMessageComponent(undefined, this.hideThinkingBlock, this.getMarkdownThemeWithSettings(), this.hiddenThinkingLabel, this.outputPad, this.getMarkdownTransformers());
+                     this.streamingComponent.setExpanded(this.toolOutputExpanded);
+                     this.streamingMessage = event.message;
+@@ -3667,7 +3671,8 @@
+                     this.streamingMessage = undefined;
+                 }
+                 this.closeToolGroup();
+-                this.turnWorkSummary = undefined;
++                // 포인터는 다음 agent_start 까지 둔다. abort 뒤에 오는 사고·도구가
++                // 새 뭉침을 열 때 요약에 안 실리면 Thought/도구 줄이 접히지 않는다.
+                 // 턴이 끝나면 펼침을 되돌린다. ctrl+o 는 한 번 보려고 누르는 것이지
+                 // 세션 내내 펼쳐두겠다는 뜻이 아니다.
+                 if (this.toolOutputExpanded)
+@@ -4320,6 +4325,7 @@
+             // Assistant messages need special handling for tool calls
+             if (message.role === "assistant") {
+                 this.closeToolGroup();
++                this.turnWorkSummary = undefined;
+                 // 첫 도구 앞의 머리말만 여기서 그린다. 그 뒤의 말은 도구 사이사이에
+                 // 끼어 있으므로, 메시지를 통째로 그리면 한 턴의 말이 전부 도구 위로
+                 // 올라가 순서가 뒤집힌다 — 스트리밍 경로와 같은 방식으로 갈라 그린다.
