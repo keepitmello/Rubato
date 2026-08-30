@@ -10,11 +10,13 @@ import {
   BUSY_ENTER_STATUS,
   BUSY_ENTER_STEER_STATUS,
   busyEnterHint,
+  handlePendingRecallKey,
   injectBusyEnter,
   installBusyEnter,
   isBusyEnterModuleUrl,
   promoteBusyEnter,
   quietCompactionStatus,
+  recallLatestPending,
   rememberBusyEnter,
   renderPendingMessages,
 } from "../../src/busy-enter.mjs";
@@ -49,10 +51,6 @@ function makeMode({ streaming = true, compacting = false } = {}) {
     _queuedInputOrder: queuedInputOrder,
     _recordQueuedInput(text, mode, enqueueOrder) {
       queuedInputOrder.push({ text, mode, enqueueOrder: enqueueOrder ?? queuedInputOrder.length + 1 });
-    },
-    _removeQueuedInput(text, mode) {
-      const index = queuedInputOrder.findIndex((item) => item.mode === mode && item.text === text);
-      if (index !== -1) queuedInputOrder.splice(index, 1);
     },
     _emitQueueUpdate() {
       this.lastQueueUpdate = {
@@ -131,6 +129,61 @@ function queueNativeFollowUp(mode, text, images) {
   return message;
 }
 
+function queueNativeSteer(mode, text, images) {
+  const message = userMessage(text, images);
+  mode.session._steeringMessages.push(text);
+  mode.session._recordQueuedInput(text, "steer");
+  mode.session.agent.steer(message);
+  return message;
+}
+
+function attachEditor(mode, text = "") {
+  const editor = {
+    text,
+    autocomplete: false,
+    inputs: [],
+    imageMarkerState: undefined,
+    getText() {
+      return this.text;
+    },
+    setText(next) {
+      this.text = next;
+    },
+    setImageMarkerState(state) {
+      this.imageMarkerState = structuredClone(state);
+    },
+    restoreAttachmentState(state) {
+      mode.pendingImages.clear();
+      for (const [id, image] of state) mode.pendingImages.set(id, image);
+    },
+    isShowingAutocomplete() {
+      return this.autocomplete;
+    },
+    handleInput(data) {
+      this.inputs.push(data);
+    },
+  };
+  mode.pendingImages = new Map();
+  mode.defaultEditor = editor;
+  mode.editor = editor;
+  mode.keybindings = { matches: (data, action) => data === "UP" && action === "tui.editor.cursorUp" };
+  mode.ui = { renders: 0, requestRender() { this.renders += 1; } };
+  return editor;
+}
+
+function makeInstrumentedMode(options) {
+  class InstrumentedMode {
+    setupKeyHandlers() {}
+  }
+  installBusyEnter(InstrumentedMode.prototype, {
+    matchesKey: (data, key) => data === "UP" && key === "up",
+  });
+  const mode = Object.assign(new InstrumentedMode(), makeMode(options));
+  const editor = attachEditor(mode);
+  mode.setupKeyHandlers();
+  return { mode, editor };
+}
+
 if (!runtime) {
   test("URL matching targets the pinned interactive-mode module", () => {
     assert.equal(isBusyEnterModuleUrl(`${nestedPrefix}interactive-mode.js`), true);
@@ -150,7 +203,7 @@ if (!runtime) {
     assert.match(next, /__rubatoRememberBusyEnter\?\.\(text\)/);
     assert.match(next, /__rubatoPromoteBusyEnter\?\.\(\)/);
     assert.match(next, /__rubatoQuietCompactionStatus\?\.\(\(\) => this\.queueCompactionSubmission\(text, "followUp"\)\)/);
-    assert.match(next, /__rubatoInstallBusyEnter\(InteractiveMode\.prototype, \{ Spacer, TruncatedText, theme \}\)/);
+    assert.match(next, /__rubatoInstallBusyEnter\(InteractiveMode\.prototype, \{ Spacer, TruncatedText, matchesKey, theme \}\)/);
     assert.equal(injectBusyEnter(next, "file:///busy-enter.mjs"), next);
     assert.throws(
       () => injectBusyEnter(source.replace("text = text.trim();", "text = String(text).trim();")),
@@ -183,10 +236,21 @@ if (!runtime) {
     assert.equal(result.status, 0, result.stderr + result.stdout);
   });
 
-  test("busy Enter queues follow-up without writing a status line into the chat", () => {
+  test("busy Enter captures exact identities without wrapping native queue methods", () => {
     const mode = makeMode();
+    const methods = {
+      record: mode.session._recordQueuedInput,
+      steer: mode.session.agent.steer,
+      followUp: mode.session.agent.followUp,
+    };
     const message = queueNativeFollowUp(mode, "later");
+    const record = mode.session._queuedInputOrder[0];
     rememberBusyEnter(mode, "later");
+    assert.equal(mode[TRACKED].record, record);
+    assert.equal(mode[TRACKED].enqueueOrder, record.enqueueOrder);
+    assert.equal(mode.session._recordQueuedInput, methods.record);
+    assert.equal(mode.session.agent.steer, methods.steer);
+    assert.equal(mode.session.agent.followUp, methods.followUp);
     assert.equal(mode[TRACKED].message, message);
     assert.deepEqual(mode.session.agent.followUpQueue.messages, [message]);
     assert.deepEqual(mode.session._followUpMessages, ["later"]);
@@ -317,32 +381,322 @@ if (!runtime) {
     assert.deepEqual(idle.session.agent.steeringQueue.messages, []);
   });
 
-  test("installs the helpers at most once per prototype", () => {
-    class FakeMode {}
-    assert.equal(installBusyEnter(FakeMode.prototype), true);
-    assert.equal(installBusyEnter(FakeMode.prototype), false);
-    assert.equal(typeof FakeMode.prototype.__rubatoRememberBusyEnter, "function");
-    assert.equal(typeof FakeMode.prototype.__rubatoPromoteBusyEnter, "function");
+  test("ArrowUp recalls the tracked input after it is promoted to steering", () => {
+    const mode = makeMode();
+    const editor = attachEditor(mode);
+    const older = queueNativeFollowUp(mode, "older follow-up");
+    const tracked = queueNativeFollowUp(mode, "tracked steering");
+    rememberBusyEnter(mode, "tracked steering");
+    promoteBusyEnter(mode);
+
+    assert.equal(recallLatestPending(mode), "tracked steering");
+    assert.equal(editor.getText(), "tracked steering");
+    assert.deepEqual(mode.session.agent.steeringQueue.messages, []);
+    assert.deepEqual(mode.session._steeringMessages, []);
+    assert.deepEqual(mode.session.agent.followUpQueue.messages, [older]);
+    assert.deepEqual(mode.session._followUpMessages, ["older follow-up"]);
+    assert.deepEqual(mode.session._queuedInputOrder.map((record) => record.enqueueOrder), [1]);
+    assert.equal(tracked.role, "user");
   });
 
-  test("queued message bodies render undimmed, only labels and hints stay dim", () => {
+  test("ArrowUp removes the newest native follow-up from its real queue and bookkeeping", () => {
     const mode = makeMode();
-    const rendered = makeRenderableMode(mode, { steering: ["steer me"], followUp: ["wait"] });
+    const editor = attachEditor(mode);
+    const older = queueNativeSteer(mode, "older steering");
+    queueNativeFollowUp(mode, "newest follow-up");
+    rememberBusyEnter(mode, "newest follow-up");
+
+    handlePendingRecallKey(mode, "UP", () => editor.handleInput("UP"));
+    assert.equal(editor.getText(), "newest follow-up");
+    assert.deepEqual(mode.session.agent.followUpQueue.messages, []);
+    assert.deepEqual(mode.session._followUpMessages, []);
+    assert.deepEqual(mode.session.agent.steeringQueue.messages, [older]);
+    assert.deepEqual(mode.session._steeringMessages, ["older steering"]);
+    assert.deepEqual(mode.session._queuedInputOrder.map((item) => item.text), ["older steering"]);
+    assert.equal(mode[TRACKED], undefined, "recalled input must not retain the empty-Enter toggle pointer");
+    assert.deepEqual(editor.inputs, []);
+  });
+
+  test("ArrowUp recomputes the tracked follow-up row after an older item drains", () => {
+    const mode = makeMode();
+    const editor = attachEditor(mode);
+    queueNativeFollowUp(mode, "older");
+    const tracked = queueNativeFollowUp(mode, "tracked");
+    rememberBusyEnter(mode, "tracked");
+
+    mode.session.agent.followUpQueue.messages.splice(0, 1);
+    mode.session._followUpMessages.splice(0, 1);
+    mode.session._queuedInputOrder.splice(0, 1);
+
+    assert.equal(recallLatestPending(mode), "tracked");
+    assert.equal(editor.getText(), "tracked");
+    assert.deepEqual(mode.session.agent.followUpQueue.messages, []);
+    assert.deepEqual(mode.session._followUpMessages, []);
+    assert.deepEqual(mode.session._queuedInputOrder, []);
+    assert.equal(mode[TRACKED], undefined);
+    assert.equal(tracked.content[0].text, "tracked");
+  });
+
+  test("ArrowUp recomputes the tracked steering row after an older item drains", () => {
+    const mode = makeMode();
+    const editor = attachEditor(mode);
+    queueNativeSteer(mode, "older steering");
+    const tracked = queueNativeFollowUp(mode, "tracked steering");
+    rememberBusyEnter(mode, "tracked steering");
+    promoteBusyEnter(mode);
+
+    mode.session.agent.steeringQueue.messages.splice(0, 1);
+    mode.session._steeringMessages.splice(0, 1);
+    mode.session._queuedInputOrder.splice(0, 1);
+
+    assert.equal(recallLatestPending(mode), "tracked steering");
+    assert.equal(editor.getText(), "tracked steering");
+    assert.deepEqual(mode.session.agent.steeringQueue.messages, []);
+    assert.deepEqual(mode.session._steeringMessages, []);
+    assert.deepEqual(mode.session._queuedInputOrder, []);
+    assert.equal(mode[TRACKED], undefined);
+    assert.equal(tracked.content[0].text, "tracked steering");
+  });
+
+  test("a newer untracked pending item blocks recall of the tracked input", () => {
+    const mode = makeMode();
+    const editor = attachEditor(mode);
+    const tracked = queueNativeFollowUp(mode, "tracked");
+    rememberBusyEnter(mode, "tracked");
+    const newer = queueNativeFollowUp(mode, "newer Alt+Enter");
+
+    handlePendingRecallKey(mode, "UP", () => editor.handleInput("UP"));
+    assert.deepEqual(editor.inputs, ["UP"]);
+    assert.equal(editor.getText(), "");
+    assert.deepEqual(mode.session.agent.followUpQueue.messages, [tracked, newer]);
+  });
+
+  test("an Alt+Enter-only queue falls through to normal history", () => {
+    const mode = makeMode();
+    const editor = attachEditor(mode);
+    const pending = queueNativeFollowUp(mode, "Alt+Enter only");
+
+    handlePendingRecallKey(mode, "UP", () => editor.handleInput("UP"));
+    assert.deepEqual(editor.inputs, ["UP"]);
+    assert.deepEqual(mode.session.agent.followUpQueue.messages, [pending]);
+  });
+
+  test("two identical follow-ups keep exact orders when latest is promoted then recalled", () => {
+    const { mode, editor } = makeInstrumentedMode();
+    const text = "same pending text";
+    const older = queueNativeFollowUp(mode, text);
+    const latest = queueNativeFollowUp(mode, text);
+    rememberBusyEnter(mode, text);
+    assert.equal(mode[TRACKED].message, latest);
+
+    promoteBusyEnter(mode);
+    assert.deepEqual(mode.session.agent.followUpQueue.messages, [older]);
+    assert.deepEqual(mode.session.agent.steeringQueue.messages, [latest]);
+    assert.deepEqual(mode.session._queuedInputOrder.map(({ mode: queueMode, enqueueOrder }) =>
+      [queueMode, enqueueOrder]), [["followUp", 1], ["steer", 2]]);
+
+    editor.setText("");
+    assert.equal(recallLatestPending(mode), text);
+    assert.deepEqual(mode.session.agent.followUpQueue.messages, [older]);
+    assert.deepEqual(mode.session.agent.steeringQueue.messages, []);
+    assert.deepEqual(mode.session._followUpMessages, [text]);
+    assert.deepEqual(mode.session._steeringMessages, []);
+    assert.deepEqual(mode.session._queuedInputOrder.map(({ mode: queueMode, enqueueOrder }) =>
+      [queueMode, enqueueOrder]), [["followUp", 1]]);
+  });
+
+  test("duplicate text recalls the exact tracked object and enqueue record", () => {
+    const { mode } = makeInstrumentedMode();
+    const text = "inspect [Image #1]";
+    const olderImage = { type: "image", data: "older-bytes", mimeType: "image/png" };
+    const trackedImage = { type: "image", data: "tracked-bytes", mimeType: "image/png" };
+    const older = queueNativeFollowUp(mode, text, [olderImage]);
+    const tracked = queueNativeFollowUp(mode, text, [trackedImage]);
+    rememberBusyEnter(mode, text);
+    promoteBusyEnter(mode);
+
+    assert.equal(recallLatestPending(mode), text);
+    assert.deepEqual([...mode.pendingImages.entries()], [[1, trackedImage]]);
+    assert.deepEqual(mode.session.agent.followUpQueue.messages, [older]);
+    assert.deepEqual(mode.session.agent.steeringQueue.messages, []);
+    assert.deepEqual(mode.session._queuedInputOrder.map((record) => record.enqueueOrder), [1]);
+    assert.notEqual(older, tracked);
+  });
+
+  test("ArrowUp restores native image markers and payloads in marker order", () => {
+    const mode = makeMode();
+    const editor = attachEditor(mode);
+    const first = { type: "image", data: "first-bytes", mimeType: "image/png" };
+    const second = { type: "image", data: "second-bytes", mimeType: "image/jpeg" };
+    const text = "compare [Image #1] with [Image #2]";
+    queueNativeFollowUp(mode, text, [first, second]);
+    rememberBusyEnter(mode, text);
+
+    assert.equal(recallLatestPending(mode), text);
+    assert.equal(editor.getText(), text);
+    assert.deepEqual(editor.imageMarkerState, { ids: [1, 2], imageCounter: 2 });
+    assert.deepEqual([...mode.pendingImages.entries()], [[1, first], [2, second]]);
+    assert.deepEqual(mode.session.agent.followUpQueue.messages, []);
+    assert.deepEqual(mode.session._followUpMessages, []);
+  });
+
+  test("image-bearing native input falls through safely when marker restoration is unavailable", () => {
+    const mode = makeMode();
+    const editor = attachEditor(mode);
+    delete editor.setImageMarkerState;
+    const image = { type: "image", data: "bytes", mimeType: "image/png" };
+    const pending = queueNativeFollowUp(mode, "inspect [Image #1]", [image]);
+    rememberBusyEnter(mode, "inspect [Image #1]");
+
+    handlePendingRecallKey(mode, "UP", () => editor.handleInput("UP"));
+    assert.deepEqual(editor.inputs, ["UP"]);
+    assert.equal(editor.getText(), "");
+    assert.deepEqual(mode.session.agent.followUpQueue.messages, [pending]);
+    assert.deepEqual(mode.pendingImages, new Map());
+  });
+
+  test("unsafe newest image blocks recall instead of falling through to an older safe text item", () => {
+    const mode = makeMode();
+    const editor = attachEditor(mode);
+    const older = queueNativeFollowUp(mode, "older safe text");
+    rememberBusyEnter(mode, "older safe text");
+    const image = { type: "image", data: "bytes", mimeType: "image/png" };
+    const newest = queueNativeSteer(mode, "newest [Image #1]", [image]);
+    delete editor.setImageMarkerState;
+
+    handlePendingRecallKey(mode, "UP", () => editor.handleInput("UP"));
+    assert.deepEqual(editor.inputs, ["UP"]);
+    assert.equal(editor.getText(), "");
+    assert.deepEqual(mode.session.agent.followUpQueue.messages, [older]);
+    assert.deepEqual(mode.session.agent.steeringQueue.messages, [newest]);
+    assert.deepEqual(mode.session._queuedInputOrder.map((item) => item.text), ["older safe text", "newest [Image #1]"]);
+  });
+
+  test("ArrowUp recalls tracked compaction queue items but excludes in-flight transfer", () => {
+    const mode = makeMode({ streaming: false, compacting: true });
+    const editor = attachEditor(mode);
+    const queued = { text: "queued compacted", mode: "followUp", enqueueOrder: 2, pendingEchoId: "echo-2" };
+    const removedEchoes = [];
+    mode.optimisticUserEchoes = { remove: (id) => removedEchoes.push(id) };
+    mode.compactionQueuedMessages.push(queued);
+    rememberBusyEnter(mode, queued.text);
+
+    assert.equal(recallLatestPending(mode), queued.text);
+    assert.equal(editor.getText(), queued.text);
+    assert.deepEqual(mode.compactionQueuedMessages, []);
+    assert.deepEqual(removedEchoes, ["echo-2"]);
+
+    const inFlight = { text: "already transferring", mode: "steer", enqueueOrder: 3 };
+    mode.compactionInFlightMessages.push(inFlight);
+    mode[TRACKED] = { kind: "compaction", message: inFlight, text: inFlight.text, enqueueOrder: 3 };
+    editor.setText("");
+    assert.equal(recallLatestPending(mode), undefined);
+    assert.deepEqual(mode.compactionInFlightMessages, [inFlight]);
+  });
+
+  test("non-empty editor falls through to normal cursor behavior without touching pending input", () => {
+    const mode = makeMode();
+    const editor = attachEditor(mode, "draft");
+    const pending = queueNativeFollowUp(mode, "pending");
+
+    handlePendingRecallKey(mode, "UP", () => editor.handleInput("UP"));
+    assert.deepEqual(editor.inputs, ["UP"]);
+    assert.equal(editor.getText(), "draft");
+    assert.deepEqual(mode.session.agent.followUpQueue.messages, [pending]);
+  });
+
+  test("empty editor with no recallable pending input falls through to normal history behavior", () => {
+    const mode = makeMode();
+    const editor = attachEditor(mode);
+    mode.compactionInFlightMessages.push({ text: "unsafe", mode: "followUp", enqueueOrder: 1 });
+
+    handlePendingRecallKey(mode, "UP", () => editor.handleInput("UP"));
+    assert.deepEqual(editor.inputs, ["UP"]);
+    assert.equal(editor.getText(), "");
+  });
+
+  test("inactive turns, autocomplete, custom editors, and non-cursorUp keys fall through unchanged", () => {
+    const cases = [
+      { configure: (mode) => { mode.session.isStreaming = false; }, key: "UP" },
+      { configure: (_mode, editor) => { editor.autocomplete = true; }, key: "UP" },
+      { configure: (mode) => { mode.editor = {}; }, key: "UP" },
+      { configure: () => {}, key: "DOWN" },
+    ];
+    for (const { configure, key } of cases) {
+      const mode = makeMode();
+      const editor = attachEditor(mode);
+      const pending = queueNativeFollowUp(mode, "pending");
+      configure(mode, editor);
+      handlePendingRecallKey(mode, key, () => editor.handleInput(key));
+      assert.deepEqual(editor.inputs, [key]);
+      assert.deepEqual(mode.session.agent.followUpQueue.messages, [pending]);
+    }
+  });
+
+  test("installs the helpers and ArrowUp interception at most once per prototype", () => {
+    class FakeMode {
+      setupKeyHandlers() {
+        this.setupCalls = (this.setupCalls ?? 0) + 1;
+      }
+    }
+    const parts = { matchesKey: (data, key) => data === "UP" && key === "up" };
+    assert.equal(installBusyEnter(FakeMode.prototype, parts), true);
+    assert.equal(installBusyEnter(FakeMode.prototype, parts), false);
+    assert.equal(typeof FakeMode.prototype.__rubatoRememberBusyEnter, "function");
+    assert.equal(typeof FakeMode.prototype.__rubatoPromoteBusyEnter, "function");
+    assert.equal(typeof FakeMode.prototype.__rubatoRecallLatestPending, "function");
+
+    const mode = Object.assign(new FakeMode(), makeMode());
+    const editor = attachEditor(mode);
+    queueNativeFollowUp(mode, "installed recall");
+    mode.__rubatoRememberBusyEnter("installed recall");
+    mode.setupKeyHandlers();
+    mode.setupKeyHandlers();
+    editor.handleInput("UP");
+    assert.equal(editor.getText(), "installed recall");
+    assert.deepEqual(editor.inputs, []);
+    assert.equal(mode.setupCalls, 2);
+
+    editor.setText("");
+    const pending = queueNativeFollowUp(mode, "not plain Up");
+    mode.__rubatoRememberBusyEnter("not plain Up");
+    mode.keybindings.matches = (_data, action) => action === "tui.editor.cursorUp";
+    editor.handleInput("CTRL_UP");
+    assert.deepEqual(editor.inputs, ["CTRL_UP"]);
+    assert.deepEqual(mode.session.agent.followUpQueue.messages, [pending]);
+
+    mode.keybindings.matches = () => false;
+    editor.handleInput("UP");
+    assert.equal(editor.getText(), "not plain Up", "physical plain Up must ignore a remapped cursorUp action");
+    assert.deepEqual(mode.session.agent.followUpQueue.messages, []);
+  });
+
+  test("pending renderer groups modes, keeps bodies readable, and advertises single-item ArrowUp recall", () => {
+    const mode = makeMode();
+    queueNativeSteer(mode, "steer me");
+    queueNativeFollowUp(mode, "wait");
+    rememberBusyEnter(mode, "wait");
+    const rendered = makeRenderableMode(mode, {
+      steering: mode.session._steeringMessages,
+      followUp: mode.session._followUpMessages,
+    });
     assert.equal(renderPendingMessages(mode, tuiParts), true);
 
-    const body = rendered.find((child) => child.text.includes("steer me"));
-    assert.ok(body, "steering message should be rendered");
-    // 본문은 편집기와 같은 text 색 — 이게 dim 이면 읽기 힘들다는 보고가 다시 나온다.
-    assert.match(body.text, /\[text\]steer me/);
-    assert.match(body.text, /\[dim\]Steering: /);
-
-    const followUp = rendered.find((child) => child.text.includes("wait"));
-    assert.match(followUp.text, /\[text\]wait/);
-    assert.match(followUp.text, /\[dim\]Follow-up: /);
-
-    for (const child of rendered) {
+    assert.ok(rendered.find((child) => child.text.includes("STEERING · current turn")));
+    assert.ok(rendered.find((child) => child.text.includes("NEXT TURN · follow-up")));
+    const steeringBody = rendered.find((child) => child.text.includes("steer me"));
+    const followUpBody = rendered.find((child) => child.text.includes("wait"));
+    assert.match(steeringBody.text, /\[dim\]  └ \[text\]steer me/);
+    assert.match(followUpBody.text, /\[dim\]  └ \[text\]wait/);
+    for (const child of [steeringBody, followUpBody]) {
       assert.doesNotMatch(child.text, /\[dim\][^[]*(steer me|wait)/);
     }
+
+    const recallHint = rendered.find((child) => child.text.includes("↑ edit latest Enter input"));
+    assert.ok(recallHint);
+    assert.match(recallHint.text, /\[dim\]/);
+    assert.equal(rendered.some((child) => child.text.includes("edit all queued messages")), false);
+    assert.equal(rendered.some((child) => child.text.includes("Esc")), false);
   });
 
   test("the busy-Enter hint rides in the pending block and flips with the toggle", () => {
@@ -361,6 +715,7 @@ if (!runtime) {
     const hint = rendered.find((child) => child.text.includes(BUSY_ENTER_STATUS));
     assert.ok(hint, "hint should render inside the pending block");
     assert.match(hint.text, /\[dim\]/);
+    assert.match(hint.text, /↑ edit latest Enter input.*·.*Enter 한 번 더/);
 
     promoteBusyEnter(mode);
     rendered.length = 0;
@@ -390,31 +745,30 @@ if (!runtime) {
     );
   });
 
-  test("toggling back restores the original follow-up position", () => {
+  test("toggling back restores the tracked follow-up's original position", () => {
     const mode = makeMode();
     const first = queueNativeFollowUp(mode, "first");
-    const second = queueNativeFollowUp(mode, "second");
-    rememberBusyEnter(mode, "first");
+    const tracked = queueNativeFollowUp(mode, "tracked");
+    rememberBusyEnter(mode, "tracked");
+    const last = queueNativeFollowUp(mode, "last");
 
     promoteBusyEnter(mode);
-    assert.deepEqual(mode.session.agent.followUpQueue.messages, [second]);
+    assert.deepEqual(mode.session.agent.followUpQueue.messages, [first, last]);
     promoteBusyEnter(mode);
 
-    // 다시 앞자리로 — append 면 [second, first] 가 되어 사용자가 친 순서가 바뀜다.
-    assert.deepEqual(mode.session.agent.followUpQueue.messages, [first, second]);
-    assert.deepEqual(mode.session._followUpMessages, ["first", "second"]);
+    assert.deepEqual(mode.session.agent.followUpQueue.messages, [first, tracked, last]);
+    assert.deepEqual(mode.session._followUpMessages, ["first", "tracked", "last"]);
   });
 
   test("the hint disappears once the tracked message has drained", () => {
     const mode = makeMode();
-    queueNativeFollowUp(mode, "tracked");
     const other = queueNativeFollowUp(mode, "still queued");
+    queueNativeFollowUp(mode, "tracked");
     rememberBusyEnter(mode, "tracked");
     assert.equal(busyEnterHint(mode), BUSY_ENTER_STATUS);
 
-    // 추적하던 것만 배달되어 빠졌다. 다른 대기열은 그대로다.
-    mode.session.agent.followUpQueue.messages.splice(0, 1);
-    mode.session._followUpMessages.splice(0, 1);
+    mode.session.agent.followUpQueue.messages.splice(1, 1);
+    mode.session._followUpMessages.splice(1, 1);
     assert.equal(busyEnterHint(mode), undefined, "stale hint must not stay on screen");
     assert.equal(mode.session.agent.followUpQueue.messages[0], other);
   });
@@ -453,6 +807,8 @@ if (!runtime) {
     const { InteractiveMode } = await import(`${pathToFileURL(interactivePath).href}?busy=${Date.now()}`);
     assert.equal(typeof InteractiveMode.prototype.__rubatoRememberBusyEnter, "function");
     assert.equal(typeof InteractiveMode.prototype.__rubatoPromoteBusyEnter, "function");
+    assert.equal(typeof InteractiveMode.prototype.__rubatoRecallLatestPending, "function");
+    assert.match(InteractiveMode.prototype.setupKeyHandlers.toString(), /installPendingRecall/);
     const source = InteractiveMode.prototype.setupEditorSubmitHandler.toString();
     assert.match(source, /streamingBehavior: "followUp"/);
     assert.match(source, /queueCompactionSubmission\(text, "followUp"\)/);
