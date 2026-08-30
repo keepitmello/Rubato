@@ -17,16 +17,17 @@ const body = "# Working agreement\nYou are on rubato.";
 
 function loaders(extra = {}) {
   return {
-    loadRolePrompt: (role) => (promptNameForRole(role) === "lead.pi.md" ? body : `${body}\nteammate`),
+    loadRolePrompt: (role) => `${body}\n${promptNameForRole(role)}`,
     skillsSection: () => "The following skills provide specialized instructions for specific tasks.\n<available_skills>\n  <skill><name>demo</name></skill>\n</available_skills>",
     ...extra,
   };
 }
 
-test("lead prompt is lead.pi.md, teammates share teammate.pi.md", () => {
+test("lead, teammates, and assigned agents receive their role prompt", () => {
   assert.equal(promptNameForRole("lead"), "lead.pi.md");
   assert.equal(promptNameForRole("owner"), "teammate.pi.md");
   assert.equal(promptNameForRole("verifier"), "teammate.pi.md");
+  assert.equal(promptNameForRole("agent"), "agent.pi.md");
 });
 
 test("current model identity is stated in the system prompt", () => {
@@ -127,7 +128,7 @@ test("a listing already in the prompt is not doubled", () => {
 });
 
 test("every role gets the shared tool guidelines and not Senpi's body", () => {
-  for (const role of ["lead", "owner", "verifier"]) {
+  for (const role of ["lead", "owner", "verifier", "agent"]) {
     const next = replaceSystemPrompt("legacy optimized prompt\n## Intent Gate\n> I read this as", role, loaders());
     assert.match(next, /## Tool Guidelines/);
     assert.ok(next.includes(TOOL_GUIDELINES));

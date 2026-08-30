@@ -5,22 +5,22 @@ description: "서브에이전트·팀원·검증자 모델을 고를 때 읽는 
 
 # Model Guide
 
-Choose an Agent's model by the work's dominant bottleneck, not by phase labels or permanent job titles. This guide has two layers: cognitive profiles that are durable across model generations, and an operational note pinned to a date that you replace when the catalog changes.
+Choose an Agent's model by the work's dominant bottleneck. Treat phase labels and permanent job titles as context around that choice. This guide has two layers: cognitive profiles that are durable across model generations, and an operational note pinned to a date that you replace when the catalog changes.
 
-Evidence base: `/Users/wy/Github-repos/rubato-lab/research/2026-08-20-model-cognition-column.md` — read it when revising this skill, not during a run.
+Evidence base: `/Users/wy/Github-repos/rubato-lab/research/2026-08-20-model-cognition-column.md` — use it while revising this skill; normal runs use the mapping below.
 
 ## 1. Preserve outcome ownership
 
 An owner keeps a bounded outcome through investigation, implementation, retries, and local verification.
 
 - The model that proves a root cause normally patches it too.
-- Do not hand work from an investigator to a builder merely because the phase changed from diagnosis to implementation.
+- Keep the same owner from diagnosis through implementation when the outcome remains the same.
 - Hand off only when the remaining work is a clean, substantial outcome that can be specified without the original investigation context, and the new model's advantage outweighs rereading and translation cost.
 - For large repetitive rollout after a difficult diagnosis, prefer delegation under the original owner. Transfer full ownership only when the rollout is genuinely independent.
 
 ## 2. Cognitive profiles (durable)
 
-Frontier models are not one IQ ladder; they differ in which kind of uncertainty they handle well.
+Frontier models specialize in different kinds of uncertainty.
 
 | Profile | Core loop | Strongest at | Characteristic failure |
 |---|---|---|---|
@@ -43,27 +43,27 @@ Two convergers are not interchangeable: a hypothesis converger compresses the an
 
 Debugging is the case that tempts misrouting. The diagnosis is judgment, and judgment stays with the session that owns the outcome — lead and teammate alike. Default shape: a `grok` explorer maps the terrain and gathers evidence, the owner reasons to the root cause, and execution of the settled fix routes by breadth as usual. Hand a debugging workstream to an Agent only when it is genuinely separable and runs parallel to other work; review it with the other model family.
 
-## 3. Current catalog mapping (operational — verify against the live catalog)
+## 3. Semantic category mapping
 
-Pinned 2026-08-29. Names are replaceable mappings, not universal claims.
+Choose the cognitive profile; the harness chooses the live provider/model.
+Rubato's semantic categories own provider preference, catalog admission, and
+configured runtime fallback.
 
-Resolve the model at spawn time, in this order:
+Route in this order:
 
-1. Determine the main session's current model then, not the model it started with; it may have changed during the session.
+1. Determine the main session's current model family then, not the family it started with; it may have changed during the session.
 2. Choose the cognitive profile and, for an independent verifier, a different model family from the artifact's producer.
-3. Read the live catalog and copy the exact model id from it. Never reuse an id from memory or from an earlier lookup in the same session: catalog ids age faster than conversational context.
-4. A catalog entry proves only that the model is listed. Send one real call and require a successful response before relying on it.
-5. For a `task` agent using **Sol or Opus**, probe the equivalent `kiro/*` model first. This Kiro preference applies only to Sol and Opus. For **Grok**, prefer Cursor Fast over xAI. If the preferred route answers, use it to conserve other providers' quota; fall back only when it is unavailable or fails the probe.
-6. For a `task` spawn, pass only `prompt` and `model: "<live-catalog-id>"` as the target. Do not add a category or subagent persona: those are preset compatibility paths, while an exact model already fully selects the Agent. Team rosters expose categories rather than model ids, so these provider preferences apply where the rail permits an exact model choice.
+3. Pass the corresponding semantic `category` to `task` or `team_create`. The runtime resolves it against the live catalog, admits the selected route, and carries ordered fallbacks into the child.
+4. Use an exact `model` when provider/model identity itself is a requirement. That explicit choice selects the requested route directly.
 
-Say in one line which model the agent runs on.
+Say in one line which category the agent runs on; report the resolved model when the runtime returns it.
 
-**Default worker is Grok 4.6 Fast.** An owner dispatches it for settled execution across files and tools (`task`). Pick Sol or Opus as an Agent only when one of the exceptions below applies — not because the work looks important or has a diagnosis step.
+**Default worker is Grok 4.6 Fast.** An owner dispatches it for settled execution across files and tools (`task`). Pick Sol or Opus as an Agent when the dominant bottleneck matches the profiles below.
 
-- **Fable 5** — problem framer. Optional framing and human-outcome review before execution or at a rare alignment gate; do not create a standing Fable teammate by default.
+- **Fable 5** — problem framer. Use for focused framing and human-outcome review before execution or at a rare alignment gate.
 - **Opus 5** — structurer. Default **lead** and default **owner**. Spawn as an Agent only when the dominant bottleneck is cross-stream architecture, contracts, or integration.
 - **GPT-5.6 Sol** — hypothesis converger. Default **verifier**, and the supervisor when the owner is stuck. Give Sol ownership only when the proof itself is the deliverable.
-- **Grok 4.6 Fast** — action converger. **Default worker** an owner dispatches. Prefer the Cursor Fast id from the live catalog (`cursor/cursor-grok-4.6` on rubato; picker label `grok-4.6-fast`). Fall back to xAI `xai/grok-4.6` only when Cursor Fast is missing or the probe fails. A `task` Agent.
+- **Grok 4.6 Fast** — action converger. **Default worker** an owner dispatches through category `grok`. A `task` Agent.
 
 Verifier defaults when an independent check is worth the cost:
 
@@ -80,7 +80,7 @@ Defaults, not mandatory pairings. A clear low-risk task may use owner self-verif
 - Unclear root cause → the owner diagnoses from a `grok` map; only a genuinely separable, parallel debugging workstream gets an Agent owner, and that owner is Opus.
 - Product or UX uncertainty → framing before execution, then the chosen owners.
 
-Do not build a four-model org chart just because all models are available.
+Build the smallest roster that gives each distinct bottleneck one clear owner.
 
 ## Scope
 

@@ -12,7 +12,7 @@ const { formatSkillsForPrompt, loadSkillsFromDir } = await import(senpiSkills);
 // launch.mjs hands Senpi a finished `--system-prompt`, which is what keeps the
 // stock Senpi prompt from ever standing up. The cost is that Senpi never gets
 // the chance to add its own skill section, so a session could not see which
-// skills exist — only the two named in the contract-skills message. Dropping
+// optional skills exist. Dropping
 // the `--system-prompt` flag would hand that job back to Senpi and let the
 // stock prompt through, so we read the same directories through Senpi's own
 // loader and format the section with Senpi's own formatter.

@@ -13,10 +13,10 @@
 | Owner-local delegation | the member process re-registers the task engine so it can spawn its own non-member helpers |
 | Parallel spawn | `task` / `team_create` with `run_in_background`; wait with `task_output`, never a sleep loop |
 
-The system prompt is replaced, not appended: lead gets `~/.agents/rubato/.build/lead.md` plus Skill(dispatching), teammates get `teammate.md` plus Skill(dispatched). Runtime default prompts are dropped. Model calls go through the existing Rubato broker at `:8788` — do not use Senpi `/login` OAuth. `RUBATO_PI_ROLE=owner|verifier` wins; a member env without that role is treated as owner. Verifier writes are not blocked.
+The role build owns the whole system prompt. Lead gets `lead.md`; owners and verifiers get `teammate.md`; both prompts carry the shared brief-receiving and brief-writing contract. A plain `task` Agent gets `agent.md`, which carries the receive-and-return contract. Model calls authenticate through the existing Rubato broker at `:8788`, including `/login`. `RUBATO_PI_ROLE=owner|verifier` wins; a member env without that role is treated as owner. Verifiers retain write tools.
 
-`worktreePath` is a real `git worktree add`, not `mkdir`. Done evidence and budget return live in task `metadata`.
+`worktreePath` provisions a real worktree with `git worktree add`. Done evidence and budget return live in task `metadata`.
 
-**Confirm where a model id actually lands before you staff it.** A catalog listing is not a live model. An independent verifier that silently shares the owner's model is not independent.
+Choose a semantic category when you staff a role. The harness resolves its live provider, admission, and fallback chain; use the resolved model in task status to confirm that an independent verifier lands on a different family from the owner.
 
-Launcher: `harness/scripts/rubato-pi.sh` (`rubato` / `rubato-pi`). State: `~/.rubato-pi/agent`. A one-off `task` child needs no approval; show the user a role+model roster and wait for yes in chat before `team_create`. `/login` is the broker. TUI `Tip:` lines are off. `/changelog` is removed. `team_create` category is a model short name (`grok`/`sol`/`opus`).
+Launcher: `harness/scripts/rubato-pi.sh` (`rubato` / `rubato-pi`). State: `~/.rubato-pi/agent`. One-off `task` Agents are available at the owner's discretion; show the user a role+category roster and wait for yes in chat before `team_create`. `/login` uses the broker. The TUI keeps `Tip:` lines and `/changelog` outside this surface. `task` and `team_create` categories are model short names (`grok`/`sol`/`opus`).

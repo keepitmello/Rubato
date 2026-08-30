@@ -67,7 +67,7 @@ function setupFixture({ dirty = false, conflict = false, evidence = false, decoy
   cpSync(SCRIPT_SRC, scriptDest);
   chmodSync(scriptDest, 0o755);
   write(join(seed, "harness/prompts/base.pi.md"), "base\n");
-  write(join(seed, "harness/prompts/build.sh"), "#!/bin/sh\nmkdir -p \"$(dirname \"$0\")/.build\"\nprintf built > \"$(dirname \"$0\")/.build/lead.pi.md\"\nprintf built > \"$(dirname \"$0\")/.build/teammate.pi.md\"\n");
+  write(join(seed, "harness/prompts/build.sh"), "#!/bin/sh\nmkdir -p \"$(dirname \"$0\")/.build\"\nprintf built > \"$(dirname \"$0\")/.build/lead.pi.md\"\nprintf built > \"$(dirname \"$0\")/.build/teammate.pi.md\"\nprintf built > \"$(dirname \"$0\")/.build/agent.pi.md\"\n");
   chmodSync(join(seed, "harness/prompts/build.sh"), 0o755);
   write(join(seed, "install.sh"), "#!/bin/sh\nexit 0\n");
   chmodSync(join(seed, "install.sh"), 0o755);

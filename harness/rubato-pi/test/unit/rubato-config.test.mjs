@@ -1,18 +1,32 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { DISABLED_AGENT_NAMES, DISABLED_CATEGORY_NAMES, MODEL_CATEGORIES } from "../../src/defaults.mjs";
+import { DISABLED_AGENT_NAMES, DISABLED_CATEGORY_NAMES, MODEL_CATEGORIES, MODEL_CATEGORY_CHAINS } from "../../src/defaults.mjs";
 import { loadRubatoPiRubatoConfig, pinMemoryJobsToGrok } from "../../src/rubato-config.mjs";
 
 test("task config maps model names and disables inactive category routing", () => {
   const { config } = loadRubatoPiRubatoConfig();
   assert.equal(MODEL_CATEGORIES.grok, "cursor/cursor-grok-4.6");
   assert.equal(config.models, undefined);
-  for (const [name, model] of Object.entries(MODEL_CATEGORIES)) {
-    assert.deepEqual(config.categories[name], { model });
+  for (const [name, models] of Object.entries(MODEL_CATEGORY_CHAINS)) {
+    assert.deepEqual(config.categories[name], { models });
   }
   for (const name of DISABLED_CATEGORY_NAMES) {
     assert.deepEqual(config.categories[name], { disable: true });
   }
+});
+
+test("semantic categories own ordered provider preference and fallback", () => {
+  assert.deepEqual(MODEL_CATEGORY_CHAINS.grok, [
+    "cursor/cursor-grok-4.6",
+  ]);
+  assert.deepEqual(MODEL_CATEGORY_CHAINS.opus, [
+    "kiro/claude-opus-5",
+    "anthropic/claude-opus-5",
+  ]);
+  assert.deepEqual(MODEL_CATEGORY_CHAINS.sol, [
+    "kiro/gpt-5.6-sol",
+    "openai-codex/gpt-5.6-sol",
+  ]);
 });
 
 test("inactive agents this harness does not route are disabled", () => {
@@ -26,8 +40,8 @@ test("inactive agents this harness does not route are disabled", () => {
 test("memory pin leaves absent settings to the memory schema and reopens quick as grok-only", () => {
   const pinned = pinMemoryJobsToGrok(loadRubatoPiRubatoConfig());
   assert.equal(pinned.config.memory, undefined);
-  assert.deepEqual(pinned.config.categories.grok, { model: MODEL_CATEGORIES.grok });
-  assert.deepEqual(pinned.config.categories.quick, { models: [MODEL_CATEGORIES.grok] });
+  assert.deepEqual(pinned.config.categories.grok, { models: MODEL_CATEGORY_CHAINS.grok });
+  assert.deepEqual(pinned.config.categories.quick, { models: MODEL_CATEGORY_CHAINS.grok });
   assert.equal(pinned.config.categories.quick.disable, undefined);
 });
 
@@ -43,5 +57,5 @@ test("memory pin keeps user memory keys and overwrites only the reflection categ
   assert.deepEqual(pinned.config.memory.project, []);
   assert.equal(pinned.config.memory.reflection.timeout_minutes, 20);
   assert.equal(pinned.config.memory.reflection.category, "grok");
-  assert.deepEqual(pinned.config.categories.quick, { models: [MODEL_CATEGORIES.grok] });
+  assert.deepEqual(pinned.config.categories.quick, { models: MODEL_CATEGORY_CHAINS.grok });
 });
