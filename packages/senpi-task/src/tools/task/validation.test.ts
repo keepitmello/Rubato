@@ -434,4 +434,16 @@ describe("resolveSpawnItems category model overrides", () => {
     if (result.kind !== "ok") throw new Error("expected ok")
     expect(result.items[0]?.model).toBe("openai/gpt-5.6-sol")
   })
+
+  test("#given top-level reasoning and one item override #then each child keeps its effective effort", () => {
+    const result = resolveSpawnItems({
+      category: "quick",
+      reasoning: "medium",
+      tasks: [{ prompt: "one" }, { prompt: "two", reasoning: "xhigh" }],
+    })
+
+    expect(result.kind).toBe("ok")
+    if (result.kind !== "ok") throw new Error("expected ok")
+    expect(result.items.map((item) => item.reasoning)).toEqual(["medium", "xhigh"])
+  })
 })

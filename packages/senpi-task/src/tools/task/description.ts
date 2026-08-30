@@ -53,7 +53,7 @@ export function buildTaskToolDescription(input: DescriptionInput): string {
   const modelNote = `category is the default semantic target when one matches the work; the harness resolves its live provider and runtime fallback chain.
   CORRECT: task(category="grok", prompt="...")
   model is an explicit override for work that requires a specific provider/model identity: task(model="kiro/claude-opus-5", prompt="...").${hasAgentRoute ? "\n  subagent_type invokes a loaded agent persona and is separate from semantic category routing." : ""}`
-  const batchLine = "- Batch: tasks (1-16 items); top-level category, model, subagent type, and skills are inherited when an item omits them."
+  const batchLine = "- Batch: tasks (1-16 items); top-level category, model, subagent type, reasoning, and skills are inherited when an item omits them."
   return `Spawn one child task or fan out a batch.
 
 Choose exactly one input form:
@@ -67,6 +67,7 @@ ${renderCategoryList(categories)}${plainAgentLine}${gatedLine}
 
 Blank provider padding is normalized automatically; do not add filler values.
 load_skills prepends named skills. run_in_background defaults to true: the spawn returns task ids immediately and completion arrives as a notification. Pass run_in_background=false to block this turn until the child finishes.
+reasoning optionally overrides the child effort; omitted values use the route configuration or the model-specific default.
 ${modelNote}
 task_send continues an existing child; task always spawns.
 Prompts MUST be in English.`

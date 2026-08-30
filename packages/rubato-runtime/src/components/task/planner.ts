@@ -36,18 +36,18 @@ export function createTaskChildPlanner(
   return (spec): PlanResolution => {
     if (spec.subagent_type !== undefined) {
       const agentResolution = resolveAgentTarget(spec.subagent_type, spec.model, agents, resolveRegistry)
-      if (agentResolution !== undefined) return agentResolution
+      if (agentResolution !== undefined) return withReasoningPolicy(agentResolution, spec.reasoning)
     }
 
     if (spec.category === undefined && spec.subagent_type === undefined && spec.model !== undefined && spec.model.length > 0) {
       const resolvedModel = explicitModelMetadata(spec.model)
-      return {
+      return withReasoningPolicy({
         kind: "resolved",
         plan: {
           model: spec.model,
           ...(resolvedModel !== undefined ? { resolved_model: resolvedModel } : {}),
         },
-      }
+      }, spec.reasoning)
     }
 
     const categoryName = spec.category ?? spec.subagent_type
@@ -69,13 +69,45 @@ export function createTaskChildPlanner(
       registry,
       spec.model !== undefined && spec.model.length > 0 ? { modelOverride: spec.model } : {},
     )
-    return toPlanResolution(
+    return withReasoningPolicy(toPlanResolution(
       categoryName,
       resolution,
       availableAgents,
       spec.model !== undefined ? explicitModelMetadata(spec.model) : undefined,
-    )
+    ), spec.reasoning)
   }
+}
+
+function withReasoningPolicy(resolution: PlanResolution, reasoning: string | undefined): PlanResolution {
+  if (resolution.kind !== "resolved") return resolution
+  const { plan } = resolution
+  const appliedReasoning = reasoning ?? plan.variant ?? defaultReasoningForModel(plan.model)
+  if (appliedReasoning === undefined || (reasoning === undefined && plan.variant !== undefined)) return resolution
+  const apply = (model: ResolvedModelMetadata, effort = appliedReasoning): ResolvedModelMetadata => ({
+    ...model,
+    reasoning: effort,
+    reasoning_effort: effort,
+  })
+  return {
+    kind: "resolved",
+    plan: {
+      ...plan,
+      ...(plan.resolved_model !== undefined ? { resolved_model: apply(plan.resolved_model) } : {}),
+      ...(reasoning !== undefined && plan.requested_model !== undefined ? { requested_model: apply(plan.requested_model) } : {}),
+      ...(reasoning !== undefined && plan.fallback_models !== undefined
+        ? { fallback_models: plan.fallback_models.map((model) => apply(model)) }
+        : {}),
+      variant: appliedReasoning,
+    },
+  }
+}
+
+function defaultReasoningForModel(model: string): string | undefined {
+  const modelId = model.slice(model.indexOf("/") + 1).toLowerCase()
+  if (modelId.startsWith("gpt-5.6-sol")) return "medium"
+  if (modelId.startsWith("claude-opus-5") || modelId.startsWith("claude-fable-5")) return "high"
+  if (/(?:^|-)grok-4\.6(?:-|$)/.test(modelId)) return "high"
+  return undefined
 }
 
 // Agent-first target handling. Unknown and disabled names may retain category fallback, but a known
