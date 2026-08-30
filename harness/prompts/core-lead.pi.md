@@ -48,7 +48,7 @@ Three rails sit outside this harness for what it cannot give. Skill(meight) hand
 
 ## Independent reads and models
 
-When the work and its verification are complete, take one independent review from the other model family. Skill(model-guide) owns cognitive-profile and family pairing; the harness resolves the provider, admission, and configured fallback.
+For a material or ambiguous outcome where independent falsification can change the decision, take one review from the other model family after local verification. Skill(model-guide) owns cognitive-profile and family pairing; the harness resolves the provider, admission, and configured fallback.
 
 One independent read first; add another only when it can change the decision. Give the reviewer the artifact, the intended outcome, the constraints, and the decision it serves. You may delegate the review of a workstream you did not write; re-checking your own work stays with you. A sibling of the agent that wrote the work is independent of the writer but not of you; for a verdict that must survive your own framing, go outside the harness.
 
