@@ -2,6 +2,7 @@ const MARKER = "rubato.busyEnter.injected";
 const INSTALLED = Symbol.for("rubato.busyEnter.installed");
 const TRACKED = Symbol.for("rubato.busyEnter.tracked");
 const PARTS = Symbol.for("rubato.busyEnter.parts");
+const RECALL_INSTALLED = Symbol.for("rubato.busyEnter.recallInstalled");
 
 // 예전에는 이 문구를 showStatus 로 띄웠다. 그 자리는 chatContainer 안이라
 // 사고 블록과 같은 dim 색으로 그려지고, 턴이 진행되면 위로 밀려 올라갔다.
@@ -55,7 +56,7 @@ export function injectBusyEnter(source, href = busyEnterHref()) {
   return `${next}
 // ${MARKER}
 const { installBusyEnter: __rubatoInstallBusyEnter } = await import(${JSON.stringify(href)});
-__rubatoInstallBusyEnter(InteractiveMode.prototype, { Spacer, TruncatedText, theme });
+__rubatoInstallBusyEnter(InteractiveMode.prototype, { Spacer, TruncatedText, matchesKey, theme });
 `;
 }
 
@@ -66,50 +67,208 @@ function agentMessageText(message) {
   return content.filter((part) => part?.type === "text").map((part) => part.text ?? "").join("");
 }
 
-function locateFreshFollowUp(mode, text) {
+function agentMessageImages(message) {
+  return Array.isArray(message?.content)
+    ? message.content.filter((part) => part?.type === "image")
+    : [];
+}
+
+function nativeImageRecallPlan(mode, candidate) {
+  const images = agentMessageImages(candidate.message);
+  if (images.length === 0) return { images, markerState: undefined };
+  const editor = mode.editor;
+  if (!(mode.pendingImages instanceof Map) ||
+      typeof editor?.setImageMarkerState !== "function" ||
+      typeof editor?.restoreAttachmentState !== "function") return undefined;
+  const ids = [...candidate.text.matchAll(/\[Image #([1-9]\d*)\]/g)]
+    .map((match) => Number.parseInt(match[1], 10));
+  const canonical = ids.length === images.length &&
+    ids.every((id, index) => id === index + 1);
+  if (!canonical) return undefined;
+  return { images, markerState: { ids, imageCounter: ids.length } };
+}
+
+function restoreCandidateToEditor(mode, candidate) {
+  const editor = mode.editor;
+  if (candidate.kind !== "native") {
+    editor?.setText?.(candidate.text);
+    return true;
+  }
+  const plan = nativeImageRecallPlan(mode, candidate);
+  if (!plan) return false;
+  editor?.setText?.(candidate.text);
+  if (plan.markerState) {
+    editor.setImageMarkerState(plan.markerState);
+    editor.restoreAttachmentState(new Map(plan.images.map((image, index) => [index + 1, image])));
+  }
+  return true;
+}
+
+function locateFreshFollowUp(mode) {
   if (mode.session?.isCompacting) {
-    const queued = mode.compactionQueuedMessages;
-    if (!Array.isArray(queued)) return undefined;
-    for (let i = queued.length - 1; i >= 0; i -= 1) {
-      const item = queued[i];
-      if (item?.mode === "followUp") return { kind: "compaction", message: item, text: item.text };
-    }
+    const message = mode.compactionQueuedMessages?.at(-1);
+    return message?.mode === "followUp"
+      ? { kind: "compaction", message, text: message.text, enqueueOrder: message.enqueueOrder }
+      : undefined;
+  }
+  const session = mode.session;
+  const message = session?.agent?.followUpQueue?.messages?.at(-1);
+  const record = session?._queuedInputOrder?.at(-1);
+  const visibleIndex = session?._followUpMessages?.length - 1;
+  if (!message || record?.mode !== "followUp" ||
+      record.text !== agentMessageText(message) || session._followUpMessages?.[visibleIndex] !== record.text) {
     return undefined;
   }
-  const messages = mode.session?.agent?.followUpQueue?.messages;
-  if (!Array.isArray(messages) || messages.length === 0) return { kind: "native", text };
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const message = messages[i];
-    if (agentMessageText(message) === text) return { kind: "native", message, text };
+  return {
+    kind: "native",
+    message,
+    record,
+    text: record.text,
+    enqueueOrder: record.enqueueOrder,
+  };
+}
+
+export function rememberBusyEnter(mode) {
+  mode[TRACKED] = locateFreshFollowUp(mode);
+  mode.updatePendingMessagesDisplay?.();
+}
+
+function isSubsequence(needles, haystack) {
+  let next = 0;
+  for (const value of haystack) {
+    if (value === needles[next]) next += 1;
   }
-  return { kind: "native", message: messages[messages.length - 1], text };
+  return next === needles.length;
 }
 
 /**
- * 세션 장부에 적힐 문자열은 우리가 받은 생텍스트가 아니라 **큐에 실제로 들어간**
- * 문자열이다. `prompt()` 은 스킬·템플릿을 펼친 뒤(`expandedText`) 큐에 넣기 때문에,
- * `/template args` 같은 입력은 원본과 큐 안의 값이 다르다. 원본으로 장부를
- * 짐지하면 followUp 쪽은 안 지워지고 steer 쪽에 유령이 남는다.
+ * 실제 Agent 큐에는 표시 장부가 없는 extension/custom 메시지도 섞일 수 있다.
+ * tracked 객체의 현재 큐 위치를 기준으로, 표시 문자열 전체와 모순 없이 대응하는
+ * 행이 하나뿐일 때만 그 행을 돌려준다. 앞 항목이 배달되어 인덱스가 당겨져도
+ * 매번 다시 계산하고, 같은 문자열 때문에 대응이 모호하면 안전하게 회수하지 않는다.
  */
-function trackedText(tracked) {
-  if (!tracked) return undefined;
-  if (tracked.kind === "compaction") return tracked.message?.text ?? tracked.text;
-  const fromMessage = tracked.message ? agentMessageText(tracked.message) : "";
-  return fromMessage || tracked.text;
+function visibleIndexForQueuedMessage(queue, queueIndex, visible) {
+  const queueText = queue.map(agentMessageText);
+  const target = queueText[queueIndex];
+  const matches = [];
+  for (let visibleIndex = 0; visibleIndex < visible.length; visibleIndex += 1) {
+    if (visible[visibleIndex] !== target) continue;
+    const prefixMatches = isSubsequence(
+      visible.slice(0, visibleIndex),
+      queueText.slice(0, queueIndex),
+    );
+    const suffixMatches = isSubsequence(
+      visible.slice(visibleIndex + 1),
+      queueText.slice(queueIndex + 1),
+    );
+    if (prefixMatches && suffixMatches) matches.push(visibleIndex);
+  }
+  return matches.length === 1 ? matches[0] : -1;
 }
 
-export function rememberBusyEnter(mode, text) {
-  mode[TRACKED] = locateFreshFollowUp(mode, text) ?? { kind: "native", text };
-  // showStatus 는 부르지 않는다. 안내문구는 아래 대기열 블록이 직접 그린다.
+function trackedCandidate(mode) {
+  const tracked = mode[TRACKED];
+  if (!tracked) return undefined;
+  if (tracked.kind === "compaction") {
+    const index = mode.compactionQueuedMessages?.indexOf(tracked.message) ?? -1;
+    return index === -1 ? undefined : { ...tracked, index };
+  }
+  const session = mode.session;
+  const recordIndex = session?._queuedInputOrder?.indexOf(tracked.record) ?? -1;
+  const modeName = tracked.record?.mode;
+  const queue = modeName === "steer"
+    ? session?.agent?.steeringQueue?.messages
+    : session?.agent?.followUpQueue?.messages;
+  const visible = modeName === "steer" ? session?._steeringMessages : session?._followUpMessages;
+  const queueIndex = queue?.indexOf(tracked.message) ?? -1;
+  const visibleIndex = Array.isArray(queue) && Array.isArray(visible)
+    ? visibleIndexForQueuedMessage(queue, queueIndex, visible)
+    : -1;
+  if (recordIndex === -1 || queueIndex === -1 || !Array.isArray(visible) ||
+      visible[visibleIndex] !== tracked.record.text) return undefined;
+  return {
+    ...tracked,
+    text: tracked.record.text,
+    mode: modeName,
+    recordIndex,
+    queue,
+    queueIndex,
+    visible,
+    visibleIndex,
+  };
+}
+
+function newestVisibleOrder(mode) {
+  const orders = [
+    ...(mode.session?._queuedInputOrder ?? []).map((record) => record?.enqueueOrder),
+    ...(mode.compactionInFlightMessages ?? []).map((message) => message?.enqueueOrder),
+    ...(mode.compactionQueuedMessages ?? []).map((message) => message?.enqueueOrder),
+  ].filter(Number.isFinite);
+  return orders.length > 0 ? Math.max(...orders) : undefined;
+}
+
+function recallableTracked(mode) {
+  const candidate = trackedCandidate(mode);
+  if (!candidate || candidate.enqueueOrder !== newestVisibleOrder(mode)) return undefined;
+  if (candidate.kind === "native" && nativeImageRecallPlan(mode, candidate) === undefined) return undefined;
+  return candidate;
+}
+
+export function recallLatestPending(mode) {
+  const session = mode.session;
+  if (!session?.isStreaming && !session?.isCompacting) return undefined;
+  const candidate = recallableTracked(mode);
+  if (!candidate || !restoreCandidateToEditor(mode, candidate)) return undefined;
+
+  if (candidate.kind === "compaction") {
+    mode.compactionQueuedMessages.splice(candidate.index, 1);
+    if (candidate.message.pendingEchoId) {
+      mode.optimisticUserEchoes?.remove?.(candidate.message.pendingEchoId);
+    }
+  } else {
+    candidate.queue.splice(candidate.queueIndex, 1);
+    candidate.visible.splice(candidate.visibleIndex, 1);
+    session._queuedInputOrder.splice(candidate.recordIndex, 1);
+    session._emitQueueUpdate?.();
+  }
+  mode[TRACKED] = undefined;
   mode.updatePendingMessagesDisplay?.();
+  mode.ui?.requestRender?.();
+  return candidate.text;
+}
+
+export function handlePendingRecallKey(mode, data, fallback) {
+  const editor = mode.defaultEditor;
+  const physicalMatcher = mode[PARTS]?.matchesKey;
+  const isPlainUp = physicalMatcher
+    ? physicalMatcher(data, "up")
+    : mode.keybindings?.matches?.(data, "tui.editor.cursorUp");
+  const canRecall = mode.editor === editor &&
+    (mode.session?.isStreaming || mode.session?.isCompacting) &&
+    editor?.getText?.() === "" &&
+    !editor?.isShowingAutocomplete?.() &&
+    isPlainUp;
+  if (canRecall && recallLatestPending(mode) !== undefined) return;
+  return fallback();
+}
+
+function installPendingRecall(mode) {
+  const editor = mode.defaultEditor;
+  if (!editor || editor[RECALL_INSTALLED] || typeof editor.handleInput !== "function") return;
+  const original = editor.handleInput;
+  editor.handleInput = function handleInput(data) {
+    return handlePendingRecallKey(mode, data, () => original.call(this, data));
+  };
+  editor[RECALL_INSTALLED] = true;
 }
 
 /** 지금 추적 중인 메시지가 이미 스티어링으로 올라갔는가. */
 function trackedIsSteering(mode) {
   const tracked = mode[TRACKED];
   if (!tracked) return false;
-  if (tracked.kind === "compaction") return tracked.message?.mode === "steer";
-  return tracked.promoted === true;
+  return tracked.kind === "compaction"
+    ? tracked.message?.mode === "steer"
+    : tracked.record?.mode === "steer";
 }
 
 /**
@@ -117,18 +276,7 @@ function trackedIsSteering(mode) {
  * 어느 쪽으로 갈지를 그대로 적는다.
  */
 export function busyEnterHint(mode) {
-  const tracked = mode[TRACKED];
-  if (!tracked) return undefined;
-  // 플래그만 믿지 않는다 — 추적하던 메시지가 이미 배달되어 빠졌으면
-  // 누르나마나 아무 일도 안 일어난다. 그럴 땐 문구를 아예 안 보여준다.
-  if (tracked.kind === "compaction") {
-    const queued = mode.compactionQueuedMessages;
-    if (!Array.isArray(queued) || queued.indexOf(tracked.message) === -1) return undefined;
-  } else {
-    const agent = mode.session?.agent;
-    const queue = tracked.promoted ? agent?.steeringQueue?.messages : agent?.followUpQueue?.messages;
-    if (!Array.isArray(queue) || queue.indexOf(tracked.message) === -1) return undefined;
-  }
+  if (!trackedCandidate(mode)) return undefined;
   return trackedIsSteering(mode) ? BUSY_ENTER_STEER_STATUS : BUSY_ENTER_STATUS;
 }
 
@@ -140,69 +288,41 @@ export function promoteBusyEnter(mode) {
   const session = mode.session;
   if (!session?.isStreaming && !session?.isCompacting) return;
   const tracked = mode[TRACKED];
-  if (!tracked) return;
+  const candidate = trackedCandidate(mode);
+  if (!tracked || !candidate) {
+    mode[TRACKED] = undefined;
+    mode.updatePendingMessagesDisplay?.();
+    return;
+  }
 
   if (tracked.kind === "compaction") {
-    const queued = mode.compactionQueuedMessages;
-    const message = tracked.message;
-    if (!Array.isArray(queued) || !message || queued.indexOf(message) === -1) {
-      mode[TRACKED] = undefined;
-      return;
-    }
-    message.mode = message.mode === "steer" ? "followUp" : "steer";
+    tracked.message.mode = tracked.message.mode === "steer" ? "followUp" : "steer";
     mode.updatePendingMessagesDisplay?.();
     return;
   }
 
-  const agent = session.agent;
-  const message = tracked.message;
-  if (!message) {
-    mode[TRACKED] = undefined;
-    return;
-  }
-  const toSteer = !tracked.promoted;
-  const from = toSteer ? agent?.followUpQueue?.messages : agent?.steeringQueue?.messages;
-  const to = toSteer ? agent?.steeringQueue?.messages : agent?.followUpQueue?.messages;
-  const index = Array.isArray(from) ? from.indexOf(message) : -1;
-  if (index === -1) {
-    // 이미 빠져나갔다 — 돌릴 대상이 없으므로 추적만 끊는다.
-    mode[TRACKED] = undefined;
-    mode.updatePendingMessagesDisplay?.();
-    return;
-  }
-  from.splice(index, 1);
+  const toSteer = candidate.mode === "followUp";
+  const destination = toSteer
+    ? session.agent?.steeringQueue?.messages
+    : session.agent?.followUpQueue?.messages;
+  const destinationVisible = toSteer ? session._steeringMessages : session._followUpMessages;
+  if (!Array.isArray(destination) || !Array.isArray(destinationVisible)) return;
 
-  const text = trackedText(tracked);
-  const fromMode = toSteer ? "followUp" : "steer";
-  const toMode = toSteer ? "steer" : "followUp";
-  const fromList = toSteer ? session._followUpMessages : session._steeringMessages;
-  const toList = toSteer ? session._steeringMessages : session._followUpMessages;
-  if (Array.isArray(fromList)) {
-    const listIndex = fromList.lastIndexOf(text);
-    if (listIndex !== -1) fromList.splice(listIndex, 1);
-  }
-  const order = session._queuedInputOrder?.find((item) => item.mode === fromMode && item.text === text);
-  session._removeQueuedInput?.(text, fromMode);
-  const enqueueOrder = order?.enqueueOrder ?? tracked.enqueueOrder;
-  // 돌아갈 때는 원래 자리로 돌려놓는다. 그냥 append 하면 뒤에 쌓인 다른
-  // follow-up 보다 늦게 배달되어 사용자가 친 순서가 바뀜다.
+  candidate.queue.splice(candidate.queueIndex, 1);
+  candidate.visible.splice(candidate.visibleIndex, 1);
+  tracked.record.mode = toSteer ? "steer" : "followUp";
   if (toSteer) {
-    tracked.followUpIndex = index;
-    agent.steer(message);
-  } else if (Array.isArray(to)) {
-    const back = Math.min(tracked.followUpIndex ?? to.length, to.length);
-    to.splice(back, 0, message);
+    tracked.followUpIndex = candidate.queueIndex;
+    tracked.followUpVisibleIndex = candidate.visibleIndex;
+    session.agent.steer(tracked.message);
+    destinationVisible.push(tracked.text);
   } else {
-    agent.followUp(message);
+    const queueIndex = Math.min(tracked.followUpIndex, destination.length);
+    const visibleIndex = Math.min(tracked.followUpVisibleIndex, destinationVisible.length);
+    destination.splice(queueIndex, 0, tracked.message);
+    destinationVisible.splice(visibleIndex, 0, tracked.text);
   }
-  if (Array.isArray(toList)) {
-    if (toSteer) toList.push(text);
-    else toList.splice(Math.min(tracked.followUpIndex ?? toList.length, toList.length), 0, text);
-  }
-  session._recordQueuedInput?.(text, toMode, enqueueOrder);
   session._emitQueueUpdate?.();
-  tracked.enqueueOrder = enqueueOrder;
-  tracked.promoted = toSteer;
   mode.updatePendingMessagesDisplay?.();
 }
 
@@ -220,21 +340,24 @@ export function renderPendingMessages(mode, parts) {
   if (steering.length === 0 && followUp.length === 0) return true;
 
   if (Spacer) container.addChild(new Spacer(1));
-  const line = (label, message) => {
-    const tag = theme.fg("dim", `${label}: `);
-    const body = theme.fg("text", message);
-    container.addChild(new TruncatedText(tag + body, 1, 0));
+  const section = (heading, messages) => {
+    if (messages.length === 0) return;
+    container.addChild(new TruncatedText(theme.fg("dim", heading), 1, 0));
+    for (const message of messages) {
+      const indent = theme.fg("dim", "  └ ");
+      const body = theme.fg("text", message);
+      container.addChild(new TruncatedText(indent + body, 1, 0));
+    }
   };
-  for (const message of steering) line("Steering", message);
-  for (const message of followUp) line("Follow-up", message);
+  section("STEERING · current turn", steering);
+  section("NEXT TURN · follow-up", followUp);
 
-  const hint = busyEnterHint(mode);
-  if (hint) container.addChild(new TruncatedText(theme.fg("dim", `\u21b3 ${hint}`), 1, 0));
-  const dequeue = mode.getAppKeyDisplay?.("app.message.dequeue");
-  if (dequeue) {
-    container.addChild(
-      new TruncatedText(theme.fg("dim", `\u21b3 ${dequeue} to edit all queued messages`), 1, 0),
-    );
+  const hints = [];
+  if (recallableTracked(mode)) hints.push("↑ edit latest Enter input");
+  const toggleHint = busyEnterHint(mode);
+  if (toggleHint) hints.push(toggleHint);
+  if (hints.length > 0) {
+    container.addChild(new TruncatedText(theme.fg("dim", `  ${hints.join("  ·  ")}`), 1, 0));
   }
   return true;
 }
@@ -271,6 +394,17 @@ export function installBusyEnter(proto, parts) {
   proto.__rubatoPromoteBusyEnter = function promote() {
     promoteBusyEnter(this);
   };
+  proto.__rubatoRecallLatestPending = function recall() {
+    return recallLatestPending(this);
+  };
+  const originalSetupKeyHandlers = proto.setupKeyHandlers;
+  if (typeof originalSetupKeyHandlers === "function") {
+    proto.setupKeyHandlers = function setupKeyHandlers(...args) {
+      const result = originalSetupKeyHandlers.apply(this, args);
+      installPendingRecall(this);
+      return result;
+    };
+  }
   // 대기열 렌더러를 갈아끼운다. 부품이 안 넘어왔거나 모양이 바뀌었으면
   // renderPendingMessages 가 false 를 돌려주므로 upstream 원본으로 되돌아간다.
   const original = proto.updatePendingMessagesDisplay;
