@@ -11,7 +11,7 @@
 | Roster and runtime status | lead `team_*` tools; members also get board `task_list` / `task_get` / `task_update` from the rubato-pi adapter |
 | Shared task list | Rubato team tasklist on disk, with member claim/update in the adapter |
 | Owner-local delegation | the member process re-registers the task engine so it can spawn its own non-member helpers |
-| Parallel spawn | `task` / `team_create` with `run_in_background`; wait with `task_output`, never a sleep loop |
+| Parallel spawn | `task` / `team_create` with `run_in_background`; completion notifications deliver terminal results, and `task_output` reads an immediate midpoint snapshot |
 
 The role build owns the whole system prompt. Lead gets `lead.md`; owners and verifiers get `teammate.md`; both prompts carry the shared brief-receiving and brief-writing contract. A plain `task` Agent gets `agent.md`, which carries the receive-and-return contract. Model calls authenticate through the existing Rubato broker at `:8788`, including `/login`. `RUBATO_PI_ROLE=owner|verifier` wins; a member env without that role is treated as owner. Verifiers retain write tools.
 
