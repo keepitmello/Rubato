@@ -8,8 +8,8 @@ import type { TaskCategoryInfo } from "./types"
 export const TASK_PROMPT_SNIPPET = "Spawn one child or fan out a batch; use task_send to continue an existing child."
 
 export const TASK_PROMPT_GUIDELINES: readonly string[] = [
-  "Spawns run in the background by default and return a task id immediately; pass run_in_background=false only when this turn genuinely cannot continue without the child's result.",
-  "When overriding a category model, choose an exact provider/model id from the current session's /model catalog; the category still supplies the task persona.",
+  "Spawns run in the background by default and return a task id immediately; pass run_in_background=false for a short synchronous dependency that blocks every useful action in the current turn.",
+  "Prefer a semantic category when one matches the work; the harness resolves its live provider, admission, and fallback chain. Use an exact model when provider/model identity itself is the requirement.",
   "Continue an existing child with task_send(to=\"st_...\", message=\"...\"); task always spawns.",
   "Use task_output for one midpoint status or transcript peek; use task_cancel to end a child.",
   "Pass task_summary (one line, <=80 chars) on every spawn: the user's footer/widget UI shows it instead of the raw prompt, so it should say WHAT was delegated.",
@@ -50,10 +50,10 @@ export function buildTaskToolDescription(input: DescriptionInput): string {
   const targetRule = hasAgentRoute
     ? "Each spawn MUST provide a model, category, or subagent_type after inheritance. category and subagent_type are mutually exclusive."
     : "Each spawn MUST provide a model or category after inheritance."
-  const modelNote = `model is the default target: pass an exact provider/model id from the current session's /model catalog with the prompt.
-  CORRECT: task(model="kiro/claude-opus-5", prompt="...")
-  ${hasAgentRoute ? "category and subagent_type are optional compatibility presets" : "category is an optional compatibility preset"}; when present, model overrides its configured model.`
-  const batchLine = "- Batch: tasks (1-16 items); top-level model, optional preset, and skills are inherited when an item omits them."
+  const modelNote = `category is the default semantic target when one matches the work; the harness resolves its live provider and runtime fallback chain.
+  CORRECT: task(category="grok", prompt="...")
+  model is an explicit override for work that requires a specific provider/model identity: task(model="kiro/claude-opus-5", prompt="...").${hasAgentRoute ? "\n  subagent_type invokes a loaded agent persona and is separate from semantic category routing." : ""}`
+  const batchLine = "- Batch: tasks (1-16 items); top-level category, model, subagent type, and skills are inherited when an item omits them."
   return `Spawn one child task or fan out a batch.
 
 Choose exactly one input form:
@@ -62,7 +62,7 @@ ${batchLine}
 
 ${targetRule}
 
-- category is an optional compatibility preset. Available categories:
+- category is a semantic routing target. Available categories:
 ${renderCategoryList(categories)}${plainAgentLine}${gatedLine}
 
 Blank provider padding is normalized automatically; do not add filler values.

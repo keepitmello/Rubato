@@ -65,7 +65,8 @@ export function resolveReflectionModel(
   }
   const resolution = resolveCategory(category, config, registry)
   if (resolution.kind !== "resolved") {
-    const pinned = config.categories?.[category]?.model
+    const categoryConfig = config.categories?.[category]
+    const pinned = categoryConfig?.model ?? categoryConfig?.models?.[0]
     const pinnedSelector = typeof pinned === "string" && pinned.includes("/") ? pinned : undefined
     if (resolution.kind === "model_unavailable" && pinnedSelector !== undefined) {
       const [provider, modelId] = pinnedSelector.split("/", 2)
@@ -233,7 +234,8 @@ function deduplicateCandidates(
 }
 
 export function shouldWarnCategoryUnavailable(config: RubatoConfig, category: string): boolean {
-  if (config.categories?.[category]?.model !== undefined) return false
+  const categoryConfig = config.categories?.[category]
+  if (categoryConfig?.model !== undefined || (categoryConfig?.models?.length ?? 0) > 0) return false
   return (config.categories?.[category]?.warn_unavailable
     ?? config.task?.warnings.unavailable_categories
     ?? true) !== false

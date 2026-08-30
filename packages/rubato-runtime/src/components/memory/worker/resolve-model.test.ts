@@ -353,6 +353,7 @@ describe("resolveReflectionModel", () => {
     expect(shouldWarnCategoryUnavailable(globallySuppressed, "quick")).toBe(false)
     expect(shouldWarnCategoryUnavailable(categoryOptIn, "quick")).toBe(true)
     expect(shouldWarnCategoryUnavailable({ categories: { quick: { model: "missing/model" } } }, "quick")).toBe(false)
+    expect(shouldWarnCategoryUnavailable({ categories: { quick: { models: ["missing/model"] } } }, "quick")).toBe(false)
   })
 
   test("#given a pinned user model whose model id contains a slash #when the availability snapshot is stale #then the whole model id is looked up rather than its first segment", () => {
@@ -382,5 +383,23 @@ describe("resolveReflectionModel", () => {
       fallbacks: [],
     })
     expect(lookups).not.toContainEqual({ provider: "apitopia", modelId: "z-ai" })
+  })
+
+  test("#given a configured model chain #when the availability snapshot is stale #then its head remains authoritative", () => {
+    const staleRegistry = {
+      getAvailable: () => [],
+      find: (provider: string, modelId: string) =>
+        provider === model.provider && modelId === model.id ? model : undefined,
+    }
+    const config: RubatoConfig = {
+      categories: { quick: { models: ["rubato-mock/mock-1", "backup/model-2"] } },
+    }
+
+    expect(resolveReflectionModel("quick", config, staleRegistry)).toEqual({
+      kind: "resolved",
+      category: "quick",
+      model: "rubato-mock/mock-1",
+      fallbacks: [],
+    })
   })
 })

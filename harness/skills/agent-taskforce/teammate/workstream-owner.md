@@ -49,7 +49,7 @@ If the acceptance criterion needs target-specific translation, register it befor
 
 Delegate what you can cut into a goal someone else can finish and check by themselves: a complete brief, and a done they settle without coming back to you. Anything with interpretation room stays with you. Bulk mechanical legs, investigation that would otherwise flood your context with transcript, and a read of your own artifact by someone who did not write it are the usual shapes — not the permitted list.
 
-Your brief follows the same register rule as the lead's: outcome, done evidence, and write boundaries bind; what you guess about the code travels as provisional leads the helper verifies. A skimmed guess shipped as fact pins your helper to the wrong spot. Skill(dispatching) holds the full composition contract.
+Your brief follows the same register rule as the lead's: outcome, done evidence, and write boundaries bind; what you guess about the code travels as provisional leads the helper verifies. A skimmed guess shipped as fact pins your helper to the wrong spot.
 
 Independent legs run at once. Dispatch them together rather than one behind another; sequential steps of one leg belong to a single helper, where splitting re-buys the context and buys nothing.
 

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { DISABLED_AGENT_NAMES, DISABLED_CATEGORY_NAMES, MODEL_CATEGORIES } from "./defaults.mjs";
+import { DISABLED_AGENT_NAMES, DISABLED_CATEGORY_NAMES, MODEL_CATEGORY_CHAINS } from "./defaults.mjs";
 
 function readTaskSettings(cwd) {
   if (!cwd) return undefined;
@@ -49,7 +49,7 @@ export function loadRubatoPiRubatoConfig(options = {}) {
       categories: {
         ...Object.fromEntries(DISABLED_CATEGORY_NAMES.map((name) => [name, { disable: true }])),
         ...Object.fromEntries(
-          Object.entries(MODEL_CATEGORIES).map(([name, model]) => [name, { model }]),
+          Object.entries(MODEL_CATEGORY_CHAINS).map(([name, models]) => [name, { models }]),
         ),
       },
       ...(task ? { task: withTaskDefaults(task) } : {}),
@@ -89,8 +89,8 @@ export function pinMemoryJobsToGrok(loaded) {
       ...config,
       categories: {
         ...config.categories,
-        grok: { model: MODEL_CATEGORIES.grok },
-        quick: { models: [MODEL_CATEGORIES.grok] },
+        grok: { models: MODEL_CATEGORY_CHAINS.grok },
+        quick: { models: MODEL_CATEGORY_CHAINS.grok },
       },
       ...(memory === undefined ? {} : {
         memory: {

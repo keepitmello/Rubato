@@ -5,6 +5,11 @@ description: "Aside를 통해 ChatGPT Work 프로젝트에 패킷을 보내고 �
 
 # Consult
 
+Begin with the workspace and the owning session's judgment. Use this when
+current external evidence, unfamiliar-domain research, or an independent read
+can materially change a costly decision. Compare the returned evidence with
+local sources and make the final decision in the owning session.
+
 Send one self-contained packet to ChatGPT through Aside. The outer agent owns
 the question, packet title, packet, ID, saved evidence, and local verification.
 The deterministic Aside REPL runner owns the normal **Work** project path;

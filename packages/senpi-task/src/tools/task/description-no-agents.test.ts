@@ -41,13 +41,14 @@ describe("buildTaskToolDescription with zero loaded agents", () => {
     expect(description).toContain("MUST provide a model or category")
   })
 
-  test("#given no loaded agents #when built #then model-only target stays reachable", () => {
+  test("#given no loaded agents #when built #then semantic category is preferred and model override stays reachable", () => {
     // when
     const description = buildTaskToolDescription({ rubatoConfig: config, agents: noAgents })
 
-    expect(description).toContain("model is the default target")
+    expect(description).toContain("category is the default semantic target")
+    expect(description).toContain('task(category="grok", prompt="...")')
     expect(description).toContain('task(model="kiro/claude-opus-5", prompt="...")')
-    expect(description).toContain("current session's /model catalog")
+    expect(description).toContain("model is an explicit override")
   })
 
   test("#given no loaded agents #when built #then the category route survives intact", () => {
@@ -55,7 +56,7 @@ describe("buildTaskToolDescription with zero loaded agents", () => {
     const description = buildTaskToolDescription({ rubatoConfig: config, agents: noAgents })
 
     // then
-    expect(description).toContain("category is an optional compatibility preset")
+    expect(description).toContain("category is a semantic routing target")
     expect(description).toContain("grok")
   })
 
