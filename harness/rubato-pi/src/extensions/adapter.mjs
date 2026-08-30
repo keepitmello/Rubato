@@ -7,7 +7,6 @@ import { registerMemberBoardTools, restoreMemberTaskEngine } from "../member-too
 import { rubatoPiMemoryComponent, rubatoPiTaskComponent } from "../rubato-runtime.mjs";
 import { DAG_RUBATO_OWNED_COMPONENTS } from "../policy.mjs";
 import { provisionSpecWorktrees } from "../team-worktrees.mjs";
-import { contractSkillsMessage, shouldInjectContractSkills } from "../contract-skills.mjs";
 import { installStatusline } from "./statusline.mjs";
 import { installSessionTitle } from "./session-title.mjs";
 import { installEvalSearchGuard } from "../eval-search-guard.mjs";
@@ -47,12 +46,6 @@ export default async function rubatoPiAdapter(pi) {
     await restoreMemberTaskEngine(composeRubatoExtension, taskComponent, pi);
     registerMemberBoardTools(pi, parseMemberIdentity() ?? {});
   }
-
-  pi.on("session_start", (event, ctx) => {
-    const entries = ctx.sessionManager?.getEntries?.() ?? [];
-    if (!shouldInjectContractSkills(event.reason, entries)) return;
-    pi.sendMessage(contractSkillsMessage(role), { triggerTurn: false, deliverAs: "nextTurn" });
-  });
 
   pi.on("before_agent_start", async (event, ctx) => ({
     systemPrompt: promptForAgentStart(event, ctx, role),

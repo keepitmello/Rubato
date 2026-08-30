@@ -12,23 +12,23 @@ function rolePrompt(role) {
   return readFileSync(join(homedir(), ".agents/rubato/.build", promptNameForRole(role)), "utf8");
 }
 
+const promptSourceRoot = join(import.meta.dirname, "../../../prompts");
+
 test("lead prompt names the pi rails and no fx ones", () => {
   const text = rolePrompt("lead");
   assert.match(text, /running on Rubato's Senpi-based runtime/);
   assert.match(text, /`task` tool/);
   assert.match(text, /team_create/);
-  // 승인 게이트는 team_create 에만 남기고 그 절차는 Skill(agent-taskforce) 가
-  // 소유한다. 일회성 에이전트는 허락 없이 띄운다 — 그래야 "그냥 내가 하지"로 안 간다.
-  // Phrased "a one-off child needs no permission" until the paragraph was rewritten to
-  // "a `task` child needs no permission". Match the invariant, not the sentence.
-  assert.match(text, /needs no permission/);
-  assert.match(text, /Skill\(agent-taskforce\) first/);
+  // team_create 승인 절차는 Skill(agent-taskforce) 가 소유하고, 일회성 task Agent는
+  // lead 판단으로 바로 쓴다. 문장 대신 그 권한 배치를 고정한다.
+  assert.match(text, /`task` agents are available at your discretion/);
+  assert.match(text, /run Skill\(agent-taskforce\) before `team_create`/);
   // Phrased "You choose each child's model" until the vocabulary moved from child to
   // agent. The invariant is that the lead owns per-agent model choice, not the noun it
   // was written with — this is the third time this file pinned a sentence and broke on a
   // rewrite that kept the meaning. Assert the invariant.
-  assert.match(text, /You choose each agent's model/);
-  assert.match(text, /catalog short name/);
+  assert.match(text, /You choose each agent's cognitive profile and semantic category/);
+  assert.match(text, /semantic model category/);
   assert.match(text, /runtimes\/pi\.md/);
 
   assert.doesNotMatch(text, /fork of the fx harness/);
@@ -73,9 +73,23 @@ test("teammate prompt points helpers at task, not subagent", () => {
   assert.doesNotMatch(text, /~\/\.fx\//);
 });
 
-test("both role prompts defer the dispatch contract to the skills", () => {
-  assert.match(rolePrompt("lead"), /Skill\(dispatching\)/);
-  assert.match(rolePrompt("owner"), /Skill\(dispatched\)/);
+test("lead, owner, and verifier carry the bidirectional brief contract", () => {
+  for (const role of ["lead", "owner", "verifier"]) {
+    const text = rolePrompt(role);
+    assert.match(text, /You both receive briefs and write them/);
+    assert.match(text, /When receiving/);
+    assert.match(text, /When writing/);
+    assert.match(text, /A budget return and a well-supported absent finding are complete outcomes/);
+  }
+});
+
+test("assigned agents carry the receive-and-return contract", () => {
+  const text = rolePrompt("agent");
+  assert.match(text, /Execute the bounded outcome in the brief and return evidence/);
+  assert.match(text, /Treat claims about code locations, mechanisms, causes, and likely files as leads/);
+  assert.doesNotMatch(text, /You both receive briefs and write them/);
+  assert.doesNotMatch(text, /`task`/);
+  assert.doesNotMatch(text, /team_create/);
 });
 
 test("both role prompts defer independent-review routing to the model guide", () => {
@@ -85,5 +99,47 @@ test("both role prompts defer independent-review routing to the model guide", ()
     assert.doesNotMatch(text, /if the main session runs a Claude model, use `sol`/);
     assert.doesNotMatch(text, /if it runs a Codex model, use `opus`/);
     assert.doesNotMatch(text, /take one independent review from `sol`\./);
+  }
+});
+
+test("role prompts delegate provider resolution and fallback to the harness", () => {
+  for (const role of ["lead", "owner"]) {
+    const text = rolePrompt(role);
+    assert.match(text, /semantic model category/);
+    assert.match(text, /harness owns provider choice|harness resolves/);
+    assert.doesNotMatch(text, /Copy the model id from the live catalog/);
+  }
+});
+
+test("Consult routing starts from local evidence and expands on material external value", () => {
+  for (const role of ["lead", "owner"]) {
+    const text = rolePrompt(role);
+    assert.match(text, /Build the map from workspace evidence/);
+    assert.match(text, /current external evidence, unfamiliar-domain research, or an independent view can materially change a costly decision/);
+    assert.doesNotMatch(text, /research it through Skill\(consult\).*not as a last resort/);
+  }
+});
+
+test("shared prompt carries the keep-simple invariant directly", () => {
+  for (const role of ["lead", "owner", "verifier", "agent"]) {
+    const text = rolePrompt(role);
+    assert.match(text, /Build the smallest correct change that owns the requested behavior/);
+    assert.match(text, /Preserve safety, validation, meaningful errors, tests, and explicit requirements while simplifying/);
+    assert.doesNotMatch(text, /Skill\(keep-simple\)/);
+  }
+});
+
+test("built role prompts contain their current source fragments", () => {
+  const cases = [
+    ["lead", ["base.pi.md", "brief-exchange.pi.md", "core-lead.pi.md", "voice.md"]],
+    ["owner", ["base.pi.md", "brief-exchange.pi.md", "core-teammate.pi.md", "voice.md"]],
+    ["agent", ["base.pi.md", "core-agent.pi.md", "voice.md"]],
+  ];
+  for (const [role, fragments] of cases) {
+    const built = rolePrompt(role);
+    for (const fragment of fragments) {
+      const source = readFileSync(join(promptSourceRoot, fragment), "utf8").trim();
+      assert.ok(built.includes(source), `${role} prompt is stale for ${fragment}`);
+    }
   }
 });

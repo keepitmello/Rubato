@@ -4,7 +4,14 @@ import { resolveRole } from "../../src/role-contract.mjs";
 
 test("member env falls back to owner unless an explicit role is set", () => {
   assert.equal(resolveRole({ env: {} }), "lead");
+  assert.equal(resolveRole({ env: { SENPI_CODING_AGENT_SESSION_DIR: "/tmp/task" } }), "agent");
   assert.equal(resolveRole({ env: { SENPI_TASK_MEMBER: "alpha" } }), "owner");
+  assert.equal(
+    resolveRole({
+      env: { SENPI_TASK_MEMBER: "alpha", SENPI_CODING_AGENT_SESSION_DIR: "/tmp/task" },
+    }),
+    "owner",
+  );
   assert.equal(
     resolveRole({ env: { SENPI_TASK_MEMBER: "alpha", RUBATO_PI_ROLE: "verifier" } }),
     "verifier",

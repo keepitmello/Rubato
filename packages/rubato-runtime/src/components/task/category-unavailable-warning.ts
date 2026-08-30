@@ -35,10 +35,10 @@ function warningSuppressed(config: RubatoConfig, settings: RubatoTaskSettings, c
   return effective === false
 }
 
-// A user category with its own model never warns: its failure is a plain user-model miss, not a
-// dead builtin chain (the resolver omits attempted_chain for it; this is the belt-and-braces guard).
+// A user category with its own model chain handles availability through that configured chain.
 function hasUserModel(config: RubatoConfig, category: string): boolean {
-  return config.categories?.[category]?.model !== undefined
+  const entry = config.categories?.[category]
+  return entry?.model !== undefined || (entry?.models?.length ?? 0) > 0
 }
 
 /**

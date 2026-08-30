@@ -25,7 +25,7 @@ describe("buildTaskToolDescription", () => {
     expect(description).toContain("Ships the release train")
   })
 
-  test("#given the description #when built #then it accepts model as a complete target", () => {
+  test("#given the description #when built #then it prefers semantic category and keeps model override", () => {
     // given
     const config: RubatoConfig = { categories: {}, agents: {} }
 
@@ -34,7 +34,9 @@ describe("buildTaskToolDescription", () => {
 
     // then
     expect(description).toContain("MUST provide a model, category, or subagent_type")
+    expect(description).toContain('task(category="grok", prompt="...")')
     expect(description).toContain('task(model="kiro/claude-opus-5", prompt="...")')
+    expect(description).toContain("model is an explicit override")
   })
 
   test("#given the description #when built #then it describes spawn-only task and task_send continuation", () => {
@@ -102,7 +104,7 @@ describe("buildTaskToolDescription", () => {
 })
 
 describe("buildTaskToolDescription category model overrides", () => {
-  test("#given the description #when built #then it makes presets optional beside model", () => {
+  test("#given the description #when built #then it makes category the semantic default", () => {
     // given
     const config: RubatoConfig = { categories: {}, agents: {} }
 
@@ -110,15 +112,15 @@ describe("buildTaskToolDescription category model overrides", () => {
     const description = buildTaskToolDescription({ rubatoConfig: config, agents })
 
     // then
-    expect(description).toContain("current session's /model catalog")
-    expect(description).toContain("model is the default target")
-    expect(description).toContain("category and subagent_type are optional compatibility presets")
+    expect(description).toContain("category is the default semantic target")
+    expect(description).toContain("model is an explicit override")
+    expect(description).toContain("subagent_type invokes a loaded agent persona")
   })
 
-  test("#given the prompt guidelines #when read #then they require a picker-visible override", () => {
+  test("#given the prompt guidelines #when read #then they assign live routing to the harness", () => {
     const joined = TASK_PROMPT_GUIDELINES.join("\n")
     expect(joined).toContain("model")
     expect(joined).toContain("category")
-    expect(joined).toContain("current session's /model catalog")
+    expect(joined).toContain("harness resolves its live provider")
   })
 })

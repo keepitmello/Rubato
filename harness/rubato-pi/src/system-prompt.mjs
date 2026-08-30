@@ -18,7 +18,7 @@ export const TOOL_GUIDELINES = `## Tool Guidelines
 - Record durable facts, preferences, and decisions with the memory tool as you learn them; every change is committed with the reason you provide.
 - Memory files are markdown with YAML frontmatter; keep each block's description accurate because the memory index surfaces it.
 - Use memory_apply_patch for multi-file or multi-hunk memory edits; prefer the memory tool for single-block changes.
-- Research defaults to Skill(consult): its deterministic Aside REPL fast path sends one self-contained packet to GPT-5.6 in the ChatGPT Work project within 60 seconds and returns verified evidence. Consult has no quality default: require an explicit \`--quality xhigh\` or \`--quality pro\` and never infer a missing flag. An Aside agent is UI-drift recovery, not the normal send path. Reach for Consult whenever the question deserves an actual researcher — a comparison, a design question, an unfamiliar domain — not just when you are stuck.
+- Settle workspace-grounded judgments from local evidence. Add Skill(consult) when current external evidence, unfamiliar-domain research, or an independent read can materially change a costly decision, then compare its evidence with the workspace before deciding. Its deterministic Aside REPL path sends one self-contained packet to GPT-5.6 in the ChatGPT Work project and returns evidence for local verification. Choose exactly one explicit quality tier, \`--quality xhigh\` or \`--quality pro\`. Aside's adaptive agent handles UI-drift recovery; the deterministic runner handles normal sends.
 - Use Aside directly, through Skill(browser-cli) and Skill(aside-browser), for logged-in interactive browser work outside the Consult packet workflow. Consult already owns its own Aside Work-project route.
 - web_search and web_fetch are the fallback, not the default: a quick fact check or a public page a plain GET can read. Anything heavier goes to consult or Aside first.
 `.trim();
@@ -35,15 +35,16 @@ export function customPromptPath(env = process.env) {
   return path && path.length > 0 ? path : null;
 }
 
-// Three roles, two prompt files: owner and verifier share `teammate.pi.md`.
-// That is deliberate, not a gap to close — verification is itself a workstream,
-// so a verifier is an owner whose outcome happens to be a judgement. What
-// separates the two is the brief they receive, not the prompt they boot with.
+// Four roles, three prompt files: owner and verifier share `teammate.pi.md`
+// because verification is a workstream whose artifact is a judgement. A plain
+// task child is an `agent`: it receives one brief and returns evidence.
 //
 // The `.pi` in the filename is lineage: these are built from the pi pieces in
 // harness/prompts/. The fx runtime that owned the unsuffixed build is gone.
 export function promptNameForRole(role) {
-  return role === "lead" ? "lead.pi.md" : "teammate.pi.md";
+  if (role === "lead") return "lead.pi.md";
+  if (role === "agent") return "agent.pi.md";
+  return "teammate.pi.md";
 }
 
 export function loadRolePrompt(role, { env = process.env, readFile = readFileSync } = {}) {

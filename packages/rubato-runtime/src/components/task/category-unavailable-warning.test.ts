@@ -202,6 +202,22 @@ describe("createCategoryUnavailableWarningPlanner", () => {
     expect(messages).toHaveLength(0)
   })
 
+  test("#given a user-configured category with a model chain #when a chain error arrives #then it stays silent", () => {
+    const { planner, messages, notifies } = setup({
+      error: deadChainError("quick"),
+      rubatoConfig: {
+        categories: {
+          quick: { models: ["rubato-mock/mock-parent", "rubato-mock/mock-fallback"], warn_unavailable: true },
+        },
+      },
+    })
+
+    plan(planner, "quick")
+
+    expect(notifies).toHaveLength(0)
+    expect(messages).toHaveLength(0)
+  })
+
   test("#given no captured ui #when planned #then the custom message still fires", () => {
     // given
     const { planner, messages, notifies } = setup({ error: deadChainError("quick"), withUi: false })

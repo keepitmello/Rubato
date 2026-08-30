@@ -53,12 +53,16 @@ fresh() {
 # 달라지는 보고 계약은 core-*.pi.md 가 이미 갖고 있다. 둘로 나눠 두면 같은 문장
 # 규칙을 두 곳에서 고쳐야 해서 한쪽만 낙후된다.
 #
-# 역할은 셋(lead/owner/verifier)이지만 core 파일은 둘이다. owner 와 verifier 는 같은
-# teammate 파일을 쓴다. 검증도 하나의 워크스트림이고, verifier 는 산출물이 판단인
-# owner 이기 때문이다. 둘을 가르는 것은 부팅 프롬프트가 아니라 받는 브리프다.
-if ! fresh "$OUT/lead.pi.md" base.pi.md core-lead.pi.md voice.md; then
-  emit lead.pi.md     base.pi.md core-lead.pi.md     voice.md
+# lead, owner, verifier 는 브리프를 받고 쓰는 실행 주체라 brief-exchange 계약을 공유한다.
+# owner 와 verifier 는 같은 teammate 파일을 쓴다. 검증도 하나의 워크스트림이고,
+# verifier 는 산출물이 판단인 owner 이기 때문이다. 순수 task Agent 는 브리프를 받아
+# 실행하고 반환하는 agent 파일을 쓴다.
+if ! fresh "$OUT/lead.pi.md" base.pi.md brief-exchange.pi.md core-lead.pi.md voice.md; then
+  emit lead.pi.md     base.pi.md brief-exchange.pi.md core-lead.pi.md     voice.md
 fi
-if ! fresh "$OUT/teammate.pi.md" base.pi.md core-teammate.pi.md voice.md; then
-  emit teammate.pi.md base.pi.md core-teammate.pi.md voice.md
+if ! fresh "$OUT/teammate.pi.md" base.pi.md brief-exchange.pi.md core-teammate.pi.md voice.md; then
+  emit teammate.pi.md base.pi.md brief-exchange.pi.md core-teammate.pi.md voice.md
+fi
+if ! fresh "$OUT/agent.pi.md" base.pi.md core-agent.pi.md voice.md; then
+  emit agent.pi.md    base.pi.md core-agent.pi.md    voice.md
 fi
