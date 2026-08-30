@@ -66,7 +66,8 @@ test("teammate prompt points helpers at task, not subagent", () => {
   // test failed on generated text while the intent it guards — point helpers at `task`,
   // never at `subagent` — was still satisfied. Assert the intent, not the old wording.
   assert.match(text, /`task`/);
-  assert.match(text, /`task_output`/);
+  assert.match(text, /Completion notifications deliver terminal results; `task_output` reads an immediate status or transcript snapshot/);
+  assert.doesNotMatch(text, /`task_output` waits/);
   assert.doesNotMatch(text, /`subagent` tool/);
   assert.doesNotMatch(text, /fx models/);
   assert.doesNotMatch(text, /rubato dispatch/);
@@ -76,7 +77,8 @@ test("teammate prompt points helpers at task, not subagent", () => {
 test("lead, owner, and verifier carry the bidirectional brief contract", () => {
   for (const role of ["lead", "owner", "verifier"]) {
     const text = rolePrompt(role);
-    assert.match(text, /You both receive briefs and write them/);
+    assert.match(text, /Leads, workstream owners, and verifiers exchange briefs in both directions/);
+    assert.match(text, /you receive briefs and write them/);
     assert.match(text, /When receiving/);
     assert.match(text, /When writing/);
     assert.match(text, /A budget return and a well-supported absent finding are complete outcomes/);
@@ -87,7 +89,7 @@ test("assigned agents carry the receive-and-return contract", () => {
   const text = rolePrompt("agent");
   assert.match(text, /Execute the bounded outcome in the brief and return evidence/);
   assert.match(text, /Treat claims about code locations, mechanisms, causes, and likely files as leads/);
-  assert.doesNotMatch(text, /You both receive briefs and write them/);
+  assert.doesNotMatch(text, /exchange briefs in both directions/);
   assert.doesNotMatch(text, /`task`/);
   assert.doesNotMatch(text, /team_create/);
 });
@@ -96,6 +98,8 @@ test("both role prompts defer independent-review routing to the model guide", ()
   for (const role of ["lead", "owner"]) {
     const text = rolePrompt(role);
     assert.match(text, /Skill\(model-guide\)/);
+    assert.match(text, /material or ambiguous outcome where independent falsification can change the decision/);
+    assert.doesNotMatch(text, /When the work and its verification are complete, take one independent review/);
     assert.doesNotMatch(text, /if the main session runs a Claude model, use `sol`/);
     assert.doesNotMatch(text, /if it runs a Codex model, use `opus`/);
     assert.doesNotMatch(text, /take one independent review from `sol`\./);
