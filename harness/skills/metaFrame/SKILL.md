@@ -1,11 +1,11 @@
 ---
-name: open-frame
+name: metaFrame
 description: "문제 설정이 좁아졌을 때 시야를 다시 여는 스킬. 수동 호출."
 disable-model-invocation: true
 argument-hint: "[task or current work]"
 ---
 
-# Open Frame
+# metaFrame
 
 Apply this to `$ARGUMENTS` when provided; otherwise apply it to the current task.
 
