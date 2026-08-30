@@ -1,0 +1,4 @@
+interface:
+  display_name: "Wrapping Sessions"
+  short_description: "Help with Wrapping Sessions tasks"
+  default_prompt: "Use wrapping-sessions to handle this task."

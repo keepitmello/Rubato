@@ -1,0 +1,16 @@
+{
+  "name": "@rubato/memory-core",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Rubato agent memory engine with git-backed storage, tools, reflection, and search.",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsgo --noEmit -p tsconfig.json",
+    "test": "bun test src/"
+  }
+}

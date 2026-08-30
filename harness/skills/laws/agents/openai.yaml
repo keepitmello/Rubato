@@ -1,0 +1,4 @@
+interface:
+  display_name: "Root-Cause Decision"
+  short_description: "Choose a local fix or evidence-backed refactor"
+  default_prompt: "Use $laws to identify the owning cause and decide whether this needs a local fix or a refactor first."

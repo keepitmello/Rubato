@@ -1,0 +1,8 @@
+[test]
+pathIgnorePatterns = [
+  "dist/**",
+  "packages/lsp-daemon/**",
+]
+
+[loader]
+".md" = "text"

@@ -1,0 +1,5 @@
+# 이 머신에서 색인·BM25·vector·hybrid 검색을 통과한 런타임 기준.
+PYTHON_VERSION=3.13.2
+JAVA_MAJOR=17
+REDIS_VERSION=8.4.0
+SEARCH_VERSION=8.4.2

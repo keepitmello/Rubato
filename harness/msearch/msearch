@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# msearch — 기억 검색 한 줄 진입점.
+#
+#   msearch '찾을 내용'      현재 프로젝트 기억에서 검색
+#   msearch -a '내용'       모든 기억에서 검색
+#   msearch --list-scopes    색인된 저장소 목록
+#   msearch --index          색인 갱신 (바뀐 파일만)
+#   msearch --reindex        전체 재색인
+#   msearch --doctor         설치 상태 진단
+#
+# 어디서 실행해도 되게 스크립트 위치를 기준으로 잡는다. alias 를 걸어도
+# symlink 를 걸어도 같은 자리를 본다.
+set -euo pipefail
+
+here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")" && pwd)"
+# 명시한 파이썬은 그대로 존중한다. 자동 선택은 잠금과 일치하는 환경만 고른다.
+# 설치가 중간에 끊겨 실행 파일만 남은 venv 는 선택하지 않는다.
+py="${MSEARCH_PYTHON:-}"
+if [ -z "$py" ]; then
+  if [ -x "$here/.venv/bin/python" ] && "$here/.venv/bin/python" "$here/msearch_env.py" >/dev/null 2>&1; then
+    py="$here/.venv/bin/python"
+  else
+    py="python3"
+  fi
+fi
+env_ok=0
+"$py" "$here/msearch_env.py" >/dev/null 2>&1 && env_ok=1
+
+case "${1:-}" in
+  --doctor)
+    exec "$py" "$here/msearch_doctor.py"
+    ;;
+  --health)
+    # 세션 시작 훅이 부르는 저렴한 생존 판정 — 검색이 실제로 돌 수 있는가만 본다
+    # (환경 잠금 일치 + Redis 응답). 전체 진단은 --doctor.
+    # msearch 는 죽어도 세션이 멀쩡히 떠서 죽음이 안 보인다 — 한 머신에서
+    # 검색이 이틀 넘게 죽어 있었는데 어떤 세션도 몰랐다. 그 구멍을 막는 출구다.
+    if [ "$env_ok" -ne 1 ]; then
+      echo "python 환경이 잠금과 다르다 (msearch --doctor)" >&2
+      exit 1
+    fi
+    if ! PYTHONPATH="$here" "$py" -c 'import msearch_config, redis; redis.Redis.from_url(msearch_config.REDIS_URL, socket_connect_timeout=2, socket_timeout=2).ping()' >/dev/null 2>&1; then
+      echo "Redis 가 응답하지 않는다 (msearch --doctor)" >&2
+      exit 1
+    fi
+    exit 0
+    ;;
+  -h|--help|"")
+    sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    exit 0
+    ;;
+esac
+
+if [ "$env_ok" -ne 1 ]; then
+  echo "msearch: Python 환경이 저장소 잠금과 다릅니다." >&2
+  echo >&2
+  exec "$py" "$here/msearch_doctor.py"
+fi
+
+case "${1:-}" in
+  --index)
+    exec "$py" "$here/memory-index.py" --incremental
+    ;;
+  --reindex)
+    exec "$py" "$here/memory-index.py" --force
+    ;;
+esac
+
+# 검색은 백엔드가 있어야 의미가 있다. 연결이 안 되는데 그냥 돌리면 0건이 나오고,
+# 그 침묵은 "기억이 없다"로 읽힌다. 설치 문제와 검색 결과를 가르기 위해
+# 먼저 물어보고, 안 되면 진단으로 보낸다.
+if ! "$py" -c "
+import sys
+sys.path.insert(0, '$here')
+import msearch_config as c
+import redis
+redis.from_url(c.REDIS_URL).ping()
+" >/dev/null 2>&1; then
+  echo "msearch: 검색 백엔드에 연결하지 못했습니다." >&2
+  echo >&2
+  exec "$py" "$here/msearch_doctor.py"
+fi
+
+exec "$py" "$here/memory-search.py" "$@"

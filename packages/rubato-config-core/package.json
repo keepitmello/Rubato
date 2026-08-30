@@ -1,0 +1,23 @@
+{
+  "name": "@rubato/config-core",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Rubato configuration schema and resolution primitives.",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "types": "./index.d.ts",
+  "scripts": {
+    "typecheck": "tsgo --noEmit -p tsconfig.json",
+    "test": "bun test src/*.test.ts src/**/*.test.ts"
+  },
+  "dependencies": {
+    "jsonc-parser": "^3.3.1",
+    "zod": "^4.4.3"
+  },
+  "sideEffects": false
+}

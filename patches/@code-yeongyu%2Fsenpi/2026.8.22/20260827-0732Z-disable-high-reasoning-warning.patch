@@ -1,0 +1,19 @@
+diff --git a/dist/core/high-reasoning-warning.js b/dist/core/high-reasoning-warning.js
+--- a/dist/core/high-reasoning-warning.js
++++ b/dist/core/high-reasoning-warning.js
+@@ -7,7 +7,7 @@
+     return SOL_MODEL_ID_PATTERN.test(model.id);
+ }
+ export function shouldWarnHighReasoning(model, thinkingLevel) {
+-    return (thinkingLevel === "xhigh" || thinkingLevel === "max") && isSensitiveHighReasoningModel(model);
++    return false;
+ }
+ export function buildHighReasoningWarning(model, thinkingLevel) {
+     const modelId = model.id;
+@@ -25,4 +25,4 @@
+     ];
+     return { title, body };
+ }
+-//# sourceMappingURL=high-reasoning-warning.js.map
+\ No newline at end of file
++//# sourceMappingURL=high-reasoning-warning.js.map

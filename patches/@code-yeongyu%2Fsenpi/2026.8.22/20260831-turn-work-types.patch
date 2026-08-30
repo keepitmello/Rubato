@@ -1,0 +1,75 @@
+diff --git a/dist/modes/interactive/components/assistant-message.d.ts b/dist/modes/interactive/components/assistant-message.d.ts
+--- a/dist/modes/interactive/components/assistant-message.d.ts
++++ b/dist/modes/interactive/components/assistant-message.d.ts
+@@ -15,6 +15,7 @@
+     private hasToolCalls;
+     private expanded;
+     private isStreaming;
++    private turnWorkCollapsed;
+     private thinkingExpanded;
+     private thinkingOverrides;
+     private lastThinkingRunKey?;
+@@ -26,6 +27,7 @@
+     dispose(): void;
+     setHiddenThinkingLabel(label: string): void;
+     setExpanded(expanded: boolean): void;
++    setTurnWorkCollapsed(collapsed: boolean): void;
+     setOutputPad(padding: number): void;
+     render(width: number): string[];
+     updateContent(message: AssistantMessage, isStreaming?: boolean): void;
+@@ -37,4 +39,4 @@
+     private cacheRender;
+     private refreshContent;
+ }
+-//# sourceMappingURL=assistant-message.d.ts.map
+\ No newline at end of file
++//# sourceMappingURL=assistant-message.d.ts.map
+diff --git a/dist/modes/interactive/components/assistant-message.js b/dist/modes/interactive/components/assistant-message.js
+--- a/dist/modes/interactive/components/assistant-message.js
++++ b/dist/modes/interactive/components/assistant-message.js
+@@ -194,7 +194,7 @@
+             if (content.type === "thinking") {
+                 if (!inRun) {
+                     inRun = true;
+-                    runStart = content.startedAt;
++                    runStart = content.startedAt ?? `untimed-${message.content.indexOf(content)}`;
+                     runActive = false;
+                 }
+                 if (content.startedAt !== undefined && content.endedAt === undefined)
+diff --git a/dist/modes/interactive/components/assistant-render-descriptors.d.ts b/dist/modes/interactive/components/assistant-render-descriptors.d.ts
+--- a/dist/modes/interactive/components/assistant-render-descriptors.d.ts
++++ b/dist/modes/interactive/components/assistant-render-descriptors.d.ts
+@@ -11,7 +11,8 @@
+     readonly hiddenThinkingLabel: string;
+     readonly hideThinkingBlock: boolean;
+     readonly hasToolCalls: boolean;
++    readonly hideTurnWork?: boolean;
+ };
+ export declare function createAssistantRenderDescriptors(message: AssistantMessage, options: AssistantRenderDescriptorOptions): readonly AssistantRenderDescriptor[];
+ export {};
+-//# sourceMappingURL=assistant-render-descriptors.d.ts.map
+\ No newline at end of file
++//# sourceMappingURL=assistant-render-descriptors.d.ts.map
+diff --git a/dist/modes/interactive/components/turn-work-summary.d.ts b/dist/modes/interactive/components/turn-work-summary.d.ts
+new file mode 100644
+--- /dev/null
++++ b/dist/modes/interactive/components/turn-work-summary.d.ts
+@@ -0,0 +1,18 @@
++import { Container } from "@earendil-works/pi-tui";
++import type { AssistantMessage } from "@earendil-works/pi-ai";
++import type { AssistantMessageComponent } from "./assistant-message.js";
++import type { ToolGroupComponent } from "./tool-group.js";
++
++export declare class TurnWorkSummaryComponent extends Container {
++    private readonly ui;
++    private readonly assistants;
++    private readonly toolGroups;
++    private expanded;
++    private readonly toggleAction;
++    constructor(ui: { requestRender(): void });
++    trackAssistant(component: AssistantMessageComponent, message: AssistantMessage): void;
++    trackToolGroup(group: ToolGroupComponent): void;
++    setExpanded(expanded: boolean): void;
++    render(width: number): string[];
++    dispose(): void;
++}

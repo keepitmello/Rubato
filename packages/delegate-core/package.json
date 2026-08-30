@@ -1,0 +1,22 @@
+{
+  "name": "@rubato/delegate-core",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Harness-neutral delegate task selection and retry primitives for Rubato.",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "types": "./index.d.ts",
+  "scripts": {
+    "typecheck": "tsgo --noEmit -p tsconfig.json",
+    "test": "bun test src/*.test.ts"
+  },
+  "dependencies": {
+    "@rubato/model-core": "workspace:*"
+  },
+  "sideEffects": false
+}

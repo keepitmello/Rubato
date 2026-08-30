@@ -1,0 +1,12 @@
+{
+  "source": "deterministic test fixture",
+  "asOf": "2026-08-24",
+  "models": {
+    "xai/grok-test": {
+      "input": 2,
+      "output": 10,
+      "cacheRead": 0.5,
+      "cacheWrite": 2
+    }
+  }
+}

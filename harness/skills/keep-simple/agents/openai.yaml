@@ -1,0 +1,4 @@
+interface:
+  display_name: "Keep Simple"
+  short_description: "Choose the smallest correct implementation"
+  default_prompt: "Use $keep-simple to keep this change small, clear, correct, and consistent with existing ownership."

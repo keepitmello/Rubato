@@ -1,0 +1,6 @@
+node_modules/
+vendor/
+tmp/
+.rubato-pi-home/
+.rubato-pi-state/
+*.log

@@ -1,0 +1,66 @@
+{
+  "name": "rubato",
+  "version": "0.1.0",
+  "description": "Fast, lightweight multi-model agent harness for everyday work",
+  "type": "module",
+  "workspaces": [
+    "packages/ast-grep-mcp",
+    "packages/delegate-core",
+    "packages/lsp-core",
+    "packages/lsp-daemon",
+    "packages/mcp-stdio-core",
+    "packages/memory-core",
+    "packages/model-core",
+    "packages/rubato-config-core",
+    "packages/rubato-runtime",
+    "packages/senpi-task",
+    "packages/team-core",
+    "packages/tmux-core",
+    "packages/utils"
+  ],
+  "scripts": {
+    "build": "node harness/scripts/build-engine.mjs --force",
+    "build:check": "node harness/scripts/build-engine.mjs --check",
+    "postinstall": "node postinstall.mjs",
+    "test": "npm --prefix harness/rubato-pi test && bun test packages/rubato-runtime packages/senpi-task",
+    "test:patches": "bun test patch-tests",
+    "typecheck": "tsgo --noEmit -p packages/rubato-runtime/tsconfig.json && tsgo --noEmit -p packages/senpi-task/tsconfig.json"
+  },
+  "keywords": [
+    "rubato",
+    "agent-harness",
+    "multi-model",
+    "senpi"
+  ],
+  "license": "SUL-1.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/keepitmello/Rubato.git"
+  },
+  "bugs": {
+    "url": "https://github.com/keepitmello/Rubato/issues"
+  },
+  "homepage": "https://github.com/keepitmello/Rubato#readme",
+  "dependencies": {
+    "diff": "^9.0.0"
+  },
+  "devDependencies": {
+    "@code-yeongyu/senpi": "2026.8.22",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
+    "bun-types": "1.4.0",
+    "typescript": "^7.0.2"
+  },
+  "overrides": {
+    "@earendil-works/pi-agent-core": "0.84.2",
+    "@earendil-works/pi-ai": "0.84.2",
+    "@earendil-works/pi-coding-agent": "0.84.2",
+    "@earendil-works/pi-tui": "0.84.2",
+    "hono": "^4.12.18",
+    "@hono/node-server": "^1.19.13",
+    "express-rate-limit": "^8.5.1",
+    "fast-uri": "^3.1.2",
+    "path-to-regexp": "^8.4.2",
+    "@types/node": "26.2.0"
+  },
+  "private": true
+}

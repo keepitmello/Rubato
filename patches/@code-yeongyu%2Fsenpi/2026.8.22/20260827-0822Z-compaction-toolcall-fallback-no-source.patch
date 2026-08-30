@@ -1,0 +1,89 @@
+diff --git a/dist/core/compaction/compaction.js b/dist/core/compaction/compaction.js
+--- a/dist/core/compaction/compaction.js
++++ b/dist/core/compaction/compaction.js
+@@ -639,6 +639,18 @@
+             model.contextWindow);
+ }
+ /** Generate or update a conversation summary and return its provider usage. */
++/**
++ * A cache-friendly sourceContext carries the live session's tool list, and even a
++ * plain conversation-text summarization request (no tools sent at all) has been
++ * observed to come back with stopReason:"toolUse" from a misbehaving provider —
++ * some providers do not reliably honor toolChoice:"none", and some return tool_use
++ * blocks with no `tools` present in the request at all. Either way, one malformed
++ * response must never leave every later compaction attempt permanently stuck
++ * throwing (compaction_end accepted:false, willRetry:false forever), and it must
++ * never be accepted by treating the tool call's arguments as summary text.
++ */
++const TOOL_CALL_FALLBACK_SUMMARY = "[Automatic compaction summary unavailable: the summarization request returned a tool call instead of text, twice in a row. This segment of the conversation could not be summarized by the model; only its file operations are recorded below.]";
++const TOOL_CALL_FALLBACK_TURN_PREFIX_SUMMARY = "[Automatic turn-prefix summary unavailable: the summarization request returned a tool call instead of text, twice in a row. The retained suffix below is authoritative; the discarded prefix could not be summarized by the model.]";
+ export async function generateSummaryWithUsage(currentMessages, model, reserveTokens, apiKey, headers, signal, customInstructions, previousSummary, extraBody, thinkingLevel, streamFn, env, transformContext, retry, callbacks, sessionId, cacheFriendly) {
+     const maxTokens = Math.min(Math.floor(0.8 * reserveTokens), model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY);
+     let sourceContext = cacheFriendly?.sourceContext;
+@@ -685,26 +697,27 @@
+     if (response.stopReason === "error") {
+         throw new Error(`Summarization failed: ${response.errorMessage || "Unknown error"}`);
+     }
+-    // A cache-friendly sourceContext carries the live session's tool list, and some
+-    // providers do not reliably honor toolChoice:"none" once tools are present in the
+-    // request — they can still emit a toolCall for a summarization turn. Retry once
+-    // without the tool-bearing sourceContext instead of treating the tool call's
+-    // arguments as summary text, or leaving compaction permanently stuck rejecting
+-    // with willRetry:false on every subsequent attempt.
++    // Bounded recovery for a response that calls a tool instead of summarizing. At
++    // most one extra network attempt: if a tool-bearing sourceContext was in play,
++    // drop it first, since some providers ignore toolChoice:"none" while tools are
++    // present; otherwise retry the identical no-tools request once, since providers
++    // have been observed to emit a stray tool_use even with no `tools` sent. If the
++    // retry still returns a tool call, fall back to a deterministic placeholder
++    // summary rather than a third network attempt or an unrecoverable throw — the
++    // tool call's arguments are never read as summary text and the tool never runs.
+     if (response.content.some((block) => block.type === "toolCall")) {
+-        if (!sourceContext) {
+-            throw new Error("Summarization attempted to call a tool");
++        if (sourceContext) {
++            await dropSourceContext();
++            basePrompt = buildBasePrompt();
++            promptText = buildPromptText();
+         }
+-        await dropSourceContext();
+-        basePrompt = buildBasePrompt();
+-        promptText = buildPromptText();
+         completionOptions = createSummarizationOptions(model, maxTokens, apiKey, headers, env, signal, thinkingLevel, extraBody, sessionId, undefined, undefined);
+         response = await completeSummarization(model, buildSummarizationContext(promptText, undefined), completionOptions, streamFn, retry, callbacks);
+         if (response.stopReason === "error") {
+             throw new Error(`Summarization failed: ${response.errorMessage || "Unknown error"}`);
+         }
+         if (response.content.some((block) => block.type === "toolCall")) {
+-            throw new Error("Summarization attempted to call a tool");
++            return { text: TOOL_CALL_FALLBACK_SUMMARY, usage: response.usage };
+         }
+     }
+     const textContent = contentTextForSummary(response.content);
+@@ -909,13 +922,11 @@
+     if (response.stopReason === "error") {
+         throw new Error(`Turn prefix summarization failed: ${response.errorMessage || "Unknown error"}`);
+     }
+-    // See generateSummaryWithUsage: a tool-bearing sourceContext can still produce a
+-    // toolCall despite toolChoice:"none". Retry once without it rather than accepting
+-    // tool arguments as the summary or leaving the split-turn compaction stuck.
++    // See generateSummaryWithUsage: bounded recovery, at most one extra network
++    // attempt (dropping any tool-bearing sourceContext first; otherwise retrying the
++    // identical no-tools request once), then a deterministic fallback instead of a
++    // third attempt or an unrecoverable throw. Never accepts tool arguments as text.
+     if (response.content.some((block) => block.type === "toolCall")) {
+-        if (!sourceContext) {
+-            throw new Error("Turn prefix summarization attempted to call a tool");
+-        }
+         sourceContext = undefined;
+         promptText = await buildPromptText();
+         response = await completeSummarization(model, buildSummarizationContext(promptText, undefined), createSummarizationOptions(model, maxTokens, apiKey, headers, env, signal, thinkingLevel, extraBody, sessionId, undefined, undefined), streamFn, retry, callbacks);
+@@ -923,7 +934,7 @@
+             throw new Error(`Turn prefix summarization failed: ${response.errorMessage || "Unknown error"}`);
+         }
+         if (response.content.some((block) => block.type === "toolCall")) {
+-            throw new Error("Turn prefix summarization attempted to call a tool");
++            return { text: TOOL_CALL_FALLBACK_TURN_PREFIX_SUMMARY, usage: response.usage };
+         }
+     }
+     return {

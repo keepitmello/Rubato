@@ -1,0 +1,21 @@
+diff --git a/dist/modes/interactive/interactive-mode.js b/dist/modes/interactive/interactive-mode.js
+--- a/dist/modes/interactive/interactive-mode.js
++++ b/dist/modes/interactive/interactive-mode.js
+@@ -3503,7 +3503,7 @@
+                     this.streamingComponent.setExpanded(this.toolOutputExpanded);
+                     this.streamingMessage = event.message;
+                     this.chatContainer.addChild(this.streamingComponent);
+-                    this.turnWorkSummary?.trackAssistant(this.streamingComponent, event.message);
++                    this.turnWorkSummary?.trackAssistant(this.streamingComponent, assistantStreamingHeadMessage(event.message));
+                     this.streamingReveal.begin(this.streamingComponent, assistantStreamingHeadMessage(this.streamingMessage));
+                     this.requestStreamingRender();
+                 }
+@@ -3511,7 +3511,7 @@
+             case "message_update":
+                 if (this.streamingComponent && event.message.role === "assistant") {
+                     this.streamingMessage = event.message;
+-                    this.turnWorkSummary?.trackAssistant(this.streamingComponent, event.message);
++                    this.turnWorkSummary?.trackAssistant(this.streamingComponent, assistantStreamingHeadMessage(event.message));
+                     this.streamingReveal.setTarget(assistantStreamingHeadMessage(event.message));
+                     for (const [contentIndex, content] of this.streamingMessage.content.entries()) {
+                         if (content.type === "toolCall") {

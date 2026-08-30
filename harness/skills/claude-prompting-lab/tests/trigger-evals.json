@@ -1,0 +1,82 @@
+[
+  {
+    "query": "Claude Fable 5용 시스템 프롬프트를 설계하고 기존 Opus 4.8 프롬프트에서 뭘 걷어낼지 알려줘",
+    "should_trigger": true
+  },
+  {
+    "query": "Opus 5가 자꾸 검증만 반복하고 구현을 늦추는데 프롬프트와 하네스를 고쳐줘",
+    "should_trigger": true
+  },
+  {
+    "query": "Sonnet 5 tool use용 JSON schema와 system prompt를 같이 리뷰해줘",
+    "should_trigger": true
+  },
+  {
+    "query": "Claude Code의 CLAUDE.md, skill, subagent 역할을 어떻게 나눌지 설계해줘",
+    "should_trigger": true
+  },
+  {
+    "query": "J-space 논문이 실제 prompting에 주는 교훈을 과장 없이 적용해줘",
+    "should_trigger": true
+  },
+  {
+    "query": "Anthropic의 CoT faithfulness 연구를 반영한 eval suite를 만들어줘",
+    "should_trigger": true
+  },
+  {
+    "query": "이 Claude API agent가 완료했다고 거짓말하는 문제를 재현하고 prompt regression test를 짜줘",
+    "should_trigger": true
+  },
+  {
+    "query": "Claude Agent SDK에서 custom system prompt와 claude_code preset 중 뭘 쓸지 판단해줘",
+    "should_trigger": true
+  },
+  {
+    "query": "Anthropic cookbook과 최신 model guide를 합쳐 프롬프트를 마이그레이션해줘",
+    "should_trigger": true
+  },
+  {
+    "query": "Claude용 장기 실행 연구 에이전트의 memory, compaction, verifier prompt를 설계해줘",
+    "should_trigger": true
+  },
+  {
+    "query": "이 문장을 영어로 번역해줘",
+    "should_trigger": false
+  },
+  {
+    "query": "파이썬에서 리스트 정렬하는 법 알려줘",
+    "should_trigger": false
+  },
+  {
+    "query": "오늘 서울 날씨 알려줘",
+    "should_trigger": false
+  },
+  {
+    "query": "이 소설의 주제를 해석해줘",
+    "should_trigger": false
+  },
+  {
+    "query": "React 컴포넌트의 CSS 버그를 바로 고쳐줘",
+    "should_trigger": false
+  },
+  {
+    "query": "Claude가 뭐야?",
+    "should_trigger": false
+  },
+  {
+    "query": "이 JSON을 YAML로 바꿔줘",
+    "should_trigger": false
+  },
+  {
+    "query": "API 가격만 비교해줘",
+    "should_trigger": false
+  },
+  {
+    "query": "첨부 PDF를 요약해줘",
+    "should_trigger": false
+  },
+  {
+    "query": "데이터베이스 인덱스를 추천해줘",
+    "should_trigger": false
+  }
+]

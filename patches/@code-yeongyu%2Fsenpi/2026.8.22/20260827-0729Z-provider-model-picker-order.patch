@@ -1,0 +1,72 @@
+diff --git a/dist/modes/interactive/components/model-selector.js b/dist/modes/interactive/components/model-selector.js
+--- a/dist/modes/interactive/components/model-selector.js
++++ b/dist/modes/interactive/components/model-selector.js
+@@ -7,6 +7,32 @@
+ import { DynamicBorder } from "./dynamic-border.js";
+ import { keyHint } from "./keybinding-hints.js";
+ import { getModelFullId, isFavoriteModel, toggleFavoriteModel } from "./model-favorites.js";
++const PROVIDER_ORDER = ["openai-codex", "anthropic", "xai", "google-antigravity", "kiro", "cursor"];
++const MODEL_ORDER = {
++    "openai-codex": ["gpt-5.6-sol", "gpt-5.6-sol-fast", "gpt-5.6-terra", "gpt-5.6-terra-fast", "gpt-5.6-luna", "gpt-5.6-luna-fast", "gpt-daybreak-blue-latest"],
++    anthropic: ["claude-fable-5", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"],
++    xai: ["grok-4.6"],
++    "google-antigravity": ["gemini-3.1-pro", "gemini-3.7-flash"],
++    kiro: ["gpt-5.6-sol", "claude-opus-5"],
++    cursor: ["gpt-5.6-sol", "claude-fable-5", "claude-opus-5", "grok-4.6", "gemini-3.7-flash", "kimi-k3", "composer-2.5"],
++};
++function rankedIndex(values, value) {
++    const index = values.indexOf(value);
++    return index < 0 ? Number.MAX_SAFE_INTEGER : index;
++}
++export function sortModelItems(models) {
++    return [...models].sort((a, b) => {
++        const providerRank = rankedIndex(PROVIDER_ORDER, a.provider) - rankedIndex(PROVIDER_ORDER, b.provider);
++        if (providerRank !== 0)
++            return providerRank;
++        const providerCompare = a.provider.localeCompare(b.provider);
++        if (providerCompare !== 0)
++            return providerCompare;
++        const order = MODEL_ORDER[a.provider] ?? [];
++        const modelRank = rankedIndex(order, a.id) - rankedIndex(order, b.id);
++        return modelRank !== 0 ? modelRank : a.id.localeCompare(b.id);
++    });
++}
+ /**
+  * Component that renders a model selector with search
+  */
+@@ -180,27 +206,7 @@
+         this.refreshAbortController.abort();
+     }
+     sortModels(models) {
+-        const sorted = [...models];
+-        // Sort: current model first, then favorites, then by provider/model.
+-        sorted.sort((a, b) => {
+-            const aIsCurrent = modelsAreEqual(this.currentModel, a.model);
+-            const bIsCurrent = modelsAreEqual(this.currentModel, b.model);
+-            if (aIsCurrent && !bIsCurrent)
+-                return -1;
+-            if (!aIsCurrent && bIsCurrent)
+-                return 1;
+-            const aIsFavorite = isFavoriteModel(this.favoriteIdsAtOpen, a.fullId);
+-            const bIsFavorite = isFavoriteModel(this.favoriteIdsAtOpen, b.fullId);
+-            if (aIsFavorite && !bIsFavorite)
+-                return -1;
+-            if (!aIsFavorite && bIsFavorite)
+-                return 1;
+-            const providerCompare = a.provider.localeCompare(b.provider);
+-            if (providerCompare !== 0)
+-                return providerCompare;
+-            return a.id.localeCompare(b.id);
+-        });
+-        return sorted;
++        return sortModelItems(models);
+     }
+     getScopeText() {
+         const allText = this.scope === "all" ? theme.fg("accent", "all") : theme.fg("muted", "all");
+@@ -371,4 +377,4 @@
+         return this.searchInput;
+     }
+ }
+-//# sourceMappingURL=model-selector.js.map
+\ No newline at end of file
++//# sourceMappingURL=model-selector.js.map

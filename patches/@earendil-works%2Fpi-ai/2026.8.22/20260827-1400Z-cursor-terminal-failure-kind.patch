@@ -1,0 +1,529 @@
+diff --git a/dist/api/cursor-agent.js b/dist/api/cursor-agent.js
+--- a/dist/api/cursor-agent.js
++++ b/dist/api/cursor-agent.js
+@@ -20,6 +20,7 @@
+ import { create, fromBinary, fromJson, toBinary, toJson } from "@bufbuild/protobuf";
+ import { ValueSchema } from "@bufbuild/protobuf/wkt";
+ import { calculateCost } from "../models.js";
++import { registerSessionResourceCleanup } from "../session-resources.js";
+ import { clearStreamingPartialJson, kCursorExecResolved, kStreamingBlockIndex, kStreamingBlockKind, kStreamingEnvelopeId, kStreamingLastParseLen, kStreamingPartialJson, } from "../utils/block-symbols.js";
+ import { AssistantMessageEventStream } from "../utils/event-stream.js";
+ import { providerHeadersToRecord } from "../utils/headers.js";
+@@ -103,6 +104,132 @@
+ const conversationStateCache = new Map();
+ const conversationBlobStores = new Map();
+ /**
++ * Session-scoped bookkeeping for the module-local conversation state above.
++ *
++ * The two maps are keyed by *wire* conversation id, which rotation can change
++ * mid-session, and nothing ever removed an entry: a long-lived process
++ * accumulated one checkpoint plus one blob store per conversation it ever ran,
++ * for its whole lifetime. These three structures make that state disposable
++ * without changing how a live request reads or writes it.
++ *
++ * `sessionLineages` maps the caller's base conversation id (the Rubato session
++ * id, via `options.sessionId`) to every wire id it has used, so disposing a
++ * session frees the rotated ids too, not just the current one.
++ */
++const sessionLineages = new Map();
++/** Wire id → base id, so eviction can reach the lineage record. */
++const wireToBase = new Map();
++/** Wire id → in-flight request count. A conversation with live calls is never evicted. */
++const activeWireCalls = new Map();
++/** Wire id → last touch, for TTL and LRU. */
++const wireTouchedAt = new Map();
++/**
++ * Bounds for abandoned conversations. A session that never disposes (crash, lost
++ * TUI, killed child) must not pin its checkpoint forever.
++ */
++export const CURSOR_CONVERSATION_STATE_TTL_MS = 30 * 60 * 1000;
++export const CURSOR_CONVERSATION_STATE_MAX = 64;
++function touchConversation(baseId, wireId) {
++    wireToBase.set(wireId, baseId);
++    wireTouchedAt.set(wireId, Date.now());
++    const lineage = sessionLineages.get(baseId) ?? new Set();
++    lineage.add(wireId);
++    sessionLineages.set(baseId, lineage);
++}
++function retainConversation(wireId) {
++    activeWireCalls.set(wireId, (activeWireCalls.get(wireId) ?? 0) + 1);
++}
++function releaseConversation(wireId) {
++    const next = (activeWireCalls.get(wireId) ?? 0) - 1;
++    if (next > 0)
++        activeWireCalls.set(wireId, next);
++    else
++        activeWireCalls.delete(wireId);
++    if (wireId !== undefined)
++        wireTouchedAt.set(wireId, Date.now());
++}
++function dropWireConversation(wireId) {
++    // An in-flight request still reads and writes these entries; dropping them
++    // would restart the conversation mid-turn against the server's checkpoint.
++    if ((activeWireCalls.get(wireId) ?? 0) > 0)
++        return false;
++    conversationStateCache.delete(wireId);
++    conversationBlobStores.delete(wireId);
++    wireTouchedAt.delete(wireId);
++    const baseId = wireToBase.get(wireId);
++    wireToBase.delete(wireId);
++    if (baseId !== undefined) {
++        const lineage = sessionLineages.get(baseId);
++        lineage?.delete(wireId);
++        if (lineage && lineage.size === 0)
++            sessionLineages.delete(baseId);
++    }
++    return true;
++}
++/** TTL first, then LRU. Conversations with live calls survive both. */
++function enforceConversationStateBounds(now = Date.now()) {
++    for (const [wireId, touchedAt] of [...wireTouchedAt]) {
++        if (now - touchedAt > CURSOR_CONVERSATION_STATE_TTL_MS)
++            dropWireConversation(wireId);
++    }
++    if (wireTouchedAt.size <= CURSOR_CONVERSATION_STATE_MAX)
++        return;
++    const byAge = [...wireTouchedAt].sort((left, right) => left[1] - right[1]);
++    for (const [wireId] of byAge) {
++        if (wireTouchedAt.size <= CURSOR_CONVERSATION_STATE_MAX)
++            break;
++        dropWireConversation(wireId);
++    }
++}
++/**
++ * Free every wire conversation this session owns, plus its rotation record.
++ *
++ * Registered with the shared `registerSessionResourceCleanup` hook, the same
++ * seam `openai-codex-responses` uses, so the host's existing session disposal
++ * path reaches Cursor without a new call site.
++ */
++export function disposeCursorSessionState(sessionId) {
++    if (typeof sessionId !== "string" || sessionId.length === 0)
++        return 0;
++    const lineage = sessionLineages.get(sessionId);
++    let freed = 0;
++    for (const wireId of [...(lineage ?? [])]) {
++        if (dropWireConversation(wireId))
++            freed += 1;
++    }
++    // The base id itself can be a wire id when rotation never happened.
++    if (dropWireConversation(sessionId))
++        freed += 1;
++    if (sessionLineages.get(sessionId)?.size === 0)
++        sessionLineages.delete(sessionId);
++    // Only forget the rotation record once no wire id of this lineage is live;
++    // otherwise a retry in flight would remint an id and lose its poison budget.
++    if (!(sessionLineages.get(sessionId)?.size > 0))
++        rotationStore().forget?.(sessionId);
++    enforceConversationStateBounds();
++    return freed;
++}
++registerSessionResourceCleanup(disposeCursorSessionState);
++/** Offline-test visibility. Reports sizes only; never conversation content. */
++export function cursorConversationStateStats() {
++    return {
++        states: conversationStateCache.size,
++        blobStores: conversationBlobStores.size,
++        lineages: sessionLineages.size,
++        tracked: wireTouchedAt.size,
++        active: [...activeWireCalls.values()].reduce((sum, count) => sum + count, 0),
++    };
++}
++/** Offline-test reset. Does not touch the persisted rotation file. */
++export function resetCursorConversationState() {
++    conversationStateCache.clear();
++    conversationBlobStores.clear();
++    sessionLineages.clear();
++    wireToBase.clear();
++    activeWireCalls.clear();
++    wireTouchedAt.clear();
++}
++/**
+  * Base conversation id → rotated wire id. Cursor's backend can pin a
+  * per-conversation rejection (bare `resource_exhausted`, zero tokens) to one
+  * conversationId forever. On the first such failure the id is rotated once
+@@ -143,6 +270,112 @@
+     }
+     console.error(`[CURSOR] ${type}${subtype ? `: ${subtype}` : ""}${dataStr}`);
+ }
++/**
++ * Machine-readable terminal failure kinds for the Cursor run RPC.
++ *
++ * The terminal event only carried `output.errorMessage`, so every consumer that
++ * had to tell "the token is gone" from "the TLS proxy stripped ALPN" had to
++ * match on prose. That match breaks on any vendor wording change and cannot see
++ * the difference between a user cancel and a server cancel at all. The kind is
++ * decided where the failure is constructed, where the structured cause (Connect
++ * code, gRPC status, `error.code`, abort flag) is still in hand.
++ *
++ * `transport` and `protocol` are the only kinds a caller may treat as route
++ * failures, and they are assigned narrowly: `transport` for a connection that did
++ * not carry the call (HTTP/2 negotiation, `unavailable`, `deadline_exceeded`,
++ * retryable transport/stall), `protocol` for a verified truncated clean end. The
++ * rest — `auth`, `oauth`, `cancelled`, `content`, `unknown` — describe the request,
++ * the credential, or a server-side condition whose route causality is unproven, so
++ * retrying them on another route hides the real error.
++ */
++export const CURSOR_FAILURE_KINDS = Object.freeze([
++    "auth",
++    "oauth",
++    "cancelled",
++    "content",
++    "transport",
++    "protocol",
++    "unknown",
++]);
++const CURSOR_ROUTE_FAILURE_KINDS = Object.freeze(["transport", "protocol"]);
++const kCursorFailureKind = Symbol.for("pi-ai.cursor.failureKind");
++/** Attach a kind to the error at its construction site. Never overwrites a more specific one. */
++export function tagCursorFailure(error, kind) {
++    if (error && typeof error === "object" && error[kCursorFailureKind] === undefined) {
++        Object.defineProperty(error, kCursorFailureKind, { value: kind, enumerable: false, configurable: true });
++    }
++    return error;
++}
++/** `CursorRetryableStreamError.retryCause` values that describe the transport dying. */
++const CURSOR_RETRY_CAUSE_KINDS = Object.freeze({
++    transport: "transport",
++    stall: "transport",
++    "clean-end": "protocol",
++});
++export function cursorFailureKindOf(error) {
++    const tagged = error && typeof error === "object" ? error[kCursorFailureKind] : undefined;
++    if (CURSOR_FAILURE_KINDS.includes(tagged))
++        return tagged;
++    // Retry exhaustion: the retry cause is the structured record of why the
++    // stream died, so it classifies without touching the message.
++    const retryCause = error && typeof error === "object" ? error.retryCause : undefined;
++    return CURSOR_RETRY_CAUSE_KINDS[String(retryCause ?? "")] ?? "unknown";
++}
++/** Connect/gRPC status name → kind. Codes absent here stay `unknown` rather than guessing. */
++const CURSOR_CONNECT_CODE_KINDS = Object.freeze({
++    canceled: "cancelled",
++    cancelled: "cancelled",
++    unauthenticated: "auth",
++    permission_denied: "auth",
++    invalid_argument: "content",
++    out_of_range: "content",
++    failed_precondition: "content",
++    resource_exhausted: "content",
++    // Server-side conditions with no proven route causality. A different route is
++    // not known to fix them, so they are classified as unknown rather than as a
++    // route failure: `unknown` is never eligible for an automatic route switch.
++    not_found: "unknown",
++    unimplemented: "unknown",
++    internal: "unknown",
++    data_loss: "unknown",
++    // Transport: the connection itself did not carry the call.
++    unavailable: "transport",
++    deadline_exceeded: "transport",
++    aborted: "transport",
++    unknown: "unknown",
++});
++/** Numeric gRPC status → canonical Connect code name. */
++const CURSOR_GRPC_STATUS_CODES = Object.freeze({
++    1: "canceled",
++    2: "unknown",
++    3: "invalid_argument",
++    4: "deadline_exceeded",
++    5: "not_found",
++    7: "permission_denied",
++    8: "resource_exhausted",
++    9: "failed_precondition",
++    10: "aborted",
++    11: "out_of_range",
++    12: "unimplemented",
++    13: "internal",
++    14: "unavailable",
++    15: "data_loss",
++    16: "unauthenticated",
++});
++export function cursorFailureKindForConnectCode(code) {
++    const named = typeof code === "number" || /^\d+$/.test(String(code ?? ""))
++        ? CURSOR_GRPC_STATUS_CODES[Number(code)]
++        : String(code ?? "").toLowerCase();
++    return CURSOR_CONNECT_CODE_KINDS[named ?? ""] ?? "unknown";
++}
++/** The terminal descriptor written onto `output`. `fallbackEligible` is derived, never asserted. */
++export function cursorFailureDescriptor(error, { aborted = false } = {}) {
++    const kind = aborted ? "cancelled" : cursorFailureKindOf(error);
++    return Object.freeze({
++        kind,
++        fallbackEligible: CURSOR_ROUTE_FAILURE_KINDS.includes(kind),
++    });
++}
+ export function frameConnectMessage(data, flags = 0) {
+     const frame = Buffer.alloc(5 + data.length);
+     frame[0] = flags;
+@@ -157,12 +390,14 @@
+         if (error) {
+             const code = typeof error.code === "string" ? error.code : "unknown";
+             const message = typeof error.message === "string" ? error.message : "Unknown error";
+-            return new Error(`Connect error ${code}: ${message}`);
++            return tagCursorFailure(new Error(`Connect error ${code}: ${message}`), cursorFailureKindForConnectCode(code));
+         }
+         return null;
+     }
+     catch {
+-        return new Error("Failed to parse Connect end stream");
++        // An end-stream frame this client cannot parse is a protocol disagreement,
++        // not a credential or content problem.
++        return tagCursorFailure(new Error("Failed to parse Connect end stream"), "protocol");
+     }
+ }
+ /**
+@@ -174,12 +409,12 @@
+     const code = error?.code;
+     const message = error instanceof Error ? error.message : String(error);
+     if (code === "ERR_HTTP2_ERROR" && /h2 is not supported/i.test(message)) {
+-        return new Error(`Cursor run transport could not negotiate HTTP/2 with ${baseUrl}: "h2 is not supported". ` +
++        return tagCursorFailure(new Error(`Cursor run transport could not negotiate HTTP/2 with ${baseUrl}: "h2 is not supported". ` +
+             "This host serves the run RPC over HTTP/2 only, and the TLS handshake did not negotiate " +
+             "h2 via ALPN — typically an ALPN-stripping TLS-intercepting proxy. " +
+-            "Front the provider with a local HTTP/2 bridge and point the model's baseUrl at it.");
++            "Front the provider with a local HTTP/2 bridge and point the model's baseUrl at it."), "transport");
+     }
+-    return error;
++    return tagCursorFailure(error, "transport");
+ }
+ export const stream = (model, context, options) => {
+     const stream = new AssistantMessageEventStream();
+@@ -284,13 +519,20 @@
+                 rejectH2 = reject;
+             });
+             let attemptSawCheckpoint = false;
++            let retainedConversationId;
+             try {
+                 const apiKey = options?.apiKey;
+                 if (!apiKey) {
+-                    throw new Error("Cursor access token is required; run /login cursor");
++                    throw tagCursorFailure(new Error("Cursor access token is required; run /login cursor"), "auth");
+                 }
+                 baseConversationId = options?.conversationId ?? options?.sessionId ?? randomUUID();
+                 conversationId = rotationStore().getWireId(baseConversationId);
++                // Track and retain before the request runs: an eviction between here
++                // and the finally below would drop the checkpoint mid-turn.
++                touchConversation(baseConversationId, conversationId);
++                retainConversation(conversationId);
++                retainedConversationId = conversationId;
++                enforceConversationStateBounds();
+                 const blobStore = conversationBlobStores.get(conversationId) ?? new Map();
+                 conversationBlobStores.set(conversationId, blobStore);
+                 const cachedState = conversationStateCache.get(conversationId);
+@@ -494,7 +736,7 @@
+                     const status = trailers["grpc-status"];
+                     const msg = trailers["grpc-message"];
+                     if (status && status !== "0" && !endStreamError) {
+-                        endStreamError = new Error(`gRPC error ${status}: ${decodeURIComponent(String(msg || ""))}`);
++                        endStreamError = tagCursorFailure(new Error(`gRPC error ${status}: ${decodeURIComponent(String(msg || ""))}`), cursorFailureKindForConnectCode(status));
+                     }
+                 });
+                 h2Request.on("end", () => {
+@@ -513,7 +755,7 @@
+                 if (options?.signal) {
+                     options.signal.addEventListener("abort", () => {
+                         h2Request?.close();
+-                        settleH2(new Error("Request was aborted"));
++                        settleH2(tagCursorFailure(new Error("Request was aborted"), "cancelled"));
+                     });
+                 }
+                 h2Request.write(frameConnectMessage(requestBytes));
+@@ -571,6 +813,7 @@
+                         retryAttempt = false;
+                         output.stopReason = "aborted";
+                         output.errorMessage = "Request was aborted";
++                        output.cursorFailure = cursorFailureDescriptor(error, { aborted: true });
+                         stream.push({ type: "error", reason: output.stopReason, error: output });
+                         stream.end();
+                     }
+@@ -624,6 +867,10 @@
+                             const blobs = conversationBlobStores.get(conversationId);
+                             if (blobs)
+                                 conversationBlobStores.set(decision.wireId, blobs);
++                            // The rotated id belongs to the same session lineage, so
++                            // disposal frees it too. Without this the migrated state
++                            // becomes unreachable and permanent.
++                            touchConversation(baseConversationId, decision.wireId);
+                             retryAttempt = true;
+                         }
+                         else {
+@@ -632,8 +879,12 @@
+                     }
+                 }
+                 if (!retryAttempt) {
+-                    output.stopReason = options?.signal?.aborted ? "aborted" : "error";
++                    const aborted = options?.signal?.aborted === true;
++                    output.stopReason = aborted ? "aborted" : "error";
+                     output.errorMessage = message;
++                    // Decided from the structured cause, not from `message`: the text is
++                    // rewritten above for rotation/poisoning and is not a classifier.
++                    output.cursorFailure = cursorFailureDescriptor(error, { aborted });
+                     stream.push({ type: "error", reason: output.stopReason, error: output });
+                     stream.end();
+                 }
+@@ -643,6 +894,10 @@
+                     clearInterval(heartbeatTimer);
+                     heartbeatTimer = null;
+                 }
++                if (retainedConversationId !== undefined) {
++                    releaseConversation(retainedConversationId);
++                    retainedConversationId = undefined;
++                }
+                 h2Request?.close();
+                 h2Client?.close();
+                 h2Request = null;
+diff --git a/dist/api/cursor-agent.d.ts b/dist/api/cursor-agent.d.ts
+--- a/dist/api/cursor-agent.d.ts
++++ b/dist/api/cursor-agent.d.ts
+@@ -16,7 +16,7 @@
+  * through the lazy wrapper (`cursor-agent.lazy.ts`).
+  */
+ import * as http2 from "node:http2";
+-import type { AssistantMessage, Message, SimpleStreamOptions, StreamFunction, TextContent, ThinkingContent, Tool, ToolCall, ToolResultMessage } from "../types.ts";
++import type { AssistantMessage, CursorFailureKind, CursorTerminalFailure, Message, SimpleStreamOptions, StreamFunction, TextContent, ThinkingContent, Tool, ToolCall, ToolResultMessage } from "../types.ts";
+ import { kCursorExecResolved, kStreamingBlockIndex, kStreamingBlockKind, kStreamingEnvelopeId, kStreamingLastParseLen, kStreamingPartialJson } from "../utils/block-symbols.ts";
+ import { AssistantMessageEventStream } from "../utils/event-stream.ts";
+ import { type AgentServerMessage, type ConversationStateStructure, type McpToolDefinition } from "./cursor-agent/gen/agent_pb.ts";
+@@ -31,7 +31,51 @@
+ /** Maximum time allowed to drain exec handlers after turnEnded. */
+ export declare const CURSOR_TURN_END_DRAIN_TIMEOUT_MS = 5000;
+ /** Reduce caller-supplied headers to what this HTTP/2 request can legally carry. */
++/** Idle bound after which an abandoned conversation's cached state is released. */
++export declare const CURSOR_CONVERSATION_STATE_TTL_MS: number;
++/** Upper bound on tracked conversations; the least recently used are released first. */
++export declare const CURSOR_CONVERSATION_STATE_MAX: number;
++/**
++ * Release every module-local conversation state this session owns: checkpoint
++ * cache, blob store, and rotation record, across all wire ids the session used.
++ *
++ * Registered with `registerSessionResourceCleanup`, so the host's existing
++ * session-disposal path reaches Cursor without a new call site. Conversations
++ * with an in-flight request are retained; returns the number released.
++ */
++export declare function disposeCursorSessionState(sessionId: string): number;
++/** Sizes of the module-local conversation state. Never exposes conversation content. */
++export declare function cursorConversationStateStats(): {
++    states: number;
++    blobStores: number;
++    lineages: number;
++    tracked: number;
++    active: number;
++};
++/** Clears the in-memory conversation state. Does not touch the persisted rotation file. */
++export declare function resetCursorConversationState(): void;
+ export declare function sanitizeCursorCallerHeaders(headers: Record<string, string> | undefined): Record<string, string>;
++/** Every terminal failure kind the Cursor run RPC distinguishes, in declaration order. */
++export declare const CURSOR_FAILURE_KINDS: readonly CursorFailureKind[];
++/**
++ * Records `kind` on the error at its construction site, where the structured
++ * cause (Connect code, gRPC status, `error.code`, abort flag) is still in hand.
++ * Never overwrites an existing, more specific tag. Returns the same error.
++ */
++export declare function tagCursorFailure<T>(error: T, kind: CursorFailureKind): T;
++/** Reads the tag, falling back to `CursorRetryableStreamError.retryCause`, else `"unknown"`. */
++export declare function cursorFailureKindOf(error: unknown): CursorFailureKind;
++/**
++ * Connect code name or numeric gRPC status to failure kind. Unrecognised codes are
++ * `"unknown"`. Route-failure kinds are assigned narrowly: server-side conditions
++ * (`internal`, `data_loss`, `not_found`, `unimplemented`) map to `"unknown"` because
++ * their route causality is unproven.
++ */
++export declare function cursorFailureKindForConnectCode(code: string | number | undefined): CursorFailureKind;
++/** Builds the descriptor written to {@link AssistantMessage.cursorFailure}. An abort always wins. */
++export declare function cursorFailureDescriptor(error: unknown, options?: {
++    aborted?: boolean;
++}): CursorTerminalFailure;
+ export declare function frameConnectMessage(data: Uint8Array, flags?: number): Buffer;
+ /**
+  * Maps an opaque HTTP/2 negotiation failure into an actionable error. The
+diff --git a/dist/types.d.ts b/dist/types.d.ts
+--- a/dist/types.d.ts
++++ b/dist/types.d.ts
+@@ -397,6 +397,20 @@
+     content: string | (TextContent | ImageContent)[];
+     timestamp: number;
+ }
++/** Terminal failure kinds the Cursor run RPC distinguishes. */
++export type CursorFailureKind = "auth" | "oauth" | "cancelled" | "content" | "transport" | "protocol" | "unknown";
++/**
++ * Structured terminal failure for the Cursor agent protocol.
++ *
++ * `fallbackEligible` is derived from `kind`, never asserted independently: only
++ * `transport` and `protocol` describe the route dying. `auth`, `oauth`,
++ * `cancelled`, `content`, and `unknown` describe the credential or the request,
++ * so retrying them on another route hides the real error.
++ */
++export interface CursorTerminalFailure {
++    kind: CursorFailureKind;
++    fallbackEligible: boolean;
++}
+ export interface AssistantMessage {
+     role: "assistant";
+     content: (TextContent | ThinkingContent | ToolCall | ProviderNativeContent)[];
+@@ -411,6 +425,17 @@
+     stopDetails?: AssistantStopDetails;
+     deferred?: DeferredHandle;
+     errorMessage?: string;
++    /**
++     * Machine-readable classification of a terminal Cursor failure, set by the
++     * `cursor-agent` API alongside `errorMessage`. Present only on Cursor
++     * assistant messages that ended in `error` or `aborted`.
++     *
++     * `errorMessage` is prose and is rewritten in-flight (conversation rotation,
++     * poisoned-conversation replacement), so it cannot classify. Callers that
++     * need to tell a dead credential from a dead transport read this instead of
++     * matching text. See `cursorFailureDescriptor` in `api/cursor-agent.ts`.
++     */
++    cursorFailure?: CursorTerminalFailure;
+     rawStopReason?: string;
+     /**
+      * Provider indication of whether the model explicitly ended its turn.
+diff --git a/dist/api/cursor-conversation-rotation.js b/dist/api/cursor-conversation-rotation.js
+--- a/dist/api/cursor-conversation-rotation.js
++++ b/dist/api/cursor-conversation-rotation.js
+@@ -72,6 +72,26 @@
+             persist();
+             return { kind: "rotated", wireId };
+         },
++        /**
++         * Drop the rotation record for a disposed conversation lineage.
++         *
++         * Without this the store keeps one entry per base conversation for the life
++         * of the persist file, and the session-disposal cleanup below cannot finish
++         * the job: the state caches would be freed while the rotation record that
++         * points at their wire id stays behind forever.
++         *
++         * Poison handling is unchanged for live conversations. Forgetting a disposed
++         * lineage is not the same as clearing poison: a later conversation reusing
++         * the same base id is a genuinely new conversation and earns its own
++         * surface-first pass, which is what a missing record already means.
++         */
++        forget(baseId) {
++            if (!(baseId in records))
++                return false;
++            delete records[baseId];
++            persist();
++            return true;
++        },
+     };
+ }
+ export function resolveConversationRotationPersistPath(env = process.env) {
+diff --git a/dist/api/cursor-conversation-rotation.d.ts b/dist/api/cursor-conversation-rotation.d.ts
+--- a/dist/api/cursor-conversation-rotation.d.ts
++++ b/dist/api/cursor-conversation-rotation.d.ts
+@@ -27,6 +27,15 @@
+     shouldSurfaceBeforeRotating(baseId: string): boolean;
+     markSurfaced(baseId: string, currentWireId: string): void;
+     recordZeroTokenPoison(baseId: string, currentWireId: string): PoisonDecision;
++    /**
++     * Drop the rotation record for a disposed conversation lineage, so the store
++     * does not keep one entry per base conversation for the life of the persist
++     * file. Returns true when a record was removed.
++     *
++     * A later conversation reusing the same base id is genuinely new and earns its
++     * own surface-first pass, which a missing record already expresses.
++     */
++    forget(baseId: string): boolean;
+ };
+ export declare function isZeroTokenResourceExhausted(errorMessage: string, sawTokenDelta: boolean): boolean;
+ export declare function createConversationRotationStore(options: {

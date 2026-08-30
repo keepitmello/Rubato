@@ -1,0 +1,4 @@
+interface:
+  display_name: "WY Server"
+  short_description: "Route verified Mac-Windows work through the destination Codex"
+  default_prompt: "Use $wy-server to route work to the other computer's Codex and verify the result."

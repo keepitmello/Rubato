@@ -1,0 +1,47 @@
+diff --git a/dist/modes/interactive/components/model-selector.js b/dist/modes/interactive/components/model-selector.js
+--- a/dist/modes/interactive/components/model-selector.js
++++ b/dist/modes/interactive/components/model-selector.js
+@@ -9,7 +9,7 @@
+ import { getModelFullId, isFavoriteModel, toggleFavoriteModel } from "./model-favorites.js";
+ const PROVIDER_ORDER = ["openai-codex", "anthropic", "xai", "google-antigravity", "kiro", "cursor"];
+ const MODEL_ORDER = {
+-    "openai-codex": ["gpt-5.6-sol", "gpt-5.6-sol-fast", "gpt-5.6-terra", "gpt-5.6-terra-fast", "gpt-5.6-luna", "gpt-5.6-luna-fast", "gpt-daybreak-blue-latest"],
++    "openai-codex": ["gpt-5.6-sol", "gpt-5.6-sol-fast", "gpt-5.6-terra", "gpt-5.6-terra-fast", "gpt-5.6-luna", "gpt-5.6-luna-fast", "gpt-daybreak-blue-latest", "gpt-daybreak-blue-latest-fast"],
+     anthropic: ["claude-fable-5", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"],
+     xai: ["grok-4.6"],
+     "google-antigravity": ["gemini-3.1-pro", "gemini-3.7-flash"],
+@@ -33,6 +33,11 @@
+         return modelRank !== 0 ? modelRank : a.id.localeCompare(b.id);
+     });
+ }
++function modelPickerLabel(item) {
++    return item.provider === "openai-codex" && item.id.startsWith("gpt-daybreak-blue-")
++        ? item.model.name
++        : item.id;
++}
+ /**
+  * Component that renders a model selector with search
+  */
+@@ -258,19 +263,20 @@
+                 continue;
+             const isSelected = i === this.selectedIndex;
+             const isCurrent = modelsAreEqual(this.currentModel, item.model);
++            const label = modelPickerLabel(item);
+             const favoriteMarker = isFavoriteModel(this.favoriteIds, item.fullId)
+                 ? theme.fg("success", "* ")
+                 : theme.fg("dim", "  ");
+             let line = "";
+             if (isSelected) {
+                 const prefix = theme.fg("accent", "→ ");
+-                const modelText = `${favoriteMarker}${theme.fg("accent", item.id)}`;
++                const modelText = `${favoriteMarker}${theme.fg("accent", label)}`;
+                 const providerBadge = theme.fg("muted", `[${item.provider}]`);
+                 const checkmark = isCurrent ? theme.fg("success", " ✓") : "";
+                 line = `${prefix}${modelText} ${providerBadge}${checkmark}`;
+             }
+             else {
+-                const modelText = `  ${favoriteMarker}${item.id}`;
++                const modelText = `  ${favoriteMarker}${label}`;
+                 const providerBadge = theme.fg("muted", `[${item.provider}]`);
+                 const checkmark = isCurrent ? theme.fg("success", " ✓") : "";
+                 line = `${modelText} ${providerBadge}${checkmark}`;

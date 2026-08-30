@@ -1,0 +1,46 @@
+diff --git a/dist/api/lazy.js b/dist/api/lazy.js
+--- a/dist/api/lazy.js
++++ b/dist/api/lazy.js
+@@ -26,6 +26,31 @@
+     setCancellationHandler(handler) {
+         this.cancellationHandler = handler;
+     }
++    /**
++     * The lazy stream is what callers hold, but the local-work bookkeeping lives
++     * on the inner provider stream created behind setup. The agent loop re-arms its
++     * idle deadline from the stream it holds (pi-agent-core agent-loop.js:
++     * `stream?.hasPendingLocalWork?.()`), so without this delegation a
++     * server-driven tool run that outlasts the idle bound looks like a dead
++     * request and a healthy stream gets torn down.
++     */
++    setLocalWorkDelegate(delegate) {
++        this.localWorkDelegate = delegate;
++    }
++    trackLocalWork(work) {
++        const delegate = this.localWorkDelegate;
++        if (delegate && typeof delegate.trackLocalWork === "function") {
++            return delegate.trackLocalWork(work);
++        }
++        return super.trackLocalWork(work);
++    }
++    hasPendingLocalWork() {
++        const delegate = this.localWorkDelegate;
++        if (delegate && typeof delegate.hasPendingLocalWork === "function") {
++            return delegate.hasPendingLocalWork() || super.hasPendingLocalWork();
++        }
++        return super.hasPendingLocalWork();
++    }
+     [Symbol.asyncIterator]() {
+         const iterator = super[Symbol.asyncIterator]();
+         return {
+@@ -62,6 +87,10 @@
+         });
+         return cancellation;
+     });
++    // Point local-work questions at the real provider stream as soon as setup
++    // resolves. Setup itself emits no events, so there is no window where the
++    // agent loop would consult a stale delegate.
++    void inner.then((source) => outer.setLocalWorkDelegate(source), () => {});
+     Promise.all([inner, iterator])
+         .then(([source, sourceIterator]) => forwardStream(outer, source, sourceIterator))
+         .catch((error) => {

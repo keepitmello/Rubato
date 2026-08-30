@@ -1,0 +1,12 @@
+diff --git a/dist/modes/interactive/components/assistant-message.js b/dist/modes/interactive/components/assistant-message.js
+--- a/dist/modes/interactive/components/assistant-message.js
++++ b/dist/modes/interactive/components/assistant-message.js
+@@ -194,7 +194,7 @@
+             if (content.type === "thinking") {
+                 if (!inRun) {
+                     inRun = true;
+-                    runStart = content.startedAt ?? `untimed-${message.content.indexOf(content)}`;
++                    runStart = content.startedAt ?? Number.POSITIVE_INFINITY;
+                     runActive = false;
+                 }
+                 if (content.startedAt !== undefined && content.endedAt === undefined)

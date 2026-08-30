@@ -1,0 +1,6 @@
+interface:
+  display_name: "Consult Playwright Fallback"
+  short_description: "Recover a failed Aside consult through strict agbrowse automation"
+  default_prompt: "Use the Playwright fallback only after the main Aside consult path has failed."
+policy:
+  allow_implicit_invocation: false

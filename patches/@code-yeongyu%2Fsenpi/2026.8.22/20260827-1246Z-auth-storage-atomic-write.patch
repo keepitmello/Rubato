@@ -1,0 +1,122 @@
+diff --git a/dist/core/auth-storage.js b/dist/core/auth-storage.js
+--- a/dist/core/auth-storage.js
++++ b/dist/core/auth-storage.js
+@@ -2,10 +2,11 @@
+  * CredentialStore implementation backed by auth.json.
+  * Provider auth orchestration belongs to ModelRuntime and pi-ai Models.
+  */
++import { randomUUID } from "node:crypto";
+ import { setTimeout as sleep } from "node:timers/promises";
+ import { findEnvKeys, getEnvApiKey } from "@earendil-works/pi-ai";
+ import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
+-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
++import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync, writeSync } from "fs";
+ import { dirname, join } from "path";
+ import lockfile from "proper-lockfile";
+ import { getAgentDir } from "../config.js";
+@@ -14,6 +15,75 @@
+ import { FILE_STORAGE_LOCK_OPTIONS } from "./lockfile-policy.js";
+ import { isCommandConfigValue, resolveConfigValue } from "./resolve-config-value.js";
+ const AUTH_FILE_WRITE_OPTIONS = { encoding: "utf-8", mode: 0o600 };
++/**
++ * Replace auth.json without ever leaving a partial file behind.
++ *
++ * An in-place `writeFileSync` truncates first and then streams bytes: a crash, a
++ * full disk, or a killed process in that window leaves a half-written file, and
++ * the next read fails to parse credentials that were previously valid. The lock
++ * does not help — it serializes writers, not the bytes of one write.
++ *
++ * So the new contents are written to a unique sibling temp file, forced to disk,
++ * and then `rename`d over the target. POSIX rename within one directory is
++ * atomic, so a concurrent reader observes either the complete previous JSON or
++ * the complete new JSON. The directory is fsynced afterwards so the rename
++ * itself survives power loss, not just the file contents.
++ *
++ * The temp file is created with `O_EXCL` and mode 0600, so the secret is never
++ * momentarily world-readable and two writers can never share a temp path.
++ */
++function atomicWriteAuthFileSync(authPath, contents) {
++    // Same directory as the target: rename is only atomic within a filesystem,
++    // and a temp dir can be on another one.
++    const tempPath = join(dirname(authPath), `.auth.json.${process.pid}.${randomUUID()}.tmp`);
++    let fd;
++    try {
++        // wx = O_CREAT | O_EXCL | O_WRONLY. Fails rather than reusing a path.
++        fd = openSync(tempPath, "wx", 0o600);
++        writeSync(fd, contents, 0, "utf-8");
++        // Force the bytes out before the rename publishes them. Without this the
++        // rename can land while the contents are still only in the page cache.
++        fsyncSync(fd);
++        closeSync(fd);
++        fd = undefined;
++        // umask cannot loosen an explicit chmod, so assert the mode we promise.
++        chmodSync(tempPath, 0o600);
++        renameSync(tempPath, authPath);
++    }
++    catch (error) {
++        // Never leave the temp file behind, and never mask the original failure.
++        if (fd !== undefined) {
++            try {
++                closeSync(fd);
++            }
++            catch {
++                // Closing failed on an already-failing path; the unlink below still runs.
++            }
++        }
++        try {
++            if (existsSync(tempPath))
++                unlinkSync(tempPath);
++        }
++        catch {
++            // Cleanup is best-effort: the original error is what the caller needs.
++        }
++        throw error;
++    }
++    // Directory fsync makes the rename itself durable. Not fatal if the platform
++    // refuses to open a directory for this purpose.
++    try {
++        const dirFd = openSync(dirname(authPath), "r");
++        try {
++            fsyncSync(dirFd);
++        }
++        finally {
++            closeSync(dirFd);
++        }
++    }
++    catch {
++        // Best-effort: the rename already gives readers atomicity within this boot.
++    }
++}
+ let sharedAuthFileReadState;
+ export class FileAuthStorageBackend {
+     constructor(authPath = join(getAgentDir(), "auth.json")) {
+@@ -27,8 +97,7 @@
+     }
+     ensureFileExists() {
+         if (!existsSync(this.authPath)) {
+-            writeFileSync(this.authPath, "{}", AUTH_FILE_WRITE_OPTIONS);
+-            chmodSync(this.authPath, 0o600);
++            atomicWriteAuthFileSync(this.authPath, "{}");
+         }
+     }
+     acquireLockSyncWithRetry(path) {
+@@ -65,8 +134,7 @@
+             const current = existsSync(this.authPath) ? readFileSync(this.authPath, "utf-8") : undefined;
+             const { result, next } = fn(current);
+             if (next !== undefined) {
+-                writeFileSync(this.authPath, next, AUTH_FILE_WRITE_OPTIONS);
+-                chmodSync(this.authPath, 0o600);
++                atomicWriteAuthFileSync(this.authPath, next);
+             }
+             return result;
+         }
+@@ -139,8 +207,7 @@
+             throwIfCompromised();
+             options?.signal?.throwIfAborted();
+             if (next !== undefined) {
+-                writeFileSync(this.authPath, next, AUTH_FILE_WRITE_OPTIONS);
+-                chmodSync(this.authPath, 0o600);
++                atomicWriteAuthFileSync(this.authPath, next);
+             }
+             throwIfCompromised();
+             return result;

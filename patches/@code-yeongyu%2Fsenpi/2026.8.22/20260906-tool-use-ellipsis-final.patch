@@ -1,0 +1,37 @@
+diff --git a/dist/modes/interactive/components/assistant-render-descriptors.js b/dist/modes/interactive/components/assistant-render-descriptors.js
+--- a/dist/modes/interactive/components/assistant-render-descriptors.js
++++ b/dist/modes/interactive/components/assistant-render-descriptors.js
+@@ -6,7 +6,15 @@
+ function assertNever(value) {
+     throw new TypeError(`Unexpected assistant render variant: ${String(value)}`);
+ }
+-function isVisibleContent(content, providerNativeVisible) {
++function isToolUseEllipsisFiller(message, content) {
++    const isToolUseTurn = message.stopReason === "toolUse" || message.stopReason === "pending";
++    return isToolUseTurn &&
++        content.type === "text" &&
++        /^(?:\.{3,}|…+)$/.test(content.text.trim());
++}
++function isVisibleContent(message, content, providerNativeVisible) {
++    if (isToolUseEllipsisFiller(message, content))
++        return false;
+     switch (content.type) {
+         case "text":
+             return Boolean(content.text.trim());
+@@ -22,13 +30,15 @@
+ }
+ export function createAssistantRenderDescriptors(message, options) {
+     const descriptors = [];
+-    const isTurnVisible = (content, providerNativeVisible) => !(options.hideTurnWork && content.type === "thinking") && isVisibleContent(content, providerNativeVisible);
++    const isTurnVisible = (content, providerNativeVisible) => !(options.hideTurnWork && content.type === "thinking") && isVisibleContent(message, content, providerNativeVisible);
+     if (message.content.some((content) => isTurnVisible(content, true)))
+         descriptors.push(SPACER_DESCRIPTOR);
+     for (let i = 0; i < message.content.length; i++) {
+         const content = message.content[i];
+         switch (content.type) {
+             case "text": {
++                if (isToolUseEllipsisFiller(message, content))
++                    break;
+                 const text = content.text.trim();
+                 if (text)
+                     descriptors.push({ kind: "text-md", text });

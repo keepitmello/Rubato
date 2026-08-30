@@ -1,0 +1,6 @@
+title,url,use
+Claude Cookbooks,https://github.com/anthropics/claude-cookbooks,"Examples for tools, evals, skills, multimodal, agents, caching, and patterns; verify model/API freshness."
+Anthropic courses,https://github.com/anthropics/courses,"API fundamentals, prompt tutorial, real-world prompting, evals, and tool use; many examples use older low-cost models."
+Prompt engineering interactive tutorial,https://github.com/anthropics/prompt-eng-interactive-tutorial,Foundational exercises; treat model-specific code as legacy until checked.
+Agent Skills repository,https://github.com/anthropics/skills,"Current skill examples, specification, template, skill creator, and Claude API skill."
+Official Claude Code plugins,https://github.com/anthropics/claude-plugins-official,Production plugin and skill-creator patterns.

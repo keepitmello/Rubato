@@ -1,0 +1,4 @@
+title,date,url,how_to_use
+Claude Fable 5 and Mythos 5 System Card,2026-06-09,https://www.anthropic.com/claude-fable-5-mythos-5-system-card,"Use behavior, honesty, diligence, agentic safety, evaluation-awareness, and capability sections to design regression tests. Do not load the full card into every prompt."
+Claude Opus 5 System Card,2026-07-24,https://www.anthropic.com/claude-opus-5-system-card,Use model-comparison findings and behavioral audit categories as workload-specific test hypotheses.
+Claude Sonnet 5 System Card,2026,https://www.anthropic.com/claude-sonnet-5-system-card,"Use hallucination, sycophancy, moralizing-tone, over-refusal, and evaluation-awareness sections as eval categories."

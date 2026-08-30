@@ -1,0 +1,2 @@
+{"ts": 1786968030, "url": "https://example.com/", "domain": "example.com", "ok": true, "verdict": "strong_ok", "profile_used": null, "attempts": 1, "planned_attempts": 0, "stop_reason": "success", "winner": {"phase": "probe", "executor": "curl_cffi", "transform": "original", "impersonate": "safari", "referer": "self_root", "status": 200, "body_size": 559}}
+{"ts": 1786968071, "url": "https://httpbin.org/status/403", "domain": "httpbin.org", "ok": false, "verdict": "unknown", "profile_used": "unknown_challenge", "attempts": 3, "planned_attempts": 14, "stop_reason": "budget"}
