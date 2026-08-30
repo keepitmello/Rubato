@@ -3,7 +3,7 @@ import type { RubatoConfig } from "@rubato/config-core"
 import type { AgentDefinition, SkillInvocationState } from "../../agents"
 import type { TaskManager } from "../../manager"
 import type { ResolvedModelRecord, TaskRunStats } from "../../state"
-import type { TaskToolParamsStatic } from "./params"
+import type { TaskReasoning, TaskToolParamsStatic } from "./params"
 
 // The narrow slice of senpi's ExtensionContext the task tool reads. ExtensionContext satisfies it
 // structurally, so the tool stays testable with a tiny fake while the ToolDefinition keeps the full
@@ -75,6 +75,7 @@ type ResolvedSpawnItemBase = {
   readonly description?: string
   readonly name?: string
   readonly model?: string
+  readonly reasoning?: TaskReasoning
   readonly load_skills: readonly string[]
 }
 

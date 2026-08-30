@@ -809,3 +809,54 @@ diff --git a/dist/modes/interactive/components/progressive-transcript-container.
      }
  }
 -//# sourceMappingURL=progressive-transcript-container.js.map
+
+diff --git a/dist/core/extensions/builtin/service-tier.js b/dist/core/extensions/builtin/service-tier.js
+--- a/dist/core/extensions/builtin/service-tier.js
++++ b/dist/core/extensions/builtin/service-tier.js
+@@ -175,14 +175,14 @@ export default function serviceTierExtension(pi) {
+         // wins over that inheritance. Malformed values read back as undefined.
+         //
+-        // The flag is derived from the POST-swap model: a `-fast` catalog variant swaps down to
+-        // its base before this reads `ctx.serviceTier`, so inheritance is judged on the model the
+-        // user actually ends up on.
++        // A remembered priority means the selected `-fast` catalog identity is itself the user's
++        // persisted default. Preserve that exact identity across startup; only normalize to the
++        // base model when an explicit remembered non-priority tier turns fast mode off.
+         const remembered = getRememberedServiceTier(settingsManager, ctx.modelRegistry, model);
+         const baseModel = findBaseModel(ctx.modelRegistry, model);
+-        if (baseModel) {
++        sessionFastMode = remembered === PRIORITY_TIER || (remembered === undefined && ctx.serviceTier === PRIORITY_TIER);
++        if (baseModel && !sessionFastMode) {
+             await pi.setSessionModel(baseModel);
+         }
+-        sessionFastMode = remembered === PRIORITY_TIER || (remembered === undefined && ctx.serviceTier === PRIORITY_TIER);
+         pi.setSessionFastMode(sessionFastMode);
+         const memoryModel = resolveServiceTierMemoryModel(ctx.modelRegistry, model);
+         liveMemoryKey = `${memoryModel.provider}/${memoryModel.id}`;
+@@ -190,15 +190,25 @@ export default function serviceTierExtension(pi) {
+         liveMemoryTier = remembered;
+     });
+-    pi.on("model_select", (event, ctx) => {
++    pi.on("model_select", async (event, ctx) => {
+         // A model switch changes the base key the memory lives under, so the live tier is RE-DERIVED
+         // for the incoming model instead of merely dropped: dropping it would leave a remembered
+         // "auto" unable to suppress a catalog-inherited priority after switching away and back in one
+         // session, silently re-sending the tier `/fast off` turned off. Per-key scoping is preserved —
+         // each model reads ITS OWN memory, never the previous model's.
+         const settingsManager = SettingsManager.create(ctx.cwd, ctx.agentDir, { projectTrusted: ctx.isProjectTrusted() });
+         const memoryModel = resolveServiceTierMemoryModel(ctx.modelRegistry, event.model);
+         liveMemoryKey = `${memoryModel.provider}/${memoryModel.id}`;
+         liveMemoryTier = getRememberedServiceTier(settingsManager, ctx.modelRegistry, event.model);
++        // Choosing a catalog `-fast` model is an explicit fast-mode choice, even when an older
++        // `/fast off` memory exists for its base model. Persist the choice on the shared base key
++        // so a fresh session restores the exact fast identity instead of immediately swapping down.
++        if ((event.source === "set" || event.source === "cycle") && findBaseModel(ctx.modelRegistry, event.model)) {
++            settingsManager.setModelServiceTier(memoryModel.provider, memoryModel.id, PRIORITY_TIER);
++            await settingsManager.flush();
++            liveMemoryTier = PRIORITY_TIER;
++            sessionFastMode = true;
++            pi.setSessionFastMode(true);
++        }
+     });
+     pi.registerCommand("fast", {
+         description: "Turn OpenAI Codex fast mode on or off for the current model",

@@ -16,6 +16,7 @@ describe("TaskToolParams", () => {
         "run_in_background",
         "name",
         "model",
+        "reasoning",
         "load_skills",
       ]),
     )
@@ -41,6 +42,14 @@ describe("TaskToolParams", () => {
     const keys = Object.keys(TaskToolParams.properties)
     expect(keys.indexOf("task_summary")).toBe(keys.indexOf("prompt") + 1)
     expect(TaskToolParams.properties.task_summary).toMatchObject({ maxLength: TASK_SUMMARY_MAX_LENGTH })
+  })
+
+  test("#given reasoning controls #when schemas are inspected #then only canonical Senpi levels are exposed", () => {
+    const levels = TaskToolParams.properties.reasoning.anyOf.map((entry) => entry.const)
+    const itemLevels = TaskToolParams.properties.tasks.items.properties.reasoning.anyOf.map((entry) => entry.const)
+
+    expect(levels).toEqual(["off", "minimal", "low", "medium", "high", "xhigh", "max"])
+    expect(itemLevels).toEqual(levels)
   })
 
   test("#given a batch item schema #when task_summary is inspected #then it sits right after the item prompt with the schema length limit", () => {
