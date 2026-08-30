@@ -1,5 +1,5 @@
 import { clampTaskSummary } from "../../task-summary"
-import type { TaskToolParamsStatic } from "./params"
+import type { TaskReasoning, TaskToolParamsStatic } from "./params"
 
 type TaskItem = NonNullable<TaskToolParamsStatic["tasks"]>[number]
 
@@ -17,6 +17,21 @@ function identifier(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined
   const trimmed = value.trim()
   return trimmed.length > 0 ? trimmed : undefined
+}
+
+function reasoning(value: unknown): TaskReasoning | undefined {
+  switch (value) {
+    case "off":
+    case "minimal":
+    case "low":
+    case "medium":
+    case "high":
+    case "xhigh":
+    case "max":
+      return value
+    default:
+      return undefined
+  }
 }
 
 function stringList(value: unknown): string[] | undefined {
@@ -43,6 +58,7 @@ function taskItem(value: unknown): TaskItem | undefined {
   const subagentType = identifier(value.subagent_type)
   const name = identifier(value.name)
   const model = identifier(value.model)
+  const normalizedReasoning = reasoning(value.reasoning)
   const loadSkills = stringList(value.load_skills)
 
   return {
@@ -53,6 +69,7 @@ function taskItem(value: unknown): TaskItem | undefined {
     ...(subagentType === undefined ? {} : { subagent_type: subagentType }),
     ...(name === undefined ? {} : { name }),
     ...(model === undefined ? {} : { model }),
+    ...(normalizedReasoning === undefined ? {} : { reasoning: normalizedReasoning }),
     ...(loadSkills === undefined ? {} : { load_skills: loadSkills }),
   }
 }
@@ -86,6 +103,7 @@ export function normalizeTaskToolArguments(raw: unknown): TaskToolParamsStatic {
   const subagentType = identifier(raw.subagent_type)
   const name = identifier(raw.name)
   const model = identifier(raw.model)
+  const normalizedReasoning = reasoning(raw.reasoning)
   const loadSkills = stringList(raw.load_skills)
   // Background is the default: an unspecified run_in_background would otherwise fall through every
   // `=== true` check downstream and block the parent turn on the child. Only an explicit false opts
@@ -101,6 +119,7 @@ export function normalizeTaskToolArguments(raw: unknown): TaskToolParamsStatic {
     run_in_background: runInBackground,
     ...(name === undefined ? {} : { name }),
     ...(model === undefined ? {} : { model }),
+    ...(normalizedReasoning === undefined ? {} : { reasoning: normalizedReasoning }),
     ...(loadSkills === undefined ? {} : { load_skills: loadSkills }),
     ...(tasks === undefined ? {} : { tasks }),
   }

@@ -38,6 +38,7 @@ export function buildStartSpec(
         : {}),
     execution_mode: executionMode,
     ...(params.model !== undefined && { model: params.model }),
+    ...(params.reasoning !== undefined && { reasoning: params.reasoning }),
     ...(params.name !== undefined && { name: params.name }),
     ...(params.description !== undefined && { description: params.description }),
     ...(params.run_in_background !== undefined && { run_in_background: params.run_in_background }),
@@ -85,6 +86,7 @@ export function singleSpawnParams(item: ResolvedSpawnItem, runInBackground: bool
     ...(item.description !== undefined && { description: item.description }),
     ...(item.name !== undefined && { name: item.name }),
     ...(item.model !== undefined && { model: item.model }),
+    ...(item.reasoning !== undefined && { reasoning: item.reasoning }),
     load_skills: [...item.load_skills],
     ...(runInBackground !== undefined && { run_in_background: runInBackground }),
   }

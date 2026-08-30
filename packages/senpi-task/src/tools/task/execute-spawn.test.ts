@@ -154,6 +154,27 @@ describe("buildTaskExecute spawn", () => {
     expect(captured?.execution_mode).toBe("process")
   })
 
+  test("#given caller reasoning #when spawning #then it reaches the manager start spec", async () => {
+    let captured: ManagerStartSpec | undefined
+    const manager = createFakeManager({
+      start: async (spec): Promise<StartResult> => {
+        captured = spec
+        return { kind: "started", task_id: "st_reasoning", status: "running", name: "reasoning-task" }
+      },
+    })
+    const execute = buildTaskExecute(makeDeps(manager))
+
+    await execute(
+      "reasoning-call",
+      { prompt: "p", model: "openai-codex/gpt-5.6-sol-fast", reasoning: "xhigh", run_in_background: true },
+      undefined,
+      undefined,
+      CTX,
+    )
+
+    expect(captured?.reasoning).toBe("xhigh")
+  })
+
   test("#given run_in_background falsy #when executed #then it composes start + waitFor and returns the final response inline", async () => {
     let waitForId: string | undefined
     const manager = createFakeManager({

@@ -66,6 +66,7 @@ export type ManagerStartSpec = {
   readonly subagent_type?: string
   readonly execution_mode?: ExecutionMode
   readonly model?: string
+  readonly reasoning?: string
   readonly name?: string
   readonly description?: string
   readonly cwd?: string

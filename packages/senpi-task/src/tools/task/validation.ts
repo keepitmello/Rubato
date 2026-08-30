@@ -26,6 +26,7 @@ type SpawnItemInput = TargetInput & {
   readonly description?: string
   readonly name?: string
   readonly model?: string
+  readonly reasoning?: ResolvedSpawnItem["reasoning"]
   readonly load_skills?: readonly string[]
 }
 
@@ -34,6 +35,7 @@ type SpawnParamsInput = TargetInput & {
   readonly description?: string
   readonly name?: string
   readonly model?: string
+  readonly reasoning?: ResolvedSpawnItem["reasoning"]
   readonly load_skills?: readonly string[]
   readonly run_in_background?: boolean
   readonly tasks?: readonly SpawnItemInput[]
@@ -124,6 +126,7 @@ export function resolveSpawnItems(params: SpawnParamsInput): ResolveSpawnItemsRe
             ...(params.task_summary === undefined ? {} : { task_summary: params.task_summary }),
             ...(params.description === undefined ? {} : { description: params.description }),
             ...(params.name === undefined ? {} : { name: params.name }),
+            ...(params.reasoning === undefined ? {} : { reasoning: params.reasoning }),
           },
         ])
   const items: ResolvedSpawnItem[] = []
@@ -158,6 +161,9 @@ export function resolveSpawnItems(params: SpawnParamsInput): ResolveSpawnItemsRe
       ...(input.description === undefined ? {} : { description: input.description }),
       ...(input.name === undefined ? {} : { name: input.name }),
       ...(model === undefined ? {} : { model }),
+      ...((input.reasoning ?? params.reasoning) === undefined
+        ? {}
+        : { reasoning: input.reasoning ?? params.reasoning }),
     }
     if (target.kind === "model") {
       items.push({ ...common, kind: "model", model: target.model })

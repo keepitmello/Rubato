@@ -346,6 +346,49 @@ describe("createTaskChildPlanner", () => {
     expect(resolved.plan.agentExecutionMode).toBe("in-process")
   })
 
+  test("#given an explicit model and caller reasoning #when planned #then the child and status metadata use that effort", () => {
+    const planner = createTaskChildPlanner({}, {}, () => undefined)
+
+    const result = planner({
+      prompt: "work",
+      model: "openai-codex/gpt-5.6-sol-fast",
+      reasoning: "xhigh",
+      parent_session_id: "parent",
+      depth: 1,
+    })
+
+    const resolved = expectResolved(result)
+    expect(resolved.plan).toMatchObject({
+      model: "openai-codex/gpt-5.6-sol-fast",
+      variant: "xhigh",
+      resolved_model: {
+        reasoning: "xhigh",
+        reasoning_effort: "xhigh",
+      },
+    })
+  })
+
+  test.each([
+    ["openai-codex/gpt-5.6-sol", "medium"],
+    ["openai-codex/gpt-5.6-sol-fast", "medium"],
+    ["anthropic/claude-opus-5", "high"],
+    ["anthropic/claude-fable-5", "high"],
+    ["xai/grok-4.6", "high"],
+    ["cursor/cursor-grok-4.6-high-fast", "high"],
+  ])("#given direct model %s without caller reasoning #then it uses model default %s", (model, reasoning) => {
+    const planner = createTaskChildPlanner({}, {}, () => undefined)
+
+    const resolved = expectResolved(planner({
+      prompt: "work",
+      model,
+      parent_session_id: "parent",
+      depth: 1,
+    }))
+
+    expect(resolved.plan.variant).toBe(reasoning)
+    expect(resolved.plan.resolved_model?.reasoning).toBe(reasoning)
+  })
+
   test("#given subagent_type naming a builtin agent with no registry #when planned #then it fails closed with the registry-unavailable error", () => {
     // given
     const planner = createTaskChildPlanner({}, BUILTIN_AGENTS, () => undefined)

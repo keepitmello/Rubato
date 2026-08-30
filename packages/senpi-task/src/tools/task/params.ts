@@ -4,6 +4,22 @@ import { TASK_SUMMARY_MAX_LENGTH } from "../../task-summary"
 
 export const MAX_TASK_BATCH_ITEMS = 16
 
+export const TASK_REASONING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const
+export type TaskReasoning = (typeof TASK_REASONING_LEVELS)[number]
+
+const TaskReasoning = Type.Union(
+  [
+    Type.Literal("off"),
+    Type.Literal("minimal"),
+    Type.Literal("low"),
+    Type.Literal("medium"),
+    Type.Literal("high"),
+    Type.Literal("xhigh"),
+    Type.Literal("max"),
+  ],
+  { description: "Optional reasoning effort for the child. Overrides the selected category or agent default." },
+)
+
 export const TaskToolParams = Type.Object({
   prompt: Type.Optional(
     Type.String({ description: "The instruction for the child task. MUST be written in English. Mutually exclusive with tasks; provide exactly one of prompt or tasks." }),
@@ -28,6 +44,7 @@ export const TaskToolParams = Type.Object({
   ),
   name: Type.Optional(Type.String({ description: "Optional stable name for this task within the current session; must be unique within the session." })),
   model: Type.Optional(Type.String({ description: "Exact model id from the current session catalog. A model alone is a complete target; with category or subagent_type it overrides that preset's model." })),
+  reasoning: Type.Optional(TaskReasoning),
   load_skills: Type.Optional(
     Type.Array(Type.String(), {
       description: "Skill names whose SKILL.md content is prepended to the child prompt. Defaults to [].",
@@ -48,11 +65,12 @@ export const TaskToolParams = Type.Object({
         subagent_type: Type.Optional(Type.String({ description: "Optional named agent persona for this task." })),
         name: Type.Optional(Type.String({ description: "Optional stable name for this task." })),
         model: Type.Optional(Type.String({ description: "Exact model id from the current session catalog; a complete target by itself." })),
+        reasoning: Type.Optional(TaskReasoning),
         load_skills: Type.Optional(Type.Array(Type.String(), { description: "Skills loaded for this task." })),
       }),
       {
         maxItems: MAX_TASK_BATCH_ITEMS,
-        description: "Batch of up to 16 child tasks to spawn in one call. Empty provider padding is normalized before validation. Mutually exclusive with prompt; top-level category/subagent_type/model/load_skills are inherited by items that omit them.",
+        description: "Batch of up to 16 child tasks to spawn in one call. Empty provider padding is normalized before validation. Mutually exclusive with prompt; top-level category/subagent_type/model/reasoning/load_skills are inherited by items that omit them.",
       },
     ),
   ),
