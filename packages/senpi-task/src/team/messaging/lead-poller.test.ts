@@ -63,7 +63,12 @@ function poller(harness: Harness): LeadPoller {
 }
 
 function persistEnvelope(harness: Harness, value: Message): void {
-  const entry = { type: "message", message: { role: "user", content: buildPeerMessageEnvelope(value) } }
+  const entry = {
+    type: "custom_message",
+    customType: "senpi-task:team-message",
+    content: buildPeerMessageEnvelope(value),
+    details: { messageId: value.messageId },
+  }
   writeFileSync(harness.sessionFile, `${JSON.stringify(entry)}\n`, "utf8")
 }
 

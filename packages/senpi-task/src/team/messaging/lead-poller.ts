@@ -103,6 +103,7 @@ async function processMessage(deps: LeadPollerDeps, message: Message, state: Lea
       key: `team-message:${message.messageId}`,
       source: "team-message",
       content: buildPeerMessageEnvelope(message),
+      details: { messageId: message.messageId },
       onFlushed: () => {
         const current = state.pending.get(message.messageId)
         if (current === delivery && current.phase === "awaiting_flush") current.phase = "awaiting_persistence"

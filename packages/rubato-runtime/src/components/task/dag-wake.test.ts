@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { DAG_VERIFICATION_DIRECTIVE, type ParentState } from "@rubato/senpi-task"
+import type { ParentState } from "@rubato/senpi-task"
 
 import {
   IdleInjectionCoordinator,
@@ -102,8 +102,7 @@ describe("dag wake", () => {
     expect(harness.delivered).toHaveLength(1)
     expect(harness.delivered[0]?.options).toEqual({ deliverAs: "steer" })
     expect(harness.delivered[0]?.message.content).toBe(
-      "DAG \"release-pipeline\" failed: 3 completed, 1 failed, 0 cancelled, 0 skipped (4 total). First failure at build [task_error]: compile failed"
-      + `\n\n${DAG_VERIFICATION_DIRECTIVE}`,
+      "DAG \"release-pipeline\" failed: 3 completed, 1 failed, 0 cancelled, 0 skipped (4 total). First failure at build [task_error]: compile failed",
     )
     expect(harness.delivered[0]?.message.details).toEqual([{
       customType: DAG_WAKE_MESSAGE_TYPE,
@@ -135,8 +134,8 @@ describe("dag wake", () => {
     // then
     expect(harness.delivered).toHaveLength(1)
     expect(harness.delivered[0]?.message.content).toBe(
-      `DAG "release" completed: 3 completed, 1 failed, 0 cancelled, 0 skipped (4 total)\n\n${DAG_VERIFICATION_DIRECTIVE}\n\n`
-      + `DAG "docs" cancelled: 3 completed, 1 failed, 0 cancelled, 0 skipped (4 total)\n\n${DAG_VERIFICATION_DIRECTIVE}`,
+      `DAG "release" completed: 3 completed, 1 failed, 0 cancelled, 0 skipped (4 total)\n\n`
+      + `DAG "docs" cancelled: 3 completed, 1 failed, 0 cancelled, 0 skipped (4 total)`,
     )
     expect(harness.delivered[0]?.options).toEqual({ deliverAs: "steer" })
   })
@@ -198,8 +197,7 @@ describe("dag wake", () => {
     // then
     expect(harness.delivered).toHaveLength(1)
     expect(harness.delivered[0]?.message.content).toBe(
-      "task st_1 completed\n\nDAG \"release-pipeline\" completed: 3 completed, 1 failed, 0 cancelled, 0 skipped (4 total)"
-      + `\n\n${DAG_VERIFICATION_DIRECTIVE}`,
+      "task st_1 completed\n\nDAG \"release-pipeline\" completed: 3 completed, 1 failed, 0 cancelled, 0 skipped (4 total)",
     )
   })
 
@@ -245,7 +243,7 @@ describe("dag wake", () => {
     expect(harness.delivered[0]?.message.content).toContain("DAG \"release-pipeline\" paused")
   })
 
-  it("#given a terminal run event and an idle parent #when the injection is delivered #then its content carries the dag verification directive", async () => {
+  it("#given a terminal run event and an idle parent #when the injection is delivered #then its content is the compact summary", async () => {
     // given
     const harness = createHarness({ kind: "idle" })
 
@@ -255,21 +253,10 @@ describe("dag wake", () => {
 
     // then
     const content = harness.delivered[0]?.message.content ?? ""
-    expect(content).toContain(DAG_VERIFICATION_DIRECTIVE)
-    expect(content).toContain(`\n\n${DAG_VERIFICATION_DIRECTIVE}`)
-    expect(content).toStartWith("DAG \"release-pipeline\" completed")
-  })
-
-  it("#given a paused run event #when the injection is delivered #then its content omits the dag verification directive", async () => {
-    // given
-    const harness = createHarness({ kind: "idle" })
-
-    // when
-    harness.wake.onRunEvent(run(), event("dag.run.paused", "dag_1", { reason: "session_shutdown" }))
-    await Promise.resolve()
-
-    // then
-    expect(harness.delivered[0]?.message.content).not.toContain(DAG_VERIFICATION_DIRECTIVE)
+    expect(content).toBe(
+      "DAG \"release-pipeline\" completed: 3 completed, 1 failed, 0 cancelled, 0 skipped (4 total)",
+    )
+    expect(content).not.toContain("TREAT AS FALSE")
   })
 
   it("#given a pause with no reason #when the event arrives #then the summary omits the reason clause", async () => {
