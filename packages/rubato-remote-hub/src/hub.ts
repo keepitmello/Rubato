@@ -1,5 +1,5 @@
 import type { BootstrapLaunchPayload, HostId, LiveSessionId, LiveSessionSummary } from "@rubato/remote-protocol"
-import { zmxNameForLiveSession } from "@rubato/remote-protocol"
+import { REMOTE_PROTOCOL_CURRENT_VERSION, REMOTE_PROTOCOL_MIN_VERSION, zmxNameForLiveSession } from "@rubato/remote-protocol"
 import type { SessionActionQueue } from "./action-queue.js"
 import type { EnvironmentHandoffStore, EnvironmentVault } from "./environment.js"
 import type { EventJournal } from "./journal.js"
@@ -194,7 +194,7 @@ export class RemoteHub {
 function fixedLabels(hostId: HostId, liveSessionId: LiveSessionId, buildId: string): Readonly<Record<string, string>> {
   return {
     app: "rubato",
-    rubato_protocol: "1",
+    rubato_protocol: String(REMOTE_PROTOCOL_CURRENT_VERSION),
     rubato_live_id: liveSessionId,
     rubato_host_id: hostId,
     rubato_build_id: buildId.replace(/[^A-Za-z0-9._-]/g, "-"),
@@ -231,7 +231,7 @@ function startingSummary(input: {
     cache: { expired: true },
     background: { activeCount: 0, labels: [] },
     teams: { activeRunCount: 0, runningMemberCount: 0, failedMemberCount: 0 },
-    build: { rubatoCommit: input.buildId, piVersion: "0.84.2", remoteProtocolMin: 1, remoteProtocolMax: 1 },
+    build: { rubatoCommit: input.buildId, piVersion: "0.84.2", remoteProtocolMin: REMOTE_PROTOCOL_MIN_VERSION, remoteProtocolMax: REMOTE_PROTOCOL_CURRENT_VERSION },
     capabilities: [],
   }
 }

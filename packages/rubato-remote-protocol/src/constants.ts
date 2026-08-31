@@ -1,6 +1,9 @@
 export const REMOTE_PROTOCOL_NAME = "rubato.remote.v1" as const
-export const REMOTE_PROTOCOL_CURRENT_VERSION = 1 as const
+export const REMOTE_PROTOCOL_CURRENT_VERSION = 2 as const
 export const REMOTE_PROTOCOL_MIN_VERSION = 1 as const
+export const FINAL_RESPONSE_PREVIEW_MAX_CHARS = 240
+export const PENDING_INPUT_PREVIEW_MAX_CHARS = 500
+export const TIMELINE_ID_MAX_CHARS = 256
 export const LIVE_SESSION_SCHEMA_VERSION = 1 as const
 export const MAX_FRAME_BYTES = 8 * 1024 * 1024
 export const REMOTE_HTTP_API_PREFIX = "/rubato/api/v1" as const
@@ -11,6 +14,7 @@ export const SURFACE_TO_HUB_FRAME_KINDS = [
   "surface.heartbeat",
   "surface.event",
   "surface.snapshot",
+  "surface.summary",
   "surface.action-result",
 ] as const
 
@@ -66,6 +70,8 @@ export const REMOTE_ACTION_TYPES = [
   "input.submit",
   "input.steer",
   "input.followUp",
+  "input.queue.clear",
+  "conversation.page",
   "agent.abort",
   "session.compact",
   "session.navigate",

@@ -1,5 +1,6 @@
 import { basename } from "node:path"
 import type { LiveSessionId, LiveSessionSummary, ZmxName } from "@rubato/remote-protocol"
+import { REMOTE_PROTOCOL_CURRENT_VERSION, REMOTE_PROTOCOL_MIN_VERSION } from "@rubato/remote-protocol"
 
 /** Heartbeat silence before a ready surface is marked degraded. */
 export const SURFACE_STALE_MS = 30_000
@@ -293,7 +294,7 @@ function degradedSummary(hostId: string, process: DiscoveredProcess): LiveSessio
     cache: { expired: true },
     background: { activeCount: 0, labels: [] },
     teams: { activeRunCount: 0, runningMemberCount: 0, failedMemberCount: 0 },
-    build: { piVersion: "unknown", remoteProtocolMin: 1, remoteProtocolMax: 1 },
+    build: { piVersion: "unknown", remoteProtocolMin: REMOTE_PROTOCOL_MIN_VERSION, remoteProtocolMax: REMOTE_PROTOCOL_CURRENT_VERSION },
     capabilities: [],
   }
 }

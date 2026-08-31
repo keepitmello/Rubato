@@ -9,6 +9,8 @@ export function interactiveChromeHrefs() {
     internalActions: new URL("./internal-actions.mjs", import.meta.url).href,
     toolGroup: new URL("./tool-group-component.mjs", import.meta.url).href,
     turnWork: new URL("./turn-work-summary.mjs", import.meta.url).href,
+    requestRun: new URL("./request-run-tracker.mjs", import.meta.url).href,
+    assistantPhase: new URL("./assistant-phase.mjs", import.meta.url).href,
   };
 }
 
@@ -21,6 +23,8 @@ export function injectInteractiveModeChrome(source, hrefs = interactiveChromeHre
     internalActions = interactiveChromeHrefs().internalActions,
     toolGroup = interactiveChromeHrefs().toolGroup,
     turnWork = interactiveChromeHrefs().turnWork,
+    requestRun = interactiveChromeHrefs().requestRun,
+    assistantPhase = interactiveChromeHrefs().assistantPhase,
   } = hrefs;
   let next = source;
   next = replaceOnce(
@@ -102,7 +106,7 @@ import { restoreInteractiveStderr, takeOverInteractiveStderr } from "./interacti
   next = replaceOnce(
     next,
     "            case \"user\": {\n                const textContent = this.getUserMessageText(message);",
-    "            case \"user\": {\n                this.turnWorkSummary = undefined;\n                const textContent = this.getUserMessageText(message);",
+    "            case \"user\": {\n                const record = this.session.getInteractiveInput?.(message);\n                if (record?.delivery !== \"steer\") {\n                    this.turnWorkSummary?.setRequestCompleted?.(true, \"completed\");\n                    this.turnWorkSummary = undefined;\n                }\n                const textContent = this.getUserMessageText(message);",
     "user clears turn work",
   );
   next = replaceOnce(
@@ -153,5 +157,6 @@ import { restoreInteractiveStderr, takeOverInteractiveStderr } from "./interacti
     "//# sourceMappingURL=interactive-mode.js.map\n",
     "interactive sourcemap newline",
   );
+
   return next;
 }

@@ -1,11 +1,14 @@
 import {
+  FINAL_RESPONSE_PREVIEW_MAX_CHARS,
   LEAD_EXECUTIONS,
   LIVE_LIFECYCLES,
   LIVE_SESSION_SCHEMA_VERSION,
+  PENDING_INPUT_PREVIEW_MAX_CHARS,
   REMOTE_ACTION_TYPES,
   REMOTE_ERROR_CODES,
   REMOTE_EVENT_TYPES,
   REMOTE_PROTOCOL_NAME,
+  TIMELINE_ID_MAX_CHARS,
 } from "./constants.js"
 import { isUuid, isUuidV7, isZmxName, zmxNameForLiveSession } from "./identifiers.js"
 import type {
@@ -17,6 +20,8 @@ import type {
   LiveSessionSummary,
   RemoteActionType,
   RemoteErrorResponse,
+  RequestRunSummary,
+  RequestTimelineSnapshot,
 } from "./types.js"
 
 export interface ValidationIssue {
@@ -76,6 +81,7 @@ export function validateLiveSessionSummary(input: unknown): ValidationResult<Liv
       "teams",
       "build",
       "capabilities",
+      "presentation",
     ],
     "$",
     issues,
@@ -107,8 +113,30 @@ export function validateLiveSessionSummary(input: unknown): ValidationResult<Liv
   validateTeams(input["teams"], issues)
   validateBuild(input["build"], issues)
   stringArray(input["capabilities"], "$.capabilities", issues)
+  optional(input, "presentation", (value) => validatePresentation(value, issues))
 
   return finish(input as unknown as LiveSessionSummary, issues)
+}
+
+export const requestRunSummarySchema = schema((input: unknown) => {
+  const issues: ValidationIssue[] = []
+  validateRequestRun(input, "$", issues)
+  return finish(input as unknown as RequestRunSummary, issues)
+})
+export const requestTimelineSnapshotSchema = schema(validateRequestTimelineSnapshot)
+
+export function validateRequestTimelineSnapshot(input: unknown): ValidationResult<RequestTimelineSnapshot> {
+  const issues: ValidationIssue[] = []
+  if (!record(input, "$", issues)) return failure(issues)
+  exactKeys(input, ["schemaVersion", "runs", "activeRequestRunId", "pendingInputs", "hasOlder"], "$", issues)
+  literal(input["schemaVersion"], 1, "$.schemaVersion", issues)
+  if (!Array.isArray(input["runs"])) issue(issues, "$.runs", "must be an array")
+  else input["runs"].forEach((run, index) => validateRequestRun(run, `$.runs[${index}]`, issues))
+  optional(input, "activeRequestRunId", (value) => timelineId(value, "$.activeRequestRunId", issues))
+  if (!Array.isArray(input["pendingInputs"])) issue(issues, "$.pendingInputs", "must be an array")
+  else input["pendingInputs"].forEach((pending, index) => validatePendingInput(pending, `$.pendingInputs[${index}]`, issues))
+  booleanValue(input["hasOlder"], "$.hasOlder", issues)
+  return finish(input as unknown as RequestTimelineSnapshot, issues)
 }
 
 export function validateActionRequest(input: unknown): ValidationResult<ActionRequestEnvelope> {
@@ -201,6 +229,16 @@ function validateActionPayload(action: RemoteActionType, input: unknown, issues:
       exactKeys(input, ["text", "imageIds"], "$.payload", issues)
       stringValue(input["text"], "$.payload.text", issues)
       optional(input, "imageIds", (value) => stringArray(value, "$.payload.imageIds", issues))
+      return
+    case "input.queue.clear":
+      exactKeys(input, [], "$.payload", issues)
+      return
+    case "conversation.page":
+      exactKeys(input, ["before", "limit"], "$.payload", issues)
+      optional(input, "before", (value) => nonEmptyString(value, "$.payload.before", issues))
+      if (typeof input["limit"] !== "number" || !Number.isSafeInteger(input["limit"]) || input["limit"] < 1 || input["limit"] > 100) {
+        issue(issues, "$.payload.limit", "must be an integer from 1 through 100")
+      }
       return
     case "agent.abort":
     case "session.new":
@@ -297,6 +335,90 @@ function validateTeams(input: unknown, issues: ValidationIssue[]): void {
   nonNegativeInteger(input["activeRunCount"], "$.teams.activeRunCount", issues)
   nonNegativeInteger(input["runningMemberCount"], "$.teams.runningMemberCount", issues)
   nonNegativeInteger(input["failedMemberCount"], "$.teams.failedMemberCount", issues)
+}
+
+function validatePresentation(input: unknown, issues: ValidationIssue[]): void {
+  if (!record(input, "$.presentation", issues)) return
+  exactKeys(input, [
+    "schemaVersion",
+    "lastFinalResponsePreview",
+    "lastFinalResponseAt",
+    "activeRequest",
+    "pendingFollowUpCount",
+    "pendingSteerCount",
+  ], "$.presentation", issues)
+  literal(input["schemaVersion"], 1, "$.presentation.schemaVersion", issues)
+  optional(input, "lastFinalResponsePreview", (value) => boundedPreview(value, "$.presentation.lastFinalResponsePreview", FINAL_RESPONSE_PREVIEW_MAX_CHARS, issues))
+  optional(input, "lastFinalResponseAt", (value) => isoDate(value, "$.presentation.lastFinalResponseAt", issues))
+  optional(input, "activeRequest", (value) => validateActiveRequest(value, issues))
+  nonNegativeInteger(input["pendingFollowUpCount"], "$.presentation.pendingFollowUpCount", issues)
+  nonNegativeInteger(input["pendingSteerCount"], "$.presentation.pendingSteerCount", issues)
+}
+
+function validateActiveRequest(input: unknown, issues: ValidationIssue[]): void {
+  if (!record(input, "$.presentation.activeRequest", issues)) return
+  exactKeys(input, ["id", "status", "startedAt", "lastProgressPreview", "toolCount", "failedToolCount"], "$.presentation.activeRequest", issues)
+  timelineId(input["id"], "$.presentation.activeRequest.id", issues)
+  oneOf(input["status"], ["running", "awaiting_input"] as const, "$.presentation.activeRequest.status", issues)
+  isoDate(input["startedAt"], "$.presentation.activeRequest.startedAt", issues)
+  optional(input, "lastProgressPreview", (value) => boundedPreview(value, "$.presentation.activeRequest.lastProgressPreview", FINAL_RESPONSE_PREVIEW_MAX_CHARS, issues))
+  nonNegativeInteger(input["toolCount"], "$.presentation.activeRequest.toolCount", issues)
+  nonNegativeInteger(input["failedToolCount"], "$.presentation.activeRequest.failedToolCount", issues)
+}
+
+function validateRequestRun(input: unknown, path: string, issues: ValidationIssue[]): void {
+  if (!record(input, path, issues)) return
+  exactKeys(input, [
+    "id",
+    "status",
+    "rootUserMessageId",
+    "startedAt",
+    "completedAt",
+    "finalMessageId",
+    "lastProgressPreview",
+    "progressMessageCount",
+    "toolCount",
+    "failedToolCount",
+    "steeringCount",
+    "failureMessage",
+  ], path, issues)
+  timelineId(input["id"], `${path}.id`, issues)
+  oneOf(input["status"], ["running", "awaiting_input", "completed", "interrupted", "failed"] as const, `${path}.status`, issues)
+  timelineId(input["rootUserMessageId"], `${path}.rootUserMessageId`, issues)
+  isoDate(input["startedAt"], `${path}.startedAt`, issues)
+  optional(input as Record<string, unknown>, "completedAt", (value) => isoDate(value, `${path}.completedAt`, issues))
+  optional(input as Record<string, unknown>, "finalMessageId", (value) => timelineId(value, `${path}.finalMessageId`, issues))
+  optional(input as Record<string, unknown>, "lastProgressPreview", (value) => boundedPreview(value, `${path}.lastProgressPreview`, FINAL_RESPONSE_PREVIEW_MAX_CHARS, issues))
+  nonNegativeInteger(input["progressMessageCount"], `${path}.progressMessageCount`, issues)
+  nonNegativeInteger(input["toolCount"], `${path}.toolCount`, issues)
+  nonNegativeInteger(input["failedToolCount"], `${path}.failedToolCount`, issues)
+  nonNegativeInteger(input["steeringCount"], `${path}.steeringCount`, issues)
+  optional(input as Record<string, unknown>, "failureMessage", (value) => stringValue(value, `${path}.failureMessage`, issues))
+}
+
+function validatePendingInput(input: unknown, path: string, issues: ValidationIssue[]): void {
+  if (!record(input, path, issues)) return
+  exactKeys(input, ["id", "delivery", "textPreview", "textLength", "imageCount", "enqueuedAt", "source", "targetRequestRunId"], path, issues)
+  timelineId(input["id"], `${path}.id`, issues)
+  oneOf(input["delivery"], ["steer", "followUp"] as const, `${path}.delivery`, issues)
+  boundedPreview(input["textPreview"], `${path}.textPreview`, PENDING_INPUT_PREVIEW_MAX_CHARS, issues)
+  nonNegativeInteger(input["textLength"], `${path}.textLength`, issues)
+  nonNegativeInteger(input["imageCount"], `${path}.imageCount`, issues)
+  isoDate(input["enqueuedAt"], `${path}.enqueuedAt`, issues)
+  oneOf(input["source"], ["tui", "remote", "extension", "unknown"] as const, `${path}.source`, issues)
+  optional(input as Record<string, unknown>, "targetRequestRunId", (value) => timelineId(value, `${path}.targetRequestRunId`, issues))
+}
+
+function timelineId(value: unknown, path: string, issues: ValidationIssue[]): void {
+  if (typeof value !== "string" || value.length === 0 || value.length > TIMELINE_ID_MAX_CHARS || value.includes("\0")) {
+    issue(issues, path, `must be a non-empty opaque id of at most ${TIMELINE_ID_MAX_CHARS} characters`)
+  }
+}
+
+function boundedPreview(value: unknown, path: string, maxChars: number, issues: ValidationIssue[]): void {
+  if (typeof value !== "string" || [...value].length > maxChars) {
+    issue(issues, path, `must be a string of at most ${maxChars} characters`)
+  }
 }
 
 function validateBuild(input: unknown, issues: ValidationIssue[]): void {

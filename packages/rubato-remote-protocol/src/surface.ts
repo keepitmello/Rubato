@@ -2,9 +2,12 @@ import type { ProtocolNegotiationResult, ProtocolVersionRange } from "./compatib
 import type { RemoteProtocolName } from "./types.js"
 import type {
   ActionRequestEnvelope,
+  AssistantTextPhase,
   JsonObject,
   LiveSessionSummary,
   RemoteEventType,
+  RequestTimelineSnapshot,
+  UserInputDelivery,
 } from "./types.js"
 import type { HostId, LiveSessionId, RequestId, SurfaceInstanceId, ZmxName } from "./identifiers.js"
 
@@ -45,6 +48,15 @@ export interface SurfaceSnapshotFrame {
   readonly at: string
   readonly summary: LiveSessionSummary
   readonly state: SessionSnapshotState
+}
+
+export interface SurfaceSummaryFrame {
+  readonly kind: "surface.summary"
+  readonly protocol: RemoteProtocolName
+  readonly surfaceInstanceId: SurfaceInstanceId
+  readonly sourceSeq: number
+  readonly at: string
+  readonly summary: LiveSessionSummary
 }
 
 export interface SurfaceActionResultFrame {
@@ -104,6 +116,7 @@ export type SurfaceToHubFrame =
   | SurfaceHeartbeatFrame
   | SurfaceEventFrame
   | SurfaceSnapshotFrame
+  | SurfaceSummaryFrame
   | SurfaceActionResultFrame
 
 export type HubToSurfaceFrame = HubLaunchFrame | HubRegisteredFrame | HubActionFrame
@@ -124,6 +137,10 @@ export type ConversationEntry = JsonObject & (
       readonly text: string
       readonly streaming?: boolean
       readonly at?: string
+      readonly requestRunId?: string
+      readonly inputId?: string
+      readonly delivery?: UserInputDelivery
+      readonly phase?: AssistantTextPhase
     }
   | {
       readonly id: string
@@ -139,9 +156,12 @@ export type ConversationEntry = JsonObject & (
       readonly status: "running" | "done" | "failed"
       readonly output?: string
       readonly artifactId?: string
+      readonly at?: string
+      readonly completedAt?: string
+      readonly requestRunId?: string
     }
-  | { readonly id: string; readonly kind: "image"; readonly alt: string; readonly url: string }
-  | { readonly id: string; readonly kind: "notice"; readonly text: string }
+  | { readonly id: string; readonly kind: "image"; readonly alt: string; readonly url: string; readonly requestRunId?: string }
+  | { readonly id: string; readonly kind: "notice"; readonly text: string; readonly requestRunId?: string }
 )
 
 export interface SessionTreeEntry extends JsonObject {
@@ -182,6 +202,7 @@ export interface SessionSnapshotState {
   readonly background?: JsonObject | undefined
   readonly teams?: JsonObject | undefined
   readonly capabilities: readonly string[]
+  readonly timeline?: RequestTimelineSnapshot
 }
 
 export interface SessionSnapshot {

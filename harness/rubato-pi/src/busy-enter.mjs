@@ -311,6 +311,7 @@ export function promoteBusyEnter(mode) {
   candidate.queue.splice(candidate.queueIndex, 1);
   candidate.visible.splice(candidate.visibleIndex, 1);
   tracked.record.mode = toSteer ? "steer" : "followUp";
+  session.updateQueuedInputDelivery?.(tracked.message, toSteer ? "steer" : "followUp");
   if (toSteer) {
     tracked.followUpIndex = candidate.queueIndex;
     tracked.followUpVisibleIndex = candidate.visibleIndex;

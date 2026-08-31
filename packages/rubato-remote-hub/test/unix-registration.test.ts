@@ -156,6 +156,90 @@ describe("Unix socket process registration", () => {
     expect(registry.get(SESSION_ID)).toBeUndefined()
   })
 
+
+  test("surface.summary updates registry presentation without rewriting the disk snapshot", async () => {
+    const temporary = await temporaryDirectory()
+    cleanupTasks.push(temporary.cleanup)
+    const registry = new LiveRegistry(HOST_ID, { discover: async () => [] })
+    const snapshotWritten = Promise.withResolvers<void>()
+    let snapshotWrites = 0
+    const journal = new SignalingJournal(join(temporary.path, "journal"), join(temporary.path, "snapshots"), () => {
+      snapshotWrites += 1
+      snapshotWritten.resolve()
+    })
+    await journal.load()
+    const tokens = new SurfaceTokenStore()
+    const socketPath = join(temporary.path, "socket", "hub.sock")
+    const server = new SurfaceSocketServer(socketPath, registry, journal, tokens, new EnvironmentHandoffStore<BootstrapLaunchPayload>(), new SurfaceReconnectCredentials(join(temporary.path, "credential-key")))
+    await server.listen()
+    cleanupTasks.push(() => server.close())
+
+    const token = tokens.issue(SESSION_ID)
+    const client = await connect(socketPath)
+    const closed = new Promise<string>((resolve) => client.once("close", () => resolve("closed")))
+    const registered = nextFrame(client)
+    const registrationSummary = unmanagedSummary()
+    client.write(encodeFrame({
+      kind: "surface.register",
+      protocol: "rubato.remote.v1",
+      protocolRange: { min: 1, max: 1 },
+      surfaceInstanceId: "00000000-0000-4000-8000-000000000001",
+      token,
+      summary: registrationSummary,
+    }))
+    expect(await registered).toMatchObject({ kind: "hub.registered" })
+
+    client.write(encodeFrame({
+      kind: "surface.snapshot",
+      protocol: "rubato.remote.v1",
+      surfaceInstanceId: "00000000-0000-4000-8000-000000000001",
+      sourceSeq: 1,
+      at: "2026-08-31T00:00:00.000Z",
+      summary: registrationSummary,
+      state: { revision: 3, entries: [], tree: [], commands: [], capabilities: [] },
+    }))
+    expect(await Promise.race([bounded(snapshotWritten.promise), closed.then((value) => { throw new Error(`socket ${value} before snapshot`) })])).toBeUndefined()
+    expect(snapshotWrites).toBe(1)
+    const before = journal.getSnapshot(SESSION_ID)
+    expect(before?.state.revision).toBe(3)
+    expect(registry.get(SESSION_ID)?.presentation).toBeUndefined()
+
+    client.write(encodeFrame({
+      kind: "surface.summary",
+      protocol: "rubato.remote.v1",
+      surfaceInstanceId: "00000000-0000-4000-8000-000000000001",
+      sourceSeq: 2,
+      at: "2026-08-31T00:00:01.000Z",
+      summary: {
+        ...registrationSummary,
+        presentation: {
+          schemaVersion: 1,
+          lastFinalResponsePreview: "Done.",
+          pendingFollowUpCount: 1,
+          pendingSteerCount: 0,
+        },
+      },
+    }))
+    await bounded(new Promise<void>((resolve) => {
+      const timer = setInterval(() => {
+        if (registry.get(SESSION_ID)?.presentation) {
+          clearInterval(timer)
+          resolve()
+        }
+      }, 5)
+    }))
+    expect(snapshotWrites).toBe(1)
+    expect(journal.getSnapshot(SESSION_ID)?.state.revision).toBe(3)
+    expect(journal.getSnapshot(SESSION_ID)?.writtenAt).toBe(before?.writtenAt)
+    expect(registry.get(SESSION_ID)?.presentation).toEqual({
+      schemaVersion: 1,
+      lastFinalResponsePreview: "Done.",
+      pendingFollowUpCount: 1,
+      pendingSteerCount: 0,
+    })
+    client.destroy()
+  })
+
 class SignalingJournal extends EventJournal {
   readonly #written: () => void
   constructor(journalPath: string, snapshotPath: string, written: () => void) {

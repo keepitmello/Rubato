@@ -6,15 +6,22 @@ import { getConnInfo } from "@hono/node-server/conninfo"
 import {
   actionRequestSchema,
   createLiveSessionRequestSchema,
+  messagePageRequestSchema,
+  messagePageResponseSchema,
   negotiateProtocolVersion,
   pairApproveRequestSchema,
   pairClaimRequestSchema,
+  parseRequestedProtocolVersion,
+  projectLiveSessionSummary,
+  projectMessagePage,
+  projectSnapshotResponse,
   pushProfileExportRequestSchema,
   pushProfileImportRequestSchema,
   pushSubscribeRequestSchema,
   REMOTE_HTTP_API_PREFIX,
   REMOTE_HTTP_ROUTES,
-  supportedProtocolRange,
+  REMOTE_PROTOCOL_NAME,
+  SUPPORTED_PROTOCOL_RANGE,
   terminalTicketRequestSchema,
   terminateLiveSessionRequestSchema,
   webSocketTicketRequestSchema,
@@ -125,7 +132,7 @@ export function createHttpApp(dependencies: HttpApiDependencies): Hono<HttpEnvir
 
   app.get(REMOTE_HTTP_ROUTES.host, async (context) => {
     const requested = parseRange(context.req.query("protocolMin"), context.req.query("protocolMax"))
-    const local = supportedProtocolRange(1)
+    const local = SUPPORTED_PROTOCOL_RANGE
     const negotiation = requested ? negotiateProtocolVersion(local, requested) : { compatible: true as const, version: local.max }
     const response: HostDescriptionResponse = {
       hostId: dependencies.config.hostId,
@@ -139,7 +146,12 @@ export function createHttpApp(dependencies: HttpApiDependencies): Hono<HttpEnvir
     return context.json(response)
   })
 
-  app.get(REMOTE_HTTP_ROUTES.inventory, (context) => context.json({ hostSeq: dependencies.hub.registry.hostSeq, sessions: dependencies.hub.registry.list() } satisfies HostInventoryResponse))
+  app.get(REMOTE_HTTP_ROUTES.inventory, (context) => {
+    const version = requestedProtocolVersion(context)
+    if (version === "protocol_mismatch") return error(context, 400, "protocol_mismatch", "Unsupported protocol version")
+    const sessions = dependencies.hub.registry.list().map((summary) => projectLiveSessionSummary(summary, version))
+    return context.json({ hostSeq: dependencies.hub.registry.hostSeq, sessions } satisfies HostInventoryResponse)
+  })
 
   app.post(REMOTE_HTTP_ROUTES.createLiveSession, async (context) => {
     const body = createLiveSessionRequestSchema.safeParse(await jsonBody(context, 256 * 1024))
@@ -201,6 +213,8 @@ export function createHttpApp(dependencies: HttpApiDependencies): Hono<HttpEnvir
   })
 
   app.get(REMOTE_HTTP_ROUTES.snapshot, (context) => {
+    const version = requestedProtocolVersion(context)
+    if (version === "protocol_mismatch") return error(context, 400, "protocol_mismatch", "Unsupported protocol version")
     const id = context.req.param("liveSessionId") as LiveSessionId
     const snapshot = dependencies.hub.journal.getSnapshot(id)
     const summary = dependencies.hub.snapshot(id)
@@ -214,9 +228,47 @@ export function createHttpApp(dependencies: HttpApiDependencies): Hono<HttpEnvir
           tree: snapshot.state.tree,
           commands: snapshot.state.commands,
           ...(snapshot.state.uiRequest === undefined ? {} : { uiRequest: snapshot.state.uiRequest }),
+          ...(snapshot.state.timeline === undefined ? {} : { timeline: snapshot.state.timeline }),
         }
       : { summary, revision: 0, lastSeq: dependencies.hub.journal.lastSeq(id), entries: [], tree: [], commands: [] }
-    return context.json(response)
+    return context.json(projectSnapshotResponse(response, version))
+  })
+
+  app.get(REMOTE_HTTP_ROUTES.messages, async (context) => {
+    const version = requestedProtocolVersion(context)
+    if (version === "protocol_mismatch") return error(context, 400, "protocol_mismatch", "Unsupported protocol version")
+    const id = context.req.param("liveSessionId") as LiveSessionId
+    const before = context.req.query("before")
+    const limitQuery = context.req.query("limit")
+    const parsed = messagePageRequestSchema.safeParse({
+      ...(before ? { before } : {}),
+      ...(limitQuery === undefined || limitQuery === "" ? {} : { limit: Number(limitQuery) }),
+    })
+    if (!parsed.ok) return error(context, 400, "invalid_action", "Invalid message page request")
+    if (!dependencies.hub.registry.get(id) && !dependencies.hub.journal.getSnapshot(id)) {
+      return error(context, 404, "session_not_found", "Live session not found")
+    }
+    try {
+      const result = await dependencies.hub.actions.enqueue({
+        protocol: REMOTE_PROTOCOL_NAME,
+        requestId: randomUUID(),
+        hostId: dependencies.config.hostId,
+        liveSessionId: id,
+        action: "conversation.page",
+        payload: {
+          limit: parsed.value.limit ?? 50,
+          ...(parsed.value.before === undefined ? {} : { before: parsed.value.before }),
+        },
+      })
+      const page = messagePageResponseSchema.safeParse(result.payload)
+      if (!result.accepted || !page.ok) return error(context, 400, "invalid_action", "Conversation page is unavailable")
+      return context.json(projectMessagePage(page.value, version))
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : ""
+      if (message === "session_not_found") return error(context, 404, "session_not_found", "Live session not found")
+      if (message.includes("timeout")) return error(context, 503, "busy", "Conversation page timed out")
+      return error(context, 503, "busy", "Conversation page could not be loaded")
+    }
   })
 
   app.post(REMOTE_HTTP_ROUTES.actions, async (context) => {
@@ -372,6 +424,10 @@ async function jsonBody(context: Context, maxBytes: number): Promise<unknown> {
 
 function error(context: Context, status: 400 | 401 | 403 | 404 | 409 | 413 | 429 | 500 | 503, code: RemoteErrorCode, message: string): Response {
   return context.json({ error: { code, message, traceId: randomUUID() } }, status)
+}
+
+function requestedProtocolVersion(context: Context): number | "protocol_mismatch" {
+  return parseRequestedProtocolVersion(context.req.query("protocolVersion"))
 }
 
 function parseRange(min: string | undefined, max: string | undefined): { min: number; max: number } | null {

@@ -73,7 +73,7 @@ describe("HTTP security and ticket API", () => {
 
     const host = await app.request("http://localhost/rubato/api/v1/host?protocolMin=1&protocolMax=2", { headers })
     expect(host.status).toBe(200)
-    expect(await host.json()).toMatchObject({ negotiation: { compatible: true, version: 1 } })
+    expect(await host.json()).toMatchObject({ negotiation: { compatible: true, version: 2 } })
     const sameOriginHost = await app.request("https://phone.example.ts.net/rubato/api/v1/host?protocolMin=1&protocolMax=2", {
       headers: { "tailscale-user-login": "owner@example.com" },
     })

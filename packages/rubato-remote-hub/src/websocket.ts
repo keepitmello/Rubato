@@ -1,7 +1,13 @@
 import type { Server as HttpServer, IncomingMessage } from "node:http"
 import type { Socket } from "node:net"
 import { WebSocketServer, WebSocket, type RawData } from "ws"
-import { clientResumeSchema, REMOTE_HTTP_ROUTES } from "@rubato/remote-protocol"
+import {
+  clientResumeSchema,
+  parseRequestedProtocolVersion,
+  projectSessionSnapshot,
+  REMOTE_HTTP_ROUTES,
+  REMOTE_PROTOCOL_NAME,
+} from "@rubato/remote-protocol"
 import {
   createTerminalBackend,
   TerminalBridgeController,
@@ -26,7 +32,8 @@ export class HubWebSocketServer {
   readonly #terminalBackend: TerminalBackend
   readonly #zmxBinary: string
   readonly #terminalOpens = new WeakMap<IncomingMessage, { ticket: string; origin: string; ownerLogin: string; zmxName: string; cols: number; rows: number }>()
-  readonly #clients = new Set<WebSocket>()
+  readonly #clients = new Map<WebSocket, { protocolVersion: number; alive: boolean }>()
+  readonly #pendingVersions = new WeakMap<IncomingMessage, number>()
   readonly #heartbeat: NodeJS.Timeout
 
   constructor(input: {
@@ -50,6 +57,11 @@ export class HubWebSocketServer {
     this.#terminalBackend = input.terminalBackend ?? createTerminalBackend({ selection: "bun" })
     this.#zmxBinary = input.zmxBinary
     this.#server.on("upgrade", (request, socket, head) => void this.#upgrade(request, (socket as Socket).remoteAddress).then((route) => {
+      if (route === "protocol_mismatch") {
+        socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Type: application/json\r\n\r\n{\"error\":{\"code\":\"protocol_mismatch\",\"message\":\"Unsupported protocol version\"}}")
+        socket.destroy()
+        return
+      }
       if (!route) {
         socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n")
         socket.destroy()
@@ -61,11 +73,10 @@ export class HubWebSocketServer {
       console.error(`rubato remote WebSocket upgrade failed: ${cause instanceof Error ? cause.message : "unknown error"}`)
       socket.destroy()
     }))
-    this.#wss.on("connection", (socket) => this.#connect(socket))
+    this.#wss.on("connection", (socket, request) => this.#connect(socket, request))
     this.#terminalWss.on("connection", (socket, request) => void this.#connectTerminal(socket, request))
     this.#heartbeat = setInterval(() => {
-      for (const socket of this.#clients) {
-        const state = socket as WebSocket & { alive?: boolean }
+      for (const [socket, state] of this.#clients) {
         if (state.alive === false) socket.terminate()
         else {
           state.alive = false
@@ -77,18 +88,20 @@ export class HubWebSocketServer {
   }
 
   broadcast(value: unknown): void {
-    const encoded = JSON.stringify(value)
-    for (const socket of this.#clients) if (socket.readyState === WebSocket.OPEN) socket.send(encoded)
+    for (const [socket, client] of this.#clients) {
+      if (socket.readyState !== WebSocket.OPEN) continue
+      socket.send(JSON.stringify(projectBroadcast(value, client.protocolVersion)))
+    }
   }
 
   close(): void {
     clearInterval(this.#heartbeat)
-    for (const socket of this.#clients) socket.close(1001, "hub stopping")
+    for (const socket of this.#clients.keys()) socket.close(1001, "hub stopping")
     this.#wss.close()
     this.#terminalWss.close()
   }
 
-  async #upgrade(request: IncomingMessage, remoteAddress: string | undefined): Promise<"events" | "terminal" | null> {
+  async #upgrade(request: IncomingMessage, remoteAddress: string | undefined): Promise<"events" | "terminal" | "protocol_mismatch" | null> {
     const origin = typeof request.headers.origin === "string" ? request.headers.origin : null
     if (!this.#pairing.isPaired(origin)) return null
     const identity = await this.#identity.verify({ headers: new Headers(flattenHeaders(request)), remoteAddress })
@@ -97,8 +110,14 @@ export class HubWebSocketServer {
     const ticket = url.searchParams.get("ticket")
     if (!ticket) return null
     if (url.pathname === REMOTE_HTTP_ROUTES.webSocket) {
+      const protocolVersion = parseRequestedProtocolVersion(url.searchParams.get("protocolVersion"))
+      if (protocolVersion === "protocol_mismatch") return "protocol_mismatch"
       const ticketOwner = this.#tickets.consumeForUpgrade(ticket, origin!)
-      return ticketOwner === this.#ownerLogin && (!identity || identity.login === ticketOwner) ? "events" : null
+      if (ticketOwner === this.#ownerLogin && (!identity || identity.login === ticketOwner)) {
+        this.#pendingVersions.set(request, protocolVersion)
+        return "events"
+      }
+      return null
     }
     if (url.pathname !== REMOTE_HTTP_ROUTES.terminalWebSocket) return null
     const launch = this.#terminalTickets.peek(ticket, origin!)
@@ -138,10 +157,10 @@ export class HubWebSocketServer {
     })
   }
 
-  #connect(socket: WebSocket): void {
-    const state = socket as WebSocket & { alive?: boolean }
-    state.alive = true
-    this.#clients.add(socket)
+  #connect(socket: WebSocket, request: IncomingMessage): void {
+    const protocolVersion = this.#pendingVersions.get(request) ?? 1
+    const state = { protocolVersion, alive: true }
+    this.#clients.set(socket, state)
     socket.on("pong", () => { state.alive = true })
     socket.on("close", () => this.#clients.delete(socket))
     socket.on("message", (data, binary) => {
@@ -159,7 +178,12 @@ export class HubWebSocketServer {
         if (replay.type === "events") {
           for (const event of replay.events) socket.send(JSON.stringify(event))
         } else {
-          socket.send(JSON.stringify({ type: "snapshot.required", liveSessionId: session.liveSessionId, snapshot: replay.snapshot }))
+          socket.send(JSON.stringify({
+            type: "snapshot.required",
+            protocol: REMOTE_PROTOCOL_NAME,
+            liveSessionId: session.liveSessionId,
+            ...(replay.snapshot === undefined ? {} : { snapshot: projectSessionSnapshot(replay.snapshot, protocolVersion) }),
+          }))
         }
       }
     })
@@ -173,6 +197,21 @@ function rawDataSize(data: RawData): number {
 function rawDataBuffer(data: RawData): Buffer {
   if (Array.isArray(data)) return Buffer.concat(data)
   return Buffer.isBuffer(data) ? data : Buffer.from(data)
+}
+
+function projectBroadcast(value: unknown, protocolVersion: number): unknown {
+  if (!isRecord(value) || value["type"] !== "snapshot.required") return value
+  const snapshot = value["snapshot"]
+  if (snapshot === undefined) return { ...value, protocol: REMOTE_PROTOCOL_NAME }
+  return {
+    ...value,
+    protocol: REMOTE_PROTOCOL_NAME,
+    snapshot: projectSessionSnapshot(snapshot as Parameters<typeof projectSessionSnapshot>[0], protocolVersion),
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function flattenHeaders(request: IncomingMessage): Record<string, string> {

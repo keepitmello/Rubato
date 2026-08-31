@@ -50,8 +50,21 @@ export function isAgentSessionUrl(url) {
  * @param {string} source
  * @returns {string}
  */
-export function injectAgentSession(source) {
-  let next = replaceOnce(source, SKILL_NEEDLE, SKILL_REPLACEMENT, "inline /skill: pattern");
+export function agentSessionHrefs() {
+  return {
+    tracker: new URL("./request-run-tracker.mjs", import.meta.url).href,
+  };
+}
+
+export function injectAgentSession(source, hrefs = agentSessionHrefs()) {
+  const trackerHref = hrefs.tracker ?? agentSessionHrefs().tracker;
+  let next = replaceOnce(
+    source,
+    "import { randomUUID } from \"node:crypto\";\n",
+    `import { randomUUID } from "node:crypto";\nimport { RequestRunTracker, createInputRecord, countImages, userMessageText } from ${JSON.stringify(trackerHref)};\n`,
+    "request-run imports",
+  );
+  next = replaceOnce(next, SKILL_NEEDLE, SKILL_REPLACEMENT, "inline /skill: pattern");
   next = replaceOnce(next, TOKEN_NEEDLE, TOKEN_REPLACEMENT, "inline /skill: tokens");
   next = replaceOnce(next, RETRY_NEEDLE, RETRY_REPLACEMENT, "compact after user abort");
   next = replaceOnce(next, ABORT_NEEDLE, ABORT_REPLACEMENT, "abortCompaction if running");
@@ -60,5 +73,72 @@ export function injectAgentSession(source) {
   next = replaceOnce(next, AWAIT2_NEEDLE, AWAIT2_REPLACEMENT, "await abortPromise bound");
   next = replaceOnce(next, SYS_NEEDLE, SYS_REPLACEMENT, "manual compact abort bound");
   next = replaceOnce(next, LIVE_NEEDLE, LIVE_REPLACEMENT, "sawProviderLive");
-  return replaceOnce(next, LIVE_ARG_NEEDLE, LIVE_ARG_REPLACEMENT, "isLive callback");
+  next = replaceOnce(next, LIVE_ARG_NEEDLE, LIVE_ARG_REPLACEMENT, "isLive callback");
+  next = replaceOnce(
+    next,
+    "        this._queuedInputOrder = [];\n        this._nextQueuedInputOrder = 0;",
+    "        this._queuedInputOrder = [];\n        this._requestRunTracker = new RequestRunTracker();\n        this._preparedInteractiveInput = undefined;\n        this._nextQueuedInputOrder = 0;",
+    "request-run ctor",
+  );
+  next = replaceOnce(
+    next,
+    "    _emitQueueUpdate() {\n        this._emit({\n            type: \"queue_update\",\n            steering: [...this._steeringMessages],\n            followUp: [...this._followUpMessages],\n        });\n    }",
+    "    _emitQueueUpdate() {\n        this._emit({\n            type: \"queue_update\",\n            steering: [...this._steeringMessages],\n            followUp: [...this._followUpMessages],\n            pendingInputs: this._requestRunTracker?.snapshot().pendingInputs ?? [],\n        });\n    }",
+    "queue_update pendingInputs",
+  );
+  next = replaceOnce(
+    next,
+    "        const message = {\n            role: \"user\",\n            content,\n            timestamp: Date.now(),\n        };\n        if (this._promptStartPending && this._skipNextPostCompactionAssistantCheck) {\n            this._postCompactionDeferredSteeringMessages.push(message);",
+    "        const message = {\n            role: \"user\",\n            content,\n            timestamp: Date.now(),\n        };\n        this._bindInteractiveInput(message, \"steer\", text, images);\n        if (this._promptStartPending && this._skipNextPostCompactionAssistantCheck) {\n            this._postCompactionDeferredSteeringMessages.push(message);",
+    "bind queued steer",
+  );
+  next = replaceOnce(
+    next,
+    "        const message = {\n            role: \"user\",\n            content,\n            timestamp: Date.now(),\n        };\n        if (this._promptStartPending && this._skipNextPostCompactionAssistantCheck) {\n            this._postCompactionDeferredFollowUpMessages.push(message);",
+    "        const message = {\n            role: \"user\",\n            content,\n            timestamp: Date.now(),\n        };\n        this._bindInteractiveInput(message, \"followUp\", text, images);\n        if (this._promptStartPending && this._skipNextPostCompactionAssistantCheck) {\n            this._postCompactionDeferredFollowUpMessages.push(message);",
+    "bind queued followUp",
+  );
+  next = replaceOnce(
+    next,
+    "            messages.push({\n                role: \"user\",\n                content: userContent,\n                timestamp: Date.now(),\n            });",
+    "            messages.push({\n                role: \"user\",\n                content: userContent,\n                timestamp: Date.now(),\n            });\n            this._bindInteractiveInput(messages[0], \"submit\", expandedText, currentImages);",
+    "bind immediate submit",
+  );
+  next = replaceOnce(
+    next,
+    "            }\n        }\n        const agentEndWillRetry = event.type === \"agent_end\" && this._willRetryAfterAgentEnd(event.messages);",
+    "            }\n            this._observeRequestRunEvent(event);\n        }\n        else {\n            this._observeRequestRunEvent(event);\n        }\n        const agentEndWillRetry = event.type === \"agent_end\" && this._willRetryAfterAgentEnd(event.messages);",
+    "observe request-run events",
+  );
+  next = replaceOnce(
+    next,
+    "            this._emit({ type: \"agent_settled\" });",
+    "            this._requestRunTracker?.onAgentSettled();\n            this._emit({ type: \"agent_settled\" });",
+    "complete on agent_settled",
+  );
+  next = replaceOnce(
+    next,
+    "        this._emit({ type: \"session_abort\" });",
+    "        this._emit({ type: \"session_abort\" });\n        this._requestRunTracker?.onInterrupted();",
+    "interrupt on session_abort",
+  );
+  next = replaceOnce(
+    next,
+    "    syncQueueModesFromSettings() {\n        this.agent.steeringMode = this.settingsManager.getSteeringMode();\n        this.agent.followUpMode = this.settingsManager.getFollowUpMode();\n    }",
+    "    syncQueueModesFromSettings() {\n        this.agent.steeringMode = this.settingsManager.getSteeringMode();\n        this.agent.followUpMode = this.settingsManager.getFollowUpMode();\n        this._forceFollowUpMode();\n    }",
+    "force followUpMode on sync",
+  );
+  next = replaceOnce(
+    next,
+    "    setFollowUpMode(mode) {\n        this.agent.followUpMode = mode;\n        this.settingsManager.setFollowUpMode(mode);\n    }",
+    "    setFollowUpMode(mode) {\n        if (mode !== \"one-at-a-time\")\n            this._sessionLogger?.warn?.(\"followUpMode forced to one-at-a-time\", { requested: mode });\n        this.agent.followUpMode = \"one-at-a-time\";\n        this.settingsManager.setFollowUpMode(\"one-at-a-time\");\n    }",
+    "force followUpMode setter",
+  );
+  next = replaceOnce(
+    next,
+    "    /** Number of pending messages (includes both steering and follow-up) */\n",
+    "    _bindInteractiveInput(message, delivery, text, images) {\n        const prepared = this._preparedInteractiveInput;\n        this._preparedInteractiveInput = undefined;\n        const resolved = prepared?.delivery ?? delivery;\n        const record = createInputRecord({\n            id: prepared?.id ?? randomUUID(),\n            delivery: resolved,\n            source: prepared?.source ?? \"unknown\",\n            text: text ?? userMessageText(message),\n            imageCount: Array.isArray(images) ? images.length : countImages(message?.content),\n            enqueuedAt: Date.now(),\n            targetRequestRunId: resolved === \"steer\" ? this._requestRunTracker?.activeRequestRunId : undefined,\n        });\n        this._requestRunTracker.attachRecord(message, record);\n        if (resolved === \"steer\" || resolved === \"followUp\")\n            this._requestRunTracker.enqueuePending(record);\n        this._lastInteractiveSubmit = {\n            inputId: record.id,\n            disposition: resolved === \"steer\" ? \"queued-steer\" : resolved === \"followUp\" ? \"queued-follow-up\" : \"started\",\n        };\n        return record;\n    }\n    prepareInteractiveInput(partial = {}) {\n        const requested = partial.delivery ?? \"auto\";\n        const delivery = requested === \"auto\"\n            ? (this.isStreaming ? \"followUp\" : \"submit\")\n            : (this.isStreaming ? requested : \"submit\");\n        this._preparedInteractiveInput = {\n            id: partial.id ?? randomUUID(),\n            delivery,\n            source: partial.source ?? \"unknown\",\n            text: partial.text ?? \"\",\n            imageCount: partial.imageCount ?? 0,\n        };\n        return this._preparedInteractiveInput;\n    }\n    takeInteractiveSubmitResult() {\n        const result = this._lastInteractiveSubmit;\n        this._lastInteractiveSubmit = undefined;\n        return result;\n    }\n    getInteractiveInput(message) {\n        return this._requestRunTracker?.getRecord(message);\n    }\n    updateQueuedInputDelivery(message, delivery) {\n        return this._requestRunTracker?.updatePendingDelivery(message, delivery);\n    }\n    clearPendingInteractiveInputs() {\n        const cleared = this._requestRunTracker?.clearPendingInputs() ?? { clearedIds: [] };\n        this.clearQueue();\n        return cleared;\n    }\n    requestTimelineSnapshot() {\n        return this._requestRunTracker?.snapshot() ?? {\n            schemaVersion: 1,\n            runs: [],\n            pendingInputs: [],\n            hasOlder: false,\n        };\n    }\n    async readConversationPage(input = {}) {\n        if (this._requestRunTracker && this._requestRunTracker.entries.length === 0) {\n            this._requestRunTracker.rebuildFromMessages(this.agent?.state?.messages ?? []);\n        }\n        return this._requestRunTracker.readConversationPage(input);\n    }\n    _observeRequestRunEvent(event) {\n        this._requestRunTracker?.observe(event);\n    }\n    _forceFollowUpMode() {\n        if (this.agent && this.agent.followUpMode !== \"one-at-a-time\") {\n            this._sessionLogger?.warn?.(\"followUpMode forced to one-at-a-time\", { requested: this.agent.followUpMode });\n        }\n        if (this.agent)\n            this.agent.followUpMode = \"one-at-a-time\";\n    }\n    /** Number of pending messages (includes both steering and follow-up) */\n",
+    "request-run session methods",
+  );
+  return next;
 }

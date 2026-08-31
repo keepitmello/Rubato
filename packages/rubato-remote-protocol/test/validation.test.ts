@@ -54,6 +54,8 @@ describe("action request validation", () => {
     "input.submit": { text: "hello", delivery: "auto" },
     "input.steer": { text: "adjust" },
     "input.followUp": { text: "then verify" },
+    "input.queue.clear": {},
+    "conversation.page": { limit: 50 },
     "agent.abort": {},
     "session.compact": { instructions: "retain decisions" },
     "session.navigate": { targetEntryId: "entry-2", summarize: true },

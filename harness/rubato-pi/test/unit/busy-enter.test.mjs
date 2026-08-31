@@ -58,6 +58,12 @@ function makeMode({ streaming = true, compacting = false } = {}) {
         followUp: [...followUpMessages],
       };
     },
+    updateQueuedInputDelivery(message, delivery) {
+      this.lastDeliveryUpdate = { message, delivery };
+    },
+    updateQueuedInputDelivery(message, delivery) {
+      this.lastDeliveryUpdate = { message, delivery };
+    },
     agent: {
       followUpQueue,
       steeringQueue,
@@ -272,6 +278,10 @@ if (!runtime) {
     assert.deepEqual(mode.session._followUpMessages, ["keep"]);
     assert.deepEqual(mode.session._steeringMessages, ["promote me"]);
     assert.deepEqual(mode.session._queuedInputOrder.map((item) => item.mode), ["followUp", "steer"]);
+    assert.equal(mode.session.lastDeliveryUpdate.delivery, "steer");
+    assert.equal(mode.session.lastDeliveryUpdate.message, second);
+    assert.equal(mode.session.lastDeliveryUpdate.delivery, "steer");
+    assert.equal(mode.session.lastDeliveryUpdate.message, second);
     assert.deepEqual(mode.session.lastQueueUpdate, {
       steering: ["promote me"],
       followUp: ["keep"],
