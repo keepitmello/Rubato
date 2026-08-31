@@ -1,6 +1,6 @@
 # Stage 9 independent-leg verification record
 
-Date: 2026-08-30
+Date: 2026-08-31
 
 Host: macOS 26.5.2 (25F84), arm64; Node 26.5.0; Bun 1.4.0; Tailscale CLI 1.102.3 logged in and running. The real Serve configuration was `{}` before this work. No destructive Serve command was run.
 
@@ -9,6 +9,7 @@ Host: macOS 26.5.2 (25F84), arm64; Node 26.5.0; Bun 1.4.0; Tailscale CLI 1.102.3
 | Command | Exit | Result |
 |---|---:|---|
 | `node --test scripts/remote-release/*.test.mjs scripts/license-policy.test.mjs scripts/check-third-party-notices.test.mjs packages/rubato-live-cli/test/*.test.mjs` | 0 | 50 release, zmx exact-manifest, license, notice, CLI routing, and isolated uninstall tests passed. |
+| Symlinked-checkout `verify.sh` contract and `/Users/wy/Github-repos/rubato` real-path invocation | 0 | All five release wrappers resolve their main module through `pwd -P`; the verified local artifact emitted its bound build ID and source commit instead of silently exiting. |
 | `bun test packages/rubato-remote-hub/test/security-release.test.ts packages/rubato-remote-hub/test/path-security.test.ts packages/rubato-remote-hub/test/tickets-pairing.test.ts` | 0 | 8 adversarial/path/pairing tests passed after the 100 MiB boundary case was added. |
 | `bun test scripts/security-web-boundaries.test.ts` | 0 | Two raw-HTML, JavaScript-URL, malicious filename, and tool-output XSS tests passed through the real renderer. |
 | `bun test packages/rubato-terminal-bridge/test` | 0 | 25 passed, one installed-zmx smoke skipped because no pinned zmx is installed at the user path. |
