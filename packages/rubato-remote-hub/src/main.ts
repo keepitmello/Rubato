@@ -96,7 +96,14 @@ const app = createHttpApp({ config, hub, pairing, tickets, terminalTickets, iden
 const server = serve({ fetch: app.fetch, hostname: "127.0.0.1", port: config.httpPort }) as HttpServer
 const sockets = new HubWebSocketServer({ server, identity, ownerLogin: config.ownerLogin, pairing, tickets, terminalTickets, journal, zmxBinary: zmxPath })
 
+void hub.maintainInventory().catch(() => {})
+const inventoryTimer = setInterval(() => {
+  void hub.maintainInventory().catch(() => {})
+}, 30_000)
+inventoryTimer.unref()
+
 const stop = async (): Promise<void> => {
+  clearInterval(inventoryTimer)
   sockets.close()
   await surfaceServer.close()
   await new Promise<void>((resolve, reject) => server.close((cause) => cause ? reject(cause) : resolve()))
