@@ -17,6 +17,7 @@ import {
   isCollapsibleToolExecutionUrl,
   isCollapsibleToolGroupUrl,
 } from "./collapsible-mouse.mjs";
+import { injectRubatoFooter, isRubatoFooterModuleUrl, rubatoFooterHref } from "./rubato-footer.mjs";
 
 // 주입 앵커는 설치된 senpi/pi-tui 의 **정확한** 소스 문자열에 걸려 있다.
 // 설치본이 레포 핀과 다르면(전역 설치, 오래된 클론, 부분 업데이트) 앵커가
@@ -76,6 +77,7 @@ export async function load(url, context, nextLoad) {
   const source = String(result.source);
   let next = source;
   if (isBusyEnterModuleUrl(url)) next = applyTransform(next, (text) => injectBusyEnter(text, busyEnterHref()));
+  if (isRubatoFooterModuleUrl(url)) next = applyTransform(next, (text) => injectRubatoFooter(text, rubatoFooterHref()));
   if (isCollapsibleAssistantUrl(url)) next = applyTransform(next, injectCollapsibleAssistant);
   if (isCollapsibleToolExecutionUrl(url)) next = applyTransform(next, injectCollapsibleToolExecution);
   if (isCollapsibleToolGroupUrl(url)) next = applyTransform(next, injectCollapsibleToolGroup);
