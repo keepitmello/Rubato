@@ -4,7 +4,6 @@ import { stat } from "node:fs/promises"
 import type { SenpiLauncher } from "@rubato/senpi-task"
 
 import { memoryChildExtensionArgs, memoryChildExtensionPaths } from "./child-extensions"
-import { withoutTuiLoaderHooks } from "./spawn-payload"
 import type { MemoryModelChain } from "./memory-model-attempts"
 import type { ReflectionModelCandidate } from "./resolve-model"
 
@@ -102,7 +101,7 @@ async function probeChildModels(
     ...DISCOVERY_DISABLED_MODEL_LIST_ARGS,
     ...memoryChildExtensionArgs(env),
   ], {
-    env: withoutTuiLoaderHooks(env),
+    env,
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
   })

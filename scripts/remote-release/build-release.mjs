@@ -31,7 +31,7 @@ export async function buildRelease(options) {
       [options.bun ?? "bun", ["install", "--frozen-lockfile"], 10 * 60_000],
       [process.execPath, ["harness/scripts/build-engine.mjs", "--force"], 5 * 60_000],
       [process.execPath, ["harness/scripts/build-engine.mjs", "--check"], 2 * 60_000],
-      [options.bun ?? "bun", ["test", "patch-tests"], 10 * 60_000],
+      ["npm", ["--prefix", "harness/rubato-pi", "test"], 10 * 60_000],
       ["npm", ["--prefix", "packages/rubato-remote-hub", "run", "build"], 5 * 60_000],
       ["npm", ["--prefix", "packages/rubato-remote-web", "run", "build"], 10 * 60_000],
       ["npm", ["--prefix", "packages/rubato-live-cli", "run", "check"], 2 * 60_000],

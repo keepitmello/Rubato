@@ -213,14 +213,14 @@ describe("worker senpi command resolution", () => {
   })
 })
 
-describe("memory child TUI loader isolation", () => {
-  // Reproduces reflection-run-2: the parent TUI injects `--import=...no-changelog-register`
-  // via NODE_OPTIONS. The child inherited that hook and then loaded PATH's older senpi,
-  // so replaceOnce threw `busy enter transform drift` and the run died in under a second.
+describe("memory child TUI loader inheritance", () => {
+  // depatch 이후 벤더 패치는 없고 훅이 곰 행동(compaction 복구, watchdog, auth 원자
+  // 쓰기)을 싣는다. 예전에는 외래 senpi 에서 replaceOnce 가 throw 해 자식이 죽어서
+  // 훅을 미리 떼었지만, 지금 로더는 드리프트를 경고로 삼키므로 그대로 물려준다.
   const HOOK = "--import=file:///Users/wy/Github-repos/Rubato/harness/rubato-pi/src/no-changelog-register.mjs"
   const OTHER = "--max-old-space-size=4096"
 
-  test("#given a parent TUI loader hook #when a reflection spawn is prepared #then the child does not inherit it", async () => {
+  test("#given a parent TUI loader hook #when a reflection spawn is prepared #then the child inherits it", async () => {
     const base = await root()
     const prepared = await prepareReflectionSpawn({
       run,
@@ -240,12 +240,11 @@ describe("memory child TUI loader isolation", () => {
       senpiCommand: "/custom/senpi",
     })
 
-    expect(prepared.env.NODE_OPTIONS).toBe(OTHER)
-    expect(prepared.env.NODE_OPTIONS).not.toContain("no-changelog-register")
+    expect(prepared.env.NODE_OPTIONS).toBe(`${OTHER} ${HOOK}`)
     expect(prepared.env.SENPI_MEMORY_REFLECTION).toBe("1")
   })
 
-  test("#given only a parent TUI loader hook #when a facts spawn is prepared #then NODE_OPTIONS is dropped", async () => {
+  test("#given only a parent TUI loader hook #when a facts spawn is prepared #then NODE_OPTIONS is kept", async () => {
     const prepared = await prepareFactsSpawn({
       runId: "facts-1",
       runDir: await root(),
@@ -255,7 +254,7 @@ describe("memory child TUI loader isolation", () => {
       senpiCommand: "/custom/senpi",
     })
 
-    expect(prepared.env.NODE_OPTIONS).toBeUndefined()
+    expect(prepared.env.NODE_OPTIONS).toBe(HOOK)
     expect(prepared.env.SENPI_MEMORY_FACTS).toBe("1")
   })
 })
