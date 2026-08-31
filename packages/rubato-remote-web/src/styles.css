@@ -390,6 +390,9 @@ svg { flex: 0 0 auto; }
 .message-caption-sent { justify-content: flex-end; }
 .streaming-label { display: inline-flex; align-items: center; gap: 5px; color: var(--success); font-weight: 660; }
 .streaming-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: streaming-pulse 1.4s ease-in-out infinite; }
+.work-collapse-row { display: flex; justify-content: flex-start; margin: 0 0 16px; padding-left: 33px; }
+.work-collapse-control { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--muted); font-size: .82rem; font-weight: 650; }
+.work-log-messages { padding-top: 8px; }
 
 .composer-shell { position: fixed; z-index: 30; left: 0; right: 0; bottom: 0; padding: 0 max(8px, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(8px, env(safe-area-inset-left)); background: linear-gradient(180deg, transparent 0, color-mix(in srgb, var(--glass) 78%, transparent) 22%, var(--glass-strong) 100%); backdrop-filter: saturate(1.45) blur(24px); -webkit-backdrop-filter: saturate(1.45) blur(24px); }
 .composer-shell .k-messagebar { position: relative; bottom: auto; max-width: var(--content-width); margin: 0 auto; border: 1px solid color-mix(in srgb, var(--line-strong) 75%, transparent); border-radius: 22px 22px 0 0; background: color-mix(in srgb, var(--surface) 90%, transparent); box-shadow: 0 -10px 30px rgba(20, 24, 34, .08); }

@@ -1,5 +1,5 @@
 import canonicalEvent from "../../../rubato-remote-protocol/test/fixtures/event-envelope.v1.json"
-import { eventEnvelopeSchema } from "@rubato/remote-protocol"
+import { eventEnvelopeSchema, snapshotResponseSchema } from "@rubato/remote-protocol"
 import { fixtureSnapshot } from "./fixtures"
 import { applyConversationSnapshot, DeltaBatcher, reduceConversation } from "./conversation"
 import type { ConversationState } from "./types"
@@ -102,5 +102,127 @@ describe("conversation events", () => {
     expect(flush).toHaveBeenCalledTimes(2)
     batcher.dispose()
     vi.useRealTimers()
+  })
+
+  test("preserves requestRunId, phase, and delivery from message.start and message.commit payloads", () => {
+    const started = reduceConversation(initial, eventEnvelopeSchema.parse({
+      ...canonicalEvent,
+      seq: 1,
+      type: "message.start",
+      payload: { ephemeralMessageId: "message-1", role: "assistant", text: "Working", requestRunId: "run-1", phase: "progress", delivery: "submit" },
+    }))
+    expect(started.entries).toEqual([{
+      id: "message-1", kind: "message", role: "assistant", text: "Working", streaming: true, at: canonicalEvent.at,
+      requestRunId: "run-1", phase: "progress", delivery: "submit",
+    }])
+    const committed = reduceConversation(started, eventEnvelopeSchema.parse({
+      ...canonicalEvent,
+      seq: 2,
+      type: "message.commit",
+      payload: { ephemeralMessageId: "message-1", text: "Done", requestRunId: "run-1", phase: "final", delivery: "submit" },
+    }))
+    expect(committed.entries).toEqual([{
+      id: "message-1", kind: "message", role: "assistant", text: "Done", streaming: false, at: canonicalEvent.at,
+      requestRunId: "run-1", phase: "final", delivery: "submit",
+    }])
+  })
+
+  test("preserves request-run fields from nested Pi message events", () => {
+    const base = { ...canonicalEvent, hostId: fixtureSnapshot.summary.hostId, liveSessionId: fixtureSnapshot.summary.liveSessionId }
+    const message = (text: string, extra: Record<string, unknown> = {}) => ({
+      role: "assistant",
+      content: [{ type: "text", text }],
+      timestamp: 1_788_147_096_682,
+      ...extra,
+    })
+    let state = reduceConversation(initial, eventEnvelopeSchema.parse({
+      ...base,
+      seq: 1,
+      type: "message.start",
+      payload: { requestRunId: "run-9", event: { type: "message_start", message: message("", { phase: "progress", delivery: "followUp" }) } },
+    }))
+    state = reduceConversation(state, eventEnvelopeSchema.parse({
+      ...base,
+      seq: 2,
+      type: "message.commit",
+      payload: { requestRunId: "run-9", event: { type: "message_end", message: message("REMOTE_SMOKE_OK", { phase: "final", delivery: "followUp" }) } },
+    }))
+    expect(state.entries).toEqual([{
+      id: "pi-message-1788147096682",
+      kind: "message",
+      role: "assistant",
+      text: "REMOTE_SMOKE_OK",
+      streaming: false,
+      at: canonicalEvent.at,
+      requestRunId: "run-9",
+      phase: "final",
+      delivery: "followUp",
+    }])
+  })
+
+  test("does not invent phase when the event omits it", () => {
+    const state = reduceConversation(initial, eventEnvelopeSchema.parse({
+      ...canonicalEvent,
+      seq: 1,
+      type: "message.start",
+      payload: { ephemeralMessageId: "message-1", text: "Hi", requestRunId: "run-1" },
+    }))
+    expect(state.entries).toEqual([{
+      id: "message-1", kind: "message", role: "assistant", text: "Hi", streaming: true, at: canonicalEvent.at,
+      requestRunId: "run-1",
+    }])
+  })
+
+  test("copies requestRunId onto tool entries", () => {
+    const state = reduceConversation(initial, eventEnvelopeSchema.parse({
+      ...canonicalEvent,
+      seq: 1,
+      type: "tool.start",
+      payload: { ephemeralMessageId: "tool-1", name: "read", summary: "읽는 중", requestRunId: "run-1" },
+    }))
+    expect(state.entries).toEqual([{
+      id: "tool-1", kind: "tool", name: "read", summary: "읽는 중", status: "running", requestRunId: "run-1",
+    }])
+  })
+
+  test("keeps timeline from a parsed snapshot body the way fetchSnapshot now forwards it", () => {
+    const timeline = { schemaVersion: 1 as const, runs: [], pendingInputs: [], hasOlder: false }
+    const body = snapshotResponseSchema.parse({ ...fixtureSnapshot, timeline })
+    expect(body.timeline).toEqual(timeline)
+    expect(applyConversationSnapshot(body).timeline).toEqual(timeline)
+  })
+
+  test("keeps the previous timeline when a later snapshot omits it", () => {
+    const timeline = { schemaVersion: 1 as const, runs: [], pendingInputs: [], hasOlder: false, activeRequestRunId: "run-1" }
+    const previous = applyConversationSnapshot(snapshotResponseSchema.parse({ ...fixtureSnapshot, timeline }))
+    expect(applyConversationSnapshot(fixtureSnapshot, previous).timeline).toEqual(timeline)
+  })
+
+  test("tracks live execution from agent.state so tool gaps do not look idle", () => {
+    const started = reduceConversation(initial, eventEnvelopeSchema.parse({
+      ...canonicalEvent, seq: 1, type: "agent.state", payload: { execution: "working" },
+    }))
+    expect(started.execution).toBe("working")
+    const settled = reduceConversation(started, eventEnvelopeSchema.parse({
+      ...canonicalEvent, seq: 2, type: "agent.state", payload: { execution: "idle" },
+    }))
+    expect(settled.execution).toBe("idle")
+  })
+
+  test("updates timeline.activeRequestRunId from session.changed requestRun payloads", () => {
+    const state = reduceConversation(initial, eventEnvelopeSchema.parse({
+      ...canonicalEvent,
+      seq: 1,
+      type: "session.changed",
+      payload: { change: "requestRun", activeRequestRunId: "run-1" },
+    }))
+    expect(state.timeline?.activeRequestRunId).toBe("run-1")
+    const cleared = reduceConversation(state, eventEnvelopeSchema.parse({
+      ...canonicalEvent,
+      seq: 2,
+      type: "session.changed",
+      payload: { change: "requestRun" },
+    }))
+    expect(cleared.timeline?.activeRequestRunId).toBeUndefined()
   })
 })

@@ -71,16 +71,7 @@ export async function fetchSnapshot(host: RegisteredHost, liveSessionId: string)
     const names = new Set(requested.split(",").filter(Boolean))
     return { ...fixtureSnapshot, commands: fixtureSnapshot.commands.filter((command) => names.has(command.name)) }
   }
-  const body = snapshotResponseSchema.parse(await request<unknown>(endpoint(host, route(REMOTE_HTTP_ROUTES.snapshot, { liveSessionId }))))
-  return {
-    summary: body.summary,
-    revision: body.revision,
-    lastSeq: body.lastSeq,
-    entries: body.entries,
-    tree: body.tree,
-    commands: body.commands,
-    ...(body.uiRequest ? { uiRequest: body.uiRequest } : {}),
-  }
+  return snapshotResponseSchema.parse(await request<unknown>(endpoint(host, route(REMOTE_HTTP_ROUTES.snapshot, { liveSessionId }))))
 }
 
 export async function fetchArtifactText(host: RegisteredHost, liveSessionId: string, artifactId: string): Promise<string> {

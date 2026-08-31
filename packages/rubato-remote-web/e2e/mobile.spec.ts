@@ -199,3 +199,25 @@ test("new session path and narrow viewport", async ({ page }) => {
   await page.getByRole("button", { name: "세션 시작" }).click()
   await expect(page.getByRole("textbox", { name: "메시지" })).toBeVisible()
 })
+
+test("finished progress collapses into a sheet and live turns keep stacking", async ({ page }) => {
+  const sessionPath = "/rubato/session/018f0c7a-2f3b-7c4d-8e5f-1234567890ab/018f0c7b-2f3b-7c4d-9e5f-1234567890ab"
+  await page.goto(`${sessionPath}?fixture=1&state=collapsed`)
+  await expect(page.getByRole("article", { name: "내 메시지" })).toHaveText(/빌드를 고쳐 줘/)
+  await expect(page.getByRole("article", { name: "Rubato 응답" })).toHaveText(/패치 넣었어요/)
+  await expect(page.getByText("로그를 보고 있어요")).toHaveCount(0)
+  await expect(page.getByText("실패 지점을 찾았어요")).toHaveCount(0)
+  await page.getByRole("button", { name: "작업 과정" }).click()
+  await expect(page.getByRole("dialog", { name: "작업 과정" })).toBeVisible()
+  await expect(page.getByText("로그를 보고 있어요")).toBeVisible()
+  await expect(page.getByText("실패 지점을 찾았어요")).toBeVisible()
+  await page.screenshot({ path: `${shots}/collapsed-work-iphone.png`, fullPage: true })
+  await page.keyboard.press("Escape")
+  await expect(page.getByRole("dialog", { name: "작업 과정" })).toHaveCount(0)
+
+  await page.goto(`${sessionPath}?fixture=1&state=live`)
+  await expect(page.getByRole("button", { name: "작업 과정" })).toHaveCount(0)
+  await expect(page.getByText("로그를 보고 있어요")).toBeVisible()
+  await expect(page.getByText("아직 보는 중")).toBeVisible()
+  await page.screenshot({ path: `${shots}/live-work-iphone.png`, fullPage: true })
+})
