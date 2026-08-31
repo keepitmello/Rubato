@@ -19,6 +19,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { ensureEngineNodeModules } from "../rubato-pi/src/engine-paths.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..", "..");
@@ -326,19 +327,7 @@ async function mirrorPluginShell() {
   // 적어 둔 그 사정이다), 둘 다 걸어야 한다. 다만 중첩 쪽이 먼저 보여야
   // 하므로 산출물 바로 옆(extensions/node_modules)에 둔다 — node 는 가까운
   // 곳부터 찾기 때문이다.
-  const linkPairs = [
-    [join(engineRoot, "node_modules"), join(repoRoot, "node_modules")],
-    [
-      join(engineRoot, "extensions", "node_modules"),
-      join(repoRoot, "node_modules", "@code-yeongyu", "senpi", "node_modules"),
-    ],
-  ];
-  for (const [linkPath, target] of linkPairs) {
-    await rm(linkPath, { recursive: true, force: true });
-    if (existsSync(target)) {
-      await symlink(target, linkPath, "dir").catch(() => {});
-    }
-  }
+  ensureEngineNodeModules(engineRoot, repoRoot);
 }
 
 async function build() {
