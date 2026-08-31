@@ -101,7 +101,8 @@ Known picker path:
 - Wait until generation is terminal. Do not harvest a partial reply.
 - Recover the exact assistant text from an accessibility snapshot.
 - Use Copy only as an optional fallback if snapshot text is incomplete.
-- Require the assistant reply to contain the exact ID before reporting success.
+- The user-turn ID is the send receipt. Save the assistant text even if it
+  omits the ID. Do not drop a completed reply because the echo is missing.
 
 ## Output envelopes
 
