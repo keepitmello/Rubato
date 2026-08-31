@@ -30,6 +30,14 @@ if [ "${1-}" = "aside-cursor" ]; then
   shift
   exec "$HERE/rubato-aside-cursor.sh" "$@"
 fi
+if [ "${1-}" = "restart" ]; then
+  if [ "$#" -ne 1 ]; then
+    echo "usage: rubato restart" >&2
+    exit 2
+  fi
+  # Remote hub LaunchAgent. -k kills the running instance first, then starts it.
+  exec /bin/launchctl kickstart -k "gui/$(id -u)/com.keepitmello.rubato.remote-hub"
+fi
 
 # `direct` 는 dispatcher 만 건너뛴다. 기존 준비·엔진 경로는 그대로 지나므로
 # auth/update/build 외의 과거 사용법과 bootstrap 이 같은 엔진을 실행한다.
