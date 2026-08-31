@@ -208,13 +208,17 @@ fi
 # 옛 설치의 사용자 상태와 현재 프로젝트 설정을 새 정본으로 옮긴다.
 # 홈과 cwd 조상에 옛 루트가 하나도 없으면 Node 프로세스조차 띄우지 않는다.
 RUBATO_NEEDS_MIGRATION=""
-if [ -e "$HOME/.omo" ] || [ -L "$HOME/.omo" ]; then
+if [ -e "$HOME/.omo" ] || [ -L "$HOME/.omo" ] \
+  || [ -e "$HOME/.rubato/.migration-archive/omo" ] \
+  || [ -e "$HOME/.rubato/.migration-archive/rubato" ]; then
   RUBATO_NEEDS_MIGRATION=1
 else
   MIGRATION_ROOT="$PWD"
   MIGRATION_BOUNDARY="$HOME"
   while [ "$MIGRATION_ROOT" != "$MIGRATION_BOUNDARY" ] && [ "$(dirname "$MIGRATION_ROOT")" != "$MIGRATION_ROOT" ]; do
-    if [ -e "$MIGRATION_ROOT/.omo" ] || [ -L "$MIGRATION_ROOT/.omo" ]; then
+    if [ -e "$MIGRATION_ROOT/.omo" ] || [ -L "$MIGRATION_ROOT/.omo" ] \
+      || [ -e "$MIGRATION_ROOT/.rubato/.migration-archive/omo" ] \
+      || [ -e "$MIGRATION_ROOT/.rubato/.migration-archive/rubato" ]; then
       RUBATO_NEEDS_MIGRATION=1
       break
     fi
