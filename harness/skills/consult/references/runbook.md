@@ -122,23 +122,17 @@ the first run's evidence and never trigger this automatically.
 
 ## Accept or reject
 
-For `--quality xhigh`, require:
+For `--quality xhigh` and `--quality pro`, require:
 
 ```text
-quality: xhigh
+quality: xhigh | pro
 model: GPT-5.6 Sol
-tier: 매우 높음 (4 of 5)
+tier: 매우 높음 (N of M)
 submitElapsedSeconds: <120
 ```
 
-For `--quality pro`, require:
-
-```text
-quality: pro
-model: GPT-5.6 Sol
-tier: Pro (5 of 5)
-submitElapsedSeconds: <120
-```
+The live picker no longer has a separate Pro stop. Match the `매우 높음`
+label; do not hardcode a 5-stop index.
 
 Reject a missing or mismatched quality/ID, an unverified model or tier, a
 partial response, or a submission at or above 120 seconds.

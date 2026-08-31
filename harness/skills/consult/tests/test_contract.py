@@ -40,11 +40,10 @@ class ConsultAsideContractTest(unittest.TestCase):
         self.assertIn("Never submit from global Chat", skill)
         self.assertIn("GPT-5.6 Sol", skill)
         self.assertIn("매우 높음", skill)
-        self.assertIn("`xhigh`: **매우 높음**", skill)
-        self.assertIn("`pro`: **Pro**", skill)
+        self.assertIn("`xhigh` and `pro`: **매우 높음**", skill)
         self.assertIn("QUALITY: xhigh", skill)
         self.assertIn("QUALITY: pro", skill)
-        self.assertIn("TIER: Pro (5 of 5)", skill)
+        self.assertIn("TIER: 매우 높음 (N of M)", skill)
         self.assertIn("ASIDE_WORK_CONSULT_ERROR", skill)
         self.assertLess(
             skill.index("In the simple tier view"),

@@ -54,8 +54,8 @@ Both qualities require:
 
 Quality mapping:
 
-- `xhigh`: **매우 높음**, shown as **4 of 5**
-- `pro`: **Pro**, shown as **5 of 5**
+- `xhigh` and `pro`: **매우 높음** at the live slider stop (`N of M`).
+  The Pro stop is gone; do not hardcode a 5-stop index.
 
 If the family or requested tier cannot be verified, stop before send.
 
@@ -63,13 +63,11 @@ Known picker path:
 
 1. Open the current tier button once.
 2. In the simple tier view, read the current `N개 중 M번째` index.
-3. Focus the `성능` menuitem and use only the required number of
-   `ArrowLeft`/`ArrowRight` presses to reach index 4 for `xhigh` or index 5 for
-   `pro`.
-4. Require `매우 높음, 5개 중 4번째` for `xhigh`, or
-   `Pro, 5개 중 5번째` for `pro`. Do not probe beyond the requested stop.
+3. Focus the `성능` menuitem and move with `ArrowLeft`/`ArrowRight` until
+   the label is `매우 높음`.
+4. Require `매우 높음, N개 중 M번째`. Do not keep probing after that label.
 5. Only after the tier is verified, open `모델 선택` and require the checked
-   radio `GPT-5.6 Sol`.
+   radio `5.6 Sol` or `GPT-5.6 Sol`. Click it if visible and unchecked.
 6. Press `Escape` to close the picker. Do not try to navigate back from the
    model submenu to the simple tier view.
 
@@ -104,7 +102,7 @@ ID: <exact ID>
 SURFACE: Work
 QUALITY: xhigh
 MODEL: GPT-5.6 Sol
-TIER: 매우 높음 (4 of 5)
+TIER: 매우 높음 (N of M)
 RESPONSE_BEGIN
 <exact ChatGPT response including its ID>
 RESPONSE_END
@@ -118,7 +116,7 @@ ID: <exact ID>
 SURFACE: Work
 QUALITY: pro
 MODEL: GPT-5.6 Sol
-TIER: Pro (5 of 5)
+TIER: 매우 높음 (N of M)
 RESPONSE_BEGIN
 <exact ChatGPT response including its ID>
 RESPONSE_END

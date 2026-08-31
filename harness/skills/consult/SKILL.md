@@ -55,9 +55,10 @@ automatic fallback senders.
    name come from `--url`/`CONSULT_CHATGPT_URL` and
    `--project`/`CONSULT_PROJECT_NAME` in `~/.codex/consult.env`. Changing
    projects is a config edit, not a code edit.
-6. For `xhigh`, require `GPT-5.6 Sol` and
-   `매우 높음 (4 of 5)`. For `pro`, require `GPT-5.6 Sol` and
-   `Pro (5 of 5)`. Read the exact answer from the saved response file.
+6. For `xhigh` and `pro`, require `GPT-5.6 Sol` and a live `매우 높음`
+   (`N of M`) receipt. The picker no longer has a separate Pro stop, and
+   the slider length moves; match the label, not a fixed index. Read the
+   exact answer from the saved response file.
 7. Confirm that the response answers the packet, then verify every material
    claim locally before acting on it. Discard an unrelated response.
 
