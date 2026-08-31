@@ -151,9 +151,11 @@ function liveTaskTitle(record: TaskRecord): string {
 
 function liveModelLabel(record: TaskRecord): string | undefined {
   const resolved = record.resolved_model
-  const modelId = optionalRendererText(resolved?.display)
-    ?? (resolved === undefined ? undefined : `${resolved.provider}/${resolved.model_id}`)
-    ?? optionalRendererText(record.model)
+  // Display is incidental catalog metadata. The short label keys on provider/model_id so
+  // "Cursor Grok 4.6" and "cursor/cursor-grok-4.6" render as one Fast identity.
+  const modelId = resolved === undefined
+    ? optionalRendererText(record.model)
+    : `${resolved.provider}/${resolved.model_id}`
   if (modelId === undefined) return undefined
   const effort = optionalRendererText(resolved?.reasoning)
     ?? optionalRendererText(resolved?.reasoning_effort)
@@ -164,7 +166,15 @@ function liveModelLabel(record: TaskRecord): string | undefined {
 function formatModelWithEffort(modelId: string, level: string | undefined): string {
   const model = shortModelLabel(modelId)
   const effort = formatEffort(level) || effortFromModelId(modelId)
-  return effort ? `${model} ${effort}` : model
+  const fast = isFastModel(modelId) ? " [fast]" : ""
+  return `${effort ? `${model} ${effort}` : model}${fast}`
+}
+
+function isFastModel(modelId: string): boolean {
+  const bare = modelId.split("/").pop()?.split(":", 1)[0] ?? modelId
+  if (/(?:^|[-.])fast$/iu.test(bare)) return true
+  // Rubato pins Cursor Grok 4.6 to Fast on the wire. The planner id stays the grouped base.
+  return bare === "cursor-grok-4.6"
 }
 
 function shortModelLabel(modelId: string): string {
