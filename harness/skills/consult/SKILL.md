@@ -48,8 +48,9 @@ automatic fallback senders.
    the turn.
    Exit `77` means the user turn committed but response recovery failed. Recover
    only from the saved `conversationUrl`; never resend the packet.
-5. Read the saved response and JSON evidence. Require the ID and quality
-   to match the invocation.
+5. Read the saved response and JSON evidence. The user-turn ID is the send
+   receipt. If the assistant omitted the ID, keep the saved reply and use
+   `conversationUrl`; do not treat a missing echo as a failed consult.
    Before launch, reject a URL unless it is HTTPS on `chatgpt.com`, its path
    starts with `/g/g-p-`, and ends in `/project`. The project URL and visible
    name come from `--url`/`CONSULT_CHATGPT_URL` and
