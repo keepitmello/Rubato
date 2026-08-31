@@ -104,8 +104,7 @@ function isFastModel(modelId, model) {
   if (!modelId) return false;
   const bare = String(modelId).split("/").pop().split(":", 1)[0];
   if (/(?:^|[-.])fast$/i.test(bare)) return true;
-  // 피커 id 는 `cursor-grok-4.6` 그대로다. Fast 인지는 표시명·discovered map 으로만 본다.
-  // id 만으로 Fast 를 단정하면 catalog 에 Fast variant 가 없을 때도 [fast] 가 붙는다.
+  // 피커 id 는 `cursor-grok-4.6` 그대로다. Fast 인지는 표시명·Fast map 으로 본다.
   if (bare !== "cursor-grok-4.6") return false;
   if (model?.compat?.cursorGrokFastByLevel && Object.keys(model.compat.cursorGrokFastByLevel).length > 0) {
     return true;

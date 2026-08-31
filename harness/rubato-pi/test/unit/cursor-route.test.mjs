@@ -743,6 +743,29 @@ test("server-exec 표지와 local-work 위임은 pinned 그대로다", async () 
   inner.end();
 });
 
+test("격리 child 처럼 getModels 에 Fast 행이 없어도 stream 은 high-fast 로 pin 한다", async () => {
+  let seen;
+  const inner = {
+    getModels: () => [discoveredModel("cursor-grok-4.6")],
+    streamSimple(_model, _context, options) {
+      seen = options.thinkingSelection;
+      return { [Symbol.asyncIterator]: async function* () {} };
+    },
+    refreshModels: async () => {},
+  };
+  const provider = await cursorDirectProvider({
+    provider: inner,
+    markerStore: memoryMarkerStore(),
+    run: async () => ({ stopReason: "stop" }),
+  });
+  provider.streamSimple(
+    discoveredModel("cursor-grok-4.6"),
+    { messages: [] },
+    { thinkingSelection: { level: "high", source: "legacy-variant", legacyVariantId: "cursor-grok-4.6-medium" } },
+  );
+  assert.equal(seen?.legacyVariantId, "cursor-grok-4.6-high-fast");
+});
+
 test("저장분 베이스 stream 도 catalog Fast 로 pin 한다", async () => {
   let seen;
   const inner = {
