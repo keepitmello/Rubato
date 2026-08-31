@@ -83,9 +83,9 @@ describe("team fallback notification", () => {
 
     // then
     expect(messages).toHaveLength(1)
-    expect(messages[0]?.content.match(/fallback:/gu)).toHaveLength(1)
-    expect(messages[0]?.content).toContain(
-      "fallback:vendor-a/primary-model->vendor-b/fallback-model",
-    )
+    expect(messages[0]?.content).toBe("completed team-worker st_team")
+    expect(messages[0]?.content).not.toContain("fallback:")
+    expect(messages[0]?.details[0]?.requested_model?.display).toBe("vendor-a/primary-model")
+    expect(messages[0]?.details[0]?.resolved_model?.display).toBe("vendor-b/fallback-model")
   })
 })

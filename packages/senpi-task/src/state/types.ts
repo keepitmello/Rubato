@@ -1,5 +1,3 @@
-import type { DagTaskOwner } from "../dag/owner"
-
 export const TASK_STATUSES = [
   "pending",
   "running",
@@ -161,7 +159,6 @@ export type TaskRecordInput = {
   readonly notify_on_terminal: boolean
   // Durable prelaunch steering queue, drained in order once the child starts. Omitted when empty.
   readonly pending_steering?: readonly PendingSteeringEntry[]
-  readonly owner?: DagTaskOwner
   // Session-local spawn ordinal, assigned once per parent session at spawn. A relational key for
   // grouping a logical task's runs; absent on records persisted before ordinals shipped.
   readonly task_seq?: number
