@@ -1,11 +1,14 @@
+// codemode jiti 리다이렉트: senpi-codemode 는 source-only TS 라 ESM 훅이 못 닿고,
+// loader.js 변환이 jiti 에 in-repo 패치본(index.ts + eval-notifier.ts)을 먹인다.
+// 설치본은 pristine 이고, 패치의 관찰 가능한 행동(detached eval 을 custom message
+// 로 보내 Steering 라벨을 피함)은 in-repo 사본이 싣는다.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { VENDOR_PATCHES } from "../../../../postinstall.mjs";
-import { vendorFileStates } from "./support/vendor-file-states.mjs";
+import { senpiDir, senpiNested } from "../../src/engine-paths.mjs";
 import { injectExtensionsLoader } from "../../src/transforms/control-extensions.mjs";
 import {
   applyControlCodemodeTransforms,
@@ -18,34 +21,20 @@ import {
   rubatoCodemodePaths,
 } from "../../src/transforms/control-codemode-redirect.mjs";
 
-const SENPI = "@code-yeongyu/senpi/dist";
 const paths = rubatoCodemodePaths();
+const loaderPath = join(senpiDir, "dist", "core", "extensions", "loader.js");
 
-test("in-repo codemode copies are byte-equal to the patched vendor files", () => {
-  const index = vendorFileStates("senpi-codemode", "src/index.ts");
-  const notifier = vendorFileStates("senpi-codemode", "src/extension/eval-notifier.ts");
-  assert.ok(index && notifier);
-  assert.notEqual(index.pristine, index.patched);
-  assert.notEqual(notifier.pristine, notifier.patched);
-  assert.equal(readFileSync(paths.index, "utf8"), index.patched);
-  assert.equal(readFileSync(paths.notifier, "utf8"), notifier.patched);
-});
-
-test("redirect needles exist on both pristine and patched loader.js", () => {
-  const states = vendorFileStates("senpi", "dist/core/extensions/loader.js");
-  assert.ok(states);
-  const onPristine = injectCodemodeRedirect(states.pristine);
-  const onPatched = injectCodemodeRedirect(states.patched);
-  assert.equal(injectCodemodeRedirect(injectExtensionsLoader(states.pristine)), onPatched);
-  assert.match(onPristine, /evalModule/);
-  assert.match(onPristine, /senpi-codemode:detached-eval/.test(readFileSync(paths.notifier, "utf8")) ? /eval-notifier\.ts/ : /eval-notifier\.ts/);
-  assert.match(onPristine, /codemode\/index\.ts/);
-  assert.match(onPristine, /codemode\/extension\/eval-notifier\.ts/);
+test("redirect needles land on the installed loader.js", () => {
+  const installed = readFileSync(loaderPath, "utf8");
+  const next = injectCodemodeRedirect(injectExtensionsLoader(installed));
+  assert.match(next, /evalModule/);
+  assert.match(next, /codemode\/index\.ts/);
+  assert.match(next, /codemode\/extension\/eval-notifier\.ts/);
   assert.throws(() => injectCodemodeRedirect("export function loadExtensions() {}"), /codemode jiti notifier alias/);
 });
 
-test("applyControlCodemodeTransforms applies redirect on already-patched loader", () => {
-  const { patched } = vendorFileStates("senpi", "dist/core/extensions/loader.js");
+test("the control cluster applies loader inject and redirect without drift", () => {
+  const installed = readFileSync(loaderPath, "utf8");
   const warnings = [];
   const applyTransform = (source, transform) => {
     try {
@@ -56,29 +45,28 @@ test("applyControlCodemodeTransforms applies redirect on already-patched loader"
       return source;
     }
   };
-  const url = `file:///x/${SENPI}/core/extensions/loader.js`;
+  const url = pathToFileURL(loaderPath).href;
   assert.equal(isExtensionsLoaderUrl(url), true);
-  const next = applyControlCodemodeTransforms(url, patched, applyTransform);
+  const next = applyControlCodemodeTransforms(url, installed, applyTransform);
   assert.match(next, /evalModule/);
-  assert.equal(warnings.length, 1);
-  assert.match(warnings[0], /extensions loader runtime/);
+  assert.match(next, /getInteractiveControl/);
+  assert.deepEqual(warnings, []);
 });
 
 test("redirected jiti load uses in-repo entry and notifier; other files stay vendor", async () => {
-  const senpiRoot = VENDOR_PATCHES[0].resolveRoot();
-  const codeRoot = VENDOR_PATCHES[3].resolveRoot();
+  const codeRoot = senpiNested("@code-yeongyu", "senpi-codemode");
   const vendorIndex = join(codeRoot, "src/index.ts");
   const vendorNotifier = join(codeRoot, "src/extension/eval-notifier.ts");
   assert.equal(isRubatoCodemodeEntry(vendorIndex), true);
 
-  const jitiHref = pathToFileURL(join(senpiRoot, "node_modules/jiti/lib/jiti-static.mjs")).href;
+  const jitiHref = pathToFileURL(join(senpiDir, "node_modules/jiti/lib/jiti-static.mjs")).href;
   const { createJiti } = await import(jitiHref);
-  const loaderUrl = pathToFileURL(join(senpiRoot, "dist/core/extensions/loader.js")).href;
-  const req = createRequire(join(senpiRoot, "dist/core/extensions/loader.js"));
+  const loaderUrl = pathToFileURL(loaderPath).href;
+  const req = createRequire(loaderPath);
   const fsCjs = req("fs");
   const orig = fsCjs.readFileSync;
   const reads = [];
-  fsCjs.readFileSync = function(p, ...rest) {
+  fsCjs.readFileSync = function (p, ...rest) {
     const s = String(p);
     if (s.endsWith(".ts") && (s.includes("senpi-codemode") || s.includes("/codemode/"))) reads.push(s);
     return orig.call(this, p, ...rest);
