@@ -129,6 +129,7 @@ describe("rubato-runtime lsp post-edit diagnostics", () => {
       ["child.foo", { kind: "not_configured", extension: ".foo" }],
     ])
     const test = setup()
+    test.pi.setFlag("rubato-runtime-lsp-post-edit-diagnostics-enabled", true)
     createLspComponent({
       postEdit: {
         runDiagnostics: async (filePath) => {
