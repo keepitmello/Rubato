@@ -58,6 +58,21 @@ export async function load(url, context, nextLoad) {
   const source = String(result.source);
   let next = source;
 
+  // 클러스터 변환이 먼저다: 벤더 패치가 걸려 있으면 pristine 니들이 없어 inert 이고,
+  // 패치를 걷은 뒤에는 여기서 patched 바이트를 재구성한다. 그래서 아래의 기존
+  // 변환들은 두 상태 모두에서 지금과 같은 텍스트를 본다. 각 클러스터는 URL
+  // 매칭을 스스로 한다.
+  // [cluster:tui-chrome] harness/rubato-pi/src/transforms/tui-chrome.mjs 소유.
+  next = applyTuiChromeTransforms(url, next, applyTransform);
+  // [cluster:misc-vendor] harness/rubato-pi/src/transforms/misc-vendor.mjs 소유.
+  next = applyMiscVendorTransforms(url, next, applyTransform);
+  // [cluster:core-session] harness/rubato-pi/src/transforms/core-session.mjs 소유.
+  next = applyCoreSessionTransforms(url, next, applyTransform);
+  // [cluster:cursor-vendor] harness/rubato-pi/src/transforms/cursor-vendor.mjs 소유.
+  next = applyCursorVendorTransforms(url, next, applyTransform);
+  // [cluster:control-codemode] harness/rubato-pi/src/transforms/control-codemode.mjs 소유.
+  next = applyControlCodemodeTransforms(url, next, applyTransform);
+
   if (isEditorMouseModuleUrl(url) || isEditorMouseTuiUrl(url)) {
     if (isEditorMouseModuleUrl(url)) {
       next = applyTransform(next, injectEditorMouse);
@@ -77,18 +92,6 @@ export async function load(url, context, nextLoad) {
     if (isCollapsibleToolGroupUrl(url)) next = applyTransform(next, injectCollapsibleToolGroup);
     next = applyTransform(next, (text) => stripChangelog(text, url));
   }
-
-  // 클러스터 변환은 무조건 지나간다 — 각 클러스터가 URL 매칭을 스스로 한다.
-  // [cluster:tui-chrome] harness/rubato-pi/src/transforms/tui-chrome.mjs 소유.
-  next = applyTuiChromeTransforms(url, next, applyTransform);
-  // [cluster:misc-vendor] harness/rubato-pi/src/transforms/misc-vendor.mjs 소유.
-  next = applyMiscVendorTransforms(url, next, applyTransform);
-  // [cluster:core-session] harness/rubato-pi/src/transforms/core-session.mjs 소유.
-  next = applyCoreSessionTransforms(url, next, applyTransform);
-  // [cluster:cursor-vendor] harness/rubato-pi/src/transforms/cursor-vendor.mjs 소유.
-  next = applyCursorVendorTransforms(url, next, applyTransform);
-  // [cluster:control-codemode] harness/rubato-pi/src/transforms/control-codemode.mjs 소유.
-  next = applyControlCodemodeTransforms(url, next, applyTransform);
 
   if (next === source) return result;
   return { format: result.format, source: next, shortCircuit: true };
