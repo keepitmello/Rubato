@@ -1522,6 +1522,21 @@
       "license": "MIT"
     },
     {
+      "name": "@zxing/browser",
+      "version": "0.2.1",
+      "license": "MIT"
+    },
+    {
+      "name": "@zxing/library",
+      "version": "0.23.0",
+      "license": "Apache-2.0"
+    },
+    {
+      "name": "@zxing/text-encoding",
+      "version": "0.9.0",
+      "license": "Apache-2.0"
+    },
+    {
       "name": "accepts",
       "version": "2.0.0",
       "license": "MIT"
@@ -3311,6 +3326,11 @@
       "license": "MIT"
     },
     {
+      "name": "qrcode-terminal",
+      "version": "0.12.0",
+      "license": "Apache-2.0"
+    },
+    {
       "name": "qs",
       "version": "6.15.3",
       "license": "BSD-3-Clause"
@@ -3695,6 +3715,11 @@
     {
       "name": "ts-algebra",
       "version": "2.0.0",
+      "license": "MIT"
+    },
+    {
+      "name": "ts-custom-error",
+      "version": "3.3.1",
       "license": "MIT"
     },
     {
