@@ -104,6 +104,14 @@ function standardUiRequest(request) {
   };
 }
 
+function tryCall(fn) {
+  try {
+    return fn();
+  } catch {
+    return undefined;
+  }
+}
+
 function sessionTree(roots, leafId) {
   if (!Array.isArray(roots)) return [];
   const result = [];
@@ -212,6 +220,7 @@ export class RemoteSurface {
     this.reconnectToken = options.reconnectToken;
     this.registered = false;
     this.stopped = false;
+    this.connectionErrorReported = false;
     this.background = { activeCount: 0, labels: [] };
     this.teams = { activeRunCount: 0, runningMemberCount: 0, failedMemberCount: 0 };
     this.dispatcher = new InteractiveActionDispatcher(pi, {
@@ -252,7 +261,6 @@ export class RemoteSurface {
       if (this.stopped) return connection.close();
       this.connection = connection;
       this.registered = false;
-      this.reconnectDelay = RECONNECT_MIN_MS;
       const registration = {
         kind: "surface.register",
         protocol: this.protocol.REMOTE_PROTOCOL_NAME,
@@ -266,7 +274,12 @@ export class RemoteSurface {
       };
       this.protocol.surfaceToHubFrameSchema?.parse(registration);
       connection.send(registration);
-    } catch {
+    } catch (error) {
+      this.connection?.close();
+      if (!this.connectionErrorReported) {
+        this.connectionErrorReported = true;
+        console.error(`[rubato remote] surface connection failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
       this.disconnected();
     }
   }
@@ -357,11 +370,11 @@ export class RemoteSurface {
   }
 
   summary() {
-    const control = this.pi.getInteractiveControl?.();
-    const native = control?.snapshot?.() ?? {};
+    const control = tryCall(() => this.pi.getInteractiveControl?.());
+    const native = tryCall(() => control?.snapshot?.()) ?? {};
     const ctx = this.context;
     const metrics = collectSessionMetrics(ctx, native, this.clock.now());
-    const title = this.pi.getSessionName?.() ?? ctx?.sessionManager?.getSessionName?.() ?? native.sessionName ?? basename(ctx?.cwd ?? process.cwd());
+    const title = tryCall(() => this.pi.getSessionName?.()) ?? ctx?.sessionManager?.getSessionName?.() ?? native.sessionName ?? basename(ctx?.cwd ?? process.cwd());
     return {
       schemaVersion: 1,
       hostId: this.hostId,
@@ -396,8 +409,8 @@ export class RemoteSurface {
   }
 
   snapshot() {
-    const control = this.pi.getInteractiveControl?.();
-    const native = control?.snapshot?.() ?? {};
+    const control = tryCall(() => this.pi.getInteractiveControl?.());
+    const native = tryCall(() => control?.snapshot?.()) ?? {};
     const ctx = this.context;
     const entries = ctx?.sessionManager?.getBranch?.() ?? [];
     const commands = (control?.listCommands?.() ?? []).map(({ name, description, category, remoteMode }) => ({
@@ -455,7 +468,9 @@ export class RemoteSurface {
       this.negotiatedProtocolVersion = frame.negotiation.version;
       this.reconnectToken = frame.reconnectToken;
       this.surfaceToken = undefined;
+      this.reconnectDelay = RECONNECT_MIN_MS;
       this.registered = true;
+      this.connectionErrorReported = false;
       if (this.buffer.snapshotRequired) {
         this.buffer.clear();
         this.buffer.snapshotRequired = false;
@@ -528,7 +543,7 @@ export async function installRemoteSurface(pi, options = {}) {
   });
   pi.events.on("interactive.ui.dismiss", (data) => {
     surface.emit("ui.dismiss", data);
-    const native = pi.getInteractiveControl?.()?.snapshot?.() ?? {};
+    const native = tryCall(() => pi.getInteractiveControl?.()?.snapshot?.()) ?? {};
     surface.emit("agent.state", {
       execution: native.isStreaming || native.isCompacting ? "working" : "idle",
       attention: false,

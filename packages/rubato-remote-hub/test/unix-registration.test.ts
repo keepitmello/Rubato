@@ -88,6 +88,22 @@ describe("Unix socket process registration", () => {
     second.write(encodeFrame({ kind: "bootstrap.claim", protocol: "rubato.remote.v1", token }))
     await bounded(closed)
   })
+
+  test("destroys sockets that connect but never complete registration", async () => {
+    const temporary = await temporaryDirectory()
+    cleanupTasks.push(temporary.cleanup)
+    const registry = new LiveRegistry(HOST_ID, { discover: async () => [] })
+    const journal = new EventJournal(join(temporary.path, "journal"), join(temporary.path, "snapshots"), HOST_ID)
+    await journal.load()
+    const socketPath = join(temporary.path, "hub.sock")
+    const server = new SurfaceSocketServer(socketPath, registry, journal, new SurfaceTokenStore(), new EnvironmentHandoffStore<BootstrapLaunchPayload>(), new SurfaceReconnectCredentials(join(temporary.path, "credential-key")), { handshakeTimeoutMs: 50 })
+    await server.listen()
+    cleanupTasks.push(() => server.close())
+    const idle = await connect(socketPath)
+    const closed = new Promise<void>((resolve) => idle.once("close", () => resolve()))
+    await bounded(closed)
+    expect(registry.get(SESSION_ID)).toBeUndefined()
+  })
 })
 
 class SignalingJournal extends EventJournal {
