@@ -39,6 +39,7 @@ rubato update         # 변경 내용을 확인하고 업데이트
 rubato update --check # 업데이트 유무만 확인
 rubato build          # 시스템 프롬프트와 엔진 산출물을 다시 빌드
 rubato auth           # provider 연결 상태 확인
+rubato aside-cursor --install  # Aside Cursor 면 (127.0.0.1:18788)
 ```
 
 ## iPhone에서 원격 사용
@@ -52,3 +53,4 @@ Rubato Remote는 같은 Tailscale tailnet의 Mac에서 세션을 실행하고 iP
 ## 더 보기
 
 - [하네스 사용법과 운영 구조](harness/README.md)
+- [Aside](harness/aside-cursor.md)
