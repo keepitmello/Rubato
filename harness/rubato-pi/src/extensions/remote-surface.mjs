@@ -459,12 +459,12 @@ export class RemoteSurface {
       if (this.buffer.snapshotRequired) {
         this.buffer.clear();
         this.buffer.snapshotRequired = false;
-        this.emitSnapshot();
       } else {
         for (const event of this.buffer.drain()) {
           if (!this.send(event)) this.buffer.push(event);
         }
       }
+      this.emitSnapshot();
       return;
     }
     if (frame.kind !== "hub.action" || !this.registered) return;

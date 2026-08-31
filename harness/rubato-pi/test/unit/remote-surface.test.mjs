@@ -109,6 +109,23 @@ test("intact reconnect replays buffered events in source order", async () => {
   );
 });
 
+test("registration always publishes an authoritative initial snapshot", async () => {
+  const sent = [];
+  const surface = new RemoteSurface(
+    { getInteractiveControl: () => undefined, getSessionName: () => "Session" },
+    protocol,
+    {
+      surfaceToken: "surface-token",
+      connect: async () => ({ send: (value) => sent.push(value), close() {} }),
+      clock: { now: () => 1_000, setTimeout, clearTimeout, setInterval, clearInterval },
+    },
+  );
+  surface.context = context();
+  await surface.connectNow();
+  await surface.receive(registered);
+  assert.equal(sent.filter((value) => value.kind === "surface.snapshot").length, 1);
+});
+
 test("registration honors negotiation and reconnect credentials", async () => {
   const sent = [];
   let closed = false;
