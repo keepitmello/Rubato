@@ -183,8 +183,8 @@ var submitState = await Promise.race([
     await workPage.waitForLoadState('domcontentloaded');
     await snapshot(workPage, {{ interactive: true }});
     submitStage = 'wait-project-composer';
-    var composer = workPage.locator('#prompt-textarea[contenteditable="true"]').and(
-      workPage.getByRole('textbox', {{ name: composerLabel, exact: true }})
+    var composer = workPage.locator(
+      '#prompt-textarea[contenteditable="true"][aria-label="' + composerLabel + '"]'
     );
     try {{
       await composer.waitFor({{ state: 'visible', timeout: 60000 }});
