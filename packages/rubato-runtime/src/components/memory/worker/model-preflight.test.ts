@@ -341,7 +341,7 @@ process.stdout.write("builtin/fallback\\n")
     // then
     expect(result.kind).toBe("filtered")
     expect(JSON.parse(await Bun.file(dump).text())).toEqual({
-      nodeOptions: "--max-old-space-size=4096",
+      nodeOptions: "--max-old-space-size=4096 --import=file:///tmp/no-changelog-register.mjs",
       kept: "yes",
     })
   })

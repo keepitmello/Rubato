@@ -51,11 +51,11 @@ jobs:
           bun test packages/rubato-terminal-bridge/test
       - name: Short measured host qualification with explicit device-pending result
         run: node scripts/remote-release/qualification.mjs --profile ci --allow-device-pending --output .qualification/ci.json
-      - name: Existing build and patch checks
+      - name: Existing build and transform checks
         run: |
           node harness/scripts/build-engine.mjs --force
           node harness/scripts/build-engine.mjs --check
-          bun test patch-tests
+          npm --prefix harness/rubato-pi test
       - name: Remote production builds
         run: |
           npm --prefix packages/rubato-remote-hub run build

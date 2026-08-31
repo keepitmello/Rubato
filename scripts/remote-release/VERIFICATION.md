@@ -53,7 +53,7 @@ release was installed and exercised through the real HTTPS Serve endpoint:
 | `npm --prefix packages/rubato-remote-web run build` | 0 | Web build passed; initial JS gzip was 275.90 KiB. |
 | `npm --prefix packages/rubato-live-cli run check` | 0 | CLI syntax checks passed. |
 | `node harness/scripts/build-engine.mjs --check` | 0 | Existing Rubato build was current. |
-| `bun test patch-tests` | 0 | 229 tests passed. |
+| `bun test patch-tests` | 0 | 229 tests passed. (historical: patch-tests retired with the vendor patch overlay; the harness unit suite now carries these checks) |
 | `node scripts/check-third-party-notices.mjs` | 0 | 29 required entries plus zmx/npm evidence passed. |
 | `node scripts/check-third-party-notices.mjs --ship` | 0 | Two packaged NOTICE payloads passed dry-run verification. |
 | `node scripts/license-policy.mjs` | 0 | All 780 registry packages in the current Bun lock were reviewed. |
@@ -69,7 +69,7 @@ release was installed and exercised through the real HTTPS Serve endpoint:
 | `tailscale serve status --json` after live qualification | 0 | `/rubato` targeted `http://127.0.0.1:7314/rubato`, `/rubato/api` targeted `http://127.0.0.1:7314/rubato/api`, and no Funnel target existed. |
 | `npm test` | 0 | Root suite passed, including 3,268 runtime/harness tests (one platform skip), 33 protocol tests, 25 CLI tests, 40 hub tests, 21 web tests, and 25 terminal tests (one installed-zmx-path skip). |
 | `npm --prefix packages/rubato-remote-web run test:e2e` | 0 | 5 WebKit scenarios passed, including a validated one-time pairing URL opening a prefilled connection sheet and removing its nonce from browser history. |
-| `npm run typecheck`; `bun test patch-tests`; `node harness/scripts/build-engine.mjs --check` | 0 | All workspace typechecks passed; 229 patch tests passed; the built engine was current. |
+| `npm run typecheck`; `bun test patch-tests`; `node harness/scripts/build-engine.mjs --check` | 0 | All workspace typechecks passed; 229 patch tests passed; the built engine was current. (historical: patch-tests retired with the vendor patch overlay) |
 | LSP diagnostics for changed source directories | unavailable | The Rubato LSP daemon socket did not become reachable. Root `npm run typecheck` passed instead. |
 
 ## Physical iPhone render status
