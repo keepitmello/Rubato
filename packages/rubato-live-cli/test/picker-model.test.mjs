@@ -83,3 +83,23 @@ test("picker screen is a TUI child that can be invalidated on startup", async ()
   tui.setFocus(screen);
   assert.doesNotThrow(() => tui.invalidate());
 });
+
+test("picker handoff stop does not dump the picker onto the next renderer", async () => {
+  const tuiApi = await loadPinnedPiTui();
+  const writes = [];
+  const terminal = {
+    start() {},
+    stop() {},
+    write(data) { writes.push(String(data)); },
+    showCursor() {},
+    hideCursor() {},
+    get columns() { return 80; },
+    get rows() { return 24; },
+  };
+  const tui = new tuiApi.TuiAltScreen(terminal, false, undefined, { mouse: true });
+  tui.addChild(createPickerScreen(sessions, tuiApi, () => {}));
+  tui.setFocus(tui.children[0]);
+  tui.start();
+  tui.stop({ preserveScreen: true });
+  assert.doesNotMatch(writes.join(""), /Existing sessions|New session/);
+});

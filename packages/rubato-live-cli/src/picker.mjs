@@ -176,7 +176,9 @@ export async function pickLiveSession(sessions, { loadTui = loadPinnedPiTui } = 
     const finish = (value) => {
       if (settled) return;
       settled = true;
-      tui.stop();
+      // zmx attach takes this terminal next. Dumping the picker into the
+      // scrollback leaves mouse/alt-screen residue that kills the first turn.
+      tui.stop({ preserveScreen: true });
       resolveSelection(value);
     };
     let screen;

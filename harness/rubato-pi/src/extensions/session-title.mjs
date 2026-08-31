@@ -89,7 +89,14 @@ function installRenameLock(pi, state) {
   if (typeof original !== "function") return;
   const wrapped = new WeakSet();
   pi.getInteractiveControl = () => {
-    const control = original.call(pi);
+    let control;
+    try {
+      control = original.call(pi);
+    } catch {
+      // switchSession invalidates the captured pi. A throw here aborts the
+      // resumed turn and senpi then process.exit(1).
+      return undefined;
+    }
     if (!control || wrapped.has(control) || typeof control.setSessionName !== "function") return control;
     const setSessionName = control.setSessionName.bind(control);
     control.setSessionName = (name) => {
