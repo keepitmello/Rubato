@@ -70,6 +70,12 @@ test("wire model은 reasoning tier를 고정한다", () => {
   assert.equal(resolveAntigravityWireModel("gemini-3.1-pro", "high"), "gemini-pro-agent");
 });
 
+test("Flash는 생략된 reasoning을 medium으로 보낸다", () => {
+  assert.equal(resolveAntigravityWireModel("gemini-3.7-flash"), "gemini-3.7-flash-medium");
+  assert.equal(resolveAntigravityWireModel("gemini-3.7-flash", undefined), "gemini-3.7-flash-medium");
+  assert.equal(resolveAntigravityWireModel("gemini-3.7-flash", "low"), "gemini-3.7-flash-low");
+});
+
 test("request가 project, lineage, image, tool identity와 서명을 보존한다", () => {
   const wire = buildAntigravityRequest(model, {
     systemPrompt: "system",

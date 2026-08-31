@@ -911,3 +911,20 @@ test("Antigravity 이관은 부모 세션만 한다", async (t) => {
     process.argv = original;
   }
 });
+
+test("자식 overlay 도 google-antigravity/gemini-3.7-flash 를 입학시킨다", async (t) => {
+  const original = process.argv;
+  const pi = recordingPi();
+  try {
+    process.argv = ["node", "senpi", "-p", "--no-extensions", "-e", "/x/provider-overlay.mjs"];
+    await providerOverlay(pi, { env: isolatedDirectEnv(t) });
+  } finally {
+    process.argv = original;
+  }
+  const antigravity = pi.registered.get("google-antigravity");
+  assert.ok(antigravity, "자식이 google-antigravity 를 등록하지 않았다");
+  const flash = antigravity.getModels?.().find((entry) => entry.id === "gemini-3.7-flash");
+  assert.ok(flash, "자식 catalog 에 gemini-3.7-flash 가 없다");
+  assert.equal(flash.provider, "google-antigravity");
+  assert.deepEqual(flash.input, ["text", "image"]);
+});

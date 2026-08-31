@@ -160,7 +160,7 @@ export function buildRespawnManagedSpec(record: TaskRecord, stateDir: string): B
   }
 }
 
-export const CONTINUE_SUGGESTION = "Use task_output to read the final result."
+export const CONTINUE_SUGGESTION = "Use AgentOutput to read the final result."
 
 export function inSession(record: TaskRecord, sessionId: string): boolean {
   return record.parent_session_id === sessionId || record.root_session_id === sessionId

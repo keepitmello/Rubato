@@ -41,7 +41,7 @@ export function evaluateReloadVeto(manager: ReloadGuardManager, dag?: ReloadGuar
   const reasons: string[] = []
   if (running.length > 0) {
     reasons.push(
-      `${running.length} subagent(s) still running: ${labels.join(", ")} - wait for them to finish or cancel them (task_cancel) before reloading.`,
+      `${running.length} subagent(s) still running: ${labels.join(", ")} - wait for them to finish or cancel them (AgentCancel) before reloading.`,
     )
   }
   if (liveRuns.length > 0) {

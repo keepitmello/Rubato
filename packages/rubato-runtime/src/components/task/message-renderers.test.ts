@@ -100,13 +100,13 @@ describe("task-family custom message renderers", () => {
   test("#given terminal control injection #when rendering task completion #then structured CJK details are sanitized", () => {
     // given
     const details = [{
-      task_id: "st_1",
+      agentId: "st_1",
       name: "작업자",
       status: "completed" as const,
       model: "quotio-openai/gpt-5.6-luna-fast",
       duration_ms: 10,
       final_response: ADVERSARIAL_CONTENT,
-      continuation_hint: "task_send로 계속",
+      continuation_hint: "AgentSend로 계속",
     }]
 
     // when
@@ -121,7 +121,7 @@ describe("task-family custom message renderers", () => {
   test("#given structured completion details #when rendering #then user-facing task facts replace protocol tags", () => {
     // given
     const details = [{
-      task_id: "st_done",
+      agentId: "st_done",
       name: "worker",
       status: "completed" as const,
       category: "quick",
@@ -135,7 +135,7 @@ describe("task-family custom message renderers", () => {
       duration_ms: 1250,
       tokens: 321,
       final_response: "검증 작업을 완료했습니다.",
-      continuation_hint: 'Use task_send({ to: "st_done", message: "..." }) to continue.',
+      continuation_hint: 'Use AgentSend({ agentId: "st_done", message: "..." }) to continue.',
     }]
 
     // when
@@ -148,12 +148,13 @@ describe("task-family custom message renderers", () => {
     const text = lines.join("\n")
 
     // then
-    expect(text).toContain("Task complete · worker")
-    expect(text).toContain("id st_done")
+    expect(text).toContain("Agent complete · worker")
+    expect(text).toContain("agentId st_done")
     expect(text).toContain("category:quick(quotio-openai/gpt-5.6-luna-fast)")
     expect(text).toContain("duration 1.25s")
     expect(text).toContain("tokens 321")
     expect(text).toContain("검증 작업을 완료했습니다.")
+    expect(text).not.toContain("AgentSend")
     expect(text).not.toContain("task_send")
     expect(lines.every((line) => line.includes("\u001b[48;2;0;0;0m"))).toBe(true)
     expect(text).not.toContain("<task-notification>")
@@ -187,7 +188,7 @@ describe("task-family custom message renderers", () => {
   test("#given a completed team member with a long target #when rendering at 140 cells #then minute duration tools and tps remain visible", () => {
     // given
     const details = [{
-      task_id: "st_team_member",
+      agentId: "st_team_member",
       name: "stats-member",
       status: "completed" as const,
       category: "quick",
@@ -201,7 +202,7 @@ describe("task-family custom message renderers", () => {
         tokens_per_second: 250,
       },
       final_response: "team statistics member complete",
-      continuation_hint: 'Use task_send({ to: "stats-member", message: "..." }) to continue.',
+      continuation_hint: 'Use AgentSend({ agentId: "stats-member", message: "..." }) to continue.',
     }]
 
     // when
@@ -215,7 +216,7 @@ describe("task-family custom message renderers", () => {
     const text = lines.map(normalizeRendererText).join("\n")
 
     // then
-    expect(text).toContain("Task complete · stats-member")
+    expect(text).toContain("Agent complete · stats-member")
     expect(text).toContain("duration 1m 5s")
     expect(text).toContain("tools 4")
     expect(text).toContain("tps 250")
@@ -225,22 +226,23 @@ describe("task-family custom message renderers", () => {
   test("#given a long completion continuation #when rendering at 54 cells #then the actual-width excerpt preserves English word boundaries", () => {
     // given
     const details = [{
-      task_id: "st_done",
+      agentId: "st_done",
       name: "worker",
       status: "completed" as const,
       model: "quotio-openai/gpt-5.6-luna-fast",
       duration_ms: 1250,
       final_response: "검증 작업을 완료했습니다.",
-      continuation_hint: 'Use task_send({ to: "st_done", message: "continue with the remaining evidence and report the result" }) to continue.',
+      continuation_hint: 'Use AgentSend({ agentId: "st_done", message: "continue with the remaining evidence and report the result" }) to continue.',
     }]
 
     // when
     const lines = renderContentLines(renderTaskCompletion, "senpi-task.completion", "<task-notification>raw</task-notification>", details, 54, true)
     const normalizedLines = lines.map(normalizeRendererText)
-    const continuationLine = normalizedLines.find((line) => line.includes("task_send")) ?? ""
+    const continuationLine = normalizedLines.find((line) => line.includes("AgentSend")) ?? ""
 
     // then
-    expect(continuationLine).toContain("to")
+    expect(continuationLine).toContain("AgentSend")
+    expect(continuationLine).toContain("agentId")
     expect(continuationLine).not.toMatch(/\b(?:durati|rea|read|ful)\.\.\.$/u)
     for (const line of lines) expect(rendererVisibleWidth(line)).toBeLessThanOrEqual(54)
   })

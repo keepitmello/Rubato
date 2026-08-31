@@ -99,7 +99,7 @@ describe("createCompletionNotifier - reconcile unnotified terminal completions",
 
     // then
     expect(parent.calls).toHaveLength(1)
-    expect(parent.calls[0]?.details.map((detail) => detail.task_id)).toEqual(["st_reconcile"])
+    expect(parent.calls[0]?.details.map((detail) => detail.agentId)).toEqual(["st_reconcile"])
     expect(records.get(record.task_id)?.notification.notified_epoch).toBe(0)
   })
 
@@ -160,7 +160,7 @@ describe("createCompletionNotifier - reconcile unnotified terminal completions",
 
     // then
     expect(parent.calls).toHaveLength(1)
-    expect(parent.calls[0]?.details.map((detail) => detail.task_id)).toEqual(["st_reconcile"])
+    expect(parent.calls[0]?.details.map((detail) => detail.agentId)).toEqual(["st_reconcile"])
   })
 
   test("#given delivery fails during reconcile w4notif #when the enqueue throws #then notification_failed_epoch is recorded and the retry is scheduled", () => {

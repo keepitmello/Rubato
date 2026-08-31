@@ -17,18 +17,23 @@ const promptSourceRoot = join(import.meta.dirname, "../../../prompts");
 test("lead prompt names the pi rails and no fx ones", () => {
   const text = rolePrompt("lead");
   assert.match(text, /running on Rubato's Senpi-based runtime/);
-  assert.match(text, /`task` tool/);
+  assert.match(text, /`Agent` tool/);
   assert.match(text, /team_create/);
-  // team_create 승인 절차는 Skill(agent-taskforce) 가 소유하고, 일회성 task Agent는
+  assert.match(text, /team_task_create/);
+  assert.match(text, /team_send/);
+  assert.match(text, /team_shutdown_request/);
+  assert.doesNotMatch(text, /semantic `category`/);
+  assert.doesNotMatch(text, /`subagent_type`/);
+  // team_create 승인 절차는 Skill(agent-taskforce) 가 소유하고, 일회성 Agent는
   // lead 판단으로 바로 쓴다. 문장 대신 그 권한 배치를 고정한다.
-  assert.match(text, /`task` agents are available at your discretion/);
+  assert.match(text, /`Agent` agents are available at your discretion/);
   assert.match(text, /run Skill\(agent-taskforce\) before `team_create`/);
   // Phrased "You choose each child's model" until the vocabulary moved from child to
   // agent. The invariant is that the lead owns per-agent model choice, not the noun it
   // was written with — this is the third time this file pinned a sentence and broke on a
   // rewrite that kept the meaning. Assert the invariant.
-  assert.match(text, /You choose each agent's cognitive profile and semantic category/);
-  assert.match(text, /semantic model category/);
+  assert.match(text, /You choose each agent's cognitive profile/);
+  assert.match(text, /exact `model` or named `preset`/);
   assert.match(text, /runtimes\/pi\.md/);
 
   assert.doesNotMatch(text, /fork of the fx harness/);
@@ -59,15 +64,19 @@ test("lead prompt keeps lead, teammate, and agent on separate axes", () => {
   assert.match(text, /always an owner/);
 });
 
-test("teammate prompt points helpers at task, not subagent", () => {
+test("teammate prompt points helpers at Agent, not subagent", () => {
   const text = rolePrompt("owner");
   // The prompt used to say "Use the `task` tool" verbatim; 32b1ba97a rewrote that
   // paragraph and this assertion kept naming a sentence that no longer exists, so the
-  // test failed on generated text while the intent it guards — point helpers at `task`,
+  // test failed on generated text while the intent it guards — point helpers at `Agent`,
   // never at `subagent` — was still satisfied. Assert the intent, not the old wording.
-  assert.match(text, /`task`/);
-  assert.match(text, /Completion notifications deliver terminal results; `task_output` reads an immediate status or transcript snapshot/);
-  assert.doesNotMatch(text, /`task_output` waits/);
+  assert.match(text, /`Agent`/);
+  assert.match(text, /Completion notifications deliver terminal results; `AgentOutput` reads an immediate status or transcript snapshot/);
+  assert.match(text, /team_task_\*/);
+  assert.match(text, /team_send/);
+  assert.match(text, /exact `model` or named `preset`/);
+  assert.match(text, /Omit `effort` unless you need a manual override/);
+  assert.doesNotMatch(text, /`AgentOutput` waits/);
   assert.doesNotMatch(text, /`subagent` tool/);
   assert.doesNotMatch(text, /fx models/);
   assert.doesNotMatch(text, /rubato dispatch/);
@@ -106,12 +115,28 @@ test("both role prompts defer independent-review routing to the model guide", ()
   }
 });
 
+test("model-guide and pi runtime tell Agent callers to use model or preset, not category", () => {
+  const modelGuide = readFileSync(join(promptSourceRoot, "../skills/model-guide/SKILL.md"), "utf8");
+  const piRuntime = readFileSync(join(promptSourceRoot, "../skills/agent-taskforce/runtimes/pi.md"), "utf8");
+  for (const text of [modelGuide, piRuntime]) {
+    assert.match(text, /exact `model` or named `preset`/);
+    assert.match(text, /Omit `effort`/);
+    assert.doesNotMatch(text, /Pass the corresponding semantic `category`/);
+    assert.doesNotMatch(text, /`task` or `team_create`/);
+  }
+  assert.match(modelGuide, /Never pass a category, task type, or `subagent_type`/);
+  assert.match(piRuntime, /team_send/);
+  assert.match(piRuntime, /`team_create` takes the approved team specification and does not accept Agent `model`, `preset`, or `effort` parameters/);
+  assert.doesNotMatch(piRuntime, /from the rubato-pi adapter/);
+});
+
 test("role prompts delegate provider resolution and fallback to the harness", () => {
   for (const role of ["lead", "owner"]) {
     const text = rolePrompt(role);
-    assert.match(text, /semantic model category/);
+    assert.match(text, /exact `model` or named `preset`/);
     assert.match(text, /harness owns provider choice|harness resolves/);
     assert.doesNotMatch(text, /Copy the model id from the live catalog/);
+    assert.doesNotMatch(text, /to `Agent` or `team_create`/);
   }
 });
 

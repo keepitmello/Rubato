@@ -7,16 +7,15 @@ import { TaskToolParams } from "./params"
 import { linesComponent, renderTaskCallLines, renderTaskResultComponent } from "./renderers"
 import type { TaskToolDeps, TaskToolDetails } from "./types"
 
-export const TASK_TOOL_NAME = "task"
+export const TASK_TOOL_NAME = "Agent"
 
-// Assembles the senpi ToolDefinition: a TypeBox param schema, a description whose category and agent
-// lists are injected dynamically from rubato.json + the loader, prompt-surface hints, the spawn/continue
-// execute logic, and compact call/result renderers.
+// Assembles the senpi ToolDefinition: a TypeBox param schema, a description whose preset list is
+// injected from the loaded agents, prompt-surface hints, host-backed spawn, and compact renderers.
 export function createTaskTool(deps: TaskToolDeps): ToolDefinition<typeof TaskToolParams, TaskToolDetails> {
   const execute = buildTaskExecute(deps)
   return defineTool({
     name: TASK_TOOL_NAME,
-    label: "Task",
+    label: "Agent",
     description: buildTaskToolDescription({ rubatoConfig: deps.rubatoConfig, agents: deps.agents }),
     promptSnippet: TASK_PROMPT_SNIPPET,
     promptGuidelines: [...TASK_PROMPT_GUIDELINES],

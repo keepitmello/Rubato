@@ -1,28 +1,29 @@
-import type { AgentToolResult } from "@code-yeongyu/senpi"
+import type { AgentToolResult, ToolDefinition } from "@code-yeongyu/senpi"
+import { Type, type Static } from "typebox"
 
 import { SenpiShutdownError } from "../../team"
 import { toolResult } from "../control"
-import type { TeamToolsService } from "./types"
+import type { TeamToolDeps, TeamToolsService } from "./types"
 
-// Shutdown has no standalone tool registration: the model-facing surface is the structured-message
-// union on task_send. These input types describe the runner calls only; the dead TypeBox param
-// schemas that implied standalone team_shutdown_* tools were removed so no future registrar wires
-// a second, inconsistent shutdown UI.
-export type TeamShutdownRequestInput = {
-  readonly team_run_id: string
-  readonly member: string
-}
+export const TeamShutdownRequestParams = Type.Object({
+  team_run_id: Type.String({ description: "Team run id (returned by team_create)." }),
+  member: Type.String({ description: "Member to request shutdown for." }),
+})
 
-export type TeamApproveShutdownInput = {
-  readonly team_run_id: string
-  readonly member: string
-}
+export const TeamApproveShutdownParams = Type.Object({
+  team_run_id: Type.String({ description: "Team run id (returned by team_create)." }),
+  member: Type.String({ description: "Member whose shutdown request to approve." }),
+})
 
-export type TeamRejectShutdownInput = {
-  readonly team_run_id: string
-  readonly member: string
-  readonly reason: string
-}
+export const TeamRejectShutdownParams = Type.Object({
+  team_run_id: Type.String({ description: "Team run id (returned by team_create)." }),
+  member: Type.String({ description: "Member whose shutdown request to reject." }),
+  reason: Type.String({ description: "Reason the member should keep running." }),
+})
+
+export type TeamShutdownRequestInput = Static<typeof TeamShutdownRequestParams>
+export type TeamApproveShutdownInput = Static<typeof TeamApproveShutdownParams>
+export type TeamRejectShutdownInput = Static<typeof TeamRejectShutdownParams>
 
 export type ShutdownErrorView =
   | { readonly kind: "unknown_member"; readonly member: string; readonly reason: string }
@@ -67,5 +68,36 @@ export async function runTeamRejectShutdown(service: TeamToolsService, params: T
   } catch (error) {
     const view = shutdownErrorView(error)
     return toolResult(view.reason, view)
+  }
+}
+
+export function createTeamShutdownRequestTool(deps: TeamToolDeps): ToolDefinition {
+  return {
+    name: "team_shutdown_request",
+    label: "Team Shutdown Request",
+    description:
+      "Request that a team member shut down. Lead-only team protocol; distinct from AgentCancel, which stops a spawned Agent session.",
+    parameters: TeamShutdownRequestParams,
+    execute: (_toolCallId: string, params: TeamShutdownRequestInput) => runTeamShutdownRequest(deps.service, params),
+  }
+}
+
+export function createTeamApproveShutdownTool(deps: TeamToolDeps): ToolDefinition {
+  return {
+    name: "team_approve_shutdown",
+    label: "Team Approve Shutdown",
+    description: "Approve a pending team member shutdown request. Lead-only team protocol.",
+    parameters: TeamApproveShutdownParams,
+    execute: (_toolCallId: string, params: TeamApproveShutdownInput) => runTeamApproveShutdown(deps.service, params),
+  }
+}
+
+export function createTeamRejectShutdownTool(deps: TeamToolDeps): ToolDefinition {
+  return {
+    name: "team_reject_shutdown",
+    label: "Team Reject Shutdown",
+    description: "Reject a pending team member shutdown request. Reason is required. Lead-only team protocol.",
+    parameters: TeamRejectShutdownParams,
+    execute: (_toolCallId: string, params: TeamRejectShutdownInput) => runTeamRejectShutdown(deps.service, params),
   }
 }

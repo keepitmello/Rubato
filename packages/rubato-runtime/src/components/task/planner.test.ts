@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 
 import { BUILTIN_AGENTS, type SenpiModelPort } from "@rubato/senpi-task"
 
-import { createTaskChildPlanner, type TaskModelRegistry } from "./planner"
+import { createTaskChildPlanner, plannedEffortSource, type TaskModelRegistry } from "./planner"
 
 type FakeModel = SenpiModelPort & { readonly name?: string }
 
@@ -103,7 +103,7 @@ describe("createTaskChildPlanner", () => {
         },
       },
       {},
-      () => registry([model("google", "gemini-3.1-pro")]),
+      () => registry([model("google", "gemini-3.1-pro"), model("openai", "gpt-5.5")]),
     )
 
     // when
@@ -163,11 +163,14 @@ describe("createTaskChildPlanner", () => {
     })
   })
 
-  test("#given category reasoning with an explicit model #when planned #then explicit metadata reports the applied reasoning", () => {
+  test("#given category reasoning with an explicit model #when planned #then category effort does not override the model default", () => {
     const planner = createTaskChildPlanner(
       { categories: { sol: { model: "openai-codex/gpt-5.6-sol", reasoning: "xhigh" } } },
       {},
-      () => registry([model("openai-codex", "gpt-daybreak-blue-latest-fast")]),
+      () => registry([
+        model("openai-codex", "gpt-5.6-sol"),
+        model("openai-codex", "gpt-daybreak-blue-latest-fast"),
+      ]),
     )
 
     const result = planner({
@@ -175,13 +178,13 @@ describe("createTaskChildPlanner", () => {
       parent_session_id: "parent-1",
       depth: 0,
       category: "sol",
-      model: "openai-codex/gpt-daybreak-blue-latest-fast",
+      model: "openai-codex/gpt-5.6-sol",
     })
 
     const resolved = expectResolved(result)
-    expect(resolved.plan.variant).toBe("xhigh")
-    expect(resolved.plan.resolved_model).toMatchObject({ source: "explicit", reasoning: "xhigh" })
-    expect(resolved.plan.requested_model).toMatchObject({ source: "explicit", reasoning: "xhigh" })
+    expect(resolved.plan.variant).toBe("medium")
+    expect(resolved.plan.resolved_model).toMatchObject({ source: "explicit", reasoning: "medium" })
+    expect(plannedEffortSource(resolved.plan.resolved_model)).toBe("model-default")
   })
 
   test("#given a category and model absent from the picker registry #when planned #then it is rejected", () => {
@@ -318,9 +321,9 @@ describe("createTaskChildPlanner", () => {
     expect(resolved.plan.agentExecutionMode).toBe("in-process")
   })
 
-  test("#given an explicit model with subagent_type and no registry #when planned #then the agent persona is kept and the model stays explicit", () => {
+  test("#given an explicit model with subagent_type #when planned against a live registry #then the agent persona is kept and the model stays explicit", () => {
     // given
-    const planner = createTaskChildPlanner({}, BUILTIN_AGENTS, () => undefined)
+    const planner = createTaskChildPlanner({}, BUILTIN_AGENTS, () => registry([model("openai", "gpt-5.5")]))
 
     // when
     const result = planner({
@@ -346,8 +349,12 @@ describe("createTaskChildPlanner", () => {
     expect(resolved.plan.agentExecutionMode).toBe("in-process")
   })
 
-  test("#given an explicit model and caller reasoning #when planned #then the child and status metadata use that effort", () => {
-    const planner = createTaskChildPlanner({}, {}, () => undefined)
+  test("#given an explicit model and caller reasoning #when planned #then the child and status metadata use that manual override", () => {
+    const planner = createTaskChildPlanner(
+      {},
+      {},
+      () => registry([model("openai-codex", "gpt-5.6-sol-fast")]),
+    )
 
     const result = planner({
       prompt: "work",
@@ -366,6 +373,7 @@ describe("createTaskChildPlanner", () => {
         reasoning_effort: "xhigh",
       },
     })
+    expect(plannedEffortSource(resolved.plan.resolved_model)).toBe("manual-override")
   })
 
   test.each([
@@ -375,18 +383,74 @@ describe("createTaskChildPlanner", () => {
     ["anthropic/claude-fable-5", "high"],
     ["xai/grok-4.6", "high"],
     ["cursor/cursor-grok-4.6-high-fast", "high"],
-  ])("#given direct model %s without caller reasoning #then it uses model default %s", (model, reasoning) => {
-    const planner = createTaskChildPlanner({}, {}, () => undefined)
+    ["google-antigravity/gemini-3.7-flash", "medium"],
+  ])("#given direct model %s without caller reasoning #then it uses model default %s", (modelId, reasoning) => {
+    const slash = modelId.indexOf("/")
+    const planner = createTaskChildPlanner(
+      {},
+      {},
+      () => registry([model(modelId.slice(0, slash), modelId.slice(slash + 1))]),
+    )
 
     const resolved = expectResolved(planner({
       prompt: "work",
-      model,
+      model: modelId,
       parent_session_id: "parent",
       depth: 1,
     }))
 
     expect(resolved.plan.variant).toBe(reasoning)
     expect(resolved.plan.resolved_model?.reasoning).toBe(reasoning)
+    expect(plannedEffortSource(resolved.plan.resolved_model)).toBe("model-default")
+  })
+
+  test("#given an exact model absent from the live registry #when planned #then it fails closed with model_unavailable", () => {
+    const planner = createTaskChildPlanner({}, {}, () => registry([model("openai-codex", "gpt-5.6-sol")]))
+
+    const result = planner({
+      prompt: "work",
+      model: "google-antigravity/gemini-3.7-flash",
+      parent_session_id: "parent",
+      depth: 1,
+    })
+
+    expect(result.kind).toBe("error")
+    if (result.kind !== "error") throw new Error("expected error")
+    expect(result.error.code).toBe("model_unavailable")
+  })
+
+  test("#given an exact model and no registry #when planned #then it fails closed", () => {
+    const planner = createTaskChildPlanner({}, {}, () => undefined)
+
+    const result = planner({
+      prompt: "work",
+      model: "openai-codex/gpt-5.6-sol",
+      parent_session_id: "parent",
+      depth: 1,
+    })
+
+    expect(result).toEqual({
+      kind: "error",
+      error: {
+        code: "model_unavailable",
+        message: "No senpi model registry is available yet to resolve a task model.",
+      },
+    })
+  })
+
+  test("#given a malformed model identifier #when planned #then it is invalid_target", () => {
+    const planner = createTaskChildPlanner({}, {}, () => registry([]))
+
+    const result = planner({
+      prompt: "work",
+      model: "gpt-5.6-sol",
+      parent_session_id: "parent",
+      depth: 1,
+    })
+
+    expect(result.kind).toBe("error")
+    if (result.kind !== "error") throw new Error("expected error")
+    expect(result.error.code).toBe("invalid_target")
   })
 
   test("#given subagent_type naming a builtin agent with no registry #when planned #then it fails closed with the registry-unavailable error", () => {
@@ -528,7 +592,7 @@ describe("createTaskChildPlanner", () => {
 })
 
 describe("createTaskChildPlanner plan variant", () => {
-  test("#given a category with an explicit reasoning effort and a variant #when planned #then the applied variant is the reasoning effort", () => {
+  test("#given a category with an explicit reasoning effort and a variant #when planned #then category effort is not applied", () => {
     // given
     const planner = createTaskChildPlanner(
       {
@@ -554,38 +618,37 @@ describe("createTaskChildPlanner plan variant", () => {
 
     // then
     const resolved = expectResolved(result)
-    expect(resolved.plan.variant).toBe("xhigh")
-    expect(resolved.plan.resolved_model).toMatchObject({ reasoning_effort: "xhigh", variant: "high" })
+    expect(resolved.plan.variant).toBeUndefined()
+    expect(plannedEffortSource(resolved.plan.resolved_model)).toBeUndefined()
   })
 
-  test("#given a category with reasoning effort only #when planned #then the public plan carries that effort", () => {
-    // given
+  test("#given a seeded Opus category with a different configured effort #when planned #then the model default wins", () => {
     const planner = createTaskChildPlanner(
       {
         categories: {
           ultrabrain: {
-            model: "google/gemini-3.1-pro",
+            model: "anthropic/claude-opus-5",
             reasoningEffort: "xhigh",
           },
         },
       },
       {},
-      () => registry([model("google", "gemini-3.1-pro")]),
+      () => registry([model("anthropic", "claude-opus-5")]),
     )
 
-    // when
-    const result = planner({
+    const resolved = expectResolved(planner({
       prompt: "Find the hard bug.",
       parent_session_id: "parent-1",
       depth: 0,
       category: "ultrabrain",
-    })
+    }))
 
-    // then
-    expect(expectResolved(result).plan.variant).toBe("xhigh")
+    expect(resolved.plan.variant).toBe("high")
+    expect(resolved.plan.resolved_model?.reasoning).toBe("high")
+    expect(plannedEffortSource(resolved.plan.resolved_model)).toBe("model-default")
   })
 
-  test("#given a category with variant only #when planned #then the public plan carries that variant", () => {
+  test("#given a category with variant only #when planned #then that variant is not applied as effort", () => {
     // given
     const planner = createTaskChildPlanner(
       {
@@ -609,10 +672,10 @@ describe("createTaskChildPlanner plan variant", () => {
     })
 
     // then
-    expect(expectResolved(result).plan.variant).toBe("high")
+    expect(expectResolved(result).plan.variant).toBeUndefined()
   })
 
-  test("#given a category resolving a variant-bearing fallback without reasoning effort #when planned #then the applied variant is the resolved variant", () => {
+  test("#given a category resolving a variant-bearing fallback without a model default #when planned #then no effort is invented", () => {
     // given
     const planner = createTaskChildPlanner(
       {},
@@ -629,7 +692,7 @@ describe("createTaskChildPlanner plan variant", () => {
     })
 
     // then
-    expect(expectResolved(result).plan.variant).toBe("max")
+    expect(expectResolved(result).plan.variant).toBeUndefined()
   })
 
   test("#given an explicit provider model #when planned #then no variant is applied", () => {
@@ -650,9 +713,10 @@ describe("createTaskChildPlanner plan variant", () => {
 
     // then
     expect(expectResolved(result).plan.variant).toBeUndefined()
+    expect(plannedEffortSource(expectResolved(result).plan.resolved_model)).toBeUndefined()
   })
 
-  test("#given momus resolves a variant-bearing chain entry #when planned #then the applied variant matches the resolved model", () => {
+  test("#given momus resolves Sol #when planned #then the applied effort is the Sol model default", () => {
     // given
     const planner = createTaskChildPlanner(
       {},
@@ -671,6 +735,7 @@ describe("createTaskChildPlanner plan variant", () => {
     // then
     const resolved = expectResolved(result)
     expect(resolved.plan.model).toBe("openai/gpt-5.6-sol")
-    expect(resolved.plan.variant).toBe("xhigh")
+    expect(resolved.plan.variant).toBe("medium")
+    expect(plannedEffortSource(resolved.plan.resolved_model)).toBe("model-default")
   })
 })

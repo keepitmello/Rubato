@@ -21,7 +21,7 @@ describe("runTaskCancel", () => {
     const started = await manager.start(baseSpec({ parent_session_id: "p1" }))
     if (started.kind !== "started") throw new Error("expected started")
 
-    const result = await runTaskCancel(manager, { task_id: started.task_id, reason: "no longer needed" })
+    const result = await runTaskCancel(manager, { agentId: started.task_id })
 
     expect(result.details.kind).toBe("cancelled")
     if (result.details.kind !== "cancelled") throw new Error("expected cancelled")
@@ -34,10 +34,10 @@ describe("runTaskCancel", () => {
     const { manager } = makeManager({})
     const started = await manager.start(baseSpec({ parent_session_id: "p1" }))
     if (started.kind !== "started") throw new Error("expected started")
-    const cancelled = await runTaskCancel(manager, { task_id: started.task_id })
+    const cancelled = await runTaskCancel(manager, { agentId: started.task_id })
     expect(cancelled.details.kind).toBe("cancelled")
 
-    const result = await runTaskSend(manager, { to: started.task_id, message: "continue anyway" }, "p1")
+    const result = await runTaskSend(manager, { agentId: started.task_id, message: "continue anyway" }, "p1")
 
     expect(result.details.kind).toBe("not_continuable")
     if (result.details.kind !== "not_continuable") throw new Error("expected not_continuable")
@@ -48,9 +48,9 @@ describe("runTaskCancel", () => {
     const { manager } = makeManager({})
     const started = await manager.start(baseSpec({ parent_session_id: "p1" }))
     if (started.kind !== "started") throw new Error("expected started")
-    await runTaskCancel(manager, { task_id: started.task_id })
+    await runTaskCancel(manager, { agentId: started.task_id })
 
-    const result = await runTaskCancel(manager, { task_id: started.task_id })
+    const result = await runTaskCancel(manager, { agentId: started.task_id })
 
     expect(result.details.kind).toBe("noop")
     if (result.details.kind !== "noop") throw new Error("expected noop")
@@ -60,7 +60,7 @@ describe("runTaskCancel", () => {
   test("#given an unknown id #when cancelled #then not_found is returned", async () => {
     const { manager } = makeManager({})
 
-    const result = await runTaskCancel(manager, { task_id: "st_deadbeef" })
+    const result = await runTaskCancel(manager, { agentId: "st_deadbeef" })
 
     expect(result.details.kind).toBe("not_found")
   })
@@ -76,10 +76,15 @@ describe("runTaskCancel", () => {
   test("#given the task_cancel tool #when reading its description #then it names the terminal contract without stale revive wording", () => {
     const { manager } = makeManager({})
 
-    const description = createTaskCancelTool({ manager }).description
+    const tool = createTaskCancelTool({ manager })
+    const keys = Object.keys(tool.parameters.properties)
+    const description = tool.description
 
+    expect(keys).toEqual(["agentId"])
     expect(description).toContain("NOT resumable")
     expect(description).not.toContain("task_interrupt")
     expect(description).not.toMatch(/revive/i)
+    expect(description).not.toContain("task_id")
+    expect(description).not.toContain("name")
   })
 })

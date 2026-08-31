@@ -11,7 +11,7 @@ import {
   statusThemeColor,
 } from "../task/renderers"
 import type { TaskCancelInput } from "./cancel"
-import type { MemberScopedTaskSendInput, TaskSendInput, StructuredMessageInput } from "./send-schema"
+import type { MemberScopedTaskSendInput, TaskSendInput } from "./send-schema"
 import type { CancelResultDetails, SendResultDetails } from "./types"
 
 export type ControlRenderTheme = Pick<Theme, "fg" | "italic">
@@ -31,11 +31,11 @@ const REASON_EXCERPT_MAX = 40
 const ELLIPSIS = "..."
 const MIN_MEANINGFUL_TRUNCATED_EXCERPT_WIDTH = 8
 
-export function renderTaskSendCall(args: TaskSendInput, theme: ControlRenderTheme): RenderComponent {
+export function renderTaskSendCall(args: Partial<TaskSendInput>, theme: ControlRenderTheme): RenderComponent {
   return widthComponent((width) => theme.fg("toolTitle", taskSendCallLine(args, theme, width)))
 }
 
-export function renderMemberScopedTaskSendCall(args: MemberScopedTaskSendInput, theme: ControlRenderTheme): RenderComponent {
+export function renderMemberScopedTaskSendCall(args: Partial<MemberScopedTaskSendInput>, theme: ControlRenderTheme): RenderComponent {
   return renderTaskSendCall(args, theme)
 }
 
@@ -48,7 +48,7 @@ export function renderTaskSendResult(
   return linesComponent([theme.fg(row.color, normalizeRendererText(row.text))])
 }
 
-export function renderTaskCancelCall(args: TaskCancelInput, theme: ControlRenderTheme): RenderComponent {
+export function renderTaskCancelCall(args: Partial<TaskCancelInput>, theme: ControlRenderTheme): RenderComponent {
   return widthComponent((width) => theme.fg("warning", taskCancelCallLine(args, theme, width)))
 }
 
@@ -68,48 +68,18 @@ function widthComponent(renderLine: (width: number) => string): RenderComponent 
   }
 }
 
-function taskSendCallLine(args: TaskSendInput, theme: ControlRenderTheme, width: number): string {
-  if (typeof args.message === "object" && args.message !== null) return shutdownCallLine(args, args.message, theme, width)
+function taskSendCallLine(args: Partial<TaskSendInput>, theme: ControlRenderTheme, width: number): string {
   const base = joinRendererTokens([
-    "task_send",
-    `to:${normalizeRendererText(args.to)}`,
+    "AgentSend",
+    `agentId:${normalizeRendererText(args.agentId ?? "<missing>")}`,
   ])
   if (typeof args.message === "string") return withExcerpt(base, "message", args.message, theme, width)
   return base
 }
 
-function shutdownCallLine(
-  args: TaskSendInput,
-  message: StructuredMessageInput,
-  theme: ControlRenderTheme,
-  width: number,
-): string {
-  const target = `to:${normalizeRendererText(args.to)}`
-  const team = optionalToken("team", args.team_run_id)
-  switch (message.type) {
-    case "shutdown_request": {
-      const base = joinRendererTokens(["task_send shutdown:request", target, team])
-      return message.reason === undefined ? base : withExcerpt(base, "reason", message.reason, theme, width)
-    }
-    case "shutdown_response": {
-      const action = message.approve ? "approve" : "reject"
-      const base = joinRendererTokens([
-        `task_send shutdown:${action}`,
-        target,
-        team,
-        optionalToken("request", message.request_id),
-      ])
-      return message.reason === undefined ? base : withExcerpt(base, "reason", message.reason, theme, width)
-    }
-    default:
-      return assertNever(message)
-  }
-}
-
-function taskCancelCallLine(args: TaskCancelInput, theme: ControlRenderTheme, width: number): string {
-  const target = normalizeRendererText(args.task_id ?? args.name ?? "<missing>")
-  const base = joinRendererTokens(["task_cancel", `target:${target}`])
-  return args.reason === undefined ? base : withExcerpt(base, "reason", args.reason, theme, width)
+function taskCancelCallLine(args: Partial<TaskCancelInput>, _theme: ControlRenderTheme, _width: number): string {
+  const target = normalizeRendererText(args.agentId ?? "<missing>")
+  return joinRendererTokens(["AgentCancel", `target:${target}`])
 }
 
 function withExcerpt(
@@ -132,48 +102,42 @@ function withExcerpt(
   return `${prefix}${theme.italic(`"${excerpt}"`)}`
 }
 
-function optionalToken(label: string, value: string | undefined): string | undefined {
-  if (value === undefined) return undefined
-  const normalized = normalizeRendererText(value)
-  return normalized.length === 0 ? undefined : `${label}:${normalized}`
-}
-
 function taskSendResultRow(details: SendResultDetails): ResultRow {
   switch (details.kind) {
     case "steered":
       return {
         color: statusThemeColor(details.status),
-        text: `task_send delivered ${details.task_id} as ${details.delivered} (${details.status})`,
+        text: `AgentSend delivered ${details.agentId} as ${details.delivered} (${details.status})`,
       }
     case "revived":
-      return { color: "success", text: `task_send revived ${details.task_id} epoch ${details.run_epoch}` }
+      return { color: "success", text: `AgentSend revived ${details.agentId} epoch ${details.run_epoch}` }
     case "queued":
-      return { color: "muted", text: `task_send queued ${details.task_id} position ${details.queue_position}` }
+      return { color: "muted", text: `AgentSend queued ${details.agentId} position ${details.queue_position}` }
     case "capacity_deferred":
-      return { color: "warning", text: `task_send deferred ${details.task_id}: ${details.reason}` }
+      return { color: "warning", text: `AgentSend deferred ${details.agentId}: ${details.reason}` }
     case "not_continuable":
-      return { color: "warning", text: `task_send not continuable ${details.task_id}: ${details.reason} ${details.suggestion}` }
+      return { color: "warning", text: `AgentSend not continuable ${details.agentId}: ${details.reason} ${details.suggestion}` }
     case "one_shot_agent":
-      return { color: "error", text: `task_send denied ${details.task_id} one-shot:${details.agent}` }
+      return { color: "error", text: `AgentSend denied ${details.agentId} one-shot:${details.agent}` }
     case "scope_denied":
-      return { color: "error", text: `task_send denied ${details.task_id} owner:${details.owning_session_id}` }
+      return { color: "error", text: `AgentSend denied ${details.agentId} owner:${details.owning_session_id}` }
     case "not_found":
       return { color: "error", text: notFoundText(details) }
     case "invalid_arguments":
-      return { color: "error", text: `task_send invalid: ${details.reason}` }
+      return { color: "error", text: `AgentSend invalid: ${details.reason}` }
     case "team_message":
       return teamMessageRow(details.team)
     case "shutdown_requested":
-      return { color: "warning", text: `task_send shutdown requested ${details.team_run_id} member:${details.member}` }
+      return { color: "warning", text: `AgentSend shutdown requested ${details.team_run_id} member:${details.member}` }
     case "shutdown_responded":
       return {
         color: details.approved ? "success" : "warning",
-        text: `task_send shutdown ${details.approved ? "approved" : "rejected"} ${details.team_run_id} member:${details.member}`,
+        text: `AgentSend shutdown ${details.approved ? "approved" : "rejected"} ${details.team_run_id} member:${details.member}`,
       }
     case "shutdown_failed":
       return {
         color: "error",
-        text: `task_send shutdown ${details.operation} failed ${details.team_run_id} member:${details.member}: ${details.reason}`,
+        text: `AgentSend shutdown ${details.operation} failed ${details.team_run_id} member:${details.member}: ${details.reason}`,
       }
     default:
       return assertNever(details)
@@ -181,25 +145,25 @@ function taskSendResultRow(details: SendResultDetails): ResultRow {
 }
 
 function notFoundText(details: Extract<SendResultDetails, { readonly kind: "not_found" }>): string {
-  if (details.known_tasks.length === 0) return `task_send not found: ${details.reason}`
-  return `task_send not found: ${details.reason} known:${details.known_tasks.join(",")}`
+  if (details.known_agents.length === 0) return `AgentSend not found: ${details.reason}`
+  return `AgentSend not found: ${details.reason} known:${details.known_agents.join(",")}`
 }
 
 function teamMessageRow(details: Extract<SendResultDetails, { readonly kind: "team_message" }>["team"]): ResultRow {
   switch (details.kind) {
     case "to_lead":
-      return { color: "success", text: `task_send team message ${details.message_id} enqueued to lead` }
+      return { color: "success", text: `AgentSend team message ${details.message_id} enqueued to lead` }
     case "to_members":
       return {
         color: "success",
-        text: `task_send team message ${details.message_id} enqueued to ${details.recipients.length} member(s)`,
+        text: `AgentSend team message ${details.message_id} enqueued to ${details.recipients.length} member(s)`,
       }
     case "recipient_backpressure":
     case "invalid_recipient":
     case "payload_too_large":
     case "broadcast_denied":
     case "team_deleting":
-      return { color: "error", text: `task_send team ${details.kind} to:${details.to}: ${details.reason}` }
+      return { color: "error", text: `AgentSend team ${details.kind} to:${details.to}: ${details.reason}` }
     default:
       return assertNever(details)
   }
@@ -210,14 +174,14 @@ function taskCancelResultRow(details: CancelResultDetails): ResultRow {
     case "cancelled":
       return {
         color: statusThemeColor(details.status),
-        text: `task_cancel cancelled ${details.task_id} (${details.previous_status} -> ${details.status})`,
+        text: `AgentCancel cancelled ${details.agentId} (${details.previous_status} -> ${details.status})`,
       }
     case "noop":
-      return { color: statusThemeColor(details.status), text: `task_cancel no change ${details.task_id} (${details.status}): ${details.reason}` }
+      return { color: statusThemeColor(details.status), text: `AgentCancel no change ${details.agentId} (${details.status}): ${details.reason}` }
     case "not_found":
-      return { color: "error", text: `task_cancel not found: ${details.reason}` }
+      return { color: "error", text: `AgentCancel not found: ${details.reason}` }
     case "invalid_arguments":
-      return { color: "error", text: `task_cancel invalid: ${details.reason}` }
+      return { color: "error", text: `AgentCancel invalid: ${details.reason}` }
     default:
       return assertNever(details)
   }

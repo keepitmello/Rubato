@@ -26,7 +26,7 @@ export function buildCompletionDetails(record: TaskRecord, options: BuildDetails
   const runStats = record.run_stats
   const tokens = options.tokens ?? runStats?.total_tokens
   const base: CompletionDetails = {
-    task_id: record.task_id,
+    agentId: record.task_id,
     name: record.name ?? record.task_id,
     status: record.status,
     ...(record.category === undefined ? {} : { category: record.category }),
@@ -91,14 +91,14 @@ function durationMs(record: TaskRecord): number {
 function continuationHint(record: TaskRecord): string {
   const mode = messageability(record.status, record.residency_state)
   if (mode === "not-continuable") return ""
-  return `Use task_send({ to: "${record.task_id}", message: "..." }) to continue.`
+  return `Use AgentSend({ agentId: "${record.task_id}", message: "..." }) to continue.`
 }
 
 function completionDetailLines(detail: CompletionDetails, width: number | undefined): readonly string[] {
   const identity = joinRendererTokens([
-    "task completion",
+    "agent completion",
     `name:${normalizeRendererText(detail.name)}`,
-    `id:${normalizeRendererText(detail.task_id)}`,
+    `agentId:${normalizeRendererText(detail.agentId)}`,
     formatTargetWithModel({
       category: detail.category,
       agentType: detail.agent_type,

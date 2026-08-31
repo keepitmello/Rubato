@@ -1,15 +1,11 @@
 import { Type, type Static } from "typebox"
 
+import { AGENT_EFFORTS } from "@rubato/agent-core"
+
 import { TASK_SUMMARY_MAX_LENGTH } from "../../task-summary"
 
-export const MAX_TASK_BATCH_ITEMS = 16
-
-export const TASK_REASONING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const
-export type TaskReasoning = (typeof TASK_REASONING_LEVELS)[number]
-
-const TaskReasoning = Type.Union(
+export const TaskToolEffort = Type.Union(
   [
-    Type.Literal("off"),
     Type.Literal("minimal"),
     Type.Literal("low"),
     Type.Literal("medium"),
@@ -17,62 +13,35 @@ const TaskReasoning = Type.Union(
     Type.Literal("xhigh"),
     Type.Literal("max"),
   ],
-  { description: "Optional reasoning effort for the child. Overrides the selected category or agent default." },
+  {
+    description:
+      "Manual effort override only. Omit normally; the configured model default applies. Set effort only when an explicit manual override is required.",
+  },
 )
 
+export type TaskToolEffort = (typeof AGENT_EFFORTS)[number]
+
 export const TaskToolParams = Type.Object({
-  prompt: Type.Optional(
-    Type.String({ description: "The instruction for the child task. MUST be written in English. Mutually exclusive with tasks; provide exactly one of prompt or tasks." }),
+  prompt: Type.String({ description: "The instruction for the child agent. MUST be written in English." }),
+  model: Type.Optional(
+    Type.String({
+      description:
+        "Complete provider/model id from the live host registry. Exactly one of model or preset is required. A missing model fails closed with no fallback.",
+    }),
   ),
-  task_summary: Type.Optional(
+  preset: Type.Optional(
+    Type.String({
+      description:
+        "Named agent persona from the loaded agent set. Exactly one of model or preset is required. Cannot be combined with model.",
+    }),
+  ),
+  effort: Type.Optional(TaskToolEffort),
+  summary: Type.Optional(
     Type.String({
       maxLength: TASK_SUMMARY_MAX_LENGTH,
-      description: "One-line summary of the delegated work, shown to the user in the task footer/widget UI instead of the raw prompt. Keep it within 80 chars; longer values are force-truncated.",
+      description:
+        "One-line summary of the delegated work, shown to the user in the task footer/widget UI instead of the raw prompt. Keep it within 80 chars; longer values are force-truncated.",
     }),
-  ),
-  description: Type.Optional(
-    Type.String({ description: "Short human label for this task, shown in status views." }),
-  ),
-  category: Type.Optional(
-    Type.String({ description: "Optional category preset. Mutually exclusive with subagent_type; omit when model directly selects the child." }),
-  ),
-  subagent_type: Type.Optional(
-    Type.String({ description: "Optional named agent persona. Mutually exclusive with category; omit when model directly selects the child." }),
-  ),
-  run_in_background: Type.Optional(
-    Type.Boolean({ description: "true (default) returns a child task id immediately and delivers completion as a notification; false waits and returns the final response." }),
-  ),
-  name: Type.Optional(Type.String({ description: "Optional stable name for this task within the current session; must be unique within the session." })),
-  model: Type.Optional(Type.String({ description: "Exact model id from the current session catalog. A model alone is a complete target; with category or subagent_type it overrides that preset's model." })),
-  reasoning: Type.Optional(TaskReasoning),
-  load_skills: Type.Optional(
-    Type.Array(Type.String(), {
-      description: "Skill names whose SKILL.md content is prepended to the child prompt. Defaults to [].",
-    }),
-  ),
-  tasks: Type.Optional(
-    Type.Array(
-      Type.Object({
-        prompt: Type.String({ description: "The instruction for this child task. MUST be written in English." }),
-        task_summary: Type.Optional(
-          Type.String({
-            maxLength: TASK_SUMMARY_MAX_LENGTH,
-            description: "One-line summary of this task's delegated work, shown in the task footer/widget UI. Longer values are force-truncated to 80 chars.",
-          }),
-        ),
-        description: Type.Optional(Type.String({ description: "Short human label for this task." })),
-        category: Type.Optional(Type.String({ description: "Optional category preset for this task." })),
-        subagent_type: Type.Optional(Type.String({ description: "Optional named agent persona for this task." })),
-        name: Type.Optional(Type.String({ description: "Optional stable name for this task." })),
-        model: Type.Optional(Type.String({ description: "Exact model id from the current session catalog; a complete target by itself." })),
-        reasoning: Type.Optional(TaskReasoning),
-        load_skills: Type.Optional(Type.Array(Type.String(), { description: "Skills loaded for this task." })),
-      }),
-      {
-        maxItems: MAX_TASK_BATCH_ITEMS,
-        description: "Batch of up to 16 child tasks to spawn in one call. Empty provider padding is normalized before validation. Mutually exclusive with prompt; top-level category/subagent_type/model/reasoning/load_skills are inherited by items that omit them.",
-      },
-    ),
   ),
 })
 

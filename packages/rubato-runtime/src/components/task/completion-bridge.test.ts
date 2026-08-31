@@ -106,7 +106,7 @@ describe("completion bridge live background promotion", () => {
     // then
     expect(harness.manager.wasBackground(started.task_id)).toBe(true)
     expect(harness.messages).toHaveLength(1)
-    expect(harness.messages[0]?.details[0]?.task_id).toBe(started.task_id)
+    expect(harness.messages[0]?.details[0]?.agentId).toBe(started.task_id)
   })
 
   it("#given a genuinely foreground start #when completion applies without promotion #then sync-task notification suppression remains intact", async () => {

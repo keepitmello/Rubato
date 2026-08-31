@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test"
 import { SenpiShutdownError, TEAM_LEAD_SENTINEL } from "../../team"
 import type { SendOutcome } from "../../steering"
 import { createFakeTeamService, fakeRuntimeState } from "../team/__fixtures__/team-tool-fakes"
-import { runTaskSend } from "./send"
+import { runTransitionalSenpiSend } from "./send-shutdown"
 import type { SendManager, SendToolResult } from "./types"
 
 const RAW_MISSING_STATE_MESSAGE = "ENOENT: no such file or directory, open '/private/secret/team/run-1/state.json'"
@@ -37,14 +37,14 @@ function spyManager(outcome: SendOutcome): SendManager {
   }
 }
 
-describe("runTaskSend shutdown routing", () => {
+describe("runTransitionalSenpiSend shutdown routing", () => {
   test("#given a lead shutdown_request #when routed through task_send #then requestShutdown is called", async () => {
     const manager = spyManager({ kind: "not_found", reason: "unused", suggestion: "unused" })
     const service = createFakeTeamService({ requestShutdown: async () => fakeRuntimeState() })
 
-    const result = await runTaskSend(
+    const result = await runTransitionalSenpiSend(
       manager,
-      { to: "alpha", team_run_id: "run-1", message: { type: "shutdown_request" } },
+      { agentId: "alpha", team_run_id: "run-1", message: { type: "shutdown_request" } },
       "lead-session",
       { service, from: TEAM_LEAD_SENTINEL },
     )
@@ -60,9 +60,9 @@ describe("runTaskSend shutdown routing", () => {
     const manager = spyManager({ kind: "not_found", reason: "unused", suggestion: "unused" })
     const service = createFakeTeamService({ approveShutdown: async () => fakeRuntimeState() })
 
-    const result = await runTaskSend(
+    const result = await runTransitionalSenpiSend(
       manager,
-      { to: "alpha", team_run_id: "run-1", message: { type: "shutdown_response", request_id: "ignored", approve: true } },
+      { agentId: "alpha", team_run_id: "run-1", message: { type: "shutdown_response", request_id: "ignored", approve: true } },
       "lead-session",
       { service, from: TEAM_LEAD_SENTINEL },
     )
@@ -78,15 +78,15 @@ describe("runTaskSend shutdown routing", () => {
     const manager = spyManager({ kind: "not_found", reason: "unused", suggestion: "unused" })
     const service = createFakeTeamService({ rejectShutdown: async () => fakeRuntimeState() })
 
-    const missing = await runTaskSend(
+    const missing = await runTransitionalSenpiSend(
       manager,
-      { to: "alpha", team_run_id: "run-1", message: { type: "shutdown_response", approve: false } },
+      { agentId: "alpha", team_run_id: "run-1", message: { type: "shutdown_response", approve: false } },
       "lead-session",
       { service, from: TEAM_LEAD_SENTINEL },
     )
-    const empty = await runTaskSend(
+    const empty = await runTransitionalSenpiSend(
       manager,
-      { to: "alpha", team_run_id: "run-1", message: { type: "shutdown_response", approve: false, reason: "" } },
+      { agentId: "alpha", team_run_id: "run-1", message: { type: "shutdown_response", approve: false, reason: "" } },
       "lead-session",
       { service, from: TEAM_LEAD_SENTINEL },
     )
@@ -106,9 +106,9 @@ describe("runTaskSend shutdown routing", () => {
     const manager = spyManager({ kind: "not_found", reason: "unused", suggestion: "unused" })
     const service = createFakeTeamService({ rejectShutdown: async () => fakeRuntimeState() })
 
-    const result = await runTaskSend(
+    const result = await runTransitionalSenpiSend(
       manager,
-      { to: "alpha", team_run_id: "run-1", message: { type: "shutdown_response", approve: false, reason: "still needed" } },
+      { agentId: "alpha", team_run_id: "run-1", message: { type: "shutdown_response", approve: false, reason: "still needed" } },
       "lead-session",
       { service, from: TEAM_LEAD_SENTINEL },
     )
@@ -126,9 +126,9 @@ describe("runTaskSend shutdown routing", () => {
       requestShutdown: () => Promise.reject(missingStateError()),
     })
 
-    const result = await runTaskSend(
+    const result = await runTransitionalSenpiSend(
       manager,
-      { to: "alpha", team_run_id: "run-1", message: { type: "shutdown_request" } },
+      { agentId: "alpha", team_run_id: "run-1", message: { type: "shutdown_request" } },
       "lead-session",
       { service, from: TEAM_LEAD_SENTINEL },
     )
@@ -142,9 +142,9 @@ describe("runTaskSend shutdown routing", () => {
       approveShutdown: () => Promise.reject(missingStateError()),
     })
 
-    const result = await runTaskSend(
+    const result = await runTransitionalSenpiSend(
       manager,
-      { to: "alpha", team_run_id: "run-1", message: { type: "shutdown_response", approve: true } },
+      { agentId: "alpha", team_run_id: "run-1", message: { type: "shutdown_response", approve: true } },
       "lead-session",
       { service, from: TEAM_LEAD_SENTINEL },
     )
@@ -158,10 +158,9 @@ describe("runTaskSend shutdown routing", () => {
       rejectShutdown: () => Promise.reject(missingStateError()),
     })
 
-    const result = await runTaskSend(
+    const result = await runTransitionalSenpiSend(
       manager,
-      {
-        to: "alpha",
+      { agentId: "alpha",
         team_run_id: "run-1",
         message: { type: "shutdown_response", approve: false, reason: "still needed" },
       },
@@ -179,9 +178,9 @@ describe("runTaskSend shutdown routing", () => {
         Promise.reject(new SenpiShutdownError("raw unknown member detail", "unknown_member", "run-1", "alpha")),
     })
 
-    const result = await runTaskSend(
+    const result = await runTransitionalSenpiSend(
       manager,
-      { to: "alpha", team_run_id: "run-1", message: { type: "shutdown_request" } },
+      { agentId: "alpha", team_run_id: "run-1", message: { type: "shutdown_request" } },
       "lead-session",
       { service, from: TEAM_LEAD_SENTINEL },
     )
@@ -202,9 +201,9 @@ describe("runTaskSend shutdown routing", () => {
     const unexpected = new TypeError("unexpected service failure")
     const service = createFakeTeamService({ requestShutdown: () => Promise.reject(unexpected) })
 
-    const pending = runTaskSend(
+    const pending = runTransitionalSenpiSend(
       manager,
-      { to: "alpha", team_run_id: "run-1", message: { type: "shutdown_request" } },
+      { agentId: "alpha", team_run_id: "run-1", message: { type: "shutdown_request" } },
       "lead-session",
       { service, from: TEAM_LEAD_SENTINEL },
     )
@@ -222,7 +221,7 @@ describe("runTaskSend shutdown routing", () => {
   test("#given structured message with no team routing #when sent #then it reports not in a team", async () => {
     const manager = spyManager({ kind: "not_found", reason: "unused", suggestion: "unused" })
 
-    const result = await runTaskSend(manager, { to: "alpha", message: { type: "shutdown_request" } }, "lead-session")
+    const result = await runTransitionalSenpiSend(manager, { agentId: "alpha", message: { type: "shutdown_request" } }, "lead-session")
 
     expect(result.details).toEqual({ kind: "invalid_arguments", reason: "not in a team" })
   })
@@ -231,9 +230,9 @@ describe("runTaskSend shutdown routing", () => {
     const manager = spyManager({ kind: "not_found", reason: "unused", suggestion: "unused" })
     const service = createFakeTeamService({ requestShutdown: async () => fakeRuntimeState() })
 
-    const result = await runTaskSend(
+    const result = await runTransitionalSenpiSend(
       manager,
-      { to: "alpha", message: { type: "shutdown_request" } },
+      { agentId: "alpha", message: { type: "shutdown_request" } },
       "member-session",
       { service, from: "alpha", teamRunId: "run-1" },
     )

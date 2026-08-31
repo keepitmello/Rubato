@@ -1,6 +1,6 @@
 import type { AgentToolResult, Theme, ThemeColor, ToolRenderResultOptions } from "@code-yeongyu/senpi"
+import type { AgentSnapshot } from "@rubato/agent-core"
 
-import { formatStatusTarget, taskIdentityLabel } from "../../status-line"
 import {
   excerptRendererText,
   joinRendererTokens,
@@ -9,9 +9,8 @@ import {
   rendererVisibleWidth,
   statusThemeColor,
 } from "../task/renderers"
-import { runStatsSuffix } from "../run-stats-format"
 import type { TaskOutputInput } from "./output"
-import type { TaskOutputDetails, TaskSnapshot } from "./types"
+import type { TaskOutputDetails } from "./types"
 
 export type OutputRenderTheme = Pick<Theme, "fg">
 
@@ -28,7 +27,7 @@ type ResultRow = {
 const DEFAULT_TAIL_LINES = 60
 const TARGET_EXCERPT_MAX = 56
 
-export function renderTaskOutputCall(args: TaskOutputInput, theme: OutputRenderTheme): RenderComponent {
+export function renderTaskOutputCall(args: Partial<TaskOutputInput>, theme: OutputRenderTheme): RenderComponent {
   return {
     render: (width: number): string[] => linesComponent([theme.fg("toolTitle", taskOutputCallLine(args, width))]).render(width),
     invalidate: (): void => {},
@@ -44,38 +43,36 @@ export function renderTaskOutputResult(
   return linesComponent([theme.fg(row.color, normalizeRendererText(row.text))])
 }
 
-function taskOutputCallLine(args: TaskOutputInput, width: number): string {
+function taskOutputCallLine(args: Partial<TaskOutputInput>, width: number): string {
   const mode = args.mode ?? "status"
   const tail = mode === "tail" ? `tail_lines:${args.tail_lines ?? DEFAULT_TAIL_LINES}` : undefined
-  const beforeTarget = "task_output target:"
+  const beforeTarget = "AgentOutput target:"
   const afterTarget = joinRendererTokens([`mode:${mode}`, "peek", tail])
   const available = Math.min(TARGET_EXCERPT_MAX, Math.max(0, width - rendererVisibleWidth(beforeTarget) - rendererVisibleWidth(afterTarget) - 1))
-  const target = excerptRendererText(args.task_id ?? args.name ?? "<missing>", available)
+  const target = excerptRendererText(args.agentId ?? "<missing>", available)
   return joinRendererTokens([`${beforeTarget}${target}`, afterTarget])
 }
 
 function taskOutputResultRow(details: TaskOutputDetails): ResultRow {
   switch (details.kind) {
     case "status": {
-      const identity = snapshotIdentity(details.snapshot)
-      const idSuffix = identity === details.snapshot.task_id ? undefined : `(${details.snapshot.task_id})`
-      const target =
-        formatStatusTarget({
-          category: details.snapshot.category,
-          agentType: details.snapshot.agent_type,
-          resolvedModel: details.snapshot.resolved_model,
-        }) ?? `model:${normalizeRendererText(details.snapshot.model)}`
-      const statusLabel = details.snapshot.suspended !== undefined ? "suspended" : normalizeRendererText(details.snapshot.status)
+      const model = details.snapshot.model === undefined ? undefined : `model:${normalizeRendererText(details.snapshot.model)}`
+      const effort = details.snapshot.effort === undefined ? undefined : `effort:${details.snapshot.effort}`
       return {
         color: statusThemeColor(details.snapshot.status),
-        text: `${joinRendererTokens([`task_output ${identity}`, idSuffix, statusLabel])} · ${target}${runStatsSuffix(details.snapshot.run_stats)}`,
+        text: joinRendererTokens([
+          `AgentOutput ${details.snapshot.agentId}`,
+          normalizeRendererText(details.snapshot.status),
+          model,
+          effort,
+        ]),
       }
     }
     case "transcript":
       return {
         color: statusThemeColor(details.snapshot.status),
         text: joinRendererTokens([
-          `task_output transcript ${snapshotIdentity(details.snapshot)}`,
+          `AgentOutput transcript ${details.snapshot.agentId}`,
           `mode:${details.mode}`,
           `source:${details.source}`,
           details.truncated ? "truncated" : undefined,
@@ -84,44 +81,25 @@ function taskOutputResultRow(details: TaskOutputDetails): ResultRow {
     case "not_found":
       return { color: "error", text: notFoundRow(details) }
     case "invalid_arguments":
-      return { color: "error", text: `task_output invalid: ${details.reason}` }
+      return { color: "error", text: `AgentOutput invalid: ${details.reason}` }
     default:
       return assertNever(details)
   }
 }
 
 function notFoundRow(details: Extract<TaskOutputDetails, { readonly kind: "not_found" }>): string {
-  const known = details.known_tasks.length > 0 ? `known:${excerptRendererText(details.known_tasks.join(","))}` : undefined
-  return joinRendererTokens([`task_output not found: ${details.reason}`, known])
+  const known = details.known_agents.length > 0 ? `known:${excerptRendererText(details.known_agents.join(","))}` : undefined
+  return joinRendererTokens([`AgentOutput not found: ${details.reason}`, known])
 }
 
-// Model-facing model summary for the task_output status view text (TUI rows use formatStatusTarget).
-export function taskOutputModelText(snapshot: TaskSnapshot): string {
-  const display = nonEmpty(snapshot.resolved_model?.display)
-  const model = normalizeRendererText(snapshot.model)
-  const reasoning = nonEmpty(snapshot.resolved_model?.reasoning) ?? nonEmpty(snapshot.resolved_model?.reasoning_effort)
-  const variant = nonEmpty(snapshot.resolved_model?.variant)
-  const details = [
-    reasoning === undefined ? undefined : `reasoning ${reasoning}`,
-    variant === undefined ? undefined : `variant ${variant}`,
-  ].filter((part) => part !== undefined)
-  return `model ${display ?? model}${details.length > 0 ? ` (${details.join(", ")})` : ""}`
-}
-
-function nonEmpty(value: string | undefined): string | undefined {
-  const normalized = value === undefined ? undefined : excerptRendererText(value)
-  return normalized !== undefined && normalized.length > 0 ? normalized : undefined
-}
-
-function snapshotIdentity(snapshot: TaskSnapshot): string {
-  return taskIdentityLabel({
-    taskId: snapshot.task_id,
-    name: snapshot.name,
-    description: snapshot.description,
-    taskSummary: snapshot.task_summary,
-  })
+export function taskOutputModelText(snapshot: AgentSnapshot): string {
+  const model = snapshot.model === undefined ? undefined : normalizeRendererText(snapshot.model)
+  const effort = snapshot.effort === undefined ? undefined : `effort ${snapshot.effort}`
+  const details = [effort].filter((part) => part !== undefined)
+  if (model === undefined) return details.length > 0 ? details.join(", ") : ""
+  return `model ${model}${details.length > 0 ? ` (${details.join(", ")})` : ""}`
 }
 
 function assertNever(value: never): never {
-  throw new Error(`Unhandled task_output renderer variant: ${String(value)}`)
+  throw new Error(`Unhandled AgentOutput renderer variant: ${String(value)}`)
 }

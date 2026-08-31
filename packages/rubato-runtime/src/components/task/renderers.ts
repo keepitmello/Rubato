@@ -20,7 +20,7 @@ export const renderCategoryUnavailable: MessageRenderer<Readonly<Record<string, 
 export const renderTaskCompletion: MessageRenderer<readonly CompletionDetails[]> = (message, options, theme) => {
   const details = message.details ?? []
   if (details.length === 0) {
-    return buildNoticeBox({ title: "· Task completion", tone: "dim", why: "Task completion details are unavailable." }, options, theme)
+    return buildNoticeBox({ title: "· Agent completion", tone: "dim", why: "Agent completion details are unavailable." }, options, theme)
   }
   const components = details.map((detail) => buildNoticeBox(completionNotice(detail), options, theme))
   return {
@@ -57,12 +57,12 @@ function completionNotice(detail: CompletionDetails): NoticeSpec {
   const continuation = normalizeRendererText(detail.continuation_hint).trim()
   const resultFile = detail.final_response_file === undefined ? undefined : normalizeRendererText(detail.final_response_file)
   return {
-    title: `${statusGlyph(detail.status)} Task complete · ${normalizeRendererText(detail.name)}`,
+    title: `${statusGlyph(detail.status)} Agent complete · ${normalizeRendererText(detail.name)}`,
     tone: statusTone(detail.status),
-    why: response.length === 0 ? `Task ${status}.` : response,
+    why: response.length === 0 ? `Agent ${status}.` : response,
     extra: [{
       text: joinNoticeFields([
-        `id ${normalizeRendererText(detail.task_id)}`,
+        `agentId ${normalizeRendererText(detail.agentId)}`,
         formatTargetWithModel({
           category: detail.category,
           agentType: detail.agent_type,

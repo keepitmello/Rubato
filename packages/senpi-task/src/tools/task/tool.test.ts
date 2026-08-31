@@ -49,7 +49,12 @@ function fakeManager(overrides: Partial<TaskManager>): TaskManager {
 }
 
 function deps(manager: TaskManager): TaskToolDeps {
-  return { manager, rubatoConfig: RUBATO_CONFIG, agents: { momus: { name: "momus", description: "Deep reasoning" } } }
+  return {
+    manager,
+    rubatoConfig: RUBATO_CONFIG,
+    agents: { explore: { name: "explore", description: "Codebase search" } },
+    models: { has: () => true },
+  }
 }
 
 function renderedLines(component: unknown, width: number): string[] {
@@ -82,22 +87,20 @@ describe("createTaskTool", () => {
     expect(typeof tool.renderResult).toBe("function")
   })
 
-  test("#given a custom rubato.json category #when the description is read #then it lists that category (dynamic snapshot)", () => {
-    // given
+  test("#given loaded agents #when the description is read #then it lists presets and omits categories", () => {
     const tool = createTaskTool(deps(fakeManager({})))
 
-    // then
-    expect(tool.description).toContain("release-crew")
-    expect(tool.description).toContain("Ships the release train")
-    expect(tool.description).toContain("momus")
+    expect(tool.description).toContain("explore")
+    expect(tool.description).toContain("Available presets")
+    expect(tool.description).not.toContain("release-crew")
+    expect(tool.description).not.toContain("subagent_type")
   })
 
-  test("#given the assembled tool #when parameters are read #then the shared TypeBox schema leaves prompt/tasks optional (XOR enforced in validateBatchShape)", () => {
-    // given
+  test("#given the assembled tool #when parameters are read #then prompt is required and batch fields are absent", () => {
     const tool = createTaskTool(deps(fakeManager({})))
 
-    // then
-    expect(tool.parameters.required).toBeUndefined()
+    expect(tool.parameters.required).toEqual(["prompt"])
+    expect(Object.keys(tool.parameters.properties)).toEqual(["prompt", "model", "preset", "effort", "summary"])
   })
 
   test("#given the real task call renderer #when rendered at 72 columns #then actual prompt and italic background mode are visible", () => {
@@ -110,8 +113,7 @@ describe("createTaskTool", () => {
     const component: unknown = Reflect.apply(renderCall, undefined, [
       {
         prompt: "실제 프롬프트입니다. This extra text forces a concise excerpt in the task row.",
-        category: "quick",
-        run_in_background: true,
+        model: "xai/grok-4.6",
       },
       RENDERER_THEME,
       {},
@@ -132,17 +134,17 @@ describe("createTaskTool", () => {
 
     // when
     const component: unknown = Reflect.apply(renderCall, undefined, [
-      { prompt: "Inspect task rendering", category: "quick", run_in_background: false },
+      { prompt: "Inspect task rendering", model: "xai/grok-4.6" },
       RENDERER_THEME,
       {},
     ])
     const [row = ""] = renderedLines(component, 120)
 
     // then
-    expect(row).toContain('task "Inspect task rendering"')
+    expect(row).toContain('Agent "Inspect task rendering"')
     expect(row).not.toContain("quick")
     expect(row).not.toContain("category:")
-    expect(row).toContain(`${ANSI_ITALIC}foreground${ANSI_ITALIC_END}`)
+    expect(row).toContain(`${ANSI_ITALIC}background${ANSI_ITALIC_END}`)
   })
 
   test("#given an agent task call #when rendered #then the call row is prompt-only without the agent target", () => {
@@ -153,14 +155,14 @@ describe("createTaskTool", () => {
 
     // when
     const component: unknown = Reflect.apply(renderCall, undefined, [
-      { prompt: "Inspect task rendering", subagent_type: "atlas", run_in_background: false },
+      { prompt: "Inspect task rendering", preset: "atlas" },
       RENDERER_THEME,
       {},
     ])
     const [row = ""] = renderedLines(component, 120)
 
     // then
-    expect(row).toContain('task "Inspect task rendering"')
+    expect(row).toContain('Agent "Inspect task rendering"')
     expect(row).not.toContain("agent:atlas")
   })
 
@@ -222,8 +224,7 @@ describe("createTaskTool", () => {
             reasoning_effort: "xhigh",
             source: "category",
           },
-          run_in_background: false,
-        },
+                  },
       },
       { expanded: false, isPartial: false },
       RENDERER_THEME,
@@ -233,7 +234,7 @@ describe("createTaskTool", () => {
 
     // then
     expect(row).toContain("category:quick(openai/gpt-5.6-sol:xhigh)")
-    expect(row).toContain(`${ANSI_ITALIC}foreground${ANSI_ITALIC_END}`)
+    expect(row).toContain(`${ANSI_ITALIC}background${ANSI_ITALIC_END}`)
     expect(rendererVisibleWidth(row)).toBeLessThanOrEqual(72)
   })
 
@@ -259,8 +260,7 @@ describe("createTaskTool", () => {
             reasoning_effort: "xhigh",
             source: "category",
           },
-          run_in_background: true,
-        },
+                  },
       },
       { expanded: false, isPartial: false },
       RENDERER_THEME,

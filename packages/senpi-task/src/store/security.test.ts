@@ -149,6 +149,18 @@ describe("parseTaskRecord persisted boundary", () => {
     expect(result.records[0]?.resolved_model).toEqual(resolvedModel)
   })
 
+  test("#given persisted resolved model metadata with effortSource #when listed #then model-default or manual-override round-trips", () => {
+    const project = tempProject()
+    const store = createTaskRecordStore({ project_dir: project })
+    const resolved = { ...RESOLVED_MODEL, effortSource: "model-default" as const }
+    writePersistedRecord(project, "st_01d00005", { resolved_model: resolved })
+
+    const result = store.list()
+
+    expect(result.diagnostics).toEqual([])
+    expect(result.records[0]?.resolved_model).toEqual(resolved)
+  })
+
   test("#given persisted resolved model metadata with a future field #when listed #then known metadata is parsed and the future field is ignored", () => {
     // given
     const project = tempProject()

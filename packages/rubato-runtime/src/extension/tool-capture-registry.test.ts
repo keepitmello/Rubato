@@ -26,11 +26,11 @@ describe("tool capture registry", () => {
 
     pi.registerTool(fakeTool("lsp_diagnostics"))
     pi.registerTool(fakeTool("lsp_find_references"))
-    pi.registerTool(fakeTool("task"))
-    pi.registerTool(fakeTool("task_send"))
+    pi.registerTool(fakeTool("Agent"))
+    pi.registerTool(fakeTool("AgentSend"))
 
     const captured = registry.getCapturedTools()
-    expect(captured.map((tool) => tool.name).sort()).toEqual(["lsp_diagnostics", "lsp_find_references", "task", "task_send"])
+    expect(captured.map((tool) => tool.name).sort()).toEqual(["Agent", "AgentSend", "lsp_diagnostics", "lsp_find_references"])
     expect(captured.every((tool) => typeof tool.execute === "function")).toBe(true)
     expect(pi.tools).toHaveLength(4)
   })
@@ -39,9 +39,9 @@ describe("tool capture registry", () => {
     const pi = new FakeExtensionAPI()
     const registry = installToolCaptureRegistry(pi)
     pi.registerTool(fakeTool("lsp_diagnostics"))
-    pi.registerTool(fakeTool("task"))
-    pi.registerTool(fakeTool("task_output"))
-    pi.registerTool(fakeTool("task_send"))
+    pi.registerTool(fakeTool("Agent"))
+    pi.registerTool(fakeTool("AgentOutput"))
+    pi.registerTool(fakeTool("AgentSend"))
 
     const shared = filterSharedParentTools(registry.getCapturedTools())
 

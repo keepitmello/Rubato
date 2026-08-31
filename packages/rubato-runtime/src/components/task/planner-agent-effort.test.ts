@@ -23,7 +23,7 @@ function resolvedPlan(resolution: ReturnType<ReturnType<typeof createTaskChildPl
 }
 
 describe("agent plans carrying configured effort", () => {
-  test("#given an agent model entry with effort #when planned #then the effort becomes the child variant", () => {
+  test("#given an agent model entry with effort #when planned #then agent effort is not applied as child variant", () => {
     // given
     const config = {
       agents: {
@@ -41,31 +41,28 @@ describe("agent plans carrying configured effort", () => {
 
     // then
     expect(plan.model).toBe("quotio-openai/gpt-5.6-luna-fast")
-    expect(plan.variant).toBe("minimal")
-    expect(plan.resolved_model?.reasoning_effort).toBe("minimal")
+    expect(plan.variant).toBeUndefined()
   })
 
-  test("#given an agent carrying both variant and effort #when planned #then effort wins exactly as it does for a category", () => {
-    // given
+  test("#given an agent on a seeded model #when planned #then the model default wins over agent effort", () => {
     const config = {
       agents: {
         librarian: {
-          models: [{ model: "openai/tuned", variant: "high", reasoningEffort: "minimal" as const }],
+          models: [{ model: "anthropic/claude-opus-5", variant: "low", reasoningEffort: "minimal" as const }],
         },
       },
     } satisfies RubatoConfig
     const agents = mapRubatoConfigAgents(config)
-    const models = registry([{ provider: "openai", id: "tuned" }])
+    const models = registry([{ provider: "anthropic", id: "claude-opus-5" }])
     const planner = createTaskChildPlanner(config, agents, () => models)
 
-    // when
     const plan = resolvedPlan(planner({ subagent_type: "librarian", prompt: "go", parent_session_id: "p", depth: 1 }))
 
-    // then
-    expect(plan.variant).toBe("minimal")
+    expect(plan.variant).toBe("high")
+    expect(plan.resolved_model?.reasoning).toBe("high")
   })
 
-  test("#given an agent level variant and a per entry effort #when planned #then the per entry effort still reaches the child", () => {
+  test("#given an agent level variant and a per entry effort #when planned #then neither becomes the child effort", () => {
     // given
     const config = {
       agents: {
@@ -83,7 +80,7 @@ describe("agent plans carrying configured effort", () => {
     const plan = resolvedPlan(planner({ subagent_type: "explore", prompt: "go", parent_session_id: "p", depth: 1 }))
 
     // then
-    expect(plan.variant).toBe("minimal")
+    expect(plan.variant).toBeUndefined()
   })
 
   test("#given an agent with plain string models #when planned #then no variant is invented", () => {

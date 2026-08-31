@@ -1,6 +1,6 @@
 // One-shot interaction policies declare agents whose sessions are fire-and-forget: the model may
-// spawn them (task), cancel them (task_cancel), and read their output (task_output), but may never
-// send them mid-run or post-completion messages (task_send is refused in every state). The
+// spawn them (Agent), cancel them (AgentCancel), and read their output (AgentOutput), but may never
+// send them mid-run or post-completion messages (AgentSend is refused in every state). The
 // promptContract field identifies agents whose spawn prompt the harness replaces with a canonical
 // neutral document, discarding all caller prose. This module owns the policy data and the pure
 // lookup; behavior wiring lives at the manager/tool boundary, exactly like invocation-guard.ts.
@@ -16,7 +16,7 @@ export const AGENT_INTERACTION_POLICIES = {
     oneShot: true,
     promptContract: "plan-review",
     sendDenialReminder: `<system-reminder>
-Momus is a one-shot plan-review specialist. The only verbs available are task (create), task_cancel (cancel), and task_output (read); task_send is refused in every state - while running, while pending, and after completion - because each momus session runs a single review to completion without external steering.
+Momus is a one-shot plan-review specialist. The only verbs available are Agent (create), AgentCancel (cancel), and AgentOutput (read); AgentSend is refused in every state - while running, while pending, and after completion - because each momus session runs a single review to completion without external steering.
 
 The harness already replaced the spawn prompt with the canonical plan-review contract: a single .rubato/plans/*.md path, analyzed for contradictions and blocking issues only. Any other prompt content the caller supplied was discarded before launch.
 

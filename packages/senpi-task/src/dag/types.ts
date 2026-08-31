@@ -1,6 +1,6 @@
 // allow: SIZE_OK - single public type contract for the dag subsystem; splitting it would fragment one cohesive domain vocabulary across imports.
 import type { TaskRunStats } from "../state/types"
-import type { TaskTargetErrorCode } from "../tools/task/validation"
+import type { TaskTargetErrorCode } from "./node-target"
 
 export type DagRunId = string & { readonly __brand: "DagRunId" }
 export type DagNodeId = string & { readonly __brand: "DagNodeId" }

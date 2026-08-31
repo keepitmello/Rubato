@@ -35,24 +35,25 @@ function writeRubatoJson(cwd: string, config: unknown): void {
   writeFileSync(join(cwd, ".rubato", "rubato.json"), `${JSON.stringify(config)}\n`)
 }
 
-// The rendered "Available agents: a, b, c" fragment of the task tool description. The example line
-// quoting subagent_type="momus" must never leak into this extraction, so the marker anchors it.
+// The rendered "Available presets: a, b, c" fragment of the Agent tool description. The example line
+// quoting preset="momus" must never leak into this extraction, so the marker anchors it.
 function advertisedAgentNames(engine: TaskEngine): string {
   const description = buildTaskToolDescription({ rubatoConfig: engine.rubatoConfig, agents: engine.agents })
-  const marker = "Available agents: "
+  const marker = "Available presets: "
   const start = description.indexOf(marker)
-  if (start < 0) throw new Error("task tool description is missing the Available agents list")
+  if (start < 0) throw new Error("task tool description is missing the Available presets list")
   const rest = description.slice(start + marker.length)
-  const end = rest.indexOf("\n")
-  return (end < 0 ? rest : rest.slice(0, end)).trim()
+  const names = rest.split(". CORRECT")[0] ?? rest
+  const end = names.indexOf("\n")
+  return (end < 0 ? names : names.slice(0, end)).trim()
 }
 
 function advertisedPlanGatedAgentNames(engine: TaskEngine): string {
   const description = buildTaskToolDescription({ rubatoConfig: engine.rubatoConfig, agents: engine.agents })
   const marker =
-    "Plan-gated agents (spawnable only after the user explicitly requests the ulw-plan workflow, a .rubato/plans/*.md plan artifact was touched in this session, and start-work was never invoked): "
+    "Plan-gated presets (spawnable only after the user explicitly requests the ulw-plan workflow, a .rubato/plans/*.md plan artifact was touched in this session, and start-work was never invoked): "
   const start = description.indexOf(marker)
-  if (start < 0) throw new Error("task tool description is missing the Plan-gated agents list")
+  if (start < 0) throw new Error("task tool description is missing the Plan-gated presets list")
   const rest = description.slice(start + marker.length)
   const end = rest.indexOf("\n")
   return (end < 0 ? rest : rest.slice(0, end)).trim()

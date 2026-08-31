@@ -52,6 +52,7 @@
     "test": "bun test src/*.test.ts src/**/*.test.ts"
   },
   "dependencies": {
+    "@rubato/agent-core": "workspace:*",
     "@rubato/delegate-core": "workspace:*",
     "@rubato/config-core": "workspace:*",
     "@rubato/team-core": "workspace:*",

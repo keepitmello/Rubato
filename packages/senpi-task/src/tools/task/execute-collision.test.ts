@@ -4,7 +4,7 @@ import { collisionStore } from "../../manager/__fixtures__/collision-store"
 import { FakeRunner, categoryPlanner, cleanupProjects, settings, tempProject } from "../../manager/__fixtures__/manager-fakes"
 import { createTaskManager } from "../../manager"
 import { createTaskRecordStore } from "../../store"
-import { CTX, makeDeps } from "./__fixtures__/task-tool-fakes"
+import { CTX, LIVE_MODEL, makeDeps } from "./__fixtures__/task-tool-fakes"
 import { buildTaskExecute } from "./execute"
 
 afterEach(cleanupProjects)
@@ -23,42 +23,13 @@ function buildCollisionExecute() {
 }
 
 describe("buildTaskExecute collision handling", () => {
-  test("#given a first-save collision #when one background task executes #then it reports a normal started result without the raw collision", async () => {
-    // given
+  test("#given a first-save collision #when one agent executes #then it reports a normal started result without the raw collision", async () => {
     const execute = buildCollisionExecute()
 
-    // when
-    const result = await execute("collision-single", { prompt: "work", category: "quick", run_in_background: true }, undefined, undefined, CTX)
+    const result = await execute("collision-single", { prompt: "work", model: LIVE_MODEL }, undefined, undefined, CTX)
 
-    // then
     expect(result.details.status).toBe("running")
-    expect(result.details.task_id).toMatch(/^st_[0-9a-f]{8}$/)
-    expect(JSON.stringify(result)).not.toContain("already exists")
-  })
-
-  test("#given a first-save collision #when a two-item background batch executes #then both tasks start without the raw collision", async () => {
-    // given
-    const execute = buildCollisionExecute()
-
-    // when
-    const result = await execute(
-      "collision-batch",
-      {
-        tasks: [
-          { prompt: "first", category: "quick" },
-          { prompt: "second", category: "quick" },
-        ],
-        run_in_background: true,
-      },
-      undefined,
-      undefined,
-      CTX,
-    )
-
-    // then
-    expect(result.details.status).toBe("running")
-    expect(result.details.items).toHaveLength(2)
-    expect(result.details.items?.every((item) => item.status === "running")).toBe(true)
+    expect(result.details.agentId).toMatch(/^st_[0-9a-f]{8}$/)
     expect(JSON.stringify(result)).not.toContain("already exists")
   })
 })

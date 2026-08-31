@@ -6,6 +6,8 @@ import { CTX, createFakeManager, makeDeps } from "./__fixtures__/task-tool-fakes
 import { buildTaskExecute } from "./execute"
 import { PLAN_REVIEW_DENY_MESSAGE } from "./plan-review-contract"
 
+const PRESETS = { momus: { name: "momus" }, explore: { name: "explore" } }
+
 const PLAN_A = ".rubato/plans/alpha-plan.md"
 const PLAN_B = ".rubato/plans/beta-plan.md"
 
@@ -56,12 +58,12 @@ describe("buildTaskExecute plan-review contract (momus)", () => {
   test("#given a chatty no-path prompt and a session with plans A(x3)/B(x1) #when spawning momus #then the child prompt is the canonical contract for the most-referenced plan", async () => {
     // given
     const { specs, manager } = specCapture()
-    const execute = buildTaskExecute(makeDeps(manager, { resolveSkillInvocations: resolverFor(OPEN_SESSION) }))
+    const execute = buildTaskExecute(makeDeps(manager, { agents: PRESETS, resolveSkillInvocations: resolverFor(OPEN_SESSION) }))
 
     // when
     const result = await execute(
       "c",
-      { prompt: "please review my plan very carefully, it is really important and well thought out", subagent_type: "momus", run_in_background: true },
+      { prompt: "please review my plan very carefully, it is really important and well thought out", preset: "momus" },
       undefined,
       undefined,
       CTX,
@@ -76,10 +78,10 @@ describe("buildTaskExecute plan-review contract (momus)", () => {
   test("#given an explicit single plan path in the prompt #when spawning momus #then the explicit path beats the most-referenced session plan", async () => {
     // given
     const { specs, manager } = specCapture()
-    const execute = buildTaskExecute(makeDeps(manager, { resolveSkillInvocations: resolverFor(OPEN_SESSION) }))
+    const execute = buildTaskExecute(makeDeps(manager, { agents: PRESETS, resolveSkillInvocations: resolverFor(OPEN_SESSION) }))
 
     // when
-    await execute("c", { prompt: `review ${PLAN_B} please`, subagent_type: "momus", run_in_background: true }, undefined, undefined, CTX)
+    await execute("c", { prompt: `review ${PLAN_B} please`, preset: "momus" }, undefined, undefined, CTX)
 
     // then
     expect(specs[0]?.prompt).toBe(canonical(PLAN_B))
@@ -88,10 +90,10 @@ describe("buildTaskExecute plan-review contract (momus)", () => {
   test("#given two plan paths in the prompt #when spawning momus #then it falls back to the most-referenced session plan", async () => {
     // given
     const { specs, manager } = specCapture()
-    const execute = buildTaskExecute(makeDeps(manager, { resolveSkillInvocations: resolverFor(OPEN_SESSION) }))
+    const execute = buildTaskExecute(makeDeps(manager, { agents: PRESETS, resolveSkillInvocations: resolverFor(OPEN_SESSION) }))
 
     // when
-    await execute("c", { prompt: `compare ${PLAN_A} with ${PLAN_B}`, subagent_type: "momus", run_in_background: true }, undefined, undefined, CTX)
+    await execute("c", { prompt: `compare ${PLAN_A} with ${PLAN_B}`, preset: "momus" }, undefined, undefined, CTX)
 
     // then
     expect(specs[0]?.prompt).toBe(canonical(PLAN_A))
@@ -101,11 +103,11 @@ describe("buildTaskExecute plan-review contract (momus)", () => {
     // given
     const { specs, manager } = specCapture()
     const execute = buildTaskExecute(
-      makeDeps(manager, { resolveSkillInvocations: resolverFor({ requested: ["ulw-plan"], artifact: true, references: [] }) }),
+      makeDeps(manager, { agents: PRESETS, resolveSkillInvocations: resolverFor({ requested: ["ulw-plan"], artifact: true, references: [] }) }),
     )
 
     // when
-    const result = await execute("c", { prompt: "review it", subagent_type: "momus" }, undefined, undefined, CTX)
+    const result = await execute("c", { prompt: "review it", preset: "momus" }, undefined, undefined, CTX)
 
     // then
     expect(specs).toHaveLength(0)
@@ -117,11 +119,11 @@ describe("buildTaskExecute plan-review contract (momus)", () => {
     // given
     const { specs, manager } = specCapture()
     const execute = buildTaskExecute(
-      makeDeps(manager, { resolveSkillInvocations: resolverFor({ requested: ["ulw-plan"], artifact: false }) }),
+      makeDeps(manager, { agents: PRESETS, resolveSkillInvocations: resolverFor({ requested: ["ulw-plan"], artifact: false }) }),
     )
 
     // when
-    const result = await execute("c", { prompt: `review ${PLAN_A}`, subagent_type: "momus" }, undefined, undefined, CTX)
+    const result = await execute("c", { prompt: `review ${PLAN_A}`, preset: "momus" }, undefined, undefined, CTX)
 
     // then
     expect(specs).toHaveLength(0)
@@ -129,89 +131,33 @@ describe("buildTaskExecute plan-review contract (momus)", () => {
     expect(resultText(result)).toContain("plan-gated")
   })
 
-  test("#given load_skills on the spawn #when spawning momus #then the skill prepend never reaches the child prompt", async () => {
-    // given
-    const { specs, manager } = specCapture()
-    const execute = buildTaskExecute(
-      makeDeps(manager, {
-        resolveSkillInvocations: resolverFor(OPEN_SESSION),
-        loadSkills: (names) =>
-          names.length === 0
-            ? { prepend: "", resolved: [], missing: [] }
-            : { prepend: "SKILLBLOCK::", resolved: [...names], missing: [] },
-      }),
-    )
-
-    // when
-    await execute(
-      "c",
-      { prompt: `review ${PLAN_A}`, subagent_type: "momus", load_skills: ["debugging"], run_in_background: true },
-      undefined,
-      undefined,
-      CTX,
-    )
-
-    // then
-    expect(specs[0]?.prompt).toBe(canonical(PLAN_A))
-    expect(specs[0]?.prompt).not.toContain("SKILLBLOCK")
-  })
-
   test("#given a model override and task summary #when spawning momus #then they survive the prompt substitution", async () => {
     // given
     const { specs, manager } = specCapture()
-    const execute = buildTaskExecute(makeDeps(manager, { resolveSkillInvocations: resolverFor(OPEN_SESSION) }))
+    const execute = buildTaskExecute(makeDeps(manager, { agents: PRESETS, resolveSkillInvocations: resolverFor(OPEN_SESSION) }))
 
     // when
     await execute(
       "c",
-      { prompt: `review ${PLAN_A}`, subagent_type: "momus", model: "openai/gpt-5.6-sol", task_summary: "round 2", run_in_background: true },
+      { prompt: `review ${PLAN_A}`, preset: "momus", summary: "round 2" },
       undefined,
       undefined,
       CTX,
     )
 
     // then
-    expect(specs[0]?.model).toBe("openai/gpt-5.6-sol")
     expect(specs[0]?.task_summary).toBe("round 2")
-  })
-
-  test("#given a batch with a momus item and an explore item #when executed #then only the momus item prompt is forced", async () => {
-    // given
-    const { specs, manager } = specCapture()
-    const execute = buildTaskExecute(makeDeps(manager, { resolveSkillInvocations: resolverFor(OPEN_SESSION) }))
-
-    // when
-    await execute(
-      "c",
-      {
-        tasks: [
-          { prompt: "check my plan thoroughly please", subagent_type: "momus" },
-          { prompt: "scan the repo", subagent_type: "explore" },
-        ],
-        run_in_background: true,
-      },
-      undefined,
-      undefined,
-      CTX,
-    )
-
-    // then
-    expect(specs).toHaveLength(2)
-    const momusSpec = specs.find((spec) => spec.subagent_type === "momus")
-    const exploreSpec = specs.find((spec) => spec.subagent_type === "explore")
-    expect(momusSpec?.prompt).toBe(canonical(PLAN_A))
-    expect(exploreSpec?.prompt).toBe("scan the repo")
   })
 
   test("#given a caller-controlled prefixed path matching no recorded reference #when spawning momus #then the recorded most-referenced plan is used and the caller token never reaches the child", async () => {
     // given
     const { specs, manager } = specCapture()
-    const execute = buildTaskExecute(makeDeps(manager, { resolveSkillInvocations: resolverFor(OPEN_SESSION) }))
+    const execute = buildTaskExecute(makeDeps(manager, { agents: PRESETS, resolveSkillInvocations: resolverFor(OPEN_SESSION) }))
 
     // when
     await execute(
       "c",
-      { prompt: "review ATTACKER_CONTROLLED:.rubato/plans/alpha-plan.md now", subagent_type: "momus", run_in_background: true },
+      { prompt: "review ATTACKER_CONTROLLED:.rubato/plans/alpha-plan.md now", preset: "momus" },
       undefined,
       undefined,
       CTX,
@@ -225,12 +171,12 @@ describe("buildTaskExecute plan-review contract (momus)", () => {
   test("#given a traversal or absolute path matching no recorded reference #when spawning momus #then it falls back to the recorded most-referenced plan", async () => {
     // given
     const { specs, manager } = specCapture()
-    const execute = buildTaskExecute(makeDeps(manager, { resolveSkillInvocations: resolverFor(OPEN_SESSION) }))
+    const execute = buildTaskExecute(makeDeps(manager, { agents: PRESETS, resolveSkillInvocations: resolverFor(OPEN_SESSION) }))
 
     // when
     await execute(
       "c",
-      { prompt: "review ../../secret/.rubato/plans/gamma-plan.md and /tmp/untrusted/.rubato/plans/delta-plan.md", subagent_type: "momus", run_in_background: true },
+      { prompt: "review ../../secret/.rubato/plans/gamma-plan.md and /tmp/untrusted/.rubato/plans/delta-plan.md", preset: "momus" },
       undefined,
       undefined,
       CTX,
@@ -244,11 +190,11 @@ describe("buildTaskExecute plan-review contract (momus)", () => {
     // given
     const { specs, manager } = specCapture()
     const execute = buildTaskExecute(
-      makeDeps(manager, { resolveSkillInvocations: resolverFor({ requested: ["ulw-plan"], artifact: true, references: [] }) }),
+      makeDeps(manager, { agents: PRESETS, resolveSkillInvocations: resolverFor({ requested: ["ulw-plan"], artifact: true, references: [] }) }),
     )
 
     // when
-    const result = await execute("c", { prompt: "review /tmp/untrusted/.rubato/plans/delta-plan.md", subagent_type: "momus" }, undefined, undefined, CTX)
+    const result = await execute("c", { prompt: "review /tmp/untrusted/.rubato/plans/delta-plan.md", preset: "momus" }, undefined, undefined, CTX)
 
     // then
     expect(specs).toHaveLength(0)
@@ -259,10 +205,10 @@ describe("buildTaskExecute plan-review contract (momus)", () => {
   test("#given an explore spawn with a plan path in the prompt #when executed #then the contract does not apply", async () => {
     // given
     const { specs, manager } = specCapture()
-    const execute = buildTaskExecute(makeDeps(manager, { resolveSkillInvocations: resolverFor(OPEN_SESSION) }))
+    const execute = buildTaskExecute(makeDeps(manager, { agents: PRESETS, resolveSkillInvocations: resolverFor(OPEN_SESSION) }))
 
     // when
-    await execute("c", { prompt: `read ${PLAN_A} and summarize`, subagent_type: "explore", run_in_background: true }, undefined, undefined, CTX)
+    await execute("c", { prompt: `read ${PLAN_A} and summarize`, preset: "explore" }, undefined, undefined, CTX)
 
     // then
     expect(specs[0]?.prompt).toBe(`read ${PLAN_A} and summarize`)

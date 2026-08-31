@@ -197,10 +197,9 @@ describe("event-bridge task RPC security and bounds", () => {
     ).resolves.toMatchObject({
       kind: "status",
       snapshot: {
-        final_response: "r".repeat(32_000),
-        final_response_truncated: true,
-        description: "d".repeat(32_000),
-        description_truncated: true,
+        task_id: "st_bounded_259",
+        output: "r".repeat(32_000),
+        output_truncated: true,
       },
     })
   })

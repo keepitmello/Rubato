@@ -7,6 +7,8 @@ import type { ExtensionAPI } from "@code-yeongyu/senpi"
 import { TeamModeConfigSchema } from "@rubato/team-core/config"
 import { sendMessage } from "@rubato/team-core/team-mailbox"
 
+import { TEAM_BOARD_TOOL_NAMES } from "@rubato/team-core/team-tasklist"
+
 import registerMemberExtension from "./index"
 
 const TEAM_RUN_ID = "77777777-7777-4777-8777-777777777777"
@@ -73,7 +75,7 @@ describe("member extension lifecycle", () => {
     try {
       await registerMemberExtension(api)
       expect(injected).toEqual([])
-      expect(toolNames).toEqual(["task_send"])
+      expect(toolNames).toEqual(["team_send", ...TEAM_BOARD_TOOL_NAMES])
 
       loading = false
       await dispatch(handlers, "session_start")
