@@ -36,9 +36,6 @@ export function buildCompletionDetails(record: TaskRecord, options: BuildDetails
     final_response: finalResponse.text,
     ...(finalResponse.file === undefined ? {} : { final_response_file: finalResponse.file }),
     continuation_hint: continuationHint(record),
-    ...(record.owner?.kind === "dag"
-      ? { dag: { run_id: record.owner.runId, node_id: record.owner.nodeId } }
-      : {}),
   }
   return tokens === undefined ? base : { ...base, tokens }
 }

@@ -8,7 +8,6 @@ import {
 import { parseTaskId } from "../state/id"
 import {
   parseNotification,
-  parseOptionalOwner,
   parseOptionalPendingSteering,
   parseOptionalResolvedModel,
   parseOptionalResolvedModelArray,
@@ -48,7 +47,6 @@ export function parseTaskRecord(value: unknown, path: string, warnings?: string[
   const fallbackAttempts = parseOptionalResolvedModelArray(value, "fallback_attempts")
   const resolvedModel = parseOptionalResolvedModel(value, "resolved_model")
   const spawnSpec = parseOptionalSpawnSpec(value)
-  const owner = parseOptionalOwner(value)
   const pendingSteering = parseOptionalPendingSteering(value, path, warnings)
   const runStats = value["run_stats"] === undefined ? undefined : parseRunStats(value["run_stats"])
   const taskSeq = readOptionalNumber(value, "task_seq")
@@ -80,7 +78,6 @@ export function parseTaskRecord(value: unknown, path: string, warnings?: string[
     ...(fallbackAttempts === undefined ? {} : { fallback_attempts: fallbackAttempts }),
     ...(resolvedModel === undefined ? {} : { resolved_model: resolvedModel }),
     ...(spawnSpec === undefined ? {} : { spawn_spec: spawnSpec }),
-    ...(owner === undefined ? {} : { owner }),
     ...(pendingSteering !== undefined && pendingSteering.length > 0 ? { pending_steering: pendingSteering } : {}),
     ...(pid === undefined ? {} : { pid }),
     ...(hostPid === undefined ? {} : { host_pid: hostPid }),
