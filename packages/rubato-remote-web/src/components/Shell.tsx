@@ -1,76 +1,193 @@
-import { Block, Glass, Navbar, NavbarBackLink, Page, Preloader, Sheet as KonstaSheet } from "konsta/react"
-import { useEffect, useId, useRef, type ReactNode } from "react"
+import { Block, Glass, Navbar, Page, Preloader, Sheet as KonstaSheet } from "konsta/react"
+import { useEffect, useId, useRef, type MouseEvent, type ReactNode } from "react"
 import { navigate } from "../lib/router"
+import { AppIcon, type AppIconName } from "./Icon"
 
-export function Shell({ title, back, onBack, action, children }: { title: string; back?: string; onBack?: () => void; action?: ReactNode; children: ReactNode }) {
-  return <Page className="app-page">
+export function Shell({
+  title,
+  back,
+  onBack,
+  action,
+  children,
+  className = "",
+}: {
+  title: string
+  back?: string
+  onBack?: () => void
+  action?: ReactNode
+  children: ReactNode
+  className?: string
+}) {
+  const goBack = (event: MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    ;(onBack ?? (() => navigate(back!)))()
+  }
+
+  return <Page className={`app-page ${className}`.trim()}>
     <Navbar
-      title={title}
-      {...(back || onBack ? { left: <NavbarBackLink component="button" text="뒤로" showText onClick={(event) => { event.preventDefault(); (onBack ?? (() => navigate(back!)))() }} aria-label="뒤로 가기" data-sheet-focus-fallback /> } : {})}
-      {...(action ? { right: action } : {})}
+      className="app-navbar"
+      title={<span className="navbar-title">{title}</span>}
+      {...(back || onBack ? {
+        left: <button className="navbar-button navbar-back" type="button" onClick={goBack} aria-label="뒤로 가기" data-sheet-focus-fallback>
+          <AppIcon name="back" size={22} />
+          <span>뒤로</span>
+        </button>,
+      } : {})}
+      {...(action ? { right: <div className="navbar-action">{action}</div> } : {})}
     />
     {children}
   </Page>
 }
 
-export function StateBanner({ kind = "offline", children }: { kind?: "offline" | "error"; children: ReactNode }) {
-  return <div className={`state-banner ${kind === "error" ? "error" : ""}`} role={kind === "error" ? "alert" : "status"}>{children}</div>
+export function StateBanner({ kind = "offline", children }: { kind?: "offline" | "error" | "notice"; children: ReactNode }) {
+  return <div className={`state-banner state-banner-${kind}`} role={kind === "error" ? "alert" : "status"}>
+    <span className="state-banner-icon" aria-hidden="true"><AppIcon name={kind === "error" ? "warning" : kind === "offline" ? "offline" : "refresh"} size={17} /></span>
+    <span>{children}</span>
+  </div>
 }
 
 let openSheetCount = 0
 let sheetReturnFocus: HTMLElement | null = null
 
-export function Sheet({ title, onClose, returnFocus, hideHandle = false, closeText, children }: { title: string; onClose: () => void; returnFocus?: HTMLElement | null; hideHandle?: boolean; closeText?: string; children: ReactNode }) {
+export function Sheet({
+  title,
+  onClose,
+  returnFocus,
+  hideHandle = false,
+  closeText,
+  children,
+  description,
+}: {
+  title: string
+  onClose: () => void
+  returnFocus?: HTMLElement | null
+  hideHandle?: boolean
+  closeText?: string
+  children: ReactNode
+  description?: string
+}) {
   const overlay = useRef<HTMLDivElement>(null)
   const closeButton = useRef<HTMLButtonElement>(null)
   const onCloseRef = useRef(onClose)
   const titleId = useId()
+  const descriptionId = useId()
   onCloseRef.current = onClose
+
   useEffect(() => {
     const active = document.activeElement as HTMLElement | null
     if (returnFocus?.isConnected) sheetReturnFocus = returnFocus
     else if (openSheetCount === 0 && active && active !== document.body && !active.closest('[role="dialog"]')) sheetReturnFocus = active
     else if (openSheetCount === 0 && !active?.closest('[role="dialog"]')) sheetReturnFocus = null
     openSheetCount += 1
+
     const layer = overlay.current
-    const siblings = layer?.parentElement ? [...layer.parentElement.children].filter((element) => element !== layer) as HTMLElement[] : []
-    const previousStates = siblings.map((element) => ({ element, inert: element.inert, ariaHidden: element.getAttribute("aria-hidden") }))
-    for (const element of siblings) { element.inert = true; element.setAttribute("aria-hidden", "true") }
+    const siblings = layer?.parentElement
+      ? [...layer.parentElement.children].filter((element) => element !== layer) as HTMLElement[]
+      : []
+    const previousStates = siblings.map((element) => ({
+      element,
+      inert: element.inert,
+      ariaHidden: element.getAttribute("aria-hidden"),
+    }))
+    for (const element of siblings) {
+      element.inert = true
+      element.setAttribute("aria-hidden", "true")
+    }
+
     closeButton.current?.focus()
     const keyboard = (event: KeyboardEvent) => {
-      if (event.key === "Escape") { event.preventDefault(); onCloseRef.current(); return }
+      if (event.key === "Escape") {
+        event.preventDefault()
+        onCloseRef.current()
+        return
+      }
       if (event.key !== "Tab" || !layer) return
-      const focusable = [...layer.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [href], [tabindex]:not([tabindex="-1"])')]
-      if (focusable.length === 0) { event.preventDefault(); return }
-      const first = focusable[0]; const last = focusable.at(-1)!
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+      const focusable = [...layer.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+      )]
+      if (focusable.length === 0) {
+        event.preventDefault()
+        return
+      }
+      const first = focusable[0]
+      const last = focusable.at(-1)!
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
     }
     addEventListener("keydown", keyboard)
+
     return () => {
       removeEventListener("keydown", keyboard)
-      for (const state of previousStates) { state.element.inert = state.inert; if (state.ariaHidden === null) state.element.removeAttribute("aria-hidden"); else state.element.setAttribute("aria-hidden", state.ariaHidden) }
+      for (const state of previousStates) {
+        state.element.inert = state.inert
+        if (state.ariaHidden === null) state.element.removeAttribute("aria-hidden")
+        else state.element.setAttribute("aria-hidden", state.ariaHidden)
+      }
       openSheetCount -= 1
       queueMicrotask(() => {
         if (openSheetCount !== 0) return
         const fallback = document.querySelector<HTMLElement>("[data-sheet-focus-fallback]")
-          ?? [...document.querySelectorAll<HTMLElement>('button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])')].find((element) => !element.closest('[role="dialog"]') && !element.closest('[inert]'))
+          ?? [...document.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+          )].find((element) => !element.closest('[role="dialog"]') && !element.closest('[inert]'))
         const target = sheetReturnFocus?.isConnected ? sheetReturnFocus : fallback
         target?.focus()
       })
     }
   }, [])
+
   return <div ref={overlay} className="sheet-root" role="presentation">
-    <KonstaSheet opened backdrop onBackdropClick={onClose} className="native-sheet" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+    <KonstaSheet
+      opened
+      backdrop
+      onBackdropClick={onClose}
+      className="native-sheet"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      {...(description ? { "aria-describedby": descriptionId } : {})}
+    >
       <Glass className="sheet-chrome">
         {hideHandle ? null : <div className="sheet-handle" aria-hidden="true" />}
-        <div className="row spread"><span aria-hidden="true" style={{ width: 44 }} /><h2 className="sheet-title" id={titleId}>{title}</h2><button ref={closeButton} className={closeText ? "sheet-close-text" : "icon-button"} aria-label={`${title} 닫기`} onClick={onClose}>{closeText ?? "×"}</button></div>
+        <div className="sheet-heading-row">
+          <span className="sheet-heading-spacer" aria-hidden="true" />
+          <div className="sheet-heading-copy">
+            <h2 className="sheet-title" id={titleId}>{title}</h2>
+            {description ? <p className="sheet-description" id={descriptionId}>{description}</p> : null}
+          </div>
+          <button
+            ref={closeButton}
+            className={closeText ? "sheet-close-text" : "icon-button sheet-close"}
+            type="button"
+            aria-label={`${title} 닫기`}
+            onClick={onClose}
+          >
+            {closeText ?? <AppIcon name="close" size={20} />}
+          </button>
+        </div>
       </Glass>
-      {children}
+      <div className="sheet-content">{children}</div>
     </KonstaSheet>
   </div>
 }
 
-export function LoadingCards() {
-  return <Block className="loading-block" aria-busy="true" aria-label="세션을 불러오는 중"><Preloader /></Block>
+export function LoadingCards({ label = "세션을 불러오는 중" }: { label?: string }) {
+  return <Block className="loading-block" aria-busy="true" aria-label={label}>
+    <Preloader />
+    <span>{label}</span>
+  </Block>
+}
+
+export function EmptyState({ icon, title, detail, action }: { icon: AppIconName; title: string; detail: string; action?: ReactNode }) {
+  return <div className="empty-state surface">
+    <span className="empty-state-icon" aria-hidden="true"><AppIcon name={icon} size={27} /></span>
+    <strong>{title}</strong>
+    <p>{detail}</p>
+    {action ? <div className="empty-state-action">{action}</div> : null}
+  </div>
 }
