@@ -94,7 +94,7 @@ function registerLspFlags(pi: SenpiExtensionAPI): void {
 	});
 	pi.registerFlag(LSP_POST_EDIT_DIAGNOSTICS_ENABLED_FLAG, {
 		type: "boolean",
-		default: true,
+		default: false,
 		description: "Enable Rubato post-edit LSP diagnostics.",
 	});
 }
