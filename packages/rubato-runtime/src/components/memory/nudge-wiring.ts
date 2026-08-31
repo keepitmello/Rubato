@@ -146,7 +146,8 @@ export function createMemoryNudgeWiring(options: MemoryNudgeWiringOptions): Memo
         : parseTurn(lastSave.trailers["Rubato-Turn"]) ?? state.sessionBaselineTurns
       const pendingTurn = [...pendingInputs.values()].some((pendingSessionId) => pendingSessionId === sessionId) ? 1 : 0
       const turns = state.priorUserTurns + pendingTurn - savedAt
-      return turns >= settings.everyUserTurns ? turns : undefined
+      // Cadence, not a sticky threshold: fire at 10/20/30, not every turn after 10.
+      return turns > 0 && turns % settings.everyUserTurns === 0 ? turns : undefined
     },
 
     provenance(sessionId): MemoryToolProvenance | undefined {

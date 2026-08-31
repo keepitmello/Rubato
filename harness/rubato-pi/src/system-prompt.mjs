@@ -15,7 +15,7 @@ export const TOOL_GUIDELINES = `## Tool Guidelines
 - Use write only for new files or complete rewrites.
 - Use one todo operation at a time; batch it with the real work rather than making a solo todo turn. Reference tasks and phases by their exact content/name.
 - If a step needs more than one tool call, prefer one eval cell that runs independent calls together and returns distilled facts.
-- Record durable facts, preferences, and decisions with the memory tool as you learn them; every change is committed with the reason you provide.
+- Record durable facts, preferences, and decisions with the memory tool as you learn them; every change is committed with the reason you provide. Never let memory bookkeeping replace answering the user's current message.
 - Memory files are markdown with YAML frontmatter; keep each block's description accurate because the memory index surfaces it.
 - Use memory_apply_patch for multi-file or multi-hunk memory edits; prefer the memory tool for single-block changes.
 - Settle workspace-grounded judgments from local evidence. Add Skill(consult) when current external evidence, unfamiliar-domain research, or an independent read can materially change a costly decision, then compare its evidence with the workspace before deciding. Its deterministic Aside REPL path sends one self-contained packet to GPT-5.6 in the configured ChatGPT project and returns evidence for local verification. Choose exactly one explicit quality tier, \`--quality xhigh\` or \`--quality pro\`. Aside's adaptive agent handles UI-drift recovery; the deterministic runner handles normal sends.

@@ -14,6 +14,7 @@ import { FakeExtensionAPI } from "../../../test-support/fake-extension-api"
 import { createMemoryBinding } from "./binding"
 import { createMemoryIdentityContext, type MemoryIdentityContext } from "./context"
 import {
+  MEMORY_COMPACT_PRIORITY_TOKEN,
   MEMORY_NUDGE_METADATA_TOKEN,
   MEMORY_PRESSURE_METADATA_TOKEN,
   MEMORY_PROMPT_TEMPLATE,
@@ -279,7 +280,7 @@ describe("createMemoryPromptHandler", () => {
       "BASE PROMPT",
       "",
       `<!-- senpi-memory:${IDENTITY}:begin -->`,
-      "Reminder: <projection> holds local paths of memory projections. <memory> is your persistent memory across conversations. Consult it BEFORE asking the user anything it may already answer. Save durable facts, preferences, decisions, and corrections with the memory tools THE MOMENT they emerge. Route facts about a person to their record under people/; the primary human's card is people/human/card.md, or system/human.md in a repository that still carries that older file.",
+      "Reminder: <projection> holds local paths of memory projections. <memory> is your persistent memory across conversations. Consult it BEFORE asking the user anything it may already answer. Save durable facts, preferences, decisions, and corrections with the memory tools when they emerge — but never instead of answering a direct user question or request. Route facts about a person to their record under people/; the primary human's card is people/human/card.md, or system/human.md in a repository that still carries that older file.",
       "",
       "<self>",
       "<projection>$MEMORY_DIR/system/persona.md</projection>",
@@ -337,6 +338,35 @@ describe("createMemoryPromptHandler", () => {
     expect(result?.systemPrompt).not.toContain(MEMORY_NUDGE_METADATA_TOKEN)
     expect(result?.message?.content).toContain(MEMORY_NUDGE_METADATA_TOKEN)
     expect(result?.message?.content).toMatch(/- 2 user turns since/)
+    expect(result?.message?.content).toContain("answer or act on it first")
+    expect(result?.message?.content).not.toContain("Save durable facts now")
+  }, 30_000)
+
+  test("#given a pending compact-priority notice #when before_agent_start compiles #then the late message leads with the answer-first guard once", async () => {
+    // given
+    const { repo, context } = await fixture()
+    let pending = true
+    const pi = new FakeExtensionAPI()
+    pi.on("before_agent_start", createMemoryPromptHandler({
+      resolveContext: () => context,
+      createRepo: () => repo,
+      resolveCompactPriorityNotice: () => {
+        if (!pending) return false
+        pending = false
+        return true
+      },
+    }))
+
+    // when
+    const first = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1", 1))
+    const second = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1", 2))
+
+    // then
+    expect(first?.message?.content).toContain(MEMORY_COMPACT_PRIORITY_TOKEN)
+    expect(first?.message?.content).toContain("latest user message is the primary task")
+    expect(first?.systemPrompt).not.toContain(MEMORY_COMPACT_PRIORITY_TOKEN)
+    // second turn: compact guard consumed; recall already sent on first, so no message
+    expect(second?.message).toBeUndefined()
   }, 30_000)
 
   test("#given a reflection soul notice #when before_agent_start compiles #then the late message carries the soul token and short sha", async () => {

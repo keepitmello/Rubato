@@ -6,6 +6,8 @@ import type { MemorySessionBinding } from "./binding"
 
 export interface MemoryPendingLedger {
   pendingCompaction: boolean
+  /** One-shot: next before_agent_start should inject the post-compact answer-first guard. */
+  pendingCompactPriorityNotice: boolean
   configRestartNotified: boolean
 }
 
@@ -32,7 +34,7 @@ export function createMemoryIdentityContext(input: {
     identity: input.identity,
     identityPaths: input.identityPaths,
     binding: input.binding,
-    ledger: { pendingCompaction: false, configRestartNotified: false },
+    ledger: { pendingCompaction: false, pendingCompactPriorityNotice: false, configRestartNotified: false },
     get repoAccess(): MemoryRepoAccess {
       repoAccess ??= {
         path: input.identityPaths.repo,

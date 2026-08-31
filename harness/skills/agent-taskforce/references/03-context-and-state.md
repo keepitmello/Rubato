@@ -25,6 +25,8 @@ Save long investigations, benchmarks, reproduction logs, and design analyses as 
 
 Do not rely on compaction alone. Make work resumable through the mission, tests, changed-files lists, and decision artifacts. If a teammate session is lost, spawn a fresh owner that reads the canonical state rather than pretending to recover the exact old context.
 
+After your context was compacted, the **latest user message is still the primary task**. Answer or act on it before status recovery, memory saves, or team reconciliation. Do not open with a "context restored" status report unless the user asked for status. Reread canonical sources as needed, but that reread must not replace the current turn's answer.
+
 At a real handoff or session end, leave:
 
 - completed work with evidence
