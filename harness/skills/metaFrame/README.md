@@ -1,6 +1,6 @@
-# Open Frame v3
+# metaFrame v3
 
-Open Frame is a manually invoked Claude Code skill for opening a small amount of problem space before committing to a frame. It is meant to improve the use of capability already present in the model, not to replace the model with a decision system.
+metaFrame is a manually invoked Claude Code skill for opening a small amount of problem space before committing to a frame. It is meant to improve the use of capability already present in the model, not to replace the model with a decision system.
 
 ## What this version keeps
 
