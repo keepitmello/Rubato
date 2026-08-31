@@ -29,7 +29,10 @@ credential은 저장소에 복사하지 않는다. 각 provider의 기존 로그
 rubato       # 기본 세션
 rubato-pi    # rubato와 같은 실행기
 rubato-soul  # 역할별 프롬프트 없이 SOUL.md만 사용
+rubato aside-cursor --install  # login launchd + KeepAlive (127.0.0.1:18788)
 ```
+
+Aside는 [aside-cursor.md](aside-cursor.md) 하나다.
 
 Rubato는 작업을 리드, 독립 작업자, 검증자로 나누고 각 작업에 맞는 모델을 선택한다.
 대화에는 다음 행동을 바꾸는 근거만 남기고, 오래 쓸 정보는 기억 저장소로 분리한다.
