@@ -81,7 +81,7 @@ export async function prepareReflectionSpawn(input: PrepareReflectionSpawnInput)
     ...(dreamTarget === undefined ? {} : { dreamTarget }),
   }
   const env: NodeJS.ProcessEnv = {
-    ...withoutTuiLoaderHooks(input.env),
+    ...input.env,
     MEMORY_DIR: input.worktree.dir,
     TRANSCRIPT_PATH: transcript,
     ...(dreamPaths === undefined ? {} : {
@@ -199,7 +199,7 @@ export async function prepareFactsSpawn(input: PrepareFactsSpawnInput): Promise<
   await writeFile(payload, serializeFactsPayload(input.payload), { encoding: "utf8", mode: 0o600 })
   await chmod(payload, 0o400)
   const env: NodeJS.ProcessEnv = {
-    ...withoutTuiLoaderHooks(input.env),
+    ...input.env,
     FACTS_PAYLOAD_PATH: payload,
     FACTS_EXTRACTION_PATH: extraction,
     SENPI_MEMORY_FACTS: "1",
@@ -282,25 +282,13 @@ async function copyJsonOrEmpty(source: string, destination: string): Promise<voi
   await writeFile(destination, content, "utf8")
 }
 
-// The parent TUI injects `--import=...no-changelog-register` so senpi's interactive-mode.js
-// can be patched in-process. A detached print-mode child inherits that NODE_OPTIONS and then
-// often resolves a different senpi than the parent (PATH's brew install vs the repo pin).
-// The hook's replaceOnce then throws `busy enter transform drift` before the child can run.
-// Strip only that loader token; leave any other NODE_OPTIONS the host actually needs.
-export function withoutTuiLoaderHooks(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const prev = env.NODE_OPTIONS
-  if (prev === undefined) return env
-  const kept = prev
-    .split(/\s+/)
-    .filter((token) => token.length > 0 && !token.includes("no-changelog-register"))
-    .join(" ")
-  if (kept.length === 0) {
-    const next = { ...env }
-    delete next.NODE_OPTIONS
-    return next
-  }
-  return { ...env, NODE_OPTIONS: kept }
-}
+// 메모리 자식도 `--import=...no-changelog-register` 훅을 그대로 물려받는다.
+// 벤더 패치가 사라진 뒤로는 이 훅이 곰 행동(compaction 복구, watchdog,
+// auth 원자 쓰기)을 싣는 유일한 길이라, 뗄면 자식만 순정 행동으로 데굴러진다.
+// 과거에 있던 strip(withoutTuiLoaderHooks)은 PATH 의 다른 senpi 를 발견하면
+// replaceOnce 가 throw 해 자식이 죽던 시절의 방어였다. 지금 로더는 모든 주입을
+// applyTransform 으로 감싸 드리프트를 경고로 삼키므로, 외래 senpi 에서도
+// 죽지 않고 변환만 조용히 비활성화된다.
 
 function errorCode(error: unknown): string | undefined {
   if (!(error instanceof Error) || !("code" in error)) return undefined
