@@ -81,7 +81,11 @@ class AsideReplConsultTest(unittest.TestCase):
             consult_id="abc123",
             response_timeout_ms=1000,
         )
-        self.assertIn('name: composerLabel, exact: true', shopping)
+        self.assertIn(
+            """#prompt-textarea[contenteditable="true"][aria-label="' + composerLabel + '"]""",
+            shopping,
+        )
+        self.assertNotIn(".and(", shopping)
         self.assertIn("Shopping에서 새 채팅", shopping)
         self.assertNotIn("Work에서 새 채팅", shopping)
         self.assertIn("project composer not visible", shopping)
@@ -126,6 +130,7 @@ class AsideReplConsultTest(unittest.TestCase):
         self.assertIn("setInputFiles([{", pro)
         self.assertNotIn("setInputFiles(packetPath)", pro)
         self.assertIn('#prompt-textarea[contenteditable="true"]', pro)
+        self.assertNotIn(".and(", pro)
         self.assertIn("Work에서 새 채팅", pro)
         self.assertIn("project composer not visible", pro)
         self.assertIn("composer.press('Meta+A')", pro)
