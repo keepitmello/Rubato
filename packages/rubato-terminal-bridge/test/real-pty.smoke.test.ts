@@ -40,7 +40,20 @@ runPinned("real Bun PTY helper starts the pinned zmx attach client and reports i
       if (listed.exitCode === 0 && listed.stdout.toString().split(/\r?\n/).includes(name)) break
       await Bun.sleep(20)
     }
-    const frames = await runHelper(zmxBinary, name)
+    const framesPromise = runHelper(zmxBinary, name)
+    let attached = false
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const listed = Bun.spawnSync([zmxBinary, "list"])
+      const line = listed.stdout.toString().split(/\r?\n/).find((entry) => entry.includes(`name=${name}`))
+      if (listed.exitCode === 0 && line?.includes("clients=1")) {
+        attached = true
+        break
+      }
+      await Bun.sleep(20)
+    }
+    Bun.spawnSync([zmxBinary, "kill", name, "--force"])
+    const frames = await framesPromise
+    expect(attached).toBe(true)
     expect(frames.some((frame) => frame.type === "exit" || frame.type === "error")).toBe(true)
   } finally {
     leader.kill("SIGTERM")
