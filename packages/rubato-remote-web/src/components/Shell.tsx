@@ -1,16 +1,14 @@
-import { Glass, Page } from "konsta/react"
+import { Block, Glass, Navbar, NavbarBackLink, Page, Preloader, Sheet as KonstaSheet } from "konsta/react"
 import { useEffect, useId, useRef, type ReactNode } from "react"
 import { navigate } from "../lib/router"
 
 export function Shell({ title, back, onBack, action, children }: { title: string; back?: string; onBack?: () => void; action?: ReactNode; children: ReactNode }) {
   return <Page className="app-page">
-    <Glass className="glass-nav">
-      <header className="nav-inner">
-        <div className="nav-side">{back || onBack ? <button className="text-button" data-sheet-focus-fallback onClick={onBack ?? (() => navigate(back!))} aria-label="뒤로 가기">‹ 뒤로</button> : null}</div>
-        <div className="nav-title">{title}</div>
-        <div className="nav-side">{action}</div>
-      </header>
-    </Glass>
+    <Navbar
+      title={title}
+      {...(back || onBack ? { left: <NavbarBackLink component="button" text="뒤로" showText onClick={(event) => { event.preventDefault(); (onBack ?? (() => navigate(back!)))() }} aria-label="뒤로 가기" data-sheet-focus-fallback /> } : {})}
+      {...(action ? { right: action } : {})}
+    />
     {children}
   </Page>
 }
@@ -62,15 +60,17 @@ export function Sheet({ title, onClose, returnFocus, children }: { title: string
       })
     }
   }, [])
-  return <div ref={overlay} className="overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
-    <section className="sheet" role="dialog" aria-modal="true" aria-labelledby={titleId}>
-      <div className="sheet-handle" aria-hidden="true" />
-      <div className="row spread"><span aria-hidden="true" style={{ width: 44 }} /><h2 className="sheet-title" id={titleId}>{title}</h2><button ref={closeButton} className="icon-button" aria-label={`${title} 닫기`} onClick={onClose}>×</button></div>
+  return <div ref={overlay} className="sheet-root" role="presentation">
+    <KonstaSheet opened backdrop onBackdropClick={onClose} className="native-sheet" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <Glass className="sheet-chrome">
+        <div className="sheet-handle" aria-hidden="true" />
+        <div className="row spread"><span aria-hidden="true" style={{ width: 44 }} /><h2 className="sheet-title" id={titleId}>{title}</h2><button ref={closeButton} className="icon-button" aria-label={`${title} 닫기`} onClick={onClose}>×</button></div>
+      </Glass>
       {children}
-    </section>
+    </KonstaSheet>
   </div>
 }
 
 export function LoadingCards() {
-  return <div aria-busy="true" aria-label="세션을 불러오는 중"><div className="skeleton" /><div className="skeleton" /></div>
+  return <Block className="loading-block" aria-busy="true" aria-label="세션을 불러오는 중"><Preloader /></Block>
 }

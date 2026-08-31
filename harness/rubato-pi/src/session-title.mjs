@@ -87,5 +87,7 @@ export function shouldRetitle({ current, proposed, locked } = {}) {
 }
 
 export function tabTitle(name, cwdBasename) {
-  return name || cwdBasename || "";
+  const explicit = String(name ?? "").trim();
+  const folder = String(cwdBasename ?? "").trim();
+  return explicit || folder || "";
 }

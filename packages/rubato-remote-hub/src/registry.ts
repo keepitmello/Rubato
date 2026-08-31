@@ -1,9 +1,12 @@
+import { basename } from "node:path"
 import type { LiveSessionId, LiveSessionSummary, ZmxName } from "@rubato/remote-protocol"
 
 export interface DiscoveredProcess {
   readonly liveSessionId: LiveSessionId
   readonly zmxName: ZmxName
   readonly pid?: number
+  readonly cwd?: string
+  readonly name?: string
   readonly labels: Readonly<Record<string, string>>
 }
 
@@ -33,6 +36,13 @@ interface RegistryEntry {
   summary: LiveSessionSummary
   surfaceInstanceId?: string
   lastHeartbeatAt?: number
+}
+
+export function liveSessionTitle(name?: string, cwd?: string, fallback = ""): string {
+  const explicit = name?.trim() ?? ""
+  const folder = basename(cwd ?? "").trim()
+  const usableFolder = folder && folder !== "/" && folder !== "." ? folder : ""
+  return explicit || usableFolder || fallback
 }
 
 export class LiveRegistry {
@@ -76,6 +86,7 @@ export class LiveRegistry {
             ...(process.pid === undefined ? (old.pid === undefined ? {} : { pid: old.pid }) : { pid: process.pid }),
             managed: true,
             lifecycle: "degraded",
+            title: liveSessionTitle(old.title, old.cwd),
           }
         : degradedSummary(this.#hostId, process)
       rebuilt.set(process.liveSessionId, { summary })
@@ -99,7 +110,11 @@ export class LiveRegistry {
     if (existing?.summary.zmxName && surface.summary.zmxName !== existing.summary.zmxName) {
       throw new Error("surface zmx identity mismatch")
     }
-    const summary: LiveSessionSummary = { ...surface.summary, lifecycle: "ready" }
+    const summary: LiveSessionSummary = {
+      ...surface.summary,
+      lifecycle: "ready",
+      title: liveSessionTitle(surface.summary.title, surface.summary.cwd),
+    }
     this.#entries.set(summary.liveSessionId, {
       summary,
       surfaceInstanceId: surface.surfaceInstanceId,
@@ -136,6 +151,7 @@ export class LiveRegistry {
 }
 
 function degradedSummary(hostId: string, process: DiscoveredProcess): LiveSessionSummary {
+  const cwd = process.cwd ?? ""
   return {
     schemaVersion: 1,
     hostId: hostId as LiveSessionSummary["hostId"],
@@ -146,8 +162,8 @@ function degradedSummary(hostId: string, process: DiscoveredProcess): LiveSessio
     lifecycle: "degraded",
     execution: "idle",
     attention: false,
-    title: "Rubato",
-    cwd: "",
+    title: liveSessionTitle(process.name, cwd, process.zmxName),
+    cwd,
     createdAt: new Date().toISOString(),
     pi: {},
     model: { label: "Unknown" },

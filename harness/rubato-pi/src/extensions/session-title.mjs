@@ -64,17 +64,46 @@ export async function refreshSessionTitle(pi, ctx, state) {
   }
 
   state.lastAuto = proposed;
-  pi.setSessionName?.(proposed);
-  pi.appendEntry?.(TITLE_ENTRY, { name: proposed });
-  paintTabTitle(ctx, proposed);
+  state.applyingAuto = true;
+  try {
+    pi.setSessionName?.(proposed);
+    pi.appendEntry?.(TITLE_ENTRY, { name: proposed });
+    paintTabTitle(ctx, proposed);
+  } finally {
+    state.applyingAuto = false;
+  }
 }
 
 function isNameCommand(text) {
   return /^\/name\s+\S/.test(String(text ?? "").trim());
 }
 
+function lockExplicitTitle(pi, state) {
+  if (state.locked) return;
+  state.locked = true;
+  pi.appendEntry?.(TITLE_ENTRY, { locked: true });
+}
+
+function installRenameLock(pi, state) {
+  const original = pi.getInteractiveControl;
+  if (typeof original !== "function") return;
+  const wrapped = new WeakSet();
+  pi.getInteractiveControl = () => {
+    const control = original.call(pi);
+    if (!control || wrapped.has(control) || typeof control.setSessionName !== "function") return control;
+    const setSessionName = control.setSessionName.bind(control);
+    control.setSessionName = (name) => {
+      if (!state.applyingAuto) lockExplicitTitle(pi, state);
+      return setSessionName(name);
+    };
+    wrapped.add(control);
+    return control;
+  };
+}
+
 export function installSessionTitle(pi) {
-  const state = { lastAuto: undefined, locked: false, inFlight: false };
+  const state = { lastAuto: undefined, locked: false, inFlight: false, applyingAuto: false };
+  installRenameLock(pi, state);
 
   pi.on("session_start", (_event, ctx) => {
     const entries = ctx.sessionManager?.getEntries?.() ?? [];
@@ -84,10 +113,7 @@ export function installSessionTitle(pi) {
   });
 
   pi.on("input", (event) => {
-    if (isNameCommand(event?.text)) {
-      state.locked = true;
-      pi.appendEntry?.(TITLE_ENTRY, { locked: true });
-    }
+    if (isNameCommand(event?.text)) lockExplicitTitle(pi, state);
     return { action: "continue" };
   });
 

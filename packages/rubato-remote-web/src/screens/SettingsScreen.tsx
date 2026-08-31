@@ -1,3 +1,4 @@
+import { Block, BlockTitle, Button, Card, List, ListItem, Range, Toggle } from "konsta/react"
 import { useEffect, useState } from "react"
 import { pairHost, subscribePush, synchronizePushProfile, unsubscribePush } from "../lib/api"
 import { hasPairingLink, parsePairingLink } from "../lib/pairing-link"
@@ -77,29 +78,43 @@ export function SettingsScreen() {
     } catch (cause) { setMessage(cause instanceof Error ? cause.message : "호스트 목록을 처리하지 못했어요.") }
   }
   return <Shell title="설정" back="/">
-    <main className="content">
-      {message ? <div role="status" className="surface" style={{ padding: 14, marginBottom: 14 }}>{message}</div> : null}
-      <div className="section-title">연결된 Mac</div>
-      <div className="surface">{hosts.length > 0 ? hosts.map((host) => <div className="settings-row row spread" key={host.hostId}><div><strong>{host.displayName}</strong><div className="meta">{host.ownerLogin}</div></div><button className="text-button" disabled={pushBusy} onClick={() => void disconnect(host)}>연결 해제</button></div>) : <div className="empty"><strong>연결된 Mac이 없어요.</strong><p className="meta">Mac에서 만든 10분짜리 연결 정보를 사용하세요.</p></div>}</div>
-      <button className="primary" style={{ marginTop: 12 }} onClick={() => setPairing(true)}>Mac 연결</button>
+    <main className="page-body page-body-flush">
+      {message ? <Card role="status">{message}</Card> : null}
+      <BlockTitle>연결된 Mac</BlockTitle>
+      <List strongIos insetIos>
+        {hosts.length > 0 ? hosts.map((host) => <ListItem key={host.hostId} title={host.displayName} footer={host.ownerLogin} after={<button className="text-button" disabled={pushBusy} onClick={() => void disconnect(host)}>연결 해제</button>} />) : <ListItem title="연결된 Mac이 없어요." text="Mac에서 만든 10분짜리 연결 정보를 사용하세요." />}
+      </List>
+      <Block><Button large onClick={() => setPairing(true)}>Mac 연결</Button></Block>
 
-      <div className="section-title">알림</div>
-      <div className="surface"><div className="settings-row row spread"><div><strong>작업 알림</strong><div className="meta">완료되거나 확인이 필요할 때</div></div><button className="secondary" disabled={pushBusy} onClick={() => void requestPush(false)}>{preferences.pushEnabled ? "등록됨" : "알림 켜기"}</button></div>{preferences.pushEnabled ? <><div className="settings-row row spread"><span><strong>구독 새로 등록</strong><span className="meta" style={{ display: "block" }}>키가 바뀌었거나 알림이 오지 않을 때</span></span><button className="text-button" disabled={pushBusy} onClick={() => void requestPush(true)}>새로 등록</button></div><div className="settings-row row spread"><span><strong>Mac 간 프로필 동기화</strong><span className="meta" style={{ display: "block" }}>연결된 모든 Mac에서 같은 알림 사용</span></span><button className="text-button" disabled={pushBusy || hosts.length < 2} onClick={() => void syncPush()}>동기화</button></div><div className="settings-row row spread"><span><strong>알림 구독 해제</strong><span className="meta" style={{ display: "block" }}>모든 Mac과 이 브라우저에서 제거</span></span><button className="text-button" disabled={pushBusy} onClick={() => void disablePush()}>알림 끄기</button></div></> : null}</div>
+      <BlockTitle>알림</BlockTitle>
+      <List strongIos insetIos>
+        <ListItem title="작업 알림" footer="완료되거나 확인이 필요할 때" after={<Button small outline disabled={pushBusy} onClick={() => void requestPush(false)}>{preferences.pushEnabled ? "등록됨" : "알림 켜기"}</Button>} />
+        {preferences.pushEnabled ? <>
+          <ListItem title="구독 새로 등록" footer="키가 바뀌었거나 알림이 오지 않을 때" after={<button className="text-button" disabled={pushBusy} onClick={() => void requestPush(true)}>새로 등록</button>} />
+          <ListItem title="Mac 간 프로필 동기화" footer="연결된 모든 Mac에서 같은 알림 사용" after={<button className="text-button" disabled={pushBusy || hosts.length < 2} onClick={() => void syncPush()}>동기화</button>} />
+          <ListItem title="알림 구독 해제" footer="모든 Mac과 이 브라우저에서 제거" after={<button className="text-button" disabled={pushBusy} onClick={() => void disablePush()}>알림 끄기</button>} />
+        </> : null}
+      </List>
 
-      <div className="section-title">화면</div>
-      <div className="surface">
-        <label className="settings-row row spread"><span><strong>모양</strong><span className="meta" style={{ display: "block" }}>iPhone 설정을 따르거나 직접 선택</span></span><select className="input" style={{ width: 120 }} value={preferences.darkMode} onChange={(event) => updatePreferences({ darkMode: event.target.value as "system" | "light" | "dark" })}><option value="system">시스템</option><option value="light">밝게</option><option value="dark">어둡게</option></select></label>
-        <label className="settings-row row spread"><span><strong>투명 효과 줄이기</strong><span className="meta" style={{ display: "block" }}>유리 효과 대신 단색 사용</span></span><input className="switch" type="checkbox" checked={preferences.reducedTransparency} onChange={(event) => updatePreferences({ reducedTransparency: event.target.checked })} /></label>
-        <label className="settings-row"><span className="row spread"><strong>터미널 글자 크기</strong><span>{preferences.terminalFontSize}px</span></span><input style={{ width: "100%" }} type="range" min="12" max="22" value={preferences.terminalFontSize} onChange={(event) => updatePreferences({ terminalFontSize: Number(event.target.value) })} /></label>
-      </div>
+      <BlockTitle>화면</BlockTitle>
+      <List strongIos insetIos>
+        <ListItem title="모양" footer="iPhone 설정을 따르거나 직접 선택" after={<select className="input compact-select" value={preferences.darkMode} onChange={(event) => updatePreferences({ darkMode: event.target.value as "system" | "light" | "dark" })} aria-label="모양"><option value="system">시스템</option><option value="light">밝게</option><option value="dark">어둡게</option></select>} />
+        <ListItem title="투명 효과 줄이기" footer="유리 효과 대신 단색 사용" after={<Toggle checked={preferences.reducedTransparency} onChange={() => updatePreferences({ reducedTransparency: !preferences.reducedTransparency })} />} />
+        <ListItem title="터미널 글자 크기" after={`${preferences.terminalFontSize}px`} text={<Range min={12} max={22} value={preferences.terminalFontSize} onChange={(event) => updatePreferences({ terminalFontSize: Number((event.target as HTMLInputElement).value) })} aria-label="터미널 글자 크기" />} />
+      </List>
 
-      <div className="section-title">즐겨찾기</div>
-      <div className="surface">{preferences.favorites.length ? preferences.favorites.map((path) => <div className="settings-row" key={path}><strong>{path.split("/").at(-1)}</strong><div className="meta path">{path}</div></div>) : <div className="empty"><strong>즐겨찾기가 없어요.</strong><p className="meta">새 세션에서 폴더를 길게 눌러 추가할 수 있습니다.</p></div>}</div>
+      <BlockTitle>즐겨찾기</BlockTitle>
+      <List strongIos insetIos>
+        {preferences.favorites.length ? preferences.favorites.map((path) => <ListItem key={path} title={path.split("/").at(-1)} footer={path} />) : <ListItem title="즐겨찾기가 없어요." text="새 세션에서 폴더를 길게 눌러 추가할 수 있습니다." />}
+      </List>
 
-      <div className="section-title">복구와 진단</div>
-      <div className="surface"><button className="choice" onClick={() => setShowTransfer(true)}><strong>홈 호스트 주소 복구</strong><div className="meta">호스트 목록 내보내기 또는 가져오기</div></button><div className="settings-row"><strong>연결 상태</strong><div className="meta">{navigator.onLine ? "네트워크 사용 가능" : "오프라인"} · 프로토콜 버전 1</div></div></div>
+      <BlockTitle>복구와 진단</BlockTitle>
+      <List strongIos insetIos>
+        <ListItem link linkComponent="button" linkProps={{ type: "button" }} title="홈 호스트 주소 복구" footer="호스트 목록 내보내기 또는 가져오기" onClick={() => setShowTransfer(true)} />
+        <ListItem title="연결 상태" footer={`${navigator.onLine ? "네트워크 사용 가능" : "오프라인"} · 프로토콜 버전 1`} />
+      </List>
     </main>
-    {pairing ? <Sheet title="Mac 연결" onClose={() => setPairing(false)}><p className="meta">Mac에서 표시된 HTTPS 주소와 일회용 연결 코드를 확인하세요.</p><label className="field"><span className="field-label">Mac 주소</span><input className="input" inputMode="url" autoCapitalize="none" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="https://my-mac.example.ts.net/rubato/" /></label><label className="field"><span className="field-label">연결 코드</span><input className="input" autoCapitalize="none" value={nonce} onChange={(event) => setNonce(event.target.value)} /></label><button className="primary" disabled={!baseUrl || !nonce} onClick={() => void connect()}>이 Mac 연결</button></Sheet> : null}
-    {showTransfer ? <Sheet title="호스트 목록 복구" onClose={() => setShowTransfer(false)}><label className="field"><span className="field-label">내보낸 호스트 목록</span><textarea className="input" style={{ minHeight: 180 }} value={importText} onChange={(event) => setImportText(event.target.value)} placeholder="내보내기를 누르거나 이전 목록을 붙여 넣으세요." /></label><div className="sheet-actions"><button className="secondary" onClick={() => void transfer("export")}>내보내기</button><button className="primary" disabled={!importText.trim()} onClick={() => void transfer("import")}>가져오기</button></div></Sheet> : null}
+    {pairing ? <Sheet title="Mac 연결" onClose={() => setPairing(false)}><p className="meta">Mac에서 표시된 HTTPS 주소와 일회용 연결 코드를 확인하세요.</p><label className="field"><span className="field-label">Mac 주소</span><input className="input" inputMode="url" autoCapitalize="none" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="https://my-mac.example.ts.net/rubato/" /></label><label className="field"><span className="field-label">연결 코드</span><input className="input" autoCapitalize="none" value={nonce} onChange={(event) => setNonce(event.target.value)} /></label><Button large disabled={!baseUrl || !nonce} onClick={() => void connect()}>이 Mac 연결</Button></Sheet> : null}
+    {showTransfer ? <Sheet title="호스트 목록 복구" onClose={() => setShowTransfer(false)}><label className="field"><span className="field-label">내보낸 호스트 목록</span><textarea className="input" style={{ minHeight: 180 }} value={importText} onChange={(event) => setImportText(event.target.value)} placeholder="내보내기를 누르거나 이전 목록을 붙여 넣으세요." /></label><div className="sheet-actions"><Button large outline onClick={() => void transfer("export")}>내보내기</Button><Button large disabled={!importText.trim()} onClick={() => void transfer("import")}>가져오기</Button></div></Sheet> : null}
   </Shell>
 }
