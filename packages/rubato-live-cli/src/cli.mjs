@@ -1,4 +1,5 @@
 import { HubControlClient, HubLifecycleClient, defaultHubSocketPath } from "./hub-client.mjs";
+import qrTerminal from "qrcode-terminal";
 import { pickLiveSession } from "./picker.mjs";
 import { runBootstrap } from "./bootstrap.mjs";
 import { ZmxAdapter } from "./zmx-adapter.mjs";
@@ -8,6 +9,12 @@ function optionValue(args, index, name) {
   const value = args[index + 1];
   if (!value) throw new Error(`${name} requires a value`);
   return value;
+}
+
+export function renderPairingQr(value) {
+  let rendered = "";
+  qrTerminal.generate(value, { small: true }, (qr) => { rendered = qr; });
+  return rendered;
 }
 
 export function parseNewArguments(args) {
@@ -110,7 +117,8 @@ export async function runCli(args, options = {}) {
     }
     if (subcommand === "add-host") {
       const added = await lifecycle.addHost();
-      stdout.write(`${added.url}\n${added.qrPayload}\n`);
+      const renderQr = options.renderPairingQr ?? renderPairingQr;
+      stdout.write(`${added.url}\n${added.qrPayload}\n${renderQr(added.url)}\nMac 주소: ${added.pairing.baseUrl}\n연결 코드: ${added.pairing.nonce}\n이 QR과 연결 코드는 10분 뒤 만료됩니다.\n`);
       return 0;
     }
     if (subcommand === "doctor") {

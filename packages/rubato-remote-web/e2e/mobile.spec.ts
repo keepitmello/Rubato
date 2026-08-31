@@ -23,12 +23,23 @@ test("one-time pairing URL opens a validated prefilled connection sheet", async 
     expiresAt: "2026-08-31T01:00:00.000Z",
   })).toString("base64url")
   await page.goto(`/rubato/?fixture=1&pair=${payload}`)
-  await expect(page.getByRole("dialog", { name: "Mac 연결" })).toBeVisible()
-  await expect(page.getByLabel("Mac 주소")).toHaveValue("https://hotel-tablet.example.ts.net/rubato/")
-  await expect(page.getByLabel("연결 코드")).toHaveValue("0123456789abcdef0123456789abcdef")
+  await expect(page.getByRole("dialog", { name: "Rubato Mac 연결" })).toBeVisible()
+  await expect(page.getByText("hotel-tablet.example.ts.net", { exact: true })).toBeVisible()
+  await expect(page.getByText("https://hotel-tablet.example.ts.net/rubato/", { exact: true })).toBeVisible()
   await expect(page).not.toHaveURL(/pair=/)
   await page.getByRole("button", { name: "이 Mac 연결" }).click()
   await expect(page.getByRole("button", { name: /Hotel Tablet/ })).toBeVisible()
+})
+
+test("an ordinarily opened web app offers QR camera pairing and manual recovery", async ({ page }) => {
+  await page.goto("/rubato/settings?fixture=1")
+  await page.getByRole("button", { name: "Mac 연결" }).click()
+  await expect(page.getByRole("button", { name: "네, 카메라 열기" })).toBeVisible()
+  await page.getByRole("button", { name: "네, 카메라 열기" }).click()
+  await expect(page.getByLabel("Mac 연결 QR 카메라")).toBeVisible()
+  await page.getByRole("button", { name: "카메라 대신 직접 입력" }).click()
+  await expect(page.getByLabel("Mac 주소")).toBeVisible()
+  await expect(page.getByLabel("연결 코드")).toBeVisible()
 })
 
 test("inventory to conversation, controls, artifacts, offline recovery", async ({ page, context }) => {
