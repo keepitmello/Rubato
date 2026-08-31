@@ -142,7 +142,8 @@ function presentBase(base, fastVariants) {
 export function resolveCursorGrokFastByLevel(model, catalog) {
   const attached = model?.compat?.cursorGrokFastByLevel;
   if (attached && defaultDiscoveredLevel(attached)) return attached;
-  const discovered = discoveredCursorGrokFastByLevel((catalog ?? []).filter(isCursorGrok46FastVariant));
+  const models = Array.isArray(catalog) ? catalog : [];
+  const discovered = discoveredCursorGrokFastByLevel(models.filter(isCursorGrok46FastVariant));
   if (defaultDiscoveredLevel(discovered)) return discovered;
   return CURSOR_GROK_46_FAST_BY_LEVEL;
 }

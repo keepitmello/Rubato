@@ -184,6 +184,17 @@ test("/name locks later auto titles and survives resume", () => {
   assert.equal(lockedRefresh, false);
 });
 
+test("rename lock wrap stays quiet when the captured control is stale after resume", () => {
+  const pi = {
+    on() {},
+    getInteractiveControl() {
+      throw new Error("This extension ctx is stale after session replacement or reload.");
+    },
+  };
+  installSessionTitle(pi);
+  assert.equal(pi.getInteractiveControl(), undefined);
+});
+
 test("session.rename locks later auto titles and survives resume", () => {
   const titles = [];
   const entries = [];
