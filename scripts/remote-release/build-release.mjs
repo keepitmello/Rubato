@@ -61,6 +61,7 @@ export async function buildRelease(options) {
   const terminalModules = join(output, "node_modules")
   await mkdir(terminalModules, { recursive: true })
   await cp(join(repository, "packages", "rubato-terminal-bridge", "node_modules", "node-pty"), join(terminalModules, "node-pty"), { recursive: true, dereference: true })
+  await cp(join(repository, "packages", "rubato-live-cli", "node_modules", "qrcode-terminal"), join(terminalModules, "qrcode-terminal"), { recursive: true, dereference: true })
   await copyTree(join(repository, "packages", "rubato-remote-web", "dist"), join(output, "web"))
   await copyTree(join(repository, "packages", "rubato-live-cli"), join(output, "live-cli"), (source) => !source.includes(`${join("live-cli", "test")}`) && !source.includes("node_modules"))
   await copyTree(join(repository, "scripts", "remote-release"), join(output, "remote-release"), (source) => !source.includes("fixtures") && !source.endsWith(".test.mjs") && !source.endsWith("VERIFICATION.md"))
