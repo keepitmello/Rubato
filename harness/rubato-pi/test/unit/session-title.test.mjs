@@ -55,6 +55,8 @@ test("tab title is the bare name, falling back to the folder", () => {
   assert.equal(tabTitle(undefined, "agent-taskforce"), "agent-taskforce");
   assert.equal(tabTitle("Tab titles", "agent-taskforce"), "Tab titles");
   assert.equal(tabTitle(undefined, undefined), "");
+  assert.equal(tabTitle("Rubato", "agent-taskforce"), "Rubato");
+  assert.equal(tabTitle("rubato", "agent-taskforce"), "rubato");
   assert.equal(buildTitlePrompt(["a", "b"]), "Recent user messages:\n1. a\n2. b");
   assert.equal(lastAutoTitle([{ type: "custom", customType: TITLE_ENTRY, data: { name: "kept" } }]), "kept");
   assert.equal(
@@ -180,6 +182,76 @@ test("/name locks later auto titles and survives resume", () => {
     },
   });
   assert.equal(lockedRefresh, false);
+});
+
+test("session.rename locks later auto titles and survives resume", () => {
+  const titles = [];
+  const entries = [];
+  const names = [];
+  const handlers = {};
+  const control = {
+    setSessionName(name) {
+      names.push(name);
+    },
+  };
+  const pi = {
+    on(event, handler) {
+      handlers[event] = handler;
+    },
+    getInteractiveControl: () => control,
+    getSessionName: () => names.at(-1),
+    setSessionName(name) {
+      names.push(name);
+    },
+    appendEntry(type, data) {
+      entries.push({ type: "custom", customType: type, data });
+    },
+  };
+  installSessionTitle(pi);
+  handlers.session_start(
+    { reason: "startup" },
+    {
+      cwd: "/tmp/repo",
+      ui: { setTitle: (title) => titles.push(title) },
+      sessionManager: { getEntries: () => entries },
+    },
+  );
+  pi.getInteractiveControl().setSessionName("Protocol work");
+  assert.equal(isTitleLocked(entries), true);
+  handlers.session_info_changed({ name: "Protocol work" }, { cwd: "/tmp/repo", ui: { setTitle: (title) => titles.push(title) } });
+  assert.ok(titles.includes("Protocol work"));
+
+  const resumed = {};
+  let lockedRefresh = false;
+  const again = {
+    on(event, handler) {
+      resumed[event] = handler;
+    },
+    getInteractiveControl: () => ({ setSessionName() {} }),
+    getSessionName: () => "Protocol work",
+    appendEntry() {},
+  };
+  installSessionTitle(again);
+  resumed.session_start(
+    { reason: "resume" },
+    {
+      cwd: "/tmp/repo",
+      ui: { setTitle() {} },
+      sessionManager: { getEntries: () => entries },
+    },
+  );
+  resumed.agent_settled?.(null, {
+    sessionManager: { getEntries: () => [userEntry("should not retitle")] },
+    modelRegistry: {
+      find: () => ({ id: "haiku" }),
+      complete: async () => {
+        lockedRefresh = true;
+        return { content: [{ type: "text", text: "<title>Nope</title>" }] };
+      },
+    },
+  });
+  assert.equal(lockedRefresh, false);
+  assert.deepEqual(names, ["Protocol work"]);
 });
 
 test("pickTitleModel prefers haiku and titleFromResponse reads complete() output", () => {

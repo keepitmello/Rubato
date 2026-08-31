@@ -39,13 +39,14 @@ test("inventory to conversation, controls, artifacts, offline recovery", async (
   page.on("requestfailed", (request) => failedRequests.push(request.url()))
   await page.route("**/api/v1/live/*/terminal/ticket", async (route) => { terminalTickets += 1; await route.fulfill({ json: { ticket: "fixture-terminal-ticket", expiresAt: "2026-08-31T01:00:00.000Z" } }) })
   await page.goto("/rubato/?fixture=1")
-  await expect(page.getByRole("heading", { name: /어디서든 같은 작업/ })).toBeVisible()
+  await expect(page.getByText("Rubato", { exact: true })).toBeVisible()
   await expect(page.getByRole("button", { name: /Hotel Tablet/ })).toBeVisible()
   await expectAccessible(page)
   await page.screenshot({ path: `${shots}/inventory-iphone.png`, fullPage: true })
 
   await page.getByRole("button", { name: /Hotel Tablet/ }).click()
-  await expect(page.getByText("접근성 테스트 4개 통과")).toBeVisible()
+  await expect(page.getByText(/레이블이 없는 방 선택 버튼/)).toBeVisible()
+  await expect(page.getByText("접근성 테스트 4개 통과")).toHaveCount(0)
   const composer = page.getByRole("textbox", { name: "메시지" })
   await composer.fill("한국어 입력도 확인해 줘")
   await composer.press("Enter")
@@ -153,11 +154,20 @@ test("structured requests, commands, images, follow-up delivery, and composer gr
   await expectAccessible(page)
 })
 
+test("system dark mode keeps the native shell accessible", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" })
+  await page.goto("/rubato/?fixture=1")
+  await expect(page.locator("html")).toHaveClass(/dark/)
+  await expect(page.getByRole("button", { name: /Hotel Tablet/ })).toBeVisible()
+  await expectAccessible(page)
+  await page.screenshot({ path: `${shots}/inventory-dark-iphone.png`, fullPage: true })
+})
+
 test("installed shell opens when the home host is offline", async ({ page, context }) => {
   await page.goto("/rubato/")
   await page.evaluate(() => navigator.serviceWorker.ready.then(() => undefined))
   await page.reload()
-  await expect(page.getByRole("heading", { name: /어디서든 같은 작업/ })).toBeVisible()
+  await expect(page.getByText("Rubato", { exact: true })).toBeVisible()
   expect(await page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true)
   await context.setOffline(true)
   const cachedShell = await page.evaluate(() => caches.match("/rubato/index.html").then((response) => response?.text()))

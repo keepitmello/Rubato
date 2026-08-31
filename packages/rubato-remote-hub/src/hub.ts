@@ -5,7 +5,7 @@ import type { EnvironmentHandoffStore, EnvironmentVault } from "./environment.js
 import type { EventJournal } from "./journal.js"
 import type { AllowedPathResolver } from "./path-security.js"
 import type { ProcessController } from "./registry.js"
-import { LiveRegistry } from "./registry.js"
+import { LiveRegistry, liveSessionTitle } from "./registry.js"
 import type { SurfaceTokenStore } from "./surface-tokens.js"
 
 export interface CreateLiveRequest {
@@ -174,7 +174,7 @@ function startingSummary(input: {
     lifecycle: "starting",
     execution: "idle",
     attention: false,
-    title: input.name ?? "Rubato",
+    title: liveSessionTitle(input.name, input.cwd),
     cwd: input.cwd,
     createdAt: new Date().toISOString(),
     pi: sessionFile === undefined ? {} : { sessionFile },
