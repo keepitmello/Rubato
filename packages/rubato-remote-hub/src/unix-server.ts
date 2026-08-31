@@ -210,6 +210,19 @@ export class SurfaceSocketServer implements SurfaceActions {
       case "surface.event": {
         if (frame.liveSessionId !== connection.liveSessionId || frame.surfaceInstanceId !== connection.surfaceInstanceId) throw new Error("invalid surface event")
         await this.#journal.append(connection.liveSessionId, frame.type, frame.payload, shouldFlush(frame.type))
+        if (frame.type === "live.exited") {
+          await this.#control?.noteExited(connection.liveSessionId)
+          connection.socket.destroy()
+          return
+        }
+        if (frame.type === "session.changed") {
+          const name = sessionChangedName(frame.payload)
+          if (name) this.#registry.updateTitle(connection.liveSessionId, name)
+        }
+        if (frame.type === "agent.state") {
+          const execution = agentStateExecution(frame.payload)
+          if (execution) this.#registry.noteExecution(connection.liveSessionId, execution)
+        }
         return
       }
       case "surface.snapshot": {
@@ -334,4 +347,19 @@ function isOptionalStringRecord(value: unknown): value is Record<string, string 
 
 function shouldFlush(type: unknown): boolean {
   return type === "action.completed" || type === "action.rejected" || type === "agent.state" || type === "live.exited"
+}
+
+function sessionChangedName(payload: unknown): string | undefined {
+  if (!isRecord(payload)) return undefined
+  const direct = payload["name"]
+  if (typeof direct === "string" && direct.trim()) return direct.trim()
+  const event = payload["event"]
+  if (isRecord(event) && typeof event["name"] === "string" && event["name"].trim()) return event["name"].trim()
+  return undefined
+}
+
+function agentStateExecution(payload: unknown): "working" | "idle" | undefined {
+  if (!isRecord(payload)) return undefined
+  const execution = payload["execution"]
+  return execution === "working" || execution === "idle" ? execution : undefined
 }

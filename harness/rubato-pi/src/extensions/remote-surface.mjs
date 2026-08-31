@@ -326,8 +326,14 @@ export class RemoteSurface {
 
   observe(name, event, ctx) {
     if (ctx) this.context = ctx;
-    if (name === "session_start" || name === "session_switch" || name === "session_fork") {
+    if (name === "session_start" || name === "session_switch" || name === "session_fork" || name === "session_info_changed") {
       this.emitSnapshot();
+      if (name === "session_info_changed") {
+        // Still emit the lightweight changed event so hubs that only watch
+        // journals can refresh the picker title without waiting on snapshot IO.
+        const type = EVENT_TYPES.get(name);
+        if (type) this.emit(type, this.normalizeEvent(name, event));
+      }
       return;
     }
     if (name === "wake_source_state") {

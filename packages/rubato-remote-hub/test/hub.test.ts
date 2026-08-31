@@ -55,3 +55,50 @@ async function hubFor(root: string, liveSessionId: typeof SESSION_ID | typeof SE
     runtime: { socketPath: "/tmp/hub.sock", launcherPath: "/rubato", zmxBinary: "/zmx", buildId: "test" },
   })
 }
+
+describe("inventory maintenance", () => {
+  test("terminates sessions that stayed idle past the TTL", async () => {
+    const temporary = await temporaryDirectory()
+    cleanups.push(temporary.cleanup)
+    const terminated: string[] = []
+    const journal = new EventJournal(join(temporary.path, "journal"), join(temporary.path, "snapshots"), HOST_ID)
+    await journal.load()
+    const handoffs = new EnvironmentHandoffStore<BootstrapLaunchPayload>()
+    const registry = new LiveRegistry(HOST_ID, {
+      discover: async () => [{
+        liveSessionId: SESSION_ID,
+        zmxName: zmxNameForLiveSession(SESSION_ID),
+        labels: { app: "rubato", rubato_live_id: SESSION_ID },
+      }],
+    })
+    const hub = new RemoteHub({
+      registry,
+      journal,
+      actions: new SessionActionQueue({ dispatch: async () => ({ accepted: true, revision: 0, payload: {} }) }, () => 0),
+      controller: {
+        launch: async (request: LaunchRequest) => ({
+          liveSessionId: request.liveSessionId,
+          zmxName: zmxNameForLiveSession(request.liveSessionId),
+          labels: request.labels,
+        }),
+        terminate: async (id) => { terminated.push(id) },
+      },
+      paths: new AllowedPathResolver([temporary.path]),
+      vault: new EnvironmentVault(join(temporary.path, "launch-env.enc"), { getOrCreate: async () => Buffer.alloc(32) }),
+      handoffs,
+      surfaceTokens: new SurfaceTokenStore(),
+      newLiveSessionId: () => SESSION_ID,
+      runtime: { socketPath: "/tmp/hub.sock", launcherPath: "/rubato", zmxBinary: "/zmx", buildId: "test" },
+    })
+    const created = await hub.create({ cwd: temporary.path, source: "terminal", name: "Quiet" })
+    registry.register({
+      surfaceInstanceId: "surface-a",
+      token: "token",
+      summary: { ...created.summary, lifecycle: "ready", execution: "idle", title: "Quiet" },
+    }, "token")
+    const result = await hub.maintainInventory(Date.now() + 12 * 60 * 60 * 1000, { idleTtlMs: 12 * 60 * 60 * 1000, startingTimeoutMs: 1 })
+    expect(result.idleExpired).toEqual([SESSION_ID])
+    expect(terminated).toEqual([SESSION_ID])
+    expect(registry.get(SESSION_ID)).toBeUndefined()
+  })
+})

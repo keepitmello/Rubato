@@ -5,7 +5,13 @@ import type { EnvironmentHandoffStore, EnvironmentVault } from "./environment.js
 import type { EventJournal } from "./journal.js"
 import type { AllowedPathResolver } from "./path-security.js"
 import type { ProcessController } from "./registry.js"
-import { LiveRegistry, liveSessionTitle } from "./registry.js"
+import {
+  IDLE_SESSION_TTL_MS,
+  LiveRegistry,
+  STARTING_TIMEOUT_MS,
+  SURFACE_STALE_MS,
+  liveSessionTitle,
+} from "./registry.js"
 import type { SurfaceTokenStore } from "./surface-tokens.js"
 
 export interface CreateLiveRequest {
@@ -121,6 +127,48 @@ export class RemoteHub {
     await this.#controller.terminate(id, force)
     this.registry.remove(id)
     await this.journal.append(id, "live.exited", { force }, true)
+  }
+
+  /**
+   * Surface reported a clean shutdown (Ctrl+C / quit). Drop it from the picker
+   * immediately and best-effort kill any lingering zmx process.
+   */
+  async noteExited(id: LiveSessionId): Promise<void> {
+    this.registry.remove(id)
+    await this.#controller.terminate(id, true).catch(() => {})
+  }
+
+  /**
+   * Periodic inventory hygiene: stale heartbeats, vanished zmx processes, stuck
+   * starts, and sessions that have sat idle past the TTL.
+   */
+  async maintainInventory(now = Date.now(), options: {
+    staleMs?: number
+    startingTimeoutMs?: number
+    idleTtlMs?: number
+  } = {}): Promise<{
+    stale: readonly LiveSessionId[]
+    missing: readonly LiveSessionId[]
+    stuckStarting: readonly LiveSessionId[]
+    idleExpired: readonly LiveSessionId[]
+  }> {
+    const staleMs = options.staleMs ?? SURFACE_STALE_MS
+    const startingTimeoutMs = options.startingTimeoutMs ?? STARTING_TIMEOUT_MS
+    const idleTtlMs = options.idleTtlMs ?? IDLE_SESSION_TTL_MS
+    const stale = this.registry.markStale(now, staleMs)
+    const discovered = await this.registry.discoveredIds()
+    const missing = this.registry.pruneMissingProcesses(discovered, now, startingTimeoutMs)
+    const stuckStarting = this.registry.pruneStuckStarting(now, startingTimeoutMs)
+    for (const id of stuckStarting) {
+      await this.#controller.terminate(id, true).catch(() => {})
+    }
+    const idleExpired = this.registry.idleExpired(now, idleTtlMs)
+    for (const id of idleExpired) {
+      await this.terminate(id, true).catch(() => {
+        this.registry.remove(id)
+      })
+    }
+    return { stale, missing, stuckStarting, idleExpired }
   }
 
   resolve(value: string): LiveSessionSummary {

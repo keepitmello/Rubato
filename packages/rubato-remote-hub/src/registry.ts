@@ -1,6 +1,13 @@
 import { basename } from "node:path"
 import type { LiveSessionId, LiveSessionSummary, ZmxName } from "@rubato/remote-protocol"
 
+/** Heartbeat silence before a ready surface is marked degraded. */
+export const SURFACE_STALE_MS = 30_000
+/** Starting sessions that never register are dropped after this. */
+export const STARTING_TIMEOUT_MS = 120_000
+/** Idle (post-turn) sessions leave the picker after this quiet period. */
+export const IDLE_SESSION_TTL_MS = 12 * 60 * 60 * 1000
+
 export interface DiscoveredProcess {
   readonly liveSessionId: LiveSessionId
   readonly zmxName: ZmxName
@@ -36,6 +43,10 @@ interface RegistryEntry {
   summary: LiveSessionSummary
   surfaceInstanceId?: string
   lastHeartbeatAt?: number
+  /** Wall-clock ms of last create/register/heartbeat/snapshot activity. */
+  lastActivityAt: number
+  /** When the current idle stretch began; cleared while execution is working. */
+  idleSinceAt?: number
 }
 
 export function liveSessionTitle(name?: string, cwd?: string, fallback = ""): string {
@@ -68,6 +79,15 @@ export class LiveRegistry {
     return [...this.#entries.values()].map(({ summary }) => summary).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   }
 
+  async discoveredIds(): Promise<ReadonlySet<LiveSessionId>> {
+    const discovered = await this.#discovery.discover()
+    return new Set(
+      discovered
+        .filter((process) => process.labels["app"] === "rubato" && process.labels["rubato_live_id"] === process.liveSessionId)
+        .map((process) => process.liveSessionId),
+    )
+  }
+
   get(id: LiveSessionId): LiveSessionSummary | undefined {
     return this.#entries.get(id)?.summary
   }
@@ -89,7 +109,12 @@ export class LiveRegistry {
             title: liveSessionTitle(old.title, old.cwd),
           }
         : degradedSummary(this.#hostId, process)
-      rebuilt.set(process.liveSessionId, { summary })
+      const now = Date.now()
+      rebuilt.set(process.liveSessionId, {
+        summary,
+        lastActivityAt: Date.parse(summary.createdAt) || now,
+        idleSinceAt: now,
+      })
     }
     this.#entries.clear()
     for (const [id, entry] of rebuilt) this.#entries.set(id, entry)
@@ -98,7 +123,8 @@ export class LiveRegistry {
 
   trackStarting(summary: LiveSessionSummary): LiveSessionSummary {
     if (summary.hostId !== this.#hostId || summary.managed !== true || !summary.zmxName) throw new Error("invalid managed session")
-    this.#entries.set(summary.liveSessionId, { summary })
+    const now = Date.now()
+    this.#entries.set(summary.liveSessionId, { summary, lastActivityAt: now, idleSinceAt: now })
     this.#hostSeq++
     return summary
   }
@@ -115,10 +141,22 @@ export class LiveRegistry {
       lifecycle: "ready",
       title: liveSessionTitle(surface.summary.title, surface.summary.cwd),
     }
+    const now = Date.now()
+    const previous = this.#entries.get(summary.liveSessionId)
+    let idleSinceAt: number | undefined
+    if (summary.execution === "working") {
+      idleSinceAt = undefined
+    } else if (previous?.summary.execution === "working" || previous?.idleSinceAt === undefined) {
+      idleSinceAt = now
+    } else {
+      idleSinceAt = previous.idleSinceAt
+    }
     this.#entries.set(summary.liveSessionId, {
       summary,
       surfaceInstanceId: surface.surfaceInstanceId,
-      lastHeartbeatAt: Date.now(),
+      lastHeartbeatAt: now,
+      lastActivityAt: now,
+      ...(idleSinceAt === undefined ? {} : { idleSinceAt }),
     })
     this.#hostSeq++
     return summary
@@ -128,19 +166,103 @@ export class LiveRegistry {
     const entry = this.#entries.get(id)
     if (!entry || entry.surfaceInstanceId !== surfaceInstanceId) return false
     entry.lastHeartbeatAt = now
+    entry.lastActivityAt = now
     return true
   }
 
-  markStale(now = Date.now(), timeoutMs = 30_000): readonly LiveSessionId[] {
+  /** Keep picker titles in sync with the Pi session / terminal tab name. */
+  updateTitle(id: LiveSessionId, title: string, now = Date.now()): boolean {
+    const entry = this.#entries.get(id)
+    if (!entry) return false
+    const explicit = title.trim()
+    if (!explicit) return false
+    const next = liveSessionTitle(explicit, entry.summary.cwd, entry.summary.zmxName)
+    if (next === entry.summary.title) return false
+    entry.summary = { ...entry.summary, title: next }
+    entry.lastActivityAt = now
+    this.#hostSeq++
+    return true
+  }
+
+  noteExecution(id: LiveSessionId, execution: LiveSessionSummary["execution"], now = Date.now()): void {
+    const entry = this.#entries.get(id)
+    if (!entry) return
+    const previous = entry.summary.execution
+    if (previous === execution) {
+      entry.lastActivityAt = now
+      return
+    }
+    entry.summary = { ...entry.summary, execution }
+    entry.lastActivityAt = now
+    if (execution === "working") {
+      delete entry.idleSinceAt
+    } else {
+      entry.idleSinceAt = now
+    }
+    this.#hostSeq++
+  }
+
+  markStale(now = Date.now(), timeoutMs = SURFACE_STALE_MS): readonly LiveSessionId[] {
     const changed: LiveSessionId[] = []
     for (const [id, entry] of this.#entries) {
       if (entry.lastHeartbeatAt !== undefined && now - entry.lastHeartbeatAt > timeoutMs && entry.summary.lifecycle === "ready") {
         entry.summary = { ...entry.summary, lifecycle: "degraded" }
+        entry.idleSinceAt ??= now
         changed.push(id)
       }
     }
     if (changed.length > 0) this.#hostSeq++
     return changed
+  }
+
+  /**
+   * Drop managed sessions whose zmx process is gone. Starting entries keep a short
+   * grace window so create→discover races do not flicker the picker.
+   */
+  pruneMissingProcesses(discoveredIds: ReadonlySet<LiveSessionId>, now = Date.now(), startingGraceMs = STARTING_TIMEOUT_MS): readonly LiveSessionId[] {
+    const removed: LiveSessionId[] = []
+    for (const [id, entry] of this.#entries) {
+      if (!entry.summary.managed || !entry.summary.zmxName) continue
+      if (discoveredIds.has(id)) continue
+      // Ready surfaces leave via live.exited / idle TTL. Only reap sessions that are
+      // already degraded or stuck starting so a flaky `zmx list` cannot wipe the picker.
+      if (entry.summary.lifecycle === "ready") continue
+      if (entry.summary.lifecycle === "starting" && now - entry.lastActivityAt < startingGraceMs) continue
+      this.#entries.delete(id)
+      removed.push(id)
+    }
+    if (removed.length > 0) this.#hostSeq++
+    return removed
+  }
+
+  /** Starting sessions that never become ready. */
+  pruneStuckStarting(now = Date.now(), timeoutMs = STARTING_TIMEOUT_MS): readonly LiveSessionId[] {
+    const removed: LiveSessionId[] = []
+    for (const [id, entry] of this.#entries) {
+      if (entry.summary.lifecycle !== "starting") continue
+      if (now - entry.lastActivityAt < timeoutMs) continue
+      this.#entries.delete(id)
+      removed.push(id)
+    }
+    if (removed.length > 0) this.#hostSeq++
+    return removed
+  }
+
+  /**
+   * Sessions that finished a turn (or never got one) and stayed quiet for the TTL.
+   * Returns ids the hub should terminate + remove from the picker.
+   */
+  idleExpired(now = Date.now(), ttlMs = IDLE_SESSION_TTL_MS): readonly LiveSessionId[] {
+    const expired: LiveSessionId[] = []
+    for (const [id, entry] of this.#entries) {
+      if (entry.summary.execution === "working") continue
+      const assistantAt = Date.parse(entry.summary.lastAssistantAt ?? "")
+      const since = entry.idleSinceAt
+        ?? (Number.isFinite(assistantAt) ? assistantAt : undefined)
+        ?? entry.lastActivityAt
+      if (now - since >= ttlMs) expired.push(id)
+    }
+    return expired
   }
 
   remove(id: LiveSessionId): boolean {
