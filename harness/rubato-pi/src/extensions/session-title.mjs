@@ -84,10 +84,28 @@ function lockExplicitTitle(pi, state) {
   pi.appendEntry?.(TITLE_ENTRY, { locked: true });
 }
 
+function decorateInteractiveControl(control, setSessionName) {
+  const wrapper = {};
+  for (const key of Reflect.ownKeys(control)) {
+    const descriptor = Object.getOwnPropertyDescriptor(control, key);
+    if (!descriptor) continue;
+    if (key === "setSessionName" && typeof descriptor.value === "function") {
+      Object.defineProperty(wrapper, key, { ...descriptor, value: setSessionName });
+      continue;
+    }
+    if (typeof descriptor.value === "function") {
+      Object.defineProperty(wrapper, key, { ...descriptor, value: descriptor.value.bind(control) });
+      continue;
+    }
+    Object.defineProperty(wrapper, key, descriptor);
+  }
+  return wrapper;
+}
+
 function installRenameLock(pi, state) {
   const original = pi.getInteractiveControl;
   if (typeof original !== "function") return;
-  const wrapped = new WeakSet();
+  const wrappers = new WeakMap();
   pi.getInteractiveControl = () => {
     let control;
     try {
@@ -97,14 +115,16 @@ function installRenameLock(pi, state) {
       // resumed turn and senpi then process.exit(1).
       return undefined;
     }
-    if (!control || wrapped.has(control) || typeof control.setSessionName !== "function") return control;
+    if (!control || typeof control.setSessionName !== "function") return control;
+    const cached = wrappers.get(control);
+    if (cached) return cached;
     const setSessionName = control.setSessionName.bind(control);
-    control.setSessionName = (name) => {
+    const wrapper = decorateInteractiveControl(control, (name) => {
       if (!state.applyingAuto) lockExplicitTitle(pi, state);
       return setSessionName(name);
-    };
-    wrapped.add(control);
-    return control;
+    });
+    wrappers.set(control, wrapper);
+    return wrapper;
   };
 }
 

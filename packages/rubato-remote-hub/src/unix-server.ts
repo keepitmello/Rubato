@@ -27,6 +27,8 @@ import type { LiveRegistry } from "./registry.js"
 import type { SurfaceReconnectCredentials } from "./surface-credentials.js"
 import type { SurfaceTokenStore } from "./surface-tokens.js"
 
+export const SURFACE_HANDSHAKE_TIMEOUT_MS = 5_000
+
 interface Connection {
   readonly socket: Socket
   liveSessionId?: LiveSessionId
@@ -65,17 +67,19 @@ export class SurfaceSocketServer implements SurfaceActions {
   readonly #credentials: SurfaceReconnectCredentials
   readonly #connections = new Map<LiveSessionId, Connection>()
   readonly #pending = new Map<string, PendingAction>()
+  readonly #handshakeTimeoutMs: number
   #server: Server | null = null
   #control: RemoteHub | null = null
   #local: LocalControlServices | null = null
 
-  constructor(path: string, registry: LiveRegistry, journal: EventJournal, tokens: SurfaceTokenStore, handoffs: EnvironmentHandoffStore<BootstrapLaunchPayload>, credentials: SurfaceReconnectCredentials) {
+  constructor(path: string, registry: LiveRegistry, journal: EventJournal, tokens: SurfaceTokenStore, handoffs: EnvironmentHandoffStore<BootstrapLaunchPayload>, credentials: SurfaceReconnectCredentials, options: { handshakeTimeoutMs?: number } = {}) {
     this.#path = path
     this.#registry = registry
     this.#journal = journal
     this.#tokens = tokens
     this.#handoffs = handoffs
     this.#credentials = credentials
+    this.#handshakeTimeoutMs = options.handshakeTimeoutMs ?? SURFACE_HANDSHAKE_TIMEOUT_MS
   }
 
   setControl(control: RemoteHub, local?: LocalControlServices): void {
@@ -137,19 +141,30 @@ export class SurfaceSocketServer implements SurfaceActions {
     socket.setNoDelay(true)
     const connection: Connection = { socket }
     const decoder = new JsonFrameDecoder()
+    const handshake = setTimeout(() => socket.destroy(), this.#handshakeTimeoutMs)
+    handshake.unref()
+    const finishHandshake = () => clearTimeout(handshake)
     socket.on("data", (chunk) => {
       try {
-        for (const frame of decoder.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk)) void this.#handle(connection, frame).catch(() => socket.destroy())
+        for (const frame of decoder.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk)) {
+          finishHandshake()
+          void this.#handle(connection, frame).catch(() => socket.destroy())
+        }
       } catch {
+        finishHandshake()
         socket.destroy()
       }
     })
     socket.on("close", () => {
+      finishHandshake()
       if (connection.liveSessionId && this.#connections.get(connection.liveSessionId) === connection) {
         this.#connections.delete(connection.liveSessionId)
       }
     })
-    socket.on("error", () => socket.destroy())
+    socket.on("error", () => {
+      finishHandshake()
+      socket.destroy()
+    })
   }
 
   async #handle(connection: Connection, input: unknown): Promise<void> {

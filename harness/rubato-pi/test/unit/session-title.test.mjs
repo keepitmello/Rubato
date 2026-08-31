@@ -195,6 +195,41 @@ test("rename lock wrap stays quiet when the captured control is stale after resu
   assert.equal(pi.getInteractiveControl(), undefined);
 });
 
+test("rename lock wraps frozen interactive control without mutating it", () => {
+  const names = [];
+  const entries = [];
+  const snapshot = () => ({ sessionName: "frozen" });
+  const listCommands = () => [{ name: "compact", description: "Compact", category: "builtin", remoteMode: "native-action" }];
+  const control = Object.freeze({
+    snapshot,
+    listCommands,
+    setSessionName(name) {
+      names.push(name);
+    },
+  });
+  const originalSetSessionName = control.setSessionName;
+  const pi = {
+    on() {},
+    getInteractiveControl: () => control,
+    appendEntry(type, data) {
+      entries.push({ type: "custom", customType: type, data });
+    },
+  };
+  installSessionTitle(pi);
+  const first = pi.getInteractiveControl();
+  const second = pi.getInteractiveControl();
+  assert.notEqual(first, control);
+  assert.equal(first, second);
+  assert.equal(Object.isFrozen(control), true);
+  assert.equal(control.setSessionName, originalSetSessionName);
+  assert.deepEqual(first.snapshot(), { sessionName: "frozen" });
+  assert.deepEqual(first.listCommands(), listCommands());
+  first.setSessionName("Protocol work");
+  second.setSessionName("Again");
+  assert.deepEqual(names, ["Protocol work", "Again"]);
+  assert.equal(isTitleLocked(entries), true);
+});
+
 test("session.rename locks later auto titles and survives resume", () => {
   const titles = [];
   const entries = [];
