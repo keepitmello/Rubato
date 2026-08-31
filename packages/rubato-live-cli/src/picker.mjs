@@ -54,6 +54,7 @@ export function createPickerScreen(sessions, {
     get sessionList() {
       return list;
     },
+    invalidate() {},
     render(width) {
       const safeWidth = Math.max(20, width);
       const wide = safeWidth >= 72;
