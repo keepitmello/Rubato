@@ -18,6 +18,11 @@ import {
   isCollapsibleToolGroupUrl,
 } from "./collapsible-mouse.mjs";
 import { injectRubatoFooter, isRubatoFooterModuleUrl, rubatoFooterHref } from "./rubato-footer.mjs";
+import { applyTuiChromeTransforms } from "./transforms/tui-chrome.mjs";
+import { applyMiscVendorTransforms } from "./transforms/misc-vendor.mjs";
+import { applyCoreSessionTransforms } from "./transforms/core-session.mjs";
+import { applyCursorVendorTransforms } from "./transforms/cursor-vendor.mjs";
+import { applyControlCodemodeTransforms } from "./transforms/control-codemode.mjs";
 
 // 주입 앵커는 설치된 senpi/pi-tui 의 **정확한** 소스 문자열에 걸려 있다.
 // 설치본이 레포 핀과 다르면(전역 설치, 오래된 클론, 부분 업데이트) 앵커가
@@ -50,10 +55,10 @@ function warnOnce(error) {
 export async function load(url, context, nextLoad) {
   const result = await nextLoad(url, context);
   if (result.source == null) return result;
+  const source = String(result.source);
+  let next = source;
 
   if (isEditorMouseModuleUrl(url) || isEditorMouseTuiUrl(url)) {
-    const source = String(result.source);
-    let next = source;
     if (isEditorMouseModuleUrl(url)) {
       next = applyTransform(next, injectEditorMouse);
       next = applyTransform(next, injectPasteExpand);
@@ -62,26 +67,29 @@ export async function load(url, context, nextLoad) {
       next = applyTransform(next, injectEditorMouseRouting);
       next = applyTransform(next, injectCollapsibleMouseRouting);
     }
-    if (next === source) return result;
-    return { format: result.format, source: next, shortCircuit: true };
+  } else if (isTerminalModuleUrl(url)) {
+    next = applyTransform(next, (text) => injectTitleGuard(text, titleGuardHref()));
+  } else if (url.includes("@code-yeongyu/senpi/dist/")) {
+    if (isBusyEnterModuleUrl(url)) next = applyTransform(next, (text) => injectBusyEnter(text, busyEnterHref()));
+    if (isRubatoFooterModuleUrl(url)) next = applyTransform(next, (text) => injectRubatoFooter(text, rubatoFooterHref()));
+    if (isCollapsibleAssistantUrl(url)) next = applyTransform(next, injectCollapsibleAssistant);
+    if (isCollapsibleToolExecutionUrl(url)) next = applyTransform(next, injectCollapsibleToolExecution);
+    if (isCollapsibleToolGroupUrl(url)) next = applyTransform(next, injectCollapsibleToolGroup);
+    next = applyTransform(next, (text) => stripChangelog(text, url));
   }
 
-  if (isTerminalModuleUrl(url)) {
-    const source = String(result.source);
-    const next = applyTransform(source, (text) => injectTitleGuard(text, titleGuardHref()));
-    if (next === source) return result;
-    return { format: result.format, source: next, shortCircuit: true };
-  }
+  // 클러스터 변환은 무조건 지나간다 — 각 클러스터가 URL 매칭을 스스로 한다.
+  // [cluster:tui-chrome] harness/rubato-pi/src/transforms/tui-chrome.mjs 소유.
+  next = applyTuiChromeTransforms(url, next, applyTransform);
+  // [cluster:misc-vendor] harness/rubato-pi/src/transforms/misc-vendor.mjs 소유.
+  next = applyMiscVendorTransforms(url, next, applyTransform);
+  // [cluster:core-session] harness/rubato-pi/src/transforms/core-session.mjs 소유.
+  next = applyCoreSessionTransforms(url, next, applyTransform);
+  // [cluster:cursor-vendor] harness/rubato-pi/src/transforms/cursor-vendor.mjs 소유.
+  next = applyCursorVendorTransforms(url, next, applyTransform);
+  // [cluster:control-codemode] harness/rubato-pi/src/transforms/control-codemode.mjs 소유.
+  next = applyControlCodemodeTransforms(url, next, applyTransform);
 
-  if (!url.includes("@code-yeongyu/senpi/dist/")) return result;
-  const source = String(result.source);
-  let next = source;
-  if (isBusyEnterModuleUrl(url)) next = applyTransform(next, (text) => injectBusyEnter(text, busyEnterHref()));
-  if (isRubatoFooterModuleUrl(url)) next = applyTransform(next, (text) => injectRubatoFooter(text, rubatoFooterHref()));
-  if (isCollapsibleAssistantUrl(url)) next = applyTransform(next, injectCollapsibleAssistant);
-  if (isCollapsibleToolExecutionUrl(url)) next = applyTransform(next, injectCollapsibleToolExecution);
-  if (isCollapsibleToolGroupUrl(url)) next = applyTransform(next, injectCollapsibleToolGroup);
-  next = applyTransform(next, (text) => stripChangelog(text, url));
   if (next === source) return result;
   return { format: result.format, source: next, shortCircuit: true };
 }
