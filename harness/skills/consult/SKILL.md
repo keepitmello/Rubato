@@ -24,9 +24,8 @@ automatic fallback senders.
    `분석 요청` to that title. Check the packet for secrets and stale context.
    Ask for a natural Korean report while leaving structure and terminology to
    the consultant. The runner attaches this file unchanged; it never pastes the
-   local path into the browser. Python reads the packet and sends its bytes over
-   REPL stdin as an in-memory attachment, so any locally readable packet path
-   works. The composer carries a short ID-bound preamble whose first line is
+   local path into the browser.    Python reads the packet and embeds its bytes in the Aside REPL script
+   argument, so any locally readable packet path works. The composer carries a short ID-bound preamble whose first line is
    that topic and which tells the consultant to use only the attached context,
    state missing evidence, and write a natural, readable Korean report while
    using technical terms or English when helpful.
@@ -46,8 +45,11 @@ automatic fallback senders.
    Exit `76` means the send was clicked but commit could not be proven; preserve
    evidence and never retry or enter any fallback because that could duplicate
    the turn.
-   Exit `77` means the user turn committed but response recovery failed. Recover
-   only from the saved `conversationUrl`; never resend the packet.
+   Exit `77` means the user turn committed but the live page did not yield a
+   reply. Recover that same conversation through ChatGPT `backend-api`, not by
+   opening the project chat list; never resend the packet. If the page shows
+   `요청이 너무 많습니다`, wait and use the backend path. Do not click through
+   the modal and keep loading Work.
 5. Read the saved response and JSON evidence. The user-turn ID is the send
    receipt. If the assistant omitted the ID, keep the saved reply and use
    `conversationUrl`; do not treat a missing echo as a failed consult.

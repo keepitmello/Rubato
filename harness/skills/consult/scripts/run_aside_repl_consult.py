@@ -28,6 +28,8 @@ ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 SUBMIT_MARKER = "ASIDE_REPL_SUBMIT_RESULT "
 SUBMIT_UNKNOWN_MARKER = "ASIDE_REPL_SUBMIT_UNKNOWN "
 RESPONSE_MARKER = "ASIDE_REPL_RESPONSE_RESULT "
+BACKEND_RECOVERY_MARKER = "ASIDE_BACKEND_RECOVERY_RESULT "
+CONVERSATION_ID_RE = re.compile(r"/c/([0-9a-fA-F-]{8,})")
 KOREAN_UPLOAD_PREAMBLE = (
     "첨부한 독립형 컨텍스트 패킷을 검토하고, 그 안의 질문이나 작업에 답해 주세요.\n\n"
     "이 패킷 외의 저장소, 터미널, 이전 대화는 볼 수 없다고 가정하세요. "
@@ -141,6 +143,163 @@ def js(value: object) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
+def conversation_id_from_url(url: str | None) -> str | None:
+    if not url:
+        return None
+    match = CONVERSATION_ID_RE.search(url)
+    return match.group(1) if match else None
+
+
+def chatgpt_message_text(message: dict[str, Any] | None) -> str:
+    if not message:
+        return ""
+    content = message.get("content") or {}
+    parts = content.get("parts") if isinstance(content, dict) else None
+    if not isinstance(parts, list):
+        return ""
+    chunks: list[str] = []
+    for part in parts:
+        if isinstance(part, str):
+            chunks.append(part)
+        elif isinstance(part, dict):
+            text = part.get("text")
+            if isinstance(text, str):
+                chunks.append(text)
+    return "".join(chunks)
+
+
+def assistant_from_conversation_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    assistants: list[dict[str, Any]] = []
+    mapping = payload.get("mapping")
+    if not isinstance(mapping, dict):
+        return {"text": "", "finished": False}
+    for node in mapping.values():
+        if not isinstance(node, dict):
+            continue
+        message = node.get("message")
+        if not isinstance(message, dict):
+            continue
+        author = message.get("author") or {}
+        if not isinstance(author, dict) or author.get("role") != "assistant":
+            continue
+        if not chatgpt_message_text(message).strip():
+            continue
+        assistants.append(message)
+    assistants.sort(key=lambda item: float(item.get("create_time") or 0))
+    if not assistants:
+        return {"text": "", "finished": False}
+    last = assistants[-1]
+    return {
+        "text": chatgpt_message_text(last).strip(),
+        "finished": last.get("status") != "in_progress",
+    }
+
+
+def user_message_has_consult_id(payload: dict[str, Any], consult_id: str) -> bool:
+    mapping = payload.get("mapping")
+    if not consult_id or not isinstance(mapping, dict):
+        return False
+    for node in mapping.values():
+        if not isinstance(node, dict):
+            continue
+        message = node.get("message")
+        if not isinstance(message, dict):
+            continue
+        author = message.get("author") or {}
+        if isinstance(author, dict) and author.get("role") == "user":
+            if consult_id in chatgpt_message_text(message):
+                return True
+    return False
+
+
+def build_backend_recovery_script(
+    consult_id: str,
+    conversation_url: str | None,
+) -> str:
+    return f"""
+var consultId = {js(consult_id)};
+var conversationUrl = {js(conversation_url or "")};
+var home = await openTab('https://chatgpt.com/');
+await home.waitForLoadState('domcontentloaded');
+var sess = await (await fetch('https://chatgpt.com/api/auth/session')).json();
+if (!sess || !sess.accessToken) throw new Error('chatgpt session token missing');
+var auth = {{ headers: {{ Authorization: 'Bearer ' + sess.accessToken }} }};
+var conversationId = (conversationUrl.match(/\\/c\\/([0-9a-fA-F-]{{8,}})/) || [])[1] || '';
+async function readConversation(id) {{
+  var response = await fetch('https://chatgpt.com/backend-api/conversation/' + id, auth);
+  if (!response.ok) return null;
+  return response.json();
+}}
+function messageText(message) {{
+  var parts = message && message.content && message.content.parts;
+  if (!Array.isArray(parts)) return '';
+  return parts.map(function (part) {{
+    return typeof part === 'string' ? part : (part && part.text) || '';
+  }}).join('');
+}}
+function assistantFrom(payload) {{
+  var nodes = Object.values(payload.mapping || {{}});
+  var assistants = nodes.filter(function (node) {{
+    return node && node.message && node.message.author && node.message.author.role === 'assistant' && messageText(node.message).trim();
+  }}).sort(function (left, right) {{
+    return (left.message.create_time || 0) - (right.message.create_time || 0);
+  }});
+  if (!assistants.length) return {{ text: '', finished: false }};
+  var last = assistants[assistants.length - 1].message;
+  return {{ text: messageText(last).trim(), finished: last.status !== 'in_progress' }};
+}}
+function userHasId(payload) {{
+  return Object.values(payload.mapping || {{}}).some(function (node) {{
+    return node && node.message && node.message.author && node.message.author.role === 'user' && messageText(node.message).includes(consultId);
+  }});
+}}
+var payload = conversationId ? await readConversation(conversationId) : null;
+if (!payload || !userHasId(payload)) {{
+  var list = await fetch('https://chatgpt.com/backend-api/conversations?offset=0&limit=15&order=updated', auth);
+  if (list.ok) {{
+    var items = (await list.json()).items || [];
+    for (var i = 0; i < items.length; i += 1) {{
+      payload = await readConversation(items[i].id);
+      if (payload && userHasId(payload)) {{
+        conversationId = items[i].id;
+        break;
+      }}
+      payload = null;
+    }}
+  }}
+}}
+await closeTab(home).catch(function () {{}});
+if (!payload || !conversationId) {{
+  console.log({js(BACKEND_RECOVERY_MARKER)} + JSON.stringify({{ ok: false }}));
+}} else {{
+  var extracted = assistantFrom(payload);
+  console.log({js(BACKEND_RECOVERY_MARKER)} + JSON.stringify({{
+    ok: true,
+    responseText: extracted.text,
+    finished: extracted.finished,
+    idMatched: extracted.text.includes(consultId),
+    conversationUrl: 'https://chatgpt.com/c/' + conversationId
+  }}));
+}}
+""".strip()
+
+
+def recover_consult_from_backend(
+    consult_id: str,
+    conversation_url: str | None = None,
+) -> dict[str, Any] | None:
+    if not consult_id:
+        return None
+    transcript = run_repl_process(
+        build_backend_recovery_script(consult_id, conversation_url),
+        timeout=45,
+    )
+    payload = marker_payload(transcript, BACKEND_RECOVERY_MARKER)
+    if not payload or not payload.get("ok"):
+        return None
+    return payload
+
+
 def build_repl_script(
     *,
     project_url: str,
@@ -181,14 +340,20 @@ var submitState = await Promise.race([
     submitStage = 'load-work-project';
     await workPage.goto(projectUrl);
     await workPage.waitForLoadState('domcontentloaded');
-    await snapshot(workPage, {{ interactive: true }});
     submitStage = 'wait-project-composer';
     var composer = workPage.locator(
       '#prompt-textarea[contenteditable="true"][aria-label="' + composerLabel + '"]'
     );
+    var rateLimit = workPage.getByRole('heading', {{ name: '요청이 너무 많습니다' }});
     try {{
-      await composer.waitFor({{ state: 'visible', timeout: 60000 }});
+      await Promise.race([
+        composer.waitFor({{ state: 'visible', timeout: 60000 }}),
+        rateLimit.waitFor({{ state: 'visible', timeout: 60000 }}).then(function () {{
+          throw new Error('ChatGPT rate-limited the project page');
+        }})
+      ]);
     }} catch (error) {{
+      if (String(error && error.message).indexOf('rate-limited') !== -1) throw error;
       var found = await workPage.locator('#prompt-textarea').evaluateAll((els) =>
         els.map((el) => ({{
           ariaLabel: el.getAttribute('aria-label'),
@@ -204,6 +369,9 @@ var submitState = await Promise.race([
     }}
     var assistantCountBefore = await workPage.locator('[data-message-author-role="assistant"]').count();
     if (assistantCountBefore !== 0) throw new Error('isolated Work composer contains stale assistant turns');
+    if (await rateLimit.isVisible().catch(() => false)) {{
+      throw new Error('ChatGPT rate-limited the project page');
+    }}
     submitStage = 'select-chat-surface';
     var chatToggle = workPage.locator('button[data-tpp-toggle-value="chatgpt"]');
     var workToggle = workPage.locator('button[data-tpp-toggle-value="work"]');
@@ -380,24 +548,73 @@ console.log({js(SUBMIT_MARKER)} + JSON.stringify({{
 var responseStartedAt = Date.now();
 var responseDeadline = responseStartedAt + {response_timeout_ms};
 var remainingResponseMs = () => Math.max(1, responseDeadline - Date.now());
-var assistant = workPage.locator('[data-message-author-role="assistant"]').last();
-await assistant.waitFor({{ state: 'visible', timeout: remainingResponseMs() }});
-var copyResponse = workPage.getByRole('button', {{ name: /^(응답 복사|Copy response)$/ }}).last();
-try {{
-  await copyResponse.waitFor({{ state: 'visible', timeout: remainingResponseMs() }});
-}} catch (error) {{
-  await sleep(2000);
+var conversationId = (workPage.url().match(/\\/c\\/([0-9a-fA-F-]{{8,}})/) || [])[1] || '';
+var recoveredFromBackend = false;
+async function readAssistantFromBackend() {{
+  if (!conversationId) {{
+    conversationId = (workPage.url().match(/\\/c\\/([0-9a-fA-F-]{{8,}})/) || [])[1] || '';
+  }}
+  if (!conversationId) return {{ text: '', finished: false }};
+  var sess = await (await fetch('https://chatgpt.com/api/auth/session')).json();
+  if (!sess || !sess.accessToken) return {{ text: '', finished: false }};
+  var cr = await fetch(
+    'https://chatgpt.com/backend-api/conversation/' + conversationId,
+    {{ headers: {{ Authorization: 'Bearer ' + sess.accessToken }} }}
+  );
+  if (!cr.ok) return {{ text: '', finished: false }};
+  var payload = await cr.json();
+  var nodes = Object.values(payload.mapping || {{}});
+  var assistants = nodes.filter(function (node) {{
+    var parts = node && node.message && node.message.content && node.message.content.parts;
+    return node && node.message && node.message.author && node.message.author.role === 'assistant' && Array.isArray(parts) && parts.join('').trim();
+  }}).sort(function (left, right) {{
+    return (left.message.create_time || 0) - (right.message.create_time || 0);
+  }});
+  if (!assistants.length) return {{ text: '', finished: false }};
+  var last = assistants[assistants.length - 1].message;
+  var parts = last.content && last.content.parts;
+  var text = Array.isArray(parts) ? parts.map(function (part) {{
+    return typeof part === 'string' ? part : (part && part.text) || '';
+  }}).join('').trim() : '';
+  return {{ text: text, finished: last.status !== 'in_progress' }};
 }}
-var responseText = (await assistant.innerText()).trim();
-if (!responseText) {{
-  await sleep(2000);
+var assistant = workPage.locator('[data-message-author-role="assistant"]').last();
+var copyResponse = workPage.getByRole('button', {{ name: /^(응답 복사|Copy response)$/ }}).last();
+var rateLimitAfter = workPage.getByRole('heading', {{ name: '요청이 너무 많습니다' }});
+var responseText = '';
+if (await rateLimitAfter.isVisible().catch(() => false)) {{
+  while (Date.now() < responseDeadline) {{
+    var extracted = await readAssistantFromBackend();
+    if (extracted.text && extracted.finished) {{
+      responseText = extracted.text;
+      recoveredFromBackend = true;
+      break;
+    }}
+    await sleep(5000);
+  }}
+}} else {{
+  await assistant.waitFor({{ state: 'visible', timeout: remainingResponseMs() }});
+  try {{
+    await copyResponse.waitFor({{ state: 'visible', timeout: remainingResponseMs() }});
+  }} catch (error) {{
+    await sleep(2000);
+  }}
   responseText = (await assistant.innerText()).trim();
+  if (!responseText) {{
+    await sleep(2000);
+    responseText = (await assistant.innerText()).trim();
+  }}
+  if (!responseText) {{
+    var extracted = await readAssistantFromBackend();
+    responseText = extracted.text;
+    recoveredFromBackend = !!responseText;
+  }}
 }}
 if (!responseText) throw new Error('assistant response text was empty');
 var idMatched = responseText.includes({js(f"ID: {consult_id}")}) || responseText.includes({js(consult_id)});
 var packetUnread = /첨부된 컨텍스트 패킷이|패킷이 현재 대화에 보이지|다시 첨부해/.test(responseText);
 var artifact = null;
-if (artifactRequested) {{
+if (artifactRequested && !recoveredFromBackend) {{
   var artifactButton = assistant.locator('button').filter({{ hasText: /\\.zip$/i }}).last();
   await artifactButton.waitFor({{ state: 'visible', timeout: remainingResponseMs() }});
   var downloadPromise = workPage.waitForEvent('download', {{ timeout: remainingResponseMs() }});
@@ -416,6 +633,7 @@ console.log({js(RESPONSE_MARKER)} + JSON.stringify({{
   responseText,
   idMatched,
   packetUnread,
+  recoveredFromBackend,
   artifact,
   responseElapsedMs: Date.now() - responseStartedAt,
   conversationUrl: finalConversationUrl
@@ -435,17 +653,10 @@ def zip_is_valid(path: Path) -> bool:
     return bad_file is None
 
 
-def repl_stdin_command(script: str) -> str:
-    """Wrap multiline, top-level-await code in one REPL input line."""
-    async_function = "Object.getPrototypeOf(async function(){}).constructor"
-    return f"await new ({async_function})({json.dumps(script)})()\n"
-
-
 def aside_repl_ping(timeout: int = 10) -> bool:
     try:
         completed = subprocess.run(
-            ["aside", "repl"],
-            input='console.log("ASIDE_REPL_PING")\n',
+            ["aside", "repl", 'console.log("ASIDE_REPL_PING")'],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -458,12 +669,12 @@ def aside_repl_ping(timeout: int = 10) -> bool:
 
 
 def ensure_aside_daemon() -> str | None:
-    if aside_repl_ping():
-        return None
     subprocess.run(["open", "-a", "Aside"], check=False)
-    time.sleep(3)
-    if aside_repl_ping():
-        return None
+    for _attempt in range(5):
+        if aside_repl_ping():
+            return None
+        time.sleep(2)
+        subprocess.run(["open", "-a", "Aside"], check=False)
     return "aside daemon is not reachable"
 
 
@@ -478,8 +689,7 @@ def transcript_lost_aside_daemon(transcript: str) -> bool:
 def run_repl_process(script: str, *, timeout: int) -> str:
     try:
         completed = subprocess.run(
-            ["aside", "repl"],
-            input=repl_stdin_command(script),
+            ["aside", "repl", script],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -508,29 +718,70 @@ def run_repl_consult(
     *,
     submit_timeout: int,
     response_timeout: int,
+    consult_id: str = "",
 ) -> tuple[dict[str, Any], dict[str, Any], float, float, str]:
-    transcript = run_repl_process(
-        script,
-        timeout=submit_timeout + response_timeout + 30,
-    )
-    submit_unknown_payload = marker_payload(transcript, SUBMIT_UNKNOWN_MARKER)
-    if submit_unknown_payload is not None:
-        raise SubmitUnknownError(
-            "submission state unknown; do not retry\n"
-            + json.dumps(submit_unknown_payload, ensure_ascii=False)
-            + "\n"
-            + transcript
-        )
-    submit_payload = marker_payload(transcript, SUBMIT_MARKER)
-    if submit_payload is None:
+    timeout = submit_timeout + response_timeout + 30
+    transcript = ""
+    earlier = ""
+    submit_payload = None
+    for attempt in range(2):
+        transcript = run_repl_process(script, timeout=timeout)
+        submit_unknown_payload = marker_payload(transcript, SUBMIT_UNKNOWN_MARKER)
+        if submit_unknown_payload is not None:
+            raise SubmitUnknownError(
+                "submission state unknown; do not retry\n"
+                + json.dumps(submit_unknown_payload, ensure_ascii=False)
+                + "\n"
+                + earlier
+                + transcript
+            )
+        submit_payload = marker_payload(transcript, SUBMIT_MARKER)
+        if submit_payload is not None:
+            break
+        recovered = None
+        if consult_id and (
+            transcript_lost_aside_daemon(transcript) or "/c/" in transcript
+        ):
+            recovered = recover_consult_from_backend(consult_id)
+        if recovered and recovered.get("conversationUrl"):
+            submit_payload = {
+                "quality": "",
+                "model": "GPT-5.6 Sol",
+                "tier": "",
+                "conversationUrl": recovered["conversationUrl"],
+                "targetId": "",
+                "submitElapsedMs": 0,
+            }
+            if recovered.get("responseText") and recovered.get("finished", True):
+                return (
+                    submit_payload,
+                    {
+                        "responseText": recovered["responseText"],
+                        "idMatched": bool(recovered.get("idMatched")),
+                        "packetUnread": False,
+                        "recoveredFromBackend": True,
+                        "responseElapsedMs": 0,
+                        "conversationUrl": recovered["conversationUrl"],
+                    },
+                    0.0,
+                    0.0,
+                    earlier + transcript,
+                )
+            raise SubmittedResponseError(submit_payload, 0.0, earlier + transcript)
+        if attempt == 0 and transcript_lost_aside_daemon(transcript):
+            earlier = transcript + "\n"
+            if ensure_aside_daemon() is None:
+                continue
         if transcript_lost_aside_daemon(transcript):
             raise RuntimeError(
                 "aside daemon closed before submission; packet was not sent\n"
+                + earlier
                 + transcript
             )
         raise RuntimeError(
             "Aside REPL exited before submission marker\n" + transcript
         )
+    assert submit_payload is not None
     submit_elapsed = float(submit_payload["submitElapsedMs"]) / 1000
     print(
         f"CONSULT_SUBMITTED quality={submit_payload['quality']} "
@@ -650,6 +901,7 @@ def main(argv: Sequence[str]) -> int:
             ),
             submit_timeout=SUBMIT_TIMEOUT_SECONDS,
             response_timeout=args.response_timeout,
+            consult_id=consult_id,
         )
     except SubmitUnknownError as exc:
         stderr_path.write_text(str(exc), encoding="utf-8")
@@ -657,6 +909,40 @@ def main(argv: Sequence[str]) -> int:
         return 76
     except SubmittedResponseError as exc:
         submitted = exc.submit_payload
+        recovered = recover_consult_from_backend(
+            consult_id,
+            conversation_url=str(submitted.get("conversationUrl") or "") or None,
+        )
+        if recovered and recovered.get("responseText"):
+            response_path.write_text(str(recovered["responseText"]) + "\n", encoding="utf-8")
+            stderr_path.write_text(exc.transcript, encoding="utf-8")
+            json_path.write_text(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "id": consult_id,
+                        "topic": topic,
+                        "quality": args.quality,
+                        "model": submitted.get("model") or "GPT-5.6 Sol",
+                        "tier": submitted.get("tier") or "",
+                        "conversationUrl": recovered["conversationUrl"],
+                        "targetId": submitted.get("targetId") or "",
+                        "submitElapsedSeconds": round(exc.submit_elapsed, 3),
+                        "responseElapsedSeconds": 0,
+                        "idMatched": bool(recovered.get("idMatched")),
+                        "packetUnread": False,
+                        "recoveredFromBackend": True,
+                        "responseOutput": str(response_path),
+                        "packetPath": packet_source,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            print(f"CONSULT_COMPLETE response={response_path}", flush=True)
+            return 0
         message = str(exc)
         stderr_path.write_text(
             message,
@@ -740,6 +1026,7 @@ def main(argv: Sequence[str]) -> int:
         "responseElapsedSeconds": round(response_elapsed, 3),
         "idMatched": bool(response_payload.get("idMatched")),
         "packetUnread": bool(response_payload.get("packetUnread")),
+        "recoveredFromBackend": bool(response_payload.get("recoveredFromBackend")),
         "responseOutput": str(response_path),
         "packetPath": packet_source,
     }
