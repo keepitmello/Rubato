@@ -30,7 +30,7 @@ export type MemberSelfPollerDeps = {
   readonly memberName: string
   readonly config: TeamModeConfig
   readonly sessionDir: string
-  readonly inject: (content: string) => void
+  readonly inject: (content: string, messageId: string) => void
   readonly appendEvent?: (event: PersistedTaskEvent) => void
   readonly afterInject?: (message: Message) => Promise<void>
 }
@@ -139,7 +139,7 @@ async function processMessage(
   }
 
   state.pending.set(message.messageId, { message, reservation })
-  deps.inject(buildPeerMessageEnvelope(message))
+  deps.inject(buildPeerMessageEnvelope(message), message.messageId)
   await deps.afterInject?.(message)
 }
 

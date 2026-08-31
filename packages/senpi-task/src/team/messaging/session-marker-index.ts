@@ -15,9 +15,10 @@ export type SessionMarkerIndex = {
 
 type PathState = { offset: number; residual: string; readonly seen: Set<string> }
 
-// messageId="..." inside a persisted peer_message envelope. The envelope lives inside JSON-encoded
-// strings, so the quote before the id may be a raw " or an escaped \". Match both.
-const MESSAGE_ID_MARKER = /<peer_message [^>]*?messageId=\\?"([^"\\]+)\\?"/g
+// Historical envelopes carried messageId= on the tag (JSON-encoded, so the quote may be raw or \").
+// Current deliveries keep the id on custom-message details as "messageId":"<uuid>".
+const ENVELOPE_ID_MARKER = /<peer_message [^>]*?messageId=\\?"([^"\\]+)\\?"/g
+const JSON_ID_MARKER = /"messageId":"([^"]+)"/g
 
 export function createSessionMarkerIndex(readSlice: SessionSliceReader = defaultReadSlice): SessionMarkerIndex {
   return createIncrementalSessionMarkerIndex(extractMessageIds, readSlice)
@@ -66,15 +67,20 @@ export function createIncrementalSessionMarkerIndex(
 }
 
 function extractMessageIds(text: string): string[] {
-  const ids: string[] = []
-  MESSAGE_ID_MARKER.lastIndex = 0
-  let match = MESSAGE_ID_MARKER.exec(text)
+  const ids = new Set<string>()
+  collect(ENVELOPE_ID_MARKER, text, ids)
+  collect(JSON_ID_MARKER, text, ids)
+  return [...ids]
+}
+
+function collect(marker: RegExp, text: string, ids: Set<string>): void {
+  marker.lastIndex = 0
+  let match = marker.exec(text)
   while (match !== null) {
     const id = match[1]
-    if (id !== undefined) ids.push(id)
-    match = MESSAGE_ID_MARKER.exec(text)
+    if (id !== undefined) ids.add(id)
+    match = marker.exec(text)
   }
-  return ids
 }
 
 async function defaultReadSlice(path: string, start: number, end: number): Promise<string> {

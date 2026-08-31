@@ -70,11 +70,10 @@ function poller(harness: Harness) {
 
 function persistEnvelope(harness: Harness, value: Message): void {
   const entry = {
-    type: "message",
-    message: {
-      role: "user",
-      content: [{ type: "text", text: buildPeerMessageEnvelope(value) }],
-    },
+    type: "custom_message",
+    customType: "senpi-task:team-message",
+    content: buildPeerMessageEnvelope(value),
+    details: { messageId: value.messageId },
   }
   writeFileSync(join(harness.sessionDir, "20260712_session.jsonl"), `${JSON.stringify(entry)}\n`, "utf8")
 }

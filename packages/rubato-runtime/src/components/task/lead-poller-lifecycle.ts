@@ -186,6 +186,7 @@ export function createLeadPollerLifecycle(deps: LeadPollerLifecycleDeps): LeadPo
               customType: "senpi-task:team-message",
               content: injection.content,
               display: false,
+              ...(injection.details === undefined ? {} : { details: injection.details }),
             },
             { triggerTurn: true, deliverAs: "steer" },
           )

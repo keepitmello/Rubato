@@ -5,7 +5,6 @@ import { join } from "node:path"
 import { afterEach, describe, expect, test } from "bun:test"
 
 import type { DagNodeId, DagRunId } from "../dag/types"
-import { DAG_VERIFICATION_DIRECTIVE } from "./dag-verification-directive"
 import { buildCompletionDetails, buildCompletionMessage } from "./notification"
 import type { TaskRecord } from "../state"
 
@@ -143,7 +142,7 @@ describe("buildCompletionDetails", () => {
 })
 
 describe("buildCompletionMessage", () => {
-  test("#given a complete result #when notification built #then the body contains it without a follow-up AgentOutput instruction", () => {
+  test("#given a complete result #when notification built #then the ping carries status without inlining the body", () => {
     // given
     const fullResult = "child final text ".repeat(100)
     const details = buildCompletionDetails(completedRecord({ final_response: fullResult }))
@@ -154,21 +153,17 @@ describe("buildCompletionMessage", () => {
     // then
     expect(message.customType).toBe("senpi-task.completion")
     expect(message.details).toEqual([details])
-    expect(message.content).toContain("agent completion")
-    expect(message.content).toContain("name:summarize-logs")
-    expect(message.content).toContain("agentId:st_deadbeef")
-    expect(message.content).toContain("status:completed")
-    expect(message.content).toContain("duration:3s")
-    expect(message.content).toContain(fullResult)
-    expect(message.content).toContain("AgentSend")
+    expect(message.details[0]?.final_response).toBe(fullResult)
+    expect(message.content).toBe("completed summarize-logs st_deadbeef")
+    expect(message.content).not.toContain(fullResult)
+    expect(message.content).not.toContain("result:")
+    expect(message.content).not.toContain("AgentSend")
     expect(message.content).not.toContain("AgentOutput")
-    expect(message.content).not.toContain("task_send")
-    expect(message.content).not.toContain("task_output")
+    expect(message.content).not.toContain("duration:")
     expect(message.content).not.toContain("<task-notification>")
-    expect(message.content).not.toContain("<head>")
   })
 
-  test("#given a spilled result #when notification built #then the body names its local file", () => {
+  test("#given a spilled result #when notification built #then the ping still omits the blob and the file stays on details", () => {
     // given
     const details = buildCompletionDetails(
       completedRecord({ final_response: "x".repeat(32_001) }),
@@ -179,7 +174,9 @@ describe("buildCompletionMessage", () => {
     const message = buildCompletionMessage([details])
 
     // then
-    expect(message.content).toContain(details.final_response_file ?? "")
+    expect(details.final_response_file).toStartWith("local://")
+    expect(message.content).not.toContain("x".repeat(100))
+    expect(message.content).not.toContain(details.final_response_file ?? "local://")
   })
 
   test("#given two details #when message built #then both completions appear in one content block", () => {
@@ -192,22 +189,10 @@ describe("buildCompletionMessage", () => {
 
     // then
     expect(message.details).toHaveLength(2)
-    expect(message.content).toContain("one")
-    expect(message.content).toContain("two")
-    expect(message.content.match(/agent completion/gu)).toHaveLength(2)
+    expect(message.content).toBe("completed one st_aaaa\ncompleted two st_bbbb")
     expect(message.content).not.toContain("<task-notification>")
   })
 })
-
-function directiveOccurrences(content: string): number {
-  let count = 0
-  let index = content.indexOf(DAG_VERIFICATION_DIRECTIVE)
-  while (index !== -1) {
-    count += 1
-    index = content.indexOf(DAG_VERIFICATION_DIRECTIVE, index + DAG_VERIFICATION_DIRECTIVE.length)
-  }
-  return count
-}
 
 describe("dag-owned completions", () => {
   test("#given a dag-owned record #when details built #then the owning run and node are attached", () => {
@@ -223,22 +208,23 @@ describe("dag-owned completions", () => {
     expect(details.dag).toEqual({ run_id: "dag_run_1", node_id: "build" })
   })
 
-  test("#given a dag-owned detail #when message built #then the verification directive is appended once", () => {
+  test("#given a dag-owned detail #when message built #then the ping stays a status line without a verification sermon", () => {
     // given
     const details = buildCompletionDetails(completedRecord({
       owner: { kind: "dag", runId: "dag_run_1" as DagRunId, nodeId: "build" as DagNodeId, fingerprint: "fp-1" },
+      final_response: "the dag node essay",
     }))
 
     // when
     const message = buildCompletionMessage([details])
 
     // then
-    expect(directiveOccurrences(message.content)).toBe(1)
-    expect(message.content).toEndWith(DAG_VERIFICATION_DIRECTIVE)
-    expect(message.content).toContain(`\n\n${DAG_VERIFICATION_DIRECTIVE}`)
+    expect(message.content).toBe("completed summarize-logs st_deadbeef")
+    expect(message.content).not.toContain("the dag node essay")
+    expect(message.content).not.toContain("TREAT AS FALSE")
   })
 
-  test("#given a plain record #when details and message built #then no dag facts and no directive appear", () => {
+  test("#given a plain record #when details and message built #then no dag facts appear", () => {
     // given
     const record = completedRecord()
 
@@ -248,10 +234,10 @@ describe("dag-owned completions", () => {
 
     // then
     expect(details.dag).toBeUndefined()
-    expect(directiveOccurrences(message.content)).toBe(0)
+    expect(message.content).not.toContain("TREAT AS FALSE")
   })
 
-  test("#given one plain and two dag details #when message built #then the directive appears exactly once", () => {
+  test("#given one plain and two dag details #when message built #then all three status pings appear", () => {
     // given
     const plain = buildCompletionDetails(completedRecord({ task_id: "st_plain", name: "plain" }))
     const firstDag = buildCompletionDetails(completedRecord({
@@ -269,10 +255,10 @@ describe("dag-owned completions", () => {
     const message = buildCompletionMessage([plain, firstDag, secondDag])
 
     // then
-    expect(directiveOccurrences(message.content)).toBe(1)
-    expect(message.content).toContain("name:plain")
-    expect(message.content).toContain("name:dag-one")
-    expect(message.content).toContain("name:dag-two")
+    expect(message.content).toContain("completed plain st_plain")
+    expect(message.content).toContain("completed dag-one st_dag1")
+    expect(message.content).toContain("completed dag-two st_dag2")
+    expect(message.content).not.toContain("TREAT AS FALSE")
   })
 })
 
@@ -298,8 +284,9 @@ describe("completion run stats", () => {
     // then
     expect(details.run_stats?.tokens_per_second).toBe(250)
     expect(details.tokens).toBe(1_800)
-    expect(message.content).toContain("tps:250")
-    expect(message.content).toContain("tools:4")
+    expect(message.content).toBe("completed summarize-logs st_deadbeef")
+    expect(message.content).not.toContain("tps:")
+    expect(message.content).not.toContain("tools:")
   })
 
   test("#given explicit tokens #when details are built #then the explicit value wins over run stats", () => {

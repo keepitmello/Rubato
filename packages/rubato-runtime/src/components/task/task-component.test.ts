@@ -102,7 +102,9 @@ describe("Rubato runtime task component fallback completion", () => {
     // then
     expect(pi.sent).toHaveLength(1)
     const content = String(pi.sent[0]?.message.content)
-    expect(content).toContain("fallback:vendor-a/primary-model->vendor-b/fallback-model")
-    expect(content.match(/fallback:/gu)).toHaveLength(1)
+    expect(content).not.toContain("fallback:")
+    const details = pi.sent[0]?.message.details as readonly { requested_model?: { display?: string }; resolved_model?: { display?: string } }[] | undefined
+    expect(details?.[0]?.requested_model?.display).toBe("vendor-a/primary-model")
+    expect(details?.[0]?.resolved_model?.display).toBe("vendor-b/fallback-model")
   })
 })

@@ -31,6 +31,7 @@ export type MemberTaskSendDeps = {
   readonly config: TeamModeConfig
   readonly members: readonly string[]
   readonly appendEvent?: (taskId: string, event: PersistedTaskEvent) => void
+  readonly onSent?: () => void
   readonly now?: () => number
   readonly newMessageId?: () => string
 }
@@ -72,6 +73,7 @@ export async function runMemberTaskSend(
     type: "team_message_sent",
     payload: { message_id: message.messageId, from: message.from, to: message.to, kind: message.kind },
   })
+  deps.onSent?.()
   return toolResult(`Message enqueued to ${input.to} (id: ${message.messageId}).`, {
     kind: "team_message",
     message_id: message.messageId,

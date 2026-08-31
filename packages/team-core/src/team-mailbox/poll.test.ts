@@ -8,10 +8,10 @@ import path from "node:path"
 
 import { TeamModeConfigSchema } from "../config"
 import { createRuntimeState, loadRuntimeState } from "../team-state-store/store"
-import type { TeamSpec } from "../types"
+import type { Message, TeamSpec } from "../types"
 import { sendMessage } from "./send"
 
-const { pollAndBuildInjection } = await import("./poll")
+const { pollAndBuildInjection, buildEnvelope } = await import("./poll")
 const { getInboxDir, resolveBaseDir } = await import("../team-registry/paths")
 
 function createConfig(baseDir: string) {
@@ -221,5 +221,44 @@ describe("pollAndBuildInjection", () => {
     expect(result.content).toContain("fresh message")
     expect(result.content).not.toContain("already injected")
     expect(member?.pendingInjectedMessageIds).toEqual([pendingMessageId, newMessageId])
+  })
+})
+
+function sampleMessage(over: Partial<Message> = {}): Message {
+  return {
+    version: 1,
+    messageId: "11111111-1111-4111-8111-111111111111",
+    from: "lead",
+    to: "m1",
+    kind: "message",
+    body: "hello",
+    timestamp: 99,
+    ...over,
+  }
+}
+
+describe("buildEnvelope", () => {
+  test("#given a default message #when the envelope is built #then only the from attribute remains", () => {
+    const envelope = buildEnvelope(sampleMessage())
+    expect(envelope).toBe(
+      `<peer_message from="lead">
+hello
+</peer_message>`,
+    )
+    expect(envelope).not.toContain("messageId=")
+    expect(envelope).not.toContain("timestamp=")
+    expect(envelope).not.toContain("kind=")
+    expect(envelope).not.toContain("correlationId=")
+  })
+
+  test("#given a non-message kind or a correlation id #when the envelope is built #then those attributes are kept", () => {
+    const shutdown = buildEnvelope(sampleMessage({ kind: "shutdown_request", body: "wrap up" }))
+    expect(shutdown).toContain(`kind="shutdown_request"`)
+    expect(shutdown).not.toContain("timestamp=")
+
+    const correlated = buildEnvelope(sampleMessage({
+      correlationId: "22222222-2222-4222-8222-222222222222",
+    }))
+    expect(correlated).toContain(`correlationId="22222222-2222-4222-8222-222222222222"`)
   })
 })
