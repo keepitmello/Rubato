@@ -120,6 +120,11 @@ These are declared `dependencies` of first-party packages under `packages/`, exc
 - Upstream URL: https://github.com/xtermjs/xterm.js
 - Where-bundled: Rubato Remote emergency terminal.
 
+### @zxing/browser@0.2.1
+- License: MIT. Copyright: Copyright (c) 2018 ZXing for JS.
+- Upstream URL: https://github.com/zxing-js/browser
+- Where-bundled: Rubato Remote camera QR pairing.
+
 ### hono@4.13.5
 - Security pin: exact 4.13.5 intentionally supersedes the vulnerable 4.12.18 design reference; reviewed HIGH/MODERATE advisories and audit evidence are recorded in `third_party/hono-security-deviation.md`.
 - License: MIT. Copyright: Yusuke Wada and Hono contributors.
@@ -135,6 +140,11 @@ These are declared `dependencies` of first-party packages under `packages/`, exc
 - License: MIT. Copyright: Vladimir Kharlampidi and contributors.
 - Upstream URL: https://github.com/konstaui/konsta
 - Where-bundled: Rubato Remote iOS-style web interface.
+
+### qrcode-terminal@0.12.0
+- License: Apache-2.0. Contributors: Gord Tanner and Michael Brooks.
+- Upstream URL: https://github.com/gtanner/qrcode-terminal
+- Where-bundled: Rubato Remote terminal pairing QR output.
 
 ### react@19.2.6
 - License: MIT. Copyright: Meta Platforms, Inc. and affiliates.
