@@ -67,3 +67,19 @@ test("mouse click on New session starts a session", async () => {
   assert.equal(screen.handleMouse({ button: 0, x: 5, y: 2, release: false }), true);
   assert.deepEqual(selections, [{ kind: "new" }]);
 });
+
+test("picker screen is a TUI child that can be invalidated on startup", async () => {
+  const tuiApi = await loadPinnedPiTui();
+  const screen = createPickerScreen(sessions, tuiApi, () => {});
+  const terminal = {
+    start() {},
+    stop() {},
+    write() {},
+    get columns() { return 80; },
+    get rows() { return 24; },
+  };
+  const tui = new tuiApi.TuiAltScreen(terminal, false, undefined, { mouse: true });
+  tui.addChild(screen);
+  tui.setFocus(screen);
+  assert.doesNotThrow(() => tui.invalidate());
+});
