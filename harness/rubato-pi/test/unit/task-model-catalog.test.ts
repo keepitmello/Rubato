@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 
-import { createTaskChildPlanner } from "../../../../packages/rubato-runtime/src/components/task/planner"
+import { createTaskChildPlanner, plannedEffortSource } from "../../../../packages/rubato-runtime/src/components/task/planner"
 import { supportedProviders } from "../../src/extensions/provider-overlay.mjs"
 
 describe("picker and task model catalog parity", () => {
@@ -38,5 +38,35 @@ describe("picker and task model catalog parity", () => {
       expect(result.plan.category).toBe("sol")
       expect(result.plan.resolved_model?.source).toBe("explicit")
     }
+  })
+
+  test("google-antigravity/gemini-3.7-flash is picker-visible and planner-admitted", async () => {
+    const providers = await supportedProviders({ env: {} })
+    const antigravity = providers.find((provider) => provider.id === "google-antigravity")
+    expect(antigravity).toBeDefined()
+    const models = antigravity?.getModels() ?? []
+    const flash = models.find((model) => model.id === "gemini-3.7-flash")
+    expect(flash).toBeDefined()
+    expect(flash?.provider).toBe("google-antigravity")
+    expect(flash?.input).toEqual(["text", "image"])
+
+    const registry = {
+      getAvailable: () => models,
+      find: (provider: string, modelId: string) =>
+        models.find((model) => model.provider === provider && model.id === modelId),
+    }
+    const planner = createTaskChildPlanner({}, {}, () => registry)
+    const result = planner({
+      prompt: "Use Flash.",
+      parent_session_id: "parent-1",
+      depth: 0,
+      model: "google-antigravity/gemini-3.7-flash",
+    })
+    expect(result.kind).toBe("resolved")
+    if (result.kind !== "resolved") return
+    expect(result.plan.model).toBe("google-antigravity/gemini-3.7-flash")
+    expect(result.plan.variant).toBe("medium")
+    expect(result.plan.resolved_model?.reasoning).toBe("medium")
+    expect(plannedEffortSource(result.plan.resolved_model)).toBe("model-default")
   })
 })

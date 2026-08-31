@@ -28,15 +28,15 @@ function rememberBufferedEpoch(tracker: NotificationEpochTracker, taskId: string
 function resolveDetailEpoch(tracker: NotificationEpochTracker, store: TaskRecordStore, detail: CompletionDetails): number {
   const tagged = tracker.detailEpochs.get(detail)
   if (tagged !== undefined) return tagged
-  const active = tracker.activeByTask.get(detail.task_id)
+  const active = tracker.activeByTask.get(detail.agentId)
   if (active !== undefined) {
     tracker.detailEpochs.set(detail, active)
     return active
   }
-  const buffered = tracker.bufferedByTask.get(detail.task_id)
+  const buffered = tracker.bufferedByTask.get(detail.agentId)
   const bufferedEpoch = buffered?.shift()
-  if (buffered?.length === 0) tracker.bufferedByTask.delete(detail.task_id)
-  const epoch = bufferedEpoch ?? store.load(detail.task_id)?.notification.run_epoch ?? 0
+  if (buffered?.length === 0) tracker.bufferedByTask.delete(detail.agentId)
+  const epoch = bufferedEpoch ?? store.load(detail.agentId)?.notification.run_epoch ?? 0
   tracker.detailEpochs.set(detail, epoch)
   return epoch
 }
@@ -61,7 +61,7 @@ export function createChaosNotifier(
       }
       calls.push(message)
       for (const entry of tagged) {
-        const key = `${entry.detail.task_id}:${entry.epoch}`
+        const key = `${entry.detail.agentId}:${entry.epoch}`
         observations.enqueueByEpoch.set(key, (observations.enqueueByEpoch.get(key) ?? 0) + 1)
       }
     },

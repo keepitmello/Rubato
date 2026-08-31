@@ -18,7 +18,7 @@ import {
   runTeamTaskUpdate,
 } from "./tasks"
 
-describe("task_create tool", () => {
+describe("team_task_create tool", () => {
   test("#given a new task #when create runs #then it reports the created task", async () => {
     const service = createFakeTeamService({ createTask: async () => fakeTask() })
     const result = await runTeamTaskCreate(service, { team_run_id: "run-1", subject: "s", description: "d" })
@@ -86,12 +86,12 @@ describe("task_create tool", () => {
     expect(listText).toContain("owner:x injected")
   })
 
-  test("#given the factory #when built #then it names the tool task_create", () => {
-    expect(createTeamTaskCreateTool({ service: createFakeTeamService() }).name).toBe("task_create")
+  test("#given the factory #when built #then it names the tool team_task_create", () => {
+    expect(createTeamTaskCreateTool({ service: createFakeTeamService() }).name).toBe("team_task_create")
   })
 })
 
-describe("task_list tool", () => {
+describe("team_task_list tool", () => {
   test("#given tasks #when list runs #then it reports them, forwarding the filter", async () => {
     const service = createFakeTeamService({ listTasks: async () => [fakeTask(), fakeTask({ id: "task-2", status: "claimed", owner: "alpha" })] })
     const result = await runTeamTaskList(service, { team_run_id: "run-1", status: "pending" })
@@ -106,12 +106,12 @@ describe("task_list tool", () => {
     expect(service.calls[0]).toMatchObject({ method: "listTasks", args: ["run-1", { status: "pending" }] })
   })
 
-  test("#given the factory #when built #then it names the tool task_list", () => {
-    expect(createTeamTaskListTool({ service: createFakeTeamService() }).name).toBe("task_list")
+  test("#given the factory #when built #then it names the tool team_task_list", () => {
+    expect(createTeamTaskListTool({ service: createFakeTeamService() }).name).toBe("team_task_list")
   })
 })
 
-describe("task_get tool", () => {
+describe("team_task_get tool", () => {
   test("#given an existing task #when get runs #then it reports the task", async () => {
     const service = createFakeTeamService({ getTask: async () => fakeTask({ owner: "alpha" }) })
     const result = await runTeamTaskGet(service, { team_run_id: "run-1", task_id: "task-1" })
@@ -135,12 +135,12 @@ describe("task_get tool", () => {
     expect(result.details).toMatchObject({ kind: "not_found", task_id: "ghost" })
   })
 
-  test("#given the factory #when built #then it names the tool task_get", () => {
-    expect(createTeamTaskGetTool({ service: createFakeTeamService() }).name).toBe("task_get")
+  test("#given the factory #when built #then it names the tool team_task_get", () => {
+    expect(createTeamTaskGetTool({ service: createFakeTeamService() }).name).toBe("team_task_get")
   })
 })
 
-describe("task_update tool", () => {
+describe("team_task_update tool", () => {
   test("#given a status update #when update runs #then it reports the updated task", async () => {
     const service = createFakeTeamService({ updateTask: async () => fakeTask({ status: "in_progress" }) })
     const result = await runTeamTaskUpdate(service, { team_run_id: "run-1", task_id: "task-1", status: "in_progress" })
@@ -194,7 +194,7 @@ describe("task_update tool", () => {
     expect(result.details.kind).toBe("cross_owner")
   })
 
-  test("#given the factory #when built #then it names the tool task_update", () => {
-    expect(createTeamTaskUpdateTool({ service: createFakeTeamService() }).name).toBe("task_update")
+  test("#given the factory #when built #then it names the tool team_task_update", () => {
+    expect(createTeamTaskUpdateTool({ service: createFakeTeamService() }).name).toBe("team_task_update")
   })
 })

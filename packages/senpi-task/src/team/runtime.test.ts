@@ -176,7 +176,7 @@ describe("createTeam", () => {
     // then
     const [alphaStart, betaStart] = manager.started
     for (const start of [alphaStart, betaStart]) {
-      expect(start?.prompt).toContain("task_send")
+      expect(start?.prompt).toContain("team_send")
     }
     expect(alphaStart?.prompt).toContain("'alpha'")
     expect(alphaStart?.prompt).toContain("'squad'")

@@ -1,8 +1,10 @@
-import type { AgentToolResult } from "@code-yeongyu/senpi"
+import type { AgentToolResult, ToolDefinition } from "@code-yeongyu/senpi"
+import { Type, type Static } from "typebox"
 
+import { TEAM_LEAD_SENTINEL } from "../../team"
 import { toolResult } from "../control"
 import { classifyMailboxError, type MailboxErrorKind } from "./classify-error"
-import type { TeamToolsService } from "./types"
+import type { TeamToolDeps, TeamToolsService } from "./types"
 
 export type LeadDeliveryView = "enqueued"
 export type MemberDeliveryOutcome = "enqueued"
@@ -14,6 +16,20 @@ export type TeamSendDetails =
   | { readonly kind: MailboxErrorKind; readonly to: string; readonly reason: string }
 
 export type TeamSendInput = { readonly to: string; readonly body: string; readonly summary?: string }
+
+export const TeamSendParams = Type.Object({
+  team_run_id: Type.String({ description: "Team run id (returned by team_create)." }),
+  to: Type.String({ description: "Recipient member name, 'lead', or '*' for a lead-only broadcast." }),
+  message: Type.String({ description: "Durable mailbox message body." }),
+  summary: Type.Optional(Type.String({ description: "Optional short summary." })),
+})
+
+export type TeamSendToolInput = Static<typeof TeamSendParams>
+
+const SEND_DESCRIPTION = [
+  "Send a durable team mailbox message to a member, the lead, or '*' (lead-only broadcast).",
+  "This is team mail, not an Agent session: use AgentSend to continue a spawned Agent.",
+].join(" ")
 
 export async function runTeamSend(
   service: TeamToolsService,
@@ -46,6 +62,21 @@ export async function runTeamSend(
       return toolResult(reason, { kind: mailbox, to: input.to, reason })
     }
     throw error
+  }
+}
+
+export function createTeamSendTool(deps: TeamToolDeps): ToolDefinition {
+  return {
+    name: "team_send",
+    label: "Team Send",
+    description: SEND_DESCRIPTION,
+    parameters: TeamSendParams,
+    execute: (_toolCallId: string, params: TeamSendToolInput) =>
+      runTeamSend(deps.service, params.team_run_id, TEAM_LEAD_SENTINEL, {
+        to: params.to,
+        body: params.message,
+        ...(params.summary !== undefined ? { summary: params.summary } : {}),
+      }),
   }
 }
 

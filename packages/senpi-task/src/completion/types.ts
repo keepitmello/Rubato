@@ -17,7 +17,7 @@ export type RoutingDecision =
   | { readonly kind: "buffer"; readonly reason: TransitionReason }
 
 export type CompletionDetails = {
-  readonly task_id: string
+  readonly agentId: string
   readonly name: string
   readonly status: TaskStatus
   readonly category?: string

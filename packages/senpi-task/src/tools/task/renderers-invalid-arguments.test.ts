@@ -4,7 +4,7 @@ import type { ThemeColor } from "@code-yeongyu/senpi"
 
 import { renderTaskResultComponent, statusThemeColor } from "./renderers"
 
-const OBSERVED_REASON = "Provide EITHER prompt OR tasks, not both"
+const OBSERVED_REASON = "Exactly one of model or preset is required."
 
 const RECORDING_THEME = {
   fg: (color: ThemeColor, text: string) => `<${color}>${text}</${color}>`,
@@ -23,10 +23,9 @@ describe("invalid task arguments", () => {
   test("#given the observed malformed task result #when rendered #then it is visibly classified as an error with its reason", () => {
     // given
     const details = {
-      task_id: "",
+      agentId: "",
       status: "invalid_arguments",
       mode: "spawn" as const,
-      run_in_background: true,
       reason: OBSERVED_REASON,
     }
 
@@ -36,6 +35,6 @@ describe("invalid task arguments", () => {
     // then
     expect(rendered).toStartWith("<error>")
     expect(rendered).toContain("invalid_arguments")
-    expect(rendered).toContain(`reason:${OBSERVED_REASON}`)
+    expect(rendered).toContain("reason:Exactly one of model or preset is req")
   })
 })

@@ -20,14 +20,14 @@ export type SendManager = Pick<TaskManager, "sendToTask" | "list">
 export type CancelManager = Pick<TaskManager, "cancelTask" | "get">
 
 export type SendResultDetails =
-  | { readonly kind: "steered"; readonly task_id: string; readonly status: TaskStatus; readonly delivered: "steer" }
-  | { readonly kind: "revived"; readonly task_id: string; readonly run_epoch: number }
-  | { readonly kind: "capacity_deferred"; readonly task_id: string; readonly reason: string }
-  | { readonly kind: "queued"; readonly task_id: string; readonly queue_position: number }
-  | { readonly kind: "not_continuable"; readonly task_id: string; readonly reason: string; readonly suggestion: string }
-  | { readonly kind: "one_shot_agent"; readonly task_id: string; readonly agent: string; readonly message: string }
-  | { readonly kind: "scope_denied"; readonly task_id: string; readonly owning_session_id: string; readonly reason: string }
-  | { readonly kind: "not_found"; readonly reason: string; readonly known_tasks: readonly string[] }
+  | { readonly kind: "steered"; readonly agentId: string; readonly status: TaskStatus; readonly delivered: "steer" }
+  | { readonly kind: "revived"; readonly agentId: string; readonly run_epoch: number }
+  | { readonly kind: "capacity_deferred"; readonly agentId: string; readonly reason: string }
+  | { readonly kind: "queued"; readonly agentId: string; readonly queue_position: number }
+  | { readonly kind: "not_continuable"; readonly agentId: string; readonly reason: string; readonly suggestion: string }
+  | { readonly kind: "one_shot_agent"; readonly agentId: string; readonly agent: string; readonly message: string }
+  | { readonly kind: "scope_denied"; readonly agentId: string; readonly owning_session_id: string; readonly reason: string }
+  | { readonly kind: "not_found"; readonly reason: string; readonly known_agents: readonly string[] }
   | { readonly kind: "invalid_arguments"; readonly reason: string }
   | { readonly kind: "team_message"; readonly team: TeamSendDetails }
   | { readonly kind: "shutdown_requested"; readonly team_run_id: string; readonly member: string }
@@ -42,8 +42,8 @@ export type SendResultDetails =
     }
 
 export type CancelResultDetails =
-  | { readonly kind: "cancelled"; readonly task_id: string; readonly previous_status: TaskStatus; readonly status: TaskStatus }
-  | { readonly kind: "noop"; readonly task_id: string; readonly status: TaskStatus; readonly reason: string }
+  | { readonly kind: "cancelled"; readonly agentId: string; readonly previous_status: TaskStatus; readonly status: TaskStatus }
+  | { readonly kind: "noop"; readonly agentId: string; readonly status: TaskStatus; readonly reason: string }
   | { readonly kind: "not_found"; readonly reason: string }
   | { readonly kind: "invalid_arguments"; readonly reason: string }
 

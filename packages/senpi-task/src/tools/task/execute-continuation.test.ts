@@ -16,13 +16,13 @@ describe("buildTaskExecute spawn-only", () => {
       },
       sendToTask: async () => {
         sendToTaskCalls += 1
-        return { kind: "not_found", reason: "not found", suggestion: "use task_send" }
+        return { kind: "not_found", reason: "not found", suggestion: "use AgentSend" }
       },
     })
     const execute = buildTaskExecute(makeDeps(manager))
 
     // when
-    const result = await execute("c", { prompt: "new work", category: "quick", run_in_background: true }, undefined, undefined, CTX)
+    const result = await execute("c", { prompt: "new work", model: "xai/grok-4.6" }, undefined, undefined, CTX)
 
     // then
     expect(sendToTaskCalls).toBe(0)

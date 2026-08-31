@@ -113,7 +113,7 @@ export function wireHarness(sessionId?: string, options: HarnessOptions = {}) {
             kind: "scope_denied" as const,
             task_id: record.task_id,
             owning_session_id: record.parent_session_id,
-            reason: `Task ${record.task_id} belongs to session ${record.parent_session_id}; pass all_scope to send across sessions.`,
+            reason: `Agent ${record.task_id} belongs to session ${record.parent_session_id}.`,
           }
         }
         return {
@@ -127,6 +127,7 @@ export function wireHarness(sessionId?: string, options: HarnessOptions = {}) {
         cancelCalls.push({ idOrName, ...(reason === undefined ? {} : { reason }) })
         const record =
           records[idOrName] ?? Object.values(records).find((candidate) => candidate.name === idOrName)
+        if (record !== undefined) records[record.task_id] = { ...record, status: "cancelled" }
         return {
           kind: "cancelled" as const,
           task_id: record?.task_id ?? idOrName,

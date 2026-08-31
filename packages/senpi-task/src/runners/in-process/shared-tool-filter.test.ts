@@ -25,14 +25,22 @@ describe("shared parent tool family filter", () => {
     expect(isTaskOrTeamFamilyTool("dag")).toBe(true)
     expect(isTaskOrTeamFamilyTool("task")).toBe(true)
     expect(isTaskOrTeamFamilyTool("task_create")).toBe(true)
-    expect(isTaskOrTeamFamilyTool("task_send")).toBe(true)
+    expect(isTaskOrTeamFamilyTool("Agent")).toBe(true)
+    expect(isTaskOrTeamFamilyTool("AgentSend")).toBe(true)
+    expect(isTaskOrTeamFamilyTool("AgentOutput")).toBe(true)
+    expect(isTaskOrTeamFamilyTool("AgentCancel")).toBe(true)
     expect(isTaskOrTeamFamilyTool("team_create")).toBe(true)
+    expect(isTaskOrTeamFamilyTool("team_send")).toBe(true)
+    expect(isTaskOrTeamFamilyTool("team_task_create")).toBe(true)
+    expect(isTaskOrTeamFamilyTool("team_task_list")).toBe(true)
+    expect(isTaskOrTeamFamilyTool("team_task_get")).toBe(true)
+    expect(isTaskOrTeamFamilyTool("team_task_update")).toBe(true)
     expect(isTaskOrTeamFamilyTool("grep")).toBe(false)
     expect(isTaskOrTeamFamilyTool("taskmaster")).toBe(false)
   })
 
   test("#given shared tools with family and ui-only entries #when filtered #then family and ui-only removed", () => {
-    const shared = [makeTool("grep"), makeTool("task_create"), makeTool("team_create"), makeTool("render_widget")]
+    const shared = [makeTool("grep"), makeTool("team_task_create"), makeTool("team_create"), makeTool("render_widget")]
 
     const filtered = filterSharedParentTools(shared, { uiOnlyToolNames: ["render_widget"] })
 
@@ -41,18 +49,18 @@ describe("shared parent tool family filter", () => {
 
   test("#given family tool in shared and in member-scoped #when merged #then only member-scoped family crosses the exclusion", () => {
     const shared = [makeTool("grep"), makeTool("task")]
-    const memberScoped = [makeTool("task_send")]
+    const memberScoped = [makeTool("AgentSend")]
 
     const merged = mergeChildCustomTools(shared, memberScoped)
 
-    expect(merged.map((tool) => tool.name)).toEqual(["grep", "task_send"])
+    expect(merged.map((tool) => tool.name)).toEqual(["grep", "AgentSend"])
     for (const tool of merged) {
       expect(typeof tool.execute).toBe("function")
     }
   })
 
   test("#given no member-scoped tools #when merged #then result is only the filtered shared set", () => {
-    const shared = [makeTool("glob"), makeTool("task_update")]
+    const shared = [makeTool("glob"), makeTool("team_task_update")]
 
     const merged = mergeChildCustomTools(shared, undefined)
 

@@ -1,4 +1,12 @@
 import type { AgentToolResult, ToolDefinition } from "@code-yeongyu/senpi"
+import {
+  TEAM_BOARD_TOOLS,
+  TEAM_TASK_CREATE,
+  TEAM_TASK_GET,
+  TEAM_TASK_LIST,
+  TEAM_TASK_UPDATE,
+  type TeamBoardToolName,
+} from "@rubato/team-core/team-tasklist"
 import type { Task } from "@rubato/team-core/types"
 import { Type } from "typebox"
 import type { Static } from "typebox"
@@ -12,6 +20,12 @@ import {
 import { toolResult } from "../control"
 import { isMissingStateError } from "./classify-error"
 import type { TeamToolDeps, TeamToolsService } from "./types"
+
+function teamBoardTool(name: TeamBoardToolName): (typeof TEAM_BOARD_TOOLS)[number] {
+  const tool = TEAM_BOARD_TOOLS.find((entry) => entry.name === name)
+  if (tool === undefined) throw new Error(`missing team board tool metadata for ${name}`)
+  return tool
+}
 
 const TaskStatusSchema = Type.Union(
   [Type.Literal("pending"), Type.Literal("claimed"), Type.Literal("in_progress"), Type.Literal("completed"), Type.Literal("deleted")],
@@ -130,23 +144,27 @@ export async function runTeamTaskUpdate(service: TeamToolsService, params: TeamT
 }
 
 export function createTeamTaskCreateTool(deps: TeamToolDeps): ToolDefinition {
+  const { name, label, description } = teamBoardTool(TEAM_TASK_CREATE)
   return {
-    name: "task_create",
-    label: "Task Create",
-    description: "Create an entry on the team tasklist (starts pending). Does NOT spawn an agent; use the 'task' tool to spawn child work.",
+    name,
+    label,
+    description,
     parameters: TeamTaskCreateParams,
     execute: (_toolCallId: string, params: TeamTaskCreateInput) => runTeamTaskCreate(deps.service, params),
   }
 }
 
 export function createTeamTaskListTool(deps: TeamToolDeps): ToolDefinition {
-  return { name: "task_list", label: "Task List", description: "Team tasklist: list entries, optionally filtered by status (pending, claimed, in_progress, completed, deleted) or owner. Child-agent state lives in task_output, not here.", parameters: TeamTaskListParams, execute: (_toolCallId: string, params: TeamTaskListInput) => runTeamTaskList(deps.service, params) }
+  const { name, label, description } = teamBoardTool(TEAM_TASK_LIST)
+  return { name, label, description, parameters: TeamTaskListParams, execute: (_toolCallId: string, params: TeamTaskListInput) => runTeamTaskList(deps.service, params) }
 }
 
 export function createTeamTaskGetTool(deps: TeamToolDeps): ToolDefinition {
-  return { name: "task_get", label: "Task Get", description: "Read one team tasklist entry by id; returns not_found if absent. The task_id is a tasklist id, not a child st_... id; use task_output for child agents.", parameters: TeamTaskGetParams, execute: (_toolCallId: string, params: TeamTaskGetInput) => runTeamTaskGet(deps.service, params) }
+  const { name, label, description } = teamBoardTool(TEAM_TASK_GET)
+  return { name, label, description, parameters: TeamTaskGetParams, execute: (_toolCallId: string, params: TeamTaskGetInput) => runTeamTaskGet(deps.service, params) }
 }
 
 export function createTeamTaskUpdateTool(deps: TeamToolDeps): ToolDefinition {
-  return { name: "task_update", label: "Task Update", description: "Update a team tasklist entry's status. Transitions run pending -> claimed -> in_progress -> completed, with deleted allowed from any state; status='claimed' claims it for owner (defaults to the lead). Illegal moves return already_claimed, blocked_by, invalid_transition, or cross_owner.", parameters: TeamTaskUpdateParams, execute: (_toolCallId: string, params: TeamTaskUpdateInput) => runTeamTaskUpdate(deps.service, params) }
+  const { name, label, description } = teamBoardTool(TEAM_TASK_UPDATE)
+  return { name, label, description, parameters: TeamTaskUpdateParams, execute: (_toolCallId: string, params: TeamTaskUpdateInput) => runTeamTaskUpdate(deps.service, params) }
 }

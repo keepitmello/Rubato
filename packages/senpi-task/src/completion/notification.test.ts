@@ -50,7 +50,7 @@ describe("buildCompletionDetails", () => {
     const details = buildCompletionDetails(record)
 
     // then
-    expect(details.task_id).toBe("st_deadbeef")
+    expect(details.agentId).toBe("st_deadbeef")
     expect(details.name).toBe("summarize-logs")
     expect(details.status).toBe("completed")
     expect(details.duration_ms).toBe(3000)
@@ -85,7 +85,7 @@ describe("buildCompletionDetails", () => {
     expect(readFileSync(spillPath, "utf8")).toBe(result)
   })
 
-  test("#given resident completed record #when details built #then continuation hint names task_send but never task_output", () => {
+  test("#given resident completed record #when details built #then continuation hint names AgentSend but never AgentOutput", () => {
     // given
     const record = completedRecord()
 
@@ -93,11 +93,13 @@ describe("buildCompletionDetails", () => {
     const details = buildCompletionDetails(record)
 
     // then
-    expect(details.continuation_hint).toContain("task_send")
+    expect(details.continuation_hint).toContain("AgentSend")
+    expect(details.continuation_hint).not.toContain("AgentOutput")
+    expect(details.continuation_hint).not.toContain("task_send")
     expect(details.continuation_hint).not.toContain("task_output")
   })
 
-  test("#given resident completed record #when details built #then task_send hint uses to and message params", () => {
+  test("#given resident completed record #when details built #then AgentSend hint uses agentId and message params", () => {
     // given
     const record = completedRecord()
 
@@ -105,9 +107,10 @@ describe("buildCompletionDetails", () => {
     const details = buildCompletionDetails(record)
 
     // then
-    expect(details.continuation_hint).toContain("task_send({ to:")
+    expect(details.continuation_hint).toContain("AgentSend({ agentId:")
     expect(details.continuation_hint).toContain("message:")
-    expect(details.continuation_hint).not.toContain("task_send({ task_id:")
+    expect(details.continuation_hint).not.toContain("AgentSend({ task_id:")
+    expect(details.continuation_hint).not.toContain("task_send")
     expect(details.continuation_hint).not.toContain("prompt:")
   })
 
@@ -140,7 +143,7 @@ describe("buildCompletionDetails", () => {
 })
 
 describe("buildCompletionMessage", () => {
-  test("#given a complete result #when notification built #then the body contains it without a follow-up task_output instruction", () => {
+  test("#given a complete result #when notification built #then the body contains it without a follow-up AgentOutput instruction", () => {
     // given
     const fullResult = "child final text ".repeat(100)
     const details = buildCompletionDetails(completedRecord({ final_response: fullResult }))
@@ -151,13 +154,15 @@ describe("buildCompletionMessage", () => {
     // then
     expect(message.customType).toBe("senpi-task.completion")
     expect(message.details).toEqual([details])
-    expect(message.content).toContain("task completion")
+    expect(message.content).toContain("agent completion")
     expect(message.content).toContain("name:summarize-logs")
-    expect(message.content).toContain("id:st_deadbeef")
+    expect(message.content).toContain("agentId:st_deadbeef")
     expect(message.content).toContain("status:completed")
     expect(message.content).toContain("duration:3s")
     expect(message.content).toContain(fullResult)
-    expect(message.content).toContain("task_send")
+    expect(message.content).toContain("AgentSend")
+    expect(message.content).not.toContain("AgentOutput")
+    expect(message.content).not.toContain("task_send")
     expect(message.content).not.toContain("task_output")
     expect(message.content).not.toContain("<task-notification>")
     expect(message.content).not.toContain("<head>")
@@ -189,7 +194,7 @@ describe("buildCompletionMessage", () => {
     expect(message.details).toHaveLength(2)
     expect(message.content).toContain("one")
     expect(message.content).toContain("two")
-    expect(message.content.match(/task completion/gu)).toHaveLength(2)
+    expect(message.content.match(/agent completion/gu)).toHaveLength(2)
     expect(message.content).not.toContain("<task-notification>")
   })
 })

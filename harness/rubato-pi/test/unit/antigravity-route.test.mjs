@@ -24,6 +24,14 @@ function response(json, { ok = true, status = 200 } = {}) {
   return { ok, status, json: async () => json };
 }
 
+test("catalog는 gemini-3.7-flash를 image 능력과 함께 공개한다", () => {
+  const flash = antigravityModels().find((entry) => entry.id === "gemini-3.7-flash");
+  assert.ok(flash, "gemini-3.7-flash 가 Antigravity catalog 에 없다");
+  assert.equal(flash.provider, ANTIGRAVITY_PROVIDER_ID);
+  assert.deepEqual(flash.input, ["text", "image"]);
+  assert.equal(flash.reasoning, true);
+});
+
 test("loadCodeAssist는 endpoint origin에 project를 묻는다", async () => {
   let seen;
   const project = await loadAntigravityProjectId("access", "http://127.0.0.1:18789/custom", async (url, init) => {

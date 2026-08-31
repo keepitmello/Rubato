@@ -4,7 +4,6 @@ import { AGENT_INTERACTION_POLICIES } from "../../agents"
 import type { SendInput, SendOutcome } from "../../steering"
 import { FakeRunner, baseSpec, cleanupProjects, flush, makeManager } from "../../manager/__fixtures__/manager-fakes"
 import { createMemberScopedTaskSendTool, createTaskSendTool, runTaskSend } from "./send"
-import type { TeamToolsService } from "../team/types"
 import type { SendManager } from "./types"
 
 afterEach(cleanupProjects)
@@ -21,25 +20,6 @@ function spyManager(outcome: SendOutcome): { manager: SendManager; sendCalls: Se
   return { manager, sendCalls }
 }
 
-function fail(name: string): never {
-  throw new Error(`fake TeamToolsService.${name} not configured`)
-}
-
-const fakeTeamToolsService: TeamToolsService = {
-  createTeam: () => Promise.resolve(fail("createTeam")),
-  deleteTeam: () => Promise.resolve(fail("deleteTeam")),
-  sendMessage: () => Promise.resolve(fail("sendMessage")),
-  status: () => Promise.resolve(fail("status")),
-  listTeams: () => Promise.resolve(fail("listTeams")),
-  createTask: () => Promise.resolve(fail("createTask")),
-  listTasks: () => Promise.resolve(fail("listTasks")),
-  updateTask: () => Promise.resolve(fail("updateTask")),
-  getTask: () => Promise.resolve(fail("getTask")),
-  requestShutdown: () => Promise.resolve(fail("requestShutdown")),
-  approveShutdown: () => Promise.resolve(fail("approveShutdown")),
-  rejectShutdown: () => Promise.resolve(fail("rejectShutdown")),
-}
-
 describe("runTaskSend", () => {
   test("#given task_send tool factories #when tools are created #then both expose custom call and result renderers", () => {
     const { manager } = spyManager({ kind: "not_found", reason: "unused", suggestion: "unused" })
@@ -47,9 +27,6 @@ describe("runTaskSend", () => {
     const leadTool = createTaskSendTool({ manager })
     const memberTool = createMemberScopedTaskSendTool({
       manager,
-      service: fakeTeamToolsService,
-      teamRunId: "team-run-1",
-      from: "atlas",
     })
 
     expect(typeof leadTool.renderCall).toBe("function")
@@ -63,36 +40,39 @@ describe("runTaskSend", () => {
     const started = await manager.start(baseSpec({ parent_session_id: "p1" }))
     if (started.kind !== "started") throw new Error("expected started")
 
-    const result = await runTaskSend(manager, { to: started.task_id, message: "keep going" }, "p1")
+    const result = await runTaskSend(manager, { agentId: started.task_id, message: "keep going" }, "p1")
 
     expect(result.details.kind).toBe("steered")
     if (result.details.kind !== "steered") throw new Error("expected steered")
     expect(result.details.delivered).toBe("steer")
-    expect(result.details.task_id).toBe(started.task_id)
+    expect(result.details.agentId).toBe(started.task_id)
   })
 
   test("#given a caller session id #when sending #then callerSessionId is injected into the steering call", async () => {
     const { manager, sendCalls } = spyManager({ kind: "steered", task_id: "st_00000001", status: "running", delivered: "steer" })
 
-    await runTaskSend(manager, { to: "st_00000001", message: "hi" }, "session-42")
+    await runTaskSend(manager, { agentId: "st_00000001", message: "hi" }, "session-42")
 
     expect(sendCalls[0]?.callerSessionId).toBe("session-42")
     expect(sendCalls[0]?.allScope).toBeUndefined()
   })
 
-  test("#given all_scope true #when sending #then allScope is forwarded to the engine", async () => {
-    const { manager, sendCalls } = spyManager({ kind: "steered", task_id: "st_00000001", status: "running", delivered: "steer" })
+  test("#given the public AgentSend schema #when inspected #then team routing shutdown and all_scope are absent", () => {
+    const { manager } = spyManager({ kind: "not_found", reason: "unused", suggestion: "unused" })
+    const tool = createTaskSendTool({ manager })
+    const keys = Object.keys(tool.parameters.properties)
 
-    await runTaskSend(manager, { to: "st_00000001", message: "hi", all_scope: true }, "session-42")
-
-    expect(sendCalls[0]?.allScope).toBe(true)
-    expect(sendCalls[0]?.deliverAs).toBe("steer")
+    expect(keys).toEqual(["agentId", "message"])
+    expect(tool.description).not.toContain("all_scope")
+    expect(tool.description).not.toContain("shutdown")
+    expect(tool.description).not.toContain("team_run_id")
+    expect(tool.description).not.toContain("task_id")
   })
 
   test("#given plain-text send without a message #when sent #then it is rejected before routing", async () => {
     const { manager, sendCalls } = spyManager({ kind: "not_found", reason: "unused", suggestion: "unused" })
 
-    const result = await runTaskSend(manager, { to: "alpha" }, "lead-session")
+    const result = await runTaskSend(manager, { agentId: "alpha" }, "lead-session")
 
     expect(result.details).toEqual({ kind: "invalid_arguments", reason: "message is required" })
     expect(sendCalls).toEqual([])
@@ -103,7 +83,7 @@ describe("runTaskSend", () => {
     const started = await manager.start(baseSpec({ parent_session_id: "owner-session" }))
     if (started.kind !== "started") throw new Error("expected started")
 
-    const result = await runTaskSend(manager, { to: started.task_id, message: "hi" }, "intruder-session")
+    const result = await runTaskSend(manager, { agentId: started.task_id, message: "hi" }, "intruder-session")
 
     expect(result.details.kind).toBe("scope_denied")
     if (result.details.kind !== "scope_denied") throw new Error("expected scope_denied")
@@ -116,18 +96,18 @@ describe("runTaskSend", () => {
     const started = await manager.start(baseSpec({ parent_session_id: "p1", name: "alpha" }))
     if (started.kind !== "started") throw new Error("expected started")
 
-    const result = await runTaskSend(manager, { to: "ghost", message: "hi" }, "p1")
+    const result = await runTaskSend(manager, { agentId: "ghost", message: "hi" }, "p1")
 
     expect(result.details.kind).toBe("not_found")
     if (result.details.kind !== "not_found") throw new Error("expected not_found")
-    expect(result.details.known_tasks).toContain("alpha")
+    expect(result.details.known_agents).toContain("alpha")
     expect(result.content[0]?.type === "text" && result.content[0].text).toContain("alpha")
   })
 
   test("#given a string recipient that is not a child and no team routing #when sent #then the child not_found result is preserved", async () => {
     const { manager } = spyManager({ kind: "not_found", reason: "No task found for \"ghost\".", suggestion: "unused" })
 
-    const result = await runTaskSend(manager, { to: "ghost", message: "hi" }, "p1")
+    const result = await runTaskSend(manager, { agentId: "ghost", message: "hi" }, "p1")
 
     expect(result.details.kind).toBe("not_found")
   })
@@ -138,7 +118,7 @@ describe("runTaskSend", () => {
     if (started.kind !== "started") throw new Error("expected started")
     await manager.cancelTask(started.task_id, "done")
 
-    const result = await runTaskSend(manager, { to: started.task_id, message: "revive?" }, "p1")
+    const result = await runTaskSend(manager, { agentId: started.task_id, message: "revive?" }, "p1")
 
     expect(result.details.kind).toBe("not_continuable")
   })
@@ -153,12 +133,12 @@ describe("runTaskSend one-shot agent refusal", () => {
     if (started.kind !== "started") throw new Error("expected started")
 
     // when
-    const result = await runTaskSend(manager, { to: started.task_id, message: "please reconsider" }, "p1")
+    const result = await runTaskSend(manager, { agentId: started.task_id, message: "please reconsider" }, "p1")
 
     // then
     expect(result.details.kind).toBe("one_shot_agent")
     if (result.details.kind !== "one_shot_agent") throw new Error("expected one_shot_agent")
-    expect(result.details.task_id).toBe(started.task_id)
+    expect(result.details.agentId).toBe(started.task_id)
     expect(result.details.agent).toBe("momus")
     const text = result.content[0]?.type === "text" ? result.content[0].text : ""
     expect(text).toBe(AGENT_INTERACTION_POLICIES.momus.sendDenialReminder)
@@ -178,7 +158,7 @@ describe("runTaskSend one-shot agent refusal", () => {
     expect(store.load(started.task_id)?.status).toBe("completed")
 
     // when
-    const result = await runTaskSend(manager, { to: started.task_id, message: "another round?" }, "p1")
+    const result = await runTaskSend(manager, { agentId: started.task_id, message: "another round?" }, "p1")
 
     // then
     expect(result.details.kind).toBe("one_shot_agent")
@@ -199,7 +179,7 @@ describe("runTaskSend one-shot agent refusal", () => {
     expect(store.load(started.task_id)?.status).toBe("completed")
 
     // when
-    const result = await runTaskSend(manager, { to: started.task_id, message: "second pass" }, "p1")
+    const result = await runTaskSend(manager, { agentId: started.task_id, message: "second pass" }, "p1")
 
     // then
     expect(result.details.kind).toBe("revived")

@@ -8,7 +8,7 @@ import { listUnreadMessages } from "@rubato/team-core/team-mailbox"
 
 import type { PersistedTaskEvent } from "../../store"
 import { MemberExtensionConfigError, parseMemberExtensionEnv } from "./index"
-import { runMemberTaskSend } from "./tools"
+import { createMemberTaskSendTool, runMemberTaskSend } from "./tools"
 
 const TEAM_RUN_ID = "66666666-6666-4666-8666-666666666666"
 const roots: string[] = []
@@ -35,7 +35,19 @@ afterEach(() => {
 })
 
 describe("member extension tools", () => {
-  test("#given member and lead recipients #when task_send runs #then each durable inbox receives its unchanged message", async () => {
+  test("#given the factory #when built #then it names the tool team_send", () => {
+    const harness = createHarness()
+    const tool = createMemberTaskSendTool({
+      teamRunId: TEAM_RUN_ID,
+      memberName: "alice",
+      taskId: "st_00000001",
+      config: harness.config,
+      members: ["alice", "bob"],
+    })
+    expect(tool.name).toBe("team_send")
+  })
+
+  test("#given member and lead recipients #when team_send runs #then each durable inbox receives its unchanged message", async () => {
     // given
     const harness = createHarness()
     const ids = [
@@ -65,7 +77,7 @@ describe("member extension tools", () => {
     expect(harness.events.map((event) => event.type)).toEqual(["team_message_sent", "team_message_sent"])
   })
 
-  test("#given an unknown recipient #when task_send runs #then it rejects without writing mail", async () => {
+  test("#given an unknown recipient #when team_send runs #then it rejects without writing mail", async () => {
     // given
     const harness = createHarness()
     const deps = {
@@ -80,7 +92,7 @@ describe("member extension tools", () => {
     await expect(runMemberTaskSend(deps, { to: "nobody", message: "nope" })).rejects.toThrow("Unknown team recipient")
   })
 
-  test("#given an unknown recipient #when task_send runs #then the error lists the valid recipients", async () => {
+  test("#given an unknown recipient #when team_send runs #then the error lists the valid recipients", async () => {
     // given
     const harness = createHarness()
     const deps = {

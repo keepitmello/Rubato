@@ -1,6 +1,6 @@
 import { describe, expect, expectTypeOf, test } from "bun:test"
 
-import type { TaskTargetErrorCode } from "../tools/task/validation"
+import type { TaskTargetErrorCode } from "./node-target"
 import {
   DAG_ACTIVITY_CHANNEL,
   DAG_EVENT_LANES,

@@ -2,8 +2,8 @@ import { join } from "node:path";
 import { assertEngineBuilt, rubatoExtension } from "../engine-paths.mjs";
 import { resolveRole } from "../role-contract.mjs";
 import { promptForAgentStart } from "../system-prompt.mjs";
-import { isTeamMemberProcess, parseMemberIdentity } from "../member-identity.mjs";
-import { registerMemberBoardTools, restoreMemberTaskEngine } from "../member-tools.mjs";
+import { isTeamMemberProcess } from "../member-identity.mjs";
+import { restoreMemberTaskEngine } from "../member-tools.mjs";
 import { rubatoPiMemoryComponent, rubatoPiTaskComponent } from "../rubato-runtime.mjs";
 import { DAG_RUBATO_OWNED_COMPONENTS } from "../policy.mjs";
 import { provisionSpecWorktrees } from "../team-worktrees.mjs";
@@ -62,7 +62,6 @@ export default async function rubatoPiAdapter(pi) {
   }
   if (member && taskComponent) {
     await restoreMemberTaskEngine(composeRubatoExtension, taskComponent, pi);
-    registerMemberBoardTools(pi, parseMemberIdentity() ?? {});
   }
 
   pi.on("before_agent_start", async (event, ctx) => ({

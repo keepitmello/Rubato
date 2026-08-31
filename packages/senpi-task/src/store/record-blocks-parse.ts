@@ -134,6 +134,7 @@ function readResolvedModel(value: Record<string, unknown>): ResolvedModelRecord 
   const variant = readOptionalString(value, "variant")
   const legacyReasoningEffort = readOptionalString(value, "reasoning_effort")
   const reasoning = readOptionalString(value, "reasoning")
+  const effortSource = readEffortSource(value)
   return {
     provider: readString(value, "provider"),
     model_id: readString(value, "model_id"),
@@ -142,7 +143,13 @@ function readResolvedModel(value: Record<string, unknown>): ResolvedModelRecord 
     ...(variant === undefined ? {} : { variant }),
     ...(legacyReasoningEffort === undefined ? {} : { reasoning_effort: legacyReasoningEffort }),
     ...(reasoning === undefined ? {} : { reasoning }),
+    ...(effortSource === undefined ? {} : { effortSource }),
   }
+}
+
+function readEffortSource(record: Record<string, unknown>): ResolvedModelRecord["effortSource"] {
+  const source = record["effortSource"]
+  return source === "model-default" || source === "manual-override" ? source : undefined
 }
 
 function readResolvedModelSource(record: Record<string, unknown>): ResolvedModelRecord["source"] {

@@ -3,20 +3,19 @@ import { Type } from "typebox"
 import type { Static } from "typebox"
 
 import type { TaskStatus } from "../../state"
+import { createSenpiAgentHandle } from "../host/senpi-agent-host"
 import { renderTaskCancelCall, renderTaskCancelResult } from "./renderers"
 import { toolResult } from "./tool-result"
 import type { CancelManager, CancelResultDetails, CancelToolResult } from "./types"
 
 export const TaskCancelParams = Type.Object({
-  task_id: Type.Optional(Type.String({ description: "Task id (st_...) of the child to cancel. Provide exactly one of task_id or name." })),
-  name: Type.Optional(Type.String({ description: "Canonical task name; required if task_id is omitted." })),
-  reason: Type.Optional(Type.String({ description: "Optional human-readable reason recorded on the cancelled task." })),
+  agentId: Type.String({ description: "agentId of the child to cancel." }),
 })
 
-export type TaskCancelInput = Static<typeof TaskCancelParams>
+export type TaskCancelInput = Static<typeof TaskCancelParams> & { readonly reason?: string }
 
 const DESCRIPTION = [
-  "Cancel a running child task and release its resources; the cancelled status is preserved so task_output can still report the outcome.",
+  "Cancel a running child agent and release its resources; the cancelled status is preserved so AgentOutput can still report the outcome.",
   "Cancel is terminal and NOT resumable; cancelling a child that is not running is a no-op that reports its unchanged status.",
   "Use this to end work you no longer need.",
 ].join(" ")
@@ -25,22 +24,23 @@ export type TaskCancelDeps = {
   readonly manager: CancelManager
 }
 
-export async function runTaskCancel(manager: CancelManager, params: TaskCancelInput): Promise<CancelToolResult> {
-  const idOrName = params.task_id ?? params.name
-  if (idOrName === undefined) {
-    return toolResult("Provide task_id or name to identify the child task.", {
+export async function runTaskCancel(manager: CancelManager, params: Partial<TaskCancelInput>): Promise<CancelToolResult> {
+  const agentId = params.agentId?.trim()
+  if (agentId === undefined || agentId.length === 0) {
+    return toolResult("agentId is required", {
       kind: "invalid_arguments",
-      reason: "Provide task_id or name to identify the child task.",
+      reason: "agentId is required",
     })
   }
 
-  const outcome = await manager.cancelTask(idOrName, params.reason)
+  const handle = createSenpiAgentHandle(manager, agentId)
+  const outcome = await handle.cancelChild(params.reason)
   switch (outcome.kind) {
     case "cancelled": {
       const status = manager.get(outcome.task_id)?.status ?? ("cancelled" satisfies TaskStatus)
       return toolResult(`Cancelled ${outcome.task_id} (was ${outcome.previous_status}, now ${status}).`, {
         kind: "cancelled",
-        task_id: outcome.task_id,
+        agentId: outcome.task_id,
         previous_status: outcome.previous_status,
         status,
       })
@@ -48,7 +48,7 @@ export async function runTaskCancel(manager: CancelManager, params: TaskCancelIn
     case "noop":
       return toolResult(`${outcome.reason} No change.`, {
         kind: "noop",
-        task_id: outcome.task_id,
+        agentId: outcome.task_id,
         status: outcome.status,
         reason: outcome.reason,
       })
@@ -59,8 +59,8 @@ export async function runTaskCancel(manager: CancelManager, params: TaskCancelIn
 
 export function createTaskCancelTool(deps: TaskCancelDeps): ToolDefinition<typeof TaskCancelParams, CancelResultDetails> {
   return {
-    name: "task_cancel",
-    label: "Task Cancel",
+    name: "AgentCancel",
+    label: "Agent Cancel",
     description: DESCRIPTION,
     parameters: TaskCancelParams,
     execute: (_toolCallId, params) => runTaskCancel(deps.manager, params),

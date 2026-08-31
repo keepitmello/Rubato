@@ -3,6 +3,9 @@ import { describe, expect, test } from "bun:test"
 import { SenpiShutdownError } from "../../team"
 import { createFakeTeamService, fakeRuntimeState } from "./__fixtures__/team-tool-fakes"
 import {
+  createTeamApproveShutdownTool,
+  createTeamRejectShutdownTool,
+  createTeamShutdownRequestTool,
   runTeamApproveShutdown,
   runTeamRejectShutdown,
   runTeamShutdownRequest,
@@ -71,5 +74,56 @@ describe("shutdown reject route", () => {
     })
     const result = await runTeamRejectShutdown(service, { team_run_id: "run-1", member: "alpha", reason: "no" })
     expect(result.details.kind).toBe("no_pending_request")
+  })
+})
+
+describe("lead shutdown tools", () => {
+  test("#given the factories #when built #then they register dedicated team_* shutdown names", () => {
+    const deps = { service: createFakeTeamService() }
+    expect(createTeamShutdownRequestTool(deps).name).toBe("team_shutdown_request")
+    expect(createTeamApproveShutdownTool(deps).name).toBe("team_approve_shutdown")
+    expect(createTeamRejectShutdownTool(deps).name).toBe("team_reject_shutdown")
+  })
+
+  test("#given a lead shutdown request tool #when executed #then requestShutdown runs for that member", async () => {
+    const service = createFakeTeamService({ requestShutdown: async () => fakeRuntimeState() })
+    const tool = createTeamShutdownRequestTool({ service })
+
+    const result = await tool.execute(
+      "call-1",
+      { team_run_id: "run-1", member: "alpha" },
+      undefined,
+      undefined,
+      {} as never,
+    )
+
+    expect(result.details).toMatchObject({ kind: "requested", team_run_id: "run-1", member: "alpha" })
+    expect(service.calls[0]).toMatchObject({ method: "requestShutdown", args: ["run-1", "alpha"] })
+  })
+
+  test("#given a lead approve then reject tool #when executed #then each completes the shutdown protocol", async () => {
+    const service = createFakeTeamService({
+      approveShutdown: async () => fakeRuntimeState(),
+      rejectShutdown: async () => fakeRuntimeState(),
+    })
+
+    const approved = await createTeamApproveShutdownTool({ service }).execute(
+      "call-2",
+      { team_run_id: "run-1", member: "alpha" },
+      undefined,
+      undefined,
+      {} as never,
+    )
+    const rejected = await createTeamRejectShutdownTool({ service }).execute(
+      "call-3",
+      { team_run_id: "run-1", member: "alpha", reason: "still needed" },
+      undefined,
+      undefined,
+      {} as never,
+    )
+
+    expect(approved.details).toMatchObject({ kind: "approved", member: "alpha" })
+    expect(rejected.details).toMatchObject({ kind: "rejected", member: "alpha", reason: "still needed" })
+    expect(service.calls.map((call) => call.method)).toEqual(["approveShutdown", "rejectShutdown"])
   })
 })

@@ -23,7 +23,8 @@ export const ANTIGRAVITY_PROJECT_ENV = "RUBATO_ANTIGRAVITY_PROJECT";
 
 const WIRE_MODELS = Object.freeze({
   "gemini-3.7-flash": Object.freeze({
-    default: "gemini-3.7-flash-low",
+    // [Assumption] Flash starts at medium; Rubato is not using `low` as a seeded default.
+    default: "gemini-3.7-flash-medium",
     minimal: "gemini-3.7-flash-low",
     low: "gemini-3.7-flash-low",
     medium: "gemini-3.7-flash-medium",

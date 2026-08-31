@@ -10,7 +10,7 @@ export type SharedToolFilterOptions = {
 }
 
 export function isTaskOrTeamFamilyTool(name: string): boolean {
-  return name === "dag" || name === "task" || name.startsWith("task_") || name.startsWith("team_")
+  return name === "dag" || name === "task" || name.startsWith("Agent") || name.startsWith("task_") || name.startsWith("team_")
 }
 
 export function filterSharedParentTools(

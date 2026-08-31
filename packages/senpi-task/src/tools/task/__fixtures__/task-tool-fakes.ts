@@ -3,7 +3,11 @@ import type { RubatoConfig } from "@rubato/config-core"
 import type { TaskManager } from "../../../manager"
 import { createTaskRecord } from "../../../state"
 import type { TaskRecord } from "../../../state"
-import type { SkillResolution, TaskToolContext, TaskToolDeps } from "../types"
+import type { TaskToolContext, TaskToolDeps } from "../types"
+
+export const LIVE_MODEL = "xai/grok-4.6"
+export const MOMUS_AGENTS = { momus: { name: "momus" } }
+export const EXPLORE_AGENTS = { explore: { name: "explore" } }
 
 export const RUBATO_CONFIG: RubatoConfig = { categories: {}, agents: {} }
 
@@ -56,7 +60,7 @@ export function makeDeps(manager: TaskManager, extra: Partial<TaskToolDeps> = {}
     manager,
     rubatoConfig: RUBATO_CONFIG,
     agents: {},
-    loadSkills: () => ({ prepend: "", resolved: [], missing: [] }) satisfies SkillResolution,
+    models: { has: (model) => model.includes("/") },
     ...extra,
   }
 }

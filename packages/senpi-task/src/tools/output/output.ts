@@ -1,22 +1,20 @@
 import type { ToolDefinition } from "@code-yeongyu/senpi"
+import type { AgentSnapshot } from "@rubato/agent-core"
 import { Type } from "typebox"
 import type { Static } from "typebox"
 
-import type { ListScope, ListedTask } from "../../manager"
-import type { TaskRecord } from "../../state"
 import { defaultResolveCallerSessionId, toolResult } from "../control"
-import { renderTaskOutputCall, renderTaskOutputResult, taskOutputModelText } from "./renderers"
+import { createSenpiAgentHandle } from "../host/senpi-agent-host"
+import { renderTaskOutputCall, renderTaskOutputResult } from "./renderers"
 import { renderTranscript } from "./render"
-import { buildTaskSnapshot } from "./snapshot"
 import { defaultTranscriptReader } from "./transcript"
-import type { TaskOutputDeps, TaskOutputDetails, TaskOutputToolResult, TaskSnapshot, TranscriptReader } from "./types"
+import type { TaskOutputDeps, TaskOutputDetails, TaskOutputToolResult, TranscriptReader } from "./types"
 
 export const TaskOutputParams = Type.Object({
-  task_id: Type.Optional(Type.String({ description: "Task id (st_...) of the child to read. Provide exactly one of task_id or name." })),
-  name: Type.Optional(Type.String({ description: "Canonical task name; required if task_id is omitted." })),
+  agentId: Type.String({ description: "agentId of the child to read." }),
   mode: Type.Optional(
     Type.Union([Type.Literal("status"), Type.Literal("tail"), Type.Literal("full")], {
-      description: "status (default) = record snapshot + final result; tail = last lines of the transcript; full = whole transcript.",
+      description: "status (default) = host snapshot; tail = last lines of the transcript; full = whole transcript.",
     }),
   ),
   tail_lines: Type.Optional(
@@ -30,55 +28,67 @@ const DEFAULT_TAIL_LINES = 60
 const BLOCKING_REMOVED_GUIDANCE = 'blocking removed - completion arrives as a notification; use mode:"tail" to peek.'
 
 const DESCRIPTION = [
-  "Read one child task, keyed by task_id or name. task_output always returns immediately: mode='status' (default) returns the record snapshot plus the final response once terminal.",
+  "Read one child agent, keyed by agentId. AgentOutput always returns immediately: mode='status' (default) returns the host snapshot, including the final output once terminal.",
   "mode='tail' returns the last tail_lines of the recorded transcript; mode='full' returns the whole transcript (capped, with a head/tail elision marker). Completion notifications already include the final result.",
-  "READ-ONLY: this never revives, steers, or otherwise touches the child. A lost task returns a status view with a lost explanation and pid/session-dir breadcrumbs.",
+  "READ-ONLY: this never revives, steers, or otherwise touches the child.",
   "Only the current session's children are visible.",
 ].join(" ")
 
 export function runTaskOutput(
   deps: TaskOutputDeps,
-  params: TaskOutputInput,
+  params: Partial<TaskOutputInput>,
   callerSessionId: string | undefined,
 ): Promise<TaskOutputToolResult> {
   if (hasLegacyBlockingParam(params)) return Promise.resolve(invalidArguments(BLOCKING_REMOVED_GUIDANCE))
 
-  const idOrName = params.task_id ?? params.name
-  if (idOrName === undefined) return Promise.resolve(invalidArguments("Provide task_id or name to identify the child task."))
+  const agentId = params.agentId?.trim()
+  if (agentId === undefined || agentId.length === 0) {
+    return Promise.resolve(invalidArguments("agentId is required"))
+  }
+  if (callerSessionId === undefined) return Promise.resolve(notFound(agentId))
 
-  const candidates = scopedCandidates(deps.manager.list.bind(deps.manager), callerSessionId)
-  const record = resolveTarget(candidates, idOrName)
-  if (record === undefined) return Promise.resolve(notFound(candidates, idOrName))
-
-  return Promise.resolve(outputForRecord(deps, record, params))
+  return outputForHandle(deps, agentId, params, callerSessionId)
 }
 
 function hasLegacyBlockingParam(params: object): boolean {
   return Reflect.get(params, "block") !== undefined || Reflect.get(params, "timeout_ms") !== undefined
 }
 
-function outputForRecord(deps: TaskOutputDeps, record: TaskRecord, params: TaskOutputInput): TaskOutputToolResult {
-  const now = (deps.now ?? Date.now)()
-  const snapshot = buildTaskSnapshot(record, deps.stateDir, now)
-  const mode = params.mode ?? "status"
+async function outputForHandle(
+  deps: TaskOutputDeps,
+  agentId: string,
+  params: Partial<TaskOutputInput>,
+  callerSessionId: string,
+): Promise<TaskOutputToolResult> {
+  const handle = createSenpiAgentHandle({ get: deps.manager.get }, agentId, { callerSessionId })
+  let snapshot: AgentSnapshot
+  try {
+    snapshot = await handle.output()
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("No agent '")) return notFound(agentId)
+    throw error
+  }
 
-  if (mode === "status" || record.status === "lost") {
+  const mode = params.mode ?? "status"
+  if (mode === "status" || snapshot.status === "lost") {
     return toolResult(statusText(snapshot), { kind: "status", snapshot })
   }
 
-  return transcriptResult(deps, record, snapshot, mode, params.tail_lines ?? DEFAULT_TAIL_LINES)
+  const record = deps.manager.get(agentId)
+  if (record === undefined) return notFound(agentId)
+  return transcriptResult(deps, record.task_id, snapshot, mode, params.tail_lines ?? DEFAULT_TAIL_LINES)
 }
 
 function transcriptResult(
   deps: TaskOutputDeps,
-  record: TaskRecord,
-  snapshot: TaskSnapshot,
+  taskId: string,
+  snapshot: AgentSnapshot,
   mode: "tail" | "full",
   tailLines: number,
 ): TaskOutputToolResult {
   const reader: TranscriptReader = deps.transcriptReader ?? defaultTranscriptReader
   const { entries, source, truncated: sourceTruncated } = reader({
-    taskId: record.task_id,
+    taskId,
     stateDir: deps.stateDir,
   })
   const rendered = renderTranscript(entries, { mode, tailLines })
@@ -90,37 +100,26 @@ function transcriptResult(
     truncated: rendered.truncated || sourceTruncated === true,
     snapshot,
   }
-  return toolResult(`${record.task_id} [${record.status}] transcript via ${source}:\n${rendered.text}`, details)
+  return toolResult(`${snapshot.agentId} [${snapshot.status}] transcript via ${source}:\n${rendered.text}`, details)
 }
 
-// Fail-closed scope: candidates are ONLY the caller session's children. No caller id -> nothing is
-// visible, so a valid id owned by another session reads as not_found (never cross-session leakage).
-function scopedCandidates(
-  list: (scope: ListScope) => readonly ListedTask[],
-  callerSessionId: string | undefined,
-): readonly TaskRecord[] {
-  if (callerSessionId === undefined) return []
-  return list({ scope: "parent-session", session_id: callerSessionId }).map((entry) => entry.record)
-}
-
-function resolveTarget(candidates: readonly TaskRecord[], idOrName: string): TaskRecord | undefined {
-  return candidates.find((record) => record.task_id === idOrName) ?? candidates.find((record) => record.name === idOrName)
-}
-
-function statusText(snapshot: TaskSnapshot): string {
-  const parts = [`${snapshot.task_id} [${snapshot.status}] ${taskOutputModelText(snapshot)}`]
-  if (snapshot.suspended !== undefined) parts.push(snapshot.suspended.explanation)
-  if (snapshot.pid !== undefined) parts.push(`pid ${snapshot.pid}`)
-  if (snapshot.lost !== undefined) parts.push(snapshot.lost.explanation)
-  if (snapshot.error_message !== undefined) parts.push(`error: ${snapshot.error_message}`)
-  if (snapshot.final_response !== undefined) parts.push(snapshot.final_response)
+function statusText(snapshot: AgentSnapshot): string {
+  const parts = [`${snapshot.agentId} [${snapshot.status}]`]
+  if (snapshot.model !== undefined) parts.push(`model ${snapshot.model}`)
+  if (snapshot.effort !== undefined) {
+    const source = snapshot.effortSource === undefined ? "" : ` (${snapshot.effortSource})`
+    parts.push(`effort ${snapshot.effort}${source}`)
+  }
+  if (snapshot.output !== undefined) parts.push(snapshot.output)
   return parts.join("\n")
 }
 
-function notFound(candidates: readonly TaskRecord[], idOrName: string): TaskOutputToolResult {
-  const known = candidates.map((record) => record.name ?? record.task_id)
-  const listText = known.length > 0 ? ` Known tasks in this session: ${known.join(", ")}.` : ""
-  return toolResult(`No task '${idOrName}' in this session.${listText}`, { kind: "not_found", reason: `No task '${idOrName}' in this session.`, known_tasks: known })
+function notFound(agentId: string): TaskOutputToolResult {
+  return toolResult(`No agent '${agentId}' in this session.`, {
+    kind: "not_found",
+    reason: `No agent '${agentId}' in this session.`,
+    known_agents: [],
+  })
 }
 
 function invalidArguments(reason: string): TaskOutputToolResult {
@@ -130,8 +129,8 @@ function invalidArguments(reason: string): TaskOutputToolResult {
 export function createTaskOutputTool(deps: TaskOutputDeps): ToolDefinition<typeof TaskOutputParams, TaskOutputDetails> {
   const resolveCaller = deps.resolveCallerSessionId ?? defaultResolveCallerSessionId
   return {
-    name: "task_output",
-    label: "Task Output",
+    name: "AgentOutput",
+    label: "Agent Output",
     description: DESCRIPTION,
     parameters: TaskOutputParams,
     execute: (_toolCallId, params, _signal, _onUpdate, ctx) => runTaskOutput(deps, params, resolveCaller(ctx)),

@@ -1,5 +1,9 @@
 import type { RubatoConfig } from "@rubato/config-core"
 import {
+  resolveModelEffort,
+  type EffortSource,
+} from "@rubato/model-core"
+import {
   resolveAgent,
   resolveCategory,
   type AgentDefinition,
@@ -13,6 +17,8 @@ import {
 type ResolvedPlan = Extract<PlanResolution, { readonly kind: "resolved" }>["plan"]
 type ResolvedModelMetadata = NonNullable<ResolvedPlan["resolved_model"]>
 
+export type { EffortSource }
+
 // The live senpi model registry surface the planner needs. ExtensionContext.modelRegistry satisfies
 // it structurally; a fake with getAvailable/find satisfies it in tests.
 export type TaskModelRegistry = SenpiModelRegistryPort<SenpiModelPort>
@@ -21,11 +27,15 @@ export type ResolveModelRegistry = () => TaskModelRegistry | undefined
 
 const NO_REGISTRY_MESSAGE = "No senpi model registry is available yet to resolve a task model."
 
+export function plannedEffortSource(model: ResolvedModelMetadata | undefined): EffortSource | undefined {
+  const source = model?.effortSource
+  return source === "model-default" || source === "manual-override" ? source : undefined
+}
+
 // The category-and-agent resolving ChildPlanner the manager consumes. Resolution order:
-// 1. a subagent_type naming a known agent wins: an explicit `model` keeps the headless explicit
-//    path (agent persona attached, no registry access); otherwise the agent's model chain resolves
-//    against the live registry and a missing registry fails closed as model_unavailable.
-// 2. an explicit `model` alone is honored verbatim, before any registry access.
+// 1. a subagent_type naming a known agent wins. An explicit `model` still has to be in the live
+//    registry; missing models fail closed as model_unavailable instead of spawning headless.
+// 2. an explicit `model` alone is admitted only when the live registry can see that exact id.
 // 3. a category (or a subagent_type naming a category) resolves against rubato.json + the registry.
 export function createTaskChildPlanner(
   rubatoConfig: RubatoConfig,
@@ -40,14 +50,7 @@ export function createTaskChildPlanner(
     }
 
     if (spec.category === undefined && spec.subagent_type === undefined && spec.model !== undefined && spec.model.length > 0) {
-      const resolvedModel = explicitModelMetadata(spec.model)
-      return withReasoningPolicy({
-        kind: "resolved",
-        plan: {
-          model: spec.model,
-          ...(resolvedModel !== undefined ? { resolved_model: resolvedModel } : {}),
-        },
-      }, spec.reasoning)
+      return withReasoningPolicy(resolveExactModel(spec.model, resolveRegistry), spec.reasoning)
     }
 
     const categoryName = spec.category ?? spec.subagent_type
@@ -80,34 +83,32 @@ export function createTaskChildPlanner(
 
 function withReasoningPolicy(resolution: PlanResolution, reasoning: string | undefined): PlanResolution {
   if (resolution.kind !== "resolved") return resolution
+  const explicit = reasoning !== undefined && reasoning.length > 0 ? reasoning : undefined
+  const applyRecord = (model: ResolvedModelMetadata): ResolvedModelMetadata => {
+    const applied = resolveModelEffort(`${model.provider}/${model.model_id}`, explicit)
+    if (applied === undefined) return model
+    return {
+      ...model,
+      reasoning: applied.effort,
+      reasoning_effort: applied.effort,
+      effortSource: applied.effortSource,
+    }
+  }
   const { plan } = resolution
-  const appliedReasoning = reasoning ?? plan.variant ?? defaultReasoningForModel(plan.model)
-  if (appliedReasoning === undefined || (reasoning === undefined && plan.variant !== undefined)) return resolution
-  const apply = (model: ResolvedModelMetadata, effort = appliedReasoning): ResolvedModelMetadata => ({
-    ...model,
-    reasoning: effort,
-    reasoning_effort: effort,
-  })
+  const applied = resolveModelEffort(plan.model, explicit)
+  const { variant: _unusedVariant, ...rest } = plan
   return {
     kind: "resolved",
     plan: {
-      ...plan,
-      ...(plan.resolved_model !== undefined ? { resolved_model: apply(plan.resolved_model) } : {}),
-      ...(reasoning !== undefined && plan.requested_model !== undefined ? { requested_model: apply(plan.requested_model) } : {}),
-      ...(reasoning !== undefined && plan.fallback_models !== undefined
-        ? { fallback_models: plan.fallback_models.map((model) => apply(model)) }
+      ...rest,
+      ...(plan.resolved_model !== undefined ? { resolved_model: applyRecord(plan.resolved_model) } : {}),
+      ...(plan.requested_model !== undefined ? { requested_model: applyRecord(plan.requested_model) } : {}),
+      ...(plan.fallback_models !== undefined
+        ? { fallback_models: plan.fallback_models.map(applyRecord) }
         : {}),
-      variant: appliedReasoning,
+      ...(applied !== undefined ? { variant: applied.effort } : {}),
     },
   }
-}
-
-function defaultReasoningForModel(model: string): string | undefined {
-  const modelId = model.slice(model.indexOf("/") + 1).toLowerCase()
-  if (modelId.startsWith("gpt-5.6-sol")) return "medium"
-  if (modelId.startsWith("claude-opus-5") || modelId.startsWith("claude-fable-5")) return "high"
-  if (/(?:^|-)grok-4\.6(?:-|$)/.test(modelId)) return "high"
-  return undefined
 }
 
 // Agent-first target handling. Unknown and disabled names may retain category fallback, but a known
@@ -132,9 +133,11 @@ function resolveAgentTarget(
   }
 
   if (explicitModel !== undefined && explicitModel.length > 0) {
+    const exact = resolveExactModel(explicitModel, resolveRegistry)
+    if (exact.kind === "error") return exact
     const resolution = resolveAgent(agentName, agents, undefined, { modelOverride: explicitModel })
     if (resolution.kind !== "resolved") return undefined
-    return { kind: "resolved", plan: toAgentPlan(resolution, explicitModelMetadata(explicitModel)) }
+    return { kind: "resolved", plan: toAgentPlan(resolution, exact.plan.resolved_model) }
   }
 
   const registry = resolveRegistry()
@@ -160,9 +163,6 @@ function resolveAgentTarget(
 
 function toAgentPlan(resolution: ResolvedAgentResult, explicitModel: ResolvedModelMetadata | undefined): ResolvedPlan {
   const resolvedModel = resolution.resolved_model ?? explicitModel
-  // Identical precedence to the category path below: reasoning outranks reasoningEffort outranks
-  // variant, and whichever is chosen becomes the child's thinking level through asSenpiThinkingLevel.
-  const appliedVariant = resolution.resolved_model?.reasoning ?? resolution.resolved_model?.reasoning_effort ?? resolution.resolved_model?.variant
   return {
     model: resolution.model,
     ...(resolution.requested_model !== undefined
@@ -172,7 +172,6 @@ function toAgentPlan(resolution: ResolvedAgentResult, explicitModel: ResolvedMod
       ? { fallback_models: resolution.fallback_models }
       : {}),
     ...(resolvedModel !== undefined ? { resolved_model: resolvedModel } : {}),
-    ...(appliedVariant !== undefined ? { variant: appliedVariant } : {}),
     agentType: resolution.agentType,
     ...(resolution.instructions !== undefined ? { instructions: resolution.instructions } : {}),
     ...(resolution.toolAllowlist !== undefined ? { toolAllowlist: resolution.toolAllowlist } : {}),
@@ -196,14 +195,11 @@ function toPlanResolution(
   explicitModel?: ResolvedModelMetadata,
 ): PlanResolution {
   if (resolution.kind === "resolved") {
-    const appliedVariant = resolution.spec.reasoning ?? resolution.spec.reasoningEffort ?? resolution.spec.variant
     const explicitResolvedModel = explicitModel === undefined
       ? undefined
       : {
           ...explicitModel,
           ...(resolution.spec.variant !== undefined ? { variant: resolution.spec.variant } : {}),
-          ...(resolution.spec.reasoningEffort !== undefined ? { reasoning_effort: resolution.spec.reasoningEffort } : {}),
-          ...(appliedVariant !== undefined ? { reasoning: appliedVariant } : {}),
         }
     return {
       kind: "resolved",
@@ -226,7 +222,6 @@ function toPlanResolution(
           ...(resolution.spec.reasoningEffort !== undefined ? { reasoning_effort: resolution.spec.reasoningEffort } : {}),
           ...(resolution.spec.reasoning !== undefined ? { reasoning: resolution.spec.reasoning } : {}),
         },
-        ...(appliedVariant !== undefined ? { variant: appliedVariant } : {}),
         category: resolution.category,
         ...(resolution.spec.prompt_append !== undefined && { promptAppend: resolution.spec.prompt_append }),
       },
@@ -273,5 +268,48 @@ function explicitModelMetadata(model: string): ResolvedModelMetadata | undefined
     provider: model.slice(0, separatorIndex),
     model_id: model.slice(separatorIndex + 1),
     display: model,
+  }
+}
+
+function pickerVisible(registry: TaskModelRegistry, provider: string, modelId: string): boolean {
+  try {
+    const available = registry.getAvailable()
+    if (!Array.isArray(available)) return false
+    return available.some((entry) => entry?.provider === provider && entry?.id === modelId)
+  } catch {
+    return false
+  }
+}
+
+function resolveExactModel(model: string, resolveRegistry: ResolveModelRegistry): PlanResolution {
+  const metadata = explicitModelMetadata(model)
+  if (metadata === undefined) {
+    return {
+      kind: "error",
+      error: {
+        code: "invalid_target",
+        message: `Model "${model}" is not a complete provider/model identifier.`,
+      },
+    }
+  }
+  const registry = resolveRegistry()
+  if (registry === undefined) {
+    return { kind: "error", error: { code: "model_unavailable", message: NO_REGISTRY_MESSAGE } }
+  }
+  if (!pickerVisible(registry, metadata.provider, metadata.model_id)) {
+    return {
+      kind: "error",
+      error: {
+        code: "model_unavailable",
+        message: `No available model "${model}".`,
+      },
+    }
+  }
+  return {
+    kind: "resolved",
+    plan: {
+      model,
+      resolved_model: metadata,
+    },
   }
 }

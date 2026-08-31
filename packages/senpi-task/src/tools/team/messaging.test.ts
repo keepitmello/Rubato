@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 
 import { TEAM_LEAD_SENTINEL } from "../../team"
 import { createFakeTeamService } from "./__fixtures__/team-tool-fakes"
-import { runTeamSend } from "./messaging"
+import { TeamSendParams, createTeamSendTool, runTeamSend } from "./messaging"
 
 class NamedError extends Error {
   constructor(name: string, message: string) {
@@ -54,6 +54,36 @@ describe("team messaging route", () => {
     })
     const result = await runTeamSend(service, "run-1", "alpha", { to: "*", body: "x" })
     expect(result.details.kind).toBe("broadcast_denied")
+  })
+})
+
+describe("lead team_send tool", () => {
+  test("#given the factory #when built #then it names the tool team_send under the team_* namespace", () => {
+    const tool = createTeamSendTool({ service: createFakeTeamService() })
+    expect(tool.name).toBe("team_send")
+    expect(tool.parameters).toBe(TeamSendParams)
+    expect(tool.description).toContain("AgentSend")
+  })
+
+  test("#given a lead team_send #when executed #then it writes durable mail from the lead sentinel", async () => {
+    const service = createFakeTeamService({
+      sendMessage: async () => ({ kind: "to_members", messageId: "msg-lead", recipients: ["beta"] }),
+    })
+    const tool = createTeamSendTool({ service })
+
+    const result = await tool.execute(
+      "call-1",
+      { team_run_id: "run-1", to: "beta", message: "please report", summary: "report" },
+      undefined,
+      undefined,
+      {} as never,
+    )
+
+    expect(result.details).toEqual({ kind: "to_members", message_id: "msg-lead", recipients: ["beta"] })
+    expect(service.calls[0]).toMatchObject({
+      method: "sendMessage",
+      args: ["run-1", { from: TEAM_LEAD_SENTINEL, to: "beta", body: "please report", summary: "report" }],
+    })
   })
 })
 
