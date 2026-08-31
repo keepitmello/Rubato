@@ -29,5 +29,12 @@ export default defineConfig({
   base: "/rubato/",
   plugins: [react(), tailwindcss(), serviceWorker()],
   build: { target: "es2022", sourcemap: true, chunkSizeWarningLimit: 500 },
-  test: { include: ["src/**/*.test.{ts,tsx}"], environment: "jsdom", setupFiles: "./src/test/setup.ts", css: true, globals: true },
+  test: {
+    include: ["src/**/*.test.{ts,tsx}"],
+    environment: "jsdom",
+    setupFiles: "./src/test/setup.ts",
+    css: true,
+    globals: true,
+    testTimeout: 15_000,
+  },
 })

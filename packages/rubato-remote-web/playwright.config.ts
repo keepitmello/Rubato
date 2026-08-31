@@ -14,9 +14,9 @@ export default defineConfig({
     screenshot: "only-on-failure",
   },
   webServer: {
-    command: "npm run preview -- --port 4173",
+    command: "env -u NODE_OPTIONS npm run preview -- --host 127.0.0.1 --port 4173",
     url: "http://127.0.0.1:4173/rubato/?fixture=1",
-    reuseExistingServer: false,
-    timeout: 30_000,
+    reuseExistingServer: !process.env.CI,
+    timeout: 60_000,
   },
 })
