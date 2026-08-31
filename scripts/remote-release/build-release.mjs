@@ -45,11 +45,13 @@ export async function buildRelease(options) {
 
   await rm(output, { recursive: true, force: true })
   await mkdir(join(output, "hub"), { recursive: true, mode: 0o755 })
+  await buildHubBundle({ repository, output, runner })
   const esbuild = join(repository, "packages", "rubato-remote-hub", "node_modules", ".bin", "esbuild")
+  await mkdir(join(output, "protocol"), { recursive: true, mode: 0o755 })
   await runner(esbuild, [
-    join(repository, "packages", "rubato-remote-hub", "src", "main.ts"),
+    join(repository, "packages", "rubato-remote-protocol", "src", "index.ts"),
     "--bundle", "--platform=node", "--format=esm", "--target=node24",
-    `--outfile=${join(output, "hub", "main.mjs")}`,
+    `--outfile=${join(output, "protocol", "index.mjs")}`,
   ], { cwd: repository, timeoutMs: 2 * 60_000 })
   await runner(esbuild, [
     join(repository, "packages", "rubato-terminal-bridge", "src", "bun-helper.ts"),
@@ -91,6 +93,18 @@ export async function buildRelease(options) {
   if (options.signingKey) await signReleaseManifest(output, options.signingKey)
   await verifyRelease(output, { publicKeyPem: options.publicKey, requireSignature: Boolean(options.publicKey) })
   return metadata
+}
+
+export async function buildHubBundle({ repository, output, runner = run }) {
+  const esbuild = join(repository, "packages", "rubato-remote-hub", "node_modules", ".bin", "esbuild")
+  const main = join(output, "hub", "main.mjs")
+  await mkdir(dirname(main), { recursive: true, mode: 0o755 })
+  await runner(esbuild, [
+    join(repository, "packages", "rubato-remote-hub", "src", "main.ts"),
+    "--bundle", "--platform=node", "--format=esm", "--target=node24",
+    '--banner:js=import { createRequire } from "node:module"; const require = createRequire(import.meta.url);',
+    `--outfile=${main}`,
+  ], { cwd: repository, timeoutMs: 2 * 60_000 })
 }
 
 export async function verifyBuiltZmx(path, lock, runner = run) {

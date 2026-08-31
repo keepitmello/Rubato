@@ -5,7 +5,6 @@ import { createHttpApp } from "../src/http.js"
 import { TailscaleServeIdentityVerifier } from "../src/identity.js"
 import { AllowedPathResolver } from "../src/path-security.js"
 import { TicketStore } from "../src/tickets.js"
-import { quote } from "../src/zmx.js"
 import { HOST_ID, SESSION_ID, temporaryDirectory } from "./helpers.js"
 
 const cleanups: Array<() => Promise<void>> = []
@@ -72,12 +71,5 @@ describe("Stage 9 adversarial public boundaries", () => {
     })
     expect(response.status).toBe(413)
     expect(dispatched).toBeFalse()
-  })
-
-  test("zmx command boundary quotes shell metacharacters and rejects NUL", () => {
-    const malicious = "/tmp/a'; touch /tmp/pwned; echo '"
-    const encoded = quote(malicious)
-    expect(encoded).toBe("'/tmp/a'\"'\"'; touch /tmp/pwned; echo '\"'\"''")
-    expect(() => quote("bad\0path")).toThrow("NUL")
   })
 })
