@@ -72,6 +72,60 @@ test("RUBATO_NODE wins so a machine can pin its own", () => {
   }
 });
 
+test("a previously selected Node is reused without rerunning the selector", () => {
+  const home = mkdtempSync(join(tmpdir(), "find-node-cache-"));
+  try {
+    const cache = join(home, "node-path");
+    writeFileSync(cache, `${process.execPath}\n`);
+    const script = `. "${FIND_NODE}"; rubato_find_node`;
+    const run = spawnSync("/bin/sh", ["-c", script], {
+      env: {
+        HOME: home,
+        PATH: "/usr/bin:/bin",
+        RUBATO_NODE_CACHE: cache,
+        RUBATO_SELECT_NODE: join(home, "selector-must-not-run.mjs"),
+      },
+      encoding: "utf8",
+    });
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(realpathSync(run.stdout.trim()), realpathSync(process.execPath));
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("a cached Node path is accepted without a trailing newline", () => {
+  const home = mkdtempSync(join(tmpdir(), "find-node-cache-no-newline-"));
+  try {
+    const cache = join(home, "node-path");
+    writeFileSync(cache, process.execPath);
+    const run = resolveNode({
+      bare: true,
+      env: { RUBATO_NODE_CACHE: cache, RUBATO_SELECT_NODE: join(home, "selector-must-not-run.mjs") },
+    });
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(realpathSync(run.bin), realpathSync(process.execPath));
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("an executable cached Node below 24 is rejected", () => {
+  const home = mkdtempSync(join(tmpdir(), "find-node-cache-old-"));
+  try {
+    const fake = join(home, "old-node");
+    const cache = join(home, "node-path");
+    writeFileSync(fake, "#!/bin/sh\nprintf '20'\n");
+    chmodSync(fake, 0o755);
+    writeFileSync(cache, `${fake}\n`);
+    const run = resolveNode({ bare: true, env: { RUBATO_NODE_CACHE: cache } });
+    assert.equal(run.status, 0, run.stderr);
+    assert.notEqual(realpathSync(run.bin), realpathSync(fake));
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("nvm is consulted before PATH", () => {
   // 후보 순서가 뒤집히면 터미널과 launchd 가 갈린다. 가짜 nvm 루트를 세우고
   // 그것이 PATH 보다 먼저 읽히는지 본다.
