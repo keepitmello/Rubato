@@ -55,15 +55,18 @@ automatic fallback senders.
    name come from `--url`/`CONSULT_CHATGPT_URL` and
    `--project`/`CONSULT_PROJECT_NAME` in `~/.codex/consult.env`. Changing
    projects is a config edit, not a code edit.
-6. For `xhigh` and `pro`, require `GPT-5.6 Sol` and a live `매우 높음`
-   (`N of M`) receipt. The picker no longer has a separate Pro stop, and
-   the slider length moves; match the label, not a fixed index. Read the
-   exact answer from the saved response file.
+6. Stay on the project's **Chat** surface. If the banner shows Work mode,
+   click `button[data-tpp-toggle-value="chatgpt"]` and wait until Chat is
+   `aria-checked="true"`. Never send from Work mode.
+   For `xhigh`, require `GPT-5.6 Sol` and a live `매우 높음` (`N of M`)
+   receipt. For `pro`, require `GPT-5.6 Sol` and a live `Pro` (`N of M`)
+   receipt. Match the Chat slider label, not a Work-mode `5.6 Sol` button.
+   Read the exact answer from the saved response file.
 7. Confirm that the response answers the packet, then verify every material
    claim locally before acting on it. Discard an unrelated response.
 
-Never use temporary chat or global Chat. Never submit when the project,
-model, tier, or ID is unverified.
+Never use temporary chat, global Chat, or Work mode. Never submit when the
+project, Chat surface, model, tier, or ID is unverified.
 
 `references/runbook.md` contains the exact Aside brief and recovery contract.
 `references/context-checklist.md` helps with complex packets.

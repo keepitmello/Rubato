@@ -27,15 +27,20 @@ opening or attaching to a browser tab.
   values on `globalThis` with an ID-derived key, or use a fresh `var` name;
   the REPL scope persists across calls.
 
-## Surface: Work project, new normal chat
+## Surface: project Chat, never Work mode
 
 1. Enter the ChatGPT project named in the task (`PROJECT` / visible name).
-2. Create a **new normal conversation** inside that project.
+2. Create a **new Chat-surface conversation** inside that project.
 3. Never use temporary chat.
 4. Never submit from global Chat.
-5. Do not open or inspect unrelated existing conversations.
-6. Before send, verify a visible project marker/breadcrumb **and** a project-owned composer.
-7. If that project cannot be verified, stop before send.
+5. Never send from Work mode. The banner toggle is
+   `button[data-tpp-toggle-value="chatgpt"|"work"]` inside
+   `radiogroup "채팅 화면 선택"`. Click Chat and wait until
+   `aria-checked="true"` / `data-state="on"`.
+6. Do not open or inspect unrelated existing conversations.
+7. Before send, verify a visible project marker/breadcrumb **and** a
+   project-owned Chat composer.
+8. If that project cannot be verified, stop before send.
 
 Known project-home path:
 
@@ -43,47 +48,53 @@ Known project-home path:
    Chat tabs rather than repairing them.
 2. Require page title `ChatGPT - <PROJECT>`, heading `<PROJECT>`, and textbox
    `<PROJECT>에서 새 채팅`. These three signals prove the project-owned composer.
-3. The project-home composer itself starts a new Work conversation. Do not open
-   an existing chat from the project list.
+3. Switch the banner to Chat before touching the picker. Work mode replaces
+   the Chat picker with `5.6 Sol 매우 높음` and Fast; do not operate that UI.
+4. The project-home Chat composer starts a new project conversation. Do not
+   open an existing chat from the project list.
 
 ## Model and tier
 
 Both qualities require:
 
+- Surface: **Chat**
 - Model: **GPT-5.6 Sol** checked
 
-Quality mapping:
+Quality mapping on the Chat slider (`즉시` `중간` `높음` `매우 높음` `Pro`):
 
-- `xhigh` and `pro`: **매우 높음** at the live slider stop (`N of M`).
-  The Pro stop is gone; do not hardcode a 5-stop index.
+- `xhigh`: **매우 높음**
+- `pro`: **Pro**
 
 If the family or requested tier cannot be verified, stop before send.
 
 Known picker path:
 
-1. Open the current tier button once.
+1. Open the current Chat tier button once (`즉시`/`중간`/`높음`/`매우 높음`/`Pro`
+   or `추론 수준`).
 2. In the simple tier view, read the current `N개 중 M번째` index.
 3. Focus the `성능` menuitem and move with `ArrowLeft`/`ArrowRight` until
-   the label is `매우 높음`.
-4. Require `매우 높음, N개 중 M번째`. Do not keep probing after that label.
+   the label is `매우 높음` for `xhigh` or `Pro` for `pro`.
+4. Require that label at `N개 중 M번째`. Do not keep probing after that label.
 5. Only after the tier is verified, open `모델 선택` and require the checked
-   radio `5.6 Sol` or `GPT-5.6 Sol`. Click it if visible and unchecked.
+   radio `GPT-5.6 Sol`. Click it if visible and unchecked.
 6. Press `Escape` to close the picker. Do not try to navigate back from the
    model submenu to the simple tier view.
 
 ## Composer and send
 
-1. Try a normal locator fill once.
-2. If contenteditable fill fails, take a fresh snapshot, focus the project
+1. Fill the composer first. Clearing after attach can drop the packet file.
+2. Try a normal locator fill once.
+3. If contenteditable fill fails, take a fresh snapshot, focus the project
    textbox, press `Meta+A`, press `Backspace`, then use keyboard `insertText`
    with the exact packet.
-3. Read the ProseMirror contenteditable back by joining each direct child
+4. Read the ProseMirror contenteditable back by joining each direct child
    block's `textContent` with `\n`, then require exact equality. Do not compare
    `innerText`: it inserts an extra display newline between adjacent `<p>`
    blocks. Do not trim or collapse whitespace. If the block-joined value
    differs, repeat that clear-and-insert sequence once after a fresh snapshot;
    then stop with an error rather than trying another input method.
-4. Send only after the exact comparison and Work/model/tier checks pass.
+5. Attach the packet after the composer text is verified. Send only if the
+   filename chip is still visible and Chat/model/tier checks pass.
 
 ## Wait and extract
 
@@ -99,7 +110,7 @@ For `xhigh`, success has this exact metadata:
 ```text
 ASIDE_WORK_CONSULT_RESULT
 ID: <exact ID>
-SURFACE: Work
+SURFACE: Chat
 QUALITY: xhigh
 MODEL: GPT-5.6 Sol
 TIER: 매우 높음 (N of M)
@@ -113,10 +124,10 @@ For `pro`, success has this exact metadata:
 ```text
 ASIDE_WORK_CONSULT_RESULT
 ID: <exact ID>
-SURFACE: Work
+SURFACE: Chat
 QUALITY: pro
 MODEL: GPT-5.6 Sol
-TIER: 매우 높음 (N of M)
+TIER: Pro (N of M)
 RESPONSE_BEGIN
 <exact ChatGPT response including its ID>
 RESPONSE_END
@@ -132,4 +143,4 @@ QUALITY: <xhigh-or-pro-or-missing>
 BLOCKER: <concrete blocker>
 ```
 
-Never fabricate response text. If Work, model, tier, composer, generation, or ID matching fails, emit the error envelope and stop.
+Never fabricate response text. If Chat surface, model, tier, composer, generation, or ID matching fails, emit the error envelope and stop.

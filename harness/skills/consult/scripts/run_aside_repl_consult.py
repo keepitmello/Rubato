@@ -13,6 +13,7 @@ import secrets
 import shutil
 import subprocess
 import sys
+import time
 from typing import Any, Sequence
 from urllib.parse import urlparse
 from zipfile import BadZipFile, ZipFile
@@ -152,7 +153,7 @@ def build_repl_script(
     response_timeout_ms: int,
     artifact_output: str | None = None,
 ) -> str:
-    target_label = "매우 높음"
+    target_label = "Pro" if quality == "pro" else "매우 높음"
     composer_label = composer_aria_label(project_name)
     return f"""
 var projectUrl = {js(project_url)};
@@ -203,8 +204,33 @@ var submitState = await Promise.race([
     }}
     var assistantCountBefore = await workPage.locator('[data-message-author-role="assistant"]').count();
     if (assistantCountBefore !== 0) throw new Error('isolated Work composer contains stale assistant turns');
+    submitStage = 'select-chat-surface';
+    var chatToggle = workPage.locator('button[data-tpp-toggle-value="chatgpt"]');
+    var workToggle = workPage.locator('button[data-tpp-toggle-value="work"]');
+    await chatToggle.waitFor({{ state: 'visible', timeout: 15000 }});
+    if ((await chatToggle.getAttribute('aria-checked')) !== 'true') await chatToggle.click();
+    var chatSelected = false;
+    for (var i = 0; i < 20; i += 1) {{
+      if (
+        (await chatToggle.getAttribute('aria-checked')) === 'true' &&
+        (await workToggle.getAttribute('aria-checked')) !== 'true'
+      ) {{
+        chatSelected = true;
+        break;
+      }}
+      await sleep(200);
+    }}
+    if (!chatSelected) throw new Error('Chat surface not selected');
+    composer = workPage.locator(
+      '#prompt-textarea[contenteditable="true"][aria-label="' + composerLabel + '"]'
+    );
+    await composer.waitFor({{ state: 'visible', timeout: 15000 }});
     submitStage = 'select-tier';
-    var tierButton = workPage.getByRole('button', {{ name: /^(추론 수준|매우 높음|Pro|5\\.6 Sol)/ }}).last();
+    var tierButton = workPage.getByRole(
+      'button',
+      {{ name: /^(추론 수준|즉시|중간|높음|매우 높음|Pro)$/ }}
+    ).last();
+    await tierButton.waitFor({{ state: 'visible', timeout: 10000 }});
     await tierButton.click();
     var performance = workPage.getByRole('menuitem', {{ name: '성능' }});
     await performance.waitFor({{ state: 'visible', timeout: 5000 }});
@@ -250,15 +276,6 @@ var submitState = await Promise.race([
     if ((await sol.getAttribute('aria-checked')) !== 'true') await sol.click();
     if ((await sol.getAttribute('aria-checked')) !== 'true') throw new Error('5.6 Sol not checked');
     await workPage.keyboard.press('Escape');
-    submitStage = 'attach-packet';
-    var fileInput = workPage.locator('#upload-files');
-    await fileInput.setInputFiles([{{
-      name: packetName,
-      mimeType: 'text/markdown',
-      buffer: Buffer.from(packetBase64, 'base64')
-    }}]);
-    var attachmentChip = workPage.getByText(packetName, {{ exact: true }}).last();
-    await attachmentChip.waitFor({{ state: 'visible', timeout: 60000 }});
     submitStage = 'fill-composer';
     await composer.focus();
     await composer.press('Meta+A');
@@ -268,11 +285,21 @@ var submitState = await Promise.race([
       (el) => Array.from(el.children).map((child) => child.textContent || '').join('\\n')
     );
     if (composerValue !== composerPrompt) throw new Error('composer prompt mismatch');
+    submitStage = 'attach-packet';
+    var fileInput = workPage.locator('#upload-files');
+    await fileInput.setInputFiles([{{
+      name: packetName,
+      mimeType: 'text/markdown',
+      buffer: Buffer.from(packetBase64, 'base64')
+    }}]);
+    var attachmentChip = workPage.getByText(packetName, {{ exact: true }}).last();
+    await attachmentChip.waitFor({{ state: 'visible', timeout: 60000 }});
     submitStage = 'ready-to-send';
     var send = workPage.locator(
       '#composer-submit-button:not(:disabled):not([aria-disabled="true"]):not([data-visually-disabled])'
     );
     await send.waitFor({{ state: 'visible', timeout: 60000 }});
+    if (!(await attachmentChip.isVisible())) throw new Error('packet attachment missing before send');
     return {{ workPage, ownedTargetId: ownedTab.targetId, send }};
   }})(),
   new Promise((_, reject) => setTimeout(
@@ -327,6 +354,7 @@ var copyResponse = workPage.getByRole('button', {{ name: /^(응답 복사|Copy r
 await copyResponse.waitFor({{ state: 'visible', timeout: remainingResponseMs() }});
 var responseText = await assistant.innerText();
 if (!responseText.includes({js(f"ID: {consult_id}")})) throw new Error('ID missing from assistant response');
+if (/첨부된 컨텍스트 패킷이|패킷이 현재 대화에 보이지|다시 첨부해/.test(responseText)) throw new Error('assistant could not read the attached packet');
 var artifact = null;
 if (artifactRequested) {{
   var artifactButton = assistant.locator('button').filter({{ hasText: /\\.zip$/i }}).last();
@@ -368,6 +396,40 @@ def repl_stdin_command(script: str) -> str:
     """Wrap multiline, top-level-await code in one REPL input line."""
     async_function = "Object.getPrototypeOf(async function(){}).constructor"
     return f"await new ({async_function})({json.dumps(script)})()\n"
+
+
+def aside_repl_ping(timeout: int = 10) -> bool:
+    try:
+        completed = subprocess.run(
+            ["aside", "repl"],
+            input='console.log("ASIDE_REPL_PING")\n',
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return False
+    return "ASIDE_REPL_PING" in (completed.stdout or "")
+
+
+def ensure_aside_daemon() -> str | None:
+    if aside_repl_ping():
+        return None
+    subprocess.run(["open", "-a", "Aside"], check=False)
+    time.sleep(3)
+    if aside_repl_ping():
+        return None
+    return "aside daemon is not reachable"
+
+
+def transcript_lost_aside_daemon(transcript: str) -> bool:
+    clean = ANSI_RE.sub("", transcript)
+    return (
+        "Aside daemon is not reachable" in clean
+        or "other side closed" in clean
+    )
 
 
 def run_repl_process(script: str, *, timeout: int) -> str:
@@ -418,6 +480,11 @@ def run_repl_consult(
         )
     submit_payload = marker_payload(transcript, SUBMIT_MARKER)
     if submit_payload is None:
+        if transcript_lost_aside_daemon(transcript):
+            raise RuntimeError(
+                "aside daemon closed before submission; packet was not sent\n"
+                + transcript
+            )
         raise RuntimeError(
             "Aside REPL exited before submission marker\n" + transcript
         )
@@ -497,6 +564,10 @@ def main(argv: Sequence[str]) -> int:
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    daemon_error = ensure_aside_daemon()
+    if daemon_error is not None:
+        print(daemon_error, file=sys.stderr)
+        return 75
     packet_source = str(packet_path.resolve())
     packet_base64 = base64.b64encode(raw_body.encode("utf-8")).decode("ascii")
     consult_id = secrets.token_hex(16)
