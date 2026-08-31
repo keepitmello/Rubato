@@ -16,11 +16,17 @@ import {
   isCollapsibleToolExecutionUrl,
   isCollapsibleToolGroupUrl,
 } from "../../src/collapsible-mouse.mjs";
+import { applyTuiChromeTransforms } from "../../src/transforms/tui-chrome.mjs";
+import { assistantInternalActionsHref } from "../../src/transforms/assistant-message.mjs";
 
 const componentsDir = join(senpiDir, "dist/modes/interactive/components");
 const assistantPath = join(componentsDir, "assistant-message.js");
 const toolExecutionPath = join(componentsDir, "tool-execution.js");
-const toolGroupPath = join(componentsDir, "tool-group.js");
+// tool-group 은 벤더 패치가 만들던 파일 — 순정 설치에는 없고 in-repo 모듈이 정본이다.
+const toolGroupPath = fileURLToPath(new URL("../../src/transforms/tool-group-component.mjs", import.meta.url));
+// 설치본은 pristine 이라 collapsible 니들은 tui-chrome 클러스터가 재구성한 텍스트에 산다.
+const chromeSource = (path) =>
+  applyTuiChromeTransforms(pathToFileURL(path).href, readFileSync(path, "utf8"), (source, transform) => transform(source));
 const altScreenPath = join(senpiNested("@earendil-works/pi-tui/dist"), "tui-alt-screen.js");
 const senpiPrefix = "file:///repo/node_modules/@code-yeongyu/senpi/dist/modes/interactive/components/";
 const registerHref = new URL("../../src/no-changelog-register.mjs", import.meta.url).href;
@@ -31,13 +37,14 @@ if (!runtime) test("URL matching targets only the three collapsible Senpi compon
   assert.equal(isCollapsibleAssistantUrl(`${senpiPrefix}assistant-message.js`), true);
   assert.equal(isCollapsibleToolExecutionUrl(`${senpiPrefix}tool-execution.js`), true);
   assert.equal(isCollapsibleToolGroupUrl(`${senpiPrefix}tool-group.js`), true);
+  assert.equal(isCollapsibleToolGroupUrl(pathToFileURL(toolGroupPath).href), true);
   assert.equal(isCollapsibleAssistantUrl(`${senpiPrefix}assistant-render-descriptors.js`), false);
   assert.equal(isCollapsibleToolExecutionUrl("file:///x/pi-tui/dist/tui-alt-screen.js"), false);
 });
 
 if (!runtime) test("transforms apply to real installed sources and are idempotent", () => {
-  const assistant = readFileSync(assistantPath, "utf8");
-  const toolExecution = readFileSync(toolExecutionPath, "utf8");
+  const assistant = chromeSource(assistantPath);
+  const toolExecution = chromeSource(toolExecutionPath);
   const toolGroup = readFileSync(toolGroupPath, "utf8");
   const altScreen = readFileSync(altScreenPath, "utf8");
   const assistantNext = injectCollapsibleAssistant(assistant);
@@ -64,8 +71,8 @@ if (!runtime) test("transforms apply to real installed sources and are idempoten
 });
 
 if (!runtime) test("transforms fail loudly on installed-source drift", () => {
-  const assistant = readFileSync(assistantPath, "utf8");
-  const toolExecution = readFileSync(toolExecutionPath, "utf8");
+  const assistant = chromeSource(assistantPath);
+  const toolExecution = chromeSource(toolExecutionPath);
   const toolGroup = readFileSync(toolGroupPath, "utf8");
   const altScreen = readFileSync(altScreenPath, "utf8");
   assert.throws(
@@ -109,7 +116,7 @@ if (runtime) test("expanded thinking body is clickable while a drag copies witho
   const { initTheme } = await import(pathToFileURL(join(senpiDir, "dist/modes/interactive/theme/theme.js")).href);
   try { initTheme("dark"); } catch { /* already initialized */ }
   const { AssistantMessageComponent } = await import(`${pathToFileURL(assistantPath).href}?collapse=${Date.now()}`);
-  const { dispatchInternalAction } = await import(pathToFileURL(join(senpiDir, "dist/modes/interactive/internal-actions.js")).href);
+  const { dispatchInternalAction } = await import(assistantInternalActionsHref());
   const { TuiAltScreen } = await import(`${pathToFileURL(altScreenPath).href}?collapse=${Date.now()}`);
   const { getOsc8LinkAtColumn } = await import(pathToFileURL(join(senpiNested("@earendil-works/pi-tui/dist"), "utils.js")).href);
   const started = Date.now();
