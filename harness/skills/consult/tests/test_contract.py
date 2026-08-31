@@ -38,12 +38,17 @@ class ConsultAsideContractTest(unittest.TestCase):
 
         self.assertIn("Never use temporary chat", skill)
         self.assertIn("Never submit from global Chat", skill)
+        self.assertIn("Never send from Work mode", skill)
+        self.assertIn('data-tpp-toggle-value="chatgpt"', skill)
         self.assertIn("GPT-5.6 Sol", skill)
         self.assertIn("매우 높음", skill)
-        self.assertIn("`xhigh` and `pro`: **매우 높음**", skill)
+        self.assertIn("`xhigh`: **매우 높음**", skill)
+        self.assertIn("`pro`: **Pro**", skill)
         self.assertIn("QUALITY: xhigh", skill)
         self.assertIn("QUALITY: pro", skill)
+        self.assertIn("SURFACE: Chat", skill)
         self.assertIn("TIER: 매우 높음 (N of M)", skill)
+        self.assertIn("TIER: Pro (N of M)", skill)
         self.assertIn("ASIDE_WORK_CONSULT_ERROR", skill)
         self.assertLess(
             skill.index("In the simple tier view"),

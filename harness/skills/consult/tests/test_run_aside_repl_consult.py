@@ -115,9 +115,15 @@ class AsideReplConsultTest(unittest.TestCase):
         self.assertIn("개 중", xhigh)
         self.assertIn("verifiedTier", xhigh)
         self.assertIn("5.6 Sol", xhigh)
+        self.assertIn('var targetLabel = "매우 높음"', xhigh)
+        self.assertIn('var targetLabel = "Pro"', pro)
+        self.assertIn('data-tpp-toggle-value="chatgpt"', xhigh)
+        self.assertIn('data-tpp-toggle-value="work"', xhigh)
+        self.assertIn("Chat surface not selected", xhigh)
         self.assertNotIn("var targetIndex = 4", xhigh)
         self.assertNotIn("/5개 중 ([1-5])번째/", xhigh)
-        self.assertNotIn("'Pro (5 of 5)'", pro)
+        self.assertNotIn("Fast 모드 활성화", pro)
+        self.assertNotIn("Work mode is selected", pro)
         self.assertIn("병렬 세션 탭 소유권\\nID: abc123", pro)
         self.assertIn("ID missing from assistant response", pro)
         self.assertIn("pre-submit preparation exceeded 110 seconds", pro)
@@ -149,6 +155,11 @@ class AsideReplConsultTest(unittest.TestCase):
         self.assertIn("#upload-files", pro)
         self.assertIn("getByText(packetName, { exact: true })", pro)
         self.assertIn("attachmentChip.waitFor", pro)
+        self.assertLess(pro.index("fill-composer"), pro.index("attach-packet"))
+        self.assertIn("packet attachment missing before send", pro)
+        self.assertIn("assistant could not read the attached packet", pro)
+        self.assertNotIn("Fast 모드 활성화", pro)
+        self.assertNotIn("Fast mode still checked", pro)
         self.assertIn("data:text/html,<title>", pro)
         self.assertIn("tab.title === ownershipMarker", pro)
         self.assertIn("ownedTabs.length !== 1", pro)
@@ -191,6 +202,33 @@ class AsideReplConsultTest(unittest.TestCase):
                     ]
                 )
         self.assertEqual(result, 2)
+
+    def test_main_returns_75_when_daemon_unreachable(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            fake = root / "aside"
+            fake.write_text("#!/bin/sh\nexit 99\n", encoding="utf-8")
+            fake.chmod(0o755)
+            packet = root / "packet.md"
+            packet.write_text("# Test topic\n\nquestion", encoding="utf-8")
+            path = f"{temp}{os.pathsep}{os.environ.get('PATH', '')}"
+            with mock.patch.dict(os.environ, {"PATH": path}):
+                with mock.patch.object(
+                    MODULE,
+                    "ensure_aside_daemon",
+                    return_value="aside daemon is not reachable",
+                ):
+                    result = MODULE.main(
+                        [
+                            "--quality", "xhigh",
+                            "--packet", str(packet),
+                            "--url", "https://chatgpt.com/g/g-p-test-work/project",
+                            "--response-output", str(root / "response.md"),
+                            "--json-output", str(root / "result.json"),
+                            "--stderr-output", str(root / "stderr.log"),
+                        ]
+                    )
+        self.assertEqual(result, 75)
 
     def test_composer_prompt_preserves_title_id_and_korean_contract(self) -> None:
         advice = MODULE.build_composer_prompt("병렬 세션 탭 소유권", "abc123", None)
@@ -263,6 +301,30 @@ print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"ID: abc123\\\\nanswer","respo
         self.assertEqual(response_s, 5.678)
         self.assertIn("ASIDE_REPL_SUBMIT_RESULT", transcript)
         self.assertIn("ASIDE_REPL_RESPONSE_RESULT", transcript)
+
+    def test_daemon_loss_before_submit_is_classified(self) -> None:
+        self.assertTrue(
+            MODULE.transcript_lost_aside_daemon(
+                "fetch failed: other side closed\n"
+                "Aside daemon is not reachable — make sure Aside Browser is running\n"
+            )
+        )
+        self.assertFalse(MODULE.transcript_lost_aside_daemon("ASIDE_REPL_SUBMIT_RESULT {}\n"))
+        with tempfile.TemporaryDirectory() as temp:
+            fake = Path(temp) / "aside"
+            fake.write_text(
+                "#!/bin/sh\nprintf 'Aside daemon is not reachable\\n'\n",
+                encoding="utf-8",
+            )
+            fake.chmod(0o755)
+            path = f"{temp}{os.pathsep}{os.environ.get('PATH', '')}"
+            with mock.patch.dict(os.environ, {"PATH": path}):
+                with self.assertRaisesRegex(RuntimeError, "daemon closed before submission"):
+                    MODULE.run_repl_consult(
+                        "ignored",
+                        submit_timeout=1,
+                        response_timeout=1,
+                    )
 
     def test_submission_runner_rejects_missing_marker(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -358,16 +420,17 @@ print('ASIDE_REPL_SUBMIT_UNKNOWN {"quality":"pro","reason":"commit unverified"}'
             packet.write_text("# Test topic\n\nquestion", encoding="utf-8")
             path = f"{temp}{os.pathsep}{os.environ.get('PATH', '')}"
             with mock.patch.dict(os.environ, {"PATH": path}):
-                result = MODULE.main(
-                    [
-                        "--quality", "pro",
-                        "--packet", str(packet),
-                        "--url", "https://chatgpt.com/g/g-p-test-work/project",
-                        "--response-output", str(root / "response.md"),
-                        "--json-output", str(root / "result.json"),
-                        "--stderr-output", str(root / "stderr.log"),
-                    ]
-                )
+                with mock.patch.object(MODULE, "ensure_aside_daemon", return_value=None):
+                    result = MODULE.main(
+                        [
+                            "--quality", "pro",
+                            "--packet", str(packet),
+                            "--url", "https://chatgpt.com/g/g-p-test-work/project",
+                            "--response-output", str(root / "response.md"),
+                            "--json-output", str(root / "result.json"),
+                            "--stderr-output", str(root / "stderr.log"),
+                        ]
+                    )
 
             self.assertEqual(result, 76)
             self.assertIn(
@@ -392,16 +455,17 @@ print("response phase failed")
             result_path = root / "result.json"
             path = f"{temp}{os.pathsep}{os.environ.get('PATH', '')}"
             with mock.patch.dict(os.environ, {"PATH": path}):
-                result = MODULE.main(
-                    [
-                        "--quality", "pro",
-                        "--packet", str(packet),
-                        "--url", "https://chatgpt.com/g/g-p-test-work/project",
-                        "--response-output", str(root / "response.md"),
-                        "--json-output", str(result_path),
-                        "--stderr-output", str(root / "stderr.log"),
-                    ]
-                )
+                with mock.patch.object(MODULE, "ensure_aside_daemon", return_value=None):
+                    result = MODULE.main(
+                        [
+                            "--quality", "pro",
+                            "--packet", str(packet),
+                            "--url", "https://chatgpt.com/g/g-p-test-work/project",
+                            "--response-output", str(root / "response.md"),
+                            "--json-output", str(result_path),
+                            "--stderr-output", str(root / "stderr.log"),
+                        ]
+                    )
 
             self.assertEqual(result, 77)
             evidence = __import__("json").loads(result_path.read_text())
@@ -433,18 +497,19 @@ print('ASIDE_REPL_RESPONSE_RESULT {{"responseText":"ID: placeholder","artifact":
             result_path = root / "result.json"
             path = f"{temp}{os.pathsep}{os.environ.get('PATH', '')}"
             with mock.patch.dict(os.environ, {"PATH": path}):
-                with mock.patch("secrets.token_hex", return_value="placeholder"):
-                    result = MODULE.main(
-                        [
-                            "--quality", "pro",
-                            "--packet", str(packet),
-                            "--url", "https://chatgpt.com/g/g-p-test-work/project",
-                            "--artifact-output", str(artifact),
-                            "--response-output", str(root / "response.md"),
-                            "--json-output", str(result_path),
-                            "--stderr-output", str(root / "stderr.log"),
-                        ]
-                    )
+                with mock.patch.object(MODULE, "ensure_aside_daemon", return_value=None):
+                    with mock.patch("secrets.token_hex", return_value="placeholder"):
+                        result = MODULE.main(
+                            [
+                                "--quality", "pro",
+                                "--packet", str(packet),
+                                "--url", "https://chatgpt.com/g/g-p-test-work/project",
+                                "--artifact-output", str(artifact),
+                                "--response-output", str(root / "response.md"),
+                                "--json-output", str(result_path),
+                                "--stderr-output", str(root / "stderr.log"),
+                            ]
+                        )
 
             self.assertEqual(result, 77)
             evidence = __import__("json").loads(result_path.read_text())

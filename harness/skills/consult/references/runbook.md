@@ -62,11 +62,15 @@ receives an in-memory file payload, never the local packet path. The composer
 starts with the packet H1 topic, then `ID: <hex>`, followed by a short
 ID-bound instruction. Packet location, blank lines,
 and trailing newlines therefore do not participate in browser input validation.
-The runner uses the composer's unrestricted `#upload-files` input and waits for
-the exact filename chip. A chip can still show an active upload, so submission
-also waits until the send button has neither native `disabled`,
-`aria-disabled="true"`, nor `data-visually-disabled`; image/video-only inputs
-and fixed sleeps are not valid packet transports.
+The runner fills the composer first, then uses the unrestricted `#upload-files`
+input and waits for the exact filename chip. Clearing the composer after attach
+can drop the file, so the chip must still be visible when send becomes enabled.
+A chip can still show an active upload, so submission also waits until the send
+button has neither native `disabled`, `aria-disabled="true"`, nor
+`data-visually-disabled`; image/video-only inputs and fixed sleeps are not
+valid packet transports. The runner pings Aside REPL before the long send and
+launches Aside once if the daemon is down. Daemon loss before submit is a
+pre-send failure; do not treat it as a committed turn.
 Aside confines `download.saveAs()` to its session directory. The browser returns
 `download.path()` instead, and the Python runner copies that verified local file
 to `--artifact-output`.
@@ -126,13 +130,17 @@ For `--quality xhigh` and `--quality pro`, require:
 
 ```text
 quality: xhigh | pro
+surface: Chat
 model: GPT-5.6 Sol
-tier: 매우 높음 (N of M)
+tier: 매우 높음 (N of M)   # xhigh
+tier: Pro (N of M)         # pro
 submitElapsedSeconds: <120
 ```
 
-The live picker no longer has a separate Pro stop. Match the `매우 높음`
-label; do not hardcode a 5-stop index.
+The project banner toggle is `button[data-tpp-toggle-value="chatgpt"|"work"]`.
+Switch to Chat before the picker. Work mode is not a consult surface.
+The Chat slider stops are `즉시` `중간` `높음` `매우 높음` `Pro`. Match the
+requested label; do not operate the Work-mode `5.6 Sol` / Fast picker.
 
 Reject a missing or mismatched quality/ID, an unverified model or tier, a
 partial response, or a submission at or above 120 seconds.
