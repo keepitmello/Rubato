@@ -1,4 +1,4 @@
-# Open Frame calibration
+# metaFrame calibration
 
 These examples show the same posture at different densities. They are not a workflow and do not need to appear in the response.
 
