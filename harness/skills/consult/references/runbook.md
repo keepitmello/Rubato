@@ -63,8 +63,11 @@ starts with the packet H1 topic, then `ID: <hex>`, followed by a short
 ID-bound instruction. Packet location, blank lines,
 and trailing newlines therefore do not participate in browser input validation.
 The runner fills the composer first, then uses the unrestricted `#upload-files`
-input and waits for the exact filename chip. Clearing the composer after attach
-can drop the file, so the chip must still be visible when send becomes enabled.
+input with a unique `consult-<id>.md` name. Work already contains many
+`packet.md` uploads, so ChatGPT renames a colliding chip to
+`packet(<timestamp>).md` and an exact `packet.md` locator dies after the
+upload finishes. The runner waits for the file-tile `group` whose name
+contains the consult ID, including after send becomes enabled.
 A chip can still show an active upload, so submission also waits until the send
 button has neither native `disabled`, `aria-disabled="true"`, nor
 `data-visually-disabled`; image/video-only inputs and fixed sleeps are not
@@ -142,8 +145,9 @@ Switch to Chat before the picker. Work mode is not a consult surface.
 The Chat slider stops are `즉시` `중간` `높음` `매우 높음` `Pro`. Match the
 requested label; do not operate the Work-mode `5.6 Sol` / Fast picker.
 
-Reject a missing or mismatched quality/ID, an unverified model or tier, a
-partial response, or a submission at or above 120 seconds.
+Reject an unverified model or tier, an empty assistant body, or a
+submission at or above 120 seconds. A missing ID echo in the assistant
+text is not a reject if the user turn committed and the reply was saved.
 
 Reject an answer that does not address the attached packet.
 

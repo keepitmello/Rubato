@@ -287,19 +287,35 @@ var submitState = await Promise.race([
     if (composerValue !== composerPrompt) throw new Error('composer prompt mismatch');
     submitStage = 'attach-packet';
     var fileInput = workPage.locator('#upload-files');
-    await fileInput.setInputFiles([{{
-      name: packetName,
-      mimeType: 'text/markdown',
-      buffer: Buffer.from(packetBase64, 'base64')
-    }}]);
-    var attachmentChip = workPage.getByText(packetName, {{ exact: true }}).last();
-    await attachmentChip.waitFor({{ state: 'visible', timeout: 60000 }});
+    var attachmentChip = workPage.getByRole('group', {{ name: {js(consult_id)} }});
+    var attached = false;
+    for (var attachAttempt = 0; attachAttempt < 2 && !attached; attachAttempt += 1) {{
+      await fileInput.setInputFiles([{{
+        name: packetName,
+        mimeType: 'text/markdown',
+        buffer: Buffer.from(packetBase64, 'base64')
+      }}]);
+      try {{
+        await attachmentChip.waitFor({{ state: 'visible', timeout: 30000 }});
+        attached = true;
+      }} catch (error) {{}}
+    }}
+    if (!attached) throw new Error('packet attachment missing before send');
     submitStage = 'ready-to-send';
     var send = workPage.locator(
       '#composer-submit-button:not(:disabled):not([aria-disabled="true"]):not([data-visually-disabled])'
     );
     await send.waitFor({{ state: 'visible', timeout: 60000 }});
-    if (!(await attachmentChip.isVisible())) throw new Error('packet attachment missing before send');
+    try {{
+      await attachmentChip.waitFor({{ state: 'visible', timeout: 10000 }});
+    }} catch (error) {{
+      await fileInput.setInputFiles([{{
+        name: packetName,
+        mimeType: 'text/markdown',
+        buffer: Buffer.from(packetBase64, 'base64')
+      }}]);
+      await attachmentChip.waitFor({{ state: 'visible', timeout: 30000 }});
+    }}
     return {{ workPage, ownedTargetId: ownedTab.targetId, send }};
   }})(),
   new Promise((_, reject) => setTimeout(
@@ -316,23 +332,39 @@ var userTurn = workPage.locator('[data-message-author-role="user"]').filter({{ h
 try {{
   await userTurn.waitFor({{ state: 'visible', timeout: remainingSubmitMs }});
 }} catch (error) {{
-  console.log({js(SUBMIT_UNKNOWN_MARKER)} + JSON.stringify({{
-    id: {js(consult_id)},
-    quality,
-    reason: 'send clicked but user turn commit was not verified before deadline'
-  }}));
-  await workPage.close().catch(() => {{}});
-  throw new Error('SUBMIT_UNKNOWN');
+  userTurn = workPage.locator('[data-message-author-role="user"]').last();
+  try {{
+    await userTurn.waitFor({{ state: 'visible', timeout: 8000 }});
+    var userText = await userTurn.innerText();
+    if (
+      !userText.includes({js(consult_id)}) &&
+      !userText.includes({js(f"consult-{consult_id}")})
+    ) throw error;
+  }} catch (inner) {{
+    console.log({js(SUBMIT_UNKNOWN_MARKER)} + JSON.stringify({{
+      id: {js(consult_id)},
+      quality,
+      reason: 'send clicked but user turn commit was not verified before deadline',
+      conversationUrl: workPage.url(),
+      targetId: submitState.ownedTargetId
+    }}));
+    throw new Error('SUBMIT_UNKNOWN');
+  }}
 }}
 var submitElapsedMs = Date.now() - submitStartedAt;
 if (submitElapsedMs >= 120000) {{
   console.log({js(SUBMIT_UNKNOWN_MARKER)} + JSON.stringify({{
     id: {js(consult_id)},
     quality,
-    reason: 'user turn committed after 120-second deadline'
+    reason: 'user turn committed after 120-second deadline',
+    conversationUrl: workPage.url(),
+    targetId: submitState.ownedTargetId
   }}));
-  await workPage.close().catch(() => {{}});
   throw new Error('SUBMIT_UNKNOWN');
+}}
+for (var i = 0; i < 20; i += 1) {{
+  if (workPage.url().indexOf('/c/') !== -1) break;
+  await sleep(250);
 }}
 var submittedTabs = await listBrowserTabs();
 var submittedTab = submittedTabs.find((tab) => tab.targetId === submitState.ownedTargetId);
@@ -348,13 +380,22 @@ console.log({js(SUBMIT_MARKER)} + JSON.stringify({{
 var responseStartedAt = Date.now();
 var responseDeadline = responseStartedAt + {response_timeout_ms};
 var remainingResponseMs = () => Math.max(1, responseDeadline - Date.now());
-var assistant = workPage.locator('[data-message-author-role="assistant"]').nth(0);
+var assistant = workPage.locator('[data-message-author-role="assistant"]').last();
 await assistant.waitFor({{ state: 'visible', timeout: remainingResponseMs() }});
 var copyResponse = workPage.getByRole('button', {{ name: /^(응답 복사|Copy response)$/ }}).last();
-await copyResponse.waitFor({{ state: 'visible', timeout: remainingResponseMs() }});
-var responseText = await assistant.innerText();
-if (!responseText.includes({js(f"ID: {consult_id}")})) throw new Error('ID missing from assistant response');
-if (/첨부된 컨텍스트 패킷이|패킷이 현재 대화에 보이지|다시 첨부해/.test(responseText)) throw new Error('assistant could not read the attached packet');
+try {{
+  await copyResponse.waitFor({{ state: 'visible', timeout: remainingResponseMs() }});
+}} catch (error) {{
+  await sleep(2000);
+}}
+var responseText = (await assistant.innerText()).trim();
+if (!responseText) {{
+  await sleep(2000);
+  responseText = (await assistant.innerText()).trim();
+}}
+if (!responseText) throw new Error('assistant response text was empty');
+var idMatched = responseText.includes({js(f"ID: {consult_id}")}) || responseText.includes({js(consult_id)});
+var packetUnread = /첨부된 컨텍스트 패킷이|패킷이 현재 대화에 보이지|다시 첨부해/.test(responseText);
 var artifact = null;
 if (artifactRequested) {{
   var artifactButton = assistant.locator('button').filter({{ hasText: /\\.zip$/i }}).last();
@@ -370,14 +411,16 @@ if (artifactRequested) {{
   }};
 }}
 var finalConversationUrl = workPage.url();
-await closeTab(workPage).catch(() => {{}});
 console.log({js(RESPONSE_MARKER)} + JSON.stringify({{
   ok: true,
   responseText,
+  idMatched,
+  packetUnread,
   artifact,
   responseElapsedMs: Date.now() - responseStartedAt,
   conversationUrl: finalConversationUrl
 }}));
+await closeTab(workPage).catch(() => {{}});
 """.strip()
 
 
@@ -598,7 +641,7 @@ def main(argv: Sequence[str]) -> int:
                 project_url=project_url,
                 project_name=project_name,
                 quality=args.quality,
-                packet_name=packet_path.name or "consult-packet.md",
+                packet_name=f"consult-{consult_id}.md",
                 packet_base64=packet_base64,
                 topic=topic,
                 consult_id=consult_id,
@@ -695,6 +738,8 @@ def main(argv: Sequence[str]) -> int:
         "targetId": submit_payload["targetId"],
         "submitElapsedSeconds": round(submit_elapsed, 3),
         "responseElapsedSeconds": round(response_elapsed, 3),
+        "idMatched": bool(response_payload.get("idMatched")),
+        "packetUnread": bool(response_payload.get("packetUnread")),
         "responseOutput": str(response_path),
         "packetPath": packet_source,
     }

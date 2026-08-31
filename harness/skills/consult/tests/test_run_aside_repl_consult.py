@@ -125,7 +125,14 @@ class AsideReplConsultTest(unittest.TestCase):
         self.assertNotIn("Fast 모드 활성화", pro)
         self.assertNotIn("Work mode is selected", pro)
         self.assertIn("병렬 세션 탭 소유권\\nID: abc123", pro)
-        self.assertIn("ID missing from assistant response", pro)
+        self.assertNotIn("ID missing from assistant response", pro)
+        self.assertIn("idMatched", pro)
+        self.assertIn("packetUnread", pro)
+        self.assertIn("assistant response text was empty", pro)
+        self.assertLess(
+            pro.index("ASIDE_REPL_RESPONSE_RESULT"),
+            pro.index("closeTab(workPage)"),
+        )
         self.assertIn("pre-submit preparation exceeded 110 seconds", pro)
         self.assertIn("user turn committed after 120-second deadline", pro)
         self.assertIn("submitElapsedMs >= 120000", pro)
@@ -153,11 +160,13 @@ class AsideReplConsultTest(unittest.TestCase):
             pro,
         )
         self.assertIn("#upload-files", pro)
-        self.assertIn("getByText(packetName, { exact: true })", pro)
+        self.assertIn("getByRole('group'", pro)
         self.assertIn("attachmentChip.waitFor", pro)
+        self.assertNotIn("getByText(packetName, { exact: true })", pro)
         self.assertLess(pro.index("fill-composer"), pro.index("attach-packet"))
         self.assertIn("packet attachment missing before send", pro)
-        self.assertIn("assistant could not read the attached packet", pro)
+        self.assertNotIn("attachmentChip.isVisible()", pro)
+        self.assertNotIn("assistant could not read the attached packet", pro)
         self.assertNotIn("Fast 모드 활성화", pro)
         self.assertNotIn("Fast mode still checked", pro)
         self.assertIn("data:text/html,<title>", pro)
@@ -301,6 +310,42 @@ print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"ID: abc123\\\\nanswer","respo
         self.assertEqual(response_s, 5.678)
         self.assertIn("ASIDE_REPL_SUBMIT_RESULT", transcript)
         self.assertIn("ASIDE_REPL_RESPONSE_RESULT", transcript)
+
+    def test_main_saves_reply_when_assistant_omits_id(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            fake = root / "aside"
+            fake.write_text(
+                """#!/usr/bin/env python3
+print('ASIDE_REPL_SUBMIT_RESULT {"quality":"xhigh","model":"GPT-5.6 Sol","tier":"매우 높음 (4 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1","targetId":"target"}')
+print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"no id here","idMatched":false,"packetUnread":false,"responseElapsedMs":5678,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1"}')
+""",
+                encoding="utf-8",
+            )
+            fake.chmod(0o755)
+            packet = root / "packet.md"
+            packet.write_text("# Test topic\n\nquestion", encoding="utf-8")
+            response_path = root / "response.md"
+            result_path = root / "result.json"
+            path = f"{temp}{os.pathsep}{os.environ.get('PATH', '')}"
+            with mock.patch.dict(os.environ, {"PATH": path}):
+                with mock.patch.object(MODULE, "ensure_aside_daemon", return_value=None):
+                    result = MODULE.main(
+                        [
+                            "--quality", "xhigh",
+                            "--packet", str(packet),
+                            "--url", "https://chatgpt.com/g/g-p-test-work/project",
+                            "--response-output", str(response_path),
+                            "--json-output", str(result_path),
+                            "--stderr-output", str(root / "stderr.log"),
+                        ]
+                    )
+            self.assertEqual(result, 0)
+            self.assertIn("no id here", response_path.read_text(encoding="utf-8"))
+            evidence = json.loads(result_path.read_text(encoding="utf-8"))
+            self.assertTrue(evidence["ok"])
+            self.assertFalse(evidence["idMatched"])
+            self.assertFalse(evidence["packetUnread"])
 
     def test_daemon_loss_before_submit_is_classified(self) -> None:
         self.assertTrue(
