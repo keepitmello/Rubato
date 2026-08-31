@@ -188,4 +188,31 @@ describe("턴 작업 요약", () => {
     summary.dispose();
     tools.dispose();
   });
+
+  test("같은 도구가 섞여 나와도 이름별로 한 칸에 합친다", () => {
+    const tools = new ToolGroupComponent(ui);
+    const names = ["eval", "grep", "eval", "grep", "eval", "read", "eval", "grep", "read"];
+    for (const [i, name] of names.entries()) {
+      const component = new ToolExecutionComponent(name, `m${i}`, {}, {}, undefined, ui, process.cwd());
+      component.setArgsComplete();
+      component.updateResult({ content: [{ type: "text", text: "ok" }], details: {}, isError: false });
+      tools.addTool(component);
+    }
+    const failed = new ToolExecutionComponent("eval", "mf", {}, {}, undefined, ui, process.cwd());
+    failed.setArgsComplete();
+    failed.updateResult({ content: [{ type: "text", text: "FAIL" }], details: {}, isError: true });
+    tools.addTool(failed);
+    const summary = new TurnWorkSummaryComponent(ui);
+    summary.trackToolGroup(tools);
+    const line = stripAnsi(summary.render(160).join(""));
+    expect(line).toContain("• Worked 0 steps · 10 tools:");
+    expect(line).toContain("✓ eval (4)");
+    expect(line).toContain("✓ grep (3)");
+    expect(line).toContain("✓ read (2)");
+    expect(line).toContain("✗ eval");
+    expect(line).not.toMatch(/✓ eval ·/);
+    expect(line).not.toMatch(/✓ grep · ✓ eval/);
+    summary.dispose();
+    tools.dispose();
+  });
 });

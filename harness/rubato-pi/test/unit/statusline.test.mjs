@@ -32,7 +32,7 @@ import {
   truncateToWidth,
 } from "../../src/statusline.mjs";
 import { BRAND_NAME } from "../../src/brand.mjs";
-import { installStatusline, extensionStatusLine } from "../../src/extensions/statusline.mjs";
+import { installStatusline, extensionStatusLine, canSetFooter, hookExtensionRunnerFooter, ctxFromHostSession, paintStatusLines, registerFooterHost, footerHost, RUBATO_FOOTER_HOST } from "../../src/extensions/statusline.mjs";
 import { createBackgroundTracker } from "../../src/background-tracker.mjs";
 
 function mockSpeedStore({ result, identity } = {}) {
@@ -1021,7 +1021,7 @@ test("session lifecycle clears identity and only refresh/score hit the store fro
   let factory;
   ctx.ui = { setFooter(next) { factory = next; } };
   installStatusline(pi, { speedStore: store });
-  assert.deepEqual([...handlers.keys()], ["session_before_switch", "model_select", "agent_end", "session_start"]);
+  assert.deepEqual([...handlers.keys()], ["session_before_switch", "model_select", "agent_end", "session_start", "before_agent_start"]);
   for (const handler of handlers.get("session_start")) handler({ type: "session_start" }, ctx);
   assert.equal(store.activeIdentity(), undefined);
   assert.ok(store.log.filter((e) => e === "clear").length >= 1);
@@ -1088,4 +1088,167 @@ test("the footer does not derive Speed identity from UI effort", () => {
   assert.notEqual(captured.effort, ctx.thinkingLevel);
   assert.match(paintedFooter(ready), /Speed 55/);
   assertNoLegacySpeedMetrics(ready);
+});
+
+test("canSetFooter rejects a no-op host and accepts a live setFooter", () => {
+  assert.equal(canSetFooter({}), false);
+  assert.equal(canSetFooter({ ui: {} }), false);
+  assert.equal(canSetFooter({ ui: { setFooter() {} }, hasUI: false }), false);
+  assert.equal(canSetFooter({ ui: { setFooter() {} } }), true);
+  assert.equal(canSetFooter({ ui: { setFooter() {} }, hasUI: true }), true);
+});
+
+test("before_agent_start paints the custom footer if session_start ran without UI", () => {
+  let factory;
+  const ctx = {
+    cwd: "/Users/wy/Github-repos/agent-taskforce",
+    model: { id: "anthropic/claude-opus-5", contextWindow: 1_000_000 },
+    thinkingLevel: "high",
+    getContextUsage: () => ({ tokens: 1, contextWindow: 1_000_000, percent: 0 }),
+    sessionManager: { getBranch: () => [] },
+    ui: {},
+  };
+  const handlers = new Map();
+  const pi = {
+    on(event, handler) {
+      handlers.set(event, handler);
+    },
+  };
+  installStatusline(pi, { speedStore: mockSpeedStore() });
+  handlers.get("session_start")({ type: "session_start", reason: "startup" }, ctx);
+  assert.equal(factory, undefined);
+  ctx.ui = { setFooter(next) { factory = next; } };
+  handlers.get("before_agent_start")({}, ctx);
+  assert.equal(typeof factory, "function");
+  const line = factory(
+    { requestRender() {} },
+    { fg: (_color, text) => text },
+    { getGitBranch: () => "main", onBranchChange: () => () => {}, getExtensionStatuses: () => new Map() },
+  ).render(160)[0];
+  assert.match(line, /^✦ Opus 5 high/);
+  assert.doesNotMatch(line, /\$0\.000|\(sub\)|\(auto\)/);
+});
+
+test("reload keeps live Speed samples; new sessions still reset", () => {
+  const events = [];
+  const store = {
+    resetSession() { events.push("reset"); },
+    clearActiveIdentity() { events.push("clear"); },
+    refresh() { events.push("refresh"); },
+    startProbes() { events.push("probes"); },
+    getCachedScore: () => ({ status: "ready", score: 120 }),
+  };
+  const handlers = new Map();
+  const pi = {
+    on(event, handler) { handlers.set(event, handler); },
+    events: { on() {}, off() {} },
+  };
+  installStatusline(pi, { speedStore: store });
+  assert.deepEqual(events, ["probes"]);
+  events.length = 0;
+  handlers.get("session_start")({ type: "session_start", reason: "reload" }, { ui: { setFooter() {} } });
+  assert.deepEqual(events, ["refresh"]);
+  events.length = 0;
+  handlers.get("session_start")({ type: "session_start", reason: "new" }, { ui: { setFooter() {} } });
+  assert.deepEqual(events, ["reset", "refresh"]);
+});
+
+test("hookExtensionRunnerFooter applies as soon as the host binds a live UI", () => {
+  let factory;
+  const ctx = {
+    cwd: "/Users/wy/Github-repos/agent-taskforce",
+    model: { id: "anthropic/claude-opus-5", contextWindow: 1_000_000 },
+    thinkingLevel: "high",
+    getContextUsage: () => ({ tokens: 1, contextWindow: 1_000_000, percent: 0 }),
+    sessionManager: { getBranch: () => [] },
+    ui: { setFooter(next) { factory = next; } },
+    hasUI: true,
+  };
+  const installed = installStatusline({
+    on() {},
+  }, { speedStore: mockSpeedStore() });
+  class FakeRunner {
+    setUIContext(uiContext, mode) {
+      this.uiContext = uiContext;
+      this.mode = mode;
+    }
+    hasUI() { return true; }
+    createContext() { return ctx; }
+  }
+  assert.equal(hookExtensionRunnerFooter(FakeRunner, installed.applyFooter), true);
+  const runner = new FakeRunner();
+  runner.setUIContext(ctx.ui, "tui");
+  assert.equal(typeof factory, "function");
+  assert.match(
+    factory(
+      { requestRender() {} },
+      { fg: (_color, text) => text },
+      { getGitBranch: () => "", onBranchChange: () => () => {}, getExtensionStatuses: () => new Map() },
+    ).render(120)[0],
+    /^✦ Opus 5 high/,
+  );
+});
+
+test("ctxFromHostSession follows live session fields instead of a snapshot", () => {
+  const session = {
+    model: { id: "anthropic/claude-opus-5", contextWindow: 1_000_000 },
+    thinkingLevel: "low",
+    sessionManager: { getCwd: () => "/tmp/repo", getBranch: () => [] },
+    getContextUsage: () => ({ tokens: 1, contextWindow: 1_000_000, percent: 0 }),
+  };
+  const ctx = ctxFromHostSession(session, { setFooter() {} });
+  assert.equal(ctx.model.id, "anthropic/claude-opus-5");
+  session.thinkingLevel = "high";
+  session.model = { id: "xai/grok-4.6", contextWindow: 200_000 };
+  assert.equal(ctx.thinkingLevel, "high");
+  assert.equal(ctx.model.id, "xai/grok-4.6");
+});
+
+test("paintStatusLines is the Rubato line, not senpi's cwd/cost/auto footer", () => {
+  const lines = paintStatusLines({
+    ctx: {
+      cwd: "/Users/wy/Github-repos/rubato-lab",
+      model: { id: "anthropic/claude-opus-5", contextWindow: 1_000_000 },
+      thinkingLevel: "high",
+      getContextUsage: () => ({ tokens: 2_000, contextWindow: 1_000_000, percent: 0.2 }),
+      sessionManager: { getBranch: () => [] },
+    },
+    footerData: { getGitBranch: () => "main", getExtensionStatuses: () => new Map() },
+    width: 160,
+    speedText: "Speed —",
+  });
+  const text = lines.join("\n");
+  assert.match(text, /^✦ Opus 5 high/);
+  assert.match(text, /rubato-lab/);
+  assert.match(text, /Speed —/);
+  assert.doesNotMatch(text, /\$0\.000|\(sub\)|\(auto\)|500K \(0\.0%\)/);
+});
+
+test("installStatusline registers a host painter so the built-in footer never needs setFooter", () => {
+  const prev = footerHost();
+  try {
+    const session = {
+      model: { id: "anthropic/claude-opus-5", contextWindow: 1_000_000 },
+      thinkingLevel: "high",
+      sessionManager: { getCwd: () => "/Users/wy/Github-repos/rubato-lab", getBranch: () => [] },
+      getContextUsage: () => ({ tokens: 1, contextWindow: 1_000_000, percent: 0 }),
+    };
+    installStatusline({ on() {} }, { speedStore: mockSpeedStore() });
+    const host = globalThis[RUBATO_FOOTER_HOST];
+    assert.equal(typeof host.paint, "function");
+    const painted = host.paint({
+      session,
+      footerData: { getGitBranch: () => "main", getExtensionStatuses: () => new Map() },
+    }, 160);
+    assert.match(painted.join("\n"), /^✦ Opus 5 high/);
+    assert.doesNotMatch(painted.join("\n"), /\$0\.000|\(sub\)/);
+    let factory;
+    assert.equal(host.attach({
+      session,
+      setExtensionFooter(next) { factory = next; },
+    }), true);
+    assert.equal(typeof factory, "function");
+  } finally {
+    registerFooterHost(prev);
+  }
 });

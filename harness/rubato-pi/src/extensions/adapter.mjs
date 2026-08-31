@@ -34,7 +34,8 @@ const dagOverlay = composeRubatoExtension([
 const taskComponent = rubatoPiTaskComponent;
 
 export default async function rubatoPiAdapter(pi) {
-  installStatusline(pi);
+  const statusline = installStatusline(pi);
+  await statusline.attachHost?.();
   installEvalSearchGuard(pi);
   installMeasurementHooks(pi);
   const member = isTeamMemberProcess();

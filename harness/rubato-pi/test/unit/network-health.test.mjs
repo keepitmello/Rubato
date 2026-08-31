@@ -148,3 +148,28 @@ test("createNetworkHealth never probes loopback and classify uses recorded probe
   assert.equal(verdict.status, "healthy");
   health.stop();
 });
+
+test("start warmups to the classify threshold instead of waiting for the 15s interval", async () => {
+  const health = createNetworkHealth({
+    autostart: false,
+    intervalMs: 15_000,
+    connect: async () => ({ ok: true, rttMs: 12 }),
+  });
+  health.start();
+  const origin = "https://chatgpt.com/backend-api";
+  const deadline = Date.now() + 2_000;
+  while (health.probes.filter((probe) => probe.origin === origin).length < PROBE_CLASSIFY_AFTER) {
+    if (Date.now() > deadline) break;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  const mine = health.probes.filter((probe) => probe.origin === origin);
+  assert.ok(mine.length >= PROBE_CLASSIFY_AFTER, `warmup got ${mine.length}`);
+  const last = mine.at(-1);
+  const verdict = health.classify({
+    providerId: "openai-codex",
+    startMs: last.endMs,
+    endMs: last.endMs + 1,
+  });
+  assert.equal(verdict.status, "healthy");
+  health.stop();
+});
