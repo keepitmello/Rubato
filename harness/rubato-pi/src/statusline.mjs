@@ -102,6 +102,7 @@ export function formatModelWithEffort(modelId, level, model, catalog) {
 
 function isFastModel(modelId, model) {
   if (!modelId) return false;
+  if (model?.serviceTier === "priority") return true;
   const bare = String(modelId).split("/").pop().split(":", 1)[0];
   if (/(?:^|[-.])fast$/i.test(bare)) return true;
   // 피커 id 는 `cursor-grok-4.6` 그대로다. Fast 인지는 표시명·Fast map 으로 본다.
