@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { rubatoExtension } from "../engine-paths.mjs";
+import { assertEngineBuilt, rubatoExtension } from "../engine-paths.mjs";
 import { resolveRole } from "../role-contract.mjs";
 import { promptForAgentStart } from "../system-prompt.mjs";
 import { isTeamMemberProcess, parseMemberIdentity } from "../member-identity.mjs";
@@ -13,6 +13,7 @@ import { installEvalSearchGuard } from "../eval-search-guard.mjs";
 import { installMeasurementHooks } from "../measurement-recorder.mjs";
 import { installRemoteSurface } from "./remote-surface.mjs";
 
+assertEngineBuilt();
 const { composeRubatoExtension, rubatoComponents } = await import(rubatoExtension);
 
 const DAG_RUBATO_OWNED = new Set(DAG_RUBATO_OWNED_COMPONENTS);
