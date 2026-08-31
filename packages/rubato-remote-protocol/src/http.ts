@@ -1,6 +1,6 @@
 import type { ProtocolNegotiationResult, ProtocolVersionRange } from "./compatibility.js"
 import type { HostId, LiveSessionId, ZmxName } from "./identifiers.js"
-import type { JsonObject, LiveSessionSummary } from "./types.js"
+import type { JsonObject, LiveSessionSummary, RequestRunSummary, RequestTimelineSnapshot } from "./types.js"
 import type { ConversationEntry, InteractiveCommandDescriptor, SessionTreeEntry, UiRequest } from "./surface.js"
 
 export interface HealthResponse {
@@ -119,6 +119,7 @@ export interface MessagePageRequest {
 
 export interface MessagePageResponse {
   readonly entries: readonly ConversationEntry[]
+  readonly requestRuns?: readonly RequestRunSummary[]
   readonly nextBefore?: string
 }
 
@@ -292,4 +293,5 @@ export interface SnapshotResponse {
   readonly tree: readonly SessionTreeEntry[]
   readonly commands: readonly InteractiveCommandDescriptor[]
   readonly uiRequest?: UiRequest | undefined
+  readonly timeline?: RequestTimelineSnapshot
 }

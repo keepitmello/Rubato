@@ -57,7 +57,12 @@ export class InteractiveActionDispatcher {
         const images = await this.resolveImages(payload.imageIds ?? []);
         const delivery = request.action === "input.steer" ? "steer"
           : request.action === "input.followUp" ? "followUp" : "auto";
-        const result = await control.submitInput(payload.text, { images, delivery, source: "external" });
+        const result = await control.submitInput(payload.text, {
+          images,
+          delivery,
+          source: "remote",
+          clientInputId: request.requestId,
+        });
         if (!result.accepted) {
           const code = result.reason === "terminal_required" ? "terminal_required" : "invalid_action";
           throw new RemoteActionError(code, result.reason);
@@ -108,6 +113,18 @@ export class InteractiveActionDispatcher {
       case "environment.refresh":
         await this.refreshEnvironment();
         return { accepted: true };
+      case "input.queue.clear":
+        return control.clearPendingInputs();
+      case "conversation.page":
+        try {
+          return await control.readConversationPage({
+            before: payload.before,
+            limit: payload.limit,
+          });
+        } catch (error) {
+          const code = error?.code === "invalid_action" ? "invalid_action" : "invalid_action";
+          throw new RemoteActionError(code, error?.message ?? "invalid_action");
+        }
       default:
         throw new RemoteActionError("invalid_action", `Unsupported action: ${request.action}`);
     }

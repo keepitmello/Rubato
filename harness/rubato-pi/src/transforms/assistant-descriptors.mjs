@@ -5,9 +5,20 @@ export function isAssistantDescriptorsUrl(url) {
 }
 
 /** #17 per-run hide + #18 hideTurnWork + #25 ellipsis + #27 abort-once. */
-export function injectAssistantDescriptors(source) {
+export function assistantDescriptorsHrefs() {
+  return { phase: new URL("./assistant-phase.mjs", import.meta.url).href };
+}
+
+export function injectAssistantDescriptors(source, hrefs = assistantDescriptorsHrefs()) {
+  const phaseHref = hrefs.phase ?? assistantDescriptorsHrefs().phase;
   let next = replaceOnce(
     source,
+    'import { theme } from "../theme/theme.js";\n',
+    `import { theme } from "../theme/theme.js";\nimport { phaseForTextContent } from ${JSON.stringify(phaseHref)};\n`,
+    "descriptors phase import",
+  );
+  next = replaceOnce(
+    next,
     `function isVisibleContent(content, providerNativeVisible) {
     switch (content.type) {`,
     `function isToolUseEllipsisFiller(message, content) {
@@ -30,7 +41,7 @@ function isVisibleContent(message, content, providerNativeVisible) {
         descriptors.push(SPACER_DESCRIPTOR);`,
     `export function createAssistantRenderDescriptors(message, options) {
     const descriptors = [];
-    const isTurnVisible = (content, providerNativeVisible) => !(options.hideTurnWork && content.type === "thinking") && isVisibleContent(message, content, providerNativeVisible);
+    const isTurnVisible = (content, providerNativeVisible) => !(options.hideTurnWork && content.type === "thinking") && !(options.hideProgress && content.type === "text" && phaseForTextContent(content, message) === "progress") && isVisibleContent(message, content, providerNativeVisible);
     if (message.content.some((content) => isTurnVisible(content, true)))
         descriptors.push(SPACER_DESCRIPTOR);`,
     "descriptors isTurnVisible",
@@ -41,6 +52,8 @@ function isVisibleContent(message, content, providerNativeVisible) {
                 const text = content.text.trim();`,
     `            case "text": {
                 if (isToolUseEllipsisFiller(message, content))
+                    break;
+                if (options.hideProgress && phaseForTextContent(content, message) === "progress")
                     break;
                 const text = content.text.trim();`,
     "descriptors skip ellipsis text",

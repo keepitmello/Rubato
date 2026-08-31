@@ -4,6 +4,7 @@
 import { pathToFileURL } from "node:url";
 import { senpiDir, senpiNested } from "../engine-paths.mjs";
 import { registerInternalAction } from "./internal-actions.mjs";
+import { phaseForTextContent } from "./assistant-phase.mjs";
 
 const { Container, hyperlink, truncateToWidth } = await import(
   pathToFileURL(senpiNested("@earendil-works/pi-tui/dist/index.js")).href
@@ -84,15 +85,30 @@ export class TurnWorkSummaryComponent extends Container {
     this.assistants = new Map();
     this.toolGroups = new Set();
     this.expanded = false;
+    this.requestCompleted = false;
+    this.terminalStatus = undefined;
     this.toggleAction = registerInternalAction(() => {
       this.setExpanded(!this.expanded);
       this.ui.requestRender();
     });
   }
+  applyPresentation() {
+    const hideProgress = this.requestCompleted && !this.expanded;
+    for (const component of this.assistants.keys()) {
+      component.setTurnWorkCollapsed?.(!this.expanded);
+      component.setHideProgress?.(hideProgress);
+    }
+    for (const group of this.toolGroups) group.setTurnWorkCollapsed?.(!this.expanded);
+    this.invalidate();
+  }
+  setRequestCompleted(completed, terminalStatus) {
+    this.requestCompleted = Boolean(completed);
+    if (terminalStatus) this.terminalStatus = terminalStatus;
+    this.applyPresentation();
+  }
   trackAssistant(component, message) {
     this.assistants.set(component, message);
-    component.setTurnWorkCollapsed?.(!this.expanded);
-    this.invalidate();
+    this.applyPresentation();
   }
   trackToolGroup(group) {
     this.toolGroups.add(group);
@@ -102,9 +118,7 @@ export class TurnWorkSummaryComponent extends Container {
   setExpanded(expanded) {
     if (this.expanded === expanded) return;
     this.expanded = expanded;
-    for (const component of this.assistants.keys()) component.setTurnWorkCollapsed?.(!expanded);
-    for (const group of this.toolGroups) group.setTurnWorkCollapsed?.(!expanded);
-    this.invalidate();
+    this.applyPresentation();
   }
   render(width) {
     let steps = 0;
@@ -116,11 +130,20 @@ export class TurnWorkSummaryComponent extends Container {
     }
     let tools = 0;
     for (const group of this.toolGroups) tools += group.size;
-    if (steps === 0 && tools === 0) return [];
+    let progress = 0;
+    for (const message of this.assistants.values()) {
+      for (const content of message?.content ?? []) {
+        if (content.type === "text" && content.text?.trim() && phaseForTextContent(content, message) === "progress")
+          progress += 1;
+      }
+    }
+    if (steps === 0 && tools === 0 && progress === 0) return [];
     const parts = [`Worked ${steps} ${steps === 1 ? "step" : "steps"}`];
+    if (progress > 0) parts.push(`${progress} ${progress === 1 ? "update" : "updates"}`);
     if (thoughtMs > 0) parts.push(`thought ${compactDuration(thoughtMs)}`);
     if (tools > 0) parts.push(`${tools} ${tools === 1 ? "tool" : "tools"}`);
-    const head = `• ${parts.join(" · ")}`;
+    const status = this.terminalStatus === "interrupted" ? "Interrupted" : this.terminalStatus === "failed" ? "Failed" : undefined;
+    const head = `• ${parts.join(" · ")}${status ? ` · ${status}` : ""}`;
     const names = compactTools(this.toolGroups, Math.max(0, width - [...head].length - 2));
     const line = truncateToWidth(`${head}${names ? `: ${names}` : ""}`, width, "");
     return [hyperlink(theme.fg("dim", line), this.toggleAction.url)];

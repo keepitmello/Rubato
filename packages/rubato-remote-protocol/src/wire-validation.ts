@@ -63,6 +63,7 @@ import type {
   SurfaceReconnectCredentialPayload,
   SurfaceRegisterFrame,
   SurfaceSnapshotFrame,
+  SurfaceSummaryFrame,
   SurfaceToHubFrame,
 } from "./surface.js"
 import type { JsonObject } from "./types.js"
@@ -70,6 +71,8 @@ import {
   actionRequestSchema,
   isJsonValue,
   liveSessionSummarySchema,
+  requestRunSummarySchema,
+  requestTimelineSnapshotSchema,
   ProtocolValidationError,
   type ProtocolSchema,
   type ValidationIssue,
@@ -181,6 +184,11 @@ export const surfaceSnapshotFrameSchema = makeSchema<SurfaceSnapshotFrame>(root(
   at: isoDate, summary: nested(liveSessionSummarySchema), state: sessionSnapshotState,
 })))
 
+export const surfaceSummaryFrameSchema = makeSchema<SurfaceSummaryFrame>(root(object({
+  kind: literal("surface.summary"), protocol, surfaceInstanceId: uuid, sourceSeq: nonNegativeInteger,
+  at: isoDate, summary: nested(liveSessionSummarySchema),
+})))
+
 export const surfaceActionResultFrameSchema = makeSchema<SurfaceActionResultFrame>(root(object({
   kind: literal("surface.action-result"), protocol, requestId: uuid, accepted: booleanCheck,
   revision: nonNegativeInteger, payload: jsonObject,
@@ -218,6 +226,7 @@ export const surfaceToHubFrameSchema = makeSchema<SurfaceToHubFrame>(root(discri
   "surface.heartbeat": schemaChecker(surfaceHeartbeatFrameSchema),
   "surface.event": schemaChecker(surfaceEventFrameSchema),
   "surface.snapshot": schemaChecker(surfaceSnapshotFrameSchema),
+  "surface.summary": schemaChecker(surfaceSummaryFrameSchema),
   "surface.action-result": schemaChecker(surfaceActionResultFrameSchema),
 })))
 
@@ -236,7 +245,7 @@ export const snapshotResponseSchema = makeSchema<SnapshotResponse>(root(object({
   summary: nested(liveSessionSummarySchema), revision: nonNegativeInteger, lastSeq: nonNegativeInteger,
   entries: arrayOf(conversationEntry), tree: arrayOf(object({ id: nonEmptyString, label: stringCheck, current: booleanCheck })),
   commands: arrayOf(interactiveCommandDescriptor),
-}, { uiRequest })))
+}, { uiRequest, timeline: nested(requestTimelineSnapshotSchema) })))
 export const sessionSnapshotSchema = makeSchema<SessionSnapshot>((value, issues) => {
   object({
     schemaVersion: literal(1), liveSessionId: uuidV7, lastSeq: nonNegativeInteger, writtenAt: isoDate,
@@ -307,7 +316,7 @@ export const messagePageRequestSchema = makeSchema<MessagePageRequest>(root(obje
 })))
 export const messagePageResponseSchema = makeSchema<MessagePageResponse>(root(object({
   entries: arrayOf(conversationEntry),
-}, { nextBefore: nonEmptyString })))
+}, { nextBefore: nonEmptyString, requestRuns: arrayOf(nested(requestRunSummarySchema)) })))
 export const imageUploadRequestSchema = makeSchema<ImageUploadRequest>(root(object({
   fileName: boundedString(255), mimeType: oneOf(["image/png", "image/jpeg", "image/webp", "image/gif"] as const), dataBase64: base64,
 })))
@@ -509,12 +518,26 @@ function stringRecord(value: unknown, path: string, issues: ValidationIssue[]): 
 }
 
 function conversationEntry(value: unknown, path: string, issues: ValidationIssue[]): void {
+  const requestRunId = nonEmptyString
   discriminated("kind", {
-    message: object({ id: nonEmptyString, kind: literal("message"), role: oneOf(["user", "assistant"] as const), text: stringCheck }, { streaming: booleanCheck, at: isoDate }),
+    message: object({ id: nonEmptyString, kind: literal("message"), role: oneOf(["user", "assistant"] as const), text: stringCheck }, {
+      streaming: booleanCheck,
+      at: isoDate,
+      requestRunId,
+      inputId: requestRunId,
+      delivery: oneOf(["submit", "steer", "followUp"] as const),
+      phase: oneOf(["progress", "final"] as const),
+    }),
     thinking: object({ id: nonEmptyString, kind: literal("thinking"), text: stringCheck }, { streaming: booleanCheck }),
-    tool: object({ id: nonEmptyString, kind: literal("tool"), name: nonEmptyString, summary: stringCheck, status: oneOf(["running", "done", "failed"] as const) }, { output: stringCheck, artifactId: nonEmptyString }),
-    image: object({ id: nonEmptyString, kind: literal("image"), alt: stringCheck, url: stringCheck }),
-    notice: object({ id: nonEmptyString, kind: literal("notice"), text: stringCheck }),
+    tool: object({ id: nonEmptyString, kind: literal("tool"), name: nonEmptyString, summary: stringCheck, status: oneOf(["running", "done", "failed"] as const) }, {
+      output: stringCheck,
+      artifactId: nonEmptyString,
+      requestRunId,
+      at: isoDate,
+      completedAt: isoDate,
+    }),
+    image: object({ id: nonEmptyString, kind: literal("image"), alt: stringCheck, url: stringCheck }, { requestRunId }),
+    notice: object({ id: nonEmptyString, kind: literal("notice"), text: stringCheck }, { requestRunId }),
   })(value, path, issues)
 }
 
@@ -548,6 +571,7 @@ function sessionSnapshotState(value: unknown, path: string, issues: ValidationIs
     uiRequest,
     background: jsonObject,
     teams: jsonObject,
+    timeline: nested(requestTimelineSnapshotSchema),
   })(value, path, issues)
 }
 

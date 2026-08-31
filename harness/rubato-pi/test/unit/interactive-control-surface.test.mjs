@@ -44,7 +44,9 @@ test("duplicate request IDs share one result and stale revisions fail before dis
 test("input delivery, images, bash context, and UI responses use native controls", async () => {
   const calls = [];
   const control = {
-    async submitInput(text, options) { calls.push(["input", text, options]); return { accepted: true }; },
+    async submitInput(text, options) { calls.push(["input", text, options]); return { accepted: true, inputId: options.clientInputId, disposition: "queued-steer" }; },
+    clearPendingInputs() { calls.push(["clear"]); return { clearedIds: ["a"] }; },
+    async readConversationPage(input) { calls.push(["page", input]); return { entries: [], requestRuns: [] }; },
     async executeUserBash(command, excluded) { calls.push(["bash", command, excluded]); },
     respondToUiRequest(id, value) { calls.push(["ui", id, value]); return id === "pending"; },
   };
@@ -52,11 +54,42 @@ test("input delivery, images, bash context, and UI responses use native controls
     { getInteractiveControl: () => control },
     { resolveImages: async (ids) => ids.map((id) => ({ type: "image", id })) },
   );
-  await dispatcher.dispatch(request("steer", "input.steer", { text: "go", imageIds: ["img"] }));
+  const steered = await dispatcher.dispatch(request("steer", "input.steer", { text: "go", imageIds: ["img"] }));
   await dispatcher.dispatch(request("bash", "bash.execute", { command: "pwd", excludeFromContext: true }));
   await dispatcher.dispatch(request("ui", "ui.respond", { requestId: "pending", value: "yes" }));
+  const cleared = await dispatcher.dispatch(request("clear", "input.queue.clear"));
+  const page = await dispatcher.dispatch(request("page", "conversation.page", { before: "x", limit: 20 }));
   assert.equal(calls[0][2].delivery, "steer");
+  assert.equal(calls[0][2].source, "remote");
+  assert.equal(calls[0][2].clientInputId, "steer");
   assert.equal(calls[0][2].images[0].id, "img");
+  assert.equal(steered.inputId, "steer");
+  assert.equal(steered.disposition, "queued-steer");
   assert.deepEqual(calls[1], ["bash", "pwd", true]);
   assert.deepEqual(calls[2], ["ui", "pending", "yes"]);
+  assert.deepEqual(calls[3], ["clear"]);
+  assert.deepEqual(cleared, { clearedIds: ["a"] });
+  assert.deepEqual(calls[4], ["page", { before: "x", limit: 20 }]);
+  assert.deepEqual(page, { entries: [], requestRuns: [] });
+});
+
+test("busy auto is followUp and snapshot exposes requestTimeline", async () => {
+  const calls = [];
+  const control = {
+    async submitInput(text, options) { calls.push(options); return { accepted: true, inputId: "id-1", disposition: options.delivery === "steer" ? "queued-steer" : "queued-follow-up" }; },
+    snapshot() {
+      return {
+        isStreaming: true,
+        pendingMessageCount: 1,
+        requestTimeline: { schemaVersion: 1, runs: [], pendingInputs: [], hasOlder: false },
+      };
+    },
+  };
+  const dispatcher = new InteractiveActionDispatcher({ getInteractiveControl: () => control });
+  const result = await dispatcher.dispatch(request("auto-1", "input.submit", { text: "later" }));
+  assert.equal(calls[0].delivery, "auto");
+  assert.equal(calls[0].source, "remote");
+  assert.equal(calls[0].clientInputId, "auto-1");
+  assert.equal(result.disposition, "queued-follow-up");
+  assert.equal(control.snapshot().requestTimeline.schemaVersion, 1);
 });

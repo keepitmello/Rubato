@@ -6,6 +6,14 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { basename } from "node:path";
 import { collectSessionMetrics } from "../session-metrics.mjs";
 import { InteractiveActionDispatcher, RemoteActionError } from "../interactive-control-surface.mjs";
+import {
+  conversationEntries,
+  paginateConversation,
+  presentationFromTimeline,
+  sanitizePageEntries,
+  sanitizeRemoteMessageEvent,
+  timelineChangePayloads,
+} from "../remote-conversation-projection.mjs";
 
 const BUFFER_EVENTS = 2_048;
 const BUFFER_BYTES = 16 * 1024 * 1024;
@@ -61,31 +69,6 @@ function messageText(content) {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
   return content.filter((item) => item?.type === "text" && typeof item.text === "string").map((item) => item.text).join("\n");
-}
-
-function conversationEntries(entries, protocol) {
-  return entries.slice(-100).flatMap((entry) => {
-    if (!entry || typeof entry.id !== "string") return [];
-    if (entry.type === "message" && (entry.message?.role === "user" || entry.message?.role === "assistant")) {
-      return [{ id: entry.id, kind: "message", role: entry.message.role, text: messageText(entry.message.content), at: entry.timestamp }];
-    }
-    if (entry.type === "message" && entry.message?.role === "toolResult") {
-      return [{
-        id: entry.id,
-        kind: "tool",
-        name: String(entry.message.toolName ?? "tool"),
-        summary: messageText(entry.message.content),
-        status: entry.message.isError ? "failed" : "done",
-      }];
-    }
-    if (entry.type === "compaction" || entry.type === "branch_summary") {
-      return [{ id: entry.id, kind: "notice", text: String(entry.summary ?? "Session compacted") }];
-    }
-    if (entry.type === "custom_message" && entry.display !== false) {
-      return [{ id: entry.id, kind: "notice", text: messageText(entry.content) }];
-    }
-    return [];
-  }).map((entry) => jsonSafe(protocol, entry));
 }
 
 function standardUiRequest(request) {
@@ -229,6 +212,8 @@ export class RemoteSurface {
       getRevision: () => this.revision,
       now: () => this.clock.now(),
     });
+    this.lastTimeline = undefined;
+    this.lastPresentationKey = undefined;
   }
 
   start() {
@@ -328,12 +313,21 @@ export class RemoteSurface {
     if (ctx) this.context = ctx;
     if (name === "session_start" || name === "session_switch" || name === "session_fork" || name === "session_info_changed") {
       this.emitSnapshot();
+      this.rememberTimeline();
       if (name === "session_info_changed") {
         // Still emit the lightweight changed event so hubs that only watch
         // journals can refresh the picker title without waiting on snapshot IO.
         const type = EVENT_TYPES.get(name);
         if (type) this.emit(type, this.normalizeEvent(name, event));
       }
+      this.maybeEmitSummary();
+      return;
+    }
+    if (name === "agent_settled") {
+      const type = EVENT_TYPES.get(name);
+      if (type) this.emit(type, this.normalizeEvent(name, event));
+      this.emitSnapshot();
+      this.publishTimelineChanges();
       return;
     }
     if (name === "wake_source_state") {
@@ -344,6 +338,7 @@ export class RemoteSurface {
     }
     const type = EVENT_TYPES.get(name);
     if (type) this.emit(type, this.normalizeEvent(name, event));
+    this.publishTimelineChanges();
   }
 
   observeChannel(data) {
@@ -352,8 +347,15 @@ export class RemoteSurface {
   }
 
   normalizeEvent(name, event) {
+    const timeline = this.controlTimeline();
+    const requestRunId = timeline?.activeRequestRunId;
+    const withRun = (payload) => requestRunId ? { ...payload, requestRunId } : payload;
     if (name === "before_agent_start" || name === "agent_start") return { execution: "working", event };
     if (name === "agent_settled") return { execution: "idle", event };
+    if (name === "message_start" || name === "message_update" || name === "message_end") {
+      return withRun({ event: jsonSafe(this.protocol, sanitizeRemoteMessageEvent(event)) });
+    }
+    if (name === "tool_execution_start") return withRun({ event: jsonSafe(this.protocol, event) });
     if (name === "tool_execution_update" || name === "tool_execution_end") {
       const normalized = jsonSafe(this.protocol, event);
       const encoded = Buffer.from(JSON.stringify(normalized));
@@ -368,9 +370,9 @@ export class RemoteSurface {
           truncated: encoded.length > MAX_TOOL_ARTIFACT_BYTES,
         };
         this.emit("artifact.created", artifact);
-        return { artifact };
+        return withRun({ artifact });
       }
-      return { event: normalized };
+      return withRun({ event: normalized });
     }
     return { event };
   }
@@ -385,8 +387,8 @@ export class RemoteSurface {
       schemaVersion: 1,
       hostId: this.hostId,
       liveSessionId: this.liveSessionId,
-      ...(process.env.RUBATO_LIVE_SESSION_ID && process.env.ZMX_SESSION ? { zmxName: process.env.ZMX_SESSION } : {}),
-      managed: Boolean(process.env.RUBATO_LIVE_SESSION_ID),
+      ...(this.managedZmxName() ? { zmxName: this.managedZmxName() } : {}),
+      managed: this.isManagedLiveSession(),
       pid: process.pid,
       lifecycle: "ready",
       execution: native.uiRequest ? "idle" : native.isStreaming || native.isCompacting ? "working" : "idle",
@@ -411,14 +413,76 @@ export class RemoteSurface {
         remoteProtocolMax: this.protocol.REMOTE_PROTOCOL_CURRENT_VERSION,
       },
       capabilities: control ? ["interactive-control", "standard-ui", "terminal-required"] : ["terminal-required"],
+      ...(this.presentation(native) ? { presentation: this.presentation(native) } : {}),
     };
+  }
+
+  isManagedLiveSession() {
+    return Boolean(process.env.RUBATO_LIVE_SESSION_ID) && process.env.RUBATO_LIVE_SESSION_ID === this.liveSessionId;
+  }
+
+  managedZmxName() {
+    if (!this.isManagedLiveSession()) return undefined;
+    const compact = String(this.liveSessionId).replaceAll("-", "").slice(0, 12).toLowerCase();
+    return compact.length === 12 ? `rubato-${compact}` : undefined;
+  }
+
+  controlTimeline() {
+    const control = tryCall(() => this.pi.getInteractiveControl?.());
+    const native = tryCall(() => control?.snapshot?.()) ?? {};
+    return native.requestTimeline;
+  }
+
+  presentation(native = this.controlSnapshot()) {
+    const timeline = native?.requestTimeline;
+    return presentationFromTimeline(timeline, this.finalPreviewOptions(timeline));
+  }
+
+  finalPreviewOptions(timeline) {
+    const completed = [...(timeline?.runs ?? [])].reverse().find((run) => run.status === "completed" && run.finalMessageId);
+    if (!completed) return {};
+    const final = this.conversationSnapshotEntries().find((entry) => entry.id === completed.finalMessageId);
+    return {
+      ...(typeof final?.text === "string" ? { lastFinalText: final.text } : {}),
+      ...(completed.completedAt ? { lastFinalAt: completed.completedAt } : {}),
+    };
+  }
+
+  conversationSnapshotEntries() {
+    const control = tryCall(() => this.pi.getInteractiveControl?.());
+    const page = tryCall(() => control?.readConversationPage?.({ limit: 100 }));
+    if (page && typeof page.then !== "function" && Array.isArray(page.entries)) {
+      return sanitizePageEntries(page.entries, this.protocol);
+    }
+    return conversationEntries(this.context?.sessionManager?.getBranch?.() ?? [], this.protocol);
+  }
+
+  rememberTimeline() {
+    this.lastTimeline = this.controlTimeline();
+  }
+
+  publishTimelineChanges() {
+    const timeline = this.controlTimeline();
+    const previous = this.lastTimeline;
+    this.lastTimeline = timeline;
+    if (timeline && previous) {
+      for (const payload of timelineChangePayloads(previous, timeline)) {
+        this.emit("session.changed", payload);
+      }
+    }
+    this.maybeEmitSummary();
+  }
+
+  controlSnapshot() {
+    const control = tryCall(() => this.pi.getInteractiveControl?.());
+    return tryCall(() => control?.snapshot?.()) ?? {};
   }
 
   snapshot() {
     const control = tryCall(() => this.pi.getInteractiveControl?.());
     const native = tryCall(() => control?.snapshot?.()) ?? {};
     const ctx = this.context;
-    const entries = ctx?.sessionManager?.getBranch?.() ?? [];
+    const entries = this.conversationSnapshotEntries();
     const commands = (control?.listCommands?.() ?? []).map(({ name, description, category, remoteMode }) => ({
       name,
       description,
@@ -426,17 +490,19 @@ export class RemoteSurface {
       remoteMode,
     }));
     const capabilities = control ? ["interactive-control", "standard-ui", "terminal-required"] : ["terminal-required"];
+    const timeline = native.requestTimeline;
     return {
       summary: this.summary(),
       state: {
         revision: this.revision,
-        entries: conversationEntries(entries, this.protocol),
+        entries,
         tree: sessionTree(ctx?.sessionManager?.getTree?.() ?? [], native.leafEntryId),
         commands,
         ...(standardUiRequest(native.uiRequest) ? { uiRequest: standardUiRequest(native.uiRequest) } : {}),
         background: jsonSafe(this.protocol, this.background),
         teams: jsonSafe(this.protocol, this.teams),
         capabilities,
+        ...(timeline ? { timeline } : {}),
       },
     };
   }
@@ -454,6 +520,7 @@ export class RemoteSurface {
       state: snapshot.state,
     };
     if (!this.send(record)) this.buffer.push(record);
+    this.lastPresentationKey = JSON.stringify(snapshot.summary.presentation ?? null);
     return record;
   }
 
@@ -486,6 +553,7 @@ export class RemoteSurface {
         }
       }
       this.emitSnapshot();
+      this.rememberTimeline();
       return;
     }
     if (frame.kind !== "hub.action" || !this.registered) return;
@@ -499,6 +567,10 @@ export class RemoteSurface {
         revision: this.revision,
         payload: { error: this.remoteError(new RemoteActionError("invalid_action", "Action identity does not match this surface"), "invalid_action") },
       });
+      return;
+    }
+    if (request.action === "conversation.page" || request.action === "input.queue.clear") {
+      await this.respondToInternalAction(request);
       return;
     }
     this.emit("action.accepted", { requestId: request.requestId, action: request.action }, { advanceRevision: false });
@@ -525,6 +597,77 @@ export class RemoteSurface {
         payload: { error: remoteError },
       });
     }
+  }
+
+  async respondToInternalAction(request) {
+    this.emit("action.accepted", { requestId: request.requestId, action: request.action }, { advanceRevision: false });
+    try {
+      const result = jsonSafe(this.protocol, request.action === "conversation.page"
+        ? await this.readConversationPage(request.payload)
+        : this.clearPendingInputs());
+      if (request.action === "input.queue.clear") this.publishTimelineChanges();
+      this.emit("action.completed", { requestId: request.requestId, action: request.action, result }, { advanceRevision: false });
+      this.send({
+        kind: "surface.action-result",
+        protocol: this.protocol.REMOTE_PROTOCOL_NAME,
+        requestId: request.requestId,
+        accepted: true,
+        revision: this.revision,
+        payload: result,
+      });
+    } catch (error) {
+      const remoteError = this.remoteError(error, error instanceof RemoteActionError ? error.code : "internal_error");
+      this.emit("action.rejected", { requestId: request.requestId, action: request.action, error: remoteError }, { advanceRevision: false });
+      this.send({
+        kind: "surface.action-result",
+        protocol: this.protocol.REMOTE_PROTOCOL_NAME,
+        requestId: request.requestId,
+        accepted: false,
+        revision: this.revision,
+        payload: { error: remoteError },
+      });
+    }
+  }
+
+  async readConversationPage(payload = {}) {
+    const control = tryCall(() => this.pi.getInteractiveControl?.());
+    if (typeof control?.readConversationPage === "function") {
+      return control.readConversationPage({
+        ...(payload.before === undefined ? {} : { before: payload.before }),
+        limit: payload.limit,
+      });
+    }
+    const entries = conversationEntries(this.context?.sessionManager?.getBranch?.() ?? [], this.protocol, { limit: Number.MAX_SAFE_INTEGER });
+    const page = paginateConversation(entries, payload);
+    if (page.error) throw new RemoteActionError(page.error, page.message);
+    const timeline = this.controlTimeline();
+    return {
+      entries: page.entries,
+      requestRuns: timeline?.runs ?? [],
+      ...(page.nextBefore === undefined ? {} : { nextBefore: page.nextBefore }),
+    };
+  }
+
+  clearPendingInputs() {
+    const control = tryCall(() => this.pi.getInteractiveControl?.());
+    if (typeof control?.clearPendingInputs === "function") return control.clearPendingInputs();
+    return { clearedIds: [] };
+  }
+
+  maybeEmitSummary() {
+    if ((this.negotiatedProtocolVersion ?? 1) < 2) return;
+    const summary = this.summary();
+    const key = JSON.stringify(summary.presentation ?? null);
+    if (key === this.lastPresentationKey) return;
+    this.lastPresentationKey = key;
+    this.send({
+      kind: "surface.summary",
+      protocol: this.protocol.REMOTE_PROTOCOL_NAME,
+      surfaceInstanceId: this.surfaceInstanceId,
+      sourceSeq: ++this.sourceSeq,
+      at: new Date(this.clock.now()).toISOString(),
+      summary,
+    });
   }
 
   remoteError(error, code) {
