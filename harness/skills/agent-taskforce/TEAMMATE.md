@@ -15,7 +15,7 @@ Address peers by their teammate name rather than routing through the lead. How m
 
 You can read anything in this skill. Most of it is addressed to the lead and will cost you attention without changing what you do. These are the exceptions:
 
-- **Your context was compacted mid-workstream** → `references/03-context-and-state.md`. A summary is a lossy record; reread your canonical sources before you act on it.
+- **Your context was compacted mid-workstream** → `references/03-context-and-state.md`. A summary is a lossy record; reread your canonical sources before you act on it. The latest user message stays primary — answer it before status recovery or memory bookkeeping.
 - **You need to argue about what counts as done** → `references/06-quality-and-evals.md` has done-evidence by task type and how a verification contract is agreed.
 - **You believe an active frame's invariant cannot hold** → `references/04-framing-bridge.md` for what is and is not a frame conflict, and `templates/frame-conflict.md` for the evidence packet. Ordinary test failures and better implementation ideas are not frame conflicts.
 - **You want to run helpers under yourself** → `runtimes/` has your harness's spawn surface. Your role contract says when delegating is worth it; the adapter says how.

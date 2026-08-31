@@ -105,6 +105,7 @@ export function createReflectionTriggerWiring(options: ReflectionTriggerWiringOp
         if (outcome === undefined || outcome.aborted || outcome.willRetry) return
         if (session.enabled === false) {
           session.ledger.pendingCompaction = false
+          session.ledger.pendingCompactPriorityNotice = false
           return
         }
 
@@ -125,6 +126,9 @@ export function createReflectionTriggerWiring(options: ReflectionTriggerWiringOp
         const session = options.resolveSession(eventCtx)
         if (!session) return
         session.ledger.pendingCompaction = true
+        // Survives settle (unlike pendingCompaction): the next agent turn must
+        // still see the answer-first guard after compaction recovery.
+        session.ledger.pendingCompactPriorityNotice = true
       })
     },
 

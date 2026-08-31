@@ -110,6 +110,12 @@ export function registerMemoryStatic(input: {
         locksDir: context.identityPaths.locks,
       })
     },
+    resolveCompactPriorityNotice: (sessionId) => {
+      const context = resolveContext(sessionId)
+      if (context === undefined || !context.ledger.pendingCompactPriorityNotice) return false
+      context.ledger.pendingCompactPriorityNotice = false
+      return true
+    },
   })
   pi.on("before_agent_start", (payload, eventCtx) => {
     lastEventCtx.current = eventCtx

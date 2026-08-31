@@ -67,7 +67,7 @@ export async function fixture(options: {
     createRunId: () => `run-${++nextRunId}`,
   })
 
-  const ledger: MemoryPendingLedger = { pendingCompaction: false, configRestartNotified: false }
+  const ledger: MemoryPendingLedger = { pendingCompaction: false, pendingCompactPriorityNotice: false, configRestartNotified: false }
   const launches: ReflectionRequest[] = []
   const logs: Array<{ level: string; message: string; details?: unknown }> = []
   const session: ReflectionTriggerSession = {

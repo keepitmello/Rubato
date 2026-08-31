@@ -90,6 +90,33 @@ describe("createMemoryNudgeWiring", () => {
     })
   }, 30_000)
 
+  test("#given accepted turns past the interval that are not a multiple of it #when nudge state resolves #then the notice stays quiet until the next cadence", async () => {
+    // given
+    const { context, repo } = await fixture()
+    const pi = new MemoryFakeExtensionAPI()
+    const wiring = createMemoryNudgeWiring({
+      resolveContext: () => context,
+      resolveSettings: () => ({ enabled: true, everyUserTurns: 2 }),
+    })
+    wiring.register(pi)
+    const ctx = eventContext("session-cadence", [{
+      type: "custom",
+      customType: ACCEPTED_TURNS_ENTRY_TYPE,
+      data: { version: 1, sessionId: "session-cadence", priorUserTurns: 3, sessionBaselineTurns: 0 },
+    }])
+    await pi.dispatch("session_start", {}, ctx)
+
+    // when
+    const offCadence = await wiring.nudgeTurns(repo, "session-cadence", context.identity)
+    await pi.dispatch("input", input("fourth"), ctx)
+    await pi.dispatch("input_disposition", disposition("fourth", "started"), ctx)
+    const onCadence = await wiring.nudgeTurns(repo, "session-cadence", context.identity)
+
+    // then
+    expect(offCadence).toBeUndefined()
+    expect(onCadence).toBe(4)
+  }, 30_000)
+
   test("#given a durable accepted-turn record and contaminated branch users #when a session resumes #then hydration uses only the durable baseline", async () => {
     // given
     const { context, repo } = await fixture()

@@ -14,6 +14,7 @@ import { estimateSystemTokens, MEMORY_PRESSURE_SOFT_RATIO } from "./status"
 export const MEMORY_PROMPT_TEMPLATE = "rubato-runtime:before_agent_start:v3"
 export const MEMORY_NOTICE_CUSTOM_TYPE = "rubato-memory:notice"
 export const MEMORY_NUDGE_METADATA_TOKEN = "user turns since your last memory save"
+export const MEMORY_COMPACT_PRIORITY_TOKEN = "After compaction:"
 export const MEMORY_PRESSURE_METADATA_TOKEN = "memory pressure:"
 export const MEMORY_SOUL_METADATA_TOKEN = "Soul updated by"
 
@@ -47,6 +48,12 @@ export interface MemoryPromptInjectionOptions {
     identity: string,
   ) => Promise<{ readonly sha: string } | undefined>
   /**
+   * One-shot after an accepted compaction: true means this turn should carry the
+   * "answer the latest user message first" guard. Callers that return true must
+   * consume the pending flag so the notice fires once.
+   */
+  readonly resolveCompactPriorityNotice?: (sessionId: string) => boolean
+  /**
    * Whitelist of system/*.md paths to project for this identity.
    * Absent or empty means metadata only — hosts that never wire it land on the safe default.
    */
@@ -64,8 +71,9 @@ export function createMemoryPromptHandler(
   const cache = options.cache ?? new MemoryBlockCache()
   const createRepo = options.createRepo ?? defaultCreateRepo
   // The recall-count line is a per-session fact, not per-turn news: repeating it every turn only
-  // changed the number, never the action. Nudge and soul notices stay per-turn because they are
-  // event-driven. When only the recall line would render, the notice message is dropped entirely.
+  // changed the number, never the action. Nudge fires on the configured cadence, not every turn
+  // after the threshold. Soul notices stay event-driven. When only the recall line would render,
+  // the notice message is dropped entirely.
   const recallNoticeGuard = createOncePerSessionGuard()
   return async (payload, eventCtx) => {
     const systemPrompt = readSystemPrompt(payload)
@@ -78,6 +86,7 @@ export function createMemoryPromptHandler(
     const repo = createRepo(context)
     const nudgeTurns = await options.resolveNudgeTurns?.(repo, session.id, context.identity)
     const soulNotice = await options.resolveSoulNotice?.(repo, session.id, context.identity)
+    const compactPriority = options.resolveCompactPriorityNotice?.(session.id) === true
     const project = normalizeProject(options.resolveProject?.(context.identity))
     // The template stays a pure template id; the cache folds output-affecting options
     // (the project whitelist) into its own variant, so callers cannot forget to encode one.
@@ -100,6 +109,7 @@ export function createMemoryPromptHandler(
       includeRecall ? session.priorMessageCount : undefined,
       nudgeTurns,
       soulNotice,
+      compactPriority,
     )
     const updatedSystemPrompt = replaceMemoryBlock(
       systemPrompt,
@@ -139,18 +149,36 @@ function renderMemoryNotice(
   previousMessageCount: number | undefined,
   nudgeTurns: number | undefined,
   soulNotice: { readonly sha: string } | undefined,
+  compactPriority = false,
 ): string | undefined {
-  if (previousMessageCount === undefined && nudgeTurns === undefined && soulNotice === undefined) {
+  if (
+    previousMessageCount === undefined
+    && nudgeTurns === undefined
+    && soulNotice === undefined
+    && !compactPriority
+  ) {
     return undefined
   }
   return [
     "<memory_notice>",
+    ...(compactPriority
+      ? [
+        `- ${MEMORY_COMPACT_PRIORITY_TOKEN} the latest user message is the primary task. `
+          + "Answer or act on it before status recovery, memory saves, or team reconciliation. "
+          + "Do not open with a context-restored status report unless the user asked for status.",
+      ]
+      : []),
     ...(previousMessageCount === undefined
       ? []
       : [`- ${previousMessageCount} previous messages between you and the user are stored in recall memory`]),
     ...(nudgeTurns === undefined
       ? []
-      : [`- ${nudgeTurns} ${MEMORY_NUDGE_METADATA_TOKEN}. Save durable facts now, or decide nothing qualifies.`]),
+      : [
+        `- ${nudgeTurns} ${MEMORY_NUDGE_METADATA_TOKEN}. `
+          + "If this turn has a direct user question or request, answer or act on it first. "
+          + "Memory saves are optional bookkeeping and must not delay or replace that. "
+          + "Only then save durable facts, or decide nothing qualifies.",
+      ]),
     ...(soulNotice === undefined
       ? []
       : [`- ${MEMORY_SOUL_METADATA_TOKEN} reflection ${soulNotice.sha.slice(0, 7)} since your last run`]),
