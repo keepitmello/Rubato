@@ -6,6 +6,7 @@ import { exportRegisteredHosts, importRegisteredHosts, removeRegisteredHost, sav
 import { navigate } from "../lib/router"
 import { useAppStore } from "../lib/store"
 import { Sheet, Shell } from "../components/Shell"
+import { PairingSheet } from "../components/PairingSheet"
 
 export function SettingsScreen() {
   const [initialPairing] = useState(() => parsePairingLink(location.search))
@@ -15,8 +16,6 @@ export function SettingsScreen() {
   const preferences = useAppStore((state) => state.preferences)
   const updatePreferences = useAppStore((state) => state.updatePreferences)
   const [pairing, setPairing] = useState(openedFromPairingLink)
-  const [baseUrl, setBaseUrl] = useState(initialPairing?.baseUrl ?? "")
-  const [nonce, setNonce] = useState(initialPairing?.nonce ?? "")
   const [message, setMessage] = useState(openedFromPairingLink && !initialPairing ? "연결 정보가 잘못됐거나 손상됐어요. Mac에서 새 연결 정보를 만드세요." : "")
   const [importText, setImportText] = useState("")
   const [showTransfer, setShowTransfer] = useState(false)
@@ -27,13 +26,11 @@ export function SettingsScreen() {
     search.delete("pair")
     history.replaceState(history.state, "", `${location.pathname}${search.size ? `?${search}` : ""}${location.hash}`)
   }, [openedFromPairingLink])
-  const connect = async () => {
-    try {
-      const host = await pairHost({ baseUrl, nonce })
-      await saveRegisteredHost(host)
-      setHosts([...hosts.filter((item) => item.hostId !== host.hostId), host])
-      setPairing(false); navigate("/")
-    } catch (cause) { setMessage(cause instanceof Error ? cause.message : "Mac을 연결하지 못했어요.") }
+  const connect = async (payload: { baseUrl: string; nonce: string }) => {
+    const host = await pairHost(payload)
+    await saveRegisteredHost(host)
+    setHosts([...hosts.filter((item) => item.hostId !== host.hostId), host])
+    setPairing(false); navigate("/")
   }
   const requestPush = async (refresh = false) => {
     if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) { setMessage("이 브라우저는 홈 화면 알림을 지원하지 않아요."); return }
@@ -114,7 +111,7 @@ export function SettingsScreen() {
         <ListItem title="연결 상태" footer={`${navigator.onLine ? "네트워크 사용 가능" : "오프라인"} · 프로토콜 버전 1`} />
       </List>
     </main>
-    {pairing ? <Sheet title="Mac 연결" onClose={() => setPairing(false)}><p className="meta">Mac에서 표시된 HTTPS 주소와 일회용 연결 코드를 확인하세요.</p><label className="field"><span className="field-label">Mac 주소</span><input className="input" inputMode="url" autoCapitalize="none" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="https://my-mac.example.ts.net/rubato/" /></label><label className="field"><span className="field-label">연결 코드</span><input className="input" autoCapitalize="none" value={nonce} onChange={(event) => setNonce(event.target.value)} /></label><Button large disabled={!baseUrl || !nonce} onClick={() => void connect()}>이 Mac 연결</Button></Sheet> : null}
+    {pairing ? <PairingSheet initial={initialPairing} onClose={() => setPairing(false)} onConfirm={connect} /> : null}
     {showTransfer ? <Sheet title="호스트 목록 복구" onClose={() => setShowTransfer(false)}><label className="field"><span className="field-label">내보낸 호스트 목록</span><textarea className="input" style={{ minHeight: 180 }} value={importText} onChange={(event) => setImportText(event.target.value)} placeholder="내보내기를 누르거나 이전 목록을 붙여 넣으세요." /></label><div className="sheet-actions"><Button large outline onClick={() => void transfer("export")}>내보내기</Button><Button large disabled={!importText.trim()} onClick={() => void transfer("import")}>가져오기</Button></div></Sheet> : null}
   </Shell>
 }
