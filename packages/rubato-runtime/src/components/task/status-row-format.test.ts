@@ -121,7 +121,7 @@ describe("backgroundWidgetRows", () => {
       }),
     ], new Map([["st_wide", "running read src/library.ts"]]), now, () => stats, 220)[0] ?? ""
 
-    expect(row).toBe("⠋ Plan the Spider-Man library · Grok 4.6 high · 1m 0s · 97 tok/s")
+    expect(row).toBe("⠋ Plan the Spider-Man library · Grok 4.6 high [fast] · 1m 0s · 97 tok/s")
     expect(row).not.toContain("category:")
     expect(row).not.toContain("turn ")
     expect(row).not.toContain("$0.1303")
@@ -217,7 +217,7 @@ describe("backgroundWidgetRows", () => {
     expect(row).not.toContain("Cursor Grok")
   })
 
-  it("#given xAI Grok #when a live row renders #then Fast is not implied", () => {
+  it("#given xAI Grok #when a live row renders #then it shows Fast like Cursor Grok", () => {
     const row = backgroundWidgetRows([
       record({
         task_id: "st_xai",
@@ -232,8 +232,7 @@ describe("backgroundWidgetRows", () => {
         },
       }),
     ], new Map(), now, () => stats, 220)[0] ?? ""
-    expect(row).toContain("Grok 4.6 high")
-    expect(row).not.toContain("[fast]")
+    expect(row).toContain("Grok 4.6 high [fast]")
   })
 
   it("#given a model whose name merely starts with a variant token #when a live row renders #then it is not read as that variant", () => {
