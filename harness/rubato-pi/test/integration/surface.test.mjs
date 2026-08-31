@@ -4,7 +4,7 @@ import { adapterPath, leadOverlayPath, senpiCliPath } from "../../src/launch.mjs
 import { probeRpc } from "../helpers/rpc-surface.mjs";
 
 const MEMORY = ["memory", "dream", "palace"];
-const TASK = ["tasks", "task-kill", "dag"];
+const TASK = ["tasks", "task-kill"];
 
 test("lead overlay plus adapter keeps task and memory without inactive skill bundles", { timeout: 60_000 }, async () => {
   const surface = await probeRpc({

@@ -4,7 +4,6 @@ import { join } from "node:path"
 
 import { afterEach, describe, expect, test } from "bun:test"
 
-import type { DagNodeId, DagRunId } from "../dag/types"
 import { buildCompletionDetails, buildCompletionMessage } from "./notification"
 import type { TaskRecord } from "../state"
 
@@ -191,74 +190,6 @@ describe("buildCompletionMessage", () => {
     expect(message.details).toHaveLength(2)
     expect(message.content).toBe("completed one st_aaaa\ncompleted two st_bbbb")
     expect(message.content).not.toContain("<task-notification>")
-  })
-})
-
-describe("dag-owned completions", () => {
-  test("#given a dag-owned record #when details built #then the owning run and node are attached", () => {
-    // given
-    const record = completedRecord({
-      owner: { kind: "dag", runId: "dag_run_1" as DagRunId, nodeId: "build" as DagNodeId, fingerprint: "fp-1" },
-    })
-
-    // when
-    const details = buildCompletionDetails(record)
-
-    // then
-    expect(details.dag).toEqual({ run_id: "dag_run_1", node_id: "build" })
-  })
-
-  test("#given a dag-owned detail #when message built #then the ping stays a status line without a verification sermon", () => {
-    // given
-    const details = buildCompletionDetails(completedRecord({
-      owner: { kind: "dag", runId: "dag_run_1" as DagRunId, nodeId: "build" as DagNodeId, fingerprint: "fp-1" },
-      final_response: "the dag node essay",
-    }))
-
-    // when
-    const message = buildCompletionMessage([details])
-
-    // then
-    expect(message.content).toBe("completed summarize-logs st_deadbeef")
-    expect(message.content).not.toContain("the dag node essay")
-    expect(message.content).not.toContain("TREAT AS FALSE")
-  })
-
-  test("#given a plain record #when details and message built #then no dag facts appear", () => {
-    // given
-    const record = completedRecord()
-
-    // when
-    const details = buildCompletionDetails(record)
-    const message = buildCompletionMessage([details])
-
-    // then
-    expect(details.dag).toBeUndefined()
-    expect(message.content).not.toContain("TREAT AS FALSE")
-  })
-
-  test("#given one plain and two dag details #when message built #then all three status pings appear", () => {
-    // given
-    const plain = buildCompletionDetails(completedRecord({ task_id: "st_plain", name: "plain" }))
-    const firstDag = buildCompletionDetails(completedRecord({
-      task_id: "st_dag1",
-      name: "dag-one",
-      owner: { kind: "dag", runId: "dag_run_1" as DagRunId, nodeId: "build" as DagNodeId, fingerprint: "fp-1" },
-    }))
-    const secondDag = buildCompletionDetails(completedRecord({
-      task_id: "st_dag2",
-      name: "dag-two",
-      owner: { kind: "dag", runId: "dag_run_1" as DagRunId, nodeId: "test" as DagNodeId, fingerprint: "fp-2" },
-    }))
-
-    // when
-    const message = buildCompletionMessage([plain, firstDag, secondDag])
-
-    // then
-    expect(message.content).toContain("completed plain st_plain")
-    expect(message.content).toContain("completed dag-one st_dag1")
-    expect(message.content).toContain("completed dag-two st_dag2")
-    expect(message.content).not.toContain("TREAT AS FALSE")
   })
 })
 

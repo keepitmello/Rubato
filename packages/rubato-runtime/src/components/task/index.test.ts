@@ -17,11 +17,10 @@ import { FakeExtensionAPI } from "../../../test-support/fake-extension-api"
 import type { ComponentContext, ComponentLogger } from "../../extension/types"
 import { composeTaskEngine, type TaskEngine } from "./engine"
 import { createTaskComponent, wireEventBridge } from "./index"
-import * as taskComponentModule from "./index"
 import type { CapturedUi } from "./runtime-context"
 import { createSessionTransitionBridge } from "./session-transition-bridge"
 
-const TASK_TOOL_NAMES = ["Agent", "AgentSend", "AgentCancel", "AgentOutput", "dag"]
+const TASK_TOOL_NAMES = ["Agent", "AgentSend", "AgentCancel", "AgentOutput"]
 const TEAM_TOOL_NAMES = [
   "team_create",
   "team_delete",
@@ -47,8 +46,7 @@ const TASK_EVENTS = [
   "agent_end",
 ]
 const SKILL_INVOCATION_TRACKER_EVENTS = ["input", "tool_result", "session_shutdown"]
-const DAG_LIFECYCLE_EVENTS = ["session_start", "session_before_switch", "session_shutdown", "session_shutdown"]
-const TASK_COMMANDS = ["dag", "task-kill", "tasks"]
+const TASK_COMMANDS = ["task-kill", "tasks"]
 
 interface RecordedLog {
   level: "info" | "warn" | "error"
@@ -224,39 +222,8 @@ describe("rubato-runtime task component wiring", () => {
     // skill-invocation tracker subscriptions feeding the plan-gated agent gate, plus the
     // unconditional T16 hygiene sweep handler, which registers its own session_start listener
     expect(pi.handlers.map((handler) => handler.event).sort()).toEqual(
-      [...TASK_EVENTS, ...SKILL_INVOCATION_TRACKER_EVENTS, ...DAG_LIFECYCLE_EVENTS, "session_start"].sort(),
+      [...TASK_EVENTS, ...SKILL_INVOCATION_TRACKER_EVENTS, "session_start"].sort(),
     )
-  })
-
-  it("#given task and DAG lifecycle handlers #when startup and shutdown dispatch #then task reconciliation precedes DAG resume while DAG pause precedes task suspension and DAG disposal", async () => {
-    // given
-    const pi = new FakeExtensionAPI()
-    const order: string[] = []
-    const wireDagLifecycle = Reflect.get(taskComponentModule, "wireDagLifecycle")
-    expect(typeof wireDagLifecycle).toBe("function")
-    if (typeof wireDagLifecycle !== "function") return
-    wireDagLifecycle(pi, {
-      attach: async () => { order.push("dag-resume") },
-      detach: () => undefined,
-      pauseForShutdown: () => { order.push("dag-pause") },
-      dispose: () => { order.push("dag-dispose") },
-    }, () => {
-      pi.on("session_start", () => { order.push("task-reconcile") })
-      pi.on("session_shutdown", () => { order.push("task-suspend") })
-    })
-
-    // when
-    await pi.dispatch("session_start", {})
-    await pi.dispatch("session_shutdown", {})
-
-    // then
-    expect(order).toEqual([
-      "task-reconcile",
-      "dag-resume",
-      "dag-pause",
-      "task-suspend",
-      "dag-dispose",
-    ])
   })
 
   it("#given a fake ExtensionAPI boot #when the task component registers #then only injection-driven lead team tools are wired", () => {

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, realpathSync, statSync } from "node:fs"
+import { existsSync, realpathSync, statSync } from "node:fs"
 import { createRequire } from "node:module"
 import { basename, delimiter, dirname, isAbsolute, join, resolve, sep } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -135,21 +135,9 @@ export function resolveSenpiLauncher(runtime: RpcSpawnRuntime): SenpiLauncher | 
  * does NOT auto-load the parent's whole package set, then ONLY the threaded `-e` extensions, then the
  * threaded `--model` so the separate process resolves the requested provider/modelId.
  */
-function isDagOwnedChild(spec: RpcRunnerSpec): boolean {
-  if (basename(dirname(spec.state_dir)) !== "children" || basename(spec.state_dir) !== spec.task_id) return false
-  const stateDir = dirname(dirname(spec.state_dir))
-  const record = JSON.parse(readFileSync(join(stateDir, "tasks", `${spec.task_id}.json`), "utf8")) as unknown
-  if (typeof record !== "object" || record === null || !("owner" in record)) return false
-  const owner = record.owner
-  return typeof owner === "object" && owner !== null && "kind" in owner && owner.kind === "dag"
-}
-
 export function buildChildArgs(spec: RpcRunnerSpec): readonly string[] {
   const args: string[] = ["--no-extensions"]
-  // The Rubato launcher prepends its own extension before user/provider entries. DAG-owned tasks drop
-  // that first entry so the detached child cannot boot a task engine, while provider extensions
-  // and every non-DAG child's extension list remain unchanged.
-  const extensions = isDagOwnedChild(spec) ? (spec.extensions ?? []).slice(1) : spec.extensions ?? []
+  const extensions = spec.extensions ?? []
   for (const entry of extensions) {
     if (entry.length > 0) args.push("--extension", entry)
   }

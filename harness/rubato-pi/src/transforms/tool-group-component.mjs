@@ -20,7 +20,7 @@ export function toolGroupComponentHref() {
 /**
  * 뭉치지 않는 도구. 결과가 곧 내용이라 접으면 남는 게 없다.
  */
-export const UNGROUPED_TOOLS = new Set(["task", "dag", "team_create", "todo"]);
+export const UNGROUPED_TOOLS = new Set(["task", "team_create", "todo"]);
 
 /**
  * 모델이 스킬을 쓰는 방법은 /skill:name 이 아니라 SKILL.md 를 read 하는 것이다.

@@ -58,8 +58,8 @@ test("internal-actions register and dispatch", () => {
 
 test("tool-group folds consecutive tools and keeps UNGROUPED_TOOLS verbatim", () => {
   // Semantic: vendor tool-group.js is a created file, so byte equality is impossible.
-  assert.deepEqual([...UNGROUPED_TOOLS], ["task", "dag", "team_create", "todo"]);
-  for (const name of ["task", "dag", "team_create", "todo"]) {
+  assert.deepEqual([...UNGROUPED_TOOLS], ["task", "team_create", "todo"]);
+  for (const name of ["task", "team_create", "todo"]) {
     assert.equal(ToolGroupComponent.canGroup(name), false);
   }
   for (const name of ["ls", "read", "grep", "bash", "edit", "write", "eval"]) {

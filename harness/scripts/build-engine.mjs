@@ -228,7 +228,6 @@ export function mirrorComplete() {
     join(extensionsDir, "rubato-memory-mcp.js"),
     join(extensionsDir, "memory-run-supervisor.mjs"),
     join(engineRoot, "package.json"),
-    join(engineRoot, "runtime", "dag", "sdk.js"),
     join(engineRoot, "runtime", "ast-grep-mcp", "cli.js"),
     join(engineRoot, "runtime", "lsp-daemon", "dist", "cli.js"),
     join(engineRoot, "node_modules"),

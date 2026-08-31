@@ -21,8 +21,7 @@ function makeTool(name: string): ToolDefinition {
 }
 
 describe("shared parent tool family filter", () => {
-  test("#given task, team, and dag orchestration names #when classified #then only orchestration names match", () => {
-    expect(isTaskOrTeamFamilyTool("dag")).toBe(true)
+  test("#given task and team orchestration names #when classified #then only orchestration names match", () => {
     expect(isTaskOrTeamFamilyTool("task")).toBe(true)
     expect(isTaskOrTeamFamilyTool("task_create")).toBe(true)
     expect(isTaskOrTeamFamilyTool("Agent")).toBe(true)

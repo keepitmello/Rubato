@@ -5,7 +5,6 @@ import {
   type TaskNotification,
   type TaskSpawnSpec,
 } from "../state"
-import type { DagTaskOwner } from "../dag/owner"
 import {
   isRecord,
   readNumber,
@@ -15,21 +14,8 @@ import {
   readString,
 } from "./scalar-read"
 
-// Parsers for the nested blocks of a persisted task record: ownership, spawn spec, prelaunch
+// Parsers for the nested blocks of a persisted task record: spawn spec, prelaunch
 // steering queue, resolved-model chain, and notification epochs.
-
-export function parseOptionalOwner(record: Record<string, unknown>): DagTaskOwner | undefined {
-  const value = record["owner"]
-  if (value === undefined) return undefined
-  if (!isRecord(value)) throw new Error("owner is not an object")
-  if (readString(value, "kind") !== "dag") throw new Error("owner.kind is not dag")
-  return {
-    kind: "dag",
-    runId: readString(value, "runId") as DagTaskOwner["runId"],
-    nodeId: readString(value, "nodeId") as DagTaskOwner["nodeId"],
-    fingerprint: readString(value, "fingerprint"),
-  }
-}
 
 export function parseOptionalSpawnSpec(record: Record<string, unknown>): TaskSpawnSpec | undefined {
   const value = record["spawn_spec"]

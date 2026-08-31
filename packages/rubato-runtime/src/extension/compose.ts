@@ -1,4 +1,3 @@
-import { createDagSdkRootProvisioning } from "./dag-sdk-root-provisioning"
 import { IdleInjectionCoordinator } from "./idle-injection-coordinator"
 import { installToolCaptureRegistry } from "./tool-capture-registry"
 import type { ComponentContext, ComponentLogger, RubatoComponent, SenpiExtensionAPI } from "./types"
@@ -48,12 +47,8 @@ export function composeRubatoExtension(
   options: ComposeRubatoExtensionOptions = {},
 ): (pi: unknown) => Promise<void> {
   const logger = options.logger ?? defaultLogger
-  const provisionDagSdkRoot = createDagSdkRootProvisioning({ logger })
 
   return async (pi: unknown): Promise<void> => {
-    // Publish the DAG eval SDK directory before components register.
-    provisionDagSdkRoot()
-
     const missing = getMissingCapabilities(pi)
     if (missing.length > 0 || !isSenpiExtensionAPI(pi)) {
       logger.warn("rubato ExtensionAPI version mismatch; extension disabled", {

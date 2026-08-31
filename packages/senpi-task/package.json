@@ -21,10 +21,6 @@
       "types": "./src/category/resolver.ts",
       "import": "./src/category/resolver.ts"
     },
-    "./dag": {
-      "types": "./src/dag/index.ts",
-      "import": "./src/dag/index.ts"
-    },
     "./renderer-text": {
       "types": "./src/renderer-text.ts",
       "import": "./src/renderer-text.ts"

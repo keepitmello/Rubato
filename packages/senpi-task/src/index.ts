@@ -337,8 +337,6 @@ export {
   taskResultLines,
 } from "./tools/task"
 export { createSenpiAgentHost, createSenpiAgentHandle, liveModelCatalog } from "./tools/host/senpi-agent-host"
-export { validateTaskTarget } from "./dag/node-target"
-export type { TaskTargetError, TaskTargetErrorCode, TaskTargetSelection } from "./dag/node-target"
 export type {
   ResolveAncestry,
   SkillLoader,
