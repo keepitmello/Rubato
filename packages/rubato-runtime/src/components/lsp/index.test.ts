@@ -127,9 +127,23 @@ describe("rubato-runtime lsp component", () => {
     ])
   })
 
-  it("#given no language server is resolvable for any file type #when the lsp component registers #then the six tools remain exposed", () => {
+  it("#given default flags #when the lsp component registers #then tools remain exposed without the post-edit hook", () => {
     // given
     const test = setup()
+
+    // when
+    createLspComponent().register(test.pi, test.ctx)
+
+    // then
+    expect(toolNames(test.pi)).toEqual([...EXPECTED_TOOL_NAMES])
+    expect(test.pi.handlers.map((handler) => handler.event)).toEqual(["session_shutdown"])
+    expect(test.logger.warnings).toEqual([])
+  })
+
+  it("#given post-edit diagnostics are enabled #when the lsp component registers #then mutation hooks register", () => {
+    // given
+    const test = setup()
+    test.pi.setFlag("rubato-runtime-lsp-post-edit-diagnostics-enabled", true)
 
     // when
     createLspComponent().register(test.pi, test.ctx)
