@@ -29,18 +29,62 @@ class AsideReplConsultTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             MODULE.parse_args(["--quality", "high", "--packet", "p"])
 
-    def test_work_project_url_is_fail_closed(self) -> None:
+    def test_project_url_is_fail_closed_without_requiring_work_slug(self) -> None:
         self.assertTrue(
-            MODULE.is_work_project_url(
+            MODULE.is_chatgpt_project_url(
                 "https://chatgpt.com/g/g-p-test-work/project"
             )
         )
-        self.assertFalse(MODULE.is_work_project_url("https://chatgpt.com/"))
+        self.assertTrue(
+            MODULE.is_chatgpt_project_url(
+                "https://chatgpt.com/g/g-p-test-shopping/project"
+            )
+        )
+        self.assertFalse(MODULE.is_chatgpt_project_url("https://chatgpt.com/"))
         self.assertFalse(
-            MODULE.is_work_project_url(
+            MODULE.is_chatgpt_project_url(
                 "https://chatgpt.com/g/g-p-test-work/c/conversation"
             )
         )
+
+    def test_project_name_comes_from_config_and_drives_composer_label(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            config = Path(temp) / "consult.env"
+            config.write_text(
+                "CONSULT_PROJECT_NAME=Shopping\n",
+                encoding="utf-8",
+            )
+            with mock.patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("CONSULT_PROJECT_NAME", None)
+                self.assertEqual(
+                    MODULE.resolve_project_name(
+                        cli_value=None,
+                        config_path=config,
+                    ),
+                    "Shopping",
+                )
+                self.assertEqual(
+                    MODULE.resolve_project_name(
+                        cli_value="예창패",
+                        config_path=config,
+                    ),
+                    "예창패",
+                )
+        self.assertEqual(MODULE.composer_aria_label("Shopping"), "Shopping에서 새 채팅")
+        shopping = MODULE.build_repl_script(
+            project_url="https://chatgpt.com/g/g-p-test-shopping/project",
+            project_name="Shopping",
+            quality="xhigh",
+            packet_name="packet.md",
+            packet_base64="cGFja2V0",
+            topic="프로젝트 전환",
+            consult_id="abc123",
+            response_timeout_ms=1000,
+        )
+        self.assertIn('name: composerLabel, exact: true', shopping)
+        self.assertIn("Shopping에서 새 채팅", shopping)
+        self.assertNotIn("Work에서 새 채팅", shopping)
+        self.assertIn("project composer not visible", shopping)
 
     def test_generated_script_has_quality_mapping_and_hard_deadline(self) -> None:
         xhigh = MODULE.build_repl_script(
@@ -82,6 +126,8 @@ class AsideReplConsultTest(unittest.TestCase):
         self.assertIn("setInputFiles([{", pro)
         self.assertNotIn("setInputFiles(packetPath)", pro)
         self.assertIn('#prompt-textarea[contenteditable="true"]', pro)
+        self.assertIn("Work에서 새 채팅", pro)
+        self.assertIn("project composer not visible", pro)
         self.assertIn("composer.press('Meta+A')", pro)
         self.assertIn("composer.press('Backspace')", pro)
         self.assertIn("keyboard.insertText(composerPrompt)", pro)

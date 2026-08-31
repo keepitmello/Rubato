@@ -1,6 +1,6 @@
 interface:
   display_name: "Consult"
-  short_description: "Get a verified ChatGPT Work-project second opinion through Aside"
+  short_description: "Get a verified ChatGPT project second opinion through Aside"
   default_prompt: "Use $consult only with an explicit --quality xhigh or --quality pro flag; attach the packet through the deterministic Aside REPL runner, never switch to another sender automatically, and verify the returned advice locally."
 policy:
   allow_implicit_invocation: true

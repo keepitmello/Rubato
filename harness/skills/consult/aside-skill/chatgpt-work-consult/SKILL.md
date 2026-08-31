@@ -1,11 +1,11 @@
 ---
 name: "chatgpt-work-consult"
-description: "Recover a failed deterministic Consult send by adaptively operating an explicitly xhigh or pro ChatGPT Work-project conversation. Do not use for the normal fast path."
+description: "Recover a failed deterministic Consult send by adaptively operating an explicitly xhigh or pro ChatGPT project conversation. Do not use for the normal fast path."
 ---
 
 # ChatGPT Work Consult
 
-Execute a packet consult on chatgpt.com inside the Work project. Do not
+Execute a packet consult on chatgpt.com inside the project named in the task. Do not
 rediscover the UI. Do not run this skill unless the task supplies an exact
 packet, exact ID, and exactly one `QUALITY: xhigh` or `QUALITY: pro`.
 This is the adaptive recovery skill after `run_aside_repl_consult.py` detects UI
@@ -29,20 +29,20 @@ opening or attaching to a browser tab.
 
 ## Surface: Work project, new normal chat
 
-1. Enter the ChatGPT project named **Work**.
+1. Enter the ChatGPT project named in the task (`PROJECT` / visible name).
 2. Create a **new normal conversation** inside that project.
 3. Never use temporary chat.
 4. Never submit from global Chat.
 5. Do not open or inspect unrelated existing conversations.
-6. Before send, verify a visible Work project marker/breadcrumb **and** a project-owned composer.
-7. If Work cannot be verified, stop before send.
+6. Before send, verify a visible project marker/breadcrumb **and** a project-owned composer.
+7. If that project cannot be verified, stop before send.
 
 Known project-home path:
 
-1. Navigate directly to the supplied Work project URL. Ignore temporary/global
+1. Navigate directly to the supplied project URL. Ignore temporary/global
    Chat tabs rather than repairing them.
-2. Require page title `ChatGPT - Work`, heading `Work`, and textbox
-   `Work에서 새 채팅`. These three signals prove the project-owned composer.
+2. Require page title `ChatGPT - <PROJECT>`, heading `<PROJECT>`, and textbox
+   `<PROJECT>에서 새 채팅`. These three signals prove the project-owned composer.
 3. The project-home composer itself starts a new Work conversation. Do not open
    an existing chat from the project list.
 

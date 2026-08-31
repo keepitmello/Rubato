@@ -4,7 +4,9 @@
 
 - `aside --version` succeeds.
 - `~/.aside/u/0/skills/user/chatgpt-work-consult/SKILL.md` exists and validates.
-- `CONSULT_CHATGPT_URL` resolves to the ChatGPT project named `Work`.
+- `CONSULT_CHATGPT_URL` and `CONSULT_PROJECT_NAME` in `~/.codex/consult.env`
+  select the ChatGPT project. The name is the visible project title, used as
+  `{name}에서 새 채팅`. Default name is `Work` when unset.
 - The invocation contains exactly one `--quality xhigh` or `--quality pro`.
 - The packet is self-contained and safe to disclose to Aside and ChatGPT.
 - The packet's first line is one concise Markdown H1 containing only the subject
@@ -21,7 +23,7 @@ bash <consult-skill-dir>/scripts/install-aside-skill.sh
 Fail before the REPL runner unless the URL matches:
 
 ```text
-https://chatgpt.com/g/g-p-...-work/project
+https://chatgpt.com/g/g-p-.../project
 ```
 
 Global `/`, global `/c/...`, temporary chat, a non-HTTPS URL, or another host is
