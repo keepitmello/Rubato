@@ -6,7 +6,13 @@ import type { PersistedTaskEvent } from "../../store"
 import type { LeadDeliveryJournal } from "./delivery-journal"
 import type { SessionMarkerIndex } from "./session-marker-index"
 
-export type LeadInjection = Readonly<{ key: string; source: "team-message"; content: string; onFlushed?: () => void }>
+export type LeadInjection = Readonly<{
+  key: string
+  source: "team-message"
+  content: string
+  details?: { readonly messageId: string }
+  onFlushed?: () => void
+}>
 
 export type LeadInjectionSink = {
   enqueue(injection: LeadInjection): void

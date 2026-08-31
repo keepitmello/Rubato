@@ -10,6 +10,7 @@ import { sendMessage } from "@rubato/team-core/team-mailbox"
 import { TEAM_BOARD_TOOL_NAMES } from "@rubato/team-core/team-tasklist"
 
 import registerMemberExtension from "./index"
+import { TEAM_REPORT_REMINDER_CONTENT, TEAM_REPORT_REMINDER_TYPE } from "./report-reminder"
 
 const TEAM_RUN_ID = "77777777-7777-4777-8777-777777777777"
 const MESSAGE_ID = "88888888-8888-4888-8888-888888888888"
@@ -84,12 +85,77 @@ describe("member extension lifecycle", () => {
       expect(injected[0]).toEqual({
         message: {
           customType: "senpi-task:team-message",
-          content: expect.stringContaining(MESSAGE_ID),
+          content: expect.stringContaining("<peer_message from=\"lead\">"),
           display: false,
+          details: { messageId: MESSAGE_ID },
         },
         options: { triggerTurn: true, deliverAs: "steer" },
       })
+      expect(String(injected[0]?.message.content)).not.toContain(MESSAGE_ID)
       expect(visible).toEqual([])
+    } finally {
+      await dispatch(handlers, "session_shutdown")
+      restoreMemberEnv(previous)
+    }
+  })
+
+  test("#given a settled turn with no team_send #when agent_settled fires #then the member is reminded once", async () => {
+    const root = mkdtempSync(join(tmpdir(), "senpi-member-reminder-"))
+    roots.push(root)
+    const stateDir = join(root, "state")
+    const sessionDir = join(root, "sessions")
+    const config = TeamModeConfigSchema.parse({ base_dir: join(stateDir, "teams") })
+    mkdirSync(sessionDir, { recursive: true })
+
+    const handlers = new Map<string, Array<() => unknown | Promise<unknown>>>()
+    const injected: Array<{ message: Record<string, unknown>; options: Record<string, unknown> | undefined }> = []
+    let loading = true
+    const api = {
+      on(event: string, handler: () => unknown | Promise<unknown>) {
+        const registered = handlers.get(event) ?? []
+        registered.push(handler)
+        handlers.set(event, registered)
+      },
+      registerTool() {},
+      sendMessage(message: Record<string, unknown>, options?: Record<string, unknown>) {
+        if (loading) throw new Error("runtime action called during extension loading")
+        injected.push({ message, options })
+      },
+      sendUserMessage() {
+        if (loading) throw new Error("runtime action called during extension loading")
+      },
+    } as unknown as ExtensionAPI
+    const previous = captureMemberEnv()
+    Object.assign(process.env, {
+      SENPI_TASK_MEMBER: `${TEAM_RUN_ID}::alice`,
+      SENPI_TASK_MEMBER_TASK_ID: "st_00000001",
+      SENPI_TASK_TEAM_CONFIG: JSON.stringify({
+        ...config,
+        stateDir,
+        members: ["alice"],
+      }),
+      SENPI_CODING_AGENT_SESSION_DIR: sessionDir,
+    })
+
+    try {
+      await registerMemberExtension(api)
+      loading = false
+      await dispatch(handlers, "session_start")
+      await dispatch(handlers, "agent_start")
+      await dispatch(handlers, "agent_settled")
+      await dispatch(handlers, "agent_start")
+      await dispatch(handlers, "agent_settled")
+
+      expect(injected).toEqual([
+        {
+          message: {
+            customType: TEAM_REPORT_REMINDER_TYPE,
+            content: TEAM_REPORT_REMINDER_CONTENT,
+            display: false,
+          },
+          options: { triggerTurn: true, deliverAs: "steer" },
+        },
+      ])
     } finally {
       await dispatch(handlers, "session_shutdown")
       restoreMemberEnv(previous)

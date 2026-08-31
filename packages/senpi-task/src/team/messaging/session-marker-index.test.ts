@@ -23,7 +23,12 @@ function tempSessionFile(): string {
 
 function envelopeLine(messageId: string): string {
   const value: Message = { version: 1, messageId, from: "alpha", to: "lead", kind: "message", body: "ready", timestamp: 1 }
-  const entry = { type: "message", message: { role: "user", content: buildPeerMessageEnvelope(value) } }
+  const entry = {
+    type: "custom_message",
+    customType: "senpi-task:team-message",
+    content: buildPeerMessageEnvelope(value),
+    details: { messageId },
+  }
   return `${JSON.stringify(entry)}\n`
 }
 

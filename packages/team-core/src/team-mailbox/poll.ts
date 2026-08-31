@@ -19,23 +19,24 @@ function escapeAttributeValue(value: string): string {
     .replaceAll("'", "&apos;")
 }
 
+// Model-visible envelope. from is required. messageId lives on the custom-message details so ack
+// scanners can find it in JSONL without putting the UUID in the model's text.
 export function buildEnvelope(message: Message): string {
   const attributes = [
     `from="${escapeAttributeValue(message.from)}"`,
-    `timestamp="${escapeAttributeValue(String(message.timestamp))}"`,
-    `messageId="${escapeAttributeValue(message.messageId)}"`,
-    `kind="${escapeAttributeValue(message.kind)}"`,
-    `correlationId="${escapeAttributeValue(message.correlationId ?? "")}"`,
   ]
-
+  if (message.kind !== "message") {
+    attributes.push(`kind="${escapeAttributeValue(message.kind)}"`)
+  }
+  if (message.correlationId !== undefined && message.correlationId.length > 0) {
+    attributes.push(`correlationId="${escapeAttributeValue(message.correlationId)}"`)
+  }
   if (message.summary !== undefined) {
     attributes.push(`summary="${escapeAttributeValue(message.summary)}"`)
   }
-
   if (message.references !== undefined) {
     attributes.push(`references="${escapeAttributeValue(JSON.stringify(message.references))}"`)
   }
-
   return `<peer_message ${attributes.join(" ")}>
 ${message.body}
 </peer_message>`

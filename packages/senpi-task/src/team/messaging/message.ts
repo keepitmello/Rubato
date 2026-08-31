@@ -4,6 +4,8 @@ import type { Message } from "@rubato/team-core/types"
 
 import type { SendTeamMessageInput } from "./types"
 
+export { buildEnvelope as buildPeerMessageEnvelope } from "@rubato/team-core/team-mailbox"
+
 export type BuildTeamMessageOptions = {
   readonly now?: () => number
   readonly newMessageId?: () => string
@@ -30,35 +32,4 @@ export function buildTeamMessage(
     timestamp,
   }
   return input.summary === undefined ? base : { ...base, summary: input.summary }
-}
-
-// Byte-for-byte mirror of team-core team-mailbox `buildEnvelope` (poll.ts), replicated here because
-// that helper is only reachable via a forbidden deep subpath. The inject fallback path calls the real
-// team-core envelope via `pollAndBuildInjection`; `inject.test.ts` asserts the two stay identical.
-export function buildPeerMessageEnvelope(message: Message): string {
-  const attributes = [
-    `from="${escapeAttributeValue(message.from)}"`,
-    `timestamp="${escapeAttributeValue(String(message.timestamp))}"`,
-    `messageId="${escapeAttributeValue(message.messageId)}"`,
-    `kind="${escapeAttributeValue(message.kind)}"`,
-    `correlationId="${escapeAttributeValue(message.correlationId ?? "")}"`,
-  ]
-  if (message.summary !== undefined) {
-    attributes.push(`summary="${escapeAttributeValue(message.summary)}"`)
-  }
-  if (message.references !== undefined) {
-    attributes.push(`references="${escapeAttributeValue(JSON.stringify(message.references))}"`)
-  }
-  return `<peer_message ${attributes.join(" ")}>
-${message.body}
-</peer_message>`
-}
-
-function escapeAttributeValue(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll("'", "&apos;")
 }

@@ -16,7 +16,7 @@ describe("sessionJsonlContainsMessage", () => {
     const root = mkdtempSync(join(tmpdir(), "senpi-member-session-scan-"))
     roots.push(root)
     const messageId = "message-hidden-1"
-    const content = `<peer_message from="lead" to="worker" messageId="${messageId}">hello</peer_message>`
+    const content = `<peer_message from="lead">hello</peer_message>`
     writeFileSync(
       join(root, "session.jsonl"),
       `${JSON.stringify({
@@ -24,6 +24,7 @@ describe("sessionJsonlContainsMessage", () => {
         customType: "senpi-task:team-message",
         display: false,
         content,
+        details: { messageId },
       })}\n`,
       "utf8",
     )

@@ -18,6 +18,11 @@ import {
 import { MEMBER_EXTENSION_BUNDLE_NAME, MEMBER_IDENTITY_ENV } from "./identity"
 import { createMemberSelfPoller, type MemberSelfPoller } from "./self-poller"
 import { createQaAfterInjectHold } from "./qa-inject-hold"
+import {
+  TEAM_REPORT_REMINDER_CONTENT,
+  TEAM_REPORT_REMINDER_TYPE,
+  createReportReminder,
+} from "./report-reminder"
 import { createMemberTaskSendTool } from "./tools"
 
 export {
@@ -135,24 +140,38 @@ export default async function registerMemberExtension(pi: ExtensionAPI): Promise
   const appendEvent = (event: Parameters<typeof store.appendEvent>[1]): void => {
     store.appendEvent(parsed.taskId, event)
   }
-  const poller = createMemberSelfPoller({
+  const runtime: ActiveRuntime = { poller: undefined as never, started: false }
+  const reminder = createReportReminder(() => {
+    if (!runtime.started) return
+    pi.sendMessage(
+      {
+        customType: TEAM_REPORT_REMINDER_TYPE,
+        content: TEAM_REPORT_REMINDER_CONTENT,
+        display: false,
+      },
+      { triggerTurn: true, deliverAs: "steer" },
+    )
+  })
+  runtime.poller = createMemberSelfPoller({
     teamRunId: parsed.teamRunId,
     memberName: parsed.memberName,
     config: parsed.config,
     sessionDir: parsed.sessionDir,
-    inject: (content) =>
+    inject: (content, messageId) => {
+      reminder.onInboundWork()
       pi.sendMessage(
         {
           customType: "senpi-task:team-message",
           content,
           display: false,
+          details: { messageId },
         },
         { triggerTurn: true, deliverAs: "steer" },
-      ),
+      )
+    },
     appendEvent,
     ...(afterInject !== undefined ? { afterInject } : {}),
   })
-  const runtime: ActiveRuntime = { poller, started: false }
   activeRuntimes.set(pi, runtime)
 
   pi.registerTool(createMemberTaskSendTool({
@@ -162,12 +181,15 @@ export default async function registerMemberExtension(pi: ExtensionAPI): Promise
     config: parsed.config,
     members: parsed.members,
     appendEvent: (taskId, event) => store.appendEvent(taskId, event),
+    onSent: () => reminder.onTeamSend(),
   }))
   for (const tool of buildMemberTeamBoardTools({ service: createMemberBoardService(parsed) })) {
     pi.registerTool(tool)
   }
   pi.on("session_start", () => startRuntime(runtime))
   pi.on("session_shutdown", () => stopRuntime(pi, runtime))
+  pi.on("agent_start", () => reminder.onTurnStart())
+  pi.on("agent_settled", () => reminder.onTurnSettled())
 }
 
 async function startRuntime(runtime: ActiveRuntime): Promise<void> {

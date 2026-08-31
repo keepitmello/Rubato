@@ -31,7 +31,9 @@ describe("task completion model visibility", () => {
     const message = buildCompletionMessage([buildCompletionDetails(completed)])
 
     // then
-    expect(message.content).toContain("category:quick(quotio-openai/gpt-5.6-luna-fast)")
+    expect(message.content).toBe(`completed ${completed.task_id}`)
+    expect(message.content).not.toContain("category:")
     expect(message.content).not.toContain("requested/model")
+    expect(message.details[0]?.resolved_model?.display).toBe("quotio-openai/gpt-5.6-luna-fast")
   })
 })

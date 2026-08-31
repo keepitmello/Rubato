@@ -253,7 +253,6 @@ export {
   buildCompletionMessage,
   completionMessageLines,
   createCompletionNotifier,
-  DAG_VERIFICATION_DIRECTIVE,
   routeCompletion,
   shouldNotifyStatus,
 } from "./completion"

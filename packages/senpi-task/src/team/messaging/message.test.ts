@@ -49,10 +49,14 @@ describe("buildPeerMessageEnvelope", () => {
 
     // then
     expect(envelope).toBe(
-      `<peer_message from="al&lt;pha" timestamp="42" messageId="33333333-3333-4333-8333-333333333333" kind="message" correlationId="">
+      `<peer_message from="al&lt;pha">
 body & <content>
 </peer_message>`,
     )
+    expect(envelope).not.toContain("messageId=")
+    expect(envelope).not.toContain("timestamp=")
+    expect(envelope).not.toContain("kind=")
+    expect(envelope).not.toContain("correlationId=")
   })
 
   test("#given a summary #when the envelope is built #then the summary attribute is appended", () => {
@@ -67,5 +71,20 @@ body & <content>
 
     // then
     expect(envelope).toContain(`summary="the-summary"`)
+  })
+
+  test("#given a shutdown request #when the envelope is built #then kind is kept and timestamp is still omitted", () => {
+    const message = {
+      ...buildTeamMessage(
+        { from: "lead", to: "alpha", body: "wrap up" },
+        { now: () => 9, newMessageId: () => "55555555-5555-4555-8555-555555555555" },
+      ),
+      kind: "shutdown_request" as const,
+    }
+
+    const envelope = buildPeerMessageEnvelope(message)
+
+    expect(envelope).toContain(`kind="shutdown_request"`)
+    expect(envelope).not.toContain("timestamp=")
   })
 })

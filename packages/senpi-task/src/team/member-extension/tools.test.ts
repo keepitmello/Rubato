@@ -54,6 +54,7 @@ describe("member extension tools", () => {
       "99999999-9999-4999-8999-999999999999",
       "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     ]
+    const sent: true[] = []
     const deps = {
       teamRunId: TEAM_RUN_ID,
       memberName: "alice",
@@ -61,6 +62,7 @@ describe("member extension tools", () => {
       config: harness.config,
       members: ["alice", "bob"],
       appendEvent: (_taskId: string, event: PersistedTaskEvent) => harness.events.push(event),
+      onSent: () => sent.push(true),
       newMessageId: () => ids.shift() ?? "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
       now: () => 1,
     }
@@ -75,6 +77,7 @@ describe("member extension tools", () => {
     expect((await listUnreadMessages(TEAM_RUN_ID, "bob", harness.config)).map((entry) => entry.body)).toEqual(["member note"])
     expect((await listUnreadMessages(TEAM_RUN_ID, "lead", harness.config)).map((entry) => entry.body)).toEqual(["lead note"])
     expect(harness.events.map((event) => event.type)).toEqual(["team_message_sent", "team_message_sent"])
+    expect(sent).toEqual([true, true])
   })
 
   test("#given an unknown recipient #when team_send runs #then it rejects without writing mail", async () => {

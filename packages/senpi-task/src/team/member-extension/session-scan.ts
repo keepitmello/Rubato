@@ -37,14 +37,8 @@ function parseJsonLine(line: string): unknown {
 }
 
 function containsEnvelopeMarker(value: unknown, messageId: string): boolean {
-  if (typeof value === "string") {
-    return value.includes("<peer_message ") && value.includes(`messageId="${messageId}"`)
-  }
-  if (Array.isArray(value)) return value.some((entry) => containsEnvelopeMarker(entry, messageId))
-  if (!isRecord(value)) return false
-  return Object.values(value).some((entry) => containsEnvelopeMarker(entry, messageId))
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
+  if (value === undefined || value === null) return false
+  const text = typeof value === "string" ? value : JSON.stringify(value)
+  if (!text.includes("<peer_message")) return false
+  return text.includes(`messageId="${messageId}"`) || text.includes(`"messageId":"${messageId}"`)
 }

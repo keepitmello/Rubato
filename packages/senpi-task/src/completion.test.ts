@@ -50,12 +50,10 @@ describe("task completion fallback reporting", () => {
     const message = buildCompletionMessage([buildCompletionDetails(record)])
 
     // then
-    expect(message.content).toContain(
-      "fallback:vendor-a/primary-model->vendor-b/fallback-model",
-    )
-    expect(message.content.match(/fallback:/gu)).toHaveLength(1)
-    expect(message.content).not.toContain("quota")
-    expect(message.content).not.toContain("403")
+    expect(message.content).toBe("completed fallback-worker st_fallback")
+    expect(message.content).not.toContain("fallback:")
+    expect(message.details[0]?.resolved_model?.display).toBe("vendor-b/fallback-model")
+    expect(message.details[0]?.requested_model?.display).toBe("vendor-a/primary-model")
   })
 
   test("#given no model reroute #when fallback notification rendering runs #then existing completion output stays unchanged", () => {
@@ -81,7 +79,8 @@ describe("task completion fallback reporting", () => {
     const message = buildCompletionMessage([buildCompletionDetails(record)])
 
     // then
-    expect(message.content).toContain("model:vendor-a/primary-model")
+    expect(message.content).toBe("completed fallback-worker st_fallback")
     expect(message.content).not.toContain("fallback:")
+    expect(message.content).not.toContain("model:")
   })
 })
