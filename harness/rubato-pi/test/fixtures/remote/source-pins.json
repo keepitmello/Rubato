@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "pi": {
+    "repository": "https://github.com/earendil-works/pi",
+    "tag": "v0.84.2",
+    "version": "0.84.2",
+    "commit": "914cf1472e715297caa30db4b9535d534a9eb718",
+    "tree": "73f6a2a71a4fb941c5688753931c2aa6f95902c5",
+    "license": {
+      "spdx": "MIT",
+      "path": "LICENSE",
+      "sha256": "0457f5bcec3b3b211605dfb5d1a49042fd638f3686a410fe099c24a25af13c48"
+    },
+    "packages": [
+      {
+        "name": "@earendil-works/pi-agent-core",
+        "sourcePath": "packages/agent/package.json",
+        "sourceSha256": "ac5e13d2a2aa0d6c78394417b59e18cb0fe92f482d2b075b39bf165312db6c06",
+        "integrity": "sha512-8Pn3wSCxj0cfo5I6jxQYVB/3uuQRmHhAlEclyjqpOuMEdQMIODHizRogv56FLdbU+dTiGnybeHQ2N+sV1/L2YA=="
+      },
+      {
+        "name": "@earendil-works/pi-ai",
+        "sourcePath": "packages/ai/package.json",
+        "sourceSha256": "9575365ce609dca8e1fd4fa72471d55006e1e0f81310c0808f93abc4bc14bbf9",
+        "integrity": "sha512-6MzsrYIYNVlE7SfpbL2yYb67Qo58p/7Q+xWG1RZvoX1P80aRCHSod2/13aFpxkow1lPO2LEh3c495J0Gwmyjig=="
+      },
+      {
+        "name": "@earendil-works/pi-coding-agent",
+        "sourcePath": "packages/coding-agent/package.json",
+        "sourceSha256": "820f4adc6d61f2cefbc29ce17e9dfd9aa482248d54be5d0dfa2a868ca000c7b0",
+        "integrity": "sha512-l4E+B7hgXKWddRo8bC/eSue2aWZjEgJ9xIpf5p0Og+lq8a2TArCwJ0HCoCPCgaBP/tN4zbYH/wOwvx9pJpeLCA=="
+      },
+      {
+        "name": "@earendil-works/pi-tui",
+        "sourcePath": "packages/tui/package.json",
+        "sourceSha256": "2c19fb7e3d1e83a461b6f020b2ffc118b435dcd78a07af8c8def72864cd09e6e",
+        "integrity": "sha512-ds2TLihOnM5sLJB3VpXV6y0uR5efVuHf4MN7yDpsty6hA2DUO/EDVzjp/0od0G2JslzVLMjT8T8zavtxVb+qbg=="
+      }
+    ]
+  },
+  "zmx": {
+    "repository": "https://github.com/neurosnap/zmx",
+    "commit": "0266042ca8f399c9d76825739b93443e2d5bf47a",
+    "tree": "76d677df2844eff6ce8a553163f5c53511184151",
+    "baseRelease": "0.7.1",
+    "baseReleaseCommit": "1cea103fef83cd53586fcb2c5f90d693fc9f5a30",
+    "releaseLineRelation": "diverged-not-ancestor",
+    "describe": "v0.7.0-47-g0266042",
+    "binaryVersion": "0.7.0",
+    "license": {
+      "spdx": "MIT",
+      "path": "LICENSE",
+      "copyright": "Copyright (c) 2025 Eric Bower",
+      "sha256": "56bab989df218f62a6deb746b43903340291dafbc7a811e3fa0c8ea889f8f5ea"
+    }
+  },
+  "piWebUi": {
+    "repository": "https://github.com/kkkiio/pi-web-ui",
+    "package": "@kkkiio/pi-web-ui",
+    "version": "0.1.1",
+    "tag": "v0.1.1",
+    "tagCommit": "d3d7b9fdf6f7cb576d422eb6605a55604cda887d",
+    "tagTree": "890c3e50146c49769f3d28bf5dfcf7db878a5800",
+    "publishedGitHead": "a3ab3b1c46f0ad3d837d7ba9e968b7e61d5259da",
+    "integrity": "sha512-Jia2QDOTm10jUgixqO0GrmYSL22Uv3NFiot1rATmSV1nNfAppo2hK3FSe9huowVd8B/wluhLzXLjPNLNk3z5bw==",
+    "license": {
+      "spdx": "MIT",
+      "packageJsonPath": "package.json",
+      "packageJsonSha256": "dfe9981ca2931ccb80a615fd98e126acb79bc3583c212fb3e879d6fe534deb61",
+      "readmePath": "README.md",
+      "readmeSha256": "26b757c46873242de9ed62b6992ec9dea6b69ac98eb57660594ef7cb6bf9a97e"
+    }
+  }
+}

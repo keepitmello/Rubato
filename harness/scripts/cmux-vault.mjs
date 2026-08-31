@@ -70,8 +70,8 @@ export function buildAgent(launcher = LAUNCHER) {
     },
     sessionIdSource: "piSessionFile",
     sessionDirectory: "~/.rubato-pi/agent/sessions",
-    resumeCommand: `${launcher} --session {{sessionPath}}`,
-    forkCommand: `${launcher} --fork {{sessionPath}}`,
+    resumeCommand: `${launcher} vault-resume --session {{sessionPath}}`,
+    forkCommand: `${launcher} vault-fork --session {{sessionPath}}`,
     cwd: "preserve",
   };
 }

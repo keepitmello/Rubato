@@ -54,9 +54,15 @@ or a retained package production dependency.
 - Upstream URL: https://github.com/fivetaku/insane-search
 - Where-bundled: `packages/rubato-runtime/plugin/skills/ultimate-browsing/engine/`. Full notices: `packages/rubato-runtime/plugin/skills/ultimate-browsing/ATTRIBUTION.md`.
 
+### zmx
+- License: MIT, full text at `third_party/zmx/LICENSE`.
+- Copyright: Copyright (c) 2025 Eric Bower.
+- Upstream URL: https://github.com/neurosnap/zmx
+- Where-bundled: architecture-specific Rubato Remote process-lifecycle binary built from commit `0266042ca8f399c9d76825739b93443e2d5bf47a`; checksums and build inputs are pinned in `third_party/zmx-lock.json`.
+
 ## Production npm dependencies of retained packages
 
-These are declared `dependencies` of first-party packages under `packages/`, excluding nested skill `package.json` files.
+These are declared `dependencies` of first-party packages under `packages/`, excluding nested skill `package.json` files. The complete transitive lockfile policy is machine-validated from `third_party/npm-license-policy.json`.
 
 ### @earendil-works/pi-tui@0.84.2
 - License: MIT, from package metadata. The inspected package did not include a separate LICENSE file.
@@ -88,6 +94,90 @@ These are declared `dependencies` of first-party packages under `packages/`, exc
 - Upstream URL: https://github.com/colinhacks/zod
 - Where-bundled: `@rubato/config-core` and `@rubato/team-core` production dependency.
 
+### @git-diff-view/react@0.1.7
+- License: MIT. Copyright: MrWangJustToDo and contributors.
+- Upstream URL: https://github.com/MrWangJustToDo/git-diff-view
+- Where-bundled: Rubato Remote web diff viewer.
+
+### @hono/node-server@1.19.17
+- Security pin: exact 1.19.17 intentionally supersedes the vulnerable 1.19.13 design reference; reviewed advisory and audit evidence are recorded in `third_party/hono-security-deviation.md`.
+- License: MIT. Copyright: Yusuke Wada and Hono contributors.
+- Upstream URL: https://github.com/honojs/node-server
+- Where-bundled: Rubato Remote localhost hub.
+
+### @tanstack/react-query@5.102.8
+- License: MIT. Copyright: TanStack Query contributors.
+- Upstream URL: https://github.com/TanStack/query
+- Where-bundled: Rubato Remote web client state synchronization.
+
+### @xterm/addon-fit@0.10.0
+- License: MIT. Copyright: The xterm.js authors.
+- Upstream URL: https://github.com/xtermjs/xterm.js
+- Where-bundled: Rubato Remote emergency terminal sizing.
+
+### @xterm/xterm@5.5.0
+- License: MIT. Copyright: The xterm.js authors.
+- Upstream URL: https://github.com/xtermjs/xterm.js
+- Where-bundled: Rubato Remote emergency terminal.
+
+### hono@4.13.5
+- Security pin: exact 4.13.5 intentionally supersedes the vulnerable 4.12.18 design reference; reviewed HIGH/MODERATE advisories and audit evidence are recorded in `third_party/hono-security-deviation.md`.
+- License: MIT. Copyright: Yusuke Wada and Hono contributors.
+- Upstream URL: https://github.com/honojs/hono
+- Where-bundled: Rubato Remote localhost HTTP API.
+
+### idb@8.0.3
+- License: ISC. Copyright: Jake Archibald.
+- Upstream URL: https://github.com/jakearchibald/idb
+- Where-bundled: Rubato Remote browser host registry.
+
+### konsta@5.4.0
+- License: MIT. Copyright: Vladimir Kharlampidi and contributors.
+- Upstream URL: https://github.com/konstaui/konsta
+- Where-bundled: Rubato Remote iOS-style web interface.
+
+### react@19.2.6
+- License: MIT. Copyright: Meta Platforms, Inc. and affiliates.
+- Upstream URL: https://github.com/facebook/react
+- Where-bundled: Rubato Remote web interface.
+
+### react-dom@19.2.6
+- License: MIT. Copyright: Meta Platforms, Inc. and affiliates.
+- Upstream URL: https://github.com/facebook/react
+- Where-bundled: Rubato Remote web interface renderer.
+
+### streamdown@2.5.0
+- License: Apache-2.0. Copyright: Vercel, Inc. and contributors.
+- Upstream URL: https://github.com/vercel/streamdown
+- Where-bundled: Rubato Remote streamed Markdown rendering.
+
+### tailwindcss@4.3.0
+- License: MIT. Copyright: Tailwind Labs, Inc.
+- Upstream URL: https://github.com/tailwindlabs/tailwindcss
+- Where-bundled: Rubato Remote web styles.
+
+### web-push@3.6.7
+- License: MPL-2.0; used unmodified. Copyright: Marco Castelluccio and contributors.
+- Upstream URL: https://github.com/web-push-libs/web-push
+- Where-bundled: Rubato Remote hub push transport.
+
+### ws@8.21.3
+- License: MIT. Copyright: Einar Otto Stangvik and contributors.
+- Upstream URL: https://github.com/websockets/ws
+- Where-bundled: Rubato Remote hub WebSocket transport.
+
+### zustand@5.0.14
+- License: MIT. Copyright: Paul Henschel and contributors.
+- Upstream URL: https://github.com/pmndrs/zustand
+- Where-bundled: Rubato Remote web client state.
+
+### node-pty@1.1.0
+- License: MIT. Copyright: Microsoft Corporation and contributors.
+- Upstream URL: https://github.com/microsoft/node-pty
+- Where-bundled: optional, explicitly enabled fallback for the Rubato Remote emergency terminal; the Bun PTY bridge remains the default.
+
 ## Inspiration-only (no source vendored)
+
+`pi-web-ui` 0.1.1 (MIT, https://github.com/kkkiio/pi-web-ui) informed reducer and interaction concepts. No pi-web-ui source is bundled.
 
 `packages/rubato-runtime/plugin/skills/ulw-research/ATTRIBUTION.md` credits third-party research-skill ideas. That file states that no third-party source is copied there.

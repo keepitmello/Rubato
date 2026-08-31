@@ -11,6 +11,7 @@ import { installStatusline } from "./statusline.mjs";
 import { installSessionTitle } from "./session-title.mjs";
 import { installEvalSearchGuard } from "../eval-search-guard.mjs";
 import { installMeasurementHooks } from "../measurement-recorder.mjs";
+import { installRemoteSurface } from "./remote-surface.mjs";
 
 const { composeRubatoExtension, rubatoComponents } = await import(rubatoExtension);
 
@@ -39,6 +40,9 @@ export default async function rubatoPiAdapter(pi) {
   const member = isTeamMemberProcess();
   const role = resolveRole();
   if (!member) installSessionTitle(pi);
+  if (!member && process.env.RUBATO_LIVE_SESSION_ID) {
+    await installRemoteSurface(pi);
+  }
   if (!leadOverlayLoaded(process.argv) && !member) {
     await dagOverlay(pi);
   }

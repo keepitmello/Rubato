@@ -1,0 +1,9 @@
+{
+  "path": "/Users/example/Projects",
+  "parentPath": "/Users/example",
+  "directories": [
+    { "name": "hotel-tablet", "path": "/Users/example/Projects/hotel-tablet", "symlink": false },
+    { "name": "rubato", "path": "/Users/example/Projects/rubato", "symlink": true }
+  ],
+  "nextCursor": "page-2"
+}

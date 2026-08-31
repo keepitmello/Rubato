@@ -1,0 +1,39 @@
+name: Rubato Remote Long Qualification
+
+on:
+  schedule:
+    - cron: '17 3 * * 0'
+  workflow_dispatch:
+    inputs:
+      mobile_driver_json:
+        description: Optional JSON argv for physical-iPhone foreground/network augmentation
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: [self-hosted, macOS, rubato-remote-qualification]
+    timeout-minutes: 600
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Verify runtime versions
+        run: |
+          test "$(bun --version)" = '1.4.0'
+          test "$(node -p 'Number(process.versions.node.split(`.`)[0]) >= 24')" = true
+      - name: Eight-hour built-in host qualification
+        env:
+          MOBILE_DRIVER_JSON: ${{ inputs.mobile_driver_json }}
+        run: |
+          test -n "${RUBATO_HUB_PID:-}"
+          ARGS=(--profile long --pid "$RUBATO_HUB_PID" --output qualification-long.json)
+          if [ -n "$MOBILE_DRIVER_JSON" ]; then ARGS+=(--mobile-driver-json "$MOBILE_DRIVER_JSON"); fi
+          node scripts/remote-release/qualification.mjs "${ARGS[@]}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: qualification-long
+          path: qualification-long.json
+          if-no-files-found: error
+          retention-days: 90

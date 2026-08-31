@@ -1,0 +1,11 @@
+- Persona: Mac에서 시작한 Rubato 작업을 iPhone에서 확인하고 이어가는 개발자
+- Screenshots:
+  - `screenshots/inventory-iphone.png`
+  - `screenshots/new-session-narrow.png`
+  - `screenshots/artifacts-iphone.png`
+  - `screenshots/offline-iphone.png`
+  - `screenshots/structured-input-iphone.png`
+- Route: `http://127.0.0.1:4173/rubato/?fixture=1`
+- Audit boundary (2026-08-31):
+  - Production dependencies: `npm audit --workspaces=false --omit=dev --audit-level=high` reports 0 vulnerabilities.
+  - Including dev dependencies reports one high-severity, Windows-only advisory through the pinned Vite development toolchain (`launch-editor` UNC/NTLM and Vite Windows path handling). It does not affect the shipped PWA dependency graph; the pinned design Vite version was not changed without upgrade evidence.

@@ -13,11 +13,89 @@ if [ "${1-}" = "auth" ]; then
 fi
 if [ "${1-}" = "update" ]; then
   shift
+  . "$HERE/find-node.sh"
+  if ! NODE="$(rubato_find_node)"; then
+    echo "rubato update preflight needs Node.js 24+ already installed." >&2
+    exit 2
+  fi
+  LIVE_CLI="$HERE/../../packages/rubato-live-cli/bin/rubato-live.mjs"
+  "$NODE" "$LIVE_CLI" remote update-guard
   exec "$HERE/rubato-update.sh" "$@"
 fi
 if [ "${1-}" = "build" ]; then
   shift
   exec "$HERE/../prompts/build.sh" "$@"
+fi
+
+# `direct` 는 dispatcher 만 건너뛴다. 기존 준비·엔진 경로는 그대로 지나므로
+# auth/update/build 외의 과거 사용법과 bootstrap 이 같은 엔진을 실행한다.
+RUBATO_LIVE_DIRECT=""
+if [ "${1-}" = "direct" ]; then
+  shift
+  RUBATO_LIVE_DIRECT=1
+  export RUBATO_LIVE_DIRECT
+fi
+
+LIVE_CLI="$HERE/../../packages/rubato-live-cli/bin/rubato-live.mjs"
+LIVE_BOOTSTRAP="$HERE/remote/rubato-live-bootstrap.mjs"
+live_node() {
+  . "$HERE/find-node.sh"
+  if ! rubato_find_node; then
+    echo "rubato live commands need Node.js 24+ already installed." >&2
+    return 2
+  fi
+}
+
+case "${1-}" in
+  new|attach|list|kill|remote|vault-resume|vault-fork)
+    NODE="$(live_node)" || exit $?
+    exec "$NODE" "$LIVE_CLI" "$@"
+    ;;
+  internal-run)
+    if [ "${2-}" != "--descriptor" ] || [ -z "${3-}" ] || [ "$#" -ne 3 ]; then
+      echo "usage: rubato internal-run --descriptor <path>" >&2
+      exit 2
+    fi
+    NODE="$(live_node)" || exit $?
+    exec "$NODE" "$LIVE_BOOTSTRAP" "$3"
+    ;;
+esac
+
+# Dispatcher 는 실제 terminal 대화에만 개입한다. pipe/RPC/print/CI/dumb terminal 과
+# zmx 안의 재귀 호출은 아래의 기존 엔진으로 그대로 보낸다.
+RUBATO_NONINTERACTIVE=""
+EXPECT_MODE=""
+for RUBATO_ARG in "$@"; do
+  if [ -n "$EXPECT_MODE" ]; then
+    case "$RUBATO_ARG" in rpc|print) RUBATO_NONINTERACTIVE=1 ;; esac
+    EXPECT_MODE=""
+  fi
+  case "$RUBATO_ARG" in
+    --print|--mode=rpc|--mode=print) RUBATO_NONINTERACTIVE=1 ;;
+    --mode) EXPECT_MODE=1 ;;
+  esac
+done
+
+if [ -z "$RUBATO_LIVE_DIRECT" ] \
+  && [ "${RUBATO_LIVE_MODE-}" != "off" ] \
+  && [ -z "${ZMX_SESSION-}" ] \
+  && [ -z "${CI-}" ] \
+  && [ "${TERM-}" != "dumb" ] \
+  && [ -z "$RUBATO_NONINTERACTIVE" ] \
+  && [ -t 0 ] && [ -t 1 ]; then
+  NODE="$(live_node)" || exit $?
+  if [ "$#" -eq 0 ]; then
+    LIVE_COMMAND="pick"
+  else
+    LIVE_COMMAND="new"
+  fi
+  if [ "$LIVE_COMMAND" = "pick" ]; then
+    if "$NODE" "$LIVE_CLI" pick; then exit 0; else LIVE_RC=$?; fi
+  else
+    if "$NODE" "$LIVE_CLI" new -- "$@"; then exit 0; else LIVE_RC=$?; fi
+  fi
+  if [ "$LIVE_RC" -ne 75 ]; then exit "$LIVE_RC"; fi
+  echo "rubato: live session service is unavailable; starting a direct unmanaged session" >&2
 fi
 
 # 부팅 스플래시. 엔진이 화면을 잡기까지 3초 남짓 걸리는데 그동안 까만

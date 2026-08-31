@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createHash } from "node:crypto"
 import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { dirname, join, relative } from "node:path"
 import { spawnSync } from "node:child_process"
@@ -16,6 +17,8 @@ const scopes = {
     requiredComponents() {
       return [...readRetainedProductionDependencyNames(), ...BUNDLED_NOTICE_HEADINGS]
     },
+    checkComponents: checkBundledEvidence,
+    checkSummary: "bundled license evidence: zmx and npm lock policy checked",
   },
   packages: {
     noticePath: "THIRD-PARTY-NOTICES.md",
@@ -23,6 +26,7 @@ const scopes = {
       return []
     },
     checkComponents: checkPackageNotices,
+    checkSummary: `package NOTICE files: ${PACKAGE_NOTICE_REQUIREMENTS.length} retained packages checked`,
   },
 }
 
@@ -67,13 +71,28 @@ function readRetainedProductionDependencyNames() {
   const names = []
   for (const packagePath of collectPackageJsonRelativePaths()) {
     const packageJson = readJson(packagePath)
-    for (const [name, spec] of Object.entries(packageJson.dependencies ?? {})) {
+    for (const [name, spec] of Object.entries({ ...(packageJson.dependencies ?? {}), ...(packageJson.optionalDependencies ?? {}) })) {
       if (name.startsWith("@rubato/")) continue
       if (typeof spec === "string" && (spec.startsWith("workspace:") || spec.startsWith("file:"))) continue
       names.push(name)
     }
   }
   return unique(names)
+}
+
+function checkBundledEvidence() {
+  const failures = []
+  try {
+    const lock = readJson("third_party/zmx-lock.json")
+    const licensePath = join(repoRoot, "third_party", lock.license.path)
+    const actual = createHash("sha256").update(readFileSync(licensePath)).digest("hex")
+    if (actual !== lock.license.sha256) failures.push("third_party/zmx license hash differs from zmx-lock.json")
+    if (lock.license.spdx !== "MIT") failures.push("third_party/zmx license is not pinned as MIT")
+  } catch (error) {
+    failures.push(`third_party/zmx evidence is invalid: ${error instanceof Error ? error.message : String(error)}`)
+  }
+  if (!existsSync(join(repoRoot, "third_party", "npm-license-policy.json"))) failures.push("third_party/npm-license-policy.json is missing")
+  return failures
 }
 
 function checkPackageNotices() {
@@ -140,9 +159,7 @@ function runScope(scopeName) {
   if (requiredComponents.length > 0) {
     console.log(`${scope.noticePath}: ${requiredComponents.length} required notice entries present`)
   }
-  if (scope.checkComponents) {
-    console.log(`package NOTICE files: ${PACKAGE_NOTICE_REQUIREMENTS.length} retained packages checked`)
-  }
+  if (scope.checkSummary) console.log(scope.checkSummary)
 }
 
 function runShipCheck() {

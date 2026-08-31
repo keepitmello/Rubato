@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "liveSessionId": "018f0c7b-2f3b-7c4d-9e5f-1234567890ab",
+  "lastSeq": 1828,
+  "writtenAt": "2026-08-31T01:00:02.000Z",
+  "summary": {
+    "schemaVersion": 1,
+    "hostId": "018f0c7a-2f3b-7c4d-8e5f-1234567890ab",
+    "liveSessionId": "018f0c7b-2f3b-7c4d-9e5f-1234567890ab",
+    "zmxName": "rubato-018f0c7b2f3b",
+    "managed": true,
+    "pid": 4242,
+    "lifecycle": "ready",
+    "execution": "idle",
+    "attention": false,
+    "title": "Hotel Tablet",
+    "cwd": "/Users/example/Projects/hotel-tablet",
+    "createdAt": "2026-08-31T00:59:00.000Z",
+    "lastAssistantAt": "2026-08-31T01:00:00.000Z",
+    "pi": { "sessionId": "pi-session-1", "sessionFile": "/Users/example/.pi/agent/sessions/session.jsonl", "leafId": "entry-7" },
+    "model": { "provider": "openai", "id": "gpt-5.6", "label": "GPT-5.6", "thinkingLevel": "high" },
+    "context": { "usedPercent": 25, "remainingPercent": 75, "windowTokens": 200000 },
+    "cache": { "policy": "provider", "hitPercent": 92.5, "expiresAt": "2026-08-31T01:05:00.000Z", "expired": false },
+    "background": { "activeCount": 2, "labels": ["indexing", "tests"] },
+    "teams": { "activeRunCount": 1, "runningMemberCount": 2, "failedMemberCount": 0 },
+    "build": { "rubatoCommit": "0123456789abcdef", "piVersion": "0.84.2", "remoteProtocolMin": 1, "remoteProtocolMax": 1 },
+    "capabilities": ["input", "compact", "tree", "terminal-required"]
+  },
+  "state": {
+    "revision": 123,
+    "entries": [
+      { "id": "m1", "kind": "message", "role": "user", "text": "Check accessibility", "at": "2026-08-31T00:59:20.000Z" },
+      { "id": "tool1", "kind": "tool", "name": "test", "summary": "4 passed", "status": "done", "artifactId": "artifact-1" }
+    ],
+    "tree": [
+      { "id": "entry-2", "label": "Initial request", "current": false },
+      { "id": "entry-7", "label": "Accessibility fix", "current": true }
+    ],
+    "commands": [
+      { "name": "compact", "description": "Compact context", "category": "builtin", "remoteMode": "native-action" },
+      { "name": "skill:review", "description": "Review changes", "category": "skill", "remoteMode": "direct" },
+      { "name": "login", "description": "Configure provider authentication", "category": "builtin", "remoteMode": "terminal-only" }
+    ],
+    "capabilities": ["interactive-control", "standard-ui"]
+  }
+}

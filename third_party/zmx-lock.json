@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 2,
+  "repository": "https://github.com/neurosnap/zmx",
+  "commit": "0266042ca8f399c9d76825739b93443e2d5bf47a",
+  "tree": "76d677df2844eff6ce8a553163f5c53511184151",
+  "commitDate": "2026-08-30",
+  "commitSubject": "chore: update ghostty",
+  "baseRelease": "0.7.1",
+  "baseReleaseCommit": "1cea103fef83cd53586fcb2c5f90d693fc9f5a30",
+  "releaseLineRelation": "diverged-not-ancestor",
+  "describe": "v0.7.0-47-g0266042",
+  "binaryVersion": "0.7.0",
+  "buildTool": "zig-0.16.0",
+  "build": {
+    "optimize": "ReleaseSafe",
+    "targets": {
+      "darwin-arm64": "aarch64-macos",
+      "darwin-x64": "x86_64-macos"
+    }
+  },
+  "qualifiedAssets": {
+    "status": "release-manifest-required",
+    "reason": "Mach-O source builds at this commit are not byte-reproducible; each release must sign the SHA-256 of the exact bytes it uploads.",
+    "manifest": "zmx-release-manifest.json",
+    "signature": "zmx-release-manifest.sig"
+  },
+  "environment": {
+    "ZMX_NO_DETACH_KEY": "1"
+  },
+  "license": {
+    "spdx": "MIT",
+    "path": "zmx/LICENSE",
+    "sha256": "56bab989df218f62a6deb746b43903340291dafbc7a811e3fa0c8ea889f8f5ea"
+  }
+}
