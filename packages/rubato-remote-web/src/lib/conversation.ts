@@ -1,4 +1,4 @@
-import type { EventEnvelope, JsonValue } from "@rubato/remote-protocol"
+import type { AssistantTextPhase, EventEnvelope, JsonValue, LeadExecution, RequestTimelineSnapshot, UserInputDelivery } from "@rubato/remote-protocol"
 import type { ConversationEntry, ConversationState, SessionSnapshot, UiRequest } from "./types"
 
 const MAX_RENDERED_ENTRIES = 1_000
@@ -29,6 +29,44 @@ function piMessage(payload: EventEnvelope["payload"]): { id: string; role: "user
 
 function bounded(entries: readonly ConversationEntry[]): readonly ConversationEntry[] {
   return entries.length > MAX_RENDERED_ENTRIES ? entries.slice(-MAX_RENDERED_ENTRIES) : entries
+}
+
+function asPhase(value: JsonValue | undefined): AssistantTextPhase | undefined {
+  return value === "progress" || value === "final" ? value : undefined
+}
+
+function asDelivery(value: JsonValue | undefined): UserInputDelivery | undefined {
+  return value === "submit" || value === "steer" || value === "followUp" ? value : undefined
+}
+
+function asExecution(value: JsonValue | undefined): LeadExecution | undefined {
+  return value === "working" || value === "idle" ? value : undefined
+}
+
+function withActiveRequestRun(timeline: RequestTimelineSnapshot | undefined, activeRequestRunId: string | undefined): RequestTimelineSnapshot {
+  return {
+    schemaVersion: 1,
+    runs: timeline?.runs ?? [],
+    pendingInputs: timeline?.pendingInputs ?? [],
+    hasOlder: timeline?.hasOlder ?? false,
+    ...(activeRequestRunId ? { activeRequestRunId } : {}),
+  }
+}
+
+function requestFields(payload: EventEnvelope["payload"]) {
+  const nested = object(object(payload.event)?.message)
+  const fields: {
+    requestRunId?: string
+    phase?: AssistantTextPhase
+    delivery?: UserInputDelivery
+  } = {}
+  const requestRunId = text(payload.requestRunId) ?? text(nested?.requestRunId)
+  const phase = asPhase(payload.phase) ?? asPhase(nested?.phase)
+  const delivery = asDelivery(payload.delivery) ?? asDelivery(nested?.delivery)
+  if (requestRunId) fields.requestRunId = requestRunId
+  if (phase) fields.phase = phase
+  if (delivery) fields.delivery = delivery
+  return fields
 }
 
 function uiRequest(payload: EventEnvelope["payload"]): UiRequest | undefined {
@@ -66,6 +104,8 @@ export function applyConversationSnapshot(snapshot: SessionSnapshot, previous?: 
     recoveryVersion: previous?.recoveryVersion ?? 0,
     bufferedEvents: [],
     ...(snapshot.uiRequest ? { uiRequest: snapshot.uiRequest } : {}),
+    ...(snapshot.timeline ? { timeline: snapshot.timeline } : previous?.timeline ? { timeline: previous.timeline } : {}),
+    ...(snapshot.summary.execution ? { execution: snapshot.summary.execution } : previous?.execution ? { execution: previous.execution } : {}),
   }
   for (const event of bufferedEvents) restored = reduceConversation(restored, event)
   return restored
@@ -94,6 +134,7 @@ export function reduceConversation(state: ConversationState, event: EventEnvelop
   const payload = event.payload
   const nestedMessage = piMessage(payload)
   const id = text(payload.ephemeralMessageId) ?? text(payload.messageId) ?? (nestedMessage?.id || `event-${event.seq}`)
+  const fields = requestFields(payload)
   let entries = state.entries
 
   switch (event.type) {
@@ -105,8 +146,8 @@ export function reduceConversation(state: ConversationState, event: EventEnvelop
         ? entries.findIndex((entry) => entry.kind === "message" && entry.role === "user" && entry.id.startsWith("optimistic-") && entry.text === startedText)
         : -1
       entries = optimistic < 0
-        ? [...entries, { id, kind: "message", role, text: startedText, streaming: true, at: event.at }]
-        : entries.map((entry, position) => position === optimistic ? { id, kind: "message", role, text: startedText, streaming: true, at: event.at } : entry)
+        ? [...entries, { id, kind: "message", role, text: startedText, streaming: true, at: event.at, ...fields }]
+        : entries.map((entry, position) => position === optimistic ? { id, kind: "message", role, text: startedText, streaming: true, at: event.at, ...fields } : entry)
       break
     }
     case "message.delta": {
@@ -114,8 +155,8 @@ export function reduceConversation(state: ConversationState, event: EventEnvelop
       const delta = nestedMessage?.text ?? text(payload.delta) ?? ""
       const index = entries.findIndex((entry) => entry.id === id && entry.kind === "message")
       entries = index < 0
-        ? [...entries, { id, kind: "message", role: "assistant", text: delta, streaming: true }]
-        : entries.map((entry, position) => position === index && entry.kind === "message" ? { ...entry, text: nestedMessage ? delta : entry.text + delta } : entry)
+        ? [...entries, { id, kind: "message", role: "assistant", text: delta, streaming: true, ...fields }]
+        : entries.map((entry, position) => position === index && entry.kind === "message" ? { ...entry, text: nestedMessage ? delta : entry.text + delta, ...fields } : entry)
       break
     }
     case "message.commit": {
@@ -123,12 +164,12 @@ export function reduceConversation(state: ConversationState, event: EventEnvelop
       const committed = nestedMessage?.text ?? text(payload.text)
       const index = entries.findIndex((entry) => entry.id === id && entry.kind === "message")
       entries = index < 0
-        ? [...entries, { id, kind: "message", role: nestedMessage?.role ?? "assistant", text: committed ?? "", streaming: false, at: event.at }]
-        : entries.map((entry, position) => position === index && entry.kind === "message" ? { ...entry, text: committed ?? entry.text, streaming: false } : entry)
+        ? [...entries, { id, kind: "message", role: nestedMessage?.role ?? "assistant", text: committed ?? "", streaming: false, at: event.at, ...fields }]
+        : entries.map((entry, position) => position === index && entry.kind === "message" ? { ...entry, text: committed ?? entry.text, streaming: false, ...fields } : entry)
       break
     }
     case "tool.start":
-      entries = [...entries, { id, kind: "tool", name: text(payload.name) ?? "도구", summary: text(payload.summary) ?? "실행 중", status: "running" }]
+      entries = [...entries, { id, kind: "tool", name: text(payload.name) ?? "도구", summary: text(payload.summary) ?? "실행 중", status: "running", ...(fields.requestRunId ? { requestRunId: fields.requestRunId } : {}) }]
       break
     case "tool.update":
     case "tool.end":
@@ -137,6 +178,7 @@ export function reduceConversation(state: ConversationState, event: EventEnvelop
         summary: text(payload.summary) ?? entry.summary,
         ...(text(payload.output) ?? entry.output ? { output: (text(payload.output) ?? entry.output)! } : {}),
         ...(text(payload.artifactId) ?? entry.artifactId ? { artifactId: (text(payload.artifactId) ?? entry.artifactId)! } : {}),
+        ...(fields.requestRunId ? { requestRunId: fields.requestRunId } : {}),
         status: event.type === "tool.end" ? (payload.failed === true ? "failed" : "done") : entry.status,
       } : entry)
       break
@@ -149,6 +191,14 @@ export function reduceConversation(state: ConversationState, event: EventEnvelop
     }
     case "ui.dismiss":
       return { ...state, lastSeq: event.seq, uiRequest: undefined }
+    case "agent.state": {
+      const execution = asExecution(payload.execution)
+      return { ...state, lastSeq: event.seq, ...(execution ? { execution } : {}) }
+    }
+    case "session.changed": {
+      if (text(payload.change) !== "requestRun") return { ...state, lastSeq: event.seq }
+      return { ...state, lastSeq: event.seq, timeline: withActiveRequestRun(state.timeline, text(payload.activeRequestRunId)) }
+    }
     case "compaction.start":
       entries = [...entries, { id, kind: "notice", text: "대화를 정리하고 있어요." }]
       break

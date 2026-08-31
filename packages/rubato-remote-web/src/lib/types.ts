@@ -2,8 +2,10 @@ import type {
   ConversationEntry,
   EventEnvelope,
   HostInventory,
+  LeadExecution,
   ProjectChoice,
   RegisteredHost,
+  RequestTimelineSnapshot,
   SnapshotResponse,
   UiRequest,
 } from "@rubato/remote-protocol"
@@ -19,6 +21,8 @@ export interface ConversationState {
   recoveryVersion: number
   bufferedEvents: readonly EventEnvelope[]
   uiRequest?: UiRequest | undefined
+  timeline?: RequestTimelineSnapshot | undefined
+  execution?: LeadExecution | undefined
 }
 
 export interface ImageAttachment {
