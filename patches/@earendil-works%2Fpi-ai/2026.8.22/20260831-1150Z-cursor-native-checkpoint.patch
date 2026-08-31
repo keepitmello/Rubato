@@ -1,0 +1,251 @@
+diff --git a/dist/api/cursor-agent.d.ts b/dist/api/cursor-agent.d.ts
+--- a/dist/api/cursor-agent.d.ts
++++ b/dist/api/cursor-agent.d.ts
+@@ -135,7 +135,7 @@
+     liveUsedTokens?: number;
+ }
+ /** Exported for tests: drives one Cursor server message through the stream (exec waits mark the stream busy). */
+-export declare function handleServerMessage(msg: AgentServerMessage, output: AssistantMessage, stream: AssistantMessageEventStream, state: BlockState, blobStore: Map<string, Uint8Array>, h2Request: http2.ClientHttp2Stream, execHandlers: CursorExecHandlers | undefined, onToolResult: CursorToolResultHandler | undefined, usageState: UsageState, requestContextTools: McpToolDefinition[], onConversationCheckpoint?: (checkpoint: ConversationStateStructure) => void): Promise<void>;
++export declare function handleServerMessage(msg: AgentServerMessage, output: AssistantMessage, stream: AssistantMessageEventStream, state: BlockState, blobStore: Map<string, Uint8Array>, h2Request: http2.ClientHttp2Stream, execHandlers: CursorExecHandlers | undefined, onToolResult: CursorToolResultHandler | undefined, usageState: UsageState, requestContextTools: McpToolDefinition[], onConversationCheckpoint?: (checkpoint: ConversationStateStructure) => void, conversationId?: string): Promise<void>;
+ /**
+  * Exported for tests: dispatches one exec frame onto its handler.
+  *
+diff --git a/dist/api/cursor-agent.js b/dist/api/cursor-agent.js
+--- a/dist/api/cursor-agent.js
++++ b/dist/api/cursor-agent.js
+@@ -103,6 +103,10 @@
+ /** Bare gRPC `resource_exhausted` end-streams (also inside a Connect error message). */
+ const conversationStateCache = new Map();
+ const conversationBlobStores = new Map();
++/** Wire ids whose cache entry is a server conversation_checkpoint_update. */
++const serverCheckpointIds = new Set();
++/** First RequestContext per wire id — rebuilt overlays shift the prompt prefix. */
++const frozenRequestContexts = new Map();
+ /**
+  * Session-scoped bookkeeping for the module-local conversation state above.
+  *
+@@ -155,6 +159,8 @@
+         return false;
+     conversationStateCache.delete(wireId);
+     conversationBlobStores.delete(wireId);
++    serverCheckpointIds.delete(wireId);
++    frozenRequestContexts.delete(wireId);
+     wireTouchedAt.delete(wireId);
+     const baseId = wireToBase.get(wireId);
+     wireToBase.delete(wireId);
+@@ -224,11 +230,33 @@
+ export function resetCursorConversationState() {
+     conversationStateCache.clear();
+     conversationBlobStores.clear();
++    serverCheckpointIds.clear();
++    frozenRequestContexts.clear();
+     sessionLineages.clear();
+     wireToBase.clear();
+     activeWireCalls.clear();
+     wireTouchedAt.clear();
+ }
++function pinRequestContext(conversationId, requestContextTools) {
++    if (conversationId) {
++        const existing = frozenRequestContexts.get(conversationId);
++        if (existing)
++            return existing;
++    }
++    const requestContext = create(RequestContextSchema, {
++        rules: [],
++        repositoryInfo: [],
++        tools: requestContextTools,
++        gitRepos: [],
++        projectLayouts: [],
++        mcpInstructions: [],
++        fileContents: {},
++        customSubagents: [],
++    });
++    if (conversationId)
++        frozenRequestContexts.set(conversationId, requestContext);
++    return requestContext;
++}
+ /**
+  * Base conversation id → rotated wire id. Cursor's backend can pin a
+  * per-conversation rejection (bare `resource_exhausted`, zero tokens) to one
+@@ -624,6 +652,7 @@
+                 const onConversationCheckpoint = (checkpoint) => {
+                     attemptSawCheckpoint = true;
+                     conversationStateCache.set(conversationId, checkpoint);
++                    serverCheckpointIds.add(conversationId);
+                 };
+                 const healthFailThresholdMs = options?.streamHealthFailThresholdMs ?? CURSOR_STREAM_HEALTH_FAIL_THRESHOLD_MS;
+                 let lastInboundFrameAt = Date.now();
+@@ -703,7 +732,7 @@
+                             // must not be pushed while an exec handler is still resolving,
+                             // or the buffered tool result is delivered after the turn
+                             // already finalized and the call is left unpaired.
+-                            const dispatch = handleServerMessage(serverMessage, output, stream, state, blobStore, h2Request, options?.execHandlers, state.onToolResult, usageState, requestContextTools, onConversationCheckpoint).catch((error) => {
++                            const dispatch = handleServerMessage(serverMessage, output, stream, state, blobStore, h2Request, options?.execHandlers, state.onToolResult, usageState, requestContextTools, onConversationCheckpoint, conversationId).catch((error) => {
+                                 log("error", "handleServerMessage", { error: String(error) });
+                             });
+                             inFlightDispatches.add(dispatch);
+@@ -867,6 +896,11 @@
+                             const blobs = conversationBlobStores.get(conversationId);
+                             if (blobs)
+                                 conversationBlobStores.set(decision.wireId, blobs);
++                            if (serverCheckpointIds.has(conversationId))
++                                serverCheckpointIds.add(decision.wireId);
++                            const frozen = frozenRequestContexts.get(conversationId);
++                            if (frozen)
++                                frozenRequestContexts.set(decision.wireId, frozen);
+                             // The rotated id belongs to the same session lineage, so
+                             // disposal frees it too. Without this the migrated state
+                             // becomes unreachable and permanent.
+@@ -919,7 +953,7 @@
+     block[kCursorExecResolved] = true;
+ }
+ /** Exported for tests: drives one Cursor server message through the stream (exec waits mark the stream busy). */
+-export async function handleServerMessage(msg, output, stream, state, blobStore, h2Request, execHandlers, onToolResult, usageState, requestContextTools, onConversationCheckpoint) {
++export async function handleServerMessage(msg, output, stream, state, blobStore, h2Request, execHandlers, onToolResult, usageState, requestContextTools, onConversationCheckpoint, conversationId) {
+     const msgCase = msg.message.case;
+     log("serverMessage", msgCase);
+     if (msgCase === "interactionUpdate") {
+@@ -933,7 +967,7 @@
+         // AssistantMessageEvent flows until the handler finishes. Mark the wait
+         // as local work so idle watchdogs attribute the silence to the tool run
+         // instead of aborting a healthy stream.
+-        await stream.trackLocalWork(handleExecServerMessage(msg.message.value, h2Request, execHandlers, onToolResult, requestContextTools, output, stream, state));
++        await stream.trackLocalWork(handleExecServerMessage(msg.message.value, h2Request, execHandlers, onToolResult, requestContextTools, output, stream, state, conversationId));
+     }
+     else if (msgCase === "conversationCheckpointUpdate") {
+         applyCheckpointTokenDetails(msg.message.value, output, usageState);
+@@ -1216,7 +1250,7 @@
+             return;
+     }
+ }
+-async function handleExecServerMessage(execMsg, h2Request, execHandlers, onToolResult, requestContextTools, output, stream, state) {
++async function handleExecServerMessage(execMsg, h2Request, execHandlers, onToolResult, requestContextTools, output, stream, state, conversationId) {
+     const execCase = execMsg.message.case;
+     log("exec", "dispatch", { execCase, execId: execMsg.execId, hasHandlers: !!execHandlers });
+     if (!execCase) {
+@@ -1239,6 +1273,7 @@
+             output,
+             stream,
+             state,
++            conversationId,
+         });
+     }
+     catch (error) {
+@@ -1255,21 +1290,12 @@
+     }
+ }
+ async function dispatchExecServerMessage(context) {
+-    const { execMsg, h2Request, execHandlers, onToolResult, requestContextTools, output, stream, state } = context;
++    const { execMsg, h2Request, execHandlers, onToolResult, requestContextTools, output, stream, state, conversationId } = context;
+     const execCase = execMsg.message.case;
+     if (!execCase)
+         throw new Error("Expected a recognized exec message");
+     if (execCase === "requestContextArgs") {
+-        const requestContext = create(RequestContextSchema, {
+-            rules: [],
+-            repositoryInfo: [],
+-            tools: requestContextTools,
+-            gitRepos: [],
+-            projectLayouts: [],
+-            mcpInstructions: [],
+-            fileContents: {},
+-            customSubagents: [],
+-        });
++        const requestContext = pinRequestContext(conversationId, requestContextTools);
+         const requestContextResult = create(RequestContextResultSchema, {
+             result: {
+                 case: "success",
+@@ -3588,12 +3614,14 @@
+             hasUserImages = hasImages(userContent);
+         }
+     }
++    const pinnedRequestContext = pinRequestContext(state.conversationId, buildMcpToolDefinitions(context.tools));
+     const action = create(ConversationActionSchema, {
+         action: !state.forceResumeAction && userContent && (userText.trim().length > 0 || hasUserImages)
+             ? {
+                 case: "userMessageAction",
+                 value: create(UserMessageActionSchema, {
+                     userMessage: createCursorUserMessage(userContent, userText),
++                    requestContext: pinnedRequestContext,
+                 }),
+             }
+             : {
+@@ -3601,43 +3629,42 @@
+                 value: create(ResumeActionSchema, {}),
+             },
+     });
+-    // Build conversation turns from prior messages, excluding only the active
+-    // user message when the request is sending one. Resume actions must
+-    // preserve trailing tool results.
+-    const turns = buildConversationTurns(context.messages, blobStore, activeUserMessage ? activeUserMessageIndex : -1);
+-    // Cursor's server uses `rootPromptMessagesJson` (not `turns[]`) to build
+-    // the actual model prompt; without it multi-turn conversations lose prior
+-    // context.
+-    const rootPromptMessagesJson = buildRootPromptMessagesJson(context.messages, systemPromptIds, blobStore, activeUserMessage ? activeUserMessageIndex : -1);
+-    // Preserve cached non-history state fields (todos, file states, summaries)
+-    // when the system prompt is unchanged; otherwise start fresh.
+-    const cachedPromptHead = state.conversationState?.rootPromptMessagesJson?.slice(0, systemPromptIds.length) ?? [];
+-    const hasMatchingPrompt = cachedPromptHead.length === systemPromptIds.length &&
+-        systemPromptIds.every((id, idx) => Buffer.from(cachedPromptHead[idx]).equals(id));
+-    const baseState = state.conversationState && hasMatchingPrompt
+-        ? state.conversationState
+-        : create(ConversationStateStructureSchema, {
+-            rootPromptMessagesJson: systemPromptIds,
+-            turns: [],
+-            todos: [],
+-            pendingToolCalls: [],
+-            previousWorkspaceUris: [],
+-            fileStates: {},
+-            fileStatesV2: {},
+-            summaryArchives: [],
+-            turnTimings: [],
+-            subagentStates: {},
+-            selfSummaryCount: 0,
+-            readPaths: [],
++    // After the server has given us a conversation_checkpoint_update, echo that
++    // snapshot. Rebuilding rootPrompt/turns from host messages changes the
++    // model prefix and Cursor's prompt cache misses (T2 0% / later 16384).
++    let conversationState;
++    if (state.conversationState && serverCheckpointIds.has(state.conversationId)) {
++        conversationState = state.conversationState;
++    }
++    else {
++        // Seed turn (or no checkpoint yet): build from host messages.
++        const turns = buildConversationTurns(context.messages, blobStore, activeUserMessage ? activeUserMessageIndex : -1);
++        const rootPromptMessagesJson = buildRootPromptMessagesJson(context.messages, systemPromptIds, blobStore, activeUserMessage ? activeUserMessageIndex : -1);
++        const cachedPromptHead = state.conversationState?.rootPromptMessagesJson?.slice(0, systemPromptIds.length) ?? [];
++        const hasMatchingPrompt = cachedPromptHead.length === systemPromptIds.length &&
++            systemPromptIds.every((id, idx) => Buffer.from(cachedPromptHead[idx]).equals(id));
++        const baseState = state.conversationState && hasMatchingPrompt
++            ? state.conversationState
++            : create(ConversationStateStructureSchema, {
++                rootPromptMessagesJson: systemPromptIds,
++                turns: [],
++                todos: [],
++                pendingToolCalls: [],
++                previousWorkspaceUris: [],
++                fileStates: {},
++                fileStatesV2: {},
++                summaryArchives: [],
++                turnTimings: [],
++                subagentStates: {},
++                selfSummaryCount: 0,
++                readPaths: [],
++            });
++        conversationState = create(ConversationStateStructureSchema, {
++            ...baseState,
++            rootPromptMessagesJson,
++            turns,
+         });
+-    // Always override `rootPromptMessagesJson` and `turns` with content freshly
+-    // built from `context.messages`: the server-echoed checkpoint replaces
+-    // historical user entries with empty placeholders.
+-    const conversationState = create(ConversationStateStructureSchema, {
+-        ...baseState,
+-        rootPromptMessagesJson,
+-        turns,
+-    });
++    }
+     const requestedModel = state.pinnedRequestedModel ?? buildRequestedModel(model, options?.thinkingSelection);
+     const wireModelId = requestedModel.modelId;
+     const cursorMaxMode = model.compat?.cursorMaxMode === true;
