@@ -187,18 +187,28 @@ export function createNetworkHealth({
     return probe;
   }
 
+  async function warmup(origin) {
+    for (let i = 0; i < PROBE_CLASSIFY_AFTER; i += 1) {
+      if (stopped) return;
+      await probeOrigin(origin);
+    }
+  }
+
   function start() {
     if (stopped || started) return;
     started = true;
+    // 15s ticks alone need ~5 minutes before a call is classifiable.
+    // Warm the window now so the first scoreable turn can paint Speed N.
     for (const origin of origins) {
-      const tick = () => {
+      void warmup(origin).then(() => {
         if (stopped) return;
-        probeOrigin(origin);
-      };
-      tick();
-      const timer = setInterval(tick, intervalMs);
-      timer.unref?.();
-      timers.push(timer);
+        const timer = setInterval(() => {
+          if (stopped) return;
+          probeOrigin(origin);
+        }, intervalMs);
+        timer.unref?.();
+        timers.push(timer);
+      });
     }
   }
 
