@@ -1,18 +1,13 @@
 ---
 name: consult
-description: "Aside를 통해 ChatGPT Work 프로젝트에 패킷을 보내고 답을 검증한다. 일반 상담·리서치·설계 검토의 기본 경로."
+description: "Aside를 통해 ChatGPT 프로젝트에 패킷을 보내고 답을 검증한다. 일반 상담·리서치·설계 검토의 기본 경로."
 ---
 
 # Consult
 
-Begin with the workspace and the owning session's judgment. Use this when
-current external evidence, unfamiliar-domain research, or an independent read
-can materially change a costly decision. Compare the returned evidence with
-local sources and make the final decision in the owning session.
-
 Send one self-contained packet to ChatGPT through Aside. The outer agent owns
 the question, packet title, packet, ID, saved evidence, and local verification.
-The deterministic Aside REPL runner owns the normal **Work** project path;
+The deterministic Aside REPL runner owns the configured project path;
 Aside's adaptive browser skill and the Playwright implementation are not
 automatic fallback senders.
 
@@ -41,7 +36,7 @@ automatic fallback senders.
    path.
 4. Launch `scripts/run_aside_repl_consult.py` as a persistent background
    process with the exact quality and packet paths. The deterministic Aside REPL
-   process owns the same Work page from upload through send, response completion,
+   process owns the same project page from upload through send, response completion,
    and optional artifact download. It must not exit between submission and
    response because ending the REPL also ends the page's generation lifecycle.
    Submission must commit in under 120 seconds or exit `75`; never extend or
@@ -56,14 +51,17 @@ automatic fallback senders.
 5. Read the saved response and JSON evidence. Require the ID and quality
    to match the invocation.
    Before launch, reject a URL unless it is HTTPS on `chatgpt.com`, its path
-   starts with `/g/g-p-`, contains `-work/`, and ends in `/project`.
+   starts with `/g/g-p-`, and ends in `/project`. The project URL and visible
+   name come from `--url`/`CONSULT_CHATGPT_URL` and
+   `--project`/`CONSULT_PROJECT_NAME` in `~/.codex/consult.env`. Changing
+   projects is a config edit, not a code edit.
 6. For `xhigh`, require `GPT-5.6 Sol` and
    `매우 높음 (4 of 5)`. For `pro`, require `GPT-5.6 Sol` and
    `Pro (5 of 5)`. Read the exact answer from the saved response file.
 7. Confirm that the response answers the packet, then verify every material
    claim locally before acting on it. Discard an unrelated response.
 
-Never use temporary chat or global Chat. Never submit when the Work project,
+Never use temporary chat or global Chat. Never submit when the project,
 model, tier, or ID is unverified.
 
 `references/runbook.md` contains the exact Aside brief and recovery contract.
@@ -81,9 +79,9 @@ For exit `77`, keep the tab open when possible and record both
 `conversationUrl` and `targetId`. The operator may attach with `aside repl` to
 inspect or recover that exact conversation. A deliberate resend is also
 possible by rerunning the original command with new output paths, but it is
-always a new Work conversation and must never happen automatically.
+always a new project conversation and must never happen automatically.
 
 ## Completion
 
-Report the question, Work/model/tier evidence, matching ID, advice accepted
+Report the question, project/model/tier evidence, matching ID, advice accepted
 or rejected, local verification, and remaining uncertainty.
