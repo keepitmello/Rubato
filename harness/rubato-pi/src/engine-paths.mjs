@@ -3,7 +3,7 @@
 // 런처는 worktree 밖의 프로필 디렉터리에 만든 Rubato bundle을 읽는다.
 // 생성물을 소스 트리에 두지 않아서 세션별 빌드가 git 상태를 더럽히지 않는다.
 // senpi 본체는 workspace에 설치된 고정 버전을 쓴다.
-import { existsSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readlinkSync, rmSync, symlinkSync } from "node:fs";
 import { userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -83,13 +83,61 @@ export function senpiNested(...segments) {
   return join(repoRoot, "node_modules", ...segments);
 }
 
+/**
+ * 번들은 `@earendil-works/pi-tui` 를 external 로 남긴다. senpi 로더를 안 거치는
+ * `await import(rubatoExtension)` 경로(lead-overlay / adapter)는 node 가
+ * 산출물 옆 node_modules 부터 찾는다. 릴리스가 /tmp 에 빌드되면 그 심링크가
+ * 끊겨 "Cannot find package '@earendil-works/pi-tui'" 로 확장이 통째로 죽는다.
+ */
+export function engineNodeModuleLinkPairs(pluginDir, repo = repoRoot) {
+  const nested = join(repo, "node_modules", "@code-yeongyu", "senpi", "node_modules");
+  const rootModules = join(repo, "node_modules");
+  return [
+    [join(pluginDir, "node_modules"), rootModules],
+    [join(pluginDir, "extensions", "node_modules"), existsSync(nested) ? nested : rootModules],
+  ];
+}
+
+function sameSymlink(linkPath, target) {
+  try {
+    return lstatSync(linkPath).isSymbolicLink() && readlinkSync(linkPath) === target;
+  } catch {
+    return false;
+  }
+}
+
+export function ensureEngineNodeModules(pluginDir = enginePluginDir, repo = repoRoot) {
+  if (!pluginDir || !existsSync(pluginDir)) return [];
+  const linked = [];
+  for (const [linkPath, target] of engineNodeModuleLinkPairs(pluginDir, repo)) {
+    if (!existsSync(target)) continue;
+    if (sameSymlink(linkPath, target)) continue;
+    try {
+      if (existsSync(linkPath) && !lstatSync(linkPath).isSymbolicLink()) continue;
+    } catch {
+      // Missing or dangling link — replace below.
+    }
+    mkdirSync(dirname(linkPath), { recursive: true });
+    rmSync(linkPath, { recursive: true, force: true });
+    symlinkSync(target, linkPath, "dir");
+    linked.push(linkPath);
+  }
+  return linked;
+}
+
 /** 없으면 세션이 못 뜨므로, 부팅 실패를 사유와 함께 세운다. */
 export function assertEngineBuilt(env = process.env) {
   const pluginDir = resolveEnginePluginDir(env);
   const extension = join(pluginDir, "extensions", "rubato.js");
-  if (existsSync(extension)) return;
-  throw new Error(
-    `rubato-pi: 엔진 산출물이 없다 - ${extension}\n` +
-      `repository root에서 빌드해라: node harness/scripts/build-engine.mjs (bun 1.4+)`,
-  );
+  if (!existsSync(extension)) {
+    throw new Error(
+      `rubato-pi: 엔진 산출물이 없다 - ${extension}\n` +
+        `repository root에서 빌드해라: node harness/scripts/build-engine.mjs (bun 1.4+)`,
+    );
+  }
+  ensureEngineNodeModules(pluginDir);
+}
+
+if (looksLikeEnginePluginDir(enginePluginDir)) {
+  ensureEngineNodeModules(enginePluginDir);
 }
