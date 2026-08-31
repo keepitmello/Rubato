@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { act, render, screen } from "@testing-library/react"
+import { act, fireEvent, render, screen } from "@testing-library/react"
 import { App } from "./App"
 import { useAppStore } from "./lib/store"
 
@@ -85,5 +85,32 @@ describe("app theme", () => {
     act(() => media.setMatches(false))
     expect(document.documentElement.classList.contains("dark")).toBe(false)
     expect(konstaDark(container)).toBe(false)
+  })
+})
+
+describe("app updates", () => {
+  afterEach(() => vi.unstubAllEnvs())
+
+  test("activates the waiting worker before reloading", async () => {
+    vi.stubEnv("DEV", false)
+    history.replaceState(null, "", "/")
+    useAppStore.setState({ preferences: { ...defaultPreferences } })
+    stubColorScheme(false)
+    const waiting = { postMessage: vi.fn() }
+    const controller = { postMessage: vi.fn() }
+    const registration = { waiting, addEventListener: vi.fn() }
+    const serviceWorker = { controller, register: vi.fn().mockResolvedValue(registration), addEventListener: vi.fn() }
+    Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: serviceWorker })
+
+    renderApp()
+    await vi.waitFor(() => expect(serviceWorker.register).toHaveBeenCalled())
+    const updateButton = await screen.findByRole("button", { name: "지금 업데이트" })
+    expect(updateButton).not.toBeDisabled()
+    fireEvent.click(updateButton)
+
+    expect(serviceWorker.addEventListener).toHaveBeenCalledWith("controllerchange", expect.any(Function), { once: true })
+    expect(waiting.postMessage).toHaveBeenCalledWith({ type: "SKIP_WAITING" })
+    expect(controller.postMessage).not.toHaveBeenCalled()
+    expect(await screen.findByRole("button", { name: "업데이트 중…" })).toBeDisabled()
   })
 })

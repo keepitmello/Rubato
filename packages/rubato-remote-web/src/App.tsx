@@ -30,6 +30,8 @@ export function App() {
   const preferences = useAppStore((state) => state.preferences)
   const [systemDark, setSystemDark] = useState(systemPrefersDark)
   const [updateReady, setUpdateReady] = useState(false)
+  const [updating, setUpdating] = useState(false)
+  const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null)
   const dark = resolveDark(preferences.darkMode, systemDark)
   useEffect(() => { void listRegisteredHosts().then(setHosts) }, [setHosts])
   useLayoutEffect(() => {
@@ -44,15 +46,26 @@ export function App() {
   useEffect(() => {
     if (!("serviceWorker" in navigator) || import.meta.env.DEV || new URLSearchParams(location.search).has("fixture")) return
     void navigator.serviceWorker.register("/rubato/sw.js", { scope: "/rubato/" }).then((registration) => {
-      if (registration.waiting) setUpdateReady(true)
-      registration.addEventListener("updatefound", () => registration.installing?.addEventListener("statechange", () => { if (registration.waiting) setUpdateReady(true) }))
+      const showWaitingUpdate = () => {
+        if (!registration.waiting) return
+        setWaitingWorker(registration.waiting)
+        setUpdateReady(true)
+      }
+      showWaitingUpdate()
+      registration.addEventListener("updatefound", () => registration.installing?.addEventListener("statechange", showWaitingUpdate))
     })
   }, [])
+  const applyUpdate = () => {
+    if (!waitingWorker) { setUpdateReady(false); return }
+    setUpdating(true)
+    navigator.serviceWorker.addEventListener("controllerchange", () => location.reload(), { once: true })
+    waitingWorker.postMessage({ type: "SKIP_WAITING" })
+  }
   return <KonstaApp theme="ios" dark={dark} safeAreas>
     {route.name === "inventory" ? <InventoryScreen /> : null}
     {route.name === "new" ? <NewSessionScreen /> : null}
     {route.name === "settings" ? <SettingsScreen /> : null}
     {route.name === "session" ? <SessionScreen hostId={route.hostId} liveSessionId={route.liveSessionId} /> : null}
-    <Dialog opened={updateReady} title="새 버전" content="새 버전을 사용할 수 있어요." buttons={<DialogButton strong onClick={() => { navigator.serviceWorker.controller?.postMessage({ type: "SKIP_WAITING" }); location.reload() }}>지금 업데이트</DialogButton>} />
+    <Dialog opened={updateReady} title="새 버전" content="새 버전을 사용할 수 있어요." buttons={<DialogButton strong disabled={updating} onClick={applyUpdate}>{updating ? "업데이트 중…" : "지금 업데이트"}</DialogButton>} />
   </KonstaApp>
 }
