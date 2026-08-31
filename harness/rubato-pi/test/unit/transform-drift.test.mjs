@@ -56,6 +56,7 @@ test("the pinned engine still gets every transform applied", async () => {
   const result = await runLoad(interactiveUrl, pinned);
   const out = String(result.source);
   assert.match(out, /rubato\.busyEnter\.injected/);
+  assert.match(out, /rubato\.footer\.injected/);
   assert.match(out, /streamingBehavior: "followUp"/);
   assert.doesNotMatch(out, /text === "\/changelog"/);
 });
