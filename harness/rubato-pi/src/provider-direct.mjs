@@ -18,6 +18,7 @@ import {
   XAI_PICKER_IDS,
   withPickerIds,
 } from "./picker-catalog.mjs";
+import { injectXaiPriority } from "./aside-cursor-lock.mjs";
 import { wrapProviderStreams } from "./rubato-stream.mjs";
 import { speedIndexStore } from "./speed-index-store.mjs";
 import { SPEED_INDEX_NETWORK_ROUTES } from "./speed-index-routes.mjs";
@@ -175,6 +176,57 @@ function withContextWindowCap(provider, cap) {
   };
 }
 
+const XAI_GROK_46_ID = "grok-4.6";
+
+function isXaiGrok46(model) {
+  return model?.id === XAI_GROK_46_ID;
+}
+
+function wrapFetchWithXaiPriority(fetchImpl) {
+  const fetchFn = fetchImpl ?? globalThis.fetch;
+  return async (url, init = {}) => {
+    const next = { ...init };
+    if (typeof next.body === "string") next.body = injectXaiPriority(next.body);
+    return fetchFn(url, next);
+  };
+}
+
+function withXaiPriorityCall(inner) {
+  if (typeof inner !== "function") return inner;
+  return (model, context, options = {}) => {
+    if (!isXaiGrok46(model)) return inner(model, context, options);
+    return inner(model, context, {
+      ...options,
+      serviceTier: "priority",
+      fetch: wrapFetchWithXaiPriority(options.fetch),
+    });
+  };
+}
+
+/**
+ * Rubato xAI grok-4.6 은 default 차로가 없다. catalog 에 priority 를 박고,
+ * streamSimple 이 serviceTier 를 버려도 fetch 에서 다시 넣는다.
+ */
+function withXaiGrokPriority(provider) {
+  const nativeGetModels = provider.getModels.bind(provider);
+  const wrapPair = (source) => ({
+    ...(typeof source?.stream === "function" ? { stream: withXaiPriorityCall(source.stream) } : {}),
+    ...(typeof source?.streamSimple === "function"
+      ? { streamSimple: withXaiPriorityCall(source.streamSimple) }
+      : {}),
+  });
+  const top = wrapPair(provider);
+  const nested = provider?.api ? wrapPair(provider.api) : undefined;
+  return {
+    ...provider,
+    ...top,
+    ...(nested ? { api: { ...provider.api, ...nested } } : {}),
+    getModels: () => nativeGetModels().map((model) => (
+      isXaiGrok46(model) ? { ...model, serviceTier: "priority" } : model
+    )),
+  };
+}
+
 /**
  * 직결로 등록할 provider 들. 전부 pinned factory 로 만들고 Rubato decorator 로 감싼다.
  *
@@ -199,10 +251,9 @@ export async function directProviders({ cursor, anthropic, kiro, antigravity, en
     CODEX_PICKER_IDS,
   );
 
-  // xAI metadata 는 pinned 그대로다. `grok-4.6` 의 `xhigh` 는 pinned map 에 이미 있고
-  // (`thinkingLevelMap.xhigh === "xhigh"`), 우리가 다시 적으면 pin 과 어긋날 뿐이다.
-  // 피커만 현재 세대(grok-4.6)로 줄인다 — 4.3/4.5 는 예전 FX 목록에 없었다.
-  const xai = withPickerIds(xaiProvider(), XAI_PICKER_IDS);
+  // xAI 의 `xhigh` map 은 pinned 그대로다. grok-4.6 만 priority 로 고정한다 —
+  // 피커에 Fast 변형을 만들지 않고, 같은 id 의 기본 차로를 priority 로 둔다.
+  const xai = withXaiGrokPriority(withPickerIds(xaiProvider(), XAI_PICKER_IDS));
 
   // Anthropic 은 pinned provider + setup-token fallback resolver 하나다. 모델 정의도,
   // wire 도, tool 이름 규칙도 손대지 않는다 — pinned OAuth 경로가 전부 소유한다.

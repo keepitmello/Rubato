@@ -108,6 +108,10 @@ test("does not read a variant token that merely prefixes a longer word", () => {
 test("appends reasoning effort next to the short model name", () => {
   assert.equal(formatModelWithEffort("anthropic/claude-opus-5", "high"), "Opus 5 high");
   assert.equal(formatModelWithEffort("xai/grok-4.6", "xhigh"), "Grok 4.6 xhigh");
+  assert.equal(
+    formatModelWithEffort("xai/grok-4.6", "xhigh", { id: "grok-4.6", provider: "xai", serviceTier: "priority" }),
+    "Grok 4.6 xhigh [fast]",
+  );
   assert.equal(formatModelWithEffort("cursor/cursor-grok-4.6", "high"), "Grok 4.6 high [fast]");
   assert.equal(
     formatModelWithEffort("cursor/cursor-grok-4.6", "high", {

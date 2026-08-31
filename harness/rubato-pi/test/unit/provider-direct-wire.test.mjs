@@ -133,6 +133,20 @@ test("base 모델의 body 에는 service_tier 가 없다", async () => {
   assert.ok(!("service_tier" in captured.body), "base 에 tier 가 붙으면 항상 우선 처리로 나간다");
 });
 
+test("xAI grok-4.6 streamSimple body 에 service_tier:priority 가 들어간다", async () => {
+  const [, xai] = await directProviders();
+  const captured = {};
+  const grok = modelById(xai, "grok-4.6");
+  assert.equal(grok.serviceTier, "priority");
+  await drain(xai.streamSimple(
+    grok,
+    { messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }] },
+    { fetch: capturingFetch(textDone(), captured), apiKey: API_KEY, maxRetries: 0, env: {} },
+  ));
+  assert.equal(captured.body.model, "grok-4.6");
+  assert.equal(captured.body.service_tier, "priority");
+});
+
 test("pinned Sol Fast 도 같은 계약을 지킨다", async () => {
   const codex = await codexProvider();
   const captured = {};
