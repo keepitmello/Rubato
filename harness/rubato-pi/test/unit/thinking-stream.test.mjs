@@ -9,6 +9,7 @@ import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { senpiDir, senpiNested } from "../../src/engine-paths.mjs";
+import { assistantInternalActionsHref } from "../../src/transforms/assistant-message.mjs";
 import { nodeChildEnv, resolveNodeExecutable } from "../helpers/node-executable.mjs";
 
 const assistantPath = join(senpiDir, "dist/modes/interactive/components/assistant-message.js");
@@ -50,7 +51,7 @@ const visible = (lines) => lines.join("\n").replace(/\x1b\][^\x07\x1b]*(\x07|\x1
 if (runtime) test("collapsed thinking never leaks prose while deltas arrive", async () => {
   await initThemeOnce();
   const { AssistantMessageComponent } = await import(`${pathToFileURL(assistantPath).href}?stream=${Date.now()}`);
-  const { dispatchInternalAction } = await import(pathToFileURL(join(senpiDir, "dist/modes/interactive/internal-actions.js")).href);
+  const { dispatchInternalAction } = await import(assistantInternalActionsHref());
   // 빈 thinking 은 디스크립터가 아예 안 생기므로 첫 조각부터 채워서 시작한다.
   const message = { role: "assistant", content: [{ type: "thinking", thinking: "첫 번째 단서를 본다", startedAt: Date.now() }], timestamp: Date.now(), stopReason: "stop" };
   const component = new AssistantMessageComponent(message, true);
@@ -77,7 +78,7 @@ if (runtime) test("collapsed thinking never leaks prose while deltas arrive", as
 if (runtime) test("expanded thinking grows with each delta", async () => {
   await initThemeOnce();
   const { AssistantMessageComponent } = await import(`${pathToFileURL(assistantPath).href}?stream=${Date.now()}`);
-  const { dispatchInternalAction } = await import(pathToFileURL(join(senpiDir, "dist/modes/interactive/internal-actions.js")).href);
+  const { dispatchInternalAction } = await import(assistantInternalActionsHref());
   const { getOsc8LinkAtColumn } = await import(pathToFileURL(join(senpiNested("@earendil-works/pi-tui/dist"), "utils.js")).href);
 
   // 이미 끝난 사고로 시작한다 — 자동 판정이 접어 두므로 손으로 펴는 경로를 볼 수 있다.
@@ -166,7 +167,7 @@ if (runtime) test("thinking auto-expands while streaming and collapses when it e
 if (runtime) test("a manual toggle overrides the automatic lifecycle", async () => {
   await initThemeOnce();
   const { AssistantMessageComponent } = await import(`${pathToFileURL(assistantPath).href}?stream=${Date.now()}`);
-  const { dispatchInternalAction } = await import(pathToFileURL(join(senpiDir, "dist/modes/interactive/internal-actions.js")).href);
+  const { dispatchInternalAction } = await import(assistantInternalActionsHref());
   const started = Date.now();
   const message = {
     role: "assistant",
@@ -218,7 +219,7 @@ if (runtime) test("each thinking run collapses on its own lifecycle", async () =
 if (runtime) test("a manual toggle does not leak into the next thinking run", async () => {
   await initThemeOnce();
   const { AssistantMessageComponent } = await import(`${pathToFileURL(assistantPath).href}?stream=${Date.now()}`);
-  const { dispatchInternalAction } = await import(pathToFileURL(join(senpiDir, "dist/modes/interactive/internal-actions.js")).href);
+  const { dispatchInternalAction } = await import(assistantInternalActionsHref());
   const t0 = Date.now();
   const message = { role: "assistant", content: [{ type: "thinking", thinking: "첫 사고", startedAt: t0 }], timestamp: t0, stopReason: "stop" };
   const component = new AssistantMessageComponent(message, true);

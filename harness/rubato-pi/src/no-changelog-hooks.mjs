@@ -84,7 +84,9 @@ export async function load(url, context, nextLoad) {
     }
   } else if (isTerminalModuleUrl(url)) {
     next = applyTransform(next, (text) => injectTitleGuard(text, titleGuardHref()));
-  } else if (url.includes("@code-yeongyu/senpi/dist/")) {
+  } else if (url.includes("@code-yeongyu/senpi/dist/") || isCollapsibleToolGroupUrl(url)) {
+    // isCollapsibleToolGroupUrl 은 in-repo tool-group-component.mjs 도 받는다 —
+    // 벤더 패치가 만들던 파일의 이사밄 모듈이라 같은 주입을 받아야 한다.
     if (isBusyEnterModuleUrl(url)) next = applyTransform(next, (text) => injectBusyEnter(text, busyEnterHref()));
     if (isRubatoFooterModuleUrl(url)) next = applyTransform(next, (text) => injectRubatoFooter(text, rubatoFooterHref()));
     if (isCollapsibleAssistantUrl(url)) next = applyTransform(next, injectCollapsibleAssistant);

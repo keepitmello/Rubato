@@ -20,7 +20,12 @@ export function isCollapsibleToolExecutionUrl(url) {
 }
 
 export function isCollapsibleToolGroupUrl(url) {
-  return url.includes("@code-yeongyu/senpi/dist/modes/interactive/components/tool-group.js");
+  // tool-group 은 벤더 패치가 만들던 파일이었고, depatch 이후 정본은 in-repo
+  // tool-group-component.mjs 다. 둘 다 받아야 예전 설치본과 순정 설치본이 같이 산다.
+  return (
+    url.includes("@code-yeongyu/senpi/dist/modes/interactive/components/tool-group.js") ||
+    url.includes("harness/rubato-pi/src/transforms/tool-group-component.mjs")
+  );
 }
 
 export function actionLineMarker(url) {
@@ -64,8 +69,8 @@ export function injectCollapsibleToolGroup(source) {
   if (source.includes(TOOL_GROUP_MARKER)) return source;
   return replaceOnce(
     source,
-    "        if (this.expanded) return super.render(width);",
-    `        // ${TOOL_GROUP_MARKER}\n        if (this.expanded) {\n            const marker = \`\\x1b]8;;\${this.toggleAction.url}\\x1b\\\\\\x1b]8;;\\x1b\\\\\`;\n            return super.render(width).map((line) => marker + line);\n        }`,
+    "    if (this.expanded) return super.render(width);",
+    `    // ${TOOL_GROUP_MARKER}\n    if (this.expanded) {\n        const marker = \`\\x1b]8;;\${this.toggleAction.url}\\x1b\\\\\\x1b]8;;\\x1b\\\\\`;\n        return super.render(width).map((line) => marker + line);\n    }`,
     "expanded tool group",
   );
 }
