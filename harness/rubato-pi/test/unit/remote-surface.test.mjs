@@ -146,6 +146,80 @@ test("registration honors negotiation and reconnect credentials", async () => {
   assert.equal(closed, true);
 });
 
+test("failed registration closes its socket before reconnecting", async () => {
+  let closed = false;
+  const invalidProtocol = {
+    ...protocol,
+    surfaceToHubFrameSchema: { parse: () => { throw new Error("invalid registration"); } },
+  };
+  const surface = new RemoteSurface({}, invalidProtocol, {
+    surfaceToken: "surface-token",
+    connect: async () => ({ send() {}, close: () => { closed = true; } }),
+    clock: { now: () => 1_000, setTimeout: () => 1, clearTimeout, setInterval, clearInterval },
+  });
+  await surface.connectNow();
+  assert.equal(closed, true);
+  assert.equal(surface.connection, undefined);
+});
+
+test("repeated pre-registration failures back off instead of resetting", async () => {
+  const delays = [];
+  let onClose = () => {};
+  const surface = new RemoteSurface({}, protocol, {
+    surfaceToken: "surface-token",
+    connect: async (_onMessage, close) => {
+      onClose = close;
+      return { send() {}, close() {} };
+    },
+    clock: {
+      now: () => 1_000,
+      setTimeout: (fn, delay) => {
+        delays.push(delay);
+        return delay;
+      },
+      clearTimeout,
+      setInterval,
+      clearInterval,
+    },
+  });
+  await surface.connectNow();
+  onClose();
+  assert.deepEqual(delays, [250]);
+  surface.reconnectTimer = undefined;
+  await surface.connectNow();
+  onClose();
+  assert.deepEqual(delays, [250, 500]);
+  surface.reconnectTimer = undefined;
+  await surface.connectNow();
+  onClose();
+  assert.deepEqual(delays, [250, 500, 1_000]);
+  surface.reconnectTimer = undefined;
+  await surface.connectNow();
+  await surface.receive(registered);
+  onClose();
+  assert.deepEqual(delays, [250, 500, 1_000, 250]);
+});
+
+test("registration survives Pi methods that throw during extension loading", async () => {
+  const sent = [];
+  let closed = false;
+  const surface = new RemoteSurface({
+    getSessionName: () => { throw new Error("Extension runtime not initialized. Action methods cannot be called during extension loading."); },
+    getInteractiveControl: () => { throw new TypeError("Cannot assign to read only property 'setSessionName' of object '#<Object>'"); },
+  }, protocol, {
+    surfaceToken: "surface-token",
+    connect: async () => ({ send: (value) => sent.push(value), close: () => { closed = true; } }),
+    clock: { now: () => 1_000, setTimeout: () => 1, clearTimeout, setInterval, clearInterval },
+  });
+  surface.context = { cwd: "/tmp/project" };
+  await surface.connectNow();
+  assert.equal(closed, false);
+  assert.equal(sent[0]?.kind, "surface.register");
+  assert.equal(sent[0]?.summary.title, "project");
+  assert.deepEqual(sent[0]?.summary.capabilities, ["terminal-required"]);
+  assert.equal(surface.emitSnapshot().kind, "surface.snapshot");
+});
+
 test("snapshot command inventory is exactly the attached Pi surface inventory", () => {
   const commands = [
     { name: "skill:review", description: "Review", category: "skill", remoteMode: "direct", privatePath: "/secret" },
