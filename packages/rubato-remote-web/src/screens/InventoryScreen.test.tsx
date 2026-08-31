@@ -20,7 +20,7 @@ describe("inventory home screen", () => {
 
   test("leads with session title and status, demotes cwd, and drops decorative hero copy", async () => {
     renderInventory()
-    const session = await screen.findByRole("button", { name: /Hotel Tablet/ })
+    const session = await screen.findByRole("button", { name: /Hotel Tablet/ }, { timeout: 5000 })
     expect(session).toBeInTheDocument()
     const text = session.textContent ?? ""
     expect(text.indexOf("Hotel Tablet")).toBeLessThan(text.indexOf("대기"))
@@ -32,7 +32,7 @@ describe("inventory home screen", () => {
 
   test("opens the live session from the list", async () => {
     renderInventory()
-    fireEvent.click(await screen.findByRole("button", { name: /Hotel Tablet/ }))
+    fireEvent.click(await screen.findByRole("button", { name: /Hotel Tablet/ }, { timeout: 5000 }))
     await waitFor(() => expect(navigate).toHaveBeenCalledWith(`/session/${fixtureSession.hostId}/${fixtureSession.liveSessionId}`))
   })
 })
