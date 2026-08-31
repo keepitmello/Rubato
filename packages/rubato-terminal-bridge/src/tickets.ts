@@ -62,6 +62,15 @@ export class TerminalLaunchTicketStore implements TerminalTicketValidationHook {
       && record.zmxName === identity.zmxName
   }
 
+  peek(ticket: string, origin: string): TerminalLaunchIdentity | null {
+    if (!isOpaqueTicket(ticket)) return null
+    this.#purge()
+    const digest = hash(ticket)
+    const record = this.#records.get(digest.toString("hex"))
+    if (!record || record.expiresAt <= this.#now() || !timingSafeEqual(record.digest, digest) || record.origin !== origin) return null
+    return { origin: record.origin, ownerLogin: record.ownerLogin, zmxName: record.zmxName }
+  }
+
   get size(): number {
     this.#purge()
     return this.#records.size

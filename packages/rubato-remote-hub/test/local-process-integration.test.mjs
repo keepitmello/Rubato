@@ -40,7 +40,8 @@ test("real hub create/list/attach/kill preserves PID and Vault resume does not d
   executable(fakeZmx, `#!${process.execPath}\nimport { openSync,readFileSync,writeFileSync } from "node:fs";import { spawn } from "node:child_process";import { createConnection } from "node:net";\nconst path=process.env.MOCK_ZMX_STATE;const read=()=>{try{return JSON.parse(readFileSync(path,"utf8"))}catch{return {sessions:{},runs:0}}};const save=(s)=>writeFileSync(path,JSON.stringify(s));const send=(value)=>new Promise((resolve)=>{const socket=createConnection(process.env.MOCK_EVENT_SOCKET);socket.end(JSON.stringify(value)+"\\n",resolve)});const [command,...args]=process.argv.slice(2);const state=read();\nif(command==="version"){console.log("zmx 0.7.1-rubato");process.exit(0)}\nif(command==="run"){const [name,_detach,script]=args;const log=openSync(process.env.MOCK_PROCESS_LOG,"a");const child=spawn("/bin/sh",["-c",script],{detached:true,stdio:["ignore",log,log],env:{...process.env,ZMX_SESSION:name}});child.unref();state.sessions[name]={pid:child.pid,labels:{}};state.runs++;save(state);process.exit(0)}\nif(command==="set"){const [name,...fields]=args;for(const field of fields){const at=field.indexOf("=");state.sessions[name].labels[field.slice(0,at)]=field.slice(at+1)}save(state);process.exit(0)}\nif(command==="list"){for(const name of Object.keys(state.sessions))console.log(name);process.exit(0)}\nif(command==="get"){const session=state.sessions[args[0]];if(args[1]==="pid")console.log(session?.pid??"");else console.log(session?.labels?.[args[1]]??"");process.exit(0)}\nif(command==="attach"){const session=state.sessions[args[0]];await send({kind:"attach",pid:session.pid});process.exit(0)}\nif(command==="kill"){const session=state.sessions[args[0]];if(session)process.kill(session.pid,"SIGTERM");delete state.sessions[args[0]];save(state);process.exit(0)}\nprocess.exit(2);\n`);
 
   const env = { ...process.env, MOCK_ZMX_STATE: statePath, MOCK_EVENT_SOCKET: eventPath, MOCK_PROCESS_LOG: processLog };
-  const processAdapter = new ZmxProcessAdapter({ zmx: fakeZmx, bootstrap, descriptorRoot: join(root, "launch"), runner: new EnvironmentRunner(env) });
+  const runner = new EnvironmentRunner(env);
+  const processAdapter = new ZmxProcessAdapter({ zmx: fakeZmx, bootstrap, descriptorRoot: join(root, "launch"), runner, launcher: new FakeDetachedLauncher(runner) });
   const registry = new LiveRegistry(HOST_ID, processAdapter);
   const journal = new EventJournal(join(root, "journal"), join(root, "snapshots"), HOST_ID);
   await journal.load();
@@ -96,6 +97,16 @@ class EnvironmentRunner {
   async run(file, args, options = {}) {
     const { execFile } = await import("node:child_process");
     return new Promise((resolveRun, reject) => execFile(file, [...args], { env: this.env, timeout: options.timeoutMs ?? 10_000 }, (error, stdout, stderr) => error ? reject(error) : resolveRun({ stdout, stderr })));
+  }
+}
+
+class FakeDetachedLauncher {
+  constructor(runner) { this.runner = runner; }
+  async launch(file, args) {
+    const nameIndex = 3;
+    const command = args.slice(nameIndex + 1).map((value) => `'${String(value).replaceAll("'", "'\\''")}'`).join(" ");
+    await this.runner.run(file, ["run", args[nameIndex], "-d", command]);
+    await this.runner.run(file, ["set", args[nameIndex], ...String(args[2]).split(" ")]);
   }
 }
 

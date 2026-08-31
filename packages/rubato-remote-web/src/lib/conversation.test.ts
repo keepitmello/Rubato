@@ -15,6 +15,16 @@ describe("conversation events", () => {
     expect(state.lastSeq).toBe(1828)
   })
 
+  test("renders real Pi nested message events with stable ids and cumulative updates", () => {
+    const base = { ...canonicalEvent, hostId: fixtureSnapshot.summary.hostId, liveSessionId: fixtureSnapshot.summary.liveSessionId }
+    const message = (text: string) => ({ role: "assistant", content: [{ type: "text", text }], timestamp: 1_788_147_096_682 })
+    let state = reduceConversation(initial, eventEnvelopeSchema.parse({ ...base, seq: 1, type: "message.start", payload: { event: { type: "message_start", message: message("") } } }))
+    state = reduceConversation(state, eventEnvelopeSchema.parse({ ...base, seq: 2, type: "message.delta", payload: { event: { type: "message_update", message: message("REMOTE") } } }))
+    state = reduceConversation(state, eventEnvelopeSchema.parse({ ...base, seq: 3, type: "message.delta", payload: { event: { type: "message_update", message: message("REMOTE_SMOKE_OK") } } }))
+    state = reduceConversation(state, eventEnvelopeSchema.parse({ ...base, seq: 4, type: "message.commit", payload: { event: { type: "message_end", message: message("REMOTE_SMOKE_OK") } } }))
+    expect(state.entries).toEqual([{ id: "pi-message-1788147096682", kind: "message", role: "assistant", text: "REMOTE_SMOKE_OK", streaming: false, at: canonicalEvent.at }])
+  })
+
   test("deduplicates replayed events and requests a snapshot for a sequence gap", () => {
     const event = eventEnvelopeSchema.parse(canonicalEvent)
     const state = reduceConversation({ ...initial, lastSeq: event.seq - 1 }, event)
@@ -45,6 +55,15 @@ describe("conversation events", () => {
     const recovered = applyConversationSnapshot({ ...fixtureSnapshot, lastSeq: 12, entries: [{ id: "message-live", kind: "message", role: "assistant", text: "snapshot owns it", streaming: true }] }, recovering)
     expect(recovered.entries).toEqual([{ id: "message-live", kind: "message", role: "assistant", text: "snapshot owns it", streaming: true }])
     expect(recovered.bufferedEvents).toEqual([])
+  })
+
+  test("recovers immediately when a reconnect supplies the missing frame", () => {
+    const seq12 = eventEnvelopeSchema.parse({ ...canonicalEvent, seq: 12, payload: { ephemeralMessageId: "message-live", delta: " twelve" } })
+    const seq11 = eventEnvelopeSchema.parse({ ...canonicalEvent, seq: 11, payload: { ephemeralMessageId: "message-live", delta: " eleven" } })
+    const recovering = reduceConversation({ ...initial, lastSeq: 10 }, seq12)
+    const recovered = reduceConversation(recovering, seq11)
+    expect(recovered).toMatchObject({ lastSeq: 12, requiresSnapshot: false, bufferedEvents: [] })
+    expect(recovered.entries).toEqual([{ id: "message-live", kind: "message", role: "assistant", text: " eleven twelve", streaming: true }])
   })
 
   test("detects a second gap during replay and keeps its tail for another snapshot", () => {

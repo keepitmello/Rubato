@@ -92,7 +92,7 @@ surfaceServer.setControl(hub, {
 })
 
 await Promise.all([pairing.load(), push.load(), hub.start(), surfaceServer.listen()])
-const app = createHttpApp({ config, hub, pairing, tickets, terminalTickets, identity, push })
+const app = createHttpApp({ config, hub, pairing, tickets, terminalTickets, identity, push, webRoot: join(import.meta.dirname, "..", "web") })
 const server = serve({ fetch: app.fetch, hostname: "127.0.0.1", port: config.httpPort }) as HttpServer
 const sockets = new HubWebSocketServer({ server, identity, ownerLogin: config.ownerLogin, pairing, tickets, terminalTickets, journal, zmxBinary: zmxPath })
 

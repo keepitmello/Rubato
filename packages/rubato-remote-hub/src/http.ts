@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto"
+import { readFile, stat } from "node:fs/promises"
+import { basename, extname, resolve, sep } from "node:path"
 import { Hono, type Context } from "hono"
 import { getConnInfo } from "@hono/node-server/conninfo"
 import {
@@ -21,6 +23,7 @@ import {
   type HostDescriptionResponse,
   type HostInventoryResponse,
   type LiveSessionId,
+  type ProjectListResponse,
   type PushProfileImportResponse,
   type PushSubscribeResponse,
   type RemoteErrorCode,
@@ -45,6 +48,7 @@ export interface HttpApiDependencies {
   readonly terminalTickets: TerminalLaunchTicketStore
   readonly identity: IdentityVerifier
   readonly push: PushProfileStore
+  readonly webRoot?: string
   readonly remoteAddress?: (context: Context) => string | undefined
 }
 
@@ -112,7 +116,7 @@ export function createHttpApp(dependencies: HttpApiDependencies): Hono<HttpEnvir
     if (context.req.path === REMOTE_HTTP_ROUTES.health || context.req.path.startsWith(`${REMOTE_HTTP_API_PREFIX}/pair/`)) return next()
     const identity = await authenticate(context, dependencies, remoteAddress)
     if (!identity || !isOwner(identity, dependencies.config.ownerLogin)) return error(context, 401, "unauthorized", "Owner identity required")
-    if (!dependencies.pairing.isPaired(context.req.header("origin"))) {
+    if (!pairedRequestOrigin(context, dependencies.pairing)) {
       return error(context, 403, "origin_not_paired", "Origin is not paired")
     }
     context.set("identity", identity)
@@ -262,11 +266,84 @@ export function createHttpApp(dependencies: HttpApiDependencies): Hono<HttpEnvir
 
   app.post(REMOTE_HTTP_ROUTES.pushRotate, async (context) => context.json(await dependencies.push.rotate()))
 
+  app.get(REMOTE_HTTP_ROUTES.projectsRecent, (context) => {
+    const seen = new Set<string>()
+    const projects = dependencies.hub.registry.list().flatMap((session) => {
+      if (!session.cwd || seen.has(session.cwd)) return []
+      seen.add(session.cwd)
+      return [{ path: session.cwd, label: basename(session.cwd) || session.cwd, source: "recent" as const }]
+    })
+    return context.json({ projects } satisfies ProjectListResponse)
+  })
+  app.get(REMOTE_HTTP_ROUTES.projectsFavorites, (context) => context.json({ projects: [] } satisfies ProjectListResponse))
+
+  app.all(`${REMOTE_HTTP_API_PREFIX}/*`, (context) => error(context, 404, "invalid_action", "Route not found"))
+  if (dependencies.webRoot) {
+    const webRoot = resolve(dependencies.webRoot)
+    app.get("/rubato", (context) => context.redirect("/rubato/"))
+    app.get("/rubato/*", async (context) => serveWebAsset(context, webRoot))
+  }
+
   app.notFound((context) => error(context, 404, "invalid_action", "Route not found"))
   app.onError((cause, context) => cause instanceof HttpInputError
     ? error(context, cause.message === "payload_too_large" ? 413 : 400, cause.message === "payload_too_large" ? "payload_too_large" : "invalid_action", cause.message === "payload_too_large" ? "Payload is too large" : "Invalid request")
     : error(context, 500, "internal_error", "Internal error"))
   return app
+}
+
+function pairedRequestOrigin(context: Context, pairing: PairingService): string | null {
+  const explicit = context.req.header("origin")
+  if (explicit !== undefined) return pairing.isPaired(explicit) ? explicit : null
+  const requestHost = new URL(context.req.url).host
+  for (const host of [context.req.header("x-forwarded-host"), context.req.header("host"), requestHost]) {
+    if (!host || host.includes(",") || host.includes("/") || host.includes("\\")) continue
+    try {
+      const origin = new URL(`https://${host}`).origin
+      if (pairing.isPaired(origin)) return origin
+    } catch {}
+  }
+  return null
+}
+
+async function serveWebAsset(context: Context, webRoot: string): Promise<Response> {
+  let relative: string
+  try {
+    relative = decodeURIComponent(context.req.path.slice("/rubato/".length))
+  } catch {
+    return error(context, 404, "invalid_action", "Route not found")
+  }
+  if (relative.includes("\0") || relative.includes("\\") || relative.split("/").includes("..")) return error(context, 404, "invalid_action", "Route not found")
+  const requested = resolve(webRoot, relative)
+  if (requested !== webRoot && !requested.startsWith(`${webRoot}${sep}`)) return error(context, 404, "invalid_action", "Route not found")
+  const candidate = await stat(requested).then((info) => info.isFile() ? requested : null).catch(() => null)
+  const file = candidate ?? (extname(relative) ? null : resolve(webRoot, "index.html"))
+  if (!file) return error(context, 404, "invalid_action", "Route not found")
+  const bytes = await readFile(file).catch(() => null)
+  if (!bytes) return error(context, 404, "invalid_action", "Route not found")
+  const extension = extname(file).toLowerCase()
+  const contentType = WEB_CONTENT_TYPES[extension] ?? "application/octet-stream"
+  const immutable = relative.startsWith("assets/") && /-[A-Za-z0-9_-]{6,}\./.test(relative)
+  return new Response(new Uint8Array(bytes), {
+    headers: {
+      "content-type": contentType,
+      "cache-control": immutable ? "public, max-age=31536000, immutable" : "no-cache",
+      "content-security-policy": "default-src 'self'; connect-src 'self' wss:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; frame-ancestors 'none'; base-uri 'none'",
+      "x-content-type-options": "nosniff",
+      "referrer-policy": "no-referrer",
+    },
+  })
+}
+
+const WEB_CONTENT_TYPES: Readonly<Record<string, string>> = {
+  ".css": "text/css; charset=utf-8",
+  ".html": "text/html; charset=utf-8",
+  ".ico": "image/x-icon",
+  ".js": "text/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".map": "application/json; charset=utf-8",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".webmanifest": "application/manifest+json",
 }
 
 function isPushRevokeRequest(value: unknown): value is { endpoint: string } {

@@ -4,6 +4,39 @@ Date: 2026-08-31
 
 Host: macOS 26.5.2 (25F84), arm64; Node 26.5.0; Bun 1.4.0; Tailscale CLI 1.102.3 logged in and running. The real Serve configuration was `{}` before this work. No destructive Serve command was run.
 
+## Live installed qualification
+
+Later on the same date, the tailnet administrator enabled Tailscale Serve while
+Funnel remained disabled. The Mac enabled MagicDNS and resolved
+`wy-mac.tail4fd4a3.ts.net` to `100.84.205.119`. A trusted local qualification
+release was installed and exercised through the real HTTPS Serve endpoint:
+
+- `rubato remote doctor` passed 19 checks with zero warnings and zero failures.
+- `/rubato` and `/rubato/api` were both scoped proxies to the loopback Hub.
+  The Hub served the PWA shell, immutable hashed assets, and SPA deep links.
+- WebKit completed one-time claim and approval, removed the nonce from browser
+  history, persisted its IndexedDB host record across reload, and received 200
+  responses from host, inventory, recent-project, and favorite-project APIs.
+- A real managed session reached `lifecycle: "ready"` at
+  `/Users/wy/Rubato-remote-smoke` with the pinned Pi surface and model inventory.
+- The continuous WebKit flow waited through bootstrap readiness, submitted an
+  `input.submit` action (HTTP 202), rendered the real `gpt-5.6-sol` response
+  `REMOTE_SMOKE_OK`, reloaded the session route, and rendered the same journaled
+  response again. The retained screenshot is
+  `/tmp/rubato-real-session-smoke.png`.
+- The real HTTPS terminal-ticket endpoint issued a 30-second bound capability.
+  A WSS client connected using only that ticket and the paired Origin, received
+  a non-empty binary output frame, sent a 101x37 resize frame, and closed
+  without changing the live zmx session PID.
+- The final root test, typecheck, build, build-check, patch, WebKit, release,
+  notice, license, and production-audit matrix ended with
+  `FINAL_MATRIX_GREEN`; the audit checked 270 production packages with zero
+  vulnerabilities.
+- A fresh verifier found that an explicit unpaired `Origin` could fall through
+  to the same-host fallback. The fallback now applies only when `Origin` is
+  absent. An explicit evil Origin with a paired Host and simple `text/plain`
+  mutation receives 403, and all 38 Hub tests pass after the correction.
+
 ## Commands and exit codes
 
 | Command | Exit | Result |
@@ -32,8 +65,8 @@ Host: macOS 26.5.2 (25F84), arm64; Node 26.5.0; Bun 1.4.0; Tailscale CLI 1.102.3
 | Repeated clean `zig build -Doptimize=ReleaseSafe` builds at exact commit `0266042...` | 0 | Builds succeeded and reported zmx 0.7.0, but same-size arm64 outputs had different SHA-256 values (`39588b72...`, `7579c8c1...`) and 302 differing bytes with different Mach-O `LC_UUID`s. Therefore no arbitrary local hash is stored in `third_party/zmx-lock.json`; CI builds once and signs/checksums the exact uploaded bytes. `git describe --tags` was `v0.7.0-47-g0266042`; no tag contains the commit. |
 | `RUBATO_ZMX_BIN=/tmp/rubato-zmx-assets/zmx-darwin-arm64 bun test .../real-pty.smoke.test.ts` | 1 | The existing pinned-zmx test timed out after 5 seconds because this unqualified source-built zmx attach remained open. The production smoke utility instead subscribes before input, waits for the exact echoed frame, then explicitly closes only the attach client; that path subsequently passed. |
 | `tailscale status --json` | 0 | `BackendState` was `Running` and the local node was online. |
-| `tailscale serve --bg --set-path=/rubato ...` against the local smoke target | 1 | Tailscale refused configuration with `Serve is not enabled on your tailnet` and printed the tailnet admin enable URL. Serve was not claimed as configured. |
-| Cleanup followed by `tailscale serve status --json` | 0 | Final Serve status was exactly `{}`; no route remained. A final read-only recheck in this leg also returned `{}`. |
+| Tailscale admin enable flow followed by trusted-local install | 0 | Serve was enabled for the tailnet, Funnel was explicitly left disabled, and the installer configured only `/rubato` and `/rubato/api` as loopback Hub proxies. |
+| `tailscale serve status --json` after live qualification | 0 | `/rubato` targeted `http://127.0.0.1:7314/rubato`, `/rubato/api` targeted `http://127.0.0.1:7314/rubato/api`, and no Funnel target existed. |
 | `npm test` | 0 | Root suite passed, including 3,268 runtime/harness tests (one platform skip), 33 protocol tests, 25 CLI tests, 40 hub tests, 21 web tests, and 25 terminal tests (one installed-zmx-path skip). |
 | `npm --prefix packages/rubato-remote-web run test:e2e` | 0 | 5 WebKit scenarios passed, including a validated one-time pairing URL opening a prefilled connection sheet and removing its nonce from browser history. |
 | `npm run typecheck`; `bun test patch-tests`; `node harness/scripts/build-engine.mjs --check` | 0 | All workspace typechecks passed; 229 patch tests passed; the built engine was current. |
@@ -47,11 +80,11 @@ The exact status above applies to all physical-device-only paths below:
 
 - Home Screen installation and offline cold launch.
 - Real Push/APNs delivery, badge behavior, and multi-host profile synchronization.
-- Live terminal WebSocket-to-PTY-to-zmx attachment.
 - iOS Korean/Japanese IME composition behavior.
 - VoiceOver, Dynamic Type, and safe-area rendering.
 - Foreground/background and Wi-Fi/mobile-network reconnect behavior.
-- Terminal touch scrolling, paste, resize, and mobile key-row behavior.
+- Terminal touch scrolling, paste, resize rendering, and mobile key-row behavior
+  on a physical iPhone.
 
 ## Final audit and external qualification gates
 
@@ -60,7 +93,16 @@ The exact status above applies to all physical-device-only paths below:
 
 - No new macOS account was created, no real iPhone was paired, and no foreground/background or Wi-Fi/5G transition was performed. The long profile and real-device flags therefore remain unqualified.
 - GitHub-hosted release signing, OIDC attestation, release upload, and the Intel runner were not executable locally. Local Ed25519 signing/self-verification and both arm64 and Rosetta x86_64 one-time-asset smoke paths passed.
-- The real Tailscale Serve config was not modified. Selective `get-config`/transform/`set-config` behavior is covered by multi-route fixtures; no `serve reset` or `serve clear` command exists in these scripts.
+- The real Tailscale Serve config now contains only Rubato's two scoped routes in
+  addition to any unrelated user routes. Tailscale 1.102.3 did not support the
+  legacy `get-config`/`set-config` transaction for these handlers, so setup,
+  rollback, and uninstall mutate only `/rubato` and `/rubato/api`; fixture tests
+  prove that unrelated routes and listeners remain unchanged. No `serve reset`
+  or broad clear command exists in these scripts.
 - The paired-owner hub now exposes an exact endpoint-and-Origin-bound Push revoke operation. PWA host removal revokes the host first and unsubscribes the browser when removing the final host; tests reject extra prompt/transcript-shaped fields. A host-side uninstall cannot execute browser JavaScript, so `--remove-push` revokes host state and explicitly reports `browserUnsubscribeRequired` when a browser subscription may remain.
 - `rubato remote doctor`, `rubato remote update --release ...`, and confirmed `rubato remote uninstall --yes` now route to the production release operations. Update remains blocked by named live sessions unless `--force-live` is explicit.
-- Static PWA files are configured as a scoped Tailscale Serve handler and `/rubato/api` is a more-specific localhost proxy. Real deep-link fallback and iPhone Home Screen behavior remain device verification work.
+- Sandboxed macOS Tailscale could not expose a static filesystem handler. Both
+  scoped Serve routes therefore proxy the localhost Hub, which serves the PWA
+  itself. Real HTTPS checks passed for the shell, hashed-asset cache policy, and
+  SPA deep-link fallback. iPhone Home Screen behavior remains device
+  verification work.
