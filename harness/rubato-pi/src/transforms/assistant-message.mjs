@@ -31,6 +31,7 @@ export function injectAssistantMessage(source, href = assistantInternalActionsHr
     `        this.expanded = false;
         this.isStreaming = false;
         this.turnWorkCollapsed = false;
+        this.hideProgress = false;
         this.thinkingExpanded = false;
         // 런별 수동 선택. 키는 그 런의 startedAt — 메시지 단위로 두면 앞 런에서
         // 누른 것이 뒤 런까지 짓눌러 새 사고가 통째로 안 보인다.
@@ -89,6 +90,12 @@ export function injectAssistantMessage(source, href = assistantInternalActionsHr
         this.turnWorkCollapsed = collapsed;
         this.refreshContent();
     }
+    setHideProgress(hide) {
+        if (this.hideProgress === hide)
+            return;
+        this.hideProgress = hide;
+        this.refreshContent();
+    }
     setOutputPad(padding) {`,
     "assistant setTurnWorkCollapsed",
   );
@@ -119,6 +126,7 @@ export function injectAssistantMessage(source, href = assistantInternalActionsHr
                 : false,
             hasToolCalls: this.hasToolCalls,
             hideTurnWork: this.turnWorkCollapsed,
+            hideProgress: this.hideProgress,
         });`,
     "assistant descriptor options",
   );
@@ -208,6 +216,7 @@ export function injectAssistantMessage(source, href = assistantInternalActionsHr
             errorState: [message.diagnostics, message.errorMessage],
             stopReason: message.stopReason,
             turnWorkCollapsed: this.turnWorkCollapsed,
+            hideProgress: this.hideProgress,
         });`,
     "assistant signature fields",
   );

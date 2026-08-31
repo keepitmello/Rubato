@@ -20,6 +20,10 @@ export type RemoteActionType = (typeof REMOTE_ACTION_TYPES)[number]
 export type RemoteEventType = (typeof REMOTE_EVENT_TYPES)[number]
 export type RemoteErrorCode = (typeof REMOTE_ERROR_CODES)[number]
 export type RemoteProtocolName = typeof REMOTE_PROTOCOL_NAME
+export type RequestRunStatus = "running" | "awaiting_input" | "completed" | "interrupted" | "failed"
+export type AssistantTextPhase = "progress" | "final"
+export type UserInputDelivery = "submit" | "steer" | "followUp"
+export type PendingInputSource = "tui" | "remote" | "extension" | "unknown"
 
 export interface SessionModelSummary {
   readonly provider?: string
@@ -39,6 +43,56 @@ export interface SessionCacheSummary {
   readonly hitPercent?: number
   readonly expiresAt?: string
   readonly expired: boolean
+}
+
+export interface RequestRunSummary {
+  readonly id: string
+  readonly status: RequestRunStatus
+  readonly rootUserMessageId: string
+  readonly startedAt: string
+  readonly completedAt?: string
+  readonly finalMessageId?: string
+  readonly lastProgressPreview?: string
+  readonly progressMessageCount: number
+  readonly toolCount: number
+  readonly failedToolCount: number
+  readonly steeringCount: number
+  readonly failureMessage?: string
+}
+
+export interface PendingInputSummary {
+  readonly id: string
+  readonly delivery: "steer" | "followUp"
+  readonly textPreview: string
+  readonly textLength: number
+  readonly imageCount: number
+  readonly enqueuedAt: string
+  readonly source: PendingInputSource
+  readonly targetRequestRunId?: string
+}
+
+export interface RequestTimelineSnapshot {
+  readonly schemaVersion: 1
+  readonly runs: readonly RequestRunSummary[]
+  readonly activeRequestRunId?: string
+  readonly pendingInputs: readonly PendingInputSummary[]
+  readonly hasOlder: boolean
+}
+
+export interface SessionPresentationSummary {
+  readonly schemaVersion: 1
+  readonly lastFinalResponsePreview?: string
+  readonly lastFinalResponseAt?: string
+  readonly activeRequest?: {
+    readonly id: string
+    readonly status: "running" | "awaiting_input"
+    readonly startedAt: string
+    readonly lastProgressPreview?: string
+    readonly toolCount: number
+    readonly failedToolCount: number
+  }
+  readonly pendingFollowUpCount: number
+  readonly pendingSteerCount: number
 }
 
 export interface LiveSessionSummary {
@@ -79,6 +133,7 @@ export interface LiveSessionSummary {
     readonly remoteProtocolMax: number
   }
   readonly capabilities: readonly string[]
+  readonly presentation?: SessionPresentationSummary
 }
 
 export interface RemoteActionPayloadMap {
@@ -94,6 +149,11 @@ export interface RemoteActionPayloadMap {
   readonly "input.followUp": {
     readonly text: string
     readonly imageIds?: readonly string[]
+  }
+  readonly "input.queue.clear": Readonly<Record<string, never>>
+  readonly "conversation.page": {
+    readonly before?: string
+    readonly limit: number
   }
   readonly "agent.abort": Readonly<Record<string, never>>
   readonly "session.compact": { readonly instructions?: string }

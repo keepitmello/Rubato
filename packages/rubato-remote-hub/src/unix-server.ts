@@ -8,8 +8,8 @@ import {
   negotiateProtocolVersion,
   pairingQrPayloadSchema,
   REMOTE_PROTOCOL_NAME,
+  SUPPORTED_PROTOCOL_RANGE,
   surfaceToHubFrameSchema,
-  supportedProtocolRange,
   type ActionRequestEnvelope,
   type ActionResultResponse,
   type BootstrapLaunchPayload,
@@ -191,7 +191,7 @@ export class SurfaceSocketServer implements SurfaceActions {
       connection.surfaceInstanceId = frame.surfaceInstanceId
       this.#connections.get(connection.liveSessionId)?.socket.destroy()
       this.#connections.set(connection.liveSessionId, connection)
-      const protocolRange = supportedProtocolRange(1)
+      const protocolRange = SUPPORTED_PROTOCOL_RANGE
       const response = {
         kind: "hub.registered",
         protocol: REMOTE_PROTOCOL_NAME,
@@ -229,6 +229,11 @@ export class SurfaceSocketServer implements SurfaceActions {
         if (frame.summary.liveSessionId !== connection.liveSessionId || frame.surfaceInstanceId !== connection.surfaceInstanceId) throw new Error("invalid surface snapshot")
         this.#registry.register({ summary: frame.summary, surfaceInstanceId: frame.surfaceInstanceId, token: "registered" }, "registered")
         await this.#journal.snapshot(frame.summary, frame.state)
+        return
+      }
+      case "surface.summary": {
+        if (frame.summary.liveSessionId !== connection.liveSessionId || frame.surfaceInstanceId !== connection.surfaceInstanceId) throw new Error("invalid surface summary")
+        this.#registry.register({ summary: frame.summary, surfaceInstanceId: frame.surfaceInstanceId, token: "registered" }, "registered")
         return
       }
       case "surface.action-result": {

@@ -204,3 +204,37 @@ test("turn-work summary aggregates mixed tool names and stays within width", () 
   wideSummary.dispose();
   wide.dispose();
 });
+
+
+test("progress hide after complete, final remains, hideTurnWork stays thinking-only", () => {
+  const commentary = JSON.stringify({ v: 1, id: "c", phase: "commentary" });
+  const finalAnswer = JSON.stringify({ v: 1, id: "f", phase: "final_answer" });
+  const hidden = [];
+  const assistant = {
+    hideProgress: false,
+    turnWorkCollapsed: false,
+    setTurnWorkCollapsed(value) { this.turnWorkCollapsed = value; },
+    setHideProgress(value) { this.hideProgress = value; hidden.push(value); },
+  };
+  const progressMessage = {
+    role: "assistant",
+    content: [
+      { type: "thinking", thinking: "secret", startedAt: 1, endedAt: 2 },
+      { type: "text", text: "working on it", textSignature: commentary },
+      { type: "text", text: "here is the answer", textSignature: finalAnswer },
+    ],
+    stopReason: "stop",
+    timestamp: 1,
+  };
+  const summary = new TurnWorkSummaryComponent(ui);
+  summary.trackAssistant(assistant, progressMessage);
+  assert.equal(assistant.hideProgress, false, "progress stays visible while running");
+  summary.setRequestCompleted(true, "completed");
+  assert.equal(assistant.hideProgress, true);
+  assert.equal(assistant.turnWorkCollapsed, true);
+  const line = stripAnsi(summary.render(120).join(""));
+  assert.match(line, /update/);
+  summary.setExpanded(true);
+  assert.equal(assistant.hideProgress, false, "expand reveals folded progress");
+  summary.dispose();
+});
