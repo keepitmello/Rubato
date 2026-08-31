@@ -91,17 +91,19 @@ test("interactive-mode transform(tui-chrome output) is byte-equal to tui-chrome 
   assert.throws(() => injectInteractiveControl("export class InteractiveMode {}"), /uuid import/);
 });
 
-test("interactive-mode and slash-commands needles survive stripChangelog", () => {
+test("cluster transforms then stripChangelog match the new hook order", () => {
+  // no-changelog-hooks now runs clusters BEFORE stripChangelog.
   const slash = vendorFileStates("senpi", "dist/core/slash-commands.js");
-  const strippedSlash = stripChangelog(slash.pristine, `file:///${SENPI}/core/slash-commands.js`);
-  const slashGot = injectSlashCommandsRemoteMode(strippedSlash);
+  const slashGot = stripChangelog(
+    injectSlashCommandsRemoteMode(slash.pristine),
+    `file:///${SENPI}/core/slash-commands.js`,
+  );
   assert.match(slashGot, /remoteMode: "terminal-only"/);
   assert.equal(slashGot.includes('{ name: "changelog"'), false);
 
   const im = vendorFileStates("senpi", "dist/modes/interactive/interactive-mode.js");
   const chrome = injectInteractiveModeChrome(im.pristine, HREFS);
-  const stripped = stripChangelog(chrome, "interactive-mode.js");
-  const got = injectInteractiveControl(stripped);
+  const got = stripChangelog(injectInteractiveControl(chrome), "interactive-mode.js");
   assert.match(got, /createInteractiveControlSurface/);
   assert.match(got, /dispatchInteractiveInput/);
 });
