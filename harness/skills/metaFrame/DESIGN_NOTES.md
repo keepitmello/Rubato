@@ -1,8 +1,8 @@
-# Open Frame v3 design notes
+# metaFrame v3 design notes
 
 ## Design decision
 
-This revision returns to the central idea of Open Frame: give a capable model a useful orientation and enough room to choose its own reasoning path. It does not try to encode a complete metacognitive controller.
+This revision returns to the central idea of metaFrame: give a capable model a useful orientation and enough room to choose its own reasoning path. It does not try to encode a complete metacognitive controller.
 
 The previous v3 correctly introduced user clarification, external evidence, and fresh context, but turned them into an explicit routing system and surrounded the skill with an evaluation harness. That structure risked teaching the model to perform the framework rather than attend to the task.
 
@@ -14,7 +14,7 @@ The attached Claude Prompting Lab repeatedly favors a small common core, affirma
 
 Those principles produced five concrete choices:
 
-1. **Manual invocation** — timing belongs to the user because Open Frame is not useful on every task.
+1. **Manual invocation** — timing belongs to the user because metaFrame is not useful on every task.
 2. **A short core** — `SKILL.md` contains the posture and the few openings that can change action; examples and fresh-context details stay optional.
 3. **No forced reasoning sequence** — user questions, external probes, and independent context are possibilities rather than stages or labels to output.
 4. **Purpose with epistemic restraint** — the result the work should create matters, but unstated purposes and human motives remain provisional.
@@ -38,4 +38,4 @@ Future changes should start from concrete transcripts where the skill caused a m
 
 ## Intended limit
 
-Open Frame can help a model use latent understanding more flexibly. It cannot add world knowledge, human understanding, or representational capacity that the base model does not possess. A stronger model may interpret the same posture more deeply; a weaker model may produce only the language of reframing.
+metaFrame can help a model use latent understanding more flexibly. It cannot add world knowledge, human understanding, or representational capacity that the base model does not possess. A stronger model may interpret the same posture more deeply; a weaker model may produce only the language of reframing.
