@@ -94,15 +94,18 @@ rubato remote doctor
 rubato remote add-host
 ```
 
-첫 줄에 나온 `https://…/rubato/?pair=…` 주소를 iPhone Safari에서 연다. 주소와
-연결 코드는 10분 동안 한 번만 사용할 수 있다.
+명령을 실행한 터미널에 QR과 연결 주소, 연결 코드가 함께 나타난다. 연결되지 않은
+Rubato 웹앱에서도 **Mac 연결** → **QR이 보이면 카메라 열기**를 눌러 이 QR을 찍을
+수 있다. 또는 첫 줄의 `https://…/rubato/?pair=…` 주소를 iPhone Safari에서 직접
+열어도 된다. QR과 연결 코드는 10분 동안 한 번만 사용할 수 있다.
 
 ## 3. iPhone에 설치하기
 
-1. Safari에서 연결 주소를 연다.
-2. Mac 이름과 Tailscale 계정이 맞는지 확인하고 **이 Mac 연결**을 누른다.
-3. Safari 공유 버튼에서 **홈 화면에 추가**를 누른다.
-4. Safari 탭을 닫고 홈 화면의 Rubato 아이콘으로 다시 연다.
+1. Safari에서 평소 Rubato 주소를 열고 **Mac 연결**을 누른다.
+2. Mac 터미널의 QR을 찍거나 연결 주소를 직접 연다.
+3. Mac 이름과 Tailscale 계정이 맞는지 확인하고 **이 Mac 연결**을 누른다.
+4. Safari 공유 버튼에서 **홈 화면에 추가**를 누른다.
+5. Safari 탭을 닫고 홈 화면의 Rubato 아이콘으로 다시 연다.
 
 홈 화면 앱에서 Mac 이름이 보이고 연결 상태가 온라인이면 설치 확인은 끝이다.
 

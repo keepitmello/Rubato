@@ -81,13 +81,21 @@ test("remote add-host and internal-run route without loading the engine", async 
   let output = "";
   const calls = [];
   await runCli(["remote", "add-host"], {
-    lifecycle: { addHost: async () => ({ pairing: { type: "rubato-host-pair", hostId: "host", nonce: "once" }, url: "https://mac/rubato/?pair=data", qrPayload: "{\"type\":\"rubato-host-pair\"}" }) },
+    lifecycle: { addHost: async () => ({ pairing: { type: "rubato-host-pair", baseUrl: "https://mac/rubato/", hostId: "host", nonce: "once" }, url: "https://mac/rubato/?pair=data", qrPayload: "{\"type\":\"rubato-host-pair\"}" }) },
     stdout: { write: (value) => { output += value; } },
+    renderPairingQr: (value) => `QR:${value}`,
   });
   await runCli(["internal-run", "--descriptor", "/tmp/descriptor"], {
     lifecycle: {},
     bootstrap: async (path) => calls.push(path),
   });
-  assert.deepEqual(output.trim().split("\n"), ["https://mac/rubato/?pair=data", "{\"type\":\"rubato-host-pair\"}"]);
+  assert.deepEqual(output.trim().split("\n"), [
+    "https://mac/rubato/?pair=data",
+    "{\"type\":\"rubato-host-pair\"}",
+    "QR:https://mac/rubato/?pair=data",
+    "Mac 주소: https://mac/rubato/",
+    "연결 코드: once",
+    "이 QR과 연결 코드는 10분 뒤 만료됩니다.",
+  ]);
   assert.deepEqual(calls, ["/tmp/descriptor"]);
 });

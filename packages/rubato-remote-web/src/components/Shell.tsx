@@ -20,7 +20,7 @@ export function StateBanner({ kind = "offline", children }: { kind?: "offline" |
 let openSheetCount = 0
 let sheetReturnFocus: HTMLElement | null = null
 
-export function Sheet({ title, onClose, returnFocus, children }: { title: string; onClose: () => void; returnFocus?: HTMLElement | null; children: ReactNode }) {
+export function Sheet({ title, onClose, returnFocus, hideHandle = false, closeText, children }: { title: string; onClose: () => void; returnFocus?: HTMLElement | null; hideHandle?: boolean; closeText?: string; children: ReactNode }) {
   const overlay = useRef<HTMLDivElement>(null)
   const closeButton = useRef<HTMLButtonElement>(null)
   const onCloseRef = useRef(onClose)
@@ -63,8 +63,8 @@ export function Sheet({ title, onClose, returnFocus, children }: { title: string
   return <div ref={overlay} className="sheet-root" role="presentation">
     <KonstaSheet opened backdrop onBackdropClick={onClose} className="native-sheet" role="dialog" aria-modal="true" aria-labelledby={titleId}>
       <Glass className="sheet-chrome">
-        <div className="sheet-handle" aria-hidden="true" />
-        <div className="row spread"><span aria-hidden="true" style={{ width: 44 }} /><h2 className="sheet-title" id={titleId}>{title}</h2><button ref={closeButton} className="icon-button" aria-label={`${title} 닫기`} onClick={onClose}>×</button></div>
+        {hideHandle ? null : <div className="sheet-handle" aria-hidden="true" />}
+        <div className="row spread"><span aria-hidden="true" style={{ width: 44 }} /><h2 className="sheet-title" id={titleId}>{title}</h2><button ref={closeButton} className={closeText ? "sheet-close-text" : "icon-button"} aria-label={`${title} 닫기`} onClick={onClose}>{closeText ?? "×"}</button></div>
       </Glass>
       {children}
     </KonstaSheet>

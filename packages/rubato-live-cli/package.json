@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@earendil-works/pi-tui": "0.84.2",
-    "@rubato/remote-protocol": "file:../rubato-remote-protocol"
+    "@rubato/remote-protocol": "file:../rubato-remote-protocol",
+    "qrcode-terminal": "0.12.0"
   }
 }
