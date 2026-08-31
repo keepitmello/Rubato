@@ -232,3 +232,26 @@ test("snapshot command inventory is exactly the attached Pi surface inventory", 
 
   assert.deepEqual(surface.snapshot().state.commands, commands.map(({ privatePath: _privatePath, ...command }) => command));
 });
+
+test("session_info_changed publishes a snapshot with the new session title", async () => {
+  const sent = [];
+  const surface = new RemoteSurface(
+    { getInteractiveControl: () => undefined, getSessionName: () => "Protocol work" },
+    protocol,
+    {
+      hostId: "018f0f4c-9d2a-7a31-8b4d-6f708192a3b4",
+      liveSessionId: "018f0f4c-9d2a-7a31-8b4d-6f708192a3b5",
+      surfaceInstanceId: "123e4567-e89b-42d3-a456-426614174000",
+      surfaceToken: "surface-token",
+      connect: async () => ({ send: (value) => sent.push(value), close() {} }),
+      clock: { now: () => 1_000, setTimeout, clearTimeout, setInterval, clearInterval },
+    },
+  );
+  surface.context = context();
+  await surface.connectNow();
+  await surface.receive(registered);
+  sent.length = 0;
+  surface.observe("session_info_changed", { name: "Protocol work" }, context());
+  assert.equal(sent.some((value) => value.kind === "surface.snapshot" && value.summary.title === "Protocol work"), true);
+  assert.equal(sent.some((value) => value.kind === "surface.event" && value.type === "session.changed"), true);
+});

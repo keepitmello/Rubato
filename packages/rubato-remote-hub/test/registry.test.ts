@@ -101,3 +101,45 @@ describe("live session title parity with terminal tabs", () => {
     expect(liveSessionTitle(undefined, undefined, "rubato-018f1e2d3c4b")).toBe("rubato-018f1e2d3c4b")
   })
 })
+
+describe("live inventory pruning", () => {
+  test("drops managed sessions whose zmx process disappeared", async () => {
+    const registry = new LiveRegistry(HOST_ID, { discover: async () => [process] })
+    await registry.rebuild()
+    expect(registry.get(SESSION_ID)?.lifecycle).toBe("degraded")
+    expect(registry.pruneMissingProcesses(new Set(), Date.now())).toEqual([SESSION_ID])
+    expect(registry.get(SESSION_ID)).toBeUndefined()
+  })
+
+  test("keeps starting sessions briefly before the process is discoverable", async () => {
+    const registry = new LiveRegistry(HOST_ID, { discover: async () => [] })
+    registry.trackStarting(summary({ lifecycle: "starting", title: "repo", cwd: "/tmp/repo" }))
+    expect(registry.pruneMissingProcesses(new Set(), Date.now(), 120_000)).toEqual([])
+    expect(registry.pruneMissingProcesses(new Set(), Date.now() + 120_001, 120_000)).toEqual([SESSION_ID])
+  })
+
+  test("expires idle sessions after the configured quiet period", async () => {
+    const registry = new LiveRegistry(HOST_ID, { discover: async () => [] })
+    registry.trackStarting(summary({ lifecycle: "starting", execution: "idle", title: "repo", cwd: "/tmp/repo" }))
+    const registered = registry.register({
+      surfaceInstanceId: "surface-a",
+      token: "one-time-token",
+      summary: summary({ title: "Topic titles", execution: "idle" }),
+    }, "one-time-token")
+    expect(registered.title).toBe("Topic titles")
+    expect(registry.idleExpired(Date.now(), 12 * 60 * 60 * 1000)).toEqual([])
+    expect(registry.idleExpired(Date.now() + 12 * 60 * 60 * 1000, 12 * 60 * 60 * 1000)).toEqual([SESSION_ID])
+    registry.noteExecution(SESSION_ID, "working", Date.now() + 12 * 60 * 60 * 1000)
+    expect(registry.idleExpired(Date.now() + 24 * 60 * 60 * 1000, 12 * 60 * 60 * 1000)).toEqual([])
+    registry.noteExecution(SESSION_ID, "idle", Date.now() + 24 * 60 * 60 * 1000)
+    expect(registry.idleExpired(Date.now() + 24 * 60 * 60 * 1000 + 12 * 60 * 60 * 1000, 12 * 60 * 60 * 1000)).toEqual([SESSION_ID])
+  })
+
+  test("updateTitle follows the same terminal-tab naming rules", async () => {
+    const registry = new LiveRegistry(HOST_ID, { discover: async () => [process] })
+    await registry.rebuild()
+    expect(registry.updateTitle(SESSION_ID, "Protocol work")).toBeTrue()
+    expect(registry.get(SESSION_ID)?.title).toBe("Protocol work")
+    expect(registry.updateTitle(SESSION_ID, "  ")).toBeFalse()
+  })
+})

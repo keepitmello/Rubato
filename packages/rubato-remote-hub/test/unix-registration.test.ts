@@ -106,6 +106,56 @@ describe("Unix socket process registration", () => {
   })
 })
 
+
+  test("live.exited removes the session from the picker inventory", async () => {
+    const temporary = await temporaryDirectory()
+    cleanupTasks.push(temporary.cleanup)
+    const registry = new LiveRegistry(HOST_ID, { discover: async () => [] })
+    const journal = new EventJournal(join(temporary.path, "journal"), join(temporary.path, "snapshots"), HOST_ID)
+    await journal.load()
+    const tokens = new SurfaceTokenStore()
+    const socketPath = join(temporary.path, "hub.sock")
+    const server = new SurfaceSocketServer(socketPath, registry, journal, tokens, new EnvironmentHandoffStore<BootstrapLaunchPayload>(), new SurfaceReconnectCredentials(join(temporary.path, "credential-key")))
+    const exited: string[] = []
+    server.setControl({
+      noteExited: async (id: string) => {
+        exited.push(id)
+        registry.remove(id as typeof SESSION_ID)
+      },
+    } as never)
+    await server.listen()
+    cleanupTasks.push(() => server.close())
+
+    const token = tokens.issue(SESSION_ID)
+    const client = await connect(socketPath)
+    const registered = nextFrame(client)
+    client.write(encodeFrame({
+      kind: "surface.register",
+      protocol: "rubato.remote.v1",
+      protocolRange: { min: 1, max: 1 },
+      surfaceInstanceId: "00000000-0000-4000-8000-000000000001",
+      token,
+      summary: unmanagedSummary(),
+    }))
+    expect(await registered).toMatchObject({ kind: "hub.registered" })
+    expect(registry.get(SESSION_ID)?.lifecycle).toBe("ready")
+
+    const closed = new Promise<void>((resolve) => client.once("close", () => resolve()))
+    client.write(encodeFrame({
+      kind: "surface.event",
+      protocol: "rubato.remote.v1",
+      liveSessionId: SESSION_ID,
+      surfaceInstanceId: "00000000-0000-4000-8000-000000000001",
+      sourceSeq: 1,
+      at: "2026-08-31T00:00:01.000Z",
+      type: "live.exited",
+      payload: { reason: "quit" },
+    }))
+    await bounded(closed)
+    expect(exited).toEqual([SESSION_ID])
+    expect(registry.get(SESSION_ID)).toBeUndefined()
+  })
+
 class SignalingJournal extends EventJournal {
   readonly #written: () => void
   constructor(journalPath: string, snapshotPath: string, written: () => void) {
