@@ -19,7 +19,7 @@ test("malicious Markdown cannot create raw HTML or javascript links", () => {
   expect(html.length).toBeGreaterThan(0)
 })
 
-test("malicious diff/tool filenames and output remain escaped plain text", () => {
+test("malicious diff/tool filenames and output cannot inject HTML", () => {
   const payload = '</pre><script>globalThis.pwned=true</script><img src=x onerror=alert(1)>.diff'
   const html = renderToStaticMarkup(React.createElement(Conversation, { entries: [{
     kind: "tool",
@@ -31,5 +31,7 @@ test("malicious diff/tool filenames and output remain escaped plain text", () =>
   }] }))
   expect(html).not.toContain("<script>")
   expect(html).not.toContain("<img src=x")
-  expect(html).toContain("&lt;script&gt;")
+  expect(html).not.toContain(payload)
+  expect(html).not.toContain("tool-card")
+  expect(html).not.toContain("tool-output")
 })
