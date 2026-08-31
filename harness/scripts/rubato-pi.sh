@@ -111,12 +111,28 @@ UPDATE_NOTE=""
 UPDATE_COUNT=""
 UPDATE_PID=""
 UPDATE_OUT=""
+UPDATE_DONE=""
+MSEARCH_PID=""
+MSEARCH_OUT=""
+MSEARCH_DONE=""
+ENGINE_PID=""
 cleanup() {
   if [ -n "${UPDATE_PID-}" ]; then
     kill "$UPDATE_PID" 2>/dev/null || true
     wait "$UPDATE_PID" 2>/dev/null || true
   fi
+  if [ -n "${MSEARCH_PID-}" ]; then
+    kill "$MSEARCH_PID" 2>/dev/null || true
+    wait "$MSEARCH_PID" 2>/dev/null || true
+  fi
+  if [ -n "${ENGINE_PID-}" ]; then
+    kill "$ENGINE_PID" 2>/dev/null || true
+    wait "$ENGINE_PID" 2>/dev/null || true
+  fi
   [ -n "${UPDATE_OUT-}" ] && rm -f "$UPDATE_OUT"
+  [ -n "${UPDATE_DONE-}" ] && rm -f "$UPDATE_DONE"
+  [ -n "${MSEARCH_OUT-}" ] && rm -f "$MSEARCH_OUT"
+  [ -n "${MSEARCH_DONE-}" ] && rm -f "$MSEARCH_DONE"
   printf '\033[?25h'
 }
 trap cleanup EXIT INT TERM
@@ -126,12 +142,14 @@ trap cleanup EXIT INT TERM
 if [ -z "${RUBATO_NO_UPDATE_CHECK-}" ] && [ -x "$HERE/rubato-update.sh" ]; then
   UPDATE_OUT="$(mktemp "${TMPDIR:-/tmp}/rubato-update.XXXXXX")" || UPDATE_OUT=""
   if [ -n "$UPDATE_OUT" ]; then
+    UPDATE_DONE="$UPDATE_OUT.done"
     (
       set +e
       note=$("$HERE/rubato-update.sh" --check 2>&1 >/dev/null)
       rc=$?
       printf '%s\n' "$rc"
       printf '%s' "$note"
+      : >"$UPDATE_DONE"
     ) >"$UPDATE_OUT" 2>/dev/null &
     UPDATE_PID=$!
   fi
@@ -165,8 +183,15 @@ fi
 # 때만 한 줄 남기고 세션은 막지 않는다.
 MSEARCH_BIN="$HERE/../msearch/msearch"
 if [ -z "${RUBATO_NO_MSEARCH_CHECK-}" ] && [ -x "$MSEARCH_BIN" ]; then
-  if ! MSEARCH_NOTE="$("$MSEARCH_BIN" --health 2>&1 >/dev/null)"; then
-    printf 'rubato: 기억 검색(msearch)이 죽어 있다 — %s\n' "${MSEARCH_NOTE:-원인 불명}" >&2
+  MSEARCH_OUT="$(mktemp "${TMPDIR:-/tmp}/rubato-msearch.XXXXXX")" || MSEARCH_OUT=""
+  if [ -n "$MSEARCH_OUT" ]; then
+    MSEARCH_DONE="$MSEARCH_OUT.done"
+    (
+      set +e
+      "$MSEARCH_BIN" --health >/dev/null 2>"$MSEARCH_OUT"
+      printf '%s\n' "$?" >"$MSEARCH_DONE"
+    ) &
+    MSEARCH_PID=$!
   fi
 fi
 
@@ -181,8 +206,22 @@ if ! NODE="$(rubato_find_node)"; then
 fi
 
 # 옛 설치의 사용자 상태와 현재 프로젝트 설정을 새 정본으로 옮긴다.
-# 같은 이름에 다른 내용이 있으면 덮어쓰지 않고 옛 항목을 남겨 경고한다.
-if [ -f "$HERE/migrate-rubato-state.mjs" ]; then
+# 홈과 cwd 조상에 옛 루트가 하나도 없으면 Node 프로세스조차 띄우지 않는다.
+RUBATO_NEEDS_MIGRATION=""
+if [ -e "$HOME/.omo" ] || [ -L "$HOME/.omo" ]; then
+  RUBATO_NEEDS_MIGRATION=1
+else
+  MIGRATION_ROOT="$PWD"
+  MIGRATION_BOUNDARY="$HOME"
+  while [ "$MIGRATION_ROOT" != "$MIGRATION_BOUNDARY" ] && [ "$(dirname "$MIGRATION_ROOT")" != "$MIGRATION_ROOT" ]; do
+    if [ -e "$MIGRATION_ROOT/.omo" ] || [ -L "$MIGRATION_ROOT/.omo" ]; then
+      RUBATO_NEEDS_MIGRATION=1
+      break
+    fi
+    MIGRATION_ROOT="$(dirname "$MIGRATION_ROOT")"
+  done
+fi
+if [ -n "$RUBATO_NEEDS_MIGRATION" ] && [ -f "$HERE/migrate-rubato-state.mjs" ]; then
   "$NODE" "$HERE/migrate-rubato-state.mjs" --cwd "$PWD"
 fi
 
@@ -195,7 +234,10 @@ fi
 # 사유를 들고 세운다.
 if [ -z "${RUBATO_NO_ENGINE_BUILD-}" ] && [ -f "$HERE/build-engine.mjs" ]; then
   splash step "엔진 빌드"
-  "$NODE" "$HERE/build-engine.mjs" >/dev/null 2>&1 || true
+  "$NODE" "$HERE/build-engine.mjs" >/dev/null 2>&1 &
+  ENGINE_PID=$!
+else
+  ENGINE_PID=""
 fi
 
 # cmux 세션 복원을 붙인다. 이게 없으면 cmux 를 꺼다 켜는 순간 세션이
@@ -214,16 +256,46 @@ if [ -z "${RUBATO_NO_KIRO_HEAL-}" ] && [ -x "$HERE/kiro-setup.sh" ]; then
   "$HERE/kiro-setup.sh" heal >/dev/null 2>&1 || true
 fi
 
-# fetch 가 아직이면 여기서 받는다. 이미 끝났으면 wait 은 즉시 돌아온다.
+# 신선도 검사/빌드는 위의 독립 준비와 겹치되, 엔진을 실행하기 전에는 끝나야 한다.
+if [ -n "$ENGINE_PID" ]; then
+  wait "$ENGINE_PID" || true
+  ENGINE_PID=""
+fi
+
+# 기억 검색 생존 판정도 준비와 겹친다. 실패 문구 계약은 그대로 유지한다.
+if [ -n "$MSEARCH_PID" ]; then
+  if [ -f "$MSEARCH_DONE" ]; then
+    wait "$MSEARCH_PID" || true
+    MSEARCH_PID=""
+    MSEARCH_RC="$(cat "$MSEARCH_DONE" 2>/dev/null || echo 1)"
+    if [ "$MSEARCH_RC" -ne 0 ]; then
+      MSEARCH_NOTE="$(cat "$MSEARCH_OUT" 2>/dev/null || true)"
+      printf 'rubato: 기억 검색(msearch)이 죽어 있다 — %s\n' "${MSEARCH_NOTE:-원인 불명}" >&2
+    fi
+  else
+    kill "$MSEARCH_PID" 2>/dev/null || true
+    wait "$MSEARCH_PID" 2>/dev/null || true
+    MSEARCH_PID=""
+  fi
+  rm -f "$MSEARCH_OUT"
+  rm -f "$MSEARCH_DONE"
+  MSEARCH_OUT=""
+  MSEARCH_DONE=""
+fi
+
+# 준비와 겹친 동안 끝난 fetch 만 받는다. 네트워크가 느린 날에도 업데이트 확인이
+# 엔진 시작을 붙잡아서는 안 된다. 아직 출력이 없으면 이번 알림만 건너뛴다.
 if [ -n "${UPDATE_PID-}" ]; then
   splash step "업데이트 확인"
-  wait "$UPDATE_PID" || true
-  UPDATE_PID=""
-  if [ -n "$UPDATE_OUT" ] && [ -f "$UPDATE_OUT" ]; then
+  if [ -n "$UPDATE_OUT" ] && [ -f "$UPDATE_DONE" ]; then
+    wait "$UPDATE_PID" || true
+    UPDATE_PID=""
     UPDATE_RC="$(sed -n '1p' "$UPDATE_OUT")"
     UPDATE_NOTE="$(sed '1d' "$UPDATE_OUT")"
     rm -f "$UPDATE_OUT"
+    rm -f "$UPDATE_DONE"
     UPDATE_OUT=""
+    UPDATE_DONE=""
     if [ "$UPDATE_RC" != 10 ]; then
       UPDATE_NOTE=""
     else
@@ -234,6 +306,14 @@ if [ -n "${UPDATE_PID-}" ]; then
         | sed 's/\033\[[0-9;]*m//g' \
         | sed -n 's/.*업데이트 \([0-9][0-9]*\)개.*/\1/p')"
     fi
+  else
+    kill "$UPDATE_PID" 2>/dev/null || true
+    wait "$UPDATE_PID" 2>/dev/null || true
+    UPDATE_PID=""
+    rm -f "$UPDATE_OUT"
+    rm -f "$UPDATE_DONE"
+    UPDATE_OUT=""
+    UPDATE_DONE=""
   fi
 fi
 

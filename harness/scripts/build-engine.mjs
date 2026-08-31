@@ -16,6 +16,7 @@
 import { cp, mkdir, readdir, readFile, rm, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -32,6 +33,8 @@ export const engineRoot = pinnedEngineDir ||
 
 const extensionsDir = join(engineRoot, "extensions");
 const mainOutput = join(extensionsDir, "rubato.js");
+const sourceStatePath = join(engineRoot, ".source-state");
+const buildLockDir = `${engineRoot}.build-lock`;
 
 const mode = process.argv.includes("--check")
   ? "check"
@@ -46,6 +49,81 @@ async function loadBuilder() {
     import(join(srcPluginRoot, "scripts", "stage-lsp-daemon-runtime.mjs")),
   ]);
   return { ...extension, ...astGrep, ...lspDaemon };
+}
+
+const freshnessPaths = [
+  "packages/rubato-runtime/src",
+  "packages/senpi-task/src",
+  "packages/ast-grep-mcp/src",
+  "packages/delegate-core/src",
+  "packages/lsp-core/src",
+  "packages/lsp-daemon/src",
+  "packages/mcp-stdio-core/src",
+  "packages/memory-core/src",
+  "packages/model-core/src",
+  "packages/rubato-config-core/src",
+  "packages/team-core/src",
+  "packages/tmux-core/src",
+  "packages/utils/src",
+  "packages/rubato-runtime/plugin/scripts",
+  "packages/rubato-runtime/plugin/runtime",
+  "packages/rubato-runtime/plugin/skills",
+  "packages/rubato-runtime/plugin/package.json",
+  "harness/scripts/build-engine.mjs",
+];
+
+/**
+ * 관련 입력의 git blob/working-tree 상태가 마지막 빌드 때와 같으면
+ * 파일 수천 개를 매 세션 stat 할 이유가 없다.
+ * 로컬 수정·untracked 입력·git 없는 설치는 기존 mtime+정밀 검사로 내려간다.
+ */
+function currentSourceState() {
+  const tracked = spawnSync("git", ["ls-files", "-s", "-z", "--", ...freshnessPaths], {
+    cwd: repoRoot,
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  const diff = spawnSync("git", ["diff", "--binary", "HEAD", "--", ...freshnessPaths], {
+    cwd: repoRoot,
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  const untracked = spawnSync("git", [
+    "ls-files", "-z", "--others", "--exclude-standard", "--", ...freshnessPaths,
+  ], {
+    cwd: repoRoot,
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  if (tracked.status !== 0 || diff.status !== 0 || untracked.status !== 0) return "";
+
+  const hash = createHash("sha256");
+  hash.update(tracked.stdout);
+  hash.update("\0");
+  hash.update(diff.stdout);
+  hash.update("\0");
+  for (const path of untracked.stdout.toString("utf8").split("\0").filter(Boolean)) {
+    hash.update(path);
+    hash.update("\0");
+    try {
+      hash.update(readFileSync(join(repoRoot, path)));
+      hash.update("\0");
+    } catch {
+      return "";
+    }
+  }
+  return hash.digest("hex");
+}
+
+function sourceStateMatchesRepo(current) {
+  if (!existsSync(sourceStatePath)) return false;
+  return current !== "" && readFileSync(sourceStatePath, "utf8").trim() === current;
+}
+
+async function writeSourceState(expected) {
+  const current = currentSourceState();
+  if (current !== "" && current === expected) {
+    await writeFile(sourceStatePath, `${current}\n`);
+  } else {
+    await rm(sourceStatePath, { force: true });
+  }
 }
 
 /**
@@ -173,7 +251,10 @@ async function isFresh() {
   // 산출물이 아니라 미러링한 것이 빠졌을 수도 있다. 그때는 소스가
   // 그대로여도 다시 만들어야 한다.
   if (!mirrorComplete()) return false;
-  if (!await sourcesNewerThanOutput()) return true;
+  const sourceStateBefore = currentSourceState();
+  if (sourceStateMatchesRepo(sourceStateBefore)) return true;
+  // 소스 배포본처럼 git 메타데이터가 없는 자리에서는 기존 mtime 경로를 쓴다.
+  if (sourceStateBefore === "" && !await sourcesNewerThanOutput()) return true;
 
   const { checkExtensionCurrent } = await loadBuilder();
   const result = await checkExtensionCurrent({ outputPath: mainOutput });
@@ -183,6 +264,7 @@ async function isFresh() {
   // 주석만 고침). 그 사실을 기록해 두지 않으면 다음 실행에도 똑같이 2초짜리
   // 정밀 검사를 다시 한다. 도장을 찍어 다음부터는 단축 경로로 끝낸다.
   await stampOutput();
+  await writeSourceState(sourceStateBefore);
   return true;
 }
 
@@ -260,6 +342,7 @@ async function mirrorPluginShell() {
 }
 
 async function build() {
+  const sourceStateBefore = currentSourceState();
   const { buildExtension, stageAstGrepMcpRuntime, stageLspDaemonRuntime } = await loadBuilder();
   run("bun", ["run", "--cwd", "packages/ast-grep-mcp", "build"]);
   run("bun", ["run", "--cwd", "packages/lsp-daemon", "build"]);
@@ -280,18 +363,42 @@ async function build() {
 
   // 방금 빌드했으니 지금이 가장 새롭다고 도장을 찍는다.
   await stampOutput();
+  await writeSourceState(sourceStateBefore);
+}
+
+async function withBuildLock(action) {
+  await mkdir(dirname(buildLockDir), { recursive: true });
+  const deadline = Date.now() + 5 * 60_000;
+  for (;;) {
+    try {
+      await mkdir(buildLockDir);
+      break;
+    } catch (error) {
+      if (error?.code !== "EEXIST") throw error;
+      const lockAge = await stat(buildLockDir).then((entry) => Date.now() - entry.mtimeMs).catch(() => 0);
+      if (lockAge > 10 * 60_000) {
+        await rm(buildLockDir, { recursive: true, force: true });
+        continue;
+      }
+      if (Date.now() >= deadline) throw new Error(`engine build lock timed out: ${buildLockDir}`);
+      await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+    }
+  }
+  try {
+    return await action();
+  } finally {
+    await rm(buildLockDir, { recursive: true, force: true });
+  }
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  if (mode === "check") {
-    process.exit(await isFresh() ? 0 : 10);
-  }
-
-  if (mode === "auto" && await isFresh()) {
-    process.exit(0);
-  }
-
-  await build();
+  const status = await withBuildLock(async () => {
+    if (mode === "check") return await isFresh() ? 0 : 10;
+    if (mode === "auto" && await isFresh()) return 0;
+    await build();
+    return 0;
+  });
+  process.exit(status);
 }
 
 function run(command, args) {
