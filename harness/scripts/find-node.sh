@@ -37,7 +37,35 @@ rubato_node_candidates() {
 # 고른 node 의 절대경로를 stdout 으로 낸다. 하나도 못 찾으면 1 로 끝난다.
 rubato_find_node() {
   _select="${RUBATO_SELECT_NODE:-$(CDPATH= cd -- "$(dirname "$0")" && pwd)/../rubato-pi/scripts/select-node.mjs}"
-  rubato_node_candidates | while IFS= read -r candidate; do
+  _cache="${RUBATO_NODE_CACHE:-${HOME:+$HOME/.rubato-pi/node-path}}"
+
+  # 한 번 정본 선택기가 고른 Node 는 같은 기계의 모든 진입점이 공유한다.
+  # 매 세션마다 설치된 구버전 Node 들로 선택기를 다시 띄우면 시작 시간 대부분을
+  # 프로세스 탐색에 쓴다. 버전별 nvm 경로처럼 선택기가 검증한 실행 파일을
+  # 그대로 재사용하고, 그 경로가 사라지면 즉시 느린 선택 경로로 돌아간다.
+  # 명시적 RUBATO_NODE 는 캐시보다 세다.
+  if [ -z "${RUBATO_NODE-}" ] && [ -n "$_cache" ] && [ -f "$_cache" ]; then
+    cached=""
+    IFS= read -r cached <"$_cache" || true
+    if [ -n "$cached" ] && [ -x "$cached" ]; then
+      cached_version="$(basename "$(dirname "$(dirname "$cached")")")"
+      case "$cached_version" in
+        v2[4-9].*|v[3-9][0-9].*)
+          printf '%s\n' "$cached"
+          return 0
+          ;;
+        *)
+          cached_major="$("$cached" -e 'process.stdout.write(String(process.versions.node.split(".")[0]))' 2>/dev/null)" || cached_major=""
+          if [ -n "$cached_major" ] && [ "$cached_major" -ge 24 ] 2>/dev/null; then
+            printf '%s\n' "$cached"
+            return 0
+          fi
+          ;;
+      esac
+    fi
+  fi
+
+  picked_node="$(rubato_node_candidates | while IFS= read -r candidate; do
     [ -n "$candidate" ] && [ -x "$candidate" ] || continue
     if [ -f "$_select" ]; then
       picked="$("$candidate" "$_select" --print 2>/dev/null)" || continue
@@ -51,5 +79,13 @@ rubato_find_node() {
       printf '%s\n' "$picked"
       return 0
     fi
-  done | head -1 | grep . || return 1
+  done | head -1 | grep .)" || return 1
+  _cache="${RUBATO_NODE_CACHE:-${HOME:+$HOME/.rubato-pi/node-path}}"
+  if [ -n "$_cache" ] && [ -z "${RUBATO_NODE-}" ]; then
+    mkdir -p "$(dirname "$_cache")" 2>/dev/null || true
+    printf '%s\n' "$picked_node" >"$_cache.tmp.$$" 2>/dev/null \
+      && mv -f "$_cache.tmp.$$" "$_cache" 2>/dev/null \
+      || rm -f "$_cache.tmp.$$"
+  fi
+  printf '%s\n' "$picked_node"
 }

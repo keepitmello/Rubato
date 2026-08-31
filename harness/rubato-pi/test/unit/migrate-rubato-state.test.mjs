@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname } from "node:path"
 import { join } from "node:path"
@@ -34,7 +34,7 @@ test("moves a legacy root atomically when the Rubato root is absent", () => {
   }
 })
 
-test("merges missing files, removes identical copies, and preserves conflicts", () => {
+test("merges missing files, removes identical copies, and archives conflicts", () => {
   const root = fixture()
   try {
     const source = join(root, ".omo")
@@ -47,8 +47,9 @@ test("merges missing files, removes identical copies, and preserves conflicts", 
     const result = migrateRoot(source, target)
     assert.equal(readFileSync(join(target, "only-old"), "utf8"), "move")
     assert.equal(existsSync(join(source, "same")), false)
-    assert.deepEqual(result.conflicts, [join(source, "conflict")])
-    assert.equal(readFileSync(join(source, "conflict"), "utf8"), "old")
+    assert.equal(result.archived, 1)
+    assert.equal(readFileSync(join(target, ".migration-archive", "omo", "conflict"), "utf8"), "old")
+    assert.equal(existsSync(source), false)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
@@ -71,16 +72,51 @@ test("migrates both the user root and the current project root", () => {
   }
 })
 
-test("leaves a symlinked legacy root untouched", () => {
+test("moves a symlinked legacy root without following it", () => {
   const root = fixture()
   try {
     const outside = join(root, "outside")
-    mkdirSync(outside)
     const source = join(root, ".omo")
     symlinkSync(outside, source, "dir")
-    const result = migrateRoot(source, join(root, ".rubato"))
-    assert.deepEqual(result.conflicts, [source])
-    assert.equal(existsSync(source), true)
+    const target = join(root, ".rubato")
+    const result = migrateRoot(source, target)
+    assert.equal(result.moved, 1)
+    assert.equal(existsSync(source), false)
+    assert.equal(lstatSync(target).isSymbolicLink(), true)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test("moves a non-conflicting symlink entry into the live tree", () => {
+  const root = fixture()
+  try {
+    const source = join(root, ".omo")
+    const target = join(root, ".rubato")
+    mkdirSync(source)
+    mkdirSync(target)
+    symlinkSync(join(root, "outside"), join(source, "auth-link"))
+    const result = migrateRoot(source, target)
+    assert.equal(result.moved, 1)
+    assert.equal(lstatSync(join(target, "auth-link")).isSymbolicLink(), true)
+    assert.equal(existsSync(join(source, "auth-link")), false)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test("archives a conflicting symlink entry instead of overwriting the live file", () => {
+  const root = fixture()
+  try {
+    const source = join(root, ".omo")
+    const target = join(root, ".rubato")
+    mkdirSync(source)
+    write(join(target, "auth-link"), "live")
+    symlinkSync(join(root, "outside"), join(source, "auth-link"))
+    const result = migrateRoot(source, target)
+    assert.equal(result.archived, 1)
+    assert.equal(readFileSync(join(target, "auth-link"), "utf8"), "live")
+    assert.equal(lstatSync(join(target, ".migration-archive", "omo", "auth-link")).isSymbolicLink(), true)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
