@@ -1,9 +1,7 @@
+import { AGENT_EFFORTS, type AgentEffort } from "@rubato/agent-core"
+
 import { clampTaskSummary } from "../../task-summary"
-import type { TaskReasoning, TaskToolParamsStatic } from "./params"
-
-type TaskItem = NonNullable<TaskToolParamsStatic["tasks"]>[number]
-
-const PROVIDER_PADDING_PROMPTS = new Set(["unused", "placeholder", "not used", "n/a"])
+import type { TaskToolParamsStatic } from "./params"
 
 function isRecord(value: unknown): value is Record<PropertyKey, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -19,108 +17,28 @@ function identifier(value: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined
 }
 
-function reasoning(value: unknown): TaskReasoning | undefined {
-  switch (value) {
-    case "off":
-    case "minimal":
-    case "low":
-    case "medium":
-    case "high":
-    case "xhigh":
-    case "max":
-      return value
-    default:
-      return undefined
-  }
-}
-
-function stringList(value: unknown): string[] | undefined {
-  if (!Array.isArray(value)) return undefined
-  const strings = value.flatMap((entry) => {
-    const normalized = identifier(entry)
-    return normalized === undefined ? [] : [normalized]
-  })
-  return strings.length > 0 ? strings : undefined
+function effort(value: unknown): AgentEffort | undefined {
+  return AGENT_EFFORTS.find((entry) => entry === value)
 }
 
 function summaryText(value: unknown): string | undefined {
   return clampTaskSummary(typeof value === "string" ? value : undefined)
 }
 
-function taskItem(value: unknown): TaskItem | undefined {
-  if (!isRecord(value)) return undefined
-  const prompt = nonBlankText(value.prompt)
-  if (prompt === undefined) return undefined
+export function normalizeTaskToolArguments(raw: unknown): TaskToolParamsStatic {
+  if (!isRecord(raw)) return { prompt: "" }
 
-  const taskSummary = summaryText(value.task_summary)
-  const description = nonBlankText(value.description)
-  const category = identifier(value.category)
-  const subagentType = identifier(value.subagent_type)
-  const name = identifier(value.name)
-  const model = identifier(value.model)
-  const normalizedReasoning = reasoning(value.reasoning)
-  const loadSkills = stringList(value.load_skills)
+  const prompt = typeof raw.prompt === "string" ? raw.prompt : ""
+  const model = identifier(raw.model)
+  const preset = identifier(raw.preset)
+  const normalizedEffort = effort(raw.effort)
+  const summary = summaryText(raw.summary) ?? summaryText(raw.task_summary)
 
   return {
     prompt,
-    ...(taskSummary === undefined ? {} : { task_summary: taskSummary }),
-    ...(description === undefined ? {} : { description }),
-    ...(category === undefined ? {} : { category }),
-    ...(subagentType === undefined ? {} : { subagent_type: subagentType }),
-    ...(name === undefined ? {} : { name }),
     ...(model === undefined ? {} : { model }),
-    ...(normalizedReasoning === undefined ? {} : { reasoning: normalizedReasoning }),
-    ...(loadSkills === undefined ? {} : { load_skills: loadSkills }),
-  }
-}
-
-function taskItems(value: unknown): TaskItem[] | undefined {
-  if (!Array.isArray(value)) return undefined
-  return value.flatMap((entry) => {
-    const normalized = taskItem(entry)
-    return normalized === undefined ? [] : [normalized]
-  })
-}
-
-function isProviderPaddingTask(item: TaskItem): boolean {
-  return PROVIDER_PADDING_PROMPTS.has(item.prompt.trim().toLowerCase())
-}
-
-export function normalizeTaskToolArguments(raw: unknown): TaskToolParamsStatic {
-  if (!isRecord(raw)) return {}
-
-  const rawPrompt = typeof raw.prompt === "string" ? raw.prompt : undefined
-  const prompt = nonBlankText(rawPrompt)
-  const normalizedTasks = taskItems(raw.tasks)
-  const tasksAreSinglePadding =
-    prompt !== undefined &&
-    normalizedTasks !== undefined &&
-    (normalizedTasks.length === 0 || normalizedTasks.every(isProviderPaddingTask))
-  const tasks = tasksAreSinglePadding ? undefined : normalizedTasks
-  const taskSummary = summaryText(raw.task_summary)
-  const description = nonBlankText(raw.description)
-  const category = identifier(raw.category)
-  const subagentType = identifier(raw.subagent_type)
-  const name = identifier(raw.name)
-  const model = identifier(raw.model)
-  const normalizedReasoning = reasoning(raw.reasoning)
-  const loadSkills = stringList(raw.load_skills)
-  // Background is the default: an unspecified run_in_background would otherwise fall through every
-  // `=== true` check downstream and block the parent turn on the child. Only an explicit false opts
-  // back into the foreground wait.
-  const runInBackground = typeof raw.run_in_background === "boolean" ? raw.run_in_background : true
-
-  return {
-    ...(prompt === undefined ? {} : { prompt }),
-    ...(taskSummary === undefined ? {} : { task_summary: taskSummary }),
-    ...(description === undefined ? {} : { description }),
-    ...(category === undefined ? {} : { category }),
-    ...(subagentType === undefined ? {} : { subagent_type: subagentType }),
-    run_in_background: runInBackground,
-    ...(name === undefined ? {} : { name }),
-    ...(model === undefined ? {} : { model }),
-    ...(normalizedReasoning === undefined ? {} : { reasoning: normalizedReasoning }),
-    ...(loadSkills === undefined ? {} : { load_skills: loadSkills }),
-    ...(tasks === undefined ? {} : { tasks }),
+    ...(preset === undefined ? {} : { preset }),
+    ...(normalizedEffort === undefined ? {} : { effort: normalizedEffort }),
+    ...(summary === undefined ? {} : { summary }),
   }
 }

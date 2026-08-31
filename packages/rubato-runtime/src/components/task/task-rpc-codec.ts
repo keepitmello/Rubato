@@ -2,7 +2,6 @@ import type {
   TaskOutputDetails,
   TaskRecord,
   TaskRunStats,
-  TaskSnapshot as TaskOutputSnapshot,
   ToolProgressDetails,
 } from "@rubato/senpi-task"
 import { recordSummary } from "@rubato/senpi-task"
@@ -144,10 +143,12 @@ export function boundedTaskOutput(details: TaskOutputDetails) {
   if (details.kind === "not_found") return { kind: "not_found", reason: "Task not found." } as const
   if (details.kind === "invalid_arguments") return details
   const snapshot = boundedOutputSnapshot(details.snapshot)
-  if (details.kind === "status") return { ...details, snapshot }
+  if (details.kind === "status") return { kind: "status" as const, snapshot }
   const transcript = bounded(details.transcript, MAX_SNAPSHOT_TEXT_LENGTH)
   return {
-    ...details,
+    kind: details.kind,
+    mode: details.mode,
+    source: details.source,
     transcript: transcript.value ?? "",
     truncated: details.truncated || transcript.truncated,
     snapshot,
@@ -162,60 +163,17 @@ function validTaskId(value: string): boolean {
   return value.length <= MAX_TASK_ID_LENGTH && TASK_ID_PATTERN.test(value)
 }
 
-function boundedOutputSnapshot(snapshot: TaskOutputSnapshot) {
-  const description = bounded(snapshot.description, MAX_SNAPSHOT_TEXT_LENGTH)
-  const finalResponse = bounded(snapshot.final_response, MAX_SNAPSHOT_TEXT_LENGTH)
-  const errorMessage = bounded(snapshot.error_message, MAX_SNAPSHOT_TEXT_LENGTH)
+function boundedOutputSnapshot(snapshot: Extract<TaskOutputDetails, { kind: "status" }>["snapshot"]) {
+  const output = bounded(snapshot.output, MAX_SNAPSHOT_TEXT_LENGTH)
+  const model = snapshot.model === undefined ? undefined : boundedRequired(snapshot.model, MAX_SNAPSHOT_TEXT_LENGTH)
   return {
-    ...snapshot,
-    task_id: boundedRequired(snapshot.task_id, MAX_TASK_ID_LENGTH),
-    name: bounded(snapshot.name, MAX_SNAPSHOT_TEXT_LENGTH).value,
-    description: description.value,
-    task_summary: bounded(snapshot.task_summary, MAX_SNAPSHOT_TEXT_LENGTH).value,
-    execution_mode: boundedRequired(snapshot.execution_mode, MAX_SNAPSHOT_TEXT_LENGTH),
-    model: boundedRequired(snapshot.model, MAX_SNAPSHOT_TEXT_LENGTH),
-    agent_type: bounded(snapshot.agent_type, MAX_SNAPSHOT_TEXT_LENGTH).value,
-    category: bounded(snapshot.category, MAX_SNAPSHOT_TEXT_LENGTH).value,
-    parent_session_id: boundedRequired(snapshot.parent_session_id, MAX_TASK_ID_LENGTH),
-    root_session_id: boundedRequired(snapshot.root_session_id, MAX_TASK_ID_LENGTH),
-    child_session_id: bounded(snapshot.child_session_id, MAX_TASK_ID_LENGTH).value,
-    final_response: finalResponse.value,
-    error_message: errorMessage.value,
-    ...(description.truncated ? { description_truncated: true } : {}),
-    ...(finalResponse.truncated ? { final_response_truncated: true } : {}),
-    ...(errorMessage.truncated ? { error_message_truncated: true } : {}),
-    ...(snapshot.resolved_model === undefined
-      ? {}
-      : {
-          resolved_model: {
-            ...snapshot.resolved_model,
-            provider: boundedRequired(snapshot.resolved_model.provider, MAX_SNAPSHOT_TEXT_LENGTH),
-            model_id: boundedRequired(snapshot.resolved_model.model_id, MAX_SNAPSHOT_TEXT_LENGTH),
-            display: boundedRequired(snapshot.resolved_model.display, MAX_SNAPSHOT_TEXT_LENGTH),
-            variant: bounded(snapshot.resolved_model.variant, MAX_SNAPSHOT_TEXT_LENGTH).value,
-            reasoning_effort: bounded(
-              snapshot.resolved_model.reasoning_effort,
-              MAX_SNAPSHOT_TEXT_LENGTH,
-            ).value,
-            reasoning: bounded(snapshot.resolved_model.reasoning, MAX_SNAPSHOT_TEXT_LENGTH).value,
-          },
-        }),
-    ...(snapshot.suspended === undefined
-      ? {}
-      : {
-          suspended: {
-            explanation: boundedRequired(snapshot.suspended.explanation, MAX_SNAPSHOT_TEXT_LENGTH),
-          },
-        }),
-    ...(snapshot.lost === undefined
-      ? {}
-      : {
-          lost: {
-            ...snapshot.lost,
-            explanation: boundedRequired(snapshot.lost.explanation, MAX_SNAPSHOT_TEXT_LENGTH),
-            session_dir: boundedRequired(snapshot.lost.session_dir, MAX_SNAPSHOT_TEXT_LENGTH),
-          },
-        }),
+    task_id: boundedRequired(snapshot.agentId, MAX_TASK_ID_LENGTH),
+    status: snapshot.status,
+    ...(model === undefined ? {} : { model }),
+    ...(snapshot.effort === undefined ? {} : { effort: snapshot.effort }),
+    ...(snapshot.effortSource === undefined ? {} : { effortSource: snapshot.effortSource }),
+    ...(output.value === undefined ? {} : { output: output.value }),
+    ...(output.truncated ? { output_truncated: true } : {}),
   }
 }
 

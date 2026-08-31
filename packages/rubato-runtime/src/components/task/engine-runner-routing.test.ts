@@ -14,6 +14,7 @@ import type {
 
 import { FakeExtensionAPI } from "../../../test-support/fake-extension-api"
 import { composeTaskEngine, type TaskRunnerFactories } from "./engine"
+import { createTeamServiceTestModelRegistry } from "./team-service-test-model-registry"
 
 const tempRoots: string[] = []
 
@@ -72,6 +73,7 @@ function composeWithSpies(): { inProcess: Spy; process: Spy; engine: ReturnType<
     sharedParentTools: () => [],
     runnerFactories,
   })
+  engine.runtime.captureFrom({ modelRegistry: createTeamServiceTestModelRegistry() })
   return { inProcess, process, engine }
 }
 

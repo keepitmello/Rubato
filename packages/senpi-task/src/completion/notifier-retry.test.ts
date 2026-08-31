@@ -204,7 +204,7 @@ describe("createCompletionNotifier scheduled retries", () => {
 
     // then
     expect(parent.calls).toHaveLength(1)
-    expect(parent.calls[0]?.details.map((detail) => detail.task_id)).toEqual(["st_eligible"])
+    expect(parent.calls[0]?.details.map((detail) => detail.agentId)).toEqual(["st_eligible"])
   })
 
   test("#given a failed record w2notif #when reconciliation sees compaction #then it buffers normally", () => {

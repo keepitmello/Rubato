@@ -22,7 +22,7 @@ describe("buildTaskToolDescription plan-gated agents", () => {
     const description = buildTaskToolDescription({ rubatoConfig: CONFIG, agents: agentSet() })
 
     // then
-    expect(description).toContain("Plan-gated agents")
+    expect(description).toContain("Plan-gated presets")
     expect(description).toContain("ulw-plan")
     expect(description).toContain("start-work")
     expect(description).toContain("user explicitly request")
@@ -36,11 +36,13 @@ describe("buildTaskToolDescription plan-gated agents", () => {
     const description = buildTaskToolDescription({ rubatoConfig: CONFIG, agents: agentSet() })
 
     // then
-    const availableLine = description.split("\n").find((line) => line.includes("Available agents:")) ?? ""
-    expect(availableLine).toContain("explore")
-    expect(availableLine).toContain("librarian")
-    expect(availableLine).not.toContain("metis")
-    expect(availableLine).not.toContain("momus")
+    const availableNames = (description.split("\n").find((line) => line.includes("Available presets:")) ?? "")
+      .split("Available presets:")[1]
+      ?.split(". CORRECT")[0] ?? ""
+    expect(availableNames).toContain("explore")
+    expect(availableNames).toContain("librarian")
+    expect(availableNames).not.toContain("metis")
+    expect(availableNames).not.toContain("momus")
   })
 
   test("#given only plain agents #when built #then no plan-gated section is rendered", () => {
@@ -53,6 +55,6 @@ describe("buildTaskToolDescription plan-gated agents", () => {
     const description = buildTaskToolDescription({ rubatoConfig: CONFIG, agents })
 
     // then
-    expect(description).not.toContain("Plan-gated agents")
+    expect(description).not.toContain("Plan-gated presets")
   })
 })

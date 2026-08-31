@@ -5,52 +5,42 @@ import { CTX, createFakeManager, makeDeps } from "./__fixtures__/task-tool-fakes
 import { buildTaskExecute } from "./execute"
 
 describe("buildTaskExecute plan errors", () => {
-  test("#given an unknown target with active agents and categories #when executed #then both roster suffixes are rendered", async () => {
-    // given
+  test("#given an unknown preset #when executed #then it fails before spawn with preset_unavailable", async () => {
+    let started = false
     const manager = createFakeManager({
-      start: async (): Promise<StartResult> => ({
-        kind: "plan_unresolved",
-        error: {
-          code: "unknown_target",
-          message: 'Target "nope" not found.',
-          availableAgents: ["explore", "momus"],
-          availableCategories: ["deep", "quick"],
-        },
-      }),
+      start: async (): Promise<StartResult> => {
+        started = true
+        return { kind: "started", task_id: "st_x", status: "running", name: "t" }
+      },
     })
-    const execute = buildTaskExecute(makeDeps(manager))
+    const execute = buildTaskExecute(makeDeps(manager, { agents: { explore: { name: "explore" } } }))
 
-    // when
-    const result = await execute("call-plan-error", { prompt: "p", subagent_type: "nope" }, undefined, undefined, CTX)
+    const result = await execute("call-plan-error", { prompt: "p", preset: "nope" }, undefined, undefined, CTX)
 
-    // then
+    expect(started).toBe(false)
+    expect(result.details.status).toBe("preset_unavailable")
     const text = result.content[0]?.type === "text" ? result.content[0].text : ""
-    expect(text).toBe(
-      'Target "nope" not found. Available agents: explore, momus. Available categories: deep, quick.',
-    )
+    expect(text).toContain("preset 'nope' is not available")
   })
 
-  test("#given a model_unavailable plan error #when executed #then the suffix points to the live picker catalog", async () => {
-    // given
+  test("#given a missing exact model #when executed #then it fails closed without calling start", async () => {
+    let started = false
     const manager = createFakeManager({
-      start: async (): Promise<StartResult> => ({
-        kind: "plan_unresolved",
-        error: {
-          code: "model_unavailable",
-          message: 'No available model for category "quick" (attempted opengateway/glm-5.2-ultrafast).',
-          availableCategories: ["deep", "quick"],
-        },
-      }),
+      start: async (): Promise<StartResult> => {
+        started = true
+        return {
+          kind: "plan_unresolved",
+          error: { code: "model_unavailable", message: "should not run" },
+        }
+      },
     })
-    const execute = buildTaskExecute(makeDeps(manager))
+    const execute = buildTaskExecute(makeDeps(manager, { models: { has: () => false } }))
 
-    // when
-    const result = await execute("call-model-unavailable", { prompt: "p", category: "quick" }, undefined, undefined, CTX)
+    const result = await execute("call-model-unavailable", { prompt: "p", model: "missing/model" }, undefined, undefined, CTX)
 
-    // then
+    expect(started).toBe(false)
+    expect(result.details.status).toBe("model_unavailable")
     const text = result.content[0]?.type === "text" ? result.content[0].text : ""
-    expect(text).toContain("Valid category names: deep, quick")
-    expect(text).toContain("current session's /model catalog")
-    expect(text).not.toContain("Available categories:")
+    expect(text).toContain("missing/model")
   })
 })

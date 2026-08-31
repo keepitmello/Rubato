@@ -1,61 +1,40 @@
 import { describe, expect, test } from "bun:test"
 
 import { TASK_SUMMARY_MAX_LENGTH } from "../../task-summary"
-import { MAX_TASK_BATCH_ITEMS, TaskToolParams } from "./params"
+import { TaskToolParams } from "./params"
 
 describe("TaskToolParams", () => {
-  test("#given the schema #when inspected #then it is a TypeBox object with the task tool fields", () => {
+  test("#given the schema #when inspected #then it exposes only prompt model XOR preset effort and summary", () => {
     expect(TaskToolParams.type).toBe("object")
-    const properties = TaskToolParams.properties
-    expect(Object.keys(properties)).toEqual(
-      expect.arrayContaining([
-        "prompt",
-        "description",
-        "category",
-        "subagent_type",
-        "run_in_background",
-        "name",
-        "model",
-        "reasoning",
-        "load_skills",
-      ]),
-    )
+    expect(Object.keys(TaskToolParams.properties)).toEqual(["prompt", "model", "preset", "effort", "summary"])
   })
 
-  test("#given the schema #when properties are inspected #then removed task params are absent", () => {
+  test("#given the schema #when properties are inspected #then removed public fields are absent", () => {
     const propertyKeys = Object.keys(TaskToolParams.properties)
 
-    expect(propertyKeys).toContain("prompt")
-    expect(propertyKeys).not.toContain("execution_mode")
-    expect(propertyKeys).not.toContain("task_id")
+    expect(propertyKeys).not.toContain("category")
+    expect(propertyKeys).not.toContain("subagent_type")
+    expect(propertyKeys).not.toContain("run_in_background")
+    expect(propertyKeys).not.toContain("load_skills")
+    expect(propertyKeys).not.toContain("reasoning")
+    expect(propertyKeys).not.toContain("tasks")
+    expect(propertyKeys).not.toContain("task_summary")
+    expect(propertyKeys).not.toContain("description")
+    expect(propertyKeys).not.toContain("name")
   })
 
-  test("#given the schema #when required fields are read #then neither prompt nor tasks is schema-required (the prompt-XOR-tasks rule is enforced by validateBatchShape)", () => {
-    expect(TaskToolParams.required).toBeUndefined()
+  test("#given the schema #when required fields are read #then prompt is required", () => {
+    expect(TaskToolParams.required).toEqual(["prompt"])
   })
 
-  test("#given batch task parameters #when schema is inspected #then a finite maximum is enforced", () => {
-    expect(TaskToolParams.properties.tasks).toMatchObject({ maxItems: MAX_TASK_BATCH_ITEMS })
-  })
-
-  test("#given the schema #when task_summary is inspected #then it sits right after prompt with the schema length limit", () => {
+  test("#given the schema #when summary is inspected #then it sits after effort with the schema length limit", () => {
     const keys = Object.keys(TaskToolParams.properties)
-    expect(keys.indexOf("task_summary")).toBe(keys.indexOf("prompt") + 1)
-    expect(TaskToolParams.properties.task_summary).toMatchObject({ maxLength: TASK_SUMMARY_MAX_LENGTH })
+    expect(keys.indexOf("summary")).toBe(keys.indexOf("effort") + 1)
+    expect(TaskToolParams.properties.summary).toMatchObject({ maxLength: TASK_SUMMARY_MAX_LENGTH })
   })
 
-  test("#given reasoning controls #when schemas are inspected #then only canonical Senpi levels are exposed", () => {
-    const levels = TaskToolParams.properties.reasoning.anyOf.map((entry) => entry.const)
-    const itemLevels = TaskToolParams.properties.tasks.items.properties.reasoning.anyOf.map((entry) => entry.const)
-
-    expect(levels).toEqual(["off", "minimal", "low", "medium", "high", "xhigh", "max"])
-    expect(itemLevels).toEqual(levels)
-  })
-
-  test("#given a batch item schema #when task_summary is inspected #then it sits right after the item prompt with the schema length limit", () => {
-    const itemSchema = TaskToolParams.properties.tasks.items
-    const keys = Object.keys(itemSchema.properties)
-    expect(keys.indexOf("task_summary")).toBe(keys.indexOf("prompt") + 1)
-    expect(itemSchema.properties.task_summary).toMatchObject({ maxLength: TASK_SUMMARY_MAX_LENGTH })
+  test("#given effort controls #when schemas are inspected #then only public Agent efforts are exposed", () => {
+    const levels = TaskToolParams.properties.effort.anyOf.map((entry) => entry.const)
+    expect(levels).toEqual(["minimal", "low", "medium", "high", "xhigh", "max"])
   })
 })

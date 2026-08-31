@@ -6,6 +6,15 @@ import { log } from "@rubato/utils"
 
 import { parseTaskId, type TaskId } from "../../state"
 import { createTaskRecordStore } from "../../store"
+import { buildMemberTeamBoardTools, type TeamToolsService } from "../../tools/team"
+import {
+  claimTeamTask,
+  createTeamTask,
+  getTeamTask,
+  listTeamTasks,
+  updateTeamTaskStatus,
+  type TeamTasklistContext,
+} from "../tasks"
 import { MEMBER_EXTENSION_BUNDLE_NAME, MEMBER_IDENTITY_ENV } from "./identity"
 import { createMemberSelfPoller, type MemberSelfPoller } from "./self-poller"
 import { createQaAfterInjectHold } from "./qa-inject-hold"
@@ -154,6 +163,9 @@ export default async function registerMemberExtension(pi: ExtensionAPI): Promise
     members: parsed.members,
     appendEvent: (taskId, event) => store.appendEvent(taskId, event),
   }))
+  for (const tool of buildMemberTeamBoardTools({ service: createMemberBoardService(parsed) })) {
+    pi.registerTool(tool)
+  }
   pi.on("session_start", () => startRuntime(runtime))
   pi.on("session_shutdown", () => stopRuntime(pi, runtime))
 }
@@ -188,6 +200,47 @@ function runSafely(operation: string, promise: Promise<void>): void {
   promise.catch((error: unknown) => {
     log("senpi-task member extension poll failed", { operation, error: String(error) })
   })
+}
+
+function createMemberBoardService(parsed: ParsedMemberExtensionEnv): TeamToolsService {
+  const ctx: TeamTasklistContext = { teamRunId: parsed.teamRunId, config: parsed.config }
+  const unused = (name: string) => (): never => {
+    throw new Error(`${name} is not available on the member board`)
+  }
+  const assertOwnTeam = (teamRunId: string): void => {
+    if (teamRunId !== parsed.teamRunId) {
+      throw new Error(`Team ${teamRunId} is not this member's team.`)
+    }
+  }
+  return {
+    createTeam: unused("createTeam"),
+    deleteTeam: unused("deleteTeam"),
+    sendMessage: unused("sendMessage"),
+    status: unused("status"),
+    listTeams: unused("listTeams"),
+    requestShutdown: unused("requestShutdown"),
+    approveShutdown: unused("approveShutdown"),
+    rejectShutdown: unused("rejectShutdown"),
+    createTask: async (teamRunId, input) => {
+      assertOwnTeam(teamRunId)
+      return createTeamTask(ctx, input)
+    },
+    listTasks: async (teamRunId, filter) => {
+      assertOwnTeam(teamRunId)
+      return listTeamTasks(ctx, filter)
+    },
+    getTask: async (teamRunId, taskId) => {
+      assertOwnTeam(teamRunId)
+      return getTeamTask(ctx, taskId)
+    },
+    updateTask: async (input) => {
+      assertOwnTeam(input.teamRunId)
+      const owner = input.owner ?? parsed.memberName
+      return input.status === "claimed"
+        ? claimTeamTask(ctx, input.taskId, owner)
+        : updateTeamTaskStatus(ctx, input.taskId, input.status, owner)
+    },
+  }
 }
 
 function requiredEnv(env: NodeJS.ProcessEnv, name: string): string {

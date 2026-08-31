@@ -1,7 +1,7 @@
 import type { Theme, ThemeColor } from "@code-yeongyu/senpi"
 import { truncateToWidth } from "@earendil-works/pi-tui"
 
-import type { TaskToolDetails, TaskToolItemDetail } from "./types"
+import type { TaskToolDetails } from "./types"
 import {
   formatTaskMode,
   renderTaskCallLines,
@@ -49,26 +49,20 @@ export function formatTaskStatus(status: string): string {
 }
 
 export function taskResultLines(details: TaskToolDetails): readonly string[] {
-  const mode = details.run_in_background === undefined ? undefined : formatTaskMode(details.run_in_background)
-  return [taskResultLine(details, mode), ...(details.items ?? []).map(taskItemResultLine)]
+  return [taskResultLine(details, formatTaskMode())]
 }
 
 export function renderTaskResultLines(details: TaskToolDetails, theme: RendererTheme): readonly string[] {
-  const mode = details.run_in_background === undefined ? undefined : theme.italic(formatTaskMode(details.run_in_background))
-  return [taskResultLine(details, mode), ...(details.items ?? []).map(taskItemResultLine)]
+  return [taskResultLine(details, theme.italic(formatTaskMode()))]
 }
 
 export function renderTaskResultComponent(details: TaskToolDetails, theme: RendererTheme): LinesComponent {
   return {
     render: (width: number): string[] => {
       if (width <= 0) return [""]
-      const mode = details.run_in_background === undefined ? undefined : theme.italic(formatTaskMode(details.run_in_background))
+      const mode = theme.italic(formatTaskMode())
       const line = taskResultLineForWidth(details, mode, width)
-      const aggregate = truncateToWidth(theme.fg(statusThemeColor(details.status), line), width, ELLIPSIS)
-      const items = (details.items ?? []).map((item) =>
-        truncateToWidth(theme.fg(statusThemeColor(item.status), taskItemResultLine(item)), width, ELLIPSIS),
-      )
-      return [aggregate, ...items]
+      return [truncateToWidth(theme.fg(statusThemeColor(details.status), line), width, ELLIPSIS)]
     },
     invalidate: (): void => {},
   }
@@ -108,39 +102,24 @@ function fallbackCountToken(details: Pick<TaskToolDetails, "fallback_attempts">)
 }
 
 function taskResultLine(details: TaskToolDetails, mode: string | undefined): string {
-  const taskId = optionalRendererText(details.task_id)
+  const taskId = optionalRendererText(details.agentId)
   const reason = optionalRendererText(details.reason)
   return joinRendererTokens([
-    "task",
+    "Agent",
     taskTargetToken(details),
     fallbackCountToken(details),
     mode,
     formatTaskStatus(details.status),
-    taskId === undefined ? undefined : `id:${taskId}`,
+    taskId === undefined ? undefined : `agentId:${taskId}`,
     ...runStatsResultTokens(details.run_stats),
     details.queue_position === undefined ? undefined : `queue:${details.queue_position}`,
     reason === undefined ? undefined : `reason:${excerptRendererText(reason, TASK_REASON_EXCERPT_WIDTH)}`,
   ])
 }
 
-function taskItemResultLine(item: TaskToolItemDetail): string {
-  const taskId = optionalRendererText(item.task_id)
-  const name = optionalRendererText(item.name)
-  const error = optionalRendererText(item.error_message)
-  return joinRendererTokens([
-    "item",
-    name === undefined ? undefined : `name:${name}`,
-    taskTargetToken(item),
-    formatTaskStatus(item.status),
-    taskId === undefined ? undefined : `id:${taskId}`,
-    item.queue_position === undefined ? undefined : `queue:${item.queue_position}`,
-    error === undefined ? undefined : `error:${excerptRendererText(error, TASK_REASON_EXCERPT_WIDTH)}`,
-  ])
-}
-
 function taskResultLineForWidth(details: TaskToolDetails, mode: string | undefined, width: number): string {
   const requiredWithoutTarget = [
-    "task",
+    "Agent",
     fallbackCountToken(details),
     mode,
     formatTaskStatus(details.status),
@@ -151,7 +130,7 @@ function taskResultLineForWidth(details: TaskToolDetails, mode: string | undefin
     width - requiredWithoutTarget.reduce((total, token) => total + rendererVisibleWidth(token), 0) - requiredSpaces,
   )
   const required = [
-    "task",
+    "Agent",
     compactTargetToken(details, targetWidth),
     fallbackCountToken(details),
     mode,
@@ -174,10 +153,10 @@ function compactTargetToken(details: TargetIdentity, maxWidth: number): string |
 }
 
 function taskResultOptionalTokens(details: TaskToolDetails): readonly string[] {
-  const taskId = optionalRendererText(details.task_id)
+  const taskId = optionalRendererText(details.agentId)
   const reason = optionalRendererText(details.reason)
   return [
-    taskId === undefined ? undefined : `id:${taskId}`,
+    taskId === undefined ? undefined : `agentId:${taskId}`,
     ...runStatsResultTokens(details.run_stats),
     details.queue_position === undefined ? undefined : `queue:${details.queue_position}`,
     reason === undefined ? undefined : `reason:${excerptRendererText(reason, TASK_REASON_EXCERPT_WIDTH)}`,

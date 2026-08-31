@@ -44,7 +44,7 @@ describe("reload guard", () => {
     expect(veto).toEqual({
       cancel: true,
       reason:
-        "1 subagent(s) still running: explore-auth - wait for them to finish or cancel them (task_cancel) before reloading.",
+        "1 subagent(s) still running: explore-auth - wait for them to finish or cancel them (AgentCancel) before reloading.",
     })
   })
 
@@ -58,7 +58,7 @@ describe("reload guard", () => {
     )
 
     expect(veto?.reason).toBe(
-      "3 subagent(s) still running: Fix type error, momus-review, st_3 - wait for them to finish or cancel them (task_cancel) before reloading.",
+      "3 subagent(s) still running: Fix type error, momus-review, st_3 - wait for them to finish or cancel them (AgentCancel) before reloading.",
     )
   })
 
@@ -88,7 +88,7 @@ describe("reload guard", () => {
       {
         cancel: true,
         reason:
-          "1 subagent(s) still running: deep-refactor - wait for them to finish or cancel them (task_cancel) before reloading.",
+          "1 subagent(s) still running: deep-refactor - wait for them to finish or cancel them (AgentCancel) before reloading.",
       },
     ])
   })
@@ -144,7 +144,7 @@ describe("reload guard", () => {
     )
 
     expect(veto?.reason).toBe(
-      "1 subagent(s) still running: explore-auth - wait for them to finish or cancel them (task_cancel) before reloading."
+      "1 subagent(s) still running: explore-auth - wait for them to finish or cancel them (AgentCancel) before reloading."
       + " 1 DAG run(s) still in flight: mass-ulw - wait for them to finish or cancel them (dag cancel) before reloading.",
     )
   })

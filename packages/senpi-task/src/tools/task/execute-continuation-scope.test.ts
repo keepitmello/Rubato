@@ -14,7 +14,7 @@ function ctxFor(sessionId: string): TaskToolContext {
 }
 
 function deps(manager: TaskManager): TaskToolDeps {
-  return { manager, rubatoConfig: RUBATO_CONFIG, agents: {}, loadSkills: () => ({ prepend: "", resolved: [], missing: [] }) }
+  return { manager, rubatoConfig: RUBATO_CONFIG, agents: {}, models: { has: (model) => model.includes("/") } }
 }
 
 afterEach(() => {
@@ -28,14 +28,14 @@ describe("task tool spawn-only manager seam", () => {
 
     const first = await execute(
       "spawn-A",
-      { prompt: "own work", category: "quick", run_in_background: true },
+      { prompt: "own work", model: "xai/grok-4.6" },
       undefined,
       undefined,
       ctxFor("session-A"),
     )
     const second = await execute(
       "spawn-B",
-      { prompt: "more work", category: "quick", run_in_background: true },
+      { prompt: "more work", model: "xai/grok-4.6" },
       undefined,
       undefined,
       ctxFor("session-B"),
@@ -43,8 +43,8 @@ describe("task tool spawn-only manager seam", () => {
 
     expect(first.details.mode).toBe("spawn")
     expect(second.details.mode).toBe("spawn")
-    expect(first.details.task_id).not.toBe(second.details.task_id)
-    expect(inProcess.handles.get(first.details.task_id)?.followUpCalls ?? []).toEqual([])
-    expect(inProcess.handles.get(second.details.task_id)?.followUpCalls ?? []).toEqual([])
+    expect(first.details.agentId).not.toBe(second.details.agentId)
+    expect(inProcess.handles.get(first.details.agentId)?.followUpCalls ?? []).toEqual([])
+    expect(inProcess.handles.get(second.details.agentId)?.followUpCalls ?? []).toEqual([])
   })
 })

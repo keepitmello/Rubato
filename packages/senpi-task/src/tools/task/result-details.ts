@@ -1,10 +1,13 @@
 import type { ExecutionMode, StartResult } from "../../manager"
-import type { ToolProgressDetails } from "../../progress"
 import type { TaskRecord } from "../../state"
-import type { TaskToolParamsStatic } from "./params"
-import type { TaskSkillSummary, TaskToolDetails, TaskToolMode } from "./types"
+import type { TaskToolDetails, TaskToolMode } from "./types"
 
-export type SingleSpawnParams = Omit<TaskToolParamsStatic, "prompt" | "tasks"> & { readonly prompt: string }
+export type SingleSpawnParams = {
+  readonly prompt: string
+  readonly summary?: string
+  readonly preset?: string
+  readonly model?: string
+}
 
 export function recordSummary(record: TaskRecord, includeLifecycle?: boolean) {
   return {
@@ -28,13 +31,14 @@ export function recordSummary(record: TaskRecord, includeLifecycle?: boolean) {
 }
 
 export function recordDetails(record: TaskRecord, mode: TaskToolMode): TaskToolDetails {
+  const { task_id, ...rest } = recordSummary(record)
   return {
-    ...recordSummary(record),
+    ...rest,
+    agentId: task_id,
     mode,
     subagent_type: record.agent_type,
     resolved_model: record.resolved_model,
     fallback_attempts: record.fallback_attempts,
-    run_in_background: false,
   }
 }
 
@@ -42,31 +46,17 @@ export function startedDetails(
   started: Extract<StartResult, { kind: "started" }>,
   params: SingleSpawnParams,
   executionMode: ExecutionMode,
-  skills?: TaskSkillSummary,
 ): TaskToolDetails {
   return {
-    task_id: started.task_id,
+    agentId: started.task_id,
     status: started.status,
     mode: "spawn",
-    task_summary: params.task_summary,
+    task_summary: params.summary,
     name: started.name,
-    category: params.category,
-    subagent_type: params.subagent_type,
+    subagent_type: params.preset,
     execution_mode: executionMode,
     model: params.model,
     resolved_model: started.resolved_model,
-    run_in_background: params.run_in_background === true,
     queue_position: started.queue_position,
-    ...(skills === undefined ? {} : { skills }),
   }
-}
-
-export function partialDetails(
-  started: Extract<StartResult, { kind: "started" }>,
-  params: SingleSpawnParams,
-  executionMode: ExecutionMode,
-  progress: ToolProgressDetails,
-  skills?: TaskSkillSummary,
-): TaskToolDetails & ToolProgressDetails {
-  return { ...startedDetails(started, params, executionMode, skills), ...progress }
 }

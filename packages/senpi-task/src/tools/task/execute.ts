@@ -1,13 +1,14 @@
+import type { AgentError, AgentHost, ResolvedAgentSpec } from "@rubato/agent-core"
+import { resolveAgentRequest } from "@rubato/agent-core"
 import type { AgentToolResult, AgentToolUpdateCallback } from "@code-yeongyu/senpi"
 
-import { executeBatch } from "./execute-batch"
-import { runSpawn } from "./execute-single"
-import { buildStartSpec, singleSpawnParams } from "./execute-spec"
-import type { ForegroundWaitOptions } from "./foreground-wait"
-import { evaluateSpawnPolicy } from "./spawn-policy"
+import { createSenpiAgentHost } from "../host/senpi-agent-host"
+import { agentPresetCatalog, closedModelCatalog } from "./catalogs"
 import type { TaskToolParamsStatic } from "./params"
-import type { ResolvedSpawnItem, TaskSkillSummary, TaskToolContext, TaskToolDeps, TaskToolDetails } from "./types"
-import { resolveSpawnItems, validateBatchShape, validateTaskTarget } from "./validation"
+import { startedDetails } from "./result-details"
+import { evaluateSpawnPolicy } from "./spawn-policy"
+import { backgroundStartText } from "./start-presentation"
+import type { TaskToolContext, TaskToolDeps, TaskToolDetails } from "./types"
 
 type TaskExecute = (
   toolCallId: string,
@@ -21,68 +22,96 @@ function result(text: string, details: TaskToolDetails): AgentToolResult<TaskToo
   return { content: [{ type: "text", text }], details }
 }
 
-function invalidArguments(message: string): AgentToolResult<TaskToolDetails> {
-  return result(message, { task_id: "", status: "invalid_arguments", mode: "spawn", reason: message })
+function invalidArguments(message: string, status = "invalid_arguments"): AgentToolResult<TaskToolDetails> {
+  return result(message, { agentId: "", status, mode: "spawn", reason: message })
 }
 
-export function buildTaskExecute(deps: TaskToolDeps, options: ForegroundWaitOptions = {}): TaskExecute {
-  return async (_toolCallId, params, signal, onUpdate, ctx) => {
-    const shape = validateBatchShape(params)
-    if (shape.kind === "error") return invalidArguments(shape.error.message)
+export function buildTaskExecute(deps: TaskToolDeps): TaskExecute {
+  return async (_toolCallId, params, signal, _onUpdate, ctx) => {
+    if (signal?.aborted) {
+      const reason = "Parent aborted before spawn"
+      return result(reason, { agentId: "", status: "cancelled", mode: "spawn", reason })
+    }
 
-    const resolved = resolveSpawnItems(params)
-    if (resolved.kind === "error") {
-      if (shape.kind === "single" && resolved.error.code === "item_target") {
-        const target = validateTaskTarget(params)
-        if (target.kind === "error") return invalidArguments(target.error.message)
+    const catalogs = {
+      models: deps.models ?? closedModelCatalog(),
+      presets: agentPresetCatalog(deps.agents),
+    }
+    const resolved = resolveAgentRequest({
+      prompt: params.prompt,
+      ...(params.model === undefined ? {} : { model: params.model }),
+      ...(params.preset === undefined ? {} : { preset: params.preset }),
+      ...(params.effort === undefined ? {} : { effort: params.effort }),
+      ...(params.summary === undefined ? {} : { summary: params.summary }),
+    }, catalogs)
+    if (!resolved.ok) return invalidArguments(resolved.error.message, resolved.error.code)
+
+    let spec = resolved.value
+    if (spec.preset !== undefined) {
+      const policy = evaluateSpawnPolicy(deps, spec.preset, spec.prompt, ctx.sessionManager.getSessionId())
+      if (policy.kind === "deny") {
+        return result(policy.message, { agentId: "", status: "denied", mode: "spawn", reason: policy.message })
       }
-      return invalidArguments(resolved.error.message)
+      if (policy.kind === "force") spec = { ...spec, prompt: policy.prompt }
     }
 
-    const first = resolved.items[0]
-    if (first === undefined) return invalidArguments("Provide at least one task item.")
-    if (resolved.items.length === 1) {
-      return runSpawn(deps, {
-        params: singleSpawnParams(first, params.run_in_background),
-        signal,
-        onUpdate,
-        ctx,
-        ...(options.env !== undefined && { env: options.env }),
-        ...(options.scheduleDeadline !== undefined && { scheduleDeadline: options.scheduleDeadline }),
-      })
+    const host = deps.host ?? hostFromDeps(deps, ctx)
+    try {
+      const handle = await host.spawn(spec)
+      return spawnedResult(deps, spec, handle.agentId)
+    } catch (error) {
+      return spawnFailure(error)
     }
-
-    const parentSessionId = ctx.sessionManager.getSessionId()
-    const skillSummaries = new WeakMap<ResolvedSpawnItem, TaskSkillSummary>()
-    return executeBatch({
-      manager: deps.manager,
-      items: resolved.items,
-      signal,
-      ctx,
-      runInBackground: params.run_in_background === true,
-      ...(options.env !== undefined && { env: options.env }),
-      ...(options.scheduleDeadline !== undefined && { scheduleDeadline: options.scheduleDeadline }),
-      skillSummaryFor: (item) => skillSummaries.get(item),
-      startItem: async (item) => {
-        let itemParams = singleSpawnParams(item, params.run_in_background)
-        const target = item.kind === "category"
-          ? { category: item.category }
-          : item.kind === "subagent_type"
-            ? { subagentType: item.subagentType }
-            : { model: item.model }
-        if (item.kind === "subagent_type") {
-          const policy = evaluateSpawnPolicy(deps, item.subagentType, itemParams.prompt, parentSessionId)
-          if (policy.kind === "deny") {
-            return { kind: "plan_unresolved", error: { code: "invalid_target", message: policy.message } }
-          }
-          if (policy.kind === "force") {
-            itemParams = { ...itemParams, prompt: policy.prompt, load_skills: [] }
-          }
-        }
-        const spec = buildStartSpec(itemParams, target, parentSessionId, deps, ctx.cwd)
-        if (spec.skills !== undefined) skillSummaries.set(item, spec.skills)
-        return deps.manager.start(spec)
-      },
-    })
   }
+}
+
+function hostFromDeps(deps: TaskToolDeps, ctx: TaskToolContext): AgentHost {
+  const parentSessionId = () => ctx.sessionManager.getSessionId()
+  return createSenpiAgentHost({
+    manager: deps.manager,
+    models: deps.models ?? closedModelCatalog(),
+    parentSessionId,
+    depth: () => (deps.resolveAncestry?.(parentSessionId())?.depth ?? 0) + 1,
+    rootSessionId: () => deps.resolveAncestry?.(parentSessionId())?.rootSessionId ?? parentSessionId(),
+    agents: deps.agents,
+    rubatoConfig: deps.rubatoConfig,
+  })
+}
+
+function spawnedResult(
+  deps: TaskToolDeps,
+  spec: ResolvedAgentSpec,
+  agentId: string,
+): AgentToolResult<TaskToolDetails> {
+  const record = deps.manager.get(agentId)
+  const status: "pending" | "running" = record?.status === "pending" ? "pending" : "running"
+  const name = record?.name ?? agentId
+  const started = {
+    kind: "started" as const,
+    task_id: agentId,
+    status,
+    name,
+    ...(record?.resolved_model === undefined ? {} : { resolved_model: record.resolved_model }),
+  }
+  return result(
+    backgroundStartText(started, { taskSummary: spec.summary }),
+    startedDetails(started, {
+      prompt: spec.prompt,
+      ...(spec.summary === undefined ? {} : { summary: spec.summary }),
+      ...(spec.preset === undefined ? {} : { preset: spec.preset }),
+      ...(spec.preset === undefined ? { model: spec.model } : {}),
+    }, record?.execution_mode === "process" ? "process" : "in-process"),
+  )
+}
+
+function spawnFailure(error: unknown): AgentToolResult<TaskToolDetails> {
+  const code = isAgentError(error) ? error.code : "invalid_request"
+  const message = error instanceof Error ? error.message : "Agent spawn failed"
+  return result(message, { agentId: "", status: code, mode: "spawn", reason: message })
+}
+
+function isAgentError(error: unknown): error is AgentError & Error {
+  return error instanceof Error && "code" in error && (
+    error.code === "invalid_request" || error.code === "model_unavailable" || error.code === "preset_unavailable"
+  )
 }

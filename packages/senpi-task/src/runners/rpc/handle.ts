@@ -147,7 +147,7 @@ export function createRpcChildHandle(options: CreateRpcChildHandleOptions): Trac
     get pid() {
       return child.pid ?? undefined
     },
-    // task_send is documented to ALWAYS steer into the addressed child, so a steer that the
+    // AgentSend is documented to ALWAYS steer into the addressed child, so a steer that the
     // host rejects as busy degrades to followUp queueing rather than failing the delivery.
     steer: async (text) => {
       beginTurn()

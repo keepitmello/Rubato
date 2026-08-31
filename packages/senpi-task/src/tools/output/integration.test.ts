@@ -26,7 +26,7 @@ afterAll(() => {
 })
 
 describe("readEventLogTranscript", () => {
-  test("#given a committed team_message_waited event #when task_output reads the event log #then the recovered body is visible", async () => {
+  test("#given a committed team_message_waited event #when AgentOutput reads the event log #then the recovered body is visible", async () => {
     // given
     const stateDir = tempStateDir()
     const store = createTaskRecordStore({ project_dir: stateDir, task: { state_dir: stateDir } })
@@ -45,7 +45,7 @@ describe("readEventLogTranscript", () => {
     // when
     const result = await runTaskOutput(
       { manager, stateDir },
-      { task_id: record.task_id, mode: "full" },
+      { agentId: record.task_id, mode: "full" },
       record.parent_session_id,
     )
 

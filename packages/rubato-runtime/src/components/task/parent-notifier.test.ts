@@ -49,7 +49,7 @@ function coordinatorWithManualFlush(delivered: Delivered[]): { coordinator: Idle
 
 const completionDetails = [
   {
-    task_id: "st_1",
+    agentId: "st_1",
     name: "worker",
     status: "completed" as const,
     model: "quotio-openai/gpt-5.6-luna-fast",
@@ -64,7 +64,7 @@ function completionMessage(taskId: string) {
     customType: "senpi-task.completion" as const,
     content: `${taskId} completed`,
     display: false,
-    details: [{ ...completionDetails[0]!, task_id: taskId }],
+    details: [{ ...completionDetails[0]!, agentId: taskId }],
     triggerTurn: true,
   }
 }
@@ -89,7 +89,7 @@ describe("createParentNotifier batched injection delivery", () => {
         customType: "senpi-task.completion",
         content: "st_1 completed",
         display: false,
-        details: [{ ...completionDetails[0], task_id: "st_1" }],
+        details: [{ ...completionDetails[0], agentId: "st_1" }],
       },
     ])
   })

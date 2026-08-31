@@ -31,7 +31,7 @@ describe("task_send always-steer surface", () => {
       },
     }
 
-    const result = await runTaskSend(manager, { to: "st_1", message: "new direction" }, "parent-1")
+    const result = await runTaskSend(manager, { agentId: "st_1", message: "new direction" }, "parent-1")
 
     expect(result.details).toMatchObject({ kind: "steered", delivered: "steer" })
     expect(sendCalls).toEqual([
@@ -46,7 +46,7 @@ describe("task_send always-steer surface", () => {
 
   test("#given a plain task_send call #when rendered #then no delivery option is shown", () => {
     const component = renderTaskSendCall(
-      { to: "st_1", message: "new direction" },
+      { agentId: "st_1", message: "new direction" },
       {
         fg: (_color, text) => text,
         italic: (text) => text,
@@ -54,7 +54,7 @@ describe("task_send always-steer surface", () => {
     )
 
     const line = component.render(120)[0] ?? ""
-    expect(line).toContain("task_send to:st_1")
+    expect(line).toContain("AgentSend agentId:st_1")
     expect(line).not.toContain("deliver:")
     expect(line).toContain("new direction")
   })

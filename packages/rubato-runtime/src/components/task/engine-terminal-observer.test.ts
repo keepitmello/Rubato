@@ -93,6 +93,7 @@ function fixture(): Fixture {
     },
     sessionManager: { getSessionId: () => "parent-session" },
     isIdle: () => true,
+    modelRegistry: createTeamServiceTestModelRegistry(),
   })
   return { engine, runner, project, edges }
 }
@@ -102,7 +103,7 @@ async function spawn(engine: TaskEngine, name: string): Promise<string> {
     prompt: `work ${name}`,
     parent_session_id: "parent-session",
     depth: 0,
-    model: "anthropic/claude-opus-5",
+    model: "rubato-mock/mock-1",
     name,
   })
   if (result.kind !== "started") throw new Error(`spawn failed: ${result.kind}`)

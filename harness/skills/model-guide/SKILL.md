@@ -1,6 +1,6 @@
 ---
 name: model-guide
-description: "서브에이전트·팀원·검증자 모델을 고를 때 읽는 라우팅 가이드. 일회성 task Agent 하나를 띄울 때도, 팀 로스터를 짤 때도 — Agent 모델을 결정하는 모든 순간에 적용."
+description: "Agent·팀원·검증자 모델을 고를 때 읽는 라우팅 가이드. 일회성 Agent 하나를 띄울 때도, 팀 로스터를 짤 때도 — Agent 모델을 결정하는 모든 순간에 적용."
 ---
 
 # Model Guide
@@ -43,27 +43,25 @@ Two convergers are not interchangeable: a hypothesis converger compresses the an
 
 Debugging is the case that tempts misrouting. The diagnosis is judgment, and judgment stays with the session that owns the outcome — lead and teammate alike. Default shape: a `grok` explorer maps the terrain and gathers evidence, the owner reasons to the root cause, and execution of the settled fix routes by breadth as usual. Hand a debugging workstream to an Agent only when it is genuinely separable and runs parallel to other work; review it with the other model family.
 
-## 3. Semantic category mapping
+## 3. Exact model or named preset
 
-Choose the cognitive profile; the harness chooses the live provider/model.
-Rubato's semantic categories own provider preference, catalog admission, and
-configured runtime fallback.
+Choose the cognitive profile, then pass an exact `model` or named `preset` to `Agent`. Never pass a category, task type, or `subagent_type`. Omit `effort` by default; the configured model default applies. Set `effort` only for an explicit manual override.
 
 Route in this order:
 
 1. Determine the main session's current model family then, not the family it started with; it may have changed during the session.
 2. Choose the cognitive profile and, for an independent verifier, a different model family from the artifact's producer.
-3. Pass the corresponding semantic `category` to `task` or `team_create`. The runtime resolves it against the live catalog, admits the selected route, and carries ordered fallbacks into the child.
-4. Use an exact `model` when provider/model identity itself is a requirement. That explicit choice selects the requested route directly.
+3. Pass an exact `model` (`provider/model`) or named `preset`. The harness resolves a named `preset` against the live catalog, admits it, and carries the runtime fallback chain.
+4. Use an exact `model` when provider/model identity itself is a requirement.
 
-Say in one line which category the agent runs on; report the resolved model when the runtime returns it.
+Say in one line which model or preset the agent runs on; report the resolved model when the runtime returns it.
 
-**Default worker is Grok 4.6 Fast.** An owner dispatches it for settled execution across files and tools (`task`). Pick Sol or Opus as an Agent when the dominant bottleneck matches the profiles below.
+**Default worker is Grok 4.6 Fast.** An owner dispatches it for settled execution across files and tools (`Agent`). Pick Sol or Opus as an Agent when the dominant bottleneck matches the profiles below.
 
 - **Fable 5** — problem framer. Use for focused framing and human-outcome review before execution or at a rare alignment gate.
 - **Opus 5** — structurer. Default **lead** and default **owner**. Spawn as an Agent only when the dominant bottleneck is cross-stream architecture, contracts, or integration.
 - **GPT-5.6 Sol** — hypothesis converger. Default **verifier**, and the supervisor when the owner is stuck. Give Sol ownership only when the proof itself is the deliverable.
-- **Grok 4.6 Fast** — action converger. **Default worker** an owner dispatches through category `grok`. A `task` Agent.
+- **Grok 4.6 Fast** — action converger. **Default worker** an owner dispatches with an exact Grok model or the matching named preset.
 
 Verifier defaults when an independent check is worth the cost:
 

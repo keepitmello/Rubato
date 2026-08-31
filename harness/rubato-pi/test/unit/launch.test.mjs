@@ -16,7 +16,7 @@ test("senpi argv replaces the system prompt and lets profile settings choose the
   const adapterAt = args.indexOf(adapterPath());
   assert.ok(promptAt > 0);
   assert.match(args[promptAt + 1], /Working agreement/);
-  assert.match(args[promptAt + 1], /`task` tool/);
+  assert.match(args[promptAt + 1], /`Agent` tool/);
   assert.match(args[promptAt + 1], /## Tool Guidelines/);
   assert.match(args[promptAt + 1], /one eval cell/);
   assert.doesNotMatch(args[promptAt + 1], /operating inside pi/);

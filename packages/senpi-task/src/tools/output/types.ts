@@ -1,10 +1,11 @@
 import type { AgentToolResult } from "@code-yeongyu/senpi"
+import type { AgentSnapshot } from "@rubato/agent-core"
 
 import type { TaskManager } from "../../manager"
 import type { ResolvedModelRecord, ResidencyState, TaskRunStats, TaskStatus } from "../../state"
 import type { CallerSessionResolver } from "../control"
 
-export type OutputManager = Pick<TaskManager, "get" | "list">
+export type OutputManager = Pick<TaskManager, "get">
 
 export type TranscriptEntry =
   | { readonly kind: "assistant"; readonly text: string }
@@ -56,16 +57,16 @@ export type TaskSnapshot = {
 }
 
 export type TaskOutputDetails =
-  | { readonly kind: "status"; readonly snapshot: TaskSnapshot }
+  | { readonly kind: "status"; readonly snapshot: AgentSnapshot }
   | {
       readonly kind: "transcript"
       readonly mode: "tail" | "full"
       readonly source: TranscriptSource
       readonly transcript: string
       readonly truncated: boolean
-      readonly snapshot: TaskSnapshot
+      readonly snapshot: AgentSnapshot
     }
-  | { readonly kind: "not_found"; readonly reason: string; readonly known_tasks: readonly string[] }
+  | { readonly kind: "not_found"; readonly reason: string; readonly known_agents: readonly string[] }
   | { readonly kind: "invalid_arguments"; readonly reason: string }
 
 export type TaskOutputDeps = {

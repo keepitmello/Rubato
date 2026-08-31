@@ -225,7 +225,8 @@ describe("steering engine scope + resolution guards", () => {
     expect(outcome.kind).toBe("not_found")
     if (outcome.kind !== "not_found") throw new Error("expected not_found")
     expect(outcome.suggestion).toContain("/tasks")
-    expect(outcome.suggestion).toContain("task_output")
+    expect(outcome.suggestion).toContain("AgentOutput")
+    expect(outcome.suggestion).not.toContain("task_output")
     expect(outcome.suggestion).not.toContain("task_list")
   })
 

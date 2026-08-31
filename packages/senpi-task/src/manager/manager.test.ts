@@ -274,7 +274,7 @@ describe("TaskManager.start", () => {
     // when
     const result = await buildTaskExecute(makeDeps(manager))(
       "call-start-failed",
-      { prompt: privatePrompt, category: "ultrabrain", run_in_background: true },
+      { prompt: privatePrompt, model: "openai/gpt-5.6-sol" },
       undefined,
       undefined,
       CTX,
@@ -283,19 +283,13 @@ describe("TaskManager.start", () => {
 
     // then
     expect(result.details).toEqual({
-      task_id: result.details.task_id,
-      status: "error",
+      agentId: "",
+      status: "invalid_request",
       mode: "spawn",
-      name: result.details.task_id,
-      category: "ultrabrain",
-      execution_mode: "in-process",
-      model: "openai/gpt-5.6-sol",
-      resolved_model: resolvedModel,
-      run_in_background: true,
       reason: "Task runner failed to start.",
     })
     expect(row).toBe(
-      `task category:ultrabrain(openai/gpt-5.6-sol:xhigh) <i>background</i> error id:${result.details.task_id} reason:Task runner failed to start.`,
+      `Agent <i>background</i> invalid_request reason:Task runner failed to start.`,
     )
     expect(JSON.stringify({ result, row })).not.toContain(privatePrompt)
   })

@@ -123,11 +123,11 @@ function baseSpec(overrides: Partial<ChildSpec> = {}): ChildSpec {
 describe("InProcessRunner resume", () => {
   test("#given a curated spec with allowlist, denylist, and member-scoped names #when resumed #then the tool surface matches the start surface exactly", async () => {
     // given a curated agent whose start path builds the full tool surface
-    const taskSend = makeTool("task_send")
+    const taskSend = makeTool("team_send")
     const parentBash = makeTool("bash")
     const captured: CreateAgentSessionOptions[] = []
     const runner = new InProcessRunner({
-      sharedParentTools: [makeTool("grep"), parentBash, taskSend, makeTool("task_create")],
+      sharedParentTools: [makeTool("grep"), parentBash, taskSend, makeTool("team_task_create")],
       createSession: async (options) => {
         captured.push(options)
         return immediateSession()
@@ -135,10 +135,10 @@ describe("InProcessRunner resume", () => {
     })
     const spec = baseSpec({
       agentType: "explore",
-      toolAllowlist: ["read", "bash", "task_send"],
+      toolAllowlist: ["read", "bash", "team_send"],
       toolDenylist: ["grep"],
       memberScopedTools: [taskSend],
-      memberScopedToolNames: ["task_send"],
+      memberScopedToolNames: ["team_send"],
     })
     const sessionPath = writeSessionFile(makeTmpDir())
 
@@ -153,15 +153,15 @@ describe("InProcessRunner resume", () => {
     const resumeNames = (resumeOptions?.customTools ?? []).map((tool) => tool.name)
     expect(resumeNames).toEqual(startNames)
     // the task/team family stays excluded; the member-scoped tool is re-resolved against the LIVE instance
-    expect(resumeNames).not.toContain("task_create")
-    expect((resumeOptions?.customTools ?? []).find((tool) => tool.name === "task_send")).toBe(taskSend)
+    expect(resumeNames).not.toContain("team_task_create")
+    expect((resumeOptions?.customTools ?? []).find((tool) => tool.name === "team_send")).toBe(taskSend)
     // the curated read-only bash override is reinstalled over the parent's builtin bash
     const resumeBash = (resumeOptions?.customTools ?? []).filter((tool) => tool.name === "bash")
     expect(resumeBash).toHaveLength(1)
     expect(resumeBash[0]?.description).toContain("read-only")
     expect(resumeBash[0]).not.toBe(parentBash)
     // the allowlist and the denylist are re-applied through the same fields as start
-    expect(resumeOptions?.tools).toEqual(["read", "bash", "task_send"])
+    expect(resumeOptions?.tools).toEqual(["read", "bash", "team_send"])
     expect(resumeOptions?.excludeTools).toEqual(["grep"])
     // a denied tool stays absent from the effective surface AFTER resume
     const effective = resumeNames.filter((name) => !(resumeOptions?.excludeTools ?? []).includes(name))
@@ -205,7 +205,7 @@ describe("InProcessRunner resume", () => {
     const sessionPath = writeSessionFile(makeTmpDir())
 
     // when
-    const resume = runner.resume(baseSpec({ memberScopedToolNames: ["task_send"] }), sessionPath)
+    const resume = runner.resume(baseSpec({ memberScopedToolNames: ["team_send"] }), sessionPath)
 
     // then the failure is TYPED (retryable), never a silently weakened tool set
     await expect(resume).rejects.toBeInstanceOf(RunnerError)
@@ -216,13 +216,13 @@ describe("InProcessRunner resume", () => {
   test("#given a duplicated member-scoped name #when resumed #then a typed tools_unavailable failure surfaces", async () => {
     // given a spec whose persisted names carry a duplicate
     const runner = new InProcessRunner({
-      sharedParentTools: [makeTool("task_send")],
+      sharedParentTools: [makeTool("team_send")],
       createSession: async () => immediateSession(),
     })
     const sessionPath = writeSessionFile(makeTmpDir())
 
     // when
-    const resume = runner.resume(baseSpec({ memberScopedToolNames: ["task_send", "task_send"] }), sessionPath)
+    const resume = runner.resume(baseSpec({ memberScopedToolNames: ["team_send", "team_send"] }), sessionPath)
 
     // then
     await expect(resume).rejects.toBeInstanceOf(RunnerError)
@@ -232,13 +232,13 @@ describe("InProcessRunner resume", () => {
   test("#given a member-scoped name matching two live tools #when resumed #then a typed tools_unavailable failure surfaces", async () => {
     // given an ambiguous live tool set
     const runner = new InProcessRunner({
-      sharedParentTools: [makeTool("task_send"), makeTool("task_send")],
+      sharedParentTools: [makeTool("team_send"), makeTool("team_send")],
       createSession: async () => immediateSession(),
     })
     const sessionPath = writeSessionFile(makeTmpDir())
 
     // when
-    const resume = runner.resume(baseSpec({ memberScopedToolNames: ["task_send"] }), sessionPath)
+    const resume = runner.resume(baseSpec({ memberScopedToolNames: ["team_send"] }), sessionPath)
 
     // then
     await expect(resume).rejects.toBeInstanceOf(RunnerError)

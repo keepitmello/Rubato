@@ -1,7 +1,7 @@
 import type { Messageability, ResidencyState, TaskStatus } from "./types"
 
 export function messageability(status: TaskStatus, residencyState: ResidencyState): Messageability {
-  // Suspended residencies are never continuable through task_send, for ANY status: messaging a
+  // Suspended residencies are never continuable through AgentSend, for ANY status: messaging a
   // suspended child must not wake it (no lazy revive-on-send) - resume its session instead.
   if (residencyState === "disposed" || residencyState === "persisted_only" || residencyState === "rpc_detached") {
     return "not-continuable"

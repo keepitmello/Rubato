@@ -1,12 +1,12 @@
 import { loadSenpiRubatoConfig } from "../config-resolution"
 import {
-  TEAM_LEAD_SENTINEL,
   buildLeadTeamTools,
   createLeadDeliveryJournal,
   createTaskCancelTool,
   createTaskOutputTool,
   createTaskSendTool,
   createTaskTool,
+  liveModelCatalog,
   defaultResolveCallerSessionId,
   evaluateSpawnPolicy,
   isTeamMemberProcess,
@@ -15,7 +15,6 @@ import {
   toTeamCoreConfig,
   type LeadDeliveryJournal,
   type SkillLoader,
-  type TaskSendTeamRouting,
   type TeamToolsService,
 } from "@rubato/senpi-task"
 
@@ -58,7 +57,7 @@ export function createTaskComponent(options: TaskComponentOptions = {}): RubatoC
   return {
     name: "task",
     register(pi: SenpiExtensionAPI, ctx: ComponentContext): void {
-      if (isTeamMemberProcess()) return
+      const memberProcess = isTeamMemberProcess()
 
       // Unconditional Rubato process hygiene (T16): fires on session_start before any
       // flag/capability gate can skip the rest of the component.
@@ -112,9 +111,11 @@ export function createTaskComponent(options: TaskComponentOptions = {}): RubatoC
           ),
         ...(ctx.idleCoordinator === undefined ? {} : { coordinator: ctx.idleCoordinator }),
       })
-      registerTaskTools(pi, engine, teamTools.service, teamTools.leadPollers.resolveDefaultTeamRunId, skillInvocations, dagRuntime)
-      registerTeamTools(pi, teamTools)
-      registerRemovedTeamWaitHint(pi)
+      registerTaskTools(pi, engine, skillInvocations, dagRuntime)
+      if (!memberProcess) {
+        registerTeamTools(pi, teamTools)
+        registerRemovedTeamWaitHint(pi)
+      }
       registerTaskCommands(pi, engine.manager)
       registerDagCommands(pi, {
         list: dagRuntime.manager.list,
@@ -175,7 +176,7 @@ function sessionCwd(pi: SenpiExtensionAPI): string {
 function registerRemovedTeamWaitHint(pi: SenpiExtensionAPI): void {
   pi.registerRemovedToolHint?.(
     "team_wait",
-    "team_wait was removed - team messages arrive as steered notifications; send updates with task_send and end your turn.",
+    "team_wait was removed - team messages arrive as steered notifications; send updates with team_send and end your turn.",
   )
 }
 
@@ -198,8 +199,6 @@ function registerTaskFlags(pi: SenpiExtensionAPI): void {
 function registerTaskTools(
   pi: SenpiExtensionAPI,
   engine: TaskEngine,
-  teamService: TeamToolsService,
-  resolveDefaultTeamRunId: TaskSendTeamRouting["resolveDefaultTeamRunId"],
   skillInvocations: SkillInvocationTracker,
   dagRuntime: DagRuntime,
 ): void {
@@ -210,7 +209,7 @@ function registerTaskTools(
       manager,
       rubatoConfig: engine.rubatoConfig,
       agents: engine.agents,
-      loadSkills: engine.loadSkills,
+      models: liveModelCatalog(() => engine.runtime.modelRegistry()),
       resolveSkillInvocations: (sessionId: string) => skillInvocations.stateFor(sessionId),
     }),
   })
@@ -218,7 +217,6 @@ function registerTaskTools(
     ...createTaskSendTool({
       manager,
       resolveCallerSessionId,
-      teamRouting: { service: teamService, from: TEAM_LEAD_SENTINEL, ...(resolveDefaultTeamRunId !== undefined ? { resolveDefaultTeamRunId } : {}) },
     }),
   })
   pi.registerTool({ ...createTaskCancelTool({ manager }) })

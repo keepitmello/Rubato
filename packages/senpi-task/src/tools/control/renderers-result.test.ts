@@ -22,18 +22,18 @@ const TERMINAL_CONTROL_PATTERN = /[\u0000-\u001f\u007f-\u009f]/u
 type SendResultRenderCase = readonly [name: string, details: SendResultDetails, expected: string]
 
 const SEND_RESULT_RENDER_CASES = [
-  ["steered", { kind: "steered", task_id: "st_1", status: "running", delivered: "steer" }, "[accent]task_send delivered st_1 as steer (running)[/accent]"],
-  ["revived", { kind: "revived", task_id: "st_1", run_epoch: 2 }, "[success]task_send revived st_1 epoch 2[/success]"],
-  ["queued", { kind: "queued", task_id: "st_1", queue_position: 3 }, "[muted]task_send queued st_1 position 3[/muted]"],
-  ["not_continuable", { kind: "not_continuable", task_id: "st_1", reason: "Task is cancelled.", suggestion: "Start a new task." }, "[warning]task_send not continuable st_1: Task is cancelled. Start a new task.[/warning]"],
-  ["scope_denied", { kind: "scope_denied", task_id: "st_1", owning_session_id: "owner", reason: "Denied." }, "[error]task_send denied st_1 owner:owner[/error]"],
-  ["one_shot_agent", { kind: "one_shot_agent", task_id: "st_1", agent: "momus", message: "reminder" }, "[error]task_send denied st_1 one-shot:momus[/error]"],
-  ["not_found", { kind: "not_found", reason: "No task.", known_tasks: ["alpha"] }, "[error]task_send not found: No task. known:alpha[/error]"],
-  ["invalid_arguments", { kind: "invalid_arguments", reason: "message is required" }, "[error]task_send invalid: message is required[/error]"],
-  ["team_message", { kind: "team_message", team: { kind: "to_lead", message_id: "msg-1" } }, "[success]task_send team message msg-1 enqueued to lead[/success]"],
-  ["shutdown_requested", { kind: "shutdown_requested", team_run_id: "team-1", member: "atlas" }, "[warning]task_send shutdown requested team-1 member:atlas[/warning]"],
-  ["shutdown_responded", { kind: "shutdown_responded", team_run_id: "team-1", member: "atlas", approved: false }, "[warning]task_send shutdown rejected team-1 member:atlas[/warning]"],
-  ["shutdown_failed", { kind: "shutdown_failed", operation: "reject", team_run_id: "team-1", member: "atlas", code: "team_state_missing", reason: "Team state is unavailable." }, "[error]task_send shutdown reject failed team-1 member:atlas: Team state is unavailable.[/error]"],
+  ["steered", { kind: "steered", agentId: "st_1", status: "running", delivered: "steer" }, "[accent]AgentSend delivered st_1 as steer (running)[/accent]"],
+  ["revived", { kind: "revived", agentId: "st_1", run_epoch: 2 }, "[success]AgentSend revived st_1 epoch 2[/success]"],
+  ["queued", { kind: "queued", agentId: "st_1", queue_position: 3 }, "[muted]AgentSend queued st_1 position 3[/muted]"],
+  ["not_continuable", { kind: "not_continuable", agentId: "st_1", reason: "Task is cancelled.", suggestion: "Start a new task." }, "[warning]AgentSend not continuable st_1: Task is cancelled. Start a new task.[/warning]"],
+  ["scope_denied", { kind: "scope_denied", agentId: "st_1", owning_session_id: "owner", reason: "Denied." }, "[error]AgentSend denied st_1 owner:owner[/error]"],
+  ["one_shot_agent", { kind: "one_shot_agent", agentId: "st_1", agent: "momus", message: "reminder" }, "[error]AgentSend denied st_1 one-shot:momus[/error]"],
+  ["not_found", { kind: "not_found", reason: "No task.", known_agents: ["alpha"] }, "[error]AgentSend not found: No task. known:alpha[/error]"],
+  ["invalid_arguments", { kind: "invalid_arguments", reason: "message is required" }, "[error]AgentSend invalid: message is required[/error]"],
+  ["team_message", { kind: "team_message", team: { kind: "to_lead", message_id: "msg-1" } }, "[success]AgentSend team message msg-1 enqueued to lead[/success]"],
+  ["shutdown_requested", { kind: "shutdown_requested", team_run_id: "team-1", member: "atlas" }, "[warning]AgentSend shutdown requested team-1 member:atlas[/warning]"],
+  ["shutdown_responded", { kind: "shutdown_responded", team_run_id: "team-1", member: "atlas", approved: false }, "[warning]AgentSend shutdown rejected team-1 member:atlas[/warning]"],
+  ["shutdown_failed", { kind: "shutdown_failed", operation: "reject", team_run_id: "team-1", member: "atlas", code: "team_state_missing", reason: "Team state is unavailable." }, "[error]AgentSend shutdown reject failed team-1 member:atlas: Team state is unavailable.[/error]"],
 ] satisfies readonly SendResultRenderCase[]
 
 
@@ -73,7 +73,7 @@ describe("task_send result renderers", () => {
       120,
     )
 
-    expect(line).toBe("[error]task_send shutdown approve failed team-9 member:atlas: Team state is unavailable.[/error]")
+    expect(line).toBe("[error]AgentSend shutdown approve failed team-9 member:atlas: Team state is unavailable.[/error]")
     expect(line).not.toContain("ENOENT")
     expect(line).not.toContain("/private/secret")
     expect(line).not.toContain("state.json")

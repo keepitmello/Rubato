@@ -54,7 +54,7 @@ describe("TaskManager start failure security", () => {
     // when
     const result = await buildTaskExecute(makeDeps(recordingManager))(
       "call-secret-start-failure",
-      { prompt: "private prompt payload", category: "ultrabrain", name: "secure-bg", run_in_background: true },
+      { prompt: "private prompt payload", model: "openai/gpt-5.6-sol", summary: "secure-bg" },
       undefined,
       undefined,
       CTX,
@@ -66,7 +66,7 @@ describe("TaskManager start failure security", () => {
     expect(capturedStart).toEqual({
       kind: "start_failed",
       task_id: capturedStart.task_id,
-      name: "secure-bg",
+      name: capturedStart.task_id,
       category: "ultrabrain",
       execution_mode: "in-process",
       model: "openai/gpt-5.6-sol",
@@ -87,19 +87,13 @@ describe("TaskManager start failure security", () => {
     const content = result.content[0]?.type === "text" ? result.content[0].text : ""
     expect(content).toBe(GENERIC_START_FAILURE)
     expect(result.details).toEqual({
-      task_id: capturedStart.task_id,
-      status: "error",
+      agentId: "",
+      status: "invalid_request",
       mode: "spawn",
-      name: "secure-bg",
-      category: "ultrabrain",
-      execution_mode: "in-process",
-      model: "openai/gpt-5.6-sol",
-      resolved_model: RESOLVED_MODEL,
-      run_in_background: true,
       reason: GENERIC_START_FAILURE,
     })
     expect(row).toBe(
-      `task category:ultrabrain(openai/gpt-5.6-sol:xhigh) <i>background</i> error id:${capturedStart.task_id} reason:${GENERIC_START_FAILURE}`,
+      `Agent <i>background</i> invalid_request reason:${GENERIC_START_FAILURE}`,
     )
 
     const persistedRecord = readFileSync(join(store.stateDir, "tasks", `${capturedStart.task_id}.json`), "utf8")

@@ -277,6 +277,31 @@ test("나머지가 현재여도 옛 promptCache 설정은 다음 launch 에서 �
   assert.equal(JSON.parse(written["/tmp/agent/settings.json"]).promptCache.safetyBufferSeconds, 300);
 });
 
+test("자식 입학용 Flash 는 google-antigravity 를 켜 두고 cursor-cli-oauth 를 꺼 둔다", () => {
+  const written = {};
+  const next = ensureSessionDefaults("/tmp/agent", {
+    exists: () => true,
+    readFile: (path) =>
+      path.endsWith("settings.json")
+        ? JSON.stringify({
+            defaultProvider: "anthropic",
+            defaultModel: "claude-opus-5",
+            disabledBuiltinExtensions: [],
+          })
+        : JSON.stringify({
+            providers: {},
+            disabledProviders: ["google-antigravity", "vercel-ai-gateway"],
+          }),
+    writeFile: (path, text) => {
+      written[path] = text;
+    },
+  });
+  assert.ok(next.disabledBuiltinExtensions.includes("cursor-cli-oauth"));
+  const models = JSON.parse(written["/tmp/agent/models.json"]);
+  assert.ok(!models.disabledProviders.includes("google-antigravity"));
+  assert.ok(JSON.parse(written["/tmp/agent/settings.json"]).disabledBuiltinExtensions.includes("cursor-cli-oauth"));
+});
+
 test("옛 safety buffer 만 있는 설정은 현재가 아니다", () => {
   const base = {
     defaultProvider: "anthropic",

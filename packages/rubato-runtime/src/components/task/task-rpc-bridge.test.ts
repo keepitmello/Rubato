@@ -5,6 +5,7 @@ import type { TaskRunStats } from "@rubato/senpi-task"
 
 import { taskRecord } from "./event-bridge.test-fixtures"
 import { wireHarness } from "./event-bridge.test-harness"
+import { boundedTaskOutput } from "./task-rpc-codec"
 
 describe("event-bridge native task telemetry and controls", () => {
   it("#given durable and live task facts #when session_start emits a snapshot #then RPC preserves every available fact without inventing fields", async () => {
@@ -197,9 +198,16 @@ describe("event-bridge native task telemetry and controls", () => {
       kind: "status",
       snapshot: {
         task_id: current.task_id,
-        parent_session_id: "parent-session",
+        status: "cancelled",
       },
     })
+    const output = await invokeRpc("rubato.task.output", {
+      task_id: current.task_id,
+      mode: "status",
+    }) as { snapshot?: Record<string, unknown> }
+    expect(output.snapshot).not.toHaveProperty("agentId")
+    expect(JSON.stringify(output)).not.toContain("known_agents")
+    expect(JSON.stringify(output)).not.toContain("agentId")
   })
 
   it("#given a live child subscription #when the task settles #then the bridge unsubscribes and ignores later child events", async () => {
@@ -243,5 +251,24 @@ describe("event-bridge native task telemetry and controls", () => {
     )
 
     expect(subscriberCount(running.task_id)).toBe(0)
+  })
+})
+
+describe("rubato.task.* adapter field mapping", () => {
+  it("#given public Agent output details #when bounded for panel RPC #then the snapshot exposes task_id not agentId", () => {
+    const mapped = boundedTaskOutput({
+      kind: "status",
+      snapshot: {
+        agentId: "st_panel",
+        status: "running",
+        output: "hello",
+      },
+    })
+    expect(mapped).toMatchObject({
+      kind: "status",
+      snapshot: { task_id: "st_panel", status: "running", output: "hello" },
+    })
+    expect(JSON.stringify(mapped)).not.toContain("agentId")
+    expect(JSON.stringify(mapped)).not.toContain("known_agents")
   })
 })

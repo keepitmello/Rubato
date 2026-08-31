@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { createTaskRecordStore } from "../src/store"
 import { TRANSCRIPT_ASSISTANT_EVENT, TRANSCRIPT_TOOL_EVENT } from "../src/manager/transcript-log"
 import { createTaskOutputTool } from "../src/tools/output"
-import type { ListScope, ListedTask, OutputManager } from "../src/index"
+import type { OutputManager } from "../src/index"
 import type { TaskRecord } from "../src/state"
 
 function ctx(sessionId: string) {
@@ -15,15 +15,6 @@ function ctx(sessionId: string) {
 function managerFrom(records: readonly TaskRecord[]): OutputManager {
   return {
     get: (taskId) => records.find((record) => record.task_id === taskId),
-    list(scope: ListScope): readonly ListedTask[] {
-      const filtered = scope.scope === "all" ? records : records.filter((r) => r.parent_session_id === scope.session_id)
-      return filtered.map((record) => ({ record }))
-    },
-    async waitFor(taskId) {
-      const found = records.find((record) => record.task_id === taskId)
-      if (found === undefined) throw new Error(`missing task ${taskId}`)
-      return found
-    },
   }
 }
 
@@ -62,10 +53,10 @@ async function main(): Promise<void> {
   const lostView = await output.execute("call", { name: "ghost", mode: "tail" }, new AbortController().signal, undefined, ctx("session-live"))
   const crossSession = await output.execute("call", { task_id: "st_0000abcd" }, new AbortController().signal, undefined, ctx("session-intruder"))
 
-  console.log("\n=== HAPPY: task_output tail on completed 'explorer' ===")
+  console.log("\n=== HAPPY: AgentOutput tail on completed 'explorer' ===")
   console.log(happy.content[0]?.type === "text" ? happy.content[0].text : "")
   console.log("details.kind:", happy.details.kind, "| source:", happy.details.kind === "transcript" ? happy.details.source : "-")
-  console.log("\n=== LOST: task_output tail on lost 'ghost' (no throw) ===")
+  console.log("\n=== LOST: AgentOutput tail on lost 'ghost' (no throw) ===")
   console.log("details.kind:", lostView.details.kind)
   console.log(JSON.stringify(lostView.details.kind === "status" ? lostView.details.snapshot.lost : lostView.details, null, 2))
   console.log("\n=== FAIL-CLOSED: intruder session reading another session's task ===")

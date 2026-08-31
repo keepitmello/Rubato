@@ -1,20 +1,19 @@
 import { describe, expect, test } from "bun:test"
 
 import type { StartResult } from "../../manager"
-import { CTX, createFakeManager } from "./__fixtures__/task-tool-fakes"
-import { executeBatch } from "./execute-batch"
+import { CTX, createFakeManager, makeDeps } from "./__fixtures__/task-tool-fakes"
+import { buildTaskExecute } from "./execute"
 import { taskResultLines } from "./renderers"
 
 const RESOLVED_MODEL = {
-  source: "category" as const,
+  source: "explicit" as const,
   provider: "quotio-openai",
   model_id: "gpt-5.6-luna-fast",
   display: "quotio-openai/gpt-5.6-luna-fast",
 }
 
-describe("batch task model visibility", () => {
-  test("#given a category task resolves to a model #when batch spawn renders #then the item names both", async () => {
-    // given
+describe("agent model visibility", () => {
+  test("#given an exact model spawn #when the start is rendered #then the result names the resolved model", async () => {
     const started: StartResult = {
       kind: "started",
       task_id: "st_model",
@@ -22,29 +21,21 @@ describe("batch task model visibility", () => {
       name: "model-audit",
       resolved_model: RESOLVED_MODEL,
     }
-    const manager = createFakeManager({})
-
-    // when
-    const output = await executeBatch({
-      manager,
-      items: [
-        {
-          kind: "category",
-          category: "quick",
-          prompt: "audit the model",
-          name: "model-audit",
-          load_skills: [],
-        },
-      ],
-      signal: undefined,
-      ctx: CTX,
-      runInBackground: true,
-      startItem: async () => started,
+    const manager = createFakeManager({
+      start: async () => started,
+      get: () => ({ task_id: "st_model", status: "running", name: "model-audit", resolved_model: RESOLVED_MODEL, execution_mode: "in-process" } as never),
     })
-    const itemLine = taskResultLines(output.details)[1]
 
-    // then
-    expect(itemLine).toContain("category:quick(quotio-openai/gpt-5.6-luna-fast)")
-    expect(itemLine).not.toContain("requested/model")
+    const output = await buildTaskExecute(makeDeps(manager))(
+      "call-model",
+      { prompt: "audit the model", model: "quotio-openai/gpt-5.6-luna-fast" },
+      undefined,
+      undefined,
+      CTX,
+    )
+    const [line] = taskResultLines(output.details)
+
+    expect(line).toContain("quotio-openai/gpt-5.6-luna-fast")
+    expect(output.details.resolved_model).toEqual(RESOLVED_MODEL)
   })
 })

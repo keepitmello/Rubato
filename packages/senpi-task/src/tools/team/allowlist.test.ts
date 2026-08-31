@@ -20,14 +20,21 @@ describe("member child team-tool allowlist", () => {
     const tools = buildLeadTeamTools(leadToolDeps())
 
     // then
-    expect(tools.map((tool) => tool.name)).toEqual([
+    const names = tools.map((tool) => tool.name)
+    expect(names).toEqual([
       "team_create",
       "team_delete",
-      "task_create",
-      "task_get",
-      "task_list",
-      "task_update",
+      "team_send",
+      "team_shutdown_request",
+      "team_approve_shutdown",
+      "team_reject_shutdown",
+      "team_task_create",
+      "team_task_get",
+      "team_task_list",
+      "team_task_update",
     ])
+    expect(new Set(names).size).toBe(names.length)
+    expect(names.filter((name) => name === "AgentSend")).toEqual([])
   })
 
   test("#given the lead team tools as shared parent tools #when filtered for a child #then all are excluded", () => {
@@ -41,19 +48,16 @@ describe("member child team-tool allowlist", () => {
     expect(childTools).toHaveLength(0)
   })
 
-  test("#given a member with the pre-scoped send #when child tools merge #then ONLY task_send survives", () => {
+  test("#given a member with the pre-scoped send #when child tools merge #then ONLY AgentSend survives", () => {
     const teamTools = buildLeadTeamTools(leadToolDeps())
     const memberSend = createMemberScopedTaskSendTool({
       manager: fakeSendManager,
-      service: createFakeTeamService(),
-      teamRunId: "run-1",
-      from: "alpha",
     })
 
     // when
     const childTools = mergeChildCustomTools(teamTools, [memberSend])
 
     // then
-    expect(childTools.map((tool) => tool.name)).toEqual(["task_send"])
+    expect(childTools.map((tool) => tool.name)).toEqual(["AgentSend"])
   })
 })

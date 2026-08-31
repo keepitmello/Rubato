@@ -51,6 +51,6 @@ export function createParentNotifier(
 }
 
 function injectionKey(message: ParentNotifierMessage): string {
-  const ids = message.details.map((detail) => detail.task_id).join(",")
+  const ids = message.details.map((detail) => detail.agentId).join(",")
   return ids.length > 0 ? `task-completion:${ids}` : "task-completion"
 }

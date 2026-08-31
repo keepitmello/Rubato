@@ -83,8 +83,8 @@ export function createMemberTaskSendTool(
   deps: MemberTaskSendDeps,
 ): ToolDefinition<typeof MemberTaskSendParams, MemberTaskSendDetails> {
   return defineTool({
-    name: "task_send",
-    label: "Task Send",
+    name: "team_send",
+    label: "Team Send",
     description: "Send a durable message to another team member or the team lead.",
     parameters: MemberTaskSendParams,
     execute: (_toolCallId, params) => runMemberTaskSend(deps, params),

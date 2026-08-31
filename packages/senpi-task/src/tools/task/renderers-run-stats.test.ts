@@ -13,14 +13,13 @@ describe("taskResultLines run stats", () => {
   test("#given terminal details with run stats #when rendered #then runtime and tps tokens are appended", () => {
     // given
     const details = {
-      task_id: "st_00000009",
+      agentId: "st_00000009",
       status: "completed",
       mode: "spawn" as const,
       category: "deep",
       execution_mode: "in-process",
       model: "kimi-coding/kimi-k3-unlocked",
-      run_in_background: false,
-      run_stats: {
+            run_stats: {
         runtime_ms: 134_000,
         turns: 3,
         tool_calls: 5,
@@ -43,14 +42,13 @@ describe("taskResultLines run stats", () => {
   test("#given terminal details with run stats #when the width-aware result renders #then runtime tools and tps follow the completed status", () => {
     // given
     const details = {
-      task_id: "st_00000009",
+      agentId: "st_00000009",
       status: "completed",
       mode: "spawn" as const,
       category: "deep",
       execution_mode: "in-process",
       model: "kimi-coding/kimi-k3-unlocked",
-      run_in_background: false,
-      run_stats: {
+            run_stats: {
         runtime_ms: 134_000,
         turns: 3,
         tool_calls: 5,
@@ -63,7 +61,7 @@ describe("taskResultLines run stats", () => {
     const [line = ""] = renderTaskResultComponent(details, TEST_THEME).render(240)
 
     // then
-    expect(line).toContain("foreground completed")
+    expect(line).toContain("background completed")
     expect(line).toContain("ran:2m14s tools:5")
     expect(line).toContain("tps:118")
   })
@@ -71,11 +69,10 @@ describe("taskResultLines run stats", () => {
   test("#given run stats with cost and cache hits #when rendered #then cost then ch then tps tokens appear in order", () => {
     // given
     const details = {
-      task_id: "st_00000009",
+      agentId: "st_00000009",
       status: "completed",
       mode: "spawn" as const,
-      run_in_background: false,
-      run_stats: {
+            run_stats: {
         runtime_ms: 134_000,
         turns: 3,
         tool_calls: 5,
@@ -100,7 +97,7 @@ describe("taskResultLines run stats", () => {
   test("#given run stats with zero cost #when rendered #then the empty price is omitted", () => {
     // when
     const [line = ""] = taskResultLines({
-      task_id: "st_00000009",
+      agentId: "st_00000009",
       status: "completed",
       mode: "spawn" as const,
       run_stats: {
@@ -119,7 +116,7 @@ describe("taskResultLines run stats", () => {
   test("#given run stats without cost or cache facts #when rendered #then neither token appears", () => {
     // when
     const [line = ""] = taskResultLines({
-      task_id: "st_00000009",
+      agentId: "st_00000009",
       status: "completed",
       mode: "spawn" as const,
       run_stats: { runtime_ms: 1_000, turns: 1, tool_calls: 0, tokens_per_second: 10 },
@@ -134,7 +131,7 @@ describe("taskResultLines run stats", () => {
   test("#given malformed persisted spend facts #when rendered #then impossible money and cache values are omitted", () => {
     // when
     const [line = ""] = taskResultLines({
-      task_id: "st_00000009",
+      agentId: "st_00000009",
       status: "completed",
       mode: "spawn" as const,
       run_stats: {
@@ -156,7 +153,7 @@ describe("taskResultLines run stats", () => {
 
   test("#given details without run stats #when rendered #then no runtime tokens appear", () => {
     // when
-    const [line = ""] = taskResultLines({ task_id: "st_00000009", status: "completed", mode: "spawn" as const })
+    const [line = ""] = taskResultLines({ agentId: "st_00000009", status: "completed", mode: "spawn" as const })
 
     // then
     expect(line).not.toContain("ran:")

@@ -42,6 +42,7 @@ export type ResolvedModelRecord = {
   /** Canonical unified reasoning level (off|minimal|low|medium|high|xhigh|max) or a harness-native preset token. */
   readonly reasoning?: string
   readonly source: ResolvedModelSource
+  readonly effortSource?: "model-default" | "manual-override"
 }
 
 export const TOKEN_COVERAGE_STATUSES = ["complete", "partial", "unavailable"] as const

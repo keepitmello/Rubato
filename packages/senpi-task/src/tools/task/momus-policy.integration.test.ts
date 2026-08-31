@@ -39,8 +39,8 @@ function deps(manager: TaskManager): TaskToolDeps {
   return {
     manager,
     rubatoConfig: RUBATO_CONFIG,
-    agents: {},
-    loadSkills: () => ({ prepend: "", resolved: [], missing: [] }),
+    agents: { momus: { name: "momus" } },
+    models: { has: (model) => model.includes("/") },
     resolveSkillInvocations: openSessionResolver(),
   }
 }
@@ -58,14 +58,14 @@ describe("momus one-shot policy over the real TaskManager", () => {
     // when step 1: momus is spawned with a chatty zero-path prompt
     const first = await execute(
       "call-1",
-      { prompt: "please review my plan, I worked really hard on it and think it is great", subagent_type: "momus", run_in_background: true },
+      { prompt: "please review my plan, I worked really hard on it and think it is great", preset: "momus" },
       undefined,
       undefined,
       CTX,
     )
 
     // then the child start spec carries ONLY the canonical contract for the most-referenced plan
-    const firstId = first.details.task_id
+    const firstId = first.details.agentId
     expect(firstId.startsWith("st_")).toBe(true)
     expect(inProcess.startedSpecs[0]?.prompt).toBe(canonical(PLAN_A))
     const firstRecord = store.load(firstId)
@@ -74,14 +74,14 @@ describe("momus one-shot policy over the real TaskManager", () => {
     // when step 2: momus is spawned with an explicit B path
     const second = await execute(
       "call-2",
-      { prompt: `review ${PLAN_B} please`, subagent_type: "momus", run_in_background: true },
+      { prompt: `review ${PLAN_B} please`, preset: "momus" },
       undefined,
       undefined,
       CTX,
     )
 
     // then the explicit path wins over the most-referenced heuristic
-    const secondId = second.details.task_id
+    const secondId = second.details.agentId
     expect(inProcess.startedSpecs[1]?.prompt).toBe(canonical(PLAN_B))
 
     // when step 3a: the running momus is sent a message
@@ -111,14 +111,14 @@ describe("momus one-shot policy over the real TaskManager", () => {
     // when step 5: a fresh momus is spawned after the cancel
     const third = await execute(
       "call-3",
-      { prompt: `review ${PLAN_A} again`, subagent_type: "momus", run_in_background: true },
+      { prompt: `review ${PLAN_A} again`, preset: "momus" },
       undefined,
       undefined,
       CTX,
     )
 
     // then a new one-shot session is admitted normally
-    expect(third.details.task_id.startsWith("st_")).toBe(true)
+    expect(third.details.agentId.startsWith("st_")).toBe(true)
     expect(inProcess.startedSpecs[2]?.prompt).toBe(canonical(PLAN_A))
   })
 })

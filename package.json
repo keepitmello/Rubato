@@ -4,6 +4,7 @@
   "description": "Fast, lightweight multi-model agent harness for everyday work",
   "type": "module",
   "workspaces": [
+    "packages/agent-core",
     "packages/ast-grep-mcp",
     "packages/delegate-core",
     "packages/lsp-core",

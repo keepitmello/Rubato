@@ -3,7 +3,6 @@ import { describe, expect, test } from "bun:test"
 import { defaultResolveCallerSessionId } from "./caller-session"
 import { TaskCancelParams, createTaskCancelTool } from "./cancel"
 import { MemberScopedTaskSendParams, TaskSendParams, createMemberScopedTaskSendTool, createTaskSendTool } from "./send"
-import { createFakeTeamService } from "../team/__fixtures__/team-tool-fakes"
 import type { CancelManager, SendManager } from "./types"
 
 const sendManager: SendManager = {
@@ -19,17 +18,14 @@ describe("control tool factories", () => {
     const cancel = createTaskCancelTool({ manager: cancelManager })
     const memberSend = createMemberScopedTaskSendTool({
       manager: sendManager,
-      service: createFakeTeamService(),
-      teamRunId: "run-1",
-      from: "alpha",
     })
 
     // then
-    expect(send.name).toBe("task_send")
+    expect(send.name).toBe("AgentSend")
     expect(send.parameters).toBe(TaskSendParams)
-    expect(memberSend.name).toBe("task_send")
+    expect(memberSend.name).toBe("AgentSend")
     expect(memberSend.parameters).toBe(MemberScopedTaskSendParams)
-    expect(cancel.name).toBe("task_cancel")
+    expect(cancel.name).toBe("AgentCancel")
     expect(cancel.parameters).toBe(TaskCancelParams)
     for (const tool of [send, memberSend, cancel]) {
       expect(tool.description.length).toBeGreaterThan(0)

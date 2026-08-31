@@ -5,6 +5,7 @@ import { TEAM_LEAD_SENTINEL } from "../../team"
 import type { SendInput, SendOutcome } from "../../steering"
 import { createFakeTeamService, fakeRuntimeState } from "../team/__fixtures__/team-tool-fakes"
 import { createMemberScopedTaskSendTool, runTaskSend } from "./send"
+import { runTransitionalSenpiSend } from "./send-shutdown"
 import type { SendManager } from "./types"
 
 afterEach(cleanupProjects)
@@ -23,7 +24,7 @@ function spyManager(outcome: SendOutcome): { manager: SendManager; sendCalls: Se
   }
 }
 
-describe("runTaskSend team routing", () => {
+describe("transitional Senpi send adapter team routing", () => {
   test("#given a string recipient that is not a child but is a team member #when team routing is present #then it sends a team message", async () => {
     const { manager } = spyManager({ kind: "not_found", reason: "No task found for \"beta\".", suggestion: "unused" })
     const service = createFakeTeamService({
@@ -34,9 +35,9 @@ describe("runTaskSend team routing", () => {
       }),
     })
 
-    const result = await runTaskSend(
+    const result = await runTransitionalSenpiSend(
       manager,
-      { to: "beta", message: "please report", team_run_id: "run-1", summary: "report" },
+      { agentId: "beta", message: "please report", team_run_id: "run-1", summary: "report" },
       "lead-session",
       { service, from: TEAM_LEAD_SENTINEL },
     )
@@ -54,9 +55,9 @@ describe("runTaskSend team routing", () => {
       sendMessage: async () => ({ kind: "to_members", messageId: "unused", recipients: [] }),
     })
 
-    const result = await runTaskSend(
+    const result = await runTransitionalSenpiSend(
       manager,
-      { to: "beta", message: "please report" },
+      { agentId: "beta", message: "please report" },
       "lead-session",
       { service, from: TEAM_LEAD_SENTINEL },
     )
@@ -73,15 +74,18 @@ describe("runTaskSend team routing", () => {
       sendMessage: async () => ({ kind: "to_members", messageId: "msg-1", recipients: ["beta"] }),
     })
 
-    const result = await runTaskSend(
+    const result = await runTransitionalSenpiSend(
       manager,
-      { to: "beta", message: "please report" },
+      { agentId: "beta", message: "please report" },
       "lead-session",
       { service, from: TEAM_LEAD_SENTINEL, resolveDefaultTeamRunId: async () => ({ kind: "resolved", teamRunId: "run-1" }) },
     )
 
     expect(result.details.kind).toBe("team_message")
-    expect(service.calls[0]).toMatchObject({ method: "sendMessage", args: ["run-1", { to: "beta" }] })
+    expect(service.calls[0]).toMatchObject({
+      method: "sendMessage",
+      args: ["run-1", { from: TEAM_LEAD_SENTINEL, to: "beta", body: "please report" }],
+    })
   })
 
   test("#given no team_run_id and an ambiguous default resolver #when child lookup misses #then it reports the owned runs without service calls", async () => {
@@ -90,9 +94,9 @@ describe("runTaskSend team routing", () => {
       sendMessage: async () => ({ kind: "to_members", messageId: "unused", recipients: [] }),
     })
 
-    const result = await runTaskSend(
+    const result = await runTransitionalSenpiSend(
       manager,
-      { to: "beta", message: "please report" },
+      { agentId: "beta", message: "please report" },
       "lead-session",
       {
         service,
@@ -117,9 +121,9 @@ describe("runTaskSend team routing", () => {
       sendMessage: async () => ({ kind: "to_members", messageId: "unused", recipients: [] }),
     })
 
-    const result = await runTaskSend(
+    const result = await runTransitionalSenpiSend(
       manager,
-      { to: "beta", message: "please report" },
+      { agentId: "beta", message: "please report" },
       "lead-session",
       { service, from: TEAM_LEAD_SENTINEL, resolveDefaultTeamRunId: async () => ({ kind: "none" }) },
     )
@@ -132,9 +136,9 @@ describe("runTaskSend team routing", () => {
     const { manager } = spyManager({ kind: "not_found", reason: "unused", suggestion: "unused" })
     const service = createFakeTeamService({ requestShutdown: async () => fakeRuntimeState() })
 
-    const result = await runTaskSend(
+    const result = await runTransitionalSenpiSend(
       manager,
-      { to: "alpha", message: { type: "shutdown_request" } },
+      { agentId: "alpha", message: { type: "shutdown_request" } },
       "lead-session",
       { service, from: TEAM_LEAD_SENTINEL, resolveDefaultTeamRunId: async () => ({ kind: "resolved", teamRunId: "run-1" }) },
     )
@@ -143,32 +147,13 @@ describe("runTaskSend team routing", () => {
     expect(service.calls[0]).toMatchObject({ method: "requestShutdown", args: ["run-1", "alpha"] })
   })
 
-  test("#given the member-scoped factory #when created #then it exposes the shared task_send surface", () => {
-    const { manager } = spyManager({ kind: "not_found", reason: "No task found for \"lead\".", suggestion: "unused" })
-    const service = createFakeTeamService({
-      sendMessage: async () => ({ kind: "to_lead", messageId: "msg-2" }),
-    })
-    const tool = createMemberScopedTaskSendTool({
-      manager,
-      service,
-      teamRunId: "bound-run",
-      from: "alpha",
-      resolveCallerSessionId: () => "member-session",
-    })
-
-    expect(tool.name).toBe("task_send")
-    expect(Object.keys(tool.parameters.properties)).toContain("to")
-    expect(Object.keys(tool.parameters.properties)).not.toContain("deliver_as")
-    expect(tool.description).not.toContain("followUp")
-  })
-
   test("#given member routing with a bound run id #when params include another run id #then the bound run id wins", async () => {
     const { manager } = spyManager({ kind: "not_found", reason: "No task found for \"lead\".", suggestion: "unused" })
     const service = createFakeTeamService({
       sendMessage: async () => ({ kind: "to_lead", messageId: "msg-2" }),
     })
 
-    await runTaskSend(manager, { to: "lead", message: "done", team_run_id: "wrong-run" }, "member-session", {
+    await runTransitionalSenpiSend(manager, { agentId: "lead", message: "done", team_run_id: "wrong-run" }, "member-session", {
       service,
       from: "alpha",
       teamRunId: "bound-run",
@@ -180,6 +165,36 @@ describe("runTaskSend team routing", () => {
     })
   })
 
+  test("#given a team shutdown message #when lead routing sends it #then no delivery option is needed", async () => {
+    const { manager } = spyManager({ kind: "not_found", reason: "unused", suggestion: "unused" })
+    const service = createFakeTeamService({ requestShutdown: async () => fakeRuntimeState() })
+
+    const result = await runTransitionalSenpiSend(
+      manager,
+      { agentId: "beta", message: { type: "shutdown_request" }, team_run_id: "run-1" },
+      "lead-session",
+      { service, from: TEAM_LEAD_SENTINEL },
+    )
+
+    expect(result.details).toMatchObject({ kind: "shutdown_requested", team_run_id: "run-1", member: "beta" })
+    expect(service.calls[0]).toMatchObject({ method: "requestShutdown", args: ["run-1", "beta"] })
+  })
+})
+
+describe("public AgentSend stays child-only", () => {
+  test("#given the member-scoped factory #when created #then it exposes the shared AgentSend surface", () => {
+    const { manager } = spyManager({ kind: "not_found", reason: "No task found for \"lead\".", suggestion: "unused" })
+    const tool = createMemberScopedTaskSendTool({
+      manager,
+      resolveCallerSessionId: () => "member-session",
+    })
+
+    expect(tool.name).toBe("AgentSend")
+    expect(Object.keys(tool.parameters.properties)).toEqual(["agentId", "message"])
+    expect(tool.description).not.toContain("followUp")
+    expect(tool.description).not.toContain("shutdown")
+  })
+
   test("#given a member-scoped peer send #when the recipient is running #then the steering engine delivers as steer", async () => {
     const { manager, inProcess } = makeManager()
     const started = await manager.start(baseSpec({ parent_session_id: "member-session", name: "lead" }))
@@ -187,9 +202,8 @@ describe("runTaskSend team routing", () => {
 
     const result = await runTaskSend(
       manager,
-      { to: "lead", message: "peer update" },
+      { agentId: "lead", message: "peer update" },
       "member-session",
-      { service: createFakeTeamService(), from: "alpha", teamRunId: "bound-run" },
     )
 
     expect(result.details).toMatchObject({ kind: "steered", delivered: "steer" })
@@ -199,16 +213,15 @@ describe("runTaskSend team routing", () => {
     expect(handle.followUpCalls).toEqual([])
   })
 
-  test("#given a lead send with team_run_id #when the recipient is running #then the steering engine delivers as steer", async () => {
+  test("#given a lead send to a running child #when sent #then the steering engine delivers as steer", async () => {
     const { manager, inProcess } = makeManager()
     const started = await manager.start(baseSpec({ parent_session_id: "lead-session", name: "beta" }))
     if (started.kind !== "started") throw new Error("expected started")
 
     const result = await runTaskSend(
       manager,
-      { to: "beta", message: "lead update", team_run_id: "run-1" },
+      { agentId: "beta", message: "lead update" },
       "lead-session",
-      { service: createFakeTeamService(), from: TEAM_LEAD_SENTINEL },
     )
 
     expect(result.details).toMatchObject({ kind: "steered", delivered: "steer" })
@@ -216,20 +229,5 @@ describe("runTaskSend team routing", () => {
     if (handle === undefined) throw new Error("expected member handle")
     expect(handle.steerCalls).toEqual(["lead update"])
     expect(handle.followUpCalls).toEqual([])
-  })
-
-  test("#given a team shutdown message #when lead routing sends it #then no delivery option is needed", async () => {
-    const { manager } = spyManager({ kind: "not_found", reason: "unused", suggestion: "unused" })
-    const service = createFakeTeamService({ requestShutdown: async () => fakeRuntimeState() })
-
-    const result = await runTaskSend(
-      manager,
-      { to: "beta", message: { type: "shutdown_request" }, team_run_id: "run-1" },
-      "lead-session",
-      { service, from: TEAM_LEAD_SENTINEL },
-    )
-
-    expect(result.details).toMatchObject({ kind: "shutdown_requested", team_run_id: "run-1", member: "beta" })
-    expect(service.calls[0]).toMatchObject({ method: "requestShutdown", args: ["run-1", "beta"] })
   })
 })

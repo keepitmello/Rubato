@@ -79,8 +79,8 @@ describe("DAG child in-process tool policy", () => {
       sharedParentTools: [
         makeTool("grep"),
         makeTool("task"),
-        makeTool("task_create"),
-        makeTool("task_send"),
+        makeTool("team_task_create"),
+        makeTool("team_send"),
         makeTool("team_create"),
         makeTool("dag"),
       ],
@@ -102,7 +102,7 @@ describe("DAG child in-process tool policy", () => {
     // given
     let captured: CreateAgentSessionOptions | undefined
     const runner = new InProcessRunner({
-      sharedParentTools: [makeTool("grep"), makeTool("task_update"), makeTool("team_send"), makeTool("dag")],
+      sharedParentTools: [makeTool("grep"), makeTool("team_task_update"), makeTool("team_send"), makeTool("dag")],
       createSession: async (options) => {
         captured = options
         return makeSession()
@@ -119,7 +119,7 @@ describe("DAG child in-process tool policy", () => {
   test("#given plain and team-member children #when their tool sets are built #then existing sanctioned sets stay exact and dag is absent", async () => {
     // given
     const shared = [makeTool("grep"), makeTool("task"), makeTool("team_create"), makeTool("dag")]
-    const taskSend = makeTool("task_send")
+    const taskSend = makeTool("team_send")
     const captured: CreateAgentSessionOptions[] = []
     const runner = new InProcessRunner({
       sharedParentTools: shared,
@@ -134,12 +134,12 @@ describe("DAG child in-process tool policy", () => {
     const member = await runner.start(childSpec({
       taskId: "st_member",
       memberScopedTools: [taskSend],
-      memberScopedToolNames: ["task_send"],
+      memberScopedToolNames: ["team_send"],
     }))
     await Promise.all([plain.waitForIdle(), member.waitForIdle()])
 
     // then
     expect(names(captured[0])).toEqual(["grep"])
-    expect(names(captured[1])).toEqual(["grep", "task_send"])
+    expect(names(captured[1])).toEqual(["grep", "team_send"])
   })
 })

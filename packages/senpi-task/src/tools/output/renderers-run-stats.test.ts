@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 
 import type { ThemeColor } from "@code-yeongyu/senpi"
+import type { AgentSnapshot } from "@rubato/agent-core"
 
 import { toolResult } from "../control"
 import { renderTaskOutputResult, type OutputRenderTheme } from "./renderers"
@@ -12,37 +13,20 @@ const TEST_THEME: OutputRenderTheme = {
 
 const RESULT_OPTIONS = { expanded: false, isPartial: false }
 
-describe("task_output run stats rendering", () => {
-  test("#given a completed task with run stats #when the status row renders #then duration tool count and tps stay adjacent", () => {
-    // given
-    const details: TaskOutputDetails = {
-      kind: "status",
-      snapshot: {
-        task_id: "st_done",
-        status: "completed",
-        residency_state: "resident",
-        execution_mode: "in-process",
-        model: "raw-model",
-        parent_session_id: "session-parent",
-        root_session_id: "session-root",
-        age_ms: 10,
-        run_stats: {
-          runtime_ms: 134_000,
-          turns: 3,
-          tool_calls: 5,
-          output_tokens: 900,
-          total_tokens: 4_200,
-          generation_ms: 7_600,
-          tokens_per_second: 118,
-        },
-      },
+describe("AgentOutput host snapshot rendering", () => {
+  test("#given a completed host snapshot #when the status row renders #then agentId and status stay adjacent", () => {
+    const snapshot: AgentSnapshot = {
+      agentId: "st_done",
+      status: "completed",
+      model: "raw-model",
     }
+    const details: TaskOutputDetails = { kind: "status", snapshot }
 
-    // when
     const [line = ""] = renderTaskOutputResult(toolResult("ignored", details), RESULT_OPTIONS, TEST_THEME).render(200)
 
-    // then
-    expect(line).toContain("task_output st_done completed")
-    expect(line).toContain("· ran 2m 14s · 5 tools · 118 tok/s")
+    expect(line).toContain("AgentOutput st_done completed")
+    expect(line).toContain("model:raw-model")
+    expect(line).not.toContain("ran ")
+    expect(line).not.toContain("tok/s")
   })
 })

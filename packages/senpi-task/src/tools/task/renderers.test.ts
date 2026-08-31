@@ -36,29 +36,29 @@ describe("statusThemeColor", () => {
 describe("taskCallLines", () => {
   test("#given current spawn arguments #when rendered #then the plain row includes task, target, actual prompt, and mode", () => {
     // given
-    const args = { prompt: "ship it", subagent_type: "atlas", run_in_background: false }
+    const args = { prompt: "ship it", preset: "atlas" }
 
     // when
     const lines = taskCallLines(args)
 
     // then
-    expect(lines).toEqual(['task "ship it" foreground'])
+    expect(lines).toEqual(['Agent "ship it" background'])
   })
 
   test("#given a category spawn call #when rendered #then its current target prompt and mode stay stable through extraction", () => {
     // given
-    const args = { prompt: "inspect task rendering", category: "quick", run_in_background: false }
+    const args = { prompt: "inspect task rendering", model: "xai/grok-4.6" }
 
     // when
     const lines = taskCallLines(args)
 
     // then
-    expect(lines).toEqual(['task "inspect task rendering" foreground'])
+    expect(lines).toEqual(['Agent "inspect task rendering" background'])
   })
 
   test("#given a spawn call #when rendered #then target and mode are summarized", () => {
     // when
-    const lines = taskCallLines({ prompt: "x", category: "quick", run_in_background: true })
+    const lines = taskCallLines({ prompt: "x", model: "xai/grok-4.6" })
 
     // then
     expect(lines.join(" ")).not.toContain("quick")
@@ -70,7 +70,7 @@ describe("taskCallLines", () => {
     const lines = taskCallLines({ prompt: "more" })
 
     // then
-    expect(lines.join(" ")).toContain("task")
+    expect(lines.join(" ")).toContain("Agent")
   })
 
   test("#given a long multiline Korean and English prompt #when rendered #then the actual prompt is normalized and width-safe", () => {
@@ -81,7 +81,7 @@ describe("taskCallLines", () => {
     ].join("\n")
 
     // when
-    const [line = ""] = taskCallLines({ prompt, category: "ultrabrain", run_in_background: true })
+    const [line = ""] = taskCallLines({ prompt, model: "openai/gpt-5.6-sol" })
 
     // then
     expect(line).toContain("실제 프롬프트")
@@ -96,15 +96,14 @@ describe("taskCallLines", () => {
     const args = {
       prompt: "TASK: A very long internal delegation prompt that the user should not have to read in the call row.",
       task_summary: "Audit the task tool boundary",
-      category: "quick",
-      run_in_background: false,
-    }
+      model: "xai/grok-4.6",
+          }
 
     // when
     const lines = taskCallLines(args)
 
     // then
-    expect(lines).toEqual(['task "Audit the task tool boundary" foreground'])
+    expect(lines).toEqual(['Agent "Audit the task tool boundary" background'])
   })
 
   test("#given a task_summary #when rendered width-bounded #then the summary replaces the prompt excerpt", () => {
@@ -112,8 +111,7 @@ describe("taskCallLines", () => {
     const args = {
       prompt: "TASK: A very long internal delegation prompt that the user should not have to read in the call row.",
       task_summary: "Audit the task tool boundary",
-      run_in_background: true,
-    }
+          }
 
     // when
     const [line = ""] = renderTaskCallLines(args, ANSI_THEME, 100)
@@ -129,7 +127,7 @@ describe("taskCallLines", () => {
     const prompt = `${sentence} ${sentence}`
 
     // when
-    const [line = ""] = taskCallLines({ prompt, category: "missing-cat", run_in_background: false })
+    const [line = ""] = taskCallLines({ prompt, model: "missing/model" })
 
     // then
     expect(line).toContain('"한국어로 긴 작업 지시를')
@@ -140,35 +138,9 @@ describe("taskCallLines", () => {
 })
 
 describe("taskResultLines", () => {
-  test(" w2batch #given aggregate item details #when rendered #then each item receives its own ordered result line", () => {
-    // given
-    const details = {
-      task_id: "st_batch_1",
-      status: "error",
-      mode: "spawn" as const,
-      items: [
-        { task_id: "st_batch_1", name: "alpha", status: "completed" },
-        { task_id: "", name: "beta", status: "error", error_message: "depth limit" },
-        { task_id: "st_batch_3", name: "gamma", status: "pending", queue_position: 2 },
-      ],
-    }
-
-    // when
-    const lines = taskResultLines(details)
-
-    // then
-    expect(lines).toHaveLength(4)
-    expect(lines[1]).toContain("alpha")
-    expect(lines[1]).toContain("completed")
-    expect(lines[2]).toContain("beta")
-    expect(lines[2]).toContain("depth limit")
-    expect(lines[3]).toContain("gamma")
-    expect(lines[3]).toContain("queue:2")
-  })
-
   test("#given a result detail #when rendered #then task_id and status appear", () => {
     // when
-    const lines = taskResultLines({ task_id: "st_0000000b", status: "completed", mode: "spawn" })
+    const lines = taskResultLines({ agentId: "st_0000000b", status: "completed", mode: "spawn" })
 
     // then
     expect(lines.join(" ")).toContain("st_0000000b")
@@ -178,7 +150,7 @@ describe("taskResultLines", () => {
   test("#given resolved category metadata #when rendered #then target, provider, display, nonduplicate reasoning, mode, status, id, and queue context appear", () => {
     // given
     const details = {
-      task_id: "st_0000000c",
+      agentId: "st_0000000c",
       status: "pending",
       mode: "spawn" as const,
       category: "ultrabrain",
@@ -191,8 +163,7 @@ describe("taskResultLines", () => {
         reasoning_effort: "xhigh",
         source: "category" as const,
       },
-      run_in_background: true,
-      queue_position: 3,
+            queue_position: 3,
       reason: "provider capacity",
     }
 
@@ -204,7 +175,7 @@ describe("taskResultLines", () => {
     expect(row.match(/xhigh/gu)).toHaveLength(1)
     expect(row).toContain("background")
     expect(row).toContain("pending")
-    expect(row).toContain("id:st_0000000c")
+    expect(row).toContain("agentId:st_0000000c")
     expect(row).toContain("queue:3")
     expect(row).toContain("reason:provider capacity")
   })
@@ -212,10 +183,11 @@ describe("taskResultLines", () => {
   test("#given resolved category metadata with variant only #when rendered #then the variant is shown", () => {
     // given
     const details = {
-      task_id: "st_0000000c",
+      agentId: "st_0000000c",
       status: "pending",
       mode: "spawn" as const,
       category: "ultrabrain",
+      model: "openai/gpt-5.6-sol",
       resolved_model: {
         provider: "openai",
         model_id: "gpt-5.6-sol",
@@ -237,10 +209,11 @@ describe("taskResultLines", () => {
   test("#given resolved category metadata with reasoning effort only #when rendered #then the reasoning effort is shown", () => {
     // given
     const details = {
-      task_id: "st_0000000c",
+      agentId: "st_0000000c",
       status: "pending",
       mode: "spawn" as const,
       category: "ultrabrain",
+      model: "openai/gpt-5.6-sol",
       resolved_model: {
         provider: "openai",
         model_id: "gpt-5.6-sol",
@@ -260,10 +233,11 @@ describe("taskResultLines", () => {
   test("#given resolved category metadata without effort or variant #when rendered #then the model is shown without a suffix", () => {
     // given
     const details = {
-      task_id: "st_0000000c",
+      agentId: "st_0000000c",
       status: "pending",
       mode: "spawn" as const,
       category: "ultrabrain",
+      model: "openai/gpt-5.6-sol",
       resolved_model: {
         provider: "openai",
         model_id: "gpt-5.6-sol",
@@ -284,17 +258,16 @@ describe("taskResultLines", () => {
   test("#given a legacy explicit model result #when rendered #then raw model fallback is useful without empty labels", () => {
     // when
     const row = taskResultLines({
-      task_id: "st_0000000d",
+      agentId: "st_0000000d",
       status: "completed",
       mode: "spawn",
       subagent_type: "momus",
       model: "openai/manual",
-      run_in_background: false,
-    }).join(" ")
+          }).join(" ")
 
     // then
     expect(row).toContain("agent:momus(openai/manual)")
-    expect(row).toContain("foreground")
+    expect(row).toContain("background")
     expect(row).not.toContain("prompt:")
     expect(row).not.toContain("reason:")
     expect(row).not.toContain("[object Object]")
@@ -303,10 +276,11 @@ describe("taskResultLines", () => {
   test("#given a persisted display already prefixed by the provider #when full and compact rows render #then the provider is not duplicated", () => {
     // given
     const details = {
-      task_id: "st_0000000e",
+      agentId: "st_0000000e",
       status: "pending",
       mode: "spawn" as const,
       category: "ultrabrain",
+      model: "openai/gpt-5.6-sol",
       resolved_model: {
         provider: "openai",
         model_id: "gpt-5.6-sol",
@@ -314,8 +288,7 @@ describe("taskResultLines", () => {
         reasoning_effort: "xhigh",
         source: "category" as const,
       },
-      run_in_background: true,
-    }
+          }
 
     // when
     const plain = taskResultLines(details).join(" ")
@@ -329,10 +302,11 @@ describe("taskResultLines", () => {
   test("#given resolved category context #when the real result component renders at width 80 #then provider, model, and reasoning stay visible within bounds", () => {
     // given
     const details = {
-      task_id: "st_0000000e",
+      agentId: "st_0000000e",
       status: "pending",
       mode: "spawn" as const,
       category: "ultrabrain",
+      model: "openai/gpt-5.6-sol",
       resolved_model: {
         provider: "openai",
         model_id: "gpt-5.6-sol",
@@ -340,8 +314,7 @@ describe("taskResultLines", () => {
         reasoning_effort: "xhigh",
         source: "category" as const,
       },
-      run_in_background: true,
-      queue_position: 12,
+            queue_position: 12,
       reason: "긴 대기열 사유입니다. Provider capacity is constrained for this request.",
     }
 
@@ -356,10 +329,11 @@ describe("taskResultLines", () => {
   test("#given two recorded fallback attempts #when full and compact rows render #then canonical model and fallback count remain visible", () => {
     // given
     const details = {
-      task_id: "st_0000000f",
+      agentId: "st_0000000f",
       status: "completed",
       mode: "spawn" as const,
       category: "quick",
+      model: "xai/grok-4.6",
       resolved_model: {
         provider: "quotio-openai",
         model_id: "gpt-5.6-luna-fast",
@@ -371,8 +345,7 @@ describe("taskResultLines", () => {
         { provider: "kimi-coding", model_id: "kimi-for-coding-highspeed", display: "kimi-for-coding-highspeed", source: "category" as const },
         { provider: "quotio-openai", model_id: "gpt-5.6-luna-fast", display: "gpt-5.6-luna-fast", reasoning_effort: "high", source: "category" as const },
       ],
-      run_in_background: false,
-    }
+          }
 
     // when
     const plain = taskResultLines(details).join(" ")
@@ -392,16 +365,14 @@ describe("renderer grammar", () => {
     // given
     const callArgs = {
       prompt: "검토 \u001b[31m빨강\u001b[0m 완료",
-      category: "quick\u001b[2J",
-      run_in_background: false,
-    }
+      preset: "quick\u001b[2J",
+          }
     const resultDetails = {
-      task_id: "st_\u001b]8;;https://example.com\u0007링크\u001b]8;;\u0007",
+      agentId: "st_\u001b]8;;https://example.com\u0007링크\u001b]8;;\u0007",
       status: "completed\u0007",
       mode: "spawn" as const,
       reason: "정상\u007f 종료",
-      run_in_background: true,
-    }
+          }
 
     // when
     const call = renderTaskCallLines(callArgs, ANSI_THEME).join(" ")
@@ -409,7 +380,7 @@ describe("renderer grammar", () => {
     const plain = [...taskCallLines(callArgs), ...taskResultLines(resultDetails)].join(" ")
 
     // then
-    expect(call).toContain("\u001b[3mforeground\u001b[0m")
+    expect(call).toContain("\u001b[3mbackground\u001b[0m")
     expect(result).toContain("\u001b[3mbackground\u001b[0m")
     expect(call).not.toContain("\u001b[31m")
     expect(call).not.toContain("\u001b[2J")

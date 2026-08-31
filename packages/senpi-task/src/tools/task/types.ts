@@ -1,9 +1,10 @@
+import type { AgentHost, ModelCatalog } from "@rubato/agent-core"
 import type { RubatoConfig } from "@rubato/config-core"
 
 import type { AgentDefinition, SkillInvocationState } from "../../agents"
 import type { TaskManager } from "../../manager"
 import type { ResolvedModelRecord, TaskRunStats } from "../../state"
-import type { TaskReasoning, TaskToolParamsStatic } from "./params"
+import type { TaskToolParamsStatic } from "./params"
 
 // The narrow slice of senpi's ExtensionContext the task tool reads. ExtensionContext satisfies it
 // structurally, so the tool stays testable with a tiny fake while the ToolDefinition keeps the full
@@ -60,8 +61,9 @@ export type TaskToolDeps = {
   readonly manager: TaskManager
   readonly rubatoConfig: RubatoConfig
   readonly agents: Readonly<Record<string, AgentDefinition>>
+  readonly models?: ModelCatalog
+  readonly host?: AgentHost
   readonly resolveAncestry?: ResolveAncestry
-  readonly loadSkills?: SkillLoader
   // Session-scoped skill-invocation state for plan-gated agents (metis/momus). When absent the
   // invocation gate fails CLOSED: without a resolver there is no proof ulw-plan was invoked.
   readonly resolveSkillInvocations?: (sessionId: string) => SkillInvocationState
@@ -69,54 +71,22 @@ export type TaskToolDeps = {
 
 export type TaskToolMode = "spawn"
 
-type ResolvedSpawnItemBase = {
-  readonly prompt: string
-  readonly task_summary?: string
-  readonly description?: string
-  readonly name?: string
-  readonly model?: string
-  readonly reasoning?: TaskReasoning
-  readonly load_skills: readonly string[]
-}
-
-export type ResolvedSpawnItem =
-  | (ResolvedSpawnItemBase & { readonly kind: "model"; readonly model: string })
-  | (ResolvedSpawnItemBase & { readonly kind: "category"; readonly category: string })
-  | (ResolvedSpawnItemBase & { readonly kind: "subagent_type"; readonly subagentType: string })
-
-export type TaskToolItemDetail = {
-  readonly task_id: string
-  readonly task_summary?: string
-  readonly name?: string
-  readonly category?: string
-  readonly subagent_type?: string
-  readonly model?: string
-  readonly resolved_model?: ResolvedModelRecord
-  readonly status: string
-  readonly error_message?: string
-  readonly queue_position?: number
-  readonly run_in_background?: boolean
-  readonly skills?: TaskSkillSummary
-}
-
 export type TaskToolDetails = {
-  readonly task_id: string
+  readonly agentId: string
   readonly status: string
   readonly mode: TaskToolMode
   readonly task_summary?: string
   readonly name?: string
   readonly category?: string
+  readonly preset?: string
   readonly subagent_type?: string
   readonly execution_mode?: string
   readonly model?: string
   readonly resolved_model?: ResolvedModelRecord
   readonly fallback_attempts?: readonly ResolvedModelRecord[]
-  readonly run_in_background?: boolean
   readonly queue_position?: number
-  readonly items?: readonly TaskToolItemDetail[]
   readonly reason?: string
   readonly run_stats?: TaskRunStats
-  readonly skills?: TaskSkillSummary
 }
 
 export type { TaskToolParamsStatic }

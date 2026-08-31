@@ -16,8 +16,8 @@ import {
   type SteeringPort,
 } from "./types"
 
-const TASK_OUTPUT_SUGGESTION = "Use task_output to read the final result."
-const NOT_FOUND_SUGGESTION = "Use /tasks to see available tasks, or task_output to read a known task."
+const TASK_OUTPUT_SUGGESTION = "Use AgentOutput to read the final result."
+const NOT_FOUND_SUGGESTION = "Use /tasks to see available agents, or AgentOutput to read a known agent."
 
 export function createSteeringEngine(port: SteeringPort): SteeringEngine {
   // Prelaunch steering is DURABLE: messages sent to a still-pending (queued) child append to the
@@ -51,7 +51,7 @@ export function createSteeringEngine(port: SteeringPort): SteeringEngine {
     const denied = scopeDenied(record, input)
     if (denied !== undefined) return denied
     // One-shot policy runs after ownership is established but BEFORE the pending enqueue and
-    // messageability: a one-shot agent refuses task_send in every state (running, pending,
+    // messageability: a one-shot agent refuses AgentSend in every state (running, pending,
     // terminal, cross-session alike), and an unauthorized caller learns only the scope denial.
     const oneShot = oneShotPolicyDenial(record)
     if (oneShot !== undefined) return oneShot
@@ -283,7 +283,7 @@ function scopeDenied(record: TaskRecord, input: SendInput): SendOutcome | undefi
     kind: "scope_denied",
     task_id: record.task_id,
     owning_session_id: record.parent_session_id,
-    reason: `Task ${record.task_id} belongs to session ${record.parent_session_id}; pass all_scope to send across sessions.`,
+    reason: `Agent ${record.task_id} belongs to session ${record.parent_session_id}.`,
   }
 }
 
@@ -291,11 +291,11 @@ function notContinuableReason(record: TaskRecord): string {
   // Suspended (session shutdown) is NOT terminal: the record is continuable, just not from this
   // process. No lazy revive-on-send - resuming the session is the wake-up path (user decision).
   if (record.residency_state === "persisted_only" || record.residency_state === "rpc_detached") {
-    return `Task ${record.task_id} is suspended - resumes when its session is resumed.`
+    return `Agent ${record.task_id} is suspended - resumes when its session is resumed.`
   }
-  if (record.residency_state === "disposed") return `Task ${record.task_id} was disposed and can no longer be continued.`
-  if (record.residency_state === "evicted") return `Task ${record.task_id} was evicted from residency and can no longer be continued.`
-  return `Task ${record.task_id} is ${record.status} and can no longer be continued.`
+  if (record.residency_state === "disposed") return `Agent ${record.task_id} was disposed and can no longer be continued.`
+  if (record.residency_state === "evicted") return `Agent ${record.task_id} was evicted from residency and can no longer be continued.`
+  return `Agent ${record.task_id} is ${record.status} and can no longer be continued.`
 }
 
 function buildRevived(record: TaskRecord, timestamp: string): TaskRecord {

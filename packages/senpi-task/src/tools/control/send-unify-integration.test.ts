@@ -21,7 +21,7 @@ describe("task_send unified resident revive integration", () => {
     expect(completedResident?.status).toBe("completed")
     expect(completedResident?.residency_state).toBe("resident")
 
-    const revived = await runTaskSend(manager, { to: started.task_id, message: "finish with new answer" }, "p1")
+    const revived = await runTaskSend(manager, { agentId: started.task_id, message: "finish with new answer" }, "p1")
 
     expect(revived.details.kind).toBe("revived")
     const revivedTurnSettled = fake.handle.waitForOutcome()

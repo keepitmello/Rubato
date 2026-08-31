@@ -192,7 +192,7 @@ describe("InProcessRunner", () => {
     let captured: CreateAgentSessionOptions | undefined
     const fake = createFakeSession()
     const runner = new InProcessRunner({
-      sharedParentTools: [makeTool("grep"), makeTool("task_create")],
+      sharedParentTools: [makeTool("grep"), makeTool("team_task_create")],
       uiOnlyToolNames: ["render_widget"],
       createSession: async (options) => {
         captured = options
@@ -200,12 +200,12 @@ describe("InProcessRunner", () => {
       },
     })
 
-    const handle = await runner.start(baseSpec({ memberScopedTools: [makeTool("task_send")] }))
+    const handle = await runner.start(baseSpec({ memberScopedTools: [makeTool("team_send")] }))
     fake.resolvePrompt()
     await handle.waitForIdle()
 
     const names = (captured?.customTools ?? []).map((tool) => tool.name)
-    expect(names).toEqual(["grep", "task_send"])
+    expect(names).toEqual(["grep", "team_send"])
     for (const tool of captured?.customTools ?? []) {
       expect(typeof tool.execute).toBe("function")
     }

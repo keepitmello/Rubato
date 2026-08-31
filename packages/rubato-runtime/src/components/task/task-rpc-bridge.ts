@@ -162,7 +162,9 @@ function registerTaskHandlers(
     if ("error" in input) return invalidArguments(input.error)
     const record = engine.manager.get(input.value.to)
     if (record === undefined || record.parent_session_id !== sessionId) return notFound()
-    return (await runTaskSend(engine.manager, input.value, sessionId)).details
+    return toRpcChildControlDetails(
+      (await runTaskSend(engine.manager, { agentId: input.value.to, message: input.value.message }, sessionId)).details,
+    )
   })
   handle("rubato.task.cancel", async (data) => {
     const sessionId = currentSessionId()
@@ -171,7 +173,10 @@ function registerTaskHandlers(
     if ("error" in input) return invalidArguments(input.error)
     const record = engine.manager.get(input.value.task_id)
     if (record === undefined || record.parent_session_id !== sessionId) return notFound()
-    return (await runTaskCancel(engine.manager, input.value)).details
+    return toRpcChildControlDetails((await runTaskCancel(engine.manager, {
+      agentId: input.value.task_id,
+      ...(input.value.reason !== undefined ? { reason: input.value.reason } : {}),
+    })).details)
   })
   handle("rubato.task.output", async (data) => {
     const sessionId = currentSessionId()
@@ -179,9 +184,28 @@ function registerTaskHandlers(
     const input = parseTaskOutput(data)
     if ("error" in input) return invalidArguments(input.error)
     return boundedTaskOutput((
-      await runTaskOutput({ manager: engine.manager, stateDir: engine.stateDir }, input.value, sessionId)
+      await runTaskOutput(
+        { manager: engine.manager, stateDir: engine.stateDir },
+        {
+          agentId: input.value.task_id,
+          ...(input.value.mode === undefined ? {} : { mode: input.value.mode }),
+          ...(input.value.tail_lines === undefined ? {} : { tail_lines: input.value.tail_lines }),
+        },
+        sessionId,
+      )
     ).details)
   })
+}
+
+// Transitional Senpi RPC adapter: public child-control details use agentId, while the panel
+// protocol still addresses children as task_id on rubato.task.* methods.
+function toRpcChildControlDetails(details: { readonly kind: string; readonly agentId?: string; readonly known_agents?: readonly string[] }) {
+  const { agentId, known_agents, ...rest } = details
+  return {
+    ...rest,
+    ...(agentId === undefined ? {} : { task_id: agentId }),
+    ...(known_agents === undefined ? {} : { known_tasks: known_agents }),
+  }
 }
 
 function isLive(record: TaskRecord): boolean {

@@ -14,6 +14,13 @@
         "typescript": "^7.0.2",
       },
     },
+    "packages/agent-core": {
+      "name": "@rubato/agent-core",
+      "version": "0.1.0",
+      "dependencies": {
+        "@rubato/model-core": "workspace:*",
+      },
+    },
     "packages/ast-grep-mcp": {
       "name": "@rubato/ast-grep-mcp",
       "version": "0.1.0",
@@ -197,6 +204,7 @@
       "name": "@rubato/senpi-task",
       "version": "0.1.0",
       "dependencies": {
+        "@rubato/agent-core": "workspace:*",
         "@rubato/config-core": "workspace:*",
         "@rubato/delegate-core": "workspace:*",
         "@rubato/team-core": "workspace:*",
@@ -567,6 +575,8 @@
     "@rolldown/binding-win32-x64-msvc": ["@rolldown/binding-win32-x64-msvc@1.0.2", "", { "os": "win32", "cpu": "x64" }, "sha512-v7qRI7gXLRINcOGXt+7YmAZ6iFuyZVMIoXAxhd8oP+DR9dLfL9GfNIx7PLMxmhZdvq8waUJBQiWN9EKNy+TRBQ=="],
 
     "@rolldown/pluginutils": ["@rolldown/pluginutils@1.0.1", "", {}, "sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw=="],
+
+    "@rubato/agent-core": ["@rubato/agent-core@workspace:packages/agent-core"],
 
     "@rubato/ast-grep-mcp": ["@rubato/ast-grep-mcp@workspace:packages/ast-grep-mcp"],
 

@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test"
 
-import type { ListScope, ListedTask } from "../../manager"
 import type { TaskRecord } from "../../state"
 import { makeRecord } from "./__fixtures__/records"
 import { runTaskOutput, TaskOutputParams } from "./output"
@@ -17,11 +16,6 @@ function managerFrom(records: readonly TaskRecord[]): ObservableOutputManager {
   const waitForCalls: string[] = []
   return {
     get: (taskId) => records.find((record) => record.task_id === taskId),
-    list(scope: ListScope): readonly ListedTask[] {
-      const filtered =
-        scope.scope === "all" ? records : records.filter((record) => record.parent_session_id === scope.session_id)
-      return filtered.map((record) => ({ record }))
-    },
     waitFor: (taskId) => {
       waitForCalls.push(taskId)
       return Promise.resolve(records.find((record) => record.task_id === taskId) ?? makeRecord({ task_id: taskId }))
@@ -45,7 +39,7 @@ function firstText(result: TaskOutputToolResult): string {
 }
 
 describe("runTaskOutput non-blocking peek", () => {
-  test("#given the task_output schema #when exposed to a model #then blocking controls are absent", () => {
+  test("#given the AgentOutput schema #when exposed to a model #then blocking controls are absent", () => {
     // when
     const properties = TaskOutputParams.properties
 
@@ -55,13 +49,13 @@ describe("runTaskOutput non-blocking peek", () => {
     expect(properties).not.toHaveProperty("wait_for")
   })
 
-  test("#given a running child #when task_output reads its status #then it returns its running snapshot without waiting", async () => {
+  test("#given a running child #when AgentOutput reads its status #then it returns its running snapshot without waiting", async () => {
     // given
     const running = makeRecord({ task_id: "st_running", status: "running" })
     const manager = managerFrom([running])
 
     // when
-    const result = await runTaskOutput(depsFrom(manager), { task_id: running.task_id, mode: "status" }, "session-parent")
+    const result = await runTaskOutput(depsFrom(manager), { agentId: running.task_id, mode: "status" }, "session-parent")
 
     // then
     expect(manager.waitForCalls()).toEqual([])
@@ -73,13 +67,13 @@ describe("runTaskOutput non-blocking peek", () => {
     ["block true", { block: true }],
     ["block false", { block: false }],
     ["blocking timeout", { timeout_ms: 1 }],
-  ] as const)("#given a legacy %s param #when task_output runs #then it redirects to notification-driven peeks", async (_label, legacyParam) => {
+  ] as const)("#given a legacy %s param #when AgentOutput runs #then it redirects to notification-driven peeks", async (_label, legacyParam) => {
     // given
     const running = makeRecord({ task_id: "st_running", status: "running" })
     const manager = managerFrom([running])
 
     // when
-    const result = await runTaskOutput(depsFrom(manager), { task_id: running.task_id, ...legacyParam }, "session-parent")
+    const result = await runTaskOutput(depsFrom(manager), { agentId: running.task_id, ...legacyParam }, "session-parent")
 
     // then
     expect(manager.waitForCalls()).toEqual([])

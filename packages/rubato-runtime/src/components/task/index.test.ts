@@ -21,14 +21,18 @@ import * as taskComponentModule from "./index"
 import type { CapturedUi } from "./runtime-context"
 import { createSessionTransitionBridge } from "./session-transition-bridge"
 
-const TASK_TOOL_NAMES = ["task", "task_send", "task_cancel", "task_output", "dag"]
+const TASK_TOOL_NAMES = ["Agent", "AgentSend", "AgentCancel", "AgentOutput", "dag"]
 const TEAM_TOOL_NAMES = [
   "team_create",
   "team_delete",
-  "task_create",
-  "task_get",
-  "task_list",
-  "task_update",
+  "team_send",
+  "team_shutdown_request",
+  "team_approve_shutdown",
+  "team_reject_shutdown",
+  "team_task_create",
+  "team_task_get",
+  "team_task_list",
+  "team_task_update",
 ]
 const ALL_TOOL_NAMES = [...TASK_TOOL_NAMES, ...TEAM_TOOL_NAMES]
 const TASK_EVENTS = [
@@ -173,7 +177,7 @@ describe("rubato-runtime task component wiring", () => {
     delete process.env.SENPI_TASK_MEMBER
   })
 
-  it("#given an explicit team member process #when the task component registers #then no lead task surface is wired", () => {
+  it("#given an explicit team member process #when the task component registers #then Agent tools are wired without lead team tools", () => {
     // given
     const previousMember = process.env.SENPI_TASK_MEMBER
     process.env.SENPI_TASK_MEMBER = "11111111-1111-4111-8111-111111111111::alice"
@@ -188,11 +192,11 @@ describe("rubato-runtime task component wiring", () => {
       else process.env.SENPI_TASK_MEMBER = previousMember
     }
 
-    // then
-    expect(toolNames(pi)).toEqual([])
-    expect(pi.commands).toEqual([])
-    expect(pi.messageRenderers).toEqual([])
-    expect(pi.handlers).toEqual([])
+    // then members keep Agent helper spawn; lead team_* names stay off this process
+    expect(toolNames(pi)).toEqual([...TASK_TOOL_NAMES].sort())
+    expect(new Set(toolNames(pi)).size).toBe(toolNames(pi).length)
+    for (const teamTool of TEAM_TOOL_NAMES) expect(toolNames(pi)).not.toContain(teamTool)
+    expect(pi.commands.map((entry) => entry.name).sort()).toEqual([...TASK_COMMANDS].sort())
   })
 
   it("#given a fake ExtensionAPI boot #when the task component registers #then tools, commands, the completion renderer, and event handlers are wired", () => {
@@ -203,7 +207,10 @@ describe("rubato-runtime task component wiring", () => {
     // when
     createTaskComponent({ resolveCwd: () => tempProject() }).register(pi, ctxFor(pi, logger))
 
-    expect(toolNames(pi)).toEqual([...ALL_TOOL_NAMES].sort())
+    const registered = toolNames(pi)
+    expect(registered).toEqual([...ALL_TOOL_NAMES].sort())
+    expect(new Set(registered).size).toBe(registered.length)
+    expect(registered).toContain("team_send")
     // the /tasks and /task-kill commands registered
     expect(pi.commands.map((entry) => entry.name).sort()).toEqual([...TASK_COMMANDS].sort())
     // Peer mail is a plain injected turn; completion, member liveness, and the dead-chain category
@@ -280,7 +287,7 @@ describe("rubato-runtime task component wiring", () => {
     // then
     expect(hints).toEqual([{
       name: "team_wait",
-      hint: "team_wait was removed - team messages arrive as steered notifications; send updates with task_send and end your turn.",
+      hint: "team_wait was removed - team messages arrive as steered notifications; send updates with team_send and end your turn.",
     }])
   })
 
@@ -312,7 +319,10 @@ describe("rubato-runtime task component wiring", () => {
     createTaskComponent({ resolveCwd: () => project }).register(pi, ctxFor(pi, logger))
 
     // then it never crashed: all tools still registered
-    expect(toolNames(pi)).toEqual([...ALL_TOOL_NAMES].sort())
+    const registered = toolNames(pi)
+    expect(registered).toEqual([...ALL_TOOL_NAMES].sort())
+    expect(new Set(registered).size).toBe(registered.length)
+    expect(registered).toContain("team_send")
     // diagnostics are surfaced once by the dedicated config-startup component on session_start.
     expect(logger.entries).toEqual([])
   })
