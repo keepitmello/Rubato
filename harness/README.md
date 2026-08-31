@@ -29,6 +29,7 @@ credential은 저장소에 복사하지 않는다. 각 provider의 기존 로그
 rubato       # 기본 세션
 rubato-pi    # rubato와 같은 실행기
 rubato-soul  # 역할별 프롬프트 없이 SOUL.md만 사용
+rubato aside-cursor --install  # Aside Cursor 면. 설명은 aside-cursor.md
 ```
 
 Rubato는 작업을 리드, 독립 작업자, 검증자로 나누고 각 작업에 맞는 모델을 선택한다.
