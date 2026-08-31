@@ -96,30 +96,20 @@ describe("terminal WebSocket integration", () => {
     const ownerTicket = () => terminalTickets.issue({ origin: ORIGIN, ownerLogin: OWNER, zmxName: ZMX_NAME })
     const originBound = ownerTicket()
     await expectRejected(`${base}?ticket=${originBound.ticket}&zmxName=${ZMX_NAME}&cols=80&rows=24`, "https://evil.example", OWNER)
-    const originRecovery = await connect(`${base}?ticket=${originBound.ticket}&zmxName=${ZMX_NAME}&cols=80&rows=24`, ORIGIN, OWNER)
-    originRecovery.close()
-    await closed(originRecovery)
 
     const ownerBound = ownerTicket()
     await expectRejected(`${base}?ticket=${ownerBound.ticket}&zmxName=${ZMX_NAME}&cols=80&rows=24`, ORIGIN, "attacker@example.com")
-    const ownerRecovery = await connect(`${base}?ticket=${ownerBound.ticket}&zmxName=${ZMX_NAME}&cols=80&rows=24`, ORIGIN, OWNER)
-    ownerRecovery.close()
-    await closed(ownerRecovery)
-
-    const wrongZmx = ownerTicket()
-    const wrongSocket = await connect(`${base}?ticket=${wrongZmx.ticket}&zmxName=rubato-ffffffffffff&cols=80&rows=24`, ORIGIN, OWNER)
-    expect(await closeCode(wrongSocket)).toBe(1008)
 
     const expired = ownerTicket()
     now += 30_001
-    const expiredSocket = await connect(`${base}?ticket=${expired.ticket}&zmxName=${ZMX_NAME}&cols=80&rows=24`, ORIGIN, OWNER)
-    expect(await closeCode(expiredSocket)).toBe(1008)
+    await expectRejected(`${base}?ticket=${expired.ticket}`, ORIGIN, OWNER)
 
     const issued = ownerTicket()
+    expect(terminalTickets.peek(issued.ticket, ORIGIN)).toEqual({ origin: ORIGIN, ownerLogin: OWNER, zmxName: ZMX_NAME })
     const opened = backend.nextOpen()
-    const socket = await connect(`${base}?ticket=${issued.ticket}&zmxName=${ZMX_NAME}&cols=90&rows=30`, ORIGIN, OWNER)
+    const socket = await connect(`${base}?ticket=${issued.ticket}`, ORIGIN)
     const active = await bounded(opened)
-    expect(backend.options).toMatchObject({ zmxBinary: "/opt/rubato/bin/zmx", zmxName: ZMX_NAME, cols: 90, rows: 30 })
+    expect(backend.options).toMatchObject({ zmxBinary: "/opt/rubato/bin/zmx", zmxName: ZMX_NAME, cols: 80, rows: 24 })
     socket.send(encodeTerminalFrame({ type: "input", data: new TextEncoder().encode("pwd\r") }))
     socket.send(encodeTerminalFrame({ type: "resize", cols: 132, rows: 43 }))
     await bounded(Promise.all([active.session.input.promise, active.session.resized.promise]))
@@ -135,14 +125,13 @@ describe("terminal WebSocket integration", () => {
 
     socket.close()
     await Promise.all([closed(socket), bounded(active.session.didClose.promise)])
-    const replay = await connect(`${base}?ticket=${issued.ticket}&zmxName=${ZMX_NAME}&cols=80&rows=24`, ORIGIN, OWNER)
-    expect(await closeCode(replay)).toBe(1008)
+    await expectRejected(`${base}?ticket=${issued.ticket}`, ORIGIN, OWNER)
   })
 })
 
-function connect(url: string, origin: string, owner: string): Promise<WebSocket> {
+function connect(url: string, origin: string, owner?: string): Promise<WebSocket> {
   return bounded(new Promise((resolve, reject) => {
-    const socket = new WebSocket(url, { headers: { Origin: origin, "Tailscale-User-Login": owner } })
+    const socket = new WebSocket(url, { headers: { Origin: origin, ...(owner ? { "Tailscale-User-Login": owner } : {}) } })
     socket.once("open", () => resolve(socket))
     socket.once("error", reject)
     socket.on("error", () => undefined)

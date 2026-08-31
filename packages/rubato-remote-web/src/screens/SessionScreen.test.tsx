@@ -51,7 +51,7 @@ describe("session conversation", () => {
     expect(screen.queryByRole("button", { name: /login/ })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: /skill:review/ }))
     expect(await screen.findByText("/skill:review", { exact: true })).toBeInTheDocument()
-    expect(sendActionSpy).toHaveBeenCalledWith(expect.anything(), fixtureSession.liveSessionId, "input.submit", { text: "/skill:review", imageIds: [], delivery: "auto" }, 123)
+    expect(sendActionSpy).toHaveBeenCalledWith(expect.anything(), fixtureSession.liveSessionId, "input.submit", { text: "/skill:review", imageIds: [], delivery: "auto" })
   })
 
   test("routes native commands to controls and terminal-only commands to the terminal", async () => {

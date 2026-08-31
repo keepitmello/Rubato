@@ -32,6 +32,8 @@ export function SessionScreen({ hostId, liveSessionId }: { hostId: string; liveS
   const [conversation, setConversation] = useState<ConversationState>({ entries: [], lastSeq: 0, requiresSnapshot: false, snapshotInstalled: false, recoveryVersion: 0, bufferedEvents: [] })
   const conversationRef = useRef(conversation)
   const [connection, setConnection] = useState<"connecting" | "online" | "offline">(navigator.onLine ? "connecting" : "offline")
+  const [streamGeneration, setStreamGeneration] = useState(0)
+  const [awaitingAssistantCount, setAwaitingAssistantCount] = useState<number | null>(null)
   const [panel, setPanel] = useState<Panel>(null)
   const [draft, setDraft] = useState("")
   const [delivery, setDelivery] = useState<"input.steer" | "input.followUp">("input.steer")
@@ -64,6 +66,11 @@ export function SessionScreen({ hostId, liveSessionId }: { hostId: string; liveS
       .catch(() => undefined)
   }, [conversation.requiresSnapshot, conversation.recoveryVersion, host, hostId, liveSessionId, queryClient])
   useEffect(() => {
+    if (snapshot.data?.summary.lifecycle !== "starting") return
+    const timer = window.setTimeout(() => { void snapshot.refetch() }, 500)
+    return () => window.clearTimeout(timer)
+  }, [snapshot.data?.summary.lifecycle, snapshot.dataUpdatedAt])
+  useEffect(() => {
     const field = composer.current
     if (!field) return
     field.style.height = "auto"
@@ -78,33 +85,48 @@ export function SessionScreen({ hostId, liveSessionId }: { hostId: string; liveS
     const stream = new SessionStream(host, liveSessionId, () => conversationRef.current.lastSeq, (event: EventEnvelope) => batcher.push(event), setConnection)
     stream.start()
     return () => { stream.stop(); batcher.dispose() }
-  }, [batcher, host, liveSessionId])
+  }, [batcher, host, liveSessionId, streamGeneration])
   useEffect(() => {
     if (nearBottom.current) requestAnimationFrame(() => scroll.current?.scrollTo({ top: scroll.current.scrollHeight, behavior: "smooth" }))
   }, [conversation.entries])
+  useEffect(() => {
+    if (awaitingAssistantCount === null) return
+    const completed = conversation.entries.filter((entry) => entry.kind === "message" && entry.role === "assistant" && !entry.streaming).length
+    if (completed > awaitingAssistantCount) {
+      setAwaitingAssistantCount(null)
+      return
+    }
+    const reconnect = window.setInterval(() => setStreamGeneration((generation) => generation + 1), 2_000)
+    return () => window.clearInterval(reconnect)
+  }, [awaitingAssistantCount, conversation.entries])
 
   const action = useMutation({
     mutationFn: async ({ type, text, imageIds }: { type: InputAction; text: string; imageIds: readonly string[] }) => {
       if (!host) throw new Error("이 호스트를 찾지 못했어요.")
-      if (type === "input.steer") return sendAction(host, liveSessionId, "input.steer", { text, imageIds }, snapshot.data?.revision)
-      if (type === "input.followUp") return sendAction(host, liveSessionId, "input.followUp", { text, imageIds }, snapshot.data?.revision)
-      return sendAction(host, liveSessionId, "input.submit", { text, imageIds, delivery: "auto" }, snapshot.data?.revision)
+      if (type === "input.steer") return sendAction(host, liveSessionId, "input.steer", { text, imageIds })
+      if (type === "input.followUp") return sendAction(host, liveSessionId, "input.followUp", { text, imageIds })
+      return sendAction(host, liveSessionId, "input.submit", { text, imageIds, delivery: "auto" })
     },
     onSuccess: (_value, variables) => {
       setDraft("")
       setActionError("")
       for (const attachment of attachments) URL.revokeObjectURL(attachment.previewUrl)
       setAttachments([])
-      setConversation((state) => ({ ...state, entries: [...state.entries, { id: crypto.randomUUID(), kind: "message", role: "user", text: variables.text || `이미지 ${variables.imageIds.length}개` }, ...(fixtureMode ? [{ id: crypto.randomUUID(), kind: "message" as const, role: "assistant" as const, text: variables.type === "input.followUp" ? "다음 차례에 처리하도록 추가했습니다…" : "요청을 받아 작업을 시작했습니다…", streaming: true }] : [])] }))
+      setConversation((state) => ({ ...state, entries: [...state.entries, { id: `optimistic-${crypto.randomUUID()}`, kind: "message", role: "user", text: variables.text || `이미지 ${variables.imageIds.length}개` }, ...(fixtureMode ? [{ id: crypto.randomUUID(), kind: "message" as const, role: "assistant" as const, text: variables.type === "input.followUp" ? "다음 차례에 처리하도록 추가했습니다…" : "요청을 받아 작업을 시작했습니다…", streaming: true }] : [])] }))
+      if (!fixtureMode) {
+        setAwaitingAssistantCount(conversationRef.current.entries.filter((entry) => entry.kind === "message" && entry.role === "assistant" && !entry.streaming).length)
+        setStreamGeneration((generation) => generation + 1)
+      }
       setAnnouncement(variables.type === "input.followUp" ? "다음 차례에 처리할 요청을 보냈습니다." : variables.type === "input.steer" ? "즉시 반영할 지시를 보냈습니다." : "메시지를 보냈습니다.")
     },
     onError: (cause) => setActionError(cause instanceof Error ? cause.message : "메시지를 보내지 못했어요."),
   })
   const summary = snapshot.data?.summary
+  const sessionReady = summary?.lifecycle === "ready"
   const working = summary?.execution === "working" || new URLSearchParams(location.search).get("state") === "working"
   const submit = () => {
     const text = draft.trim()
-    if ((!text && attachments.length === 0) || action.isPending || connection === "offline") return
+    if ((!text && attachments.length === 0) || action.isPending || connection === "offline" || !sessionReady) return
     action.mutate({ type: working ? delivery : "input.submit", text, imageIds: attachments.map((attachment) => attachment.imageId) })
   }
   const attachImage = async (file?: File) => {
@@ -160,6 +182,7 @@ export function SessionScreen({ hostId, liveSessionId }: { hostId: string; liveS
 
   return <Shell title={summary.title} back="/" action={<button className="icon-button" aria-label="세션 제어 열기" onClick={(event) => { sheetOpener.current = event.currentTarget; setPanel("controls") }}>•••</button>}>
     {(connection === "offline" || new URLSearchParams(location.search).get("state") === "offline") ? <StateBanner>연결이 끊겼어요. 대화는 그대로 두고 다시 연결하고 있습니다.</StateBanner> : connection === "connecting" ? <StateBanner>Mac에 다시 연결하는 중…</StateBanner> : null}
+    {!sessionReady ? <StateBanner>Mac에서 세션을 준비하고 있어요…</StateBanner> : null}
     {conversation.requiresSnapshot ? <StateBanner kind="error">일부 업데이트를 놓쳤어요. 현재 대화를 다시 불러옵니다. <button className="text-button" onClick={() => void snapshot.refetch()}>다시 시도</button></StateBanner> : null}
     <div className="session-head">
       <div className="row spread"><span className="status"><span className={`status-dot ${working ? "working" : ""}`} />{working ? "작업 중" : "대기"}</span><span className="meta path">{host.displayName} · {summary.cwd.replace(/^\/Users\/[^/]+/, "~")}</span></div>
@@ -182,8 +205,8 @@ export function SessionScreen({ hostId, liveSessionId }: { hostId: string; liveS
       <div className="composer">
       <input ref={imageInput} className="sr-only" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/heic,image/heif" aria-label="이미지 파일 선택" onChange={(event) => void attachImage(event.target.files?.[0])} />
       <button className="composer-menu" aria-label="도구와 명령 열기" onClick={(event) => { sheetOpener.current = event.currentTarget; setPanel("controls") }}>＋</button>
-      <label className="sr-only" htmlFor="message">메시지</label><textarea ref={composer} id="message" rows={1} value={draft} disabled={connection === "offline"} placeholder={connection === "offline" ? "연결되면 보낼 수 있어요" : working ? "추가 지시 보내기" : "메시지"} onChange={(event) => setDraft(event.target.value)} onCompositionStart={() => { composing.current = true }} onCompositionEnd={() => { composing.current = false }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !composing.current && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); submit() } }} />
-      {working && !draft.trim() && attachments.length === 0 ? <button className="abort" onClick={() => void fire("agent.abort", {}, "작업을 중단했습니다.")}>중단</button> : <button className="send" aria-label={working ? delivery === "input.followUp" ? "다음 차례에 보내기" : "즉시 반영할 지시 보내기" : "메시지 보내기"} disabled={(!draft.trim() && attachments.length === 0) || action.isPending || uploading || connection === "offline"} onClick={submit}>↑</button>}
+      <label className="sr-only" htmlFor="message">메시지</label><textarea ref={composer} id="message" rows={1} value={draft} disabled={connection === "offline"} placeholder={connection === "offline" ? "연결되면 보낼 수 있어요" : !sessionReady ? "세션을 준비하고 있어요" : working ? "추가 지시 보내기" : "메시지"} onChange={(event) => setDraft(event.target.value)} onCompositionStart={() => { composing.current = true }} onCompositionEnd={() => { composing.current = false }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !composing.current && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); submit() } }} />
+      {working && !draft.trim() && attachments.length === 0 ? <button className="abort" onClick={() => void fire("agent.abort", {}, "작업을 중단했습니다.")}>중단</button> : <button className="send" aria-label={working ? delivery === "input.followUp" ? "다음 차례에 보내기" : "즉시 반영할 지시 보내기" : "메시지 보내기"} disabled={(!draft.trim() && attachments.length === 0) || action.isPending || uploading || connection === "offline" || !sessionReady} onClick={submit}>↑</button>}
     </div></div>
     <div className="live-region" aria-live="polite">{announcement}</div>
 

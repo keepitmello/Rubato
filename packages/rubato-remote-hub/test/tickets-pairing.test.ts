@@ -44,6 +44,9 @@ describe("pairing, exact CORS, and websocket tickets", () => {
     expect(tickets.consume(second.ticket, "https://phone.example.ts.net", "owner@example.com")).toBeTrue()
     expect(tickets.consume(second.ticket, "https://phone.example.ts.net", "owner@example.com")).toBeFalse()
 
+    const headerless = tickets.issue("https://phone.example.ts.net", "owner@example.com")
+    expect(tickets.consumeForUpgrade(headerless.ticket, "https://phone.example.ts.net")).toBe("owner@example.com")
+
     const expired = tickets.issue("https://phone.example.ts.net", "owner@example.com")
     now += 15_001
     expect(tickets.consume(expired.ticket, "https://phone.example.ts.net", "owner@example.com")).toBeFalse()

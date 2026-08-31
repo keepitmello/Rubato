@@ -4,6 +4,29 @@ import type { ConversationEntry, ConversationState, SessionSnapshot, UiRequest }
 const MAX_RENDERED_ENTRIES = 1_000
 const text = (value: JsonValue | undefined): string | undefined => typeof value === "string" ? value : undefined
 
+function object(value: JsonValue | undefined): Record<string, JsonValue> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, JsonValue> : undefined
+}
+
+function messageContent(value: JsonValue | undefined): string {
+  if (typeof value === "string") return value
+  if (!Array.isArray(value)) return ""
+  return value.map((part) => object(part)).filter((part): part is Record<string, JsonValue> => Boolean(part))
+    .filter((part) => part.type === "text").map((part) => text(part.text) ?? "").join("")
+}
+
+function piMessage(payload: EventEnvelope["payload"]): { id: string; role: "user" | "assistant"; text: string; hidden: boolean } | undefined {
+  const message = object(object(payload.event)?.message)
+  if (!message) return undefined
+  const timestamp = typeof message.timestamp === "number" ? message.timestamp : undefined
+  return {
+    id: timestamp === undefined ? "" : `pi-message-${timestamp}`,
+    role: message.role === "user" ? "user" : "assistant",
+    text: messageContent(message.content),
+    hidden: message.display === false || message.role === "custom",
+  }
+}
+
 function bounded(entries: readonly ConversationEntry[]): readonly ConversationEntry[] {
   return entries.length > MAX_RENDERED_ENTRIES ? entries.slice(-MAX_RENDERED_ENTRIES) : entries
 }
@@ -49,33 +72,61 @@ export function applyConversationSnapshot(snapshot: SessionSnapshot, previous?: 
 }
 
 export function reduceConversation(state: ConversationState, event: EventEnvelope): ConversationState {
-  if (!state.snapshotInstalled || state.requiresSnapshot) {
+  if (!state.snapshotInstalled) {
     const bufferedEvents = event.seq <= state.lastSeq ? state.bufferedEvents : bufferEvent(state.bufferedEvents, event)
     return bufferedEvents === state.bufferedEvents ? state : { ...state, bufferedEvents }
+  }
+  if (state.requiresSnapshot) {
+    const bufferedEvents = event.seq <= state.lastSeq ? state.bufferedEvents : bufferEvent(state.bufferedEvents, event)
+    let recovered: ConversationState = { ...state, requiresSnapshot: false, bufferedEvents: [] }
+    for (let index = 0; index < bufferedEvents.length; index++) {
+      const buffered = bufferedEvents[index]!
+      if (buffered.seq <= recovered.lastSeq) continue
+      if (buffered.seq !== recovered.lastSeq + 1) {
+        return { ...recovered, requiresSnapshot: true, bufferedEvents: bufferedEvents.slice(index) }
+      }
+      recovered = reduceConversation(recovered, buffered)
+    }
+    return recovered
   }
   if (event.seq <= state.lastSeq) return state
   if (event.seq !== state.lastSeq + 1) return { ...state, requiresSnapshot: true, recoveryVersion: state.recoveryVersion + 1, bufferedEvents: bufferEvent(state.bufferedEvents, event) }
   const payload = event.payload
-  const id = text(payload.ephemeralMessageId) ?? text(payload.messageId) ?? `event-${event.seq}`
+  const nestedMessage = piMessage(payload)
+  const id = text(payload.ephemeralMessageId) ?? text(payload.messageId) ?? (nestedMessage?.id || `event-${event.seq}`)
   let entries = state.entries
 
   switch (event.type) {
     case "message.start": {
-      const role = payload.role === "user" ? "user" : "assistant"
-      entries = [...entries, { id, kind: "message", role, text: text(payload.text) ?? "", streaming: true, at: event.at }]
+      if (nestedMessage?.hidden) break
+      const role = nestedMessage?.role ?? (payload.role === "user" ? "user" : "assistant")
+      const startedText = nestedMessage?.text ?? text(payload.text) ?? ""
+      const optimistic = nestedMessage?.role === "user"
+        ? entries.findIndex((entry) => entry.kind === "message" && entry.role === "user" && entry.id.startsWith("optimistic-") && entry.text === startedText)
+        : -1
+      entries = optimistic < 0
+        ? [...entries, { id, kind: "message", role, text: startedText, streaming: true, at: event.at }]
+        : entries.map((entry, position) => position === optimistic ? { id, kind: "message", role, text: startedText, streaming: true, at: event.at } : entry)
       break
     }
     case "message.delta": {
-      const delta = text(payload.delta) ?? ""
+      if (nestedMessage?.hidden) break
+      const delta = nestedMessage?.text ?? text(payload.delta) ?? ""
       const index = entries.findIndex((entry) => entry.id === id && entry.kind === "message")
       entries = index < 0
         ? [...entries, { id, kind: "message", role: "assistant", text: delta, streaming: true }]
-        : entries.map((entry, position) => position === index && entry.kind === "message" ? { ...entry, text: entry.text + delta } : entry)
+        : entries.map((entry, position) => position === index && entry.kind === "message" ? { ...entry, text: nestedMessage ? delta : entry.text + delta } : entry)
       break
     }
-    case "message.commit":
-      entries = entries.map((entry) => entry.id === id && entry.kind === "message" ? { ...entry, text: text(payload.text) ?? entry.text, streaming: false } : entry)
+    case "message.commit": {
+      if (nestedMessage?.hidden) break
+      const committed = nestedMessage?.text ?? text(payload.text)
+      const index = entries.findIndex((entry) => entry.id === id && entry.kind === "message")
+      entries = index < 0
+        ? [...entries, { id, kind: "message", role: nestedMessage?.role ?? "assistant", text: committed ?? "", streaming: false, at: event.at }]
+        : entries.map((entry, position) => position === index && entry.kind === "message" ? { ...entry, text: committed ?? entry.text, streaming: false } : entry)
       break
+    }
     case "tool.start":
       entries = [...entries, { id, kind: "tool", name: text(payload.name) ?? "도구", summary: text(payload.summary) ?? "실행 중", status: "running" }]
       break

@@ -98,7 +98,7 @@ export async function install(options) {
   } catch (error) {
     let serveRestoreError = null
     if (serveTransaction) {
-      try { await restoreServeSnapshot(tailscaleCommand, serveTransaction.snapshot, runner) }
+      try { await restoreServeSnapshot(tailscaleCommand, serveTransaction.snapshot, serveTransaction.port, serveTransaction.webRoot, runner) }
       catch (cause) { serveRestoreError = cause }
     }
     if (zmxBackup) await rename(zmxBackup, paths.zmx).catch(() => {})

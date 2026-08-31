@@ -59,7 +59,6 @@ describe("WebSocket ticket API", () => {
       `Sec-WebSocket-Key: ${randomBytes(16).toString("base64")}`,
       "Sec-WebSocket-Version: 13",
       "Origin: https://phone.example.ts.net",
-      "Tailscale-User-Login: owner@example.com",
       "\r\n",
     ].join("\r\n"))
     expect((await upgraded).toString()).toStartWith("HTTP/1.1 101")

@@ -13,6 +13,8 @@ describe("terminal launch tickets", () => {
     const store = new TerminalLaunchTicketStore({ now: () => now })
     const issued = store.issue(identity)
     expect(issued.expiresAt).toBe(new Date(now + TERMINAL_TICKET_TTL_MS).toISOString())
+    expect(store.peek(issued.ticket, "https://other.example.test")).toBeNull()
+    expect(store.peek(issued.ticket, identity.origin)).toEqual(identity)
     expect(store.consume(issued.ticket, identity)).toBe(true)
     expect(store.consume(issued.ticket, identity)).toBe(false)
 

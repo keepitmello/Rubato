@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { randomBytes } from "node:crypto"
 import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
@@ -31,16 +32,28 @@ test("real Node-side backend controls the Bun PTY helper", async () => {
 })
 
 runPinned("real Bun PTY helper starts the pinned zmx attach client and reports its exit", async () => {
-  const frames = await runHelper(zmxBinary)
-  expect(frames.some((frame) => frame.type === "exit" || frame.type === "error")).toBe(true)
+  const name = `rubato-${randomBytes(6).toString("hex")}`
+  const leader = Bun.spawn([zmxBinary, "attach", name, "/bin/sleep", "2"], { stdin: "ignore", stdout: "ignore", stderr: "ignore", env: { ...process.env, ZMX_NO_DETACH_KEY: "1" } })
+  try {
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const listed = Bun.spawnSync([zmxBinary, "list", "--short"])
+      if (listed.exitCode === 0 && listed.stdout.toString().split(/\r?\n/).includes(name)) break
+      await Bun.sleep(20)
+    }
+    const frames = await runHelper(zmxBinary, name)
+    expect(frames.some((frame) => frame.type === "exit" || frame.type === "error")).toBe(true)
+  } finally {
+    leader.kill("SIGTERM")
+    Bun.spawnSync([zmxBinary, "kill", name, "--force"])
+  }
 })
 
-async function runHelper(binary: string): Promise<readonly TerminalFrame[]> {
+async function runHelper(binary: string, name = "rubato-ffffffffffff"): Promise<readonly TerminalFrame[]> {
   const child = Bun.spawn([
     process.execPath,
     helper,
     "--zmx", binary,
-    "--name", "rubato-ffffffffffff",
+    "--name", name,
     "--cols", "80",
     "--rows", "24",
   ], { stdin: "pipe", stdout: "pipe", stderr: "pipe" })

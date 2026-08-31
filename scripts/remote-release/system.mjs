@@ -147,36 +147,42 @@ export async function tailscaleIdentity(tailscale = "tailscale", runner = run) {
 export async function configureServe(tailscale, port, webRoot, runner = run) {
   if (!Number.isSafeInteger(port) || port < HUB_PORT_MIN || port > HUB_PORT_MAX) throw new Error("invalid hub port")
   const resolvedWebRoot = await realpath(webRoot)
-  const before = await serveStatus(tailscale, runner)
-  assertNoFunnel(before)
-  const snapshotPath = join(tmpdir(), `rubato-serve-before-${process.pid}-${randomUUID()}.json`)
+  const snapshot = await serveStatus(tailscale, runner)
+  assertNoFunnel(snapshot)
+  assertRubatoServeRoutesAvailable(snapshot, port, resolvedWebRoot)
   try {
-    await runner(tailscale, ["serve", "get-config", snapshotPath], { timeoutMs: 10_000 })
-    const snapshot = JSON.parse(await readFile(snapshotPath, "utf8"))
-    assertNoFunnel(snapshot)
-    assertRubatoServeRoutesAvailable(snapshot, port, resolvedWebRoot)
-    try {
-      await runner(tailscale, ["serve", "--bg", "--yes", "--set-path=/rubato", resolvedWebRoot], { timeoutMs: 30_000 })
-      await runner(tailscale, ["serve", "--bg", "--yes", "--set-path=/rubato/api", `http://127.0.0.1:${port}/rubato/api`], { timeoutMs: 30_000 })
-      const after = await serveStatus(tailscale, runner)
-      assertNoFunnel(after)
-      assertExactRubatoServeRoutes(after, port, resolvedWebRoot)
-      return { status: after, snapshot }
-    } catch (cause) {
-      try { await runner(tailscale, ["serve", "set-config", snapshotPath], { timeoutMs: 30_000 }) }
-      catch (restoreError) { throw new AggregateError([cause, restoreError], "Tailscale Serve mutation failed and its exact pre-mutation config could not be restored") }
-      throw cause
-    }
-  } finally { await rm(snapshotPath, { force: true }) }
+    await setServePath(tailscale, "/rubato", `http://127.0.0.1:${port}/rubato`, runner)
+    await setServePath(tailscale, "/rubato/api", `http://127.0.0.1:${port}/rubato/api`, runner)
+    const after = await serveStatus(tailscale, runner)
+    assertNoFunnel(after)
+    assertExactRubatoServeRoutes(after, port, resolvedWebRoot)
+    return { status: after, snapshot, port, webRoot: resolvedWebRoot }
+  } catch (cause) {
+    try { await restoreServeSnapshot(tailscale, snapshot, port, resolvedWebRoot, runner) }
+    catch (restoreError) { throw new AggregateError([cause, restoreError], "Tailscale Serve mutation failed and its exact pre-mutation Rubato routes could not be restored") }
+    throw cause
+  }
 }
 
-export async function restoreServeSnapshot(tailscale, snapshot, runner = run) {
+export async function restoreServeSnapshot(tailscale, snapshot, port, webRoot, runner = run) {
   assertNoFunnel(snapshot)
-  const snapshotPath = join(tmpdir(), `rubato-serve-restore-${process.pid}-${randomUUID()}.json`)
-  try {
-    await writeFile(snapshotPath, `${JSON.stringify(snapshot, null, 2)}\n`, { mode: 0o600 })
-    await runner(tailscale, ["serve", "set-config", snapshotPath], { timeoutMs: 30_000 })
-  } finally { await rm(snapshotPath, { force: true }) }
+  const current = await serveStatus(tailscale, runner)
+  assertNoFunnel(current)
+  assertRubatoServeRoutesAvailable(current, port, webRoot)
+  for (const path of RUBATO_SERVE_PATHS) {
+    if (servePathHandlers(current, path).length > 0) await clearServePath(tailscale, path, runner)
+  }
+  for (const path of RUBATO_SERVE_PATHS) {
+    const handlers = servePathHandlers(snapshot, path)
+    if (handlers.length > 1) throw new Error(`cannot restore ambiguous Tailscale Serve route ${path}`)
+    const handler = handlers[0]
+    if (!handler) continue
+    const target = typeof handler.Proxy === "string" ? handler.Proxy : typeof handler.Path === "string" ? handler.Path : null
+    if (!target) throw new Error(`cannot restore unsupported Tailscale Serve handler ${path}`)
+    await setServePath(tailscale, path, target, runner)
+  }
+  const restored = await serveStatus(tailscale, runner)
+  if (JSON.stringify(rubatoServeHandlers(restored)) !== JSON.stringify(rubatoServeHandlers(snapshot))) throw new Error("Tailscale Serve Rubato route rollback did not restore the exact prior handlers")
 }
 
 export async function writeServeStateRecord(paths, state) {
@@ -228,12 +234,13 @@ export function serveHasRubatoTarget(status, port) {
 }
 
 export function assertRubatoServeRoutesAvailable(config, port, webRoot) {
+  const expectedRootProxy = `http://127.0.0.1:${port}/rubato`
   const expectedProxy = `http://127.0.0.1:${port}/rubato/api`
   for (const web of Object.values(config?.Web ?? {})) {
     const handlers = web?.Handlers ?? {}
     for (const path of ["/rubato", "/rubato/"]) {
       const handler = handlers[path]
-      if (handler && handler.Path !== webRoot && handler.Path !== `${webRoot}/` && handler.Proxy !== `http://127.0.0.1:${port}`) throw new Error(`refusing to overwrite existing non-Rubato Serve route ${path}`)
+      if (handler && handler.Path !== webRoot && handler.Path !== `${webRoot}/` && handler.Proxy !== `http://127.0.0.1:${port}` && handler.Proxy !== expectedRootProxy) throw new Error(`refusing to overwrite existing non-Rubato Serve route ${path}`)
     }
     for (const path of ["/rubato/api", "/rubato/api/"]) {
       const handler = handlers[path]
@@ -244,8 +251,12 @@ export function assertRubatoServeRoutesAvailable(config, port, webRoot) {
 
 export function assertExactRubatoServeRoutes(config, port, webRoot) {
   assertRubatoServeRoutesAvailable(config, port, webRoot)
-  const encoded = JSON.stringify(config)
-  if (!encoded.includes(webRoot) || !encoded.includes(`http://127.0.0.1:${port}/rubato/api`)) throw new Error("Tailscale Serve did not retain both exact Rubato routes")
+  const rootProxy = `http://127.0.0.1:${port}/rubato`
+  const apiProxy = `http://127.0.0.1:${port}/rubato/api`
+  if (!servePathHandlers(config, "/rubato").some((handler) => handler.Proxy === rootProxy)
+    || !servePathHandlers(config, "/rubato/api").some((handler) => handler.Proxy === apiProxy)) {
+    throw new Error("Tailscale Serve did not retain both exact Rubato routes")
+  }
 }
 
 export async function removeRubatoServeRoute(tailscale = "tailscale", port, webRoot, runner = run) {
@@ -254,16 +265,11 @@ export async function removeRubatoServeRoute(tailscale = "tailscale", port, webR
   assertNoFunnel(status)
   if (!serveHasRubatoTarget(status, port)) return { changed: false }
 
-  const configPath = join(tmpdir(), `rubato-serve-${process.pid}-${randomUUID()}.json`)
-  try {
-    await runner(tailscale, ["serve", "get-config", configPath], { timeoutMs: 10_000 })
-    const config = JSON.parse(await readFile(configPath, "utf8"))
-    assertNoFunnel(config)
-    const { config: next, removed } = withoutRubatoServeRoute(config, port, await realpath(webRoot))
-    if (!removed) throw new Error("could not identify the owned /rubato handler in Serve config; refusing broad cleanup")
-    await writeFile(configPath, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 })
-    await runner(tailscale, ["serve", "set-config", configPath], { timeoutMs: 30_000 })
-  } finally { await rm(configPath, { force: true }) }
+  const resolvedWebRoot = await realpath(webRoot)
+  assertRubatoServeRoutesAvailable(status, port, resolvedWebRoot)
+  const owned = rubatoServeHandlers(status)
+  if (Object.keys(owned).length === 0) throw new Error("could not identify the owned /rubato handler in Serve config; refusing broad cleanup")
+  for (const path of Object.keys(owned)) await clearServePath(tailscale, path, runner)
   const verified = await serveStatus(tailscale, runner)
   if (serveHasRubatoTarget(verified, port)) throw new Error("Rubato Serve route removal did not take effect")
   return { changed: true }
@@ -273,6 +279,7 @@ export function withoutRubatoServeRoute(config, port, webRoot) {
   if (!config || typeof config !== "object" || Array.isArray(config)) throw new Error("invalid Tailscale Serve config")
   const next = structuredClone(config)
   const expectedProxy = `http://127.0.0.1:${port}/rubato/api`
+  const expectedRootProxy = `http://127.0.0.1:${port}/rubato`
   let removed = false
   for (const web of Object.values(next.Web ?? {})) {
     if (!web || typeof web !== "object" || Array.isArray(web)) continue
@@ -288,13 +295,42 @@ export function withoutRubatoServeRoute(config, port, webRoot) {
       const handler = handlers[path]
       const ownedStaticPath = typeof webRoot === "string" && (handler?.Path === webRoot || handler?.Path === `${webRoot}/`)
       // Legacy one-proxy installations are also owned when they target this exact hub.
-      const ownedLegacyProxy = handler?.Proxy === `http://127.0.0.1:${port}`
-      if (!ownedStaticPath && !ownedLegacyProxy) continue
+      const ownedProxy = handler?.Proxy === expectedRootProxy || handler?.Proxy === `http://127.0.0.1:${port}`
+      if (!ownedStaticPath && !ownedProxy) continue
       delete handlers[path]
       removed = true
     }
   }
   return { config: next, removed }
+}
+
+const RUBATO_SERVE_PATHS = ["/rubato", "/rubato/api"]
+
+function servePathHandlers(config, path) {
+  const handlers = []
+  for (const web of Object.values(config?.Web ?? {})) {
+    const handler = web?.Handlers?.[path]
+    if (handler && typeof handler === "object" && !Array.isArray(handler)) handlers.push(handler)
+  }
+  return handlers
+}
+
+function rubatoServeHandlers(config) {
+  const handlers = {}
+  for (const path of RUBATO_SERVE_PATHS) {
+    const found = servePathHandlers(config, path)
+    if (found.length === 1) handlers[path] = found[0]
+    else if (found.length > 1) handlers[path] = found
+  }
+  return handlers
+}
+
+async function setServePath(tailscale, path, target, runner) {
+  await runner(tailscale, ["serve", "--bg", "--yes", `--set-path=${path}`, target], { timeoutMs: 30_000 })
+}
+
+async function clearServePath(tailscale, path, runner) {
+  await runner(tailscale, ["serve", "--https=443", `--set-path=${path}`, "off"], { timeoutMs: 30_000 })
 }
 
 export async function initializeIdentity(paths, identity, { displayName, port = HUB_PORT_MIN } = {}) {

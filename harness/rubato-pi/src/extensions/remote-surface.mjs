@@ -1,6 +1,7 @@
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { randomBytes, randomUUID } from "node:crypto";
 import { basename } from "node:path";
 import { collectSessionMetrics } from "../session-metrics.mjs";
@@ -515,7 +516,7 @@ export class RemoteSurface {
 }
 
 export async function installRemoteSurface(pi, options = {}) {
-  const protocol = options.protocol ?? await import("@rubato/remote-protocol");
+  const protocol = options.protocol ?? await import(pathToFileURL(path.join(os.homedir(), ".local", "lib", "rubato", "remote", "current", "protocol", "index.mjs")).href);
   const surface = new RemoteSurface(pi, protocol, options);
   for (const eventName of SUBSCRIBED_EVENTS) {
     pi.on(eventName, (event, ctx) => surface.observe(eventName, event, ctx));

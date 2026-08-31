@@ -57,7 +57,10 @@ export class HubWebSocketServer {
       }
       const target = route === "events" ? this.#wss : this.#terminalWss
       target.handleUpgrade(request, socket, head, (client) => target.emit("connection", client, request))
-    }).catch(() => socket.destroy()))
+    }).catch((cause) => {
+      console.error(`rubato remote WebSocket upgrade failed: ${cause instanceof Error ? cause.message : "unknown error"}`)
+      socket.destroy()
+    }))
     this.#wss.on("connection", (socket) => this.#connect(socket))
     this.#terminalWss.on("connection", (socket, request) => void this.#connectTerminal(socket, request))
     this.#heartbeat = setInterval(() => {
@@ -89,19 +92,22 @@ export class HubWebSocketServer {
     const origin = typeof request.headers.origin === "string" ? request.headers.origin : null
     if (!this.#pairing.isPaired(origin)) return null
     const identity = await this.#identity.verify({ headers: new Headers(flattenHeaders(request)), remoteAddress })
-    if (!isOwner(identity, this.#ownerLogin)) return null
+    if (identity && !isOwner(identity, this.#ownerLogin)) return null
     const url = new URL(request.url ?? "/", "http://127.0.0.1")
     const ticket = url.searchParams.get("ticket")
     if (!ticket) return null
     if (url.pathname === REMOTE_HTTP_ROUTES.webSocket) {
-      return this.#tickets.consume(ticket, origin!, identity!.login) ? "events" : null
+      const ticketOwner = this.#tickets.consumeForUpgrade(ticket, origin!)
+      return ticketOwner === this.#ownerLogin && (!identity || identity.login === ticketOwner) ? "events" : null
     }
     if (url.pathname !== REMOTE_HTTP_ROUTES.terminalWebSocket) return null
-    const zmxName = url.searchParams.get("zmxName")
-    const cols = Number(url.searchParams.get("cols"))
-    const rows = Number(url.searchParams.get("rows"))
-    if (!zmxName || !Number.isSafeInteger(cols) || !Number.isSafeInteger(rows)) return null
-    this.#terminalOpens.set(request, { ticket, origin: origin!, ownerLogin: identity!.login, zmxName, cols, rows })
+    const launch = this.#terminalTickets.peek(ticket, origin!)
+    if (!launch || launch.ownerLogin !== this.#ownerLogin || (identity && identity.login !== launch.ownerLogin)) return null
+    const requestedCols = Number(url.searchParams.get("cols"))
+    const requestedRows = Number(url.searchParams.get("rows"))
+    const cols = Number.isSafeInteger(requestedCols) && requestedCols > 0 ? requestedCols : 80
+    const rows = Number.isSafeInteger(requestedRows) && requestedRows > 0 ? requestedRows : 24
+    this.#terminalOpens.set(request, { ticket, ...launch, cols, rows })
     return "terminal"
   }
 

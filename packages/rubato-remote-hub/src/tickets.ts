@@ -27,13 +27,17 @@ export class TicketStore {
   }
 
   consume(ticket: string, origin: string, ownerLogin: string): boolean {
+    return this.consumeForUpgrade(ticket, origin) === ownerLogin
+  }
+
+  consumeForUpgrade(ticket: string, origin: string): string | null {
     this.#purge()
     const digest = hash(ticket)
     const key = digest.toString("hex")
     const record = this.#tickets.get(key)
-    if (!record) return false
+    if (!record) return null
     this.#tickets.delete(key)
-    return timingSafeEqual(record.digest, digest) && record.origin === origin && record.ownerLogin === ownerLogin && record.expiresAt > this.#now()
+    return timingSafeEqual(record.digest, digest) && record.origin === origin && record.expiresAt > this.#now() ? record.ownerLogin : null
   }
 
   get size(): number {

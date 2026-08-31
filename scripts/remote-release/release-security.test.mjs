@@ -141,7 +141,7 @@ test("uninstall leaves LaunchAgent and service intact when scoped Serve cleanup 
     if (file === "/bin/launchctl") { launchctlCalled = true; return { code: 0, stdout: "", stderr: "" } }
     if (args.join(" ") === "status --json") return { code: 0, stdout: JSON.stringify({ BackendState: "Running", Self: { Online: true, UserID: 1, DNSName: "mac.ts.net." }, User: { "1": { LoginName: "owner@example.com" } } }), stderr: "" }
     if (args.join(" ") === "serve status --json") return { code: 0, stdout: JSON.stringify({ Web: { "host:443": { Handlers: { "/rubato/api": { Proxy: "http://127.0.0.1:7314/rubato/api" } } } } }), stderr: "" }
-    if (args[0] === "serve" && args[1] === "get-config") throw new Error("injected Serve cleanup failure")
+    if (args[0] === "serve" && args.at(-1) === "off") throw new Error("injected Serve cleanup failure")
     throw new Error(`unexpected command: ${file} ${args.join(" ")}`)
   }
   await assert.rejects(() => uninstall({ paths, runner, yes: true }), /injected Serve cleanup failure/)
@@ -210,7 +210,6 @@ test("Serve setup refuses unrelated /rubato ownership before mutation", async (t
   const runner = async (_file, args) => {
     calls.push(args)
     if (args.join(" ") === "serve status --json") return { code: 0, stdout: JSON.stringify(existing), stderr: "" }
-    if (args[0] === "serve" && args[1] === "get-config") { await writeFile(args[2], JSON.stringify(existing)); return { code: 0, stdout: "", stderr: "" } }
     throw new Error(`unexpected mutation: ${args.join(" ")}`)
   }
   await assert.rejects(() => configureServe("tailscale", 7314, web, runner), /refusing to overwrite/)
@@ -222,17 +221,20 @@ test("Serve setup restores the exact snapshot when the API route command fails",
   const web = join(root, "web"); await mkdir(web)
   const before = { Web: { "host:443": { Handlers: { "/docs": { Proxy: "http://127.0.0.1:9000" } } } }, TCP: { "22": { TCPForward: "127.0.0.1:22" } } }
   let current = structuredClone(before)
-  let restored = null
   const runner = async (_file, args) => {
     if (args.join(" ") === "serve status --json") return { code: 0, stdout: JSON.stringify(current), stderr: "" }
-    if (args[0] === "serve" && args[1] === "get-config") { await writeFile(args[2], JSON.stringify(before)); return { code: 0, stdout: "", stderr: "" } }
-    if (args.some((arg) => String(arg) === "--set-path=/rubato")) { current.Web["host:443"].Handlers["/rubato"] = { Path: web }; return { code: 0, stdout: "", stderr: "" } }
-    if (args.some((arg) => String(arg) === "--set-path=/rubato/api")) throw new Error("injected second command failure")
-    if (args[0] === "serve" && args[1] === "set-config") { restored = JSON.parse(await readFile(args[2], "utf8")); current = structuredClone(restored); return { code: 0, stdout: "", stderr: "" } }
+    if (args.includes("--set-path=/rubato/api") && args.at(-1) !== "off") throw new Error("injected second command failure")
+    if (args.includes("--set-path=/rubato") && args.at(-1) !== "off") {
+      current.Web["host:443"].Handlers["/rubato"] = { Proxy: args.at(-1) }
+      return { code: 0, stdout: "", stderr: "" }
+    }
+    if (args.includes("--set-path=/rubato") && args.at(-1) === "off") {
+      delete current.Web["host:443"].Handlers["/rubato"]
+      return { code: 0, stdout: "", stderr: "" }
+    }
     throw new Error(`unexpected command: ${args.join(" ")}`)
   }
   await assert.rejects(() => configureServe("tailscale", 7314, web, runner), /injected second command failure/)
-  assert.deepEqual(restored, before)
   assert.deepEqual(current, before)
 })
 
