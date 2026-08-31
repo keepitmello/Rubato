@@ -198,6 +198,44 @@ describe("backgroundWidgetRows", () => {
     expect(rowFor("GPT-5.6 Sol")).not.toContain("GPT 5.6")
   })
 
+  it("#given a Cursor Grok task whose catalog name is not Fast #when a live row renders #then it still shows Fast", () => {
+    const row = backgroundWidgetRows([
+      record({
+        task_id: "st_grok",
+        description: "Review tests",
+        status: "running",
+        resolved_model: {
+          provider: "cursor",
+          model_id: "cursor-grok-4.6",
+          display: "Cursor Grok 4.6",
+          reasoning: "high",
+          source: "category",
+        },
+      }),
+    ], new Map(), now, () => stats, 220)[0] ?? ""
+    expect(row).toContain("Grok 4.6 high [fast]")
+    expect(row).not.toContain("Cursor Grok")
+  })
+
+  it("#given xAI Grok #when a live row renders #then Fast is not implied", () => {
+    const row = backgroundWidgetRows([
+      record({
+        task_id: "st_xai",
+        description: "Review tests",
+        status: "running",
+        resolved_model: {
+          provider: "xai",
+          model_id: "grok-4.6",
+          display: "xai/grok-4.6",
+          reasoning: "high",
+          source: "category",
+        },
+      }),
+    ], new Map(), now, () => stats, 220)[0] ?? ""
+    expect(row).toContain("Grok 4.6 high")
+    expect(row).not.toContain("[fast]")
+  })
+
   it("#given a model whose name merely starts with a variant token #when a live row renders #then it is not read as that variant", () => {
     const row = backgroundWidgetRows([
       record({
