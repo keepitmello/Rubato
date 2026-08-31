@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { adapterPath, providerOverlayPath, buildSenpiArgs, leadOverlayPath, readPinnedVersions } from "../../src/launch.mjs";
+import { adapterPath, providerOverlayPath, buildSenpiArgs, leadOverlayPath, statuslinePath, readPinnedVersions } from "../../src/launch.mjs";
 import { PIN } from "../../src/policy.mjs";
 
 test("launcher pins exact engine plugin and senpi versions", () => {
@@ -10,6 +10,7 @@ test("launcher pins exact engine plugin and senpi versions", () => {
 test("senpi argv replaces the system prompt and lets profile settings choose the default model", () => {
   const args = buildSenpiArgs(["--mode", "rpc"], { env: {} });
   const promptAt = args.indexOf("--system-prompt");
+  const statuslineAt = args.indexOf(statuslinePath());
   const leadAt = args.indexOf(leadOverlayPath());
   const providerAt = args.indexOf(providerOverlayPath());
   const adapterAt = args.indexOf(adapterPath());
@@ -25,7 +26,8 @@ test("senpi argv replaces the system prompt and lets profile settings choose the
   assert.doesNotMatch(args[promptAt + 1], /# Dispatched/);
   assert.equal(args.includes("--model"), false);
   assert.ok(args.includes("-e"));
-  assert.ok(leadAt > 0 && args[leadAt - 1] === "-e");
+  assert.ok(statuslineAt > 0 && args[statuslineAt - 1] === "-e");
+  assert.ok(leadAt > statuslineAt && args[leadAt - 1] === "-e");
   assert.ok(providerAt > leadAt && args[providerAt - 1] === "-e");
   assert.ok(adapterAt > providerAt && args[adapterAt - 1] === "-e");
 });
@@ -73,6 +75,7 @@ test("interactive sessions default to fullscreen without overriding explicit mod
 
 test("launcher argv loads Rubato overlays rather than an rubato.js package entry", () => {
   const args = buildSenpiArgs(["--mode", "rpc"]);
+  assert.ok(args.includes(statuslinePath()));
   assert.ok(args.includes(leadOverlayPath()));
   assert.ok(args.includes(adapterPath()));
   assert.equal(args.some((token) => token.endsWith("/rubato.js") || token.endsWith("\\rubato.js")), false);

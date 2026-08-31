@@ -82,6 +82,23 @@ export function footerHost() {
   return globalThis[RUBATO_FOOTER_HOST];
 }
 
+/** Host 가 없거나 paint 가 비어도 senpi cwd/cost 줄로 떨어지지 않게 하는 최소 줄. */
+export function fallbackStatusLines(component, width) {
+  try {
+    const lines = paintStatusLines({
+      ctx: ctxFromHostSession(component?.session),
+      theme: component?.theme,
+      footerData: component?.footerData,
+      width,
+      speedText: "Speed —",
+    });
+    if (Array.isArray(lines) && lines.length > 0) return lines;
+  } catch {
+    // Session inspection is best-effort. The caller still needs a Rubato line.
+  }
+  return ["✦ — · Speed —"];
+}
+
 /** InteractiveMode / FooterComponent 가 쥐고 있는 session 으로 상태줄 ctx 를 만든다. */
 export function ctxFromHostSession(session, ui) {
   if (!session) return undefined;
@@ -265,10 +282,16 @@ export function installStatusline(pi, { processStartedAt = PROCESS_STARTED_AT, s
   }
 
   function paintHostFooter(component, width) {
-    const session = component?.session;
-    const ctx = ctxFromHostSession(session, latestCtx?.ui) ?? latestCtx;
-    if (ctx) latestCtx = ctx;
-    return linesFor(ctx, component?.theme, component?.footerData, width);
+    try {
+      const session = component?.session;
+      const ctx = ctxFromHostSession(session, latestCtx?.ui) ?? latestCtx;
+      if (ctx) latestCtx = ctx;
+      const lines = linesFor(ctx, component?.theme, component?.footerData, width);
+      if (Array.isArray(lines) && lines.length > 0) return lines;
+    } catch {
+      // Keep a Rubato line even if usage or model inspection throws.
+    }
+    return fallbackStatusLines(component, width);
   }
 
   function attachHostMode(mode) {
@@ -338,6 +361,17 @@ function extensionStatusLine(statuses) {
 export default function statuslineExtension(pi) {
   const installed = installStatusline(pi);
   void installed.attachHost?.();
+}
+
+// 모듈이 로드되는 즉시 fallback painter 를 심는다. adapter 의 engine import 가
+// 끝나기 전에 FooterComponent 가 그려져도 senpi 기본 줄이 나오지 않는다.
+if (!footerHost()) {
+  registerFooterHost({
+    paint: fallbackStatusLines,
+    attach() {
+      return false;
+    },
+  });
 }
 
 export { HIDDEN_STATUS_KEYS, extensionStatusLine };

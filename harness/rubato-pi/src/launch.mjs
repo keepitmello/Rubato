@@ -32,6 +32,10 @@ export function adapterPath() {
   return join(root, "src/extensions/adapter.mjs");
 }
 
+export function statuslinePath() {
+  return join(root, "src/extensions/statusline.mjs");
+}
+
 export function providerOverlayPath() {
   return join(root, "src/extensions/provider-overlay.mjs");
 }
@@ -85,6 +89,8 @@ export function buildSenpiArgs(userArgs, { env = process.env } = {}) {
     replaceSystemPrompt("", resolveRole({ env }), { env }),
     ...interactiveTuiArgs,
     ...skillPathArgs(),
+    "-e",
+    statuslinePath(),
     "-e",
     leadOverlayPath(),
     "-e",

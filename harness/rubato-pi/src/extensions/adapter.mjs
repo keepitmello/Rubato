@@ -17,13 +17,21 @@ const { composeRubatoExtension, rubatoComponents } = await import(rubatoExtensio
 
 const DAG_RUBATO_OWNED = new Set(DAG_RUBATO_OWNED_COMPONENTS);
 
-function leadOverlayLoaded(argv) {
+function cliExtensionLoaded(argv, suffix) {
   for (let i = 0; i < argv.length; i += 1) {
-    if ((argv[i] === "-e" || argv[i] === "--extension") && argv[i + 1]?.endsWith("lead-overlay.mjs")) {
+    if ((argv[i] === "-e" || argv[i] === "--extension") && argv[i + 1]?.endsWith(suffix)) {
       return true;
     }
   }
   return false;
+}
+
+function leadOverlayLoaded(argv) {
+  return cliExtensionLoaded(argv, "lead-overlay.mjs");
+}
+
+function statuslineExtensionLoaded(argv = process.argv) {
+  return cliExtensionLoaded(argv, "statusline.mjs");
 }
 
 const replaceMemory = rubatoPiMemoryComponent !== undefined;
@@ -34,8 +42,12 @@ const dagOverlay = composeRubatoExtension([
 const taskComponent = rubatoPiTaskComponent;
 
 export default async function rubatoPiAdapter(pi) {
-  const statusline = installStatusline(pi);
-  await statusline.attachHost?.();
+  // launch 가 `-e statusline.mjs` 를 adapter 보다 먼저 붙인다. 그 경로가
+  // 이미 깔렸으면 여기서 다시 install 하면 probe/handler 가 두 벌이 된다.
+  if (!statuslineExtensionLoaded()) {
+    const statusline = installStatusline(pi);
+    await statusline.attachHost?.();
+  }
   installEvalSearchGuard(pi);
   installMeasurementHooks(pi);
   const member = isTeamMemberProcess();

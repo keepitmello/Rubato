@@ -32,7 +32,7 @@ import {
   truncateToWidth,
 } from "../../src/statusline.mjs";
 import { BRAND_NAME } from "../../src/brand.mjs";
-import { installStatusline, extensionStatusLine, canSetFooter, hookExtensionRunnerFooter, ctxFromHostSession, paintStatusLines, registerFooterHost, footerHost, RUBATO_FOOTER_HOST } from "../../src/extensions/statusline.mjs";
+import { installStatusline, extensionStatusLine, canSetFooter, hookExtensionRunnerFooter, ctxFromHostSession, paintStatusLines, registerFooterHost, footerHost, fallbackStatusLines, RUBATO_FOOTER_HOST } from "../../src/extensions/statusline.mjs";
 import { createBackgroundTracker } from "../../src/background-tracker.mjs";
 
 function mockSpeedStore({ result, identity } = {}) {
@@ -1251,4 +1251,33 @@ test("installStatusline registers a host painter so the built-in footer never ne
   } finally {
     registerFooterHost(prev);
   }
+});
+
+test("importing statusline registers a fallback host that never paints the senpi cost line", () => {
+  const host = footerHost();
+  assert.equal(typeof host?.paint, "function");
+  const painted = host.paint({
+    session: {
+      model: { id: "anthropic/claude-opus-5", contextWindow: 1_000_000 },
+      sessionManager: { getCwd: () => "/Users/wy/Github-repos/rubato-lab", getBranch: () => [] },
+      getContextUsage: () => ({ tokens: 1, contextWindow: 1_000_000, percent: 0 }),
+    },
+    footerData: { getGitBranch: () => "main", getExtensionStatuses: () => new Map() },
+  }, 160);
+  const text = painted.join("\n");
+  assert.match(text, /✦/);
+  assert.doesNotMatch(text, /\$0\.000|\(sub\)|\(auto\)/);
+});
+
+test("fallbackStatusLines stays on a Rubato line when session inspection throws", () => {
+  const painted = fallbackStatusLines({
+    session: {
+      get model() {
+        throw new Error("model boom");
+      },
+    },
+  }, 80);
+  const text = painted.join("\n");
+  assert.match(text, /✦/);
+  assert.doesNotMatch(text, /\$0\.000|\(sub\)/);
 });
