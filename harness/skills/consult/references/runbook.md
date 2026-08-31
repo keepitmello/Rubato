@@ -57,8 +57,9 @@ their `targetId` by exact title and URL before navigating to Work. A
 before/after "new tab" set difference is unsafe because simultaneous runners
 can both claim the same target.
 
-Python reads `--packet` itself and sends the bytes over REPL stdin. The browser
-receives an in-memory file payload, never the local packet path. The composer
+Python reads `--packet` itself and embeds the bytes in the REPL script
+argument. The browser receives an in-memory file payload, never the local
+packet path. The composer
 starts with the packet H1 topic, then `ID: <hex>`, followed by a short
 ID-bound instruction. Packet location, blank lines,
 and trailing newlines therefore do not participate in browser input validation.
@@ -71,9 +72,9 @@ contains the consult ID, including after send becomes enabled.
 A chip can still show an active upload, so submission also waits until the send
 button has neither native `disabled`, `aria-disabled="true"`, nor
 `data-visually-disabled`; image/video-only inputs and fixed sleeps are not
-valid packet transports. The runner pings Aside REPL before the long send and
-launches Aside once if the daemon is down. Daemon loss before submit is a
-pre-send failure; do not treat it as a committed turn.
+valid packet transports. The runner opens Aside, pings REPL until it answers,
+and if the daemon drops before the submit marker it relaunches Aside and
+retries the same send once. After a user turn commits, do not retry.
 Aside confines `download.saveAs()` to its session directory. The browser returns
 `download.path()` instead, and the Python runner copies that verified local file
 to `--artifact-output`.
@@ -106,21 +107,26 @@ conversation only. Do not send the packet again.
 
 ## Manual recovery and explicit resend
 
-For exit `77`, read `targetId` and `conversationUrl` from the saved JSON. Attach
-to the existing tab when it is still open:
+For exit `77`, the runner first recovers through ChatGPT
+`backend-api/conversation` using the Aside session cookie. Do not open the
+Work project chat list or acknowledge `요청이 너무 많습니다`; that modal is
+conversation-history throttling and more project-page snapshots extend it.
+
+If the automatic backend recover is not enough, use a `https://chatgpt.com/`
+tab (not the project URL) and fetch the committed conversation:
+
+```bash
+aside repl "var p = await openTab('https://chatgpt.com/'); var sess = await (await fetch('https://chatgpt.com/api/auth/session')).json(); var r = await fetch('https://chatgpt.com/backend-api/conversation/<id>', { headers: { Authorization: 'Bearer ' + sess.accessToken } }); console.log(await r.json())"
+```
+
+Attach the existing tab only when it is still open and the rate-limit modal
+is absent:
 
 ```bash
 aside repl "var p = await attachBrowserTab('<targetId>'); await p.snapshot()"
 ```
 
-If the tab is gone, reopen the committed conversation without sending:
-
-```bash
-aside repl "var p = await openTab('<conversationUrl>'); await p.snapshot()"
-```
-
-Continue in an interactive `aside repl` when selector inspection or a manual
-download is needed. This is recovery of the existing turn, not a resend.
+This is recovery of the existing turn, not a resend.
 
 If the operator deliberately chooses to resend, rerun the original
 `run_aside_repl_consult.py` command with the same packet and a new run directory

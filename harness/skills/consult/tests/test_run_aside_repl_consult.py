@@ -120,6 +120,14 @@ class AsideReplConsultTest(unittest.TestCase):
         self.assertIn('data-tpp-toggle-value="chatgpt"', xhigh)
         self.assertIn('data-tpp-toggle-value="work"', xhigh)
         self.assertIn("Chat surface not selected", xhigh)
+        self.assertIn("ChatGPT rate-limited the project page", xhigh)
+        self.assertIn("backend-api/conversation", xhigh)
+        self.assertIn("readAssistantFromBackend", xhigh)
+        self.assertIn("recoveredFromBackend", xhigh)
+        self.assertNotIn(
+            "await snapshot(workPage, { interactive: true });\n    submitStage = 'wait-project-composer'",
+            xhigh,
+        )
         self.assertNotIn("var targetIndex = 4", xhigh)
         self.assertNotIn("/5개 중 ([1-5])번째/", xhigh)
         self.assertNotIn("Fast 모드 활성화", pro)
@@ -274,14 +282,29 @@ class AsideReplConsultTest(unittest.TestCase):
             self.assertTrue(MODULE.zip_is_valid(valid))
             self.assertFalse(MODULE.zip_is_valid(empty))
 
-    def test_repl_stdin_command_is_one_line_and_preserves_script(self) -> None:
-        script = 'console.log("first")\nawait Promise.resolve()\nconsole.log("last")'
-        command = MODULE.repl_stdin_command(script)
-
-        self.assertEqual(command.count("\n"), 1)
-        self.assertTrue(command.endswith("\n"))
-        self.assertIn("Object.getPrototypeOf(async function(){}).constructor", command)
-        self.assertIn("\\nawait Promise.resolve()\\n", command)
+    def test_repl_process_passes_script_as_argv(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            fake = Path(temp) / "aside"
+            fake.write_text(
+                """#!/usr/bin/env python3
+import sys
+print(sys.argv[2])
+print('ASIDE_REPL_SUBMIT_RESULT {"quality":"xhigh","submitElapsedMs":1,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1","targetId":"t"}')
+print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"ok","responseElapsedMs":1,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1"}')
+""",
+                encoding="utf-8",
+            )
+            fake.chmod(0o755)
+            path = f"{temp}{os.pathsep}{os.environ.get('PATH', '')}"
+            with mock.patch.dict(os.environ, {"PATH": path}):
+                _submitted, _response, _submit_s, _response_s, transcript = (
+                    MODULE.run_repl_consult(
+                        "UNIQUE_SCRIPT_BODY",
+                        submit_timeout=1,
+                        response_timeout=1,
+                    )
+                )
+        self.assertIn("UNIQUE_SCRIPT_BODY", transcript)
 
     def test_single_repl_runner_parses_both_markers(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -347,6 +370,85 @@ print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"no id here","idMatched":false
             self.assertFalse(evidence["idMatched"])
             self.assertFalse(evidence["packetUnread"])
 
+    def test_conversation_payload_helpers_and_backend_recovery_script(self) -> None:
+        payload = {
+            "mapping": {
+                "u": {
+                    "message": {
+                        "author": {"role": "user"},
+                        "content": {"parts": ["ID: abc123\nQ"]},
+                        "create_time": 1,
+                    }
+                },
+                "a": {
+                    "message": {
+                        "author": {"role": "assistant"},
+                        "content": {"parts": ["hello"]},
+                        "status": "finished_successfully",
+                        "create_time": 2,
+                    }
+                },
+            }
+        }
+        self.assertEqual(
+            MODULE.conversation_id_from_url(
+                "https://chatgpt.com/g/g-p-x/c/6a95625e-1f78-83e8-aa90-a49f982e36ef"
+            ),
+            "6a95625e-1f78-83e8-aa90-a49f982e36ef",
+        )
+        self.assertIsNone(
+            MODULE.conversation_id_from_url(
+                "https://chatgpt.com/g/g-p-x/project"
+            )
+        )
+        extracted = MODULE.assistant_from_conversation_payload(payload)
+        self.assertEqual(extracted["text"], "hello")
+        self.assertTrue(extracted["finished"])
+        self.assertTrue(MODULE.user_message_has_consult_id(payload, "abc123"))
+        script = MODULE.build_backend_recovery_script(
+            "abc123",
+            "https://chatgpt.com/c/6a95625e-1f78-83e8-aa90-a49f982e36ef",
+        )
+        self.assertIn("openTab('https://chatgpt.com/')", script)
+        self.assertIn("backend-api/conversation", script)
+        self.assertIn("backend-api/conversations?offset=0&limit=15", script)
+        self.assertNotIn("/project", script)
+        self.assertIn("ASIDE_BACKEND_RECOVERY_RESULT", script)
+
+    def test_daemon_loss_recovers_from_backend_instead_of_resend(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            fake = Path(temp) / "aside"
+            fake.write_text(
+                "#!/bin/sh\nprintf 'fetch failed: other side closed\\nAside daemon is not reachable\\n'\n",
+                encoding="utf-8",
+            )
+            fake.chmod(0o755)
+            path = f"{temp}{os.pathsep}{os.environ.get('PATH', '')}"
+            with mock.patch.dict(os.environ, {"PATH": path}):
+                with mock.patch.object(
+                    MODULE,
+                    "recover_consult_from_backend",
+                    return_value={
+                        "ok": True,
+                        "responseText": "recovered",
+                        "finished": True,
+                        "idMatched": True,
+                        "conversationUrl": "https://chatgpt.com/c/abc",
+                    },
+                ) as recover:
+                    submitted, response, _submit_s, _response_s, _transcript = (
+                        MODULE.run_repl_consult(
+                            "ignored",
+                            submit_timeout=1,
+                            response_timeout=1,
+                            consult_id="abc123",
+                        )
+                    )
+        recover.assert_called_once_with("abc123")
+        self.assertEqual(response["responseText"], "recovered")
+        self.assertTrue(response["recoveredFromBackend"])
+        self.assertEqual(submitted["conversationUrl"], "https://chatgpt.com/c/abc")
+
     def test_daemon_loss_before_submit_is_classified(self) -> None:
         self.assertTrue(
             MODULE.transcript_lost_aside_daemon(
@@ -364,12 +466,51 @@ print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"no id here","idMatched":false
             fake.chmod(0o755)
             path = f"{temp}{os.pathsep}{os.environ.get('PATH', '')}"
             with mock.patch.dict(os.environ, {"PATH": path}):
-                with self.assertRaisesRegex(RuntimeError, "daemon closed before submission"):
-                    MODULE.run_repl_consult(
-                        "ignored",
-                        submit_timeout=1,
-                        response_timeout=1,
+                with mock.patch.object(
+                    MODULE,
+                    "ensure_aside_daemon",
+                    return_value="aside daemon is not reachable",
+                ):
+                    with self.assertRaisesRegex(RuntimeError, "daemon closed before submission"):
+                        MODULE.run_repl_consult(
+                            "ignored",
+                            submit_timeout=1,
+                            response_timeout=1,
+                        )
+
+    def test_daemon_loss_before_submit_retries_once(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            counter = root / "n"
+            counter.write_text("0", encoding="utf-8")
+            fake = root / "aside"
+            fake.write_text(
+                f"""#!/bin/sh
+n=$(cat '{counter}')
+n=$((n + 1))
+printf '%s' "$n" > '{counter}'
+if [ "$n" -eq 1 ]; then
+  printf 'fetch failed: other side closed\\nAside daemon is not reachable\\n'
+  exit 0
+fi
+printf '%s\\n' 'ASIDE_REPL_SUBMIT_RESULT {{"quality":"xhigh","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1","targetId":"target"}}'
+printf '%s\\n' 'ASIDE_REPL_RESPONSE_RESULT {{"responseText":"ok","responseElapsedMs":5678,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1"}}'
+""",
+                encoding="utf-8",
+            )
+            fake.chmod(0o755)
+            path = f"{temp}{os.pathsep}{os.environ.get('PATH', '')}"
+            with mock.patch.dict(os.environ, {"PATH": path}):
+                with mock.patch.object(MODULE, "ensure_aside_daemon", return_value=None):
+                    submitted, response, _submit_s, _response_s, _transcript = (
+                        MODULE.run_repl_consult(
+                            "ignored",
+                            submit_timeout=1,
+                            response_timeout=1,
+                        )
                     )
+        self.assertEqual(submitted["quality"], "xhigh")
+        self.assertEqual(response["responseText"], "ok")
 
     def test_submission_runner_rejects_missing_marker(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -482,6 +623,52 @@ print('ASIDE_REPL_SUBMIT_UNKNOWN {"quality":"pro","reason":"commit unverified"}'
                 "do not retry",
                 (root / "stderr.log").read_text(encoding="utf-8"),
             )
+
+    def test_main_recovers_backend_after_submitted_response_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            fake = root / "aside"
+            fake.write_text(
+                """#!/usr/bin/env python3
+print('ASIDE_REPL_SUBMIT_RESULT {"quality":"pro","model":"GPT-5.6 Sol","tier":"Pro (5 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1","targetId":"target"}')
+print("response phase failed")
+""",
+                encoding="utf-8",
+            )
+            fake.chmod(0o755)
+            packet = root / "packet.md"
+            packet.write_text("# Test topic\n\nquestion", encoding="utf-8")
+            response_path = root / "response.md"
+            result_path = root / "result.json"
+            path = f"{temp}{os.pathsep}{os.environ.get('PATH', '')}"
+            with mock.patch.dict(os.environ, {"PATH": path}):
+                with mock.patch.object(MODULE, "ensure_aside_daemon", return_value=None):
+                    with mock.patch.object(
+                        MODULE,
+                        "recover_consult_from_backend",
+                        return_value={
+                            "ok": True,
+                            "responseText": "backend answer",
+                            "finished": True,
+                            "idMatched": True,
+                            "conversationUrl": "https://chatgpt.com/c/1",
+                        },
+                    ):
+                        result = MODULE.main(
+                            [
+                                "--quality", "pro",
+                                "--packet", str(packet),
+                                "--url", "https://chatgpt.com/g/g-p-test-work/project",
+                                "--response-output", str(response_path),
+                                "--json-output", str(result_path),
+                                "--stderr-output", str(root / "stderr.log"),
+                            ]
+                        )
+            self.assertEqual(result, 0)
+            self.assertEqual(response_path.read_text(encoding="utf-8"), "backend answer\n")
+            evidence = json.loads(result_path.read_text(encoding="utf-8"))
+            self.assertTrue(evidence["ok"])
+            self.assertTrue(evidence["recoveredFromBackend"])
 
     def test_main_returns_77_after_committed_turn_recovery_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

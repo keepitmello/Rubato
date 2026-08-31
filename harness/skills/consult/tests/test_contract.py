@@ -26,6 +26,7 @@ class ConsultAsideContractTest(unittest.TestCase):
         self.assertIn("--artifact-output", skill)
         self.assertIn("Playwright is not part of Consult", skill)
         self.assertIn("conversationUrl", skill)
+        self.assertIn("backend-api", skill)
         self.assertIn("targetId", skill)
         self.assertIn("deliberate resend", skill)
         self.assertNotIn("run_agbrowse", skill)
