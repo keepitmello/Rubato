@@ -152,8 +152,7 @@ def build_repl_script(
     response_timeout_ms: int,
     artifact_output: str | None = None,
 ) -> str:
-    target_index = 4 if quality == "xhigh" else 5
-    target_label = "매우 높음" if quality == "xhigh" else "Pro"
+    target_label = "매우 높음"
     composer_label = composer_aria_label(project_name)
     return f"""
 var projectUrl = {js(project_url)};
@@ -163,8 +162,8 @@ var packetName = {js(packet_name)};
 var packetBase64 = {js(packet_base64)};
 var artifactRequested = {js(artifact_output is not None)};
 var composerPrompt = {js(build_composer_prompt(topic, consult_id, artifact_output))};
-var targetIndex = {target_index};
 var targetLabel = {js(target_label)};
+var verifiedTier = null;
 var submitStartedAt = Date.now();
 var submitStage = 'open-isolated-tab';
 var submitState = await Promise.race([
@@ -205,27 +204,51 @@ var submitState = await Promise.race([
     var assistantCountBefore = await workPage.locator('[data-message-author-role="assistant"]').count();
     if (assistantCountBefore !== 0) throw new Error('isolated Work composer contains stale assistant turns');
     submitStage = 'select-tier';
-    var tierButton = workPage.getByRole('button', {{ name: /^(추론 수준|매우 높음|Pro)$/ }}).last();
+    var tierButton = workPage.getByRole('button', {{ name: /^(추론 수준|매우 높음|Pro|5\\.6 Sol)/ }}).last();
     await tierButton.click();
     var performance = workPage.getByRole('menuitem', {{ name: '성능' }});
     await performance.waitFor({{ state: 'visible', timeout: 5000 }});
+    var readTier = (tree) => {{
+      var match = tree.match(/([^\\n"]+), (\\d+)개 중 (\\d+)번째/);
+      if (!match) return null;
+      return {{
+        label: match[1].replace(/^.*text: "/, '').trim(),
+        total: Number(match[2]),
+        index: Number(match[3])
+      }};
+    }};
     var tierSnapshot = await snapshot(workPage, {{ interactive: true }});
-    var positionMatch = tierSnapshot.tree.match(/5개 중 ([1-5])번째/);
-    if (!positionMatch) throw new Error('tier position not readable');
-    var currentIndex = Number(positionMatch[1]);
-    performance = workPage.getByRole('menuitem', {{ name: '성능' }});
-    await performance.focus();
-    var direction = targetIndex > currentIndex ? 'ArrowRight' : 'ArrowLeft';
-    for (var i = 0; i < Math.abs(targetIndex - currentIndex); i += 1) {{
-      await workPage.keyboard.press(direction);
+    var current = readTier(tierSnapshot.tree);
+    if (!current) throw new Error('tier position not readable');
+    if (current.label !== targetLabel) {{
+      performance = workPage.getByRole('menuitem', {{ name: '성능' }});
+      await performance.focus();
+      for (var i = 0; i < current.total; i += 1) {{
+        await workPage.keyboard.press('ArrowLeft');
+      }}
+      var found = false;
+      var total = current.total;
+      for (var i = 0; i < total; i += 1) {{
+        current = readTier((await snapshot(workPage, {{ interactive: true }})).tree);
+        if (!current) throw new Error('tier position not readable');
+        if (current.label === targetLabel) {{
+          found = true;
+          break;
+        }}
+        if (i < total - 1) await workPage.keyboard.press('ArrowRight');
+      }}
+      if (!found) throw new Error('requested tier not verified');
     }}
     var selectedSnapshot = await snapshot(workPage, {{ interactive: true }});
-    if (!selectedSnapshot.tree.includes(targetLabel + ', 5개 중 ' + targetIndex + '번째')) throw new Error('requested tier not verified');
+    var selected = readTier(selectedSnapshot.tree);
+    if (!selected || selected.label !== targetLabel) throw new Error('requested tier not verified');
+    verifiedTier = selected.label + ' (' + selected.index + ' of ' + selected.total + ')';
     submitStage = 'verify-model';
     await workPage.getByRole('menuitem', {{ name: '모델 선택' }}).click();
-    var sol = workPage.getByRole('menuitemradio', {{ name: 'GPT-5.6 Sol' }});
+    var sol = workPage.getByRole('menuitemradio', {{ name: /^(GPT-5\\.6 Sol|5\\.6 Sol)$/ }});
     await sol.waitFor({{ state: 'visible', timeout: 5000 }});
-    if ((await sol.getAttribute('aria-checked')) !== 'true') throw new Error('GPT-5.6 Sol not checked');
+    if ((await sol.getAttribute('aria-checked')) !== 'true') await sol.click();
+    if ((await sol.getAttribute('aria-checked')) !== 'true') throw new Error('5.6 Sol not checked');
     await workPage.keyboard.press('Escape');
     submitStage = 'attach-packet';
     var fileInput = workPage.locator('#upload-files');
@@ -290,7 +313,7 @@ console.log({js(SUBMIT_MARKER)} + JSON.stringify({{
   ok: true,
   quality,
   model: 'GPT-5.6 Sol',
-  tier: quality === 'xhigh' ? '매우 높음 (4 of 5)' : 'Pro (5 of 5)',
+  tier: verifiedTier,
   submitElapsedMs,
   conversationUrl: submittedTab ? submittedTab.url : workPage.url(),
   targetId: submitState.ownedTargetId
