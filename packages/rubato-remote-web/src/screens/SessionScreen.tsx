@@ -54,6 +54,31 @@ function isNearBottom(owner: HTMLElement): boolean {
   return owner.scrollHeight - owner.scrollTop - owner.clientHeight < 120
 }
 
+const fixtureStates = new Set(["empty", "partial", "collapsed", "live"])
+
+function fixtureEntries(data: { entries: readonly ConversationEntry[] }, state: string | null): readonly ConversationEntry[] {
+  if (state === "empty") return []
+  if (state === "partial") {
+    return [...data.entries, { id: "partial", kind: "message", role: "assistant", text: "계속 확인하고 있", streaming: true }]
+  }
+  if (state === "collapsed") {
+    return [
+      { id: "u1", kind: "message", role: "user", text: "빌드를 고쳐 줘", requestRunId: "run-1" },
+      { id: "a1", kind: "message", role: "assistant", text: "로그를 보고 있어요", requestRunId: "run-1", phase: "progress" },
+      { id: "a2", kind: "message", role: "assistant", text: "실패 지점을 찾았어요", requestRunId: "run-1", phase: "progress" },
+      { id: "a3", kind: "message", role: "assistant", text: "패치 넣었어요", requestRunId: "run-1", phase: "final" },
+    ]
+  }
+  if (state === "live") {
+    return [
+      { id: "u1", kind: "message", role: "user", text: "빌드를 고쳐 줘", requestRunId: "run-1" },
+      { id: "a1", kind: "message", role: "assistant", text: "로그를 보고 있어요", requestRunId: "run-1", phase: "progress" },
+      { id: "a2", kind: "message", role: "assistant", text: "아직 보는 중", requestRunId: "run-1", phase: "progress", streaming: true },
+    ]
+  }
+  return data.entries
+}
+
 const supportedNativeCommands = new Set(["abort", "compact", "reload"])
 const remotelyAvailable = (command: InteractiveCommandDescriptor): boolean => command.remoteMode !== "native-action" || supportedNativeCommands.has(command.name)
 
@@ -122,16 +147,12 @@ export function SessionScreen({ hostId, liveSessionId }: { hostId: string; liveS
     if (!snapshot.data) return
     const data = snapshot.data
     const params = new URLSearchParams(location.search)
-    const entries = params.get("state") === "empty"
-      ? []
-      : params.get("state") === "partial"
-        ? [...data.entries, { id: "partial", kind: "message", role: "assistant", text: "계속 확인하고 있", streaming: true } satisfies ConversationEntry]
-        : data.entries
+    const entries = fixtureEntries(data, params.get("state"))
     const fixtureRequest: UiRequest | undefined = params.get("ui") === "confirm"
       ? { requestId: "fixture-ui-request", kind: "confirm", title: "이 변경을 적용할까요?", message: "현재 작업 파일에 접근성 수정을 적용합니다." }
       : undefined
     setConversation((state) => {
-      if (state.snapshotInstalled && !state.requiresSnapshot && data.lastSeq === state.lastSeq && params.get("state") !== "partial" && params.get("state") !== "empty") return state
+      if (state.snapshotInstalled && !state.requiresSnapshot && data.lastSeq === state.lastSeq && !fixtureStates.has(params.get("state") ?? "")) return state
       return applyConversationSnapshot({
         ...data,
         entries: entries.slice(-100),
@@ -252,7 +273,14 @@ export function SessionScreen({ hostId, liveSessionId }: { hostId: string; liveS
         ...state,
         entries: [
           ...state.entries,
-          { id: `optimistic-${crypto.randomUUID()}`, kind: "message", role: "user", text: variables.text || `이미지 ${variables.imageIds.length}개` },
+          {
+            id: `optimistic-${crypto.randomUUID()}`,
+            kind: "message",
+            role: "user",
+            text: variables.text || `이미지 ${variables.imageIds.length}개`,
+            delivery: variables.type === "input.steer" ? "steer" : variables.type === "input.followUp" ? "followUp" : "submit",
+            ...(variables.type === "input.steer" && state.timeline?.activeRequestRunId ? { requestRunId: state.timeline.activeRequestRunId } : {}),
+          },
           ...(fixtureMode ? [{
             id: crypto.randomUUID(),
             kind: "message" as const,
@@ -277,7 +305,10 @@ export function SessionScreen({ hostId, liveSessionId }: { hostId: string; liveS
 
   const summary = snapshot.data?.summary
   const sessionReady = summary?.lifecycle === "ready"
-  const working = summary?.execution === "working" || new URLSearchParams(location.search).get("state") === "working"
+  const fixtureState = new URLSearchParams(location.search).get("state")
+  const working = fixtureState === "working" || fixtureState === "live"
+    || conversation.execution === "working"
+    || (conversation.execution !== "idle" && summary?.execution === "working")
 
   useEffect(() => {
     if (!working) setDelivery("input.followUp")
@@ -448,7 +479,7 @@ export function SessionScreen({ hostId, liveSessionId }: { hostId: string; liveS
       {hasOlder && conversation.entries.length > 0 ? <div className="older-messages"><Button clear disabled={olderLoading} onClick={() => void loadOlder()}>{olderLoading ? "불러오는 중…" : "이전 대화 보기"}</Button></div> : null}
       {conversation.entries.length === 0
         ? <EmptyState icon="spark" title="무엇을 할지 알려주세요" detail="메시지를 보내면 이 Mac의 같은 Rubato 세션에서 작업을 시작합니다." />
-        : <Conversation entries={conversation.entries} host={host} liveSessionId={liveSessionId} />}
+        : <Conversation entries={conversation.entries} working={working} {...(conversation.timeline ? { timeline: conversation.timeline } : {})} host={host} liveSessionId={liveSessionId} />}
     </main>
 
     {actionError && panel !== "rename" && panel !== "model" ? <div className="composer-error" role="alert"><AppIcon name="warning" size={17} /><span>{actionError}</span><button className="text-button text-button-inline" type="button" onClick={submit}>다시 보내기</button></div> : null}
