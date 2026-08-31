@@ -21,6 +21,8 @@ from zipfile import BadZipFile, ZipFile
 SUBMIT_TIMEOUT_SECONDS = 120
 DEFAULT_RESPONSE_TIMEOUT_SECONDS = 3600
 DEFAULT_CONFIG = Path.home() / ".codex" / "consult.env"
+DEFAULT_PROJECT_NAME = "Work"
+PROJECT_NAME_KEY = "CONSULT_PROJECT_NAME"
 ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 SUBMIT_MARKER = "ASIDE_REPL_SUBMIT_RESULT "
 SUBMIT_UNKNOWN_MARKER = "ASIDE_REPL_SUBMIT_UNKNOWN "
@@ -104,7 +106,7 @@ def read_config_value(path: Path, key: str) -> str | None:
     return None
 
 
-def is_work_project_url(value: str | None) -> bool:
+def is_chatgpt_project_url(value: str | None) -> bool:
     if not value:
         return False
     parsed = urlparse(value)
@@ -112,9 +114,26 @@ def is_work_project_url(value: str | None) -> bool:
         parsed.scheme == "https"
         and parsed.netloc == "chatgpt.com"
         and parsed.path.startswith("/g/g-p-")
-        and "-work/" in parsed.path
         and parsed.path.endswith("/project")
     )
+
+
+def composer_aria_label(project_name: str) -> str:
+    return f"{project_name}에서 새 채팅"
+
+
+def resolve_project_name(
+    *,
+    cli_value: str | None,
+    config_path: Path,
+) -> str:
+    raw = (
+        cli_value
+        or os.environ.get(PROJECT_NAME_KEY)
+        or read_config_value(config_path, PROJECT_NAME_KEY)
+        or DEFAULT_PROJECT_NAME
+    )
+    return raw.strip()
 
 
 def js(value: object) -> str:
@@ -124,6 +143,7 @@ def js(value: object) -> str:
 def build_repl_script(
     *,
     project_url: str,
+    project_name: str = DEFAULT_PROJECT_NAME,
     quality: str,
     packet_name: str,
     packet_base64: str,
@@ -134,8 +154,10 @@ def build_repl_script(
 ) -> str:
     target_index = 4 if quality == "xhigh" else 5
     target_label = "매우 높음" if quality == "xhigh" else "Pro"
+    composer_label = composer_aria_label(project_name)
     return f"""
 var projectUrl = {js(project_url)};
+var composerLabel = {js(composer_label)};
 var quality = {js(quality)};
 var packetName = {js(packet_name)};
 var packetBase64 = {js(packet_base64)};
@@ -160,11 +182,26 @@ var submitState = await Promise.race([
     await workPage.goto(projectUrl);
     await workPage.waitForLoadState('domcontentloaded');
     await snapshot(workPage, {{ interactive: true }});
-    submitStage = 'wait-work-composer';
-    var composer = workPage.locator(
-      '#prompt-textarea[contenteditable="true"][aria-label="Work에서 새 채팅"]'
+    submitStage = 'wait-project-composer';
+    var composer = workPage.locator('#prompt-textarea[contenteditable="true"]').and(
+      workPage.getByRole('textbox', {{ name: composerLabel, exact: true }})
     );
-    await composer.waitFor({{ state: 'visible', timeout: 60000 }});
+    try {{
+      await composer.waitFor({{ state: 'visible', timeout: 60000 }});
+    }} catch (error) {{
+      var found = await workPage.locator('#prompt-textarea').evaluateAll((els) =>
+        els.map((el) => ({{
+          ariaLabel: el.getAttribute('aria-label'),
+          contenteditable: el.getAttribute('contenteditable')
+        }}))
+      ).catch(() => []);
+      throw new Error(
+        'project composer not visible: expected ' + composerLabel +
+        ' found ' + JSON.stringify(found) +
+        ' url=' + workPage.url() +
+        ' title=' + (await workPage.title())
+      );
+    }}
     var assistantCountBefore = await workPage.locator('[data-message-author-role="assistant"]').count();
     if (assistantCountBefore !== 0) throw new Error('isolated Work composer contains stale assistant turns');
     submitStage = 'select-tier';
@@ -388,6 +425,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--quality", choices=("xhigh", "pro"), required=True)
     parser.add_argument("--packet", required=True)
     parser.add_argument("--url", default=None)
+    parser.add_argument("--project", default=None)
     parser.add_argument("--config", default=str(DEFAULT_CONFIG))
     parser.add_argument("--response-output", default=".consult/consult-response.md")
     parser.add_argument("--json-output", default=".consult/aside-consult-response.json")
@@ -411,10 +449,17 @@ def main(argv: Sequence[str]) -> int:
         or os.environ.get("CONSULT_CHATGPT_URL")
         or read_config_value(Path(args.config).expanduser(), "CONSULT_CHATGPT_URL")
     )
-    if not is_work_project_url(project_url):
-        print("a verified ChatGPT Work project URL is required", file=sys.stderr)
+    if not is_chatgpt_project_url(project_url):
+        print("a verified ChatGPT project URL is required", file=sys.stderr)
         return 2
     assert isinstance(project_url, str)
+    project_name = resolve_project_name(
+        cli_value=args.project,
+        config_path=Path(args.config).expanduser(),
+    )
+    if not project_name:
+        print("a ChatGPT project name is required", file=sys.stderr)
+        return 2
     packet_path = Path(args.packet).expanduser()
     try:
         raw_body = packet_path.read_text(encoding="utf-8")
@@ -457,6 +502,7 @@ def main(argv: Sequence[str]) -> int:
         ) = run_repl_consult(
             build_repl_script(
                 project_url=project_url,
+                project_name=project_name,
                 quality=args.quality,
                 packet_name=packet_path.name or "consult-packet.md",
                 packet_base64=packet_base64,
