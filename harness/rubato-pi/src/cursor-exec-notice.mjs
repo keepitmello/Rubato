@@ -15,13 +15,10 @@
  * 그 사이에 도구 호출이 없으면 사용자는 영원히 듣지 못한다. 살아 있는 PID 가
  * 쥔 항목은 정착하지 않는다 — 그건 다른 프로세스가 지금 실행 중인 것이다.
  */
-import { pathToFileURL } from "node:url";
-import { senpiDir } from "./engine-paths.mjs";
-import { join } from "node:path";
-
-/** 설치본 journal 모듈. bare import 는 깨끗한 설치에 없다. */
+/** in-repo journal 모듈. 벤더 dist 의 journal 은 패치가 만들던 파일이라
+ * pristine 설치에는 없다 — depatch 이후 정본은 transforms/ 의 사본이다. */
 async function loadJournalModule() {
-  return await import(pathToFileURL(join(senpiDir, "dist", "core", "cursor-exec-journal.js")).href);
+  return await import(new URL("./transforms/cursor-exec-journal.mjs", import.meta.url).href);
 }
 
 /**
