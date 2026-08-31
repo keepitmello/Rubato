@@ -86,6 +86,7 @@ describe("reflection trigger wiring", () => {
     await compact(pi, true)
 
     expect(ledger.pendingCompaction).toBe(true)
+    expect(ledger.pendingCompactPriorityNotice).toBe(true)
     expect(launches).toEqual([])
     expect((await store.readState()).active).toBeUndefined()
     expect(pi.messages).toEqual([])
@@ -98,6 +99,7 @@ describe("reflection trigger wiring", () => {
     await successfulSettle(pi)
 
     expect(ledger.pendingCompaction).toBe(false)
+    expect(ledger.pendingCompactPriorityNotice).toBe(false)
     expect(launches).toEqual([])
   })
 
@@ -110,12 +112,15 @@ describe("reflection trigger wiring", () => {
 
     expect(launches).toEqual([])
     expect(ledger.pendingCompaction).toBe(true)
+    expect(ledger.pendingCompactPriorityNotice).toBe(true)
 
     await successfulSettle(pi)
 
     expect(launches).toHaveLength(1)
     expect(launches[0]?.trigger).toBe("compaction")
     expect(ledger.pendingCompaction).toBe(false)
+    // Priority notice is for the next agent turn, not reflection settle.
+    expect(ledger.pendingCompactPriorityNotice).toBe(true)
 
     await successfulSettle(pi)
 
@@ -259,6 +264,7 @@ describe("reflection trigger wiring", () => {
     await successfulSettle(pi)
 
     expect(ledger.pendingCompaction).toBe(false)
+    expect(ledger.pendingCompactPriorityNotice).toBe(false)
     expect(launches).toEqual([])
     expect((await store.readState()).active).toBeUndefined()
   })

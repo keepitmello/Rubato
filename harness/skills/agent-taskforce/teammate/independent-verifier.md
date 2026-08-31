@@ -26,7 +26,7 @@ Read the team mission, the active frame or spec/ADR, the task boundaries, the cu
 
 Read-only means "does not write," not "only measures." You may — and should — read owners' source code, comments, commits, and briefs. The places where an owner's coded-in premises diverge from the team's criterion are visible only by reading the code.
 
-If your context was compacted mid-verification, reread those same sources before continuing: a compacted summary is not evidence, and a verdict carried forward from one is not independent.
+If your context was compacted mid-verification, reread those same sources before continuing: a compacted summary is not evidence, and a verdict carried forward from one is not independent. If the lead or user asked a direct question in this turn, answer that before status recovery.
 
 If an active FRAME_LOCK exists, check that the implementation has not silently changed an invariant and that frame-linked tasks connect to the hypothesis and user outcome. Do not select or modify the frame yourself; raise `FRAME_CONFLICT` evidence to the lead.
 
