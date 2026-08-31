@@ -102,11 +102,8 @@ export function formatModelWithEffort(modelId, level, model, catalog) {
 
 function isFastModel(modelId, model) {
   if (!modelId) return false;
-  if (model?.serviceTier === "priority") return true;
   const bare = String(modelId).split("/").pop().split(":", 1)[0];
   if (/(?:^|[-.])fast$/i.test(bare)) return true;
-  // xAI grok-4.6 도 priority 로 고정. 서브에이전트 위젯은 id 만 있어서 serviceTier 없이도 Fast 로 본다.
-  if (bare === "grok-4.6") return true;
   // 피커 id 는 `cursor-grok-4.6` 그대로다. Fast 인지는 표시명·Fast map 으로 본다.
   if (bare !== "cursor-grok-4.6") return false;
   if (model?.compat?.cursorGrokFastByLevel && Object.keys(model.compat.cursorGrokFastByLevel).length > 0) {

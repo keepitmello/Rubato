@@ -173,9 +173,8 @@ function formatModelWithEffort(modelId: string, level: string | undefined): stri
 function isFastModel(modelId: string): boolean {
   const bare = modelId.split("/").pop()?.split(":", 1)[0] ?? modelId
   if (/(?:^|[-.])fast$/iu.test(bare)) return true
-  // Rubato pins Cursor Grok 4.6 and xAI grok-4.6 to Fast on the wire.
-  // Planner ids stay the grouped/base ids; there is no -fast sibling.
-  return bare === "cursor-grok-4.6" || bare === "grok-4.6"
+  // Rubato pins Cursor Grok 4.6 to Fast on the wire. The planner id stays the grouped base.
+  return bare === "cursor-grok-4.6"
 }
 
 function shortModelLabel(modelId: string): string {
