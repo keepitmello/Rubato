@@ -1,0 +1,10 @@
+{
+  "kind": "surface.event",
+  "protocol": "rubato.remote.v1",
+  "liveSessionId": "018f0c7b-2f3b-7c4d-9e5f-1234567890ab",
+  "surfaceInstanceId": "123e4567-e89b-42d3-a456-426614174000",
+  "sourceSeq": 42,
+  "at": "2026-08-31T01:00:01.000Z",
+  "type": "message.delta",
+  "payload": { "ephemeralMessageId": "stream-1", "delta": "Done" }
+}

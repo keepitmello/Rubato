@@ -6,6 +6,7 @@ export const BUNDLED_NOTICE_HEADINGS = [
   "UI/UX Pro Max",
   "designpowers",
   "insane-search",
+  "zmx",
 ]
 
 export const PACKAGE_NOTICE_REQUIREMENTS = [

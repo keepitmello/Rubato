@@ -1,0 +1,152 @@
+name: Source-built zmx release assets
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing GitHub release tag to receive the qualified assets (optional)
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      release_tag:
+        required: false
+        type: string
+    secrets:
+      RUBATO_RELEASE_SIGNING_KEY:
+        required: true
+      RUBATO_RELEASE_PUBLIC_KEY:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-smoke-native:
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - runner: macos-15-arm64
+            machine: arm64
+            platform: darwin-arm64
+            target: aarch64-macos
+            artifact: zmx-native-darwin-arm64
+          - runner: macos-15-intel
+            machine: x86_64
+            platform: darwin-x64
+            target: x86_64-macos
+            artifact: zmx-native-darwin-x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: '1.4.0'
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29
+        with:
+          version: '0.16.0'
+      - name: Assert native runner and frozen tools
+        env:
+          EXPECTED_MACHINE: ${{ matrix.machine }}
+        run: |
+          test "$(uname -m)" = "$EXPECTED_MACHINE"
+          test "$(zig version)" = '0.16.0'
+          bun install --frozen-lockfile
+      - name: Build this native target exactly once
+        run: |
+          node scripts/remote-release/build-zmx-release.mjs \
+            --output "$RUNNER_TEMP/zmx-partial" \
+            --work "$RUNNER_TEMP/zmx-build" \
+            --platform '${{ matrix.platform }}'
+          test "$(node -p "require('$RUNNER_TEMP/zmx-partial/zmx-release-manifest.json').assets[0].target")" = '${{ matrix.target }}'
+      - name: Smoke the exact native bytes through run/list/kill and PTY attach
+        run: node scripts/remote-release/smoke-zmx-release.mjs "$RUNNER_TEMP/zmx-partial"
+      - name: Verify MIT notice is shipped
+        run: cmp third_party/zmx/LICENSE "$RUNNER_TEMP/zmx-partial/LICENSE.zmx"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            ${{ runner.temp }}/zmx-partial/zmx-${{ matrix.platform }}
+            ${{ runner.temp }}/zmx-partial/zmx-release-manifest.json
+            ${{ runner.temp }}/zmx-partial/zmx-smoke-report.json
+            ${{ runner.temp }}/zmx-partial/LICENSE.zmx
+          if-no-files-found: error
+          retention-days: 1
+
+  combine-sign-release:
+    needs: build-smoke-native
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: zmx-native-darwin-arm64
+          path: ${{ runner.temp }}/native/darwin-arm64
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: zmx-native-darwin-x64
+          path: ${{ runner.temp }}/native/darwin-x64
+      - name: Combine downloaded exact bytes and sign one release manifest
+        env:
+          RUBATO_RELEASE_SIGNING_KEY: ${{ secrets.RUBATO_RELEASE_SIGNING_KEY }}
+          RUBATO_RELEASE_PUBLIC_KEY: ${{ secrets.RUBATO_RELEASE_PUBLIC_KEY }}
+        run: |
+          test -n "$RUBATO_RELEASE_SIGNING_KEY"
+          test -n "$RUBATO_RELEASE_PUBLIC_KEY"
+          node scripts/remote-release/combine-zmx-release.mjs \
+            --partial "$RUNNER_TEMP/native/darwin-arm64" \
+            --partial "$RUNNER_TEMP/native/darwin-x64" \
+            --output "$RUNNER_TEMP/zmx-release"
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
+        with:
+          subject-path: '${{ runner.temp }}/zmx-release/zmx-darwin-*'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: zmx-qualified-darwin
+          path: |
+            ${{ runner.temp }}/zmx-release/zmx-darwin-*
+            ${{ runner.temp }}/zmx-release/zmx-release-manifest.json
+            ${{ runner.temp }}/zmx-release/zmx-release-manifest.sig
+            ${{ runner.temp }}/zmx-release/zmx-smoke-report.json
+            ${{ runner.temp }}/zmx-release/LICENSE.zmx
+          if-no-files-found: error
+          retention-days: 30
+
+  release-upload:
+    if: inputs.release_tag != ''
+    needs: combine-sign-release
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: zmx-qualified-darwin
+          path: ${{ runner.temp }}/zmx-release
+      - name: Upload the exact qualified bytes to an existing GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload '${{ inputs.release_tag }}' --clobber \
+            "$RUNNER_TEMP/zmx-release/zmx-darwin-arm64" \
+            "$RUNNER_TEMP/zmx-release/zmx-darwin-x64" \
+            "$RUNNER_TEMP/zmx-release/zmx-release-manifest.json" \
+            "$RUNNER_TEMP/zmx-release/zmx-release-manifest.sig" \
+            "$RUNNER_TEMP/zmx-release/zmx-smoke-report.json" \
+            "$RUNNER_TEMP/zmx-release/LICENSE.zmx"

@@ -1,0 +1,9 @@
+{
+  "type": "client.resume",
+  "sessions": [
+    {
+      "liveSessionId": "018f0c7b-2f3b-7c4d-9e5f-1234567890ab",
+      "lastSeq": 1827
+    }
+  ]
+}

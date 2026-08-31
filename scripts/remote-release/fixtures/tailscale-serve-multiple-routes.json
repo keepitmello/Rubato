@@ -1,0 +1,23 @@
+{
+  "TCP": {
+    "443": { "HTTPS": true },
+    "2222": { "TCPForward": "127.0.0.1:22" }
+  },
+  "Web": {
+    "mac.example.ts.net:443": {
+      "Handlers": {
+        "/": { "Text": "personal home" },
+        "/docs": { "Proxy": "http://127.0.0.1:9000" },
+        "/rubato": { "Path": "/Users/test/.local/lib/rubato/remote/current/web" },
+        "/rubato/api": { "Proxy": "http://127.0.0.1:7314/rubato/api" }
+      }
+    },
+    "other.example.ts.net:8443": {
+      "Handlers": {
+        "/rubato": { "Proxy": "http://127.0.0.1:8888" },
+        "/app": { "Proxy": "http://127.0.0.1:4000" }
+      }
+    }
+  },
+  "AllowFunnel": {}
+}

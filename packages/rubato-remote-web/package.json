@@ -1,0 +1,45 @@
+{
+  "name": "@rubato/remote-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "preview": "vite preview --host 127.0.0.1",
+    "build": "tsgo --noEmit -p tsconfig.json && vite build",
+    "typecheck": "tsgo --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "check": "npm run typecheck && npm test && npm run build"
+  },
+  "dependencies": {
+    "@git-diff-view/react": "0.1.7",
+    "@rubato/remote-protocol": "file:../rubato-remote-protocol",
+    "@tanstack/react-query": "5.102.8",
+    "@xterm/addon-fit": "0.10.0",
+    "@xterm/xterm": "5.5.0",
+    "idb": "8.0.3",
+    "konsta": "5.4.0",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "streamdown": "2.5.0",
+    "tailwindcss": "4.3.0",
+    "zustand": "5.0.14"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
+    "@tailwindcss/vite": "4.3.0",
+    "@testing-library/jest-dom": "6.9.1",
+    "@testing-library/react": "16.3.3",
+    "@types/node": "26.2.0",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.1.1",
+    "axe-core": "4.13.0",
+    "jsdom": "26.1.0",
+    "typescript": "7.0.2",
+    "vite": "8.0.14",
+    "vitest": "4.1.11"
+  }
+}

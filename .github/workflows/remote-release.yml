@@ -1,0 +1,89 @@
+name: Signed Rubato Remote Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: Immutable release build id
+        required: true
+        type: string
+  push:
+    tags: ['remote-v*']
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - runner: macos-15-arm64
+            architecture: arm64
+          - runner: macos-15-intel
+            architecture: x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: '1.4.0'
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29
+        with:
+          version: '0.16.0'
+      - name: Require configured Ed25519 release trust root
+        env:
+          RUBATO_RELEASE_SIGNING_KEY: ${{ secrets.RUBATO_RELEASE_SIGNING_KEY }}
+          RUBATO_RELEASE_PUBLIC_KEY: ${{ secrets.RUBATO_RELEASE_PUBLIC_KEY }}
+        run: test -n "$RUBATO_RELEASE_SIGNING_KEY" && test -n "$RUBATO_RELEASE_PUBLIC_KEY"
+      - name: Frozen install and canonical audit
+        run: |
+          test "$(zig version)" = '0.16.0'
+          bun install --frozen-lockfile
+          npm --prefix packages/rubato-remote-hub ci --dry-run --ignore-scripts
+          bun audit --production
+      - name: Build this architecture once and sign its exact-byte manifest
+        env:
+          RUBATO_RELEASE_SIGNING_KEY: ${{ secrets.RUBATO_RELEASE_SIGNING_KEY }}
+          RUBATO_RELEASE_PUBLIC_KEY: ${{ secrets.RUBATO_RELEASE_PUBLIC_KEY }}
+        run: |
+          node scripts/remote-release/build-zmx-release.mjs \
+            --output "$RUNNER_TEMP/zmx-assets" \
+            --work "$RUNNER_TEMP/zmx-build" \
+            --platform "darwin-${{ matrix.architecture }}" \
+            --require-signature
+          node scripts/remote-release/smoke-zmx-release.mjs "$RUNNER_TEMP/zmx-assets"
+      - name: Build, sign, and self-verify release
+        env:
+          RUBATO_RELEASE_SIGNING_KEY: ${{ secrets.RUBATO_RELEASE_SIGNING_KEY }}
+          RUBATO_RELEASE_PUBLIC_KEY: ${{ secrets.RUBATO_RELEASE_PUBLIC_KEY }}
+          INPUT_BUILD_ID: ${{ inputs.build_id }}
+        run: |
+          BUILD_ID="${INPUT_BUILD_ID:-${GITHUB_REF_NAME}-${{ matrix.architecture }}}"
+          node scripts/remote-release/build-release.mjs \
+            --output "$RUNNER_TEMP/release-$BUILD_ID" \
+            --zmx-asset "$RUNNER_TEMP/zmx-assets/zmx-darwin-${{ matrix.architecture }}" \
+            --zmx-manifest-directory "$RUNNER_TEMP/zmx-assets" \
+            --build-id "$BUILD_ID"
+          tar -C "$RUNNER_TEMP" -czf "rubato-remote-$BUILD_ID.tar.gz" "release-$BUILD_ID"
+          shasum -a 256 "rubato-remote-$BUILD_ID.tar.gz" > "rubato-remote-$BUILD_ID.tar.gz.sha256"
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
+        with:
+          subject-path: 'rubato-remote-*.tar.gz'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rubato-remote-${{ matrix.architecture }}
+          path: |
+            rubato-remote-*.tar.gz
+            rubato-remote-*.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 30

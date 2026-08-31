@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "name": "anthropic sliding hit",
+      "model": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "id": "claude-opus-5"
+      },
+      "now": 61000,
+      "entries": [
+        {
+          "type": "message",
+          "message": {
+            "role": "assistant",
+            "timestamp": 2000,
+            "timing": { "sentAt": 1000 },
+            "usage": { "input": 20, "cacheRead": 80, "cacheWrite": 0 }
+          }
+        }
+      ],
+      "expected": {
+        "policy": { "kind": "sliding", "ttlSeconds": 3600 },
+        "hitPercent": 80,
+        "status": { "text": "Cache 59m", "ticking": true, "expired": false },
+        "expiresAt": "1970-01-01T01:00:01.000Z",
+        "expired": false
+      }
+    },
+    {
+      "name": "OpenAI minimum retention write",
+      "model": {
+        "provider": "openai",
+        "api": "openai-responses",
+        "id": "gpt-5.6-sol"
+      },
+      "now": 70000,
+      "entries": [
+        {
+          "type": "message",
+          "message": {
+            "role": "assistant",
+            "timestamp": 20000,
+            "timing": { "sentAt": 10000 },
+            "usage": { "input": 10, "cacheRead": 0, "cacheWrite": 90 }
+          }
+        }
+      ],
+      "expected": {
+        "policy": { "kind": "minimum", "ttlSeconds": 1800 },
+        "hitPercent": 0,
+        "status": { "text": "Cache ≥ 29m", "ticking": true, "expired": false },
+        "expiresAt": "1970-01-01T00:30:10.000Z",
+        "expired": false
+      }
+    },
+    {
+      "name": "expired sliding cache",
+      "model": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "id": "claude-sonnet-4.6"
+      },
+      "now": 3601001,
+      "entries": [
+        {
+          "type": "message",
+          "message": {
+            "role": "assistant",
+            "timestamp": 1000,
+            "usage": { "input": 0, "cacheRead": 50, "cacheWrite": 0 }
+          }
+        }
+      ],
+      "expected": {
+        "policy": { "kind": "sliding", "ttlSeconds": 3600 },
+        "hitPercent": 100,
+        "status": { "text": "Cache Expired", "ticking": false, "expired": true },
+        "expiresAt": "1970-01-01T01:00:01.000Z",
+        "expired": true
+      }
+    },
+    {
+      "name": "opaque provider does not invent expiry",
+      "model": {
+        "provider": "xai",
+        "api": "openai-completions",
+        "id": "grok-4.6"
+      },
+      "now": 70000,
+      "entries": [
+        {
+          "type": "message",
+          "message": {
+            "role": "assistant",
+            "timestamp": 1000,
+            "usage": { "input": 20000, "cacheRead": 0, "cacheWrite": 0 }
+          }
+        }
+      ],
+      "expected": {
+        "policy": { "kind": "opaque" },
+        "hitPercent": null,
+        "status": null,
+        "expiresAt": null,
+        "expired": false
+      }
+    }
+  ]
+}

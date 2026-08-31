@@ -1,0 +1,12 @@
+{
+  "protocol": "rubato.remote.v1",
+  "requestId": "123e4567-e89b-42d3-a456-426614174000",
+  "hostId": "018f0c7a-2f3b-7c4d-8e5f-1234567890ab",
+  "liveSessionId": "018f0c7b-2f3b-7c4d-9e5f-1234567890ab",
+  "action": "input.submit",
+  "expectedRevision": 123,
+  "payload": {
+    "text": "Run the focused tests.",
+    "delivery": "auto"
+  }
+}

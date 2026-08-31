@@ -1,0 +1,30 @@
+{
+  "kind": "surface.register",
+  "protocol": "rubato.remote.v1",
+  "protocolRange": { "min": 1, "max": 1 },
+  "surfaceInstanceId": "123e4567-e89b-42d3-a456-426614174000",
+  "token": "bootstrap-token",
+  "summary": {
+    "schemaVersion": 1,
+    "hostId": "018f0c7a-2f3b-7c4d-8e5f-1234567890ab",
+    "liveSessionId": "018f0c7b-2f3b-7c4d-9e5f-1234567890ab",
+    "zmxName": "rubato-018f0c7b2f3b",
+    "managed": true,
+    "pid": 4242,
+    "lifecycle": "ready",
+    "execution": "idle",
+    "attention": false,
+    "title": "Hotel Tablet",
+    "cwd": "/Users/example/Projects/hotel-tablet",
+    "createdAt": "2026-08-31T00:59:00.000Z",
+    "lastAssistantAt": "2026-08-31T01:00:00.000Z",
+    "pi": { "sessionId": "pi-session-1", "sessionFile": "/Users/example/.pi/agent/sessions/session.jsonl", "leafId": "entry-7" },
+    "model": { "provider": "openai", "id": "gpt-5.6", "label": "GPT-5.6", "thinkingLevel": "high" },
+    "context": { "usedPercent": 25, "remainingPercent": 75, "windowTokens": 200000 },
+    "cache": { "policy": "provider", "hitPercent": 92.5, "expiresAt": "2026-08-31T01:05:00.000Z", "expired": false },
+    "background": { "activeCount": 2, "labels": ["indexing", "tests"] },
+    "teams": { "activeRunCount": 1, "runningMemberCount": 2, "failedMemberCount": 0 },
+    "build": { "rubatoCommit": "0123456789abcdef", "piVersion": "0.84.2", "remoteProtocolMin": 1, "remoteProtocolMax": 1 },
+    "capabilities": ["input", "compact", "tree", "terminal-required"]
+  }
+}
