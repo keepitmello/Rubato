@@ -1,0 +1,12 @@
+{
+  "protocol": "rubato.remote.v1",
+  "hostId": "018f0c7a-2f3b-7c4d-8e5f-1234567890ab",
+  "liveSessionId": "018f0c7b-2f3b-7c4d-9e5f-1234567890ab",
+  "seq": 1828,
+  "at": "2026-08-31T01:00:00.000Z",
+  "type": "message.delta",
+  "payload": {
+    "ephemeralMessageId": "message-1",
+    "delta": "Focused tests are running."
+  }
+}

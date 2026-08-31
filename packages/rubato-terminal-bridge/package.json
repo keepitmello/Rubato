@@ -1,0 +1,28 @@
+{
+  "name": "@rubato/terminal-bridge",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Bounded PTY bridge for Rubato emergency terminal sessions.",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./bun-helper": "./src/bun-helper.ts"
+  },
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsgo --noEmit -p tsconfig.json",
+    "test": "bun test test/*.test.ts",
+    "smoke": "bun test test/real-pty.smoke.test.ts"
+  },
+  "sideEffects": false,
+  "optionalDependencies": {
+    "node-pty": "1.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "26.2.0",
+    "bun-types": "1.4.0"
+  }
+}

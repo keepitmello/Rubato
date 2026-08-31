@@ -1,0 +1,584 @@
+diff --git a/dist/core/slash-commands.js b/dist/core/slash-commands.js
+--- a/dist/core/slash-commands.js
++++ b/dist/core/slash-commands.js
+@@ -1,28 +1,31 @@
+ import { APP_NAME } from "../config.js";
+ export const BUILTIN_SLASH_COMMANDS = [
+-    { name: "settings", description: "Open settings menu" },
+-    { name: "model", description: "Select model (opens selector UI)", argumentHint: "<provider/model>" },
+-    { name: "scoped-models", description: "Enable/disable models for Ctrl+P cycling" },
+-    { name: "favorite-models", description: "Manage favorite models for Ctrl+P cycling" },
+-    { name: "export", description: "Export session (HTML default, or specify path: .html/.jsonl)" },
+-    { name: "import", description: "Import and resume a session from a JSONL file" },
+-    { name: "share", description: "Share session as a secret GitHub gist" },
+-    { name: "copy", description: "Copy last agent message to clipboard" },
+-    { name: "name", description: "Set session display name" },
+-    { name: "session", description: "Show session info and stats" },
++    { name: "settings", description: "Open settings menu" , remoteMode: "terminal-only" },
++    { name: "model", description: "Select model (opens selector UI)", argumentHint: "<provider/model>" , remoteMode: "native-action" },
++    { name: "scoped-models", description: "Enable/disable models for Ctrl+P cycling" , remoteMode: "terminal-only" },
++    { name: "favorite-models", description: "Manage favorite models for Ctrl+P cycling" , remoteMode: "terminal-only" },
++    { name: "export", description: "Export session (HTML default, or specify path: .html/.jsonl)" , remoteMode: "terminal-only" },
++    { name: "import", description: "Import and resume a session from a JSONL file" , remoteMode: "terminal-only" },
++    { name: "share", description: "Share session as a secret GitHub gist" , remoteMode: "terminal-only" },
++    { name: "copy", description: "Copy last agent message to clipboard" , remoteMode: "terminal-only" },
++    { name: "name", description: "Set session display name" , remoteMode: "native-action" },
++    { name: "session", description: "Show session info and stats" , remoteMode: "terminal-only" },
+     { name: "changelog", description: "Show changelog entries" },
+-    { name: "hotkeys", description: "Show all keyboard shortcuts" },
+-    { name: "fork", description: "Create a new fork from a previous user message" },
+-    { name: "clone", description: "Duplicate the current session at the current position" },
+-    { name: "tree", description: "Navigate session tree (switch branches)" },
+-    { name: "trust", description: "Save project trust decision for future sessions" },
+-    { name: "login", description: "Configure provider authentication", argumentHint: "<provider>" },
+-    { name: "logout", description: "Remove provider authentication" },
+-    { name: "new", description: "Start a new session" },
+-    { name: "compact", description: "Manually compact the session context" },
+-    { name: "resume", description: "Resume a different session" },
+-    { name: "reload", description: "Reload keybindings, extensions, skills, prompts, themes, and context files" },
+-    { name: "quit", description: `Quit ${APP_NAME}` },
+-    { name: "exit", description: `Quit ${APP_NAME} (alias of /quit)` },
++    { name: "hotkeys", description: "Show all keyboard shortcuts" , remoteMode: "terminal-only" },
++    { name: "fork", description: "Create a new fork from a previous user message" , remoteMode: "native-action" },
++    { name: "clone", description: "Duplicate the current session at the current position" , remoteMode: "terminal-only" },
++    { name: "tree", description: "Navigate session tree (switch branches)" , remoteMode: "native-action" },
++    { name: "trust", description: "Save project trust decision for future sessions" , remoteMode: "terminal-only" },
++    { name: "login", description: "Configure provider authentication", argumentHint: "<provider>" , remoteMode: "terminal-only" },
++    { name: "logout", description: "Remove provider authentication" , remoteMode: "terminal-only" },
++    { name: "new", description: "Start a new session" , remoteMode: "native-action" },
++    { name: "compact", description: "Manually compact the session context" , remoteMode: "native-action" },
++    { name: "resume", description: "Resume a different session" , remoteMode: "terminal-only" },
++    { name: "reload", description: "Reload keybindings, extensions, skills, prompts, themes, and context files" , remoteMode: "native-action" },
++    { name: "quit", description: `Quit ${APP_NAME}` , remoteMode: "native-action" },
++    { name: "exit", description: `Quit ${APP_NAME} (alias of /quit)` , remoteMode: "native-action" },
+ ];
++const changelogCommand = BUILTIN_SLASH_COMMANDS.find((command) => command.name === "changelog");
++if (changelogCommand)
++    changelogCommand.remoteMode = "terminal-only";
+ //# sourceMappingURL=slash-commands.js.map
+\ No newline at end of file
+diff --git a/dist/core/slash-commands.d.ts b/dist/core/slash-commands.d.ts
+--- a/dist/core/slash-commands.d.ts
++++ b/dist/core/slash-commands.d.ts
+@@ -6,10 +6,12 @@
+     source: SlashCommandSource;
+     sourceInfo: SourceInfo;
+ }
++export type RemoteCommandMode = "direct" | "native-action" | "terminal-only";
+ export interface BuiltinSlashCommand {
+     name: string;
+     description: string;
+     argumentHint?: string;
++    remoteMode: RemoteCommandMode;
+ }
+ export declare const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand>;
+ //# sourceMappingURL=slash-commands.d.ts.map
+\ No newline at end of file
+diff --git a/dist/core/extensions/types.d.ts b/dist/core/extensions/types.d.ts
+--- a/dist/core/extensions/types.d.ts
++++ b/dist/core/extensions/types.d.ts
+@@ -1344,6 +1344,8 @@
+     setActiveTools(toolNames: string[]): void;
+     /** Get available slash commands in the current session. */
+     getCommands(): SlashCommandInfo[];
++    /** Returns the stable interactive control facade, or undefined outside interactive mode. */
++    getInteractiveControl(): InteractiveControlSurface | undefined;
+     /** Set the current model. Returns false if no API key available. */
+     setModel(model: Model<any>): Promise<boolean>;
+     /** Get current thinking level. */
+@@ -1647,8 +1649,42 @@
+  * Shared state created by loader, used during registration and runtime.
+  * Contains flag values (defaults set during registration, CLI values set after).
+  */
++export type InteractiveInputSource = "editor" | "external";
++export type InteractiveDelivery = "auto" | "steer" | "followUp";
++export interface InteractiveSubmitOptions {
++    images?: readonly ImageContent[];
++    delivery?: InteractiveDelivery;
++    source?: string;
++}
++export type InteractiveSubmitResult = { accepted: true } | { accepted: false; reason: string };
++export interface InteractiveCommandDescriptor {
++    name: string;
++    description: string;
++    category: "builtin" | "extension" | "skill" | "template";
++    remoteMode: "direct" | "native-action" | "terminal-only";
++}
++export interface InteractiveControlSurface {
++    submitInput(text: string, options?: InteractiveSubmitOptions): Promise<InteractiveSubmitResult>;
++    abortAgent(): Promise<void>;
++    executeUserBash(command: string, excludeFromContext: boolean): Promise<void>;
++    abortUserBash(): Promise<void>;
++    compact(instructions?: string): Promise<void>;
++    navigateTree(targetEntryId: string, options?: { summarize?: boolean; instructions?: string; replaceInstructions?: boolean }): Promise<void>;
++    fork(targetEntryId?: string): Promise<void>;
++    newSession(): Promise<void>;
++    reload(): Promise<void>;
++    shutdown(): Promise<void>;
++    setModel(provider: string, modelId: string): Promise<void>;
++    setThinkingLevel(level: ThinkingLevel): void;
++    setSessionName(name: string): void;
++    listCommands(): InteractiveCommandDescriptor[];
++    snapshot(): Record<string, unknown>;
++    respondToUiRequest(requestId: string, value: unknown): boolean;
++}
+ export interface ExtensionRuntimeState {
+     flagValues: Map<string, boolean | string>;
++    /** Resolves the current interactive host lazily; undefined in non-interactive modes. */
++    getInteractiveControl: () => InteractiveControlSurface | undefined;
+     /** Legacy provider-config registrations queued during extension loading, processed when runner binds. */
+     pendingProviderRegistrations: PendingProviderConfigRegistration[];
+     /** Native pi-ai provider registrations queued during extension loading, processed when runner binds. */
+diff --git a/dist/core/extensions/loader.js b/dist/core/extensions/loader.js
+--- a/dist/core/extensions/loader.js
++++ b/dist/core/extensions/loader.js
+@@ -194,6 +194,7 @@
+         setSessionThinkingLevel: notInitialized,
+         setSessionFastMode: notInitialized,
+         flagValues: new Map(),
++        getInteractiveControl: () => undefined,
+         pendingProviderRegistrations: [],
+         pendingNativeProviderRegistrations: [],
+         assertActive,
+@@ -414,6 +415,10 @@
+             runtime.assertActive();
+             return runtime.getCommands();
+         },
++        getInteractiveControl() {
++            runtime.assertActive();
++            return runtime.getInteractiveControl();
++        },
+         setModel(model) {
+             runtime.assertActive();
+             return runtime.setModel(model);
+diff --git a/dist/core/extensions/runner.js b/dist/core/extensions/runner.js
+--- a/dist/core/extensions/runner.js
++++ b/dist/core/extensions/runner.js
+@@ -352,6 +352,9 @@
+             this.modelRegistry.unregisterProvider(name);
+         };
+     }
++    setInteractiveControl(surface) {
++        this.runtime.getInteractiveControl = () => surface;
++    }
+     bindCommandContext(actions) {
+         if (actions) {
+             this.waitForIdleFn = actions.waitForIdle;
+diff --git a/dist/core/extensions/runner.d.ts b/dist/core/extensions/runner.d.ts
+--- a/dist/core/extensions/runner.d.ts
++++ b/dist/core/extensions/runner.d.ts
+@@ -150,6 +150,7 @@
+         registerNativeProvider?: (provider: Provider) => void;
+         unregisterProvider?: (name: string) => void;
+     }): void;
++    setInteractiveControl(surface: import("./types.js").InteractiveControlSurface | undefined): void;
+     bindCommandContext(actions?: ExtensionCommandContextActions): void;
+     private requestReload;
+     setUIContext(uiContext?: ExtensionUIContext, mode?: ExtensionMode): void;
+diff --git a/dist/modes/interactive/interactive-mode.js b/dist/modes/interactive/interactive-mode.js
+--- a/dist/modes/interactive/interactive-mode.js
++++ b/dist/modes/interactive/interactive-mode.js
+@@ -3,6 +3,7 @@
+  * Handles TUI rendering and user interaction, delegating business logic to AgentSession.
+  */
+ import * as fs from "node:fs";
++import { randomUUID } from "node:crypto";
+ import * as os from "node:os";
+ import * as path from "node:path";
+ import * as TuiLayouts from "@earendil-works/pi-tui";
+@@ -621,6 +622,7 @@
+          */
+         this.isShuttingDown = false;
+         this.runtimeHost = runtimeHost;
++        this.interactiveControlSurface = this.createInteractiveControlSurface();
+         this.optimisticUserEchoes = new OptimisticUserEchoController((text) => this.renderPendingUserEcho(text));
+         const tuiMode = options.tuiMode ?? this.settingsManager.getTuiMode();
+         this.options = { ...options, tuiMode };
+@@ -716,7 +718,134 @@
+             showError: (message) => this.showError(message),
+             onChanged: () => this.updateEditorBorderColor(),
+             initialThemeSetting: options.initialThemeSetting,
++        });
++    }
++    createInteractiveControlSurface() {
++        const host = this;
++        return Object.freeze({
++            async submitInput(text, options = {}) {
++                const normalized = text.trim();
++                if (!normalized && !(options.images?.length))
++                    return { accepted: false, reason: "empty" };
++                const commandName = normalized.match(/^\/([^\s]+)/)?.[1];
++                if (commandName) {
++                    const descriptor = host.listInteractiveCommands().find((item) => item.name === commandName);
++                    if (descriptor?.remoteMode === "native-action")
++                        return { accepted: false, reason: "native_action_required" };
++                    if (descriptor?.remoteMode === "terminal-only")
++                        return { accepted: false, reason: "terminal_required" };
++                }
++                await host.dispatchInteractiveInput(text, options.images ?? [], options.source ?? "external", options.delivery ?? "auto");
++                return { accepted: true };
++            },
++            abortAgent: () => host.session.abort(),
++            executeUserBash: (command, excludeFromContext) => host.handleBashCommand(command, excludeFromContext),
++            abortUserBash: async () => host.abortBash(),
++            compact: (instructions) => host.handleCompactCommand(instructions),
++            navigateTree: (targetEntryId, options) => host.navigateTreeFromControl(targetEntryId, options),
++            fork: async (targetEntryId) => {
++                const target = targetEntryId ?? host.session.sessionManager.getLeafId();
++                if (!target)
++                    throw new Error("Cannot fork an empty session");
++                await host.runtimeHost.fork(target, { position: "at" });
++            },
++            newSession: () => host.handleClearCommand(),
++            reload: () => host.handleReloadCommand(),
++            shutdown: () => host.shutdown(),
++            setModel: async (provider, modelId) => {
++                const model = host.session.modelRegistry.find(provider, modelId);
++                if (!model)
++                    throw new Error(`Unknown model: ${provider}/${modelId}`);
++                await host.session.setModel(model);
++            },
++            setThinkingLevel: (level) => host.session.setThinkingLevel(level),
++            setSessionName: (name) => host.session.setSessionName(name),
++            listCommands: () => host.listInteractiveCommands(),
++            snapshot: () => host.getInteractiveSnapshot(),
++            respondToUiRequest: (requestId, value) => host.respondToStandardUiRequest(requestId, value),
++        });
++    }
++    listInteractiveCommands() {
++        const builtins = BUILTIN_SLASH_COMMANDS.map((command) => ({ ...command, category: "builtin" }));
++        const extensions = this.session.extensionRunner.getRegisteredCommands().map((command) => ({
++            name: command.invocationName,
++            description: command.description,
++            category: "extension",
++            remoteMode: "direct",
++        }));
++        const skills = this.session.resourceLoader.getSkills().skills.map((skill) => ({
++            name: `skill:${skill.name}`,
++            description: skill.description,
++            category: "skill",
++            remoteMode: "direct",
++        }));
++        const prompts = this.session.promptTemplates.map((prompt) => ({
++            name: prompt.name,
++            description: prompt.description,
++            category: "template",
++            remoteMode: "direct",
++        }));
++        return [...builtins, ...extensions, ...skills, ...prompts];
++    }
++    getInteractiveSnapshot() {
++        const session = this.session;
++        const model = session.model;
++        return {
++            sessionFile: session.sessionFile,
++            sessionName: session.sessionManager.getSessionName(),
++            leafEntryId: session.sessionManager.getLeafId(),
++            model: model ? { provider: model.provider, id: model.id, name: model.name } : undefined,
++            thinkingLevel: session.thinkingLevel,
++            isStreaming: session.isStreaming,
++            isCompacting: session.isCompacting,
++            pendingMessageCount: session.pendingMessageCount,
++            contextUsage: session.getContextUsage(),
++            uiRequest: this.standardUiRequest?.request,
++        };
++    }
++    async navigateTreeFromControl(targetEntryId, options = {}) {
++        if (this.session.isStreaming)
++            await this.session.abort();
++        const result = await this.session.navigateTree(targetEntryId, {
++            summarize: options.summarize ?? false,
++            customInstructions: options.instructions,
++            replaceInstructions: options.replaceInstructions,
+         });
++        if (result.cancelled)
++            return;
++        this.rebuildChatFromSession();
++        this.defaultEditor.setText("");
++        this.updateEditorHeight();
++        this.ui.requestRender();
++    }
++    openStandardUiRequest(request, respond) {
++        if (this.standardUiRequest)
++            this.standardUiRequest.respond(undefined, "replaced");
++        const id = randomUUID();
++        const enriched = { id, ...request };
++        this.standardUiRequest = { id, request: enriched, respond };
++        this.session.emitExtensionEvent("interactive.ui.request", enriched);
++        return id;
++    }
++    finishStandardUiRequest(requestId, origin) {
++        if (this.standardUiRequest?.id !== requestId)
++            return;
++        this.standardUiRequest = undefined;
++        this.session.emitExtensionEvent("interactive.ui.dismiss", { id: requestId, origin });
++    }
++    respondToStandardUiRequest(requestId, value) {
++        const pending = this.standardUiRequest;
++        if (!pending || pending.id !== requestId)
++            return false;
++        const { kind, options } = pending.request;
++        if (kind === "select" && (typeof value !== "string" || !options.includes(value)))
++            return false;
++        if (kind === "confirm" && typeof value !== "boolean")
++            return false;
++        if (kind === "input" && value !== undefined && typeof value !== "string")
++            return false;
++        pending.respond(value, "remote");
++        return true;
+     }
+     getAutocompleteSourceTag(sourceInfo) {
+         if (!sourceInfo) {
+@@ -1890,6 +2019,7 @@
+      */
+     async bindCurrentSessionExtensions() {
+         const uiContext = this.createExtensionUIContext();
++        this.session.extensionRunner.setInteractiveControl(this.interactiveControlSurface);
+         await this.session.bindExtensions({
+             uiContext,
+             mode: "tui",
+@@ -2440,6 +2570,8 @@
+         this.renderWidgets();
+     }
+     resetExtensionUI() {
++        if (this.standardUiRequest)
++            this.standardUiRequest.respond(undefined, "reset");
+         if (this.extensionSelector) {
+             this.hideExtensionSelector();
+         }
+@@ -2657,26 +2789,28 @@
+     /**
+      * Show a selector for extensions.
+      */
+-    showExtensionSelector(title, options, opts) {
++    showExtensionSelector(title, options, opts, bridgeRequest) {
++        if (opts?.signal?.aborted)
++            return Promise.resolve(undefined);
+         return new Promise((resolve) => {
+-            if (opts?.signal?.aborted) {
+-                resolve(undefined);
+-                return;
+-            }
+-            const onAbort = () => {
+-                this.hideExtensionSelector();
+-                resolve(undefined);
+-            };
+-            opts?.signal?.addEventListener("abort", onAbort, { once: true });
+-            this.extensionSelector = new ExtensionSelectorComponent(title, options, (option) => {
+-                opts?.signal?.removeEventListener("abort", onAbort);
+-                this.hideExtensionSelector();
+-                resolve(option);
+-            }, () => {
++            let settled = false;
++            let requestId;
++            const onAbort = () => finish(undefined, "abort");
++            const finish = (value, origin = "terminal") => {
++                if (settled)
++                    return;
++                settled = true;
+                 opts?.signal?.removeEventListener("abort", onAbort);
+                 this.hideExtensionSelector();
+-                resolve(undefined);
+-            }, {
++                this.finishStandardUiRequest(requestId, origin);
++                resolve(value);
++            };
++            const request = bridgeRequest ?? { kind: "select", title, options };
++            requestId = this.openStandardUiRequest(request, (value, origin) => {
++                const selected = request.kind === "confirm" && typeof value === "boolean" ? (value ? "Yes" : "No") : value;
++                finish(selected, origin);
++            });
++            this.extensionSelector = new ExtensionSelectorComponent(title, options, (value) => finish(value), () => finish(undefined), {
+                 tui: this.ui,
+                 timeout: opts?.timeout,
+                 onToggleToolsExpanded: () => this.toggleToolOutputExpansion(),
+@@ -2686,6 +2820,7 @@
+             this.editorContainer.addChild(this.extensionSelector);
+             this.ui.setFocus(this.extensionSelector);
+             this.ui.requestRender();
++            opts?.signal?.addEventListener("abort", onAbort, { once: true });
+         });
+     }
+     /**
+@@ -2703,7 +2838,11 @@
+      * Show a confirmation dialog for extensions.
+      */
+     async showExtensionConfirm(title, message, opts) {
+-        const result = await this.showExtensionSelector(`${title}\n${message}`, ["Yes", "No"], opts);
++        const result = await this.showExtensionSelector(`${title}\n${message}`, ["Yes", "No"], opts, {
++            kind: "confirm",
++            title,
++            message,
++        });
+         return result === "Yes";
+     }
+     async promptForMissingSessionCwd(error) {
+@@ -2714,30 +2853,29 @@
+      * Show a text input for extensions.
+      */
+     showExtensionInput(title, placeholder, opts) {
++        if (opts?.signal?.aborted)
++            return Promise.resolve(undefined);
+         return new Promise((resolve) => {
+-            if (opts?.signal?.aborted) {
+-                resolve(undefined);
+-                return;
+-            }
+-            const onAbort = () => {
+-                this.hideExtensionInput();
+-                resolve(undefined);
+-            };
+-            opts?.signal?.addEventListener("abort", onAbort, { once: true });
+-            this.extensionInput = new ExtensionInputComponent(title, placeholder, (value) => {
++            let settled = false;
++            let requestId;
++            const onAbort = () => finish(undefined, "abort");
++            const finish = (value, origin = "terminal") => {
++                if (settled)
++                    return;
++                settled = true;
+                 opts?.signal?.removeEventListener("abort", onAbort);
+                 this.hideExtensionInput();
++                this.finishStandardUiRequest(requestId, origin);
+                 resolve(value);
+-            }, () => {
+-                opts?.signal?.removeEventListener("abort", onAbort);
+-                this.hideExtensionInput();
+-                resolve(undefined);
+-            }, { tui: this.ui, timeout: opts?.timeout });
++            };
++            requestId = this.openStandardUiRequest({ kind: "input", title, placeholder }, finish);
++            this.extensionInput = new ExtensionInputComponent(title, placeholder, (value) => finish(value), () => finish(undefined), { tui: this.ui, timeout: opts?.timeout });
+             this.disposeActiveSelector();
+             this.editorContainer.clear();
+             this.editorContainer.addChild(this.extensionInput);
+             this.ui.setFocus(this.extensionInput);
+             this.ui.requestRender();
++            opts?.signal?.addEventListener("abort", onAbort, { once: true });
+         });
+     }
+     /**
+@@ -2886,6 +3024,12 @@
+         else {
+             this.showStatus(message);
+         }
++        this.session.emitExtensionEvent("interactive.ui.request", {
++            id: randomUUID(),
++            kind: "notify",
++            message,
++            level: type,
++        });
+     }
+     /** Show a custom component with keyboard focus. Overlay mode renders on top of existing content. */
+     async showExtensionCustom(factory, options) {
+@@ -3197,16 +3341,19 @@
+         this.showStatus("Startup is still in progress");
+     }
+     setupEditorSubmitHandler() {
+-        this.defaultEditor.onSubmit = async (text) => {
++        this.dispatchInteractiveInput = async (text, suppliedImages = [], source = "editor", delivery = "auto") => {
++            const fromEditor = source === "editor";
+             // Capture-then-clear BEFORE any branch: handleFollowUp's non-streaming
+             // path pre-resolves images and hands off here, but slash / extension /
+             // bash submissions return before the consuming branches below. Clearing
+             // only after use would leak a stale array into a later ordinary
+             // submission whose text never references it.
+-            const preResolvedImages = this.preResolvedSubmissionImages;
+-            this.preResolvedSubmissionImages = undefined;
+-            this.hideShortcutOverlay();
+-            this.lastEditorText = "";
++            const preResolvedImages = fromEditor ? this.preResolvedSubmissionImages : suppliedImages;
++            if (fromEditor) {
++                this.preResolvedSubmissionImages = undefined;
++                this.hideShortcutOverlay();
++                this.lastEditorText = "";
++            }
+             text = text.trim();
+             if (!text)
+                 return;
+@@ -3350,6 +3497,10 @@
+                 return;
+             }
+             if (this.isExtensionCommand(text)) {
++                if (!fromEditor) {
++                    await this.session.prompt(text, { source: "external" });
++                    return;
++                }
+                 this.editor.addToHistory?.(text);
+                 this.editor.setText("");
+                 const pendingEchoId = this.optimisticUserEchoes.begin(text);
+@@ -3368,10 +3519,16 @@
+                 const command = isExcluded ? text.slice(2).trim() : text.slice(1).trim();
+                 if (command) {
+                     if (this.session.isBashRunning) {
++                        if (!fromEditor)
++                            throw new Error("A bash command is already running");
+                         this.showWarning("A bash command is already running. Press Esc to cancel it first.");
+                         this.editor.setText(text);
+                         return;
+                     }
++                    if (!fromEditor) {
++                        await this.handleBashCommand(command, isExcluded);
++                        return;
++                    }
+                     this.editor.addToHistory?.(text);
+                     await this.handleBashCommand(command, isExcluded);
+                     this.isBashMode = false;
+@@ -3404,6 +3561,14 @@
+                 else {
+                     this.queueCompactionSubmission(text, "steer");
+                 }
++                return;
++            }
++            if (!fromEditor) {
++                await this.session.prompt(text, {
++                    ...(suppliedImages.length > 0 ? { images: suppliedImages } : {}),
++                    ...(this.session.isStreaming ? { streamingBehavior: delivery === "followUp" ? "followUp" : "steer" } : {}),
++                    source: "external",
++                });
+                 return;
+             }
+             // If streaming, use prompt() with steer behavior.
+@@ -3447,6 +3612,7 @@
+             }
+             this.editor.addToHistory?.(text);
+         };
++        this.defaultEditor.onSubmit = (text) => this.dispatchInteractiveInput(text, [], "editor", "auto");
+     }
+     subscribeToAgent() {
+         this.unsubscribe = this.session.subscribe(async (event) => {
+diff --git a/dist/modes/interactive/interactive-mode.d.ts b/dist/modes/interactive/interactive-mode.d.ts
+--- a/dist/modes/interactive/interactive-mode.d.ts
++++ b/dist/modes/interactive/interactive-mode.d.ts
+@@ -10,6 +10,7 @@
+ import { type AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
+ import { isApiKeyLoginProvider } from "../../core/auth-providers.ts";
+ import { type NoticeSpec } from "../../core/extensions/notice/index.ts";
++import type { InteractiveControlSurface, InteractiveDelivery, InteractiveInputSource } from "../../core/extensions/types.js";
+ import { SessionManager } from "../../core/session-manager.ts";
+ import type { FullscreenExitOutput, TuiMode } from "../../core/settings-manager.ts";
+ import { type InteractiveChrome } from "./grok/chrome.ts";
+@@ -83,6 +84,7 @@
+ export declare class InteractiveMode {
+     private static restoreCompactionEscapeOverride;
+     private runtimeHost;
++    readonly interactiveControlSurface: InteractiveControlSurface;
+     private options;
+     private chrome;
+     private renderer;
+@@ -430,7 +432,15 @@
+     private takeSubmissionImages;
+     private getSessionLogger;
+     private handleStartupSubmit;
++    private createInteractiveControlSurface;
++    private listInteractiveCommands;
++    private getInteractiveSnapshot;
++    private navigateTreeFromControl;
++    private openStandardUiRequest;
++    private finishStandardUiRequest;
++    private respondToStandardUiRequest;
+     private setupEditorSubmitHandler;
++    dispatchInteractiveInput(text: string, images?: ImageContent[], source?: InteractiveInputSource, delivery?: InteractiveDelivery): Promise<void>;
+     private subscribeToAgent;
+     private handleEvent;
+     private showRetryStatusIndicator;
