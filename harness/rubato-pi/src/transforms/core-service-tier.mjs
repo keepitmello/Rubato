@@ -8,12 +8,32 @@ const SELECT_NEEDLE = "    pi.on(\"model_select\", (event, ctx) => {\n        //
 
 const SELECT_REPLACEMENT = "    pi.on(\"model_select\", async (event, ctx) => {\n        // A model switch changes the base key the memory lives under, so the live tier is RE-DERIVED\n        // for the incoming model instead of merely dropped: dropping it would leave a remembered\n        // \"auto\" unable to suppress a catalog-inherited priority after switching away and back in one\n        // session, silently re-sending the tier `/fast off` turned off. Per-key scoping is preserved —\n        // each model reads ITS OWN memory, never the previous model's.\n        const settingsManager = SettingsManager.create(ctx.cwd, ctx.agentDir, { projectTrusted: ctx.isProjectTrusted() });\n        const memoryModel = resolveServiceTierMemoryModel(ctx.modelRegistry, event.model);\n        liveMemoryKey = `${memoryModel.provider}/${memoryModel.id}`;\n        liveMemoryTier = getRememberedServiceTier(settingsManager, ctx.modelRegistry, event.model);\n        // Choosing a catalog `-fast` model is an explicit fast-mode choice, even when an older\n        // `/fast off` memory exists for its base model. Persist the choice on the shared base key\n        // so a fresh session restores the exact fast identity instead of immediately swapping down.\n        if ((event.source === \"set\" || event.source === \"cycle\") && findBaseModel(ctx.modelRegistry, event.model)) {\n            settingsManager.setModelServiceTier(memoryModel.provider, memoryModel.id, PRIORITY_TIER);\n            await settingsManager.flush();\n            liveMemoryTier = PRIORITY_TIER;\n            sessionFastMode = true;\n            pi.setSessionFastMode(true);\n        }\n    });\n";
 
+const APIS_NEEDLE = "const SERVICE_TIER_APIS = new Set([\"openai-responses\", OPENAI_CODEX_RESPONSES_API]);";
+const APIS_REPLACEMENT = "const SERVICE_TIER_APIS = new Set([\"openai-responses\", OPENAI_CODEX_RESPONSES_API, \"openai-completions\"]);";
+
+const APPLY_NEEDLE = "    if (model?.api !== OPENAI_CODEX_RESPONSES_API) {\n        const message = \"Fast mode is only available for OpenAI Codex models.\";";
+const APPLY_REPLACEMENT = "    if (model?.api !== OPENAI_CODEX_RESPONSES_API && model?.provider !== \"xai\") {\n        const message = \"Fast mode is only available for OpenAI Codex and xAI models.\";";
+
+const BOOT_GATE_NEEDLE = "        if (model?.api !== OPENAI_CODEX_RESPONSES_API) {\n            sessionFastMode = false;\n            pi.setSessionFastMode(false);\n            return;\n        }";
+const BOOT_GATE_REPLACEMENT = "        if (model?.api !== OPENAI_CODEX_RESPONSES_API && model?.provider !== \"xai\") {\n            sessionFastMode = false;\n            pi.setSessionFastMode(false);\n            return;\n        }";
+
+const REQUEST_NEEDLE = "        if (ctx.model?.api === OPENAI_CODEX_RESPONSES_API) {";
+const REQUEST_REPLACEMENT = "        if (ctx.model?.api === OPENAI_CODEX_RESPONSES_API || ctx.model?.provider === \"xai\") {";
+
+const DESC_NEEDLE = "        description: \"Turn OpenAI Codex fast mode on or off for the current model\",";
+const DESC_REPLACEMENT = "        description: \"Turn Codex Fast or xAI priority on or off for the current model\",";
+
 export function isServiceTierUrl(url) {
   return url.includes("@code-yeongyu/senpi/dist/core/extensions/builtin/service-tier.js");
 }
 
-/** Baseline: persist -fast catalog identity across restart. */
+/** Baseline: persist -fast catalog identity across restart. xAI /fast is opt-in priority. */
 export function injectServiceTier(source) {
   let next = replaceOnce(source, BOOT_NEEDLE, BOOT_REPLACEMENT, "service-tier boot persist");
-  return replaceOnce(next, SELECT_NEEDLE, SELECT_REPLACEMENT, "service-tier model_select persist");
+  next = replaceOnce(next, SELECT_NEEDLE, SELECT_REPLACEMENT, "service-tier model_select persist");
+  next = replaceOnce(next, APIS_NEEDLE, APIS_REPLACEMENT, "service-tier xai completions");
+  next = replaceOnce(next, APPLY_NEEDLE, APPLY_REPLACEMENT, "service-tier xai apply");
+  next = replaceOnce(next, BOOT_GATE_NEEDLE, BOOT_GATE_REPLACEMENT, "service-tier xai boot gate");
+  next = replaceOnce(next, REQUEST_NEEDLE, REQUEST_REPLACEMENT, "service-tier xai request");
+  return replaceOnce(next, DESC_NEEDLE, DESC_REPLACEMENT, "service-tier xai description");
 }

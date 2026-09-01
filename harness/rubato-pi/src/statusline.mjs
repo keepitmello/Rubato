@@ -92,12 +92,24 @@ export function formatEffort(level) {
   return String(level).toLowerCase();
 }
 
-export function formatModelWithEffort(modelId, level, model, catalog) {
+export function formatModelWithEffort(modelId, level, model, catalog, fastMode = false) {
   const presented = presentCursorGrokFastModel(model, catalog, modelId);
   const label = shortModelLabel(modelId);
   const effort = formatEffort(level) || effortFromModelId(modelId);
-  const fast = isFastModel(modelId, presented) ? " [fast]" : "";
-  return `${effort ? `${label} ${effort}` : label}${fast}`;
+  const badge = laneBadge(modelId, presented, fastMode);
+  return `${effort ? `${label} ${effort}` : label}${badge}`;
+}
+
+function laneBadge(modelId, model, fastMode) {
+  if (isXaiPriority(modelId, model, fastMode)) return " [priority]";
+  if (isFastModel(modelId, model)) return " [fast]";
+  return "";
+}
+
+function isXaiPriority(modelId, model, fastMode) {
+  const provider = model?.provider ?? String(modelId ?? "").split("/")[0];
+  if (provider !== "xai") return false;
+  return fastMode === true || model?.serviceTier === "priority";
 }
 
 function isFastModel(modelId, model) {
