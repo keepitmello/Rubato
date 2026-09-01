@@ -23,9 +23,8 @@ rubato aside-cursor --install
 - `providers.cursor` → `http://127.0.0.1:18788/v1`, key `rubato-cursor`
 - 피커에 `cursor/grok-4.6`과 `cursor/grok-4.6-fast`가 없으면 넣는다.
   둘 다 pinned `cursor-grok-4.6`으로 접힌다.
-- 이미 있는 xAI `grok-4.6`은 `http://127.0.0.1:18788/xai/v1`로 돌려
-  POST에 `service_tier: priority`를 넣는다. Aside Fast/`supportsFastMode`는
-  hydrate에서 버리고 카탈로그 리프레시가 provider를 다시 쓴다.
+- xAI `grok-4.6`은 `https://api.x.ai/v1` 기본 차로다. 예전에 localhost
+  `/xai`로 묶여 있으면 공식 upstream으로 되돌린다.
 
 4. Aside를 다시 열고 **Grok 4.6 Fast [Cursor]** 를 고른다.
 
@@ -41,7 +40,7 @@ curl -sS http://127.0.0.1:18788/v1/models
 | 피커 | 경로 | 캐시 |
 |---|---|---|
 | Grok 4.6 Fast [Cursor] | Rubato Connect | Rubato 세션과 같음. T2부터 접두 히트 |
-| Grok Subscription `grok-4.6` | xAI `api.x.ai` (priority만 주입) | xAI 쪽. Cursor 접두 캐시가 아니다 |
+| Grok Subscription `grok-4.6` | xAI `api.x.ai` (기본 차로) | xAI 쪽. Cursor 접두 캐시가 아니다 |
 
 Codex 앱만 OpenCodex를 쓴다. Aside Cursor를 10100에 다시 꽂지 않는다.
 

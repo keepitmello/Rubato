@@ -1,9 +1,6 @@
-// Aside models.json 잠금. Cursor 면과 xAI grok-4.6 priority 프록시 경로를
-// 카탈로그 리프레시가 지워도 다시 박는다.
-//
-// supportsFastMode 는 hydrateProviderModel 이 버리고 FAST_MODE_SUPPORTED 에도
-// xAI 가 없다. 그래서 Fast 토글이 아니라 baseUrl 을 이 프로세스의 /xai 로
-// 돌려 POST 에 service_tier: priority 를 넣는다.
+// Aside models.json 잠금. Cursor 면을 카탈로그 리프레시가 지워도 다시 박는다.
+// xAI grok-4.6 은 catalog 기본 차로다. 예전 priority 프록시로 묶인 baseUrl 만
+// 공식 upstream 으로 되돌린다.
 
 import { ASIDE_CURSOR_API_KEY, ASIDE_CURSOR_DEFAULT_HOST, ASIDE_CURSOR_DEFAULT_PORT } from "./aside-cursor.mjs";
 
@@ -73,9 +70,10 @@ export function lockAsideModels(data, options = {}) {
   }
   const xai = providers[ASIDE_XAI_OAUTH_PROVIDER];
   if (Array.isArray(xai?.models)) {
+    const face = asideXaiFaceUrl(host, port);
     for (const model of xai.models) {
-      if (model?.id === ASIDE_XAI_PRIORITY_MODEL) {
-        model.baseUrl = asideXaiFaceUrl(host, port);
+      if (model?.id === ASIDE_XAI_PRIORITY_MODEL && model.baseUrl === face) {
+        model.baseUrl = `${ASIDE_XAI_UPSTREAM}/v1`;
       }
     }
   }
@@ -84,18 +82,6 @@ export function lockAsideModels(data, options = {}) {
 
 export function asideModelsUnlocked(data, options = {}) {
   return JSON.stringify(data ?? {}) !== JSON.stringify(lockAsideModels(data, options));
-}
-
-export function injectXaiPriority(raw) {
-  if (typeof raw !== "string" || raw.length === 0) return raw;
-  try {
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return raw;
-    parsed.service_tier = "priority";
-    return JSON.stringify(parsed);
-  } catch {
-    return raw;
-  }
 }
 
 export function xaiUpstreamUrl(pathname, search = "") {
