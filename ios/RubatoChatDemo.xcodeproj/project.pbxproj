@@ -1,0 +1,590 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 56;
+	objects = {
+		BC25154894E3BA27F6DBAC9D /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD5CF868C927ACF3AA9A3AAE /* AppModel.swift */; };
+		2118B935F1B89E091605B6E1 /* RubatoChatDemoApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF4FB34BD7776353BE69AD2D /* RubatoChatDemoApp.swift */; };
+		14E4733E7A20DA42D66430EB /* ChatModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4082EADE8F5D162DE72B24D5 /* ChatModels.swift */; };
+		5D0B47BE301A027F46BE3BA8 /* ConversationReducer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F33ABF82C1A03CB01D06262 /* ConversationReducer.swift */; };
+		6CCB33020B89D23C9D1853F5 /* HubClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DB8E94DEEEE970F08D3F0EC /* HubClient.swift */; };
+		9EC67778086F57414FB54563 /* HubEventStream.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA8522E64AB69D9686887595 /* HubEventStream.swift */; };
+		476B949EAB735369346FEE3E /* JSONObject.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A4E13B674BA1B2F8322AD39 /* JSONObject.swift */; };
+		F97FA19B02FE355FAC11C15C /* RemoteID.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38CCA28FC5177A900E5E69BB /* RemoteID.swift */; };
+		830BE58EF47AFCEF51A058E7 /* RubatoChatTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBE4C8A955A2FEF3CE29E9D7 /* RubatoChatTransport.swift */; };
+		7E76AAA7BFA9A49DD7F27B8E /* RubatoModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50478E9B305E85570608921D /* RubatoModels.swift */; };
+		14FD70275DFF4D1CE9B2AA2D /* RubatoSessionProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B84C189681C66E53BB4E663E /* RubatoSessionProvider.swift */; };
+		4346E4280E304EEF3AF80605 /* AttachmentFileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5878018D45565BD35B2FAF44 /* AttachmentFileStore.swift */; };
+		4AA37B0C7FB9F840B0FAC21E /* AudioPlaybackCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C60DD4CB6CCFD8604471D14 /* AudioPlaybackCenter.swift */; };
+		DEFFEF0F4F2B4A2EE4DAE57F /* AudioRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = D02AE4D595FD13B3745B6764 /* AudioRecorder.swift */; };
+		D18DCB4154379BF0345FDA3F /* ChatSessionProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26D0BE483898F4713B26FEA /* ChatSessionProvider.swift */; };
+		7AD1A2B5F780DFEED7476813 /* ChatTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0C1990E924A2E0D313EAA8B /* ChatTransport.swift */; };
+		BDC0311901EA5B3230C6230B /* MockChatSessionProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76A04EF6603392CEC021BC0C /* MockChatSessionProvider.swift */; };
+		7BF1CB6C088E986795AAC686 /* MockRubatoTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFD4AD610EF569EB79951327 /* MockRubatoTransport.swift */; };
+		317F174C58A5CD1565F316E2 /* ChatRoomStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8719A4521BD30089A2EB21D /* ChatRoomStore.swift */; };
+		1F73B1998B8F16AABFF22230 /* SampleData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BCB7E1C0C2D8A0A1063F57 /* SampleData.swift */; };
+		B20737E59D34F5E78623420B /* AttachmentViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85BF8B92F75E0B75A5BAF390 /* AttachmentViews.swift */; };
+		6003B82A8332064839FE8894 /* AudioMessageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 834DB44CEE97F4763C1D729B /* AudioMessageView.swift */; };
+		E394EA0021B269562DCC8B7D /* ChatCollectionViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E18D9EB42E1F64314793FCD /* ChatCollectionViewController.swift */; };
+		2178D3D1270D0717ADE9392B /* ChatRoomScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67070E1A47C9B76D280D2797 /* ChatRoomScreen.swift */; };
+		41A115329E637140E06677EB /* MessageRowViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C36692A2594A2F8D5A88D683 /* MessageRowViews.swift */; };
+		BD433DC02ACBF7C70D9C4AD3 /* MessageComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F95BA15ABA337CA4CC22E1F /* MessageComposerView.swift */; };
+		8A4FAAEE5390E7A14CD7A813 /* ConversationListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D0E8927CEF115F7FB3BC1C4 /* ConversationListView.swift */; };
+		D4F48D705B65990C6C0D7F8D /* HostSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6D2CBFB7EE8E7824161E2FD /* HostSettingsView.swift */; };
+		6E19925F8370B195BE251EFE /* NewSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 212AEE03AD5893130BE0D12D /* NewSessionView.swift */; };
+		EC2A499A790AA4D5B12FAC96 /* ApprovalCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B89ADE2139661D5DEA4D9E7D /* ApprovalCard.swift */; };
+		38D7C96E4AC9A212414AB193 /* ArtifactsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD82F563B61DBA20B6DD4CA2 /* ArtifactsSheet.swift */; };
+		74DFD5DD5AB5DC1B5652043F /* EmergencyTerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 735122784797F97A98EAF34E /* EmergencyTerminalView.swift */; };
+		E443C81BA3F91080E0120A71 /* SessionControlsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53B366EA3E6648082950958F /* SessionControlsSheet.swift */; };
+		F371C4555389033253B25755 /* ToolStatusBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C419768C98A88B4B0994F26 /* ToolStatusBar.swift */; };
+		ED2F48EC6C9500E32A36DE7C /* GlassComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26B9B56AD2A411F57136B8C4 /* GlassComponents.swift */; };
+		5EC92EBEA8EA73861E21FFDE /* MarkdownBlocks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 908D2AA95A629B97262F50FE /* MarkdownBlocks.swift */; };
+		75ECAFF53D8E13C8A993B47E /* ChatRoomStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A2CF0A6131418DF9400F79B /* ChatRoomStoreTests.swift */; };
+		0341ACC5114AB002E24E44A7 /* ConversationReducerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 425045CB27E31C2775B97B69 /* ConversationReducerTests.swift */; };
+		B5B9D27250F90A61CBE8D3B6 /* MarkdownBlockParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD56C5A36C8CF442E18DB40C /* MarkdownBlockParserTests.swift */; };
+		2E770705F8BCD9C38C454817 /* RemoteIDTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B969A4381852E80256643974 /* RemoteIDTests.swift */; };
+		8DBBCCD430E5608954E15731 /* ChatLayout in Frameworks */ = {isa = PBXBuildFile; productRef = 4875A53AB7EAF90FD4F112A6 /* ChatLayout */; };
+		0AE3D8E0A2E916516993C3AE /* XCTest.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 268FA4AC0735691F66D04CDE /* XCTest.framework */; };
+		14E6825F35BC0BE58626C44B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 98F54143AB4E86B28C3AFEE0 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F75109BEB4DD8800DA6B45F8;
+			remoteInfo = RubatoChatDemo;
+		};
+		4E783A9E10D2A8ABA38CD11C /* RubatoChatDemo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RubatoChatDemo.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		6C7CCDEB3609F1FAA874E941 /* RubatoChatDemoTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RubatoChatDemoTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		268FA4AC0735691F66D04CDE /* XCTest.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = XCTest.framework; path = System/Library/Frameworks/XCTest.framework; sourceTree = SDKROOT; };
+		BD5CF868C927ACF3AA9A3AAE /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		AF4FB34BD7776353BE69AD2D /* RubatoChatDemoApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RubatoChatDemoApp.swift; sourceTree = "<group>"; };
+		4082EADE8F5D162DE72B24D5 /* ChatModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModels.swift; sourceTree = "<group>"; };
+		7F33ABF82C1A03CB01D06262 /* ConversationReducer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationReducer.swift; sourceTree = "<group>"; };
+		6DB8E94DEEEE970F08D3F0EC /* HubClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HubClient.swift; sourceTree = "<group>"; };
+		CA8522E64AB69D9686887595 /* HubEventStream.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HubEventStream.swift; sourceTree = "<group>"; };
+		0A4E13B674BA1B2F8322AD39 /* JSONObject.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONObject.swift; sourceTree = "<group>"; };
+		38CCA28FC5177A900E5E69BB /* RemoteID.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteID.swift; sourceTree = "<group>"; };
+		EBE4C8A955A2FEF3CE29E9D7 /* RubatoChatTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RubatoChatTransport.swift; sourceTree = "<group>"; };
+		50478E9B305E85570608921D /* RubatoModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RubatoModels.swift; sourceTree = "<group>"; };
+		B84C189681C66E53BB4E663E /* RubatoSessionProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RubatoSessionProvider.swift; sourceTree = "<group>"; };
+		5878018D45565BD35B2FAF44 /* AttachmentFileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentFileStore.swift; sourceTree = "<group>"; };
+		8C60DD4CB6CCFD8604471D14 /* AudioPlaybackCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlaybackCenter.swift; sourceTree = "<group>"; };
+		D02AE4D595FD13B3745B6764 /* AudioRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRecorder.swift; sourceTree = "<group>"; };
+		D26D0BE483898F4713B26FEA /* ChatSessionProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatSessionProvider.swift; sourceTree = "<group>"; };
+		F0C1990E924A2E0D313EAA8B /* ChatTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTransport.swift; sourceTree = "<group>"; };
+		76A04EF6603392CEC021BC0C /* MockChatSessionProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockChatSessionProvider.swift; sourceTree = "<group>"; };
+		FFD4AD610EF569EB79951327 /* MockRubatoTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockRubatoTransport.swift; sourceTree = "<group>"; };
+		E8719A4521BD30089A2EB21D /* ChatRoomStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatRoomStore.swift; sourceTree = "<group>"; };
+		50BCB7E1C0C2D8A0A1063F57 /* SampleData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleData.swift; sourceTree = "<group>"; };
+		85BF8B92F75E0B75A5BAF390 /* AttachmentViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentViews.swift; sourceTree = "<group>"; };
+		834DB44CEE97F4763C1D729B /* AudioMessageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioMessageView.swift; sourceTree = "<group>"; };
+		8E18D9EB42E1F64314793FCD /* ChatCollectionViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatCollectionViewController.swift; sourceTree = "<group>"; };
+		67070E1A47C9B76D280D2797 /* ChatRoomScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatRoomScreen.swift; sourceTree = "<group>"; };
+		C36692A2594A2F8D5A88D683 /* MessageRowViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageRowViews.swift; sourceTree = "<group>"; };
+		5F95BA15ABA337CA4CC22E1F /* MessageComposerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageComposerView.swift; sourceTree = "<group>"; };
+		3D0E8927CEF115F7FB3BC1C4 /* ConversationListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationListView.swift; sourceTree = "<group>"; };
+		E6D2CBFB7EE8E7824161E2FD /* HostSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostSettingsView.swift; sourceTree = "<group>"; };
+		212AEE03AD5893130BE0D12D /* NewSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewSessionView.swift; sourceTree = "<group>"; };
+		B89ADE2139661D5DEA4D9E7D /* ApprovalCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalCard.swift; sourceTree = "<group>"; };
+		BD82F563B61DBA20B6DD4CA2 /* ArtifactsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactsSheet.swift; sourceTree = "<group>"; };
+		735122784797F97A98EAF34E /* EmergencyTerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmergencyTerminalView.swift; sourceTree = "<group>"; };
+		53B366EA3E6648082950958F /* SessionControlsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionControlsSheet.swift; sourceTree = "<group>"; };
+		6C419768C98A88B4B0994F26 /* ToolStatusBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolStatusBar.swift; sourceTree = "<group>"; };
+		26B9B56AD2A411F57136B8C4 /* GlassComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassComponents.swift; sourceTree = "<group>"; };
+		908D2AA95A629B97262F50FE /* MarkdownBlocks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownBlocks.swift; sourceTree = "<group>"; };
+		8A2CF0A6131418DF9400F79B /* ChatRoomStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatRoomStoreTests.swift; sourceTree = "<group>"; };
+		425045CB27E31C2775B97B69 /* ConversationReducerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationReducerTests.swift; sourceTree = "<group>"; };
+		DD56C5A36C8CF442E18DB40C /* MarkdownBlockParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownBlockParserTests.swift; sourceTree = "<group>"; };
+		B969A4381852E80256643974 /* RemoteIDTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteIDTests.swift; sourceTree = "<group>"; };
+		65C579F5E9F9858C77139572 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8DBBCCD430E5608954E15731 /* ChatLayout in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E8A9DA1328747E8A58EC5C81 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0AE3D8E0A2E916516993C3AE /* XCTest.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		91468586F9881985D065A03B /* App */ = {
+			isa = PBXGroup;
+			children = (
+				BD5CF868C927ACF3AA9A3AAE /* AppModel.swift */,
+				AF4FB34BD7776353BE69AD2D /* RubatoChatDemoApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		D40CDA4BC33432C558328A29 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				4082EADE8F5D162DE72B24D5 /* ChatModels.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		52EB817D8191FA599D32C16D /* Rubato */ = {
+			isa = PBXGroup;
+			children = (
+				7F33ABF82C1A03CB01D06262 /* ConversationReducer.swift */,
+				6DB8E94DEEEE970F08D3F0EC /* HubClient.swift */,
+				CA8522E64AB69D9686887595 /* HubEventStream.swift */,
+				0A4E13B674BA1B2F8322AD39 /* JSONObject.swift */,
+				38CCA28FC5177A900E5E69BB /* RemoteID.swift */,
+				EBE4C8A955A2FEF3CE29E9D7 /* RubatoChatTransport.swift */,
+				50478E9B305E85570608921D /* RubatoModels.swift */,
+				B84C189681C66E53BB4E663E /* RubatoSessionProvider.swift */,
+			);
+			path = Rubato;
+			sourceTree = "<group>";
+		};
+		EF972FBDF6EB970E6AA4CC4F /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				5878018D45565BD35B2FAF44 /* AttachmentFileStore.swift */,
+				8C60DD4CB6CCFD8604471D14 /* AudioPlaybackCenter.swift */,
+				D02AE4D595FD13B3745B6764 /* AudioRecorder.swift */,
+				D26D0BE483898F4713B26FEA /* ChatSessionProvider.swift */,
+				F0C1990E924A2E0D313EAA8B /* ChatTransport.swift */,
+				76A04EF6603392CEC021BC0C /* MockChatSessionProvider.swift */,
+				FFD4AD610EF569EB79951327 /* MockRubatoTransport.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		177893893E636DD440CA724E /* Store */ = {
+			isa = PBXGroup;
+			children = (
+				E8719A4521BD30089A2EB21D /* ChatRoomStore.swift */,
+			);
+			path = Store;
+			sourceTree = "<group>";
+		};
+		B2ADD567ADCD61F91327283F /* Support */ = {
+			isa = PBXGroup;
+			children = (
+				50BCB7E1C0C2D8A0A1063F57 /* SampleData.swift */,
+			);
+			path = Support;
+			sourceTree = "<group>";
+		};
+		DCDD79034BDA4E708C1DC82A /* Chat */ = {
+			isa = PBXGroup;
+			children = (
+				85BF8B92F75E0B75A5BAF390 /* AttachmentViews.swift */,
+				834DB44CEE97F4763C1D729B /* AudioMessageView.swift */,
+				8E18D9EB42E1F64314793FCD /* ChatCollectionViewController.swift */,
+				67070E1A47C9B76D280D2797 /* ChatRoomScreen.swift */,
+				C36692A2594A2F8D5A88D683 /* MessageRowViews.swift */,
+			);
+			path = Chat;
+			sourceTree = "<group>";
+		};
+		FC771C13D7AA45B3B1C298D8 /* Composer */ = {
+			isa = PBXGroup;
+			children = (
+				5F95BA15ABA337CA4CC22E1F /* MessageComposerView.swift */,
+			);
+			path = Composer;
+			sourceTree = "<group>";
+		};
+		F2A5FF278F4D9615B0084982 /* ConversationList */ = {
+			isa = PBXGroup;
+			children = (
+				3D0E8927CEF115F7FB3BC1C4 /* ConversationListView.swift */,
+			);
+			path = ConversationList;
+			sourceTree = "<group>";
+		};
+		A002CF1CE376ECBBB63F1323 /* Host */ = {
+			isa = PBXGroup;
+			children = (
+				E6D2CBFB7EE8E7824161E2FD /* HostSettingsView.swift */,
+			);
+			path = Host;
+			sourceTree = "<group>";
+		};
+		7778CCB403ED07DDF84FDF11 /* NewSession */ = {
+			isa = PBXGroup;
+			children = (
+				212AEE03AD5893130BE0D12D /* NewSessionView.swift */,
+			);
+			path = NewSession;
+			sourceTree = "<group>";
+		};
+		10B817D84E46B78CF8ADFACC /* Session */ = {
+			isa = PBXGroup;
+			children = (
+				B89ADE2139661D5DEA4D9E7D /* ApprovalCard.swift */,
+				BD82F563B61DBA20B6DD4CA2 /* ArtifactsSheet.swift */,
+				735122784797F97A98EAF34E /* EmergencyTerminalView.swift */,
+				53B366EA3E6648082950958F /* SessionControlsSheet.swift */,
+				6C419768C98A88B4B0994F26 /* ToolStatusBar.swift */,
+			);
+			path = Session;
+			sourceTree = "<group>";
+		};
+		C27AF544B313F7BE8C26DF02 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				26B9B56AD2A411F57136B8C4 /* GlassComponents.swift */,
+				908D2AA95A629B97262F50FE /* MarkdownBlocks.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		CDEB381DCE73DCBC4CC4FA5A /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				DCDD79034BDA4E708C1DC82A /* Chat */,
+				FC771C13D7AA45B3B1C298D8 /* Composer */,
+				F2A5FF278F4D9615B0084982 /* ConversationList */,
+				A002CF1CE376ECBBB63F1323 /* Host */,
+				7778CCB403ED07DDF84FDF11 /* NewSession */,
+				10B817D84E46B78CF8ADFACC /* Session */,
+				C27AF544B313F7BE8C26DF02 /* Shared */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		8309DD304D804F9D7F6302F5 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				91468586F9881985D065A03B /* App */,
+				D40CDA4BC33432C558328A29 /* Models */,
+				52EB817D8191FA599D32C16D /* Rubato */,
+				EF972FBDF6EB970E6AA4CC4F /* Services */,
+				177893893E636DD440CA724E /* Store */,
+				B2ADD567ADCD61F91327283F /* Support */,
+				CDEB381DCE73DCBC4CC4FA5A /* Views */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		A619C04D8A87AB070162A099 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				8A2CF0A6131418DF9400F79B /* ChatRoomStoreTests.swift */,
+				425045CB27E31C2775B97B69 /* ConversationReducerTests.swift */,
+				DD56C5A36C8CF442E18DB40C /* MarkdownBlockParserTests.swift */,
+				B969A4381852E80256643974 /* RemoteIDTests.swift */,
+			);
+			path = Tests;
+			sourceTree = "<group>";
+		};
+		615B463D1028E4E24B674CF7 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				4E783A9E10D2A8ABA38CD11C /* RubatoChatDemo.app */,
+				6C7CCDEB3609F1FAA874E941 /* RubatoChatDemoTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		495D82678C0F4E59B4982D1F /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				268FA4AC0735691F66D04CDE /* XCTest.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		870B3294C0CBD48AF6BBCC1B = {
+			isa = PBXGroup;
+			children = (
+				8309DD304D804F9D7F6302F5 /* Sources */,
+				A619C04D8A87AB070162A099 /* Tests */,
+				615B463D1028E4E24B674CF7 /* Products */,
+				495D82678C0F4E59B4982D1F /* Frameworks */,
+			);
+			sourceTree = "<group>";
+		};
+		F75109BEB4DD8800DA6B45F8 /* RubatoChatDemo */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 268D2D29669C504AD910B275 /* Build configuration list for PBXNativeTarget "RubatoChatDemo" */;
+			buildPhases = (
+				CE6F732915415528288BBD76 /* Sources */,
+				65C579F5E9F9858C77139572 /* Frameworks */,
+				A1BE90F212D813EE17901F5F /* Resources */,
+			);
+			buildRules = ();
+			dependencies = ();
+			name = RubatoChatDemo;
+			packageProductDependencies = (
+				4875A53AB7EAF90FD4F112A6 /* ChatLayout */,
+			);
+			productName = RubatoChatDemo;
+			productReference = 4E783A9E10D2A8ABA38CD11C /* RubatoChatDemo.app */;
+			productType = "com.apple.product-type.application";
+		};
+		C062A5A4A7F4F37DD90F54CB /* RubatoChatDemoTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D54537A1E0B78DECB3F131F4 /* Build configuration list for PBXNativeTarget "RubatoChatDemoTests" */;
+			buildPhases = (
+				E7218F3454A11A425E876D8D /* Sources */,
+				E8A9DA1328747E8A58EC5C81 /* Frameworks */,
+				2B14375FBE60926446581B7B /* Resources */,
+			);
+			buildRules = ();
+			dependencies = (
+				90D98942BAC0E647BD414C72 /* PBXTargetDependency */,
+			);
+			name = RubatoChatDemoTests;
+			productName = RubatoChatDemoTests;
+			productReference = 6C7CCDEB3609F1FAA874E941 /* RubatoChatDemoTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		98F54143AB4E86B28C3AFEE0 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2600;
+				LastUpgradeCheck = 2600;
+				TargetAttributes = {
+					F75109BEB4DD8800DA6B45F8 = { CreatedOnToolsVersion = 26.0; };
+					C062A5A4A7F4F37DD90F54CB = { CreatedOnToolsVersion = 26.0; TestTargetID = F75109BEB4DD8800DA6B45F8; };
+				};
+			};
+			buildConfigurationList = 6650A2B5E24FA7522CE6B81C /* Build configuration list for PBXProject "RubatoChatDemo" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = ko;
+			hasScannedForEncodings = 0;
+			knownRegions = (ko, en, Base);
+			mainGroup = 870B3294C0CBD48AF6BBCC1B;
+			packageReferences = (
+				82C305592FDCC0212E523816 /* XCRemoteSwiftPackageReference "ChatLayout" */,
+			);
+			productRefGroup = 615B463D1028E4E24B674CF7 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				F75109BEB4DD8800DA6B45F8 /* RubatoChatDemo */,
+				C062A5A4A7F4F37DD90F54CB /* RubatoChatDemoTests */,
+			);
+		};
+		A1BE90F212D813EE17901F5F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		2B14375FBE60926446581B7B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CE6F732915415528288BBD76 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BC25154894E3BA27F6DBAC9D /* AppModel.swift in Sources */,
+				2118B935F1B89E091605B6E1 /* RubatoChatDemoApp.swift in Sources */,
+				14E4733E7A20DA42D66430EB /* ChatModels.swift in Sources */,
+				5D0B47BE301A027F46BE3BA8 /* ConversationReducer.swift in Sources */,
+				6CCB33020B89D23C9D1853F5 /* HubClient.swift in Sources */,
+				9EC67778086F57414FB54563 /* HubEventStream.swift in Sources */,
+				476B949EAB735369346FEE3E /* JSONObject.swift in Sources */,
+				F97FA19B02FE355FAC11C15C /* RemoteID.swift in Sources */,
+				830BE58EF47AFCEF51A058E7 /* RubatoChatTransport.swift in Sources */,
+				7E76AAA7BFA9A49DD7F27B8E /* RubatoModels.swift in Sources */,
+				14FD70275DFF4D1CE9B2AA2D /* RubatoSessionProvider.swift in Sources */,
+				4346E4280E304EEF3AF80605 /* AttachmentFileStore.swift in Sources */,
+				4AA37B0C7FB9F840B0FAC21E /* AudioPlaybackCenter.swift in Sources */,
+				DEFFEF0F4F2B4A2EE4DAE57F /* AudioRecorder.swift in Sources */,
+				D18DCB4154379BF0345FDA3F /* ChatSessionProvider.swift in Sources */,
+				7AD1A2B5F780DFEED7476813 /* ChatTransport.swift in Sources */,
+				BDC0311901EA5B3230C6230B /* MockChatSessionProvider.swift in Sources */,
+				7BF1CB6C088E986795AAC686 /* MockRubatoTransport.swift in Sources */,
+				317F174C58A5CD1565F316E2 /* ChatRoomStore.swift in Sources */,
+				1F73B1998B8F16AABFF22230 /* SampleData.swift in Sources */,
+				B20737E59D34F5E78623420B /* AttachmentViews.swift in Sources */,
+				6003B82A8332064839FE8894 /* AudioMessageView.swift in Sources */,
+				E394EA0021B269562DCC8B7D /* ChatCollectionViewController.swift in Sources */,
+				2178D3D1270D0717ADE9392B /* ChatRoomScreen.swift in Sources */,
+				41A115329E637140E06677EB /* MessageRowViews.swift in Sources */,
+				BD433DC02ACBF7C70D9C4AD3 /* MessageComposerView.swift in Sources */,
+				8A4FAAEE5390E7A14CD7A813 /* ConversationListView.swift in Sources */,
+				D4F48D705B65990C6C0D7F8D /* HostSettingsView.swift in Sources */,
+				6E19925F8370B195BE251EFE /* NewSessionView.swift in Sources */,
+				EC2A499A790AA4D5B12FAC96 /* ApprovalCard.swift in Sources */,
+				38D7C96E4AC9A212414AB193 /* ArtifactsSheet.swift in Sources */,
+				74DFD5DD5AB5DC1B5652043F /* EmergencyTerminalView.swift in Sources */,
+				E443C81BA3F91080E0120A71 /* SessionControlsSheet.swift in Sources */,
+				F371C4555389033253B25755 /* ToolStatusBar.swift in Sources */,
+				ED2F48EC6C9500E32A36DE7C /* GlassComponents.swift in Sources */,
+				5EC92EBEA8EA73861E21FFDE /* MarkdownBlocks.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E7218F3454A11A425E876D8D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				75ECAFF53D8E13C8A993B47E /* ChatRoomStoreTests.swift in Sources */,
+				0341ACC5114AB002E24E44A7 /* ConversationReducerTests.swift in Sources */,
+				B5B9D27250F90A61CBE8D3B6 /* MarkdownBlockParserTests.swift in Sources */,
+				2E770705F8BCD9C38C454817 /* RemoteIDTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		90D98942BAC0E647BD414C72 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F75109BEB4DD8800DA6B45F8 /* RubatoChatDemo */;
+			targetProxy = 14E6825F35BC0BE58626C44B /* PBXContainerItemProxy */;
+		};
+		D12546C7310DEE778E55E187 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		AA23A758EC6A71B7321371F8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		F8A000F6C06CBAF02E297063 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Rubato Chat";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "음성 메시지를 녹음하려면 마이크 접근이 필요해요.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rubato.chatdemo;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		B2DB900C1DBD2C369C18C79F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Rubato Chat";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "음성 메시지를 녹음하려면 마이크 접근이 필요해요.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rubato.chatdemo;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		C9F0D88F895259AE7E99C579 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@loader_path/Frameworks");
+				PRODUCT_BUNDLE_IDENTIFIER = com.rubato.chatdemo.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/RubatoChatDemo.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/RubatoChatDemo";
+			};
+			name = Debug;
+		};
+		9B624F4150330A230A5C6095 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@loader_path/Frameworks");
+				PRODUCT_BUNDLE_IDENTIFIER = com.rubato.chatdemo.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/RubatoChatDemo.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/RubatoChatDemo";
+			};
+			name = Release;
+		};
+		6650A2B5E24FA7522CE6B81C /* Build configuration list for PBXProject "RubatoChatDemo" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (D12546C7310DEE778E55E187 /* Debug */, AA23A758EC6A71B7321371F8 /* Release */);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		268D2D29669C504AD910B275 /* Build configuration list for PBXNativeTarget "RubatoChatDemo" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (F8A000F6C06CBAF02E297063 /* Debug */, B2DB900C1DBD2C369C18C79F /* Release */);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D54537A1E0B78DECB3F131F4 /* Build configuration list for PBXNativeTarget "RubatoChatDemoTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (C9F0D88F895259AE7E99C579 /* Debug */, 9B624F4150330A230A5C6095 /* Release */);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		82C305592FDCC0212E523816 /* XCRemoteSwiftPackageReference "ChatLayout" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ekazaev/ChatLayout.git";
+			requirement = { kind = revision; revision = cf01193e9d20d448d0005f563063924c667e4496; };
+		};
+		4875A53AB7EAF90FD4F112A6 /* ChatLayout */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 82C305592FDCC0212E523816 /* XCRemoteSwiftPackageReference "ChatLayout" */;
+			productName = ChatLayout;
+		};
+	};
+	rootObject = 98F54143AB4E86B28C3AFEE0 /* Project object */;
+}

@@ -1,0 +1,14 @@
+{
+  "originHash" : "35cbaa1686f2739665d351e8f9be34b628d0cdf03ebd808c700defe65c4c7956",
+  "pins" : [
+    {
+      "identity" : "chatlayout",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/ekazaev/ChatLayout.git",
+      "state" : {
+        "revision" : "cf01193e9d20d448d0005f563063924c667e4496"
+      }
+    }
+  ],
+  "version" : 3
+}
