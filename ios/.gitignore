@@ -1,0 +1,11 @@
+.DS_Store
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
+.rubato-pi/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
