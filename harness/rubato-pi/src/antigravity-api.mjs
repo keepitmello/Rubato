@@ -245,6 +245,9 @@ export function createAntigravityApi({
   }
 
   const stream = (model, context, options = {}) => {
+    // catalog 가 `input` 을 빼먹어도 pinned encoder / transformMessages 가
+    // `model.input.includes` 에서 죽지 않게, 이 경로의 descriptor 는 여기서 채운다.
+    model = withAntigravityCapabilities(model);
     // 내부 재호출은 state를 이미 받았으므로 다시 queue에 넣지 않는다. 그러지 않으면
     // wrapper가 자기 자신을 재귀 호출해 stack overflow가 난다.
     if (runStateful && !options.antigravityState) {
