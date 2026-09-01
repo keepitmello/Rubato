@@ -99,7 +99,7 @@ export class RemoteHub {
     const launchToken = this.#handoffs.issue(payload, 60_000)
     let process: Awaited<ReturnType<ProcessController["launch"]>>
     try {
-      process = await this.#controller.launch({ liveSessionId, launchToken, socketPath: this.#runtime.socketPath, labels })
+      process = await this.#controller.launch({ liveSessionId, launchToken, socketPath: this.#runtime.socketPath, labels, cwd })
     } catch (error) {
       this.#handoffs.revoke(launchToken)
       throw error

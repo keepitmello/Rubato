@@ -185,7 +185,9 @@ export class SurfaceSocketServer implements SurfaceActions {
       if (frame.kind !== "surface.register") throw new Error("surface must register first")
       const bootstrapValid = typeof frame.token === "string" && this.#tokens.consume(frame.summary.liveSessionId, frame.token)
       const reconnectValid = typeof frame.reconnectToken === "string" && this.#credentials.verify(frame.reconnectToken, frame.summary.liveSessionId, frame.surfaceInstanceId)
-      if (!bootstrapValid && !reconnectValid) throw new Error("invalid surface credential")
+      const recovered = this.#registry.get(frame.summary.liveSessionId)?.lifecycle === "degraded"
+        || this.#registry.get(frame.summary.liveSessionId)?.lifecycle === "starting"
+      if (!bootstrapValid && !reconnectValid && !recovered) throw new Error("invalid surface credential")
       this.#registry.register({ summary: frame.summary, surfaceInstanceId: frame.surfaceInstanceId, token: "verified" }, "verified")
       connection.liveSessionId = frame.summary.liveSessionId
       connection.surfaceInstanceId = frame.surfaceInstanceId
