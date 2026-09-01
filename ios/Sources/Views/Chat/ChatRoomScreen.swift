@@ -78,32 +78,22 @@ struct ChatRoomScreen: View {
                 }
             }
             .overlay(alignment: .top) {
-                if let extras, extras.uiRequest == nil, !store.isLoadingInitial {
-                    VStack(spacing: 8) {
-                        if extras.isTerminalOnly {
-                            Button {
-                                presented = .terminal
-                                onTerminalOpen?()
-                            } label: {
-                                Text("이 세션은 아직 채팅이 안 붙었어요. 여기를 눌러 비상 터미널로 입력하세요.")
-                                    .font(.footnote)
-                                    .multilineTextAlignment(.center)
-                                    .padding(12)
-                                    .frame(maxWidth: .infinity)
-                                    .rubatoGlass(in: RoundedRectangle(cornerRadius: 16))
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("비상 터미널 열기")
-                            .padding(.horizontal, 12)
-                            .padding(.top, 8)
-                        }
-                        let activeTools = extras.tools.filter { $0.status == "running" }
-                        if !activeTools.isEmpty {
-                            ToolStatusBar(tools: activeTools)
-                                .padding(.horizontal, 12)
-                                .padding(.top, extras.isTerminalOnly ? 0 : 8)
-                        }
+                if let extras, extras.uiRequest == nil, !store.isLoadingInitial, extras.isTerminalOnly {
+                    Button {
+                        presented = .terminal
+                        onTerminalOpen?()
+                    } label: {
+                        Text("이 세션은 아직 채팅이 안 붙었어요. 여기를 눌러 비상 터미널로 입력하세요.")
+                            .font(.footnote)
+                            .multilineTextAlignment(.center)
+                            .padding(12)
+                            .frame(maxWidth: .infinity)
+                            .rubatoGlass(in: RoundedRectangle(cornerRadius: 16))
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("비상 터미널 열기")
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
                 }
             }
             .overlay {
