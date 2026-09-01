@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import serviceTierExtension from "../../../../node_modules/@code-yeongyu/senpi/dist/core/extensions/builtin/service-tier.js";
+import { senpiDir } from "../../src/engine-paths.mjs";
+import { injectServiceTier } from "../../src/transforms/core-service-tier.mjs";
 
 const base = {
   provider: "openai-codex",
@@ -77,3 +79,12 @@ for (const source of ["set", "cycle"]) {
     assert.deepEqual(result.fastModes, [false, true]);
   });
 }
+
+test("service-tier transform lets /fast send xAI completions priority", () => {
+  const source = readFileSync(join(senpiDir, "dist/core/extensions/builtin/service-tier.js"), "utf8");
+  const out = injectServiceTier(source);
+  assert.match(out, /openai-completions/);
+  assert.match(out, /provider !== "xai"/);
+  assert.match(out, /provider === "xai"/);
+  assert.match(out, /xAI priority/);
+});

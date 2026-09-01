@@ -110,7 +110,15 @@ test("appends reasoning effort next to the short model name", () => {
   assert.equal(formatModelWithEffort("xai/grok-4.6", "xhigh"), "Grok 4.6 xhigh");
   assert.equal(
     formatModelWithEffort("xai/grok-4.6", "xhigh", { id: "grok-4.6", provider: "xai", serviceTier: "priority" }),
-    "Grok 4.6 xhigh",
+    "Grok 4.6 xhigh [priority]",
+  );
+  assert.equal(
+    formatModelWithEffort("xai/grok-4.6", "xhigh", { id: "grok-4.6", provider: "xai" }, undefined, true),
+    "Grok 4.6 xhigh [priority]",
+  );
+  assert.equal(
+    formatModelWithEffort("openai-codex/gpt-5.6-sol", "high", { provider: "openai-codex" }, undefined, true),
+    "5.6 Sol high",
   );
   assert.equal(formatModelWithEffort("cursor/cursor-grok-4.6", "high"), "Grok 4.6 high [fast]");
   assert.equal(
@@ -1206,6 +1214,23 @@ test("ctxFromHostSession follows live session fields instead of a snapshot", () 
   session.model = { id: "xai/grok-4.6", contextWindow: 200_000 };
   assert.equal(ctx.thinkingLevel, "high");
   assert.equal(ctx.model.id, "xai/grok-4.6");
+});
+
+test("paintStatusLines stamps xAI /fast as [priority]", () => {
+  const lines = paintStatusLines({
+    ctx: {
+      cwd: "/tmp/repo",
+      model: { id: "grok-4.6", provider: "xai", contextWindow: 500_000 },
+      thinkingLevel: "xhigh",
+      isFastModeActive: () => true,
+      getContextUsage: () => ({ tokens: 2_000, contextWindow: 500_000, percent: 0.4 }),
+      sessionManager: { getBranch: () => [] },
+    },
+    footerData: { getGitBranch: () => "main", getExtensionStatuses: () => new Map() },
+    width: 160,
+    speedText: "Speed —",
+  });
+  assert.match(lines.join("\n"), /Grok 4\.6 xhigh \[priority\]/);
 });
 
 test("paintStatusLines is the Rubato line, not senpi's cwd/cost/auto footer", () => {

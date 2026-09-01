@@ -112,6 +112,12 @@ export function ctxFromHostSession(session, ui) {
     get thinkingLevel() {
       return session.thinkingLevel;
     },
+    get serviceTier() {
+      return session.effectiveServiceTier ?? session.serviceTier;
+    },
+    isFastModeActive() {
+      return session.isFastModeActive?.() === true;
+    },
     getThinkingLevel() {
       return session.getThinkingLevel?.() ?? session.thinkingLevel;
     },
@@ -152,7 +158,7 @@ export function paintStatusLines({
     .join(" · ");
   const identity = [
     {
-      text: `✦ ${formatModelWithEffort(ctx.model?.id, ctx.thinkingLevel ?? ctx.getThinkingLevel?.(), ctx.model, ctx.modelRegistry?.getAll?.())}`,
+      text: `✦ ${formatModelWithEffort(ctx.model?.id, ctx.thinkingLevel ?? ctx.getThinkingLevel?.(), ctx.model, ctx.modelRegistry?.getAll?.(), ctx.isFastModeActive?.() === true || ctx.serviceTier === "priority")}`,
       color: "accent",
     },
     { text: formatContext(remaining, window), color: remainingColor(remaining) },
