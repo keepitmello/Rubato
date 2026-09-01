@@ -86,7 +86,7 @@ export function buildSenpiArgs(userArgs, { env = process.env } = {}) {
   return [
     senpiCliPath(),
     "--system-prompt",
-    replaceSystemPrompt("", resolveRole({ env }), { env }),
+    replaceSystemPrompt("", resolveRole({ env }), { env, argv: userArgs }),
     ...interactiveTuiArgs,
     ...skillPathArgs(),
     "-e",
