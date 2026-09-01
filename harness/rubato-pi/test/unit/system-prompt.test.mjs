@@ -7,7 +7,9 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
   customPromptPath,
+  dispatchedSkillSection,
   isCloudStubReadError,
+  isNonInteractiveCli,
   loadRolePrompt,
   materializeLocalFile,
   modelIdentityLine,
@@ -15,6 +17,7 @@ import {
   readPromptFile,
   replaceSystemPrompt,
   promptNameForRole,
+  skillMarkdownBody,
   TOOL_GUIDELINES,
 } from "../../src/system-prompt.mjs";
 
@@ -209,4 +212,53 @@ test("rubato-soul materializes iCloud stubs before launch", () => {
   const script = readFileSync(fileURLToPath(new URL("../../../scripts/rubato-soul.sh", import.meta.url)), "utf8");
   assert.match(script, /chflags nodataless/);
   assert.match(script, /읽을 수 없다/);
+});
+
+test("print and json CLI flags are non-interactive; rpc and text are not", () => {
+  assert.equal(isNonInteractiveCli(["--print", "hello"]), true);
+  assert.equal(isNonInteractiveCli(["-p", "hello"]), true);
+  assert.equal(isNonInteractiveCli(["--mode", "json"]), true);
+  assert.equal(isNonInteractiveCli(["--mode=json"]), true);
+  assert.equal(isNonInteractiveCli(["--mode", "print"]), true);
+  assert.equal(isNonInteractiveCli(["--mode=print"]), true);
+  assert.equal(isNonInteractiveCli(["--mode", "rpc"]), false);
+  assert.equal(isNonInteractiveCli(["--mode", "text"]), false);
+  assert.equal(isNonInteractiveCli([]), false);
+  assert.equal(isNonInteractiveCli(["--model", "xai/grok-4.6"]), false);
+});
+
+test("print sessions inline the dispatched contract; interactive ones do not", () => {
+  const dispatched = () => "# Dispatched\nProvisional: the sender's reading, not ground truth.";
+  const printed = replaceSystemPrompt("", "lead", { ...loaders(), argv: ["--print", "hello"], dispatchedSkillSection: dispatched });
+  assert.match(printed, /# Dispatched/);
+  assert.match(printed, /Provisional: the sender's reading/);
+  assert.ok(printed.indexOf("Working agreement") < printed.indexOf("# Dispatched"));
+
+  const interactive = replaceSystemPrompt("", "lead", { ...loaders(), argv: [] });
+  assert.doesNotMatch(interactive, /# Dispatched/);
+
+  const rpc = replaceSystemPrompt("", "lead", { ...loaders(), argv: ["--mode", "rpc"] });
+  assert.doesNotMatch(rpc, /# Dispatched/);
+});
+
+test("agent start inherits process argv so a print child keeps the contract after rebuild", () => {
+  const next = promptForAgentStart(
+    { systemPrompt: "" },
+    { model: { provider: "xai", id: "grok-4.6", name: "Grok 4.6" } },
+    "agent",
+    { ...loaders(), argv: ["--mode", "json"], dispatchedSkillSection: () => "# Dispatched\nProvisional: sender reading." },
+  );
+  assert.match(next, /# Dispatched/);
+  assert.match(next, /Provisional: sender reading/);
+});
+
+test("the bundled dispatched skill body is what print sessions receive", () => {
+  const body = dispatchedSkillSection({
+    dirs: [],
+    dispatchedPath: fileURLToPath(new URL("../../../skills/dispatched/SKILL.md", import.meta.url)),
+  });
+  assert.match(body, /# Dispatched/);
+  assert.match(body, /Provisional:/);
+  assert.doesNotMatch(body, /^---/);
+  assert.equal(skillMarkdownBody("---\nname: x\n---\n\n# Hello\n"), "# Hello");
 });

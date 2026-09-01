@@ -1,10 +1,13 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
-import { skillsSection } from "./skills-section.mjs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { skillsSection, SKILL_DIRS } from "./skills-section.mjs";
 
 const SKILLS_SECTION = "The following skills provide specialized instructions";
+const BUNDLED_DISPATCHED_SKILL = join(dirname(fileURLToPath(import.meta.url)), "../../skills/dispatched/SKILL.md");
+const NON_INTERACTIVE_MODES = new Set(["json", "print"]);
 
 export const TOOL_GUIDELINES = `## Tool Guidelines
 
@@ -117,11 +120,58 @@ export function modelIdentityLine(model, serviceTier) {
   return `You are ${name} (${catalogId}).`;
 }
 
+export function isNonInteractiveCli(argv = []) {
+  for (let i = 0; i < argv.length; i += 1) {
+    const token = argv[i];
+    if (token === "--print" || token === "-p") return true;
+    if (token === "--mode") {
+      if (NON_INTERACTIVE_MODES.has(argv[i + 1])) return true;
+      continue;
+    }
+    if (typeof token === "string" && token.startsWith("--mode=") && NON_INTERACTIVE_MODES.has(token.slice("--mode=".length))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function skillMarkdownBody(raw) {
+  const normalized = String(raw).replace(/\r\n?/g, "\n");
+  if (!normalized.startsWith("---\n")) return normalized.trim();
+  const closing = normalized.indexOf("\n---", 4);
+  if (closing < 0) return normalized.trim();
+  return normalized.slice(closing + 4).replace(/^\n/, "").trim();
+}
+
+export function dispatchedSkillPath({ dirs = SKILL_DIRS, exists = existsSync } = {}) {
+  for (const { dir } of dirs) {
+    const path = join(dir, "dispatched", "SKILL.md");
+    if (exists(path)) return path;
+  }
+  return exists(BUNDLED_DISPATCHED_SKILL) ? BUNDLED_DISPATCHED_SKILL : null;
+}
+
+export function dispatchedSkillSection({
+  readFile = readFileSync,
+  exists = existsSync,
+  dirs = SKILL_DIRS,
+  dispatchedPath,
+} = {}) {
+  const path = dispatchedPath ?? dispatchedSkillPath({ dirs, exists });
+  if (!path) return "";
+  try {
+    return skillMarkdownBody(readFile(path, "utf8"));
+  } catch {
+    return "";
+  }
+}
+
 export function promptForAgentStart(event, ctx, role, hooks = {}) {
   return replaceSystemPrompt(event.systemPrompt ?? "", role, {
     ...hooks,
     model: ctx.model,
     serviceTier: ctx.serviceTier,
+    argv: hooks.argv ?? process.argv,
   });
 }
 
@@ -151,6 +201,11 @@ export function replaceSystemPrompt(existing, role, hooks = {}) {
   if (!extras.some((part) => part.startsWith(SKILLS_SECTION))) {
     const listSkills = hooks.skillsSection ?? skillsSection;
     parts.push(listSkills());
+  }
+  // Print/json sessions start from a brief. Inline the dispatched contract so
+  // the worker has it even when the brief forgot to say Skill(dispatched).
+  if (hooks.includeDispatched ?? isNonInteractiveCli(hooks.argv ?? [])) {
+    parts.push((hooks.dispatchedSkillSection ?? dispatchedSkillSection)(hooks));
   }
   return parts.filter((part) => part.length > 0).join("\n\n");
 }
