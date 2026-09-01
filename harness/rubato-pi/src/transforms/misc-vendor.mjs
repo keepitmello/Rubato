@@ -1,9 +1,15 @@
 // [cluster:misc-vendor] — 소형 벤더 패치(auth-storage, model-selector, high-reasoning,
-// pi-tui autocomplete, pi-ai lazy/TTL)를 load transform 으로 옮기는 자리.
+// pi-tui autocomplete, pi-ai lazy/TTL, google input guard)를 load transform 으로 옮기는 자리.
 // 이 파일과 여기서 import 하는 transform 모듈들은 misc-vendor 워크스트림이 소유한다.
 // 규약은 tui-chrome.mjs 와 같다: pristine 니들, 없으면 throw, 패치 공존 중 inert.
 
 import { injectAuthStorage, isAuthStorageUrl } from "./misc-auth-storage.mjs";
+import {
+  injectGoogleSharedInputGuard,
+  injectTransformMessagesInputGuard,
+  isGoogleSharedUrl,
+  isTransformMessagesUrl,
+} from "./misc-google-input-guard.mjs";
 import { injectHighReasoning, isHighReasoningUrl } from "./misc-high-reasoning.mjs";
 import { injectModelSelector, isModelSelectorUrl } from "./misc-model-selector.mjs";
 import { injectPiAiLazy, isPiAiLazyUrl } from "./misc-pi-ai-lazy.mjs";
@@ -35,24 +41,30 @@ export function applyMiscVendorTransforms(url, source, applyTransform) {
   if (isTuiSlashUrl(url)) source = applyTransform(source, injectTuiSlash);
   if (isPiAiLazyUrl(url)) source = applyTransform(source, injectPiAiLazy);
   if (isPromptCacheTtlUrl(url)) source = applyTransform(source, injectPromptCacheTtl);
+  if (isTransformMessagesUrl(url)) source = applyTransform(source, injectTransformMessagesInputGuard);
+  if (isGoogleSharedUrl(url)) source = applyTransform(source, injectGoogleSharedInputGuard);
   return source;
 }
 
 export {
   injectAuthStorage,
+  injectGoogleSharedInputGuard,
   injectHighReasoning,
   injectModelSelector,
   injectPiAiLazy,
   injectPromptCacheTtl,
+  injectTransformMessagesInputGuard,
   injectTuiAutocomplete,
   injectTuiDollar,
   injectTuiEditor,
   injectTuiSlash,
   isAuthStorageUrl,
+  isGoogleSharedUrl,
   isHighReasoningUrl,
   isModelSelectorUrl,
   isPiAiLazyUrl,
   isPromptCacheTtlUrl,
+  isTransformMessagesUrl,
   isTuiAutocompleteUrl,
   isTuiDollarUrl,
   isTuiEditorUrl,

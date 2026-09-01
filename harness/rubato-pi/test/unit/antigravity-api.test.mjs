@@ -249,3 +249,36 @@ test("상류가 준 input 은 덮어쓰지 않는다", () => {
   assert.deepEqual(withAntigravityCapabilities({ ...model, input: ["text"] }).input, ["text"]);
   assert.deepEqual(withAntigravityCapabilities({ ...model, input: undefined }).input, ["text", "image"]);
 });
+
+test("input 없는 descriptor 로도 첫 user 턴을 실을 수 있다", () => {
+  const stripped = { ...model, input: undefined };
+  const wire = buildAntigravityRequest(stripped, {
+    messages: [
+      { role: "user", content: [{ type: "text", text: "이 이미지 설명해줘" }], timestamp: 1 },
+    ],
+  }, { env: { [ANTIGRAVITY_PROJECT_ENV]: "project-a" } }, state());
+  assert.equal(wire.request.contents[0].role, "user");
+  assert.equal(wire.request.contents[0].parts[0].text, "이 이미지 설명해줘");
+});
+
+test("stream은 input 없는 descriptor 로도 request를 만든다", async () => {
+  let bodies = 0;
+  const api = createAntigravityApi({
+    fetchImpl: async () => {
+      bodies += 1;
+      return responseFor({
+        response: { candidates: [{ content: { parts: [{ text: "ok" }] }, finishReason: "STOP" }] },
+      });
+    },
+  });
+  const stream = api.stream({ ...model, input: undefined }, {
+    messages: [{ role: "user", content: [{ type: "text", text: "hi" }], timestamp: 1 }],
+  }, {
+    apiKey: "token",
+    env: { [ANTIGRAVITY_PROJECT_ENV]: "project-a" },
+    antigravityState: state(),
+  });
+  await eventsOf(stream);
+  assert.equal(bodies, 1);
+  assert.equal((await stream.result()).stopReason, "stop");
+});
