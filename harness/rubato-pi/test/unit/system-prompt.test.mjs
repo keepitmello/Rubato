@@ -3,11 +3,16 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
   customPromptPath,
+  isCloudStubReadError,
   loadRolePrompt,
+  materializeLocalFile,
   modelIdentityLine,
   promptForAgentStart,
+  readPromptFile,
   replaceSystemPrompt,
   promptNameForRole,
   TOOL_GUIDELINES,
@@ -141,4 +146,67 @@ test("every role gets the shared tool guidelines and not Senpi's body", () => {
     assert.doesNotMatch(next, /# Dispatching/);
     assert.doesNotMatch(next, /# Dispatched/);
   }
+});
+
+test("iCloud dataless read errors are recognized", () => {
+  assert.equal(isCloudStubReadError({ errno: -11, message: "Unknown system error -11" }), true);
+  assert.equal(isCloudStubReadError({ code: "EDEADLK" }), true);
+  assert.equal(isCloudStubReadError({ message: "Resource deadlock avoided" }), true);
+  assert.equal(isCloudStubReadError({ code: "ENOENT" }), false);
+});
+
+test("cloud stub reads retry after materialize", () => {
+  let reads = 0;
+  const seen = [];
+  const text = readPromptFile("/tmp/SOUL.md", {
+    readFile: () => {
+      reads += 1;
+      if (reads === 1) {
+        const error = new Error("Unknown system error -11: Unknown system error -11, read");
+        error.errno = -11;
+        throw error;
+      }
+      return "# 나는 루\n";
+    },
+    materialize: (path) => {
+      seen.push(path);
+    },
+  });
+  assert.equal(text, "# 나는 루\n");
+  assert.deepEqual(seen, ["/tmp/SOUL.md"]);
+  assert.equal(reads, 2);
+});
+
+test("unreadable custom prompt explains the iCloud stub", () => {
+  assert.throws(
+    () => readPromptFile("/tmp/SOUL.md", {
+      readFile: () => {
+        const error = new Error("Unknown system error -11: Unknown system error -11, read");
+        error.errno = -11;
+        throw error;
+      },
+      materialize: () => false,
+    }),
+    /iCloud Optimize/,
+  );
+});
+
+test("darwin materialize uses chflags nodataless", () => {
+  const seen = [];
+  const ok = materializeLocalFile("/tmp/SOUL.md", {
+    platform: "darwin",
+    spawnSyncImpl: (cmd, args) => {
+      seen.push([cmd, ...args]);
+      return { status: 0 };
+    },
+  });
+  assert.equal(ok, true);
+  assert.deepEqual(seen, [["chflags", "nodataless", "/tmp/SOUL.md"]]);
+  assert.equal(materializeLocalFile("/tmp/SOUL.md", { platform: "linux", spawnSyncImpl: () => { throw new Error("no"); } }), false);
+});
+
+test("rubato-soul materializes iCloud stubs before launch", () => {
+  const script = readFileSync(fileURLToPath(new URL("../../../scripts/rubato-soul.sh", import.meta.url)), "utf8");
+  assert.match(script, /chflags nodataless/);
+  assert.match(script, /읽을 수 없다/);
 });
