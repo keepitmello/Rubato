@@ -212,7 +212,7 @@ enum ConversationReducer {
         return parts.compactMap { JSONObject(value: $0) }
             .filter { $0.string("type") == "text" }
             .compactMap { $0.string("text") }
-            .joined()
+            .joined(separator: "\n")
     }
 
     private static func upsertMessage(
