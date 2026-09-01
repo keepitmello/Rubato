@@ -32,6 +32,7 @@ export interface LaunchRequest {
   readonly launchToken: string
   readonly socketPath: string
   readonly labels: Readonly<Record<string, string>>
+  readonly cwd: string
 }
 
 export interface RegisteredSurface {

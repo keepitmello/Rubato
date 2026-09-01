@@ -13,7 +13,7 @@ export interface CommandRunner {
 }
 
 export interface DetachedCommandLauncher {
-  launch(file: string, args: readonly string[]): Promise<void>
+  launch(file: string, args: readonly string[], cwd?: string): Promise<void>
 }
 
 export class ExecFileRunner implements CommandRunner {
@@ -24,11 +24,11 @@ export class ExecFileRunner implements CommandRunner {
 }
 
 export class SpawnDetachedCommandLauncher implements DetachedCommandLauncher {
-  async launch(file: string, args: readonly string[]): Promise<void> {
+  async launch(file: string, args: readonly string[], cwd?: string): Promise<void> {
     const environment: NodeJS.ProcessEnv = { ...process.env, ZMX_NO_DETACH_KEY: "1" }
     delete environment["ZMX_SESSION"]
     await new Promise<void>((resolve, reject) => {
-      const child = spawn(file, [...args], { detached: true, stdio: "ignore", env: environment })
+      const child = spawn(file, [...args], { detached: true, stdio: "ignore", env: environment, ...(cwd ? { cwd } : {}) })
       child.once("spawn", () => {
         child.unref()
         resolve()
@@ -96,7 +96,7 @@ export class ZmxProcessAdapter implements ProcessDiscovery, ProcessController {
     await writePrivateFile(descriptorPath, JSON.stringify(descriptor))
     const labels = Object.entries(input.labels).map(([key, value]) => `${key}=${value}`)
     try {
-      await this.#launcher.launch(this.#zmx, ["attach", "--labels", labels.join(" "), zmxName, this.#bootstrap, descriptorPath])
+      await this.#launcher.launch(this.#zmx, ["attach", "--labels", labels.join(" "), zmxName, this.#bootstrap, descriptorPath], input.cwd)
       await this.#waitForLabel(zmxName, "app", input.labels["app"] ?? "rubato")
     } catch (cause) {
       await this.#runner.run(this.#zmx, ["kill", zmxName, "--force"]).catch(() => {})
