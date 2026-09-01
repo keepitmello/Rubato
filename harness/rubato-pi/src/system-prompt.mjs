@@ -7,7 +7,9 @@ import { skillsSection, SKILL_DIRS } from "./skills-section.mjs";
 
 const SKILLS_SECTION = "The following skills provide specialized instructions";
 const BUNDLED_DISPATCHED_SKILL = join(dirname(fileURLToPath(import.meta.url)), "../../skills/dispatched/SKILL.md");
+const BUNDLED_RETURN_SKILL = join(dirname(fileURLToPath(import.meta.url)), "../../skills/return/SKILL.md");
 const NON_INTERACTIVE_MODES = new Set(["json", "print"]);
+const DEFAULT_AGENT_DIR_SEGMENTS = [".rubato-pi", "agent"];
 
 export const TOOL_GUIDELINES = `## Tool Guidelines
 
@@ -151,6 +153,72 @@ export function dispatchedSkillPath({ dirs = SKILL_DIRS, exists = existsSync } =
   return exists(BUNDLED_DISPATCHED_SKILL) ? BUNDLED_DISPATCHED_SKILL : null;
 }
 
+export function sessionFileFromArgv(argv = []) {
+  for (let i = 0; i < argv.length; i += 1) {
+    const token = argv[i];
+    if (token === "--session" && typeof argv[i + 1] === "string" && argv[i + 1].length > 0) {
+      return argv[i + 1];
+    }
+    if (typeof token === "string" && token.startsWith("--session=") && token.length > "--session=".length) {
+      return token.slice("--session=".length);
+    }
+  }
+  return null;
+}
+
+export function defaultAgentReportsDir({ env = process.env, home = homedir } = {}) {
+  const agentDir = env.RUBATO_PI_CODING_AGENT_DIR
+    || env.SENPI_CODING_AGENT_DIR
+    || env.PI_CODING_AGENT_DIR
+    || join(typeof home === "function" ? home() : home, ...DEFAULT_AGENT_DIR_SEGMENTS);
+  return join(agentDir, "reports");
+}
+
+export function defaultReturnDetailPath({
+  argv = [],
+  env = process.env,
+  now = Date.now,
+  home = homedir,
+} = {}) {
+  const override = env.RUBATO_RETURN_DETAIL;
+  if (typeof override === "string" && override.length > 0) return override;
+  const session = sessionFileFromArgv(argv);
+  if (session) return `${session}.return.md`;
+  const stamp = new Date(now()).toISOString().replace(/[:.]/g, "-");
+  return join(defaultAgentReportsDir({ env, home }), `${stamp}-return.md`);
+}
+
+export function returnSkillPath({ dirs = SKILL_DIRS, exists = existsSync } = {}) {
+  for (const { dir } of dirs) {
+    const path = join(dir, "return", "SKILL.md");
+    if (exists(path)) return path;
+  }
+  return exists(BUNDLED_RETURN_SKILL) ? BUNDLED_RETURN_SKILL : null;
+}
+
+export function returnSkillSection({
+  readFile = readFileSync,
+  exists = existsSync,
+  dirs = SKILL_DIRS,
+  returnPath,
+  argv = [],
+  env = process.env,
+  now = Date.now,
+  home = homedir,
+  returnDetailPath,
+} = {}) {
+  const path = returnPath ?? returnSkillPath({ dirs, exists });
+  if (!path) return "";
+  let body = "";
+  try {
+    body = skillMarkdownBody(readFile(path, "utf8"));
+  } catch {
+    return "";
+  }
+  const detail = returnDetailPath ?? defaultReturnDetailPath({ argv, env, now, home });
+  return `${body}\n\nThis run's detail file: ${detail}`;
+}
+
 export function dispatchedSkillSection({
   readFile = readFileSync,
   exists = existsSync,
@@ -202,10 +270,14 @@ export function replaceSystemPrompt(existing, role, hooks = {}) {
     const listSkills = hooks.skillsSection ?? skillsSection;
     parts.push(listSkills());
   }
-  // Print/json sessions start from a brief. Inline the dispatched contract so
-  // the worker has it even when the brief forgot to say Skill(dispatched).
-  if (hooks.includeDispatched ?? isNonInteractiveCli(hooks.argv ?? [])) {
+  // Print/json sessions start from a brief. Inline the dispatched and return
+  // contracts so the worker has them even when the brief forgot the skills.
+  const nonInteractive = isNonInteractiveCli(hooks.argv ?? []);
+  if (hooks.includeDispatched ?? nonInteractive) {
     parts.push((hooks.dispatchedSkillSection ?? dispatchedSkillSection)(hooks));
+  }
+  if (hooks.includeReturn ?? nonInteractive) {
+    parts.push((hooks.returnSkillSection ?? returnSkillSection)(hooks));
   }
   return parts.filter((part) => part.length > 0).join("\n\n");
 }
