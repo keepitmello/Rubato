@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
   customPromptPath,
+  defaultReturnDetailPath,
   dispatchedSkillSection,
   isCloudStubReadError,
   isNonInteractiveCli,
@@ -17,6 +18,7 @@ import {
   readPromptFile,
   replaceSystemPrompt,
   promptNameForRole,
+  returnSkillSection,
   skillMarkdownBody,
   TOOL_GUIDELINES,
 } from "../../src/system-prompt.mjs";
@@ -100,6 +102,7 @@ test("replaces senpi and legacy prompts instead of appending", () => {
   assert.doesNotMatch(next, /Category_Context/);
   assert.doesNotMatch(next, /# Dispatching/);
   assert.doesNotMatch(next, /# Dispatched/);
+  assert.doesNotMatch(next, /# Return/);
   assert.ok(next.indexOf("Working agreement") < next.indexOf("keep this"));
   assert.equal(replaceSystemPrompt(next, "lead", loaders()), next);
 });
@@ -108,6 +111,7 @@ test("owner replacement does not keep a previous legacy base", () => {
   const next = replaceSystemPrompt("legacy optimized prompt", "owner", loaders());
   assert.match(next, /teammate/);
   assert.doesNotMatch(next, /# Dispatched/);
+  assert.doesNotMatch(next, /# Return/);
   assert.doesNotMatch(next, /legacy optimized prompt/);
 });
 
@@ -148,6 +152,7 @@ test("every role gets the shared tool guidelines and not Senpi's body", () => {
     assert.doesNotMatch(next, /legacy optimized prompt/);
     assert.doesNotMatch(next, /# Dispatching/);
     assert.doesNotMatch(next, /# Dispatched/);
+    assert.doesNotMatch(next, /# Return/);
   }
 });
 
@@ -229,16 +234,27 @@ test("print and json CLI flags are non-interactive; rpc and text are not", () =>
 
 test("print sessions inline the dispatched contract; interactive ones do not", () => {
   const dispatched = () => "# Dispatched\nProvisional: the sender's reading, not ground truth.";
-  const printed = replaceSystemPrompt("", "lead", { ...loaders(), argv: ["--print", "hello"], dispatchedSkillSection: dispatched });
+  const returned = () => "# Return\nBoss report only.";
+  const printed = replaceSystemPrompt("", "lead", {
+    ...loaders(),
+    argv: ["--print", "hello"],
+    dispatchedSkillSection: dispatched,
+    returnSkillSection: returned,
+  });
   assert.match(printed, /# Dispatched/);
   assert.match(printed, /Provisional: the sender's reading/);
+  assert.match(printed, /# Return/);
+  assert.match(printed, /Boss report only/);
   assert.ok(printed.indexOf("Working agreement") < printed.indexOf("# Dispatched"));
+  assert.ok(printed.indexOf("# Dispatched") < printed.indexOf("# Return"));
 
   const interactive = replaceSystemPrompt("", "lead", { ...loaders(), argv: [] });
   assert.doesNotMatch(interactive, /# Dispatched/);
+  assert.doesNotMatch(interactive, /# Return/);
 
   const rpc = replaceSystemPrompt("", "lead", { ...loaders(), argv: ["--mode", "rpc"] });
   assert.doesNotMatch(rpc, /# Dispatched/);
+  assert.doesNotMatch(rpc, /# Return/);
 });
 
 test("agent start inherits process argv so a print child keeps the contract after rebuild", () => {
@@ -246,10 +262,16 @@ test("agent start inherits process argv so a print child keeps the contract afte
     { systemPrompt: "" },
     { model: { provider: "xai", id: "grok-4.6", name: "Grok 4.6" } },
     "agent",
-    { ...loaders(), argv: ["--mode", "json"], dispatchedSkillSection: () => "# Dispatched\nProvisional: sender reading." },
+    {
+      ...loaders(),
+      argv: ["--mode", "json"],
+      dispatchedSkillSection: () => "# Dispatched\nProvisional: sender reading.",
+      returnSkillSection: () => "# Return\nBoss report only.",
+    },
   );
   assert.match(next, /# Dispatched/);
   assert.match(next, /Provisional: sender reading/);
+  assert.match(next, /# Return/);
 });
 
 test("the bundled dispatched skill body is what print sessions receive", () => {
@@ -261,4 +283,42 @@ test("the bundled dispatched skill body is what print sessions receive", () => {
   assert.match(body, /Provisional:/);
   assert.doesNotMatch(body, /^---/);
   assert.equal(skillMarkdownBody("---\nname: x\n---\n\n# Hello\n"), "# Hello");
+});
+
+test("print sessions receive the bundled return contract and a concrete detail path", () => {
+  const section = returnSkillSection({
+    dirs: [],
+    returnPath: fileURLToPath(new URL("../../../skills/return/SKILL.md", import.meta.url)),
+    argv: ["--print", "hello"],
+    env: {},
+    now: () => Date.UTC(2026, 8, 2, 0, 0, 0),
+    home: () => "/tmp/fake-home",
+  });
+  assert.match(section, /# Return/);
+  assert.match(section, /Boss report only/);
+  assert.doesNotMatch(section, /^---/);
+  assert.match(section, /This run's detail file: \/tmp\/fake-home\/\.rubato-pi\/agent\/reports\/2026-09-02T00-00-00-000Z-return\.md/);
+});
+
+test("return detail path sits next to the session file, or under reports when there is none", () => {
+  assert.equal(
+    defaultReturnDetailPath({ argv: ["--session", "/tmp/sess/abc.jsonl"], env: {} }),
+    "/tmp/sess/abc.jsonl.return.md",
+  );
+  assert.equal(
+    defaultReturnDetailPath({ argv: ["--session=/tmp/sess/abc.jsonl"], env: {} }),
+    "/tmp/sess/abc.jsonl.return.md",
+  );
+  assert.equal(
+    defaultReturnDetailPath({ argv: ["--print", "--no-session"], env: { RUBATO_RETURN_DETAIL: "/tmp/forced.md" } }),
+    "/tmp/forced.md",
+  );
+  assert.equal(
+    defaultReturnDetailPath({
+      argv: ["--print", "--no-session"],
+      env: { RUBATO_PI_CODING_AGENT_DIR: "/tmp/agent-home" },
+      now: () => Date.UTC(2026, 8, 2, 12, 0, 0),
+    }),
+    "/tmp/agent-home/reports/2026-09-02T12-00-00-000Z-return.md",
+  );
 });

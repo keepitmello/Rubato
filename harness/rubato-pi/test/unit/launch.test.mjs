@@ -24,6 +24,7 @@ test("senpi argv replaces the system prompt and lets profile settings choose the
   assert.doesNotMatch(args[promptAt + 1], /Run `fx models`/);
   assert.doesNotMatch(args[promptAt + 1], /# Dispatching/);
   assert.doesNotMatch(args[promptAt + 1], /# Dispatched/);
+  assert.doesNotMatch(args[promptAt + 1], /# Return/);
   assert.equal(args.includes("--model"), false);
   assert.ok(args.includes("-e"));
   assert.ok(statuslineAt > 0 && args[statuslineAt - 1] === "-e");
@@ -41,6 +42,7 @@ test("member argv gets teammate prompt plus the same tool guidelines", () => {
   assert.doesNotMatch(prompt, /# Lead\n/);
   assert.doesNotMatch(prompt, /# Dispatching/);
   assert.doesNotMatch(prompt, /# Dispatched/);
+  assert.doesNotMatch(prompt, /# Return/);
 });
 
 test("an explicit --model is not overwritten", () => {
@@ -89,11 +91,17 @@ test("print and json sessions inline the dispatched contract; interactive and rp
   const printed = promptOf(["--print", "hello"]);
   assert.match(printed, /# Dispatched/);
   assert.match(printed, /Provisional:/);
+  assert.match(printed, /# Return/);
+  assert.match(printed, /Boss report only/);
+  assert.match(printed, /This run's detail file:/);
 
   const json = promptOf(["--mode", "json"]);
   assert.match(json, /# Dispatched/);
   assert.match(json, /Provisional:/);
+  assert.match(json, /# Return/);
 
   assert.doesNotMatch(promptOf([]), /# Dispatched/);
+  assert.doesNotMatch(promptOf([]), /# Return/);
   assert.doesNotMatch(promptOf(["--mode", "rpc"]), /# Dispatched/);
+  assert.doesNotMatch(promptOf(["--mode", "rpc"]), /# Return/);
 });
