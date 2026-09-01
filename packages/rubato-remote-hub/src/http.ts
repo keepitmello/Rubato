@@ -38,6 +38,7 @@ import {
   type TerminateLiveSessionResponse,
   type TicketResponse,
 } from "@rubato/remote-protocol"
+import { readGitDiff, readGitStatus } from "./git.js"
 import type { TerminalLaunchTicketStore } from "@rubato/terminal-bridge"
 import type { HostConfig } from "./config.js"
 import type { RemoteHub } from "./hub.js"
@@ -248,26 +249,44 @@ export function createHttpApp(dependencies: HttpApiDependencies): Hono<HttpEnvir
     if (!dependencies.hub.registry.get(id) && !dependencies.hub.journal.getSnapshot(id)) {
       return error(context, 404, "session_not_found", "Live session not found")
     }
-    try {
-      const result = await dependencies.hub.actions.enqueue({
-        protocol: REMOTE_PROTOCOL_NAME,
-        requestId: randomUUID(),
-        hostId: dependencies.config.hostId,
-        liveSessionId: id,
-        action: "conversation.page",
-        payload: {
-          limit: parsed.value.limit ?? 50,
-          ...(parsed.value.before === undefined ? {} : { before: parsed.value.before }),
+    const snapshot = dependencies.hub.journal.getSnapshot(id)
+    const entries = snapshot?.state.entries ?? []
+    const limit = parsed.value.limit ?? 50
+    const end = parsed.value.before ? entries.findIndex((entry) => entry.id === parsed.value.before) : entries.length
+    const sliceEnd = end < 0 ? entries.length : end
+    const sliceStart = Math.max(0, sliceEnd - limit)
+    const page = entries.slice(sliceStart, sliceEnd)
+    const nextBefore = sliceStart > 0 ? page[0]?.id : undefined
+    return context.json(
+      projectMessagePage(
+        {
+          entries: page,
+          ...(nextBefore === undefined ? {} : { nextBefore }),
         },
-      })
-      const page = messagePageResponseSchema.safeParse(result.payload)
-      if (!result.accepted || !page.ok) return error(context, 400, "invalid_action", "Conversation page is unavailable")
-      return context.json(projectMessagePage(page.value, version))
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : ""
-      if (message === "session_not_found") return error(context, 404, "session_not_found", "Live session not found")
-      if (message.includes("timeout")) return error(context, 503, "busy", "Conversation page timed out")
-      return error(context, 503, "busy", "Conversation page could not be loaded")
+        version,
+      ),
+    )
+  })
+
+  app.get(REMOTE_HTTP_ROUTES.gitStatus, async (context) => {
+    const id = context.req.param("liveSessionId") as LiveSessionId
+    const session = dependencies.hub.snapshot(id)
+    if (!session?.cwd) return error(context, 404, "session_not_found", "Live session not found")
+    try {
+      return context.json(await readGitStatus(session.cwd))
+    } catch {
+      return error(context, 500, "invalid_action", "git status를 읽지 못했어요.")
+    }
+  })
+
+  app.get(REMOTE_HTTP_ROUTES.gitDiff, async (context) => {
+    const id = context.req.param("liveSessionId") as LiveSessionId
+    const session = dependencies.hub.snapshot(id)
+    if (!session?.cwd) return error(context, 404, "session_not_found", "Live session not found")
+    try {
+      return context.json(await readGitDiff(session.cwd))
+    } catch {
+      return error(context, 500, "invalid_action", "git diff를 읽지 못했어요.")
     }
   })
 
