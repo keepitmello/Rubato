@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -47,7 +48,50 @@ export function promptNameForRole(role) {
   return "teammate.pi.md";
 }
 
-export function loadRolePrompt(role, { env = process.env, readFile = readFileSync } = {}) {
+export function isCloudStubReadError(error) {
+  const errno = Number(error?.errno);
+  if (errno === 11 || errno === -11) return true;
+  const code = String(error?.code ?? "");
+  if (code === "EDEADLK" || code === "EAGAIN") return true;
+  return /deadlock|unknown system error -11/i.test(String(error?.message ?? error ?? ""));
+}
+
+export function materializeLocalFile(path, { spawnSyncImpl = spawnSync, platform = process.platform } = {}) {
+  if (platform !== "darwin" || typeof path !== "string" || path.length === 0) return false;
+  const result = spawnSyncImpl("chflags", ["nodataless", path], { stdio: "ignore" });
+  return result?.status === 0;
+}
+
+function promptReadError(path, error) {
+  const detail = error instanceof Error ? error.message : String(error);
+  return new Error(
+    `rubato-pi system prompt unreadable: ${path} (${detail}). ` +
+      "iCloud Optimize 로 파일이 이 맥에 없을 수 있다. Finder 에서 한 번 열거나 Always Keep Downloaded 로 고정해라.",
+  );
+}
+
+export function readPromptFile(path, {
+  readFile = readFileSync,
+  materialize = materializeLocalFile,
+} = {}) {
+  try {
+    return readFile(path, "utf8");
+  } catch (error) {
+    if (!isCloudStubReadError(error)) throw promptReadError(path, error);
+    materialize(path);
+    try {
+      return readFile(path, "utf8");
+    } catch (retryError) {
+      throw promptReadError(path, retryError);
+    }
+  }
+}
+
+export function loadRolePrompt(role, {
+  env = process.env,
+  readFile = readFileSync,
+  materialize = materializeLocalFile,
+} = {}) {
   const custom = customPromptPath(env);
   const path = custom ?? join(rolePromptsRoot(env), ".build", promptNameForRole(role));
   if (!existsSync(path)) {
@@ -57,7 +101,7 @@ export function loadRolePrompt(role, { env = process.env, readFile = readFileSyn
         : `rubato-pi role prompt missing: ${path}`,
     );
   }
-  return readFile(path, "utf8");
+  return readPromptFile(path, { readFile, materialize });
 }
 
 export function modelIdentityLine(model, serviceTier) {
