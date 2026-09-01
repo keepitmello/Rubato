@@ -80,3 +80,20 @@ test("launcher argv loads Rubato overlays rather than an rubato.js package entry
   assert.ok(args.includes(adapterPath()));
   assert.equal(args.some((token) => token.endsWith("/rubato.js") || token.endsWith("\\rubato.js")), false);
 });
+
+test("print and json sessions inline the dispatched contract; interactive and rpc do not", () => {
+  const promptOf = (userArgs) => {
+    const args = buildSenpiArgs(userArgs, { env: {} });
+    return args[args.indexOf("--system-prompt") + 1];
+  };
+  const printed = promptOf(["--print", "hello"]);
+  assert.match(printed, /# Dispatched/);
+  assert.match(printed, /Provisional:/);
+
+  const json = promptOf(["--mode", "json"]);
+  assert.match(json, /# Dispatched/);
+  assert.match(json, /Provisional:/);
+
+  assert.doesNotMatch(promptOf([]), /# Dispatched/);
+  assert.doesNotMatch(promptOf(["--mode", "rpc"]), /# Dispatched/);
+});
