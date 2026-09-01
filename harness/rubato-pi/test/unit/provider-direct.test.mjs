@@ -216,7 +216,7 @@ test("xAI: pinned grok-4.6 의 xhigh 가 picker 와 wire 에 남는다", async (
   // picker 가 Shift+Tab 으로 xhigh 를 고를 수 있는 근거, 그리고 wire 로 나가는 값.
   assert.equal(grok.thinkingLevelMap.xhigh, "xhigh");
   assert.equal(grok.contextWindow, 500_000);
-  assert.equal(grok.serviceTier, "priority");
+  assert.equal(grok.serviceTier, undefined, "base 에 priority 를 붙이면 항상 우선 처리로 나간다");
 });
 
 test("피커는 현재 세대만 남기고 getModels 저장분은 그대로다", async () => {

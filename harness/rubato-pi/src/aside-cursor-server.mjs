@@ -29,7 +29,6 @@ import {
   ASIDE_CURSOR_LAUNCHD_LABEL,
   asideModelsUnlocked,
   defaultAsideModelsPath,
-  injectXaiPriority,
   lockAsideModels,
   renderAsideCursorLaunchAgent,
   xaiUpstreamUrl,
@@ -292,7 +291,7 @@ async function proxyXai(req, res, url, fetchImpl) {
   const dest = xaiUpstreamUrl(url.pathname, url.search);
   let body;
   if (req.method !== "GET" && req.method !== "HEAD") {
-    body = injectXaiPriority(await readBody(req));
+    body = await readBody(req);
   }
   const headers = new Headers();
   for (const [key, value] of Object.entries(req.headers)) {

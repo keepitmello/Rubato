@@ -19,7 +19,6 @@ import {
   asideCursorFaceUrl,
   asideModelsUnlocked,
   asideXaiFaceUrl,
-  injectXaiPriority,
   lockAsideModels,
   renderAsideCursorLaunchAgent,
   xaiUpstreamUrl,
@@ -153,13 +152,13 @@ test("Aside lock seeds Cursor Grok rows on an empty models file", () => {
   ]);
 });
 
-test("Aside lock points Cursor and xAI grok-4.6 at this process", () => {
+test("Aside lock points Cursor at this process and leaves xAI on default", () => {
   const locked = lockAsideModels({
     providers: {
       cursor: { baseUrl: "http://127.0.0.1:10100/v1", apiKey: "opencodex-loopback" },
       "xai-grok-oauth": {
         models: [
-          { id: "grok-4.6", baseUrl: "https://api.x.ai/v1" },
+          { id: "grok-4.6", baseUrl: asideXaiFaceUrl() },
           { id: "grok-4.5", baseUrl: "https://api.x.ai/v1" },
         ],
       },
@@ -172,7 +171,7 @@ test("Aside lock points Cursor and xAI grok-4.6 at this process", () => {
     "cursor/grok-4.6",
     "cursor/grok-4.6-fast",
   ]);
-  assert.equal(locked.providers["xai-grok-oauth"].models[0].baseUrl, asideXaiFaceUrl());
+  assert.equal(locked.providers["xai-grok-oauth"].models[0].baseUrl, "https://api.x.ai/v1");
   assert.equal(locked.providers["xai-grok-oauth"].models[1].baseUrl, "https://api.x.ai/v1");
   assert.equal(asideModelsUnlocked(locked), false);
 });
@@ -182,19 +181,18 @@ test("Aside catalog rewrite is locked back onto the local faces", () => {
   writeFileSync(path, JSON.stringify({
     providers: {
       cursor: { baseUrl: "https://wiped.example/v1", apiKey: "gone" },
-      "xai-grok-oauth": { models: [{ id: "grok-4.6", baseUrl: "https://api.x.ai/v1" }] },
+      "xai-grok-oauth": { models: [{ id: "grok-4.6", baseUrl: asideXaiFaceUrl() }] },
     },
   }));
   assert.equal(applyAsideModelsLock(path), true);
   const restored = JSON.parse(readFileSync(path, "utf8"));
   assert.equal(restored.providers.cursor.baseUrl, asideCursorFaceUrl());
-  assert.equal(restored.providers["xai-grok-oauth"].models[0].baseUrl, asideXaiFaceUrl());
+  assert.equal(restored.providers["xai-grok-oauth"].models[0].baseUrl, "https://api.x.ai/v1");
   assert.equal(applyAsideModelsLock(path), false);
 });
 
-test("xAI proxy injects priority and forwards the stripped path", () => {
+test("xAI proxy forwards the stripped path without rewriting the body", () => {
   assert.equal(xaiUpstreamUrl("/xai/v1/responses"), "https://api.x.ai/v1/responses");
-  assert.equal(JSON.parse(injectXaiPriority(`{"model":"grok-4.6"}`)).service_tier, "priority");
 });
 
 test("launchd plist keeps the process alive after crash", () => {
@@ -209,7 +207,7 @@ test("launchd plist keeps the process alive after crash", () => {
   assert.match(plist, /com.keepitmello.rubato.aside-cursor/);
 });
 
-test("xAI face proxies JSON with service_tier priority", async () => {
+test("xAI face proxies JSON without injecting service_tier", async () => {
   const calls = [];
   const handler = await createAsideCursorHandler({
     credential: { apiKey: "test-key" },
@@ -231,7 +229,7 @@ test("xAI face proxies JSON with service_tier priority", async () => {
   assert.equal(status, 200);
   assert.equal(body, `{"ok":true}`);
   assert.equal(calls[0].url, "https://api.x.ai/v1/responses");
-  assert.equal(JSON.parse(calls[0].body).service_tier, "priority");
+  assert.ok(!("service_tier" in JSON.parse(calls[0].body)));
   assert.equal(calls[0].auth, "Bearer xai-token");
 });
 
