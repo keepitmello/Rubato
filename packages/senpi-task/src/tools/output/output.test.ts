@@ -170,6 +170,25 @@ describe("runTaskOutput", () => {
     expect(result.details.kind).toBe("not_found")
   })
 
+  test("#given a manager whose get uses a private method #when read #then this stays bound (no brand-check error)", async () => {
+    const record = makeRecord({ task_id: "st_a", parent_session_id: "session-parent" })
+    // Mirrors TaskManagerImpl.get -> this.#tryLoad. An extracted `get` would throw
+    // "Receiver must be an instance of class ..." here.
+    class BrandCheckedManager implements OutputManager {
+      #load(taskId: string): TaskRecord | undefined {
+        return taskId === record.task_id ? record : undefined
+      }
+      get(taskId: string): TaskRecord | undefined {
+        return this.#load(taskId)
+      }
+    }
+    const deps: TaskOutputDeps = { ...depsFrom([]), manager: new BrandCheckedManager() }
+
+    const result = await runTaskOutput(deps, { agentId: "st_a", mode: "status" }, "session-parent")
+
+    expect(result.details.kind).toBe("status")
+  })
+
   test("#given no agentId #when read #then invalid arguments are reported", async () => {
     const deps = depsFrom([])
 
