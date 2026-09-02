@@ -16,6 +16,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CLAUDE_SETUP_TOKEN_FILE_ENV, CLAUDE_SETUP_TOKEN_PREFIX } from "../src/anthropic-setup-token.mjs";
 import { launchEnv } from "../src/brand.mjs";
+import { importLegacyDirectCredentials } from "../src/credential-import.mjs";
 import { withNoChangelog } from "../src/no-changelog.mjs";
 import { providerOverlayPath, senpiCliPath } from "../src/launch.mjs";
 import { PROVIDER_DIRECT_FLAG } from "../src/provider-direct.mjs";
@@ -23,20 +24,28 @@ import { DISABLED_OAUTH_EXTENSIONS } from "../src/session-defaults.mjs";
 import { createLineReader, createRpcWaiter } from "../test/smoke/rpc-waiter.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const OUT = "/tmp/cache-audit/haiku-run";
+function argValue(flag) {
+  const index = process.argv.indexOf(flag);
+  return index >= 0 ? process.argv[index + 1] : undefined;
+}
+const MODEL = argValue("--model") ?? "anthropic/claude-haiku-4-5";
+const slash = MODEL.indexOf("/");
+const PROVIDER = slash >= 0 ? MODEL.slice(0, slash) : MODEL;
+const MODEL_ID = slash >= 0 ? MODEL.slice(slash + 1) : "";
+const OUT = {
+  anthropic: "/tmp/cache-audit/haiku-run",
+  "openai-codex": "/tmp/cache-audit/codex-run",
+  xai: "/tmp/cache-audit/xai-run",
+}[PROVIDER] ?? `/tmp/cache-audit/${PROVIDER}-run`;
 const AUDIT_DIR = join(OUT, "audit");
-const MODEL = "anthropic/claude-haiku-4-5";
-const PROVIDER = "anthropic";
-const MODEL_ID = "claude-haiku-4-5";
 const TURN_MS = 120_000;
 const COMPACTION_TURN_MS = 180_000;
 const BOOT_MS = 45_000;
-const ONLY = (() => {
-  const index = process.argv.indexOf("--only");
-  return index >= 0 ? process.argv[index + 1] : undefined;
-})();
+const ONLY = argValue("--only");
 const KEEP_AUDIT = process.argv.includes("--keep-audit") || Boolean(ONLY);
 const realClaudeToken = join(homedir(), ".claude", "auth", "setup-token-sub");
+const liveAuthPath = join(homedir(), ".rubato-pi", "agent", "auth.json");
+const realSenpiAuth = join(homedir(), ".senpi", "agent", "auth.json");
 
 const scenarios = {};
 const errors = [];
@@ -124,6 +133,51 @@ function seedClaudeToken(profile) {
   return dest;
 }
 
+function isBrokerSentinel(entry) {
+  return entry?.refresh === "rubato-broker" || entry?.access === "local";
+}
+
+function readStore(path) {
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf8"));
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Read-only: profile `~/.rubato-pi` first, then legacy `~/.senpi`. Never writes those paths. */
+function credentialSource(id) {
+  const profile = readStore(liveAuthPath)[id];
+  if (profile?.type && !isBrokerSentinel(profile)) return { where: "profile", entry: profile };
+  const legacy = readStore(realSenpiAuth)[id];
+  if (legacy?.type && !isBrokerSentinel(legacy)) return { where: "legacy", entry: legacy };
+  return undefined;
+}
+
+async function seedDirectCredentials(env) {
+  const sources = new Set();
+  for (const id of ["openai-codex", "xai"]) {
+    const source = credentialSource(id);
+    if (source) sources.add(source.where === "profile" ? liveAuthPath : realSenpiAuth);
+  }
+  if (sources.size === 0) sources.add(realSenpiAuth);
+  const reports = [];
+  for (const sourcePath of sources) {
+    reports.push(await importLegacyDirectCredentials({ env: { ...env, RUBATO_LEGACY_AUTH_PATH: sourcePath } }));
+  }
+  return reports;
+}
+
+async function seedProfileCredentials(profile) {
+  if (PROVIDER === "anthropic") return;
+  await seedDirectCredentials({
+    ...process.env,
+    HOME: profile.home,
+    RUBATO_TARGET_AUTH_PATH: join(profile.agentDir, "auth.json"),
+  });
+}
+
 function childEnv(profile, extra = {}) {
   const env = {
     ...launchEnv(process.env, profile.agentDir),
@@ -134,7 +188,7 @@ function childEnv(profile, extra = {}) {
     RUBATO_TARGET_AUTH_PATH: join(profile.agentDir, "auth.json"),
     RUBATO_CACHE_AUDIT_DIR: AUDIT_DIR,
     RUBATO_CACHE_AUDIT_DIAGNOSTICS: "1",
-    [CLAUDE_SETUP_TOKEN_FILE_ENV]: seedClaudeToken(profile),
+    ...(PROVIDER === "anthropic" ? { [CLAUDE_SETUP_TOKEN_FILE_ENV]: seedClaudeToken(profile) } : {}),
     ...extra,
   };
   for (const key of [
@@ -333,6 +387,7 @@ function recordScenario(name, fields) {
 
 async function runPlain3() {
   const profile = createProfile("plain3");
+  await seedProfileCredentials(profile);
   const session = spawnRpc(profile, { extraArgs: ["--session-id", "cache-audit-plain3"] });
   try {
     await setModel(session);
@@ -356,8 +411,9 @@ async function runPlain3() {
   }
 }
 
-async function runToolsAndResume() {
+async function runToolsAndResume({ resume = true } = {}) {
   const profile = createProfile("tools");
+  await seedProfileCredentials(profile);
   const first = spawnRpc(profile, { extraArgs: ["--session-id", "cache-audit-tools"] });
   let sessionFile;
   try {
@@ -379,6 +435,7 @@ async function runToolsAndResume() {
     throw error;
   }
   await stop(first);
+  if (!resume) return;
   await new Promise((resolve) => setTimeout(resolve, 300));
   const files = sessionFiles(profile);
   sessionFile = sessionFile ?? files[0];
@@ -499,7 +556,10 @@ async function printReport() {
 }
 
 function shouldRun(name) {
-  return !ONLY || ONLY === name || (ONLY === "tools" && name === "resume") || (ONLY === "resume" && (name === "tools" || name === "resume"));
+  if (ONLY === "resume") return name === "tools" || name === "resume";
+  if (ONLY) return ONLY === name;
+  if (PROVIDER !== "anthropic") return name === "plain3" || name === "tools";
+  return true;
 }
 
 async function main() {
@@ -521,12 +581,22 @@ async function main() {
     // first run has no prior map
   }
 
-  const fileOk = setupTokenPresent();
-  const keychainOk = await keychainSetupTokenPresent();
-  if (!fileOk && !keychainOk) {
-    throw new Error("Anthropic setup-token absent (file + Keychain). Read-only sources were checked; nothing was written.");
+  if (PROVIDER === "anthropic") {
+    const fileOk = setupTokenPresent();
+    const keychainOk = await keychainSetupTokenPresent();
+    if (!fileOk && !keychainOk) {
+      throw new Error("Anthropic setup-token absent (file + Keychain). Read-only sources were checked; nothing was written.");
+    }
+    log(`credential file=${fileOk} keychain=${keychainOk}`);
+  } else if (PROVIDER === "openai-codex" || PROVIDER === "xai") {
+    const source = credentialSource(PROVIDER);
+    if (!source) {
+      throw new Error(`${PROVIDER} credential absent (read-only ~/.rubato-pi + ~/.senpi). Nothing was written.`);
+    }
+    log(`credential ${PROVIDER} where=${source.where}`);
+  } else {
+    throw new Error(`unsupported --model ${MODEL}`);
   }
-  log(`credential file=${fileOk} keychain=${keychainOk}`);
 
   const skipped = {};
   if (shouldRun("plain3")) {
@@ -540,7 +610,7 @@ async function main() {
   }
   if (shouldRun("tools") || shouldRun("resume")) {
     try {
-      await runToolsAndResume();
+      await runToolsAndResume({ resume: shouldRun("resume") });
     } catch (error) {
       log(`tools/resume failed: ${error instanceof Error ? error.message : error}`);
       if (!scenarios.resume) {

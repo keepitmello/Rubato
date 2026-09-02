@@ -18,10 +18,16 @@ const asJson = rest.includes("--json");
 const events = readFileSync(path, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
 const requests = new Map();
 const responses = new Map();
+const REQUEST_TYPES = new Set(["anthropic.request", "codex.request", "xai.request"]);
+const RESPONSE_TYPES = new Set(["anthropic.response", "codex.response", "xai.response"]);
 for (const event of events) {
   if (sessionFilter && event.sessionId !== sessionFilter) continue;
-  if (event.type === "anthropic.request") requests.set(event.seq, event);
-  if (event.type === "anthropic.response") responses.set(event.seq, event);
+  if (REQUEST_TYPES.has(event.type)) requests.set(event.seq, event);
+  if (RESPONSE_TYPES.has(event.type)) responses.set(event.seq, event);
+}
+
+function isOpenAiStyle(request) {
+  return request?.type === "codex.request" || request?.type === "xai.request";
 }
 
 function pct(read, input, write) {
@@ -39,21 +45,29 @@ const rows = [...requests.keys()].sort((a, b) => a - b).map((seq) => {
   const changed = request.firstChanged
     ? `${request.firstChanged.section}[${request.firstChanged.index}] ${request.firstChanged.kind}`
     : request.identicalToPrevious ? "identical" : "first";
+  const openaiStyle = isOpenAiStyle(request);
+  const cacheRead = openaiStyle
+    ? (usage.cached_tokens ?? usage.input_tokens_details?.cached_tokens ?? "-")
+    : (usage.cache_read_input_tokens ?? "-");
+  const cacheWrite = openaiStyle ? "-" : (usage.cache_creation_input_tokens ?? "-");
   return {
     seq,
     session: (request.sessionId ?? "-").slice(0, 8),
     model: request.model,
     status: response.status ?? "-",
     input: usage.input_tokens ?? "-",
-    cacheRead: usage.cache_read_input_tokens ?? "-",
-    cacheWrite: usage.cache_creation_input_tokens ?? "-",
-    write5m: usage.ephemeral_5m_input_tokens ?? "-",
-    write1h: usage.ephemeral_1h_input_tokens ?? "-",
-    readRatio: pct(usage.cache_read_input_tokens, usage.input_tokens, usage.cache_creation_input_tokens),
+    cacheRead,
+    cacheWrite,
+    write5m: openaiStyle ? "-" : (usage.ephemeral_5m_input_tokens ?? "-"),
+    write1h: openaiStyle ? "-" : (usage.ephemeral_1h_input_tokens ?? "-"),
+    // OpenAI 계열은 input_tokens 가 cached 를 포함한다 → cached / input.
+    readRatio: openaiStyle
+      ? (typeof cacheRead === "number" && usage.input_tokens > 0 ? `${(cacheRead / usage.input_tokens * 100).toFixed(1)}%` : "-")
+      : pct(usage.cache_read_input_tokens, usage.input_tokens, usage.cache_creation_input_tokens),
     ttl: request.cacheControl?.ttl ?? "-",
     sysBp: request.cacheControl?.systemBreakpoint ? "y" : "n",
     tools: request.counts?.tools ?? "-",
-    msgs: request.counts?.messages ?? "-",
+    msgs: request.counts?.messages ?? request.counts?.input ?? "-",
     firstChanged: changed,
     missReason: response.diagnostics?.cache_miss_reason?.type ?? (request.injected?.includes("diagnostics") ? "(none)" : "-"),
     thinkingDropped: dropped,
@@ -75,6 +89,8 @@ if (asJson) {
   const withUsage = rows.filter((row) => typeof row.input === "number");
   if (withUsage.length > 0) {
     const sum = (key) => withUsage.reduce((total, row) => total + (typeof row[key] === "number" ? row[key] : 0), 0);
-    console.log(`\ncalls=${withUsage.length} input=${sum("input")} cacheRead=${sum("cacheRead")} cacheWrite=${sum("cacheWrite")} readRatio=${pct(sum("cacheRead"), sum("input"), sum("cacheWrite"))}`);
+    const openai = withUsage.every((row) => row.cacheWrite === "-");
+    const ratio = openai ? `${(sum("cacheRead") / Math.max(1, sum("input")) * 100).toFixed(1)}%` : pct(sum("cacheRead"), sum("input"), sum("cacheWrite"));
+    console.log(`\ncalls=${withUsage.length} input=${sum("input")} cacheRead=${sum("cacheRead")} cacheWrite=${sum("cacheWrite")} readRatio=${ratio}`);
   }
 }
