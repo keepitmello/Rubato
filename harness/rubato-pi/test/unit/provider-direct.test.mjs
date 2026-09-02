@@ -194,8 +194,8 @@ test("Codex: native metadata 를 보존하되 Rubato context 상한은 272K 다"
   assert.deepEqual(base.input ?? base.modalities, ["text", "image"]);
   assert.equal(base.thinkingLevelMap.xhigh, "xhigh");
   assert.equal(base.thinkingLevelMap.max, "max");
-  assert.equal(base.thinkingLevelMap.off, "none");
-  assert.equal(base.thinkingLevelMap.minimal, "low");
+  assert.equal(base.thinkingLevelMap.off, undefined);
+  assert.equal(base.thinkingLevelMap.minimal, undefined);
   assert.equal(base.upstreamModelId, undefined, "base 는 canonical 그 자체다");
   assert.equal(base.serviceTier, undefined, "base 에 priority 를 붙이면 항상 우선 처리로 나간다");
   assert.equal(fast.upstreamModelId, "gpt-daybreak-blue-latest", "Fast wire 는 base ID 다");
