@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // 브리지와 세션이 서로 다른 node 로 뜨면 같은 기계에서 두 얼굴이 된다.
@@ -118,7 +118,13 @@ test("an executable cached Node below 24 is rejected", () => {
     writeFileSync(fake, "#!/bin/sh\nprintf '20'\n");
     chmodSync(fake, 0o755);
     writeFileSync(cache, `${fake}\n`);
-    const run = resolveNode({ bare: true, env: { RUBATO_NODE_CACHE: cache } });
+    const run = resolveNode({
+      bare: true,
+      env: {
+        RUBATO_NODE_CACHE: cache,
+        PATH: `${dirname(process.execPath)}:/usr/bin:/bin:/usr/sbin:/sbin`,
+      },
+    });
     assert.equal(run.status, 0, run.stderr);
     assert.notEqual(realpathSync(run.bin), realpathSync(fake));
   } finally {
