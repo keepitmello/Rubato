@@ -1,6 +1,6 @@
 ---
 name: browser-cli
-description: "브라우저 네이티브 에이전트 Aside 진입점. 웹 리서치(문서·포럼·저장소 교차 확인), 로그인 사이트 조작, 다단계 웹 작업을 통째로 맡길 때. 단순 탐색·폼·캡처도 여기서."
+description: "수동 브라우저 조작이 꼭 필요할 때만 (탭 직접 제어, 스냅샷, Playwright 스크립트). 평소 웹 작업은 aside-browser."
 
 ---
 
