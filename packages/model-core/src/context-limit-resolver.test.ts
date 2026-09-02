@@ -135,11 +135,11 @@ describe("resolveActualContextLimit", () => {
     expect(actualLimit).toBe(1_000_000)
   })
 
-  it("returns GA 1M for claude-fable-5 and claude-mythos-5", () => {
+  it("returns GA 1M for claude-fable-5-1 and claude-mythos-5", () => {
     delete process.env[ANTHROPIC_CONTEXT_ENV_KEY]
     delete process.env[VERTEX_CONTEXT_ENV_KEY]
 
-    expect(resolveActualContextLimit("anthropic", "claude-fable-5", {
+    expect(resolveActualContextLimit("anthropic", "claude-fable-5-1", {
       anthropicContext1MEnabled: false,
     })).toBe(1_000_000)
 
@@ -161,11 +161,11 @@ describe("resolveActualContextLimit", () => {
     })).toBe(1_000_000)
   })
 
-  it("returns GA 1M for claude-fable-5 on google-vertex-anthropic", () => {
+  it("returns GA 1M for claude-fable-5-1 on google-vertex-anthropic", () => {
     delete process.env[ANTHROPIC_CONTEXT_ENV_KEY]
     delete process.env[VERTEX_CONTEXT_ENV_KEY]
 
-    expect(resolveActualContextLimit("google-vertex-anthropic", "claude-fable-5", {
+    expect(resolveActualContextLimit("google-vertex-anthropic", "claude-fable-5-1", {
       anthropicContext1MEnabled: false,
     })).toBe(1_000_000)
   })

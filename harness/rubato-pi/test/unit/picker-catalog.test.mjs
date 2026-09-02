@@ -30,6 +30,7 @@ test("Anthropic 이전 세대와 dated id 는 빠진다", () => {
       model("claude-haiku-4-5-20251001"),
       model("claude-haiku-4-5"),
       model("claude-fable-5"),
+      model("claude-fable-5-1"),
     ],
     ANTHROPIC_PICKER_IDS,
   );

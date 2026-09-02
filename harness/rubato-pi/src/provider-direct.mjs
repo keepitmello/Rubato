@@ -110,6 +110,27 @@ const DAYBREAK_THINKING_LEVEL_MAP = Object.freeze({
 const DAYBREAK_BASE_ID = "gpt-daybreak-blue-latest";
 const DAYBREAK_FAST_ID = "gpt-daybreak-blue-latest-fast";
 
+const FABLE_51_ID = "claude-fable-5-1";
+const FABLE_51_TEMPLATE_ID = "claude-fable-5";
+
+/**
+ * Fable 5.1 은 pinned anthropic catalog 에 없다. Rubato 가 파생하는 유일 Anthropic 모델이다.
+ *
+ * 필드를 손으로 다 적지 않는다. `api`, `cost`, `compat`, `thinkingLevelMap` 같은
+ * 것을 빼뜨리면 provider 가 조용히 다른 요청을 만든다. pin 의 Fable 5를 틀로 쓰고
+ * id·표시명만 덮는다.
+ */
+export function fable51Models(nativeModels) {
+  if (nativeModels.some((model) => model.id === FABLE_51_ID)) return [];
+  const template = nativeModels.find((model) => model.id === FABLE_51_TEMPLATE_ID);
+  if (!template) throw new Error("pinned anthropic catalog has no claude-fable-5 to derive Fable 5.1 from");
+  return [{
+    ...template,
+    id: FABLE_51_ID,
+    name: "Fable 5.1",
+  }];
+}
+
 /**
  * Daybreak 모델 정의를 native 모델 하나에서 파생시킨다.
  *
@@ -202,11 +223,12 @@ export async function directProviders({ cursor, anthropic, kiro, antigravity, en
   // xAI 의 `xhigh` map 은 pinned 그대로다. grok-4.6 은 catalog 기본 차로다.
   const xai = withPickerIds(xaiProvider(), XAI_PICKER_IDS);
 
-  // Anthropic 은 pinned provider + setup-token fallback resolver 하나다. 모델 정의도,
-  // wire 도, tool 이름 규칙도 손대지 않는다 — pinned OAuth 경로가 전부 소유한다.
-  // 피커만 현재 세대(opus/sonnet/fable 5, haiku 4.5)로 줄인다.
+  // Anthropic 은 pinned provider + setup-token fallback resolver 하나다. wire 와
+  // tool 이름 규칙은 pin 이 소유한다. Fable 5.1 만 pin 에 없어 Fable 5에서 파생한다.
+  // 피커는 현재 세대(opus/sonnet/fable 5.1, haiku 4.5)로 줄인다.
+  const anthropicBase = withClaudeSetupToken(anthropicProvider(), anthropic ?? { env });
   const anthropicNative = withPickerIds(
-    withClaudeSetupToken(anthropicProvider(), anthropic ?? { env }),
+    withExtraModels(anthropicBase, fable51Models(anthropicBase.getModels())),
     ANTHROPIC_PICKER_IDS,
   );
 

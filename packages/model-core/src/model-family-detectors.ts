@@ -50,7 +50,7 @@ export function isClaudeOpus47OrLaterModel(model: string): boolean {
 }
 
 /**
- * Claude Fable / Mythos family (e.g. claude-fable-5, claude-mythos-5,
+ * Claude Fable / Mythos family (e.g. claude-fable-5-1, claude-mythos-5,
  * claude-mythos-preview). Like Opus 4.7+, these are adaptive-only: they reject
  * thinking.type "enabled" with a 400 and require adaptive thinking + effort,
  * which OpenCode core derives from the model variant.

@@ -473,19 +473,19 @@ describe("builtin category defaults", () => {
     // then: declared order plus each category's primary provider, model, and variant
     expect(defaults.map(({ config, name }) => [name, config.model, config.variant])).toEqual([
       ["visual-engineering", "anthropic/claude-opus-5", "max"],
-      ["artistry", "anthropic/claude-fable-5", "xhigh"],
+      ["artistry", "anthropic/claude-fable-5-1", "xhigh"],
       ["ultrabrain", "openai/gpt-5.6-sol", "max"],
       ["deep", "openai/gpt-5.6-sol", "medium"],
       ["quick", "kimi-coding/kimi-for-coding-highspeed", undefined],
       ["unspecified-low", "xai/grok-4.6", "xhigh"],
-      ["architect", "anthropic/claude-fable-5", "xhigh"],
+      ["architect", "anthropic/claude-fable-5-1", "xhigh"],
       ["unspecified-high", "kimi-coding/k3", "max"],
       ["writing", "kimi-coding/k3", "low"],
     ])
 
     // then: availability gating applies only to the model-gated builtins
     expect(BUILTIN_CATEGORY_REQUIRES_MODEL).toEqual({
-      architect: "claude-fable-5",
+      architect: "claude-fable-5-1",
       ultrabrain: "gpt-5.6-sol",
       deep: "gpt-5.6-sol",
     })

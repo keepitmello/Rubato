@@ -75,12 +75,12 @@ if (visualKimiFallback.kind !== "resolved") {
 requireCondition(visualKimiFallback.spec.modelId === "k3", "visual-engineering kimi fallback model mismatch")
 requireCondition(visualKimiFallback.spec.variant === "max", "visual-engineering kimi fallback variant is not max")
 
-const artistryPrimary = resolveCategory("artistry", {}, registry([model("anthropic", "claude-fable-5")]))
+const artistryPrimary = resolveCategory("artistry", {}, registry([model("anthropic", "claude-fable-5-1")]))
 requireCondition(artistryPrimary.kind === "resolved", "artistry primary did not resolve")
 if (artistryPrimary.kind !== "resolved") {
   throw new Error("artistry primary did not resolve")
 }
-requireCondition(artistryPrimary.spec.modelId === "claude-fable-5", "artistry primary model mismatch")
+requireCondition(artistryPrimary.spec.modelId === "claude-fable-5-1", "artistry primary model mismatch")
 requireCondition(artistryPrimary.spec.variant === "xhigh", "artistry primary variant is not xhigh")
 
 const artistryKimiFallback = resolveCategory("artistry", {}, registry([model("kimi-coding", "k3")]))

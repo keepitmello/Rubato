@@ -8,7 +8,7 @@ export const XAI_PICKER_IDS = Object.freeze(["grok-4.6"]);
 export const ANTHROPIC_PICKER_IDS = Object.freeze([
   "claude-opus-5",
   "claude-sonnet-5",
-  "claude-fable-5",
+  "claude-fable-5-1",
   "claude-haiku-4-5",
 ]);
 

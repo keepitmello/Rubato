@@ -380,7 +380,7 @@ describe("createTaskChildPlanner", () => {
     ["openai-codex/gpt-5.6-sol", "medium"],
     ["openai-codex/gpt-5.6-sol-fast", "medium"],
     ["anthropic/claude-opus-5", "high"],
-    ["anthropic/claude-fable-5", "high"],
+    ["anthropic/claude-fable-5-1", "high"],
     ["xai/grok-4.6", "high"],
     ["cursor/cursor-grok-4.6-high-fast", "high"],
     ["google-antigravity/gemini-3.7-flash", "medium"],
