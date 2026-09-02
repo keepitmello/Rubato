@@ -4,6 +4,7 @@
 // 규약은 tui-chrome.mjs 와 같다: pristine 니들, 없으면 throw, 패치 공존 중 inert.
 
 import { injectAuthStorage, isAuthStorageUrl } from "./misc-auth-storage.mjs";
+import { injectAdaptiveToolTurnEffort, isAdaptiveToolTurnEffortUrl } from "./misc-adaptive-tool-turn-effort.mjs";
 import { injectClaudeCodeVersion, isAnthropicMessagesUrl } from "./misc-claude-code-version.mjs";
 import {
   injectGoogleSharedInputGuard,
@@ -41,6 +42,7 @@ export function applyMiscVendorTransforms(url, source, applyTransform) {
   if (isTuiDollarUrl(url)) source = applyTransform(source, injectTuiDollar);
   if (isTuiSlashUrl(url)) source = applyTransform(source, injectTuiSlash);
   if (isAnthropicMessagesUrl(url)) source = applyTransform(source, injectClaudeCodeVersion);
+  if (isAdaptiveToolTurnEffortUrl(url)) source = applyTransform(source, injectAdaptiveToolTurnEffort);
   if (isPiAiLazyUrl(url)) source = applyTransform(source, injectPiAiLazy);
   if (isPromptCacheTtlUrl(url)) source = applyTransform(source, injectPromptCacheTtl);
   if (isTransformMessagesUrl(url)) source = applyTransform(source, injectTransformMessagesInputGuard);
@@ -49,6 +51,7 @@ export function applyMiscVendorTransforms(url, source, applyTransform) {
 }
 
 export {
+  injectAdaptiveToolTurnEffort,
   injectAuthStorage,
   injectClaudeCodeVersion,
   injectGoogleSharedInputGuard,
