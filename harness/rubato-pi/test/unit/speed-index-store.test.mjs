@@ -251,3 +251,18 @@ test("recordSpeedIndexCall keeps classifier serverDurationMs; probe message timi
   assert.equal(recorded[1].networkSource, "probe");
   assert.equal(recorded[1].networkStatus, "unknown");
 });
+
+test("does not ingest sample history until groups are read", () => {
+  const dir = mkdtempSync(join(tmpdir(), "si-lazy-"));
+  const seed = createSpeedIndexStore({ agentDir: dir, autostartProbes: false, pid: 20, startedAt: 100, nonce: "lz" });
+  seed.record(valid({ effort: "high" }));
+  const history = join(seed.dir, "200-1-ffff.jsonl");
+  writeFileSync(history, `${JSON.stringify(valid({ effort: "low", processId: "other" }))}\n`);
+  const reader = createSpeedIndexStore({ agentDir: dir, autostartProbes: false, pid: 21, startedAt: 101, nonce: "ly" });
+  assert.equal(reader.sessionGroups.size, 0);
+  reader.refresh();
+  assert.equal([...reader.sessionGroups.values()].flat().length, 0);
+  assert.ok([...reader.groups.values()].flat().some((sample) => sample.effort === "low"));
+  seed.stop();
+  reader.stop();
+});
