@@ -16,6 +16,7 @@ import { pathToFileURL } from "node:url";
 import { cacheAudit, isCacheAuditModel, isCodexResponsesModel } from "./cache-audit.mjs";
 import { senpiNested } from "./engine-paths.mjs";
 import { measurementRecorder, normalizeProviderUsage } from "./measurement-recorder.mjs";
+import { midConversationEffort } from "./mid-conversation-effort.mjs";
 import { PROCESS_STARTED_AT } from "./process-start.mjs";
 import { resolveCallIdentity } from "./speed-index-identity.mjs";
 import { recordSpeedIndexCall, speedIndexStore } from "./speed-index-store.mjs";
@@ -518,18 +519,27 @@ export function withRubatoStream(inner, { modelId = (model) => model?.id, report
     // 직결 경로의 캐시 실사: SDK 가 부르는 fetch 를 감싸 최종 body 와 원시 usage 를
     // 남긴다 (`RUBATO_CACHE_AUDIT_DIR`). Codex 는 기본 WebSocket 이라 fetch 가 안
     // 불리므로 audit 이 켜진 세션에서만 `transport: "sse"` 를 강제한다.
+    let fetchImpl = options.fetch;
     if (isCacheAuditModel(model)) {
       let audit;
       try { audit = options.cacheAudit ?? cacheAudit(options.env ?? process.env); } catch {}
       if (audit) {
         if (isCodexResponsesModel(model)) innerOptions.transport = "sse";
-        innerOptions.fetch = audit.wrapFetch(options.fetch, {
+        fetchImpl = audit.wrapFetch(fetchImpl, {
           sessionId: options.sessionId,
           model: modelId(model),
           provider: model?.provider,
         });
       }
     }
+    if (model?.provider === "anthropic") {
+      const effort = options.midConversationEffort ?? midConversationEffort();
+      fetchImpl = effort.wrapFetch(fetchImpl, {
+        sessionId: options.sessionId,
+        provider: model.provider,
+      });
+    }
+    if (fetchImpl !== options.fetch) innerOptions.fetch = fetchImpl;
     // wire body 를 알려주지 않는 provider 는 요청을 보내기 전에 시작해야 model.send
     // 시각이 실제 전송 시점이다. 알려주는 transport 만 첫 event 까지 기다린다.
     state.ensureStarted = () => {
