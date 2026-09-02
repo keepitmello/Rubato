@@ -10,7 +10,7 @@ describe("anthropic builtin categories", () => {
   describe("#given the architect category", () => {
     describe("#when a caller reads the description before delegating", () => {
       it("#then it names the model that answers the consultation", () => {
-        expect(architect?.description).toContain("Fable 5")
+        expect(architect?.description).toContain("Fable 5.1")
       })
 
       it("#then it names the content that model is sensitive about", () => {
@@ -24,10 +24,10 @@ describe("anthropic builtin categories", () => {
     })
 
     describe("#when the resolver routes it", () => {
-      it("#then it still requires fable 5 at the xhigh variant", () => {
-        expect(architect?.config.model).toBe("anthropic/claude-fable-5")
+      it("#then it still requires Fable 5.1 at the xhigh variant", () => {
+        expect(architect?.config.model).toBe("anthropic/claude-fable-5-1")
         expect(architect?.config.variant).toBe("xhigh")
-        expect(architect?.requiresModel).toBe("claude-fable-5")
+        expect(architect?.requiresModel).toBe("claude-fable-5-1")
       })
     })
   })

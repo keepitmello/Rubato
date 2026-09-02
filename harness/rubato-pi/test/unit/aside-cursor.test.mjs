@@ -28,7 +28,8 @@ test("Aside Fast id folds onto the pinned Grok 4.6 base", () => {
   assert.equal(asideCursorModelId("cursor/grok-4.6-fast"), "cursor-grok-4.6");
   assert.equal(asideCursorModelId("cursor/grok-4.6"), "cursor-grok-4.6");
   assert.equal(asideCursorModelId("grok-4.6-fast"), "cursor-grok-4.6");
-  assert.equal(asideCursorModelId("cursor/claude-fable-5"), "claude-fable-5");
+  assert.equal(asideCursorModelId("cursor/claude-fable-5"), "claude-fable-5-1");
+  assert.equal(asideCursorModelId("cursor/claude-fable-5-1"), "claude-fable-5-1");
 });
 
 test("conversation key prefers Aside session header over message hash", () => {

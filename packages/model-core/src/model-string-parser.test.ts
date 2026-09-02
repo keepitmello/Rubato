@@ -7,7 +7,7 @@ describe("parseModelString reasoning suffixes", () => {
   })
 
   test("given provider-prefixed high suffix when parsed then it extracts the level", () => {
-    expect(parseModelString("anthropic/claude-fable-5:high")).toEqual({ providerID: "anthropic", modelID: "claude-fable-5", variant: "high" })
+    expect(parseModelString("anthropic/claude-fable-5-1:high")).toEqual({ providerID: "anthropic", modelID: "claude-fable-5-1", variant: "high" })
   })
 
   test("given non-level colon suffix when parsed then it stays part of the model id", () => {

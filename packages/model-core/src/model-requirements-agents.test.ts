@@ -144,7 +144,7 @@ describe("AGENT_MODEL_REQUIREMENTS", () => {
     })
   })
 
-  test("prometheus uses Fable 5 xhigh before Kimi K3 max", () => {
+  test("prometheus uses Fable 5.1 xhigh before Kimi K3 max", () => {
     // given
     const prometheus = AGENT_MODEL_REQUIREMENTS["prometheus"]
 
@@ -155,7 +155,7 @@ describe("AGENT_MODEL_REQUIREMENTS", () => {
     expect(prometheus.fallbackChain).toHaveLength(2)
     expect(primary).toEqual({
       providers: ["anthropic", "github-copilot", "opencode", "vercel"],
-      model: "claude-fable-5",
+      model: "claude-fable-5-1",
       variant: "xhigh",
     })
     expect(kimiFallback).toEqual({

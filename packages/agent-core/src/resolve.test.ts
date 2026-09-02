@@ -9,7 +9,7 @@ const models: ModelCatalog = {
       "openai/gpt-5.6-sol",
       "anthropic/claude-opus-5",
       "xai/grok-4.6",
-      "anthropic/claude-fable-5",
+      "anthropic/claude-fable-5-1",
       "google-antigravity/gemini-3.7-flash",
       "openai-codex/gpt-5.6-luna-fast",
     ]).has(model),
@@ -35,7 +35,7 @@ describe("resolveEffort", () => {
       effort: "high",
       effortSource: "model-default",
     })
-    expect(resolveEffort({ model: "anthropic/claude-fable-5" })).toEqual({
+    expect(resolveEffort({ model: "anthropic/claude-fable-5-1" })).toEqual({
       effort: "high",
       effortSource: "model-default",
     })

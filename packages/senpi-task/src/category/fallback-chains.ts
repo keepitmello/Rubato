@@ -28,7 +28,7 @@ export const CATEGORY_FALLBACK_CHAINS: Readonly<Record<string, readonly Delegate
     },
   ],
   architect: [
-    { providers: ["anthropic", "anthropic-api", "github-copilot", "opencode", "vercel"], model: "claude-fable-5", variant: "xhigh" },
+    { providers: ["anthropic", "anthropic-api", "github-copilot", "opencode", "vercel"], model: "claude-fable-5-1", variant: "xhigh" },
   ],
   ultrabrain: [
     { providers: ["openai", "quotio-openai", "vercel"], model: "gpt-5.6-sol", variant: "max" },
@@ -45,7 +45,7 @@ export const CATEGORY_FALLBACK_CHAINS: Readonly<Record<string, readonly Delegate
   artistry: [
     {
       providers: ["anthropic", "anthropic-api", "github-copilot", "opencode", "vercel"],
-      model: "claude-fable-5",
+      model: "claude-fable-5-1",
       variant: "xhigh",
     },
     {

@@ -116,7 +116,7 @@ export const GOOGLE_CATEGORIES = [
   },
   {
     name: "artistry",
-    config: { model: "anthropic/claude-fable-5", variant: "xhigh" },
+    config: { model: "anthropic/claude-fable-5-1", variant: "xhigh" },
     description: "Complex problem-solving with unconventional, creative approaches - beyond standard patterns",
     promptAppend: ARTISTRY_CATEGORY_PROMPT_APPEND,
   },

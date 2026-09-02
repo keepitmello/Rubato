@@ -58,7 +58,7 @@ Say in one line which model or preset the agent runs on; report the resolved mod
 
 **Default worker is Grok 4.6 Fast.** An owner dispatches it for settled execution across files and tools (`Agent`). Pick Sol or Opus as an Agent when the dominant bottleneck matches the profiles below.
 
-- **Fable 5** — problem framer. Use for focused framing and human-outcome review before execution or at a rare alignment gate.
+- **Fable 5.1** — problem framer. Use for focused framing and human-outcome review before execution or at a rare alignment gate.
 - **Opus 5** — structurer. Default **lead** and default **owner**. Spawn as an Agent only when the dominant bottleneck is cross-stream architecture, contracts, or integration.
 - **GPT-5.6 Sol** — hypothesis converger. Default **verifier**, and the supervisor when the owner is stuck. Give Sol ownership only when the proof itself is the deliverable.
 - **Grok 4.6 Fast** — action converger. **Default worker** an owner dispatches with an exact Grok model or the matching named preset.

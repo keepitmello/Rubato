@@ -190,7 +190,7 @@ describe("CATEGORY_MODEL_REQUIREMENTS", () => {
     expect(chain).toEqual([
       {
         providers: ["anthropic", "anthropic-api", "github-copilot", "opencode", "vercel"],
-        model: "claude-fable-5",
+        model: "claude-fable-5-1",
         variant: "xhigh",
       },
       {
