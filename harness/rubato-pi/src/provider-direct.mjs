@@ -185,6 +185,20 @@ function withExtraModels(provider, extra) {
   };
 }
 
+/** xAI 요청의 `max_output_tokens` 상한. 캐시 키 안정성을 위해 턴마다 같은 값이어야 한다. */
+export const XAI_MAX_OUTPUT_TOKENS = 65_536;
+
+function withMaxTokensCap(provider, cap) {
+  const nativeGetModels = provider.getModels.bind(provider);
+  return {
+    ...provider,
+    getModels: () => nativeGetModels().map((model) => ({
+      ...model,
+      maxTokens: Math.min(model.maxTokens > 0 ? model.maxTokens : cap, cap),
+    })),
+  };
+}
+
 function withContextWindowCap(provider, cap) {
   const nativeGetModels = provider.getModels.bind(provider);
   return {
@@ -224,7 +238,14 @@ export async function directProviders({ cursor, anthropic, kiro, antigravity, en
   );
 
   // xAI 의 `xhigh` map 은 pinned 그대로다. grok-4.6 은 catalog 기본 차로다.
-  const xai = withPickerIds(xaiProvider(), XAI_PICKER_IDS);
+  //
+  // catalog 는 grok 의 `maxTokens` 를 contextWindow(500k)와 같게 두는데, 그러면 pi 가
+  // 매 호출 `max_output_tokens = contextWindow - 현재 컨텍스트 추정 - 4096` 을 보낸다
+  // (`simple-options.js clampMaxTokensToContext`). xAI 는 그 값을 프롬프트 캐시 키에
+  // 넣어서, 값이 턴마다 바뀌면 접두사가 같아도 전부 miss 다 (2026-09-02 실측:
+  // 동일 body 재전송 cached 7808 → max_output_tokens 만 바꾸면 512). 고정 상한을 줘서
+  // 컨텍스트가 거의 찰 때까지 같은 값이 나가게 한다.
+  const xai = withPickerIds(withMaxTokensCap(xaiProvider(), XAI_MAX_OUTPUT_TOKENS), XAI_PICKER_IDS);
 
   // Anthropic 은 pinned provider + setup-token fallback resolver 하나다. wire 와
   // tool 이름 규칙은 pin 이 소유한다. Fable 5.1 만 pin 에 없어 Fable 5에서 파생한다.
