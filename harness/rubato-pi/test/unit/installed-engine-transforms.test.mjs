@@ -43,6 +43,7 @@ const AUDITED = [
   ["senpi", "dist/modes/interactive/components/assistant-render-descriptors.js"],
   ["senpi", "dist/core/slash-commands.js"],
   ["senpi", "dist/core/extensions/loader.js"],
+  ["senpi", "dist/main.js"],
   ["senpi", "dist/core/extensions/runner.js"],
   ["senpi", "dist/core/provider-timeout-retry.js"],
   ["senpi", "dist/modes/interactive/extension-error-format.js"],

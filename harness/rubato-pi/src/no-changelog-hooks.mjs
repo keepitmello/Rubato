@@ -23,6 +23,7 @@ import { applyMiscVendorTransforms } from "./transforms/misc-vendor.mjs";
 import { applyCoreSessionTransforms } from "./transforms/core-session.mjs";
 import { applyCursorVendorTransforms } from "./transforms/cursor-vendor.mjs";
 import { applyControlCodemodeTransforms } from "./transforms/control-codemode.mjs";
+import { applyBootPerfTransforms } from "./transforms/boot-perf.mjs";
 
 // 주입 앵커는 설치된 senpi/pi-tui 의 **정확한** 소스 문자열에 걸려 있다.
 // 설치본이 레포 핀과 다르면(전역 설치, 오래된 클론, 부분 업데이트) 앵커가
@@ -72,6 +73,8 @@ export async function load(url, context, nextLoad) {
   next = applyCursorVendorTransforms(url, next, applyTransform);
   // [cluster:control-codemode] harness/rubato-pi/src/transforms/control-codemode.mjs 소유.
   next = applyControlCodemodeTransforms(url, next, applyTransform);
+  // [cluster:boot-perf] harness/rubato-pi/src/transforms/boot-perf.mjs 소유.
+  next = applyBootPerfTransforms(url, next, applyTransform);
 
   if (isEditorMouseModuleUrl(url) || isEditorMouseTuiUrl(url)) {
     if (isEditorMouseModuleUrl(url)) {

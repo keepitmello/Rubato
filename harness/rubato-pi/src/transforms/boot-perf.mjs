@@ -1,0 +1,28 @@
+// [cluster:boot-perf] — 엔진 부팅 그래프에서 첫 페인트에 안 쓰는
+// 정적 import 를 끊는 자리. 규약은 tui-chrome.mjs 와 같다.
+
+import { injectAgentSessionDeferExportHtml, isBootAgentSessionUrl } from "./boot-agent-session-export.mjs";
+import { injectLoaderDeferHeavyBundles, isBootLoaderUrl } from "./boot-loader-defer.mjs";
+import { injectMainDeferCliModules, isBootMainUrl } from "./boot-main-defer.mjs";
+
+/**
+ * @param {string} url
+ * @param {string} source
+ * @param {(source: string, transform: (text: string) => string) => string} applyTransform
+ * @returns {string}
+ */
+export function applyBootPerfTransforms(url, source, applyTransform) {
+  if (isBootLoaderUrl(url)) source = applyTransform(source, injectLoaderDeferHeavyBundles);
+  if (isBootAgentSessionUrl(url)) source = applyTransform(source, injectAgentSessionDeferExportHtml);
+  if (isBootMainUrl(url)) source = applyTransform(source, injectMainDeferCliModules);
+  return source;
+}
+
+export {
+  injectAgentSessionDeferExportHtml,
+  injectLoaderDeferHeavyBundles,
+  injectMainDeferCliModules,
+  isBootAgentSessionUrl,
+  isBootLoaderUrl,
+  isBootMainUrl,
+};
