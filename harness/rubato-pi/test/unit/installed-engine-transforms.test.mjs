@@ -55,6 +55,7 @@ const AUDITED = [
   ["senpi-tui", "dist/terminal.js"],
   ["senpi-tui", "dist/tui-alt-screen.js"],
   ["pi-ai", "dist/api/anthropic-messages.js"],
+  ["pi-ai", "dist/models.js"],
   ["pi-ai", "dist/api/lazy.js"],
   ["pi-ai", "dist/api/transform-messages.js"],
   ["pi-ai", "dist/api/google-shared.js"],
