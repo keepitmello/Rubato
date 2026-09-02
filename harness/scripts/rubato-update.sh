@@ -111,10 +111,11 @@ echo "$CHANGED" | grep -Eq '^(packages/|harness/scripts/build-engine\.mjs$)' && 
 # Vault 등록기가 있다. 둘 중 하나라도 바뀌면 다시 심는다.
 echo "$CHANGED" | grep -Eq '^(install\.sh$|harness/scripts/)' && need_shell=1
 # Aside 면(aside-cursor 프록시)은 launchd 상주 프로세스라 소스를 받아도 옛 코드로
-# 계속 돈다. 그 코드가 Aside models.json 잠금(모델 행·maxTokens)을 소유하므로
-# 바뀌면 재시작해서 새 잠금을 바로 적용한다. 이 기기에 등록돼 있을 때만.
+# 계속 돈다. 그 코드가 Aside models.json 잠금(모델 행·maxTokens)을 소유하고
+# provider-direct 등 다른 모듈도 import 하므로, 업데이트마다 재시작한다.
+# 이 기기에 등록돼 있을 때만.
 need_aside=0
-echo "$CHANGED" | grep -Eq '^(harness/rubato-pi/src/aside-cursor|harness/scripts/rubato-aside-cursor\.sh$)' && need_aside=1
+/bin/launchctl print "gui/$(id -u)/com.keepitmello.rubato.aside-cursor" >/dev/null 2>&1 && need_aside=1
 
 printf '\n%s== 다시 만들 것 ==%s\n' "$BOLD" "$RST"
 [ "$need_deps" = 1 ]    && echo "  의존성 설치"
@@ -123,7 +124,7 @@ echo "  번들 스킬 → ~/.agents/skills"
 [ "$need_extensions" = 1 ] && echo "  번들 확장 → agentDir/extensions"
 [ "$need_shell" = 1 ]   && echo "  셸 alias 블록 · cmux 세션 복원"
 [ "$need_engine" = 1 ]  && echo "  엔진 플러그인 빌드 ${DIM}(몇 분 걸려요)${RST}"
-[ "$need_aside" = 1 ]   && echo "  Aside 프록시 재시작 ${DIM}(등록된 기기만)${RST}"
+[ "$need_aside" = 1 ]   && echo "  Aside 프록시 재시작"
 [ "$need_deps$need_prompts$need_extensions$need_engine$need_shell$need_aside" = "000000" ] && echo "  ${DIM}그 외는 소스만 받으면 돼요${RST}"
 
 # 로컬 수정이 있어도 멈추지 않는다.
@@ -368,13 +369,11 @@ fi
 # 이미 허락했다 — 스킬과 프롬프트도 여기서 다시 깔린다.
 # cmux.json 은 JSONC 라 쓰면 주석을 잃는다. 그래서 백업을 반드시 남긴다.
 # Aside 프록시. 재시작하면 새 코드가 models.json 잠금을 다시 적용한다.
-# 등록이 없는 기기(Aside 미사용)는 조용히 지나간다.
+# 등록이 없는 기기(Aside 미사용)는 need_aside=0 이라 지나간다.
 if [ "$need_aside" = 1 ]; then
   ASIDE_LABEL="com.keepitmello.rubato.aside-cursor"
-  if /bin/launchctl print "gui/$(id -u)/$ASIDE_LABEL" >/dev/null 2>&1; then
-    /bin/launchctl kickstart -k "gui/$(id -u)/$ASIDE_LABEL" >/dev/null 2>&1 \
-      && ok "Aside 프록시 재시작" || warn "Aside 프록시 재시작 경고 — 손으로: launchctl kickstart -k gui/\$(id -u)/$ASIDE_LABEL"
-  fi
+  /bin/launchctl kickstart -k "gui/$(id -u)/$ASIDE_LABEL" >/dev/null 2>&1 \
+    && ok "Aside 프록시 재시작" || warn "Aside 프록시 재시작 경고 — 손으로: launchctl kickstart -k gui/\$(id -u)/$ASIDE_LABEL"
 fi
 
 date +%s > "$STAMP"
