@@ -7,6 +7,14 @@ import { ASIDE_CURSOR_API_KEY, ASIDE_CURSOR_DEFAULT_HOST, ASIDE_CURSOR_DEFAULT_P
 export const ASIDE_XAI_OAUTH_PROVIDER = "xai-grok-oauth";
 export const ASIDE_XAI_PRIORITY_MODEL = "grok-4.6";
 export const ASIDE_XAI_UPSTREAM = "https://api.x.ai";
+/**
+ * Aside 의 xAI 모델 `max_output_tokens` 상한. Aside 카탈로그는 maxTokens 를
+ * contextWindow(500k) 와 같게 두고, 그러면 클라이언트가 매 호출
+ * `contextWindow − 현재 컨텍스트` 를 보낸다. xAI 는 그 값을 프롬프트 캐시 키에
+ * 넣어서 턴마다 값이 바뀌면 전부 miss 다 (2026-09-02 실측). Rubato 직결과 같은
+ * 상수로 고정한다 (`provider-direct.mjs XAI_MAX_OUTPUT_TOKENS`).
+ */
+export const ASIDE_XAI_MAX_OUTPUT_TOKENS = 65_536;
 export const ASIDE_CURSOR_LAUNCHD_LABEL = "com.keepitmello.rubato.aside-cursor";
 
 const ASIDE_CURSOR_GROK_ROW = {
@@ -74,6 +82,10 @@ export function lockAsideModels(data, options = {}) {
     for (const model of xai.models) {
       if (model?.id === ASIDE_XAI_PRIORITY_MODEL && model.baseUrl === face) {
         model.baseUrl = `${ASIDE_XAI_UPSTREAM}/v1`;
+      }
+      if (model && typeof model === "object" && model.reasoning === true
+        && (typeof model.maxTokens !== "number" || model.maxTokens > ASIDE_XAI_MAX_OUTPUT_TOKENS)) {
+        model.maxTokens = ASIDE_XAI_MAX_OUTPUT_TOKENS;
       }
     }
   }
