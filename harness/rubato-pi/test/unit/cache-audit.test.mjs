@@ -9,7 +9,12 @@ import {
   anthropicSegments,
   createCacheAudit,
   firstChangedAnthropicSegment,
+  isCacheAuditModel,
+  isCodexResponsesModel,
+  isXaiResponsesModel,
   parseAnthropicSse,
+  parseResponsesSse,
+  responsesSegments,
 } from "../../src/cache-audit.mjs";
 
 const sse = (events) => events.map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join("");
@@ -127,4 +132,128 @@ test("non-messages endpoints pass through untouched", async () => {
   await fetch("https://api.anthropic.com/v1/models", { method: "GET" });
   assert.equal(called, 1);
   assert.throws(() => readFileSync(join(dir, "audit.jsonl")));
+});
+
+const responsesSse = (id, usage, extra = {}) => [
+  { type: "response.created", response: { id, model: extra.model ?? "gpt-5.6-sol" } },
+  { type: "response.completed", response: { id, model: extra.model ?? "gpt-5.6-sol", usage } },
+].map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join("");
+
+const codexBody = () => ({
+  model: "gpt-5.6-sol",
+  store: true,
+  prompt_cache_key: "sess-key",
+  previous_response_id: "resp_prev",
+  instructions: "sys",
+  tools: [{ type: "function", name: "read" }],
+  input: [{ role: "user", content: "hi" }],
+});
+
+const xaiBody = () => ({
+  model: "grok-4.6",
+  instructions: "sys",
+  tools: [{ type: "function", name: "read" }],
+  input: [{ role: "user", content: "hi" }],
+});
+
+test("responses segments follow params → instructions → tools → input", () => {
+  const first = responsesSegments(codexBody());
+  assert.deepEqual(first.map((segment) => segment.section), ["params", "instructions", "tools", "input"]);
+  const next = codexBody();
+  next.input.push({ role: "assistant", content: "yo" });
+  assert.deepEqual(firstChangedAnthropicSegment(first, responsesSegments(next)), {
+    section: "input",
+    index: 1,
+    kind: "appended",
+    position: 4,
+  });
+});
+
+test("parseResponsesSse reads created id and completed usage", () => {
+  const parsed = parseResponsesSse(responsesSse("resp_1", {
+    input_tokens: 40,
+    output_tokens: 6,
+    input_tokens_details: { cached_tokens: 12 },
+  }));
+  assert.equal(parsed.created.id, "resp_1");
+  assert.equal(parsed.completed.usage.input_tokens_details.cached_tokens, 12);
+});
+
+test("hook gate matches Codex and xAI direct models only", () => {
+  assert.equal(isCodexResponsesModel({ api: "openai-codex-responses", provider: "openai-codex" }), true);
+  assert.equal(isXaiResponsesModel({ api: "openai-responses", provider: "xai" }), true);
+  assert.equal(isCacheAuditModel({ api: "openai-responses", provider: "openai" }), false);
+  assert.equal(isCacheAuditModel({ api: "anthropic-messages", provider: "anthropic" }), true);
+});
+
+test("wrapFetch records a Codex-style responses exchange", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cache-audit-"));
+  const audit = createCacheAudit({ env: { RUBATO_CACHE_AUDIT_DIR: dir }, now: () => new Date(0) });
+  const seen = [];
+  const fake = async (url, init) => {
+    seen.push({ url, init });
+    return new Response(responsesSse(`resp_${seen.length}`, {
+      input_tokens: 80,
+      output_tokens: 5,
+      input_tokens_details: { cached_tokens: seen.length === 1 ? 0 : 40 },
+    }), { status: 200, headers: { "request-id": `req_c${seen.length}`, "content-type": "text/event-stream" } });
+  };
+  const fetch = audit.wrapFetch(fake, { sessionId: "codex-1", model: "gpt-5.6-sol", provider: "openai-codex" });
+  const body1 = JSON.stringify(codexBody());
+  const res = await fetch("https://chatgpt.com/backend-api/codex/responses", { method: "POST", headers: { authorization: "secret" }, body: body1 });
+  assert.equal(await res.text().then((text) => text.includes("response.completed")), true);
+  assert.equal(seen[0].init.body, body1);
+
+  const second = codexBody();
+  second.input.push({ role: "assistant", content: "yo" });
+  await (await fetch("https://chatgpt.com/backend-api/codex/responses", { method: "POST", headers: {}, body: JSON.stringify(second) })).text();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const events = readFileSync(join(dir, "audit.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+  const requests = events.filter((event) => event.type === "codex.request");
+  const responses = events.filter((event) => event.type === "codex.response");
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].transport, "sse");
+  assert.equal(requests[0].store, true);
+  assert.equal(requests[0].prompt_cache_key, "sess-key");
+  assert.equal(requests[0].previous_response_id, "resp_prev");
+  assert.deepEqual(requests[1].firstChanged, { section: "input", index: 1, kind: "appended", position: 4 });
+  assert.equal(responses.length, 2);
+  assert.equal(responses[1].usage.cached_tokens, 40);
+  assert.equal(responses[0].id, "resp_1");
+  const meta = JSON.parse(readFileSync(requests[0].files.meta, "utf8"));
+  assert.equal(meta.headers.authorization, "<redacted>");
+  assert.equal(meta.transport, "sse");
+  assert.equal(readFileSync(requests[0].files.body, "utf8"), body1);
+});
+
+test("wrapFetch records an xAI-style responses exchange", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cache-audit-"));
+  const audit = createCacheAudit({ env: { RUBATO_CACHE_AUDIT_DIR: dir }, now: () => new Date(0) });
+  const seen = [];
+  const fake = async (url, init) => {
+    seen.push(init.body);
+    return new Response(responsesSse(`resp_x${seen.length}`, {
+      input_tokens: 30,
+      output_tokens: 4,
+      input_tokens_details: { cached_tokens: seen.length === 1 ? 0 : 18 },
+    }, { model: "grok-4.6" }), { status: 200, headers: { "content-type": "text/event-stream" } });
+  };
+  const fetch = audit.wrapFetch(fake, { sessionId: "xai-1", model: "grok-4.6", provider: "xai" });
+  const first = xaiBody();
+  await (await fetch("https://api.x.ai/v1/responses", { method: "POST", body: JSON.stringify(first) })).text();
+  const second = xaiBody();
+  second.input.push({ role: "assistant", content: "yo" });
+  await (await fetch("https://api.x.ai/v1/responses", { method: "POST", body: JSON.stringify(second) })).text();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const events = readFileSync(join(dir, "audit.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+  const requests = events.filter((event) => event.type === "xai.request");
+  const responses = events.filter((event) => event.type === "xai.response");
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].transport, "sse");
+  assert.deepEqual(requests[1].firstChanged, { section: "input", index: 1, kind: "appended", position: 4 });
+  assert.equal(responses[1].usage.cached_tokens, 18);
+  assert.equal(responses[0].id, "resp_x1");
+  assert.equal(seen[0], JSON.stringify(first));
 });
