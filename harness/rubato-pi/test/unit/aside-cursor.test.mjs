@@ -159,8 +159,9 @@ test("Aside lock points Cursor at this process and leaves xAI on default", () =>
       cursor: { baseUrl: "http://127.0.0.1:10100/v1", apiKey: "opencodex-loopback" },
       "xai-grok-oauth": {
         models: [
-          { id: "grok-4.6", baseUrl: asideXaiFaceUrl() },
-          { id: "grok-4.5", baseUrl: "https://api.x.ai/v1" },
+          { id: "grok-4.6", baseUrl: asideXaiFaceUrl(), reasoning: true, contextWindow: 500000, maxTokens: 500000 },
+          { id: "grok-4.5", baseUrl: "https://api.x.ai/v1", reasoning: true, contextWindow: 500000, maxTokens: 500000 },
+          { id: "grok-composer-2.5-fast", baseUrl: "https://cli-chat-proxy.grok.com/v1", reasoning: false, maxTokens: 32000 },
         ],
       },
     },
@@ -174,6 +175,10 @@ test("Aside lock points Cursor at this process and leaves xAI on default", () =>
   ]);
   assert.equal(locked.providers["xai-grok-oauth"].models[0].baseUrl, "https://api.x.ai/v1");
   assert.equal(locked.providers["xai-grok-oauth"].models[1].baseUrl, "https://api.x.ai/v1");
+  // xAI 는 max_output_tokens 를 캐시 키에 넣는다: 카탈로그의 500k 를 상수로 내린다.
+  assert.equal(locked.providers["xai-grok-oauth"].models[0].maxTokens, 65_536);
+  assert.equal(locked.providers["xai-grok-oauth"].models[1].maxTokens, 65_536);
+  assert.equal(locked.providers["xai-grok-oauth"].models[2].maxTokens, 32000);
   assert.equal(asideModelsUnlocked(locked), false);
 });
 
