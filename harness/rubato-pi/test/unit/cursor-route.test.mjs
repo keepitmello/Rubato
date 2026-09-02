@@ -523,6 +523,41 @@ test("부모는 재로그인 뒤 오프라인 동기화에서 canary를 다시 �
   assert.equal(decisions.some((decision) => decision.ok && decision.phase === "activate"), true);
 });
 
+test("부모는 저장 catalog 가 어긋난 오프라인 동기화에서 canary를 다시 돈다", async () => {
+  const store = memoryMarkerStore();
+  const parent = withCursorActivationCanary(
+    pinnedShapedCursor({ fetchModels: async () => [discoveredModel("composer-1")] }),
+    { markerStore: store, run: async () => ({ stopReason: "stop" }) },
+  );
+  const first = await twoPhaseRefresh(parent, { storedCredential: CREDENTIAL });
+  const drifted = {
+    models: [discoveredModel("composer-1"), discoveredModel("smuggled-model")],
+    checkedAt: 2,
+  };
+  let runs = 0;
+  const decisions = [];
+  const reactivated = withCursorActivationCanary(
+    pinnedShapedCursor({ fetchModels: async () => { throw new Error("offline reactivate must not discover"); } }),
+    {
+      markerStore: store,
+      reactivateOnCredentialRotation: true,
+      onDecision: (decision) => decisions.push(decision),
+      run: async () => {
+        runs += 1;
+        return { stopReason: "stop" };
+      },
+    },
+  );
+  const { published } = await twoPhaseRefresh(reactivated, {
+    store: drifted,
+    storedCredential: CREDENTIAL,
+    allowNetwork: false,
+  });
+  assert.equal(runs, 1, "catalog 가 어긋난 오프라인 동기화가 canary를 건너뛰었다");
+  assert.equal(published.length, 1, "canary 뒤에 저장분이 공개되지 않았다");
+  assert.equal(decisions.some((decision) => decision.ok && decision.phase === "activate"), true);
+});
+
 test("같은 인스턴스에서 재로그인하면 canary가 다시 돈다", async () => {
   let runs = 0;
   const store = memoryMarkerStore();

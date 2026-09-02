@@ -30,6 +30,10 @@ if [ "${1-}" = "aside-cursor" ]; then
   shift
   exec "$HERE/rubato-aside-cursor.sh" "$@"
 fi
+if [ "${1-}" = "dispatch" ]; then
+  shift
+  exec "$HERE/rubato-dispatch.sh" "$@"
+fi
 if [ "${1-}" = "restart" ]; then
   if [ "$#" -ne 1 ]; then
     echo "usage: rubato restart" >&2
