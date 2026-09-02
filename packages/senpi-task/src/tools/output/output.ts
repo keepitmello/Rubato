@@ -60,7 +60,10 @@ async function outputForHandle(
   params: Partial<TaskOutputInput>,
   callerSessionId: string,
 ): Promise<TaskOutputToolResult> {
-  const handle = createSenpiAgentHandle({ get: deps.manager.get }, agentId, { callerSessionId })
+  // Pass the manager itself, as send/cancel do. Extracting `get` off a
+  // TaskManagerImpl instance unbinds `this`, and its private `#tryLoad` then
+  // fails the brand check ("Receiver must be an instance of class ...").
+  const handle = createSenpiAgentHandle(deps.manager, agentId, { callerSessionId })
   let snapshot: AgentSnapshot
   try {
     snapshot = await handle.output()
