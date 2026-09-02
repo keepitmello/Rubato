@@ -1,6 +1,6 @@
 ---
 name: aside-browser
-description: "Aside exec/repl 매뉴얼. browser-cli가 Aside를 고른 뒤에만."
+description: "브라우저 네이티브 에이전트 Aside. 웹 리서치(문서·포럼·저장소 교차 확인), 로그인 사이트 조작, 다단계 웹 작업을 통째로 맡긴다. 브라우저가 필요한 일의 기본 진입점."
 
 ---
 
