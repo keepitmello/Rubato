@@ -377,8 +377,16 @@ export function createSpeedIndexStore({
   if (baselinePath) localBaseline = loadBaseline(baselinePath);
   bundledBaseline = loadBundledBaseline(bundledBaselinePath);
   pruneExpired();
-  loadAll();
-  tryFreeze();
+  // History is calibration-only. The footer scores this process's own
+  // samples, so reading every sample file here blocked TUI startup on
+  // machines with a large speed-index dir (measured: 1.3s / 7.8MB).
+  let historyLoaded = false;
+  function ensureHistory() {
+    if (historyLoaded) return;
+    historyLoaded = true;
+    loadAll();
+    tryFreeze();
+  }
   if (autostartProbes) health.start();
 
   function samplesFor(identity) {
@@ -406,10 +414,16 @@ export function createSpeedIndexStore({
     ownPath,
     processId: ownProcessId,
     networkHealth: health,
-    groups,
+    get groups() {
+      ensureHistory();
+      return groups;
+    },
     sessionGroups,
     diagnostics,
-    calibration,
+    get calibration() {
+      ensureHistory();
+      return calibration;
+    },
     persistDisabled: !ownPath,
     record(raw) {
       const sample = sanitizeSample(raw);
@@ -464,10 +478,14 @@ export function createSpeedIndexStore({
       cached = undefined;
     },
     refresh() {
-      tail({ force: true });
+      // Do not ingest history here. session_start calls refresh() before the
+      // TUI paints; tailing sample files would put the 1.3s read back on boot.
       cached = undefined;
     },
-    tail,
+    tail(options) {
+      ensureHistory();
+      return tail(options);
+    },
     getCachedScore(identity = activeIdentity) {
       const baseline = baselineOf();
       const key = `${identityKey(identity)}\0${baseline?.hash ?? ""}\0${samplesFor(identity).length}`;
@@ -485,7 +503,7 @@ export function createSpeedIndexStore({
     },
     _ingestFile: ingestFile,
     _tail: tail,
-    _loadAll: loadAll,
+    _loadAll: ensureHistory,
   };
 }
 

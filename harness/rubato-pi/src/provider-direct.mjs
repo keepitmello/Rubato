@@ -208,10 +208,13 @@ function withContextWindowCap(provider, cap) {
  * Cursor 경로는 native HTTP/2 직결 하나다.
  */
 export async function directProviders({ cursor, anthropic, kiro, antigravity, env = process.env } = {}) {
-  const [openaiCodexProvider, xaiProvider, anthropicProvider] = await Promise.all([
+  const [openaiCodexProvider, xaiProvider, anthropicProvider, kiroNative, antigravityDirect, cursorProvider] = await Promise.all([
     loadPinnedFactory("openai-codex.js", "openaiCodexProvider"),
     loadPinnedFactory("xai.js", "xaiProvider"),
     loadPinnedFactory("anthropic.js", "anthropicProvider"),
+    kiroDirectProvider({ env, ...(kiro ?? {}) }),
+    antigravityDirectProvider({ env, ...(antigravity ?? {}) }),
+    cursorDirectProvider({ env, ...(cursor ?? {}) }),
   ]);
 
   const codexNative = withContextWindowCap(openaiCodexProvider(), 272_000);
@@ -232,11 +235,6 @@ export async function directProviders({ cursor, anthropic, kiro, antigravity, en
     ANTHROPIC_PICKER_IDS,
   );
 
-  // Kiro 는 loopback 사이드카다. 여기서 config 를 읽는다 — module import 시점이 아니다.
-  const kiroNative = await kiroDirectProvider({ env, ...(kiro ?? {}) });
-  // Antigravity transport와 auth writer는 Rubato 프로세스 안에서 하나다. lifecycle
-  // tracker는 overlay가 같은 bundle에서 꺼내 등록한다.
-  const antigravityDirect = await antigravityDirectProvider({ env, ...(antigravity ?? {}) });
   if (antigravity && typeof antigravity === "object") {
     Object.assign(antigravity, {
       stateStore: antigravityDirect.stateStore,
@@ -247,11 +245,6 @@ export async function directProviders({ cursor, anthropic, kiro, antigravity, en
   const store = speedIndexStore(env);
   store?.startProbes?.();
   const wrap = (provider) => wrapProviderStreams(provider, { speedIndexStore: store });
-
-  const cursorProvider = await cursorDirectProvider({
-    env,
-    ...(cursor ?? {}),
-  });
 
   return [
     wrap(codex),
