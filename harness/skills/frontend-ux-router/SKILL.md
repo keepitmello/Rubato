@@ -1,6 +1,6 @@
 ---
 name: frontend-ux-router
-description: "화면·플로우·대시보드 만들 때. 초안, UX, 랜딩."
+description: "Building screens, flows, dashboards. Drafts, UX, landing pages."
 
 ---
 

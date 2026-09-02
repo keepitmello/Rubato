@@ -1,6 +1,6 @@
 ---
 name: macos-computer-use
-description: "맥 앱 GUI 조작. Peekaboo, 전용 CLI가 없을 때."
+description: "Drive Mac app GUIs with Peekaboo when no dedicated CLI exists."
 ---
 
 # macOS computer use

@@ -1,6 +1,6 @@
 ---
 name: insane-search
-description: "차단된 사이트 우회 접근. 트위터/레딧/유튜브/깃헙/네이버가 안 열릴 때. 일반 검색엔 쓰지 마."
+description: "Bypass blocked sites when Twitter/Reddit/YouTube/GitHub/Naver will not open. Not for general search."
 
 ---
 

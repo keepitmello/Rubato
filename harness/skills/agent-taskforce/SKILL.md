@@ -1,6 +1,6 @@
 ---
 name: agent-taskforce
-description: "여러 workstream을 조율하거나 큰 bounded outcome을 독립 owner에게 맡길 때, 리드가 최소 모델·역할 배치안을 먼저 사용자에게 보고하고 승인 뒤 teammate를 띄우는 경량 Agent Team 운영 스킬."
+description: "Lightweight Agent Team ops: when coordinating several workstreams or handing a large bounded outcome to an independent owner, the lead proposes the minimal model/role roster, gets user approval, then spawns teammates."
 ---
 
 # Agent Taskforce

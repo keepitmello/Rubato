@@ -1,6 +1,6 @@
 ---
 name: laws
-description: 버그를 설계 실패로 보는 correctness-by-construction 마인드셋 주입.
+description: "Correctness-by-construction mindset: treat bugs as design failures."
 
 ---
 
