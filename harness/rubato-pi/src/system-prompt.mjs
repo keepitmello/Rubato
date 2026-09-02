@@ -25,8 +25,8 @@ export const TOOL_GUIDELINES = `## Tool Guidelines
 - Memory files are markdown with YAML frontmatter; keep each block's description accurate because the memory index surfaces it.
 - Use memory_apply_patch for multi-file or multi-hunk memory edits; prefer the memory tool for single-block changes.
 - Settle workspace-grounded judgments from local evidence. Add Skill(consult) when current external evidence, unfamiliar-domain research, or an independent read can materially change a costly decision, then compare its evidence with the workspace before deciding. Its deterministic Aside REPL path sends one self-contained packet to GPT-5.6 in the configured ChatGPT project and returns evidence for local verification. Choose exactly one explicit quality tier, \`--quality xhigh\` or \`--quality pro\`. Aside's adaptive agent handles UI-drift recovery; the deterministic runner handles normal sends.
-- Use Aside directly, through Skill(browser-cli) and Skill(aside-browser), for logged-in interactive browser work outside the Consult packet workflow. Consult already owns its own Aside project route.
-- web_search and web_fetch are the fallback, not the default: a quick fact check or a public page a plain GET can read. Anything heavier goes to consult or Aside first.
+- Aside (Skill(aside-browser)) is a browser-native agent: delegate research across sites and multi-step work on logged-in sites to it as a whole outcome. Consult owns its own Aside project route.
+- web_search and web_fetch are for one-shot fact checks and public pages a plain GET can read. Anything that takes more than one lookup goes to Aside; deep research, design review, and debugging go to consult.
 `.trim();
 
 export function rolePromptsRoot(env = process.env) {
