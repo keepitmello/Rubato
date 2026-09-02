@@ -55,6 +55,10 @@ jobs:
         run: |
           node harness/scripts/build-engine.mjs --force
           node harness/scripts/build-engine.mjs --check
+          bash harness/prompts/build.sh
+          mkdir -p "$HOME/.agents"
+          ln -sfn "$PWD/harness/prompts" "$HOME/.agents/rubato"
+          export NODE_OPTIONS="--import=file://$PWD/harness/rubato-pi/src/no-changelog-register.mjs"
           npm --prefix harness/rubato-pi test
       - name: Remote production builds
         run: |

@@ -1,3 +1,7 @@
 import { register } from "node:module";
 
-register(new URL("./no-changelog-hooks.mjs", import.meta.url));
+const registered = Symbol.for("rubato.no-changelog-register");
+if (!globalThis[registered]) {
+  globalThis[registered] = true;
+  register(new URL("./no-changelog-hooks.mjs", import.meta.url));
+}
