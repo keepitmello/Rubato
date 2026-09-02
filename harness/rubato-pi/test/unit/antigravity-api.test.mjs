@@ -282,3 +282,29 @@ test("stream은 input 없는 descriptor 로도 request를 만든다", async () =
   assert.equal(bodies, 1);
   assert.equal((await stream.result()).stopReason, "stop");
 });
+
+test("cacheAudit wrapFetch는 fetch 호출 시점에 sessionId를 받는다", async () => {
+  const seen = [];
+  const api = createAntigravityApi({
+    cacheAudit: {
+      wrapFetch: (base, meta) => {
+        seen.push(meta);
+        return base;
+      },
+    },
+    fetchImpl: async () => responseFor({
+      response: { candidates: [{ content: { parts: [{ text: "ok" }] }, finishReason: "STOP" }] },
+    }),
+  });
+  const stream = api.stream(model, { messages: [{ role: "user", content: "hi", timestamp: 1 }] }, {
+    apiKey: "token",
+    env: { [ANTIGRAVITY_PROJECT_ENV]: "project-a" },
+    antigravityState: state(),
+    sessionId: "sess-hook",
+  });
+  await eventsOf(stream);
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].sessionId, "sess-hook");
+  assert.equal(seen[0].model, "gemini-3.7-flash");
+  assert.equal(seen[0].provider, "google-antigravity");
+});

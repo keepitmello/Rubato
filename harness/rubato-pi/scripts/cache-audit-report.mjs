@@ -18,8 +18,8 @@ const asJson = rest.includes("--json");
 const events = readFileSync(path, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
 const requests = new Map();
 const responses = new Map();
-const REQUEST_TYPES = new Set(["anthropic.request", "codex.request", "xai.request"]);
-const RESPONSE_TYPES = new Set(["anthropic.response", "codex.response", "xai.response"]);
+const REQUEST_TYPES = new Set(["anthropic.request", "codex.request", "xai.request", "antigravity.request"]);
+const RESPONSE_TYPES = new Set(["anthropic.response", "codex.response", "xai.response", "antigravity.response"]);
 for (const event of events) {
   if (sessionFilter && event.sessionId !== sessionFilter) continue;
   if (REQUEST_TYPES.has(event.type)) requests.set(event.seq, event);
@@ -28,6 +28,10 @@ for (const event of events) {
 
 function isOpenAiStyle(request) {
   return request?.type === "codex.request" || request?.type === "xai.request";
+}
+
+function isAntigravityStyle(request) {
+  return request?.type === "antigravity.request";
 }
 
 function pct(read, input, write) {
@@ -46,28 +50,35 @@ const rows = [...requests.keys()].sort((a, b) => a - b).map((seq) => {
     ? `${request.firstChanged.section}[${request.firstChanged.index}] ${request.firstChanged.kind}`
     : request.identicalToPrevious ? "identical" : "first";
   const openaiStyle = isOpenAiStyle(request);
-  const cacheRead = openaiStyle
-    ? (usage.cached_tokens ?? usage.input_tokens_details?.cached_tokens ?? "-")
-    : (usage.cache_read_input_tokens ?? "-");
-  const cacheWrite = openaiStyle ? "-" : (usage.cache_creation_input_tokens ?? "-");
+  const antigravityStyle = isAntigravityStyle(request);
+  const cacheRead = antigravityStyle
+    ? (usage.cachedContentTokenCount ?? "-")
+    : openaiStyle
+      ? (usage.cached_tokens ?? usage.input_tokens_details?.cached_tokens ?? "-")
+      : (usage.cache_read_input_tokens ?? "-");
+  const cacheWrite = openaiStyle || antigravityStyle ? "-" : (usage.cache_creation_input_tokens ?? "-");
+  const input = antigravityStyle ? (usage.promptTokenCount ?? "-") : (usage.input_tokens ?? "-");
   return {
     seq,
     session: (request.sessionId ?? "-").slice(0, 8),
     model: request.model,
     status: response.status ?? "-",
-    input: usage.input_tokens ?? "-",
+    input,
     cacheRead,
     cacheWrite,
-    write5m: openaiStyle ? "-" : (usage.ephemeral_5m_input_tokens ?? "-"),
-    write1h: openaiStyle ? "-" : (usage.ephemeral_1h_input_tokens ?? "-"),
+    write5m: openaiStyle || antigravityStyle ? "-" : (usage.ephemeral_5m_input_tokens ?? "-"),
+    write1h: openaiStyle || antigravityStyle ? "-" : (usage.ephemeral_1h_input_tokens ?? "-"),
     // OpenAI 계열은 input_tokens 가 cached 를 포함한다 → cached / input.
-    readRatio: openaiStyle
-      ? (typeof cacheRead === "number" && usage.input_tokens > 0 ? `${(cacheRead / usage.input_tokens * 100).toFixed(1)}%` : "-")
-      : pct(usage.cache_read_input_tokens, usage.input_tokens, usage.cache_creation_input_tokens),
+    // Antigravity 는 cachedContentTokenCount / promptTokenCount.
+    readRatio: antigravityStyle
+      ? (typeof cacheRead === "number" && usage.promptTokenCount > 0 ? `${(cacheRead / usage.promptTokenCount * 100).toFixed(1)}%` : "-")
+      : openaiStyle
+        ? (typeof cacheRead === "number" && usage.input_tokens > 0 ? `${(cacheRead / usage.input_tokens * 100).toFixed(1)}%` : "-")
+        : pct(usage.cache_read_input_tokens, usage.input_tokens, usage.cache_creation_input_tokens),
     ttl: request.cacheControl?.ttl ?? "-",
     sysBp: request.cacheControl?.systemBreakpoint ? "y" : "n",
     tools: request.counts?.tools ?? "-",
-    msgs: request.counts?.messages ?? request.counts?.input ?? "-",
+    msgs: request.counts?.messages ?? request.counts?.input ?? request.counts?.contents ?? "-",
     firstChanged: changed,
     missReason: response.diagnostics?.cache_miss_reason?.type ?? (request.injected?.includes("diagnostics") ? "(none)" : "-"),
     thinkingDropped: dropped,

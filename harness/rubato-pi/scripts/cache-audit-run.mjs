@@ -15,12 +15,24 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CLAUDE_SETUP_TOKEN_FILE_ENV, CLAUDE_SETUP_TOKEN_PREFIX } from "../src/anthropic-setup-token.mjs";
+import { ANTIGRAVITY_PROJECT_ENV } from "../src/antigravity-api.mjs";
+import {
+  decodeAntigravityKeychainSecret,
+  importAntigravityKeychainCredential,
+  readAntigravityKeychainSecret,
+} from "../src/antigravity-keychain-import.mjs";
+import {
+  ANTIGRAVITY_ENDPOINT,
+  ANTIGRAVITY_OAUTH_FILE_ENV,
+  antigravityOAuth,
+  loadAntigravityProjectId,
+} from "../src/antigravity-route.mjs";
 import { launchEnv } from "../src/brand.mjs";
 import { importLegacyDirectCredentials } from "../src/credential-import.mjs";
 import { withNoChangelog } from "../src/no-changelog.mjs";
 import { providerOverlayPath, senpiCliPath } from "../src/launch.mjs";
 import { PROVIDER_DIRECT_FLAG } from "../src/provider-direct.mjs";
-import { DISABLED_OAUTH_EXTENSIONS } from "../src/session-defaults.mjs";
+import { DISABLED_OAUTH_EXTENSIONS, ensureModelsConfig } from "../src/session-defaults.mjs";
 import { createLineReader, createRpcWaiter } from "../test/smoke/rpc-waiter.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -36,6 +48,7 @@ const OUT = {
   anthropic: "/tmp/cache-audit/haiku-run",
   "openai-codex": "/tmp/cache-audit/codex-run",
   xai: "/tmp/cache-audit/xai-run",
+  "google-antigravity": "/tmp/cache-audit/antigravity-run",
 }[PROVIDER] ?? `/tmp/cache-audit/${PROVIDER}-run`;
 const AUDIT_DIR = join(OUT, "audit");
 const TURN_MS = 120_000;
@@ -46,6 +59,8 @@ const KEEP_AUDIT = process.argv.includes("--keep-audit") || Boolean(ONLY);
 const realClaudeToken = join(homedir(), ".claude", "auth", "setup-token-sub");
 const liveAuthPath = join(homedir(), ".rubato-pi", "agent", "auth.json");
 const realSenpiAuth = join(homedir(), ".senpi", "agent", "auth.json");
+const realAntigravityOauth = join(homedir(), ".rubato-pi", "antigravity-oauth.json");
+let antigravityProjectId;
 
 const scenarios = {};
 const errors = [];
@@ -114,6 +129,7 @@ function createProfile(label, { compaction } = {}) {
       disabledBuiltinExtensions: DISABLED_OAUTH_EXTENSIONS,
     })}\n`,
   );
+  ensureModelsConfig(agentDir);
   writeFileSync(join(cwd, "a.txt"), "alpha: small fixture for cache-audit tools/plain turns.\n");
   writeFileSync(join(cwd, "b.txt"), "bravo: second fixture file.\n");
   writeFileSync(join(cwd, "c.txt"), "charlie: third fixture file for resume.\n");
@@ -169,13 +185,55 @@ async function seedDirectCredentials(env) {
   return reports;
 }
 
+async function resolveAntigravityProject(oauthFile) {
+  const token = decodeAntigravityKeychainSecret(await readAntigravityKeychainSecret());
+  const extraEnv = { [ANTIGRAVITY_OAUTH_FILE_ENV]: oauthFile };
+  try {
+    return await loadAntigravityProjectId(token.access, ANTIGRAVITY_ENDPOINT, globalThis.fetch);
+  } catch {
+    const oauth = antigravityOAuth({ env: extraEnv, fetchImpl: globalThis.fetch });
+    const rotated = await oauth.refresh({
+      type: "oauth",
+      access: token.access,
+      refresh: token.refresh,
+      expires: 0,
+      env: { [ANTIGRAVITY_PROJECT_ENV]: "diagnosis-skip-loadCodeAssist" },
+    });
+    return await loadAntigravityProjectId(rotated.access, ANTIGRAVITY_ENDPOINT, globalThis.fetch);
+  }
+}
+
+async function seedAntigravityProfile(profile) {
+  const oauthDest = join(profile.home, ".rubato-pi", "antigravity-oauth.json");
+  mkdirSync(dirname(oauthDest), { recursive: true });
+  copyFileSync(realAntigravityOauth, oauthDest);
+  const extraEnv = { [ANTIGRAVITY_OAUTH_FILE_ENV]: oauthDest };
+  if (antigravityProjectId) extraEnv[ANTIGRAVITY_PROJECT_ENV] = antigravityProjectId;
+  const imported = await importAntigravityKeychainCredential({
+    env: {
+      ...process.env,
+      HOME: profile.home,
+      RUBATO_TARGET_AUTH_PATH: join(profile.agentDir, "auth.json"),
+      ...extraEnv,
+    },
+    enabled: true,
+    projectId: antigravityProjectId,
+  });
+  if (imported.status !== "imported" && imported.status !== "already_present" && imported.status !== "skipped") {
+    throw new Error(`antigravity keychain import ${imported.status}${imported.reason ? `:${imported.reason}` : ""}`);
+  }
+  return extraEnv;
+}
+
 async function seedProfileCredentials(profile) {
-  if (PROVIDER === "anthropic") return;
+  if (PROVIDER === "anthropic") return {};
+  if (PROVIDER === "google-antigravity") return await seedAntigravityProfile(profile);
   await seedDirectCredentials({
     ...process.env,
     HOME: profile.home,
     RUBATO_TARGET_AUTH_PATH: join(profile.agentDir, "auth.json"),
   });
+  return {};
 }
 
 function childEnv(profile, extra = {}) {
@@ -296,6 +354,7 @@ async function setModel(session) {
   const models = listed.data?.models ?? listed.models ?? [];
   const haiku = models.find((model) => model.provider === PROVIDER && model.id === MODEL_ID);
   if (haiku?.contextWindow) haikuContextWindow = haiku.contextWindow;
+  log(`model ${MODEL} input=${JSON.stringify(haiku?.input)} keys=${Object.keys(haiku ?? {})}`);
   if (!haiku) {
     const names = models.map((model) => `${model.provider}/${model.id}`).slice(0, 24);
     throw new Error(`model not available: ${MODEL}; listed=${names.join(",") || "none"}`);
@@ -387,8 +446,8 @@ function recordScenario(name, fields) {
 
 async function runPlain3() {
   const profile = createProfile("plain3");
-  await seedProfileCredentials(profile);
-  const session = spawnRpc(profile, { extraArgs: ["--session-id", "cache-audit-plain3"] });
+  const extraEnv = await seedProfileCredentials(profile);
+  const session = spawnRpc(profile, { extraArgs: ["--session-id", "cache-audit-plain3"], extraEnv });
   try {
     await setModel(session);
     await promptTurn(session, "1+1은? 숫자만.", { id: "p1" });
@@ -413,8 +472,8 @@ async function runPlain3() {
 
 async function runToolsAndResume({ resume = true } = {}) {
   const profile = createProfile("tools");
-  await seedProfileCredentials(profile);
-  const first = spawnRpc(profile, { extraArgs: ["--session-id", "cache-audit-tools"] });
+  const extraEnv = await seedProfileCredentials(profile);
+  const first = spawnRpc(profile, { extraArgs: ["--session-id", "cache-audit-tools"], extraEnv });
   let sessionFile;
   try {
     await setModel(first);
@@ -440,7 +499,7 @@ async function runToolsAndResume({ resume = true } = {}) {
   const files = sessionFiles(profile);
   sessionFile = sessionFile ?? files[0];
   if (!sessionFile) throw new Error("tools session file missing; cannot resume");
-  const resumed = spawnRpc(profile, { extraArgs: ["--session", sessionFile] });
+  const resumed = spawnRpc(profile, { extraArgs: ["--session", sessionFile], extraEnv });
   try {
     await setModel(resumed);
     await promptTurn(resumed, "c.txt 도 읽고 한 줄로.", { id: "resume" });
@@ -594,6 +653,12 @@ async function main() {
       throw new Error(`${PROVIDER} credential absent (read-only ~/.rubato-pi + ~/.senpi). Nothing was written.`);
     }
     log(`credential ${PROVIDER} where=${source.where}`);
+  } else if (PROVIDER === "google-antigravity") {
+    if (!existsSync(realAntigravityOauth)) {
+      throw new Error("antigravity-oauth.json absent (read-only ~/.rubato-pi). Nothing was written.");
+    }
+    antigravityProjectId = await resolveAntigravityProject(realAntigravityOauth);
+    log(`credential google-antigravity oauth=present project=${antigravityProjectId}`);
   } else {
     throw new Error(`unsupported --model ${MODEL}`);
   }
