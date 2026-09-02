@@ -16,6 +16,7 @@ import {
   createAntigravityLineageTracker,
   createAntigravityStateStore,
 } from "./antigravity-state.mjs";
+import { cacheAudit, cacheAuditEnabled } from "./cache-audit.mjs";
 import { defaultTargetAuthPath, resolveAgentDirFromEnv } from "./credential-import.mjs";
 import { senpiNested } from "./engine-paths.mjs";
 import { loginAntigravityGoogle } from "./antigravity-oauth-login.mjs";
@@ -226,7 +227,14 @@ export async function antigravityDirectProvider({
       throw error;
     }
   };
-  const transport = createAntigravityApi({ fetchImpl, endpoint: endpointFromEnv(env), runStateful });
+  const auditEnv = cacheAuditEnabled(env) ? env : process.env;
+  const audit = cacheAuditEnabled(auditEnv) ? cacheAudit(auditEnv) : undefined;
+  const transport = createAntigravityApi({
+    fetchImpl,
+    endpoint: endpointFromEnv(env),
+    runStateful,
+    ...(audit ? { cacheAudit: audit } : {}),
+  });
   const withModelId = {
     stream: (model, context, options) => transport.stream(model, context, { ...options, antigravityModelId: model.id }),
     streamSimple: (model, context, options) => transport.streamSimple(model, context, { ...options, antigravityModelId: model.id }),

@@ -15,6 +15,7 @@ const { createAssistantMessageEventStream } = await import(
 const {
   convertMessages: convertGoogleMessages,
 } = await import(pathToFileURL(senpiNested("@earendil-works/pi-ai/dist/api/google-shared.js")).href);
+import { cacheAudit, cacheAuditEnabled } from "./cache-audit.mjs";
 import { nextAntigravityEnvelope } from "./antigravity-state.mjs";
 
 export const ANTIGRAVITY_API = "rubato-antigravity";
@@ -238,6 +239,7 @@ export function createAntigravityApi({
   fetchImpl = globalThis.fetch,
   endpoint = ANTIGRAVITY_ENDPOINT,
   runStateful,
+  cacheAudit: audit,
 } = {}) {
   if (typeof fetchImpl !== "function") throw new TypeError("fetchImpl must be a function");
   if (runStateful !== undefined && typeof runStateful !== "function") {
@@ -285,7 +287,18 @@ export function createAntigravityApi({
         if (options.signal?.aborted) throw options.signal.reason ?? new DOMException("Aborted", "AbortError");
 
         const body = buildAntigravityRequest(model, context, options, providerState);
-        const response = await fetchImpl(new URL("/v1internal:streamGenerateContent?alt=sse", endpoint), {
+        const auditEnv = options.env && cacheAuditEnabled(options.env) ? options.env : process.env;
+        const resolvedAudit = typeof audit?.wrapFetch === "function"
+          ? audit
+          : cacheAuditEnabled(auditEnv) ? cacheAudit(auditEnv) : undefined;
+        const fetch = typeof resolvedAudit?.wrapFetch === "function"
+          ? resolvedAudit.wrapFetch(fetchImpl, {
+              sessionId: options.sessionId,
+              model: model.id,
+              provider: model.provider,
+            })
+          : fetchImpl;
+        const response = await fetch(new URL("/v1internal:streamGenerateContent?alt=sse", endpoint), {
           method: "POST",
           headers: {
             authorization: `Bearer ${apiKey}`,
