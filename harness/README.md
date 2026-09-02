@@ -29,6 +29,9 @@ credential은 저장소에 복사하지 않는다. 각 provider의 기존 로그
 rubato       # 기본 세션
 rubato-pi    # rubato와 같은 실행기
 rubato-soul  # 역할별 프롬프트 없이 SOUL.md만 사용
+rubato dispatch <name> [grok|grokfast|fast|sol|fable] < brief.md
+             # 비대화 워커. 브리프는 stdin, 끝나면 최종 답만 stdout.
+             # PATH의 `dispatch`도 같은 명령이다.
 rubato aside-cursor --install  # Aside Cursor 면. 설명은 aside-cursor.md
 ```
 

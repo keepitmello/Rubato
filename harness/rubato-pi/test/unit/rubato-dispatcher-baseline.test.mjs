@@ -46,6 +46,7 @@ function dispatcherHarness(t) {
   executable(join(scripts, "rubato-auth.sh"), `#!/bin/sh\nprintf 'auth\\n%s\\n' "$@" > "$RUBATO_TEST_COMMAND"\n`);
   executable(join(scripts, "rubato-update.sh"), `#!/bin/sh\nprintf 'update\\n%s\\n' "$@" > "$RUBATO_TEST_COMMAND"\n`);
   executable(join(scripts, "rubato-aside-cursor.sh"), `#!/bin/sh\nprintf 'aside-cursor\\n%s\\n' "$@" > "$RUBATO_TEST_COMMAND"\n`);
+  executable(join(scripts, "rubato-dispatch.sh"), `#!/bin/sh\nprintf '%s\\n' dispatch "$@" > "$RUBATO_TEST_COMMAND"\n`);
   writeFileSync(join(engineBin, "rubato-pi.mjs"), "// argv sentinel\n");
 
   const env = {
@@ -87,6 +88,7 @@ test("auth, update, and build remain launcher-owned passthrough commands", (t) =
     ["update", ["--check"]],
     ["build", ["--force"]],
     ["aside-cursor", ["--help"]],
+    ["dispatch", ["worker", "grok"]],
   ]) {
     const harness = dispatcherHarness(t);
     const result = harness.run([command, ...extra]);

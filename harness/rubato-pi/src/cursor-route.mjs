@@ -499,9 +499,11 @@ export function withCursorActivationCanary(provider, {
   markerStore,
   now = Date.now,
   ttlMs = CURSOR_ACTIVATION_TTL_MS,
-  // Senpi `/login` 직후 동기화는 allowNetwork:false 다. 재로그인은 refresh token
-  // 을 바꾸므로 옛 marker 가 죽고, 오프라인 복원은 모델을 숨긴 채 끝난다. 부모
-  // 세션만 그 자리에서 canary 를 다시 돌린다 — 격리 자식이 각자 Run 하면 안 된다.
+  // Senpi `/login` 직후 동기화와 `--print` 부팅은 allowNetwork:false 다.
+  // refresh token 이 바뀌거나 저장 catalog 가 마지막 증명과 어긋나면 옛 marker 는
+  // 죽고, 오프라인 복원은 모델을 숨긴 채 끝난다. `--print --model cursor/…` 는
+  // 그 다음 network phase 가 없어서 Cursor 가 빈 채로 죽는다. 부모 세션만 그
+  // 자리에서 canary 를 다시 돌린다 — 격리 자식이 각자 Run 하면 안 된다.
   reactivateOnCredentialRotation = false,
 } = {}) {
   const nativeRefresh = provider.refreshModels;
@@ -581,7 +583,9 @@ export function withCursorActivationCanary(provider, {
           const stored = storedCursorModels(context);
           if (
             reactivateOnCredentialRotation &&
-            verdict.reason === "credential_generation_mismatch" &&
+            (verdict.reason === "credential_generation_mismatch" ||
+              verdict.reason === "catalog_generation_mismatch" ||
+              verdict.reason === "expired") &&
             stored.length > 0 &&
             cursorAccessToken(context.credential)
           ) {
