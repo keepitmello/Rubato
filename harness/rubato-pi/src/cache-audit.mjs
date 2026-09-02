@@ -4,10 +4,16 @@
 // **중간 표현**이다. Anthropic 프롬프트 캐시는 실제로 전송된 `system`/`tools`/`messages`
 // 바이트가 기준이므로, 실사에는 SDK 가 직렬화한 HTTP body 그 자체가 필요하다.
 //
-// 그래서 여기는 provider 에 `options.fetch` 로 들어가 Anthropic SDK 가 부르는 fetch 를
-// 감싼다. 요청 body 문자열을 그대로 저장하고, 구간별 해시로 직전 요청과 첫 변경
-// 지점을 찾고, 응답 SSE 를 tee 해 `message_start`/`message_delta` 의 원시 usage 와
-// `diagnostics`/`input_transformations` 를 남긴다.
+// 그래서 여기는 provider 에 `options.fetch` 로 들어가 SDK 가 부르는 fetch 를 감싼다.
+// 요청 body 문자열을 그대로 저장하고, 구간별 해시로 직전 요청과 첫 변경 지점을
+// 찾고, 응답 SSE 를 tee 해 원시 usage 를 남긴다.
+//
+// 가족:
+// - Anthropic Messages (`/v1/messages`) — system/tools/messages, cache_* usage
+// - OpenAI Codex Responses (`/codex/responses`) — instructions/tools/input,
+//   `cached_tokens`. Codex 기본 전송은 WebSocket 이라 실사 훅이 안 보이므로
+//   `rubato-stream` 이 audit 켜진 세션에서만 `options.transport = "sse"` 를 넣는다.
+// - xAI OpenAI-Responses (`/v1/responses`) — 같은 구간·usage. SDK 기본이 SSE.
 //
 // 선택 주입(테스트 세션 전용):
 // - `RUBATO_CACHE_AUDIT_DIAGNOSTICS=1`  → `cache-diagnosis-2026-04-07` 베타 +
@@ -19,6 +25,7 @@
 import { createHash } from "node:crypto";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import zlib from "node:zlib";
 
 export const CACHE_AUDIT_SCHEMA_VERSION = 1;
 export const CACHE_DIAGNOSIS_BETA = "cache-diagnosis-2026-04-07";
@@ -70,6 +77,25 @@ export function anthropicSegments(body) {
   else if (Array.isArray(system)) system.forEach((block, index) => push("system", index, block));
   if (Array.isArray(tools)) tools.forEach((tool, index) => push("tools", index, tool));
   if (Array.isArray(messages)) messages.forEach((message, index) => push("messages", index, message));
+  return segments;
+}
+
+/**
+ * Codex / OpenAI-Responses body 를 캐시 접두사 순서(params → instructions → tools → input)로
+ * 구간화한다. `params` 는 instructions/tools/input 을 뺀 나머지(model, store,
+ * previous_response_id, prompt_cache_key, reasoning …).
+ */
+export function responsesSegments(body) {
+  const segments = [];
+  const push = (section, index, value) => {
+    const serialized = JSON.stringify(value);
+    segments.push({ section, index, digest: sha(serialized), bytes: Buffer.byteLength(serialized) });
+  };
+  const { instructions, tools, input, ...rest } = body ?? {};
+  push("params", 0, rest);
+  if (instructions !== undefined) push("instructions", 0, instructions);
+  if (Array.isArray(tools)) tools.forEach((tool, index) => push("tools", index, tool));
+  if (Array.isArray(input)) input.forEach((item, index) => push("input", index, item));
   return segments;
 }
 
@@ -133,6 +159,54 @@ export function parseAnthropicSse(text) {
   return summary;
 }
 
+/** SSE 본문에서 Responses API 의 response.created / response.completed / error 를 모은다. */
+export function parseResponsesSse(text) {
+  const summary = { created: undefined, completed: undefined, errors: [] };
+  for (const rawLine of text.split(/\r?\n/)) {
+    if (!rawLine.startsWith("data:")) continue;
+    const payload = rawLine.slice(5).trim();
+    if (!payload || payload === "[DONE]") continue;
+    let event;
+    try { event = JSON.parse(payload); } catch { continue; }
+    switch (event?.type) {
+      case "response.created":
+        summary.created = event.response ?? event;
+        break;
+      case "response.completed":
+        summary.completed = event.response ?? event;
+        break;
+      case "response.failed":
+      case "error":
+        summary.errors.push(event.error ?? event.response ?? event);
+        break;
+      default:
+        break;
+    }
+  }
+  return summary;
+}
+
+function responsesFamilyFromUrl(url) {
+  if (/\/codex\/responses(\?|$)/.test(url)) return "codex";
+  if (/\/v1\/responses(\?|$)/.test(url)) return "xai";
+  return undefined;
+}
+
+function initBodyText(init) {
+  const body = init?.body;
+  if (typeof body === "string") return body;
+  if (body == null) return undefined;
+  let buffer;
+  if (body instanceof ArrayBuffer) buffer = Buffer.from(body);
+  else if (ArrayBuffer.isView(body)) buffer = Buffer.from(body.buffer, body.byteOffset, body.byteLength);
+  else return undefined;
+  const encoding = headersToRecord(init.headers)["content-encoding"] ?? "";
+  if (/(?:^|[,\s])zstd(?:[,\s]|$)/i.test(encoding) && typeof zlib.zstdDecompressSync === "function") {
+    try { buffer = Buffer.from(zlib.zstdDecompressSync(buffer)); } catch { /* keep raw bytes */ }
+  }
+  return buffer.toString("utf8");
+}
+
 export function createCacheAudit({ env = process.env, dir = env.RUBATO_CACHE_AUDIT_DIR, now = () => new Date() } = {}) {
   if (!dir) return undefined;
   const rawDir = join(dir, "raw");
@@ -188,12 +262,113 @@ export function createCacheAudit({ env = process.env, dir = env.RUBATO_CACHE_AUD
    * Anthropic SDK 가 부르는 fetch 를 감싼다. `baseFetch` 가 없으면 전역 fetch.
    * Messages API 가 아닌 호출(모델 목록 등)은 그대로 통과시킨다.
    */
+  const wrapResponsesFetch = (inner, input, init, url, { sessionId, model, provider } = {}) => {
+    const family = responsesFamilyFromUrl(url);
+    const bodyText = typeof init.body === "string" ? init.body : initBodyText(init);
+    if (!family || bodyText === undefined) return inner(input, init);
+
+    const seq = ++sequence;
+    const state = sessionState(sessionId);
+    const sentHeaders = headersToRecord(init.headers);
+    const tag = `${String(seq).padStart(4, "0")}-${(sessionId ?? "anon").slice(0, 8)}`;
+    let parsed;
+    try { parsed = JSON.parse(bodyText); } catch { parsed = undefined; }
+    const segments = parsed ? responsesSegments(parsed) : [];
+    const changed = firstChangedAnthropicSegment(state.segments, segments);
+    const previousSegments = state.segments;
+    state.segments = segments;
+
+    const requestBodyPath = writeRaw(`${tag}.request.json`, bodyText);
+    const requestMetaPath = writeRaw(`${tag}.request.meta.json`, JSON.stringify({
+      url,
+      method: init.method ?? "POST",
+      headers: redactHeaders(sentHeaders),
+      transport: "sse",
+      segments,
+    }, null, 2));
+    const sentAt = Date.now();
+    record(`${family}.request`, {
+      seq,
+      sessionId,
+      provider,
+      model: parsed?.model ?? model,
+      transport: "sse",
+      injected: [],
+      bodyBytes: Buffer.byteLength(bodyText),
+      bodyDigest: sha(bodyText),
+      counts: {
+        instructions: segments.filter((segment) => segment.section === "instructions").length,
+        tools: segments.filter((segment) => segment.section === "tools").length,
+        input: segments.filter((segment) => segment.section === "input").length,
+      },
+      sharedPrefixSegments: changed ? changed.position : segments.length,
+      previousSegments: previousSegments.length,
+      ...(changed ? { firstChanged: changed } : { identicalToPrevious: previousSegments.length > 0 }),
+      previous_response_id: parsed?.previous_response_id ?? null,
+      prompt_cache_key: parsed?.prompt_cache_key ?? null,
+      store: parsed?.store ?? null,
+      files: { body: requestBodyPath, meta: requestMetaPath },
+    });
+
+    return inner(input, init).then((response) => {
+      const responseHeaders = headersToRecord(response.headers);
+      const base = {
+        seq,
+        sessionId,
+        status: response.status,
+        requestId: responseHeaders["request-id"] ?? responseHeaders["x-request-id"],
+        latencyMs: Date.now() - sentAt,
+        transport: "sse",
+      };
+      if (!response.body) {
+        record(`${family}.response`, { ...base, note: "no body" });
+        return response;
+      }
+      const [forward, observe] = response.body.tee();
+      (async () => {
+        try {
+          const text = await new Response(observe).text();
+          const responsePath = writeRaw(`${tag}.response.sse`, text);
+          const sse = parseResponsesSse(text);
+          const completed = sse.completed;
+          const created = sse.created;
+          const usage = completed?.usage ?? created?.usage ?? {};
+          const id = completed?.id ?? created?.id;
+          const responseModel = completed?.model ?? created?.model;
+          if (id) {
+            state.lastResponseId = id;
+            state.lastResponseModel = responseModel;
+          }
+          record(`${family}.response`, {
+            ...base,
+            id,
+            model: responseModel,
+            usage: {
+              input_tokens: usage.input_tokens ?? null,
+              cached_tokens: usage.input_tokens_details?.cached_tokens ?? usage.cached_tokens ?? null,
+              output_tokens: usage.output_tokens ?? null,
+              ...(usage.input_tokens_details ? { input_tokens_details: usage.input_tokens_details } : {}),
+            },
+            errors: sse.errors,
+            responseHeaders: redactHeaders(responseHeaders),
+            files: { sse: responsePath },
+          });
+        } catch (error) {
+          record(`${family}.response`, { ...base, error: error instanceof Error ? error.message : String(error) });
+        }
+      })();
+      return new Response(forward, { status: response.status, statusText: response.statusText, headers: response.headers });
+    });
+  };
+
   const wrapFetch = (baseFetch, { sessionId, model, provider } = {}) => {
     const inner = baseFetch ?? globalThis.fetch;
     return async (input, init = {}) => {
       const url = typeof input === "string" ? input : input?.url ?? String(input);
       const bodyText = typeof init.body === "string" ? init.body : undefined;
-      if (!/\/v1\/messages(\?|$)/.test(url) || bodyText === undefined) return inner(input, init);
+      if (!/\/v1\/messages(\?|$)/.test(url) || bodyText === undefined) {
+        return wrapResponsesFetch(inner, input, init, url, { sessionId, model, provider });
+      }
 
       const seq = ++sequence;
       const state = sessionState(sessionId);
@@ -319,4 +494,17 @@ export function cacheAudit(env = process.env) {
 /** 이 model 이 Anthropic Messages 직결 경로인지. 다른 provider 의 fetch 는 건드리지 않는다. */
 export function isAnthropicMessagesModel(model) {
   return model?.api === "anthropic-messages" && (model?.provider === "anthropic" || /api\.anthropic\.com/.test(model?.baseUrl ?? ""));
+}
+
+export function isCodexResponsesModel(model) {
+  return model?.api === "openai-codex-responses" && model?.provider === "openai-codex";
+}
+
+export function isXaiResponsesModel(model) {
+  return model?.api === "openai-responses" && model?.provider === "xai";
+}
+
+/** Anthropic Messages + Codex Responses + xAI Responses 직결 경로. */
+export function isCacheAuditModel(model) {
+  return isAnthropicMessagesModel(model) || isCodexResponsesModel(model) || isXaiResponsesModel(model);
 }

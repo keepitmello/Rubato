@@ -13,7 +13,7 @@
 // iterator 의 `return`(취소 전파), `trackLocalWork()` 도 같은 이유로 위임한다.
 import { performance } from "node:perf_hooks";
 import { pathToFileURL } from "node:url";
-import { cacheAudit, isAnthropicMessagesModel } from "./cache-audit.mjs";
+import { cacheAudit, isCacheAuditModel, isCodexResponsesModel } from "./cache-audit.mjs";
 import { senpiNested } from "./engine-paths.mjs";
 import { measurementRecorder, normalizeProviderUsage } from "./measurement-recorder.mjs";
 import { PROCESS_STARTED_AT } from "./process-start.mjs";
@@ -515,12 +515,14 @@ export function withRubatoStream(inner, { modelId = (model) => model?.id, report
         options.onRubatoRequest?.(body);
       },
     };
-    // Anthropic 직결 경로의 캐시 실사: SDK 가 부르는 fetch 를 감싸 최종 body 와 원시
-    // usage/diagnostics 를 남긴다 (`RUBATO_CACHE_AUDIT_DIR`). 다른 provider 는 그대로.
-    if (isAnthropicMessagesModel(model)) {
+    // 직결 경로의 캐시 실사: SDK 가 부르는 fetch 를 감싸 최종 body 와 원시 usage 를
+    // 남긴다 (`RUBATO_CACHE_AUDIT_DIR`). Codex 는 기본 WebSocket 이라 fetch 가 안
+    // 불리므로 audit 이 켜진 세션에서만 `transport: "sse"` 를 강제한다.
+    if (isCacheAuditModel(model)) {
       let audit;
       try { audit = options.cacheAudit ?? cacheAudit(options.env ?? process.env); } catch {}
       if (audit) {
+        if (isCodexResponsesModel(model)) innerOptions.transport = "sse";
         innerOptions.fetch = audit.wrapFetch(options.fetch, {
           sessionId: options.sessionId,
           model: modelId(model),
