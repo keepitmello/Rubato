@@ -20,6 +20,7 @@ export function asideCursorModelId(raw) {
   if (ASIDE_PREFIX.test(id)) id = id.slice("cursor/".length);
   if (id === `${CURSOR_GROK_46_ID}-fast` || id === "grok-4.6-fast") return CURSOR_GROK_46_ID;
   if (id === "grok-4.6") return CURSOR_GROK_46_ID;
+  if (id === "claude-fable-5") return "claude-fable-5-1";
   return id;
 }
 
@@ -27,7 +28,7 @@ export function asideCursorCatalog() {
   return [
     { id: "cursor/grok-4.6", name: "Grok 4.6 Fast [Cursor]" },
     { id: "cursor/grok-4.6-fast", name: "Grok 4.6 Fast [Cursor]" },
-    { id: "cursor/claude-fable-5", name: "Fable 5 [Cursor/Claude]" },
+    { id: "cursor/claude-fable-5-1", name: "Fable 5.1 [Cursor/Claude]" },
     { id: "cursor/claude-opus-5", name: "Opus 5 [Cursor/Claude]" },
     { id: "cursor/gemini-3.7-flash", name: "3.7 Flash [Cursor/Gemini]" },
     { id: "cursor/kimi-k3", name: "K3 [Cursor/Kimi]" },

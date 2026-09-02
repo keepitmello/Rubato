@@ -27,7 +27,7 @@ const MODELS_THE_PRE_GATING_CHAINS_WOULD_HAVE_ACCEPTED = [
 ] as const
 
 describe("category activation gating", () => {
-  describe("#given a builtin category gated on claude-fable-5", () => {
+  describe("#given a builtin category gated on claude-fable-5-1", () => {
     test("#when the registry offers only cross-family models #then architect is unavailable and never falls back", () => {
       // given
       const models = registry(MODELS_THE_PRE_GATING_CHAINS_WOULD_HAVE_ACCEPTED)
@@ -38,13 +38,13 @@ describe("category activation gating", () => {
       // then
       expect(result.kind).toBe("model_unavailable")
       if (result.kind !== "model_unavailable") throw new Error("Expected model_unavailable")
-      expect(result.attemptedModel).toBe("anthropic/claude-fable-5")
+      expect(result.attemptedModel).toBe("anthropic/claude-fable-5-1")
       expect(result.availableCategories).not.toContain("architect")
     })
 
-    test("#when the registry offers claude-fable-5 #then architect resolves at xhigh", () => {
+    test("#when the registry offers claude-fable-5-1 #then architect resolves at xhigh", () => {
       // given
-      const models = registry([...MODELS_THE_PRE_GATING_CHAINS_WOULD_HAVE_ACCEPTED, model("anthropic", "claude-fable-5")])
+      const models = registry([...MODELS_THE_PRE_GATING_CHAINS_WOULD_HAVE_ACCEPTED, model("anthropic", "claude-fable-5-1")])
 
       // when
       const result = resolveCategory("architect", {}, models)
@@ -53,7 +53,7 @@ describe("category activation gating", () => {
       expect(result.kind).toBe("resolved")
       if (result.kind !== "resolved") throw new Error("Expected resolved")
       expect(result.spec.provider).toBe("anthropic")
-      expect(result.spec.modelId).toBe("claude-fable-5")
+      expect(result.spec.modelId).toBe("claude-fable-5-1")
       expect(result.spec.variant).toBe("xhigh")
       expect(result.availableCategories).toContain("architect")
     })
@@ -202,7 +202,7 @@ describe("category activation gating", () => {
 
     test("#when artistry resolves on a fable-only registry #then it is a PRIMARY hit, which is why it cannot prove fallback", () => {
       // given
-      const models = registry([model("anthropic", "claude-fable-5")])
+      const models = registry([model("anthropic", "claude-fable-5-1")])
 
       // when
       const result = resolveCategory("artistry", {}, models)
@@ -217,7 +217,7 @@ describe("category activation gating", () => {
   describe("#given a registry model whose last path segment collides with a gate model", () => {
     test("#when architect resolves #then an unrelated vendor model must not open the fable gate", () => {
       // given
-      const models = registry([model("custom", "unrelated/claude-fable-5")])
+      const models = registry([model("custom", "unrelated/claude-fable-5-1")])
 
       // when
       const result = resolveCategory("architect", {}, models)

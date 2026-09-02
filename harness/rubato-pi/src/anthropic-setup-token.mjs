@@ -6,7 +6,7 @@
 //
 // 왜 apiKey 인가. pinned anthropic-messages 는 apiKey 가 `sk-ant-oat` 를 포함할 때만
 // OAuth 경로를 탄다(`api/anthropic-messages.js:1396-1397,1447`). 그 경로가 Claude CLI
-// 신원 전체를 붙인다 — `user-agent: claude-cli/2.1.75`, `anthropic-beta:
+// 신원 전체를 붙인다 — `user-agent: claude-cli/2.1.257`, `anthropic-beta:
 // claude-code-20250219,oauth-2025-04-20`, `x-app: cli`, Claude Code system prompt,
 // 그리고 tool 이름의 canonical 대소문자 교정(`toClaudeCodeName`). 그래서 우리가 할 일은
 // **token 을 그 자리에 놓는 것**뿐이고, 신원·beta·cache 의미는 전부 pin 이 소유한다.

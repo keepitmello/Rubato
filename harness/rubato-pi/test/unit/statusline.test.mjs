@@ -72,6 +72,7 @@ function assertNoLegacySpeedMetrics(text) {
 test("shortens Claude-style model ids the way the statusline does", () => {
   assert.equal(shortModelLabel("claude-opus-4.8"), "Opus 4.8");
   assert.equal(shortModelLabel("anthropic/claude-opus-5:high"), "Opus 5");
+  assert.equal(shortModelLabel("anthropic/claude-fable-5-1"), "Fable 5.1");
   assert.equal(shortModelLabel("claude-sonnet-4-6-20251001"), "Sonnet 4.6");
   assert.equal(shortModelLabel("xai/grok-4.6"), "Grok 4.6");
   assert.equal(shortModelLabel("gpt-5.6-sol"), "5.6 Sol");

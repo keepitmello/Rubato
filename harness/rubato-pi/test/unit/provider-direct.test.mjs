@@ -15,6 +15,7 @@ import {
   PROVIDER_DIRECT_FLAG,
   daybreakModels,
   directProviders,
+  fable51Models,
   providerDirectEnabled,
   warnIgnoredDirectOptOut,
 } from "../../src/provider-direct.mjs";
@@ -208,6 +209,27 @@ test("Daybreak 파생은 틀이 없으면 조용히 넘어가지 않는다", () 
   assert.throws(() => daybreakModels([{ id: "gpt-5.4" }]), /gpt-5\.6-terra/);
 });
 
+test("Fable 5.1 은 pin 의 Fable 5에서 id·이름만 덮는다", () => {
+  const template = {
+    id: "claude-fable-5",
+    name: "Claude Fable 5",
+    api: "anthropic-messages",
+    thinkingLevelMap: { xhigh: "xhigh", max: "max" },
+    cost: { input: 10, output: 50 },
+  };
+  const [model] = fable51Models([template]);
+  assert.equal(model.id, "claude-fable-5-1");
+  assert.equal(model.name, "Fable 5.1");
+  assert.equal(model.api, "anthropic-messages");
+  assert.deepEqual(model.thinkingLevelMap, template.thinkingLevelMap);
+  assert.deepEqual(model.cost, template.cost);
+  assert.deepEqual(fable51Models([{ ...template, id: "claude-fable-5-1" }]), []);
+});
+
+test("Fable 5.1 파생은 틀이 없으면 조용히 넘어가지 않는다", () => {
+  assert.throws(() => fable51Models([{ id: "claude-opus-5" }]), /claude-fable-5/);
+});
+
 test("xAI: pinned grok-4.6 의 xhigh 가 picker 와 wire 에 남는다", async () => {
   const [, xai] = await directProviders();
   assert.equal(xai.id, "xai");
@@ -225,8 +247,10 @@ test("피커는 현재 세대만 남기고 getModels 저장분은 그대로다",
   assert.ok(xai.getModels().some((model) => model.id === "grok-4.3"), "pin 저장분에서 4.3 을 지우면 안 된다");
 
   const anthropicPicker = anthropic.filterModels(anthropic.getModels()).map((model) => model.id);
-  assert.deepEqual(anthropicPicker, ["claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-haiku-4-5"]);
+  assert.deepEqual(anthropicPicker, ["claude-opus-5", "claude-sonnet-5", "claude-fable-5-1", "claude-haiku-4-5"]);
   assert.ok(anthropic.getModels().some((model) => model.id === "claude-sonnet-4-5"));
+  assert.ok(anthropic.getModels().some((model) => model.id === "claude-fable-5"), "pin 저장분의 Fable 5를 지우면 안 된다");
+  assert.ok(anthropic.getModels().some((model) => model.id === "claude-fable-5-1"), "Fable 5.1 파생이 없다");
 
   const codexPicker = new Set(codex.filterModels(codex.getModels()).map((model) => model.id));
   assert.ok(codexPicker.has("gpt-5.6-sol"));
