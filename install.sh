@@ -221,12 +221,15 @@ alias rubato-soul="\$RUBATO_HARNESS/scripts/rubato-soul.sh"
 # msearch — 기억 검색. alias 는 사람이 쓰는 대화형 셸용이고,
 # 에이전트가 부르는 비대화형 bash 는 rc 를 안 읽으므로 ~/.local/bin 심링크가 정본이다.
 alias msearch="\$RUBATO_HARNESS/msearch/msearch"
+# dispatch — 비대화 워커. alias 는 대화형 셸용이고, 에이전트 bash 는
+# ~/.local/bin/dispatch 심링크가 정본이다.
+alias dispatch="\$RUBATO_HARNESS/scripts/rubato-dispatch.sh"
 $ALIAS_END
 EOF
 }
 
 if [ "$APPLY" -eq 0 ]; then
-  plan "$RC 에 alias 블록을 넣는다 (rubato, rubato-pi, rubato-soul, msearch)"
+  plan "$RC 에 alias 블록을 넣는다 (rubato, rubato-pi, rubato-soul, msearch, dispatch)"
   plan "이미 있으면 블록을 이 클론으로 갈아끼운다"
 else
   touch "$RC"
@@ -248,9 +251,9 @@ else
     # 마커 이전에 손으로/옛 설치기로 넣은 낱개 줄이 있으면 거둔다.
     # 안 거두면 나중에 정의된 옛 줄이 블록을 이긴다.
     # rubato-restart/rbr 는 삭제된 bridge 재기동 alias 다. 남아 있으면 여기서 걷어낸다.
-    if grep -qE '^alias (rubato|rubato-pi|rubato-soul|rubato-restart|rbr|msearch)=' "$RC" 2>/dev/null; then
+    if grep -qE '^alias (rubato|rubato-pi|rubato-soul|rubato-restart|rbr|msearch|dispatch)=' "$RC" 2>/dev/null; then
       tmp="$(mktemp)"
-      grep -vE '^alias (rubato|rubato-pi|rubato-soul|rubato-restart|rbr|msearch)=' "$RC" > "$tmp"
+      grep -vE '^alias (rubato|rubato-pi|rubato-soul|rubato-restart|rbr|msearch|dispatch)=' "$RC" > "$tmp"
       mv "$tmp" "$RC"
       say "옛 alias 줄을 거두고 블록으로 옮겼다"
     fi
@@ -260,23 +263,35 @@ else
   add_manual "새 셸을 열거나 'source $RC' 해야 alias 가 먹는다"
 fi
 
-head_ "단계 4.2 · msearch 를 PATH 에"
+head_ "단계 4.2 · msearch·dispatch 를 PATH 에"
 # alias 는 대화형 셸에서만 산다. 에이전트가 도구로 부르는 bash 는 비대화형이라
 # rc 를 안 읽어서 alias 가 없다 — 프롬프트는 msearch 로 기억을 찾으라고 지시하는데
 # 정작 그 명령이 없는 상태가 오래 갔다. 심링크가 그 구멍을 막는다.
+# dispatch 도 같다. 정본은 rubato dispatch 이고, PATH 이름은 같은 스크립트다.
 MSEARCH_LINK="$HOME/.local/bin/msearch"
 MSEARCH_SRC="$HARNESS/msearch/msearch"
+DISPATCH_LINK="$HOME/.local/bin/dispatch"
+DISPATCH_SRC="$HARNESS/scripts/rubato-dispatch.sh"
 if [ "$APPLY" -eq 0 ]; then
   plan "$MSEARCH_LINK -> $MSEARCH_SRC 심링크를 만든다"
-elif [ "$(readlink "$MSEARCH_LINK" 2>/dev/null)" = "$MSEARCH_SRC" ]; then
-  ok "msearch 심링크 이미 맞다"
+  plan "$DISPATCH_LINK -> $DISPATCH_SRC 심링크를 만든다"
 else
   mkdir -p "$HOME/.local/bin"
-  ln -sf "$MSEARCH_SRC" "$MSEARCH_LINK"
-  ok "msearch 를 PATH 에 놓았다 ($MSEARCH_LINK)"
+  if [ "$(readlink "$MSEARCH_LINK" 2>/dev/null)" = "$MSEARCH_SRC" ]; then
+    ok "msearch 심링크 이미 맞다"
+  else
+    ln -sf "$MSEARCH_SRC" "$MSEARCH_LINK"
+    ok "msearch 를 PATH 에 놓았다 ($MSEARCH_LINK)"
+  fi
+  if [ "$(readlink "$DISPATCH_LINK" 2>/dev/null)" = "$DISPATCH_SRC" ]; then
+    ok "dispatch 심링크 이미 맞다"
+  else
+    ln -sf "$DISPATCH_SRC" "$DISPATCH_LINK"
+    ok "dispatch 를 PATH 에 놓았다 ($DISPATCH_LINK)"
+  fi
   case ":$PATH:" in
     *":$HOME/.local/bin:"*) : ;;
-    *) add_manual "~/.local/bin 이 PATH 에 없다. rc 에 추가해야 msearch 가 잡힌다" ;;
+    *) add_manual "~/.local/bin 이 PATH 에 없다. rc 에 추가해야 msearch·dispatch 가 잡힌다" ;;
   esac
 fi
 
