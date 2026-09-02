@@ -97,9 +97,9 @@ export function warnIgnoredDirectOptOut(env = process.env, warn = (message) => c
  * 상한을 적용한다. Fast 변형의 `upstreamModelId` + `serviceTier: "priority"` 같은
  * wire metadata 는 그대로 둔다.
  */
+// Codex pin 은 minimal 을 low 별칭으로만 싣고 off 는 칸이 아니다.
+// Shift+Tab 에 가짜 칸이 섞이지 않게 실제 단계만 남긴다.
 const DAYBREAK_THINKING_LEVEL_MAP = Object.freeze({
-  off: "none",
-  minimal: "low",
   low: "low",
   medium: "medium",
   high: "high",
