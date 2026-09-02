@@ -7,12 +7,14 @@ import {
   CACHE_DIAGNOSIS_BETA,
   THINKING_BINDING_BETA,
   anthropicSegments,
+  antigravitySegments,
   createCacheAudit,
   firstChangedAnthropicSegment,
   isCacheAuditModel,
   isCodexResponsesModel,
   isXaiResponsesModel,
   parseAnthropicSse,
+  parseAntigravitySse,
   parseResponsesSse,
   responsesSegments,
 } from "../../src/cache-audit.mjs";
@@ -256,4 +258,109 @@ test("wrapFetch records an xAI-style responses exchange", async () => {
   assert.equal(responses[1].usage.cached_tokens, 18);
   assert.equal(responses[0].id, "resp_x1");
   assert.equal(seen[0], JSON.stringify(first));
+});
+
+const antigravitySse = (usage, extra = {}) => [
+  { response: { usageMetadata: { promptTokenCount: 1, cachedContentTokenCount: 0 } } },
+  {
+    response: {
+      candidates: [{ content: { parts: [{ text: "ok" }] }, finishReason: "STOP" }],
+      usageMetadata: usage,
+      ...(extra.responseId ? { responseId: extra.responseId } : {}),
+      ...(extra.model ? { model: extra.model } : {}),
+    },
+  },
+].map((event) => `data: ${JSON.stringify(event)}\n\n`).join("");
+
+const antigravityBody = () => ({
+  project: "project-a",
+  requestId: "req-1",
+  model: "gemini-3.7-flash-medium",
+  request: {
+    sessionId: "wire-session",
+    labels: { trajectory_id: "t", last_step_index: "1" },
+    generationConfig: { maxOutputTokens: 65536 },
+    systemInstruction: { role: "user", parts: [{ text: "sys" }] },
+    tools: [{ functionDeclarations: [{ name: "read", description: "read" }] }],
+    contents: [{ role: "user", parts: [{ text: "hi" }] }],
+  },
+});
+
+test("antigravity segments follow params → systemInstruction → tools → contents", () => {
+  const first = antigravitySegments(antigravityBody());
+  assert.deepEqual(first.map((segment) => segment.section), ["params", "systemInstruction", "tools", "contents"]);
+  const next = antigravityBody();
+  next.request.contents.push({ role: "model", parts: [{ text: "yo" }] });
+  assert.deepEqual(firstChangedAnthropicSegment(first, antigravitySegments(next)), {
+    section: "contents",
+    index: 1,
+    kind: "appended",
+    position: 4,
+  });
+});
+
+test("parseAntigravitySse keeps the last usageMetadata", () => {
+  const parsed = parseAntigravitySse(antigravitySse({
+    promptTokenCount: 80,
+    cachedContentTokenCount: 40,
+    candidatesTokenCount: 5,
+    thoughtsTokenCount: 2,
+  }, { responseId: "resp_ag1", model: "gemini-3.7-flash-medium" }));
+  assert.equal(parsed.responseId, "resp_ag1");
+  assert.equal(parsed.model, "gemini-3.7-flash-medium");
+  assert.equal(parsed.usageMetadata.promptTokenCount, 80);
+  assert.equal(parsed.usageMetadata.cachedContentTokenCount, 40);
+});
+
+test("wrapFetch records an Antigravity exchange", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cache-audit-"));
+  const audit = createCacheAudit({ env: { RUBATO_CACHE_AUDIT_DIR: dir }, now: () => new Date(0) });
+  const seen = [];
+  const fake = async (url, init) => {
+    seen.push({ url, init });
+    return new Response(antigravitySse({
+      promptTokenCount: 80,
+      cachedContentTokenCount: seen.length === 1 ? 0 : 40,
+      candidatesTokenCount: 5,
+      thoughtsTokenCount: 2,
+    }, { responseId: `resp_ag${seen.length}`, model: "gemini-3.7-flash-medium" }), {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    });
+  };
+  const fetch = audit.wrapFetch(fake, { sessionId: "ag-1", model: "gemini-3.7-flash", provider: "google-antigravity" });
+  const body1 = JSON.stringify(antigravityBody());
+  const res = await fetch("https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse", {
+    method: "POST",
+    headers: { authorization: "secret" },
+    body: body1,
+  });
+  assert.equal(await res.text().then((text) => text.includes("usageMetadata")), true);
+  assert.equal(seen[0].init.body, body1);
+
+  const second = antigravityBody();
+  second.request.contents.push({ role: "model", parts: [{ text: "yo" }] });
+  await (await fetch("https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse", {
+    method: "POST",
+    headers: {},
+    body: JSON.stringify(second),
+  })).text();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const events = readFileSync(join(dir, "audit.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+  const requests = events.filter((event) => event.type === "antigravity.request");
+  const responses = events.filter((event) => event.type === "antigravity.response");
+  assert.equal(requests.length, 2);
+  assert.deepEqual(requests[0].counts, { systemInstruction: 1, tools: 1, contents: 1 });
+  assert.deepEqual(requests[0].paramsChanged, []);
+  assert.deepEqual(requests[1].paramsChanged, []);
+  assert.deepEqual(requests[1].firstChanged, { section: "contents", index: 1, kind: "appended", position: 4 });
+  assert.equal(responses.length, 2);
+  assert.equal(responses[0].usage.promptTokenCount, 80);
+  assert.equal(responses[0].usage.cachedContentTokenCount, 0);
+  assert.equal(responses[1].usage.cachedContentTokenCount, 40);
+  assert.equal(responses[0].id, "resp_ag1");
+  const meta = JSON.parse(readFileSync(requests[0].files.meta, "utf8"));
+  assert.equal(meta.headers.authorization, "<redacted>");
+  assert.equal(readFileSync(requests[0].files.body, "utf8"), body1);
 });

@@ -14,6 +14,8 @@
 //   `cached_tokens`. Codex 기본 전송은 WebSocket 이라 실사 훅이 안 보이므로
 //   `rubato-stream` 이 audit 켜진 세션에서만 `options.transport = "sse"` 를 넣는다.
 // - xAI OpenAI-Responses (`/v1/responses`) — 같은 구간·usage. SDK 기본이 SSE.
+// - Gemini/Antigravity (`streamGenerateContent`) — params/systemInstruction/
+//   functionDeclarations/contents. usageMetadata 의 cachedContentTokenCount.
 //
 // 선택 주입(테스트 세션 전용):
 // - `RUBATO_CACHE_AUDIT_DIAGNOSTICS=1`  → `cache-diagnosis-2026-04-07` 베타 +
@@ -99,6 +101,66 @@ export function responsesSegments(body) {
   return segments;
 }
 
+const ANTIGRAVITY_PARAM_FIELDS = ["project", "requestId", "sessionId", "labels", "generationConfig"];
+
+/** Antigravity params 스냅샷. 구간 해시와 필드별 변경 기록에 같은 값을 쓴다. */
+export function antigravityParamsOf(body) {
+  const request = body?.request && typeof body.request === "object" ? body.request : {};
+  return {
+    project: body?.project ?? null,
+    requestId: body?.requestId ?? null,
+    sessionId: request.sessionId ?? null,
+    labels: request.labels ?? null,
+    generationConfig: request.generationConfig ?? null,
+  };
+}
+
+/** Which `params` sub-fields differ. Nested generationConfig keys use `generationConfig.maxOutputTokens`. */
+export function changedAntigravityParamFields(previous, current) {
+  const changed = [];
+  for (const field of ANTIGRAVITY_PARAM_FIELDS) {
+    if (JSON.stringify(previous?.[field] ?? null) !== JSON.stringify(current?.[field] ?? null)) {
+      changed.push(field);
+    }
+  }
+  const prevCfg = previous?.generationConfig && typeof previous.generationConfig === "object" ? previous.generationConfig : {};
+  const currCfg = current?.generationConfig && typeof current.generationConfig === "object" ? current.generationConfig : {};
+  for (const key of new Set([...Object.keys(prevCfg), ...Object.keys(currCfg)])) {
+    if (JSON.stringify(prevCfg[key] ?? null) !== JSON.stringify(currCfg[key] ?? null)) {
+      changed.push(`generationConfig.${key}`);
+    }
+  }
+  return changed;
+}
+
+/**
+ * Antigravity body 를 캐시 접두사 순서(params → systemInstruction → tools → contents)로
+ * 구간화한다. `tools[i]` 는 각 `functionDeclaration`. `params` 는 project /
+ * requestId / request.sessionId / request.labels / request.generationConfig.
+ */
+export function antigravitySegments(body) {
+  const segments = [];
+  const push = (section, index, value) => {
+    const serialized = JSON.stringify(value);
+    segments.push({ section, index, digest: sha(serialized), bytes: Buffer.byteLength(serialized) });
+  };
+  const request = body?.request && typeof body.request === "object" ? body.request : {};
+  push("params", 0, antigravityParamsOf(body));
+  if (request.systemInstruction !== undefined) push("systemInstruction", 0, request.systemInstruction);
+  if (Array.isArray(request.tools)) {
+    let index = 0;
+    for (const tool of request.tools) {
+      if (!Array.isArray(tool?.functionDeclarations)) continue;
+      for (const declaration of tool.functionDeclarations) {
+        push("tools", index, declaration);
+        index += 1;
+      }
+    }
+  }
+  if (Array.isArray(request.contents)) request.contents.forEach((content, index) => push("contents", index, content));
+  return segments;
+}
+
 /** 직전 요청과 비교해 접두사가 처음 갈라지는 구간. 없으면 undefined (완전 동일). */
 export function firstChangedAnthropicSegment(previous = [], current = []) {
   const length = Math.max(previous.length, current.length);
@@ -155,6 +217,26 @@ export function parseAnthropicSse(text) {
       default:
         break;
     }
+  }
+  return summary;
+}
+
+/** Antigravity SSE 에서 마지막 usageMetadata 와 responseId/model 을 모은다. */
+export function parseAntigravitySse(text) {
+  const summary = { usageMetadata: undefined, responseId: undefined, model: undefined, errors: [] };
+  for (const rawLine of text.split(/\r?\n/)) {
+    if (!rawLine.startsWith("data:")) continue;
+    const payload = rawLine.slice(5).trim();
+    if (!payload || payload === "[DONE]") continue;
+    let event;
+    try { event = JSON.parse(payload); } catch { continue; }
+    if (event?.error) summary.errors.push(event.error);
+    const chunk = event?.response && typeof event.response === "object" ? event.response : event;
+    if (!chunk || typeof chunk !== "object") continue;
+    if (chunk.usageMetadata) summary.usageMetadata = chunk.usageMetadata;
+    if (typeof chunk.responseId === "string" && chunk.responseId.length > 0) summary.responseId = chunk.responseId;
+    if (typeof chunk.model === "string" && chunk.model.length > 0) summary.model = chunk.model;
+    else if (typeof event?.model === "string" && event.model.length > 0) summary.model = event.model;
   }
   return summary;
 }
@@ -262,6 +344,106 @@ export function createCacheAudit({ env = process.env, dir = env.RUBATO_CACHE_AUD
    * Anthropic SDK 가 부르는 fetch 를 감싼다. `baseFetch` 가 없으면 전역 fetch.
    * Messages API 가 아닌 호출(모델 목록 등)은 그대로 통과시킨다.
    */
+  const wrapAntigravityFetch = (inner, input, init, url, { sessionId, model, provider } = {}) => {
+    const bodyText = typeof init.body === "string" ? init.body : initBodyText(init);
+    if (!/streamGenerateContent/.test(url) || bodyText === undefined) return inner(input, init);
+
+    const seq = ++sequence;
+    const state = sessionState(sessionId);
+    const sentHeaders = headersToRecord(init.headers);
+    const tag = `${String(seq).padStart(4, "0")}-${(sessionId ?? "anon").slice(0, 8)}`;
+    let parsed;
+    try { parsed = JSON.parse(bodyText); } catch { parsed = undefined; }
+    const segments = parsed ? antigravitySegments(parsed) : [];
+    const changed = firstChangedAnthropicSegment(state.segments, segments);
+    const previousSegments = state.segments;
+    const params = parsed ? antigravityParamsOf(parsed) : undefined;
+    const paramsChanged = state.antigravityParams && params
+      ? changedAntigravityParamFields(state.antigravityParams, params)
+      : [];
+    state.segments = segments;
+    state.antigravityParams = params;
+
+    const requestBodyPath = writeRaw(`${tag}.request.json`, bodyText);
+    const requestMetaPath = writeRaw(`${tag}.request.meta.json`, JSON.stringify({
+      url,
+      method: init.method ?? "POST",
+      headers: redactHeaders(sentHeaders),
+      transport: "sse",
+      segments,
+      params,
+      paramsChanged,
+    }, null, 2));
+    const sentAt = Date.now();
+    record("antigravity.request", {
+      seq,
+      sessionId,
+      provider,
+      model: parsed?.model ?? model,
+      transport: "sse",
+      injected: [],
+      bodyBytes: Buffer.byteLength(bodyText),
+      bodyDigest: sha(bodyText),
+      counts: {
+        systemInstruction: segments.filter((segment) => segment.section === "systemInstruction").length,
+        tools: segments.filter((segment) => segment.section === "tools").length,
+        contents: segments.filter((segment) => segment.section === "contents").length,
+      },
+      params,
+      paramsChanged,
+      sharedPrefixSegments: changed ? changed.position : segments.length,
+      previousSegments: previousSegments.length,
+      ...(changed ? { firstChanged: changed } : { identicalToPrevious: previousSegments.length > 0 }),
+      files: { body: requestBodyPath, meta: requestMetaPath },
+    });
+
+    return inner(input, init).then((response) => {
+      const responseHeaders = headersToRecord(response.headers);
+      const base = {
+        seq,
+        sessionId,
+        status: response.status,
+        requestId: responseHeaders["request-id"] ?? responseHeaders["x-request-id"],
+        latencyMs: Date.now() - sentAt,
+        transport: "sse",
+      };
+      if (!response.body) {
+        record("antigravity.response", { ...base, note: "no body" });
+        return response;
+      }
+      const [forward, observe] = response.body.tee();
+      (async () => {
+        try {
+          const text = await new Response(observe).text();
+          const responsePath = writeRaw(`${tag}.response.sse`, text);
+          const sse = parseAntigravitySse(text);
+          const usage = sse.usageMetadata ?? {};
+          if (sse.responseId) {
+            state.lastResponseId = sse.responseId;
+            state.lastResponseModel = sse.model;
+          }
+          record("antigravity.response", {
+            ...base,
+            id: sse.responseId,
+            model: sse.model,
+            usage: {
+              promptTokenCount: usage.promptTokenCount ?? null,
+              cachedContentTokenCount: usage.cachedContentTokenCount ?? null,
+              candidatesTokenCount: usage.candidatesTokenCount ?? null,
+              thoughtsTokenCount: usage.thoughtsTokenCount ?? null,
+            },
+            errors: sse.errors,
+            responseHeaders: redactHeaders(responseHeaders),
+            files: { sse: responsePath },
+          });
+        } catch (error) {
+          record("antigravity.response", { ...base, error: error instanceof Error ? error.message : String(error) });
+        }
+      })();
+      return new Response(forward, { status: response.status, statusText: response.statusText, headers: response.headers });
+    });
+  };
+
   const wrapResponsesFetch = (inner, input, init, url, { sessionId, model, provider } = {}) => {
     const family = responsesFamilyFromUrl(url);
     const bodyText = typeof init.body === "string" ? init.body : initBodyText(init);
@@ -364,9 +546,12 @@ export function createCacheAudit({ env = process.env, dir = env.RUBATO_CACHE_AUD
   const wrapFetch = (baseFetch, { sessionId, model, provider } = {}) => {
     const inner = baseFetch ?? globalThis.fetch;
     return async (input, init = {}) => {
-      const url = typeof input === "string" ? input : input?.url ?? String(input);
+      const url = typeof input === "string" ? input : input?.href ?? input?.url ?? String(input);
       const bodyText = typeof init.body === "string" ? init.body : undefined;
       if (!/\/v1\/messages(\?|$)/.test(url) || bodyText === undefined) {
+        if (/streamGenerateContent/.test(url)) {
+          return wrapAntigravityFetch(inner, input, init, url, { sessionId, model, provider });
+        }
         return wrapResponsesFetch(inner, input, init, url, { sessionId, model, provider });
       }
 
