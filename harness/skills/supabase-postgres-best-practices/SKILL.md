@@ -1,6 +1,6 @@
 ---
 name: supabase-postgres-best-practices
-description: "Postgres 쿼리·스키마 최적화."
+description: "Postgres query and schema optimization."
 
 license: MIT
 metadata:

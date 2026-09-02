@@ -1,6 +1,6 @@
 ---
 name: claude-prompting-lab
-description: "Claude 프롬프트·툴·스킬·하네스 설계와 평가."
+description: "Design and evaluate Claude prompts, tools, skills, and harnesses."
 
 ---
 

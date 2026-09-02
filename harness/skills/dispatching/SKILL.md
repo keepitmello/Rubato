@@ -1,6 +1,6 @@
 ---
 name: dispatching
-description: "다른 세션에 일을 넘기는 브리프를 쓸 때 — 구속과 힌트를 가르고, 예산과 반환 계약을 싣고, 나간 뒤를 지켜본다."
+description: "Writing a brief that hands work to another session: separate binding from hints, carry budget and return contract, watch after dispatch."
 ---
 
 # Dispatching

@@ -1,6 +1,6 @@
 ---
 name: return
-description: "비대화형 워커가 발주자에게 돌려주는 최종 stdout 계약 — 사장 보고 한 층, 상세는 파일."
+description: "Final stdout contract from a non-interactive worker to its dispatcher: one executive layer, details in files."
 ---
 
 # Return

@@ -1,6 +1,6 @@
 ---
 name: rubato-tui-verify
-description: "Rubato/senpi TUI 렌더링을 검증할 때 — 사고 블록 접힘·펼침, 도구 출력, 마우스 토글. 세션을 띄우기 전에 컴포넌트 층에서 먼저 본다."
+description: "Verify Rubato/senpi TUI rendering: thinking block collapse/expand, tool output, mouse toggles. Check the component layer before launching a session."
 ---
 
 # Rubato TUI Verify

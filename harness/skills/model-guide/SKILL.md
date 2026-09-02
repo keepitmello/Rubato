@@ -1,6 +1,6 @@
 ---
 name: model-guide
-description: "Agent·팀원·검증자 모델을 고를 때 읽는 라우팅 가이드. 일회성 Agent 하나를 띄울 때도, 팀 로스터를 짤 때도 — Agent 모델을 결정하는 모든 순간에 적용."
+description: "Routing guide for choosing Agent, teammate, and verifier models. Applies whenever an Agent model is decided, one-off or full roster."
 ---
 
 # Model Guide

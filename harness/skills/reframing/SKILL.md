@@ -1,6 +1,6 @@
 ---
 name: reframing
-description: "같은 접근이 반복해서 막힐 때 프레임을 바꿈."
+description: "Change the frame when the same approach keeps failing."
 
 ---
 

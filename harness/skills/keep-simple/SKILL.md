@@ -1,6 +1,6 @@
 ---
 name: keep-simple
-description: "가장 작은 올바른 수정. 과설계 금지."
+description: "Smallest correct fix. No over-engineering."
 
 ---
 

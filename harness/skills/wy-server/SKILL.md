@@ -1,6 +1,6 @@
 ---
 name: wy-server
-description: "맥-윈도우 공유환경. SSH, wy-desktop, 원격 작업."
+description: "Mac-Windows shared environment. SSH, wy-desktop, remote work."
 
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: browser-cli
-description: "수동 브라우저 조작이 꼭 필요할 때만 (탭 직접 제어, 스냅샷, Playwright 스크립트). 평소 웹 작업은 aside-browser."
+description: "Only when manual browser control is required (direct tab control, snapshots, Playwright scripts). Everyday web work goes to aside-browser."
 
 ---
 

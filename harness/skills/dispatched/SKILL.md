@@ -1,6 +1,6 @@
 ---
 name: dispatched
-description: "위임받은 브리프로 시작하는 세션이 그 브리프를 읽는 계약 — 무엇이 구속이고 무엇이 검증 대상인지."
+description: "Contract for a session that starts from a delegated brief: what binds and what must be verified."
 ---
 
 # Dispatched
