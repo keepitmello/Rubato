@@ -1,6 +1,6 @@
 ---
 name: consult
-description: "Aside를 통해 ChatGPT 프로젝트에 패킷을 보내고 답을 검증한다. 일반 상담·리서치·설계 검토의 기본 경로."
+description: "Send a packet to a ChatGPT project via Aside and verify the answer. Default route for consultation, research, and design review."
 ---
 
 # Consult

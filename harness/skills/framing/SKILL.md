@@ -1,6 +1,6 @@
 ---
 name: framing
-description: 해커톤·공모전·새 제품 착수 전에 사용자, 현재 대안, 비교 가치, 아웃컴과 실험 범위를 정하는 착수 전 점검표. PRD·구현 전 아이디어 검증, 프레임 동결·동결 해제, 구현 중 가치 표류 점검에 쓴다.
+description: "Pre-launch checklist before hackathons, contests, or new products: users, current alternatives, comparative value, outcome and experiment scope. Idea validation before PRD/implementation, frame freeze/unfreeze, value-drift checks mid-build."
 ---
 
 # Framing — 착수 전 가치 점검표와 프레임 동결

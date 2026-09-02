@@ -1,6 +1,6 @@
 ---
 name: find-skills
-description: "할 수 있는 스킬이 있는지 찾을 때."
+description: "Check whether a skill exists for the task."
 ---
 
 # Find Skills

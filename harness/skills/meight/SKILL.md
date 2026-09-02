@@ -1,6 +1,6 @@
 ---
 name: meight
-description: "Codex 세션에 작업 통째 위임. worker는 구현, mate는 설계·리뷰."
+description: "Delegate whole tasks to a Codex session: worker implements, mate designs and reviews."
 
 ---
 

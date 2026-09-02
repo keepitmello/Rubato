@@ -1,6 +1,6 @@
 ---
 name: imagen-proxy
-description: "로컬 이미지 프록시와 i2i. gti, wan26."
+description: "Local image proxy and i2i. gti, wan26."
 
 ---
 

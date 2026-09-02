@@ -1,6 +1,6 @@
 ---
 name: vercel-react-best-practices
-description: "React/Next 성능 가이드."
+description: "React/Next performance guide."
 
 ---
 

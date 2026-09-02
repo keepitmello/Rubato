@@ -1,6 +1,6 @@
 ---
 name: wrapping-sessions
-description: "세션 마무리 문서. 마무리, wrap."
+description: "Session wrap-up documents. Wrap."
 
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: aside-browser
-description: "브라우저 네이티브 에이전트 Aside. 웹 리서치(문서·포럼·저장소 교차 확인), 로그인 사이트 조작, 다단계 웹 작업을 통째로 맡긴다. 브라우저가 필요한 일의 기본 진입점."
+description: "Aside, a browser-native agent. Delegate whole web research (docs, forums, repos, cross-checking), logged-in site actions, and multi-step web work. Default entry for anything needing a browser."
 
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: humanize-korean
-description: "AI 티 나는 한글을 사람 문장으로. 내용은 유지."
+description: "Rewrite AI-sounding Korean into natural prose; keep the content."
 ---
 
 # Humanize Korean — Single-call Path (Codex · GitHub Copilot CLI)
