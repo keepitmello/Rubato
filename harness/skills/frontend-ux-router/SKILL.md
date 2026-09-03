@@ -24,7 +24,7 @@ These hold even when no reference is loaded. They are checks, not aspirations.
 4. **No internal language in visible copy**: no snake_case/camelCase identifiers, raw enum values, ids, raw timestamps, schema or pipeline nouns, or headings like `Data`/`Info`. If a string reads like a code comment, rewrite or delete it.
 5. **Native evidence, co-located with the action.** Show the thing being judged (real chart, real audio, both comparison states, the actual editable object) next to the question and its controls. Summaries and counts are not evidence. No invented color/tone/icon codes that need a legend.
 6. **Deletion pass after implementation**: map every visible element to a purpose; delete or demote unmapped elements; report the deleted list.
-7. **Walk the rendered path** — entry, primary action, feedback, recovery, resume — at target and narrow viewports. A build or a static screenshot is not proof of interactive behavior.
+7. **Walk the rendered path** (entry, primary action, feedback, recovery, resume) at target and narrow viewports. A build or a static screenshot is not proof of interactive behavior.
 8. **Fresh-eyes gate**: comprehension is certified by a reviewer with zero implementation context (`references/fresh-eyes-review.md`), never by the implementer. `VERIFIED` requires a recorded PASS.
 9. **Comprehension failure → redesign, not patching.** When a user or reviewer asks what to do, return to the path card. Do not add tooltips, legends, or explanatory paragraphs to a wrong task model.
 
@@ -64,7 +64,7 @@ These hold even when no reference is loaded. They are checks, not aspirations.
 
 ## Completion
 
-- Claim completion only after walking the affected path in the rendered interface from entry through action, feedback, relevant recovery, and completion — at the target viewport and a materially narrower one, including keyboard and focus.
+- Claim completion only after walking the affected path in the rendered interface from entry through action, feedback, relevant recovery, and completion, at the target viewport and a materially narrower one, including keyboard and focus.
 - Include in the report: the three mandatory path-card fields (goal, primary action, success signal), the deletion-pass list, hard-budget confirmation, walkthrough evidence, and the fresh-eyes packet location or verdict.
 - Status ladder: `IMPLEMENTED, RENDER VERIFICATION PENDING` (render blocked; include blocker) → `IMPLEMENTED, FRESH-EYES PENDING` (walkthrough done, packet ready) → `VERIFIED` (walkthrough + fresh-eyes PASS on record).
 

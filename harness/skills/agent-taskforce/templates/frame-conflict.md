@@ -14,4 +14,4 @@ recommended_next_step: <reject conflict / contract change / reopen review / refr
 decision_owner: <human>
 ```
 
-The lead does not demand raw debugging transcripts. If judged a genuine conflict, follow the existing `framing/templates/reopen-request.md` and its state transitions.
+The lead does not demand raw debugging transcripts. If judged a genuine conflict, follow the existing `product-framing/templates/reopen-request.md` and its state transitions.

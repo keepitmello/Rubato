@@ -37,13 +37,13 @@ description: "Local image proxy and i2i. gti, wan26."
 --previous-response-id <id>   (예약됨; 백엔드가 store=true를 거부)
 --session-id <id>             특정 세션 id 고정
 --reset-session               저장된 세션 상태 전부 삭제
---store                       서버 저장 강제 (이 백엔드 미지원 — 400 발생)
+--store                       서버 저장 강제 (이 백엔드 미지원, 400 발생)
 ```
 
 `~/.gti/` 상태 파일:
-- `turns.json` — 누적 user/assistant 대화 이력 (최대 6턴, `MAX_PRIOR_TURNS = 6`이 오래된 턴부터 트림)
-- `last-response-id`, `last-session-id` — 기록용
-- `last-image-path` — 다음 `--continue` 때 레퍼런스로 자동 첨부
+- `turns.json`: 누적 user/assistant 대화 이력 (최대 6턴, `MAX_PRIOR_TURNS = 6`이 오래된 턴부터 트림)
+- `last-response-id`, `last-session-id`: 기록용
+- `last-image-path`: 다음 `--continue` 때 레퍼런스로 자동 첨부
 
 이 백엔드는 `store: true`를 거부한다. 그래서 `previous_response_id`가 아니라 매 호출 `input` 배열에 이전 턴을 인라인해 컨텍스트를 누적한다. 제약: `assistant` 턴에는 `output_text`나 `refusal`만 들어갈 수 있고 `input_image` 블록은 금지다. 그래서 assistant 쪽은 텍스트만 저장하고, 마지막 생성 이미지는 다음 user 턴의 레퍼런스로 자동 첨부한다.
 
@@ -53,9 +53,9 @@ description: "Local image proxy and i2i. gti, wan26."
 - **계정 누적**: `sessionId`는 호출마다 새로 생기지만 account/installation_id 단위 moderation은 단기 누적된다. 짧은 시간에 비슷한 프롬프트를 반복하면 판정이 강해지고, 시간이 지나면 풀린다. 하드 블록이 걸리면 기다리거나 세션을 리셋한다.
 
 실패 3종:
-1. **하드 블록** — 에러 `"response stream completed without an image_generation_call result"`. moderation이 아예 거절.
-2. **Sanitize** — 통과는 하지만 실명이 "inspired by"로 재작성됨. 비슷하게 생겼지만 그 사람은 아니다.
-3. **경고성 소프트 패스** — revised prompt에 `"tasteful and non-explicit"`가 붙는다. 다음 시도가 하드 블록될 신호.
+1. **하드 블록**: 에러 `"response stream completed without an image_generation_call result"`. moderation이 아예 거절.
+2. **Sanitize**: 통과는 하지만 실명이 "inspired by"로 재작성됨. 비슷하게 생겼지만 그 사람은 아니다.
+3. **경고성 소프트 패스**: revised prompt에 `"tasteful and non-explicit"`가 붙는다. 다음 시도가 하드 블록될 신호.
 
 ## 자주 쓰는 커맨드
 
@@ -84,7 +84,7 @@ cat ./debug/response.json
 
 ## 벤치마크 (2026-05-04 KST)
 
-단순 파란 사각형 프롬프트 — `private-codex` `19.891s`, `codex-cli` `27.597s`. 스모크 결과라 안정적인 수치는 아니다.
+단순 파란 사각형 프롬프트: `private-codex` `19.891s`, `codex-cli` `27.597s`. 스모크 결과라 안정적인 수치는 아니다.
 
 ## Caveats
 

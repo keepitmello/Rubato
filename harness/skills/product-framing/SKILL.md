@@ -1,5 +1,5 @@
 ---
-name: framing
+name: product-framing
 description: "Pre-launch checklist before hackathons, contests, or new products: users, current alternatives, comparative value, outcome and experiment scope. Idea validation before PRD/implementation, frame freeze/unfreeze, value-drift checks mid-build."
 ---
 
@@ -85,7 +85,7 @@ description: "Pre-launch checklist before hackathons, contests, or new products:
 - 동시에 비교하는 후보는 **3개 이하**. 나머지는 보관함.
 - 후보들을 같은 기준으로 비교한다: 근거 강도, 문제 중요성, 현재 대안의 결함, 차별성, (해커톤이면) 주최사 적합성, 시험 가능성, 되돌릴 수 있음.
 - 추가 브레인스토밍보다 실험이 더 구별력 있는 정보를 주는 시점이 오면 닫는다.
-- 후보가 전부 비슷하거나 탐색이 수렴하지 않으면 `reframing` 스킬로 프레임 밖 후보를 만들어 온다. 여기의 발산 역할이 현재 결정 경계 안에서 후보를 넓히는 것이라면, reframing은 그 경계 자체를 의심하는 탈출이다.
+- 후보가 전부 비슷하거나 탐색이 수렴하지 않으면 `product-reframing` 스킬로 프레임 밖 후보를 만들어 온다. 여기의 발산 역할이 현재 결정 경계 안에서 후보를 넓히는 것이라면, reframing은 그 경계 자체를 의심하는 탈출이다.
 
 ### 2. 운용 단계 정하기
 

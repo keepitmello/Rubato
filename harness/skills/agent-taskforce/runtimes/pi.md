@@ -1,11 +1,11 @@
 # Runtime — rubato-pi
 
-*Lead and teammates.* What this harness supplies. The skill still owns scope, responsibility, approved staffing, evidence, and completion.
+*Lead and teammates.* What this harness supplies. The skill still owns scope, responsibility, reported staffing, evidence, and completion.
 
 | Concern | Where it lives |
 |---|---|
 | Lead | the current `rubato-pi` session |
-| Approved teammate | a process member of a `team_create` run, after the lead showed the roster and the user said yes |
+| Teammate | a process member of a `team_create` run, spawned after the lead reported the roster |
 | Spawn, configure, lifecycle | `Agent`, `team_create`, `dag` |
 | Peer message | `AgentSend` for spawned Agents; `team_send` for the team mailbox |
 | Roster and runtime status | lead `team_*` tools including `team_send` and shutdown request/response; members get `team_send` plus board tools from the member extension |

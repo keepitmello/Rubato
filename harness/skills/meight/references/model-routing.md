@@ -27,7 +27,7 @@ xAI 는 이 하네스를 떠났다 (2026-08-21). grok 은 rubato 가 xAI OAuth �
 직접 잡고(`rubato dispatch --model xai/grok-4.6`), meight 는 Codex 세션
 전용이다.
 
-전문은 `2026-07-29-model-routing-evidence` 기록에 있다.
+전문: [`docs/2026-07-29-model-routing-evidence.md`](../../../docs/2026-07-29-model-routing-evidence.md)
 
 ## 난이도가 올라갈 때
 
