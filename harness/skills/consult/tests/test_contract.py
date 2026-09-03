@@ -11,6 +11,9 @@ class ConsultAsideContractTest(unittest.TestCase):
         skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
 
         self.assertIn("run_aside_repl_consult.py", skill)
+        self.assertIn("consult list", skill)
+        self.assertIn("consult send", skill)
+        self.assertIn("consult recover", skill)
         self.assertIn("under 120 seconds", skill)
         self.assertIn("submitElapsedSeconds", skill)
         self.assertIn("--quality xhigh", skill)
@@ -29,6 +32,10 @@ class ConsultAsideContractTest(unittest.TestCase):
         self.assertIn("backend-api", skill)
         self.assertIn("targetId", skill)
         self.assertIn("deliberate resend", skill)
+        self.assertIn("--to", skill)
+        self.assertIn("--thread", skill)
+        self.assertIn("--conversation-url", skill)
+        self.assertIn("consult-sessions.json", skill)
         self.assertNotIn("run_agbrowse", skill)
         self.assertNotIn("ensure_consult_chrome", skill)
 

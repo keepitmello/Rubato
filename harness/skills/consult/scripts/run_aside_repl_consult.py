@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -14,7 +15,7 @@ import shutil
 import subprocess
 import sys
 import time
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 from urllib.parse import urlparse
 from zipfile import BadZipFile, ZipFile
 
@@ -38,6 +39,28 @@ KOREAN_UPLOAD_PREAMBLE = (
     "자연스럽고 이해하기 쉽게 설명해 주세요. 기술 용어와 영문 표현은 도움이 될 때 "
     "자유롭게 사용해도 됩니다."
 )
+KOREAN_FOLLOWUP_PREAMBLE = (
+    "같은 대화의 후속 질문입니다. 이전 답변과 첨부한 패킷을 함께 보고 답해 주세요.\n\n"
+    "판단에 필요한 근거가 부족하면 그 점을 명확히 밝혀 주세요.\n\n"
+    "답변은 한국어 보고서로 작성해 주세요. 문제에 맞는 구조와 표현을 자유롭게 선택하되, "
+    "자연스럽고 이해하기 쉽게 설명해 주세요. 기술 용어와 영문 표현은 도움이 될 때 "
+    "자유롭게 사용해도 됩니다."
+)
+
+
+def load_sessions_module():
+    spec = importlib.util.spec_from_file_location(
+        "consult_sessions",
+        Path(__file__).with_name("consult_sessions.py"),
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("consult_sessions.py is missing")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+SESSIONS = load_sessions_module()
 
 
 class SubmitUnknownError(RuntimeError):
@@ -78,17 +101,20 @@ def build_composer_prompt(
     topic: str,
     consult_id: str,
     artifact_output: str | None,
+    *,
+    follow_up: bool = False,
 ) -> str:
     artifact_instruction = (
         "\n\n요청한 작업 결과는 zip 파일 하나로도 반환해 주세요."
         if artifact_output
         else ""
     )
+    preamble = KOREAN_FOLLOWUP_PREAMBLE if follow_up else KOREAN_UPLOAD_PREAMBLE
     return (
         f"{topic}\n"
         f"ID: {consult_id}\n\n"
         "답변 첫 줄에 위 ID를 그대로 써 주세요.\n\n"
-        f"{KOREAN_UPLOAD_PREAMBLE}{artifact_instruction}"
+        f"{preamble}{artifact_instruction}"
     )
 
 
@@ -168,12 +194,32 @@ def chatgpt_message_text(message: dict[str, Any] | None) -> str:
     return "".join(chunks)
 
 
-def assistant_from_conversation_payload(payload: dict[str, Any]) -> dict[str, Any]:
+def assistant_from_conversation_payload(
+    payload: dict[str, Any],
+    consult_id: str | None = None,
+) -> dict[str, Any]:
     assistants: list[dict[str, Any]] = []
     mapping = payload.get("mapping")
     if not isinstance(mapping, dict):
         return {"text": "", "finished": False}
-    for node in mapping.values():
+    user_time: float | None = None
+    child_ids: set[str] = set()
+    if consult_id:
+        for node in mapping.values():
+            if not isinstance(node, dict):
+                continue
+            message = node.get("message")
+            if not isinstance(message, dict):
+                continue
+            author = message.get("author") or {}
+            if isinstance(author, dict) and author.get("role") == "user":
+                if consult_id in chatgpt_message_text(message):
+                    user_time = float(message.get("create_time") or 0)
+                    children = node.get("children") or []
+                    if isinstance(children, list):
+                        child_ids.update(child for child in children if isinstance(child, str))
+                    break
+    for node_id, node in mapping.items():
         if not isinstance(node, dict):
             continue
         message = node.get("message")
@@ -184,6 +230,10 @@ def assistant_from_conversation_payload(payload: dict[str, Any]) -> dict[str, An
             continue
         if not chatgpt_message_text(message).strip():
             continue
+        if consult_id:
+            later_than_user = user_time is not None and float(message.get("create_time") or 0) > user_time
+            if node_id not in child_ids and not later_than_user:
+                continue
         assistants.append(message)
     assistants.sort(key=lambda item: float(item.get("create_time") or 0))
     if not assistants:
@@ -243,14 +293,27 @@ function messageText(message) {{
   }}).join('');
 }}
 function assistantFrom(payload) {{
-  var nodes = Object.values(payload.mapping || {{}});
-  var assistants = nodes.filter(function (node) {{
-    return node && node.message && node.message.author && node.message.author.role === 'assistant' && messageText(node.message).trim();
+  var mapping = payload.mapping || {{}};
+  var userTime = 0;
+  var childIds = {{}};
+  Object.keys(mapping).forEach(function (id) {{
+    var node = mapping[id];
+    if (node && node.message && node.message.author && node.message.author.role === 'user' && messageText(node.message).includes(consultId)) {{
+      userTime = node.message.create_time || 0;
+      (node.children || []).forEach(function (child) {{ childIds[child] = true; }});
+    }}
+  }});
+  var assistants = Object.keys(mapping).map(function (id) {{
+    return {{ id: id, node: mapping[id] }};
+  }}).filter(function (entry) {{
+    var node = entry.node;
+    var later = userTime && node && node.message && (node.message.create_time || 0) > userTime;
+    return node && node.message && node.message.author && node.message.author.role === 'assistant' && messageText(node.message).trim() && (childIds[entry.id] || later);
   }}).sort(function (left, right) {{
-    return (left.message.create_time || 0) - (right.message.create_time || 0);
+    return (left.node.message.create_time || 0) - (right.node.message.create_time || 0);
   }});
   if (!assistants.length) return {{ text: '', finished: false }};
-  var last = assistants[assistants.length - 1].message;
+  var last = assistants[assistants.length - 1].node.message;
   return {{ text: messageText(last).trim(), finished: last.status !== 'in_progress' }};
 }}
 function userHasId(payload) {{
@@ -333,17 +396,26 @@ def build_repl_script(
     consult_id: str,
     response_timeout_ms: int,
     artifact_output: str | None = None,
+    conversation_url: str | None = None,
+    follow_up: bool = False,
 ) -> str:
     target_label = "Pro" if quality == "pro" else "매우 높음"
     composer_label = composer_aria_label(project_name)
+    continue_mode = bool(conversation_url)
+    start_url = conversation_url or project_url
+    expected_conversation_id = conversation_id_from_url(conversation_url) or ""
     return f"""
 var projectUrl = {js(project_url)};
+var startUrl = {js(start_url)};
+var continueMode = {js(continue_mode)};
+var expectedConversationId = {js(expected_conversation_id)};
+var consultId = {js(consult_id)};
 var composerLabel = {js(composer_label)};
 var quality = {js(quality)};
 var packetName = {js(packet_name)};
 var packetBase64 = {js(packet_base64)};
 var artifactRequested = {js(artifact_output is not None)};
-var composerPrompt = {js(build_composer_prompt(topic, consult_id, artifact_output))};
+var composerPrompt = {js(build_composer_prompt(topic, consult_id, artifact_output, follow_up=follow_up))};
 var targetLabel = {js(target_label)};
 var verifiedTier = null;
 var submitStartedAt = Date.now();
@@ -359,38 +431,65 @@ var submitState = await Promise.race([
     );
     if (ownedTabs.length !== 1) throw new Error('isolated consult tab ownership is ambiguous');
     var ownedTab = ownedTabs[0];
-    submitStage = 'load-work-project';
-    await workPage.goto(projectUrl);
+    submitStage = continueMode ? 'load-saved-conversation' : 'load-work-project';
+    await workPage.goto(startUrl);
     await workPage.waitForLoadState('domcontentloaded');
-    submitStage = 'wait-project-composer';
-    var composer = workPage.locator(
-      '#prompt-textarea[contenteditable="true"][aria-label="' + composerLabel + '"]'
-    );
     var rateLimit = workPage.getByRole('heading', {{ name: '요청이 너무 많습니다' }});
-    try {{
-      await Promise.race([
-        composer.waitFor({{ state: 'visible', timeout: 60000 }}),
-        rateLimit.waitFor({{ state: 'visible', timeout: 60000 }}).then(function () {{
-          throw new Error('ChatGPT rate-limited the project page');
-        }})
-      ]);
-    }} catch (error) {{
-      if (String(error && error.message).indexOf('rate-limited') !== -1) throw error;
-      var found = await workPage.locator('#prompt-textarea').evaluateAll((els) =>
-        els.map((el) => ({{
-          ariaLabel: el.getAttribute('aria-label'),
-          contenteditable: el.getAttribute('contenteditable')
-        }}))
-      ).catch(() => []);
-      throw new Error(
-        'project composer not visible: expected ' + composerLabel +
-        ' found ' + JSON.stringify(found) +
-        ' url=' + workPage.url() +
-        ' title=' + (await workPage.title())
+    var composer;
+    if (continueMode) {{
+      submitStage = 'wait-conversation-composer';
+      composer = workPage.locator('#prompt-textarea[contenteditable="true"]');
+      try {{
+        await Promise.race([
+          composer.waitFor({{ state: 'visible', timeout: 60000 }}),
+          rateLimit.waitFor({{ state: 'visible', timeout: 60000 }}).then(function () {{
+            throw new Error('ChatGPT rate-limited the project page');
+          }})
+        ]);
+      }} catch (error) {{
+        if (String(error && error.message).indexOf('rate-limited') !== -1) throw error;
+        throw new Error(
+          'saved conversation composer not visible url=' + workPage.url() +
+          ' expectedConversationId=' + expectedConversationId +
+          ' title=' + (await workPage.title())
+        );
+      }}
+      if (expectedConversationId && workPage.url().indexOf('/c/' + expectedConversationId) === -1) {{
+        throw new Error('continue landed off the saved conversation url=' + workPage.url());
+      }}
+      if (workPage.url().indexOf('/project') !== -1 && workPage.url().indexOf('/c/') === -1) {{
+        throw new Error('continue redirected to project home url=' + workPage.url());
+      }}
+    }} else {{
+      submitStage = 'wait-project-composer';
+      composer = workPage.locator(
+        '#prompt-textarea[contenteditable="true"][aria-label="' + composerLabel + '"]'
       );
+      try {{
+        await Promise.race([
+          composer.waitFor({{ state: 'visible', timeout: 60000 }}),
+          rateLimit.waitFor({{ state: 'visible', timeout: 60000 }}).then(function () {{
+            throw new Error('ChatGPT rate-limited the project page');
+          }})
+        ]);
+      }} catch (error) {{
+        if (String(error && error.message).indexOf('rate-limited') !== -1) throw error;
+        var found = await workPage.locator('#prompt-textarea').evaluateAll((els) =>
+          els.map((el) => ({{
+            ariaLabel: el.getAttribute('aria-label'),
+            contenteditable: el.getAttribute('contenteditable')
+          }}))
+        ).catch(() => []);
+        throw new Error(
+          'project composer not visible: expected ' + composerLabel +
+          ' found ' + JSON.stringify(found) +
+          ' url=' + workPage.url() +
+          ' title=' + (await workPage.title())
+        );
+      }}
     }}
     var assistantCountBefore = await workPage.locator('[data-message-author-role="assistant"]').count();
-    if (assistantCountBefore !== 0) throw new Error('isolated Work composer contains stale assistant turns');
+    if (!continueMode && assistantCountBefore !== 0) throw new Error('isolated Work composer contains stale assistant turns');
     if (await rateLimit.isVisible().catch(() => false)) {{
       throw new Error('ChatGPT rate-limited the project page');
     }}
@@ -422,9 +521,11 @@ var submitState = await Promise.race([
     ) {{
       throw new Error('Work mode selected and Chat toggle missing');
     }}
-    composer = workPage.locator(
-      '#prompt-textarea[contenteditable="true"][aria-label="' + composerLabel + '"]'
-    );
+    composer = continueMode
+      ? workPage.locator('#prompt-textarea[contenteditable="true"]')
+      : workPage.locator(
+          '#prompt-textarea[contenteditable="true"][aria-label="' + composerLabel + '"]'
+        );
     await composer.waitFor({{ state: 'visible', timeout: 15000 }});
     submitStage = 'select-tier';
     var tierButton = workPage.getByRole(
@@ -517,7 +618,7 @@ var submitState = await Promise.race([
       }}]);
       await attachmentChip.waitFor({{ state: 'visible', timeout: 30000 }});
     }}
-    return {{ workPage, ownedTargetId: ownedTab.targetId, send }};
+    return {{ workPage, ownedTargetId: ownedTab.targetId, send, assistantCountBefore }};
   }})(),
   new Promise((_, reject) => setTimeout(
     () => reject(new Error('pre-submit preparation exceeded 110 seconds at ' + submitStage)),
@@ -525,6 +626,7 @@ var submitState = await Promise.race([
   ))
 ]);
 var workPage = submitState.workPage;
+var assistantCountBefore = submitState.assistantCountBefore || 0;
 var remainingSubmitMs = 120000 - (Date.now() - submitStartedAt);
 if (remainingSubmitMs <= 0) throw new Error('pre-submit preparation exceeded 120 seconds');
 submitStage = 'commit-user-turn';
@@ -583,6 +685,13 @@ var responseDeadline = responseStartedAt + {response_timeout_ms};
 var remainingResponseMs = () => Math.max(1, responseDeadline - Date.now());
 var conversationId = (workPage.url().match(/\\/c\\/([0-9a-fA-F-]{{8,}})/) || [])[1] || '';
 var recoveredFromBackend = false;
+function messageTextFrom(message) {{
+  var parts = message && message.content && message.content.parts;
+  if (!Array.isArray(parts)) return '';
+  return parts.map(function (part) {{
+    return typeof part === 'string' ? part : (part && part.text) || '';
+  }}).join('');
+}}
 async function readAssistantFromBackend() {{
   if (!conversationId) {{
     conversationId = (workPage.url().match(/\\/c\\/([0-9a-fA-F-]{{8,}})/) || [])[1] || '';
@@ -596,20 +705,28 @@ async function readAssistantFromBackend() {{
   );
   if (!cr.ok) return {{ text: '', finished: false }};
   var payload = await cr.json();
-  var nodes = Object.values(payload.mapping || {{}});
-  var assistants = nodes.filter(function (node) {{
-    var parts = node && node.message && node.message.content && node.message.content.parts;
-    return node && node.message && node.message.author && node.message.author.role === 'assistant' && Array.isArray(parts) && parts.join('').trim();
+  var mapping = payload.mapping || {{}};
+  var userTime = 0;
+  var childIds = {{}};
+  Object.keys(mapping).forEach(function (id) {{
+    var node = mapping[id];
+    if (node && node.message && node.message.author && node.message.author.role === 'user' && messageTextFrom(node.message).includes(consultId)) {{
+      userTime = node.message.create_time || 0;
+      (node.children || []).forEach(function (child) {{ childIds[child] = true; }});
+    }}
+  }});
+  var assistants = Object.keys(mapping).map(function (id) {{
+    return {{ id: id, node: mapping[id] }};
+  }}).filter(function (entry) {{
+    var node = entry.node;
+    var later = userTime && node && node.message && (node.message.create_time || 0) > userTime;
+    return node && node.message && node.message.author && node.message.author.role === 'assistant' && messageTextFrom(node.message).trim() && (childIds[entry.id] || later);
   }}).sort(function (left, right) {{
-    return (left.message.create_time || 0) - (right.message.create_time || 0);
+    return (left.node.message.create_time || 0) - (right.node.message.create_time || 0);
   }});
   if (!assistants.length) return {{ text: '', finished: false }};
-  var last = assistants[assistants.length - 1].message;
-  var parts = last.content && last.content.parts;
-  var text = Array.isArray(parts) ? parts.map(function (part) {{
-    return typeof part === 'string' ? part : (part && part.text) || '';
-  }}).join('').trim() : '';
-  return {{ text: text, finished: last.status !== 'in_progress' }};
+  var last = assistants[assistants.length - 1].node.message;
+  return {{ text: messageTextFrom(last).trim(), finished: last.status !== 'in_progress' }};
 }}
 var assistant = workPage.locator('[data-message-author-role="assistant"]').last();
 var copyResponse = workPage.getByRole('button', {{ name: /^(응답 복사|Copy response)$/ }}).last();
@@ -626,7 +743,7 @@ while (Date.now() < responseDeadline) {{
     await sleep(5000);
     continue;
   }}
-  if ((await workPage.locator('[data-message-author-role="assistant"]').count()) > 0) {{
+  if ((await workPage.locator('[data-message-author-role="assistant"]').count()) > assistantCountBefore) {{
     try {{
       await assistant.waitFor({{ state: 'visible', timeout: 1000 }});
       var liveText = (await assistant.innerText()).trim();
@@ -748,6 +865,7 @@ def run_repl_consult(
     submit_timeout: int,
     response_timeout: int,
     consult_id: str = "",
+    on_submit: Callable[[dict[str, Any]], None] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], float, float, str]:
     timeout = submit_timeout + response_timeout + 30
     transcript = ""
@@ -781,6 +899,8 @@ def run_repl_consult(
                 "targetId": "",
                 "submitElapsedMs": 0,
             }
+            if on_submit is not None:
+                on_submit(submit_payload)
             if recovered.get("responseText") and recovered.get("finished", True):
                 return (
                     submit_payload,
@@ -817,6 +937,8 @@ def run_repl_consult(
         f"elapsed={submit_elapsed:.3f}s url={submit_payload['conversationUrl']}",
         flush=True,
     )
+    if on_submit is not None:
+        on_submit(submit_payload)
     response_payload = marker_payload(transcript, RESPONSE_MARKER)
     if response_payload is None:
         raise SubmittedResponseError(
@@ -854,12 +976,133 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         default=None,
         help="Recover a committed consult from a previous result.json. Never resends.",
     )
+    parser.add_argument(
+        "--list",
+        action="store_true",
+        help="List stored consult threads and their running/finished status.",
+    )
+    parser.add_argument(
+        "--thread",
+        default=None,
+        help="Continue a stored thread id, conversation id, result.json, or unique topic.",
+    )
+    parser.add_argument(
+        "--conversation-url",
+        default=None,
+        help="Continue an existing chatgpt.com /c/ conversation.",
+    )
+    parser.add_argument("--sessions-file", default=None)
+    parser.add_argument("--limit", type=int, default=20)
+    parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
-    if args.recover_from:
+    if args.list:
+        if args.quality or args.packet or args.thread or args.conversation_url or args.recover_from:
+            parser.error("--list cannot be combined with send or recover flags")
         return args
+    if args.recover_from:
+        if args.thread or args.conversation_url:
+            parser.error("--recover-from cannot be combined with --thread or --conversation-url")
+        return args
+    if args.thread and args.conversation_url:
+        parser.error("use exactly one of --thread or --conversation-url")
     if not args.quality or not args.packet:
-        parser.error("--quality and --packet are required unless --recover-from is set")
+        parser.error("--quality and --packet are required unless --list or --recover-from is set")
+    if args.conversation_url and not SESSIONS.is_chatgpt_conversation_url(args.conversation_url):
+        parser.error("--conversation-url must be an https://chatgpt.com/.../c/<id> URL")
     return args
+
+
+def session_store_from_args(args: argparse.Namespace):
+    return SESSIONS.SessionStore(SESSIONS.resolve_sessions_path(args.sessions_file))
+
+
+def record_thread_outcome(
+    store,
+    thread: dict[str, Any] | None,
+    *,
+    status: str,
+    consult_id: str | None,
+    conversation_url: str | None = None,
+    target_id: str | None = None,
+    response_output: str = "",
+    json_output: str = "",
+    submit_elapsed_seconds: float | None = None,
+) -> None:
+    if store is None or not thread:
+        return
+    try:
+        store.finish_turn(
+            thread["threadId"],
+            status=status,
+            consult_id=consult_id,
+            conversation_url=conversation_url,
+            target_id=target_id,
+            response_output=response_output,
+            json_output=json_output,
+            submit_elapsed_seconds=submit_elapsed_seconds,
+        )
+    except SESSIONS.UnknownThreadError:
+        return
+
+
+def attach_thread_fields(
+    evidence: dict[str, Any],
+    thread: dict[str, Any] | None,
+    mode: str,
+) -> dict[str, Any]:
+    attached = dict(evidence)
+    if thread:
+        attached["threadId"] = thread.get("threadId") or ""
+        attached["mode"] = mode
+    return attached
+
+
+def open_or_continue_thread(
+    args: argparse.Namespace,
+    *,
+    topic: str,
+    quality: str,
+    project_name: str,
+    consult_id: str,
+    packet_path: str,
+):
+    store = session_store_from_args(args)
+    cwd = os.getcwd()
+    pid = os.getpid()
+    if args.thread or args.conversation_url:
+        query = str(args.thread or args.conversation_url)
+        thread = None
+        try:
+            thread = store.resolve(query)
+        except SESSIONS.UnknownThreadError:
+            if not args.conversation_url:
+                raise
+        if thread is None:
+            thread = store.adopt_conversation(
+                conversation_url=str(args.conversation_url),
+                topic=topic,
+                quality=quality,
+                project_name=project_name,
+                consult_id=consult_id,
+                packet_path=packet_path,
+                cwd=cwd,
+                pid=pid,
+            )
+            return store, thread, store.thread_lock(thread["threadId"]), True, str(thread.get("conversationUrl") or ""), False
+        conversation_url = str(thread.get("conversationUrl") or "")
+        if not SESSIONS.is_chatgpt_conversation_url(conversation_url):
+            raise ValueError("thread has no saved conversation yet; cannot continue")
+        return store, thread, store.thread_lock(thread["threadId"]), True, conversation_url, True
+    thread = store.create_thread(
+        topic=topic,
+        quality=quality,
+        project_name=project_name,
+        consult_id=consult_id,
+        packet_path=packet_path,
+        cwd=cwd,
+        pid=pid,
+    )
+    return store, thread, store.thread_lock(thread["threadId"]), False, None, False
 
 
 def recover_from_saved_state(args: argparse.Namespace) -> int:
@@ -907,16 +1150,31 @@ def recover_from_saved_state(args: argparse.Namespace) -> int:
             "responseOutput": str(response_path),
             "packetPath": evidence.get("packetPath") or "",
         }
+        saved = attach_thread_fields(saved, {"threadId": evidence.get("threadId") or ""}, str(evidence.get("mode") or "recover"))
         json_path.write_text(json.dumps(saved, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        record_thread_outcome(
+            session_store_from_args(args),
+            {"threadId": evidence.get("threadId") or ""} if evidence.get("threadId") else None,
+            status="finished",
+            consult_id=consult_id,
+            conversation_url=str(saved.get("conversationUrl") or ""),
+            target_id=str(saved.get("targetId") or ""),
+            response_output=str(response_path),
+            json_output=str(json_path),
+        )
         print(f"CONSULT_COMPLETE response={response_path}", flush=True)
         return 0
     stderr_path.write_text("backend recovery did not finish\n", encoding="utf-8")
-    failed = {
-        **evidence,
-        "ok": False,
-        "status": "submitted_response_unavailable",
-        "id": consult_id,
-    }
+    failed = attach_thread_fields(
+        {
+            **evidence,
+            "ok": False,
+            "status": "submitted_response_unavailable",
+            "id": consult_id,
+        },
+        {"threadId": evidence.get("threadId") or ""} if evidence.get("threadId") else None,
+        str(evidence.get("mode") or "recover"),
+    )
     json_path.write_text(json.dumps(failed, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(
         "submission committed but response recovery failed; recover the same conversation and do not resend",
@@ -927,6 +1185,12 @@ def recover_from_saved_state(args: argparse.Namespace) -> int:
 
 def main(argv: Sequence[str]) -> int:
     args = parse_args(argv)
+    if args.list:
+        return SESSIONS.print_list(
+            path=SESSIONS.resolve_sessions_path(args.sessions_file),
+            as_json=args.json,
+            limit=args.limit,
+        )
     if not shutil.which("aside"):
         print("aside not found", file=sys.stderr)
         return 127
@@ -984,32 +1248,96 @@ def main(argv: Sequence[str]) -> int:
     if artifact_path is not None:
         artifact_path.unlink(missing_ok=True)
 
+    store = None
+    thread = None
+    follow_up = False
+    conversation_url = None
+    mode = "new"
     try:
-        (
-            submit_payload,
-            response_payload,
-            submit_elapsed,
-            response_elapsed,
-            transcript,
-        ) = run_repl_consult(
-            build_repl_script(
-                project_url=project_url,
-                project_name=project_name,
-                quality=args.quality,
-                packet_name=f"consult-{consult_id}.md",
-                packet_base64=packet_base64,
-                topic=topic,
-                consult_id=consult_id,
-                response_timeout_ms=args.response_timeout * 1000,
-                artifact_output=str(artifact_path) if artifact_path else None,
-            ),
-            submit_timeout=SUBMIT_TIMEOUT_SECONDS,
-            response_timeout=args.response_timeout,
+        store, thread, thread_lock, follow_up, conversation_url, needs_start = open_or_continue_thread(
+            args,
+            topic=topic,
+            quality=args.quality,
+            project_name=project_name,
+            consult_id=consult_id,
+            packet_path=packet_source,
+        )
+    except SESSIONS.UnknownThreadError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    except SESSIONS.AmbiguousThreadError as exc:
+        print(str(exc), file=sys.stderr)
+        return 3
+    except (SESSIONS.ThreadBusyError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    mode = "continue" if follow_up else "new"
+    print(
+        f"CONSULT_THREAD thread={thread.get('threadId') if thread else '-'} "
+        f"mode={mode} url={conversation_url or '-'}",
+        flush=True,
+    )
+
+    def mark_submitted(payload: dict[str, Any]) -> None:
+        if store is None or thread is None:
+            return
+        store.mark_submitted(
+            thread["threadId"],
+            conversation_url=str(payload.get("conversationUrl") or "") or None,
+            target_id=str(payload.get("targetId") or "") or None,
             consult_id=consult_id,
         )
+
+    try:
+        with thread_lock:
+            if needs_start and thread is not None and store is not None:
+                thread = store.start_turn(
+                    thread["threadId"],
+                    consult_id=consult_id,
+                    topic=topic,
+                    quality=args.quality,
+                    mode=mode,
+                    packet_path=packet_source,
+                    pid=os.getpid(),
+                )
+            (
+                submit_payload,
+                response_payload,
+                submit_elapsed,
+                response_elapsed,
+                transcript,
+            ) = run_repl_consult(
+                build_repl_script(
+                    project_url=project_url,
+                    project_name=project_name,
+                    quality=args.quality,
+                    packet_name=f"consult-{consult_id}.md",
+                    packet_base64=packet_base64,
+                    topic=topic,
+                    consult_id=consult_id,
+                    response_timeout_ms=args.response_timeout * 1000,
+                    artifact_output=str(artifact_path) if artifact_path else None,
+                    conversation_url=conversation_url,
+                    follow_up=follow_up,
+                ),
+                submit_timeout=SUBMIT_TIMEOUT_SECONDS,
+                response_timeout=args.response_timeout,
+                consult_id=consult_id,
+                on_submit=mark_submitted,
+            )
+    except SESSIONS.ThreadBusyError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     except SubmitUnknownError as exc:
         stderr_path.write_text(str(exc), encoding="utf-8")
         print(str(exc), file=sys.stderr)
+        record_thread_outcome(
+            store,
+            thread,
+            status="failed",
+            consult_id=consult_id,
+            json_output=str(json_path),
+        )
         return 76
     except SubmittedResponseError as exc:
         submitted = exc.submit_payload
@@ -1021,30 +1349,41 @@ def main(argv: Sequence[str]) -> int:
         if finished_backend_reply(recovered):
             response_path.write_text(str(recovered["responseText"]) + "\n", encoding="utf-8")
             stderr_path.write_text(exc.transcript, encoding="utf-8")
+            recovered_evidence = attach_thread_fields(
+                {
+                    "ok": True,
+                    "id": consult_id,
+                    "topic": topic,
+                    "quality": args.quality,
+                    "model": submitted.get("model") or "GPT-5.6 Sol",
+                    "tier": submitted.get("tier") or "",
+                    "conversationUrl": recovered["conversationUrl"],
+                    "targetId": submitted.get("targetId") or "",
+                    "submitElapsedSeconds": round(exc.submit_elapsed, 3),
+                    "responseElapsedSeconds": 0,
+                    "idMatched": bool(recovered.get("idMatched")),
+                    "packetUnread": False,
+                    "recoveredFromBackend": True,
+                    "responseOutput": str(response_path),
+                    "packetPath": packet_source,
+                },
+                thread,
+                mode,
+            )
             json_path.write_text(
-                json.dumps(
-                    {
-                        "ok": True,
-                        "id": consult_id,
-                        "topic": topic,
-                        "quality": args.quality,
-                        "model": submitted.get("model") or "GPT-5.6 Sol",
-                        "tier": submitted.get("tier") or "",
-                        "conversationUrl": recovered["conversationUrl"],
-                        "targetId": submitted.get("targetId") or "",
-                        "submitElapsedSeconds": round(exc.submit_elapsed, 3),
-                        "responseElapsedSeconds": 0,
-                        "idMatched": bool(recovered.get("idMatched")),
-                        "packetUnread": False,
-                        "recoveredFromBackend": True,
-                        "responseOutput": str(response_path),
-                        "packetPath": packet_source,
-                    },
-                    ensure_ascii=False,
-                    indent=2,
-                )
-                + "\n",
+                json.dumps(recovered_evidence, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
+            )
+            record_thread_outcome(
+                store,
+                thread,
+                status="finished",
+                consult_id=consult_id,
+                conversation_url=str(recovered["conversationUrl"]),
+                target_id=str(submitted.get("targetId") or ""),
+                response_output=str(response_path),
+                json_output=str(json_path),
+                submit_elapsed_seconds=round(exc.submit_elapsed, 3),
             )
             print(f"CONSULT_COMPLETE response={response_path}", flush=True)
             return 0
@@ -1053,28 +1392,49 @@ def main(argv: Sequence[str]) -> int:
             message,
             encoding="utf-8",
         )
-        evidence = {
-            "ok": False,
-            "status": "submitted_response_unavailable",
-            "id": consult_id,
-            "topic": topic,
-            "quality": args.quality,
-            "model": submitted["model"],
-            "tier": submitted["tier"],
-            "conversationUrl": submitted["conversationUrl"],
-            "targetId": submitted["targetId"],
-            "submitElapsedSeconds": round(exc.submit_elapsed, 3),
-            "packetPath": packet_source,
-        }
+        evidence = attach_thread_fields(
+            {
+                "ok": False,
+                "status": "submitted_response_unavailable",
+                "id": consult_id,
+                "topic": topic,
+                "quality": args.quality,
+                "model": submitted["model"],
+                "tier": submitted["tier"],
+                "conversationUrl": submitted["conversationUrl"],
+                "targetId": submitted["targetId"],
+                "submitElapsedSeconds": round(exc.submit_elapsed, 3),
+                "packetPath": packet_source,
+            },
+            thread,
+            mode,
+        )
         json_path.write_text(
             json.dumps(evidence, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
+        )
+        record_thread_outcome(
+            store,
+            thread,
+            status="submitted_response_unavailable",
+            consult_id=consult_id,
+            conversation_url=str(submitted.get("conversationUrl") or ""),
+            target_id=str(submitted.get("targetId") or ""),
+            json_output=str(json_path),
+            submit_elapsed_seconds=round(exc.submit_elapsed, 3),
         )
         print(message, file=sys.stderr)
         return 77
     except (TimeoutError, RuntimeError, json.JSONDecodeError) as exc:
         stderr_path.write_text(str(exc), encoding="utf-8")
         print(str(exc), file=sys.stderr)
+        record_thread_outcome(
+            store,
+            thread,
+            status="failed",
+            consult_id=consult_id,
+            json_output=str(json_path),
+        )
         return 75
     stderr_path.write_text(transcript, encoding="utf-8")
     response_text = str(response_payload["responseText"])
@@ -1096,9 +1456,46 @@ def main(argv: Sequence[str]) -> int:
         if artifact_copy_error is not None:
             message += f" ({artifact_copy_error})"
         stderr_path.write_text(transcript + "\n" + message + "\n", encoding="utf-8")
-        evidence = {
-            "ok": False,
-            "status": "submitted_artifact_unavailable",
+        evidence = attach_thread_fields(
+            {
+                "ok": False,
+                "status": "submitted_artifact_unavailable",
+                "id": consult_id,
+                "topic": topic,
+                "quality": args.quality,
+                "model": submit_payload["model"],
+                "tier": submit_payload["tier"],
+                "conversationUrl": response_payload["conversationUrl"],
+                "targetId": submit_payload["targetId"],
+                "submitElapsedSeconds": round(submit_elapsed, 3),
+                "responseElapsedSeconds": round(response_elapsed, 3),
+                "responseOutput": str(response_path),
+                "packetPath": packet_source,
+                "artifactOutput": str(artifact_path),
+            },
+            thread,
+            mode,
+        )
+        json_path.write_text(
+            json.dumps(evidence, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        record_thread_outcome(
+            store,
+            thread,
+            status="submitted_response_unavailable",
+            consult_id=consult_id,
+            conversation_url=str(response_payload.get("conversationUrl") or ""),
+            target_id=str(submit_payload.get("targetId") or ""),
+            response_output=str(response_path),
+            json_output=str(json_path),
+            submit_elapsed_seconds=round(submit_elapsed, 3),
+        )
+        print(message, file=sys.stderr)
+        return 77
+    evidence = attach_thread_fields(
+        {
+            "ok": True,
             "id": consult_id,
             "topic": topic,
             "quality": args.quality,
@@ -1108,36 +1505,29 @@ def main(argv: Sequence[str]) -> int:
             "targetId": submit_payload["targetId"],
             "submitElapsedSeconds": round(submit_elapsed, 3),
             "responseElapsedSeconds": round(response_elapsed, 3),
+            "idMatched": bool(response_payload.get("idMatched")),
+            "packetUnread": bool(response_payload.get("packetUnread")),
+            "recoveredFromBackend": bool(response_payload.get("recoveredFromBackend")),
             "responseOutput": str(response_path),
             "packetPath": packet_source,
-            "artifactOutput": str(artifact_path),
-        }
-        json_path.write_text(
-            json.dumps(evidence, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
-        print(message, file=sys.stderr)
-        return 77
-    evidence = {
-        "ok": True,
-        "id": consult_id,
-        "topic": topic,
-        "quality": args.quality,
-        "model": submit_payload["model"],
-        "tier": submit_payload["tier"],
-        "conversationUrl": response_payload["conversationUrl"],
-        "targetId": submit_payload["targetId"],
-        "submitElapsedSeconds": round(submit_elapsed, 3),
-        "responseElapsedSeconds": round(response_elapsed, 3),
-        "idMatched": bool(response_payload.get("idMatched")),
-        "packetUnread": bool(response_payload.get("packetUnread")),
-        "recoveredFromBackend": bool(response_payload.get("recoveredFromBackend")),
-        "responseOutput": str(response_path),
-        "packetPath": packet_source,
-    }
+        },
+        thread,
+        mode,
+    )
     if artifact_path is not None:
         evidence["artifactOutput"] = str(artifact_path)
     json_path.write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    record_thread_outcome(
+        store,
+        thread,
+        status="finished",
+        consult_id=consult_id,
+        conversation_url=str(response_payload.get("conversationUrl") or ""),
+        target_id=str(submit_payload.get("targetId") or ""),
+        response_output=str(response_path),
+        json_output=str(json_path),
+        submit_elapsed_seconds=round(submit_elapsed, 3),
+    )
     print(f"CONSULT_COMPLETE response={response_path}", flush=True)
     return 0
 
