@@ -3,7 +3,7 @@ export const DEFAULT_MODEL_ID = "claude-opus-5";
 export const CACHE_RETENTION = "long";
 
 export const MODEL_CATEGORIES = Object.freeze({
-  grok: "cursor/cursor-grok-4.6",
+  grok: "xai/grok-4.6",
   opus: "anthropic/claude-opus-5",
   sonnet: "anthropic/claude-sonnet-5",
   fable: "anthropic/claude-fable-5-1",
@@ -17,7 +17,7 @@ export const MODEL_CATEGORIES = Object.freeze({
 // these ordered chains against the live registry, then carries the remaining available rungs into
 // the child runtime. Callers choose the cognitive profile; they do not probe provider ids.
 export const MODEL_CATEGORY_CHAINS = Object.freeze({
-  grok: Object.freeze([MODEL_CATEGORIES.grok]),
+  grok: Object.freeze([MODEL_CATEGORIES.grok, "cursor/cursor-grok-4.6"]),
   opus: Object.freeze(["kiro/claude-opus-5", MODEL_CATEGORIES.opus]),
   sonnet: Object.freeze([MODEL_CATEGORIES.sonnet]),
   fable: Object.freeze([MODEL_CATEGORIES.fable]),

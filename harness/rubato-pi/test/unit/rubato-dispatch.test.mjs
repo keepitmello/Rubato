@@ -37,6 +37,8 @@ function harness(t) {
           RUBATO_TEST_ARGS: argsPath,
           RUBATO_TEST_STDIN: stdinPath,
           RUBATO_TEST_CWD: cwdPath,
+          RUBATO_PI_CODING_AGENT_DIR: "",
+          SENPI_CODING_AGENT_DIR: "",
           ...extraEnv,
         },
         input,
@@ -115,4 +117,20 @@ test("invalid names and unknown lanes fail before launch", (t) => {
   assert.equal(box.run(["../escape"]).status, 2);
   assert.equal(box.run(["job-a", "unknown-lane"]).status, 2);
   assert.throws(() => box.args(), /ENOENT/);
+});
+
+test("oversized worker stdout is truncated and the full file stays on disk", (t) => {
+  const box = harness(t);
+  const scripts = join(box.root, "scripts");
+  writeFileSync(join(scripts, "rubato-pi.sh"), `#!/bin/sh\npython3 -c "print('x'*200)"\n`);
+  chmodSync(join(scripts, "rubato-pi.sh"), 0o755);
+  const result = box.run(["job-a"], "hi\n", { RUBATO_DISPATCH_STDOUT_MAX: "32" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /truncated 201 bytes to 32/);
+  assert.match(result.stdout, /last\.stdout/);
+  assert.match(result.stdout, /last\.log/);
+  assert.ok(!result.stdout.includes("x".repeat(200)));
+  assert.ok(result.stdout.startsWith("x".repeat(32)));
+  const full = readFileSync(join(box.home, ".rubato-pi", "agent", "dispatch", "job-a", "last.stdout"), "utf8");
+  assert.equal(full.trimEnd(), "x".repeat(200));
 });

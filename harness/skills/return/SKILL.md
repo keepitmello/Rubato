@@ -5,7 +5,7 @@ description: "Final stdout contract from a non-interactive worker to its dispatc
 
 # Return
 
-This is the contract for what you put on stdout when the session is non-interactive (`--print` / `--mode json`). Interactive and `--mode rpc` sessions ignore it.
+This is the contract for what you put on stdout when the session is non-interactive (`rubato dispatch` / `--print` / `--mode json`). Interactive and `--mode rpc` sessions ignore it. The caller is `rubato dispatch`; `--print` is the engine switch it already uses. Dispatch may truncate caller stdout further and leave the full answer in `last.stdout`.
 
 ## Boss report only
 

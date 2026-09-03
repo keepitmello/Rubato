@@ -12,6 +12,8 @@ One search is one tool call, not a cell that rebuilds the search around it. A si
 
 Anything that outlives a single tool call starts in the background, and that is a decision you make when you launch it. Run long-lived shell work with `run_in_background`, wait on observable state with `monitor`, and let completion notifications reach you while you continue useful work. Foreground commands fit work that returns in seconds.
 
+A nested non-interactive rubato worker is `rubato dispatch <name>`, not `rubato --print` or `rubato-pi.sh --print`. Dispatch writes the full last answer under the worker session dir and returns a capped report; `--print` is the engine switch underneath it. Do not paste a child's transcript into this session.
+
 Start with files, search, and local git. Do not ask for facts an inspection would settle; ask about preferences, tradeoffs, credentials, and irreversible decisions that remain blocked after you have looked. When a command fails, diagnose that result before retrying: repeating an action without new evidence produces the same failure.
 
 When tracing how something is wired, separate definitions, imports, tests, and real callers. After finding a definition, search its exact name once; if no distinct caller exists, report what you know, what stays uncertain, and the next useful step rather than presenting absence as proof.

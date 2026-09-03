@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # rubato dispatch — 브리프를 stdin으로 받아 비대화 워커를 한 번 돌린다.
-# 끝나면 stdout에 최종 답만 남긴다. 대화 세션이 아니다.
+# 엔진은 --print 를 쓰지만, 호출자 stdout은 잘린 답이다. 전문은 last.stdout.
+# 부모 세션에서 rubato --print / rubato-pi.sh --print 를 직접 돌리지 말라.
 set -euo pipefail
+
+# 부모 컨텍스트로 날아가는 최대. 워커가 계약을 어겨도 여기서 자른다.
+DEFAULT_STDOUT_MAX=8192
 
 usage() {
   cat <<'USAGE'
@@ -9,6 +13,8 @@ Usage: rubato dispatch <name> [grok|grokfast|fast|sol|fable] [--cwd DIR] < brief
        rubato dispatch <name> --continue < followup.md
 
 `dispatch` on PATH is the same command.
+The full last answer stays in the worker session dir. Caller stdout is
+capped (RUBATO_DISPATCH_STDOUT_MAX, default 8192 bytes).
 USAGE
 }
 
@@ -44,6 +50,24 @@ resolve_agent_dir() {
     return
   fi
   printf '%s\n' "${HOME}/.rubato-pi/agent"
+}
+
+emit_worker_stdout() {
+  local out="$1"
+  local log="$2"
+  local max size
+  max="${RUBATO_DISPATCH_STDOUT_MAX:-$DEFAULT_STDOUT_MAX}"
+  if [[ ! "$max" =~ ^[1-9][0-9]*$ ]]; then
+    max="$DEFAULT_STDOUT_MAX"
+  fi
+  size="$(wc -c <"$out" | tr -d '[:space:]')"
+  if [[ "$size" -le "$max" ]]; then
+    cat "$out"
+    return
+  fi
+  head -c "$max" "$out"
+  printf '\n\n[rubato dispatch] truncated %s bytes to %s. full: %s  log: %s\n' \
+    "$size" "$max" "$out" "$log"
 }
 
 if [[ $# -eq 0 ]]; then
@@ -150,5 +174,5 @@ else
   "${cmd[@]}" >"$OUT" 2>"$LOG" || status=$?
 fi
 
-cat "$OUT"
+emit_worker_stdout "$OUT" "$LOG"
 exit "$status"
