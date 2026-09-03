@@ -33,10 +33,10 @@ aside --version
 aside exec --help
 ```
 
-Then read `aside-browser` and run Aside in an interactive PTY with one self-contained task. Pin Grok. Never pass Sol.
+Then read `aside-browser` and run Aside in an interactive PTY with one self-contained task. Omit `-m` unless overriding the default model. Never pass Sol.
 
 ```bash
-aside exec -m cursor/grok-4.6 --effort high "<complete browser task, constraints, approval boundaries, and required evidence>"
+aside exec "<complete browser task, constraints, approval boundaries, and required evidence>"
 ```
 
 Wait for the process to finish, then use the returned final answer, artifacts, and exit status as the handoff result. If the process dies or the session is interrupted, recover that same session. Do not launch a second research agent.
