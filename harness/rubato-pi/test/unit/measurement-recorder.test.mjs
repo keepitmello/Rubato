@@ -35,6 +35,21 @@ test("provider usage preserves unavailable fields and reported zero", () => {
   });
 });
 
+test("Anthropic server-compaction iteration stays visible next to the post-compaction usage", () => {
+  // 실측 (pi-ai message.usage 꼴): 최상위는 압축 이후, compaction 은 압축 시점의 청구.
+  const usage = {
+    input: 380, output: 5300, cacheRead: 37703, cacheWrite: 213889, totalTokens: 257272,
+    compaction: { input: 380, output: 5300, cacheRead: 37703, cacheWrite: 213889 },
+  };
+  const normalized = normalizeProviderUsage(usage);
+  assert.equal(normalized.inputTokens, 380);
+  assert.equal(normalized.compactionInputTokens, 380);
+  assert.equal(normalized.compactionOutputTokens, 5300);
+  assert.equal(normalized.compactionCacheReadTokens, 37703);
+  assert.equal(normalized.compactionCacheWriteTokens, 213889);
+  assert.equal(normalizeProviderUsage({ input: 1, output: 1 }).compactionInputTokens, undefined);
+});
+
 test("call events carry TTFT, byte-level context diffs, and inter-call wait", () => {
   const fx = recorderFixture();
   const first = fx.recorder.startCall({ taskId: "task-1", sessionId: "session-1", provider: "xai", model: "xai/grok", body: { prompt: [{ role: "user", content: "one" }] } });

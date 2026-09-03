@@ -12,6 +12,7 @@ import { installSessionTitle } from "./session-title.mjs";
 import { installEvalSearchGuard } from "../eval-search-guard.mjs";
 import { installMeasurementHooks } from "../measurement-recorder.mjs";
 import { installRemoteSurface } from "./remote-surface.mjs";
+import { installServerCompaction } from "./server-compaction.mjs";
 
 assertEngineBuilt();
 const { composeRubatoExtension, rubatoComponents } = await import(rubatoExtension);
@@ -51,6 +52,7 @@ export default async function rubatoPiAdapter(pi) {
   }
   installEvalSearchGuard(pi);
   installMeasurementHooks(pi);
+  installServerCompaction(pi);
   const member = isTeamMemberProcess();
   const role = resolveRole();
   if (!member) installSessionTitle(pi);
