@@ -94,17 +94,17 @@ test("이미 새 번들과 같으면 그대로 둔다", () => {
   assert.match(result.stdout, /이미 최신 2/);
 });
 
-test("consult 실행 파일이 있으면 PATH 에 심는다", () => {
+test("outpost 실행 파일이 있으면 PATH 에 심는다", () => {
   const { repo, dest } = setupRepo();
-  write(join(repo, "harness/skills/consult/SKILL.md"), "consult\n");
-  write(join(repo, "harness/skills/consult/scripts/consult"), "#!/bin/sh\nexit 0\n");
+  write(join(repo, "harness/skills/outpost/SKILL.md"), "outpost\n");
+  write(join(repo, "harness/skills/outpost/scripts/outpost"), "#!/bin/sh\nexit 0\n");
   const result = run(repo, dest);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(
-    readFileSync(join(dest, ".local/bin/consult"), "utf8"),
+    readFileSync(join(dest, ".local/bin/outpost"), "utf8"),
     "#!/bin/sh\nexit 0\n",
   );
-  assert.match(result.stdout, /consult ->/);
+  assert.match(result.stdout, /outpost ->/);
 });
 
 test("--force 는 로컬 수정도 덮는다", () => {

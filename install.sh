@@ -263,23 +263,23 @@ else
   add_manual "새 셸을 열거나 'source $RC' 해야 alias 가 먹는다"
 fi
 
-head_ "단계 4.2 · msearch·dispatch·consult 를 PATH 에"
+head_ "단계 4.2 · msearch·dispatch·outpost 를 PATH 에"
 # alias 는 대화형 셸에서만 산다. 에이전트가 도구로 부르는 bash 는 비대화형이라
 # rc 를 안 읽어서 alias 가 없다 — 프롬프트는 msearch 로 기억을 찾으라고 지시하는데
 # 정작 그 명령이 없는 상태가 오래 갔다. 심링크가 그 구멍을 막는다.
 # dispatch 도 같다. 정본은 rubato dispatch 이고, PATH 이름은 같은 스크립트다.
-# consult 는 ~/.agents/skills 정본을 가리킨다. 스킬이 아직 없으면 번들 사본.
+# outpost 는 ~/.agents/skills 정본을 가리킨다. 스킬이 아직 없으면 번들 사본.
 MSEARCH_LINK="$HOME/.local/bin/msearch"
 MSEARCH_SRC="$HARNESS/msearch/msearch"
 DISPATCH_LINK="$HOME/.local/bin/dispatch"
 DISPATCH_SRC="$HARNESS/scripts/rubato-dispatch.sh"
-CONSULT_LINK="$HOME/.local/bin/consult"
-CONSULT_SRC="${AGENTS_SKILLS_DIR:-$HOME/.agents/skills}/consult/scripts/consult"
-[ -f "$CONSULT_SRC" ] || CONSULT_SRC="$HARNESS/skills/consult/scripts/consult"
+OUTPOST_LINK="$HOME/.local/bin/outpost"
+OUTPOST_SRC="${AGENTS_SKILLS_DIR:-$HOME/.agents/skills}/outpost/scripts/outpost"
+[ -f "$OUTPOST_SRC" ] || OUTPOST_SRC="$HARNESS/skills/outpost/scripts/outpost"
 if [ "$APPLY" -eq 0 ]; then
   plan "$MSEARCH_LINK -> $MSEARCH_SRC 심링크를 만든다"
   plan "$DISPATCH_LINK -> $DISPATCH_SRC 심링크를 만든다"
-  plan "$CONSULT_LINK -> $CONSULT_SRC 심링크를 만든다"
+  plan "$OUTPOST_LINK -> $OUTPOST_SRC 심링크를 만든다"
 else
   mkdir -p "$HOME/.local/bin"
   if [ "$(readlink "$MSEARCH_LINK" 2>/dev/null)" = "$MSEARCH_SRC" ]; then
@@ -294,20 +294,21 @@ else
     ln -sf "$DISPATCH_SRC" "$DISPATCH_LINK"
     ok "dispatch 를 PATH 에 놓았다 ($DISPATCH_LINK)"
   fi
-  if [ -f "$CONSULT_SRC" ]; then
-    chmod +x "$CONSULT_SRC" 2>/dev/null || true
-    if [ "$(readlink "$CONSULT_LINK" 2>/dev/null)" = "$CONSULT_SRC" ]; then
-      ok "consult 심링크 이미 맞다"
+  if [ -f "$OUTPOST_SRC" ]; then
+    chmod +x "$OUTPOST_SRC" 2>/dev/null || true
+    if [ "$(readlink "$OUTPOST_LINK" 2>/dev/null)" = "$OUTPOST_SRC" ]; then
+      ok "outpost 심링크 이미 맞다"
     else
-      ln -sfn "$CONSULT_SRC" "$CONSULT_LINK"
-      ok "consult 를 PATH 에 놓았다 ($CONSULT_LINK)"
+      ln -sfn "$OUTPOST_SRC" "$OUTPOST_LINK"
+      ok "outpost 를 PATH 에 놓았다 ($OUTPOST_LINK)"
     fi
+    rm -f "$HOME/.local/bin/consult"
   else
-    warn "consult 실행 파일이 없어 PATH 에 심지 못했다"
+    warn "outpost 실행 파일이 없어 PATH 에 심지 못했다"
   fi
   case ":$PATH:" in
     *":$HOME/.local/bin:"*) : ;;
-    *) add_manual "~/.local/bin 이 PATH 에 없다. rc 에 추가해야 msearch·dispatch·consult 가 잡힌다" ;;
+    *) add_manual "~/.local/bin 이 PATH 에 없다. rc 에 추가해야 msearch·dispatch·outpost 가 잡힌다" ;;
   esac
 fi
 

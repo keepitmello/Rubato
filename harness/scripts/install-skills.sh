@@ -81,19 +81,25 @@ for dir in "$SRC"/*/; do
   fi
 done
 
-install_consult_cli() {
-  local src="$DEST/consult/scripts/consult"
-  local link="$HOME/.local/bin/consult"
+install_outpost_cli() {
+  local src="$DEST/outpost/scripts/outpost"
+  local link="$HOME/.local/bin/outpost"
   [ -f "$src" ] || return 0
   mkdir -p "$HOME/.local/bin"
   chmod +x "$src" 2>/dev/null || true
-  if [ "$(readlink "$link" 2>/dev/null)" = "$src" ]; then
-    return 0
+  if [ "$(readlink "$link" 2>/dev/null)" != "$src" ]; then
+    ln -sfn "$src" "$link"
+    echo "install-skills: outpost -> $link"
   fi
-  ln -sfn "$src" "$link"
-  echo "install-skills: consult -> $link"
+  if [ -e "$HOME/.local/bin/consult" ]; then
+    rm -f "$HOME/.local/bin/consult"
+  fi
+  if [ -e "$DEST/outpost/SKILL.md" ] && [ -e "$DEST/consult" ]; then
+    rm -rf "$DEST/consult"
+    echo "install-skills: 옛 consult 자리를 지웠다"
+  fi
 }
-install_consult_cli
+install_outpost_cli
 
 echo "install-skills: 새로 $added, 이미 최신 $current, 갱신 $replaced, 로컬 유지 $kept -> $DEST"
 if [ "$kept" -gt 0 ]; then

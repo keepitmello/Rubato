@@ -1,0 +1,178 @@
+#!/usr/bin/env python3
+"""User-facing Outpost command: list, show, send, recover."""
+
+from __future__ import annotations
+
+import argparse
+import importlib.util
+from pathlib import Path
+import sys
+from typing import Sequence
+from urllib.parse import urlparse
+
+
+HERE = Path(__file__).resolve().parent
+
+
+def load_module(name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"{path.name} is missing")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def infer_run_dir(packet: Path) -> Path:
+    parts = Path(packet).parts
+    for marker in (".outpost", ".consult"):
+        if marker not in parts:
+            continue
+        index = parts.index(marker)
+        after = parts[index + 1 :]
+        if not after:
+            return Path(*parts[: index + 1]) / Path(packet).stem
+        if len(after) == 1:
+            return Path(*parts[: index + 1]) / Path(after[0]).stem
+        return Path(*parts[: index + 2])
+    return Path(".outpost") / Path(packet).stem
+
+
+def is_chatgpt_conversation_url(value: str | None) -> bool:
+    if not value:
+        return False
+    parsed = urlparse(value)
+    return (
+        parsed.scheme == "https"
+        and parsed.netloc == "chatgpt.com"
+        and "/c/" in parsed.path
+    )
+
+
+def parse_send_tokens(tokens: Sequence[str], quality: str | None) -> tuple[str, str]:
+    rest = list(tokens)
+    if rest and rest[0] in {"xhigh", "pro"}:
+        if quality and quality != rest[0]:
+            raise ValueError("quality was specified twice")
+        quality = rest.pop(0)
+    if not rest:
+        raise ValueError("packet path is required")
+    packet = rest.pop(0)
+    if rest:
+        raise ValueError(f"unexpected extra arguments: {' '.join(rest)}")
+    if quality not in {"xhigh", "pro"}:
+        raise ValueError("send requires xhigh or pro")
+    return quality, packet
+
+
+def build_engine_argv(command: str, args: argparse.Namespace) -> list[str]:
+    if command == "list":
+        argv = ["--list", "--limit", str(args.limit)]
+        if args.json:
+            argv.append("--json")
+        if args.sessions_file:
+            argv.extend(["--sessions-file", args.sessions_file])
+        return argv
+
+    if command == "recover":
+        result = Path(args.result).expanduser()
+        run_dir = result.parent if result.suffix == ".json" else result
+        result_path = result if result.suffix == ".json" else run_dir / "result.json"
+        return [
+            "--recover-from",
+            str(result_path),
+            "--response-output",
+            str(run_dir / "response.md"),
+            "--json-output",
+            str(run_dir / "result.json"),
+            "--stderr-output",
+            str(run_dir / "recover.stderr.log"),
+        ]
+
+    quality, packet = parse_send_tokens(args.tokens, args.quality)
+    packet_path = Path(packet)
+    run_dir = Path(args.run).expanduser() if args.run else infer_run_dir(packet_path)
+    argv = [
+        "--quality",
+        quality,
+        "--packet",
+        str(packet_path),
+        "--response-output",
+        str(run_dir / "response.md"),
+        "--json-output",
+        str(run_dir / "result.json"),
+        "--stderr-output",
+        str(run_dir / "stderr.log"),
+    ]
+    if args.to:
+        if is_chatgpt_conversation_url(args.to):
+            argv.extend(["--conversation-url", args.to])
+        else:
+            argv.extend(["--thread", args.to])
+    if args.artifact:
+        argv.extend(["--artifact-output", args.artifact])
+    if args.url:
+        argv.extend(["--url", args.url])
+    if args.project:
+        argv.extend(["--project", args.project])
+    if args.sessions_file:
+        argv.extend(["--sessions-file", args.sessions_file])
+    if args.timeout is not None:
+        argv.extend(["--response-timeout", str(args.timeout)])
+    return argv
+
+
+def parse_args(argv: Sequence[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="outpost",
+        description="Send or continue a ChatGPT project outpost.",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    listed = sub.add_parser("list", help="Show running and finished threads.")
+    listed.add_argument("--json", action="store_true")
+    listed.add_argument("--limit", type=int, default=20)
+    listed.add_argument("--sessions-file", default=None)
+
+    show = sub.add_parser("show", help="Show one thread.")
+    show.add_argument("query")
+    show.add_argument("--json", action="store_true")
+    show.add_argument("--sessions-file", default=None)
+
+    recover = sub.add_parser("recover", help="Poll a submitted turn. Never resends.")
+    recover.add_argument("result")
+
+    send = sub.add_parser("send", help="Open a new thread or continue with --to.")
+    send.add_argument("tokens", nargs="*", help="xhigh|pro and the packet path.")
+    send.add_argument("--quality", choices=("xhigh", "pro"))
+    send.add_argument("--to", default=None, help="Thread id, conversation URL, or result.json.")
+    send.add_argument("--artifact", default=None, help="Save one generated zip here.")
+    send.add_argument("--run", default=None, help="Directory for response.md and result.json.")
+    send.add_argument("--url", default=None)
+    send.add_argument("--project", default=None)
+    send.add_argument("--sessions-file", default=None)
+    send.add_argument("--timeout", type=int, default=None)
+    return parser.parse_args(argv)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = parse_args(list(argv) if argv is not None else sys.argv[1:])
+    if args.command == "show":
+        sessions = load_module("outpost_sessions", HERE / "outpost_sessions.py")
+        show_argv = ["show", args.query]
+        if args.json:
+            show_argv.append("--json")
+        if args.sessions_file:
+            show_argv.extend(["--sessions-file", args.sessions_file])
+        return sessions.main(show_argv)
+    try:
+        engine_argv = build_engine_argv(args.command, args)
+    except ValueError as error:
+        print(str(error), file=sys.stderr)
+        return 2
+    runner = load_module("run_aside_repl_outpost", HERE / "run_aside_repl_outpost.py")
+    return runner.main(engine_argv)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
