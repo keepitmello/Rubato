@@ -33,7 +33,7 @@ throw 하지만 `applyTransform` 이 `RubatoTransformDrift` 경고로 삼킨다 
 |---|---|---|
 | tui-chrome | (없음: assistant-*, tool-*, interactive-mode-chrome, transcript-cache, turn-work-summary, internal-actions) | TUI 접기/펼치기, turn-work 요약, thinking 라이프사이클, abort-once, 트랜스크립트 캐시 |
 | misc-vendor | `misc-` | 모델 피커 정렬/라벨, high-reasoning 경고 제거, auth 원자/내구 쓰기, pi-tui 인라인 /skill: 자동완성, pi-ai lazy local-work, GPT-5.6 캐시 TTL |
-| core-session | `core-` | compaction 4부작 + 예산, retry/stream watchdog, /skill: 인라인, user-abort 후 compact, speculative 제거, service-tier fast 기억, Codex overflow 감지 |
+| core-session | `core-` | compaction 4부작 + 예산, retry/stream watchdog, /skill: 인라인, user-abort 후 compact, speculative 제거, service-tier fast 기억, Codex overflow 감지, 모델별 client compact 임계점 |
 | cursor-vendor | `cursor-` | cursor-exec journal 3부작, terminal-failure-kind, native checkpoint |
 | control-codemode | `control-` | interactive-control-surface(#29), codemode jiti 리다이렉트 |
 
