@@ -5,7 +5,9 @@
 
 import { injectAgentSession, isAgentSessionUrl } from "./core-agent-session.mjs";
 import { injectCompaction, isCompactionUrl } from "./core-compaction.mjs";
+import { injectCompactionUtils, isCompactionUtilsUrl } from "./core-compaction-utils.mjs";
 import { injectCoreDescriptors, isCoreDescriptorsUrl } from "./core-descriptors.mjs";
+import { injectEmptyRecoveryLiveness, isEmptyRecoveryUrl } from "./core-empty-recovery.mjs";
 import { injectErrorFormat, isErrorFormatUrl } from "./core-error-format.mjs";
 import { injectOverflow, isOverflowUrl } from "./core-overflow.mjs";
 import { injectProviderTimeoutRetry, isProviderTimeoutRetryUrl } from "./core-retry-watchdog.mjs";
@@ -22,6 +24,7 @@ import { injectStreamWatchdog, isStreamWatchdogUrl } from "./core-stream-watchdo
 export function applyCoreSessionTransforms(url, source, applyTransform) {
   if (isStreamWatchdogUrl(url)) source = applyTransform(source, injectStreamWatchdog);
   if (isCompactionUrl(url)) source = applyTransform(source, injectCompaction);
+  if (isCompactionUtilsUrl(url)) source = applyTransform(source, injectCompactionUtils);
   if (isAgentSessionUrl(url)) source = applyTransform(source, injectAgentSession);
   if (isSpeculativeUrl(url)) source = applyTransform(source, injectSpeculative);
   if (isServiceTierUrl(url)) source = applyTransform(source, injectServiceTier);
@@ -29,6 +32,7 @@ export function applyCoreSessionTransforms(url, source, applyTransform) {
   if (isProviderTimeoutRetryUrl(url)) source = applyTransform(source, injectProviderTimeoutRetry);
   if (isErrorFormatUrl(url)) source = applyTransform(source, injectErrorFormat);
   if (isCoreDescriptorsUrl(url)) source = applyTransform(source, injectCoreDescriptors);
+  if (isEmptyRecoveryUrl(url)) source = applyTransform(source, injectEmptyRecoveryLiveness);
   return source;
 }
 
@@ -36,6 +40,7 @@ export {
   injectAgentSession,
   injectCompaction,
   injectCoreDescriptors,
+  injectEmptyRecoveryLiveness,
   injectErrorFormat,
   injectOverflow,
   injectProviderTimeoutRetry,
@@ -44,7 +49,9 @@ export {
   injectStreamWatchdog,
   isAgentSessionUrl,
   isCompactionUrl,
+  isCompactionUtilsUrl,
   isCoreDescriptorsUrl,
+  isEmptyRecoveryUrl,
   isErrorFormatUrl,
   isOverflowUrl,
   isProviderTimeoutRetryUrl,

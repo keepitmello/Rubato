@@ -23,6 +23,7 @@ const ROOTS = {
   senpi: (rel) => join(senpiDir, rel),
   "senpi-tui": (rel) => senpiNested("@earendil-works", "pi-tui", rel),
   "pi-ai": (rel) => senpiNested("@earendil-works", "pi-ai", rel),
+  "pi-agent-core": (rel) => senpiNested("@earendil-works", "pi-agent-core", rel),
 };
 
 const AUDITED = [
@@ -37,6 +38,7 @@ const AUDITED = [
   ["senpi", "dist/modes/interactive/components/model-selector.js"],
   ["senpi", "dist/core/high-reasoning-warning.js"],
   ["senpi", "dist/core/compaction/compaction.js"],
+  ["senpi", "dist/core/compaction/utils.js"],
   ["senpi", "dist/core/auth-storage.js"],
   ["senpi", "dist/core/cursor-exec-bridge-session.js"],
   ["senpi", "dist/core/cursor-exec-bridge.js"],
@@ -63,6 +65,7 @@ const AUDITED = [
   ["pi-ai", "dist/api/cursor-conversation-rotation.js"],
   ["pi-ai", "dist/utils/prompt-cache-ttl.js"],
   ["pi-ai", "dist/utils/overflow.js"],
+  ["pi-agent-core", "dist/empty-assistant-recovery.js"],
 ];
 
 test("every audited vendor file transforms cleanly on the installed engine", async () => {
