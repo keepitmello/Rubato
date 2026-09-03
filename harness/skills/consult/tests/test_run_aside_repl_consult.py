@@ -21,6 +21,16 @@ SPEC.loader.exec_module(MODULE)
 
 
 class AsideReplConsultTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self._sessions_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._sessions_dir.cleanup)
+        self._sessions_env = mock.patch.dict(
+            os.environ,
+            {"CONSULT_SESSIONS_PATH": str(Path(self._sessions_dir.name) / "sessions.json")},
+        )
+        self._sessions_env.start()
+        self.addCleanup(self._sessions_env.stop)
+
     def test_quality_flag_is_required_and_limited(self) -> None:
         with self.assertRaises(SystemExit):
             MODULE.parse_args([])
@@ -812,6 +822,218 @@ print('ASIDE_REPL_RESPONSE_RESULT {{"responseText":"ID: placeholder","artifact":
             self.assertTrue(saved["ok"])
             self.assertTrue(saved["recoveredFromBackend"])
             self.assertEqual(saved["id"], "abc123")
+
+    def test_list_and_thread_flags_are_parseable(self) -> None:
+        listed = MODULE.parse_args(["--list"])
+        self.assertTrue(listed.list)
+        continued = MODULE.parse_args(
+            ["--thread", "abcd1234", "--quality", "xhigh", "--packet", "p"]
+        )
+        self.assertEqual(continued.thread, "abcd1234")
+        self.assertEqual(continued.quality, "xhigh")
+        with self.assertRaises(SystemExit):
+            MODULE.parse_args(["--list", "--quality", "xhigh", "--packet", "p"])
+        with self.assertRaises(SystemExit):
+            MODULE.parse_args(["--thread", "abcd1234"])
+        with self.assertRaises(SystemExit):
+            MODULE.parse_args(
+                [
+                    "--thread", "abcd",
+                    "--conversation-url", "https://chatgpt.com/c/6a95625e-1f78-83e8-aa90-a49f982e36ef",
+                    "--quality", "xhigh",
+                    "--packet", "p",
+                ]
+            )
+        with self.assertRaises(SystemExit):
+            MODULE.parse_args(
+                [
+                    "--conversation-url", "https://chatgpt.com/g/g-p-x/project",
+                    "--quality", "xhigh",
+                    "--packet", "p",
+                ]
+            )
+
+    def test_follow_up_prompt_keeps_prior_conversation(self) -> None:
+        follow = MODULE.build_composer_prompt(
+            "후속 질문",
+            "abc123",
+            None,
+            follow_up=True,
+        )
+        self.assertTrue(follow.startswith("후속 질문\nID: abc123\n\n"))
+        self.assertIn("같은 대화의 후속 질문", follow)
+        self.assertNotIn("이전 대화는 볼 수 없다고 가정", follow)
+
+    def test_continue_script_opens_saved_conversation_not_project_home(self) -> None:
+        script = MODULE.build_repl_script(
+            project_url="https://chatgpt.com/g/g-p-test-work/project",
+            quality="xhigh",
+            packet_name="packet.md",
+            packet_base64="cGFja2V0",
+            topic="후속",
+            consult_id="abc123",
+            response_timeout_ms=1000,
+            conversation_url="https://chatgpt.com/c/6a95625e-1f78-83e8-aa90-a49f982e36ef",
+            follow_up=True,
+        )
+        self.assertIn("var continueMode = true", script)
+        self.assertIn("wait-conversation-composer", script)
+        self.assertIn("6a95625e-1f78-83e8-aa90-a49f982e36ef", script)
+        self.assertIn("continue landed off the saved conversation", script)
+        self.assertIn("saved conversation composer not visible", script)
+        self.assertIn("> assistantCountBefore", script)
+        self.assertIn("consultId", script)
+        self.assertIn("같은 대화의 후속 질문", script)
+
+    def test_assistant_helper_ignores_previous_turn(self) -> None:
+        payload = {
+            "mapping": {
+                "old-user": {
+                    "message": {
+                        "author": {"role": "user"},
+                        "content": {"parts": ["ID: old\nQ1"]},
+                        "create_time": 1,
+                    },
+                    "children": ["old-assistant"],
+                },
+                "old-assistant": {
+                    "message": {
+                        "author": {"role": "assistant"},
+                        "content": {"parts": ["previous answer"]},
+                        "status": "finished_successfully",
+                        "create_time": 2,
+                    }
+                },
+                "new-user": {
+                    "message": {
+                        "author": {"role": "user"},
+                        "content": {"parts": ["ID: abc123\nQ2"]},
+                        "create_time": 3,
+                    },
+                    "children": ["new-assistant"],
+                },
+                "new-assistant": {
+                    "message": {
+                        "author": {"role": "assistant"},
+                        "content": {"parts": ["follow-up answer"]},
+                        "status": "finished_successfully",
+                        "create_time": 4,
+                    }
+                },
+            }
+        }
+        extracted = MODULE.assistant_from_conversation_payload(payload, "abc123")
+        self.assertEqual(extracted["text"], "follow-up answer")
+        self.assertEqual(
+            MODULE.assistant_from_conversation_payload(payload)["text"],
+            "follow-up answer",
+        )
+        pending = MODULE.assistant_from_conversation_payload(
+            {
+                "mapping": {
+                    "old-assistant": payload["mapping"]["old-assistant"],
+                    "new-user": payload["mapping"]["new-user"],
+                }
+            },
+            "abc123",
+        )
+        self.assertEqual(pending["text"], "")
+        self.assertFalse(pending["finished"])
+
+    def test_main_lists_threads_without_aside(self) -> None:
+        store = MODULE.SESSIONS.SessionStore(
+            Path(os.environ["CONSULT_SESSIONS_PATH"])
+        )
+        store.create_thread(
+            topic="목록 테스트",
+            quality="xhigh",
+            project_name="Work",
+            consult_id="turn-1",
+            pid=os.getpid(),
+        )
+        with mock.patch.object(MODULE.shutil, "which", return_value=None):
+            result = MODULE.main(["--list"])
+        self.assertEqual(result, 0)
+
+    def test_main_records_new_thread_and_continues_it(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            fake = root / "aside"
+            fake.write_text(
+                """#!/usr/bin/env python3
+print('ASIDE_REPL_SUBMIT_RESULT {"quality":"xhigh","model":"GPT-5.6 Sol","tier":"매우 높음 (4 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/c/6a95625e-1f78-83e8-aa90-a49f982e36ef","targetId":"target"}')
+print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"answer","idMatched":false,"packetUnread":false,"responseElapsedMs":5678,"conversationUrl":"https://chatgpt.com/c/6a95625e-1f78-83e8-aa90-a49f982e36ef"}')
+""",
+                encoding="utf-8",
+            )
+            fake.chmod(0o755)
+            packet = root / "packet.md"
+            packet.write_text("# 세션 유지\n\nquestion", encoding="utf-8")
+            first_result = root / "first.json"
+            path = f"{temp}{os.pathsep}{os.environ.get('PATH', '')}"
+            with mock.patch.dict(os.environ, {"PATH": path}):
+                with mock.patch.object(MODULE, "ensure_aside_daemon", return_value=None):
+                    first = MODULE.main(
+                        [
+                            "--quality", "xhigh",
+                            "--packet", str(packet),
+                            "--url", "https://chatgpt.com/g/g-p-test-work/project",
+                            "--response-output", str(root / "first.md"),
+                            "--json-output", str(first_result),
+                            "--stderr-output", str(root / "first.log"),
+                        ]
+                    )
+                    evidence = json.loads(first_result.read_text(encoding="utf-8"))
+                    second = MODULE.main(
+                        [
+                            "--thread", evidence["threadId"],
+                            "--quality", "xhigh",
+                            "--packet", str(packet),
+                            "--url", "https://chatgpt.com/g/g-p-test-work/project",
+                            "--response-output", str(root / "second.md"),
+                            "--json-output", str(root / "second.json"),
+                            "--stderr-output", str(root / "second.log"),
+                        ]
+                    )
+            self.assertEqual(first, 0)
+            self.assertEqual(second, 0)
+            store = MODULE.SESSIONS.SessionStore(Path(os.environ["CONSULT_SESSIONS_PATH"]))
+            thread = store.resolve(evidence["threadId"])
+            self.assertEqual(thread["status"], "finished")
+            self.assertEqual(len(thread["turns"]), 2)
+            self.assertEqual(thread["turns"][0]["mode"], "new")
+            self.assertEqual(thread["turns"][1]["mode"], "continue")
+            self.assertEqual(
+                thread["conversationId"],
+                "6a95625e-1f78-83e8-aa90-a49f982e36ef",
+            )
+            follow = json.loads((root / "second.json").read_text(encoding="utf-8"))
+            self.assertEqual(follow["threadId"], evidence["threadId"])
+            self.assertEqual(follow["mode"], "continue")
+
+    def test_main_rejects_unknown_thread_before_send(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            fake = root / "aside"
+            fake.write_text("#!/bin/sh\nexit 99\n", encoding="utf-8")
+            fake.chmod(0o755)
+            packet = root / "packet.md"
+            packet.write_text("# 없는 스레드\n\nquestion", encoding="utf-8")
+            path = f"{temp}{os.pathsep}{os.environ.get('PATH', '')}"
+            with mock.patch.dict(os.environ, {"PATH": path}):
+                with mock.patch.object(MODULE, "ensure_aside_daemon", return_value=None):
+                    result = MODULE.main(
+                        [
+                            "--thread", "missing",
+                            "--quality", "xhigh",
+                            "--packet", str(packet),
+                            "--url", "https://chatgpt.com/g/g-p-test-work/project",
+                            "--response-output", str(root / "response.md"),
+                            "--json-output", str(root / "result.json"),
+                            "--stderr-output", str(root / "stderr.log"),
+                        ]
+                    )
+        self.assertEqual(result, 2)
 
 
 if __name__ == "__main__":

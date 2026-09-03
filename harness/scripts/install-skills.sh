@@ -81,6 +81,20 @@ for dir in "$SRC"/*/; do
   fi
 done
 
+install_consult_cli() {
+  local src="$DEST/consult/scripts/consult"
+  local link="$HOME/.local/bin/consult"
+  [ -f "$src" ] || return 0
+  mkdir -p "$HOME/.local/bin"
+  chmod +x "$src" 2>/dev/null || true
+  if [ "$(readlink "$link" 2>/dev/null)" = "$src" ]; then
+    return 0
+  fi
+  ln -sfn "$src" "$link"
+  echo "install-skills: consult -> $link"
+}
+install_consult_cli
+
 echo "install-skills: 새로 $added, 이미 최신 $current, 갱신 $replaced, 로컬 유지 $kept -> $DEST"
 if [ "$kept" -gt 0 ]; then
   if [ -n "$SYNC_FROM" ]; then

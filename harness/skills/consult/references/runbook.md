@@ -31,15 +31,24 @@ not a recoverable default.
 
 ## Launch the fast path
 
-Launch the deterministic Aside REPL runner as a background process:
+Launch `consult` on PATH as a background process. It drives the Aside REPL
+engine and fills the output paths from the packet directory:
 
 ```bash
-python3 <consult-skill-dir>/scripts/run_aside_repl_consult.py \
-  --quality <xhigh-or-pro> \
-  --packet .consult/<run>/packet.md \
-  --response-output .consult/<run>/response.md \
-  --json-output .consult/<run>/result.json \
-  --stderr-output .consult/<run>/stderr.log
+consult send --quality <xhigh-or-pro> .consult/<run>/packet.md
+```
+
+List stored threads, including which are running and which have finished:
+
+```bash
+consult list
+consult show <thread-id>
+```
+
+Continue a saved thread. This opens that conversation, not the project home:
+
+```bash
+consult send --quality <xhigh-or-pro> .consult/<run>/packet.md --to <thread-id>
 ```
 
 The runner's in-browser guard must commit the user turn within 120 seconds and
@@ -55,7 +64,9 @@ normal Aside GUI conversation entry.
 Parallel runners open unique ID-derived `data:` marker tabs and resolve
 their `targetId` by exact title and URL before navigating to Work. A
 before/after "new tab" set difference is unsafe because simultaneous runners
-can both claim the same target.
+can both claim the same target. Different `threadId`s may run at the same
+time. A second send to the same thread fails closed while that thread is
+busy; wait for it to finish or recover, then `--thread` again.
 
 Python reads `--packet` itself and embeds the bytes in the REPL script
 argument. The browser receives an in-memory file payload, never the local
@@ -82,16 +93,10 @@ Aside confines `download.saveAs()` to its session directory. The browser returns
 `download.path()` instead, and the Python runner copies that verified local file
 to `--artifact-output`.
 
-For a code artifact, use the same runner:
+For a code artifact, use the same command:
 
 ```bash
-python3 <consult-skill-dir>/scripts/run_aside_repl_consult.py \
-  --quality pro \
-  --packet .consult/<run>/packet.md \
-  --artifact-output .consult/<run>/artifact.zip \
-  --response-output .consult/<run>/response.md \
-  --json-output .consult/<run>/result.json \
-  --stderr-output .consult/<run>/stderr.log
+consult send --quality pro .consult/<run>/packet.md --artifact .consult/<run>/artifact.zip
 ```
 
 Aside waits for the ChatGPT download event, saves the zip directly, and the
@@ -131,7 +136,9 @@ This is recovery of the existing turn, not a resend.
 If the operator deliberately chooses to resend, rerun the original
 `run_aside_repl_consult.py` command with the same packet and a new run directory
 for every output path. That creates a new Work conversation. Never overwrite
-the first run's evidence and never trigger this automatically.
+the first run's evidence and never trigger this automatically. A follow-up
+turn is not a resend: pass `--thread` or `--conversation-url` so the runner
+opens the saved `/c/` conversation instead of the project home.
 
 ## Accept or reject
 
@@ -167,11 +174,7 @@ If the runner exits `77` or the first REPL dies after `CONSULT_SUBMITTED`, do
 not send again. Poll the same conversation:
 
 ```bash
-python3 <consult-skill-dir>/scripts/run_aside_repl_consult.py \
-  --recover-from .consult/<run>/result.json \
-  --response-output .consult/<run>/response.md \
-  --json-output .consult/<run>/result.recovered.json \
-  --stderr-output .consult/<run>/recover.stderr.log
+consult recover .consult/<run>/result.json
 ```
 
 Backend-api polling is the primary wait after the user turn persists (`/c/` in
