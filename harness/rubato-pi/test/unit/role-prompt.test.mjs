@@ -140,12 +140,12 @@ test("role prompts delegate provider resolution and fallback to the harness", ()
   }
 });
 
-test("Consult routing starts from local evidence and expands on material external value", () => {
+test("Outpost routing starts from local evidence and expands on material external value", () => {
   for (const role of ["lead", "owner"]) {
     const text = rolePrompt(role);
     assert.match(text, /Build the map from workspace evidence/);
     assert.match(text, /current external evidence, unfamiliar-domain research, or an independent view can materially change a costly decision/);
-    assert.doesNotMatch(text, /research it through Skill\(consult\).*not as a last resort/);
+    assert.doesNotMatch(text, /research it through Skill\(outpost\).*not as a last resort/);
   }
 });
 

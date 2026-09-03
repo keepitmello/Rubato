@@ -1,6 +1,0 @@
-interface:
-  display_name: "Consult"
-  short_description: "Send a packet to a web-strong ChatGPT project agent"
-  default_prompt: "Use $consult with exactly one --quality xhigh or --quality pro flag on `consult send`; write a self-contained packet, never switch to another sender automatically, and verify the returned answer locally."
-policy:
-  allow_implicit_invocation: true
