@@ -9,6 +9,14 @@ import { injectCompactionUtils, isCompactionUtilsUrl } from "./core-compaction-u
 import { injectCoreDescriptors, isCoreDescriptorsUrl } from "./core-descriptors.mjs";
 import { injectEmptyRecoveryLiveness, isEmptyRecoveryUrl } from "./core-empty-recovery.mjs";
 import { injectErrorFormat, isErrorFormatUrl } from "./core-error-format.mjs";
+import {
+  injectCompactionIndexThreshold,
+  injectCompactionPolicy,
+  injectCompactionSettings,
+  isCompactionIndexThresholdUrl,
+  isCompactionPolicyUrl,
+  isSettingsManagerUrl,
+} from "./core-compaction-policy.mjs";
 import { injectCompactionIndexReason, injectLanePolicy, isCompactionIndexUrl, isLanePolicyUrl } from "./core-lane-policy.mjs";
 import { injectOverflow, isOverflowUrl } from "./core-overflow.mjs";
 import { injectProviderTimeoutRetry, isProviderTimeoutRetryUrl } from "./core-retry-watchdog.mjs";
@@ -36,6 +44,9 @@ export function applyCoreSessionTransforms(url, source, applyTransform) {
   if (isEmptyRecoveryUrl(url)) source = applyTransform(source, injectEmptyRecoveryLiveness);
   if (isLanePolicyUrl(url)) source = applyTransform(source, injectLanePolicy);
   if (isCompactionIndexUrl(url)) source = applyTransform(source, injectCompactionIndexReason);
+  if (isCompactionIndexThresholdUrl(url)) source = applyTransform(source, injectCompactionIndexThreshold);
+  if (isCompactionPolicyUrl(url)) source = applyTransform(source, injectCompactionPolicy);
+  if (isSettingsManagerUrl(url)) source = applyTransform(source, injectCompactionSettings);
   return source;
 }
 
@@ -43,6 +54,9 @@ export {
   injectAgentSession,
   injectCompaction,
   injectCompactionIndexReason,
+  injectCompactionIndexThreshold,
+  injectCompactionPolicy,
+  injectCompactionSettings,
   injectCompactionUtils,
   injectCoreDescriptors,
   injectLanePolicy,
@@ -56,7 +70,10 @@ export {
   isAgentSessionUrl,
   isCompactionUrl,
   isCompactionIndexUrl,
+  isCompactionIndexThresholdUrl,
+  isCompactionPolicyUrl,
   isCompactionUtilsUrl,
+  isSettingsManagerUrl,
   isLanePolicyUrl,
   isCoreDescriptorsUrl,
   isEmptyRecoveryUrl,
