@@ -8,6 +8,7 @@ import {
   antigravityDirectProvider,
   antigravityModels,
   antigravityOAuth,
+  assertAntigravityCatalogModel,
   loadAntigravityProjectId,
   registerAntigravityLifecycle,
 } from "../../src/antigravity-route.mjs";
@@ -30,6 +31,32 @@ test("catalog는 gemini-3.7-flash를 image 능력과 함께 공개한다", () =>
   assert.equal(flash.provider, ANTIGRAVITY_PROVIDER_ID);
   assert.deepEqual(flash.input, ["text", "image"]);
   assert.equal(flash.reasoning, true);
+  assert.equal(flash.baseUrl, ANTIGRAVITY_ENDPOINT);
+});
+
+test("catalog model baseUrl follows the endpoint override", () => {
+  const flash = antigravityModels("http://127.0.0.1:18888/custom").find((entry) => entry.id === "gemini-3.7-flash");
+  assert.equal(flash.baseUrl, "http://127.0.0.1:18888/custom");
+});
+
+test("well-formed catalog model survives pinned attribution .includes", async () => {
+  const { mergeProviderAttributionHeaders } = await import(
+    pathToFileURL(join(senpiNested("@code-yeongyu/senpi"), "dist/core/provider-attribution.js")).href
+  );
+  const flash = antigravityModels().find((entry) => entry.id === "gemini-3.7-flash");
+  const settings = { getEnableInstallTelemetry: () => true };
+  assert.doesNotThrow(() => mergeProviderAttributionHeaders(flash, settings, "child-session"));
+});
+
+test("malformed catalog model fails with a field list instead of TypeError", () => {
+  assert.throws(
+    () => assertAntigravityCatalogModel({ id: "gemini-3.7-flash", provider: ANTIGRAVITY_PROVIDER_ID }),
+    { message: /missing required fields: input, baseUrl/ },
+  );
+  assert.throws(
+    () => assertAntigravityCatalogModel(undefined),
+    { message: /catalog model is missing/ },
+  );
 });
 
 test("loadCodeAssist는 endpoint origin에 project를 묻는다", async () => {
@@ -127,6 +154,7 @@ test("provider endpoint는 HTTPS와 loopback만 허용한다", async () => {
     env: { RUBATO_ANTIGRAVITY_ENDPOINT: "http://127.0.0.1:18888/custom" }, createProvider: factory,
   });
   assert.equal(local.provider.baseUrl, "http://127.0.0.1:18888/custom");
+  assert.equal(local.provider.models[0].baseUrl, "http://127.0.0.1:18888/custom");
 });
 
 test("오류로 끝난 turn은 오염된 lineage state를 버린다", async () => {

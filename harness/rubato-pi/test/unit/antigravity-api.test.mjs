@@ -248,6 +248,11 @@ test("상류가 준 input 은 덮어쓰지 않는다", () => {
   // catalog 가 우리보다 최신일 수 있다. 없을 때만 채운다.
   assert.deepEqual(withAntigravityCapabilities({ ...model, input: ["text"] }).input, ["text"]);
   assert.deepEqual(withAntigravityCapabilities({ ...model, input: undefined }).input, ["text", "image"]);
+  assert.equal(withAntigravityCapabilities({ ...model, baseUrl: undefined }).baseUrl, "https://daily-cloudcode-pa.googleapis.com");
+  assert.throws(
+    () => withAntigravityCapabilities(undefined),
+    { message: /model descriptor is missing/ },
+  );
 });
 
 test("input 없는 descriptor 로도 첫 user 턴을 실을 수 있다", () => {
