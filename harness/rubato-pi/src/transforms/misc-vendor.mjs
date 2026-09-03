@@ -5,6 +5,7 @@
 
 import { injectAuthStorage, isAuthStorageUrl } from "./misc-auth-storage.mjs";
 import { injectAdaptiveToolTurnEffort, isAdaptiveToolTurnEffortUrl } from "./misc-adaptive-tool-turn-effort.mjs";
+import { injectAnthropicCompaction, isAnthropicCompactionUrl } from "./misc-anthropic-compaction.mjs";
 import { injectClaudeCodeVersion, isAnthropicMessagesUrl } from "./misc-claude-code-version.mjs";
 import {
   injectGoogleSharedInputGuard,
@@ -44,6 +45,7 @@ export function applyMiscVendorTransforms(url, source, applyTransform) {
   if (isTuiSlashUrl(url)) source = applyTransform(source, injectTuiSlash);
   if (isAnthropicMessagesUrl(url)) source = applyTransform(source, injectClaudeCodeVersion);
   if (isAdaptiveToolTurnEffortUrl(url)) source = applyTransform(source, injectAdaptiveToolTurnEffort);
+  if (isAnthropicCompactionUrl(url)) source = applyTransform(source, injectAnthropicCompaction);
   if (isPiAiLazyUrl(url)) source = applyTransform(source, injectPiAiLazy);
   if (isThinkingLevelsUrl(url)) source = applyTransform(source, injectThinkingLevels);
   if (isPromptCacheTtlUrl(url)) source = applyTransform(source, injectPromptCacheTtl);
@@ -54,6 +56,7 @@ export function applyMiscVendorTransforms(url, source, applyTransform) {
 
 export {
   injectAdaptiveToolTurnEffort,
+  injectAnthropicCompaction,
   injectAuthStorage,
   injectClaudeCodeVersion,
   injectGoogleSharedInputGuard,
@@ -67,6 +70,7 @@ export {
   injectTuiDollar,
   injectTuiEditor,
   injectTuiSlash,
+  isAnthropicCompactionUrl,
   isAnthropicMessagesUrl,
   isAuthStorageUrl,
   isGoogleSharedUrl,

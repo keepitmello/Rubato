@@ -39,6 +39,8 @@ const AUDITED = [
   ["senpi", "dist/core/high-reasoning-warning.js"],
   ["senpi", "dist/core/compaction/compaction.js"],
   ["senpi", "dist/core/compaction/utils.js"],
+  ["senpi", "dist/core/extensions/builtin/compaction/lane-policy.js"],
+  ["senpi", "dist/core/extensions/builtin/compaction/index.js"],
   ["senpi", "dist/core/auth-storage.js"],
   ["senpi", "dist/core/cursor-exec-bridge-session.js"],
   ["senpi", "dist/core/cursor-exec-bridge.js"],

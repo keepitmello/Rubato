@@ -16,6 +16,7 @@ import { pathToFileURL } from "node:url";
 import { cacheAudit, isCacheAuditModel, isCodexResponsesModel } from "./cache-audit.mjs";
 import { senpiNested } from "./engine-paths.mjs";
 import { measurementRecorder, normalizeProviderUsage } from "./measurement-recorder.mjs";
+import { wrapAnthropicServerCompactionFetch } from "./anthropic-server-compaction-wire.mjs";
 import { midConversationEffort } from "./mid-conversation-effort.mjs";
 import { PROCESS_STARTED_AT } from "./process-start.mjs";
 import { resolveCallIdentity } from "./speed-index-identity.mjs";
@@ -352,7 +353,7 @@ function settleTerminal(state, options, event) {
   const aborted = options.signal?.aborted === true || message.stopReason === "aborted";
 
   if (event.type === "error" && aborted && settleAbortedToolUse(message)) {
-    state.endCall({ status: message.stopReason, usage: normalizeProviderUsage(message.providerUsage) });
+    state.endCall({ status: message.stopReason, usage: normalizeProviderUsage(message.providerUsage ?? message.usage) });
     state.emitSpeedIndex(message, message.stopReason, undefined, { aborted: true });
     return { type: "done", reason: message.stopReason, message };
   }
@@ -360,7 +361,7 @@ function settleTerminal(state, options, event) {
   state.endCall({
     status: message.stopReason,
     ...(event.type === "error" && rawError ? { error: rawError } : {}),
-    usage: normalizeProviderUsage(message.providerUsage),
+    usage: normalizeProviderUsage(message.providerUsage ?? message.usage),
   });
 
   if (event.type === "error") {
@@ -536,6 +537,9 @@ export function withRubatoStream(inner, { modelId = (model) => model?.id, report
       const effort = options.midConversationEffort ?? midConversationEffort();
       fetchImpl = effort.wrapFetch(fetchImpl, {
         sessionId: options.sessionId,
+        provider: model.provider,
+      });
+      fetchImpl = wrapAnthropicServerCompactionFetch(fetchImpl, {
         provider: model.provider,
       });
     }
