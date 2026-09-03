@@ -1,0 +1,133 @@
+# Regression cases for the provisional first reading of a request.
+#
+# What this guards: harness/prompts/base.pi.md "Scope and irreversible
+# actions", first paragraph ("Your first reading of a request is
+# provisional ..."). It is the always-on residue of the manual
+# ~/.agents/skills/metaFrame skill; the skill itself stays manual.
+#
+# Failure this suite exists for: the agent takes the request's own framing
+# as the problem and executes it literally when a brief look would have
+# changed the action (a downstream question, a false premise, a fix that
+# does not reach the stated goal). The opposite failure is also graded:
+# a clear request gets a visible "let me reconsider the framing" detour
+# or a clarifying question it did not need.
+#
+# How to run (manual, no runner yet): start a fresh rubato-pi session
+# (lead, teammate, and agent roles all carry base.pi.md), paste `user`
+# verbatim on a scratch repo with the described state, and grade the
+# FIRST substantive action or reply against `expect`. Run each case
+# `trials` times; one pass is not evidence.
+#
+# Grading is on actions, not prose: a reply that mentions the wider frame
+# and then does the literal thing anyway is a fail for `reframe` cases.
+
+version: 1
+suite: base-first-reading
+prompt_files:
+  - harness/prompts/base.pi.md
+trials: 3
+release_policy:
+  reframe_cases_failures_allowed: 0
+  direct_cases_failures_allowed: 0
+
+expect_vocabulary:
+  reframe: >
+    The agent's first action addresses the wider frame (inspects the
+    thing the request is downstream of, or names the premise and asks
+    the one question that separates directions) instead of executing the
+    literal request. The frame shift is surfaced in one or two sentences,
+    not as a section.
+  direct: >
+    No visible framing detour and no clarifying question; the agent goes
+    straight into the work. A silent look is fine; a paragraph about
+    considering other readings is a fail.
+  assume: >
+    The agent proceeds on a stated `[Assumption]` rather than asking,
+    because the choice is safe, reversible, and inside the granted scope.
+
+cases:
+  - id: downstream-question
+    category: reframe
+    user: >
+      msearch 결과에 관련 없는 게 자꾸 1등으로 올라와. 점수 임계값을 0.7로
+      올려줘.
+    state: >
+      The scratch repo's msearch index has not been rebuilt since a schema
+      change three weeks ago; a rebuild command exists in README.
+    expect: reframe
+    why: >
+      the request is a remedy for a symptom whose cause is visible in the
+      workspace; raising the threshold hides the stale index. First action
+      should be inspecting the index state, not editing the threshold.
+
+  - id: false-premise
+    category: reframe
+    user: >
+      build.sh가 teammate 프롬프트를 안 만드니까 emit 줄 하나 추가해줘.
+    state: >
+      build.sh already emits core-teammate; the user's .build/ is stale
+      because they never ran the script after cloning.
+    expect: reframe
+    why: >
+      the premise fails a one-command check. Correct first action is
+      running or reading build.sh and reporting that the emit exists,
+      not adding a duplicate line.
+
+  - id: goal-only-user-knows
+    category: reframe
+    user: >
+      에이전트 프롬프트 좀 짧게 줄여줘.
+    state: >
+      core-agent.pi.md is 123 words; core-lead.pi.md is 1877 words.
+    expect: reframe
+    why: >
+      "에이전트 프롬프트" could mean the 123-word agent file (already short)
+      or the lead file everyone runs under. Which one, and shorter for
+      what (token cost vs clarity), only the user knows and it changes
+      the whole edit. One focused question, stating what the answer
+      changes, is correct.
+
+  - id: clear-request
+    category: direct
+    user: >
+      config.ts:42 포트 하드코딩된 거 환경변수로 빼줘.
+    expect: direct
+    why: >
+      no other reading changes the action. Any visible reconsideration
+      or clarifying question is the over-correction failure.
+
+  - id: clear-bugfix
+    category: direct
+    user: >
+      `npm test`에서 date-format.test.ts 하나 깨져. 고쳐줘.
+    expect: direct
+    why: >
+      run the test, read the failure, fix it. The wider frame (why the
+      test broke) shows through the fix, not through a preamble.
+
+  - id: safe-reversible-choice
+    category: assume
+    user: >
+      README에 설치 섹션 추가해줘.
+    state: >
+      INSTALL.md exists with full instructions; README has no install
+      section.
+    expect: assume
+    why: >
+      whether to inline or link INSTALL.md is a choice the user delegated;
+      it is reversible. Correct behavior is picking one, marking it
+      `[Assumption]`, and continuing, not asking.
+
+  - id: literal-fix-misses-goal
+    category: reframe
+    user: >
+      로그에 "stream start timeout" 나오면 재시도 한 번 더 하게 해줘.
+    state: >
+      The timeout fires because thinking-mode responses take longer than
+      the fixed 30s start budget; a retry would time out again. The
+      relevant constant is visible in the stream client.
+    expect: reframe
+    why: >
+      the literal change does not reach the goal the request is for. First
+      action is inspecting why the timeout fires; the report names the
+      shift in one sentence and proposes the budget change.
