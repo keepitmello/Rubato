@@ -13,9 +13,9 @@ automatic fallback senders.
 
 ## Workflow
 
-1. Require exactly one explicit `--quality xhigh` or `--quality pro` flag.
-   With no flag, both flags, or any other value, stop before writing a packet or
-   opening Aside.
+1. Require exactly one explicit `--quality xhigh` or `--quality pro` flag on
+   `consult send`. With no flag, both flags, or any other value, stop before
+   writing a packet or opening Aside.
 2. State one precise question and what the answer must settle.
 3. Write a focused packet whose first line is one concise Markdown H1 containing
    only the subject title (`# <title>`), followed by the decisive evidence,
@@ -30,14 +30,22 @@ automatic fallback senders.
    state missing evidence, and write a natural, readable Korean report while
    using technical terms or English when helpful.
    When the requested result is a code archive, pass
-   `--artifact-output .consult/<run>/artifact.zip`. The same Aside conversation
+   `--artifact .consult/<run>/artifact.zip`. The same Aside conversation
    sends the packet and downloads the generated zip; there is no Playwright code
-   path.
-4. Launch `scripts/run_aside_repl_consult.py` as a persistent background
-   process with the exact quality and packet paths. The deterministic Aside REPL
-   process owns the same project page from upload through send, response completion,
-   and optional artifact download. It must not exit between submission and
-   response because ending the REPL also ends the page's generation lifecycle.
+   path. The engine still records that path as `--artifact-output`.
+4. Launch `consult` on PATH as a persistent background process. The `consult`
+   command drives `run_aside_repl_consult.py`; do not hand-assemble the engine
+   flags. `consult send --quality xhigh .consult/<run>/packet.md` opens a new
+   project conversation and writes `response.md`, `result.json`, and `stderr.log`
+   next to the packet. To continue a saved thread, first run `consult list`, then
+   `consult send --quality xhigh .consult/<run>/packet.md --to <thread-id-or-url>`.
+   `--to` accepts a thread id, `conversationUrl`, or previous result.json.
+   Unrelated threads may run in parallel tabs; the same thread serializes. The
+   runner records `threadId` in `result.json` and `~/.codex/consult-sessions.json`.
+   The deterministic Aside REPL process owns the same project page from upload
+   through send, response completion, and optional artifact download. It must
+   not exit between submission and response because ending the REPL also ends
+   the page's generation lifecycle.
    Submission must commit in under 120 seconds or exit `75`; never extend or
    retry that submission budget. Aside may buffer markers until the process
    exits, so classify the final transcript by its submission and response
@@ -49,7 +57,7 @@ automatic fallback senders.
    reply. Recover that same conversation through ChatGPT `backend-api`, not by
    opening the project chat list; never resend the packet.
    After submit, backend-api polling is the primary wait. A later
-   `--recover-from .consult/<run>/result.json` reruns only that poller. If the page shows
+   `consult recover .consult/<run>/result.json` reruns only that poller. If the page shows
    `요청이 너무 많습니다`, wait and use the backend path. Do not click through
    the modal and keep loading Work.
 5. Read the saved response and JSON evidence. The user-turn ID is the send
@@ -89,8 +97,25 @@ For exit `77`, keep the tab open when possible and record both
 inspect or recover that exact conversation. A deliberate resend is also
 possible by rerunning the original command with new output paths, but it is
 always a new project conversation and must never happen automatically.
+Follow-ups use `consult send --to` on the saved conversation; that is a later
+turn, not a resend of the failed one. The engine maps `--to` to `--thread` or
+`--conversation-url`.
+
+## Sessions
+
+`consult list` prints running and finished threads without opening Aside. Use
+that list, the saved `threadId`, or `conversationUrl` before a follow-up. Do not
+guess from whichever `.consult/` directory is nearby, and do not use the hidden
+Playwright `consult_history.py` for the Aside path.
+
+```bash
+consult list
+consult send --quality xhigh .consult/<run>/packet.md
+consult send --quality xhigh .consult/<run>/packet.md --to <thread-id>
+consult recover .consult/<run>/result.json
+```
 
 ## Completion
 
-Report the question, project/model/tier evidence, matching ID, advice accepted
-or rejected, local verification, and remaining uncertainty.
+Report the question, project/model/tier evidence, matching ID, thread id,
+advice accepted or rejected, local verification, and remaining uncertainty.

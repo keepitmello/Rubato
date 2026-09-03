@@ -30,7 +30,9 @@ opening or attaching to a browser tab.
 ## Surface: project Chat, never Work mode
 
 1. Enter the ChatGPT project named in the task (`PROJECT` / visible name).
-2. Create a **new Chat-surface conversation** inside that project.
+2. Create a **new Chat-surface conversation** inside that project unless the
+   task supplies `THREAD` / `CONVERSATION_URL`. In that case open that exact
+   `/c/` conversation and send a follow-up there.
 3. Never use temporary chat.
 4. Never submit from global Chat.
 5. Never send from Work mode. The banner toggle is
@@ -51,7 +53,8 @@ Known project-home path:
 3. Switch the banner to Chat before touching the picker. Work mode replaces
    the Chat picker with `5.6 Sol 매우 높음` and Fast; do not operate that UI.
 4. The project-home Chat composer starts a new project conversation. Do not
-   open an existing chat from the project list.
+   open an existing chat from the project list unless the task is an explicit
+   follow-up with `THREAD` / `CONVERSATION_URL`.
 
 ## Model and tier
 
