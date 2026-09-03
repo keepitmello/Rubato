@@ -1,0 +1,105 @@
+# Regression cases for the lead's first delegation decision.
+#
+# What this guards: harness/prompts/core-lead.pi.md "Rails" paragraph
+# ("Which rail carries a delegation ...") and the team_create tool
+# description in packages/senpi-task/src/tools/team/lifecycle.ts.
+#
+# Failure this suite exists for: the lead receives team-shaped work and
+# fans it out as several `Agent` spawns because the team path reads as a
+# gate. The observable is the FIRST delegation action of the turn.
+#
+# How to run (manual, no runner yet): start a fresh rubato-pi lead session
+# on a scratch repo, paste `user` verbatim, stop after the first Agent or
+# team_create call (or the roster report that precedes team_create), and
+# grade against `expect`. Run each case `trials` times; the model is
+# stochastic and one pass is not evidence.
+#
+# Grading is on actions, not prose: an answer that discusses a team but
+# spawns Agents is a fail for `team` cases.
+
+version: 1
+suite: lead-rail-choice
+prompt_files:
+  - harness/prompts/core-lead.pi.md
+  - packages/senpi-task/src/tools/team/lifecycle.ts
+trials: 3
+release_policy:
+  team_cases_failures_allowed: 0
+  agent_cases_failures_allowed: 0
+
+expect_vocabulary:
+  team: >
+    First delegation is a roster report in one message (owned outcomes,
+    model per owner, verifier or none) followed by team_create in the same
+    turn. No wait for approval unless the roster names a hard-to-reverse
+    spawn. LEAD.md and runtimes/pi.md were read before team_create.
+  agent: >
+    First delegation is one or more `Agent` spawns (or a grok explorer)
+    with no team_create and no roster report.
+  inline: >
+    No spawn; the lead answers from a couple of reads.
+
+cases:
+  - id: layers-fe-be-tests
+    category: team
+    user: >
+      결제 실패 재시도 기능 붙이자. 백엔드에 재시도 큐 넣고, 프론트에 상태
+      배지 띄우고, e2e 테스트까지. 서로 API 계약 맞춰야 해.
+    expect: team
+    why: three layers that must agree on an interface; owners trade the contract directly.
+
+  - id: unknown-root-cause
+    category: team
+    user: >
+      배포 후 간헐적으로 세션이 풀려. 로그엔 아무것도 없고 재현도 안 돼.
+      캐시 만료, 쿠키 도메인, 로드밸런서 sticky 중 뭔지 모르겠어.
+    expect: team
+    why: competing hypotheses need independent verification; one lead absorbing all three narratives is the failure mode.
+
+  - id: two-parallel-workstreams
+    category: team
+    user: >
+      msearch 색인기를 Redis에서 sqlite로 옮기는 것과, 동시에 harness/prompts
+      빌드를 zig로 재작성하는 거 둘 다 이번 주에 끝내야 해.
+    expect: team
+    why: two substantial independent outcomes, each deserving its own context.
+
+  - id: explorer-map
+    category: agent
+    user: >
+      team_create 호출이 어디서 spec을 검증하는지, 그 검증이 실패하면 어떤
+      에러가 나오는지 알려줘.
+    expect: agent
+    why: a map to take back; no owner needs another owner.
+
+  - id: single-review
+    category: agent
+    user: >
+      이 PR 한 번 봐줘. 보안 관점에서만.
+    expect: agent
+    why: one review through one lens.
+
+  - id: noisy-investigation
+    category: agent
+    user: >
+      CI가 어젯밤부터 flaky해. 로그 3천 줄인데 뭐가 문제인지 찾아줘.
+    expect: agent
+    why: noisy investigation kept out of the lead's context; a single result comes back.
+
+  - id: couple-of-reads
+    category: inline
+    user: >
+      build.sh가 lead.pi.md를 어디에 쓰는지 경로만 알려줘.
+    expect: inline
+    why: two reads settle it; spawning costs more than it saves.
+
+  - id: gate-friction
+    category: team
+    user: >
+      프론트, 백엔드, 마이그레이션 세 갈래로 나눠서 유저 프로필 v2 만들자.
+      빨리 시작해.
+    expect: team
+    why: >
+      "빨리 시작해" tempts the lead to skip the roster and spawn Agents.
+      Correct behavior is still a one-message roster report then
+      team_create in the same turn; the report is not a wait.

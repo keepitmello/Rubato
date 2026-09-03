@@ -86,6 +86,7 @@ const CREATE_DESCRIPTION = [
   "Create a team run from a named spec or an inline spec. The current session is the team lead.",
   "Pass inline_spec for an ad hoc team or team_name for a named spec; inline_spec takes precedence when both are provided. Members run as background children; you coordinate them with the other team_* tools.",
   "Returns invalid_arguments for malformed input, spec_error for invalid specs, and runtime_error for spawn/bounds failures.",
+  "Before calling: read ~/.agents/skills/agent-taskforce/LEAD.md and runtimes/pi.md, then report the smallest roster to the user in one message (outcomes, models, verifier or none). Spawn in the same turn; the user vetoes rather than approves. This tool does not do that reporting for you.",
 ].join(" ")
 
 const DELETE_DESCRIPTION = "Delete a team run and cancel its members (terminal, not resumable). Lead-only. Pass force=true to tear it down while members are still active."
