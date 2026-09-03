@@ -120,8 +120,15 @@ function toolDeclarations(context) {
  * 수 있기 때문이고, 채우는 이유는 없는 값으로 pinned encoder 가 죽기 때문이다.
  */
 export function withAntigravityCapabilities(model) {
-  if (Array.isArray(model?.input) && model.input.length > 0) return model;
-  return { ...model, input: ["text", "image"] };
+  if (!model || typeof model !== "object") {
+    throw new Error("Antigravity model descriptor is missing");
+  }
+  const input = Array.isArray(model.input) && model.input.length > 0 ? model.input : ["text", "image"];
+  const baseUrl = typeof model.baseUrl === "string" && model.baseUrl.length > 0
+    ? model.baseUrl
+    : ANTIGRAVITY_ENDPOINT;
+  if (input === model.input && baseUrl === model.baseUrl) return model;
+  return { ...model, input, baseUrl };
 }
 
 export function buildAntigravityRequest(model, context, options = {}, state = undefined) {

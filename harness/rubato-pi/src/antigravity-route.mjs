@@ -37,11 +37,36 @@ function zeroCost() {
   return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 }
 
-export function antigravityModels() {
-  return MODELS.map((entry) => ({
+/**
+ * Catalog models must carry every field pinned senpi reads with an unguarded
+ * `.includes` before our stream runs. `core/provider-attribution.js:17` does
+ * `model.baseUrl.includes(...)` when install telemetry is on (the default),
+ * and that call happens in `model-runtime.prepareRequest` — so a missing
+ * `baseUrl` kills a child spawn before the first turn.
+ */
+export function assertAntigravityCatalogModel(model) {
+  if (!model || typeof model !== "object") {
+    throw new Error("Antigravity catalog model is missing");
+  }
+  const missing = [];
+  if (typeof model.id !== "string" || model.id.length === 0) missing.push("id");
+  if (!Array.isArray(model.input)) missing.push("input");
+  if (typeof model.baseUrl !== "string" || model.baseUrl.length === 0) missing.push("baseUrl");
+  if (missing.length > 0) {
+    const label = typeof model.id === "string" && model.id.length > 0 ? model.id : "(unknown)";
+    throw new Error(
+      `Antigravity catalog model ${label} is missing required field${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}`,
+    );
+  }
+  return model;
+}
+
+export function antigravityModels(baseUrl = ANTIGRAVITY_ENDPOINT) {
+  return MODELS.map((entry) => assertAntigravityCatalogModel({
     ...entry,
     api: ANTIGRAVITY_API,
     provider: ANTIGRAVITY_PROVIDER_ID,
+    baseUrl,
     reasoning: true,
     input: ["text", "image"],
     cost: zeroCost(),
@@ -229,9 +254,10 @@ export async function antigravityDirectProvider({
   };
   const auditEnv = cacheAuditEnabled(env) ? env : process.env;
   const audit = cacheAuditEnabled(auditEnv) ? cacheAudit(auditEnv) : undefined;
+  const endpoint = endpointFromEnv(env);
   const transport = createAntigravityApi({
     fetchImpl,
-    endpoint: endpointFromEnv(env),
+    endpoint,
     runStateful,
     ...(audit ? { cacheAudit: audit } : {}),
   });
@@ -242,9 +268,9 @@ export async function antigravityDirectProvider({
   const provider = factory({
     id: ANTIGRAVITY_PROVIDER_ID,
     name: "Google Antigravity",
-    baseUrl: endpointFromEnv(env),
-    auth: { oauth: antigravityOAuth({ env, fetchImpl, readFileImpl, endpoint: endpointFromEnv(env) }) },
-    models: antigravityModels(),
+    baseUrl: endpoint,
+    auth: { oauth: antigravityOAuth({ env, fetchImpl, readFileImpl, endpoint }) },
+    models: antigravityModels(endpoint),
     api: withModelId,
   });
   return { provider, stateStore, lineage };
