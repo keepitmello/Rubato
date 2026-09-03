@@ -8,7 +8,7 @@ description: "Delegate whole tasks to a Codex session: worker implements, mate d
 
 오케스트레이팅 에이전트가 Codex 세션을 병렬로 굴리는 하네스. `meight` CLI로 어느 레포에서든 쓴다. 전역 데몬 하나를 레포들이 공유하고, 세션 상태는 호출 레포별로 `<daemon-home>/repos/<repo-key>/` 아래 격리된다. 기본 디스패처는 Claude Code 세션이고, Codex 앱/CLI 세션도 얇은 `~/.codex/skills/meight` 바인딩으로 이 파일을 읽는다 — 교차 모델 디스패처는 감독하는 Codex 워커와 사각지대가 겹치지 않는다.
 
-세션 쪽 계약은 `meight-mate`, `meight-worker`, 공통 프로토콜은 `meight-common` CONTRACT에 있고, 하네스 preamble이 자세에 맞는 스킬 + 공통 계약을 세션에 주입한다.
+세션 쪽 계약은 [`meight-mate`](../meight-mate/SKILL.md), [`meight-worker`](../meight-worker/SKILL.md), 공통 프로토콜은 [`meight-common/CONTRACT.md`](../meight-common/CONTRACT.md)에 있고, 하네스 preamble이 자세에 맞는 스킬 + 공통 계약을 세션에 주입한다.
 
 ## 두 자세 — `--mode mate|worker` (필수)
 

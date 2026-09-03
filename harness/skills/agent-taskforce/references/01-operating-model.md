@@ -12,7 +12,7 @@ The lead owns:
 - routing conflicts between an active frame and execution
 - integration and completion decisions
 
-The human operator owns the framing choice, lead-model choice, and approval of the roster. Do not spawn a new or materially changed teammate before that approval. Recreating the same approved teammate after session loss is recovery, not a new staffing decision.
+The human operator owns the framing choice, lead-model choice, and the veto over the roster. Report a new or materially changed teammate before it starts; wait for explicit confirmation only when the spawn commits something hard to take back or the operator has asked to approve teams. Recreating the same teammate after session loss is recovery, not a new staffing decision.
 
 The lead does not absorb every debugging detail. Look at task state, verified facts, and decision-grade evidence. When an owner is stuck, attach a relevant peer, redesign the boundary, or replace the owner rather than choosing commands one at a time.
 
@@ -61,8 +61,8 @@ Watch the lead's own outbound tone: **evaluative sentences** — "this is the be
 | whether to use framing | human operator |
 | lead model | human operator |
 | initial roster proposal | lead |
-| initial teammate spawn | human approval |
-| material restaffing or new teammate | lead proposes; human approves before spawn |
+| initial teammate spawn | lead, after reporting the roster; human veto |
+| material restaffing or new teammate | lead reports before spawn; human veto |
 | implementation and debugging inside a workstream | owner |
 | interface between two streams | affected owners; lead if unresolved |
 | architecture, public contract, or high-blast-radius change | lead; human approval when needed |

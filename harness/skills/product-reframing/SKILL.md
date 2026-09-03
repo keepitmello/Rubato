@@ -1,6 +1,6 @@
 ---
-name: reframing
-description: "Change the frame when the same approach keeps failing."
+name: product-reframing
+description: "Escape an entrenched product frame when framing candidates all look alike: so-what chain in a blind session, bridge research, new frame candidates handed back to framing. Needs an existing product frame; not for debugging loops or task-level rethinking."
 
 ---
 
@@ -13,7 +13,7 @@ description: "Change the frame when the same approach keeps failing."
 1. **매몰은 구조 문제다.** 프레임을 다듬은 세션은 애착이 생겨 스스로 못 빠져나온다. 그래서 감지는 메인 세션이, 수행은 바깥 눈이 한다.
 2. **새 프레임은 무에서 나오지 않는다.** 끊긴 사슬과 이미 존재하는 재료의 연결에서 나온다. 질문만 하는 스킬이 아니라 리서치가 손발이다 — 가장 좋은 프레임은 종종 "이미 있는 두 개를 잇는 것"이다.
 
-`framing`과의 관계: 점검표는 프레임을 좁히고 동결하는 수렴 장치, reframing은 프레임 밖 후보를 만드는 발산 장치다. framing 안의 발산 역할이 현재 결정 경계 **안**에서 후보를 넓히는 것이라면, reframing은 그 결정 경계 **자체**를 의심하는 탈출이다 — 후보를 아무리 넓혀도 다 비슷하면 넘어올 때다. reframing의 출력은 점검표 탐색 단계의 입력이 되며, reframing 자체는 아무것도 확정하지 않는다.
+`product-framing`과의 관계: 점검표는 프레임을 좁히고 동결하는 수렴 장치, reframing은 프레임 밖 후보를 만드는 발산 장치다. framing 안의 발산 역할이 현재 결정 경계 **안**에서 후보를 넓히는 것이라면, reframing은 그 결정 경계 **자체**를 의심하는 탈출이다 — 후보를 아무리 넓혀도 다 비슷하면 넘어올 때다. reframing의 출력은 점검표 탐색 단계의 입력이 되며, reframing 자체는 아무것도 확정하지 않는다.
 
 ## 언제 쓰나 — 발동 신호
 
@@ -29,7 +29,7 @@ description: "Change the frame when the same approach keeps failing."
 
 ### 0. 매몰 선언과 점 수집 (메인 세션)
 
-현재 프레임을 한 문장으로 적는다: "우리는 지금 [사용자]에게 [산출물]을 만들어 [가치]를 주려 한다". 이 문장을 못 적으면 매몰이 아니라 프레임 부재이므로 `framing`부터 간다.
+현재 프레임을 한 문장으로 적는다: "우리는 지금 [사용자]에게 [산출물]을 만들어 [가치]를 주려 한다". 이 문장을 못 적으면 매몰이 아니라 프레임 부재이므로 `product-framing`부터 간다.
 
 같이 챙길 점(dot) 재료 — connecting the dots는 점이 있어야 잇는다:
 - 점검표 부산물: 기각된 프레임 목록, `[모델 이견]`, 실험 실패 기록
@@ -64,7 +64,7 @@ description: "Change the frame when the same approach keeps failing."
 
 체인과 재료를 붙여 "끊긴 지점을 [X]로 이으면 프레임이 [B]가 된다" 형태의 후보 1~3개를 만든다. **원래 프레임 유지도 정당한 결론이다** — 사슬이 안 끊겼으면 매몰이 아니었던 것이고, 그 확인 자체가 성과다.
 
-인계: 후보마다 **어느 끊긴 지점을 무엇으로 잇는지 + 실존 재료와 출처**를 붙여 `framing` 탐색 단계에 넘긴다 — 근거를 떼고 후보 한 줄만 넘기면 점검표에서 도로 추정(E0) 취급되어 브릿지 리서치가 헛일이 된다. 확정·검증·동결은 점검표 몫.
+인계: 후보마다 **어느 끊긴 지점을 무엇으로 잇는지 + 실존 재료와 출처**를 붙여 `product-framing` 탐색 단계에 넘긴다 — 근거를 떼고 후보 한 줄만 넘기면 점검표에서 도로 추정(E0) 취급되어 브릿지 리서치가 헛일이 된다. 확정·검증·동결은 점검표 몫.
 
 ## 경계
 

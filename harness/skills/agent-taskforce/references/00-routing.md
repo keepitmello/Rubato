@@ -42,4 +42,4 @@ The more of these get a "yes," the better the fit:
 
 A fresh session is not a standing co-manager. It reads the canonical artifacts and current results, renders a milestone judgment, and exits.
 
-This file decides *whether* to form a team. The human chooses framing and the lead model; `LEAD.md` then proposes the smallest roster and waits for approval before spawning.
+This file decides *whether* to form a team. The human chooses framing and the lead model; `LEAD.md` then reports the smallest roster and forms the team.

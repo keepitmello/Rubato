@@ -2,7 +2,7 @@
 
 *Lead, and any teammate returning a FRAME_CONFLICT.*
 
-`framing` and `reframing` own the product-value frame. This file explains how a moving team respects that authority. The human operator decides whether this run uses framing; the signals below help the lead make a recommendation, not override that choice.
+`product-framing` and `product-reframing` own the product-value frame. This file explains how a moving team respects that authority. The human operator decides whether this run uses framing; the signals below help the lead make a recommendation, not override that choice.
 
 ## Recommend framing when
 
