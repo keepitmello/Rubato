@@ -83,6 +83,21 @@ export function normalizeProviderUsage(usage) {
   if (fullInputTokens > 0 && normalized.cacheReadTokens !== undefined) {
     normalized.cacheHitRate = normalized.cacheReadTokens / fullInputTokens;
   }
+  // Anthropic 서버 컴팩션 iteration (어댑터 패치가 `usage.compaction` 으로 옮김) — 최상위
+  // 숫자는 압축 *이후* 컨텍스트라서 이 iteration 을 따로 남겨야 청구가 맞는다.
+  const compaction = usage.compaction && typeof usage.compaction === "object" ? usage.compaction : undefined;
+  if (compaction) {
+    const compactionInputTokens = finite(compaction.input);
+    const compactionOutputTokens = finite(compaction.output);
+    const compactionCacheReadTokens = finite(compaction.cacheRead);
+    const compactionCacheWriteTokens = finite(compaction.cacheWrite);
+    Object.assign(normalized, {
+      ...(compactionInputTokens === undefined ? {} : { compactionInputTokens }),
+      ...(compactionOutputTokens === undefined ? {} : { compactionOutputTokens }),
+      ...(compactionCacheReadTokens === undefined ? {} : { compactionCacheReadTokens }),
+      ...(compactionCacheWriteTokens === undefined ? {} : { compactionCacheWriteTokens }),
+    });
+  }
   return Object.keys(normalized).length > 0 ? normalized : undefined;
 }
 

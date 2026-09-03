@@ -9,6 +9,7 @@ import { injectCompactionUtils, isCompactionUtilsUrl } from "./core-compaction-u
 import { injectCoreDescriptors, isCoreDescriptorsUrl } from "./core-descriptors.mjs";
 import { injectEmptyRecoveryLiveness, isEmptyRecoveryUrl } from "./core-empty-recovery.mjs";
 import { injectErrorFormat, isErrorFormatUrl } from "./core-error-format.mjs";
+import { injectCompactionIndexReason, injectLanePolicy, isCompactionIndexUrl, isLanePolicyUrl } from "./core-lane-policy.mjs";
 import { injectOverflow, isOverflowUrl } from "./core-overflow.mjs";
 import { injectProviderTimeoutRetry, isProviderTimeoutRetryUrl } from "./core-retry-watchdog.mjs";
 import { injectServiceTier, isServiceTierUrl } from "./core-service-tier.mjs";
@@ -33,13 +34,18 @@ export function applyCoreSessionTransforms(url, source, applyTransform) {
   if (isErrorFormatUrl(url)) source = applyTransform(source, injectErrorFormat);
   if (isCoreDescriptorsUrl(url)) source = applyTransform(source, injectCoreDescriptors);
   if (isEmptyRecoveryUrl(url)) source = applyTransform(source, injectEmptyRecoveryLiveness);
+  if (isLanePolicyUrl(url)) source = applyTransform(source, injectLanePolicy);
+  if (isCompactionIndexUrl(url)) source = applyTransform(source, injectCompactionIndexReason);
   return source;
 }
 
 export {
   injectAgentSession,
   injectCompaction,
+  injectCompactionIndexReason,
+  injectCompactionUtils,
   injectCoreDescriptors,
+  injectLanePolicy,
   injectEmptyRecoveryLiveness,
   injectErrorFormat,
   injectOverflow,
@@ -49,7 +55,9 @@ export {
   injectStreamWatchdog,
   isAgentSessionUrl,
   isCompactionUrl,
+  isCompactionIndexUrl,
   isCompactionUtilsUrl,
+  isLanePolicyUrl,
   isCoreDescriptorsUrl,
   isEmptyRecoveryUrl,
   isErrorFormatUrl,
