@@ -410,8 +410,8 @@ else
   probe="$(mktemp -d)"; (cd "$probe" && git init -q && echo x > a.md)
   out="$(cd "$probe" && "$HARNESS/scripts/rubato-pi.sh" --print "Say only: ok" 2>&1 | tail -1)"
   rm -rf "$probe"
-  if [ "$out" = "ok" ]; then ok "비대화형 왕복 성공 (rubato --print)"
-  else err "왕복 실패: $out"; add_manual "'rubato --print \"ok\"' 를 직접 돌려 원인을 봐라"; fi
+  if [ "$out" = "ok" ]; then ok "엔진 비대화 왕복 성공"
+  else err "왕복 실패: $out"; add_manual "엔진 점검: rubato-pi.sh --print \"Say only: ok\""; fi
 fi
 
 fi   # ONLY_SHELL 스킵 끝
@@ -420,7 +420,7 @@ head_ "요약"
 if [ "$APPLY" -eq 0 ]; then
   say "계획만 보였다. 적용하려면: ./install.sh --apply"
 else
-  say "대화형은 'rubato', 비대화형은 'rubato --print \"...\"' 다."
+  say "대화형은 'rubato', 비대화형 워커는 'rubato dispatch <name> < brief.md' 다."
 fi
 if [ "${#MANUAL[@]}" -gt 0 ]; then
   printf '\n%s남은 일%s\n' "$BOLD" "$RST"

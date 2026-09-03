@@ -5,7 +5,7 @@ import { loadRubatoPiRubatoConfig, pinMemoryJobsToGrok } from "../../src/rubato-
 
 test("task config maps model names and disables inactive category routing", () => {
   const { config } = loadRubatoPiRubatoConfig();
-  assert.equal(MODEL_CATEGORIES.grok, "cursor/cursor-grok-4.6");
+  assert.equal(MODEL_CATEGORIES.grok, "xai/grok-4.6");
   assert.equal(config.models, undefined);
   for (const [name, models] of Object.entries(MODEL_CATEGORY_CHAINS)) {
     assert.deepEqual(config.categories[name], { models });
@@ -17,6 +17,7 @@ test("task config maps model names and disables inactive category routing", () =
 
 test("semantic categories own ordered provider preference and fallback", () => {
   assert.deepEqual(MODEL_CATEGORY_CHAINS.grok, [
+    "xai/grok-4.6",
     "cursor/cursor-grok-4.6",
   ]);
   assert.deepEqual(MODEL_CATEGORY_CHAINS.opus, [
