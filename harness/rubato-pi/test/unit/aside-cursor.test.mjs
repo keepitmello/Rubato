@@ -14,7 +14,7 @@ import {
   openaiSseChunk,
   resolveCursorModel,
 } from "../../src/aside-cursor.mjs";
-import { applyAsideModelsLock, createAsideCursorHandler } from "../../src/aside-cursor-server.mjs";
+import { activateCursorProvider, applyAsideModelsLock, createAsideCursorHandler } from "../../src/aside-cursor-server.mjs";
 import {
   asideCursorFaceUrl,
   asideModelsUnlocked,
@@ -199,6 +199,27 @@ test("Aside catalog rewrite is locked back onto the local faces", () => {
 
 test("xAI proxy forwards the stripped path without rewriting the body", () => {
   assert.equal(xaiUpstreamUrl("/xai/v1/responses"), "https://api.x.ai/v1/responses");
+});
+
+test("catalog refresh failure does not kill the Aside Cursor process", async () => {
+  const provider = {
+    getModels: () => [],
+    refreshModels: async () => {
+      throw new Error("Could not load Cursor model catalog from GetUsableModels");
+    },
+  };
+  const activated = await activateCursorProvider({ provider, credential: { apiKey: "test-key" } });
+  assert.equal(activated, provider);
+  const handler = await createAsideCursorHandler({
+    credential: { apiKey: "test-key" },
+    provider: activated,
+  });
+  const { status, body } = await request(handler, {
+    method: "GET",
+    path: "/v1/models",
+  });
+  assert.equal(status, 200);
+  assert.match(body, /cursor\/grok-4.6/);
 });
 
 test("launchd plist keeps the process alive after crash", () => {

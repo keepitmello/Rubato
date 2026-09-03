@@ -19,16 +19,26 @@ Start Aside Browser before running CLI commands. (Use `aside -h` to see how.)
 
 ### Start a task
 
+Aside research uses Grok. Never pass Sol, `openai/gpt-5.6-sol`, or
+`cursor/gpt-5.6-sol`. The account default is `cursor/grok-4.6`; still pin it
+on every launch so a stale skill example cannot override the picker.
+
 ```bash
-aside "Find flights from SF to Tokyo for next weekend"
-aside -m openai/gpt-5.6-sol -s fast --effort high "Research quarterly earnings"
-aside --effort ultrabrowse "Research this deeply"
-aside --account u1 "Check unread Slack notifications"
-aside --permission full-access "Install the CLI from the project README"
-aside "https://example.com"
+aside -m cursor/grok-4.6 --effort high "Find flights from SF to Tokyo for next weekend"
+aside -m cursor/grok-4.6 --effort high "Research quarterly earnings"
+aside -m cursor/grok-4.6 --effort ultrabrowse "Research this deeply"
+aside -m cursor/grok-4.6 --account u1 "Check unread Slack notifications"
+aside -m cursor/grok-4.6 --permission full-access "Install the CLI from the project README"
+aside -m cursor/grok-4.6 "https://example.com"
 ```
 
 After running the task, watch the run and give the user a status update around every 60 seconds.
+If the process exits or the session is `interrupted`/`terminated`, recover the
+same session. Do not start a second Sol session.
+
+```bash
+aside session resume <id> "Continue and return the final evidence"
+```
 
 ### Control sessions
 
