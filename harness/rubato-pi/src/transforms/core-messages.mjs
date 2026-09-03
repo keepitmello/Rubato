@@ -2,7 +2,7 @@ import { replaceOnce } from "./core-replace.mjs";
 
 export function messagesHrefs() {
   return {
-    foldHiddenCustom: new URL("./fold-hidden-custom-user-turns.mjs", import.meta.url).href,
+    remapHiddenCustom: new URL("./remap-hidden-custom-turns.mjs", import.meta.url).href,
   };
 }
 
@@ -19,24 +19,24 @@ const RETURN_NEEDLE =
 const FILTER_NEEDLE = "    })\n        .filter((m) => m !== undefined);\n";
 
 /**
- * Fold hidden custom user-turns into the preceding real user message so a
- * memory notice or post-compact restoration cannot become the latest user turn.
+ * Remap hidden custom turns to assistant and keep the latest user message last
+ * so a memory notice or post-compact restoration cannot steal the user turn.
  */
 export function injectMessages(source, hrefs = messagesHrefs()) {
-  const foldHref = hrefs.foldHiddenCustom ?? messagesHrefs().foldHiddenCustom;
+  const remapHref = hrefs.remapHiddenCustom ?? messagesHrefs().remapHiddenCustom;
   let next = replaceOnce(
     source,
     IMPORT_NEEDLE,
-    `${IMPORT_NEEDLE}import { foldHiddenCustomUserTurns } from ${JSON.stringify(foldHref)};\n`,
-    "messages fold import",
+    `${IMPORT_NEEDLE}import { remapHiddenCustomTurns } from ${JSON.stringify(remapHref)};\n`,
+    "messages remap import",
   );
   next = replaceOnce(
     next,
     RETURN_NEEDLE,
     "    // Continuations are append-only here too: the transport array must extend the\n" +
       "    // previous request verbatim to keep the provider's cache prefix valid.\n" +
-      "    return foldHiddenCustomUserTurns(messages, (m) => {\n",
-    "messages fold convertToLlm",
+      "    return remapHiddenCustomTurns(messages, (m) => {\n",
+    "messages remap convertToLlm",
   );
-  return replaceOnce(next, FILTER_NEEDLE, "    });\n", "messages fold convertToLlm close");
+  return replaceOnce(next, FILTER_NEEDLE, "    });\n", "messages remap convertToLlm close");
 }
