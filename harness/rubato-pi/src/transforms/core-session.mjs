@@ -1,6 +1,6 @@
 // [cluster:core-session] — compaction 시리즈, stream-watchdog, agent-session
 // (/skill: inline, compact-after-user-abort), speculative, service-tier,
-// pi-ai codex-overflow 를 load transform 으로 옮기는 자리.
+// pi-ai codex-overflow, convertToLlm hidden-custom fold 를 load transform 으로 옮기는 자리.
 // 규약은 tui-chrome.mjs 와 같다: pristine 니들, 없으면 throw, 패치 공존 중 inert.
 
 import { injectAgentSession, isAgentSessionUrl } from "./core-agent-session.mjs";
@@ -22,6 +22,7 @@ import { injectOverflow, isOverflowUrl } from "./core-overflow.mjs";
 import { injectProviderTimeoutRetry, isProviderTimeoutRetryUrl } from "./core-retry-watchdog.mjs";
 import { injectServiceTier, isServiceTierUrl } from "./core-service-tier.mjs";
 import { injectSpeculative, isSpeculativeUrl } from "./core-speculative.mjs";
+import { injectMessages, isMessagesUrl } from "./core-messages.mjs";
 import { injectSessionPersist, isSessionManagerUrl } from "./core-session-persist.mjs";
 import { injectStreamWatchdog, isStreamWatchdogUrl } from "./core-stream-watchdog.mjs";
 
@@ -49,6 +50,7 @@ export function applyCoreSessionTransforms(url, source, applyTransform) {
   if (isCompactionPolicyUrl(url)) source = applyTransform(source, injectCompactionPolicy);
   if (isSettingsManagerUrl(url)) source = applyTransform(source, injectCompactionSettings);
   if (isSessionManagerUrl(url)) source = applyTransform(source, injectSessionPersist);
+  if (isMessagesUrl(url)) source = applyTransform(source, injectMessages);
   return source;
 }
 
@@ -62,6 +64,7 @@ export {
   injectCompactionUtils,
   injectCoreDescriptors,
   injectLanePolicy,
+  injectMessages,
   injectEmptyRecoveryLiveness,
   injectErrorFormat,
   injectOverflow,
@@ -78,6 +81,7 @@ export {
   isCompactionUtilsUrl,
   isSettingsManagerUrl,
   isLanePolicyUrl,
+  isMessagesUrl,
   isCoreDescriptorsUrl,
   isEmptyRecoveryUrl,
   isErrorFormatUrl,
