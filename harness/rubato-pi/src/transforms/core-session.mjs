@@ -22,6 +22,7 @@ import { injectOverflow, isOverflowUrl } from "./core-overflow.mjs";
 import { injectProviderTimeoutRetry, isProviderTimeoutRetryUrl } from "./core-retry-watchdog.mjs";
 import { injectServiceTier, isServiceTierUrl } from "./core-service-tier.mjs";
 import { injectSpeculative, isSpeculativeUrl } from "./core-speculative.mjs";
+import { injectSessionPersist, isSessionManagerUrl } from "./core-session-persist.mjs";
 import { injectStreamWatchdog, isStreamWatchdogUrl } from "./core-stream-watchdog.mjs";
 
 /**
@@ -47,6 +48,7 @@ export function applyCoreSessionTransforms(url, source, applyTransform) {
   if (isCompactionIndexThresholdUrl(url)) source = applyTransform(source, injectCompactionIndexThreshold);
   if (isCompactionPolicyUrl(url)) source = applyTransform(source, injectCompactionPolicy);
   if (isSettingsManagerUrl(url)) source = applyTransform(source, injectCompactionSettings);
+  if (isSessionManagerUrl(url)) source = applyTransform(source, injectSessionPersist);
   return source;
 }
 
@@ -65,6 +67,7 @@ export {
   injectOverflow,
   injectProviderTimeoutRetry,
   injectServiceTier,
+  injectSessionPersist,
   injectSpeculative,
   injectStreamWatchdog,
   isAgentSessionUrl,
@@ -81,6 +84,7 @@ export {
   isOverflowUrl,
   isProviderTimeoutRetryUrl,
   isServiceTierUrl,
+  isSessionManagerUrl,
   isSpeculativeUrl,
   isStreamWatchdogUrl,
 };
