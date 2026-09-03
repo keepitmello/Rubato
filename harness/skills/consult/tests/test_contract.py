@@ -7,37 +7,48 @@ REPO = ROOT.parent
 
 
 class ConsultAsideContractTest(unittest.TestCase):
-    def test_main_skill_uses_aside_without_legacy_browser_helpers(self) -> None:
+    def test_main_skill_stays_thin_and_points_at_consult_cli(self) -> None:
         skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
 
-        self.assertIn("run_aside_repl_consult.py", skill)
         self.assertIn("consult list", skill)
         self.assertIn("consult send", skill)
         self.assertIn("consult recover", skill)
-        self.assertIn("under 120 seconds", skill)
-        self.assertIn("submitElapsedSeconds", skill)
         self.assertIn("--quality xhigh", skill)
         self.assertIn("--quality pro", skill)
         self.assertIn("With no flag", skill)
-        self.assertIn("same project page", skill)
-        self.assertIn("configured project path", skill)
-        self.assertIn("CONSULT_PROJECT_NAME", skill)
-        self.assertNotIn("contains `-work/`", skill)
-        self.assertNotIn("ChatGPT Work 프로젝트", skill)
-        self.assertIn("Exit `77`", skill)
-        self.assertIn("There is no automatic alternate sender", skill)
-        self.assertIn("--artifact-output", skill)
-        self.assertIn("Playwright is not part of Consult", skill)
-        self.assertIn("conversationUrl", skill)
-        self.assertIn("backend-api", skill)
-        self.assertIn("targetId", skill)
-        self.assertIn("deliberate resend", skill)
         self.assertIn("--to", skill)
-        self.assertIn("--thread", skill)
-        self.assertIn("--conversation-url", skill)
-        self.assertIn("consult-sessions.json", skill)
+        self.assertIn("Exit `77`", skill)
+        self.assertIn("references/runbook.md", skill)
+        self.assertIn("references/after-advice.md", skill)
+        self.assertIn("references/context-checklist.md", skill)
+        self.assertLess(len(skill.splitlines()), 80)
         self.assertNotIn("run_agbrowse", skill)
         self.assertNotIn("ensure_consult_chrome", skill)
+        self.assertNotIn("data-tpp-toggle-value", skill)
+        self.assertNotIn("submitElapsedSeconds", skill)
+        self.assertNotIn("run_aside_repl_consult.py", skill)
+
+    def test_runbook_keeps_the_engine_contract(self) -> None:
+        runbook = (ROOT / "references" / "runbook.md").read_text(encoding="utf-8")
+
+        self.assertIn("run_aside_repl_consult.py", runbook)
+        self.assertIn("under 120 seconds", runbook)
+        self.assertIn("submitElapsedSeconds", runbook)
+        self.assertIn("same project page", runbook)
+        self.assertIn("configured project path", runbook)
+        self.assertIn("CONSULT_PROJECT_NAME", runbook)
+        self.assertIn("There is no automatic alternate sender", runbook)
+        self.assertIn("--artifact-output", runbook)
+        self.assertIn("Playwright is not part of Consult", runbook)
+        self.assertIn("conversationUrl", runbook)
+        self.assertIn("backend-api", runbook)
+        self.assertIn("targetId", runbook)
+        self.assertIn("deliberate resend", runbook)
+        self.assertIn("--thread", runbook)
+        self.assertIn("--conversation-url", runbook)
+        self.assertIn("consult-sessions.json", runbook)
+        self.assertNotIn("contains `-work/`", runbook)
+        self.assertNotIn("ChatGPT Work 프로젝트", runbook)
 
     def test_inner_skill_fails_closed_outside_work(self) -> None:
         skill = (
@@ -72,8 +83,6 @@ class ConsultAsideContractTest(unittest.TestCase):
                 fallback.resolve(), (REPO / "consult-playwright").resolve()
             )
         else:
-            # Rubato's bundle dereferences the canonical hidden link so the
-            # fallback survives distribution without becoming a top-level skill.
             self.assertTrue(fallback.is_dir())
         self.assertTrue((fallback / "SKILL.md").is_file())
         self.assertFalse((ROOT / "scripts" / "run_agbrowse_consult.py").exists())

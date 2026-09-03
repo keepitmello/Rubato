@@ -12,11 +12,12 @@ Use this after receiving a response from the external consultant.
 4. Make the smallest safe change first.
 5. Run the relevant tests and commands.
 6. Summarize:
+   - the question and thread id
    - what advice was used
    - what was changed
    - what was rejected and why
    - test results
-   - remaining risks
+   - remaining risks and uncertainty
 
 Do not treat the consultant as authoritative when its assumptions conflict with
 the codebase. Repo facts, user constraints, and passing tests win.

@@ -1,4 +1,8 @@
-# Aside Work Consult Runbook
+# Aside Consult Runbook
+
+Operator and engine contract. The main session reads `SKILL.md` and calls
+`consult` on PATH. This file is the configured project path, the same project page
+lifecycle, and recovery. There is no automatic alternate sender.
 
 ## Preconditions
 
@@ -51,8 +55,8 @@ Continue a saved thread. This opens that conversation, not the project home:
 consult send --quality <xhigh-or-pro> .consult/<run>/packet.md --to <thread-id>
 ```
 
-The runner's in-browser guard must commit the user turn within 120 seconds and
-records `submitElapsedSeconds`; it exits `75` at that boundary. Never increase
+The runner's in-browser guard must commit the user turn under 120 seconds and
+record `submitElapsedSeconds`; it exits `75` at that boundary. Never increase
 or blindly retry the budget. One REPL process keeps the Work page alive through
 submission, response completion, and optional download. Never split those
 stages across REPL processes: closing the first process can terminate the
@@ -88,10 +92,8 @@ and if the daemon drops before the submit marker it relaunches Aside and
 retries the same send once. After a user turn commits, do not retry.
 Aside confines `download.saveAs()` to its session directory. The browser returns
 `download.path()` instead, and the Python runner copies that verified local file
-to `--artifact-output`.
-Aside confines `download.saveAs()` to its session directory. The browser returns
-`download.path()` instead, and the Python runner copies that verified local file
-to `--artifact-output`.
+to `--artifact-output`. Threads are stored in `~/.codex/consult-sessions.json`
+with `threadId`, `conversationUrl`, and `targetId`.
 
 For a code artifact, use the same command:
 
@@ -166,6 +168,9 @@ Reject an answer that does not address the attached packet.
 
 On exit `75` caused by pre-send UI drift, preserve evidence and stop. Do not
 hand the packet to another sender. Consult has one continuous Aside REPL path.
+Playwright is not part of Consult, including code artifact generation and
+download. A deliberate resend is a new project conversation and must never
+happen automatically.
 
 
 ## Recover without resend
