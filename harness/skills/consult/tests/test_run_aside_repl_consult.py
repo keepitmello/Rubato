@@ -120,10 +120,13 @@ class AsideReplConsultTest(unittest.TestCase):
         self.assertIn('data-tpp-toggle-value="chatgpt"', xhigh)
         self.assertIn('data-tpp-toggle-value="work"', xhigh)
         self.assertIn("Chat surface not selected", xhigh)
+        self.assertIn("Work mode selected and Chat toggle missing", xhigh)
+        self.assertIn("chatToggleVisible", xhigh)
         self.assertIn("ChatGPT rate-limited the project page", xhigh)
         self.assertIn("backend-api/conversation", xhigh)
         self.assertIn("readAssistantFromBackend", xhigh)
         self.assertIn("recoveredFromBackend", xhigh)
+        self.assertIn("i < 80", xhigh)
         self.assertNotIn(
             "await snapshot(workPage, { interactive: true });\n    submitStage = 'wait-project-composer'",
             xhigh,
@@ -414,6 +417,14 @@ print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"no id here","idMatched":false
         self.assertIn("backend-api/conversations?offset=0&limit=15", script)
         self.assertNotIn("/project", script)
         self.assertIn("ASIDE_BACKEND_RECOVERY_RESULT", script)
+        self.assertIn("pollIntervalMs", script)
+        self.assertIn("Date.now() + 45000", script)
+        long_script = MODULE.build_backend_recovery_script(
+            "abc123",
+            "https://chatgpt.com/c/6a95625e-1f78-83e8-aa90-a49f982e36ef",
+            timeout_ms=90000,
+        )
+        self.assertIn("Date.now() + 90000", long_script)
 
     def test_daemon_loss_recovers_from_backend_instead_of_resend(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -749,6 +760,58 @@ print('ASIDE_REPL_RESPONSE_RESULT {{"responseText":"ID: placeholder","artifact":
             self.assertEqual(evidence["targetId"], "target")
             self.assertEqual(evidence["id"], "placeholder")
             self.assertEqual(evidence["topic"], "Test topic")
+
+    def test_recover_from_saved_state_never_resends(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            evidence = root / "result.json"
+            evidence.write_text(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "status": "submitted_response_unavailable",
+                        "id": "abc123",
+                        "topic": "Test topic",
+                        "quality": "pro",
+                        "model": "GPT-5.6 Sol",
+                        "tier": "Pro (5 of 5)",
+                        "conversationUrl": "https://chatgpt.com/c/1",
+                        "targetId": "target",
+                        "packetPath": str(root / "packet.md"),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            response_path = root / "response.md"
+            result_path = root / "recovered.json"
+            with mock.patch.object(MODULE, "ensure_aside_daemon", return_value=None):
+                with mock.patch.object(
+                    MODULE,
+                    "recover_consult_from_backend",
+                    return_value={
+                        "ok": True,
+                        "responseText": "recovered later",
+                        "finished": True,
+                        "idMatched": True,
+                        "conversationUrl": "https://chatgpt.com/c/1",
+                    },
+                ) as recover:
+                    result = MODULE.main(
+                        [
+                            "--recover-from", str(evidence),
+                            "--response-output", str(response_path),
+                            "--json-output", str(result_path),
+                            "--stderr-output", str(root / "stderr.log"),
+                        ]
+                    )
+            recover.assert_called_once()
+            self.assertEqual(recover.call_args.args[0], "abc123")
+            self.assertEqual(result, 0)
+            self.assertEqual(response_path.read_text(encoding="utf-8"), "recovered later\n")
+            saved = json.loads(result_path.read_text(encoding="utf-8"))
+            self.assertTrue(saved["ok"])
+            self.assertTrue(saved["recoveredFromBackend"])
+            self.assertEqual(saved["id"], "abc123")
 
 
 if __name__ == "__main__":

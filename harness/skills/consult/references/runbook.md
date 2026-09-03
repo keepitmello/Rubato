@@ -159,3 +159,20 @@ Reject an answer that does not address the attached packet.
 
 On exit `75` caused by pre-send UI drift, preserve evidence and stop. Do not
 hand the packet to another sender. Consult has one continuous Aside REPL path.
+
+
+## Recover without resend
+
+If the runner exits `77` or the first REPL dies after `CONSULT_SUBMITTED`, do
+not send again. Poll the same conversation:
+
+```bash
+python3 <consult-skill-dir>/scripts/run_aside_repl_consult.py \
+  --recover-from .consult/<run>/result.json \
+  --response-output .consult/<run>/response.md \
+  --json-output .consult/<run>/result.recovered.json \
+  --stderr-output .consult/<run>/recover.stderr.log
+```
+
+Backend-api polling is the primary wait after the user turn persists (`/c/` in
+the conversation URL). The live ChatGPT page is only a secondary signal.
