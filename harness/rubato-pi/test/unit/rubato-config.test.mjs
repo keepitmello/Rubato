@@ -39,7 +39,7 @@ test("inactive agents this harness does not route are disabled", () => {
 
 test("memory pin leaves absent settings to the memory schema and reopens quick as grok-only", () => {
   const pinned = pinMemoryJobsToGrok(loadRubatoPiRubatoConfig());
-  assert.deepEqual(MEMORY_JOB_MODELS, ["xai/grok-4.6"]);
+  assert.deepEqual(MEMORY_JOB_MODELS, ["xai/grok-4.6", "cursor/cursor-grok-4.6-high-fast"]);
   assert.equal(pinned.config.memory, undefined);
   assert.deepEqual(pinned.config.categories.grok, { models: MEMORY_JOB_MODELS });
   assert.deepEqual(pinned.config.categories.quick, { models: MEMORY_JOB_MODELS });

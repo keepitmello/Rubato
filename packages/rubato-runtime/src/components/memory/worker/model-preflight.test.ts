@@ -346,4 +346,23 @@ process.stdout.write("builtin/fallback\\n")
     })
   })
 
+
+  test("#given a child catalog that only lists Cursor Grok Fast #when the presented id is preflighted #then it stays visible", async () => {
+    const item = await fixture('process.stdout.write("cursor/cursor-grok-4.6-high-fast\\n")')
+    const result = await preflightMemoryModels({
+      candidates: [
+        { model: "cursor/cursor-grok-4.6", thinking: "high" },
+        { model: "xai/grok-4.6", thinking: "off" },
+      ],
+      launch: item.launch,
+      env: { PATH: process.env.PATH },
+      configSources: [{ path: item.config, exists: true }],
+    })
+    expect(result).toEqual({
+      kind: "filtered",
+      candidates: [{ model: "cursor/cursor-grok-4.6", thinking: "high" }],
+      rejected: [{ model: "xai/grok-4.6", cause: "model_not_visible" }],
+    })
+  })
+
 })
