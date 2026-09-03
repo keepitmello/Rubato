@@ -5,6 +5,7 @@ import {
   ANTHROPIC_SERVER_COMPACTION_EDIT_TYPE,
 } from "../../src/anthropic-server-compaction.mjs";
 import {
+  anthropicServerCompactionTrigger,
   applyAnthropicServerCompaction,
   wrapAnthropicServerCompactionFetch,
 } from "../../src/anthropic-server-compaction-wire.mjs";
@@ -36,12 +37,12 @@ function hasCompactEdit(payload) {
     && payload.context_management.edits.some((edit) => edit?.type === ANTHROPIC_SERVER_COMPACTION_EDIT_TYPE);
 }
 
-async function send(model, { provider = "anthropic", headers = { "anthropic-beta": OAUTH_BETAS }, extra } = {}) {
+async function send(model, { provider = "anthropic", headers = { "anthropic-beta": OAUTH_BETAS }, extra, contextWindow } = {}) {
   const seen = [];
   const fetchImpl = wrapAnthropicServerCompactionFetch(async (url, init) => {
     seen.push({ url, init });
     return new Response("{}", { status: 200 });
-  }, { provider });
+  }, { provider, contextWindow });
   const raw = body(model, extra);
   const init = { method: "POST", headers, body: raw };
   await fetchImpl(MESSAGES_URL, init);
@@ -62,6 +63,21 @@ for (const model of ["claude-fable-5-1", "claude-opus-5", "claude-sonnet-5"]) {
     assert.notEqual(seen.init.headers, init.headers);
   });
 }
+
+test("trigger sits at 65% of the model context window (35% left)", async () => {
+  const { seen } = await send("claude-fable-5-1", { contextWindow: 1_000_000 });
+  const edit = JSON.parse(seen.init.body).context_management.edits[0];
+  assert.deepEqual(edit.trigger, { type: "input_tokens", value: 650_000 });
+  const small = await send("claude-opus-5", { contextWindow: 200_000 });
+  assert.deepEqual(JSON.parse(small.seen.init.body).context_management.edits[0].trigger, { type: "input_tokens", value: 130_000 });
+});
+
+test("trigger never drops below the Anthropic 50k floor and is omitted without a window", () => {
+  assert.deepEqual(anthropicServerCompactionTrigger(40_000), { type: "input_tokens", value: 50_000 });
+  assert.equal(anthropicServerCompactionTrigger(undefined), undefined);
+  assert.equal(anthropicServerCompactionTrigger(0), undefined);
+  assert.equal(anthropicServerCompactionTrigger("nope"), undefined);
+});
 
 test("the wire stays off when a required transform did not apply", () => {
   const raw = body("claude-fable-5-1");
