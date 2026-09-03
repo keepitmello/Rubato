@@ -3,7 +3,7 @@ name: "chatgpt-work-consult"
 description: "Recover a failed deterministic Consult send by adaptively operating an explicitly xhigh or pro ChatGPT project conversation. Do not use for the normal fast path."
 ---
 
-# ChatGPT Work Consult
+# ChatGPT project Chat consult
 
 Execute a packet consult on chatgpt.com inside the project named in the task. Do not
 rediscover the UI. Do not run this skill unless the task supplies an exact

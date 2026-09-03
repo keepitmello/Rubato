@@ -47,7 +47,9 @@ automatic fallback senders.
    the turn.
    Exit `77` means the user turn committed but the live page did not yield a
    reply. Recover that same conversation through ChatGPT `backend-api`, not by
-   opening the project chat list; never resend the packet. If the page shows
+   opening the project chat list; never resend the packet.
+   After submit, backend-api polling is the primary wait. A later
+   `--recover-from .consult/<run>/result.json` reruns only that poller. If the page shows
    `요청이 너무 많습니다`, wait and use the backend path. Do not click through
    the modal and keep loading Work.
 5. Read the saved response and JSON evidence. The user-turn ID is the send

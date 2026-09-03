@@ -252,19 +252,24 @@ async function collectText(stream) {
   return { text, usage };
 }
 
-async function activateCursorProvider({ provider, credential, env }) {
+export async function activateCursorProvider({ provider, credential, env }) {
   const cursor = provider ?? await cursorDirectProvider({ env });
   if (typeof cursor.refreshModels !== "function") return cursor;
-  await cursor.refreshModels({
-    credential,
-    stored: { models: [] },
-    allowNetwork: true,
-    signal: AbortSignal.any([]),
-    publish: async (publication) => {
-      publication.update?.();
-      return true;
-    },
-  });
+  try {
+    await cursor.refreshModels({
+      credential,
+      stored: { models: [] },
+      allowNetwork: true,
+      signal: AbortSignal.any([]),
+      publish: async (publication) => {
+        publication.update?.();
+        return true;
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`aside-cursor catalog refresh failed, continuing without live catalog: ${message}`);
+  }
   return cursor;
 }
 

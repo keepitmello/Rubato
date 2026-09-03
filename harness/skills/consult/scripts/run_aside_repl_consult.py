@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Submit and recover a ChatGPT Work consult through deterministic Aside REPL calls."""
+"""Submit and recover a ChatGPT project consult through deterministic Aside REPL calls."""
 
 from __future__ import annotations
 
@@ -215,16 +215,21 @@ def user_message_has_consult_id(payload: dict[str, Any], consult_id: str) -> boo
 def build_backend_recovery_script(
     consult_id: str,
     conversation_url: str | None,
+    *,
+    timeout_ms: int = 45_000,
+    poll_interval_ms: int = 5_000,
 ) -> str:
     return f"""
 var consultId = {js(consult_id)};
 var conversationUrl = {js(conversation_url or "")};
+var deadline = Date.now() + {int(timeout_ms)};
+var pollIntervalMs = {int(poll_interval_ms)};
 var home = await openTab('https://chatgpt.com/');
 await home.waitForLoadState('domcontentloaded');
 var sess = await (await fetch('https://chatgpt.com/api/auth/session')).json();
 if (!sess || !sess.accessToken) throw new Error('chatgpt session token missing');
 var auth = {{ headers: {{ Authorization: 'Bearer ' + sess.accessToken }} }};
-var conversationId = (conversationUrl.match(/\\/c\\/([0-9a-fA-F-]{{8,}})/) || [])[1] || '';
+    var conversationId = (conversationUrl.match(/\\/c\\/([0-9a-fA-F-]{{8,}})/) || [])[1] || '';
 async function readConversation(id) {{
   var response = await fetch('https://chatgpt.com/backend-api/conversation/' + id, auth);
   if (!response.ok) return null;
@@ -253,51 +258,68 @@ function userHasId(payload) {{
     return node && node.message && node.message.author && node.message.author.role === 'user' && messageText(node.message).includes(consultId);
   }});
 }}
-var payload = conversationId ? await readConversation(conversationId) : null;
-if (!payload || !userHasId(payload)) {{
+async function findConversation() {{
+  var payload = conversationId ? await readConversation(conversationId) : null;
+  if (payload && userHasId(payload)) return payload;
   var list = await fetch('https://chatgpt.com/backend-api/conversations?offset=0&limit=15&order=updated', auth);
-  if (list.ok) {{
-    var items = (await list.json()).items || [];
-    for (var i = 0; i < items.length; i += 1) {{
-      payload = await readConversation(items[i].id);
-      if (payload && userHasId(payload)) {{
-        conversationId = items[i].id;
-        break;
-      }}
-      payload = null;
+  if (!list.ok) return payload && userHasId(payload) ? payload : null;
+  var items = (await list.json()).items || [];
+  for (var i = 0; i < items.length; i += 1) {{
+    payload = await readConversation(items[i].id);
+    if (payload && userHasId(payload)) {{
+      conversationId = items[i].id;
+      return payload;
     }}
   }}
+  return null;
+}}
+var last = {{ ok: false }};
+while (Date.now() < deadline) {{
+  var payload = await findConversation();
+  if (payload && conversationId) {{
+    var extracted = assistantFrom(payload);
+    last = {{
+      ok: true,
+      responseText: extracted.text,
+      finished: extracted.finished,
+      idMatched: extracted.text.includes(consultId),
+      conversationUrl: 'https://chatgpt.com/c/' + conversationId
+    }};
+    if (extracted.text && extracted.finished) break;
+  }}
+  await sleep(pollIntervalMs);
 }}
 await closeTab(home).catch(function () {{}});
-if (!payload || !conversationId) {{
-  console.log({js(BACKEND_RECOVERY_MARKER)} + JSON.stringify({{ ok: false }}));
-}} else {{
-  var extracted = assistantFrom(payload);
-  console.log({js(BACKEND_RECOVERY_MARKER)} + JSON.stringify({{
-    ok: true,
-    responseText: extracted.text,
-    finished: extracted.finished,
-    idMatched: extracted.text.includes(consultId),
-    conversationUrl: 'https://chatgpt.com/c/' + conversationId
-  }}));
-}}
+console.log({js(BACKEND_RECOVERY_MARKER)} + JSON.stringify(last));
 """.strip()
 
 
 def recover_consult_from_backend(
     consult_id: str,
     conversation_url: str | None = None,
+    *,
+    timeout: int = 45,
+    poll_interval: int = 5,
 ) -> dict[str, Any] | None:
     if not consult_id:
         return None
     transcript = run_repl_process(
-        build_backend_recovery_script(consult_id, conversation_url),
-        timeout=45,
+        build_backend_recovery_script(
+            consult_id,
+            conversation_url,
+            timeout_ms=max(1, int(timeout)) * 1000,
+            poll_interval_ms=max(1, int(poll_interval)) * 1000,
+        ),
+        timeout=max(1, int(timeout)) + 15,
     )
     payload = marker_payload(transcript, BACKEND_RECOVERY_MARKER)
     if not payload or not payload.get("ok"):
         return None
     return payload
+
+
+def finished_backend_reply(payload: dict[str, Any] | None) -> bool:
+    return bool(payload and payload.get("responseText") and payload.get("finished", True))
 
 
 def build_repl_script(
@@ -375,20 +397,31 @@ var submitState = await Promise.race([
     submitStage = 'select-chat-surface';
     var chatToggle = workPage.locator('button[data-tpp-toggle-value="chatgpt"]');
     var workToggle = workPage.locator('button[data-tpp-toggle-value="work"]');
-    await chatToggle.waitFor({{ state: 'visible', timeout: 15000 }});
-    if ((await chatToggle.getAttribute('aria-checked')) !== 'true') await chatToggle.click();
-    var chatSelected = false;
-    for (var i = 0; i < 20; i += 1) {{
-      if (
-        (await chatToggle.getAttribute('aria-checked')) === 'true' &&
-        (await workToggle.getAttribute('aria-checked')) !== 'true'
-      ) {{
-        chatSelected = true;
-        break;
+    var chatToggleVisible = false;
+    try {{
+      await chatToggle.waitFor({{ state: 'visible', timeout: 3000 }});
+      chatToggleVisible = true;
+    }} catch (error) {{}}
+    if (chatToggleVisible) {{
+      if ((await chatToggle.getAttribute('aria-checked')) !== 'true') await chatToggle.click();
+      var chatSelected = false;
+      for (var i = 0; i < 20; i += 1) {{
+        if (
+          (await chatToggle.getAttribute('aria-checked')) === 'true' &&
+          (await workToggle.getAttribute('aria-checked')) !== 'true'
+        ) {{
+          chatSelected = true;
+          break;
+        }}
+        await sleep(200);
       }}
-      await sleep(200);
+      if (!chatSelected) throw new Error('Chat surface not selected');
+    }} else if (
+      await workToggle.isVisible().catch(() => false) &&
+      (await workToggle.getAttribute('aria-checked')) === 'true'
+    ) {{
+      throw new Error('Work mode selected and Chat toggle missing');
     }}
-    if (!chatSelected) throw new Error('Chat surface not selected');
     composer = workPage.locator(
       '#prompt-textarea[contenteditable="true"][aria-label="' + composerLabel + '"]'
     );
@@ -530,7 +563,7 @@ if (submitElapsedMs >= 120000) {{
   }}));
   throw new Error('SUBMIT_UNKNOWN');
 }}
-for (var i = 0; i < 20; i += 1) {{
+for (var i = 0; i < 80; i += 1) {{
   if (workPage.url().indexOf('/c/') !== -1) break;
   await sleep(250);
 }}
@@ -582,33 +615,29 @@ var assistant = workPage.locator('[data-message-author-role="assistant"]').last(
 var copyResponse = workPage.getByRole('button', {{ name: /^(응답 복사|Copy response)$/ }}).last();
 var rateLimitAfter = workPage.getByRole('heading', {{ name: '요청이 너무 많습니다' }});
 var responseText = '';
-if (await rateLimitAfter.isVisible().catch(() => false)) {{
-  while (Date.now() < responseDeadline) {{
-    var extracted = await readAssistantFromBackend();
-    if (extracted.text && extracted.finished) {{
-      responseText = extracted.text;
-      recoveredFromBackend = true;
-      break;
-    }}
-    await sleep(5000);
-  }}
-}} else {{
-  await assistant.waitFor({{ state: 'visible', timeout: remainingResponseMs() }});
-  try {{
-    await copyResponse.waitFor({{ state: 'visible', timeout: remainingResponseMs() }});
-  }} catch (error) {{
-    await sleep(2000);
-  }}
-  responseText = (await assistant.innerText()).trim();
-  if (!responseText) {{
-    await sleep(2000);
-    responseText = (await assistant.innerText()).trim();
-  }}
-  if (!responseText) {{
-    var extracted = await readAssistantFromBackend();
+while (Date.now() < responseDeadline) {{
+  var extracted = await readAssistantFromBackend();
+  if (extracted.text && extracted.finished) {{
     responseText = extracted.text;
-    recoveredFromBackend = !!responseText;
+    recoveredFromBackend = true;
+    break;
   }}
+  if (await rateLimitAfter.isVisible().catch(() => false)) {{
+    await sleep(5000);
+    continue;
+  }}
+  if ((await workPage.locator('[data-message-author-role="assistant"]').count()) > 0) {{
+    try {{
+      await assistant.waitFor({{ state: 'visible', timeout: 1000 }});
+      var liveText = (await assistant.innerText()).trim();
+      var copyReady = await copyResponse.isVisible().catch(() => false);
+      if (liveText && (copyReady || extracted.finished)) {{
+        responseText = liveText;
+        break;
+      }}
+    }} catch (error) {{}}
+  }}
+  await sleep(3000);
 }}
 if (!responseText) throw new Error('assistant response text was empty');
 var idMatched = responseText.includes({js(f"ID: {consult_id}")}) || responseText.includes({js(consult_id)});
@@ -806,8 +835,8 @@ def run_repl_consult(
 
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--quality", choices=("xhigh", "pro"), required=True)
-    parser.add_argument("--packet", required=True)
+    parser.add_argument("--quality", choices=("xhigh", "pro"))
+    parser.add_argument("--packet")
     parser.add_argument("--url", default=None)
     parser.add_argument("--project", default=None)
     parser.add_argument("--config", default=str(DEFAULT_CONFIG))
@@ -820,7 +849,80 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         help="Save one generated zip artifact here; uses the same Aside conversation.",
     )
     parser.add_argument("--response-timeout", type=int, default=DEFAULT_RESPONSE_TIMEOUT_SECONDS)
-    return parser.parse_args(argv)
+    parser.add_argument(
+        "--recover-from",
+        default=None,
+        help="Recover a committed consult from a previous result.json. Never resends.",
+    )
+    args = parser.parse_args(argv)
+    if args.recover_from:
+        return args
+    if not args.quality or not args.packet:
+        parser.error("--quality and --packet are required unless --recover-from is set")
+    return args
+
+
+def recover_from_saved_state(args: argparse.Namespace) -> int:
+    evidence_path = Path(args.recover_from).expanduser()
+    try:
+        evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    consult_id = str(evidence.get("id") or "")
+    if not consult_id:
+        print("recover-from is missing consult id", file=sys.stderr)
+        return 2
+    daemon_error = ensure_aside_daemon()
+    if daemon_error is not None:
+        print(daemon_error, file=sys.stderr)
+        return 75
+    recovered = recover_consult_from_backend(
+        consult_id,
+        conversation_url=str(evidence.get("conversationUrl") or "") or None,
+        timeout=args.response_timeout,
+    )
+    response_path = Path(args.response_output).expanduser()
+    json_path = Path(args.json_output).expanduser()
+    stderr_path = Path(args.stderr_output).expanduser()
+    for path in (response_path, json_path, stderr_path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+    if finished_backend_reply(recovered):
+        assert recovered is not None
+        response_path.write_text(str(recovered["responseText"]) + "\n", encoding="utf-8")
+        saved = {
+            "ok": True,
+            "id": consult_id,
+            "topic": evidence.get("topic") or "",
+            "quality": evidence.get("quality") or args.quality or "",
+            "model": evidence.get("model") or "GPT-5.6 Sol",
+            "tier": evidence.get("tier") or "",
+            "conversationUrl": recovered["conversationUrl"],
+            "targetId": evidence.get("targetId") or "",
+            "submitElapsedSeconds": evidence.get("submitElapsedSeconds") or 0,
+            "responseElapsedSeconds": 0,
+            "idMatched": bool(recovered.get("idMatched")),
+            "packetUnread": False,
+            "recoveredFromBackend": True,
+            "responseOutput": str(response_path),
+            "packetPath": evidence.get("packetPath") or "",
+        }
+        json_path.write_text(json.dumps(saved, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(f"CONSULT_COMPLETE response={response_path}", flush=True)
+        return 0
+    stderr_path.write_text("backend recovery did not finish\n", encoding="utf-8")
+    failed = {
+        **evidence,
+        "ok": False,
+        "status": "submitted_response_unavailable",
+        "id": consult_id,
+    }
+    json_path.write_text(json.dumps(failed, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(
+        "submission committed but response recovery failed; recover the same conversation and do not resend",
+        file=sys.stderr,
+    )
+    return 77
 
 
 def main(argv: Sequence[str]) -> int:
@@ -828,6 +930,8 @@ def main(argv: Sequence[str]) -> int:
     if not shutil.which("aside"):
         print("aside not found", file=sys.stderr)
         return 127
+    if args.recover_from:
+        return recover_from_saved_state(args)
     project_url = (
         args.url
         or os.environ.get("CONSULT_CHATGPT_URL")
@@ -912,8 +1016,9 @@ def main(argv: Sequence[str]) -> int:
         recovered = recover_consult_from_backend(
             consult_id,
             conversation_url=str(submitted.get("conversationUrl") or "") or None,
+            timeout=args.response_timeout,
         )
-        if recovered and recovered.get("responseText"):
+        if finished_backend_reply(recovered):
             response_path.write_text(str(recovered["responseText"]) + "\n", encoding="utf-8")
             stderr_path.write_text(exc.transcript, encoding="utf-8")
             json_path.write_text(
