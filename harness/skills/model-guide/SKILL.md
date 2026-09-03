@@ -34,7 +34,7 @@ Route by asking: **what part is hardest to get right?**
 | Dominant bottleneck | Owner profile |
 |---|---|
 | Understanding people, product value, or what should be built | problem framer — usually a framing step or human dialogue, not a standing teammate |
-| Cross-stream architecture, contracts, integration | structurer — often the lead itself |
+| Cross-stream architecture, contracts, integration | structurer — usually the lead itself (the lead is whatever main session the user opened; this guide does not pick it) |
 | Discovering and proving the correct technical change | the outcome's current owner — diagnosis is judgment, not a delegable phase (see the debugging note) |
 | Executing a settled change across tools, files, runtime | action converger — a worker the owner dispatches |
 | Falsifying a material implementation | fresh verifier with a *different* profile from the writer |
@@ -45,7 +45,7 @@ Debugging is the case that tempts misrouting. The diagnosis is judgment, and jud
 
 ## 3. Exact model or named preset
 
-Choose the cognitive profile, then pass an exact `model` or named `preset` to `Agent`. Never pass a category, task type, or `subagent_type`. Omit `effort` by default; the configured model default applies. Set `effort` only for an explicit manual override.
+Choose the cognitive profile, then pass an exact `model` or named `preset` to `Agent`. Never pass a category, task type, or `subagent_type`. Omit `effort` for Grok. Always pass `effort` for Fable 5.1 and Sol: Fable as a worker runs `low`; Sol runs `medium`; anything higher only after the user confirms it for that dispatch.
 
 Route in this order:
 
@@ -56,17 +56,20 @@ Route in this order:
 
 Say in one line which model or preset the agent runs on; report the resolved model when the runtime returns it.
 
-**Default worker is Grok 4.6 Fast.** An owner dispatches it for settled execution across files and tools (`Agent`). Pick Sol or Opus as an Agent when the dominant bottleneck matches the profiles below.
+**Default owner and default worker is Grok 4.6 Fast**, for every workstream including diagnosis and integration. When xAI direct is out of credits, use `cursor/cursor-grok-4.6`. Opus 5 has no slot.
 
-- **Fable 5.1** — problem framer. Use for focused framing and human-outcome review before execution or at a rare alignment gate.
-- **Opus 5** — structurer. Default **lead** and default **owner**. Spawn as an Agent only when the dominant bottleneck is cross-stream architecture, contracts, or integration.
-- **GPT-5.6 Sol** — hypothesis converger. Default **verifier**, and the supervisor when the owner is stuck. Give Sol ownership only when the proof itself is the deliverable.
-- **Grok 4.6 Fast** — action converger. **Default worker** an owner dispatches with an exact Grok model or the matching named preset.
+**Fable 5.1 and Sol as owners or workers require the user's approval per dispatch.** Ask, naming the workstream; until approved it runs on Grok. A verifier (independent review) needs no approval.
+
+The choice is made once, at dispatch. An owner that hits a bottleneck mid-work is not swapped for a stronger model; it reports, and the lead decides the next leg. So predict the bottleneck up front rather than planning to climb later.
+
+- **Fable 5.1** — problem framer and structurer. As an Agent: framing, human-outcome review, cross-stream architecture, contracts, and integration. `effort: low` as a worker; higher with the user's confirmation.
+- **GPT-5.6 Sol** — hypothesis converger. Default **verifier**, and the supervisor when the owner is stuck. Give Sol ownership only when the proof itself is the deliverable. `effort: medium` by default; `high` with the user's confirmation.
+- **Grok 4.6 Fast** — action converger. Default **owner** and default **worker**, passed as an exact Grok model or the matching named preset.
 
 Verifier defaults when an independent check is worth the cost:
 
 - Claude-family main session → Sol verifier
-- Codex-family main session → fresh Opus verifier
+- Codex-family main session → fresh Fable 5.1 verifier (`effort: medium`)
 
 Defaults, not mandatory pairings. A clear low-risk task may use owner self-verification only.
 
@@ -75,7 +78,7 @@ Defaults, not mandatory pairings. A clear low-risk task may use owner self-verif
 - One bounded technical outcome → one owner. That owner dispatches Grok Fast workers for settled execution.
 - One material or ambiguous outcome → owner + verifier.
 - Two genuinely independent outcomes → two owners; verifier only if integration risk warrants.
-- Unclear root cause → the owner diagnoses from a `grok` map; only a genuinely separable, parallel debugging workstream gets an Agent owner, and that owner is Opus.
+- Unclear root cause → the owner diagnoses from a `grok` map; only a genuinely separable, parallel debugging workstream gets an Agent owner. That owner is Grok.
 - Product or UX uncertainty → framing before execution, then the chosen owners.
 
 Build the smallest roster that gives each distinct bottleneck one clear owner.
