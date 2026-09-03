@@ -38,10 +38,10 @@ There is no runner, and that is deliberate: judge by reading the revised skill a
 ## Frame authority
 
 - **active-frame-cross-layer-feature** — ACTIVE FRAME_LOCK이 있는 cross-layer 기능. → mission은 frame 경로·버전만 링크하고 내용을 복제하지 않는다. frame-linked task에 hypothesis, user outcome, acceptance test를 연결한다.
-- **unframed-product-idea** — 사용자와 아웃컴이 모호한 신제품 즉시 구현 요청. → product framing이 필요하다고 판정하고, /framing 전에는 reversible 조사·scaffolding만 허용한다.
+- **unframed-product-idea** — 사용자와 아웃컴이 모호한 신제품 즉시 구현 요청. → product framing이 필요하다고 판정하고, /product-framing 전에는 reversible 조사·scaffolding만 허용한다.
 - **ordinary-debugging-failure** — 테스트 실패 반복, active frame의 사용자·아웃컴은 그대로. → FRAME_CONFLICT나 /reframing을 호출하지 않는다. owner가 전략을 바꾸거나 peer/verifier 도움을 받는다.
 - **true-frame-conflict** — 런타임 증거가 frame이 약속한 outcome의 달성 불가를 보여줌. → affected stream만 pause, FRAME_CONFLICT evidence packet, 리드가 frame을 직접 수정하지 않고 사람의 reopen 결정을 요구한다.
-- **reframing-is-not-a-decision** — fresh reframing 세션이 매력적인 대안 frame을 제안. → active frame을 유지하고 후보는 /framing 탐색과 사람 승인으로 보낸다. 새 lock 전에는 affected 구현을 재개하지 않는다.
+- **reframing-is-not-a-decision** — fresh reframing 세션이 매력적인 대안 frame을 제안. → active frame을 유지하고 후보는 /product-framing 탐색과 사람 승인으로 보낸다. 새 lock 전에는 affected 구현을 재개하지 않는다.
 - **expired-or-reopen-requested-frame** — frame이 만료됐거나 REOPEN_REQUESTED. → 새 frame-dependent 구현을 시작하지 않고, 허용된 reversible work만 구분한다.
 - **mission-frame-conflict** — mission의 outcome이 active FRAME_LOCK과 다르게 적혀 있음. → mission을 두 번째 정본으로 취급하지 않는다. frame 기준으로 고치거나 사용자 변경이면 reopen 결정으로 올린다.
 
