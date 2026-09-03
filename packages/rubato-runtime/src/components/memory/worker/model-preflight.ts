@@ -4,6 +4,7 @@ import { stat } from "node:fs/promises"
 import type { SenpiLauncher } from "@rubato/senpi-task"
 
 import { memoryChildExtensionArgs, memoryChildExtensionPaths } from "./child-extensions"
+import { expandCursorGrokVisibility } from "./cursor-grok-ids"
 import type { MemoryModelChain } from "./memory-model-attempts"
 import type { ReflectionModelCandidate } from "./resolve-model"
 
@@ -124,7 +125,7 @@ async function probeChildModels(
   if (code !== 0) throw new Error(`model catalog probe exited with code ${code}: ${stderrText.trim() || stdoutText.trim()}`)
   const models = parseModelCatalog(stdoutText)
   if (models.size === 0) throw new Error("model catalog probe returned no parseable model ids")
-  return models
+  return expandCursorGrokVisibility(models)
 }
 
 function parseModelCatalog(output: string): ReadonlySet<string> {

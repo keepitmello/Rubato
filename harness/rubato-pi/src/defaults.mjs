@@ -34,7 +34,10 @@ export const MODEL_CATEGORY_CHAINS = Object.freeze({
 // Memory reflection/dream/facts load a separate config. That overlay must not
 // inherit the grok category's Cursor default — those jobs were dying with
 // model_not_visible:cursor/cursor-grok-4.6. Task/Agent grok stays Cursor.
-export const MEMORY_JOB_MODELS = Object.freeze(["xai/grok-4.6"]);
+export const MEMORY_JOB_MODELS = Object.freeze([
+  "xai/grok-4.6",
+  "cursor/cursor-grok-4.6-high-fast",
+]);
 
 export const DISABLED_AGENT_NAMES = Object.freeze([
   "explore",
