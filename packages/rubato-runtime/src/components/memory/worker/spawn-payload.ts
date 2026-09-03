@@ -18,6 +18,7 @@ import type {
   ReflectionSpawnPaths,
 } from "./spawn-types"
 import { memoryChildExtensionArgs } from "./child-extensions"
+import { cursorGrokLaunchModel } from "./cursor-grok-ids"
 import { resolveMemoryChildLaunch, resolveSenpiLaunch } from "./senpi-command"
 
 export async function prepareReflectionSpawn(input: PrepareReflectionSpawnInput): Promise<ReflectionSpawnArgs> {
@@ -117,7 +118,7 @@ export async function prepareReflectionSpawn(input: PrepareReflectionSpawnInput)
     "--no-prompt-templates",
     "--no-context-files",
     "--session-dir", sessionDir,
-    "--model", input.model,
+    "--model", cursorGrokLaunchModel(input.model),
     ...(input.thinking === undefined ? [] : ["--thinking", input.thinking]),
     `@${prompt}`,
   ]
@@ -128,7 +129,7 @@ export async function prepareReflectionSpawn(input: PrepareReflectionSpawnInput)
     hardDeadlineAt: input.hardDeadlineAt ?? Date.now() + 15 * 60_000,
     category: input.category,
     conversationIds: input.run.request.conversationIds,
-    model: input.model,
+    model: cursorGrokLaunchModel(input.model),
     ...(input.thinking === undefined ? {} : { thinking: input.thinking }),
     ...(input.nextAttempt === undefined ? {} : { nextAttempt: input.nextAttempt }),
     kind: input.run.request.trigger === "dream" ? "dream" : "reflection",
@@ -173,7 +174,7 @@ export async function prepareReflectionForkSpawn(input: PrepareReflectionSpawnIn
     ...memoryChildExtensionArgs(input.env),
     "--fork", parentSessionFile,
     "--session-dir", base.paths.sessionDir,
-    "--model", input.model,
+    "--model", cursorGrokLaunchModel(input.model),
     ...(input.thinking === undefined ? [] : ["--thinking", input.thinking]),
     `@${base.paths.prompt}`,
   ]
@@ -215,7 +216,7 @@ export async function prepareFactsSpawn(input: PrepareFactsSpawnInput): Promise<
     "--no-prompt-templates",
     "--no-context-files",
     "--session-dir", input.runDir,
-    "--model", input.model,
+    "--model", cursorGrokLaunchModel(input.model),
     ...(input.thinking === undefined ? [] : ["--thinking", input.thinking]),
     `Read ${payload} and write only ${extraction} according to the system prompt.`,
   ]
@@ -226,7 +227,7 @@ export async function prepareFactsSpawn(input: PrepareFactsSpawnInput): Promise<
     runId: input.runId,
     attempt: input.attempt ?? 1,
     hardDeadlineAt: input.hardDeadlineAt ?? Date.now() + 15 * 60_000,
-    model: input.model,
+    model: cursorGrokLaunchModel(input.model),
     ...(input.thinking === undefined ? {} : { thinking: input.thinking }),
     ...(input.nextAttempt === undefined ? {} : { nextAttempt: input.nextAttempt }),
     command: launch.command,
