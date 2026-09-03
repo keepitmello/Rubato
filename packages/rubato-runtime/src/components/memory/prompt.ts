@@ -63,7 +63,9 @@ export interface MemoryPromptInjectionOptions {
 /**
  * Per-run memory injection. The stable projection composes with the event's systemPrompt (never
  * rebuilds it), while session-volatile recall and maintenance notices return as a late hidden
- * custom message. Unbound/disabled sessions return undefined so the handler chain passes through.
+ * custom message. convertToLlm maps those to role:user; rubato-pi folds display:false customs
+ * into the preceding user turn so a notice cannot become the latest user message
+ * (session 01a068e3). Unbound/disabled sessions return undefined so the handler chain passes through.
  */
 export function createMemoryPromptHandler(
   options: MemoryPromptInjectionOptions,
