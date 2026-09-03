@@ -541,6 +541,7 @@ export function withRubatoStream(inner, { modelId = (model) => model?.id, report
       });
       fetchImpl = wrapAnthropicServerCompactionFetch(fetchImpl, {
         provider: model.provider,
+        contextWindow: model.contextWindow,
       });
     }
     if (fetchImpl !== options.fetch) innerOptions.fetch = fetchImpl;

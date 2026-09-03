@@ -106,7 +106,13 @@ test("지원 모델 요청 전체 스택: beta + context_management, system cach
       { fetch: (i, init) => sse(compactionSse())(i, init, captured), apiKey: SETUP_TOKEN, maxRetries: 0, env: {}, sessionId: "s1" },
     ));
     assert.ok(captured.headers["anthropic-beta"].split(",").includes("compact-2026-01-12"), id);
-    assert.deepEqual(captured.body.context_management, { edits: [{ type: "compact_20260112" }] }, id);
+    // trigger 는 카탈로그 contextWindow 의 65% (35% 남았을 때 압축).
+    assert.ok(m.contextWindow > 0, `${id}: contextWindow`);
+    assert.deepEqual(
+      captured.body.context_management,
+      { edits: [{ type: "compact_20260112", trigger: { type: "input_tokens", value: Math.floor(m.contextWindow * 0.65) } }] },
+      id,
+    );
     // system 프롬프트 끝의 cache_control 은 그대로다 (compaction 이 시스템 캐시를 깨지 않는 조건).
     assert.ok(captured.body.system.at(-1).cache_control, `${id}: system cache_control`);
     assert.ok(countBreakpoints(captured.body) <= 4, `${id}: breakpoints ${countBreakpoints(captured.body)}`);
