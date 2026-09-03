@@ -78,6 +78,31 @@ function inverseCells(line) {
   return cells.join("");
 }
 
+function effectiveInverseCells(line) {
+  let inverse = false;
+  let out = "";
+  for (let i = 0; i < line.length; ) {
+    if (line[i] === "\x1b" && line[i + 1] === "[") {
+      const end = line.indexOf("m", i + 2);
+      if (end < 0) break;
+      const raw = line.slice(i + 2, end);
+      const codes = raw.length === 0 ? [0] : raw.split(";").map(Number);
+      if (codes.includes(0) || codes.includes(27)) inverse = false;
+      else if (codes.includes(7)) inverse = true;
+      i = end + 1;
+      continue;
+    }
+    if (line[i] === "\x1b") {
+      const bell = line.indexOf("\x07", i);
+      i = bell < 0 ? line.length : bell + 1;
+      continue;
+    }
+    if (inverse) out += line[i];
+    i += 1;
+  }
+  return out;
+}
+
 function contentRow(lines) {
   return lines.find((line) => !/^─+$/.test(stripAnsi(line))) ?? "";
 }
@@ -606,5 +631,67 @@ if (!runtime) {
     assert.match(stripAnsi(painted[2]), /xyz/);
     assert.equal(inverseOpenAtEnd(painted[2]), false, painted[2]);
     assert.match(painted[2], /\x1b\[(?:0|27)m/);
+  });
+
+  test("backward drag paints the same inverse cells as a forward drag", async () => {
+    const { CustomEditor } = await import(`${pathToFileURL(customEditorPath).href}?mouse=${Date.now()}`);
+
+    const forward = makeCustomEditor(CustomEditor);
+    forward.setText("hello world");
+    forward.render(20);
+    pointer(forward, "press", 2, 1);
+    pointer(forward, "drag", 7, 1);
+    pointer(forward, "release", 7, 1);
+    assert.equal(forward.getMouseSelectedText(), "hello");
+    assert.equal(effectiveInverseCells(contentRow(forward.render(20))), "hello");
+
+    const backward = makeCustomEditor(CustomEditor);
+    backward.setText("hello world");
+    backward.render(20);
+    pointer(backward, "press", 7, 1);
+    pointer(backward, "drag", 2, 1);
+    pointer(backward, "release", 2, 1);
+    assert.deepEqual(backward.getMouseSelection(), {
+      start: { line: 0, col: 0 },
+      end: { line: 0, col: 5 },
+    });
+    assert.equal(backward.getMouseSelectedText(), "hello");
+    assert.equal(effectiveInverseCells(contentRow(backward.render(20))), "hello");
+  });
+
+  test("release copies selected editor text; a click does not", async () => {
+    const { CustomEditor } = await import(`${pathToFileURL(customEditorPath).href}?mouse=${Date.now()}`);
+    const copied = [];
+    const flashes = [];
+    const editor = makeCustomEditor(CustomEditor);
+    editor.tui.copySelection = async (text) => {
+      copied.push(text);
+      return true;
+    };
+    editor.tui.flash = (message) => flashes.push(message);
+    editor.setText("hello world");
+    editor.render(20);
+
+    pointer(editor, "press", 4, 1);
+    pointer(editor, "release", 4, 1);
+    await Promise.resolve();
+    assert.deepEqual(copied, []);
+    assert.deepEqual(flashes, []);
+
+    pointer(editor, "press", 7, 1);
+    pointer(editor, "drag", 2, 1);
+    pointer(editor, "release", 2, 1);
+    await Promise.resolve();
+    assert.deepEqual(copied, ["hello"]);
+    assert.deepEqual(flashes, ["Copied!"]);
+
+    copied.length = 0;
+    flashes.length = 0;
+    pointer(editor, "press", 2, 1);
+    pointer(editor, "drag", 7, 1);
+    pointer(editor, "release", 7, 1);
+    await Promise.resolve();
+    assert.deepEqual(copied, ["hello"]);
+    assert.deepEqual(flashes, ["Copied!"]);
   });
 }
