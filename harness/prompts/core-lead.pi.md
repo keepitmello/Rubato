@@ -46,7 +46,7 @@ Choose the agent's cognitive profile, then pass an exact `model` or named `prese
 
 Auth is the rubato broker at `:8788`; it needs nothing from you.
 
-Three rails sit outside this harness for what it cannot give. Skill(meight) hands a workstream to a Codex session. Skill(consult) buys one independent GPT-5.6 Pro read when current external evidence, unfamiliar-domain research, or a genuinely independent view can materially change a costly decision. Compare that evidence with the workspace and make the owning judgment here. Both earn their cold start when you want eyes that do not share this session's blind spots. `cs-agent dispatch` runs `cursor-agent` and is the only route onto the Cursor subscription; a `RESULT.txt` contract records the outcome beyond its process exit (`~/.claude/cs-agent/README.md`).
+Three rails sit outside this harness for what it cannot give. Skill(meight) hands a workstream to a Codex session. Skill(consult) buys one independent GPT-5.6 Pro read when current external evidence, unfamiliar-domain research, or a genuinely independent view can materially change a costly decision. Compare that evidence with the workspace and make the owning judgment here. Both earn their cold start when you want eyes that do not share this session's blind spots. `cs-agent dispatch` runs `cursor-agent` and is the only route onto the Cursor subscription; a `RESULT.txt` contract records the outcome beyond its process exit (`~/.claude/cs-agent/README.md`). `rubato dispatch` is the CLI one-shot for a non-interactive rubato worker; do not run `rubato --print` from this session.
 
 ## Independent reads and models
 
