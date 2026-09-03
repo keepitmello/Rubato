@@ -41,7 +41,7 @@ describe("rubato-pi semantic category integration", () => {
     ])
   })
 
-  test("grok prefers xAI and keeps Cursor as a separate quota fallback", () => {
+  test("grok keeps Cursor and xAI as separate quota routes", () => {
     const result = plan("grok", [
       { provider: "cursor", id: "cursor-grok-4.6" },
       { provider: "xai", id: "grok-4.6" },
@@ -49,9 +49,7 @@ describe("rubato-pi semantic category integration", () => {
 
     expect(result.kind).toBe("resolved")
     if (result.kind !== "resolved") return
-    expect(result.plan.model).toBe("xai/grok-4.6")
-    expect(result.plan.fallback_models?.map((entry) => entry.display)).toEqual([
-      "cursor/cursor-grok-4.6",
-    ])
+    expect(result.plan.model).toBe("cursor/cursor-grok-4.6")
+    expect(result.plan.fallback_models ?? []).toEqual([])
   })
 })

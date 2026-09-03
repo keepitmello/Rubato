@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { DISABLED_AGENT_NAMES, DISABLED_CATEGORY_NAMES, MODEL_CATEGORY_CHAINS } from "./defaults.mjs";
+import { DISABLED_AGENT_NAMES, DISABLED_CATEGORY_NAMES, MEMORY_JOB_MODELS, MODEL_CATEGORY_CHAINS } from "./defaults.mjs";
 
 function readTaskSettings(cwd) {
   if (!cwd) return undefined;
@@ -61,7 +61,8 @@ export function loadRubatoPiRubatoConfig(options = {}) {
 /**
  * Memory children still call loadConfig themselves. Task overlay disables `quick`,
  * but facts and `/people --ask` are hardcoded to that name, so memory reopens it
- * as grok-only and pins reflection/dream to the grok category.
+ * as xAI grok and pins reflection/dream to the grok category name.
+ * The models here are MEMORY_JOB_MODELS, not the task-planner grok chain.
  *
  * 이 함수는 **오직 category 만** 고정한다. 나머지 필드는 손대지 않는다.
  *
@@ -89,8 +90,8 @@ export function pinMemoryJobsToGrok(loaded) {
       ...config,
       categories: {
         ...config.categories,
-        grok: { models: MODEL_CATEGORY_CHAINS.grok },
-        quick: { models: MODEL_CATEGORY_CHAINS.grok },
+        grok: { models: MEMORY_JOB_MODELS },
+        quick: { models: MEMORY_JOB_MODELS },
       },
       ...(memory === undefined ? {} : {
         memory: {

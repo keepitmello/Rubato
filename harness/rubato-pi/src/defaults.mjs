@@ -3,7 +3,7 @@ export const DEFAULT_MODEL_ID = "claude-opus-5";
 export const CACHE_RETENTION = "long";
 
 export const MODEL_CATEGORIES = Object.freeze({
-  grok: "xai/grok-4.6",
+  grok: "cursor/cursor-grok-4.6",
   opus: "anthropic/claude-opus-5",
   sonnet: "anthropic/claude-sonnet-5",
   fable: "anthropic/claude-fable-5-1",
@@ -17,7 +17,7 @@ export const MODEL_CATEGORIES = Object.freeze({
 // these ordered chains against the live registry, then carries the remaining available rungs into
 // the child runtime. Callers choose the cognitive profile; they do not probe provider ids.
 export const MODEL_CATEGORY_CHAINS = Object.freeze({
-  grok: Object.freeze([MODEL_CATEGORIES.grok, "cursor/cursor-grok-4.6"]),
+  grok: Object.freeze([MODEL_CATEGORIES.grok]),
   opus: Object.freeze(["kiro/claude-opus-5", MODEL_CATEGORIES.opus]),
   sonnet: Object.freeze([MODEL_CATEGORIES.sonnet]),
   fable: Object.freeze([MODEL_CATEGORIES.fable]),
@@ -31,6 +31,11 @@ export const MODEL_CATEGORY_CHAINS = Object.freeze({
 // rubato-native, their rubato.jsonc model routing never reaches this harness, and an
 // unrouted agent still shows up in the tool surface as if it were ours. Decide
 // them one at a time before turning any back on.
+// Memory reflection/dream/facts load a separate config. That overlay must not
+// inherit the grok category's Cursor default — those jobs were dying with
+// model_not_visible:cursor/cursor-grok-4.6. Task/Agent grok stays Cursor.
+export const MEMORY_JOB_MODELS = Object.freeze(["xai/grok-4.6"]);
+
 export const DISABLED_AGENT_NAMES = Object.freeze([
   "explore",
   "librarian",
