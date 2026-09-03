@@ -16,7 +16,7 @@ describe("buildTaskToolDescription", () => {
     expect(description).toContain(
       "Start one child agent using exactly one of `model` or `preset`. Omit `effort` normally; the configured model default applies. Set `effort` only when an explicit manual override is required.",
     )
-    expect(description).toContain('Agent(model="xai/grok-4.6", prompt="...")')
+    expect(description).toContain('Agent(model="cursor/cursor-grok-4.6", effort="xhigh", prompt="...")')
     expect(description).toContain('Agent(preset="explore", prompt="...")')
     expect(description).not.toContain("category")
     expect(description).not.toContain("subagent_type")
