@@ -30,3 +30,13 @@ test("cursor-agent rewrite ships image bytes on native readResult", () => {
   assert.match(patched, /output: \{ case: "data", value: imageBytes \}/);
   assert.match(patched, /cursor-read-image\.mjs/);
 });
+
+test("cursor-agent rewrite does not teach that Task is a subagent", () => {
+  const source = readFileSync(senpiNested("@earendil-works/pi-ai/dist/api/cursor-agent.js"), "utf8");
+  const patched = injectCursorAgent(source);
+  assert.doesNotMatch(patched, /Subagents are \$\{NOT_IMPLEMENTED_SUFFIX\}/);
+  assert.match(
+    patched,
+    /Cursor Task is not available in this client\. Spawn with Agent using an exact model or preset\. Board work uses team_task_\*/,
+  );
+});
