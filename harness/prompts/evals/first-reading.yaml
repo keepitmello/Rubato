@@ -1,8 +1,8 @@
 # Regression cases for the provisional first reading of a request.
 #
 # What this guards: harness/prompts/base.pi.md "Scope and irreversible
-# actions", first paragraph ("Your first reading of a request is
-# provisional ..."). It is the always-on residue of the manual
+# actions", first paragraph ("Define the problem before you work on
+# it ..."). It is the always-on residue of the manual
 # ~/.agents/skills/metaFrame skill; the skill itself stays manual.
 #
 # Failure this suite exists for: the agent takes the request's own framing
