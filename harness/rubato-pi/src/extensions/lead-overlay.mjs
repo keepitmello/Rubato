@@ -1,15 +1,16 @@
 import { assertEngineBuilt, rubatoExtension } from "../engine-paths.mjs";
-import { registerDeferredExtension, shouldDeferExtensionActivation } from "../deferred-extensions.mjs";
+import { runOrDeferExtension } from "../deferred-extensions.mjs";
 import { RUBATO_OWNED_COMPONENTS } from "../policy.mjs";
 
 assertEngineBuilt();
 
 const RUBATO_OWNED = new Set(RUBATO_OWNED_COMPONENTS);
-let activating;
+const activatingByPi = new WeakMap();
 
 async function activateLeadOverlay(pi) {
-  if (activating) return activating;
-  activating = (async () => {
+  const existing = activatingByPi.get(pi);
+  if (existing) return existing;
+  const activating = (async () => {
     const [{ composeRubatoExtension, rubatoComponents }, { rubatoPiMemoryComponent, rubatoPiTaskComponent }] = await Promise.all([
       import(rubatoExtension),
       import("../rubato-runtime.mjs"),
@@ -21,10 +22,10 @@ async function activateLeadOverlay(pi) {
       ...(replaceMemory ? [rubatoPiMemoryComponent] : []),
     ])(pi);
   })();
+  activatingByPi.set(pi, activating);
   return activating;
 }
 
 export default async function leadOverlay(pi) {
-  registerDeferredExtension(() => activateLeadOverlay(pi));
-  if (!shouldDeferExtensionActivation()) return activateLeadOverlay(pi);
+  return runOrDeferExtension(() => activateLeadOverlay(pi));
 }

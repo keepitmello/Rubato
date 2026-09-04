@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 import { isHeadlessCli } from "../../src/cli-headless.mjs";
 import {
   activateDeferredExtensions,
+  hasFinishedFirstPaintDeferral,
   registerDeferredExtension,
   resetDeferredExtensionsForTests,
+  runOrDeferExtension,
   shouldDeferExtensionActivation,
 } from "../../src/deferred-extensions.mjs";
 
@@ -55,4 +57,15 @@ test("activate runs each registered starter once", async () => {
   await activateDeferredExtensions();
   await activateDeferredExtensions();
   assert.deepEqual(log, ["a", "b"]);
+  assert.equal(hasFinishedFirstPaintDeferral(), true);
+});
+
+test("after first paint a new factory attaches immediately, like /resume", async () => {
+  resetDeferredExtensionsForTests();
+  await activateDeferredExtensions();
+  const log = [];
+  await runOrDeferExtension(async () => {
+    log.push("resume");
+  });
+  assert.deepEqual(log, ["resume"]);
 });

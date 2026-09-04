@@ -1321,3 +1321,14 @@ test("statusline hooks ExtensionRunner from the runner module, not the senpi bar
   assert.doesNotMatch(source, /import\("@code-yeongyu\/senpi"\)/);
   assert.match(readFileSync(senpiExtensionRunner, "utf8"), /export class ExtensionRunner/);
 });
+
+test("after first paint a new statusline factory installs a live host, like /resume", async () => {
+  const { activateDeferredExtensions, resetDeferredExtensionsForTests } = await import("../../src/deferred-extensions.mjs");
+  const { default: statuslineExtension } = await import("../../src/extensions/statusline.mjs");
+  resetDeferredExtensionsForTests();
+  await activateDeferredExtensions();
+  await statuslineExtension({ on() {} });
+  const host = footerHost();
+  assert.equal(typeof host?.paint, "function");
+  assert.notEqual(host.paint, fallbackStatusLines);
+});
