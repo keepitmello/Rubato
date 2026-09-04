@@ -24,6 +24,7 @@ const GETTER_NEEDLE = `        getTool: (name) => sessionRef.current?.getRegiste
 
 const GETTER_REPLACEMENT = `        getTool: (name) => sessionRef.current?.getRegisteredTool(name),
         getConversationLineageId: () => sessionRef.current?.sessionId,
+        getCwd: () => sessionRef.current?.cwd ?? process.cwd(),
         preflightToolCall:`;
 
 /** #14: session id is the durable conversation lineage the journal keys on. */

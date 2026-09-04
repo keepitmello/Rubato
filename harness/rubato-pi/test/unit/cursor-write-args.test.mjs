@@ -5,7 +5,7 @@ import test from "node:test";
 
 import { senpiDir } from "../../src/engine-paths.mjs";
 import { injectCursorExecBridge } from "../../src/transforms/cursor-exec-bridge.mjs";
-import { persistWriteToHostDisk } from "../../src/transforms/cursor-write-host-fs.mjs";
+import { injectCursorExecBridgeSession } from "../../src/transforms/cursor-exec-bridge-session.mjs";
 import { cursorWriteContent, missingCursorWriteContentMessage } from "../../src/transforms/cursor-write-args.mjs";
 
 test("prefers fileText, then contents, then content, then fileBytes", () => {
@@ -33,5 +33,15 @@ test("injected bridge writes through host disk persist, not tool success alone",
   const next = injectCursorExecBridge(source);
   assert.match(next, /persistWriteToHostDisk/);
   assert.match(next, /persistCursorWrite/);
+  assert.match(next, /persistCursorEdit/);
+  assert.match(next, /sessionCwd/);
+  assert.match(next, /readEditFinalContent/);
   assert.match(next, /StrReplace/);
+});
+
+test("injected session bridge passes the session cwd so any repo persists", () => {
+  const source = readFileSync(join(senpiDir, "dist/core/cursor-exec-bridge-session.js"), "utf8");
+  const next = injectCursorExecBridgeSession(source);
+  assert.match(next, /getCwd/);
+  assert.match(next, /sessionRef\.current\?\.cwd/);
 });
