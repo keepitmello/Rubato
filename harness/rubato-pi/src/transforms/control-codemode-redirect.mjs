@@ -5,6 +5,7 @@ export function rubatoCodemodePaths() {
   return {
     index: fileURLToPath(new URL("../codemode/index.ts", import.meta.url)),
     notifier: fileURLToPath(new URL("../codemode/extension/eval-notifier.ts", import.meta.url)),
+    evalPrompt: fileURLToPath(new URL("../codemode/prompt/eval-prompt.ts", import.meta.url)),
   };
 }
 
@@ -33,11 +34,12 @@ export async function importRubatoCodemode(importer, extensionPath, paths = ruba
 export function injectCodemodeRedirect(source, paths = rubatoCodemodePaths()) {
   const indexLiteral = JSON.stringify(paths.index);
   const notifierLiteral = JSON.stringify(paths.notifier);
+  const evalPromptLiteral = JSON.stringify(paths.evalPrompt);
   let next = source;
   next = replaceOnce(
     next,
     "                : { alias: getAliases() }),",
-    `                : { alias: { ...getAliases(), "./extension/eval-notifier.ts": ${notifierLiteral} } }),`,
+    `                : { alias: { ...getAliases(), "./extension/eval-notifier.ts": ${notifierLiteral}, "../prompt/eval-prompt.ts": ${evalPromptLiteral} } }),`,
     "codemode jiti notifier alias",
   );
   next = replaceOnce(
