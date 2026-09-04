@@ -1,5 +1,6 @@
 // Hidden custom messages must not become the latest user turn, and they are
-// not the user's words.
+// not the user's words. They also must not leave the request ending on an
+// assistant turn — Fable 5.1 400s that as assistant prefill.
 //
 // Session 01a068e3 (2026-09-03): after a 644k-token pre_prompt compact the user
 // sent "ㅇㅇ 해봐. 이어가기까지 잘 되는지..." twice. Both turns are in the
@@ -108,7 +109,7 @@ test("#given user then restoration then notice #when convertToLlm remaps #then b
   assert.equal(texts(remapped[1])[0], "continue the live test");
 });
 
-test("#given a hidden custom with no preceding user #when convertToLlm remaps #then it is an assistant turn", () => {
+test("#given a hidden custom with no preceding user #when convertToLlm remaps #then it stays a user turn so the request is not assistant prefill", () => {
   const remapped = remapHiddenCustomTurns(
     [
       {
@@ -122,8 +123,9 @@ test("#given a hidden custom with no preceding user #when convertToLlm remaps #t
     convertOne,
   );
   assert.equal(remapped.length, 1);
-  assert.equal(remapped[0].role, "assistant");
+  assert.equal(remapped[0].role, "user");
   assert.equal(texts(remapped[0])[0], "<memory_notice>");
+  assertEmptyUsage(remapped[0]);
 });
 
 test("#given a visible custom after a user message #when convertToLlm remaps #then it stays a separate user turn", () => {
@@ -147,7 +149,7 @@ test("#given a visible custom after a user message #when convertToLlm remaps #th
   assert.equal(texts(remapped[1])[0], "continue the goal");
 });
 
-test("#given assistant then hidden custom #when convertToLlm remaps #then the custom is an assistant turn", () => {
+test("#given assistant then hidden custom #when convertToLlm remaps #then the notice stays a user tail (no assistant prefill)", () => {
   const remapped = remapHiddenCustomTurns(
     [
       { role: "assistant", content: [{ type: "text", text: "done" }], timestamp: 1 },
@@ -164,8 +166,31 @@ test("#given assistant then hidden custom #when convertToLlm remaps #then the cu
   assert.equal(remapped.length, 2);
   assert.equal(remapped[0].role, "assistant");
   assert.equal(texts(remapped[0])[0], "done");
-  assert.equal(remapped[1].role, "assistant");
+  assert.equal(remapped[1].role, "user");
   assert.equal(texts(remapped[1])[0], "<memory_notice>");
+  assertEmptyUsage(remapped[1]);
+});
+
+test("#given user, assistant, then a trailing notice #when convertToLlm remaps #then the request ends on a user turn", () => {
+  const remapped = remapHiddenCustomTurns(
+    [
+      { role: "user", content: [{ type: "text", text: "go" }], timestamp: 1 },
+      { role: "assistant", content: [{ type: "text", text: "done" }], timestamp: 2 },
+      {
+        role: "custom",
+        customType: "rubato-memory:notice",
+        display: false,
+        content: "<memory_notice>",
+        timestamp: 3,
+      },
+    ],
+    convertOne,
+  );
+  assert.deepEqual(remapped.map((message) => message.role), ["user", "assistant", "user"]);
+  assert.equal(texts(remapped[0])[0], "go");
+  assert.equal(texts(remapped[1])[0], "done");
+  assert.equal(texts(remapped[2])[0], "<memory_notice>");
+  assert.notEqual(remapped[remapped.length - 1].role, "assistant");
 });
 
 test("#given prior reply then a new user and a notice #when convertToLlm remaps #then the notice sits between the prior assistant and the new user", () => {
