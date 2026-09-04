@@ -61,13 +61,18 @@ test("CLI defer needles land on the installed main.js", () => {
   const next = injectMainDeferCliModules(installed);
   assert.match(next, /import \{ InteractiveMode \} from "\.\/modes\/interactive\/interactive-mode\.js"/);
   assert.doesNotMatch(next, /from "\.\/modes\/index\.js"/);
+  assert.match(next, /args\[0\] === "install"/);
   assert.doesNotMatch(next, /import \{ exportFromFile \}/);
   assert.doesNotMatch(next, /import \{ handleConfigCommand, handlePackageCommand \}/);
   assert.match(next, /await import\("\.\/package-manager-cli\.js"\)/);
   assert.match(next, /await import\("\.\/core\/export-html\/index\.js"\)/);
+  assert.doesNotMatch(next, /from "\.\/cli\/startup-ui\.js"/);
+  assert.doesNotMatch(next, /from "\.\/cli\/auth-command\.js"/);
+  assert.match(next, /if \(args\[0\] !== "auth"\)/);
+  assert.match(next, /await import\("\.\/cli\/startup-ui\.js"\)/);
   assert.throws(
     () => injectMainDeferCliModules("export async function main() {}"),
-    /main defer app-server import/,
+    /main defer auth-check import/,
   );
 });
 
