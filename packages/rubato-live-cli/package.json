@@ -17,7 +17,7 @@
     "check": "node --check bin/rubato-live.mjs && node --check src/*.mjs"
   },
   "dependencies": {
-    "@earendil-works/pi-tui": "0.84.2",
+    "@earendil-works/pi-tui": "npm:@code-yeongyu/senpi-tui@2026.9.4-3",
     "@rubato/remote-protocol": "file:../rubato-remote-protocol",
     "qrcode-terminal": "0.12.0"
   }

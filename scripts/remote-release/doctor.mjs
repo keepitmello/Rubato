@@ -70,9 +70,18 @@ export async function doctor(paths, options = {}) {
   await check("zmx-smoke-candidates", async () => ({ staleCandidates: await staleCandidates(paths) }), { warning: true })
   await check("pi-patch-pin", async () => {
     const packageJson = await readJson(join(options.repository ?? process.cwd(), "package.json"))
-    const pins = ["@earendil-works/pi-agent-core", "@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"]
-    for (const name of pins) if (packageJson.overrides?.[name] !== "0.84.2") throw new Error(`${name} is not exactly pinned to 0.84.2`)
-    return { version: "0.84.2" }
+    const pins = {
+      "@earendil-works/pi-agent-core": "npm:@code-yeongyu/senpi-agent-core@2026.9.4-3",
+      "@earendil-works/pi-ai": "npm:@code-yeongyu/senpi-ai@2026.9.4-3",
+      "@earendil-works/pi-tui": "npm:@code-yeongyu/senpi-tui@2026.9.4-3",
+    }
+    for (const [name, version] of Object.entries(pins)) {
+      if (packageJson.overrides?.[name] !== version) throw new Error(`${name} is not exactly pinned to ${version}`)
+    }
+    if (packageJson.devDependencies?.["@code-yeongyu/senpi"] !== "2026.9.4-3") {
+      throw new Error("@code-yeongyu/senpi is not exactly pinned to 2026.9.4-3")
+    }
+    return { version: "2026.9.4-3" }
   })
   await check("tailscale-serve", async () => {
     if (!host) host = await readJson(paths.host)

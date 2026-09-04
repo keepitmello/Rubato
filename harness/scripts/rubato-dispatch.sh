@@ -9,7 +9,7 @@ DEFAULT_STDOUT_MAX=8192
 
 usage() {
   cat <<'USAGE'
-Usage: rubato dispatch <name> [grok|grokfast|fast|sol|fable] [--cwd DIR] < brief.md
+Usage: rubato dispatch <name> [grok|grokfast|fast|muse|sol|fable] [--cwd DIR] < brief.md
        rubato dispatch <name> --continue < followup.md
 
 `dispatch` on PATH is the same command.
@@ -33,7 +33,8 @@ alias_to_model() {
   case "$1" in
     grok) echo "xai/grok-4.6" ;;
     grokfast) echo "cursor/cursor-grok-4.6-high-fast" ;;
-    fast) echo "google-antigravity/gemini-3.7-flash" ;;
+    fast) echo "cursor/gemini-3.8-flash" ;;
+    muse) echo "opencode/muse-spark-1.3-contributor-free" ;;
     sol) echo "openai-codex/gpt-5.6-sol" ;;
     fable) echo "anthropic/claude-fable-5" ;;
     *) return 1 ;;
@@ -113,7 +114,7 @@ while [[ $# -gt 0 ]]; do
       CWD="$2"
       shift 2
       ;;
-    grok|grokfast|fast|sol|fable)
+    grok|grokfast|fast|muse|sol|fable)
       if [[ -n "$MODEL_ALIAS" ]]; then
         echo "rubato dispatch: model already set to $MODEL_ALIAS" >&2
         exit 2

@@ -10,11 +10,11 @@ export function isMessagesUrl(url) {
   return url.includes("@code-yeongyu/senpi/dist/core/messages.js");
 }
 
-const IMPORT_NEEDLE = "import { copyContextProvenance } from \"@earendil-works/pi-ai\";\n";
+const IMPORT_NEEDLE = "import { copyContextProvenance, dropFailedAssistantTurns, } from \"@earendil-works/pi-ai\";\n";
 const RETURN_NEEDLE =
   "    // Continuations are append-only here too: the transport array must extend the\n" +
   "    // previous request verbatim to keep the provider's cache prefix valid.\n" +
-  "    return messages\n" +
+  "    const converted = messages\n" +
   "        .map((m) => {\n";
 const FILTER_NEEDLE = "    })\n        .filter((m) => m !== undefined);\n";
 
@@ -36,7 +36,7 @@ export function injectMessages(source, hrefs = messagesHrefs()) {
     RETURN_NEEDLE,
     "    // Continuations are append-only here too: the transport array must extend the\n" +
       "    // previous request verbatim to keep the provider's cache prefix valid.\n" +
-      "    return remapHiddenCustomTurns(messages, (m) => {\n",
+      "    const converted = remapHiddenCustomTurns(messages, (m) => {\n",
     "messages remap convertToLlm",
   );
   return replaceOnce(next, FILTER_NEEDLE, "    });\n", "messages remap convertToLlm close");

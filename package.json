@@ -50,16 +50,16 @@
     "diff": "^9.0.0"
   },
   "devDependencies": {
-    "@code-yeongyu/senpi": "2026.8.22",
+    "@code-yeongyu/senpi": "2026.9.4-3",
     "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "bun-types": "1.4.0",
     "typescript": "^7.0.2"
   },
   "overrides": {
-    "@earendil-works/pi-agent-core": "0.84.2",
-    "@earendil-works/pi-ai": "0.84.2",
+    "@earendil-works/pi-agent-core": "npm:@code-yeongyu/senpi-agent-core@2026.9.4-3",
+    "@earendil-works/pi-ai": "npm:@code-yeongyu/senpi-ai@2026.9.4-3",
     "@earendil-works/pi-coding-agent": "0.84.2",
-    "@earendil-works/pi-tui": "0.84.2",
+    "@earendil-works/pi-tui": "npm:@code-yeongyu/senpi-tui@2026.9.4-3",
     "hono": "4.13.5",
     "@hono/node-server": "1.19.17",
     "express-rate-limit": "^8.5.1",

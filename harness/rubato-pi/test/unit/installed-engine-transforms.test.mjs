@@ -29,7 +29,6 @@ const ROOTS = {
 const AUDITED = [
   ["senpi", "dist/core/agent-session.js"],
   ["senpi", "dist/core/messages.js"],
-  ["senpi", "dist/core/extensions/builtin/compaction/speculative.js"],
   ["senpi", "dist/modes/interactive/components/assistant-message.js"],
   ["senpi", "dist/modes/interactive/components/tool-execution.js"],
   ["senpi", "dist/modes/interactive/interactive-mode.js"],

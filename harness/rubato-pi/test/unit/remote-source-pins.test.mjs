@@ -18,7 +18,7 @@ function assertLicensePin(license) {
   if (license.sha256 !== undefined) assert.match(license.sha256, SHA256);
 }
 
-test("every Pi package remains exactly 0.84.2 at the asserted upstream source commit", () => {
+test("upstream Pi source evidence stays 0.84.2 and runtime overrides follow senpi 2026.9.4-3", () => {
   assert.equal(evidence.schemaVersion, 1);
   assert.deepEqual(
     {
@@ -43,9 +43,16 @@ test("every Pi package remains exactly 0.84.2 at the asserted upstream source co
     "@earendil-works/pi-coding-agent",
     "@earendil-works/pi-tui",
   ];
+  const runtimeOverrides = {
+    "@earendil-works/pi-agent-core": "npm:@code-yeongyu/senpi-agent-core@2026.9.4-3",
+    "@earendil-works/pi-ai": "npm:@code-yeongyu/senpi-ai@2026.9.4-3",
+    "@earendil-works/pi-coding-agent": "0.84.2",
+    "@earendil-works/pi-tui": "npm:@code-yeongyu/senpi-tui@2026.9.4-3",
+  };
   assert.deepEqual(evidence.pi.packages.map((entry) => entry.name), names);
+  assert.equal(rootPackage.devDependencies["@code-yeongyu/senpi"], "2026.9.4-3");
   for (const entry of evidence.pi.packages) {
-    assert.equal(rootPackage.overrides[entry.name], "0.84.2", `${entry.name} root override`);
+    assert.equal(rootPackage.overrides[entry.name], runtimeOverrides[entry.name], `${entry.name} root override`);
     assert.match(entry.sourceSha256, SHA256, `${entry.name} source hash`);
     assert.match(entry.integrity, /^sha512-[A-Za-z0-9+/]+=*$/, `${entry.name} registry integrity`);
   }

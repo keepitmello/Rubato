@@ -1,6 +1,6 @@
 export const PIN = Object.freeze({
   engine: "0.1.0",
-  senpi: "2026.8.22",
+  senpi: "2026.9.4-3",
 });
 
 export const RUBATO_OWNED_COMPONENTS = Object.freeze([

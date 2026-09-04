@@ -133,6 +133,20 @@ test("base 모델의 body 에는 service_tier 가 없다", async () => {
   assert.ok(!("service_tier" in captured.body), "base 에 tier 가 붙으면 항상 우선 처리로 나간다");
 });
 
+test("Astra Fast 의 body 에 canonical model ID 와 service_tier:priority 가 들어간다", async () => {
+  const codex = await codexProvider();
+  const captured = {};
+  const fast = modelById(codex, "gpt-6-astra-fast");
+  const wireModel = { ...fast, id: fast.upstreamModelId ?? fast.id };
+  await drain(codex.stream(
+    wireModel,
+    { messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }] },
+    { fetch: capturingFetch(textDone(), captured), apiKey: API_KEY, maxRetries: 0, serviceTier: fast.serviceTier, env: {} },
+  ));
+  assert.equal(captured.body.model, "gpt-6-astra", "wire 에는 canonical ID 가 가야 한다");
+  assert.equal(captured.body.service_tier, "priority");
+});
+
 test("xAI grok-4.6 streamSimple body 에 service_tier 가 없다", async () => {
   const [, xai] = await directProviders();
   const captured = {};

@@ -84,9 +84,9 @@ describe("rubato-runtime package shape", () => {
       typecheck: "tsgo --noEmit -p tsconfig.json",
       test: "bun test src/**/*.test.ts",
     })
-    expect(peerDependencies["@code-yeongyu/senpi"]).toBe("2026.8.22")
+    expect(peerDependencies["@code-yeongyu/senpi"]).toBe("2026.9.4-3")
     expect(peerDependenciesMeta["@code-yeongyu/senpi"]).toMatchObject({ optional: true })
-    expect(devDependencies["@code-yeongyu/senpi"]).toBe("2026.8.22")
+    expect(devDependencies["@code-yeongyu/senpi"]).toBe("2026.9.4-3")
     expect(dependencies).toMatchObject({
       "@rubato/utils": "workspace:*",
       "@rubato/lsp-core": "workspace:*",
