@@ -1,11 +1,11 @@
 #!/bin/sh
 # 부팅 스플래시. senpi 가 main.js 를 평가하는 동안(실측 2.5초) 까만 화면을
-# 두지 않는다. 로고는 즉시 뜨고 그 아래 한 줄이 단계에 따라 바뀐다.
+# 두지 않는다. 로고는 즉시 뜨고 그 아래 단계는 한 줄씩 쌓인다.
 # 런처는 엔진에 넘기기 전에 close 하지 않는다. 닫으면 "엔진 시작" 한 줄만
 # 남은 채 빈 화면이 된다. fullscreen TUI 가 로고를 지운다.
 #
 #   rubato-splash.sh open           로고를 그리고 커서를 감춘다
-#   rubato-splash.sh step <말>      아래 한 줄을 <말> 로 바꾼다
+#   rubato-splash.sh step <말>      아래에 단계 한 줄을 더한다
 #   rubato-splash.sh close          그린 것을 지우고 요약 한 줄만 남긴다
 #
 # 화면을 못 그리는 곳(파이프, CI, TERM=dumb)에서는 전부 조용히 빠진다.
@@ -57,12 +57,12 @@ case "${1-}" in
       printf '  %s▀ ▀  ▀▀▀  ▀▀▀  ▀ ▀   ▀   ▀▀▀%s\r\n' "$C2" "$RST"
       printf '\r\n'
     fi
-    printf '  %s⠋ 준비하는 중%s' "$DIM" "$RST"
+    printf '  %s· 준비하는 중%s' "$DIM" "$RST"
     ;;
 
   step)
-    # 상태 줄만 다시 쓴다. 줄 처음으로 가서 지우고 새로 찍는다.
-    printf '\r%s  %s⠋ %s%s' "${ESC}[K" "$DIM" "${2-}" "$RST"
+    # 끝난 줄은 두고 아래에 한 줄을 더한다.
+    printf '\r\n  %s· %s%s' "$DIM" "${2-}" "$RST"
     ;;
 
   close)

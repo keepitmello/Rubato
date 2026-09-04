@@ -9,6 +9,7 @@ const DEFAULT_STATUS = "엔진을 불러오는 중";
 
 let painted = false;
 let label = DEFAULT_STATUS;
+let history = [DEFAULT_STATUS];
 let tick = 0;
 let timer = null;
 let ioRef = null;
@@ -45,35 +46,51 @@ export function bootChromeColumnCount(io = process, env = process.env) {
   return 80;
 }
 
+function statusList({ status, statuses }) {
+  if (Array.isArray(statuses) && statuses.length > 0) return statuses;
+  return [status ?? DEFAULT_STATUS];
+}
+
 export function composeBootChrome({
   env = process.env,
   columns = 80,
   status = DEFAULT_STATUS,
+  statuses,
   frame = 0,
 } = {}) {
   const { c1, c2, dim, rst } = bootChromeColors(env);
-  const spin = SPINNER[frame % SPINNER.length];
-  const statusLine = `  ${dim}${spin} ${status}${rst}`;
-  if (columns < LOGO_MIN_COLUMNS) return `${statusLine}\r\n`;
+  const list = statusList({ status, statuses });
+  const statusLines = list.map((item, index) => {
+    const mark = index === list.length - 1 ? SPINNER[frame % SPINNER.length] : "·";
+    return `  ${dim}${mark} ${item}${rst}`;
+  });
+  if (columns < LOGO_MIN_COLUMNS) return `${statusLines.join("\r\n")}\r\n`;
   return [
     `  ${c1}█▀▄  █ █  █▀▄  ▄▀▄  ▀█▀  ▄▀▄${rst}`,
     `  ${c2}█▀▄  █ █  █▀▄  █▀█   █   █ █${rst}`,
     `  ${c2}▀ ▀  ▀▀▀  ▀▀▀  ▀ ▀   ▀   ▀▀▀${rst}`,
     "",
-    statusLine,
+    ...statusLines,
   ].join("\r\n") + "\r\n";
 }
 
-function statusRow(columns) {
+function firstStatusRow(columns) {
   return columns < LOGO_MIN_COLUMNS ? 1 : 5;
 }
 
-function writeStatusLine() {
-  if (!painted || !ioRef?.stdout) return;
-  const columns = bootChromeColumnCount(ioRef, envRef);
+function currentStatusRow() {
+  return firstStatusRow(bootChromeColumnCount(ioRef, envRef)) + history.length - 1;
+}
+
+function writeAtStatusRow(row, mark, text) {
+  if (!ioRef?.stdout) return;
   const { dim, rst } = bootChromeColors(envRef);
-  const spin = SPINNER[tick % SPINNER.length];
-  ioRef.stdout.write(`\x1b[${statusRow(columns)};1H\x1b[2K  ${dim}${spin} ${label}${rst}`);
+  ioRef.stdout.write(`\x1b[${row};1H\x1b[2K  ${dim}${mark} ${text}${rst}`);
+}
+
+function writeStatusLine() {
+  if (!painted) return;
+  writeAtStatusRow(currentStatusRow(), SPINNER[tick % SPINNER.length], label);
 }
 
 export function shouldPaintBootChrome(argv = process.argv.slice(2), io = process, env = process.env) {
@@ -87,9 +104,13 @@ export function shouldPaintBootChrome(argv = process.argv.slice(2), io = process
 
 export function setBootChromeStatus(next, io = ioRef) {
   if (!painted || typeof next !== "string" || next.length === 0) return false;
-  label = next;
   if (io) ioRef = io;
-  writeStatusLine();
+  if (next === label) return true;
+  writeAtStatusRow(currentStatusRow(), "·", label);
+  label = next;
+  history.push(next);
+  const { dim, rst } = bootChromeColors(envRef);
+  ioRef.stdout.write(`\r\n  ${dim}${SPINNER[tick % SPINNER.length]} ${label}${rst}`);
   return true;
 }
 
@@ -111,6 +132,7 @@ export function enterBootChrome(argv = process.argv.slice(2), io = process, env 
   ioRef = io;
   envRef = env;
   label = DEFAULT_STATUS;
+  history = [DEFAULT_STATUS];
   tick = 0;
   const columns = bootChromeColumnCount(io, env);
   io.stdout.write(`${ENTER_ALT}${composeBootChrome({ env, columns, status: label, frame: 0 })}`);
@@ -135,6 +157,7 @@ export function abandonBootChrome(io = process) {
 export function resetBootChromeForTests() {
   releaseBootChrome();
   label = DEFAULT_STATUS;
+  history = [DEFAULT_STATUS];
   tick = 0;
   envRef = process.env;
 }

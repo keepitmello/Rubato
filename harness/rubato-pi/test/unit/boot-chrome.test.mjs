@@ -22,11 +22,17 @@ test("boot chrome stays off for print, help, CI, and pipes", () => {
   assert.equal(shouldPaintBootChrome([], { stdout: { isTTY: false }, stdin: { isTTY: true } }, {}), false);
 });
 
-test("composeBootChrome keeps the logo and a loading status", () => {
-  const wide = composeBootChrome({ env: {}, columns: 80, status: "엔진을 불러오는 중", frame: 0 });
+test("composeBootChrome keeps the logo and stacks status lines", () => {
+  const wide = composeBootChrome({
+    env: {},
+    columns: 80,
+    statuses: ["엔진을 불러오는 중", "에디터를 준비하는 중"],
+    frame: 0,
+  });
   assert.match(wide, /█▀▄  █ █  █▀▄/);
-  assert.match(wide, /엔진을 불러오는 중/);
-  assert.match(wide, /⠋/);
+  assert.match(wide, /· 엔진을 불러오는 중/);
+  assert.match(wide, /⠋ 에디터를 준비하는 중/);
+  assert.ok(wide.indexOf("엔진을 불러오는 중") < wide.indexOf("에디터를 준비하는 중"));
   const narrow = composeBootChrome({ env: {}, columns: 20, status: "준비하는 중", frame: 1 });
   assert.doesNotMatch(narrow, /█▀▄/);
   assert.match(narrow, /준비하는 중/);
@@ -42,8 +48,12 @@ test("enterBootChrome writes alt-screen and the logo, abandon restores it", () =
   assert.match(first, /█▀▄  █ █  █▀▄/);
   assert.match(first, /엔진을 불러오는 중/);
   assert.doesNotMatch(first, /^\x1b\[2m  rubato/m);
+  assert.equal(setBootChromeStatus("엔진을 불러오는 중", { stdout, stdin }), true);
   assert.equal(setBootChromeStatus("에디터를 준비하는 중", { stdout, stdin }), true);
-  assert.match(stdout.chunks.join(""), /에디터를 준비하는 중/);
+  const stacked = stdout.chunks.join("");
+  assert.match(stacked, /엔진을 불러오는 중/);
+  assert.match(stacked, /에디터를 준비하는 중/);
+  assert.ok(stacked.indexOf("엔진을 불러오는 중") < stacked.indexOf("에디터를 준비하는 중"));
   releaseBootChrome();
   stdout.chunks.length = 0;
   assert.equal(setBootChromeStatus("should not paint", { stdout, stdin }), false);
