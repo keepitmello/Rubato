@@ -16,7 +16,7 @@ describe("configuredModelEffort", () => {
     ["anthropic/claude-fable-5-1", "high"],
     ["xai/grok-4.6", "high"],
     ["cursor/cursor-grok-4.6-high-fast", "high"],
-    ["google-antigravity/gemini-3.7-flash", "medium"],
+    ["google-antigravity/gemini-3.8-flash", "medium"],
   ] as const)("#given %s #then the seeded default is %s", (model, effort) => {
     expect(configuredModelEffort(model)).toBe(effort)
   })
@@ -24,7 +24,7 @@ describe("configuredModelEffort", () => {
   test("#given models outside the seeded families #then no default is invented", () => {
     expect(configuredModelEffort("openai-codex/gpt-5.6-luna-fast")).toBeUndefined()
     expect(configuredModelEffort("google/gemini-3.1-pro")).toBeUndefined()
-    expect(configuredModelEffort("cursor/gemini-3.7-flash")).toBeUndefined()
+    expect(configuredModelEffort("cursor/gemini-3.8-flash")).toBeUndefined()
     expect(configuredModelEffort("openai/gpt-5.5")).toBeUndefined()
   })
 })

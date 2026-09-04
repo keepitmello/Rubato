@@ -10,7 +10,7 @@ const models: ModelCatalog = {
       "anthropic/claude-opus-5",
       "xai/grok-4.6",
       "anthropic/claude-fable-5-1",
-      "google-antigravity/gemini-3.7-flash",
+      "google-antigravity/gemini-3.8-flash",
       "openai-codex/gpt-5.6-luna-fast",
     ]).has(model),
 }
@@ -42,7 +42,7 @@ describe("resolveEffort", () => {
   })
 
   test("#given Antigravity Flash #when read #then the seeded default is medium", () => {
-    expect(resolveEffort({ model: "google-antigravity/gemini-3.7-flash" })).toEqual({
+    expect(resolveEffort({ model: "google-antigravity/gemini-3.8-flash" })).toEqual({
       effort: "medium",
       effortSource: "model-default",
     })

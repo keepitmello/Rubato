@@ -25,9 +25,9 @@ function response(json, { ok = true, status = 200 } = {}) {
   return { ok, status, json: async () => json };
 }
 
-test("catalog는 gemini-3.7-flash를 image 능력과 함께 공개한다", () => {
-  const flash = antigravityModels().find((entry) => entry.id === "gemini-3.7-flash");
-  assert.ok(flash, "gemini-3.7-flash 가 Antigravity catalog 에 없다");
+test("catalog는 gemini-3.8-flash를 image 능력과 함께 공개한다", () => {
+  const flash = antigravityModels().find((entry) => entry.id === "gemini-3.8-flash");
+  assert.ok(flash, "gemini-3.8-flash 가 Antigravity catalog 에 없다");
   assert.equal(flash.provider, ANTIGRAVITY_PROVIDER_ID);
   assert.deepEqual(flash.input, ["text", "image"]);
   assert.equal(flash.reasoning, true);
@@ -35,7 +35,7 @@ test("catalog는 gemini-3.7-flash를 image 능력과 함께 공개한다", () =>
 });
 
 test("catalog model baseUrl follows the endpoint override", () => {
-  const flash = antigravityModels("http://127.0.0.1:18888/custom").find((entry) => entry.id === "gemini-3.7-flash");
+  const flash = antigravityModels("http://127.0.0.1:18888/custom").find((entry) => entry.id === "gemini-3.8-flash");
   assert.equal(flash.baseUrl, "http://127.0.0.1:18888/custom");
 });
 
@@ -43,14 +43,14 @@ test("well-formed catalog model survives pinned attribution .includes", async ()
   const { mergeProviderAttributionHeaders } = await import(
     pathToFileURL(join(senpiNested("@code-yeongyu/senpi"), "dist/core/provider-attribution.js")).href
   );
-  const flash = antigravityModels().find((entry) => entry.id === "gemini-3.7-flash");
+  const flash = antigravityModels().find((entry) => entry.id === "gemini-3.8-flash");
   const settings = { getEnableInstallTelemetry: () => true };
   assert.doesNotThrow(() => mergeProviderAttributionHeaders(flash, settings, "child-session"));
 });
 
 test("malformed catalog model fails with a field list instead of TypeError", () => {
   assert.throws(
-    () => assertAntigravityCatalogModel({ id: "gemini-3.7-flash", provider: ANTIGRAVITY_PROVIDER_ID }),
+    () => assertAntigravityCatalogModel({ id: "gemini-3.8-flash", provider: ANTIGRAVITY_PROVIDER_ID }),
     { message: /missing required fields: input, baseUrl/ },
   );
   assert.throws(

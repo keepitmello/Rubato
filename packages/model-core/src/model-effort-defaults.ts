@@ -31,13 +31,13 @@ function isSolModel(model: string): boolean {
 
 function isAntigravityFlash(model: string): boolean {
   const { provider, id } = providerAndId(model)
-  return provider === "google-antigravity" && id === "gemini-3.7-flash"
+  return provider === "google-antigravity" && id === "gemini-3.8-flash"
 }
 
 /**
  * Seeded model-owned effort. Callers omit effort unless they need a manual override.
  *
- * [Assumption] `google-antigravity/gemini-3.7-flash` starts at medium because Rubato is
+ * [Assumption] `google-antigravity/gemini-3.8-flash` starts at medium because Rubato is
  * not using `low` as a seeded default.
  */
 export function configuredModelEffort(model: string): ConfiguredModelEffort | undefined {
