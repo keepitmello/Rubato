@@ -158,7 +158,7 @@ export class RemoteHub {
     const stale = this.registry.markStale(now, staleMs)
     const discovered = await this.registry.discoveredIds()
     const missing = this.registry.pruneMissingProcesses(discovered, now, startingTimeoutMs)
-    const stuckStarting = this.registry.pruneStuckStarting(now, startingTimeoutMs)
+    const stuckStarting = this.registry.pruneStuckStarting(now, startingTimeoutMs, discovered)
     for (const id of stuckStarting) {
       await this.#controller.terminate(id, true).catch(() => {})
     }
