@@ -70,6 +70,9 @@ senpi-codemode 는 source-only TS 라 Node ESM 훅이 못 닿는다 (senpi 가 j
    `transforms/*.mjs` 의 니들을 새 소스에 맞게 수정
 3. upstream 이 이미 흡수한 수정(auth 원자 쓰기, lazy local-work, TTL 등)은
    그 transform 을 그냥 삭제
+4. `cursor-agent.js` 는 checkpoint echo / RequestContext pin / read-image /
+   Task 문구의 작은 니들만 쓴다. 통파일 치환은 senpi 가 import·blob cap 을
+   넣자 첫 바이트에서 빗나가 checkpoint 메아리가 통째로 빠졌다 — 다시 키우지 않는다
 
 패치 재작성(re-cut)은 더 이상 없다.
 
