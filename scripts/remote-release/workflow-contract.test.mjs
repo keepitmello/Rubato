@@ -42,3 +42,9 @@ test("zmx signing combines only exact downloaded native artifacts without rebuil
   assert.match(upload, /name: zmx-qualified-darwin[\s\S]*gh release upload/)
   assert.doesNotMatch(upload, /id-token: write|attestations: write|combine-zmx-release/)
 })
+
+test("Stage 9 CI runs the same local gate that blocks push", async () => {
+  const workflow = await readFile(join(workflowRoot, "remote-stage9-ci.yml"), "utf8")
+  assert.match(workflow, /node scripts\/check-executables\.mjs/)
+  assert.match(workflow, /bash scripts\/ci-local\.sh/)
+})

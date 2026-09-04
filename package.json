@@ -27,6 +27,7 @@
   "scripts": {
     "build": "node harness/scripts/build-engine.mjs --force",
     "build:check": "node harness/scripts/build-engine.mjs --check",
+    "ci:local": "bash scripts/ci-local.sh",
     "test": "npm --prefix harness/rubato-pi test && bun test packages/rubato-runtime packages/senpi-task && npm --prefix packages/rubato-remote-protocol test && npm --prefix packages/rubato-live-cli test && npm --prefix packages/rubato-remote-hub test && npm --prefix packages/rubato-remote-web test && npm --prefix packages/rubato-terminal-bridge test",
     "typecheck": "tsgo --noEmit -p packages/rubato-runtime/tsconfig.json && tsgo --noEmit -p packages/senpi-task/tsconfig.json && npm --prefix packages/rubato-remote-protocol run typecheck && npm --prefix packages/rubato-remote-hub run typecheck && npm --prefix packages/rubato-remote-web run typecheck && npm --prefix packages/rubato-terminal-bridge run typecheck"
   },
