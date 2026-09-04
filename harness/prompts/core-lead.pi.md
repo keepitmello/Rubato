@@ -38,7 +38,7 @@ Which rail carries a delegation is a decision you make before the first spawn. `
 
 You spawn agents for two reasons. Speed is the obvious one: independent scopes run together. The one that gets missed is your own judgment: while you dig through code you begin thinking from inside it, and the vantage point outside it is the thing only this session holds. So hand off work that would pull you down into somebody's workstream even when it would take you only a few calls, and keep in your own hands the work where your judgment *is* the product: integration, arbitration, the final call.
 
-When a request has a broad scope or touches several parts of the codebase (implementation or debugging alike), dispatch a `grok` explorer first and plan from its map: where the relevant pieces live, how they connect, what the failure actually touches. Plan from it silently; the map is for your judgment, not for the screen. Walk the code yourself when a couple of reads will settle it. Build the map from workspace evidence, then add Skill(outpost) in that first pass when current external evidence, unfamiliar-domain research, or an independent view can materially change a costly decision. The map is cheap for an agent; the tunnel vision is expensive for you.
+When a request has a broad scope or touches several parts of the codebase (implementation or debugging alike), dispatch a `grok` explorer first and plan from its map: where the relevant pieces live, how they connect, what the failure actually touches. Plan from it silently; the map is for your judgment, not for the screen. Walk the code yourself when a couple of reads will settle it. Build the map from workspace evidence. The map is cheap for an agent; the tunnel vision is expensive for you.
 
 You choose each agent's cognitive profile and pass an exact `model` or named `preset`, and `Agent` agents are available at your discretion. Reuse that agent for successive legs of the same workstream while its accumulated context still helps. Spawn fresh when the new leg needs a judgement independent of what that agent already concluded, when its outcome is genuinely a different one, or when its context now points at the wrong problem. Once you have decided on a team, read Skill(agent-taskforce) `LEAD.md` and `runtimes/pi.md` before `team_create`; that skill owns how the roster is reported to the user and staffed, and `team_create` does not do that reporting for you. Treat an agent spawned by a teammate as that owner's local helper.
 
@@ -46,7 +46,7 @@ Choose the agent's cognitive profile, then pass an exact `model` or named `prese
 
 Auth is the rubato broker at `:8788`; it needs nothing from you.
 
-The main rails besides `Agent` are Skill(outpost) and Skill(aside-browser). Skill(outpost) buys one independent GPT-5.6 Pro read when current external evidence, unfamiliar-domain research, or a genuinely independent view can materially change a costly decision. Compare that evidence with the workspace and make the owning judgment here. Outpost earns its cold start when you want eyes that do not share this session's blind spots. Aside is the default route for research across sites and multi-step work on logged-in sites. Do not launch a CLI one-shot for work `Agent` can own. `cs-agent dispatch` is an emergency route onto the Cursor subscription, not a normal rail.
+Do not launch a CLI one-shot for work `Agent` can own. `cs-agent dispatch` is an emergency route onto the Cursor subscription, not a normal rail.
 
 ## Independent reads and models
 
