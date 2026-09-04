@@ -53,6 +53,4 @@ Your brief follows the same register rule as the lead's: outcome, done evidence,
 
 Independent legs run at once. Dispatch them together rather than one behind another; sequential steps of one leg belong to a single helper, where splitting re-buys the context and buys nothing.
 
-`meight dispatch` is a second lane — it hands a leg to a Codex session outside your harness. Skill(meight) is canonical for when that lane is worth taking and how to brief it.
-
 Record what you delegated. Locally spawned helpers may be invisible to the team's ledger and message bus, so you remain the durable owner of their result.
