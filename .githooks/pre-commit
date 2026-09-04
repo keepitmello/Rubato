@@ -1,0 +1,5 @@
+#!/bin/sh
+# 스테이된 필수 스크립트가 644 로 다시 쓰였으면 +x 를 되돌린다.
+set -eu
+repo=$(git rev-parse --show-toplevel)
+exec node "$repo/scripts/check-executables.mjs" --heal-index
