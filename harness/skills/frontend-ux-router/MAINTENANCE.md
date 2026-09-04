@@ -10,8 +10,7 @@ Codex 워커는 이 파일을 읽지 않는다 — SKILL.md 라우팅 테이블�
   `references/task-design-failure-case-study.md` (2026-07-12, Arcaea 채보 검수 UI).
 - 라이브 사본: `~/.codex/skills/frontend-ux-router/` (Codex가 실제로 로드하는 위치)
 - 공유 레포: https://github.com/keepitmello/frontend-ux-router (gh 계정: keepitmello)
-- 디스패처 쪽 연동: `~/.claude/skills/meight/SKILL.md`의 "Fresh-Eyes UI Review" 절.
-  워커가 `IMPLEMENTED, FRESH-EYES PENDING`을 보고하면 디스패처가 컨텍스트 없는
+- 디스패처 쪽 연동: 워커가 `IMPLEMENTED, FRESH-EYES PENDING`을 보고하면 디스패처가 컨텍스트 없는
   리뷰어를 돌리고, PASS 기록이 있어야 `VERIFIED`를 인정한다.
 
 ## 개선 루프 (개판 발견 → 스킬 강화)
