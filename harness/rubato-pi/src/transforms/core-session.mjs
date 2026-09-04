@@ -4,7 +4,7 @@
 // 규약은 tui-chrome.mjs 와 같다: pristine 니들, 없으면 throw, 패치 공존 중 inert.
 
 import { injectAgentSession, isAgentSessionUrl } from "./core-agent-session.mjs";
-import { injectCompaction, isCompactionUrl } from "./core-compaction.mjs";
+import { injectCompaction, injectContextTokensGuard, isCompactionUrl, isContextTokensUrl } from "./core-compaction.mjs";
 import { injectCompactionUtils, isCompactionUtilsUrl } from "./core-compaction-utils.mjs";
 import { injectCoreDescriptors, isCoreDescriptorsUrl } from "./core-descriptors.mjs";
 import { injectEmptyRecoveryLiveness, isEmptyRecoveryUrl } from "./core-empty-recovery.mjs";
@@ -35,6 +35,7 @@ import { injectStreamWatchdog, isStreamWatchdogUrl } from "./core-stream-watchdo
 export function applyCoreSessionTransforms(url, source, applyTransform) {
   if (isStreamWatchdogUrl(url)) source = applyTransform(source, injectStreamWatchdog);
   if (isCompactionUrl(url)) source = applyTransform(source, injectCompaction);
+  if (isContextTokensUrl(url)) source = applyTransform(source, injectContextTokensGuard);
   if (isCompactionUtilsUrl(url)) source = applyTransform(source, injectCompactionUtils);
   if (isAgentSessionUrl(url)) source = applyTransform(source, injectAgentSession);
   if (isSpeculativeUrl(url)) source = applyTransform(source, injectSpeculative);
@@ -57,6 +58,7 @@ export function applyCoreSessionTransforms(url, source, applyTransform) {
 export {
   injectAgentSession,
   injectCompaction,
+  injectContextTokensGuard,
   injectCompactionIndexReason,
   injectCompactionIndexThreshold,
   injectCompactionPolicy,
@@ -75,6 +77,7 @@ export {
   injectStreamWatchdog,
   isAgentSessionUrl,
   isCompactionUrl,
+  isContextTokensUrl,
   isCompactionIndexUrl,
   isCompactionIndexThresholdUrl,
   isCompactionPolicyUrl,
