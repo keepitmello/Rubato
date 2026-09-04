@@ -278,9 +278,12 @@ test("피커는 현재 세대만 남기고 getModels 저장분은 그대로다",
   const codexPicker = new Set(codex.filterModels(codex.getModels()).map((model) => model.id));
   assert.ok(codexPicker.has("gpt-5.6-sol"));
   assert.ok(codexPicker.has("gpt-6-astra"));
-  assert.ok(codexPicker.has("gpt-6-astra-fast"));
   assert.ok(codexPicker.has("gpt-daybreak-blue-latest"));
+  assert.ok(!codexPicker.has("gpt-5.6-sol-fast"));
+  assert.ok(!codexPicker.has("gpt-6-astra-fast"));
+  assert.ok(!codexPicker.has("gpt-daybreak-blue-latest-fast"));
   assert.ok(!codexPicker.has("gpt-5.4"));
+  assert.ok(codex.getModels().some((model) => model.id === "gpt-6-astra-fast"), "/fast 가 쓸 Fast 변형을 저장분에서 지우면 안 된다");
 
   assert.equal(opencode.id, "opencode");
   assert.deepEqual(

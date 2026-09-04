@@ -14,17 +14,14 @@ export const ANTHROPIC_PICKER_IDS = Object.freeze([
   "claude-haiku-4-5",
 ]);
 
+// Codex Fast 는 피커 행이 아니라 `/fast` 토글이다. getModels() 저장분의 `-fast`
+// 변형은 그대로 두고, 피커에만 base 를 올린다.
 export const CODEX_PICKER_IDS = Object.freeze([
   "gpt-5.6-sol",
   "gpt-5.6-terra",
   "gpt-5.6-luna",
-  "gpt-5.6-sol-fast",
-  "gpt-5.6-terra-fast",
-  "gpt-5.6-luna-fast",
   "gpt-6-astra",
-  "gpt-6-astra-fast",
   "gpt-daybreak-blue-latest",
-  "gpt-daybreak-blue-latest-fast",
 ]);
 
 export function keepPickerIds(models, ids) {
