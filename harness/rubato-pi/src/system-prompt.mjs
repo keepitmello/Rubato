@@ -19,7 +19,6 @@ export const TOOL_GUIDELINES = `## Tool Guidelines
 - Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit.
 - Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.
 - Use write only for new files or complete rewrites.
-- A write/edit success is only real after a later read sees the new bytes. If the file is unchanged, the write did not persist.
 - Use one todo operation at a time; batch it with the real work rather than making a solo todo turn. Reference tasks and phases by their exact content/name.
 - If a step needs more than one tool call, prefer one eval cell that runs independent calls together and returns distilled facts.
 - Record durable facts, preferences, and decisions with the memory tool as you learn them; every change is committed with the reason you provide. Never let memory bookkeeping replace answering the user's current message.
