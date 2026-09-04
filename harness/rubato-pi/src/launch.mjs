@@ -14,6 +14,7 @@ import { ensureSessionDefaults, sessionDefaultsLookCurrent } from "./session-def
 import { replaceSystemPrompt } from "./system-prompt.mjs";
 import { SKILL_DIRS } from "./skills-section.mjs";
 import { enginePackageJson, senpiCli, senpiCliMain, senpiPackageJson } from "./engine-paths.mjs";
+import { setBootChromeStatus } from "./boot-chrome.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -136,6 +137,7 @@ export async function spawnRubatoPi({ args = process.argv.slice(2), env = proces
     throw new Error("pinned senpi CLI is missing; run bun install at the repository root");
   }
   const nextEnv = withNoChangelog(launchEnv(env, agentDir));
+  setBootChromeStatus("엔진을 불러오는 중");
   // 같은 Node 면 자식을 또 띄우지 않는다. cli.js 가 --import 보고 한 번 더
   // spawn 하던 것과 합치면 기동마다 Node 를 세 번 올리는 셈이었다.
   if (sameNodeBinary(node.bin)) {

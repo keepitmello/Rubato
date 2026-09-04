@@ -41,6 +41,8 @@ test("dialog and mermaid imports leave the InteractiveMode static graph", () => 
   assert.match(next, /import\("\.\/components\/mermaid\.js"\)/);
   assert.match(next, /import\("\.\/components\/assistant-message\.js"\)/);
   assert.match(next, /\.filter\(Boolean\)/);
+  assert.match(next, /에디터를 준비하는 중/);
+  assert.match(next, /releaseBootChrome/);
   assert.throws(
     () => injectInteractiveDeferDialogs("export class InteractiveMode {}"),
     /interactive defer/,
@@ -58,4 +60,6 @@ test("the boot-perf cluster defers InteractiveMode dialogs without drift", () =>
   assert.match(next, /deferredInteractiveUi/);
   assert.match(next, /activateDeferredExtensions/);
   assert.match(next, /async rebindCurrentSession[\s\S]*activateDeferredExtensions/);
+  assert.match(next, /에디터를 준비하는 중/);
+  assert.match(next, /releaseBootChrome/);
 });

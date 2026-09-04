@@ -173,7 +173,6 @@ fi
 
 # 로컬에서 프롬프트 조각을 고친 뒤 build.sh 를 잊어도 새 세션에는 바로
 # 반영한다. 합성은 보통 0.01초고, 실패하면 낡은 프롬프트로 시작하지 않는다.
-splash step "프롬프트"
 "$HERE/../prompts/build.sh" >/dev/null
 
 # 스킬은 `rubato update` 가 맞춘다. 예전 업데이터는 있는 스킬을 건너뛰어서
@@ -183,7 +182,7 @@ REPO="$(CDPATH= cd -- "$HERE/../.." && pwd)"
 SKILLS_STAMP="${RUBATO_SKILLS_STAMP:-$HOME/.rubato-pi/skills-bundle-head}"
 SKILLS_HEAD="$(git -C "$REPO" rev-parse HEAD 2>/dev/null || true)"
 if [ -n "$SKILLS_HEAD" ] && [ "$(cat "$SKILLS_STAMP" 2>/dev/null || true)" != "$SKILLS_HEAD" ]; then
-  splash step "스킬"
+  splash step "스킬을 맞추는 중"
   SKILLS_PREV="$(cat "$SKILLS_STAMP" 2>/dev/null || true)"
   [ -n "$SKILLS_PREV" ] || SKILLS_PREV="$(git -C "$REPO" rev-parse 'HEAD@{1}' 2>/dev/null || true)"
   if [ -n "$SKILLS_PREV" ]; then
@@ -214,7 +213,6 @@ fi
 ROOT="$(CDPATH= cd -- "$HERE/../rubato-pi" && pwd)"
 # node 를 찾는 곳은 한 군데다. 예전에는 여기서 nvm 경로를 박아 뒀는데, 그 버전이
 # 사라지면 조용히 PATH 의 아무 node 로 떨어졌다.
-splash step "node"
 . "$HERE/find-node.sh"
 if ! NODE="$(rubato_find_node)"; then
   echo "rubato-pi needs Node.js 24+ already installed. Default Node was not changed." >&2
@@ -253,7 +251,7 @@ fi
 # 실패해도 여기서 세션을 막지 않는다. 산출물이 정말 없으면 assertEngineBuilt 가
 # 사유를 들고 세운다.
 if [ -z "${RUBATO_NO_ENGINE_BUILD-}" ] && [ -f "$HERE/build-engine.mjs" ]; then
-  splash step "엔진 빌드"
+  splash step "엔진을 확인하는 중"
   "$NODE" "$HERE/build-engine.mjs" >/dev/null 2>&1 &
   ENGINE_PID=$!
 else
@@ -265,7 +263,6 @@ fi
 # 경로가 어긋난 때도(하네스를 옮기면 절대경로가 깨진다) 여기서 고친다.
 # 쓰면 JSONC 주석을 잃어서 백업을 남긴다. 실패해도 세션을 막지 않는다.
 if [ -z "${RUBATO_NO_VAULT-}" ] && [ -f "$HOME/.config/cmux/cmux.json" ]; then
-  splash step "세션 복원"
   "$NODE" "$HERE/cmux-vault.mjs" --apply >/dev/null 2>&1 || true
 fi
 
@@ -306,7 +303,6 @@ fi
 # 준비와 겹친 동안 끝난 fetch 만 받는다. 네트워크가 느린 날에도 업데이트 확인이
 # 엔진 시작을 붙잡아서는 안 된다. 아직 출력이 없으면 이번 알림만 건너뛴다.
 if [ -n "${UPDATE_PID-}" ]; then
-  splash step "업데이트 확인"
   if [ -n "$UPDATE_OUT" ] && [ -f "$UPDATE_DONE" ]; then
     wait "$UPDATE_PID" || true
     UPDATE_PID=""
@@ -340,7 +336,6 @@ fi
 # 스플래시를 여기서 닫지 않는다. 닫으면 "엔진 시작" 한 줄만 남고, senpi 가
 # main.js 를 평가하는 동안(실측 2.5초) 까만 화면이 된다. 로고를 유지한 채로
 # 엔진에 넘기면 그 구간이 빈 화면으로 보이지 않고, fullscreen TUI 가 지운다.
-splash step "엔진"
 trap - EXIT INT TERM
 
 # 새 커밋이 있으면 받을지 물어본다. 예면 받아서 다시 만들고, 그 뒤에
