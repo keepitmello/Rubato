@@ -87,6 +87,15 @@ test("shortens Claude-style model ids the way the statusline does", () => {
   assert.equal(shortModelLabel("openai-codex/gpt-daybreak-blue-latest"), "Daybreak Blue");
   assert.equal(shortModelLabel("openai-codex/gpt-daybreak-blue-latest-fast"), "Daybreak Blue");
   assert.equal(shortModelLabel("openai-codex/gpt-daybreak-blue-latest:high"), "Daybreak Blue");
+  assert.equal(shortModelLabel("gpt-6-astra"), "6 Astra");
+  assert.equal(shortModelLabel("openai-codex/gpt-6-astra"), "6 Astra");
+  assert.equal(shortModelLabel("openai-codex/gpt-6-astra-fast"), "6 Astra");
+  assert.equal(shortModelLabel("openai-codex/gpt-6-astra:low"), "6 Astra");
+  assert.equal(shortModelLabel("GPT-6 Astra"), "6 Astra");
+  assert.equal(shortModelLabel("muse-spark-1.3-contributor-free"), "Muse Spark 1.3");
+  assert.equal(shortModelLabel("opencode/muse-spark-1.3-contributor-free"), "Muse Spark 1.3");
+  assert.equal(shortModelLabel("opencode/muse-spark-1.3-contributor-free:high"), "Muse Spark 1.3");
+  assert.equal(shortModelLabel("Muse Spark 1.3 Free"), "Muse Spark 1.3");
   assert.equal(shortModelLabel("unknown-model:high"), "unknown-model");
 });
 
@@ -99,7 +108,9 @@ test("reads friendly display spellings as the same model as their id spelling", 
   assert.equal(shortModelLabel("GPT-5.6 Terra"), "5.6 Terra");
   assert.equal(shortModelLabel("GPT-5.6 Sol"), shortModelLabel("gpt-5.6-sol"));
   assert.equal(shortModelLabel("GPT-5.6 Luna"), shortModelLabel("openai-codex/gpt-5.6-luna"));
+  assert.equal(shortModelLabel("Muse Spark 1.3 Free"), shortModelLabel("muse-spark-1.3-contributor-free"));
   assert.equal(formatModelWithEffort("GPT-5.6 Sol", "high"), "5.6 Sol high");
+  assert.equal(formatModelWithEffort("muse-spark-1.3-contributor-free", "high"), "Muse Spark 1.3 high");
 });
 
 test("does not read a variant token that merely prefixes a longer word", () => {

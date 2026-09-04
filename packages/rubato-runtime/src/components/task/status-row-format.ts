@@ -28,6 +28,8 @@ const MODEL_FAMILIES: ReadonlyArray<readonly [string, string]> = [
   ["grok", "Grok"],
   ["gemini", "Gemini"],
   ["kimi", "Kimi"],
+  ["muse-spark", "Muse Spark"],
+  ["muse spark", "Muse Spark"],
   ["gpt", "GPT"],
 ]
 
@@ -35,6 +37,7 @@ const MODEL_VARIANTS: ReadonlyArray<readonly [string, string]> = [
   ["sol", "Sol"],
   ["luna", "Luna"],
   ["terra", "Terra"],
+  ["astra", "Astra"],
 ]
 
 const TERMINAL_STATUSES: ReadonlySet<TaskStatus> = new Set(["completed", "error", "cancelled", "interrupted", "lost"])
@@ -185,7 +188,7 @@ function shortModelLabel(modelId: string): string {
   for (const [key, label] of MODEL_FAMILIES) {
     const idx = lc.indexOf(key)
     if (idx < 0) continue
-    const tail = lc.slice(idx + key.length).replace(/^[-.]/u, "")
+    const tail = lc.slice(idx + key.length).replace(/^[-.\s]+/u, "")
     const version = parseVersion(tail)
     return version ? `${label} ${version}` : label
   }

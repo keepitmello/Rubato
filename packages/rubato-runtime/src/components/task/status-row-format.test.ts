@@ -198,6 +198,45 @@ describe("backgroundWidgetRows", () => {
     expect(rowFor("GPT-5.6 Sol")).not.toContain("GPT 5.6")
   })
 
+  it("#given GPT-6 Astra #when a live row renders #then the label is 6 Astra", () => {
+    const row = backgroundWidgetRows([
+      record({
+        task_id: "st_astra",
+        description: "Review tests",
+        status: "running",
+        resolved_model: {
+          provider: "openai-codex",
+          model_id: "gpt-6-astra",
+          display: "GPT-6 Astra",
+          source: "category",
+        },
+      }),
+    ], new Map(), now, () => stats, 220)[0] ?? ""
+    expect(row).toContain("6 Astra")
+    expect(row).not.toContain("GPT 6")
+  })
+
+  it("#given Muse Spark 1.3 Free #when a live row renders #then the label is Muse Spark 1.3", () => {
+    const rowFor = (modelId: string, display?: string) =>
+      backgroundWidgetRows([
+        record({
+          task_id: "st_muse",
+          description: "Review tests",
+          status: "running",
+          resolved_model: {
+            provider: "opencode",
+            model_id: modelId,
+            display,
+            source: "category",
+          },
+        }),
+      ], new Map(), now, () => stats, 220)[0] ?? ""
+
+    expect(rowFor("muse-spark-1.3-contributor-free")).toContain("Muse Spark 1.3")
+    expect(rowFor("muse-spark-1.3-contributor-free", "Muse Spark 1.3 Free")).toContain("Muse Spark 1.3")
+    expect(rowFor("muse-spark-1.3-contributor-free")).not.toContain("contributor-free")
+  })
+
   it("#given a Cursor Grok task whose catalog name is not Fast #when a live row renders #then it still shows Fast", () => {
     const row = backgroundWidgetRows([
       record({
