@@ -42,6 +42,20 @@ const EVENT_TYPES = new Map([
   ["wake_source_state", "background.changed"], ["session_shutdown", "live.exited"],
 ]);
 
+/** In-process replacements keep the TUI/zmx pane; only a real process exit may kill it. */
+const PROCESS_EXIT_SHUTDOWN_REASONS = new Set(["quit"]);
+
+export function isProcessExitShutdown(reason) {
+  return PROCESS_EXIT_SHUTDOWN_REASONS.has(reason);
+}
+
+function stripSummaryPresentation(message) {
+  const summary = message?.summary;
+  if (!summary || !Object.hasOwn(summary, "presentation")) return undefined;
+  const { presentation: _presentation, ...rest } = summary;
+  return { ...message, summary: rest };
+}
+
 function uuidv7(now = Date.now()) {
   const bytes = randomBytes(16);
   const timestamp = BigInt(now);
@@ -214,6 +228,8 @@ export class RemoteSurface {
     });
     this.lastTimeline = undefined;
     this.lastPresentationKey = undefined;
+    this.presentationUnsupported = false;
+    this.negotiatedProtocolVersion = undefined;
   }
 
   start() {
@@ -246,7 +262,7 @@ export class RemoteSurface {
       if (this.stopped) return connection.close();
       this.connection = connection;
       this.registered = false;
-      const registration = {
+      const registration = this.parseForHub({
         kind: "surface.register",
         protocol: this.protocol.REMOTE_PROTOCOL_NAME,
         protocolRange: {
@@ -255,9 +271,11 @@ export class RemoteSurface {
         },
         surfaceInstanceId: this.surfaceInstanceId,
         ...(this.reconnectToken ? { reconnectToken: this.reconnectToken } : { token: this.surfaceToken }),
-        summary: this.summary(),
-      };
-      this.protocol.surfaceToHubFrameSchema?.parse(registration);
+        // Register is validated before negotiation. Old installed protocols reject
+        // summary.presentation, which used to abort connect and leave the session
+        // stuck in `starting` until the hub force-killed zmx.
+        summary: this.summary({ forWire: true, allowPresentation: false }),
+      });
       connection.send(registration);
     } catch (error) {
       this.connection?.close();
@@ -281,11 +299,23 @@ export class RemoteSurface {
     }, delay);
   }
 
+  parseForHub(message) {
+    try {
+      this.protocol.surfaceToHubFrameSchema?.parse(message);
+      return message;
+    } catch (error) {
+      const stripped = stripSummaryPresentation(message);
+      if (!stripped) throw error;
+      this.protocol.surfaceToHubFrameSchema?.parse(stripped);
+      this.presentationUnsupported = true;
+      return stripped;
+    }
+  }
+
   send(message) {
     if (!this.connection || !this.registered) return false;
     try {
-      this.protocol.surfaceToHubFrameSchema?.parse(message);
-      this.connection.send(message);
+      this.connection.send(this.parseForHub(message));
       return true;
     } catch {
       this.disconnected();
@@ -311,6 +341,12 @@ export class RemoteSurface {
 
   observe(name, event, ctx) {
     if (ctx) this.context = ctx;
+    if (name === "session_shutdown") {
+      // /resume, /new, /fork, and settings hot-reload tear down the Pi session
+      // inside this same process. Emitting live.exited here made the hub
+      // `zmx kill --force` the pane the user was still sitting in.
+      if (!isProcessExitShutdown(event?.reason)) return;
+    }
     if (name === "session_start" || name === "session_switch" || name === "session_fork" || name === "session_info_changed") {
       this.emitSnapshot();
       this.rememberTimeline();
@@ -377,12 +413,22 @@ export class RemoteSurface {
     return { event };
   }
 
-  summary() {
+  shouldPublishPresentation() {
+    return !this.presentationUnsupported && (this.negotiatedProtocolVersion ?? 1) >= 2;
+  }
+
+  summary(options = {}) {
     const control = tryCall(() => this.pi.getInteractiveControl?.());
     const native = tryCall(() => control?.snapshot?.()) ?? {};
     const ctx = this.context;
     const metrics = collectSessionMetrics(ctx, native, this.clock.now());
     const title = tryCall(() => this.pi.getSessionName?.()) ?? ctx?.sessionManager?.getSessionName?.() ?? native.sessionName ?? basename(ctx?.cwd ?? process.cwd());
+    const presentation = this.presentation(native);
+    const publishPresentation = options.allowPresentation === false
+      ? false
+      : options.forWire === true
+        ? this.shouldPublishPresentation() && presentation
+        : Boolean(presentation);
     return {
       schemaVersion: 1,
       hostId: this.hostId,
@@ -413,7 +459,7 @@ export class RemoteSurface {
         remoteProtocolMax: this.protocol.REMOTE_PROTOCOL_CURRENT_VERSION,
       },
       capabilities: control ? ["interactive-control", "standard-ui", "terminal-required"] : ["terminal-required"],
-      ...(this.presentation(native) ? { presentation: this.presentation(native) } : {}),
+      ...(publishPresentation ? { presentation } : {}),
     };
   }
 
@@ -516,7 +562,7 @@ export class RemoteSurface {
       surfaceInstanceId: this.surfaceInstanceId,
       sourceSeq: ++this.sourceSeq,
       at: new Date(this.clock.now()).toISOString(),
-      summary: snapshot.summary,
+      summary: this.summary({ forWire: true }),
       state: snapshot.state,
     };
     if (!this.send(record)) this.buffer.push(record);
@@ -655,8 +701,8 @@ export class RemoteSurface {
   }
 
   maybeEmitSummary() {
-    if ((this.negotiatedProtocolVersion ?? 1) < 2) return;
-    const summary = this.summary();
+    if (!this.shouldPublishPresentation()) return;
+    const summary = this.summary({ forWire: true });
     const key = JSON.stringify(summary.presentation ?? null);
     if (key === this.lastPresentationKey) return;
     this.lastPresentationKey = key;
