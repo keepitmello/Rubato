@@ -1,24 +1,9 @@
-import { pathToFileURL } from "node:url";
-import { senpiNested } from "./engine-paths.mjs";
-
-// provider-overlay 가 끌어오는 pi-ai index.js(createProvider) 없이
-// disabledProviders 계산에 필요한 id 만 모은다. 세션 기본값을 쓸 때마다
-// 프로바이더 구현을 컴파일하지 않으려고 갈라 둔 파일이다.
-const { builtinProviders, getBuiltinProviders } = await import(
-  pathToFileURL(senpiNested("@earendil-works/pi-ai/dist/providers/all.js")).href
-);
-
-/**
- * Rubato 가 제품으로 지원하는 provider. FX bridge 삭제 뒤로 이것이 **유일한 권위**다.
- *
- * 예전에는 두 개념이 갈라져 있었다: 이 정적 목록은 "제품 계약"이었고, 활성 등록의
- * 권위는 bridge catalog 에서 유도한 `ourProviderIds(catalog)` 였다. 갈라 둘 이유가
- * catalog 자신이었다 — 살아 있는 bridge 가 우리가 모르는 provider 를 열 수 있었으므로
- * 그때의 실제 목록을 런타임에 물어야 했다.
- *
- * 이제 물을 곳이 없고, 등록하는 것은 pinned native factory 뿐이다. 목록과 실제가
- * 어긋날 수 있는 자리가 사라졌으므로 두 개념을 하나로 둔다.
- */
+// provider-overlay / session-defaults 가 끄는 foreign id 목록.
+//
+// 예전에는 `@earendil-works/pi-ai/providers/all` 을 올려 constructor 까지 돌렸다.
+// 그 배럴은 프로바이더 구현 40개를 정적 import 해서, 세션 기본값만 확인해도
+// 기동 그래프가 한 덩어리가 됐다. id 만 필요하므로 설치본에서 뽑은 스냅샷을
+// 정적으로 두고, 핀이 바뀌면 provider-ids.test.mjs 가 어긋난다.
 export const SUPPORTED_PROVIDER_IDS = Object.freeze([
   "openai-codex",
   "xai",
@@ -29,18 +14,62 @@ export const SUPPORTED_PROVIDER_IDS = Object.freeze([
 ]);
 
 /**
- * Built-in pi-ai providers the model picker must never show. A provider id we did not register
- * ourselves is a direct-vendor lane with no credentials behind it. Ids we do register
- * (anthropic, openai-codex, xai, cursor, kiro, google-antigravity) stay: our registration
- * replaced them.
+ * Senpi 2026.8.22 의 `getBuiltinProviders()` ∪ `builtinProviders().map(p => p.id)`.
+ * `getBuiltinProviders()` 는 generated catalog 키만 보고 cursor/ollama/radius
+ * 같은 credential-only lane 을 빠뜨리므로 둘을 합친 값이다.
  */
+export const BUILTIN_PROVIDER_IDS = Object.freeze([
+  "alibaba-token-plan",
+  "amazon-bedrock",
+  "ant-ling",
+  "anthropic",
+  "azure-openai-responses",
+  "baseten",
+  "cerebras",
+  "cloudflare-ai-gateway",
+  "cloudflare-workers-ai",
+  "cursor",
+  "deepseek",
+  "fireworks",
+  "github-copilot",
+  "google",
+  "google-vertex",
+  "groq",
+  "huggingface",
+  "kimi-coding",
+  "minimax",
+  "minimax-cn",
+  "mistral",
+  "moonshotai",
+  "moonshotai-cn",
+  "nvidia",
+  "ollama",
+  "openai",
+  "openai-codex",
+  "opencode",
+  "opencode-go",
+  "opengateway",
+  "openrouter",
+  "qwen-token-plan",
+  "qwen-token-plan-cn",
+  "qwen-token-plan-individual",
+  "radius",
+  "together",
+  "vercel-ai-gateway",
+  "xai",
+  "xiaomi",
+  "xiaomi-token-plan-ams",
+  "xiaomi-token-plan-cn",
+  "xiaomi-token-plan-sgp",
+  "zai",
+  "zai-coding-cn",
+]);
+
 export function builtinProviderIds() {
-  // getBuiltinProviders() only lists ids present in the generated catalog, which misses
-  // credential-only lanes like cursor/ollama/radius. Union both so nothing survives.
-  return [...getBuiltinProviders(), ...builtinProviders().map((provider) => provider.id)];
+  return BUILTIN_PROVIDER_IDS;
 }
 
-export function foreignProviderIds(builtinIds) {
+export function foreignProviderIds(builtinIds = BUILTIN_PROVIDER_IDS) {
   const ours = new Set(SUPPORTED_PROVIDER_IDS);
   return [...new Set(builtinIds)].filter((id) => typeof id === "string" && id.length > 0 && !ours.has(id));
 }

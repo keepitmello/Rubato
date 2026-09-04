@@ -45,6 +45,7 @@ const AUDITED = [
   ["senpi", "dist/core/extensions/builtin/compaction/index.js"],
   ["senpi", "dist/core/settings-manager.js"],
   ["senpi", "dist/core/auth-storage.js"],
+  ["senpi", "dist/core/model-runtime.js"],
   ["senpi", "dist/core/cursor-exec-bridge-session.js"],
   ["senpi", "dist/core/cursor-exec-bridge.js"],
   ["senpi", "dist/modes/interactive/components/assistant-render-descriptors.js"],

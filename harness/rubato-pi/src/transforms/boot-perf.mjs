@@ -2,6 +2,12 @@
 // 정적 import 를 끊는 자리. 규약은 tui-chrome.mjs 와 같다.
 
 import { injectAgentSessionDeferExportHtml, isBootAgentSessionUrl } from "./boot-agent-session-export.mjs";
+import {
+  injectAuthStorageCatalogSlim,
+  injectModelRuntimeCatalogSlim,
+  isBootAuthStorageUrl,
+  isBootModelRuntimeUrl,
+} from "./boot-catalog-slim.mjs";
 import { injectLoaderDeferHeavyBundles, isBootLoaderUrl } from "./boot-loader-defer.mjs";
 import { injectMainDeferCliModules, isBootMainUrl } from "./boot-main-defer.mjs";
 
@@ -15,14 +21,20 @@ export function applyBootPerfTransforms(url, source, applyTransform) {
   if (isBootLoaderUrl(url)) source = applyTransform(source, injectLoaderDeferHeavyBundles);
   if (isBootAgentSessionUrl(url)) source = applyTransform(source, injectAgentSessionDeferExportHtml);
   if (isBootMainUrl(url)) source = applyTransform(source, injectMainDeferCliModules);
+  if (isBootModelRuntimeUrl(url)) source = applyTransform(source, injectModelRuntimeCatalogSlim);
+  if (isBootAuthStorageUrl(url)) source = applyTransform(source, injectAuthStorageCatalogSlim);
   return source;
 }
 
 export {
   injectAgentSessionDeferExportHtml,
+  injectAuthStorageCatalogSlim,
   injectLoaderDeferHeavyBundles,
   injectMainDeferCliModules,
+  injectModelRuntimeCatalogSlim,
   isBootAgentSessionUrl,
+  isBootAuthStorageUrl,
   isBootLoaderUrl,
   isBootMainUrl,
+  isBootModelRuntimeUrl,
 };

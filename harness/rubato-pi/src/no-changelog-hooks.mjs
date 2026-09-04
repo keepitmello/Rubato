@@ -53,9 +53,22 @@ function warnOnce(error) {
   );
 }
 
+function isVendorTransformUrl(url) {
+  return (
+    url.includes("@code-yeongyu/senpi/") ||
+    url.includes("@earendil-works/pi-tui/") ||
+    url.includes("@earendil-works/pi-ai/") ||
+    url.includes("@earendil-works/pi-agent-core/") ||
+    url.includes("/harness/rubato-pi/")
+  );
+}
+
 export async function load(url, context, nextLoad) {
   const result = await nextLoad(url, context);
   if (result.source == null) return result;
+  // 변환 대상이 아니면 소스를 문자열로 펼치지 않는다. 매 모듈마다
+  // String(source) 하면 compile cache 가 있는 바이트를 다시 풀어 기동이 늘어진다.
+  if (!isVendorTransformUrl(url)) return result;
   const source = String(result.source);
   let next = source;
 
