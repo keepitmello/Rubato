@@ -38,10 +38,14 @@ jobs:
         run: |
           bun audit --production
           node scripts/license-policy.mjs
+      - name: Required executables stay executable
+        run: |
+          node scripts/check-executables.mjs
+          node --test scripts/check-executables.test.mjs
       - name: Notice policy and tests
         run: |
           node scripts/check-third-party-notices.mjs
-          node --test scripts/check-third-party-notices.test.mjs scripts/license-policy.test.mjs
+          node --test scripts/check-third-party-notices.test.mjs scripts/license-policy.test.mjs scripts/check-executables.test.mjs
       - name: Release and selective-uninstall security tests
         run: node --test scripts/remote-release/release-security.test.mjs
       - name: Hub, web, and terminal adversarial boundary tests
@@ -52,14 +56,7 @@ jobs:
       - name: Short measured host qualification with explicit device-pending result
         run: node scripts/remote-release/qualification.mjs --profile ci --allow-device-pending --output .qualification/ci.json
       - name: Existing build and transform checks
-        run: |
-          node harness/scripts/build-engine.mjs --force
-          node harness/scripts/build-engine.mjs --check
-          bash harness/prompts/build.sh
-          mkdir -p "$HOME/.agents"
-          ln -sfn "$PWD/harness/prompts" "$HOME/.agents/rubato"
-          export NODE_OPTIONS="--import=file://$PWD/harness/rubato-pi/src/no-changelog-register.mjs"
-          npm --prefix harness/rubato-pi test
+        run: bash scripts/ci-local.sh
       - name: Remote production builds
         run: |
           npm --prefix packages/rubato-remote-hub run build

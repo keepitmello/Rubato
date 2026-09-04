@@ -24,7 +24,8 @@ while [ $# -gt 0 ]; do
       printf '%s\n' '사용법: ./install.sh [--apply] [--only-shell]' '' \
         '  인자 없음               설치 계획만 출력한다' \
         '  --apply                 이 클론에서 Rubato를 설치하고 검증한다' \
-        '  --only-shell            셸 alias 블록과 cmux 세션 복원만 다시 심는다'
+        '  --only-shell            셸 alias 블록과 cmux 세션 복원만 다시 심는다' \
+        '  (적용 시)               core.hooksPath=.githooks 로 푸시 게이트를 켠다'
       exit 0 ;;
     *) printf '모르는 옵션: %s\n' "$1" >&2; exit 2 ;;
   esac
@@ -119,6 +120,20 @@ if [ -z "$NODE24" ] || [ -z "$BUN" ]; then
 fi
 
 PATH="$(dirname "$NODE24"):$PATH"
+
+head_ "단계 0.5 · 푸시 게이트"
+# Stage 9 가 반복해서 깨진 이유: 실행 비트가 빠진 채 푸시되거나, 로컬에서
+# rubato-pi 테스트를 안 돌리고 올리는 것. 이 클론의 hooksPath 를 레포
+# .githooks 로 고정하면 pre-commit 이 +x 를 되돌리고 pre-push 가
+# scripts/ci-local.sh 를 돌린다. --no-verify 나 RUBATO_SKIP_CI_GATE=1 은
+# 비상용이다.
+if [ "$APPLY" -eq 0 ]; then
+  plan "git config core.hooksPath .githooks"
+else
+  git -C "$REPO" config core.hooksPath .githooks
+  chmod +x "$REPO/.githooks/pre-commit" "$REPO/.githooks/pre-push"
+  ok "푸시 전에 scripts/ci-local.sh 가 돈다"
+fi
 
 # 첫 설치와 재설치 모두 옛 사용자 상태와 현재 프로젝트 설정을 Rubato 경로로
 # 옮긴다. dry-run에서는 계획만 보여준다.
