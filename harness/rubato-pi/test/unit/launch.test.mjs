@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { adapterPath, providerOverlayPath, buildSenpiArgs, leadOverlayPath, statuslinePath, readPinnedVersions } from "../../src/launch.mjs";
+import { adapterPath, providerOverlayPath, buildSenpiArgs, leadOverlayPath, sameNodeBinary, senpiCliMainPath, senpiCliPath, senpiEntryPath, statuslinePath, readPinnedVersions } from "../../src/launch.mjs";
 import { PIN } from "../../src/policy.mjs";
 
 test("launcher pins exact engine plugin and senpi versions", () => {
@@ -104,4 +104,20 @@ test("print and json sessions inline the dispatched contract; interactive and rp
   assert.doesNotMatch(promptOf([]), /# Return/);
   assert.doesNotMatch(promptOf(["--mode", "rpc"]), /# Dispatched/);
   assert.doesNotMatch(promptOf(["--mode", "rpc"]), /# Return/);
+});
+
+
+test("interactive and help argv start at cli-main, version stays on the cheap cli.js path", () => {
+  assert.equal(senpiEntryPath([]), senpiCliMainPath());
+  assert.equal(senpiEntryPath(["--help"]), senpiCliMainPath());
+  assert.equal(senpiEntryPath(["--version"]), senpiCliPath());
+  assert.equal(senpiEntryPath(["-v"]), senpiCliPath());
+  assert.equal(buildSenpiArgs([])[0], senpiCliMainPath());
+  assert.equal(buildSenpiArgs(["--version"])[0], senpiCliPath());
+});
+
+
+test("the current process is treated as the same Node the launcher resolved", () => {
+  assert.equal(sameNodeBinary(process.execPath), true);
+  assert.equal(sameNodeBinary("/not/this/node"), false);
 });

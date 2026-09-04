@@ -69,6 +69,7 @@ export const enginePackageJson = join(enginePluginDir, "package.json");
 /** senpi 본체는 repository workspace에 설치한 것을 쓴다. */
 export const senpiDir = join(repoRoot, "node_modules", "@code-yeongyu", "senpi");
 export const senpiCli = join(senpiDir, "dist", "cli.js");
+export const senpiCliMain = join(senpiDir, "dist", "cli-main.js");
 export const senpiPackageJson = join(senpiDir, "package.json");
 export const senpiSkillsModule = join(senpiDir, "dist", "core", "skills.js");
 export const senpiSystemPromptModule = join(senpiDir, "dist", "core", "system-prompt.js");
