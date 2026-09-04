@@ -1,21 +1,20 @@
 import { join } from "node:path";
+import { registerDeferredExtension, shouldDeferExtensionActivation } from "../deferred-extensions.mjs";
 import { assertEngineBuilt, rubatoExtension } from "../engine-paths.mjs";
-import { resolveRole } from "../role-contract.mjs";
-import { promptForAgentStart } from "../system-prompt.mjs";
+import { installEvalSearchGuard } from "../eval-search-guard.mjs";
 import { isTeamMemberProcess } from "../member-identity.mjs";
 import { restoreMemberTaskEngine } from "../member-tools.mjs";
-import { rubatoPiMemoryComponent, rubatoPiTaskComponent } from "../rubato-runtime.mjs";
-import { DAG_RUBATO_OWNED_COMPONENTS } from "../policy.mjs";
-import { provisionSpecWorktrees } from "../team-worktrees.mjs";
-import { installStatusline } from "./statusline.mjs";
-import { installSessionTitle } from "./session-title.mjs";
-import { installEvalSearchGuard } from "../eval-search-guard.mjs";
 import { installMeasurementHooks } from "../measurement-recorder.mjs";
+import { DAG_RUBATO_OWNED_COMPONENTS } from "../policy.mjs";
+import { resolveRole } from "../role-contract.mjs";
+import { promptForAgentStart } from "../system-prompt.mjs";
+import { provisionSpecWorktrees } from "../team-worktrees.mjs";
 import { installRemoteSurface } from "./remote-surface.mjs";
 import { installServerCompaction } from "./server-compaction.mjs";
+import { installSessionTitle } from "./session-title.mjs";
+import { installStatusline } from "./statusline.mjs";
 
 assertEngineBuilt();
-const { composeRubatoExtension, rubatoComponents } = await import(rubatoExtension);
 
 const DAG_RUBATO_OWNED = new Set(DAG_RUBATO_OWNED_COMPONENTS);
 
@@ -36,35 +35,45 @@ function statuslineExtensionLoaded(argv = process.argv) {
   return cliExtensionLoaded(argv, "statusline.mjs");
 }
 
-const replaceMemory = rubatoPiMemoryComponent !== undefined;
-const dagOverlay = composeRubatoExtension([
-  ...rubatoComponents.filter((component) => DAG_RUBATO_OWNED.has(component.name) && (!replaceMemory || component.name !== "memory")),
-  ...(replaceMemory ? [rubatoPiMemoryComponent] : []),
-]);
-const taskComponent = rubatoPiTaskComponent;
+let activating;
+
+async function activateAdapterOverlay(pi) {
+  if (activating) return activating;
+  activating = (async () => {
+    // launch 가 `-e statusline.mjs` 를 adapter 보다 먼저 붙인다. 그 경로가
+    // 이미 깔렸으면 여기서 다시 install 하면 probe/handler 가 두 벌이 된다.
+    if (!statuslineExtensionLoaded()) {
+      const statusline = installStatusline(pi);
+      await statusline.attachHost?.();
+    }
+    const member = isTeamMemberProcess();
+    if (!member && process.env.RUBATO_LIVE_SESSION_ID) {
+      await installRemoteSurface(pi);
+    }
+    const { composeRubatoExtension, rubatoComponents } = await import(rubatoExtension);
+    const { rubatoPiMemoryComponent, rubatoPiTaskComponent } = await import("../rubato-runtime.mjs");
+    const replaceMemory = rubatoPiMemoryComponent !== undefined;
+    if (!leadOverlayLoaded(process.argv) && !member) {
+      const dagOverlay = composeRubatoExtension([
+        ...rubatoComponents.filter((component) => DAG_RUBATO_OWNED.has(component.name) && (!replaceMemory || component.name !== "memory")),
+        ...(replaceMemory ? [rubatoPiMemoryComponent] : []),
+      ]);
+      await dagOverlay(pi);
+    }
+    if (member && rubatoPiTaskComponent) {
+      await restoreMemberTaskEngine(composeRubatoExtension, rubatoPiTaskComponent, pi);
+    }
+  })();
+  return activating;
+}
 
 export default async function rubatoPiAdapter(pi) {
-  // launch 가 `-e statusline.mjs` 를 adapter 보다 먼저 붙인다. 그 경로가
-  // 이미 깔렸으면 여기서 다시 install 하면 probe/handler 가 두 벌이 된다.
-  if (!statuslineExtensionLoaded()) {
-    const statusline = installStatusline(pi);
-    await statusline.attachHost?.();
-  }
   installEvalSearchGuard(pi);
   installMeasurementHooks(pi);
   installServerCompaction(pi);
   const member = isTeamMemberProcess();
   const role = resolveRole();
   if (!member) installSessionTitle(pi);
-  if (!member && process.env.RUBATO_LIVE_SESSION_ID) {
-    await installRemoteSurface(pi);
-  }
-  if (!leadOverlayLoaded(process.argv) && !member) {
-    await dagOverlay(pi);
-  }
-  if (member && taskComponent) {
-    await restoreMemberTaskEngine(composeRubatoExtension, taskComponent, pi);
-  }
 
   pi.on("before_agent_start", async (event, ctx) => ({
     systemPrompt: promptForAgentStart(event, ctx, role),
@@ -82,4 +91,7 @@ export default async function rubatoPiAdapter(pi) {
       }
     }
   });
+
+  registerDeferredExtension(() => activateAdapterOverlay(pi));
+  if (!shouldDeferExtensionActivation()) return activateAdapterOverlay(pi);
 }

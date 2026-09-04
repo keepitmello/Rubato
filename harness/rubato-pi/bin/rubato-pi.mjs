@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { spawnRubatoPi } from "../src/launch.mjs";
+import { abandonBootChrome, enterBootChrome } from "../src/boot-chrome.mjs";
 
 function showCursor() {
   try {
@@ -9,7 +9,10 @@ function showCursor() {
   }
 }
 
+enterBootChrome();
+
 try {
+  const { spawnRubatoPi } = await import("../src/launch.mjs");
   const child = await spawnRubatoPi();
   if (!child) {
     // senpi 를 이 프로세스에서 올렸다. spawnRubatoPi 가 main() 끝까지 await 한다.
@@ -20,12 +23,14 @@ try {
       process.exit(code ?? 1);
     });
     child.on("error", (error) => {
+      abandonBootChrome();
       showCursor();
       console.error(error.message);
       process.exit(1);
     });
   }
 } catch (error) {
+  abandonBootChrome();
   showCursor();
   console.error(error.message);
   process.exit(1);
