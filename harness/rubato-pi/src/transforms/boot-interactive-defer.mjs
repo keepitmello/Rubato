@@ -153,5 +153,16 @@ export function injectInteractiveDeferDialogs(source) {
 ${DEFERRED_ASSIGNMENT}`,
     "interactive defer await prefetch",
   );
+  next = replaceOnce(
+    next,
+    `    async rebindCurrentSession(options = {}) {
+        InteractiveMode.restoreCompactionEscapeOverride(this);
+`,
+    `    async rebindCurrentSession(options = {}) {
+        InteractiveMode.restoreCompactionEscapeOverride(this);
+        await import(${JSON.stringify(deferredExtensionsHref())}).then((mod) => mod.activateDeferredExtensions());
+`,
+    "interactive defer rebind activate",
+  );
   return next;
 }

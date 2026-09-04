@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { registerDeferredExtension, shouldDeferExtensionActivation } from "../deferred-extensions.mjs";
+import { runOrDeferExtension } from "../deferred-extensions.mjs";
 import { assertEngineBuilt, rubatoExtension } from "../engine-paths.mjs";
 import { installEvalSearchGuard } from "../eval-search-guard.mjs";
 import { isTeamMemberProcess } from "../member-identity.mjs";
@@ -35,11 +35,12 @@ function statuslineExtensionLoaded(argv = process.argv) {
   return cliExtensionLoaded(argv, "statusline.mjs");
 }
 
-let activating;
+const activatingByPi = new WeakMap();
 
 async function activateAdapterOverlay(pi) {
-  if (activating) return activating;
-  activating = (async () => {
+  const existing = activatingByPi.get(pi);
+  if (existing) return existing;
+  const activating = (async () => {
     // launch 가 `-e statusline.mjs` 를 adapter 보다 먼저 붙인다. 그 경로가
     // 이미 깔렸으면 여기서 다시 install 하면 probe/handler 가 두 벌이 된다.
     if (!statuslineExtensionLoaded()) {
@@ -64,6 +65,7 @@ async function activateAdapterOverlay(pi) {
       await restoreMemberTaskEngine(composeRubatoExtension, rubatoPiTaskComponent, pi);
     }
   })();
+  activatingByPi.set(pi, activating);
   return activating;
 }
 
@@ -92,6 +94,5 @@ export default async function rubatoPiAdapter(pi) {
     }
   });
 
-  registerDeferredExtension(() => activateAdapterOverlay(pi));
-  if (!shouldDeferExtensionActivation()) return activateAdapterOverlay(pi);
+  return runOrDeferExtension(() => activateAdapterOverlay(pi));
 }
