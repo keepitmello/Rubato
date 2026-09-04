@@ -1,3 +1,5 @@
+import { pathToFileURL } from "node:url";
+import { senpiExtensionRunner } from "../engine-paths.mjs";
 import {
   cacheStatus,
   formatBackgroundLine,
@@ -344,7 +346,7 @@ export function installStatusline(pi, { processStartedAt = PROCESS_STARTED_AT, s
     paintHostFooter,
     async attachHost() {
       try {
-        const { ExtensionRunner } = await import("@code-yeongyu/senpi");
+        const { ExtensionRunner } = await import(pathToFileURL(senpiExtensionRunner).href);
         hookExtensionRunnerFooter(ExtensionRunner, applyFooter);
       } catch {
         // Unit tests and non-senpi hosts keep the event-path installer only.
