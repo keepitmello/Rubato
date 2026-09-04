@@ -39,6 +39,16 @@ if [ ! -d "$SRC" ]; then
 fi
 mkdir -p "$DEST"
 
+# 번들에서 뺀 Orca 스킬은 설치본에도 남기지 않는다. 일반 로컬 스킬은
+# 보존하지만, 이 둘은 Orca 가 심은 디스커버리 스텁이라 업데이트 때 지운다.
+removed=0
+for name in orca-cli orchestration; do
+  if [ -e "$DEST/$name" ]; then
+    rm -rf "$DEST/$name"
+    removed=$((removed + 1))
+  fi
+done
+
 same_tree() {
   diff -qr -x .DS_Store -x .git "$1" "$2" >/dev/null 2>&1
 }
@@ -101,7 +111,7 @@ install_outpost_cli() {
 }
 install_outpost_cli
 
-echo "install-skills: 새로 $added, 이미 최신 $current, 갱신 $replaced, 로컬 유지 $kept -> $DEST"
+echo "install-skills: 새로 $added, 이미 최신 $current, 갱신 $replaced, 로컬 유지 $kept, 폐기 $removed -> $DEST"
 if [ "$kept" -gt 0 ]; then
   if [ -n "$SYNC_FROM" ]; then
     echo "  (로컬에서 고친 스킬은 두었다. 덮어쓰려면 --force)"
