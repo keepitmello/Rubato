@@ -1,11 +1,11 @@
 ---
 name: dispatching
-description: "Writing a brief that hands work to another session: separate binding from hints, carry budget and return contract, watch after dispatch."
+description: "Handing work to another session, or sending the next leg to an existing one: decide continue-versus-fresh, separate binding from hints, carry budget and return contract, watch after dispatch. Read before every Agent spawn or AgentSend."
 ---
 
 # Dispatching
 
-Run this when you are about to hand work to another session (a teammate, a subagent, a freehand worker on any lane). It shapes the brief you are composing; it is not a template to fill.
+Run this when you are about to hand work to another session (a teammate, a subagent, a freehand worker on any lane), and when you are about to send the next leg of work to a session that already exists. It shapes the brief you are composing and the choice of who receives it; it is not a template to fill.
 
 ## What binds, and what is a lead
 
@@ -34,11 +34,19 @@ Two boundary cases, drawn from a real incident:
 
 A worker whose session loads a role contract already knows how to read this brief. A worker that loads none (a freehand lane, an ad-hoc helper) gets one line instead: start by reading Skill(dispatched). Where that skill cannot reach the worker's harness, carry the license inline: repo claims here are provisional; verify them; a conflict with a binding line returns with evidence and a recommendation; at budget, return what you covered; no finding is a valid result.
 
+## Reuse the agent or start a new one
+
+Part of every dispatch is choosing who gets it. If an agent already worked on this same problem, send the next task to that agent: it has already read the files, and a new one would read them all again. This holds when the work moves from looking to building, from building to fixing a failed test, or when you changed your mind about the approach after seeing its report.
+
+Start a new agent for three reasons only: you want a second opinion that has not seen the first agent's thinking (a reviewer), the task is about a different problem, or the old agent is stuck on a wrong idea it cannot let go of. A reviewer starting cold is the point, not a cost. A stronger model being available is not one of the three; once you have decided on a new agent, Skill(model-guide) picks its model.
+
+If `AgentSend` says the agent cannot be continued (it was evicted, cancelled, crashed, or expired), start a new one and pass along whatever the old one left behind (its report, files, evidence) as leads to verify. If nothing was left, say so in the brief.
+
 ## While it is out
 
 A stalled worker has a shape you can see from outside: budget draining while nothing new appears (no edit, no test, no narrowed hypothesis appropriate to the task) and the same surface being read again. That shape, not elapsed time alone, is the signal.
 
-Cut in and ask. Asked directly, a worker usually knows exactly what blocked it, and the answer arrives in one exchange where another hour of silence would have produced nothing. Steering an existing session keeps the thread; spawning a replacement pays a cold read for the same brief.
+Cut in and ask. Asked directly, a worker usually knows exactly what blocked it, and the answer arrives in one exchange where another hour of silence would have produced nothing. Steering keeps the thread, as above; a replacement pays a cold read for the same brief.
 
 ## When it comes back empty
 
