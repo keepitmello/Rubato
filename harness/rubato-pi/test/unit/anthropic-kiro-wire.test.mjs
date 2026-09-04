@@ -219,12 +219,7 @@ test("pinned Anthropic 모델 metadata 를 다시 적지 않았다", async () =>
   const native = pinned.anthropicProvider().getModels();
   const ours = anthropic.getModels().map((model) => `${model.id}:${model.contextWindow}:${model.maxTokens}`);
   const pin = native.map((model) => `${model.id}:${model.contextWindow}:${model.maxTokens}`);
-  const fable5 = native.find((model) => model.id === "claude-fable-5");
-  assert.deepEqual(ours.filter((entry) => !entry.startsWith("claude-fable-5-1:")), pin);
-  assert.deepEqual(
-    ours.filter((entry) => entry.startsWith("claude-fable-5-1:")),
-    [`claude-fable-5-1:${fable5.contextWindow}:${fable5.maxTokens}`],
-  );
+  assert.deepEqual(ours, pin);
 });
 
 // -------------------------------------------------------------- Kiro wire

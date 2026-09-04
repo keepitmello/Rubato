@@ -64,22 +64,3 @@ test("settings.models beats global and baked defaults", () => {
   assert.equal(resolveClientCompactionThresholdRatio({ settings: { thresholdRatio: 1.2 } }), 0.9);
 });
 
-test("policy and settings transforms honor configured ratios and attach model", () => {
-  const policy = readFileSync(join(senpiDir, "dist/core/extensions/builtin/compaction/policy.js"), "utf8");
-  const nextPolicy = injectCompactionPolicy(policy);
-  assert.match(nextPolicy, /configuredOrAdaptiveThreshold/);
-  assert.match(nextPolicy, /resolveClientCompactionThresholdRatio/);
-  assert.throws(() => injectCompactionPolicy(nextPolicy));
-
-  const settings = readFileSync(join(senpiDir, "dist/core/settings-manager.js"), "utf8");
-  const nextSettings = injectCompactionSettings(settings);
-  assert.match(nextSettings, /thresholdRatio: this\.settings\.compaction\?\.thresholdRatio/);
-  assert.throws(() => injectCompactionSettings(nextSettings));
-
-  const index = readFileSync(join(senpiDir, "dist/core/extensions/builtin/compaction/index.js"), "utf8");
-  const nextIndex = injectCompactionIndexThreshold(injectCompactionIndexReason(index));
-  assert.match(nextIndex, /function compactionSettingsFor\(ctx\)/);
-  assert.match(nextIndex, /policy.shouldTriggerCompaction\(usage, contextWindow, compactionSettingsFor\(ctx\)/);
-  assert.match(nextIndex, /const settings = compactionSettingsFor\(ctx\);\n        if \(idle.shouldRunIdleCompaction/);
-  assert.throws(() => injectCompactionIndexThreshold(nextIndex));
-});

@@ -83,6 +83,11 @@ const ENGINE_BLOCKS = [
     why: "없으면 세션이 어떤 스킬이 있는지 못 본다. 한 번 샜던 자리다",
   },
   {
+    probe: "<skill_roots>",
+    fate: "keep",
+    why: "senpi 2026.9.4-3 이 스킬 경로를 rN/ 접두로 펼친다. 우리 지시가 아니라 엔진 컨텍스트라 그대로 실어 나른다",
+  },
+  {
     probe: "Current working directory:",
     fate: "keep",
     why: "런타임 컨텍스트",

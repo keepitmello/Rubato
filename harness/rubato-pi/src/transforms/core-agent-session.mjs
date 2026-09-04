@@ -82,8 +82,8 @@ export function injectAgentSession(source, hrefs = agentSessionHrefs()) {
   );
   next = replaceOnce(
     next,
-    "    _emitQueueUpdate() {\n        this._emit({\n            type: \"queue_update\",\n            steering: [...this._steeringMessages],\n            followUp: [...this._followUpMessages],\n        });\n    }",
-    "    _emitQueueUpdate() {\n        this._emit({\n            type: \"queue_update\",\n            steering: [...this._steeringMessages],\n            followUp: [...this._followUpMessages],\n            pendingInputs: this._requestRunTracker?.snapshot().pendingInputs ?? [],\n        });\n    }",
+    "    _emitQueueUpdate() {\n        this._emit({\n            type: \"queue_update\",\n            steering: [...this._steeringMessages],\n            followUp: [...this._followUpMessages],\n            ordered: [...this._queuedInputOrder].sort((a, b) => a.enqueueOrder - b.enqueueOrder),\n        });\n    }",
+    "    _emitQueueUpdate() {\n        this._emit({\n            type: \"queue_update\",\n            steering: [...this._steeringMessages],\n            followUp: [...this._followUpMessages],\n            ordered: [...this._queuedInputOrder].sort((a, b) => a.enqueueOrder - b.enqueueOrder),\n            pendingInputs: this._requestRunTracker?.snapshot().pendingInputs ?? [],\n        });\n    }",
     "queue_update pendingInputs",
   );
   next = replaceOnce(
@@ -130,8 +130,8 @@ export function injectAgentSession(source, hrefs = agentSessionHrefs()) {
   );
   next = replaceOnce(
     next,
-    "    setFollowUpMode(mode) {\n        this.agent.followUpMode = mode;\n        this.settingsManager.setFollowUpMode(mode);\n    }",
-    "    setFollowUpMode(mode) {\n        if (mode !== \"one-at-a-time\")\n            this._sessionLogger?.warn?.(\"followUpMode forced to one-at-a-time\", { requested: mode });\n        this.agent.followUpMode = \"one-at-a-time\";\n        this.settingsManager.setFollowUpMode(\"one-at-a-time\");\n    }",
+    "    setFollowUpMode(mode) {\n        this.agent.followUpMode = mode;\n        this.settingsManager.setFollowUpMode(mode);\n        this._emitSessionSettingsChanged();\n    }",
+    "    setFollowUpMode(mode) {\n        if (mode !== \"one-at-a-time\")\n            this._sessionLogger?.warn?.(\"followUpMode forced to one-at-a-time\", { requested: mode });\n        this.agent.followUpMode = \"one-at-a-time\";\n        this.settingsManager.setFollowUpMode(\"one-at-a-time\");\n        this._emitSessionSettingsChanged();\n    }",
     "force followUpMode setter",
   );
   next = replaceOnce(
