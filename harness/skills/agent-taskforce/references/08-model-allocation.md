@@ -1,6 +1,6 @@
 # Model allocation for the lead
 
-*Lead.* **Canonical routing guidance lives in Skill(model-guide)** (`~/.agents/skills/model-guide/SKILL.md`) — cognitive profiles, bottleneck routing, ownership preservation, verifier pairings, and the current catalog mapping. Read it there; this file keeps only what is team-specific.
+*Lead.* **Canonical routing guidance lives in Skill(model-guide)** (`~/.agents/skills/model-guide/SKILL.md`) — cognitive profiles, bottleneck routing, verifier pairings, and the current catalog mapping. Session continuity (continue an existing session or start fresh) lives in Skill(dispatching). Read it there; this file keeps only what is team-specific.
 
 The human operator chooses whether framing is used and which model is lead. You choose the smallest execution roster from model-guide's routing, explain it briefly, and wait for approval before spawning.
 
