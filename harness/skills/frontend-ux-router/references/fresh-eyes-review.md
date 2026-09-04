@@ -61,7 +61,7 @@ failure even if it happens to be right.
 
 ## Dispatcher notes
 
-- Any capable agent with vision can be the reviewer; a cheap fast model is fine — the reviewer needs perception, not implementation skill. In a meight environment, a one-shot `luna` dispatch with the prompt above and screenshot paths is sufficient.
+- Any capable agent with vision can be the reviewer; a cheap fast model is fine — the reviewer needs perception, not implementation skill.
 - Run the reviewer in a fresh context (new worker/session). Never reuse the implementer's session or a session that saw the brief.
 - When the screen's actor is an expert (diagnostic tools, admin consoles), set the persona line to that expert. The gate tests fit-to-actor, not universal simplicity.
 - Attach the verdict and the reviewer's raw answers to the completion evidence. `VERIFIED` requires a PASS on record.
