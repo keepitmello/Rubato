@@ -142,4 +142,14 @@ describe("live inventory pruning", () => {
     expect(registry.get(SESSION_ID)?.title).toBe("Protocol work")
     expect(registry.updateTitle(SESSION_ID, "  ")).toBeFalse()
   })
+
+  test("keeps a starting session whose zmx process is still running", () => {
+    const registry = new LiveRegistry(HOST_ID, { discover: async () => [] })
+    registry.trackStarting(summary({ lifecycle: "starting", title: "repo", cwd: "/tmp/repo" }))
+    const later = Date.now() + 120_001
+    expect(registry.pruneStuckStarting(later, 120_000, new Set([SESSION_ID]))).toEqual([])
+    expect(registry.get(SESSION_ID)?.lifecycle).toBe("starting")
+    expect(registry.pruneStuckStarting(later, 120_000, new Set())).toEqual([SESSION_ID])
+    expect(registry.get(SESSION_ID)).toBeUndefined()
+  })
 })

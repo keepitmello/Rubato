@@ -237,12 +237,21 @@ export class LiveRegistry {
     return removed
   }
 
-  /** Starting sessions that never become ready. */
-  pruneStuckStarting(now = Date.now(), timeoutMs = STARTING_TIMEOUT_MS): readonly LiveSessionId[] {
+  /**
+   * Starting sessions that never become ready. A still-running zmx pane is not
+   * stuck: register may still be retrying (schema mismatch, hub restart). Killing
+   * it here is what made a live TUI vanish after two minutes.
+   */
+  pruneStuckStarting(
+    now = Date.now(),
+    timeoutMs = STARTING_TIMEOUT_MS,
+    discoveredIds?: ReadonlySet<LiveSessionId>,
+  ): readonly LiveSessionId[] {
     const removed: LiveSessionId[] = []
     for (const [id, entry] of this.#entries) {
       if (entry.summary.lifecycle !== "starting") continue
       if (now - entry.lastActivityAt < timeoutMs) continue
+      if (discoveredIds?.has(id)) continue
       this.#entries.delete(id)
       removed.push(id)
     }

@@ -23,6 +23,7 @@ import { injectProviderTimeoutRetry, isProviderTimeoutRetryUrl } from "./core-re
 import { injectServiceTier, isServiceTierUrl } from "./core-service-tier.mjs";
 import { injectSpeculative, isSpeculativeUrl } from "./core-speculative.mjs";
 import { injectMessages, isMessagesUrl } from "./core-messages.mjs";
+import { injectRoutineSettings, isRoutineSettingsUrl } from "./core-routine-settings.mjs";
 import { injectSessionPersist, isSessionManagerUrl } from "./core-session-persist.mjs";
 import { injectStreamWatchdog, isStreamWatchdogUrl } from "./core-stream-watchdog.mjs";
 
@@ -52,6 +53,7 @@ export function applyCoreSessionTransforms(url, source, applyTransform) {
   if (isSettingsManagerUrl(url)) source = applyTransform(source, injectCompactionSettings);
   if (isSessionManagerUrl(url)) source = applyTransform(source, injectSessionPersist);
   if (isMessagesUrl(url)) source = applyTransform(source, injectMessages);
+  if (isRoutineSettingsUrl(url)) source = applyTransform(source, injectRoutineSettings);
   return source;
 }
 

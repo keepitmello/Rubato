@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { RemoteSurface, SurfaceEventBuffer } from "../../src/extensions/remote-surface.mjs";
+import { isProcessExitShutdown, RemoteSurface, SurfaceEventBuffer } from "../../src/extensions/remote-surface.mjs";
 
 const protocol = {
   REMOTE_PROTOCOL_NAME: "rubato.remote.v1",
@@ -537,9 +537,10 @@ test("agent_settled snapshot reads the already-completed control timeline", () =
   const snapshot = surface.buffer.drain().find((record) => record.kind === "surface.snapshot");
   assert.equal(snapshot.state.timeline.activeRequestRunId, undefined);
   assert.equal(snapshot.state.timeline.runs[0].status, "completed");
-  assert.equal(snapshot.summary.presentation.lastFinalResponsePreview, "Done.");
-  assert.equal(snapshot.summary.presentation.lastFinalResponseAt, "2026-08-31T01:00:05.000Z");
-  assert.equal(snapshot.summary.presentation.activeRequest, undefined);
+  assert.equal(Object.hasOwn(snapshot.summary, "presentation"), false);
+  assert.equal(surface.snapshot().summary.presentation.lastFinalResponsePreview, "Done.");
+  assert.equal(surface.snapshot().summary.presentation.lastFinalResponseAt, "2026-08-31T01:00:05.000Z");
+  assert.equal(surface.snapshot().summary.presentation.activeRequest, undefined);
   assert.equal(snapshot.state.entries[0].text, "Done.");
 });
 
@@ -657,4 +658,90 @@ test("summary zmxName is derived from this liveSessionId, never a leaked env nam
     if (previousZmx === undefined) delete process.env.ZMX_SESSION;
     else process.env.ZMX_SESSION = previousZmx;
   }
+});
+
+test("only quit session_shutdown is a process-exit", () => {
+  assert.equal(isProcessExitShutdown("quit"), true);
+  assert.equal(isProcessExitShutdown("resume"), false);
+  assert.equal(isProcessExitShutdown("reload"), false);
+  assert.equal(isProcessExitShutdown("new"), false);
+  assert.equal(isProcessExitShutdown("fork"), false);
+  assert.equal(isProcessExitShutdown(undefined), false);
+});
+
+test("in-process session_shutdown does not emit live.exited", () => {
+  const surface = new RemoteSurface({}, protocol, {
+    buffer: { maxEvents: 10, maxBytes: 100_000 },
+    clock: { now: () => 1_000, setTimeout, clearTimeout, setInterval, clearInterval },
+  });
+  surface.observe("session_shutdown", { type: "session_shutdown", reason: "resume" });
+  surface.observe("session_shutdown", { type: "session_shutdown", reason: "reload" });
+  surface.observe("session_shutdown", { type: "session_shutdown", reason: "new" });
+  assert.equal(surface.buffer.drain().some((record) => record.type === "live.exited"), false);
+  surface.observe("session_shutdown", { type: "session_shutdown", reason: "quit" });
+  const records = surface.buffer.drain();
+  assert.equal(records.length, 1);
+  assert.equal(records[0].type, "live.exited");
+});
+
+test("register summary never carries presentation even when a timeline exists", async () => {
+  const sent = [];
+  const timeline = {
+    schemaVersion: 1,
+    runs: [],
+    pendingInputs: [],
+    hasOlder: false,
+  };
+  const surface = new RemoteSurface({
+    getInteractiveControl: () => ({ snapshot: () => ({ requestTimeline: timeline }), listCommands: () => [] }),
+  }, protocol, {
+    surfaceToken: "surface-token",
+    connect: async () => ({ send: (value) => sent.push(value), close() {} }),
+    clock: { now: () => 1_000, setTimeout, clearTimeout, setInterval, clearInterval },
+  });
+  await surface.connectNow();
+  assert.equal(sent[0].kind, "surface.register");
+  assert.equal(Object.hasOwn(sent[0].summary, "presentation"), false);
+});
+
+test("old protocol schemas drop presentation instead of aborting connect", async () => {
+  const sent = [];
+  let closed = false;
+  const rejecting = {
+    ...protocol,
+    surfaceToHubFrameSchema: {
+      parse(value) {
+        if (value?.summary && Object.hasOwn(value.summary, "presentation")) {
+          throw new Error("$.summary.presentation: is not allowed");
+        }
+        return value;
+      },
+    },
+  };
+  const surface = new RemoteSurface({
+    getInteractiveControl: () => ({
+      snapshot: () => ({
+        requestTimeline: {
+          schemaVersion: 1,
+          runs: [],
+          pendingInputs: [{ id: "q1", delivery: "followUp", textPreview: "later", textLength: 5, imageCount: 0, enqueuedAt: "2026-08-31T01:00:06.000Z", source: "remote" }],
+          hasOlder: false,
+        },
+      }),
+      listCommands: () => [],
+    }),
+  }, rejecting, {
+    surfaceToken: "surface-token",
+    connect: async () => ({ send: (value) => sent.push(value), close: () => { closed = true; } }),
+    clock: { now: () => 1_000, setTimeout: () => 1, clearTimeout, setInterval, clearInterval },
+  });
+  await surface.connectNow();
+  await surface.receive({ ...registered, negotiation: { compatible: true, version: 2 } });
+  assert.equal(closed, false);
+  assert.equal(sent[0].kind, "surface.register");
+  assert.equal(Object.hasOwn(sent[0].summary, "presentation"), false);
+  const snapshots = sent.filter((value) => value.kind === "surface.snapshot");
+  assert.equal(snapshots.length > 0, true);
+  assert.equal(Object.hasOwn(snapshots[0].summary, "presentation"), false);
+  assert.equal(surface.presentationUnsupported, true);
 });
