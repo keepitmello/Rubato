@@ -337,8 +337,8 @@ fi
 "$HARNESS/scripts/install-skills.sh" --sync-from "$LOCAL" \
   && ok "번들 스킬" || fail "번들 스킬 설치에 실패했습니다. 소스는 받았지만 업데이트는 완료되지 않았습니다."
 
-# 확장은 덮어쓰지 않는다. 이 디렉터리는 Orca 가 심는 확장(orca-*.ts)과
-# 사람이 손본 판이 같이 사는 자리라, 새 파일만 넣고 있는 것은 둔다.
+# 확장은 덮어쓰지 않는다. 사람이 손본 판이 사는 자리라 새 파일만 넣고
+# 있는 것은 둔다. Orca 가 심어 둔 orca-*.ts 는 install-extensions 가 지운다.
 if [ "$need_extensions" = 1 ]; then
   "$HARNESS/scripts/install-extensions.sh" >/dev/null 2>&1 \
     && ok "번들 확장" || fail "번들 확장 설치에 실패했습니다. 소스는 받았지만 업데이트는 완료되지 않았습니다."
