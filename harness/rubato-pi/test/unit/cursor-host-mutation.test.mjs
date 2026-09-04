@@ -115,10 +115,18 @@ test("same-file writes serialize and the last result remains", async () => {
   assert.ok(["one", "two", "three"].includes(final));
 });
 
-test("expectedWriteBytes prefers raw bytes over text", () => {
+test("empty proto fileBytes do not discard fileText", () => {
+  assert.deepEqual(expectedWriteBytes({ bytes: new Uint8Array(), content: "hello" }), Buffer.from("hello"));
   assert.deepEqual(expectedWriteBytes({ bytes: Uint8Array.from([9]), content: "x" }), Buffer.from([9]));
   assert.deepEqual(expectedWriteBytes({ content: "ab" }), Buffer.from("ab"));
+  assert.deepEqual(expectedWriteBytes({ bytes: new Uint8Array() }), Buffer.alloc(0));
   assert.throws(() => expectedWriteBytes({}), /missing file text/);
+});
+
+test("WriteArgs-shaped hostWrite keeps fileText when fileBytes is empty", async () => {
+  const cwd = await sessionDir();
+  await hostWrite({ cwd, path: "note.txt", content: "from-text", bytes: new Uint8Array() });
+  assert.equal(await readFile(join(cwd, "note.txt"), "utf8"), "from-text");
 });
 
 test("applyUniqueEdits rejects a duplicate match before any write", () => {
@@ -131,6 +139,7 @@ test("bridge write/edit frames call the host mutation owner", () => {
   assert.match(next, /hostWriteResult\(options, args\.toolCallId, "write"/);
   assert.match(next, /hostEditResult\(options, call\.toolCallId/);
   assert.doesNotMatch(next, /write: async \(args\) => executeTool\(options, "write"/);
+  assert.doesNotMatch(next, /piWrite: async \(call\) => executeTool\(options, "write"/);
   assert.doesNotMatch(next, /piEdit: async \(call\) => executeTool\(options, "edit"/);
   assert.match(next, /cursor-host-mutation\.mjs/);
 });
