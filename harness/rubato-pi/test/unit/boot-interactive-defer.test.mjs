@@ -57,4 +57,5 @@ test("the boot-perf cluster defers InteractiveMode dialogs without drift", () =>
   assert.match(next, /let AssistantMessageComponent;/);
   assert.match(next, /deferredInteractiveUi/);
   assert.match(next, /activateDeferredExtensions/);
+  assert.match(next, /async rebindCurrentSession[\s\S]*activateDeferredExtensions/);
 });
