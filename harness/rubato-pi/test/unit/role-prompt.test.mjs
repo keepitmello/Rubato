@@ -27,7 +27,7 @@ test("lead prompt names the pi rails and no fx ones", () => {
   // team_create 승인 절차는 Skill(agent-taskforce) 가 소유하고, 일회성 Agent는
   // lead 판단으로 바로 쓴다. 문장 대신 그 권한 배치를 고정한다.
   assert.match(text, /`Agent` agents are available at your discretion/);
-  assert.match(text, /run Skill\(agent-taskforce\) before `team_create`/);
+  assert.match(text, /read Skill\(agent-taskforce\).*before `team_create`/);
   // Phrased "You choose each child's model" until the vocabulary moved from child to
   // agent. The invariant is that the lead owns per-agent model choice, not the noun it
   // was written with — this is the third time this file pinned a sentence and broke on a
@@ -140,12 +140,19 @@ test("role prompts delegate provider resolution and fallback to the harness", ()
   }
 });
 
-test("Outpost routing starts from local evidence and expands on material external value", () => {
+test("shared prompt routes Aside and Outpost by the quality bottleneck", () => {
   for (const role of ["lead", "owner"]) {
     const text = rolePrompt(role);
     assert.match(text, /Build the map from workspace evidence/);
-    assert.match(text, /current external evidence, unfamiliar-domain research, or an independent view can materially change a costly decision/);
-    assert.doesNotMatch(text, /research it through Skill\(outpost\).*not as a last resort/);
+  }
+  for (const role of ["lead", "owner", "verifier", "agent"]) {
+    const text = rolePrompt(role);
+    assert.match(text, /by the main quality bottleneck/);
+    assert.match(text, /breadth, recall, freshness, or browser interaction favors Aside/);
+    assert.match(text, /reasoning depth or judgment favors Outpost/);
+    assert.match(text, /Aside gathers evidence and Outpost analyzes it/);
+    assert.doesNotMatch(text, /Aside .* is the default route/);
+    assert.doesNotMatch(text, /current external evidence, unfamiliar-domain research/);
   }
 });
 

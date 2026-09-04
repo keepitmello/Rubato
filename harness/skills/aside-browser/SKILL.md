@@ -1,19 +1,19 @@
 ---
-name: aside-browser
+name: "aside-browser"
 version: 2
-description: Use this skill for any task that needs a browser.
+description: "Use when research quality depends on broad, fresh, high-recall evidence collection, or when the task requires direct browser interaction."
 ---
 
 # Aside browser
 
-Aside is an AI browser. Inside Aside, there is an intelligent agent designed to handle complex tasks across user's credentials, cookies, browsing history, and various websites the user uses.  
-Default: hand the work to Aside. Skip JavaScript unless the user named Playwright or asked you to attach to a specific tab and run code. Do not mix both in one request.
+Aside is an AI browser. Inside Aside, there is an intelligent agent designed to handle complex tasks across user's credentials, cookies, browsing history, and various websites the user uses.
+Use it when the main quality bottleneck is breadth, recall, freshness, or direct browser interaction. Skip JavaScript unless the user named Playwright or asked you to attach to a specific tab and run code. Do not mix both in one request.
 
 `aside --help` and `aside <command> --help` print current flags and examples.
 
 ## Run the task to Aside
 
-Use this for research or actions on websites like Slack or Gmail. Aside plans the steps and controls the browser. Plain text only.
+Give Aside the whole browser-bound outcome. It plans the steps and controls the browser. When its evidence will feed later analysis, require source links, dates, quotations, contradictions, and collection gaps. Plain text only.
 
 Start Aside Browser before running CLI commands. (Use `aside -h` to see how.)
 
