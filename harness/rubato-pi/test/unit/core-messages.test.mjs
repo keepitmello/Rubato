@@ -11,9 +11,10 @@ import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
 
-import { senpiDir } from "../../src/engine-paths.mjs";
+import { senpiDir, senpiNested } from "../../src/engine-paths.mjs";
 import { remapHiddenCustomTurns } from "../../src/transforms/remap-hidden-custom-turns.mjs";
 import { injectMessages, isMessagesUrl } from "../../src/transforms/core-messages.mjs";
+import { injectContextTokensGuard, isContextTokensUrl } from "../../src/transforms/core-compaction.mjs";
 
 const MESSAGES = `${senpiDir}/dist/core/messages.js`;
 
@@ -29,6 +30,14 @@ function convertOne(message) {
 
 function texts(message) {
   return (message.content ?? []).map((block) => block.text);
+}
+
+function assertEmptyUsage(message) {
+  assert.equal(message.usage?.totalTokens, 0);
+  assert.equal(message.usage?.input, 0);
+  assert.equal(message.usage?.output, 0);
+  assert.equal(message.usage?.cacheRead, 0);
+  assert.equal(message.usage?.cacheWrite, 0);
 }
 
 test("isMessagesUrl matches senpi core messages", () => {
@@ -61,6 +70,7 @@ test("#given a user follow-up then a hidden memory notice #when convertToLlm rem
   assert.equal(remapped.length, 2);
   assert.equal(remapped[0].role, "assistant");
   assert.match(texts(remapped[0])[0], /memory_notice/);
+  assertEmptyUsage(remapped[0]);
   assert.equal(remapped[1].role, "user");
   assert.equal(texts(remapped[1])[0].startsWith("ㅇㅇ 해봐."), true);
 });
@@ -89,6 +99,7 @@ test("#given user then restoration then notice #when convertToLlm remaps #then b
 
   assert.equal(remapped.length, 2);
   assert.equal(remapped[0].role, "assistant");
+  assertEmptyUsage(remapped[0]);
   assert.deepEqual(texts(remapped[0]), [
     "[Restored context after compaction — files and skills from before compaction]",
     "<memory_notice>\\n- 10 user turns since your last memory save.\\n</memory_notice>",
@@ -193,7 +204,16 @@ test("installed convertToLlm remaps a trailing memory notice to assistant before
   ]);
   assert.equal(converted.length, 2);
   assert.equal(converted[0].role, "assistant");
+  assertEmptyUsage(converted[0]);
   assert.match(texts(converted[0])[0], /After compaction/);
   assert.equal(converted[1].role, "user");
   assert.equal(texts(converted[1])[0], "ㅇㅇ 해봐. 이어가기까지 잘 되는지.");
+});
+
+test("injectContextTokensGuard skips totalTokens when usage is missing", () => {
+  const estimate = `${senpiNested("@earendil-works", "pi-ai")}/dist/utils/estimate.js`;
+  const source = readFileSync(estimate, "utf8");
+  assert.equal(isContextTokensUrl(pathToFileURL(estimate).href), true);
+  const patched = injectContextTokensGuard(source);
+  assert.match(patched, /if \(!usage\) return 0;/);
 });
