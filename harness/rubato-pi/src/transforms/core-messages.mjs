@@ -21,6 +21,7 @@ const FILTER_NEEDLE = "    })\n        .filter((m) => m !== undefined);\n";
 /**
  * Remap hidden custom turns to assistant and keep the latest user message last
  * so a memory notice or post-compact restoration cannot steal the user turn.
+ * Notices with no later user stay user-role so Fable 5.1 is not sent assistant prefill.
  */
 export function injectMessages(source, hrefs = messagesHrefs()) {
   const remapHref = hrefs.remapHiddenCustom ?? messagesHrefs().remapHiddenCustom;

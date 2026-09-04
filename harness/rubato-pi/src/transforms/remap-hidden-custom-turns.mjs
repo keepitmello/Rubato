@@ -5,10 +5,15 @@
  * the 644k-token compact: the Korean follow-up was on disk, the model only
  * saw <memory_notice> / post-compact restoration).
  *
- * display:false customs are harness speech, not the user. Map them to
- * assistant turns and place any that currently sit after the latest user
- * message immediately before that user, so the request still ends on the
- * user's text (no user-turn pollution, no assistant prefill of the notice).
+ * display:false customs are harness speech, not the user. When they sit
+ * after the latest user with nothing else in between, map them to assistant
+ * and place them immediately before that user so the request still ends on
+ * the user's text.
+ *
+ * If a later user does not exist — notice after an assistant reply, or a
+ * notice-only prefix — keep them as user. Hoisting in that shape appends
+ * the real assistant after the last user and Fable 5.1 400s it as prefill
+ * ("This model does not support assistant message prefill").
  * Visible custom messages keep senpi's user-role mapping.
  *
  * @param {readonly unknown[]} messages
@@ -47,7 +52,9 @@ function hoistHiddenAssistantsBeforeLastUser(messages, hidden) {
   for (let index = 0; index < messages.length; index += 1) {
     if (messages[index]?.role === "user") lastUser = index;
   }
-  if (lastUser < 0) return messages;
+  // No user turn: a remapped notice would be the whole request, i.e. assistant
+  // prefill. Send it as user so providers that reject prefill stay valid.
+  if (lastUser < 0) return restoreHiddenAsUser(messages, hidden);
 
   const trailing = [];
   for (let index = lastUser + 1; index < messages.length; index += 1) {
@@ -56,13 +63,33 @@ function hoistHiddenAssistantsBeforeLastUser(messages, hidden) {
   if (trailing.length === 0) return messages;
 
   const mid = messages.slice(lastUser + 1).filter((message) => !hidden.has(message));
+  // Hidden after an assistant reply (or other non-user turns), with no later
+  // user: the old hoist put `mid` after the user and ended the request on
+  // assistant. Fable 5.1 rejects that. Leave the notices as a user-role tail
+  // — there is no follow-up for them to steal.
+  if (mid.length > 0) {
+    return [
+      ...messages.slice(0, lastUser + 1),
+      ...mid,
+      ...restoreHiddenAsUser(trailing, hidden),
+    ];
+  }
+
   const merged = trailing.length === 1
     ? trailing[0]
     : {
         ...trailing[0],
         content: trailing.flatMap((message) => asBlocks(message.content)),
       };
-  return [...messages.slice(0, lastUser), merged, messages[lastUser], ...mid];
+  return [...messages.slice(0, lastUser), merged, messages[lastUser]];
+}
+
+function restoreHiddenAsUser(messages, hidden) {
+  return messages.map((message) => (
+    hidden.has(message) && message.role === "assistant"
+      ? { ...message, role: "user" }
+      : message
+  ));
 }
 
 function isHiddenCustom(message) {
