@@ -1,6 +1,6 @@
 ---
-name: outpost
-description: "Send a packet through `outpost` on PATH to a web-strong ChatGPT project agent. Use for deep research, public-repo work, and reviews the checkout cannot settle."
+name: "outpost"
+description: "Use when quality depends on deep research, synthesis, architecture, diagnosis, or independent judgment through a packeted GPT-5.6 project-agent run."
 ---
 
 # Outpost
@@ -11,9 +11,12 @@ hand the packet to another browser or agent.
 
 ## When
 
-Use this when the checkout cannot settle the work: current web facts, public
-repos, deep research, or a sandbox build. Skip it for code that depends on
-local services or private repo state the sandbox cannot reach.
+Use Outpost when the main quality bottleneck is depth: difficult research,
+synthesis, architecture, diagnosis, or independent judgment. It can find and
+evaluate public sources while reasoning. When evidence coverage is equally
+material, put the evidence collected through Aside in the packet first. Skip it
+for code that depends on local services or private repo state the sandbox
+cannot reach.
 
 ## Quality
 

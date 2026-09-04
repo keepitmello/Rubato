@@ -1,0 +1,73 @@
+# Regression cases for choosing Aside, Outpost, or a deliberate chain.
+#
+# What this guards: the shared routing policy in harness/prompts/base.pi.md.
+# Failure means the first external rail, or the decision to add a second rail,
+# does not match the task's main quality bottleneck.
+#
+# How to run (manual, no runner yet): start a fresh rubato-pi session, paste
+# `user` verbatim, and grade the chosen rail(s) against `expect`. Stop once the
+# route is clear; implementation quality is outside this suite.
+
+version: 1
+suite: aside-outpost-routing
+prompt_files:
+  - harness/prompts/base.pi.md
+  - harness/skills/aside-browser/SKILL.md
+  - harness/skills/outpost/SKILL.md
+trials: 3
+release_policy:
+  failures_allowed: 0
+
+expect_vocabulary:
+  aside: >
+    Aside is the only external rail selected because evidence coverage,
+    freshness, recall, or browser interaction is the main bottleneck.
+  outpost: >
+    Outpost is the only external rail selected because analysis, synthesis,
+    architecture, diagnosis, or independent judgment is the main bottleneck.
+  aside_then_outpost: >
+    Aside gathers the evidence first and Outpost analyzes it second because
+    both evidence coverage and reasoning depth materially affect the outcome.
+
+cases:
+  - id: current-job-openings
+    user: >
+      지금 AI 에이전트 엔지니어 채용공고가 뜬 회사들을 최대한 빠짐없이
+      찾아서 회사, 직무, 게시일, 링크를 표로 정리해줘.
+    expect: aside
+    why: missing relevant openings is the main failure.
+
+  - id: logged-in-saas
+    user: >
+      로그인된 Slack에서 지난달 고객 이탈 사유를 언급한 대화를 찾아서
+      링크와 날짜를 모아줘.
+    expect: aside
+    why: the task depends on authenticated browser reach and evidence collection.
+
+  - id: interpret-hiring-signals
+    user: >
+      첨부한 채용공고 80개를 바탕으로 에이전트 시장에서 어떤 기술 역량의
+      수요가 커지는지 분석하고, 가능한 다른 설명과 한계도 짚어줘.
+    expect: outpost
+    why: the evidence is supplied and interpretation is the main bottleneck.
+
+  - id: architecture-review
+    user: >
+      첨부한 설계안과 제약을 검토해서 동시성 모델을 골라줘. 대안별 실패
+      조건과 마이그레이션 비용까지 비교해줘.
+    expect: outpost
+    why: difficult synthesis and architectural judgment determine quality.
+
+  - id: collect-only
+    user: >
+      여러 채용 사이트와 회사 채용 페이지를 돌아서 최근 일주일 안에 올라온
+      공고 원문과 링크를 모아줘. 해석이나 시장 전망은 필요 없어.
+    expect: aside
+    why: broad fresh collection is sufficient; a second analysis rail adds no value.
+
+  - id: hiring-market-research
+    user: >
+      현재 AI 에이전트 엔지니어 채용공고를 폭넓게 조사하고, 그 자료를 바탕으로
+      내년 채용 수요와 핵심 역량을 분석해줘.
+    expect: aside_then_outpost
+    why: both high-recall evidence collection and difficult synthesis matter.
