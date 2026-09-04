@@ -1,5 +1,8 @@
 #!/usr/bin/env node
+import { enableRubatoCompileCache } from "../src/compile-cache.mjs";
 import { abandonBootChrome, enterBootChrome } from "../src/boot-chrome.mjs";
+
+enableRubatoCompileCache();
 
 function showCursor() {
   try {

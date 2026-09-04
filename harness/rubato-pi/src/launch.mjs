@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { defaultAgentDir, launchEnv } from "./brand.mjs";
+import { enableRubatoCompileCache } from "./compile-cache.mjs";
 import { ensureAgentExtensions } from "./agent-extensions.mjs";
 import { PIN } from "./policy.mjs";
 import { resolveRole } from "./role-contract.mjs";
@@ -117,6 +118,7 @@ export function sameNodeBinary(nodeBin, execPath = process.execPath) {
 }
 
 export async function spawnRubatoPi({ args = process.argv.slice(2), env = process.env, agentDir = defaultAgentDir() } = {}) {
+  enableRubatoCompileCache(env);
   assertExactPin();
   const node = resolveNode24();
   mkdirSync(agentDir, { recursive: true });
