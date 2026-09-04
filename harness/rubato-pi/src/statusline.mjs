@@ -11,6 +11,8 @@ const FAMILIES = [
   ["grok", "Grok"],
   ["gemini", "Gemini"],
   ["kimi", "Kimi"],
+  ["muse-spark", "Muse Spark"],
+  ["muse spark", "Muse Spark"],
   ["gpt", "GPT"],
 ];
 
@@ -43,6 +45,7 @@ const VARIANTS = [
   ["sol", "Sol"],
   ["luna", "Luna"],
   ["terra", "Terra"],
+  ["astra", "Astra"],
 ];
 
 export function shortModelLabel(modelId) {
@@ -56,7 +59,7 @@ export function shortModelLabel(modelId) {
   for (const [key, label] of FAMILIES) {
     const idx = lc.indexOf(key);
     if (idx < 0) continue;
-    const tail = lc.slice(idx + key.length).replace(/^[-.]/, "");
+    const tail = lc.slice(idx + key.length).replace(/^[-.\s]+/, "");
     const version = parseVersion(tail);
     return version ? `${label} ${version}` : label;
   }
