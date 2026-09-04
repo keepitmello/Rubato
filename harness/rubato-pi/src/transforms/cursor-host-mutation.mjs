@@ -19,9 +19,16 @@ export function resolveSessionPath(path, cwd) {
   return isAbsolute(path) ? path : resolve(cwd, path);
 }
 
+function hasBytePayload(bytes) {
+  return bytes != null && bytes.length > 0;
+}
+
 export function expectedWriteBytes({ content, bytes } = {}) {
-  if (bytes != null) return Buffer.from(bytes);
+  // Cursor WriteArgs.fileBytes is proto3 `bytes`, so a text-only frame still
+  // arrives as an empty Uint8Array. That empty payload must not win over fileText.
+  if (hasBytePayload(bytes)) return Buffer.from(bytes);
   if (typeof content === "string") return Buffer.from(content, "utf8");
+  if (bytes != null) return Buffer.from(bytes);
   throw new Error("Write did not persist to disk: missing file text (fileText/contents/content/fileBytes)");
 }
 
