@@ -29,8 +29,7 @@ export const ANTIGRAVITY_ENDPOINT_ENV = "RUBATO_ANTIGRAVITY_ENDPOINT";
 const LEGACY_BRIDGE_PORTS = new Set(["8788", "18788"]);
 
 const MODELS = Object.freeze([
-  Object.freeze({ id: "gemini-3.7-flash", name: "Gemini 3.7 Flash", contextWindow: 200_000, maxTokens: 65_536 }),
-  Object.freeze({ id: "gemini-3.1-pro", name: "Gemini 3.1 Pro", contextWindow: 200_000, maxTokens: 65_536 }),
+  Object.freeze({ id: "gemini-3.8-flash", name: "Gemini 3.8 Flash", contextWindow: 200_000, maxTokens: 65_536 }),
 ]);
 
 function zeroCost() {

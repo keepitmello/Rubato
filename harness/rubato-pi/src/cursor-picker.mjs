@@ -5,7 +5,7 @@
 //
 // 일곱은 OpenCodex 시절 실사용 목록이다
 // (`case-studies/provider-routing/cursor-route-verdict`: grok-4.6, gpt-5.6-sol,
-// claude-fable-5-1, claude-opus-5, gemini-3.7-flash, kimi-k3, composer-2.5).
+// claude-fable-5-1, claude-opus-5, gemini-3.8-flash, kimi-k3, composer-2.5).
 // live id 는 `cursor-grok-4.6` 이다.
 
 import { CURSOR_GROK_46_ID, presentCursorGrokFast } from "./cursor-grok-fast.mjs";
@@ -16,7 +16,7 @@ export const CURSOR_PICKER_IDS = Object.freeze([
   "gpt-5.6-sol",
   "claude-fable-5-1",
   "claude-opus-5",
-  "gemini-3.7-flash",
+  "gemini-3.8-flash",
   "kimi-k3",
   "composer-2.5",
 ]);
