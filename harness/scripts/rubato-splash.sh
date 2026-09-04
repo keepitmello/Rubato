@@ -57,12 +57,12 @@ case "${1-}" in
       printf '  %s▀ ▀  ▀▀▀  ▀▀▀  ▀ ▀   ▀   ▀▀▀%s\r\n' "$C2" "$RST"
       printf '\r\n'
     fi
-    printf '  %s· 준비하는 중%s' "$DIM" "$RST"
+    printf '  %s⠋ 준비하는 중%s' "$DIM" "$RST"
     ;;
 
   step)
     # 상태 줄만 다시 쓴다. 줄 처음으로 가서 지우고 새로 찍는다.
-    printf '\r%s  %s· %s%s' "${ESC}[K" "$DIM" "${2-}" "$RST"
+    printf '\r%s  %s⠋ %s%s' "${ESC}[K" "$DIM" "${2-}" "$RST"
     ;;
 
   close)

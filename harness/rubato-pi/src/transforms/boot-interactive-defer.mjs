@@ -8,6 +8,10 @@ export function deferredExtensionsHref() {
   return new URL("../deferred-extensions.mjs", import.meta.url).href;
 }
 
+export function bootChromeHref() {
+  return new URL("../boot-chrome.mjs", import.meta.url).href;
+}
+
 const DEFERRED_IMPORTS = [
   ['import { ArminComponent } from "./components/armin.js";\n', "let ArminComponent;\n"],
   ['import { AssistantMessageComponent } from "./components/assistant-message.js";\n', "let AssistantMessageComponent;\n"],
@@ -152,6 +156,37 @@ export function injectInteractiveDeferDialogs(source) {
         this.fdPath = fdPath;
 ${DEFERRED_ASSIGNMENT}`,
     "interactive defer await prefetch",
+  );
+  next = replaceOnce(
+    next,
+    `    async init() {
+        if (this.isInitialized)
+            return;
+`,
+    `    async init() {
+        if (this.isInitialized)
+            return;
+        await import(${JSON.stringify(bootChromeHref())}).then((mod) => mod.setBootChromeStatus("에디터를 준비하는 중"));
+`,
+    "interactive boot chrome editor status",
+  );
+  next = replaceOnce(
+    next,
+    `        try {
+            takeOverInteractiveStderr();
+            this.ui.start();
+        }
+`,
+    `        try {
+            takeOverInteractiveStderr();
+            await import(${JSON.stringify(bootChromeHref())}).then((mod) => {
+                mod.setBootChromeStatus("화면을 여는 중");
+                mod.releaseBootChrome();
+            });
+            this.ui.start();
+        }
+`,
+    "interactive release boot chrome",
   );
   next = replaceOnce(
     next,
