@@ -1,15 +1,30 @@
 import { assertEngineBuilt, rubatoExtension } from "../engine-paths.mjs";
-import { rubatoPiMemoryComponent, rubatoPiTaskComponent } from "../rubato-runtime.mjs";
+import { registerDeferredExtension, shouldDeferExtensionActivation } from "../deferred-extensions.mjs";
 import { RUBATO_OWNED_COMPONENTS } from "../policy.mjs";
 
 assertEngineBuilt();
-const { composeRubatoExtension, rubatoComponents } = await import(rubatoExtension);
 
 const RUBATO_OWNED = new Set(RUBATO_OWNED_COMPONENTS);
+let activating;
 
-const replaceMemory = rubatoPiMemoryComponent !== undefined;
-export default composeRubatoExtension([
-  ...rubatoComponents.filter((component) => RUBATO_OWNED.has(component.name) && component.name !== "task" && (!replaceMemory || component.name !== "memory")),
-  rubatoPiTaskComponent,
-  ...(replaceMemory ? [rubatoPiMemoryComponent] : []),
-]);
+async function activateLeadOverlay(pi) {
+  if (activating) return activating;
+  activating = (async () => {
+    const [{ composeRubatoExtension, rubatoComponents }, { rubatoPiMemoryComponent, rubatoPiTaskComponent }] = await Promise.all([
+      import(rubatoExtension),
+      import("../rubato-runtime.mjs"),
+    ]);
+    const replaceMemory = rubatoPiMemoryComponent !== undefined;
+    await composeRubatoExtension([
+      ...rubatoComponents.filter((component) => RUBATO_OWNED.has(component.name) && component.name !== "task" && (!replaceMemory || component.name !== "memory")),
+      rubatoPiTaskComponent,
+      ...(replaceMemory ? [rubatoPiMemoryComponent] : []),
+    ])(pi);
+  })();
+  return activating;
+}
+
+export default async function leadOverlay(pi) {
+  registerDeferredExtension(() => activateLeadOverlay(pi));
+  if (!shouldDeferExtensionActivation()) return activateLeadOverlay(pi);
+}

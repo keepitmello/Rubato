@@ -4,6 +4,10 @@ export function isBootInteractiveModeUrl(url) {
   return url.includes("@code-yeongyu/senpi/dist/modes/interactive/interactive-mode.js");
 }
 
+export function deferredExtensionsHref() {
+  return new URL("../deferred-extensions.mjs", import.meta.url).href;
+}
+
 const DEFERRED_IMPORTS = [
   ['import { ArminComponent } from "./components/armin.js";\n', "let ArminComponent;\n"],
   ['import { AssistantMessageComponent } from "./components/assistant-message.js";\n', "let AssistantMessageComponent;\n"],
@@ -143,6 +147,7 @@ export function injectInteractiveDeferDialogs(source) {
             ensureTool("fd", (status) => this.showManagedToolStatus(status)),
             ensureTool("rg", (status) => this.showManagedToolStatus(status)),
             deferredInteractiveUi,
+            import(${JSON.stringify(deferredExtensionsHref())}).then((mod) => mod.activateDeferredExtensions()),
         ]);
         this.fdPath = fdPath;
 ${DEFERRED_ASSIGNMENT}`,

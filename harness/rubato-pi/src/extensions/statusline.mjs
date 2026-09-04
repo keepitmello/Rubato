@@ -1,4 +1,5 @@
 import { pathToFileURL } from "node:url";
+import { registerDeferredExtension, shouldDeferExtensionActivation } from "../deferred-extensions.mjs";
 import { senpiExtensionRunner } from "../engine-paths.mjs";
 import {
   cacheStatus,
@@ -366,9 +367,13 @@ function extensionStatusLine(statuses) {
     .join(" · ");
 }
 
-export default function statuslineExtension(pi) {
-  const installed = installStatusline(pi);
-  void installed.attachHost?.();
+export default async function statuslineExtension(pi) {
+  const start = async () => {
+    const installed = installStatusline(pi);
+    await installed.attachHost?.();
+  };
+  registerDeferredExtension(start);
+  if (!shouldDeferExtensionActivation()) return start();
 }
 
 // 모듈이 로드되는 즉시 fallback painter 를 심는다. adapter 의 engine import 가
