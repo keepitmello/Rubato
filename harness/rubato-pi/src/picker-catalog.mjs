@@ -5,6 +5,8 @@
 
 export const XAI_PICKER_IDS = Object.freeze(["grok-4.6"]);
 
+export const OPENCODE_PICKER_IDS = Object.freeze(["muse-spark-1.3-contributor-free"]);
+
 export const ANTHROPIC_PICKER_IDS = Object.freeze([
   "claude-opus-5",
   "claude-sonnet-5",
@@ -19,6 +21,8 @@ export const CODEX_PICKER_IDS = Object.freeze([
   "gpt-5.6-sol-fast",
   "gpt-5.6-terra-fast",
   "gpt-5.6-luna-fast",
+  "gpt-6-astra",
+  "gpt-6-astra-fast",
   "gpt-daybreak-blue-latest",
   "gpt-daybreak-blue-latest-fast",
 ]);

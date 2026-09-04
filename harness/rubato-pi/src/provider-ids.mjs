@@ -11,10 +11,11 @@ export const SUPPORTED_PROVIDER_IDS = Object.freeze([
   "cursor",
   "kiro",
   "google-antigravity",
+  "opencode",
 ]);
 
 /**
- * Senpi 2026.8.22 의 `getBuiltinProviders()` ∪ `builtinProviders().map(p => p.id)`.
+ * Senpi 2026.9.4-3 의 `getBuiltinProviders()` ∪ `builtinProviders().map(p => p.id)`.
  * `getBuiltinProviders()` 는 generated catalog 키만 보고 cursor/ollama/radius
  * 같은 credential-only lane 을 빠뜨리므로 둘을 합친 값이다.
  */

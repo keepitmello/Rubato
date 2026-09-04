@@ -15,9 +15,11 @@ import { antigravityDirectProvider } from "./antigravity-route.mjs";
 import {
   ANTHROPIC_PICKER_IDS,
   CODEX_PICKER_IDS,
+  OPENCODE_PICKER_IDS,
   XAI_PICKER_IDS,
   withPickerIds,
 } from "./picker-catalog.mjs";
+import { withOpenCodeKeychain } from "./opencode-keychain.mjs";
 import { wrapProviderStreams } from "./rubato-stream.mjs";
 import { speedIndexStore } from "./speed-index-store.mjs";
 import { SPEED_INDEX_NETWORK_ROUTES } from "./speed-index-routes.mjs";
@@ -41,7 +43,15 @@ export const PROVIDER_DIRECT_FLAG = "RUBATO_PROVIDER_DIRECT";
  * 같은 결이다. 앞의 세 개를 **그 자리에 그대로 둔다** — Phase 0/1/2A 의 테스트가
  * 위치로 provider 를 집는다(`const [codex, xai] = await directProviders()`).
  */
-export const DIRECT_PROVIDER_IDS = Object.freeze(["openai-codex", "xai", "cursor", "anthropic", "kiro", "google-antigravity"]);
+export const DIRECT_PROVIDER_IDS = Object.freeze([
+  "openai-codex",
+  "xai",
+  "cursor",
+  "anthropic",
+  "kiro",
+  "google-antigravity",
+  "opencode",
+]);
 
 /**
  * legacy `~/.senpi/agent/auth.json` 에서 이관할 provider. **Codex 와 xAI 뿐이다.**
@@ -89,7 +99,7 @@ export function warnIgnoredDirectOptOut(env = process.env, warn = (message) => c
 }
 
 /**
- * Daybreak 은 pinned catalog 에 없다. Rubato 가 직접 정의하는 유일한 Codex 모델이다.
+ * Daybreak 은 pinned catalog 에 없다. Rubato 가 직접 정의하는 유일한 Codex extra 다.
  *
  * 나머지 native 모델 metadata 는 context window 를 제외하면 손대지 않는다.
  * Codex 의 Rubato 상한은 272K 다. pinned catalog 가 더 큰 원시 window 를 싣더라도
@@ -221,14 +231,15 @@ function withContextWindowCap(provider, cap) {
  * 정의는 하나도 만들지 않는다 — catalog 는 계정별 `GetUsableModels` 가 권위다.
  * Cursor 경로는 native HTTP/2 직결 하나다.
  */
-export async function directProviders({ cursor, anthropic, kiro, antigravity, env = process.env } = {}) {
-  const [openaiCodexProvider, xaiProvider, anthropicProvider, kiroNative, antigravityDirect, cursorProvider] = await Promise.all([
+export async function directProviders({ cursor, anthropic, kiro, antigravity, opencode: opencodeOptions, env = process.env } = {}) {
+  const [openaiCodexProvider, xaiProvider, anthropicProvider, kiroNative, antigravityDirect, cursorProvider, opencodeProvider] = await Promise.all([
     loadPinnedFactory("openai-codex.js", "openaiCodexProvider"),
     loadPinnedFactory("xai.js", "xaiProvider"),
     loadPinnedFactory("anthropic.js", "anthropicProvider"),
     kiroDirectProvider({ env, ...(kiro ?? {}) }),
     antigravityDirectProvider({ env, ...(antigravity ?? {}) }),
     cursorDirectProvider({ env, ...(cursor ?? {}) }),
+    loadPinnedFactory("opencode.js", "opencodeProvider"),
   ]);
 
   const codexNative = withContextWindowCap(openaiCodexProvider(), 272_000);
@@ -263,6 +274,14 @@ export async function directProviders({ cursor, anthropic, kiro, antigravity, en
     });
   }
 
+  // OpenCode 는 pinned factory 그대로다. Muse Spark 1.3 Contributor Free 는
+  // pin catalog 에 이미 있으므로 파생하지 않는다. 피커만 그 모델로 줄인다.
+  // 키는 OPENCODE_API_KEY 또는 Keychain `opencode.ai` — `/login` 을 요구하지 않는다.
+  const opencode = withOpenCodeKeychain(
+    withPickerIds(opencodeProvider(), OPENCODE_PICKER_IDS),
+    { env, ...(opencodeOptions ?? {}) },
+  );
+
   const store = speedIndexStore(env);
   store?.startProbes?.();
   const wrap = (provider) => wrapProviderStreams(provider, { speedIndexStore: store });
@@ -277,5 +296,6 @@ export async function directProviders({ cursor, anthropic, kiro, antigravity, en
       kiro?.ensureKiro ?? (() => ensureKiroSidecar(env)),
     )),
     wrap(antigravityDirect.provider),
+    wrap(opencode),
   ];
 }
