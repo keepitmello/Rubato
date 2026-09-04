@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { senpiExtensionRunner } from "../../src/engine-paths.mjs";
 import {
   appendBrandMark,
   cacheHitPercent,
@@ -1310,4 +1312,12 @@ test("fallbackStatusLines stays on a Rubato line when session inspection throws"
   const text = painted.join("\n");
   assert.match(text, /✦/);
   assert.doesNotMatch(text, /\$0\.000|\(sub\)/);
+});
+
+test("statusline hooks ExtensionRunner from the runner module, not the senpi barrel", () => {
+  assert.match(senpiExtensionRunner, /dist\/core\/extensions\/runner\.js$/);
+  const source = readFileSync(new URL("../../src/extensions/statusline.mjs", import.meta.url), "utf8");
+  assert.match(source, /senpiExtensionRunner/);
+  assert.doesNotMatch(source, /import\("@code-yeongyu\/senpi"\)/);
+  assert.match(readFileSync(senpiExtensionRunner, "utf8"), /export class ExtensionRunner/);
 });

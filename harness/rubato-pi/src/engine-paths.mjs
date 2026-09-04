@@ -71,6 +71,7 @@ export const senpiDir = join(repoRoot, "node_modules", "@code-yeongyu", "senpi")
 export const senpiCli = join(senpiDir, "dist", "cli.js");
 export const senpiCliMain = join(senpiDir, "dist", "cli-main.js");
 export const senpiPackageJson = join(senpiDir, "package.json");
+export const senpiExtensionRunner = join(senpiDir, "dist", "core", "extensions", "runner.js");
 export const senpiSkillsModule = join(senpiDir, "dist", "core", "skills.js");
 export const senpiSystemPromptModule = join(senpiDir, "dist", "core", "system-prompt.js");
 
