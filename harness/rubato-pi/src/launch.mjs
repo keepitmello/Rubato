@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
+import { register } from "node:module";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { defaultAgentDir, launchEnv } from "./brand.mjs";
 import { ensureAgentExtensions } from "./agent-extensions.mjs";
 import { PIN } from "./policy.mjs";
@@ -11,7 +12,7 @@ import { withNoChangelog } from "./no-changelog.mjs";
 import { ensureSessionDefaults, sessionDefaultsLookCurrent } from "./session-defaults.mjs";
 import { replaceSystemPrompt } from "./system-prompt.mjs";
 import { SKILL_DIRS } from "./skills-section.mjs";
-import { enginePackageJson, senpiCli, senpiPackageJson } from "./engine-paths.mjs";
+import { enginePackageJson, senpiCli, senpiCliMain, senpiPackageJson } from "./engine-paths.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -22,6 +23,16 @@ export function packageRoot() {
 
 export function senpiCliPath() {
   return senpiCli;
+}
+
+export function senpiCliMainPath() {
+  return senpiCliMain;
+}
+
+/** cli.js 는 --version 만 값싸다. 그 외는 cli-main 으로 가서 --import 이중 기동을 피한다. */
+export function senpiEntryPath(userArgs = []) {
+  if (userArgs.some((token) => token === "--version" || token === "-v")) return senpiCli;
+  return senpiCliMain;
 }
 
 export function leadOverlayPath() {
@@ -84,7 +95,7 @@ export function buildSenpiArgs(userArgs, { env = process.env } = {}) {
     ? []
     : ["--tui-mode", "fullscreen"];
   return [
-    senpiCliPath(),
+    senpiEntryPath(userArgs),
     "--system-prompt",
     replaceSystemPrompt("", resolveRole({ env }), { env, argv: userArgs }),
     ...interactiveTuiArgs,
@@ -101,6 +112,10 @@ export function buildSenpiArgs(userArgs, { env = process.env } = {}) {
   ];
 }
 
+export function sameNodeBinary(nodeBin, execPath = process.execPath) {
+  return nodeBin === execPath;
+}
+
 export async function spawnRubatoPi({ args = process.argv.slice(2), env = process.env, agentDir = defaultAgentDir() } = {}) {
   assertExactPin();
   const node = resolveNode24();
@@ -113,11 +128,23 @@ export async function spawnRubatoPi({ args = process.argv.slice(2), env = proces
   if (!sessionDefaultsLookCurrent(agentDir)) {
     ensureSessionDefaults(agentDir);
   }
-  if (!existsSync(senpiCliPath())) {
+  const argv = buildSenpiArgs(args, { env });
+  const entry = argv[0];
+  if (!existsSync(entry)) {
     throw new Error("pinned senpi CLI is missing; run bun install at the repository root");
   }
-  return spawn(node.bin, buildSenpiArgs(args), {
-    env: withNoChangelog(launchEnv(env, agentDir)),
+  const nextEnv = withNoChangelog(launchEnv(env, agentDir));
+  // 같은 Node 면 자식을 또 띄우지 않는다. cli.js 가 --import 보고 한 번 더
+  // spawn 하던 것과 합치면 기동마다 Node 를 세 번 올리는 셈이었다.
+  if (sameNodeBinary(node.bin)) {
+    Object.assign(process.env, nextEnv);
+    register(new URL("./no-changelog-hooks.mjs", import.meta.url));
+    process.argv = [process.execPath, ...argv];
+    await import(pathToFileURL(entry).href);
+    return undefined;
+  }
+  return spawn(node.bin, argv, {
+    env: nextEnv,
     stdio: "inherit",
   });
 }
