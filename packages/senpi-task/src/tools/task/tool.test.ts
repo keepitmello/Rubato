@@ -94,6 +94,14 @@ describe("createTaskTool", () => {
     expect(tool.description).not.toContain("subagent_type")
   })
 
+  test("#given Cursor Grok guidance #when the description is read #then it names the canonical Agent model", () => {
+    const tool = createTaskTool(deps(fakeManager({})))
+
+    expect(tool.description).toContain('model="cursor/cursor-grok-4.6"')
+    expect(tool.description).toContain('effort="xhigh"')
+    expect(tool.description).not.toContain('model="xai/grok-4.6"')
+  })
+
   test("#given the assembled tool #when parameters are read #then prompt is required and batch fields are absent", () => {
     const tool = createTaskTool(deps(fakeManager({})))
 
