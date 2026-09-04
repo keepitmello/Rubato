@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isProcessExitShutdown, RemoteSurface, SurfaceEventBuffer } from "../../src/extensions/remote-surface.mjs";
+import { installRemoteSurface, isProcessExitShutdown, RemoteSurface, SurfaceEventBuffer } from "../../src/extensions/remote-surface.mjs";
 
 const protocol = {
   REMOTE_PROTOCOL_NAME: "rubato.remote.v1",
@@ -669,6 +669,29 @@ test("only quit session_shutdown is a process-exit", () => {
   assert.equal(isProcessExitShutdown(undefined), false);
 });
 
+function fakePi() {
+  const handlers = new Map();
+  const eventHandlers = new Map();
+  return {
+    events: {
+      on(name, fn) {
+        eventHandlers.set(name, [...(eventHandlers.get(name) ?? []), fn]);
+      },
+      emit(name, data) {
+        for (const fn of eventHandlers.get(name) ?? []) fn(data);
+      },
+    },
+    on(name, fn) {
+      handlers.set(name, [...(handlers.get(name) ?? []), fn]);
+    },
+    emit(name, event, ctx) {
+      for (const fn of handlers.get(name) ?? []) fn(event, ctx);
+    },
+    getInteractiveControl: () => undefined,
+    getSessionName: () => "Session",
+  };
+}
+
 test("in-process session_shutdown does not emit live.exited", () => {
   const surface = new RemoteSurface({}, protocol, {
     buffer: { maxEvents: 10, maxBytes: 100_000 },
@@ -678,6 +701,7 @@ test("in-process session_shutdown does not emit live.exited", () => {
   surface.observe("session_shutdown", { type: "session_shutdown", reason: "reload" });
   surface.observe("session_shutdown", { type: "session_shutdown", reason: "new" });
   assert.equal(surface.buffer.drain().some((record) => record.type === "live.exited"), false);
+  assert.equal(surface.stopped, false);
   surface.observe("session_shutdown", { type: "session_shutdown", reason: "quit" });
   const records = surface.buffer.drain();
   assert.equal(records.length, 1);
@@ -744,4 +768,79 @@ test("old protocol schemas drop presentation instead of aborting connect", async
   assert.equal(snapshots.length > 0, true);
   assert.equal(Object.hasOwn(snapshots[0].summary, "presentation"), false);
   assert.equal(surface.presentationUnsupported, true);
+});
+
+test("installRemoteSurface reuses the live surface across in-process session replacement", async () => {
+  const sent = [];
+  const connections = [];
+  const connect = async () => {
+    const connection = {
+      send(value) { sent.push(value); },
+      close() { this.closed = true; },
+    };
+    connections.push(connection);
+    return connection;
+  };
+  const options = {
+    protocol,
+    liveSessionId: "018f0f4c-9d2a-7a31-8b4d-6f708192a3b9",
+    surfaceInstanceId: "123e4567-e89b-42d3-a456-426614174099",
+    surfaceToken: "one-time-bootstrap",
+    connect,
+    clock: { now: () => 1_000, setTimeout, clearTimeout, setInterval, clearInterval },
+  };
+  const firstPi = fakePi();
+  const first = await installRemoteSurface(firstPi, options);
+  try {
+    await first.receive(registered);
+    assert.equal(connections.length, 1);
+    assert.equal(sent.filter((frame) => frame.kind === "surface.register").length, 1);
+    assert.equal(sent[0].token, "one-time-bootstrap");
+
+    firstPi.emit("session_shutdown", { type: "session_shutdown", reason: "resume" }, context());
+    assert.equal(first.stopped, false);
+    assert.equal(connections[0].closed, undefined);
+    assert.equal(sent.some((frame) => frame.type === "live.exited"), false);
+
+    const secondPi = fakePi();
+    const second = await installRemoteSurface(secondPi, options);
+    assert.equal(second, first);
+    assert.equal(first.pi, secondPi);
+    assert.equal(connections.length, 1);
+    assert.equal(sent.filter((frame) => frame.kind === "surface.register").length, 1);
+
+    const before = sent.length;
+    firstPi.emit("session_start", { type: "session_start" }, context());
+    assert.equal(sent.length, before);
+
+    secondPi.emit("session_start", { type: "session_start" }, context());
+    assert.equal(sent.some((frame) => frame.kind === "surface.snapshot"), true);
+  } finally {
+    first.stop();
+  }
+});
+
+test("installRemoteSurface starts a new surface after the previous one is stopped", async () => {
+  const connections = [];
+  const options = {
+    protocol,
+    liveSessionId: "018f0f4c-9d2a-7a31-8b4d-6f708192a3ba",
+    surfaceToken: "another-bootstrap",
+    connect: async () => {
+      const connection = { send() {}, close() { this.closed = true; } };
+      connections.push(connection);
+      return connection;
+    },
+    clock: { now: () => 1_000, setTimeout, clearTimeout, setInterval, clearInterval },
+  };
+  const first = await installRemoteSurface(fakePi(), options);
+  first.stop();
+  const second = await installRemoteSurface(fakePi(), options);
+  try {
+    assert.notEqual(second, first);
+    assert.equal(connections.length, 2);
+    assert.equal(connections[0].closed, true);
+  } finally {
+    second.stop();
+  }
 });

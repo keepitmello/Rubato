@@ -49,6 +49,40 @@ export function isProcessExitShutdown(reason) {
   return PROCESS_EXIT_SHUTDOWN_REASONS.has(reason);
 }
 
+const installedSurfaces = new Map();
+const PROCESS_SURFACE_KEY = "process";
+
+function installedSurfaceKey(options = {}) {
+  return options.liveSessionId ?? process.env.RUBATO_LIVE_SESSION_ID ?? PROCESS_SURFACE_KEY;
+}
+
+function bindSurfaceEvents(pi, surface) {
+  for (const eventName of SUBSCRIBED_EVENTS) {
+    pi.on(eventName, (event, ctx) => {
+      if (surface.pi !== pi) return;
+      surface.observe(eventName, event, ctx);
+    });
+  }
+  pi.events.on("rubato.remote.channel", (data) => {
+    if (surface.pi !== pi) return;
+    surface.observeChannel(data);
+  });
+  pi.events.on("interactive.ui.request", (data) => {
+    if (surface.pi !== pi) return;
+    surface.emit("ui.request", standardUiRequest(data) ?? data);
+    surface.emit("agent.state", { execution: "idle", attention: true });
+  });
+  pi.events.on("interactive.ui.dismiss", (data) => {
+    if (surface.pi !== pi) return;
+    surface.emit("ui.dismiss", data);
+    const native = tryCall(() => pi.getInteractiveControl?.()?.snapshot?.()) ?? {};
+    surface.emit("agent.state", {
+      execution: native.isStreaming || native.isCompacting ? "working" : "idle",
+      attention: false,
+    });
+  });
+}
+
 function stripSummaryPresentation(message) {
   const summary = message?.summary;
   if (!summary || !Object.hasOwn(summary, "presentation")) return undefined;
@@ -220,12 +254,9 @@ export class RemoteSurface {
     this.connectionErrorReported = false;
     this.background = { activeCount: 0, labels: [] };
     this.teams = { activeRunCount: 0, runningMemberCount: 0, failedMemberCount: 0 };
-    this.dispatcher = new InteractiveActionDispatcher(pi, {
-      resolveImages: options.resolveImages,
-      refreshEnvironment: options.refreshEnvironment,
-      getRevision: () => this.revision,
-      now: () => this.clock.now(),
-    });
+    this.resolveImages = options.resolveImages;
+    this.refreshEnvironment = options.refreshEnvironment;
+    this.dispatcher = this.createDispatcher(pi);
     this.lastTimeline = undefined;
     this.lastPresentationKey = undefined;
     this.presentationUnsupported = false;
@@ -251,6 +282,26 @@ export class RemoteSurface {
     this.connection?.close();
     this.connection = undefined;
     this.registered = false;
+    if (this.installKey && installedSurfaces.get(this.installKey) === this) {
+      installedSurfaces.delete(this.installKey);
+    }
+  }
+
+  createDispatcher(pi) {
+    return new InteractiveActionDispatcher(pi, {
+      resolveImages: this.resolveImages,
+      refreshEnvironment: this.refreshEnvironment,
+      getRevision: () => this.revision,
+      now: () => this.clock.now(),
+    });
+  }
+
+  rebind(pi, options = {}) {
+    if (options.resolveImages !== undefined) this.resolveImages = options.resolveImages;
+    if (options.refreshEnvironment !== undefined) this.refreshEnvironment = options.refreshEnvironment;
+    this.pi = pi;
+    this.dispatcher = this.createDispatcher(pi);
+    bindSurfaceEvents(pi, this);
   }
 
   async connectNow() {
@@ -344,7 +395,8 @@ export class RemoteSurface {
     if (name === "session_shutdown") {
       // /resume, /new, /fork, and settings hot-reload tear down the Pi session
       // inside this same process. Emitting live.exited here made the hub
-      // `zmx kill --force` the pane the user was still sitting in.
+      // `zmx kill --force` the pane the user was still sitting in. The socket
+      // stays up; installRemoteSurface rebinds this instance onto the new pi.
       if (!isProcessExitShutdown(event?.reason)) return;
     }
     if (name === "session_start" || name === "session_switch" || name === "session_fork" || name === "session_info_changed") {
@@ -726,24 +778,17 @@ export class RemoteSurface {
 }
 
 export async function installRemoteSurface(pi, options = {}) {
+  const key = installedSurfaceKey(options);
+  const existing = installedSurfaces.get(key);
+  if (existing && !existing.stopped) {
+    existing.rebind(pi, options);
+    return existing;
+  }
   const protocol = options.protocol ?? await import(pathToFileURL(path.join(os.homedir(), ".local", "lib", "rubato", "remote", "current", "protocol", "index.mjs")).href);
   const surface = new RemoteSurface(pi, protocol, options);
-  for (const eventName of SUBSCRIBED_EVENTS) {
-    pi.on(eventName, (event, ctx) => surface.observe(eventName, event, ctx));
-  }
-  pi.events.on("rubato.remote.channel", (data) => surface.observeChannel(data));
-  pi.events.on("interactive.ui.request", (data) => {
-    surface.emit("ui.request", standardUiRequest(data) ?? data);
-    surface.emit("agent.state", { execution: "idle", attention: true });
-  });
-  pi.events.on("interactive.ui.dismiss", (data) => {
-    surface.emit("ui.dismiss", data);
-    const native = tryCall(() => pi.getInteractiveControl?.()?.snapshot?.()) ?? {};
-    surface.emit("agent.state", {
-      execution: native.isStreaming || native.isCompacting ? "working" : "idle",
-      attention: false,
-    });
-  });
+  surface.installKey = key;
+  bindSurfaceEvents(pi, surface);
+  installedSurfaces.set(key, surface);
   surface.start();
   return surface;
 }
