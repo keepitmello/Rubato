@@ -31,14 +31,14 @@ export function injectBusyEnter(source, href = busyEnterHref()) {
   if (source.includes(MARKER)) return source;
   let next = replaceOnce(
     source,
-    "            text = text.trim();\n            if (!text)\n                return;",
-    "            text = text.trim();\n            if (!text) {\n                this.__rubatoPromoteBusyEnter?.();\n                return;\n            }",
+    "                text = text.trim();\n                if (!text)\n                    return;",
+    "                text = text.trim();\n                if (!text) {\n                    this.__rubatoPromoteBusyEnter?.();\n                    return;\n                }",
     "submit trim guard",
   );
   next = replaceOnce(
     next,
-    "                    await this.session.prompt(text, {\n                        streamingBehavior: \"steer\",\n                        ...(images.length > 0 ? { images } : {}),\n                        ...this.optimisticUserEchoes.promptOptions(pendingEchoId),\n                    });",
-    "                    await this.session.prompt(text, {\n                        streamingBehavior: \"followUp\",\n                        ...(images.length > 0 ? { images } : {}),\n                        ...this.optimisticUserEchoes.promptOptions(pendingEchoId),\n                    });\n                    this.__rubatoRememberBusyEnter?.(text);",
+    "                        await this.session.prompt(text, {\n                            streamingBehavior: \"steer\",\n                            ...(images.length > 0 ? { images } : {}),\n                            ...this.optimisticUserEchoes.promptOptions(pendingEchoId),\n                        });",
+    "                        await this.session.prompt(text, {\n                            streamingBehavior: \"followUp\",\n                            ...(images.length > 0 ? { images } : {}),\n                            ...this.optimisticUserEchoes.promptOptions(pendingEchoId),\n                        });\n                        this.__rubatoRememberBusyEnter?.(text);",
     "streaming prompt option",
   );
   // 압축 중 대기열은 upstream 이 queueCompactionMessage 안에서 showStatus 를 불러

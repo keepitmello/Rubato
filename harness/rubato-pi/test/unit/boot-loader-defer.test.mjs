@@ -59,7 +59,7 @@ test("export-html needles land on the installed agent-session.js", () => {
 test("CLI defer needles land on the installed main.js", () => {
   const installed = readFileSync(mainPath, "utf8");
   const next = injectMainDeferCliModules(installed);
-  assert.match(next, /import \{ InteractiveMode \} from "\.\/modes\/interactive\/interactive-mode\.js"/);
+  assert.match(next, /await import\("\.\/modes\/interactive\/interactive-mode\.js"\)/);
   assert.doesNotMatch(next, /from "\.\/modes\/index\.js"/);
   assert.match(next, /args\[0\] === "install"/);
   assert.doesNotMatch(next, /import \{ exportFromFile \}/);
@@ -80,7 +80,7 @@ test("the boot-perf cluster applies loader/main/agent-session without drift", ()
   for (const rel of [
     ["dist/core/extensions/loader.js", /const _bundledPiCodingAgent = \{\};/],
     ["dist/core/agent-session.js", /await import\("\.\/export-html\/index\.js"\)/],
-    ["dist/main.js", /import \{ InteractiveMode \} from "\.\/modes\/interactive\/interactive-mode\.js"/],
+    ["dist/main.js", /await import\("\.\/modes\/interactive\/interactive-mode\.js"\)/],
   ]) {
     const filePath = join(senpiDir, rel[0]);
     const { next, warnings } = applyNoThrow(pathToFileURL(filePath).href, readFileSync(filePath, "utf8"));

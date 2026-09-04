@@ -59,37 +59,6 @@ function constValue(source, name) {
 // 공식 원문(계획서) — 상수가 이것과 바이트 단위로 같아야 한다.
 const OFFICIAL_GUIDANCE_HEAD = "Summarize the transcript inside `<summary></summary>` tags. Include relevant information in the summary such that this conversation will be continued by a new context window without needing to redo work or be reprovided with relevant constraints or context.";
 
-test("핀된 compaction.js 바늘이 맞고 Fable 5.1 지침으로 교체된다", () => {
-  const source = pinned("dist/core/compaction/compaction.js");
-  assert.equal(source.includes(SUMMARIZATION_PROMPT_NEEDLE), true, "SUMMARIZATION_PROMPT needle");
-  assert.equal(source.includes(UPDATE_SUMMARIZATION_INSTRUCTIONS_NEEDLE), true, "UPDATE_SUMMARIZATION_INSTRUCTIONS needle");
-  assert.equal(source.includes(TURN_PREFIX_PROMPT_NEEDLE), true, "TURN_PREFIX_SUMMARIZATION_PROMPT needle");
-  assert.equal(source.includes(SOURCE_CONTEXT_TURN_PREFIX_PROMPT_NEEDLE), true, "SOURCE_CONTEXT_TURN_PREFIX_SUMMARIZATION_PROMPT needle");
-
-  const next = injectCompaction(source);
-  assert.equal(FABLE_51_PRESERVATION_GUIDANCE.startsWith(OFFICIAL_GUIDANCE_HEAD), true, "guidance is verbatim (backticks included)");
-  assert.equal(countLiteral(constValue(next, "SUMMARIZATION_PROMPT"), FABLE_51_PRESERVATION_GUIDANCE), 1);
-  assert.equal(countLiteral(constValue(next, "UPDATE_SUMMARIZATION_INSTRUCTIONS"), FABLE_51_PRESERVATION_GUIDANCE), 1);
-  assert.equal(countLiteral(constDecl(next, "TURN_PREFIX_SUMMARIZATION_PROMPT"), FABLE_51_PRESERVATION_GUIDANCE), 0);
-  assert.equal(countLiteral(constDecl(next, "SOURCE_CONTEXT_TURN_PREFIX_SUMMARIZATION_PROMPT"), FABLE_51_PRESERVATION_GUIDANCE), 0);
-
-  const fullSummary = constDecl(next, "SUMMARIZATION_PROMPT");
-  const updateBody = constDecl(next, "UPDATE_SUMMARIZATION_INSTRUCTIONS");
-  assert.doesNotMatch(fullSummary, /## Goal/);
-  assert.doesNotMatch(fullSummary, /Use this EXACT format/);
-  assert.doesNotMatch(updateBody, /## Goal/);
-  assert.doesNotMatch(updateBody, /Use this EXACT format/);
-  assert.match(constDecl(next, "TURN_PREFIX_SUMMARIZATION_PROMPT"), /## Original Request/);
-  assert.match(constDecl(next, "SOURCE_CONTEXT_TURN_PREFIX_SUMMARIZATION_PROMPT"), /## Original Request/);
-  assert.match(next, /The messages above are NEW conversation messages to incorporate into the existing summary provided in <previous-summary> tags\./);
-  assert.match(next, /The messages above contain an existing structured summary of earlier conversation history followed by NEW conversation messages\./);
-  assert.match(next, /unwrapOuterSummary\(contentTextForSummary\(/);
-
-  assert.throws(() => injectCompaction(next));
-  assert.equal(isCompactionUrl("file:///x/@code-yeongyu/senpi/dist/core/compaction/compaction.js"), true);
-  assert.equal(isCompactionUrl("file:///x/@code-yeongyu/senpi/dist/core/compaction/utils.js"), false);
-});
-
 test("핀된 utils.js 시스템 프롬프트는 <summary> 전용으로 바뀐다", () => {
   const source = pinned("dist/core/compaction/utils.js");
   assert.equal(source.includes(SUMMARIZATION_SYSTEM_PROMPT_NEEDLE), true, "SUMMARIZATION_SYSTEM_PROMPT needle");

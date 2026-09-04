@@ -11,7 +11,10 @@ export function isCompactionPolicyUrl(url) {
 }
 
 export function isSettingsManagerUrl(url) {
-  return url.includes("@code-yeongyu/senpi/dist/core/settings-manager.js");
+  return (
+    url.includes("@code-yeongyu/senpi/dist/core/settings-manager.js") ||
+    url.includes("@code-yeongyu/senpi/dist/core/compaction-settings-resolver.js")
+  );
 }
 
 export function isCompactionIndexThresholdUrl(url) {
@@ -98,14 +101,30 @@ export function injectCompactionPolicy(source, hrefs = compactionPolicyHrefs()) 
   );
 }
 
+const RESOLVER_NEEDLE =
+  "        idleCompactionEnabled: typeof raw?.idleCompactionEnabled === \"boolean\" ? raw.idleCompactionEnabled : DEFAULTS.idleCompactionEnabled,\n";
+
+const RESOLVER_REPLACEMENT =
+  RESOLVER_NEEDLE +
+  "        thresholdRatio: raw?.thresholdRatio,\n" +
+  "        models: raw?.models ?? raw?.thresholdByModel,\n";
+
 export function injectCompactionSettings(source) {
+  if (source.includes(RESOLVER_NEEDLE)) {
+    return replaceOnce(source, RESOLVER_NEEDLE, RESOLVER_REPLACEMENT, "settings compaction threshold keys");
+  }
+  if (!source.includes(SETTINGS_NEEDLE)) return source;
   return replaceOnce(source, SETTINGS_NEEDLE, SETTINGS_REPLACEMENT, "settings compaction threshold keys");
 }
 
 export function injectCompactionIndexThreshold(source) {
-  let next = replaceOnce(source, INDEX_HELPER_NEEDLE, INDEX_HELPER_REPLACEMENT, "index compactionSettingsFor");
+  let next = source.includes(INDEX_HELPER_NEEDLE)
+    ? replaceOnce(source, INDEX_HELPER_NEEDLE, INDEX_HELPER_REPLACEMENT, "index compactionSettingsFor")
+    : source;
   for (const [needle, replacement, label] of INDEX_CALLS) {
-    next = replaceOnce(next, needle, replacement, label);
+    if (next.includes(needle)) {
+      next = replaceOnce(next, needle, replacement, label);
+    }
   }
   return next;
 }

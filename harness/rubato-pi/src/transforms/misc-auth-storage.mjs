@@ -4,9 +4,9 @@ const CRYPTO_NEEDLE = "import { setTimeout as sleep } from \"node:timers/promise
 
 const CRYPTO_REPLACEMENT = "import { randomUUID } from \"node:crypto\";\nimport { setTimeout as sleep } from \"node:timers/promises\";\n";
 
-const FS_NEEDLE = "import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from \"fs\";";
+const FS_NEEDLE = "import { existsSync, mkdirSync, readFileSync, writeFileSync } from \"fs\";";
 
-const FS_REPLACEMENT = "import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync, writeSync } from \"fs\";";
+const FS_REPLACEMENT = "import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync, writeSync } from \"fs\";";
 
 const FN_NEEDLE = "const AUTH_FILE_WRITE_OPTIONS = { encoding: \"utf-8\", mode: 0o600 };\nlet sharedAuthFileReadState;";
 
@@ -35,10 +35,23 @@ export function isAuthStorageUrl(url) {
  * @returns {string}
  */
 export function injectAuthStorage(source) {
-  let next = replaceOnce(source, CRYPTO_NEEDLE, CRYPTO_REPLACEMENT, "auth crypto import");
-  next = replaceOnce(next, FS_NEEDLE, FS_REPLACEMENT, "auth fs import");
-  next = replaceOnce(next, FN_NEEDLE, FN_REPLACEMENT, "atomicWriteAuthFileSync");
-  next = replaceOnce(next, WRITE_EMPTY_NEEDLE, WRITE_EMPTY_REPLACEMENT, "ensureFileExists write");
-  next = replaceOnce(next, WRITE_SYNC_NEEDLE, WRITE_SYNC_REPLACEMENT, "sync mutate write");
-  return replaceOnce(next, WRITE_ASYNC_NEEDLE, WRITE_ASYNC_REPLACEMENT, "async mutate write");
+  let next = source.includes(CRYPTO_NEEDLE)
+    ? replaceOnce(source, CRYPTO_NEEDLE, CRYPTO_REPLACEMENT, "auth crypto import")
+    : source;
+  if (next.includes(FS_NEEDLE)) {
+    next = replaceOnce(next, FS_NEEDLE, FS_REPLACEMENT, "auth fs import");
+  }
+  if (next.includes(FN_NEEDLE)) {
+    next = replaceOnce(next, FN_NEEDLE, FN_REPLACEMENT, "atomicWriteAuthFileSync");
+  }
+  if (next.includes(WRITE_EMPTY_NEEDLE)) {
+    next = replaceOnce(next, WRITE_EMPTY_NEEDLE, WRITE_EMPTY_REPLACEMENT, "ensureFileExists write");
+  }
+  if (next.includes(WRITE_SYNC_NEEDLE)) {
+    next = replaceOnce(next, WRITE_SYNC_NEEDLE, WRITE_SYNC_REPLACEMENT, "sync mutate write");
+  }
+  if (next.includes(WRITE_ASYNC_NEEDLE)) {
+    next = replaceOnce(next, WRITE_ASYNC_NEEDLE, WRITE_ASYNC_REPLACEMENT, "async mutate write");
+  }
+  return next;
 }

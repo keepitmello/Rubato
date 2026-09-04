@@ -40,6 +40,8 @@ yarn.lock
 
 # Local agent workspaces
 .claude/
+.consult/
+.outpost/
 .dori-sync/
 .dori/
 .dys/

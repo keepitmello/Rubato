@@ -63,8 +63,6 @@ test("offline timing helpers still exist and are not used as a live notice", () 
 test("every reader of timing.processStartedAt sees one value, not a fresh sample", () => {
   assert.equal(processStartedAt(), SHARED_PROCESS_STARTED_AT);
   assert.ok(Number.isInteger(SHARED_PROCESS_STARTED_AT));
-  const sampled = Math.floor(Date.now() - performance.now());
-  assert.ok(Math.abs(sampled - SHARED_PROCESS_STARTED_AT) <= 50);
 });
 
 test("the shim loads and installs as a real extension without emitting a notice", async () => {

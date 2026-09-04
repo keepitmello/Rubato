@@ -51,8 +51,8 @@ export function injectEditorMouse(source) {
   );
   next = replaceOnce(
     next,
-    "    handleInput(data) {\n        const kb = getKeybindings();",
-    "    handleInput(data) {\n        const kb = getKeybindings();\n        if (this.consumeMouseSelectionInput(data, kb)) return;",
+    "    handleInput(data) {\n        data = normalizeWarpWslShiftEnterInput(data, this.terminalEnvironment, this.terminalPlatform, this.terminalSocketExists);\n        const kb = getKeybindings();",
+    "    handleInput(data) {\n        data = normalizeWarpWslShiftEnterInput(data, this.terminalEnvironment, this.terminalPlatform, this.terminalSocketExists);\n        const kb = getKeybindings();\n        if (this.consumeMouseSelectionInput(data, kb)) return;",
     "editor input",
   );
   next = replaceOnce(

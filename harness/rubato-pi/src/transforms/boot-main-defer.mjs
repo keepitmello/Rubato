@@ -73,12 +73,14 @@ export function injectMainDeferCliModules(source) {
     "",
     "main defer export-html import",
   );
-  next = replaceOnce(
-    next,
-    'import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";\n',
-    'import { InteractiveMode } from "./modes/interactive/interactive-mode.js";\n',
-    "main defer modes barrel",
-  );
+  if (next.includes('import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";\n')) {
+    next = replaceOnce(
+      next,
+      'import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";\n',
+      'import { InteractiveMode } from "./modes/interactive/interactive-mode.js";\n',
+      "main defer modes barrel",
+    );
+  }
   next = replaceOnce(
     next,
     'import { runMultiSessionHost } from "./modes/rpc/multi-session-host.js";\n',
