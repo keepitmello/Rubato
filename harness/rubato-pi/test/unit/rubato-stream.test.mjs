@@ -1,12 +1,13 @@
 // `withRubatoStream` 의 계약.
 //
 // 이 decorator 는 transport 가 아니다. native stream 을 그대로 위임하면서 Rubato
-// 고유 의미(계측 한 번, timing, 델타 후 재시도 금지, 중단 정착)만 얹는다. 그래서
+// 고유 의미(계측 한 번, timing, provider 실행 뒤 재시도 금지, 중단 정착)만 얹는다. 그래서
 // 여기서 지키는 것은 "무엇을 더 하는가"보다 **무엇을 잃지 않는가**다.
 import assert from "node:assert/strict";
+import { join } from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
-import { senpiNested } from "../../src/engine-paths.mjs";
+import { senpiDir, senpiNested } from "../../src/engine-paths.mjs";
 import {
   kRubatoStream,
   measurementBodyFromContext,
@@ -24,6 +25,9 @@ const { createAssistantMessageEventStream } = await import(
 // 설치본에서 가져와야 "실제로 걸러지는가"를 검사한 것이 된다.
 const { kCursorExecResolved } = await import(
   pathToFileURL(senpiNested("@earendil-works/pi-ai/dist/utils/block-symbols.js")).href
+);
+const { AgentSession } = await import(
+  pathToFileURL(join(senpiDir, "dist/core/agent-session.js")).href
 );
 
 const model = { provider: "openai-codex", id: "gpt-5.6-sol" };
@@ -180,7 +184,7 @@ test("timing 은 성공 턴에만 붙고 벽시계/단조시계를 주입받는�
   });
 });
 
-test("델타 전 오류는 재시도 가능하고, 델타 후 오류는 재시도를 막는다", async () => {
+test("provider tool 실행이 없는 오류는 text delta 뒤에도 재시도 가능하다", async () => {
   const before = assistant({ stopReason: "error", errorMessage: "terminated" });
   const beforeLast = (await drain(withRubatoStream(scriptedStream([
     { type: "start", partial: before },
@@ -195,10 +199,10 @@ test("델타 전 오류는 재시도 가능하고, 델타 후 오류는 재시�
     { type: "text_delta", contentIndex: 0, delta: "안녕" },
     { type: "error", reason: "error", error: after },
   ]))(model, context, { env: {} }))).at(-1);
-  assert.equal(afterLast.error.errorMessage, "senpi:no-turn-retry:terminated");
+  assert.equal(afterLast.error.errorMessage, "terminated");
 });
 
-test("사고 델타만 있으면 전송 오류는 재시도하고, 텍스트·도구가 나간 뒤에만 막는다", async () => {
+test("사고나 text delta 뒤 WebSocket 오류는 실제 AgentSession 제한 재시도로 넘어간다", async () => {
   const thinking = assistant({ stopReason: "error", errorMessage: "WebSocket error" });
   const thinkingLast = (await drain(withRubatoStream(scriptedStream([
     { type: "start", partial: thinking },
@@ -214,7 +218,54 @@ test("사고 델타만 있으면 전송 오류는 재시도하고, 텍스트·�
     { type: "text_delta", contentIndex: 1, delta: "안녕" },
     { type: "error", reason: "error", error: afterText },
   ]))(model, context, { env: {} }))).at(-1);
-  assert.equal(afterTextLast.error.errorMessage, "senpi:no-turn-retry:WebSocket error");
+  assert.equal(afterTextLast.error.errorMessage, "WebSocket error");
+  assert.equal(
+    AgentSession.prototype._isRetryableError.call(
+      { model: { contextWindow: 200_000 } },
+      {
+        ...afterTextLast.error,
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 },
+      },
+    ),
+    true,
+    "decorator가 접두사를 빼면 실제 AgentSession이 제한 재시도를 맡아야 한다",
+  );
+});
+
+test("Cursor tool 실행 표지는 future projector가 terminal block을 잃어도 latch에 남는다", async () => {
+  // pinned Cursor는 partial과 terminal에 같은 message 객체를 쓴다. split-object는
+  // 앞으로 stream projector가 block을 다시 만들더라도 fail-open하지 않게 하는 계약이다.
+  const executed = {
+    type: "toolCall",
+    id: "t1",
+    name: "read_file",
+    arguments: { path: "/tmp/a" },
+    [kCursorExecResolved]: true,
+  };
+  const partial = assistant({ content: [executed] });
+  const message = assistant({
+    stopReason: "error",
+    errorMessage: "WebSocket error",
+  });
+  const last = (await drain(withRubatoStream(scriptedStream([
+    { type: "start", partial },
+    { type: "toolcall_start", contentIndex: 0, partial },
+    { type: "toolcall_end", contentIndex: 0, toolCall: executed, partial },
+    { type: "error", reason: "error", error: message },
+  ]))(model, context, { env: {} }))).at(-1);
+
+  assert.equal(last.error.errorMessage, "senpi:no-turn-retry:WebSocket error");
+  assert.equal(
+    AgentSession.prototype._isRetryableError.call(
+      { model: { contextWindow: 200_000 } },
+      {
+        ...last.error,
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 },
+      },
+    ),
+    false,
+    "provider가 이미 실행한 tool은 실제 AgentSession에서도 재시도하면 안 된다",
+  );
 });
 
 test("사용자 중단 + 완성된 미실행 tool 은 toolUse 로 정착한다", async () => {
@@ -247,7 +298,19 @@ test("중단이 아닌 전송 실패는 도구가 있어도 성공으로 바꾸�
     { type: "error", reason: "error", error: message },
   ]))(model, context, { env: {} }))).at(-1);
   assert.equal(last.type, "error");
-  assert.ok(last.error.errorMessage.startsWith("senpi:no-turn-retry:"));
+  assert.equal(last.error.errorMessage, "terminated");
+  assert.equal(last.error.content[0].partialJson, '{"path":"/tm', "잘린 tool을 성공으로 정착시키면 안 된다");
+  assert.equal(
+    AgentSession.prototype._isRetryableError.call(
+      { model: { contextWindow: 200_000 } },
+      {
+        ...last.error,
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 },
+      },
+    ),
+    true,
+    "실행되지 않은 일반 toolCall은 실제 AgentSession의 제한 재시도로 넘어가야 한다",
+  );
 });
 
 test("pi-ai 가 표지한 exec-resolved block 은 실행할 tool 로 세지 않는다", () => {

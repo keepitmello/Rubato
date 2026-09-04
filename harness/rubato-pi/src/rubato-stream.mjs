@@ -2,7 +2,7 @@
 //
 // 예전에는 계측·timing·정착이 삭제된 FX transport 구현 **안쪽**에 있었다. 그래서
 // provider 를 직결로 바꾸는 순간 그 의미가 통째로 사라졌다 — statusline 의
-// TTFT/wait/think, measurement log, 델타 후 재시도 금지, 도구를 든 사용자 중단의
+// TTFT/wait/think, measurement log, provider 실행 뒤 재시도 금지, 도구를 든 사용자 중단의
 // 정착이 전부 그 transport 전용 코드였다.
 //
 // 여기는 transport 를 구현하지 않는다. native `stream`/`streamSimple` 을 그대로
@@ -30,6 +30,7 @@ import { recordSpeedIndexCall, speedIndexStore } from "./speed-index-store.mjs";
 const { isCursorExecResolved } = await import(
   pathToFileURL(senpiNested("@earendil-works/pi-ai/dist/utils/block-symbols.js")).href
 );
+
 export { isCursorExecResolved };
 
 /** 엔진(agent-session TURN_RETRY_SUPPRESSION_PREFIX)이 재시도 금지로 읽는 접두사. */
@@ -57,6 +58,20 @@ function isTerminal(event) {
 
 function terminalMessage(event) {
   return event?.type === "done" ? event.message : event?.error;
+}
+
+/**
+ * provider 가 model stream 안에서 이미 tool 을 실행했는지 본다.
+ *
+ * 일반 toolCall delta 는 agent loop 가 terminal `toolUse` 뒤에 실행하므로 transport
+ * 오류 시점에는 부작용이 없다. 반면 Cursor exec-channel block 은 provider 가
+ * 요청 도중 tool 을 직접 실행하며, 시작과 함께 `kCursorExecResolved`를 붙인다.
+ * 그 턴을 다시 보내면 실행 완료 여부와 관계없이 같은 부작용을 두 번 낼 수 있다.
+ */
+function hasProviderExecutedTool(message) {
+  return (message?.content ?? []).some(
+    (part) => part?.type === "toolCall" && isCursorExecResolved(part),
+  );
 }
 
 /**
@@ -188,6 +203,7 @@ function createCallState(model, options, modelId) {
     firstReasoningAtMs: undefined,
     firstTextAtMs: undefined,
     emittedDelta: false,
+    providerExecutedTool: false,
     // recorder 내부 dedupe 에 기대지 않는다. 계약은 "logical call 당 최대 한 번"이고,
     // 그 계약을 지키는 주체가 이 decorator 다.
     firstOutputRecorded: false,
@@ -295,6 +311,13 @@ function isReplayableContent(event) {
 
 function observeDelta(state, event) {
   if (isReplayableContent(event)) state.emittedDelta = true;
+  if (
+    !state.providerExecutedTool &&
+    (isCursorExecResolved(event?.toolCall) ||
+      hasProviderExecutedTool(event?.partial))
+  ) {
+    state.providerExecutedTool = true;
+  }
   // TTFT 는 빈 start/end 프레임이 아니라 사용자가 실제로 볼 첫 내용이다.
   const isContentDelta = event.type === "text_delta" ||
     event.type === "thinking_delta" || event.type === "toolcall_delta";
@@ -334,7 +357,8 @@ function attachTiming(state, message) {
  * 종료 정착표(설계 문서)를 여기서 지킨다:
  * - 텍스트·도구 델타 전 오류 → 그대로 error, 재시도 허용
  * - 사고만 나간 오류 → 그대로 error, 재시도 허용 (사고는 재시도가 두 번 그리지 않는다)
- * - 텍스트·도구 델타 후 오류 → `senpi:no-turn-retry:` 로 재시도 금지
+ * - text/thinking/일반 toolCall 델타 뒤 오류 → 엔진의 제한 재시도에 위임
+ * - provider 내부 tool 실행 뒤 오류 → `senpi:no-turn-retry:` 로 재시도 금지
  * - 사용자 중단 + 완성된 미실행 tool → `toolUse` done
  * - 전송 실패는 도구가 있어도 성공으로 바꾸지 않는다
  */
@@ -377,11 +401,16 @@ function settleTerminal(state, options, event) {
       message.errorMessage = reason.startsWith(NO_TURN_RETRY_PREFIX) ? reason : `${NO_TURN_RETRY_PREFIX}${reason}`;
       return event;
     }
-    // 이미 화면에 나간 텍스트·도구가 있으면 같은 턴을 다시 보낼 수 없다 —
-    // 업스트림은 이미 토큰을 태웠고, 재시도하면 같은 텍스트가 두 번 나온다.
-    // 사고만 나간 경우는 여기 오지 않는다: 재시도가 사고를 다시 그리더라도
-    // 실패한 턴은 엔진이 걷어내고, Codex 는 SSE 로 넘어간다.
-    if (state.emittedDelta && rawError && !rawError.startsWith(NO_TURN_RETRY_PREFIX)) {
+    // 실패한 assistant 는 AgentSession 이 active branch 에서 걷어낸 뒤 같은
+    // model call 만 제한 재시도한다. 앞 턴의 toolResult 는 남고, 아직 terminal
+    // `toolUse`가 되지 않은 일반 toolCall 은 실행된 적이 없으므로 재시도해도 안전하다.
+    // provider 가 stream 안에서 tool 을 직접 실행한 경우만 같은 부작용을 막는다.
+    if (
+      state.emittedDelta &&
+      (state.providerExecutedTool || hasProviderExecutedTool(message)) &&
+      rawError &&
+      !rawError.startsWith(NO_TURN_RETRY_PREFIX)
+    ) {
       message.errorMessage = `${NO_TURN_RETRY_PREFIX}${rawError}`;
     }
     return event;
