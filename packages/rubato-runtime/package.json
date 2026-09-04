@@ -23,7 +23,7 @@
     "test": "bun test src/**/*.test.ts"
   },
   "dependencies": {
-    "@earendil-works/pi-tui": "0.84.2",
+    "@earendil-works/pi-tui": "npm:@code-yeongyu/senpi-tui@2026.9.4-3",
     "@rubato/ast-grep-mcp": "workspace:*",
     "@rubato/delegate-core": "workspace:*",
     "@rubato/lsp-core": "workspace:*",
@@ -38,7 +38,7 @@
     "typebox": "1.3.16"
   },
   "peerDependencies": {
-    "@code-yeongyu/senpi": "2026.8.22"
+    "@code-yeongyu/senpi": "2026.9.4-3"
   },
   "peerDependenciesMeta": {
     "@code-yeongyu/senpi": {
@@ -46,7 +46,7 @@
     }
   },
   "devDependencies": {
-    "@code-yeongyu/senpi": "2026.8.22",
+    "@code-yeongyu/senpi": "2026.9.4-3",
     "terser": "5.50.0"
   }
 }

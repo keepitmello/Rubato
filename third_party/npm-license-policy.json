@@ -14,70 +14,70 @@
     },
     {
       "name": "@anthropic-ai/claude-agent-sdk-darwin-arm64",
-      "version": "0.3.238",
+      "version": "0.3.259",
       "license": "SEE LICENSE IN LICENSE.md",
       "approvedException": true,
       "exceptionReason": "Pre-existing pinned Anthropic SDK platform payload; use and redistribution remain subject to the license shipped by Anthropic."
     },
     {
       "name": "@anthropic-ai/claude-agent-sdk-darwin-x64",
-      "version": "0.3.238",
+      "version": "0.3.259",
       "license": "SEE LICENSE IN LICENSE.md",
       "approvedException": true,
       "exceptionReason": "Pre-existing pinned Anthropic SDK platform payload; use and redistribution remain subject to the license shipped by Anthropic."
     },
     {
       "name": "@anthropic-ai/claude-agent-sdk-linux-arm64-musl",
-      "version": "0.3.238",
+      "version": "0.3.259",
       "license": "SEE LICENSE IN LICENSE.md",
       "approvedException": true,
       "exceptionReason": "Pre-existing pinned Anthropic SDK platform payload; use and redistribution remain subject to the license shipped by Anthropic."
     },
     {
       "name": "@anthropic-ai/claude-agent-sdk-linux-arm64",
-      "version": "0.3.238",
+      "version": "0.3.259",
       "license": "SEE LICENSE IN LICENSE.md",
       "approvedException": true,
       "exceptionReason": "Pre-existing pinned Anthropic SDK platform payload; use and redistribution remain subject to the license shipped by Anthropic."
     },
     {
       "name": "@anthropic-ai/claude-agent-sdk-linux-x64-musl",
-      "version": "0.3.238",
+      "version": "0.3.259",
       "license": "SEE LICENSE IN LICENSE.md",
       "approvedException": true,
       "exceptionReason": "Pre-existing pinned Anthropic SDK platform payload; use and redistribution remain subject to the license shipped by Anthropic."
     },
     {
       "name": "@anthropic-ai/claude-agent-sdk-linux-x64",
-      "version": "0.3.238",
+      "version": "0.3.259",
       "license": "SEE LICENSE IN LICENSE.md",
       "approvedException": true,
       "exceptionReason": "Pre-existing pinned Anthropic SDK platform payload; use and redistribution remain subject to the license shipped by Anthropic."
     },
     {
       "name": "@anthropic-ai/claude-agent-sdk-win32-arm64",
-      "version": "0.3.238",
+      "version": "0.3.259",
       "license": "SEE LICENSE IN LICENSE.md",
       "approvedException": true,
       "exceptionReason": "Pre-existing pinned Anthropic SDK platform payload; use and redistribution remain subject to the license shipped by Anthropic."
     },
     {
       "name": "@anthropic-ai/claude-agent-sdk-win32-x64",
-      "version": "0.3.238",
+      "version": "0.3.259",
       "license": "SEE LICENSE IN LICENSE.md",
       "approvedException": true,
       "exceptionReason": "Pre-existing pinned Anthropic SDK platform payload; use and redistribution remain subject to the license shipped by Anthropic."
     },
     {
       "name": "@anthropic-ai/claude-agent-sdk",
-      "version": "0.3.238",
+      "version": "0.3.259",
       "license": "SEE LICENSE IN README.md",
       "approvedException": true,
       "exceptionReason": "Pre-existing pinned Anthropic SDK platform payload; use and redistribution remain subject to the license shipped by Anthropic."
     },
     {
       "name": "@anthropic-ai/sdk",
-      "version": "0.91.1",
+      "version": "0.123.0",
       "license": "MIT"
     },
     {
@@ -97,97 +97,92 @@
     },
     {
       "name": "@aws-sdk/client-bedrock-runtime",
-      "version": "3.1115.0",
+      "version": "3.1116.0",
       "license": "Apache-2.0"
     },
     {
       "name": "@aws-sdk/core",
-      "version": "3.977.8",
+      "version": "3.977.9",
       "license": "Apache-2.0"
     },
     {
       "name": "@aws-sdk/credential-provider-env",
-      "version": "3.972.69",
+      "version": "3.972.70",
       "license": "Apache-2.0"
     },
     {
       "name": "@aws-sdk/credential-provider-http",
-      "version": "3.972.71",
+      "version": "3.972.72",
       "license": "Apache-2.0"
     },
     {
       "name": "@aws-sdk/credential-provider-ini",
-      "version": "3.973.14",
+      "version": "3.973.15",
       "license": "Apache-2.0"
     },
     {
       "name": "@aws-sdk/credential-provider-login",
-      "version": "3.972.76",
+      "version": "3.972.77",
       "license": "Apache-2.0"
     },
     {
       "name": "@aws-sdk/credential-provider-node",
-      "version": "3.972.80",
+      "version": "3.972.81",
       "license": "Apache-2.0"
     },
     {
       "name": "@aws-sdk/credential-provider-process",
-      "version": "3.972.69",
+      "version": "3.972.70",
       "license": "Apache-2.0"
     },
     {
       "name": "@aws-sdk/credential-provider-sso",
-      "version": "3.973.13",
+      "version": "3.973.14",
       "license": "Apache-2.0"
     },
     {
       "name": "@aws-sdk/credential-provider-web-identity",
-      "version": "3.972.75",
+      "version": "3.972.76",
       "license": "Apache-2.0"
     },
     {
       "name": "@aws-sdk/eventstream-handler-node",
-      "version": "3.972.33",
+      "version": "3.972.34",
       "license": "Apache-2.0"
     },
     {
       "name": "@aws-sdk/middleware-eventstream",
-      "version": "3.972.28",
+      "version": "3.972.29",
       "license": "Apache-2.0"
     },
     {
       "name": "@aws-sdk/middleware-websocket",
-      "version": "3.972.51",
+      "version": "3.972.52",
       "license": "Apache-2.0"
     },
     {
       "name": "@aws-sdk/nested-clients",
-      "version": "3.997.43",
+      "version": "3.997.44",
       "license": "Apache-2.0"
     },
     {
       "name": "@aws-sdk/signature-v4-multi-region",
-      "version": "3.996.45",
+      "version": "3.996.46",
       "license": "Apache-2.0"
     },
     {
       "name": "@aws-sdk/token-providers",
-      "version": "3.1111.0",
-      "license": "Apache-2.0"
-    },
-    {
-      "name": "@aws-sdk/token-providers",
-      "version": "3.1115.0",
+      "version": "3.1116.0",
       "license": "Apache-2.0"
     },
     {
       "name": "@aws-sdk/types",
-      "version": "3.974.4",
+      "version": "3.974.5",
       "license": "Apache-2.0"
     },
     {
       "name": "@aws-sdk/xml-builder",
-      "version": "3.972.39",
+      "version": "3.972.40",
       "license": "Apache-2.0"
     },
     {
@@ -297,37 +292,37 @@
     },
     {
       "name": "@code-yeongyu/senpi-agent-core",
-      "version": "2026.8.22",
+      "version": "2026.9.4-3",
       "license": "MIT"
     },
     {
       "name": "@code-yeongyu/senpi-ai",
-      "version": "2026.8.22",
+      "version": "2026.9.4-3",
       "license": "MIT"
     },
     {
       "name": "@code-yeongyu/senpi-codemode",
-      "version": "2026.8.22",
+      "version": "2026.9.4-3",
       "license": "MIT"
     },
     {
       "name": "@code-yeongyu/senpi-pty",
-      "version": "2026.8.22",
+      "version": "2026.9.4-3",
       "license": "MIT"
     },
     {
       "name": "@code-yeongyu/senpi-telemetry",
-      "version": "2026.8.22",
+      "version": "2026.9.4-3",
       "license": "MIT"
     },
     {
       "name": "@code-yeongyu/senpi-tui",
-      "version": "2026.8.22",
+      "version": "2026.9.4-3",
       "license": "MIT"
     },
     {
       "name": "@code-yeongyu/senpi",
-      "version": "2026.8.22",
+      "version": "2026.9.4-3",
       "license": "MIT"
     },
     {
@@ -389,11 +384,6 @@
     {
       "name": "@csstools/css-tokenizer",
       "version": "4.0.0",
-      "license": "MIT"
-    },
-    {
-      "name": "@earendil-works/pi-tui",
-      "version": "0.84.2",
       "license": "MIT"
     },
     {
@@ -938,13 +928,18 @@
     },
     {
       "name": "@smithy/signature-v4",
-      "version": "5.7.2",
+      "version": "5.7.3",
       "license": "Apache-2.0"
     },
     {
       "name": "@smithy/types",
       "version": "4.17.2",
       "license": "Apache-2.0"
+    },
+    {
+      "name": "@stablelib/base64",
+      "version": "1.0.1",
+      "license": "MIT"
     },
     {
       "name": "@standard-schema/spec",
@@ -2219,6 +2214,13 @@
       "license": "Apache-2.0"
     },
     {
+      "name": "fast-sha256",
+      "version": "1.3.0",
+      "license": "Unlicense",
+      "approvedException": true,
+      "exceptionReason": "Pre-existing lockfile dependency under a permissive non-copyleft license; retained as an explicit reviewed exception to the Stage 9 allowlist."
+    },
+    {
       "name": "fast-uri",
       "version": "3.1.6",
       "license": "BSD-3-Clause"
@@ -2788,7 +2790,9 @@
     {
       "name": "lru-cache",
       "version": "10.4.3",
-      "license": "ISC"
+      "license": "ISC",
+      "approvedException": true,
+      "exceptionReason": "Pre-existing lockfile dependency under a permissive non-copyleft license; retained as an explicit reviewed exception to the Stage 9 allowlist."
     },
     {
       "name": "lru-cache",
@@ -2825,11 +2829,6 @@
     {
       "name": "marked",
       "version": "18.0.10",
-      "license": "MIT"
-    },
-    {
-      "name": "marked",
-      "version": "18.0.5",
       "license": "MIT"
     },
     {
@@ -3568,6 +3567,11 @@
       "license": "MIT"
     },
     {
+      "name": "standardwebhooks",
+      "version": "1.0.0",
+      "license": "MIT"
+    },
+    {
       "name": "statuses",
       "version": "2.0.2",
       "license": "MIT"
@@ -3747,6 +3751,11 @@
     {
       "name": "typebox",
       "version": "1.3.16",
+      "license": "MIT"
+    },
+    {
+      "name": "typebox",
+      "version": "1.3.18",
       "license": "MIT"
     },
     {
