@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   ANTHROPIC_PICKER_IDS,
   CODEX_PICKER_IDS,
+  OPENCODE_PICKER_IDS,
   XAI_PICKER_IDS,
   keepPickerIds,
   withPickerIds,
@@ -45,17 +46,38 @@ test("Codex 피커는 base 묶음 다음 Fast 묶음이다", () => {
     "gpt-5.6-sol-fast",
     "gpt-5.6-terra-fast",
     "gpt-5.6-luna-fast",
+    "gpt-6-astra",
+    "gpt-6-astra-fast",
     "gpt-daybreak-blue-latest",
     "gpt-daybreak-blue-latest-fast",
   ]);
 });
 
-test("Codex 는 5.6과 Daybreak만 남긴다", () => {
+test("Codex 는 5.6과 Astra, Daybreak만 남긴다", () => {
   const kept = keepPickerIds(
-    [model("gpt-5.4"), model("gpt-5.6-sol"), model("gpt-5.5"), model("gpt-daybreak-blue-latest")],
+    [
+      model("gpt-5.4"),
+      model("gpt-5.6-sol"),
+      model("gpt-5.5"),
+      model("gpt-6-astra"),
+      model("gpt-daybreak-blue-latest"),
+    ],
     CODEX_PICKER_IDS,
   );
-  assert.deepEqual(kept.map((entry) => entry.id), ["gpt-5.6-sol", "gpt-daybreak-blue-latest"]);
+  assert.deepEqual(kept.map((entry) => entry.id), [
+    "gpt-5.6-sol",
+    "gpt-6-astra",
+    "gpt-daybreak-blue-latest",
+  ]);
+});
+
+test("OpenCode 피커는 Muse Spark 1.3 Contributor Free 만 남긴다", () => {
+  assert.deepEqual([...OPENCODE_PICKER_IDS], ["muse-spark-1.3-contributor-free"]);
+  const kept = keepPickerIds(
+    [model("muse-spark-1.2"), model("muse-spark-1.3-contributor-free"), model("gpt-5.4")],
+    OPENCODE_PICKER_IDS,
+  );
+  assert.deepEqual(kept.map((entry) => entry.id), ["muse-spark-1.3-contributor-free"]);
 });
 
 test("withPickerIds 는 native filter 뒤에 겹친다", () => {

@@ -68,7 +68,7 @@ test("models.json disables vercel and other foreign builtins without dropping us
   assert.ok(next.disabledProviders.includes("vercel-ai-gateway"));
   assert.ok(next.disabledProviders.includes("alibaba-token-plan"));
   // Codex 를 직접 물면서 브로커가 서비스하는 id 가 openai -> openai-codex 로 바뀌었다.
-  for (const kept of ["anthropic", "openai-codex", "xai"]) {
+  for (const kept of ["anthropic", "openai-codex", "xai", "opencode"]) {
     assert.ok(!next.disabledProviders.includes(kept), `${kept} is served by the broker`);
   }
   assert.match(written, /vercel-ai-gateway/);
@@ -187,11 +187,11 @@ test("models.json reclaims every supported provider and leaves foreign ids disab
     exists: () => true,
     readFile: () => JSON.stringify({
       providers: {},
-      disabledProviders: ["openai", "cursor", "kiro", "google-antigravity", "vercel-ai-gateway"],
+      disabledProviders: ["openai", "cursor", "kiro", "google-antigravity", "opencode", "vercel-ai-gateway"],
     }),
     writeFile: () => {},
   });
-  for (const id of ["cursor", "kiro", "google-antigravity"]) {
+  for (const id of ["cursor", "kiro", "google-antigravity", "opencode"]) {
     assert.ok(!next.disabledProviders.includes(id), `${id} 는 직결 소유이므로 회수해야 한다`);
   }
   assert.ok(next.disabledProviders.includes("openai"), "우리가 등록하지 않는 openai 는 계속 끈다");

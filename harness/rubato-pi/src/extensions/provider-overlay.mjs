@@ -23,11 +23,12 @@ function warn(message) {
  * 위를 덮는 두 번째 등록이었다. 이제 합성할 catalog 도, 덮을 대상도 없다 — pinned pi-ai
  * factory 가 모델 metadata 의 유일한 권위다.
  */
-export async function supportedProviders({ env = process.env, antigravity, cursor } = {}) {
+export async function supportedProviders({ env = process.env, antigravity, cursor, opencode } = {}) {
   return await directProviders({
     env,
     ...(antigravity ? { antigravity } : {}),
     ...(cursor ? { cursor } : {}),
+    ...(opencode ? { opencode } : {}),
   });
 }
 
@@ -68,6 +69,7 @@ export default async function providerOverlay(pi, {
   antigravityCredentialImporter = importAntigravityKeychainCredential,
   antigravityProjectLoader = loadAntigravityProjectId,
   fetchImpl = globalThis.fetch,
+  opencode,
 } = {}) {
   // 직결은 조건이 아니다. bridge 가 없으므로 이것이 유일한 경로이고, 여기서 갈라지면
   // provider 가 하나도 없는 세션이 뜬다. 예전 opt-out 값을 들고 온 환경에는 한 줄
@@ -80,6 +82,7 @@ export default async function providerOverlay(pi, {
     env,
     antigravity,
     cursor: { reactivateOnCredentialRotation: parentSession(process.argv) },
+    ...(opencode ? { opencode } : {}),
   });
   // 이관 결과를 삼키지 않는다. pinned ExtensionAPI 에는 `log` 가 없어서(agent-session.js
   // 의 extension 객체를 확인했다) `pi.log?.()` 는 영원히 조용한 no-op 이 된다. 그래서

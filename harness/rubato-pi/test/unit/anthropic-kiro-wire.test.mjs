@@ -95,7 +95,7 @@ async function drain(stream) {
   return events;
 }
 
-/** `[codex, xai, cursor, anthropic, kiro]` 순서는 `DIRECT_PROVIDER_IDS` 와 같은 계약이다. */
+/** `[codex, xai, cursor, anthropic, kiro, antigravity, opencode]` 순서는 `DIRECT_PROVIDER_IDS` 와 같은 계약이다. OpenCode 는 맨 뒤라 앞 인덱스는 그대로다. */
 async function providers(options) {
   const [, , , anthropic, kiro] = await directProviders({
     ...options,
