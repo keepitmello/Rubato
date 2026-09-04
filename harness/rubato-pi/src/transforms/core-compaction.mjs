@@ -43,6 +43,31 @@ export function isCompactionUrl(url) {
   return url.includes("@code-yeongyu/senpi/dist/core/compaction/compaction.js");
 }
 
+const CONTEXT_TOKENS_NEEDLE =
+  "export function calculateContextTokens(usage) {\n    return usage.totalTokens || usage.input + usage.output + usage.cacheRead + usage.cacheWrite;\n}";
+
+const CONTEXT_TOKENS_REPLACEMENT =
+  "export function calculateContextTokens(usage) {\n    if (!usage) return 0;\n    return usage.totalTokens || usage.input + usage.output + usage.cacheRead + usage.cacheWrite;\n}";
+
+/** pi-ai estimate.js and senpi compaction.js both expose this helper. */
+export function isContextTokensUrl(url) {
+  return (
+    url.includes("@earendil-works/pi-ai/dist/utils/estimate.js") ||
+    url.includes("@code-yeongyu/senpi-ai/dist/utils/estimate.js") ||
+    isCompactionUrl(url)
+  );
+}
+
+/** usage 없는 assistant에서 `.totalTokens`를 읽지 않게 한다. */
+export function injectContextTokensGuard(source) {
+  return replaceOnce(
+    source,
+    CONTEXT_TOKENS_NEEDLE,
+    CONTEXT_TOKENS_REPLACEMENT,
+    "calculateContextTokens usage guard",
+  );
+}
+
 /** 저장된 요약이 convertToLlm 의 <summary> 래퍼와 이중으로 감기지 않게, 바깥 한 겹만 벗긴다. */
 export function unwrapOuterSummary(text) {
   const trimmed = String(text ?? "").trim();

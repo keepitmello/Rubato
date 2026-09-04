@@ -26,6 +26,7 @@ export function remapHiddenCustomTurns(messages, convertOne) {
         ...next,
         role: "assistant",
         content: asBlocks(next.content),
+        usage: emptyUsage(),
       };
       const previous = converted[converted.length - 1];
       if (previous?.role === "assistant" && hidden.has(previous)) {
@@ -73,6 +74,17 @@ function asBlocks(content) {
     return content.length > 0 ? [{ type: "text", text: content }] : [];
   }
   return Array.isArray(content) ? content : [];
+}
+
+function emptyUsage() {
+  return {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 0,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  };
 }
 
 function isRecord(value) {
