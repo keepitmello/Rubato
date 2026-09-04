@@ -184,6 +184,27 @@ test("Codex: native metadata 를 보존하되 Rubato context 상한은 272K 다"
   assert.equal(models.get("gpt-5.6-sol").serviceTier, undefined, "base 에는 tier 가 없다");
   assert.equal(models.get("gpt-5.6-sol").upstreamModelId, undefined);
 
+  const astra = models.get("gpt-6-astra");
+  const astraFast = models.get("gpt-6-astra-fast");
+  assert.ok(astra, "Astra 가 catalog 에 없다");
+  assert.ok(astraFast, "Astra Fast 가 catalog 에 없다");
+  assert.equal(astra.name, "GPT-6 Astra");
+  assert.equal(astra.contextWindow, 272_000);
+  assert.equal(astra.maxTokens, 128_000);
+  assert.equal(astra.cost.input, 10);
+  assert.equal(astra.cost.output, 50);
+  assert.equal(astra.api, "openai-codex-responses");
+  assert.equal(astra.thinkingLevelMap.low, "low");
+  assert.equal(astra.thinkingLevelMap.xhigh, "xhigh");
+  assert.equal(astra.thinkingLevelMap.max, "max");
+  assert.equal(astra.thinkingLevelMap.off, null);
+  assert.equal(astra.thinkingLevelMap.minimal, null);
+  assert.equal(astra.upstreamModelId, undefined, "base 에는 tier 가 없다");
+  assert.equal(astra.serviceTier, undefined);
+  assert.equal(astraFast.upstreamModelId, "gpt-6-astra", "Fast 는 canonical ID 로 나가야 한다");
+  assert.equal(astraFast.serviceTier, "priority");
+  assert.equal(astraFast.contextWindow, 272_000);
+
   // Daybreak.
   const base = models.get("gpt-daybreak-blue-latest");
   const fast = models.get("gpt-daybreak-blue-latest-fast");
@@ -242,7 +263,9 @@ test("xAI: pinned grok-4.6 의 xhigh 가 picker 와 wire 에 남는다", async (
 });
 
 test("피커는 현재 세대만 남기고 getModels 저장분은 그대로다", async () => {
-  const [codex, xai, , anthropic] = await directProviders();
+  const providers = await directProviders();
+  const [codex, xai, , anthropic] = providers;
+  const opencode = providers.at(-1);
   assert.deepEqual(xai.filterModels(xai.getModels()).map((model) => model.id), ["grok-4.6"]);
   assert.ok(xai.getModels().some((model) => model.id === "grok-4.3"), "pin 저장분에서 4.3 을 지우면 안 된다");
 
@@ -254,8 +277,17 @@ test("피커는 현재 세대만 남기고 getModels 저장분은 그대로다",
 
   const codexPicker = new Set(codex.filterModels(codex.getModels()).map((model) => model.id));
   assert.ok(codexPicker.has("gpt-5.6-sol"));
+  assert.ok(codexPicker.has("gpt-6-astra"));
+  assert.ok(codexPicker.has("gpt-6-astra-fast"));
   assert.ok(codexPicker.has("gpt-daybreak-blue-latest"));
   assert.ok(!codexPicker.has("gpt-5.4"));
+
+  assert.equal(opencode.id, "opencode");
+  assert.deepEqual(
+    opencode.filterModels(opencode.getModels()).map((model) => model.id),
+    ["muse-spark-1.3-contributor-free"],
+  );
+  assert.ok(opencode.getModels().some((model) => model.id === "muse-spark-1.2"), "pin 저장분의 유료 Muse 를 지우면 안 된다");
 });
 
 test("직결 provider 는 pinned 의 다른 면을 잃지 않는다", async () => {
@@ -265,13 +297,25 @@ test("직결 provider 는 pinned 의 다른 면을 잃지 않는다", async () =
     // 있으나 값이 undefined 다 — 있다고 단정하면 pin 이 아니라 우리 상상을 검사한다.
     assert.equal(typeof provider.auth, "object", `${provider.id} 의 auth 가 사라졌다`);
     assert.equal(typeof provider.getModels, "function");
-    assert.ok(provider.baseUrl, `${provider.id} 의 baseUrl 이 사라졌다`);
+    // OpenCode 의 pin factory 는 provider.baseUrl 을 안 싣고, 모델이 Zen 주소를 갖는다.
+    // Anthropic 계열은 `/zen`, Responses 계열(Muse)은 `/zen/v1` 이다.
+    if (provider.id === "opencode") {
+      const models = provider.getModels();
+      assert.ok(models.length > 0, "opencode catalog 가 비었다");
+      assert.ok(models.every((model) => typeof model.baseUrl === "string" && model.baseUrl.startsWith("https://opencode.ai/zen")));
+      assert.equal(
+        models.find((model) => model.id === "muse-spark-1.3-contributor-free")?.baseUrl,
+        "https://opencode.ai/zen/v1",
+      );
+    } else {
+      assert.ok(provider.baseUrl, `${provider.id} 의 baseUrl 이 사라졌다`);
+    }
     assert.ok(provider.name, `${provider.id} 의 name 이 사라졌다`);
     assert.equal(typeof provider.stream, "function");
     assert.equal(typeof provider.streamSimple, "function");
-    // Kiro 는 OAuth 플로우가 없다 — 로컬 사이드카 key 하나다. 거기에 oauth 를 요구하는
-    // 것은 pin 이 아니라 우리 상상이고, 달아 두면 없는 로그인을 제시하게 된다.
-    if (provider.id === "kiro") {
+    // Kiro 는 로컬 사이드카 key, OpenCode 는 OPENCODE_API_KEY 하나다. 둘 다 oauth 가
+    // 없다. 달아 두면 없는 로그인을 제시하게 된다.
+    if (provider.id === "kiro" || provider.id === "opencode") {
       assert.equal(provider.auth.oauth, undefined);
       assert.equal(typeof provider.auth.apiKey?.resolve, "function");
       continue;
@@ -572,7 +616,7 @@ test("legacy 와 target 이 같은 경로면 아무것도 하지 않는다", asy
 // 예전에는 지원 신원과 활성 등록이 갈라져 있었다: 이 목록은 제품 계약이고, 활성 권위는
 // bridge catalog 에서 유도한 `ourProviderIds(catalog)` 였다. bridge 가 삭제되면서 물을
 // 곳이 없어졌으므로 이 목록이 유일한 권위다.
-test("지원 신원은 여섯 개이고 정적이다", async () => {
+test("지원 신원은 일곱 개이고 정적이다", async () => {
   const { SUPPORTED_PROVIDER_IDS, foreignProviderIds } = await import("../../src/provider-ids.mjs");
   assert.deepEqual([...SUPPORTED_PROVIDER_IDS], [
     "openai-codex",
@@ -581,6 +625,7 @@ test("지원 신원은 여섯 개이고 정적이다", async () => {
     "cursor",
     "kiro",
     "google-antigravity",
+    "opencode",
   ]);
   // 등록하는 id 는 어느 것도 foreign 이 아니다 — 정리 단계가 그것을 지우면 안 된다.
   const foreign = foreignProviderIds([...SUPPORTED_PROVIDER_IDS, "vercel-ai-gateway", "ollama"]);

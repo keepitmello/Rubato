@@ -18,6 +18,7 @@ export const SPEED_INDEX_NETWORK_ROUTES = Object.freeze({
     kind: "probe",
     origin: "https://daily-cloudcode-pa.googleapis.com",
   }),
+  opencode: Object.freeze({ kind: "probe", origin: "https://opencode.ai/zen/v1" }),
 });
 
 export function networkRouteFor(providerId) {
