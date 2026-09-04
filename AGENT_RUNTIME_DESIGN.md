@@ -91,7 +91,7 @@ The resolved snapshot records both `effort` and `effortSource`, whose values are
 reasoning values are migrated to model configuration rather than becoming another precedence
 layer.
 
-[Assumption] `google-antigravity/gemini-3.7-flash` starts at `medium` because Rubato is not
+[Assumption] `google-antigravity/gemini-3.8-flash` starts at `medium` because Rubato is not
 using `low` as a seeded default. This remains ordinary model configuration and can be changed
 without altering Agent code.
 
@@ -171,7 +171,7 @@ Model admission uses the parent Rubato host's live registry after provider regis
 - Process agents launch with the same Rubato profile and provider extensions.
 - Child launch never shells out to an unconfigured bare `pi`.
 - Exact provider/model identity is checked before execution.
-- `google-antigravity/gemini-3.7-flash` must be visible in both parent and process-child
+- `google-antigravity/gemini-3.8-flash` must be visible in both parent and process-child
   admission checks.
 
 This matters because the Rubato launcher currently exposes the Antigravity model while a bare

@@ -23,18 +23,13 @@ export const ANTIGRAVITY_ENDPOINT = "https://daily-cloudcode-pa.googleapis.com";
 export const ANTIGRAVITY_PROJECT_ENV = "RUBATO_ANTIGRAVITY_PROJECT";
 
 const WIRE_MODELS = Object.freeze({
-  "gemini-3.7-flash": Object.freeze({
-    // [Assumption] Flash starts at medium; Rubato is not using `low` as a seeded default.
-    default: "gemini-3.7-flash-medium",
-    minimal: "gemini-3.7-flash-low",
-    low: "gemini-3.7-flash-low",
-    medium: "gemini-3.7-flash-medium",
-    high: "gemini-3.7-flash-high",
-  }),
-  "gemini-3.1-pro": Object.freeze({
-    default: "gemini-3.1-pro-low",
-    low: "gemini-3.1-pro-low",
-    high: "gemini-pro-agent",
+  "gemini-3.8-flash": Object.freeze({
+    // [Assumption] 3.8 wire names follow the 3.7 pattern; upstream names unconfirmed (no quota to probe).
+    default: "gemini-3.8-flash-medium",
+    minimal: "gemini-3.8-flash-low",
+    low: "gemini-3.8-flash-low",
+    medium: "gemini-3.8-flash-medium",
+    high: "gemini-3.8-flash-high",
   }),
 });
 

@@ -18,7 +18,7 @@ test("피커에는 쓰던 일곱만, 목록 순서로 남는다", () => {
     cursor("gpt-5.6-sol"),
     cursor("claude-opus-5-thinking"),
     cursor("claude-opus-5"),
-    cursor("gemini-3.7-flash"),
+    cursor("gemini-3.8-flash"),
     cursor("kimi-k3"),
     cursor("claude-fable-5-1"),
     cursor(CURSOR_GROK_46_ID),
