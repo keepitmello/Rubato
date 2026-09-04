@@ -7,7 +7,7 @@
 # 없는 대신 설치가 필요하다.
 #
 # **이미 있는 확장은 건드리지 않는다.** 그 기기에서 사람이 고쳐 온 것이 정본일
-# 수 있고, Orca 가 심어 둔 확장(orca-*.ts)과 한 디렉터리를 쓰기 때문이다.
+# 수 있어서다. Orca 가 심어 둔 확장(orca-*.ts)은 예외 — 업데이트 때 지운다.
 # 덮어쓰려면 --force 를 준다.
 set -euo pipefail
 
@@ -31,6 +31,20 @@ for name in promise-nudge.ts; do
     rm -f "$DEST/$name"
     removed=$((removed + 1))
   fi
+done
+# Orca 는 agentDir 뿐 아니라 ~/.rubato·~/.pi·~/.senpi 확장 칸에도 심는다.
+for dir in "$DEST" \
+  "$HOME/.rubato/extensions" \
+  "$HOME/.rubato/agent/extensions" \
+  "$HOME/.rubato-pi/agent/extensions" \
+  "$HOME/.pi/agent/extensions" \
+  "$HOME/.senpi/agent/extensions"; do
+  [ -d "$dir" ] || continue
+  for file in "$dir"/orca-*.ts "$dir"/orca-*.js; do
+    [ -e "$file" ] || continue
+    rm -f "$file"
+    removed=$((removed + 1))
+  done
 done
 
 added=0; kept=0; replaced=0
