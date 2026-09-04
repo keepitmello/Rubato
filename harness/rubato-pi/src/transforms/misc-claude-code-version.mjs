@@ -3,7 +3,7 @@ import { replaceOnce } from "./misc-replace.mjs";
 /** Fable 5.1 이 요구하는 하한은 2.1.251. 이 기기 Claude Code 와 맞춘다. */
 export const CLAUDE_CODE_VERSION = "2.1.257";
 
-const VERSION_NEEDLE = 'const claudeCodeVersion = "2.1.75";';
+const VERSION_NEEDLE = 'const claudeCodeVersion = "2.1.251";';
 const VERSION_REPLACEMENT = `const claudeCodeVersion = "${CLAUDE_CODE_VERSION}";`;
 
 export function isAnthropicMessagesUrl(url) {

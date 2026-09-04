@@ -36,7 +36,7 @@ const LIVE_NEEDLE = "            if (this.agent.state.isStreaming)\n            
 
 const LIVE_REPLACEMENT = "            if (this.agent.state.isStreaming)\n                return \"taken-over\";\n            // Sticky: once the provider emits, keep the watchdog disarmed through\n            // tool rounds where isStreaming flickers false.\n            let sawProviderLive = false;\n            await runBoundedRetryContinuation({";
 
-const LIVE_ARG_NEEDLE = "                abortActive: () => this.agent.abort(),\n                timeoutMs: retryTimeoutMs,\n            });";
+const LIVE_ARG_NEEDLE = "                abortActive: () => this.agent.abort(new ProviderRetryWatchdogAbortError(providerRetryWatchdogAbortMessage(retryTimeoutMs, this.agent.streamStartTimeoutMs))),\n                timeoutMs: retryTimeoutMs,\n            });";
 
 const LIVE_ARG_REPLACEMENT = "                abortActive: () => this.agent.abort(),\n                timeoutMs: retryTimeoutMs,\n                isLive: () => {\n                    if (sawProviderLive)\n                        return true;\n                    if (this.agent.state.isStreaming) {\n                        sawProviderLive = true;\n                        return true;\n                    }\n                    return false;\n                },\n            });";
 

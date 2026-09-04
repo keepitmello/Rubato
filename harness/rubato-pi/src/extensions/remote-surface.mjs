@@ -506,7 +506,7 @@ export class RemoteSurface {
       background: this.background,
       teams: this.teams,
       build: {
-        piVersion: "2026.8.22",
+        piVersion: "2026.9.4-3",
         remoteProtocolMin: this.protocol.REMOTE_PROTOCOL_MIN_VERSION,
         remoteProtocolMax: this.protocol.REMOTE_PROTOCOL_CURRENT_VERSION,
       },
