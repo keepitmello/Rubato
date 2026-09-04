@@ -29,7 +29,7 @@ export function stripChangelog(source, url = "") {
   }
   if (url.includes("interactive-mode.js") || url === "") {
     next = next.replace(
-      `\n            if (text === "/changelog") {\n                this.handleChangelogCommand();\n                this.editor.setText("");\n                return;\n            }`,
+      `\n                if (text === "/changelog") {\n                    this.handleChangelogCommand();\n                    this.editor.setText("");\n                    return;\n                }`,
       "",
     );
     next = next.replace("getChangelogForDisplay() {", "getChangelogForDisplay() { return undefined;");

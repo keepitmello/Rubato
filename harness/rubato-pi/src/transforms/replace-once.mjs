@@ -6,3 +6,9 @@ export function replaceOnce(source, needle, replacement, label) {
   }
   return source.slice(0, first) + replacement + source.slice(first + needle.length);
 }
+
+/** Missing needle → leave source unchanged (no throw, no warning). */
+export function replaceOnceIfPresent(source, needle, replacement, label) {
+  if (!source.includes(needle)) return source;
+  return replaceOnce(source, needle, replacement, label);
+}

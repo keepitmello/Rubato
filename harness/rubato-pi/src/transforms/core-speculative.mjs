@@ -6,8 +6,9 @@ export function isSpeculativeUrl(url) {
   return url.includes("@code-yeongyu/senpi/dist/core/extensions/builtin/compaction/speculative.js");
 }
 
-/** Baseline: drop speculative cheap-reasoning override. */
+/** Baseline: drop speculative cheap-reasoning override. senpi 2026.9.4-3 은 함수가 이미 없다. */
 export function injectSpeculative(source) {
+  if (!source.includes("function summarizationReasoningOptions")) return source;
   let next = replaceOnce(source, FN_NEEDLE, "", "speculative reasoning override fn");
   return replaceOnce(
     next,

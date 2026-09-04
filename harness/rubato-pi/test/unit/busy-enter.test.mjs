@@ -217,8 +217,8 @@ if (!runtime) {
     );
     assert.throws(
       () => injectBusyEnter(source.replace(
-        "                    await this.session.prompt(text, {\n                        streamingBehavior: \"steer\",",
-        "                    await this.session.prompt(text, {\n                        streamingBehavior: \"queued\",",
+        "                        await this.session.prompt(text, {\n                            streamingBehavior: \"steer\",",
+        "                        await this.session.prompt(text, {\n                            streamingBehavior: \"queued\",",
       )),
       /transform drift: streaming prompt option/,
     );

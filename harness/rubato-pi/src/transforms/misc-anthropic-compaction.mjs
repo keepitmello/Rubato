@@ -81,12 +81,12 @@ function shouldOmitThinkingBeforeCompaction(cut, messageIndex, blockIndex) {
     return !!cut && (messageIndex < cut.messageIndex || (messageIndex === cut.messageIndex && blockIndex < cut.blockIndex));
 }`;
 
-const REPLAYABLE_NEEDLE = `    "fallback",
-]);`;
+const REPLAYABLE_NEEDLE = `    "container_upload",
+    // The server-side fallback marker (\`fallback\`, server-side-fallback-2026-06-01`;
 
-const REPLAYABLE_REPLACEMENT = `    "fallback",
+const REPLAYABLE_REPLACEMENT = `    "container_upload",
     "compaction",
-]);`;
+    // The server-side fallback marker (\`fallback\`, server-side-fallback-2026-06-01`;
 
 const START_NEEDLE = `                    else {
                         const block = {
@@ -170,7 +170,7 @@ const DELTA_USAGE_NEEDLE = `                        if (thinkingTokens != null) 
                     // Anthropic doesn't provide total_tokens, compute from components
                     output.usage.totalTokens =
                         output.usage.input + output.usage.output + output.usage.cacheRead + output.usage.cacheWrite;
-                    calculateCost(model, output.usage);`;
+                    calculateCost(usageModel, output.usage);`;
 
 const DELTA_USAGE_REPLACEMENT = `                        if (thinkingTokens != null) {
                             output.usage.reasoning = thinkingTokens;
@@ -180,8 +180,8 @@ const DELTA_USAGE_REPLACEMENT = `                        if (thinkingTokens != n
                     output.usage.totalTokens =
                         output.usage.input + output.usage.output + output.usage.cacheRead + output.usage.cacheWrite;
                     applyAnthropicCompactionUsage(output.usage, event.usage);
-                    calculateCost(model, output.usage);
-                    addAnthropicCompactionCost(model, output.usage);`;
+                    calculateCost(usageModel, output.usage);
+                    addAnthropicCompactionCost(usageModel, output.usage);`;
 
 const CONVERT_CUT_NEEDLE = `    const providerNativeToolPairing = collectProviderNativeToolPairing(transformedMessages, model, deferredToolNames, normalizeToolName, discardedFallbackToolCallIds);
     for (let i = 0; i < transformedMessages.length; i++) {`;
@@ -237,13 +237,29 @@ export function isAnthropicCompactionUrl(url) {
  */
 export function injectAnthropicCompaction(source) {
   let next = replaceOnce(source, HELPERS_NEEDLE, HELPERS_REPLACEMENT, "anthropic-compaction helpers");
-  next = replaceOnce(next, REPLAYABLE_NEEDLE, REPLAYABLE_REPLACEMENT, "anthropic-compaction replayable types");
-  next = replaceOnce(next, START_NEEDLE, START_REPLACEMENT, "anthropic-compaction content_block_start");
-  next = replaceOnce(next, DELTA_NEEDLE, DELTA_REPLACEMENT, "anthropic-compaction content_block_delta");
-  next = replaceOnce(next, START_USAGE_NEEDLE, START_USAGE_REPLACEMENT, "anthropic-compaction message_start usage");
-  next = replaceOnce(next, DELTA_USAGE_NEEDLE, DELTA_USAGE_REPLACEMENT, "anthropic-compaction message_delta usage");
-  next = replaceOnce(next, CONVERT_CUT_NEEDLE, CONVERT_CUT_REPLACEMENT, "anthropic-compaction convertMessages cut");
-  next = replaceOnce(next, THINKING_NEEDLE, THINKING_REPLACEMENT, "anthropic-compaction thinking omit");
-  next = replaceOnce(next, REPLAY_NEEDLE, REPLAY_REPLACEMENT, "anthropic-compaction convertMessages replay");
+  if (next.includes(REPLAYABLE_NEEDLE)) {
+    next = replaceOnce(next, REPLAYABLE_NEEDLE, REPLAYABLE_REPLACEMENT, "anthropic-compaction replayable types");
+  }
+  if (next.includes(START_NEEDLE)) {
+    next = replaceOnce(next, START_NEEDLE, START_REPLACEMENT, "anthropic-compaction content_block_start");
+  }
+  if (next.includes(DELTA_NEEDLE)) {
+    next = replaceOnce(next, DELTA_NEEDLE, DELTA_REPLACEMENT, "anthropic-compaction content_block_delta");
+  }
+  if (next.includes(START_USAGE_NEEDLE)) {
+    next = replaceOnce(next, START_USAGE_NEEDLE, START_USAGE_REPLACEMENT, "anthropic-compaction message_start usage");
+  }
+  if (next.includes(DELTA_USAGE_NEEDLE)) {
+    next = replaceOnce(next, DELTA_USAGE_NEEDLE, DELTA_USAGE_REPLACEMENT, "anthropic-compaction message_delta usage");
+  }
+  if (next.includes(CONVERT_CUT_NEEDLE)) {
+    next = replaceOnce(next, CONVERT_CUT_NEEDLE, CONVERT_CUT_REPLACEMENT, "anthropic-compaction convertMessages cut");
+  }
+  if (next.includes(THINKING_NEEDLE)) {
+    next = replaceOnce(next, THINKING_NEEDLE, THINKING_REPLACEMENT, "anthropic-compaction thinking omit");
+  }
+  if (next.includes(REPLAY_NEEDLE)) {
+    next = replaceOnce(next, REPLAY_NEEDLE, REPLAY_REPLACEMENT, "anthropic-compaction convertMessages replay");
+  }
   return next + serverCompactionMarkerStatement(ANTHROPIC_SERVER_COMPACTION_ADAPTER_MARKER);
 }

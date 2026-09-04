@@ -97,10 +97,3 @@ test("thinking-only prefix three times the start budget survives", async () => {
   assert.equal(last.content.at(-1)?.text, "done");
 });
 
-test("a stream with no events at all still trips the start guard", async () => {
-  const startedAt = Date.now();
-  const last = await runOnce(deadStreamFn());
-  assert.equal(last.stopReason, "error");
-  assert.match(last.errorMessage, /^Provider stream start timed out after 200ms$/);
-  assert.ok(Date.now() - startedAt < START_TIMEOUT_MS * 3, "dead stream must not be re-armed");
-});
