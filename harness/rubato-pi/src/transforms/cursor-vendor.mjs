@@ -13,12 +13,6 @@ import {
   injectCursorExecBridgeSession,
   isCursorExecBridgeSessionUrl,
 } from "./cursor-exec-bridge-session.mjs";
-import {
-  injectCursorEditPersist,
-  injectCursorWritePersist,
-  isCursorEditToolUrl,
-  isCursorWriteToolUrl,
-} from "./cursor-write-persist.mjs";
 
 /**
  * @param {string} url
@@ -29,8 +23,6 @@ import {
 export function applyCursorVendorTransforms(url, source, applyTransform) {
   if (isCursorExecBridgeSessionUrl(url)) source = applyTransform(source, injectCursorExecBridgeSession);
   if (isCursorExecBridgeUrl(url)) source = applyTransform(source, (text) => injectCursorExecBridge(text));
-  if (isCursorWriteToolUrl(url)) source = applyTransform(source, injectCursorWritePersist);
-  if (isCursorEditToolUrl(url)) source = applyTransform(source, injectCursorEditPersist);
   if (isCursorConversationRotationUrl(url)) source = applyTransform(source, injectCursorConversationRotation);
   if (isCursorAgentUrl(url)) source = applyTransform(source, injectCursorAgent);
   return source;
