@@ -21,12 +21,13 @@ rubato aside-cursor --install
 다시 올린다. 기동된 프로세스가 `~/.aside/u/0/models.json`을 잠근다.
 
 - `providers.cursor` → `http://127.0.0.1:18788/v1`, key `rubato-cursor`
-- 피커에 `cursor/grok-4.6`과 `cursor/grok-4.6-fast`가 없으면 넣는다.
-  둘 다 pinned `cursor-grok-4.6`으로 접힌다.
+- 피커에 없으면 넣는 행: `cursor/grok-4.6`, `cursor/grok-4.6-fast`,
+  `cursor/gemini-3.8-flash`. Grok 둘은 pinned `cursor-grok-4.6`으로 접힌다.
+  Gemini는 피커 id `gemini-3.8-flash`, wire는 `gemini-3.8-flash-high`.
 - xAI `grok-4.6`은 `https://api.x.ai/v1` 기본 차로다. 예전에 localhost
   `/xai`로 묶여 있으면 공식 upstream으로 되돌린다.
 
-4. Aside를 다시 열고 **Grok 4.6 Fast [Cursor]** 를 고른다.
+4. Aside를 다시 열고 **Grok 4.6 Fast [Cursor]** 또는 **3.8 Flash [Cursor/Gemini]** 를 고른다.
 
 ```bash
 curl -sS http://127.0.0.1:18788/v1/models
@@ -34,6 +35,15 @@ curl -sS http://127.0.0.1:18788/v1/models
 
 목록이 비면 Cursor credential이 없거나 프로세스가 죽은 것이다.
 `rubato auth` 후 로그는 `~/.rubato-pi/aside-cursor.out.log`다.
+
+## 운영 메모
+
+- plist에 `ThrottleInterval 10`이 있어 크래시 때 launchd가 빡빡하게
+  재시작하지 않는다. 생성기는 `renderAsideCursorLaunchAgent`라 고치면
+  `--install`로 다시 박는다.
+- Cursor가 카탈로그 이름을 바꾸면 베이스 id가 목록에서 사라진다.
+  베어를 wire에 싣히면 답 뒤에 턴이 깨져 502가 난다.
+  `aside-cursor.mjs`의 `CURSOR_WIRE_VARIANT`에 실 variant를 적어 둔다.
 
 ## 두 Grok
 
