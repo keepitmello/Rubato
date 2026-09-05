@@ -193,6 +193,49 @@ test("#given user, assistant, then a trailing notice #when convertToLlm remaps #
   assert.notEqual(remapped[remapped.length - 1].role, "assistant");
 });
 
+test("#given wakes interleaved with tools #when convertToLlm remaps #then the wakes stay in place so the next tool turn is a prefix extension", () => {
+  const before = remapHiddenCustomTurns(
+    [
+      { role: "user", content: [{ type: "text", text: "go" }], timestamp: 1 },
+      { role: "assistant", content: [{ type: "toolCall", name: "AgentSend" }], timestamp: 2 },
+      { role: "toolResult", content: [{ type: "text", text: "revived" }], timestamp: 3 },
+      {
+        role: "custom",
+        customType: "rubato-runtime:wake",
+        display: false,
+        content: "<peer_message from=\"runtime\">map</peer_message>",
+        timestamp: 4,
+      },
+    ],
+    convertOne,
+  );
+  const after = remapHiddenCustomTurns(
+    [
+      { role: "user", content: [{ type: "text", text: "go" }], timestamp: 1 },
+      { role: "assistant", content: [{ type: "toolCall", name: "AgentSend" }], timestamp: 2 },
+      { role: "toolResult", content: [{ type: "text", text: "revived" }], timestamp: 3 },
+      {
+        role: "custom",
+        customType: "rubato-runtime:wake",
+        display: false,
+        content: "<peer_message from=\"runtime\">map</peer_message>",
+        timestamp: 4,
+      },
+      { role: "assistant", content: [{ type: "toolCall", name: "AgentOutput" }], timestamp: 5 },
+      { role: "toolResult", content: [{ type: "text", text: "completed" }], timestamp: 6 },
+    ],
+    convertOne,
+  );
+
+  assert.deepEqual(before.map((message) => message.role), ["user", "assistant", "toolResult", "user"]);
+  assert.equal(texts(before[3])[0], "<peer_message from=\"runtime\">map</peer_message>");
+  assertEmptyUsage(before[3]);
+  assert.deepEqual(after.map((message) => message.role), ["user", "assistant", "toolResult", "user", "assistant", "toolResult"]);
+  for (let index = 0; index < before.length; index += 1) {
+    assert.deepEqual(after[index], before[index]);
+  }
+});
+
 test("#given prior reply then a new user and a notice #when convertToLlm remaps #then the notice sits between the prior assistant and the new user", () => {
   const remapped = remapHiddenCustomTurns(
     [
