@@ -211,7 +211,7 @@ function variantLabel(lc: string): string {
     if (!isVariantSeparator(lc[idx - 1]) || !isVariantSeparator(lc[idx + key.length])) continue
     const before = lc.slice(0, idx).replace(/[^a-z0-9]$/u, "").replace(/^gpt[^a-z0-9]/u, "")
     const version = parseVersion(before.replace(/^[a-z]+[^a-z0-9]/u, "")) || parseVersion(before)
-    return version ? `${version} ${label}` : label
+    return version ? `${label} ${version}` : label
   }
   return ""
 }

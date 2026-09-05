@@ -168,7 +168,7 @@ describe("backgroundWidgetRows", () => {
         },
       }),
     ], new Map(), now, () => stats, 220)[0] ?? ""
-    expect(row).toContain("5.6 Luna · 1m 0s")
+    expect(row).toContain("Luna 5.6 · 1m 0s")
     expect(row).not.toContain("Luna luna")
   })
 
@@ -193,12 +193,12 @@ describe("backgroundWidgetRows", () => {
 
     // Machine A: no `model.name` in the catalog, so the planner falls back to the id spelling.
     // Machine B: the catalog carries `GPT-5.6 Sol`, which the planner preserves verbatim.
-    expect(rowFor("openai/gpt-5.6-sol")).toContain("5.6 Sol")
-    expect(rowFor("GPT-5.6 Sol")).toContain("5.6 Sol")
+    expect(rowFor("openai/gpt-5.6-sol")).toContain("Sol 5.6")
+    expect(rowFor("GPT-5.6 Sol")).toContain("Sol 5.6")
     expect(rowFor("GPT-5.6 Sol")).not.toContain("GPT 5.6")
   })
 
-  it("#given GPT-6 Astra #when a live row renders #then the label is 6 Astra", () => {
+  it("#given GPT-6 Astra #when a live row renders #then the label is Astra 6", () => {
     const row = backgroundWidgetRows([
       record({
         task_id: "st_astra",
@@ -212,7 +212,7 @@ describe("backgroundWidgetRows", () => {
         },
       }),
     ], new Map(), now, () => stats, 220)[0] ?? ""
-    expect(row).toContain("6 Astra")
+    expect(row).toContain("Astra 6")
     expect(row).not.toContain("GPT 6")
   })
 

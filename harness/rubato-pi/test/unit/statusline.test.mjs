@@ -77,21 +77,21 @@ test("shortens Claude-style model ids the way the statusline does", () => {
   assert.equal(shortModelLabel("anthropic/claude-fable-5-1"), "Fable 5.1");
   assert.equal(shortModelLabel("claude-sonnet-4-6-20251001"), "Sonnet 4.6");
   assert.equal(shortModelLabel("xai/grok-4.6"), "Grok 4.6");
-  assert.equal(shortModelLabel("gpt-5.6-sol"), "5.6 Sol");
-  assert.equal(shortModelLabel("openai-codex/gpt-5.6-sol"), "5.6 Sol");
-  assert.equal(shortModelLabel("gpt-5.6-luna"), "5.6 Luna");
-  assert.equal(shortModelLabel("openai-codex/gpt-5.6-luna"), "5.6 Luna");
-  assert.equal(shortModelLabel("gpt-5.6-terra"), "5.6 Terra");
-  assert.equal(shortModelLabel("openai-codex/gpt-5.6-terra"), "5.6 Terra");
-  assert.equal(shortModelLabel("quotio-openai/gpt-5.6-luna-fast"), "5.6 Luna");
+  assert.equal(shortModelLabel("gpt-5.6-sol"), "Sol 5.6");
+  assert.equal(shortModelLabel("openai-codex/gpt-5.6-sol"), "Sol 5.6");
+  assert.equal(shortModelLabel("gpt-5.6-luna"), "Luna 5.6");
+  assert.equal(shortModelLabel("openai-codex/gpt-5.6-luna"), "Luna 5.6");
+  assert.equal(shortModelLabel("gpt-5.6-terra"), "Terra 5.6");
+  assert.equal(shortModelLabel("openai-codex/gpt-5.6-terra"), "Terra 5.6");
+  assert.equal(shortModelLabel("quotio-openai/gpt-5.6-luna-fast"), "Luna 5.6");
   assert.equal(shortModelLabel("openai-codex/gpt-daybreak-blue-latest"), "Daybreak Blue");
   assert.equal(shortModelLabel("openai-codex/gpt-daybreak-blue-latest-fast"), "Daybreak Blue");
   assert.equal(shortModelLabel("openai-codex/gpt-daybreak-blue-latest:high"), "Daybreak Blue");
-  assert.equal(shortModelLabel("gpt-6-astra"), "6 Astra");
-  assert.equal(shortModelLabel("openai-codex/gpt-6-astra"), "6 Astra");
-  assert.equal(shortModelLabel("openai-codex/gpt-6-astra-fast"), "6 Astra");
-  assert.equal(shortModelLabel("openai-codex/gpt-6-astra:low"), "6 Astra");
-  assert.equal(shortModelLabel("GPT-6 Astra"), "6 Astra");
+  assert.equal(shortModelLabel("gpt-6-astra"), "Astra 6");
+  assert.equal(shortModelLabel("openai-codex/gpt-6-astra"), "Astra 6");
+  assert.equal(shortModelLabel("openai-codex/gpt-6-astra-fast"), "Astra 6");
+  assert.equal(shortModelLabel("openai-codex/gpt-6-astra:low"), "Astra 6");
+  assert.equal(shortModelLabel("GPT-6 Astra"), "Astra 6");
   assert.equal(shortModelLabel("muse-spark-1.3-contributor-free"), "Muse Spark 1.3");
   assert.equal(shortModelLabel("opencode/muse-spark-1.3-contributor-free"), "Muse Spark 1.3");
   assert.equal(shortModelLabel("opencode/muse-spark-1.3-contributor-free:high"), "Muse Spark 1.3");
@@ -103,13 +103,13 @@ test("shortens Claude-style model ids the way the statusline does", () => {
 // they carry a friendly display name, so the label arrives as either the id spelling or the
 // friendly one. Parent statusline and Task widget must not diverge on that incidental metadata.
 test("reads friendly display spellings as the same model as their id spelling", () => {
-  assert.equal(shortModelLabel("GPT-5.6 Sol"), "5.6 Sol");
-  assert.equal(shortModelLabel("GPT-5.6 Luna"), "5.6 Luna");
-  assert.equal(shortModelLabel("GPT-5.6 Terra"), "5.6 Terra");
+  assert.equal(shortModelLabel("GPT-5.6 Sol"), "Sol 5.6");
+  assert.equal(shortModelLabel("GPT-5.6 Luna"), "Luna 5.6");
+  assert.equal(shortModelLabel("GPT-5.6 Terra"), "Terra 5.6");
   assert.equal(shortModelLabel("GPT-5.6 Sol"), shortModelLabel("gpt-5.6-sol"));
   assert.equal(shortModelLabel("GPT-5.6 Luna"), shortModelLabel("openai-codex/gpt-5.6-luna"));
   assert.equal(shortModelLabel("Muse Spark 1.3 Free"), shortModelLabel("muse-spark-1.3-contributor-free"));
-  assert.equal(formatModelWithEffort("GPT-5.6 Sol", "high"), "5.6 Sol high");
+  assert.equal(formatModelWithEffort("GPT-5.6 Sol", "high"), "Sol 5.6 high");
   assert.equal(formatModelWithEffort("muse-spark-1.3-contributor-free", "high"), "Muse Spark 1.3 high");
 });
 
@@ -132,7 +132,7 @@ test("appends reasoning effort next to the short model name", () => {
   );
   assert.equal(
     formatModelWithEffort("openai-codex/gpt-5.6-sol", "high", { provider: "openai-codex" }, undefined, true),
-    "5.6 Sol high",
+    "Sol 5.6 high",
   );
   assert.equal(formatModelWithEffort("cursor/cursor-grok-4.6", "high"), "Grok 4.6 high [fast]");
   assert.equal(
@@ -164,11 +164,11 @@ test("appends reasoning effort next to the short model name", () => {
     "Grok 4.6 high [fast]",
   );
   assert.equal(formatModelWithEffort("anthropic/claude-opus-5", "max"), "Opus 5 max");
-  assert.equal(formatModelWithEffort("gpt-5.6-sol", "high"), "5.6 Sol high");
-  assert.equal(formatModelWithEffort("openai-codex/gpt-5.6-sol-fast", "medium"), "5.6 Sol medium [fast]");
-  assert.equal(formatModelWithEffort("quotio-openai/gpt-5.6-luna-fast", "high"), "5.6 Luna high [fast]");
-  assert.equal(formatModelWithEffort("openai-codex/gpt-5.6-luna", "high"), "5.6 Luna high");
-  assert.equal(formatModelWithEffort("openai-codex/gpt-5.6-terra", "medium"), "5.6 Terra medium");
+  assert.equal(formatModelWithEffort("gpt-5.6-sol", "high"), "Sol 5.6 high");
+  assert.equal(formatModelWithEffort("openai-codex/gpt-5.6-sol-fast", "medium"), "Sol 5.6 medium [fast]");
+  assert.equal(formatModelWithEffort("quotio-openai/gpt-5.6-luna-fast", "high"), "Luna 5.6 high [fast]");
+  assert.equal(formatModelWithEffort("openai-codex/gpt-5.6-luna", "high"), "Luna 5.6 high");
+  assert.equal(formatModelWithEffort("openai-codex/gpt-5.6-terra", "medium"), "Terra 5.6 medium");
   assert.equal(formatModelWithEffort("anthropic/claude-opus-5:high"), "Opus 5 high");
   assert.equal(formatModelWithEffort("claude-opus-5", "off"), "Opus 5");
 });
@@ -270,7 +270,7 @@ test("cache policy distinguishes exact, minimum, and opaque provider guarantees"
   assert.deepEqual(resolveCachePolicy({ provider: "anthropic", api: "claude-sdk-oauth" }), { kind: "sliding", ttlSeconds: 3600 });
   assert.deepEqual(resolveCachePolicy({ provider: "openai", api: "openai-responses", id: "gpt-5.6-sol" }), { kind: "minimum", ttlSeconds: 1800 });
   assert.deepEqual(resolveCachePolicy({ provider: "openai-codex", api: "openai-codex-responses" }), { kind: "opaque" });
-  assert.deepEqual(resolveCachePolicy({ provider: "google-antigravity", api: "openai-completions", id: "gemini-3.7-flash" }), { kind: "opaque" });
+  assert.deepEqual(resolveCachePolicy({ provider: "google-antigravity", api: "openai-completions", id: "gemini-3.8-flash" }), { kind: "opaque" });
   assert.deepEqual(resolveCachePolicy({ provider: "xai", api: "openai-completions", id: "xai/grok-4.6" }), { kind: "opaque" });
 });
 
@@ -434,13 +434,13 @@ test("statusline order is model, remaining, metrics, branch, repo", () => {
   );
   assert.deepEqual(
     statuslineSegments({
-      model: "5.6 Sol high",
+      model: "Sol 5.6 high",
       remaining: 100,
       window: 372_000,
       branch: "main",
       repo: "agent-taskforce",
     }),
-    ["✦ 5.6 Sol high", "100% (372K)", "main", "agent-taskforce", "Speed —"],
+    ["✦ Sol 5.6 high", "100% (372K)", "main", "agent-taskforce", "Speed —"],
   );
 });
 
