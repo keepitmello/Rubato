@@ -30,4 +30,4 @@ Choose each agent's cognitive profile with Skill(model-guide) and pass an exact 
 
 ## Independent reads
 
-For a material or ambiguous outcome where independent falsification could change the decision, take one review from the other model family after local verification; add a second only when it could change the decision. Give the reviewer the artifact, the intended outcome, the constraints, and the decision it serves. Re-checking your own work stays with you; a sibling of the agent that wrote the work is independent of the writer but not of you, so for a verdict that must survive your own framing, go outside the harness.
+For a material or ambiguous outcome where independent falsification could change the decision, take one review from the other model family after local verification; add a second only when it could change the decision. Give the reviewer the artifact, the intended outcome, the constraints, and the decision it serves. Re-checking your own work stays with you.
