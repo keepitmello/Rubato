@@ -8,6 +8,36 @@ import type { DiscoveredProcess, LaunchRequest, ProcessController, ProcessDiscov
 
 const execFileAsync = promisify(execFile)
 
+const IDENTITY_LABELS = ["app", "rubato_live_id", "rubato_host_id", "rubato_protocol", "rubato_build_id", "rubato_persist"] as const
+
+/**
+ * zmx `list` is a tab-separated key=value table. `clients` and `pid` are not
+ * labels (`zmx get name clients` fails), so inventory reads them here and still
+ * uses `zmx get` for identity labels.
+ */
+export function parseZmxListInventory(stdout: string): ReadonlyMap<string, { pid?: number; clients?: number }> {
+  const inventory = new Map<string, { pid?: number; clients?: number }>()
+  for (const raw of stdout.split(/\r?\n/)) {
+    const line = raw.replace(/^→\s*/, "").trim()
+    if (!line) continue
+    const fields: Record<string, string> = {}
+    for (const field of line.split("\t")) {
+      const separator = field.indexOf("=")
+      if (separator <= 0) continue
+      fields[field.slice(0, separator).trim()] = field.slice(separator + 1)
+    }
+    const name = fields["name"]
+    if (!name) continue
+    const pid = Number(fields["pid"])
+    const clients = Number(fields["clients"])
+    inventory.set(name, {
+      ...(Number.isSafeInteger(pid) && pid > 0 ? { pid } : {}),
+      ...(Number.isSafeInteger(clients) && clients >= 0 ? { clients } : {}),
+    })
+  }
+  return inventory
+}
+
 export interface CommandRunner {
   run(file: string, args: readonly string[], options?: { timeoutMs?: number }): Promise<{ stdout: string; stderr: string }>
 }
@@ -65,9 +95,15 @@ export class ZmxProcessAdapter implements ProcessDiscovery, ProcessController {
     } catch {
       return []
     }
+    let inventory: ReadonlyMap<string, { pid?: number; clients?: number }> = new Map()
+    try {
+      inventory = parseZmxListInventory((await this.#runner.run(this.#zmx, ["list"])).stdout)
+    } catch {
+      // clients/pid stay unknown; identity still comes from labels.
+    }
     const discovered = await Promise.all(names.map(async (name): Promise<DiscoveredProcess | null> => {
       const labels: Record<string, string> = {}
-      for (const label of ["app", "rubato_live_id", "rubato_host_id", "rubato_protocol", "rubato_build_id"]) {
+      for (const label of IDENTITY_LABELS) {
         try {
           labels[label] = (await this.#runner.run(this.#zmx, ["get", name, label])).stdout.trim()
         } catch {
@@ -76,14 +112,23 @@ export class ZmxProcessAdapter implements ProcessDiscovery, ProcessController {
       }
       const id = labels["rubato_live_id"]
       if (labels["app"] !== "rubato" || !isUuidV7(id) || zmxNameForLiveSession(id) !== name) return null
-      let pid: number | undefined
-      try {
-        const parsed = Number((await this.#runner.run(this.#zmx, ["get", name, "pid"])).stdout.trim())
-        if (Number.isSafeInteger(parsed) && parsed > 0) pid = parsed
-      } catch {
-        // PID is optional inventory metadata.
+      const listed = inventory.get(name)
+      let pid = listed?.pid
+      if (pid === undefined) {
+        try {
+          const parsed = Number((await this.#runner.run(this.#zmx, ["get", name, "pid"])).stdout.trim())
+          if (Number.isSafeInteger(parsed) && parsed > 0) pid = parsed
+        } catch {
+          // PID is optional inventory metadata.
+        }
       }
-      return { liveSessionId: id, zmxName: name, labels, ...(pid === undefined ? {} : { pid }) }
+      return {
+        liveSessionId: id,
+        zmxName: name,
+        labels,
+        ...(pid === undefined ? {} : { pid }),
+        ...(listed?.clients === undefined ? {} : { clients: listed.clients }),
+      }
     }))
     return discovered.filter((entry): entry is DiscoveredProcess => entry !== null)
   }

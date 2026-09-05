@@ -283,6 +283,7 @@ export class SurfaceSocketServer implements SurfaceActions {
             rubatoArgs: frame["rubatoArgs"],
             environment: frame["environment"],
             ...(typeof frame["name"] === "string" ? { name: frame["name"] } : {}),
+            ...(frame["persist"] === true ? { persist: true } : {}),
           })
           result = { session: created.summary }
           break

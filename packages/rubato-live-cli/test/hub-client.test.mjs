@@ -35,6 +35,17 @@ test("terminal create sends process environment only through hub control and att
   assert.deepEqual(create.fields.environment, { SECRET: "terminal-only" });
   assert.deepEqual(create.fields.rubatoArgs, ["hello"]);
   assert.deepEqual(attached, [SESSION.zmxName]);
+  assert.equal(create.fields.persist, undefined);
+});
+
+test("detached create asks the hub to persist the pane and does not attach", async () => {
+  const control = new FakeControl();
+  const attached = [];
+  const lifecycle = new HubLifecycleClient({ control, zmx: { attach: (name) => attached.push(name) }, env: {} });
+  await lifecycle.create({ cwd: "/tmp", detach: true });
+  const create = control.calls.find((call) => call.kind === "cli.create");
+  assert.equal(create.fields.persist, true);
+  assert.deepEqual(attached, []);
 });
 
 test("attach resolves through hub and zmx-attaches the exact returned session", async () => {

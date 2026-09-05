@@ -141,6 +141,7 @@ export class HubLifecycleClient {
       rubatoArgs: [...args],
       environment: stringEnvironment(environment),
       ...(name ? { name } : {}),
+      ...(detach ? { persist: true } : {}),
     });
     const session = result.session;
     if (!detach) this.zmx.attach(session.zmxName);

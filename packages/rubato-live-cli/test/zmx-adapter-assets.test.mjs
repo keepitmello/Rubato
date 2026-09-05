@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { ZmxAdapter, fixedRubatoLabels, parseLabels } from "../src/zmx-adapter.mjs";
+import { ZmxAdapter, fixedRubatoLabels, parseLabels, parseZmxListInventory } from "../src/zmx-adapter.mjs";
 
 const HOST_ID = "018f0c7a-2f3b-7c4d-8e5f-1234567890ab";
 const LIVE_ID = "018f0c7b-2f3b-7c4d-9e5f-1234567890ab";
@@ -49,4 +49,8 @@ test("zmx adapter discovers only protocol-derived Rubato labels", () => {
   assert.equal(calls.at(-1).options.env.ZMX_SESSION, undefined);
   assert.equal(calls.at(-1).options.env.ZMX_NO_DETACH_KEY, "1");
   assert.deepEqual(parseLabels("a=1 b=two\n"), { a: "1", b: "two" });
+  assert.deepEqual(
+    parseZmxListInventory("  name=rubato-018f0c7b2f3b\tpid=24134\tclients=0\tapp=rubato\n").get("rubato-018f0c7b2f3b"),
+    { pid: 24134, clients: 0 },
+  );
 });
