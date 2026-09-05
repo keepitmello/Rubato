@@ -1,6 +1,9 @@
 // Mid-conversation effort: freeze top-level `output_config.effort` and carry
 // Shift+Tab changes as empty-content system messages so the prompt-cache prefix
-// (`params` + earlier `messages`) stays byte-stable.
+// (`params` + earlier `messages`) stays byte-stable. Official Fable 5.1 docs:
+// per-message effort does not invalidate the prompt cache; replay the system
+// message verbatim at the same index.
+// https://platform.claude.com/docs/en/models/fable-5-1/whats-new-fable-5-1#change-effort-mid-conversation-beta
 //
 // Official (2026-07-28): beta `mid-conversation-output-config-2026-07-01`;
 // `{ role: "system", content: [], output_config: { effort } }` inside `messages`
