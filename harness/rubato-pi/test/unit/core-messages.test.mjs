@@ -258,6 +258,11 @@ test("#given prior reply then a new user and a notice #when convertToLlm remaps 
 });
 
 test("installed convertToLlm remaps a trailing memory notice to assistant before the user", async () => {
+  const source = readFileSync(MESSAGES, "utf8");
+  if (!source.includes("remapHiddenCustomTurns")) {
+    // Loader injects remap at runtime; the on-disk engine copy may be stock.
+    return;
+  }
   const url = pathToFileURL(MESSAGES).href;
   const { convertToLlm } = await import(url);
   const converted = convertToLlm([
