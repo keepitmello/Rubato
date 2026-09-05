@@ -6,9 +6,15 @@
  * saw <memory_notice> / post-compact restoration).
  *
  * display:false customs are harness speech, not the user. When they sit
- * after the latest user with nothing else in between, map them to assistant
- * and place them immediately before that user so the request still ends on
- * the user's text.
+ * immediately after a real user with nothing else in between, map them to
+ * assistant and place them immediately before that user so the request still
+ * ends on the user's text. That rewrite is stable: later assistant/tool
+ * turns append after the pair.
+ *
+ * Hidden customs that arrive after assistant/tool content stay in
+ * chronological place as user. Pulling every post-user notice to a tail
+ * (session 01a070da) rewrites the prefix on every tool loop — Codex WS
+ * continuation misses, cacheRead sticks at tools+instructions (14976).
  *
  * If a later user does not exist — notice after an assistant reply, or a
  * notice-only prefix — keep them as user. Hoisting in that shape appends
@@ -27,69 +33,63 @@ export function remapHiddenCustomTurns(messages, convertOne) {
     const next = convertOne(message);
     if (next === undefined) continue;
     if (isHiddenCustom(message)) {
-      const assistant = {
+      const asUser = {
         ...next,
-        role: "assistant",
+        role: "user",
         content: asBlocks(next.content),
         usage: emptyUsage(),
       };
       const previous = converted[converted.length - 1];
-      if (previous?.role === "assistant" && hidden.has(previous)) {
-        previous.content = [...asBlocks(previous.content), ...asBlocks(assistant.content)];
+      if (previous?.role === "user" && hidden.has(previous)) {
+        previous.content = [...asBlocks(previous.content), ...asBlocks(asUser.content)];
         continue;
       }
-      hidden.add(assistant);
-      converted.push(assistant);
+      hidden.add(asUser);
+      converted.push(asUser);
       continue;
     }
     converted.push(next);
   }
-  return hoistHiddenAssistantsBeforeLastUser(converted, hidden);
+  return hoistHiddenImmediatelyAfterUsers(converted, hidden);
 }
 
-function hoistHiddenAssistantsBeforeLastUser(messages, hidden) {
-  let lastUser = -1;
-  for (let index = 0; index < messages.length; index += 1) {
-    if (messages[index]?.role === "user") lastUser = index;
-  }
-  // No user turn: a remapped notice would be the whole request, i.e. assistant
-  // prefill. Send it as user so providers that reject prefill stay valid.
-  if (lastUser < 0) return restoreHiddenAsUser(messages, hidden);
+function hoistHiddenImmediatelyAfterUsers(messages, hidden) {
+  const result = [];
+  let index = 0;
+  while (index < messages.length) {
+    const message = messages[index];
+    if (message?.role !== "user" || hidden.has(message)) {
+      result.push(message);
+      index += 1;
+      continue;
+    }
 
-  const trailing = [];
-  for (let index = lastUser + 1; index < messages.length; index += 1) {
-    if (hidden.has(messages[index])) trailing.push(messages[index]);
-  }
-  if (trailing.length === 0) return messages;
+    const notices = [];
+    let cursor = index + 1;
+    while (cursor < messages.length && hidden.has(messages[cursor])) {
+      notices.push(messages[cursor]);
+      cursor += 1;
+    }
+    if (notices.length === 0) {
+      result.push(message);
+      index += 1;
+      continue;
+    }
 
-  const mid = messages.slice(lastUser + 1).filter((message) => !hidden.has(message));
-  // Hidden after an assistant reply (or other non-user turns), with no later
-  // user: the old hoist put `mid` after the user and ended the request on
-  // assistant. Fable 5.1 rejects that. Leave the notices as a user-role tail
-  // — there is no follow-up for them to steal.
-  if (mid.length > 0) {
-    return [
-      ...messages.slice(0, lastUser + 1),
-      ...mid,
-      ...restoreHiddenAsUser(trailing, hidden),
-    ];
+    result.push(toHiddenAssistant(notices), message);
+    index = cursor;
   }
-
-  const merged = trailing.length === 1
-    ? trailing[0]
-    : {
-        ...trailing[0],
-        content: trailing.flatMap((message) => asBlocks(message.content)),
-      };
-  return [...messages.slice(0, lastUser), merged, messages[lastUser]];
+  return result;
 }
 
-function restoreHiddenAsUser(messages, hidden) {
-  return messages.map((message) => (
-    hidden.has(message) && message.role === "assistant"
-      ? { ...message, role: "user" }
-      : message
-  ));
+function toHiddenAssistant(notices) {
+  const first = notices[0];
+  return {
+    ...first,
+    role: "assistant",
+    content: notices.flatMap((message) => asBlocks(message.content)),
+    usage: emptyUsage(),
+  };
 }
 
 function isHiddenCustom(message) {
