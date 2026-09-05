@@ -4,6 +4,17 @@
 set -eu
 HERE="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
 
+# ANTHROPIC_AUTH_TOKEN 은 엔진이 "bearer" 로 받는다 — OAuth 경로가 아니다.
+# 거기에 setup-token(sk-ant-oat)을 담아 두면 Claude Code 신원 없이 요청이 나가고,
+# Anthropic 은 haiku 만 통과시키고 opus·sonnet·fable 은 429 로 막는다. setup-token 은
+# 키체인에서 읽는 마지막 출처가 제 자리라, env 가 먼저 잡히면 그 자리가 가려진다.
+# bridge 시절에는 launchd 가 로그인 셸 env 를 안 물려받아 이 길이 닫혀 있었는데,
+# provider 가 세션 안으로 들어오면서 열렸다.
+# 진짜 API 키를 이 이름으로 쓰는 설치는 건드리지 않는다 — 접두로만 가른다.
+case "${ANTHROPIC_AUTH_TOKEN-}" in
+  sk-ant-oat*) unset ANTHROPIC_AUTH_TOKEN ;;
+esac
+
 # Subcommands handled here rather than by the agent. Everything else falls
 # through to the session launcher, so a prompt starting with an ordinary word
 # still works.

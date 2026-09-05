@@ -38,9 +38,10 @@ function dispatcherHarness(t) {
 
   const argsPath = join(root, "engine-args.txt");
   const stdinPath = join(root, "engine-stdin.txt");
+  const tokenPath = join(root, "anthropic-token.txt");
   const commandPath = join(root, "command.txt");
   const fakeNode = join(root, "fake-node");
-  executable(fakeNode, `#!/bin/sh\nprintf '%s\\n' "$@" > "$RUBATO_TEST_ARGS"\nif [ "\${RUBATO_TEST_GUARD_FAIL-}" = 1 ] && [ "\${2-}" = remote ] && [ "\${3-}" = update-guard ]; then exit 73; fi\ncat > "$RUBATO_TEST_STDIN"\n`);
+  executable(fakeNode, `#!/bin/sh\nprintf '%s\\n' "$@" > "$RUBATO_TEST_ARGS"\nprintf '%s\\n' "\${ANTHROPIC_AUTH_TOKEN-unset}" > "$RUBATO_TEST_TOKEN"\nif [ "\${RUBATO_TEST_GUARD_FAIL-}" = 1 ] && [ "\${2-}" = remote ] && [ "\${3-}" = update-guard ]; then exit 73; fi\ncat > "$RUBATO_TEST_STDIN"\n`);
   executable(join(scripts, "find-node.sh"), `#!/bin/sh\nrubato_find_node() { printf '%s\\n' "$RUBATO_TEST_NODE"; }\n`);
   executable(join(prompts, "build.sh"), `#!/bin/sh\nif [ "$#" -gt 0 ]; then printf 'build\\n%s\\n' "$@" > "$RUBATO_TEST_COMMAND"; fi\n`);
   executable(join(scripts, "rubato-auth.sh"), `#!/bin/sh\nprintf 'auth\\n%s\\n' "$@" > "$RUBATO_TEST_COMMAND"\n`);
@@ -55,6 +56,7 @@ function dispatcherHarness(t) {
     RUBATO_TEST_NODE: fakeNode,
     RUBATO_TEST_ARGS: argsPath,
     RUBATO_TEST_STDIN: stdinPath,
+    RUBATO_TEST_TOKEN: tokenPath,
     RUBATO_TEST_COMMAND: commandPath,
     RUBATO_NO_UPDATE_CHECK: "1",
     RUBATO_NO_MSEARCH_CHECK: "1",
@@ -73,6 +75,9 @@ function dispatcherHarness(t) {
     },
     engineInput() {
       return readFileSync(stdinPath, "utf8");
+    },
+    anthropicToken() {
+      return readFileSync(tokenPath, "utf8").trimEnd();
     },
     command() {
       return readFileSync(commandPath, "utf8").trimEnd().split("\n");
@@ -111,6 +116,20 @@ test("ordinary arguments pass through unchanged to the existing engine", (t) => 
   const result = harness.run(args);
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(harness.engineArgs(), [harness.engineEntry, ...args]);
+});
+
+test("Claude setup-token env does not shadow the launcher's native credential path", (t) => {
+  const harness = dispatcherHarness(t);
+  const result = harness.run(["hello"], "", { ANTHROPIC_AUTH_TOKEN: "sk-ant-oat01-fixture" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(harness.anthropicToken(), "unset");
+});
+
+test("a real Anthropic API bearer remains available to the engine", (t) => {
+  const harness = dispatcherHarness(t);
+  const result = harness.run(["hello"], "", { ANTHROPIC_AUTH_TOKEN: "sk-ant-api03-fixture" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(harness.anthropicToken(), "sk-ant-api03-fixture");
 });
 
 test("direct strips only its dispatcher marker before the existing engine", (t) => {
