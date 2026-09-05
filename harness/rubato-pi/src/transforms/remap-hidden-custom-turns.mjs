@@ -12,9 +12,10 @@
  * turns append after the pair.
  *
  * Hidden customs that arrive after assistant/tool content stay in
- * chronological place as user. Pulling every post-user notice to a tail
- * (session 01a070da) rewrites the prefix on every tool loop — Codex WS
- * continuation misses, cacheRead sticks at tools+instructions (14976).
+ * chronological place as user, one turn each. Merging or pulling them to
+ * a tail (session 01a070da) rewrites the prefix on every tool loop —
+ * Codex WS continuation misses, cacheRead sticks at tools+instructions
+ * (14976).
  *
  * If a later user does not exist — notice after an assistant reply, or a
  * notice-only prefix — keep them as user. Hoisting in that shape appends
@@ -39,11 +40,6 @@ export function remapHiddenCustomTurns(messages, convertOne) {
         content: asBlocks(next.content),
         usage: emptyUsage(),
       };
-      const previous = converted[converted.length - 1];
-      if (previous?.role === "user" && hidden.has(previous)) {
-        previous.content = [...asBlocks(previous.content), ...asBlocks(asUser.content)];
-        continue;
-      }
       hidden.add(asUser);
       converted.push(asUser);
       continue;
