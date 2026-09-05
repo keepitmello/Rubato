@@ -3,12 +3,15 @@ import test from "node:test";
 import {
   REFERENCE_IDENTITY,
   cacheBand,
+  cacheHitRate,
   effectiveDuration,
   formatSpeedIndex,
   freezeBaseline,
+  fullInputTokens,
   inputBand,
   iqr,
   isScoreableSample,
+  mergeBaselines,
   sampleCell,
   scoreFromRatios,
   scoreGroup,
@@ -115,10 +118,38 @@ test("one matched call scores; zero matched is a dash; no baseline is unavailabl
   assert.equal(formatSpeedIndex(covered).text, "Speed 100");
 });
 
+test("mergeBaselines keeps bundled coverage where local cells are unsupported", () => {
+  const local = freezeBaseline(many(20, { fullInputTokens: 300, cacheHitRate: 0.8, cacheReadTokens: 240, newInputTokens: 60, cacheWriteTokens: 0 }), { now: () => now, minReferenceCalls: 20 });
+  const bundled = freezeBaseline(many(20, { fullInputTokens: 80_000, cacheHitRate: 0.75, cacheReadTokens: 60_000, newInputTokens: 20_000, cacheWriteTokens: 0 }), { now: () => now, minReferenceCalls: 20 });
+  assert.equal(local.status, "frozen");
+  assert.equal(bundled.status, "frozen");
+  const merged = mergeBaselines(local, bundled);
+  const byKey = Object.fromEntries(merged.cells.map((cell) => [cell.key, cell]));
+  assert.equal(byKey["256:512:gte50"]?.supported, true);
+  assert.equal(byKey["65536:131072:gte50"]?.supported, true);
+  assert.equal(speedRatio(sample({ fullInputTokens: 80_000, cacheHitRate: 0.75, cacheReadTokens: 60_000, newInputTokens: 20_000, clientDurationMs: 1000 }), local), undefined);
+  assert.equal(speedRatio(sample({ fullInputTokens: 80_000, cacheHitRate: 0.75, cacheReadTokens: 60_000, newInputTokens: 20_000, clientDurationMs: 1000 }), merged), 1);
+  assert.equal(mergeBaselines(undefined, bundled), bundled);
+  assert.equal(mergeBaselines(local, undefined), local);
+});
+
+test("undersized fullInputTokens and cacheHitRate>1 recompute from cache parts", () => {
+  const claude = sample({
+    newInputTokens: 0,
+    cacheReadTokens: 92_060,
+    cacheWriteTokens: 1_317,
+    fullInputTokens: 4,
+    cacheHitRate: 23_015,
+  });
+  assert.equal(fullInputTokens(claude), 93_377);
+  assert.ok(Math.abs(cacheHitRate(claude) - 92_060 / 93_377) < 1e-9);
+  assert.equal(sampleCell(claude).key, "65536:131072:gte50");
+});
+
 test("unknown effort, degraded network, auxiliary stream, and errors are unscoreable", () => {
   assert.equal(isScoreableSample(sample({ effort: undefined, effortSource: "unknown" })), false);
   assert.equal(isScoreableSample(sample({ networkStatus: "degraded" })), false);
-  assert.equal(isScoreableSample(sample({ networkStatus: "unknown" })), false);
+  assert.equal(isScoreableSample(sample({ networkStatus: "unknown" })), true);
   assert.equal(isScoreableSample(sample({ streamKind: "compaction" })), false);
   assert.equal(isScoreableSample(sample({ terminalStatus: "error" })), false);
   assert.equal(isScoreableSample(sample({ terminalStatus: "aborted" })), false);
@@ -135,7 +166,7 @@ test("unknown effort, degraded network, auxiliary stream, and errors are unscore
     networkSource: "probe",
     clientDurationMs: 800,
     serverDurationMs: 350,
-  })), undefined);
+  })), 800);
   assert.equal(effectiveDuration(sample({
     networkStatus: "degraded",
     networkSource: "probe",

@@ -76,6 +76,8 @@ export type TaskRunStats = {
   readonly total_tokens?: number
   readonly generation_ms?: number
   readonly tokens_per_second?: number
+  /** Footer Speed Index for this run: 100 is the bundled Sol-medium cell, higher is faster. */
+  readonly speed_index?: number
   /** Summed provider-reported spend for the run, in USD. */
   readonly cost_usd?: number
   /** cacheRead / (input + cacheRead + cacheWrite) for the latest assistant request with a nonzero

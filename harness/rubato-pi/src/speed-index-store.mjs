@@ -19,6 +19,7 @@ import {
   identityKey,
   isCalibrationCandidate,
   isScoreableSample,
+  mergeBaselines,
   scoreGroup,
   validateBaseline,
 } from "./speed-index.mjs";
@@ -240,7 +241,7 @@ export function createSpeedIndexStore({
   const fileSizes = new Map();
 
   function baselineOf() {
-    return localBaseline ?? bundledBaseline;
+    return mergeBaselines(localBaseline, bundledBaseline);
   }
 
   function remember(sample, { source } = {}) {

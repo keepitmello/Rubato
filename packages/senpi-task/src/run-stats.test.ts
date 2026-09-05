@@ -338,4 +338,21 @@ describe("run stats tracker", () => {
     expect(snapshot.generation_ms).toBe(2_000)
     expect(snapshot.tokens_per_second).toBeUndefined()
   })
+
+  test("#given a cached 64k prompt at the bundled median #when snapshotted #then Speed Index is 100", () => {
+    let nowMs = 1_000
+    const tracker = createRunStatsTracker(1_000, () => nowMs)
+    nowMs = 1_000
+    tracker.accept({ type: "message_start", message: { role: "assistant", content: [] } })
+    nowMs = 1_000 + 8658
+    tracker.accept({
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "ok" }],
+        usage: { output: 20, input: 20_000, cacheRead: 60_000, cacheWrite: 0 },
+      },
+    })
+    expect(tracker.snapshot(nowMs).speed_index).toBe(100)
+  })
 })

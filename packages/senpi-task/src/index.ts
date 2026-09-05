@@ -45,6 +45,7 @@ export type {
 } from "./store"
 export {
   composeStatusLine,
+  formatLiveSpeed,
   formatLiveSpend,
   formatRunSpend,
   formatStatusTarget,

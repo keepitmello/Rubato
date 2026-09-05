@@ -52,7 +52,7 @@ describe("child task progress", () => {
     const details = progress.details()
     expect(details).toEqual({
       progress: {
-        activity: "st_00000001 · category:quick(kimi-coding/kimi-k3-unlocked:max) · turn 1 (1 tool) · running · 50 tok/s",
+        activity: "st_00000001 · category:quick(kimi-coding/kimi-k3-unlocked:max) · turn 1 (1 tool) · running",
         startedAt: 1_000,
       },
       childId: "st_00000001",

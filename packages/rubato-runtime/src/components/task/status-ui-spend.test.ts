@@ -55,7 +55,7 @@ describe("createTaskStatusUi spend", () => {
               runtime_ms: 1_000,
               turns: 2,
               tool_calls: 1,
-              tokens_per_second: 40,
+              speed_index: 40,
               cost_usd: 0.4213,
               cache_hit_rate_last: 0.8712,
               cache_hit_rate_run: 0.4,
@@ -64,7 +64,7 @@ describe("createTaskStatusUi spend", () => {
               runtime_ms: 1_000,
               turns: 1,
               tool_calls: 0,
-              tokens_per_second: 12,
+              speed_index: 12,
               cost_usd: 0.017,
               cache_hit_rate_last: 0.5,
               cache_hit_rate_run: 0.1,
@@ -82,8 +82,8 @@ describe("createTaskStatusUi spend", () => {
 
     // then
     const rows = widgetCalls.at(-1) ?? []
-    expect(rows[0]).toEndWith("40 tok/s")
-    expect(rows[1]).toEndWith("12 tok/s")
+    expect(rows[0]).toEndWith("Speed 40")
+    expect(rows[1]).toEndWith("Speed 12")
     expect(rows.join("\n")).not.toContain("$0.4213")
     expect(rows.join("\n")).not.toContain("$0.0170")
     expect(rows.join("\n")).not.toContain("CH:")
