@@ -27,8 +27,10 @@ export const CODEX_STOCK_WINDOW = 272_000;
 export const CODEX_STOCK_THRESHOLD_RATIO = 0.9;
 export const CODEX_STOCK_TRIGGER_TOKENS = 244_800;
 export const GROK_REMAINING_THRESHOLD_RATIO = 0.9;
-export const GEMINI_COMPACTION_THRESHOLD_RATIO = 0.87;
+export const GEMINI_COMPACTION_THRESHOLD_RATIO = 0.9;
 export const DEFAULT_CLIENT_COMPACTION_THRESHOLD_RATIO = 0.9;
+/** 긴급 컴팩션(0.95)보다 최소 3% 앞서 자동 요약이 먼저 돌도록 보장하는 안전 상한선. */
+export const MAX_SAFE_COMPACTION_THRESHOLD_RATIO = 0.92;
 
 /** @type {Record<string, number>} */
 export const DEFAULT_CLIENT_COMPACTION_THRESHOLD_MODELS = Object.freeze({
@@ -121,11 +123,19 @@ export function resolveClientCompactionThresholdRatio(input = {}) {
   const settings = input.settings ?? {};
   const model = input.model ?? settings.model;
   const fromModels = pickThresholdRatioFromMap(settings.models ?? settings.thresholdByModel, model);
-  if (fromModels !== undefined) return fromModels;
-  const global = normalizeThresholdRatio(settings.thresholdRatio);
-  if (global !== undefined) return global;
-  return pickThresholdRatioFromMap(DEFAULT_CLIENT_COMPACTION_THRESHOLD_MODELS, model)
-    ?? DEFAULT_CLIENT_COMPACTION_THRESHOLD_RATIO;
+  let resolved;
+  if (fromModels !== undefined) {
+    resolved = fromModels;
+  } else {
+    const global = normalizeThresholdRatio(settings.thresholdRatio);
+    if (global !== undefined) {
+      resolved = global;
+    } else {
+      resolved = pickThresholdRatioFromMap(DEFAULT_CLIENT_COMPACTION_THRESHOLD_MODELS, model)
+        ?? DEFAULT_CLIENT_COMPACTION_THRESHOLD_RATIO;
+    }
+  }
+  return Math.min(resolved, MAX_SAFE_COMPACTION_THRESHOLD_RATIO);
 }
 
 /**
