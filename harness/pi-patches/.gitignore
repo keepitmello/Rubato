@@ -1,0 +1,3 @@
+# These dist trees are retained compatibility source, not local build output.
+!**/owned/dist/
+!**/owned/dist/**

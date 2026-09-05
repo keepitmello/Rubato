@@ -1,0 +1,120 @@
+import { createAssistantMessageEventStream, getToolCallFormat, hasVisibleAssistantContent, hasVisibleText, shouldRecoverTextToolCalls, } from "@earendil-works/pi-ai";
+const EMPTY_RESPONSE_ERROR = "Model returned an empty response twice";
+function isEmptyStop(message) {
+    return message.stopReason === "stop" && !hasVisibleAssistantContent(message);
+}
+function eventStartsVisibleContent(event) {
+    return event.type === "toolcall_start" || (event.type === "text_delta" && hasVisibleText(event.delta));
+}
+function appendRetryDiagnostic(message) {
+    return {
+        ...message,
+        diagnostics: [
+            ...(message.diagnostics ?? []),
+            {
+                type: "empty_assistant_response_recovery",
+                timestamp: Date.now(),
+                details: { retries: 1 },
+            },
+        ],
+    };
+}
+function createEmptyResponseFailure(message) {
+    return {
+        ...appendRetryDiagnostic(message),
+        content: [{ type: "text", text: EMPTY_RESPONSE_ERROR }],
+        stopReason: "error",
+        errorMessage: EMPTY_RESPONSE_ERROR,
+    };
+}
+function createRetryingStream(firstStream, createStream) {
+    const outerStream = createAssistantMessageEventStream();
+    // Liveness while events are held back: the agent loop's stream-start guard
+    // never sees buffered `start`/`thinking_delta` events, so a long thinking
+    // prefix would look like a dead request. The guard consults
+    // `hasPendingLocalWork()` at its deadline; answer true when upstream moved
+    // since the last check so it re-arms instead of aborting a live stream.
+    let upstreamActivity = false;
+    let currentStream = firstStream;
+    outerStream.hasPendingLocalWork = () => {
+        const seen = upstreamActivity;
+        upstreamActivity = false;
+        return seen || currentStream?.hasPendingLocalWork?.() === true;
+    };
+    void (async () => {
+        try {
+            let stream = firstStream;
+            let retrying = false;
+            for (;;) {
+                const buffered = [];
+                let forwarding = false;
+                let retry = false;
+                for await (const event of stream) {
+                    if (!forwarding)
+                        upstreamActivity = true;
+                    if (event.type === "done") {
+                        if (isEmptyStop(event.message)) {
+                            if (!retrying) {
+                                retry = true;
+                                break;
+                            }
+                            const error = createEmptyResponseFailure(event.message);
+                            outerStream.push({ type: "error", reason: "error", error });
+                            outerStream.end();
+                            return;
+                        }
+                        const terminal = retrying ? { ...event, message: appendRetryDiagnostic(event.message) } : event;
+                        if (!forwarding) {
+                            for (const pending of buffered)
+                                outerStream.push(pending);
+                        }
+                        outerStream.push(terminal);
+                        outerStream.end();
+                        return;
+                    }
+                    if (event.type === "error") {
+                        if (!forwarding) {
+                            for (const pending of buffered)
+                                outerStream.push(pending);
+                        }
+                        outerStream.push(event);
+                        outerStream.end();
+                        return;
+                    }
+                    if (forwarding) {
+                        outerStream.push(event);
+                        continue;
+                    }
+                    buffered.push(event);
+                    if (eventStartsVisibleContent(event)) {
+                        for (const pending of buffered)
+                            outerStream.push(pending);
+                        forwarding = true;
+                        // Forwarded events reset the guard themselves.
+                        upstreamActivity = false;
+                    }
+                }
+                if (!retry) {
+                    outerStream.end(retrying ? appendRetryDiagnostic(await stream.result()) : await stream.result());
+                    return;
+                }
+                retrying = true;
+                stream = await createStream();
+                currentStream = stream;
+            }
+        }
+        catch (error) {
+            outerStream.fail(error);
+        }
+    })();
+    return outerStream;
+}
+export function withEmptyAssistantRecovery(model, streamFunction) {
+    if (!shouldRecoverTextToolCalls(model) && getToolCallFormat(model) === undefined)
+        return streamFunction;
+    return async (requestedModel, context, options) => {
+        const createStream = () => streamFunction(requestedModel, context, options);
+        return createRetryingStream(await createStream(), createStream);
+    };
+}
+//# sourceMappingURL=empty-assistant-recovery.js.map
