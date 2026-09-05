@@ -58,6 +58,24 @@ test("gemini-3.8-flash 베이스가 오면 그대로 남는다", () => {
   assert.equal(presented[0].upstreamModelId, "gemini-3.8-flash-high");
 });
 
+test("grouped 3.7 저장분만 있으면 3.8을 만들지 않는다", () => {
+  const presented = presentCursorPicker([
+    cursor("gemini-3.7-flash"),
+    cursor("composer-2.5"),
+  ]);
+  assert.deepEqual(presented.map((model) => model.id), ["composer-2.5"]);
+});
+
+test("grouped 3.7 위에 3.8 변형이 있으면 3.8로 접힌다", () => {
+  const presented = presentCursorPicker([
+    cursor("gemini-3.7-flash"),
+    cursor("gemini-3.8-flash-high"),
+    cursor("gemini-3.8-flash-medium"),
+    cursor("composer-2.5"),
+  ]);
+  assert.deepEqual(presented.map((model) => model.id), ["gemini-3.8-flash", "composer-2.5"]);
+});
+
 test("Grok Fast 변형은 베이스 하나로 접힌 뒤 남는다", () => {
   const presented = presentCursorPicker([
     cursor("composer-2.5"),

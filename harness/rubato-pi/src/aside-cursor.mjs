@@ -5,7 +5,11 @@
 
 import { createHash } from "node:crypto";
 import { CURSOR_GROK_46_ID } from "./cursor-grok-fast.mjs";
-import { CURSOR_PICKER_IDS } from "./cursor-picker.mjs";
+import {
+  CURSOR_GEMINI_38_FLASH_HIGH_ID,
+  CURSOR_GEMINI_38_FLASH_ID,
+  CURSOR_PICKER_IDS,
+} from "./cursor-picker.mjs";
 
 export const ASIDE_CURSOR_DEFAULT_PORT = 18788;
 export const ASIDE_CURSOR_DEFAULT_HOST = "127.0.0.1";
@@ -30,7 +34,7 @@ export function asideCursorCatalog() {
     { id: "cursor/grok-4.6-fast", name: "Grok 4.6 Fast [Cursor]" },
     { id: "cursor/claude-fable-5-1", name: "Fable 5.1 [Cursor/Claude]" },
     { id: "cursor/claude-opus-5", name: "Opus 5 [Cursor/Claude]" },
-    { id: "cursor/gemini-3.7-flash", name: "3.7 Flash [Cursor/Gemini]" },
+    { id: "cursor/gemini-3.8-flash", name: "3.8 Flash [Cursor/Gemini]" },
     { id: "cursor/kimi-k3", name: "K3 [Cursor/Kimi]" },
     { id: "cursor/composer-2.5", name: "Composer 2.5 [Cursor]" },
     { id: "cursor/gpt-5.6-sol", name: "5.6 Sol [Cursor/GPT]" },
@@ -96,12 +100,17 @@ export function cursorModelStub(id) {
   };
 }
 
-export function resolveCursorModel(id, catalog) {
-  const want = asideCursorModelId(id);
-  const models = Array.isArray(catalog) ? catalog : [];
-  const found = models.find((model) => model.id === want)
-    ?? models.find((model) => model?.provider === "cursor" && model.id === want);
-  if (!found) return cursorModelStub(id);
+// pinned catalog-grouping이 모르는 신규모델 베이스(gemini-3.8, fable-5-1)는
+// provider 목록에 베이스가 없다. stub의 베어 id를 wire에 싣히면 선택기가
+// 별명표를 몰라 베어로 되돌리고, Cursor는 답 뒤에 턴을 깨뜨린다(2026-09-05
+// 실측: type error / reason error). 목록에 있는 실 variant 항목을 그대로
+// 쓴다. gemini는 high(캐시 실측), fable은 medium(opus·sol 선례).
+const CURSOR_WIRE_VARIANT = {
+  [CURSOR_GEMINI_38_FLASH_ID]: CURSOR_GEMINI_38_FLASH_HIGH_ID,
+  "claude-fable-5-1": "claude-fable-5-1-medium",
+};
+
+function normalizeCursorEntry(found) {
   return {
     ...found,
     id: found.id,
@@ -109,6 +118,22 @@ export function resolveCursorModel(id, catalog) {
     api: found.api ?? "cursor-agent",
     baseUrl: found.baseUrl ?? "https://api2.cursor.sh",
   };
+}
+
+function findCursorEntry(models, target) {
+  return models.find((model) => model.id === target)
+    ?? models.find((model) => model?.provider === "cursor" && model.id === target);
+}
+
+export function resolveCursorModel(id, catalog) {
+  const want = asideCursorModelId(id);
+  const models = Array.isArray(catalog) ? catalog : [];
+  const found = findCursorEntry(models, want);
+  if (found) return normalizeCursorEntry(found);
+  const variant = CURSOR_WIRE_VARIANT[want];
+  const live = variant ? findCursorEntry(models, variant) : undefined;
+  if (live) return normalizeCursorEntry(live);
+  return cursorModelStub(id);
 }
 
 export function cacheHitRate(usage) {

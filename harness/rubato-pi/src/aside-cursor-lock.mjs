@@ -44,6 +44,7 @@ export function asideCursorGrokAllowlist() {
   return [
     structuredClone({ id: "cursor/grok-4.6", name: "Grok 4.6 Fast [Cursor]", ...ASIDE_CURSOR_GROK_ROW }),
     structuredClone({ id: "cursor/grok-4.6-fast", name: "Grok 4.6 Fast [Cursor]", ...ASIDE_CURSOR_GROK_ROW }),
+    structuredClone({ id: "cursor/gemini-3.8-flash", name: "3.8 Flash [Cursor/Gemini]", ...ASIDE_CURSOR_GROK_ROW }),
   ];
 }
 
@@ -114,6 +115,7 @@ export function renderAsideCursorLaunchAgent({
 <key>ProgramArguments</key><array><string>/bin/sh</string><string>${escapeXml(scriptPath)}</string></array>
 <key>RunAtLoad</key><true/>
 <key>KeepAlive</key><true/>
+<key>ThrottleInterval</key><integer>10</integer>
 <key>EnvironmentVariables</key><dict>
 <key>HOME</key><string>${escapeXml(home)}</string>
 </dict>
