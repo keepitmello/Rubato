@@ -103,6 +103,16 @@ test("cache hit treats exclusive and inclusive input the same", () => {
   assert.equal(cacheHitRate({ input: 0, cacheRead: 0 }), null);
 });
 
+test("ungrouped bases resolve to a live wire variant", () => {
+  const live = [
+    { id: "gemini-3.8-flash-high", provider: "cursor", api: "cursor-agent" },
+    { id: "claude-fable-5-1-medium", provider: "cursor", api: "cursor-agent" },
+  ];
+  assert.equal(resolveCursorModel("cursor/gemini-3.8-flash", live).id, "gemini-3.8-flash-high");
+  assert.equal(resolveCursorModel("cursor/claude-fable-5-1", live).id, "claude-fable-5-1-medium");
+  assert.equal(resolveCursorModel("cursor/gemini-3.8-flash", []).id, "gemini-3.8-flash");
+});
+
 test("catalog miss still stubs a cursor-agent Grok Fast model", () => {
   const stub = resolveCursorModel("cursor/grok-4.6-fast", []);
   assert.equal(stub.id, "cursor-grok-4.6");
@@ -150,6 +160,7 @@ test("Aside lock seeds Cursor Grok rows on an empty models file", () => {
   assert.deepEqual(locked.providers.cursor.models.map((model) => model.id), [
     "cursor/grok-4.6",
     "cursor/grok-4.6-fast",
+    "cursor/gemini-3.8-flash",
   ]);
 });
 
@@ -172,6 +183,7 @@ test("Aside lock points Cursor at this process and leaves xAI on default", () =>
   assert.deepEqual(locked.providers.cursor.models.map((model) => model.id), [
     "cursor/grok-4.6",
     "cursor/grok-4.6-fast",
+    "cursor/gemini-3.8-flash",
   ]);
   assert.equal(locked.providers["xai-grok-oauth"].models[0].baseUrl, "https://api.x.ai/v1");
   assert.equal(locked.providers["xai-grok-oauth"].models[1].baseUrl, "https://api.x.ai/v1");
@@ -220,6 +232,7 @@ test("catalog refresh failure does not kill the Aside Cursor process", async () 
   });
   assert.equal(status, 200);
   assert.match(body, /cursor\/grok-4.6/);
+  assert.match(body, /cursor\/gemini-3.8-flash/);
 });
 
 test("launchd plist keeps the process alive after crash", () => {
@@ -231,6 +244,7 @@ test("launchd plist keeps the process alive after crash", () => {
   });
   assert.match(plist, /<key>KeepAlive<\/key>\s*<true\/>/);
   assert.match(plist, /<key>RunAtLoad<\/key>\s*<true\/>/);
+  assert.match(plist, /<key>ThrottleInterval<\/key>\s*<integer>10<\/integer>/);
   assert.match(plist, /com.keepitmello.rubato.aside-cursor/);
 });
 
