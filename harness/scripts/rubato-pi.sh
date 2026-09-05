@@ -87,7 +87,7 @@ for RUBATO_ARG in "$@"; do
     EXPECT_MODE=""
   fi
   case "$RUBATO_ARG" in
-    --print|--mode=rpc|--mode=print) RUBATO_NONINTERACTIVE=1 ;;
+    --print|--mode=rpc|--mode=print|--help|-h|--version|-v) RUBATO_NONINTERACTIVE=1 ;;
     --mode) EXPECT_MODE=1 ;;
   esac
 done
@@ -117,7 +117,7 @@ fi
 # 부팅 스플래시. 엔진이 화면을 잡기까지 3초 남짓 걸리는데 그동안 까만
 # 화면을 두지 않는다. 그릴 수 없는 곳에서는 splash 가 스스로 빠진다.
 SPLASH="$HERE/rubato-splash.sh"
-splash() { [ -x "$SPLASH" ] && "$SPLASH" "$@" || true; }
+splash() { [ -z "$RUBATO_NONINTERACTIVE" ] && [ -x "$SPLASH" ] && "$SPLASH" "$@" || true; }
 splash open
 
 # 스플래시를 켜 둔 채로 죽으면 커서가 사라진 터미널이 남는다. 어떻게
@@ -133,6 +133,7 @@ MSEARCH_OUT=""
 MSEARCH_DONE=""
 ENGINE_PID=""
 cleanup() {
+  splash close
   if [ -n "${UPDATE_PID-}" ]; then
     kill "$UPDATE_PID" 2>/dev/null || true
     wait "$UPDATE_PID" 2>/dev/null || true
@@ -333,9 +334,8 @@ if [ -n "${UPDATE_PID-}" ]; then
   fi
 fi
 
-# 스플래시를 여기서 닫지 않는다. 닫으면 "엔진 시작" 한 줄만 남고, senpi 가
-# main.js 를 평가하는 동안(실측 2.5초) 까만 화면이 된다. 로고를 유지한 채로
-# 엔진에 넘기면 그 구간이 빈 화면으로 보이지 않고, fullscreen TUI 가 지운다.
+# 확인 질문은 정상 화면에서 받고, 그 외에는 Node가 같은 화면을 인계받는다.
+if [ -n "$UPDATE_NOTE" ]; then splash close; fi
 trap - EXIT INT TERM
 
 # 새 커밋이 있으면 받을지 물어본다. 예면 받아서 다시 만들고, 그 뒤에

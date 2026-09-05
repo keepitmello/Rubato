@@ -179,14 +179,14 @@ ${DEFERRED_ASSIGNMENT}`,
 `,
     `        try {
             takeOverInteractiveStderr();
-            await import(${JSON.stringify(bootChromeHref())}).then((mod) => {
+            await import(${JSON.stringify(bootChromeHref())}).then(async (mod) => {
                 mod.setBootChromeStatus("화면을 여는 중");
-                mod.releaseBootChrome();
+                await mod.finishBootChrome();
             });
             this.ui.start();
         }
 `,
-    "interactive release boot chrome",
+    "interactive finish boot chrome before UI handoff",
   );
   next = replaceOnce(
     next,
