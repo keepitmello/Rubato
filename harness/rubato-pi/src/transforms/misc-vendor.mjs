@@ -3,6 +3,7 @@
 // 이 파일과 여기서 import 하는 transform 모듈들은 misc-vendor 워크스트림이 소유한다.
 // 규약은 tui-chrome.mjs 와 같다: pristine 니들, 없으면 throw, 패치 공존 중 inert.
 
+import { injectAstraCodex, isAstraCodexUrl } from "./misc-astra-codex.mjs";
 import { injectAuthStorage, isAuthStorageUrl } from "./misc-auth-storage.mjs";
 import { injectAdaptiveToolTurnEffort, isAdaptiveToolTurnEffortUrl } from "./misc-adaptive-tool-turn-effort.mjs";
 import { injectAnthropicCompaction, isAnthropicCompactionUrl } from "./misc-anthropic-compaction.mjs";
@@ -36,6 +37,7 @@ import { injectThinkingLevels, isThinkingLevelsUrl } from "./misc-thinking-level
  * @returns {string}
  */
 export function applyMiscVendorTransforms(url, source, applyTransform) {
+  if (isAstraCodexUrl(url)) source = applyTransform(source, injectAstraCodex);
   if (isModelSelectorUrl(url)) source = applyTransform(source, injectModelSelector);
   if (isHighReasoningUrl(url)) source = applyTransform(source, injectHighReasoning);
   if (isAuthStorageUrl(url)) source = applyTransform(source, injectAuthStorage);
@@ -55,6 +57,7 @@ export function applyMiscVendorTransforms(url, source, applyTransform) {
 }
 
 export {
+  injectAstraCodex,
   injectAdaptiveToolTurnEffort,
   injectAnthropicCompaction,
   injectAuthStorage,
@@ -70,6 +73,7 @@ export {
   injectTuiDollar,
   injectTuiEditor,
   injectTuiSlash,
+  isAstraCodexUrl,
   isAnthropicCompactionUrl,
   isAnthropicMessagesUrl,
   isAuthStorageUrl,
