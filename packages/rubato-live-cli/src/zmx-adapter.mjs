@@ -7,6 +7,29 @@ export function defaultZmxBinary(home = homedir()) {
   return join(home, ".local", "lib", "rubato", "bin", "zmx");
 }
 
+/** zmx `list` table. `clients`/`pid` are not labels; `zmx get name clients` fails. */
+export function parseZmxListInventory(text) {
+  const inventory = new Map();
+  for (const raw of String(text).split(/\r?\n/)) {
+    const line = raw.replace(/^→\s*/, "").trim();
+    if (!line) continue;
+    const fields = {};
+    for (const field of line.split("\t")) {
+      const separator = field.indexOf("=");
+      if (separator <= 0) continue;
+      fields[field.slice(0, separator).trim()] = field.slice(separator + 1);
+    }
+    if (!fields.name) continue;
+    const pid = Number(fields.pid);
+    const clients = Number(fields.clients);
+    inventory.set(fields.name, {
+      ...(Number.isSafeInteger(pid) && pid > 0 ? { pid } : {}),
+      ...(Number.isSafeInteger(clients) && clients >= 0 ? { clients } : {}),
+    });
+  }
+  return inventory;
+}
+
 export function parseLabels(text) {
   const labels = {};
   for (const field of String(text).trim().split(/\s+/)) {
@@ -87,7 +110,18 @@ export class ZmxAdapter {
 
   attach(name) {
     if (!isZmxName(name)) throw new TypeError("invalid Rubato zmx name");
+    this.#resumeIfStopped(name);
     return this.invoke(["attach", name], { stdio: "inherit", env: withoutNestedSession(this.env) });
+  }
+
+  #resumeIfStopped(name) {
+    try {
+      const listed = this.spawn(this.binary, ["list"], { encoding: "utf8", env: this.env });
+      const pid = parseZmxListInventory(listed.stdout ?? "").get(name)?.pid;
+      if (pid) process.kill(pid, "SIGCONT");
+    } catch {
+      // Attach still proceeds; the hub inventory tick will resume if needed.
+    }
   }
 
   kill(name) {

@@ -135,6 +135,32 @@ describe("live inventory pruning", () => {
     expect(registry.idleExpired(Date.now() + 24 * 60 * 60 * 1000 + 12 * 60 * 60 * 1000, 12 * 60 * 60 * 1000)).toEqual([SESSION_ID])
   })
 
+  test("reaps interactive sessions with zero zmx clients after the detached TTL", async () => {
+    const registry = new LiveRegistry(HOST_ID, {
+      discover: async () => [{ ...process, clients: 0, pid: 456, labels: { app: "rubato", rubato_live_id: SESSION_ID } }],
+    })
+    await registry.rebuild()
+    const now = Date.now()
+    await registry.snapshotDiscovery(now)
+    expect(registry.idleExpired(now + 29 * 60 * 1000, 12 * 60 * 60 * 1000, 30 * 60 * 1000)).toEqual([])
+    expect(registry.idleExpired(now + 30 * 60 * 1000, 12 * 60 * 60 * 1000, 30 * 60 * 1000)).toEqual([SESSION_ID])
+  })
+
+  test("keeps persist-labeled sessions with zero clients until the idle TTL", async () => {
+    const registry = new LiveRegistry(HOST_ID, {
+      discover: async () => [{
+        ...process,
+        clients: 0,
+        labels: { app: "rubato", rubato_live_id: SESSION_ID, rubato_persist: "1" },
+      }],
+    })
+    await registry.rebuild()
+    const now = Date.now()
+    await registry.snapshotDiscovery(now)
+    expect(registry.idleExpired(now + 30 * 60 * 1000, 12 * 60 * 60 * 1000, 30 * 60 * 1000)).toEqual([])
+    expect(registry.idleExpired(now + 12 * 60 * 60 * 1000, 12 * 60 * 60 * 1000, 30 * 60 * 1000)).toEqual([SESSION_ID])
+  })
+
   test("updateTitle follows the same terminal-tab naming rules", async () => {
     const registry = new LiveRegistry(HOST_ID, { discover: async () => [process] })
     await registry.rebuild()

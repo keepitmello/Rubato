@@ -8,11 +8,14 @@ export const SURFACE_STALE_MS = 30_000
 export const STARTING_TIMEOUT_MS = 120_000
 /** Idle (post-turn) sessions leave the picker after this quiet period. */
 export const IDLE_SESSION_TTL_MS = 12 * 60 * 60 * 1000
+/** Interactive sessions with no zmx client are paused, then reaped after this. */
+export const DETACHED_SESSION_TTL_MS = 30 * 60 * 1000
 
 export interface DiscoveredProcess {
   readonly liveSessionId: LiveSessionId
   readonly zmxName: ZmxName
   readonly pid?: number
+  readonly clients?: number
   readonly cwd?: string
   readonly name?: string
   readonly labels: Readonly<Record<string, string>>
@@ -49,6 +52,12 @@ interface RegistryEntry {
   lastActivityAt: number
   /** When the current idle stretch began; cleared while execution is working. */
   idleSinceAt?: number
+  /** zmx attach clients. Missing means the table did not report it. */
+  clients?: number
+  /** `--detach` / mobile sessions keep running with zero clients. */
+  persist?: boolean
+  /** When clients first dropped to 0; cleared on reattach. */
+  detachedSinceAt?: number
 }
 
 export function liveSessionTitle(name?: string, cwd?: string, fallback = ""): string {
@@ -82,12 +91,31 @@ export class LiveRegistry {
   }
 
   async discoveredIds(): Promise<ReadonlySet<LiveSessionId>> {
-    const discovered = await this.#discovery.discover()
-    return new Set(
-      discovered
-        .filter((process) => process.labels["app"] === "rubato" && process.labels["rubato_live_id"] === process.liveSessionId)
-        .map((process) => process.liveSessionId),
+    return new Set((await this.snapshotDiscovery()).map((process) => process.liveSessionId))
+  }
+
+  /**
+   * Pull zmx inventory, remember client counts / persist labels, and return the
+   * live Rubato processes. Hub maintenance uses this instead of a second discover.
+   */
+  async snapshotDiscovery(now = Date.now()): Promise<readonly DiscoveredProcess[]> {
+    const discovered = (await this.#discovery.discover()).filter(
+      (process) => process.labels["app"] === "rubato" && process.labels["rubato_live_id"] === process.liveSessionId,
     )
+    this.#applyDiscovery(discovered, now)
+    return discovered
+  }
+
+  #applyDiscovery(discovered: readonly DiscoveredProcess[], now: number): void {
+    for (const process of discovered) {
+      const entry = this.#entries.get(process.liveSessionId)
+      if (!entry) continue
+      if (process.clients === undefined) delete entry.clients
+      else entry.clients = process.clients
+      entry.persist = process.labels["rubato_persist"] === "1"
+      if (process.clients === 0) entry.detachedSinceAt ??= now
+      else delete entry.detachedSinceAt
+    }
   }
 
   get(id: LiveSessionId): LiveSessionSummary | undefined {
@@ -116,6 +144,9 @@ export class LiveRegistry {
         summary,
         lastActivityAt: Date.parse(summary.createdAt) || now,
         idleSinceAt: now,
+        persist: process.labels["rubato_persist"] === "1",
+        ...(process.clients === undefined ? {} : { clients: process.clients }),
+        ...(process.clients === 0 ? { detachedSinceAt: now } : {}),
       })
     }
     this.#entries.clear()
@@ -263,9 +294,14 @@ export class LiveRegistry {
    * Sessions that finished a turn (or never got one) and stayed quiet for the TTL.
    * Returns ids the hub should terminate + remove from the picker.
    */
-  idleExpired(now = Date.now(), ttlMs = IDLE_SESSION_TTL_MS): readonly LiveSessionId[] {
+  idleExpired(now = Date.now(), ttlMs = IDLE_SESSION_TTL_MS, detachedTtlMs = DETACHED_SESSION_TTL_MS): readonly LiveSessionId[] {
     const expired: LiveSessionId[] = []
     for (const [id, entry] of this.#entries) {
+      if (entry.clients === 0 && !entry.persist) {
+        const since = entry.detachedSinceAt ?? entry.lastActivityAt
+        if (now - since >= detachedTtlMs) expired.push(id)
+        continue
+      }
       if (entry.summary.execution === "working") continue
       const assistantAt = Date.parse(entry.summary.lastAssistantAt ?? "")
       const since = entry.idleSinceAt

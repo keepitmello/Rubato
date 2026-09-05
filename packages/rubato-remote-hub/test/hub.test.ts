@@ -101,4 +101,66 @@ describe("inventory maintenance", () => {
     expect(terminated).toEqual([SESSION_ID])
     expect(registry.get(SESSION_ID)).toBeUndefined()
   })
+
+  test("stops zero-client interactive panes and expires them on the detached TTL", async () => {
+    const temporary = await temporaryDirectory()
+    cleanups.push(temporary.cleanup)
+    const terminated: string[] = []
+    const stopped: number[] = []
+    const resumed: number[] = []
+    const journal = new EventJournal(join(temporary.path, "journal"), join(temporary.path, "snapshots"), HOST_ID)
+    await journal.load()
+    const handoffs = new EnvironmentHandoffStore<BootstrapLaunchPayload>()
+    const registry = new LiveRegistry(HOST_ID, {
+      discover: async () => [{
+        liveSessionId: SESSION_ID,
+        zmxName: zmxNameForLiveSession(SESSION_ID),
+        pid: 4242,
+        clients: 0,
+        labels: { app: "rubato", rubato_live_id: SESSION_ID },
+      }],
+    })
+    const hub = new RemoteHub({
+      registry,
+      journal,
+      actions: new SessionActionQueue({ dispatch: async () => ({ accepted: true, revision: 0, payload: {} }) }, () => 0),
+      controller: {
+        launch: async (request: LaunchRequest) => ({
+          liveSessionId: request.liveSessionId,
+          zmxName: zmxNameForLiveSession(request.liveSessionId),
+          labels: request.labels,
+        }),
+        terminate: async (id) => { terminated.push(id) },
+      },
+      paths: new AllowedPathResolver([temporary.path]),
+      vault: new EnvironmentVault(join(temporary.path, "launch-env.enc"), { getOrCreate: async () => Buffer.alloc(32) }),
+      handoffs,
+      surfaceTokens: new SurfaceTokenStore(),
+      newLiveSessionId: () => SESSION_ID,
+      runtime: { socketPath: "/tmp/hub.sock", launcherPath: "/rubato", zmxBinary: "/zmx", buildId: "test" },
+      signals: { stop: (pid) => { stopped.push(pid) }, resume: (pid) => { resumed.push(pid) } },
+    })
+    await hub.create({ cwd: temporary.path, source: "terminal", name: "Orphan" })
+    const now = Date.now()
+    const paused = await hub.maintainInventory(now, { idleTtlMs: 12 * 60 * 60 * 1000, detachedTtlMs: 30 * 60 * 1000, startingTimeoutMs: 1 })
+    expect(paused.idleExpired).toEqual([])
+    expect(stopped).toEqual([4242])
+    expect(resumed).toEqual([])
+    const expired = await hub.maintainInventory(now + 30 * 60 * 1000, { idleTtlMs: 12 * 60 * 60 * 1000, detachedTtlMs: 30 * 60 * 1000, startingTimeoutMs: 1 })
+    expect(expired.idleExpired).toEqual([SESSION_ID])
+    expect(terminated).toEqual([SESSION_ID])
+  })
+
+  test("persist create marks the zmx pane so zero clients do not stop it", async () => {
+    const temporary = await temporaryDirectory()
+    cleanups.push(temporary.cleanup)
+    const persisted = await (await hubFor(temporary.path, SESSION_ID)).create({
+      cwd: temporary.path, source: "terminal", persist: true,
+    })
+    expect(persisted.process.labels["rubato_persist"]).toBe("1")
+    const interactive = await (await hubFor(temporary.path, SESSION_2_ID)).create({
+      cwd: temporary.path, source: "terminal",
+    })
+    expect(interactive.process.labels["rubato_persist"]).toBeUndefined()
+  })
 })
