@@ -6,6 +6,12 @@
 import { injectAgentSession, isAgentSessionUrl } from "./core-agent-session.mjs";
 import { injectCompaction, injectContextTokensGuard, isCompactionUrl, isContextTokensUrl } from "./core-compaction.mjs";
 import { injectCompactionUtils, isCompactionUtilsUrl } from "./core-compaction-utils.mjs";
+import {
+  injectCompactionContextPipeline,
+  injectCompactionOverflowRetry,
+  isCompactionContextPipelineUrl,
+  isCompactionOverflowRetryUrl,
+} from "./core-compaction-prune.mjs";
 import { injectCoreDescriptors, isCoreDescriptorsUrl } from "./core-descriptors.mjs";
 import { injectEmptyRecoveryLiveness, isEmptyRecoveryUrl } from "./core-empty-recovery.mjs";
 import { injectErrorFormat, isErrorFormatUrl } from "./core-error-format.mjs";
@@ -50,6 +56,8 @@ export function applyCoreSessionTransforms(url, source, applyTransform) {
   if (isCompactionUrl(url)) source = applyTransform(source, injectCompaction);
   if (isContextTokensUrl(url)) source = applyTransform(source, injectContextTokensGuard);
   if (isCompactionUtilsUrl(url)) source = applyTransform(source, injectCompactionUtils);
+  if (isCompactionContextPipelineUrl(url)) source = applyTransform(source, injectCompactionContextPipeline);
+  if (isCompactionOverflowRetryUrl(url)) source = applyTransform(source, injectCompactionOverflowRetry);
   if (isAgentSessionUrl(url)) source = applyTransform(source, injectAgentSession);
   if (isSpeculativeUrl(url)) source = applyTransform(source, injectSpeculative);
   if (isServiceTierUrl(url)) source = applyTransform(source, injectServiceTier);
@@ -86,6 +94,8 @@ export {
   injectCompactionPolicy,
   injectCompactionSettings,
   injectCompactionUtils,
+  injectCompactionContextPipeline,
+  injectCompactionOverflowRetry,
   injectCoreDescriptors,
   injectLanePolicy,
   injectMessages,
@@ -104,6 +114,8 @@ export {
   isCompactionIndexThresholdUrl,
   isCompactionPolicyUrl,
   isCompactionUtilsUrl,
+  isCompactionContextPipelineUrl,
+  isCompactionOverflowRetryUrl,
   isSettingsManagerUrl,
   isLanePolicyUrl,
   isMessagesUrl,

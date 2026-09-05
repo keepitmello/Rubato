@@ -19,6 +19,8 @@ import { injectCompactionIndexReason } from "../../src/transforms/core-lane-poli
 const CODEX = { provider: "openai-codex", id: "gpt-5.6-sol" };
 const CURSOR_GROK = { provider: "cursor", id: "cursor-grok-4.6-high-fast" };
 const XAI_GROK = { provider: "xai", id: "grok-4.6" };
+const CURSOR_GEMINI = { provider: "cursor", id: "gemini-3.8-flash" };
+const ANTIGRAVITY_GEMINI = { provider: "google-antigravity", id: "gemini-3.8-flash" };
 const FABLE = { provider: "anthropic", id: "claude-fable-5-1" };
 
 test("stock Codex 272k compact trigger is 244800", () => {
@@ -32,6 +34,12 @@ test("Grok on Cursor or xAI compact at 10% remaining", () => {
   assert.equal(resolveClientCompactionThresholdRatio({ model: CURSOR_GROK }), 0.9);
   assert.equal(resolveClientCompactionThresholdRatio({ model: XAI_GROK }), 0.9);
   assert.equal(compactTriggerTokens(500_000, 0.9), 450_000);
+});
+
+test("Gemini compacts at 87% (13% remaining) by default", () => {
+  assert.equal(resolveClientCompactionThresholdRatio({ model: CURSOR_GEMINI }), 0.87);
+  assert.equal(resolveClientCompactionThresholdRatio({ model: ANTIGRAVITY_GEMINI }), 0.87);
+  assert.equal(compactTriggerTokens(1_048_576, 0.87), 912_261);
 });
 
 test("unlisted models also default to 0.9", () => {
