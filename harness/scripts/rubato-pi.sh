@@ -13,13 +13,10 @@ if [ "${1-}" = "auth" ]; then
 fi
 if [ "${1-}" = "update" ]; then
   shift
-  . "$HERE/find-node.sh"
-  if ! NODE="$(rubato_find_node)"; then
-    echo "rubato update preflight needs Node.js 24+ already installed." >&2
-    exit 2
-  fi
-  LIVE_CLI="$HERE/../../packages/rubato-live-cli/bin/rubato-live.mjs"
-  "$NODE" "$LIVE_CLI" remote update-guard
+  # Live zmx sessions stay up. `remote update-guard` belongs to signed
+  # `rubato remote update`, which replaces the install prefix. Git pull plus a
+  # hub kickstart must not be blocked by an open pane — hub GC/fixes have to
+  # land while other sessions are still running.
   exec "$HERE/rubato-update.sh" "$@"
 fi
 if [ "${1-}" = "build" ]; then

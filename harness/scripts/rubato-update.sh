@@ -96,7 +96,7 @@ printf '\n%s== 새 커밋 %s개 ==%s\n' "$BOLD" "$BEHIND" "$RST"
 git log --oneline --no-decorate "HEAD..origin/$BRANCH" | sed 's/^/  /'
 
 CHANGED="$(git diff --name-only "HEAD..origin/$BRANCH")"
-need_deps=0; need_prompts=0; need_engine=0; need_shell=0; need_extensions=0
+need_deps=0; need_prompts=0; need_engine=0; need_shell=0; need_extensions=0; need_hub=0
 echo "$CHANGED" | grep -Eq '^(package\.json|bun\.lock|harness/rubato-pi/package\.json)$' && need_deps=1
 echo "$CHANGED" | grep -Eq '^harness/prompts/' && need_prompts=1
 # 자동 로드되는 사용자 확장. 설치기 자신이 바뀌어도 다시 깐다 — 설치 규칙이
@@ -116,6 +116,15 @@ echo "$CHANGED" | grep -Eq '^(install\.sh$|harness/scripts/)' && need_shell=1
 # 이 기기에 등록돼 있을 때만.
 need_aside=0
 /bin/launchctl print "gui/$(id -u)/com.keepitmello.rubato.aside-cursor" >/dev/null 2>&1 && need_aside=1
+# Remote hub 도 launchd 상주라 소스만 받으면 옛 프로세스가 GC/유휴 정책을
+# 계속 돈다. zmx 세션은 허브 밖이라 kickstart -k 로도 안 죽는다.
+# 허브 소스가 바뀌고, 이 기기에 허브가 등록돼 있을 때만.
+# 업데이터 자신이 허브 재시작을 처음 넣는 커밋도 포함한다 — 그 커밋만
+# 받으면 허브 소스는 이미 HEAD 인데 프로세스는 옛 코드로 남는 구멍이 있다.
+HUB_LABEL="com.keepitmello.rubato.remote-hub"
+if echo "$CHANGED" | grep -Eq '^packages/rubato-remote-hub/|^harness/scripts/rubato-update\.sh$'; then
+  /bin/launchctl print "gui/$(id -u)/$HUB_LABEL" >/dev/null 2>&1 && need_hub=1
+fi
 
 printf '\n%s== 다시 만들 것 ==%s\n' "$BOLD" "$RST"
 [ "$need_deps" = 1 ]    && echo "  의존성 설치"
@@ -125,7 +134,8 @@ echo "  번들 스킬 → ~/.agents/skills"
 [ "$need_shell" = 1 ]   && echo "  셸 alias 블록 · cmux 세션 복원"
 [ "$need_engine" = 1 ]  && echo "  엔진 플러그인 빌드 ${DIM}(몇 분 걸려요)${RST}"
 [ "$need_aside" = 1 ]   && echo "  Aside 프록시 재시작"
-[ "$need_deps$need_prompts$need_extensions$need_engine$need_shell$need_aside" = "000000" ] && echo "  ${DIM}그 외는 소스만 받으면 돼요${RST}"
+[ "$need_hub" = 1 ]     && echo "  remote hub 재시작"
+[ "$need_deps$need_prompts$need_extensions$need_engine$need_shell$need_aside$need_hub" = "0000000" ] && echo "  ${DIM}그 외는 소스만 받으면 돼요${RST}"
 
 # 로컬 수정이 있어도 멈추지 않는다.
 #
@@ -374,6 +384,13 @@ if [ "$need_aside" = 1 ]; then
   ASIDE_LABEL="com.keepitmello.rubato.aside-cursor"
   /bin/launchctl kickstart -k "gui/$(id -u)/$ASIDE_LABEL" >/dev/null 2>&1 \
     && ok "Aside 프록시 재시작" || warn "Aside 프록시 재시작 경고 — 손으로: launchctl kickstart -k gui/\$(id -u)/$ASIDE_LABEL"
+fi
+
+# 허브 재시작은 세션이 있어도 한다. zmx 세션은 허브 프로세스가 아니라서
+# kickstart -k 로 안 죽는다. 허브 소스가 안 바뀌면 need_hub=0 이라 안 건드린다.
+if [ "$need_hub" = 1 ]; then
+  /bin/launchctl kickstart -k "gui/$(id -u)/$HUB_LABEL" >/dev/null 2>&1 \
+    && ok "remote hub 재시작" || warn "remote hub 재시작 경고 — 손으로: rubato restart"
 fi
 
 date +%s > "$STAMP"
