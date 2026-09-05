@@ -306,3 +306,26 @@ test("cache_control moving off messages[0] does not reset lineage", async () => 
   assert.deepEqual(sent.messages[2], systemMark("low"));
   assert.equal(effort.store.get("sess-1").baseEffort, "high");
 });
+
+test("a tool loop after an effort mark keeps the earlier messages byte-identical", async () => {
+  const { seen, fetchImpl } = createHarness();
+  await send(fetchImpl, body({ effort: "high", messages: [user("hi")] }));
+  await send(fetchImpl, body({
+    effort: "low",
+    messages: [user("hi"), assistant("yo"), user("again")],
+  }));
+  await send(fetchImpl, body({
+    effort: "low",
+    messages: [
+      user("hi"),
+      assistant("yo"),
+      user("again"),
+      { role: "assistant", content: [{ type: "tool_use", id: "c1", name: "eval", input: {} }] },
+      { role: "user", content: [{ type: "tool_result", tool_use_id: "c1", content: "ok" }] },
+    ],
+  }));
+  const marked = JSON.parse(seen[1].init.body).messages;
+  const looped = JSON.parse(seen[2].init.body).messages;
+  assert.deepEqual(looped.slice(0, marked.length), marked);
+  assert.equal(JSON.parse(seen[2].init.body).output_config.effort, "high");
+});
