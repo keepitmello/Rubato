@@ -17,7 +17,8 @@ node scripts/check-third-party-notices.mjs
 node --test \
   scripts/check-executables.test.mjs \
   scripts/check-third-party-notices.test.mjs \
-  scripts/license-policy.test.mjs
+  scripts/license-policy.test.mjs \
+  scripts/pre-push-isolation.test.mjs
 
 say "engine build and prompt synthesis"
 node harness/scripts/build-engine.mjs --force
