@@ -12,7 +12,9 @@ function showCursor() {
   }
 }
 
-enterBootChrome();
+// An older Node relaunches through this entry point on Node 24; only the owner paints.
+if (Number(process.versions.node.split(".")[0]) >= 24) enterBootChrome();
+process.once("exit", () => abandonBootChrome());
 
 try {
   const { spawnRubatoPi } = await import("../src/launch.mjs");
