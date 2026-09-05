@@ -4,6 +4,7 @@ import {
   ANTHROPIC_SERVER_COMPACTION_BETA,
   ANTHROPIC_SERVER_COMPACTION_EDIT_TYPE,
 } from "../../src/anthropic-server-compaction.mjs";
+import { COMPACTION_BRIEFING_GUIDANCE } from "../../src/compaction-guidance.mjs";
 import {
   anthropicServerCompactionTrigger,
   applyAnthropicServerCompaction,
@@ -56,13 +57,23 @@ for (const model of ["claude-fable-5-1", "claude-opus-5", "claude-sonnet-5"]) {
     const payload = JSON.parse(seen.init.body);
     assert.equal(hasCompactEdit(payload), true);
     assert.equal(payload.context_management.edits.length, 1);
-    assert.deepEqual(payload.context_management.edits[0], { type: ANTHROPIC_SERVER_COMPACTION_EDIT_TYPE });
+    assert.deepEqual(payload.context_management.edits[0], {
+      type: ANTHROPIC_SERVER_COMPACTION_EDIT_TYPE,
+      instructions: COMPACTION_BRIEFING_GUIDANCE,
+    });
     assert.ok(!("trigger" in payload.context_management.edits[0]));
     assert.equal(betaOf(seen.init.headers).startsWith(OAUTH_BETAS), true);
     assert.ok(betaOf(seen.init.headers).split(",").map((entry) => entry.trim()).includes(ANTHROPIC_SERVER_COMPACTION_BETA));
     assert.notEqual(seen.init.headers, init.headers);
   });
 }
+
+test("server instructions are the same briefing guidance the client compaction uses", () => {
+  assert.match(COMPACTION_BRIEFING_GUIDANCE, /next worker/);
+  assert.match(COMPACTION_BRIEFING_GUIDANCE, /<summary><\/summary>/);
+  const edit = JSON.parse(applyAnthropicServerCompaction(body("claude-fable-5-1"), {}, { provider: "anthropic" }).bodyText).context_management.edits[0];
+  assert.equal(edit.instructions, COMPACTION_BRIEFING_GUIDANCE);
+});
 
 test("trigger sits at 65% of the model context window (35% left)", async () => {
   const { seen } = await send("claude-fable-5-1", { contextWindow: 1_000_000 });

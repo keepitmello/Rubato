@@ -4,6 +4,7 @@ import {
   anthropicServerCompactionArmed,
   supportsAnthropicServerCompaction,
 } from "./anthropic-server-compaction.mjs";
+import { COMPACTION_BRIEFING_GUIDANCE } from "./compaction-guidance.mjs";
 
 let warnedDisarmed = false;
 function warnDisarmedOnce() {
@@ -73,11 +74,12 @@ export function anthropicServerCompactionTrigger(contextWindow) {
 
 /**
  * 기존 `context_management` 는 유지하고 `compact_20260112` edit 만 합친다.
- * instructions / pause_after_compaction 은 넣지 않는다 (Anthropic 기본값).
+ * `instructions` 는 클라이언트 컴팩션과 같은 인계 지침(`compaction-guidance.mjs`) — Anthropic 기본
+ * 프롬프트를 완전히 대체한다. pause_after_compaction 은 넣지 않는다 (기본값).
  * trigger 는 contextWindow 를 알 때만 붙는다.
  */
 export function mergeAnthropicServerCompactionEdit(body, { contextWindow } = {}) {
-  const edit = { type: ANTHROPIC_SERVER_COMPACTION_EDIT_TYPE };
+  const edit = { type: ANTHROPIC_SERVER_COMPACTION_EDIT_TYPE, instructions: COMPACTION_BRIEFING_GUIDANCE };
   const trigger = anthropicServerCompactionTrigger(contextWindow);
   if (trigger) edit.trigger = trigger;
   const existing = body.context_management;
