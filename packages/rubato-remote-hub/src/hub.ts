@@ -6,11 +6,13 @@ import type { EventJournal } from "./journal.js"
 import type { AllowedPathResolver } from "./path-security.js"
 import type { ProcessController } from "./registry.js"
 import {
+  DETACHED_SESSION_TTL_MS,
   IDLE_SESSION_TTL_MS,
   LiveRegistry,
   STARTING_TIMEOUT_MS,
   SURFACE_STALE_MS,
   liveSessionTitle,
+  type DiscoveredProcess,
 } from "./registry.js"
 import type { SurfaceTokenStore } from "./surface-tokens.js"
 
@@ -20,6 +22,22 @@ export interface CreateLiveRequest {
   readonly rubatoArgs?: readonly string[]
   readonly environment?: Readonly<Record<string, string>>
   readonly source: "terminal" | "mobile"
+  /** Keep the zmx pane with zero clients (`rubato new --detach`, mobile). */
+  readonly persist?: boolean
+}
+
+export interface ProcessSignals {
+  stop(pid: number): void
+  resume(pid: number): void
+}
+
+export const defaultProcessSignals: ProcessSignals = {
+  stop(pid) {
+    try { process.kill(pid, "SIGSTOP") } catch { /* ESRCH / EPERM */ }
+  },
+  resume(pid) {
+    try { process.kill(pid, "SIGCONT") } catch { /* ESRCH / EPERM */ }
+  },
 }
 
 export interface HubLaunchRuntime {
@@ -40,6 +58,7 @@ export class RemoteHub {
   readonly #surfaceTokens: SurfaceTokenStore
   readonly #newLiveSessionId: () => LiveSessionId
   readonly #runtime: HubLaunchRuntime
+  readonly #signals: ProcessSignals
 
   constructor(input: {
     registry: LiveRegistry
@@ -52,6 +71,7 @@ export class RemoteHub {
     surfaceTokens: SurfaceTokenStore
     newLiveSessionId: () => LiveSessionId
     runtime?: HubLaunchRuntime
+    signals?: ProcessSignals
   }) {
     this.registry = input.registry
     this.journal = input.journal
@@ -62,6 +82,7 @@ export class RemoteHub {
     this.#handoffs = input.handoffs
     this.#surfaceTokens = input.surfaceTokens
     this.#newLiveSessionId = input.newLiveSessionId
+    this.#signals = input.signals ?? defaultProcessSignals
     this.#runtime = input.runtime ?? {
       socketPath: "/tmp/rubato-hub.sock",
       launcherPath: "/rubato/rubato-pi.sh",
@@ -81,7 +102,8 @@ export class RemoteHub {
     const liveSessionId = this.#newLiveSessionId()
     const zmxName = zmxNameForLiveSession(liveSessionId)
     const surfaceToken = this.#surfaceTokens.issue(liveSessionId)
-    const labels = fixedLabels(this.registry.hostId, liveSessionId, this.#runtime.buildId)
+    const persist = request.persist === true || request.source === "mobile"
+    const labels = fixedLabels(this.registry.hostId, liveSessionId, this.#runtime.buildId, persist)
     const payload: BootstrapLaunchPayload = {
       schemaVersion: 1,
       liveSessionId,
@@ -146,6 +168,7 @@ export class RemoteHub {
     staleMs?: number
     startingTimeoutMs?: number
     idleTtlMs?: number
+    detachedTtlMs?: number
   } = {}): Promise<{
     stale: readonly LiveSessionId[]
     missing: readonly LiveSessionId[]
@@ -155,20 +178,32 @@ export class RemoteHub {
     const staleMs = options.staleMs ?? SURFACE_STALE_MS
     const startingTimeoutMs = options.startingTimeoutMs ?? STARTING_TIMEOUT_MS
     const idleTtlMs = options.idleTtlMs ?? IDLE_SESSION_TTL_MS
+    const detachedTtlMs = options.detachedTtlMs ?? DETACHED_SESSION_TTL_MS
     const stale = this.registry.markStale(now, staleMs)
-    const discovered = await this.registry.discoveredIds()
+    const processes = await this.registry.snapshotDiscovery(now)
+    const discovered = new Set(processes.map((process) => process.liveSessionId))
+    this.#reconcileDetachedSignals(processes)
     const missing = this.registry.pruneMissingProcesses(discovered, now, startingTimeoutMs)
     const stuckStarting = this.registry.pruneStuckStarting(now, startingTimeoutMs, discovered)
     for (const id of stuckStarting) {
       await this.#controller.terminate(id, true).catch(() => {})
     }
-    const idleExpired = this.registry.idleExpired(now, idleTtlMs)
+    const idleExpired = this.registry.idleExpired(now, idleTtlMs, detachedTtlMs)
     for (const id of idleExpired) {
       await this.terminate(id, true).catch(() => {
         this.registry.remove(id)
       })
     }
     return { stale, missing, stuckStarting, idleExpired }
+  }
+
+  #reconcileDetachedSignals(processes: readonly DiscoveredProcess[]): void {
+    for (const process of processes) {
+      if (!process.pid) continue
+      const persist = process.labels["rubato_persist"] === "1"
+      if (process.clients === 0 && !persist) this.#signals.stop(process.pid)
+      else if ((process.clients ?? 0) > 0) this.#signals.resume(process.pid)
+    }
   }
 
   resolve(value: string): LiveSessionSummary {
@@ -191,13 +226,14 @@ export class RemoteHub {
   }
 }
 
-function fixedLabels(hostId: HostId, liveSessionId: LiveSessionId, buildId: string): Readonly<Record<string, string>> {
+function fixedLabels(hostId: HostId, liveSessionId: LiveSessionId, buildId: string, persist: boolean): Readonly<Record<string, string>> {
   return {
     app: "rubato",
     rubato_protocol: String(REMOTE_PROTOCOL_CURRENT_VERSION),
     rubato_live_id: liveSessionId,
     rubato_host_id: hostId,
     rubato_build_id: buildId.replace(/[^A-Za-z0-9._-]/g, "-"),
+    ...(persist ? { rubato_persist: "1" } : {}),
   }
 }
 
