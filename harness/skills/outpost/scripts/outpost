@@ -145,7 +145,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     send = sub.add_parser("send", help="Open a new thread or continue with --to.")
     send.add_argument("tokens", nargs="*", help="xhigh|pro and the packet path.")
     send.add_argument("--quality", choices=("xhigh", "pro"))
-    send.add_argument("--to", default=None, help="Thread id, conversation URL, or result.json.")
+    send.add_argument("--to", default=None, help="Thread id, last, /c/ URL, or result.json.")
     send.add_argument("--artifact", default=None, help="Save one generated zip here.")
     send.add_argument("--run", default=None, help="Directory for response.md and result.json.")
     send.add_argument("--url", default=None)
