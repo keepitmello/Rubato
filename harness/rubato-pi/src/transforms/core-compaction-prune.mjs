@@ -31,6 +31,12 @@ export const CONTEXT_PIPELINE_REPLACEMENT =
   "    }\n" +
   "    const admittedMessages = admitContextToolResults(contextMessages, input.contextWindow, input.toolAdmissionEnabled);\n";
 
+export const EMERGENCY_PRUNE_WINDOW_NEEDLE =
+  "        : hardLimitEmergencyPrune(sourceMessages, input.promptContextWindow, input.emergencyPruneLatch);\n";
+
+export const EMERGENCY_PRUNE_WINDOW_REPLACEMENT =
+  "        : hardLimitEmergencyPrune(sourceMessages, input.contextWindow, input.emergencyPruneLatch);\n";
+
 export const ESTIMATE_WIRE_TOKENS_NEEDLE =
   "function estimateWireTokens(message) {\n" +
   "    const base = estimateTokens(message);\n" +
@@ -172,13 +178,23 @@ export function isCompactionOverflowRetryUrl(url) {
   return url.includes("@code-yeongyu/senpi/dist/core/extensions/builtin/compaction/overflow-retry.js");
 }
 
-/** Cursor 모델의 과거 턴 thinking 블록을 컴팩션 파이프라인에서 제거해 허수 토큰과 직렬화 부하를 방지한다. */
+/**
+ * Cursor 모델의 과거 턴 thinking 블록을 컴팩션 파이프라인에서 제거하고,
+ * 긴급 컴팩션 대상 윈도우를 promptContextWindow 대신 contextWindow 기준으로 바로잡아
+ * maxTokens 과대 차감에 따른 조기 긴급 프루닝(82% / 50% 등)을 방지하고 95% 비상선으로 정상화한다.
+ */
 export function injectCompactionContextPipeline(source) {
-  return replaceOnce(
+  let next = replaceOnce(
     source,
     CONTEXT_PIPELINE_NEEDLE,
     CONTEXT_PIPELINE_REPLACEMENT,
     "compaction context-pipeline stripCursorThinking",
+  );
+  return replaceOnce(
+    next,
+    EMERGENCY_PRUNE_WINDOW_NEEDLE,
+    EMERGENCY_PRUNE_WINDOW_REPLACEMENT,
+    "compaction context-pipeline normalize hardLimitEmergencyPrune window",
   );
 }
 

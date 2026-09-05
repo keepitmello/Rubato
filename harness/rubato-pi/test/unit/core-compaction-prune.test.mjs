@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { senpiDir } from "../../src/engine-paths.mjs";
 import {
   CONTEXT_PIPELINE_NEEDLE,
+  EMERGENCY_PRUNE_WINDOW_NEEDLE,
   ESTIMATE_WIRE_TOKENS_NEEDLE,
   PRUNE_TO_BUDGET_NEEDLE,
   injectCompactionContextPipeline,
@@ -18,12 +19,14 @@ function pinned(rel) {
   return readFileSync(join(senpiDir, rel), "utf8");
 }
 
-test("핀된 context-pipeline.js 에 Cursor thinking 제거 패치가 바르게 적용된다", () => {
+test("핀된 context-pipeline.js 에 Cursor thinking 제거 및 긴급 컴팩션 윈도우 정상화 패치가 바르게 적용된다", () => {
   const source = pinned("dist/core/extensions/builtin/compaction/context-pipeline.js");
   assert.equal(source.includes(CONTEXT_PIPELINE_NEEDLE), true, "CONTEXT_PIPELINE_NEEDLE present");
+  assert.equal(source.includes(EMERGENCY_PRUNE_WINDOW_NEEDLE), true, "EMERGENCY_PRUNE_WINDOW_NEEDLE present");
   const next = injectCompactionContextPipeline(source);
   assert.match(next, /stripCursorThinking/);
   assert.match(next, /input\.ctx\?\.model\?\.provider === "cursor"/);
+  assert.match(next, /hardLimitEmergencyPrune\(sourceMessages, input\.contextWindow, input\.emergencyPruneLatch\)/);
   assert.throws(() => injectCompactionContextPipeline(next), /drift/);
   assert.equal(
     isCompactionContextPipelineUrl("file:///x/@code-yeongyu/senpi/dist/core/extensions/builtin/compaction/context-pipeline.js"),
