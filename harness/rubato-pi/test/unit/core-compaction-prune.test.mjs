@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
-import { senpiDir } from "../../src/engine-paths.mjs";
 import { pathToFileURL } from "node:url";
+import { senpiDir } from "../../src/engine-paths.mjs";
 import {
   CONTEXT_PIPELINE_NEEDLE,
+  ESTIMATE_WIRE_TOKENS_NEEDLE,
   PRUNE_TO_BUDGET_NEEDLE,
   injectCompactionContextPipeline,
   injectCompactionOverflowRetry,
@@ -30,12 +31,13 @@ test("핀된 context-pipeline.js 에 Cursor thinking 제거 패치가 바르게 
   );
 });
 
-test("핀된 overflow-retry.js 의 pruneOldMessagesToBudget 이 O(N) 구현으로 교체된다", () => {
+test("핀된 overflow-retry.js 에 estimateWireTokens sanitize 및 O(N) 프루너가 바르게 적용된다", () => {
   const source = pinned("dist/core/extensions/builtin/compaction/overflow-retry.js");
+  assert.equal(source.includes(ESTIMATE_WIRE_TOKENS_NEEDLE), true, "ESTIMATE_WIRE_TOKENS_NEEDLE present");
   assert.equal(source.includes(PRUNE_TO_BUDGET_NEEDLE), true, "PRUNE_TO_BUDGET_NEEDLE present");
   const next = injectCompactionOverflowRetry(source);
-  assert.match(next, /tokenMap = new Array\(messages\.length\)/);
-  assert.match(next, /toRemove = new Set\(\)/);
+  assert.match(next, /sanitizeForWireEstimate/);
+  assert.match(next, /visitedCallIds/);
   assert.throws(() => injectCompactionOverflowRetry(next), /drift/);
   assert.equal(
     isCompactionOverflowRetryUrl("file:///x/@code-yeongyu/senpi/dist/core/extensions/builtin/compaction/overflow-retry.js"),
@@ -43,8 +45,29 @@ test("핀된 overflow-retry.js 의 pruneOldMessagesToBudget 이 O(N) 구현으�
   );
 });
 
+test("estimateWireTokens 는 어시스턴트의 거대 thinking 블록을 와이어 토큰 추정에서 제외한다", async () => {
+  const source = pinned("dist/core/extensions/builtin/compaction/overflow-retry.js");
+  const transformed = injectCompactionOverflowRetry(source);
+
+  const absCompactionUrl = pathToFileURL(join(senpiDir, "dist/core/compaction/index.js")).href;
+  const modSource = transformed.replace('../../../compaction/index.js', absCompactionUrl);
+  const dataUri = `data:text/javascript;base64,${Buffer.from(modSource).toString("base64")}`;
+  const { estimateTotalTokens } = await import(dataUri);
+
+  const hugeThinkingMsg = {
+    role: "assistant",
+    content: [
+      { type: "text", text: "Hello world" },
+      { type: "thinking", thinking: "Deep thought ".repeat(5000) }, // 65,000 자 thinking
+    ],
+  };
+
+  const estimated = estimateTotalTokens([hugeThinkingMsg]);
+  // thinking이 제외되었으므로 수만 토큰이 아니라 "Hello world"의 수십 토큰 수준이어야 함
+  assert.equal(estimated < 100, true, `estimated tokens: ${estimated}, expected < 100`);
+});
+
 test("pruneOldMessagesToBudget O(N) 은 도구 쌍을 원자적으로 제거하고 대용량에서도 즉시 수렴한다", async () => {
-  // overflow-retry.js 소스에 주입 후 동적으로 모듈 import
   const source = pinned("dist/core/extensions/builtin/compaction/overflow-retry.js");
   const transformed = injectCompactionOverflowRetry(source);
 
@@ -53,9 +76,9 @@ test("pruneOldMessagesToBudget O(N) 은 도구 쌍을 원자적으로 제거하�
   const dataUri = `data:text/javascript;base64,${Buffer.from(modSource).toString("base64")}`;
   const { pruneOldMessagesToBudget, estimateTotalTokens } = await import(dataUri);
 
-  // 100개 턴의 긴 히스토리 생성 (도구 호출 + 도구 결과 쌍 다수)
+  // 200개 턴의 긴 히스토리 생성 (100쌍의 도구 호출 + 결과)
   const messages = [];
-  for (let i = 0; i < 50; i++) {
+  for (let i = 0; i < 100; i++) {
     const callId = `call_${i}`;
     messages.push({
       role: "assistant",
@@ -70,34 +93,25 @@ test("pruneOldMessagesToBudget O(N) 은 도구 쌍을 원자적으로 제거하�
       content: [{ type: "text", text: `File content ${i}: ${"x".repeat(100)}` }],
     });
   }
-  // 마지막 사용자 지시
   messages.push({
     role: "user",
     content: [{ type: "text", text: "Final user instruction" }],
   });
 
   const totalTokens = estimateTotalTokens(messages);
-  assert.equal(totalTokens > 1000, true);
+  const targetTokens = Math.floor(totalTokens / 2);
 
   const t0 = performance.now();
-  // 절반 예산으로 프루닝
-  const targetTokens = Math.floor(totalTokens / 2);
   const pruned = pruneOldMessagesToBudget(messages, targetTokens);
   const elapsedMs = performance.now() - t0;
 
-  // O(N)이라 50ms 이내에 완료되어야 함 (기존 O(N^2)는 수 초 소요)
   assert.equal(elapsedMs < 100, true, `pruning took ${elapsedMs}ms, expected < 100ms`);
+  assert.equal(estimateTotalTokens(pruned) <= targetTokens, true);
 
-  // 예산 이내로 줄었는지 확인
-  const prunedTokens = estimateTotalTokens(pruned);
-  assert.equal(prunedTokens <= targetTokens, true);
-
-  // 마지막 유저 메시지는 반드시 보존되어야 함
   const lastMsg = pruned.at(-1);
   assert.equal(lastMsg.role, "user");
   assert.equal(lastMsg.content[0].text, "Final user instruction");
 
-  // 남아있는 toolResult는 반드시 짝이 맞는 assistant toolCall이 있어야 함 (고아 제거 검증)
   const retainedCallIds = new Set();
   for (const m of pruned) {
     if (m.role === "assistant") {
@@ -111,4 +125,43 @@ test("pruneOldMessagesToBudget O(N) 은 도구 쌍을 원자적으로 제거하�
       assert.equal(retainedCallIds.has(m.toolCallId), true, `toolResult ${m.toolCallId} was orphaned`);
     }
   }
+});
+
+test("pruneOldMessagesToBudget O(N) 은 중복 toolCall ID 가 있어도 O(N^2) 회귀 없이 안전하게 처리한다", async () => {
+  const source = pinned("dist/core/extensions/builtin/compaction/overflow-retry.js");
+  const transformed = injectCompactionOverflowRetry(source);
+
+  const absCompactionUrl = pathToFileURL(join(senpiDir, "dist/core/compaction/index.js")).href;
+  const modSource = transformed.replace('../../../compaction/index.js', absCompactionUrl);
+  const dataUri = `data:text/javascript;base64,${Buffer.from(modSource).toString("base64")}`;
+  const { pruneOldMessagesToBudget, estimateTotalTokens } = await import(dataUri);
+
+  // 모든 assistant 가 동일한 ID("dup_call")를 공유하는 악성/손상 케이스
+  const messages = [];
+  for (let i = 0; i < 50; i++) {
+    messages.push({
+      role: "assistant",
+      content: [
+        { type: "text", text: `Assistant turn ${i}` },
+        { type: "toolCall", id: "dup_call", name: "ping", arguments: {} },
+      ],
+    });
+    messages.push({
+      role: "toolResult",
+      toolCallId: "dup_call",
+      content: [{ type: "text", text: `Pong ${i}` }],
+    });
+  }
+  messages.push({
+    role: "user",
+    content: [{ type: "text", text: "Boundary user" }],
+  });
+
+  const totalTokens = estimateTotalTokens(messages);
+  const t0 = performance.now();
+  const pruned = pruneOldMessagesToBudget(messages, Math.floor(totalTokens / 2));
+  const elapsedMs = performance.now() - t0;
+
+  assert.equal(elapsedMs < 50, true, `duplicate callId pruning took ${elapsedMs}ms, expected < 50ms`);
+  assert.equal(pruned.length < messages.length, true);
 });
