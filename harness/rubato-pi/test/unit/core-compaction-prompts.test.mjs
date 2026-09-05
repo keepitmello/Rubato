@@ -3,11 +3,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { senpiDir } from "../../src/engine-paths.mjs";
+import { COMPACTION_BRIEFING_GUIDANCE } from "../../src/compaction-guidance.mjs";
 import {
-  FABLE_51_PRESERVATION_GUIDANCE,
-  SOURCE_CONTEXT_TURN_PREFIX_PROMPT_NEEDLE,
   SUMMARIZATION_PROMPT_NEEDLE,
-  TURN_PREFIX_PROMPT_NEEDLE,
   UPDATE_SUMMARIZATION_INSTRUCTIONS_NEEDLE,
   injectCompaction,
   isCompactionUrl,
@@ -56,8 +54,20 @@ function constValue(source, name) {
   return new Function(`${decl}; return ${name};`)();
 }
 
-// 공식 원문(계획서) — 상수가 이것과 바이트 단위로 같아야 한다.
-const OFFICIAL_GUIDANCE_HEAD = "Summarize the transcript inside `<summary></summary>` tags. Include relevant information in the summary such that this conversation will be continued by a new context window without needing to redo work or be reprovided with relevant constraints or context.";
+test("핀된 compaction.js 의 요약 프롬프트는 인계 지침으로 바뀜다", () => {
+  const source = pinned("dist/core/compaction/compaction.js");
+  // TURN_PREFIX 계열 니들은 senpi 2026.9.4-3 핀에 없다(드리프트, 별도 정리 대상) — 여기서는 지침이 실제로 들어가는 두 니들만 본다.
+  for (const needle of [SUMMARIZATION_PROMPT_NEEDLE, UPDATE_SUMMARIZATION_INSTRUCTIONS_NEEDLE]) {
+    assert.equal(countLiteral(source, needle), 1, `needle: ${needle.slice(0, 40)}`);
+  }
+  const next = injectCompaction(source);
+  // 런타임 문자열이 정본과 바이트 단위로 같아야 한다 (이스케이프가 문구를 바꾸면 안 된다).
+  assert.equal(constValue(next, "SUMMARIZATION_PROMPT").endsWith(COMPACTION_BRIEFING_GUIDANCE), true);
+  assert.equal(constValue(next, "UPDATE_SUMMARIZATION_INSTRUCTIONS").endsWith(COMPACTION_BRIEFING_GUIDANCE), true);
+  assert.match(COMPACTION_BRIEFING_GUIDANCE, /^You are writing the briefing that the next worker will start from/);
+  assert.doesNotMatch(next, /Use this EXACT format/);
+  assert.equal(isCompactionUrl("file:///x/@code-yeongyu/senpi/dist/core/compaction/compaction.js"), true);
+});
 
 test("핀된 utils.js 시스템 프롬프트는 <summary> 전용으로 바뀐다", () => {
   const source = pinned("dist/core/compaction/utils.js");
