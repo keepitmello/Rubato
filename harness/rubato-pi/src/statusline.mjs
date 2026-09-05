@@ -238,7 +238,7 @@ export function resolveCachePolicy(model) {
     return { kind: "sliding", ttlSeconds: model?.cacheRetention === "long" ? 3600 : 300 };
   }
   if (
-    provider === "xai" || id.includes("grok") ||
+    provider === "xai" || id.includes("grok") || id.includes("gemini") ||
     provider === "openai-codex" || api === "openai-codex-responses" ||
     provider === "google" || provider === "google-vertex" || provider === "google-antigravity"
   ) return { kind: "opaque" };

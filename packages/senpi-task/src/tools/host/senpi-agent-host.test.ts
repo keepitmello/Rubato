@@ -152,11 +152,11 @@ describe("liveModelCatalog", () => {
 
   test("#given a live registry #when the exact provider/id is present #then it admits that model only", () => {
     const catalog = liveModelCatalog(() => ({
-      getAvailable: () => [{ provider: "xai", id: "grok-4.6" }, { provider: "google-antigravity", id: "gemini-3.7-flash" }],
+      getAvailable: () => [{ provider: "xai", id: "grok-4.6" }, { provider: "google-antigravity", id: "gemini-3.8-flash" }],
     }))
 
     expect(catalog.has("xai/grok-4.6")).toBe(true)
-    expect(catalog.has("google-antigravity/gemini-3.7-flash")).toBe(true)
+    expect(catalog.has("google-antigravity/gemini-3.8-flash")).toBe(true)
     expect(catalog.has("missing/model")).toBe(false)
     expect(catalog.has("grok-4.6")).toBe(false)
   })

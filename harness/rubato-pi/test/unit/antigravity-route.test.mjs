@@ -32,6 +32,8 @@ test("catalog는 gemini-3.8-flash를 image 능력과 함께 공개한다", () =>
   assert.deepEqual(flash.input, ["text", "image"]);
   assert.equal(flash.reasoning, true);
   assert.equal(flash.baseUrl, ANTIGRAVITY_ENDPOINT);
+  assert.equal(flash.contextWindow, 1_048_576);
+  assert.equal(flash.maxTokens, 65_536);
 });
 
 test("catalog model baseUrl follows the endpoint override", () => {

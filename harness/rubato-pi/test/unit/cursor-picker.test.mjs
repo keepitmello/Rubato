@@ -47,6 +47,8 @@ test("gemini-3.8-flash 변형은 베이스 하나로 접힌 뒤 남는다", () =
   // display 는 베이스, wire 는 high 고정 — 베어 id 는 캐시 0%라서.
   assert.equal(presented[0].upstreamModelId, "gemini-3.8-flash-high");
   assert.equal(presented[0].compat?.cursorReasoning?.representativeVariantId, "gemini-3.8-flash-high");
+  assert.equal(presented[0].contextWindow, 1_048_576);
+  assert.equal(presented[0].maxTokens, 65_536);
 });
 
 test("gemini-3.8-flash 베이스가 오면 그대로 남는다", () => {
