@@ -17,7 +17,11 @@ from urllib.parse import urlparse
 
 DEFAULT_SESSIONS_PATH = Path.home() / ".codex" / "outpost-sessions.json"
 LEGACY_SESSIONS_PATH = Path.home() / ".codex" / "consult-sessions.json"
-CONVERSATION_ID_RE = re.compile(r"/c/([0-9a-fA-F-]{8,})")
+CONVERSATION_ID_RE = re.compile(r"/c/([0-9a-fA-F-]{1,})")
+BARE_CONVERSATION_ID_RE = re.compile(
+    r"(?i)^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$"
+)
+LATEST_ALIASES = frozenset({"last", "latest"})
 STATUS_ORDER = {
     "running": 0,
     "submitted_response_unavailable": 1,
@@ -49,6 +53,18 @@ def conversation_id_from_url(url: str | None) -> str | None:
     return match.group(1) if match else None
 
 
+def conversation_id_from_value(value: str | None) -> str | None:
+    if not value:
+        return None
+    text = str(value).strip()
+    extracted = conversation_id_from_url(text)
+    if extracted:
+        return extracted
+    if BARE_CONVERSATION_ID_RE.fullmatch(text):
+        return text
+    return None
+
+
 def is_chatgpt_conversation_url(value: str | None) -> bool:
     if not value:
         return False
@@ -61,10 +77,43 @@ def is_chatgpt_conversation_url(value: str | None) -> bool:
 
 
 def canonical_conversation_url(url: str | None) -> str:
-    conversation_id = conversation_id_from_url(url)
+    conversation_id = conversation_id_from_value(url)
     if not conversation_id:
         return (url or "").strip()
     return f"https://chatgpt.com/c/{conversation_id}"
+
+
+def preferred_conversation_url(*values: str | None) -> str:
+    """Keep the first recoverable /c/ conversation; never prefer a project home."""
+    for value in values:
+        if is_chatgpt_conversation_url(value):
+            return canonical_conversation_url(value)
+    for value in values:
+        conversation_id = conversation_id_from_value(value)
+        if conversation_id:
+            return canonical_conversation_url(conversation_id)
+    return ""
+
+
+def thread_conversation_url(thread: dict[str, Any] | None) -> str:
+    if not thread:
+        return ""
+    return preferred_conversation_url(
+        str(thread.get("conversationUrl") or "") or None,
+        str(thread.get("conversationId") or "") or None,
+    )
+
+
+def apply_conversation_to_thread(thread: dict[str, Any], conversation_url: str | None) -> None:
+    preferred = preferred_conversation_url(
+        conversation_url,
+        str(thread.get("conversationUrl") or "") or None,
+        str(thread.get("conversationId") or "") or None,
+    )
+    if not preferred:
+        return
+    thread["conversationUrl"] = preferred
+    thread["conversationId"] = conversation_id_from_url(preferred) or thread.get("conversationId") or ""
 
 
 def resolve_sessions_path(cli_value: str | None = None) -> Path:
@@ -153,6 +202,8 @@ class SessionStore:
         needle = query.strip()
         if not needle:
             raise UnknownThreadError("thread query is empty")
+        if needle.casefold() in LATEST_ALIASES:
+            return self._latest_thread()
         as_path = Path(needle).expanduser()
         if as_path.is_file() and as_path.suffix == ".json":
             try:
@@ -347,9 +398,7 @@ class SessionStore:
         outpost_id: str | None = None,
     ) -> dict[str, Any]:
         def mutate(thread: dict[str, Any]) -> None:
-            if conversation_url:
-                thread["conversationUrl"] = conversation_url
-                thread["conversationId"] = conversation_id_from_url(conversation_url) or thread.get("conversationId") or ""
+            apply_conversation_to_thread(thread, conversation_url)
             if target_id:
                 thread["targetId"] = target_id
             thread["updatedAt"] = now_iso()
@@ -372,9 +421,7 @@ class SessionStore:
         submit_elapsed_seconds: float | None = None,
     ) -> dict[str, Any]:
         def mutate(thread: dict[str, Any]) -> None:
-            if conversation_url:
-                thread["conversationUrl"] = conversation_url
-                thread["conversationId"] = conversation_id_from_url(conversation_url) or thread.get("conversationId") or ""
+            apply_conversation_to_thread(thread, conversation_url)
             if target_id:
                 thread["targetId"] = target_id
             thread["status"] = status
@@ -416,6 +463,16 @@ class SessionStore:
             return thread
         raise UnknownThreadError(f"no outpost thread matches {thread_id!r}")
 
+    def _latest_thread(self) -> dict[str, Any]:
+        threads = self.threads()
+        if not threads:
+            raise UnknownThreadError("no outpost threads")
+        ranked = sorted(threads, key=lambda thread: str(thread.get("updatedAt") or ""), reverse=True)
+        for thread in ranked:
+            if thread_conversation_url(thread):
+                return thread
+        raise UnknownThreadError("no outpost thread has a saved conversation yet")
+
     def _new_thread_id(self) -> str:
         existing = {str(thread.get("threadId") or "") for thread in self.threads()}
         for _attempt in range(16):
@@ -436,8 +493,10 @@ class SessionStore:
                     last = dict(last)
                     last["status"] = "failed"
                     turns[-1] = last
-        if current.get("conversationUrl") and not current.get("conversationId"):
-            current["conversationId"] = conversation_id_from_url(str(current["conversationUrl"])) or ""
+        apply_conversation_to_thread(
+            current,
+            str(current.get("conversationUrl") or "") or None,
+        )
         return current
 
     @staticmethod
