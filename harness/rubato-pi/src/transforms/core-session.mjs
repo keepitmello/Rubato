@@ -25,6 +25,18 @@ import { injectSpeculative, isSpeculativeUrl } from "./core-speculative.mjs";
 import { injectMessages, isMessagesUrl } from "./core-messages.mjs";
 import { injectRoutineSettings, isRoutineSettingsUrl } from "./core-routine-settings.mjs";
 import { injectSessionPersist, isSessionManagerUrl } from "./core-session-persist.mjs";
+import { injectResumeUsabilityBudget, isSdkUrl } from "./core-session-resume-budget.mjs";
+import {
+  injectInteractiveSessionListPage,
+  injectMainSessionListPage,
+  injectSessionDiscoveryPage,
+  injectSessionManagerPage,
+  injectSessionSelectorPage,
+  isBootMainSessionListUrl,
+  isInteractiveModeSessionListUrl,
+  isSessionDiscoveryUrl,
+  isSessionSelectorUrl,
+} from "./core-session-list-page.mjs";
 import { injectStreamWatchdog, isStreamWatchdogUrl } from "./core-stream-watchdog.mjs";
 
 /**
@@ -51,7 +63,15 @@ export function applyCoreSessionTransforms(url, source, applyTransform) {
   if (isCompactionIndexThresholdUrl(url)) source = applyTransform(source, injectCompactionIndexThreshold);
   if (isCompactionPolicyUrl(url)) source = applyTransform(source, injectCompactionPolicy);
   if (isSettingsManagerUrl(url)) source = applyTransform(source, injectCompactionSettings);
-  if (isSessionManagerUrl(url)) source = applyTransform(source, injectSessionPersist);
+  if (isSessionManagerUrl(url)) {
+    source = applyTransform(source, injectSessionPersist);
+    source = applyTransform(source, injectSessionManagerPage);
+  }
+  if (isSessionDiscoveryUrl(url)) source = applyTransform(source, injectSessionDiscoveryPage);
+  if (isSessionSelectorUrl(url)) source = applyTransform(source, injectSessionSelectorPage);
+  if (isInteractiveModeSessionListUrl(url)) source = applyTransform(source, injectInteractiveSessionListPage);
+  if (isBootMainSessionListUrl(url)) source = applyTransform(source, injectMainSessionListPage);
+  if (isSdkUrl(url)) source = applyTransform(source, injectResumeUsabilityBudget);
   if (isMessagesUrl(url)) source = applyTransform(source, injectMessages);
   if (isRoutineSettingsUrl(url)) source = applyTransform(source, injectRoutineSettings);
   return source;
