@@ -207,16 +207,87 @@ def chatgpt_message_text(message: dict[str, Any] | None) -> str:
     return "".join(chunks)
 
 
+def sanitize_filename(name: str) -> str:
+    cleaned = re.sub(r'[/\\?%*:|"<>]+', '_', name.strip())
+    cleaned = re.sub(r'\s+', '_', cleaned)
+    return cleaned or "attachment.bin"
+
+
+def save_outpost_attachments(
+    outpost_id: str,
+    downloaded_files: list[dict[str, Any]] | None = None,
+    writing_artifacts: list[dict[str, Any]] | None = None,
+) -> list[Path]:
+    downloaded_files = downloaded_files or []
+    writing_artifacts = writing_artifacts or []
+    if not downloaded_files and not writing_artifacts:
+        return []
+    save_dir = Path(f"/tmp/outpost-{outpost_id}")
+    save_dir.mkdir(parents=True, exist_ok=True)
+    saved_paths: list[Path] = []
+    seen_names: set[str] = set()
+
+    for item in downloaded_files:
+        name = sanitize_filename(str(item.get("suggestedFilename") or "download.bin"))
+        if name in seen_names:
+            base, ext = os.path.splitext(name)
+            name = f"{base}_{len(seen_names)}{ext}"
+        seen_names.add(name)
+        dest = save_dir / name
+        temp_path = item.get("temporaryPath")
+        if temp_path and Path(str(temp_path)).is_file():
+            try:
+                shutil.copyfile(temp_path, dest)
+                saved_paths.append(dest)
+            except OSError:
+                pass
+        elif item.get("contentBase64"):
+            try:
+                dest.write_bytes(base64.b64decode(item["contentBase64"]))
+                saved_paths.append(dest)
+            except (OSError, ValueError):
+                pass
+
+    for item in writing_artifacts:
+        title = str(item.get("title") or "document").strip()
+        name = sanitize_filename(title)
+        if not name.endswith(".md"):
+            name += ".md"
+        if name in seen_names:
+            base, ext = os.path.splitext(name)
+            name = f"{base}_{len(seen_names)}{ext}"
+        seen_names.add(name)
+        dest = save_dir / name
+        content = str(item.get("content") or "")
+        try:
+            dest.write_text(content + "\n", encoding="utf-8")
+            saved_paths.append(dest)
+        except OSError:
+            pass
+
+    return saved_paths
+
+
+def format_attachments_section(saved_paths: list[Path]) -> str:
+    if not saved_paths:
+        return ""
+    lines = ["\n\n---\n### 📎 첨부파일 (/tmp 저장됨)"]
+    for path in saved_paths:
+        lines.append(f"- `{path}`")
+    return "\n".join(lines)
+
+
 def assistant_from_conversation_payload(
     payload: dict[str, Any],
     outpost_id: str | None = None,
 ) -> dict[str, Any]:
-    assistants: list[dict[str, Any]] = []
     mapping = payload.get("mapping")
     if not isinstance(mapping, dict):
-        return {"text": "", "finished": False}
+        return {"text": "", "finished": False, "writingBlocks": None, "attachments": None}
+    current_node = payload.get("current_node")
     user_time: float | None = None
     child_ids: set[str] = set()
+    user_found = False
     if outpost_id:
         for node in mapping.values():
             if not isinstance(node, dict):
@@ -228,10 +299,51 @@ def assistant_from_conversation_payload(
             if isinstance(author, dict) and author.get("role") == "user":
                 if outpost_id in chatgpt_message_text(message):
                     user_time = float(message.get("create_time") or 0)
+                    user_found = True
                     children = node.get("children") or []
                     if isinstance(children, list):
                         child_ids.update(child for child in children if isinstance(child, str))
                     break
+        if not user_found:
+            return {"text": "", "finished": False, "writingBlocks": None, "attachments": None}
+
+    # Check current_node first if available
+    if current_node and isinstance(mapping.get(current_node), dict):
+        curr_entry = mapping[current_node]
+        curr_msg = curr_entry.get("message")
+        if isinstance(curr_msg, dict):
+            curr_role = (curr_msg.get("author") or {}).get("role")
+            curr_status = curr_msg.get("status")
+            curr_end_turn = curr_msg.get("end_turn")
+            curr_meta = curr_msg.get("metadata") or {}
+            is_preamble = curr_meta.get("is_thinking_preamble_message") is True
+            curr_is_complete = curr_meta.get("is_complete") is True or (
+                isinstance(curr_meta.get("finish_details"), dict)
+                and curr_meta.get("finish_details", {}).get("type") == "stop"
+            )
+            if curr_role == "tool" or curr_status == "in_progress" or curr_end_turn is False or is_preamble:
+                # Still in progress or preamble
+                pass
+            elif curr_role == "assistant" and curr_status == "finished_successfully":
+                if curr_end_turn is True or curr_is_complete:
+                    txt = chatgpt_message_text(curr_msg).strip()
+                    if txt:
+                        return {
+                            "text": txt,
+                            "finished": True,
+                            "writingBlocks": curr_meta.get("writing_blocks") or None,
+                            "attachments": curr_meta.get("attachments") or None,
+                        }
+
+    # Check if any node in mapping is in_progress
+    has_in_progress = any(
+        isinstance(n, dict)
+        and isinstance(n.get("message"), dict)
+        and n.get("message", {}).get("status") == "in_progress"
+        for n in mapping.values()
+    )
+
+    assistants: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
     for node_id, node in mapping.items():
         if not isinstance(node, dict):
             continue
@@ -243,18 +355,66 @@ def assistant_from_conversation_payload(
             continue
         if not chatgpt_message_text(message).strip():
             continue
+        meta = message.get("metadata") or {}
+        if meta.get("is_thinking_preamble_message") is True:
+            # Skip thinking preamble messages as final response candidates
+            continue
         if outpost_id:
             later_than_user = user_time is not None and float(message.get("create_time") or 0) > user_time
             if node_id not in child_ids and not later_than_user:
                 continue
-        assistants.append(message)
-    assistants.sort(key=lambda item: float(item.get("create_time") or 0))
+        assistants.append((node_id, node, message))
+    assistants.sort(key=lambda item: float(item[2].get("create_time") or 0))
     if not assistants:
-        return {"text": "", "finished": False}
-    last = assistants[-1]
+        return {"text": "", "finished": False, "writingBlocks": None, "attachments": None}
+
+    last_id, last_node, last = assistants[-1]
+    last_meta = last.get("metadata") or {}
+
+    if has_in_progress or last.get("end_turn") is False:
+        return {
+            "text": chatgpt_message_text(last).strip(),
+            "finished": False,
+            "writingBlocks": last_meta.get("writing_blocks") or None,
+            "attachments": last_meta.get("attachments") or None,
+        }
+
+    children = last_node.get("children") or []
+    if isinstance(children, list) and children:
+        has_active_child = False
+        for cid in children:
+            cnode = mapping.get(cid)
+            if isinstance(cnode, dict):
+                cmsg = cnode.get("message")
+                if isinstance(cmsg, dict):
+                    crole = (cmsg.get("author") or {}).get("role")
+                    cstatus = cmsg.get("status")
+                    if cstatus == "in_progress" or crole == "tool":
+                        has_active_child = True
+                        break
+        if has_active_child:
+            return {
+                "text": chatgpt_message_text(last).strip(),
+                "finished": False,
+                "writingBlocks": last_meta.get("writing_blocks") or None,
+                "attachments": last_meta.get("attachments") or None,
+            }
+
+    is_complete = last_meta.get("is_complete") is True or (
+        isinstance(last_meta.get("finish_details"), dict)
+        and last_meta.get("finish_details", {}).get("type") == "stop"
+    )
+    finished = last.get("status") == "finished_successfully"
+    if last.get("end_turn") is not None:
+        finished = finished and (last.get("end_turn") is True)
+    elif last_meta.get("is_complete") is not None:
+        finished = finished and is_complete
+
     return {
         "text": chatgpt_message_text(last).strip(),
-        "finished": last.get("status") != "in_progress",
+        "finished": bool(finished),
+        "writingBlocks": last_meta.get("writing_blocks") or None,
+        "attachments": last_meta.get("attachments") or None,
     }
 
 
@@ -307,27 +467,91 @@ function messageText(message) {{
 }}
 function assistantFrom(payload) {{
   var mapping = payload.mapping || {{}};
+  var currentNode = payload.current_node;
   var userTime = 0;
+  var userFound = false;
   var childIds = {{}};
-  Object.keys(mapping).forEach(function (id) {{
-    var node = mapping[id];
-    if (node && node.message && node.message.author && node.message.author.role === 'user' && messageText(node.message).includes(outpostId)) {{
-      userTime = node.message.create_time || 0;
-      (node.children || []).forEach(function (child) {{ childIds[child] = true; }});
+  if (outpostId) {{
+    Object.keys(mapping).forEach(function (id) {{
+      var node = mapping[id];
+      if (node && node.message && node.message.author && node.message.author.role === 'user' && messageText(node.message).includes(outpostId)) {{
+        userTime = node.message.create_time || 0;
+        userFound = true;
+        (node.children || []).forEach(function (child) {{ childIds[child] = true; }});
+      }}
+    }});
+    if (!userFound) return {{ text: '', finished: false, writingBlocks: null, attachments: null }};
+  }}
+  if (currentNode && mapping[currentNode]) {{
+    var curr = mapping[currentNode];
+    var currMsg = curr && curr.message;
+    if (currMsg) {{
+      var role = currMsg.author && currMsg.author.role;
+      var status = currMsg.status;
+      var endTurn = currMsg.end_turn;
+      var meta = currMsg.metadata || {{}};
+      var isPreamble = meta.is_thinking_preamble_message === true;
+      var isComplete = meta.is_complete === true || (meta.finish_details && meta.finish_details.type === 'stop');
+      if (role === 'tool' || status === 'in_progress' || endTurn === false || isPreamble) {{
+        // in progress or preamble
+      }} else if (role === 'assistant' && status === 'finished_successfully') {{
+        if (endTurn === true || isComplete) {{
+          var txt = messageText(currMsg).trim();
+          if (txt) {{
+            return {{
+              text: txt,
+              finished: true,
+              writingBlocks: meta.writing_blocks || null,
+              attachments: meta.attachments || null
+            }};
+          }}
+        }}
+      }}
     }}
+  }}
+  var hasInProgress = Object.values(mapping).some(function (n) {{
+    return n && n.message && n.message.status === 'in_progress';
   }});
   var assistants = Object.keys(mapping).map(function (id) {{
     return {{ id: id, node: mapping[id] }};
   }}).filter(function (entry) {{
     var node = entry.node;
+    var meta = (node && node.message && node.message.metadata) || {{}};
+    var isPreamble = meta.is_thinking_preamble_message === true;
     var later = userTime && node && node.message && (node.message.create_time || 0) > userTime;
-    return node && node.message && node.message.author && node.message.author.role === 'assistant' && messageText(node.message).trim() && (childIds[entry.id] || later);
+    return node && node.message && node.message.author && node.message.author.role === 'assistant' && !isPreamble && messageText(node.message).trim() && (childIds[entry.id] || later);
   }}).sort(function (left, right) {{
     return (left.node.message.create_time || 0) - (right.node.message.create_time || 0);
   }});
-  if (!assistants.length) return {{ text: '', finished: false }};
-  var last = assistants[assistants.length - 1].node.message;
-  return {{ text: messageText(last).trim(), finished: last.status !== 'in_progress' }};
+  if (!assistants.length) return {{ text: '', finished: false, writingBlocks: null, attachments: null }};
+  var lastEntry = assistants[assistants.length - 1];
+  var lastNode = lastEntry.node;
+  var last = lastNode.message;
+  var lastMeta = last.metadata || {{}};
+  if (hasInProgress || last.end_turn === false) {{
+    return {{ text: messageText(last).trim(), finished: false, writingBlocks: lastMeta.writing_blocks || null, attachments: lastMeta.attachments || null }};
+  }}
+  if (Array.isArray(lastNode.children) && lastNode.children.length > 0) {{
+    var hasActiveChild = lastNode.children.some(function (cid) {{
+      var cnode = mapping[cid];
+      return cnode && cnode.message && (cnode.message.status === 'in_progress' || (cnode.message.author && cnode.message.author.role === 'tool'));
+    }});
+    if (hasActiveChild) {{
+      return {{ text: messageText(last).trim(), finished: false, writingBlocks: lastMeta.writing_blocks || null, attachments: lastMeta.attachments || null }};
+    }}
+  }}
+  var isFinished = last.status === 'finished_successfully';
+  if (last.end_turn !== undefined) {{
+    isFinished = isFinished && (last.end_turn === true);
+  }} else if (lastMeta.is_complete !== undefined) {{
+    isFinished = isFinished && (lastMeta.is_complete === true);
+  }}
+  return {{
+    text: messageText(last).trim(),
+    finished: isFinished,
+    writingBlocks: lastMeta.writing_blocks || null,
+    attachments: lastMeta.attachments || null
+  }};
 }}
 function userHasId(payload) {{
   return Object.values(payload.mapping || {{}}).some(function (node) {{
@@ -354,12 +578,54 @@ while (Date.now() < deadline) {{
   var payload = await findConversation();
   if (payload && conversationId) {{
     var extracted = assistantFrom(payload);
+    var writingArtifacts = [];
+    if (extracted.writingBlocks) {{
+      Object.keys(extracted.writingBlocks).forEach(function (wid) {{
+        var wb = extracted.writingBlocks[wid];
+        if (wb && wb.content) {{
+          writingArtifacts.push({{
+            id: wid,
+            title: wb.title || ('artifact-' + wid),
+            content: wb.content,
+            variant: wb.variant || 'document'
+          }});
+        }}
+      }});
+    }}
+    var downloadedFiles = [];
+    if (Array.isArray(extracted.attachments)) {{
+      for (var ai = 0; ai < extracted.attachments.length; ai += 1) {{
+        var att = extracted.attachments[ai];
+        if (att && att.id) {{
+          try {{
+            var dres = await fetch('https://chatgpt.com/backend-api/files/' + att.id + '/download', auth);
+            if (dres.ok) {{
+              var dj = await dres.json();
+              if (dj.download_url) {{
+                var fres = await fetch(dj.download_url);
+                if (fres.ok) {{
+                  var ab = await fres.arrayBuffer();
+                  var b64 = Buffer.from(ab).toString('base64');
+                  downloadedFiles.push({{
+                    suggestedFilename: att.name || (att.id + '.bin'),
+                    contentBase64: b64
+                  }});
+                }}
+              }}
+            }}
+          }} catch (e) {{}}
+        }}
+      }}
+    }}
     last = {{
       ok: true,
       responseText: extracted.text,
       finished: extracted.finished,
       idMatched: extracted.text.includes(outpostId),
-      conversationUrl: 'https://chatgpt.com/c/' + conversationId
+      conversationUrl: 'https://chatgpt.com/c/' + conversationId,
+      conversationId: conversationId,
+      writingArtifacts: writingArtifacts,
+      downloadedFiles: downloadedFiles
     }};
     if (extracted.text && extracted.finished) break;
   }}
@@ -678,25 +944,33 @@ if (submitElapsedMs >= 120000) {{
   }}));
   throw new Error('SUBMIT_UNKNOWN');
 }}
+function conversationUrlFrom(url) {{
+  var id = (String(url || '').match(/\\/c\\/([0-9a-fA-F-]{{8,}})/) || [])[1] || '';
+  return id ? ('https://chatgpt.com/c/' + id) : '';
+}}
 for (var i = 0; i < 80; i += 1) {{
-  if (workPage.url().indexOf('/c/') !== -1) break;
+  if (conversationUrlFrom(workPage.url())) break;
   await sleep(250);
 }}
 var submittedTabs = await listBrowserTabs();
 var submittedTab = submittedTabs.find((tab) => tab.targetId === submitState.ownedTargetId);
+var stickyConversationUrl = conversationUrlFrom(workPage.url())
+  || conversationUrlFrom(submittedTab && submittedTab.url)
+  || '';
+var conversationId = (stickyConversationUrl.match(/\\/c\\/([0-9a-fA-F-]{{8,}})/) || [])[1] || '';
 console.log({js(SUBMIT_MARKER)} + JSON.stringify({{
   ok: true,
   quality,
   model: 'GPT-5.6 Sol',
   tier: verifiedTier,
   submitElapsedMs,
-  conversationUrl: submittedTab ? submittedTab.url : workPage.url(),
+  conversationUrl: stickyConversationUrl || (submittedTab ? submittedTab.url : workPage.url()),
+  conversationId: conversationId,
   targetId: submitState.ownedTargetId
 }}));
 var responseStartedAt = Date.now();
 var responseDeadline = responseStartedAt + {response_timeout_ms};
 var remainingResponseMs = () => Math.max(1, responseDeadline - Date.now());
-var conversationId = (workPage.url().match(/\\/c\\/([0-9a-fA-F-]{{8,}})/) || [])[1] || '';
 var recoveredFromBackend = false;
 function messageTextFrom(message) {{
   var parts = message && message.content && message.content.parts;
@@ -707,48 +981,123 @@ function messageTextFrom(message) {{
 }}
 async function readAssistantFromBackend() {{
   if (!conversationId) {{
-    conversationId = (workPage.url().match(/\\/c\\/([0-9a-fA-F-]{{8,}})/) || [])[1] || '';
+    conversationId = (conversationUrlFrom(workPage.url()).match(/\\/c\\/([0-9a-fA-F-]{{8,}})/) || [])[1] || '';
   }}
-  if (!conversationId) return {{ text: '', finished: false }};
+  if (!conversationId) return {{ text: '', finished: false, writingBlocks: null, attachments: null }};
   var sess = await (await fetch('https://chatgpt.com/api/auth/session')).json();
-  if (!sess || !sess.accessToken) return {{ text: '', finished: false }};
+  if (!sess || !sess.accessToken) return {{ text: '', finished: false, writingBlocks: null, attachments: null }};
   var cr = await fetch(
     'https://chatgpt.com/backend-api/conversation/' + conversationId,
     {{ headers: {{ Authorization: 'Bearer ' + sess.accessToken }} }}
   );
-  if (!cr.ok) return {{ text: '', finished: false }};
+  if (!cr.ok) return {{ text: '', finished: false, writingBlocks: null, attachments: null }};
   var payload = await cr.json();
   var mapping = payload.mapping || {{}};
+  var currentNode = payload.current_node;
   var userTime = 0;
+  var userFound = false;
   var childIds = {{}};
   Object.keys(mapping).forEach(function (id) {{
     var node = mapping[id];
     if (node && node.message && node.message.author && node.message.author.role === 'user' && messageTextFrom(node.message).includes(outpostId)) {{
       userTime = node.message.create_time || 0;
+      userFound = true;
       (node.children || []).forEach(function (child) {{ childIds[child] = true; }});
     }}
   }});
+  if (outpostId && !userFound) return {{ text: '', finished: false, writingBlocks: null, attachments: null }};
+
+  if (currentNode && mapping[currentNode]) {{
+    var curr = mapping[currentNode];
+    var currMsg = curr && curr.message;
+    if (currMsg) {{
+      var role = currMsg.author && currMsg.author.role;
+      var status = currMsg.status;
+      var endTurn = currMsg.end_turn;
+      var meta = currMsg.metadata || {{}};
+      var isPreamble = meta.is_thinking_preamble_message === true;
+      var isComplete = meta.is_complete === true || (meta.finish_details && meta.finish_details.type === 'stop');
+      if (role === 'tool' || status === 'in_progress' || endTurn === false || isPreamble) {{
+        // in progress or preamble
+      }} else if (role === 'assistant' && status === 'finished_successfully') {{
+        if (endTurn === true || isComplete) {{
+          var txt = messageTextFrom(currMsg).trim();
+          if (txt) {{
+            return {{
+              text: txt,
+              finished: true,
+              writingBlocks: meta.writing_blocks || null,
+              attachments: meta.attachments || null
+            }};
+          }}
+        }}
+      }}
+    }}
+  }}
+
+  var hasInProgress = Object.values(mapping).some(function (n) {{
+    return n && n.message && n.message.status === 'in_progress';
+  }});
+
   var assistants = Object.keys(mapping).map(function (id) {{
     return {{ id: id, node: mapping[id] }};
   }}).filter(function (entry) {{
     var node = entry.node;
+    var meta = (node && node.message && node.message.metadata) || {{}};
+    var isPreamble = meta.is_thinking_preamble_message === true;
     var later = userTime && node && node.message && (node.message.create_time || 0) > userTime;
-    return node && node.message && node.message.author && node.message.author.role === 'assistant' && messageTextFrom(node.message).trim() && (childIds[entry.id] || later);
+    return node && node.message && node.message.author && node.message.author.role === 'assistant' && !isPreamble && messageTextFrom(node.message).trim() && (childIds[entry.id] || later);
   }}).sort(function (left, right) {{
     return (left.node.message.create_time || 0) - (right.node.message.create_time || 0);
   }});
-  if (!assistants.length) return {{ text: '', finished: false }};
-  var last = assistants[assistants.length - 1].node.message;
-  return {{ text: messageTextFrom(last).trim(), finished: last.status !== 'in_progress' }};
+  if (!assistants.length) return {{ text: '', finished: false, writingBlocks: null, attachments: null }};
+  var lastEntry = assistants[assistants.length - 1];
+  var lastNode = lastEntry.node;
+  var last = lastNode.message;
+  var lastMeta = last.metadata || {{}};
+  if (hasInProgress || last.end_turn === false) {{
+    return {{ text: messageTextFrom(last).trim(), finished: false, writingBlocks: lastMeta.writing_blocks || null, attachments: lastMeta.attachments || null }};
+  }}
+  if (Array.isArray(lastNode.children) && lastNode.children.length > 0) {{
+    var hasActiveChild = lastNode.children.some(function (cid) {{
+      var cnode = mapping[cid];
+      return cnode && cnode.message && (cnode.message.status === 'in_progress' || (cnode.message.author && cnode.message.author.role === 'tool'));
+    }});
+    if (hasActiveChild) {{
+      return {{ text: messageTextFrom(last).trim(), finished: false, writingBlocks: lastMeta.writing_blocks || null, attachments: lastMeta.attachments || null }};
+    }}
+  }}
+  var isFinished = last.status === 'finished_successfully';
+  if (last.end_turn !== undefined) {{
+    isFinished = isFinished && (last.end_turn === true);
+  }} else if (lastMeta.is_complete !== undefined) {{
+    isFinished = isFinished && (lastMeta.is_complete === true);
+  }}
+  return {{
+    text: messageTextFrom(last).trim(),
+    finished: isFinished,
+    writingBlocks: lastMeta.writing_blocks || null,
+    attachments: lastMeta.attachments || null
+  }};
 }}
+var stopButton = workPage.locator(
+  'button[data-testid="stop-button"], button[aria-label*="중지"], button[aria-label*="Stop"]'
+);
 var assistant = workPage.locator('[data-message-author-role="assistant"]').last();
 var copyResponse = workPage.getByRole('button', {{ name: /^(응답 복사|Copy response)$/ }}).last();
 var rateLimitAfter = workPage.getByRole('heading', {{ name: '요청이 너무 많습니다' }});
 var responseText = '';
+var backendExtracted = null;
 while (Date.now() < responseDeadline) {{
+  var isGenerating = await stopButton.isVisible().catch(() => false);
+  if (isGenerating) {{
+    await sleep(3000);
+    continue;
+  }}
   var extracted = await readAssistantFromBackend();
-  if (extracted.text && extracted.finished) {{
+  if (extracted && extracted.text && extracted.finished) {{
     responseText = extracted.text;
+    backendExtracted = extracted;
     recoveredFromBackend = true;
     break;
   }}
@@ -756,37 +1105,123 @@ while (Date.now() < responseDeadline) {{
     await sleep(5000);
     continue;
   }}
-  if ((await workPage.locator('[data-message-author-role="assistant"]').count()) > assistantCountBefore) {{
-    try {{
-      await assistant.waitFor({{ state: 'visible', timeout: 1000 }});
-      var liveText = (await assistant.innerText()).trim();
-      var copyReady = await copyResponse.isVisible().catch(() => false);
-      if (liveText && (copyReady || extracted.finished)) {{
-        responseText = liveText;
-        break;
-      }}
-    }} catch (error) {{}}
+  // Only use DOM fallback if backend explicitly finished or if backend extraction failed to find anything
+  if (!extracted || (!extracted.text && !extracted.finished)) {{
+    if ((await workPage.locator('[data-message-author-role="assistant"]').count()) > assistantCountBefore) {{
+      try {{
+        await assistant.waitFor({{ state: 'visible', timeout: 1000 }});
+        var liveText = (await assistant.innerText()).trim();
+        var copyReady = await copyResponse.isVisible().catch(() => false);
+        if (liveText && copyReady && !isGenerating) {{
+          responseText = liveText;
+          backendExtracted = extracted;
+          break;
+        }}
+      }} catch (error) {{}}
+    }}
   }}
   await sleep(3000);
 }}
 if (!responseText) throw new Error('assistant response text was empty');
 var idMatched = responseText.includes({js(f"ID: {outpost_id}")}) || responseText.includes({js(outpost_id)});
 var packetUnread = /첨부된 컨텍스트 패킷이|패킷이 현재 대화에 보이지|다시 첨부해/.test(responseText);
+
+var downloadedFiles = [];
+try {{
+  var downloadCandidates = assistant.locator(
+    'a[download], a[href*="/backend-api/files/"], a[href*="files.oaiusercontent.com"], ' +
+    'button:has-text(".zip"), button:has-text(".csv"), button:has-text(".xlsx"), ' +
+    'button:has-text(".pdf"), button:has-text(".json"), button:has-text(".py"), ' +
+    'button:has-text(".txt"), button:has-text(".png"), button:has-text(".tar.gz")'
+  );
+  var candCount = await downloadCandidates.count().catch(() => 0);
+  for (var i = 0; i < candCount; i += 1) {{
+    try {{
+      var cand = downloadCandidates.nth(i);
+      var dlPromise = workPage.waitForEvent('download', {{ timeout: 8000 }});
+      await cand.click({{ timeout: 4000 }});
+      var dl = await dlPromise;
+      var tempPath = await dl.path();
+      if (tempPath) {{
+        downloadedFiles.push({{
+          temporaryPath: tempPath,
+          suggestedFilename: dl.suggestedFilename()
+        }});
+      }}
+    }} catch (e) {{}}
+  }}
+}} catch (e) {{}}
+
 var artifact = null;
-if (artifactRequested && !recoveredFromBackend) {{
-  var artifactButton = assistant.locator('button').filter({{ hasText: /\\.zip$/i }}).last();
-  await artifactButton.waitFor({{ state: 'visible', timeout: remainingResponseMs() }});
-  var downloadPromise = workPage.waitForEvent('download', {{ timeout: remainingResponseMs() }});
-  await artifactButton.click({{ timeout: remainingResponseMs() }});
-  var download = await downloadPromise;
-  var temporaryPath = await download.path();
-  if (!temporaryPath) throw new Error('artifact download path unavailable');
-  artifact = {{
-    temporaryPath,
-    suggestedFilename: download.suggestedFilename()
-  }};
+if (artifactRequested) {{
+  var foundZip = downloadedFiles.find((f) => /\\.zip$/i.test(f.suggestedFilename));
+  if (foundZip) {{
+    artifact = foundZip;
+  }} else if (!recoveredFromBackend) {{
+    try {{
+      var artifactButton = assistant.locator('button').filter({{ hasText: /\\.zip$/i }}).last();
+      await artifactButton.waitFor({{ state: 'visible', timeout: Math.min(10000, remainingResponseMs()) }});
+      var downloadPromise = workPage.waitForEvent('download', {{ timeout: Math.min(10000, remainingResponseMs()) }});
+      await artifactButton.click({{ timeout: 5000 }});
+      var download = await downloadPromise;
+      var temporaryPath = await download.path();
+      if (temporaryPath) {{
+        artifact = {{
+          temporaryPath: temporaryPath,
+          suggestedFilename: download.suggestedFilename()
+        }};
+        downloadedFiles.push(artifact);
+      }}
+    }} catch (e) {{}}
+  }}
 }}
-var finalConversationUrl = workPage.url();
+
+var writingArtifacts = [];
+if (backendExtracted && backendExtracted.writingBlocks) {{
+  var wbMap = backendExtracted.writingBlocks;
+  Object.keys(wbMap).forEach(function (wid) {{
+    var wb = wbMap[wid];
+    if (wb && wb.content) {{
+      writingArtifacts.push({{
+        id: wid,
+        title: wb.title || ('artifact-' + wid),
+        content: wb.content,
+        variant: wb.variant || 'document'
+      }});
+    }}
+  }});
+}}
+
+if (backendExtracted && Array.isArray(backendExtracted.attachments)) {{
+  for (var ai = 0; ai < backendExtracted.attachments.length; ai += 1) {{
+    var att = backendExtracted.attachments[ai];
+    if (att && att.id) {{
+      try {{
+        var sess = await (await fetch('https://chatgpt.com/api/auth/session')).json();
+        if (sess && sess.accessToken) {{
+          var authH = {{ headers: {{ Authorization: 'Bearer ' + sess.accessToken }} }};
+          var dres = await fetch('https://chatgpt.com/backend-api/files/' + att.id + '/download', authH);
+          if (dres.ok) {{
+            var dj = await dres.json();
+            if (dj.download_url) {{
+              var fres = await fetch(dj.download_url);
+              if (fres.ok) {{
+                var ab = await fres.arrayBuffer();
+                var b64 = Buffer.from(ab).toString('base64');
+                downloadedFiles.push({{
+                  suggestedFilename: att.name || (att.id + '.bin'),
+                  contentBase64: b64
+                }});
+              }}
+            }}
+          }}
+        }}
+      }} catch (e) {{}}
+    }}
+  }}
+}}
+
+var finalConversationUrl = conversationUrlFrom(workPage.url()) || stickyConversationUrl || workPage.url();
 console.log({js(RESPONSE_MARKER)} + JSON.stringify({{
   ok: true,
   responseText,
@@ -794,8 +1229,11 @@ console.log({js(RESPONSE_MARKER)} + JSON.stringify({{
   packetUnread,
   recoveredFromBackend,
   artifact,
+  downloadedFiles,
+  writingArtifacts,
   responseElapsedMs: Date.now() - responseStartedAt,
-  conversationUrl: finalConversationUrl
+  conversationUrl: finalConversationUrl,
+  conversationId: conversationId
 }}));
 await closeTab(workPage).catch(() => {{}});
 """.strip()
@@ -1058,6 +1496,16 @@ def record_thread_outcome(
         return
 
 
+def persisted_conversation_url(*values: str | None, thread: dict[str, Any] | None = None) -> str:
+    extras: tuple[str | None, ...] = ()
+    if thread:
+        extras = (
+            str(thread.get("conversationUrl") or "") or None,
+            str(thread.get("conversationId") or "") or None,
+        )
+    return SESSIONS.preferred_conversation_url(*values, *extras)
+
+
 def attach_thread_fields(
     evidence: dict[str, Any],
     thread: dict[str, Any] | None,
@@ -1067,6 +1515,14 @@ def attach_thread_fields(
     if thread:
         attached["threadId"] = thread.get("threadId") or ""
         attached["mode"] = mode
+    url = persisted_conversation_url(
+        attached.get("conversationUrl"),
+        attached.get("conversationId"),
+        thread=thread,
+    )
+    if url:
+        attached["conversationUrl"] = url
+        attached["conversationId"] = SESSIONS.conversation_id_from_url(url) or ""
     return attached
 
 
@@ -1101,8 +1557,8 @@ def open_or_continue_thread(
                 cwd=cwd,
                 pid=pid,
             )
-            return store, thread, store.thread_lock(thread["threadId"]), True, str(thread.get("conversationUrl") or ""), False
-        conversation_url = str(thread.get("conversationUrl") or "")
+            return store, thread, store.thread_lock(thread["threadId"]), True, SESSIONS.thread_conversation_url(thread), False
+        conversation_url = SESSIONS.thread_conversation_url(thread)
         if not SESSIONS.is_chatgpt_conversation_url(conversation_url):
             raise ValueError("thread has no saved conversation yet; cannot continue")
         return store, thread, store.thread_lock(thread["threadId"]), True, conversation_url, True
@@ -1133,9 +1589,13 @@ def recover_from_saved_state(args: argparse.Namespace) -> int:
     if daemon_error is not None:
         print(daemon_error, file=sys.stderr)
         return 75
+    conversation_url = persisted_conversation_url(
+        evidence.get("conversationUrl"),
+        evidence.get("conversationId"),
+    ) or None
     recovered = recover_outpost_from_backend(
         outpost_id,
-        conversation_url=str(evidence.get("conversationUrl") or "") or None,
+        conversation_url=conversation_url,
         timeout=args.response_timeout,
     )
     response_path = Path(args.response_output).expanduser()
@@ -1145,7 +1605,13 @@ def recover_from_saved_state(args: argparse.Namespace) -> int:
         path.parent.mkdir(parents=True, exist_ok=True)
     if finished_backend_reply(recovered):
         assert recovered is not None
-        response_path.write_text(str(recovered["responseText"]) + "\n", encoding="utf-8")
+        saved_paths = save_outpost_attachments(
+            outpost_id,
+            recovered.get("downloadedFiles"),
+            recovered.get("writingArtifacts"),
+        )
+        response_text = str(recovered["responseText"]) + format_attachments_section(saved_paths)
+        response_path.write_text(response_text + "\n", encoding="utf-8")
         saved = {
             "ok": True,
             "id": outpost_id,
@@ -1153,7 +1619,8 @@ def recover_from_saved_state(args: argparse.Namespace) -> int:
             "quality": evidence.get("quality") or args.quality or "",
             "model": evidence.get("model") or "GPT-5.6 Sol",
             "tier": evidence.get("tier") or "",
-            "conversationUrl": recovered["conversationUrl"],
+            "conversationUrl": recovered.get("conversationUrl") or conversation_url,
+            "conversationId": recovered.get("conversationId") or evidence.get("conversationId") or "",
             "targetId": evidence.get("targetId") or "",
             "submitElapsedSeconds": evidence.get("submitElapsedSeconds") or 0,
             "responseElapsedSeconds": 0,
@@ -1163,6 +1630,9 @@ def recover_from_saved_state(args: argparse.Namespace) -> int:
             "responseOutput": str(response_path),
             "packetPath": evidence.get("packetPath") or "",
         }
+        if saved_paths:
+            saved["attachments"] = [str(p) for p in saved_paths]
+            saved["attachmentsDir"] = str(Path(f"/tmp/outpost-{outpost_id}"))
         saved = attach_thread_fields(saved, {"threadId": evidence.get("threadId") or ""}, str(evidence.get("mode") or "recover"))
         json_path.write_text(json.dumps(saved, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         record_thread_outcome(
@@ -1175,6 +1645,10 @@ def recover_from_saved_state(args: argparse.Namespace) -> int:
             response_output=str(response_path),
             json_output=str(json_path),
         )
+        if saved_paths:
+            print(f"OUTPOST_ATTACHMENTS dir=/tmp/outpost-{outpost_id} count={len(saved_paths)}", flush=True)
+            for p in saved_paths:
+                print(f"  - {p}", flush=True)
         print(f"OUTPOST_COMPLETE response={response_path}", flush=True)
         return 0
     stderr_path.write_text("backend recovery did not finish\n", encoding="utf-8")
@@ -1299,7 +1773,10 @@ def main(argv: Sequence[str]) -> int:
             return
         store.mark_submitted(
             thread["threadId"],
-            conversation_url=str(payload.get("conversationUrl") or "") or None,
+            conversation_url=SESSIONS.preferred_conversation_url(
+                str(payload.get("conversationUrl") or "") or None,
+                str(payload.get("conversationId") or "") or None,
+            ) or None,
             target_id=str(payload.get("targetId") or "") or None,
             outpost_id=outpost_id,
         )
@@ -1359,11 +1836,22 @@ def main(argv: Sequence[str]) -> int:
         submitted = exc.submit_payload
         recovered = recover_outpost_from_backend(
             outpost_id,
-            conversation_url=str(submitted.get("conversationUrl") or "") or None,
+            conversation_url=persisted_conversation_url(
+                submitted.get("conversationUrl"),
+                submitted.get("conversationId"),
+                thread=thread,
+            )
+            or None,
             timeout=args.response_timeout,
         )
         if finished_backend_reply(recovered):
-            response_path.write_text(str(recovered["responseText"]) + "\n", encoding="utf-8")
+            saved_paths = save_outpost_attachments(
+                outpost_id,
+                recovered.get("downloadedFiles"),
+                recovered.get("writingArtifacts"),
+            )
+            response_text = str(recovered["responseText"]) + format_attachments_section(saved_paths)
+            response_path.write_text(response_text + "\n", encoding="utf-8")
             stderr_path.write_text(exc.transcript, encoding="utf-8")
             recovered_evidence = attach_thread_fields(
                 {
@@ -1373,7 +1861,12 @@ def main(argv: Sequence[str]) -> int:
                     "quality": args.quality,
                     "model": submitted.get("model") or "GPT-5.6 Sol",
                     "tier": submitted.get("tier") or "",
-                    "conversationUrl": recovered["conversationUrl"],
+                    "conversationUrl": persisted_conversation_url(
+                        recovered.get("conversationUrl"),
+                        submitted.get("conversationUrl"),
+                        submitted.get("conversationId"),
+                        thread=thread,
+                    ),
                     "targetId": submitted.get("targetId") or "",
                     "submitElapsedSeconds": round(exc.submit_elapsed, 3),
                     "responseElapsedSeconds": 0,
@@ -1386,6 +1879,9 @@ def main(argv: Sequence[str]) -> int:
                 thread,
                 mode,
             )
+            if saved_paths:
+                recovered_evidence["attachments"] = [str(p) for p in saved_paths]
+                recovered_evidence["attachmentsDir"] = str(Path(f"/tmp/outpost-{outpost_id}"))
             json_path.write_text(
                 json.dumps(recovered_evidence, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
@@ -1395,12 +1891,20 @@ def main(argv: Sequence[str]) -> int:
                 thread,
                 status="finished",
                 outpost_id=outpost_id,
-                conversation_url=str(recovered["conversationUrl"]),
+                conversation_url=persisted_conversation_url(
+                    recovered.get("conversationUrl"),
+                    submitted.get("conversationUrl"),
+                    thread=thread,
+                ),
                 target_id=str(submitted.get("targetId") or ""),
                 response_output=str(response_path),
                 json_output=str(json_path),
                 submit_elapsed_seconds=round(exc.submit_elapsed, 3),
             )
+            if saved_paths:
+                print(f"OUTPOST_ATTACHMENTS dir=/tmp/outpost-{outpost_id} count={len(saved_paths)}", flush=True)
+                for p in saved_paths:
+                    print(f"  - {p}", flush=True)
             print(f"OUTPOST_COMPLETE response={response_path}", flush=True)
             return 0
         message = str(exc)
@@ -1417,7 +1921,11 @@ def main(argv: Sequence[str]) -> int:
                 "quality": args.quality,
                 "model": submitted["model"],
                 "tier": submitted["tier"],
-                "conversationUrl": submitted["conversationUrl"],
+                "conversationUrl": persisted_conversation_url(
+                    submitted.get("conversationUrl"),
+                    submitted.get("conversationId"),
+                    thread=thread,
+                ),
                 "targetId": submitted["targetId"],
                 "submitElapsedSeconds": round(exc.submit_elapsed, 3),
                 "packetPath": packet_source,
@@ -1434,7 +1942,11 @@ def main(argv: Sequence[str]) -> int:
             thread,
             status="submitted_response_unavailable",
             outpost_id=outpost_id,
-            conversation_url=str(submitted.get("conversationUrl") or ""),
+            conversation_url=persisted_conversation_url(
+                submitted.get("conversationUrl"),
+                submitted.get("conversationId"),
+                thread=thread,
+            ),
             target_id=str(submitted.get("targetId") or ""),
             json_output=str(json_path),
             submit_elapsed_seconds=round(exc.submit_elapsed, 3),
@@ -1453,16 +1965,28 @@ def main(argv: Sequence[str]) -> int:
         )
         return 75
     stderr_path.write_text(transcript, encoding="utf-8")
-    response_text = str(response_payload["responseText"])
+    saved_paths = save_outpost_attachments(
+        outpost_id,
+        response_payload.get("downloadedFiles"),
+        response_payload.get("writingArtifacts"),
+    )
+    response_text = str(response_payload["responseText"]) + format_attachments_section(saved_paths)
     response_path.write_text(response_text + "\n", encoding="utf-8")
     artifact_copy_error = None
     if artifact_path is not None:
         try:
-            artifact_payload = response_payload["artifact"]
-            temporary_path = Path(str(artifact_payload["temporaryPath"]))
-            if not temporary_path.is_file():
-                raise FileNotFoundError(temporary_path)
-            shutil.copyfile(temporary_path, artifact_path)
+            artifact_payload = response_payload.get("artifact")
+            if artifact_payload and artifact_payload.get("temporaryPath"):
+                temporary_path = Path(str(artifact_payload["temporaryPath"]))
+                if not temporary_path.is_file():
+                    raise FileNotFoundError(temporary_path)
+                shutil.copyfile(temporary_path, artifact_path)
+            else:
+                zip_saved = next((p for p in saved_paths if p.suffix.lower() == ".zip"), None)
+                if zip_saved and zip_saved.is_file():
+                    shutil.copyfile(zip_saved, artifact_path)
+                else:
+                    raise KeyError("artifact")
         except (KeyError, OSError, TypeError) as exc:
             artifact_copy_error = str(exc)
     if artifact_path is not None and (
@@ -1481,7 +2005,13 @@ def main(argv: Sequence[str]) -> int:
                 "quality": args.quality,
                 "model": submit_payload["model"],
                 "tier": submit_payload["tier"],
-                "conversationUrl": response_payload["conversationUrl"],
+                "conversationUrl": persisted_conversation_url(
+                    submit_payload.get("conversationUrl"),
+                    response_payload.get("conversationUrl"),
+                    submit_payload.get("conversationId"),
+                    response_payload.get("conversationId"),
+                    thread=thread,
+                ),
                 "targetId": submit_payload["targetId"],
                 "submitElapsedSeconds": round(submit_elapsed, 3),
                 "responseElapsedSeconds": round(response_elapsed, 3),
@@ -1501,7 +2031,11 @@ def main(argv: Sequence[str]) -> int:
             thread,
             status="submitted_response_unavailable",
             outpost_id=outpost_id,
-            conversation_url=str(response_payload.get("conversationUrl") or ""),
+            conversation_url=persisted_conversation_url(
+                submit_payload.get("conversationUrl"),
+                response_payload.get("conversationUrl"),
+                thread=thread,
+            ),
             target_id=str(submit_payload.get("targetId") or ""),
             response_output=str(response_path),
             json_output=str(json_path),
@@ -1517,7 +2051,13 @@ def main(argv: Sequence[str]) -> int:
             "quality": args.quality,
             "model": submit_payload["model"],
             "tier": submit_payload["tier"],
-            "conversationUrl": response_payload["conversationUrl"],
+            "conversationUrl": persisted_conversation_url(
+                submit_payload.get("conversationUrl"),
+                response_payload.get("conversationUrl"),
+                submit_payload.get("conversationId"),
+                response_payload.get("conversationId"),
+                thread=thread,
+            ),
             "targetId": submit_payload["targetId"],
             "submitElapsedSeconds": round(submit_elapsed, 3),
             "responseElapsedSeconds": round(response_elapsed, 3),
@@ -1532,18 +2072,31 @@ def main(argv: Sequence[str]) -> int:
     )
     if artifact_path is not None:
         evidence["artifactOutput"] = str(artifact_path)
+    if saved_paths:
+        evidence["attachments"] = [str(p) for p in saved_paths]
+        evidence["attachmentsDir"] = str(Path(f"/tmp/outpost-{outpost_id}"))
     json_path.write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     record_thread_outcome(
         store,
         thread,
         status="finished",
         outpost_id=outpost_id,
-        conversation_url=str(response_payload.get("conversationUrl") or ""),
+        conversation_url=persisted_conversation_url(
+            submit_payload.get("conversationUrl"),
+            response_payload.get("conversationUrl"),
+            submit_payload.get("conversationId"),
+            response_payload.get("conversationId"),
+            thread=thread,
+        ),
         target_id=str(submit_payload.get("targetId") or ""),
         response_output=str(response_path),
         json_output=str(json_path),
         submit_elapsed_seconds=round(submit_elapsed, 3),
     )
+    if saved_paths:
+        print(f"OUTPOST_ATTACHMENTS dir=/tmp/outpost-{outpost_id} count={len(saved_paths)}", flush=True)
+        for p in saved_paths:
+            print(f"  - {p}", flush=True)
     print(f"OUTPOST_COMPLETE response={response_path}", flush=True)
     return 0
 

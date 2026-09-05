@@ -138,6 +138,96 @@ class ConsultSessionsTest(unittest.TestCase):
                 0,
             )
 
+    def test_project_home_does_not_clobber_saved_conversation(self) -> None:
+        self.assertEqual(
+            MODULE.preferred_conversation_url(
+                "https://chatgpt.com/g/g-p-x-work/project",
+                "https://chatgpt.com/g/g-p-x-work/c/6a95625e-1f78-83e8-aa90-a49f982e36ef",
+            ),
+            "https://chatgpt.com/c/6a95625e-1f78-83e8-aa90-a49f982e36ef",
+        )
+        self.assertEqual(
+            MODULE.preferred_conversation_url(
+                "https://chatgpt.com/g/g-p-x-work/project",
+                "6a95625e-1f78-83e8-aa90-a49f982e36ef",
+            ),
+            "https://chatgpt.com/c/6a95625e-1f78-83e8-aa90-a49f982e36ef",
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            store = MODULE.SessionStore(Path(temp) / "sessions.json")
+            thread = store.create_thread(
+                topic="이어가기",
+                quality="xhigh",
+                project_name="Work",
+                outpost_id="turn-1",
+            )
+            store.mark_submitted(
+                thread["threadId"],
+                conversation_url="https://chatgpt.com/g/g-p-x-work/c/6a95625e-1f78-83e8-aa90-a49f982e36ef",
+            )
+            store.finish_turn(
+                thread["threadId"],
+                status="finished",
+                conversation_url="https://chatgpt.com/g/g-p-x-work/project",
+            )
+            saved = store.resolve(thread["threadId"])
+            self.assertEqual(
+                saved["conversationUrl"],
+                "https://chatgpt.com/c/6a95625e-1f78-83e8-aa90-a49f982e36ef",
+            )
+            self.assertEqual(saved["conversationId"], "6a95625e-1f78-83e8-aa90-a49f982e36ef")
+
+    def test_repair_rebuilds_conversation_url_from_id(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "sessions.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "threads": [
+                            {
+                                "threadId": "7c8a40c9",
+                                "conversationId": "6a99ef53-3d80-83ee-a84c-187e4a415929",
+                                "conversationUrl": "https://chatgpt.com/g/g-p-x-work/project",
+                                "topic": "Outpost 경로 확인",
+                                "status": "finished",
+                                "turns": [],
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            store = MODULE.SessionStore(path)
+            repaired = store.resolve("7c8a40c9")
+            self.assertEqual(
+                repaired["conversationUrl"],
+                "https://chatgpt.com/c/6a99ef53-3d80-83ee-a84c-187e4a415929",
+            )
+            self.assertEqual(
+                MODULE.thread_conversation_url(repaired),
+                "https://chatgpt.com/c/6a99ef53-3d80-83ee-a84c-187e4a415929",
+            )
+            self.assertEqual(store.resolve("last")["threadId"], "7c8a40c9")
+            self.assertEqual(store.resolve("latest")["threadId"], "7c8a40c9")
+
+    def test_last_requires_saved_conversation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            store = MODULE.SessionStore(Path(temp) / "sessions.json")
+            store.create_thread(
+                topic="새 스레드",
+                quality="xhigh",
+                project_name="Work",
+                outpost_id="turn-1",
+            )
+            with self.assertRaisesRegex(
+                MODULE.UnknownThreadError,
+                "saved conversation",
+            ):
+                store.resolve("last")
+
+
 
 if __name__ == "__main__":
     unittest.main()

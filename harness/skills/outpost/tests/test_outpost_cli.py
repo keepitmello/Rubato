@@ -83,6 +83,28 @@ class ConsultCliTest(unittest.TestCase):
         sent = runner.main.call_args.args[0]
         self.assertEqual(sent[:4], ["--quality", "xhigh", "--packet", "packet.md"])
 
+    def test_last_alias_uses_thread_flag(self) -> None:
+        args = MODULE.parse_args(["send", "xhigh", "p.md", "--to", "last"])
+        argv = MODULE.build_engine_argv("send", args)
+        self.assertEqual(argv[argv.index("--thread") + 1], "last")
+        self.assertNotIn("--conversation-url", argv)
+
+    def test_project_conversation_url_uses_continue_flag(self) -> None:
+        args = MODULE.parse_args(
+            [
+                "send",
+                "--quality",
+                "xhigh",
+                "p.md",
+                "--to",
+                "https://chatgpt.com/g/g-p-test-work/c/6a95625e-1f78-83e8-aa90-a49f982e36ef",
+            ]
+        )
+        argv = MODULE.build_engine_argv("send", args)
+        self.assertIn("--conversation-url", argv)
+        self.assertNotIn("--thread", argv)
+
+
 
 if __name__ == "__main__":
     unittest.main()

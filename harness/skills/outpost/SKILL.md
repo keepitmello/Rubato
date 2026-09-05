@@ -48,8 +48,8 @@ outpost send --quality xhigh .outpost/<run>/packet.md --to <thread-id>
 outpost recover .outpost/<run>/result.json
 ```
 
-`--to` accepts a thread id, `conversationUrl`, or a previous `result.json`.
-List first; do not guess the thread from a nearby `.outpost/` directory.
+`--to` accepts a thread id, `last`, a `/c/` conversation URL, or `result.json`.
+List first; `last` is the newest thread that already has a conversation.
 Unrelated threads may run in parallel. The same thread serializes.
 
 ## After

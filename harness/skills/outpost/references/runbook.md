@@ -54,6 +54,7 @@ Continue a saved thread. This opens that conversation, not the project home:
 
 ```bash
 outpost send --quality <xhigh-or-pro> .outpost/<run>/packet.md --to <thread-id>
+outpost send --quality <xhigh-or-pro> .outpost/<run>/packet.md --to last
 ```
 
 The runner's in-browser guard must commit the user turn under 120 seconds and
@@ -94,7 +95,8 @@ retries the same send once. After a user turn commits, do not retry.
 Aside confines `download.saveAs()` to its session directory. The browser returns
 `download.path()` instead, and the Python runner copies that verified local file
 to `--artifact-output`. Threads are stored in `~/.codex/outpost-sessions.json`
-with `threadId`, `conversationUrl`, and `targetId`.
+with `threadId`, a canonical `https://chatgpt.com/c/<id>` `conversationUrl`, and `targetId`.
+The runner never replaces a saved `/c/` URL with the project home.
 
 For a code artifact, use the same command:
 
