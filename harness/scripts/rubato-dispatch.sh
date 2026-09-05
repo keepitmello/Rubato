@@ -9,12 +9,24 @@ DEFAULT_STDOUT_MAX=8192
 
 usage() {
   cat <<'USAGE'
-Usage: rubato dispatch <name> [grok|grokfast|fast|muse|sol|fable] [--cwd DIR] < brief.md
+Usage: rubato dispatch <name> [grok|grokfast|fast|muse|sol|fable|astra] [--model PROVIDER/MODEL[:THINKING]] [--effort LEVEL] [--cwd DIR] < brief.md
        rubato dispatch <name> --continue < followup.md
 
 `dispatch` on PATH is the same command.
 The full last answer stays in the worker session dir. Caller stdout is
 capped (RUBATO_DISPATCH_STDOUT_MAX, default 8192 bytes).
+
+--model takes a full id like anthropic/claude-fable-5-1 and wins over the alias.
+--effort appends :LEVEL to the model unless it already has :suffix (senpi --model form).
+
+Models:
+  grok      xai/grok-4.6
+  grokfast  cursor/cursor-grok-4.6-high-fast
+  fast      cursor/gemini-3.8-flash
+  muse      opencode/muse-spark-1.3-contributor-free
+  sol       openai-codex/gpt-5.6-sol
+  fable     anthropic/claude-fable-5-1
+  astra     openai-codex/gpt-6-astra:medium
 USAGE
 }
 
@@ -36,7 +48,8 @@ alias_to_model() {
     fast) echo "cursor/gemini-3.8-flash" ;;
     muse) echo "opencode/muse-spark-1.3-contributor-free" ;;
     sol) echo "openai-codex/gpt-5.6-sol" ;;
-    fable) echo "anthropic/claude-fable-5" ;;
+    fable) echo "anthropic/claude-fable-5-1" ;;
+    astra) echo "openai-codex/gpt-6-astra:medium" ;;
     *) return 1 ;;
   esac
 }
@@ -97,6 +110,8 @@ if [[ ! "$NAME" =~ ^[A-Za-z0-9._-]+$ || "$NAME" == "." || "$NAME" == ".." ]]; th
 fi
 
 MODEL_ALIAS=""
+MODEL_DIRECT=""
+EFFORT=""
 CWD=""
 CONTINUE=0
 
@@ -106,6 +121,34 @@ while [[ $# -gt 0 ]]; do
       CONTINUE=1
       shift
       ;;
+    --model)
+      if [[ $# -lt 2 ]]; then
+        echo "rubato dispatch: --model requires PROVIDER/MODEL[:THINKING]" >&2
+        exit 2
+      fi
+      if [[ -n "$MODEL_DIRECT" ]]; then
+        echo "rubato dispatch: model already set to $MODEL_DIRECT" >&2
+        exit 2
+      fi
+      if [[ -n "$MODEL_ALIAS" ]]; then
+        echo "rubato dispatch: model already set to $MODEL_ALIAS" >&2
+        exit 2
+      fi
+      MODEL_DIRECT="$2"
+      shift 2
+      ;;
+    --effort)
+      if [[ $# -lt 2 ]]; then
+        echo "rubato dispatch: --effort requires a level (e.g. low, medium, high)" >&2
+        exit 2
+      fi
+      if [[ -n "$EFFORT" ]]; then
+        echo "rubato dispatch: effort already set to $EFFORT" >&2
+        exit 2
+      fi
+      EFFORT="$2"
+      shift 2
+      ;;
     --cwd)
       if [[ $# -lt 2 ]]; then
         echo "rubato dispatch: --cwd requires a directory" >&2
@@ -114,7 +157,7 @@ while [[ $# -gt 0 ]]; do
       CWD="$2"
       shift 2
       ;;
-    grok|grokfast|fast|muse|sol|fable)
+    grok|grokfast|fast|muse|sol|fable|astra)
       if [[ -n "$MODEL_ALIAS" ]]; then
         echo "rubato dispatch: model already set to $MODEL_ALIAS" >&2
         exit 2
@@ -140,7 +183,18 @@ while [[ $# -gt 0 ]]; do
 done
 
 MODEL_ALIAS="${MODEL_ALIAS:-grok}"
-MODEL="$(alias_to_model "$MODEL_ALIAS")"
+if [[ -n "$MODEL_DIRECT" ]]; then
+  MODEL="$MODEL_DIRECT"
+else
+  MODEL="$(alias_to_model "$MODEL_ALIAS")"
+fi
+if [[ -n "$EFFORT" ]]; then
+  if [[ "$MODEL" != *:* ]]; then
+    MODEL="$MODEL:$EFFORT"
+  else
+    echo "rubato dispatch: --effort ignored, model already has :suffix: $MODEL" >&2
+  fi
+fi
 
 SCRIPT_DIR="$(resolve_script_dir)"
 LAUNCHER="$SCRIPT_DIR/rubato-pi.sh"
