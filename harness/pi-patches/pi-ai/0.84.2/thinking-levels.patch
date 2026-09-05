@@ -1,0 +1,32 @@
+--- a/dist/models.js
++++ b/dist/models.js
+@@ -548,14 +548,22 @@
+ export function getSupportedThinkingLevels(model) {
+     if (!model.reasoning)
+         return ["off"];
+-    return EXTENDED_THINKING_LEVELS.filter((level) => {
+-        const mapped = model.thinkingLevelMap?.[level];
++    const map = model.thinkingLevelMap;
++    const usedWire = new Set();
++    const graded = [];
++    for (const level of ["low", "medium", "high", "xhigh", "max"]) {
++        const mapped = map?.[level];
+         if (mapped === null)
+-            return false;
+-        if (level === "xhigh" || level === "max")
+-            return mapped !== undefined;
+-        return true;
+-    });
++            continue;
++        if ((level === "xhigh" || level === "max") && mapped === undefined)
++            continue;
++        const wire = typeof mapped === "string" ? mapped : level;
++        if (usedWire.has(wire))
++            continue;
++        usedWire.add(wire);
++        graded.push(level);
++    }
++    return graded;
+ }
+ export function clampThinkingLevel(model, level) {
+     const availableLevels = getSupportedThinkingLevels(model);

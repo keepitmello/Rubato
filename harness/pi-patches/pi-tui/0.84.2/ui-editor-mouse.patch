@@ -1,0 +1,277 @@
+--- a/dist/components/editor.js
++++ b/dist/components/editor.js
+@@ -245,6 +245,11 @@
+     // vertical move can resolve it to a visual column on whatever VL it belongs
+     // to.
+     snappedFromCursorCol = null;
++    // rubato.editorMouse.injected
++    mouseSelectionAnchor = null;
++    mouseSelectionFocus = null;
++    mouseSelectionActive = false;
++    lastRenderedTop = 0;
+     // Undo support
+     undoStack = new UndoStack();
+     onSubmit;
+@@ -538,6 +543,7 @@
+         this.scrollOffset = Math.max(0, Math.min(this.scrollOffset, maxScrollOffset));
+         // Get visible lines slice
+         const visibleLines = layoutLines.slice(this.scrollOffset, this.scrollOffset + maxVisibleLines);
++        this.lastRenderedTop = this.scrollOffset;
+         const result = [];
+         const leftPadding = " ".repeat(paddingX);
+         const rightPadding = leftPadding;
+@@ -554,12 +560,13 @@
+         // hardware cursor for IME candidate-window placement even while
+         // autocomplete (e.g. slash-command menu) is visible.
+         const emitCursorMarker = this.focused;
++        let mouseVisualIndex = 0;
+         for (const layoutLine of visibleLines) {
+             let displayText = layoutLine.text;
+             let lineVisibleWidth = visibleWidth(layoutLine.text);
+             let cursorInPadding = false;
+             // Add cursor if this line has it
+-            if (layoutLine.hasCursor && layoutLine.cursorPos !== undefined) {
++            if (layoutLine.hasCursor && layoutLine.cursorPos !== undefined && !this.getMouseSelection()) {
+                 const before = displayText.slice(0, layoutLine.cursorPos);
+                 const after = displayText.slice(layoutLine.cursorPos);
+                 // Hardware cursor marker (zero-width, emitted before fake cursor for IME positioning)
+@@ -585,6 +592,7 @@
+                     }
+                 }
+             }
++            displayText = this.applyMouseSelectionHighlight(displayText, mouseVisualIndex++);
+             // Calculate padding based on actual visible width
+             const padding = " ".repeat(Math.max(0, contentWidth - lineVisibleWidth));
+             const lineRightPadding = cursorInPadding ? rightPadding.slice(1) : rightPadding;
+@@ -613,6 +621,7 @@
+     }
+     handleInput(data) {
+         const kb = getKeybindings();
++        if (this.consumeMouseSelectionInput(data, kb)) return;
+         // Handle character jump mode (awaiting next character to jump to)
+         if (this.jumpMode !== null) {
+             // Cancel if the hotkey is pressed again
+@@ -875,8 +884,138 @@
+         // Regular characters
+         if (data.charCodeAt(0) >= 32) {
+             this.insertCharacter(data);
++        }
++    }
++    handleMouse(event) {
++        const position = this.getMousePosition(event.x, event.y);
++        if (!position) return false;
++        if (event.kind === "press") {
++            this.cancelAutocomplete();
++            this.exitHistoryBrowsing();
++            this.mouseSelectionAnchor = position;
++            this.mouseSelectionFocus = position;
++            this.mouseSelectionActive = true;
++        } else if (event.kind === "drag") {
++            if (!this.mouseSelectionActive) return false;
++            this.mouseSelectionFocus = position;
++        } else {
++            if (!this.mouseSelectionActive) return false;
++            this.mouseSelectionFocus = position;
++            this.mouseSelectionActive = false;
++            this.copyMouseSelection();
+         }
++        this.state.cursorLine = position.line;
++        this.setCursorCol(position.col);
++        this.tui.requestRender();
++        return true;
+     }
++    getMousePosition(x, y) {
++        const visualLines = this.buildVisualLineMap(this.lastWidth);
++        if (visualLines.length === 0) return undefined;
++        const visualIndex = Math.max(0, Math.min(visualLines.length - 1, this.lastRenderedTop + y - 1));
++        const visualLine = visualLines[visualIndex];
++        if (!visualLine) return undefined;
++        const text = (this.state.lines[visualLine.logicalLine] || "").slice(visualLine.startCol, visualLine.startCol + visualLine.length);
++        const promptRow = Number.isFinite(this.promptPaddingX) && this.lastRenderedTop === 0 && visualIndex === 0;
++        const targetWidth = Math.max(0, x - (promptRow ? 2 : this.paddingX));
++        let col = visualLine.startCol;
++        let width = 0;
++        for (const segment of this.segment(text, "grapheme")) {
++            const segmentWidth = visibleWidth(segment.segment);
++            if (width + segmentWidth > targetWidth) break;
++            width += segmentWidth;
++            col = visualLine.startCol + segment.index + segment.segment.length;
++        }
++        return { line: visualLine.logicalLine, col: Math.min(col, visualLine.startCol + visualLine.length) };
++    }
++    getMouseSelection() {
++        const anchor = this.mouseSelectionAnchor;
++        const focus = this.mouseSelectionFocus;
++        if (!anchor || !focus || (anchor.line === focus.line && anchor.col === focus.col)) return undefined;
++        return anchor.line < focus.line || (anchor.line === focus.line && anchor.col < focus.col) ? { start: anchor, end: focus } : { start: focus, end: anchor };
++    }
++    getMouseSelectedText() {
++        const selection = this.getMouseSelection();
++        if (!selection) return "";
++        if (selection.start.line === selection.end.line) return (this.state.lines[selection.start.line] || "").slice(selection.start.col, selection.end.col);
++        const parts = [(this.state.lines[selection.start.line] || "").slice(selection.start.col)];
++        for (let line = selection.start.line + 1; line < selection.end.line; line++) parts.push(this.state.lines[line] || "");
++        parts.push((this.state.lines[selection.end.line] || "").slice(0, selection.end.col));
++        return parts.join("\n");
++    }
++    copyMouseSelection() {
++        const text = this.getMouseSelectedText();
++        if (!text) return;
++        const copy = this.tui.copySelection;
++        if (typeof copy === "function") {
++            void Promise.resolve(copy.call(this.tui, text)).then((ok) => {
++                if (typeof this.tui.flash === "function") this.tui.flash(ok === false ? "Copy failed" : "Copied!");
++            }, () => {
++                if (typeof this.tui.flash === "function") this.tui.flash("Copy failed");
++            });
++            return;
++        }
++        this.tui.terminal?.write?.("\x1b]52;c;" + Buffer.from(text).toString("base64") + "\x07");
++        if (typeof this.tui.flash === "function") this.tui.flash("Copied!");
++    }
++    clearMouseSelection() {
++        this.mouseSelectionAnchor = this.mouseSelectionFocus = null;
++        this.mouseSelectionActive = false;
++    }
++    deleteMouseSelection(notify = true) {
++        const selection = this.getMouseSelection();
++        if (!selection) return false;
++        this.pushUndoSnapshot();
++        const before = (this.state.lines[selection.start.line] || "").slice(0, selection.start.col);
++        const after = (this.state.lines[selection.end.line] || "").slice(selection.end.col);
++        this.state.lines.splice(selection.start.line, selection.end.line - selection.start.line + 1, before + after);
++        this.state.cursorLine = selection.start.line;
++        this.setCursorCol(selection.start.col);
++        this.clearMouseSelection();
++        if (notify) this.onChange?.(this.getText());
++        return true;
++    }
++    applyMouseSelectionHighlight(text, visualIndex) {
++        const selection = this.getMouseSelection();
++        if (!selection) return text;
++        const visualLine = this.buildVisualLineMap(this.lastWidth)[this.lastRenderedTop + visualIndex];
++        if (!visualLine || visualLine.logicalLine < selection.start.line || visualLine.logicalLine > selection.end.line) return text;
++        const lineStart = visualLine.startCol;
++        const lineEnd = visualLine.startCol + visualLine.length;
++        const from = visualLine.logicalLine === selection.start.line ? Math.max(lineStart, selection.start.col) : lineStart;
++        const to = visualLine.logicalLine === selection.end.line ? Math.min(lineEnd, selection.end.col) : lineEnd;
++        const localFrom = from - lineStart;
++        const localTo = to - lineStart;
++        if (localFrom >= localTo) return text;
++        const raw = (this.state.lines[visualLine.logicalLine] || "").slice(lineStart, lineEnd);
++        const fromCol = visibleWidth(raw.slice(0, localFrom));
++        const toCol = visibleWidth(raw.slice(0, localTo));
++        const before = sliceByColumn(text, 0, fromCol, true);
++        const after = sliceByColumn(text, toCol, Math.max(0, visibleWidth(text) - toCol), true);
++        return before + "\x1b[7m" + raw.slice(localFrom, localTo) + "\x1b[27m" + after + "\x1b[0m";
++    }
++    consumeMouseSelectionInput(data, kb) {
++        if (!this.getMouseSelection()) return false;
++        if (kb.matches(data, "tui.editor.deleteCharBackward") || kb.matches(data, "tui.editor.deleteCharForward") || matchesKey(data, "shift+backspace") || matchesKey(data, "shift+delete") || kb.matches(data, "tui.editor.deleteWordBackward") || kb.matches(data, "tui.editor.deleteWordForward") || kb.matches(data, "tui.editor.deleteToLineStart") || kb.matches(data, "tui.editor.deleteToLineEnd")) {
++            this.deleteMouseSelection();
++            return true;
++        }
++        if (kb.matches(data, "tui.editor.cursorLeft") || kb.matches(data, "tui.editor.cursorRight") || kb.matches(data, "tui.editor.cursorUp") || kb.matches(data, "tui.editor.cursorDown") || kb.matches(data, "tui.editor.cursorLineStart") || kb.matches(data, "tui.editor.cursorLineEnd") || kb.matches(data, "tui.editor.cursorWordLeft") || kb.matches(data, "tui.editor.cursorWordRight") || kb.matches(data, "tui.editor.historyPrevious") || kb.matches(data, "tui.editor.historyNext") || kb.matches(data, "tui.editor.pageUp") || kb.matches(data, "tui.editor.pageDown")) {
++            this.clearMouseSelection();
++            return false;
++        }
++        if (kb.matches(data, "tui.input.submit")) {
++            this.clearMouseSelection();
++            return false;
++        }
++        const mouseReplacement = decodePrintableKey(data);
++        if (mouseReplacement !== undefined || (data.charCodeAt(0) >= 32 && data.charCodeAt(0) !== 127 && !data.startsWith("\x1b"))) {
++            this.deleteMouseSelection(false);
++            this.insertCharacter(mouseReplacement ?? data, true);
++            return true;
++        }
++        return false;
++    }
+     layoutText(contentWidth) {
+         const layoutLines = [];
+         if (this.state.lines.length === 0 || (this.state.lines.length === 1 && this.state.lines[0] === "")) {
+@@ -980,6 +1119,7 @@
+         return { line: this.state.cursorLine, col: this.state.cursorCol };
+     }
+     setText(text) {
++        this.clearMouseSelection();
+         this.cancelAutocomplete();
+         this.lastAction = null;
+         this.exitHistoryBrowsing();
+@@ -1121,7 +1261,7 @@
+         this.cancelAutocomplete();
+         this.exitHistoryBrowsing();
+         this.lastAction = null;
+-        this.pushUndoSnapshot();
++        if (!this.deleteMouseSelection(false)) this.pushUndoSnapshot();
+         // Some terminals (e.g. tmux popups with extended-keys-format=csi-u) re-encode
+         // control bytes inside bracketed paste as CSI-u Ctrl+<letter> sequences
+         // (ESC [ <codepoint> ; 5 u). Decode those back to their literal byte so the
+@@ -1174,7 +1314,7 @@
+         this.cancelAutocomplete();
+         this.exitHistoryBrowsing();
+         this.lastAction = null;
+-        this.pushUndoSnapshot();
++        if (!this.deleteMouseSelection(false)) this.pushUndoSnapshot();
+         const currentLine = this.state.lines[this.state.cursorLine] || "";
+         const before = currentLine.slice(0, this.state.cursorCol);
+         const after = currentLine.slice(this.state.cursorCol);
+@@ -1201,6 +1341,7 @@
+         return this.state.cursorCol > 0 && currentLine[this.state.cursorCol - 1] === "\\";
+     }
+     submitValue() {
++        this.clearMouseSelection();
+         this.cancelAutocomplete();
+         const result = this.pasteMarkers.expand(this.state.lines.join("\n")).trim();
+         this.state = { lines: [""], cursorLine: 0, cursorCol: 0 };
+--- a/dist/tui-alt-screen.js
++++ b/dist/tui-alt-screen.js
+@@ -415,7 +415,7 @@
+             const handled = this.handleScrollbarMouseEvent(mouseEvent);
+             if (!this.scrollbarDrag)
+                 this.updateScrollbarHover(mouseEvent.x, mouseEvent.y);
+-            if (!handled)
++            if (!handled && !this.routeFocusedMouseEvent(mouseEvent))
+                 this.handleSelectionMouseEvent(mouseEvent);
+             return { consume: true };
+         }
+@@ -557,6 +557,39 @@
+             release: match[4] === "m",
+         };
+     }
++    // rubato.editorMouse.routingInjected
++    findFocusedMouseBox(component) {
++        const wraps = (node) => {
++            if (!node.component || node.children?.length) return false;
++            const nested = node.component.children;
++            return Array.isArray(nested) && nested.length === 1 && nested[0] === component;
++        };
++        const visit = (node) => {
++            if (!node) return undefined;
++            if (node.component === component) return node;
++            for (const child of node.children ?? []) {
++                const found = visit(child);
++                if (found) return found;
++            }
++            if (wraps(node)) return node;
++            return undefined;
++        };
++        return visit(this.currentLayout?.root);
++    }
++    routeFocusedMouseEvent(event) {
++        const focused = this.getFocusedComponent();
++        if (!focused?.handleMouse) return false;
++        const button = event.button & 3;
++        const drag = (event.button & 32) !== 0;
++        if (button !== 0 && !(drag && button === 3) && !(event.release && button === 3)) return false;
++        const kind = event.release ? "release" : drag ? "drag" : "press";
++        const box = this.findFocusedMouseBox(focused);
++        if (!box) return false;
++        const bounds = box.clip ?? box.rect;
++        const inside = event.x >= bounds.x && event.x < bounds.x + bounds.width && event.y >= bounds.y && event.y < bounds.y + bounds.height;
++        if (!inside && !(focused.mouseSelectionActive && kind !== "press")) return false;
++        return focused.handleMouse({ kind, x: event.x - box.rect.x, y: event.y - box.rect.y }) === true;
++    }
+     handleRightClickPaste(event) {
+         if (!this.onRightClickPaste || process.platform !== "win32" || event.release || event.button !== 2) {
+             return false;

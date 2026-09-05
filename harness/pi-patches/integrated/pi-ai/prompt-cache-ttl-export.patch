@@ -1,0 +1,10 @@
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -16,6 +16,7 @@
+ export * from "./utils/overflow.js";
+ export { hasVisibleAssistantContent, hasVisibleText } from "./utils/visible-text.js";
+ export { getToolCallFormat, shouldRecoverTextToolCalls } from "./utils/empty-recovery-gate.js";
++export { isAnthropicApiBaseUrl, PROMPT_CACHE_TTL_LONG_SECONDS, PROMPT_CACHE_TTL_SHORT_SECONDS, resolvePromptCacheTtlSeconds } from "./utils/prompt-cache-ttl.js";
+ export * from "./utils/retry.js";
+ export { contentText } from "./utils/text.js";
+ export * from "./utils/typebox-helpers.js";

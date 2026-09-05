@@ -1,0 +1,280 @@
+--- a/dist/core/agent-session.js
++++ b/dist/core/agent-session.js
+@@ -155,6 +155,9 @@
+         this._preparedInteractiveInput = undefined;
+         this._lastInteractiveSubmit = undefined;
+         this._removedToolHints = new Map();
++        this._sessionFastMode = false;
++        this._hadClearedQueuedMessages = false;
++        this._requestRunTracker = undefined;
+         // Always subscribe to agent events for internal handling
+         // (session persistence, extensions, auto-compaction, retry logic)
+         this._unsubscribeAgent = this.agent.subscribe(this._handleAgentEvent);
+@@ -1167,9 +1170,12 @@
+      * Useful for restoring to editor when user aborts.
+      * @returns Object with steering and followUp arrays
+      */
+-    clearQueue() {
++    clearQueue(options = { abortWillFollow: false }) {
+         const steering = [...this._steeringMessages];
+         const followUp = [...this._followUpMessages];
++        if (options.abortWillFollow && (steering.length > 0 || followUp.length > 0)) {
++            this._hadClearedQueuedMessages = true;
++        }
+         this._steeringMessages = [];
+         this._followUpMessages = [];
+         this.agent.clearAllQueues();
+@@ -1201,7 +1207,9 @@
+         const wasMidRun = this.isStreaming && this._retryAbortController === undefined;
+         const hadRetryBackoff = this._retryAbortController !== undefined;
+         const hadCompactionOrPending = !this.isStreaming && (this.isCompacting || this.pendingMessageCount > 0);
+-        const shouldEmitAbort = !wasMidRun && (hadRetryBackoff || hadCompactionOrPending);
++        const hadClearedQueues = this._hadClearedQueuedMessages;
++        this._hadClearedQueuedMessages = false;
++        const shouldEmitAbort = !wasMidRun && (hadRetryBackoff || hadCompactionOrPending || hadClearedQueues);
+         this.abortCompaction();
+         this.abortRetry();
+         this.agent.abort();
+@@ -1313,11 +1321,33 @@
+                 category: "extension",
+                 remoteMode: "direct",
+             })),
+-            readConversationPage: async () => ({ entries: [], requestRuns: [] }),
++            readConversationPage: (input) => session.readConversationPage(input),
++            requestTimelineSnapshot: () => session.requestTimelineSnapshot(),
+         });
+     }
+     getInteractiveControl() {
+         return this._extensionRunner?.getInteractiveControl?.() ?? this.createInteractiveControlSurface();
++    }
++    attachRequestRunTracker(tracker) {
++        this._requestRunTracker = tracker;
++    }
++    requestTimelineSnapshot() {
++        return this._requestRunTracker?.snapshot?.() ?? {
++            schemaVersion: 1,
++            runs: [],
++            pendingInputs: [],
++            hasOlder: false,
++        };
++    }
++    async readConversationPage(input = {}) {
++        if (this._requestRunTracker) {
++            if (this._requestRunTracker.entries?.length === 0) {
++                this._requestRunTracker.rebuildFromMessages?.(this.agent?.state?.messages ?? []);
++            }
++            return this._requestRunTracker.readConversationPage(input);
++        }
++        const entries = this.sessionManager.getEntries?.() ?? [];
++        return { entries, requestRuns: [] };
+     }
+     // =========================================================================
+     // Model Management
+@@ -1337,6 +1367,23 @@
+      * Validates that auth is configured, saves to session and settings.
+      * @throws Error if no auth is configured for the model
+      */
++    setSessionFastMode(enabled) {
++        this._sessionFastMode = !!enabled;
++    }
++    isFastModeActive() {
++        return this._sessionFastMode === true;
++    }
++    async setSessionModel(model) {
++        if (!(await this._modelRuntime.checkAuth(model.provider))) {
++            throw new Error(`No API key for ${model.provider}/${model.id}`);
++        }
++        const previousModel = this.model;
++        const thinkingLevel = this._getThinkingLevelForModelSwitch();
++        this.agent.state.model = model;
++        this.sessionManager.appendModelChange(model.provider, model.id);
++        this.setThinkingLevel(thinkingLevel);
++        await this._emitModelSelect(model, previousModel, "set");
++    }
+     async setModel(model) {
+         if (!(await this._modelRuntime.checkAuth(model.provider))) {
+             throw new Error(`No API key for ${model.provider}/${model.id}`);
+@@ -2183,6 +2230,23 @@
+         }
+         this._bindExtensionCore(this._extensionRunner);
+         this._extensionRunner.setInteractiveControl(this.createInteractiveControlSurface());
++        const prevHint = this._extensionRunner.runtime.registerRemovedToolHint;
++        this._extensionRunner.runtime.registerRemovedToolHint = (name, hint) => {
++            prevHint?.(name, hint);
++            this.agent.removedToolHints ??= {};
++            this.agent.removedToolHints[name] = hint;
++        };
++        for (const [name, hint] of this._extensionRunner._removedToolHints ?? []) {
++            this.agent.removedToolHints ??= {};
++            this.agent.removedToolHints[name] = hint;
++        }
++        this._extensionRunner.runtime.setSessionFastMode = (enabled) => this.setSessionFastMode(enabled);
++        this._extensionRunner.runtime.setSessionModel = async (model) => {
++            if (!this._modelRuntime.hasConfiguredAuth(model.provider))
++                return false;
++            await this.setSessionModel(model);
++            return true;
++        };
+         this._applyExtensionBindings(this._extensionRunner);
+         const defaultActiveToolNames = this._baseToolsOverride
+             ? Object.keys(this._baseToolsOverride)
+--- a/dist/core/agent-session.d.ts
++++ b/dist/core/agent-session.d.ts
+@@ -453,6 +453,26 @@
+     } | undefined;
+     createInteractiveControlSurface(): import("./extensions/types.ts").InteractiveControlSurface;
+     getInteractiveControl(): import("./extensions/types.ts").InteractiveControlSurface;
++    setSessionFastMode(enabled: boolean): void;
++    isFastModeActive(): boolean;
++    setSessionModel(model: import("@earendil-works/pi-ai").Model<any>): Promise<void>;
++    clearQueue(options?: {
++        abortWillFollow?: boolean;
++    }): {
++        steering: string[];
++        followUp: string[];
++    };
++    attachRequestRunTracker(tracker: {
++        snapshot?: () => unknown;
++        entries?: unknown[];
++        rebuildFromMessages?: (messages: unknown[]) => void;
++        readConversationPage: (input?: unknown) => unknown;
++    }): void;
++    requestTimelineSnapshot(): unknown;
++    readConversationPage(input?: unknown): Promise<{
++        entries: unknown[];
++        requestRuns: unknown[];
++    }>;
+     private _emitModelSelect;
+     /**
+      * Set model directly.
+--- a/dist/core/extensions/loader.js
++++ b/dist/core/extensions/loader.js
+@@ -155,6 +155,9 @@
+         refreshTools: () => { },
+         registerRemovedToolHint: () => { },
+         getInteractiveControl: () => undefined,
++        getRegisteredMcpServers: () => [],
++        setSessionFastMode: notInitialized,
++        setSessionModel: () => Promise.reject(new Error("Extension runtime not initialized")),
+         getCommands: notInitialized,
+         setModel: () => Promise.reject(new Error("Extension runtime not initialized")),
+         getThinkingLevel: notInitialized,
+@@ -320,6 +323,29 @@
+             hints.set(name, hint);
+             runtime.registerRemovedToolHint(name, hint);
+         },
++        registerMcpServer(name, config) {
++            runtime.assertActive();
++            if (!name || typeof name !== "string")
++                throw new Error("MCP server name is required");
++            if (!config || typeof config !== "object")
++                throw new Error("MCP server config is required");
++            if (!config.command && !config.url)
++                throw new Error("MCP server requires command or url");
++            extension.mcpServers ??= new Map();
++            extension.mcpServers.set(name, {
++                name,
++                config,
++                extensionPath: extension.path,
++            });
++        },
++        setSessionFastMode(enabled) {
++            runtime.assertActive();
++            runtime.setSessionFastMode(enabled);
++        },
++        setSessionModel(model) {
++            runtime.assertActive();
++            return runtime.setSessionModel(model);
++        },
+         setModel(model) {
+             runtime.assertActive();
+             return runtime.setModel(model);
+@@ -406,6 +432,7 @@
+         handlers: new Map(),
+         tools: new Map(),
+         removedToolHints: new Map(),
++        mcpServers: new Map(),
+         messageRenderers: new Map(),
+         entryRenderers: new Map(),
+         commands: new Map(),
+--- a/dist/core/extensions/runner.js
++++ b/dist/core/extensions/runner.js
+@@ -261,6 +261,16 @@
+     }
+     getInteractiveControl() {
+         return this.runtime.getInteractiveControl?.();
++    }
++    getRegisteredMcpServers() {
++        const serversByName = new Map();
++        for (const ext of this.extensions) {
++            for (const decl of (ext.mcpServers ?? new Map()).values()) {
++                if (!serversByName.has(decl.name))
++                    serversByName.set(decl.name, decl);
++            }
++        }
++        return Array.from(serversByName.values());
+     }
+     bindCommandContext(actions) {
+         if (actions) {
+--- a/dist/core/extensions/types.d.ts
++++ b/dist/core/extensions/types.d.ts
+@@ -989,6 +989,16 @@
+     registerRemovedToolHint(name: string, hint: string): void;
+     /** Public interactive control surface (session-backed; TUI may overlay). */
+     getInteractiveControl(): InteractiveControlSurface | undefined;
++    registerMcpServer(name: string, config: {
++        command?: string;
++        args?: string[];
++        url?: string;
++        enabled?: boolean;
++        exposure?: string;
++        [key: string]: unknown;
++    }): void;
++    setSessionFastMode(enabled: boolean): void;
++    setSessionModel(model: Model<any>): Promise<boolean>;
+     /** Register a custom command. */
+     registerCommand(name: string, options: Omit<RegisteredCommand, "name" | "sourceInfo">): void;
+     /** Register a keyboard shortcut. */
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -9,6 +9,7 @@
+ export { createEventBus } from "./core/event-bus.js";
+ export { createExtensionRuntime, defineTool, discoverAndLoadExtensions, ExtensionRunner, isBashToolResult, isEditToolResult, isFindToolResult, isGrepToolResult, isLsToolResult, isReadToolResult, isToolCallEventType, isWriteToolResult, wrapRegisteredTool, wrapRegisteredTools, } from "./core/extensions/index.js";
+ export { convertToLlm } from "./core/messages.js";
++export { redactSensitiveOutput, redactSensitiveTokenValues } from "./core/sensitive-output.js";
+ export { ModelRegistry } from "./core/model-registry.js";
+ export { resolveCliModel, resolveModelScopeWithDiagnostics, } from "./core/model-resolver.js";
+ export { CredentialSynchronizationError, ModelRuntime, } from "./core/model-runtime.js";
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -8,6 +8,7 @@
+ export { createExtensionRuntime, defineTool, discoverAndLoadExtensions, ExtensionRunner, isBashToolResult, isEditToolResult, isFindToolResult, isGrepToolResult, isLsToolResult, isReadToolResult, isToolCallEventType, isWriteToolResult, wrapRegisteredTool, wrapRegisteredTools, } from "./core/extensions/index.ts";
+ export type { ReadonlyFooterDataProvider } from "./core/footer-data-provider.ts";
+ export { convertToLlm } from "./core/messages.ts";
++export { redactSensitiveOutput, redactSensitiveTokenValues } from "./core/sensitive-output.ts";
+ export { ModelRegistry } from "./core/model-registry.ts";
+ export { type ModelScopeDiagnostic, type ResolveCliModelResult, type ResolveModelScopeResult, resolveCliModel, resolveModelScopeWithDiagnostics, type ScopedModel, } from "./core/model-resolver.ts";
+ export { type CreateModelRuntimeOptions, CredentialSynchronizationError, type CredentialSynchronizationOperation, ModelRuntime, type ModelRuntimeAuthOverrides, } from "./core/model-runtime.ts";
+--- /dev/null
++++ b/dist/core/sensitive-output.js
+@@ -0,0 +1,12 @@
++export function redactSensitiveOutput(text) {
++    return redactSensitiveTokenValues(text
++        .replace(/\b([A-Z][A-Z0-9_]*(?:API_KEY|SECRET|TOKEN|PASSWORD|AUTH)[A-Z0-9_]*)=([^\s'"]+)/g, "$1=[REDACTED]")
++        .replace(/\b(Authorization:\s*Bearer\s+)([^\s'"]+)/gi, "$1[REDACTED]")
++        .replace(/\b(Bearer\s+)(sk-[A-Za-z0-9._-]+)/g, "$1[REDACTED]"));
++}
++export function redactSensitiveTokenValues(text, replacement = "[REDACTED]") {
++    return text
++        .replace(/\bghp_[A-Za-z0-9]{20,}\b/g, replacement)
++        .replace(/\bgithub_pat_[A-Za-z0-9_]{20,}\b/g, replacement);
++}
++//# sourceMappingURL=sensitive-output.js.map
+\ No newline at end of file
+--- /dev/null
++++ b/dist/core/sensitive-output.d.ts
+@@ -0,0 +1,3 @@
++export declare function redactSensitiveOutput(text: string): string;
++export declare function redactSensitiveTokenValues(text: string, replacement?: string): string;
++//# sourceMappingURL=sensitive-output.d.ts.map
+\ No newline at end of file

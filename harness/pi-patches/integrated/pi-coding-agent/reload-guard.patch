@@ -1,0 +1,179 @@
+--- a/dist/core/agent-session.d.ts
++++ b/dist/core/agent-session.d.ts
+@@ -514,7 +514,22 @@
+     private _buildRuntime;
+     reload(options?: {
+         beforeSessionStart?: () => void | Promise<void>;
+-    }): Promise<void>;
++    }): Promise<{
++        cancelled: boolean;
++        reason?: string;
++    }>;
++    /**
++     * Ask extensions whether a full session reload may proceed by emitting the
++     * cancellable `session_before_reload` event. `reload()` always consults this
++     * gate itself, so a cancelling extension prevents the teardown on every
++     * reload path. Interactive hosts may additionally pre-check it; stock
++     * interactive/RPC command-context `ctx.reload()` is not wired to surface
++     * this return in this slice.
++     */
++    checkReloadVeto(): Promise<{
++        cancelled: boolean;
++        reason?: string;
++    }>;
+     /**
+      * Check if an error is retryable (overloaded, rate limit, server errors).
+      * Context overflow errors are NOT retryable (handled by compaction instead).
+--- a/dist/core/agent-session.js
++++ b/dist/core/agent-session.js
+@@ -2050,6 +2050,12 @@
+         });
+     }
+     async reload(options) {
++        // Rubato cutover: cancellable reload gate (senpi `session_before_reload`).
++        // Consulted BEFORE any teardown so a veto prevents session_shutdown{reason:"reload"}.
++        const veto = await this.checkReloadVeto();
++        if (veto.cancelled) {
++            return veto;
++        }
+         const oldRunner = this._extensionRunner;
+         const previousFlagValues = oldRunner.getFlagValues();
+         await emitSessionShutdownEvent(oldRunner, { type: "session_shutdown", reason: "reload" });
+@@ -2072,6 +2078,26 @@
+             await this._extensionRunner.emit({ type: "session_start", reason: "reload" });
+             await this.extendResourcesFromExtensions("reload");
+         }
++        return { cancelled: false };
++    }
++    /**
++     * Ask extensions whether a full session reload may proceed by emitting the
++     * cancellable `session_before_reload` event. `reload()` always consults this
++     * gate itself, so a cancelling extension prevents the teardown on every
++     * reload path. Carried from the senpi fork onto stock pi-coding-agent
++     * 0.84.2 (MIT; see harness/pi-patches provenance doc).
++     */
++    async checkReloadVeto() {
++        if (!this._extensionRunner.hasHandlers("session_before_reload")) {
++            return { cancelled: false };
++        }
++        const result = await this._extensionRunner.emit({
++            type: "session_before_reload",
++        });
++        if (result?.cancel !== true) {
++            return { cancelled: false };
++        }
++        return result.reason === undefined ? { cancelled: true } : { cancelled: true, reason: result.reason };
+     }
+     // =========================================================================
+     // Auto-Retry
+--- a/dist/core/extensions/index.d.ts
++++ b/dist/core/extensions/index.d.ts
+@@ -6,7 +6,7 @@
+ export { createExtensionRuntime, discoverAndLoadExtensions, loadExtensionFromFactory, loadExtensions, } from "./loader.ts";
+ export type { ExtensionErrorListener, ForkHandler, NavigateTreeHandler, NewSessionHandler, ShutdownHandler, SwitchSessionHandler, } from "./runner.ts";
+ export { ExtensionRunner } from "./runner.ts";
+-export type { AfterProviderResponseEvent, AgentEndEvent, AgentSettledEvent, AgentStartEvent, AgentToolResult, AgentToolUpdateCallback, AppendEntryHandler, AppKeybinding, AutocompleteProviderFactory, BashToolCallEvent, BashToolResultEvent, BeforeAgentStartEvent, BeforeAgentStartEventResult, BeforeProviderHeadersEvent, BeforeProviderRequestEvent, BeforeProviderRequestEventResult, BuildSystemPromptOptions, CompactOptions, ContextEvent, ContextEventResult, ContextUsage, CustomToolCallEvent, CustomToolResultEvent, EditorFactory, EditToolCallEvent, EditToolResultEvent, EntryRenderer, EntryRenderOptions, ExecOptions, ExecResult, Extension, ExtensionActions, ExtensionAPI, ExtensionCommandContext, ExtensionCommandContextActions, ExtensionContext, ExtensionContextActions, ExtensionError, ExtensionEvent, ExtensionFactory, ExtensionFlag, ExtensionHandler, ExtensionMode, ExtensionRuntime, ExtensionShortcut, ExtensionUIContext, ExtensionUIDialogOptions, ExtensionWidgetOptions, FindToolCallEvent, FindToolResultEvent, GetActiveToolsHandler, GetAllToolsHandler, GetCommandsHandler, GetThinkingLevelHandler, GrepToolCallEvent, GrepToolResultEvent, InlineExtension, InputEvent, InputEventResult, InputSource, KeybindingsManager, LoadExtensionsResult, LsToolCallEvent, LsToolResultEvent, MarkdownTransformContext, MarkdownTransformer, MessageEndEvent, MessageRenderer, MessageRenderOptions, MessageStartEvent, MessageUpdateEvent, ModelSelectEvent, ModelSelectSource, ProjectTrustContext, ProjectTrustEvent, ProjectTrustEventDecision, ProjectTrustEventResult, ProjectTrustHandler, ProviderConfig, ProviderModelConfig, ReadToolCallEvent, ReadToolResultEvent, RegisteredCommand, RegisteredTool, ReplacedSessionContext, ResolvedCommand, ResourcesDiscoverEvent, ResourcesDiscoverResult, SendMessageHandler, SendUserMessageHandler, SessionBeforeCompactEvent, SessionBeforeCompactResult, SessionBeforeForkEvent, SessionBeforeForkResult, SessionBeforeSwitchEvent, SessionBeforeSwitchResult, SessionBeforeTreeEvent, SessionBeforeTreeResult, SessionCompactEvent, SessionEvent, SessionInfoChangedEvent, SessionShutdownEvent, SessionStartEvent, SessionTreeEvent, SetActiveToolsHandler, SetLabelHandler, SetModelHandler, SetThinkingLevelHandler, TerminalInputHandler, ToolCallEvent, ToolCallEventResult, ToolDefinition, ToolExecutionEndEvent, ToolExecutionMode, ToolExecutionStartEvent, ToolExecutionUpdateEvent, ToolInfo, ToolRenderResultOptions, ToolResultEvent, ToolResultEventResult, TreePreparation, TurnEndEvent, TurnStartEvent, UserBashEvent, UserBashEventResult, WidgetPlacement, WorkingIndicatorOptions, WriteToolCallEvent, WriteToolResultEvent, } from "./types.ts";
++export type { AfterProviderResponseEvent, AgentEndEvent, AgentSettledEvent, AgentStartEvent, AgentToolResult, AgentToolUpdateCallback, AppendEntryHandler, AppKeybinding, AutocompleteProviderFactory, BashToolCallEvent, BashToolResultEvent, BeforeAgentStartEvent, BeforeAgentStartEventResult, BeforeProviderHeadersEvent, BeforeProviderRequestEvent, BeforeProviderRequestEventResult, BuildSystemPromptOptions, CompactOptions, ContextEvent, ContextEventResult, ContextUsage, CustomToolCallEvent, CustomToolResultEvent, EditorFactory, EditToolCallEvent, EditToolResultEvent, EntryRenderer, EntryRenderOptions, ExecOptions, ExecResult, Extension, ExtensionActions, ExtensionAPI, ExtensionCommandContext, ExtensionCommandContextActions, ExtensionContext, ExtensionContextActions, ExtensionError, ExtensionEvent, ExtensionFactory, ExtensionFlag, ExtensionHandler, ExtensionMode, ExtensionRuntime, ExtensionShortcut, ExtensionUIContext, ExtensionUIDialogOptions, ExtensionWidgetOptions, FindToolCallEvent, FindToolResultEvent, GetActiveToolsHandler, GetAllToolsHandler, GetCommandsHandler, GetThinkingLevelHandler, GrepToolCallEvent, GrepToolResultEvent, InlineExtension, InputEvent, InputEventResult, InputSource, KeybindingsManager, LoadExtensionsResult, LsToolCallEvent, LsToolResultEvent, MarkdownTransformContext, MarkdownTransformer, MessageEndEvent, MessageRenderer, MessageRenderOptions, MessageStartEvent, MessageUpdateEvent, ModelSelectEvent, ModelSelectSource, ProjectTrustContext, ProjectTrustEvent, ProjectTrustEventDecision, ProjectTrustEventResult, ProjectTrustHandler, ProviderConfig, ProviderModelConfig, ReadToolCallEvent, ReadToolResultEvent, RegisteredCommand, RegisteredTool, ReplacedSessionContext, ResolvedCommand, ResourcesDiscoverEvent, ResourcesDiscoverResult, SendMessageHandler, SendUserMessageHandler, SessionBeforeCompactEvent, SessionBeforeCompactResult, SessionBeforeForkEvent, SessionBeforeForkResult, SessionBeforeReloadEvent, SessionBeforeReloadResult, SessionBeforeSwitchEvent, SessionBeforeSwitchResult, SessionBeforeTreeEvent, SessionBeforeTreeResult, ReloadVetoDecision, SessionCompactEvent, SessionEvent, SessionInfoChangedEvent, SessionShutdownEvent, SessionStartEvent, SessionTreeEvent, SetActiveToolsHandler, SetLabelHandler, SetModelHandler, SetThinkingLevelHandler, TerminalInputHandler, ToolCallEvent, ToolCallEventResult, ToolDefinition, ToolExecutionEndEvent, ToolExecutionMode, ToolExecutionStartEvent, ToolExecutionUpdateEvent, ToolInfo, ToolRenderResultOptions, ToolResultEvent, ToolResultEventResult, TreePreparation, TurnEndEvent, TurnStartEvent, UserBashEvent, UserBashEventResult, WidgetPlacement, WorkingIndicatorOptions, WriteToolCallEvent, WriteToolResultEvent, } from "./types.ts";
+ export { defineTool, isBashToolResult, isEditToolResult, isFindToolResult, isGrepToolResult, isLsToolResult, isReadToolResult, isToolCallEventType, isWriteToolResult, } from "./types.ts";
+ export { wrapRegisteredTool, wrapRegisteredTools } from "./wrapper.ts";
+ //# sourceMappingURL=index.d.ts.map
+\ No newline at end of file
+--- a/dist/core/extensions/runner.d.ts
++++ b/dist/core/extensions/runner.d.ts
+@@ -9,7 +9,7 @@
+ import type { ModelRegistry } from "../model-registry.ts";
+ import type { SessionManager } from "../session-manager.ts";
+ import type { BuildSystemPromptOptions } from "../system-prompt.ts";
+-import type { BeforeAgentStartEvent, BeforeAgentStartEventResult, BeforeProviderHeadersEvent, BeforeProviderRequestEvent, ContextEvent, EntryRenderer, Extension, ExtensionActions, ExtensionCommandContext, ExtensionCommandContextActions, ExtensionContext, ExtensionContextActions, ExtensionError, ExtensionEvent, ExtensionFlag, ExtensionMode, ExtensionRuntime, ExtensionShortcut, ExtensionUIContext, InputEvent, InputEventResult, InputSource, LoadExtensionsResult, MarkdownTransformer, MessageEndEvent, MessageRenderer, ProjectTrustContext, ProjectTrustEvent, ProjectTrustEventResult, ProviderConfig, RegisteredTool, ReplacedSessionContext, ResolvedCommand, ResourcesDiscoverEvent, SessionBeforeCompactResult, SessionBeforeForkResult, SessionBeforeSwitchResult, SessionBeforeTreeResult, SessionShutdownEvent, ToolCallEvent, ToolCallEventResult, ToolResultEvent, ToolResultEventResult, UserBashEvent, UserBashEventResult } from "./types.ts";
++import type { BeforeAgentStartEvent, BeforeAgentStartEventResult, BeforeProviderHeadersEvent, BeforeProviderRequestEvent, ContextEvent, EntryRenderer, Extension, ExtensionActions, ExtensionCommandContext, ExtensionCommandContextActions, ExtensionContext, ExtensionContextActions, ExtensionError, ExtensionEvent, ExtensionFlag, ExtensionMode, ExtensionRuntime, ExtensionShortcut, ExtensionUIContext, InputEvent, InputEventResult, InputSource, LoadExtensionsResult, MarkdownTransformer, MessageEndEvent, MessageRenderer, ProjectTrustContext, ProjectTrustEvent, ProjectTrustEventResult, ProviderConfig, RegisteredTool, ReplacedSessionContext, ResolvedCommand, ResourcesDiscoverEvent, SessionBeforeCompactResult, SessionBeforeForkResult, SessionBeforeReloadResult, SessionBeforeSwitchResult, SessionBeforeTreeResult, SessionShutdownEvent, ToolCallEvent, ToolCallEventResult, ToolResultEvent, ToolResultEventResult, UserBashEvent, UserBashEventResult } from "./types.ts";
+ /** Combined result from all before_agent_start handlers */
+ interface BeforeAgentStartCombinedResult {
+     messages?: NonNullable<BeforeAgentStartEventResult["message"]>[];
+@@ -25,6 +25,8 @@
+ } ? SessionBeforeSwitchResult | undefined : TEvent extends {
+     type: "session_before_fork";
+ } ? SessionBeforeForkResult | undefined : TEvent extends {
++    type: "session_before_reload";
++} ? SessionBeforeReloadResult | undefined : TEvent extends {
+     type: "session_before_compact";
+ } ? SessionBeforeCompactResult | undefined : TEvent extends {
+     type: "session_before_tree";
+--- a/dist/core/extensions/runner.js
++++ b/dist/core/extensions/runner.js
+@@ -573,6 +573,7 @@
+     isSessionBeforeEvent(event) {
+         return (event.type === "session_before_switch" ||
+             event.type === "session_before_fork" ||
++            event.type === "session_before_reload" ||
+             event.type === "session_before_compact" ||
+             event.type === "session_before_tree");
+     }
+--- a/dist/core/extensions/types.d.ts
++++ b/dist/core/extensions/types.d.ts
+@@ -438,6 +438,16 @@
+     entryId: string;
+     position: "before" | "at";
+ }
++/**
++ * Fired before a full session reload (`/reload`, `ctx.reload()`, or the
++ * config-reload hot path) tears down and rebuilds the extension runtime.
++ * Cancelling prevents the reload entirely: no `session_shutdown` is emitted and
++ * no resources are reloaded. Use this to protect work that a reload would
++ * destroy (e.g. running background children owned by the extension runtime).
++ */
++export interface SessionBeforeReloadEvent {
++    type: "session_before_reload";
++}
+ /** Fired before context compaction (can be cancelled or customized) */
+ export interface SessionBeforeCompactEvent {
+     type: "session_before_compact";
+@@ -495,7 +505,7 @@
+     summaryEntry?: BranchSummaryEntry;
+     fromExtension?: boolean;
+ }
+-export type SessionEvent = SessionStartEvent | SessionInfoChangedEvent | SessionBeforeSwitchEvent | SessionBeforeForkEvent | SessionBeforeCompactEvent | SessionCompactEvent | SessionShutdownEvent | SessionBeforeTreeEvent | SessionTreeEvent;
++export type SessionEvent = SessionStartEvent | SessionInfoChangedEvent | SessionBeforeSwitchEvent | SessionBeforeForkEvent | SessionBeforeReloadEvent | SessionBeforeCompactEvent | SessionCompactEvent | SessionShutdownEvent | SessionBeforeTreeEvent | SessionTreeEvent;
+ /** Fired before each LLM call. Can modify messages. */
+ export interface ContextEvent {
+     type: "context";
+@@ -815,6 +825,21 @@
+     cancel?: boolean;
+     skipConversationRestore?: boolean;
+ }
++export interface SessionBeforeReloadResult {
++    cancel?: boolean;
++    /**
++     * Short human-readable reason shown by hosts when the reload is blocked.
++     * Prefer an actionable sentence ("2 subagents still running: a, b - wait or
++     * cancel them before reloading").
++     */
++    reason?: string;
++}
++/** Outcome of probing the `session_before_reload` gate without reloading. */
++export interface ReloadVetoDecision {
++    cancelled: boolean;
++    /** Human-readable veto reason forwarded from the cancelling extension. */
++    reason?: string;
++}
+ export interface SessionBeforeCompactResult {
+     cancel?: boolean;
+     compaction?: CompactionResult;
+@@ -871,6 +896,7 @@
+     on(event: "session_info_changed", handler: ExtensionHandler<SessionInfoChangedEvent>): void;
+     on(event: "session_before_switch", handler: ExtensionHandler<SessionBeforeSwitchEvent, SessionBeforeSwitchResult>): void;
+     on(event: "session_before_fork", handler: ExtensionHandler<SessionBeforeForkEvent, SessionBeforeForkResult>): void;
++    on(event: "session_before_reload", handler: ExtensionHandler<SessionBeforeReloadEvent, SessionBeforeReloadResult>): void;
+     on(event: "session_before_compact", handler: ExtensionHandler<SessionBeforeCompactEvent, SessionBeforeCompactResult>): void;
+     on(event: "session_compact", handler: ExtensionHandler<SessionCompactEvent>): void;
+     on(event: "session_shutdown", handler: ExtensionHandler<SessionShutdownEvent>): void;
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -4,7 +4,7 @@
+ export { readStoredCredential } from "./core/auth-storage.ts";
+ export { type BranchPreparation, type BranchSummaryResult, type CollectEntriesResult, type CompactionResult, type CutPointResult, calculateContextTokens, collectEntriesForBranchSummary, compact, DEFAULT_COMPACTION_SETTINGS, estimateTokens, type FileOperations, findCutPoint, findTurnStartIndex, type GenerateBranchSummaryOptions, generateBranchSummary, generateSummary, generateSummaryWithUsage, getLastAssistantUsage, prepareBranchEntries, serializeConversation, shouldCompact, } from "./core/compaction/index.ts";
+ export { createEventBus, type EventBus, type EventBusController } from "./core/event-bus.ts";
+-export type { AgentEndEvent, AgentSettledEvent, AgentStartEvent, AgentToolResult, AgentToolUpdateCallback, AppKeybinding, AutocompleteProviderFactory, BashToolCallEvent, BeforeAgentStartEvent, BeforeAgentStartEventResult, BeforeProviderHeadersEvent, BeforeProviderRequestEvent, BeforeProviderRequestEventResult, BuildSystemPromptOptions, CompactOptions, ContextEvent, ContextUsage, CustomToolCallEvent, EditToolCallEvent, EntryRenderer, EntryRenderOptions, ExecOptions, ExecResult, Extension, ExtensionActions, ExtensionAPI, ExtensionCommandContext, ExtensionCommandContextActions, ExtensionContext, ExtensionContextActions, ExtensionError, ExtensionEvent, ExtensionFactory, ExtensionFlag, ExtensionHandler, ExtensionRuntime, ExtensionShortcut, ExtensionUIContext, ExtensionUIDialogOptions, ExtensionWidgetOptions, FindToolCallEvent, GrepToolCallEvent, InlineExtension, InputEvent, InputEventResult, InputSource, KeybindingsManager, LoadExtensionsResult, LsToolCallEvent, MarkdownTransformContext, MarkdownTransformer, MessageEndEvent, MessageRenderer, MessageRenderOptions, MessageStartEvent, MessageUpdateEvent, ProjectTrustContext, ProjectTrustEvent, ProjectTrustEventDecision, ProjectTrustEventResult, ProjectTrustHandler, ProviderConfig, ProviderModelConfig, ReadToolCallEvent, RegisteredCommand, RegisteredTool, ResolvedCommand, SessionBeforeCompactEvent, SessionBeforeForkEvent, SessionBeforeSwitchEvent, SessionBeforeTreeEvent, SessionCompactEvent, SessionInfoChangedEvent, SessionShutdownEvent, SessionStartEvent, SessionTreeEvent, SlashCommandInfo, SlashCommandSource, SourceInfo, TerminalInputHandler, ToolCallEvent, ToolCallEventResult, ToolDefinition, ToolExecutionEndEvent, ToolExecutionMode, ToolExecutionStartEvent, ToolExecutionUpdateEvent, ToolInfo, ToolRenderResultOptions, ToolResultEvent, TurnEndEvent, TurnStartEvent, UserBashEvent, UserBashEventResult, WidgetPlacement, WorkingIndicatorOptions, WriteToolCallEvent, } from "./core/extensions/index.ts";
++export type { AgentEndEvent, AgentSettledEvent, AgentStartEvent, AgentToolResult, AgentToolUpdateCallback, AppKeybinding, AutocompleteProviderFactory, BashToolCallEvent, BeforeAgentStartEvent, BeforeAgentStartEventResult, BeforeProviderHeadersEvent, BeforeProviderRequestEvent, BeforeProviderRequestEventResult, BuildSystemPromptOptions, CompactOptions, ContextEvent, ContextUsage, CustomToolCallEvent, EditToolCallEvent, EntryRenderer, EntryRenderOptions, ExecOptions, ExecResult, Extension, ExtensionActions, ExtensionAPI, ExtensionCommandContext, ExtensionCommandContextActions, ExtensionContext, ExtensionContextActions, ExtensionError, ExtensionEvent, ExtensionFactory, ExtensionFlag, ExtensionHandler, ExtensionRuntime, ExtensionShortcut, ExtensionUIContext, ExtensionUIDialogOptions, ExtensionWidgetOptions, FindToolCallEvent, GrepToolCallEvent, InlineExtension, InputEvent, InputEventResult, InputSource, KeybindingsManager, LoadExtensionsResult, LsToolCallEvent, MarkdownTransformContext, MarkdownTransformer, MessageEndEvent, MessageRenderer, MessageRenderOptions, MessageStartEvent, MessageUpdateEvent, ProjectTrustContext, ProjectTrustEvent, ProjectTrustEventDecision, ProjectTrustEventResult, ProjectTrustHandler, ProviderConfig, ProviderModelConfig, ReadToolCallEvent, RegisteredCommand, RegisteredTool, ResolvedCommand, SessionBeforeCompactEvent, SessionBeforeForkEvent, SessionBeforeReloadEvent, SessionBeforeReloadResult, ReloadVetoDecision, SessionBeforeSwitchEvent, SessionBeforeTreeEvent, SessionCompactEvent, SessionInfoChangedEvent, SessionShutdownEvent, SessionStartEvent, SessionTreeEvent, SlashCommandInfo, SlashCommandSource, SourceInfo, TerminalInputHandler, ToolCallEvent, ToolCallEventResult, ToolDefinition, ToolExecutionEndEvent, ToolExecutionMode, ToolExecutionStartEvent, ToolExecutionUpdateEvent, ToolInfo, ToolRenderResultOptions, ToolResultEvent, TurnEndEvent, TurnStartEvent, UserBashEvent, UserBashEventResult, WidgetPlacement, WorkingIndicatorOptions, WriteToolCallEvent, } from "./core/extensions/index.ts";
+ export { createExtensionRuntime, defineTool, discoverAndLoadExtensions, ExtensionRunner, isBashToolResult, isEditToolResult, isFindToolResult, isGrepToolResult, isLsToolResult, isReadToolResult, isToolCallEventType, isWriteToolResult, wrapRegisteredTool, wrapRegisteredTools, } from "./core/extensions/index.ts";
+ export type { ReadonlyFooterDataProvider } from "./core/footer-data-provider.ts";
+ export { convertToLlm } from "./core/messages.ts";

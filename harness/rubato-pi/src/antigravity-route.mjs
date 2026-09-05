@@ -18,7 +18,7 @@ import {
 } from "./antigravity-state.mjs";
 import { cacheAudit, cacheAuditEnabled } from "./cache-audit.mjs";
 import { defaultTargetAuthPath, resolveAgentDirFromEnv } from "./credential-import.mjs";
-import { senpiNested } from "./engine-paths.mjs";
+import { resolvePiAiFile } from "./pi-provider-bridge.mjs";
 import { loginAntigravityGoogle } from "./antigravity-oauth-login.mjs";
 
 export const ANTIGRAVITY_PROVIDER_ID = "google-antigravity";
@@ -213,7 +213,7 @@ function sessionId(options) {
 }
 
 async function loadCreateProvider() {
-  const module = await import(pathToFileURL(senpiNested("@earendil-works/pi-ai/dist/models.js")).href);
+  const module = await import(pathToFileURL(resolvePiAiFile("dist/models.js")).href);
   if (typeof module.createProvider !== "function") throw new Error("pinned pi-ai has no createProvider");
   return module.createProvider;
 }

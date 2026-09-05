@@ -21,7 +21,7 @@ import { dirname, join } from "node:path";
 import { pinCursorGrokFastSelection } from "./cursor-grok-fast.mjs";
 import { resolveCallIdentity } from "./speed-index-identity.mjs";
 import { presentCursorPicker } from "./cursor-picker.mjs";
-import { senpiNested } from "./engine-paths.mjs";
+import { resolvePiAiFile } from "./pi-provider-bridge.mjs";
 
 export const CURSOR_PROVIDER_ID = "cursor";
 
@@ -645,7 +645,7 @@ export function withCursorActivationCanary(provider, {
 /** pinned factory 를 그 자리에서 불러온다. 정적 Cursor 모델을 만들지 않는다. */
 export async function loadPinnedCursorProvider() {
   const module = await import(
-    pathToFileURL(senpiNested("@earendil-works/pi-ai/dist/providers/cursor.js")).href
+    pathToFileURL(resolvePiAiFile("dist/providers/cursor.js")).href
   );
   if (typeof module.cursorProvider !== "function") throw new Error("pinned pi-ai has no cursorProvider in providers/cursor.js");
   return module.cursorProvider();

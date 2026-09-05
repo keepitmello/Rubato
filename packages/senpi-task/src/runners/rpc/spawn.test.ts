@@ -378,4 +378,23 @@ describe("buildRpcSpawn spawn strategy", () => {
     expect(descriptor.env.SENPI_CODING_AGENT_SESSION_DIR).toBe(resolveChildSessionDir(baseSpec.state_dir, baseSpec.task_id))
     expect(descriptor.args).toContain("/tmp/rubato-member.js")
   })
+
+  test("#given no executable #when building with default resolver #then rpc-entry is stock Pi not Senpi", () => {
+    const previous = process.env.RUBATO_PI_SDK
+    process.env.RUBATO_PI_SDK = "/tmp/rubato-pi-candidate-3bd2ec525"
+    const descriptor = buildRpcSpawn(baseSpec, {
+      isBunBinary: false,
+      execPath: "/usr/bin/node",
+      platform: "linux",
+      parentEnv: { RUBATO_PI_SDK: "/tmp/rubato-pi-candidate-3bd2ec525" },
+      ...noExecutable,
+    })
+    if (previous === undefined) delete process.env.RUBATO_PI_SDK
+    else process.env.RUBATO_PI_SDK = previous
+    expect(descriptor.command).toBe("/usr/bin/node")
+    expect(descriptor.args[0].endsWith("/dist/rpc-entry.js")).toBe(true)
+    expect(descriptor.args[0].includes("rubato-pi-candidate-3bd2ec525") || descriptor.args[0].includes("pi-coding-agent")).toBe(true)
+    expect(descriptor.args[0].includes("@code-yeongyu")).toBe(false)
+    expect(descriptor.args[0].includes("senpi")).toBe(false)
+  })
 })

@@ -1,4 +1,6 @@
-import { defineTool, type ToolDefinition } from "@code-yeongyu/senpi"
+import type { ToolDefinition } from "@code-yeongyu/senpi"
+
+import { defineTool } from "../../pi-sdk/host-runtime.ts"
 
 import { createSenpiAgentHandle } from "../host/senpi-agent-host"
 import { defaultResolveCallerSessionId } from "./caller-session"

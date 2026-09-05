@@ -5,6 +5,7 @@
     "": {
       "name": "rubato",
       "dependencies": {
+        "@bufbuild/protobuf": "2.14.0",
         "diff": "^9.0.0",
       },
       "devDependencies": {
@@ -1746,7 +1747,25 @@
 
     "@earendil-works/pi-ai/typebox": ["typebox@1.3.18", "", {}, "sha512-/wYPoDqxWZSxV/XD8Eskzr3YluXC9CaWJOuUYMkj+lLVLkyeEIQKzHvMuS/IRc3OLTIBC32LAtHgXo/WFEOMHQ=="],
 
+    "@rubato/ast-grep-mcp/@rubato/mcp-stdio-core": ["@rubato/mcp-stdio-core@file:packages/mcp-stdio-core", { "devDependencies": { "bun-types": "1.4.0" } }],
+
+    "@rubato/live-cli/@rubato/remote-protocol": ["@rubato/remote-protocol@file:packages/rubato-remote-protocol", { "devDependencies": { "bun-types": "1.4.0" } }],
+
+    "@rubato/lsp-daemon/@rubato/lsp-core": ["@rubato/lsp-core@file:packages/lsp-core", { "dependencies": { "@rubato/mcp-stdio-core": "workspace:*" } }],
+
+    "@rubato/lsp-daemon/@rubato/mcp-stdio-core": ["@rubato/mcp-stdio-core@file:packages/mcp-stdio-core", { "devDependencies": { "bun-types": "1.4.0" } }],
+
     "@rubato/lsp-daemon/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
+
+    "@rubato/remote-hub/@rubato/remote-protocol": ["@rubato/remote-protocol@file:packages/rubato-remote-protocol", { "devDependencies": { "bun-types": "1.4.0" } }],
+
+    "@rubato/remote-hub/@rubato/terminal-bridge": ["@rubato/terminal-bridge@file:packages/rubato-terminal-bridge", { "devDependencies": { "@types/node": "26.2.0", "bun-types": "1.4.0" }, "optionalDependencies": { "node-pty": "1.1.0" } }],
+
+    "@rubato/remote-web/@rubato/remote-protocol": ["@rubato/remote-protocol@file:packages/rubato-remote-protocol", { "devDependencies": { "bun-types": "1.4.0" } }],
+
+    "@rubato/runtime/@rubato/lsp-core": ["@rubato/lsp-core@file:packages/lsp-core", { "dependencies": { "@rubato/mcp-stdio-core": "workspace:*" } }],
+
+    "@rubato/runtime/@rubato/mcp-stdio-core": ["@rubato/mcp-stdio-core@file:packages/mcp-stdio-core", { "devDependencies": { "bun-types": "1.4.0" } }],
 
     "@tailwindcss/node/lightningcss": ["lightningcss@1.32.0", "", { "dependencies": { "detect-libc": "^2.0.3" }, "optionalDependencies": { "lightningcss-android-arm64": "1.32.0", "lightningcss-darwin-arm64": "1.32.0", "lightningcss-darwin-x64": "1.32.0", "lightningcss-freebsd-x64": "1.32.0", "lightningcss-linux-arm-gnueabihf": "1.32.0", "lightningcss-linux-arm64-gnu": "1.32.0", "lightningcss-linux-arm64-musl": "1.32.0", "lightningcss-linux-x64-gnu": "1.32.0", "lightningcss-linux-x64-musl": "1.32.0", "lightningcss-win32-arm64-msvc": "1.32.0", "lightningcss-win32-x64-msvc": "1.32.0" } }, "sha512-NXYBzinNrblfraPGyrbPoD19C1h9lfI/1mzgWYvXUTe414Gz/X1FD2XBZSZM7rRTrMA8JL3OtAaGifrIKhQ5yQ=="],
 
@@ -1829,6 +1848,10 @@
     "whatwg-encoding/iconv-lite": ["iconv-lite@0.6.3", "", { "dependencies": { "safer-buffer": ">= 2.1.2 < 3.0.0" } }, "sha512-4fCk79wshMdzMp2rH06qWrJE4iolqLhCUH+OiuIgU++RB0+94NlDL81atO7GX55uUKueo0txHNtvEyI6D7WdMw=="],
 
     "@code-yeongyu/senpi/jsdom/whatwg-url": ["whatwg-url@17.1.0", "", { "dependencies": { "@exodus/bytes": "^1.15.1", "tr46": "^6.0.0", "webidl-conversions": "^8.0.1" } }, "sha512-3GeworPmc2ZfEEHP7lEbUfBX/L75wdEsi0rLNhXcXxnoN5jyq0SL5gCy06SGW2cyTIZdTvWIDQNQoza++vKeaw=="],
+
+    "@rubato/lsp-daemon/@rubato/lsp-core/@rubato/mcp-stdio-core": ["@rubato/mcp-stdio-core@workspace:packages/mcp-stdio-core"],
+
+    "@rubato/runtime/@rubato/lsp-core/@rubato/mcp-stdio-core": ["@rubato/mcp-stdio-core@workspace:packages/mcp-stdio-core"],
 
     "@tailwindcss/node/lightningcss/lightningcss-android-arm64": ["lightningcss-android-arm64@1.32.0", "", { "os": "android", "cpu": "arm64" }, "sha512-YK7/ClTt4kAK0vo6w3X+Pnm0D2cf2vPHbhOXdoNti1Ga0al1P4TBZhwjATvjNwLEBCnKvjJc2jQgHXH0NEwlAg=="],
 

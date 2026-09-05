@@ -1,0 +1,383 @@
+--- a/dist/modes/interactive/interactive-mode.js
++++ b/dist/modes/interactive/interactive-mode.js
+@@ -7,7 +7,7 @@
+ import * as os from "node:os";
+ import * as path from "node:path";
+ import * as TuiLayouts from "@earendil-works/pi-tui";
+-import { CombinedAutocompleteProvider, Container, fuzzyFilter, getCapabilities, hyperlink, Markdown, matchesKey, ProcessTerminal, Spacer, setKeybindings, Text, TruncatedText, TuiAltScreen, TuiMainScreen, visibleWidth, } from "@earendil-works/pi-tui";
++import { CombinedAutocompleteProvider, Container, fuzzyFilter, getCapabilities, hyperlink, Markdown, matchesKey, outerKittyGraphicsMode, ProcessTerminal, Spacer, sanitizeTerminalLabel, setCapabilityOverrides, setKeybindings, Text, TruncatedText, TuiAltScreen, TuiMainScreen, visibleWidth, } from "@earendil-works/pi-tui";
+ import chalk from "chalk";
+ import { spawn, spawnSync } from "child_process";
+ import { APP_NAME, APP_TITLE, CONFIG_DIR_NAME, getAgentDir, getAuthPath, getDebugLogPath, getDocsPath, getShareViewerUrl, VERSION, } from "../../config.js";
+@@ -31,6 +31,7 @@
+ import { copyToClipboard, readClipboardText } from "../../utils/clipboard.js";
+ import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
+ import { parseGitUrl } from "../../utils/git.js";
++import { processImage } from "../../utils/image-process.js";
+ import { openBrowser } from "../../utils/open-browser.js";
+ import { getCwdRelativePath } from "../../utils/paths.js";
+ import { getPiUserAgent } from "../../utils/pi-user-agent.js";
+@@ -53,6 +54,17 @@
+ import { ExtensionInputComponent } from "./components/extension-input.js";
+ import { ExtensionSelectorComponent } from "./components/extension-selector.js";
+ import { FooterComponent, formatTokens } from "./components/footer.js";
++import { DEFAULT_TAIL_BUDGET, DEFAULT_WARM_CHUNK_SIZE, ProgressiveTranscriptContainer, } from "./components/progressive-transcript-container.js";
++import { classifyEditorInput, ShortcutOverlay, shouldShowShortcutOverlay } from "./components/shortcut-overlay.js";
++import { ToolGroupComponent } from "./components/tool-group.js";
++import { TurnWorkSummaryComponent } from "./components/turn-work-summary.js";
++import { GrokChrome } from "./grok/chrome.js";
++import { WorkingTipCache } from "./tips/working-tip.js";
++import { transferEditorContent, expandSubmittedText } from "./editor-paste-transfer.js";
++import { dispatchInternalAction } from "./internal-actions.js";
++import { DEFAULT_SMOOTH_FPS, StreamingRevealController } from "./streaming-reveal.js";
++import { buildTmuxSetupWarning } from "./tmux-setup.js";
++import { largeSessionWorkingStatusInterval } from "./working-status.js";
+ import { formatKeyText, keyDisplayText, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.js";
+ import { LoginDialogComponent } from "./components/login-dialog.js";
+ import { createMermaidMarkdownTransformer } from "./components/mermaid.js";
+@@ -174,7 +186,10 @@
+         return new TuiAltScreen(terminal, options.showHardwareCursor, options.logDirectory, {
+             searchMatchStyle: (text) => theme.underline(styleSearchMatch(text)),
+             searchCurrentMatchStyle: (text) => theme.bold(theme.inverse(styleSearchMatch(text))),
+-            openUrl: openBrowser,
++            openUrl: (url) => {
++                if (!dispatchInternalAction(url))
++                    openBrowser(url);
++            },
+             onRightClickPaste: options.onRightClickPaste,
+             copySelection: async (text) => {
+                 try {
+@@ -360,7 +375,14 @@
+         this.ui.setClearOnShrink(this.settingsManager.getClearOnShrink());
+         this.headerContainer = new Container();
+         this.loadedResourcesContainer = new Container();
+-        this.chatContainer = new Container();
++        this.pendingImages = new Map();
++        this.streamingReveal = new StreamingRevealController({
++            getSmoothStreaming: () => this.settingsManager.getSmoothStreaming?.() ?? true,
++            getSmoothStreamingFps: () => this.settingsManager.getSmoothStreamingFps?.() ?? DEFAULT_SMOOTH_FPS,
++            getHideThinkingBlock: () => this.hideThinkingBlock,
++            requestRender: () => this.ui.requestRender(),
++        });
++        this.chatContainer = new ProgressiveTranscriptContainer({ tailBudget: DEFAULT_TAIL_BUDGET, warmChunkSize: DEFAULT_WARM_CHUNK_SIZE });
+         this.documentContainer = new Container();
+         this.documentContainer.addChild(this.headerContainer);
+         this.documentContainer.addChild(this.loadedResourcesContainer);
+@@ -379,6 +401,12 @@
+         });
+         this.editor = this.defaultEditor;
+         this.editorContainer = new Container();
++        this.chrome = options.chrome === "grok" ? new GrokChrome() : options.chrome;
++        this.turnWorkingTip = new WorkingTipCache();
++        this.lastEditorText = "";
++        this.lastInputWasPaste = false;
++        this.interactiveControlSurface = this.createInteractiveControlSurface();
++        this.session.extensionRunner?.setInteractiveControl?.(this.interactiveControlSurface);
+         this.editorContainer.addChild(this.editor);
+         this.footerDataProvider = new FooterDataProvider(this.sessionManager.getCwd());
+         this.footer = new FooterComponent(this.session, this.footerDataProvider);
+@@ -1713,6 +1741,9 @@
+         this.renderWidgets();
+     }
+     resetExtensionUI() {
++        if (this.standardUiRequest)
++            this.standardUiRequest.respond(undefined, "reset");
++        this.hideShortcutOverlay?.();
+         if (this.extensionSelector) {
+             this.hideExtensionSelector();
+         }
+@@ -1923,26 +1954,29 @@
+     /**
+      * Show a selector for extensions.
+      */
+-    showExtensionSelector(title, options, opts) {
++    showExtensionSelector(title, options, opts, bridgeRequest) {
++        if (opts?.signal?.aborted)
++            return Promise.resolve(undefined);
+         return new Promise((resolve) => {
+-            if (opts?.signal?.aborted) {
+-                resolve(undefined);
+-                return;
+-            }
+-            const onAbort = () => {
++            let settled = false;
++            let requestId;
++            const onAbort = () => finish(undefined, "abort");
++            const finish = (value, origin = "terminal") => {
++                if (settled)
++                    return;
++                settled = true;
++                opts?.signal?.removeEventListener("abort", onAbort);
+                 this.hideExtensionSelector();
+-                resolve(undefined);
++                this.finishStandardUiRequest(requestId, origin);
++                resolve(value);
+             };
+             opts?.signal?.addEventListener("abort", onAbort, { once: true });
+-            this.extensionSelector = new ExtensionSelectorComponent(title, options, (option) => {
+-                opts?.signal?.removeEventListener("abort", onAbort);
+-                this.hideExtensionSelector();
+-                resolve(option);
+-            }, () => {
+-                opts?.signal?.removeEventListener("abort", onAbort);
+-                this.hideExtensionSelector();
+-                resolve(undefined);
+-            }, { tui: this.ui, timeout: opts?.timeout, onToggleToolsExpanded: () => this.toggleToolOutputExpansion() });
++            const request = bridgeRequest ?? { kind: "select", title, options };
++            requestId = this.openStandardUiRequest(request, (value, origin) => {
++                const selected = request.kind === "confirm" && typeof value === "boolean" ? (value ? "Yes" : "No") : value;
++                finish(selected, origin);
++            });
++            this.extensionSelector = new ExtensionSelectorComponent(title, options, (value) => finish(value), () => finish(undefined), { tui: this.ui, timeout: opts?.timeout, onToggleToolsExpanded: () => this.toggleToolOutputExpansion() });
+             this.disposeActiveSelector();
+             this.editorContainer.clear();
+             this.editorContainer.addChild(this.extensionSelector);
+@@ -2046,10 +2080,162 @@
+      * Set a custom editor component from an extension.
+      * Pass undefined to restore the default editor.
+      */
++    reconcilePendingImages(order) {
++        if (this.pendingImages.size === 0)
++            return;
++        const next = new Map();
++        for (const [index, id] of order.entries()) {
++            const image = this.pendingImages.get(id);
++            if (image)
++                next.set(index + 1, image);
++        }
++        this.pendingImages = next;
++    }
++    attachToolComponent(toolName, component) {
++        if (!ToolGroupComponent.canGroup(toolName, component.args)) {
++            this.activeToolGroup = undefined;
++            this.chatContainer.addChild(component);
++            return;
++        }
++        if (!this.activeToolGroup) {
++            this.activeToolGroup = new ToolGroupComponent(this.ui);
++            this.activeToolGroup.setExpanded(this.toolOutputExpanded);
++            this.chatContainer.addChild(this.activeToolGroup);
++            this.turnWorkSummary?.trackToolGroup?.(this.activeToolGroup);
++        }
++        this.activeToolGroup.addTool(component);
++    }
++    closeToolGroup() {
++        this.activeToolGroup = undefined;
++    }
++    startTurnWorkSummary() {
++        if (this.turnWorkSummary)
++            return this.turnWorkSummary;
++        this.turnWorkSummary = new TurnWorkSummaryComponent(this.ui);
++        this.chatContainer.addChild(this.turnWorkSummary);
++        return this.turnWorkSummary;
++    }
++    createInteractiveControlSurface() {
++        const host = this;
++        return Object.freeze({
++            async submitInput(text, options = {}) {
++                const normalized = text.trim();
++                if (!normalized && !(options.images?.length))
++                    return { accepted: false, reason: "empty" };
++                const commandName = normalized.match(/^\/([^\s]+)/)?.[1];
++                if (commandName) {
++                    const descriptor = host.listInteractiveCommands().find((item) => item.name === commandName);
++                    if (descriptor?.remoteMode === "native-action")
++                        return { accepted: false, reason: "native_action_required" };
++                    if (descriptor?.remoteMode === "terminal-only")
++                        return { accepted: false, reason: "terminal_required" };
++                }
++                const inputId = options.clientInputId ?? crypto.randomUUID();
++                await host.session.prompt(text, {
++                    ...(options.images?.length ? { images: options.images } : {}),
++                    source: options.source ?? "external",
++                });
++                return { accepted: true, inputId, disposition: host.session.isStreaming ? "queued-follow-up" : "started" };
++            },
++            abortAgent: () => host.session.abort(),
++            reload: () => host.handleReloadCommand(),
++            shutdown: () => host.shutdown(),
++            listCommands: () => host.listInteractiveCommands(),
++            snapshot: () => host.getInteractiveSnapshot(),
++            respondToUiRequest: (requestId, value) => host.respondToStandardUiRequest(requestId, value),
++        });
++    }
++    listInteractiveCommands() {
++        const builtins = BUILTIN_SLASH_COMMANDS.map((command) => ({ ...command, category: "builtin" }));
++        const extensions = (this.session.extensionRunner?.getRegisteredCommands?.() ?? []).map((command) => ({
++            name: command.invocationName,
++            description: command.description,
++            category: "extension",
++            remoteMode: "direct",
++        }));
++        return [...builtins, ...extensions];
++    }
++    getInteractiveSnapshot() {
++        const session = this.session;
++        const model = session.model;
++        return {
++            sessionFile: session.sessionFile,
++            sessionName: session.sessionManager?.getSessionName?.(),
++            model: model ? { provider: model.provider, id: model.id, name: model.name } : undefined,
++            thinkingLevel: session.thinkingLevel,
++            isStreaming: session.isStreaming,
++            uiRequest: this.standardUiRequest?.request,
++        };
++    }
++    openStandardUiRequest(request, respond) {
++        if (this.standardUiRequest)
++            this.standardUiRequest.respond(undefined, "replaced");
++        const id = crypto.randomUUID();
++        const enriched = { id, ...request };
++        this.standardUiRequest = { id, request: enriched, respond };
++        this.session.emitExtensionEvent?.("interactive.ui.request", enriched);
++        return id;
++    }
++    finishStandardUiRequest(requestId, origin) {
++        if (this.standardUiRequest?.id !== requestId)
++            return;
++        this.standardUiRequest = undefined;
++        this.session.emitExtensionEvent?.("interactive.ui.dismiss", { id: requestId, origin });
++    }
++    respondToStandardUiRequest(requestId, value) {
++        const pending = this.standardUiRequest;
++        if (!pending || pending.id !== requestId)
++            return false;
++        const { kind, options } = pending.request;
++        if (kind === "select" && (typeof value !== "string" || !options.includes(value)))
++            return false;
++        if (kind === "confirm" && typeof value !== "boolean")
++            return false;
++        if (kind === "input" && value !== undefined && typeof value !== "string")
++            return false;
++        pending.respond(value, "remote");
++        return true;
++    }
++    updateShortcutOverlay(nextText) {
++        const previousText = this.lastEditorText ?? "";
++        this.lastEditorText = nextText;
++        const inputKind = classifyEditorInput(previousText, nextText, this.lastInputWasPaste);
++        this.lastInputWasPaste = false;
++        if (shouldShowShortcutOverlay(previousText, nextText, inputKind)) {
++            if (!this.shortcutOverlay) {
++                this.shortcutOverlay = new ShortcutOverlay();
++                this.headerContainer.addChild(this.shortcutOverlay);
++                this.ui.requestRender();
++            }
++            return;
++        }
++        this.hideShortcutOverlay();
++    }
++    hideShortcutOverlay() {
++        if (!this.shortcutOverlay)
++            return;
++        this.headerContainer.removeChild(this.shortcutOverlay);
++        this.shortcutOverlay = undefined;
++        this.ui.requestRender();
++    }
++    subscribeImageMarkers(editor) {
++        if (!editor?.insertImageMarker)
++            return;
++        editor.onImageMarkersChanged = (order) => this.reconcilePendingImages(order);
++        editor.snapshotAttachmentState = () => new Map(this.pendingImages);
++        editor.restoreAttachmentState = (state) => {
++            if (!(state instanceof Map))
++                return;
++            this.pendingImages.clear();
++            for (const [key, image] of state)
++                this.pendingImages.set(key, image);
++        };
++    }
+     setCustomEditorComponent(factory) {
+         this.editorComponentFactory = factory;
+         // Save text from current editor before switching
+         const currentText = this.editor.getText();
++        const sourceEditor = this.editor;
+         this.disposeActiveSelector();
+         this.editorContainer.clear();
+         if (factory) {
+@@ -2058,8 +2244,10 @@
+             // Wire up callbacks from the default editor
+             newEditor.onSubmit = this.defaultEditor.onSubmit;
+             newEditor.onChange = this.defaultEditor.onChange;
+-            // Copy text from previous editor
+-            newEditor.setText(currentText);
++            const transferred = transferEditorContent(sourceEditor, newEditor);
++            if (!transferred.imageMarkersTransferred)
++                this.pendingImages.clear();
++            this.subscribeImageMarkers(newEditor);
+             // Copy appearance settings if supported
+             if (newEditor.borderColor !== undefined) {
+                 newEditor.borderColor = this.defaultEditor.borderColor;
+@@ -2099,8 +2287,11 @@
+         }
+         else {
+             // Restore default editor with text from custom editor
+-            this.defaultEditor.setText(currentText);
++            const transferred = transferEditorContent(sourceEditor, this.defaultEditor);
++            if (!transferred.imageMarkersTransferred)
++                this.pendingImages.clear();
+             this.editor = this.defaultEditor;
++            this.subscribeImageMarkers(this.editor);
+         }
+         this.editorContainer.addChild(this.editor);
+         this.ui.setFocus(this.editor);
+@@ -2274,7 +2465,9 @@
+             if (wasBashMode !== this.isBashMode) {
+                 this.updateEditorBorderColor();
+             }
++            this.updateShortcutOverlay(text);
+         };
++        this.subscribeImageMarkers(this.defaultEditor);
+         // Handle clipboard paste (triggered on Ctrl+V). Images are attached by path;
+         // otherwise, paste plain text from the system clipboard.
+         this.defaultEditor.onPasteImage = () => {
+@@ -2306,6 +2499,19 @@
+                 const fileName = `pi-clipboard-${crypto.randomUUID()}.${ext}`;
+                 const filePath = path.join(tmpDir, fileName);
+                 fs.writeFileSync(filePath, Buffer.from(image.bytes));
++                if (this.editor.insertImageMarker) {
++                    const processed = await processImage(image.bytes, image.mimeType, {
++                        autoResizeImages: this.settingsManager.getImageAutoResize(),
++                    });
++                    if (processed.ok) {
++                        const id = this.editor.insertImageMarker();
++                        this.pendingImages.set(id, { type: "image", data: processed.data, mimeType: processed.mimeType });
++                        this.ui.requestRender();
++                        return;
++                    }
++                    this.showStatus?.(processed.message);
++                    return;
++                }
+                 this.editor.insertTextAtCursor?.(filePath);
+                 this.ui.requestRender();
+                 return;
+@@ -2569,17 +2775,18 @@
+                     this.ui.requestRender();
+                 }
+                 else if (event.message.role === "assistant") {
++                    this.startTurnWorkSummary();
+                     this.streamingComponent = new AssistantMessageComponent(undefined, this.hideThinkingBlock, this.getMarkdownThemeWithSettings(), this.hiddenThinkingLabel, this.outputPad, this.getMarkdownTransformers());
+                     this.streamingMessage = event.message;
+                     this.chatContainer.addChild(this.streamingComponent);
+-                    this.streamingComponent.updateContent(this.streamingMessage, true);
++                    this.streamingReveal.begin(this.streamingComponent, this.streamingMessage);
+                     this.ui.requestRender();
+                 }
+                 break;
+             case "message_update":
+                 if (this.streamingComponent && event.message.role === "assistant") {
+                     this.streamingMessage = event.message;
+-                    this.streamingComponent.updateContent(this.streamingMessage, true);
++                    this.streamingReveal.setTarget(this.streamingMessage);
+                     for (const content of this.streamingMessage.content) {
+                         if (content.type === "toolCall") {
+                             if (!this.pendingTools.has(content.id)) {
+@@ -2588,7 +2795,7 @@
+                                     imageWidthCells: this.settingsManager.getImageWidthCells(),
+                                 }, this.getRegisteredToolDefinition(content.name), this.ui, this.sessionManager.getCwd());
+                                 component.setExpanded(this.toolOutputExpanded);
+-                                this.chatContainer.addChild(component);
++                                this.attachToolComponent(content.name, component);
+                                 this.pendingTools.set(content.id, component);
+                             }
+                             else {

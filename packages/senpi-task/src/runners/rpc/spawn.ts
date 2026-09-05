@@ -1,17 +1,14 @@
 import { existsSync, realpathSync, statSync } from "node:fs"
-import { createRequire } from "node:module"
 import { basename, delimiter, dirname, isAbsolute, join, resolve, sep } from "node:path"
-import { fileURLToPath } from "node:url"
 
+import { stockRpcEntry } from "../../pi-sdk/resolve-stock.ts"
 import type { RpcRunnerSpec } from "../types"
 import { asSenpiThinkingLevel } from "../../senpi/thinking-level"
 import { MEMBER_EXTENSION_BUNDLE_NAME, MEMBER_PROCESS_ENV_NAMES } from "../../team/member-extension/identity"
 
-const require = createRequire(import.meta.url)
-
 const SESSION_DIR_ENV = "SENPI_CODING_AGENT_SESSION_DIR"
 const SENPI_BIN_ENV = "SENPI_BIN"
-const RPC_ENTRY_SPECIFIER = "@code-yeongyu/senpi/rpc-entry"
+const PI_BIN_ENV = "PI_BIN"
 
 export type RpcSpawnSpec = RpcRunnerSpec & {
   readonly memberEnv?: Readonly<Record<string, string>>
@@ -88,7 +85,7 @@ function canonicalExecutable(candidate: string): string | null {
  */
 export function resolveSenpiExecutable(runtime: RpcSpawnRuntime): string | null {
   const binaryName = senpiBinaryName(runtime.platform)
-  const override = runtime.parentEnv[SENPI_BIN_ENV]?.trim()
+  const override = (runtime.parentEnv[PI_BIN_ENV] ?? runtime.parentEnv[SENPI_BIN_ENV])?.trim()
   if (override !== undefined && override.length > 0) {
     if (override.includes("/") || override.includes(sep) || isAbsolute(override)) {
       return canonicalExecutable(override)
@@ -107,6 +104,8 @@ function normalizeSenpiLauncher(executable: string, runtime: RpcSpawnRuntime): S
   }
   const shimDir = dirname(executable)
   const cliCandidates = [
+    join(shimDir, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "cli.js"),
+    join(shimDir, "..", "@earendil-works", "pi-coding-agent", "dist", "cli.js"),
     join(shimDir, "node_modules", "@code-yeongyu", "senpi", "dist", "cli.js"),
     join(shimDir, "..", "@code-yeongyu", "senpi", "dist", "cli.js"),
   ]
@@ -160,15 +159,8 @@ export function buildModelCatalogArgs(spec: RpcRunnerSpec): readonly string[] {
   return args
 }
 
-function resolveRpcEntrySpecifier(): string {
-  for (const modulesDir of require.resolve.paths(RPC_ENTRY_SPECIFIER) ?? []) {
-    const candidate = join(modulesDir, "@code-yeongyu", "senpi", "dist", "rpc-entry.js")
-    if (existsSync(candidate)) return candidate
-  }
-  if (typeof Bun !== "undefined") {
-    return Bun.resolveSync(RPC_ENTRY_SPECIFIER, dirname(fileURLToPath(import.meta.url)))
-  }
-  return require.resolve(RPC_ENTRY_SPECIFIER)
+function resolveRpcEntrySpecifier(env: NodeJS.ProcessEnv = process.env): string {
+  return stockRpcEntry(undefined, env)
 }
 
 function defaultRuntime(): RpcSpawnRuntime {
@@ -177,7 +169,7 @@ function defaultRuntime(): RpcSpawnRuntime {
     execPath: process.execPath,
     platform: process.platform,
     parentEnv: process.env,
-    resolveRpcEntry: resolveRpcEntrySpecifier,
+    resolveRpcEntry: () => resolveRpcEntrySpecifier(process.env),
   }
 }
 

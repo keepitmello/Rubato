@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto"
 
-import { defineTool, type AgentToolResult, type ToolDefinition } from "@code-yeongyu/senpi"
+import type { AgentToolResult, ToolDefinition } from "@code-yeongyu/senpi"
+
+import { defineTool } from "../../pi-sdk/host-runtime.ts"
 import type { TeamModeConfig } from "@rubato/team-core/config"
 import { sendMessage } from "@rubato/team-core/team-mailbox"
 import { Type, type Static } from "typebox"

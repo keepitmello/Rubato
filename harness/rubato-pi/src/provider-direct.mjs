@@ -9,7 +9,7 @@
 import { pathToFileURL } from "node:url";
 import { withClaudeSetupToken } from "./anthropic-setup-token.mjs";
 import { cursorDirectProvider } from "./cursor-route.mjs";
-import { senpiNested } from "./engine-paths.mjs";
+import { resolvePiAiFile } from "./pi-provider-bridge.mjs";
 import { ensureKiroSidecar, kiroDirectProvider, withKiroSidecarEnsure } from "./kiro-route.mjs";
 import { antigravityDirectProvider } from "./antigravity-route.mjs";
 import {
@@ -175,7 +175,7 @@ export function daybreakModels(nativeModels) {
 }
 
 async function loadPinnedFactory(file, exportName) {
-  const module = await import(pathToFileURL(senpiNested(`@earendil-works/pi-ai/dist/providers/${file}`)).href);
+  const module = await import(pathToFileURL(resolvePiAiFile(`dist/providers/${file}`)).href);
   const factory = module[exportName];
   if (typeof factory !== "function") throw new Error(`pinned pi-ai has no ${exportName} in providers/${file}`);
   return factory;

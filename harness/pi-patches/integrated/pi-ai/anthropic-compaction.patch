@@ -1,0 +1,196 @@
+--- a/dist/api/anthropic-messages.js
++++ b/dist/api/anthropic-messages.js
+@@ -36,6 +36,74 @@
+         cacheControl: { type: "ephemeral", ...(ttl && { ttl }) },
+     };
+ }
++
++function isRecord(value) {
++    return typeof value === "object" && value !== null;
++}
++function applyAnthropicCompactionUsage(usage, rawUsage) {
++    const iterations = rawUsage?.iterations;
++    if (!Array.isArray(iterations))
++        return;
++    const compaction = iterations.find((it) => it && it.type === "compaction");
++    if (!compaction) {
++        delete usage.compaction;
++        return;
++    }
++    usage.compaction = {
++        input: compaction.input_tokens || 0,
++        output: compaction.output_tokens || 0,
++        cacheRead: compaction.cache_read_input_tokens || 0,
++        cacheWrite: compaction.cache_creation_input_tokens || 0,
++        cacheWrite1h: compaction.cache_creation?.ephemeral_1h_input_tokens || 0,
++    };
++}
++const ANTHROPIC_SERVER_COMPACTION_MODEL_IDS = new Set(["claude-opus-5", "claude-sonnet-5", "claude-fable-5-1"]);
++function supportsAnthropicServerCompactionModel(model) {
++    return model?.provider === "anthropic" && ANTHROPIC_SERVER_COMPACTION_MODEL_IDS.has(model.id);
++}
++function addAnthropicCompactionCost(model, usage) {
++    const compaction = usage.compaction;
++    if (!compaction)
++        return;
++    const extra = {
++        input: compaction.input,
++        output: compaction.output,
++        cacheRead: compaction.cacheRead,
++        cacheWrite: compaction.cacheWrite,
++        cacheWrite1h: compaction.cacheWrite1h || 0,
++        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
++    };
++    calculateCost(model, extra);
++    usage.cost.input += extra.cost.input;
++    usage.cost.output += extra.cost.output;
++    usage.cost.cacheRead += extra.cost.cacheRead;
++    usage.cost.cacheWrite += extra.cost.cacheWrite;
++    usage.cost.total += extra.cost.total;
++}
++function lastReplayableAnthropicCompactionCut(messages, model) {
++    if (!Array.isArray(messages) || !supportsAnthropicServerCompactionModel(model))
++        return undefined;
++    for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex--) {
++        const msg = messages[messageIndex];
++        if (msg.role !== "assistant" || !Array.isArray(msg.content))
++            continue;
++        if (msg.provider !== model.provider || msg.api !== model.api)
++            continue;
++        for (let blockIndex = msg.content.length - 1; blockIndex >= 0; blockIndex--) {
++            const block = msg.content[blockIndex];
++            if (block?.type !== "providerNative" || block.subtype !== "compaction" || !isRecord(block.raw) || block.raw.type !== "compaction")
++                continue;
++            if (typeof block.raw.content !== "string" || block.raw.content.length === 0)
++                continue;
++            return { messageIndex, blockIndex };
++        }
++    }
++    return undefined;
++}
++function shouldOmitThinkingBeforeCompaction(cut, messageIndex, blockIndex) {
++    return !!cut && (messageIndex < cut.messageIndex || (messageIndex === cut.messageIndex && blockIndex < cut.blockIndex));
++}
++
+ // Stealth mode: Mimic Claude Code's tool naming exactly
+ const claudeCodeVersion = "2.1.75";
+ // Claude Code 2.x tool names (canonical casing)
+@@ -403,7 +471,9 @@
+                     // Anthropic doesn't provide total_tokens, compute from components
+                     output.usage.totalTokens =
+                         output.usage.input + output.usage.output + output.usage.cacheRead + output.usage.cacheWrite;
++                    applyAnthropicCompactionUsage(output.usage, event.message.usage);
+                     calculateCost(model, output.usage);
++                    addAnthropicCompactionCost(model, output.usage);
+                 }
+                 else if (event.type === "content_block_start") {
+                     if (event.content_block.type === "text") {
+@@ -450,6 +520,19 @@
+                         output.content.push(block);
+                         stream.push({ type: "toolcall_start", contentIndex: output.content.length - 1, partial: output });
+                     }
++                    else if (event.content_block.type === "compaction") {
++                        const startContent = event.content_block.content;
++                        const block = {
++                            type: "providerNative",
++                            subtype: "compaction",
++                            raw: {
++                                type: "compaction",
++                                content: typeof startContent === "string" || startContent === null ? startContent : null,
++                            },
++                            index: event.index,
++                        };
++                        output.content.push(block);
++                    }
+                 }
+                 else if (event.type === "content_block_delta") {
+                     if (event.delta.type === "text_delta") {
+@@ -500,6 +583,13 @@
+                             block.thinkingSignature += event.delta.signature;
+                         }
+                     }
++                    else if (event.delta.type === "compaction_delta") {
++                        const index = blocks.findIndex((b) => b.index === event.index);
++                        const block = blocks[index];
++                        if (block && block.type === "providerNative" && block.subtype === "compaction" && isRecord(block.raw)) {
++                            block.raw.content = event.delta.content ?? event.delta.summary ?? block.raw.content;
++                        }
++                    }
+                 }
+                 else if (event.type === "content_block_stop") {
+                     const index = blocks.findIndex((b) => b.index === event.index);
+@@ -572,7 +662,9 @@
+                     // Anthropic doesn't provide total_tokens, compute from components
+                     output.usage.totalTokens =
+                         output.usage.input + output.usage.output + output.usage.cacheRead + output.usage.cacheWrite;
++                    applyAnthropicCompactionUsage(output.usage, event.usage);
+                     calculateCost(model, output.usage);
++                    addAnthropicCompactionCost(model, output.usage);
+                 }
+             }
+             if (options?.signal?.aborted) {
+@@ -728,7 +820,7 @@
+     const deferredToolNames = new Set(deferredTools.map((tool) => normalizeToolName(tool.name)));
+     const params = {
+         model: model.id,
+-        messages: convertMessages(transformedMessages, isOAuthToken, cacheControl, compat.allowEmptySignature, deferredToolNames, normalizeToolName),
++        messages: convertMessages(transformedMessages, isOAuthToken, cacheControl, compat.allowEmptySignature, deferredToolNames, normalizeToolName, model),
+         max_tokens: options?.maxTokens ?? model.maxTokens,
+         stream: true,
+     };
+@@ -847,9 +939,10 @@
+                 : convertedContent,
+     };
+ }
+-function convertMessages(transformedMessages, isOAuthToken, cacheControl, allowEmptySignature = false, deferredToolNames = new Set(), normalizeToolName = (name) => name) {
++function convertMessages(transformedMessages, isOAuthToken, cacheControl, allowEmptySignature = false, deferredToolNames = new Set(), normalizeToolName = (name) => name, model) {
+     const params = [];
+     const loadedToolNames = new Set();
++    const compactionCut = lastReplayableAnthropicCompactionCut(transformedMessages, model);
+     for (let i = 0; i < transformedMessages.length; i++) {
+         const msg = transformedMessages[i];
+         if (msg.role === "user") {
+@@ -896,7 +989,8 @@
+         }
+         else if (msg.role === "assistant") {
+             const blocks = [];
+-            for (const block of msg.content) {
++            for (let blockIndex = 0; blockIndex < msg.content.length; blockIndex++) {
++                const block = msg.content[blockIndex];
+                 if (block.type === "text") {
+                     if (block.text.trim().length === 0)
+                         continue;
+@@ -906,6 +1000,8 @@
+                     });
+                 }
+                 else if (block.type === "thinking") {
++                    if (shouldOmitThinkingBeforeCompaction(compactionCut, i, blockIndex))
++                        continue;
+                     // Redacted thinking: pass the opaque payload back as redacted_thinking
+                     if (block.redacted) {
+                         blocks.push({
+@@ -948,6 +1044,16 @@
+                         name: isOAuthToken ? toClaudeCodeName(block.name) : block.name,
+                         input: block.arguments ?? {},
+                     });
++                }
++                else if (block.type === "providerNative") {
++                    const isCompaction = block.subtype === "compaction" && isRecord(block.raw) && block.raw.type === "compaction";
++                    const sameAnthropicApi = msg.provider === model.provider && msg.api === model.api && supportsAnthropicServerCompactionModel(model);
++                    if (isCompaction) {
++                        const content = block.raw.content;
++                        if (typeof content === "string" && content.length > 0 && sameAnthropicApi) {
++                            blocks.push({ type: "compaction", content });
++                        }
++                    }
+                 }
+             }
+             if (blocks.length === 0)
+@@ -1057,4 +1163,5 @@
+             throw new Error(`Unhandled stop reason: ${reason}`);
+     }
+ }
+-//# sourceMappingURL=anthropic-messages.js.map
+\ No newline at end of file
++//# sourceMappingURL=anthropic-messages.js.map
++globalThis[Symbol.for("rubato.anthropicServerCompaction.adapter")] = true;

@@ -1,0 +1,227 @@
+--- a/dist/core/agent-session.d.ts
++++ b/dist/core/agent-session.d.ts
+@@ -45,6 +45,8 @@
+     willRetry: boolean;
+ } | {
+     type: "agent_settled";
++} | {
++    type: "session_abort";
+ } | {
+     type: "queue_update";
+     steering: readonly string[];
+--- a/dist/core/agent-session.js
++++ b/dist/core/agent-session.js
+@@ -12,6 +12,7 @@
+  *
+  * Modes use this class and add their own I/O layer on top.
+  */
++import { randomUUID } from "node:crypto";
+ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+ import { basename, dirname } from "node:path";
+ import { contentText } from "@earendil-works/pi-ai";
+@@ -150,6 +151,7 @@
+         this._excludedToolNames = config.excludedToolNames ? new Set(config.excludedToolNames) : undefined;
+         this._baseToolsOverride = config.baseToolsOverride;
+         this._sessionStartEvent = config.sessionStartEvent ?? { type: "session_start", reason: "startup" };
++        this._nextInputId = 0;
+         // Always subscribe to agent events for internal handling
+         // (session persistence, extensions, auto-compaction, retry logic)
+         this._unsubscribeAgent = this.agent.subscribe(this._handleAgentEvent);
+@@ -793,6 +795,16 @@
+         const expandPromptTemplates = options?.expandPromptTemplates ?? true;
+         const preflightResult = options?.preflightResult;
+         let messages;
++        let inputId;
++        const emitInputDisposition = async (disposition) => {
++            if (inputId === undefined)
++                return;
++            await this._extensionRunner.emit({
++                type: "input_disposition",
++                inputId,
++                disposition,
++            });
++        };
+         try {
+             // Handle extension commands first (execute immediately, even during streaming)
+             // Extension commands manage their own LLM interaction via pi.sendMessage()
+@@ -811,8 +823,10 @@
+             let currentText = text;
+             let currentImages = options?.images;
+             if (this._extensionRunner.hasHandlers("input")) {
+-                const inputResult = await this._extensionRunner.emitInput(currentText, currentImages, options?.source ?? "interactive", this.isStreaming ? options?.streamingBehavior : undefined);
++                inputId = randomUUID();
++                const inputResult = await this._extensionRunner.emitInput(currentText, currentImages, options?.source ?? "interactive", this.isStreaming ? options?.streamingBehavior : undefined, inputId);
+                 if (inputResult.action === "handled") {
++                    await emitInputDisposition("handled");
+                     preflightResult?.(true);
+                     return;
+                 }
+@@ -838,6 +852,7 @@
+                 else {
+                     await this._queueSteer(expandedText, currentImages);
+                 }
++                await emitInputDisposition("queued");
+                 preflightResult?.(true);
+                 return;
+             }
+@@ -907,8 +922,10 @@
+                 this._systemPromptOverride = undefined;
+                 this.agent.state.systemPrompt = this._baseSystemPrompt;
+             }
++            await emitInputDisposition("started");
+         }
+         catch (error) {
++            await emitInputDisposition("rejected");
+             preflightResult?.(false);
+             throw error;
+         }
+@@ -1166,8 +1183,25 @@
+      * Abort current operation and wait for agent to become idle.
+      */
+     async abort() {
++        // Senpi: streaming aborts are agent_end provenance; session_abort is only
++        // for gaps (retry backoff, compaction, or queued continuation). Stock has
++        // no AgentAbortProvenance / abortWillFollow flag — those gaps are uncovered.
++        const wasMidRun = this.isStreaming && this._retryAbortController === undefined;
++        const hadRetryBackoff = this._retryAbortController !== undefined;
++        const hadCompactionOrPending = !this.isStreaming && (this.isCompacting || this.pendingMessageCount > 0);
++        const shouldEmitAbort = !wasMidRun && (hadRetryBackoff || hadCompactionOrPending);
++        this.abortCompaction();
+         this.abortRetry();
+         this.agent.abort();
++        if (shouldEmitAbort) {
++            try {
++                await this._extensionRunner.emit({ type: "session_abort" });
++                this._emit({ type: "session_abort" });
++            }
++            catch {
++                // Extension runner may be torn down during RPC close — best-effort.
++            }
++        }
+         await this.waitForIdle();
+     }
+     async waitForIdle() {
+--- a/dist/core/extensions/index.d.ts
++++ b/dist/core/extensions/index.d.ts
+@@ -6,7 +6,7 @@
+ export { createExtensionRuntime, discoverAndLoadExtensions, loadExtensionFromFactory, loadExtensions, } from "./loader.ts";
+ export type { ExtensionErrorListener, ForkHandler, NavigateTreeHandler, NewSessionHandler, ShutdownHandler, SwitchSessionHandler, } from "./runner.ts";
+ export { ExtensionRunner } from "./runner.ts";
+-export type { AfterProviderResponseEvent, AgentEndEvent, AgentSettledEvent, AgentStartEvent, AgentToolResult, AgentToolUpdateCallback, AppendEntryHandler, AppKeybinding, AutocompleteProviderFactory, BashToolCallEvent, BashToolResultEvent, BeforeAgentStartEvent, BeforeAgentStartEventResult, BeforeProviderHeadersEvent, BeforeProviderRequestEvent, BeforeProviderRequestEventResult, BuildSystemPromptOptions, CompactOptions, ContextEvent, ContextEventResult, ContextUsage, CustomToolCallEvent, CustomToolResultEvent, EditorFactory, EditToolCallEvent, EditToolResultEvent, EntryRenderer, EntryRenderOptions, ExecOptions, ExecResult, Extension, ExtensionActions, ExtensionAPI, ExtensionCommandContext, ExtensionCommandContextActions, ExtensionContext, ExtensionContextActions, ExtensionError, ExtensionEvent, ExtensionFactory, ExtensionFlag, ExtensionHandler, ExtensionMode, ExtensionRuntime, ExtensionShortcut, ExtensionUIContext, ExtensionUIDialogOptions, ExtensionWidgetOptions, FindToolCallEvent, FindToolResultEvent, GetActiveToolsHandler, GetAllToolsHandler, GetCommandsHandler, GetThinkingLevelHandler, GrepToolCallEvent, GrepToolResultEvent, InlineExtension, InputEvent, InputEventResult, InputSource, KeybindingsManager, LoadExtensionsResult, LsToolCallEvent, LsToolResultEvent, MarkdownTransformContext, MarkdownTransformer, MessageEndEvent, MessageRenderer, MessageRenderOptions, MessageStartEvent, MessageUpdateEvent, ModelSelectEvent, ModelSelectSource, ProjectTrustContext, ProjectTrustEvent, ProjectTrustEventDecision, ProjectTrustEventResult, ProjectTrustHandler, ProviderConfig, ProviderModelConfig, ReadToolCallEvent, ReadToolResultEvent, RegisteredCommand, RegisteredTool, ReplacedSessionContext, ResolvedCommand, ResourcesDiscoverEvent, ResourcesDiscoverResult, SendMessageHandler, SendUserMessageHandler, SessionBeforeCompactEvent, SessionBeforeCompactResult, SessionBeforeForkEvent, SessionBeforeForkResult, SessionBeforeReloadEvent, SessionBeforeReloadResult, SessionBeforeSwitchEvent, SessionBeforeSwitchResult, SessionBeforeTreeEvent, SessionBeforeTreeResult, ReloadVetoDecision, SessionCompactEvent, SessionEvent, SessionInfoChangedEvent, SessionShutdownEvent, SessionStartEvent, SessionTreeEvent, SetActiveToolsHandler, SetLabelHandler, SetModelHandler, SetThinkingLevelHandler, TerminalInputHandler, ToolCallEvent, ToolCallEventResult, ToolDefinition, ToolExecutionEndEvent, ToolExecutionMode, ToolExecutionStartEvent, ToolExecutionUpdateEvent, ToolInfo, ToolRenderResultOptions, ToolResultEvent, ToolResultEventResult, TreePreparation, TurnEndEvent, TurnStartEvent, UserBashEvent, UserBashEventResult, WidgetPlacement, WorkingIndicatorOptions, WriteToolCallEvent, WriteToolResultEvent, } from "./types.ts";
++export type { AfterProviderResponseEvent, AgentEndEvent, AgentSettledEvent, AgentStartEvent, AgentToolResult, AgentToolUpdateCallback, AppendEntryHandler, AppKeybinding, AutocompleteProviderFactory, BashToolCallEvent, BashToolResultEvent, BeforeAgentStartEvent, BeforeAgentStartEventResult, BeforeProviderHeadersEvent, BeforeProviderRequestEvent, BeforeProviderRequestEventResult, BuildSystemPromptOptions, CompactOptions, ContextEvent, ContextEventResult, ContextUsage, CustomToolCallEvent, CustomToolResultEvent, EditorFactory, EditToolCallEvent, EditToolResultEvent, EntryRenderer, EntryRenderOptions, ExecOptions, ExecResult, Extension, ExtensionActions, ExtensionAPI, ExtensionCommandContext, ExtensionCommandContextActions, ExtensionContext, ExtensionContextActions, ExtensionError, ExtensionEvent, ExtensionFactory, ExtensionFlag, ExtensionHandler, ExtensionMode, ExtensionRuntime, ExtensionShortcut, ExtensionUIContext, ExtensionUIDialogOptions, ExtensionWidgetOptions, FindToolCallEvent, FindToolResultEvent, GetActiveToolsHandler, GetAllToolsHandler, GetCommandsHandler, GetThinkingLevelHandler, GrepToolCallEvent, GrepToolResultEvent, InlineExtension, InputEvent, InputEventResult, InputSource, InputDispositionEvent, SessionAbortEvent, KeybindingsManager, LoadExtensionsResult, LsToolCallEvent, LsToolResultEvent, MarkdownTransformContext, MarkdownTransformer, MessageEndEvent, MessageRenderer, MessageRenderOptions, MessageStartEvent, MessageUpdateEvent, ModelSelectEvent, ModelSelectSource, ProjectTrustContext, ProjectTrustEvent, ProjectTrustEventDecision, ProjectTrustEventResult, ProjectTrustHandler, ProviderConfig, ProviderModelConfig, ReadToolCallEvent, ReadToolResultEvent, RegisteredCommand, RegisteredTool, ReplacedSessionContext, ResolvedCommand, ResourcesDiscoverEvent, ResourcesDiscoverResult, SendMessageHandler, SendUserMessageHandler, SessionBeforeCompactEvent, SessionBeforeCompactResult, SessionBeforeForkEvent, SessionBeforeForkResult, SessionBeforeReloadEvent, SessionBeforeReloadResult, SessionBeforeSwitchEvent, SessionBeforeSwitchResult, SessionBeforeTreeEvent, SessionBeforeTreeResult, ReloadVetoDecision, SessionCompactEvent, SessionEvent, SessionInfoChangedEvent, SessionShutdownEvent, SessionStartEvent, SessionTreeEvent, SetActiveToolsHandler, SetLabelHandler, SetModelHandler, SetThinkingLevelHandler, TerminalInputHandler, ToolCallEvent, ToolCallEventResult, ToolDefinition, ToolExecutionEndEvent, ToolExecutionMode, ToolExecutionStartEvent, ToolExecutionUpdateEvent, ToolInfo, ToolRenderResultOptions, ToolResultEvent, ToolResultEventResult, TreePreparation, TurnEndEvent, TurnStartEvent, UserBashEvent, UserBashEventResult, WidgetPlacement, WorkingIndicatorOptions, WriteToolCallEvent, WriteToolResultEvent, } from "./types.ts";
+ export { defineTool, isBashToolResult, isEditToolResult, isFindToolResult, isGrepToolResult, isLsToolResult, isReadToolResult, isToolCallEventType, isWriteToolResult, } from "./types.ts";
+ export { wrapRegisteredTool, wrapRegisteredTools } from "./wrapper.ts";
+ //# sourceMappingURL=index.d.ts.map
+\ No newline at end of file
+--- a/dist/core/extensions/runner.d.ts
++++ b/dist/core/extensions/runner.d.ts
+@@ -169,7 +169,7 @@
+         }>;
+     }>;
+     /** Emit input event. Transforms chain, "handled" short-circuits. */
+-    emitInput(text: string, images: ImageContent[] | undefined, source: InputSource, streamingBehavior?: "steer" | "followUp"): Promise<InputEventResult>;
++    emitInput(text: string, images: ImageContent[] | undefined, source: InputSource, streamingBehavior?: "steer" | "followUp", inputId?: string): Promise<InputEventResult>;
+ }
+ export {};
+ //# sourceMappingURL=runner.d.ts.map
+\ No newline at end of file
+--- a/dist/core/extensions/runner.js
++++ b/dist/core/extensions/runner.js
+@@ -928,7 +928,7 @@
+         return { skillPaths, promptPaths, themePaths };
+     }
+     /** Emit input event. Transforms chain, "handled" short-circuits. */
+-    async emitInput(text, images, source, streamingBehavior) {
++    async emitInput(text, images, source, streamingBehavior, inputId = "input") {
+         const ctx = this.createContext();
+         let currentText = text;
+         let currentImages = images;
+@@ -937,6 +937,7 @@
+                 try {
+                     const event = {
+                         type: "input",
++                        inputId,
+                         text: currentText,
+                         images: currentImages,
+                         source,
+--- a/dist/core/extensions/types.d.ts
++++ b/dist/core/extensions/types.d.ts
+@@ -477,6 +477,10 @@
+     /** Destination session file when shutting down due to session replacement. */
+     targetSessionFile?: string;
+ }
++/** Fired when abort() stops in-flight work. Memory cancels idle dream timers on this event. */
++export interface SessionAbortEvent {
++    type: "session_abort";
++}
+ /** Preparation data for tree navigation */
+ export interface TreePreparation {
+     targetId: string;
+@@ -505,7 +509,7 @@
+     summaryEntry?: BranchSummaryEntry;
+     fromExtension?: boolean;
+ }
+-export type SessionEvent = SessionStartEvent | SessionInfoChangedEvent | SessionBeforeSwitchEvent | SessionBeforeForkEvent | SessionBeforeReloadEvent | SessionBeforeCompactEvent | SessionCompactEvent | SessionShutdownEvent | SessionBeforeTreeEvent | SessionTreeEvent;
++export type SessionEvent = SessionStartEvent | SessionInfoChangedEvent | SessionBeforeSwitchEvent | SessionBeforeForkEvent | SessionBeforeReloadEvent | SessionBeforeCompactEvent | SessionCompactEvent | SessionShutdownEvent | SessionAbortEvent | SessionBeforeTreeEvent | SessionTreeEvent;
+ /** Fired before each LLM call. Can modify messages. */
+ export interface ContextEvent {
+     type: "context";
+@@ -637,6 +641,8 @@
+ /** Fired when user input is received, before agent processing */
+ export interface InputEvent {
+     type: "input";
++    /** Correlates this input with its eventual disposition within the session. */
++    inputId: string;
+     /** The input text */
+     text: string;
+     /** Attached images, if any */
+@@ -645,6 +651,13 @@
+     source: InputSource;
+     /** How the input will be delivered during streaming, or undefined when idle */
+     streamingBehavior?: "steer" | "followUp";
++}
++/** Fired after interception and admission determine ownership of an input. */
++export interface InputDispositionEvent {
++    type: "input_disposition";
++    /** Matches the originating InputEvent. */
++    inputId: string;
++    disposition: "handled" | "queued" | "started" | "rejected";
+ }
+ /** Result from input event handler */
+ export type InputEventResult = {
+@@ -781,7 +794,7 @@
+     input: TInput;
+ };
+ /** Union of all event types */
+-export type ExtensionEvent = ProjectTrustEvent | ResourcesDiscoverEvent | SessionEvent | ContextEvent | BeforeProviderRequestEvent | BeforeProviderHeadersEvent | AfterProviderResponseEvent | BeforeAgentStartEvent | AgentStartEvent | AgentEndEvent | AgentSettledEvent | TurnStartEvent | TurnEndEvent | MessageStartEvent | MessageUpdateEvent | MessageEndEvent | ToolExecutionStartEvent | ToolExecutionUpdateEvent | ToolExecutionEndEvent | ModelSelectEvent | ThinkingLevelSelectEvent | UserBashEvent | InputEvent | ToolCallEvent | ToolResultEvent;
++export type ExtensionEvent = ProjectTrustEvent | ResourcesDiscoverEvent | SessionEvent | ContextEvent | BeforeProviderRequestEvent | BeforeProviderHeadersEvent | AfterProviderResponseEvent | BeforeAgentStartEvent | AgentStartEvent | AgentEndEvent | AgentSettledEvent | TurnStartEvent | TurnEndEvent | MessageStartEvent | MessageUpdateEvent | MessageEndEvent | ToolExecutionStartEvent | ToolExecutionUpdateEvent | ToolExecutionEndEvent | ModelSelectEvent | ThinkingLevelSelectEvent | UserBashEvent | InputEvent | InputDispositionEvent | ToolCallEvent | ToolResultEvent;
+ export interface ContextEventResult {
+     messages?: AgentMessage[];
+ }
+@@ -900,6 +913,7 @@
+     on(event: "session_before_compact", handler: ExtensionHandler<SessionBeforeCompactEvent, SessionBeforeCompactResult>): void;
+     on(event: "session_compact", handler: ExtensionHandler<SessionCompactEvent>): void;
+     on(event: "session_shutdown", handler: ExtensionHandler<SessionShutdownEvent>): void;
++    on(event: "session_abort", handler: ExtensionHandler<SessionAbortEvent>): void;
+     on(event: "session_before_tree", handler: ExtensionHandler<SessionBeforeTreeEvent, SessionBeforeTreeResult>): void;
+     on(event: "session_tree", handler: ExtensionHandler<SessionTreeEvent>): void;
+     on(event: "context", handler: ExtensionHandler<ContextEvent, ContextEventResult>): void;
+@@ -924,6 +938,7 @@
+     on(event: "tool_result", handler: ExtensionHandler<ToolResultEvent, ToolResultEventResult>): void;
+     on(event: "user_bash", handler: ExtensionHandler<UserBashEvent, UserBashEventResult>): void;
+     on(event: "input", handler: ExtensionHandler<InputEvent, InputEventResult>): void;
++    on(event: "input_disposition", handler: ExtensionHandler<InputDispositionEvent>): void;
+     /** Register a tool that the LLM can call. */
+     registerTool<TParams extends TSchema = TSchema, TDetails = unknown, TState = any>(tool: ToolDefinition<TParams, TDetails, TState>): void;
+     /** Register a custom command. */
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -4,7 +4,7 @@
+ export { readStoredCredential } from "./core/auth-storage.ts";
+ export { type BranchPreparation, type BranchSummaryResult, type CollectEntriesResult, type CompactionResult, type CutPointResult, calculateContextTokens, collectEntriesForBranchSummary, compact, DEFAULT_COMPACTION_SETTINGS, estimateTokens, type FileOperations, findCutPoint, findTurnStartIndex, type GenerateBranchSummaryOptions, generateBranchSummary, generateSummary, generateSummaryWithUsage, getLastAssistantUsage, prepareBranchEntries, serializeConversation, shouldCompact, } from "./core/compaction/index.ts";
+ export { createEventBus, type EventBus, type EventBusController } from "./core/event-bus.ts";
+-export type { AgentEndEvent, AgentSettledEvent, AgentStartEvent, AgentToolResult, AgentToolUpdateCallback, AppKeybinding, AutocompleteProviderFactory, BashToolCallEvent, BeforeAgentStartEvent, BeforeAgentStartEventResult, BeforeProviderHeadersEvent, BeforeProviderRequestEvent, BeforeProviderRequestEventResult, BuildSystemPromptOptions, CompactOptions, ContextEvent, ContextUsage, CustomToolCallEvent, EditToolCallEvent, EntryRenderer, EntryRenderOptions, ExecOptions, ExecResult, Extension, ExtensionActions, ExtensionAPI, ExtensionCommandContext, ExtensionCommandContextActions, ExtensionContext, ExtensionContextActions, ExtensionError, ExtensionEvent, ExtensionFactory, ExtensionFlag, ExtensionHandler, ExtensionRuntime, ExtensionShortcut, ExtensionUIContext, ExtensionUIDialogOptions, ExtensionWidgetOptions, FindToolCallEvent, GrepToolCallEvent, InlineExtension, InputEvent, InputEventResult, InputSource, KeybindingsManager, LoadExtensionsResult, LsToolCallEvent, MarkdownTransformContext, MarkdownTransformer, MessageEndEvent, MessageRenderer, MessageRenderOptions, MessageStartEvent, MessageUpdateEvent, ProjectTrustContext, ProjectTrustEvent, ProjectTrustEventDecision, ProjectTrustEventResult, ProjectTrustHandler, ProviderConfig, ProviderModelConfig, ReadToolCallEvent, RegisteredCommand, RegisteredTool, ResolvedCommand, SessionBeforeCompactEvent, SessionBeforeForkEvent, SessionBeforeReloadEvent, SessionBeforeReloadResult, ReloadVetoDecision, SessionBeforeSwitchEvent, SessionBeforeTreeEvent, SessionCompactEvent, SessionInfoChangedEvent, SessionShutdownEvent, SessionStartEvent, SessionTreeEvent, SlashCommandInfo, SlashCommandSource, SourceInfo, TerminalInputHandler, ToolCallEvent, ToolCallEventResult, ToolDefinition, ToolExecutionEndEvent, ToolExecutionMode, ToolExecutionStartEvent, ToolExecutionUpdateEvent, ToolInfo, ToolRenderResultOptions, ToolResultEvent, TurnEndEvent, TurnStartEvent, UserBashEvent, UserBashEventResult, WidgetPlacement, WorkingIndicatorOptions, WriteToolCallEvent, } from "./core/extensions/index.ts";
++export type { AgentEndEvent, AgentSettledEvent, AgentStartEvent, AgentToolResult, AgentToolUpdateCallback, AppKeybinding, AutocompleteProviderFactory, BashToolCallEvent, BeforeAgentStartEvent, BeforeAgentStartEventResult, BeforeProviderHeadersEvent, BeforeProviderRequestEvent, BeforeProviderRequestEventResult, BuildSystemPromptOptions, CompactOptions, ContextEvent, ContextUsage, CustomToolCallEvent, EditToolCallEvent, EntryRenderer, EntryRenderOptions, ExecOptions, ExecResult, Extension, ExtensionActions, ExtensionAPI, ExtensionCommandContext, ExtensionCommandContextActions, ExtensionContext, ExtensionContextActions, ExtensionError, ExtensionEvent, ExtensionFactory, ExtensionFlag, ExtensionHandler, ExtensionRuntime, ExtensionShortcut, ExtensionUIContext, ExtensionUIDialogOptions, ExtensionWidgetOptions, FindToolCallEvent, GrepToolCallEvent, InlineExtension, InputEvent, InputEventResult, InputSource, InputDispositionEvent, SessionAbortEvent, KeybindingsManager, LoadExtensionsResult, LsToolCallEvent, MarkdownTransformContext, MarkdownTransformer, MessageEndEvent, MessageRenderer, MessageRenderOptions, MessageStartEvent, MessageUpdateEvent, ProjectTrustContext, ProjectTrustEvent, ProjectTrustEventDecision, ProjectTrustEventResult, ProjectTrustHandler, ProviderConfig, ProviderModelConfig, ReadToolCallEvent, RegisteredCommand, RegisteredTool, ResolvedCommand, SessionBeforeCompactEvent, SessionBeforeForkEvent, SessionBeforeReloadEvent, SessionBeforeReloadResult, ReloadVetoDecision, SessionBeforeSwitchEvent, SessionBeforeTreeEvent, SessionCompactEvent, SessionInfoChangedEvent, SessionShutdownEvent, SessionStartEvent, SessionTreeEvent, SlashCommandInfo, SlashCommandSource, SourceInfo, TerminalInputHandler, ToolCallEvent, ToolCallEventResult, ToolDefinition, ToolExecutionEndEvent, ToolExecutionMode, ToolExecutionStartEvent, ToolExecutionUpdateEvent, ToolInfo, ToolRenderResultOptions, ToolResultEvent, TurnEndEvent, TurnStartEvent, UserBashEvent, UserBashEventResult, WidgetPlacement, WorkingIndicatorOptions, WriteToolCallEvent, } from "./core/extensions/index.ts";
+ export { createExtensionRuntime, defineTool, discoverAndLoadExtensions, ExtensionRunner, isBashToolResult, isEditToolResult, isFindToolResult, isGrepToolResult, isLsToolResult, isReadToolResult, isToolCallEventType, isWriteToolResult, wrapRegisteredTool, wrapRegisteredTools, } from "./core/extensions/index.ts";
+ export type { ReadonlyFooterDataProvider } from "./core/footer-data-provider.ts";
+ export { convertToLlm } from "./core/messages.ts";

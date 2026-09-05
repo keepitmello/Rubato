@@ -1,13 +1,14 @@
 import { execFile } from "node:child_process"
 
+import type { ToolDefinition } from "@code-yeongyu/senpi"
+
 import {
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,
   defineTool,
   formatSize,
   truncateHead,
-  type ToolDefinition,
-} from "@code-yeongyu/senpi"
+} from "../../pi-sdk/host-runtime.ts"
 import { Type, type Static } from "typebox"
 
 const CurlProgram = Type.Literal("curl")

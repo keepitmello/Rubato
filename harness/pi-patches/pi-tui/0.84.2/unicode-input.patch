@@ -1,0 +1,79 @@
+--- a/dist/stdin-buffer.js
++++ b/dist/stdin-buffer.js
+@@ -16,6 +16,7 @@
+  * Based on code from OpenTUI (https://github.com/anomalyco/opentui)
+  * MIT License - Copyright (c) 2025 opentui
+  */
++import { StringDecoder } from "node:string_decoder";
+ import { EventEmitter } from "events";
+ const ESC = "\x1b";
+ const DEFAULT_SEQUENCE_TIMEOUT_MS = 50;
+@@ -214,9 +215,11 @@
+             }
+         }
+         else {
+-            // Not an escape sequence - take a single character
+-            sequences.push(remaining[0]);
+-            pos++;
++            // Take a whole code point so astral characters (emoji) stay intact.
++            const codepoint = remaining.codePointAt(0);
++            const character = String.fromCodePoint(codepoint);
++            sequences.push(character);
++            pos += character.length;
+         }
+     }
+     return { sequences, remainder: "" };
+@@ -233,6 +236,7 @@
+     pasteMode = false;
+     pasteBuffer = "";
+     pendingKittyPrintableCodepoint;
++    decoder = new StringDecoder("utf8");
+     constructor(options = {}) {
+         super();
+         this.timeoutMs = options.timeout ?? DEFAULT_SEQUENCE_TIMEOUT_MS;
+@@ -244,23 +248,32 @@
+             clearTimeout(this.timeout);
+             this.timeout = null;
+         }
+-        // Handle high-byte conversion (for compatibility with parseKeypress)
+-        // If buffer has single byte > 127, convert to ESC + (byte - 128)
+         let str;
++        let decodedFromBuffer = false;
+         if (Buffer.isBuffer(data)) {
+-            if (data.length === 1 && data[0] > 127) {
++            const hasPendingUtf8Bytes = (this.decoder.lastNeed ?? 0) > 0;
++            if (!hasPendingUtf8Bytes && data.length === 1 && data[0] >= 0x80 && data[0] < 0xc2) {
++                // Single high byte outside any UTF-8 sequence: legacy
++                // parseKeypress compatibility maps it to ESC + (byte - 128).
++                // Bytes >= 0xc2 may lead a multibyte sequence, so they go to
++                // the decoder instead.
+                 const byte = data[0] - 128;
+                 str = `\x1b${String.fromCharCode(byte)}`;
+             }
+             else {
+-                str = data.toString();
++                // StringDecoder holds a split multibyte tail across process()
++                // calls instead of emitting U+FFFD replacement characters.
++                str = this.decoder.write(data);
++                decodedFromBuffer = true;
+             }
+         }
+         else {
+             str = data;
+         }
+         if (str.length === 0 && this.buffer.length === 0) {
+-            this.emitDataSequence("");
++            if (!decodedFromBuffer) {
++                this.emitDataSequence("");
++            }
+             return;
+         }
+         this.buffer += str;
+@@ -355,6 +368,7 @@
+         this.pasteMode = false;
+         this.pasteBuffer = "";
+         this.pendingKittyPrintableCodepoint = undefined;
++        this.decoder = new StringDecoder("utf8");
+     }
+     getBuffer() {
+         return this.buffer;

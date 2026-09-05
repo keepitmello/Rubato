@@ -1,0 +1,14 @@
+--- a/dist/auth/oauth/load.js
++++ b/dist/auth/oauth/load.js
+@@ -51,6 +51,11 @@
+         return bundledLoaders.xai();
+     return (await importOAuthModule("./xai.ts")).xaiOAuth;
+ };
++export const loadCursorOAuth = async () => {
++    if (bundledLoaders)
++        return bundledLoaders.cursor();
++    return (await importOAuthModule("./cursor.ts")).cursorOAuth;
++};
+ export const loadRadiusOAuth = async (options) => {
+     if (bundledLoaders)
+         return bundledLoaders.radius(options);

@@ -19,6 +19,7 @@ import type {
 } from "./spawn-types"
 import { memoryChildExtensionArgs } from "./child-extensions"
 import { cursorGrokLaunchModel } from "./cursor-grok-ids"
+import { applyNonInteractiveBashCompat } from "@rubato/senpi-task/pi-sdk"
 import { resolveMemoryChildLaunch, resolveSenpiLaunch } from "./senpi-command"
 
 export async function prepareReflectionSpawn(input: PrepareReflectionSpawnInput): Promise<ReflectionSpawnArgs> {
@@ -81,7 +82,7 @@ export async function prepareReflectionSpawn(input: PrepareReflectionSpawnInput)
     ...dreamPaths,
     ...(dreamTarget === undefined ? {} : { dreamTarget }),
   }
-  const env: NodeJS.ProcessEnv = {
+  const env: NodeJS.ProcessEnv = applyNonInteractiveBashCompat({
     ...input.env,
     MEMORY_DIR: input.worktree.dir,
     TRANSCRIPT_PATH: transcript,
@@ -96,11 +97,7 @@ export async function prepareReflectionSpawn(input: PrepareReflectionSpawnInput)
       ...(dreamTarget === undefined ? {} : { DREAM_TARGET_PATH: dreamTarget }),
     }),
     SENPI_MEMORY_REFLECTION: "1",
-    // A detached child has no controlling terminal, so senpi's PTY-backed bash session fails with
-    // "Native PTY session handle is missing write()" and the child could never git-commit its
-    // reflection. pi-pty's documented non-interactive override selects the pipe session backend.
-    SENPI_PTY_FORCE_PIPE: "1",
-  }
+  })
   // Verified against senpi packages/coding-agent/src/cli/args.ts and cli/file-processor.ts:
   // -p selects print mode; --system-prompt reads a file path; --tools is a comma allowlist;
   // --no-extensions/--no-skills/--no-prompt-templates/--no-context-files disable discovery;
@@ -199,13 +196,12 @@ export async function prepareFactsSpawn(input: PrepareFactsSpawnInput): Promise<
   // the written bytes drift past the cap the selection proved.
   await writeFile(payload, serializeFactsPayload(input.payload), { encoding: "utf8", mode: 0o600 })
   await chmod(payload, 0o400)
-  const env: NodeJS.ProcessEnv = {
+  const env: NodeJS.ProcessEnv = applyNonInteractiveBashCompat({
     ...input.env,
     FACTS_PAYLOAD_PATH: payload,
     FACTS_EXTRACTION_PATH: extraction,
     SENPI_MEMORY_FACTS: "1",
-    SENPI_PTY_FORCE_PIPE: "1",
-  }
+  })
   const args = [
     "-p",
     "--system-prompt", loadFactsPersona(),

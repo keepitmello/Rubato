@@ -1,0 +1,50 @@
+--- a/dist/agent-loop.js
++++ b/dist/agent-loop.js
+@@ -393,9 +393,10 @@
+ async function prepareToolCall(currentContext, assistantMessage, toolCall, config, signal) {
+     const tool = currentContext.tools?.find((t) => t.name === toolCall.name);
+     if (!tool) {
++        const hint = config.removedToolHints?.[toolCall.name];
+         return {
+             kind: "immediate",
+-            result: createErrorToolResult(`Tool ${toolCall.name} not found`),
++            result: createErrorToolResult(hint === undefined ? `Tool ${toolCall.name} not found` : `Tool ${toolCall.name} not found. ${hint}`),
+             isError: true,
+         };
+     }
+--- a/dist/agent.d.ts
++++ b/dist/agent.d.ts
+@@ -22,6 +22,7 @@
+     transport?: Transport;
+     maxRetryDelayMs?: number;
+     toolExecution?: ToolExecutionMode;
++    removedToolHints?: Record<string, string>;
+ }
+ /**
+  * Stateful wrapper around the low-level agent loop.
+@@ -56,6 +57,7 @@
+     maxRetryDelayMs?: number;
+     /** Tool execution strategy for assistant messages that contain multiple tool calls. */
+     toolExecution: ToolExecutionMode;
++    removedToolHints: Record<string, string>;
+     constructor(options: AgentOptions);
+     /**
+      * Subscribe to agent lifecycle events.
+--- a/dist/agent.js
++++ b/dist/agent.js
+@@ -132,6 +132,7 @@
+         this.transport = runtimeOptions.transport ?? "auto";
+         this.maxRetryDelayMs = runtimeOptions.maxRetryDelayMs;
+         this.toolExecution = runtimeOptions.toolExecution ?? "parallel";
++        this.removedToolHints = runtimeOptions.removedToolHints ?? {};
+     }
+     /**
+      * Subscribe to agent lifecycle events.
+@@ -321,6 +322,7 @@
+                 return this.steeringQueue.drain();
+             },
+             getFollowUpMessages: async () => this.followUpQueue.drain(),
++            removedToolHints: this.removedToolHints,
+         };
+     }
+     async runWithLifecycle(executor) {

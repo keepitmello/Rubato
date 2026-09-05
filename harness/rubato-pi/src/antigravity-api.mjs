@@ -7,14 +7,14 @@
  */
 
 import { pathToFileURL } from "node:url";
-import { senpiNested } from "./engine-paths.mjs";
+import { resolvePiAiFile } from "./pi-provider-bridge.mjs";
 
 const { createAssistantMessageEventStream } = await import(
-  pathToFileURL(senpiNested("@earendil-works/pi-ai/dist/utils/event-stream.js")).href
+  pathToFileURL(resolvePiAiFile("dist/utils/event-stream.js")).href
 );
 const {
   convertMessages: convertGoogleMessages,
-} = await import(pathToFileURL(senpiNested("@earendil-works/pi-ai/dist/api/google-shared.js")).href);
+} = await import(pathToFileURL(resolvePiAiFile("dist/api/google-shared.js")).href);
 import { cacheAudit, cacheAuditEnabled } from "./cache-audit.mjs";
 import { nextAntigravityEnvelope } from "./antigravity-state.mjs";
 

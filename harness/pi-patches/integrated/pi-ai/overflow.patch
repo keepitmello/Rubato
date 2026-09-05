@@ -1,0 +1,26 @@
+--- a/dist/utils/overflow.js
++++ b/dist/utils/overflow.js
+@@ -57,6 +57,9 @@
+     /context[_ ]length[_ ]exceeded/i, // Generic fallback
+     /too many tokens/i, // Generic fallback
+     /token limit exceeded/i, // Generic fallback
++    /conversation is too long/i, // ChatGPT / Codex backend
++    /please try a shorter message/i, // ChatGPT / Codex backend
++    /requested context length is too (?:large|long)/i, // ChatGPT / Codex backend
+     /^4(?:00|13)\s*(?:status code)?\s*\(no body\)/i, // Cerebras: 400/413 with no body
+ ];
+ /**
+@@ -136,9 +139,11 @@
+             return true;
+         }
+     }
+-    // Case 2: Silent overflow (z.ai style) - successful but usage exceeds context
++    // Case 2: Silent overflow (z.ai style) — successful but uncached input exceeds context.
++    // Cursor bills cacheRead far above the live prompt; a successful turn already fitted
++    // the window, so cacheRead-only overrun is billing noise, not overflow.
+     if (contextWindow && message.stopReason === "stop") {
+-        const inputTokens = message.usage.input + message.usage.cacheRead;
++        const inputTokens = message.usage.input ?? 0;
+         if (inputTokens > contextWindow) {
+             return true;
+         }

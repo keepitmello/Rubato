@@ -1,0 +1,11 @@
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -14,6 +14,8 @@
+ export * from "./utils/event-stream.js";
+ export * from "./utils/json-parse.js";
+ export * from "./utils/overflow.js";
++export { hasVisibleAssistantContent, hasVisibleText } from "./utils/visible-text.js";
++export { getToolCallFormat, shouldRecoverTextToolCalls } from "./utils/empty-recovery-gate.js";
+ export * from "./utils/retry.js";
+ export { contentText } from "./utils/text.js";
+ export * from "./utils/typebox-helpers.js";

@@ -380,6 +380,27 @@ async function withBuildLock(action) {
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  if (process.argv.includes("--stage-pi")) {
+    const { stagePiEngine } = await import("./stage-pi-engine.mjs");
+    const readArg = (flag) => {
+      const index = process.argv.indexOf(flag);
+      if (index === -1 || !process.argv[index + 1]) {
+        throw new Error(`missing ${flag}`);
+      }
+      return process.argv[index + 1];
+    };
+    try {
+      const result = stagePiEngine({
+        stock: readArg("--stock"),
+        output: readArg("--output"),
+      });
+      process.stdout.write(`${JSON.stringify(result)}\n`);
+      process.exit(0);
+    } catch (error) {
+      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+      process.exit(1);
+    }
+  }
   const status = await withBuildLock(async () => {
     if (mode === "check") return await isFresh() ? 0 : 10;
     if (mode === "auto" && await isFresh()) return 0;

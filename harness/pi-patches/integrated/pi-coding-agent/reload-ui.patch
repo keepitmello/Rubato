@@ -1,0 +1,69 @@
+--- a/dist/modes/interactive/interactive-mode.js
++++ b/dist/modes/interactive/interactive-mode.js
+@@ -4801,7 +4801,14 @@
+             this.showWarning("Wait for compaction to finish before reloading.");
+             return;
+         }
+-        this.resetExtensionUI();
++        // Rubato cutover: Senpi preflight. Consult session_before_reload BEFORE
++        // clearing extension UI or showing the reload box. reload() re-checks
++        // internally, so a race after this probe is still covered below.
++        const veto = await this.session.checkReloadVeto();
++        if (veto.cancelled) {
++            this.showWarning(veto.reason ?? "Reload blocked by an extension.");
++            return;
++        }
+         const reloadBox = new Container();
+         const borderColor = (s) => theme.fg("border", s);
+         reloadBox.addChild(new DynamicBorder(borderColor));
+@@ -4809,7 +4816,6 @@
+         reloadBox.addChild(new Text(theme.fg("muted", "Reloading keybindings, extensions, skills, prompts, themes, and context files..."), 1, 0));
+         reloadBox.addChild(new Spacer(1));
+         reloadBox.addChild(new DynamicBorder(borderColor));
+-        const previousEditor = this.editor;
+         this.editorContainer.clear();
+         this.editorContainer.addChild(reloadBox);
+         this.ui.setFocus(reloadBox);
+@@ -4827,13 +4833,30 @@
+             if (chatRestoredBeforeSessionStart) {
+                 return;
+             }
++            // Reset extension UI only once the reload is actually proceeding
++            // (after reload()'s internal veto re-check). Resetting before reload()
++            // destroyed live extension UI on a vetoed reload.
++            this.resetExtensionUI();
++            // Stock setCustomEditorComponent(undefined) always clears editorContainer
++            // and focuses defaultEditor. Re-seat the Reloading box until reload
++            // finishes rather than forking editor policy.
++            this.editorContainer.clear();
++            this.editorContainer.addChild(reloadBox);
++            this.ui.setFocus(reloadBox);
++            this.ui.requestRender();
+             this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
+             this.outputPad = this.settingsManager.getOutputPad();
+             this.rebuildChatFromMessages();
+             chatRestoredBeforeSessionStart = true;
+         };
+         try {
+-            await this.session.reload({ beforeSessionStart: restoreChatBeforeSessionStart });
++            const reloadResult = await this.session.reload({ beforeSessionStart: restoreChatBeforeSessionStart });
++            if (reloadResult?.cancelled) {
++                dismissReloadBox(this.editor);
++                reloadBoxDismissed = true;
++                this.showWarning(reloadResult.reason ?? "Reload blocked by an extension.");
++                return;
++            }
+             restoreChatBeforeSessionStart();
+             this.keybindings.reload();
+             const activeHeader = this.customHeader ?? this.builtInHeader;
+@@ -4863,7 +4886,9 @@
+         }
+         catch (error) {
+             if (!reloadBoxDismissed) {
+-                dismissReloadBox(previousEditor);
++                // After resetExtensionUI a custom previousEditor is detached and
++                // this.editor is defaultEditor. Never re-seat the stale custom instance.
++                dismissReloadBox(this.editor);
+             }
+             this.showError(`Reload failed: ${error instanceof Error ? error.message : String(error)}`);
+         }

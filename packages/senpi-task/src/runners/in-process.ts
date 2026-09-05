@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs"
 
-import { createAgentSession, SessionManager, type CreateAgentSessionOptions, type ToolDefinition } from "@code-yeongyu/senpi"
+import type { CreateAgentSessionOptions, ToolDefinition } from "@code-yeongyu/senpi"
+
+import { loadStockSdk } from "../pi-sdk/stock-runtime.ts"
 
 import type { ResolvedModelRecord } from "../state"
 import { createChildHandle, createRestoredChildHandle, type ChildHandle, type ChildSession } from "./in-process/child-handle"
@@ -79,7 +81,11 @@ export type InProcessRunnerOptions = {
   readonly createSession?: CreateChildSession
 }
 
-const defaultCreateChildSession: CreateChildSession = async (options) => (await createAgentSession(options)).session
+const defaultCreateChildSession: CreateChildSession = async (options) => {
+  const sdk = await loadStockSdk()
+  const created = await sdk.createAgentSession(options as Record<string, unknown>)
+  return created.session as ChildSession
+}
 
 export class InProcessRunner {
   readonly #sharedParentTools: readonly ToolDefinition[]
@@ -104,9 +110,10 @@ export class InProcessRunner {
 
     let session: ChildSession
     try {
+      const sdk = await loadStockSdk()
       const options = buildChildSessionOptions({
         spec,
-        sessionManager: SessionManager.create(spec.cwd, requireChildSessionDir(spec)),
+        sessionManager: sdk.SessionManager.create(spec.cwd, requireChildSessionDir(spec)) as CreateAgentSessionOptions["sessionManager"],
         sharedParentTools: this.#sharedParentTools,
         uiOnlyToolNames: this.#uiOnlyToolNames,
       })
@@ -142,9 +149,10 @@ export class InProcessRunner {
 
     let session: ChildSession
     try {
+      const sdk = await loadStockSdk()
       const options = buildChildSessionOptions({
         spec: { ...spec, memberScopedTools },
-        sessionManager: SessionManager.open(sessionPath, requireChildSessionDir(spec), spec.cwd),
+        sessionManager: sdk.SessionManager.open(sessionPath, requireChildSessionDir(spec), spec.cwd) as CreateAgentSessionOptions["sessionManager"],
         sharedParentTools: this.#sharedParentTools,
         uiOnlyToolNames: this.#uiOnlyToolNames,
       })

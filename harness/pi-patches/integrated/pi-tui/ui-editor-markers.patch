@@ -1,0 +1,662 @@
+--- a/dist/components/editor.js
++++ b/dist/components/editor.js
+@@ -1,4 +1,6 @@
++import { formatImageMarker, IMAGE_MARKER_REGEX, ImageMarkerRegistry, imageMarkerId, isImageMarker, } from "../image-markers.js";
+ import { getKeybindings } from "../keybindings.js";
++import { expandPasteMarkers as expandPasteMarkerRegistry, PasteMarkerRegistry, pasteMarkerId, segmentWithMarkers as segmentWithAuthorizedMarkers, } from "../paste-markers.js";
+ import { decodePrintableKey, matchesKey } from "../keys.js";
+ import { KillRing } from "../kill-ring.js";
+ import { CURSOR_MARKER } from "../tui.js";
+@@ -220,8 +222,9 @@
+     autocompleteStartToken = 0;
+     autocompleteRequestId = 0;
+     // Paste tracking for large pastes
+-    pastes = new Map();
+-    pasteCounter = 0;
++    pasteMarkers = new PasteMarkerRegistry();
++    imageMarkers = new ImageMarkerRegistry();
++    onImageMarkersChanged;
+     // Bracketed paste mode buffering
+     pasteBuffer = "";
+     isInPaste = false;
+@@ -258,11 +261,145 @@
+     }
+     /** Set of currently valid paste IDs, for marker-aware segmentation. */
+     validPasteIds() {
+-        return new Set(this.pastes.keys());
++        return new Set(this.pasteMarkers.snapshot().pastes.keys());
++    }
++    authorizedMarkers(text) {
++        const imageMarkers = this.imageMarkers.authorizedMarkers(text);
++        if (imageMarkers.size === 0)
++            return this.pasteMarkers.authorizedMarkers(text);
++        const merged = new Set(this.pasteMarkers.authorizedMarkers(text));
++        for (const marker of imageMarkers)
++            merged.add(marker);
++        return merged;
++    }
++    removePasteMarker(id) {
++        const removal = this.pasteMarkers.remove(id, this.getText());
++        if (!removal.removed)
++            return false;
++        this.state.lines = removal.text.split("\n");
++        return true;
++    }
++    expandMatchingPaste(filteredText) {
++        // rubato.pasteExpand.injected
++        let text = this.getText();
++        for (;;) {
++            const orphanState = this.pasteMarkers.snapshot();
++            let orphanId;
++            for (const [id, marker] of orphanState.markers) {
++                if (text.indexOf(marker) < 0 && (orphanId === undefined || id < orphanId))
++                    orphanId = id;
++            }
++            if (orphanId === undefined)
++                break;
++            const orphanRemoval = this.pasteMarkers.remove(orphanId, text);
++            if (!orphanRemoval.removed)
++                break;
++            text = orphanRemoval.text;
++        }
++        if (text !== this.getText())
++            this.state.lines = text.split("\n");
++        const pasteState = this.pasteMarkers.snapshot();
++        for (const [id, content] of pasteState.pastes) {
++            if (content !== filteredText)
++                continue;
++            const marker = pasteState.markers.get(id);
++            if (!marker)
++                continue;
++            const first = text.indexOf(marker);
++            if (first < 0 || text.indexOf(marker, first + marker.length) >= 0)
++                continue;
++            const removal = this.pasteMarkers.remove(id, text);
++            if (!removal.removed)
++                continue;
++            const expanded = removal.text.slice(0, first) + content + removal.text.slice(first);
++            this.state.lines = expanded.split("\n");
++            const prefix = expanded.slice(0, first + content.length);
++            const prefixLines = prefix.split("\n");
++            this.state.cursorLine = prefixLines.length - 1;
++            this.setCursorCol(prefixLines[prefixLines.length - 1].length);
++            if (this.onChange)
++                this.onChange(this.getText());
++            return true;
++        }
++        if (text !== this.getText() && this.onChange)
++            this.onChange(this.getText());
++        return false;
++    }
++    removeImageMarker(id) {
++        const survivors = this.imageMarkers.ids(this.getText()).filter((entryId) => entryId !== id);
++        const removal = this.imageMarkers.remove(id, this.getText());
++        if (!removal.removed)
++            return false;
++        this.state.lines = removal.text.split("\n");
++        this.onImageMarkersChanged?.(survivors);
++        return true;
++    }
++    getPasteState() {
++        return this.pasteMarkers.snapshot();
++    }
++    setPasteState(state) {
++        this.pasteMarkers.install(state, this.getText());
++    }
++    getImageMarkerState() {
++        return this.imageMarkers.snapshot();
++    }
++    setImageMarkerState(state) {
++        this.imageMarkers.install(state, this.getText());
++    }
++    applyCanonicalizedText(canonicalization) {
++        if (canonicalization.text === this.getText())
++            return;
++        const oldLine = this.state.lines[this.state.cursorLine] ?? "";
++        const cursorCol = this.state.cursorCol;
++        const renumbered = new Map();
++        for (const [index, id] of canonicalization.order.entries())
++            renumbered.set(id, index + 1);
++        let delta = 0;
++        for (const match of oldLine.matchAll(IMAGE_MARKER_REGEX)) {
++            const end = (match.index ?? 0) + match[0].length;
++            if (end > cursorCol)
++                break;
++            const newId = renumbered.get(Number.parseInt(match[1] ?? "0", 10));
++            if (newId === undefined)
++                continue;
++            delta += formatImageMarker(newId).length - match[0].length;
++        }
++        this.state.lines = canonicalization.text.split("\n");
++        this.setCursorCol(Math.max(0, cursorCol + delta));
++    }
++    insertImageMarker() {
++        this.cancelAutocomplete();
++        this.pushUndoSnapshot();
++        this.lastAction = null;
++        this.exitHistoryBrowsing();
++        const marker = this.imageMarkers.add();
++        this.insertTextAtCursorInternal(marker);
++        const canonicalization = this.imageMarkers.canonicalize(this.getText());
++        this.applyCanonicalizedText(canonicalization);
++        const insertionId = imageMarkerId(marker);
++        const finalId = canonicalization.order.includes(insertionId)
++            ? canonicalization.order.indexOf(insertionId) + 1
++            : insertionId;
++        this.onImageMarkersChanged?.(canonicalization.order);
++        return finalId;
++    }
++    removeMarkerSegment(segment) {
++        if (isPasteMarker(segment)) {
++            const id = pasteMarkerId(segment);
++            return id !== undefined && this.removePasteMarker(id);
++        }
++        if (isImageMarker(segment)) {
++            const id = imageMarkerId(segment);
++            return id !== undefined && this.removeImageMarker(id);
++        }
++        return false;
+     }
+     /** Segment text with paste-marker awareness, only merging markers with valid IDs. */
+     segment(text, mode) {
+-        return segmentWithMarkers(text, mode === "word" ? wordSegmenter : graphemeSegmenter, this.validPasteIds());
++        const authorized = this.authorizedMarkers(text);
++        if (authorized.size === 0)
++            return (mode === "word" ? wordSegmenter : graphemeSegmenter).segment(text);
++        return segmentWithAuthorizedMarkers(text, mode === "word" ? wordSegmenter : graphemeSegmenter, authorized);
+     }
+     getPaddingX() {
+         return this.paddingX;
+@@ -827,12 +964,7 @@
+         return this.state.lines.join("\n");
+     }
+     expandPasteMarkers(text) {
+-        let result = text;
+-        for (const [pasteId, pasteContent] of this.pastes) {
+-            const markerRegex = new RegExp(`\\[paste #${pasteId}( (\\+\\d+ lines|\\d+ chars))?\\]`, "g");
+-            result = result.replace(markerRegex, () => pasteContent);
+-        }
+-        return result;
++        return this.pasteMarkers.expand(text);
+     }
+     /**
+      * Get text with paste markers expanded to their actual content.
+@@ -852,13 +984,21 @@
+         this.lastAction = null;
+         this.exitHistoryBrowsing();
+         const normalized = this.normalizeText(text);
++        const previousText = this.getText();
+         // Push undo snapshot if content differs (makes programmatic changes undoable)
+-        if (this.getText() !== normalized) {
++        if (previousText !== normalized) {
+             this.pushUndoSnapshot();
+         }
+-        this.pastes.clear();
+-        this.pasteCounter = 0;
++        this.pasteMarkers.prune(normalized, previousText);
++        const previousImageOrder = this.imageMarkers.ids(previousText);
++        this.imageMarkers.prune(normalized, previousText);
+         this.setTextInternal(normalized);
++        const canonicalization = this.imageMarkers.canonicalize(normalized);
++        this.applyCanonicalizedText(canonicalization);
++        const imageOrder = canonicalization.order;
++        if (previousImageOrder.length !== imageOrder.length || previousImageOrder.some((id, i) => id !== imageOrder[i])) {
++            this.onImageMarkersChanged?.(imageOrder);
++        }
+     }
+     /**
+      * Insert text at the current cursor position.
+@@ -1016,14 +1156,9 @@
+         // Check if this is a large paste (> 10 lines or > 1000 characters)
+         const totalChars = filteredText.length;
+         if (pastedLines.length > 10 || totalChars > 1000) {
+-            // Store the paste and insert a marker
+-            this.pasteCounter++;
+-            const pasteId = this.pasteCounter;
+-            this.pastes.set(pasteId, filteredText);
+-            // Insert marker like "[paste #1 +123 lines]" or "[paste #1 1234 chars]"
+-            const marker = pastedLines.length > 10
+-                ? `[paste #${pasteId} +${pastedLines.length} lines]`
+-                : `[paste #${pasteId} ${totalChars} chars]`;
++            if (this.expandMatchingPaste(filteredText))
++                return;
++            const marker = this.pasteMarkers.add(filteredText, pastedLines.length, totalChars);
+             this.insertTextAtCursorInternal(marker);
+             return;
+         }
+@@ -1067,10 +1202,10 @@
+     }
+     submitValue() {
+         this.cancelAutocomplete();
+-        const result = this.expandPasteMarkers(this.state.lines.join("\n")).trim();
++        const result = this.pasteMarkers.expand(this.state.lines.join("\n")).trim();
+         this.state = { lines: [""], cursorLine: 0, cursorCol: 0 };
+-        this.pastes.clear();
+-        this.pasteCounter = 0;
++        this.pasteMarkers.clear();
++        this.imageMarkers.clear();
+         this.exitHistoryBrowsing();
+         this.scrollOffset = 0;
+         this.undoStack.clear();
+@@ -1092,33 +1227,16 @@
+             const graphemes = [...this.segment(beforeCursor, "grapheme")];
+             const lastGrapheme = graphemes[graphemes.length - 1];
+             const graphemeLength = lastGrapheme ? lastGrapheme.segment.length : 1;
+-            const isPastedSegmented = PASTE_MARKER_SINGLE.exec(lastGrapheme.segment);
+-            if (isPastedSegmented) {
+-                // This contains the id part e.g 4 from [paste #4 +123 lines]
+-                const targetId = Number(isPastedSegmented[1]);
+-                this.pastes.delete(targetId);
+-                this.pasteCounter--;
+-                // Shift registry entries down in ascending id order, independent
+-                // of marker order in the text ([paste #3] becomes [paste #2] when
+-                // [paste #1] is removed).
+-                const higherIds = [...this.pastes.keys()].filter((id) => id > targetId).sort((a, b) => a - b);
+-                for (const id of higherIds) {
+-                    this.pastes.set(id - 1, this.pastes.get(id));
+-                    this.pastes.delete(id);
+-                }
+-                // Renumber markers with ids greater than the removed one.
+-                this.state.lines = this.state.lines.map((line) => line.replace(PASTE_MARKER_REGEX, (fullMatch, idGroup, suffixGroup) => {
+-                    const x = Number(idGroup);
+-                    if (x <= targetId)
+-                        return fullMatch;
+-                    return `[paste #${x - 1}${suffixGroup}]`;
+-                }));
+-            }
+-            line = this.state.lines[this.state.cursorLine] || "";
+-            const before = line.slice(0, this.state.cursorCol - graphemeLength);
+-            const after = line.slice(this.state.cursorCol);
+-            this.state.lines[this.state.cursorLine] = before + after;
+-            this.setCursorCol(this.state.cursorCol - graphemeLength);
++            if (this.removeMarkerSegment(lastGrapheme?.segment ?? "")) {
++                this.setCursorCol(Math.max(0, this.state.cursorCol - graphemeLength));
++            }
++            else {
++                line = this.state.lines[this.state.cursorLine] || "";
++                const before = line.slice(0, this.state.cursorCol - graphemeLength);
++                const after = line.slice(this.state.cursorCol);
++                this.state.lines[this.state.cursorLine] = before + after;
++                this.setCursorCol(this.state.cursorCol - graphemeLength);
++            }
+         }
+         else if (this.state.cursorLine > 0) {
+             this.pushUndoSnapshot();
+@@ -1419,9 +1537,11 @@
+             const graphemes = [...this.segment(afterCursor, "grapheme")];
+             const firstGrapheme = graphemes[0];
+             const graphemeLength = firstGrapheme ? firstGrapheme.segment.length : 1;
+-            const before = currentLine.slice(0, this.state.cursorCol);
+-            const after = currentLine.slice(this.state.cursorCol + graphemeLength);
+-            this.state.lines[this.state.cursorLine] = before + after;
++            if (!this.removeMarkerSegment(firstGrapheme?.segment ?? "")) {
++                const before = currentLine.slice(0, this.state.cursorCol);
++                const after = currentLine.slice(this.state.cursorCol + graphemeLength);
++                this.state.lines[this.state.cursorLine] = before + after;
++            }
+         }
+         else if (this.state.cursorLine < this.state.lines.length - 1) {
+             this.pushUndoSnapshot();
+@@ -1700,7 +1820,7 @@
+         }
+     }
+     pushUndoSnapshot() {
+-        this.undoStack.push({ state: this.state, pastes: this.pastes, pasteCounter: this.pasteCounter });
++        this.undoStack.push({ state: this.state, pasteState: this.pasteMarkers.snapshot(), imageState: this.imageMarkers.snapshot() });
+     }
+     undo() {
+         this.exitHistoryBrowsing();
+@@ -1708,8 +1828,10 @@
+         if (!snapshot)
+             return;
+         Object.assign(this.state, snapshot.state);
+-        this.pastes = snapshot.pastes;
+-        this.pasteCounter = snapshot.pasteCounter;
++        if (snapshot.pasteState)
++            this.pasteMarkers.restore(snapshot.pasteState);
++        if (snapshot.imageState)
++            this.imageMarkers.install(snapshot.imageState, snapshot.state.lines.join("\n"));
+         this.lastAction = null;
+         this.preferredVisualCol = null;
+         if (this.onChange) {
+--- /dev/null
++++ b/dist/image-markers.js
+@@ -0,0 +1,131 @@
++// MIT-derived UI delta. Stock @earendil-works (MIT) + @code-yeongyu/senpi 2026.9.4-3 (MIT). See harness/pi-patches ui-*.md.
++export const IMAGE_MARKER_REGEX = /\[Image #([1-9]\d*)\]/g;
++export const IMAGE_MARKER_SINGLE = /^\[Image #([1-9]\d*)\]$/;
++export function formatImageMarker(id) {
++    return `[Image #${id}]`;
++}
++export function isImageMarker(segment) {
++    return segment.length >= 10 && IMAGE_MARKER_SINGLE.test(segment);
++}
++export function imageMarkerId(segment) {
++    const match = segment.length >= 10 ? IMAGE_MARKER_SINGLE.exec(segment) : null;
++    return match ? Number.parseInt(match[1], 10) : undefined;
++}
++function countOccurrences(text, marker) {
++    let count = 0;
++    let offset = 0;
++    while (offset <= text.length - marker.length) {
++        const index = text.indexOf(marker, offset);
++        if (index === -1)
++            break;
++        count++;
++        offset = index + marker.length;
++    }
++    return count;
++}
++function replaceSingleOccurrence(text, marker, replacement) {
++    const index = text.indexOf(marker);
++    if (index === -1 || text.indexOf(marker, index + marker.length) !== -1)
++        return text;
++    return text.slice(0, index) + replacement + text.slice(index + marker.length);
++}
++/**
++ * Tracks the ids of atomic `[Image #N]` markers living in editor text.
++ *
++ * The registry deliberately stores NO image payload: the owner (interactive mode) keeps the bytes
++ * keyed by id, and this class only guarantees that the visible numbers stay a contiguous
++ * `1..k` sequence so the Nth marker in reading order maps to the Nth submitted image.
++ */
++export class ImageMarkerRegistry {
++    constructor() {
++        this.entries = new Set();
++        this.imageCounter = 0;
++    }
++    /** Registers the next id and returns its canonical marker. */
++    add() {
++        const id = ++this.imageCounter;
++        this.entries.add(id);
++        return formatImageMarker(id);
++    }
++    /** Registered markers occurring EXACTLY once in `text` - the only ones safe to treat as atomic. */
++    authorizedMarkers(text) {
++        const markers = new Set();
++        for (const id of this.entries) {
++            const marker = formatImageMarker(id);
++            if (countOccurrences(text, marker) === 1)
++                markers.add(marker);
++        }
++        return markers;
++    }
++    /** Rewrites authorized markers to `1..k` in reading order, returning the original id order. */
++    canonicalize(text) {
++        const order = this.ids(text);
++        if (order.length === 0)
++            return { text, order };
++        const renumbered = new Map();
++        for (const [index, id] of order.entries())
++            renumbered.set(id, index + 1);
++        const updatedText = text.replace(IMAGE_MARKER_REGEX, (marker) => {
++            const id = imageMarkerId(marker);
++            const newId = id === undefined ? undefined : renumbered.get(id);
++            return newId === undefined ? marker : formatImageMarker(newId);
++        });
++        this.entries = new Set(order.map((_, index) => index + 1));
++        this.imageCounter = this.entries.size;
++        return { text: updatedText, order };
++    }
++    clear() {
++        this.entries.clear();
++        this.imageCounter = 0;
++    }
++    /** Registered, authorized ids in TEXT READING ORDER (not insertion order). */
++    ids(text) {
++        const authorized = this.authorizedMarkers(text);
++        const ordered = [];
++        for (const match of text.matchAll(IMAGE_MARKER_REGEX)) {
++            if (!authorized.has(match[0]))
++                continue;
++            ordered.push(Number.parseInt(match[1], 10));
++        }
++        return ordered;
++    }
++    install(state, text) {
++        this.restore(state);
++        this.prune(text);
++    }
++    prune(text, previousText) {
++        for (const id of [...this.entries]) {
++            const marker = formatImageMarker(id);
++            const wasAuthorized = previousText === undefined || countOccurrences(previousText, marker) === 1;
++            if (!wasAuthorized || countOccurrences(text, marker) !== 1)
++                this.entries.delete(id);
++        }
++        this.imageCounter = Math.max(...this.entries, 0);
++    }
++    /** Deletes `id`'s marker from `text` and renumbers every higher id downward by one. */
++    remove(id, text) {
++        if (!this.entries.delete(id))
++            return { text, removed: false };
++        let updatedText = replaceSingleOccurrence(text, formatImageMarker(id), "");
++        const higherIds = [...this.entries].filter((entryId) => entryId > id).sort((a, b) => a - b);
++        for (const oldId of higherIds) {
++            this.entries.delete(oldId);
++            const marker = formatImageMarker(oldId);
++            if (countOccurrences(updatedText, marker) !== 1)
++                continue;
++            const newId = oldId - 1;
++            updatedText = replaceSingleOccurrence(updatedText, marker, formatImageMarker(newId));
++            this.entries.add(newId);
++        }
++        this.imageCounter = Math.max(...this.entries, 0);
++        return { text: updatedText, removed: true };
++    }
++    restore(state) {
++        this.entries = new Set(state.ids);
++        this.imageCounter = Math.max(state.imageCounter, ...this.entries, 0);
++    }
++    snapshot() {
++        return { ids: [...this.entries].sort((a, b) => a - b), imageCounter: this.imageCounter };
++    }
++}
++//# sourceMappingURL=image-markers.js.map
+\ No newline at end of file
+--- /dev/null
++++ b/dist/paste-markers.js
+@@ -0,0 +1,202 @@
++// MIT-derived UI delta. Stock @earendil-works (MIT) + @code-yeongyu/senpi 2026.9.4-3 (MIT). See harness/pi-patches ui-*.md.
++const PASTE_MARKER_REGEX = /\[paste #(\d+)( (\+\d+ lines|\d+ chars))?\]/g;
++const PASTE_MARKER_SINGLE = /^\[paste #(\d+)( (\+\d+ lines|\d+ chars))?\]$/;
++function formatPasteMarker(id, lineCount, charCount) {
++    return lineCount > 10 ? `[paste #${id} +${lineCount} lines]` : `[paste #${id} ${charCount} chars]`;
++}
++function countLines(content) {
++    let lineCount = 1;
++    for (let index = 0; index < content.length; index++) {
++        if (content.charCodeAt(index) === 10)
++            lineCount++;
++    }
++    return lineCount;
++}
++function createEntry(id, content, marker) {
++    const charCount = content.length;
++    const parsed = marker?.match(PASTE_MARKER_SINGLE);
++    const lineMatch = parsed?.[3]?.match(/^\+(\d+) lines$/);
++    const lineCount = lineMatch ? Number.parseInt(lineMatch[1], 10) : countLines(content);
++    const canonical = formatPasteMarker(id, lineCount, charCount);
++    return { content, marker: marker === canonical ? marker : canonical, lineCount, charCount };
++}
++function countOccurrences(text, marker) {
++    let count = 0;
++    let offset = 0;
++    while (offset <= text.length - marker.length) {
++        const index = text.indexOf(marker, offset);
++        if (index === -1)
++            break;
++        count++;
++        offset = index + marker.length;
++    }
++    return count;
++}
++function replaceSingleOccurrence(text, marker, replacement) {
++    const index = text.indexOf(marker);
++    if (index === -1 || text.indexOf(marker, index + marker.length) !== -1)
++        return text;
++    return text.slice(0, index) + replacement + text.slice(index + marker.length);
++}
++function entriesFromState(state) {
++    const entries = new Map();
++    for (const [id, content] of state.pastes) {
++        entries.set(id, createEntry(id, content, state.markers?.get(id)));
++    }
++    return entries;
++}
++export function expandPasteMarkers(text, state) {
++    const entries = entriesFromState(state);
++    const byMarker = new Map();
++    for (const entry of entries.values())
++        byMarker.set(entry.marker, entry);
++    const matches = [];
++    const counts = new Map();
++    for (const match of text.matchAll(PASTE_MARKER_REGEX)) {
++        const marker = match[0];
++        if (!byMarker.has(marker))
++            continue;
++        matches.push({ start: match.index, end: match.index + marker.length, marker });
++        counts.set(marker, (counts.get(marker) ?? 0) + 1);
++    }
++    if (matches.length === 0)
++        return text;
++    const chunks = [];
++    let offset = 0;
++    for (const match of matches) {
++        chunks.push(text.slice(offset, match.start));
++        const entry = byMarker.get(match.marker);
++        chunks.push(counts.get(match.marker) === 1 ? entry.content : match.marker);
++        offset = match.end;
++    }
++    chunks.push(text.slice(offset));
++    return chunks.join("");
++}
++export function isPasteMarker(segment) {
++    return segment.length >= 10 && PASTE_MARKER_SINGLE.test(segment);
++}
++export function pasteMarkerId(segment) {
++    const match = segment.length >= 10 ? PASTE_MARKER_SINGLE.exec(segment) : null;
++    return match ? Number.parseInt(match[1], 10) : undefined;
++}
++/** Segments `text` treating every literal in `validMarkers` as a single atomic segment. */
++export function segmentWithMarkers(text, baseSegmenter, validMarkers) {
++    if (validMarkers.size === 0)
++        return baseSegmenter.segment(text);
++    const found = [];
++    for (const marker of validMarkers) {
++        const start = text.indexOf(marker);
++        if (start === -1)
++            continue;
++        found.push({ start, end: start + marker.length });
++    }
++    if (found.length === 0)
++        return baseSegmenter.segment(text);
++    found.sort((a, b) => a.start - b.start || b.end - a.end);
++    // Nested/overlapping literals would desync the single-pass walk below; keep the outermost.
++    const markers = [];
++    for (const range of found) {
++        const previous = markers[markers.length - 1];
++        if (previous && range.start < previous.end)
++            continue;
++        markers.push(range);
++    }
++    const result = [];
++    let markerIndex = 0;
++    let marker = markers[0];
++    for (const segment of baseSegmenter.segment(text)) {
++        while (marker && segment.index >= marker.end)
++            marker = markers[++markerIndex];
++        if (!marker || segment.index < marker.start) {
++            result.push(segment);
++        }
++        else if (segment.index === marker.start) {
++            result.push({ segment: text.slice(marker.start, marker.end), index: marker.start, input: text });
++        }
++    }
++    return result;
++}
++/** Backward-compatible wrapper: paste markers are just one atomic marker set. */
++export function segmentWithPasteMarkers(text, baseSegmenter, validMarkers) {
++    return segmentWithMarkers(text, baseSegmenter, validMarkers);
++}
++export class PasteMarkerRegistry {
++    constructor() {
++        this.entries = new Map();
++        this.pasteCounter = 0;
++        this.metadataBuilds = 0;
++    }
++    add(content, lineCount, charCount) {
++        const id = ++this.pasteCounter;
++        const marker = formatPasteMarker(id, lineCount, charCount);
++        this.entries.set(id, { content, marker, lineCount, charCount });
++        this.metadataBuilds++;
++        return marker;
++    }
++    authorizedMarkers(text) {
++        const markers = new Set();
++        for (const entry of this.entries.values()) {
++            if (countOccurrences(text, entry.marker) === 1)
++                markers.add(entry.marker);
++        }
++        return markers;
++    }
++    clear() {
++        this.entries.clear();
++        this.pasteCounter = 0;
++    }
++    expand(text) {
++        return expandPasteMarkers(text, this.snapshot());
++    }
++    get metadataBuildCount() {
++        return this.metadataBuilds;
++    }
++    install(state, text) {
++        this.entries = entriesFromState(state);
++        this.metadataBuilds += this.entries.size;
++        this.pasteCounter = Math.max(state.pasteCounter, ...this.entries.keys(), 0);
++        this.prune(text);
++    }
++    prune(text, previousText) {
++        for (const [id, entry] of this.entries) {
++            const wasAuthorized = previousText === undefined || countOccurrences(previousText, entry.marker) === 1;
++            if (!wasAuthorized || countOccurrences(text, entry.marker) !== 1)
++                this.entries.delete(id);
++        }
++        this.pasteCounter = Math.max(...this.entries.keys(), 0);
++    }
++    remove(id, text) {
++        const removedEntry = this.entries.get(id);
++        if (!removedEntry || !this.entries.delete(id))
++            return { text, removed: false };
++        let updatedText = replaceSingleOccurrence(text, removedEntry.marker, "");
++        const higherIds = [...this.entries.keys()].filter((entryId) => entryId > id).sort((a, b) => a - b);
++        for (const oldId of higherIds) {
++            const entry = this.entries.get(oldId);
++            this.entries.delete(oldId);
++            if (countOccurrences(updatedText, entry.marker) !== 1)
++                continue;
++            const newId = oldId - 1;
++            const renamed = formatPasteMarker(newId, entry.lineCount, entry.charCount);
++            updatedText = replaceSingleOccurrence(updatedText, entry.marker, renamed);
++            this.entries.set(newId, { ...entry, marker: renamed });
++        }
++        this.pasteCounter = Math.max(...this.entries.keys(), 0);
++        return { text: updatedText, removed: true };
++    }
++    snapshot() {
++        const pastes = new Map();
++        const markers = new Map();
++        for (const [id, entry] of this.entries) {
++            pastes.set(id, entry.content);
++            markers.set(id, entry.marker);
++        }
++        return { pastes, markers, pasteCounter: this.pasteCounter };
++    }
++    restore(state) {
++        this.entries = entriesFromState(state);
++        this.metadataBuilds += this.entries.size;
++        this.pasteCounter = Math.max(state.pasteCounter, ...this.entries.keys(), 0);
++    }
++}
++//# sourceMappingURL=paste-markers.js.map
+\ No newline at end of file

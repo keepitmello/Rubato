@@ -1,0 +1,54 @@
+--- a/dist/api/openai-codex-responses.js
++++ b/dist/api/openai-codex-responses.js
+@@ -365,6 +365,34 @@
+ // ============================================================================
+ // Request Building
+ // ============================================================================
++
++const astraConfigurationUpdateState = new Map();
++function isAstraConfigurationUpdateModel(model) {
++    return !!model && (model.id === "gpt-6-astra" || model.upstreamModelId === "gpt-6-astra");
++}
++function applyAstraConfigurationUpdate(body, model, cacheSessionId, reasoningEffort) {
++    if (!isAstraConfigurationUpdateModel(model)) return body;
++    if (reasoningEffort === undefined || reasoningEffort === null) return body;
++    if (!body || !Array.isArray(body.input)) return body;
++    const key = (model.id || "unknown") + "\n" + (cacheSessionId || "anonymous");
++    let state = astraConfigurationUpdateState.get(key);
++    if (!state || body.input.length < state.lastInputLength) {
++        state = { base: reasoningEffort, lastInputLength: body.input.length };
++        astraConfigurationUpdateState.set(key, state);
++    }
++    state.lastInputLength = body.input.length;
++    if (body.reasoning && typeof body.reasoning === "object") {
++        body.reasoning = Object.assign({}, body.reasoning, { effort: state.base });
++    }
++    if (reasoningEffort === state.base) return body;
++    const update = { type: "configuration_update", reasoning: { effort: reasoningEffort } };
++    let at = body.input.length;
++    for (let i = body.input.length - 1; i >= 0; i--) {
++        if (body.input[i] && body.input[i].role === "user") { at = i; break; }
++    }
++    body.input = body.input.slice(0, at).concat([update], body.input.slice(at));
++    return body;
++}
+ function buildRequestBody(model, context, options, cacheSessionId, grammarToolInputProperties = createGrammarToolInputProperties(context.tools, model.compat?.supportsOpenAIGrammarTools ?? false)) {
+     const supportsStrictMode = model.compat?.supportsStrictMode ?? true;
+     const supportsOpenAIGrammarTools = model.compat?.supportsOpenAIGrammarTools ?? false;
+@@ -397,7 +425,7 @@
+         tool_choice: options?.toolChoice ?? "auto",
+         parallel_tool_calls: true,
+     };
+-    if (options?.temperature !== undefined) {
++    if (options?.temperature !== undefined && !isAstraConfigurationUpdateModel(model)) {
+         body.temperature = options.temperature;
+     }
+     if (options?.serviceTier !== undefined) {
+@@ -420,6 +448,7 @@
+                 summary: options.reasoningSummary ?? "auto",
+             };
+         }
++        applyAstraConfigurationUpdate(body, model, cacheSessionId, effort);
+     }
+     return body;
+ }

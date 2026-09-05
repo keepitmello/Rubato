@@ -1,0 +1,9 @@
+--- a/dist/stream-fn.js
++++ b/dist/stream-fn.js
+@@ -14,4 +14,5 @@
+     }
+     return defaultStreamFn;
+ }
++export { withEmptyAssistantRecovery } from "./empty-assistant-recovery.js";
+ //# sourceMappingURL=stream-fn.js.map
+\ No newline at end of file

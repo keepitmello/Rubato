@@ -1,4 +1,4 @@
-import type { ExtensionContext } from "@code-yeongyu/senpi";
+import type { ExtensionContext } from "../host-types.ts";
 import type { EvalDetachedCellNotification, EvalDetachedCellNotifier } from "../tool/detached-cell-manager.ts";
 
 const NON_INTERACTIVE_MODES = new Set(["print", "json"]);

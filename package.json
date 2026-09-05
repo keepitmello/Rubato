@@ -47,6 +47,7 @@
   },
   "homepage": "https://github.com/keepitmello/Rubato#readme",
   "dependencies": {
+    "@bufbuild/protobuf": "2.14.0",
     "diff": "^9.0.0"
   },
   "devDependencies": {

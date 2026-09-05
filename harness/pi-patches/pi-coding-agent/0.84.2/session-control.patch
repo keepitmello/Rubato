@@ -1,0 +1,342 @@
+--- a/dist/core/agent-session.js
++++ b/dist/core/agent-session.js
+@@ -152,6 +152,9 @@
+         this._baseToolsOverride = config.baseToolsOverride;
+         this._sessionStartEvent = config.sessionStartEvent ?? { type: "session_start", reason: "startup" };
+         this._nextInputId = 0;
++        this._preparedInteractiveInput = undefined;
++        this._lastInteractiveSubmit = undefined;
++        this._removedToolHints = new Map();
+         // Always subscribe to agent events for internal handling
+         // (session persistence, extensions, auto-compaction, retry logic)
+         this._unsubscribeAgent = this.agent.subscribe(this._handleAgentEvent);
+@@ -799,6 +802,11 @@
+         const emitInputDisposition = async (disposition) => {
+             if (inputId === undefined)
+                 return;
++            const streamingBehavior = this.isStreaming ? options?.streamingBehavior : undefined;
++            const controlDisposition = disposition === "queued"
++                ? (streamingBehavior === "steer" ? "queued-steer" : "queued-follow-up")
++                : disposition;
++            this._lastInteractiveSubmit = { inputId, disposition: controlDisposition };
+             await this._extensionRunner.emit({
+                 type: "input_disposition",
+                 inputId,
+@@ -822,8 +830,12 @@
+             // Emit input event for extension interception (before skill/template expansion)
+             let currentText = text;
+             let currentImages = options?.images;
++            const prepared = this._preparedInteractiveInput;
++            this._preparedInteractiveInput = undefined;
++            if (this._extensionRunner.hasHandlers("input") || prepared) {
++                inputId = prepared?.id ?? randomUUID();
++            }
+             if (this._extensionRunner.hasHandlers("input")) {
+-                inputId = randomUUID();
+                 const inputResult = await this._extensionRunner.emitInput(currentText, currentImages, options?.source ?? "interactive", this.isStreaming ? options?.streamingBehavior : undefined, inputId);
+                 if (inputResult.action === "handled") {
+                     await emitInputDisposition("handled");
+@@ -1209,6 +1221,103 @@
+             return;
+         }
+         await this._getIdleWaitPromise();
++    }
++    prepareInteractiveInput(partial = {}) {
++        const requested = partial.delivery ?? "auto";
++        const delivery = requested === "auto"
++            ? (this.isStreaming ? "followUp" : "submit")
++            : (this.isStreaming ? requested : "submit");
++        this._preparedInteractiveInput = {
++            id: partial.id ?? randomUUID(),
++            delivery,
++            source: partial.source ?? "unknown",
++            text: partial.text ?? "",
++            imageCount: partial.imageCount ?? 0,
++        };
++        return this._preparedInteractiveInput;
++    }
++    takeInteractiveSubmitResult() {
++        const result = this._lastInteractiveSubmit;
++        this._lastInteractiveSubmit = undefined;
++        return result;
++    }
++    createInteractiveControlSurface() {
++        const session = this;
++        return Object.freeze({
++            async submitInput(text, options = {}) {
++                const normalized = String(text ?? "").trim();
++                if (!normalized && !(options.images?.length))
++                    return { accepted: false, reason: "empty" };
++                const inputId = options.clientInputId ?? randomUUID();
++                const delivery = options.delivery ?? "auto";
++                session.prepareInteractiveInput({
++                    id: inputId,
++                    delivery,
++                    source: options.source ?? "external",
++                    text: normalized,
++                    imageCount: options.images?.length ?? 0,
++                });
++                const streamingBehavior = session.isStreaming
++                    ? (delivery === "steer" ? "steer" : "followUp")
++                    : undefined;
++                try {
++                    await session.prompt(text, {
++                        images: options.images,
++                        source: options.source ?? "external",
++                        streamingBehavior,
++                    });
++                }
++                catch (error) {
++                    const taken = session.takeInteractiveSubmitResult();
++                    return {
++                        accepted: false,
++                        reason: taken?.disposition === "rejected" ? "rejected" : (error instanceof Error ? error.message : String(error)),
++                        inputId: taken?.inputId ?? inputId,
++                    };
++                }
++                const submitted = session.takeInteractiveSubmitResult() ?? {
++                    inputId,
++                    disposition: session.isStreaming
++                        ? (delivery === "steer" ? "queued-steer" : "queued-follow-up")
++                        : "started",
++                };
++                return { accepted: true, inputId: submitted.inputId ?? inputId, disposition: submitted.disposition };
++            },
++            abortAgent: () => session.abort(),
++            compact: (instructions) => session.compact(instructions),
++            reload: () => session.reload(),
++            setThinkingLevel: (level) => session.setThinkingLevel(level),
++            setSessionName: (name) => session.setSessionName(name),
++            snapshot: () => ({
++                sessionFile: session.sessionFile,
++                sessionName: session.sessionManager.getSessionName?.(),
++                model: session.model ? { provider: session.model.provider, id: session.model.id, name: session.model.name } : undefined,
++                thinkingLevel: session.thinkingLevel,
++                isStreaming: session.isStreaming,
++                isCompacting: session.isCompacting,
++                pendingMessageCount: session.pendingMessageCount,
++                requestTimeline: {
++                    schemaVersion: 1,
++                    runs: [],
++                    pendingInputs: [],
++                    hasOlder: false,
++                },
++            }),
++            clearPendingInputs: () => {
++                session.clearQueue();
++                return { clearedIds: [] };
++            },
++            listCommands: () => session.extensionRunner.getRegisteredCommands().map((command) => ({
++                name: command.invocationName,
++                description: command.description,
++                category: "extension",
++                remoteMode: "direct",
++            })),
++            readConversationPage: async () => ({ entries: [], requestRuns: [] }),
++        });
++    }
++    getInteractiveControl() {
++        return this._extensionRunner?.getInteractiveControl?.() ?? this.createInteractiveControlSurface();
+     }
+     // =========================================================================
+     // Model Management
+@@ -2073,6 +2182,7 @@
+             this._extensionRunnerRef.current = this._extensionRunner;
+         }
+         this._bindExtensionCore(this._extensionRunner);
++        this._extensionRunner.setInteractiveControl(this.createInteractiveControlSurface());
+         this._applyExtensionBindings(this._extensionRunner);
+         const defaultActiveToolNames = this._baseToolsOverride
+             ? Object.keys(this._baseToolsOverride)
+--- a/dist/core/agent-session.d.ts
++++ b/dist/core/agent-session.d.ts
+@@ -434,6 +434,25 @@
+      */
+     abort(): Promise<void>;
+     waitForIdle(): Promise<void>;
++    prepareInteractiveInput(partial?: {
++        id?: string;
++        delivery?: "auto" | "steer" | "followUp" | "submit";
++        source?: string;
++        text?: string;
++        imageCount?: number;
++    }): {
++        id: string;
++        delivery: string;
++        source: string;
++        text: string;
++        imageCount: number;
++    };
++    takeInteractiveSubmitResult(): {
++        inputId: string;
++        disposition: string;
++    } | undefined;
++    createInteractiveControlSurface(): import("./extensions/types.ts").InteractiveControlSurface;
++    getInteractiveControl(): import("./extensions/types.ts").InteractiveControlSurface;
+     private _emitModelSelect;
+     /**
+      * Set model directly.
+--- a/dist/core/extensions/loader.js
++++ b/dist/core/extensions/loader.js
+@@ -153,6 +153,8 @@
+         setActiveTools: notInitialized,
+         // registerTool() is valid during extension load; refresh is only needed post-bind.
+         refreshTools: () => { },
++        registerRemovedToolHint: () => { },
++        getInteractiveControl: () => undefined,
+         getCommands: notInitialized,
+         setModel: () => Promise.reject(new Error("Extension runtime not initialized")),
+         getThinkingLevel: notInitialized,
+@@ -303,7 +305,21 @@
+         getCommands() {
+             runtime.assertActive();
+             return runtime.getCommands();
++        },
++        getInteractiveControl() {
++            runtime.assertActive();
++            return runtime.getInteractiveControl();
+         },
++        registerRemovedToolHint(name, hint) {
++            runtime.assertActive();
++            let hints = extension.removedToolHints;
++            if (!hints) {
++                hints = new Map();
++                extension.removedToolHints = hints;
++            }
++            hints.set(name, hint);
++            runtime.registerRemovedToolHint(name, hint);
++        },
+         setModel(model) {
+             runtime.assertActive();
+             return runtime.setModel(model);
+@@ -389,6 +405,7 @@
+         sourceInfo: createSyntheticSourceInfo(extensionPath, { source, baseDir }),
+         handlers: new Map(),
+         tools: new Map(),
++        removedToolHints: new Map(),
+         messageRenderers: new Map(),
+         entryRenderers: new Map(),
+         commands: new Map(),
+--- a/dist/core/extensions/runner.js
++++ b/dist/core/extensions/runner.js
+@@ -246,7 +246,22 @@
+             }
+             this.modelRegistry.unregisterProvider(name);
+         };
++        this.runtime.registerRemovedToolHint = (name, hint) => {
++            this._removedToolHints ??= new Map();
++            this._removedToolHints.set(name, hint);
++        };
++        for (const extension of this.extensions) {
++            for (const [name, hint] of extension.removedToolHints ?? []) {
++                this.runtime.registerRemovedToolHint(name, hint);
++            }
++        }
+     }
++    setInteractiveControl(surface) {
++        this.runtime.getInteractiveControl = () => surface;
++    }
++    getInteractiveControl() {
++        return this.runtime.getInteractiveControl?.();
++    }
+     bindCommandContext(actions) {
+         if (actions) {
+             this.waitForIdleFn = actions.waitForIdle;
+--- a/dist/core/extensions/runner.d.ts
++++ b/dist/core/extensions/runner.d.ts
+@@ -105,6 +105,8 @@
+         registerNativeProvider?: (provider: Provider) => void;
+         unregisterProvider?: (name: string) => void;
+     }): void;
++    setInteractiveControl(surface: unknown): void;
++    getInteractiveControl(): unknown;
+     bindCommandContext(actions?: ExtensionCommandContextActions): void;
+     setUIContext(uiContext?: ExtensionUIContext, mode?: ExtensionMode): void;
+     getUIContext(): ExtensionUIContext;
+--- a/dist/core/extensions/types.d.ts
++++ b/dist/core/extensions/types.d.ts
+@@ -899,6 +899,50 @@
+ }
+ /** Handler function type for events */
+ export type ExtensionHandler<E, R = undefined> = (event: E, ctx: ExtensionContext) => Promise<R | void> | R | void;
++export interface InteractiveControlSurface {
++    submitInput(text: string, options?: {
++        images?: ImageContent[];
++        delivery?: "auto" | "steer" | "followUp";
++        source?: string;
++        clientInputId?: string;
++    }): Promise<{
++        accepted: boolean;
++        reason?: string;
++        inputId?: string;
++        disposition?: string;
++    }>;
++    abortAgent(): Promise<void> | void;
++    compact?(instructions?: string): Promise<unknown>;
++    reload?(): Promise<unknown>;
++    snapshot(): {
++        isStreaming?: boolean;
++        isCompacting?: boolean;
++        pendingMessageCount?: number;
++        requestTimeline?: {
++            schemaVersion: number;
++            runs: unknown[];
++            pendingInputs: unknown[];
++            hasOlder: boolean;
++        };
++        [key: string]: unknown;
++    };
++    listCommands?(): Array<{
++        name: string;
++        description?: string;
++        category?: string;
++        remoteMode?: string;
++    }>;
++    clearPendingInputs?(): {
++        clearedIds: string[];
++    };
++    readConversationPage?(input?: unknown): Promise<{
++        entries: unknown[];
++        requestRuns: unknown[];
++    }> | {
++        entries: unknown[];
++        requestRuns: unknown[];
++    };
++}
+ /**
+  * ExtensionAPI passed to extension factory functions.
+  */
+@@ -941,6 +985,10 @@
+     on(event: "input_disposition", handler: ExtensionHandler<InputDispositionEvent>): void;
+     /** Register a tool that the LLM can call. */
+     registerTool<TParams extends TSchema = TSchema, TDetails = unknown, TState = any>(tool: ToolDefinition<TParams, TDetails, TState>): void;
++    /** Register migration guidance returned when an intentionally removed tool is called. */
++    registerRemovedToolHint(name: string, hint: string): void;
++    /** Public interactive control surface (session-backed; TUI may overlay). */
++    getInteractiveControl(): InteractiveControlSurface | undefined;
+     /** Register a custom command. */
+     registerCommand(name: string, options: Omit<RegisteredCommand, "name" | "sourceInfo">): void;
+     /** Register a keyboard shortcut. */
+--- a/dist/core/extensions/index.d.ts
++++ b/dist/core/extensions/index.d.ts
+@@ -6,7 +6,7 @@
+ export { createExtensionRuntime, discoverAndLoadExtensions, loadExtensionFromFactory, loadExtensions, } from "./loader.ts";
+ export type { ExtensionErrorListener, ForkHandler, NavigateTreeHandler, NewSessionHandler, ShutdownHandler, SwitchSessionHandler, } from "./runner.ts";
+ export { ExtensionRunner } from "./runner.ts";
+-export type { AfterProviderResponseEvent, AgentEndEvent, AgentSettledEvent, AgentStartEvent, AgentToolResult, AgentToolUpdateCallback, AppendEntryHandler, AppKeybinding, AutocompleteProviderFactory, BashToolCallEvent, BashToolResultEvent, BeforeAgentStartEvent, BeforeAgentStartEventResult, BeforeProviderHeadersEvent, BeforeProviderRequestEvent, BeforeProviderRequestEventResult, BuildSystemPromptOptions, CompactOptions, ContextEvent, ContextEventResult, ContextUsage, CustomToolCallEvent, CustomToolResultEvent, EditorFactory, EditToolCallEvent, EditToolResultEvent, EntryRenderer, EntryRenderOptions, ExecOptions, ExecResult, Extension, ExtensionActions, ExtensionAPI, ExtensionCommandContext, ExtensionCommandContextActions, ExtensionContext, ExtensionContextActions, ExtensionError, ExtensionEvent, ExtensionFactory, ExtensionFlag, ExtensionHandler, ExtensionMode, ExtensionRuntime, ExtensionShortcut, ExtensionUIContext, ExtensionUIDialogOptions, ExtensionWidgetOptions, FindToolCallEvent, FindToolResultEvent, GetActiveToolsHandler, GetAllToolsHandler, GetCommandsHandler, GetThinkingLevelHandler, GrepToolCallEvent, GrepToolResultEvent, InlineExtension, InputEvent, InputEventResult, InputSource, InputDispositionEvent, SessionAbortEvent, KeybindingsManager, LoadExtensionsResult, LsToolCallEvent, LsToolResultEvent, MarkdownTransformContext, MarkdownTransformer, MessageEndEvent, MessageRenderer, MessageRenderOptions, MessageStartEvent, MessageUpdateEvent, ModelSelectEvent, ModelSelectSource, ProjectTrustContext, ProjectTrustEvent, ProjectTrustEventDecision, ProjectTrustEventResult, ProjectTrustHandler, ProviderConfig, ProviderModelConfig, ReadToolCallEvent, ReadToolResultEvent, RegisteredCommand, RegisteredTool, ReplacedSessionContext, ResolvedCommand, ResourcesDiscoverEvent, ResourcesDiscoverResult, SendMessageHandler, SendUserMessageHandler, SessionBeforeCompactEvent, SessionBeforeCompactResult, SessionBeforeForkEvent, SessionBeforeForkResult, SessionBeforeReloadEvent, SessionBeforeReloadResult, SessionBeforeSwitchEvent, SessionBeforeSwitchResult, SessionBeforeTreeEvent, SessionBeforeTreeResult, ReloadVetoDecision, SessionCompactEvent, SessionEvent, SessionInfoChangedEvent, SessionShutdownEvent, SessionStartEvent, SessionTreeEvent, SetActiveToolsHandler, SetLabelHandler, SetModelHandler, SetThinkingLevelHandler, TerminalInputHandler, ToolCallEvent, ToolCallEventResult, ToolDefinition, ToolExecutionEndEvent, ToolExecutionMode, ToolExecutionStartEvent, ToolExecutionUpdateEvent, ToolInfo, ToolRenderResultOptions, ToolResultEvent, ToolResultEventResult, TreePreparation, TurnEndEvent, TurnStartEvent, UserBashEvent, UserBashEventResult, WidgetPlacement, WorkingIndicatorOptions, WriteToolCallEvent, WriteToolResultEvent, } from "./types.ts";
++export type { AfterProviderResponseEvent, AgentEndEvent, AgentSettledEvent, AgentStartEvent, AgentToolResult, AgentToolUpdateCallback, AppendEntryHandler, AppKeybinding, AutocompleteProviderFactory, BashToolCallEvent, BashToolResultEvent, BeforeAgentStartEvent, BeforeAgentStartEventResult, BeforeProviderHeadersEvent, BeforeProviderRequestEvent, BeforeProviderRequestEventResult, BuildSystemPromptOptions, CompactOptions, ContextEvent, ContextEventResult, ContextUsage, CustomToolCallEvent, CustomToolResultEvent, EditorFactory, EditToolCallEvent, EditToolResultEvent, EntryRenderer, EntryRenderOptions, ExecOptions, ExecResult, Extension, ExtensionActions, ExtensionAPI, ExtensionCommandContext, ExtensionCommandContextActions, ExtensionContext, ExtensionContextActions, ExtensionError, ExtensionEvent, ExtensionFactory, ExtensionFlag, ExtensionHandler, ExtensionMode, ExtensionRuntime, ExtensionShortcut, ExtensionUIContext, ExtensionUIDialogOptions, ExtensionWidgetOptions, FindToolCallEvent, FindToolResultEvent, GetActiveToolsHandler, GetAllToolsHandler, GetCommandsHandler, GetThinkingLevelHandler, GrepToolCallEvent, GrepToolResultEvent, InlineExtension, InputEvent, InputEventResult, InputSource, InputDispositionEvent, SessionAbortEvent, InteractiveControlSurface, KeybindingsManager, LoadExtensionsResult, LsToolCallEvent, LsToolResultEvent, MarkdownTransformContext, MarkdownTransformer, MessageEndEvent, MessageRenderer, MessageRenderOptions, MessageStartEvent, MessageUpdateEvent, ModelSelectEvent, ModelSelectSource, ProjectTrustContext, ProjectTrustEvent, ProjectTrustEventDecision, ProjectTrustEventResult, ProjectTrustHandler, ProviderConfig, ProviderModelConfig, ReadToolCallEvent, ReadToolResultEvent, RegisteredCommand, RegisteredTool, ReplacedSessionContext, ResolvedCommand, ResourcesDiscoverEvent, ResourcesDiscoverResult, SendMessageHandler, SendUserMessageHandler, SessionBeforeCompactEvent, SessionBeforeCompactResult, SessionBeforeForkEvent, SessionBeforeForkResult, SessionBeforeReloadEvent, SessionBeforeReloadResult, SessionBeforeSwitchEvent, SessionBeforeSwitchResult, SessionBeforeTreeEvent, SessionBeforeTreeResult, ReloadVetoDecision, SessionCompactEvent, SessionEvent, SessionInfoChangedEvent, SessionShutdownEvent, SessionStartEvent, SessionTreeEvent, SetActiveToolsHandler, SetLabelHandler, SetModelHandler, SetThinkingLevelHandler, TerminalInputHandler, ToolCallEvent, ToolCallEventResult, ToolDefinition, ToolExecutionEndEvent, ToolExecutionMode, ToolExecutionStartEvent, ToolExecutionUpdateEvent, ToolInfo, ToolRenderResultOptions, ToolResultEvent, ToolResultEventResult, TreePreparation, TurnEndEvent, TurnStartEvent, UserBashEvent, UserBashEventResult, WidgetPlacement, WorkingIndicatorOptions, WriteToolCallEvent, WriteToolResultEvent, } from "./types.ts";
+ export { defineTool, isBashToolResult, isEditToolResult, isFindToolResult, isGrepToolResult, isLsToolResult, isReadToolResult, isToolCallEventType, isWriteToolResult, } from "./types.ts";
+ export { wrapRegisteredTool, wrapRegisteredTools } from "./wrapper.ts";
+ //# sourceMappingURL=index.d.ts.map
+\ No newline at end of file
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -4,7 +4,7 @@
+ export { readStoredCredential } from "./core/auth-storage.ts";
+ export { type BranchPreparation, type BranchSummaryResult, type CollectEntriesResult, type CompactionResult, type CutPointResult, calculateContextTokens, collectEntriesForBranchSummary, compact, DEFAULT_COMPACTION_SETTINGS, estimateTokens, type FileOperations, findCutPoint, findTurnStartIndex, type GenerateBranchSummaryOptions, generateBranchSummary, generateSummary, generateSummaryWithUsage, getLastAssistantUsage, prepareBranchEntries, serializeConversation, shouldCompact, } from "./core/compaction/index.ts";
+ export { createEventBus, type EventBus, type EventBusController } from "./core/event-bus.ts";
+-export type { AgentEndEvent, AgentSettledEvent, AgentStartEvent, AgentToolResult, AgentToolUpdateCallback, AppKeybinding, AutocompleteProviderFactory, BashToolCallEvent, BeforeAgentStartEvent, BeforeAgentStartEventResult, BeforeProviderHeadersEvent, BeforeProviderRequestEvent, BeforeProviderRequestEventResult, BuildSystemPromptOptions, CompactOptions, ContextEvent, ContextUsage, CustomToolCallEvent, EditToolCallEvent, EntryRenderer, EntryRenderOptions, ExecOptions, ExecResult, Extension, ExtensionActions, ExtensionAPI, ExtensionCommandContext, ExtensionCommandContextActions, ExtensionContext, ExtensionContextActions, ExtensionError, ExtensionEvent, ExtensionFactory, ExtensionFlag, ExtensionHandler, ExtensionRuntime, ExtensionShortcut, ExtensionUIContext, ExtensionUIDialogOptions, ExtensionWidgetOptions, FindToolCallEvent, GrepToolCallEvent, InlineExtension, InputEvent, InputEventResult, InputSource, InputDispositionEvent, SessionAbortEvent, KeybindingsManager, LoadExtensionsResult, LsToolCallEvent, MarkdownTransformContext, MarkdownTransformer, MessageEndEvent, MessageRenderer, MessageRenderOptions, MessageStartEvent, MessageUpdateEvent, ProjectTrustContext, ProjectTrustEvent, ProjectTrustEventDecision, ProjectTrustEventResult, ProjectTrustHandler, ProviderConfig, ProviderModelConfig, ReadToolCallEvent, RegisteredCommand, RegisteredTool, ResolvedCommand, SessionBeforeCompactEvent, SessionBeforeForkEvent, SessionBeforeReloadEvent, SessionBeforeReloadResult, ReloadVetoDecision, SessionBeforeSwitchEvent, SessionBeforeTreeEvent, SessionCompactEvent, SessionInfoChangedEvent, SessionShutdownEvent, SessionStartEvent, SessionTreeEvent, SlashCommandInfo, SlashCommandSource, SourceInfo, TerminalInputHandler, ToolCallEvent, ToolCallEventResult, ToolDefinition, ToolExecutionEndEvent, ToolExecutionMode, ToolExecutionStartEvent, ToolExecutionUpdateEvent, ToolInfo, ToolRenderResultOptions, ToolResultEvent, TurnEndEvent, TurnStartEvent, UserBashEvent, UserBashEventResult, WidgetPlacement, WorkingIndicatorOptions, WriteToolCallEvent, } from "./core/extensions/index.ts";
++export type { AgentEndEvent, AgentSettledEvent, AgentStartEvent, AgentToolResult, AgentToolUpdateCallback, AppKeybinding, AutocompleteProviderFactory, BashToolCallEvent, BeforeAgentStartEvent, BeforeAgentStartEventResult, BeforeProviderHeadersEvent, BeforeProviderRequestEvent, BeforeProviderRequestEventResult, BuildSystemPromptOptions, CompactOptions, ContextEvent, ContextUsage, CustomToolCallEvent, EditToolCallEvent, EntryRenderer, EntryRenderOptions, ExecOptions, ExecResult, Extension, ExtensionActions, ExtensionAPI, ExtensionCommandContext, ExtensionCommandContextActions, ExtensionContext, ExtensionContextActions, ExtensionError, ExtensionEvent, ExtensionFactory, ExtensionFlag, ExtensionHandler, ExtensionRuntime, ExtensionShortcut, ExtensionUIContext, ExtensionUIDialogOptions, ExtensionWidgetOptions, FindToolCallEvent, GrepToolCallEvent, InlineExtension, InputEvent, InputEventResult, InputSource, InputDispositionEvent, SessionAbortEvent, InteractiveControlSurface, KeybindingsManager, LoadExtensionsResult, LsToolCallEvent, MarkdownTransformContext, MarkdownTransformer, MessageEndEvent, MessageRenderer, MessageRenderOptions, MessageStartEvent, MessageUpdateEvent, ProjectTrustContext, ProjectTrustEvent, ProjectTrustEventDecision, ProjectTrustEventResult, ProjectTrustHandler, ProviderConfig, ProviderModelConfig, ReadToolCallEvent, RegisteredCommand, RegisteredTool, ResolvedCommand, SessionBeforeCompactEvent, SessionBeforeForkEvent, SessionBeforeReloadEvent, SessionBeforeReloadResult, ReloadVetoDecision, SessionBeforeSwitchEvent, SessionBeforeTreeEvent, SessionCompactEvent, SessionInfoChangedEvent, SessionShutdownEvent, SessionStartEvent, SessionTreeEvent, SlashCommandInfo, SlashCommandSource, SourceInfo, TerminalInputHandler, ToolCallEvent, ToolCallEventResult, ToolDefinition, ToolExecutionEndEvent, ToolExecutionMode, ToolExecutionStartEvent, ToolExecutionUpdateEvent, ToolInfo, ToolRenderResultOptions, ToolResultEvent, TurnEndEvent, TurnStartEvent, UserBashEvent, UserBashEventResult, WidgetPlacement, WorkingIndicatorOptions, WriteToolCallEvent, } from "./core/extensions/index.ts";
+ export { createExtensionRuntime, defineTool, discoverAndLoadExtensions, ExtensionRunner, isBashToolResult, isEditToolResult, isFindToolResult, isGrepToolResult, isLsToolResult, isReadToolResult, isToolCallEventType, isWriteToolResult, wrapRegisteredTool, wrapRegisteredTools, } from "./core/extensions/index.ts";
+ export type { ReadonlyFooterDataProvider } from "./core/footer-data-provider.ts";
+ export { convertToLlm } from "./core/messages.ts";

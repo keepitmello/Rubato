@@ -1,5 +1,5 @@
 import * as os from "node:os";
-import type { ExtensionContext } from "@code-yeongyu/senpi";
+import type { ExtensionContext } from "./host-types.ts";
 import type { AgentExecuteTool } from "./bridges/agent-bridge.ts";
 import type { EvalSchemaToolInfo } from "./bridges/schema-bridge.ts";
 import { type CompletionRequest, type CompletionResult, createCompletionHandler } from "./completion/handler.ts";

@@ -1,15 +1,12 @@
 import { existsSync } from "node:fs"
-import { createRequire } from "node:module"
-import { isAbsolute, join } from "node:path"
+import { isAbsolute } from "node:path"
 
 import {
   detectBunBinary,
   resolveSenpiLauncher as resolveTaskSenpiLauncher,
   type SenpiLauncher,
 } from "@rubato/senpi-task"
-
-const SENPI_PACKAGE_DIR = join("@code-yeongyu", "senpi")
-const CLI_RELATIVE = join("dist", "cli.js")
+import { stockCliEntry } from "@rubato/senpi-task/pi-sdk"
 
 /**
  * Resolve the senpi CLI to spawn reflection, dream, and facts children with.
@@ -69,12 +66,12 @@ export type SenpiLaunchRuntime = {
 }
 
 function resolveInstalledSenpiCli(): string | null {
-  const require = createRequire(import.meta.url)
-  for (const modulesDir of require.resolve.paths(join(SENPI_PACKAGE_DIR, "package.json")) ?? []) {
-    const candidate = join(modulesDir, SENPI_PACKAGE_DIR, CLI_RELATIVE)
-    if (existsSync(candidate)) return candidate
+  try {
+    const cli = stockCliEntry()
+    return existsSync(cli) ? cli : null
+  } catch {
+    return null
   }
-  return null
 }
 
 function defaultRuntime(): SenpiLaunchRuntime {

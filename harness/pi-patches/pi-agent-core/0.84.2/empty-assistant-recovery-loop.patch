@@ -1,0 +1,20 @@
+--- a/dist/agent-loop.js
++++ b/dist/agent-loop.js
+@@ -3,7 +3,7 @@
+  * Transforms to Message[] only at the LLM call boundary.
+  */
+ import { EventStream, validateToolArguments, } from "@earendil-works/pi-ai";
+-import { getDefaultStreamFn } from "./stream-fn.js";
++import { getDefaultStreamFn, withEmptyAssistantRecovery } from "./stream-fn.js";
+ /**
+  * Start an agent loop with a new prompt message.
+  * The prompt is added to the context and events are emitted for it.
+@@ -103,7 +103,7 @@
+                 pendingMessages = [];
+             }
+             // Stream assistant response
+-            const message = await streamAssistantResponse(currentContext, config, signal, emit, streamFunction);
++            const message = await streamAssistantResponse(currentContext, config, signal, emit, withEmptyAssistantRecovery(config.model, streamFunction));
+             newMessages.push(message);
+             if (message.stopReason === "error" || message.stopReason === "aborted") {
+                 await emit({ type: "turn_end", message, toolResults: [] });

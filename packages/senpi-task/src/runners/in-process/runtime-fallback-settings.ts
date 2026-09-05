@@ -1,26 +1,44 @@
-import { SettingsManager } from "@code-yeongyu/senpi"
+import type { SettingsManager } from "@code-yeongyu/senpi"
 
+import { tryGetStockSdkSync } from "../../pi-sdk/stock-runtime.ts"
 import type { ResolvedModelRecord } from "../../state"
+
+type RetryFallbackSettings = {
+  readonly modelFallback: boolean
+  readonly chains: Readonly<Record<string, readonly string[]>>
+}
+
+type FallbackSettings = SettingsManager & {
+  getRetryFallbackSettings(): RetryFallbackSettings
+}
 
 export function createRuntimeFallbackSettings(
   selectedModel: string | undefined,
   fallbackModels: readonly ResolvedModelRecord[] | undefined,
-): SettingsManager {
-  if (selectedModel === undefined || fallbackModels === undefined || fallbackModels.length === 0) {
-    return SettingsManager.inMemory({
-      retry: {
-        modelFallback: false,
-      },
-    })
+): FallbackSettings {
+  const retry = selectedModel === undefined || fallbackModels === undefined || fallbackModels.length === 0
+    ? { modelFallback: false as const }
+    : {
+        modelFallback: true as const,
+        fallbackChains: {
+          [selectedModel]: fallbackModels.map(modelSelector),
+        },
+      }
+  const chains = "fallbackChains" in retry ? retry.fallbackChains : {}
+  const view: RetryFallbackSettings = {
+    modelFallback: retry.modelFallback,
+    chains,
   }
-  return SettingsManager.inMemory({
-    retry: {
-      modelFallback: true,
-      fallbackChains: {
-        [selectedModel]: fallbackModels.map(modelSelector),
-      },
-    },
-  })
+  const stock = tryGetStockSdkSync()?.SettingsManager.inMemory({ retry })
+  if (stock !== undefined && typeof stock === "object" && stock !== null) {
+    const inner = stock as FallbackSettings
+    if (typeof inner.getRetryFallbackSettings === "function") return inner
+    inner.getRetryFallbackSettings = () => view
+    return inner
+  }
+  return {
+    getRetryFallbackSettings: () => view,
+  } as FallbackSettings
 }
 
 function modelSelector(model: ResolvedModelRecord): string {

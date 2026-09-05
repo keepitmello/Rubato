@@ -40,6 +40,10 @@
     "./notice-box": {
       "types": "./src/notice-box.ts",
       "import": "./src/notice-box.ts"
+    },
+    "./pi-sdk": {
+      "types": "./src/pi-sdk/index.ts",
+      "import": "./src/pi-sdk/index.ts"
     }
   },
   "types": "./src/index.ts",

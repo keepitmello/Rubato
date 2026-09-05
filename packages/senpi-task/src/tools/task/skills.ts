@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 
-import { loadSkillsFromDir as discoverSkillsFromDir } from "@code-yeongyu/senpi"
+import { loadSkillsFromDir as discoverSkillsFromDir } from "../../pi-sdk/host-runtime.ts"
 
 import type { LoadedSkill, SkillLoader, SkillResolution } from "./types"
 

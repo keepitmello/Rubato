@@ -1,0 +1,90 @@
+--- a/dist/modes/rpc/rpc-client.d.ts
++++ b/dist/modes/rpc/rpc-client.d.ts
+@@ -76,6 +76,14 @@
+      * Abort current operation.
+      */
+     abort(): Promise<void>;
++    reload(): Promise<{
++        cancelled: boolean;
++        reason?: string;
++    }>;
++    checkReloadVeto(): Promise<{
++        cancelled: boolean;
++        reason?: string;
++    }>;
+     /**
+      * Start a new session, optionally with parent tracking.
+      * @param parentSession - Optional parent session path for lineage tracking
+--- a/dist/modes/rpc/rpc-client.js
++++ b/dist/modes/rpc/rpc-client.js
+@@ -152,6 +152,14 @@
+      */
+     async abort() {
+         await this.send({ type: "abort" });
++    }
++    async reload() {
++        const response = await this.send({ type: "reload" });
++        return this.getData(response);
++    }
++    async checkReloadVeto() {
++        const response = await this.send({ type: "check_reload_veto" });
++        return this.getData(response);
+     }
+     /**
+      * Start a new session, optionally with parent tracking.
+--- a/dist/modes/rpc/rpc-mode.js
++++ b/dist/modes/rpc/rpc-mode.js
+@@ -564,6 +564,13 @@
+                 }
+                 return success(id, "get_commands", { commands });
+             }
++            case "reload": {
++                const result = await session.reload();
++                return success(id, "reload", result);
++            }
++            case "check_reload_veto": {
++                return success(id, "check_reload_veto", await session.checkReloadVeto());
++            }
+             default: {
+                 const unknownCommand = command;
+                 return error(id, unknownCommand.type, `Unknown command: ${unknownCommand.type}`);
+--- a/dist/modes/rpc/rpc-types.d.ts
++++ b/dist/modes/rpc/rpc-types.d.ts
+@@ -30,6 +30,12 @@
+ } | {
+     id?: string;
+     type: "abort";
++} | {
++    id?: string;
++    type: "reload";
++} | {
++    id?: string;
++    type: "check_reload_veto";
+ } | {
+     id?: string;
+     type: "new_session";
+@@ -179,6 +185,24 @@
+ } | {
+     id?: string;
+     type: "response";
++    command: "reload";
++    success: true;
++    data: {
++        cancelled: boolean;
++        reason?: string;
++    };
++} | {
++    id?: string;
++    type: "response";
++    command: "check_reload_veto";
++    success: true;
++    data: {
++        cancelled: boolean;
++        reason?: string;
++    };
++} | {
++    id?: string;
++    type: "response";
+     command: "new_session";
+     success: true;
+     data: {

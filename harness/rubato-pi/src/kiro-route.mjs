@@ -17,7 +17,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { senpiNested } from "./engine-paths.mjs";
+import { resolvePiAiFile } from "./pi-provider-bridge.mjs";
 
 export const KIRO_PROVIDER_ID = "kiro";
 
@@ -265,7 +265,7 @@ export function kiroApiKeyAuth({ env = process.env, readFileImpl, home } = {}) {
 }
 
 async function loadPinned(file, exportName) {
-  const module = await import(pathToFileURL(senpiNested(`@earendil-works/pi-ai/dist/${file}`)).href);
+  const module = await import(pathToFileURL(resolvePiAiFile(`dist/${file}`)).href);
   const value = module[exportName];
   if (typeof value !== "function") throw new Error(`pinned pi-ai has no ${exportName} in ${file}`);
   return value;

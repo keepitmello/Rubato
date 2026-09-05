@@ -60,15 +60,67 @@ or a retained package production dependency.
 - Upstream URL: https://github.com/neurosnap/zmx
 - Where-bundled: architecture-specific Rubato Remote process-lifecycle binary built from commit `0266042ca8f399c9d76825739b93443e2d5bf47a`; checksums and build inputs are pinned in `third_party/zmx-lock.json`.
 
+### @earendil-works/pi-tui@0.84.2 (copied fixture + derived unicode-input.patch)
+- License: MIT (package metadata). The inspected npm tarball did not include a separate LICENSE file. Full MIT text is reproduced below.
+- Copyright: Copyright (c) Mario Zechner and pi contributors.
+- Additional in-file notice in `dist/stdin-buffer.js`: based on code from OpenTUI (https://github.com/anomalyco/opentui), MIT License - Copyright (c) 2025 opentui.
+- Upstream URL: https://github.com/earendil-works/pi/tree/main/packages/tui
+- Where-bundled:
+  - verbatim stock copy: `harness/rubato-pi/test/fixtures/pi-tui-0.84.2-stdin-buffer.js`
+  - derived delta: `harness/pi-patches/pi-tui/0.84.2/unicode-input.patch` (and `unicode-input.md`)
+- Delta informed by `@code-yeongyu/senpi-tui@2026.9.4-3` (MIT, Yeongyu Kim / code-yeongyu). Only the four functional hunks were carried; the fork file was not copied wholesale.
+
+### @earendil-works/pi-coding-agent@0.84.2 (derived reload-guard.patch)
+- License: MIT (package metadata). The inspected npm tarball did not include a separate LICENSE file. Full MIT text is reproduced below.
+- Copyright: Copyright (c) Mario Zechner and pi contributors.
+- Upstream URL: https://github.com/earendil-works/pi/tree/main/packages/coding-agent
+- Where-bundled: derived deltas `harness/pi-patches/pi-coding-agent/0.84.2/reload-guard.patch` and `reload-ui.patch` (and `README.md` / `reload-ui.md`). Tests apply them in that order to an unpacked stock 0.84.2 scratch install (not committed).
+- Delta informed by `@code-yeongyu/senpi@2026.9.4-3` (MIT, Yeongyu Kim / code-yeongyu). Stock `emit()` short-circuit and `hasHandlers()` are preserved; the patch adds the `session_before_reload` arm, `AgentSession` gate, and matching public types.
+
+### Stock Pi cutover compatibility checkpoint (not a release)
+- License: MIT for the Pi and Senpi-derived compatibility source and patches.
+- Copyright: Mario Zechner / Pi contributors; Yeongyu Kim / code-yeongyu for Senpi-derived functionality.
+- Where-bundled: `harness/pi-patches/{pi-coding-agent,pi-ai,pi-agent-core,pi-tui}/0.84.2/` and the generated counterparts under `harness/pi-patches/integrated/`.
+- Provenance: per-patch Markdown files, `pi-ai/0.84.2/owned/LICENSE.md`, `pi-agent-core/0.84.2/owned/LICENSE.md`, and `manifest.json` source SHA256 entries. Generated integrated patches preserve the same attribution as their inputs.
+- This checkpoint carries provider, session, editor, terminal-capability and UI modules; the earlier reload/Unicode entries are not the complete inventory of retained compatibility code.
+
+### @bufbuild/protobuf@2.14.0 (staged runtime dependency)
+- License: `(Apache-2.0 AND BSD-3-Clause)`, as declared in the inspected package metadata.
+- Upstream URL: https://github.com/bufbuild/protobuf-es
+- Where-bundled: copied from the pinned build dependency into the staged Pi engine's `node_modules/@bufbuild/protobuf`.
+- The inspected npm payload contains `dist`, `package.json`, and `README.md`, but no top-level license file. Release packaging must complete the license-text audit; this checkpoint is not a distribution approval.
+
+MIT License (applies to the Pi / OpenTUI / Senpi materials named above that are MIT-declared without a vendored LICENSE file):
+
+```
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ## Production npm dependencies of retained packages
 
 These are declared `dependencies` of first-party packages under `packages/`, excluding nested skill `package.json` files. The complete transitive lockfile policy is machine-validated from `third_party/npm-license-policy.json`.
 
 ### @earendil-works/pi-tui@0.84.2
-- License: MIT, from package metadata. The inspected package did not include a separate LICENSE file.
-- Copyright: Mario Zechner and pi contributors.
+- License: MIT, from package metadata. The inspected package did not include a separate LICENSE file. Full MIT text is reproduced in Copied or derived source above.
+- Copyright: Mario Zechner and pi contributors. stdin-buffer.js also carries OpenTUI MIT, Copyright (c) 2025 opentui.
 - Upstream URL: https://github.com/earendil-works/pi/tree/main/packages/tui
-- Where-bundled: `@rubato/runtime` production dependency.
+- Where-bundled: `@rubato/runtime` production dependency; also the retained stdin-buffer fixture and `unicode-input.patch` listed under Copied or derived source.
 
 ### js-yaml@5.3.0
 - License: MIT, from `node_modules/js-yaml/LICENSE`.
