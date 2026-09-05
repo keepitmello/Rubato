@@ -257,8 +257,8 @@ describe("createTaskStatusUi.background progress", () => {
     for (const callback of [...active.values()]) callback()
 
     expect(ui.widgetCalls.at(-1)?.content).toEqual([
-      "⠋ Investigate the unexpectedly ... · 5.6 Luna high [fast] · 1m 5s · 42 tok/s",
-      "⠋ Review tests · 5.6 Luna [fast] · 1m 5s",
+      "⠋ Investigate the unexpectedly ... · Luna 5.6 high [fast] · 1m 5s · 42 tok/s",
+      "⠋ Review tests · Luna 5.6 [fast] · 1m 5s",
     ])
     // C1: the duplicated footer task status line is gone; widget rows are the only task surface.
     expect(ui.statusCalls).toHaveLength(0)
