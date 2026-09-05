@@ -35,6 +35,29 @@ test("discovery 에 없는 id 는 만들지 않는다", () => {
   assert.deepEqual(presented.map((model) => model.id), ["gpt-5.6-sol", "composer-2.5"]);
 });
 
+test("gemini-3.8-flash 변형은 베이스 하나로 접힌 뒤 남는다", () => {
+  // pinned grouping 이 3.8 을 묶지 못해 discovery 는 variant id 로 온다.
+  const presented = presentCursorPicker([
+    cursor("gemini-3.8-flash-medium"),
+    cursor("gemini-3.8-flash-high"),
+    cursor("gemini-3.8-flash-low"),
+    cursor("composer-2.5"),
+  ]);
+  assert.deepEqual(presented.map((model) => model.id), ["gemini-3.8-flash", "composer-2.5"]);
+  // display 는 베이스, wire 는 high 고정 — 베어 id 는 캐시 0%라서.
+  assert.equal(presented[0].upstreamModelId, "gemini-3.8-flash-high");
+  assert.equal(presented[0].compat?.cursorReasoning?.representativeVariantId, "gemini-3.8-flash-high");
+});
+
+test("gemini-3.8-flash 베이스가 오면 그대로 남는다", () => {
+  const presented = presentCursorPicker([
+    cursor("gemini-3.8-flash"),
+    cursor("kimi-k3"),
+  ]);
+  assert.deepEqual(presented.map((model) => model.id), ["gemini-3.8-flash", "kimi-k3"]);
+  assert.equal(presented[0].upstreamModelId, "gemini-3.8-flash-high");
+});
+
 test("Grok Fast 변형은 베이스 하나로 접힌 뒤 남는다", () => {
   const presented = presentCursorPicker([
     cursor("composer-2.5"),
