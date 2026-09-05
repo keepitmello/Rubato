@@ -2,6 +2,10 @@
 # 깨진 커밋을 origin 에 올리기 전에 Stage 9 로컬 게이트를 돌린다.
 set -eu
 repo=$(git rev-parse --show-toplevel)
+# Git exports repository-local paths to hooks. If the test gate inherits them,
+# fixture `git init`, branch, worktree, and push commands mutate this checkout
+# and can even target its real origin instead of the temporary repository.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_COMMON_DIR
 if [ "${RUBATO_SKIP_CI_GATE:-}" = 1 ]; then
   printf '%s\n' "RUBATO_SKIP_CI_GATE=1: skipping local CI gate"
   exit 0
