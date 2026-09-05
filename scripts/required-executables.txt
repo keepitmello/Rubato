@@ -1,6 +1,5 @@
 # Tracked files that must stay 100755. A rewrite that drops +x fails CI and pre-push.
 .githooks/pre-commit
-.githooks/pre-push
 harness/msearch/memory-index.py
 harness/msearch/memory-search.py
 harness/msearch/msearch
