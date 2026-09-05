@@ -139,7 +139,7 @@ export const CATEGORY_FALLBACK_CHAINS: Readonly<Record<string, readonly Delegate
     },
     {
       providers: ["google", "github-copilot", "opencode", "vercel"],
-      model: "gemini-3.1-pro",
+      model: "gemini-3.6-flash",
     },
   ],
 }

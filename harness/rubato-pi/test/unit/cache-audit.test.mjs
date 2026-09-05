@@ -275,7 +275,7 @@ const antigravitySse = (usage, extra = {}) => [
 const antigravityBody = () => ({
   project: "project-a",
   requestId: "req-1",
-  model: "gemini-3.7-flash-medium",
+  model: "gemini-3.8-flash-medium",
   request: {
     sessionId: "wire-session",
     labels: { trajectory_id: "t", last_step_index: "1" },
@@ -305,9 +305,9 @@ test("parseAntigravitySse keeps the last usageMetadata", () => {
     cachedContentTokenCount: 40,
     candidatesTokenCount: 5,
     thoughtsTokenCount: 2,
-  }, { responseId: "resp_ag1", model: "gemini-3.7-flash-medium" }));
+  }, { responseId: "resp_ag1", model: "gemini-3.8-flash-medium" }));
   assert.equal(parsed.responseId, "resp_ag1");
-  assert.equal(parsed.model, "gemini-3.7-flash-medium");
+  assert.equal(parsed.model, "gemini-3.8-flash-medium");
   assert.equal(parsed.usageMetadata.promptTokenCount, 80);
   assert.equal(parsed.usageMetadata.cachedContentTokenCount, 40);
 });
@@ -323,12 +323,12 @@ test("wrapFetch records an Antigravity exchange", async () => {
       cachedContentTokenCount: seen.length === 1 ? 0 : 40,
       candidatesTokenCount: 5,
       thoughtsTokenCount: 2,
-    }, { responseId: `resp_ag${seen.length}`, model: "gemini-3.7-flash-medium" }), {
+    }, { responseId: `resp_ag${seen.length}`, model: "gemini-3.8-flash-medium" }), {
       status: 200,
       headers: { "content-type": "text/event-stream" },
     });
   };
-  const fetch = audit.wrapFetch(fake, { sessionId: "ag-1", model: "gemini-3.7-flash", provider: "google-antigravity" });
+  const fetch = audit.wrapFetch(fake, { sessionId: "ag-1", model: "gemini-3.8-flash", provider: "google-antigravity" });
   const body1 = JSON.stringify(antigravityBody());
   const res = await fetch("https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse", {
     method: "POST",

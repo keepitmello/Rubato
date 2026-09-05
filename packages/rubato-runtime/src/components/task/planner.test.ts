@@ -383,7 +383,7 @@ describe("createTaskChildPlanner", () => {
     ["anthropic/claude-fable-5-1", "high"],
     ["xai/grok-4.6", "high"],
     ["cursor/cursor-grok-4.6-high-fast", "high"],
-    ["google-antigravity/gemini-3.7-flash", "medium"],
+    ["google-antigravity/gemini-3.8-flash", "medium"],
   ])("#given direct model %s without caller reasoning #then it uses model default %s", (modelId, reasoning) => {
     const slash = modelId.indexOf("/")
     const planner = createTaskChildPlanner(
@@ -409,7 +409,7 @@ describe("createTaskChildPlanner", () => {
 
     const result = planner({
       prompt: "work",
-      model: "google-antigravity/gemini-3.7-flash",
+      model: "google-antigravity/gemini-3.8-flash",
       parent_session_id: "parent",
       depth: 1,
     })
@@ -546,7 +546,7 @@ describe("createTaskChildPlanner", () => {
     const planner = createTaskChildPlanner(
       {},
       BUILTIN_AGENTS,
-      () => registry([model("google", "gemini-3.1-pro")]),
+      () => registry([model("google", "gemini-3.6-flash")]),
     )
 
     // when
@@ -561,7 +561,7 @@ describe("createTaskChildPlanner", () => {
     if (result.kind !== "error") throw new Error(`Expected error resolution, got ${result.kind}`)
     expect(result.error.code).toBe("unknown_target")
     expect(result.error.availableAgents).toEqual(["explore", "librarian", "metis", "momus"])
-    // writing survives on a gemini-only registry (its gemini-3.1-pro rung resolves); ultrabrain's
+    // writing survives on a gemini-only registry (its gemini-3.6-flash rung resolves); ultrabrain's
     // sol-only chain is dead, so the dead-chain gate excludes it.
     expect(result.error.availableCategories).toContain("writing")
     expect(result.error.availableCategories).not.toContain("ultrabrain")

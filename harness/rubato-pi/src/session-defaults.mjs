@@ -16,7 +16,7 @@ export function modelsPath(agentDir) {
  *
  * `cursor-cli-oauth` 는 real `cursor-agent` binary 를 띄우는 별개 lane 이고, native
  * Connect-RPC 와 동시에 노출하지 않는다(설계). 그런데 이것을 끄지 않으면 그 lane 의
- * catalog 가 **우리 모델 id 를 가린다** — `gemini-3.7-flash` 를 `input: ["text"]` 로 들고
+ * catalog 가 **우리 모델 id 를 가린다** — `gemini-3.8-flash` 를 `input: ["text"]` 로 들고
  * 있어서, 같은 id 인 Antigravity 모델이 이미지 능력을 잃고 도구 결과 변환에서 죽는다.
  *
  * 시험이 이 목록을 다시 적지 않게 내보낸다. 실 세션과 다른 구성을 검증하면 그 검증은

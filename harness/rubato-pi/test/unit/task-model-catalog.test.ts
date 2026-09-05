@@ -40,12 +40,12 @@ describe("picker and task model catalog parity", () => {
     }
   })
 
-  test("google-antigravity/gemini-3.7-flash is picker-visible and planner-admitted", async () => {
+  test("google-antigravity/gemini-3.8-flash is picker-visible and planner-admitted", async () => {
     const providers = await supportedProviders({ env: {} })
     const antigravity = providers.find((provider) => provider.id === "google-antigravity")
     expect(antigravity).toBeDefined()
     const models = antigravity?.getModels() ?? []
-    const flash = models.find((model) => model.id === "gemini-3.7-flash")
+    const flash = models.find((model) => model.id === "gemini-3.8-flash")
     expect(flash).toBeDefined()
     expect(flash?.provider).toBe("google-antigravity")
     expect(flash?.input).toEqual(["text", "image"])
@@ -60,11 +60,11 @@ describe("picker and task model catalog parity", () => {
       prompt: "Use Flash.",
       parent_session_id: "parent-1",
       depth: 0,
-      model: "google-antigravity/gemini-3.7-flash",
+      model: "google-antigravity/gemini-3.8-flash",
     })
     expect(result.kind).toBe("resolved")
     if (result.kind !== "resolved") return
-    expect(result.plan.model).toBe("google-antigravity/gemini-3.7-flash")
+    expect(result.plan.model).toBe("google-antigravity/gemini-3.8-flash")
     expect(result.plan.variant).toBe("medium")
     expect(result.plan.resolved_model?.reasoning).toBe("medium")
     expect(plannedEffortSource(result.plan.resolved_model)).toBe("model-default")

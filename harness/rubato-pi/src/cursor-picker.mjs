@@ -55,6 +55,8 @@ export function presentCursorGemini38Flash(models) {
       id: CURSOR_GEMINI_38_FLASH_ID,
       reasoning: typeof source.reasoning === "boolean" ? source.reasoning : true,
       upstreamModelId: CURSOR_GEMINI_38_FLASH_HIGH_ID,
+      contextWindow: 1_048_576,
+      maxTokens: 65_536,
       compat: {
         ...(source.compat ?? {}),
         cursorReasoning: {
