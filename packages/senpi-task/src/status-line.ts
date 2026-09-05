@@ -24,6 +24,7 @@ export type StatusTargetInput = {
 export type StatusLineStats = Pick<TaskRunStats, "turns" | "tool_calls"> & {
   readonly runtime_ms?: number
   readonly tokens_per_second?: number
+  readonly speed_index?: number
   readonly cost_usd?: number
   readonly cache_hit_rate_last?: number
   readonly cache_hit_rate_run?: number
@@ -76,7 +77,7 @@ export function formatStatusTarget(input: StatusTargetInput): string | undefined
 }
 
 // The canonical grammar every live/status row shares:
-//   <identity> · <target (model)> · turn N (M tools) · <verb> · $C · T tok/s
+//   <identity> · <target (model)> · turn N (M tools) · <verb> · $C · Speed N
 export function composeStatusLine(input: StatusLineInput): string {
   const tokens = [
     input.identity,
@@ -84,9 +85,14 @@ export function composeStatusLine(input: StatusLineInput): string {
     input.stats === undefined ? undefined : `turn ${input.stats.turns}${toolCountSuffix(input.stats.tool_calls)}`,
     input.verb,
     input.stats === undefined ? undefined : formatLiveSpend(input.stats),
-    input.stats?.tokens_per_second === undefined ? undefined : `${input.stats.tokens_per_second} tok/s`,
+    formatLiveSpeed(input.stats),
   ]
   return tokens.filter((token): token is string => typeof token === "string" && token.length > 0).join(" · ")
+}
+
+export function formatLiveSpeed(stats: Pick<StatusLineStats, "speed_index"> | undefined): string | undefined {
+  if (stats?.speed_index === undefined || !Number.isFinite(stats.speed_index)) return undefined
+  return `Speed ${Math.round(stats.speed_index)}`
 }
 
 // Running task rows keep spend compact; cache-hit rate remains available in completed-run details.

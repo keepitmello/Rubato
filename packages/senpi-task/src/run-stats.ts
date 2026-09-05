@@ -1,5 +1,6 @@
 import type { ManagedChildEvent } from "./manager/child-handle"
 import type { CostReportStatus, TaskRunStats, TokenCoverageStatus } from "./state"
+import { rememberTaskSpeedRatio, scoreTaskSpeedIndex, taskSpeedRatio } from "./task-speed-index"
 
 export type RunStatsTracker = {
   accept(event: ManagedChildEvent): boolean
@@ -25,6 +26,7 @@ export function createRunStatsTracker(startedAt: number, now: () => number = Dat
   let cacheableTokens = 0
   let turnsReportingUsage = 0
   let latestCacheHitRate: number | undefined
+  let speedRatios: number[] = []
   const evalRunCallIds = new Set<string>()
   let anonymousEvalRuns = 0
 
@@ -94,6 +96,12 @@ export function createRunStatsTracker(startedAt: number, now: () => number = Dat
       const requestCacheableTokens = (usage.input ?? 0) + requestCacheReadTokens + requestCacheWriteTokens
       const requestCacheHitRate = boundedCacheHitRate(requestCacheReadTokens, requestCacheableTokens)
       if (requestCacheHitRate !== undefined) latestCacheHitRate = requestCacheHitRate
+      if (window > 0 && requestCacheableTokens > 0 && requestCacheHitRate !== undefined) {
+        speedRatios = rememberTaskSpeedRatio(
+          speedRatios,
+          taskSpeedRatio(window, requestCacheableTokens, requestCacheHitRate),
+        )
+      }
       inputTokens += usage.input ?? 0
       cacheReadTokens += requestCacheReadTokens
       cacheWriteTokens += requestCacheWriteTokens
@@ -117,6 +125,7 @@ export function createRunStatsTracker(startedAt: number, now: () => number = Dat
       const throughputWindowMs =
         collapsedWindows > 0 ? undefined : generationMs > 0 ? generationMs : runtimeMs
       const tps = throughputWindowMs === undefined ? undefined : tokensPerSecond(outputTokens, throughputWindowMs)
+      const speedIndex = scoreTaskSpeedIndex(speedRatios)
       const runCacheHitRate = boundedCacheHitRate(cacheReadTokens, cacheableTokens)
       const costReported = sawCost && Number.isFinite(costUsd)
       return {
@@ -135,6 +144,7 @@ export function createRunStatsTracker(startedAt: number, now: () => number = Dat
         ...positiveFiniteTotal("total_tokens", totalTokens),
         ...(generationMs > 0 ? { generation_ms: generationMs } : {}),
         ...(tps === undefined ? {} : { tokens_per_second: tps }),
+        ...(speedIndex === undefined ? {} : { speed_index: speedIndex }),
         ...(costReported ? { cost_usd: costUsd } : {}),
         ...(latestCacheHitRate === undefined ? {} : { cache_hit_rate_last: latestCacheHitRate }),
         ...(runCacheHitRate === undefined ? {} : { cache_hit_rate_run: runCacheHitRate }),

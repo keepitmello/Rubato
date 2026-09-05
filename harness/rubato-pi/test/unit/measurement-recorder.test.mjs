@@ -35,6 +35,24 @@ test("provider usage preserves unavailable fields and reported zero", () => {
   });
 });
 
+test("uncached provider totals do not shrink full input below cache tokens", () => {
+  const nested = normalizeProviderUsage({
+    inputTokens: { total: 4, noCache: 0, cacheRead: 156074, cacheWrite: 2243 },
+    outputTokens: { total: 517 },
+  });
+  assert.equal(nested.inputTokens, 4);
+  assert.equal(nested.newInputTokens, 0);
+  assert.equal(nested.fullInputTokens, 158317);
+  assert.equal(nested.cacheHitRate, 156074 / 158317);
+
+  const flat = normalizeProviderUsage({
+    input: 4, output: 54, cacheRead: 157608, cacheWrite: 1291,
+  });
+  assert.equal(flat.inputTokens, 4);
+  assert.equal(flat.fullInputTokens, 158903);
+  assert.ok(flat.cacheHitRate > 0.9 && flat.cacheHitRate <= 1);
+});
+
 test("Anthropic server-compaction iteration stays visible next to the post-compaction usage", () => {
   // 실측 (pi-ai message.usage 꼴): 최상위는 압축 이후, compaction 은 압축 시점의 청구.
   const usage = {
@@ -48,6 +66,17 @@ test("Anthropic server-compaction iteration stays visible next to the post-compa
   assert.equal(normalized.compactionCacheReadTokens, 37703);
   assert.equal(normalized.compactionCacheWriteTokens, 213889);
   assert.equal(normalizeProviderUsage({ input: 1, output: 1 }).compactionInputTokens, undefined);
+});
+
+test("Anthropic-shaped usage prefers cache parts over a tiny input total", () => {
+  const normalized = normalizeProviderUsage({
+    inputTokens: { total: 4, noCache: 0, cacheRead: 92_060, cacheWrite: 1_317 },
+    outputTokens: { total: 969 },
+  });
+  assert.equal(normalized.fullInputTokens, 93_377);
+  assert.equal(normalized.cacheHitRate, 92_060 / 93_377);
+  assert.equal(normalized.newInputTokens, 0);
+  assert.equal(normalized.cacheReadTokens, 92_060);
 });
 
 test("call events carry TTFT, byte-level context diffs, and inter-call wait", () => {

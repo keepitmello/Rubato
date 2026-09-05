@@ -1,5 +1,5 @@
 import type { TaskRunStats } from "../state"
-import { formatCacheHitPercent, formatCostUsd, formatRunSpend } from "../status-line"
+import { formatCacheHitPercent, formatCostUsd, formatLiveSpeed, formatRunSpend } from "../status-line"
 
 export function formatRunDuration(durationMs: number): string {
   const totalSeconds = Math.max(0, Math.round(durationMs / 1_000))
@@ -12,14 +12,15 @@ export function formatRunDuration(durationMs: number): string {
 }
 
 // Prose-style suffix for the task_output status row:
-// ` · ran 2m 14s · 5 tools · $0.4213 (CH: 87%) · 118 tok/s`.
+// ` · ran 2m 14s · 5 tools · $0.4213 (CH: 87%) · Speed 80`.
 // Spend reads immediately before throughput so the money fact and the speed fact stay adjacent.
 export function runStatsSuffix(stats: TaskRunStats | undefined): string {
   if (stats === undefined) return ""
   const parts = [`ran ${formatRunDuration(stats.runtime_ms)}`, `${stats.tool_calls} ${stats.tool_calls === 1 ? "tool" : "tools"}`]
   const spend = formatRunSpend(stats)
   if (spend !== undefined) parts.push(spend)
-  if (stats.tokens_per_second !== undefined) parts.push(`${stats.tokens_per_second} tok/s`)
+  const speed = formatLiveSpeed(stats)
+  if (speed !== undefined) parts.push(speed)
   return parts.map((part) => ` · ${part}`).join("")
 }
 
