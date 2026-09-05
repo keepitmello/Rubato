@@ -16,7 +16,7 @@ const model = Object.freeze({
   name: "Gemini 3.8 Flash",
   api: ANTIGRAVITY_API,
   provider: "google-antigravity",
-  contextWindow: 200_000,
+  contextWindow: 1_048_576,
   maxTokens: 65_536,
   reasoning: true,
   input: ["text", "image"],

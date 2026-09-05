@@ -15,7 +15,7 @@ import {
 const key = Object.freeze({
   profileId: "/tmp/rubato-antigravity-test-profile",
   providerId: "google-antigravity",
-  modelId: "gemini-3.7-flash",
+  modelId: "gemini-3.8-flash",
   sessionId: "session-a",
   branchId: "leaf-a",
   conversationGeneration: 0,

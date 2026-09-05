@@ -271,6 +271,7 @@ test("cache policy distinguishes exact, minimum, and opaque provider guarantees"
   assert.deepEqual(resolveCachePolicy({ provider: "openai", api: "openai-responses", id: "gpt-5.6-sol" }), { kind: "minimum", ttlSeconds: 1800 });
   assert.deepEqual(resolveCachePolicy({ provider: "openai-codex", api: "openai-codex-responses" }), { kind: "opaque" });
   assert.deepEqual(resolveCachePolicy({ provider: "google-antigravity", api: "openai-completions", id: "gemini-3.8-flash" }), { kind: "opaque" });
+  assert.deepEqual(resolveCachePolicy({ provider: "cursor", api: "cursor-agent", id: "gemini-3.8-flash" }), { kind: "opaque" });
   assert.deepEqual(resolveCachePolicy({ provider: "xai", api: "openai-completions", id: "xai/grok-4.6" }), { kind: "opaque" });
 });
 
