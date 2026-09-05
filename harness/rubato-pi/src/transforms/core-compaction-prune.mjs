@@ -31,6 +31,44 @@ export const CONTEXT_PIPELINE_REPLACEMENT =
   "    }\n" +
   "    const admittedMessages = admitContextToolResults(contextMessages, input.contextWindow, input.toolAdmissionEnabled);\n";
 
+export const ESTIMATE_WIRE_TOKENS_NEEDLE =
+  "function estimateWireTokens(message) {\n" +
+  "    const base = estimateTokens(message);\n" +
+  "    let serialized;\n" +
+  "    try {\n" +
+  "        serialized = JSON.stringify(message);\n" +
+  "    }\n" +
+  "    catch {\n" +
+  "        return base;\n" +
+  "    }\n" +
+  "    return base + Math.ceil(cjkExtraChars(serialized) / 4);\n" +
+  "}\n";
+
+export const ESTIMATE_WIRE_TOKENS_REPLACEMENT =
+  "function sanitizeForWireEstimate(message) {\n" +
+  "    if (message?.role === \"assistant\" && Array.isArray(message.content)) {\n" +
+  "        if (message.content.some((b) => b.type === \"thinking\")) {\n" +
+  "            return {\n" +
+  "                ...message,\n" +
+  "                content: message.content.filter((b) => b.type !== \"thinking\"),\n" +
+  "            };\n" +
+  "        }\n" +
+  "    }\n" +
+  "    return message;\n" +
+  "}\n" +
+  "function estimateWireTokens(message) {\n" +
+  "    const wireMsg = sanitizeForWireEstimate(message);\n" +
+  "    const base = estimateTokens(wireMsg);\n" +
+  "    let serialized;\n" +
+  "    try {\n" +
+  "        serialized = JSON.stringify(wireMsg);\n" +
+  "    }\n" +
+  "    catch {\n" +
+  "        return base;\n" +
+  "    }\n" +
+  "    return base + Math.ceil(cjkExtraChars(serialized) / 4);\n" +
+  "}\n";
+
 export const PRUNE_TO_BUDGET_NEEDLE =
   "export function pruneOldMessagesToBudget(messages, targetTokens) {\n" +
   "    let pruned = messages;\n" +
@@ -73,6 +111,7 @@ export const PRUNE_TO_BUDGET_REPLACEMENT =
   "        }\n" +
   "    }\n" +
   "    const toRemove = new Set();\n" +
+  "    const visitedCallIds = new Set();\n" +
   "    const removeIndices = (indices) => {\n" +
   "        for (const idx of indices) {\n" +
   "            if (!toRemove.has(idx)) {\n" +
@@ -89,6 +128,8 @@ export const PRUNE_TO_BUDGET_REPLACEMENT =
   "        if (m.role === \"assistant\" && ids.size > 0) {\n" +
   "            const pair = [i];\n" +
   "            for (const id of ids) {\n" +
+  "                if (visitedCallIds.has(id)) continue;\n" +
+  "                visitedCallIds.add(id);\n" +
   "                const results = toolResultIndicesByCallId.get(id);\n" +
   "                if (results) {\n" +
   "                    for (const rIdx of results) pair.push(rIdx);\n" +
@@ -107,6 +148,8 @@ export const PRUNE_TO_BUDGET_REPLACEMENT =
   "        if (m.role === \"assistant\" && ids.size > 0) {\n" +
   "            const pair = [i];\n" +
   "            for (const id of ids) {\n" +
+  "                if (visitedCallIds.has(id)) continue;\n" +
+  "                visitedCallIds.add(id);\n" +
   "                const results = toolResultIndicesByCallId.get(id);\n" +
   "                if (results) {\n" +
   "                    for (const rIdx of results) pair.push(rIdx);\n" +
@@ -139,10 +182,19 @@ export function injectCompactionContextPipeline(source) {
   );
 }
 
-/** pruneOldMessagesToBudget 을 O(N^2) 반복 필터링/직렬화에서 O(N) 단일 패스로 최적화한다. */
+/**
+ * pruneOldMessagesToBudget 을 O(N^2) 반복 필터링/직렬화에서 O(N) 단일 패스로 최적화하고,
+ * estimateWireTokens 에서 thinking 블록을 제외하여 요약 입력 및 긴급 컴팩션의 허수 계상을 방지한다.
+ */
 export function injectCompactionOverflowRetry(source) {
-  return replaceOnce(
+  let next = replaceOnce(
     source,
+    ESTIMATE_WIRE_TOKENS_NEEDLE,
+    ESTIMATE_WIRE_TOKENS_REPLACEMENT,
+    "compaction overflow-retry estimateWireTokens sanitize",
+  );
+  return replaceOnce(
+    next,
     PRUNE_TO_BUDGET_NEEDLE,
     PRUNE_TO_BUDGET_REPLACEMENT,
     "compaction overflow-retry O(N) pruneOldMessagesToBudget",

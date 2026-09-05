@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 import { senpiDir } from "../../src/engine-paths.mjs";
 import { COMPACTION_BRIEFING_GUIDANCE } from "../../src/compaction-guidance.mjs";
 import {
@@ -12,6 +13,8 @@ import {
   unwrapOuterSummary,
 } from "../../src/transforms/core-compaction.mjs";
 import {
+  SERIALIZE_THINKING_NEEDLE,
+  SERIALIZE_THINKING_REPLACEMENT,
   SUMMARIZATION_SYSTEM_PROMPT_NEEDLE,
   injectCompactionUtils,
   isCompactionUtilsUrl,
@@ -84,4 +87,11 @@ test("unwrapOuterSummary 는 바깥 <summary> 한 겹만 벗긴다", () => {
   assert.equal(unwrapOuterSummary("<summary>hello</summary>"), "hello");
   assert.equal(unwrapOuterSummary("hello"), "hello");
   assert.equal(unwrapOuterSummary("  \n<summary>\n  hello\n</summary>\n  "), "hello");
+});
+
+test("핀된 utils.js 의 serializeConversation 은 thinking 을 1000자로 캡핑한다", () => {
+  const source = pinned("dist/core/compaction/utils.js");
+  const next = injectCompactionUtils(source);
+  assert.equal(next.includes(SERIALIZE_THINKING_REPLACEMENT), true);
+  assert.equal(next.includes(SERIALIZE_THINKING_NEEDLE), false);
 });
