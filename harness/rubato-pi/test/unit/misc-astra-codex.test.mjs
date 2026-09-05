@@ -77,7 +77,7 @@ test("같은 effort 반복(툴 루프)에도 update 는 하나만", () => {
   assert.equal(updates(loop2.input).length, 1);
 });
 
-test("effort 복귀하면 update 없이 최상위 그대로", () => {
+test("effort 복귀는 이전 update 를 남기고 새 update 를 접두 뒤에 붙인다", () => {
   const start = body([{ role: "user", content: "hi" }], "low");
   applyAstraConfigurationUpdate(start, ASTRA, "s-3", "low");
   const hi = body([...start.input, { role: "user", content: "more" }], "low");
@@ -85,8 +85,11 @@ test("effort 복귀하면 update 없이 최상위 그대로", () => {
   assert.equal(updates(hi.input).length, 1);
   const back = body([...withoutUpdate(hi.input), { role: "user", content: "ok" }], "low");
   applyAstraConfigurationUpdate(back, ASTRA, "s-3", "low");
-  assert.equal(updates(back.input).length, 0);
+  assert.equal(updates(back.input).length, 2);
+  assert.deepEqual(updates(back.input)[0], { type: "configuration_update", reasoning: { effort: "high" } });
+  assert.deepEqual(updates(back.input)[1], { type: "configuration_update", reasoning: { effort: "low" } });
   assert.equal(back.reasoning.effort, "low");
+  assert.deepEqual(withoutUpdate(back.input).slice(0, withoutUpdate(hi.input).length), withoutUpdate(hi.input));
 });
 
 test("히스토리 축소(컴팩션)는 base 를 다시 고정한다", () => {
@@ -114,7 +117,8 @@ test("null/undefined effort 와 user 없는 입력은 안전하게", () => {
   applyAstraConfigurationUpdate(noUser, ASTRA, "s-6", "high");
   const found = updates(noUser.input);
   assert.equal(found.length, 1);
-  assert.equal(noUser.input[noUser.input.length - 1], found[0]);
+  assert.equal(noUser.input[0], found[0]);
+  assert.equal(noUser.input[1].role, "assistant");
 });
 
 test("effort 가 바뀌어도 캐시 델타 비교 대상은 같다", () => {
@@ -136,6 +140,8 @@ test("실제 엔진 소스에 패치가 걸리고 두 번 걸면 던진다", () 
   const next = injectAstraCodex(source);
   assert.match(next, /configuration_update/);
   assert.match(next, /isAstraConfigurationUpdateModel\(model\)/);
+  assert.match(next, /preserveThinking: !!fullBody\.reasoning/);
+  assert.match(next, /preserveTextSignatures: true/);
   assert.doesNotMatch(next, /if \(options\?\.temperature !== undefined\) \{\n\s+body\.temperature/);
   assert.throws(() => injectAstraCodex(next));
   assert.equal(
@@ -146,4 +152,22 @@ test("실제 엔진 소스에 패치가 걸리고 두 번 걸면 던진다", () 
     isAstraCodexUrl("file:///x/@earendil-works/pi-ai/dist/api/openai-codex-responses.lazy.js"),
     false,
   );
+});
+
+test("같은 high 를 다음 유저에서도 유지하면 update 자리는 그대로다", () => {
+  const start = body([{ role: "user", content: "hi" }], "low");
+  applyAstraConfigurationUpdate(start, ASTRA, "s-8", "low");
+  const first = body(
+    [...start.input, { role: "assistant", content: "draft" }, { role: "user", content: "hard" }],
+    "low",
+  );
+  applyAstraConfigurationUpdate(first, ASTRA, "s-8", "high");
+  const second = body(
+    [...withoutUpdate(first.input), { role: "assistant", content: "ok" }, { role: "user", content: "more" }],
+    "low",
+  );
+  applyAstraConfigurationUpdate(second, ASTRA, "s-8", "high");
+  assert.equal(updates(second.input).length, 1);
+  assert.equal(second.input.indexOf(updates(second.input)[0]), first.input.indexOf(updates(first.input)[0]));
+  assert.deepEqual(second.input.slice(0, first.input.length), first.input);
 });

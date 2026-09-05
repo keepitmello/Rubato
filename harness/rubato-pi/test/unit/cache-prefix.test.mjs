@@ -242,3 +242,34 @@ test("#given remapped wakes #when Astra effort changes once #then the update sit
   applyAstraConfigurationUpdate(second, model, "cache-prefix-effort", "high");
   assertExtends(first.input, second.input, "astra after effort change");
 });
+
+test("#given an Astra effort change #when a later user keeps that effort #then the update stays put and the new user appends", () => {
+  const model = { id: "gpt-6-astra" };
+  const firstSession = [
+    user("go"),
+    assistant("eval", 2),
+    toolResult("out", 3),
+    hidden("wake-1", 4),
+  ];
+  const first = {
+    model: "gpt-6-astra",
+    input: remap(firstSession).map((message) => ({ role: message.role, content: message.content })),
+    reasoning: { effort: "low", summary: "auto" },
+  };
+  applyAstraConfigurationUpdate(first, model, "cache-prefix-stay", "low");
+  applyAstraConfigurationUpdate(first, model, "cache-prefix-stay", "high");
+  const secondSession = [
+    ...firstSession,
+    assistant("eval", 5),
+    toolResult("out2", 6),
+    user("more", 7),
+  ];
+  const second = {
+    model: "gpt-6-astra",
+    input: remap(secondSession).map((message) => ({ role: message.role, content: message.content })),
+    reasoning: { effort: "low", summary: "auto" },
+  };
+  applyAstraConfigurationUpdate(second, model, "cache-prefix-stay", "high");
+  assert.equal(second.input.filter((entry) => entry?.type === "configuration_update").length, 1);
+  assertExtends(first.input, second.input, "astra update stays put");
+});
