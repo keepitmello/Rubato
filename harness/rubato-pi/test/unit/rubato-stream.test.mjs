@@ -217,6 +217,40 @@ test("사고 델타만 있으면 전송 오류는 재시도하고, 텍스트·�
   assert.equal(afterTextLast.error.errorMessage, "senpi:no-turn-retry:WebSocket error");
 });
 
+test("WebSocket 단절 + 완성된 미실행 tool 은 턴을 죽이지 않고 toolUse 로 정착한다", async () => {
+  const message = assistant({
+    stopReason: "error",
+    errorMessage: "WebSocket error",
+    content: [{ type: "toolCall", id: "t1", name: "AgentSend", arguments: { agentId: "st_1", message: "go" } }],
+  });
+  const last = (await drain(withRubatoStream(scriptedStream([
+    { type: "start", partial: message },
+    { type: "toolcall_end", contentIndex: 0 },
+    { type: "error", reason: "error", error: message },
+  ]))(model, context, { env: {} }))).at(-1);
+  assert.equal(last.type, "done");
+  assert.equal(last.message.stopReason, "toolUse");
+  assert.equal(last.message.errorMessage, undefined);
+  assert.deepEqual(last.message.content[0].arguments, { agentId: "st_1", message: "go" });
+});
+
+test("WebSocket 단절 + 잘린 도구는 실행하지 않고 재시도를 막는다", async () => {
+  const message = assistant({
+    stopReason: "error",
+    errorMessage: "WebSocket error",
+    content: [{ type: "toolCall", id: "t1", name: "bash", arguments: {}, partialJson: '{"cmd":"rm -r' }],
+  });
+  const last = (await drain(withRubatoStream(scriptedStream([
+    { type: "start", partial: message },
+    { type: "toolcall_delta", contentIndex: 0, delta: '{"cmd":"rm -r' },
+    { type: "error", reason: "error", error: message },
+  ]))(model, context, { env: {} }))).at(-1);
+  assert.equal(last.type, "error");
+  assert.equal(last.error.stopReason, "error");
+  assert.equal(last.error.errorMessage, "senpi:no-turn-retry:WebSocket error");
+  assert.equal(last.error.content[0].partialJson, '{"cmd":"rm -r');
+});
+
 test("사용자 중단 + 완성된 미실행 tool 은 toolUse 로 정착한다", async () => {
   const signal = AbortSignal.abort();
   const message = assistant({

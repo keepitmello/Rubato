@@ -80,11 +80,11 @@ function toolArgsResolution(tool) {
 }
 
 /**
- * 사용자가 멈춘 턴에서 **완성된 미실행 tool call** 만 살려 `toolUse` 로 정착시킨다.
+ * **완성된 미실행 tool call** 만 살려 `toolUse` 로 정착시킨다.
  *
- * 전송 실패를 같이 살리면 엔진이 성공한 턴으로 읽어 재시도도 폴백도 걸지 않고,
- * 잘린 인자로 도구가 그대로 실행된다. 그래서 호출하는 쪽이 `signal.aborted` 를
- * 확인한 뒤에만 부른다.
+ * 응답 전체가 성공한 게 아니다. 프로토콜상 끝난 item 을 롤백하지 않을 뿐이다.
+ * 잘린 인자는 거절한다 — 승격하면 agent loop 가 빈 인자로 실행한다.
+ * 호출하는 쪽이 사용자 중단 또는 WebSocket 단절인지 가린 뒤에만 부른다.
  *
  * native Cursor 가 이미 실행한 block(`kCursorExecResolved`)은 실행할 tool 이 아니다.
  * 그것만 남은 턴은 정착시키지 않는다 — 되살리면 agent loop 가 같은 tool 을 두 번
@@ -293,6 +293,11 @@ function isReplayableContent(event) {
     || event.type === "toolcall_start" || event.type === "toolcall_delta" || event.type === "toolcall_end";
 }
 
+/** Codex/pi-ai 가 빈 소켓 error 이벤트를 이 문자열로 올린다. close 도 같은 계층이다. */
+function isWebSocketTransportError(errorMessage) {
+  return typeof errorMessage === "string" && /websocket/i.test(errorMessage);
+}
+
 function observeDelta(state, event) {
   if (isReplayableContent(event)) state.emittedDelta = true;
   // TTFT 는 빈 start/end 프레임이 아니라 사용자가 실제로 볼 첫 내용이다.
@@ -335,8 +340,9 @@ function attachTiming(state, message) {
  * - 텍스트·도구 델타 전 오류 → 그대로 error, 재시도 허용
  * - 사고만 나간 오류 → 그대로 error, 재시도 허용 (사고는 재시도가 두 번 그리지 않는다)
  * - 텍스트·도구 델타 후 오류 → `senpi:no-turn-retry:` 로 재시도 금지
- * - 사용자 중단 + 완성된 미실행 tool → `toolUse` done
- * - 전송 실패는 도구가 있어도 성공으로 바꾸지 않는다
+ * - 사용자 중단 또는 WebSocket 단절 + 완성된 미실행 tool → `toolUse` done
+ *   (응답 전체가 성공한 게 아니라, 프로토콜상 끝난 item 을 소켓과 함께 롤백하지 않는다)
+ * - 잘린 도구·텍스트만 있는 전송 실패는 성공으로 바꾸지 않는다
  */
 function settleTerminal(state, options, event) {
   if (state.settled) return event;
@@ -352,9 +358,12 @@ function settleTerminal(state, options, event) {
   // 한쪽만 보면 result() 경로와 iteration 경로의 정착이 갈린다.
   const aborted = options.signal?.aborted === true || message.stopReason === "aborted";
 
-  if (event.type === "error" && aborted && settleAbortedToolUse(message)) {
+  // 소켓 수명과 턴 수명을 묶지 않는다. 사용자 중단이든 WebSocket 단절이든,
+  // 프로토콜상 끝난 tool item 은 이미 commit 이다. 응답 전체를 성공으로 승격하는
+  // 게 아니라 그 item 만 롤백하지 않을 뿐이다. 잘린 인자는 settleAbortedToolUse 가 거절한다.
+  if (event.type === "error" && (aborted || isWebSocketTransportError(rawError)) && settleAbortedToolUse(message)) {
     state.endCall({ status: message.stopReason, usage: normalizeProviderUsage(message.providerUsage ?? message.usage) });
-    state.emitSpeedIndex(message, message.stopReason, undefined, { aborted: true });
+    state.emitSpeedIndex(message, message.stopReason, undefined, { aborted });
     return { type: "done", reason: message.stopReason, message };
   }
 
