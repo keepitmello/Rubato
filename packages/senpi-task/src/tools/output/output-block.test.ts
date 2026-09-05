@@ -61,6 +61,17 @@ describe("runTaskOutput non-blocking peek", () => {
     expect(manager.waitForCalls()).toEqual([])
     expect(result.details.kind).toBe("status")
     if (result.details.kind === "status") expect(result.details.snapshot.status).toBe("running")
+    expect(result.terminate).toBe(true)
+  })
+
+  test("#given a completed child #when AgentOutput reads status #then it does not terminate the parent turn", async () => {
+    const result = await runTaskOutput(
+      depsFrom(managerFrom([makeRecord({ task_id: "st_done", status: "completed" })])),
+      { agentId: "st_done", mode: "status" },
+      "session-parent",
+    )
+    expect(result.details.kind).toBe("status")
+    expect(result.terminate).toBeUndefined()
   })
 
   test.each([

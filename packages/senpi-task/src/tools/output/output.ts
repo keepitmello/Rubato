@@ -32,6 +32,7 @@ const DESCRIPTION = [
   "mode='tail' returns the last tail_lines of the recorded transcript; mode='full' returns the whole transcript (capped, with a head/tail elision marker). Completion notifications already include the final result.",
   "READ-ONLY: this never revives, steers, or otherwise touches the child.",
   "Only the current session's children are visible.",
+  "Peeking a still-running child ends the parent turn unless this round also did other work; completion wakes the parent.",
 ].join(" ")
 
 export function runTaskOutput(
@@ -74,12 +75,22 @@ async function outputForHandle(
 
   const mode = params.mode ?? "status"
   if (mode === "status" || snapshot.status === "lost") {
-    return toolResult(statusText(snapshot), { kind: "status", snapshot })
+    return maybeTerminateRunningPeek(toolResult(statusText(snapshot), { kind: "status", snapshot }), snapshot.status)
   }
 
   const record = deps.manager.get(agentId)
   if (record === undefined) return notFound(agentId)
-  return transcriptResult(deps, record.task_id, snapshot, mode, params.tail_lines ?? DEFAULT_TAIL_LINES)
+  return maybeTerminateRunningPeek(
+    await transcriptResult(deps, record.task_id, snapshot, mode, params.tail_lines ?? DEFAULT_TAIL_LINES),
+    snapshot.status,
+  )
+}
+
+function maybeTerminateRunningPeek(result: TaskOutputToolResult, status: string): TaskOutputToolResult {
+  // Engine stops the parent loop only when every tool in the batch sets this.
+  // A running peek alone therefore ends the turn; mixed with Agent/read/eval it does not.
+  if (status !== "running" && status !== "pending") return result
+  return { ...result, terminate: true }
 }
 
 function transcriptResult(
