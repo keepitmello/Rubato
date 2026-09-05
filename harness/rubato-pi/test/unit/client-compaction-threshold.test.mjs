@@ -36,10 +36,10 @@ test("Grok on Cursor or xAI compact at 10% remaining", () => {
   assert.equal(compactTriggerTokens(500_000, 0.9), 450_000);
 });
 
-test("Gemini compacts at 87% (13% remaining) by default", () => {
-  assert.equal(resolveClientCompactionThresholdRatio({ model: CURSOR_GEMINI }), 0.87);
-  assert.equal(resolveClientCompactionThresholdRatio({ model: ANTIGRAVITY_GEMINI }), 0.87);
-  assert.equal(compactTriggerTokens(1_048_576, 0.87), 912_261);
+test("Gemini compacts at 90% (10% remaining) by default, aligned with stock default", () => {
+  assert.equal(resolveClientCompactionThresholdRatio({ model: CURSOR_GEMINI }), 0.9);
+  assert.equal(resolveClientCompactionThresholdRatio({ model: ANTIGRAVITY_GEMINI }), 0.9);
+  assert.equal(compactTriggerTokens(1_048_576, 0.9), 943_718);
 });
 
 test("unlisted models also default to 0.9", () => {
@@ -54,7 +54,7 @@ test("unlisted models also default to 0.9", () => {
   );
 });
 
-test("settings.models beats global and baked defaults", () => {
+test("settings.models beats global and baked defaults, clamped by MAX_SAFE_COMPACTION_THRESHOLD_RATIO", () => {
   assert.equal(
     resolveClientCompactionThresholdRatio({
       model: CODEX,
@@ -69,6 +69,16 @@ test("settings.models beats global and baked defaults", () => {
     }),
     0.72,
   );
+  // 1.2 등 유효 범위를 벗어난 값은 기본값 0.9 로 fallback
   assert.equal(resolveClientCompactionThresholdRatio({ settings: { thresholdRatio: 1.2 } }), 0.9);
+  // 긴급 컴팩션(0.95)보다 앞서도록 0.92 로 안전하게 동적 클램핑
+  assert.equal(resolveClientCompactionThresholdRatio({ settings: { thresholdRatio: 0.98 } }), 0.92);
+  assert.equal(
+    resolveClientCompactionThresholdRatio({
+      model: CODEX,
+      settings: { models: { "openai-codex/gpt-5.6-sol": 0.96 } },
+    }),
+    0.92,
+  );
 });
 
