@@ -21,6 +21,7 @@ export function parseRunStats(value: unknown): TaskRunStats {
   const totalTokens = readOptionalNumber(value, "total_tokens")
   const generationMs = readOptionalNumber(value, "generation_ms")
   const tokensPerSecond = readOptionalNumber(value, "tokens_per_second")
+  const speedIndex = readOptionalNumber(value, "speed_index")
   const costUsd = readOptionalNumber(value, "cost_usd")
   const cacheHitRateLast = readOptionalNumber(value, "cache_hit_rate_last")
   const cacheHitRateRun = readOptionalNumber(value, "cache_hit_rate_run")
@@ -40,6 +41,7 @@ export function parseRunStats(value: unknown): TaskRunStats {
     ...(totalTokens === undefined ? {} : { total_tokens: totalTokens }),
     ...(generationMs === undefined ? {} : { generation_ms: generationMs }),
     ...(tokensPerSecond === undefined ? {} : { tokens_per_second: tokensPerSecond }),
+    ...(speedIndex === undefined ? {} : { speed_index: speedIndex }),
     ...(costUsd === undefined ? {} : { cost_usd: costUsd }),
     ...(cacheHitRateLast === undefined ? {} : { cache_hit_rate_last: cacheHitRateLast }),
     ...(resolvedCacheHitRateRun === undefined ? {} : { cache_hit_rate_run: resolvedCacheHitRateRun }),

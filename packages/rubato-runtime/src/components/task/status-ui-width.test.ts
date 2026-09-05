@@ -40,7 +40,7 @@ const stats: TaskRunStats = {
   runtime_ms: 60_000,
   cost_usd: 0.1303,
   cache_hit_rate_last: 0.89,
-  tokens_per_second: 97,
+  speed_index: 80,
 }
 
 function fakeUi(): CapturedUi & { readonly rows: string[][] } {
@@ -80,6 +80,6 @@ describe("createTaskStatusUi terminal width", () => {
     expect(rendererVisibleWidth(row)).toBeLessThanOrEqual(120)
     expect(row).toContain("Plan the")
     expect(row).not.toContain("running")
-    expect(row).toEndWith("97 tok/s")
+    expect(row).toEndWith("Speed 80")
   })
 })

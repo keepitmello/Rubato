@@ -72,16 +72,23 @@ export function normalizeProviderUsage(usage) {
     ...(reasoningTokens === undefined ? {} : { reasoningTokens }),
   };
   if (normalized.newInputTokens === undefined && normalized.inputTokens !== undefined && normalized.cacheReadTokens !== undefined) {
-    normalized.newInputTokens = Math.max(0, normalized.inputTokens - normalized.cacheReadTokens - (normalized.cacheWriteTokens ?? 0));
+    const derived = normalized.inputTokens - normalized.cacheReadTokens - (normalized.cacheWriteTokens ?? 0);
+    // Negative means `input`/`total` was uncached-only, not the full prompt.
+    normalized.newInputTokens = derived >= 0 ? derived : normalized.inputTokens;
   }
-  const fullInputTokens = normalized.inputTokens ?? (
-    normalized.newInputTokens !== undefined && normalized.cacheReadTokens !== undefined && normalized.cacheWriteTokens !== undefined
-      ? normalized.newInputTokens + normalized.cacheReadTokens + normalized.cacheWriteTokens
-      : undefined
-  );
+  // Anthropic/xAI often report `input`/`total` as uncached-only while cache
+  // tokens sit in sibling fields. Trust the larger of the declared total and
+  // the reconstructed prompt (new + cache read + cache write).
+  const fromParts = [normalized.newInputTokens, normalized.cacheReadTokens, normalized.cacheWriteTokens]
+    .some((value) => value !== undefined)
+    ? (normalized.newInputTokens ?? 0) + (normalized.cacheReadTokens ?? 0) + (normalized.cacheWriteTokens ?? 0)
+    : undefined;
+  const fullCandidates = [normalized.inputTokens, fromParts]
+    .filter((value) => typeof value === "number" && Number.isFinite(value) && value >= 0);
+  const fullInputTokens = fullCandidates.length === 0 ? undefined : Math.max(...fullCandidates);
   if (fullInputTokens !== undefined) normalized.fullInputTokens = fullInputTokens;
-  if (fullInputTokens > 0 && normalized.cacheReadTokens !== undefined) {
-    normalized.cacheHitRate = normalized.cacheReadTokens / fullInputTokens;
+  if (fullInputTokens !== undefined && fullInputTokens > 0 && normalized.cacheReadTokens !== undefined) {
+    normalized.cacheHitRate = Math.min(1, normalized.cacheReadTokens / fullInputTokens);
   }
   // Anthropic 서버 컴팩션 iteration (어댑터 패치가 `usage.compaction` 으로 옮김) — 최상위
   // 숫자는 압축 *이후* 컨텍스트라서 이 iteration 을 따로 남겨야 청구가 맞는다.

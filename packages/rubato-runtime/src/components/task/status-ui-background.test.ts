@@ -99,7 +99,7 @@ describe("createTaskStatusUi.background progress", () => {
       category: "quick",
       created_at: new Date(currentTime).toISOString(),
     })
-    let stats = { runtime_ms: 0, turns: 1, tool_calls: 2, tokens_per_second: 40 }
+    let stats = { runtime_ms: 0, turns: 1, tool_calls: 2, speed_index: 40 }
     let listCalls = 0
     const manager: StatusUiManager = {
       list: () => {
@@ -123,17 +123,17 @@ describe("createTaskStatusUi.background progress", () => {
 
     // when
     currentTime += 1_000
-    stats = { runtime_ms: 1_000, turns: 2, tool_calls: 3, tokens_per_second: 42 }
+    stats = { runtime_ms: 1_000, turns: 2, tool_calls: 3, speed_index: 42 }
     expect(active.size).toBe(1)
     for (const callback of [...active.values()]) callback()
     const second = ui.widgetCalls.at(-1)?.content?.[0] ?? ""
 
     // then
     expect(first).not.toContain("turn ")
-    expect(first).toContain("40 tok/s")
+    expect(first).toContain("Speed 40")
     expect(first).toContain("0s")
     expect(second).not.toContain("turn ")
-    expect(second).toContain("42 tok/s")
+    expect(second).toContain("Speed 42")
     expect(second).toContain("1s")
     expect(second[0]).not.toBe(first[0])
     expect(listCalls).toBe(1)
@@ -239,7 +239,7 @@ describe("createTaskStatusUi.background progress", () => {
       },
       runStatsSnapshot: (taskId) =>
         taskId === "st_first"
-          ? { runtime_ms: 65_000, turns: 3, tool_calls: 7, tokens_per_second: 42 }
+          ? { runtime_ms: 65_000, turns: 3, tool_calls: 7, speed_index: 42 }
           : { runtime_ms: 65_000, turns: 1, tool_calls: 2 },
     }
     const ui = fakeUi()
@@ -257,7 +257,7 @@ describe("createTaskStatusUi.background progress", () => {
     for (const callback of [...active.values()]) callback()
 
     expect(ui.widgetCalls.at(-1)?.content).toEqual([
-      "⠋ Investigate the unexpectedly ... · Luna 5.6 high [fast] · 1m 5s · 42 tok/s",
+      "⠋ Investigate the unexpectedly ... · Luna 5.6 high [fast] · 1m 5s · Speed 42",
       "⠋ Review tests · Luna 5.6 [fast] · 1m 5s",
     ])
     // C1: the duplicated footer task status line is gone; widget rows are the only task surface.

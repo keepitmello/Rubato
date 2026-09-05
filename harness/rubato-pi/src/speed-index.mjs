@@ -45,21 +45,27 @@ export function sameIdentity(a, b) {
 }
 
 export function fullInputTokens(sample) {
-  if (Number.isFinite(sample?.fullInputTokens) && sample.fullInputTokens >= 0) {
-    return sample.fullInputTokens;
-  }
   const hasAny = [sample?.newInputTokens, sample?.cacheReadTokens, sample?.cacheWriteTokens]
     .some((value) => Number.isFinite(value) && value >= 0);
-  if (!hasAny) return undefined;
-  return (sample?.newInputTokens ?? 0) + (sample?.cacheReadTokens ?? 0) + (sample?.cacheWriteTokens ?? 0);
+  const summed = hasAny
+    ? (sample?.newInputTokens ?? 0) + (sample?.cacheReadTokens ?? 0) + (sample?.cacheWriteTokens ?? 0)
+    : undefined;
+  const reported = Number.isFinite(sample?.fullInputTokens) && sample.fullInputTokens >= 0
+    ? sample.fullInputTokens
+    : undefined;
+  if (summed !== undefined && reported !== undefined) return Math.max(reported, summed);
+  return reported ?? summed;
 }
 
 export function cacheHitRate(sample) {
-  if (Number.isFinite(sample?.cacheHitRate) && sample.cacheHitRate >= 0) return sample.cacheHitRate;
+  const stored = sample?.cacheHitRate;
   const full = fullInputTokens(sample);
   const read = sample?.cacheReadTokens;
-  if (!Number.isFinite(full) || full <= 0 || !Number.isFinite(read) || read < 0) return undefined;
-  return read / full;
+  const recomputed = Number.isFinite(full) && full > 0 && Number.isFinite(read) && read >= 0
+    ? Math.min(1, read / full)
+    : undefined;
+  if (Number.isFinite(stored) && stored >= 0 && stored <= 1) return stored;
+  return recomputed;
 }
 
 /** Power-of-two half-open band: 8192 is 8–16k (2^13 .. 2^14). */
@@ -140,7 +146,11 @@ export function effectiveDuration(sample) {
   ) {
     return sample.serverDurationMs;
   }
-  if (sample?.networkStatus === "healthy" && Number.isFinite(sample.clientDurationMs) && sample.clientDurationMs > 0) {
+  if (!Number.isFinite(sample?.clientDurationMs) || sample.clientDurationMs <= 0) return undefined;
+  if (sample?.networkStatus === "healthy") return sample.clientDurationMs;
+  // Probe warmup has not classified the route yet. That is not a slow path, so the
+  // first turns in a session can still paint Speed N. Degraded stays out.
+  if (sample?.networkStatus === "unknown" && sample?.networkSource === "probe") {
     return sample.clientDurationMs;
   }
   return undefined;
@@ -328,17 +338,47 @@ export function baselineHash(baseline) {
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
-export function referenceDurationFor(sample, baseline) {
-  if (!baseline || baseline.status !== "frozen") return undefined;
-  const cell = sampleCell(sample);
-  if (!cell) return undefined;
-  const match = baseline.cells.find((entry) => entry.key === cell.key && entry.supported);
+/**
+ * Local v1 wins on cells it actually supports. Bundled v0 keeps covering the
+ * input bands a sparse local freeze never measured, so a large-context Claude
+ * call is not scored against a 2–8k Sol cell or dropped as unmatched.
+ */
+export function mergeBaselines(preferred, fallback) {
+  const primary = preferred?.status === "frozen" ? preferred : undefined;
+  const secondary = fallback?.status === "frozen" ? fallback : undefined;
+  if (!primary) return secondary;
+  if (!secondary) return primary;
+  const byKey = new Map();
+  for (const cell of secondary.cells ?? []) byKey.set(cell.key, cell);
+  for (const cell of primary.cells ?? []) {
+    const current = byKey.get(cell.key);
+    // A sparse local freeze must not hide a supported bundled cell behind an
+    // unsupported stub of the same key (the 64k Sol cell is count=1 locally).
+    if (cell.supported || !current?.supported) byKey.set(cell.key, cell);
+  }
+  const cells = [...byKey.values()].sort((a, b) => String(a.key).localeCompare(String(b.key)));
+  return {
+    ...primary,
+    cells,
+    supportedCells: cells.filter((cell) => cell.supported).length,
+  };
+}
+
+function supportedCellMedian(baseline, key) {
+  if (!baseline || baseline.status !== "frozen" || !key) return undefined;
+  const match = baseline.cells?.find((entry) => entry.key === key && entry.supported);
   if (!match || !(match.medianMs > 0)) return undefined;
   return match.medianMs;
 }
 
-export function speedRatio(sample, baseline) {
-  const reference = referenceDurationFor(sample, baseline);
+export function referenceDurationFor(sample, baseline, fallbackBaseline) {
+  const cell = sampleCell(sample);
+  if (!cell) return undefined;
+  return supportedCellMedian(baseline, cell.key) ?? supportedCellMedian(fallbackBaseline, cell.key);
+}
+
+export function speedRatio(sample, baseline, fallbackBaseline) {
+  const reference = referenceDurationFor(sample, baseline, fallbackBaseline);
   const duration = effectiveDuration(sample);
   if (reference === undefined || duration === undefined || duration <= 0) return undefined;
   return reference / duration;
@@ -366,7 +406,7 @@ export function matchedGroupSamples(samples, identity, baseline, options) {
   const candidates = groupCandidates(samples, identity, options);
   const matched = [];
   for (const sample of candidates) {
-    const ratio = speedRatio(sample, baseline);
+    const ratio = speedRatio(sample, baseline, options?.fallbackBaseline);
     if (ratio === undefined) continue;
     matched.push({ sample, ratio });
   }
@@ -388,6 +428,7 @@ export function scoreGroup(samples, identity, baseline, {
   windowMs,
   cap = MATCHED_CAP,
   minMatched = MIN_MATCHED_LIVE,
+  fallbackBaseline,
 } = {}) {
   if (!identity?.provider || !identity?.model || identity.effort == null || identity.effort === "") {
     return { status: "unavailable", reason: "identity", score: undefined, matched: 0, valid: 0, coverage: 0 };
@@ -395,7 +436,7 @@ export function scoreGroup(samples, identity, baseline, {
   if (!baseline || baseline.status !== "frozen") {
     return { status: "unavailable", reason: "no_baseline", score: undefined, matched: 0, valid: 0, coverage: 0 };
   }
-  const { candidates, matched } = matchedGroupSamples(samples, identity, baseline, { now, windowMs });
+  const { candidates, matched } = matchedGroupSamples(samples, identity, baseline, { now, windowMs, fallbackBaseline });
   const coverage = candidates.length === 0 ? 0 : matched.length / candidates.length;
   const retained = matched
     .sort((a, b) => sampleTime(b.sample, now) - sampleTime(a.sample, now))

@@ -100,7 +100,7 @@ describe("backgroundWidgetRows", () => {
     runtime_ms: 60_000,
     cost_usd: 0.1303,
     cache_hit_rate_last: 0.89,
-    tokens_per_second: 97,
+    speed_index: 80,
   }
 
   it("#given a wide terminal #when a live task row renders #then title, short model, elapsed, and tps remain", () => {
@@ -121,7 +121,7 @@ describe("backgroundWidgetRows", () => {
       }),
     ], new Map([["st_wide", "running read src/library.ts"]]), now, () => stats, 220)[0] ?? ""
 
-    expect(row).toBe("⠋ Plan the Spider-Man library · Grok 4.6 high · 1m 0s · 97 tok/s")
+    expect(row).toBe("⠋ Plan the Spider-Man library · Grok 4.6 high · 1m 0s · Speed 80")
     expect(row).not.toContain("category:")
     expect(row).not.toContain("turn ")
     expect(row).not.toContain("$0.1303")
@@ -150,7 +150,7 @@ describe("backgroundWidgetRows", () => {
     expect(title).toStartWith("Plan the complete")
     expect(title).not.toContain("Final review")
     expect(rendererVisibleWidth(title)).toBeLessThanOrEqual(32)
-    expect(row).toEndWith("97 tok/s")
+    expect(row).toEndWith("Speed 80")
   })
 
   it("#given only a routing variant #when a live row renders #then it is not repeated as reasoning effort", () => {
@@ -308,7 +308,7 @@ describe("backgroundWidgetRows", () => {
     expect(row).toContain("Plan")
     expect(row).not.toContain("category:")
     expect(row).not.toContain("running")
-    expect(row).toEndWith("97 tok/s")
+    expect(row).toEndWith("Speed 80")
   })
 })
 

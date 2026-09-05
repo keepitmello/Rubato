@@ -89,6 +89,32 @@ test("a fresh installation with no local baseline scores from the bundled v0", (
   store.stop();
 });
 
+test("a sparse local v1 still scores bundled large-context cells", () => {
+  const dir = mkdtempSync(join(tmpdir(), "si-overlay-"));
+  const store = createSpeedIndexStore({ agentDir: dir, autostartProbes: false, pid: 21, startedAt: 21, nonce: "ov" });
+  const small = freezeBaseline(
+    Array.from({ length: 20 }, () => ({
+      ...call({
+        fullInputTokens: 300,
+        cacheHitRate: 0.8,
+        cacheReadTokens: 240,
+        newInputTokens: 60,
+        cacheWriteTokens: 0,
+        clientDurationMs: 1000,
+      }),
+    })),
+    { now: () => Date.now(), minReferenceCalls: 20 },
+  );
+  assert.equal(small.status, "frozen");
+  store.setBaseline(small);
+  assert.equal(store.baselineOrigin(), LOCAL_ORIGIN);
+  store.record(call());
+  const scored = store.getCachedScore(REFERENCE_IDENTITY);
+  assert.equal(scored.status, "ready");
+  assert.equal(scored.matched, 1);
+  store.stop();
+});
+
 test("a matched call halves and doubles the score against the bundled reference cell", () => {
   const dir = mkdtempSync(join(tmpdir(), "si-v0-ratio-"));
   const bundled = loadBundledBaseline();

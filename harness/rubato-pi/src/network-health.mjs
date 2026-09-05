@@ -188,10 +188,12 @@ export function createNetworkHealth({
   }
 
   async function warmup(origin) {
-    for (let i = 0; i < PROBE_CLASSIFY_AFTER; i += 1) {
-      if (stopped) return;
-      await probeOrigin(origin);
-    }
+    // Sequential 20 connects could finish after the first user turn. Fire them
+    // together so classifyCallNetwork has a window before that call ends.
+    await Promise.all(Array.from({ length: PROBE_CLASSIFY_AFTER }, () => {
+      if (stopped) return undefined;
+      return probeOrigin(origin);
+    }));
   }
 
   function start() {

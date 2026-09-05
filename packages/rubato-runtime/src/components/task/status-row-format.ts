@@ -1,5 +1,6 @@
 import {
   excerptRendererText,
+  formatLiveSpeed,
   formatStatusTarget,
   normalizeRendererText,
   parseTeamMemberTaskIdentity,
@@ -125,7 +126,7 @@ function formatLiveBackgroundRow(
     liveModelLabel(record),
     isSuspended(record) ? "suspended" : undefined,
     formatElapsed(record.created_at, now),
-    stats?.tokens_per_second === undefined ? undefined : `${stats.tokens_per_second} tok/s`,
+    formatLiveSpeed(stats),
   ].filter((token): token is string => token !== undefined && token.length > 0)
   return excerptRendererText(`${frame} ${tokens.join(" · ")}`, maxWidth)
 }
