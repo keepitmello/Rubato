@@ -14,7 +14,7 @@ import { ensureSessionDefaults, sessionDefaultsLookCurrent } from "./session-def
 import { replaceSystemPrompt } from "./system-prompt.mjs";
 import { SKILL_DIRS } from "./skills-section.mjs";
 import { enginePackageJson, senpiCli, senpiCliMain, senpiPackageJson } from "./engine-paths.mjs";
-import { setBootChromeStatus } from "./boot-chrome.mjs";
+import { releaseBootChrome, setBootChromeStatus } from "./boot-chrome.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -147,8 +147,10 @@ export async function spawnRubatoPi({ args = process.argv.slice(2), env = proces
     await import(pathToFileURL(entry).href);
     return undefined;
   }
-  return spawn(node.bin, argv, {
-    env: nextEnv,
+  // Re-enter the launcher so the child owns both the splash and its awaited handoff.
+  releaseBootChrome();
+  return spawn(node.bin, [join(root, "bin", "rubato-pi.mjs"), ...args], {
+    env: launchEnv(env, agentDir),
     stdio: "inherit",
   });
 }
