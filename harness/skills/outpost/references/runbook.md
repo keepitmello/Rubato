@@ -34,6 +34,20 @@ https://chatgpt.com/g/g-p-.../project
 Global `/`, global `/c/...`, temporary chat, a non-HTTPS URL, or another host is
 not a recoverable default.
 
+## Doctor
+
+Probe the live ChatGPT project page without sending a packet:
+
+```bash
+outpost doctor
+outpost doctor --json
+```
+
+It opens the configured project, checks the composer label, Chat surface,
+tier pill (`NPro` included), `성능` / `모델 선택`, and the `GPT-5.6 Sol`
+radio, then closes the tab. Exit `0` if send would get past those locators.
+Exit `75` if the UI drifted. Never fills the composer and never clicks send.
+
 ## Launch the fast path
 
 Launch `outpost` on PATH as a background process. It drives the Aside REPL
