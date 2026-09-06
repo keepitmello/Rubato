@@ -80,6 +80,43 @@ test("shell-phase renderer animates shell steps and is adopted without re-enteri
   }
 });
 
+test("an inherited screen and clock are continued by both the shell renderer and the engine chrome", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "rubato-splash-"));
+  const t0 = String(Date.now() - 3000);
+  const child = spawn(process.execPath, [splashPath, dir], {
+    env: { ...process.env, NODE_OPTIONS: "", COLUMNS: "80", LINES: "24", RUBATO_BOOT_T0: t0 },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  try {
+    const until = Date.now() + 8000;
+    while (Date.now() < until && !existsSync(join(dir, "t0"))) await sleep(50);
+    assert.equal(readFileSync(join(dir, "t0"), "utf8"), t0, "renderer must keep the picker's clock");
+  } finally {
+    child.kill("SIGKILL");
+    rmSync(dir, { recursive: true, force: true });
+  }
+
+  const source = `
+    import { EventEmitter } from "node:events";
+    import { enterBootChrome, abandonBootChrome } from ${JSON.stringify(chromeUrl)};
+    const stdout = Object.assign(new EventEmitter(), { isTTY: true, columns: 80, rows: 24, fd: 1 });
+    const io = { stdout, stdin: { isTTY: true } };
+    if (!enterBootChrome([], io, { TERM: "xterm-256color", RUBATO_BOOT_T0: ${JSON.stringify(t0)} }, { inheritScreen: true, status: "세션을 여는 중" })) throw Error("refused");
+    await new Promise(r => setTimeout(r, 200));
+    abandonBootChrome();
+  `;
+  const engine = spawn(process.execPath, ["--input-type=module", "-e", source], {
+    env: { ...process.env, NODE_OPTIONS: "" }, stdio: ["ignore", "pipe", "pipe"],
+  });
+  let out = "", err = "";
+  engine.stdout.on("data", (c) => { out += c; });
+  engine.stderr.on("data", (c) => { err += c; });
+  assert.equal(await new Promise((resolve) => engine.once("exit", resolve)), 0, err);
+  assert(out.startsWith("\x1b[?25l\x1b[?2026h"), "inherited screen must not be re-entered");
+  assert(!out.includes("\x1b[?1049h"));
+  assert(plain(out).includes("세션을 여는 중"));
+});
+
 test("shell-phase renderer leaves the alt-screen on close and on signals", async () => {
   for (const mode of ["close", "SIGTERM"]) {
     const dir = mkdtempSync(join(tmpdir(), "rubato-splash-"));

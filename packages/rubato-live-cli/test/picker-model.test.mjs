@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createPickerScreen, loadPinnedPiTui, pickerItems, renderPickerStars } from "../src/picker.mjs";
+import { createPickerScreen, loadPinnedPiTui, pickerItems, renderPickerStars, startPickerBootChrome } from "../src/picker.mjs";
 
 const sessions = [{
   liveSessionId: "018f0c7b-2f3b-7c4d-9e5f-1234567890ab",
@@ -166,4 +166,34 @@ test("centered picker ignores margin clicks and maps scrolled rows to actual ses
   assert(y >= 0);
   assert(screen.handleMouse({ button: 0, x: lines[y].indexOf("Session 20"), y }));
   assert.equal(selected[0].liveSessionId, "id-20");
+});
+
+test("New session keeps the picker screen and hands the session the intro clock", async () => {
+  const calls = [];
+  const chrome = {
+    enterBootChrome(argv, io, env, options) { calls.push(["enter", argv, env.RUBATO_BOOT_T0, options]); return true; },
+    releaseBootChrome() { calls.push(["release"]); },
+    abandonBootChrome() { calls.push(["abandon"]); },
+  };
+  const io = { stdout: { isTTY: true, fd: 1 }, stdin: { isTTY: true } };
+  const boot = await startPickerBootChrome({ TERM: "xterm" }, { loadChrome: async () => chrome, io, now: () => 1234 });
+  assert.equal(boot.env.RUBATO_BOOT_T0, "1234");
+  assert.equal(boot.env.TERM, "xterm");
+  boot.release();
+  boot.abandon();
+  assert.deepEqual(calls, [["enter", [], "1234", { status: "세션을 여는 중" }], ["release"], ["abandon"]]);
+
+  const refused = await startPickerBootChrome({}, { loadChrome: async () => ({ enterBootChrome: () => false, releaseBootChrome() { throw Error("must not release"); } }), io });
+  assert.equal(refused.env.RUBATO_BOOT_T0, undefined);
+  refused.release(); refused.abandon();
+  const broken = await startPickerBootChrome({}, { loadChrome: async () => { throw Error("no harness"); }, io });
+  assert.equal(broken.env.RUBATO_BOOT_T0, undefined);
+  broken.release(); broken.abandon();
+});
+
+test("picker boot chrome resolves the harness renderer without importing the engine", async () => {
+  const { loadBootChrome } = await import("../src/picker.mjs");
+  const chrome = await loadBootChrome();
+  assert.equal(typeof chrome.enterBootChrome, "function");
+  assert.equal(typeof chrome.releaseBootChrome, "function");
 });

@@ -24,11 +24,14 @@ if (!dir) {
   process.exit(2);
 }
 const fd = 1;
-const t0 = Date.now();
+// The session picker may have started this intro in the previous terminal
+// owner; continue its clock so the attach cut lands on the same frame.
+const inherited = Number(process.env.RUBATO_BOOT_T0);
+const t0 = Number.isFinite(inherited) && inherited > 0 && inherited <= Date.now() ? inherited : Date.now();
 writeFileSync(join(dir, "t0"), String(t0));
 writeFileSync(join(dir, "pid"), String(process.pid));
 
-let previous = t0, elapsed = 0, done = false;
+let previous = Date.now(), elapsed = previous - t0, done = false;
 function finish(leave) {
   if (done) return;
   done = true;

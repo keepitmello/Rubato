@@ -177,7 +177,12 @@ export function adoptShellSplash(env = process.env, io = process) {
   return adopted;
 }
 
-export function enterBootChrome(argv = process.argv.slice(2), io = process, env = process.env) {
+/**
+ * `inheritScreen`: the caller already owns an alt-screen (the session picker);
+ * paint over it instead of entering and clearing again. `status`: first label.
+ * RUBATO_BOOT_T0 in env continues an intro that started in another process.
+ */
+export function enterBootChrome(argv = process.argv.slice(2), io = process, env = process.env, { inheritScreen = false, status: initialStatus } = {}) {
   const adopted = adoptShellSplash(env, io);
   if (!shouldPaintBootChrome(argv, io, env)) {
     if (adopted) { try { writeSync(io.stdout.fd ?? 1, LEAVE_ALT); } catch { /* TTY may be gone */ } }
@@ -187,14 +192,15 @@ export function enterBootChrome(argv = process.argv.slice(2), io = process, env 
   ioRef = io; workerError = null;
   const t0 = adopted?.t0 ?? Number(env.RUBATO_BOOT_T0);
   const elapsed = Number.isFinite(t0) && t0 > 0 ? Math.max(0, Date.now() - t0) : 0;
-  const status = adopted?.status ?? DEFAULT_STATUS;
+  const status = adopted?.status ?? initialStatus ?? DEFAULT_STATUS;
+  const inherit = adopted !== null || inheritScreen;
   control = new Int32Array(new SharedArrayBuffer(5 * Int32Array.BYTES_PER_ELEMENT));
   onResize = () => {
     Atomics.store(control, 2, bootChromeColumnCount(io, env));
     Atomics.store(control, 3, bootChromeRowCount(io, env));
   };
   onResize();
-  writeSync(io.stdout.fd ?? 1, (adopted ? HIDE_CURSOR : ENTER_ALT) + composeBootChrome({
+  writeSync(io.stdout.fd ?? 1, (inherit ? HIDE_CURSOR : ENTER_ALT) + composeBootChrome({
     env, columns: control[2], rows: control[3], status, time: elapsed,
   }));
   const current = new Worker(new URL("./boot-worker.mjs", import.meta.url), {

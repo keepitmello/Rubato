@@ -268,6 +268,36 @@ export async function pickLiveSession(sessions, { loadTui = loadPinnedPiTui } = 
   });
 }
 
+/**
+ * After "New session" pi-tui has left its alt-screen (preserveScreen only skips
+ * the scrollback dump). Open our own and run the Resonance intro on it while the
+ * hub spawns the session, and hand the session the same clock (RUBATO_BOOT_T0)
+ * so its own splash continues rather than restarts. `release` stops painting but
+ * keeps the alt-screen: zmx attach takes it over in the same tick, so the last
+ * frame stays instead of a normal-screen flash.
+ * Returns `{ env, release, abandon }`; `release` stops painting before zmx attaches.
+ * Any failure to load the renderer degrades to the plain frozen picker.
+ */
+export async function startPickerBootChrome(env = process.env, { loadChrome = loadBootChrome, io = process, now = Date.now } = {}) {
+  const nextEnv = { ...env, RUBATO_BOOT_T0: String(now()) };
+  try {
+    const chrome = await loadChrome();
+    if (!chrome.enterBootChrome([], io, nextEnv, { status: "세션을 여는 중" })) {
+      return { env, release() {}, abandon() {} };
+    }
+    // release: stop painting, keep the screen for zmx. abandon: the session never
+    // came; give the terminal back with its cursor before the error prints.
+    return { env: nextEnv, release: () => chrome.releaseBootChrome(), abandon: () => chrome.abandonBootChrome() };
+  } catch {
+    return { env, release() {}, abandon() {} };
+  }
+}
+
+export function loadBootChrome() {
+  const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+  return import(pathToFileURL(join(repositoryRoot, "harness", "rubato-pi", "src", "boot-chrome.mjs")).href);
+}
+
 export async function loadPinnedPiTui() {
   try {
     return await import("@earendil-works/pi-tui");

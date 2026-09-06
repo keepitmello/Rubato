@@ -54,6 +54,34 @@ test("bare picker consumes hub summaries and routes the selected canonical live 
   assert.deepEqual(calls, [session.liveSessionId]);
 });
 
+test("picker New session paints the intro until the attach handoff and forwards its clock", async () => {
+  const events = [];
+  const bootEnv = { TERM: "xterm", RUBATO_BOOT_T0: "42" };
+  await runCli(["pick"], {
+    env: { TERM: "xterm" },
+    lifecycle: {
+      list: async () => [],
+      create: async ({ environment, beforeAttach }) => {
+        events.push(["create", environment]);
+        await beforeAttach();
+        events.push(["attach"]);
+        return {};
+      },
+    },
+    picker: async () => ({ kind: "new" }),
+    bootChrome: async (env) => { events.push(["chrome", env]); return { env: bootEnv, release: () => events.push(["release"]) }; },
+  });
+  assert.deepEqual(events, [["chrome", { TERM: "xterm" }], ["create", bootEnv], ["release"], ["attach"], ["release"]]);
+
+  events.length = 0;
+  await assert.rejects(() => runCli(["pick"], {
+    lifecycle: { list: async () => [], create: async () => { throw new Error("path_not_allowed"); } },
+    picker: async () => ({ kind: "new" }),
+    bootChrome: async () => ({ env: {}, release: () => events.push("release"), abandon: () => events.push("abandon") }),
+  }), /path_not_allowed/);
+  assert.deepEqual(events, ["abandon", "release"]);
+});
+
 test("remote production doctor, update guard path, and confirmed uninstall are publicly routed", async () => {
   let output = "";
   const calls = [];

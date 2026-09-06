@@ -133,7 +133,7 @@ export class HubLifecycleClient {
     throw new HubUnavailableError();
   }
 
-  async create({ cwd = process.cwd(), name, detach = false, args = [], environment = this.env } = {}) {
+  async create({ cwd = process.cwd(), name, detach = false, args = [], environment = this.env, beforeAttach } = {}) {
     if (this.env.ZMX_SESSION && !detach) throw new Error("already inside zmx; use `rubato new --detach` to avoid a nested session");
     await this.ensureHealthy();
     const result = await this.control.request("cli.create", {
@@ -144,7 +144,11 @@ export class HubLifecycleClient {
       ...(detach ? { persist: true } : {}),
     });
     const session = result.session;
-    if (!detach) this.zmx.attach(session.zmxName);
+    if (!detach) {
+      // The terminal changes owner here; whoever paints it now must stop first.
+      await beforeAttach?.();
+      this.zmx.attach(session.zmxName);
+    }
     return session;
   }
 
