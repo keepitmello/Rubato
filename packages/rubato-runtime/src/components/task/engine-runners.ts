@@ -61,11 +61,17 @@ function buildInProcessRunner(build: RunnerBuildContext): ManagedRunner {
   return createInProcessManagedRunner(inProcess, context)
 }
 
+// One RpcProcessRunner shape for both first launch and respawn: the parent's `-e` extensions ride
+// to the child, and a model the parent's live registry resolves skips the child catalog probe. The
+// manager would otherwise default its respawn runner to a bare `new RpcProcessRunner()` that
+// still probes, so a revived process child could hit the same probe budget the first launch avoids.
+export function buildRpcProcessRunner(build: Pick<RunnerBuildContext, "runtime">): RpcProcessRunner {
+  return new RpcProcessRunner({
+    inheritedExtensions: parseExtensionEntries(process.argv),
+    parentRegistry: () => build.runtime.modelRegistry(),
+  })
+}
+
 function buildProcessRunner(build: RunnerBuildContext): ManagedRunner {
-  return createRpcManagedRunner(
-    new RpcProcessRunner({
-      inheritedExtensions: parseExtensionEntries(process.argv),
-      parentRegistry: () => build.runtime.modelRegistry(),
-    }),
-  )
+  return createRpcManagedRunner(buildRpcProcessRunner(build))
 }

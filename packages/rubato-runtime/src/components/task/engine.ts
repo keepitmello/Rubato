@@ -32,6 +32,7 @@ import { createCategoryUnavailableWarningPlanner } from "./category-unavailable-
 import { createTaskStoreChain } from "./engine-store-chain"
 import {
   DEFAULT_RUNNER_FACTORIES,
+  buildRpcProcessRunner,
   resolveTaskAgents,
   type RunnerBuildContext,
   type TaskRunnerFactories,
@@ -216,6 +217,7 @@ export function composeTaskEngine(deps: ComposeTaskEngineDeps): TaskEngine {
   const manager = createTaskManager({
     store: storeChain.store,
     runners: { "in-process": factories.inProcess(runnerContext), process: factories.process(runnerContext) },
+    rpcRespawnRunner: buildRpcProcessRunner(runnerContext),
     planner,
     config: settings,
     cwd: deps.cwd,
