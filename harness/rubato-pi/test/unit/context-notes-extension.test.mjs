@@ -59,9 +59,12 @@ test("shutdown removes the provider admission registration",async(t)=>{
     await f.dispatch("session_shutdown"); assert.throws(()=>assertSessionReady(f.manager),/준비되지/);
   } finally { if(previous===undefined)delete process.env.RUBATO_CONTEXT_MODE;else process.env.RUBATO_CONTEXT_MODE=previous; }
 });
-test("summary mode leaves existing extension behavior untouched",async(t)=>{
-  const f=fakeSession(t); assert.equal(await installContextNotes(f.pi,{enabled:false}),undefined);
-  assert.equal(f.tools.size,0);
+test("summary mode registers tools but they refuse to act",async(t)=>{
+  const f=fakeSession(t);
+  const api=await installContextNotes(f.pi,{enabled:false,Type,requireEngine:false}); t.after(()=>api.close());
+  assert.equal(f.tools.size,11);
+  await assert.rejects(f.tools.get("new_context").execute("id",{},undefined,undefined,f.ctx),/요약 모드/);
+  assert.equal((await f.dispatch("session_before_compact"))[0],undefined);
 });
 
 test("admission failure aborts the agent even when a hook dispatcher catches errors",async(t)=>{
