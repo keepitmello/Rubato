@@ -103,31 +103,35 @@ export function loadSkillEntries(dirs = SKILL_DIRS, { load } = {}) {
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function escapeXml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&apos;");
-}
-
 export function formatSkillsForPrompt(skills) {
   const visible = skills.filter((skill) => !skill.disableModelInvocation);
   if (visible.length === 0) return "";
+  const roots = new Map();
+  for (const skill of visible) {
+    const root = dirname(dirname(skill.filePath));
+    if (skill.filePath === join(root, skill.name, "SKILL.md")) {
+      roots.set(root, (roots.get(root) ?? 0) + 1);
+    }
+  }
+  const [commonRoot, count] = [...roots.entries()].sort((a, b) => b[1] - a[1])[0] ?? [];
+  const defaultRoot = count >= 2 ? commonRoot : undefined;
   const lines = [
     "The following skills provide specialized instructions for specific tasks.",
     "Use the read tool to load a skill's file whenever its description even loosely matches the task - loading an irrelevant skill costs little; missing a relevant one degrades the work.",
     "When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.",
     "",
     "<available_skills>",
+    "Each JSON array is [name, description, full path].",
   ];
+  if (defaultRoot) {
+    lines.push(`An omitted path means ${JSON.stringify(join(defaultRoot, "<name>", "SKILL.md"))}; substitute the skill name.`);
+  }
   for (const skill of visible) {
-    lines.push("  <skill>");
-    lines.push(`    <name>${escapeXml(skill.name)}</name>`);
-    lines.push(`    <description>${escapeXml(skill.description)}</description>`);
-    lines.push(`    <location>${escapeXml(skill.filePath)}</location>`);
-    lines.push("  </skill>");
+    const entry = [skill.name, skill.description];
+    if (!defaultRoot || skill.filePath !== join(defaultRoot, skill.name, "SKILL.md")) {
+      entry.push(skill.filePath);
+    }
+    lines.push(JSON.stringify(entry).replaceAll("<", "\\u003c"));
   }
   lines.push("</available_skills>");
   return lines.join("\n");
