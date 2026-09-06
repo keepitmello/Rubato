@@ -4,6 +4,7 @@ import { historyNotesEnabled } from "./config.mjs";
 import { bootstrapMessage, validateTransition } from "./protocol.mjs";
 
 const KEY = Symbol.for("rubato.history-notes.sessions.v1");
+const DRIFT_KEY = Symbol.for("rubato.history-notes.drift.v1");
 const sessions = globalThis[KEY] ??= new Map();
 export const REQUIRED_MARKERS = ["lane", "messages", "session", "settings", "pipeline", "anthropic"];
 
@@ -11,9 +12,17 @@ export function markEnginePart(name) {
   globalThis[Symbol.for(`rubato.history-notes.${name}.v1`)] = true;
 }
 
+export function recordEnginePartDrift(name, error) {
+  const drift = globalThis[DRIFT_KEY] ??= Object.create(null);
+  drift[name] = error?.message ?? String(error);
+}
+
 export function assertEngineParts() {
   const missing = REQUIRED_MARKERS.filter((part) => !globalThis[Symbol.for(`rubato.history-notes.${part}.v1`)]);
-  if (missing.length) throw new Error(`새 문맥 모드의 엔진 연결이 빠졌어요: ${missing.join(", ")}. check-history-notes-engine.mjs를 실행해 주세요.`);
+  if (!missing.length) return;
+  const drift = globalThis[DRIFT_KEY] ?? Object.create(null);
+  const details = missing.map((part) => drift[part] ? `${part} (${drift[part]})` : part).join(", ");
+  throw new Error(`새 문맥 모드의 엔진 연결이 빠졌어요: ${details}. check-history-notes-engine.mjs를 실행해 주세요.`);
 }
 
 export function registerSessionGate(id, gate) {

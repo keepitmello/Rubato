@@ -1,6 +1,7 @@
 // Critical context ownership transforms run OUTSIDE the cosmetic drift catcher.
 // Keep this after the existing core-session/control clusters in the loader.
 import { historyNotesEnabled } from "../context-notes/config.mjs";
+import { recordEnginePartDrift } from "../context-notes/engine-gate.mjs";
 
 export function contextNotesHrefs() {
   return { gate: new URL("../context-notes/engine-gate.mjs", import.meta.url).href,
@@ -39,8 +40,7 @@ export function applyContextNotesTransforms(url, source, options = {}) {
   }
   if (source.includes(marker)) return source;
   const enabled = options.enabled ?? historyNotesEnabled();
-  // Summary mode must still understand already-persisted notes-window carriers.
-  if (!enabled && target !== "messages") return source;
+  // Gates stay present in both modes and read the live env at call time.
   const hrefs = { ...contextNotesHrefs(), ...options.hrefs };
   let next = source;
   try {
@@ -88,9 +88,10 @@ export function applyContextNotesTransforms(url, source, options = {}) {
         break;
     }
   } catch (error) {
+    recordEnginePartDrift(target, error);
     if (enabled) throw error;
-    // Legacy runs may use an older pinned engine. Their own transforms retain
-    // existing behavior; never silently accept this drift for a notes-mode run.
+    // Summary mode must not brick the CLI when a pin drifts. A later switch
+    // into notes refuses with this reason via assertEngineParts().
     return source;
   }
   return next + `\n${marker}\n`;
