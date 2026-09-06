@@ -18,7 +18,7 @@ export const SURFACE_TO_HUB_FRAME_KINDS = [
   "surface.action-result",
 ] as const
 
-export const HUB_TO_SURFACE_FRAME_KINDS = ["hub.launch", "hub.registered", "hub.action"] as const
+export const HUB_TO_SURFACE_FRAME_KINDS = ["hub.launch", "hub.registered", "hub.action", "hub.rejected"] as const
 
 export const REMOTE_HTTP_ROUTES = Object.freeze({
   health: "/rubato/api/v1/health",

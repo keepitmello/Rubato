@@ -240,6 +240,62 @@ describe("Unix socket process registration", () => {
     client.destroy()
   })
 
+  test("invalid surface frames log once, send hub.rejected, and close", async () => {
+    const temporary = await temporaryDirectory()
+    cleanupTasks.push(temporary.cleanup)
+    const registry = new LiveRegistry(HOST_ID, { discover: async () => [] })
+    const journal = new EventJournal(join(temporary.path, "journal"), join(temporary.path, "snapshots"), HOST_ID)
+    await journal.load()
+    const tokens = new SurfaceTokenStore()
+    const socketPath = join(temporary.path, "hub.sock")
+    const server = new SurfaceSocketServer(socketPath, registry, journal, tokens, new EnvironmentHandoffStore<BootstrapLaunchPayload>(), new SurfaceReconnectCredentials(join(temporary.path, "credential-key")))
+    await server.listen()
+    cleanupTasks.push(() => server.close())
+
+    const token = tokens.issue(SESSION_ID)
+    const client = await connect(socketPath)
+    const registered = nextFrame(client)
+    const registrationSummary = unmanagedSummary()
+    client.write(encodeFrame({
+      kind: "surface.register",
+      protocol: "rubato.remote.v1",
+      protocolRange: { min: 1, max: 1 },
+      surfaceInstanceId: "00000000-0000-4000-8000-000000000001",
+      token,
+      summary: registrationSummary,
+    }))
+    expect(await registered).toMatchObject({ kind: "hub.registered" })
+
+    const errors: string[] = []
+    const originalError = console.error
+    console.error = (...args: unknown[]) => errors.push(args.map(String).join(" "))
+    try {
+      const rejected = nextFrame(client)
+      const closed = new Promise<void>((resolve) => client.once("close", () => resolve()))
+      const bad = {
+        kind: "surface.snapshot",
+        protocol: "rubato.remote.v1",
+        surfaceInstanceId: "00000000-0000-4000-8000-000000000001",
+        sourceSeq: 1,
+        at: "2026-08-31T00:00:00.000Z",
+        summary: registrationSummary,
+        state: { revision: 1 },
+      }
+      client.write(Buffer.concat([Buffer.from(encodeFrame(bad)), Buffer.from(encodeFrame(bad))]))
+      const frame = await rejected as { kind?: string; protocol?: string; reason?: string }
+      expect(frame).toMatchObject({ kind: "hub.rejected", protocol: "rubato.remote.v1" })
+      expect(typeof frame.reason).toBe("string")
+      expect(frame.reason?.length).toBeGreaterThan(0)
+      await bounded(closed)
+      const dropped = errors.filter((line) => line.includes("surface frame dropped"))
+      expect(dropped).toHaveLength(1)
+      expect(dropped[0]).toContain(`liveSessionId=${SESSION_ID}`)
+      expect(dropped[0]).toContain("kind=surface.snapshot")
+    } finally {
+      console.error = originalError
+    }
+  })
+
 class SignalingJournal extends EventJournal {
   readonly #written: () => void
   constructor(journalPath: string, snapshotPath: string, written: () => void) {

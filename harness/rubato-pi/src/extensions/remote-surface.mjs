@@ -1,7 +1,9 @@
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomBytes, randomUUID } from "node:crypto";
 import { basename } from "node:path";
 import { collectSessionMetrics } from "../session-metrics.mjs";
@@ -55,9 +57,114 @@ export function isProcessExitShutdown(reason) {
 
 const installedSurfaces = new Map();
 const PROCESS_SURFACE_KEY = "process";
+const DEFAULT_INSTALLED_PROTOCOL = path.join(os.homedir(), ".local", "lib", "rubato", "remote", "current", "protocol", "index.mjs");
+const KNOWN_HUB_FRAME_KINDS = ["hub.launch", "hub.registered", "hub.action"];
 
 function installedSurfaceKey(options = {}) {
   return options.liveSessionId ?? process.env.RUBATO_LIVE_SESSION_ID ?? PROCESS_SURFACE_KEY;
+}
+
+export function getInstalledRemoteSurface(options = {}) {
+  return installedSurfaces.get(installedSurfaceKey(options));
+}
+
+function pathExists(value) {
+  try {
+    return existsSync(value);
+  } catch {
+    return false;
+  }
+}
+
+function findCheckoutRoot(fromDir, exists = pathExists) {
+  let dir = fromDir;
+  for (let depth = 0; depth < 10; depth += 1) {
+    if (exists(path.join(dir, "packages", "rubato-remote-protocol", "src", "index.ts"))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return undefined;
+}
+
+export function resolveRemoteProtocolSource({
+  env = process.env,
+  exists = pathExists,
+  fromFile = fileURLToPath(import.meta.url),
+  installedPath = DEFAULT_INSTALLED_PROTOCOL,
+  cwd = process.cwd(),
+} = {}) {
+  const override = typeof env.RUBATO_REMOTE_PROTOCOL === "string" ? env.RUBATO_REMOTE_PROTOCOL.trim() : "";
+  if (override) {
+    return { source: "env", path: path.resolve(cwd, override) };
+  }
+  const checkoutRoot = findCheckoutRoot(path.dirname(fromFile), exists);
+  if (checkoutRoot) {
+    const protocolRoot = path.join(checkoutRoot, "packages", "rubato-remote-protocol");
+    return {
+      source: "checkout",
+      path: path.join(protocolRoot, "dist", "index.mjs"),
+      entry: path.join(protocolRoot, "src", "index.ts"),
+      checkoutRoot,
+    };
+  }
+  return { source: "installed", path: installedPath };
+}
+
+function protocolSourceMtime(srcDir) {
+  let latest = 0;
+  for (const name of readdirSync(srcDir)) {
+    if (!name.endsWith(".ts")) continue;
+    const stamp = statSync(path.join(srcDir, name)).mtimeMs;
+    if (stamp > latest) latest = stamp;
+  }
+  return latest;
+}
+
+function ensureCheckoutProtocolModule(resolved) {
+  const dist = resolved.path;
+  const entry = resolved.entry;
+  const srcDir = path.dirname(entry);
+  if (pathExists(dist) && statSync(dist).mtimeMs >= protocolSourceMtime(srcDir)) return dist;
+  const esbuild = path.join(resolved.checkoutRoot, "packages", "rubato-remote-hub", "node_modules", ".bin", "esbuild");
+  if (!pathExists(esbuild)) {
+    throw new Error(`in-repo protocol at ${entry} needs esbuild to load under Node`);
+  }
+  mkdirSync(path.dirname(dist), { recursive: true });
+  const result = spawnSync(esbuild, [
+    entry,
+    "--bundle",
+    "--platform=node",
+    "--format=esm",
+    "--target=node24",
+    `--outfile=${dist}`,
+  ], { encoding: "utf8", timeout: 30_000 });
+  if (result.status !== 0) {
+    const detail = String(result.stderr || result.stdout || `exit ${result.status}`).trim();
+    throw new Error(`in-repo protocol build failed: ${detail}`);
+  }
+  return dist;
+}
+
+export async function loadRemoteProtocol(options = {}) {
+  let resolved = resolveRemoteProtocolSource(options);
+  let modulePath = resolved.path;
+  if (resolved.source === "checkout") {
+    try {
+      modulePath = ensureCheckoutProtocolModule(resolved);
+    } catch (error) {
+      // 체크아웃은 있는데 esbuild 가 없거나 빌드가 깨진 기기. 서피스를 아예 안 여는
+      // 것보다 설치 릴리스로 내려가는 쪽이 낫다 — 그 사본이 있으면.
+      const installedPath = options.installedPath ?? DEFAULT_INSTALLED_PROTOCOL;
+      if (!pathExists(installedPath)) throw error;
+      console.error(`[rubato remote] ${error instanceof Error ? error.message : String(error)}; falling back to installed protocol`);
+      resolved = { source: "installed", path: installedPath };
+      modulePath = installedPath;
+    }
+  }
+  const href = pathToFileURL(modulePath).href;
+  const module = options.importModule ? await options.importModule(href) : await import(href);
+  return { module, source: resolved.source, path: modulePath };
 }
 
 function bindSurfaceEvents(pi, surface) {
@@ -317,18 +424,36 @@ export class RemoteSurface {
     this.legacyOutgoing = false;
     this.snapshotWireFailed = false;
     this.registeredAt = undefined;
+    this.reconnectWaitMs = undefined;
   }
 
   start() {
     this.stopped = false;
     this.connectNow();
-    this.heartbeat = this.clock.setInterval(() => this.send({
+    this.heartbeat = this.clock.setInterval(() => this.sendHeartbeat(), HEARTBEAT_MS);
+  }
+
+  sendHeartbeat() {
+    const sent = this.send({
       kind: "surface.heartbeat",
       protocol: this.protocol.REMOTE_PROTOCOL_NAME,
       surfaceInstanceId: this.surfaceInstanceId,
       sourceSeq: this.sourceSeq,
       at: new Date(this.clock.now()).toISOString(),
-    }), HEARTBEAT_MS);
+    });
+    if (sent && this.registeredAt !== undefined && (this.clock.now() - this.registeredAt) >= RECONNECT_STABLE_MS) {
+      this.reconnectDelay = RECONNECT_MIN_MS;
+    }
+    return sent;
+  }
+
+  state() {
+    return {
+      registered: this.registered === true,
+      legacyOutgoing: this.legacyOutgoing === true,
+      reconnectDelay: this.registered ? 0 : (this.reconnectWaitMs ?? this.reconnectDelay),
+      negotiatedProtocolVersion: this.negotiatedProtocolVersion,
+    };
   }
 
   stop() {
@@ -400,6 +525,7 @@ export class RemoteSurface {
       this.reconnectDelay = RECONNECT_MIN_MS;
     }
     const delay = this.reconnectDelay;
+    this.reconnectWaitMs = delay;
     this.reconnectDelay = Math.min(RECONNECT_MAX_MS, delay * 2);
     this.reconnectTimer = this.clock.setTimeout(() => {
       this.reconnectTimer = undefined;
@@ -450,7 +576,6 @@ export class RemoteSurface {
       const frame = this.parseForHub(message);
       if (frame === undefined) return false;
       this.connection.send(frame);
-      this.reconnectDelay = RECONNECT_MIN_MS;
       return true;
     } catch {
       return false;
@@ -707,11 +832,20 @@ export class RemoteSurface {
     return record;
   }
 
+  unknownHubFrameKind(message) {
+    const kind = message?.kind;
+    if (typeof kind !== "string") return false;
+    const known = this.protocol.HUB_TO_SURFACE_FRAME_KINDS;
+    if (Array.isArray(known)) return !known.includes(kind);
+    return !KNOWN_HUB_FRAME_KINDS.includes(kind);
+  }
+
   async receive(message) {
     let frame;
     try {
       frame = this.protocol.hubToSurfaceFrameSchema.parse(message);
     } catch {
+      if (this.unknownHubFrameKind(message)) return;
       this.connection?.close();
       this.disconnected();
       return;
@@ -870,7 +1004,12 @@ export async function installRemoteSurface(pi, options = {}) {
     existing.rebind(pi, options);
     return existing;
   }
-  const protocol = options.protocol ?? await import(pathToFileURL(path.join(os.homedir(), ".local", "lib", "rubato", "remote", "current", "protocol", "index.mjs")).href);
+  let protocol = options.protocol;
+  if (!protocol) {
+    const loaded = await loadRemoteProtocol(options.protocolLoader ?? {});
+    console.error(`[rubato remote] protocol source: ${loaded.source} (${loaded.path})`);
+    protocol = loaded.module;
+  }
   const surface = new RemoteSurface(pi, protocol, options);
   surface.installKey = key;
   bindSurfaceEvents(pi, surface);
