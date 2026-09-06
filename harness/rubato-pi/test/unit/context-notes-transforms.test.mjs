@@ -7,7 +7,7 @@ const base="file:///repo/node_modules/@code-yeongyu/senpi/dist/core/";
 const sources={
   settings:['settings-manager.js',`export class SettingsManager { getCompactionSettings() { return {enabled:true,idleCompactionEnabled:true}; } }`],
   messages:['messages.js',`export function createCompactionSummaryMessage(summary, tokensBefore, timestamp, details) { return {role:"compactionSummary",summary,tokensBefore,timestamp,details}; }`],
-  session:['agent-session.js',`export class AgentSession { async _executeCompaction(request) { const compactionEntryId = this.sessionManager.appendCompaction(); return compactionEntryId; } async _enforceFinalProviderAdmission(messages) { return messages; } }`],
+  session:['agent-session.js',`export class AgentSession { async _executeCompaction(request) { const compactionEntryId = this.sessionManager.appendCompaction(); return compactionEntryId; } async _enforceFinalProviderAdmission(messages) { return messages; } prepareNextTurn(turn, compactedBeforeCallback) { const messages = compactedBeforeCallback ? this.agent.state.messages.slice() : turn.context.messages; return messages; } }`],
   lane:['extensions/builtin/compaction/lane-policy.js',`export function laneRejectionReason(model) { return "legacy"; } export function laneAllowsManualCompaction(model, reason) { return true; } export function lane() {return {disablesSenpiCompaction(context) { return false; } };}`],
   pipeline:['extensions/builtin/compaction/context-pipeline.js',`function stripCursorThinking(m) {return m;} function repairOrphanedToolResults(m) {return m;} function convertToLlm(m) {return m;} export function buildCompactionContext(input) { throw new Error("PRUNE"); }`],
 };
@@ -59,6 +59,27 @@ test("transformed executable session refuses both missing companion and normal s
     await assert.rejects(session._executeCompaction({}),/요약 압축/);
   }finally{if(old===undefined)delete process.env.RUBATO_CONTEXT_MODE;else process.env.RUBATO_CONTEXT_MODE=old;}
 });
+test("notesTurnMessages uses rebuilt agent messages only in notes mode after a window carrier appears",async()=>{
+  const { notesTurnMessages } = await import("../../src/context-notes/engine-gate.mjs");
+  const carrier = { role: "user", content: [{ type: "text", text: encodeBootstrap(initialWindow()) }] };
+  const turn = { context: { messages: [{ role: "user", content: "old" }] } };
+  const old = process.env.RUBATO_CONTEXT_MODE;
+  process.env.RUBATO_CONTEXT_MODE = "history-notes";
+  try {
+    const next = notesTurnMessages(turn, [carrier]);
+    assert.equal(next[0], carrier);
+    assert.equal(notesTurnMessages({ context: { messages: [carrier] } }, [carrier]), undefined);
+    process.env.RUBATO_CONTEXT_MODE = "summary";
+    assert.equal(notesTurnMessages(turn, [carrier]), undefined);
+  } finally { if (old === undefined) delete process.env.RUBATO_CONTEXT_MODE; else process.env.RUBATO_CONTEXT_MODE = old; }
+});
+
+test("transformed session next-turn prepare prefers a notes-window carrier",()=>{
+  const result=apply(base+sources.session[0],sources.session[1],{enabled:true});
+  assert.ok(result.includes("notesTurnMessages(turn, this.agent.state.messages)"));
+  assert.ok(result.includes('markEnginePart("turn")'));
+});
+
 test("Anthropic server support predicate is disabled only in new mode",async()=>{
   const old=process.env.RUBATO_CONTEXT_MODE;process.env.RUBATO_CONTEXT_MODE="history-notes";
   try {
@@ -84,6 +105,7 @@ test("transformed session checks again after async work immediately before disk 
       return compactionEntryId;
     }
     async _enforceFinalProviderAdmission(messages) { return messages; }
+    prepareNextTurn(turn, compactedBeforeCallback) { const messages = compactedBeforeCallback ? this.agent.state.messages.slice() : turn.context.messages; return messages; }
   }`;
   try {
     const module = await load(apply(base + "agent-session.js", source, { enabled: true }));
