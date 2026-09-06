@@ -12,7 +12,7 @@ RUBATO_CONTEXT_MODE=history-notes node harness/rubato-pi/bin/rubato-pi.mjs
 RUBATO_CONTEXT_MODE=summary node harness/rubato-pi/bin/rubato-pi.mjs
 ```
 
-`RUBATO_CONTEXT_MODE`를 정하지 않으면 런처가 시작 모델로 기본 모드를 고릅니다. 아스트라(`openai-codex/gpt-6-astra`)는 작업 노트, 나머지는 요약이에요. `--session`으로 연 파일에 모드 기록이나 작업 노트 창이 있으면 그 값이 모델 규칙보다 앞섭니다.
+`RUBATO_CONTEXT_MODE`를 사용자가 정하면 그대로 씁니다. 없으면 세션이 시작될 때 시작 모델로 고릅니다. 아스트라(`openai-codex/gpt-6-astra`)는 작업 노트, 나머지는 요약이에요. 세션 파일의 모드 기록이나 작업 노트 창이 있으면 그 값이 모델 규칙보다 앞섭니다. 부모 세션이 고른 모드는 자식 프로세스에 이어지지 않아요.
 
 세션 안에서 모델을 바꿀 때 새 모델의 기본 모드가 다르면 확인 뒤에만 바꿉니다. 요약에서 작업 노트로의 전환은 언제든 가능하고, 이미 새 창을 만든 세션은 요약으로 되돌리지 않아요. 확인을 거절하면 같은 모델 쌍에 대해 다시 묻지 않아요.
 

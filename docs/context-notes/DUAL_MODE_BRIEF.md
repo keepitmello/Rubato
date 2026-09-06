@@ -70,3 +70,45 @@ Commands (cwd worktree, `NODE_OPTIONS` unset, `NODE_NO_WARNINGS=1`):
 - `npm --prefix harness/rubato-pi test` (packet runner, summary) → exit 1, 873 pass / 24 fail. The original 12 listed above still fail. Extra file-level crashes were `ERR_MODULE_NOT_FOUND: undici` from `src/upstream-dispatcher.mjs` because this worktree's `node_modules` symlink target (`rubato-lab/rubato/node_modules`) has only 5 entries, plus `anthropic-setup-token` `EEXIST` symlink and `boot-chrome` worker-resize. None of those are context-notes tests.
 
 Unverified: live AgentSession / TUI `ctx.ui.confirm` on a real `model_select`; LSP diagnostics (daemon unreachable). `contextMode()` still defaults to `history-notes` when env is unset so existing packet tests keep working; the launcher always writes env for users.
+
+
+## Leg 2 (lead review, 2026-09-06)
+
+Reviewed commits `85f7d0a2d..5f463574b`. Structure is right. Two defects and one gap to fix in this leg; everything else in the brief still binds.
+
+### Defect 1 (binding): children inherit the launcher's mode
+
+`packages/senpi-task/src/agents/rubato-overlay.ts:22` spawns Agent/team children with `...process.env`. Because the launcher writes `RUBATO_CONTEXT_MODE`, every child of an Astra lead starts in `history-notes` regardless of its own model, and a child on provider `claude-sdk-oauth` is refused by the controller (`controller.mjs:157`). The "explicit env wins" rule cannot tell a user-set value from a launcher/parent-set one.
+
+Required behavior: each process decides its own mode from its own starting model and its own session record; only a value the *user* set explicitly is inherited as-is.
+
+Suggested shape (lead's proposal; verify and adjust):
+- The launcher stops writing `RUBATO_CONTEXT_MODE`. (The `--session` peek becomes unnecessary: with the env unset, `contextMode()` defaults to `history-notes` during session load, so `notesAwareSummaryMessage` never throws on a notes session, and `session_start` sets the real mode before the first provider request. Verify that ordering against the real engine: which runs first on resume, `createCompactionSummaryMessage` or the extension's `session_start`?)
+- `session_start` in `context-notes.mjs` resolves: user-explicit env → recorded `rubato.context-mode.v1` on the branch → notes-window entries present → `defaultContextModeForModel(ctx.model)`. Then `setContextMode(mode)` and mark `RUBATO_CONTEXT_MODE_ORIGIN=session` in `process.env`. A process that sees `RUBATO_CONTEXT_MODE` together with `RUBATO_CONTEXT_MODE_ORIGIN=session` treats the value as inherited and re-resolves; a value without the origin marker is user-explicit and wins. Keep `resolveLaunchContextMode` only if something still needs it; otherwise delete it and its tests rather than leaving dead code.
+- Add a unit test that simulates a child process env (`RUBATO_CONTEXT_MODE=history-notes`, `RUBATO_CONTEXT_MODE_ORIGIN=session`, model Fable) and asserts it resolves to `summary`; and the mirror case with a user-set env and no origin marker.
+
+### Defect 2 (verify, then fix or document): drift record never reaches the main thread
+
+`module.register()` loader hooks run on a separate thread in Node ≥ 20, so `recordEnginePartDrift` called inside `applyContextNotesTransforms` writes to the hook thread's `globalThis`, not the one `assertEngineParts()` reads. Verify with a quick experiment against the real loader. If confirmed, either carry the reason into the module source itself (append a small `recordEnginePartDrift("<part>", "<message>")` statement to the untransformed module on the summary-mode drift path) or drop the reason plumbing and keep the plain missing-part error; do not leave a comment that promises a reason which cannot arrive.
+
+### Gap: full-suite numbers
+
+`harness/rubato-pi/node_modules` is now symlinked in the worktree, so the `undici` failures should be gone. Re-run `npm --prefix harness/rubato-pi test` and report the exact failure list against the 12 pre-existing ones; investigate any that are not on that list (the symlink `EEXIST` and boot-chrome resize ones you mentioned included) and say whether they are worktree artifacts or real.
+
+Budget for this leg: 45 minutes. Append `## Result (leg 2)` to this file when done.
+
+## Result (leg 2)
+
+Both defects fixed. `createCompactionSummaryMessage` runs in `sessionManager.buildSessionContext()` during SDK setup, before `session_start`. Env unset (or inherited `ORIGIN=session` before this process resolves) defaults to `history-notes`, so a notes resume does not throw; `session_start` then sets the real mode.
+
+- Defect 1: launcher no longer writes `RUBATO_CONTEXT_MODE`. `session_start` uses `adoptContextMode` (user-explicit env → recorded mode → notes-window entries → model). `setContextMode` marks `RUBATO_CONTEXT_MODE_ORIGIN=session`. Inherited origin is re-resolved; a value with no origin marker wins. `resolveLaunchContextMode` deleted.
+- Defect 2: confirmed. A `module.register` hook wrote `globalThis[Symbol.for("rubato.drift.hook-thread")]="hook"`; the main thread read `null`. Summary-mode transform drift now appends `recordEnginePartDrift(...)` to the module source so it runs on load.
+- Gap: `npm --prefix harness/rubato-pi test` → exit 1, 1045 pass / 14 fail. The original 12 still fail. Extra: `boot-chrome` "worker resize…" (`resizedFrames.length > 0`). Isolated re-run of that file: 8/8 pass. Flake under parallel load, not this change. The `undici` and `EEXIST` symlink failures are gone.
+
+Commands (`NODE_OPTIONS` unset, `NODE_NO_WARNINGS=1`):
+- `check:context-notes-engine` exit 0
+- `test:context-notes` 89/89 in both `summary` and `history-notes`
+- `test:context-cost` 24/24 in both modes
+- packet runner as above
+
+Unverified: live TUI `ctx.ui.confirm`.
