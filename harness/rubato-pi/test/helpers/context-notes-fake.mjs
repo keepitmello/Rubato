@@ -43,8 +43,17 @@ export function fakeSession(t, options = {}) {
     getSessionFile: () => file, getEntries: () => entries, buildSessionContext: build };
   const notices = []; const handlers = new Map(); const tools = new Map(); const commands = new Map(); const sent = [];
   const abort = new AbortController();
+  const confirms = [];
+  let confirmAnswer = true;
   const ctx = { sessionManager: manager, agentDir: dir, model: { id: "test-model", provider: "test", contextWindow: 32000 },
-    ui: { notify: (...args) => notices.push(args), setStatus: (...args) => notices.push(args) },
+    ui: {
+      notify: (...args) => notices.push(args),
+      setStatus: (...args) => notices.push(args),
+      confirm: async (title, message) => {
+        confirms.push({ title, message });
+        return typeof confirmAnswer === "function" ? confirmAnswer(title, message) : confirmAnswer;
+      },
+    },
     mode: "tui", hasUI: true, cwd: dir, signal: undefined,
     isIdle: () => true, getContextUsage: () => ({ tokens: 0 }), getSystemPrompt: () => "Stable system prompt",
     getMessageRevision: () => revision, abort: () => abort.abort(),
@@ -65,6 +74,8 @@ export function fakeSession(t, options = {}) {
   };
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return { ctx, pi, manager, addMessage, append, branch, build, notices, sent, tools, commands, dispatch,
-    abort, dir, file, entries, rewind: (id) => { leaf = id; revision++; },
+    abort, dir, file, entries, confirms,
+    setConfirm: (value) => { confirmAnswer = value; },
+    rewind: (id) => { leaf = id; revision++; },
     init: () => append({ type: "custom", customType: INIT_ENTRY, data: { window: initialWindow() } }) };
 }

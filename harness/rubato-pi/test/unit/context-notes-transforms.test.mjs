@@ -22,8 +22,11 @@ test("critical source transforms are idempotent and drift is fatal",()=>{
   }
   assert.equal(apply("file:///other.js","keep"),"keep");
 });
-test("normal summary runs bypass critical patches but retain the saved-window mode check",()=>{
-  const [path,source]=sources.settings; assert.equal(apply(base+path,source,{enabled:false}),source);
+test("summary-mode loads still apply engine gates so a later notes switch can wake them",()=>{
+  for (const [part,[path,source]] of Object.entries(sources)) {
+    const result=apply(base+path,source,{enabled:false});
+    assert.ok(result.includes(`rubato-history-notes-transform-v2:${part}`));
+  }
   assert.ok(apply(base+"messages.js",sources.messages[1],{enabled:false}).includes("notesAwareSummaryMessage"));
 });
 test("transformed executable settings disable all builtin summary variants",async()=>{
