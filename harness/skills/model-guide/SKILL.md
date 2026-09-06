@@ -1,6 +1,6 @@
 ---
 name: model-guide
-description: "Routing guide for choosing Agent, teammate, and verifier models. Applies whenever an Agent model is decided, one-off or full roster."
+description: "Routing guide for Agent, teammate, and verifier models. Fable/Astra are ultra-expensive: explicit user approval is mandatory for every dispatch, including verification."
 ---
 
 # Model Guide
@@ -38,7 +38,13 @@ Debugging is the case that tempts misrouting. The diagnosis is judgment, and jud
 
 ## 2. Exact model or named preset
 
-Choose the cognitive profile, then pass an exact `model` or named `preset` to `Agent`. Never pass a category, task type, or `subagent_type`. Omit `effort` for Muse and Grok. Always pass `effort` for Fable 5.1 and Sol: Fable as a worker runs `low`; Sol runs `medium`; anything higher only after the user confirms it for that dispatch.
+Choose the cognitive profile, then pass an exact `model` or named `preset` to `Agent`. Never pass a category, task type, or `subagent_type`.
+
+Pass `effort` with the model:
+
+- **Muse** — omit `effort`.
+- **Grok** — pass `effort`. Default `high`; `xhigh` when the leg looks hard.
+- **Fable 5.1, Sol, and Astra** — default `medium`; `high` when the work looks hard. The model and the effort both need approval.
 
 Route in this order:
 
@@ -49,30 +55,37 @@ Route in this order:
 
 Say in one line which model or preset the agent runs on; report the resolved model when the runtime returns it.
 
-**Default owner is Grok 4.6 Fast**: `xai/grok-4.6` or Cursor Fast (`cursor/cursor-grok-4.6-high-fast`) — use either. **Default worker is Muse Spark or Grok 4.6 Fast**: `opencode/muse-spark-1.3-contributor-free`, or the same Grok ids. Muse runs several times faster at slightly lower accuracy; prefer it as a worker, and use Grok when a leg needs the extra precision. Opus 5 has no slot.
+**Owner seat** is Fable 5.1 or Sol, by bottleneck — Fable for framing and structure, Sol for hypothesis and proof. Both, and Astra, need the user's approval per dispatch.
 
-**Fable 5.1 and Sol as owners or workers require the user's approval per dispatch.** Ask, naming the workstream; until approved, owners run on Grok and workers on Muse or Grok. A verifier (independent review) needs no approval.
+**Grok may hold that seat** when the outcome is already framed and the work is clear: `xai/grok-4.6` or Cursor Fast (`cursor/cursor-grok-4.6-high-fast`) — use either. Grok is an action converger; it can own a bounded, already-framed technical outcome. If the bottleneck is judgment — diagnosis, framing, architecture, or what should be built — Grok as owner is itself a bottleneck. Ask for Fable or Sol; until approved, keep that judgment in the current session instead of spawning a Grok owner.
+
+**Default worker** is Muse Spark or Grok 4.6 Fast: `opencode/muse-spark-1.3-contributor-free`, or the same Grok ids. Muse runs several times faster at slightly lower accuracy; prefer it as a worker, and use Grok when a leg needs the extra precision. Opus 5 has no slot.
+
+**Fable (including Fable 5.1) and Astra are ultra-expensive and require the user's explicit approval for every dispatch, in every role — owner, worker, or independent verifier.** Before spawning, name the model, effort, and task and obtain approval. A clear owner seat may run on Grok without that approval; a judgment seat may not. A verifier role, routing default, fallback, or previous approval for a different task is NOT permission. Approval is scoped to the specified task and effort, not blanket permission for later spawns or new tasks in a resumed agent.
+
+Sol as an owner or worker also requires the user's approval per dispatch.
 
 Choose the profile at dispatch and predict the dominant bottleneck up front rather than planning to climb later. A stronger model existing is not by itself a reason for a new session; whether the next leg continues or starts fresh belongs to Skill(dispatching).
 
-- **Fable 5.1** — problem framer and structurer. As an Agent: framing, human-outcome review, cross-stream architecture, contracts, and integration. `effort: low` as a worker; higher with the user's confirmation.
-- **GPT-5.6 Sol** — hypothesis converger. Default **verifier**, and the supervisor when the owner is stuck. Give Sol ownership only when the proof itself is the deliverable. `effort: medium` by default; `high` with the user's confirmation.
-- **Grok 4.6 Fast** — action converger. Default **owner**, and also a default **worker**. Pass `xai/grok-4.6` or Cursor Fast (`cursor/cursor-grok-4.6-high-fast`).
-- **Muse Spark 1.3** — action converger. Default **worker** only (`opencode/muse-spark-1.3-contributor-free`). Prefer it for speed; use Grok when the leg needs more precision.
+- **Fable 5.1** — problem framer and structurer. As an Agent: framing, human-outcome review, cross-stream architecture, contracts, and integration. `effort: medium` by default; `high` when the work looks hard, with the user's confirmation.
+- **GPT-5.6 Sol** — hypothesis converger. Default **verifier**, and the supervisor when the owner is stuck. Give Sol ownership when the proof itself is the deliverable. `effort: medium` by default; `high` when the work looks hard, with the user's confirmation.
+- **Astra** — same effort and approval rule as Fable and Sol: `medium` by default; `high` when the work looks hard, only after approval for that model and effort.
+- **Grok 4.6 Fast** — action converger. Default **worker**, and the owner stand-in for already-clear work. Pass `xai/grok-4.6` or Cursor Fast (`cursor/cursor-grok-4.6-high-fast`). `effort: high` by default; `xhigh` when the leg looks hard.
+- **Muse Spark 1.3** — action converger. Default **worker** only (`opencode/muse-spark-1.3-contributor-free`). Prefer it for speed; use Grok when the leg needs more precision. Omit `effort`.
 
 Verifier defaults when an independent check is worth the cost:
 
 - Claude-family main session → Sol verifier
-- Codex-family main session → fresh Fable 5.1 verifier (`effort: medium`)
+- Codex-family main session → fresh Fable 5.1 verifier (`effort: medium`), **only after explicit approval for that dispatch**
 
-Defaults, not mandatory pairings. A clear low-risk task may use owner self-verification only.
+Defaults, not mandatory pairings, and never exceptions to the approval rule. Do not automatically substitute Astra for a verifier. A clear low-risk task may use owner self-verification only.
 
 ## 3. Minimal shapes
 
-- One bounded technical outcome → one owner. That owner dispatches Muse or Grok Fast workers for settled execution.
-- One material or ambiguous outcome → owner + verifier.
+- One bounded, already-clear technical outcome → one owner. Grok may hold that seat. That owner dispatches Muse or Grok Fast workers for settled execution.
+- One material or judgment-heavy outcome → Fable or Sol owner after approval; if not approved, keep the judgment in the current session. Add a verifier when the outcome is material or ambiguous.
 - Two genuinely independent outcomes → two owners; verifier only if integration risk warrants.
-- Unclear root cause → the owner diagnoses from a worker's map; only a genuinely separable, parallel debugging workstream gets an Agent owner. That owner is Grok.
+- Unclear root cause → the current owner diagnoses from a worker's map. A separable parallel debugging workstream is a judgment seat: ask for Sol, or Fable if the frame itself is wrong. Until approved, do not spawn a Grok owner for that seat.
 - Product or UX uncertainty → framing before execution, then the chosen owners.
 
 Build the smallest roster that gives each distinct bottleneck one clear owner.
