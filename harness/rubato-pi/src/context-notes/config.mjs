@@ -1,14 +1,37 @@
-// Live mode is process.env.RUBATO_CONTEXT_MODE. The launcher writes the default;
-// a confirm-gated model switch may rewrite it in the same process.
+// Live mode is process.env.RUBATO_CONTEXT_MODE. A user-set value has no origin
+// marker and wins. A session-resolved value is marked ORIGIN=session so a child
+// process re-resolves from its own model and session record.
 export const HISTORY_NOTES_MODE = "history-notes";
 export const SUMMARY_MODE = "summary";
+export const CONTEXT_MODE_ORIGIN = "session";
 
-export function contextMode(env = process.env) {
-  const value = env.RUBATO_CONTEXT_MODE?.trim() || HISTORY_NOTES_MODE;
+let resolvedThisProcess = false;
+
+function validateMode(value) {
   if (value !== HISTORY_NOTES_MODE && value !== SUMMARY_MODE) {
     throw new Error("RUBATO_CONTEXT_MODE는 history-notes 또는 summary여야 해요.");
   }
   return value;
+}
+
+export function isUserExplicitContextMode(env = process.env) {
+  return Boolean(env.RUBATO_CONTEXT_MODE?.trim()) && env.RUBATO_CONTEXT_MODE_ORIGIN !== CONTEXT_MODE_ORIGIN;
+}
+
+export function hasResolvedContextMode() {
+  return resolvedThisProcess;
+}
+
+export function resetContextModeResolution() {
+  resolvedThisProcess = false;
+}
+
+export function contextMode(env = process.env) {
+  const raw = env.RUBATO_CONTEXT_MODE?.trim();
+  if (!raw) return HISTORY_NOTES_MODE;
+  if (env.RUBATO_CONTEXT_MODE_ORIGIN !== CONTEXT_MODE_ORIGIN) return validateMode(raw);
+  if (env === process.env && !resolvedThisProcess) return HISTORY_NOTES_MODE;
+  return validateMode(raw);
 }
 
 export function historyNotesEnabled(env = process.env) {
@@ -16,8 +39,10 @@ export function historyNotesEnabled(env = process.env) {
 }
 
 export function setContextMode(mode, env = process.env) {
-  const next = contextMode({ ...env, RUBATO_CONTEXT_MODE: mode });
+  const next = validateMode(mode);
   env.RUBATO_CONTEXT_MODE = next;
+  env.RUBATO_CONTEXT_MODE_ORIGIN = CONTEXT_MODE_ORIGIN;
+  if (env === process.env) resolvedThisProcess = true;
   return next;
 }
 
