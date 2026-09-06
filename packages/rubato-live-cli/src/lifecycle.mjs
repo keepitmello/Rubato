@@ -45,7 +45,7 @@ export class LiveLifecycle {
     this.buildId = buildId;
   }
 
-  async create({ cwd = process.cwd(), name, detach = false, args = [], environment = this.env } = {}) {
+  async create({ cwd = process.cwd(), name, detach = false, args = [], environment = this.env, beforeAttach } = {}) {
     if (this.env.ZMX_SESSION && !detach) {
       throw new Error("already inside zmx; use `rubato new --detach` to avoid a nested session");
     }
@@ -95,7 +95,10 @@ export class LiveLifecycle {
       ...(sessionFileFromArgs(args, launchCwd) ? { sessionFile: sessionFileFromArgs(args, launchCwd) } : {}),
       createdAt: new Date().toISOString(),
     });
-    if (!detach) this.zmx.attach(zmxName);
+    if (!detach) {
+      await beforeAttach?.();
+      this.zmx.attach(zmxName);
+    }
     return session;
   }
 

@@ -115,6 +115,17 @@ fi
 # 화면을 두지 않는다. 그릴 수 없는 곳에서는 splash 가 스스로 빠진다.
 SPLASH="$HERE/rubato-splash.sh"
 splash() { [ -z "$RUBATO_NONINTERACTIVE" ] && [ -x "$SPLASH" ] && "$SPLASH" "$@" || true; }
+# 워드마크는 splash open 이 바로 찍고, 애니메이션은 아래에서 붙는다. 스킬·엔진 준비
+# 같은 셸 단계 동안 화면이 멈춰 있지 않도록 작은 렌더러를 뒤에 띄운다. 엔진
+# Node 가 뜨면 같은 화면과 시계를 넘겨받아 인트로가 다시 돌지 않는다
+# (boot-chrome.mjs adoptShellSplash). 렌더러의 부모는 이 셸이고 exec 뒤에는 엔진이
+# 같은 pid 를 잇는다. open 이 실제로 그렸을 때만 $DIR/open 을 남긴다.
+if [ -z "$RUBATO_NONINTERACTIVE" ] && [ -x "$SPLASH" ] \
+  && RUBATO_BOOT_SPLASH_DIR="$(mktemp -d "${TMPDIR:-/tmp}/rubato-splash.XXXXXX" 2>/dev/null)"; then
+  export RUBATO_BOOT_SPLASH_DIR
+else
+  RUBATO_BOOT_SPLASH_DIR=""
+fi
 splash open
 
 ROOT="$(CDPATH= cd -- "$HERE/../rubato-pi" && pwd)"
@@ -127,17 +138,15 @@ if ! NODE="$(rubato_find_node)"; then
   exit 2
 fi
 
-# 워드마크는 위에서 바로 찍었고, 애니메이션은 여기서 붙는다. 스킬·엔진 준비
-# 같은 셸 단계 동안 화면이 멈춰 있지 않도록 작은 렌더러를 뒤에 띄운다. 엔진
-# Node 가 뜨면 같은 화면과 시계를 넘겨받아 인트로가 다시 돌지 않는다
-# (boot-chrome.mjs adoptShellSplash). 렌더러의 부모는 이 셸이고 exec 뒤에는 엔진이
-# 같은 pid 를 잇는다.
 SPLASH_PID=""
-if [ -z "$RUBATO_NONINTERACTIVE" ] && [ -x "$SPLASH" ] && "$SPLASH" active \
-  && RUBATO_BOOT_SPLASH_DIR="$(mktemp -d "${TMPDIR:-/tmp}/rubato-splash.XXXXXX" 2>/dev/null)"; then
-  export RUBATO_BOOT_SPLASH_DIR
-  "$NODE" "$ROOT/src/boot-splash.mjs" "$RUBATO_BOOT_SPLASH_DIR" </dev/null 2>/dev/null &
+if [ -n "$RUBATO_BOOT_SPLASH_DIR" ] && [ -f "$RUBATO_BOOT_SPLASH_DIR/open" ]; then
+  # 엔진 훅(NODE_OPTIONS)은 렌더러에 싣지 않는다. 기동을 느리게 할 뿐이다.
+  NODE_OPTIONS= "$NODE" "$ROOT/src/boot-splash.mjs" "$RUBATO_BOOT_SPLASH_DIR" </dev/null 2>/dev/null &
   SPLASH_PID=$!
+elif [ -n "$RUBATO_BOOT_SPLASH_DIR" ]; then
+  rm -rf "$RUBATO_BOOT_SPLASH_DIR"
+  RUBATO_BOOT_SPLASH_DIR=""
+  unset RUBATO_BOOT_SPLASH_DIR
 fi
 
 # 스플래시를 켜 둔 채로 죽으면 커서가 사라진 터미널이 남는다. 어떻게
