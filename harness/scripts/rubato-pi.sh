@@ -117,6 +117,29 @@ SPLASH="$HERE/rubato-splash.sh"
 splash() { [ -z "$RUBATO_NONINTERACTIVE" ] && [ -x "$SPLASH" ] && "$SPLASH" "$@" || true; }
 splash open
 
+ROOT="$(CDPATH= cd -- "$HERE/../rubato-pi" && pwd)"
+# node 를 찾는 곳은 한 군데다. 예전에는 여기서 nvm 경로를 박아 뒀는데, 그 버전이
+# 사라지면 조용히 PATH 의 아무 node 로 떨어졌다.
+. "$HERE/find-node.sh"
+if ! NODE="$(rubato_find_node)"; then
+  splash close
+  echo "rubato-pi needs Node.js 24+ already installed. Default Node was not changed." >&2
+  exit 2
+fi
+
+# 워드마크는 위에서 바로 찍었고, 애니메이션은 여기서 붙는다. 스킬·엔진 준비
+# 같은 셸 단계 동안 화면이 멈춰 있지 않도록 작은 렌더러를 뒤에 띄운다. 엔진
+# Node 가 뜨면 같은 화면과 시계를 넘겨받아 인트로가 다시 돌지 않는다
+# (boot-chrome.mjs adoptShellSplash). 렌더러의 부모는 이 셸이고 exec 뒤에는 엔진이
+# 같은 pid 를 잇는다.
+SPLASH_PID=""
+if [ -z "$RUBATO_NONINTERACTIVE" ] && [ -x "$SPLASH" ] && "$SPLASH" active \
+  && RUBATO_BOOT_SPLASH_DIR="$(mktemp -d "${TMPDIR:-/tmp}/rubato-splash.XXXXXX" 2>/dev/null)"; then
+  export RUBATO_BOOT_SPLASH_DIR
+  "$NODE" "$ROOT/src/boot-splash.mjs" "$RUBATO_BOOT_SPLASH_DIR" </dev/null 2>/dev/null &
+  SPLASH_PID=$!
+fi
+
 # 스플래시를 켜 둔 채로 죽으면 커서가 사라진 터미널이 남는다. 어떻게
 # 끝나든 커서는 되돌린다. 업데이트 확인을 백그라운드로 돌리면 그 임시
 # 파일도 같이 치운다.
@@ -131,6 +154,9 @@ MSEARCH_DONE=""
 ENGINE_PID=""
 cleanup() {
   splash close
+  if [ -n "${SPLASH_PID-}" ]; then
+    wait "$SPLASH_PID" 2>/dev/null || true
+  fi
   if [ -n "${UPDATE_PID-}" ]; then
     kill "$UPDATE_PID" 2>/dev/null || true
     wait "$UPDATE_PID" 2>/dev/null || true
@@ -206,15 +232,6 @@ if [ -z "${RUBATO_NO_MSEARCH_CHECK-}" ] && [ -x "$MSEARCH_BIN" ]; then
     ) &
     MSEARCH_PID=$!
   fi
-fi
-
-ROOT="$(CDPATH= cd -- "$HERE/../rubato-pi" && pwd)"
-# node 를 찾는 곳은 한 군데다. 예전에는 여기서 nvm 경로를 박아 뒀는데, 그 버전이
-# 사라지면 조용히 PATH 의 아무 node 로 떨어졌다.
-. "$HERE/find-node.sh"
-if ! NODE="$(rubato_find_node)"; then
-  echo "rubato-pi needs Node.js 24+ already installed. Default Node was not changed." >&2
-  exit 2
 fi
 
 # 옛 설치의 사용자 상태와 현재 프로젝트 설정을 새 정본으로 옮긴다.
