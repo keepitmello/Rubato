@@ -124,7 +124,8 @@ class AsideReplConsultTest(unittest.TestCase):
         self.assertEqual(MODULE.SUBMIT_TIMEOUT_SECONDS, 120)
         self.assertIn("개 중", xhigh)
         self.assertIn("verifiedTier", xhigh)
-        self.assertIn("/^최신$/", xhigh)
+        self.assertIn("^최신$", xhigh)
+        self.assertIn("targetModel", xhigh)
         self.assertIn('var targetLabel = "매우 높음"', xhigh)
         self.assertIn('var targetLabel = "Pro"', pro)
         self.assertIn("[0-9]* ?Pro", xhigh)
@@ -226,7 +227,9 @@ class AsideReplConsultTest(unittest.TestCase):
         self.assertIn("OUTPOST_DOCTOR_RESULT", script)
         self.assertIn("Work에서 새 채팅", script)
         self.assertIn("[0-9]* ?Pro", script)
-        self.assertIn("/^최신$/", script)
+        self.assertIn("preferredModel", script)
+        self.assertIn("modelRadios", script)
+        self.assertIn("tierFallback", script)
         self.assertNotIn("insertText", script)
         self.assertNotIn("setInputFiles", script)
         self.assertNotIn("composer-submit-button", script)
@@ -235,6 +238,49 @@ class AsideReplConsultTest(unittest.TestCase):
     def test_doctor_flag_does_not_need_packet(self) -> None:
         args = MODULE.parse_args(["--doctor"])
         self.assertTrue(args.doctor)
+
+    def test_doctor_payload_writes_picker_aliases_not_sidebar_menus(self) -> None:
+        contract = MODULE.picker_from_doctor_payload(
+            {
+                "url": "https://chatgpt.com/g/g-p-test-work/project",
+                "tierInnerText": ["6 Pro", "Work 프로젝트 옵션 열기"],
+                "modelRadios": [
+                    {"name": "최신", "checked": True},
+                    {"name": "GPT-5.6 Sol", "checked": False},
+                ],
+            }
+        )
+        self.assertIsNotNone(contract)
+        assert contract is not None
+        self.assertEqual(contract["modelRadio"], "최신")
+        self.assertIn("6 Pro", contract["tierAliases"])
+        self.assertNotIn("Work 프로젝트 옵션 열기", contract["tierAliases"])
+        self.assertIsNone(
+            MODULE.picker_from_doctor_payload(
+                {"modelRadios": [{"name": "GPT-5.6 Sol", "checked": True}]}
+            )
+        )
+
+    def test_send_script_uses_saved_picker_contract(self) -> None:
+        script = MODULE.build_repl_script(
+            project_url="https://chatgpt.com/g/g-p-test-work/project",
+            quality="pro",
+            packet_name="packet.md",
+            packet_base64="cGFja2V0",
+            topic="병렬 세션 탭 소유권",
+            outpost_id="abc123",
+            response_timeout_ms=1000,
+            picker={
+                "modelRadio": "최신",
+                "tierAliases": ["추론 수준", "6 Pro", "Pro"],
+                "xhighLabel": "매우 높음",
+                "proLabel": "Pro",
+            },
+        )
+        self.assertIn("tierNameRe", script)
+        self.assertIn("6Pro", script)
+        self.assertIn("targetModel", script)
+        self.assertIn("최신", script)
 
     def test_packet_topic_requires_the_first_line_h1(self) -> None:
         self.assertEqual(
