@@ -61,7 +61,7 @@ class ConsultAsideContractTest(unittest.TestCase):
         self.assertIn("Never submit from global Chat", skill)
         self.assertIn("Never send from Work mode", skill)
         self.assertIn('data-tpp-toggle-value="chatgpt"', skill)
-        self.assertIn("GPT-5.6 Sol", skill)
+        self.assertIn("**최신**", skill)
         self.assertIn("매우 높음", skill)
         self.assertIn("`xhigh`: **매우 높음**", skill)
         self.assertIn("`pro`: **Pro**", skill)

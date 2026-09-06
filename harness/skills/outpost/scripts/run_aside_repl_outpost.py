@@ -888,14 +888,14 @@ var submitState = await Promise.race([
     verifiedTier = selected.label + ' (' + selected.index + ' of ' + selected.total + ')';
     submitStage = 'verify-model';
     await workPage.getByRole('menuitem', {{ name: '모델 선택' }}).click();
-    var sol = workPage.getByRole('menuitemradio', {{ name: /^(GPT-5\\.6 Sol|5\\.6 Sol)$/ }});
+    var latest = workPage.getByRole('menuitemradio', {{ name: /^최신$/ }});
     try {{
-      await sol.waitFor({{ state: 'visible', timeout: 5000 }});
+      await latest.waitFor({{ state: 'visible', timeout: 5000 }});
     }} catch (error) {{
-      throw new Error('5.6 Sol radio not visible');
+      throw new Error('최신 radio not visible');
     }}
-    if ((await sol.getAttribute('aria-checked')) !== 'true') await sol.click();
-    if ((await sol.getAttribute('aria-checked')) !== 'true') throw new Error('5.6 Sol not checked');
+    if ((await latest.getAttribute('aria-checked')) !== 'true') await latest.click();
+    if ((await latest.getAttribute('aria-checked')) !== 'true') throw new Error('최신 not checked');
     await workPage.keyboard.press('Escape');
     submitStage = 'fill-composer';
     await composer.focus();
@@ -1006,7 +1006,7 @@ var conversationId = (stickyConversationUrl.match(/\\/c\\/([0-9a-fA-F-]{{8,}})/)
 console.log({js(SUBMIT_MARKER)} + JSON.stringify({{
   ok: true,
   quality,
-  model: 'GPT-5.6 Sol',
+  model: '최신',
   tier: verifiedTier,
   submitElapsedMs,
   conversationUrl: stickyConversationUrl || (submittedTab ? submittedTab.url : workPage.url()),
@@ -1410,7 +1410,7 @@ def run_repl_outpost(
         if recovered and recovered.get("conversationUrl"):
             submit_payload = {
                 "quality": "",
-                "model": "GPT-5.6 Sol",
+                "model": "최신",
                 "tier": "",
                 "conversationUrl": recovered["conversationUrl"],
                 "targetId": "",
@@ -1496,7 +1496,7 @@ var report = {{
   tierRoleMatched: false,
   performanceVisible: false,
   modelMenuVisible: false,
-  solRadioPresent: false,
+  latestRadioPresent: false,
   blockers: []
 }};
 var page = await openTab(projectUrl);
@@ -1549,9 +1549,9 @@ try {{
     }} else {{
       await modelItem.click();
       await sleep(500);
-      var sol = page.getByRole('menuitemradio', {{ name: /^(GPT-5\\.6 Sol|5\\.6 Sol)$/ }});
-      report.solRadioPresent = (await sol.count()) > 0;
-      if (!report.solRadioPresent) report.blockers.push('sol');
+      var latest = page.getByRole('menuitemradio', {{ name: /^최신$/ }});
+      report.latestRadioPresent = (await latest.count()) > 0;
+      if (!report.latestRadioPresent) report.blockers.push('latest');
     }}
     await page.keyboard.press('Escape');
     await page.keyboard.press('Escape');
@@ -1564,7 +1564,7 @@ report.ok = report.blockers.length === 0
   && report.chatSurfaceOk
   && report.tierRoleMatched
   && report.performanceVisible
-  && report.solRadioPresent;
+  && report.latestRadioPresent;
 console.log('OUTPOST_DOCTOR_RESULT ' + JSON.stringify(report));
 """
 
@@ -1584,7 +1584,7 @@ def format_doctor_report(payload: dict[str, Any]) -> str:
         f"innerText={json.dumps(payload.get('tierInnerText') or [], ensure_ascii=False)}",
         f"performance={'true' if payload.get('performanceVisible') else 'false'} "
         f"modelMenu={'true' if payload.get('modelMenuVisible') else 'false'} "
-        f"sol={'true' if payload.get('solRadioPresent') else 'false'}",
+        f"latest={'true' if payload.get('latestRadioPresent') else 'false'}",
     ]
     blockers = payload.get("blockers") or []
     if blockers:
@@ -1852,7 +1852,7 @@ def recover_from_saved_state(args: argparse.Namespace) -> int:
             "id": outpost_id,
             "topic": evidence.get("topic") or "",
             "quality": evidence.get("quality") or args.quality or "",
-            "model": evidence.get("model") or "GPT-5.6 Sol",
+            "model": evidence.get("model") or "최신",
             "tier": evidence.get("tier") or "",
             "conversationUrl": recovered.get("conversationUrl") or conversation_url,
             "conversationId": recovered.get("conversationId") or evidence.get("conversationId") or "",
@@ -2096,7 +2096,7 @@ def main(argv: Sequence[str]) -> int:
                     "id": outpost_id,
                     "topic": topic,
                     "quality": args.quality,
-                    "model": submitted.get("model") or "GPT-5.6 Sol",
+                    "model": submitted.get("model") or "최신",
                     "tier": submitted.get("tier") or "",
                     "conversationUrl": persisted_conversation_url(
                         recovered.get("conversationUrl"),
