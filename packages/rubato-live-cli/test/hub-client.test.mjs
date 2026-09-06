@@ -38,6 +38,14 @@ test("terminal create sends process environment only through hub control and att
   assert.equal(create.fields.persist, undefined);
 });
 
+test("terminal create runs beforeAttach after the hub answers and before zmx takes the terminal", async () => {
+  const control = new FakeControl();
+  const events = [];
+  const lifecycle = new HubLifecycleClient({ control, zmx: { attach: (name) => events.push(["attach", name]) }, env: {} });
+  await lifecycle.create({ cwd: "/tmp", beforeAttach: async () => events.push(["before"]) });
+  assert.deepEqual(events, [["before"], ["attach", SESSION.zmxName]]);
+});
+
 test("detached create asks the hub to persist the pane and does not attach", async () => {
   const control = new FakeControl();
   const attached = [];

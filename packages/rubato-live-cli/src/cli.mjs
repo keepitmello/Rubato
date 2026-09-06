@@ -1,5 +1,5 @@
 import { HubControlClient, HubLifecycleClient, defaultHubSocketPath } from "./hub-client.mjs";
-import { pickLiveSession } from "./picker.mjs";
+import { pickLiveSession, startPickerBootChrome } from "./picker.mjs";
 import { runBootstrap } from "./bootstrap.mjs";
 import { ZmxAdapter } from "./zmx-adapter.mjs";
 import { createRemoteOperations } from "./remote-operations.mjs";
@@ -64,8 +64,20 @@ export async function runCli(args, options = {}) {
     const sessions = await lifecycle.list();
     const selected = await picker(sessions);
     if (selected.kind === "quit") return 0;
-    if (selected.kind === "new") await lifecycle.create({ environment: env });
-    else await lifecycle.attach(selected.liveSessionId);
+    if (selected.kind === "new") {
+      // Keep the picker's alt-screen alive with the boot intro while the hub
+      // spawns the session; the session continues the same clock (RUBATO_BOOT_T0)
+      // so the zmx attach cut lands on the same frame.
+      const chrome = await (options.bootChrome ?? startPickerBootChrome)(env);
+      try {
+        await lifecycle.create({ environment: chrome.env, beforeAttach: chrome.release });
+      } catch (error) {
+        chrome.abandon();
+        throw error;
+      } finally {
+        chrome.release();
+      }
+    } else await lifecycle.attach(selected.liveSessionId);
     return 0;
   }
   if (command === "new") {
