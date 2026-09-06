@@ -32,6 +32,22 @@ SUBMIT_MARKER = "ASIDE_REPL_SUBMIT_RESULT "
 SUBMIT_UNKNOWN_MARKER = "ASIDE_REPL_SUBMIT_UNKNOWN "
 RESPONSE_MARKER = "ASIDE_REPL_RESPONSE_RESULT "
 BACKEND_RECOVERY_MARKER = "ASIDE_BACKEND_RECOVERY_RESULT "
+DOCTOR_MARKER = "OUTPOST_DOCTOR_RESULT "
+FAIL_STAGE_RE = re.compile(r"OUTPOST_FAIL stage=(\S+)\s+(.*)")
+STAGE_HINTS = {
+    "open-isolated-tab": "격리 탭",
+    "load-work-project": "프로젝트 페이지",
+    "load-saved-conversation": "저장된 대화",
+    "wait-project-composer": "새 채팅 입력창",
+    "wait-conversation-composer": "이어가기 입력창",
+    "select-chat-surface": "Chat/Work 토글",
+    "select-tier": "추론 수준/Pro 버튼",
+    "verify-model": "모델 선택",
+    "fill-composer": "입력창 채우기",
+    "attach-packet": "패킷 첨부",
+    "ready-to-send": "보내기 버튼",
+    "commit-user-turn": "제출",
+}
 CONVERSATION_ID_RE = re.compile(r"/c/([0-9a-fA-F-]{8,})")
 KOREAN_UPLOAD_PREAMBLE = (
     "첨부한 독립형 컨텍스트 패킷을 검토하고, 그 안의 질문이나 작업에 답해 주세요.\n\n"
@@ -701,6 +717,7 @@ var submitStartedAt = Date.now();
 var submitStage = 'open-isolated-tab';
 var submitState = await Promise.race([
   (async () => {{
+    try {{
     var ownershipMarker = 'outpost-owner-' + {js(outpost_id)};
     var ownershipUrl = 'data:text/html,<title>' + ownershipMarker + '</title>';
     var workPage = await openTab(ownershipUrl);
@@ -829,7 +846,11 @@ var submitState = await Promise.race([
     }}
     await tierButton.click();
     var performance = workPage.getByRole('menuitem', {{ name: '성능' }});
-    await performance.waitFor({{ state: 'visible', timeout: 5000 }});
+    try {{
+      await performance.waitFor({{ state: 'visible', timeout: 5000 }});
+    }} catch (error) {{
+      throw new Error('performance menuitem not visible');
+    }}
     var readTier = (tree) => {{
       var match = tree.match(/([^\\n"]+), (\\d+)개 중 (\\d+)번째/);
       if (!match) return null;
@@ -868,7 +889,11 @@ var submitState = await Promise.race([
     submitStage = 'verify-model';
     await workPage.getByRole('menuitem', {{ name: '모델 선택' }}).click();
     var sol = workPage.getByRole('menuitemradio', {{ name: /^(GPT-5\\.6 Sol|5\\.6 Sol)$/ }});
-    await sol.waitFor({{ state: 'visible', timeout: 5000 }});
+    try {{
+      await sol.waitFor({{ state: 'visible', timeout: 5000 }});
+    }} catch (error) {{
+      throw new Error('5.6 Sol radio not visible');
+    }}
     if ((await sol.getAttribute('aria-checked')) !== 'true') await sol.click();
     if ((await sol.getAttribute('aria-checked')) !== 'true') throw new Error('5.6 Sol not checked');
     await workPage.keyboard.press('Escape');
@@ -913,9 +938,14 @@ var submitState = await Promise.race([
       await attachmentChip.waitFor({{ state: 'visible', timeout: 30000 }});
     }}
     return {{ workPage, ownedTargetId: ownedTab.targetId, send, assistantCountBefore }};
+    }} catch (error) {{
+      var failMessage = String(error && error.message || error);
+      if (failMessage.indexOf('OUTPOST_FAIL stage=') === 0) throw error;
+      throw new Error('OUTPOST_FAIL stage=' + submitStage + ' ' + failMessage);
+    }}
   }})(),
   new Promise((_, reject) => setTimeout(
-    () => reject(new Error('pre-submit preparation exceeded 110 seconds at ' + submitStage)),
+    () => reject(new Error('OUTPOST_FAIL stage=' + submitStage + ' pre-submit preparation exceeded 110 seconds')),
     110000
   ))
 ]);
@@ -1298,6 +1328,27 @@ def transcript_lost_aside_daemon(transcript: str) -> bool:
     )
 
 
+def describe_pre_submit_failure(transcript: str) -> str:
+    stage = ""
+    detail = ""
+    for line in transcript.splitlines():
+        clean = ANSI_RE.sub("", line)
+        match = FAIL_STAGE_RE.search(clean)
+        if not match:
+            continue
+        stage = match.group(1)
+        detail = match.group(2).strip()
+    if not stage:
+        header = "exit 75 — 전송 안 됨 (단계 불명)"
+        return f"{header}\n\n{transcript}" if transcript else header
+    hint = STAGE_HINTS.get(stage, "")
+    label = f"{stage} ({hint})" if hint else stage
+    header = f"exit 75 — 전송 안 됨\n단계: {label}"
+    if detail:
+        header += f"\n{detail}"
+    return f"{header}\n\n{transcript}"
+
+
 def run_repl_process(script: str, *, timeout: int) -> str:
     try:
         completed = subprocess.run(
@@ -1389,12 +1440,16 @@ def run_repl_outpost(
                 continue
         if transcript_lost_aside_daemon(transcript):
             raise RuntimeError(
-                "aside daemon closed before submission; packet was not sent\n"
-                + earlier
-                + transcript
+                describe_pre_submit_failure(
+                    "aside daemon closed before submission; packet was not sent\n"
+                    + earlier
+                    + transcript
+                )
             )
         raise RuntimeError(
-            "Aside REPL exited before submission marker\n" + transcript
+            describe_pre_submit_failure(
+                "Aside REPL exited before submission marker\n" + transcript
+            )
         )
     assert submit_payload is not None
     submit_elapsed = float(submit_payload["submitElapsedMs"]) / 1000
@@ -1419,6 +1474,162 @@ def run_repl_outpost(
         float(response_payload["responseElapsedMs"]) / 1000,
         transcript,
     )
+
+
+
+def build_doctor_script(*, project_url: str, project_name: str) -> str:
+    composer_label = composer_aria_label(project_name)
+    return f"""
+var projectUrl = {js(project_url)};
+var composerLabel = {js(composer_label)};
+var report = {{
+  url: '',
+  title: '',
+  expectedComposer: composerLabel,
+  composerLabels: [],
+  composerOk: false,
+  chatTogglePresent: false,
+  chatChecked: false,
+  workChecked: false,
+  chatSurfaceOk: false,
+  tierInnerText: [],
+  tierRoleMatched: false,
+  performanceVisible: false,
+  modelMenuVisible: false,
+  solRadioPresent: false,
+  blockers: []
+}};
+var page = await openTab(projectUrl);
+await page.waitForLoadState('domcontentloaded');
+try {{
+  report.url = page.url();
+  report.title = await page.title();
+  var composer = page.locator(
+    '#prompt-textarea[contenteditable="true"][aria-label="' + composerLabel + '"]'
+  );
+  try {{
+    await composer.waitFor({{ state: 'visible', timeout: 30000 }});
+    report.composerOk = true;
+  }} catch (error) {{
+    report.blockers.push('composer');
+  }}
+  report.composerLabels = await page.locator('#prompt-textarea').evaluateAll((els) =>
+    els.map((el) => el.getAttribute('aria-label'))
+  ).catch(() => []);
+  var chatToggle = page.locator('button[data-tpp-toggle-value="chatgpt"]');
+  var workToggle = page.locator('button[data-tpp-toggle-value="work"]');
+  report.chatTogglePresent = await chatToggle.isVisible().catch(() => false);
+  report.chatChecked = report.chatTogglePresent
+    && (await chatToggle.getAttribute('aria-checked')) === 'true';
+  report.workChecked = await workToggle.isVisible().catch(() => false)
+    && (await workToggle.getAttribute('aria-checked')) === 'true';
+  report.chatSurfaceOk = report.chatChecked || (!report.workChecked && report.composerOk);
+  if (!report.chatSurfaceOk) report.blockers.push('chat-surface');
+  var tierButton = page.getByRole(
+    'button',
+    {{ name: /^(추론 수준|즉시|중간|높음|매우 높음|[0-9]* ?Pro)$/ }}
+  ).last();
+  report.tierRoleMatched = (await tierButton.count()) > 0
+    && await tierButton.isVisible().catch(() => false);
+  report.tierInnerText = await page.locator('button[aria-haspopup="menu"]').evaluateAll((els) =>
+    els.map((el) => (el.innerText || '').replace(/\\s+/g, ' ').trim()).filter(Boolean)
+  ).catch(() => []);
+  if (!report.tierRoleMatched) {{
+    report.blockers.push('tier');
+  }} else {{
+    await tierButton.click();
+    await sleep(800);
+    report.performanceVisible = await page.getByRole('menuitem', {{ name: '성능' }})
+      .isVisible().catch(() => false);
+    var modelItem = page.getByRole('menuitem', {{ name: '모델 선택' }});
+    report.modelMenuVisible = await modelItem.isVisible().catch(() => false);
+    if (!report.performanceVisible) report.blockers.push('performance');
+    if (!report.modelMenuVisible) {{
+      report.blockers.push('model-menu');
+    }} else {{
+      await modelItem.click();
+      await sleep(500);
+      var sol = page.getByRole('menuitemradio', {{ name: /^(GPT-5\\.6 Sol|5\\.6 Sol)$/ }});
+      report.solRadioPresent = (await sol.count()) > 0;
+      if (!report.solRadioPresent) report.blockers.push('sol');
+    }}
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Escape');
+  }}
+}} finally {{
+  await closeTab(page).catch(() => {{}});
+}}
+report.ok = report.blockers.length === 0
+  && report.composerOk
+  && report.chatSurfaceOk
+  && report.tierRoleMatched
+  && report.performanceVisible
+  && report.solRadioPresent;
+console.log('OUTPOST_DOCTOR_RESULT ' + JSON.stringify(report));
+"""
+
+
+def format_doctor_report(payload: dict[str, Any]) -> str:
+    ok = bool(payload.get("ok"))
+    lines = [
+        f"OUTPOST_DOCTOR ok={'true' if ok else 'false'}",
+        f"url={payload.get('url') or '-'}",
+        f"composer expected={payload.get('expectedComposer') or '-'} "
+        f"visible={'true' if payload.get('composerOk') else 'false'} "
+        f"found={json.dumps(payload.get('composerLabels') or [], ensure_ascii=False)}",
+        f"chat surface toggle={'true' if payload.get('chatTogglePresent') else 'false'} "
+        f"chatChecked={'true' if payload.get('chatChecked') else 'false'} "
+        f"workChecked={'true' if payload.get('workChecked') else 'false'}",
+        f"tier roleMatch={'true' if payload.get('tierRoleMatched') else 'false'} "
+        f"innerText={json.dumps(payload.get('tierInnerText') or [], ensure_ascii=False)}",
+        f"performance={'true' if payload.get('performanceVisible') else 'false'} "
+        f"modelMenu={'true' if payload.get('modelMenuVisible') else 'false'} "
+        f"sol={'true' if payload.get('solRadioPresent') else 'false'}",
+    ]
+    blockers = payload.get("blockers") or []
+    if blockers:
+        lines.append("blockers=" + ",".join(str(b) for b in blockers))
+    if not ok:
+        lines.append("exit 75 — ChatGPT UI가 send 계약과 다름. 패킷은 보내지 않음.")
+    return "\n".join(lines)
+
+
+def run_doctor(args: argparse.Namespace) -> int:
+    if not shutil.which("aside"):
+        print("aside not found", file=sys.stderr)
+        return 127
+    config_path = resolve_config_path(args.config)
+    project_url = (
+        args.url
+        or os.environ.get("OUTPOST_CHATGPT_URL")
+        or os.environ.get("CONSULT_CHATGPT_URL")
+        or read_config_value(config_path, "OUTPOST_CHATGPT_URL")
+        or read_config_value(config_path, "CONSULT_CHATGPT_URL")
+    )
+    if not is_chatgpt_project_url(project_url):
+        print("a verified ChatGPT project URL is required", file=sys.stderr)
+        return 2
+    assert isinstance(project_url, str)
+    project_name = resolve_project_name(cli_value=args.project, config_path=config_path)
+    if not project_name:
+        print("a ChatGPT project name is required", file=sys.stderr)
+        return 2
+    daemon_error = ensure_aside_daemon()
+    if daemon_error is not None:
+        print(daemon_error, file=sys.stderr)
+        return 75
+    script = build_doctor_script(project_url=project_url, project_name=project_name)
+    transcript = run_repl_process(script, timeout=60)
+    payload = marker_payload(transcript, DOCTOR_MARKER)
+    if payload is None:
+        print("exit 75 — doctor가 ChatGPT UI를 읽지 못함", file=sys.stderr)
+        print(transcript, file=sys.stderr)
+        return 75
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(format_doctor_report(payload))
+    return 0 if payload.get("ok") else 75
 
 
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
@@ -1448,6 +1659,11 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         help="List stored outpost threads and their running/finished status.",
     )
     parser.add_argument(
+        "--doctor",
+        action="store_true",
+        help="Probe ChatGPT UI without sending a packet.",
+    )
+    parser.add_argument(
         "--thread",
         default=None,
         help="Continue a stored thread id, conversation id, result.json, or unique topic.",
@@ -1462,8 +1678,12 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     if args.list:
+        if args.quality or args.packet or args.thread or args.conversation_url or args.recover_from or args.doctor:
+            parser.error("--list cannot be combined with send, recover, or doctor flags")
+        return args
+    if args.doctor:
         if args.quality or args.packet or args.thread or args.conversation_url or args.recover_from:
-            parser.error("--list cannot be combined with send or recover flags")
+            parser.error("--doctor cannot be combined with send or recover flags")
         return args
     if args.recover_from:
         if args.thread or args.conversation_url:
@@ -1472,7 +1692,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     if args.thread and args.conversation_url:
         parser.error("use exactly one of --thread or --conversation-url")
     if not args.quality or not args.packet:
-        parser.error("--quality and --packet are required unless --list or --recover-from is set")
+        parser.error("--quality and --packet are required unless --list, --doctor, or --recover-from is set")
     if args.conversation_url and not SESSIONS.is_chatgpt_conversation_url(args.conversation_url):
         parser.error("--conversation-url must be an https://chatgpt.com/.../c/<id> URL")
     return args
@@ -1693,6 +1913,8 @@ def main(argv: Sequence[str]) -> int:
             as_json=args.json,
             limit=args.limit,
         )
+    if args.doctor:
+        return run_doctor(args)
     if not shutil.which("aside"):
         print("aside not found", file=sys.stderr)
         return 127

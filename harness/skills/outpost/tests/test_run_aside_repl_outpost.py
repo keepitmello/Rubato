@@ -130,6 +130,8 @@ class AsideReplConsultTest(unittest.TestCase):
         self.assertIn("[0-9]* ?Pro", xhigh)
         self.assertIn("tier button not visible", xhigh)
         self.assertNotIn("매우 높음|Pro)$", xhigh)
+        self.assertIn("OUTPOST_FAIL stage=", xhigh)
+        self.assertIn("OUTPOST_FAIL stage=' + submitStage", xhigh)
         self.assertIn('data-tpp-toggle-value="chatgpt"', xhigh)
         self.assertIn('data-tpp-toggle-value="work"', xhigh)
         self.assertIn("Chat surface not selected", xhigh)
@@ -206,6 +208,34 @@ class AsideReplConsultTest(unittest.TestCase):
         self.assertIn("assistant.locator('button')", pro)
         self.assertIn("hasText: /\\.zip$/i", pro)
         self.assertNotIn("attachBrowserTab(targetId)", pro)
+
+    def test_pre_submit_failure_names_the_stage(self) -> None:
+        text = MODULE.describe_pre_submit_failure(
+            "Aside REPL exited before submission marker\n"
+            "OUTPOST_FAIL stage=select-tier tier button not visible: []\n"
+        )
+        self.assertIn("exit 75", text)
+        self.assertIn("단계: select-tier (추론 수준/Pro 버튼)", text)
+        self.assertIn("tier button not visible", text)
+
+    def test_doctor_script_probes_without_sending(self) -> None:
+        script = MODULE.build_doctor_script(
+            project_url="https://chatgpt.com/g/g-p-test-work/project",
+            project_name="Work",
+        )
+        self.assertIn("OUTPOST_DOCTOR_RESULT", script)
+        self.assertIn("Work에서 새 채팅", script)
+        self.assertIn("[0-9]* ?Pro", script)
+        self.assertIn("GPT-5", script)
+        self.assertIn("Sol", script)
+        self.assertNotIn("insertText", script)
+        self.assertNotIn("setInputFiles", script)
+        self.assertNotIn("composer-submit-button", script)
+        self.assertIn("closeTab", script)
+
+    def test_doctor_flag_does_not_need_packet(self) -> None:
+        args = MODULE.parse_args(["--doctor"])
+        self.assertTrue(args.doctor)
 
     def test_packet_topic_requires_the_first_line_h1(self) -> None:
         self.assertEqual(

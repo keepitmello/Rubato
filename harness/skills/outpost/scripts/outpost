@@ -74,6 +74,16 @@ def build_engine_argv(command: str, args: argparse.Namespace) -> list[str]:
             argv.extend(["--sessions-file", args.sessions_file])
         return argv
 
+    if command == "doctor":
+        argv = ["--doctor"]
+        if args.json:
+            argv.append("--json")
+        if args.url:
+            argv.extend(["--url", args.url])
+        if args.project:
+            argv.extend(["--project", args.project])
+        return argv
+
     if command == "recover":
         result = Path(args.result).expanduser()
         run_dir = result.parent if result.suffix == ".json" else result
@@ -133,6 +143,11 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     listed.add_argument("--json", action="store_true")
     listed.add_argument("--limit", type=int, default=20)
     listed.add_argument("--sessions-file", default=None)
+
+    doctor = sub.add_parser("doctor", help="Probe ChatGPT UI without sending.")
+    doctor.add_argument("--json", action="store_true")
+    doctor.add_argument("--url", default=None)
+    doctor.add_argument("--project", default=None)
 
     show = sub.add_parser("show", help="Show one thread.")
     show.add_argument("query")

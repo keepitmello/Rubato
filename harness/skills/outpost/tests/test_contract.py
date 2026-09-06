@@ -11,6 +11,7 @@ class ConsultAsideContractTest(unittest.TestCase):
         skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
 
         self.assertIn("outpost list", skill)
+        self.assertIn("outpost doctor", skill)
         self.assertIn("outpost send", skill)
         self.assertIn("outpost recover", skill)
         self.assertIn("--quality xhigh", skill)
@@ -32,6 +33,7 @@ class ConsultAsideContractTest(unittest.TestCase):
         runbook = (ROOT / "references" / "runbook.md").read_text(encoding="utf-8")
 
         self.assertIn("run_aside_repl_outpost.py", runbook)
+        self.assertIn("outpost doctor", runbook)
         self.assertIn("under 120 seconds", runbook)
         self.assertIn("submitElapsedSeconds", runbook)
         self.assertIn("same project page", runbook)

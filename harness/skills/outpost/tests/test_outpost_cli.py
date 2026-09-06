@@ -54,6 +54,14 @@ class ConsultCliTest(unittest.TestCase):
         self.assertIn("--conversation-url", argv)
         self.assertNotIn("--thread", argv)
 
+    def test_doctor_does_not_require_a_packet(self) -> None:
+        args = MODULE.parse_args(["doctor"])
+        argv = MODULE.build_engine_argv("doctor", args)
+        self.assertEqual(argv, ["--doctor"])
+        args = MODULE.parse_args(["doctor", "--json", "--project", "Work"])
+        argv = MODULE.build_engine_argv("doctor", args)
+        self.assertEqual(argv, ["--doctor", "--json", "--project", "Work"])
+
     def test_list_and_recover_stay_small(self) -> None:
         listed = MODULE.build_engine_argv(
             "list",
