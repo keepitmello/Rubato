@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { DISABLED_AGENT_NAMES, DISABLED_CATEGORY_NAMES, MEMORY_JOB_MODELS, MODEL_CATEGORIES, MODEL_CATEGORY_CHAINS } from "../../src/defaults.mjs";
 import { loadRubatoPiRubatoConfig, pinMemoryJobsToGrok } from "../../src/rubato-config.mjs";
 
@@ -62,4 +65,51 @@ test("memory pin keeps user memory keys and overwrites only the reflection categ
   assert.equal(pinned.config.memory.reflection.timeout_minutes, 20);
   assert.equal(pinned.config.memory.reflection.category, "grok");
   assert.deepEqual(pinned.config.categories.quick, { models: MEMORY_JOB_MODELS });
+});
+
+const TASK_SCHEMA_DEFAULTS_EXCEPT_MODE = {
+  default_concurrency: 5,
+  global_concurrency: 8,
+  max_depth: 1,
+  residency_max_children: 8,
+  ttl_ms: 86400000,
+  resume_children: true,
+  warnings: { unavailable_categories: true },
+  wait: { min_ms: 5000, default_ms: 60000, max_ms: 600000 },
+  team: { max_members: 8, max_parallel_members: 4, max_wall_clock_minutes: 120 },
+};
+
+function withProjectTask(task, run) {
+  const cwd = mkdtempSync(join(tmpdir(), "rubato-config-"));
+  try {
+    mkdirSync(join(cwd, ".rubato"));
+    writeFileSync(join(cwd, ".rubato", "rubato.json"), JSON.stringify({ task }));
+    run(loadRubatoPiRubatoConfig({ cwd }).config.task);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}
+
+test("task defaults to process mode with a full schema-matching block when no project file exists", () => {
+  const { config } = loadRubatoPiRubatoConfig();
+  assert.equal(config.task.default_execution_mode, "process");
+  for (const [key, value] of Object.entries(TASK_SCHEMA_DEFAULTS_EXCEPT_MODE)) {
+    assert.deepEqual(config.task[key], value);
+  }
+});
+
+test("project file default_execution_mode in-process wins over the harness process default", () => {
+  withProjectTask({ default_execution_mode: "in-process" }, (task) => {
+    assert.equal(task.default_execution_mode, "in-process");
+    assert.equal(task.default_concurrency, 5);
+  });
+});
+
+test("partial project task block keeps process default and fills remaining schema caps", () => {
+  withProjectTask({ default_concurrency: 3 }, (task) => {
+    assert.equal(task.default_execution_mode, "process");
+    assert.equal(task.default_concurrency, 3);
+    assert.equal(task.global_concurrency, 8);
+    assert.equal(task.max_depth, 1);
+  });
 });
