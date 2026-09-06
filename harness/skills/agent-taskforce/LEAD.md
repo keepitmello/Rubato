@@ -54,7 +54,7 @@ Start from one `workstream-owner`, not from a standing org chart.
 - Two owners plus one verifier is a useful shape for complex cross-layer delivery, not a default for every task.
 - Retire roles when the phase or workstream ends.
 
-Roles are responsibility contracts, not permanent model identities. Each owner keeps its bounded outcome end to end; whether a later leg continues an existing session or starts fresh follows Skill(dispatching), and model choice follows Skill(model-guide). `references/08-model-allocation.md` keeps only the team-specific proposal format.
+Roles are responsibility contracts, not permanent model identities. Each owner keeps its bounded outcome end to end; whether a follow-up task continues an existing session or starts fresh follows Skill(dispatching), and model choice follows Skill(model-guide). `references/08-model-allocation.md` keeps only the team-specific proposal format.
 
 Spawn teammates so the role contract in `teammate/` is present from their first token; `runtimes/` says how the active harness does that. Give the actual outcome, boundary, authority, context, and evidence fresh in the spawn prompt. Do not paste this skill wholesale into a teammate.
 

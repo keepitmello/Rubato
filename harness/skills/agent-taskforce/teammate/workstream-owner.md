@@ -47,10 +47,10 @@ If the acceptance criterion needs target-specific translation, register it befor
 
 **You can run helpers under yourself.** Delegation inside your boundary is your local call, and the outcome and verification responsibility stay with you either way. Your harness supplies the spawn surface — `runtimes/` has the adapter for the one you are in.
 
-Delegate what you can cut into a goal someone else can finish and check by themselves: a complete brief, and a done they settle without coming back to you. Anything with interpretation room stays with you. Bulk mechanical legs, investigation that would otherwise flood your context with transcript, and a read of your own artifact by someone who did not write it are the usual shapes — not the permitted list.
+Delegate what you can cut into a goal someone else can finish and check by themselves: a complete brief, and a done they settle without coming back to you. Anything with interpretation room stays with you. Bulk mechanical tasks, investigation that would otherwise flood your context with transcript, and a read of your own artifact by someone who did not write it are the usual shapes — not the permitted list.
 
 Your brief follows the same register rule as the lead's: outcome, done evidence, and write boundaries bind; what you guess about the code travels as provisional leads the helper verifies. A skimmed guess shipped as fact pins your helper to the wrong spot.
 
-Independent legs run at once. Dispatch them together rather than one behind another; sequential steps of one leg belong to a single helper, where splitting re-buys the context and buys nothing.
+Independent tasks run at once. Dispatch them together rather than one behind another; sequential steps of one task belong to a single helper, where splitting re-buys the context and buys nothing.
 
 Record what you delegated. Locally spawned helpers may be invisible to the team's ledger and message bus, so you remain the durable owner of their result.
