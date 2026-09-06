@@ -7,9 +7,10 @@ export const MANAGEMENT_TOOLS = new Set([
 ]);
 
 /** A note is a safe checkpoint only if no newer work can be lost by the cut. */
-export function assertCheckpointFresh(branch, note) {
+export function assertCheckpointFresh(branch, note, { allowStale = false } = {}) {
   const index = branch.findIndex((e) => e.id === note?.id && e.type === "custom" && e.customType === NOTE_ENTRY);
   if (index < 0) throw new Error("현재 가지에서 작업 노트를 찾지 못했어요.");
+  if (allowStale) return;
   for (const entry of branch.slice(index + 1)) {
     if (entry.type === "custom_message") {
       throw new Error("노트 저장 뒤 새 안내나 작업 요청이 도착했어요. 노트를 갱신한 뒤 전환해 주세요.");

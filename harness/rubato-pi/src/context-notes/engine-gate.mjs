@@ -62,7 +62,7 @@ export function assertTransitionCommit(request, manager) {
       request.precomputed.firstKeptEntryId !== prepare.id) {
     throw new Error("문맥 전환 준비 기록과 적용할 경계가 다르게 지정됐어요.");
   }
-  assertCheckpointFresh(branch, { id: details.checkpointEntryId });
+  assertCheckpointFresh(branch, { id: details.checkpointEntryId }, { allowStale: details.reason === "hard" });
 }
 
 function notesWindowText(message) {

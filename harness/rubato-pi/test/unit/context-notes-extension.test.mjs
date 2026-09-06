@@ -70,8 +70,9 @@ test("summary mode registers tools but they refuse to act",async(t)=>{
 test("admission failure aborts the agent even when a hook dispatcher catches errors",async(t)=>{
   const f=await setup(t);const old=process.env.RUBATO_CONTEXT_MODE;process.env.RUBATO_CONTEXT_MODE="history-notes";
   try {
-    const huge=[{role:"user",content:"a".repeat(150000)}];
-    assert.throws(()=>assertSessionReady(f.manager,huge));
+    f.addMessage("user","a".repeat(150000));
+    f.api.getController(f.ctx).refresh(f.ctx,true);
+    assert.throws(()=>assertSessionReady(f.manager,f.build().messages));
     assert.ok(f.abort.signal.aborted);
   }finally{if(old===undefined)delete process.env.RUBATO_CONTEXT_MODE;else process.env.RUBATO_CONTEXT_MODE=old;}
 });
