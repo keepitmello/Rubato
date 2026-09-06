@@ -65,23 +65,34 @@ export function assertTransitionCommit(request, manager) {
   assertCheckpointFresh(branch, { id: details.checkpointEntryId });
 }
 
-function messageHasNotesWindow(message) {
+function notesWindowText(message) {
   const texts = [];
   if (typeof message?.content === "string") texts.push(message.content);
   else if (Array.isArray(message?.content)) {
     for (const part of message.content) if (typeof part?.text === "string") texts.push(part.text);
   }
-  return texts.some((text) => text.startsWith(BOOTSTRAP_PREFIX));
+  return texts.find((text) => text.startsWith(BOOTSTRAP_PREFIX));
+}
+
+// The newest window carrier in a message list identifies the active window.
+function latestNotesWindow(messages) {
+  const list = Array.isArray(messages) ? messages : [];
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    const text = notesWindowText(list[i]);
+    if (text) return text;
+  }
+  return undefined;
 }
 
 // After an extension applyCompaction at turn_end, senpi's next-turn prepare still
-// feeds turn.context.messages unless its own threshold compaction also ran.
+// feeds turn.context.messages unless its own threshold compaction also ran. Compare
+// the newest carrier on each side: the loop copy may still hold an older window.
 export function notesTurnMessages(turn, agentMessages) {
   if (!historyNotesEnabled()) return undefined;
   const agent = Array.isArray(agentMessages) ? agentMessages : [];
-  if (!agent.some(messageHasNotesWindow)) return undefined;
-  const captured = turn?.context?.messages;
-  if (Array.isArray(captured) && captured.some(messageHasNotesWindow)) return undefined;
+  const current = latestNotesWindow(agent);
+  if (!current) return undefined;
+  if (latestNotesWindow(turn?.context?.messages) === current) return undefined;
   return agent.slice();
 }
 
