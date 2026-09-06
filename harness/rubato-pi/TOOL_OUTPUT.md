@@ -1,7 +1,8 @@
 # Direct tools and bounded model-facing output
 
-Ordinary tools are available directly; eval remains an optional persistent
-computation surface. `core-agent-session.mjs` clears the installed engine's
+Core tools are available directly; other tools become directly callable after
+discovery (see [TOOL_SURFACE.md](TOOL_SURFACE.md)). Eval remains an optional
+persistent computation surface. `core-agent-session.mjs` clears the installed engine's
 default eval-only name set at load time. Explicit SDK overrides still work.
 The installed package is not modified.
 

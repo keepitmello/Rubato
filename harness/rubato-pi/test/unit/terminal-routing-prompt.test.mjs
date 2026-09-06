@@ -32,7 +32,7 @@ test("loaded terminal prompt uses direct calls when eval and native tools coexis
     monitorEvalOnly: isEvalOnlyRouting(pi, "monitor"),
   });
   assert.match(prompt, /`bash\(\{ command, run_in_background: true \}\)`/);
-  assert.match(prompt, /`monitor\(\{ description, command, filter\?/);
+  assert.match(prompt, /discover `monitor`/);
   assert.doesNotMatch(prompt, /tool\.(bash|monitor)/);
 });
 
@@ -56,6 +56,10 @@ test("routing helper does not invent an eval path for absent tools or partial ho
   assert.equal(isEvalOnlyRouting({ getAllTools: () => [{ name: "eval" }] }), false);
   assert.equal(isEvalOnlyRouting(api([], ["bash", "monitor"])), false);
   assert.equal(isEvalOnlyRouting(api(["eval"], ["eval"])), false);
+  assert.equal(isEvalOnlyRouting({
+    getAllTools: () => [{ name: "eval" }, { name: "monitor", exposure: "search" }],
+    getActiveTools: () => ["bash"],
+  }, "monitor"), false);
 });
 
 test("installed terminal extension passes both actual per-tool routes to its prompt", async () => {
@@ -63,6 +67,24 @@ test("installed terminal extension passes both actual per-tool routes to its pro
   assert.match(source, /bashEvalOnly: isEvalOnlyRouting\(pi, "bash"\)/);
   assert.match(source, /monitorEvalOnly: isEvalOnlyRouting\(pi, "monitor"\)/);
   assert.doesNotMatch(source, /buildTerminalPromptSection\(\{ evalOnly: isEvalOnlyRouting\(pi\)/);
+});
+
+test("installed terminal sync does not eagerly reactivate companion tools", async () => {
+  const source = await loaded("terminal/extension.js");
+  const start = source.indexOf("function syncToolset(pi, state) {");
+  const end = source.indexOf("/** Send one model-visible terminal reminder", start);
+  assert.ok(start >= 0 && end > start);
+  for (const native of [false, true]) {
+    const sync = Function("shouldStepAside", "TERMINAL_BASH_TOOL", `${source.slice(start, end)}; return syncToolset;`)(() => native, "bash");
+    let active = ["read", "bash", "apply_patch", "todo", "tool_search"];
+    const pi = { getActiveTools: () => active, setActiveTools: (names) => { active = names; } };
+    const state = { ctx: { ui: { notify() {} } } };
+    sync(pi, state);
+    assert.deepEqual(active, ["read", "bash", "apply_patch", "todo", "tool_search"]);
+    active.push("monitor");
+    sync(pi, state);
+    assert.ok(active.includes("monitor"), "model selection retains a discovered companion");
+  }
 });
 
 test("actual bash and monitor descriptions do not teach eval-only calls", async () => {

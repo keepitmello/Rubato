@@ -69,7 +69,7 @@ type Context = Readonly<Record<string, ContextValue>>;
 const EVAL_PROMPT_TEMPLATE = `Run one step of code in a persistent kernel.
 
 <instruction>
-**One eval call = one cell = one logical step.** Top-level names persist per language across eval calls{{#if spawns}}, tool calls and \`task\` subagents{{else}} and tool calls{{/if}}: define helpers and clients once and reuse them instead of re-importing or re-reading. Rebuild state only after \`reset\`, a kernel restart, or a \`NameError\`/\`ReferenceError\`, and check a sentinel variable first so a re-run cannot duplicate side effects.
+**One eval call = one cell = one logical step.** Top-level names persist per language across eval calls{{#if spawns}}, tool calls and \`task\` subagents{{else}} and tool calls{{/if}}. Reuse helpers; rebuild only after \`reset\`, a kernel restart, or a \`NameError\`/\`ReferenceError\`. Check a sentinel before re-running to avoid duplicate side effects.
 
 Ordinary calls are direct tools. Use eval for programmatic intermediates or persistent calculations; \`parallel(thunks)\` is available inside a cell.
 {{#if hostLine}}
@@ -78,51 +78,42 @@ Host: {{hostLine}} — cells execute here; \`tool.<name>()\` shell commands must
 
 \`language\`: {{#if py}}\`"py"\` IPython kernel{{/if}}{{#ifAll py js}}, {{/ifAll}}{{#if js}}\`"js"\` persistent JavaScript VM{{/if}}{{#if rb}}{{#ifAny py js}}, {{/ifAny}}\`"rb"\` persistent Ruby kernel{{/if}}{{#if jl}}{{#ifAny py js rb}}, {{/ifAny}}\`"jl"\` persistent Julia kernel{{/if}}.
 
-A cell that outlives the foreground window detaches: it keeps its language kernel busy (another language can continue) and completes as one notification with its value or error and buffered output. Do not re-run a detached cell; read or cancel it with \`eval({ action: "peek", cell_id })\` / \`eval({ action: "stop", cell_id })\`.
+A cell that outlives the foreground window detaches (kernel stays busy; other languages can continue) and completes as one notification. Do not re-run a detached cell; peek or stop with \`eval({ action: "peek", cell_id })\` / \`eval({ action: "stop", cell_id })\`.
 
 {{#if py}}Python runs on a live event loop: use top-level \`await\`; \`asyncio.run(…)\` raises.{{/if}}
-{{#if js}}{{#if jsBun}}JS runs in-process on Bun {{jsVersion}}: top-level \`await\`/\`return\` work; \`Bun.*\` builtins available, including \`new Bun.WebView()\` — a headless browser (navigate/click/evaluate/screenshot) to reach for before \`curl\` or a browser CLI when a page needs JS, a login, or a screenshot.{{#if bunSkillPath}} MUST READ the bun-1-4 skill at {{bunSkillPath}} before your first js cell — its builtins replace the npm packages you would otherwise install.{{/if}}{{else}}JS runs under Node.js worker: top-level \`await\`/\`return\` work; \`fetch\`/\`Buffer\` available.{{/if}}{{/if}}
-{{#if rb}}Ruby: synchronous; helper options are keyword args{{#if spawns}} (e.g. \`output("id", limit: 2)\`){{/if}}; the last expression auto-displays unless it is \`nil\`, an assignment, or a definition (like IRB).{{/if}}
-{{#if jl}}Julia: synchronous; helper options are standard keyword args{{#if spawns}} (e.g. \`output("id", limit=2)\`){{/if}}; the last expression auto-displays unless it is an assignment or a definition (like the Julia REPL).{{/if}}
-On error, fix and re-run only the failing step; a normal error keeps state, while a timeout or stop message says whether the kernel restarted.
+{{#if js}}{{#if jsBun}}JS runs in-process on Bun {{jsVersion}}: top-level \`await\`/\`return\`; \`Bun.*\` including \`new Bun.WebView()\` before curl or a browser CLI.{{#if bunSkillPath}} MUST READ the bun-1-4 skill at {{bunSkillPath}} before your first js cell.{{/if}}{{else}}JS runs under Node.js worker: top-level \`await\`/\`return\`; \`fetch\`/\`Buffer\` available.{{/if}}{{/if}}
+{{#if rb}}Ruby: sync, keyword args{{#if spawns}} (e.g. \`output("id", limit: 2)\`){{/if}}; last expression auto-displays unless \`nil\`, assignment, or definition.{{/if}}
+{{#if jl}}Julia: sync, keyword args{{#if spawns}} (e.g. \`output("id", limit=2)\`){{/if}}; last expression auto-displays unless assignment or definition.{{/if}}
+On error, fix and re-run only the failing step; a normal error keeps state; timeout/stop says if the kernel restarted.
 </instruction>
 
 <prelude>
-{{#ifAll py js}}Same helpers + arg order, both runtimes. Python: sync, options = trailing kwargs. JS: async/\`await\`able, options = ONE trailing object literal, never positional (extras throw).{{else}}{{#if py}}Sync; options = trailing kwargs.{{/if}}{{#if js}}Async/\`await\`able; options = ONE trailing object literal, never positional (extras throw).{{/if}}{{/ifAll}}{{#if rb}} Ruby: sync, options = trailing keyword args.{{/if}}{{#if jl}} Julia: sync, options = trailing keyword args.{{/if}}
+{{#ifAll py js}}Same helpers + arg order. Python: sync, trailing kwargs. JS: async, ONE trailing object literal (extras throw).{{else}}{{#if py}}Sync; options = trailing kwargs.{{/if}}{{#if js}}Async/\`await\`able; options = ONE trailing object literal, never positional (extras throw).{{/if}}{{/ifAll}}{{#if rb}} Ruby: sync, trailing keyword args.{{/if}}{{#if jl}} Julia: sync, trailing keyword args.{{/if}}
 \`\`\`
 display(value) → None
-    Cell output; figures/images/dataframes shown natively.
 print(value, ...) → None
-    Text output.
 read(path, offset?=1, limit?=None) → str
-    File as text; offset/limit are 1-indexed lines. Accepts \`local://…\`.
+    1-indexed lines; accepts \`local://…\`.
 write(path, content) → str
-    Write file (creates parents) → resolved path. \`local://…\` persists across turns/subagents.
+    Creates parents; returns path. \`local://…\` persists across turns/subagents.
 env(key?=None, value?=None) → str | None | dict
-    No args → full env dict; one → value; two → set \`key=value\`.
+    No args: all; one: get; two: set.
 {{#if spawns}}output(*ids, format?="raw", offset?=None, limit?=None) → str | dict | list[dict]
-    Task/agent output by id. Reads immediately: running tasks return their status; \`format\` \`"raw"\` = full, \`"tail"\` = trailing.
 {{/if}}tool.<name>(args) → unknown
-    Invoke any session tool; \`args\` = its parameter object.
 tool_schema(name?) → dict
-    Parameter schema of a tool (omit \`name\` to list tool names); a failed \`tool.<name>()\` call also returns the expected parameters.
+    Omit name to list tools; failed tool calls also return their schema.
 completion(prompt, model?="default", system?=None, schema?=None) → str | dict
-    Oneshot, stateless. \`model\`: \`"smol"\` fast | \`"default"\` session | \`"slow"\` most capable. \`schema\` (JSON-Schema) → parsed structured output.
+    Stateless; model: smol/default/slow. JSON-Schema gives a parsed result.
 {{#if spawns}}agent(prompt, agent?="{{spawnDefaultAgent}}", model?=None, label?=None, schema?=None, handle?=False) → str | dict
-    Run a subagent → final output. \`agent\` picks a discovered agent. \`schema\` as in completion(). \`handle\` → workflow node { text, output, handle: \`agent://<id>\`, id, agent } (parsed under \`data\` with \`schema\`).
 {{/if}}parallel(thunks) → list
-    Thunks through a bounded pool (as wide as a \`task\` batch), input order kept; a throwing thunk propagates.
 pipeline(items, ...stages) → list
-    Map items through one-arg stages with a barrier between stages; each stage receives the previous stage's result.
 log(message) → None
-    Progress line above the status tree.
 phase(title) → None
-    Phase grouping subsequent status lines.
 \`\`\`
 </prelude>
 {{#if spawns}}
 <workflow>
-Multi-agent work is an acyclic graph in code: one \`agent(…)\` node per step with its handle option ({{#if py}}\`handle=True\`{{/if}}{{#ifAll py js}} / {{/ifAll}}{{#if js}}\`{ handle: true }\`{{/if}}{{#if jl}}{{#ifAny py js}} / {{/ifAny}}\`handle=true\`{{/if}}), \`parallel(thunks)\` for independent nodes, \`pipeline(items, *stages)\` for staged waves. Pass an upstream node's \`handle\` or \`output\` (or a \`write("local://…")\` URI for bulk text) into dependents instead of re-inlining transcripts, and wrap risky nodes in try/except so a failure aborts only its subtree.
+One \`agent(…)\` node per step with handle ({{#if py}}\`handle=True\`{{/if}}{{#ifAll py js}} / {{/ifAll}}{{#if js}}\`{ handle: true }\`{{/if}}{{#if jl}}{{#ifAny py js}} / {{/ifAny}}\`handle=true\`{{/if}}); \`parallel(thunks)\` for independent nodes; \`pipeline(items, *stages)\` for waves. Pass \`handle\`/\`output\` or \`write("local://…")\` into dependents; try/except a risky subtree.
 </workflow>
 {{/if}}
 `;

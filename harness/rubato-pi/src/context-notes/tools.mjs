@@ -7,14 +7,19 @@ export const CONTEXT_NOTES_TOOL_NAMES = Object.freeze([
   "notes_append_to_file", "new_context", "get_context_remaining",
 ]);
 
-export function syncNotesToolActivation(pi, enabled) {
+export function syncNotesToolActivation(pi, enabled, definitions = []) {
+  for (const definition of definitions) {
+    if (definition.allowLazyActivation === enabled) continue;
+    definition.allowLazyActivation = enabled;
+    pi.registerTool({ ...definition });
+  }
   if (typeof pi.getActiveTools !== "function" || typeof pi.setActiveTools !== "function") return;
   const notes = new Set(CONTEXT_NOTES_TOOL_NAMES);
   const current = pi.getActiveTools();
   const next = enabled
-    ? [...new Set([...current, ...CONTEXT_NOTES_TOOL_NAMES])]
+    ? current
     : current.filter((name) => !notes.has(name));
-  pi.setActiveTools(next);
+  if (next.length !== current.length) pi.setActiveTools(next);
 }
 
 // Flat tool names preserve the Codex operations across providers whose function
