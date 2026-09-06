@@ -9,11 +9,14 @@
     "node": ">=24"
   },
   "scripts": {
-    "test": "node --import ./src/no-changelog-register.mjs --test test/unit/*.test.mjs",
+    "test": "node scripts/run-unit-tests.mjs",
     "test:integration": "node --test test/integration/*.test.mjs",
     "smoke:local": "node test/smoke/local.mjs",
     "smoke:real": "node test/smoke/real.mjs",
-    "smoke:direct": "node test/smoke/direct-real.mjs"
+    "smoke:direct": "node test/smoke/direct-real.mjs",
+    "test:context-notes": "node --test test/unit/context-notes-*.test.mjs",
+    "check:context-notes-engine": "node scripts/check-history-notes-engine.mjs",
+    "test:context-cost": "node --test test/unit/context-cost-*.test.mjs"
   },
   "dependencies": {
     "undici": "8.10.0"
