@@ -64,7 +64,9 @@ export async function installContextNotes(pi, options = {}) {
   // Mark installed only after tools/schema loading succeeds. The engine's
   // admission gate refuses provider requests if initialization ever fails.
   const Type = options.Type ?? await loadTypebox();
-  for (const tool of createContextNotesTools(getController, Type, notesActive)) pi.registerTool(tool);
+  const toolDefinitions = createContextNotesTools(getController, Type, notesActive);
+  for (const tool of toolDefinitions) pi.registerTool(tool);
+  const syncTools = (enabled) => syncNotesToolActivation(pi, enabled, toolDefinitions);
   const applyResolvedMode = (ctx, { persistIfMissing = false, allowModelDefault = true } = {}) => {
     const branch = sessionBranch(ctx);
     if (liveSwitch) {
@@ -82,7 +84,7 @@ export async function installContextNotes(pi, options = {}) {
       }
       if (persistIfMissing && !recordedModeFromBranch(branch)) persistMode(contextMode());
     }
-    syncNotesToolActivation(pi, notesActive());
+    syncTools(notesActive());
     if (notesActive()) getController(ctx).showStatus();
     else api.close();
   };
@@ -133,7 +135,7 @@ export async function installContextNotes(pi, options = {}) {
         if (decision.action === "switch") {
           setContextMode(decision.mode);
           persistMode(decision.mode);
-          syncNotesToolActivation(pi, decision.mode === HISTORY_NOTES_MODE);
+          syncTools(decision.mode === HISTORY_NOTES_MODE);
           if (decision.mode !== HISTORY_NOTES_MODE) {
             api.close();
             ctx.ui?.setStatus?.("rubato-context-notes", undefined);
@@ -141,7 +143,7 @@ export async function installContextNotes(pi, options = {}) {
         }
       }
       if (notesActive()) getController(ctx).showStatus();
-      else syncNotesToolActivation(pi, false);
+      else syncTools(false);
     } catch (error) { report(error, ctx); }
   });
   pi.on("before_agent_start", async (event, ctx) => {

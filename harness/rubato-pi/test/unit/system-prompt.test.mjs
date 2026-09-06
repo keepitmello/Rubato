@@ -146,9 +146,11 @@ test("every role gets the shared tool guidelines and not Senpi's body", () => {
     const next = replaceSystemPrompt("legacy optimized prompt\n## Intent Gate\n> I read this as", role, loaders());
     assert.match(next, /## Tool Guidelines/);
     assert.ok(next.includes(TOOL_GUIDELINES));
-    assert.match(next, /instead of cat or sed/);
+    assert.match(next, /Use read to inspect files and apply_patch/);
+    assert.match(next, /Use tool_search for other capabilities/);
+    assert.doesNotMatch(next, /Use edit|edits\[\]|Use write/);
     assert.doesNotMatch(next, /Use eval when a step needs/);
-    assert.match(next, /one todo operation at a time/);
+    assert.doesNotMatch(next, /one todo operation at a time/);
     assert.match(next, /memory tool/);
     assert.doesNotMatch(next, /I read this as/);
     assert.doesNotMatch(next, /legacy optimized prompt/);

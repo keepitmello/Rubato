@@ -4,6 +4,12 @@
 // 규약은 tui-chrome.mjs 와 같다: pristine 니들, 없으면 throw, 패치 공존 중 inert.
 
 import { injectAgentSession, injectEvalOnlyDirectTools, isAgentSessionUrl } from "./core-agent-session.mjs";
+import {
+  injectToolSurface, injectUniversalApplyPatch, isApplyPatchExtensionUrl,
+  injectMcpSearchExposure, isMcpTierBUrl, injectDeferredMediaTool, isModelGatedMediaUrl,
+  injectMcpCatalogOwnership, isToolSearchServiceUrl,
+} from "./core-tool-surface.mjs";
+import { injectToolDescriptions, isToolDefinitionWrapperUrl } from "./core-tool-descriptions.mjs";
 import { injectCompaction, injectContextTokensGuard, isCompactionUrl, isContextTokensUrl } from "./core-compaction.mjs";
 import { injectCompactionUtils, isCompactionUtilsUrl } from "./core-compaction-utils.mjs";
 import {
@@ -65,7 +71,13 @@ export function applyCoreSessionTransforms(url, source, applyTransform) {
   if (isAgentSessionUrl(url)) {
     source = applyTransform(source, injectAgentSession);
     source = applyTransform(source, injectEvalOnlyDirectTools);
+    source = applyTransform(source, injectToolSurface);
   }
+  if (isApplyPatchExtensionUrl(url)) source = applyTransform(source, injectUniversalApplyPatch);
+  if (isMcpTierBUrl(url)) source = applyTransform(source, injectMcpSearchExposure);
+  if (isToolSearchServiceUrl(url)) source = applyTransform(source, injectMcpCatalogOwnership);
+  if (isModelGatedMediaUrl(url)) source = applyTransform(source, injectDeferredMediaTool);
+  if (isToolDefinitionWrapperUrl(url)) source = applyTransform(source, injectToolDescriptions);
   if (isSpeculativeUrl(url)) source = applyTransform(source, injectSpeculative);
   if (isServiceTierUrl(url)) source = applyTransform(source, injectServiceTier);
   if (isOverflowUrl(url)) source = applyTransform(source, injectOverflow);

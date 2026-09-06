@@ -70,3 +70,40 @@ test("eval prompt renders one common rule for every model dialect", async () => 
     assert.equal(rendered[i].promptSnippet, rendered[0].promptSnippet);
   }
 });
+
+test("eval prompt omits spawn helpers when disabled and keeps host and event-loop lines", async () => {
+  const { buildEvalPrompt } = await loadEvalPrompt();
+  const enabled = { py: true, js: true, rb: false, jl: false };
+  const noSpawns = buildEvalPrompt(enabled, {
+    spawns: false,
+    hostLine: "darwin arm64 · 10 cores",
+  });
+  assert.doesNotMatch(noSpawns.description, /output\(\*ids/);
+  assert.doesNotMatch(noSpawns.description, /agent\(prompt/);
+  assert.doesNotMatch(noSpawns.description, /<workflow>/);
+  assert.match(noSpawns.description, /Host: darwin arm64 · 10 cores/);
+  assert.match(noSpawns.description, /Python runs on a live event loop/);
+  assert.match(noSpawns.description, /`"py"` IPython kernel/);
+  assert.match(noSpawns.description, /`"js"` persistent JavaScript VM/);
+  assert.match(noSpawns.description, /tool\.<name>\(args\)/);
+
+  const withSpawns = buildEvalPrompt(enabled, {
+    spawns: true,
+    spawnDefaultAgent: "task",
+    hostLine: "darwin arm64 · 10 cores",
+  });
+  assert.match(withSpawns.description, /output\(\*ids/);
+  assert.match(withSpawns.description, /agent\(prompt/);
+  assert.match(withSpawns.description, /<workflow>/);
+  assert.match(withSpawns.description, /Host: darwin arm64 · 10 cores/);
+  assert.match(withSpawns.description, /Python runs on a live event loop/);
+
+  const bun = buildEvalPrompt(enabled, {
+    spawns: false,
+    jsRuntime: { name: "bun", version: "1.4.0" },
+    bunSkillPath: "/tmp/bun-1-4/SKILL.md",
+  });
+  assert.match(bun.description, /Bun 1\.4\.0/);
+  assert.match(bun.description, /MUST READ the bun-1-4 skill at \/tmp\/bun-1-4\/SKILL.md/);
+  assert.doesNotMatch(bun.description, /Node\.js worker/);
+});
