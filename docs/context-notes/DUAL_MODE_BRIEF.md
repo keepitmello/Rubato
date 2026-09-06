@@ -112,3 +112,87 @@ Commands (`NODE_OPTIONS` unset, `NODE_NO_WARNINGS=1`):
 - packet runner as above
 
 Unverified: live TUI `ctx.ui.confirm`.
+
+
+## Task 3 (lead, 2026-09-06): real AgentSession with scripted model responses
+
+Task 2 accepted. Lead note for the record: `npm run build` / `npm run typecheck` fail in this worktree only because `packages/*/node_modules` workspace links do not exist here (`terser`, `@rubato/*` not found); `git diff 8caa2018b..HEAD -- packages` is empty, so both are equivalent to the base commit. Do not try to `bun install` in the worktree (root `node_modules` is a symlink into the main checkout).
+
+### Outcome (binding)
+
+An integration test that drives the **real pinned AgentSession** (not the fake helper) with a scripted provider and asserts the six facts in `docs/context-notes-behavior-guide.md` §2, in both modes:
+
+1. Note content is in the session file before the tool result reaches the model.
+2. `new_context` does not cut the current tool batch; the window switches after the batch ends.
+3. The first provider request after the switch carries only the new-window bootstrap (window id + note path list), not the old conversation or note bodies; system prompt and tool definitions stay.
+4. Note/history reads enter the input only after an explicit tool call.
+5. Consecutive requests without a further switch do not rewrite earlier guidance/messages in the middle (prefix stability).
+6. No engine summary, no `session_before_compact` approval, no Anthropic server compaction request is ever issued in notes mode.
+
+Plus the dual-mode paths on the real engine: (a) a session started in summary mode with a summary-default model runs today's compaction path untouched (gates dormant); (b) `model_select` to Astra with a scripted `confirm` → yes switches to notes and appends `rubato.context-mode.v1`; → no keeps summary; (c) reopening the session file from (b-yes) adopts notes mode without env; (d) a child-style env (`RUBATO_CONTEXT_MODE=history-notes`, `RUBATO_CONTEXT_MODE_ORIGIN=session`) with a Fable model resolves to summary on the real engine.
+
+Capture the request **at the provider boundary** (the request actually handed to the provider transport), not the `context` event result. Reuse `harness/rubato-pi/test/helpers/mock-openai.mjs` and the existing smoke/rpc conventions (`test/smoke/*.mjs`, `test/integration/*.test.mjs`) rather than inventing a private wire format. If the existing mock cannot produce tool calls in the shape the engine expects, extend it minimally and say so.
+
+Use a small experiment budget (`RUBATO_CONTEXT_WINDOW_TOKENS` ~24000) so a transition is reachable in a few turns; the guide says this is a behavior check, not a cost setting.
+
+### Done evidence (binding)
+
+- New file(s) under `harness/rubato-pi/test/integration/` gated the same way as the existing one (`RUBATO_TEST_CONTEXT_NOTES_ENGINE=1`), passing with exit 0 for both `RUBATO_CONTEXT_MODE=summary` and unset env.
+- Assertion for each of the six facts and the four dual-mode paths is named so the failing fact is obvious.
+- `check:context-notes-engine`, `test:context-notes`, `test:context-cost` still pass in both modes.
+- `## Result (task 3)` appended here: commands, exit codes, and for every fact that could not be asserted against the real engine, why (missing hook, engine shape) and what was asserted instead. An honest "could not assert fact N" is a valid result; a fake assertion is not.
+
+Same write ownership and off-limits paths. Budget: 90 minutes or three failed attempts at the same sub-problem. If the real engine contradicts a packet design rule (handoff §2), stop that part and write `docs/context-notes/DESIGN_REVIEW_REQUEST.md` as the handoff §9 prescribes.
+
+
+## Task 4 (lead, 2026-09-06): fix the three findings from the independent review
+
+An independent reviewer (different model family) read `dc397cabf..4e0930993` and verdicted "do not ship" on three High findings. Full report: `/tmp/rubato-hn2-review-sol.md` (read it; the file:line anchors and experiments are there). All three are binding to fix; the user has asked for the fixes and then a push.
+
+### F1 (binding): process-global resolution state leaks across sessions
+
+`config.mjs` `resolvedThisProcess` is a module boolean that is never reset in production. The pinned engine replaces the runtime in-process on `/new`, resume, and switch and emits a new `session_start` (`node_modules/@code-yeongyu/senpi/dist/core/agent-session-runtime.js:149-188`), but `config.mjs` stays cached, so the second session skips `adoptContextMode` and persists the stale mode. Reviewer reproduced it with two `pi` instances in one process. Fix: scope the resolution to the session (e.g. key it by `sessionManager.getSessionId()` or reset on `session_shutdown`/before the replacement runtime starts) and re-adopt at every `session_start` whenever the env origin is `session`; only a user-explicit env bypasses adoption. Add the test the reviewer describes: two different `pi` instances installed sequentially in one process without calling `resetContextModeResolution()`, second one on Astra resolves to notes.
+
+### F2 (binding): `session_tree` ignores the destination branch's recorded mode
+
+`context-notes.mjs` `session_tree` only checks the live mode; `recordedModeFromBranch()` is never consulted there. Navigating from a notes branch back to an entry before the mode record keeps notes live, and `controller.refresh(ctx, true)` appends `rubato.context-window.init.v1` into what was a summary branch (`controller.mjs:81-93`). Fix: resolve the destination branch's mode on navigation — prefer `session_before_tree` if the destination branch is reachable there so incompatible navigation can be refused before the leaf changes; otherwise restore on `session_tree` (close/create the controller, `setContextMode`) and never append an init marker until the branch's resolved mode is history-notes. Tests in both directions around a mode-switch entry.
+
+### F3 (binding): summary mode now sends 11 notes/history tool schemas on every provider request
+
+All tools are registered `exposure: "direct"` unconditionally; the engine activates direct tools in `_refreshToolRegistry` (`agent-session.js:5809-5825`) and rebuilds every provider context from `state.tools` (`:963-970`). That falsifies "summary stays untouched" at the request level. Fix: tools must be absent from the provider request while the mode is summary and present while it is notes, atomically on switch, and the user's prior active-tool selection must survive a round trip. Find the engine's supported control for this (active-tool set / lazy activation / `setActiveTools` or equivalent) rather than unregistering; verify against the pinned engine that the provider-facing tool array actually changes. Add a request-level assertion in the integration test you are writing: a never-notes Fable session's provider request carries no `notes_*`/`history_*`/`new_context`/`get_context_remaining` definitions; after a confirmed switch it does; after a refused/declined switch it still does not.
+
+### Done evidence (binding)
+
+- Unit + integration tests for F1/F2/F3 as described, passing in both modes.
+- `check:context-notes-engine`, `test:context-notes`, `test:context-cost` green in both modes; full harness suite shows only the known 12 pre-existing failures (plus at most the boot-chrome flake, re-run isolated).
+- `## Result (task 4)` appended here with commands and exit codes.
+- Then push the branch: `git push -u origin rubato/history-notes-v2` (the user asked for the push). Push only this branch; do not touch `rubato/base`.
+
+Budget: 90 minutes. If Task 3 is still open when you read this, finish Task 3 first (its integration test is where F3's request-level assertion belongs), then do Task 4.
+
+## Result (task 3)
+
+Real AgentSession RPC + `mock-openai` integration test: `harness/rubato-pi/test/integration/context-notes-agent-session.test.mjs` (gated `RUBATO_TEST_CONTEXT_NOTES_ENGINE=1`). Tools are scripted as OpenAI tool_calls; request bodies are captured at the mock HTTP boundary. Adapter is not loaded (remote protocol missing under temp HOME); a test-only `-e context-notes-rpc-extension.mjs` installs notes + server-compaction.
+
+`RUBATO_TEST_CONTEXT_NOTES_ENGINE=1 node --test harness/rubato-pi/test/integration/context-notes-agent-session.test.mjs` last full run: 9 pass / 1 fail (fact 3 spawn timeout on `set_model` with no events). Prior run in the same session: fact 3 passed via the honest branch (window compaction committed, no follow-up HTTP). Dual-c `--session` reopen of a dumped `get_entries` jsonl is not a valid SessionManager file; the test asserts the mode record on `get_entries` after confirm-yes. Second-process adoption remains the unit `session_start` test.
+
+Facts vs real engine:
+1. Pass. Note is in the session file when the second provider request arrives.
+2. Pass. The provider request that carries the `new_context` result still has the original user turn; no bootstrap mid-batch.
+3. Partial. Senpi calls the model again after `new_context`. A text assistant can fail checkpoint freshness (`DESIGN_REVIEW_REQUEST.md`). When compaction does commit, a follow-up provider request was not always issued (paused/fatal or spawn flake). Could not reliably assert bootstrap-only bytes at the provider boundary.
+4. Pass on the write-tool path: note body is absent on the request that calls `notes_write_file` and present on the next request as the tool result. Could not observe `notes_read_file` after a committed window switch (depends on fact 3).
+5. Pass on consecutive requests in the same unswitched turn: the original user message is unchanged.
+6. Pass: no `compact-2026-01-12` header and no summary prompt in provider bodies. Notes-window `applyCompaction` lifecycle events are expected and not treated as engine summary.
+
+Dual-mode: (a) pass, including F3 (no notes tools on summary requests; declined Astra switch still none). (b) pass, including F3 (notes tools present after confirm-yes). (c) pass as persist-record; live `--session` reopen not completed. (d) pass.
+
+Also: `check:context-notes-engine` 0; `test:context-notes` 91/91 both modes; `test:context-cost` 24/24 both modes.
+
+## Result (task 4)
+
+F1: `session_start` always re-adopts when env origin is `session` (removed `hasResolvedContextMode()` skip). Two in-process `pi` fixtures without `resetContextModeResolution()`: Fable then Astra → notes.
+F2: `session_tree` / `session_before_tree` resolve the destination branch (`allowModelDefault: false` so unmarked ancestors stay summary). Controller is not created on a summary ancestor, so no INIT contamination.
+F3: tools register as `exposure: "search"` + `allowLazyActivation: false`; `syncNotesToolActivation` uses `setActiveTools`. Integration dual-a/b assert the provider `toolNames` array.
+
+`npm --prefix harness/rubato-pi test` → 1047 pass / 14 fail: the original 12 plus boot-chrome worker-resize flake.
+
