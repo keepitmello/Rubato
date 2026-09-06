@@ -1,15 +1,14 @@
-import test from "node:test";
+import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { HISTORY_NOTES_MODE, SUMMARY_MODE, setContextMode } from "../../src/context-notes/config.mjs";
-import { assertEngineParts, recordEnginePartDrift } from "../../src/context-notes/engine-gate.mjs";
 import {
+  CONTEXT_MODE_ORIGIN, HISTORY_NOTES_MODE, SUMMARY_MODE, resetContextModeResolution, setContextMode,
+} from "../../src/context-notes/config.mjs";
+import { assertEngineParts } from "../../src/context-notes/engine-gate.mjs";
+import {
+  adoptContextMode,
   considerContextModeSwitch,
   defaultContextModeForModel,
-  peekSessionContextMode,
-  resolveLaunchContextMode,
+  recordedModeFromBranch,
 } from "../../src/context-notes/mode-policy.mjs";
 import { INIT_ENTRY, MODE_ENTRY, SOURCE, encodeBootstrap, initialWindow, nextWindow } from "../../src/context-notes/protocol.mjs";
 import { applyContextNotesTransforms as apply } from "../../src/transforms/core-context-notes.mjs";
@@ -19,22 +18,19 @@ import { fakeSession, Type } from "../helpers/context-notes-fake.mjs";
 const ASTRA = { provider: "openai-codex", id: "gpt-6-astra" };
 const FABLE = { provider: "anthropic", id: "claude-fable-5-1" };
 
-function tempDir(t) {
-  const dir = mkdtempSync(join(tmpdir(), "rubato-dual-mode-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  return dir;
-}
-
-function writeSettings(dir, settings) {
-  writeFileSync(join(dir, "settings.json"), JSON.stringify(settings));
-}
-
-function withMode(t, mode) {
+function withMode(t, mode, { origin } = {}) {
   const previous = process.env.RUBATO_CONTEXT_MODE;
+  const previousOrigin = process.env.RUBATO_CONTEXT_MODE_ORIGIN;
+  resetContextModeResolution();
   process.env.RUBATO_CONTEXT_MODE = mode;
+  if (origin) process.env.RUBATO_CONTEXT_MODE_ORIGIN = origin;
+  else delete process.env.RUBATO_CONTEXT_MODE_ORIGIN;
   t.after(() => {
     if (previous === undefined) delete process.env.RUBATO_CONTEXT_MODE;
     else process.env.RUBATO_CONTEXT_MODE = previous;
+    if (previousOrigin === undefined) delete process.env.RUBATO_CONTEXT_MODE_ORIGIN;
+    else process.env.RUBATO_CONTEXT_MODE_ORIGIN = previousOrigin;
+    resetContextModeResolution();
   });
 }
 
@@ -46,49 +42,36 @@ async function liveSetup(t, mode) {
   return { ...f, api };
 }
 
-test("Astra defaults to history-notes and Fable to summary; env wins", (t) => {
+test("Astra defaults to history-notes and Fable to summary; user env wins", () => {
   assert.equal(defaultContextModeForModel(ASTRA), HISTORY_NOTES_MODE);
   assert.equal(defaultContextModeForModel(FABLE), SUMMARY_MODE);
-  const dir = tempDir(t);
-  writeSettings(dir, { defaultProvider: "openai-codex", defaultModel: "gpt-6-astra" });
-  assert.equal(resolveLaunchContextMode({ args: [], env: {}, agentDir: dir }), HISTORY_NOTES_MODE);
-  writeSettings(dir, { defaultProvider: "anthropic", defaultModel: "claude-fable-5-1" });
-  assert.equal(resolveLaunchContextMode({ args: [], env: {}, agentDir: dir }), SUMMARY_MODE);
-  assert.equal(resolveLaunchContextMode({
-    args: ["--model", "openai-codex/gpt-6-astra"],
-    env: {},
-    agentDir: dir,
-  }), HISTORY_NOTES_MODE);
-  assert.equal(resolveLaunchContextMode({
-    args: ["--model", "openai-codex/gpt-6-astra"],
-    env: { RUBATO_CONTEXT_MODE: "summary" },
-    agentDir: dir,
-  }), SUMMARY_MODE);
+  assert.equal(adoptContextMode({ env: {}, model: ASTRA }), HISTORY_NOTES_MODE);
+  assert.equal(adoptContextMode({ env: {}, model: FABLE }), SUMMARY_MODE);
+  assert.equal(adoptContextMode({ env: { RUBATO_CONTEXT_MODE: "summary" }, model: ASTRA }), SUMMARY_MODE);
 });
 
-test("a --session mode record or notes-window entry wins over the model rule", (t) => {
-  const dir = tempDir(t);
-  writeSettings(dir, { defaultProvider: "anthropic", defaultModel: "claude-fable-5-1" });
-  const recorded = join(dir, "recorded.jsonl");
-  writeFileSync(recorded, `${JSON.stringify({ type: "custom", customType: MODE_ENTRY, data: { mode: HISTORY_NOTES_MODE } })}\n`);
-  assert.equal(resolveLaunchContextMode({
-    args: ["--session", recorded, "--model", "anthropic/claude-fable-5-1"],
-    env: {},
-    agentDir: dir,
+test("recorded mode and notes-window entries win over the model rule; inherited env does not", () => {
+  const recorded = [{ type: "custom", customType: MODE_ENTRY, data: { mode: HISTORY_NOTES_MODE } }];
+  assert.equal(adoptContextMode({
+    env: { RUBATO_CONTEXT_MODE: SUMMARY_MODE, RUBATO_CONTEXT_MODE_ORIGIN: CONTEXT_MODE_ORIGIN },
+    branch: recorded,
+    model: FABLE,
   }), HISTORY_NOTES_MODE);
-  const windowed = join(dir, "windowed.jsonl");
-  writeFileSync(windowed, `${JSON.stringify({ type: "custom", customType: INIT_ENTRY, data: { window: initialWindow() } })}\n`);
-  assert.equal(peekSessionContextMode(windowed), HISTORY_NOTES_MODE);
-  assert.equal(resolveLaunchContextMode({ args: ["--session", windowed], env: {}, agentDir: dir }), HISTORY_NOTES_MODE);
-  const summary = join(dir, "summary.jsonl");
-  writeFileSync(summary, `${JSON.stringify({ type: "custom", customType: MODE_ENTRY, data: { mode: SUMMARY_MODE } })}\n`);
-  assert.equal(resolveLaunchContextMode({
-    args: ["--session", summary, "--model", "openai-codex/gpt-6-astra"],
-    env: {},
-    agentDir: dir,
+  const windowed = [{ type: "custom", customType: INIT_ENTRY, data: { window: initialWindow() } }];
+  assert.equal(adoptContextMode({ env: {}, branch: windowed, model: FABLE }), HISTORY_NOTES_MODE);
+  assert.equal(adoptContextMode({
+    env: { RUBATO_CONTEXT_MODE: HISTORY_NOTES_MODE, RUBATO_CONTEXT_MODE_ORIGIN: CONTEXT_MODE_ORIGIN },
+    branch: [],
+    model: FABLE,
   }), SUMMARY_MODE);
+  assert.equal(adoptContextMode({
+    env: { RUBATO_CONTEXT_MODE: HISTORY_NOTES_MODE },
+    branch: [],
+    model: FABLE,
+  }), HISTORY_NOTES_MODE);
 });
 
+describe("live env", { concurrency: false }, () => {
 test("model_select confirm yes/no in both directions, and no repeat after no", async (t) => {
   const yes = await liveSetup(t, SUMMARY_MODE);
   await yes.dispatch("session_start");
@@ -132,15 +115,14 @@ test("notes to summary is refused after a window boundary without prompting", as
   assert.ok(f.notices.some((args) => String(args[0]).includes("작업 노트 창")));
 });
 
-test("mode record round-trips through the session file and session_start adoption", async (t) => {
+test("mode record round-trips and session_start re-resolves inherited env", async (t) => {
   const f = await liveSetup(t, SUMMARY_MODE);
   await f.dispatch("session_start");
   f.setConfirm(true);
   await f.dispatch("model_select", { model: ASTRA, source: "set" });
-  assert.equal(peekSessionContextMode(f.file), HISTORY_NOTES_MODE);
-  assert.equal(resolveLaunchContextMode({ args: ["--session", f.file], env: {}, agentDir: f.dir }), HISTORY_NOTES_MODE);
+  assert.equal(recordedModeFromBranch(f.entries), HISTORY_NOTES_MODE);
 
-  withMode(t, SUMMARY_MODE);
+  withMode(t, SUMMARY_MODE, { origin: CONTEXT_MODE_ORIGIN });
   const resumed = fakeSession(t);
   resumed.append({ type: "custom", customType: MODE_ENTRY, data: { mode: HISTORY_NOTES_MODE } });
   const api = await installContextNotes(resumed.pi, { Type, requireEngine: false });
@@ -150,25 +132,30 @@ test("mode record round-trips through the session file and session_start adoptio
   assert.equal(api.getController(resumed.ctx).window.number, 0);
 });
 
+test("a child that inherits a session-origin notes env still follows its own Fable model", async (t) => {
+  withMode(t, HISTORY_NOTES_MODE, { origin: CONTEXT_MODE_ORIGIN });
+  const f = fakeSession(t);
+  f.ctx.model = { ...f.ctx.model, ...FABLE };
+  const api = await installContextNotes(f.pi, { Type, requireEngine: false });
+  t.after(() => api.close());
+  await f.dispatch("session_start");
+  assert.equal(process.env.RUBATO_CONTEXT_MODE, SUMMARY_MODE);
+  await assert.rejects(f.tools.get("get_context_remaining").execute("id", {}, undefined, undefined, f.ctx), /요약 모드/);
+});
+});
+
 test("gates are present but dormant in summary mode; drift is recorded for a later notes switch", async () => {
   const base = "file:///repo/node_modules/@code-yeongyu/senpi/dist/core/";
   const settings = `export class SettingsManager { getCompactionSettings() { return {enabled:true,idleCompactionEnabled:true}; } }`;
   const patched = apply(`${base}settings-manager.js`, settings, { enabled: false });
   assert.ok(patched.includes("rubato-history-notes-transform-v2:settings"));
-  const old = process.env.RUBATO_CONTEXT_MODE;
-  process.env.RUBATO_CONTEXT_MODE = SUMMARY_MODE;
-  try {
-    const module = await import(`data:text/javascript;base64,${Buffer.from(patched).toString("base64")}#${Math.random()}`);
-    assert.equal(new module.SettingsManager().getCompactionSettings().enabled, true);
-    process.env.RUBATO_CONTEXT_MODE = HISTORY_NOTES_MODE;
-    assert.equal(new module.SettingsManager().getCompactionSettings().enabled, false);
-  } finally {
-    if (old === undefined) delete process.env.RUBATO_CONTEXT_MODE;
-    else process.env.RUBATO_CONTEXT_MODE = old;
-  }
+  assert.ok(patched.includes("installSettingsGate"));
   delete globalThis[Symbol.for("rubato.history-notes.lane.v1")];
-  recordEnginePartDrift("lane", new Error("니들이 없어요"));
-  assert.throws(() => assertEngineParts(), /lane \(니들이 없어요\)/);
+  const drifted = apply(`${base}extensions/builtin/compaction/lane-policy.js`, "export const keep = true;\n", { enabled: false });
+  assert.match(drifted, /__rubatoRecordDrift\("lane"/);
+  const driftedModule = await import(`data:text/javascript;base64,${Buffer.from(drifted).toString("base64")}#${Math.random()}`);
+  assert.equal(driftedModule.keep, true);
+  assert.throws(() => assertEngineParts(), /lane \(/);
 });
 
 test("considerContextModeSwitch never switches silently", async () => {
@@ -206,5 +193,6 @@ test("setContextMode is the live env switch", () => {
   const env = { RUBATO_CONTEXT_MODE: SUMMARY_MODE };
   assert.equal(setContextMode(HISTORY_NOTES_MODE, env), HISTORY_NOTES_MODE);
   assert.equal(env.RUBATO_CONTEXT_MODE, HISTORY_NOTES_MODE);
+  assert.equal(env.RUBATO_CONTEXT_MODE_ORIGIN, CONTEXT_MODE_ORIGIN);
   assert.throws(() => setContextMode("typo", env));
 });
