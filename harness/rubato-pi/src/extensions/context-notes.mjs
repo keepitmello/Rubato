@@ -91,8 +91,12 @@ export async function installContextNotes(pi, options = {}) {
     catch (error) { report(error, ctx, true); throw error; }
   });
   pi.on("session_shutdown", async () => api.close());
-  pi.on("session_abort", async () => { if (controller) controller.pending = null; });
-  pi.on("agent_end", async (event) => { if (controller && event.aborted) controller.pending = null; });
+  pi.on("session_abort", async () => {
+    if (controller) { controller.pending = null; controller.checkpointRequested = false; }
+  });
+  pi.on("agent_end", async (event) => {
+    if (controller && event.aborted) controller.pending = null;
+  });
   pi.on("session_before_tree", async (event, ctx) => {
     const targetId = event.preparation?.targetId;
     if (targetId && liveSwitch && !isUserExplicitContextMode()) {

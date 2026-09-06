@@ -85,6 +85,21 @@ test("oversized live context stops explicitly, without deletion or summary", asy
   await f.c.turnEnd({},f.ctx); assert.equal(f.c.window.number,0);
   assert.equal(f.c.store.listItems({role:"tool"}).items[0].total_chars,large.length);
 });
+test("budget limit requests one checkpoint turn and rolls after the note is saved", async(t)=>{
+  const f=setup(t); f.addMessage("toolResult","a".repeat(40000),{toolName:"read"});
+  f.c.refresh(f.ctx); await f.c.turnEnd({},f.ctx);
+  assert.equal(f.sent.length,1); assert.equal(f.c.paused,null);
+  assert.doesNotThrow(()=>f.c.admit(f.build().messages));
+  save(f); await f.c.turnEnd({},f.ctx);
+  assert.equal(f.c.window.number,1); assert.equal(f.c.pending,null);
+});
+test("manual new-context can recover after the budget gate stopped a user request", async(t)=>{
+  const f=setup(t); f.addMessage("toolResult","a".repeat(40000),{toolName:"read"});
+  f.c.refresh(f.ctx); assert.throws(()=>f.c.admit(f.build().messages),/한도/);
+  assert.equal((await f.c.manual(f.ctx)).requested,true);
+  assert.equal(f.sent.length,1);
+  assert.doesNotThrow(()=>f.c.admit(f.build().messages));
+});
 test("near-limit request includes warning and stable, readable source IDs", (t)=>{
   const f=setup(t); f.addMessage("toolResult","a".repeat(19000),{toolName:"read",toolCallId:"r1"});
   const input=f.build().messages; const snapshot=JSON.stringify(input);
@@ -118,6 +133,48 @@ test("manual command uses the same model via a queued checkpoint request", async
   assert.equal(outcome.requested,true); assert.equal(f.sent.length,1);
   assert.equal(f.sent[0][1].triggerTurn,true); assert.equal(f.sent[0][1].deliverAs,"steer");
   assert.equal(f.c.window.number,0);
+});
+test("manual checkpoint turn rolls after saving a note even below the budget", async(t)=>{
+  const f=setup(t); await f.c.manual(f.ctx); save(f); await f.c.turnEnd({},f.ctx);
+  assert.equal(f.c.window.number,1); assert.equal(f.c.checkpointRequested,false);
+});
+test("checkpoint permission closes if its dedicated turn does not save a note", async(t)=>{
+  const f=setup(t); await f.c.manual(f.ctx);
+  f.addMessage("assistant","continued without checkpoint");
+  await f.c.turnEnd({},f.ctx);
+  assert.match(f.c.paused,/작업 노트를 저장하지 않았/);
+  assert.equal(f.c.checkpointRequested,false); assert.equal(f.c.window.number,0);
+});
+test("checkpoint turn never consumes the provider safety reserve", async(t)=>{
+  const f=setup(t); f.addMessage("toolResult","a".repeat(90000),{toolName:"read"});
+  f.c.refresh(f.ctx);
+  await assert.rejects(f.c.manual(f.ctx),/안전하게 실행할 여유/);
+  assert.equal(f.sent.length,0); assert.equal(f.c.checkpointRequested,false);
+});
+test("reasoning payloads do not inflate the experiment budget", (t)=>{
+  const f=setup(t);
+  f.addMessage("assistant",[{type:"reasoning",encrypted:"x".repeat(80000)}]);
+  f.c.refresh(f.ctx);
+  assert.doesNotThrow(()=>f.c.admit(f.build().messages));
+});
+test("engine sample wins over a larger byte estimate for the experiment gate", (t)=>{
+  const f=setup(t); f.addMessage("toolResult","a".repeat(40000),{toolName:"read"});
+  f.ctx.getContextUsage=()=>({tokens:1000});
+  f.c.refresh(f.ctx); f.c.hasSample=true;
+  assert.doesNotThrow(()=>f.c.admit(f.build().messages));
+  assert.equal(f.c.usage(f.build().messages).tokens,1000);
+});
+test("admit over the experiment budget starts a checkpoint turn instead of dead-ending", (t)=>{
+  const f=setup(t); f.addMessage("toolResult","a".repeat(40000),{toolName:"read"});
+  f.c.refresh(f.ctx);
+  assert.throws(()=>f.c.admit(f.build().messages),/체크포인트/);
+  assert.equal(f.c.checkpointRequested,true); assert.equal(f.sent.length,1);
+  assert.doesNotThrow(()=>f.c.admit(f.build().messages));
+});
+test("turn end remains idle while no model context window is available", async(t)=>{
+  const f=setup(t); f.ctx.model={}; f.c.refresh(f.ctx);
+  await f.c.turnEnd({},f.ctx);
+  assert.equal(f.c.paused,null); assert.equal(f.sent.length,0);
 });
 test("SDK-owned remote conversation is refused for a notes experiment", (t)=>{
   const f=setup(t); f.ctx.model={...f.ctx.model,provider:"claude-sdk-oauth"}; f.c.refresh(f.ctx);
