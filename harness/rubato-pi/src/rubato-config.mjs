@@ -18,8 +18,17 @@ function readTaskSettings(cwd) {
   return undefined;
 }
 
+// Full copy of RubatoTaskSettingsSchema.parse({}) except default_execution_mode.
+// Agent children resolve mode from the raw config object
+// (`spec.execution_mode ?? agentDef.executionMode ?? config.task.default_execution_mode ?? "in-process"`),
+// and composeTaskEngine takes `rubatoConfig.task ?? Schema.parse({})`. A missing or partial
+// `task` block therefore either keeps the hardcoded in-process fallback (most sessions have
+// no project file) or, if we emitted only `{ default_execution_mode: "process" }`, would
+// skip schema defaults for every other cap — same class of bug as pinMemoryJobsToGrok.
+// The schema default stays "in-process" for loadRubatoConfig consumers; this harness overlay
+// is the single place that makes Agent-spawned children process-by-default.
 const TASK_SCHEMA_DEFAULTS = {
-  default_execution_mode: "in-process",
+  default_execution_mode: "process",
   default_concurrency: 5,
   global_concurrency: 8,
   max_depth: 1,
@@ -52,7 +61,7 @@ export function loadRubatoPiRubatoConfig(options = {}) {
           Object.entries(MODEL_CATEGORY_CHAINS).map(([name, models]) => [name, { models }]),
         ),
       },
-      ...(task ? { task: withTaskDefaults(task) } : {}),
+      task: withTaskDefaults(task ?? {}),
     },
     diagnostics: [],
   };
