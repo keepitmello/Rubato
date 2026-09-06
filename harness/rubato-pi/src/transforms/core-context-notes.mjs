@@ -1,7 +1,6 @@
 // Critical context ownership transforms run OUTSIDE the cosmetic drift catcher.
 // Keep this after the existing core-session/control clusters in the loader.
 import { historyNotesEnabled } from "../context-notes/config.mjs";
-import { recordEnginePartDrift } from "../context-notes/engine-gate.mjs";
 
 export function contextNotesHrefs() {
   return { gate: new URL("../context-notes/engine-gate.mjs", import.meta.url).href,
@@ -88,11 +87,14 @@ export function applyContextNotesTransforms(url, source, options = {}) {
         break;
     }
   } catch (error) {
-    recordEnginePartDrift(target, error);
     if (enabled) throw error;
-    // Summary mode must not brick the CLI when a pin drifts. A later switch
-    // into notes refuses with this reason via assertEngineParts().
-    return source;
+    // Loader hooks run on another thread, so recording drift on this globalThis
+    // never reaches assertEngineParts(). Put the call in the module source.
+    const message = error?.message ?? String(error);
+    return `${source}
+import { recordEnginePartDrift as __rubatoRecordDrift } from ${JSON.stringify(hrefs.gate)};
+__rubatoRecordDrift(${JSON.stringify(target)}, ${JSON.stringify(message)});
+`;
   }
   return next + `\n${marker}\n`;
 }
