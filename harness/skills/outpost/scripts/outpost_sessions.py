@@ -23,11 +23,19 @@ BARE_CONVERSATION_ID_RE = re.compile(
 )
 LATEST_ALIASES = frozenset({"last", "latest"})
 STATUS_ORDER = {
+    "working": 0,
     "running": 0,
     "submitted_response_unavailable": 1,
     "finished": 2,
     "failed": 3,
 }
+
+
+def live_status_label(status: Any) -> str:
+    text = str(status or "-")
+    if text == "running":
+        return "working"
+    return text
 
 
 class UnknownThreadError(LookupError):
@@ -448,7 +456,10 @@ class SessionStore:
             self.write(payload)
         repaired.sort(key=lambda thread: str(thread.get("updatedAt") or ""), reverse=True)
         repaired.sort(key=lambda thread: STATUS_ORDER.get(str(thread.get("status") or "failed"), 9))
-        return repaired[: max(0, limit)]
+        return [
+            {**thread, "status": live_status_label(thread.get("status"))}
+            for thread in repaired[: max(0, limit)]
+        ]
 
     def thread_lock(self, thread_id: str) -> "ThreadLock":
         return ThreadLock(_thread_lock_path(self.path, thread_id), thread_id)
@@ -573,7 +584,7 @@ def format_threads(threads: list[dict[str, Any]], *, as_json: bool = False) -> s
             "\t".join(
                 [
                     str(thread.get("threadId") or "-"),
-                    str(thread.get("status") or "-"),
+                    live_status_label(thread.get("status")),
                     str(len(turns)),
                     str(thread.get("quality") or "-"),
                     str(thread.get("topic") or "-"),
