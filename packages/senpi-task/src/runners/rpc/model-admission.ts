@@ -19,10 +19,32 @@ export const MODEL_CATALOG_CACHE_TTL_MS = 120_000
 
 export type RpcModelAdmission = (spec: RpcRunnerSpec) => Promise<void>
 
+// The parent session's live model lookup: `find(provider, modelId)` as the concrete senpi
+// ModelRegistry exposes it. Structural so a test fake needs no registry class.
+export type ParentModelFinder = {
+  readonly find: (provider: string, modelId: string) => unknown
+}
+
 export type RpcModelAdmissionOptions = {
   readonly buildSpawn?: (spec: RpcRunnerSpec) => RpcSpawnDescriptor
   readonly probe?: (descriptor: RpcSpawnDescriptor) => Promise<ModelCatalogProbeResult>
   readonly now?: () => number
+  // Returns the parent's live registry, or undefined before one exists. When the parent resolves
+  // the model and the child inherits the parent's `-e` extensions, the child sees the same provider
+  // set, so the probe is skipped. A model the parent cannot see still goes through the child probe.
+  readonly parentRegistry?: () => ParentModelFinder | undefined
+}
+
+/**
+ * Whether the parent's live registry resolves `provider/modelId`. Split on the FIRST slash so an
+ * openrouter-style modelId that embeds further slashes keeps them; an absent or edge-positioned
+ * slash is not a reference and yields false without a lookup.
+ */
+export function parentResolvesModel(registry: ParentModelFinder | undefined, model: string): boolean {
+  if (registry === undefined) return false
+  const slash = model.indexOf("/")
+  if (slash <= 0 || slash === model.length - 1) return false
+  return registry.find(model.slice(0, slash), model.slice(slash + 1)) !== undefined
 }
 
 type ProbedCatalog = {
@@ -86,6 +108,7 @@ export function createRpcModelAdmission(options: RpcModelAdmissionOptions = {}):
   const buildSpawn = options.buildSpawn ?? buildRpcModelCatalogSpawn
   const probe = options.probe ?? probeModelCatalog
   const now = options.now ?? Date.now
+  const parentRegistry = options.parentRegistry ?? (() => undefined)
   const catalogs = new Map<string, CachedCatalog>()
   const probeCatalog = async (descriptor: RpcSpawnDescriptor, model: string): Promise<ProbedCatalog> => {
     const first = await probe(descriptor)
@@ -107,6 +130,10 @@ export function createRpcModelAdmission(options: RpcModelAdmissionOptions = {}):
   return async (spec) => {
     const model = spec.model?.trim()
     if (model === undefined || model.length === 0) return
+    // The probe is a full senpi boot (`--list-models` with the parent's extensions): 8s idle on an
+    // M4, 18s with the harness adapter, past the 20s budget on a loaded machine. The parent's own
+    // registry answers the same question for free when it already resolves the model.
+    if (parentResolvesModel(parentRegistry(), model)) return
     const descriptor = buildSpawn(spec)
     const key = profileKey(descriptor)
     const cached = catalogs.get(key)
