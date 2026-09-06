@@ -49,15 +49,16 @@ Route in this order:
 
 Say in one line which model or preset the agent runs on; report the resolved model when the runtime returns it.
 
-**Default owner and default worker is Muse Spark or Grok 4.6 Fast**: `opencode/muse-spark-1.3-contributor-free` or `xai/grok-4.6`. Muse runs several times faster at slightly lower accuracy; prefer it, and use Grok when a leg needs the extra precision. When xAI direct is out of credits, use `cursor/cursor-grok-4.6`. Opus 5 has no slot.
+**Default owner is Grok 4.6 Fast**: `xai/grok-4.6` or Cursor Fast (`cursor/cursor-grok-4.6-high-fast`) — use either. **Default worker is Muse Spark or Grok 4.6 Fast**: `opencode/muse-spark-1.3-contributor-free`, or the same Grok ids. Muse runs several times faster at slightly lower accuracy; prefer it as a worker, and use Grok when a leg needs the extra precision. Opus 5 has no slot.
 
-**Fable 5.1 and Sol as owners or workers require the user's approval per dispatch.** Ask, naming the workstream; until approved it runs on Muse or Grok. A verifier (independent review) needs no approval.
+**Fable 5.1 and Sol as owners or workers require the user's approval per dispatch.** Ask, naming the workstream; until approved, owners run on Grok and workers on Muse or Grok. A verifier (independent review) needs no approval.
 
 Choose the profile at dispatch and predict the dominant bottleneck up front rather than planning to climb later. A stronger model existing is not by itself a reason for a new session; whether the next leg continues or starts fresh belongs to Skill(dispatching).
 
 - **Fable 5.1** — problem framer and structurer. As an Agent: framing, human-outcome review, cross-stream architecture, contracts, and integration. `effort: low` as a worker; higher with the user's confirmation.
 - **GPT-5.6 Sol** — hypothesis converger. Default **verifier**, and the supervisor when the owner is stuck. Give Sol ownership only when the proof itself is the deliverable. `effort: medium` by default; `high` with the user's confirmation.
-- **Muse Spark 1.3 / Grok 4.6 Fast** — action convergers. Default **owner** and default **worker**, passed as an exact model or the matching named preset. Both fill the action-converger slot; Muse for speed, Grok when the leg needs more precision.
+- **Grok 4.6 Fast** — action converger. Default **owner**, and also a default **worker**. Pass `xai/grok-4.6` or Cursor Fast (`cursor/cursor-grok-4.6-high-fast`).
+- **Muse Spark 1.3** — action converger. Default **worker** only (`opencode/muse-spark-1.3-contributor-free`). Prefer it for speed; use Grok when the leg needs more precision.
 
 Verifier defaults when an independent check is worth the cost:
 
@@ -71,7 +72,7 @@ Defaults, not mandatory pairings. A clear low-risk task may use owner self-verif
 - One bounded technical outcome → one owner. That owner dispatches Muse or Grok Fast workers for settled execution.
 - One material or ambiguous outcome → owner + verifier.
 - Two genuinely independent outcomes → two owners; verifier only if integration risk warrants.
-- Unclear root cause → the owner diagnoses from a worker's map; only a genuinely separable, parallel debugging workstream gets an Agent owner. That owner is Muse or Grok.
+- Unclear root cause → the owner diagnoses from a worker's map; only a genuinely separable, parallel debugging workstream gets an Agent owner. That owner is Grok.
 - Product or UX uncertainty → framing before execution, then the chosen owners.
 
 Build the smallest roster that gives each distinct bottleneck one clear owner.
