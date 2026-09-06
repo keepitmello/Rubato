@@ -1,0 +1,95 @@
+{
+  "formatVersion": 1,
+  "notice": "Scenario defaults, not measured truths or a recommended optimum. Calibrate from local logs. Do not compare different assumptions as if they were a single experiment.",
+  "experiments": [
+    {
+      "label": "fable",
+      "prices": {
+        "input": 10,
+        "cacheRead": 0.25,
+        "cacheWrite": 12.5,
+        "cacheWrite1h": 20,
+        "output": 50
+      },
+      "common": {
+        "contextWindowTokens": 1000000,
+        "staticTokens": 8000,
+        "historyStaticExtraTokens": 1200,
+        "summaryTokens": 5000,
+        "summaryOutputTokens": 5000,
+        "checkpointTokens": 2000,
+        "checkpointOutputTokens": 2000,
+        "retainedRecentTokens": 0,
+        "checkpointExtraCalls": 1,
+        "resumeNoteCalls": 1,
+        "cacheHitFraction": 1,
+        "staticReuseFraction": 1,
+        "cacheTtlMs": 300000,
+        "extraCallMs": 10000,
+        "growthMultiplier": 1
+      },
+      "thresholds": [
+        100000,
+        150000,
+        200000,
+        250000,
+        300000,
+        400000,
+        500000,
+        650000,
+        800000
+      ],
+      "scenarios": [
+        {
+          "name": "summary-hot",
+          "mode": "summary",
+          "summaryCacheHitFraction": 1
+        },
+        {
+          "name": "summary-cold",
+          "mode": "summary",
+          "summaryCacheHitFraction": 0
+        },
+        {
+          "name": "notes-read-0",
+          "mode": "history-notes",
+          "retrievalTokens": 0,
+          "retrievalCalls": 0
+        },
+        {
+          "name": "notes-read-5000",
+          "mode": "history-notes",
+          "retrievalTokens": 5000,
+          "retrievalCalls": 1
+        },
+        {
+          "name": "notes-read-10000",
+          "mode": "history-notes",
+          "retrievalTokens": 10000,
+          "retrievalCalls": 1
+        },
+        {
+          "name": "notes-read-20000",
+          "mode": "history-notes",
+          "retrievalTokens": 20000,
+          "retrievalCalls": 2
+        },
+        {
+          "name": "notes-read-50000",
+          "mode": "history-notes",
+          "retrievalTokens": 50000,
+          "retrievalCalls": 5
+        },
+        {
+          "name": "notes-read-100000",
+          "mode": "history-notes",
+          "retrievalTokens": 100000,
+          "retrievalCalls": 10
+        }
+      ],
+      "modelKeys": [
+        "anthropic/claude-fable-5-1"
+      ]
+    }
+  ]
+}
