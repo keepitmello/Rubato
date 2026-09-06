@@ -10,6 +10,7 @@ import { PIN } from "./policy.mjs";
 import { resolveRole } from "./role-contract.mjs";
 import { listNodeCandidates, pickNode, runningNode } from "./select-node.mjs";
 import { withNoChangelog } from "./no-changelog.mjs";
+import { resolveLaunchContextMode } from "./context-notes/mode-policy.mjs";
 import { ensureSessionDefaults, sessionDefaultsLookCurrent } from "./session-defaults.mjs";
 import { replaceSystemPrompt } from "./system-prompt.mjs";
 import { SKILL_DIRS } from "./skills-section.mjs";
@@ -136,7 +137,9 @@ export async function spawnRubatoPi({ args = process.argv.slice(2), env = proces
   if (!existsSync(entry)) {
     throw new Error("pinned senpi CLI is missing; run bun install at the repository root");
   }
-  const nextEnv = withNoChangelog(launchEnv(env, agentDir));
+  const launched = launchEnv(env, agentDir);
+  launched.RUBATO_CONTEXT_MODE = resolveLaunchContextMode({ args, env: launched, agentDir });
+  const nextEnv = withNoChangelog(launched);
   setBootChromeStatus("엔진을 불러오는 중");
   // 같은 Node 면 자식을 또 띄우지 않는다. cli.js 가 --import 보고 한 번 더
   // spawn 하던 것과 합치면 기동마다 Node 를 세 번 올리는 셈이었다.
@@ -150,7 +153,7 @@ export async function spawnRubatoPi({ args = process.argv.slice(2), env = proces
   // Re-enter the launcher so the child owns both the splash and its awaited handoff.
   releaseBootChrome();
   return spawn(node.bin, [join(root, "bin", "rubato-pi.mjs"), ...args], {
-    env: launchEnv(env, agentDir),
+    env: { ...launchEnv(env, agentDir), RUBATO_CONTEXT_MODE: nextEnv.RUBATO_CONTEXT_MODE },
     stdio: "inherit",
   });
 }

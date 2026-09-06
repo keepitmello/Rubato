@@ -1,4 +1,5 @@
-// One process has one context policy. Do not switch it during a running session.
+// Live mode is process.env.RUBATO_CONTEXT_MODE. The launcher writes the default;
+// a confirm-gated model switch may rewrite it in the same process.
 export const HISTORY_NOTES_MODE = "history-notes";
 export const SUMMARY_MODE = "summary";
 
@@ -12,6 +13,12 @@ export function contextMode(env = process.env) {
 
 export function historyNotesEnabled(env = process.env) {
   return contextMode(env) === HISTORY_NOTES_MODE;
+}
+
+export function setContextMode(mode, env = process.env) {
+  const next = contextMode({ ...env, RUBATO_CONTEXT_MODE: mode });
+  env.RUBATO_CONTEXT_MODE = next;
+  return next;
 }
 
 function integer(env, name, fallback, minimum, maximum) {
