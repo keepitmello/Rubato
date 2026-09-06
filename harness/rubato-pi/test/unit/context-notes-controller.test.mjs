@@ -81,7 +81,7 @@ test("cancelled write/transition never reports success", async(t)=>{
 });
 test("oversized live context stops explicitly, without deletion or summary", async(t)=>{
   const f=setup(t); const large="a".repeat(40000); f.addMessage("toolResult",large,{toolName:"read"});
-  f.c.refresh(f.ctx); assert.throws(()=>f.c.admit(f.build().messages),/한도/);
+  f.c.refresh(f.ctx); assert.doesNotThrow(()=>f.c.admit(f.build().messages));
   await f.c.turnEnd({},f.ctx); assert.equal(f.c.window.number,0);
   assert.equal(f.c.store.listItems({role:"tool"}).items[0].total_chars,large.length);
 });
@@ -95,7 +95,7 @@ test("budget limit requests one checkpoint turn and rolls after the note is save
 });
 test("manual new-context can recover after the budget gate stopped a user request", async(t)=>{
   const f=setup(t); f.addMessage("toolResult","a".repeat(40000),{toolName:"read"});
-  f.c.refresh(f.ctx); assert.throws(()=>f.c.admit(f.build().messages),/한도/);
+  f.c.refresh(f.ctx); assert.doesNotThrow(()=>f.c.admit(f.build().messages));
   assert.equal((await f.c.manual(f.ctx)).requested,true);
   assert.equal(f.sent.length,1);
   assert.doesNotThrow(()=>f.c.admit(f.build().messages));
@@ -146,7 +146,7 @@ test("checkpoint permission closes if its dedicated turn does not save a note", 
   assert.equal(f.c.checkpointRequested,false); assert.equal(f.c.window.number,0);
 });
 test("checkpoint turn never consumes the provider safety reserve", async(t)=>{
-  const f=setup(t); f.addMessage("toolResult","a".repeat(90000),{toolName:"read"});
+  const f=setup(t); f.addMessage("toolResult","a".repeat(120000),{toolName:"read"});
   f.c.refresh(f.ctx);
   await assert.rejects(f.c.manual(f.ctx),/안전하게 실행할 여유/);
   assert.equal(f.sent.length,0); assert.equal(f.c.checkpointRequested,false);
@@ -170,12 +170,20 @@ test("physical safety line follows the engine meter, not a larger payload estima
   f.c.refresh(f.ctx);
   assert.doesNotThrow(()=>f.c.admit(f.build().messages));
 });
-test("admit over the experiment budget starts a checkpoint turn instead of dead-ending", (t)=>{
+test("admit over the experiment budget starts a checkpoint turn instead of dead-ending", async(t)=>{
   const f=setup(t); f.addMessage("toolResult","a".repeat(40000),{toolName:"read"});
   f.c.refresh(f.ctx);
-  assert.throws(()=>f.c.admit(f.build().messages),/체크포인트/);
+  assert.doesNotThrow(()=>f.c.admit(f.build().messages));
+  await f.c.turnEnd({},f.ctx);
   assert.equal(f.c.checkpointRequested,true); assert.equal(f.sent.length,1);
   assert.doesNotThrow(()=>f.c.admit(f.build().messages));
+});
+test("95 percent hard line rolls even if the latest note is stale", async(t)=>{
+  const f=setup(t); save(f);
+  f.addMessage("toolResult","a".repeat(100000),{toolName:"read"});
+  f.c.refresh(f.ctx);
+  await f.c.turnEnd({},f.ctx);
+  assert.equal(f.c.window.number,1);
 });
 test("turn end remains idle while no model context window is available", async(t)=>{
   const f=setup(t); f.ctx.model={}; f.c.refresh(f.ctx);

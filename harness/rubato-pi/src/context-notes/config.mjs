@@ -73,9 +73,10 @@ export function windowBudget(model, config = contextNotesConfig()) {
   if (!Number.isSafeInteger(full) || full < 8192) {
     throw new Error("모델의 문맥 한도를 읽지 못했어요. 새 문맥 모드에서는 한도가 명시된 모델을 사용해 주세요.");
   }
-  // Leave room for output and token-estimation error. The override is an input
-  // experiment budget, not permission to exceed the provider's context limit.
-  const ceiling = Math.floor(full * 0.9);
-  const target = Math.min(config.windowTokens ?? Math.floor(full * 0.8), ceiling);
-  return { target, reminder: Math.min(config.reminderTokens, Math.floor(target / 2)), full };
+  // Codex-aligned stages on the physical window: reminder at target-6144,
+  // strong checkpoint at 90%, harness cut at 95%. An explicit override is the
+  // 90% line, still capped so it cannot pass the physical 90% ceiling.
+  const target = Math.min(config.windowTokens ?? Math.floor(full * 0.9), Math.floor(full * 0.9));
+  const hard = Math.floor(full * 0.95);
+  return { target, hard, reminder: Math.min(config.reminderTokens, Math.floor(target / 2)), full };
 }
