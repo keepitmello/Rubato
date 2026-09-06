@@ -154,3 +154,17 @@ export function injectAgentSession(source, hrefs = agentSessionHrefs()) {
   );
   return next;
 }
+
+const EVAL_ONLY_NEEDLE = "const EVAL_ONLY_TOOL_NAMES = new Set([\"bash\", \"powershell\", \"workflow\", \"monitor\"]);";
+const EVAL_ONLY_REPLACEMENT = "const EVAL_ONLY_TOOL_NAMES = new Set([]);";
+
+/**
+ * Leave bash/powershell/monitor on the native tool list. Eval stays registered;
+ * SDK `evalOnlyToolNames` still overrides this default.
+ *
+ * @param {string} source
+ * @returns {string}
+ */
+export function injectEvalOnlyDirectTools(source) {
+  return replaceOnce(source, EVAL_ONLY_NEEDLE, EVAL_ONLY_REPLACEMENT, "eval-only shell tools");
+}

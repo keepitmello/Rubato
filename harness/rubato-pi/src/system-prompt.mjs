@@ -20,7 +20,6 @@ export const TOOL_GUIDELINES = `## Tool Guidelines
 - Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.
 - Use write only for new files or complete rewrites.
 - Use one todo operation at a time; batch it with the real work rather than making a solo todo turn. Reference tasks and phases by their exact content/name.
-- If a step needs more than one tool call, prefer one eval cell that runs independent calls together and returns distilled facts.
 - Record durable facts, preferences, and decisions with the memory tool as you learn them; every change is committed with the reason you provide. Never let memory bookkeeping replace answering the user's current message.
 - Memory files are markdown with YAML frontmatter; keep each block's description accurate because the memory index surfaces it.
 - Use memory_apply_patch for multi-file or multi-hunk memory edits; prefer the memory tool for single-block changes.

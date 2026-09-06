@@ -1,7 +1,6 @@
 // rubato patched copy of senpi-codemode/src/prompt/eval-prompt.ts.
-// Diff from vendor: the <eval_first_batching> opening line, and "file sets" -> "a known file list"
-// in every dialect, so a single lookup stays one direct tool call and tree search stays rg/find.
-// Wired by transforms/control-codemode-redirect.mjs (jiti alias).
+// Diff from vendor: one short common rule (direct tools vs eval), no per-model
+// batching dialects in the rendered prompt. Wired by control-codemode-redirect.mjs.
 import type { EvalRuntimeInfo } from "../tool/types.ts";
 
 export interface EnabledLanguages {
@@ -22,9 +21,9 @@ export interface EvalPromptOptions {
 	/** Whether the session registry exposes the monitor tool through eval. */
 	readonly monitor?: boolean;
 	readonly spawnDefaultAgent?: string;
-	/** Active model id; selects the emphasis dialect of the batching guidance. */
+	/** Active model id; style helpers still classify it, rendered guidance does not branch. */
 	readonly modelId?: string;
-	/** Preformatted host line (e.g. "darwin arm64 · Apple M5 Max · 18 cores"); enables the host-sizing note. */
+	/** Preformatted host line (e.g. "darwin arm64 · Apple M5 Max · 18 cores"); enables the host identity line. */
 	readonly hostLine?: string;
 	/** Identity of the in-process js kernel; a bun runtime swaps the Node.js worker line for the Bun one. */
 	readonly jsRuntime?: EvalRuntimeInfo;
@@ -32,7 +31,7 @@ export interface EvalPromptOptions {
 	readonly bunSkillPath?: string;
 }
 
-/** Prompt dialect for the eval-first batching emphasis. */
+/** Prompt dialect for eval composition emphasis. */
 export type EvalEmphasisStyle = "default" | "claude" | "codex" | "gpt" | "kimi";
 
 const CLAUDE_MODEL_RE = /(^|[/.:])claude[-.]/i;
@@ -41,16 +40,15 @@ const KIMI_MODEL_RE = /(^|[/.:])kimi[-.]/i;
 const OPENAI_MODEL_RE = /(^|[/.:])(gpt|chatgpt|codex)[-.]|(^|[/.:])o[134](?:[-.]|$)/i;
 
 /**
- * Selects the eval-first batching dialect for a model id:
+ * Selects the eval composition dialect for a model id:
  * - `claude`: Claude/GLM — direct imperatives; both are steered most reliably
  *   by explicit tagged directives (GLM prompting guidance routes to Claude's).
  * - `gpt`: GPT models — terse composition-forward rules that direct detached
  *   cells to notify on completion instead of being polled.
  * - `codex`: Other OpenAI reasoning families — terse bounded rules, no emphasis spam.
- * - `kimi`: Kimi K-series — maximum-emphasis POSITIVE imperatives (uppercase/
- *   bold DO-framing); all-caps NEVER prohibitions stay out because they make
- *   K-series overthink instead of comply.
- * - `default`: everything else (and no model) — maximum-emphasis fallback.
+ * - `kimi`: Kimi K-series — positive imperatives (uppercase/bold DO-framing);
+ *   all-caps NEVER prohibitions stay out because they make K-series overthink.
+ * - `default`: everything else (and no model) — same optional-eval rules.
  */
 /** True only for GPT model ids that receive the terse eval composition dialect. */
 export function isGptCodeModeModel(modelId: string | undefined): boolean {
@@ -73,32 +71,9 @@ const EVAL_PROMPT_TEMPLATE = `Run one step of code in a persistent kernel.
 <instruction>
 **One eval call = one cell = one logical step.** Top-level names persist per language across eval calls{{#if spawns}}, tool calls and \`task\` subagents{{else}} and tool calls{{/if}}: define helpers and clients once and reuse them instead of re-importing or re-reading. Rebuild state only after \`reset\`, a kernel restart, or a \`NameError\`/\`ReferenceError\`, and check a sentinel variable first so a re-run cannot duplicate side effects.
 
-{{#if styleClaude}}<eval_first_batching>
-\`eval\` is for steps that need several tool calls at once: write ONE cell that runs them together. A single lookup (one \`rg\`, one file read, one command) is one direct tool call, not a cell; searching the tree is \`rg\`/\`find\` through \`bash\`, not a read-every-file loop.
-- Enumerate every lookup the step needs, then run all independent ones simultaneously with \`parallel(thunks)\` inside the cell; keep calls sequential only when one result feeds the next.
-- Write real code around the calls: loop or comprehend over a known file list with \`read()\`/stdlib, branch per case, and wrap risky calls in try/except so one failure degrades only its item — recover or retry inside the cell, keep the batch alive.
-- Post-process \`tool.<name>()\` results programmatically — filter, join, aggregate — and return distilled facts, not raw dumps.
-{{#if monitor}}- Start long-running work (build, test run, deploy, or watch) through \`tool.monitor({ command, filter })\`, putting the decisive-line filter inside the same cell, then keep working until its event wakes the turn.{{/if}}
-</eval_first_batching>{{/if}}{{#if styleGpt}}<gpt_eval_dialect>
-GPT eval: compose multi-tool work inside one cell with \`tool.<name>(args)\` and \`parallel(thunks)\`; do not split a planned step into serial tool calls.
-- Long cells detach on timeout and notify on completion; do not poll or re-run them.
-- Filter, join, and aggregate tool results in the cell; return only decision-relevant facts.
-{{#if monitor}}- For long-running build, test run, deploy, or watch work, start \`tool.monitor({ command, filter })\` with the decisive-line filter in the same cell; keep working until its event wakes the turn.{{/if}}
-</gpt_eval_dialect>{{/if}}{{#if styleCodex}}Route multi-call steps through eval: one cell per step, independent lookups dispatched together via \`parallel(thunks)\`; keep work sequential only when one result determines the next action.
-- Loop or comprehend over a known file list with \`read()\`/stdlib instead of reading files one call at a time; post-process \`tool.<name>()\` results programmatically — filter, join, aggregate.
-- Wrap failable calls in try/except inside the cell; a failed item degrades only itself. After two distinct failed strategies for the same fact, fall back to direct tool calls.
-- Reduce large results in-kernel to the facts the task needs before returning.
-{{#if monitor}}- Long-running build/test/deploy/watch work: start \`tool.monitor({ command, filter })\` with the decisive-line filter inside the same cell, then continue working until its event wakes the turn.{{/if}}{{/if}}{{#if styleKimi}}**EVAL IS YOUR SUPERPOWER — MAKE IT YOUR DEFAULT WAY TO ACT.** Before any step, think: "how do I execute this WHOLE step in ONE parallelized cell?" — then write that ONE cell.
-- **BATCH EVERYTHING AT ONCE:** enumerate EVERY independent lookup the step needs and dispatch them ALL simultaneously with \`parallel(thunks)\` in that cell; keep calls sequential only when one result feeds the next.
-- **WRITE REAL CODE, NOT CALL CHAINS:** loop or comprehend over a known file list with \`read()\`/stdlib, post-process \`tool.<name>()\` results programmatically, and put try/except around each risky call so the rest of the batch completes.
-- **DISTILL IN-KERNEL:** filter, join, and aggregate \`tool.<name>()\` results in code, then return ONLY the distilled facts.
-{{#if monitor}}- **DO start long-running build, test run, deploy, or watch work with \`tool.monitor({ command, filter })\`, put the decisive-line filter INSIDE THE SAME CELL, and KEEP WORKING until its event wakes the turn.**{{/if}}{{/if}}{{#if styleDefault}}**EVAL IS YOUR PRIMARY EXECUTION SURFACE.** Any step that needs MORE THAN ONE tool call MUST be written as ONE cell — NEVER as a chain of single tool calls.
-- **PLAN THE WHOLE STEP, THEN BATCH IT.** Enumerate every read/search/lookup the step needs and dispatch ALL independent ones through \`parallel(thunks)\` in one cell.
-- **WRITE REAL CODE, NOT CALL LISTS.** Loop or comprehend over a known file list with \`read()\`/stdlib, branch \`if\`/\`else\` per case, post-process \`tool.<name>()\` results programmatically, and wrap EVERY risky call in try/except so ONE failure NEVER kills the batch.
-- **DISTILL IN-KERNEL.** Filter, join, diff, and aggregate in code before returning; return facts, NOT dumps.
-{{#if monitor}}- **LONG-RUNNING build, test run, deploy, or watch work MUST start with \`tool.monitor({ command, filter })\`, with the decisive-line filter INSIDE THE SAME CELL; KEEP WORKING until its event wakes the turn.**{{/if}}{{/if}}
+Ordinary calls are direct tools. Use eval for programmatic intermediates or persistent calculations; \`parallel(thunks)\` is available inside a cell.
 {{#if hostLine}}
-Host: {{hostLine}} — cells execute here. Size \`parallel(thunks)\` pools to its cores; \`tool.<name>()\` shell commands must fit this platform, even when the code you are writing targets another machine.
+Host: {{hostLine}} — cells execute here; \`tool.<name>()\` shell commands must fit this platform, even when the code you are writing targets another machine.
 {{/if}}
 
 \`language\`: {{#if py}}\`"py"\` IPython kernel{{/if}}{{#ifAll py js}}, {{/ifAll}}{{#if js}}\`"js"\` persistent JavaScript VM{{/if}}{{#if rb}}{{#ifAny py js}}, {{/ifAny}}\`"rb"\` persistent Ruby kernel{{/if}}{{#if jl}}{{#ifAny py js rb}}, {{/ifAny}}\`"jl"\` persistent Julia kernel{{/if}}.
@@ -167,13 +142,7 @@ export function buildEvalPrompt(
 		rb: enabled.rb,
 		jl: enabled.jl,
 		spawns: options.spawns,
-		monitor: options.monitor === true,
 		spawnDefaultAgent,
-		styleClaude: style === "claude",
-		styleCodex: style === "codex",
-		styleGpt: style === "gpt",
-		styleKimi: style === "kimi",
-		styleDefault: style === "default",
 		hostLine: options.hostLine ?? "",
 		jsBun: options.jsRuntime?.name === "bun",
 		jsVersion: options.jsRuntime?.version ?? "",
@@ -192,19 +161,16 @@ export function buildEvalPrompt(
 	};
 }
 
-/**
- * System-prompt guideline per emphasis dialect. The default dialect carries
- * maximum emphasis so unmapped models still batch through eval; the others are
- * tuned to what steers that family reliably.
- */
+const COMMON_GUIDELINE =
+	"Ordinary calls are direct tools. Use eval for programmatic intermediates or persistent calculations; parallel(thunks) is available inside a cell.";
+
+/** Same guideline for every dialect so callers of evalEmphasisStyle stay compatible. */
 const BATCHING_GUIDELINES: Record<EvalEmphasisStyle, string> = {
-	default:
-		"**EVAL FIRST.** Any step needing MORE THAN ONE tool call MUST be ONE eval cell: run independent calls in parallel, wrap risky calls in try/except, and return distilled facts — NEVER a chain of single tool calls.",
-	claude:
-		"Prefer eval for any step needing more than one tool call: one cell that runs independent calls in parallel, handles per-call failures in code, and returns distilled facts.",
-	codex: "Route multi-call steps through eval: one cell per step, independent calls dispatched in parallel; fall back to direct tool calls when one call is sufficient or each result changes the next decision.",
-	gpt: "Use eval to compose tool work in one cell; long cells detach on timeout and notify on completion, so do not poll.",
-	kimi: "**EVAL IS YOUR SUPERPOWER — DEFAULT TO IT.** Execute EVERY multi-call step as ONE eval cell: run ALL independent calls simultaneously via parallel(thunks), handle failures per item in code, and return ONLY distilled facts.",
+	default: COMMON_GUIDELINE,
+	claude: COMMON_GUIDELINE,
+	codex: COMMON_GUIDELINE,
+	gpt: COMMON_GUIDELINE,
+	kimi: COMMON_GUIDELINE,
 };
 
 function renderTemplate(template: string, context: Context): string {

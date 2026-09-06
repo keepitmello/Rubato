@@ -147,7 +147,7 @@ test("every role gets the shared tool guidelines and not Senpi's body", () => {
     assert.match(next, /## Tool Guidelines/);
     assert.ok(next.includes(TOOL_GUIDELINES));
     assert.match(next, /instead of cat or sed/);
-    assert.match(next, /one eval cell/);
+    assert.doesNotMatch(next, /Use eval when a step needs/);
     assert.match(next, /one todo operation at a time/);
     assert.match(next, /memory tool/);
     assert.doesNotMatch(next, /I read this as/);

@@ -3,7 +3,7 @@
 // pi-ai codex-overflow, convertToLlm hidden-custom remap 를 load transform 으로 옮기는 자리.
 // 규약은 tui-chrome.mjs 와 같다: pristine 니들, 없으면 throw, 패치 공존 중 inert.
 
-import { injectAgentSession, isAgentSessionUrl } from "./core-agent-session.mjs";
+import { injectAgentSession, injectEvalOnlyDirectTools, isAgentSessionUrl } from "./core-agent-session.mjs";
 import { injectCompaction, injectContextTokensGuard, isCompactionUrl, isContextTokensUrl } from "./core-compaction.mjs";
 import { injectCompactionUtils, isCompactionUtilsUrl } from "./core-compaction-utils.mjs";
 import {
@@ -44,6 +44,10 @@ import {
   isSessionSelectorUrl,
 } from "./core-session-list-page.mjs";
 import { injectStreamWatchdog, isStreamWatchdogUrl } from "./core-stream-watchdog.mjs";
+import {
+  injectEvalOnlyRouting, injectTerminalExtension, injectTerminalPrompt,
+  isEvalOnlyRoutingUrl, isTerminalExtensionUrl, isTerminalPromptUrl,
+} from "./core-terminal-routing.mjs";
 
 /**
  * @param {string} url
@@ -58,7 +62,10 @@ export function applyCoreSessionTransforms(url, source, applyTransform) {
   if (isCompactionUtilsUrl(url)) source = applyTransform(source, injectCompactionUtils);
   if (isCompactionContextPipelineUrl(url)) source = applyTransform(source, injectCompactionContextPipeline);
   if (isCompactionOverflowRetryUrl(url)) source = applyTransform(source, injectCompactionOverflowRetry);
-  if (isAgentSessionUrl(url)) source = applyTransform(source, injectAgentSession);
+  if (isAgentSessionUrl(url)) {
+    source = applyTransform(source, injectAgentSession);
+    source = applyTransform(source, injectEvalOnlyDirectTools);
+  }
   if (isSpeculativeUrl(url)) source = applyTransform(source, injectSpeculative);
   if (isServiceTierUrl(url)) source = applyTransform(source, injectServiceTier);
   if (isOverflowUrl(url)) source = applyTransform(source, injectOverflow);
@@ -82,11 +89,18 @@ export function applyCoreSessionTransforms(url, source, applyTransform) {
   if (isSdkUrl(url)) source = applyTransform(source, injectResumeUsabilityBudget);
   if (isMessagesUrl(url)) source = applyTransform(source, injectMessages);
   if (isRoutineSettingsUrl(url)) source = applyTransform(source, injectRoutineSettings);
+  if (isEvalOnlyRoutingUrl(url)) source = applyTransform(source, injectEvalOnlyRouting);
+  if (isTerminalExtensionUrl(url)) source = applyTransform(source, injectTerminalExtension);
+  if (isTerminalPromptUrl(url)) source = applyTransform(source, injectTerminalPrompt);
   return source;
 }
 
 export {
   injectAgentSession,
+  injectEvalOnlyDirectTools,
+  injectEvalOnlyRouting,
+  injectTerminalExtension,
+  injectTerminalPrompt,
   injectCompaction,
   injectContextTokensGuard,
   injectCompactionIndexReason,
@@ -108,6 +122,9 @@ export {
   injectSpeculative,
   injectStreamWatchdog,
   isAgentSessionUrl,
+  isEvalOnlyRoutingUrl,
+  isTerminalExtensionUrl,
+  isTerminalPromptUrl,
   isCompactionUrl,
   isContextTokensUrl,
   isCompactionIndexUrl,
