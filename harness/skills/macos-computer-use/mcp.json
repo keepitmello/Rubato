@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "cua_repl": {
+      "command": "/bin/zsh",
+      "args": [
+        "-lc",
+        "exec \"$HOME/.agents/skills/macos-computer-use/scripts/launch-cua-repl.zsh\""
+      ],
+      "includeTools": ["js", "js_reset"],
+      "startupTimeoutMs": 120000
+    }
+  }
+}
