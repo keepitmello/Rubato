@@ -10,6 +10,7 @@ import {
   formatContext,
   formatFooterLatencyMs,
   formatFooterMetrics,
+  formatRemoteSurfaceSegment,
   formatLatency,
   formatLatencyMs,
   formatModelWithEffort,
@@ -1246,6 +1247,45 @@ test("paintStatusLines stamps xAI /fast as [priority]", () => {
     speedText: "Speed —",
   });
   assert.match(lines.join("\n"), /Grok 4\.6 xhigh \[priority\]/);
+});
+
+test("remote surface footer segment follows registered, degraded, and backoff state", () => {
+  assert.equal(formatRemoteSurfaceSegment(undefined), "");
+  assert.equal(formatRemoteSurfaceSegment({ registered: true, legacyOutgoing: false }), "remote ✓");
+  assert.equal(formatRemoteSurfaceSegment({ registered: true, legacyOutgoing: true }), "remote v1↓");
+  assert.equal(formatRemoteSurfaceSegment({ registered: false, reconnectDelay: 8_000 }), "remote ✗ 8s");
+  assert.equal(formatRemoteSurfaceSegment({ registered: false, reconnectDelay: 250 }), "remote ✗ 0.25s");
+});
+
+test("paintStatusLines appends the remote surface segment", () => {
+  const lines = paintStatusLines({
+    ctx: {
+      cwd: "/tmp/repo",
+      model: { id: "anthropic/claude-opus-5", contextWindow: 1_000_000 },
+      thinkingLevel: "high",
+      getContextUsage: () => ({ tokens: 2_000, contextWindow: 1_000_000, percent: 0.2 }),
+      sessionManager: { getBranch: () => [] },
+    },
+    footerData: { getGitBranch: () => "main", getExtensionStatuses: () => new Map() },
+    width: 160,
+    speedText: "Speed —",
+    remote: { registered: true, legacyOutgoing: true },
+  });
+  assert.match(lines.join("\n"), /remote v1↓/);
+  const idle = paintStatusLines({
+    ctx: {
+      cwd: "/tmp/repo",
+      model: { id: "anthropic/claude-opus-5", contextWindow: 1_000_000 },
+      thinkingLevel: "high",
+      getContextUsage: () => ({ tokens: 2_000, contextWindow: 1_000_000, percent: 0.2 }),
+      sessionManager: { getBranch: () => [] },
+    },
+    footerData: { getGitBranch: () => "main", getExtensionStatuses: () => new Map() },
+    width: 160,
+    speedText: "Speed —",
+    remote: null,
+  });
+  assert.doesNotMatch(idle.join("\n"), /remote /);
 });
 
 test("paintStatusLines is the Rubato line, not senpi's cwd/cost/auto footer", () => {

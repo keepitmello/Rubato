@@ -33,6 +33,7 @@ interface Connection {
   readonly socket: Socket
   liveSessionId?: LiveSessionId
   surfaceInstanceId?: string
+  rejectionLog?: Set<string>
 }
 
 export interface LocalDoctorCheck {
@@ -148,7 +149,7 @@ export class SurfaceSocketServer implements SurfaceActions {
       try {
         for (const frame of decoder.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk)) {
           finishHandshake()
-          void this.#handle(connection, frame).catch(() => socket.destroy())
+          void this.#handle(connection, frame).catch((error) => this.#dropSurfaceFrame(connection, frame, error))
         }
       } catch {
         finishHandshake()
@@ -165,6 +166,32 @@ export class SurfaceSocketServer implements SurfaceActions {
       finishHandshake()
       socket.destroy()
     })
+  }
+
+  #dropSurfaceFrame(connection: Connection, input: unknown, error: unknown): void {
+    const kind = isRecord(input) && typeof input["kind"] === "string" ? input["kind"] : "frame"
+    const reason = truncateRejectionReason(error instanceof Error ? error.message : String(error))
+    const signature = `${kind}:${reason}`
+    const log = connection.rejectionLog ?? new Set<string>()
+    connection.rejectionLog = log
+    if (!log.has(signature)) {
+      log.add(signature)
+      const liveSessionId = connection.liveSessionId ?? "-"
+      console.error(`surface frame dropped liveSessionId=${liveSessionId} kind=${kind}: ${reason}`)
+    }
+    const finish = () => {
+      if (!connection.socket.destroyed) connection.socket.destroy()
+    }
+    try {
+      const frame = { kind: "hub.rejected", protocol: REMOTE_PROTOCOL_NAME, reason } satisfies HubToSurfaceFrame
+      if (connection.socket.destroyed || !connection.socket.writable) {
+        finish()
+        return
+      }
+      connection.socket.write(encodeFrame(frame), finish)
+    } catch {
+      finish()
+    }
   }
 
   async #handle(connection: Connection, input: unknown): Promise<void> {
@@ -370,4 +397,9 @@ function agentStateExecution(payload: unknown): "working" | "idle" | undefined {
   if (!isRecord(payload)) return undefined
   const execution = payload["execution"]
   return execution === "working" || execution === "idle" ? execution : undefined
+}
+
+function truncateRejectionReason(message: string): string {
+  const reason = message.trim() || "rejected"
+  return reason.length > 4_096 ? reason.slice(0, 4_096) : reason
 }

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { installRemoteSurface, isProcessExitShutdown, RemoteSurface, SurfaceEventBuffer } from "../../src/extensions/remote-surface.mjs";
+import { getInstalledRemoteSurface, installRemoteSurface, isProcessExitShutdown, RemoteSurface, resolveRemoteProtocolSource, SurfaceEventBuffer } from "../../src/extensions/remote-surface.mjs";
 
 const protocol = {
   REMOTE_PROTOCOL_NAME: "rubato.remote.v1",
@@ -197,7 +197,7 @@ test("repeated pre-registration failures back off instead of resetting", async (
   await surface.connectNow();
   await surface.receive(registered);
   onClose();
-  assert.deepEqual(delays, [250, 500, 1_000, 250]);
+  assert.deepEqual(delays, [250, 500, 1_000, 2_000]);
 });
 
 test("registration survives Pi methods that throw during extension loading", async () => {
@@ -918,27 +918,16 @@ test("schema rejection of snapshot timeline projects instead of disconnecting", 
   }
 });
 
-test("register snapshot-reject close cycles back off and emit one snapshot per registration", async () => {
+test("register send-OK close cycles back off and emit one snapshot per registration", async () => {
   const delays = [];
   let snapshotBuilds = 0;
   let onClose = () => {};
-  const rejecting = {
-    ...protocol,
-    surfaceToHubFrameSchema: {
-      parse(value) {
-        if (value?.kind === "surface.snapshot") {
-          throw new Error("$.state.timeline: is not allowed");
-        }
-        return value;
-      },
-    },
-  };
   const surface = new RemoteSurface({
     getInteractiveControl: () => ({
       snapshot: () => ({ requestTimeline: { schemaVersion: 1, runs: [], pendingInputs: [], hasOlder: false } }),
       listCommands: () => [],
     }),
-  }, rejecting, {
+  }, protocol, {
     surfaceToken: "surface-token",
     connect: async (_onMessage, close) => {
       onClose = close;
@@ -966,19 +955,12 @@ test("register snapshot-reject close cycles back off and emit one snapshot per r
   await surface.receive(registered);
   assert.equal(surface.registered, true);
   assert.equal(snapshotBuilds, 1);
-  assert.equal(surface.buffer.events.length, 0);
-  assert.equal(surface.buffer.snapshotRequired, true);
-  surface.emitSnapshot();
-  surface.emitSnapshot();
-  assert.equal(snapshotBuilds, 1);
   onClose();
   assert.deepEqual(delays, [250]);
 
   surface.reconnectTimer = undefined;
   await surface.connectNow();
   await surface.receive(registered);
-  assert.equal(snapshotBuilds, 2);
-  surface.emitSnapshot();
   assert.equal(snapshotBuilds, 2);
   onClose();
   assert.deepEqual(delays, [250, 500]);
@@ -996,4 +978,104 @@ test("disconnected closes the socket it abandons", async () => {
   surface.disconnected();
   assert.equal(closed, 1);
   assert.equal(surface.connection, undefined);
+});
+
+test("protocol resolver prefers env, then checkout, then installed", () => {
+  const checkoutFiles = new Set(["/repo/packages/rubato-remote-protocol/src/index.ts"]);
+  const exists = (value) => checkoutFiles.has(value);
+  const fromFile = "/repo/harness/rubato-pi/src/extensions/remote-surface.mjs";
+  const installedPath = "/opt/rubato/protocol/index.mjs";
+
+  assert.deepEqual(
+    resolveRemoteProtocolSource({
+      env: { RUBATO_REMOTE_PROTOCOL: "/custom/protocol.mjs" },
+      exists,
+      fromFile,
+      installedPath,
+      cwd: "/",
+    }),
+    { source: "env", path: "/custom/protocol.mjs" },
+  );
+
+  const checkout = resolveRemoteProtocolSource({ env: {}, exists, fromFile, installedPath });
+  assert.equal(checkout.source, "checkout");
+  assert.equal(checkout.path, "/repo/packages/rubato-remote-protocol/dist/index.mjs");
+  assert.equal(checkout.entry, "/repo/packages/rubato-remote-protocol/src/index.ts");
+  assert.equal(checkout.checkoutRoot, "/repo");
+
+  assert.deepEqual(
+    resolveRemoteProtocolSource({
+      env: { RUBATO_REMOTE_PROTOCOL: "  " },
+      exists: () => false,
+      fromFile: "/opt/rubato/extensions/remote-surface.mjs",
+      installedPath,
+    }),
+    { source: "installed", path: installedPath },
+  );
+});
+
+test("unknown hub frame kind is ignored instead of disconnecting", async () => {
+  let closed = 0;
+  const surface = new RemoteSurface({}, {
+    ...protocol,
+    HUB_TO_SURFACE_FRAME_KINDS: ["hub.launch", "hub.registered", "hub.action"],
+    hubToSurfaceFrameSchema: {
+      parse(value) {
+        if (value?.kind === "hub.rejected") throw new Error("unknown kind");
+        if (value?.kind === "hub.action" && !value.request) throw new Error("missing request");
+        return value;
+      },
+    },
+  }, {
+    surfaceToken: "surface-token",
+    connect: async () => ({ send() {}, close() { closed += 1; } }),
+    clock: { now: () => 1_000, setTimeout: () => 1, clearTimeout, setInterval, clearInterval },
+  });
+  await surface.connectNow();
+  await surface.receive({ kind: "hub.rejected", protocol: "rubato.remote.v1", reason: "stale surface" });
+  assert.equal(closed, 0);
+  assert.equal(surface.connection !== undefined, true);
+  await surface.receive({ kind: "hub.action", protocol: "rubato.remote.v1" });
+  assert.equal(surface.connection, undefined);
+  assert.ok(closed >= 1);
+});
+
+test("heartbeat after 30s registered resets reconnect delay", async () => {
+  let now = 1_000;
+  const sent = [];
+  const surface = new RemoteSurface({}, protocol, {
+    surfaceToken: "surface-token",
+    connect: async () => ({ send: (value) => sent.push(value), close() {} }),
+    clock: { now: () => now, setTimeout: () => 1, clearTimeout, setInterval, clearInterval },
+  });
+  await surface.connectNow();
+  await surface.receive(registered);
+  surface.reconnectDelay = 8_000;
+  now = 20_000;
+  surface.sendHeartbeat();
+  assert.equal(surface.reconnectDelay, 8_000);
+  now = 31_000;
+  surface.sendHeartbeat();
+  assert.equal(surface.reconnectDelay, 250);
+  assert.equal(sent.some((frame) => frame.kind === "surface.heartbeat"), true);
+});
+
+test("RemoteSurface.state reports registered, degraded, and backoff", async () => {
+  const surface = new RemoteSurface({}, protocol, {
+    surfaceToken: "surface-token",
+    connect: async () => ({ send() {}, close() {} }),
+    clock: { now: () => 1_000, setTimeout: () => 1, clearTimeout, setInterval, clearInterval },
+  });
+  await surface.connectNow();
+  assert.deepEqual(surface.state(), {
+    registered: false,
+    legacyOutgoing: false,
+    reconnectDelay: 250,
+    negotiatedProtocolVersion: undefined,
+  });
+  await surface.receive(registered);
+  surface.legacyOutgoing = true;
+  assert.equal(surface.state().registered, true);
+  assert.equal(surface.state().legacyOutgoing, true);
+  assert.equal(getInstalledRemoteSurface({ liveSessionId: surface.liveSessionId }), undefined);
 });

@@ -53,6 +53,7 @@ import type {
   HubActionFrame,
   HubLaunchFrame,
   HubRegisteredFrame,
+  HubRejectedFrame,
   HubToSurfaceFrame,
   SessionSnapshot,
   SessionSnapshotState,
@@ -220,6 +221,15 @@ export const hubActionFrameSchema = makeSchema<HubActionFrame>(root(object({
   kind: literal("hub.action"), protocol, request: nested(actionRequestSchema),
 })))
 
+const rejectionReason: Checker = (value, path, issues) => {
+  if (typeof value !== "string" || value.length < 1 || value.length > 4_096 || value.includes("\0")) {
+    add(issues, path, "must be a string of 1 to 4096 characters without NUL")
+  }
+}
+export const hubRejectedFrameSchema = makeSchema<HubRejectedFrame>(root(object({
+  kind: literal("hub.rejected"), protocol, reason: rejectionReason,
+})))
+
 export const surfaceToHubFrameSchema = makeSchema<SurfaceToHubFrame>(root(discriminated("kind", {
   "bootstrap.claim": schemaChecker(bootstrapClaimFrameSchema),
   "surface.register": schemaChecker(surfaceRegisterFrameSchema),
@@ -234,6 +244,7 @@ export const hubToSurfaceFrameSchema = makeSchema<HubToSurfaceFrame>(root(discri
   "hub.launch": schemaChecker(hubLaunchFrameSchema),
   "hub.registered": schemaChecker(hubRegisteredFrameSchema),
   "hub.action": schemaChecker(hubActionFrameSchema),
+  "hub.rejected": schemaChecker(hubRejectedFrameSchema),
 })))
 
 export const surfaceReconnectCredentialPayloadSchema = makeSchema<SurfaceReconnectCredentialPayload>(root(object({

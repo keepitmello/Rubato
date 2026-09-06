@@ -26,6 +26,9 @@ import { uuidV7 } from "./uuid.js"
 import { HubWebSocketServer } from "./websocket.js"
 import { ExecFileRunner, ZmxProcessAdapter } from "./zmx.js"
 
+stampProcessOutput(process.stdout)
+stampProcessOutput(process.stderr)
+
 const paths = defaultHubPaths()
 const storedConfig = await ensureHostConfig(paths.host, {
   ...(process.env["RUBATO_HOST_DISPLAY_NAME"] === undefined ? {} : { displayName: process.env["RUBATO_HOST_DISPLAY_NAME"] }),
@@ -110,6 +113,27 @@ const stop = async (): Promise<void> => {
 }
 process.once("SIGINT", () => void stop().finally(() => process.exit(0)))
 process.once("SIGTERM", () => void stop().finally(() => process.exit(0)))
+
+function stampProcessOutput(stream: NodeJS.WriteStream): void {
+  const write = stream.write.bind(stream)
+  let atLineStart = true
+  stream.write = ((chunk: string | Uint8Array, encoding?: BufferEncoding | ((error?: Error | null) => void), callback?: (error?: Error | null) => void) => {
+    const cb = typeof encoding === "function" ? encoding : callback
+    const enc = typeof encoding === "string" ? encoding : undefined
+    const text = typeof chunk === "string" ? chunk : Buffer.from(chunk).toString(enc ?? "utf8")
+    const prefix = `${new Date().toISOString()} `
+    let out = ""
+    for (const char of text) {
+      if (atLineStart) {
+        out += prefix
+        atLineStart = false
+      }
+      out += char
+      if (char === "\n") atLineStart = true
+    }
+    return write(out, enc as BufferEncoding | undefined, cb)
+  }) as typeof stream.write
+}
 
 function parsePairingBaseUrl(value: string | undefined): string | undefined {
   if (!value) return undefined

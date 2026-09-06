@@ -24,6 +24,7 @@ import {
   hubActionFrameSchema,
   hubLaunchFrameSchema,
   hubRegisteredFrameSchema,
+  hubRejectedFrameSchema,
   hubToSurfaceFrameSchema,
   imageUploadRequestSchema,
   imageUploadResponseSchema,
@@ -121,10 +122,12 @@ describe("canonical surface and bootstrap frames", () => {
       } },
       { kind: "hub.registered", protocol: REMOTE_PROTOCOL_NAME, hostSeq: 9, reconnectToken: "reconnect-token", protocolRange: { min: 1, max: 1 }, negotiation: { compatible: true, version: 1 } },
       { kind: "hub.action", protocol: REMOTE_PROTOCOL_NAME, request: action },
+      { kind: "hub.rejected", protocol: REMOTE_PROTOCOL_NAME, reason: "$.state.timeline: is not allowed" },
     ]
     expectValid(hubLaunchFrameSchema, hubFrames[0])
     expectValid(hubRegisteredFrameSchema, hubFrames[1])
     expectValid(hubActionFrameSchema, hubFrames[2])
+    expectValid(hubRejectedFrameSchema, hubFrames[3])
     for (const frame of hubFrames) expectValid(hubToSurfaceFrameSchema, frame)
   })
 

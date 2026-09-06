@@ -110,6 +110,12 @@ export interface HubActionFrame {
   readonly request: ActionRequestEnvelope
 }
 
+export interface HubRejectedFrame {
+  readonly kind: "hub.rejected"
+  readonly protocol: RemoteProtocolName
+  readonly reason: string
+}
+
 export type SurfaceToHubFrame =
   | BootstrapClaimFrame
   | SurfaceRegisterFrame
@@ -119,7 +125,7 @@ export type SurfaceToHubFrame =
   | SurfaceSummaryFrame
   | SurfaceActionResultFrame
 
-export type HubToSurfaceFrame = HubLaunchFrame | HubRegisteredFrame | HubActionFrame
+export type HubToSurfaceFrame = HubLaunchFrame | HubRegisteredFrame | HubActionFrame | HubRejectedFrame
 
 export interface SurfaceReconnectCredentialPayload {
   readonly schemaVersion: 1
