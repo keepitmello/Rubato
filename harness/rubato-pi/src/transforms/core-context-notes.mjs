@@ -13,6 +13,12 @@ function once(source, pattern, insertion, label) {
   return source.replace(pattern, (match) => match + insertion);
 }
 
+function onceReplace(source, pattern, replacement, label) {
+  const matches = [...source.matchAll(new RegExp(pattern.source, "g"))];
+  if (matches.length !== 1) throw new Error(`문맥 관리 연결 위치가 달라졌어요 (${label}, ${matches.length}곳). 설치된 senpi 버전을 확인해 주세요.`);
+  return source.replace(pattern, replacement);
+}
+
 function header(hrefs, names = []) {
   return `import { historyNotesEnabled as __rubatoNotesEnabled } from ${JSON.stringify(hrefs.config)};\n` +
     (names.length ? `import { ${names.join(", ")} } from ${JSON.stringify(hrefs.gate)};\n` : "");
@@ -63,7 +69,11 @@ export function applyContextNotesTransforms(url, source, options = {}) {
         const commitPattern = /const compactionEntryId = this\.sessionManager\.appendCompaction\(/g;
         if ([...next.matchAll(commitPattern)].length !== 1) throw new Error("문맥 전환 직전 검사 위치가 달라졌어요.");
         next = next.replace(commitPattern, "assertTransitionCommit(request, this.sessionManager);\n            const compactionEntryId = this.sessionManager.appendCompaction(");
-        next = header(hrefs, ["assertCompactionRequest", "assertSessionReady", "assertTransitionCommit", "markEnginePart"]) + next + '\nmarkEnginePart("session");\n';
+        next = onceReplace(next,
+          /const messages = compactedBeforeCallback \? this\.agent\.state\.messages\.slice\(\) : turn\.context\.messages;/,
+          "const messages = notesTurnMessages(turn, this.agent.state.messages) ?? (compactedBeforeCallback ? this.agent.state.messages.slice() : turn.context.messages);",
+          "next-turn window");
+        next = header(hrefs, ["assertCompactionRequest", "assertSessionReady", "assertTransitionCommit", "notesTurnMessages", "markEnginePart"]) + next + '\nmarkEnginePart("session");\nmarkEnginePart("turn");\n';
         break;
       case "lane":
         next = once(next, /disablesSenpiCompaction\(context\)\s*\{/,

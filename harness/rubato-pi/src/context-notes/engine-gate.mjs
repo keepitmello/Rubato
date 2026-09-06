@@ -1,12 +1,12 @@
 import { readAuthoritativeBranch } from "./history-source.mjs";
 import { assertCheckpointFresh } from "./checkpoint.mjs";
 import { historyNotesEnabled } from "./config.mjs";
-import { bootstrapMessage, validateTransition } from "./protocol.mjs";
+import { BOOTSTRAP_PREFIX, bootstrapMessage, validateTransition } from "./protocol.mjs";
 
 const KEY = Symbol.for("rubato.history-notes.sessions.v1");
 const DRIFT_KEY = Symbol.for("rubato.history-notes.drift.v1");
 const sessions = globalThis[KEY] ??= new Map();
-export const REQUIRED_MARKERS = ["lane", "messages", "session", "settings", "pipeline", "anthropic"];
+export const REQUIRED_MARKERS = ["lane", "messages", "session", "settings", "pipeline", "anthropic", "turn"];
 
 export function markEnginePart(name) {
   globalThis[Symbol.for(`rubato.history-notes.${name}.v1`)] = true;
@@ -63,6 +63,26 @@ export function assertTransitionCommit(request, manager) {
     throw new Error("문맥 전환 준비 기록과 적용할 경계가 다르게 지정됐어요.");
   }
   assertCheckpointFresh(branch, { id: details.checkpointEntryId });
+}
+
+function messageHasNotesWindow(message) {
+  const texts = [];
+  if (typeof message?.content === "string") texts.push(message.content);
+  else if (Array.isArray(message?.content)) {
+    for (const part of message.content) if (typeof part?.text === "string") texts.push(part.text);
+  }
+  return texts.some((text) => text.startsWith(BOOTSTRAP_PREFIX));
+}
+
+// After an extension applyCompaction at turn_end, senpi's next-turn prepare still
+// feeds turn.context.messages unless its own threshold compaction also ran.
+export function notesTurnMessages(turn, agentMessages) {
+  if (!historyNotesEnabled()) return undefined;
+  const agent = Array.isArray(agentMessages) ? agentMessages : [];
+  if (!agent.some(messageHasNotesWindow)) return undefined;
+  const captured = turn?.context?.messages;
+  if (Array.isArray(captured) && captured.some(messageHasNotesWindow)) return undefined;
+  return agent.slice();
 }
 
 export function notesAwareSummaryMessage(summary, timestamp) {
