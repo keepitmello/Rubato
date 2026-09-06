@@ -1,6 +1,9 @@
+import { historyNotesEnabled } from "./config.mjs";
+import { SUMMARY_SESSION_TOOL_ERROR } from "./mode-policy.mjs";
+
 // Flat tool names preserve the Codex operations across providers whose function
 // names cannot contain periods. TypeBox comes from the pinned senpi installation.
-export function createContextNotesTools(getController, T) {
+export function createContextNotesTools(getController, T, notesActive = historyNotesEnabled) {
   const optional = (type) => T.Optional(type);
   const str = () => T.String();
   const int = (max = 100) => optional(T.Integer({ minimum: 1, maximum: max }));
@@ -52,6 +55,7 @@ export function createContextNotesTools(getController, T) {
     parameters: T.Object(properties, { additionalProperties: false }),
     async execute(id, params, signal, _onUpdate, ctx) {
       signal?.throwIfAborted();
+      if (!notesActive()) throw new Error(SUMMARY_SESSION_TOOL_ERROR);
       const controller = getController(ctx);
       controller.refresh(ctx);
       if (controller.fatal) throw new Error(controller.fatal);
