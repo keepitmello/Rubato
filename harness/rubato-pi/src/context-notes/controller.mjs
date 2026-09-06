@@ -227,17 +227,8 @@ export class ContextNotesController {
     return { messages };
   }
 
-  showStatus(usage) {
-    if (!this.ctx.model?.contextWindow) {
-      this.ctx.ui?.setStatus?.("rubato-context-notes", "문맥 모드 준비 · 모델을 선택해 주세요");
-      return;
-    }
-    usage ??= this.usage();
-    this.ctx.ui?.setStatus?.("rubato-context-notes", this.fatal || (this.paused && !this.checkpointRequested)
-      ? `문맥 전환 중단 · ${this.fatal ?? this.paused}`
-      : this.checkpointRequested
-        ? `문맥 ${this.window.number + 1} · 체크포인트 턴 · 노트 ${this.store.noteVersions.size}개`
-        : `문맥 ${this.window.number + 1} · 약 ${usage.remaining.toLocaleString()}토큰 남음 · 노트 ${this.store.noteVersions.size}개`);
+  showStatus(_usage) {
+    this.ctx.ui?.setStatus?.("rubato-context-notes", undefined);
   }
 
   fail(error, fatal = false) {
@@ -245,12 +236,9 @@ export class ContextNotesController {
     if (fatal) this.fatal = message; else this.paused = message;
     try { this.record("paused", { reason: message }); } catch { /* original failure wins */ }
     this.ctx.ui?.notify?.(message, "error");
-    if (this.checkpointRequested && !fatal) {
-      this.showStatus();
-      return;
-    }
+    this.showStatus();
+    if (this.checkpointRequested && !fatal) return;
     this.checkpointRequested = false;
-    this.ctx.ui?.setStatus?.("rubato-context-notes", `문맥 전환 중단 · ${message}`);
     this.ctx.abort?.("system");
   }
 
