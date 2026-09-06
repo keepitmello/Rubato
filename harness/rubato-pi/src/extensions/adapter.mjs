@@ -13,6 +13,7 @@ import { installRemoteSurface } from "./remote-surface.mjs";
 import { installServerCompaction } from "./server-compaction.mjs";
 import { installSessionTitle } from "./session-title.mjs";
 import { installStatusline } from "./statusline.mjs";
+import { installToolOutputPreviews } from "./tool-output.mjs";
 
 assertEngineBuilt();
 
@@ -72,6 +73,7 @@ async function activateAdapterOverlay(pi) {
 export default async function rubatoPiAdapter(pi) {
   installEvalSearchGuard(pi);
   installMeasurementHooks(pi);
+  installToolOutputPreviews(pi);
   installServerCompaction(pi);
   const member = isTeamMemberProcess();
   const role = resolveRole();
