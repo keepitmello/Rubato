@@ -1,6 +1,22 @@
 import { historyNotesEnabled } from "./config.mjs";
 import { SUMMARY_SESSION_TOOL_ERROR } from "./mode-policy.mjs";
 
+export const CONTEXT_NOTES_TOOL_NAMES = Object.freeze([
+  "history_list_windows", "history_list_items", "history_search_contents", "history_read_item",
+  "notes_list_files_by_prefix", "notes_read_file", "notes_search_contents", "notes_write_file",
+  "notes_append_to_file", "new_context", "get_context_remaining",
+]);
+
+export function syncNotesToolActivation(pi, enabled) {
+  if (typeof pi.getActiveTools !== "function" || typeof pi.setActiveTools !== "function") return;
+  const notes = new Set(CONTEXT_NOTES_TOOL_NAMES);
+  const current = pi.getActiveTools();
+  const next = enabled
+    ? [...new Set([...current, ...CONTEXT_NOTES_TOOL_NAMES])]
+    : current.filter((name) => !notes.has(name));
+  pi.setActiveTools(next);
+}
+
 // Flat tool names preserve the Codex operations across providers whose function
 // names cannot contain periods. TypeBox comes from the pinned senpi installation.
 export function createContextNotesTools(getController, T, notesActive = historyNotesEnabled) {
@@ -51,7 +67,7 @@ export function createContextNotesTools(getController, T, notesActive = historyN
       {}, (c) => ({ ...c.usage(), window: c.window, mode: "history-notes" })],
   ];
   return definitions.map(([name, label, description, properties, action, executionMode = "parallel"]) => ({
-    name, label, description, exposure: "direct", executionMode,
+    name, label, description, exposure: "search", allowLazyActivation: false, executionMode,
     parameters: T.Object(properties, { additionalProperties: false }),
     async execute(id, params, signal, _onUpdate, ctx) {
       signal?.throwIfAborted();

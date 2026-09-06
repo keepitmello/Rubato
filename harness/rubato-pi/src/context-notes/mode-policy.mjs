@@ -27,6 +27,22 @@ export function defaultContextModeForModel(model = {}) {
   return notes ? HISTORY_NOTES_MODE : SUMMARY_MODE;
 }
 
+export function branchFromLeaf(entries = [], leafId) {
+  const byId = new Map();
+  for (const entry of entries) {
+    if (typeof entry?.id === "string") byId.set(entry.id, entry);
+  }
+  const output = [];
+  let at = leafId;
+  while (at) {
+    const entry = byId.get(at);
+    if (!entry) break;
+    output.push(entry);
+    at = entry.parentId;
+  }
+  return output.reverse();
+}
+
 export function recordedModeFromBranch(branch = []) {
   for (let i = branch.length - 1; i >= 0; i -= 1) {
     const entry = branch[i];
@@ -59,11 +75,12 @@ export function hasNotesWindowBoundary(branch = []) {
   }
 }
 
-export function adoptContextMode({ env = process.env, branch = [], model } = {}) {
+export function adoptContextMode({ env = process.env, branch = [], model, allowModelDefault = true } = {}) {
   if (isUserExplicitContextMode(env)) return contextMode(env);
   const recorded = recordedModeFromBranch(branch);
   if (recorded) return recorded;
   if (hasNotesWindowEntries(branch)) return HISTORY_NOTES_MODE;
+  if (!allowModelDefault) return SUMMARY_MODE;
   return defaultContextModeForModel(model);
 }
 
