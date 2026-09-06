@@ -72,8 +72,8 @@ If the family or requested tier cannot be verified, stop before send.
 
 Known picker path:
 
-1. Open the current Chat tier button once (`즉시`/`중간`/`높음`/`매우 높음`/`Pro`
-   or `추론 수준`).
+1. Open the current Chat tier button once (`즉시`/`중간`/`높음`/`매우 높음`/`Pro`,
+   quota-prefixed `NPro`/`N Pro`, or `추론 수준`).
 2. In the simple tier view, read the current `N개 중 M번째` index.
 3. Focus the `성능` menuitem and move with `ArrowLeft`/`ArrowRight` until
    the label is `매우 높음` for `xhigh` or `Pro` for `pro`.

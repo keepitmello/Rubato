@@ -807,11 +807,26 @@ var submitState = await Promise.race([
         );
     await composer.waitFor({{ state: 'visible', timeout: 15000 }});
     submitStage = 'select-tier';
+    // Closed Pro pill accessible name is quota+label with no space, e.g. "6Pro".
     var tierButton = workPage.getByRole(
       'button',
-      {{ name: /^(추론 수준|즉시|중간|높음|매우 높음|Pro)$/ }}
+      {{ name: /^(추론 수준|즉시|중간|높음|매우 높음|[0-9]* ?Pro)$/ }}
     ).last();
-    await tierButton.waitFor({{ state: 'visible', timeout: 10000 }});
+    try {{
+      await tierButton.waitFor({{ state: 'visible', timeout: 10000 }});
+    }} catch (error) {{
+      var foundTiers = await workPage.locator('button[aria-haspopup="menu"]').evaluateAll((els) =>
+        els.map((el) => ({{
+          text: (el.innerText || '').replace(/\\s+/g, ' ').trim(),
+          visible: !!(el.offsetWidth || el.offsetHeight)
+        }}))
+      ).catch(() => []);
+      throw new Error(
+        'tier button not visible: expected 추론 수준/즉시/중간/높음/매우 높음/[0-9]*Pro found ' +
+        JSON.stringify(foundTiers) +
+        ' url=' + workPage.url()
+      );
+    }}
     await tierButton.click();
     var performance = workPage.getByRole('menuitem', {{ name: '성능' }});
     await performance.waitFor({{ state: 'visible', timeout: 5000 }});
