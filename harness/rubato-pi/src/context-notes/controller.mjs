@@ -33,9 +33,17 @@ function identity(message) {
     message?.toolName, message?.content]);
 }
 
+function estimateText(message) {
+  if (typeof message?.content === "string") return message.content;
+  if (!Array.isArray(message?.content)) return "";
+  // Count visible text only. Reasoning/tool payloads stringified as JSON would
+  // inflate the experiment budget far past the engine's actual token meter.
+  return message.content.map((part) => typeof part?.text === "string" ? part.text : "").join("\n");
+}
+
 function estimate(messages, systemPrompt = "") {
   let bytes = Buffer.byteLength(systemPrompt);
-  for (const message of messages ?? []) bytes += Buffer.byteLength(messageText(message)) + 32;
+  for (const message of messages ?? []) bytes += Buffer.byteLength(estimateText(message)) + 32;
   // Heuristic only, NOT a tokenizer or a proof of fitting the provider window.
   return Math.ceil(bytes / 3);
 }
@@ -51,6 +59,7 @@ export class ContextNotesController {
     this.store = options.store ?? new ContextNotesStore(databasePath(ctx.agentDir, this.sessionId), this.config);
     this.ctx = baseContext(ctx);
     this.pending = null;
+    this.checkpointRequested = false;
     this.fatal = null;
     this.paused = null;
     this.leaf = undefined;
@@ -142,10 +151,15 @@ export class ContextNotesController {
         .map(({ name, description, parameters }) => ({ name, description, parameters })));
     }
     const estimated = estimate(messages, (this.ctx.getSystemPrompt?.() ?? "") + toolDefinitions);
-    const sampled = this.hasSample ? Number(this.ctx.getContextUsage?.()?.tokens) : 0;
-    const tokens = Number.isFinite(sampled) && sampled > 0 ? Math.max(sampled, estimated) : estimated;
+    const live = Number(this.ctx.getContextUsage?.()?.tokens);
+    const sampled = this.hasSample && Number.isFinite(live) && live > 0 ? live : 0;
+    // The experiment budget follows the engine meter when it exists so a
+    // conservative byte heuristic cannot stop a session the footer still shows as half-empty.
+    const tokens = sampled > 0 ? sampled : estimated;
+    const conservative = Math.max(tokens, estimated);
     const budget = windowBudget(this.ctx.model, this.config);
-    return { tokens, ...budget, remaining: Math.max(0, budget.target - tokens), sampled: this.hasSample && sampled > 0 };
+    return { tokens, conservative, estimated, ...budget, remaining: Math.max(0, budget.target - tokens),
+      sampled: sampled > 0 };
   }
 
   admit(messages) {
@@ -159,8 +173,15 @@ export class ContextNotesController {
     }
     if (!messages) return;
     const usage = this.usage(messages);
+    const recoveryLimit = Math.floor(usage.full * 0.9);
+    if (usage.conservative >= recoveryLimit) {
+      this.showStatus({ ...usage, remaining: 0 });
+      throw new Error(`체크포인트 턴을 안전하게 실행할 여유도 남지 않았어요. 기록은 보존했으니 더 큰 한도로 같은 세션을 다시 열어 주세요.`);
+    }
     if (usage.tokens >= usage.target) {
-      throw new Error(`현재 문맥이 실험 한도 ${usage.target}토큰에 도달했어요. 기록은 보존했으며 요약이나 긴급 삭제는 실행하지 않았어요. /new-context를 확인하거나 더 큰 한도로 같은 세션을 다시 열어 주세요.`);
+      if (!this.checkpointRequested) this.requestCheckpoint();
+      else { this.paused = null; return; }
+      throw new Error(`현재 문맥이 실험 한도 ${usage.target}토큰에 도달했어요. 기록은 보존했으며 요약이나 긴급 삭제는 실행하지 않았어요. 체크포인트 전용 턴을 시작했어요.`);
     }
     this.paused = null;
   }
@@ -213,9 +234,11 @@ export class ContextNotesController {
       return;
     }
     usage ??= this.usage();
-    this.ctx.ui?.setStatus?.("rubato-context-notes", this.fatal || this.paused
+    this.ctx.ui?.setStatus?.("rubato-context-notes", this.fatal || (this.paused && !this.checkpointRequested)
       ? `문맥 전환 중단 · ${this.fatal ?? this.paused}`
-      : `문맥 ${this.window.number + 1} · 약 ${usage.remaining.toLocaleString()}토큰 남음 · 노트 ${this.store.noteVersions.size}개`);
+      : this.checkpointRequested
+        ? `문맥 ${this.window.number + 1} · 체크포인트 턴 · 노트 ${this.store.noteVersions.size}개`
+        : `문맥 ${this.window.number + 1} · 약 ${usage.remaining.toLocaleString()}토큰 남음 · 노트 ${this.store.noteVersions.size}개`);
   }
 
   fail(error, fatal = false) {
@@ -223,6 +246,11 @@ export class ContextNotesController {
     if (fatal) this.fatal = message; else this.paused = message;
     try { this.record("paused", { reason: message }); } catch { /* original failure wins */ }
     this.ctx.ui?.notify?.(message, "error");
+    if (this.checkpointRequested && !fatal) {
+      this.showStatus();
+      return;
+    }
+    this.checkpointRequested = false;
     this.ctx.ui?.setStatus?.("rubato-context-notes", `문맥 전환 중단 · ${message}`);
     this.ctx.abort?.("system");
   }
@@ -321,6 +349,7 @@ export class ContextNotesController {
       const committed = this.store.branch.findLast((e) => e.type === "compaction" && e.details?.window?.windowId === window.windowId);
       this.flush(ctx.sessionManager, committed.id);
       this.pending = null;
+      this.checkpointRequested = false;
       if (applyError || outcome?.applied !== true) {
         // The disk boundary may be committed while the engine's live state or
         // provider reset failed. Never run a second cut or claim success.
@@ -343,6 +372,8 @@ export class ContextNotesController {
       if (ctx.signal?.aborted || ["aborted", "error"].includes(_event?.message?.stopReason)) {
         this.pending = null;
         this.record("transition_cancelled");
+        if (!this.fatal && ctx.model?.contextWindow && this.usage().tokens >= this.usage().target &&
+            !this.checkpointRequested) this.requestCheckpoint();
         return;
       }
       this.refresh(ctx, true);
@@ -353,10 +384,41 @@ export class ContextNotesController {
           throw new Error("노트 작성 뒤 사용자 요청이나 대화 가지가 바뀌었어요. 전환하지 않았으니 노트를 갱신해 주세요.");
         }
         await this.roll(ctx, "tool");
-      } else if (ctx.model?.contextWindow && this.usage().tokens >= this.usage().target) {
-        await this.roll(ctx, "budget");
+      } else if (this.checkpointRequested || ctx.model?.contextWindow) {
+        const usage = this.usage();
+        const note = this.store.latestNoteForWindow(this.window.windowId, this.lastUser);
+        let fresh = false;
+        if (note) {
+          try { assertCheckpointFresh(this.store.branch, note); fresh = true; }
+          catch { /* request a checkpoint-only turn below */ }
+        }
+        if (this.checkpointRequested) {
+          if (fresh) await this.roll(ctx, usage.tokens >= usage.target ? "budget" : "manual");
+          else {
+            this.checkpointRequested = false;
+            throw new Error("체크포인트 전용 턴이 작업 노트를 저장하지 않았어요. 이전 문맥은 그대로 유지했어요.");
+          }
+        } else if (ctx.model?.contextWindow && usage.tokens >= usage.target) {
+          if (fresh) await this.roll(ctx, "budget");
+          else this.requestCheckpoint();
+        }
       }
     } catch (error) { this.fail(error); }
+  }
+
+  requestCheckpoint() {
+    const usage = this.usage(this.activeMessages);
+    if (usage.tokens >= Math.floor(usage.full * 0.9)) {
+      throw new Error("체크포인트 턴을 안전하게 실행할 여유도 남지 않았어요. 기록은 보존했으니 더 큰 한도로 같은 세션을 다시 열어 주세요.");
+    }
+    if (this.checkpointRequested) return { requested: true, repeated: true };
+    this.checkpointRequested = true;
+    this.paused = null;
+    this.pi.sendMessage({ customType: "rubato-context-checkpoint-request", display: true,
+      content: "지금은 체크포인트 전용 턴이에요. 다른 작업을 진행하지 말고 현재 작업의 목표·결정·진행·실패 이유·다음 단계와 원문 항목 위치를 notes 도구에 저장한 뒤 new_context를 호출해 주세요. 다른 모델로 요약하지 마세요." },
+    { triggerTurn: true, deliverAs: "steer" });
+    this.showStatus();
+    return { requested: true };
   }
 
   async manual(ctx) {
@@ -367,16 +429,12 @@ export class ContextNotesController {
       try { assertCheckpointFresh(this.store.branch, note); } catch { fresh = false; }
       if (fresh) return this.roll(ctx, "manual");
     }
-    this.admit(this.activeMessages);
-    this.pi.sendMessage({ customType: "rubato-context-checkpoint-request", display: true,
-      content: "현재 작업의 목표·결정·진행·실패 이유·다음 단계와 원문 항목 위치를 notes 도구에 저장한 뒤 new_context를 호출해 주세요. 다른 모델로 요약하지 마세요." },
-    { triggerTurn: true, deliverAs: "steer" });
-    return { requested: true };
+    return this.requestCheckpoint();
   }
 
   close() {
     if (this.closed) return;
-    this.closed = true; this.pending = null;
+    this.closed = true; this.pending = null; this.checkpointRequested = false;
     this.disposeGate?.(); this.store.close();
   }
 }
