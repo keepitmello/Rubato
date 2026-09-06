@@ -48,6 +48,19 @@ STAGE_HINTS = {
     "ready-to-send": "보내기 버튼",
     "commit-user-turn": "제출",
 }
+DEFAULT_PICKER_PATH = Path.home() / ".codex" / "outpost-picker.json"
+PREFERRED_MODEL_RADIO = "최신"
+FORBIDDEN_MODEL_RADIOS = ("GPT-5.6 Sol", "5.6 Sol")
+DEFAULT_TIER_ALIASES = (
+    "추론 수준",
+    "즉시",
+    "중간",
+    "높음",
+    "매우 높음",
+    "Pro",
+    "Instant",
+    "High",
+)
 CONVERSATION_ID_RE = re.compile(r"/c/([0-9a-fA-F-]{8,})")
 KOREAN_UPLOAD_PREAMBLE = (
     "첨부한 독립형 컨텍스트 패킷을 검토하고, 그 안의 질문이나 작업에 답해 주세요.\n\n"
@@ -64,6 +77,110 @@ KOREAN_FOLLOWUP_PREAMBLE = (
     "자연스럽고 이해하기 쉽게 설명해 주세요. 기술 용어와 영문 표현은 도움이 될 때 "
     "자유롭게 사용해도 됩니다."
 )
+
+
+
+def picker_contract_path() -> Path:
+    return Path(os.environ.get("OUTPOST_PICKER_PATH") or DEFAULT_PICKER_PATH)
+
+
+def default_picker_contract() -> dict[str, Any]:
+    return {
+        "modelRadio": PREFERRED_MODEL_RADIO,
+        "tierAliases": list(DEFAULT_TIER_ALIASES),
+        "xhighLabel": "매우 높음",
+        "proLabel": "Pro",
+        "forbiddenModels": list(FORBIDDEN_MODEL_RADIOS),
+    }
+
+
+def load_picker_contract() -> dict[str, Any]:
+    contract = default_picker_contract()
+    path = picker_contract_path()
+    if not path.is_file():
+        return contract
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return contract
+    if not isinstance(data, dict):
+        return contract
+    model = str(data.get("modelRadio") or "").strip()
+    if model and model not in FORBIDDEN_MODEL_RADIOS:
+        contract["modelRadio"] = model
+    aliases = data.get("tierAliases")
+    if isinstance(aliases, list):
+        merged: list[str] = []
+        for item in list(DEFAULT_TIER_ALIASES) + [str(alias) for alias in aliases]:
+            text = " ".join(item.split())
+            if text and text not in merged:
+                merged.append(text)
+        contract["tierAliases"] = merged
+    xhigh = str(data.get("xhighLabel") or "").strip()
+    pro = str(data.get("proLabel") or "").strip()
+    if xhigh:
+        contract["xhighLabel"] = xhigh
+    if pro:
+        contract["proLabel"] = pro
+    return contract
+
+
+def save_picker_contract(contract: dict[str, Any]) -> Path:
+    path = picker_contract_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(contract, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def tier_name_pattern(aliases: Sequence[str]) -> str:
+    parts: list[str] = []
+    seen: set[str] = set()
+    for raw in aliases:
+        text = " ".join(str(raw).split())
+        if not text:
+            continue
+        for candidate in (text, re.sub(r"\s+", "", text)):
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            parts.append(re.escape(candidate))
+    parts.append(r"[0-9]* ?Pro")
+    return r"^(?:" + "|".join(parts) + r")$"
+
+
+def picker_from_doctor_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
+    radios = payload.get("modelRadios") or []
+    names: list[str] = []
+    for row in radios:
+        if isinstance(row, dict):
+            name = str(row.get("name") or "").strip()
+        else:
+            name = str(row).strip()
+        if name:
+            names.append(name)
+    if PREFERRED_MODEL_RADIO not in names:
+        return None
+    aliases: list[str] = []
+    hint = re.compile(r"(추론|즉시|중간|높음|Pro|Instant|High|Thinking)", re.I)
+    for item in list(DEFAULT_TIER_ALIASES) + [str(x) for x in (payload.get("tierInnerText") or [])]:
+        text = " ".join(item.split())
+        if not text or text in aliases:
+            continue
+        if text in DEFAULT_TIER_ALIASES or hint.search(text):
+            aliases.append(text)
+    return {
+        "modelRadio": PREFERRED_MODEL_RADIO,
+        "tierAliases": aliases,
+        "xhighLabel": "매우 높음",
+        "proLabel": "Pro",
+        "forbiddenModels": list(FORBIDDEN_MODEL_RADIOS),
+        "observedAt": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "url": str(payload.get("url") or ""),
+        "modelRadios": names,
+        "tierInnerText": [
+            " ".join(str(x).split()) for x in (payload.get("tierInnerText") or []) if str(x).strip()
+        ],
+    }
 
 
 def load_sessions_module():
@@ -693,8 +810,13 @@ def build_repl_script(
     artifact_output: str | None = None,
     conversation_url: str | None = None,
     follow_up: bool = False,
+    picker: dict[str, Any] | None = None,
 ) -> str:
-    target_label = "Pro" if quality == "pro" else "매우 높음"
+    picker = picker or load_picker_contract()
+    target_label = picker["proLabel"] if quality == "pro" else picker["xhighLabel"]
+    target_model = str(picker.get("modelRadio") or PREFERRED_MODEL_RADIO)
+    tier_pattern = tier_name_pattern(picker.get("tierAliases") or DEFAULT_TIER_ALIASES)
+    model_pattern = r"^" + re.escape(target_model) + r"$"
     composer_label = composer_aria_label(project_name)
     continue_mode = bool(conversation_url)
     start_url = conversation_url or project_url
@@ -712,6 +834,9 @@ var packetBase64 = {js(packet_base64)};
 var artifactRequested = {js(artifact_output is not None)};
 var composerPrompt = {js(build_composer_prompt(topic, outpost_id, artifact_output, follow_up=follow_up))};
 var targetLabel = {js(target_label)};
+var targetModel = {js(target_model)};
+var tierNameRe = new RegExp({js(tier_pattern)});
+var modelNameRe = new RegExp({js(model_pattern)});
 var verifiedTier = null;
 var submitStartedAt = Date.now();
 var submitStage = 'open-isolated-tab';
@@ -827,7 +952,7 @@ var submitState = await Promise.race([
     // Closed Pro pill accessible name is quota+label with no space, e.g. "6Pro".
     var tierButton = workPage.getByRole(
       'button',
-      {{ name: /^(추론 수준|즉시|중간|높음|매우 높음|[0-9]* ?Pro)$/ }}
+      {{ name: tierNameRe }}
     ).last();
     try {{
       await tierButton.waitFor({{ state: 'visible', timeout: 10000 }});
@@ -839,7 +964,7 @@ var submitState = await Promise.race([
         }}))
       ).catch(() => []);
       throw new Error(
-        'tier button not visible: expected 추론 수준/즉시/중간/높음/매우 높음/[0-9]*Pro found ' +
+        'tier button not visible: expected ' + tierNameRe + ' found ' +
         JSON.stringify(foundTiers) +
         ' url=' + workPage.url()
       );
@@ -888,14 +1013,14 @@ var submitState = await Promise.race([
     verifiedTier = selected.label + ' (' + selected.index + ' of ' + selected.total + ')';
     submitStage = 'verify-model';
     await workPage.getByRole('menuitem', {{ name: '모델 선택' }}).click();
-    var latest = workPage.getByRole('menuitemradio', {{ name: /^최신$/ }});
+    var latest = workPage.getByRole('menuitemradio', {{ name: modelNameRe }});
     try {{
       await latest.waitFor({{ state: 'visible', timeout: 5000 }});
     }} catch (error) {{
-      throw new Error('최신 radio not visible');
+      throw new Error(targetModel + ' radio not visible');
     }}
     if ((await latest.getAttribute('aria-checked')) !== 'true') await latest.click();
-    if ((await latest.getAttribute('aria-checked')) !== 'true') throw new Error('최신 not checked');
+    if ((await latest.getAttribute('aria-checked')) !== 'true') throw new Error(targetModel + ' not checked');
     await workPage.keyboard.press('Escape');
     submitStage = 'fill-composer';
     await composer.focus();
@@ -1006,7 +1131,7 @@ var conversationId = (stickyConversationUrl.match(/\\/c\\/([0-9a-fA-F-]{{8,}})/)
 console.log({js(SUBMIT_MARKER)} + JSON.stringify({{
   ok: true,
   quality,
-  model: '최신',
+  model: targetModel,
   tier: verifiedTier,
   submitElapsedMs,
   conversationUrl: stickyConversationUrl || (submittedTab ? submittedTab.url : workPage.url()),
@@ -1477,11 +1602,15 @@ def run_repl_outpost(
 
 
 
-def build_doctor_script(*, project_url: str, project_name: str) -> str:
+def build_doctor_script(*, project_url: str, project_name: str, picker: dict[str, Any] | None = None) -> str:
     composer_label = composer_aria_label(project_name)
+    picker = picker or load_picker_contract()
+    tier_pattern = tier_name_pattern(picker.get("tierAliases") or DEFAULT_TIER_ALIASES)
     return f"""
 var projectUrl = {js(project_url)};
 var composerLabel = {js(composer_label)};
+var preferredModel = {js(PREFERRED_MODEL_RADIO)};
+var tierNameRe = new RegExp({js(tier_pattern)});
 var report = {{
   url: '',
   title: '',
@@ -1494,9 +1623,11 @@ var report = {{
   chatSurfaceOk: false,
   tierInnerText: [],
   tierRoleMatched: false,
+  tierFallback: false,
   performanceVisible: false,
   modelMenuVisible: false,
   latestRadioPresent: false,
+  modelRadios: [],
   blockers: []
 }};
 var page = await openTab(projectUrl);
@@ -1525,20 +1656,37 @@ try {{
     && (await workToggle.getAttribute('aria-checked')) === 'true';
   report.chatSurfaceOk = report.chatChecked || (!report.workChecked && report.composerOk);
   if (!report.chatSurfaceOk) report.blockers.push('chat-surface');
-  var tierButton = page.getByRole(
-    'button',
-    {{ name: /^(추론 수준|즉시|중간|높음|매우 높음|[0-9]* ?Pro)$/ }}
-  ).last();
-  report.tierRoleMatched = (await tierButton.count()) > 0
-    && await tierButton.isVisible().catch(() => false);
   report.tierInnerText = await page.locator('button[aria-haspopup="menu"]').evaluateAll((els) =>
     els.map((el) => (el.innerText || '').replace(/\\s+/g, ' ').trim()).filter(Boolean)
   ).catch(() => []);
+  var tierButton = page.getByRole('button', {{ name: tierNameRe }}).last();
+  report.tierRoleMatched = (await tierButton.count()) > 0
+    && await tierButton.isVisible().catch(() => false);
+  if (!report.tierRoleMatched) {{
+    var menus = page.locator('button[aria-haspopup="menu"]');
+    var menuCount = await menus.count();
+    for (var i = menuCount - 1; i >= 0; i -= 1) {{
+      var candidate = menus.nth(i);
+      if (!(await candidate.isVisible().catch(() => false))) continue;
+      await candidate.click();
+      await sleep(800);
+      var opened = await page.getByRole('menuitem', {{ name: '성능' }}).isVisible().catch(() => false);
+      if (opened) {{
+        report.tierRoleMatched = true;
+        report.tierFallback = true;
+        break;
+      }}
+      await page.keyboard.press('Escape');
+      await sleep(200);
+    }}
+  }}
   if (!report.tierRoleMatched) {{
     report.blockers.push('tier');
   }} else {{
-    await tierButton.click();
-    await sleep(800);
+    if (!report.tierFallback) {{
+      await tierButton.click();
+      await sleep(800);
+    }}
     report.performanceVisible = await page.getByRole('menuitem', {{ name: '성능' }})
       .isVisible().catch(() => false);
     var modelItem = page.getByRole('menuitem', {{ name: '모델 선택' }});
@@ -1549,8 +1697,13 @@ try {{
     }} else {{
       await modelItem.click();
       await sleep(500);
-      var latest = page.getByRole('menuitemradio', {{ name: /^최신$/ }});
-      report.latestRadioPresent = (await latest.count()) > 0;
+      report.modelRadios = await page.locator('[role="menuitemradio"]').evaluateAll((els) =>
+        els.map((el) => ({{
+          name: (el.getAttribute('aria-label') || el.innerText || '').replace(/\\s+/g, ' ').trim(),
+          checked: el.getAttribute('aria-checked') === 'true'
+        }})).filter((row) => row.name)
+      ).catch(() => []);
+      report.latestRadioPresent = report.modelRadios.some((row) => row.name === preferredModel);
       if (!report.latestRadioPresent) report.blockers.push('latest');
     }}
     await page.keyboard.press('Escape');
@@ -1585,6 +1738,7 @@ def format_doctor_report(payload: dict[str, Any]) -> str:
         f"performance={'true' if payload.get('performanceVisible') else 'false'} "
         f"modelMenu={'true' if payload.get('modelMenuVisible') else 'false'} "
         f"latest={'true' if payload.get('latestRadioPresent') else 'false'}",
+        f"radios={json.dumps(payload.get('modelRadios') or [], ensure_ascii=False)}",
     ]
     blockers = payload.get("blockers") or []
     if blockers:
@@ -1625,11 +1779,25 @@ def run_doctor(args: argparse.Namespace) -> int:
         print("exit 75 — doctor가 ChatGPT UI를 읽지 못함", file=sys.stderr)
         print(transcript, file=sys.stderr)
         return 75
+    contract = picker_from_doctor_payload(payload)
+    wrote = None
+    if contract is not None:
+        wrote = save_picker_contract(contract)
+        payload = dict(payload)
+        payload["pickerPath"] = str(wrote)
+        payload["picker"] = contract
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
         print(format_doctor_report(payload))
-    return 0 if payload.get("ok") else 75
+        if wrote is not None:
+            print(f"OUTPOST_PICKER wrote {wrote}")
+    if payload.get("ok"):
+        return 0
+    if wrote is not None:
+        print("exit 0 — 피커 계약을 갱신했으니 다음 send는 이 이름을 쓴다.")
+        return 0
+    return 75
 
 
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
@@ -2049,6 +2217,7 @@ def main(argv: Sequence[str]) -> int:
                     artifact_output=str(artifact_path) if artifact_path else None,
                     conversation_url=conversation_url,
                     follow_up=follow_up,
+                    picker=load_picker_contract(),
                 ),
                 submit_timeout=SUBMIT_TIMEOUT_SECONDS,
                 response_timeout=args.response_timeout,

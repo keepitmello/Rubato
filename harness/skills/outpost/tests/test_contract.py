@@ -34,6 +34,7 @@ class ConsultAsideContractTest(unittest.TestCase):
 
         self.assertIn("run_aside_repl_outpost.py", runbook)
         self.assertIn("outpost doctor", runbook)
+        self.assertIn("outpost-picker.json", runbook)
         self.assertIn("under 120 seconds", runbook)
         self.assertIn("submitElapsedSeconds", runbook)
         self.assertIn("same project page", runbook)

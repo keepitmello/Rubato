@@ -45,8 +45,11 @@ outpost doctor --json
 
 It opens the configured project, checks the composer label, Chat surface,
 tier pill (`NPro` included), `성능` / `모델 선택`, and the `최신`
-radio, then closes the tab. Exit `0` if send would get past those locators.
-Exit `75` if the UI drifted. Never fills the composer and never clicks send.
+radio, then closes the tab. If the live names still include `최신`, doctor
+writes `~/.codex/outpost-picker.json` so the next send uses those aliases
+instead of waiting for a code patch. Exit `0` if send would get past those
+locators or the contract was refreshed. Exit `75` if `최신` is gone.
+Never fills the composer and never clicks send.
 
 ## Launch the fast path
 
