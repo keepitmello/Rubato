@@ -449,12 +449,23 @@ export function formatFooterMetrics({ speed } = {}) {
   return formatSpeedIndex(speed).text;
 }
 
-export function statuslineSegments({ model, remaining, window, branch, repo, cache, cacheLifetime, speed }) {
+export function formatRemoteSurfaceSegment(state) {
+  if (state == null) return "";
+  if (state.registered) return state.legacyOutgoing ? "remote v1↓" : "remote ✓";
+  const delayMs = Number(state.reconnectDelay);
+  const seconds = Number.isFinite(delayMs) ? Math.max(0, delayMs / 1000) : 0;
+  const label = Number.isInteger(seconds) ? String(seconds) : String(Number(seconds.toFixed(2)));
+  return `remote ✗ ${label}s`;
+}
+
+export function statuslineSegments({ model, remaining, window, branch, repo, cache, cacheLifetime, speed, remote }) {
   const parts = [`✦ ${model}`, formatContext(remaining, window)];
   const cacheText = formatCacheSegment(cache, cacheLifetime);
   if (cacheText) parts.push(cacheText);
   if (branch) parts.push(branch);
   if (repo) parts.push(repo);
+  const remoteText = formatRemoteSurfaceSegment(remote);
+  if (remoteText) parts.push(remoteText);
   parts.push(formatFooterMetrics({ speed }));
   return parts;
 }

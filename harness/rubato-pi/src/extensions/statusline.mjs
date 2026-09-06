@@ -8,6 +8,7 @@ import {
   formatContext,
   formatFooterMetrics,
   formatModelWithEffort,
+  formatRemoteSurfaceSegment,
   layoutStatusLines,
   remainingPercent,
   resolveCachePolicy,
@@ -15,6 +16,7 @@ import {
   sessionCacheHitPercent,
   truncateToWidth,
 } from "../statusline.mjs";
+import { getInstalledRemoteSurface } from "./remote-surface.mjs";
 import { BRAND_NAME } from "../brand.mjs";
 import {
   createBackgroundTracker,
@@ -146,6 +148,7 @@ export function paintStatusLines({
   speedText,
   backgroundGroups,
   nowMs = Date.now(),
+  remote = getInstalledRemoteSurface()?.state?.(),
 } = {}) {
   if (!ctx) return undefined;
   const usage = ctx.getContextUsage?.();
@@ -178,6 +181,8 @@ export function paintStatusLines({
   if (branch) identity.push({ text: branch, color: "dim" });
   const repo = repoBasename(ctx.cwd);
   if (repo) identity.push({ text: repo, color: "text" });
+  const remoteText = formatRemoteSurfaceSegment(remote);
+  if (remoteText) identity.push({ text: remoteText, color: "dim" });
   const metrics = [{ text: speedText ?? "Speed —", color: "dim" }];
   const mark = theme?.fg ? theme.fg("dim", BRAND_NAME) : BRAND_NAME;
   const lines = layoutStatusLines(paint(identity), paint(metrics), width, mark);
