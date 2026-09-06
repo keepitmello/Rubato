@@ -69,6 +69,12 @@ test("notesTurnMessages uses rebuilt agent messages only in notes mode after a w
     const next = notesTurnMessages(turn, [carrier]);
     assert.equal(next[0], carrier);
     assert.equal(notesTurnMessages({ context: { messages: [carrier] } }, [carrier]), undefined);
+    // A second transition: the loop copy still holds the previous window's carrier.
+    const { nextWindow } = await import("../../src/context-notes/protocol.mjs");
+    const later = { role: "user", content: [{ type: "text", text: encodeBootstrap(nextWindow(initialWindow())) }] };
+    const stale = { context: { messages: [carrier, { role: "user", content: "work in window 1" }] } };
+    assert.equal(notesTurnMessages(stale, [later])[0], later);
+    assert.equal(notesTurnMessages({ context: { messages: [later] } }, [later]), undefined);
     process.env.RUBATO_CONTEXT_MODE = "summary";
     assert.equal(notesTurnMessages(turn, [carrier]), undefined);
   } finally { if (old === undefined) delete process.env.RUBATO_CONTEXT_MODE; else process.env.RUBATO_CONTEXT_MODE = old; }
