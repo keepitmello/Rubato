@@ -1,0 +1,43 @@
+{
+  "formatVersion": 1,
+  "date": "2026-09-06",
+  "node": "22.16.0",
+  "unitTests": {
+    "uniquePassed": 104,
+    "failed": 0,
+    "skipped": 0,
+    "runs": [
+      {
+        "environment": "default history-notes",
+        "passed": 104
+      },
+      {
+        "environment": "summary",
+        "passed": 104
+      }
+    ]
+  },
+  "syntaxFilesPassed": 32,
+  "offlineCli": {
+    "auditArithmetic": "passed",
+    "bodyNotExported": "passed",
+    "astraGrid": {
+      "valid": 37,
+      "invalid": 3
+    },
+    "fableGrid": {
+      "valid": 71,
+      "invalid": 1
+    }
+  },
+  "realEngineIntegrationRun": false,
+  "fullRepositoryBuildRun": false,
+  "typecheckRun": false,
+  "liveModelRun": false,
+  "renderVerification": "pending",
+  "blockers": [
+    "Node 24+ and pinned engine dependencies unavailable",
+    "container network DNS failure prevents repository download",
+    "no rendered Rubato UI available"
+  ]
+}

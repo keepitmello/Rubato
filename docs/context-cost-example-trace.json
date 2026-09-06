@@ -1,0 +1,609 @@
+{
+  "formatVersion": 1,
+  "modelKey": "synthetic/not-a-real-model",
+  "warnings": [
+    "synthetic_workload_for_cli_smoke_test_not_real_economics"
+  ],
+  "calls": [
+    {
+      "newTokens": 5000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 9000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 18000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 7000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 11000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 5000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 9000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 18000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 7000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 11000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 5000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 9000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 18000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 7000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 11000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 5000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 9000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 18000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 7000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 11000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 5000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 9000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 18000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 7000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 11000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 5000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 9000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 18000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 7000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 11000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 5000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 9000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 18000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 7000,
+      "outputTokens": 600,
+      "gapMs": 900000
+    },
+    {
+      "newTokens": 11000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 5000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 9000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 18000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 7000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 11000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 5000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 9000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 18000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 7000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 11000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 5000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 9000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 18000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 7000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 11000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 5000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 9000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 18000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 7000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 11000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 5000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 9000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 18000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 7000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 11000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 5000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 9000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 18000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 7000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 11000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 5000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 9000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 18000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 7000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 11000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 5000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 9000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 18000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 7000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 11000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 5000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 9000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 18000,
+      "outputTokens": 2000,
+      "gapMs": 900000
+    },
+    {
+      "newTokens": 7000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 11000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 5000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 9000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 18000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 7000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 11000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 5000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 9000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 18000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 7000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 11000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 5000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 9000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 18000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 7000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 11000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 5000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 9000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 18000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 7000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 11000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 5000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 9000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 18000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 7000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 11000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 5000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 9000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 18000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 7000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 11000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 5000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 9000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 18000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 7000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 11000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 5000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 9000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 18000,
+      "outputTokens": 600,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 7000,
+      "outputTokens": 1100,
+      "gapMs": 15000
+    },
+    {
+      "newTokens": 11000,
+      "outputTokens": 2000,
+      "gapMs": 15000
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 import { stripChangelog } from "./no-changelog.mjs";
+import { applyContextNotesTransforms } from "./transforms/core-context-notes.mjs";
 import {
   injectEditorMouse,
   injectEditorMouseRouting,
@@ -110,6 +111,10 @@ export async function load(url, context, nextLoad) {
     if (isCollapsibleToolGroupUrl(url)) next = applyTransform(next, injectCollapsibleToolGroup);
     next = applyTransform(next, (text) => stripChangelog(text, url));
   }
+
+  // A missing memory/compaction safety patch must stop a notes-mode run.
+  // Do not wrap this in the cosmetic applyTransform drift catcher.
+  next = applyContextNotesTransforms(url, next);
 
   if (next === source) return result;
   return { format: result.format, source: next, shortCircuit: true };
