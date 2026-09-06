@@ -1,0 +1,417 @@
+{
+  "formatVersion": 2,
+  "date": "2026-09-06",
+  "repository": "keepitmello/Rubato",
+  "branch": "rubato/base",
+  "baseCommit": "98958616cda4e7a34aa2033f6d29028fea4d4219",
+  "previousPackage": "rubato-history-notes-98958616.zip",
+  "senpiPackageVersion": "2026.9.4-3",
+  "referenceSenpiCommit": "4df67dc87a21ccbc1c5b2de9e4cd69af295fec02",
+  "referenceCodexMainCommit": "a31c18ab7a5d8bb5da8e67e20261aa14d91aa3b2",
+  "validation": {
+    "formatVersion": 1,
+    "date": "2026-09-06",
+    "node": "22.16.0",
+    "unitTests": {
+      "uniquePassed": 104,
+      "failed": 0,
+      "skipped": 0,
+      "runs": [
+        {
+          "environment": "default history-notes",
+          "passed": 104
+        },
+        {
+          "environment": "summary",
+          "passed": 104
+        }
+      ]
+    },
+    "syntaxFilesPassed": 32,
+    "offlineCli": {
+      "auditArithmetic": "passed",
+      "bodyNotExported": "passed",
+      "astraGrid": {
+        "valid": 37,
+        "invalid": 3
+      },
+      "fableGrid": {
+        "valid": 71,
+        "invalid": 1
+      }
+    },
+    "realEngineIntegrationRun": false,
+    "fullRepositoryBuildRun": false,
+    "typecheckRun": false,
+    "liveModelRun": false,
+    "renderVerification": "pending",
+    "blockers": [
+      "Node 24+ and pinned engine dependencies unavailable",
+      "container network DNS failure prevents repository download",
+      "no rendered Rubato UI available"
+    ]
+  },
+  "notice": "Complete replacement for the first patch, not a full repository. Never overwrite divergent local edits. The manifest excludes itself. No GitHub writes. Cost results are conditional API-equivalent estimates, not subscription bills.",
+  "files": [
+    {
+      "path": "IMPLEMENTATION_HANDOFF.md",
+      "action": "add",
+      "bytes": 16954,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": "8de149193363e6fb5fdd10bc676d746175238e97ebd7e35b297034dca5becc23",
+      "sha256": "85758bd76770842d7de71000fb9e8719455d67be4a1fb3a0991c7e2ff2d4fe76"
+    },
+    {
+      "path": "docs/context-cost-astra-scenarios.json",
+      "action": "add",
+      "bytes": 2457,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": null,
+      "sha256": "4c3e6613898847e8601a2dbd61297f0225da4eecfc22bf560a07588e7410e138"
+    },
+    {
+      "path": "docs/context-cost-example-trace.json",
+      "action": "add",
+      "bytes": 10620,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": null,
+      "sha256": "ff18597114f6b7caa5278008271ef390ada7157be36a81cc54d3663d4d62f231"
+    },
+    {
+      "path": "docs/context-cost-fable-scenarios.json",
+      "action": "add",
+      "bytes": 2421,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": null,
+      "sha256": "be944e3feba2dc68fec9d3750ac0db428c0c99b442a348c01ef35a5c04d3ace4"
+    },
+    {
+      "path": "docs/context-cost-prices.json",
+      "action": "add",
+      "bytes": 1032,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": null,
+      "sha256": "71a06ce6825815837b1cc05c11a52e80a290ebbdee401277326232948ef6a282"
+    },
+    {
+      "path": "docs/context-cost-simulation-guide.md",
+      "action": "add",
+      "bytes": 22016,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": null,
+      "sha256": "de6105b72926c9fa2fe5829208c8817ac693df8228d03b12178647b7f303aa96"
+    },
+    {
+      "path": "docs/context-cost-local-measurement.md",
+      "action": "add",
+      "bytes": 6053,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": null,
+      "sha256": "c95f5449b25e2e8a53a99c27429bd20dc55ef93e3fe1ab97b7342216dd5237a1"
+    },
+    {
+      "path": "docs/context-notes-behavior-guide.md",
+      "action": "add",
+      "bytes": 11878,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": null,
+      "sha256": "568506466a7a170bfdaff77723e011a194c3df2a7d554af4209f7f94190d125e"
+    },
+    {
+      "path": "docs/context-notes-review.md",
+      "action": "add",
+      "bytes": 10279,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": null,
+      "sha256": "c81928a91c85bcee1aea21df6961beda17e5a4ce71118f0e9a065cd4721f333f"
+    },
+    {
+      "path": "docs/context-notes-validation.json",
+      "action": "add",
+      "bytes": 915,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": null,
+      "sha256": "767a3907e85c0831bbfb6b41310b68bbf9aa7dda299a96973bbcfa6d5800a747"
+    },
+    {
+      "path": "docs/context-notes-validation.md",
+      "action": "add",
+      "bytes": 4117,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": "2acc9ee0d1d3808710ad6151d9069df641484190f9f17e6f50d562681e927c2b",
+      "sha256": "25351290b8c85365847571ee667926b6a32326dce288eef81b1feeb5faf8e256"
+    },
+    {
+      "path": "docs/context-notes.md",
+      "action": "add",
+      "bytes": 8309,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": "bfe55129d96dec9952aa34676d355b01912ebe447b5c1e9b7b46df9cc060dd47",
+      "sha256": "e160f061f9c6633d6bc9372af4cc14b6122212613ab3886fb37a68e346fcb0c5"
+    },
+    {
+      "path": "harness/rubato-pi/package.json",
+      "action": "modify",
+      "bytes": 672,
+      "originalGitBlobSha": "229e0cd07f5e07fc321ee2317ab4ce9b98daa692",
+      "previousPackageSha256": "cf1054669b290db07a16485a8adc0406c1996e603bfe079d007e5111d7532084",
+      "sha256": "6a80be5d1aec56771509d2d0d72ec89c262f5bb98eae8f80a7c3fd0db34a34d3"
+    },
+    {
+      "path": "harness/rubato-pi/scripts/check-history-notes-engine.mjs",
+      "action": "add",
+      "bytes": 2680,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": "249f319365ae0fa999b07a618601b396c182d51ee4e938f8c422588d6723c57f",
+      "sha256": "a51c2d45e6a663a04cee00566dfd076b2e2e9495073afca9c9a3413233f0ef79"
+    },
+    {
+      "path": "harness/rubato-pi/scripts/context-cost-audit.mjs",
+      "action": "add",
+      "bytes": 8023,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": null,
+      "sha256": "419d7c10d5e6116a08107ef2938d0f50458fb2c291cf79ddb98a086bf0b64ccc"
+    },
+    {
+      "path": "harness/rubato-pi/scripts/context-cost-simulate.mjs",
+      "action": "add",
+      "bytes": 2569,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": null,
+      "sha256": "cb4b214af1d39a8c6d76a78050d407cbd33ab95662cda9d9c245bfd525caf030"
+    },
+    {
+      "path": "harness/rubato-pi/scripts/context-notes-report.mjs",
+      "action": "add",
+      "bytes": 1414,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": "cad56d9bee9e59276c14c327b3e7468abf812694b4b12c79db7a47f0a4eb3b11",
+      "sha256": "cad56d9bee9e59276c14c327b3e7468abf812694b4b12c79db7a47f0a4eb3b11"
+    },
+    {
+      "path": "harness/rubato-pi/scripts/lib/context-cost-model.mjs",
+      "action": "add",
+      "bytes": 8174,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": null,
+      "sha256": "b1bfe748d87cd49136e8eb662bfe7564768cd27cbf973603efad623c78b54e42"
+    },
+    {
+      "path": "harness/rubato-pi/scripts/run-unit-tests.mjs",
+      "action": "add",
+      "bytes": 820,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": "424e4478f65f74e834734a20559f9f2a1333b8c2042a84739d3df1d746129ee9",
+      "sha256": "424e4478f65f74e834734a20559f9f2a1333b8c2042a84739d3df1d746129ee9"
+    },
+    {
+      "path": "harness/rubato-pi/scripts/verify-context-notes-package.mjs",
+      "action": "add",
+      "bytes": 2780,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": null,
+      "sha256": "4723a345004a269e8f421d4b41d0a14e0b56ec39a3965962936099d2c6f5d938"
+    },
+    {
+      "path": "harness/rubato-pi/src/anthropic-server-compaction.mjs",
+      "action": "modify",
+      "bytes": 4100,
+      "originalGitBlobSha": "5c54a0e3ada4de41b4abbc45cdc025e7041468a6",
+      "previousPackageSha256": "0a302870082e98df89e6dd856d4c532dca9ed42b641b72f55f4dfef894b6f0fb",
+      "sha256": "0a302870082e98df89e6dd856d4c532dca9ed42b641b72f55f4dfef894b6f0fb"
+    },
+    {
+      "path": "harness/rubato-pi/src/context-notes/checkpoint.mjs",
+      "action": "add",
+      "bytes": 1550,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": null,
+      "sha256": "c07193743f1fdd460b3a812d469e9f228ebd9a05151fdf226888ed3ec72d01f3"
+    },
+    {
+      "path": "harness/rubato-pi/src/context-notes/config.mjs",
+      "action": "add",
+      "bytes": 2038,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": "e001ce9de3846c4462a1c300785fc543d1e4a666f1b5e993b827daf06e2081c2",
+      "sha256": "e001ce9de3846c4462a1c300785fc543d1e4a666f1b5e993b827daf06e2081c2"
+    },
+    {
+      "path": "harness/rubato-pi/src/context-notes/controller.mjs",
+      "action": "add",
+      "bytes": 22180,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": "8d2404bf1b07ce48e3e22455613f512e6cf832ae4ebb66877bb89988d02266fd",
+      "sha256": "f39608aafa005aed108d7352eda27343dcbd32aa6c8ec797890f2b3fc088cbed"
+    },
+    {
+      "path": "harness/rubato-pi/src/context-notes/engine-gate.mjs",
+      "action": "add",
+      "bytes": 3857,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": "6aad255fab9e795768279d72d64913712bd9ec5c587fc2b979d8cf537206f460",
+      "sha256": "a57b924e8351fc38ee174f2d3bb828c8837df0b283376567b9bcbafaea65b4b8"
+    },
+    {
+      "path": "harness/rubato-pi/src/context-notes/history-source.mjs",
+      "action": "add",
+      "bytes": 1760,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": "646ce4b6f05e5ca33d4b7e7ce2095d7fd344e156c1832d21c1cdf862b0093a76",
+      "sha256": "5464aaabeef340dc0e4d3271a6881f87898dbc9af9adf4790989f009075274f2"
+    },
+    {
+      "path": "harness/rubato-pi/src/context-notes/journal.mjs",
+      "action": "add",
+      "bytes": 1670,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": "1dba5bb99b75958b31b4ae9197b5dc621b283a0031bccfafdfb0b560e818111b",
+      "sha256": "1dba5bb99b75958b31b4ae9197b5dc621b283a0031bccfafdfb0b560e818111b"
+    },
+    {
+      "path": "harness/rubato-pi/src/context-notes/protocol.mjs",
+      "action": "add",
+      "bytes": 6491,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": "c71afb3e5f230715bce5b6565ea918bcad53f8be9e9452a3b564aa4bba79cb82",
+      "sha256": "9749cd96f3c8b085690b829efb82532dd713f987b07c2f65288e0bd9ac7fd8d3"
+    },
+    {
+      "path": "harness/rubato-pi/src/context-notes/reminder.mjs",
+      "action": "add",
+      "bytes": 2585,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": null,
+      "sha256": "001283aff19155948c28259abf4f397c2ea566aa0e27a16779d3824f3e4dea63"
+    },
+    {
+      "path": "harness/rubato-pi/src/context-notes/store.mjs",
+      "action": "add",
+      "bytes": 21632,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": "54143926311548509c0aeac18f33fe19343b92a32962a6f31f1d4ee39b3342a5",
+      "sha256": "9d2b32479a1cb70dc8e08daf3960bbb0ba07008a6934e85b171b036a5e83a48a"
+    },
+    {
+      "path": "harness/rubato-pi/src/context-notes/tools.mjs",
+      "action": "add",
+      "bytes": 6529,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": "53c8a03f285a101af90a6c0ce0384166fac8143310b53cfde3bf369c33a8436e",
+      "sha256": "da536fc8a7932a8960c3cdf884fc410ee03f23708bb6fee15587f4fc5ecce7c2"
+    },
+    {
+      "path": "harness/rubato-pi/src/extensions/adapter.mjs",
+      "action": "modify",
+      "bytes": 4155,
+      "originalGitBlobSha": "266573fb977997a3e15ef0b752ca3e63b94ac3d0",
+      "previousPackageSha256": "d26090f87d871f2bcce42ea0740cb6fefd5564313473fb544b73a91e765bfc4b",
+      "sha256": "d26090f87d871f2bcce42ea0740cb6fefd5564313473fb544b73a91e765bfc4b"
+    },
+    {
+      "path": "harness/rubato-pi/src/extensions/context-notes.mjs",
+      "action": "add",
+      "bytes": 4728,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": "f243ed33d378f43390dc6deb5593568ab6a5f253c348d378a0e5564cb217fbd5",
+      "sha256": "3b7ae4823f42fe57c6d07986d8948f25a99b031d9ac366bdce129578c9f85fa4"
+    },
+    {
+      "path": "harness/rubato-pi/src/no-changelog-hooks.mjs",
+      "action": "modify",
+      "bytes": 6238,
+      "originalGitBlobSha": "340f8c02509af6f31453aebff9f04a8858966cc6",
+      "previousPackageSha256": "3f795a21b8d90ab0407b01be8de06f6df84b2690540bc676db896dd20636f476",
+      "sha256": "3f795a21b8d90ab0407b01be8de06f6df84b2690540bc676db896dd20636f476"
+    },
+    {
+      "path": "harness/rubato-pi/src/transforms/core-context-notes.mjs",
+      "action": "add",
+      "bytes": 6174,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": "da74fc4893deab9a842dbad5f554ca6cba780a4e35e26337e73658f8ab1b43ac",
+      "sha256": "bd17f0fff2986963c45bc9841eb55d6f28b529cacca96546979189284ef7b21e"
+    },
+    {
+      "path": "harness/rubato-pi/test/helpers/context-notes-fake.mjs",
+      "action": "add",
+      "bytes": 3923,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": "105fbd7134ebcfd42ccffea63c66db1daaa89793ec9d563d7c335ce2825a9028",
+      "sha256": "105fbd7134ebcfd42ccffea63c66db1daaa89793ec9d563d7c335ce2825a9028"
+    },
+    {
+      "path": "harness/rubato-pi/test/integration/context-notes-engine.test.mjs",
+      "action": "add",
+      "bytes": 3394,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": "b358d69e1f6554e6ec64e8f26859137f5a64ab1a3839513b40d39784de97b4be",
+      "sha256": "b358d69e1f6554e6ec64e8f26859137f5a64ab1a3839513b40d39784de97b4be"
+    },
+    {
+      "path": "harness/rubato-pi/test/unit/context-cost-model.test.mjs",
+      "action": "add",
+      "bytes": 9983,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": null,
+      "sha256": "f368a8e04b6e962bce40c987d3cb83fb51b00bf8e3932936131cdfccd209e0d2"
+    },
+    {
+      "path": "harness/rubato-pi/test/unit/context-notes-controller.test.mjs",
+      "action": "add",
+      "bytes": 8454,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": "7dbe819344469f554f1209dd665a7fe49029ccf6c25ec640030fd0ed54680ed0",
+      "sha256": "9647942e92e6d689d4dc52de42a3307fb4e43c5ed471490228b0f06cdbac6904"
+    },
+    {
+      "path": "harness/rubato-pi/test/unit/context-notes-extension.test.mjs",
+      "action": "add",
+      "bytes": 5159,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": "f87da3fbb6f4b6e833d83507c3a6e4622502a0c6bed2d3db2e88cf71c054bbca",
+      "sha256": "f87da3fbb6f4b6e833d83507c3a6e4622502a0c6bed2d3db2e88cf71c054bbca"
+    },
+    {
+      "path": "harness/rubato-pi/test/unit/context-notes-hardening.test.mjs",
+      "action": "add",
+      "bytes": 13544,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": null,
+      "sha256": "33d234e40ed930d533193d5f68a5cdd91e05a24d14e7448f4df62ab0857d6996"
+    },
+    {
+      "path": "harness/rubato-pi/test/unit/context-notes-package.test.mjs",
+      "action": "add",
+      "bytes": 2002,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": null,
+      "sha256": "1364d918515d024db1ed17d63e2b7e09cd69aad03b675f42ad3f5bf7bddbdc91"
+    },
+    {
+      "path": "harness/rubato-pi/test/unit/context-notes-protocol.test.mjs",
+      "action": "add",
+      "bytes": 2853,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": "9fd54f772ba3ec061ccc44b3d1871a79bba81450b8da064156144364921a8922",
+      "sha256": "9fd54f772ba3ec061ccc44b3d1871a79bba81450b8da064156144364921a8922"
+    },
+    {
+      "path": "harness/rubato-pi/test/unit/context-notes-store.test.mjs",
+      "action": "add",
+      "bytes": 5939,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": "832a92342261c20cb1b91117b7f9040f03b3cb3a4acb04692298f504b8767a65",
+      "sha256": "832a92342261c20cb1b91117b7f9040f03b3cb3a4acb04692298f504b8767a65"
+    },
+    {
+      "path": "harness/rubato-pi/test/unit/context-notes-transforms.test.mjs",
+      "action": "add",
+      "bytes": 7276,
+      "originalGitBlobSha": null,
+      "previousPackageSha256": "bd3faaa0e5370e40fd0f1c7d58356c4ad6a576fc4e24d8fc0ab29e2dedcec533",
+      "sha256": "301db114524514c17d14a806651718826fa9847a4e477bf513f493163476110a"
+    }
+  ]
+}
