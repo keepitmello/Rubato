@@ -14,6 +14,7 @@ import {
   withRubatoStream,
   wrapProviderStreams,
 } from "../../src/rubato-stream.mjs";
+import { upstreamFetch } from "../../src/upstream-dispatcher.mjs";
 
 // 실제 엔진이 쓰는 stream 구현으로 위임을 검사한다. 손으로 만든 대역은
 // hasPendingLocalWork/result 의 실제 의미를 갖지 않는다.
@@ -155,6 +156,27 @@ test("createProvider 모양(api.stream)도 그대로 감싼다", () => {
 
 test("stream 면이 없는 provider 는 사유를 말하고 실패한다", () => {
   assert.throws(() => wrapProviderStreams({ id: "kiro" }), /exposes no stream to wrap/);
+});
+
+test("wrapProviderStreams 는 fetch 가 없으면 업스트림 dispatcher 를 넣고, 호출자 fetch 는 그대로 둔다", async () => {
+  const seen = [];
+  const inner = (_model, _context, options) => {
+    seen.push(options.fetch);
+    return scriptedStream([{ type: "done", reason: "stop", message: assistant({ stopReason: "stop" }) }])();
+  };
+  const wrapped = wrapProviderStreams({ id: "xai", stream: inner, streamSimple: inner });
+
+  await drain(wrapped.streamSimple(model, context, { env: {} }));
+  assert.equal(seen[0], upstreamFetch);
+
+  const caller = async () => new Response();
+  seen.length = 0;
+  await drain(wrapped.streamSimple(model, context, { env: {}, fetch: caller }));
+  assert.equal(seen[0], caller);
+
+  seen.length = 0;
+  await drain(wrapped.streamSimple(model, context, { env: { RUBATO_UPSTREAM_DISPATCHER: "0" } }));
+  assert.equal(seen[0], undefined);
 });
 
 test("timing 은 성공 턴에만 붙고 벽시계/단조시계를 주입받는다", async () => {

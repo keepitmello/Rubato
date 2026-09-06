@@ -4,6 +4,7 @@
 // 규약은 tui-chrome.mjs 와 같다: pristine 니들, 없으면 throw, 패치 공존 중 inert.
 
 import { injectAstraCodex, isAstraCodexUrl } from "./misc-astra-codex.mjs";
+import { injectCodexWsCacheTtl, isCodexWsCacheTtlUrl } from "./misc-codex-ws-cache-ttl.mjs";
 import { injectAuthStorage, isAuthStorageUrl } from "./misc-auth-storage.mjs";
 import { injectAdaptiveToolTurnEffort, isAdaptiveToolTurnEffortUrl } from "./misc-adaptive-tool-turn-effort.mjs";
 import { injectAnthropicCompaction, isAnthropicCompactionUrl } from "./misc-anthropic-compaction.mjs";
@@ -38,6 +39,7 @@ import { injectThinkingLevels, isThinkingLevelsUrl } from "./misc-thinking-level
  */
 export function applyMiscVendorTransforms(url, source, applyTransform) {
   if (isAstraCodexUrl(url)) source = applyTransform(source, injectAstraCodex);
+  if (isCodexWsCacheTtlUrl(url)) source = applyTransform(source, injectCodexWsCacheTtl);
   if (isModelSelectorUrl(url)) source = applyTransform(source, injectModelSelector);
   if (isHighReasoningUrl(url)) source = applyTransform(source, injectHighReasoning);
   if (isAuthStorageUrl(url)) source = applyTransform(source, injectAuthStorage);
@@ -58,6 +60,7 @@ export function applyMiscVendorTransforms(url, source, applyTransform) {
 
 export {
   injectAstraCodex,
+  injectCodexWsCacheTtl,
   injectAdaptiveToolTurnEffort,
   injectAnthropicCompaction,
   injectAuthStorage,
@@ -74,6 +77,7 @@ export {
   injectTuiEditor,
   injectTuiSlash,
   isAstraCodexUrl,
+  isCodexWsCacheTtlUrl,
   isAnthropicCompactionUrl,
   isAnthropicMessagesUrl,
   isAuthStorageUrl,
