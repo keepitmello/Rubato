@@ -54,7 +54,9 @@ Never fills the composer and never clicks send.
 ## Launch the fast path
 
 Launch `outpost` on PATH as a background process. It drives the Aside REPL
-engine and fills the output paths from the packet directory:
+engine and fills the output paths from the packet directory. `outpost list`
+shows `working` while that process is alive. When the process exits, an idle
+parent session is woken:
 
 ```bash
 outpost send --quality <xhigh-or-pro> .outpost/<run>/packet.md

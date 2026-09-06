@@ -52,6 +52,8 @@ outpost recover .outpost/<run>/result.json
 `--to` accepts a thread id, `last`, a `/c/` conversation URL, or `result.json`.
 List first; `last` is the newest thread that already has a conversation.
 Unrelated threads may run in parallel. The same thread serializes.
+While a send is in flight, `outpost list` shows `working`. Background the
+process; when it exits, an idle parent session is woken.
 
 ## After
 

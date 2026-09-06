@@ -47,7 +47,7 @@ class ConsultSessionsTest(unittest.TestCase):
             )
 
             listed = store.listed_threads()
-            self.assertEqual(listed[0]["status"], "running")
+            self.assertEqual(listed[0]["status"], "working")
             self.assertEqual(listed[0]["threadId"], second["threadId"])
             self.assertEqual(listed[1]["status"], "finished")
             self.assertEqual(
