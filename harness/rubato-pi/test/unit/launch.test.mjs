@@ -16,7 +16,9 @@ test("senpi argv replaces the system prompt and lets profile settings choose the
   const adapterAt = args.indexOf(adapterPath());
   assert.ok(promptAt > 0);
   assert.match(args[promptAt + 1], /Working agreement/);
-  assert.match(args[promptAt + 1], /`Agent` tool/);
+  // 785f6a3f9 이후 리드 프롬프트는 `Agent` 를 "rail" 로 부른다. 문구가 아니라
+  // 생성물이 통째로 argv 에 실렸는지를 본다.
+  assert.match(args[promptAt + 1], /`Agent` is the rail for a result you take back/);
   assert.match(args[promptAt + 1], /## Tool Guidelines/);
   assert.match(args[promptAt + 1], /one eval cell/);
   assert.doesNotMatch(args[promptAt + 1], /operating inside pi/);
