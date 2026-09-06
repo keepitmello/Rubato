@@ -73,6 +73,7 @@ describe("createAstGrepComponent", () => {
           env: { RUBATO_AST_GREP_PROJECT_CWD: "/workspace/project" },
           enabled: true,
           lifecycle: "eager",
+          startupTimeoutMs: 2000,
         },
       },
     ])
