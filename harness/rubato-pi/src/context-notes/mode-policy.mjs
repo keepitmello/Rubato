@@ -1,6 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { HISTORY_NOTES_MODE, SUMMARY_MODE, contextMode } from "./config.mjs";
+import { HISTORY_NOTES_MODE, SUMMARY_MODE, contextMode, isUserExplicitContextMode } from "./config.mjs";
 import {
   INIT_ENTRY,
   MODE_ENTRY,
@@ -27,82 +25,6 @@ export function defaultContextModeForModel(model = {}) {
   const id = model.id ?? model.modelId ?? "";
   const notes = HISTORY_NOTES_DEFAULT_MODELS.some((entry) => entry.provider === provider && entry.id === id);
   return notes ? HISTORY_NOTES_MODE : SUMMARY_MODE;
-}
-
-export function flagValue(args = [], name) {
-  const prefix = `${name}=`;
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-    if (token === name && typeof args[i + 1] === "string" && args[i + 1].length > 0) return args[i + 1];
-    if (typeof token === "string" && token.startsWith(prefix) && token.length > prefix.length) {
-      return token.slice(prefix.length);
-    }
-  }
-  return undefined;
-}
-
-export function startingModelFromLaunch({
-  args = [],
-  agentDir,
-  readFile = readFileSync,
-  exists = existsSync,
-} = {}) {
-  const modelArg = flagValue(args, "--model");
-  const providerArg = flagValue(args, "--provider");
-  let provider = providerArg;
-  let id = modelArg;
-  if (typeof modelArg === "string") {
-    const slash = modelArg.indexOf("/");
-    if (slash > 0) {
-      if (!provider) provider = modelArg.slice(0, slash);
-      id = modelArg.slice(slash + 1);
-    }
-  }
-  if (!provider || !id) {
-    const settings = readSettings(agentDir, { readFile, exists });
-    provider = provider || settings.defaultProvider;
-    id = id || settings.defaultModel;
-  }
-  return { provider, id };
-}
-
-export function peekSessionContextMode(file, { readFile = readFileSync } = {}) {
-  if (!file) return undefined;
-  let text;
-  try { text = readFile(file, "utf8"); }
-  catch { return undefined; }
-  let recorded;
-  let notes = false;
-  for (const line of text.split("\n")) {
-    if (!line.trim()) continue;
-    let entry;
-    try { entry = JSON.parse(line); }
-    catch { continue; }
-    if (entry?.type === "custom" && entry.customType === MODE_ENTRY) {
-      const mode = entry.data?.mode;
-      if (mode === HISTORY_NOTES_MODE || mode === SUMMARY_MODE) recorded = mode;
-    }
-    if (isNotesWindowEntry(entry)) notes = true;
-  }
-  if (recorded) return recorded;
-  if (notes) return HISTORY_NOTES_MODE;
-  return undefined;
-}
-
-export function resolveLaunchContextMode({
-  args = [],
-  env = process.env,
-  agentDir,
-  readFile = readFileSync,
-  exists = existsSync,
-} = {}) {
-  if (env.RUBATO_CONTEXT_MODE?.trim()) return contextMode(env);
-  const sessionFile = flagValue(args, "--session");
-  if (sessionFile) {
-    const peeked = peekSessionContextMode(sessionFile, { readFile });
-    if (peeked) return peeked;
-  }
-  return defaultContextModeForModel(startingModelFromLaunch({ args, agentDir, readFile, exists }));
 }
 
 export function recordedModeFromBranch(branch = []) {
@@ -135,6 +57,14 @@ export function hasNotesWindowBoundary(branch = []) {
   } catch {
     return true;
   }
+}
+
+export function adoptContextMode({ env = process.env, branch = [], model } = {}) {
+  if (isUserExplicitContextMode(env)) return contextMode(env);
+  const recorded = recordedModeFromBranch(branch);
+  if (recorded) return recorded;
+  if (hasNotesWindowEntries(branch)) return HISTORY_NOTES_MODE;
+  return defaultContextModeForModel(model);
 }
 
 export function modelModeLabel(model = {}) {
@@ -186,16 +116,4 @@ export async function considerContextModeSwitch({
     return { action: "keep", declined: true };
   }
   return { action: "switch", mode: wanted };
-}
-
-function readSettings(agentDir, { readFile, exists }) {
-  if (!agentDir) return {};
-  const path = join(agentDir, "settings.json");
-  if (!exists(path)) return {};
-  try {
-    const parsed = JSON.parse(readFile(path, "utf8"));
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
-  } catch {
-    return {};
-  }
 }
