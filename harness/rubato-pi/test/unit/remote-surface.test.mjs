@@ -498,7 +498,7 @@ test("session.changed carries requestRun and pendingInputs after re-reading requ
   assert.equal(changed.every((payload) => payload.change === "requestRun" || payload.change === "pendingInputs" || payload.event), true);
 });
 
-test("agent_settled snapshot reads the already-completed control timeline", () => {
+test("agent_settled snapshot reads the already-completed control timeline", async () => {
   const running = {
     id: "run-1",
     status: "running",
@@ -522,6 +522,7 @@ test("agent_settled snapshot reads the already-completed control timeline", () =
     entries: [{ id: "a1", kind: "message", role: "assistant", text: "Done.", phase: "final", requestRunId: "run-1" }],
     requestRuns: [completed],
   };
+  const sent = [];
   const surface = new RemoteSurface({
     getInteractiveControl: () => ({
       snapshot: () => settled
@@ -530,11 +531,18 @@ test("agent_settled snapshot reads the already-completed control timeline", () =
       listCommands: () => [],
       readConversationPage: () => page,
     }),
-  }, protocol, { clock: { now: () => 1_000, setTimeout, clearTimeout, setInterval, clearInterval } });
+  }, protocol, {
+    surfaceToken: "surface-token",
+    connect: async () => ({ send: (value) => sent.push(value), close() {} }),
+    clock: { now: () => 1_000, setTimeout, clearTimeout, setInterval, clearInterval },
+  });
+  await surface.connectNow();
+  await surface.receive(registered);
   surface.rememberTimeline();
+  sent.length = 0;
   settled = true;
   surface.observe("agent_settled", { settled: true });
-  const snapshot = surface.buffer.drain().find((record) => record.kind === "surface.snapshot");
+  const snapshot = sent.find((record) => record.kind === "surface.snapshot");
   assert.equal(snapshot.state.timeline.activeRequestRunId, undefined);
   assert.equal(snapshot.state.timeline.runs[0].status, "completed");
   assert.equal(Object.hasOwn(snapshot.summary, "presentation"), false);
@@ -843,4 +851,149 @@ test("installRemoteSurface starts a new surface after the previous one is stoppe
   } finally {
     second.stop();
   }
+});
+
+test("schema rejection of snapshot timeline projects instead of disconnecting", async () => {
+  const sent = [];
+  const errors = [];
+  const originalError = console.error;
+  console.error = (...args) => errors.push(args.map(String).join(" "));
+  const rejecting = {
+    ...protocol,
+    surfaceToHubFrameSchema: {
+      parse(value) {
+        if (value?.state && Object.hasOwn(value.state, "timeline")) {
+          throw new Error("$.state.timeline: is not allowed");
+        }
+        if (Array.isArray(value?.state?.commands)) {
+          for (const [index, command] of value.state.commands.entries()) {
+            if (command.remoteMode && !["direct", "native-action", "terminal-only"].includes(command.remoteMode)) {
+              throw new Error(`$.state.commands[${index}].remoteMode: must be one of direct, native-action, terminal-only`);
+            }
+          }
+        }
+        return value;
+      },
+    },
+  };
+  let disconnectedCalls = 0;
+  const surface = new RemoteSurface({
+    getInteractiveControl: () => ({
+      snapshot: () => ({
+        requestTimeline: { schemaVersion: 1, runs: [], pendingInputs: [], hasOlder: false },
+      }),
+      listCommands: () => [
+        { name: "skill:review", description: "Review", category: "skill", remoteMode: "direct" },
+        { name: "compact", description: "Compact", category: "builtin", remoteMode: "native-action" },
+        { name: "login", description: "Login", category: "builtin", remoteMode: "terminal-only" },
+        { name: "weird", description: "New", category: "builtin", remoteMode: "interactive" },
+      ],
+    }),
+  }, rejecting, {
+    surfaceToken: "surface-token",
+    connect: async () => ({ send: (value) => sent.push(value), close() {} }),
+    clock: { now: () => 1_000, setTimeout: () => 1, clearTimeout, setInterval, clearInterval },
+  });
+  const originalDisconnected = surface.disconnected.bind(surface);
+  surface.disconnected = (...args) => {
+    disconnectedCalls += 1;
+    return originalDisconnected(...args);
+  };
+  try {
+    await surface.connectNow();
+    await surface.receive(registered);
+    assert.equal(disconnectedCalls, 0);
+    const snapshots = sent.filter((value) => value.kind === "surface.snapshot");
+    assert.equal(snapshots.length, 1);
+    assert.equal(Object.hasOwn(snapshots[0].state, "timeline"), false);
+    assert.equal(snapshots[0].state.commands.find((command) => command.name === "weird")?.remoteMode, "terminal-only");
+    assert.equal(errors.length <= 1, true);
+    surface.emitSnapshot();
+    assert.equal(errors.length <= 1, true);
+    assert.equal(disconnectedCalls, 0);
+    assert.equal(surface.registered, true);
+    assert.equal(sent.filter((value) => value.kind === "surface.snapshot").length, 2);
+  } finally {
+    console.error = originalError;
+  }
+});
+
+test("register snapshot-reject close cycles back off and emit one snapshot per registration", async () => {
+  const delays = [];
+  let snapshotBuilds = 0;
+  let onClose = () => {};
+  const rejecting = {
+    ...protocol,
+    surfaceToHubFrameSchema: {
+      parse(value) {
+        if (value?.kind === "surface.snapshot") {
+          throw new Error("$.state.timeline: is not allowed");
+        }
+        return value;
+      },
+    },
+  };
+  const surface = new RemoteSurface({
+    getInteractiveControl: () => ({
+      snapshot: () => ({ requestTimeline: { schemaVersion: 1, runs: [], pendingInputs: [], hasOlder: false } }),
+      listCommands: () => [],
+    }),
+  }, rejecting, {
+    surfaceToken: "surface-token",
+    connect: async (_onMessage, close) => {
+      onClose = close;
+      return { send() {}, close() {} };
+    },
+    clock: {
+      now: () => 1_000,
+      setTimeout: (fn, delay) => {
+        delays.push(delay);
+        return delay;
+      },
+      clearTimeout,
+      setInterval,
+      clearInterval,
+    },
+  });
+  surface.context = context();
+  const originalSnapshot = surface.snapshot.bind(surface);
+  surface.snapshot = (...args) => {
+    snapshotBuilds += 1;
+    return originalSnapshot(...args);
+  };
+
+  await surface.connectNow();
+  await surface.receive(registered);
+  assert.equal(surface.registered, true);
+  assert.equal(snapshotBuilds, 1);
+  assert.equal(surface.buffer.events.length, 0);
+  assert.equal(surface.buffer.snapshotRequired, true);
+  surface.emitSnapshot();
+  surface.emitSnapshot();
+  assert.equal(snapshotBuilds, 1);
+  onClose();
+  assert.deepEqual(delays, [250]);
+
+  surface.reconnectTimer = undefined;
+  await surface.connectNow();
+  await surface.receive(registered);
+  assert.equal(snapshotBuilds, 2);
+  surface.emitSnapshot();
+  assert.equal(snapshotBuilds, 2);
+  onClose();
+  assert.deepEqual(delays, [250, 500]);
+});
+
+test("disconnected closes the socket it abandons", async () => {
+  let closed = 0;
+  const surface = new RemoteSurface({}, protocol, {
+    surfaceToken: "surface-token",
+    connect: async () => ({ send() {}, close() { closed += 1; } }),
+    clock: { now: () => 1_000, setTimeout: () => 1, clearTimeout, setInterval, clearInterval },
+  });
+  await surface.connectNow();
+  assert.equal(surface.connection !== undefined, true);
+  surface.disconnected();
+  assert.equal(closed, 1);
+  assert.equal(surface.connection, undefined);
 });

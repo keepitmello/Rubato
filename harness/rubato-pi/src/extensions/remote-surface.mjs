@@ -23,6 +23,10 @@ const TOOL_PREVIEW_BYTES = 16 * 1024;
 const MAX_TOOL_ARTIFACT_BYTES = 20 * 1024 * 1024;
 const RECONNECT_MIN_MS = 250;
 const RECONNECT_MAX_MS = 30_000;
+const RECONNECT_STABLE_MS = 30_000;
+const V1_REMOTE_MODES = new Set(["direct", "native-action", "terminal-only"]);
+const DEGRADABLE_OUTGOING_KINDS = new Set(["surface.snapshot", "surface.summary", "surface.event"]);
+const reportedOutgoingSchemaFailures = new Set();
 const SUBSCRIBED_EVENTS = [
   "session_start", "session_before_switch", "session_switch", "session_before_fork", "session_fork",
   "session_before_compact", "session_compact", "session_shutdown", "session_info_changed", "model_select",
@@ -88,6 +92,55 @@ function stripSummaryPresentation(message) {
   if (!summary || !Object.hasOwn(summary, "presentation")) return undefined;
   const { presentation: _presentation, ...rest } = summary;
   return { ...message, summary: rest };
+}
+
+function coerceCommandRemoteMode(command) {
+  if (!command || typeof command !== "object" || V1_REMOTE_MODES.has(command.remoteMode)) return command;
+  return { ...command, remoteMode: "terminal-only" };
+}
+
+function reportOutgoingSchemaFailure(kind, error) {
+  const detail = error instanceof Error ? error.message : String(error);
+  const signature = `${kind ?? "frame"}:${detail}`;
+  if (reportedOutgoingSchemaFailures.has(signature)) return;
+  reportedOutgoingSchemaFailures.add(signature);
+  console.error(`[rubato remote] installed protocol rejected ${kind ?? "frame"}: ${detail}`);
+}
+
+function projectOutgoingFrame(message) {
+  if (!message || typeof message !== "object") return { frame: message, changed: false };
+  let frame = message;
+  let changed = false;
+  const stripped = stripSummaryPresentation(frame);
+  if (stripped) {
+    frame = stripped;
+    changed = true;
+  }
+  if (frame.state && typeof frame.state === "object") {
+    const state = { ...frame.state };
+    let stateChanged = false;
+    if (Object.hasOwn(state, "timeline")) {
+      delete state.timeline;
+      stateChanged = true;
+    }
+    if (Array.isArray(state.commands)) {
+      let commandsChanged = false;
+      const commands = state.commands.map((command) => {
+        const coerced = coerceCommandRemoteMode(command);
+        if (coerced !== command) commandsChanged = true;
+        return coerced;
+      });
+      if (commandsChanged) {
+        state.commands = commands;
+        stateChanged = true;
+      }
+    }
+    if (stateChanged) {
+      frame = { ...frame, state };
+      changed = true;
+    }
+  }
+  return { frame, changed };
 }
 
 function uuidv7(now = Date.now()) {
@@ -261,6 +314,9 @@ export class RemoteSurface {
     this.lastPresentationKey = undefined;
     this.presentationUnsupported = false;
     this.negotiatedProtocolVersion = undefined;
+    this.legacyOutgoing = false;
+    this.snapshotWireFailed = false;
+    this.registeredAt = undefined;
   }
 
   start() {
@@ -340,14 +396,20 @@ export class RemoteSurface {
 
   disconnected() {
     if (this.stopped || this.reconnectTimer) return;
-    this.connection = undefined;
-    this.registered = false;
+    if (this.registered && this.registeredAt !== undefined && (this.clock.now() - this.registeredAt) >= RECONNECT_STABLE_MS) {
+      this.reconnectDelay = RECONNECT_MIN_MS;
+    }
     const delay = this.reconnectDelay;
     this.reconnectDelay = Math.min(RECONNECT_MAX_MS, delay * 2);
     this.reconnectTimer = this.clock.setTimeout(() => {
       this.reconnectTimer = undefined;
       this.connectNow();
     }, delay);
+    const connection = this.connection;
+    this.connection = undefined;
+    this.registered = false;
+    this.registeredAt = undefined;
+    connection?.close();
   }
 
   parseForHub(message) {
@@ -355,21 +417,42 @@ export class RemoteSurface {
       this.protocol.surfaceToHubFrameSchema?.parse(message);
       return message;
     } catch (error) {
-      const stripped = stripSummaryPresentation(message);
-      if (!stripped) throw error;
-      this.protocol.surfaceToHubFrameSchema?.parse(stripped);
-      this.presentationUnsupported = true;
-      return stripped;
+      const degradable = DEGRADABLE_OUTGOING_KINDS.has(message?.kind);
+      const { frame, changed } = projectOutgoingFrame(message);
+      if (changed) {
+        try {
+          this.protocol.surfaceToHubFrameSchema?.parse(frame);
+          this.legacyOutgoing = true;
+          if (stripSummaryPresentation(message)) this.presentationUnsupported = true;
+          if (degradable) reportOutgoingSchemaFailure(message?.kind, error);
+          return frame;
+        } catch (retryError) {
+          if (message?.kind === "surface.snapshot") this.snapshotWireFailed = true;
+          if (degradable) {
+            reportOutgoingSchemaFailure(message?.kind, retryError);
+            return undefined;
+          }
+          throw retryError;
+        }
+      }
+      if (message?.kind === "surface.snapshot") this.snapshotWireFailed = true;
+      if (degradable) {
+        reportOutgoingSchemaFailure(message?.kind, error);
+        return undefined;
+      }
+      throw error;
     }
   }
 
   send(message) {
     if (!this.connection || !this.registered) return false;
     try {
-      this.connection.send(this.parseForHub(message));
+      const frame = this.parseForHub(message);
+      if (frame === undefined) return false;
+      this.connection.send(frame);
+      this.reconnectDelay = RECONNECT_MIN_MS;
       return true;
     } catch {
-      this.disconnected();
       return false;
     }
   }
@@ -581,12 +664,10 @@ export class RemoteSurface {
     const native = tryCall(() => control?.snapshot?.()) ?? {};
     const ctx = this.context;
     const entries = this.conversationSnapshotEntries();
-    const commands = (control?.listCommands?.() ?? []).map(({ name, description, category, remoteMode }) => ({
-      name,
-      description,
-      category,
-      remoteMode,
-    }));
+    const commands = (control?.listCommands?.() ?? []).map(({ name, description, category, remoteMode }) => {
+      const command = { name, description, category, remoteMode };
+      return this.legacyOutgoing ? coerceCommandRemoteMode(command) : command;
+    });
     const capabilities = control ? ["interactive-control", "standard-ui", "terminal-required"] : ["terminal-required"];
     const timeline = native.requestTimeline;
     return {
@@ -600,12 +681,16 @@ export class RemoteSurface {
         background: jsonSafe(this.protocol, this.background),
         teams: jsonSafe(this.protocol, this.teams),
         capabilities,
-        ...(timeline ? { timeline } : {}),
+        ...(timeline && !this.legacyOutgoing ? { timeline } : {}),
       },
     };
   }
 
   emitSnapshot() {
+    if (this.snapshotWireFailed) {
+      this.buffer.snapshotRequired = true;
+      return undefined;
+    }
     this.revision += 1;
     const snapshot = this.snapshot();
     const record = {
@@ -617,7 +702,7 @@ export class RemoteSurface {
       summary: this.summary({ forWire: true }),
       state: snapshot.state,
     };
-    if (!this.send(record)) this.buffer.push(record);
+    if (!this.send(record)) this.buffer.snapshotRequired = true;
     this.lastPresentationKey = JSON.stringify(snapshot.summary.presentation ?? null);
     return record;
   }
@@ -639,8 +724,9 @@ export class RemoteSurface {
       this.negotiatedProtocolVersion = frame.negotiation.version;
       this.reconnectToken = frame.reconnectToken;
       this.surfaceToken = undefined;
-      this.reconnectDelay = RECONNECT_MIN_MS;
       this.registered = true;
+      this.registeredAt = this.clock.now();
+      this.snapshotWireFailed = false;
       this.connectionErrorReported = false;
       if (this.buffer.snapshotRequired) {
         this.buffer.clear();
