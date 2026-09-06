@@ -1,9 +1,30 @@
 #!/bin/sh
-# Shell prerequisites precede Node. Keep the same centered wordmark here;
-# boot-chrome takes over this alt-screen and owns the full animated intro/outro.
+# Shell prerequisites precede Node. `open` paints the centered wordmark at once;
+# rubato-pi.sh then starts boot-splash.mjs (RUBATO_BOOT_SPLASH_DIR) which
+# animates the Resonance intro over this alt-screen while the shell steps run,
+# and boot-chrome adopts that renderer and its clock for the outro.
+# `active` exits 0 iff this terminal can take the splash at all.
 set -eu
+DIR="${RUBATO_BOOT_SPLASH_DIR-}"
+# The renderer directory exists as soon as rubato-pi.sh decided to animate;
+# the renderer may still be booting, so steps go to the file, not the screen.
+animated() { [ -n "$DIR" ] && [ -d "$DIR" ]; }
+if [ "${1-}" = close ] && animated; then
+  printf 'close' >"$DIR/stop"
+  i=0
+  while [ ! -f "$DIR/stopped" ] && [ "$i" -lt 40 ]; do sleep 0.05; i=$((i + 1)); done
+  if [ ! -f "$DIR/stopped" ] && [ -f "$DIR/pid" ]; then kill -9 "$(cat "$DIR/pid")" 2>/dev/null || true; fi
+  rm -rf "$DIR"
+  printf '%s' "$(printf '\033')[0m$(printf '\033')[?1049l$(printf '\033')[?25h"
+  exit 0
+fi
+if [ "${1-}" = step ] && animated; then
+  printf '%s' "${2-}" >"$DIR/status.tmp" && mv -f "$DIR/status.tmp" "$DIR/status"
+  exit 0
+fi
 if [ ! -t 0 ] || [ ! -t 1 ] || [ "${TERM-}" = dumb ] || [ -n "${CI-}" ] \
   || [ -n "${RUBATO_NO_SPLASH-}" ] || [ "${RUBATO_BOOT_CHROME-}" = 0 ]; then
+  [ "${1-}" = active ] && exit 1
   exit 0
 fi
 # tput trusts inherited COLUMNS/LINES, which can describe the picker rather than
@@ -15,7 +36,7 @@ if [ -z "$SIZE" ] || [ "$ROWS" = 0 ] || [ "$COLS" = 0 ]; then
   COLS=80
   ROWS=24
 fi
-case "$COLS:$ROWS" in *[!0-9:]*|:*|*:) exit 0 ;; esac
+case "$COLS:$ROWS" in *[!0-9:]*|:*|*:) [ "${1-}" = active ] && exit 1; exit 0 ;; esac
 ROW=$((ROWS * 45 / 100))
 [ "$ROW" -ge 1 ] || ROW=1
 COL=$(((COLS - 6) / 2))
@@ -29,6 +50,7 @@ if [ -z "${NO_COLOR+x}" ]; then
   esac
 fi
 case "${1-}" in
+  active) exit 0 ;;
   open)
     printf '%s' "${ESC}[?1049h${ESC}[2J${ESC}[H${ESC}[?25l"
     if [ "$COLS" -ge 8 ]; then

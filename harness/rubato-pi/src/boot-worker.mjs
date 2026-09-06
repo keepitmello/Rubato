@@ -4,7 +4,10 @@ import { composeBootChrome } from "./boot-chrome.mjs";
 import { INTRO_MS, RELEASE_MS, CLEAR_MS } from "./boot-resonance.mjs";
 
 const control = new Int32Array(workerData.control);
-let elapsed = 0, previous = Date.now(), release = null, status = "엔진을 불러오는 중";
+// `elapsed` may start past zero: the shell-phase renderer (boot-splash.mjs)
+// already ran the intro and enterBootChrome adopted its clock.
+let elapsed = Number(workerData.elapsed) || 0, previous = Date.now(), release = null;
+let status = typeof workerData.status === "string" && workerData.status ? workerData.status : "엔진을 불러오는 중";
 let timer;
 parentPort.on("message", (message) => {
   if (typeof message.status === "string") status = message.status;
