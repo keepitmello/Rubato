@@ -3,6 +3,9 @@ import { replaceOnce } from "./misc-replace.mjs";
 const TTL_NEEDLE = "const SESSION_WEBSOCKET_CACHE_TTL_MS = 5 * 60 * 1000;";
 const TTL_REPLACEMENT = "const SESSION_WEBSOCKET_CACHE_TTL_MS = 30 * 60 * 1000;";
 
+const UNREF_NEEDLE = "    }, SESSION_WEBSOCKET_CACHE_TTL_MS);";
+const UNREF_REPLACEMENT = "    }, SESSION_WEBSOCKET_CACHE_TTL_MS);\n    entry.idleTimer.unref?.();";
+
 export function isCodexWsCacheTtlUrl(url) {
   return url.includes("@earendil-works/pi-ai/dist/api/openai-codex-responses.js");
 }
@@ -16,5 +19,6 @@ export function isCodexWsCacheTtlUrl(url) {
  * @returns {string}
  */
 export function injectCodexWsCacheTtl(source) {
-  return replaceOnce(source, TTL_NEEDLE, TTL_REPLACEMENT, "codex-ws cache ttl");
+  let next = replaceOnce(source, TTL_NEEDLE, TTL_REPLACEMENT, "codex-ws cache ttl");
+  return replaceOnce(next, UNREF_NEEDLE, UNREF_REPLACEMENT, "codex-ws cache ttl unref");
 }

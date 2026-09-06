@@ -37,15 +37,44 @@ export function upstreamDispatcherEnabled(env = process.env) {
   return env?.[UPSTREAM_DISPATCHER_FLAG] !== "0";
 }
 
+function isUrlInput(input) {
+  return typeof input === "string" || input instanceof URL;
+}
+
+function bodyNeedsDuplex(body) {
+  return body != null
+    && typeof body === "object"
+    && (typeof body.getReader === "function" || typeof body.pipe === "function");
+}
+
 /**
- * undici fetch 를 이 프로세스 Agent 에 묶는다. `Request` 입력도 init.dispatcher 로
- * 탄다 — 본문을 다시 읽지 않는다.
+ * undici 8 은 다른 realm 의 `Request` 를 URL 로 파싱하지 못한다. string/URL 이
+ * 아니면 `input.url` 과 method/headers/body/signal 을 init 으로 옮긴다. 호출자가
+ * 준 init 필드가 Request 에서 파생한 값보다 이긴다.
+ */
+function adaptFetchArgs(input, init) {
+  const derived = isUrlInput(input)
+    ? {}
+    : {
+      method: input.method,
+      headers: input.headers,
+      body: input.body,
+      signal: input.signal,
+    };
+  const next = { ...derived, ...init };
+  if (next.duplex === undefined && bodyNeedsDuplex(next.body)) next.duplex = "half";
+  return [isUrlInput(input) ? input : input.url, next];
+}
+
+/**
+ * undici fetch 를 이 프로세스 Agent 에 묶는다.
  *
  * @param {import("undici").Dispatcher} [dispatcher]
  */
-export function bindUpstreamFetch(dispatcher = getAgent()) {
+export function bindUpstreamFetch(dispatcher) {
   return function upstreamFetch(input, init) {
-    return undiciFetch(input, { ...init, dispatcher });
+    const [url, adapted] = adaptFetchArgs(input, init);
+    return undiciFetch(url, { ...adapted, dispatcher: dispatcher ?? getAgent() });
   };
 }
 
@@ -54,4 +83,11 @@ export const upstreamFetch = bindUpstreamFetch();
 /** 꺼져 있으면 undefined — 호출자가 fetch 를 안 준 것과 같다. */
 export function resolveUpstreamFetch(env = process.env) {
   return upstreamDispatcherEnabled(env) ? upstreamFetch : undefined;
+}
+
+/** 싱글턴 Agent 를 닫고 다음 fetch 가 새 풀을 만들게 한다. 호출 연결은 없다. */
+export function closeUpstreamAgent() {
+  const current = agent;
+  agent = undefined;
+  return current?.close();
 }

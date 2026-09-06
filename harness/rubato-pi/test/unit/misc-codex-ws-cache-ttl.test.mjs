@@ -13,9 +13,12 @@ test("실제 엔진 소스에 WS cache TTL 패치가 걸리고 두 번 걸면 �
     "utf8",
   );
   assert.match(source, /const SESSION_WEBSOCKET_CACHE_TTL_MS = 5 \* 60 \* 1000;/);
+  assert.match(source, /\}, SESSION_WEBSOCKET_CACHE_TTL_MS\);/);
+  assert.doesNotMatch(source, /idleTimer\.unref/);
   const next = injectCodexWsCacheTtl(source);
   assert.match(next, /const SESSION_WEBSOCKET_CACHE_TTL_MS = 30 \* 60 \* 1000;/);
   assert.doesNotMatch(next, /const SESSION_WEBSOCKET_CACHE_TTL_MS = 5 \* 60 \* 1000;/);
+  assert.match(next, /entry\.idleTimer\.unref\?\.\(\);/);
   assert.throws(() => injectCodexWsCacheTtl(next));
   assert.equal(
     isCodexWsCacheTtlUrl("file:///x/@earendil-works/pi-ai/dist/api/openai-codex-responses.js"),

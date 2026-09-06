@@ -310,14 +310,26 @@ test("pickTitleModel prefers luna and titleFromResponse reads complete() output"
   assert.equal(found, luna);
   assert.deepEqual(seen, [["openai-codex", "gpt-5.6-luna"]]);
   assert.equal(pickTitleModel({ find: () => undefined }, { id: "fallback" }).id, "fallback");
+  const fallback = { id: "fallback" };
+  assert.equal(
+    pickTitleModel({ find: () => luna, hasConfiguredAuth: () => true }, fallback),
+    luna,
+  );
+  assert.equal(
+    pickTitleModel({ find: () => luna, hasConfiguredAuth: () => false }, fallback),
+    fallback,
+  );
   assert.equal(titleFromResponse({ content: [{ type: "text", text: "<title>Ok</title>" }] }), "Ok");
   paintTabTitle({ cwd: "/tmp/repo", ui: { setTitle: (title) => assert.equal(title, "repo") } });
 });
 
-function settledHarness({ locked = false } = {}) {
+function settledHarness({ locked = false, startEntries = [] } = {}) {
   const handlers = {};
   const names = [];
-  const entries = locked ? [{ type: "custom", customType: TITLE_ENTRY, data: { locked: true } }] : [];
+  const entries = [
+    ...startEntries,
+    ...(locked ? [{ type: "custom", customType: TITLE_ENTRY, data: { locked: true } }] : []),
+  ];
   const pi = {
     on(event, handler) {
       handlers[event] = handler;
@@ -392,4 +404,25 @@ test("paintTabTitle still runs on turns where the LLM call is skipped", async ()
   }
   assert.equal(completionCount(), 1);
   assert.equal(paints.length, 5);
+});
+
+test("resume with an existing auto title skips the first settle, then fires on the 16th", async () => {
+  const { handlers, settledCtx, paints, completionCount } = settledHarness({
+    startEntries: [{ type: "custom", customType: TITLE_ENTRY, data: { name: "Existing title" } }],
+  });
+  let turn = 0;
+  const firedOn = [];
+  const original = settledCtx.modelRegistry.complete.bind(settledCtx.modelRegistry);
+  settledCtx.modelRegistry.complete = (...args) => {
+    firedOn.push(turn);
+    return original(...args);
+  };
+  paints.length = 0;
+  for (let i = 0; i < 16; i += 1) {
+    turn += 1;
+    await handlers.agent_settled(null, settledCtx);
+  }
+  assert.equal(completionCount(), 1);
+  assert.deepEqual(firedOn, [16]);
+  assert.equal(paints.length, 16);
 });

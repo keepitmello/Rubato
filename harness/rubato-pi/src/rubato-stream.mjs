@@ -52,6 +52,13 @@ export const kRubatoStream = Symbol.for("rubato.stream.decorated");
  */
 export const kRubatoCallActive = Symbol.for("rubato.stream.callActive");
 
+const GOOGLE_FETCH_BLOCKED_APIS = new Set(["google-generative-ai", "google-vertex"]);
+
+function resolveStreamUpstreamFetch(model, env) {
+  if (GOOGLE_FETCH_BLOCKED_APIS.has(model?.api)) return undefined;
+  return resolveUpstreamFetch(env);
+}
+
 function isTerminal(event) {
   return event?.type === "done" || event?.type === "error";
 }
@@ -532,7 +539,9 @@ export function withRubatoStream(inner, { modelId = (model) => model?.id, report
     // 불리므로 audit 이 켜진 세션에서만 `transport: "sse"` 를 강제한다.
     // 호출자 `options.fetch` 가 있으면 그것이 이긴다. 없으면 프로세스당 undici
     // Agent (`upstream-dispatcher.mjs`). 래퍼는 그 위에 쌓인다.
-    let fetchImpl = options.fetch ?? resolveUpstreamFetch(options.env ?? process.env);
+    // google-generative-ai / google-vertex 는 `options.fetch !== globalThis.fetch`
+    // 이면 던지므로 dispatcher 를 넣지 않는다.
+    let fetchImpl = options.fetch ?? resolveStreamUpstreamFetch(model, options.env ?? process.env);
     if (isCacheAuditModel(model)) {
       let audit;
       try { audit = options.cacheAudit ?? cacheAudit(options.env ?? process.env); } catch {}
