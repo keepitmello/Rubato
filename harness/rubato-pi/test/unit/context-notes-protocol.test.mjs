@@ -12,8 +12,12 @@ test("new default and explicit legacy mode; invalid values fail closed", () => {
   assert.throws(() => contextNotesConfig({ RUBATO_CONTEXT_REMINDER_TOKENS: "1" }));
 });
 test("input experiment budget leaves physical headroom", () => {
-  assert.deepEqual(windowBudget({ contextWindow: 100000 }, contextNotesConfig({})), { target: 80000, reminder: 6144, full: 100000 });
+  assert.deepEqual(windowBudget({ contextWindow: 100000 }, contextNotesConfig({})), { target: 90000, hard: 95000, reminder: 6144, full: 100000 });
   assert.equal(windowBudget({ contextWindow: 100000 }, contextNotesConfig({ RUBATO_CONTEXT_WINDOW_TOKENS: "120000" })).target, 90000);
+  const astra = windowBudget({ contextWindow: 272000 }, contextNotesConfig({}));
+  assert.equal(astra.target, 244800);
+  assert.equal(astra.hard, 258400);
+  assert.equal(astra.reminder, 6144);
   assert.throws(() => windowBudget({ contextWindow: 0 }));
 });
 test("UUIDv7 chain and deterministic metadata carrier, never a generated summary", () => {

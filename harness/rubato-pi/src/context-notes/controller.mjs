@@ -18,7 +18,9 @@ observations/tool results. history_list_windows, history_list_items,
 history_search_contents and history_read_item recover the original record.
 Search is case-sensitive literal substring search, not semantic search.
 When the remaining budget warning appears, save a checkpoint with the notes tools,
-then call new_context. Do not include a summary argument: new_context takes none.
+then call new_context. At the 90% line stop new work, save once, and call new_context.
+If the window still grows to 95%, the harness starts a new window without a summary.
+Do not include a summary argument: new_context takes none.
 The new window contains stable instructions, window IDs and a small list of note paths,
 not the old conversation or the contents of all notes. Read relevant notes first and
 follow their references into history when needed. Notes are working aids, not new
@@ -173,15 +175,12 @@ export class ContextNotesController {
     }
     if (!messages) return;
     const usage = this.usage();
-    const recoveryLimit = Math.floor(usage.full * 0.9);
-    if (usage.tokens >= recoveryLimit) {
+    if (usage.tokens >= usage.full) {
       this.showStatus({ ...usage, remaining: 0 });
       throw new Error(`체크포인트 턴을 안전하게 실행할 여유도 남지 않았어요. 기록은 보존했으니 더 큰 한도로 같은 세션을 다시 열어 주세요.`);
     }
-    if (usage.tokens >= usage.target) {
-      if (!this.checkpointRequested) this.requestCheckpoint();
-      else { this.paused = null; return; }
-      throw new Error(`현재 문맥이 실험 한도 ${usage.target}토큰에 도달했어요. 기록은 보존했으며 요약이나 긴급 삭제는 실행하지 않았어요. 체크포인트 전용 턴을 시작했어요.`);
+    if (usage.tokens >= usage.hard && !this.checkpointRequested) {
+      throw new Error(`현재 문맥이 창 한도 ${usage.hard}토큰에 도달했어요. 기록은 보존했으며 요약은 실행하지 않았어요. 체크포인트가 있으면 새 창으로 넘어갑니다.`);
     }
     this.paused = null;
   }
@@ -308,9 +307,11 @@ export class ContextNotesController {
     const throughUserId = this.lastUser;
     const note = this.store.latestNoteForWindow(old.windowId, this.lastUser);
     if (!note) throw new Error("새 사용자 요청을 반영한 노트가 없어서 문맥 전환을 중단했어요. 노트를 갱신해 주세요.");
-    assertCheckpointFresh(this.store.branch, note);
-    if (reason === "budget" && note.savedAtTokens < this.usage().target - this.usage().reminder) {
-      throw new Error("문맥 한도에 도달했지만 최근 작업 노트가 없어요. 기록을 남긴 채 중단했어요.");
+    if (reason !== "hard") {
+      assertCheckpointFresh(this.store.branch, note);
+      if (reason === "budget" && note.savedAtTokens < this.usage().target - this.usage().reminder) {
+        throw new Error("문맥 한도에 도달했지만 최근 작업 노트가 없어요. 기록을 남긴 채 중단했어요.");
+      }
     }
     if (typeof ctx.applyCompaction !== "function" || typeof ctx.getMessageRevision !== "function") {
       throw new Error("설치된 엔진에 문맥 교체 인터페이스가 없어요.");
@@ -398,9 +399,11 @@ export class ContextNotesController {
             this.checkpointRequested = false;
             throw new Error("체크포인트 전용 턴이 작업 노트를 저장하지 않았어요. 이전 문맥은 그대로 유지했어요.");
           }
-        } else if (ctx.model?.contextWindow && usage.tokens >= usage.target) {
-          if (fresh) await this.roll(ctx, "budget");
+        } else if (ctx.model?.contextWindow && usage.tokens >= usage.hard) {
+          if (note) await this.roll(ctx, "hard");
           else this.requestCheckpoint();
+        } else if (ctx.model?.contextWindow && usage.tokens >= usage.target) {
+          if (!fresh) this.requestCheckpoint();
         }
       }
     } catch (error) { this.fail(error); }
@@ -408,7 +411,7 @@ export class ContextNotesController {
 
   requestCheckpoint() {
     const usage = this.usage(this.activeMessages);
-    if (usage.tokens >= Math.floor(usage.full * 0.9)) {
+    if (usage.tokens >= usage.full) {
       throw new Error("체크포인트 턴을 안전하게 실행할 여유도 남지 않았어요. 기록은 보존했으니 더 큰 한도로 같은 세션을 다시 열어 주세요.");
     }
     if (this.checkpointRequested) return { requested: true, repeated: true };
