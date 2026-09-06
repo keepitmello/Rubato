@@ -1,38 +1,21 @@
-# 설계 검토 요청: 실제 AgentSession에서 new_context 직후 전환
+# 해결: 실제 AgentSession에서 new_context 직후 공급자 요청
 
-작성일 2026-09-06. 작업 노트 문맥 관리 2차 패킷 인수인계 §9.
+작성일 2026-09-06. 작업 노트 문맥 관리 2차 패킷 인수인계 §9. 원인은 체크포인트가 아니라 센피의 다음 턴 준비였다.
 
-## 문제 위치
+## 실제 원인
 
-`harness/rubato-pi/src/context-notes/controller.mjs` `turnEnd` → `roll` → `assertCheckpointFresh`.
-실제 엔진은 `@code-yeongyu/senpi` AgentSession의 도구 루프.
+`turn_end`에서 `applyCompaction`은 경계를 저장하고 `this.agent.state.messages`를 새 창으로 다시 만든다. 그런데 `_installAgentNextTurnRefresh` → `prepareNextTurnWithContext`는 이렇게 고른다.
 
-## 재현
+```js
+const messages = compactedBeforeCallback ? this.agent.state.messages.slice() : turn.context.messages;
+```
 
-`RUBATO_TEST_CONTEXT_NOTES_ENGINE=1 node --test harness/rubato-pi/test/integration/context-notes-agent-session.test.mjs` 의 fact 3.
+`compactedBeforeCallback`은 센피 자신의 threshold 압축이 그 prepare에서 돌았을 때만 true다. 확장의 `turn_end` 압축은 무시되므로, `new_context` 도구 결과 뒤의 공급자 요청은 옛 창 원문을 그대로 보낸다.
 
-스크립트: `notes_write_file` → `new_context` → 다음 모델 호출에 텍스트.
+## 수정
 
-## 기대
+`core-context-notes.mjs`의 `session` 대상에 일곱 번째 연결을 넣었다. `engine-gate.mjs`의 `notesTurnMessages(turn, agentMessages)`는 노트 모드에서 에이전트 메시지가 창 안내로 시작하는데 `turn.context.messages`에는 없을 때만 재구성 결과를 쓴다. 요약 모드에서는 그대로 둔다.
 
-`new_context` 도구 묶음이 끝나면 요약 없이 창이 바뀌고, 그 다음 공급자 요청은 새 창 안내만 담는다. 패킷 단위 시험은 `turn_end`를 직접 보내 이 순서를 만든다.
+## 업스트림 보고 초안
 
-## 실제
-
-센피 에이전트 루프는 `new_context` 도구 결과 뒤에 모델을 한 번 더 호출한다. 그 응답이 텍스트면 노트 뒤 일반 작업으로 취급되어 전환이 거부된다 (`노트 저장 뒤 새 작업 결과가 생겼어요`). 공급자 요청 3번째에도 이전 사용자 원문이 남는다 (fact 2가 이 사실을 고정함).
-
-## 실패 이유
-
-패킷 규칙 6(노트 뒤 일반 작업이 있으면 그 노트로 자르지 않음)과 센피의 “도구 결과 후 반드시 모델 재호출”이 같은 턴에서 만난다. 단위 시험용 fake는 그 재호출을 만들지 않는다.
-
-## 영향 범위
-
-실제 AgentSession에서 도구만으로 창을 바꾸는 해피패스를 자동 검사하지 못한다. `/new-context` 수동 경로도 노트 뒤 텍스트 어시스턴트가 있으면 같은 검사를 받는다.
-
-## 가능한 대안
-
-1. `new_context` 직후 모델 재호출을 건너뛰고 `turn_end`를 내도록 엔진 루프를 바꾼다.
-2. 전환 예약을 도구 결과가 나온 시점에 적용하고, 그 다음 모델 호출을 새 창으로 보낸다.
-3. 관리 도구만 있는 어시스턴트 다음의 빈 텍스트 응답은 작업으로 보지 않는다.
-
-1·2는 엔진 계약, 3은 패킷 규칙 6의 예외라 임의로 정하지 않는다.
+extension `applyCompaction` during `turn_end` is not reflected in `prepareNextTurnWithContext` unless the built-in threshold compaction also ran. After an extension commits a compaction at `turn_end`, `_executeCompaction` rebuilds `this.agent.state.messages`, but the next provider admission still sends `turn.context.messages` because `compactedBeforeCallback` is true only when senpi's own `_enforceCompactionBeforeProvider` ran in that prepare. Hosts that own compaction (external-owner / applyCompaction) therefore emit one stale full-window request after a successful boundary. Reading `this.agent.state.messages` when it already carries the new compaction carrier would close the gap without changing threshold timing.

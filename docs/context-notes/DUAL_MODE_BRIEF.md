@@ -196,3 +196,50 @@ F3: tools register as `exposure: "search"` + `allowLazyActivation: false`; `sync
 
 `npm --prefix harness/rubato-pi test` → 1047 pass / 14 fail: the original 12 plus boot-chrome worker-resize flake.
 
+
+
+## Task 5 (lead, 2026-09-06): the post-`new_context` request goes out with the old window — root cause and fix
+
+Lead diagnosed the DESIGN_REVIEW_REQUEST case on the real engine. Evidence (fact 3 run with request/entry dump):
+
+- Entries on disk after one prompt: `user, assistant(notes_write_file), note, toolResult, assistant(new_context), toolResult, prepare, compaction(reason=tool), …, assistant`. Controller diagnostics: `transition_requested` → `transition_committed reported_applied=true`. So the packet's turn_end transition **works** on the real engine.
+- Provider requests: #3 (the one after the `new_context` result, issued *after* the compaction entry) still carried `system,user,user,assistant+tc,tool,assistant+tc,tool` with the old user text and **no bootstrap**.
+- Cause in the pinned engine, `node_modules/@code-yeongyu/senpi/dist/core/agent-session.js` `_installAgentNextTurnRefresh` → `prepareNextTurnWithContext`:
+  ```js
+  const compactedBeforeCallback = await compactBeforeNextAdmission();
+  const messages = compactedBeforeCallback ? this.agent.state.messages.slice() : turn.context.messages;
+  ```
+  `_executeCompaction` does replace `this.agent.state.messages` with the rebuilt session context, but the next turn only reads it when senpi's *own* threshold compaction ran in that prepare. An extension `applyCompaction` at `turn_end` is ignored until the agent loop ends. That anchor line is unique in the file (count 1).
+
+So the three options in `DESIGN_REVIEW_REQUEST.md` were aimed at the wrong target; the checkpoint rule is fine and `shouldStopAfterTurn` would stop autonomous continuation in the new window, which the packet does not want.
+
+### Fix (binding)
+
+Add one anchor to the `session` target in `src/transforms/core-context-notes.mjs` so that, in notes mode, when a notes-window boundary was committed since the turn's context was captured, `prepareNextTurnWithContext` uses `this.agent.state.messages.slice()`. Implement the decision in `engine-gate.mjs` (e.g. `notesTurnMessages(turn, agentMessages)` returning the agent messages when they begin with a notes-window carrier that `turn.context.messages` lacks, or any equivalent check you can justify from the engine), keep it dormant in summary mode, and give it a `markEnginePart`-style presence so `check-history-notes-engine.mjs` and `REQUIRED_MARKERS`/the transforms unit test cover the new anchor. Use `once()` so drift throws in notes mode like the other anchors.
+
+### Tests (binding)
+
+- Rewrite **fact 2** and **fact 3** in `test/integration/context-notes-agent-session.test.mjs`: fact 2 currently codifies the bug (asserts the old user text is still in request #3). Correct expectation: the request that carries the `new_context` result is the first request of the new window — bootstrap prefix present, old user text and note body absent, system prompt and tool definitions retained — and the model can keep working in that same agent loop (script a `notes_read_file` call as turn 3 and assert its result appears in request #4 only). Remove the "honest branches" that pass on `after.length === 0`.
+- Unit test for the new transform anchor and for the gate decision in both modes.
+- `check:context-notes-engine` exit 0; `test:context-notes`, `test:context-cost` green in both modes; the integration file green with `RUBATO_TEST_CONTEXT_NOTES_ENGINE=1`.
+
+### Docs (binding)
+
+Rewrite `docs/context-notes/DESIGN_REVIEW_REQUEST.md` into a resolved note: actual cause, the transform, and a one-paragraph upstream report draft for senpi ("extension `applyCompaction` during `turn_end` is not reflected in `prepareNextTurnWithContext` unless the built-in threshold compaction also ran"). Update the anchor count (six → seven) wherever the docs state it.
+
+Then commit and push the branch again. Budget: 60 minutes. Append `## Result (task 5)`.
+
+## Result (task 5)
+
+Root cause confirmed: `prepareNextTurnWithContext` only reads `this.agent.state.messages` when senpi's own threshold compaction ran. Extension `applyCompaction` at `turn_end` was ignored.
+
+Fix: `notesTurnMessages` in `engine-gate.mjs` plus a seventh `session` anchor (`onceReplace` of the unique `const messages = compactedBeforeCallback ? …` line). `REQUIRED_MARKERS` includes `turn`. Dormant in summary mode.
+
+`DESIGN_REVIEW_REQUEST.md` rewritten as a resolved note with an upstream report draft. Handoff/validation now say seven anchors.
+
+Commands (`NODE_OPTIONS` unset, `NODE_NO_WARNINGS=1`):
+- `check:context-notes-engine` exit 0
+- `test:context-notes` 93/93 in both `summary` and default/`history-notes`
+- `test:context-cost` 24/24 in both modes
+- `RUBATO_TEST_CONTEXT_NOTES_ENGINE=1 node --test harness/rubato-pi/test/integration/context-notes-agent-session.test.mjs` 10/10 pass. Fact 2/3 now assert the new-window bootstrap on the `new_context`-result request and `notes_read_file` body only on the next request.
+
