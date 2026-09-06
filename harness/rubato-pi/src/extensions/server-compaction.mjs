@@ -7,6 +7,7 @@
 //   투영한다. `ctx.applyCompaction(precomputed)` 는 prepareCompaction 과 LLM 요약을
 //   건너뛰고 stale/overflow 검사 → appendCompaction → 메시지 재구성만 수행한다.
 //   `ctx.compact()` 는 실행 중인 에이전트를 중단시키므로 쓰지 않는다.
+import { historyNotesEnabled } from "../context-notes/config.mjs";
 import { projectServerCompaction, serverCompactionRejection } from "../server-compaction-projection.mjs";
 
 export function installServerCompaction(pi, options = {}) {
@@ -15,9 +16,13 @@ export function installServerCompaction(pi, options = {}) {
   // 다음 컴팩션까지 매 turn_end 에 다시 발견되기 때문.
   let lastReported;
 
-  pi.on("session_before_compact", async (event, ctx) => serverCompactionRejection(ctx?.model, event?.reason));
+  pi.on("session_before_compact", async (event, ctx) => {
+    if (historyNotesEnabled()) return undefined;
+    return serverCompactionRejection(ctx?.model, event?.reason);
+  });
 
   pi.on("turn_end", async (_event, ctx) => {
+    if (historyNotesEnabled()) return;
     const outcome = await projectServerCompaction(ctx);
     if (outcome.status === "none") return;
     const key = `${outcome.status}:${outcome.entryId}:${outcome.reason ?? ""}`;
