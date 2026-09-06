@@ -124,7 +124,7 @@ class AsideReplConsultTest(unittest.TestCase):
         self.assertEqual(MODULE.SUBMIT_TIMEOUT_SECONDS, 120)
         self.assertIn("개 중", xhigh)
         self.assertIn("verifiedTier", xhigh)
-        self.assertIn("5.6 Sol", xhigh)
+        self.assertIn("/^최신$/", xhigh)
         self.assertIn('var targetLabel = "매우 높음"', xhigh)
         self.assertIn('var targetLabel = "Pro"', pro)
         self.assertIn("[0-9]* ?Pro", xhigh)
@@ -226,8 +226,7 @@ class AsideReplConsultTest(unittest.TestCase):
         self.assertIn("OUTPOST_DOCTOR_RESULT", script)
         self.assertIn("Work에서 새 채팅", script)
         self.assertIn("[0-9]* ?Pro", script)
-        self.assertIn("GPT-5", script)
-        self.assertIn("Sol", script)
+        self.assertIn("/^최신$/", script)
         self.assertNotIn("insertText", script)
         self.assertNotIn("setInputFiles", script)
         self.assertNotIn("composer-submit-button", script)
@@ -386,7 +385,7 @@ print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"ID: abc123\\\\nanswer","respo
             fake = root / "aside"
             fake.write_text(
                 """#!/usr/bin/env python3
-print('ASIDE_REPL_SUBMIT_RESULT {"quality":"xhigh","model":"GPT-5.6 Sol","tier":"매우 높음 (4 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1","targetId":"target"}')
+print('ASIDE_REPL_SUBMIT_RESULT {"quality":"xhigh","model":"최신","tier":"매우 높음 (4 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1","targetId":"target"}')
 print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"no id here","idMatched":false,"packetUnread":false,"responseElapsedMs":5678,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1"}')
 """,
                 encoding="utf-8",
@@ -684,7 +683,7 @@ print('ASIDE_REPL_SUBMIT_UNKNOWN {"quality":"pro","reason":"commit unverified"}'
             fake = root / "aside"
             fake.write_text(
                 """#!/usr/bin/env python3
-print('ASIDE_REPL_SUBMIT_RESULT {"quality":"pro","model":"GPT-5.6 Sol","tier":"Pro (5 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1","targetId":"target"}')
+print('ASIDE_REPL_SUBMIT_RESULT {"quality":"pro","model":"최신","tier":"Pro (5 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1","targetId":"target"}')
 print("response phase failed")
 """,
                 encoding="utf-8",
@@ -730,7 +729,7 @@ print("response phase failed")
             fake = root / "aside"
             fake.write_text(
                 """#!/usr/bin/env python3
-print('ASIDE_REPL_SUBMIT_RESULT {"quality":"pro","model":"GPT-5.6 Sol","tier":"Pro (5 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1","targetId":"target"}')
+print('ASIDE_REPL_SUBMIT_RESULT {"quality":"pro","model":"최신","tier":"Pro (5 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1","targetId":"target"}')
 print("response phase failed")
 """,
                 encoding="utf-8",
@@ -772,7 +771,7 @@ print("response phase failed")
                 f"""#!/usr/bin/env python3
 import pathlib
 pathlib.Path({str(temporary_artifact)!r}).write_bytes(b"not a zip")
-print('ASIDE_REPL_SUBMIT_RESULT {{"quality":"pro","model":"GPT-5.6 Sol","tier":"Pro (5 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1","targetId":"target"}}')
+print('ASIDE_REPL_SUBMIT_RESULT {{"quality":"pro","model":"최신","tier":"Pro (5 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1","targetId":"target"}}')
 print('ASIDE_REPL_RESPONSE_RESULT {{"responseText":"ID: placeholder","artifact":{{"temporaryPath":{json.dumps(str(temporary_artifact))},"suggestedFilename":"downloaded.zip"}},"responseElapsedMs":5678,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1"}}')
 """,
                 encoding="utf-8",
@@ -816,7 +815,7 @@ print('ASIDE_REPL_RESPONSE_RESULT {{"responseText":"ID: placeholder","artifact":
                         "id": "abc123",
                         "topic": "Test topic",
                         "quality": "pro",
-                        "model": "GPT-5.6 Sol",
+                        "model": "최신",
                         "tier": "Pro (5 of 5)",
                         "conversationUrl": "https://chatgpt.com/c/1",
                         "targetId": "target",
@@ -994,7 +993,7 @@ print('ASIDE_REPL_RESPONSE_RESULT {{"responseText":"ID: placeholder","artifact":
             fake = root / "aside"
             fake.write_text(
                 """#!/usr/bin/env python3
-print('ASIDE_REPL_SUBMIT_RESULT {"quality":"xhigh","model":"GPT-5.6 Sol","tier":"매우 높음 (4 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/c/6a95625e-1f78-83e8-aa90-a49f982e36ef","targetId":"target"}')
+print('ASIDE_REPL_SUBMIT_RESULT {"quality":"xhigh","model":"최신","tier":"매우 높음 (4 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/c/6a95625e-1f78-83e8-aa90-a49f982e36ef","targetId":"target"}')
 print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"answer","idMatched":false,"packetUnread":false,"responseElapsedMs":5678,"conversationUrl":"https://chatgpt.com/c/6a95625e-1f78-83e8-aa90-a49f982e36ef"}')
 """,
                 encoding="utf-8",
@@ -1074,7 +1073,7 @@ print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"answer","idMatched":false,"pa
             fake = root / "aside"
             fake.write_text(
                 """#!/usr/bin/env python3
-print('ASIDE_REPL_SUBMIT_RESULT {"quality":"xhigh","model":"GPT-5.6 Sol","tier":"매우 높음 (4 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/6a99ef53-3d80-83ee-a84c-187e4a415929","targetId":"target"}')
+print('ASIDE_REPL_SUBMIT_RESULT {"quality":"xhigh","model":"최신","tier":"매우 높음 (4 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/6a99ef53-3d80-83ee-a84c-187e4a415929","targetId":"target"}')
 print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"answer","idMatched":true,"packetUnread":false,"responseElapsedMs":25,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/project"}')
 """,
                 encoding="utf-8",

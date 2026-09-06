@@ -44,7 +44,7 @@ outpost doctor --json
 ```
 
 It opens the configured project, checks the composer label, Chat surface,
-tier pill (`NPro` included), `성능` / `모델 선택`, and the `GPT-5.6 Sol`
+tier pill (`NPro` included), `성능` / `모델 선택`, and the `최신`
 radio, then closes the tab. Exit `0` if send would get past those locators.
 Exit `75` if the UI drifted. Never fills the composer and never clicks send.
 
@@ -166,7 +166,7 @@ For `--quality xhigh` and `--quality pro`, require:
 ```text
 quality: xhigh | pro
 surface: Chat
-model: GPT-5.6 Sol
+model: 최신
 tier: 매우 높음 (N of M)   # xhigh
 tier: Pro (N of M)         # pro
 submitElapsedSeconds: <120
@@ -177,7 +177,7 @@ Switch to Chat before the picker. Work mode is not a outpost surface.
 The Chat slider stops are `즉시` `중간` `높음` `매우 높음` `Pro`. The closed
 composer pill may expose Pro as `NPro` (quota digits plus label, no space in
 the accessible name). Match the requested label; do not operate the Work-mode
-`5.6 Sol` / Fast picker.
+`최신` Chat picker; never `GPT-5.6 Sol`.
 
 Reject an unverified model or tier, an empty assistant body, or a
 submission at or above 120 seconds. A missing ID echo in the assistant

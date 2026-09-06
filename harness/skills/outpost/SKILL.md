@@ -1,6 +1,6 @@
 ---
 name: "outpost"
-description: "Use when quality depends on deep research, synthesis, architecture, diagnosis, or independent judgment through a packeted GPT-5.6 project-agent run."
+description: "Use when quality depends on deep research, synthesis, architecture, diagnosis, or independent judgment through a packeted ChatGPT 최신 Pro/xhigh project-agent run."
 ---
 
 # Outpost

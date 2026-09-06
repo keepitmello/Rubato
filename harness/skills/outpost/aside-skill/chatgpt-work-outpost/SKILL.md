@@ -51,7 +51,7 @@ Known project-home path:
 2. Require page title `ChatGPT - <PROJECT>`, heading `<PROJECT>`, and textbox
    `<PROJECT>에서 새 채팅`. These three signals prove the project-owned composer.
 3. Switch the banner to Chat before touching the picker. Work mode replaces
-   the Chat picker with `5.6 Sol 매우 높음` and Fast; do not operate that UI.
+   the Chat picker with a Work-mode model/Fast control; do not operate that UI.
 4. The project-home Chat composer starts a new project conversation. Do not
    open an existing chat from the project list unless the task is an explicit
    follow-up with `THREAD` / `CONVERSATION_URL`.
@@ -61,7 +61,7 @@ Known project-home path:
 Both qualities require:
 
 - Surface: **Chat**
-- Model: **GPT-5.6 Sol** checked
+- Model: **최신** checked
 
 Quality mapping on the Chat slider (`즉시` `중간` `높음` `매우 높음` `Pro`):
 
@@ -79,7 +79,7 @@ Known picker path:
    the label is `매우 높음` for `xhigh` or `Pro` for `pro`.
 4. Require that label at `N개 중 M번째`. Do not keep probing after that label.
 5. Only after the tier is verified, open `모델 선택` and require the checked
-   radio `GPT-5.6 Sol`. Click it if visible and unchecked.
+   radio `최신`. Click it if visible and unchecked. Do not select `GPT-5.6 Sol`.
 6. Press `Escape` to close the picker. Do not try to navigate back from the
    model submenu to the simple tier view.
 
@@ -116,7 +116,7 @@ ASIDE_WORK_OUTPOST_RESULT
 ID: <exact ID>
 SURFACE: Chat
 QUALITY: xhigh
-MODEL: GPT-5.6 Sol
+MODEL: 최신
 TIER: 매우 높음 (N of M)
 RESPONSE_BEGIN
 <exact ChatGPT response including its ID>
@@ -130,7 +130,7 @@ ASIDE_WORK_OUTPOST_RESULT
 ID: <exact ID>
 SURFACE: Chat
 QUALITY: pro
-MODEL: GPT-5.6 Sol
+MODEL: 최신
 TIER: Pro (N of M)
 RESPONSE_BEGIN
 <exact ChatGPT response including its ID>
