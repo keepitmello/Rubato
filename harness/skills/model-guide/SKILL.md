@@ -42,8 +42,7 @@ Choose the cognitive profile, then pass an exact `model` or named `preset` to `A
 
 Pass `effort` with the model:
 
-- **Muse** — omit `effort`.
-- **Grok** — pass `effort`. Default `high`; `xhigh` when the leg looks hard.
+- **Muse and Grok** — pass `effort`. Default `high`; `xhigh` when the leg looks hard.
 - **Fable 5.1, Sol, and Astra** — default `medium`; `high` when the work looks hard. The model and the effort both need approval.
 
 Route in this order:
@@ -71,7 +70,7 @@ Choose the profile at dispatch and predict the dominant bottleneck up front rath
 - **GPT-5.6 Sol** — hypothesis converger. Default **verifier**, and the supervisor when the owner is stuck. Give Sol ownership when the proof itself is the deliverable. `effort: medium` by default; `high` when the work looks hard, with the user's confirmation.
 - **Astra** — same effort and approval rule as Fable and Sol: `medium` by default; `high` when the work looks hard, only after approval for that model and effort.
 - **Grok 4.6 Fast** — action converger. Default **worker**, and the owner stand-in for already-clear work. Pass `xai/grok-4.6` or Cursor Fast (`cursor/cursor-grok-4.6-high-fast`). `effort: high` by default; `xhigh` when the leg looks hard.
-- **Muse Spark 1.3** — action converger. Default **worker** only (`opencode/muse-spark-1.3-contributor-free`). Prefer it for speed; use Grok when the leg needs more precision. Omit `effort`.
+- **Muse Spark 1.3** — action converger. Default **worker** only (`opencode/muse-spark-1.3-contributor-free`). Prefer it for speed; use Grok when the leg needs more precision. `effort: high` by default; `xhigh` when the leg looks hard.
 
 Verifier defaults when an independent check is worth the cost:
 
