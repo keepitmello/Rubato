@@ -43,6 +43,7 @@ Complex packets: `references/context-checklist.md`.
 
 ```bash
 outpost list
+outpost doctor
 outpost send --quality xhigh .outpost/<run>/packet.md
 outpost send --quality xhigh .outpost/<run>/packet.md --to <thread-id>
 outpost recover .outpost/<run>/result.json
