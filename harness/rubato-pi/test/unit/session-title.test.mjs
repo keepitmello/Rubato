@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   TITLE_ENTRY,
+  TITLE_MODEL,
   buildTitlePrompt,
   isTitleLocked,
   lastAutoTitle,
@@ -12,6 +13,7 @@ import {
   userTextsFromEntries,
 } from "../../src/session-title.mjs";
 import {
+  TITLE_EVERY_N_SETTLED_TURNS,
   installSessionTitle,
   paintTabTitle,
   pickTitleModel,
@@ -300,10 +302,94 @@ test("session.rename locks later auto titles and survives resume", () => {
   assert.deepEqual(names, ["Protocol work"]);
 });
 
-test("pickTitleModel prefers haiku and titleFromResponse reads complete() output", () => {
-  const haiku = { provider: "anthropic", id: "claude-haiku-4-5" };
-  assert.equal(pickTitleModel({ find: () => haiku }, { id: "fallback" }), haiku);
+test("pickTitleModel prefers luna and titleFromResponse reads complete() output", () => {
+  assert.deepEqual(TITLE_MODEL, { provider: "openai-codex", id: "gpt-5.6-luna" });
+  const luna = { provider: "openai-codex", id: "gpt-5.6-luna" };
+  const seen = [];
+  const found = pickTitleModel({ find: (...args) => (seen.push(args), luna) }, { id: "fallback" });
+  assert.equal(found, luna);
+  assert.deepEqual(seen, [["openai-codex", "gpt-5.6-luna"]]);
   assert.equal(pickTitleModel({ find: () => undefined }, { id: "fallback" }).id, "fallback");
   assert.equal(titleFromResponse({ content: [{ type: "text", text: "<title>Ok</title>" }] }), "Ok");
   paintTabTitle({ cwd: "/tmp/repo", ui: { setTitle: (title) => assert.equal(title, "repo") } });
+});
+
+function settledHarness({ locked = false } = {}) {
+  const handlers = {};
+  const names = [];
+  const entries = locked ? [{ type: "custom", customType: TITLE_ENTRY, data: { locked: true } }] : [];
+  const pi = {
+    on(event, handler) {
+      handlers[event] = handler;
+    },
+    getSessionName: () => names.at(-1),
+    setSessionName: (name) => names.push(name),
+    appendEntry(type, data) {
+      entries.push({ type: "custom", customType: type, data });
+    },
+  };
+  installSessionTitle(pi);
+  let completions = 0;
+  const paints = [];
+  const settledCtx = {
+    cwd: "/tmp/repo",
+    ui: { setTitle: (title) => paints.push(title) },
+    model: { provider: "anthropic", id: "claude-opus-5" },
+    modelRegistry: {
+      find: () => ({ provider: "openai-codex", id: "gpt-5.6-luna" }),
+      async complete() {
+        completions += 1;
+        return { content: [{ type: "text", text: `<title>Auto title ${completions}</title>` }] };
+      },
+    },
+    sessionManager: { getEntries: () => [userEntry("title cadence work item")] },
+  };
+  handlers.session_start(
+    { reason: "new" },
+    { cwd: "/tmp/repo", ui: { setTitle: () => {} }, sessionManager: { getEntries: () => entries } },
+  );
+  return {
+    handlers,
+    settledCtx,
+    paints,
+    names,
+    completionCount: () => completions,
+  };
+}
+
+test("title LLM runs on turns 1, 16, and 31 over 32 settled turns", async () => {
+  assert.equal(TITLE_EVERY_N_SETTLED_TURNS, 15);
+  const { handlers, settledCtx, completionCount } = settledHarness();
+  let turn = 0;
+  const firedOn = [];
+  const original = settledCtx.modelRegistry.complete.bind(settledCtx.modelRegistry);
+  settledCtx.modelRegistry.complete = (...args) => {
+    firedOn.push(turn);
+    return original(...args);
+  };
+  for (let i = 0; i < 32; i += 1) {
+    turn += 1;
+    await handlers.agent_settled(null, settledCtx);
+  }
+  assert.equal(turn, 32);
+  assert.equal(completionCount(), 3);
+  assert.deepEqual(firedOn, [1, 16, 31]);
+});
+
+test("a locked title never calls the completion function", async () => {
+  const { handlers, settledCtx, completionCount } = settledHarness({ locked: true });
+  for (let i = 0; i < 20; i += 1) {
+    await handlers.agent_settled(null, settledCtx);
+  }
+  assert.equal(completionCount(), 0);
+});
+
+test("paintTabTitle still runs on turns where the LLM call is skipped", async () => {
+  const { handlers, settledCtx, paints, completionCount } = settledHarness();
+  paints.length = 0;
+  for (let i = 0; i < 5; i += 1) {
+    await handlers.agent_settled(null, settledCtx);
+  }
+  assert.equal(completionCount(), 1);
+  assert.equal(paints.length, 5);
 });

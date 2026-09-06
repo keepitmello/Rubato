@@ -16,6 +16,11 @@ function cwdName(ctx) {
   return basename(ctx?.cwd ?? ctx?.sessionManager?.getCwd?.() ?? "");
 }
 
+// Rate-limit for the title LLM call: generate on the first settled turn of the
+// session, then only every Nth settled turn after that (turns 1, 16, 31, ...).
+// Painting the tab is free and still happens on every settle.
+export const TITLE_EVERY_N_SETTLED_TURNS = 15;
+
 function currentName(pi, ctx) {
   return pi.getSessionName?.() ?? ctx?.sessionManager?.getSessionName?.();
 }
@@ -129,13 +134,14 @@ function installRenameLock(pi, state) {
 }
 
 export function installSessionTitle(pi) {
-  const state = { lastAuto: undefined, locked: false, inFlight: false, applyingAuto: false };
+  const state = { lastAuto: undefined, locked: false, inFlight: false, applyingAuto: false, settled: 0 };
   installRenameLock(pi, state);
 
   pi.on("session_start", (_event, ctx) => {
     const entries = ctx.sessionManager?.getEntries?.() ?? [];
     state.lastAuto = lastAutoTitle(entries);
     state.locked = isTitleLocked(entries);
+    state.settled = 0;
     paintTabTitle(ctx, currentName(pi, ctx));
   });
 
@@ -151,6 +157,11 @@ export function installSessionTitle(pi) {
 
   pi.on("agent_settled", async (_event, ctx) => {
     if (state.locked || state.inFlight) return;
+    state.settled += 1;
+    if ((state.settled - 1) % TITLE_EVERY_N_SETTLED_TURNS !== 0) {
+      paintTabTitle(ctx, currentName(pi, ctx));
+      return;
+    }
     state.inFlight = true;
     try {
       await refreshSessionTitle(pi, ctx, state);

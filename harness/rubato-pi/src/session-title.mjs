@@ -1,4 +1,4 @@
-export const TITLE_MODEL = Object.freeze({ provider: "anthropic", id: "claude-haiku-4-5" });
+export const TITLE_MODEL = Object.freeze({ provider: "openai-codex", id: "gpt-5.6-luna" });
 export const TITLE_ENTRY = "rubato-pi.session-title";
 
 export const TITLE_SYSTEM_PROMPT = `Name this coding-agent session.
