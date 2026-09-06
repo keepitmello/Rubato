@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { stripVTControlCharacters as plain } from "node:util";
 import {
   abandonBootChrome, composeBootChrome, enterBootChrome, finishBootChrome,
@@ -9,6 +12,93 @@ import {
 import { INTRO_MS, RELEASE_MS, CLEAR_MS, WORDMARK, renderResonance } from "../../src/boot-resonance.mjs";
 
 const chromeUrl = new URL("../../src/boot-chrome.mjs", import.meta.url).href;
+const splashPath = new URL("../../src/boot-splash.mjs", import.meta.url).pathname;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function startShellSplash(dir) {
+  const child = spawn(process.execPath, [splashPath, dir], {
+    env: { ...process.env, NODE_OPTIONS: "", COLUMNS: "80", LINES: "24", NO_COLOR: "" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let output = "";
+  child.stdout.on("data", (chunk) => { output += chunk; });
+  const exit = new Promise((resolve) => child.once("exit", resolve));
+  return { child, exit, output: () => output };
+}
+
+test("shell-phase renderer animates shell steps and is adopted without re-entering the screen", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "rubato-splash-"));
+  const splash = startShellSplash(dir);
+  try {
+    writeFileSync(join(dir, "status"), "스킬을 맞추는 중");
+    // Under a loaded test host the renderer may take a while to boot; wait for evidence, not time.
+    const until = Date.now() + 8000;
+    while (Date.now() < until && (splash.output().match(/\x1b\[\?2026h/g) ?? []).length < 4) await sleep(50);
+    const shellFrames = splash.output();
+    assert((shellFrames.match(/\x1b\[\?2026h/g) ?? []).length >= 4, "renderer must paint on its own");
+    assert(!shellFrames.includes("\x1b[?1049h"), "the shell already opened the alt-screen");
+    assert.match(plain(shellFrames), /[\u2801-\u28ff]/u);
+    assert(plain(shellFrames).includes("스킬을 맞추는 중"));
+    const t0 = readFileSync(join(dir, "t0"), "utf8");
+
+    const source = `
+      import { EventEmitter } from "node:events";
+      import { enterBootChrome, abandonBootChrome } from ${JSON.stringify(chromeUrl)};
+      const stdout = Object.assign(new EventEmitter(), { isTTY: true, columns: 80, rows: 24, fd: 1 });
+      const io = { stdout, stdin: { isTTY: true } };
+      const env = { TERM: "xterm-256color", RUBATO_BOOT_SPLASH_DIR: ${JSON.stringify(dir)} };
+      const before = Date.now();
+      if (!enterBootChrome([], io, env)) throw Error("chrome refused");
+      process.stderr.write(JSON.stringify({ t0: env.RUBATO_BOOT_T0, waited: Date.now() - before, dir: env.RUBATO_BOOT_SPLASH_DIR ?? null }));
+      await new Promise(r => setTimeout(r, 300));
+      abandonBootChrome();
+    `;
+    const engine = spawn(process.execPath, ["--input-type=module", "-e", source], {
+      env: { ...process.env, NODE_OPTIONS: "" }, stdio: ["ignore", "pipe", "pipe"],
+    });
+    let engineOut = "", engineErr = "";
+    engine.stdout.on("data", (c) => { engineOut += c; });
+    engine.stderr.on("data", (c) => { engineErr += c; });
+    const engineCode = await new Promise((resolve) => engine.once("exit", resolve));
+    assert.equal(engineCode, 0, engineErr);
+    const splashCode = await Promise.race([splash.exit, sleep(2000).then(() => "timeout")]);
+    assert.equal(splashCode, 0, "renderer must stop once adopted");
+    const report = JSON.parse(engineErr);
+    assert.equal(report.t0, t0, "engine must continue the shell clock");
+    assert.equal(report.dir, null);
+    assert(report.waited < 1400, `adoption took ${report.waited}ms`);
+    assert(!existsSync(dir), "adopter removes the handoff directory");
+    assert(!engineOut.includes("\x1b[?1049h"), "adopted screen must not be cleared again");
+    assert(engineOut.startsWith("\x1b[?25l\x1b[?2026h"));
+    assert(plain(engineOut).includes("스킬을 맞추는 중"), "last shell step stays until the engine reports its own");
+    // Frames after the renderer acknowledged the stop belong to the engine only.
+    const shellTail = splash.output().slice(shellFrames.length);
+    assert(!shellTail.includes("\x1b[?1049l"), "adopted renderer must leave the screen alone");
+  } finally {
+    splash.child.kill("SIGKILL");
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("shell-phase renderer leaves the alt-screen on close and on signals", async () => {
+  for (const mode of ["close", "SIGTERM"]) {
+    const dir = mkdtempSync(join(tmpdir(), "rubato-splash-"));
+    const splash = startShellSplash(dir);
+    try {
+      const until = Date.now() + 8000;
+      while (Date.now() < until && !splash.output().includes("\x1b[?2026h")) await sleep(50);
+      if (mode === "close") writeFileSync(join(dir, "stop"), "close");
+      else splash.child.kill("SIGTERM");
+      const code = await Promise.race([splash.exit, sleep(2000).then(() => "timeout")]);
+      assert.equal(code, 0, mode);
+      assert.equal(readFileSync(join(dir, "stopped"), "utf8"), "closed");
+      assert(splash.output().endsWith("\x1b[0m\x1b[?1049l\x1b[?25h"), mode);
+    } finally {
+      splash.child.kill("SIGKILL");
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
 test("release gets a larger canvas without scaling or shifting the held logo", () => {
   const options = { time: 6000, columns: 80, rows: 28, env: { NO_COLOR: "" } };
   const held = renderResonance(options).map(plain);

@@ -1,10 +1,12 @@
 import { stripVTControlCharacters } from "node:util";
-import { writeSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync, writeSync } from "node:fs";
+import { join } from "node:path";
 import { Worker } from "node:worker_threads";
 import { isHeadlessCli } from "./cli-headless.mjs";
 import { RELEASE_MS, WORDMARK, renderResonance, resonanceColor } from "./boot-resonance.mjs";
 
 const ENTER_ALT = "\x1b[?1049h\x1b[2J\x1b[H\x1b[?25l";
+const HIDE_CURSOR = "\x1b[?25l";
 const LEAVE_ALT = "\x1b[0m\x1b[?1049l\x1b[?25h";
 const DEFAULT_STATUS = "엔진을 불러오는 중";
 let ioRef = null, worker = null, control = null, onResize = null;
@@ -140,23 +142,65 @@ export function finishBootChrome() {
   return finishPromise;
 }
 
+/**
+ * Take over the shell-phase renderer (boot-splash.mjs) started by rubato-pi.sh.
+ * It is told to stop and we wait for its acknowledgement, so the next frame
+ * here continues the same picture on the same alt-screen. Returns the adopted
+ * clock/status, or null when there was nothing to adopt. Sets RUBATO_BOOT_T0
+ * so a relaunched child launcher keeps the clock too.
+ */
+export function adoptShellSplash(env = process.env, io = process) {
+  const dir = env.RUBATO_BOOT_SPLASH_DIR;
+  if (!dir) return null;
+  delete env.RUBATO_BOOT_SPLASH_DIR;
+  if (!existsSync(dir)) return null;
+  let adopted = null;
+  try {
+    writeFileSync(join(dir, "stop"), "adopt");
+    const gate = new Int32Array(new SharedArrayBuffer(4));
+    const deadline = Date.now() + 1500;
+    const stopped = join(dir, "stopped");
+    while (!existsSync(stopped) && Date.now() < deadline) Atomics.wait(gate, 0, 0, 10);
+    if (existsSync(stopped) && readFileSync(stopped, "utf8").trim() === "adopted") {
+      const t0 = Number(readFileSync(join(dir, "t0"), "utf8"));
+      let status = "";
+      try { status = readFileSync(join(dir, "status"), "utf8").trim(); } catch { /* no step yet */ }
+      adopted = { t0: Number.isFinite(t0) ? t0 : null, status: status || null };
+      if (adopted.t0 !== null) env.RUBATO_BOOT_T0 = String(adopted.t0);
+    } else {
+      // Renderer never answered: make sure it cannot paint over the next owner.
+      try { process.kill(Number(readFileSync(join(dir, "pid"), "utf8")), "SIGKILL"); } catch { /* already gone */ }
+    }
+  } catch { /* treat as nothing to adopt */ }
+  rmSync(dir, { recursive: true, force: true });
+  if (!adopted) { try { writeSync(io?.stdout?.fd ?? 1, LEAVE_ALT); } catch { /* TTY may be gone */ } }
+  return adopted;
+}
+
 export function enterBootChrome(argv = process.argv.slice(2), io = process, env = process.env) {
-  if (!shouldPaintBootChrome(argv, io, env)) return false;
+  const adopted = adoptShellSplash(env, io);
+  if (!shouldPaintBootChrome(argv, io, env)) {
+    if (adopted) { try { writeSync(io.stdout.fd ?? 1, LEAVE_ALT); } catch { /* TTY may be gone */ } }
+    return false;
+  }
   releaseBootChrome();
   ioRef = io; workerError = null;
+  const t0 = adopted?.t0 ?? Number(env.RUBATO_BOOT_T0);
+  const elapsed = Number.isFinite(t0) && t0 > 0 ? Math.max(0, Date.now() - t0) : 0;
+  const status = adopted?.status ?? DEFAULT_STATUS;
   control = new Int32Array(new SharedArrayBuffer(5 * Int32Array.BYTES_PER_ELEMENT));
   onResize = () => {
     Atomics.store(control, 2, bootChromeColumnCount(io, env));
     Atomics.store(control, 3, bootChromeRowCount(io, env));
   };
   onResize();
-  writeSync(io.stdout.fd ?? 1, ENTER_ALT + composeBootChrome({
-    env, columns: control[2], rows: control[3], status: DEFAULT_STATUS,
+  writeSync(io.stdout.fd ?? 1, (adopted ? HIDE_CURSOR : ENTER_ALT) + composeBootChrome({
+    env, columns: control[2], rows: control[3], status, time: elapsed,
   }));
   const current = new Worker(new URL("./boot-worker.mjs", import.meta.url), {
     // Never load engine hooks in the renderer; they would recreate the startup stall.
     execArgv: [], env: { ...process.env, NODE_OPTIONS: "" },
-    workerData: { control: control.buffer, fd: io.stdout.fd ?? 1, env },
+    workerData: { control: control.buffer, fd: io.stdout.fd ?? 1, env, elapsed, status },
   });
   worker = current;
   const fail = (error) => {
