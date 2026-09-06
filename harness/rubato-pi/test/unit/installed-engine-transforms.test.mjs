@@ -11,13 +11,16 @@
 // 만들던 신규 벤더 파일(tool-group, turn-work-summary, internal-actions,
 // cursor-exec-journal)은 in-repo 모듈이 정본이라 여기 없다.
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 
 import { senpiDir, senpiNested } from "../../src/engine-paths.mjs";
 import { load } from "../../src/no-changelog-hooks.mjs";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const transformDir = join(here, "../../src/transforms");
 
 const ROOTS = {
   senpi: (rel) => join(senpiDir, rel),
@@ -98,4 +101,95 @@ test("every audited vendor file transforms cleanly on the installed engine", asy
   } finally {
     process.off("warning", onWarning);
   }
+});
+
+function walkJs(dir, acc = []) {
+  let entries;
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return acc;
+  }
+  for (const name of entries) {
+    const path = join(dir, name);
+    let st;
+    try {
+      st = statSync(path);
+    } catch {
+      continue;
+    }
+    if (st.isDirectory()) {
+      if (name === "node_modules" || name === "vendor") continue;
+      walkJs(path, acc);
+    } else if (name.endsWith(".js") || name.endsWith(".mjs")) {
+      acc.push(path);
+    }
+  }
+  return acc;
+}
+
+const ENGINE_DIST = [
+  senpiDir,
+  senpiNested("@earendil-works", "pi-tui"),
+  senpiNested("@earendil-works", "pi-ai"),
+  senpiNested("@earendil-works", "pi-agent-core"),
+].map((root) => join(root, "dist"));
+
+function engineFileUrls() {
+  return ENGINE_DIST.flatMap((dir) => walkJs(dir)).map((path) => pathToFileURL(path).href);
+}
+
+async function collectDriftWarnings(run) {
+  const warnings = [];
+  const onWarning = (warning) => {
+    if (warning?.name === "RubatoTransformDrift") warnings.push(warning.message);
+  };
+  process.on("warning", onWarning);
+  try {
+    await run();
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+    return warnings;
+  } finally {
+    process.off("warning", onWarning);
+  }
+}
+
+// AUDITED 는 depatch 인벤토리의 일부라, 여기 없는 파일의 니들이
+// 어긋나도 감사가 못 본다. 등록된 변환은 URL 이 맞는 dist
+// 파일에만 걸리므로, dist 전부를 load 한 뒤 드리프트가 0건이어야
+// 한다. (부팅 경고가 나오는 다른 원인: 부모 NODE_OPTIONS --import 위에
+// launch.mjs 가 훅을 한 번 더 등록하면 변환이 두 번 돌고 두 번째는
+// 니들 미스로 보인다. 그건 론처 쪽이다.)
+test("every registered transform applies to the pinned engine without drift", async () => {
+  const files = ENGINE_DIST.flatMap((dir) => walkJs(dir));
+  const warnings = await collectDriftWarnings(async () => {
+    for (const path of files) {
+      const source = readFileSync(path, "utf8");
+      const url = pathToFileURL(path).href;
+      await load(url, { format: "module" }, async () => ({ format: "module", source }));
+    }
+  });
+  assert.deepEqual(warnings, [], "transform drift on a pinned engine file outside AUDITED");
+});
+
+test("every transform URL matcher still hits a pinned engine file", async () => {
+  const urls = engineFileUrls();
+  const dead = [];
+  for (const name of readdirSync(transformDir)) {
+    if (!name.endsWith(".mjs")) continue;
+    const mod = await import(pathToFileURL(join(transformDir, name)).href);
+    for (const [key, fn] of Object.entries(mod)) {
+      if (!key.startsWith("is") || !key.endsWith("Url") || typeof fn !== "function") continue;
+      const hit = urls.some((url) => {
+        try {
+          return fn(url);
+        } catch {
+          return false;
+        }
+      });
+      if (!hit) dead.push(`${name}:${key}`);
+    }
+  }
+  assert.deepEqual(dead, [], "transform URL matcher hits no pinned engine file");
 });

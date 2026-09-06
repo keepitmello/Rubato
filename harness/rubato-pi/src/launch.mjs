@@ -1,5 +1,4 @@
 import { spawn } from "node:child_process";
-import { register } from "node:module";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -142,7 +141,11 @@ export async function spawnRubatoPi({ args = process.argv.slice(2), env = proces
   // spawn 하던 것과 합치면 기동마다 Node 를 세 번 올리는 셈이었다.
   if (sameNodeBinary(node.bin)) {
     Object.assign(process.env, nextEnv);
-    register(new URL("./no-changelog-hooks.mjs", import.meta.url));
+    // NODE_OPTIONS --import 가 이미 같은 훅을 심은 채 이 프로세스가 떠 있으면
+    // (루바토 안에서 루바토를 띄운 경우) register() 를 한 번 더 부르면 로더가
+    // 두 겹이 되어 변환이 두 번 돌고 두 번째는 전부 drift 로 보인다.
+    // no-changelog-register 의 심볼 가드가 그 이중 등록을 막는다.
+    await import(new URL("./no-changelog-register.mjs", import.meta.url).href);
     process.argv = [process.execPath, ...argv];
     await import(pathToFileURL(entry).href);
     return undefined;
