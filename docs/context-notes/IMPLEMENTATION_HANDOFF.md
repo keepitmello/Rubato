@@ -54,7 +54,7 @@
 | `src/context-notes/controller.mjs`, `engine-gate.mjs` | 노트 저장, 전환 예약·적용·격리, 마지막 저장 직전 검사를 연결해요. |
 | `src/context-notes/tools.mjs`, `src/extensions/context-notes.mjs` | 도구 11개와 명령·이벤트를 연결해요. |
 | `src/transforms/core-context-notes.mjs` | 실제 고정 엔진의 요약·입력·경계 저장 위치에 필수 검사를 붙여요. |
-| `scripts/check-history-notes-engine.mjs` | 설치본 버전·연결 위치 여섯 곳과 변환 후 구문을 검사해요. |
+| `scripts/check-history-notes-engine.mjs` | 설치본 버전·연결 위치 일곱 곳과 변환 후 구문을 검사해요. |
 | `scripts/verify-context-notes-package.mjs` | 전달 파일 해시와 로컬 원본·이전 버전·수정분을 읽기 전용으로 비교해요. |
 | `scripts/context-notes-report.mjs` | 원문 없이 도구·전환 진단을 요약해요. |
 | `scripts/context-cost-audit.mjs` | 한 모델의 현재 가지 사용량을 합산하고 추정 재생 자료를 내보내요. |
@@ -144,7 +144,7 @@ node harness/rubato-pi/scripts/context-cost-simulate.mjs \
 
 ## 7. 성공 조건
 
-필수 엔진 변환 여섯 곳이 모두 적용되고, 전체 저장소의 빌드·형 검사·기존 테스트와 새 테스트가 통과해야 해요. 기존부터 실패하는 검사는 이번 변경과 분리해 재현 자료를 남겨요.
+필수 엔진 변환 일곱 곳이 모두 적용되고, 전체 저장소의 빌드·형 검사·기존 테스트와 새 테스트가 통과해야 해요. 기존부터 실패하는 검사는 이번 변경과 분리해 재현 자료를 남겨요.
 
 실제 같은 작업에서 요약 없는 창 전환을 여러 번 마치고 노트·원문을 읽어 처음 요구사항을 지켜야 해요. 재시작·경합·취소·저장 실패에 원문을 잃거나 실패를 성공으로 표시하면 안 돼요. 새 창 첫 입력에 이전 전체 기록을 몰래 다시 넣어도 실패예요.
 
