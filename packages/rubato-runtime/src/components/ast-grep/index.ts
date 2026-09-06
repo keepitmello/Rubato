@@ -47,6 +47,7 @@ export function createAstGrepComponent(options: AstGrepComponentOptions = {}): R
         env: { [PROJECT_CWD_ENV]: env[PROJECT_CWD_ENV] ?? resolveCwd() },
         enabled: true,
         lifecycle: "eager",
+        startupTimeoutMs: 2000,
       })
     },
   }
