@@ -1,11 +1,15 @@
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
-import { HISTORY_NOTES_MODE, contextMode, historyNotesEnabled, setContextMode } from "../context-notes/config.mjs";
+import {
+  HISTORY_NOTES_MODE, SUMMARY_MODE, contextMode, hasResolvedContextMode, historyNotesEnabled,
+  isUserExplicitContextMode, setContextMode,
+} from "../context-notes/config.mjs";
 import { ContextNotesController, GUIDANCE } from "../context-notes/controller.mjs";
 import { assertEngineParts } from "../context-notes/engine-gate.mjs";
 import {
   NOTES_RESUME_IN_SUMMARY,
   SUMMARY_SESSION_COMMAND_NOTICE,
+  adoptContextMode,
   considerContextModeSwitch,
   hasNotesWindowBoundary,
   hasNotesWindowEntries,
@@ -64,14 +68,17 @@ export async function installContextNotes(pi, options = {}) {
     try {
       const branch = sessionBranch(ctx);
       if (liveSwitch) {
-        const implied = recordedModeFromBranch(branch) ?? (hasNotesWindowEntries(branch) ? HISTORY_NOTES_MODE : undefined);
-        if (implied && implied !== contextMode()) {
-          if (implied === HISTORY_NOTES_MODE) {
-            if (options.requireEngine !== false) assertEngineParts();
-            setContextMode(HISTORY_NOTES_MODE);
-          } else if (hasNotesWindowBoundary(branch)) {
+        if (isUserExplicitContextMode()) {
+          if (contextMode() === SUMMARY_MODE && hasNotesWindowEntries(branch)) {
             throw new Error(NOTES_RESUME_IN_SUMMARY);
-          } else setContextMode(implied);
+          }
+        } else if (!hasResolvedContextMode()) {
+          const mode = adoptContextMode({ branch, model: ctx.model });
+          if (mode === HISTORY_NOTES_MODE && options.requireEngine !== false) assertEngineParts();
+          if (mode === SUMMARY_MODE && hasNotesWindowBoundary(branch)) {
+            throw new Error(NOTES_RESUME_IN_SUMMARY);
+          }
+          setContextMode(mode);
         }
         if (!recordedModeFromBranch(branch)) persistMode(contextMode());
       }
