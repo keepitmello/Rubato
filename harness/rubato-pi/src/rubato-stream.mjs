@@ -19,6 +19,7 @@ import { measurementRecorder, normalizeProviderUsage } from "./measurement-recor
 import { wrapAnthropicServerCompactionFetch } from "./anthropic-server-compaction-wire.mjs";
 import { midConversationEffort } from "./mid-conversation-effort.mjs";
 import { PROCESS_STARTED_AT } from "./process-start.mjs";
+import { resolveUpstreamFetch } from "./upstream-dispatcher.mjs";
 import { resolveCallIdentity } from "./speed-index-identity.mjs";
 import { recordSpeedIndexCall, speedIndexStore } from "./speed-index-store.mjs";
 
@@ -529,7 +530,9 @@ export function withRubatoStream(inner, { modelId = (model) => model?.id, report
     // 직결 경로의 캐시 실사: SDK 가 부르는 fetch 를 감싸 최종 body 와 원시 usage 를
     // 남긴다 (`RUBATO_CACHE_AUDIT_DIR`). Codex 는 기본 WebSocket 이라 fetch 가 안
     // 불리므로 audit 이 켜진 세션에서만 `transport: "sse"` 를 강제한다.
-    let fetchImpl = options.fetch;
+    // 호출자 `options.fetch` 가 있으면 그것이 이긴다. 없으면 프로세스당 undici
+    // Agent (`upstream-dispatcher.mjs`). 래퍼는 그 위에 쌓인다.
+    let fetchImpl = options.fetch ?? resolveUpstreamFetch(options.env ?? process.env);
     if (isCacheAuditModel(model)) {
       let audit;
       try { audit = options.cacheAudit ?? cacheAudit(options.env ?? process.env); } catch {}

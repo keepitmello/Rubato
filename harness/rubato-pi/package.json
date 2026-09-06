@@ -14,5 +14,8 @@
     "smoke:local": "node test/smoke/local.mjs",
     "smoke:real": "node test/smoke/real.mjs",
     "smoke:direct": "node test/smoke/direct-real.mjs"
+  },
+  "dependencies": {
+    "undici": "8.10.0"
   }
 }
