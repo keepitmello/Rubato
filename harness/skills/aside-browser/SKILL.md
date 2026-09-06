@@ -1,6 +1,6 @@
 ---
 name: "aside-browser"
-version: 2
+version: 4
 description: "Use when research quality depends on broad, fresh, high-recall evidence collection, or when the task requires direct browser interaction."
 ---
 
@@ -19,11 +19,16 @@ Start Aside Browser before running CLI commands. (Use `aside -h` to see how.)
 
 ### Start a task
 
-Omit `-m` unless you are deliberately overriding the account default.
-The default model is already Grok. Do not pass Sol.
+Omit `-m`. The model comes from Aside settings Task models, not from `aside guide`.
+This account maps every slot to Grok 4.6: Default, Fast, Standard, Deep, Visual.
+`-s fast` selects the Fast slot. `--effort` is thinking level, not the model.
+
+`aside guide` and `aside exec --help` print `-m openai/gpt-5.6-sol` as a generic
+example. That model is not on this account. Do not copy it.
 
 ```bash
 aside "Find flights from SF to Tokyo for next weekend"
+aside -s fast "Quick lookup"
 aside --effort high "Research quarterly earnings"
 aside --effort ultrabrowse "Research this deeply"
 aside --account u1 "Check unread Slack notifications"
@@ -31,7 +36,8 @@ aside --permission full-access "Install the CLI from the project README"
 aside "https://example.com"
 ```
 
-Use `-m <provider/model>` only when the user or task names a different model.
+Use `-m <provider/model>` only when the user names a different model that exists
+on this account.
 Never pass `openai/gpt-5.6-sol` or `cursor/gpt-5.6-sol`.
 
 After running the task, watch the run and give the user a status update around every 60 seconds.
