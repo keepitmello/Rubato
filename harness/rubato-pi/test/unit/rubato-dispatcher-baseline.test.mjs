@@ -97,9 +97,14 @@ test("auth, update, and build remain launcher-owned passthrough commands", (t) =
   }
 });
 
-test("legacy update runs the live-session guard first and never delegates when blocked", (t) => {
+test("remote update-guard runs before delegation and never delegates when blocked", (t) => {
+  // 5f3393e4d took the live-session guard off legacy `update` (git pull plus a
+  // hub kickstart must land while sessions run) and left it on the signed
+  // `rubato remote update` path whose preflight is `remote update-guard`.
+  // The launcher-level invariant is unchanged: guard first, exit 73 when
+  // blocked, never delegate. Hermetic: the fake node, not live sessions.
   const harness = dispatcherHarness(t);
-  const result = harness.run(["update"], "", { RUBATO_TEST_GUARD_FAIL: "1" });
+  const result = harness.run(["remote", "update-guard"], "", { RUBATO_TEST_GUARD_FAIL: "1" });
   assert.equal(result.status, 73, result.stderr);
   assert.deepEqual(harness.engineArgs().slice(-2), ["remote", "update-guard"]);
   assert.throws(() => harness.command(), /ENOENT/);

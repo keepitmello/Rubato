@@ -167,9 +167,10 @@ test("drop 으로 표시한 블록은 재조립 결과에 섞이지 않는다", 
 test("탐색 도구 안내는 역할 프롬프트 조각에 살아 있다", () => {
   for (const role of ["lead", "teammate"]) {
     const text = loadRolePrompt(role);
+    // 785f6a3f9 reworded the hook; the tool list it pins is unchanged.
     assert.match(
       text,
-      /Search with the tools built for it/,
+      /Search with the search tools/,
       `${role} 역할 프롬프트에 탐색 도구 안내가 없다. 엔진도 안 넣고 역할 프롬프트도 없으면 세션은 파이썬 순회로 레포를 훑는다`,
     );
     for (const probe of ["rg", "ast_grep_search", "lsp_find_references"]) {
