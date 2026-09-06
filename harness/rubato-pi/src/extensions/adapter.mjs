@@ -1,5 +1,4 @@
 import { join } from "node:path";
-import { historyNotesEnabled } from "../context-notes/config.mjs";
 import { installContextNotes } from "./context-notes.mjs";
 import { runOrDeferExtension } from "../deferred-extensions.mjs";
 import { assertEngineBuilt, rubatoExtension } from "../engine-paths.mjs";
@@ -74,7 +73,7 @@ async function activateAdapterOverlay(pi) {
 export default async function rubatoPiAdapter(pi) {
   installEvalSearchGuard(pi);
   installMeasurementHooks(pi);
-  if (!historyNotesEnabled()) installServerCompaction(pi);
+  installServerCompaction(pi);
   const member = isTeamMemberProcess();
   const role = resolveRole();
   if (!member) installSessionTitle(pi);
