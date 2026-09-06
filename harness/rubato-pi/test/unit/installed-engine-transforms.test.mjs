@@ -31,6 +31,14 @@ const ROOTS = {
 
 const AUDITED = [
   ["senpi", "dist/core/agent-session.js"],
+  ["senpi", "dist/core/tools/tool-definition-wrapper.js"],
+  ["senpi", "dist/core/extensions/builtin/gpt-apply-patch/extension.js"],
+  ["senpi", "dist/core/extensions/builtin/mcp/expose/tier-b.js"],
+  ["senpi", "dist/core/extensions/builtin/tool-search/service.js"],
+  ["senpi", "dist/core/extensions/builtin/video-in/index.js"],
+  ["senpi", "dist/core/extensions/builtin/look-at/index.js"],
+  ["senpi", "dist/core/extensions/builtin/terminal/extension.js"],
+  ["senpi", "dist/core/extensions/builtin/terminal/prompt.js"],
   ["senpi", "dist/core/messages.js"],
   ["senpi", "dist/modes/interactive/components/assistant-message.js"],
   ["senpi", "dist/modes/interactive/components/tool-execution.js"],
