@@ -1,4 +1,6 @@
 import { join } from "node:path";
+import { historyNotesEnabled } from "../context-notes/config.mjs";
+import { installContextNotes } from "./context-notes.mjs";
 import { runOrDeferExtension } from "../deferred-extensions.mjs";
 import { assertEngineBuilt, rubatoExtension } from "../engine-paths.mjs";
 import { installEvalSearchGuard } from "../eval-search-guard.mjs";
@@ -72,7 +74,7 @@ async function activateAdapterOverlay(pi) {
 export default async function rubatoPiAdapter(pi) {
   installEvalSearchGuard(pi);
   installMeasurementHooks(pi);
-  installServerCompaction(pi);
+  if (!historyNotesEnabled()) installServerCompaction(pi);
   const member = isTeamMemberProcess();
   const role = resolveRole();
   if (!member) installSessionTitle(pi);
@@ -94,5 +96,7 @@ export default async function rubatoPiAdapter(pi) {
     }
   });
 
+  // Register after the role prompt handler so stable context guidance is kept.
+  await installContextNotes(pi);
   return runOrDeferExtension(() => activateAdapterOverlay(pi));
 }

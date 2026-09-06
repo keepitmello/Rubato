@@ -1,0 +1,38 @@
+{
+  "verifiedOn": "2026-09-06",
+  "currency": "USD",
+  "unit": "per 1 million tokens",
+  "meaning": "API-equivalent only; not subscription allowance or actual Codex/Claude subscription billing",
+  "sources": [
+    "https://developers.openai.com/api/docs/models/gpt-6-astra",
+    "https://developers.openai.com/api/docs/guides/prompt-caching",
+    "https://platform.claude.com/docs/en/about-claude/pricing"
+  ],
+  "models": {
+    "openai-codex/gpt-6-astra": {
+      "input": 10,
+      "cacheRead": 1,
+      "cacheWrite": 12.5,
+      "output": 50,
+      "longThreshold": 272000,
+      "longInputMultiplier": 2,
+      "longOutputMultiplier": 1.5
+    },
+    "openai/gpt-6-astra": {
+      "input": 10,
+      "cacheRead": 1,
+      "cacheWrite": 12.5,
+      "output": 50,
+      "longThreshold": 272000,
+      "longInputMultiplier": 2,
+      "longOutputMultiplier": 1.5
+    },
+    "anthropic/claude-fable-5-1": {
+      "input": 10,
+      "cacheRead": 0.25,
+      "cacheWrite": 12.5,
+      "cacheWrite1h": 20,
+      "output": 50
+    }
+  }
+}

@@ -1,3 +1,6 @@
+import { historyNotesEnabled } from "./context-notes/config.mjs";
+import { markEnginePart } from "./context-notes/engine-gate.mjs";
+
 // Anthropic 서버 컴팩션(beta `compact-2026-01-12`) 을 쓰는 모델의 **유일한** 판별점.
 //
 // 문서(platform.claude.com/docs/en/build-with-claude/compaction)의 지원 목록과
@@ -43,6 +46,7 @@ export function anthropicServerCompactionArmed() {
  * 세션 설정을 받는다. provider 가 `anthropic` 이고 id 가 지원 목록에 있을 때만 true.
  */
 export function supportsAnthropicServerCompaction(model) {
+  if (historyNotesEnabled()) return false;
   if (!model || typeof model !== "object") return false;
   if (model.provider !== "anthropic") return false;
   const id = typeof model.id === "string" ? model.id : model.modelId;
@@ -76,3 +80,7 @@ export function lastAnthropicCompactionSummary(content) {
   }
   return undefined;
 }
+
+// Direct source guard also covers extension loaders that bypass native hooks.
+markEnginePart("anthropic");
+// rubato-history-notes-transform-v2:anthropic
