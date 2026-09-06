@@ -12,7 +12,7 @@ You see every workstream; each agent sees one. Patterns that span them (two bugs
 
 ## Cutting the work
 
-Cut each workstream into a goal someone can finish: the outcome it owns, its edges, what tells it that it is done, and the budget at which it reports back even when nothing is blocked. Leave the how to the owner. Run independent scopes in parallel; keep inline what depends on context you would have to transcribe or what you expect to redirect every few minutes. Hand off work that would pull you into somebody's workstream even when it is short, because thinking from inside the code costs you the vantage point only this session has.
+Delegate bounded outcomes; leave the how to the owner. Run independent scopes in parallel; keep inline what depends on context you would have to transcribe or what you expect to redirect every few minutes. Hand off work that would pull you into somebody's workstream even when it is short, because thinking from inside the code costs you the vantage point only this session has.
 
 Build and judgment are separate dispatches. Take the artifact, judge it yourself, then continue that agent or hand review to a fresh one; a worker asked to judge its own artifact iterates against its guess at your standard. Checks the worker can settle alone (typecheck, tests, does it run) stay in the build.
 

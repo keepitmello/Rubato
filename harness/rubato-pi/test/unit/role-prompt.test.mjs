@@ -100,13 +100,37 @@ test("lead, owner, and verifier carry the bidirectional brief contract", () => {
   for (const role of ["lead", "owner", "verifier"]) {
     const text = rolePrompt(role);
     assert.match(text, /Leads, workstream owners, and verifiers exchange briefs in both directions/);
-    // The "you receive briefs and write them" sentence was cut in 785f6a3f9 as
-    // redundant with the bidirectional line above; the write side is pinned here.
-    assert.match(text, /give the next owner a bounded outcome/);
+    // Receiving stays in the role contract; the writing procedure has one owner.
+    assert.match(text, /When writing a brief or intervening in stalled work, follow Skill\(dispatching\)/);
     assert.match(text, /When receiving/);
     assert.match(text, /When writing/);
     assert.match(text, /A budget return and a well-supported absent finding are complete outcomes/);
   }
+});
+
+test("dispatching owns the brief-writing checklist and stalled-work procedure", () => {
+  const skill = readFileSync(join(promptSourceRoot, "../skills/dispatching/SKILL.md"), "utf8");
+  for (const rule of [
+    /The outcome and why it matters/,
+    /Done evidence/,
+    /Write ownership and off-limits paths/,
+    /The budget/,
+    /Name a number/,
+    /Constraints that carry a named authority source/,
+    /Provisional:/,
+    /read scope apart from write scope/,
+    /nothing new appears/,
+    /Recover the cause from the same session first/,
+  ]) assert.match(skill, rule);
+  for (const role of ["lead", "owner", "verifier"]) {
+    const text = rolePrompt(role);
+    assert.match(text, /Before you spawn an `Agent` or send one a follow-up, read Skill\(dispatching\)/);
+    assert.doesNotMatch(text, /give the next owner a bounded outcome/);
+    assert.doesNotMatch(text, /the budget at which it reports back/);
+  }
+  assert.match(rolePrompt("lead"), /Delegate bounded outcomes; leave the how to the owner/);
+  assert.match(rolePrompt("lead"), /Before you dispatch, check what is already modified/);
+  assert.match(rolePrompt("lead"), /Judgment across workstreams .* is yours and is not delegated/);
 });
 
 test("assigned agents carry the receive-and-return contract", () => {
