@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { installContextNotes } from "./context-notes.mjs";
 import { runOrDeferExtension } from "../deferred-extensions.mjs";
 import { assertEngineBuilt, rubatoExtension } from "../engine-paths.mjs";
 import { installEvalSearchGuard } from "../eval-search-guard.mjs";
@@ -96,5 +97,7 @@ export default async function rubatoPiAdapter(pi) {
     }
   });
 
+  // Register after the role prompt handler so stable context guidance is kept.
+  await installContextNotes(pi);
   return runOrDeferExtension(() => activateAdapterOverlay(pi));
 }
