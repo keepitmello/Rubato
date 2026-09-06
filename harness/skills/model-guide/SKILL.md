@@ -45,14 +45,14 @@ Every dispatch fills one of four seats. Pick the seat from the bottleneck (§1),
 | **Owner** — judgment | framing, architecture, diagnosis, proof; the outcome's decisions | Fable 5.1 `anthropic/claude-fable-5-1` (framing, structure) · Sol `openai-codex/gpt-5.6-sol` (hypothesis, proof) · Astra `openai-codex/gpt-6-astra` | `medium`; `high` when hard | **per dispatch, model and effort both** |
 | **Owner** — already-framed | a bounded technical outcome whose frame and goal are settled | Grok 4.6 `xai/grok-4.6` or Cursor Fast `cursor/cursor-grok-4.6-high-fast` | `high`; `xhigh` when hard | none |
 | **Fast Model** — default worker | settled execution, maps, evidence gathering, prototypes; anything where turnaround matters more than the last few points of precision | Muse Spark `opencode/muse-spark-1.3-contributor-free` · Gemini 3.8 Flash `cursor/gemini-3.8-flash` | `high`; `xhigh` when hard | none |
-| **Worker** — precise | a settled leg that needs Grok's extra precision or its large quota | same Grok ids as above | `high`; `xhigh` when hard | none |
+| **Worker** — precise | a settled task that needs Grok's extra precision or its large quota | same Grok ids as above | `high`; `xhigh` when hard | none |
 | **Verifier** | falsifying a material artifact, from a *different* model family than its producer | Claude-family main session → Sol · Codex-family main session → Fable 5.1 | `medium` | same as the judgment owner row |
 
 Opus 5 has no slot.
 
 ### Fast Model
 
-Muse Spark and Gemini 3.8 Flash sit at roughly Grok's level of capability and run several times faster, so they are the first choice for a worker and are fine to run as an `Agent` on their own. Reach for Grok instead when a leg keeps tripping on precision, or when you want its quota rather than speed. All three are action convergers: they compress the action space, not the answer space, so none of them takes a judgment seat.
+Muse Spark and Gemini 3.8 Flash sit at roughly Grok's level of capability and run several times faster, so they are the first choice for a worker and are fine to run as an `Agent` on their own. Reach for Grok instead when a task keeps tripping on precision, or when you want its quota rather than speed. All three are action convergers: they compress the action space, not the answer space, so none of them takes a judgment seat.
 
 ### Owner seat
 
@@ -73,7 +73,7 @@ The judgment owner is Fable 5.1 or Sol, by bottleneck — Fable for framing and 
 3. Pass the exact `model` and `effort` from the table, or a named `preset`. The harness resolves a preset against the live catalog, admits it, and carries the runtime fallback chain; use an exact `model` when provider/model identity is itself a requirement.
 4. Say in one line which model or preset the agent runs on; report the resolved model when the runtime returns it.
 
-Choose the seat at dispatch and predict the dominant bottleneck up front rather than planning to climb later. A stronger model existing is not by itself a reason for a new session; whether the next leg continues or starts fresh belongs to Skill(dispatching).
+Choose the seat at dispatch and predict the dominant bottleneck up front rather than planning to climb later. A stronger model existing is not by itself a reason for a new session; whether the next task continues or starts fresh belongs to Skill(dispatching).
 
 ## 3. Minimal shapes
 

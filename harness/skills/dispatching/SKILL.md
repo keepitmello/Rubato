@@ -1,11 +1,11 @@
 ---
 name: dispatching
-description: "Handing work to another session, or sending the next leg to an existing one: decide continue-versus-fresh, separate binding from hints, carry budget and return contract, watch after dispatch. Read before every Agent spawn or AgentSend."
+description: "Handing work to another session, or sending the next task to an existing one: decide continue-versus-fresh, separate binding from hints, carry budget and return contract, watch after dispatch. Read before every Agent spawn or AgentSend."
 ---
 
 # Dispatching
 
-Run this when you are about to hand work to another session (a teammate, a subagent, a freehand worker on any lane), and when you are about to send the next leg of work to a session that already exists. It shapes the brief you are composing and the choice of who receives it; it is not a template to fill.
+Run this when you are about to hand work to another session (a teammate, a subagent, a freehand worker on any lane), and when you are about to send the next task to a session that already exists. It shapes the brief you are composing and the choice of who receives it; it is not a template to fill.
 
 ## What binds, and what is a lead
 
