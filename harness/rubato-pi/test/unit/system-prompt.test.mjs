@@ -54,13 +54,15 @@ test("current model identity is stated in the system prompt", () => {
     "You are Grok 4.6 (xai/grok-4.6).",
   );
   assert.equal(modelIdentityLine(undefined), "");
+  const model = { provider: "openai-codex", id: "gpt-5.6-sol", name: "GPT-5.6 Sol" };
+  assert.equal(modelIdentityLine(model, "priority"), modelIdentityLine(model, undefined));
   const next = promptForAgentStart(
     { systemPrompt: "" },
-    { model: { provider: "openai-codex", id: "gpt-5.6-sol", name: "GPT-5.6 Sol" }, serviceTier: "priority" },
+    { model, serviceTier: "priority" },
     "lead",
     loaders(),
   );
-  assert.match(next, /You are GPT-5\.6 Sol Fast \(openai-codex\/gpt-5\.6-sol\)\./);
+  assert.match(next, /You are GPT-5\.6 Sol \(openai-codex\/gpt-5\.6-sol\)\./);
   assert.doesNotMatch(next, /You are undefined/);
 });
 
