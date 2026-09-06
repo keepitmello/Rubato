@@ -212,6 +212,8 @@ describe("TaskManager start failure security", () => {
     ["depth-exceeded", "In-process child depth limit exceeded."],
     ["session-create-failed", "In-process child session creation failed."],
     ["child-prompt-failed", "Child prompt failed to start."],
+    ["model_unavailable", "Child model admission failed: the model is not visible to the child process."],
+    ["session_unavailable", "Child session could not be resumed."],
   ] satisfies readonly (readonly [RunnerFailure["kind"], string])[])(
     "#given a %s RunnerError containing secrets #when a named subagent start fails #then its stable classification preserves the resolved context",
     async (kind, publicMessage) => {

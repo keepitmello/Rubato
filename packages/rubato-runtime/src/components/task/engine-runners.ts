@@ -61,6 +61,11 @@ function buildInProcessRunner(build: RunnerBuildContext): ManagedRunner {
   return createInProcessManagedRunner(inProcess, context)
 }
 
-function buildProcessRunner(_build: RunnerBuildContext): ManagedRunner {
-  return createRpcManagedRunner(new RpcProcessRunner({ inheritedExtensions: parseExtensionEntries(process.argv) }))
+function buildProcessRunner(build: RunnerBuildContext): ManagedRunner {
+  return createRpcManagedRunner(
+    new RpcProcessRunner({
+      inheritedExtensions: parseExtensionEntries(process.argv),
+      parentRegistry: () => build.runtime.modelRegistry(),
+    }),
+  )
 }

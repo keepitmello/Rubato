@@ -98,6 +98,10 @@ function publicStartFailureMessage(error: unknown): string {
         return "In-process child session creation failed."
       case "child-prompt-failed":
         return "Child prompt failed to start."
+      case "model_unavailable":
+        return "Child model admission failed: the model is not visible to the child process."
+      case "session_unavailable":
+        return "Child session could not be resumed."
       default:
         return GENERIC_START_FAILURE_MESSAGE
     }

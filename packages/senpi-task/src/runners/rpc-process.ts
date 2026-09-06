@@ -4,7 +4,7 @@ import { log } from "@rubato/utils"
 import type { RpcChildHandle, RpcRunnerSpec } from "./types"
 import { RunnerError } from "./in-process/runner-error"
 import { createRpcChildHandle } from "./rpc/handle"
-import { createRpcModelAdmission, type RpcModelAdmission } from "./rpc/model-admission"
+import { createRpcModelAdmission, type ParentModelFinder, type RpcModelAdmission } from "./rpc/model-admission"
 import { type MalformedLineHandler, RpcProtocolClient } from "./rpc/protocol-client"
 import { type RpcSpawnDescriptor, buildRpcSpawn } from "./rpc/spawn"
 import { discardUnstartedRpcHandle } from "./rpc/start-cleanup"
@@ -19,6 +19,9 @@ export type RpcProcessRunnerOptions = {
   readonly onMalformedLine?: MalformedLineHandler
   readonly now?: () => number
   readonly modelAdmission?: RpcModelAdmission
+  // The parent session's live model registry. A model it resolves skips the child catalog probe
+  // (see createRpcModelAdmission). Ignored when modelAdmission is supplied.
+  readonly parentRegistry?: () => ParentModelFinder | undefined
   // The parent's `-e` extension entries, forwarded to every child so a detached process reproduces the
   // parent's extensions. Applied only when a spec does not already carry its own extensions.
   readonly inheritedExtensions?: readonly string[]
@@ -47,7 +50,9 @@ export class RpcProcessRunner {
     this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS
     this.onMalformedLine = options.onMalformedLine
     this.now = options.now ?? Date.now
-    this.modelAdmission = options.modelAdmission ?? createRpcModelAdmission()
+    this.modelAdmission =
+      options.modelAdmission ??
+      createRpcModelAdmission(options.parentRegistry === undefined ? {} : { parentRegistry: options.parentRegistry })
     this.inheritedExtensions = options.inheritedExtensions ?? []
   }
 
