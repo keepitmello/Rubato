@@ -31,7 +31,13 @@ export function paintTabTitle(ctx, name) {
 
 export function pickTitleModel(registry, fallback) {
   const found = registry?.find?.(TITLE_MODEL.provider, TITLE_MODEL.id);
-  return found ?? fallback;
+  if (!found) return fallback;
+  // find() does no auth check; without Codex credentials complete() would
+  // throw, so fall back to the session model instead of failing the title.
+  if (typeof registry.hasConfiguredAuth === "function" && !registry.hasConfiguredAuth(found)) {
+    return fallback;
+  }
+  return found;
 }
 
 export function titleFromResponse(response) {
@@ -134,7 +140,7 @@ function installRenameLock(pi, state) {
 }
 
 export function installSessionTitle(pi) {
-  const state = { lastAuto: undefined, locked: false, inFlight: false, applyingAuto: false, settled: 0 };
+  const state = { lastAuto: undefined, locked: false, inFlight: false, applyingAuto: false, settled: 0, skipFirst: false };
   installRenameLock(pi, state);
 
   pi.on("session_start", (_event, ctx) => {
@@ -142,6 +148,10 @@ export function installSessionTitle(pi) {
     state.lastAuto = lastAutoTitle(entries);
     state.locked = isTitleLocked(entries);
     state.settled = 0;
+    // A resume already carrying an auto title counts that title as the
+    // turn-1 generation, so the first settle skips the LLM call and the
+    // 15-turn cadence continues from there (next call on the 16th settle).
+    state.skipFirst = state.lastAuto !== undefined;
     paintTabTitle(ctx, currentName(pi, ctx));
   });
 
@@ -158,7 +168,8 @@ export function installSessionTitle(pi) {
   pi.on("agent_settled", async (_event, ctx) => {
     if (state.locked || state.inFlight) return;
     state.settled += 1;
-    if ((state.settled - 1) % TITLE_EVERY_N_SETTLED_TURNS !== 0) {
+    if ((state.settled - 1) % TITLE_EVERY_N_SETTLED_TURNS !== 0 || (state.settled === 1 && state.skipFirst)) {
+      state.skipFirst = false;
       paintTabTitle(ctx, currentName(pi, ctx));
       return;
     }

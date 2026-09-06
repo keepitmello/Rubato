@@ -4,8 +4,10 @@
 // 고유 의미(계측 한 번, timing, 델타 후 재시도 금지, 중단 정착)만 얹는다. 그래서
 // 여기서 지키는 것은 "무엇을 더 하는가"보다 **무엇을 잃지 않는가**다.
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
+import { Agent } from "undici";
 import { senpiNested } from "../../src/engine-paths.mjs";
 import {
   kRubatoStream,
@@ -14,7 +16,7 @@ import {
   withRubatoStream,
   wrapProviderStreams,
 } from "../../src/rubato-stream.mjs";
-import { upstreamFetch } from "../../src/upstream-dispatcher.mjs";
+import { bindUpstreamFetch, upstreamFetch } from "../../src/upstream-dispatcher.mjs";
 
 // 실제 엔진이 쓰는 stream 구현으로 위임을 검사한다. 손으로 만든 대역은
 // hasPendingLocalWork/result 의 실제 의미를 갖지 않는다.
@@ -177,6 +179,75 @@ test("wrapProviderStreams 는 fetch 가 없으면 업스트림 dispatcher 를 �
   seen.length = 0;
   await drain(wrapped.streamSimple(model, context, { env: { RUBATO_UPSTREAM_DISPATCHER: "0" } }));
   assert.equal(seen[0], undefined);
+});
+
+test("google adapters 는 dispatcher fetch 를 넣지 않고, 호출자 fetch 는 그대로 둔다", async () => {
+  const seen = [];
+  const inner = (_model, _context, options) => {
+    seen.push(options.fetch);
+    return scriptedStream([{ type: "done", reason: "stop", message: assistant({ stopReason: "stop" }) }])();
+  };
+  const wrapped = wrapProviderStreams({ id: "google", stream: inner, streamSimple: inner });
+  const caller = async () => new Response();
+
+  await drain(wrapped.streamSimple(
+    { api: "google-generative-ai", provider: "google", id: "gemini-3-flash" },
+    context,
+    { env: {} },
+  ));
+  assert.equal(seen[0], undefined);
+
+  seen.length = 0;
+  await drain(wrapped.streamSimple(
+    { api: "google-vertex", provider: "google-vertex", id: "gemini-3-flash" },
+    context,
+    { env: {} },
+  ));
+  assert.equal(seen[0], undefined);
+
+  seen.length = 0;
+  await drain(wrapped.streamSimple(
+    { api: "google-generative-ai", provider: "google", id: "gemini-3-flash" },
+    context,
+    { env: {}, fetch: caller },
+  ));
+  assert.equal(seen[0], caller);
+});
+
+test("upstreamFetch 는 global Request 의 method+headers+body 를 전달한다", async () => {
+  const seen = { method: "", headers: {}, body: "" };
+  const server = createServer((req, res) => {
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("end", () => {
+      seen.method = req.method;
+      seen.headers = req.headers;
+      seen.body = Buffer.concat(chunks).toString();
+      res.writeHead(200, { "content-type": "text/plain" });
+      res.end("ok");
+    });
+  });
+  const dispatcher = new Agent({ connections: 1, allowH2: false });
+  const fetchImpl = bindUpstreamFetch(dispatcher);
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  try {
+    const request = new Request(`http://127.0.0.1:${port}/echo`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-rubato": "1" },
+      body: JSON.stringify({ hello: "world" }),
+    });
+    const res = await fetchImpl(request);
+    assert.equal(res.status, 200);
+    assert.equal(await res.text(), "ok");
+    assert.equal(seen.method, "POST");
+    assert.equal(seen.body, JSON.stringify({ hello: "world" }));
+    assert.equal(seen.headers["x-rubato"], "1");
+    assert.match(seen.headers["content-type"], /application\/json/);
+  } finally {
+    await dispatcher.close();
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
 });
 
 test("timing 은 성공 턴에만 붙고 벽시계/단조시계를 주입받는다", async () => {
