@@ -79,7 +79,13 @@ export function startMockOpenAI({ reply = "ok", onRequest } = {}) {
       } catch {
         body = {};
       }
-      requests.push({ method: req.method, url: req.url, toolNames: (body.tools ?? []).map((t) => t.function?.name ?? t.name) });
+      requests.push({
+        method: req.method,
+        url: req.url,
+        headers: { ...req.headers },
+        body,
+        toolNames: (body.tools ?? []).map((t) => t.function?.name ?? t.name),
+      });
       const action = onRequest ? onRequest(body) : { type: "text", text: reply };
       if (action?.type === "hang") {
         hanging.push(res);

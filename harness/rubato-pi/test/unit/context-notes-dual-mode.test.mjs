@@ -142,6 +142,52 @@ test("a child that inherits a session-origin notes env still follows its own Fab
   assert.equal(process.env.RUBATO_CONTEXT_MODE, SUMMARY_MODE);
   await assert.rejects(f.tools.get("get_context_remaining").execute("id", {}, undefined, undefined, f.ctx), /요약 모드/);
 });
+
+test("a second in-process session re-adopts instead of keeping the previous mode", async (t) => {
+  const previous = process.env.RUBATO_CONTEXT_MODE;
+  const previousOrigin = process.env.RUBATO_CONTEXT_MODE_ORIGIN;
+  t.after(() => {
+    if (previous === undefined) delete process.env.RUBATO_CONTEXT_MODE;
+    else process.env.RUBATO_CONTEXT_MODE = previous;
+    if (previousOrigin === undefined) delete process.env.RUBATO_CONTEXT_MODE_ORIGIN;
+    else process.env.RUBATO_CONTEXT_MODE_ORIGIN = previousOrigin;
+    resetContextModeResolution();
+  });
+  process.env.RUBATO_CONTEXT_MODE = HISTORY_NOTES_MODE;
+  process.env.RUBATO_CONTEXT_MODE_ORIGIN = CONTEXT_MODE_ORIGIN;
+  const first = fakeSession(t);
+  first.ctx.model = { ...first.ctx.model, ...FABLE };
+  const api1 = await installContextNotes(first.pi, { Type, requireEngine: false });
+  t.after(() => api1.close());
+  await first.dispatch("session_start");
+  assert.equal(process.env.RUBATO_CONTEXT_MODE, SUMMARY_MODE);
+  const second = fakeSession(t);
+  second.ctx.model = { ...second.ctx.model, ...ASTRA };
+  const api2 = await installContextNotes(second.pi, { Type, requireEngine: false });
+  t.after(() => api2.close());
+  await second.dispatch("session_start");
+  assert.equal(process.env.RUBATO_CONTEXT_MODE, HISTORY_NOTES_MODE);
+});
+
+test("session_tree restores the destination branch mode and does not init a summary ancestor", async (t) => {
+  withMode(t, SUMMARY_MODE, { origin: CONTEXT_MODE_ORIGIN });
+  const f = fakeSession(t);
+  f.ctx.model = { ...f.ctx.model, ...FABLE };
+  const api = await installContextNotes(f.pi, { Type, requireEngine: false });
+  t.after(() => api.close());
+  f.addMessage("user", "before switch");
+  await f.dispatch("session_start");
+  const userId = f.manager.getLeafId();
+  f.setConfirm(true);
+  f.ctx.model = { ...f.ctx.model, ...ASTRA };
+  await f.dispatch("model_select", { model: ASTRA, source: "set" });
+  assert.equal(process.env.RUBATO_CONTEXT_MODE, HISTORY_NOTES_MODE);
+  const inits = f.entries.filter((e) => e.customType === INIT_ENTRY).length;
+  f.rewind(userId);
+  await f.dispatch("session_tree");
+  assert.equal(process.env.RUBATO_CONTEXT_MODE, SUMMARY_MODE);
+  assert.equal(f.entries.filter((e) => e.customType === INIT_ENTRY).length, inits);
+});
 });
 
 test("gates are present but dormant in summary mode; drift is recorded for a later notes switch", async () => {

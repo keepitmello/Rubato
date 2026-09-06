@@ -15,7 +15,7 @@ test("all nine history/note operations plus window controls are registered",asyn
   const f=await setup(t); assert.equal(f.tools.size,11);
   for(const name of ["notes_write_file","notes_append_to_file","new_context"]) assert.equal(f.tools.get(name).executionMode,"sequential");
   assert.equal(f.tools.get("history_read_item").executionMode,"parallel");
-  for(const tool of f.tools.values()) assert.equal(tool.exposure,"direct");
+  for(const tool of f.tools.values()) assert.equal(tool.exposure,"search");
 });
 test("registered tools save, search, recover notes and transition in the same session",async(t)=>{
   const f=await setup(t); const session=f.manager.getSessionId();
