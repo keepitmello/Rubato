@@ -152,13 +152,13 @@ export class ContextNotesController {
     }
     const estimated = estimate(messages, (this.ctx.getSystemPrompt?.() ?? "") + toolDefinitions);
     const live = Number(this.ctx.getContextUsage?.()?.tokens);
-    const sampled = this.hasSample && Number.isFinite(live) && live > 0 ? live : 0;
-    // The experiment budget follows the engine meter when it exists so a
-    // conservative byte heuristic cannot stop a session the footer still shows as half-empty.
+    const sampled = Number.isFinite(live) && live > 0 ? live : 0;
+    // Both the experiment budget and the physical safety line follow the engine
+    // meter when it exists. A byte heuristic of a different message list must not
+    // declare the window full while the footer still shows it half-empty.
     const tokens = sampled > 0 ? sampled : estimated;
-    const conservative = Math.max(tokens, estimated);
     const budget = windowBudget(this.ctx.model, this.config);
-    return { tokens, conservative, estimated, ...budget, remaining: Math.max(0, budget.target - tokens),
+    return { tokens, estimated, ...budget, remaining: Math.max(0, budget.target - tokens),
       sampled: sampled > 0 };
   }
 
@@ -172,9 +172,9 @@ export class ContextNotesController {
       throw new Error("이 연결은 외부 실행기가 문맥을 관리해요. 새 문맥 실험에는 직접 모델 연결을 사용하거나 summary 모드로 다시 시작해 주세요.");
     }
     if (!messages) return;
-    const usage = this.usage(messages);
+    const usage = this.usage();
     const recoveryLimit = Math.floor(usage.full * 0.9);
-    if (usage.conservative >= recoveryLimit) {
+    if (usage.tokens >= recoveryLimit) {
       this.showStatus({ ...usage, remaining: 0 });
       throw new Error(`체크포인트 턴을 안전하게 실행할 여유도 남지 않았어요. 기록은 보존했으니 더 큰 한도로 같은 세션을 다시 열어 주세요.`);
     }

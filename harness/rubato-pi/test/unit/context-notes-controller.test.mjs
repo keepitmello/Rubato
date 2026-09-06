@@ -160,9 +160,15 @@ test("reasoning payloads do not inflate the experiment budget", (t)=>{
 test("engine sample wins over a larger byte estimate for the experiment gate", (t)=>{
   const f=setup(t); f.addMessage("toolResult","a".repeat(40000),{toolName:"read"});
   f.ctx.getContextUsage=()=>({tokens:1000});
-  f.c.refresh(f.ctx); f.c.hasSample=true;
+  f.c.refresh(f.ctx);
   assert.doesNotThrow(()=>f.c.admit(f.build().messages));
-  assert.equal(f.c.usage(f.build().messages).tokens,1000);
+  assert.equal(f.c.usage().tokens,1000);
+});
+test("physical safety line follows the engine meter, not a larger payload estimate", (t)=>{
+  const f=setup(t); f.addMessage("toolResult","a".repeat(90000),{toolName:"read"});
+  f.ctx.getContextUsage=()=>({tokens:8000});
+  f.c.refresh(f.ctx);
+  assert.doesNotThrow(()=>f.c.admit(f.build().messages));
 });
 test("admit over the experiment budget starts a checkpoint turn instead of dead-ending", (t)=>{
   const f=setup(t); f.addMessage("toolResult","a".repeat(40000),{toolName:"read"});
