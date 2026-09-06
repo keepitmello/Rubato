@@ -206,60 +206,48 @@ test("fact 1: note is in the session file before the tool result reaches the pro
   }
 });
 
-test("fact 2: new_context does not cut the window until the tool batch ends", { skip: !enabled }, async () => {
+test("fact 2: the request that carries the new_context result is the new window", { skip: !enabled }, async () => {
   const harness = await startHarness({
     env: { RUBATO_CONTEXT_MODE: "history-notes" },
     script: (_body, index) => {
       if (index === 0) return { type: "tool", name: "notes_write_file", args: { path: "work.md", text: NOTE_TEXT }, id: "call_write" };
       if (index === 1) return { type: "tool", name: "new_context", args: {}, id: "call_ctx" };
-      return { type: "text", text: "after tools" };
+      if (index === 2) return { type: "tool", name: "notes_read_file", args: { path: "work.md" }, id: "call_read" };
+      return { type: "text", text: "read in the new window" };
     },
   });
   try {
     await ready(harness.rpc, harness.stderr);
     await promptTurn(harness.rpc, USER_TEXT, "p1");
     const bodies = harness.mock.requests.map((r) => r.body).filter(Boolean);
-    assert.ok(bodies.length >= 3, `fact2: expected write, new_context result, then follow-up; got ${bodies.length} provider calls`);
-    const newContextResult = bodies[2];
-    const blob = messageBlob(newContextResult?.messages);
-    assert.ok(blob.includes(USER_TEXT), "fact2: the request that carried the new_context result still had the original user turn");
-    assert.equal(blob.includes(BOOTSTRAP_PREFIX), false, "fact2: window bootstrap was not injected mid-batch");
+    assert.ok(bodies.length >= 3, `fact2: expected write, new_context, then new-window request; got ${bodies.length}`);
+    const blob = messageBlob(bodies[2]?.messages);
+    assert.ok(blob.includes("<rubato_context_window_v1>"), "fact2: new_context-result request carries the window bootstrap");
+    assert.equal(blob.includes(USER_TEXT), false, "fact2: old user conversation is not in the new-window request");
+    assert.equal(blob.includes(NOTE_TEXT), false, "fact2: note body is not in the new-window request");
+    assert.ok((harness.mock.requests[2]?.toolNames ?? []).includes("notes_read_file"), "fact2: tool definitions remain after the switch");
   } finally {
     await harness.close();
   }
 });
 
-test("fact 3: first provider request after the switch is only the new-window bootstrap", { skip: !enabled }, async () => {
+test("fact 3: notes_read_file result appears only on the request after the new-window call", { skip: !enabled }, async () => {
   const harness = await startHarness({
     env: { RUBATO_CONTEXT_MODE: "history-notes" },
     script: (_body, index) => {
       if (index === 0) return { type: "tool", name: "notes_write_file", args: { path: "work.md", text: NOTE_TEXT }, id: "call_write" };
       if (index === 1) return { type: "tool", name: "new_context", args: {}, id: "call_ctx" };
-      if (index === 2) return { type: "text", text: "batch done" };
-      return { type: "text", text: "next window" };
+      if (index === 2) return { type: "tool", name: "notes_read_file", args: { path: "work.md" }, id: "call_read" };
+      return { type: "text", text: "read in the new window" };
     },
   });
   try {
     await ready(harness.rpc, harness.stderr);
     await promptTurn(harness.rpc, USER_TEXT, "p1");
-    harness.rpc.send({ id: "e3", type: "get_entries" });
-    const entries = await harness.rpc.wait((rec) => rec.type === "response" && rec.command === "get_entries" && rec.id === "e3", 10000, "get_entries");
-    const compacted = (entries.data?.entries ?? []).some((e) => e.type === "compaction");
-    if (!compacted) {
-      assert.equal(compacted, true, "fact3: window switch did not commit (post-new_context assistant vs checkpoint; DESIGN_REVIEW_REQUEST.md)");
-      return;
-    }
-    const before = harness.mock.requests.length;
-    await promptTurn(harness.rpc, "continue in the new window", "p2");
-    const after = harness.mock.requests.slice(before);
-    if (after.length === 0) {
-      assert.equal(compacted, true, "fact3: window compaction committed; no follow-up provider request was issued (session likely paused after transition)");
-      return;
-    }
-    const blob = messageBlob(after[0].body?.messages);
-    assert.ok(blob.includes(BOOTSTRAP_PREFIX), "fact3: post-switch request carries the window bootstrap");
-    assert.equal(blob.includes(USER_TEXT), false, "fact3: old user conversation is not in the post-switch request");
-    assert.equal(blob.includes(NOTE_TEXT), false, "fact3: note body is not in the post-switch request");
+    const bodies = harness.mock.requests.map((r) => r.body).filter(Boolean);
+    assert.ok(bodies.length >= 4, `fact3: expected four provider calls (write, new_context, read, result); got ${bodies.length}`);
+    assert.equal(messageBlob(bodies[2]?.messages).includes(NOTE_TEXT), false, "fact3: note body is absent from the new-window request that calls notes_read_file");
+    assert.ok(messageBlob(bodies[3]?.messages).includes(NOTE_TEXT), "fact3: note body appears only after notes_read_file returns");
   } finally {
     await harness.close();
   }
