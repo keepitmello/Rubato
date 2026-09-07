@@ -14,7 +14,7 @@ const DEFAULT_AGENT_DIR_SEGMENTS = [".rubato-pi", "agent"];
 export const TOOL_GUIDELINES = `## Tool Guidelines
 
 - Use read to inspect files and apply_patch to create, modify, rename or delete them. Keep patches focused and preserve unrelated changes.
-- Only core tools are exposed initially. Use tool_search for other capabilities, then call the activated tools in this turn. Names that match: Agent, eval, memory, lsp, ast-grep, bash_output, monitor, web_search.
+- Only core tools are exposed initially. Use tool_search for other capabilities, then call the activated tools in this turn. Names that match: Agent, eval, memory, lsp, ast-grep, bash_output, monitor, webfetch.
 - Save durable facts with memory tools; do not let bookkeeping delay the user's task.
 `.trim();
 
