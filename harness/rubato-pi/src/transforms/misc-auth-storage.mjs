@@ -38,19 +38,41 @@ export function injectAuthStorage(source) {
   let next = source.includes(CRYPTO_NEEDLE)
     ? replaceOnce(source, CRYPTO_NEEDLE, CRYPTO_REPLACEMENT, "auth crypto import")
     : source;
-  if (next.includes(FS_NEEDLE)) {
+  // 아래 세 조각은 하나의 변경이다. 헬퍼는 넓힌 fs import 를 쓰고, 세 write 자리는
+  // 그 헬퍼를 부른다. 조각마다 독립적으로 `if (includes)` 를 걸면 니들 하나가
+  // 어긋났을 때 나머지가 그대로 들어가, 로드는 되는데 첫 자격증명 쓰기에서
+  // `openSync is not defined` 로 죽는 파일이 만들어진다. 실제로 pinned 판보다 낡은
+  // 전역 엔진에서 이렇게 났다 — import 줄에 `chmodSync,` 하나가 더 있어서 FS_NEEDLE 만
+  // 빗나갔다. 선행 조각이 없으면 통째로 drift 로 던져 이 변환을 건너뛰게 한다.
+  const importUpgraded = next.includes(FS_NEEDLE);
+  if (importUpgraded) {
     next = replaceOnce(next, FS_NEEDLE, FS_REPLACEMENT, "auth fs import");
   }
   if (next.includes(FN_NEEDLE)) {
+    if (!importUpgraded) {
+      throw new Error("rubato misc vendor transform drift: auth fs import for atomicWriteAuthFileSync");
+    }
     next = replaceOnce(next, FN_NEEDLE, FN_REPLACEMENT, "atomicWriteAuthFileSync");
   }
+  // 이미 패치된 node_modules 를 다시 지나갈 수 있으므로, 방금 넣었는지가 아니라
+  // 결과물에 헬퍼가 있는지를 본다.
+  const helperPresent = next.includes("function atomicWriteAuthFileSync");
   if (next.includes(WRITE_EMPTY_NEEDLE)) {
+    if (!helperPresent) {
+      throw new Error("rubato misc vendor transform drift: atomicWriteAuthFileSync for ensureFileExists write");
+    }
     next = replaceOnce(next, WRITE_EMPTY_NEEDLE, WRITE_EMPTY_REPLACEMENT, "ensureFileExists write");
   }
   if (next.includes(WRITE_SYNC_NEEDLE)) {
+    if (!helperPresent) {
+      throw new Error("rubato misc vendor transform drift: atomicWriteAuthFileSync for sync mutate write");
+    }
     next = replaceOnce(next, WRITE_SYNC_NEEDLE, WRITE_SYNC_REPLACEMENT, "sync mutate write");
   }
   if (next.includes(WRITE_ASYNC_NEEDLE)) {
+    if (!helperPresent) {
+      throw new Error("rubato misc vendor transform drift: atomicWriteAuthFileSync for async mutate write");
+    }
     next = replaceOnce(next, WRITE_ASYNC_NEEDLE, WRITE_ASYNC_REPLACEMENT, "async mutate write");
   }
   return next;
