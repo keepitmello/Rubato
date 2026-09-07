@@ -84,7 +84,9 @@ test("service-tier transform lets /fast send xAI completions priority", () => {
   const source = readFileSync(join(senpiDir, "dist/core/extensions/builtin/service-tier.js"), "utf8");
   const out = injectServiceTier(source);
   assert.match(out, /openai-completions/);
-  assert.match(out, /provider !== "xai"/);
+  // 게이트 세 곳(boot, apply, model_select)이 한 술어를 공유한다.
+  assert.match(out, /function supportsFastMode/);
+  assert.match(out, /model\?\.provider === "xai" \|\| isAnthropicFastModel\(model\)/);
   assert.match(out, /provider === "xai"/);
   assert.match(out, /xAI priority/);
 });
