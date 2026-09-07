@@ -68,7 +68,7 @@ test("all selected hooks compose in one isolated stock SDK and standard binary",
       { name: "service-tier", factory: serviceTier.extension },
       { name: "codemode", factory: (pi) => codemode.default(pi, { complete: async () => { throw new Error("Provider completion is outside this local test"); } }) },
       { name: "tool-search", factory: createToolSearchExtension(toolSearch) },
-      { name: "mcp", factory: createMcpExtension({ toolSearchService: toolSearch, servers: [{ name: "selected", type: "stdio", command: process.execPath,
+      { name: "mcp", factory: createMcpExtension({ toolSearchService: toolSearch, servers: [{ name: "selected", type: "stdio", exposure: "search", command: process.execPath,
         args: [join(sourceRoot, "features/mcp/fake-server.mjs")], requestTimeoutMs: 2_000,
       }] }) },
       { name: "composition-contract", factory: (pi) => {

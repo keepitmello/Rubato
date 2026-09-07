@@ -1,5 +1,12 @@
 const DISPOSITIONS = new Set(["handled", "queued", "started", "rejected"]);
 
+function pendingSource(source) {
+  if (source === "rpc" || source === "external") return "remote";
+  if (source === "interactive" || source === "editor") return "tui";
+  if (source === "extension") return "extension";
+  return "unknown";
+}
+
 /**
  * Session-local input correlation and queued-message identity.
  *
@@ -18,7 +25,7 @@ export class InputLifecycle {
     this.#openInputs.set(inputId, {
       id: inputId,
       inputId,
-      source,
+      source: pendingSource(source),
       text,
       imageCount: Array.isArray(images) ? images.length : 0,
       enqueuedAt: Date.now(),

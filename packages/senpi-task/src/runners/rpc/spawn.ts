@@ -35,6 +35,8 @@ export type RpcSpawnRuntime = {
   readonly platform: NodeJS.Platform
   readonly parentEnv: NodeJS.ProcessEnv
   readonly resolveRpcEntry: () => string
+  /** Environment key consumed by the selected child runtime for session isolation. */
+  readonly sessionDirEnvName?: string
   // Injectable so tests can pin the executable-vs-fallback branch; defaults to resolveSenpiExecutable.
   readonly resolveSenpiExecutable?: (runtime: RpcSpawnRuntime) => string | null
 }
@@ -201,7 +203,7 @@ function buildChildProfile(
   const env: NodeJS.ProcessEnv = { ...resolved.parentEnv }
   for (const name of MEMBER_PROCESS_ENV_NAMES) delete env[name]
   Object.assign(env, spec.memberEnv)
-  env[SESSION_DIR_ENV] = resolveChildSessionDir(spec.state_dir, spec.task_id)
+  env[resolved.sessionDirEnvName ?? SESSION_DIR_ENV] = resolveChildSessionDir(spec.state_dir, spec.task_id)
   const extensions = spec.memberEnv === undefined
     ? spec.extensions?.filter((entry) => basename(entry) !== MEMBER_EXTENSION_BUNDLE_NAME)
     : spec.extensions

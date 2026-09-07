@@ -1,10 +1,13 @@
-import { appendFileSync } from "node:fs";
+import { appendFileSync, existsSync, writeFileSync } from "node:fs";
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { CallToolRequestSchema, ListToolsRequestSchema, McpError } from "@modelcontextprotocol/sdk/types.js";
 
-const markerPath = process.env.RUBATO_MCP_TEST_MARKER;
+const markerPath = process.env.RUBATO_MCP_TEST_MARKER ?? process.env.RUBATO_AST_GREP_PROJECT_CWD;
+const retryStatePath = process.env.RUBATO_MCP_TEST_RETRY_STATE;
+const exposeLarge = process.env.RUBATO_MCP_TEST_LARGE === "1";
+const exposeRetry = retryStatePath !== undefined;
 const mark = (value) => {
   if (markerPath) appendFileSync(markerPath, `${value}\n`);
 };
@@ -40,13 +43,17 @@ server.setRequestHandler(ListToolsRequestSchema, ({ params }) => {
     tools: [
       { name: "rich", description: "Return non-text MCP blocks", inputSchema: { type: "object" } },
       { name: "slow", description: "Wait until cancelled", inputSchema: { type: "object" } },
+      ...(exposeLarge ? [{ name: "large", description: "Return oversized output", inputSchema: { type: "object" } }] : []),
+      ...(exposeRetry ? [{ name: "retry", description: "Expire once, then succeed", inputSchema: { type: "object" } }] : []),
     ],
   };
 });
 
 server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
   mark(`call:${request.params.name}`);
-  const progressToken = request.params._meta?.progressToken;
+  // The SDK exposes request metadata through RequestHandlerExtra. Reading the
+  // parsed method params is not stable because schema parsing may strip _meta.
+  const progressToken = extra._meta?.progressToken;
   if (progressToken !== undefined) {
     await extra.sendNotification({
       method: "notifications/progress",
@@ -85,6 +92,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
           { once: true },
         );
       });
+    case "large":
+      return { content: [{ type: "text", text: Array.from({ length: 100 }, (_, index) => `large-line-${index}`).join("\n") }] };
+    case "retry":
+      if (!existsSync(retryStatePath)) {
+        writeFileSync(retryStatePath, "expired\n", "utf8");
+        throw new McpError(-32001, "session expired");
+      }
+      return { content: [{ type: "text", text: "retry:ok" }] };
     default:
       return { content: [{ type: "text", text: "unknown tool" }], isError: true };
   }

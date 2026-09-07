@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
@@ -7,7 +7,14 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { resolvePiRuntime } from "../../resolve-runtime.mjs";
 import { buildMcpToolNames } from "./compat.mjs";
-import { createMcpExtension, createMcpService, McpServiceError } from "./index.mjs";
+import {
+  computeMcpExposurePolicy,
+  createMcpExtension,
+  createMcpService,
+  isMcpSessionExpiredError,
+  isRetriableMcpError,
+  McpServiceError,
+} from "./index.mjs";
 
 const featureDir = dirname(fileURLToPath(import.meta.url));
 const runtimeRoot = resolve(featureDir, "../..");
@@ -23,6 +30,7 @@ async function fixture(t, name = "fake server") {
     server: {
       name,
       type: "stdio",
+      lifecycle: "eager",
       command: process.execPath,
       args: [fakeServerPath],
       env: { RUBATO_MCP_TEST_MARKER: markerPath },
@@ -41,13 +49,13 @@ async function markerLines(path) {
   }
 }
 
-async function waitForMarker(path, marker) {
+async function waitForMarker(path, marker, count = 1) {
   const deadline = Date.now() + 2_000;
   while (Date.now() < deadline) {
-    if ((await markerLines(path)).includes(marker)) return;
+    if ((await markerLines(path)).filter((line) => line === marker).length >= count) return;
     await new Promise((resolveWait) => setTimeout(resolveWait, 10));
   }
-  assert.fail(`Timed out waiting for marker '${marker}'`);
+  assert.fail(`Timed out waiting for marker '${marker}' x${count}`);
 }
 
 test("Rubato MCP names keep the current Claude-compatible prefix and deterministic collision suffixes", () => {
@@ -127,6 +135,67 @@ test("startup errors are contextual and already-started stdio processes are roll
   await waitForMarker(input.markerPath, "exit");
   await service.close();
   assert.equal(service.state, "closed");
+});
+
+test("session-expiry retry renews the mutable connection once", async (t) => {
+  const input = await fixture(t, "retry server");
+  const retryStatePath = join(input.root, "retry.state");
+  input.server.env.RUBATO_MCP_TEST_RETRY_STATE = retryStatePath;
+  const service = createMcpService({ servers: [input.server] });
+  t.after(() => service.close().catch(() => undefined));
+
+  const tools = await service.start();
+  const retry = tools.find(({ mcpToolName }) => mcpToolName === "retry");
+  assert.ok(retry);
+  const result = await service.callTool(retry.name);
+  assert.equal(result.content[0].text, "retry:ok");
+  await waitForMarker(input.markerPath, "initialized", 2);
+  assert.equal((await markerLines(input.markerPath)).filter((line) => line === "call:retry").length, 2);
+
+  await service.close();
+  await waitForMarker(input.markerPath, "exit", 2);
+});
+
+test("oversized output spills mode-0600 artifacts and shutdown removes only service-owned files", async (t) => {
+  const input = await fixture(t, "large server");
+  input.server.env.RUBATO_MCP_TEST_LARGE = "1";
+  const agentDir = join(input.root, "agent");
+  const service = createMcpService({
+    servers: [input.server],
+    agentDir,
+    outputGuard: { maxBytes: 128, maxLines: 5 },
+  });
+  t.after(() => service.close().catch(() => undefined));
+
+  const tools = await service.start();
+  const large = tools.find(({ mcpToolName }) => mcpToolName === "large");
+  assert.ok(large);
+  const result = await service.callTool(large.name);
+  assert.match(result.content[0].text, /MCP tool output exceeded outputGuard/);
+  const artifact = result.content[0].text.match(/Full output saved to: (.+)/)?.[1];
+  assert.ok(artifact);
+  assert.match(await readFile(artifact, "utf8"), /large-line-99/);
+  assert.equal((await stat(artifact)).mode & 0o777, 0o600);
+
+  await service.close();
+  await assert.rejects(access(artifact), (error) => error?.code === "ENOENT");
+});
+
+test("exposure policy and retry classification preserve Senpi direct/search signals", () => {
+  const tools = [{ name: "read" }, { name: "write" }, { name: "admin_delete" }];
+  const policy = computeMcpExposurePolicy(tools, {
+    name: "policy",
+    exposure: "search",
+    includeTools: ["*"],
+    excludeTools: ["admin_*"],
+    directTools: ["read"],
+  });
+  assert.equal(policy.mode, "search");
+  assert.deepEqual(policy.registeredTools.map(({ name }) => name), ["read", "write"]);
+  assert.deepEqual([...policy.activeToolNames], ["read"]);
+  const nested = { cause: { response: { status: 404 } } };
+  assert.equal(isMcpSessionExpiredError(nested), true);
+  assert.equal(isRetriableMcpError({ cause: new Error("transport closed") }), true);
 });
 
 test("stock AgentSession registers, activates, calls, shuts down, and restarts proxies on one runner", async (t) => {

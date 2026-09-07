@@ -1,7 +1,8 @@
 # Third-party notices
 
-`compat.mjs` preserves naming, JSON Schema compatibility, pagination, and MCP
-result-mapping behavior from `@code-yeongyu/senpi` 2026.9.4-3. Its installed
+`compat.mjs`, `errors.mjs`, and `output-guard.mjs` preserve naming, JSON Schema
+compatibility, pagination, result-mapping, retry classification, and output
+spill behavior from `@code-yeongyu/senpi` 2026.9.4-3. Its installed
 `package.json` declares MIT (`license: "MIT"`) but that published package does
 not contain a root `LICENSE` file. The exact license text below was checked
 against `@code-yeongyu/senpi-codemode` 2026.9.4-3's included `LICENSE` from the

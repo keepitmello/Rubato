@@ -1,15 +1,18 @@
 # Provider, auth, and model migration boundary
 
-Status: executable boundary started; the stock runtime is not yet the Rubato default.
-Evidence date: 2026-09-08. Product baseline: `1f6ca5392a554b8b27126e6d016b0ffc00260707`.
+Status: the staged stock provider closure is executable; the stock runtime is not yet the Rubato default.
+Evidence date: 2026-09-08. Candidate starting baseline:
+`c0f6b6f99a31b6e8acd44075f3ee3ad97e4695a5`.
 
-This map compares these exact source trees without reading credentials, logging in, refreshing a
-token, or making a provider request:
+This map compares these exact source trees without reading live credentials, logging in, refreshing
+a token, or making an external provider request:
 
 - stock `@earendil-works/pi-coding-agent@0.85.1` under `harness/pi-runtime/node_modules/`;
 - its nested stock `@earendil-works/pi-ai@0.85.1` and `pi-agent-core@0.85.1`;
 - pinned `@code-yeongyu/senpi@2026.9.4-3` under the original checkout's `node_modules`;
-- Rubato provider sources under `harness/rubato-pi/src/`.
+- Rubato provider sources under `harness/rubato-pi/src/`;
+- the selected, feature-owned Cursor closure under
+  `harness/pi-runtime/features/providers/vendor/pi-ai/`.
 
 ## Resulting executable boundary
 
@@ -27,14 +30,22 @@ Antigravity credential import and before the first `registerProvider` call. Thus
 factory result makes zero credential-import or registration writes. A later host exception from an
 individual `registerProvider` is not transactional; Pi exposes no batch/rollback registration API.
 
-Native provider loading is now explicit and injectable. `nativeProviderFactoryLoader(piAiRoot)`
+Native provider loading is explicit and injectable. `nativeProviderFactoryLoader(piAiRoot)`
 (`provider-direct.mjs:178-192`) resolves only `piAiRoot/dist/providers/<file>` and fails on a missing
 file/export without falling back to Senpi or global module resolution. `directProviders()` accepts
 that loader and separately injectable Cursor/Kiro/Antigravity constructors
-(`provider-direct.mjs:247-268`). The production default still points at pinned Senpi until the full
-candidate is composed. A stock-backed test already drives the actual 0.85.1 Codex, xAI, Anthropic,
-and OpenCode factories through the Rubato decorators, fills the other three lanes with injected
-route-contract providers, and admits the resulting all-seven vector through the real overlay.
+(`provider-direct.mjs:247-268`).
+
+The staged provider feature now closes that boundary for real. `providersFeature` installs the
+Rubato adapters and the selected Cursor implementation *inside the selected stock pi-ai package*.
+Its staged `engine-paths.mjs` resolves only that package; it rejects any nested request except
+`@earendil-works/pi-ai`. `createRubatoProviders()` therefore defaults to the four stock 0.85.1
+factories plus the owned Cursor, Kiro, and Antigravity routes, while
+`createProvidersExtension()` validates and registers the ordered all-seven vector through the
+actual stock ExtensionAPI. The local response tests exercise those defaults, not no-op route
+fixtures. Root-owned feature catalog/bootstrap wiring and the default launcher cutover are still
+pending, so this is an executable staged closure rather than a claim that the shipped default has
+changed.
 
 The minimum maintained module boundary is therefore:
 
@@ -51,25 +62,27 @@ Do not copy Senpi's complete `pi-ai` tree. The selected closure is listed below.
 
 ## Current seven-lane map
 
-| Product identity | Current request/stream path | Auth and catalog | Stock 0.85.1 status | Retained Rubato/Senpi behavior |
+| Product identity | Staged request/stream path | Auth and catalog | Stock 0.85.1 status | Retained Rubato/Senpi behavior |
 |---|---|---|---|---|
-| `openai-codex/<id>` | Senpi `openaiCodexProvider()` -> Codex Responses WS/SSE -> Rubato stream decorator | stock/Senpi OAuth; legacy import only when target lacks it; static catalog | Native factory exists (`providers/openai-codex.js:6`), but stock catalog has no `-fast` rows and its request builder is behind selected Senpi behavior | 272K cap; Daybreak base/fast; selected picker; priority `/fast`; Astra configuration updates; WS/cache fixes; pool semantics |
-| `xai/grok-4.6` | Senpi `xaiProvider()` -> OpenAI Responses-compatible xAI endpoint -> decorator | `XAI_API_KEY` or OAuth; legacy import eligible | Native factory and xAI device OAuth exist (`providers/xai.js:6-22`, `auth/oauth/xai.js:114-189`) | 65,536 output cap; `xhigh`; xAI priority `/fast`; pools |
-| `cursor/<id>` | Senpi Cursor HTTP/2 Connect `AgentService/Run` -> Rubato canary/picker/error wrappers -> decorator | Cursor OAuth; per-account `GetUsableModels`; activation marker bound to credential+catalog generation | **Absent.** Zero source hits for Cursor runtime/provider in stock non-bundle sources | Entire selected Cursor transport closure, server-driven tool lifecycle, local-work heartbeat, catalog grouping, OAuth, canary, Grok Fast pin, Gemini 3.8 grouping |
-| `anthropic/<id>` | native Anthropic Messages -> setup-token fallback -> Rubato effort/server-compaction fetch wrappers -> decorator | stored OAuth/API key or Anthropic env; then setup-token file, then Keychain | Native provider exists. Factory differs from Senpi only by Senpi's two direct stream exports; underlying API implementation still differs | selected picker/Fable compatibility; setup-token; Opus fast body+beta; mid-conversation effort marks; server compaction; pools |
-| `kiro/<id>` | Rubato `createProvider()` + Anthropic Messages API -> loopback `kiro.rs` at `127.0.0.1:8990`; sidecar ensure happens at first stream | stored key, then `KIRO_API_KEY`, then Rubato Kiro config; no OAuth | **Absent as a provider.** Stock `createProvider` and Anthropic API are reusable | loopback-only gate, two-model catalog, lazy sidecar recovery; no `/fast` because it is a gateway path |
-| `google-antigravity/gemini-3.8-flash` | Rubato Antigravity API adapter -> Google internal endpoint; state keyed by profile/provider/model/session/branch/generation | Rubato Google OAuth; parent-only one-time Keychain import; project id carried in credential env | **Absent** | OAuth/login/refresh, project discovery, state/lineage reset on tree and accepted compaction |
-| `opencode/muse-spark-1.3-contributor-free` | native OpenCode provider -> decorator | native env/stored API key, then macOS Keychain fallback; no Rubato OAuth | Native factory/catalog exists and is newer/more complete than the pinned Senpi catalog | picker restriction and Keychain fallback only |
+| `openai-codex/<id>` | stock `openaiCodexProvider()` -> stock Codex Responses WS/SSE -> Rubato stream decorator | stock OAuth; legacy import only when target lacks it; static stock catalog plus Rubato Daybreak | Native factory is used (`providers/openai-codex.js`) | 272K cap; Daybreak base/fast; selected picker; priority `/fast`. Astra configuration-update and cache patches remain open |
+| `xai/grok-4.6` | stock `xaiProvider()` -> stock OpenAI Responses-compatible xAI API -> decorator | `XAI_API_KEY` or stock xAI OAuth; legacy import eligible | Native factory and device OAuth are used | 65,536 output cap; `xhigh`; xAI priority `/fast`. Pools remain open |
+| `cursor/<id>` | selected owned HTTP/2 Connect `AgentService/Run` -> Rubato canary/picker/error wrappers -> decorator | selected Cursor OAuth; per-account `GetUsableModels`; activation marker bound to credential+catalog generation | Provider is absent from stock; selected closure is staged into stock pi-ai | HTTP/2/protobuf transport, server-driven tool lifecycle, local-work heartbeat, catalog grouping, canary, Grok Fast pin, Gemini 3.8 grouping |
+| `anthropic/<id>` | stock Anthropic provider/API -> setup-token fallback -> Rubato effort/server-compaction wrappers -> decorator | stock stored OAuth/API key or env; then setup-token file, then Keychain | Native factory is used | selected picker/Fable compatibility; setup-token; Opus fast body+beta; mid-conversation effort marks; server compaction. Pools remain open |
+| `kiro/<id>` | owned route uses stock `createProvider()` and stock Anthropic Messages API -> loopback `kiro.rs`; lazy ensure on first stream | stored key, then `KIRO_API_KEY`, then Rubato Kiro config; no OAuth | Provider is absent; stock provider/API primitives are used | loopback-only gate, two-model catalog, lazy sidecar recovery; no `/fast` because it is a gateway path |
+| `google-antigravity/gemini-3.8-flash` | owned Antigravity API/route uses stock Google converter and event stream -> Google internal endpoint | owned Google OAuth; parent-only Keychain import; project id retained in OAuth credential env | Provider is absent; stock provider/auth primitives are used | OAuth/login/refresh, project discovery, request/response hooks, lineage reset on tree/successful compaction |
+| `opencode/muse-spark-1.3-contributor-free` | stock OpenCode provider -> decorator | native env/stored API key, then macOS Keychain fallback; no Rubato OAuth | Native factory/catalog is used | picker restriction and Keychain fallback only |
 
 Evidence anchors:
 
+- staged descriptor and API: `harness/pi-runtime/features/providers/patches.mjs` and
+  `features/providers/extension.mjs`;
 - actual composition and order: `harness/rubato-pi/src/provider-direct.mjs:247-326`;
 - overlay auth/admission/register/unregister order: `harness/rubato-pi/src/extensions/provider-overlay.mjs:68-162`;
 - stock builtins include the four native factories: stock `pi-ai/dist/providers/all.js:52-103`;
 - stock Cursor/Kiro/Antigravity absence: a non-bundle source search for
   `cursor-agent|cursor-cli-oauth|kiro|antigravity` returned no hits;
-- Cursor's dynamic catalog/protocol contract: pinned Senpi
-  `pi-ai/dist/providers/cursor.js:9-92`; Rubato canary/publish gate
+- Cursor's dynamic catalog/protocol contract: selected
+  `features/providers/vendor/pi-ai/providers/cursor.js`; Rubato canary/publish gate
   `cursor-route.mjs:422-640`;
 - Kiro config/auth/provider construction: `kiro-route.mjs:124-203,225-291`;
 - Antigravity OAuth/provider/lifecycle: `antigravity-route.mjs:116-203,221-310`.
@@ -175,6 +188,16 @@ then `KIRO_API_KEY`, then its config file and accepts only a loopback endpoint
 project id before write where possible, validates before a locked merge, and thereafter its provider
 OAuth owns refresh (`antigravity-keychain-import.mjs:204-301`, `antigravity-route.mjs:139-203`).
 
+Stock 0.85.1's `resolveStoredOAuth()` returned only `{ auth, source }`, even though its stored OAuth
+schema accepts `credential.env`. Antigravity keeps the resolved project id in that env; dropping it
+made a valid stored login fail later with `Antigravity credential is missing
+RUBATO_ANTIGRAVITY_PROJECT`. The provider descriptor therefore applies one exact-preimage patch to
+stock `pi-ai/dist/auth/resolve.js` (SHA-256
+`82ee45ecec319f59536759312a4de25313a8bb8cb7ce43db43d18edc10fef305`) so the resolved value is
+`{ auth, env: credential.env, source }`. An actual stock AgentSession test writes a fake OAuth record
+to an isolated `auth.json` and observes its fake project on the local Antigravity request. This is a
+data-preservation patch, not a second credential reader or refresh implementation.
+
 Stock AuthStorage supports one flat `api_key` or OAuth credential per provider and locked
 read/modify/delete/list (`stock coding-agent/dist/core/auth-storage.js:157-231,263-412`). It does not
 validate or select `accounts`. Current Senpi preserves a backward-readable flat projection plus
@@ -229,11 +252,16 @@ watchdog from killing a live long-thinking or Cursor-exec request
 the behavior into its coding-agent bundle or removed it is still an open runtime trace. Do not drop
 the behavior merely because the old patch path vanished.
 
-Accepted compaction invalidates effort lineage naturally (first-message fingerprint changes) and
+Successful compaction invalidates effort lineage naturally (first-message fingerprint changes) and
 explicitly advances Antigravity's conversation generation after dropping per-session state
-(`antigravity-route.mjs:293-310`). Auxiliary title/summary/compaction streams are classified separately
-by the decorator so they do not overwrite main-turn speed measurements. Stock-host compaction and
-empty-recovery ordering still needs a response-mock combination test.
+(`antigravity-route.mjs:293-313`). Senpi may emit a rejected attempt as
+`{ accepted: false }`; stock 0.85.1 emits `session_compact` only after success and supplies no
+`accepted` field. The lifecycle accepts the latter while still ignoring the former. Antigravity's
+transport also now honors stock's per-request `options.fetch`, `onPayload`, and `onResponse` hooks;
+the actual stock request test proves request replacement and normalized response headers.
+Auxiliary title/summary/compaction streams are classified separately by the decorator so they do not
+overwrite main-turn speed measurements. Stock-host compaction and empty-recovery ordering still
+needs a combined response-mock test.
 
 ## Builtin registration and settings
 
@@ -258,42 +286,55 @@ reconstruct it from a hand list. The provider boundary directly requires stock
 `typebox@1.3.7` (`stock pi-ai/package.json:66-89`). Pi, pi-ai, pi-agent-core, pi-tui, chord, and
 pi-telemetry are MIT; the lockfile is the authority for every transitive version/license.
 
-Selected Senpi-derived material that has no stock replacement must be ported as owned modules, not
-by copying the package:
+The provider descriptor is the executable source-of-truth for the selected closure. It stages 62
+files: eight feature glue/assets, 33 Rubato provider/decorator sources, and 21 Cursor targets. The
+eight are `extension.mjs`, the stock-only `engine-paths.mjs`, `cursor-lazy.mjs`, a feature-local
+Cursor event stream, the Rubato read-image adapter, `THIRD_PARTY_NOTICES.md`, the speed-index
+baseline JSON, and `kiro-setup.sh`. The 33 Rubato paths are listed once in `patches.mjs` as
+`rubatoSources`; they include the provider composition, three owned routes, credential fallbacks,
+request decorators, and their recursively imported Rubato helpers.
 
-- service tier: selected as the Rubato-owned stock ExtensionAPI module
-  `harness/pi-runtime/features/service-tier/extension.mjs`, two exact-hash SettingsManager patches,
-  and `THIRD_PARTY_NOTICES.md`; no non-core runtime package or data asset;
-- credential pools: Senpi core `credential-pool/{env-slots,rotation-stream,state-store,classify,
-  failover}.js`, the minimum request/login/refresh hooks, and pi-ai
-  `auth/pool/{select,slots}.js`. Runtime packages are `proper-lockfile@4.1.2` (MIT) and the actually
-  resolved `zod@3.25.76` (MIT); state is the existing mode-0600
-  `credential-pool-state.json`, containing health/HMAC revisions but no credential material;
-- Cursor provider/catalog/OAuth eager closure:
-  `providers/cursor.js`, `api/{cursor-agent.lazy,lazy}.js`,
-  `auth/{context,credential-store,helpers,resolve}.js`, `auth/oauth/{load,cursor,pkce}.js`,
-  `auth/pool/slots.js`, `cursor/{catalog-grouping,model-capabilities,store-migration}.js`,
-  `models{,-store}.js`, `utils/{abort,diagnostics,event-stream}.js`, and asset
-  `cursor/cursor-variant-aliases.json`;
-- Cursor Node-only transport closure loaded by the lazy boundary:
-  `api/cursor-agent.js`, `api/cursor-agent/{deterministic-id,exec-lifecycle,exec-modern,measure,
-  pi-args,reasoning-params,stream-retry}.js`, generated `api/cursor-agent/gen/agent_pb.js`,
-  `api/{cursor-conversation-rotation,cursor-task-args,lazy}.js`,
-  `cursor/{composer-prompt,model-capabilities,selection-descriptor}.js`, `session-resources.js`,
-  `utils/{abort,block-symbols,diagnostics,event-stream,headers,json-parse,sanitize-unicode}.js`,
-  `models{,-store}.js`, `auth/{context,credential-store,resolve}.js`, `auth/pool/slots.js`, and the
-  same alias JSON. External runtime packages are `@bufbuild/protobuf@2.14.0`
-  (`Apache-2.0 AND BSD-3-Clause`) and `partial-json@0.1.7` (MIT), plus Node
-  `crypto`, `fs`, `http2`, and `path`;
-- Rubato uses Senpi's module-local `utils/block-symbols.js` identity today. A stock boundary must
-  source that symbol from the selected Cursor module or expose it through an adapter; recreating it
-  with `Symbol.for()` is not equivalent.
+The exact 21 Cursor targets installed at stock pi-ai paths are:
 
-All selected Senpi packages inspected here (`senpi`, its pi-ai, pi-agent-core, and pi-tui aliases)
-declare MIT. License texts and attribution must accompany any copied/derived source. The generated
-Cursor protobuf file and alias JSON are required assets, not optional source-map material. `.d.ts`,
-`.map`, tests, unrelated providers/APIs, and the rest of the Senpi pi-ai tree are not in the runtime
-closure above.
+```text
+api/cursor-agent.js
+api/cursor-agent.lazy.js
+api/cursor-agent/{deterministic-id,exec-lifecycle,exec-modern,measure,pi-args,
+  reasoning-params,stream-retry}.js
+api/cursor-agent/gen/agent_pb.js
+api/cursor-conversation-rotation.js
+api/cursor-task-args.js
+auth/oauth/cursor.js
+cursor/{catalog-grouping,composer-prompt,model-capabilities,selection-descriptor,
+  store-migration}.js
+cursor/cursor-variant-aliases.json
+providers/cursor.js
+utils/block-symbols.js
+```
+
+The 22nd Senpi-derived source is `utils/event-stream.js`, deliberately staged under the feature
+namespace rather than overwriting stock's shared utility. Everything else used by Cursor resolves
+from stock pi-ai: model store, auth resolution/credential store, session resource cleanup,
+abort/diagnostic/header/JSON/unicode helpers, and common API types. The selected Cursor transport
+also carries the existing Rubato checkpoint/request-context, read-image byte loading, Task wording,
+and conversation `forget` transformations. Its generated protobuf and alias JSON are required
+assets. `.d.ts`, `.map`, tests, unrelated providers/APIs, and the rest of Senpi pi-ai are excluded.
+
+This feature adds one standalone direct dependency:
+`@bufbuild/protobuf@2.14.0` (`Apache-2.0 AND BSD-3-Clause`). `partial-json@0.1.7` comes from stock
+pi-ai's own locked dependency set. The selected source uses Node `crypto`, `fs`, `http2`, and `path`.
+The full MIT text and source/protobuf attribution are in
+`features/providers/THIRD_PARTY_NOTICES.md`; the copied `utils/block-symbols.js` is retained so
+Cursor producer and Rubato consumer share the same module-local symbol identity.
+
+Service tier is separately selected as the Rubato-owned stock ExtensionAPI module
+`harness/pi-runtime/features/service-tier/extension.mjs`, two exact-hash SettingsManager patches,
+and its MIT notice. Credential pools are *not* part of either selected descriptor yet. Their future
+minimum closure remains Senpi core
+`credential-pool/{env-slots,rotation-stream,state-store,classify,failover}.js`, pi-ai
+`auth/pool/{select,slots}.js`, and the request/login/refresh hooks. Expected packages are
+`proper-lockfile@4.1.2` (MIT) and resolved `zod@3.25.76` (MIT), with the existing mode-0600
+`credential-pool-state.json`; that list is a migration boundary, not an implementation claim.
 
 ## Verification path and remaining unknowns
 
@@ -308,31 +349,45 @@ Completed without network or credential access:
   `/fast off`, per-model persistence, Codex-to-Codex live-intent preservation, model switch,
   extension reload, fresh AgentSession restart,
   Codex/xAI `service_tier`, direct Anthropic `speed` plus beta, and Kiro/unsupported exclusions;
+- isolated Node run of `features/providers/providers.test.mjs`: 6/6 passed against a freshly staged
+  actual stock 0.85.1 SDK. It registered the exact all-seven vector and completed local Kiro HTTP,
+  Antigravity HTTP/SSE, and Cursor HTTP/2 Connect/protobuf turns. It also verified Cursor stored
+  catalog grouping, lazy local-work forwarding, request/response hooks, OAuth project env, abort,
+  clean premature EOF, and exactly one terminal event;
+- isolated source regression of `antigravity-api.test.mjs`, `antigravity-route.test.mjs`, and
+  `kiro-route.test.mjs`: 50/50 passed against the existing pinned Senpi dependency tree, proving the
+  two compatibility edits preserve the current path as well as the staged stock path;
 - source SHA comparison: stock and Senpi provider factory files are identical for Codex, xAI, and
   OpenCode; Anthropic differs only by Senpi's exported direct stream aliases;
 - read-only transform probes: Codex WS TTL applies to stock; Astra patch drifts; old prompt-cache TTL
   and empty-recovery target files are absent.
 
-The full provider test is reproducible without resolving an engine or credential profile from the
-user's home directory. The temporary top-level symlink only supplies the pinned dependency tree to
-legacy test cases; the stock tests pass their `harness/pi-runtime` pi-ai root explicitly, and a
-missing stock export is required to fail rather than fall back through that symlink:
+The actual provider closure test is reproducible without resolving an engine, credential profile,
+or package from the user's home/original checkout. `stagePiRuntime()` copies the locked stock
+runtime to its own temporary root, applies the exact patch, and imports the feature from that staged
+stock pi-ai. All credentials are literal fake values and all network endpoints are process-local:
 
 ```sh
 cd /Users/wy/Github-repos/rubato-lab/worktrees/pi-adapter-0851
-ln -s /Users/wy/Github-repos/rubato-lab/rubato/node_modules node_modules
-isolated_engine="$(mktemp -d /tmp/rubato-provider-engine-0851.XXXXXX)"
-trap 'unlink node_modules; rmdir "$isolated_engine"' EXIT
-env NODE_TEST_CONTEXT=child-v8 \
-  RUBATO_ENGINE_DIR="$isolated_engine" \
+TEST_HOME="$(mktemp -d /tmp/rubato-providers-test-home.XXXXXX)"
+TEST_AGENT="$(mktemp -d /tmp/rubato-providers-test-agent.XXXXXX)"
+TEST_ENGINE="$(mktemp -d /tmp/rubato-providers-test-engine.XXXXXX)"
+env -u NODE_OPTIONS -u NODE_COMPILE_CACHE \
+  HOME="$TEST_HOME" \
+  PI_CODING_AGENT_DIR="$TEST_AGENT" \
+  RUBATO_PI_CODING_AGENT_DIR="$TEST_AGENT" \
+  RUBATO_ENGINE_DIR="$TEST_ENGINE" \
   RUBATO_SPEED_INDEX=0 \
-  bun test harness/rubato-pi/test/unit/provider-direct.test.mjs
+  RUBATO_NO_KIRO_ENSURE=1 \
+  PI_OFFLINE=1 \
+  node --test harness/pi-runtime/features/providers/providers.test.mjs
 ```
 
-`NODE_TEST_CONTEXT` activates the live-auth refusal gate. Individual credential tests inject their
-own temporary `RUBATO_LEGACY_AUTH_PATH` and `RUBATO_TARGET_AUTH_PATH`; do not set a process-wide
-`*_CODING_AGENT_DIR`, because doing so would replace the live-path guard that one safety test
-deliberately exercises.
+The legacy `provider-direct.test.mjs` safety suite remains a separate Bun check. To avoid creating a
+dependency symlink in the worktree, copy `harness/rubato-pi` to an isolated temporary repo and put
+the pinned dependency symlink only there. Its `NODE_TEST_CONTEXT=child-v8` guard rejects a live auth
+path; individual credential cases inject their own temporary paths. That suite is evidence for the
+admission/legacy boundary, not evidence that the stock feature falls back to Senpi.
 
 The service-tier run is separately reproducible with an empty home/profile. It copies and patches
 the stock package into its own temporary directory, injects that actual SettingsManager into the
@@ -351,17 +406,17 @@ env -u NODE_OPTIONS -u NODE_COMPILE_CACHE \
     harness/pi-runtime/features/service-tier/service-tier.test.mjs
 ```
 
-Next response/mock checks, in order:
+Next checks, in order:
 
-1. use the isolated stock runtime resolver to supply the loader root; mock fetch/WS responses for the
-   four native providers and assert request body, event stream, abort, and terminal settlement;
+1. connect the providers descriptor in the root-owned feature catalog/bootstrap and run the combined
+   staged SDK composition; keep `RUBATO_PI_CODING_AGENT_DIR` equal to the AgentSession `agentDir`;
 2. connect the service-tier `getState()` / `onChange()` bridge to existing footer/lightning and RPC
    `fastMode` consumers, without adding a private AgentSession mutation API unless composition proves
    one is necessary;
 3. add the minimum stock host credential-pool hooks and exercise two mock accounts: HRW affinity,
    pre-output 429 rotation, post-output no-retry, refresh merge, and flat backward compatibility;
-4. stage the selected Cursor closure and run its existing response/protobuf mocks, including
-   server-driven tool `hasPendingLocalWork`, canary, cancellation, and catalog migration;
+4. connect Cursor's server-driven exec bridge to the stock agent loop and prove exec deduplication,
+   cancellation during local work, activation canary, and dynamic catalog publication together;
 5. run combined long-thinking -> empty recovery -> compaction mocks and verify no watchdog false
    timeout or stale Antigravity/Cursor state;
 6. only then run isolated copied-profile startup/resume. Live OAuth/provider calls remain separately
@@ -375,6 +430,7 @@ Unknowns that block a parity claim:
 - a stock-specific Astra `configuration_update`/extra-body patch and prompt-cache timeout owner;
 - the smallest stable stock ModelRuntime/AuthStorage hook for account pools without forking the
   runtime;
-- Cursor package export/bundle integration for the selected generated protobuf and lazy Node module;
-- full builtin registration parity, final distribution/CLI entry, live auth refresh, and paid model
+- Cursor's stock agent-loop host bridge for server-driven exec and its canary/catalog combination;
+- legacy/parent credential imports and builtin unregister in the final bootstrap, full builtin
+  registration parity, final distribution/CLI entry, live auth refresh, and paid model
   behavior. Those are deliberately not claimed complete.

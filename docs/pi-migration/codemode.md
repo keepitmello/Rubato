@@ -80,10 +80,10 @@ local `stock-host-adapter.ts`가 `context` hook에서 stock의 정확한
 ```text
 env -u NODE_OPTIONS -u NODE_COMPILE_CACHE \
   node --test --test-timeout=30000 \
-  harness/pi-runtime/features/codemode/codemode.test.mjs
+  harness/pi-runtime/features/codemode/codemode.test.mjs \
+  harness/pi-runtime/features/codemode/codemode-interpreters.test.mjs
 
-3 tests, 3 pass (focused)
-62 tests, 62 pass (complete `harness/pi-runtime` suite)
+7 tests: 6 pass, 1 skip (Julia executable 없음)
 ```
 
 테스트 순서는 다음 계약을 고정한다.
@@ -100,20 +100,28 @@ env -u NODE_OPTIONS -u NODE_COMPILE_CACHE \
    cancellation과 state reset, completion notification 정확히 한 번 확인
 7. cell manager와 session manager dispose 뒤 기존 worker의 새 run이 `closed`로 거부되고
    HTTP bridge endpoint도 사라지는지 확인
+8. Python 3.14.6 실제 subprocess에서 `saved=41` 뒤 `42`, HTTP `tool.echo`, SIGINT 뒤
+   state retained, close 뒤 캡처한 PID 소멸 확인
+9. Ruby 2.6.10 실제 subprocess에서 같은 persistence/tool 계약, interrupt 때 기존 process를
+   retire하고 새 process로 교체해 state가 사라지며 모든 캡처 PID가 소멸하는지 확인
+10. Bun 1.4.0 프로세스 안에서 실제 JS worker의 persistence/tool reply/interrupt/state reset을
+    확인하고 worker close 뒤 Bun host process까지 종료되는지 확인
 
-모든 실행은 local temporary cwd, fake generic tool 하나와 실제 Node Worker/HTTP bridge를
-사용했다. provider 호출, user profile, MCP 우회는 없었다.
+모든 실행은 local temporary cwd, fake generic tool 하나와 실제 Worker/HTTP bridge/subprocess를
+사용했다. `NODE_OPTIONS`와 `NODE_COMPILE_CACHE`는 비웠다. provider 호출, user profile,
+MCP 우회는 없었다.
 
 ## 아직 완료되지 않은 경계
 
-- Python/Ruby/Julia source와 runner/prelude는 배포 목록에 포함됐지만 interpreter별
-  persistence, tool bridge, cancellation, process-group 종료 E2E는 아직 실행하지 않았다.
-- Bun skill과 inline worker asset은 포함됐지만 Bun kernel mode는 실행하지 않았다.
+- Julia runner는 이 host에 executable이 없어 명시적으로 skip했다. source/asset 포함은
+  Julia runtime parity 증거가 아니다.
+- Python/Ruby/Bun은 위의 실제 프로세스 계약까지 통과했지만, Windows 및 Linux에서 같은
+  interpreter/process-group 종료를 실행하지 않았다.
 - stock removed-tool adapter는 다음 provider context에 붙는 redirect를 검증했지만,
   Senpi처럼 최초 오류를 TUI와 session 저장값에도 즉시 넣는 core-native API는 없다.
 - image/render/TUI와 provider-backed completion은 실행하지 않았다.
 
 따라서 현재 증거는 **독립 배포 가능한 codemode source/assets, 실제 patched stock SDK bind,
-JS eval/tool/lifecycle**까지다.
-다른 interpreter와 TUI/provider-backed completion까지 실행하기 전에는 전체 codemode
+Node/Python/Ruby/Bun eval·tool·interrupt·shutdown**까지다.
+Julia와 다른 OS, TUI/provider-backed completion까지 실행하기 전에는 전체 codemode
 parity나 기본 엔진 전환 완료로 표시하면 안 된다.
