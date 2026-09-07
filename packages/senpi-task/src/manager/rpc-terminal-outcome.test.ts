@@ -41,7 +41,7 @@ afterEach(async () => {
 })
 
 describe("RPC terminal outcomes", () => {
-  test("#given prompt preflight rejection #when a process task starts #then its running record becomes a typed start failure without an unhandled rejection", async () => {
+  test("#given prompt preflight rejection #when a process task starts #then the spawn returns immediately and the record terminalizes as an error without an unhandled rejection", async () => {
     // given
     const { manager, store } = createManager()
     const rejections: unknown[] = []
@@ -51,6 +51,10 @@ describe("RPC terminal outcomes", () => {
     process.on("unhandledRejection", onRejection)
 
     // when
+    // start() no longer waits for the child to accept its initial prompt (a real child needs
+    // 12-28s to boot), so a preflight rejection can no longer be reported through the spawn
+    // result. It settles the turn outcome instead, and the outcome tracker terminalizes the
+    // record - the same seam every other child failure already travels.
     const result = await manager.start({
       prompt: "prompt-error:model missing",
       parent_session_id: "parent-1",
@@ -58,13 +62,14 @@ describe("RPC terminal outcomes", () => {
       execution_mode: "process",
       model: "fixture/model",
     })
+    if (result.kind !== "started") throw new Error("expected started")
+    const terminal = await manager.waitFor(result.task_id)
     process.off("unhandledRejection", onRejection)
 
     // then
-    expect(result.kind).toBe("start_failed")
-    if (result.kind !== "start_failed") throw new Error("expected start_failed")
+    expect(terminal?.status).toBe("error")
     expect(store.load(result.task_id)?.status).toBe("error")
-    expect(result.error_message).toBe("Child prompt failed to start.")
+    expect(store.load(result.task_id)?.error_message).toContain("model missing")
     expect(rejections).toEqual([])
   })
 

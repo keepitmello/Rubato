@@ -1,4 +1,4 @@
-import { type ChildProcess, type SpawnOptions } from "node:child_process"
+import { type ChildProcess, type SpawnOptions, spawn } from "node:child_process"
 import { mkdtempSync, rmSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
@@ -164,18 +164,50 @@ describe("RpcProcessRunner", () => {
     const { runner } = makeRunner()
 
     // when
-    const start = runner.start(makeSpec({ prompt: "crash:4:boom stderr detail" }))
-    await expect(start).rejects.toMatchObject({
+    // start() does NOT wait for the child to accept its initial prompt, so a crash during
+    // startup surfaces on the handle's settled turn outcome - the same seam the manager's
+    // outcome tracker already terminalizes the record through.
+    const handle = await runner.start(makeSpec({ prompt: "crash:4:boom stderr detail" }))
+    expect(handle.waitForOutcome).toBeDefined()
+    const outcome = await handle.waitForOutcome?.()
+    await Promise.resolve()
+    process.off("unhandledRejection", onRejection)
+
+    // then
+    expect(outcome).toMatchObject({
+      status: "error",
       failure: {
         kind: "child-prompt-failed",
         message: expect.stringContaining("boom stderr detail"),
       },
     })
-    await Promise.resolve()
-    process.off("unhandledRejection", onRejection)
+    expect(rejections).toEqual([])
+  })
+
+  test("#given a child that is still booting #when started #then start resolves without waiting for the prompt ack", async () => {
+    // given a child that never answers: a real rubato child needs 12-28s to boot its engine
+    // before it can ack the initial prompt, and the parent's Agent tool call is frozen for
+    // exactly as long as start() waits.
+    const silentRunner = new RpcProcessRunner({
+      spawnChild: () => {
+        const child = spawn(process.execPath, ["-e", "process.stdin.resume(); setTimeout(() => {}, 60_000)"], {
+          stdio: ["pipe", "pipe", "pipe"],
+          detached: process.platform !== "win32",
+        })
+        children.push(child)
+        return child
+      },
+    })
+
+    // when
+    const handle = await Promise.race([
+      silentRunner.start(makeSpec({ prompt: "hello" })),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("start() blocked on the prompt ack")), 2_000)),
+    ])
 
     // then
-    expect(rejections).toEqual([])
+    expect(handle.task_id).toBe("st_deadbeef")
+    expect(handle.pid).toBeDefined()
   })
 
   test("#given a resident child #when heartbeats poll #then lastSeen and sessionId are recorded", async () => {
