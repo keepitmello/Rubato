@@ -73,24 +73,36 @@ export class RpcProcessRunner {
       now: this.now,
     })
     const resume = spec.resumeSessionPath === undefined ? undefined : client.switchSession(spec.resumeSessionPath)
-    try {
-      if (resume === undefined) {
-        await handle.startInitialPrompt(spec.prompt)
-      } else {
-        await resume
-      }
-    } catch (error) {
-      try {
-        await discardUnstartedRpcHandle(handle)
-      } catch (cleanupError) {
-        log("senpi-task rpc start cleanup failed", { taskId: spec.task_id, error: String(cleanupError) })
-      }
-      const message = error instanceof Error ? error.message : String(error)
-      throw new RunnerError({
-        kind: resume === undefined ? "child-prompt-failed" : "session_unavailable",
-        message,
-        cause: error,
+    if (resume === undefined) {
+      // 초기 프롬프트를 기다리지 않는다. 자식은 별도 프로세스라 엔진(확장·스킬·MCP)을
+      // 통째로 올린 뒤에야 prompt 명령에 응답하고, 그 부팅에만 12~28초가 걸린다(실측).
+      // 그동안 start() 를 붙들면 부모의 Agent 도구 호출이 그만큼 멈추고, 부모 턴이
+      // 도구 안에 갇혀 사용자의 스티어가 다음 도구 경계까지 못 들어간다.
+      // in-process 러너는 이미 이렇게 동작한다 (createChildHandle 의 beginTurn).
+      //
+      // 실패는 버려지지 않는다: runPrompt 가 rethrow 하기 전에 이미 턴 결과를
+      // child-prompt-failed 로 정산해 두므로, 매니저의 outcome 추적이 레코드를
+      // fail 로 넘기고(모델 폴백이 있으면 그쪽으로 간다) 완료 핑이 부모에게 간다.
+      //
+      // 자식 프로세스는 여기서 죽이지 않는다. start() 가 돌아간 뒤로 그 자식은
+      // 매니저의 #live 소유이고, 프롬프트 admission 이후에 실패한 턴
+      // (child-turn-failed)도 프로세스를 남긴 채 레코드만 실패로 넘긴다.
+      // 여기서만 따로 걷으면 매니저의 teardown 과 이중 종료가 된다.
+      void handle.startInitialPrompt(spec.prompt).catch((error: unknown) => {
+        log("senpi-task rpc initial prompt failed", { taskId: spec.task_id, error: String(error) })
       })
+    } else {
+      try {
+        await resume
+      } catch (error) {
+        try {
+          await discardUnstartedRpcHandle(handle)
+        } catch (cleanupError) {
+          log("senpi-task rpc start cleanup failed", { taskId: spec.task_id, error: String(cleanupError) })
+        }
+        const message = error instanceof Error ? error.message : String(error)
+        throw new RunnerError({ kind: "session_unavailable", message, cause: error })
+      }
     }
     return Object.assign(handle, {
       spawnSpec: {
