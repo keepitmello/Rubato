@@ -8,6 +8,7 @@ import {
   injectToolSurface, injectUniversalApplyPatch, isApplyPatchExtensionUrl,
   injectMcpSearchExposure, isMcpTierBUrl, injectDeferredMediaTool, isModelGatedMediaUrl,
   injectMcpCatalogOwnership, isToolSearchServiceUrl,
+  injectMcpToolNamePrefix, isMcpNamingUrl, injectMcpProxyToolName, isMcpProxyUrl,
 } from "./core-tool-surface.mjs";
 import { injectToolDescriptions, isToolDefinitionWrapperUrl } from "./core-tool-descriptions.mjs";
 import { injectCompaction, injectContextTokensGuard, isCompactionUrl, isContextTokensUrl } from "./core-compaction.mjs";
@@ -75,6 +76,8 @@ export function applyCoreSessionTransforms(url, source, applyTransform) {
   }
   if (isApplyPatchExtensionUrl(url)) source = applyTransform(source, injectUniversalApplyPatch);
   if (isMcpTierBUrl(url)) source = applyTransform(source, injectMcpSearchExposure);
+  if (isMcpNamingUrl(url)) source = applyTransform(source, injectMcpToolNamePrefix);
+  if (isMcpProxyUrl(url)) source = applyTransform(source, injectMcpProxyToolName);
   if (isToolSearchServiceUrl(url)) source = applyTransform(source, injectMcpCatalogOwnership);
   if (isModelGatedMediaUrl(url)) source = applyTransform(source, injectDeferredMediaTool);
   if (isToolDefinitionWrapperUrl(url)) source = applyTransform(source, injectToolDescriptions);
