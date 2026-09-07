@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "rubatoCommit": "1f6ca5392a554b8b27126e6d016b0ffc00260707",
+  "remoteBranch": "origin/rubato/base",
+  "workBranch": "codex/pi-adapter-0851",
+  "stockPi": {
+    "name": "@earendil-works/pi-coding-agent",
+    "version": "0.85.1",
+    "integrity": "sha512-FGRN+OHbWaefBPGaTggAdLjrIHW+s2PzLyglz/5dfLzb9of7uuXMXYC0fJIeZTw+shS32o2cuQ9jF7YSDuL/oQ=="
+  },
+  "protectedUserFiles": [
+    { "path": "harness/rubato-pi/src/transforms/boot-interactive-defer.mjs", "sha256": "22c348ebc8d37ca8220b98638667401ca18cc14d2c59adc6167a5eaf8a45ff92" },
+    { "path": "harness/rubato-pi/src/transforms/boot-perf.mjs", "sha256": "b934046cc459080e1160d54a1e457924036c419b033aa40c36e2c7f5afb0fe49" },
+    { "path": "harness/rubato-pi/src/transforms/core-session.mjs", "sha256": "eef758ad561e05d21fc23f0044b2aa9ace834de9a4672f59df1930bffa2d89f2" },
+    { "path": "harness/rubato-pi/test/unit/boot-interactive-defer.test.mjs", "sha256": "d115034998af949f6a807b7dc13ea32a224e3569db2b634dc121ecda1722a261" },
+    { "path": "harness/rubato-pi/src/transforms/core-prompt-noise.mjs", "sha256": "085ad65b96b1088ee6b9bf846e903bea9d922d7ba5091eccb3d256136c528c7a" },
+    { "path": "harness/rubato-pi/test/unit/prompt-noise.test.mjs", "sha256": "d116bb286a9ef3913adae15101a26840aca66eae28fb91f2522b33f40849ddf1" }
+  ]
+}

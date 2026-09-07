@@ -1,9 +1,10 @@
 // 직결 경로의 계약. pinned factory 를 그대로 쓴다 — shape mock 은 "우리가 상상한
 // provider" 를 검사하는 것이고, 실제 등록에서 터지는 것은 상상과 다른 지점이다.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import {
   credentialShapeWith,
@@ -16,6 +17,7 @@ import {
   daybreakModels,
   directProviders,
   fable51Models,
+  nativeProviderFactoryLoader,
   providerDirectEnabled,
   warnIgnoredDirectOptOut,
 } from "../../src/provider-direct.mjs";
@@ -28,6 +30,12 @@ const CATALOG = [
   { id: "anthropic/claude-opus-5", name: "Opus 5" },
   { id: "kiro/claude-opus-5", name: "Opus 5 (Kiro)" },
 ];
+
+const testDir = dirname(fileURLToPath(import.meta.url));
+const STOCK_PI_AI_ROOT = resolve(
+  testDir,
+  "../../../pi-runtime/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai",
+);
 
 /** 등록 순서를 그대로 기록하는 pi 대역. 순서가 계약이므로 순서를 본다. */
 function recordingPi() {
@@ -624,8 +632,8 @@ test("지원 신원은 일곱 개이고 정적이다", async () => {
   assert.deepEqual([...SUPPORTED_PROVIDER_IDS], [
     "openai-codex",
     "xai",
-    "anthropic",
     "cursor",
+    "anthropic",
     "kiro",
     "google-antigravity",
     "opencode",
@@ -633,6 +641,134 @@ test("지원 신원은 일곱 개이고 정적이다", async () => {
   // 등록하는 id 는 어느 것도 foreign 이 아니다 — 정리 단계가 그것을 지우면 안 된다.
   const foreign = foreignProviderIds([...SUPPORTED_PROVIDER_IDS, "vercel-ai-gateway", "ollama"]);
   assert.deepEqual(foreign, ["vercel-ai-gateway", "ollama"]);
+});
+
+function injectedRouteProvider(id, baseUrl) {
+  const stream = () => ({
+    async *[Symbol.asyncIterator]() {},
+  });
+  return {
+    id,
+    name: id,
+    baseUrl,
+    getModels: () => [],
+    stream,
+    streamSimple: stream,
+  };
+}
+
+function stockDirectOptions() {
+  return {
+    env: { RUBATO_SPEED_INDEX: "0" },
+    nativeFactoryLoader: nativeProviderFactoryLoader(STOCK_PI_AI_ROOT),
+    routeFactories: {
+      cursor: async () => injectedRouteProvider("cursor", "https://cursor.invalid"),
+      kiro: async () => injectedRouteProvider("kiro", "http://127.0.0.1:8990"),
+      antigravity: async () => ({
+        provider: injectedRouteProvider("google-antigravity", "https://antigravity.invalid"),
+      }),
+    },
+  };
+}
+
+function injectedOverlayOptions(events, providerFactory) {
+  return {
+    env: { RUBATO_PROVIDER_DIRECT: "1", RUBATO_SPEED_INDEX: "0" },
+    providerFactory,
+    legacyCredentialImporter: async () => {
+      events.push("legacy-import");
+      return { status: "nothing_to_import", rejected: {} };
+    },
+    availabilityChecker: async () => [],
+    antigravityCredentialImporter: async () => {
+      events.push("antigravity-import");
+      return { status: "keychain_unavailable" };
+    },
+    cursorNoticeRegistrar: () => events.push("cursor-notice"),
+  };
+}
+
+test("stock 0.85.1 native factories compose into the full seven-lane provider vector", async (t) => {
+  if (!existsSync(join(STOCK_PI_AI_ROOT, "package.json"))) {
+    t.skip("isolated stock Pi runtime is not installed");
+    return;
+  }
+  const requested = [];
+  const loadStock = nativeProviderFactoryLoader(STOCK_PI_AI_ROOT);
+  const options = stockDirectOptions();
+  options.nativeFactoryLoader = async (file, exportName) => {
+    requested.push([file, exportName]);
+    return await loadStock(file, exportName);
+  };
+  const providers = await directProviders(options);
+
+  assert.deepEqual(providers.map((provider) => provider.id), [...DIRECT_PROVIDER_IDS]);
+  assert.deepEqual(requested, [
+    ["openai-codex.js", "openaiCodexProvider"],
+    ["xai.js", "xaiProvider"],
+    ["anthropic.js", "anthropicProvider"],
+    ["opencode.js", "opencodeProvider"],
+  ]);
+  for (const id of ["openai-codex", "xai", "anthropic", "opencode"]) {
+    const provider = providers.find((entry) => entry.id === id);
+    assert.equal(typeof provider.stream, "function", `${id} stock stream contract is missing`);
+    assert.equal(typeof provider.streamSimple, "function", `${id} stock streamSimple contract is missing`);
+    assert.ok(provider.getModels().length > 0, `${id} stock catalog is empty`);
+  }
+});
+
+test("an explicit native factory source never falls back when an export is absent", async (t) => {
+  if (!existsSync(join(STOCK_PI_AI_ROOT, "package.json"))) {
+    t.skip("isolated stock Pi runtime is not installed");
+    return;
+  }
+  const loadStock = nativeProviderFactoryLoader(STOCK_PI_AI_ROOT);
+  await assert.rejects(
+    () => loadStock("xai.js", "notAProviderFactory"),
+    new RegExp(`pi-ai provider source .* has no notAProviderFactory`),
+  );
+});
+
+test("overlay admits the complete stock-backed seven-lane factory before registration", async (t) => {
+  if (!existsSync(join(STOCK_PI_AI_ROOT, "package.json"))) {
+    t.skip("isolated stock Pi runtime is not installed");
+    return;
+  }
+  const events = [];
+  const pi = {
+    registerProvider: (provider) => events.push(`register:${provider.id}`),
+    unregisterProvider: () => {},
+  };
+  await providerOverlayImpl(pi, injectedOverlayOptions(events, async () => {
+    events.push("factory");
+    return await directProviders(stockDirectOptions());
+  }));
+
+  assert.deepEqual(events.slice(0, 3), ["factory", "legacy-import", "antigravity-import"]);
+  assert.deepEqual(
+    events.filter((entry) => entry.startsWith("register:")),
+    DIRECT_PROVIDER_IDS.map((id) => `register:${id}`),
+  );
+});
+
+test("overlay rejects an incomplete stock-backed factory before auth or registration", async (t) => {
+  if (!existsSync(join(STOCK_PI_AI_ROOT, "package.json"))) {
+    t.skip("isolated stock Pi runtime is not installed");
+    return;
+  }
+  const events = [];
+  const pi = {
+    registerProvider: (provider) => events.push(`register:${provider.id}`),
+    unregisterProvider: () => events.push("unregister"),
+  };
+  await assert.rejects(
+    () => providerOverlayImpl(pi, injectedOverlayOptions(events, async () => {
+      events.push("factory");
+      return (await directProviders(stockDirectOptions())).slice(0, -1);
+    })),
+    /missing=opencode/,
+  );
+  assert.deepEqual(events, ["factory"]);
 });
 
 test("Cursor 는 직결 소유이고 정확히 한 번 등록된다", async (t) => {
