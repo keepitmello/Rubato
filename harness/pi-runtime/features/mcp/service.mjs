@@ -198,6 +198,8 @@ export class McpService {
             label,
             description: tool.description ?? `MCP tool ${label}`,
             parameters,
+            mcpServerName: server.name,
+            mcpToolName: tool.name,
             executionMode: "parallel",
             execute: async (_toolCallId, params, signal, onUpdate) =>
               this.callTool(name, params, { signal, onUpdate }),
