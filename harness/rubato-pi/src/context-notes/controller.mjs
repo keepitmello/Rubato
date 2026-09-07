@@ -58,7 +58,7 @@ export class ContextNotesController {
     this.flushJournal = options.flushJournal ?? flushSessionJournal;
     if (this.requireEngine) assertEngineParts();
     this.sessionId = ctx.sessionManager.getSessionId();
-    this.store = options.store ?? new ContextNotesStore(databasePath(ctx.agentDir, this.sessionId), this.config);
+    this.store = options.store ?? new ContextNotesStore(databasePath(options.agentDir ?? ctx.agentDir, this.sessionId), this.config);
     this.ctx = baseContext(ctx);
     this.pending = null;
     this.checkpointRequested = false;

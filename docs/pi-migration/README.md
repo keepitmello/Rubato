@@ -1,11 +1,64 @@
 # Pi 어댑터 이관 — 현재 실행 상태
 
-상태: 최신 Rubato 기반에서 조사와 좁은 구현을 병행한다. 전체 기능 이관·기본 엔진 전환은 아직 아니다.
+상태: 최신 Rubato 기반에서 stock Pi 기능 모듈과 실제 Rubato bundle을 조립하고 있다.
+전체 기능 이관·기본 엔진 전환은 아직 아니다. 아래 세 번째 단위 기록이 현재 상태이며,
+두 번째 단위의 62/62 및 그 당시 미연결 목록과 구별한다.
 
-중간 저장: 제품 `3011aafa4`, lab 계획 `1867787` (2026-09-08). 사용자 변경 6개는 커밋에서 제외했다.
+중간 저장: 제품 `3011aafa4` → `c0f6b6f99`, lab 계획 `1867787` → `39da024` (2026-09-08).
+사용자 변경 6개는 커밋에서 제외했다.
 두 번째 구현 단위인 tool 실행/검색, 입력/abort identity, `/fast` 지속성, 독립 codemode의 JS 경로를
-격리 stock SDK에서 검증했다. 전체 runtime suite는 **62/62 pass, fail/skip 0**이다.
+격리 stock SDK에서 검증했다. 당시 전체 runtime suite는 **62/62 pass, fail/skip 0**이었다.
 각 구현 담당은 그대로 유지하며, 공통 패키징·조합 검증은 리드가 소유한다.
+
+## 세 번째 단위 — 2026-09-08 현재
+
+- **Rubato 실제 조립:** 현재 workspace source에서 task/team/member/memory/MCP/worker/LSP
+  실행물 7개를 별도 Bun builder로 만들고, stock dependency tree의 공개 exports만 연결한다.
+  원본 checkout·global Senpi import fallback은 없다. 현재 component 등록 실패는 필수 기능의
+  조용한 누락이 되지 않고 실패로 드러난다. SDK bootstrap은 stock AgentSession을 그대로 쓴다.
+- **기능 소비자:** request-run tracker가 input/abort identity를 실제 pending/run/completed
+  timeline과 RPC get_state로 전달한다. session catalog는 첫 user turn 저장, 안정적인 page,
+  fork/재시작을 검증했다. Extension RPC 요청/이벤트와 memory 상태, /fast footer/RPC를 연결했다.
+- **MCP + memory:** 현재 ast-grep/memory 선언을 registry가 수집하며 exposure/lifecycle을
+  보존한다. health/expiry/retry와 service-owned output spill cleanup을 연결했다.
+  실제 Rubato config의 direct/search를 각각 빈 profile에서 실행해 memory 파일 작성·Git commit·
+  RPC headSha 확인까지 통과했다. search 경로는 도구 검색→실제 MCP subprocess 호출→
+  단일 write notice를 검증했다. 기존 MCP memory 이름 불일치도 바로잡았다.
+- **provider:** stock 4개 + 소유 Cursor/Kiro/Antigravity 3개를 등록한다. 실제 stock SDK에서
+  Kiro HTTP, Antigravity OAuth env/SSE/hooks, Cursor HTTP2 Connect/protobuf를 로컬 서버로
+  검증했다. 세 route의 abort/EOF 단일 terminal도 통과했다. 실계정 요청은 하지 않았다.
+- **terminal/interpreter:** native macOS arm64 PTY에서 six-tool 등록, input/output/screen/resize,
+  reload 후 같은 bash_id·shell 변수 유지, monitor/단일 process 종료를 검증했다.
+  Python/Ruby/Bun interpreter도 실제 실행했다. Julia는 미설치라 skip이며 성공으로 세지 않는다.
+  interactive shell의 별도 process-group descendant 종료 결함은 원래 Senpi에서도 같은
+  조건으로 재현됐다. 이관 회귀와 구별해 기록했고 시험 PID는 정리했다.
+- **child:** explicit staged unbundled RPC entry와 PI session-dir env를 사용하며 Senpi PATH
+  선택을 우회한다. in-process는 부모 canonical ModelRuntime을 주입한다. 실제 기존 runner
+  실행/JSONL/stream-start 후 취소/프로세스 종료를 rejecting timeout과 자동 E2E로 확인했다.
+- **빌드 검증 보강:** 빌드에 읽힌 source bytes, 모든 bundle/asset/metadata의 hash를 기록한다.
+  ready receipt의 schema·선택 lock·필수 payload 누락을 검사하고 bootstrap에서도 모두 재검사한다.
+  독립 리뷰가 찾은 RPC replacement 이중 session_start는 네 replacement 분기를 고쳐
+  실제 child의 단일 이벤트로 재검증했다. receipt/metadata 누락 검사도 독립 재리뷰 READY다.
+
+현재 실행 증거:
+
+- 빈 HOME·별도 profile·PI_OFFLINE에서 체크포인트 범위 **98 tests: 97 pass, fail 0, Julia skip 1**,
+  53.87초. catalog 15개 기능 + 미등록 context-notes 기반 + 공통 build/install tests를 포함한다.
+  아직 구현 중인 다음 feature namespace는 이 실행에서 제외했다. 이것은 전체 제품 parity가 아니다.
+- MCP 시험 서버가 진행 metadata를 canonical SDK extra에서 읽도록 고쳤다. 진행 알림 검사를
+  독립 프로세스 20회 반복해 **20/20** 통과했고 위 최종 조합에서도 통과했다.
+- root direct dependency 10개, Pi 6종 0.85.1, registry SRI 271/271.
+  현재 lock SHA-256: `73e62bee015fc3c41bb2a862b4c0ffb0c55e163f7f492230f244d23b4ead6970`.
+- 원본/worktree 사용자 파일 **12/12 hash 보존**, `git diff --check` 통과.
+- source memory unit 4개는 worktree 루트 의존성 부재로 직접 실행하지 못했다. 위 실제 bundle
+  direct/search/notice 경로는 통과했지만 모든 기존 unit의 통과를 대신 주장하지 않는다.
+
+context-notes 기반 저장·주입·reload/clone도 actual SDK/RPC에서 통과했지만 `/new-context`
+원자적 전환이 미완이라 catalog/bootstrap에는 아직 등록하지 않았다.
+이어지는 소유 단위는 context-window/compaction, Cursor native exec/tool pairing,
+tool guards/permissions, media/web tools다. 같은 담당자가 새 feature namespace에서 진행한다.
+아직 자동 builtin 장부 전체, credential pool/refresh/import, 전역 TUI·resume/remote·부팅,
+후보 CLI bootstrap/설치·업데이트·실사용 전환은 끝나지 않았다. 기본 빌드는 계속 Senpi다.
 
 ## 기준과 범위
 
@@ -51,7 +104,7 @@ Pi 내부 구조를 알아야 하는 코드는 명시된 연결/패치 경계로
 provider는 로컬 mock부터 검증한다. 실계정 요청·라이브 전환·push는 별도 작업이다.
 테스트 수가 아니라 연결된 기능과 미연결/미확정 기능을 보고한다.
 
-## 현재 증거와 다음 작업
+## 두 번째 중간 저장 당시 증거
 
 - **런타임 선택·조립:** stock suite 6개를 실제 Node import graph에서 고른다. alias,
   다른 버전·물리 사본·외부 경로·잘못된 export는 실패한다. 별도 lock과 root dependency,
@@ -150,7 +203,7 @@ Pi 배포본의 shrinkwrap 때문에 `npm install`은 nested Pi 5개의 보강�
 의존성을 바꾼 뒤 exact registry integrity를 다시 대조·보강해야 한다. 해당 pin이 없으면
 installed-runtime 테스트와 stage가 실패한다. 평소 재현 설치는 보강한 lock으로 `npm ci`를 쓴다.
 
-다음 구현 단위는 아래 순서다. 앞서 연 접점을 다시 만들지 않고 같은 담당자가 이어간다.
+두 번째 중간 저장 때 정한 순서는 아래와 같다. 현재 완료/진행 상태는 문서 상단을 따른다.
 
 1. **Rubato 소비자 연결:** input/abort record를 기존 request-run tracker에 연결한다.
    MCP producer 설정과 tool surface 정책, service-tier의 footer/RPC state 소비자를 조립한다.

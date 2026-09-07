@@ -303,7 +303,9 @@ export function registerAntigravityLifecycle(pi, {
     lineage.onTree(sid, event.newLeafId);
   });
   pi.on("session_compact", (event, ctx) => {
-    if (!event.accepted) return;
+    // Senpi emitted rejected attempts with `accepted: false`; stock Pi 0.85.1
+    // emits this event only after a successful compaction and has no field.
+    if (Object.hasOwn(event, "accepted") && !event.accepted) return;
     const sid = identify(ctx) ?? activeSessionId;
     if (!sid) return;
     stateStore.dropSession({ profileId: stateProfileId, sessionId: sid });

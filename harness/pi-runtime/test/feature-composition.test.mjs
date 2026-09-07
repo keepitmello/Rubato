@@ -58,7 +58,7 @@ export const versions = Object.fromEntries(["typebox", "@babel/parser"].map(name
     extensionFactories: [
       { name: "test-reload-guard", factory: (pi) => pi.on("session_before_reload", () => veto ? { cancel: true, reason: "active work" } : undefined) },
       { name: "rubato-mcp", factory: createMcpExtension({ servers: [{
-        name: "composition", type: "stdio", command: process.execPath,
+        name: "composition", type: "stdio", lifecycle: "eager", command: process.execPath,
         args: [join(sourceRoot, "features/mcp/fake-server.mjs")],
         env: { RUBATO_MCP_TEST_MARKER: markerPath }, requestTimeoutMs: 2_000,
       }] }) },

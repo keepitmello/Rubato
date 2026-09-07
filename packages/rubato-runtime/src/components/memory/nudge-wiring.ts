@@ -209,7 +209,8 @@ function isTurn(value: unknown): value is number {
 }
 
 function isMemoryToolName(value: unknown): boolean {
-  // The MCP surface exposes the same tools under senpi's catalog names (mcp_<server>_<tool>);
+  // The MCP surface exposes the same tools under Rubato's Claude-compatible catalog names
+  // (mcp__<server>_<tool>);
   // matching only the bare names would skip provenance injection on the search exposure.
   return value === MEMORY_TOOL_NAME
     || value === MEMORY_APPLY_PATCH_TOOL_NAME

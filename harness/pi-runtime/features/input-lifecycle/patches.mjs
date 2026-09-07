@@ -105,16 +105,16 @@ function patchAgentSessionRuntime(source) {
     next,
     `            if (this._extensionRunner.hasHandlers("input")) {
                 const inputResult = await this._extensionRunner.emitInput(currentText, currentImages, options?.source ?? "interactive", this.isStreaming ? options?.streamingBehavior : undefined);`,
-    `            if (this._extensionRunner.hasHandlers("input")) {
-                const inputSource = options?.source ?? "interactive";
-                const streamingBehavior = this.isStreaming ? options?.streamingBehavior : undefined;
-                inputId = this._inputLifecycle.begin({
-                    sessionId: this.sessionId,
-                    text: currentText,
-                    images: currentImages,
-                    source: inputSource,
-                    streamingBehavior,
-                });
+    `            const inputSource = options?.source ?? "interactive";
+            const streamingBehavior = this.isStreaming ? options?.streamingBehavior : undefined;
+            inputId = this._inputLifecycle.begin({
+                sessionId: this.sessionId,
+                text: currentText,
+                images: currentImages,
+                source: inputSource,
+                streamingBehavior,
+            });
+            if (this._extensionRunner.hasHandlers("input")) {
                 const inputResult = await this._extensionRunner.emitInput(currentText, currentImages, inputSource, streamingBehavior, inputId);`,
     "prompt-input-event",
   );

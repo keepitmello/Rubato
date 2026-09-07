@@ -1,4 +1,4 @@
-import { createMcpService } from "./service.mjs";
+import { createMcpService, McpServiceError } from "./service.mjs";
 
 /**
  * Stock Pi ExtensionFactory. The factory itself only installs lifecycle hooks;
@@ -12,10 +12,26 @@ export function createMcpExtension(options) {
     pi.on("session_start", async (_event, ctx) => {
       const ownedService = service ?? createMcpService(options);
       service = ownedService;
-      const tools = await ownedService.start();
+      let tools;
+      try {
+        tools = await ownedService.start();
+      } catch (error) {
+        if (service === ownedService) service = undefined;
+        await ownedService.close().catch(() => undefined);
+        throw error;
+      }
       if (service !== ownedService) {
         await ownedService.close();
         return;
+      }
+      const searchableTools = tools.filter(({ mcpExposure }) => mcpExposure === "search");
+      if (searchableTools.length > 0 && !search) {
+        service = undefined;
+        await ownedService.close();
+        throw new McpServiceError(
+          "MCP_TOOL_SEARCH_REQUIRED",
+          `MCP search exposure requires an injected ToolSearchService (${searchableTools.map(({ mcpServerName }) => mcpServerName).filter((name, index, all) => all.indexOf(name) === index).join(", ")})`,
+        );
       }
       const activeBeforeRegistration = pi.getActiveTools();
       for (const tool of tools) {
@@ -29,11 +45,12 @@ export function createMcpExtension(options) {
       }
       if (search) {
         // Dynamic registration makes stock Pi activate new tools by default.
-        // Restore the pre-registration set before the catalog owner adds only
-        // tool_search (and any ownership-valid history activations).
-        pi.setActiveTools(activeBeforeRegistration);
-        const knownNames = new Set(tools.map(({ name }) => name));
-        search.feed("mcp", tools.map((tool) => ({
+        // Restore the prior set, then add only tools selected by each server's
+        // direct/search policy. Search owns the remaining MCP catalog.
+        const initiallyActive = tools.filter(({ mcpInitiallyActive }) => mcpInitiallyActive).map(({ name }) => name);
+        pi.setActiveTools([...new Set([...activeBeforeRegistration, ...initiallyActive])]);
+        const knownNames = new Set(searchableTools.map(({ name }) => name));
+        search.feed("mcp", searchableTools.map((tool) => ({
           name: tool.name,
           label: tool.label,
           aliases: [],

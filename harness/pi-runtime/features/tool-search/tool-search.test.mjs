@@ -57,6 +57,8 @@ test("actual staged Pi discovers inactive MCP tools, invokes one in the same tur
   const server = {
     name: "fake server",
     type: "stdio",
+    lifecycle: "eager",
+    exposure: "search",
     command: process.execPath,
     args: [fakeServerPath],
     env: { RUBATO_MCP_TEST_MARKER: markerPath },

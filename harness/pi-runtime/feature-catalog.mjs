@@ -9,6 +9,13 @@ const catalog = Object.freeze({
   "abort-provenance": { requires: [], load: () => import("./features/abort-provenance/patches.mjs") },
   mcp: { requires: ["tool-execution"], load: async () => (await import("./features/mcp/feature.mjs")).mcpFeature },
   "tool-search": { requires: ["tool-execution"], load: () => import("./features/tool-search/patches.mjs") },
+  "extension-rpc": { requires: [], load: () => import("./features/extension-rpc/patches.mjs") },
+  "request-run": { requires: ["input-lifecycle", "abort-provenance"], load: () => import("./features/request-run/patches.mjs") },
+  "mcp-producers": { requires: ["mcp"], load: async () => (await import("./features/mcp-producers/feature.mjs")).mcpProducersFeature },
+  "session-catalog": { requires: [], load: () => import("./features/session-catalog/patches.mjs") },
+  "child-runtime": { requires: [], load: async () => (await import("./features/child-runtime/feature.mjs")).childRuntimeFeature },
+  terminal: { requires: ["tool-execution"], load: () => import("./features/terminal/patches.mjs") },
+  providers: { requires: [], load: () => import("./features/providers/patches.mjs") },
 });
 
 export const PI_FEATURE_NAMES = Object.freeze(Object.keys(catalog));

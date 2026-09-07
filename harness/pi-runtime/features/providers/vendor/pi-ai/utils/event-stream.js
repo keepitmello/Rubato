@@ -1,0 +1,139 @@
+// Generic event stream class for async iteration
+export class EventStream {
+    #queue;
+    #queueHead;
+    #failed;
+    #error;
+    #localWorkDepth;
+    constructor(isComplete, extractResult) {
+        this.#queue = [];
+        this.#queueHead = 0;
+        this.waiting = [];
+        this.done = false;
+        this.#failed = false;
+        this.#localWorkDepth = 0;
+        this.isComplete = isComplete;
+        this.extractResult = extractResult;
+        this.finalResultPromise = new Promise((resolve, reject) => {
+            this.resolveFinalResult = resolve;
+            this.rejectFinalResult = reject;
+        });
+        this.finalResultPromise.catch(() => { });
+    }
+    get queue() {
+        return this.#queue.slice(this.#queueHead);
+    }
+    #enqueue(event) {
+        this.#queue.push(event);
+    }
+    #dequeue() {
+        const event = this.#queue[this.#queueHead];
+        if (event === undefined) {
+            throw new Error("EventStream queue underflow");
+        }
+        this.#queueHead++;
+        if (this.#queueHead > 1024 && this.#queueHead * 2 >= this.#queue.length) {
+            this.#queue = this.#queue.slice(this.#queueHead);
+            this.#queueHead = 0;
+        }
+        return event;
+    }
+    push(event) {
+        if (this.done)
+            return;
+        if (this.isComplete(event)) {
+            this.done = true;
+            this.resolveFinalResult(this.extractResult(event));
+        }
+        // Deliver to waiting consumer or queue it
+        const waiter = this.waiting.shift();
+        if (waiter) {
+            waiter.resolve({ value: event, done: false });
+        }
+        else {
+            this.#enqueue(event);
+        }
+    }
+    end(result) {
+        this.done = true;
+        if (result !== undefined) {
+            this.resolveFinalResult(result);
+        }
+        // Notify all waiting consumers that we're done
+        while (this.waiting.length > 0) {
+            const waiter = this.waiting.shift();
+            if (waiter)
+                waiter.resolve({ value: undefined, done: true });
+        }
+    }
+    fail(error) {
+        if (this.done)
+            return;
+        this.done = true;
+        this.#failed = true;
+        this.#error = error;
+        this.rejectFinalResult(error);
+        while (this.waiting.length > 0) {
+            const waiter = this.waiting.shift();
+            if (waiter)
+                waiter.reject(error);
+        }
+    }
+    [Symbol.asyncIterator]() {
+        return {
+            next: () => {
+                if (this.#queueHead < this.#queue.length) {
+                    return Promise.resolve({ value: this.#dequeue(), done: false });
+                }
+                if (this.#failed) {
+                    return Promise.reject(this.#error);
+                }
+                if (this.done) {
+                    return Promise.resolve({ value: undefined, done: true });
+                }
+                return new Promise((resolve, reject) => this.waiting.push({ resolve, reject }));
+            },
+        };
+    }
+    result() {
+        return this.finalResultPromise;
+    }
+    /**
+     * Track a locally executing unit of work (for example a server-requested
+     * tool run on Cursor's exec channel) during which the stream legitimately
+     * emits no events. Idle watchdogs consult {@link hasPendingLocalWork} to
+     * attribute the silence to the tool run instead of aborting a healthy
+     * stream. Rejections propagate to the caller unchanged.
+     */
+    async trackLocalWork(work) {
+        this.#localWorkDepth++;
+        try {
+            return await work;
+        }
+        finally {
+            this.#localWorkDepth--;
+        }
+    }
+    /** True while at least one {@link trackLocalWork} promise is unsettled. */
+    hasPendingLocalWork() {
+        return this.#localWorkDepth > 0;
+    }
+}
+export class AssistantMessageEventStream extends EventStream {
+    constructor() {
+        super((event) => event.type === "done" || event.type === "error", (event) => {
+            if (event.type === "done") {
+                return event.message;
+            }
+            else if (event.type === "error") {
+                return event.error;
+            }
+            throw new Error("Unexpected event type for final result");
+        });
+    }
+}
+/** Factory function for AssistantMessageEventStream (for use in extensions) */
+export function createAssistantMessageEventStream() {
+    return new AssistantMessageEventStream();
+}
+//# sourceMappingURL=event-stream.js.map
