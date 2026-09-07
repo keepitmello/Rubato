@@ -24,6 +24,27 @@ export function modelsPath(agentDir) {
  */
 export const DISABLED_OAUTH_EXTENSIONS = ["claude-sdk-oauth", "cursor-cli-oauth"];
 
+/**
+ * 끄는 built-in 웹 검색 extension.
+ *
+ * `anthropic-web-search` 는 벤더 서버가 직접 도는 `web_search` 도구를 붙이고 시스템
+ * 프롬프트에 그 사용법 문단까지 얹는다. 그 경로는 우리가 통제하지 못하는 축을 둘
+ * 들여온다: 검색 실행이 모델 벤더의 과금·정책에 묶이고, 결과가 `encrypted_content`
+ * 를 실은 provider-native 블록으로 대화에 남아 다른 모델로 갈아탈 때 replay 대상이
+ * 된다. 웹은 Aside 로 간다 — 로그인 세션과 차단 우회까지 한 경로가 맡는다.
+ *
+ * `websearch` 를 함께 끄는 이유는 그것이 남으면 **거짓말을 하기 때문**이다. 그 확장은
+ * `anthropic-web-search` 가 켜져 있다고 보고(판정이 env 만 읽는다) "provider 네이티브가
+ * 처리한다"는 안내를 돌려주는데, 네이티브를 끈 뒤에는 아무도 처리하지 않는다. 게다가
+ * 이 기기에는 `websearch.json` 이 없어 실제로 부를 수 있는 백엔드도 없다.
+ *
+ * `webfetch` 는 남긴다. URL 하나를 가져오는 것은 브라우저를 띄울 값이 아니다.
+ */
+export const DISABLED_WEB_SEARCH_EXTENSIONS = ["anthropic-web-search", "websearch"];
+
+/** settings.json 에 적히는 전체 목록. 두 갈래를 한 곳에서 합친다. */
+export const DISABLED_BUILTIN_EXTENSIONS = [...DISABLED_OAUTH_EXTENSIONS, ...DISABLED_WEB_SEARCH_EXTENSIONS];
+
 /** Subtracted from the model cache TTL so a foreground wait never straddles expiry. */
 export const PROMPT_CACHE_SAFETY_BUFFER_SECONDS = 300;
 
@@ -64,7 +85,7 @@ export function settingsLookCurrent(current) {
   if (current.tips !== false) return false;
   if (typeof current.hideThinkingBlock !== "boolean") return false;
   if (!Array.isArray(current.disabledBuiltinExtensions)) return false;
-  if (!DISABLED_OAUTH_EXTENSIONS.every((id) => current.disabledBuiltinExtensions.includes(id))) return false;
+  if (!DISABLED_BUILTIN_EXTENSIONS.every((id) => current.disabledBuiltinExtensions.includes(id))) return false;
   if (current.retry?.maxRetries == null) return false;
   if (current.retry?.modelFallback == null) return false;
   if (!promptCacheLooksCurrent(current)) return false;
@@ -100,7 +121,7 @@ export function ensureSessionDefaults(
   }
   const disabled = new Set([
     ...(current.disabledBuiltinExtensions ?? []),
-    ...DISABLED_OAUTH_EXTENSIONS,
+    ...DISABLED_BUILTIN_EXTENSIONS,
   ]);
   const next = {
     ...current,

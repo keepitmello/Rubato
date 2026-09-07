@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  DISABLED_BUILTIN_EXTENSIONS,
   ensureModelsConfig,
   ensureSessionDefaults,
   modelsLookCurrent,
@@ -29,6 +30,8 @@ test("session defaults preserve a selected model without dropping other settings
   assert.equal(next.tips, false);
   assert.ok(next.disabledBuiltinExtensions.includes("claude-sdk-oauth"));
   assert.ok(next.disabledBuiltinExtensions.includes("cursor-cli-oauth"));
+  assert.ok(next.disabledBuiltinExtensions.includes("anthropic-web-search"));
+  assert.ok(next.disabledBuiltinExtensions.includes("websearch"));
   assert.match(written["/tmp/agent/settings.json"], /gpt-5\.6-sol/);
 });
 
@@ -99,7 +102,7 @@ test("already-current session files are left untouched", () => {
     tips: false,
     retry: { maxRetries: 5, modelFallback: false },
     promptCache: { cacheAwareTimeouts: true, safetyBufferSeconds: 300 },
-    disabledBuiltinExtensions: ["claude-sdk-oauth", "cursor-cli-oauth"],
+    disabledBuiltinExtensions: [...DISABLED_BUILTIN_EXTENSIONS],
     theme: "dark",
   };
   const models = {
@@ -251,7 +254,7 @@ test("나머지가 현재여도 옛 promptCache 설정은 다음 launch 에서 �
       safetyBufferSeconds: 30,
       keepAlive: { enabled: true },
     },
-    disabledBuiltinExtensions: ["claude-sdk-oauth", "cursor-cli-oauth"],
+    disabledBuiltinExtensions: [...DISABLED_BUILTIN_EXTENSIONS],
   };
   const models = {
     providers: {},
@@ -309,7 +312,7 @@ test("옛 safety buffer 만 있는 설정은 현재가 아니다", () => {
     hideThinkingBlock: true,
     tips: false,
     retry: { maxRetries: 5, modelFallback: false },
-    disabledBuiltinExtensions: ["claude-sdk-oauth", "cursor-cli-oauth"],
+    disabledBuiltinExtensions: [...DISABLED_BUILTIN_EXTENSIONS],
   };
   assert.equal(settingsLookCurrent({ ...base, promptCache: { cacheAwareTimeouts: true, safetyBufferSeconds: 30 } }), false);
   assert.equal(settingsLookCurrent({ ...base, promptCache: { cacheAwareTimeouts: true, safetyBufferSeconds: 300 } }), true);

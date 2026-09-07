@@ -32,7 +32,7 @@ import { importLegacyDirectCredentials } from "../src/credential-import.mjs";
 import { withNoChangelog } from "../src/no-changelog.mjs";
 import { providerOverlayPath, senpiCliPath } from "../src/launch.mjs";
 import { PROVIDER_DIRECT_FLAG } from "../src/provider-direct.mjs";
-import { DISABLED_OAUTH_EXTENSIONS, ensureModelsConfig } from "../src/session-defaults.mjs";
+import { DISABLED_BUILTIN_EXTENSIONS, ensureModelsConfig } from "../src/session-defaults.mjs";
 import { createLineReader, createRpcWaiter } from "../test/smoke/rpc-waiter.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -126,7 +126,7 @@ function createProfile(label, { compaction } = {}) {
       defaultProjectTrust: "always",
       permissionPreset: "full-access",
       compaction: compaction ?? { enabled: false },
-      disabledBuiltinExtensions: DISABLED_OAUTH_EXTENSIONS,
+      disabledBuiltinExtensions: DISABLED_BUILTIN_EXTENSIONS,
     })}\n`,
   );
   ensureModelsConfig(agentDir);
