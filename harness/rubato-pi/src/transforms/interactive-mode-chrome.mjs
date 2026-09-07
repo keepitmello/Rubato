@@ -11,6 +11,7 @@ export function interactiveChromeHrefs() {
     turnWork: new URL("./turn-work-summary.mjs", import.meta.url).href,
     requestRun: new URL("./request-run-tracker.mjs", import.meta.url).href,
     assistantPhase: new URL("./assistant-phase.mjs", import.meta.url).href,
+    workingPhase: new URL("./working-phase.mjs", import.meta.url).href,
   };
 }
 
@@ -25,6 +26,7 @@ export function injectInteractiveModeChrome(source, hrefs = interactiveChromeHre
     turnWork = interactiveChromeHrefs().turnWork,
     requestRun = interactiveChromeHrefs().requestRun,
     assistantPhase = interactiveChromeHrefs().assistantPhase,
+    workingPhase = interactiveChromeHrefs().workingPhase,
   } = hrefs;
   let next = source;
   next = replaceOnce(
@@ -34,6 +36,7 @@ export function injectInteractiveModeChrome(source, hrefs = interactiveChromeHre
 import { dispatchInternalAction } from ${JSON.stringify(internalActions)};
 import { ToolGroupComponent } from ${JSON.stringify(toolGroup)};
 import { TurnWorkSummaryComponent } from ${JSON.stringify(turnWork)};
+import { THINKING_LABEL, nextWorkingLabel, shouldClearWorkingOnAgentEnd } from ${JSON.stringify(workingPhase)};
 import { restoreInteractiveStderr, takeOverInteractiveStderr } from "./interactive-stderr-guard.js";`,
     "interactive imports",
   );
@@ -153,6 +156,27 @@ import { restoreInteractiveStderr, takeOverInteractiveStderr } from "./interacti
     "                this.addMessageToChat(message, options);\n            }\n        }\n        for (const [toolCallId, component] of renderedPendingTools) {\n            this.pendingTools.set(toolCallId, component);\n        }\n        this.ui.requestRender();",
     "                this.addMessageToChat(message, options);\n            }\n        }\n        for (const toolCallId of abortedPendingToolIds) {\n            const component = renderedPendingTools.get(toolCallId);\n            if (!component)\n                continue;\n            // No result: stop the spinner, but do not invent a success or abort\n            // payload. Real toolResult rows stay in the map and keep their text.\n            component.stopAnimation();\n            renderedPendingTools.delete(toolCallId);\n        }\n        for (const [toolCallId, component] of renderedPendingTools) {\n            this.pendingTools.set(toolCallId, component);\n        }\n        this.turnWorkSummary = undefined;\n        this.ui.requestRender();",
     "aborted pending + turn work clear",
+  );
+  // ── working dock: 국면 라벨과 접는 시점 ──────────────────────────────────
+  // 벤더는 turn_start 부터 agent_idle 까지 "Working" 한 장으로 버틴다. 사고와
+  // 실행이 구분되지 않고, 답이 끝난 뒤 정산 구간까지 일하는 척을 한다.
+  next = replaceOnce(
+    next,
+    "            case \"turn_start\":\n                if (this.settingsManager.getShowTerminalProgress() && this.ui.terminal) {\n                    this.ui.terminal.setProgress(true);\n                }\n                if (this.workingVisible) {",
+    "            case \"turn_start\":\n                if (this.settingsManager.getShowTerminalProgress() && this.ui.terminal) {\n                    this.ui.terminal.setProgress(true);\n                }\n                // 턴 머리에서는 모델이 아직 아무 블록도 안 보냈다. 그 구간은 사고다.\n                if (this.activeToolExecutions.size === 0)\n                    this.workingMessage = THINKING_LABEL;\n                if (this.workingVisible) {",
+    "turn_start thinking label",
+  );
+  next = replaceOnce(
+    next,
+    "                    this.turnWorkSummary?.trackAssistant(this.streamingComponent, assistantStreamingHeadMessage(event.message));\n                    this.streamingReveal.setTarget(assistantStreamingHeadMessage(event.message));",
+    "                    this.turnWorkSummary?.trackAssistant(this.streamingComponent, assistantStreamingHeadMessage(event.message));\n                    // 꼬리 블록이 국면을 정한다: 사고면 Thinking, 말·도구가 나오면 Working.\n                    // 도구가 도는 동안은 \"Running <tool>\" 라벨이 주인이므로 건드리지 않는다.\n                    if (this.activeToolExecutions.size === 0) {\n                        const workingLabel = nextWorkingLabel(event.message);\n                        if (workingLabel && workingLabel !== this.workingMessage) {\n                            this.workingMessage = workingLabel;\n                            this.refreshWorkingLoaderMessage();\n                        }\n                    }\n                    this.streamingReveal.setTarget(assistantStreamingHeadMessage(event.message));",
+    "message_update working phase",
+  );
+  next = replaceOnce(
+    next,
+    "                this.chatContainer.markSettled();\n                this.ui.requestRender();\n                break;\n            case \"agent_settled\":",
+    "                this.chatContainer.markSettled();\n                // 답이 다 찍힌 뒤에도 agent_idle 까지 독을 붙들면, 세션 정리(제목 생성,\n                // 확장 정산)가 끝날 때까지 \"Working (Ns • esc to interrupt)\" 가 계속 돈다\n                // — 실측 0.5s~3.9s. 런이 끝났으면 여기서 접는다. 재시도나 이어지는\n                // 런은 turn_start 가 다시 띄우고, agent_idle 의 clear 는 그대로 뒷받침.\n                if (shouldClearWorkingOnAgentEnd(event, this.pendingUserInputs.length))\n                    this.clearStatusIndicator(\"working\");\n                this.ui.requestRender();\n                break;\n            case \"agent_settled\":",
+    "agent_end release working dock",
   );
   next = replaceOnce(
     next,
