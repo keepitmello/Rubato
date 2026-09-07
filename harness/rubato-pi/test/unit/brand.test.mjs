@@ -11,6 +11,7 @@ import {
   providerExtensionPaths,
 } from "../../src/brand.mjs";
 import { CHILD_EXTENSIONS_ENV } from "../../src/runtime-env.mjs";
+import { senpiCli } from "../../src/engine-paths.mjs";
 
 test("brand uses Rubato identity and state paths", () => {
   const brand = brandProfile();
@@ -81,4 +82,20 @@ test("the derived measurement log path is stable per process and stamped with wa
   const now = () => new Date("2026-08-24T12:34:56.789Z");
   const path = defaultMeasurementLogPath("/tmp/home/.rubato-pi/agent", { now, pid: 4242 });
   assert.equal(path, "/tmp/home/.rubato-pi/agent/measurements/2026-08-24T12-34-56-789Z-4242.jsonl");
+});
+
+// 자식 스폰(resolveSenpiExecutable)은 SENPI_BIN 이 비면 PATH 의 `senpi` 로 떨어진다.
+// 그 전역 설치본이 pinned 판보다 낡으면 자식만 다른 엔진에서 돌고, 니들이 어긋난
+// 변환 조각이 조용히 빠진다. 부모가 자기 엔진을 명시해 그 어긋남을 없앤다.
+test("launch env pins child spawns to the parent's own engine", () => {
+  const env = launchEnv({ HOME: "/tmp/home" }, "/tmp/home/.rubato-pi/agent");
+  assert.equal(env.SENPI_BIN, senpiCli);
+  assert.ok(existsSync(env.SENPI_BIN), `pinned senpi CLI is missing: ${env.SENPI_BIN}`);
+});
+
+test("an explicit SENPI_BIN is never overridden", () => {
+  const env = launchEnv({ HOME: "/tmp/home", SENPI_BIN: "/opt/custom/senpi" }, "/tmp/home/.rubato-pi/agent");
+  assert.equal(env.SENPI_BIN, "/opt/custom/senpi");
+  const blank = launchEnv({ HOME: "/tmp/home", SENPI_BIN: "   " }, "/tmp/home/.rubato-pi/agent");
+  assert.equal(blank.SENPI_BIN, senpiCli);
 });
