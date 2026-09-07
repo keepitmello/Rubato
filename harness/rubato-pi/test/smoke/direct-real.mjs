@@ -17,7 +17,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { providerOverlayPath, senpiCliPath } from "../../src/launch.mjs";
 import { launchEnv } from "../../src/brand.mjs";
-import { DISABLED_OAUTH_EXTENSIONS } from "../../src/session-defaults.mjs";
+import { DISABLED_BUILTIN_EXTENSIONS } from "../../src/session-defaults.mjs";
 import { createLineReader, createRpcWaiter } from "./rpc-waiter.mjs";
 import { importLegacyDirectCredentials } from "../../src/credential-import.mjs";
 import { CLAUDE_SETUP_TOKEN_FILE_ENV, CLAUDE_SETUP_TOKEN_PREFIX } from "../../src/anthropic-setup-token.mjs";
@@ -217,7 +217,7 @@ function createProfile(label) {
       defaultProjectTrust: "always",
       permissionPreset: "full-access",
       compaction: { enabled: false },
-      disabledBuiltinExtensions: DISABLED_OAUTH_EXTENSIONS,
+      disabledBuiltinExtensions: DISABLED_BUILTIN_EXTENSIONS,
     })}\n`,
   );
   writeFileSync(join(cwd, "hello.txt"), "KIRO_SMOKE_OK\n");

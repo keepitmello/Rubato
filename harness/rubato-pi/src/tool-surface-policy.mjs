@@ -24,7 +24,6 @@ export const SEARCH_HINT_KEYWORDS = Object.freeze({
   bash_input: ["terminal control"],
   bash_resize: ["terminal control"],
   kill_bash: ["terminal control"],
-  web_search: ["web"],
   webfetch: ["web"],
 });
 
