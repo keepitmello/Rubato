@@ -7,6 +7,7 @@
 // FX bridge 가 삭제된 뒤로 직결은 **유일한** 경로다. 예전에는 기본값이 꺼짐이었고
 // bridge 가 그 기본값이었는데, 이제 돌아갈 기본값 자신이 없다.
 import { pathToFileURL } from "node:url";
+import { join, resolve } from "node:path";
 import { withClaudeSetupToken } from "./anthropic-setup-token.mjs";
 import { cursorDirectProvider } from "./cursor-route.mjs";
 import { senpiNested } from "./engine-paths.mjs";
@@ -23,6 +24,7 @@ import { withOpenCodeKeychain } from "./opencode-keychain.mjs";
 import { wrapProviderStreams } from "./rubato-stream.mjs";
 import { speedIndexStore } from "./speed-index-store.mjs";
 import { SPEED_INDEX_NETWORK_ROUTES } from "./speed-index-routes.mjs";
+import { SUPPORTED_PROVIDER_IDS } from "./provider-capabilities.mjs";
 
 export { SPEED_INDEX_NETWORK_ROUTES };
 
@@ -43,15 +45,7 @@ export const PROVIDER_DIRECT_FLAG = "RUBATO_PROVIDER_DIRECT";
  * 같은 결이다. 앞의 세 개를 **그 자리에 그대로 둔다** — Phase 0/1/2A 의 테스트가
  * 위치로 provider 를 집는다(`const [codex, xai] = await directProviders()`).
  */
-export const DIRECT_PROVIDER_IDS = Object.freeze([
-  "openai-codex",
-  "xai",
-  "cursor",
-  "anthropic",
-  "kiro",
-  "google-antigravity",
-  "opencode",
-]);
+export const DIRECT_PROVIDER_IDS = SUPPORTED_PROVIDER_IDS;
 
 /**
  * legacy `~/.senpi/agent/auth.json` 에서 이관할 provider. **Codex 와 xAI 뿐이다.**
@@ -174,12 +168,31 @@ export function daybreakModels(nativeModels) {
   return [base, fast];
 }
 
-async function loadPinnedFactory(file, exportName) {
-  const module = await import(pathToFileURL(senpiNested(`@earendil-works/pi-ai/dist/providers/${file}`)).href);
-  const factory = module[exportName];
-  if (typeof factory !== "function") throw new Error(`pinned pi-ai has no ${exportName} in providers/${file}`);
-  return factory;
+/**
+ * Bind native provider loading to one explicit pi-ai package root.
+ *
+ * Missing files/exports fail at that root; this loader never falls back to the
+ * Senpi or process-wide installation. The runtime resolver can therefore pass
+ * a verified stock package without changing global module resolution.
+ */
+export function nativeProviderFactoryLoader(piAiRoot) {
+  if (typeof piAiRoot !== "string" || piAiRoot.trim() === "") {
+    throw new TypeError("native provider factory loader requires an explicit pi-ai package root");
+  }
+  const root = resolve(piAiRoot);
+  return async (file, exportName) => {
+    const source = join(root, "dist", "providers", file);
+    const module = await import(pathToFileURL(source).href);
+    const factory = module[exportName];
+    if (typeof factory !== "function") {
+      throw new Error(`pi-ai provider source ${root} has no ${exportName} in providers/${file}`);
+    }
+    return factory;
+  };
 }
+
+const loadPinnedFactory = (file, exportName) =>
+  nativeProviderFactoryLoader(senpiNested("@earendil-works/pi-ai"))(file, exportName);
 
 /**
  * 모델 목록만 바꿔 끼운 provider. 다른 면은 전부 pinned 그대로다.
@@ -231,15 +244,27 @@ function withContextWindowCap(provider, cap) {
  * 정의는 하나도 만들지 않는다 — catalog 는 계정별 `GetUsableModels` 가 권위다.
  * Cursor 경로는 native HTTP/2 직결 하나다.
  */
-export async function directProviders({ cursor, anthropic, kiro, antigravity, opencode: opencodeOptions, env = process.env } = {}) {
+export async function directProviders({
+  cursor,
+  anthropic,
+  kiro,
+  antigravity,
+  opencode: opencodeOptions,
+  env = process.env,
+  nativeFactoryLoader = loadPinnedFactory,
+  routeFactories = {},
+} = {}) {
+  const cursorFactory = routeFactories.cursor ?? cursorDirectProvider;
+  const kiroFactory = routeFactories.kiro ?? kiroDirectProvider;
+  const antigravityFactory = routeFactories.antigravity ?? antigravityDirectProvider;
   const [openaiCodexProvider, xaiProvider, anthropicProvider, kiroNative, antigravityDirect, cursorProvider, opencodeProvider] = await Promise.all([
-    loadPinnedFactory("openai-codex.js", "openaiCodexProvider"),
-    loadPinnedFactory("xai.js", "xaiProvider"),
-    loadPinnedFactory("anthropic.js", "anthropicProvider"),
-    kiroDirectProvider({ env, ...(kiro ?? {}) }),
-    antigravityDirectProvider({ env, ...(antigravity ?? {}) }),
-    cursorDirectProvider({ env, ...(cursor ?? {}) }),
-    loadPinnedFactory("opencode.js", "opencodeProvider"),
+    nativeFactoryLoader("openai-codex.js", "openaiCodexProvider"),
+    nativeFactoryLoader("xai.js", "xaiProvider"),
+    nativeFactoryLoader("anthropic.js", "anthropicProvider"),
+    kiroFactory({ env, ...(kiro ?? {}) }),
+    antigravityFactory({ env, ...(antigravity ?? {}) }),
+    cursorFactory({ env, ...(cursor ?? {}) }),
+    nativeFactoryLoader("opencode.js", "opencodeProvider"),
   ]);
 
   const codexNative = withContextWindowCap(openaiCodexProvider(), 272_000);

@@ -1,0 +1,337 @@
+{
+  "schemaVersion": 1,
+  "scope": "builtin-registration-only-not-all-product-features",
+  "sources": {
+    "indexSha256": "35e87e481662d4e682d9329ff3def20beda3569cc43ea230c3bb3255479e0918",
+    "loaderSha256": "f5068dd1db9b180df7a868bf3785e266e4cc889ffe248acc7221cfbd3eac7035",
+    "rubatoDefaultsSha256": "fdbe9b988f546478f2af3fb54bdcb2e91b9fd3663bdef45290ea71fe5e2bd17b"
+  },
+  "entries": [
+    {
+      "id": "loop-guard",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/loop-guard/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "hooks",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/hooks/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "permission-system",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/permission-system/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "gpt-apply-patch",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/gpt-apply-patch/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "imagegen",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/imagegen/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "openai-image-gen",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/openai-image-gen/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "prompt-preset",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/prompt-preset/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "todowrite",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/todotools/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "redraws",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/redraws.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "anthropic-web-search",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/anthropic-web-search/index.js",
+      "defaultPolicy": "disabled-by-rubato",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "anthropic-bash",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/anthropic-bash/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "openai-web-search",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/openai-web-search/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "service-tier",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/service-tier.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "reasoning",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/reasoning/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "model-fallback",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/model-fallback/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "recommended-models",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/recommended-models/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "bash-timeout",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/bash-timeout/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "terminal",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/terminal/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "tool-pair-guard",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/tool-pair-guard/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "compaction",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/compaction/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "history-search",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/history-search/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "help",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/help/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "import-repro",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/import-repro.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "websearch",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/websearch/index.js",
+      "defaultPolicy": "disabled-by-rubato",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "webfetch",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/webfetch/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "video-in",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/video-in/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "look-at",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/look-at/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "nested-agents-md",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/nested-agents-md/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "rules",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/rules/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "goal",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/goal/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "loop",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/loop/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "cache-keepalive",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/cache-keepalive/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "ttsr",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/ttsr/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "btw",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/btw/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "account",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/account/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "gpt-account",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/gpt-account.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "claude-sdk-oauth",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/claude-sdk-oauth/index.js",
+      "defaultPolicy": "disabled-by-rubato",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "cursor-cli-oauth",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/cursor-cli-oauth/index.js",
+      "defaultPolicy": "disabled-by-rubato",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "config-reload",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/config-reload/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "tool-search",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/tool-search/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "mcp",
+      "registration": "builtin",
+      "source": "dist/core/extensions/builtin/mcp/index.js",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "codemode",
+      "registration": "bundled-package",
+      "source": "@code-yeongyu/senpi-codemode",
+      "defaultPolicy": "registered-subject-to-settings",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "diff",
+      "registration": "generated-global-extension",
+      "source": "dist/core/extensions/builtin/diff.js",
+      "defaultPolicy": "generated-subject-to-extension-selection",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "files",
+      "registration": "generated-global-extension",
+      "source": "dist/core/extensions/builtin/files.js",
+      "defaultPolicy": "generated-subject-to-extension-selection",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "prompt-url-widget",
+      "registration": "generated-global-extension",
+      "source": "dist/core/extensions/builtin/prompt-url-widget.js",
+      "defaultPolicy": "generated-subject-to-extension-selection",
+      "status": "pending-contract-and-parity"
+    },
+    {
+      "id": "tps",
+      "registration": "generated-global-extension",
+      "source": "dist/core/extensions/builtin/tps.js",
+      "defaultPolicy": "generated-subject-to-extension-selection",
+      "status": "pending-contract-and-parity"
+    }
+  ],
+  "baseline": {
+    "name": "@code-yeongyu/senpi",
+    "version": "2026.9.4-3"
+  }
+}

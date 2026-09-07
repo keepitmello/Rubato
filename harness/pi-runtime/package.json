@@ -1,0 +1,18 @@
+{
+  "name": "rubato-stock-pi-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Isolated stock Pi dependency boundary; not the default Rubato runtime until parity is verified",
+  "scripts": {
+    "test": "node --test --test-timeout=30000 test/*.test.mjs features/*/*.test.mjs"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "cmd-shim": "8.0.0"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
