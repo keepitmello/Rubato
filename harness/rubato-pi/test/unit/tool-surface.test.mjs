@@ -7,7 +7,10 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { senpiDir } from "../../src/engine-paths.mjs";
 import { CORE_TOOL_NAMES, withToolExposure } from "../../src/tool-surface-policy.mjs";
-import { injectToolSurface, injectUniversalApplyPatch } from "../../src/transforms/core-tool-surface.mjs";
+import {
+  injectToolSurface, injectUniversalApplyPatch,
+  injectToolSearchSameTurnCopy, isToolSearchToolUrl,
+} from "../../src/transforms/core-tool-surface.mjs";
 import { syncNotesToolActivation } from "../../src/context-notes/tools.mjs";
 
 const engine = (path) => pathToFileURL(join(senpiDir, "dist", path)).href;
@@ -225,4 +228,34 @@ test("surface transforms apply once and reject drift", () => {
   assert.throws(() => injectToolSurface(transformed), /drift/);
   const patch = readFileSync(join(senpiDir, "dist/core/extensions/builtin/gpt-apply-patch/extension.js"), "utf8");
   assert.throws(() => injectUniversalApplyPatch(injectUniversalApplyPatch(patch)), /drift/);
+  const searchTool = readFileSync(join(senpiDir, "dist/core/extensions/builtin/tool-search/tool.js"), "utf8");
+  const sameTurn = injectToolSearchSameTurnCopy(searchTool);
+  assert.match(sameTurn, /Call them in this turn:/);
+  assert.doesNotMatch(sameTurn, /NEXT turn/);
+  assert.equal(isToolSearchToolUrl(engine("core/extensions/builtin/tool-search/tool.js")), true);
+  assert.throws(() => injectToolSearchSameTurnCopy(sameTurn), /drift/);
+});
+
+test("guideline hint words find the tools they name", () => {
+  const catalog = ["lsp_find_references", "Agent", "eval", "memory", "monitor"].map((name) => {
+    const tool = withToolExposure(definition(name));
+    return {
+      ...tool,
+      exposure: "search",
+      allowLazyActivation: true,
+      searchKeywords: tool.searchKeywords ?? [],
+      sourceInfo: { source: "builtin", path: `/builtin/${name}.js` },
+    };
+  });
+  let active = ["read"];
+  const service = new ToolSearchService({
+    getAllTools: () => catalog,
+    getActiveTools: () => active,
+    setActiveTools: (names) => { active = names; },
+  });
+  const hits = (query) => service.search(query, 10).map((match) => match.name);
+  assert.ok(hits("code analysis").includes("lsp_find_references"));
+  assert.ok(hits("agents").includes("Agent"));
+  assert.ok(hits("eval").includes("eval"));
+  assert.ok(hits("terminal control").includes("monitor"));
 });

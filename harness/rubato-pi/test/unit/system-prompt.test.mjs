@@ -148,6 +148,8 @@ test("every role gets the shared tool guidelines and not Senpi's body", () => {
     assert.ok(next.includes(TOOL_GUIDELINES));
     assert.match(next, /Use read to inspect files and apply_patch/);
     assert.match(next, /Use tool_search for other capabilities/);
+    assert.match(next, /in this turn/);
+    assert.match(next, /Agent, eval, memory/);
     assert.doesNotMatch(next, /Use edit|edits\[\]|Use write/);
     assert.doesNotMatch(next, /Use eval when a step needs/);
     assert.doesNotMatch(next, /one todo operation at a time/);
