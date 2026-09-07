@@ -1,7 +1,8 @@
 # 세션·제어·TUI 이관 계약
 
-상태: `@earendil-works/pi-coding-agent@0.85.1` 위에서 reload 접점만 구현·검증했다.
-나머지는 현재 Rubato와 Senpi의 사용자 기능을 보존하기 위한 소스 기반 구현 경계다.
+상태: `@earendil-works/pi-coding-agent@0.85.1` 위에서 reload, 입력 identity/disposition,
+gap-only abort provenance 접점을 구현·검증했다. 나머지는 현재 Rubato와 Senpi의 사용자 기능을
+보존하기 위한 소스 기반 구현 경계다.
 과거 cutover와 기존 `harness/rubato-pi/src/transforms/**`는 행동을 확인하는 참고 자료이며,
 새 런타임에 그대로 적용하거나 Senpi의 `AgentSession`/`InteractiveMode` 전체를 복사하지 않는다.
 
@@ -29,9 +30,9 @@
 
 | 기능·중요도 | 실제 진입 → 상태/이벤트 → 소비자 | 정리와 불변조건 | Pi 0.85.1의 표면/차이 | 목적지와 필요한 접점 |
 |---|---|---|---|---|
-| 입력 disposition·대기열 identity — **필수** | TUI/RPC/extension의 `AgentSession.prompt()` → 상관 가능한 `input{id,text,images,source,streamingBehavior}` → 차단·변환·queue/start 결정 → 정확히 한 `input_disposition{inputId,handled\|queued\|started\|rejected}`. goal direct-input과 Rubato memory nudge가 이를 소비한다 (`senpi:dist/core/extensions/types.d.ts:958-990`, `senpi:dist/core/agent-session.js:2659-2717`, `repo:packages/rubato-runtime/src/components/memory/nudge-wiring.ts:89-109`). | 같은 텍스트·이미지가 연속 제출돼도 ID로 구분한다. interceptor 예외/취소도 `rejected`, 소유한 command는 `handled`, agent message가 시작되면 `started`, 실제 queue에 들어가면 `queued`다. 소비자는 disposition 후 pending ID를 한 번 제거한다. | 공개 `input`에는 ID가 없고 disposition 이벤트도 없다 (`stock:dist/core/extensions/types.d.ts:654-677`). queue 소비 시 첫 번째 같은 **문자열**을 찾아 제거한다 (`stock:dist/core/agent-session.js:360-381`), 따라서 중복 텍스트 identity를 보장하지 않는다. | Senpi `input-lifecycle` 모듈 + Pi 어댑터의 prompt admission, user-message 생성, queue enqueue/dequeue/clear 접점. Rubato는 remote client ID와 제품 소비자만 연결한다. |
+| 입력 disposition·대기열 identity — **필수, 구현됨** | TUI/RPC/extension의 `AgentSession.prompt()` → 상관 가능한 `input{inputId,text,images,source,streamingBehavior}` → 차단·변환·queue/start 결정 → 정확히 한 `input_disposition{inputId,handled\|queued\|started\|rejected}`. goal direct-input과 Rubato memory nudge가 이를 소비한다 (`senpi:dist/core/extensions/types.d.ts:958-990`, `senpi:dist/core/agent-session.js:2659-2717`, `repo:packages/rubato-runtime/src/components/memory/nudge-wiring.ts:89-109`). | 같은 텍스트·이미지가 연속 제출돼도 ID와 실제 user-message object로 구분한다. admission 실패는 `rejected`, 소유한 input은 `handled`, provider 진입은 `started`, 실제 queue 진입은 `queued`다. disposition 상태를 먼저 닫아 후속 callback 오류에도 두 번째 결과를 내지 않는다. | 공개 `input`에는 ID가 없고 disposition 이벤트도 없다 (`stock:dist/core/extensions/types.d.ts:654-677`). queue 소비 시 첫 번째 같은 **문자열**을 찾아 제거한다 (`stock:dist/core/agent-session.js:360-381`), 따라서 중복 텍스트 identity를 보장하지 않는다. | 독립 `input-lifecycle` 상태 모듈과 exact-hash Pi patch가 prompt/runner/type 및 queue object identity를 연결한다. Rubato memory nudge는 기존 이벤트 shape를 그대로 쓸 수 있다. request-run tracker 등록은 별도 wiring으로 남는다. |
 | request-run 추적 — **필수** | 생성된 실제 user-message object에 input record를 결속 → `message_*`/`tool_execution_*` → `agent_settled` 또는 사용자 중단 → remote timeline/request-run/pending-input snapshot (`repo:harness/rubato-pi/src/transforms/request-run-tracker.mjs:1-3,77-197,280-389`; protocol `repo:packages/rubato-remote-protocol/src/types.ts:74-95`). | WeakMap 결속으로 메시지와 별도 장부가 어긋나지 않아야 한다. queue clear는 ID 목록을 반환하고, run은 `completed\|failed\|interrupted` 중 하나로 한 번만 terminalize한다. compaction/retry의 중간 `agent_end`는 같은 run을 성급히 닫지 않는다. | `message_*`, tool execution, `agent_settled`는 이미 공개 이벤트다 (`stock:dist/core/extensions/types.d.ts:559-562,591-626`; `stock:dist/core/agent-session.js:347-355`). 부족한 것은 안정적인 입력 identity와 gap abort다. | Rubato `request-run` 기능 모듈을 유지한다. Pi 어댑터는 message-object 결속과 queue 전이만 제공하고, 전체 `AgentSession`을 이식하지 않는다. |
-| gap-only abort provenance — **필수** | user/system/provider abort 진입 → 열린 agent-end 경계에 출처를 보관 → `agent_end{aborted,willRetry,abortSource}` 또는 agent-end가 없는 retry backoff/compaction/queued gap에서만 `session_abort` → goal/loop/ttsr/context-notes/memory가 소비 (`senpi:dist/core/agent-abort-provenance.js:1-56`, `senpi:dist/core/agent-session.js:3531-3549`). | 한 사용자 abort에 `agent_end(abort)`와 `session_abort`를 둘 다 내보내지 않는다. retry/compaction controller와 queue를 먼저 멈추고, 열린 경계가 닫힌 뒤 provenance를 비운다. | stock `AgentEndEvent`는 messages만 갖고 (`stock:dist/core/extensions/types.d.ts:554-562`), `abort()`는 controller/agent를 중단하고 idle만 기다리며 별도 이벤트가 없다 (`stock:dist/core/agent-session.js:1222-1228`). | Senpi `abort-provenance` 상태 기계 + Pi 어댑터의 agent event 경계, retry/compaction/queue abort 접점. Rubato 소비자는 기존 이벤트 의미를 그대로 쓴다. |
+| gap-only abort provenance — **필수, 구현됨** | user/system/provider abort 진입 → 열린 agent-end 경계에 출처를 보관 → `agent_end{aborted,willRetry,abortSource}` 또는 agent-end가 없는 retry backoff/compaction/queued gap에서만 `session_abort` → goal/loop/ttsr/context-notes/memory가 소비 (`senpi:dist/core/agent-abort-provenance.js:1-56`, `senpi:dist/core/agent-session.js:3531-3549`). | 한 abort에 `agent_end(abort)`와 `session_abort`를 둘 다 내보내지 않는다. extension handler가 await 중인 late user abort도 같은 event object에 합류한다. user/system/provider abort는 다음 queue/retry continuation을 막고, gap claim은 concurrent abort에서도 한 번만 terminalize한다. | stock `AgentEndEvent`는 messages만 갖고 (`stock:dist/core/extensions/types.d.ts:554-562`), `abort()`는 controller/agent를 중단하고 idle만 기다리며 별도 이벤트가 없다 (`stock:dist/core/agent-session.js:1222-1228`). | 독립 `abort-provenance` 상태 모듈 + AgentSession event/post-run/abort/type exact-hash patch다. AgentSession subscriber를 쓰는 unbundled RPC는 enriched event를 그대로 전달하므로 별도 RPC patch가 필요 없다. |
 | reload veto·UI·RPC — **필수, 구현됨** | `/reload`, extension context 또는 RPC `reload` → host의 선택적 `checkReloadVeto()` → 권위 있는 `session_before_reload` 재검사 → Rubato task guard → veto면 이유 반환, 허용이면 `session_shutdown{reason:"reload"}` 후 runner/settings/resource 재구축. guard는 resident 중 `status === "running"`만 막는다 (`repo:packages/rubato-runtime/src/components/task/reload-guard.ts:5-45`). | precheck 뒤 task가 시작되는 race 때문에 `AgentSession.reload()` 내부 gate가 최종 권위다. veto 전에는 editor, extension UI, runner, child/MCP 자원을 건드리지 않는다. 허용 시 shutdown은 정확히 한 번이며 새 runner에 rebind한다. terminal resident는 막지 않는다. | stock reload는 곧바로 shutdown/invalidate한다 (`stock:dist/core/agent-session.js:2217-2240`), TUI도 먼저 `resetExtensionUI()`한다 (`stock:dist/modes/interactive/interactive-mode.js:4978-4987`). 공개 veto/RPC reload가 없어 아래 좁은 patch를 추가했다. | Senpi 계약은 cancellable event/result뿐이고, Pi 어댑터는 runner/session/TUI/RPC/type 접점을 연다. Rubato guard와 task shutdown 정책은 Rubato에 남긴다. |
 | `/resume`·목록 paging·첫 입력 보존·fork — **필수(페이지 크기는 조정 가능)** | `/resume` → mtime newest-first 파일 discovery → 한 page JSONL parse → picker의 load-more/search → 선택한 session switch/rebind. 첫 user message가 기록되는 즉시 JSONL을 생성한다. fork는 선택 entry → cancellable `session_before_fork` → 새 session/rebind다 (`repo:harness/rubato-pi/src/transforms/core-session-list-page.mjs:27-124,170-232,507-568`; persist 이유 `repo:harness/rubato-pi/src/transforms/core-session-persist.mjs:3-10`). | 빈 TUI 실행만으로 파일을 만들지 않지만, assistant가 오기 전 crash/provider error에도 첫 입력 세션은 다시 열려야 한다. paging은 newest-first 안정 순서, 중복/누락 없는 cursor, scope별 total/hasMore를 보존한다. switch/fork 시 이전 extension/UI 자원을 정리하고 새 세션에만 bind한다. | stock `list/listAll`은 모든 JSONL을 읽는다 (`stock:dist/core/session-manager.js:1311-1363`)이고 첫 assistant 전에는 flush하지 않는다 (`:739-767`). 반면 fork와 cancellable `session_before_fork`는 native runtime/RPC에 있으므로 재사용한다 (`stock:dist/core/agent-session-runtime.js:92-96,174`; `stock:dist/modes/rpc/rpc-mode.js:484-495`). 0.85.1 SDK에는 과거 `assertModelUsable` resume gate가 없어 옛 `core-session-resume-budget` patch는 이식 대상이 아니다. | Senpi `session-catalog`/first-user-persist 기능 + discovery/persist 최소 Pi patch. Rubato가 page size와 picker 표현을 정한다. native switch/fork 계약은 감싸지 말고 adapter에서 연결한다. |
 | context-notes·compaction 소유권 — **데이터 보존 필수** | session start/tree/model → mode 선택·store/controller → `before_agent_start` admission → `context` window 제공 → `turn_end` checkpoint → `/new-context` commit. extension 층은 session/agent abort와 shutdown 때 pending/controller를 정리한다 (`repo:harness/rubato-pi/src/extensions/context-notes.mjs:38-101,102-173`). | notes mode에서는 provider에 전달한 window와 저장/commit한 window가 같아야 한다. 실패한 초기화나 전이 commit은 provider 요청을 막는다. manual/automatic/speculative/idle/pruning/server compaction 어느 lane도 notes 소유권을 우회하면 안 되며, no-prune tool-result repair를 유지한다. | public `session_before_compact`, context, turn, tree, model events로 정책 대부분은 extension화할 수 있다. 그러나 현재 구현도 extension event에 들어오는 compaction만 막고, speculative/idle/pruning은 내부 접점에 의존한다고 명시한다 (`repo:harness/rubato-pi/src/extensions/context-notes.mjs:167-168`). 필요한 내부 접점은 settings gate, summary-window carrier, provider admission/transition commit/next-turn window, lane ownership, no-prune pipeline, server compaction disable이다 (`repo:harness/rubato-pi/src/transforms/core-context-notes.mjs:27-37,53-97`). | Senpi `context-notes` 정책/controller 모듈 + 여섯 종류의 좁은 Pi hook + Rubato store/tools/config adapter. extension-only port를 완료로 간주하지 않는다. |
@@ -80,19 +81,58 @@ export const patches = [{ id, packageName, version, path, preimageSha256, apply(
 이 검사는 local dummy model(`127.0.0.1:9`, 호출되지 않음), in-memory session/private temp,
 `NODE_OPTIONS` 제거로 실행한다. provider 비용이나 HOME profile을 쓰지 않는다.
 
+## 구현된 입력·abort 경계
+
+`repo:harness/pi-runtime/features/input-lifecycle/`는 상태 모듈 한 개와 pristine hash에 고정된
+6개 patch를 제공한다. 상태 모듈은 세션 순번 ID, 아직 disposition이 없는 input, 실제
+user-message object의 WeakMap record, queue pending ownership만 가진다. Pi patch 대상은
+`dist/core/agent-session.js`, extension runner runtime/type, extension/public type export다.
+`AgentSession.prompt()`가 input handler를 호출하기 직전에 ID를 만들고, handled/queued/started/rejected
+중 하나로 상태를 먼저 닫은 뒤 event를 보낸다. queue에는 생성한 user-message object 자체를 결속해
+동일 문자열과 서로 다른 image가 섞여도 steer/followUp 제거가 문자열 추측에 의존하지 않는다.
+
+`repo:harness/pi-runtime/features/abort-provenance/`도 상태 모듈 한 개와 5개 patch만 제공한다.
+상태 모듈은 current abort source, 열려 있거나 settle 중인 agent-end event, continuation stop,
+cleared-queue 표식, gap terminal claim을 소유한다. Pi patch 대상은 `dist/core/agent-session.{js,d.ts}`와
+extension/public type export다. active run의 user/system abort와 provider가 표시한 abort는 enriched
+`agent_end` 하나로 끝난다. retry sleep, compaction controller, queued/just-cleared input처럼 새
+agent-end가 생기지 않는 구간의 user abort만 `session_abort`를 낸다. manual compact의 내부 abort는
+`system`으로 분류한다.
+
+두 기능은 다음 공통 feature manifest를 export한다. owned state 파일은 stock 파일을 덮어쓰지 않고
+stager의 additive `files` 계약으로 package 안에 복사된다.
+
+```js
+export const patches = [{ id, packageName, version, path, preimageSha256, apply(source) }]
+export const files = [{ packageName, version, path, sourcePath }]
+```
+
+실제 검증은 `input-lifecycle.test.mjs`와 `abort-provenance.test.mjs`가 resolver의 현재 standalone
+`codingAgentDir`를 기본값으로 사용해 private temp package를 만든 뒤 Pi SDK를 import한다. local
+`AssistantMessageEventStream`으로 provider를 대체해 다음을 실행했다.
+
+- input interceptor handled, model admission rejected, 실제 fake stream started, streaming queue를 모두
+  통과하고 각 `inputId`에 disposition이 정확히 한 번인지 확인했다.
+- 같은 `duplicate` text에 서로 다른 image를 붙여 followUp 뒤 steer 순으로 넣고, Pi의 steer 우선
+  소비가 image/message identity와 각 input ID를 보존하는지 확인했다.
+- active user/system abort, provider abort, extension `agent_end` handler가 대기 중인 late user join에서
+  extension과 AgentSession subscriber가 동일한 enriched event object를 받는지 확인했다.
+- 실제 retry backoff를 local 429 error로 열어 취소했고, compaction controller gap과 cleared queue gap,
+  concurrent abort에서 `session_abort`가 한 번만 발생하는지 확인했다.
+
 ## 다음 구현 순서와 테스트 계약
 
-reload 다음의 가장 작은 공통 seam은 **입력 identity/disposition + gap-only abort provenance**다.
-둘이 있어야 request-run, memory nudge, goal, remote queue가 같은 사용자의 행동을 같은 것으로
-인식한다. 그 뒤 첫-user persistence/paged catalog, interactive-control bridge,
-context-notes 내부 소유권 hook, paste/image/tmux 보강 순서가 결합 리스크가 낮다.
+reload와 **입력 identity/disposition + gap-only abort provenance**까지 공통 seam을 열었다.
+다음은 이 message-object record와 terminal event를 기존 request-run tracker에 연결하고,
+첫-user persistence/paged catalog, interactive-control bridge, context-notes 내부 소유권 hook,
+paste/image/tmux 보강 순으로 진행하는 것이 결합 리스크가 낮다.
 
 유료 provider 없이 다음 증거를 만든다.
 
 | 묶음 | 최소 검증 |
 |---|---|
-| input/run | inline extension + fake/local stream으로 같은 text·image를 여러 번 submit/steer/follow-up한다. 각 ID에 disposition이 정확히 한 번이고 queue clear/소비 순서와 run terminal state가 맞는지 본다. |
-| abort | synthetic agent events로 mid-run user abort, provider abort, retry backoff, compaction, cleared queue를 각각 만들고 `agent_end` 또는 `session_abort`가 정확히 하나인지 검사한다. |
+| input/run | **input 완료:** inline extension + fake/local stream으로 같은 text·image의 submit/steer/follow-up, handled/rejected/started/queued, 각 ID의 단일 disposition과 queue 소비를 확인했다. **남음:** request-run tracker terminal/pending snapshot wiring. |
+| abort | **완료:** 실제 SDK fake stream/controller로 active user/system/provider abort, late join, retry backoff, compaction, cleared queue를 만들고 `agent_end` 또는 `session_abort` 하나만 발생하는지 확인했다. |
 | sessions | private temp에 수백 개 JSONL을 만들고 first-user 직후 강제 종료 복구, newest-first paging/search/load-more, bad file 격리, resume/fork/rebind를 검사한다. parse count와 picker first-render 시간을 함께 측정한다. |
 | context notes | 기존 fake context/store를 stock event contract에 연결하고 manual/auto/speculative/idle/pruning/server compaction lane을 강제로 통과시킨다. provider admission 전 gate, no-prune tool repair, commit/next-turn window 원자성을 검사한다. |
 | remote/UI | in-memory fake hub/WebSocket + 실제 interactive host adapter로 duplicate request, stale revision, image input, reload veto, UI response/abort/session switch race를 검사한다. pending promise/listener가 0으로 정리되는지도 본다. |
@@ -102,7 +142,10 @@ context-notes 내부 소유권 hook, paste/image/tmux 보강 순서가 결합 �
 
 ```sh
 cd harness/pi-runtime
-env -u NODE_OPTIONS -u NODE_COMPILE_CACHE node --test features/reload/reload.test.mjs
+env -u NODE_OPTIONS -u NODE_COMPILE_CACHE node --test \
+  features/reload/reload.test.mjs \
+  features/input-lifecycle/input-lifecycle.test.mjs \
+  features/abort-provenance/abort-provenance.test.mjs
 ```
 
 ## 필수 의미와 조정 가능한 표현
@@ -118,17 +161,19 @@ fullscreen의 시각 스타일이다. 다만 설정으로 제공되던 fullscree
 
 ## 현재 coverage와 미검증 경계
 
-- **구현·실행 확인:** reload SDK/TUI method/RPC와 patch drift 검증. 공통 stager에서 reload와 MCP를
-  함께 조합하는 검증은 통합 담당 범위다.
-- **소스 계약까지 확인:** input/disposition, request-run, abort, session persist/paging/fork,
-  context-notes, remote control/UI, fullscreen, paste/image, Unicode/mouse, tmux/local selector cleanup.
-- **아직 구현하지 않음:** reload 외 위 기능의 Pi 0.85.1 adapter와 Rubato wiring.
+- **구현·실행 확인:** reload SDK/TUI method/RPC, input identity/disposition, active/late/gap abort와
+  각 patch의 pristine hash·anchor drift를 검증했다. 공통 stager의 전체 feature 합성은 통합 담당
+  검사가 정본이다.
+- **소스 계약까지 확인:** request-run, session persist/paging/fork, context-notes, remote control/UI,
+  fullscreen, paste/image, Unicode/mouse, tmux/local selector cleanup.
+- **아직 구현하지 않음:** input record의 기존 request-run tracker 연결, 첫-user persistence/paged
+  catalog, interactive-control bridge, context-notes 내부 hook, paste/image/tmux 보강과 제품 wiring.
 - **아직 실행하지 않음:** 실제 terminal 렌더링, 실제 remote hub/mobile, 대규모 `/resume` 성능,
   기존 세션 복사본 호환, context-notes의 모든 compaction lane 결합, 유료 provider E2E.
 - **목록 한계:** 이 문서는 지정된 session/control/UI 그룹의 contract inventory다. Senpi builtin 전체
   등록 목록과 provider/tool/auth/runtime 배포의 완전성은 각 담당 inventory가 정본이며,
   여기서 전체 제품 parity를 주장하지 않는다.
 
-이 영역의 stop 조건은 reload patch를 공통 stager에 조합하고, 위 순서의 각 기능에 별도 소유권을
-받아 구현·검증한 뒤 전체 Rubato 후보 런타임에서 기존 세션/remote/TUI 시나리오가 green인 때다.
-현재는 reload만 그 구현 수준에 도달했다.
+이 영역의 stop 조건은 위 순서의 남은 기능을 별도 소유권으로 구현·검증한 뒤 전체 Rubato 후보
+런타임에서 기존 세션/remote/TUI 시나리오가 green인 때다. 현재 reload, input lifecycle,
+abort provenance는 개별 실제 SDK 검증 수준에 도달했으며 전체 제품 wiring은 아직 완료가 아니다.

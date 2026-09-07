@@ -114,9 +114,37 @@ restore, the session fast flag, and `before_provider_request`
 (`senpi/dist/core/extensions/builtin/service-tier.js:51-135,135-266`). Rubato's current transform
 extends it for xAI and Anthropic and preserves fast identity across restart
 (`transforms/core-service-tier.mjs:3-91`). Stock Pi has no corresponding unbundled builtin module.
-Therefore the minimum migration is a selected Rubato-owned service-tier extension against stock
-ExtensionAPI plus any host hook required to persist/read the same per-model key; it is not a catalog
-metadata-only change.
+
+That behavior is now selected into `harness/pi-runtime/features/service-tier/extension.mjs`. It uses
+stock `registerCommand`, `model_select`, `session_start`, and `before_provider_request` hooks and the
+real stock AgentSession request path. Two exact-preimage patches in `patches.mjs` add only
+`SettingsManager.getModelServiceTier()` / `setModelServiceTier()` and the corresponding declaration.
+The value is persisted in the normal global settings file as
+`modelServiceTiers["<provider>/<base-model-id>"] = "priority" | "auto"`; the explicit `auto` value
+is what keeps `/fast off` disabled after restart. The runtime descriptor stages the extension and
+its MIT notice under `rubato-features/service-tier/` so the extension resolves the patched stock SDK
+from the selected staged root, rather than importing this source checkout's package graph.
+
+For the stock CLI, the extension calls `SettingsManager.create(ctx.cwd, undefined, ...)`, so the
+settings root is stock Pi's normal `PI_CODING_AGENT_DIR` (or its stock default). Stock 0.85.1's
+extension context does **not** expose `agentDir` or `serviceTier`. An SDK host that supplies an
+explicit AgentSession `agentDir` must therefore create the feature with the same `{ agentDir }` (or
+an explicit `settingsManagerFactory`); silently guessing a directory would split persistence.
+The stock model registry also has no service-tier resolver, so catalog `serviceTier` and
+`upstreamModelId` are read from a model only when an owned alias supplies them. Stock's base models
+need no aliases for the three direct request wires.
+
+`createServiceTierFeature()` exposes `getState()` and `onChange()` as the small host boundary for
+footer/lightning and RPC `fastMode` state. Those host consumers are not connected in this unit;
+their current behavior remains a required follow-up, not a removed feature. Stock has no public
+`setSessionFastMode` API, so this extension does not pretend that such a hook exists.
+
+The live toggle and persisted preference have intentionally different scopes, matching the latest
+Rubato transform. Once `/fast on` is active, that session intent survives a model switch while the
+incoming model supports a fast wire (including Codex-to-Codex); switching to Kiro or another
+unsupported model turns it off. Disk memory remains keyed per model, so the incoming model is not
+silently written and its own value controls a fresh session/reload. This distinction is covered by
+an actual stock AgentSession regression rather than inferred from settings alone.
 
 ## Auth and credential lifecycle
 
@@ -233,8 +261,9 @@ pi-telemetry are MIT; the lockfile is the authority for every transitive version
 Selected Senpi-derived material that has no stock replacement must be ported as owned modules, not
 by copying the package:
 
-- service tier: `senpi/dist/core/extensions/builtin/service-tier.js` plus a Rubato-owned stock
-  ExtensionAPI adapter; no non-core package or data asset;
+- service tier: selected as the Rubato-owned stock ExtensionAPI module
+  `harness/pi-runtime/features/service-tier/extension.mjs`, two exact-hash SettingsManager patches,
+  and `THIRD_PARTY_NOTICES.md`; no non-core runtime package or data asset;
 - credential pools: Senpi core `credential-pool/{env-slots,rotation-stream,state-store,classify,
   failover}.js`, the minimum request/login/refresh hooks, and pi-ai
   `auth/pool/{select,slots}.js`. Runtime packages are `proper-lockfile@4.1.2` (MIT) and the actually
@@ -274,6 +303,11 @@ Completed without network or credential access:
 - isolated Bun run of `provider-direct.test.mjs`: 50/50 passed, including actual stock 0.85.1
   factories, no-fallback loader failure, all-seven overlay admission, and zero auth/registration work
   for an incomplete stock-backed result;
+- isolated Node run of `features/service-tier/service-tier.test.mjs`: 7/7 passed against a copied,
+  patched actual stock 0.85.1 SDK. It exercised real SettingsManager file persistence, `/fast on` and
+  `/fast off`, per-model persistence, Codex-to-Codex live-intent preservation, model switch,
+  extension reload, fresh AgentSession restart,
+  Codex/xAI `service_tier`, direct Anthropic `speed` plus beta, and Kiro/unsupported exclusions;
 - source SHA comparison: stock and Senpi provider factory files are identical for Codex, xAI, and
   OpenCode; Anthropic differs only by Senpi's exported direct stream aliases;
 - read-only transform probes: Codex WS TTL applies to stock; Astra patch drifts; old prompt-cache TTL
@@ -300,12 +334,30 @@ own temporary `RUBATO_LEGACY_AUTH_PATH` and `RUBATO_TARGET_AUTH_PATH`; do not se
 `*_CODING_AGENT_DIR`, because doing so would replace the live-path guard that one safety test
 deliberately exercises.
 
+The service-tier run is separately reproducible with an empty home/profile. It copies and patches
+the stock package into its own temporary directory, injects that actual SettingsManager into the
+extension, replaces every provider stream with a local in-process fake, and makes no provider or
+credential call:
+
+```sh
+cd /Users/wy/Github-repos/rubato-lab/worktrees/pi-adapter-0851
+isolated_home="$(mktemp -d /tmp/rubato-service-tier-home-0851.XXXXXX)"
+trap 'rmdir "$isolated_home"' EXIT
+env -u NODE_OPTIONS -u NODE_COMPILE_CACHE \
+  HOME="$isolated_home" \
+  PI_CODING_AGENT_DIR="$isolated_home/pi-agent" \
+  PI_OFFLINE=1 \
+  node --test --test-timeout=30000 \
+    harness/pi-runtime/features/service-tier/service-tier.test.mjs
+```
+
 Next response/mock checks, in order:
 
 1. use the isolated stock runtime resolver to supply the loader root; mock fetch/WS responses for the
    four native providers and assert request body, event stream, abort, and terminal settlement;
-2. port service-tier as an owned extension and assert persisted `/fast` across restart/model switch
-   for Codex, xAI, and Anthropic, including unsupported-model disable;
+2. connect the service-tier `getState()` / `onChange()` bridge to existing footer/lightning and RPC
+   `fastMode` consumers, without adding a private AgentSession mutation API unless composition proves
+   one is necessary;
 3. add the minimum stock host credential-pool hooks and exercise two mock accounts: HRW affinity,
    pre-output 429 rotation, post-output no-retry, refresh merge, and flat backward compatibility;
 4. stage the selected Cursor closure and run its existing response/protobuf mocks, including
@@ -317,8 +369,8 @@ Next response/mock checks, in order:
 
 Unknowns that block a parity claim:
 
-- stock 0.85.1's exact host hook for a selected `/fast` extension and whether an unbundled entry sees
-  the same SettingsManager/service-tier context as the compiled CLI;
+- the final bootstrap consumer for the staged service-tier extension and its footer/lightning/RPC
+  state bridge; the direct `/fast` request and SettingsManager paths themselves are verified;
 - the stock location or absence of empty-assistant retry behavior and its watchdog ordering;
 - a stock-specific Astra `configuration_update`/extra-body patch and prompt-cache timeout owner;
 - the smallest stable stock ModelRuntime/AuthStorage hook for account pools without forking the

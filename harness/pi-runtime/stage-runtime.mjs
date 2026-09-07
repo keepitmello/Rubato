@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
-import { cp, mkdir, readdir, readFile, readlink, realpath, writeFile } from "node:fs/promises";
+import { chmod, cp, lstat, mkdir, readdir, readFile, readlink, realpath, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolvePiRuntime } from "./resolve-runtime.mjs";
 import { validatePiInstall } from "./validate-install.mjs";
+import { loadPiFeatures } from "./feature-catalog.mjs";
 import cmdShim from "cmd-shim";
 
 const RECEIPT = "rubato-pi-stage.json";
@@ -37,6 +38,22 @@ async function validateLinks(modulesRoot, directory = modulesRoot) {
   }
 }
 
+async function validateNewParent(packageDir, target) {
+  let parent = dirname(target);
+  while (true) {
+    try {
+      const resolved = await realpath(parent);
+      if (resolved !== packageDir && !within(packageDir, resolved)) {
+        throw new Error(`Pi added file parent escapes its package: ${target}`);
+      }
+      return;
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+      parent = dirname(parent);
+    }
+  }
+}
+
 /**
  * Build selected capability hooks into a new, isolated installation.
  * Never changes a shared stock fixture, an existing output, or the live engine.
@@ -45,7 +62,7 @@ async function validateLinks(modulesRoot, directory = modulesRoot) {
  */
 export async function stagePiRuntime({ sourceRoot, outputRoot, features = [] } = {}) {
   const source = resolvePiRuntime({ root: sourceRoot });
-  const { packageJson, lock, packages: lockedPackages } = await validatePiInstall(source);
+  const { packageJson, lock, packages: lockedPackages, directDependencies } = await validatePiInstall(source);
   if (typeof outputRoot !== "string" || outputRoot.trim() === "") {
     throw new Error("stagePiRuntime requires an explicit, new output directory");
   }
@@ -58,6 +75,7 @@ export async function stagePiRuntime({ sourceRoot, outputRoot, features = [] } =
   const ids = new Set();
   const patchIds = new Set();
   const changes = new Map();
+  const additions = new Map();
 
   // Complete validation and transformations before claiming or writing output.
   for (const feature of features) {
@@ -65,6 +83,32 @@ export async function stagePiRuntime({ sourceRoot, outputRoot, features = [] } =
       throw new Error("Pi features require unique ids and an explicit patches array");
     }
     ids.add(feature.id);
+    if (feature.files !== undefined && !Array.isArray(feature.files)) throw new Error("Pi feature files must be an array");
+    for (const file of feature.files ?? []) {
+      const runtimeOwned = file.target === "runtime";
+      const pkg = runtimeOwned ? undefined : source.packages[file.packageName];
+      if ((runtimeOwned ? file.packageName !== undefined : !pkg) ||
+          (file.target !== undefined && !["runtime", "package"].includes(file.target)) ||
+          file.version !== source.version || typeof file.sourcePath !== "string" || !isAbsolute(file.sourcePath)) {
+        throw new Error(`Pi owned file requires a selected package and explicit source path: ${feature.id}`);
+      }
+      const baseDir = runtimeOwned ? source.root : pkg.dir;
+      const target = relativeTarget(baseDir, file.path);
+      if (runtimeOwned && (!/^[a-z][a-z0-9-]*$/.test(feature.id) || !within(join(source.root, "rubato-features", feature.id), target))) {
+        throw new Error(`Runtime-owned files must stay in rubato-features/${feature.id}/`);
+      }
+      if (additions.has(target)) throw new Error(`Duplicate Pi added file: ${file.path}`);
+      const exists = await lstat(target).then(() => true, (error) => { if (error.code === "ENOENT") return false; throw error; });
+      if (exists) throw new Error(`Pi added file would overwrite a stock target: ${file.path}`);
+      await validateNewParent(baseDir, target);
+      const info = await stat(file.sourcePath);
+      if (!info.isFile()) throw new Error(`Pi owned source must be a regular file: ${file.sourcePath}`);
+      const data = await readFile(file.sourcePath);
+      additions.set(target, {
+        feature: feature.id, target: runtimeOwned ? "runtime" : "package", packageName: pkg?.name, path: relative(source.root, target),
+        sha256: sha256(data), mode: info.mode & 0o777, data,
+      });
+    }
     for (const patch of feature.patches) {
       const patchId = `${feature.id}/${patch.id}`;
       if (typeof patch.id !== "string" || !patch.id || patchIds.has(patchId)) throw new Error(`Duplicate or missing Pi patch id: ${patchId}`);
@@ -107,7 +151,9 @@ export async function stagePiRuntime({ sourceRoot, outputRoot, features = [] } =
     packageSha256: sha256(packageJson),
     lockSha256: sha256(lock),
     lockedPackages,
+    directDependencies,
     files: [...changes.values()].map(({ text: _text, ...entry }) => entry),
+    addedFiles: [...additions.values()].map(({ data: _data, ...entry }) => entry),
   };
   const writeReceipt = () => writeFile(join(canonicalOutput, RECEIPT), `${JSON.stringify(receipt, null, 2)}\n`);
   await writeReceipt();
@@ -121,6 +167,16 @@ export async function stagePiRuntime({ sourceRoot, outputRoot, features = [] } =
     // before any patch or shim writes, not just before marking the receipt ready.
     await validateLinks(join(canonicalOutput, "node_modules"));
     const runtime = resolvePiRuntime({ root: canonicalOutput });
+    for (const addition of additions.values()) {
+      const target = join(canonicalOutput, addition.path);
+      const baseDir = addition.target === "runtime" ? runtime.root : runtime.packages[addition.packageName].dir;
+      await validateNewParent(baseDir, target);
+      await mkdir(dirname(target), { recursive: true });
+      await writeFile(target, addition.data, { flag: "wx", mode: addition.mode });
+      await chmod(target, addition.mode);
+      if (((await stat(target)).mode & 0o777) !== addition.mode) throw new Error(`Pi owned file mode mismatch: ${addition.path}`);
+      if (sha256(await readFile(target)) !== addition.sha256) throw new Error(`Pi owned file hash mismatch: ${addition.path}`);
+    }
     for (const change of changes.values()) {
       const stagedPath = join(canonicalOutput, change.path);
       const stagedPackage = runtime.packages[change.packageName];
@@ -169,12 +225,7 @@ async function main(argv) {
     else if (arg === "--feature") featureNames.push(argv[++i]);
     else throw new Error(`Unknown argument: ${arg}`);
   }
-  const features = [];
-  for (const name of featureNames) {
-    if (name !== "reload") throw new Error(`Unknown Pi feature: ${name}`);
-    const { patches } = await import("./features/reload/patches.mjs");
-    features.push({ id: name, patches });
-  }
+  const features = await loadPiFeatures(featureNames);
   const result = await stagePiRuntime({ sourceRoot, outputRoot, features });
   process.stdout.write(`${JSON.stringify({ root: result.root, ...result.receipt }, null, 2)}\n`);
 }

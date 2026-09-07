@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
@@ -23,7 +23,17 @@ test("staged binary and actual SDK compose reload veto with MCP resource lifecyc
     }
     await rm(scratch, { recursive: true, force: true });
   });
-  const staged = await stagePiRuntime({ sourceRoot, outputRoot: join(scratch, "engine"), features: [{ id: "reload", patches }] });
+  const probePath = join(scratch, "dependency-probe.mjs");
+  await writeFile(probePath, `import {findPackageJSON} from "node:module";
+import {readFileSync} from "node:fs";
+export const versions = Object.fromEntries(["typebox", "@babel/parser"].map(name =>
+  [name, JSON.parse(readFileSync(findPackageJSON(name, import.meta.url), "utf8")).version]));\n`);
+  const staged = await stagePiRuntime({ sourceRoot, outputRoot: join(scratch, "engine"), features: [
+    { id: "reload", patches },
+    { id: "dependency-probe", patches: [], files: [{ target: "runtime", version: "0.85.1", path: "rubato-features/dependency-probe/probe.mjs", sourcePath: probePath }] },
+  ] });
+  const probe = await import(pathToFileURL(join(staged.root, "rubato-features/dependency-probe/probe.mjs")));
+  assert.deepEqual(probe.versions, { typebox: "1.3.18", "@babel/parser": "8.0.4" });
   const agentDir = join(scratch, "agent");
   const cwd = join(scratch, "project");
   await Promise.all([mkdir(agentDir), mkdir(cwd)]);
