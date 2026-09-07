@@ -28,6 +28,9 @@ export const SLIM_DESCRIPTIONS = Object.freeze({
 
   monitor:
     "Subscribe instead of polling. Pass command XOR path, never both. command: PTY output lines matching filter become events; path: one file, fires once (create default; use modify if the file already exists); path takes no filter or persistent. Returns bash_id; peek bash_output, stop kill_bash. Identical consecutive line batches are deduped.",
+
+  tool_search:
+    "Search the catalog of available tools by capability; matched tools are activated and are callable immediately after this result.",
 });
 
 /**

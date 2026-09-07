@@ -105,6 +105,28 @@ export function isToolSearchServiceUrl(url) {
   return url.endsWith("/dist/core/extensions/builtin/tool-search/service.js");
 }
 
+export function isToolSearchToolUrl(url) {
+  return url.endsWith("/dist/core/extensions/builtin/tool-search/tool.js");
+}
+
+// Runtime already puts activated tools on the next model request in this user turn
+// (`prepareNextTurn` re-reads agent.state.tools). The stock copy said "NEXT turn"
+// and models stopped instead of calling them.
+export function injectToolSearchSameTurnCopy(source) {
+  let next = replaceOnce(source,
+    "matched tools are activated and become callable on your NEXT turn.",
+    "matched tools are activated and are callable immediately after this result.",
+    "tool-search description same-turn");
+  next = replaceOnce(next,
+    "Search available tool catalogs by capability; matched tools activate next turn.",
+    "Search available tool catalogs by capability; matched tools activate immediately.",
+    "tool-search snippet same-turn");
+  return replaceOnce(next,
+    "Matched tools are now active and callable from your NEXT turn:",
+    "Matched tools are now active. Call them in this turn:",
+    "tool-search result same-turn");
+}
+
 export function injectMcpCatalogOwnership(source) {
   return replaceOnce(source,
     '.filter((tool) => tool.exposure === "search" && tool.allowLazyActivation)',
