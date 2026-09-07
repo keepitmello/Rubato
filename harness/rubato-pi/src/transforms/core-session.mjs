@@ -8,6 +8,7 @@ import {
   injectToolSurface, injectUniversalApplyPatch, isApplyPatchExtensionUrl,
   injectMcpSearchExposure, isMcpTierBUrl, injectDeferredMediaTool, isModelGatedMediaUrl,
   injectMcpCatalogOwnership, isToolSearchServiceUrl,
+  injectToolSearchSameTurnCopy, isToolSearchToolUrl,
   injectMcpToolNamePrefix, isMcpNamingUrl, injectMcpProxyToolName, isMcpProxyUrl,
 } from "./core-tool-surface.mjs";
 import { injectToolDescriptions, isToolDefinitionWrapperUrl } from "./core-tool-descriptions.mjs";
@@ -79,6 +80,7 @@ export function applyCoreSessionTransforms(url, source, applyTransform) {
   if (isMcpNamingUrl(url)) source = applyTransform(source, injectMcpToolNamePrefix);
   if (isMcpProxyUrl(url)) source = applyTransform(source, injectMcpProxyToolName);
   if (isToolSearchServiceUrl(url)) source = applyTransform(source, injectMcpCatalogOwnership);
+  if (isToolSearchToolUrl(url)) source = applyTransform(source, injectToolSearchSameTurnCopy);
   if (isModelGatedMediaUrl(url)) source = applyTransform(source, injectDeferredMediaTool);
   if (isToolDefinitionWrapperUrl(url)) source = applyTransform(source, injectToolDescriptions);
   if (isSpeculativeUrl(url)) source = applyTransform(source, injectSpeculative);
