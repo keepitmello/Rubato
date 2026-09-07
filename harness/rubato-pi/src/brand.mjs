@@ -2,6 +2,7 @@ import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CACHE_RETENTION } from "./defaults.mjs";
+import { senpiCli } from "./engine-paths.mjs";
 import { applyChildExtensionsEnv } from "./runtime-env.mjs";
 
 export const BRAND_NAME = "\u{1D493}\u{1D496}\u{1D483}\u{1D482}\u{1D495}\u{1D490}";
@@ -75,6 +76,12 @@ export function launchEnv(baseEnv, agentDir) {
   env.SENPI_BRAND = JSON.stringify(brandProfile(env));
   env.SENPI_CODING_AGENT_DIR = agentDir;
   env.RUBATO_PI_CODING_AGENT_DIR = agentDir;
+  // 자식 세션은 부모와 같은 엔진에서 돌아야 한다. 자식 스폰(resolveSenpiExecutable)은
+  // SENPI_BIN 이 비어 있으면 PATH 에서 `senpi` 를 찾는데, 그건 전역 설치본이라 우리가
+  // 고정한 판보다 낡을 수 있다. 그러면 부모는 pinned 엔진에 변환을 먹이고 자식은 다른
+  // 판에 같은 변환을 먹여, 니들이 어긋난 조각만 조용히 빠진 자식이 만들어진다.
+  // 여기서 고정본을 박아 그 어긋남을 구조적으로 없앤다. 사용자가 명시한 값은 남긴다.
+  env.SENPI_BIN = typeof env.SENPI_BIN === "string" && env.SENPI_BIN.trim() !== "" ? env.SENPI_BIN : senpiCli;
   // provider SDK의 범용 추적 비활성화 계약이다.
   env.DO_NOT_TRACK = "1";
   applyChildExtensionsEnv(env, providerExtensionPaths(), delimiter);
