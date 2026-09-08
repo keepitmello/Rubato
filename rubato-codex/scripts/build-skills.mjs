@@ -61,29 +61,6 @@ function transformText(relativePath, input) {
       .replace("disable-model-invocation: true\nargument-hint: \"[task or current work]\"\n", "");
   }
 
-  if (relativePath === "agent-taskforce/references/01-operating-model.md") {
-    output = output
-      .replace(
-        "The human operator owns the framing choice, lead-model choice, and the veto over the roster. Report a new or materially changed teammate before it starts; wait for explicit confirmation only when the spawn commits something hard to take back or the operator has asked to approve teams. Recreating the same teammate after session loss is recovery, not a new staffing decision.",
-        "The human operator owns the framing choice and lead-model choice. Before forming a team, the lead presents the outcome, role, model and effort roster and waits for explicit confirmation. Recreating the same teammate after session loss, or correcting the same already approved work, stays under that confirmation. A new or materially changed teammate or roster requires confirmation before spawn.",
-      )
-      .replace(
-        "| initial teammate spawn | lead, after reporting the roster; human veto |",
-        "| initial teammate spawn | lead, after explicit roster confirmation |",
-      )
-      .replace(
-        "| material restaffing or new teammate | lead reports before spawn; human veto |",
-        "| material restaffing or new teammate | lead, after explicit roster confirmation |",
-      );
-  }
-
-  if (relativePath === "agent-taskforce/references/05-prompting-contracts.md") {
-    output = output.replace(
-      "Skill(model-guide) contains the current soft roster and the bottleneck-based selection guide; `references/08-model-allocation.md` holds only the team proposal format.",
-      "The bundled [model-guide](../../model-guide/SKILL.md) is the model and approval SSOT; [model allocation](model-allocation.md) keeps only the team-specific pointer.",
-    );
-  }
-
   if (relativePath === "frontend-ux-router/MAINTENANCE.md") {
     output = output.replace('git add -A && git commit -m "<what failure this addresses>" \n', 'git add -A && git commit -m "<what failure this addresses>"\n');
   }
@@ -262,19 +239,6 @@ async function copySkill(name, outputRoot) {
   }
 }
 
-async function copySupplemental(outputRoot) {
-  for (const [name, files] of Object.entries(manifest.supplemental)) {
-    for (const relative of [...files].sort()) {
-      assert(!isExcluded(relative), `supplemental file is excluded: ${name}/${relative}`);
-      await copyFileTransformed(
-        path.join(sourceRoot, name, relative),
-        path.join(outputRoot, name, relative),
-        path.join(name, relative),
-      );
-    }
-  }
-}
-
 async function verifyInventory() {
   const entries = await readdir(sourceRoot, { withFileTypes: true });
   const actual = entries
@@ -292,11 +256,6 @@ async function comparableFiles(root, names) {
     const destinationName = outputName(name);
     for (const relative of await listTree(path.join(root, destinationName))) {
       results.set(toPosix(path.join(destinationName, relative)), await readFile(path.join(root, destinationName, relative)));
-    }
-  }
-  for (const [name, files] of Object.entries(manifest.supplemental)) {
-    for (const relative of files) {
-      results.set(toPosix(path.join(name, relative)), await readFile(path.join(root, name, relative)));
     }
   }
   return results;
@@ -317,7 +276,6 @@ if (process.argv.includes("--check")) {
   const temporary = await mkdtemp(path.join(os.tmpdir(), "rubato-codex-skills-"));
   try {
     for (const name of managedNames) await copySkill(name, temporary);
-    await copySupplemental(temporary);
     await assertSame(temporary, installedRoot);
     process.stdout.write(`skills bundle is current (${sourceNames.length} source skills accounted for)\n`);
   } finally {
@@ -326,6 +284,5 @@ if (process.argv.includes("--check")) {
 } else {
   await mkdir(installedRoot, { recursive: true });
   for (const name of managedNames) await copySkill(name, installedRoot);
-  await copySupplemental(installedRoot);
   process.stdout.write(`built ${managedNames.length} managed skills; preserved ${manifest.preserved.length} Codex-owned source skills\n`);
 }

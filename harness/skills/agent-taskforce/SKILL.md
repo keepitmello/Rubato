@@ -24,6 +24,10 @@ Read the adapter for the harness you are in before staffing:
 - fx → `runtimes/fx.md`
 - rubato-pi / Senpi → `runtimes/pi.md`
 
+This is the Rubato/shared CLI edition. Codex uses the separate `rubato-codex`
+plugin's taskforce, model-guide and native roles; do not install this edition
+as its operating layer or generate Codex role files from it.
+
 ## What this skill does not contain
 
 General prompting, effort selection, and context design belong to `claude-prompting-lab`. Product-value framing belongs to `product-framing`. The runtime's command surface belongs to the runtime's own guides. Use them alongside this skill rather than copying them here; where they disagree, they win.

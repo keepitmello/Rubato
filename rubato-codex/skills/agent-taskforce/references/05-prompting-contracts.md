@@ -31,7 +31,7 @@ If the same model must review its own model family's work, call it a **fresh rev
 
 Model substitution is normal when quotas, outages, or runtime constraints intervene. Propose any material substitution and wait for user approval before spawning it; preserve the approved responsibility boundary and record what actually ran in the mission. Recreating the same approved teammate after session loss is recovery, not a new model decision.
 
-Claude Code teammates inherit the lead's model unless the spawn prompt names one or `CLAUDE_CODE_SUBAGENT_MODEL` supplies one. Confirm and record the actual model.
+Use the [Codex runtime adapter](../runtimes/codex.md) for model overrides and history inheritance. Claude Code environment variables do not configure Codex native agents. Distinguish requested settings from runtime-confirmed identity.
 
 **Confirm where a role's model actually lands before you trust it as independent.** A routing layer between the CLI and the provider can resolve the same model name somewhere else, and then a verifier that looks independent shares the owners' weights. Do not infer this from a catalog name — send one call and read the failure: quota and auth errors name the account you actually hit.
 
