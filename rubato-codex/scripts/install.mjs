@@ -8,7 +8,8 @@ import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep 
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { discoverProviderCatalog, makeProviderPolicy, resolveProviderSelection } from "./providers.mjs";
-import { applyOpenCodexSetup, configureOpenCodexRoster, planOpenCodexSetup, registerOpenCodexProviders } from "./opencodex-setup.mjs";
+import { applyOpenCodexSetup, configureOpenCodexMultiAgent, configureOpenCodexRoster, planOpenCodexSetup, registerOpenCodexProviders } from "./opencodex-setup.mjs";
+import { configureOpenCodexAnthropicAuth } from "./anthropic-setup-token.mjs";
 import { applyBundleDependencies, planBundleDependencies } from "./bundle-dependencies.mjs";
 
 const ROLE_NAMES = ["taskforce_owner", "taskforce_verifier", "taskforce_helper"];
@@ -702,16 +703,34 @@ export async function installPackage(options = {}) {
     env: openCodexEnv,
     runner: options.openCodexProviderRunner,
   });
+  // Before the catalog refresh: an Anthropic row that has no login still lists its models, and
+  // selecting one hangs instead of failing. Importing the local setup-token here means the very
+  // first launch answers.
+  const openCodexAnthropicAuth = await configureOpenCodexAnthropicAuth(openCodexResult, {
+    dryRun,
+    env: openCodexEnv,
+    opencodexHome: dirname(providerCatalog.configPath),
+    readToken: options.claudeSetupTokenReader,
+  });
   const refreshedProviderCatalog = await discoverProviderCatalog({ opencodexHome: options.opencodexHome });
   const openCodexRoster = await configureOpenCodexRoster(openCodexResult, refreshedProviderCatalog, {
     env: openCodexEnv,
     preserveExisting: providerCatalog.status === "available" && Boolean(providerCatalog.roster?.length),
     runner: options.openCodexRosterRunner,
   });
+  // Must follow the roster: the roster decides WHICH routed models a spawn may name, this decides
+  // whether naming one can run at all.
+  const openCodexMultiAgent = await configureOpenCodexMultiAgent(openCodexResult, {
+    dryRun,
+    env: openCodexEnv,
+    runner: options.openCodexMultiAgentRunner,
+  });
   providerPolicy = makeProviderPolicy(refreshedProviderCatalog, providerSelection.selected);
   preservedState.providerPolicy.installedSha = sha256(providerPolicy);
   openCodexResult.providerSetup = openCodexProviders;
   openCodexResult.roster = openCodexRoster;
+  openCodexResult.multiAgent = openCodexMultiAgent;
+  openCodexResult.anthropicAuth = openCodexAnthropicAuth;
   openCodexResult.runtime = providerSelection.selected.length ? {
     status: "authentication-pending",
     nextStep: `${openCodexResult.command} start`,
