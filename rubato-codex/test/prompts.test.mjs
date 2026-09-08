@@ -14,6 +14,10 @@ test('Rubato base keeps root leadership separate from delegated contracts', asyn
   assert.match(base, /## Lead — main\/root session only/);
   assert.match(base, /do not promote it to lead/);
   assert.match(base, /Codex owns spawning/);
+  assert.match(base, /define the\s+question and the relevant boundary before planning/);
+  assert.match(base, /You see every workstream while each owner sees one/);
+  assert.match(base, /Speak like a capable colleague sharing the screen/);
+  assert.match(base, /take one independent review after local verification/);
   assert.doesNotMatch(base, /team_create|team_send|AgentSend|:8788|permissions pre-granted/);
   const contracts = [];
   for (const role of ['owner', 'verifier', 'helper']) {
