@@ -1,0 +1,3 @@
+# Checked-in dependency bundle; verify with taskforce's check:dist command.
+# Do not rewrite whitespace inside upstream template strings.
+taskforce/dist/mcp-server.mjs linguist-generated=true -whitespace
