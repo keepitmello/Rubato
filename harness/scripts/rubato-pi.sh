@@ -3,6 +3,7 @@
 # This is the default `rubato` alias. Does not change the shell default Node.
 set -eu
 HERE="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
+export RUBATO_HUB_RESTART="$HERE/rubato-hub-restart.mjs"
 
 # Subcommands handled here rather than by the agent. Everything else falls
 # through to the session launcher, so a prompt starting with an ordinary word
@@ -31,14 +32,6 @@ if [ "${1-}" = "dispatch" ]; then
   shift
   exec "$HERE/rubato-dispatch.sh" "$@"
 fi
-if [ "${1-}" = "restart" ]; then
-  if [ "$#" -ne 1 ]; then
-    echo "usage: rubato restart" >&2
-    exit 2
-  fi
-  # Remote hub LaunchAgent. -k kills the running instance first, then starts it.
-  exec /bin/launchctl kickstart -k "gui/$(id -u)/com.keepitmello.rubato.remote-hub"
-fi
 
 # `direct` 는 dispatcher 만 건너뛴다. 기존 준비·엔진 경로는 그대로 지나므로
 # auth/update/build 외의 과거 사용법과 bootstrap 이 같은 엔진을 실행한다.
@@ -60,6 +53,14 @@ live_node() {
 }
 
 case "${1-}" in
+  restart)
+    if [ "$#" -ne 1 ]; then
+      echo "usage: rubato restart" >&2
+      exit 2
+    fi
+    NODE="$(live_node)" || exit $?
+    exec "$NODE" "$HERE/rubato-hub-restart.mjs"
+    ;;
   new|attach|list|kill|remote|vault-resume|vault-fork)
     NODE="$(live_node)" || exit $?
     exec "$NODE" "$LIVE_CLI" "$@"
