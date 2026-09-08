@@ -48,8 +48,9 @@ export async function reconcileOnSessionStart(
     return { outcomes }
   }
 
-  // Preserve the pre-feature global crash sweep for legacy resident orphans of OTHER sessions.
-  // Suspended records are intentionally excluded: scoped revival may only target parentSessionId.
+  // Foreign resident records are hygiene, not this session's children. Adopting them here
+  // respawned leftover process children into every new session and paid a 5s SIGTERM wait
+  // per live pid. Reap without adopting; scoped revival below still restores THIS session.
   for (const record of candidates) {
     if (record.parent_session_id === parentSessionId || record.residency_state !== "resident") continue
     // A multi-session host (one shared process, one engine + registry PER session) reaches this
@@ -57,12 +58,12 @@ export async function reconcileOnSessionStart(
     // from this session's registry, which is indistinguishable from a crashed-process orphan by
     // host_pid alone - and reclaiming it kills a live sibling child (an in-process record is marked
     // lost outright). Ownership by a live session in this process is the sibling's to resolve, so
-    // defer instead of sweeping. The global sweep below keeps the single-session crash semantics.
+    // defer instead of sweeping.
     if (isSameProcessSibling(context, record)) {
       outcomes.push({ task_id: record.task_id, kind: "deferred", reason: "foreign_live_owner" })
       continue
     }
-    outcomes.push(await reconcileLegacyRecord(context, record))
+    outcomes.push(await reapForeignResident(context, record))
   }
 
   outcomes.push(...await reconcileScopedRevival(
@@ -72,6 +73,29 @@ export async function reconcileOnSessionStart(
     (taskId) => newestSessionPath(context, taskId),
   ))
   return { outcomes }
+}
+
+
+/** Never adopt another session's child. Kill a leftover pid immediately; do not wait or respawn. */
+async function reapForeignResident(context: LifecycleContext, observed: TaskRecord): Promise<ReconcileOutcome> {
+  const release = beginLocalReclamation(context, observed.task_id)
+  if (release === undefined) {
+    return { task_id: observed.task_id, kind: "foreign_live_owner", reason: "orphan ownership claim in flight" }
+  }
+  try {
+    const pid = observed.execution_mode === "process" ? observed.pid : undefined
+    if (pid !== undefined && context.signaller.isAlive(pid)) {
+      context.signaller.signal(pid, "SIGKILL")
+      context.store.appendEvent(observed.task_id, {
+        type: "reconcile_terminated",
+        payload: { pid, signal: "SIGKILL" },
+      })
+    }
+    await markLost(context, observed, "foreign session orphan reaped; not adopted into this session")
+    return { task_id: observed.task_id, kind: "lost", reason: "foreign_orphan_not_adopted" }
+  } finally {
+    release()
+  }
 }
 
 async function reconcileLegacyRecord(context: LifecycleContext, observed: TaskRecord): Promise<ReconcileOutcome> {

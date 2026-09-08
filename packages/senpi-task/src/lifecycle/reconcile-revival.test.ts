@@ -124,21 +124,52 @@ describe("reconcileOnSessionStart scoped revival", () => {
     expect(harness.store.load(record.task_id)?.host_pid).toBe(hostPid)
   })
 
-  test("#given a legacy crash orphan of another session #when this session resumes #then the global process reattach still runs", async () => {
+  test("#given a legacy crash orphan of another session #when this session starts #then it is reaped and not adopted", async () => {
     // given
-    const harness = injectedHarness()
+    const harness = injectedHarness({ alive: new Set([7400]) })
     const other = withV1(harness.store, seedRecord(harness.store, {
       task_id: "st_10000015", parent_session_id: "session-other", status: "running",
       residency_state: "resident", execution_mode: "process", pid: 7400, host_pid: 9999,
     }))
-    const sessionPath = persistSession(harness.store, other.task_id)
+    persistSession(harness.store, other.task_id)
 
     // when
+    const started = Date.now()
     const result = await harness.lifecycle.reconcileOnSessionStart(parentSessionId)
 
     // then
-    expect(result.outcomes.find((entry) => entry.task_id === other.task_id)?.kind).toBe("resumed")
-    expect(harness.launches).toContainEqual({ taskId: other.task_id, sessionPath })
+    expect(Date.now() - started).toBeLessThan(250)
+    expect(result.outcomes.find((entry) => entry.task_id === other.task_id)).toEqual({
+      task_id: other.task_id,
+      kind: "lost",
+      reason: "foreign_orphan_not_adopted",
+    })
+    expect(harness.launches).toEqual([])
+    expect(harness.signals).toEqual([{ pid: 7400, signal: "SIGKILL" }])
+  })
+
+  test("#given many foreign terminal residents with live pids #when this session starts #then it reaps them immediately without respawn", async () => {
+    const alive = new Set<number>()
+    const store = tempStore()
+    for (let index = 0; index < 40; index += 1) {
+      const pid = 8000 + index
+      alive.add(pid)
+      seedRecord(store, {
+        task_id: `st_200000${String(index).padStart(2, "0")}`,
+        parent_session_id: "session-other",
+        status: "completed",
+        residency_state: "resident",
+        execution_mode: "process",
+        pid,
+        host_pid: 9999,
+      })
+    }
+    const harness = injectedHarness({ store, alive })
+    const started = Date.now()
+    const result = await harness.lifecycle.reconcileOnSessionStart(parentSessionId)
+    expect(Date.now() - started).toBeLessThan(250)
+    expect(harness.launches).toEqual([])
+    expect(result.outcomes.filter((outcome) => outcome.reason === "foreign_orphan_not_adopted")).toHaveLength(40)
   })
 
   test("#given a terminal record owned by a live sibling #when reconciled #then the early owner guard leaves it untouched", async () => {
