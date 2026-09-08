@@ -34,8 +34,12 @@ class AsideReplConsultTest(unittest.TestCase):
     def test_quality_flag_is_required_and_limited(self) -> None:
         with self.assertRaises(SystemExit):
             MODULE.parse_args([])
-        self.assertEqual(MODULE.parse_args(["--quality", "xhigh", "--packet", "p"]).quality, "xhigh")
         self.assertEqual(MODULE.parse_args(["--quality", "pro", "--packet", "p"]).quality, "pro")
+        with self.assertRaises(SystemExit):
+            MODULE.parse_args(["--quality", "xhigh", "--packet", "p"])
+        self.assertEqual(MODULE.parse_args(["--quality", "pro", "--packet", "p"]).quality, "pro")
+        with self.assertRaises(SystemExit):
+            MODULE.parse_args(["--quality", "xhigh", "--packet", "p"])
         with self.assertRaises(SystemExit):
             MODULE.parse_args(["--quality", "high", "--packet", "p"])
 
@@ -84,7 +88,7 @@ class AsideReplConsultTest(unittest.TestCase):
         shopping = MODULE.build_repl_script(
             project_url="https://chatgpt.com/g/g-p-test-shopping/project",
             project_name="Shopping",
-            quality="xhigh",
+            quality="pro",
             packet_name="packet.md",
             packet_base64="cGFja2V0",
             topic="프로젝트 전환",
@@ -101,9 +105,9 @@ class AsideReplConsultTest(unittest.TestCase):
         self.assertIn("project composer not visible", shopping)
 
     def test_generated_script_has_quality_mapping_and_hard_deadline(self) -> None:
-        xhigh = MODULE.build_repl_script(
+        pro = MODULE.build_repl_script(
             project_url="https://chatgpt.com/g/g-p-test-work/project",
-            quality="xhigh",
+            quality="pro",
             packet_name="packet.md",
             packet_base64="cGFja2V0",
             topic="병렬 세션 탭 소유권",
@@ -122,33 +126,33 @@ class AsideReplConsultTest(unittest.TestCase):
         )
 
         self.assertEqual(MODULE.SUBMIT_TIMEOUT_SECONDS, 120)
-        self.assertIn("개 중", xhigh)
-        self.assertIn("verifiedTier", xhigh)
-        self.assertIn("^최신$", xhigh)
-        self.assertIn("targetModel", xhigh)
-        self.assertIn('var targetLabel = "매우 높음"', xhigh)
+        self.assertIn("개 중", pro)
+        self.assertIn("verifiedTier", pro)
+        self.assertIn("^최신$", pro)
+        self.assertIn("targetModel", pro)
         self.assertIn('var targetLabel = "Pro"', pro)
-        self.assertIn("[0-9]* ?Pro", xhigh)
-        self.assertIn("tier button not visible", xhigh)
-        self.assertNotIn("매우 높음|Pro)$", xhigh)
-        self.assertIn("OUTPOST_FAIL stage=", xhigh)
-        self.assertIn("OUTPOST_FAIL stage=' + submitStage", xhigh)
-        self.assertIn('data-tpp-toggle-value="chatgpt"', xhigh)
-        self.assertIn('data-tpp-toggle-value="work"', xhigh)
-        self.assertIn("Chat surface not selected", xhigh)
-        self.assertIn("Work mode selected and Chat toggle missing", xhigh)
-        self.assertIn("chatToggleVisible", xhigh)
-        self.assertIn("ChatGPT rate-limited the project page", xhigh)
-        self.assertIn("backend-api/conversation", xhigh)
-        self.assertIn("readAssistantFromBackend", xhigh)
-        self.assertIn("recoveredFromBackend", xhigh)
-        self.assertIn("i < 80", xhigh)
+        self.assertIn('var targetLabel = "Pro"', pro)
+        self.assertIn("[0-9]* ?Pro", pro)
+        self.assertIn("tier button not visible", pro)
+        self.assertNotIn("매우 높음|Pro)$", pro)
+        self.assertIn("OUTPOST_FAIL stage=", pro)
+        self.assertIn("OUTPOST_FAIL stage=' + submitStage", pro)
+        self.assertIn('data-tpp-toggle-value="chatgpt"', pro)
+        self.assertIn('data-tpp-toggle-value="work"', pro)
+        self.assertIn("Chat surface not selected", pro)
+        self.assertIn("Work mode selected and Chat toggle missing", pro)
+        self.assertIn("chatToggleVisible", pro)
+        self.assertIn("ChatGPT rate-limited the project page", pro)
+        self.assertIn("backend-api/conversation", pro)
+        self.assertIn("readAssistantFromBackend", pro)
+        self.assertIn("recoveredFromBackend", pro)
+        self.assertIn("i < 80", pro)
         self.assertNotIn(
             "await snapshot(workPage, { interactive: true });\n    submitStage = 'wait-project-composer'",
-            xhigh,
+            pro,
         )
-        self.assertNotIn("var targetIndex = 4", xhigh)
-        self.assertNotIn("/5개 중 ([1-5])번째/", xhigh)
+        self.assertNotIn("var targetIndex = 4", pro)
+        self.assertNotIn("/5개 중 ([1-5])번째/", pro)
         self.assertNotIn("Fast 모드 활성화", pro)
         self.assertNotIn("Work mode is selected", pro)
         self.assertIn("병렬 세션 탭 소유권\\nID: abc123", pro)
@@ -187,8 +191,8 @@ class AsideReplConsultTest(unittest.TestCase):
             pro,
         )
         self.assertIn("#upload-files", pro)
-        self.assertIn("getByRole('group'", pro)
-        self.assertIn("attachmentChip.waitFor", pro)
+        self.assertIn("waitRole(workPage, 'group'", pro)
+        self.assertIn("attachmentPresent(", pro)
         self.assertNotIn("getByText(packetName, { exact: true })", pro)
         self.assertLess(pro.index("fill-composer"), pro.index("attach-packet"))
         self.assertIn("packet attachment missing before send", pro)
@@ -273,7 +277,7 @@ class AsideReplConsultTest(unittest.TestCase):
             picker={
                 "modelRadio": "최신",
                 "tierAliases": ["추론 수준", "6 Pro", "Pro"],
-                "xhighLabel": "매우 높음",
+                "proLabel": "매우 높음",
                 "proLabel": "Pro",
             },
         )
@@ -304,7 +308,7 @@ class AsideReplConsultTest(unittest.TestCase):
             with mock.patch.dict(os.environ, {"PATH": path}):
                 result = MODULE.main(
                     [
-                        "--quality", "xhigh",
+                        "--quality", "pro",
                         "--packet", str(packet),
                         "--url", "https://chatgpt.com/g/g-p-test-work/project",
                     ]
@@ -328,7 +332,7 @@ class AsideReplConsultTest(unittest.TestCase):
                 ):
                     result = MODULE.main(
                         [
-                            "--quality", "xhigh",
+                            "--quality", "pro",
                             "--packet", str(packet),
                             "--url", "https://chatgpt.com/g/g-p-test-work/project",
                             "--response-output", str(root / "response.md"),
@@ -380,8 +384,8 @@ class AsideReplConsultTest(unittest.TestCase):
                 """#!/usr/bin/env python3
 import sys
 print(sys.argv[2])
-print('ASIDE_REPL_SUBMIT_RESULT {"quality":"xhigh","submitElapsedMs":1,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1","targetId":"t"}')
-print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"ok","responseElapsedMs":1,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1"}')
+print('ASIDE_REPL_SUBMIT_RESULT {"quality":"pro","submitElapsedMs":1,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1","targetId":"t"}')
+print('ASIDE_REPL_RESPONSE_RESULT {"modelSlug":"gpt-6-pro","responseText":"ok","responseElapsedMs":1,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1"}')
 """,
                 encoding="utf-8",
             )
@@ -403,7 +407,7 @@ print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"ok","responseElapsedMs":1,"co
             fake.write_text(
                 """#!/usr/bin/env python3
 print('ASIDE_REPL_SUBMIT_RESULT {"quality":"pro","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1","targetId":"target"}')
-print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"ID: abc123\\\\nanswer","responseElapsedMs":5678,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1"}')
+print('ASIDE_REPL_RESPONSE_RESULT {"modelSlug":"gpt-6-pro","responseText":"ID: abc123\\\\nanswer","responseElapsedMs":5678,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1"}')
 """,
                 encoding="utf-8",
             )
@@ -431,8 +435,8 @@ print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"ID: abc123\\\\nanswer","respo
             fake = root / "aside"
             fake.write_text(
                 """#!/usr/bin/env python3
-print('ASIDE_REPL_SUBMIT_RESULT {"quality":"xhigh","model":"최신","tier":"매우 높음 (4 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1","targetId":"target"}')
-print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"no id here","idMatched":false,"packetUnread":false,"responseElapsedMs":5678,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1"}')
+print('ASIDE_REPL_SUBMIT_RESULT {"quality":"pro","model":"최신","tier":"매우 높음 (4 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1","targetId":"target"}')
+print('ASIDE_REPL_RESPONSE_RESULT {"modelSlug":"gpt-6-pro","responseText":"no id here","idMatched":false,"packetUnread":false,"responseElapsedMs":5678,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1"}')
 """,
                 encoding="utf-8",
             )
@@ -446,7 +450,7 @@ print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"no id here","idMatched":false
                 with mock.patch.object(MODULE, "ensure_aside_daemon", return_value=None):
                     result = MODULE.main(
                         [
-                            "--quality", "xhigh",
+                            "--quality", "pro",
                             "--packet", str(packet),
                             "--url", "https://chatgpt.com/g/g-p-test-work/project",
                             "--response-output", str(response_path),
@@ -529,7 +533,7 @@ print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"no id here","idMatched":false
                     "recover_outpost_from_backend",
                     return_value={
                         "ok": True,
-                        "responseText": "recovered",
+                        "responseText": "recovered", "modelSlug": "gpt-6-pro",
                         "finished": True,
                         "idMatched": True,
                         "conversationUrl": "https://chatgpt.com/c/abc",
@@ -592,8 +596,8 @@ if [ "$n" -eq 1 ]; then
   printf 'fetch failed: other side closed\\nAside daemon is not reachable\\n'
   exit 0
 fi
-printf '%s\\n' 'ASIDE_REPL_SUBMIT_RESULT {{"quality":"xhigh","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1","targetId":"target"}}'
-printf '%s\\n' 'ASIDE_REPL_RESPONSE_RESULT {{"responseText":"ok","responseElapsedMs":5678,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1"}}'
+printf '%s\\n' 'ASIDE_REPL_SUBMIT_RESULT {{"quality":"pro","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1","targetId":"target"}}'
+printf '%s\\n' 'ASIDE_REPL_RESPONSE_RESULT {{"modelSlug":"gpt-6-pro","responseText":"ok","responseElapsedMs":5678,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1"}}'
 """,
                 encoding="utf-8",
             )
@@ -608,7 +612,7 @@ printf '%s\\n' 'ASIDE_REPL_RESPONSE_RESULT {{"responseText":"ok","responseElapse
                             response_timeout=1,
                         )
                     )
-        self.assertEqual(submitted["quality"], "xhigh")
+        self.assertEqual(submitted["quality"], "pro")
         self.assertEqual(response["responseText"], "ok")
 
     def test_submission_runner_rejects_missing_marker(self) -> None:
@@ -747,7 +751,7 @@ print("response phase failed")
                         "recover_outpost_from_backend",
                         return_value={
                             "ok": True,
-                            "responseText": "backend answer",
+                            "responseText": "backend answer", "modelSlug": "gpt-6-pro",
                             "finished": True,
                             "idMatched": True,
                             "conversationUrl": "https://chatgpt.com/c/1",
@@ -818,7 +822,7 @@ print("response phase failed")
 import pathlib
 pathlib.Path({str(temporary_artifact)!r}).write_bytes(b"not a zip")
 print('ASIDE_REPL_SUBMIT_RESULT {{"quality":"pro","model":"최신","tier":"Pro (5 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1","targetId":"target"}}')
-print('ASIDE_REPL_RESPONSE_RESULT {{"responseText":"ID: placeholder","artifact":{{"temporaryPath":{json.dumps(str(temporary_artifact))},"suggestedFilename":"downloaded.zip"}},"responseElapsedMs":5678,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1"}}')
+print('ASIDE_REPL_RESPONSE_RESULT {{"modelSlug":"gpt-6-pro","responseText":"ID: placeholder","artifact":{{"temporaryPath":{json.dumps(str(temporary_artifact))},"suggestedFilename":"downloaded.zip"}},"responseElapsedMs":5678,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1"}}')
 """,
                 encoding="utf-8",
             )
@@ -878,7 +882,7 @@ print('ASIDE_REPL_RESPONSE_RESULT {{"responseText":"ID: placeholder","artifact":
                     "recover_outpost_from_backend",
                     return_value={
                         "ok": True,
-                        "responseText": "recovered later",
+                        "responseText": "recovered later", "modelSlug": "gpt-6-pro",
                         "finished": True,
                         "idMatched": True,
                         "conversationUrl": "https://chatgpt.com/c/1",
@@ -905,12 +909,12 @@ print('ASIDE_REPL_RESPONSE_RESULT {{"responseText":"ID: placeholder","artifact":
         listed = MODULE.parse_args(["--list"])
         self.assertTrue(listed.list)
         continued = MODULE.parse_args(
-            ["--thread", "abcd1234", "--quality", "xhigh", "--packet", "p"]
+            ["--thread", "abcd1234", "--quality", "pro", "--packet", "p"]
         )
         self.assertEqual(continued.thread, "abcd1234")
-        self.assertEqual(continued.quality, "xhigh")
+        self.assertEqual(continued.quality, "pro")
         with self.assertRaises(SystemExit):
-            MODULE.parse_args(["--list", "--quality", "xhigh", "--packet", "p"])
+            MODULE.parse_args(["--list", "--quality", "pro", "--packet", "p"])
         with self.assertRaises(SystemExit):
             MODULE.parse_args(["--thread", "abcd1234"])
         with self.assertRaises(SystemExit):
@@ -918,7 +922,7 @@ print('ASIDE_REPL_RESPONSE_RESULT {{"responseText":"ID: placeholder","artifact":
                 [
                     "--thread", "abcd",
                     "--conversation-url", "https://chatgpt.com/c/6a95625e-1f78-83e8-aa90-a49f982e36ef",
-                    "--quality", "xhigh",
+                    "--quality", "pro",
                     "--packet", "p",
                 ]
             )
@@ -926,7 +930,7 @@ print('ASIDE_REPL_RESPONSE_RESULT {{"responseText":"ID: placeholder","artifact":
             MODULE.parse_args(
                 [
                     "--conversation-url", "https://chatgpt.com/g/g-p-x/project",
-                    "--quality", "xhigh",
+                    "--quality", "pro",
                     "--packet", "p",
                 ]
             )
@@ -945,7 +949,7 @@ print('ASIDE_REPL_RESPONSE_RESULT {{"responseText":"ID: placeholder","artifact":
     def test_continue_script_opens_saved_conversation_not_project_home(self) -> None:
         script = MODULE.build_repl_script(
             project_url="https://chatgpt.com/g/g-p-test-work/project",
-            quality="xhigh",
+            quality="pro",
             packet_name="packet.md",
             packet_base64="cGFja2V0",
             topic="후속",
@@ -1024,7 +1028,7 @@ print('ASIDE_REPL_RESPONSE_RESULT {{"responseText":"ID: placeholder","artifact":
         )
         store.create_thread(
             topic="목록 테스트",
-            quality="xhigh",
+            quality="pro",
             project_name="Work",
             outpost_id="turn-1",
             pid=os.getpid(),
@@ -1039,8 +1043,8 @@ print('ASIDE_REPL_RESPONSE_RESULT {{"responseText":"ID: placeholder","artifact":
             fake = root / "aside"
             fake.write_text(
                 """#!/usr/bin/env python3
-print('ASIDE_REPL_SUBMIT_RESULT {"quality":"xhigh","model":"최신","tier":"매우 높음 (4 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/c/6a95625e-1f78-83e8-aa90-a49f982e36ef","targetId":"target"}')
-print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"answer","idMatched":false,"packetUnread":false,"responseElapsedMs":5678,"conversationUrl":"https://chatgpt.com/c/6a95625e-1f78-83e8-aa90-a49f982e36ef"}')
+print('ASIDE_REPL_SUBMIT_RESULT {"quality":"pro","model":"최신","tier":"매우 높음 (4 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/c/6a95625e-1f78-83e8-aa90-a49f982e36ef","targetId":"target"}')
+print('ASIDE_REPL_RESPONSE_RESULT {"modelSlug":"gpt-6-pro","responseText":"answer","idMatched":false,"packetUnread":false,"responseElapsedMs":5678,"conversationUrl":"https://chatgpt.com/c/6a95625e-1f78-83e8-aa90-a49f982e36ef"}')
 """,
                 encoding="utf-8",
             )
@@ -1053,7 +1057,7 @@ print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"answer","idMatched":false,"pa
                 with mock.patch.object(MODULE, "ensure_aside_daemon", return_value=None):
                     first = MODULE.main(
                         [
-                            "--quality", "xhigh",
+                            "--quality", "pro",
                             "--packet", str(packet),
                             "--url", "https://chatgpt.com/g/g-p-test-work/project",
                             "--response-output", str(root / "first.md"),
@@ -1065,7 +1069,7 @@ print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"answer","idMatched":false,"pa
                     second = MODULE.main(
                         [
                             "--thread", evidence["threadId"],
-                            "--quality", "xhigh",
+                            "--quality", "pro",
                             "--packet", str(packet),
                             "--url", "https://chatgpt.com/g/g-p-test-work/project",
                             "--response-output", str(root / "second.md"),
@@ -1103,7 +1107,7 @@ print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"answer","idMatched":false,"pa
                     result = MODULE.main(
                         [
                             "--thread", "missing",
-                            "--quality", "xhigh",
+                            "--quality", "pro",
                             "--packet", str(packet),
                             "--url", "https://chatgpt.com/g/g-p-test-work/project",
                             "--response-output", str(root / "response.md"),
@@ -1119,8 +1123,8 @@ print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"answer","idMatched":false,"pa
             fake = root / "aside"
             fake.write_text(
                 """#!/usr/bin/env python3
-print('ASIDE_REPL_SUBMIT_RESULT {"quality":"xhigh","model":"최신","tier":"매우 높음 (4 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/6a99ef53-3d80-83ee-a84c-187e4a415929","targetId":"target"}')
-print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"answer","idMatched":true,"packetUnread":false,"responseElapsedMs":25,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/project"}')
+print('ASIDE_REPL_SUBMIT_RESULT {"quality":"pro","model":"최신","tier":"매우 높음 (4 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/6a99ef53-3d80-83ee-a84c-187e4a415929","targetId":"target"}')
+print('ASIDE_REPL_RESPONSE_RESULT {"modelSlug":"gpt-6-pro","responseText":"answer","idMatched":true,"packetUnread":false,"responseElapsedMs":25,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/project"}')
 """,
                 encoding="utf-8",
             )
@@ -1133,7 +1137,7 @@ print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"answer","idMatched":true,"pac
                 with mock.patch.object(MODULE, "ensure_aside_daemon", return_value=None):
                     result = MODULE.main(
                         [
-                            "--quality", "xhigh",
+                            "--quality", "pro",
                             "--packet", str(packet),
                             "--url", "https://chatgpt.com/g/g-p-test-work/project",
                             "--response-output", str(root / "response.md"),
@@ -1156,7 +1160,7 @@ print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"answer","idMatched":true,"pac
             continued = MODULE.open_or_continue_thread(
                 MODULE.parse_args([
                     "--thread", evidence["threadId"],
-                    "--quality", "xhigh",
+                    "--quality", "pro",
                     "--packet", str(packet),
                     "--url", "https://chatgpt.com/g/g-p-test-work/project",
                     "--response-output", str(root / "c.md"),
@@ -1164,7 +1168,7 @@ print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"answer","idMatched":true,"pac
                     "--stderr-output", str(root / "c.log"),
                 ]),
                 topic="Outpost 경로 확인",
-                quality="xhigh",
+                quality="pro",
                 project_name="Work",
                 outpost_id="follow",
                 packet_path=str(packet),
@@ -1179,7 +1183,7 @@ print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"answer","idMatched":true,"pac
         store = MODULE.SESSIONS.SessionStore(Path(os.environ["OUTPOST_SESSIONS_PATH"]))
         thread = store.create_thread(
             topic="복구",
-            quality="xhigh",
+            quality="pro",
             project_name="Work",
             outpost_id="turn-1",
         )
@@ -1196,7 +1200,7 @@ print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"answer","idMatched":true,"pac
         _store, _thread, _lock, needs_start, conversation_url, follow_up = MODULE.open_or_continue_thread(
             MODULE.parse_args([
                 "--thread", thread["threadId"],
-                "--quality", "xhigh",
+                "--quality", "pro",
                 "--packet", str(packet),
                 "--url", "https://chatgpt.com/g/g-p-test-work/project",
                 "--response-output", str(packet.with_name("r.md")),
@@ -1204,7 +1208,7 @@ print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"answer","idMatched":true,"pac
                 "--stderr-output", str(packet.with_name("r.log")),
             ]),
             topic="복구",
-            quality="xhigh",
+            quality="pro",
             project_name="Work",
             outpost_id="turn-2",
             packet_path=str(packet),
@@ -1219,7 +1223,7 @@ print('ASIDE_REPL_RESPONSE_RESULT {"responseText":"answer","idMatched":true,"pac
     def test_repl_script_keeps_sticky_conversation_url(self) -> None:
         script = MODULE.build_repl_script(
             project_url="https://chatgpt.com/g/g-p-test-work/project",
-            quality="xhigh",
+            quality="pro",
             packet_name="outpost-x.md",
             packet_base64="Zg==",
             topic="t",

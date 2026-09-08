@@ -17,12 +17,12 @@ SPEC.loader.exec_module(MODULE)
 
 class ConsultCliTest(unittest.TestCase):
     def test_send_infers_run_dir_and_output_paths(self) -> None:
-        args = MODULE.parse_args(["send", "--quality", "xhigh", ".outpost/foo/packet.md"])
+        args = MODULE.parse_args(["send", "--quality", "pro", ".outpost/foo/packet.md"])
         argv = MODULE.build_engine_argv("send", args)
         self.assertEqual(
             argv,
             [
-                "--quality", "xhigh",
+                "--quality", "pro",
                 "--packet", ".outpost/foo/packet.md",
                 "--response-output", ".outpost/foo/response.md",
                 "--json-output", ".outpost/foo/result.json",
@@ -44,7 +44,7 @@ class ConsultCliTest(unittest.TestCase):
             [
                 "send",
                 "--quality",
-                "xhigh",
+                "pro",
                 "p.md",
                 "--to",
                 "https://chatgpt.com/c/6a95625e-1f78-83e8-aa90-a49f982e36ef",
@@ -78,7 +78,7 @@ class ConsultCliTest(unittest.TestCase):
 
     def test_send_without_quality_fails_closed(self) -> None:
         args = MODULE.parse_args(["send", "packet.md"])
-        with self.assertRaisesRegex(ValueError, "xhigh or pro"):
+        with self.assertRaisesRegex(ValueError, "--quality pro"):
             MODULE.build_engine_argv("send", args)
 
     def test_main_dispatches_send_to_engine(self) -> None:
@@ -86,13 +86,13 @@ class ConsultCliTest(unittest.TestCase):
             runner = mock.Mock()
             runner.main.return_value = 0
             load.return_value = runner
-            result = MODULE.main(["send", "xhigh", "packet.md"])
+            result = MODULE.main(["send", "pro", "packet.md"])
         self.assertEqual(result, 0)
         sent = runner.main.call_args.args[0]
-        self.assertEqual(sent[:4], ["--quality", "xhigh", "--packet", "packet.md"])
+        self.assertEqual(sent[:4], ["--quality", "pro", "--packet", "packet.md"])
 
     def test_last_alias_uses_thread_flag(self) -> None:
-        args = MODULE.parse_args(["send", "xhigh", "p.md", "--to", "last"])
+        args = MODULE.parse_args(["send", "pro", "p.md", "--to", "last"])
         argv = MODULE.build_engine_argv("send", args)
         self.assertEqual(argv[argv.index("--thread") + 1], "last")
         self.assertNotIn("--conversation-url", argv)
@@ -102,7 +102,7 @@ class ConsultCliTest(unittest.TestCase):
             [
                 "send",
                 "--quality",
-                "xhigh",
+                "pro",
                 "p.md",
                 "--to",
                 "https://chatgpt.com/g/g-p-test-work/c/6a95625e-1f78-83e8-aa90-a49f982e36ef",

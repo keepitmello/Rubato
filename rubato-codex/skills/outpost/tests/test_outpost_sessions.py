@@ -21,7 +21,7 @@ class ConsultSessionsTest(unittest.TestCase):
             store = MODULE.SessionStore(Path(temp) / "sessions.json")
             first = store.create_thread(
                 topic="캐시 깨기",
-                quality="xhigh",
+                quality="pro",
                 project_name="Work",
                 outpost_id="turn-1",
                 pid=os.getpid(),
@@ -63,8 +63,8 @@ class ConsultSessionsTest(unittest.TestCase):
     def test_topic_lookup_is_ambiguous_when_two_match(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             store = MODULE.SessionStore(Path(temp) / "sessions.json")
-            store.create_thread(topic="리뷰 A", quality="xhigh", project_name="Work", outpost_id="a")
-            store.create_thread(topic="리뷰 B", quality="xhigh", project_name="Work", outpost_id="b")
+            store.create_thread(topic="리뷰 A", quality="pro", project_name="Work", outpost_id="a")
+            store.create_thread(topic="리뷰 B", quality="pro", project_name="Work", outpost_id="b")
             with self.assertRaises(MODULE.AmbiguousThreadError):
                 store.resolve("리뷰")
             with self.assertRaises(MODULE.UnknownThreadError):
@@ -75,7 +75,7 @@ class ConsultSessionsTest(unittest.TestCase):
             store = MODULE.SessionStore(Path(temp) / "sessions.json")
             thread = store.create_thread(
                 topic="후속",
-                quality="xhigh",
+                quality="pro",
                 project_name="Work",
                 outpost_id="turn-1",
             )
@@ -95,7 +95,7 @@ class ConsultSessionsTest(unittest.TestCase):
             store = MODULE.SessionStore(Path(temp) / "sessions.json")
             thread = store.create_thread(
                 topic="죽은 프로세스",
-                quality="xhigh",
+                quality="pro",
                 project_name="Work",
                 outpost_id="turn-1",
                 pid=99999999,
@@ -109,7 +109,7 @@ class ConsultSessionsTest(unittest.TestCase):
             store = MODULE.SessionStore(Path(temp) / "sessions.json")
             thread = store.create_thread(
                 topic="락",
-                quality="xhigh",
+                quality="pro",
                 project_name="Work",
                 outpost_id="turn-1",
             )
@@ -157,7 +157,7 @@ class ConsultSessionsTest(unittest.TestCase):
             store = MODULE.SessionStore(Path(temp) / "sessions.json")
             thread = store.create_thread(
                 topic="이어가기",
-                quality="xhigh",
+                quality="pro",
                 project_name="Work",
                 outpost_id="turn-1",
             )
@@ -217,7 +217,7 @@ class ConsultSessionsTest(unittest.TestCase):
             store = MODULE.SessionStore(Path(temp) / "sessions.json")
             store.create_thread(
                 topic="새 스레드",
-                quality="xhigh",
+                quality="pro",
                 project_name="Work",
                 outpost_id="turn-1",
             )
