@@ -23,7 +23,9 @@ Codex 실행본은 `$CODEX_HOME/plugins/cache/.../rubato-codex/.../skills`에 �
 Codex 설정에서만 비활성화하므로 Rubato가 읽는 원본에는 영향을 주지 않습니다.
 Rubato의 스킬 설치·번들 스크립트는 Codex의 역할/설정/플러그인을 관리하지 않습니다.
 
-POSIX shell(`sh`), Node.js 24 이상과 플러그인을 지원하는 Codex가 필요합니다.
+POSIX shell(`sh`), Node.js 24 이상, npm, 가상환경을 만들 수 있는 Python 3와
+플러그인을 지원하는 Codex가 필요합니다. 필수 실행기가 없으면 변경 전에 필요한
+항목을 알려주고 중단하며, 설치 완료로 표시하지 않습니다.
 현재 검증 환경은 macOS와 Codex CLI 0.153.4입니다. Windows 네이티브 설치는
 아직 검증하지 않았습니다. 앱의 내장 CLI와 PATH의 CLI 버전이 다를 수 있어요.
 설치기는 호환 바이너리를 찾고, 필요하면 `--codex /path/to/codex`로 지정합니다.
@@ -35,15 +37,16 @@ Rubato 저장소 루트에서 실행합니다.
 ./rubato-codex/install.sh install
 ```
 
-기본은 Codex native 모델만 사용합니다. OpenCodex에 이미 로그인·설정된 provider가
-있으면 첫 대화형 설치에서 사용할 경로를 고르거나 명시할 수 있습니다.
+기본은 Codex native 모델만 사용합니다. 외부 provider를 고르면 설치기는
+OpenCodex 2.43을 Codex 전용 managed prefix에 준비하거나 같은 버전의 기존 실행기를
+재사용하고, 알려진 provider를 등록합니다. 로그인과 실제 호출 검증은 별도입니다.
 
 ```sh
 ./rubato-codex/install.sh plan --providers none
 ./rubato-codex/install.sh install --providers anthropic,xai
 ```
 
-`--providers`는 OpenCodex 설정에서 발견된 provider ID만 받습니다. 선택 결과는
+`--providers`는 OpenCodex의 지원 registry 또는 현재 설정에서 발견된 provider ID만 받습니다. 선택 결과는
 `$CODEX_HOME/rubato-codex/providers.json`에 기록되며, `CODEX_HOME`이 없으면
 `~/.codex/rubato-codex/providers.json`입니다. 업데이트 때 옵션을 생략하면 이전
 선택을 유지하고, `--providers none`은 native-only로 되돌립니다.
@@ -51,12 +54,17 @@ Rubato 저장소 루트에서 실행합니다.
 이 파일은 model-guide가 참고하는 **routing 정책**입니다. shared proxy를 강제로
 통과시키는 접근통제나 provider 로그인 설정이 아닙니다. 설치기는 OpenCodex의
 credential을 읽어 복사하지 않으며, 외부 provider 로그인은 별도로 마쳐야 합니다.
+설치 결과에 로그인과 `ocx start` 후속 명령이 나옵니다. 이 설치기는 로그인이나
+프록시 시작까지 자동 완료했다고 보고하지 않으며, 기존 프록시를 재시작하지 않습니다.
 카탈로그 등록과 선택은 실제 모델 실행 증거도 아닙니다. 현재 Codex agent schema가
 그 provider 모델을 노출하지 않을 수 있으므로, 지원되는 실행 표면에서 실제 런타임이
 보고한 모델을 확인해야 합니다.
 
-OpenCodex 2.43의 Codex subagent roster는 별도 설정이며 최대 다섯 모델입니다.
-설치기가 provider routing 정책을 기록하는 것과 이 roster를 바꾸는 것은 다른 작업입니다.
+OpenCodex 2.43의 Codex subagent roster는 최대 다섯 모델입니다. 선택 provider의
+model catalog가 보이면 설치기가 Sol과 선택 가능한 Fable·Opus·Grok·Flash,
+Terra 후보를 최대 다섯 slot에 설정합니다. 기존 roster가 있는 업데이트는 보존하고,
+catalog가 비었으면 임의 ID를 쓰지 않고 `pending-catalog`로 남깁니다.
+이 catalog는 등록 정보이며, 실제 인증 성공을 증명하지는 않습니다.
 
 ```sh
 ocx agent subagents status
@@ -64,7 +72,7 @@ ocx agent subagents set gpt-5.6-sol,cursor/claude-fable-5-1,cursor/claude-opus-5
 ocx agent subagents clear
 ```
 
-위 `set` 목록은 이 머신에서 적용된 예시이며 `$OPENCODEX_HOME/config.json`의
+위 `set` 목록은 수동 확인·복구 예시이며 `$OPENCODEX_HOME/config.json`의
 `subagentModels`를 갱신합니다(`OPENCODEX_HOME` 기본값은 `~/.opencodex`). Astra를
 승인받아 쓸 때는 다섯 slot 중 하나와 교체하며 lead 모델은 바뀌지 않습니다. 실행 전
 `status`와 현재 Codex spawn schema를 다시 확인하세요.
@@ -80,6 +88,32 @@ OpenCodex의 `renewableOAuth` local-import와 호환되지 않습니다. 지원�
 번들에 들어 있으므로 사용자 설치에 `npm install`이나 빌드가 필요하지 않습니다.
 실행기는 PATH와 일반 설치 경로에서 호환 Node를 찾습니다. 필요하면
 `RUBATO_CODEX_NODE=/path/to/node`로 지정할 수 있습니다.
+
+스킬 파일 설치와 외부 도구의 **사용 준비 완료**는 구분합니다. 설치·업데이트는
+번들된 Outpost 실행기와 public `agent-browser`/`chrome-devtools`, `insane-search`용
+격리 Python 환경을 `$CODEX_HOME/rubato-codex` 아래에 준비합니다. 명령도 같은
+디렉터리의 `bin/`에만 노출해 Rubato가 관리하는 `$HOME/.local/bin/outpost`와
+경쟁하지 않습니다. 명시적으로 `OUTPOST_BIN_DIR` 또는 `RUBATO_CODEX_BIN_DIR`를
+쓸 때도 기존 파일을 덮어쓰지 않습니다. 제거할 때는 설치 기록의 source/marker와
+여전히 같은 link·managed prefix만 정리할 수 있도록 기록합니다.
+
+macOS에서 Aside CLI가 없고 Homebrew가 있으면 [공식 `aside` cask](https://formulae.brew.sh/cask/aside)로 앱까지 설치할
+수 있습니다. 앱 최초 실행·계정 로그인, 브라우저 profile, macOS Accessibility/Screen Recording 권한,
+원격 호스트·SSH 설정, private image proxy/유료 credential은 자동으로 만들지 않습니다.
+`insane-search`의 핵심 Python 패키지는 version-pinned managed venv에 설치하지만,
+선택적 main-content/stealth 패키지와 Playwright/Patchright 브라우저 다운로드는
+자동 실행하지 않습니다. 기본 경로는 없는 도구를 만나면 기능별로 degrade하며, installer의 readiness 결과가 `ready`,
+`missing`, `manual`, `unavailable` 경계를 보여줍니다. 전체 분류의 정본은
+[`bundle-dependencies.json`](bundle-dependencies.json)입니다.
+
+| 기능 | 설치기가 준비하는 것 | 여전히 필요한 것 |
+| --- | --- | --- |
+| Outpost | Codex 전용 bundled launcher | Aside 최초 실행·로그인과 account skill 확인 |
+| Browser CLI | pinned `agent-browser`, `chrome-devtools-mcp`와 `--version` smoke | Cloak shared-process wrapper/profile은 배포 source가 없어 수동 |
+| Insane Search | pinned core packages의 격리 venv와 launcher | 선택적 extraction/stealth packages와 browser download |
+| Aside | macOS+Homebrew에서 공식 cask | 앱 최초 실행, 로그인, 다른 OS 설치 |
+| Computer Use | backend 존재 여부 보고 | macOS backend 설치와 OS 권한 |
+| Imagen/remote host | readiness 보고 | private proxy·유료 credential, `codex-peer`·SSH trust |
 
 기존 수동 taskforce 설치에서 옮기는 경우에는 먼저 계획을 확인합니다.
 
@@ -117,6 +151,11 @@ OpenCodex의 `renewableOAuth` local-import와 호환되지 않습니다. 지원�
 설치 후 새 루트 태스크에서 시작하세요. 이미 열린 태스크와 그 자식은 이전
 지침·도구 스키마를 유지할 수 있습니다. 플러그인만 설치하면 스킬과 MCP는
 제공되지만, 설치기의 전역 리드 지침과 네이티브 역할 등록까지 적용되지는 않습니다.
+저장소의 `instructions/base.md`는 설치 입력이고, 실제 루트는 설치된
+`model_instructions_file`을 다음 새 세션에서 읽습니다. 오너·검토자·헬퍼는 각각
+설치된 native role의 `developer_instructions`를 읽으므로 서로 같은 prompt가 아닙니다.
+이는 Codex의 runtime·tool schema나 변경 불가능한 시스템 prompt 전체를 교체한다는
+뜻이 아닙니다.
 
 ## 사용
 
@@ -160,8 +199,10 @@ Terra/Luna 워커를 씁니다.
 플러그인 UI만 새로고침하면 이 패키지의 외부 역할 파일까지 갱신되지는 않습니다.
 업데이트는 자동 실행되지 않으며 기존 작업보드 데이터는 유지합니다.
 
-전역 `AGENTS.md`는 표시된 관리 블록만 추가합니다. 기존 시스템/base 지침,
-루트 모델, 권한, hooks를 바꾸지 않습니다. 역할은 `$CODEX_HOME/agents`에,
+전역 `AGENTS.md`는 표시된 routing 블록만 추가하고, `model_instructions_file`은
+백업·충돌 검사를 거쳐 Rubato base 실행본으로 교체합니다. 교체 대상은 설정 가능한
+기본 지침이며, Codex가 별도로 제공하는 도구·권한·환경 지침과 루트 모델·hooks는
+유지합니다. 역할은 `$CODEX_HOME/agents`에,
 설치 기록과 백업은 `$CODEX_HOME/rubato-codex`에 둡니다.
 `CODEX_HOME`이 없으면 `~/.codex`를 사용합니다.
 
@@ -171,7 +212,13 @@ Terra/Luna 워커를 씁니다.
 ```
 
 제거해도 공유 보드의 SQLite 데이터와 백업, 마켓플레이스 등록은 남습니다.
+OpenCodex의 private 실행기와 provider·roster·인증 설정도 보존합니다. 다른 클라이언트나
+실행 중인 프록시가 사용할 수 있기 때문입니다. 제거는 Rubato Codex의 관리 설정을
+되돌리는 작업이며, 외부 앱과 계정까지 설치 이전 상태로 초기화하는 작업은 아닙니다.
 설치 후 사용자가 수정한 역할 파일은 무조건 덮어쓰거나 지우지 않습니다.
+최초 설치가 중간에 실패하면 이미 설치한 의존성이 남을 수 있습니다. 같은 설치
+명령으로 재시도할 수 있지만, 설치 기록이 저장되기 전 실패에 대한 자동 rollback이나
+즉시 uninstall 복구는 아직 보장하지 않습니다.
 
 ## 개발·검증
 

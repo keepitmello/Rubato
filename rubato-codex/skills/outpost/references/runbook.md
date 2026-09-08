@@ -1,7 +1,7 @@
 # Aside Outpost Runbook
 
 Operator and engine contract. The main session reads `SKILL.md` and calls
-`outpost` on PATH. This file is the configured project path, the same project page
+`${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost`. This file is the configured project path, the same project page
 lifecycle, and recovery. There is no automatic alternate sender.
 
 ## Preconditions
@@ -39,8 +39,8 @@ not a recoverable default.
 Probe the live ChatGPT project page without sending a packet:
 
 ```bash
-outpost doctor
-outpost doctor --json
+"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost" doctor
+"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost" doctor --json
 ```
 
 It opens the configured project, checks the composer label, Chat surface,
@@ -53,27 +53,27 @@ Never fills the composer and never clicks send.
 
 ## Launch the fast path
 
-Launch `outpost` on PATH as a background process. It drives the Aside REPL
+Launch `${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost` as a background process. It drives the Aside REPL
 engine and fills the output paths from the packet directory. `outpost list`
 shows `working` while that process is alive. When the process exits, an idle
 parent session is woken:
 
 ```bash
-outpost send --quality <xhigh-or-pro> .outpost/<run>/packet.md
+"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost" send --quality <xhigh-or-pro> .outpost/<run>/packet.md
 ```
 
 List stored threads, including which are running and which have finished:
 
 ```bash
-outpost list
-outpost show <thread-id>
+"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost" list
+"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost" show <thread-id>
 ```
 
 Continue a saved thread. This opens that conversation, not the project home:
 
 ```bash
-outpost send --quality <xhigh-or-pro> .outpost/<run>/packet.md --to <thread-id>
-outpost send --quality <xhigh-or-pro> .outpost/<run>/packet.md --to last
+"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost" send --quality <xhigh-or-pro> .outpost/<run>/packet.md --to <thread-id>
+"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost" send --quality <xhigh-or-pro> .outpost/<run>/packet.md --to last
 ```
 
 The runner's in-browser guard must commit the user turn under 120 seconds and
@@ -120,7 +120,7 @@ The runner never replaces a saved `/c/` URL with the project home.
 For a code artifact, use the same command:
 
 ```bash
-outpost send --quality pro .outpost/<run>/packet.md --artifact .outpost/<run>/artifact.zip
+"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost" send --quality pro .outpost/<run>/packet.md --artifact .outpost/<run>/artifact.zip
 ```
 
 Aside waits for the ChatGPT download event, saves the zip directly, and the
@@ -203,7 +203,7 @@ If the runner exits `77` or the first REPL dies after `OUTPOST_SUBMITTED`, do
 not send again. Poll the same conversation:
 
 ```bash
-outpost recover .outpost/<run>/result.json
+"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost" recover .outpost/<run>/result.json
 ```
 
 Backend-api polling is the primary wait after the user turn persists (`/c/` in

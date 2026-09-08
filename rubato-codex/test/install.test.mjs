@@ -36,6 +36,7 @@ async function fixture() {
   await writeFile(join(pluginRoot, ".mcp.json"), JSON.stringify({
     mcpServers: { taskforce: { command: "sh", args: ["./scripts/taskforce-mcp.sh"], cwd: "." } },
   }));
+  await writeFile(join(pluginRoot, "bundle-dependencies.json"), "{}\n");
   for (const role of roles) {
     await writeFile(join(pluginRoot, "agents", `${role}.toml`), `name = "${role}"\ndescription = "${role} description"\ndeveloper_instructions = "role contract"\n`);
   }
@@ -43,7 +44,11 @@ async function fixture() {
     await mkdir(join(pluginRoot, "skills", skill), { recursive: true });
     await writeFile(join(pluginRoot, "skills", skill, "SKILL.md"), `---\nname: ${skill}\ndescription: fixture\n---\n`);
   }
+  await mkdir(join(pluginRoot, "skills", "outpost", "scripts"), { recursive: true });
+  await writeFile(join(pluginRoot, "skills", "outpost", "SKILL.md"), "---\nname: outpost\ndescription: fixture\n---\n");
+  await writeFile(join(pluginRoot, "skills", "outpost", "scripts", "outpost"), "#!/bin/sh\nexit 0\n");
   await writeFile(join(pluginRoot, "instructions", "AGENTS.md"), "Use native Rubato taskforce roles.\n");
+  await writeFile(join(pluginRoot, "instructions", "base.md"), "Rubato Codex base prompt.\n");
   await writeFile(join(pluginRoot, "taskforce", "dist", "mcp-server.mjs"), "// fixture bundle\n");
   await writeFile(join(pluginRoot, "scripts", "taskforce-mcp.sh"), "#!/bin/sh\nexit 0\n");
   await writeFile(fakeCodex, `#!/usr/bin/env node
@@ -82,7 +87,16 @@ console.error("unexpected", args); process.exit(2);
 }
 
 function options(f) {
-  return { pluginRoot: f.pluginRoot, repoRoot: f.repoRoot, codexHome: f.codexHome, codexPath: f.fakeCodex };
+  return {
+    pluginRoot: f.pluginRoot,
+    repoRoot: f.repoRoot,
+    codexHome: f.codexHome,
+    codexPath: f.fakeCodex,
+    env: { ...process.env, HOME: join(f.root, "home") },
+    bundleDependencyRunner: async () => {},
+    openCodexProviderRunner: async () => {},
+    openCodexRosterRunner: async () => {},
+  };
 }
 
 test("install is idempotent and uninstall removes only managed content", async () => {
@@ -98,6 +112,7 @@ test("install is idempotent and uninstall removes only managed content", async (
   assert.equal((config.match(/rubato-codex managed bootstrap >>>/g) || []).length, 1);
   assert.equal((agents.match(/rubato-codex managed instructions >>>/g) || []).length, 1);
   assert.match(config, /model = "user-model"/);
+  assert.match(config, /model_instructions_file = .*rubato-codex.*model-instructions\.md/);
   assert.match(config, /\[plugins\."rubato-codex@rubato"\]/);
   assert.doesNotMatch(config, /model_reasoning_effort/);
   assert.ok(config.indexOf('model = "user-model"') < config.indexOf("rubato-codex managed bootstrap"));
@@ -117,12 +132,54 @@ test("install is idempotent and uninstall removes only managed content", async (
   assert.match(configAfter, /model = "user-model"/);
   assert.match(configAfter, /\[notice\]/);
   assert.doesNotMatch(configAfter, /rubato-codex managed/);
+  await assert.rejects(readFile(join(f.codexHome, "rubato-codex", "model-instructions.md"), "utf8"), { code: "ENOENT" });
   assert.match(agentsAfter, /User instructions stay/);
   assert.match(agentsAfter, /Later user instruction/);
   assert.doesNotMatch(agentsAfter, /rubato-codex managed/);
+  await assert.rejects(lstat(join(f.root, "home", ".local", "bin", "outpost")), { code: "ENOENT" });
   for (const role of roles) {
     await assert.rejects(readFile(join(f.codexHome, "agents", `${role}.toml`), "utf8"), { code: "ENOENT" });
   }
+});
+
+test("installer replaces and later restores the exact root model instructions scalar and target", async () => {
+  const f = await fixture();
+  const target = join(f.codexHome, "rubato-codex", "model-instructions.md");
+  await mkdir(dirname(target), { recursive: true });
+  await writeFile(target, "user prompt source\n");
+  await writeFile(join(f.codexHome, "config.toml"), `model_instructions_file = ${JSON.stringify(target)} # keep exact\n\n[features]\nmulti_agent_v2 = true\n`);
+  await installPackage(options(f));
+  assert.equal(await readFile(target, "utf8"), "Rubato Codex base prompt.\n");
+  const installed = await readFile(join(f.codexHome, "config.toml"), "utf8");
+  assert.doesNotMatch(installed, /# keep exact/);
+  await uninstallPackage(options(f));
+  assert.equal(await readFile(target, "utf8"), "user prompt source\n");
+  const restored = await readFile(join(f.codexHome, "config.toml"), "utf8");
+  assert.match(restored, new RegExp(`model_instructions_file = ${JSON.stringify(target).replaceAll("\\", "\\\\")} # keep exact`));
+});
+
+test("update and uninstall refuse model instruction pointer or empty-file drift", async () => {
+  const f = await fixture();
+  await installPackage(options(f));
+  const configPath = join(f.codexHome, "config.toml");
+  const installedConfig = await readFile(configPath, "utf8");
+  await writeFile(configPath, installedConfig.replace(/model_instructions_file = .*$/m, 'model_instructions_file = "/user/changed.md"'));
+  await assert.rejects(installPackage(options(f)), /changed model_instructions_file/);
+  await assert.rejects(uninstallPackage(options(f)), /changed model_instructions_file/);
+  await writeFile(configPath, installedConfig);
+  await writeFile(join(f.codexHome, "rubato-codex", "model-instructions.md"), "");
+  await assert.rejects(installPackage(options(f)), /modified model instructions/);
+  await assert.rejects(uninstallPackage(options(f)), /modified model instructions/);
+});
+
+test("update refuses unmanaged taskforce tables without changing their bytes", async () => {
+  const f = await fixture();
+  await installPackage(options(f));
+  const configPath = join(f.codexHome, "config.toml");
+  const drifted = `${await readFile(configPath, "utf8")}\n[agents.taskforce_custom]\ndescription = "user owned"\nconfig_file = "/tmp/user.toml"\n`;
+  await writeFile(configPath, drifted);
+  await assert.rejects(installPackage(options(f)), /unmanaged taskforce config appeared/);
+  assert.equal(await readFile(configPath, "utf8"), drifted);
 });
 
 test("dry-run plans but does not write", async () => {
@@ -147,13 +204,22 @@ test("installer records provider subset and preserves it on an update without --
     },
   }));
 
-  const first = await installPackage({ ...options(f), opencodexHome, providers: "xai,cursor" });
+  const ocxEnvs = [];
+  const first = await installPackage({
+    ...options(f),
+    opencodexHome,
+    providers: "xai,cursor",
+    openCodexProviderRunner: async (_command, _provider, env) => ocxEnvs.push(env),
+    openCodexRosterRunner: async (_command, _models, env) => ocxEnvs.push(env),
+  });
   assert.deepEqual(first.providers, ["cursor", "xai"]);
   assert.equal(first.providerSelection, "explicit");
   let policy = JSON.parse(await readFile(join(f.codexHome, "rubato-codex", "providers.json"), "utf8"));
   assert.deepEqual(policy.selectedProviders, ["cursor", "xai"]);
-  assert.deepEqual(policy.availableProviders.map((provider) => provider.id), ["anthropic", "cursor", "xai"]);
+  assert.deepEqual(policy.availableProviders.map((provider) => provider.id), ["anthropic", "cursor", "kiro", "xai"]);
   assert.deepEqual(policy.availableProviders.find((provider) => provider.id === "cursor").models, ["cursor/gpt-5.6-sol"]);
+  assert.ok(ocxEnvs.length > 0);
+  assert.ok(ocxEnvs.every((env) => env.CODEX_HOME === f.codexHome && env.OPENCODEX_HOME === opencodexHome));
 
   await writeFile(join(opencodexHome, "config.json"), JSON.stringify({ providers: { openai: {} } }));
   const update = await installPackage({ ...options(f), opencodexHome });
@@ -161,7 +227,7 @@ test("installer records provider subset and preserves it on an update without --
   assert.equal(update.providerSelection, "preserved");
   policy = JSON.parse(await readFile(join(f.codexHome, "rubato-codex", "providers.json"), "utf8"));
   assert.deepEqual(policy.selectedProviders, ["cursor", "xai"]);
-  assert.deepEqual(policy.availableProviders, []);
+  assert.deepEqual(policy.availableProviders.map((provider) => provider.id), ["anthropic", "cursor", "kiro", "xai"]);
 
   const nativeOnly = await installPackage({ ...options(f), opencodexHome, providers: "none" });
   assert.deepEqual(nativeOnly.providers, ["native-codex-only"]);
@@ -169,12 +235,12 @@ test("installer records provider subset and preserves it on an update without --
   assert.deepEqual(policy.selectedProviders, []);
 });
 
-test("explicit routed provider selection fails safely when OpenCodex is absent", async () => {
+test("fresh provider plan bootstraps OpenCodex without writing or running setup", async () => {
   const f = await fixture();
-  await assert.rejects(
-    installPackage({ ...options(f), opencodexHome: join(f.root, "missing-opencodex"), providers: "xai" }),
-    /OpenCodex config is missing.*xai/,
-  );
+  const plan = await installPackage({ ...options(f), dryRun: true, opencodexHome: join(f.root, "missing-opencodex"), providers: "xai", env: { PATH: "", HOME: join(f.root, "home") } });
+  assert.equal(plan.openCodex.action, "install-private");
+  assert.deepEqual(plan.openCodex.providerSetup.register, ["xai"]);
+  assert.equal(plan.openCodex.providerSetup.status, "authentication-pending");
   await assert.rejects(readFile(join(f.codexHome, "config.toml"), "utf8"), { code: "ENOENT" });
 });
 

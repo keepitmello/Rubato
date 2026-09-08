@@ -5,8 +5,7 @@ description: "Use when quality depends on deep research, synthesis, architecture
 
 # Outpost
 
-The local session owns the question, the packet, and verification. `outpost` on
-PATH owns the ChatGPT project send. Do not assemble engine flags, and do not
+The local session owns the question, the packet, and verification. `${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost` owns the ChatGPT project send. Do not assemble engine flags, and do not
 hand the packet to another browser or agent.
 
 ## When
@@ -42,11 +41,11 @@ Complex packets: `references/context-checklist.md`.
 ## Command
 
 ```bash
-outpost list
-outpost doctor
-outpost send --quality xhigh .outpost/<run>/packet.md
-outpost send --quality xhigh .outpost/<run>/packet.md --to <thread-id>
-outpost recover .outpost/<run>/result.json
+"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost" list
+"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost" doctor
+"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost" send --quality xhigh .outpost/<run>/packet.md
+"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost" send --quality xhigh .outpost/<run>/packet.md --to <thread-id>
+"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost" recover .outpost/<run>/result.json
 ```
 
 `--to` accepts a thread id, `last`, a `/c/` conversation URL, or `result.json`.
