@@ -1,5 +1,7 @@
 # Stock Pi codemode 이관 경계
 
+> HISTORICAL EVIDENCE — 2026-09-08: 이 문서는 작성 당시 기능별 구현/검증 기록입니다. 현재 상태·남은 문제·다음 순서의 정본은 lab의 [pi-migration-ssot.md](../../../../case-studies/runtime-migration/pi-migration-ssot.md)입니다. 아래 완료/계획 표현은 그 시점과 범위에 한정하며 현재 전체 통과를 뜻하지 않습니다.
+
 결론: codemode는 Pi package 내부 patch가 아니라 독립 runtime feature다. 선택된 runtime의
 `rubato-features/codemode/`에 source와 worker/interpreter asset 99개를 함께 stage한다.
 이 위치에서 `typebox@1.3.18`과 `@babel/parser@8.0.4`를 runtime root dependency로

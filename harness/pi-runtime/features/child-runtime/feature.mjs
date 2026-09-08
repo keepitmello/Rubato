@@ -14,6 +14,18 @@ export const childRuntimeFeature = Object.freeze({
       path: "rubato-features/child-runtime/stock-rpc-runtime.mjs",
       sourcePath: join(featureDir, "stock-rpc-runtime.mjs"),
     },
+    {
+      target: "runtime",
+      version: "0.85.1",
+      path: "rubato-features/child-runtime/provider-extension.mjs",
+      sourcePath: join(featureDir, "provider-extension.mjs"),
+    },
+    {
+      target: "runtime",
+      version: "0.85.1",
+      path: "rubato-features/child-runtime/guard-extension.mjs",
+      sourcePath: join(featureDir, "guard-extension.mjs"),
+    },
   ],
 })
 

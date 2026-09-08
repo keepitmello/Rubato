@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
+import { execFile } from "node:child_process";
 import { chmod, cp, lstat, mkdir, readdir, readFile, readlink, realpath, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { resolvePiRuntime } from "./resolve-runtime.mjs";
 import { validatePiInstall } from "./validate-install.mjs";
 import { loadPiFeatures } from "./feature-catalog.mjs";
@@ -9,6 +11,17 @@ import cmdShim from "cmd-shim";
 
 const RECEIPT = "rubato-pi-stage.json";
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+
+async function copyDependencyTree(source, output) {
+  if (process.platform === "darwin") {
+    // macOS cp uses copy-on-write clones where supported and documented
+    // copyfile fallback otherwise. -P preserves the validated symlink text;
+    // -p preserves modes under restrictive umasks. This is not a hard link.
+    await promisify(execFile)("/bin/cp", ["-cR", "-P", "-p", source, output]);
+  } else {
+    await cp(source, output, { recursive: true, verbatimSymlinks: true, errorOnExist: true, force: false });
+  }
+}
 
 function within(parent, child) {
   const path = relative(parent, child);
@@ -159,7 +172,7 @@ export async function stagePiRuntime({ sourceRoot, outputRoot, features = [] } =
   await writeReceipt();
   try {
     await Promise.all([
-      cp(join(source.root, "node_modules"), join(canonicalOutput, "node_modules"), { recursive: true, verbatimSymlinks: true, errorOnExist: true, force: false }),
+      copyDependencyTree(join(source.root, "node_modules"), join(canonicalOutput, "node_modules")),
       writeFile(join(canonicalOutput, "package.json"), packageJson),
       writeFile(join(canonicalOutput, "package-lock.json"), lock),
     ]);

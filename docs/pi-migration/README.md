@@ -1,16 +1,54 @@
 # Pi 어댑터 이관 — 현재 실행 상태
 
-상태: 최신 Rubato 기반에서 stock Pi 기능 모듈과 실제 Rubato bundle을 조립하고 있다.
-전체 기능 이관·기본 엔진 전환은 아직 아니다. 아래 세 번째 단위 기록이 현재 상태이며,
-두 번째 단위의 62/62 및 그 당시 미연결 목록과 구별한다.
+> HISTORICAL EVIDENCE — 2026-09-08: 이 문서는 작성 당시 기능별 구현/검증 기록입니다. 현재 상태·남은 문제·다음 순서의 정본은 lab의 [pi-migration-ssot.md](../../../../case-studies/runtime-migration/pi-migration-ssot.md)입니다. 아래 완료/계획 표현은 그 시점과 범위에 한정하며 현재 전체 통과를 뜻하지 않습니다.
 
-중간 저장: 제품 `3011aafa4` → `c0f6b6f99`, lab 계획 `1867787` → `39da024` (2026-09-08).
+상태: 최신 Rubato 기반에서 stock Pi 기능 모듈과 실제 Rubato bundle을 조립하고 있다.
+전체 기능 이관·기본 엔진 전환은 아직 아니다. 네 번째 단위의 진행 기록과,
+아래 커밋된 세 번째 단위 검증 결과를 구별한다.
+
+중간 저장: 제품 `3011aafa4` → `c0f6b6f99` → `ead7cb763`,
+lab 계획 `1867787` → `39da024` → `ad0f551` (2026-09-08).
 사용자 변경 6개는 커밋에서 제외했다.
 두 번째 구현 단위인 tool 실행/검색, 입력/abort identity, `/fast` 지속성, 독립 codemode의 JS 경로를
 격리 stock SDK에서 검증했다. 당시 전체 runtime suite는 **62/62 pass, fail/skip 0**이었다.
 각 구현 담당은 그대로 유지하며, 공통 패키징·조합 검증은 리드가 소유한다.
 
-## 세 번째 단위 — 2026-09-08 현재
+네 번째 단위를 진행 중이다. media/web 도구의 현재 동작을 보존하기 위해 standalone direct
+dependency를 15개로 늘렸으며 Pi 6종은 그대로 0.85.1이다. jsdom 30.0.1 요구 조건에 맞춰
+후보의 Node 조건은 `^24.15.0 || >=26.0.0`으로 올렸다. npm audit는 0이며 새 단위 전체 검증은
+아직 아니다. 아래 세 번째 단위의 98개 결과/lock hash는 `ead7cb763` 체크포인트에 한정한다.
+
+## 네 번째 단위 — CLI 조립과 남은 기능군
+
+- **실제 후보 CLI:** stock main이 만든 canonical ModelRuntime/SettingsManager를 그대로
+  factory callback에 넘기는 4-file 접점을 추가했다. SDK 전용 조립에 머물지 않고 실제
+  RPC CLI에서 현재 Rubato 도구·7 provider 등록, memory 작성/Git commit/RPC 상태,
+  new_session 단일 start, reload 후 도구 보존, JSON stdout을 검증했다.
+- **실사용 경로 격리:** 후보는 절대 경로 `RUBATO_CANDIDATE_AGENT_DIR` 없이는 시작하지
+  않는다. inherited package/managed-install/profile/session 경로를 후보로 고정하며,
+  오염된 환경을 넣어도 기존 sentinel 디렉터리가 바뀌지 않는 실제 child 검사가 통과했다.
+  아직 일반 launcher/default 설치로 노출하지 않는다.
+- **불완전 설치 차단:** 모든 선언된 patch/addition/bin/package/lock hash를 stock import 전에
+  대조하고 필수 factory 접점 4개를 요구한다. staged main을 순정 원본으로 되돌리거나
+  receipt에서 hook record를 빼면 plain Pi로 진행하지 않고 종료한다. 두 독립 리뷰 finding을
+  수정했고 이 CLI/factory 범위 재리뷰는 READY다. signed supply-chain 검증은 아니다.
+- **추가 조립:** webfetch/look_at, loop/apply_patch/tool-pair guard, Cursor native exec를
+  catalog/bootstrap에 연결했다. guard는 하나의 묶음이 아닌 기존 실행 순서의 개별 factory다.
+  실제 CLI + SDK direct/search 조합은 3/3 통과했다. 이 결과는 후속 imagegen/권한/컨텍스트
+  작업까지 포함한 전체 네 번째 단위 green은 아니다.
+- **진행 중:** client imagegen, hooks/permissions/bash-timeout, notes-aware context-window,
+  실제 provider-bearing child profile, Cursor guarded abort/replay 검증을 같은 담당자가 맡는다.
+  nested AGENTS/rules/prompt-preset/todo는 별도 담당 1명이 독립 namespace에서 진행한다.
+
+현재 standalone lock SHA-256은
+`5201145de576da141b9ea8d3a388aa91c7b8e3de801fddf4d35780e38e8ae7d3`이다.
+직접 의존 15개와 Pi 6종 설치 대조를 통과했고, image provider source 호환을 위해
+`openai@6.26.0`을 별도 exact dependency로 사용한다(stock Pi의 내부 SDK 버전은 바꾸지 않는다).
+원본 builtin 등록 inventory는 생성 시점의 정적 목록이므로 상태 필드가 모두 pending이다.
+실행 완료 범위는 이 문서와 각 기능 문서/actual staged test가 정본이며, 목록 전체 parity로
+자동 승격하지 않는다.
+
+## 세 번째 단위 — 2026-09-08 체크포인트
 
 - **Rubato 실제 조립:** 현재 workspace source에서 task/team/member/memory/MCP/worker/LSP
   실행물 7개를 별도 Bun builder로 만들고, stock dependency tree의 공개 exports만 연결한다.
@@ -187,7 +225,7 @@ Windows shim의 patch 우회, symlink 재배치 시 원본으로 쓰기가 새�
 
 ## 재현과 이어갈 순서
 
-Node 24.11.0 이상에서 standalone 프로젝트 안에서 실행한다. codemode의 Babel 8 요구 조건이다.
+Node 24.15 LTS 또는 26 이상에서 standalone 프로젝트 안에서 실행한다. media의 jsdom과 codemode의 Babel 8 요구 조건을 함께 따른다.
 기존 루트 Bun 설치로 대체하지 않는다.
 
 ```sh

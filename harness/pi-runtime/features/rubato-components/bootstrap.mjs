@@ -3,13 +3,18 @@ import { readFile, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SettingsManager, createAgentSession } from "../../node_modules/@earendil-works/pi-coding-agent/dist/index.js";
-import { createStockRpcSpawnRuntime } from "../child-runtime/stock-rpc-runtime.mjs";
+import { createStockRpcSpawnRuntime, resolveStockChildProviderProfile } from "../child-runtime/stock-rpc-runtime.mjs";
 import { createMcpProducerRegistry } from "../mcp-producers/index.mjs";
 import { createMcpExtension } from "../mcp/index.mjs";
 import { ToolSearchService, createToolSearchExtension } from "../tool-search/index.mjs";
 import { createServiceTierFeature } from "../service-tier/extension.mjs";
 import terminal from "../terminal/src/index.ts";
+import mediaTools from "../media-tools/src/index.mjs";
+import { loopGuardExtension, registerApplyPatchExtension, toolPairGuardExtension } from "../tool-guards/index.mjs";
 import { createProvidersExtension } from "../../node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/rubato-features/providers/extension.mjs";
+import { createProviderExecution } from "../../node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/rubato-features/provider-execution/extension.mjs";
+import { createContextNotesExtension } from "../../node_modules/@earendil-works/pi-coding-agent/dist/rubato-features/context-notes/extension.mjs";
+import { createPromptRulesExtensionFactories } from "../prompt-rules/index.mjs";
 import codemode from "../codemode/src/index.ts";
 import { createRemovedToolHintRegistrar } from "../codemode/src/extension/stock-host-adapter.ts";
 import { createRubatoComponentExtension } from "./extensions/rubato.js";
@@ -40,19 +45,28 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
   const servers = createMcpProducerRegistry({ registrationCwd: cwd });
   const toolSearch = new ToolSearchService();
   const serviceTier = createServiceTierFeature({ agentDir, settingsManagerFactory: () => settings });
+  const providerExecution = createProviderExecution({ cursorProviderFactory: providerOptions.routeFactories?.cursor });
   const rpcSpawnRuntime = createStockRpcSpawnRuntime({
     rpcEntry: fileURLToPath(new URL("../../node_modules/@earendil-works/pi-coding-agent/dist/rpc-entry.js", import.meta.url)),
   });
+  const stockChildProfile = resolveStockChildProviderProfile({ root: fileURLToPath(new URL("../..", import.meta.url)) });
   const componentFactory = servers.wrapFactory(createRubatoComponentExtension({ createTaskOptions: ({ createTaskRunnerFactories }) => ({
-    runnerFactories: createTaskRunnerFactories({ rpcSpawnRuntime, stockModelRuntime: modelRuntime,
+    runnerFactories: createTaskRunnerFactories({ rpcSpawnRuntime, stockChildProfile, stockModelRuntime: modelRuntime,
       createInProcessSession: async (options) => (await createAgentSession(options)).session }),
   }) }), { sourcePath: join(here, "extensions/rubato.js"), registrationCwd: cwd });
   const extensionFactories = [
     { name: "rubato-assets", factory: async () => validateRubatoBundleAssets() },
+    { name: "rubato-loop-guard", factory: loopGuardExtension },
     { name: "providers", factory: createProvidersExtension({ ...providerOptions,
+      routeFactories: { ...providerOptions.routeFactories, cursor: providerExecution.cursorRouteFactory },
       env: { ...process.env, ...providerOptions.env, RUBATO_PI_CODING_AGENT_DIR: agentDir } }) },
+    { name: "provider-execution", factory: providerExecution.extension },
     { name: "service-tier", factory: serviceTier.extension },
+    { name: "rubato-gpt-apply-patch", factory: registerApplyPatchExtension },
+    { name: "context-notes", factory: createContextNotesExtension({ agentDir }) },
+    ...createPromptRulesExtensionFactories({ settingsManager: settings }),
     { name: "terminal", factory: (pi) => terminal(pi, { ...terminalOptions, createSettingsManager: () => settings }) },
+    { name: "media-tools", factory: (pi) => mediaTools(pi, { createSettingsManager: () => settings }) },
     { name: "codemode", factory: (pi) => codemode(pi, codemodeOptions) },
     { name: "tool-search", factory: createToolSearchExtension(toolSearch) },
     { name: "rubato-components", factory: async (pi) => {
@@ -64,6 +78,7 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
       await componentFactory(host);
     } },
     { name: "mcp", factory: createMcpExtension({ ...mcpOptions, agentDir, servers, toolSearchService: toolSearch }) },
+    { name: "rubato-tool-pair-guard", factory: toolPairGuardExtension },
     { name: "service-tier-consumers", factory: (pi) => {
       let unsubscribe;
       pi.rpc.handle("rubato.service-tier.status", () => serviceTier.getState());

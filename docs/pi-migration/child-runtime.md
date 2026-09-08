@@ -1,5 +1,7 @@
 # Child runtime binding
 
+> HISTORICAL EVIDENCE — 2026-09-08: 이 문서는 작성 당시 기능별 구현/검증 기록입니다. 현재 상태·남은 문제·다음 순서의 정본은 lab의 [pi-migration-ssot.md](../../../../case-studies/runtime-migration/pi-migration-ssot.md)입니다. 아래 완료/계획 표현은 그 시점과 범위에 한정하며 현재 전체 통과를 뜻하지 않습니다.
+
 Rubato task and team children use an explicit stock-Pi runtime descriptor. The
 descriptor is passed to `buildRpcSpawn(spec, runtime)` by the Rubato runner
 assembly; the default `senpi-task` runtime remains unchanged for legacy users.
@@ -18,6 +20,8 @@ const childRuntime = createStockRpcSpawnRuntime({ rpcEntry: runtime.patchableRpc
 createTaskComponent({
   runnerFactories: createTaskRunnerFactories({
     rpcSpawnRuntime: childRuntime,
+    // Provider-only entries; do not pass the parent Rubato/MCP/task list.
+    stockChildProfile: createStockChildFeatureProfile({ rpcExtensions: providerExtensionPaths }),
     // The factory wraps stock createAgentSession with the adapter; provide
     // stockModelRuntime when the parent owns auth/model state.
     createInProcessSession: createAgentSession,
@@ -25,6 +29,19 @@ createTaskComponent({
   }),
 })
 ```
+
+`createStockChildFeatureProfile` de-duplicates and validates the explicit
+absolute provider extension paths. `resolveStockChildProviderProfile(root)`
+selects the staged `child-runtime/provider-extension.mjs`, whose closure binds
+the seven-provider module and the shared provider-execution bridge. The staged
+`providers`, `provider-execution`, and `tool-execution` features are
+prerequisites; provider-execution is imported by that single child extension,
+not passed as a second standalone factory. `createTaskRunnerFactories` uses
+that profile for both first RPC launches and respawns; an explicit
+`rpcChildExtensions` option overrides it. In-process children continue to
+receive the parent's canonical model runtime through `stockModelRuntime` and
+keep the minimal child resource loader, so the parent task/MCP assembly is not
+re-run in the child.
 
 The adapter removes the Senpi-only `authStorage`/`modelRegistry` fields only
 after a canonical `modelRuntime` is present. If neither the factory nor the
@@ -37,16 +54,26 @@ options; the parent assembly must provide stock `modelRuntime`/model context
 explicitly before declaring model/auth parity.
 
 The staged fixture `harness/pi-runtime/features/child-runtime/fixture.ts`
-exercises the real `InProcessRunner.start` path with a local injected stream,
-isolated JSONL transcript, and `abort()`; it then starts `RpcProcessRunner`
-through `buildRpcSpawn`, verifies `PI_CODING_AGENT_SESSION_DIR`, and terminates
-the child. The Node test builds and stages the fixture from scratch, runs it
-with an isolated HOME/PI_OFFLINE environment, and removes its temporary root:
+exercises the real `InProcessRunner.start` path with a configured fixture
+provider/auth model, local injected stream, isolated JSONL transcript, and
+`abort()`. It then starts `RpcProcessRunner` through `buildRpcSpawn` with an
+explicit provider-only extension, runs one fake provider turn, checks the
+provider/auth identity and transcript, verifies `PI_CODING_AGENT_SESSION_DIR`,
+and terminates the child. The Node test builds and stages the fixture from
+scratch, runs it with an isolated HOME/PI_OFFLINE environment, and removes its
+temporary root:
 
 ```sh
 env -u NODE_OPTIONS -u NODE_COMPILE_CACHE node --test --test-timeout=30000 \
   features/child-runtime/child-e2e.test.mjs
 ```
 
-This verifies the selected stock runtime seam and lifecycle only; it does not
-establish live provider/auth parity or full task/team behavior.
+This verifies the selected stock runtime seam, provider-only child profile,
+model/auth identity, and lifecycle. It still does not establish live paid
+provider behavior or full task/team orchestration parity. Under the current
+profile, codemode, terminal, loop/tool-pair guards, media-tools, MCP,
+service-tier, tool-search, task/team, and memory extensions are intentionally
+absent. In-process children additionally use an empty extension loader, so
+Senpi builtin compaction/goal/todo extensions are absent; adding any of these
+requires a separate child-safe profile rather than forwarding the parent
+assembly.

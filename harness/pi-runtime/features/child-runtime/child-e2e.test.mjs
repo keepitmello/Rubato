@@ -9,12 +9,18 @@ import { fileURLToPath } from "node:url"
 
 import { buildRubatoComponents } from "../../build-rubato.mjs"
 import { stagePiRuntime } from "../../stage-runtime.mjs"
+import { providersFeature } from "../providers/patches.mjs"
+import { providerExecutionFeature } from "../provider-execution/patches.mjs"
+import { toolExecutionFeature } from "../tool-execution/patches.mjs"
+import { feature as contextNotesFeature } from "../context-notes/patches.mjs"
+import { feature as contextWindowFeature } from "../context-window/patches.mjs"
+import { toolGuardsFeature } from "../tool-guards/feature.mjs"
 import { childRuntimeFeature } from "./feature.mjs"
 
 const run = promisify(execFile)
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..")
 
-test("staged stock child fixture consumes the in-process and RPC runner seams", async () => {
+test("staged stock child fixture consumes the in-process and RPC runner seams", { timeout: 90_000 }, async () => {
   const scratch = await mkdtemp(join(tmpdir(), "rubato-child-e2e-test-"))
   try {
     const build = await buildRubatoComponents({
@@ -24,7 +30,8 @@ test("staged stock child fixture consumes the in-process and RPC runner seams", 
     const staged = await stagePiRuntime({
       sourceRoot,
       outputRoot: join(scratch, "stage"),
-      features: [build.feature, childRuntimeFeature],
+      features: [toolExecutionFeature, providersFeature, providerExecutionFeature, contextNotesFeature, contextWindowFeature,
+        toolGuardsFeature, childRuntimeFeature, build.feature],
     })
     const env = {
       HOME: join(scratch, "home"),
