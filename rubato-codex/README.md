@@ -11,6 +11,18 @@ Rubato의 리드·오너 운영방식을 Codex 네이티브 멀티에이전트 �
 
 ## 설치
 
+### Rubato와 Codex의 정본 구분
+
+Rubato/shared CLI 운영 스킬의 정본은 `~/.agents/skills`이며 `harness/skills`는
+그 배포용 사본입니다. Codex의 `agent-taskforce`, `dispatching`, `model-guide`는
+이 디렉터리의 `skills/`가 별도 정본이고, 보조 문서까지 Rubato에서 자동 덮어쓰지 않습니다.
+일반 공통 스킬만 manifest의 managed 목록을 통해 재사용합니다.
+
+Codex 실행본은 `$CODEX_HOME/plugins/cache/.../rubato-codex/.../skills`에 있습니다.
+`$CODEX_HOME/skills`로 공유 taskforce를 연결하는 방식이 아닙니다. 설치기는 공유 중복을
+Codex 설정에서만 비활성화하므로 Rubato가 읽는 원본에는 영향을 주지 않습니다.
+Rubato의 스킬 설치·번들 스크립트는 Codex의 역할/설정/플러그인을 관리하지 않습니다.
+
 POSIX shell(`sh`), Node.js 24 이상과 플러그인을 지원하는 Codex가 필요합니다.
 현재 검증 환경은 macOS와 Codex CLI 0.153.4입니다. Windows 네이티브 설치는
 아직 검증하지 않았습니다. 앱의 내장 CLI와 PATH의 CLI 버전이 다를 수 있어요.

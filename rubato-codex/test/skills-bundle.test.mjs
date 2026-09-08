@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFile, readdir, stat } from "node:fs/promises";
+import { readFile, readdir, stat, mkdtemp, mkdir, writeFile, copyFile, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -31,6 +32,29 @@ test("manifest-driven bundle is deterministic and current", () => {
     "--check",
   ], { encoding: "utf8" });
   assert.match(output, /25 source skills accounted for/);
+});
+
+test("rebuilding common skills cannot overwrite Codex-owned operating skills or references", async () => {
+  const fixture = await mkdtemp(path.join(os.tmpdir(), "codex-skill-ownership-"));
+  try {
+    await mkdir(path.join(fixture, "scripts"));
+    await copyFile(path.join(packageDir, "scripts/build-skills.mjs"), path.join(fixture, "scripts/build-skills.mjs"));
+    await writeFile(path.join(fixture, "skill-bundle.json"), JSON.stringify({ ...manifest, source: sourceRoot }));
+    const expected = new Map();
+    for (const name of manifest.preserved) {
+      for (const relative of ["SKILL.md", "references/01-operating-model.md"]) {
+        const file = path.join(fixture, "skills", name, relative);
+        await mkdir(path.dirname(file), { recursive: true });
+        const content = `Codex-owned ${name}/${relative}: must survive regeneration\n`;
+        await writeFile(file, content);
+        expected.set(file, content);
+      }
+    }
+    execFileSync(process.execPath, [path.join(fixture, "scripts/build-skills.mjs")], { encoding: "utf8" });
+    for (const [file, content] of expected) assert.equal(await readFile(file, "utf8"), content);
+  } finally {
+    await rm(fixture, { recursive: true, force: true });
+  }
 });
 
 test("every installed skill is a real directory with valid frontmatter", async () => {
