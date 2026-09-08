@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto";
-import { access, copyFile, cp, lstat, mkdir, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { access, copyFile, cp, lstat, mkdir, readFile, readdir, readlink, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { homedir } from "node:os";
-import { basename, delimiter, dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { discoverProviderCatalog, makeProviderPolicy, resolveProviderSelection } from "./providers.mjs";
+import { applyOpenCodexSetup, configureOpenCodexRoster, planOpenCodexSetup, registerOpenCodexProviders } from "./opencodex-setup.mjs";
+import { applyBundleDependencies, planBundleDependencies } from "./bundle-dependencies.mjs";
 
 const ROLE_NAMES = ["taskforce_owner", "taskforce_verifier", "taskforce_helper"];
 const CONFIG_START = "# >>> rubato-codex managed bootstrap >>>";
@@ -121,8 +123,7 @@ function extractAndRemoveSections(content, matches) {
 }
 
 function extractAndRemoveRoleSections(content) {
-  const wanted = new Set(ROLE_NAMES.map((name) => `agents.${name}`));
-  return extractAndRemoveSections(content, (name) => wanted.has(name));
+  return extractAndRemoveSections(content, (name) => name.startsWith("agents.taskforce_"));
 }
 
 function extractAndRemoveMcpSections(content) {
@@ -151,8 +152,8 @@ function assertSafeTomlEditing(content, path) {
   }
 }
 
-function makeConfigBlock(roleRecords, disabledSkillPaths) {
-  const lines = [CONFIG_START];
+function makeConfigBlock(roleRecords, disabledSkillPaths, modelInstructionsPath) {
+  const lines = [CONFIG_START, `model_instructions_file = ${quoteToml(modelInstructionsPath)}`, ""];
   for (const role of roleRecords) {
     lines.push(
       `[agents.${role.name}]`,
@@ -171,6 +172,27 @@ function makeConfigBlock(roleRecords, disabledSkillPaths) {
   }
   lines.push(CONFIG_END);
   return lines.join("\n");
+}
+
+function extractRootScalar(content, key) {
+  const firstTable = content.search(/^\s*\[/m);
+  const boundary = firstTable === -1 ? content.length : firstTable;
+  const preamble = content.slice(0, boundary);
+  const pattern = new RegExp(`^([ \\t]*${key}[ \\t]*=[^\\r\\n]*(?:\\r?\\n|$))`, "gm");
+  const matches = [...preamble.matchAll(pattern)];
+  if (matches.length > 1) fail(`duplicate root ${key} values`);
+  if (!matches.length) return { stripped: content, line: null };
+  const match = matches[0];
+  return { stripped: content.slice(0, match.index) + content.slice(match.index + match[0].length), line: match[1] };
+}
+
+function restoreRootScalar(content, line) {
+  if (!line) return content;
+  const firstTable = content.search(/^\s*\[/m);
+  const boundary = firstTable === -1 ? content.length : firstTable;
+  const preamble = content.slice(0, boundary).replace(/\s+$/g, "");
+  const tables = content.slice(boundary).replace(/^\n+/, "");
+  return `${preamble}${preamble ? "\n" : ""}${line.replace(/\r?\n$/, "")}\n${tables ? `\n${tables}` : ""}`;
 }
 
 function makeAgentsBlock(fragment) {
@@ -280,7 +302,9 @@ async function stageLocalMarketplace(pluginRoot, repoRoot, stageRoot) {
   );
   await cp(join(pluginRoot, ".codex-plugin"), join(next, "rubato-codex", ".codex-plugin"), { recursive: true });
   await copyFile(join(pluginRoot, ".mcp.json"), join(next, "rubato-codex", ".mcp.json"));
+  await copyFile(join(pluginRoot, "bundle-dependencies.json"), join(next, "rubato-codex", "bundle-dependencies.json"));
   await cp(join(pluginRoot, "skills"), join(next, "rubato-codex", "skills"), { recursive: true });
+  await cp(join(pluginRoot, "instructions"), join(next, "rubato-codex", "instructions"), { recursive: true });
   await mkdir(join(next, "rubato-codex", "scripts"), { recursive: true });
   await copyFile(
     join(pluginRoot, "scripts", "taskforce-mcp.sh"),
@@ -303,6 +327,48 @@ async function canonicalPath(path) {
     return await realpath(path);
   } catch {
     return resolve(path);
+  }
+}
+
+async function removeManagedBundleDependencies(cleanup = [], codexHome) {
+  for (const item of [...cleanup].reverse()) {
+    if (item.action === "remove-tree-if-marker") {
+      if (!(await exists(item.target))) continue;
+      const marker = JSON.parse(await readFile(item.marker, "utf8"));
+      if (marker.version !== 1 || !Array.isArray(marker.packages)) fail(`refusing to remove unrecognized bundle dependency tree: ${item.target}`);
+      await rm(item.target, { recursive: true });
+      continue;
+    }
+    if (item.action !== "unlink-if-target") continue;
+    let info;
+    try { info = await lstat(item.target); } catch (error) { if (error.code === "ENOENT") continue; throw error; }
+    if (!info.isSymbolicLink()) fail(`refusing to remove modified bundle dependency: ${item.target}`);
+    const current = resolve(dirname(item.target), await readlink(item.target));
+    if (current !== resolve(item.expectedSource)) fail(`refusing to remove retargeted bundle dependency: ${item.target}`);
+    await unlink(item.target);
+  }
+}
+
+async function preflightManagedBundleDependencies(cleanup = [], codexHome) {
+  const dependencyRoot = resolve(codexHome, "rubato-codex", "dependencies");
+  for (const item of cleanup) {
+    if (item.action === "remove-tree-if-marker") {
+      if (!(await exists(item.target))) continue;
+      const rel = relative(dependencyRoot, resolve(item.target));
+      if (!rel || rel.startsWith("..") || isAbsolute(rel)) fail(`refusing to remove bundle dependency outside managed root: ${item.target}`);
+      const markerRel = relative(resolve(item.target), resolve(item.marker));
+      if (markerRel.startsWith("..") || isAbsolute(markerRel)) fail(`invalid bundle dependency marker: ${item.marker}`);
+      let marker;
+      try { marker = JSON.parse(await readFile(item.marker, "utf8")); } catch { fail(`refusing to remove unmarked bundle dependency tree: ${item.target}`); }
+      if (marker.version !== 1 || !Array.isArray(marker.packages)) fail(`refusing to remove unrecognized bundle dependency tree: ${item.target}`);
+      continue;
+    }
+    if (item.action !== "unlink-if-target") continue;
+    let info;
+    try { info = await lstat(item.target); } catch (error) { if (error.code === "ENOENT") continue; throw error; }
+    if (!info.isSymbolicLink()) fail(`refusing to remove modified bundle dependency: ${item.target}`);
+    const current = resolve(dirname(item.target), await readlink(item.target));
+    if (current !== resolve(item.expectedSource)) fail(`refusing to remove retargeted bundle dependency: ${item.target}`);
   }
 }
 
@@ -331,13 +397,14 @@ async function loadPackage(pluginRoot, repoRoot) {
     roleRecords.push({ name, source, content, description: parseRoleDescription(content, name) });
   }
   const instructions = await readFile(join(pluginRoot, "instructions", "AGENTS.md"), "utf8");
+  const modelInstructions = await readFile(join(pluginRoot, "instructions", "base.md"), "utf8");
   const skillRecords = [];
   const skillEntries = await readdir(join(pluginRoot, "skills"), { withFileTypes: true });
   for (const name of skillEntries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort()) {
     const source = join(pluginRoot, "skills", name, "SKILL.md");
     skillRecords.push({ name, source, content: await readFile(source, "utf8") });
   }
-  return { manifest, marketplace, roleRecords, instructions, skillRecords };
+  return { manifest, marketplace, roleRecords, instructions, modelInstructions, skillRecords };
 }
 
 async function preflightRoleTargets(roleRecords, codexHome, previousState, legacyMigration) {
@@ -442,6 +509,11 @@ export async function installPackage(options = {}) {
   const previousState = JSON.parse((await readOptional(statePath)) || "null");
   const providerPolicyPath = join(stateDir, "providers.json");
   const providerCatalog = await discoverProviderCatalog({ opencodexHome: options.opencodexHome });
+  const openCodexEnv = {
+    ...(options.env || process.env),
+    CODEX_HOME: codexHome,
+    OPENCODEX_HOME: dirname(providerCatalog.configPath),
+  };
   const providerSelection = await resolveProviderSelection({
     requested: options.providers,
     previous: previousState?.selectedProviders,
@@ -449,13 +521,41 @@ export async function installPackage(options = {}) {
     interactive: options.interactiveProviders ?? Boolean(process.stdin.isTTY && process.stdout.isTTY),
     prompt: options.providerPrompt,
   });
-  const providerPolicy = makeProviderPolicy(providerCatalog, providerSelection.selected);
+  let providerPolicy = makeProviderPolicy(providerCatalog, providerSelection.selected);
+  const openCodexPlan = planOpenCodexSetup({
+    selectedProviders: providerSelection.selected,
+    codexHome,
+    opencodexPath: options.opencodexPath,
+    env: openCodexEnv,
+  });
+  openCodexPlan.providerSetup = providerSelection.selected.length ? {
+    status: "authentication-pending",
+    register: providerSelection.selected.filter((id) => !providerCatalog.providers.find((provider) => provider.id === id)?.configured),
+    authenticate: providerSelection.selected,
+  } : { status: "native-codex-only", register: [], authenticate: [] };
+  const cachedPluginRoot = join(stagedMarketplace, "rubato-codex");
+  const planningPluginRoot = !options.marketplaceSource && await exists(cachedPluginRoot) ? cachedPluginRoot : pluginRoot;
+  const bundleDependencyPlan = await planBundleDependencies({ pluginRoot: planningPluginRoot, codexHome, env: options.env || process.env });
+  const dependencyConflicts = bundleDependencyPlan.steps.filter((step) => step.action === "blocked" || step.action === "conflict");
+  if (dependencyConflicts.length && !dryRun) fail(`bundle dependency conflict: ${dependencyConflicts.map((step) => `${step.id}: ${step.reason}`).join("; ")}`);
   const roles = await preflightRoleTargets(packageData.roleRecords, codexHome, previousState, options.legacyMigration);
 
   const configPath = join(codexHome, "config.toml");
   const agentsPath = join(codexHome, "AGENTS.md");
+  const modelInstructionsPath = join(stateDir, "model-instructions.md");
+  if (previousState?.modelInstructions?.installedSha) {
+    const current = await readOptional(previousState.modelInstructions.target);
+    if (await exists(previousState.modelInstructions.target) && sha256(current) !== previousState.modelInstructions.installedSha) {
+      fail(`refusing to overwrite modified model instructions: ${previousState.modelInstructions.target}`);
+    }
+  }
   const configOriginal = await readOptional(configPath);
   assertSafeTomlEditing(configOriginal, configPath);
+  if (previousState?.modelInstructions) {
+    const currentScalar = extractRootScalar(configOriginal, "model_instructions_file").line?.trim();
+    const expectedScalar = `model_instructions_file = ${quoteToml(previousState.modelInstructions.target)}`;
+    if (currentScalar !== expectedScalar) fail(`refusing to replace changed model_instructions_file in ${configPath}`);
+  }
   const configWithoutManaged = removeManagedBlock(configOriginal, CONFIG_START, CONFIG_END);
   const { stripped: configWithoutRoles, extracted: legacySections } = extractAndRemoveRoleSections(configWithoutManaged);
   const { stripped: configWithoutLegacyMcp, extracted: legacyMcpSections } = extractAndRemoveMcpSections(configWithoutRoles);
@@ -478,6 +578,9 @@ export async function installPackage(options = {}) {
       fail(`legacy taskforce MCP uses custom TASKFORCE_STATE_DIR=${previousStateDir}; preserve that board explicitly before migrating (plugin default is ${defaultStateDir})`);
     }
   }
+  if (previousState && (legacySections.length || legacyMcpSections.length)) {
+    fail(`unmanaged taskforce config appeared outside the Rubato managed block in ${configPath}; refusing update`);
+  }
   const disabledSkillPaths = await preflightLegacySkills(
     packageData.skillRecords,
     codexHome,
@@ -487,12 +590,14 @@ export async function installPackage(options = {}) {
     options.disableSkillPaths,
   );
   const roleConfigRecords = roles.map((role) => ({ name: role.name, description: role.description, target: role.target }));
-  const configBase = previousState ? configWithoutManaged : configWithoutLegacyMcp;
+  const unmanagedConfigBase = previousState ? configWithoutManaged : configWithoutLegacyMcp;
+  const modelScalar = extractRootScalar(unmanagedConfigBase, "model_instructions_file");
+  const configBase = modelScalar.stripped;
   const configNext = replaceManagedBlock(
     configBase,
     CONFIG_START,
     CONFIG_END,
-    makeConfigBlock(roleConfigRecords, disabledSkillPaths),
+    makeConfigBlock(roleConfigRecords, disabledSkillPaths, modelInstructionsPath),
     { prepend: true },
   );
   const agentsOriginal = await readOptional(agentsPath);
@@ -531,6 +636,9 @@ export async function installPackage(options = {}) {
     providers: providerSelection.selected.length ? providerSelection.selected : ["native-codex-only"],
     providerSelection: providerSelection.source,
     providerPolicy: providerPolicyPath,
+    modelInstructions: modelInstructionsPath,
+    openCodex: openCodexPlan,
+    bundleDependencies: bundleDependencyPlan,
   };
   if (dryRun) return plan;
 
@@ -559,8 +667,59 @@ export async function installPackage(options = {}) {
   }
   preservedState.providerPolicy ||= { target: providerPolicyPath, previousExisted: false, previousBackup: null };
   preservedState.providerPolicy.installedSha = sha256(providerPolicy);
+  if (!previousState?.modelInstructions) {
+    preservedState.modelInstructions = {
+      target: modelInstructionsPath,
+      previousScalarLine: modelScalar.line,
+      previousExisted: await exists(modelInstructionsPath),
+      previousBackup: await backupExisting(modelInstructionsPath, backupDir),
+    };
+  }
+  preservedState.modelInstructions.installedSha = sha256(packageData.modelInstructions);
 
   if (!options.marketplaceSource) await stageLocalMarketplace(pluginRoot, repoRoot, stagedMarketplace);
+  const installedPluginRoot = options.marketplaceSource ? pluginRoot : join(stagedMarketplace, "rubato-codex");
+  const appliedDependencyPlan = await planBundleDependencies({
+    pluginRoot: installedPluginRoot,
+    codexHome,
+    env: openCodexEnv,
+  });
+  const bundleDependencyResult = await applyBundleDependencies(appliedDependencyPlan, {
+    dryRun,
+    runner: options.bundleDependencyRunner,
+  });
+  const previousCleanup = previousState?.bundleDependencies?.cleanup || [];
+  const cleanupByTarget = new Map([...previousCleanup, ...bundleDependencyResult.cleanup].map((item) => [item.target, item]));
+  bundleDependencyResult.cleanup = [...cleanupByTarget.values()];
+  preservedState.bundleDependencies = bundleDependencyResult;
+  plan.bundleDependencies = bundleDependencyResult;
+  const openCodexResult = await applyOpenCodexSetup(openCodexPlan, {
+    dryRun,
+    env: openCodexEnv,
+    install: options.openCodexInstall,
+  });
+  const openCodexProviders = await registerOpenCodexProviders(openCodexResult, providerCatalog, {
+    env: openCodexEnv,
+    runner: options.openCodexProviderRunner,
+  });
+  const refreshedProviderCatalog = await discoverProviderCatalog({ opencodexHome: options.opencodexHome });
+  const openCodexRoster = await configureOpenCodexRoster(openCodexResult, refreshedProviderCatalog, {
+    env: openCodexEnv,
+    preserveExisting: providerCatalog.status === "available" && Boolean(providerCatalog.roster?.length),
+    runner: options.openCodexRosterRunner,
+  });
+  providerPolicy = makeProviderPolicy(refreshedProviderCatalog, providerSelection.selected);
+  preservedState.providerPolicy.installedSha = sha256(providerPolicy);
+  openCodexResult.providerSetup = openCodexProviders;
+  openCodexResult.roster = openCodexRoster;
+  openCodexResult.runtime = providerSelection.selected.length ? {
+    status: "authentication-pending",
+    nextStep: `${openCodexResult.command} start`,
+    note: "authenticate selected providers before starting a fresh proxy; existing proxies are never restarted",
+  } : { status: "native-codex-only" };
+  plan.openCodex = openCodexResult;
+  preservedState.openCodexActive = openCodexResult;
+  if (openCodexResult.managed || !previousState?.openCodex?.managed) preservedState.openCodex = openCodexResult;
 
   if (!marketplace) {
     const addArgs = ["plugin", "marketplace", "add", source];
@@ -593,15 +752,17 @@ export async function installPackage(options = {}) {
   const withoutManagedAfterPlugin = removeManagedBlock(configAfterPlugin, CONFIG_START, CONFIG_END);
   const withoutRolesAfterPlugin = extractAndRemoveRoleSections(withoutManagedAfterPlugin).stripped;
   const withoutMcpAfterPlugin = extractAndRemoveMcpSections(withoutRolesAfterPlugin).stripped;
-  const finalConfig = replaceManagedBlock(
-    withoutMcpAfterPlugin,
+  const finalConfigBase = extractRootScalar(withoutMcpAfterPlugin, "model_instructions_file").stripped;
+  const finalConfigWithPrompt = replaceManagedBlock(
+    finalConfigBase,
     CONFIG_START,
     CONFIG_END,
-    makeConfigBlock(roleConfigRecords, disabledSkillPaths),
+    makeConfigBlock(roleConfigRecords, disabledSkillPaths, modelInstructionsPath),
     { prepend: true },
   );
-  await atomicWrite(configPath, finalConfig, 0o600);
+  await atomicWrite(configPath, finalConfigWithPrompt, 0o600);
   await atomicWrite(agentsPath, agentsNext, 0o600);
+  await atomicWrite(modelInstructionsPath, packageData.modelInstructions, 0o600);
   await atomicWrite(providerPolicyPath, providerPolicy, 0o600);
   await atomicWrite(statePath, `${JSON.stringify(preservedState, null, 2)}\n`, 0o600);
   return plan;
@@ -618,20 +779,33 @@ export async function uninstallPackage(options = {}) {
   const state = JSON.parse(stateText);
   const configPath = join(codexHome, "config.toml");
   const agentsPath = join(codexHome, "AGENTS.md");
-  assertSafeTomlEditing(await readOptional(configPath), configPath);
+  const configOriginal = await readOptional(configPath);
+  assertSafeTomlEditing(configOriginal, configPath);
+  if (state.modelInstructions) {
+    const currentScalar = extractRootScalar(configOriginal, "model_instructions_file").line?.trim();
+    const expectedScalar = `model_instructions_file = ${quoteToml(state.modelInstructions.target)}`;
+    if (currentScalar !== expectedScalar) fail(`refusing to restore changed model_instructions_file in ${configPath}`);
+  }
 
   for (const [name, record] of Object.entries(state.roles || {})) {
     const current = await readOptional(record.target);
-    if (current && sha256(current) !== record.installedSha) {
+    if (await exists(record.target) && sha256(current) !== record.installedSha) {
       fail(`refusing to overwrite modified installed role ${name}: ${record.target}`);
     }
   }
   if (state.providerPolicy?.installedSha) {
     const current = await readOptional(state.providerPolicy.target);
-    if (current && sha256(current) !== state.providerPolicy.installedSha) {
+    if (await exists(state.providerPolicy.target) && sha256(current) !== state.providerPolicy.installedSha) {
       fail(`refusing to overwrite modified provider policy: ${state.providerPolicy.target}`);
     }
   }
+  if (state.modelInstructions?.installedSha) {
+    const current = await readOptional(state.modelInstructions.target);
+    if (await exists(state.modelInstructions.target) && sha256(current) !== state.modelInstructions.installedSha) {
+      fail(`refusing to overwrite modified model instructions: ${state.modelInstructions.target}`);
+    }
+  }
+  await preflightManagedBundleDependencies(state.bundleDependencies?.cleanup, codexHome);
   const pluginsResult = parseJsonOutput(
     runCodex(codex.path, ["plugin", "list", "--json"], codexHome),
     "plugin list",
@@ -646,11 +820,13 @@ export async function uninstallPackage(options = {}) {
     marketplace: "preserved",
     roles: Object.keys(state.roles || {}),
     boardData: "preserved",
+    dependencies: "managed bundle dependencies removed; private OpenCodex binary and authentication retained",
   };
   if (dryRun) return plan;
   if (pluginInstalled) runCodex(codex.path, ["plugin", "remove", state.pluginSelector, "--json"], codexHome, { mutate: true });
 
   let configNext = removeManagedBlock(await readOptional(configPath), CONFIG_START, CONFIG_END);
+  configNext = restoreRootScalar(configNext, state.modelInstructions?.previousScalarLine);
   const roleCollisions = extractAndRemoveRoleSections(configNext).extracted;
   const mcpCollisions = extractAndRemoveMcpSections(configNext).extracted;
   if (state.legacyConfigSections?.length || state.legacyMcpSections?.length) {
@@ -677,6 +853,12 @@ export async function uninstallPackage(options = {}) {
   } else {
     await rm(state.providerPolicy?.target || join(codexHome, "rubato-codex", "providers.json"), { force: true });
   }
+  if (state.modelInstructions?.previousExisted && state.modelInstructions.previousBackup) {
+    await copyFile(state.modelInstructions.previousBackup, state.modelInstructions.target);
+  } else if (state.modelInstructions?.target) {
+    await rm(state.modelInstructions.target, { force: true });
+  }
+  await removeManagedBundleDependencies(state.bundleDependencies?.cleanup, codexHome);
   await rm(statePath, { force: true });
   return plan;
 }

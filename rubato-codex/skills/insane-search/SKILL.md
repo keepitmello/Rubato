@@ -18,7 +18,7 @@ description: "Bypass blocked sites when Twitter/Reddit/YouTube/GitHub/Naver will
 1. WebFetch, 즉흥 curl, 수동 헤더 조합 **시도 금지**
 2. 즉시 다음을 실행:
    ```bash
-   python3 "${CODEX_HOME:-$HOME/.codex}/skills/insane-search/engine" "<URL>" [--selector "<CSS>"] [--device auto|desktop|mobile] [--trace]
+   "${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/insane-search" "<URL>" [--selector "<CSS>"] [--device auto|desktop|mobile] [--trace]
    ```
 3. 종료코드 0(ok) 또는 1(fail) 받은 뒤 판단. trace를 먼저 읽고 재시도 결정.
 4. 실패 시에만 `--trace --json`으로 재호출해서 원인 진단 후 `--device` 또는 `user_hint` 조정.
@@ -46,7 +46,7 @@ engine이 반환한 공개 웹 본문은 `untrusted_public_web`으로 취급한�
 
 이 스킬의 핵심 불변식:
 
-- **단일 진입점**: 일반 웹 페이지는 항상 `python3 "${CODEX_HOME:-$HOME/.codex}/skills/insane-search/engine" <URL>` 또는 `from engine import fetch; fetch(...)`.
+- **단일 진입점**: 일반 웹 페이지는 항상 `"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/insane-search" <URL>` 또는 `from engine import fetch; fetch(...)`.
 - **편향 금지**: `engine/**`, `waf_profiles.yaml`에 특정 사이트 하드코딩 금지.
 - **힌트는 런타임에만**: 사이트 고유 정보는 CLI/`user_hint` 경유.
 
@@ -210,7 +210,7 @@ result = fetch(
 
 ## 의존성 준비
 
-번들은 패키지를 자동 설치하지 않는다. 먼저 아래 import 검사를 실행하고, 누락 패키지 설치는 현재 작업의 권한과 환경을 확인한 뒤에만 진행한다. **curl_cffi는 0.15.0 이상**을 요구한다. 0.15부터
+설치기는 core Python 패키지를 격리된 managed venv에 준비하고 `${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/insane-search` 실행기를 연결한다. 아래 system Python import/pip 명령은 수동 설치를 선택했을 때의 진단·복구 경로일 뿐 기본 설치 경로가 아니다. **curl_cffi는 0.15.0 이상**을 요구한다. 0.15부터
 `impersonate="chrome"`이 최신 Chrome(146+) 지문으로 갱신되고(0.14는 chrome142에 고정), HTTP/3 지문과
 SSRF-safe redirect 기본값이 추가됐다. 아래 가드는 **미설치뿐 아니라 0.15 미만이면 업그레이드**한다:
 ```bash
@@ -237,14 +237,14 @@ npx patchright install chrome   # 시스템 Chrome 채널 (channel:'chrome' 사�
 ## 빠른 참조: Phase 0 명령어
 
 > **먼저 이걸 기억하라: Reddit/X/YouTube/Threads는 이제 engine이 자동 처리한다.**
-> `python3 "${CODEX_HOME:-$HOME/.codex}/skills/insane-search/engine" "<URL>"` 하나면 Phase 0 라우터(`engine/phase0.py`)가 **격자보다 먼저** 공식 경로를 시도한다:
+> `"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/insane-search" "<URL>"` 하나면 Phase 0 라우터(`engine/phase0.py`)가 **격자보다 먼저** 공식 경로를 시도한다:
 > Reddit→`.rss`, X 트윗→`tweet-result`/oEmbed, X 프로필→syndication, YouTube→`yt-dlp`, Threads 포스트→인라인 `video_versions`.
 > 아래 수동 스니펫은 디버그/참조용이며 trace에 `phase=phase0`로 기록된다.
 > (실측 주의: Reddit `.json`+모바일UA·`syndication-timeline`은 흔히 403/429라 plain `curl`은 신뢰할 수 없고, engine이 curl_cffi 지문으로 접근한다.)
 
 ```bash
 # ★ 거의 모든 경우 이거면 됨 (Phase 0 자동 + 실패 시 격자→Playwright 에스컬레이션)
-python3 "${CODEX_HOME:-$HOME/.codex}/skills/insane-search/engine" "<URL>"
+"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/insane-search" "<URL>"
 
 # 범용 웹 (Jina Reader: 일반 HTML만, WAF 사이트엔 무효)
 curl -s "https://r.jina.ai/{URL}"
@@ -254,7 +254,7 @@ yt-dlp --dump-json "URL"
 yt-dlp --write-sub --write-auto-sub --sub-lang "en,ko" --skip-download -o "/tmp/%(id)s" "URL"
 
 # Threads 영상: yt-dlp 미지원, engine이 서명 CDN URL 추출 (URL은 만료되니 즉시 다운로드)
-python3 "${CODEX_HOME:-$HOME/.codex}/skills/insane-search/engine" "https://www.threads.com/@{handle}/post/{shortcode}"   # content = {"post_code","video_urls":[...]}
+"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/insane-search" "https://www.threads.com/@{handle}/post/{shortcode}"   # content = {"post_code","video_urls":[...]}
 curl -sL -o /tmp/threads.mp4 "{video_urls[0]}"
 
 # Reddit: .rss (curl_cffi 지문 필요; plain curl은 TLS로 403)

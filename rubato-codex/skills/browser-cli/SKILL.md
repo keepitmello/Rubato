@@ -55,16 +55,16 @@ For the explicit `agent-browser` fallback, use the shared headless Cloak process
 
 ```bash
 codex-cloak-cdp start --port 9333
-agent-browser --cdp 9333 --session my-task tab list
-agent-browser --cdp 9333 --session my-task tab new --label my-task "https://example.com"
-agent-browser --cdp 9333 --session my-task tab my-task
-agent-browser --cdp 9333 --session my-task snapshot -i
-agent-browser --cdp 9333 --session my-task click @e1
-agent-browser --cdp 9333 --session my-task tab close my-task
+"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/agent-browser" --cdp 9333 --session my-task tab list
+"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/agent-browser" --cdp 9333 --session my-task tab new --label my-task "https://example.com"
+"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/agent-browser" --cdp 9333 --session my-task tab my-task
+"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/agent-browser" --cdp 9333 --session my-task snapshot -i
+"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/agent-browser" --cdp 9333 --session my-task click @e1
+"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/agent-browser" --cdp 9333 --session my-task tab close my-task
 ```
 
 For headed fallback, run `codex-cloak-cdp start --headed`, use `--cdp 9334`, close the exact task tab, then run `codex-cloak-cdp stop --headed`. Stop refuses while another non-blank task tab remains.
 
-Run `agent-browser skills get core --full` or `chrome-devtools --help` for current command details instead of duplicating their references here.
+Run `${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/agent-browser skills get core --full` or `${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/chrome-devtools --help` for current command details instead of duplicating their references here.
 
 Never navigate or close unrelated tabs. Hand CAPTCHA or security challenges to the user, and ask before live production mutations, payments, posts, messages, or other consequential external actions.
