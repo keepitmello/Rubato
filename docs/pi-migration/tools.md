@@ -1,5 +1,7 @@
 # Tool 실행 이관 계약: MCP, tool search, eval/codemode, PTY
 
+> HISTORICAL EVIDENCE — 2026-09-08: 이 문서는 작성 당시 기능별 구현/검증 기록입니다. 현재 상태·남은 문제·다음 순서의 정본은 lab의 [pi-migration-ssot.md](../../../../case-studies/runtime-migration/pi-migration-ssot.md)입니다. 아래 완료/계획 표현은 그 시점과 범위에 한정하며 현재 전체 통과를 뜻하지 않습니다.
+
 결론: stock Pi 0.85.1에 **일반 `executeTool` seam, Rubato `registerMcpServer` producer registry,
 server별 direct/search 정책, owner-controlled lazy activation, session-owned MCP stdio client,
 BM25 `tool_search` catalog**가 연결됐다. 현재 ast-grep producer는 기존 설정 그대로 eager/auto로,

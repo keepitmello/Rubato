@@ -11,6 +11,7 @@ import { createAgentSession, ModelRuntime, SessionManager, SettingsManager } fro
 import { Type } from "typebox"
 
 import {
+  createStockChildFeatureProfile,
   createStockRpcSpawnRuntime,
   resolveStockRpcEntry,
   STOCK_PI_PACKAGE,
@@ -24,6 +25,13 @@ const PATCHABLE_RPC_ENTRY = join(
 )
 
 describe("stock Pi child RPC runtime", () => {
+  test("builds a narrow provider-only child profile", () => {
+    const profile = createStockChildFeatureProfile({ rpcExtensions: ["/provider.mjs", "/provider.mjs", "/other.mjs"] })
+    assert.deepEqual(profile.rpcExtensions, ["/provider.mjs", "/other.mjs"])
+    assert.deepEqual(profile.inProcessFactories, [])
+    assert.throws(() => createStockChildFeatureProfile({ rpcExtensions: ["relative.mjs"] }), /absolute, non-empty strings/)
+  })
+
   test("resolves the installed stock export, not Senpi's rpc entry", () => {
     const entry = resolveStockRpcEntry({ root: RUNTIME_ROOT })
     assert.equal(STOCK_PI_PACKAGE, "@earendil-works/pi-coding-agent")

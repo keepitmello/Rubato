@@ -6,6 +6,7 @@ import {
   InProcessRunner,
   RpcProcessRunner,
   createInProcessManagedRunner,
+  createChildResourceLoader,
   createParentRegistrySessionContext,
   createRpcManagedRunner,
   mapRubatoConfigAgents,
@@ -41,8 +42,18 @@ export interface TaskRunnerFactories {
 export type TaskRunnerFactoryOptions = {
   /** Explicit child process runtime. Omitted for the legacy Senpi default. */
   readonly rpcSpawnRuntime?: Partial<RpcSpawnRuntime>
+  /** Narrow stock child profile: only provider-bearing extensions are forwarded to RPC children. */
+  readonly stockChildProfile?: {
+    readonly rpcExtensions?: readonly string[]
+    readonly inProcessFactories?: readonly unknown[]
+    readonly agentDir?: string
+  }
+  /** Explicit provider extensions for RPC children; overrides stockChildProfile when supplied. */
+  readonly rpcChildExtensions?: readonly string[]
   /** Explicit in-process SDK session factory. Omitted to use senpi-task's default import. */
   readonly createInProcessSession?: CreateChildSession
+  /** Optional child-safe inline extensions shared by in-process child sessions. */
+  readonly childExtensionFactories?: readonly unknown[]
   /** Canonical stock ModelRuntime replacing Senpi-only authStorage/modelRegistry fields. */
   readonly stockModelRuntime?: NonNullable<ChildSpec["modelRuntime"]>
 }
@@ -55,6 +66,8 @@ export type TaskRunnerFactoryOptions = {
 export function createStockInProcessSessionAdapter(
   createSession: CreateChildSession,
   stockModelRuntime?: TaskRunnerFactoryOptions["stockModelRuntime"],
+  childExtensionFactories?: readonly unknown[],
+  childAgentDir?: string,
 ): CreateChildSession {
   return async (options) => {
     const legacy = options as unknown as Record<string, unknown>
@@ -66,18 +79,29 @@ export function createStockInProcessSessionAdapter(
     delete normalized.authStorage
     delete normalized.modelRegistry
     if (modelRuntime !== undefined) normalized.modelRuntime = modelRuntime
+    if (childExtensionFactories !== undefined && childExtensionFactories.length > 0) {
+      normalized.resourceLoader = createChildResourceLoader({
+        cwd: String(normalized.cwd),
+        agentDir: childAgentDir ?? String(normalized.agentDir ?? ""),
+        settingsManager: normalized.settingsManager,
+        extensionFactories: childExtensionFactories,
+      })
+    }
     return createSession(normalized as Parameters<CreateChildSession>[0])
   }
 }
 
 export function createTaskRunnerFactories(options: TaskRunnerFactoryOptions = {}): TaskRunnerFactories {
+  const rpcChildExtensions = options.rpcChildExtensions ?? options.stockChildProfile?.rpcExtensions
+  const childExtensionFactories = options.childExtensionFactories ?? options.stockChildProfile?.inProcessFactories
+  const childAgentDir = options.stockChildProfile?.agentDir
   const createInProcessSession = options.createInProcessSession === undefined
     ? undefined
-    : createStockInProcessSessionAdapter(options.createInProcessSession, options.stockModelRuntime)
+    : createStockInProcessSessionAdapter(options.createInProcessSession, options.stockModelRuntime, childExtensionFactories, childAgentDir)
   return {
     inProcess: (build) => buildInProcessRunner(build, createInProcessSession),
-    process: (build) => buildProcessRunner(build, options.rpcSpawnRuntime),
-    rpcRespawn: (build) => buildRpcProcessRunner(build, options.rpcSpawnRuntime),
+    process: (build) => buildProcessRunner(build, options.rpcSpawnRuntime, rpcChildExtensions),
+    rpcRespawn: (build) => buildRpcProcessRunner(build, options.rpcSpawnRuntime, rpcChildExtensions),
   }
 }
 
@@ -115,14 +139,19 @@ function buildInProcessRunner(build: RunnerBuildContext, createSession?: CreateC
 export function buildRpcProcessRunner(
   build: Pick<RunnerBuildContext, "runtime">,
   rpcSpawnRuntime?: Partial<RpcSpawnRuntime>,
+  rpcChildExtensions?: readonly string[],
 ): RpcProcessRunner {
   return new RpcProcessRunner({
-    inheritedExtensions: parseExtensionEntries(process.argv),
+    inheritedExtensions: rpcChildExtensions ?? parseExtensionEntries(process.argv),
     parentRegistry: () => build.runtime.modelRegistry(),
     ...(rpcSpawnRuntime === undefined ? {} : { buildSpawn: (spec) => buildRpcSpawn(spec, rpcSpawnRuntime) }),
   })
 }
 
-function buildProcessRunner(build: RunnerBuildContext, rpcSpawnRuntime?: Partial<RpcSpawnRuntime>): ManagedRunner {
-  return createRpcManagedRunner(buildRpcProcessRunner(build, rpcSpawnRuntime))
+function buildProcessRunner(
+  build: RunnerBuildContext,
+  rpcSpawnRuntime?: Partial<RpcSpawnRuntime>,
+  rpcChildExtensions?: readonly string[],
+): ManagedRunner {
+  return createRpcManagedRunner(buildRpcProcessRunner(build, rpcSpawnRuntime, rpcChildExtensions))
 }

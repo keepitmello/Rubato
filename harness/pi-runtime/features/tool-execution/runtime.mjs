@@ -23,6 +23,12 @@ export async function executeRegisteredTool(
   options = {},
   { validateToolArguments, ExecuteToolError },
 ) {
+  if (
+    options.toolCallId !== undefined &&
+    (typeof options.toolCallId !== "string" || options.toolCallId.trim() === "")
+  ) {
+    throw new TypeError("executeTool toolCallId must be a non-empty string when provided");
+  }
   let activeToolNames = session.getActiveToolNames();
   let tool = resolveActiveTool(session, toolName);
 
@@ -51,7 +57,7 @@ export async function executeRegisteredTool(
 
   const toolCall = {
     type: "toolCall",
-    id: `rubato-${randomUUID()}`,
+    id: options.toolCallId ?? `rubato-${randomUUID()}`,
     name: toolName,
     arguments: rawParams,
   };
@@ -97,12 +103,18 @@ export async function executeRegisteredTool(
       options.signal,
     );
   } catch (error) {
-    return errorResult(error);
+    return { ...errorResult(error), isError: true };
   }
-  if (!afterResult) return result;
-  return {
-    content: afterResult.content ?? result.content,
-    details: afterResult.details ?? result.details,
-    terminate: result.terminate,
-  };
+  if (afterResult) {
+    result = {
+      ...result,
+      content: afterResult.content ?? result.content,
+      details: afterResult.details ?? result.details,
+      usage: afterResult.usage ?? result.usage,
+      addedToolNames: afterResult.addedToolNames ?? result.addedToolNames,
+      terminate: afterResult.terminate ?? result.terminate,
+    };
+    isError = afterResult.isError ?? isError;
+  }
+  return { ...result, isError };
 }

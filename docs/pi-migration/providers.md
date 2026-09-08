@@ -1,5 +1,7 @@
 # Provider, auth, and model migration boundary
 
+> HISTORICAL EVIDENCE — 2026-09-08: 이 문서는 작성 당시 기능별 구현/검증 기록입니다. 현재 상태·남은 문제·다음 순서의 정본은 lab의 [pi-migration-ssot.md](../../../../case-studies/runtime-migration/pi-migration-ssot.md)입니다. 아래 완료/계획 표현은 그 시점과 범위에 한정하며 현재 전체 통과를 뜻하지 않습니다.
+
 Status: the staged stock provider closure is executable; the stock runtime is not yet the Rubato default.
 Evidence date: 2026-09-08. Candidate starting baseline:
 `c0f6b6f99a31b6e8acd44075f3ee3ad97e4695a5`.
