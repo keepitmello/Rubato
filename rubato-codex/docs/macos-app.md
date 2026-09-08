@@ -105,6 +105,45 @@ repository and rerun `install.sh install --target app`.
 
 ## Acceptance boundary
 
+### First real workflow check
+
+1. Save ongoing work and quit the original app, then open `/Applications/Rubato.app`.
+   Complete login, send a simple message, quit and reopen. Check that login and
+   the conversation persist. Stop here if launch/login fails; do not change OS
+   security or credential storage to make the check pass.
+2. In a disposable branch or small non-production project, perform a normal
+   edit, inspect the diff, and run the relevant test. Check terminal/file tools.
+3. Ask for a small taskforce with a Sol/medium owner and a bounded Grok worker.
+   Confirm the proposed roster. Check actual reported model identities, separate
+   owner/helper contracts, board ownership and evidence-backed completion.
+   Send a correction to the same owner and verify continuation instead of a
+   replacement agent. Board status is explicitly updated, not inferred from an
+   agent going idle; this matches Rubato Pi's shared-board contract.
+4. Exercise browser/Aside/Outpost and native Computer Use individually when their
+   logins and OS permissions are ready. Then return to ordinary work. Record the
+   exact failed action and error rather than treating one working tool as proof
+   that all native features work.
+
+### Existing local OpenCodex service: measured boundary
+
+The development machine's separate Rubato profile was manually connected to its
+already-running loopback OpenCodex service using `openai_base_url`,
+`experimental_realtime_ws_base_url`, and `model_catalog_json`. The catalog points
+to the existing service-managed catalog; provider credentials were not copied.
+The routing policy selects Cursor, xAI and Anthropic, but selection is not login.
+The service readiness check and a direct Grok Responses call succeeded. Original
+Codex config/AGENTS hashes remained unchanged and the service was not restarted.
+App login and in-app model/agent execution remain unverified; Anthropic direct
+login was still absent. These local settings and credentials are not distributed.
+
+This is not automatic existing-service attachment in the installer. OpenCodex
+2.43 rejected cross-profile `sync` because the service belongs to its original
+Codex home; its admin-token `connect` path also requires HTTPS. Do not describe
+either attempted command as a successful connection or bypass those guards.
+The manually configured client route is separate from service-side management.
+Reproduce another machine's connection only after checking its actual endpoint,
+catalog path, authentication requirements and running service ownership.
+
 Static/unit checks and code signatures do not establish UI/login compatibility.
 Before treating the new app as ready, verify launch, login persistence, native
 session/SQLite writes, Finder/Dock/Command-Tab/Launchpad branding, the actual
