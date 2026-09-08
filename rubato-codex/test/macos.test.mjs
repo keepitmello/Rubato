@@ -44,15 +44,18 @@ test('ASAR rewriting preserves unpacked references, offsets and content integrit
   assert.equal(parsed.headerHash, rewritten.headerHash);
   assert.throws(() => rewriteArchive(tinyAsar(), { 'unpacked.node': 'no' }), /unpacked/);
 });
-test('launcher and bootstrap preserve isolated paths and never launch original Sparkle', async () => {
+test('launcher preserves isolated paths and uses the original app without bootstrap injection', async () => {
   const launcher = await readFile(new URL('../macos/launcher.m', import.meta.url), 'utf8');
   for (const key of ['CODEX_HOME', 'CODEX_SQLITE_HOME', 'CODEX_ELECTRON_USER_DATA_PATH', 'OPENCODEX_HOME', '--user-data-dir=']) assert.ok(launcher.includes(key));
   assert.ok(!launcher.includes('SIGKILL'));
   assert.ok(!launcher.includes('launchAllowed'));
-  const bootstrap = await readFile(new URL('../macos/bootstrap.cjs', import.meta.url), 'utf8');
-  assert.match(bootstrap, /CODEX_SPARKLE_ENABLED = 'false'/);
-  assert.match(bootstrap, /__rubatoAttachUpdater/);
-  assert.match(bootstrap, /rubatoCheckUpdates/);
+  assert.match(launcher, /openApplicationAtURL/);
+  assert.match(launcher, /allowsRunningApplicationSubstitution = NO/);
+  const builder = await readFile(new URL('../scripts/macos-app.mjs', import.meta.url), 'utf8');
+  const transform = builder.split('export async function transformApp(')[1].split('export async function appPlan(')[0];
+  assert.ok(!transform.includes('rewriteArchive'));
+  assert.ok(!transform.includes('preserve-metadata'));
+  assert.ok(!transform.includes('bootstrap.cjs'));
   assert.equal(parseUpdateArgs(['--check']).action, 'check');
   assert.equal(parseUpdateArgs([]).action, 'install');
   assert.equal(parseUpdateArgs(['--rollback']).action, 'rollback');
@@ -65,8 +68,7 @@ test('clone transform leaves native identity, handlers and entitlements alone', 
   assert.ok(!source.includes("['--force', '--deep'"));
   assert.ok(!source.includes('delete info.CFBundleURLTypes'));
   assert.ok(!source.includes('delete info.NSDockTilePlugIn'));
-  const bootstrap = await readFile(new URL('../macos/bootstrap.cjs', import.meta.url), 'utf8');
-  assert.ok(!bootstrap.includes("setPath('appData'"));
+  assert.ok(source.includes("mode: 'signed-profile-launcher'"));
 });
 test('app operations reject concurrent mutation and release owned locks after failure', async () => {
   const root = await mkdtemp(join(tmpdir(), 'rubato-lock-test-'));

@@ -13,7 +13,6 @@ int main(int argc, char **argv) {
     setenv("CODEX_SQLITE_HOME", [[home stringByAppendingPathComponent:@"sqlite"] fileSystemRepresentation], 1);
     setenv("OPENCODEX_HOME", [[home stringByAppendingPathComponent:@"opencodex"] fileSystemRepresentation], 1);
     setenv("CODEX_ELECTRON_USER_DATA_PATH", [profile fileSystemRepresentation], 1);
-    setenv("CODEX_SPARKLE_ENABLED", "false", 1);
     setenv("RUBATO_APP", [[bundle bundlePath] fileSystemRepresentation], 1);
     if (argc == 2 && strcmp(argv[1], "--rubato-print-paths") == 0) {
       NSData *data = [NSJSONSerialization dataWithJSONObject:paths options:0 error:nil];
@@ -27,13 +26,25 @@ int main(int argc, char **argv) {
         [alert runModal]; return 2;
       }
     }
-    NSString *real = [[[bundle executablePath] stringByDeletingLastPathComponent]
-      stringByAppendingPathComponent:paths[@"realExecutable"]];
-    char **args = calloc((size_t)argc + 2, sizeof(char *));
-    args[0] = (char *)[real fileSystemRepresentation];
-    args[1] = (char *)[[NSString stringWithFormat:@"--user-data-dir=%@", profile] UTF8String];
-    for (int i = 1; i < argc; i++) args[i + 1] = argv[i];
-    execv(args[0], args);
-    perror("Rubato launcher"); return 1;
+    NSString *upstream = paths[@"upstreamApp"];
+    if (!upstream) { fprintf(stderr, "Rubato: missing upstream app\n"); return 1; }
+    NSWorkspaceOpenConfiguration *config = [NSWorkspaceOpenConfiguration configuration];
+    config.createsNewApplicationInstance = YES;
+    config.allowsRunningApplicationSubstitution = NO;
+    config.arguments = @[[NSString stringWithFormat:@"--user-data-dir=%@", profile]];
+    NSMutableDictionary *env = [[[NSProcessInfo processInfo] environment] mutableCopy];
+    env[@"CODEX_HOME"] = home;
+    env[@"CODEX_SQLITE_HOME"] = [home stringByAppendingPathComponent:@"sqlite"];
+    env[@"CODEX_ELECTRON_USER_DATA_PATH"] = profile;
+    env[@"OPENCODEX_HOME"] = [home stringByAppendingPathComponent:@"opencodex"];
+    [env removeObjectForKey:@"CODEX_SPARKLE_ENABLED"];
+    config.environment = env;
+    [[NSWorkspace sharedWorkspace] openApplicationAtURL:[NSURL fileURLWithPath:upstream]
+      configuration:config completionHandler:^(NSRunningApplication *app, NSError *error) {
+        if (error || !app) { fprintf(stderr, "Rubato launch failed: %s\n", [[error description] UTF8String]); exit(1); }
+        printf("Rubato profile launched: pid=%d\n", app.processIdentifier); exit(0);
+      }];
+    [[NSRunLoop mainRunLoop] run];
+    return 0;
   }
 }
