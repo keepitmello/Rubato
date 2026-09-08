@@ -12,7 +12,8 @@ lifecycle, and recovery. There is no automatic alternate sender.
   select the ChatGPT project. `~/.codex/consult.env` and `CONSULT_*` still
   load when the new names are absent. The name is the visible project title, used as
   `{name}에서 새 채팅`. Default name is `Work` when unset.
-- The invocation contains exactly one `--quality xhigh` or `--quality pro`.
+- The invocation contains exactly `--quality pro`. `xhigh` is gone: ChatGPT's
+  `매우 높음` tier answers as `gpt-5-6-thinking`, not GPT-6.
 - The packet is self-contained and safe to disclose to Aside and ChatGPT.
 - The packet's first line is one concise Markdown H1 containing only the subject
   title (`# <title>`). The calling main session owns it; the runner extracts it
@@ -59,7 +60,7 @@ shows `working` while that process is alive. When the process exits, an idle
 parent session is woken:
 
 ```bash
-"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost" send --quality <xhigh-or-pro> .outpost/<run>/packet.md
+"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost" send --quality pro .outpost/<run>/packet.md
 ```
 
 List stored threads, including which are running and which have finished:
@@ -72,8 +73,8 @@ List stored threads, including which are running and which have finished:
 Continue a saved thread. This opens that conversation, not the project home:
 
 ```bash
-"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost" send --quality <xhigh-or-pro> .outpost/<run>/packet.md --to <thread-id>
-"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost" send --quality <xhigh-or-pro> .outpost/<run>/packet.md --to last
+"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost" send --quality pro .outpost/<run>/packet.md --to <thread-id>
+"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost" send --quality pro .outpost/<run>/packet.md --to last
 ```
 
 The runner's in-browser guard must commit the user turn under 120 seconds and
@@ -166,14 +167,14 @@ opens the saved `/c/` conversation instead of the project home.
 
 ## Accept or reject
 
-For `--quality xhigh` and `--quality pro`, require:
+For `--quality pro` (the only quality), require:
 
 ```text
-quality: xhigh | pro
+quality: pro
 surface: Chat
 model: 최신
-tier: 매우 높음 (N of M)   # xhigh
-tier: Pro (N of M)         # pro
+tier: Pro (N of M)
+modelSlug: gpt-6-pro
 submitElapsedSeconds: <120
 ```
 
@@ -208,3 +209,41 @@ not send again. Poll the same conversation:
 
 Backend-api polling is the primary wait after the user turn persists (`/c/` in
 the conversation URL). The live ChatGPT page is only a secondary signal.
+
+
+## Model is judged by the server, not the picker
+
+The picker label (`최신`) is a moving alias, and the tier list is model
+specific. The only accepted answer slug is `gpt-6-pro`. After the reply is
+read, the runner takes `metadata.model_slug` from the ChatGPT backend and
+stores it as `modelSlug` in `result.json`. A different slug still saves
+`response.md` but exits `78`; the run is not a Pro answer.
+
+Observed slugs: `매우 높음` -> `gpt-5-6-thinking`, `Pro` + `최신` ->
+`gpt-6-pro`. That is why `xhigh` was removed instead of relabelled.
+
+## Aside role lookups need a snapshot first
+
+`getByRole` resolves against the index Aside builds inside `snapshot()`. On a
+page that was never snapshotted in the current REPL session it returns zero
+matches, including for elements that have an explicit `aria-label`. Every role
+lookup in the runner goes through `waitRole()`, which snapshots and then
+queries, and the doctor script snapshots before each role probe. A missing tier
+pill is therefore a real UI change, not a priming artifact.
+
+## Nothing is lost after the send
+
+`result.json` is written before the send click with `status:
+submitted_pending`, `id`, and `packetSha`. If the REPL dies, Aside restarts,
+or the parent is killed, `outpost recover .outpost/<run>` finds the turn by id
+through the backend and saves the answer. A second `send` with the same packet
+in the same run directory exits `79` instead of spending another Pro turn;
+`OUTPOST_FORCE=1` is the deliberate override.
+
+## Input attachments
+
+`--attach <path>` uploads extra files with the packet. Non-ASCII file names -
+and non-ASCII names inside a zip - are rewritten to ASCII before upload because
+ChatGPT mangles them, and the `safe <- original` mapping is appended to the
+packet body and to `FILENAMES.txt` inside the repacked zip. `--artifact` is
+the opposite direction: it saves a zip that ChatGPT generates.

@@ -1,13 +1,13 @@
 ---
 name: "chatgpt-work-outpost"
-description: "Recover a failed deterministic Outpost send by adaptively operating an explicitly xhigh or pro ChatGPT project conversation. Do not use for the normal fast path."
+description: "Recover a failed deterministic Outpost send by adaptively operating an explicitly pro ChatGPT project conversation. Do not use for the normal fast path."
 ---
 
 # ChatGPT project Chat outpost
 
 Execute a packet outpost on chatgpt.com inside the project named in the task. Do not
 rediscover the UI. Do not run this skill unless the task supplies an exact
-packet, exact ID, and exactly one `QUALITY: xhigh` or `QUALITY: pro`.
+packet, exact ID, and exactly `QUALITY: pro`.
 This is the adaptive recovery skill after `run_aside_repl_outpost.py` detects UI
 drift; ordinary outposts must not invoke an Aside agent.
 
@@ -16,7 +16,7 @@ drift; ordinary outposts must not invoke an Aside agent.
 Accept the packet and ID exactly as given in the task prompt. Do not rewrite, trim, wrap, or translate the packet.
 `PACKET_BEGIN` and `PACKET_END` are transport delimiters; send only the text
 between them.
-If `QUALITY` is absent or is not exactly `xhigh` or `pro`, return an error before
+If `QUALITY` is absent or is not exactly `pro`, return an error before
 opening or attaching to a browser tab.
 
 ## Browser and REPL
@@ -65,7 +65,6 @@ Both qualities require:
 
 Quality mapping on the Chat slider (`즉시` `중간` `높음` `매우 높음` `Pro`):
 
-- `xhigh`: **매우 높음**
 - `pro`: **Pro**
 
 If the family or requested tier cannot be verified, stop before send.
@@ -76,7 +75,7 @@ Known picker path:
    quota-prefixed `NPro`/`N Pro`, or `추론 수준`).
 2. In the simple tier view, read the current `N개 중 M번째` index.
 3. Focus the `성능` menuitem and move with `ArrowLeft`/`ArrowRight` until
-   the label is `매우 높음` for `xhigh` or `Pro` for `pro`.
+   the label is `Pro`.
 4. Require that label at `N개 중 M번째`. Do not keep probing after that label.
 5. Only after the tier is verified, open `모델 선택` and require the checked
    radio `최신`. Click it if visible and unchecked. Do not select `GPT-5.6 Sol`.
@@ -109,15 +108,15 @@ Known picker path:
 
 ## Output envelopes
 
-For `xhigh`, success has this exact metadata:
+For `pro`, success has this exact metadata:
 
 ```text
 ASIDE_WORK_OUTPOST_RESULT
 ID: <exact ID>
 SURFACE: Chat
-QUALITY: xhigh
+QUALITY: pro
 MODEL: 최신
-TIER: 매우 높음 (N of M)
+TIER: Pro (N of M)
 RESPONSE_BEGIN
 <exact ChatGPT response including its ID>
 RESPONSE_END
@@ -143,7 +142,7 @@ Failure, exact format:
 ASIDE_WORK_OUTPOST_ERROR
 ID: <exact ID>
 SURFACE: <last verified surface, or unknown>
-QUALITY: <xhigh-or-pro-or-missing>
+QUALITY: <pro-or-missing>
 BLOCKER: <concrete blocker>
 ```
 
