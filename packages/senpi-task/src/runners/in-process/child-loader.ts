@@ -1,4 +1,4 @@
-import { createExtensionRuntime, type ResourceLoader } from "@code-yeongyu/senpi"
+import { createExtensionRuntime, DefaultResourceLoader, type ResourceLoader } from "@code-yeongyu/senpi"
 
 import { createMinimalSenpiResourceLoader } from "../../senpi/minimal-resource-loader"
 
@@ -16,6 +16,27 @@ import { createMinimalSenpiResourceLoader } from "../../senpi/minimal-resource-l
 // v1 tradeoff: children run WITHOUT senpi builtin extensions (no compaction / goal / todo tools
 // inside children); the core read/bash/edit tools plus the injected customTools remain. Skills
 // and context per spec are still delivered through prompt injection.
-export function createChildResourceLoader(): ResourceLoader {
+export function createChildResourceLoader(options: {
+  readonly cwd?: string
+  readonly agentDir?: string
+  readonly settingsManager?: unknown
+  readonly extensionFactories?: readonly unknown[]
+} = {}): ResourceLoader {
+  if (options.extensionFactories !== undefined && options.extensionFactories.length > 0) {
+    if (options.cwd === undefined || options.agentDir === undefined || options.settingsManager === undefined) {
+      throw new Error("child extension factories require explicit cwd, agentDir, and settingsManager")
+    }
+    return new DefaultResourceLoader({
+      cwd: options.cwd,
+      agentDir: options.agentDir,
+      settingsManager: options.settingsManager as never,
+      noExtensions: true,
+      noSkills: true,
+      noPromptTemplates: true,
+      noThemes: true,
+      noContextFiles: true,
+      extensionFactories: [...options.extensionFactories] as never,
+    })
+  }
   return createMinimalSenpiResourceLoader({ runtime: createExtensionRuntime() })
 }

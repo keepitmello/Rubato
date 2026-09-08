@@ -16,6 +16,13 @@ const catalog = Object.freeze({
   "child-runtime": { requires: [], load: async () => (await import("./features/child-runtime/feature.mjs")).childRuntimeFeature },
   terminal: { requires: ["tool-execution"], load: () => import("./features/terminal/patches.mjs") },
   providers: { requires: [], load: () => import("./features/providers/patches.mjs") },
+  "runtime-factories": { requires: [], load: () => import("./features/runtime-factories/patches.mjs") },
+  "media-tools": { requires: ["tool-execution"], load: () => import("./features/media-tools/patches.mjs") },
+  "tool-guards": { requires: ["tool-execution"], load: async () => (await import("./features/tool-guards/feature.mjs")).toolGuardsFeature },
+  "provider-execution": { requires: ["tool-execution", "providers"], load: async () => (await import("./features/provider-execution/patches.mjs")).providerExecutionFeature },
+  "context-notes": { requires: [], load: () => import("./features/context-notes/patches.mjs") },
+  "context-window": { requires: ["context-notes"], load: () => import("./features/context-window/patches.mjs") },
+  "prompt-rules": { requires: [], load: () => import("./features/prompt-rules/feature.mjs") },
 });
 
 export const PI_FEATURE_NAMES = Object.freeze(Object.keys(catalog));

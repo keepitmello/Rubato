@@ -53,7 +53,13 @@ async function createFixture(t) {
     pi.registerTool(definition("mock", async (_id, args, _signal, onUpdate) => {
       calls.push(["mock", args.value]);
       onUpdate?.({ content: [{ type: "text", text: `update:${args.value}` }], details: {} });
-      return { content: [{ type: "text", text: `raw:${args.value}` }], details: { raw: true } };
+      return {
+        content: [{ type: "text", text: `raw:${args.value}` }],
+        details: { raw: true },
+        usage: { input: 1 },
+        addedToolNames: ["fixture-added"],
+        terminate: true,
+      };
     }));
     pi.registerTool(definition("fails", async () => {
       throw new Error("fixture exploded");
@@ -94,6 +100,8 @@ async function createFixture(t) {
         return {
           content: [{ type: "text", text: `hook:${event.content[0].text}` }],
           details: { hooked: true },
+          usage: { input: 2 },
+          isError: true,
         };
       }
       return undefined;
@@ -137,7 +145,10 @@ test("actual stock SDK executeTool validates, runs hooks, streams updates, and c
   assert.deepEqual(result, {
     content: [{ type: "text", text: "hook:raw:ok:mutated" }],
     details: { hooked: true },
-    terminate: undefined,
+    usage: { input: 2 },
+    addedToolNames: ["fixture-added"],
+    terminate: true,
+    isError: true,
   });
   assert.deepEqual(fixture.events.slice(0, 2), [
     ["call", "mock", "ok"],

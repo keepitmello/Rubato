@@ -1,5 +1,7 @@
 # 세션·제어·TUI 이관 계약
 
+> HISTORICAL EVIDENCE — 2026-09-08: 이 문서는 작성 당시 기능별 구현/검증 기록입니다. 현재 상태·남은 문제·다음 순서의 정본은 lab의 [pi-migration-ssot.md](../../../../case-studies/runtime-migration/pi-migration-ssot.md)입니다. 아래 완료/계획 표현은 그 시점과 범위에 한정하며 현재 전체 통과를 뜻하지 않습니다.
+
 상태: `@earendil-works/pi-coding-agent@0.85.1` 위에서 reload, 입력 identity/disposition,
 gap-only abort provenance, request-run ledger, 첫 사용자 입력 보존과 SDK session catalog paging,
 context-notes의 저장·주입·reload·session copy 기반 경로를 구현·검증했다. 나머지는 현재 Rubato와

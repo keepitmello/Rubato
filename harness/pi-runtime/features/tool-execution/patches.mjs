@@ -51,7 +51,7 @@ function patchTypesDeclarations(source) {
     `    /** Register an owner that can activate a known inactive tool on demand. */
     registerLazyToolActivator(activator: LazyToolActivator): void;
     /** Execute a registered tool through Pi validation and middleware hooks. */
-    executeTool(toolName: string, params: unknown, options?: ExecuteToolOptions): Promise<AgentToolResult>;
+    executeTool(toolName: string, params: unknown, options?: ExecuteToolOptions): Promise<ExecuteToolResult>;
     /** Register a custom command. */
     registerCommand(name: string, options: Omit<RegisteredCommand, "name" | "sourceInfo">): void;`,
     "api-methods",
@@ -63,7 +63,10 @@ function patchTypesDeclarations(source) {
     signal?: AbortSignal;
     onUpdate?: AgentToolUpdateCallback;
     activateInactiveTool?: boolean;
+    /** Preserve a provider-owned call id when execution is bridged mid-stream. */
+    toolCallId?: string;
 }
+export type ExecuteToolResult = AgentToolResult & { readonly isError: boolean };
 export type ExecuteToolErrorCode = "unknown_tool" | "inactive_tool" | "invalid_params" | "blocked";
 export declare class ExecuteToolError extends Error {
     readonly code: ExecuteToolErrorCode;
@@ -71,7 +74,7 @@ export declare class ExecuteToolError extends Error {
     readonly activeToolNames: string[];
     constructor(code: ExecuteToolErrorCode, toolName: string, message: string, activeToolNames: string[]);
 }
-export type ExecuteToolHandler = (toolName: string, params: unknown, options?: ExecuteToolOptions) => Promise<AgentToolResult>;
+export type ExecuteToolHandler = (toolName: string, params: unknown, options?: ExecuteToolOptions) => Promise<ExecuteToolResult>;
 export type LazyToolActivator = (toolName: string) => boolean;
 export type RegisterLazyToolActivatorHandler = (activator: LazyToolActivator) => void;
 export type GetActiveToolsHandler = () => string[];`,
@@ -271,7 +274,7 @@ function patchAgentSessionDeclarations(source) {
      * Set active tools by name.`,
     `    getToolDefinition(name: string): ToolDefinition | undefined;
     /** Execute one registered tool through normal validation and middleware. */
-    executeTool(toolName: string, params: unknown, options?: import("./extensions/types.js").ExecuteToolOptions): Promise<import("@earendil-works/pi-agent-core").AgentToolResult<unknown>>;
+    executeTool(toolName: string, params: unknown, options?: import("./extensions/types.js").ExecuteToolOptions): Promise<import("./extensions/types.js").ExecuteToolResult>;
     /**
      * Set active tools by name.`,
     "method",
@@ -288,11 +291,17 @@ function patchExtensionRuntimeIndex(source) {
 }
 
 function patchExtensionTypesIndex(source) {
-  return replaceOnce(
+  let next = replaceOnce(
     source,
     `export { defineTool, isBashToolResult,`,
     `export { ExecuteToolError, defineTool, isBashToolResult,`,
     "value-export",
+  );
+  return replaceOnce(
+    next,
+    `export type { AfterProviderResponseEvent,`,
+    `export type { ExecuteToolErrorCode, ExecuteToolHandler, ExecuteToolOptions, ExecuteToolResult, LazyToolActivator, RegisterLazyToolActivatorHandler, AfterProviderResponseEvent,`,
+    "type-export",
   );
 }
 
@@ -315,7 +324,7 @@ function patchRootTypesIndex(source) {
   return replaceOnce(
     next,
     `export type { AgentEndEvent,`,
-    `export type { ExecuteToolErrorCode, ExecuteToolHandler, ExecuteToolOptions, LazyToolActivator, RegisterLazyToolActivatorHandler } from "./core/extensions/index.ts";
+    `export type { ExecuteToolErrorCode, ExecuteToolHandler, ExecuteToolOptions, ExecuteToolResult, LazyToolActivator, RegisterLazyToolActivatorHandler } from "./core/extensions/index.ts";
 export type { AgentEndEvent,`,
     "type-export",
   );
