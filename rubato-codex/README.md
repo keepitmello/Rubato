@@ -4,10 +4,10 @@ Rubato의 리드·오너 운영방식을 Codex 네이티브 멀티에이전트 �
 세션과 런타임은 Codex가 관리하고, 이 패키지는 운영 계약과 공유 작업보드를
 제공합니다. 별도 Rubato 프로세스는 필요하지 않습니다.
 
-- **네이티브 플러그인:** 여섯 스킬과 `taskforce` MCP.
+- **네이티브 플러그인:** Rubato의 portable 스킬 번들과 `taskforce` MCP.
 - **작은 설치기:** 네이티브 오너·검토자·헬퍼 역할과 전역 리드 지침 연결.
-- **모델 배분:** 역할별 Sol 고정 없이 리드가 현재 지원되는 GPT 모델과 추론
-  강도를 선택합니다. Rubato의 다중 프로바이더 model-guide는 아직 연결하지 않습니다.
+- **모델 배분:** [model-guide](skills/model-guide/SKILL.md)를 정본으로 삼아 역할과
+  작업에 맞는 모델·추론 강도·선택 provider를 배분합니다.
 
 ## 설치
 
@@ -22,6 +22,45 @@ Rubato 저장소 루트에서 실행합니다.
 ./rubato-codex/install.sh plan
 ./rubato-codex/install.sh install
 ```
+
+기본은 Codex native 모델만 사용합니다. OpenCodex에 이미 로그인·설정된 provider가
+있으면 첫 대화형 설치에서 사용할 경로를 고르거나 명시할 수 있습니다.
+
+```sh
+./rubato-codex/install.sh plan --providers none
+./rubato-codex/install.sh install --providers anthropic,xai
+```
+
+`--providers`는 OpenCodex 설정에서 발견된 provider ID만 받습니다. 선택 결과는
+`$CODEX_HOME/rubato-codex/providers.json`에 기록되며, `CODEX_HOME`이 없으면
+`~/.codex/rubato-codex/providers.json`입니다. 업데이트 때 옵션을 생략하면 이전
+선택을 유지하고, `--providers none`은 native-only로 되돌립니다.
+
+이 파일은 model-guide가 참고하는 **routing 정책**입니다. shared proxy를 강제로
+통과시키는 접근통제나 provider 로그인 설정이 아닙니다. 설치기는 OpenCodex의
+credential을 읽어 복사하지 않으며, 외부 provider 로그인은 별도로 마쳐야 합니다.
+카탈로그 등록과 선택은 실제 모델 실행 증거도 아닙니다. 현재 Codex agent schema가
+그 provider 모델을 노출하지 않을 수 있으므로, 지원되는 실행 표면에서 실제 런타임이
+보고한 모델을 확인해야 합니다.
+
+OpenCodex 2.43의 Codex subagent roster는 별도 설정이며 최대 다섯 모델입니다.
+설치기가 provider routing 정책을 기록하는 것과 이 roster를 바꾸는 것은 다른 작업입니다.
+
+```sh
+ocx agent subagents status
+ocx agent subagents set gpt-5.6-sol,cursor/claude-fable-5-1,cursor/claude-opus-5,xai/grok-4.6,cursor/gemini-3.8-flash
+ocx agent subagents clear
+```
+
+위 `set` 목록은 이 머신에서 적용된 예시이며 `$OPENCODEX_HOME/config.json`의
+`subagentModels`를 갱신합니다(`OPENCODEX_HOME` 기본값은 `~/.opencodex`). Astra를
+승인받아 쓸 때는 다섯 slot 중 하나와 교체하며 lead 모델은 바뀌지 않습니다. 실행 전
+`status`와 현재 Codex spawn schema를 다시 확인하세요.
+
+Provider 등록, 모델 roster 등록, 인증, 실제 호출 성공은 각각 다른 상태입니다.
+특히 Anthropic 직접 provider는 등록돼 있어도 Rubato의 `setup-token-sub` 방식은 현재
+OpenCodex의 `renewableOAuth` local-import와 호환되지 않습니다. 지원되는 별도 로그인
+경로를 완료하고 실제 호출 결과를 보기 전에는 Anthropic 사용 가능으로 보고하지 않습니다.
 
 설치기는 배포 파일만 Codex 홈의 로컬 스냅샷에 복사한 뒤 네이티브 마켓플레이스로
 등록하고 `rubato-codex@rubato` 플러그인을 설치합니다. 개발용 `node_modules`나
@@ -43,6 +82,23 @@ Rubato 저장소 루트에서 실행합니다.
 기본값과 다른 보드 경로를 사용 중이거나 설정에 TOML 여러 줄 문자열이 있으면
 자동 편집을 중단합니다. 기존 데이터를 옮기거나 설정을 덮어쓰지는 않습니다.
 
+`~/.agents/skills` 등에 같은 이름의 스킬을 직접 설치해 둔 경우에는 정확한
+`SKILL.md` 경로를 `--disable-skill`로 지정합니다. 이 옵션은 여러 번 쓸 수 있고,
+계획과 실제 설치에 같은 경로를 넘깁니다.
+
+```sh
+./rubato-codex/install.sh plan \
+  --disable-skill "$HOME/.agents/skills/outpost/SKILL.md"
+./rubato-codex/install.sh install \
+  --disable-skill "$HOME/.agents/skills/outpost/SKILL.md"
+```
+
+설치기는 지정한 원본을 이동·수정·삭제하지 않습니다. 관리되는
+`[[skills.config]]` 항목에 그 exact path와 `enabled = false`만 추가해 플러그인
+사본과의 중복 로딩을 막습니다. 경로가 실제 bundled skill의 `SKILL.md`가 아니거나
+기존 설정이 명시적으로 `enabled = true`면 중단합니다. 이후 업데이트에서도 선택을
+기억하며, uninstall하면 관리 블록이 제거되어 보존된 원본 스킬이 다시 활성화됩니다.
+
 별도 Codex 홈에 시험 설치하려면 `--codex-home /path/to/test-codex-home`을
 두 명령에 모두 붙입니다. `plan` 또는 `--dry-run`은 적용 계획만 보여줍니다.
 
@@ -54,11 +110,22 @@ Rubato 저장소 루트에서 실행합니다.
 
 큰 작업에서 “태스크포스로 진행해 주세요”라고 요청하거나, 리드가 서로 독립적인
 작업 영역을 발견하면 `agent-taskforce`를 사용합니다. 리드는 모델·역할·담당 영역을
-짧게 알리고 각 오너에게 결과와 범위, 예산, 완료 증거를 전달합니다.
+짧은 roster로 먼저 확인받고, 각 오너에게 결과와 범위, 예산, 완료 증거를 전달합니다.
+
+현재 모델 배분과 승인 규칙의 정본은 [model-guide](skills/model-guide/SKILL.md)입니다.
+요약하면 오너는 Fable·Opus·Sol·Grok 중에서 고르고 Astra는 어려운 문제의 예외로
+둡니다. Terra·Luna는 워커 전용입니다. Fable/Astra는 작업과 effort를 함께 명시해
+승인받고, Opus/Sol/Grok은 별도 모델 승인을 요구하지 않습니다. 이미 승인된 같은
+작업의 correction은 다시 승인받지 않습니다. Codex-only 환경에서는 Sol 오너와
+Terra/Luna 워커를 씁니다.
 
 한 오너가 조사부터 구현·수정·로컬 검증까지 이어서 맡습니다. 리드는 전체 방향과
 통합·최종 판단을 맡고, 독립 검토가 필요한 경우에는 새 컨텍스트를 사용합니다.
 작은 수정이나 확인에는 팀이나 보드를 억지로 만들지 않습니다.
+
+아래는 핵심 운영 스킬입니다. 설치되는 전체 목록과 portable/조건부/보존 분류는
+[`skill-bundle.json`](skill-bundle.json)이 정본이며, 프론트엔드·리서치·브라우저·
+프롬프트·제품 프레이밍·DB/React 가이드와 안전한 보조 리소스도 함께 설치됩니다.
 
 | 스킬 | 쓰임 |
 | --- | --- |
@@ -102,9 +169,11 @@ npm --prefix taskforce ci
 npm test
 ```
 
-역할 계약을 바꿨다면 `npm run build:roles`, MCP 소스나 의존성을 바꿨다면
+원본 harness 스킬을 바꿨다면 `npm run build:skills`, 역할 계약을 바꿨다면
+`npm run build:roles`, MCP 소스나 의존성을 바꿨다면
 `npm --prefix taskforce run build`로 배포 파일도 갱신합니다. `npm test`는
-역할·번들 최신 여부와 설치기·보드·실제 MCP 프로토콜을 검사합니다.
+`check:skills`를 포함해 인벤토리·번들·역할 최신 여부와 설치기·보드·실제 MCP
+프로토콜을 검사합니다.
 테스트는 별도 임시 상태를 사용합니다. 번들의 제3자 라이선스는
 [THIRD_PARTY_NOTICES.md](taskforce/THIRD_PARTY_NOTICES.md)에 있습니다.
 

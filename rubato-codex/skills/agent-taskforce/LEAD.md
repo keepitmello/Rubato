@@ -27,11 +27,16 @@ Preserve the user's selected lead and framing choice. Settled implementation,
 bugs and migrations do not need a new product-framing process. If an authoritative
 frame/spec exists, reference it rather than copying it into a competing mission.
 
-Before staffing, read the Codex adapter and GPT allocation guidance. Report a
-short roster: each outcome, role, selected model/effort and why it fits. Continue
-without an extra approval gate inside the user's authorized work; an explicitly
-restricted model, external spend or material scope expansion still needs the
-applicable authority. Do not change the lead's model yourself.
+Before staffing, read the Codex adapter and model allocation guidance. Present a
+short roster: each outcome, role, selected model/effort and why it fits. Obtain
+the user's confirmation before forming the team. An explicit instruction to
+proceed with a presented roster counts; a generic implementation request alone
+does not. Keep approved owners for corrections and re-verification of the same
+outcome without asking again. Material roster/scope changes need confirmation.
+Model-specific approval follows the bundled model-guide: Fable and Astra need
+task-and-effort approval; Opus, Sol and Grok have no extra model approval gate.
+Ordinary bounded helpers inside approved scope need no new team ceremony.
+Do not change the lead's model yourself.
 
 Give each owner a distinct write boundary. Native task names do not create
 worktrees or filesystem isolation. Inspect existing modifications before

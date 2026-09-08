@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "source": "../harness/skills",
+  "output": "skills",
+  "renames": {
+    "metaFrame": "metaframe"
+  },
+  "managed": [
+    "aside-browser",
+    "browser-cli",
+    "claude-prompting-lab",
+    "dispatched",
+    "find-skills",
+    "frontend-ux-router",
+    "humanize-korean",
+    "imagen-proxy",
+    "insane-search",
+    "keep-simple",
+    "laws",
+    "macos-computer-use",
+    "metaFrame",
+    "outpost",
+    "product-framing",
+    "product-reframing",
+    "supabase-postgres-best-practices",
+    "vercel-react-best-practices",
+    "wy-server"
+  ],
+  "conditional": [
+    "return",
+    "rubato-tui-verify",
+    "wrapping-sessions"
+  ],
+  "preserved": [
+    "agent-taskforce",
+    "dispatching",
+    "model-guide"
+  ],
+  "nativeOnly": [
+    "codex-discusser",
+    "codex-reviewer"
+  ],
+  "supplemental": {
+    "agent-taskforce": [
+      "references/00-routing.md",
+      "references/01-operating-model.md",
+      "references/02-team-patterns.md",
+      "references/03-context-and-state.md",
+      "references/04-framing-bridge.md",
+      "references/05-prompting-contracts.md",
+      "references/06-quality-and-evals.md",
+      "references/07-source-map.md",
+      "references/09-regression-scenarios.md",
+      "templates/decision-request.md",
+      "templates/frame-conflict.md",
+      "templates/mission.md",
+      "templates/verification-contract.md"
+    ]
+  },
+  "excludedPatterns": [
+    "(^|/)__pycache__(/|$)",
+    "\\.pyc$",
+    "(^|/)\\.DS_Store$",
+    "(^|/)observations(/|$)",
+    "\\.bak-[^/]+$",
+    "\\.log$",
+    "~$"
+  ]
+}

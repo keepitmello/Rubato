@@ -15,7 +15,7 @@ Codex owns the agent runtime. The taskforce MCP records shared work, not session
   [verifier](teammate/independent-verifier.md) contract; a focused helper needs
   only the sibling `dispatched` skill.
 - Before an assignment or follow-up: read the sibling `dispatching` skill.
-- Selecting a model: use [GPT allocation](references/model-allocation.md).
+- Selecting a model: use [model allocation](references/model-allocation.md).
 - Using the shared board: read [its contract](runtimes/codex-taskforce.md).
 
 Keep small, tightly coupled work local. An independent agent needs an outcome,
