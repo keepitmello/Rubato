@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import importlib.util
 import json
 import os
@@ -51,6 +52,11 @@ STAGE_HINTS = {
 DEFAULT_PICKER_PATH = Path.home() / ".codex" / "outpost-picker.json"
 PREFERRED_MODEL_RADIO = "최신"
 FORBIDDEN_MODEL_RADIOS = ("GPT-5.6 Sol", "5.6 Sol")
+# The only model an outpost turn may run on. The picker label is a moving
+# alias, so the run is judged by the slug ChatGPT reports for the answer.
+REQUIRED_MODEL_SLUG = "gpt-6-pro"
+WRONG_MODEL_EXIT = 78
+DUPLICATE_SEND_EXIT = 79
 DEFAULT_TIER_ALIASES = (
     "추론 수준",
     "즉시",
@@ -346,6 +352,80 @@ def sanitize_filename(name: str) -> str:
     return cleaned or "attachment.bin"
 
 
+def is_ascii(value: str) -> bool:
+    return all(ord(char) < 128 for char in value)
+
+
+def ascii_upload_name(name: str, index: int) -> str:
+    """ChatGPT mangles non-ASCII upload names, so send an ASCII name."""
+    if is_ascii(name):
+        return name
+    suffix = Path(name).suffix
+    if not is_ascii(suffix):
+        suffix = ".bin"
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "-", Path(name).stem).strip("-")
+    if not stem:
+        stem = f"attachment-{index + 1}"
+    return f"{stem}{suffix}"
+
+
+def normalized_zip_bytes(path: Path) -> tuple[bytes, list[tuple[str, str]]]:
+    """Repack a zip with ASCII inner names; keep the original names in a map."""
+    import io
+
+    renames: list[tuple[str, str]] = []
+    with ZipFile(path) as source:
+        entries = source.infolist()
+        if all(is_ascii(entry.filename) for entry in entries):
+            return path.read_bytes(), renames
+        buffer = io.BytesIO()
+        with ZipFile(buffer, "w") as target:
+            for index, entry in enumerate(entries):
+                if entry.is_dir():
+                    continue
+                inner = entry.filename
+                if is_ascii(inner):
+                    safe = inner
+                else:
+                    parent = str(Path(inner).parent)
+                    safe_name = ascii_upload_name(Path(inner).name, index)
+                    safe = safe_name if parent in {"", "."} else f"{parent}/{safe_name}"
+                    if not is_ascii(safe):
+                        safe = safe_name
+                    renames.append((inner, safe))
+                target.writestr(safe, source.read(entry.filename))
+            if renames:
+                mapping = "\n".join(f"{safe} <- {original}" for original, safe in renames)
+                target.writestr("FILENAMES.txt", mapping + "\n")
+    return buffer.getvalue(), renames
+
+
+def build_uploads(paths: Sequence[str]) -> tuple[list[dict[str, str]], list[str]]:
+    uploads: list[dict[str, str]] = []
+    notes: list[str] = []
+    for index, raw in enumerate(paths):
+        source = Path(raw).expanduser()
+        if not source.is_file():
+            raise ValueError(f"attachment not found: {source}")
+        if source.suffix.lower() == ".zip":
+            payload, renames = normalized_zip_bytes(source)
+            for original, safe in renames:
+                notes.append(f"{safe} <- {original}")
+        else:
+            payload = source.read_bytes()
+        upload_name = ascii_upload_name(source.name, index)
+        if upload_name != source.name:
+            notes.append(f"{upload_name} <- {source.name}")
+        uploads.append(
+            {
+                "name": upload_name,
+                "mime": "application/zip" if source.suffix.lower() == ".zip" else "application/octet-stream",
+                "base64": base64.b64encode(payload).decode("ascii"),
+            }
+        )
+    return uploads, notes
+
+
 def save_outpost_attachments(
     outpost_id: str,
     downloaded_files: list[dict[str, Any]] | None = None,
@@ -580,6 +660,7 @@ var outpostId = {js(outpost_id)};
 var conversationUrl = {js(conversation_url or "")};
 var deadline = Date.now() + {int(timeout_ms)};
 var pollIntervalMs = {int(poll_interval_ms)};
+var recoveredModelSlug = '';
 var home = await openTab('https://chatgpt.com/');
 await home.waitForLoadState('domcontentloaded');
 var sess = await (await fetch('https://chatgpt.com/api/auth/session')).json();
@@ -631,6 +712,7 @@ function assistantFrom(payload) {{
         if (endTurn === true || isComplete) {{
           var txt = messageText(currMsg).trim();
           if (txt) {{
+            recoveredModelSlug = meta.model_slug || recoveredModelSlug;
             return {{
               text: txt,
               finished: true,
@@ -661,6 +743,7 @@ function assistantFrom(payload) {{
   var lastNode = lastEntry.node;
   var last = lastNode.message;
   var lastMeta = last.metadata || {{}};
+  recoveredModelSlug = lastMeta.model_slug || recoveredModelSlug;
   if (hasInProgress || last.end_turn === false) {{
     return {{ text: messageText(last).trim(), finished: false, writingBlocks: lastMeta.writing_blocks || null, attachments: lastMeta.attachments || null }};
   }}
@@ -758,7 +841,8 @@ while (Date.now() < deadline) {{
       conversationUrl: 'https://chatgpt.com/c/' + conversationId,
       conversationId: conversationId,
       writingArtifacts: writingArtifacts,
-      downloadedFiles: downloadedFiles
+      downloadedFiles: downloadedFiles,
+      modelSlug: recoveredModelSlug
     }};
     if (extracted.text && extracted.finished) break;
   }}
@@ -797,6 +881,31 @@ def finished_backend_reply(payload: dict[str, Any] | None) -> bool:
     return bool(payload and payload.get("responseText") and payload.get("finished", True))
 
 
+def confirm_model_slug(
+    outpost_id: str,
+    conversation_url: str | None,
+    *,
+    timeout: int = 25,
+) -> str:
+    """Ask ChatGPT which model produced this outpost turn."""
+    payload = recover_outpost_from_backend(
+        outpost_id,
+        conversation_url=conversation_url,
+        timeout=timeout,
+        poll_interval=5,
+    )
+    return str((payload or {}).get("modelSlug") or "")
+
+
+def wrong_model_message(observed: str, response_path: Path) -> str:
+    return (
+        f"OUTPOST_WRONG_MODEL required={REQUIRED_MODEL_SLUG} "
+        f"observed={observed or 'unknown'} response={response_path}\n"
+        "답변은 저장했지만 요청한 모델이 아닙니다. ChatGPT 모델 피커 계약을 "
+        "다시 확인하세요 (outpost doctor)."
+    )
+
+
 def build_repl_script(
     *,
     project_url: str,
@@ -811,9 +920,12 @@ def build_repl_script(
     conversation_url: str | None = None,
     follow_up: bool = False,
     picker: dict[str, Any] | None = None,
+    uploads: Sequence[dict[str, str]] | None = None,
 ) -> str:
     picker = picker or load_picker_contract()
-    target_label = picker["proLabel"] if quality == "pro" else picker["xhighLabel"]
+    if quality != "pro":
+        raise ValueError("outpost only runs the Pro tier")
+    target_label = picker["proLabel"]
     target_model = str(picker.get("modelRadio") or PREFERRED_MODEL_RADIO)
     tier_pattern = tier_name_pattern(picker.get("tierAliases") or DEFAULT_TIER_ALIASES)
     model_pattern = r"^" + re.escape(target_model) + r"$"
@@ -831,6 +943,7 @@ var composerLabel = {js(composer_label)};
 var quality = {js(quality)};
 var packetName = {js(packet_name)};
 var packetBase64 = {js(packet_base64)};
+var extraUploads = {js(list(uploads or []))};
 var artifactRequested = {js(artifact_output is not None)};
 var composerPrompt = {js(build_composer_prompt(topic, outpost_id, artifact_output, follow_up=follow_up))};
 var targetLabel = {js(target_label)};
@@ -840,6 +953,52 @@ var modelNameRe = new RegExp({js(model_pattern)});
 var verifiedTier = null;
 var submitStartedAt = Date.now();
 var submitStage = 'open-isolated-tab';
+// Aside builds its role/accessible-name index inside snapshot(). getByRole()
+// returns zero matches on a page that was never snapshotted in this REPL
+// session, so every role lookup below primes the index first.
+async function primeRoles(target) {{
+  try {{ await snapshot(target, {{ interactive: true }}); }} catch (error) {{}}
+}}
+async function waitRole(target, role, name, timeoutMs) {{
+  var roleDeadline = Date.now() + timeoutMs;
+  while (true) {{
+    await primeRoles(target);
+    var located = target.getByRole(role, {{ name: name }});
+    if ((await located.count()) > 0) return located;
+    if (Date.now() >= roleDeadline) return null;
+    await sleep(500);
+  }}
+}}
+async function bodyTextOf(target) {{
+  return await target.evaluate(function () {{
+    return (document.body && document.body.innerText || '').trim();
+  }}).catch(function () {{ return ''; }});
+}}
+async function waitComposer(target, selector, attempts) {{
+  for (var composerAttempt = 0; composerAttempt < attempts; composerAttempt += 1) {{
+    var candidate = target.locator(selector);
+    try {{
+      await candidate.waitFor({{ state: 'visible', timeout: 30000 }});
+      return candidate;
+    }} catch (error) {{}}
+    var shown = await bodyTextOf(target);
+    if (shown.indexOf('요청이 너무 많습니다') !== -1) {{
+      throw new Error('ChatGPT rate-limited the project page');
+    }}
+    if (composerAttempt + 1 < attempts) {{
+      await target.reload();
+      await target.waitForLoadState('domcontentloaded');
+      await sleep(2000);
+      continue;
+    }}
+    if (/^Try again$/i.test(shown.slice(0, 40))) {{
+      throw new Error(
+        'ChatGPT did not render the page (client error "Try again") url=' + target.url()
+      );
+    }}
+  }}
+  return null;
+}}
 var submitState = await Promise.race([
   (async () => {{
     try {{
@@ -855,20 +1014,11 @@ var submitState = await Promise.race([
     submitStage = continueMode ? 'load-saved-conversation' : 'load-work-project';
     await workPage.goto(startUrl);
     await workPage.waitForLoadState('domcontentloaded');
-    var rateLimit = workPage.getByRole('heading', {{ name: '요청이 너무 많습니다' }});
     var composer;
     if (continueMode) {{
       submitStage = 'wait-conversation-composer';
-      composer = workPage.locator('#prompt-textarea[contenteditable="true"]');
-      try {{
-        await Promise.race([
-          composer.waitFor({{ state: 'visible', timeout: 60000 }}),
-          rateLimit.waitFor({{ state: 'visible', timeout: 60000 }}).then(function () {{
-            throw new Error('ChatGPT rate-limited the project page');
-          }})
-        ]);
-      }} catch (error) {{
-        if (String(error && error.message).indexOf('rate-limited') !== -1) throw error;
+      composer = await waitComposer(workPage, '#prompt-textarea[contenteditable="true"]', 3);
+      if (!composer) {{
         throw new Error(
           'saved conversation composer not visible url=' + workPage.url() +
           ' expectedConversationId=' + expectedConversationId +
@@ -883,18 +1033,12 @@ var submitState = await Promise.race([
       }}
     }} else {{
       submitStage = 'wait-project-composer';
-      composer = workPage.locator(
-        '#prompt-textarea[contenteditable="true"][aria-label="' + composerLabel + '"]'
+      composer = await waitComposer(
+        workPage,
+        '#prompt-textarea[contenteditable="true"][aria-label="' + composerLabel + '"]',
+        3
       );
-      try {{
-        await Promise.race([
-          composer.waitFor({{ state: 'visible', timeout: 60000 }}),
-          rateLimit.waitFor({{ state: 'visible', timeout: 60000 }}).then(function () {{
-            throw new Error('ChatGPT rate-limited the project page');
-          }})
-        ]);
-      }} catch (error) {{
-        if (String(error && error.message).indexOf('rate-limited') !== -1) throw error;
+      if (!composer) {{
         var found = await workPage.locator('#prompt-textarea').evaluateAll((els) =>
           els.map((el) => ({{
             ariaLabel: el.getAttribute('aria-label'),
@@ -911,7 +1055,7 @@ var submitState = await Promise.race([
     }}
     var assistantCountBefore = await workPage.locator('[data-message-author-role="assistant"]').count();
     if (!continueMode && assistantCountBefore !== 0) throw new Error('isolated Work composer contains stale assistant turns');
-    if (await rateLimit.isVisible().catch(() => false)) {{
+    if ((await bodyTextOf(workPage)).indexOf('요청이 너무 많습니다') !== -1) {{
       throw new Error('ChatGPT rate-limited the project page');
     }}
     submitStage = 'select-chat-surface';
@@ -949,14 +1093,9 @@ var submitState = await Promise.race([
         );
     await composer.waitFor({{ state: 'visible', timeout: 15000 }});
     submitStage = 'select-tier';
-    // Closed Pro pill accessible name is quota+label with no space, e.g. "6Pro".
-    var tierButton = workPage.getByRole(
-      'button',
-      {{ name: tierNameRe }}
-    ).last();
-    try {{
-      await tierButton.waitFor({{ state: 'visible', timeout: 10000 }});
-    }} catch (error) {{
+    // Closed Pro pill accessible name is quota+label, e.g. "6 Pro" or "6Pro".
+    var tierMatches = await waitRole(workPage, 'button', tierNameRe, 20000);
+    if (!tierMatches) {{
       var foundTiers = await workPage.locator('button[aria-haspopup="menu"]').evaluateAll((els) =>
         els.map((el) => ({{
           text: (el.innerText || '').replace(/\\s+/g, ' ').trim(),
@@ -969,13 +1108,10 @@ var submitState = await Promise.race([
         ' url=' + workPage.url()
       );
     }}
+    var tierButton = tierMatches.last();
     await tierButton.click();
-    var performance = workPage.getByRole('menuitem', {{ name: '성능' }});
-    try {{
-      await performance.waitFor({{ state: 'visible', timeout: 5000 }});
-    }} catch (error) {{
-      throw new Error('performance menuitem not visible');
-    }}
+    var performance = await waitRole(workPage, 'menuitem', '성능', 8000);
+    if (!performance) throw new Error('performance menuitem not visible');
     var readTier = (tree) => {{
       var match = tree.match(/([^\\n"]+), (\\d+)개 중 (\\d+)번째/);
       if (!match) return null;
@@ -989,6 +1125,7 @@ var submitState = await Promise.race([
     var current = readTier(tierSnapshot.tree);
     if (!current) throw new Error('tier position not readable');
     if (current.label !== targetLabel) {{
+      await primeRoles(workPage);
       performance = workPage.getByRole('menuitem', {{ name: '성능' }});
       await performance.focus();
       for (var i = 0; i < current.total; i += 1) {{
@@ -1012,12 +1149,17 @@ var submitState = await Promise.race([
     if (!selected || selected.label !== targetLabel) throw new Error('requested tier not verified');
     verifiedTier = selected.label + ' (' + selected.index + ' of ' + selected.total + ')';
     submitStage = 'verify-model';
-    await workPage.getByRole('menuitem', {{ name: '모델 선택' }}).click();
-    var latest = workPage.getByRole('menuitemradio', {{ name: modelNameRe }});
-    try {{
-      await latest.waitFor({{ state: 'visible', timeout: 5000 }});
-    }} catch (error) {{
-      throw new Error(targetModel + ' radio not visible');
+    var modelMenu = await waitRole(workPage, 'menuitem', '모델 선택', 8000);
+    if (!modelMenu) throw new Error('model menu not visible');
+    await modelMenu.click();
+    var latest = await waitRole(workPage, 'menuitemradio', modelNameRe, 8000);
+    if (!latest) {{
+      var foundRadios = await workPage.locator('[role="menuitemradio"]').evaluateAll((els) =>
+        els.map((el) => (el.innerText || '').replace(/\\s+/g, ' ').trim())
+      ).catch(() => []);
+      throw new Error(
+        targetModel + ' radio not visible; found ' + JSON.stringify(foundRadios)
+      );
     }}
     if ((await latest.getAttribute('aria-checked')) !== 'true') await latest.click();
     if ((await latest.getAttribute('aria-checked')) !== 'true') throw new Error(targetModel + ' not checked');
@@ -1033,18 +1175,30 @@ var submitState = await Promise.race([
     if (composerValue !== composerPrompt) throw new Error('composer prompt mismatch');
     submitStage = 'attach-packet';
     var fileInput = workPage.locator('#upload-files');
-    var attachmentChip = workPage.getByRole('group', {{ name: {js(outpost_id)} }});
+    var attachmentName = {js(outpost_id)};
+    async function attachmentPresent(timeoutMs) {{
+      var attachDeadline = Date.now() + timeoutMs;
+      while (true) {{
+        if (await waitRole(workPage, 'group', attachmentName, 0)) return true;
+        if ((await bodyTextOf(workPage)).indexOf(packetName) !== -1) return true;
+        if (Date.now() >= attachDeadline) return false;
+        await sleep(1000);
+      }}
+    }}
     var attached = false;
     for (var attachAttempt = 0; attachAttempt < 2 && !attached; attachAttempt += 1) {{
       await fileInput.setInputFiles([{{
         name: packetName,
         mimeType: 'text/markdown',
         buffer: Buffer.from(packetBase64, 'base64')
-      }}]);
-      try {{
-        await attachmentChip.waitFor({{ state: 'visible', timeout: 30000 }});
-        attached = true;
-      }} catch (error) {{}}
+      }}].concat(extraUploads.map(function (item) {{
+        return {{
+          name: item.name,
+          mimeType: item.mime,
+          buffer: Buffer.from(item.base64, 'base64')
+        }};
+      }})));
+      attached = await attachmentPresent(30000);
     }}
     if (!attached) throw new Error('packet attachment missing before send');
     submitStage = 'ready-to-send';
@@ -1052,15 +1206,21 @@ var submitState = await Promise.race([
       '#composer-submit-button:not(:disabled):not([aria-disabled="true"]):not([data-visually-disabled])'
     );
     await send.waitFor({{ state: 'visible', timeout: 60000 }});
-    try {{
-      await attachmentChip.waitFor({{ state: 'visible', timeout: 10000 }});
-    }} catch (error) {{
+    if (!(await attachmentPresent(10000))) {{
       await fileInput.setInputFiles([{{
         name: packetName,
         mimeType: 'text/markdown',
         buffer: Buffer.from(packetBase64, 'base64')
-      }}]);
-      await attachmentChip.waitFor({{ state: 'visible', timeout: 30000 }});
+      }}].concat(extraUploads.map(function (item) {{
+        return {{
+          name: item.name,
+          mimeType: item.mime,
+          buffer: Buffer.from(item.base64, 'base64')
+        }};
+      }})));
+      if (!(await attachmentPresent(30000))) {{
+        throw new Error('packet attachment missing before send');
+      }}
     }}
     return {{ workPage, ownedTargetId: ownedTab.targetId, send, assistantCountBefore }};
     }} catch (error) {{
@@ -1149,6 +1309,7 @@ function messageTextFrom(message) {{
     return typeof part === 'string' ? part : (part && part.text) || '';
   }}).join('');
 }}
+var observedModelSlug = '';
 async function readAssistantFromBackend() {{
   if (!conversationId) {{
     conversationId = (conversationUrlFrom(workPage.url()).match(/\\/c\\/([0-9a-fA-F-]{{8,}})/) || [])[1] || '';
@@ -1193,6 +1354,7 @@ async function readAssistantFromBackend() {{
         if (endTurn === true || isComplete) {{
           var txt = messageTextFrom(currMsg).trim();
           if (txt) {{
+            observedModelSlug = meta.model_slug || observedModelSlug;
             return {{
               text: txt,
               finished: true,
@@ -1225,6 +1387,7 @@ async function readAssistantFromBackend() {{
   var lastNode = lastEntry.node;
   var last = lastNode.message;
   var lastMeta = last.metadata || {{}};
+  observedModelSlug = lastMeta.model_slug || observedModelSlug;
   if (hasInProgress || last.end_turn === false) {{
     return {{ text: messageTextFrom(last).trim(), finished: false, writingBlocks: lastMeta.writing_blocks || null, attachments: lastMeta.attachments || null }};
   }}
@@ -1254,6 +1417,7 @@ var stopButton = workPage.locator(
   'button[data-testid="stop-button"], button[aria-label*="중지"], button[aria-label*="Stop"]'
 );
 var assistant = workPage.locator('[data-message-author-role="assistant"]').last();
+await primeRoles(workPage);
 var copyResponse = workPage.getByRole('button', {{ name: /^(응답 복사|Copy response)$/ }}).last();
 var rateLimitAfter = workPage.getByRole('heading', {{ name: '요청이 너무 많습니다' }});
 var responseText = '';
@@ -1403,7 +1567,8 @@ console.log({js(RESPONSE_MARKER)} + JSON.stringify({{
   writingArtifacts,
   responseElapsedMs: Date.now() - responseStartedAt,
   conversationUrl: finalConversationUrl,
-  conversationId: conversationId
+  conversationId: conversationId,
+  modelSlug: observedModelSlug
 }}));
 await closeTab(workPage).catch(() => {{}});
 """.strip()
@@ -1659,6 +1824,7 @@ try {{
   report.tierInnerText = await page.locator('button[aria-haspopup="menu"]').evaluateAll((els) =>
     els.map((el) => (el.innerText || '').replace(/\\s+/g, ' ').trim()).filter(Boolean)
   ).catch(() => []);
+  await snapshot(page, {{ interactive: true }});
   var tierButton = page.getByRole('button', {{ name: tierNameRe }}).last();
   report.tierRoleMatched = (await tierButton.count()) > 0
     && await tierButton.isVisible().catch(() => false);
@@ -1670,6 +1836,7 @@ try {{
       if (!(await candidate.isVisible().catch(() => false))) continue;
       await candidate.click();
       await sleep(800);
+      await snapshot(page, {{ interactive: true }});
       var opened = await page.getByRole('menuitem', {{ name: '성능' }}).isVisible().catch(() => false);
       if (opened) {{
         report.tierRoleMatched = true;
@@ -1687,6 +1854,7 @@ try {{
       await tierButton.click();
       await sleep(800);
     }}
+    await snapshot(page, {{ interactive: true }});
     report.performanceVisible = await page.getByRole('menuitem', {{ name: '성능' }})
       .isVisible().catch(() => false);
     var modelItem = page.getByRole('menuitem', {{ name: '모델 선택' }});
@@ -1802,7 +1970,7 @@ def run_doctor(args: argparse.Namespace) -> int:
 
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--quality", choices=("xhigh", "pro"))
+    parser.add_argument("--quality", choices=("pro",))
     parser.add_argument("--packet")
     parser.add_argument("--url", default=None)
     parser.add_argument("--project", default=None)
@@ -1814,6 +1982,12 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         "--artifact-output",
         default=None,
         help="Save one generated zip artifact here; uses the same Aside conversation.",
+    )
+    parser.add_argument(
+        "--attach-input",
+        action="append",
+        default=None,
+        help="Upload an extra input file with the packet; repeatable.",
     )
     parser.add_argument("--response-timeout", type=int, default=DEFAULT_RESPONSE_TIMEOUT_SECONDS)
     parser.add_argument(
@@ -2016,11 +2190,14 @@ def recover_from_saved_state(args: argparse.Namespace) -> int:
         response_text = str(recovered["responseText"]) + format_attachments_section(saved_paths)
         response_path.write_text(response_text + "\n", encoding="utf-8")
         saved = {
-            "ok": True,
+            "ok": str(recovered.get("modelSlug") or "") == REQUIRED_MODEL_SLUG,
             "id": outpost_id,
             "topic": evidence.get("topic") or "",
             "quality": evidence.get("quality") or args.quality or "",
-            "model": evidence.get("model") or "최신",
+            "model": str(recovered.get("modelSlug") or "") or evidence.get("model") or "",
+            "modelSlug": str(recovered.get("modelSlug") or ""),
+            "modelOk": str(recovered.get("modelSlug") or "") == REQUIRED_MODEL_SLUG,
+            "requiredModel": REQUIRED_MODEL_SLUG,
             "tier": evidence.get("tier") or "",
             "conversationUrl": recovered.get("conversationUrl") or conversation_url,
             "conversationId": recovered.get("conversationId") or evidence.get("conversationId") or "",
@@ -2037,6 +2214,7 @@ def recover_from_saved_state(args: argparse.Namespace) -> int:
             saved["attachments"] = [str(p) for p in saved_paths]
             saved["attachmentsDir"] = str(Path(f"/tmp/outpost-{outpost_id}"))
         saved = attach_thread_fields(saved, {"threadId": evidence.get("threadId") or ""}, str(evidence.get("mode") or "recover"))
+        saved["packetSha"] = str(evidence.get("packetSha") or "")
         json_path.write_text(json.dumps(saved, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         record_thread_outcome(
             session_store_from_args(args),
@@ -2052,7 +2230,14 @@ def recover_from_saved_state(args: argparse.Namespace) -> int:
             print(f"OUTPOST_ATTACHMENTS dir=/tmp/outpost-{outpost_id} count={len(saved_paths)}", flush=True)
             for p in saved_paths:
                 print(f"  - {p}", flush=True)
-        print(f"OUTPOST_COMPLETE response={response_path}", flush=True)
+        recovered_state_slug = str(recovered.get("modelSlug") or "")
+        if recovered_state_slug != REQUIRED_MODEL_SLUG:
+            print(wrong_model_message(recovered_state_slug, response_path), file=sys.stderr)
+            return WRONG_MODEL_EXIT
+        print(
+            f"OUTPOST_COMPLETE response={response_path} model={recovered_state_slug}",
+            flush=True,
+        )
         return 0
     stderr_path.write_text("backend recovery did not finish\n", encoding="utf-8")
     failed = attach_thread_fields(
@@ -2126,6 +2311,18 @@ def main(argv: Sequence[str]) -> int:
         print(daemon_error, file=sys.stderr)
         return 75
     packet_source = str(packet_path.resolve())
+    try:
+        uploads, upload_notes = build_uploads(args.attach_input or [])
+    except (ValueError, OSError, BadZipFile) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    if upload_notes:
+        raw_body = (
+            raw_body.rstrip()
+            + "\n\n## 첨부 파일 이름 (업로드용 ASCII 이름 <- 원래 이름)\n\n"
+            + "\n".join(f"- `{note}`" for note in upload_notes)
+            + "\n"
+        )
     packet_base64 = base64.b64encode(raw_body.encode("utf-8")).decode("ascii")
     outpost_id = secrets.token_hex(16)
     stderr_path = Path(args.stderr_output).expanduser()
@@ -2148,6 +2345,28 @@ def main(argv: Sequence[str]) -> int:
     follow_up = False
     conversation_url = None
     mode = "new"
+    packet_sha = hashlib.sha256(raw_body.encode("utf-8")).hexdigest()
+    if os.environ.get("OUTPOST_FORCE") != "1" and json_path.is_file():
+        try:
+            previous = json.loads(json_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            previous = None
+        if isinstance(previous, dict) and str(previous.get("packetSha") or "") == packet_sha:
+            previous_status = str(previous.get("status") or ("finished" if previous.get("ok") else ""))
+            if previous.get("ok") or previous_status in {
+                "submitted_pending",
+                "submitted_response_unavailable",
+                "submitted_artifact_unavailable",
+                "finished",
+            }:
+                print(
+                    "이 패킷은 이미 이 실행 디렉터리에서 보냈다 "
+                    f"(id={previous.get('id') or '-'}, status={previous_status or 'finished'}). "
+                    f"회수는 'outpost recover {json_path.parent}', "
+                    "정말 다시 보내려면 OUTPOST_FORCE=1.",
+                    file=sys.stderr,
+                )
+                return DUPLICATE_SEND_EXIT
     try:
         store, thread, thread_lock, follow_up, conversation_url, needs_start = open_or_continue_thread(
             args,
@@ -2172,8 +2391,50 @@ def main(argv: Sequence[str]) -> int:
         f"mode={mode} url={conversation_url or '-'}",
         flush=True,
     )
+    pending_evidence = {
+        "ok": False,
+        "status": "submitted_pending",
+        "id": outpost_id,
+        "topic": topic,
+        "quality": args.quality,
+        "requiredModel": REQUIRED_MODEL_SLUG,
+        "packetPath": packet_source,
+        "packetSha": packet_sha,
+        "responseOutput": str(response_path),
+        "conversationUrl": conversation_url or "",
+        "threadId": (thread or {}).get("threadId") or "",
+        "mode": mode,
+    }
+
+    def write_pending(extra: dict[str, Any] | None = None) -> None:
+        if extra:
+            pending_evidence.update(extra)
+        try:
+            json_path.write_text(
+                json.dumps(pending_evidence, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
+
+    # Written before the send so a dead REPL, daemon restart, or killed parent
+    # still leaves enough state for 'outpost recover' to pick the answer up.
+    write_pending()
 
     def mark_submitted(payload: dict[str, Any]) -> None:
+        write_pending(
+            {
+                "conversationUrl": SESSIONS.preferred_conversation_url(
+                    str(payload.get("conversationUrl") or "") or None,
+                    str(payload.get("conversationId") or "") or None,
+                )
+                or pending_evidence.get("conversationUrl")
+                or "",
+                "conversationId": str(payload.get("conversationId") or ""),
+                "targetId": str(payload.get("targetId") or ""),
+                "tier": str(payload.get("tier") or ""),
+            }
+        )
         if store is None or thread is None:
             return
         store.mark_submitted(
@@ -2218,6 +2479,7 @@ def main(argv: Sequence[str]) -> int:
                     conversation_url=conversation_url,
                     follow_up=follow_up,
                     picker=load_picker_contract(),
+                    uploads=uploads,
                 ),
                 submit_timeout=SUBMIT_TIMEOUT_SECONDS,
                 response_timeout=args.response_timeout,
@@ -2259,13 +2521,18 @@ def main(argv: Sequence[str]) -> int:
             response_text = str(recovered["responseText"]) + format_attachments_section(saved_paths)
             response_path.write_text(response_text + "\n", encoding="utf-8")
             stderr_path.write_text(exc.transcript, encoding="utf-8")
+            recovered_slug = str(recovered.get("modelSlug") or "")
+            recovered_model_ok = recovered_slug == REQUIRED_MODEL_SLUG
             recovered_evidence = attach_thread_fields(
                 {
-                    "ok": True,
+                    "ok": recovered_model_ok,
                     "id": outpost_id,
                     "topic": topic,
                     "quality": args.quality,
-                    "model": submitted.get("model") or "최신",
+                    "model": recovered_slug or submitted.get("model") or "",
+                    "modelSlug": recovered_slug,
+                    "modelOk": recovered_model_ok,
+                    "requiredModel": REQUIRED_MODEL_SLUG,
                     "tier": submitted.get("tier") or "",
                     "conversationUrl": persisted_conversation_url(
                         recovered.get("conversationUrl"),
@@ -2288,6 +2555,7 @@ def main(argv: Sequence[str]) -> int:
             if saved_paths:
                 recovered_evidence["attachments"] = [str(p) for p in saved_paths]
                 recovered_evidence["attachmentsDir"] = str(Path(f"/tmp/outpost-{outpost_id}"))
+            recovered_evidence["packetSha"] = packet_sha
             json_path.write_text(
                 json.dumps(recovered_evidence, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
@@ -2311,7 +2579,13 @@ def main(argv: Sequence[str]) -> int:
                 print(f"OUTPOST_ATTACHMENTS dir=/tmp/outpost-{outpost_id} count={len(saved_paths)}", flush=True)
                 for p in saved_paths:
                     print(f"  - {p}", flush=True)
-            print(f"OUTPOST_COMPLETE response={response_path}", flush=True)
+            if not recovered_model_ok:
+                print(wrong_model_message(recovered_slug, response_path), file=sys.stderr)
+                return WRONG_MODEL_EXIT
+            print(
+                f"OUTPOST_COMPLETE response={response_path} model={recovered_slug}",
+                flush=True,
+            )
             return 0
         message = str(exc)
         stderr_path.write_text(
@@ -2339,6 +2613,7 @@ def main(argv: Sequence[str]) -> int:
             thread,
             mode,
         )
+        evidence["packetSha"] = packet_sha
         json_path.write_text(
             json.dumps(evidence, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
@@ -2428,6 +2703,7 @@ def main(argv: Sequence[str]) -> int:
             thread,
             mode,
         )
+        evidence["packetSha"] = packet_sha
         json_path.write_text(
             json.dumps(evidence, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
@@ -2449,13 +2725,27 @@ def main(argv: Sequence[str]) -> int:
         )
         print(message, file=sys.stderr)
         return 77
+    model_slug = str(response_payload.get("modelSlug") or "")
+    conversation_for_check = persisted_conversation_url(
+        submit_payload.get("conversationUrl"),
+        response_payload.get("conversationUrl"),
+        submit_payload.get("conversationId"),
+        response_payload.get("conversationId"),
+        thread=thread,
+    )
+    if not model_slug:
+        model_slug = confirm_model_slug(outpost_id, conversation_for_check or None)
+    model_ok = model_slug == REQUIRED_MODEL_SLUG
     evidence = attach_thread_fields(
         {
-            "ok": True,
+            "ok": model_ok,
             "id": outpost_id,
             "topic": topic,
             "quality": args.quality,
-            "model": submit_payload["model"],
+            "model": model_slug or submit_payload["model"],
+            "modelSlug": model_slug,
+            "modelOk": model_ok,
+            "requiredModel": REQUIRED_MODEL_SLUG,
             "tier": submit_payload["tier"],
             "conversationUrl": persisted_conversation_url(
                 submit_payload.get("conversationUrl"),
@@ -2481,6 +2771,7 @@ def main(argv: Sequence[str]) -> int:
     if saved_paths:
         evidence["attachments"] = [str(p) for p in saved_paths]
         evidence["attachmentsDir"] = str(Path(f"/tmp/outpost-{outpost_id}"))
+    evidence["packetSha"] = packet_sha
     json_path.write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     record_thread_outcome(
         store,
@@ -2503,7 +2794,13 @@ def main(argv: Sequence[str]) -> int:
         print(f"OUTPOST_ATTACHMENTS dir=/tmp/outpost-{outpost_id} count={len(saved_paths)}", flush=True)
         for p in saved_paths:
             print(f"  - {p}", flush=True)
-    print(f"OUTPOST_COMPLETE response={response_path}", flush=True)
+    if not model_ok:
+        print(wrong_model_message(model_slug, response_path), file=sys.stderr)
+        return WRONG_MODEL_EXIT
+    print(
+        f"OUTPOST_COMPLETE response={response_path} model={model_slug}",
+        flush=True,
+    )
     return 0
 
 
