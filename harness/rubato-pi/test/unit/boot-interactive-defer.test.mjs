@@ -6,7 +6,10 @@ import { pathToFileURL } from "node:url";
 
 import { senpiDir } from "../../src/engine-paths.mjs";
 import { applyBootPerfTransforms } from "../../src/transforms/boot-perf.mjs";
-import { injectInteractiveDeferDialogs } from "../../src/transforms/boot-interactive-defer.mjs";
+import {
+  injectInteractiveDeferDialogs,
+  injectStartupPromptReleasesBootChrome,
+} from "../../src/transforms/boot-interactive-defer.mjs";
 
 const interactivePath = join(senpiDir, "dist", "modes", "interactive", "interactive-mode.js");
 
@@ -62,4 +65,17 @@ test("the boot-perf cluster defers InteractiveMode dialogs without drift", () =>
   assert.match(next, /async rebindCurrentSession[\s\S]*activateDeferredExtensions/);
   assert.match(next, /에디터를 준비하는 중/);
   assert.match(next, /await mod\.finishBootChrome\(\);[\s\S]*?this\.ui\.start\(\);/);
+});
+
+test("startup trust prompts release the boot splash so they are visible", () => {
+  const indicatorPath = join(senpiDir, "dist", "cli", "startup-loading-indicator.js");
+  const installed = readFileSync(indicatorPath, "utf8");
+  const next = injectStartupPromptReleasesBootChrome(installed);
+  assert.match(next, /releaseBootChrome/);
+  const { warnings } = applyNoThrow(pathToFileURL(indicatorPath).href, installed);
+  assert.equal(warnings.length, 0, `startup-loading-indicator drift: ${warnings.join("; ")}`);
+  assert.throws(
+    () => injectStartupPromptReleasesBootChrome("export function pauseIndicatorDuringPrompts() {}"),
+    /startup prompt releases boot chrome/,
+  );
 });
