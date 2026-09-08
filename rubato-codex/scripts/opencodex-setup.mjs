@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
-export const OPENCODEX_VERSION = "2.43.0";
+export const OPENCODEX_VERSION = "2.48.0";
 const PACKAGE = `@bitkyc08/opencodex@${OPENCODEX_VERSION}`;
 const PACKAGE_NAME = "@bitkyc08/opencodex";
 const OWNERSHIP_MARKER = "rubato-opencodex.json";
@@ -159,26 +159,95 @@ function defaultRosterRunner(command, roster, env) {
   }
 }
 
+/**
+ * Provider preference inside the roster. Direct providers come before proxied ones so a
+ * sub-agent spends the account we authenticated rather than a resold seat, and the picker's
+ * top band ends up grouped by provider instead of interleaved.
+ */
+const ROSTER_PROVIDER_RANK = Object.freeze({ anthropic: 0, xai: 1, cursor: 2, kiro: 3 });
+
+/**
+ * Roles the roster fills, in priority order. Every slot is a ROUTED model on purpose.
+ *
+ * Codex offers native ChatGPT models as spawn candidates whether or not they are listed
+ * here (clearing the roster leaves `gpt-*` as the advertised set), so spending a slot on
+ * `gpt-5.6-sol` buys nothing and costs one of the five that only a routed model can use.
+ */
+const ROSTER_ROLES = Object.freeze([
+  { suffix: "/claude-opus-5", pattern: /opus/i },
+  { suffix: "/claude-fable-5-1", pattern: /fable/i },
+  { suffix: "/grok-4.6", pattern: /grok/i },
+  { suffix: "/claude-sonnet-5", pattern: /sonnet/i },
+  { suffix: null, pattern: /gemini.*flash|flash.*gemini/i },
+]);
+
+const MAX_ROSTER_MODELS = 5;
+
 export async function configureOpenCodexRoster(setup, catalog, options = {}) {
   if (!setup?.selectedProviders?.length) return { status: "native-codex-only", models: [] };
   if (options.preserveExisting && catalog?.roster?.length) return { status: "preserved", models: catalog.roster };
   const selected = new Set(setup.selectedProviders);
-  const routed = (catalog?.providers || []).filter((provider) => selected.has(provider.id)).flatMap((provider) => provider.models || []);
-  const pick = (preferredSuffix, pattern) => routed.find((model) => model.endsWith(preferredSuffix)) || routed.find((model) => pattern.test(model));
-  const external = [
-    pick("/claude-fable-5-1", /fable/i),
-    pick("/claude-opus-5", /opus/i),
-    pick("/grok-4.6", /grok/i),
-    pick("/gemini-3.8-flash", /gemini.*flash|flash.*gemini/i),
-  ].filter(Boolean);
+  const rank = (id) => (Object.hasOwn(ROSTER_PROVIDER_RANK, id) ? ROSTER_PROVIDER_RANK[id] : Number.MAX_SAFE_INTEGER);
+  const routed = (catalog?.providers || [])
+    .filter((provider) => selected.has(provider.id))
+    .slice()
+    .sort((left, right) => rank(left.id) - rank(right.id) || left.id.localeCompare(right.id))
+    .flatMap((provider) => provider.models || []);
+  // One model answers at most one role: without this a single `grok-4.6` would win both the
+  // grok slot and any later pattern it happens to match, silently shrinking the roster.
+  const taken = new Set();
+  const external = [];
+  for (const { suffix, pattern } of ROSTER_ROLES) {
+    if (external.length >= MAX_ROSTER_MODELS) break;
+    const hit = (suffix ? routed.find((model) => model.endsWith(suffix) && !taken.has(model)) : undefined)
+      ?? routed.find((model) => pattern.test(model) && !taken.has(model));
+    if (!hit) continue;
+    taken.add(hit);
+    external.push(hit);
+  }
   if (!external.length) {
     return { status: "pending-catalog", models: ["gpt-5.6-sol", "gpt-5.6-terra"], reason: "selected provider models are not available until authentication and catalog sync" };
   }
-  const roster = [...new Set([
-    "gpt-5.6-sol",
-    ...external,
-    "gpt-5.6-terra",
-  ].filter(Boolean))].slice(0, 5);
+  // Group by provider for the picker's top band; roles keep their order inside a provider.
+  const order = new Map(external.map((model, index) => [model, index]));
+  const roster = external
+    .slice()
+    .sort((left, right) => rank(left.split("/")[0]) - rank(right.split("/")[0]) || order.get(left) - order.get(right))
+    .slice(0, MAX_ROSTER_MODELS);
   await (options.runner || defaultRosterRunner)(setup.command, roster, options.env || process.env);
   return { status: "configured", models: roster };
+}
+
+function defaultMultiAgentRunner(command, env) {
+  const result = spawnSync(command, ["v2", "keep-native-v1", "on"], { encoding: "utf8", env, timeout: 20_000 });
+  if (result.error || result.status !== 0) {
+    const detail = `${result.stderr || ""}${result.stdout || ""}`.trim();
+    throw new Error(`OpenCodex multi-agent setup failed${detail ? `: ${detail}` : ""}`);
+  }
+}
+
+/**
+ * Let a native ChatGPT parent spawn a routed sub-agent.
+ *
+ * Codex's v2 multi-agent surface encrypts the child NEW_TASK body for the ChatGPT backend, so a
+ * routed provider receives ciphertext it cannot read and the spawn dies with
+ * `unreadable_encrypted_agent_task` — the model override is accepted, then the run fails.
+ * `keep-native-v1` stamps ChatGPT-native catalog rows as v1 while routed rows stay v2, which is
+ * the one supported way out (opencodex issue #92).
+ *
+ * The cost is real and belongs in the install record: a v1-stamped row is an eligible LEAF
+ * worker, so a sub-agent under a native parent cannot itself delegate, and the v2-only tools
+ * (`followup_task`, `interrupt_agent`, `list_agents`) are gone for that parent. Routed parents
+ * keep the full v2 surface. Without this step the roster above is decoration: every model in it
+ * is advertised and every spawn using one fails.
+ */
+export async function configureOpenCodexMultiAgent(setup, options = {}) {
+  if (!setup?.selectedProviders?.length) return { status: "native-codex-only" };
+  if (options.dryRun) return { status: "planned", keepNativeChatGptOnV1: true };
+  await (options.runner || defaultMultiAgentRunner)(setup.command, options.env || process.env);
+  return {
+    status: "configured",
+    keepNativeChatGptOnV1: true,
+    tradeoff: "native ChatGPT parents use the v1 surface: sub-agents under them are leaf workers and lose followup_task/interrupt_agent/list_agents",
+  };
 }

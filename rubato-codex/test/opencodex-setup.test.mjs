@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { applyOpenCodexSetup, configureOpenCodexRoster, OPENCODEX_VERSION, planOpenCodexSetup, registerOpenCodexProviders, removeManagedOpenCodex } from "../scripts/opencodex-setup.mjs";
+import { applyOpenCodexSetup, configureOpenCodexMultiAgent, configureOpenCodexRoster, OPENCODEX_VERSION, planOpenCodexSetup, registerOpenCodexProviders, removeManagedOpenCodex } from "../scripts/opencodex-setup.mjs";
 
 test("native-only plan never installs OpenCodex", async () => {
   const home = await mkdtemp(join(tmpdir(), "rubato-ocx-native-"));
@@ -89,6 +89,43 @@ test("provider registration and fresh exact-model roster are noninteractive and 
       { id: "xai", models: ["xai/grok-4.6"] },
     ],
   }, { runner: async (command, models) => calls.push([command, ...models]) });
-  assert.deepEqual(roster.models, ["gpt-5.6-sol", "cursor/claude-fable-5-1", "cursor/claude-opus-5", "xai/grok-4.6", "cursor/gemini-3.8-flash"]);
+  // Every slot is routed: native gpt rows are spawn candidates without the roster, so spending a
+  // slot on one wastes it. xai outranks cursor, and roles keep their order inside a provider.
+  assert.deepEqual(roster.models, ["xai/grok-4.6", "cursor/claude-opus-5", "cursor/claude-fable-5-1", "cursor/gemini-3.8-flash"]);
   assert.deepEqual(calls[1], ["/managed/ocx", ...roster.models]);
+});
+
+test("roster prefers direct providers and never spends a slot twice", async () => {
+  const setup = { command: "/managed/ocx", selectedProviders: ["anthropic", "cursor", "xai"] };
+  const roster = await configureOpenCodexRoster(setup, {
+    providers: [
+      { id: "cursor", models: ["cursor/claude-opus-5", "cursor/grok-4.6", "cursor/gemini-3.7-flash"] },
+      { id: "anthropic", models: ["anthropic/claude-opus-5", "anthropic/claude-fable-5-1", "anthropic/claude-sonnet-5"] },
+      { id: "xai", models: ["xai/grok-4.6"] },
+    ],
+  }, { runner: async () => {} });
+  assert.deepEqual(roster.models, [
+    "anthropic/claude-opus-5",
+    "anthropic/claude-fable-5-1",
+    "anthropic/claude-sonnet-5",
+    "xai/grok-4.6",
+    "cursor/gemini-3.7-flash",
+  ]);
+  assert.equal(new Set(roster.models).size, roster.models.length);
+  assert.ok(roster.models.every((model) => model.includes("/")), "native models waste a roster slot");
+});
+
+test("multi-agent setup turns on keep-native-v1 so routed spawns can run", async () => {
+  const calls = [];
+  const setup = { command: "/managed/ocx", selectedProviders: ["anthropic"] };
+  const configured = await configureOpenCodexMultiAgent(setup, { runner: async (command) => calls.push(command) });
+  assert.deepEqual(calls, ["/managed/ocx"]);
+  assert.equal(configured.keepNativeChatGptOnV1, true);
+  assert.equal(configured.status, "configured");
+
+  const planned = await configureOpenCodexMultiAgent(setup, { dryRun: true, runner: async () => assert.fail("dry run must not run the CLI") });
+  assert.equal(planned.status, "planned");
+
+  const native = await configureOpenCodexMultiAgent({ command: "/managed/ocx", selectedProviders: [] }, { runner: async () => assert.fail("native-only install must not touch multi-agent config") });
+  assert.equal(native.status, "native-codex-only");
 });
