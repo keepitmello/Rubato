@@ -53,6 +53,28 @@ export function injectUniversalApplyPatch(source) {
     "apply patch safe initial variant");
 }
 
+
+export function isMcpIndexUrl(url) {
+  return url.endsWith("/dist/core/extensions/builtin/mcp/index.js");
+}
+
+/**
+ * session_start 가 MCP attach 를 기다리면 첫 메시지가 Working 도 없이 붙잡힌다.
+ * senpi 는 핸들러를 순서대로 await 하고 SessionWorkBarrier 가 그 동안 입력을 막는다.
+ * reload 는 이미 fire-and-forget. startup/new/resume 도 같게 두되, attach 자체는
+ * 시작하고 first turn 의 before_agent_start 가 그 Promise 를 기다려 도구가 빠지지 않게 한다.
+ */
+export function injectMcpAttachNonblocking(source) {
+  return replaceOnce(source,
+    `            if (event.reason === "reload") {
+                void work;
+                return;
+            }
+            return work;`,
+    "            void work;",
+    "mcp session_start never awaits attach");
+}
+
 export function isMcpTierBUrl(url) {
   return url.endsWith("/dist/core/extensions/builtin/mcp/expose/tier-b.js");
 }
