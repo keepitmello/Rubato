@@ -1,0 +1,220 @@
+import assert from "node:assert/strict";
+import { chmod, lstat, mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+
+import { installPackage, uninstallPackage } from "../scripts/install.mjs";
+
+const roles = ["taskforce_owner", "taskforce_verifier", "taskforce_helper"];
+const skills = ["agent-taskforce", "dispatching", "dispatched", "codex-discusser", "codex-reviewer", "keep-simple"];
+
+async function fixture() {
+  const root = await mkdtemp(join(tmpdir(), "rubato-codex-install-"));
+  const repoRoot = join(root, "repo");
+  const pluginRoot = join(repoRoot, "rubato-codex");
+  const codexHome = join(root, "codex-home");
+  const fakeCodex = join(root, "codex");
+  const fakeState = join(root, "fake-codex-state.json");
+  const fakeLog = join(root, "fake-codex.log");
+  await mkdir(join(repoRoot, ".agents", "plugins"), { recursive: true });
+  await mkdir(join(pluginRoot, ".codex-plugin"), { recursive: true });
+  await mkdir(join(pluginRoot, "agents"), { recursive: true });
+  await mkdir(join(pluginRoot, "instructions"), { recursive: true });
+  await mkdir(join(pluginRoot, "taskforce", "dist"), { recursive: true });
+  await mkdir(join(pluginRoot, "scripts"), { recursive: true });
+  await writeFile(join(repoRoot, ".agents", "plugins", "marketplace.json"), JSON.stringify({
+    name: "rubato",
+    plugins: [{ name: "rubato-codex", source: { source: "local", path: "./rubato-codex" } }],
+  }));
+  await writeFile(join(pluginRoot, ".codex-plugin", "plugin.json"), JSON.stringify({
+    name: "rubato-codex",
+    version: "0.1.0",
+    skills: "./skills/",
+    mcpServers: "./.mcp.json",
+  }));
+  await writeFile(join(pluginRoot, ".mcp.json"), JSON.stringify({
+    mcpServers: { taskforce: { command: "sh", args: ["./scripts/taskforce-mcp.sh"], cwd: "." } },
+  }));
+  for (const role of roles) {
+    await writeFile(join(pluginRoot, "agents", `${role}.toml`), `name = "${role}"\ndescription = "${role} description"\ndeveloper_instructions = "role contract"\n`);
+  }
+  for (const skill of skills) {
+    await mkdir(join(pluginRoot, "skills", skill), { recursive: true });
+    await writeFile(join(pluginRoot, "skills", skill, "SKILL.md"), `---\nname: ${skill}\ndescription: fixture\n---\n`);
+  }
+  await writeFile(join(pluginRoot, "instructions", "AGENTS.md"), "Use native Rubato taskforce roles.\n");
+  await writeFile(join(pluginRoot, "taskforce", "dist", "mcp-server.mjs"), "// fixture bundle\n");
+  await writeFile(join(pluginRoot, "scripts", "taskforce-mcp.sh"), "#!/bin/sh\nexit 0\n");
+  await writeFile(fakeCodex, `#!/usr/bin/env node
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+const statePath = process.env.FAKE_CODEX_STATE;
+const logPath = process.env.FAKE_CODEX_LOG;
+const state = fs.existsSync(statePath) ? JSON.parse(fs.readFileSync(statePath, "utf8")) : { marketplaces: [], installed: [] };
+fs.appendFileSync(logPath, JSON.stringify(args) + "\\n");
+if (args[0] === "--version") { console.log("codex-cli 0.153.4"); process.exit(0); }
+if (args[0] === "plugin" && args[1] === "--help") { console.log("Manage Codex plugins"); process.exit(0); }
+if (args[1] === "marketplace" && args[2] === "list") { console.log(JSON.stringify({marketplaces: state.marketplaces})); process.exit(0); }
+if (args[1] === "marketplace" && args[2] === "add") {
+  state.marketplaces.push({name:"rubato",root:args[3],marketplaceSource:{sourceType:"local",source:args[3]}});
+  fs.writeFileSync(statePath, JSON.stringify(state)); console.log("{}"); process.exit(0);
+}
+if (args[1] === "list") { console.log(JSON.stringify({installed: state.installed, available: []})); process.exit(0); }
+if (args[1] === "add") {
+  state.installed.push({pluginId:args[2],name:"rubato-codex",marketplaceName:"rubato"});
+  fs.writeFileSync(statePath, JSON.stringify(state));
+  const configPath = process.env.CODEX_HOME + "/config.toml";
+  fs.mkdirSync(process.env.CODEX_HOME, {recursive:true});
+  const config = fs.existsSync(configPath) ? fs.readFileSync(configPath, "utf8") : "";
+  if (!config.includes('[plugins."rubato-codex@rubato"]')) {
+    fs.writeFileSync(configPath, config + '\\n[plugins."rubato-codex@rubato"]\\nenabled = true\\n');
+  }
+  console.log("{}"); process.exit(0);
+}
+if (args[1] === "remove") { state.installed = state.installed.filter((item) => item.pluginId !== args[2]); fs.writeFileSync(statePath, JSON.stringify(state)); console.log("{}"); process.exit(0); }
+console.error("unexpected", args); process.exit(2);
+`);
+  await chmod(fakeCodex, 0o755);
+  process.env.FAKE_CODEX_STATE = fakeState;
+  process.env.FAKE_CODEX_LOG = fakeLog;
+  return { root, repoRoot, pluginRoot, codexHome, fakeCodex, fakeLog };
+}
+
+function options(f) {
+  return { pluginRoot: f.pluginRoot, repoRoot: f.repoRoot, codexHome: f.codexHome, codexPath: f.fakeCodex };
+}
+
+test("install is idempotent and uninstall removes only managed content", async () => {
+  const f = await fixture();
+  await mkdir(f.codexHome, { recursive: true });
+  await writeFile(join(f.codexHome, "config.toml"), "model = \"user-model\"\n\n[tui]\nstatus_line = [\"model\"]\n");
+  await writeFile(join(f.codexHome, "AGENTS.md"), "User instructions stay.\n");
+
+  await installPackage(options(f));
+  await installPackage(options(f));
+  const config = await readFile(join(f.codexHome, "config.toml"), "utf8");
+  const agents = await readFile(join(f.codexHome, "AGENTS.md"), "utf8");
+  assert.equal((config.match(/rubato-codex managed bootstrap >>>/g) || []).length, 1);
+  assert.equal((agents.match(/rubato-codex managed instructions >>>/g) || []).length, 1);
+  assert.match(config, /model = "user-model"/);
+  assert.match(config, /\[plugins\."rubato-codex@rubato"\]/);
+  assert.doesNotMatch(config, /model_reasoning_effort/);
+  assert.ok(config.indexOf('model = "user-model"') < config.indexOf("rubato-codex managed bootstrap"));
+  assert.ok(config.indexOf("rubato-codex managed bootstrap") < config.indexOf("[tui]"));
+  for (const role of roles) assert.match(config, new RegExp(`\\[agents\\.${role}\\]`));
+
+  const calls = (await readFile(f.fakeLog, "utf8")).trim().split("\n").map(JSON.parse);
+  assert.equal(calls.filter((call) => call[1] === "marketplace" && call[2] === "add").length, 1);
+  assert.equal(calls.filter((call) => call[1] === "add").length, 2);
+  assert.equal(calls.filter((call) => call[1] === "remove").length, 1);
+
+  await writeFile(join(f.codexHome, "config.toml"), `${config}\n[notice]\nvalue = \"later\"\n`);
+  await writeFile(join(f.codexHome, "AGENTS.md"), `${agents}\nLater user instruction.\n`);
+  await uninstallPackage(options(f));
+  const configAfter = await readFile(join(f.codexHome, "config.toml"), "utf8");
+  const agentsAfter = await readFile(join(f.codexHome, "AGENTS.md"), "utf8");
+  assert.match(configAfter, /model = "user-model"/);
+  assert.match(configAfter, /\[notice\]/);
+  assert.doesNotMatch(configAfter, /rubato-codex managed/);
+  assert.match(agentsAfter, /User instructions stay/);
+  assert.match(agentsAfter, /Later user instruction/);
+  assert.doesNotMatch(agentsAfter, /rubato-codex managed/);
+  for (const role of roles) {
+    await assert.rejects(readFile(join(f.codexHome, "agents", `${role}.toml`), "utf8"), { code: "ENOENT" });
+  }
+});
+
+test("dry-run plans but does not write", async () => {
+  const f = await fixture();
+  const plan = await installPackage({ ...options(f), dryRun: true });
+  assert.equal(plan.action, "install");
+  assert.equal(plan.dryRun, true);
+  await assert.rejects(readFile(join(f.codexHome, "config.toml"), "utf8"), { code: "ENOENT" });
+});
+
+test("unrelated role collision is refused", async () => {
+  const f = await fixture();
+  await mkdir(join(f.codexHome, "agents"), { recursive: true });
+  await writeFile(join(f.codexHome, "agents", "taskforce_owner.toml"), "name = \"someone_else\"\n");
+  await assert.rejects(installPackage(options(f)), /role collision/);
+  await assert.rejects(installPackage({ ...options(f), legacyMigration: true }), /role collision/);
+});
+
+test("explicit legacy migration backs up and uninstall restores generated roles and config", async () => {
+  const f = await fixture();
+  await mkdir(join(f.codexHome, "agents"), { recursive: true });
+  const legacyFiles = new Map();
+  for (const role of roles) {
+    const content = `# Generated by agent-taskforce/scripts/sync-codex-roles.mjs. Edit canonical sources.\nname = "${role}"\nmodel = "legacy"\n`;
+    legacyFiles.set(role, content);
+    await writeFile(join(f.codexHome, "agents", `${role}.toml`), content);
+  }
+  const legacyConfig = `approval_policy = "never"\n\n${roles.map((role) => `[agents.${role}]\nconfig_file = "/legacy/${role}.toml"\n`).join("\n")}[tui]\nstatus_line = ["model"]\n`;
+  const legacyMcp = `[mcp_servers.taskforce]\ncommand = "node"\nargs = ["/legacy/taskforce/src/mcp-server.js"]\n\n[mcp_servers.taskforce.env]\nTASKFORCE_STATE_DIR = ${JSON.stringify(join(f.codexHome, "taskforce"))}\n`;
+  const unrelatedArray = `[[skills.config]]\npath = "/unrelated/SKILL.md"\nenabled = true\n`;
+  await writeFile(join(f.codexHome, "config.toml"), `${legacyConfig}\n${legacyMcp}\n${unrelatedArray}`);
+  for (const skill of skills) {
+    const source = join(f.pluginRoot, "skills", skill, "SKILL.md");
+    await mkdir(join(f.codexHome, "skills", skill), { recursive: true });
+    await writeFile(join(f.codexHome, "skills", skill, "SKILL.md"), await readFile(source, "utf8"));
+  }
+
+  await assert.rejects(installPackage(options(f)), /role collision/);
+  await installPackage({ ...options(f), legacyMigration: true });
+  const state = JSON.parse(await readFile(join(f.codexHome, "rubato-codex", "install-state.json"), "utf8"));
+  assert.equal(state.legacyConfigSections.length, 3);
+  assert.equal(state.legacyMcpSections.length, 2);
+  assert.equal(state.disabledSkillPaths.length, 6);
+  for (const role of roles) assert.ok(state.roles[role].previousBackup);
+
+  await uninstallPackage(options(f));
+  const restoredConfig = await readFile(join(f.codexHome, "config.toml"), "utf8");
+  assert.match(restoredConfig, /approval_policy = "never"/);
+  assert.match(restoredConfig, /\[tui\]/);
+  assert.match(restoredConfig, /\[mcp_servers\.taskforce\]/);
+  assert.match(restoredConfig, /\[\[skills\.config\]\]/);
+  assert.match(restoredConfig, /\/unrelated\/SKILL\.md/);
+  for (const role of roles) {
+    assert.match(restoredConfig, new RegExp(`\\[agents\\.${role}\\]`));
+    assert.equal(await readFile(join(f.codexHome, "agents", `${role}.toml`), "utf8"), legacyFiles.get(role));
+  }
+});
+
+test("package roles may not pin model selection", async () => {
+  const f = await fixture();
+  await writeFile(join(f.pluginRoot, "agents", "taskforce_owner.toml"), "name = \"taskforce_owner\"\ndescription = \"owner\"\nmodel = \"gpt-5.6-sol\"\n");
+  await assert.rejects(installPackage({ ...options(f), dryRun: true }), /pins a model/);
+});
+
+test("legacy MCP custom board directory is refused instead of silently switching state", async () => {
+  const f = await fixture();
+  await mkdir(join(f.codexHome, "agents"), { recursive: true });
+  for (const role of roles) {
+    await writeFile(join(f.codexHome, "agents", `${role}.toml`), `# Generated by agent-taskforce/scripts/sync-codex-roles.mjs.\nname = "${role}"\n`);
+  }
+  await writeFile(join(f.codexHome, "config.toml"), `[mcp_servers.taskforce]\ncommand = "node"\nargs = ["/legacy/taskforce/src/mcp-server.js"]\n\n[mcp_servers.taskforce.env]\nTASKFORCE_STATE_DIR = '/custom/board' # preserve me\n`);
+  await assert.rejects(
+    installPackage({ ...options(f), legacyMigration: true, dryRun: true }),
+    /custom TASKFORCE_STATE_DIR/,
+  );
+});
+
+test("explicit migration recognizes shared .agents skill symlinks without moving them", async () => {
+  const f = await fixture();
+  const shared = join(f.root, ".agents", "skills", "agent-taskforce");
+  await mkdir(shared, { recursive: true });
+  await writeFile(join(shared, "SKILL.md"), "shared canonical skill\n");
+  await mkdir(join(f.codexHome, "skills"), { recursive: true });
+  await symlink(shared, join(f.codexHome, "skills", "agent-taskforce"));
+  const plan = await installPackage({ ...options(f), legacyMigration: true, dryRun: true });
+  assert.deepEqual(plan.disabledLegacySkills, [join(f.codexHome, "skills", "agent-taskforce", "SKILL.md")]);
+  assert.equal((await lstat(join(f.codexHome, "skills", "agent-taskforce"))).isSymbolicLink(), true);
+});
+
+test("conservative config editor refuses TOML multiline strings", async () => {
+  const f = await fixture();
+  await mkdir(f.codexHome, { recursive: true });
+  await writeFile(join(f.codexHome, "config.toml"), 'custom = """\n[agents.not_a_real_section]\n"""\n');
+  await assert.rejects(installPackage({ ...options(f), dryRun: true }), /TOML multiline strings/);
+});
