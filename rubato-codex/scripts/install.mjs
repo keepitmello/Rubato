@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto";
-import { access, copyFile, cp, lstat, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { access, copyFile, cp, lstat, mkdir, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { homedir } from "node:os";
 import { basename, delimiter, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { discoverProviderCatalog, makeProviderPolicy, resolveProviderSelection } from "./providers.mjs";
 
 const ROLE_NAMES = ["taskforce_owner", "taskforce_verifier", "taskforce_helper"];
 const CONFIG_START = "# >>> rubato-codex managed bootstrap >>>";
@@ -331,7 +332,8 @@ async function loadPackage(pluginRoot, repoRoot) {
   }
   const instructions = await readFile(join(pluginRoot, "instructions", "AGENTS.md"), "utf8");
   const skillRecords = [];
-  for (const name of ["agent-taskforce", "dispatching", "dispatched", "codex-discusser", "codex-reviewer", "keep-simple"]) {
+  const skillEntries = await readdir(join(pluginRoot, "skills"), { withFileTypes: true });
+  for (const name of skillEntries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort()) {
     const source = join(pluginRoot, "skills", name, "SKILL.md");
     skillRecords.push({ name, source, content: await readFile(source, "utf8") });
   }
@@ -355,26 +357,55 @@ async function preflightRoleTargets(roleRecords, codexHome, previousState, legac
   return records;
 }
 
-async function preflightLegacySkills(skillRecords, codexHome, previousState, legacyMigration, configContent) {
-  if (previousState) return previousState.disabledSkillPaths || [];
-  const disabled = [];
+async function preflightLegacySkills(skillRecords, codexHome, previousState, legacyMigration, configContent, explicitSkillPaths = []) {
+  const disabled = [...(previousState?.disabledSkillPaths || [])];
+  const alreadyDisabled = new Set(disabled);
+  const bundledNames = new Set(skillRecords.map((skill) => skill.name.toLowerCase()));
+  const explicitRecords = [];
+  for (const requestedPath of explicitSkillPaths) {
+    const skillPath = resolve(requestedPath);
+    if (basename(skillPath) !== "SKILL.md" || !bundledNames.has(basename(dirname(skillPath)).toLowerCase())) {
+      fail(`--disable-skill must name a bundled skill's exact SKILL.md path: ${requestedPath}`);
+    }
+    if (!(await exists(skillPath))) fail(`--disable-skill path does not exist: ${skillPath}`);
+    explicitRecords.push({ skillPath, canonical: await canonicalPath(skillPath) });
+  }
   for (const skill of skillRecords) {
     const skillDir = join(codexHome, "skills", skill.name);
     if (!(await exists(skillDir))) continue;
-    if (!legacyMigration) {
+    const skillPath = join(skillDir, "SKILL.md");
+    if (alreadyDisabled.has(skillPath)) continue;
+    const canonicalSkillPath = await canonicalPath(skillPath);
+    const explicitlyAuthorized = explicitRecords.some((record) => record.canonical === canonicalSkillPath);
+    if (!previousState && !legacyMigration && !explicitlyAuthorized) {
       fail(`legacy Codex skill collision at ${skillDir}; use --migrate-legacy to disable the recognized duplicate without moving it`);
     }
     let recognized = false;
     const info = await lstat(skillDir);
     if (info.isSymbolicLink()) {
       const resolved = await realpath(skillDir);
-      recognized = basename(resolved) === skill.name && resolved.includes(`${sep}.agents${sep}skills${sep}`);
+      recognized = basename(resolved).toLowerCase() === skill.name.toLowerCase()
+        && resolved.includes(`${sep}.agents${sep}skills${sep}`);
     } else if (info.isDirectory()) {
       const currentSkill = await readOptional(join(skillDir, "SKILL.md"));
       recognized = currentSkill === skill.content;
     }
+    recognized ||= explicitlyAuthorized;
     if (!recognized) fail(`refusing to disable unrecognized skill collision at ${skillDir}`);
-    const skillPath = join(skillDir, "SKILL.md");
+    const existingConfig = splitTomlSections(configContent)
+      .filter((section) => section.name === "skills.config")
+      .map((section) => configContent.slice(section.start, section.end))
+      .find((section) => section.includes(`path = ${quoteToml(skillPath)}`));
+    if (existingConfig && !/^enabled\s*=\s*false\s*$/m.test(existingConfig)) {
+      fail(`existing skills.config explicitly enables ${skillPath}; refusing to override it`);
+    }
+    if (!existingConfig) {
+      disabled.push(skillPath);
+      alreadyDisabled.add(skillPath);
+    }
+  }
+  for (const { skillPath } of explicitRecords) {
+    if (alreadyDisabled.has(skillPath)) continue;
     const existingConfig = splitTomlSections(configContent)
       .filter((section) => section.name === "skills.config")
       .map((section) => configContent.slice(section.start, section.end))
@@ -383,6 +414,7 @@ async function preflightLegacySkills(skillRecords, codexHome, previousState, leg
       fail(`existing skills.config explicitly enables ${skillPath}; refusing to override it`);
     }
     if (!existingConfig) disabled.push(skillPath);
+    alreadyDisabled.add(skillPath);
   }
   return disabled;
 }
@@ -408,6 +440,16 @@ export async function installPackage(options = {}) {
   const stateDir = join(codexHome, "rubato-codex");
   const statePath = join(stateDir, "install-state.json");
   const previousState = JSON.parse((await readOptional(statePath)) || "null");
+  const providerPolicyPath = join(stateDir, "providers.json");
+  const providerCatalog = await discoverProviderCatalog({ opencodexHome: options.opencodexHome });
+  const providerSelection = await resolveProviderSelection({
+    requested: options.providers,
+    previous: previousState?.selectedProviders,
+    catalog: providerCatalog,
+    interactive: options.interactiveProviders ?? Boolean(process.stdin.isTTY && process.stdout.isTTY),
+    prompt: options.providerPrompt,
+  });
+  const providerPolicy = makeProviderPolicy(providerCatalog, providerSelection.selected);
   const roles = await preflightRoleTargets(packageData.roleRecords, codexHome, previousState, options.legacyMigration);
 
   const configPath = join(codexHome, "config.toml");
@@ -442,6 +484,7 @@ export async function installPackage(options = {}) {
     previousState,
     options.legacyMigration,
     configWithoutLegacyMcp,
+    options.disableSkillPaths,
   );
   const roleConfigRecords = roles.map((role) => ({ name: role.name, description: role.description, target: role.target }));
   const configBase = previousState ? configWithoutManaged : configWithoutLegacyMcp;
@@ -485,6 +528,9 @@ export async function installPackage(options = {}) {
     config: configPath,
     instructions: agentsPath,
     boardData: "preserved",
+    providers: providerSelection.selected.length ? providerSelection.selected : ["native-codex-only"],
+    providerSelection: providerSelection.source,
+    providerPolicy: providerPolicyPath,
   };
   if (dryRun) return plan;
 
@@ -502,6 +548,17 @@ export async function installPackage(options = {}) {
   preservedState.marketplaceName = marketplaceName;
   preservedState.marketplaceAdded = previousState?.marketplaceAdded || !marketplace;
   preservedState.roles ||= {};
+  preservedState.disabledSkillPaths = disabledSkillPaths;
+  preservedState.selectedProviders = providerSelection.selected;
+  if (!previousState) {
+    preservedState.providerPolicy = {
+      target: providerPolicyPath,
+      previousExisted: await exists(providerPolicyPath),
+      previousBackup: await backupExisting(providerPolicyPath, backupDir),
+    };
+  }
+  preservedState.providerPolicy ||= { target: providerPolicyPath, previousExisted: false, previousBackup: null };
+  preservedState.providerPolicy.installedSha = sha256(providerPolicy);
 
   if (!options.marketplaceSource) await stageLocalMarketplace(pluginRoot, repoRoot, stagedMarketplace);
 
@@ -545,6 +602,7 @@ export async function installPackage(options = {}) {
   );
   await atomicWrite(configPath, finalConfig, 0o600);
   await atomicWrite(agentsPath, agentsNext, 0o600);
+  await atomicWrite(providerPolicyPath, providerPolicy, 0o600);
   await atomicWrite(statePath, `${JSON.stringify(preservedState, null, 2)}\n`, 0o600);
   return plan;
 }
@@ -566,6 +624,12 @@ export async function uninstallPackage(options = {}) {
     const current = await readOptional(record.target);
     if (current && sha256(current) !== record.installedSha) {
       fail(`refusing to overwrite modified installed role ${name}: ${record.target}`);
+    }
+  }
+  if (state.providerPolicy?.installedSha) {
+    const current = await readOptional(state.providerPolicy.target);
+    if (current && sha256(current) !== state.providerPolicy.installedSha) {
+      fail(`refusing to overwrite modified provider policy: ${state.providerPolicy.target}`);
     }
   }
   const pluginsResult = parseJsonOutput(
@@ -608,12 +672,17 @@ export async function uninstallPackage(options = {}) {
       await rm(record.target, { force: true });
     }
   }
+  if (state.providerPolicy?.previousExisted && state.providerPolicy.previousBackup) {
+    await copyFile(state.providerPolicy.previousBackup, state.providerPolicy.target);
+  } else {
+    await rm(state.providerPolicy?.target || join(codexHome, "rubato-codex", "providers.json"), { force: true });
+  }
   await rm(statePath, { force: true });
   return plan;
 }
 
 function usage() {
-  return `Usage: ./install.sh [install|uninstall|plan] [options]\n\nOptions:\n  --codex PATH               use this Codex binary\n  --codex-home DIR           isolate or select Codex home\n  --marketplace-source SRC   local path or Git marketplace source\n  --marketplace-ref REF      Git ref; adds sparse repo paths\n  --migrate-legacy           back up and replace generated legacy taskforce roles\n  --dry-run                  print the plan without changing files or plugin state\n`;
+  return `Usage: ./install.sh [install|uninstall|plan] [options]\n\nOptions:\n  --codex PATH               use this Codex binary\n  --codex-home DIR           isolate or select Codex home\n  --marketplace-source SRC   local path or Git marketplace source\n  --marketplace-ref REF      Git ref; adds sparse repo paths\n  --migrate-legacy           back up and replace generated legacy taskforce roles\n  --providers LIST           OpenCodex provider IDs, comma-separated; 'none' means native only\n  --disable-skill PATH       disable an exact duplicate global SKILL.md; repeatable\n  --dry-run                  print the plan without changing files or plugin state\n`;
 }
 
 function parseArgs(argv) {
@@ -629,6 +698,8 @@ function parseArgs(argv) {
     else if (flag === "--codex-home") options.codexHome = args.shift() || fail("--codex-home needs a directory");
     else if (flag === "--marketplace-source") options.marketplaceSource = args.shift() || fail("--marketplace-source needs a value");
     else if (flag === "--marketplace-ref") options.marketplaceRef = args.shift() || fail("--marketplace-ref needs a value");
+    else if (flag === "--providers") options.providers = args.shift() || fail("--providers needs a value");
+    else if (flag === "--disable-skill") (options.disableSkillPaths ||= []).push(args.shift() || fail("--disable-skill needs a path"));
     else if (flag === "--help" || flag === "-h") return { help: true };
     else fail(`unknown argument: ${flag}`);
   }

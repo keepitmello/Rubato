@@ -5,8 +5,10 @@
   "type": "module",
   "engines": { "node": ">=24.0.0" },
   "scripts": {
+    "build:skills": "node scripts/build-skills.mjs",
+    "check:skills": "node scripts/build-skills.mjs --check",
     "build:roles": "node scripts/build-roles.mjs",
     "check:roles": "node scripts/build-roles.mjs --check",
-    "test": "node --test test/*.test.mjs && npm --prefix taskforce test && npm run check:roles && npm --prefix taskforce run check:dist"
+    "test": "node --test test/*.test.mjs && npm --prefix taskforce test && npm run check:skills && npm run check:roles && npm --prefix taskforce run check:dist"
   }
 }

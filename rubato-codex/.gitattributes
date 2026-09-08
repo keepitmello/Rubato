@@ -1,3 +1,7 @@
 # Checked-in dependency bundle; verify with taskforce's check:dist command.
 # Do not rewrite whitespace inside upstream template strings.
 taskforce/dist/mcp-server.mjs linguist-generated=true -whitespace
+
+# Preserve upstream Markdown hard breaks in generated/reference-only content.
+skills/vercel-react-best-practices/**/*.md whitespace=-trailing-space
+skills/agent-taskforce/templates/*.md whitespace=-trailing-space

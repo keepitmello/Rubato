@@ -1,0 +1,4 @@
+interface:
+  display_name: "Imagen Proxy"
+  short_description: "Explain and test god-tibo-imagen image generation proxy."
+  default_prompt: "Use imagen-proxy to explain or test god-tibo-imagen."

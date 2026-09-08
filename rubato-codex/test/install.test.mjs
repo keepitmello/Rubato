@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { chmod, lstat, mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
 
 import { installPackage, uninstallPackage } from "../scripts/install.mjs";
@@ -133,6 +133,51 @@ test("dry-run plans but does not write", async () => {
   await assert.rejects(readFile(join(f.codexHome, "config.toml"), "utf8"), { code: "ENOENT" });
 });
 
+test("installer records provider subset and preserves it on an update without --providers", async () => {
+  const f = await fixture();
+  const opencodexHome = join(f.root, "opencodex-home");
+  await mkdir(opencodexHome, { recursive: true });
+  await writeFile(join(opencodexHome, "config.json"), JSON.stringify({
+    port: 10100,
+    providers: {
+      openai: {},
+      cursor: { models: ["gpt-5.6-sol"], selectedModels: ["gpt-5.6-sol"] },
+      xai: { models: ["grok-4.6"] },
+      anthropic: { models: ["claude-opus-5"] },
+    },
+  }));
+
+  const first = await installPackage({ ...options(f), opencodexHome, providers: "xai,cursor" });
+  assert.deepEqual(first.providers, ["cursor", "xai"]);
+  assert.equal(first.providerSelection, "explicit");
+  let policy = JSON.parse(await readFile(join(f.codexHome, "rubato-codex", "providers.json"), "utf8"));
+  assert.deepEqual(policy.selectedProviders, ["cursor", "xai"]);
+  assert.deepEqual(policy.availableProviders.map((provider) => provider.id), ["anthropic", "cursor", "xai"]);
+  assert.deepEqual(policy.availableProviders.find((provider) => provider.id === "cursor").models, ["cursor/gpt-5.6-sol"]);
+
+  await writeFile(join(opencodexHome, "config.json"), JSON.stringify({ providers: { openai: {} } }));
+  const update = await installPackage({ ...options(f), opencodexHome });
+  assert.deepEqual(update.providers, ["cursor", "xai"]);
+  assert.equal(update.providerSelection, "preserved");
+  policy = JSON.parse(await readFile(join(f.codexHome, "rubato-codex", "providers.json"), "utf8"));
+  assert.deepEqual(policy.selectedProviders, ["cursor", "xai"]);
+  assert.deepEqual(policy.availableProviders, []);
+
+  const nativeOnly = await installPackage({ ...options(f), opencodexHome, providers: "none" });
+  assert.deepEqual(nativeOnly.providers, ["native-codex-only"]);
+  policy = JSON.parse(await readFile(join(f.codexHome, "rubato-codex", "providers.json"), "utf8"));
+  assert.deepEqual(policy.selectedProviders, []);
+});
+
+test("explicit routed provider selection fails safely when OpenCodex is absent", async () => {
+  const f = await fixture();
+  await assert.rejects(
+    installPackage({ ...options(f), opencodexHome: join(f.root, "missing-opencodex"), providers: "xai" }),
+    /OpenCodex config is missing.*xai/,
+  );
+  await assert.rejects(readFile(join(f.codexHome, "config.toml"), "utf8"), { code: "ENOENT" });
+});
+
 test("unrelated role collision is refused", async () => {
   const f = await fixture();
   await mkdir(join(f.codexHome, "agents"), { recursive: true });
@@ -210,6 +255,86 @@ test("explicit migration recognizes shared .agents skill symlinks without moving
   const plan = await installPackage({ ...options(f), legacyMigration: true, dryRun: true });
   assert.deepEqual(plan.disabledLegacySkills, [join(f.codexHome, "skills", "agent-taskforce", "SKILL.md")]);
   assert.equal((await lstat(join(f.codexHome, "skills", "agent-taskforce"))).isSymbolicLink(), true);
+});
+
+test("update preserves prior disabled skills and checks newly bundled skill collisions", async () => {
+  const f = await fixture();
+  await installPackage(options(f));
+
+  const originalShared = join(f.root, ".agents", "skills", "agent-taskforce");
+  await mkdir(originalShared, { recursive: true });
+  await writeFile(join(originalShared, "SKILL.md"), await readFile(join(f.pluginRoot, "skills", "agent-taskforce", "SKILL.md"), "utf8"));
+  await mkdir(join(f.codexHome, "skills"), { recursive: true });
+  await symlink(originalShared, join(f.codexHome, "skills", "agent-taskforce"));
+  const installedStatePath = join(f.codexHome, "rubato-codex", "install-state.json");
+  const installedState = JSON.parse(await readFile(installedStatePath, "utf8"));
+  installedState.disabledSkillPaths = [join(f.codexHome, "skills", "agent-taskforce", "SKILL.md")];
+  await writeFile(installedStatePath, `${JSON.stringify(installedState, null, 2)}\n`);
+
+  const added = "new-portable-skill";
+  const addedSource = join(f.pluginRoot, "skills", added);
+  const addedShared = join(f.root, ".agents", "skills", added);
+  await mkdir(addedSource, { recursive: true });
+  await mkdir(addedShared, { recursive: true });
+  await writeFile(join(addedSource, "SKILL.md"), `---\nname: ${added}\ndescription: fixture\n---\n`);
+  await writeFile(join(addedShared, "SKILL.md"), "shared source may be adapted by the bundle\n");
+  await symlink(addedShared, join(f.codexHome, "skills", added));
+
+  await installPackage(options(f));
+  const updatedState = JSON.parse(await readFile(installedStatePath, "utf8"));
+  assert.deepEqual(updatedState.disabledSkillPaths, [
+    join(f.codexHome, "skills", "agent-taskforce", "SKILL.md"),
+    join(f.codexHome, "skills", added, "SKILL.md"),
+  ]);
+});
+
+test("update refuses an unrecognized collision from a newly bundled skill", async () => {
+  const f = await fixture();
+  await installPackage(options(f));
+  const added = "new-portable-skill";
+  await mkdir(join(f.pluginRoot, "skills", added), { recursive: true });
+  await writeFile(join(f.pluginRoot, "skills", added, "SKILL.md"), `---\nname: ${added}\ndescription: fixture\n---\n`);
+  await mkdir(join(f.codexHome, "skills", added), { recursive: true });
+  await writeFile(join(f.codexHome, "skills", added, "SKILL.md"), "user-owned different skill\n");
+  await assert.rejects(installPackage(options(f)), /refusing to disable unrecognized skill collision/);
+});
+
+test("explicit duplicate skill path is disabled without modifying its source", async () => {
+  const f = await fixture();
+  const sharedSkill = join(f.root, ".agents", "skills", "keep-simple", "SKILL.md");
+  await mkdir(join(f.root, ".agents", "skills", "keep-simple"), { recursive: true });
+  await writeFile(sharedSkill, "user source remains untouched\n");
+  await installPackage({ ...options(f), disableSkillPaths: [sharedSkill] });
+  const config = await readFile(join(f.codexHome, "config.toml"), "utf8");
+  assert.ok(config.includes(`path = ${JSON.stringify(sharedSkill)}`));
+  assert.equal(await readFile(sharedSkill, "utf8"), "user source remains untouched\n");
+  await uninstallPackage(options(f));
+  assert.equal(await readFile(sharedSkill, "utf8"), "user source remains untouched\n");
+});
+
+test("explicit path authorizes its matching auto collision before conservative rejection", async () => {
+  const f = await fixture();
+  const collision = join(f.codexHome, "skills", "keep-simple", "SKILL.md");
+  await mkdir(dirname(collision), { recursive: true });
+  await writeFile(collision, "user source remains untouched\n");
+  await installPackage({ ...options(f), disableSkillPaths: [collision] });
+  const state = JSON.parse(await readFile(join(f.codexHome, "rubato-codex", "install-state.json"), "utf8"));
+  assert.deepEqual(state.disabledSkillPaths, [collision]);
+  assert.equal(await readFile(collision, "utf8"), "user source remains untouched\n");
+});
+
+test("case-only manifest rename recognizes a shared .agents skill symlink", async () => {
+  const f = await fixture();
+  const bundled = join(f.pluginRoot, "skills", "metaframe");
+  const shared = join(f.root, ".agents", "skills", "metaFrame");
+  await mkdir(bundled, { recursive: true });
+  await mkdir(shared, { recursive: true });
+  await writeFile(join(bundled, "SKILL.md"), "adapted bundled content\n");
+  await writeFile(join(shared, "SKILL.md"), "original shared content\n");
+  await mkdir(join(f.codexHome, "skills"), { recursive: true });
+  await symlink(shared, join(f.codexHome, "skills", "metaframe"));
+  const plan = await installPackage({ ...options(f), legacyMigration: true, dryRun: true });
+  assert.deepEqual(plan.disabledLegacySkills, [join(f.codexHome, "skills", "metaframe", "SKILL.md")]);
 });
 
 test("conservative config editor refuses TOML multiline strings", async () => {

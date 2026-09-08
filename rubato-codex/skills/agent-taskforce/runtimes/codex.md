@@ -48,9 +48,10 @@ user requests a new task, not as a substitute for native delegation.
 
 ## Models and evidence
 
-Read [GPT allocation](../references/model-allocation.md). Roles have no fixed
-Sol or other model setting. The lead chooses among supported GPT models per
-assignment, without changing its own model or importing Rubato's unready catalog.
+Read [model allocation](../references/model-allocation.md) and its model-guide.
+Roles have no fixed model. The lead chooses from native tool-supported models
+and the selected-provider policy in `providers.json`, without changing its own
+model. Preserve exact provider identity; never import Rubato aliases blindly.
 
 Native agents share the checkout unless the runtime states otherwise. Assign
 non-overlapping writes. Preserve user changes, and stage only owned files when
