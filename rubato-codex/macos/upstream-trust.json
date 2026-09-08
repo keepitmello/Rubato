@@ -1,0 +1,10 @@
+{
+  "appcastUrl": "https://persistent.oaistatic.com/codex-app-prod/appcast.xml",
+  "downloadOrigin": "https://persistent.oaistatic.com",
+  "downloadPathPrefix": "/codex-app-prod/",
+  "teamId": "2DC432GLL2",
+  "upstreamBundleId": "com.openai.codex",
+  "sparklePublicKey": "mNfr1v9t63BfgDtlw4C8lRvSY6uMggIXABDOCi3tS6k=",
+  "bundleId": "app.rubato.codex",
+  "transformVersion": 1
+}
