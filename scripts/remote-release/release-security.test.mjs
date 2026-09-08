@@ -10,7 +10,7 @@ import { defaultPaths, ZMX_COMMIT } from "./constants.mjs"
 import { atomicSymlink, pathExists, redact, removeTreeInside, sha256 } from "./lib.mjs"
 import { install, uninstall } from "./remote-release.mjs"
 import { createMockDriver, qualify } from "./qualification.mjs"
-import { assertBunVersion, assertNoFunnel, configureServe, guardUpdate, renderLaunchAgent, serveHasRubatoTarget, withoutRubatoServeRoute, writeServeStateRecord } from "./system.mjs"
+import { assertBunVersion, assertNoFunnel, configureServe, guardUpdate, launchAgentNeedsRepair, renderLaunchAgent, serveHasRubatoTarget, withoutRubatoServeRoute, writeServeStateRecord } from "./system.mjs"
 
 async function temporary(t) {
   const root = await mkdtemp(join(tmpdir(), "rubato-release-test-"))
@@ -185,6 +185,23 @@ test("launchd and Serve checks retain argv boundaries, localhost, scoped path, a
   assert.doesNotMatch(plist, /\/bin\/sh/)
   assert.equal(serveHasRubatoTarget({ Web: { "host:443": { Handlers: { "/rubato": { Proxy: "http://127.0.0.1:7314" } } } } }, 7314), true)
   assert.equal(serveHasRubatoTarget({ Web: { "/": "http://0.0.0.0:7314" } }, 7314), false)
+  assert.equal(plist.includes("<key>WorkingDirectory</key>"), false)
+  assert.equal(plist.includes("src/main.ts"), false)
+  assert.equal(plist.includes("<string>run</string>"), false)
+  assert.match(plist, /<string>Interactive<\/string>/)
+  assert.equal(launchAgentNeedsRepair(plist, { entryPath: "/release & one/main.mjs" }), false)
+})
+
+test("a checkout bun-run LaunchAgent is drifted from the installed release hub", () => {
+  const drifted = `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>ProgramArguments</key><array><string>/Users/wy/.bun/bin/bun</string><string>run</string><string>src/main.ts</string></array>
+<key>WorkingDirectory</key><string>/Users/wy/Github-repos/rubato-lab/rubato/packages/rubato-remote-hub</string>
+</dict></plist>
+`
+  const entryPath = "/Users/wy/.local/lib/rubato/remote/current/hub/main.mjs"
+  assert.equal(launchAgentNeedsRepair(drifted, { entryPath }), true)
+  assert.equal(launchAgentNeedsRepair("", { entryPath }), true)
 })
 
 test("selective Serve removal preserves unrelated routes, listeners, and same-name routes owned by others", async () => {
