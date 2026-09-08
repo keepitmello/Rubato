@@ -90,19 +90,56 @@ export async function guardUpdate(paths, { forceLive = false, runner = run } = {
   return sessions
 }
 
+// ProcessType is Interactive on purpose. Background + a crash loop leaves launchd in
+// xpcproxy with execs=0 / immediate reason=inefficient, so kickstart never actually execs the hub.
 export function renderLaunchAgent({ nodePath, bunPath, tailscalePath, entryPath, bootstrapPath, launcherPath, zmxPath, stdoutPath, stderrPath, home, tmpDirectory = tmpdir(), buildId }) {
   const xml = (value) => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;")
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict>\n<key>Label</key><string>${HUB_LABEL}</string>\n<key>ProgramArguments</key><array><string>${xml(nodePath)}</string><string>${xml(entryPath)}</string></array>\n<key>RunAtLoad</key><true/><key>KeepAlive</key><true/>\n<key>ProcessType</key><string>Background</string>\n<key>EnvironmentVariables</key><dict><key>HOME</key><string>${xml(home)}</string><key>TMPDIR</key><string>${xml(tmpDirectory)}</string><key>RUBATO_BUILD_ID</key><string>${xml(buildId)}</string><key>RUBATO_BUN_BIN</key><string>${xml(bunPath)}</string><key>RUBATO_BOOTSTRAP_PATH</key><string>${xml(bootstrapPath)}</string><key>RUBATO_LAUNCHER_PATH</key><string>${xml(launcherPath)}</string><key>RUBATO_ZMX_PATH</key><string>${xml(zmxPath)}</string><key>RUBATO_TAILSCALE_PATH</key><string>${xml(tailscalePath)}</string></dict>\n<key>StandardOutPath</key><string>${xml(stdoutPath)}</string>\n<key>StandardErrorPath</key><string>${xml(stderrPath)}</string>\n</dict></plist>\n`
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict>\n<key>Label</key><string>${HUB_LABEL}</string>\n<key>ProgramArguments</key><array><string>${xml(nodePath)}</string><string>${xml(entryPath)}</string></array>\n<key>RunAtLoad</key><true/><key>KeepAlive</key><true/>\n<key>ProcessType</key><string>Interactive</string>\n<key>EnvironmentVariables</key><dict><key>HOME</key><string>${xml(home)}</string><key>TMPDIR</key><string>${xml(tmpDirectory)}</string><key>RUBATO_BUILD_ID</key><string>${xml(buildId)}</string><key>RUBATO_BUN_BIN</key><string>${xml(bunPath)}</string><key>RUBATO_BOOTSTRAP_PATH</key><string>${xml(bootstrapPath)}</string><key>RUBATO_LAUNCHER_PATH</key><string>${xml(launcherPath)}</string><key>RUBATO_ZMX_PATH</key><string>${xml(zmxPath)}</string><key>RUBATO_TAILSCALE_PATH</key><string>${xml(tailscalePath)}</string></dict>\n<key>StandardOutPath</key><string>${xml(stdoutPath)}</string>\n<key>StandardErrorPath</key><string>${xml(stderrPath)}</string>\n</dict></plist>\n`
+}
+
+export function launchdNodePath() {
+  const candidates = [process.env.RUBATO_NODE, "/opt/homebrew/bin/node", "/usr/local/bin/node", process.execPath]
+  for (const candidate of candidates) {
+    if (candidate && existsSync(candidate)) return candidate
+  }
+  return process.execPath
+}
+
+export function canonicalHubEntryPath(paths) {
+  return join(paths.current, "hub", "main.mjs")
+}
+
+export function launchAgentProgramArguments(plist) {
+  const match = String(plist ?? "").match(/<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/)
+  if (!match) return []
+  return [...match[1].matchAll(/<string>([\s\S]*?)<\/string>/g)].map((item) =>
+    item[1]
+      .replaceAll("&amp;", "&")
+      .replaceAll("&lt;", "<")
+      .replaceAll("&gt;", ">")
+      .replaceAll("&quot;", '"')
+      .replaceAll("&apos;", "'"),
+  )
+}
+
+export function launchAgentNeedsRepair(plist, { entryPath }) {
+  const args = launchAgentProgramArguments(plist)
+  if (args.length !== 2) return true
+  if (args[1] !== entryPath) return true
+  const runtime = basename(args[0])
+  if (runtime === "bun" || runtime === "bun.exe") return true
+  if (String(plist).includes("<key>WorkingDirectory</key>")) return true
+  return false
 }
 
 export async function installLaunchAgent(paths, buildId, runner = run, bunPath = "bun", launcherPath = join(paths.current, "bin", "rubato"), tailscalePath = "tailscale") {
   await mkdir(dirname(paths.plist), { recursive: true })
   await mkdir(paths.logs, { recursive: true, mode: 0o700 })
   const plist = renderLaunchAgent({
-    nodePath: process.execPath,
+    nodePath: launchdNodePath(),
     bunPath,
     tailscalePath,
-    entryPath: join(paths.current, "hub", "main.mjs"),
+    entryPath: canonicalHubEntryPath(paths),
     bootstrapPath: join(paths.current, "bin", "rubato-live-bootstrap"),
     launcherPath,
     zmxPath: paths.zmx,
