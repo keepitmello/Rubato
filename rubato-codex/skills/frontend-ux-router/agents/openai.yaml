@@ -1,0 +1,4 @@
+interface:
+  display_name: "Frontend UX Router"
+  short_description: "Create and verify user-centered frontend experiences"
+  default_prompt: "Use $frontend-ux-router to create or improve this interface from the user path through rendered verification."
