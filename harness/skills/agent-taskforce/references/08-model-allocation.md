@@ -1,8 +1,8 @@
 # Model allocation for the lead
 
-*Lead.* **Canonical routing guidance lives in Skill(model-guide)** (`~/.agents/skills/model-guide/SKILL.md`) — cognitive profiles, bottleneck routing, verifier pairings, and the current catalog mapping. Session continuity (continue an existing session or start fresh) lives in Skill(dispatching). Read it there; this file keeps only what is team-specific.
+*Lead.* Use Skill(model-guide) (`~/.agents/skills/model-guide/SKILL.md`) for cognitive profiles, bottleneck routing, verifier pairings, and catalog mapping. Session continuity (continue an existing session or start fresh) lives in Skill(dispatching). This file keeps only the team proposal format.
 
-The human operator chooses whether framing is used and which model is lead. You choose the smallest execution roster from model-guide's routing, explain it briefly, and wait for approval before spawning.
+The human operator chooses whether framing is used and which model is lead. Choose the smallest execution roster from the active runtime's policy and report it before spawning. The operator can veto it; wait only for restricted-model, cost, or explicit team-approval decisions as defined in `LEAD.md`.
 
 ## What to show the user before spawn
 
@@ -16,7 +16,7 @@ Keep the proposal short.
 - Owner: <outcome> → <model> — <dominant bottleneck>   # only if needed
 - Verifier: <model or none> — <why included or skipped>
 
-이 배치로 띄울까?
+이 배치로 진행할게요.
 ```
 
-Wait for explicit confirmation. After approval, spawn only the approved teammates and record the actual roster if a mission artifact is being used.
+If explicit confirmation is required, ask for it instead of announcing a start. Otherwise form the reported team in the same turn. Record the actual roster if a mission artifact is being used.

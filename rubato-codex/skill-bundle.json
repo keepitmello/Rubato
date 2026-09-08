@@ -40,23 +40,6 @@
     "codex-discusser",
     "codex-reviewer"
   ],
-  "supplemental": {
-    "agent-taskforce": [
-      "references/00-routing.md",
-      "references/01-operating-model.md",
-      "references/02-team-patterns.md",
-      "references/03-context-and-state.md",
-      "references/04-framing-bridge.md",
-      "references/05-prompting-contracts.md",
-      "references/06-quality-and-evals.md",
-      "references/07-source-map.md",
-      "references/09-regression-scenarios.md",
-      "templates/decision-request.md",
-      "templates/frame-conflict.md",
-      "templates/mission.md",
-      "templates/verification-contract.md"
-    ]
-  },
   "excludedPatterns": [
     "(^|/)__pycache__(/|$)",
     "\\.pyc$",

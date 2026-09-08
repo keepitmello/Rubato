@@ -38,7 +38,7 @@ A worker whose session loads a role contract already knows how to read this brie
 
 Part of every dispatch is choosing who gets it. If an agent already worked on this same problem, send the next task to that agent: it has already read the files, and a new one would read them all again. This holds when the work moves from looking to building, from building to fixing a failed test, or when you changed your mind about the approach after seeing its report.
 
-Start a new agent for three reasons only: you want a second opinion that has not seen the first agent's thinking (a reviewer), the task is about a different problem, or the old agent is stuck on a wrong idea it cannot let go of. A reviewer starting cold is the point, not a cost. A stronger model being available is not one of the three; once you have decided on a new agent, Skill(model-guide) picks its model.
+Start a new agent for three reasons only: you want a second opinion that has not seen the first agent's thinking (a reviewer), the task is about a different problem, or the old agent is stuck on a wrong idea it cannot let go of. A reviewer starting cold is the point, not a cost. A stronger model being available is not one of the three; once you have decided on a new agent, use Skill(model-guide) with the active runtime's supported models.
 
 If `AgentSend` says the agent cannot be continued (it was evicted, cancelled, crashed, or expired), start a new one and pass along whatever the old one left behind (its report, files, evidence) as leads to verify. If nothing was left, say so in the brief.
 

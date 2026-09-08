@@ -12,13 +12,13 @@ Beyond role, objective, scope, verification, and output, a teammate needs:
 - **Coordination** — named peers, interfaces, file ownership, dependencies, handoffs, and shared runtime resources.
 - **A budget** — the effort or scope growth at which the owner returns even though nothing is blocked. Escalation triggers written only as impossibilities (needs a dependency, breaks compatibility, requires a rewrite) leave a tenacious owner no reason to stop when the surface is merely far larger than assumed.
 
-A teammate never receives the lead's conversation history. Any fact that exists only there is lost unless it reaches the brief. Tag unverified premises `[inherited]` or `[assumed]`; see `templates/task-brief.md`.
+A teammate's inherited history depends on the active runtime and spawn options. Make the task brief self-contained for its outcome and authority; inherited lead context does not expand the worker's role. Tag unverified premises `[inherited]` or `[assumed]`; see `templates/task-brief.md`.
 
 Be precise about outcome, boundary, authority, and evidence. Leave the order of attack to the owner. A brief's sentences carry two forces, decided by content kind rather than tone or tags: outcome, done evidence, write ownership/off-limits, budget, and constraints with a named authority source bind; repository coordinates, call paths, and causal claims are provisional leads the owner verifies against code, tests, and runtime, and may overrule. A mechanism prohibition without an authority source is a lead-invented quality concern — state it as an observable instead. The `dispatching` and `dispatched` skills are canonical for the full composition and reading contracts. For repository content, give the path. For a short task, compress the same contract into a few lines.
 
 ## Staffing a role
 
-A role requires a capability profile, not a permanent model name. The human chooses the lead model; the lead proposes workstream models and waits for approval. Skill(model-guide) contains the current soft roster and the bottleneck-based selection guide; `references/08-model-allocation.md` holds only the team proposal format.
+A role requires a capability profile, not a permanent model name. The human chooses the lead model; the lead reports workstream models under `LEAD.md`'s veto and restricted-spawn rules. Use Skill(model-guide); `references/08-model-allocation.md` holds only the team proposal format.
 
 | Role | What it must have |
 |---|---|
@@ -33,7 +33,7 @@ Model substitution is normal when quotas, outages, or runtime constraints interv
 
 Claude Code teammates inherit the lead's model unless the spawn prompt names one or `CLAUDE_CODE_SUBAGENT_MODEL` supplies one. Confirm and record the actual model.
 
-**Confirm where a role's model actually lands before you trust it as independent.** A routing layer between the CLI and the provider can resolve the same model name somewhere else, and then a verifier that looks independent shares the owners' weights. Do not infer this from a catalog name — send one call and read the failure: quota and auth errors name the account you actually hit.
+**Confirm where a role's model actually lands before you trust it as independent.** A routing layer between the CLI and the provider can resolve the same model name somewhere else, and then a verifier that looks independent shares the owners' weights. Use actual runtime metadata or existing call evidence rather than inferring identity from a catalog label. If unavailable, report model identity or independence as unverified; do not trigger extra calls merely to elicit quota/auth errors.
 
 ## Avoid the overgrown manager prompt
 

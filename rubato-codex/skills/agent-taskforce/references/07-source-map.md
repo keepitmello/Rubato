@@ -42,7 +42,7 @@ Before adopting any revision, check the candidate against `references/09-regress
 
 ## Local roster policy
 
-Model routing (cognitive profiles, bottleneck routing, catalog mapping) moved to the standalone Skill(model-guide) at `${CODEX_HOME:-$HOME/.codex}/skills/model-guide/SKILL.md`, because it applies to every child spawn, not only teams. `references/08-model-allocation.md` now keeps only the team-specific roster proposal format. Revise the mapping in model-guide without changing the owner-continuity principle when model behavior changes.
+Model routing and approvals belong to the bundled [model-guide](../../model-guide/SKILL.md), because they apply to every child spawn, not only teams. [Model allocation](model-allocation.md) is the team-specific pointer. Resolve files relative to the installed plugin skill directory, not a shared global skill directory. These Codex operating documents are maintained independently of Rubato's shared edition.
 
 
 ## Local prompt-design basis
