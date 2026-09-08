@@ -11,9 +11,9 @@ Rubato의 리드·오너 운영방식을 Codex 네이티브 멀티에이전트 �
 
 ## 설치
 
-별도 앱은 Codex 복제본에 Rubato 이름·아이콘·전용 프로필과 워크플로우를 적용합니다.
-내부 네이티브 서비스·권한 저장소는 원본대로 유지하며 별도 구현하지 않습니다.
-인위적인 기능 차단은 제거했으며, 전체 기능의 실제 실행 검증은 아직 진행 중입니다.
+별도 앱은 Rubato 이름·아이콘의 **프로필 런처**입니다. 원본 서명 앱을 수정하지 않고
+루바토 전용 프로필·워크플로우로 실행하며, 실행 중 Dock/About 이름은 ChatGPT로 남습니다.
+이전 재서명 복제 방식의 시작 충돌을 피합니다. 전체 기능 검증은 별도입니다.
 
 기본값은 **별도 macOS `Rubato.app`**입니다. 기존 Codex의 전역 지침·기본
 프롬프트·스킬 설정·세션을 바꾸지 않습니다. 터미널 대화형 설치에서는 두 방식을
@@ -28,7 +28,7 @@ Rubato의 리드·오너 운영방식을 Codex 네이티브 멀티에이전트 �
 
 별도 앱은 `/Applications/Rubato.app`, Codex 상태는 `~/.rubato/codex`,
 Electron 상태는 `~/Library/Application Support/Rubato/Codex`에 둡니다.
-원본 `/Applications/ChatGPT.app`은 읽어서 복제하며 수정하지 않습니다.
+원본 `/Applications/ChatGPT.app`을 그대로 실행하며 수정하거나 재서명하지 않습니다.
 `~/.codex`의 설정·세션은 복사하거나 수정하지 않습니다.
 기존 Pi/remote 도구의 사용자 데이터도 이동하지 않습니다. 앱 이름은 **Rubato**이며,
 이전 Pi 런타임과 구분할 때만 문서에서 **Rubato Pi**라고 부릅니다.

@@ -1,5 +1,29 @@
 # macOS implementation checkpoint — 2026-09-08
 
+## Latest: original-signature profile launcher
+
+This section supersedes all clone-transform acceptance below. Actual launch
+revealed AMFI rejection of the re-signed main's restricted entitlements; removing
+those in a diagnostic copy then exposed library-validation Team ID mismatch.
+No OS security setting was weakened. The installer now builds a branded launcher
+that starts the untouched official app through NSWorkspace with Rubato profiles.
+Finder entry is Rubato; running Dock/About identity remains ChatGPT, as accepted.
+The original official updater is retained. See macos-app.md for current behavior.
+Original app Info.plist/ASAR and original Codex config hashes matched baseline.
+The native structural test now verifies the original OpenAI signature and launcher
+routing rather than treating preserved restricted entitlements as launch proof.
+
+Installed `/Applications/Rubato.app/Contents/MacOS/Rubato` launched the official
+app (PID 23415) with the Rubato user-data argument. After normal app quit, opening
+Rubato.app again launched PID 50631. The accessibility window query reported a
+visible/frontmost 1090x760 ChatGPT window; native logs recorded primary frame load
+and ready-to-show at 633/1033 ms on relaunch. Rubato's SQLite directory contained
+fresh state/log/queue/memory databases. Screenshot capture was unavailable; no
+pixel-based UI claim is made. Login/model calls/CUA interaction remain unverified.
+Full pipeline passed 59 package and 11 board tests, with two opt-in native CLI
+tests skipped; the launcher-native signature/routing test was enabled. Updated
+focused macOS regressions passed 6/6. This work has not been committed or pushed.
+
 ## Current contract (supersedes the earlier isolation stop below)
 
 The user explicitly requires a clone with changed name/icon and Rubato profile,

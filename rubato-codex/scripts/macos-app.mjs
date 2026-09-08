@@ -99,7 +99,7 @@ async function copyPackage(target) {
   await cp(packageRoot, target, { recursive: true, filter: source => !source.split('/').some(p => ['node_modules', '.git', '__pycache__'].includes(p)) });
 }
 export async function installIcon(resources, options = {}) {
-  const input = options.iconPath || join(packageRoot, '../packages/rubato-remote-web/public/icons/icon-512.png');
+  const input = options.iconPath || join(packageRoot, 'macos/Rubato.png');
   const embedded = join(packageRoot, 'macos/Rubato.icns');
   if (!options.iconPath && await exists(embedded)) {
     await cp(embedded, join(resources, 'Rubato.icns')); return;
@@ -117,79 +117,33 @@ export async function installIcon(resources, options = {}) {
 }
 export async function transformApp(source, target, paths, options = {}) {
   const original = await verifyUpstream(source, options.release);
-  const sourceAsar = join(source, 'Contents/Resources/app.asar');
-  const before = sha(await readFile(sourceAsar));
-  run('/usr/bin/ditto', [source, target]);
   const contents = join(target, 'Contents'), resources = join(contents, 'Resources');
-  const infoPath = join(contents, 'Info.plist');
-  const info = await plist(infoPath);
-  const executable = info.CFBundleExecutable;
-  if (!executable || basename(executable) !== executable) throw new Error('Unsafe upstream executable name');
-  await rename(join(contents, 'MacOS', executable), join(contents, 'MacOS', executable + '.real'));
+  await mkdir(join(contents, 'MacOS'), { recursive: true });
+  await mkdir(resources, { recursive: true });
   await installIcon(resources, options);
-  const archiveBytes = await readFile(join(resources, 'app.asar'));
-  const archive = readArchive(archiveBytes);
-  const pkg = JSON.parse(archive.get('package.json'));
-  if (!pkg.main || pkg.type === 'module' || pkg.main.includes('..')) throw new Error('Unsupported Electron bootstrap format');
-  const bridge = await readFile(join(packageRoot, 'macos/bootstrap.cjs'), 'utf8');
-  const replacements = {};
-  // Preserve native services and their original namespaces. Only the user
-  // profile and Rubato workflow are separate; this is not OS-service isolation.
-  let updateUiHook = 'fallback';
-  // Guard the observed adapter boundary rather than rewriting renderer labels.
-  // Unknown upstream layouts retain the independent menu/CLI and disabled Sparkle.
-  if (!options.forceUiFallback && process.env.RUBATO_FORCE_UPDATE_UI_FALLBACK !== '1') {
-    const files = Object.keys(archive.header.files['.vite']?.files?.build?.files || {});
-    const candidates = files.filter(name => /^window-all-closed-.*\.js$/.test(name));
-    for (const name of candidates) {
-      const key = '.vite/build/' + name, code = replacements[key] || archive.get(key).toString();
-      const anchor = 'constructor(e){this.options=e}async initialize(){if(!this.options.enableUpdater)';
-      if (code.split(anchor).length === 2 && ['inAppUpdatesLaunchPolicyResolution=Promise.withResolvers()', 'getUpdateLifecycleState(){', 'async initializeMacSparkle(){', 'setUpdateLifecycleState('].every(s => code.includes(s))) {
-        replacements[key] = code.replace(anchor, 'constructor(e){this.options=e;globalThis.__rubatoAttachUpdater?.(this)}async initialize(){if(!this.options.enableUpdater)');
-        updateUiHook = 'native';
-      }
-    }
-  }
-  const rewritten = rewriteArchive(archiveBytes, {
-    ...replacements,
-    'package.json': JSON.stringify({ ...pkg, productName: 'Rubato', description: 'Rubato', main: 'rubato-bootstrap.cjs' }),
-    'rubato-bootstrap.cjs': bridge + `\nrequire(${JSON.stringify('./' + pkg.main)});\n`,
+  const upstreamApp = await realpath(source);
+  await savePlist(join(contents, 'Info.plist'), {
+    CFBundleIdentifier: trust.bundleId, CFBundleName: 'Rubato',
+    CFBundleDisplayName: 'Rubato', CFBundleExecutable: 'Rubato',
+    CFBundlePackageType: 'APPL', CFBundleIconFile: 'Rubato.icns',
+    CFBundleShortVersionString: '0.1.0', CFBundleVersion: '2', LSUIElement: true,
   });
-  await writeFile(join(resources, 'app.asar'), rewritten.bytes);
-  info.CFBundleDisplayName = info.CFBundleName = 'Rubato';
-  info.CFBundleIdentifier = trust.bundleId;
-  info.CFBundleAlternateNames = ['Rubato']; info.CrProductDirName = trust.bundleId;
-  info.CFBundleIconFile = 'Rubato.icns'; delete info.CFBundleIconName;
-  info.CodexAppIconBaseName = 'Rubato'; info.MDItemKeywords = 'Rubato';
-  // Keep upstream URL/document handlers and the native Dock plugin intact.
-  info.ElectronAsarIntegrity = { 'Resources/app.asar': { algorithm: 'SHA256', hash: rewritten.headerHash } };
-  await savePlist(infoPath, info);
-  // Localized InfoPlist names override the primary plist in Finder.
-  for (const entry of await readdir(resources)) if (entry.endsWith('.lproj')) {
-    const localized = join(resources, entry, 'InfoPlist.strings');
-    if (await exists(localized)) {
-      try { const p = await plist(localized); p.CFBundleDisplayName = p.CFBundleName = 'Rubato'; await savePlist(localized, p); }
-      catch (error) { throw new Error(`Cannot safely brand ${entry}: ${error.message}`); }
-    }
-  }
-  await savePlist(join(resources, 'rubato-paths.plist'), { ...paths, realExecutable: executable + '.real' });
-  run('/usr/bin/xcrun', ['clang', '-fobjc-arc', '-framework', 'Cocoa', join(packageRoot, 'macos/launcher.m'), '-o', join(contents, 'MacOS', executable)]);
+  await savePlist(join(resources, 'rubato-paths.plist'), { ...paths, upstreamApp });
+  run('/usr/bin/xcrun', ['clang', '-fobjc-arc', '-framework', 'Cocoa', join(packageRoot, 'macos/launcher.m'), '-o', join(contents, 'MacOS/Rubato')]);
   const runtime = join(resources, 'rubato-codex'); await copyPackage(runtime);
   await cp(join(resources, 'Rubato.icns'), join(runtime, 'macos/Rubato.icns'));
-  // The embedded updater never depends on the original checkout staying put.
   await mkdir(join(contents, 'Helpers'), { recursive: true });
   const updater = join(contents, 'Helpers/rubato-updater');
-  await writeFile(updater, `#!/bin/sh\nset -eu\nscript=$0\nwhile [ -L "$script" ]; do\n  parent=$(CDPATH= cd -- "$(dirname -- "$script")" && pwd)\n  link=$(readlink "$script")\n  case "$link" in /*) script=$link ;; *) script=$parent/$link ;; esac\ndone\nhere=$(CDPATH= cd -- "$(dirname -- "$script")" && pwd)\nfor node in "$(command -v node || true)" /opt/homebrew/bin/node /usr/local/bin/node; do\n  if [ -x "$node" ] && "$node" -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 24 ? 0 : 1)' 2>/dev/null; then\n    exec "$node" "$here/../Resources/rubato-codex/scripts/macos-cli.mjs" --app "$(dirname "$(dirname "$here")")" "$@"\n  fi\ndone\necho 'Rubato updater needs Node.js 24+' >&2\nexit 1\n`, { mode: 0o755 });
-  const receipt = { ...paths, launchStatus: 'enabled-unverified', nativeServices: 'upstream-preserved', bundleId: trust.bundleId, upstreamVersion: original.CFBundleShortVersionString, upstreamBuild: original.CFBundleVersion, upstreamAsarSha256: before, transformVersion: trust.transformVersion, updateUiHook, updateUiPatchedFiles: Object.entries(replacements).map(([file]) => ({ file, originalSha256: sha(archive.get(file)) })), installedAt: new Date().toISOString() };
+  await writeFile(updater, '#!/bin/sh\necho "Rubato uses the unchanged official app. Update ChatGPT/Codex through its official updater; rerun the Rubato installer to update workflows."\n', { mode: 0o755 });
+  const receipt = { ...paths, upstreamApp, mode: 'signed-profile-launcher',
+    launchStatus: 'enabled-unverified', bundleId: trust.bundleId,
+    upstreamVersion: original.CFBundleShortVersionString, upstreamBuild: original.CFBundleVersion,
+    transformVersion: 2, updateUiHook: 'official-app', installedAt: new Date().toISOString() };
   await writeFile(markerPath(target), JSON.stringify(receipt, null, 2) + '\n');
-  // The original main signature binds the old Info.plist. Refresh that signature
-  // without replacing its original entitlements or executable instructions.
-  // Frameworks, services and native modules retain their original signatures.
-  run('/usr/bin/codesign', ['--force', '--sign', '-', '--preserve-metadata=identifier,entitlements,flags,runtime', join(contents, 'MacOS', executable + '.real')]);
   run('/usr/bin/codesign', ['--force', '--sign', '-', updater]);
   run('/usr/bin/codesign', ['--force', '--sign', '-', target]);
   run('/usr/bin/codesign', ['--verify', '--deep', '--strict', target]);
-  if (sha(await readFile(sourceAsar)) !== before) throw new Error('Upstream changed while building');
+  await verifyUpstream(upstreamApp);
   return receipt;
 }
 export async function appPlan(options = {}) {
@@ -245,7 +199,10 @@ async function applyAppInstall(options = {}) {
     const sharedNames = await exists(sharedRoot) ? await readdir(sharedRoot) : [];
     const sharedDuplicates = [];
     for (const name of sharedNames) if (bundledNames.has(name.toLowerCase()) && await exists(join(sharedRoot, name, 'SKILL.md'))) sharedDuplicates.push(join(sharedRoot, name, 'SKILL.md'));
-    const setup = await installPackage({ ...options, codexHome: paths.codexHome, opencodexHome: join(paths.codexHome, 'opencodex'), codexPath: join(next, 'Contents/Resources/codex'), providers: options.providers, pluginRoot: packageRoot, disableSkillPaths: [...(options.disableSkillPaths || []), ...sharedDuplicates] });
+    const policyPath = join(paths.codexHome, 'rubato-codex/providers.json');
+    const previousPolicy = await exists(policyPath) ? JSON.parse(await readFile(policyPath, 'utf8')) : null;
+    const opencodexHome = previousPolicy?.opencodex?.configPath ? dirname(previousPolicy.opencodex.configPath) : join(paths.codexHome, 'opencodex');
+    const setup = await installPackage({ ...options, codexHome: paths.codexHome, opencodexHome, codexPath: join(plan.source, 'Contents/Resources/codex'), providers: options.providers, pluginRoot: packageRoot, disableSkillPaths: [...(options.disableSkillPaths || []), ...sharedDuplicates] });
     await replaceApp(next, paths.appPath);
     await installUpdaterLink(paths);
     return { ...plan, installed: true, verification: 'structural; GUI/login/native feature checks pending', setup, nextStep: 'Close the original ChatGPT/Codex app, then open Rubato for runtime verification.' };
@@ -280,6 +237,11 @@ export async function updateApp(options = {}) {
 async function applyAppUpdate(options = {}) {
   const paths = appPaths(options); const installed = await managedApp(paths.appPath);
   if (options.action === 'version') return installed;
+  if (installed.mode === 'signed-profile-launcher') {
+    const current = await verifyUpstream(installed.upstreamApp);
+    if (options.action === 'rollback') throw new Error('Launcher mode uses the official app; rollback must not restore the broken re-signed clone.');
+    return { status: 'official-updater', version: current.CFBundleShortVersionString, nextStep: 'Update the official ChatGPT/Codex app normally. Rerun the Rubato installer to update workflows.' };
+  }
   if (options.action === 'rollback') {
     if (runningApps().some(line => line.includes(paths.appPath + '/'))) throw new Error('Close Rubato before rollback');
     const previous = paths.appPath + '.previous';
