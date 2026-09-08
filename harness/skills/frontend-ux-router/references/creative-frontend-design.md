@@ -6,7 +6,7 @@ Use this reference after `frontend-creation.md` for landing pages, heroes, marke
 
 - Start from the product purpose, audience, occasion, brand traits, and real content.
 - Gather context anchors from the domain: objects, rituals, environments, histories, materials, language, and emotions.
-- Explore distinct concepts internally and select one clear point of view.
+- Explore distinct concepts internally only when the product already has a visual language to extend; when it has none, mood and scale are agreed with the user on generated images before code (`frontend-creation.md` §5). Then select one clear point of view.
 - Write one concept sentence that could belong to this product and would change for an unrelated product.
 - Choose one memorable signature and a small family of supporting details.
 - Define a restraint that keeps the message and primary action clear.

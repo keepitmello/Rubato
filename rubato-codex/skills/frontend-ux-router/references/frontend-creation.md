@@ -91,6 +91,9 @@ Every visible string must serve at least one purpose: orient, describe current e
 - raw ISO timestamps (`2026-07-12T05:53:34Z`)
 - schema/storage/pipeline nouns, prompt or model terminology, confidence semantics
 - meaningless headings: `Data`, `Info`, `Details`, `Item 1`, `Section`
+- form-label copy where a sentence belongs: `확인한 이의제기: 보완 요청`, `상태: 진행 중`. A person reads a sentence, not a key-value pair.
+- **In Korean copy**, typographic connectors people do not type: `·`, `—`, `→`, `|`, emoji, and mixed-in English words. Join with a period or a comma. Number only where order carries meaning. In other languages, follow that language's ordinary punctuation; the check is still "would a person type this in a sentence".
+- mixed speakers in one screen: the service, the user, and a third party (a bank, a reviewer) must not share one voice. Decide who is speaking on each surface and keep it.
 
 **Comment-copy test:** read every visible string as a first-time user. Rewrite or delete anything that reads like a code comment, schema field label, experiment note, commit message, or spec fragment.
 
@@ -107,7 +110,7 @@ Transformation examples (adapt to the product's domain language; do not apply me
 
 ## 5. Visual concept
 
-Explore distinct directions internally, then commit to one concept grounded in the product:
+When the product already has a visual language (tokens, approved screens, a design document), extend it and skip exploration. When it does not, and the open question is look (mood, scale, whitespace), do not explore in code: agree it with the user on generated images first (three images, one variable changed per image, user picks). When the open question is behavior rather than look, a runnable slice comes first and images are not a prerequisite. Then commit to one concept grounded in the product:
 
 ```md
 - Context anchors: domain object, ritual, environment, audience, or brand trait
@@ -145,10 +148,10 @@ Run this as a separate step after implementation, before verification.
 
 1. List every visible element of the rendered initial view (text, control, badge, icon, divider, metric).
 2. Map each element to exactly one purpose: orientation / current state / evidence / primary action / expected result / recovery-resume / prerequisite input.
-3. Any element with no mapping: **delete it**, or move it behind a deliberate secondary entry if a named actor genuinely needs it.
+3. Any element with no mapping: **delete it**, or move it behind a deliberate secondary entry if a named actor genuinely needs it. An element the user explicitly approved (a signature detail, a locked composition) is not deleted by this pass; list it in the report as approved-and-kept.
 4. Record the deleted/demoted list in the completion report.
 
-An empty deletion list on a first draft means the pass was skipped, not that the draft was perfect. Adding is easy; this step exists because nothing else forces removal.
+The report lists every element reviewed with the reason it stays, and the elements deleted or demoted. An empty deletion list is a valid result when every element maps; what is not valid is a missing review list. Do not remove a needed element to make the list non-empty.
 
 ## 9. Render and walk the path
 
