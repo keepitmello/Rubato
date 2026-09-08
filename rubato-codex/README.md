@@ -11,6 +11,32 @@ Rubato의 리드·오너 운영방식을 Codex 네이티브 멀티에이전트 �
 
 ## 설치
 
+별도 앱은 Codex 복제본에 Rubato 이름·아이콘·전용 프로필과 워크플로우를 적용합니다.
+내부 네이티브 서비스·권한 저장소는 원본대로 유지하며 별도 구현하지 않습니다.
+인위적인 기능 차단은 제거했으며, 전체 기능의 실제 실행 검증은 아직 진행 중입니다.
+
+기본값은 **별도 macOS `Rubato.app`**입니다. 기존 Codex의 전역 지침·기본
+프롬프트·스킬 설정·세션을 바꾸지 않습니다. 터미널 대화형 설치에서는 두 방식을
+선택할 수 있고, Enter 또는 비대화형 실행은 별도 앱을 선택합니다.
+
+```sh
+./rubato-codex/install.sh plan
+./rubato-codex/install.sh install --target app
+# 기존 Codex에 Rubato 운영방식을 적용하려는 경우에만:
+./rubato-codex/install.sh install --target codex
+```
+
+별도 앱은 `/Applications/Rubato.app`, Codex 상태는 `~/.rubato/codex`,
+Electron 상태는 `~/Library/Application Support/Rubato/Codex`에 둡니다.
+원본 `/Applications/ChatGPT.app`은 읽어서 복제하며 수정하지 않습니다.
+`~/.codex`의 설정·세션은 복사하거나 수정하지 않습니다.
+기존 Pi/remote 도구의 사용자 데이터도 이동하지 않습니다. 앱 이름은 **Rubato**이며,
+이전 Pi 런타임과 구분할 때만 문서에서 **Rubato Pi**라고 부릅니다.
+
+앱 설치·업데이트·검증 범위와 남은 런타임 확인 사항은
+[macOS 앱 안내](docs/macos-app.md)를 참고하세요. 아래 플러그인·전역 설정 적용
+설명은 별도 앱의 격리된 홈 또는 명시적인 `--target codex` 대상에 적용됩니다.
+
 ### Rubato와 Codex의 정본 구분
 
 Rubato/shared CLI 운영 스킬의 정본은 `~/.agents/skills`이며 `harness/skills`는
@@ -42,8 +68,8 @@ OpenCodex 2.43을 Codex 전용 managed prefix에 준비하거나 같은 버전�
 재사용하고, 알려진 provider를 등록합니다. 로그인과 실제 호출 검증은 별도입니다.
 
 ```sh
-./rubato-codex/install.sh plan --providers none
-./rubato-codex/install.sh install --providers anthropic,xai
+./rubato-codex/install.sh plan --target codex --providers none
+./rubato-codex/install.sh install --target codex --providers anthropic,xai
 ```
 
 `--providers`는 OpenCodex의 지원 registry 또는 현재 설정에서 발견된 provider ID만 받습니다. 선택 결과는
@@ -118,8 +144,8 @@ macOS에서 Aside CLI가 없고 Homebrew가 있으면 [공식 `aside` cask](http
 기존 수동 taskforce 설치에서 옮기는 경우에는 먼저 계획을 확인합니다.
 
 ```sh
-./rubato-codex/install.sh plan --migrate-legacy
-./rubato-codex/install.sh install --migrate-legacy
+./rubato-codex/install.sh plan --target codex --migrate-legacy
+./rubato-codex/install.sh install --target codex --migrate-legacy
 ```
 
 이 옵션은 인식 가능한 이전 taskforce 설치를 백업하고 교체하기 위한 것입니다.
@@ -133,9 +159,9 @@ macOS에서 Aside CLI가 없고 Homebrew가 있으면 [공식 `aside` cask](http
 계획과 실제 설치에 같은 경로를 넘깁니다.
 
 ```sh
-./rubato-codex/install.sh plan \
+./rubato-codex/install.sh plan --target codex \
   --disable-skill "$HOME/.agents/skills/outpost/SKILL.md"
-./rubato-codex/install.sh install \
+./rubato-codex/install.sh install --target codex \
   --disable-skill "$HOME/.agents/skills/outpost/SKILL.md"
 ```
 
@@ -145,7 +171,7 @@ macOS에서 Aside CLI가 없고 Homebrew가 있으면 [공식 `aside` cask](http
 기존 설정이 명시적으로 `enabled = true`면 중단합니다. 이후 업데이트에서도 선택을
 기억하며, uninstall하면 관리 블록이 제거되어 보존된 원본 스킬이 다시 활성화됩니다.
 
-별도 Codex 홈에 시험 설치하려면 `--codex-home /path/to/test-codex-home`을
+앱 없이 별도 Codex 홈에 시험 설치하려면 `--target codex --codex-home /path/to/test-codex-home`을
 두 명령에 모두 붙입니다. `plan` 또는 `--dry-run`은 적용 계획만 보여줍니다.
 
 설치 후 새 루트 태스크에서 시작하세요. 이미 열린 태스크와 그 자식은 이전
@@ -207,8 +233,8 @@ Terra/Luna 워커를 씁니다.
 `CODEX_HOME`이 없으면 `~/.codex`를 사용합니다.
 
 ```sh
-./rubato-codex/install.sh uninstall --dry-run
-./rubato-codex/install.sh uninstall
+./rubato-codex/install.sh uninstall --target codex --dry-run
+./rubato-codex/install.sh uninstall --target codex
 ```
 
 제거해도 공유 보드의 SQLite 데이터와 백업, 마켓플레이스 등록은 남습니다.

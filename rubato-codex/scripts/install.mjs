@@ -864,10 +864,10 @@ export async function uninstallPackage(options = {}) {
 }
 
 function usage() {
-  return `Usage: ./install.sh [install|uninstall|plan] [options]\n\nOptions:\n  --codex PATH               use this Codex binary\n  --codex-home DIR           isolate or select Codex home\n  --marketplace-source SRC   local path or Git marketplace source\n  --marketplace-ref REF      Git ref; adds sparse repo paths\n  --migrate-legacy           back up and replace generated legacy taskforce roles\n  --providers LIST           OpenCodex provider IDs, comma-separated; 'none' means native only\n  --disable-skill PATH       disable an exact duplicate global SKILL.md; repeatable\n  --dry-run                  print the plan without changing files or plugin state\n`;
+  return `Usage: ./install.sh [install|uninstall|plan] [options]\n\nDefault: separate Rubato.app; existing Codex is not changed.\n\nOptions:\n  --target app|codex         separate macOS app (default), or explicitly modify Codex integration\n  --app PATH                separate app destination, ending in /Rubato.app\n  --upstream-app PATH       verified official app used for initial creation\n  --icon PATH               Rubato PNG or ICNS icon\n  --codex PATH               use this Codex binary (--target codex)\n  --codex-home DIR           isolate or select Codex home (--target codex)\n  --marketplace-source SRC   local path or Git marketplace source\n  --marketplace-ref REF      Git ref; adds sparse repo paths\n  --migrate-legacy           back up and replace generated legacy taskforce roles\n  --providers LIST           OpenCodex provider IDs, comma-separated; 'none' means native only\n  --disable-skill PATH       disable an exact duplicate global SKILL.md; repeatable\n  --dry-run                  print the plan without changing files or plugin state\n`;
 }
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const args = [...argv];
   let command = "install";
   if (args[0] && ["install", "uninstall", "plan"].includes(args[0])) command = args.shift();
@@ -875,6 +875,10 @@ function parseArgs(argv) {
   while (args.length) {
     const flag = args.shift();
     if (flag === "--dry-run") options.dryRun = true;
+    else if (flag === "--target") options.target = args.shift() || fail("--target needs app or codex");
+    else if (flag === "--app") options.appPath = args.shift() || fail("--app needs a path");
+    else if (flag === "--upstream-app") options.upstreamApp = args.shift() || fail("--upstream-app needs a path");
+    else if (flag === "--icon") options.iconPath = args.shift() || fail("--icon needs a PNG or ICNS path");
     else if (flag === "--migrate-legacy") options.legacyMigration = true;
     else if (flag === "--codex") options.codexPath = args.shift() || fail("--codex needs a path");
     else if (flag === "--codex-home") options.codexHome = args.shift() || fail("--codex-home needs a directory");
@@ -894,9 +898,16 @@ async function main() {
     process.stdout.write(usage());
     return;
   }
-  const result = parsed.command === "uninstall"
-    ? await uninstallPackage(parsed.options)
-    : await installPackage(parsed.options);
+  const { chooseInstallTarget } = await import('./install-target.mjs');
+  const options = await chooseInstallTarget(parsed.options, { interactive: !parsed.options.dryRun && Boolean(process.stdin.isTTY && process.stdout.isTTY) });
+  let result;
+  if (options.target === 'app') {
+    if (parsed.command === 'uninstall') fail('Rubato.app removal is explicit: move the app to Trash; isolated user data is retained. Use --target codex to remove the managed integration from a Codex home.');
+    const { installApp } = await import('./macos-app.mjs');
+    result = await installApp(options);
+  } else {
+    result = parsed.command === "uninstall" ? await uninstallPackage(options) : await installPackage(options);
+  }
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }
 
