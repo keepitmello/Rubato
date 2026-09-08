@@ -17,7 +17,7 @@ Use this reference after `frontend-creation.md` for dashboards, tools, admin scr
 - Give the product one recognizable signature that supports orientation or action.
 - Keep familiar controls and task-critical patterns stable.
 
-For confirmed flows with open visual details, explore a few directions internally and select the one that best supports the product context. Ask the user one focused question when a visual choice changes brand meaning or the user flow materially.
+For confirmed flows with open visual details, explore a few directions internally and select the one that best supports the product context. This applies when the product already has a visual language to extend; when it has none, mood and scale are agreed with the user on generated images before code (`frontend-creation.md` §5). Ask the user one focused question when a visual choice changes brand meaning or the user flow materially.
 
 ## Hierarchy and composition
 
