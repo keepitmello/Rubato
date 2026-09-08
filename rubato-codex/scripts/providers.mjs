@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 
 const DISPLAY_NAMES = { anthropic: "Anthropic", cursor: "Cursor", kiro: "Kiro", xai: "xAI" };
+export const SUPPORTED_PROVIDER_IDS = Object.freeze(Object.keys(DISPLAY_NAMES).sort());
 
 function safeModelIds(value) {
   if (!Array.isArray(value)) return [];
@@ -45,22 +46,38 @@ export async function discoverProviderCatalog(options = {}) {
   try {
     parsed = JSON.parse(await readFile(configPath, "utf8"));
   } catch (error) {
-    if (error.code === "ENOENT") return { status: "missing", configPath, providers: [] };
+    if (error.code === "ENOENT") return {
+      status: "missing",
+      configPath,
+      providers: SUPPORTED_PROVIDER_IDS.map((id) => ({ id, displayName: DISPLAY_NAMES[id], source: "opencodex-registry", configured: false, models: [] })),
+    };
     return { status: "unreadable", configPath, providers: [], error: error.message };
   }
   if (!parsed.providers || typeof parsed.providers !== "object" || Array.isArray(parsed.providers)) {
     return { status: "unreadable", configPath, providers: [], error: "providers must be an object" };
   }
-  const providers = Object.entries(parsed.providers)
+  const configuredProviders = Object.entries(parsed.providers)
     .filter(([id, config]) => id !== "openai" && config && typeof config === "object" && !Array.isArray(config))
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([id, config]) => ({
       id,
       displayName: DISPLAY_NAMES[id] || id,
       source: "opencodex",
+      configured: true,
       models: providerModels(config, id, parsed),
     }));
-  return { status: "available", configPath, port: Number.isInteger(parsed.port) ? parsed.port : undefined, providers };
+  const configuredIds = new Set(configuredProviders.map((provider) => provider.id));
+  const providers = [
+    ...configuredProviders,
+    ...SUPPORTED_PROVIDER_IDS.filter((id) => !configuredIds.has(id)).map((id) => ({
+      id,
+      displayName: DISPLAY_NAMES[id],
+      source: "opencodex-registry",
+      configured: false,
+      models: [],
+    })),
+  ].sort((left, right) => left.id.localeCompare(right.id));
+  return { status: "available", configPath, port: Number.isInteger(parsed.port) ? parsed.port : undefined, roster: safeModelIds(parsed.subagentModels), providers };
 }
 
 export async function promptForProviders(catalog, input = process.stdin, output = process.stdout) {

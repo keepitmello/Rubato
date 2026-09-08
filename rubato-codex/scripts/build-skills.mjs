@@ -55,6 +55,22 @@ function transformText(relativePath, input) {
     output = output.replace("name: \"aside-browser\"\nversion: 4", "name: \"aside-browser\"\nmetadata:\n  version: \"4\"");
   }
 
+  if (relativePath === "browser-cli/SKILL.md") {
+    output = output
+      .replace(/^agent-browser /gm, '"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/agent-browser" ')
+      .replace(/^chrome-devtools /gm, '"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/chrome-devtools" ')
+      .replace(/`agent-browser ([^`]+)`/g, '`${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/agent-browser $1`')
+      .replace(/`chrome-devtools ([^`]+)`/g, '`${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/chrome-devtools $1`');
+  }
+
+  if (relativePath === "outpost/SKILL.md" || relativePath === "outpost/references/runbook.md") {
+    output = output
+      .replace(/^outpost /gm, '"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost" ')
+      .replace("`outpost` on\nPATH", "`${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost`")
+      .replace("`outpost` on PATH", "`${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost`")
+      .replace("Launch `outpost` on PATH", "Launch `${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost`");
+  }
+
   if (relativePath === "metaFrame/SKILL.md") {
     output = output
       .replace("name: metaFrame", "name: metaframe")
@@ -102,7 +118,7 @@ function transformText(relativePath, input) {
       .replaceAll("`mcp__playwright__*`: Cloudflare급 챌린지", "런타임이 제공하는 browser tool: Cloudflare급 챌린지");
 
     output = output
-      .replaceAll("python3 -m engine", "python3 \"${CODEX_HOME:-$HOME/.codex}/skills/insane-search/engine\"")
+      .replaceAll("python3 -m engine", "\"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/insane-search\"")
       .replaceAll("python3 engine/bias_check.py", "python3 \"${CODEX_HOME:-$HOME/.codex}/skills/insane-search/engine/bias_check.py\"")
       .replaceAll("python3 tests/coverage_battery.py", "python3 \"${CODEX_HOME:-$HOME/.codex}/skills/insane-search/tests/coverage_battery.py\"")
       .replace(
@@ -111,7 +127,7 @@ function transformText(relativePath, input) {
       )
       .replace(
         "## 의존성 자동 설치\n\n최초 호출 시 필요 패키지를 자동 설치한다.",
-        "## 의존성 준비\n\n번들은 패키지를 자동 설치하지 않는다. 먼저 아래 import 검사를 실행하고, 누락 패키지 설치는 현재 작업의 권한과 환경을 확인한 뒤에만 진행한다.",
+        "## 의존성 준비\n\n설치기는 core Python 패키지를 격리된 managed venv에 준비하고 `${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/insane-search` 실행기를 연결한다. 아래 system Python import/pip 명령은 수동 설치를 선택했을 때의 진단·복구 경로일 뿐 기본 설치 경로가 아니다.",
       )
       .replace(
         "`protocol_stealth_chrome`는 `pip install nodriver`(또는 patchright)가 필요하다. 없으면 다음 fallback으로 진행하며, `INSANE_AUTO_INSTALL=1`이면 첫 호출 시 자동 설치.",

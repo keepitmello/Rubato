@@ -14,6 +14,12 @@ registry, scheduler, daemon or model runner.
 These installed native roles contain their role contract and `dispatched` as
 developer instructions. Send the task-specific brief, not a second copy of that
 contract. Inherited lead conversation is background, not the worker's authority.
+The installer replaces the configurable base instructions with Rubato's
+Codex-adapted working agreement. That base is shared and explicitly scopes its
+lead section to the main/root session; each native role supplies its distinct
+owner, verifier or helper instructions. A delegated session does not follow the
+root-only lead section. Runtime tool definitions and environment instructions
+remain provided by Codex, not replaced with Pi's tool declarations.
 For cold review, use no inherited turns and supply artifacts, constraints and
 acceptance criteria without the builder's reasoning or desired verdict.
 

@@ -31,9 +31,9 @@ test("OpenCodex catalog discovery exposes identifiers but no provider configurat
   const catalog = await discoverProviderCatalog({ opencodexHome: home });
   assert.equal(catalog.status, "available");
   assert.equal(catalog.port, 10100);
-  assert.deepEqual(catalog.providers.map((provider) => provider.id), ["cursor", "xai"]);
-  assert.deepEqual(catalog.providers[0].models, ["cursor/gpt-5.6-sol"]);
-  assert.deepEqual(catalog.providers[1].models, ["xai/grok-4.6"]);
+  assert.deepEqual(catalog.providers.map((provider) => provider.id), ["anthropic", "cursor", "kiro", "xai"]);
+  assert.deepEqual(catalog.providers.find((provider) => provider.id === "cursor").models, ["cursor/gpt-5.6-sol"]);
+  assert.deepEqual(catalog.providers.find((provider) => provider.id === "xai").models, ["xai/grok-4.6"]);
   assert.doesNotMatch(JSON.stringify(catalog), /secret|accessToken|must-not-leak/);
 });
 
