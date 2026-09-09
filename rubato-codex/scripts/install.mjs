@@ -718,18 +718,10 @@ export async function installPackage(options = {}) {
     preserveExisting: providerCatalog.status === "available" && Boolean(providerCatalog.roster?.length),
     runner: options.openCodexRosterRunner,
   });
-  // Must follow the roster: the roster decides WHICH routed models a spawn may name, this decides
-  // whether naming one can run at all.
-  const openCodexMultiAgent = await configureOpenCodexMultiAgent(openCodexResult, {
-    dryRun,
-    env: openCodexEnv,
-    runner: options.openCodexMultiAgentRunner,
-  });
   providerPolicy = makeProviderPolicy(refreshedProviderCatalog, providerSelection.selected);
   preservedState.providerPolicy.installedSha = sha256(providerPolicy);
   openCodexResult.providerSetup = openCodexProviders;
   openCodexResult.roster = openCodexRoster;
-  openCodexResult.multiAgent = openCodexMultiAgent;
   openCodexResult.anthropicAuth = openCodexAnthropicAuth;
   openCodexResult.runtime = providerSelection.selected.length ? {
     status: "authentication-pending",
@@ -783,6 +775,18 @@ export async function installPackage(options = {}) {
   await atomicWrite(agentsPath, agentsNext, 0o600);
   await atomicWrite(modelInstructionsPath, packageData.modelInstructions, 0o600);
   await atomicWrite(providerPolicyPath, providerPolicy, 0o600);
+
+  // Both Codex's plugin commands and our managed-block rewrite mutate config.toml. OpenCodex may
+  // place its root routing keys beside model_instructions_file, inside that managed block, so a
+  // later block replacement deletes them. Reconcile only after every config write; otherwise the
+  // routed models remain visible in the picker but go to ChatGPT and fail with 400.
+  const openCodexMultiAgent = await configureOpenCodexMultiAgent(openCodexResult, {
+    dryRun,
+    env: openCodexEnv,
+    runner: options.openCodexMultiAgentRunner,
+  });
+  openCodexResult.multiAgent = openCodexMultiAgent;
+
   await atomicWrite(statePath, `${JSON.stringify(preservedState, null, 2)}\n`, 0o600);
   return plan;
 }
