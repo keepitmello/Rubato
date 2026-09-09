@@ -9,8 +9,15 @@ import { readArchive, rewriteArchive } from './asar.mjs';
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const trust = JSON.parse(await readFile(join(packageRoot, 'macos/upstream-trust.json'), 'utf8'));
+export const RUBATO_DEFAULT_MODEL = 'gpt-5.6-sol';
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const exists = async path => { try { await lstat(path); return true; } catch (e) { if (e.code === 'ENOENT') return false; throw e; } };
+export function withRubatoDefaultModel(content, model = RUBATO_DEFAULT_MODEL) {
+  const firstTable = content.search(/^\s*\[/m);
+  const root = content.slice(0, firstTable === -1 ? content.length : firstTable);
+  if (/^\s*model\s*=/m.test(root)) return content;
+  return `model = ${JSON.stringify(model)}\n${content}`;
+}
 export function run(command, args, options = {}) {
   const r = spawnSync(command, args, { encoding: 'utf8', timeout: 120_000, maxBuffer: 16 * 1024 * 1024, ...options });
   if (r.error || r.status !== 0) throw new Error(`${basename(command)} failed: ${r.error?.message || r.stderr || r.stdout}`);
@@ -202,6 +209,11 @@ async function applyAppInstall(options = {}) {
     const policyPath = join(paths.codexHome, 'rubato-codex/providers.json');
     const previousPolicy = await exists(policyPath) ? JSON.parse(await readFile(policyPath, 'utf8')) : null;
     const opencodexHome = previousPolicy?.opencodex?.configPath ? dirname(previousPolicy.opencodex.configPath) : join(paths.codexHome, 'opencodex');
+    const configPath = join(paths.codexHome, 'config.toml');
+    await mkdir(paths.codexHome, { recursive: true });
+    const currentConfig = await exists(configPath) ? await readFile(configPath, 'utf8') : '';
+    const configWithDefault = withRubatoDefaultModel(currentConfig);
+    if (configWithDefault !== currentConfig) await writeFile(configPath, configWithDefault, { mode: 0o600 });
     const setup = await installPackage({ ...options, codexHome: paths.codexHome, opencodexHome, codexPath: join(plan.source, 'Contents/Resources/codex'), providers: options.providers, pluginRoot: packageRoot, disableSkillPaths: [...(options.disableSkillPaths || []), ...sharedDuplicates] });
     await replaceApp(next, paths.appPath);
     await installUpdaterLink(paths);
