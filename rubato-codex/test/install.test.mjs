@@ -71,7 +71,11 @@ if (args[1] === "add") {
   fs.writeFileSync(statePath, JSON.stringify(state));
   const configPath = process.env.CODEX_HOME + "/config.toml";
   fs.mkdirSync(process.env.CODEX_HOME, {recursive:true});
-  const config = fs.existsSync(configPath) ? fs.readFileSync(configPath, "utf8") : "";
+  let config = fs.existsSync(configPath) ? fs.readFileSync(configPath, "utf8") : "";
+  if (process.env.FAKE_CODEX_STRIP_ROUTING_ON_PLUGIN_ADD === "1") {
+    config = config.split("\\n").filter(line => !/^(openai_base_url|experimental_realtime_ws_base_url|model_catalog_json)\\s*=/.test(line)).join("\\n");
+    fs.writeFileSync(configPath, config);
+  }
   if (!config.includes('[plugins."rubato-codex@rubato"]')) {
     fs.writeFileSync(configPath, config + '\\n[plugins."rubato-codex@rubato"]\\nenabled = true\\n');
   }
@@ -233,6 +237,38 @@ test("installer records provider subset and preserves it on an update without --
   assert.deepEqual(nativeOnly.providers, ["native-codex-only"]);
   policy = JSON.parse(await readFile(join(f.codexHome, "rubato-codex", "providers.json"), "utf8"));
   assert.deepEqual(policy.selectedProviders, []);
+});
+
+test("OpenCodex routing is reconciled after Codex plugin config rewrites", async () => {
+  const f = await fixture();
+  const opencodexHome = join(f.root, "opencodex-home");
+  await mkdir(opencodexHome, { recursive: true });
+  await writeFile(join(opencodexHome, "config.json"), JSON.stringify({
+    providers: { xai: { models: ["grok-4.6"] } },
+  }));
+  await mkdir(f.codexHome, { recursive: true });
+  await writeFile(join(f.codexHome, "config.toml"), 'openai_base_url = "http://127.0.0.1:10100/v1"\nmodel_catalog_json = "/tmp/catalog.json"\n');
+
+  const env = { ...process.env, HOME: join(f.root, "home"), FAKE_CODEX_STRIP_ROUTING_ON_PLUGIN_ADD: "1" };
+  await installPackage({
+    ...options(f),
+    env,
+    opencodexHome,
+    providers: "xai",
+    openCodexMultiAgentRunner: async (_command, runnerEnv) => {
+      assert.equal(runnerEnv.CODEX_HOME, f.codexHome);
+      const current = await readFile(join(f.codexHome, "config.toml"), "utf8");
+      assert.match(current, /# <<< rubato-codex managed bootstrap <<</);
+      await writeFile(
+        join(f.codexHome, "config.toml"),
+        `${current}\nopenai_base_url = "http://127.0.0.1:10100/v1"\nmodel_catalog_json = "/tmp/catalog.json"\n`,
+      );
+    },
+  });
+
+  const config = await readFile(join(f.codexHome, "config.toml"), "utf8");
+  assert.match(config, /^openai_base_url = "http:\/\/127\.0\.0\.1:10100\/v1"$/m);
+  assert.match(config, /^model_catalog_json = "\/tmp\/catalog\.json"$/m);
 });
 
 test("fresh provider plan bootstraps OpenCodex without writing or running setup", async () => {
