@@ -4,7 +4,7 @@ import { readFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chooseInstallTarget, appPaths } from '../scripts/install-target.mjs';
-import { parseAppcast, validateDownloadUrl, assertAppTarget, trust, verifyDownload, withAppLock } from '../scripts/macos-app.mjs';
+import { parseAppcast, validateDownloadUrl, assertAppTarget, RUBATO_DEFAULT_MODEL, trust, verifyDownload, withAppLock, withRubatoDefaultModel } from '../scripts/macos-app.mjs';
 import { readArchive, rewriteArchive } from '../scripts/asar.mjs';
 import { parseUpdateArgs } from '../scripts/macos-cli.mjs';
 import { parseArgs } from '../scripts/install.mjs';
@@ -18,6 +18,11 @@ test('CLI defaults to isolated app even if CODEX_HOME is set; Codex requires exp
   assert.equal(parseArgs(['install', '--target', 'codex']).options.target, 'codex');
   assert.equal(appPaths({}, '/private-user').codexHome, '/private-user/.rubato/codex');
   assert.equal(appPaths({}, '/private-user').electronHome, '/private-user/Library/Application Support/Rubato/Codex');
+});
+test('isolated Rubato profile defaults to Sol without replacing a user selection', () => {
+  assert.equal(RUBATO_DEFAULT_MODEL, 'gpt-5.6-sol');
+  assert.equal(withRubatoDefaultModel('[features]\nmemories = true\n'), 'model = "gpt-5.6-sol"\n[features]\nmemories = true\n');
+  assert.equal(withRubatoDefaultModel('model = "anthropic/claude-opus-5"\n'), 'model = "anthropic/claude-opus-5"\n');
 });
 test('appcast selects full archives by architecture/build and refuses untrusted origins', () => {
   const item = (build, cpu) => `<item><sparkle:version>${build}</sparkle:version><sparkle:shortVersionString>26.${build}</sparkle:shortVersionString><sparkle:hardwareRequirements>${cpu}</sparkle:hardwareRequirements><enclosure url="${trust.downloadOrigin}/codex-app-prod/test.zip" length="12" sparkle:edSignature="AA=="/><sparkle:deltas><enclosure url="https://evil.test/x.delta"/></sparkle:deltas></item>`;

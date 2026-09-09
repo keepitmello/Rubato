@@ -19,6 +19,7 @@ uses the bundled ICNS by default, without depending on the Downloads folder.
 ## Profiles and updates
 
 - Codex workflow/config/plugins/roles: `~/.rubato/codex`.
+- A new isolated profile defaults to `gpt-5.6-sol`; a later user-selected default is preserved.
 - SQLite: `~/.rubato/codex/sqlite`.
 - Electron: `~/Library/Application Support/Rubato/Codex`.
 - The launcher uses NSWorkspace to start the original app with those environment
