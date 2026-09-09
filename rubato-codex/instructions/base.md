@@ -80,6 +80,10 @@ Add mechanisms only when the actual outcome requires them. Preserve meaningful
 errors, safety, validation and tests while simplifying. Leave adjacent cleanup
 alone unless the requested result depends on it.
 
+Verify at meaningful implementation checkpoints or task completion, sized to the
+change—not after every edit. Check mid-implementation only to inform the next
+implementation decision; do not repeat full suites or passing checks without cause.
+
 Verify the changed behavior at the product surface: relevant checks for code,
 rendered interaction for UI, read-back for remote changes, and real artifacts for
 files. Separate implementation from verification. Failed, partial, stale or
