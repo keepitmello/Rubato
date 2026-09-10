@@ -1,5 +1,13 @@
 # Teammate task brief
 
+**Intent reference (when durable):** same canonical workspace, intent path/URI,
+ID and revision as the lead; managed records also carry the returned SHA-256.
+Read before dependent work. Link the specific intent/spec clauses this outcome
+serves; do not restate the whole intent. Preserve this reference for descendants
+and existing board `metadata.intent_ref`; a missing source is a blocker to resolve,
+not permission to invent one. For a focused helper without durable intent, the
+bounded user-authorized brief is sufficient.
+
 **Outcome:** the result this teammate owns end to end.
 
 **Why:** why the team mission needs this result.
@@ -12,7 +20,9 @@
 
 **Premises:** among the facts this brief rests on, tag the ones you have not verified yourself — `[inherited]` carried over from earlier records / `[assumed]` weakly grounded. Tags record provenance; they do not gate verification — repository-shape claims belong in Repository leads and are provisional either way. When handing down a discard/infeasible verdict, include the evidence behind it; if the basis is not an independent refutation, hand it down as provisional ("re-verification allowed"), not as settled.
 
-**Done evidence:** the tests, runtime behavior, artifacts, source-backed findings, or environment state that will count as done — the specifics for *this* outcome. The general rules (commit on your branch, raw rows in a durable path) are already in the role contract; do not restate them here.
+**Done evidence:** the tests, runtime behavior, artifacts, source-backed findings, or environment state that will count as done — the specifics for *this* outcome.
+
+**Approved delivery contract (if any):** what must be handed back (for example, a branch commit, patch, artifact, or report). Absence of a contract does not authorize a commit or external delivery.
 
 **Dependencies and peers:** teammates to contact directly, inputs to receive, handoffs to deliver.
 

@@ -1,22 +1,16 @@
 # Model allocation for the lead
 
-*Lead.* Use Skill(model-guide) (`~/.agents/skills/model-guide/SKILL.md`) for cognitive profiles, bottleneck routing, verifier pairings, and catalog mapping. Session continuity (continue an existing session or start fresh) lives in Skill(dispatching). This file keeps only the team proposal format.
+*Lead.* Skill(model-guide) owns cognitive profiles, bottleneck routing, verifier pairings
+and exact catalog/effort values. Skill(dispatching) owns session continuity. This file
+only connects model selection to the combined proposal; it does not create another gate.
 
-The human operator chooses whether framing is used and which model is lead. Choose the smallest execution roster from the active runtime's policy and report it before spawning. The operator can veto it; wait only for restricted-model, cost, or explicit team-approval decisions as defined in `LEAD.md`.
+Preserve the user's lead and framing choices. After useful discovery, select the smallest
+roster and present it with the intended result using the sibling
+`work-intent/templates/approval-message.md`. Explain each selected model's responsibility
+and why it fits in the user's language. Keep exact technical settings in the internal
+roster; explain their practical cost/effort when material.
 
-## What to show the user before spawn
-
-Keep the proposal short.
-
-```text
-팀 배치안
-- 프레이밍: 사용 / 기존 프레임 연결 / 생략
-- Lead: <model> — <why this lead fits>
-- Owner: <outcome> → <model> — <dominant bottleneck>
-- Owner: <outcome> → <model> — <dominant bottleneck>   # only if needed
-- Verifier: <model or none> — <why included or skipped>
-
-이 배치로 진행할게요.
-```
-
-If explicit confirmation is required, ask for it instead of announcing a start. Otherwise form the reported team in the same turn. Record the actual roster if a mission artifact is being used.
+Wait for explicit confirmation of both intent and roster before staffing. One reply can
+accept clearly presented model/effort commitments together with the result. It does not
+waive other authorization requirements. Keep accepted owners for related follow-ups;
+ask only about a material staffing or intent delta, not every helper or repeated check.

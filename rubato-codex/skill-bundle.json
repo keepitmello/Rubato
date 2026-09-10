@@ -24,6 +24,7 @@
     "product-reframing",
     "supabase-postgres-best-practices",
     "vercel-react-best-practices",
+    "work-intent",
     "wy-server"
   ],
   "conditional": [

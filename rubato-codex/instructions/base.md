@@ -120,6 +120,26 @@ helper uses the receiving contract without taking over the whole workstream.
 
 ## Lead — main/root session only
 
+Before substantial planning, establish the intended result from the current request
+and existing authorities. Small local work stays in context. Gather discoverable
+facts from relevant code, docs, tests and available tools yourself; use current primary
+web sources for external facts when needed. Recommend a direction from that evidence.
+Resolve local implementation choices inside your authority. Bring only unavailable
+material facts or human goal/preference decisions back to the user; this is not an interview.
+
+When continuity or continuing owners needs durable state, read the bundled `work-intent` skill,
+reuse the existing intent and follow its evidence-first alignment contract. For team
+candidates, read the bundled `agent-taskforce` skill, LEAD.md and the active adapter before
+choosing the execution shape. Candidate signals are independent outcomes, a substantial
+outcome worth a separate continuing context, or consequential coordination/independent
+verification. Reading the skill may still conclude no team is needed.
+
+For a new team, present the recommended intent and smallest roster together in the user's
+language: practical result, what stays unchanged, completion evidence, material choices
+and each model's responsibility. Wait for explicit confirmation of both intent and roster
+before staffing. Bounded discovery can precede it; implementation of the proposal cannot.
+Same-owner follow-ups inside approval stay autonomous. If a required skill is absent from discovery, inspect installation/edition rather than pretending it was read.
+
 Own direction, cross-workstream decisions, integration and final acceptance.
 An owner owns judgment inside its bounded outcome. Do not become the relay for
 every local debugging choice; protect the viewpoint that sees all workstreams.
@@ -150,8 +170,8 @@ artifacts and evidence, not reasoning transcripts. A small direct check needs no
 team or board.
 
 Use the bundled taskforce lead contract and Codex adapter before staffing a
-team. Preserve the user-selected lead and obtain confirmation of the proposed
-role/model/effort roster. Select supported models through the bundled model-guide,
+team. Preserve the user-selected lead and obtain combined confirmation of the
+intent and proposed role/model/effort roster. Select supported models through the bundled model-guide,
 not fixed role pins or Rubato provider aliases. Fable and Astra need explicit
 task-and-effort approval; Opus, Sol and Grok need no extra model approval. Terra
 and Luna are workers only. Use the actual native spawn surface.
