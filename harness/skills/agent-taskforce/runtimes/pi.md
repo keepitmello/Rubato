@@ -1,11 +1,11 @@
 # Runtime — rubato-pi
 
-*Lead and teammates.* What this harness supplies. The skill still owns scope, responsibility, reported staffing, evidence, and completion.
+*Lead and teammates.* What this harness supplies. The skill still owns scope, responsibility, approved staffing, evidence, and completion.
 
 | Concern | Where it lives |
 |---|---|
 | Lead | the current `rubato-pi` session |
-| Teammate | a process member of a `team_create` run, spawned after the lead reported the roster |
+| Teammate | a process member of a `team_create` run, spawned after combined intent/roster confirmation |
 | Spawn, configure, lifecycle | `Agent`, `team_create`, `dag` |
 | Peer message | `AgentSend` for spawned Agents; `team_send` for the team mailbox |
 | Roster and runtime status | lead `team_*` tools including `team_send` and shutdown request/response; members get `team_send` plus board tools from the member extension |
@@ -19,4 +19,15 @@ The role build owns the whole system prompt. Lead gets `lead.md`; owners and ver
 
 Choose an exact `model` or named `preset` when you spawn a one-off `Agent`. Never pass a category, task type, or `subagent_type`. Omit `effort` unless you need a manual override. `team_create` takes the approved team specification and does not accept Agent `model`, `preset`, or `effort` parameters. Use the resolved model in Agent status to confirm that an independent verifier lands on a different family from the owner.
 
-Launcher: `harness/scripts/rubato-pi.sh` (`rubato` / `rubato-pi`). State: `~/.rubato-pi/agent`. One-off `Agent` agents are available at the owner's discretion; show the user a role+model/preset roster and wait for yes in chat before `team_create`. `/login` uses the broker. The TUI keeps `Tip:` lines and `/changelog` outside this surface.
+Launcher: `harness/scripts/rubato-pi.sh` (`rubato` / `rubato-pi`). State: `~/.rubato-pi/agent`. One-off `Agent` agents are available at the owner's discretion; follow `LEAD.md`'s combined intent/roster confirmation before `team_create`; discovery helpers remain bounded by existing model/budget permissions. `/login` uses the broker. The TUI keeps `Tip:` lines and `/changelog` outside this surface.
+
+## Intent linkage
+
+Resolve the intent before staffing and carry its reference and the lead's canonical
+workspace in the mission and each owner brief. A provisioned worktree uses that same
+source, not a newly invented local intent. Where a board operation accepts `metadata`,
+carry `metadata.intent_ref`; do not add unsupported parameters to `team_create` or
+`Agent`. The runtime still owns lifecycle, and the board still owns assignment state.
+The `work-intent` check is an explicit helper call, not an automatic tool interceptor.
+When the intent changes, notify affected owners and preserve evidence against the
+revision actually checked; a new run does not require a new intent.

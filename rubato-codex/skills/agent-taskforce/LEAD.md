@@ -27,16 +27,39 @@ Preserve the user's selected lead and framing choice. Settled implementation,
 bugs and migrations do not need a new product-framing process. If an authoritative
 frame/spec exists, reference it rather than copying it into a competing mission.
 
-Before staffing, read the Codex adapter and model allocation guidance. Present a
-short roster: each outcome, role, selected model/effort and why it fits. Obtain
-the user's confirmation before forming the team. An explicit instruction to
-proceed with a presented roster counts; a generic implementation request alone
-does not. Keep approved owners for corrections and re-verification of the same
-outcome without asking again. Material roster/scope changes need confirmation.
-Model-specific approval follows the bundled model-guide: Fable and Astra need
-task-and-effort approval; Opus, Sol and Grok have no extra model approval gate.
-Ordinary bounded helpers inside approved scope need no new team ceremony.
-Do not change the lead's model yourself.
+## Resolve intent before staffing
+
+Read the sibling `work-intent` skill and its alignment guide. Reuse the authority for
+this outcome; a new team or worktree is not a new intent. Inspect the relevant repository,
+documents and available external sources to resolve discoverable gaps. Keep uncertain
+findings provisional. Decide local methods yourself and recommend the best-supported
+direction; material user choices belong in the combined proposal, not a rolling interview.
+Stop discovery once enough is known to choose direction and ownership. A bounded discovery
+helper may work under a draft within existing permissions; continuing owners may not.
+
+Draft only when no existing source serves the purpose. Show the result, preserved behavior,
+non-goals and completion evidence in the user's language together with the roster, then
+wait for explicit confirmation of both intent and roster. Cite the actual human instruction
+accepting that proposal, not a generic earlier request or silence. Refer to the proposal
+and accepted intent revision in the existing mission; do not copy the roster into intent.
+Follow `work-intent` for partial approval, accepted corrections and changed-scope decisions.
+
+Keep frame/spec authority and local owner autonomy intact. Carry the exact `intent_ref`
+and canonical workspace in briefs and task metadata. Run-specific staffing, approval
+references and integration belong in mission. Intent acceptance does not replace any
+independent model, frame, budget or delivery permission.
+
+Before staffing, read the Codex adapter and model allocation guidance. Present one
+combined intent/roster proposal using the sibling work-intent message guide. Name the
+selected model and practical responsibility; translate effort and internal role labels
+into readable language while keeping exact values in the internal roster. Obtain
+confirmation of both intent and roster before forming the team. A reply accepting the
+concrete proposal counts; a generic earlier implementation request or partial assent does
+not. Keep accepted owners for related corrections without asking again. Confirm material
+scope/roster/cost deltas, not routine implementation decisions or same-owner recovery.
+Fable and Astra still need task-and-effort approval; clearly presented commitments may be
+accepted in the same reply. Opus, Sol and Grok have no extra model gate. Ordinary bounded
+helpers inside approved authority need no new team ceremony. Do not change the lead's model.
 
 Give each owner a distinct write boundary. Native task names do not create
 worktrees or filesystem isolation. Inspect existing modifications before
@@ -82,3 +105,13 @@ board status or launch another session manager to fill an observability gap.
 
 Report what changed, the supporting evidence, meaningful limitations and the
 next action. Commit, push or create a PR only when the delivery contract asks.
+
+## Accept against the intent
+
+Before final acceptance, reread the current intent and any linked acceptance
+criteria. Compare actual artifacts and delivery with that revision, not only board
+completion. On a material intent change, pause affected work, record the decision
+and refresh all affected owners' references; keep older evidence tied to its old
+revision. Fulfill the intent only when accepted evidence supports it. Update existing
+permanent documentation instead of creating another final summary. Keep historical
+intent records separate from current-system documentation.

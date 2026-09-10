@@ -1,6 +1,6 @@
 ---
 name: agent-taskforce
-description: "Run coordinated work through continuing owners and a shared taskforce board, while Codex owns agent execution. Use for substantial delegated outcomes or parallel workstreams, not every small helper."
+description: "Read before the final execution-shape decision for independent outcomes, substantial continuing ownership or consequential coordination/review. Resolve intent from evidence, then confirm a readable intent/roster proposal before staffing. The skill may choose no team; it never requires an interview."
 ---
 
 # Agent Taskforce
@@ -9,7 +9,7 @@ The lead owns direction and integration; each owner keeps a bounded outcome
 through investigation, authorized implementation, correction and local checks.
 Codex owns the agent runtime. The taskforce MCP records shared work, not sessions.
 
-- Leading a team: read [LEAD.md](LEAD.md) and [the Codex adapter](runtimes/codex.md).
+- Considering or leading a team: read [LEAD.md](LEAD.md) and [the Codex adapter](runtimes/codex.md).
 - Receiving work: use the native role already loaded. If no role was supplied,
   read the matching [owner](teammate/workstream-owner.md) or
   [verifier](teammate/independent-verifier.md) contract; a focused helper needs
@@ -22,3 +22,10 @@ Keep small, tightly coupled work local. An independent agent needs an outcome,
 write boundary, budget and done evidence, not a standing organization chart.
 Use the actual advertised tool schema and installed skill paths; plugin prefixes
 can change tool and skill names. Do not resurrect a Rubato runtime as a fallback.
+
+## Intent before staffing
+
+A skill read is not a team decision. For continuing-owner work, the lead reads the
+sibling `work-intent` skill and resolves the authoritative intent before staffing.
+Existing user/frame/spec authority stays intact. Small local/helper work may leave
+without creating an intent, mission, board or extra approval ceremony.

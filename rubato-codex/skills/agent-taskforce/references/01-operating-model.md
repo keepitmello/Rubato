@@ -6,13 +6,19 @@
 
 The lead owns:
 
-- the execution mission and completion criteria
+- evidence-first intent resolution, the execution mission and completion criteria
 - the roster proposal, workstream boundaries, and resource allocation
 - cross-workstream contracts and teammate replacement
 - routing conflicts between an active frame and execution
 - integration and completion decisions
 
-The human operator owns the framing choice and lead-model choice. Before forming a team, the lead presents the outcome, role, model and effort roster and waits for explicit confirmation. Recreating the same teammate after session loss, or correcting the same already approved work, stays under that confirmation. A new or materially changed teammate or roster requires confirmation before spawn.
+The human operator owns the framing choice, lead-model choice and approval of the
+combined intent/roster proposal. Before forming a team, the lead gathers available
+evidence, recommends the result and minimal team in the user's language, and waits for
+explicit confirmation of both intent and roster. Follow the sibling work-intent alignment
+contract for missing information, partial approvals and accepted corrections. Same-owner
+follow-ups and like-for-like recovery retain approval; material outcome, roster, cost or
+commitment changes require only a delta confirmation before affected work.
 
 The lead does not absorb every debugging detail. Look at task state, verified facts, and decision-grade evidence. When an owner is stuck, attach a relevant peer, redesign the boundary, or replace the owner rather than choosing commands one at a time.
 
@@ -61,8 +67,8 @@ Watch the lead's own outbound tone: **evaluative sentences** — "this is the be
 | whether to use framing | human operator |
 | lead model | human operator |
 | initial roster proposal | lead |
-| initial teammate spawn | lead, after explicit roster confirmation |
-| material restaffing or new teammate | lead, after explicit roster confirmation |
+| initial teammate spawn | lead, after combined intent/roster confirmation |
+| material restaffing or new teammate | lead, after delta confirmation |
 | implementation and debugging inside a workstream | owner |
 | interface between two streams | affected owners; lead if unresolved |
 | architecture, public contract, or high-blast-radius change | lead; human approval when needed |
