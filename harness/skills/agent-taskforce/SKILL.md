@@ -1,6 +1,6 @@
 ---
 name: agent-taskforce
-description: "Lightweight Agent Team ops: when coordinating several workstreams or handing a large bounded outcome to an independent owner, the lead reports the minimal model/role roster in one message and spawns teammates; the user vetoes rather than approves."
+description: "Read before the final execution-shape decision for independent outcomes, substantial continuing ownership or consequential coordination/review. Resolve intent from evidence, then confirm a readable intent/roster proposal before staffing. The skill may choose no team; it never requires an interview."
 ---
 
 # Agent Taskforce
@@ -9,14 +9,14 @@ Run the team like a small company: the lead protects the goal and cross-workstre
 
 ## Which role are you in?
 
-- **You are assembling or running a team** → read `LEAD.md`. It covers routing, the operator's framing and lead choices, roster report, staffing, delegation, integration, and completion.
+- **You are deciding whether a team helps, assembling one, or running one** → read `LEAD.md`. It covers routing, the operator's framing and lead choices, roster report, staffing, delegation, integration, and completion.
 - **You were spawned into a workstream** → read `TEAMMATE.md`. It routes you to your role contract and the few shared documents that may apply.
 
 If neither fits — you are revising this skill — start from `references/07-source-map.md`.
 
 ## Runtime
 
-This skill owns scope, responsibility, reported staffing, evidence, and completion. The active harness owns sessions, lifecycle, peer messaging, and visibility.
+This skill owns scope, responsibility, approved staffing, evidence, and completion. The active harness owns sessions, lifecycle, peer messaging, and visibility.
 
 Read the adapter for the harness you are in before staffing:
 
@@ -31,3 +31,10 @@ as its operating layer or generate Codex role files from it.
 ## What this skill does not contain
 
 General prompting, effort selection, and context design belong to `claude-prompting-lab`. Product-value framing belongs to `product-framing`. The runtime's command surface belongs to the runtime's own guides. Use them alongside this skill rather than copying them here; where they disagree, they win.
+
+## Intent before staffing
+
+A skill read is not a team decision. For continuing-owner work, the lead reads the
+sibling `work-intent` skill and resolves the authoritative intent before staffing.
+Existing user/frame/spec authority stays intact. Small local/helper work may leave
+without creating an intent, mission, board or extra approval ceremony.

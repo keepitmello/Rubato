@@ -3,33 +3,29 @@
 Updated: YYYY-MM-DD HH:MM
 Owner: team lead
 
-> This file does not replace the product frame, spec, ADRs, or shared task list. It links authority and records the current execution boundaries.
+> This run snapshot links the intent and upstream authorities. It does not copy their requirements or replace the shared task list. The same intent may span several runs.
 
 ## Authority and approvals
 
-- User directive:
+- Intent reference: `<path/URI + ID/revision; SHA-256 for managed records>`
+- Canonical workspace / intent home:
+- Intent acceptance reference: `<actual human instruction/review>`
+- Combined proposal message: `<retrievable message + intent ID/revision reviewed>`
+- Combined confirmation: `<actual human reply, accepted options/corrections; both intent and roster>`
+- Run / board scope:
 - Framing choice: `used | existing frame | skipped`
 - Framing approval / reference:
 - Lead model chosen by user:
-- Roster approval:
+- Roster acceptance reference:
 - Canonical product frame: `<path + frame_id/version>` | N/A
 - Technical spec / ADR / schema:
 - Other authoritative source:
 
-## Execution outcome
+## Execution slice and acceptance links
 
-The state that must actually hold when this run ends.
-
-## Done evidence
-
-- 
-- 
-
-## Scope, non-goals, constraints
-
-- In scope:
-- Out of scope:
-- Hard constraints:
+The part of the accepted intent this run handles. Point to intent/spec acceptance
+clauses and identify the evidence this run will produce; do not restate the full
+outcome, constraints or non-goals. Keep all upstream boundaries in force.
 
 ## Decision rights
 
@@ -39,7 +35,8 @@ The state that must actually hold when this run ends.
 
 ## Approved roster
 
-Update only on material restaffing. Record the actual model that ran.
+Record the exact proposed model/effort internally, the accepted roster and actual model that ran.
+A material roster delta needs its own confirmation; same-owner recovery does not.
 
 | Role / outcome | Runtime / session | Model | Why this model | Verification relation |
 |---|---|---|---|---|
@@ -70,14 +67,16 @@ What works together, what is verified, and what remains disconnected.
 
 ## Material decisions and invalidated assumptions
 
-- Decision (+ evidence):
+- Decision (+ evidence and affected intent revision):
 - Invalidated assumption (+ refuting evidence and affected workstreams):
 
 ## Open gate
 
-- Decision or risk:
-- Evidence needed:
-- Owner:
+- Material decision still needed (if any):
+- Facts checked / unavailable evidence:
+- Recommendation and user-visible consequence:
+- Affected work only:
+- Decision owner:
 
 ## Resume point
 

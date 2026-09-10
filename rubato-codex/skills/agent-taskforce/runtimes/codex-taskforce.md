@@ -15,6 +15,20 @@ their own child thread ID. Resume the recorded scope after an interruption.
 `actor` is the caller's native ID or canonical task name. It is cooperative
 metadata, not authentication or permission to write another owner's files.
 
+## Intent linkage
+
+On `task_create`, place the resolved `intent_ref` in existing `metadata`, alongside
+the same workspace and run scope used in the brief. No new tool parameter, database
+or lifecycle API is required. It is a pointer, not a copy of the requested outcome.
+Check the referenced authority through `work-intent` before dependent execution.
+The board itself does not enforce intent acceptance or revision freshness.
+
+A changed intent does not rewrite old evidence or silently retarget existing tasks.
+`task_update` does not edit metadata. Use native follow-up messages with the revised
+reference for remaining approved work, recording the revision in completion evidence;
+create a separate scoped item when the requested outcome materially changes. Preserve
+the historical item's original reference. Keep run identity separate from intent ID.
+
 ## Operations
 
 - `task_create`: scope, `subject`, `description`; optional `blocked_by`,
