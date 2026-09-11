@@ -182,6 +182,7 @@ test("feature is additive-only, stock-version locked, and stages a complete owne
     "rubato-features/prompt-rules/index.mjs",
     "rubato-features/prompt-rules/instructions.mjs",
     "rubato-features/prompt-rules/todo.mjs",
+    "rubato-features/prompt-rules/role-prompt.mjs",
     "rubato-features/prompt-rules/THIRD_PARTY_NOTICES.md",
   ]);
   assert.ok(files.every((entry) => entry.target === "runtime" && entry.version === "0.85.1"));

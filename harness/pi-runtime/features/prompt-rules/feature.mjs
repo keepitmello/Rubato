@@ -5,6 +5,7 @@ const RUNTIME_FILES = Object.freeze([
   "index.mjs",
   "instructions.mjs",
   "todo.mjs",
+  "role-prompt.mjs",
   "THIRD_PARTY_NOTICES.md",
 ]);
 

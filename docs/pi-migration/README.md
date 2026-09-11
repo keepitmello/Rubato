@@ -1,6 +1,26 @@
 # Pi 어댑터 이관 — 현재 실행 상태
 
-> HISTORICAL EVIDENCE — 2026-09-08: 이 문서는 작성 당시 기능별 구현/검증 기록입니다. 현재 상태·남은 문제·다음 순서의 정본은 lab의 [pi-migration-ssot.md](../../../../case-studies/runtime-migration/pi-migration-ssot.md)입니다. 아래 완료/계획 표현은 그 시점과 범위에 한정하며 현재 전체 통과를 뜻하지 않습니다.
+## 기본 엔진 전환
+
+후보(stock Pi 0.85.1 + 33 features)는 완성됐다. 제품 런처는 `RUBATO_ENGINE=stock-pi|senpi`를 읽는다. 유효한 `~/.rubato-pi/stock-engine/rubato-install.json`이 있으면 기본은 stock-pi이고, 없거나 깨지면 senpi로 떨어지며 한 줄 알림을 낸다. 라이브 `~/.rubato-pi` 전환은 merge 후 리드가 아래 한 명령으로 한다.
+
+```sh
+cd harness/pi-runtime
+env -u NODE_OPTIONS -u NODE_COMPILE_CACHE node scripts/switch-engine.mjs switch
+```
+
+`switch`는 후보가 없으면 `~/.rubato-pi/stock-engine`에 설치한 뒤 `~/.rubato-pi/engine.json` 마커를 쓴다. 롤백은 마커만 되돌리고 설치는 남긴다.
+
+```sh
+node scripts/switch-engine.mjs rollback
+# 같은 프로필에서 임시로:
+RUBATO_ENGINE=senpi rubato
+```
+
+전환 후 세션은 stock-pi가 쓴다. 같은 프로필에 `RUBATO_ENGINE=senpi`는 롤백 전용이다(double-writer). splash/boot chrome은 런처가 유지한다. 두 엔진은 같은 `agent/auth.json`을 공유하므로 `switch` 전에 실행 중인 Senpi 루바토 세션을 먼저 닫는다. 토큰 회전은 서버 측이라 롤백해도 이전 토큰은 돌아오지 않는다 — `refresh_token_reused`가 보이면 `/login`·`/gpt-account`로 재로그인한다.
+
+알려진 한계: `@code-yeongyu/senpi-pty`는 선언된 런타임 의존이며 교체는 사용자 보류. 후보는 `fullRubatoParity: false`. stock-pi 경로는 Senpi `-e` overlay·no-changelog 로더를 넘기지 않는다. `--system-prompt`와 `rubato-role-prompt` factory가 제품 role prompt를 주입하고, 후보 `prompt-preset`은 그 값에 양보한다. `~/.agents/skills`와 `--tui-mode fullscreen`은 그대로 argv로 넘긴다.
+
 
 ## A1 접점
 
@@ -11,9 +31,7 @@
 - **사건 예:** `prompt` RPC 응답 `success:true`는 preflight 수락이지 턴 완료가 아니다. 수락 뒤 `agent_start` → user `message_end` → assistant `message_end` → `agent_end`가 한 턴의 완료다. 모델 주도 tool loop는 tool_call → tool_result → 후속 provider 요청 → 최종 assistant까지 포함한다. 스트리밍 중 `abort` RPC는 현재 턴을 끊고 그 턴의 `agent_end`로 끝난다. 세션 jsonl은 파일 존재만 확인하며, 저장 시점(첫 user append vs 턴 완료)은 이 시험으로 증명하지 않는다. `switch_session`으로 같은 파일을 다시 연다.
 - **좁은 시험:** `cd harness/pi-runtime && env -u NODE_OPTIONS -u NODE_COMPILE_CACHE node --test --test-timeout=90000 test/candidate-cli.test.mjs`
 
-상태: 최신 Rubato 기반에서 stock Pi 기능 모듈과 실제 Rubato bundle을 조립하고 있다.
-전체 기능 이관·기본 엔진 전환은 아직 아니다. 네 번째 단위의 진행 기록과,
-아래 커밋된 세 번째 단위 검증 결과를 구별한다.
+상태: 후보는 완성됐고, 기본 엔진 전환 절차는 위 절. 아래는 기능별 접점·과거 단위 기록이다.
 
 중간 저장: 제품 `3011aafa4` → `c0f6b6f99` → `ead7cb763`,
 lab 계획 `1867787` → `39da024` → `ad0f551` (2026-09-08).
@@ -55,7 +73,7 @@ A12: `features/user-commands-agent/` — `/goal` `rubato-goal`, `/loop` `rubato-
 - **실사용 경로 격리:** 후보는 절대 경로 `RUBATO_CANDIDATE_AGENT_DIR` 없이는 시작하지
   않는다. inherited package/managed-install/profile/session 경로를 후보로 고정하며,
   오염된 환경을 넣어도 기존 sentinel 디렉터리가 바뀌지 않는 실제 child 검사가 통과했다.
-  아직 일반 launcher/default 설치로 노출하지 않는다.
+  기본 엔진 전환은 문서 상단 절차. 라이브 프로필은 merge 후 리드가 전환한다.
 - **불완전 설치 차단:** 모든 선언된 patch/addition/bin/package/lock hash를 stock import 전에
   대조하고 필수 factory 접점 4개를 요구한다. staged main을 순정 원본으로 되돌리거나
   receipt에서 hook record를 빼면 plain Pi로 진행하지 않고 종료한다. 두 독립 리뷰 finding을
