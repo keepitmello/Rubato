@@ -5,10 +5,8 @@ import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { buildRubatoCandidate } from "../build-candidate.mjs";
-import { CANDIDATE_FEATURE_NAMES } from "../features/rubato-components/candidate-main.mjs";
-import { resolvePiRuntime } from "../resolve-runtime.mjs";
-import { validateCandidateIsolation, validatePiInstall } from "../validate-install.mjs";
+import { stageAndPublishInstall, withInstallLock } from "./install-transaction.mjs";
+import { sourceFingerprint } from "./source-fingerprint.mjs";
 
 const run = promisify(execFile);
 const here = dirname(fileURLToPath(import.meta.url));
@@ -61,6 +59,9 @@ function previousDir(outputRoot) {
 }
 
 async function npmCi({ sourceRoot, npmRoot, execPath = process.execPath }) {
+  // Status/build-check can load this module before standalone dependencies exist.
+  const { resolvePiRuntime } = await import("../resolve-runtime.mjs");
+  const { validatePiInstall } = await import("../validate-install.mjs");
   await copyFile(join(sourceRoot, "package.json"), join(npmRoot, "package.json"));
   await copyFile(join(sourceRoot, "package-lock.json"), join(npmRoot, "package-lock.json"));
   const lockBefore = sha256(await readFile(join(npmRoot, "package-lock.json")));
@@ -83,7 +84,8 @@ async function npmCi({ sourceRoot, npmRoot, execPath = process.execPath }) {
   };
 }
 
-function requiredFeatures() {
+async function requiredFeatures() {
+  const { CANDIDATE_FEATURE_NAMES } = await import("../features/rubato-components/candidate-main.mjs");
   return [...CANDIDATE_FEATURE_NAMES, "rubato-components"];
 }
 
@@ -92,21 +94,23 @@ async function writeInstallReceipt(outputRoot, receipt) {
 }
 
 async function stageCandidate({ sourceRoot, npmRoot, outputRoot, bunExecutable, repoRoot }) {
+  const { buildRubatoCandidate } = await import("../build-candidate.mjs");
+  const { validateCandidateIsolation } = await import("../validate-install.mjs");
   const staged = await buildRubatoCandidate({
     sourceRoot: npmRoot,
     outputRoot,
     repoRoot,
     bunExecutable,
   });
-  const isolation = await validateCandidateIsolation(staged.runtime, { requiredFeatures: requiredFeatures() });
-  const missing = requiredFeatures().filter((name) => !staged.receipt.features.includes(name));
+  const required = await requiredFeatures();
+  const isolation = await validateCandidateIsolation(staged.runtime, { requiredFeatures: required });
+  const missing = required.filter((name) => !staged.receipt.features.includes(name));
   if (missing.length > 0) throw new Error(`Staged candidate is missing CANDIDATE_FEATURE_NAMES: ${missing.join(", ")}`);
   return { staged, isolation };
 }
 
-/**
- * Install the incomplete candidate into a fresh directory via npm ci + stage.
- * Never writes the default launcher, profile, or a live engine.
+/** Build a fresh candidate first; publish it only after validation succeeds.
+ * Does not switch the launcher marker or touch auth/session files.
  */
 export async function installRubatoCandidate({
   outputRoot,
@@ -119,61 +123,57 @@ export async function installRubatoCandidate({
   requireNodeEngine();
   const dest = requireAbsolute(outputRoot, "Candidate install");
   const source = requireAbsolute(sourceRoot, "Candidate source");
-  if (mode !== "install" && mode !== "update") throw new Error(`Unknown install mode: ${mode}`);
-  const exists = await pathExists(dest);
-  let previous = null;
-  if (mode === "install") {
-    if (exists) throw new Error("Candidate install output already exists; choose a new directory or pass --update");
-  } else {
-    if (!exists) throw new Error("Candidate update requires an existing install directory");
-    const priorReceipt = JSON.parse(await readFile(join(dest, INSTALL_RECEIPT), "utf8"));
-    const snapshot = previousDir(dest);
-    if (await pathExists(snapshot)) await retirePath(snapshot);
-    await rename(dest, snapshot);
-    previous = {
-      dir: snapshot,
-      installSha256: sha256(await readFile(join(snapshot, INSTALL_RECEIPT))),
-      lockSha256: priorReceipt.hashes?.lock,
-      stockVersion: priorReceipt.stockVersion,
-      features: priorReceipt.features,
-    };
-  }
-
-  const npmRoot = await mkdtemp(join(tmpdir(), "rubato-candidate-npmci-"));
-  let retiredNpm;
-  try {
-    const ci = await npmCi({ sourceRoot: source, npmRoot, execPath });
-    const { staged, isolation } = await stageCandidate({ sourceRoot: source, npmRoot, outputRoot: dest, bunExecutable, repoRoot });
-    const stageBytes = await readFile(join(dest, "rubato-pi-stage.json"));
-    const receipt = {
-      version: 1,
-      state: "ready",
-      mode: "isolated-candidate",
-      fullRubatoParity: false,
-      stockVersion: staged.receipt.stockVersion,
-      node: { version: process.version, execPath },
-      features: staged.receipt.features,
-      candidateEntry: "rubato-features/rubato-components/candidate-main.mjs",
-      hashes: {
-        package: staged.receipt.packageSha256,
-        lock: staged.receipt.lockSha256,
-        stageReceipt: sha256(stageBytes),
-        npmLock: ci.lockSha256,
-      },
-      npmCi: {
-        lockSha256: ci.lockSha256,
-        directDependencies: ci.validated.directDependencies.map(({ name, version, integrity }) => ({ name, version, integrity })),
-        stockPackages: ci.validated.packages.map(({ name, version, integrity }) => ({ name, version, integrity })),
-      },
-      senpiPty: isolation.senpiPty,
-      previous,
-      installedAt: new Date().toISOString(),
-    };
-    await writeInstallReceipt(dest, receipt);
-    return { root: dest, receipt, staged, previous };
-  } finally {
-    retiredNpm = await retirePath(npmRoot).catch((error) => ({ method: "failed", path: npmRoot, error: error.message }));
-  }
+  const repo = requireAbsolute(repoRoot ?? resolve(defaultSourceRoot, "../.."), "Candidate repository");
+  const result = await stageAndPublishInstall(dest, {
+    mode,
+    retire: retirePath,
+    async build(stagingRoot, currentRoot) {
+      let previous = null;
+      if (currentRoot) {
+        const priorBytes = await readFile(join(currentRoot, INSTALL_RECEIPT));
+        const prior = JSON.parse(priorBytes);
+        previous = {
+          dir: previousDir(dest), installSha256: sha256(priorBytes),
+          lockSha256: prior.hashes?.lock, stockVersion: prior.stockVersion, features: prior.features,
+        };
+      }
+      const sourceSha256 = await sourceFingerprint(repo);
+      const npmRoot = await mkdtemp(join(tmpdir(), "rubato-candidate-npmci-"));
+      try {
+        const ci = await npmCi({ sourceRoot: source, npmRoot, execPath });
+        const { staged, isolation } = await stageCandidate({ sourceRoot: source, npmRoot, outputRoot: stagingRoot, bunExecutable, repoRoot: repo });
+        const stageBytes = await readFile(join(stagingRoot, "rubato-pi-stage.json"));
+        if (await sourceFingerprint(repo) !== sourceSha256) throw new Error("Candidate sources changed during build; current install was not replaced");
+        const receipt = {
+          version: 1, state: "ready", mode: "isolated-candidate", fullRubatoParity: false,
+          stockVersion: staged.receipt.stockVersion,
+          node: { version: process.version, execPath },
+          features: staged.receipt.features,
+          candidateEntry: "rubato-features/rubato-components/candidate-main.mjs",
+          sourceSha256,
+          hashes: {
+            package: staged.receipt.packageSha256, lock: staged.receipt.lockSha256,
+            stageReceipt: sha256(stageBytes), npmLock: ci.lockSha256,
+          },
+          npmCi: {
+            lockSha256: ci.lockSha256,
+            directDependencies: ci.validated.directDependencies.map(({ name, version, integrity }) => ({ name, version, integrity })),
+            stockPackages: ci.validated.packages.map(({ name, version, integrity }) => ({ name, version, integrity })),
+          },
+          senpiPty: isolation.senpiPty, previous, installedAt: new Date().toISOString(),
+        };
+        await writeInstallReceipt(stagingRoot, receipt);
+        return { root: dest, receipt, staged, previous };
+      } finally {
+        await retirePath(npmRoot);
+      }
+    },
+  });
+  // stagePiRuntime's return value contains absolute paths. Rebind those public
+  // paths after the relocatable installation has been renamed into place.
+  const { resolvePiRuntime } = await import("../resolve-runtime.mjs");
+  return { ...result, staged: { ...result.staged, root: dest,
+    runtime: resolvePiRuntime({ root: dest }), candidateEntry: join(dest, result.receipt.candidateEntry) } };
 }
 
 export async function updateRubatoCandidate(options) {
@@ -182,13 +182,23 @@ export async function updateRubatoCandidate(options) {
 
 export async function rollbackRubatoCandidate({ outputRoot } = {}) {
   const dest = requireAbsolute(outputRoot, "Candidate rollback");
-  const snapshot = previousDir(dest);
-  if (!await pathExists(snapshot)) throw new Error("Candidate rollback requires a previous snapshot next to the install");
-  const discard = `${dest}.discard-${Date.now()}`;
-  if (await pathExists(dest)) await rename(dest, discard);
-  await rename(snapshot, dest);
-  const receipt = JSON.parse(await readFile(join(dest, INSTALL_RECEIPT), "utf8"));
-  return { root: dest, receipt, discarded: discard };
+  return withInstallLock(dest, async () => {
+    const snapshot = previousDir(dest);
+    if (!await pathExists(snapshot)) throw new Error("Candidate rollback requires a previous snapshot next to the install");
+    // Validate before moving the currently working directory out of the way.
+    const receipt = JSON.parse(await readFile(join(snapshot, INSTALL_RECEIPT), "utf8"));
+    if (receipt.state !== "ready") throw new Error("Previous candidate is not ready");
+    const discard = `${dest}.discard-${Date.now()}`;
+    const present = await pathExists(dest);
+    if (present) await rename(dest, discard);
+    try {
+      await rename(snapshot, dest);
+    } catch (error) {
+      if (present) await rename(discard, dest);
+      throw error;
+    }
+    return { root: dest, receipt, discarded: present ? discard : null };
+  });
 }
 
 export async function chmodSenpiTraps(trapRoot) {
@@ -234,17 +244,10 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     : installRubatoCandidate({ outputRoot, sourceRoot, mode });
   runInstall.then((result) => {
     process.stdout.write(`${JSON.stringify({
-      root: result.root,
-      node: result.receipt.node,
-      stockVersion: result.receipt.stockVersion,
-      features: result.receipt.features,
-      hashes: result.receipt.hashes,
-      candidateEntry: result.receipt.candidateEntry,
-      previous: result.receipt.previous ?? null,
+      root: result.root, node: result.receipt.node, stockVersion: result.receipt.stockVersion,
+      features: result.receipt.features, hashes: result.receipt.hashes,
+      candidateEntry: result.receipt.candidateEntry, previous: result.receipt.previous ?? null,
       discarded: result.discarded,
     }, null, 2)}\n`);
-  }).catch((error) => {
-    console.error(error);
-    process.exitCode = 1;
-  });
+  }).catch((error) => { console.error(error); process.exitCode = 1; });
 }
