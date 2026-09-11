@@ -2,6 +2,15 @@
 
 > HISTORICAL EVIDENCE — 2026-09-08: 이 문서는 작성 당시 기능별 구현/검증 기록입니다. 현재 상태·남은 문제·다음 순서의 정본은 lab의 [pi-migration-ssot.md](../../../../case-studies/runtime-migration/pi-migration-ssot.md)입니다. 아래 완료/계획 표현은 그 시점과 범위에 한정하며 현재 전체 통과를 뜻하지 않습니다.
 
+## A1 접점
+
+세션-서버가 재사용할 실제 후보 CLI 한 경로의 접점이다. 새 인터페이스가 아니다.
+
+- **생성 진입:** `runRubatoCandidate` (`harness/pi-runtime/features/rubato-components/candidate-main.mjs`). 절대 경로 `RUBATO_CANDIDATE_AGENT_DIR`이 있어야 하고, stock `main()`에 `createRubatoExtensionFactories`를 넘긴다. 세션 파일은 stock이 `PI_CODING_AGENT_SESSION_DIR`=`$RUBATO_CANDIDATE_AGENT_DIR/sessions`에 만든다.
+- **런타임 고정:** `buildRubatoCandidate`가 stock Pi 0.85.1 + 선택 feature를 stage한다. `candidate-main`은 import 전에 `PI_PACKAGE_DIR` / `PI_CODING_AGENT_DIR` / `PI_CODING_AGENT_SESSION_DIR`을 후보로 덮고, `rubato-pi-stage.json` receipt(`stockVersion` 0.85.1, selected features, payload hash)를 검증한다. 기본 프로필은 쓰지 않는다. 시험은 빈 HOME, `PI_OFFLINE=1`, `--provider fixture --model local-only`.
+- **사건 예:** `prompt` RPC 응답 `success:true`는 preflight 수락이지 턴 완료가 아니다. 수락 뒤 `agent_start` → user `message_end` → assistant `message_end` → `agent_end`가 한 턴의 완료다. 모델 주도 tool loop는 tool_call → tool_result → 후속 provider 요청 → 최종 assistant까지 포함한다. 스트리밍 중 `abort` RPC는 현재 턴을 끊고 그 턴의 `agent_end`로 끝난다. 세션 jsonl은 파일 존재만 확인하며, 저장 시점(첫 user append vs 턴 완료)은 이 시험으로 증명하지 않는다. `switch_session`으로 같은 파일을 다시 연다.
+- **좁은 시험:** `cd harness/pi-runtime && env -u NODE_OPTIONS -u NODE_COMPILE_CACHE node --test --test-timeout=90000 test/candidate-cli.test.mjs`
+
 상태: 최신 Rubato 기반에서 stock Pi 기능 모듈과 실제 Rubato bundle을 조립하고 있다.
 전체 기능 이관·기본 엔진 전환은 아직 아니다. 네 번째 단위의 진행 기록과,
 아래 커밋된 세 번째 단위 검증 결과를 구별한다.
