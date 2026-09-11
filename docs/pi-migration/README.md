@@ -27,6 +27,23 @@ dependency를 15개로 늘렸으며 Pi 6종은 그대로 0.85.1이다. jsdom 30.
 후보의 Node 조건은 `^24.15.0 || >=26.0.0`으로 올렸다. npm audit는 0이며 새 단위 전체 검증은
 아직 아니다. 아래 세 번째 단위의 98개 결과/lock hash는 `ead7cb763` 체크포인트에 한정한다.
 
+## builtin 판정
+
+Senpi 등록 46행(`docs/pi-migration/builtin-inventory.json`, 2026-09-11). 등록 진입점 coverage이며 기능 전체 parity가 아니다. 사용자가 직접 치는 슬래시 명령은 제품 코드가 안 부른다고 unused가 되지 않는다. stock 동등 명령 / 후보 feature / 아니면 needed-missing.
+
+| 판정 | 수 | 의미 |
+| --- | ---: | --- |
+| stock-pi | 1 | `reasoning` → stock `/thinking` (`pi-coding-agent/dist/core/slash-commands.js`) |
+| candidate-has | 20 | 후보 feature+테스트. `account`는 A6 `providers/auth-pool` `/account` |
+| rubato-disabled | 4 | `claude-sdk-oauth`, `cursor-cli-oauth`, `anthropic-web-search`, `websearch` (`session-defaults.mjs` `DISABLED_BUILTIN_EXTENSIONS`) |
+| needed-missing | 16 | stock/후보에 동등 표면 없음. 이번 단위에서 연결하지 않음 |
+| unused | 5 | 사용자 슬래시가 아님: `anthropic-bash`, `recommended-models`, `cache-keepalive`, `prompt-url-widget`, `tps` |
+
+needed-missing 런타임(기존 large): `prompt-preset`, `compaction`, `video-in`, `goal`, `config-reload`.
+`goal` tracked 근거는 `harness/rubato-pi/src/codemode/index.ts`(goal builtin session_start 카운트). untracked `core-prompt-noise.mjs`는 인용하지 않는다.
+
+needed-missing 사용자 명령: `history-search` `/history`, `diff`, `files`, `help`, `redraws` `/tui`, `model-fallback` `/fallback`, `import-repro` `/ir`, `loop`, `ttsr`, `btw`, `gpt-account`(A6 Codex credential import와 짝, `/gpt-account` 자체는 후보에 없음).
+
 ## 네 번째 단위 — CLI 조립과 남은 기능군
 
 - **실제 후보 CLI:** stock main이 만든 canonical ModelRuntime/SettingsManager를 그대로

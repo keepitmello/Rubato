@@ -33,3 +33,10 @@ SOFTWARE.
 `@bufbuild/protobuf@2.14.0` is used by the Cursor transport. Its package
 license expression is `(Apache-2.0 AND BSD-3-Clause)`; it is installed and
 locked by the standalone runtime rather than copied into this feature.
+
+The credential-pool modules under `features/providers/auth-pool/` are derived
+from `@code-yeongyu/senpi@2026.9.4-3` (MIT), specifically
+`dist/core/credential-pool/*`, `dist/core/credential-accounts.js`,
+`dist/core/extensions/builtin/account/index.js`, and nested
+`@earendil-works/pi-ai/dist/auth/pool/{slots,select}.js`. The MIT text above
+covers that derivation.

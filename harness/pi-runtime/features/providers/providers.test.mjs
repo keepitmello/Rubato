@@ -221,15 +221,29 @@ async function drain(stream) {
 
 test("feature stages one stock-bound closure and its default factory builds the admitted seven", async () => {
   assert.equal(providersFeature.id, "providers");
-  assert.equal(providersFeature.patches.length, 1);
+  assert.equal(providersFeature.patches.length, 3);
   assert.deepEqual(
     providersFeature.patches.map(({ path, preimageSha256 }) => ({ path, preimageSha256 })),
-    [{
-      path: "dist/auth/resolve.js",
-      preimageSha256: "82ee45ecec319f59536759312a4de25313a8bb8cb7ce43db43d18edc10fef305",
-    }],
+    [
+      {
+        path: "dist/auth/resolve.js",
+        preimageSha256: "82ee45ecec319f59536759312a4de25313a8bb8cb7ce43db43d18edc10fef305",
+      },
+      {
+        path: "dist/models.js",
+        preimageSha256: "42610d47fe293d99f4b05b147971e181c7312ea47c9be2906a4803955276a8a4",
+      },
+      {
+        path: "dist/core/model-runtime.js",
+        preimageSha256: "32cd50599d9e6e001229090e3d0554b60e4addb8ab7b3165635a574feb660b74",
+      },
+    ],
   );
-  assert.ok(providersFeature.files.every((entry) => entry.packageName === "@earendil-works/pi-ai"));
+  assert.ok(providersFeature.files.every((entry) =>
+    entry.packageName === "@earendil-works/pi-ai"
+    || (entry.packageName === "@earendil-works/pi-coding-agent"
+      && entry.path === "dist/rubato-features/providers/auth-pool/runtime-pool.mjs")
+  ));
   assert.ok(providersFeature.files.every((entry) => !entry.sourcePath.includes("/rubato/node_modules/")));
   assert.match(readFileSync(join(piAiRoot, "dist/rubato-features/providers/THIRD_PARTY_NOTICES.md"), "utf8"), /MIT License/);
 

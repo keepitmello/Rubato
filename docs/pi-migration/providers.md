@@ -436,3 +436,31 @@ Unknowns that block a parity claim:
 - legacy/parent credential imports and builtin unregister in the final bootstrap, full builtin
   registration parity, final distribution/CLI entry, live auth refresh, and paid model
   behavior. Those are deliberately not claimed complete.
+
+## A6 — Auth pool, refresh, import, login/logout/account
+
+Evidence date: 2026-09-11. Owner: a6_auth_pool.
+
+Current product (Senpi ModelRuntime + Rubato overlay) vs candidate:
+
+| Behavior | Current product | Candidate | Verdict |
+|---|---|---|---|
+| Account pool selection / HRW + pin | Senpi `model-runtime.js` + `auth/pool/{select,slots}.js` | `features/providers/auth-pool/{select,slots,runtime-pool}.mjs` via ModelRuntime stream patch | wired |
+| Rotation before committed output; no replay after text | Senpi `credential-pool/{rotation-stream,failover,classify}.js` | same named modules under `auth-pool/` | wired |
+| Token refresh on expiry | stock/Senpi `auth/resolve.js` oauth lock + refresh | same file, merge into the named slot so siblings survive | wired |
+| 401 | pool classifies as account `auth_error` and failovers | same classifier | wired |
+| Credential import (profile `auth.json`) | `credential-import.mjs` from overlay, Codex/xAI only, never overwrite | `createProvidersExtension` now calls it against stock AuthStorage | wired |
+| Antigravity Keychain import | overlay, parent-only | not enabled on the candidate default (no live Keychain in tests) | left |
+| `/login` `/logout` | stock slash commands → `ModelRuntime.login/logout` | stock handlers; login now `appendLoginSlot` | wired |
+| `/account` | Senpi builtin `account/index.js` | `auth-pool/accounts.mjs` registers `account` | wired |
+| Provider fallback (model chain) | Rubato default `retry.modelFallback: false` | not ported; product default is off | left |
+| Auth fallback (setup-token / OpenCode Keychain / Kiro env) | `provider-direct.mjs` routes | already in the staged providers factory | reused |
+| Auth cache | AuthStorage read snapshot + persisted oauth after refresh | stock AuthStorage + mergeRefreshed write | reused |
+| Pool health sidecar | `credential-pool-state.json` next to `auth.json` | same filename, no credential material | wired |
+
+Local mocks only. Tests refuse live `~/.senpi` / `~/.rubato-pi` paths.
+
+Follow-up (same owner): patched resolve now exercises `mergeRefreshedSlot` through on-disk
+`auth.json`. A missing named slot fails closed instead of dropping the refresh. Legacy
+import is explicit (`RUBATO_LEGACY_AUTH_PATH` / `legacyPath`) and `agentDir` is required.
+The ModelRuntime pool import is package-relative (`../rubato-features/...`).
