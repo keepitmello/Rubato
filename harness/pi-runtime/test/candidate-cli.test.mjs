@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
@@ -58,15 +59,43 @@ test("actual candidate main RPC binds Rubato against canonical services across n
   await Promise.all([mkdir(agentDir, { recursive: true }), mkdir(join(cwd, ".rubato"), { recursive: true })]);
   await writeFile(join(cwd, ".rubato/rubato.jsonc"), JSON.stringify({ memory: { agent: "candidate-fixture",
     reflection: { enabled: false }, facts: { enabled: false }, dream: { enabled: false, shutdown_launch: false }, sync: { enabled: false } } }));
+  const waiters = new Set();
   const providerRequests = [];
+  const wake = () => { for (const notify of waiters) notify(); };
   server = createServer(async (request, response) => {
     assert.equal(request.url, "/v1/chat/completions");
     let body = "";
     for await (const chunk of request) body += chunk;
-    providerRequests.push(JSON.parse(body));
+    const parsed = JSON.parse(body);
+    providerRequests.push(parsed);
+    wake();
+    const textSse = (text) => `data: ${JSON.stringify({ id: "fixture", choices: [{ index: 0, delta: { role: "assistant", content: text }, finish_reason: null }] })}\n\n` +
+      `data: ${JSON.stringify({ id: "fixture", choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } })}\n\n` + "data: [DONE]\n\n";
+    const blob = JSON.stringify(parsed);
+    const hasToolResult = (parsed.messages ?? []).some((message) => message.role === "tool" || message.tool_call_id);
     response.writeHead(200, { "Content-Type": "text/event-stream" });
-    response.end(`data: ${JSON.stringify({ id: "fixture", choices: [{ index: 0, delta: { role: "assistant", content: "candidate local turn" }, finish_reason: null }] })}\n\n` +
-      `data: ${JSON.stringify({ id: "fixture", choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } })}\n\n` + "data: [DONE]\n\n");
+    if (blob.includes("hang-for-abort")) {
+      const aborted = await Promise.race([
+        once(request, "close").then(() => true),
+        new Promise((resolve) => setTimeout(() => resolve(false), 2000)),
+      ]);
+      if (!response.writableEnded) response.end(aborted ? "" : textSse("candidate local turn"));
+      return;
+    }
+    if (blob.includes("Call memory once for the model-driven loop.") && !hasToolResult) {
+      const args = JSON.stringify({
+        command: "create", file_path: "facts/model-loop.md", description: "model loop",
+        file_text: "model-driven", reason: "loop proof",
+      });
+      if (!response.writableEnded) {
+        response.end(`data: ${JSON.stringify({ id: "fixture", choices: [{ index: 0, delta: { role: "assistant", tool_calls: [{ index: 0, id: "call_memory_loop", type: "function", function: { name: "memory", arguments: "" } }] }, finish_reason: null }] })}\n\n` +
+          `data: ${JSON.stringify({ id: "fixture", choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: args } }] }, finish_reason: null }] })}\n\n` +
+          `data: ${JSON.stringify({ id: "fixture", choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } })}\n\n` + "data: [DONE]\n\n");
+      }
+      return;
+    }
+    const text = blob.includes("Call memory once for the model-driven loop.") ? "model-driven memory loop done" : "candidate local turn";
+    if (!response.writableEnded) response.end(textSse(text));
   });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -109,21 +138,22 @@ test("actual candidate main RPC binds Rubato against canonical services across n
     "--offline", "--approve", "--provider", "fixture", "--model", "local-only", "--no-extensions", "--no-skills", "--no-prompt-templates",
     "--no-themes", "--no-context-files", "--extension", extension],
   { cwd, env, stdio: ["pipe", "pipe", "pipe"] });
-  const frames = [], waiters = new Set();
+  const frames = [];
   let stderr = "";
   child.stderr.setEncoding("utf8").on("data", (chunk) => { stderr += chunk; });
   createInterface({ input: child.stdout }).on("line", (line) => {
     try { frames.push(JSON.parse(line)); } catch { frames.push({ type: "invalid-json", line }); }
     for (const notify of waiters) notify();
   });
-  const waitFor = (predicate) => new Promise((resolveFrame, reject) => {
+  const waitUntil = (predicate) => new Promise((resolveWait, reject) => {
     const check = () => {
-      const frame = frames.find(predicate);
-      if (frame) { clearTimeout(timer); waiters.delete(check); resolveFrame(frame); }
+      if (predicate()) { clearTimeout(timer); waiters.delete(check); resolveWait(); }
     };
     const timer = setTimeout(() => { waiters.delete(check); reject(new Error(`Candidate RPC timeout: ${stderr}; ${JSON.stringify(frames.slice(-8))}`)); }, 30000);
     waiters.add(check); check();
   });
+  const waitFor = (predicate, afterIndex = 0) => waitUntil(() => frames.slice(afterIndex).some(predicate))
+    .then(() => frames.slice(afterIndex).find(predicate));
   let id = 0;
   const request = async (type, data = {}) => {
     const requestId = String(++id);
@@ -141,24 +171,57 @@ test("actual candidate main RPC binds Rubato against canonical services across n
   // small direct-exposure profile here intentionally has none.
   for (const name of ["Agent", "team_create", "memory", "memory_apply_patch", "bash_input", "eval", "webfetch", "look_at", "apply_patch"]) assert.ok(initial.tools.includes(name), `missing ${name}`);
   for (const name of ["openai-codex", "xai", "cursor", "anthropic", "kiro", "google-antigravity", "opencode"]) assert.ok(initial.providers.includes(name), `missing ${name}`);
-  await request("prompt", { message: "Use the isolated local fixture once." });
-  assert.equal(providerRequests.length, 1, "actual parent prompt reaches only the local provider once");
+  const promptAndSettle = async (message) => {
+    const from = frames.length;
+    await request("prompt", { message });
+    await waitFor((frame) => frame.type === "agent_end", from);
+  };
+  await promptAndSettle("Use the isolated local fixture once.");
+  const hitsFor = (needle) => providerRequests.filter((body) => JSON.stringify(body).includes(needle)).length;
+  assert.equal(hitsFor("Use the isolated local fixture once."), 1, "actual parent prompt reaches only the local provider once");
   assert.ok(frames.some((frame) => frame.type === "message_end" && frame.message?.role === "assistant" &&
     frame.message.content.some((block) => block.text === "candidate local turn")));
+  const loopFrom = frames.length;
+  await promptAndSettle("Call memory once for the model-driven loop.");
+  assert.equal(hitsFor("Call memory once for the model-driven loop."), 2, "model-driven tool loop reaches the local provider twice");
+  assert.ok(frames.slice(loopFrom).some((frame) => frame.type === "message_end" && (frame.message?.role === "toolResult" || frame.message?.role === "tool")),
+    "model-driven tool loop emits a tool_result frame");
+  assert.ok(frames.slice(loopFrom).some((frame) => frame.type === "message_end" && frame.message?.role === "assistant" &&
+    frame.message.content.some((block) => block.text === "model-driven memory loop done")));
   const written = await request("extension_request", { name: "candidate.execute", data: { name: "memory", params: {
     command: "create", file_path: "facts/candidate.md", description: "CLI fixture", file_text: "actual candidate main", reason: "local proof" } } });
   assert.notEqual(written.isError, true, JSON.stringify(written));
   const status = await request("extension_request", { name: "rubato.memory.status" });
   assert.ok(status.repo.headSha, "existing RPC consumer observes the CLI tool commit");
+  const sessionFile = state.sessionFile;
+  const abortFrom = frames.length;
+  const abortStarted = performance.now();
+  await request("prompt", { message: "hang-for-abort" });
+  await waitUntil(() => providerRequests.some((body) => JSON.stringify(body).includes("hang-for-abort")));
+  await request("abort");
+  await waitFor((frame) => frame.type === "agent_end", abortFrom);
+  assert.ok(performance.now() - abortStarted < 2000, "abort must settle before the 2s fixture would complete on its own");
+  assert.equal(frames.slice(abortFrom).some((frame) => frame.type === "message_end" && frame.message?.role === "assistant" &&
+    Array.isArray(frame.message.content) && frame.message.content.some((block) => block.text === "candidate local turn")), false,
+    "aborted turn must not deliver the fixture assistant text");
+  assert.equal((await request("get_state")).isStreaming, false, "abort ends the in-flight parent turn");
+  assert.equal(existsSync(sessionFile), true, "first user turn persists the session file");
+  assert.ok((await readFile(sessionFile, "utf8")).includes("Use the isolated local fixture once."));
   const readyCount = () => frames.filter((frame) => frame.type === "extension_event" && frame.name === "candidate.ready").length;
   const before = readyCount();
   await request("new_session");
   assert.equal(readyCount(), before + 1, "runtime callback replacement must not duplicate session_start");
   assert.deepEqual((await inspect()).tools, initial.tools);
+  await request("switch_session", { sessionPath: sessionFile });
+  const restored = await request("get_messages");
+  const restoredBlob = JSON.stringify(restored.messages);
+  assert.ok(restoredBlob.includes("Use the isolated local fixture once."), "switch_session restores the saved session");
+  assert.ok(restoredBlob.includes("candidate local turn"));
+  await request("new_session");
   await request("reload");
   assert.deepEqual((await inspect()).tools, initial.tools);
-  await request("prompt", { message: "Verify the replacement and reloaded context owner." });
-  assert.equal(providerRequests.length, 2, "replacement/reload keeps the provider admission path usable");
+  await promptAndSettle("Verify the replacement and reloaded context owner.");
+  assert.equal(hitsFor("Verify the replacement and reloaded context owner."), 1, "replacement/reload keeps the provider admission path usable");
   assert.equal(frames.some((frame) => frame.type === "invalid-json"), false, "component logs may not corrupt RPC stdout");
   assert.deepEqual(await readdir(liveDir), ["untouched"]);
   assert.equal(await readFile(join(liveDir, "untouched"), "utf8"), "live profile must remain untouched");
