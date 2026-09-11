@@ -251,6 +251,42 @@ Windows shim의 patch 우회, symlink 재배치 시 원본으로 쓰기가 새�
 - Node 26.5.0/Bun 1.4.0, macOS arm64에서 실행했다. Windows shim 3종의 생성·대상 검사는 했지만
   Windows `.cmd`/PowerShell 실제 실행은 아직 하지 않았다.
 
+## 격리 설치
+
+배포 후보를 worktree 밖 임시 디렉터리에 설치해 Senpi 배포물이 없어도 돌아가는지 검증한다.
+기본 launcher/profile/engine 전환은 하지 않는다(사용자 게이트).
+
+한 명령:
+
+```sh
+cd harness/pi-runtime
+env -u NODE_OPTIONS -u NODE_COMPILE_CACHE node scripts/install-candidate.mjs --output /absolute/new-dir
+# 같은 디렉터리에 다시 설치(이전 트리는 `*.previous`로 보존):
+node scripts/install-candidate.mjs --output /absolute/dir --update
+node scripts/install-candidate.mjs --output /absolute/dir --rollback
+```
+
+흐름: 핀된 lock으로 `npm ci --ignore-scripts` → `build-candidate.mjs`/`stage-runtime.mjs` → `validate-install.mjs` + Senpi 앱 패키지 미해석 검사 → receipt(`rubato-install.json`: 기능 목록, lock/package hash, Node 버전). 기능 목록은 `CANDIDATE_FEATURE_NAMES`에서 파생하므로 A13–A16 추가분이 자동으로 포함된다.
+
+차단 조건(테스트 `test/isolated-install.test.mjs`):
+- PATH는 node/npm/git/bun/bash만 담은 임시 bin. `senpi`/`omo`/`rubato-pi` 없음
+- 빈 HOME, `NODE_PATH` 제거, `SENPI_BIN`/`SENPI_CODING_AGENT_DIR`/`RUBATO_PI_*`는 존재하지 않는 경로
+- 부모 `node_modules/@code-yeongyu/senpi{,-ai,-codemode,-tui}`는 읽기 불가 trap
+- 이 환경에서 CLI `--version`, RPC inspect→prompt→memory tool→abort, 자식 in-process/RPC seam, install→update→rollback
+
+`@code-yeongyu/senpi-pty`는 선언된 런타임 의존이다. 교체 여부는 사용자 보류. 사용처와 대체 요건은 [install-scan.json](install-scan.json)과 아래 장부 입력이다.
+
+2026-09-11 측정: `npm ci`+stage 31 features, Node v26.5.0. Senpi 차단 CLI/RPC/자식/update→rollback **6/6 pass**, 27.8초. 로드 경로 26158개 중 install 안 24180, node-core 1976, 바깥/Senpi 앱 0. 같은 날 A14 `media-tools` 중간 패치가 잠깐 restage를 깨뜨린 적이 있다(`native-block-delta`). 최종 재실행은 배치 끝 리드 요청.
+
+- 런타임: `features/terminal/src/manager.ts`, `runtime-session.ts` (SessionRegistry / TerminalSession / TerminalScreen)
+- 테스트: `terminal-native.test.mjs` (`loadPtyNative`), `terminal.test.mjs` (lock 해석), `session-picker.test.mjs:createTerminalSession` (native PTY `/resume`)
+- 대체하려면 동등 SessionRegistry+PTY+screen API, Darwin arm64 native(현재 자격), 자손 process tree-kill, xterm-headless 스냅샷이 필요하다. 지금은 교체하지 않는다.
+
+```sh
+cd harness/pi-runtime
+env -u NODE_OPTIONS -u NODE_COMPILE_CACHE node --test --test-timeout=600000 test/isolated-install.test.mjs
+```
+
 ## 재현과 이어갈 순서
 
 Node 24.15 LTS 또는 26 이상에서 standalone 프로젝트 안에서 실행한다. media의 jsdom과 codemode의 Babel 8 요구 조건을 함께 따른다.

@@ -156,7 +156,7 @@ async function createLoopbackServer(t) {
 }
 
 test("media-tools source closure is runtime-owned and carries webfetch, look_at, and generate_image", async () => {
-	assert.equal(files.length, 43);
+	assert.equal(files.length, 44);
 	assert.equal(files.every((entry) => entry.target === "runtime"), true);
 	for (const relativePath of [
 		"src/openai-image-gen/externalize.js",
@@ -164,6 +164,7 @@ test("media-tools source closure is runtime-owned and carries webfetch, look_at,
 		"src/openai-image-gen/index.js",
 		"src/openai-image-gen/inject.js",
 		"src/openai-web-search/index.js",
+		"src/anthropic-bash/index.js",
 	]) {
 		assert.equal(
 			files.some((entry) => entry.path.endsWith(relativePath)),

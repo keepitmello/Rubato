@@ -194,6 +194,51 @@ Use web search when the user asks for current or online information.
 Prefer web search over guessing when freshness matters.
 `;
 
+function readString(record, key) {
+    const value = record?.[key];
+    return typeof value === "string" ? value : undefined;
+}
+
+export function formatOpenAiWebSearchText(raw) {
+    if (!isRecord(raw) || raw.type !== "web_search_call") return undefined;
+    const action = isRecord(raw.action) ? raw.action : {};
+    const query = readString(action, "query");
+    const queries = Array.isArray(action.queries) ? action.queries.filter((value) => typeof value === "string") : [];
+    const sources = Array.isArray(action.sources) ? action.sources.filter(isRecord) : [];
+    const lines = [];
+    const shownQuery = query ?? queries[0];
+    if (shownQuery) lines.push(`Web search: ${shownQuery}`);
+    else lines.push("Web search");
+    for (const source of sources) {
+        const title = readString(source, "title") ?? readString(source, "name");
+        const url = readString(source, "url") ?? readString(source, "uri");
+        if (title && url) lines.push(`- ${title} ${url}`);
+        else if (url) lines.push(`- ${url}`);
+        else if (title) lines.push(`- ${title}`);
+    }
+    return lines.join("\n");
+}
+
+export function materializeOpenAiWebSearch(message) {
+    if (!Array.isArray(message.content)) return undefined;
+    const content = [];
+    let replaced = false;
+    for (const block of message.content) {
+        if (block.type !== "providerNative" || block.subtype !== "web_search_call") {
+            content.push(block);
+            continue;
+        }
+        const text = formatOpenAiWebSearchText(block.raw);
+        if (text === undefined) {
+            content.push(block);
+            continue;
+        }
+        content.push({ type: "text", text });
+        replaced = true;
+    }
+    return replaced ? { ...message, content } : undefined;
+}
+
 export default function openaiWebSearchExtension(pi) {
     pi.on("before_provider_request", (event, ctx) => {
         return addOpenAiWebSearchToPayload(ctx.model, event.payload);
@@ -217,5 +262,10 @@ export default function openaiWebSearchExtension(pi) {
         return {
             systemPrompt: `${event.systemPrompt}\n${OPENAI_WEB_SEARCH_SECTION}`,
         };
+    });
+    pi.on("message_end", async (event) => {
+        if (event.message.role !== "assistant") return undefined;
+        const message = materializeOpenAiWebSearch(event.message);
+        return message === undefined ? undefined : { message };
     });
 }
