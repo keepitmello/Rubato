@@ -1,0 +1,1060 @@
+{
+  "generatedAt": "2026-09-11T13:28:32.165Z",
+  "stockVersion": "0.85.1",
+  "node": "v26.5.0",
+  "installRoot": "/private/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-IINCM6/engine",
+  "features": [
+    "runtime-factories",
+    "reload",
+    "tool-execution",
+    "input-lifecycle",
+    "abort-provenance",
+    "request-run",
+    "extension-rpc",
+    "service-tier",
+    "tool-search",
+    "mcp",
+    "mcp-producers",
+    "codemode",
+    "child-runtime",
+    "terminal",
+    "providers",
+    "provider-execution",
+    "media-tools",
+    "video-in",
+    "tool-guards",
+    "tool-policy",
+    "context-window",
+    "session-catalog",
+    "session-picker",
+    "prompt-rules",
+    "prompt-preset",
+    "compaction",
+    "config-reload",
+    "user-commands-agent",
+    "user-commands-session",
+    "remote-surface",
+    "tui-input"
+  ],
+  "senpiPty": {
+    "package": "@code-yeongyu/senpi-pty@2026.9.4-3",
+    "decision": "deferred-by-user",
+    "nativeDarwinArm64Sha256": "20f9f1644966694779ee78b76cf60e9f2de2ae0b373a1eb0cf5944afdda0c4da",
+    "usageSites": [
+      {
+        "path": "features/terminal/src/manager.ts",
+        "symbols": [
+          "SessionRegistry",
+          "SessionRegistryCapacityError",
+          "TerminalSession"
+        ],
+        "role": "runtime",
+        "note": "Owns live terminal sessions; native PTY registry, capacity, teardown."
+      },
+      {
+        "path": "features/terminal/src/runtime-session.ts",
+        "symbols": [
+          "TerminalScreen",
+          "TerminalSession"
+        ],
+        "role": "runtime",
+        "note": "Wraps a live TerminalSession with screen model and output buffer."
+      },
+      {
+        "path": "features/terminal/terminal-native.test.mjs",
+        "symbols": [
+          "loadPtyNative"
+        ],
+        "role": "test",
+        "note": "Darwin arm64 ABI smoke: native.__senpiPtyAbi1()."
+      },
+      {
+        "path": "features/terminal/terminal.test.mjs",
+        "symbols": [
+          "findPackageJSON(@code-yeongyu/senpi-pty)"
+        ],
+        "role": "test",
+        "note": "Asserts staged install still resolves the declared PTY package inside the runtime."
+      },
+      {
+        "path": "features/session-picker/session-picker.test.mjs",
+        "symbols": [
+          "createTerminalSession"
+        ],
+        "role": "test",
+        "note": "pseudo-TTY /resume path; native backend instead of script(1) sockets. Not a runtime import of session-picker itself."
+      }
+    ],
+    "replacementWouldRequire": [
+      "A drop-in SessionRegistry + TerminalSession + TerminalScreen API (create, write, resize, kill, waitExit, onData, scrollback).",
+      "Native PTY backend with Darwin arm64 (currently qualified), plus Windows/Linux if those hosts must keep six-tool terminal.",
+      "Capacity / LRU-exited pruning / tree-kill of descendant processes — today delegated to senpi-pty.",
+      "xterm-headless screen snapshots used by bash_output / resize / monitor.",
+      "ABI equivalent of loadPtyNative() used by terminal-native.test.mjs.",
+      "session-picker tests would need another PTY (node-pty, bun terminal, or a stdio mock) for /resume ioctl coverage.",
+      "Do not replace while the user decision is deferred; keep the declared npm pin."
+    ]
+  },
+  "resolvedModulePaths": {
+    "total": 26256,
+    "insideInstall": 24236,
+    "nodeCore": 2018,
+    "allowedScratch": 2,
+    "outside": [],
+    "senpiAppLoads": []
+  },
+  "fallbackDeps": [],
+  "childExecutables": [
+    {
+      "seam": "rpc",
+      "execPath": "/opt/homebrew/Cellar/node/26.5.0_1/bin/node",
+      "entry": "/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-IINCM6/engine/node_modules/@earendil-works/pi-coding-agent/dist/rpc-entry.js"
+    },
+    {
+      "seam": "in-process",
+      "note": "same process.execPath; no SENPI_BIN",
+      "senpiExecutable": null
+    }
+  ],
+  "childEnv": {
+    "sessionDirFromGetState": "/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-IINCM6/home/child/rpc-sessions/child/2026-09-11T13-28-29-986Z_01a090a7-c821-7472-9807-1a105f4316d3.jsonl"
+  },
+  "dynamicImports": [
+    {
+      "path": "abort-provenance/abort-provenance.test.mjs",
+      "specifier": "moduleUrl"
+    },
+    {
+      "path": "abort-provenance/abort-provenance.test.mjs",
+      "specifier": "streamUrl"
+    },
+    {
+      "path": "child-runtime/stock-rpc-runtime.mjs",
+      "specifier": "pathToFileURL(entry"
+    },
+    {
+      "path": "child-runtime/stock-rpc-runtime.mjs",
+      "specifier": "pathToFileURL(entry"
+    },
+    {
+      "path": "codemode/codemode.test.mjs",
+      "specifier": "\"./src/index.ts\""
+    },
+    {
+      "path": "codemode/codemode.test.mjs",
+      "specifier": "\"./src/kernels/shared/runtime-asset.ts\""
+    },
+    {
+      "path": "codemode/codemode.test.mjs",
+      "specifier": "pathToFileURL(stagedEntry"
+    },
+    {
+      "path": "codemode/codemode.test.mjs",
+      "specifier": "pathToFileURL(staged.runtime.sdkEntry"
+    },
+    {
+      "path": "codemode/src/host-sdk.ts",
+      "specifier": "pathToFileURL(piAiCompatEntry"
+    },
+    {
+      "path": "codemode/src/kernels/js/local-module-loader.ts",
+      "specifier": "'node:url'"
+    },
+    {
+      "path": "codemode/src/kernels/js/local-module-loader.ts",
+      "specifier": "target"
+    },
+    {
+      "path": "codemode/src/kernels/js/local-module-loader.ts",
+      "specifier": "target, options"
+    },
+    {
+      "path": "codemode/src/kernels/js/rewrite-imports.ts",
+      "specifier": "specifier, options"
+    },
+    {
+      "path": "compaction/child-mode.test.mjs",
+      "specifier": "pathToFileURL(runtime.sdkEntry"
+    },
+    {
+      "path": "compaction/child-mode.test.mjs",
+      "specifier": "pathToFileURL(join(\n  staged.root,\n  \"rubato-features/child-runtime/stock-rpc-runtime.mjs\",\n"
+    },
+    {
+      "path": "compaction/child-mode.test.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"dist/rubato-features/context-notes/src/context-notes/config.mjs\",\n"
+    },
+    {
+      "path": "compaction/compaction.test.mjs",
+      "specifier": "pathToFileURL(runtime.sdkEntry"
+    },
+    {
+      "path": "compaction/compaction.test.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js\",\n"
+    },
+    {
+      "path": "compaction/compaction.test.mjs",
+      "specifier": "pathToFileURL(join(\n  staged.root,\n  \"rubato-features/compaction/index.mjs\",\n"
+    },
+    {
+      "path": "compaction/session-scoped-mode.test.mjs",
+      "specifier": "pathToFileURL(runtime.sdkEntry"
+    },
+    {
+      "path": "compaction/session-scoped-mode.test.mjs",
+      "specifier": "pathToFileURL(join(\n  staged.root,\n  \"rubato-features/child-runtime/stock-rpc-runtime.mjs\",\n"
+    },
+    {
+      "path": "compaction/session-scoped-mode.test.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"dist/rubato-features/context-notes/extension.mjs\",\n"
+    },
+    {
+      "path": "compaction/session-scoped-mode.test.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"dist/rubato-features/context-notes/src/context-notes/config.mjs\",\n"
+    },
+    {
+      "path": "compaction/session-scoped-mode.test.mjs",
+      "specifier": "pathToFileURL(join(\n  staged.root,\n  \"rubato-features/compaction/index.mjs\",\n"
+    },
+    {
+      "path": "compaction/summary-compaction-parity.test.mjs",
+      "specifier": "pathToFileURL(runtime.sdkEntry"
+    },
+    {
+      "path": "compaction/summary-compaction-parity.test.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js\",\n"
+    },
+    {
+      "path": "compaction/summary-compaction-parity.test.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.packages[\"@earendil-works/pi-ai\"].dir,\n  \"dist/api/anthropic-messages.js\",\n"
+    },
+    {
+      "path": "compaction/summary-compaction-parity.test.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"dist/core/compaction/compaction.js\",\n"
+    },
+    {
+      "path": "compaction/summary-compaction-parity.test.mjs",
+      "specifier": "pathToFileURL(join(\n  staged.root,\n  \"rubato-features/compaction/index.mjs\",\n"
+    },
+    {
+      "path": "compaction/summary-mode.test.mjs",
+      "specifier": "pathToFileURL(runtime.sdkEntry"
+    },
+    {
+      "path": "compaction/summary-mode.test.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js\",\n"
+    },
+    {
+      "path": "compaction/summary-mode.test.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"dist/rubato-features/context-notes/extension.mjs\",\n"
+    },
+    {
+      "path": "compaction/summary-mode.test.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"dist/rubato-features/context-notes/src/context-notes/config.mjs\",\n"
+    },
+    {
+      "path": "compaction/summary-mode.test.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"dist/rubato-features/context-notes/src/context-notes/mode-policy.mjs\",\n"
+    },
+    {
+      "path": "compaction/summary-mode.test.mjs",
+      "specifier": "pathToFileURL(join(\n  staged.root,\n  \"rubato-features/compaction/index.mjs\",\n"
+    },
+    {
+      "path": "compaction/summary-mode.test.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"dist/core/compaction/compaction.js\",\n"
+    },
+    {
+      "path": "config-reload/config-reload.test.mjs",
+      "specifier": "pathToFileURL(runtime.sdkEntry"
+    },
+    {
+      "path": "config-reload/config-reload.test.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js\",\n"
+    },
+    {
+      "path": "config-reload/config-reload.test.mjs",
+      "specifier": "pathToFileURL(join(\n  staged.root,\n  \"rubato-features/config-reload/index.mjs\",\n"
+    },
+    {
+      "path": "context-notes/context-notes.test.mjs",
+      "specifier": "pathToFileURL(runtime.sdkEntry"
+    },
+    {
+      "path": "context-notes/context-notes.test.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js\",\n"
+    },
+    {
+      "path": "context-notes/context-notes.test.mjs",
+      "specifier": "contextExtensionUrl"
+    },
+    {
+      "path": "context-notes/src/extensions/context-notes.mjs",
+      "specifier": "\"../engine-paths.mjs\""
+    },
+    {
+      "path": "context-notes/src/extensions/context-notes.mjs",
+      "specifier": "pathToFileURL(require.resolve(\"typebox\""
+    },
+    {
+      "path": "context-window/context-window.test.mjs",
+      "specifier": "pathToFileURL(runtime.sdkEntry"
+    },
+    {
+      "path": "context-window/context-window.test.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js\",\n"
+    },
+    {
+      "path": "context-window/context-window.test.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"dist/rubato-features/context-notes/extension.mjs\",\n"
+    },
+    {
+      "path": "context-window/context-window.test.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"dist/rubato-features/context-notes/src/context-notes/protocol.mjs\",\n"
+    },
+    {
+      "path": "context-window/context-window.test.mjs",
+      "specifier": "pathToFileURL(join(serverCompactionDir, \"anthropic-server-compaction.mjs\""
+    },
+    {
+      "path": "context-window/context-window.test.mjs",
+      "specifier": "pathToFileURL(join(serverCompactionDir, \"anthropic-server-compaction-wire.mjs\""
+    },
+    {
+      "path": "context-window/notes-session-open.test.mjs",
+      "specifier": "pathToFileURL(runtime.sdkEntry"
+    },
+    {
+      "path": "context-window/notes-session-open.test.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"dist/rubato-features/context-notes/src/context-notes/protocol.mjs\",\n"
+    },
+    {
+      "path": "context-window/notes-session-open.test.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"dist/rubato-features/context-notes/src/context-notes/mode-policy.mjs\",\n"
+    },
+    {
+      "path": "context-window/notes-session-open.test.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"dist/rubato-features/context-notes/src/context-notes/config.mjs\",\n"
+    },
+    {
+      "path": "extension-rpc/extension-rpc.test.mjs",
+      "specifier": "pathToFileURL(staged.runtime.sdkEntry"
+    },
+    {
+      "path": "input-lifecycle/input-lifecycle.test.mjs",
+      "specifier": "moduleUrl"
+    },
+    {
+      "path": "input-lifecycle/input-lifecycle.test.mjs",
+      "specifier": "streamUrl"
+    },
+    {
+      "path": "mcp/mcp.test.mjs",
+      "specifier": "pathToFileURL(runtime.sdkEntry"
+    },
+    {
+      "path": "mcp-producers/mcp-producers.test.mjs",
+      "specifier": "pathToFileURL(runtime.sdkEntry"
+    },
+    {
+      "path": "mcp-producers/mcp-producers.test.mjs",
+      "specifier": "pathToFileURL(join(stagedRoot, \"rubato-features/mcp-producers/index.mjs\""
+    },
+    {
+      "path": "mcp-producers/mcp-producers.test.mjs",
+      "specifier": "pathToFileURL(join(stagedRoot, \"rubato-features/tool-search/index.mjs\""
+    },
+    {
+      "path": "mcp-producers/mcp-producers.test.mjs",
+      "specifier": "pathToFileURL(join(stagedRoot, \"rubato-features/mcp/index.mjs\""
+    },
+    {
+      "path": "mcp-producers/mcp-producers.test.mjs",
+      "specifier": "pathToFileURL(astGrepSource"
+    },
+    {
+      "path": "media-tools/media-tools.test.mjs",
+      "specifier": "\"./src/index.mjs\""
+    },
+    {
+      "path": "media-tools/media-tools.test.mjs",
+      "specifier": "\"./src/imagegen/auth.js\""
+    },
+    {
+      "path": "media-tools/media-tools.test.mjs",
+      "specifier": "\"./src/imagegen/paths.js\""
+    },
+    {
+      "path": "media-tools/media-tools.test.mjs",
+      "specifier": "pathToFileURL(staged.runtime.sdkEntry"
+    },
+    {
+      "path": "media-tools/media-tools.test.mjs",
+      "specifier": "pathToFileURL(stagedEntry"
+    },
+    {
+      "path": "media-tools/media-tools.test.mjs",
+      "specifier": "pathToFileURL(join(dirname(stagedEntry"
+    },
+    {
+      "path": "media-tools/native-media.test.mjs",
+      "specifier": "pathToFileURL(join(piAiPath, \"api/openai-responses-shared.js\""
+    },
+    {
+      "path": "media-tools/native-media.test.mjs",
+      "specifier": "pathToFileURL(join(piAiPath, \"utils/event-stream.js\""
+    },
+    {
+      "path": "media-tools/native-media.test.mjs",
+      "specifier": "pathToFileURL(join(piAiPath, \"api/anthropic-messages.js\""
+    },
+    {
+      "path": "media-tools/native-media.test.mjs",
+      "specifier": "pathToFileURL(join(stockPiAi, \"api/openai-responses-shared.js\""
+    },
+    {
+      "path": "media-tools/src/host-sdk.mjs",
+      "specifier": "pathToFileURL(join(codingAgentDir, \"node_modules/@earendil-works/pi-ai/dist/index.js\""
+    },
+    {
+      "path": "media-tools/src/host-sdk.mjs",
+      "specifier": "pathToFileURL(join(codingAgentDir, \"node_modules/@earendil-works/pi-ai/dist/compat.js\""
+    },
+    {
+      "path": "media-tools/src/host-sdk.mjs",
+      "specifier": "pathToFileURL(join(codingAgentDir, \"node_modules/@earendil-works/pi-tui/dist/index.js\""
+    },
+    {
+      "path": "media-tools/src/imagegen/index.js",
+      "specifier": "\"./skill/SKILL.md\", { with: { type: \"file\" } }"
+    },
+    {
+      "path": "media-tools/src/webfetch/content.lazy.js",
+      "specifier": "\"./content.js\""
+    },
+    {
+      "path": "prompt-preset/prompt-preset.test.mjs",
+      "specifier": "pathToFileURL(runtime.sdkEntry"
+    },
+    {
+      "path": "prompt-preset/prompt-preset.test.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js\",\n"
+    },
+    {
+      "path": "prompt-preset/prompt-preset.test.mjs",
+      "specifier": "pathToFileURL(join(\n  staged.root,\n  \"rubato-features/prompt-preset/index.mjs\",\n"
+    },
+    {
+      "path": "prompt-rules/prompt-rules.test.mjs",
+      "specifier": "pathToFileURL(runtime.sdkEntry"
+    },
+    {
+      "path": "prompt-rules/prompt-rules.test.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js\",\n"
+    },
+    {
+      "path": "prompt-rules/prompt-rules.test.mjs",
+      "specifier": "pathToFileURL(join(\n  staged.root,\n  \"rubato-features/prompt-rules/index.mjs\",\n"
+    },
+    {
+      "path": "prompt-rules/role-prompt.mjs",
+      "specifier": "promptHref"
+    },
+    {
+      "path": "prompt-rules/role-prompt.mjs",
+      "specifier": "roleHref"
+    },
+    {
+      "path": "provider-execution/extension.mjs",
+      "specifier": "\"../providers/src/cursor-route.mjs\""
+    },
+    {
+      "path": "provider-execution/provider-execution.test.mjs",
+      "specifier": "pathToFileURL(join(runtime.codingAgentDir, \"dist/index.js\""
+    },
+    {
+      "path": "provider-execution/provider-execution.test.mjs",
+      "specifier": "pathToFileURL(join(piAiRoot, \"dist/rubato-features/providers/extension.mjs\""
+    },
+    {
+      "path": "provider-execution/provider-execution.test.mjs",
+      "specifier": "pathToFileURL(join(piAiRoot, \"dist/rubato-features/provider-execution/extension.mjs\""
+    },
+    {
+      "path": "provider-execution/provider-execution.test.mjs",
+      "specifier": "pathToFileURL(join(stagedRoot, \"rubato-features/tool-guards/index.mjs\""
+    },
+    {
+      "path": "provider-execution/provider-execution.test.mjs",
+      "specifier": "pathToFileURL(join(piAiRoot, \"dist/api/cursor-agent/gen/agent_pb.js\""
+    },
+    {
+      "path": "providers/auth-pool.test.mjs",
+      "specifier": "pathToFileURL(join(runtime.codingAgentDir, \"dist/index.js\""
+    },
+    {
+      "path": "providers/auth-pool.test.mjs",
+      "specifier": "pathToFileURL(join(piAiRoot, \"dist/rubato-features/providers/extension.mjs\""
+    },
+    {
+      "path": "providers/auth-pool.test.mjs",
+      "specifier": "pathToFileURL(join(piAiRoot, \"dist/rubato-features/providers/auth-pool/slots.mjs\""
+    },
+    {
+      "path": "providers/gpt-account.test.mjs",
+      "specifier": "pathToFileURL(join(runtime.codingAgentDir, \"dist/index.js\""
+    },
+    {
+      "path": "providers/providers.test.mjs",
+      "specifier": "pathToFileURL(join(runtime.codingAgentDir, \"dist/index.js\""
+    },
+    {
+      "path": "providers/providers.test.mjs",
+      "specifier": "pathToFileURL(join(piAiRoot, \"dist/rubato-features/providers/extension.mjs\""
+    },
+    {
+      "path": "providers/providers.test.mjs",
+      "specifier": "pathToFileURL(join(piAiRoot, \"dist/api/cursor-agent.js\""
+    },
+    {
+      "path": "providers/providers.test.mjs",
+      "specifier": "pathToFileURL(join(piAiRoot, \"dist/api/cursor-agent/gen/agent_pb.js\""
+    },
+    {
+      "path": "providers/providers.test.mjs",
+      "specifier": "pathToFileURL(join(piAiRoot, \"dist/providers/cursor.js\""
+    },
+    {
+      "path": "providers/providers.test.mjs",
+      "specifier": "pathToFileURL(join(piAiRoot, \"dist/rubato-features/providers/cursor-lazy.mjs\""
+    },
+    {
+      "path": "providers/providers.test.mjs",
+      "specifier": "pathToFileURL(join(piAiRoot, \"dist/rubato-features/providers/cursor-event-stream.mjs\""
+    },
+    {
+      "path": "providers/vendor/pi-ai/api/cursor-agent.lazy.js",
+      "specifier": "__rewriteRelativeImportExtension(runtimeSpecifier"
+    },
+    {
+      "path": "providers/vendor/pi-ai/providers/cursor.js",
+      "specifier": "\"../auth/oauth/cursor.js\""
+    },
+    {
+      "path": "reload/reload.test.mjs",
+      "specifier": "moduleUrl"
+    },
+    {
+      "path": "reload/reload.test.mjs",
+      "specifier": "interactiveUrl"
+    },
+    {
+      "path": "remote-surface/local-hub.mjs",
+      "specifier": "pathToFileURL(bundlePath"
+    },
+    {
+      "path": "remote-surface/protocol-loader.mjs",
+      "specifier": "href"
+    },
+    {
+      "path": "remote-surface/remote-hub.test.mjs",
+      "specifier": "pathToFileURL(sdkEntry"
+    },
+    {
+      "path": "remote-surface/remote-hub.test.mjs",
+      "specifier": "pathToFileURL(streamEntry"
+    },
+    {
+      "path": "remote-surface/remote-resume.test.mjs",
+      "specifier": "pathToFileURL(sdk"
+    },
+    {
+      "path": "remote-surface/surface.mjs",
+      "specifier": "href"
+    },
+    {
+      "path": "request-run/request-run.test.mjs",
+      "specifier": "moduleUrl"
+    },
+    {
+      "path": "request-run/request-run.test.mjs",
+      "specifier": "streamUrl"
+    },
+    {
+      "path": "rubato-components/candidate-main.mjs",
+      "specifier": "\"./bootstrap.mjs\""
+    },
+    {
+      "path": "rubato-components/candidate-main.mjs",
+      "specifier": "\"../../node_modules/@earendil-works/pi-coding-agent/dist/main.js\""
+    },
+    {
+      "path": "rubato-components/entry.ts",
+      "specifier": "\"#rubato-task-runtime\""
+    },
+    {
+      "path": "runtime-factories/runtime-factories.test.mjs",
+      "specifier": "pathToFileURL(join(\n    staged.root,\n    \"node_modules/@earendil-works/pi-coding-agent/dist/core/agent-session-services.js\",\n  "
+    },
+    {
+      "path": "runtime-factories/runtime-factories.test.mjs",
+      "specifier": "pathToFileURL(join(\n    staged.root,\n    \"node_modules/@earendil-works/pi-coding-agent/dist/core/agent-session-services.js\",\n  "
+    },
+    {
+      "path": "service-tier/service-tier.test.mjs",
+      "specifier": "pathToFileURL(join(patchedPackage, \"dist/index.js\""
+    },
+    {
+      "path": "service-tier/service-tier.test.mjs",
+      "specifier": "pathToFileURL(join(runtime.packages[\"@earendil-works/pi-ai\"].dir, \"dist/utils/event-stream.js\""
+    },
+    {
+      "path": "session-catalog/session-catalog.test.mjs",
+      "specifier": "moduleUrl"
+    },
+    {
+      "path": "session-catalog/session-catalog.test.mjs",
+      "specifier": "process.argv[1]"
+    },
+    {
+      "path": "session-catalog/session-catalog.test.mjs",
+      "specifier": "moduleUrl"
+    },
+    {
+      "path": "session-picker/session-picker.test.mjs",
+      "specifier": "pathToFileURL(runtime.sdkEntry"
+    },
+    {
+      "path": "session-picker/session-picker.test.mjs",
+      "specifier": "pathToFileURL(runtime.sdkEntry"
+    },
+    {
+      "path": "session-picker/session-picker.test.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"dist/modes/interactive/components/session-selector.js\",\n"
+    },
+    {
+      "path": "terminal/src/host-sdk.ts",
+      "specifier": "pathToFileURL(join(codingAgentDir, \"node_modules/@earendil-works/pi-ai/dist/index.js\""
+    },
+    {
+      "path": "terminal/src/host-sdk.ts",
+      "specifier": "pathToFileURL(join(codingAgentDir, \"node_modules/@earendil-works/pi-tui/dist/index.js\""
+    },
+    {
+      "path": "terminal/src/tools/context.ts",
+      "specifier": "\"../host-sdk.ts\""
+    },
+    {
+      "path": "terminal/terminal.test.mjs",
+      "specifier": "\"./src/index.ts\""
+    },
+    {
+      "path": "terminal/terminal.test.mjs",
+      "specifier": "pathToFileURL(stagedEntry"
+    },
+    {
+      "path": "terminal/terminal.test.mjs",
+      "specifier": "pathToFileURL(staged.runtime.sdkEntry"
+    },
+    {
+      "path": "tool-execution/patches.mjs",
+      "specifier": "\"./extensions/types.js\""
+    },
+    {
+      "path": "tool-execution/patches.mjs",
+      "specifier": "\"./extensions/types.js\""
+    },
+    {
+      "path": "tool-policy/candidate-intervention-probe.mjs",
+      "specifier": "pathToFileURL(join(root, \"node_modules/@earendil-works/pi-coding-agent/dist/index.js\""
+    },
+    {
+      "path": "tool-policy/candidate-intervention-probe.mjs",
+      "specifier": "pathToFileURL(join(root, \"rubato-features/rubato-components/bootstrap.mjs\""
+    },
+    {
+      "path": "tool-search/tool-search.test.mjs",
+      "specifier": "pathToFileURL(runtime.sdkEntry"
+    },
+    {
+      "path": "tool-search/tool-search.test.mjs",
+      "specifier": "pathToFileURL(join(stagedRoot, \"rubato-features/tool-search/index.mjs\""
+    },
+    {
+      "path": "tool-search/tool-search.test.mjs",
+      "specifier": "pathToFileURL(join(stagedRoot, \"rubato-features/mcp/index.mjs\""
+    },
+    {
+      "path": "tui-input/patches.mjs",
+      "specifier": "bootChromeHref"
+    },
+    {
+      "path": "tui-input/tui-input.test.mjs",
+      "specifier": "pathToFileURL(stockFile"
+    },
+    {
+      "path": "tui-input/tui-input.test.mjs",
+      "specifier": "pathToFileURL(patchedFile"
+    },
+    {
+      "path": "tui-input/tui-input.test.mjs",
+      "specifier": "pathToFileURL(patchedFile"
+    },
+    {
+      "path": "tui-input/tui-input.test.mjs",
+      "specifier": "pathToFileURL(join(\n    sourceRoot,\n    \"node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/stdin-buffer.js\",\n  "
+    },
+    {
+      "path": "tui-input/tui-input.test.mjs",
+      "specifier": "pathToFileURL(join(\n    sourceRoot,\n    \"node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/index.js\",\n  "
+    },
+    {
+      "path": "tui-input/tui-input.test.mjs",
+      "specifier": "pathToFileURL(stdinPath"
+    },
+    {
+      "path": "tui-input/unicode-pty.test.mjs",
+      "specifier": "pathToFileURL(stockFile"
+    },
+    {
+      "path": "tui-input/unicode-pty.test.mjs",
+      "specifier": "pathToFileURL(patchedFile"
+    },
+    {
+      "path": "user-commands-agent/test-harness.mjs",
+      "specifier": "pathToFileURL(runtime.sdkEntry"
+    },
+    {
+      "path": "user-commands-agent/test-harness.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js\",\n"
+    },
+    {
+      "path": "user-commands-session/history-search/catalog-index.mjs",
+      "specifier": "url.href"
+    },
+    {
+      "path": "user-commands-session/user-commands-session.test.mjs",
+      "specifier": "pathToFileURL(runtime.sdkEntry"
+    },
+    {
+      "path": "video-in/video-in.test.mjs",
+      "specifier": "pathToFileURL(staged.runtime.sdkEntry"
+    },
+    {
+      "path": "video-in/video-in.test.mjs",
+      "specifier": "pathToFileURL(stagedEntry"
+    },
+    {
+      "path": "video-in/video-in.test.mjs",
+      "specifier": "pathToFileURL(join(\n    outputRoot,\n    \"node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/anthropic-messages.js\",\n  "
+    },
+    {
+      "path": "video-in/video-in.test.mjs",
+      "specifier": "pathToFileURL(join(\n    outputRoot,\n    \"node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js\",\n  "
+    }
+  ],
+  "spawnSites": [
+    "abort-provenance/abort-provenance.test.mjs",
+    "child-runtime/child-e2e.test.mjs",
+    "child-runtime/fixture.ts",
+    "child-runtime/stock-rpc-runtime.test.mjs",
+    "codemode/codemode-interpreters.test.mjs",
+    "codemode/src/interpreters/detect.ts",
+    "codemode/src/interpreters/resolve-command.ts",
+    "codemode/src/kernels/jl/kernel.ts",
+    "codemode/src/kernels/js/worker-shell-capture.js",
+    "codemode/src/kernels/py/kernel.ts",
+    "codemode/src/kernels/py/process.ts",
+    "codemode/src/kernels/rb/kernel.ts",
+    "codemode/src/kernels/shared/subprocess-contract.ts",
+    "codemode/src/kernels/shared/subprocess-kernel.ts",
+    "codemode/src/kernels/shared/subprocess-process.ts",
+    "compaction/child-mode.test.mjs",
+    "compaction/compaction.test.mjs",
+    "compaction/summary-mode.test.mjs",
+    "config-reload/config-reload.test.mjs",
+    "context-notes/context-notes.test.mjs",
+    "context-window/context-window.test.mjs",
+    "extension-rpc/extension-rpc.test.mjs",
+    "input-lifecycle/input-lifecycle.test.mjs",
+    "prompt-preset/prompt-preset.test.mjs",
+    "prompt-rules/prompt-rules.test.mjs",
+    "providers/vendor/pi-ai/api/cursor-agent.js",
+    "reload/reload.test.mjs",
+    "remote-surface/local-hub.mjs",
+    "remote-surface/protocol-loader.mjs",
+    "remote-surface/remote-resume.test.mjs",
+    "remote-surface/surface.mjs",
+    "request-run/request-run.test.mjs",
+    "runtime-factories/runtime-factories.test.mjs",
+    "service-tier/service-tier.test.mjs",
+    "session-catalog/session-catalog.test.mjs",
+    "session-picker/session-picker.test.mjs",
+    "terminal/src/extension.ts",
+    "terminal/src/host/shell.ts",
+    "terminal/src/monitor-registry.ts",
+    "terminal/src/notify.ts",
+    "terminal/src/tools/bash-output.ts",
+    "terminal/src/tools/bash.ts",
+    "terminal/src/tools/monitor.ts",
+    "terminal/src/tools/spawn.ts",
+    "tool-guards/loop-guard.mjs",
+    "tool-policy/hooks.mjs",
+    "tui-input/tui-input.test.mjs",
+    "user-commands-agent/user-commands-agent.test.mjs",
+    "user-commands-session/user-commands-session.test.mjs"
+  ],
+  "relativeAssets": [
+    {
+      "path": "abort-provenance/patches.mjs",
+      "expr": "\"./state.mjs\", import.meta.url"
+    },
+    {
+      "path": "codemode/codemode-interpreters.test.mjs",
+      "expr": "\"./test-bun-kernel.ts\", import.meta.url"
+    },
+    {
+      "path": "codemode/codemode.test.mjs",
+      "expr": "new URL(relativePath, import.meta.url"
+    },
+    {
+      "path": "codemode/codemode.test.mjs",
+      "expr": "\"./src\", import.meta.url"
+    },
+    {
+      "path": "compaction/feature.mjs",
+      "expr": "relative, import.meta.url"
+    },
+    {
+      "path": "config-reload/feature.mjs",
+      "expr": "`./${name}`, import.meta.url"
+    },
+    {
+      "path": "context-notes/patches.mjs",
+      "expr": "relative, import.meta.url"
+    },
+    {
+      "path": "extension-rpc/patches.mjs",
+      "expr": "\"./runtime.mjs\", import.meta.url"
+    },
+    {
+      "path": "input-lifecycle/patches.mjs",
+      "expr": "\"./state.mjs\", import.meta.url"
+    },
+    {
+      "path": "mcp/feature.mjs",
+      "expr": "`./${name}`, import.meta.url"
+    },
+    {
+      "path": "mcp-producers/feature.mjs",
+      "expr": "`./${name}`, import.meta.url"
+    },
+    {
+      "path": "media-tools/media-tools.test.mjs",
+      "expr": "\"./src\", import.meta.url"
+    },
+    {
+      "path": "media-tools/native-media.test.mjs",
+      "expr": "resolve(runtimeRoot, \"../../harness/rubato-pi/src/session-defaults.mjs\""
+    },
+    {
+      "path": "prompt-preset/feature.mjs",
+      "expr": "`./${name}`, import.meta.url"
+    },
+    {
+      "path": "prompt-rules/feature.mjs",
+      "expr": "`./${name}`, import.meta.url"
+    },
+    {
+      "path": "provider-execution/patches.mjs",
+      "expr": "\"./extension.mjs\", import.meta.url"
+    },
+    {
+      "path": "provider-execution/patches.mjs",
+      "expr": "\"./cursor-exec-bridge.mjs\", import.meta.url"
+    },
+    {
+      "path": "provider-execution/patches.mjs",
+      "expr": "\"./cursor-exec-journal.mjs\", import.meta.url"
+    },
+    {
+      "path": "provider-execution/patches.mjs",
+      "expr": "\"./cursor-host-mutation.mjs\", import.meta.url"
+    },
+    {
+      "path": "provider-execution/patches.mjs",
+      "expr": "\"./THIRD_PARTY_NOTICES.md\", import.meta.url"
+    },
+    {
+      "path": "providers/patches.mjs",
+      "expr": "relative, import.meta.url"
+    },
+    {
+      "path": "remote-surface/feature.mjs",
+      "expr": "`./${name}`, import.meta.url"
+    },
+    {
+      "path": "remote-surface/feature.mjs",
+      "expr": "\"../../../rubato-pi/src/remote-conversation-projection.mjs\", import.meta.url"
+    },
+    {
+      "path": "remote-surface/feature.mjs",
+      "expr": "\"../../../rubato-pi/src/interactive-control-surface.mjs\", import.meta.url"
+    },
+    {
+      "path": "remote-surface/remote-surface.test.mjs",
+      "expr": "new URL(\"../rubato-components/bootstrap.mjs\", import.meta.url"
+    },
+    {
+      "path": "remote-surface/remote-surface.test.mjs",
+      "expr": "new URL(\"./index.mjs\", import.meta.url"
+    },
+    {
+      "path": "request-run/patches.mjs",
+      "expr": "\"../../../rubato-pi/src/transforms/request-run-tracker.mjs\", import.meta.url"
+    },
+    {
+      "path": "request-run/patches.mjs",
+      "expr": "\"../../../rubato-pi/src/transforms/assistant-phase.mjs\", import.meta.url"
+    },
+    {
+      "path": "rubato-components/bootstrap.mjs",
+      "expr": "new URL(\"../../package-lock.json\", import.meta.url"
+    },
+    {
+      "path": "rubato-components/bootstrap.mjs",
+      "expr": "\"../../node_modules/@earendil-works/pi-coding-agent/dist/rpc-entry.js\", import.meta.url"
+    },
+    {
+      "path": "rubato-components/bootstrap.mjs",
+      "expr": "\"../..\", import.meta.url"
+    },
+    {
+      "path": "rubato-components/candidate-main.mjs",
+      "expr": "new URL(\"../../rubato-pi-stage.json\", import.meta.url"
+    },
+    {
+      "path": "rubato-components/candidate-main.mjs",
+      "expr": "\"../..\", import.meta.url"
+    },
+    {
+      "path": "rubato-components/candidate-main.mjs",
+      "expr": "\"../../node_modules/@earendil-works/pi-coding-agent\", import.meta.url"
+    },
+    {
+      "path": "service-tier/patches.mjs",
+      "expr": "\"./extension.mjs\", import.meta.url"
+    },
+    {
+      "path": "service-tier/patches.mjs",
+      "expr": "\"./THIRD_PARTY_NOTICES.md\", import.meta.url"
+    },
+    {
+      "path": "session-catalog/patches.mjs",
+      "expr": "\"./catalog.mjs\", import.meta.url"
+    },
+    {
+      "path": "session-picker/patches.mjs",
+      "expr": "\"./pager.mjs\", import.meta.url"
+    },
+    {
+      "path": "terminal/terminal.test.mjs",
+      "expr": "\"./src\", import.meta.url"
+    },
+    {
+      "path": "tool-execution/patches.mjs",
+      "expr": "\"./runtime.mjs\", import.meta.url"
+    },
+    {
+      "path": "tool-execution/patches.mjs",
+      "expr": "\"./THIRD_PARTY_NOTICES.md\", import.meta.url"
+    },
+    {
+      "path": "tool-guards/feature.mjs",
+      "expr": "`./${name}`, import.meta.url"
+    },
+    {
+      "path": "tool-policy/feature.mjs",
+      "expr": "`./${name}`, import.meta.url"
+    },
+    {
+      "path": "tool-policy/tool-policy.test.mjs",
+      "expr": "new URL(\"../rubato-components/bootstrap.mjs\", import.meta.url"
+    },
+    {
+      "path": "tool-search/patches.mjs",
+      "expr": "`./${name}`, import.meta.url"
+    },
+    {
+      "path": "tui-input/patches.mjs",
+      "expr": "`./${name}`, import.meta.url"
+    },
+    {
+      "path": "tui-input/patches.mjs",
+      "expr": "\"./busy-enter.mjs\", import.meta.url"
+    },
+    {
+      "path": "tui-input/patches.mjs",
+      "expr": "\"./images.mjs\", import.meta.url"
+    },
+    {
+      "path": "user-commands-agent/feature.mjs",
+      "expr": "`./${name}`, import.meta.url"
+    },
+    {
+      "path": "user-commands-agent/user-commands-agent.test.mjs",
+      "expr": "new URL(\"../rubato-components/bootstrap.mjs\", import.meta.url"
+    },
+    {
+      "path": "user-commands-agent/user-commands-agent.test.mjs",
+      "expr": "\"./index.mjs\", import.meta.url"
+    },
+    {
+      "path": "user-commands-session/feature.mjs",
+      "expr": "\"./\" + name, import.meta.url"
+    },
+    {
+      "path": "user-commands-session/history-search/catalog-index.mjs",
+      "expr": "\"../../session-catalog/catalog.mjs\", import.meta.url"
+    },
+    {
+      "path": "user-commands-session/history-search/catalog-index.mjs",
+      "expr": "\"../../../node_modules/@earendil-works/pi-coding-agent/dist/rubato-features/session-catalog/catalog.mjs\", import.meta.url"
+    },
+    {
+      "path": "video-in/video-in.test.mjs",
+      "expr": "new URL(\"../rubato-components/bootstrap.mjs\", import.meta.url"
+    }
+  ],
+  "envIdentifiers": [
+    "RUBATO_PI_CODING_AGENT_DIR",
+    "RUBATO_PI_ROLE",
+    "SENPI_BIN",
+    "SENPI_CODEMODE_FOREGROUND_SECONDS",
+    "SENPI_CODEMODE_HARD_LIMIT_SECONDS",
+    "SENPI_CODEMODE_JL",
+    "SENPI_CODEMODE_JS",
+    "SENPI_CODEMODE_PY",
+    "SENPI_CODEMODE_RB",
+    "SENPI_CODEMODE_WAKE_SOURCE",
+    "SENPI_CODING_AGENT_DIR",
+    "SENPI_CODING_AGENT_SESSION_DIR",
+    "SENPI_GIT_BASH_PATH",
+    "SENPI_HOOK_EVENT",
+    "SENPI_HOOK_SOURCE"
+  ],
+  "recreatedAfterUpdate": [],
+  "senpiAppPackagesMustNotResolve": [
+    "@code-yeongyu/senpi",
+    "@code-yeongyu/senpi-ai",
+    "@code-yeongyu/senpi-codemode",
+    "@code-yeongyu/senpi-tui"
+  ],
+  "notes": [
+    "Measured 2026-09-11T13:28:32.165Z: 33 staged features, Node v26.5.0. CANDIDATE_FEATURE_NAMES=31.",
+    "Load report: 26256 urls, 24236 inside install, 2018 node-core, 2 scratch, 0 outside, 0 Senpi app.",
+    "Current restage matched CANDIDATE_FEATURE_NAMES.",
+    "Fake user HOME ~/.senpi/agent, ~/.rubato-pi/engine, and parent node_modules/@code-yeongyu/senpi stub were present and not loaded.",
+    "@code-yeongyu/senpi-pty remains a declared runtime dependency; replacement is deferred by the user."
+  ]
+}

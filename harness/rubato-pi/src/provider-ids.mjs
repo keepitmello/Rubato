@@ -4,15 +4,8 @@
 // 그 배럴은 프로바이더 구현 40개를 정적 import 해서, 세션 기본값만 확인해도
 // 기동 그래프가 한 덩어리가 됐다. id 만 필요하므로 설치본에서 뽑은 스냅샷을
 // 정적으로 두고, 핀이 바뀌면 provider-ids.test.mjs 가 어긋난다.
-export const SUPPORTED_PROVIDER_IDS = Object.freeze([
-  "openai-codex",
-  "xai",
-  "anthropic",
-  "cursor",
-  "kiro",
-  "google-antigravity",
-  "opencode",
-]);
+import { SUPPORTED_PROVIDER_IDS } from "./provider-capabilities.mjs";
+export { SUPPORTED_PROVIDER_IDS };
 
 /**
  * Senpi 2026.9.4-3 의 `getBuiltinProviders()` ∪ `builtinProviders().map(p => p.id)`.

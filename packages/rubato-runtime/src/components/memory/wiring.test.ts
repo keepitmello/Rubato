@@ -294,8 +294,8 @@ describe("memory footer wiring", () => {
     expect(statusCalls).toEqual([])
 
     const toolContext = sessionContext(fixture.sessionId, statusCalls)
-    await pi.dispatch("tool_result", memoryResult("mcp_rubato-memory_memory"), toolContext)
-    await pi.dispatch("tool_result", memoryResult("mcp_rubato-memory_memory_apply_patch"), toolContext)
+    await pi.dispatch("tool_result", memoryResult("mcp__rubato-memory_memory"), toolContext)
+    await pi.dispatch("tool_result", memoryResult("mcp__rubato-memory_memory_apply_patch"), toolContext)
     await pi.dispatch("tool_result", memoryResult("read"), toolContext)
 
     expect(statusCalls).toHaveLength(1)
