@@ -13,8 +13,9 @@ function resolveActiveTool(session, name) {
 
 /**
  * Execute one registered tool through the same validation and middleware hooks
- * used by stock Pi's agent loop. AgentSession owns lookup and activation state;
- * this module deliberately contains no MCP- or codemode-specific bypass.
+ * used by stock Pi's agent loop. AgentSession owns lookup and activation state.
+ * A provider may supply a trusted in-memory native file executor; model-visible
+ * tool removal is not authorization to skip the session's middleware.
  */
 export async function executeRegisteredTool(
   session,
@@ -31,6 +32,18 @@ export async function executeRegisteredTool(
   }
   let activeToolNames = session.getActiveToolNames();
   let tool = resolveActiveTool(session, toolName);
+
+  // This capability contains an executable function and is passed only by the
+  // native provider bridge, never deserialized from model/RPC arguments. Keep
+  // the original tool name so permission/loop/result hooks see write or edit.
+  if (options.nativeFileTool !== undefined) {
+    const native = options.nativeFileTool;
+    if ((toolName !== "write" && toolName !== "edit") || native?.name !== toolName ||
+        typeof native.execute !== "function" || !native.parameters) {
+      throw new TypeError("Invalid native file executor");
+    }
+    tool = native;
+  }
 
   if (!tool && options.activateInactiveTool === true && session._toolDefinitions.has(toolName)) {
     const definition = session._toolDefinitions.get(toolName)?.definition;
