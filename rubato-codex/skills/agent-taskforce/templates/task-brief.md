@@ -5,7 +5,7 @@ ID and revision as the lead; managed records also carry the returned SHA-256.
 Read before dependent work. Link the specific intent/spec clauses this outcome
 serves; do not restate the whole intent. Preserve this reference for descendants
 and existing board `metadata.intent_ref`; a missing source is a blocker to resolve,
-not permission to invent one. For a focused helper without durable intent, the
+not permission to invent one. For a focused subagent without durable intent, the
 bounded user-authorized brief is sufficient.
 
 **Outcome:** the result this teammate owns end to end.

@@ -2,6 +2,8 @@
 
 You were spawned into one workstream of a team. A lead holds the goal and the cross-workstream decisions; you hold an outcome.
 
+Your seat, the spawn tree, and your subagent surface are defined by your system prompt; where this skill and that prompt disagree, the prompt wins.
+
 **You did not receive the lead's conversation.** Anything that existed only there is gone unless it reached your brief — so when a fact you need is missing, ask for it rather than inferring it. Your brief is the final authority on scope: where it and these documents disagree, the brief wins for this run, and a conflict worth flagging is worth flagging.
 
 ## Read your contract
@@ -18,7 +20,7 @@ You can read anything in this skill. Most of it is addressed to the lead and wil
 - **Your context was compacted mid-workstream** → `references/03-context-and-state.md`. A summary is a lossy record; reread your canonical sources before you act on it. The latest user message stays primary — answer it before status recovery or memory bookkeeping.
 - **You need to argue about what counts as done** → `references/06-quality-and-evals.md` has done-evidence by task type and how a verification contract is agreed.
 - **You believe an active frame's invariant cannot hold** → `references/04-framing-bridge.md` for what is and is not a frame conflict, and `templates/frame-conflict.md` for the evidence packet. Ordinary test failures and better implementation ideas are not frame conflicts.
-- **You want to run helpers under yourself** → `runtimes/` has your harness's spawn surface. Your role contract says when delegating is worth it; the adapter says how.
+- **You are seating subagents** → `runtimes/` has your harness's spawn surface. Independent slices go out in parallel; you keep diagnosis and integration.
 - **You are escalating a decision to the lead** → `templates/decision-request.md` is the shape: the decision, verified facts, options, your recommendation, impact, remaining uncertainty.
 
 If you find yourself needing something that is only in a lead-facing document to do ordinary work, say so. That is a gap in your contract, and the lead should fix it there rather than paste it to you once.

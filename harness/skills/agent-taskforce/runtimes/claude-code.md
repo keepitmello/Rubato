@@ -11,6 +11,6 @@
 | Roster and runtime status | `ListAgents` |
 | Shared task list | supplied by the runtime |
 | Owner-local delegation | the Agent tool under that owner — an ordinary subagent, not a teammate |
-| Parallel spawn | several Agent calls in **one** message start at once; calls in separate messages run one behind another. Same rule for the lead seating teammates and an owner running helpers |
+| Parallel spawn | several Agent calls in **one** message start at once; calls in separate messages run one behind another. Same rule for the lead seating teammates and a teammate running subagents |
 
 Address peers by name. The lead is not a relay.

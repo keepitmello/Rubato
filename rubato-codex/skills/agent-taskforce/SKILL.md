@@ -12,7 +12,7 @@ Codex owns the agent runtime. The taskforce MCP records shared work, not session
 - Considering or leading a team: read [LEAD.md](LEAD.md) and [the Codex adapter](runtimes/codex.md).
 - Receiving work: use the native role already loaded. If no role was supplied,
   read the matching [owner](teammate/workstream-owner.md) or
-  [verifier](teammate/independent-verifier.md) contract; a focused helper needs
+  [verifier](teammate/independent-verifier.md) contract; a subagent needs
   only the sibling `dispatched` skill.
 - Before an assignment or follow-up: read the sibling `dispatching` skill.
 - Selecting a model: use [model allocation](references/model-allocation.md).
@@ -27,5 +27,5 @@ can change tool and skill names. Do not resurrect a Rubato runtime as a fallback
 
 A skill read is not a team decision. For continuing-owner work, the lead reads the
 sibling `work-intent` skill and resolves the authoritative intent before staffing.
-Existing user/frame/spec authority stays intact. Small local/helper work may leave
+Existing user/frame/spec authority stays intact. Small local/subagent work may leave
 without creating an intent, mission, board or extra approval ceremony.

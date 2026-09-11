@@ -10,7 +10,7 @@
 | Peer message | `AgentSend` for spawned Agents; `team_send` for the team mailbox |
 | Roster and runtime status | lead `team_*` tools including `team_send` and shutdown request/response; members get `team_send` plus board tools from the member extension |
 | Shared task list | Rubato team tasklist on disk; board operations have one owner per process |
-| Owner-local delegation | the member process registers Agent tools so it can spawn its own non-member helpers |
+| Owner-local spawn | the member process registers Agent tools so it can run subagents under itself; those children are not teammates |
 | Parallel spawn | `Agent` / `team_create`; completion notifications deliver terminal results, and `AgentOutput` reads an immediate midpoint snapshot |
 
 The role build owns the whole system prompt. Lead gets `lead.md`; owners and verifiers get `teammate.md`; both prompts carry the shared brief-receiving and brief-writing contract. A plain `Agent` spawn gets `agent.md`, which carries the receive-and-return contract. Model calls authenticate through the existing Rubato broker at `:8788`, including `/login`. `RUBATO_PI_ROLE=owner|verifier` wins; a member env without that role is treated as owner. Verifiers retain write tools.
@@ -19,7 +19,7 @@ The role build owns the whole system prompt. Lead gets `lead.md`; owners and ver
 
 Choose an exact `model` or named `preset` when you spawn a one-off `Agent`. Never pass a category, task type, or `subagent_type`. Omit `effort` unless you need a manual override. `team_create` takes the approved team specification and does not accept Agent `model`, `preset`, or `effort` parameters. Use the resolved model in Agent status to confirm that an independent verifier lands on a different family from the owner.
 
-Launcher: `harness/scripts/rubato-pi.sh` (`rubato` / `rubato-pi`). State: `~/.rubato-pi/agent`. One-off `Agent` agents are available at the owner's discretion; follow `LEAD.md`'s combined intent/roster confirmation before `team_create`; discovery helpers remain bounded by existing model/budget permissions. `/login` uses the broker. The TUI keeps `Tip:` lines and `/changelog` outside this surface.
+Launcher: `harness/scripts/rubato-pi.sh` (`rubato` / `rubato-pi`). State: `~/.rubato-pi/agent`. Teammates run independent slices as `Agent` subagents; follow `LEAD.md`'s combined intent/roster confirmation before `team_create`; discovery subagents remain bounded by existing model/budget permissions. `/login` uses the broker. The TUI keeps `Tip:` lines and `/changelog` outside this surface.
 
 ## Intent linkage
 

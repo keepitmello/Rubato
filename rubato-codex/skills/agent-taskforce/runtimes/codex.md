@@ -8,16 +8,19 @@ registry, scheduler, daemon or model runner.
 
 - A continuing owner uses `agent_type: "taskforce_owner"` when advertised.
 - An independent verifier uses `agent_type: "taskforce_verifier"`.
-- A focused map/check uses `agent_type: "taskforce_helper"`; no team roster or
-  board item is needed unless the actual assignment requires shared work state.
+- A subagent, under the lead or a teammate, uses `agent_type: "taskforce_helper"`
+  when advertised; no team roster or board item is needed unless the assignment
+  requires shared work state.
 
 These installed native roles contain their role contract and `dispatched` as
 developer instructions. Send the task-specific brief, not a second copy of that
-contract. Inherited lead conversation is background, not the worker's authority.
+contract. Seats, parentage and spawn surface follow the base instructions' Role
+selection section; this adapter only maps them to native operations. Spawn owners with
+`fork_turns: "none"` unless a short, named history slice is required.
 The installer replaces the configurable base instructions with Rubato's
 Codex-adapted working agreement. That base is shared and explicitly scopes its
 lead section to the main/root session; each native role supplies its distinct
-owner, verifier or helper instructions. A delegated session does not follow the
+owner, verifier or subagent instructions. A delegated teammate does not follow the
 root-only lead section. Runtime tool definitions and environment instructions
 remain provided by Codex, not replaced with Pi's tool declarations.
 For cold review, use no inherited turns and supply artifacts, constraints and
@@ -33,7 +36,7 @@ Use a fresh root after installing or changing the roles.
 
 | Intent | Native operation when advertised |
 |---|---|
-| New independent assignment | `spawn_agent` |
+| New teammate or subagent | `spawn_agent` — lead seats owners/verifiers; any teammate seats subagents the same way |
 | Follow-up or correction, including an idle owner | `followup_task` |
 | A fact for an active peer, not a new assignment | `send_message` |
 | Inspect the current team | `list_agents` |

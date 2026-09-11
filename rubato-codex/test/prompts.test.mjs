@@ -12,13 +12,21 @@ const read = (name) => readFile(new URL(name, root), 'utf8');
 test('Rubato base keeps root leadership separate from delegated contracts', async () => {
   const base = await read('instructions/base.md');
   assert.match(base, /## Lead — main\/root session only/);
-  assert.match(base, /do not promote it to lead/);
+  assert.match(base, /does\s+not promote\s+it to lead/);
   assert.match(base, /Codex owns spawning/);
   assert.match(base, /define the\s+question and the relevant boundary before planning/);
   assert.match(base, /You see every workstream while each owner sees one/);
   assert.match(base, /Speak like a capable colleague sharing the screen/);
   assert.match(base, /take one independent review after local verification/);
   assert.doesNotMatch(base, /team_create|team_send|AgentSend|:8788|permissions pre-granted/);
+  assert.match(base, /owners and verifiers are teammates, not\s+the lead's workers/);
+  assert.match(base, /not make it the lead's subagent/);
+  assert.match(base, /A subagent sits under whoever spawned it, lead or teammate/);
+  assert.match(base, /single source for seats, parentage and spawn surface/);
+  assert.doesNotMatch(base, /cognitively depth 0/);
+  // Seat identity lives in base.md only; AGENTS.md and the role contracts do not restate it.
+  const agentsMd = await read('instructions/AGENTS.md');
+  assert.doesNotMatch(agentsMd, /not the lead's workers|cognitively depth 0/);
   const contracts = [];
   for (const role of ['owner', 'verifier', 'helper']) {
     const text = await read(`agents/taskforce_${role}.toml`);
@@ -30,8 +38,18 @@ test('Rubato base keeps root leadership separate from delegated contracts', asyn
   }
   assert.equal(new Set(contracts).size, 3);
   assert.match(contracts[0], /You own one bounded outcome end to end/);
+  assert.match(contracts[0], /Independent slices go out in one turn as subagents/);
+  assert.match(contracts[0], /Keep diagnosis, integration, and anything with interpretation room/);
+  assert.match(contracts[0], /Record what you spawned/);
+  assert.doesNotMatch(contracts[0], /You can run helpers under yourself/);
   assert.match(contracts[1], /Your two falsification targets/);
+  assert.match(contracts[2], /You are a subagent of the session that sent this brief — the lead or a teammate/);
+  assert.match(contracts[2], /You are not on the team roster/);
   assert.match(contracts[2], /You do not own the wider workstream/);
+  for (const text of contracts) {
+    assert.doesNotMatch(text, /cognitively depth 0|not the lead's worker|Run this scope the way the lead runs the team|Do not do this outcome as a subagent of the lead/);
+    assert.match(text, /defined by the base instructions' Role selection section/);
+  }
 });
 
 test('native prompt replacement preserves Codex environment and distinct role layer', {

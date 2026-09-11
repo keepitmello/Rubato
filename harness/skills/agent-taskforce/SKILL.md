@@ -36,5 +36,5 @@ General prompting, effort selection, and context design belong to `claude-prompt
 
 A skill read is not a team decision. For continuing-owner work, the lead reads the
 sibling `work-intent` skill and resolves the authoritative intent before staffing.
-Existing user/frame/spec authority stays intact. Small local/helper work may leave
+Existing user/frame/spec authority stays intact. Small local/subagent work may leave
 without creating an intent, mission, board or extra approval ceremony.

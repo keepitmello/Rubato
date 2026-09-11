@@ -14,25 +14,25 @@ For Codex native collaboration, read `../agent-taskforce/runtimes/codex.md` befo
 A root lead considering continuing owners, independently ownable outcomes or
 cross-owner coordination reads the runtime-correct `agent-taskforce` skill before
 settling on a team or focused agent. This read may choose no team. A small isolated
-helper or an owner delegating within an accepted boundary needs no new team ceremony.
+subagent or an owner delegating within an accepted boundary needs no new team ceremony.
 
 For work with durable intent, resolve it through `work-intent` before continuing-owner
 assignments. Put the same `intent_ref` and canonical workspace in the brief and in
 existing board `metadata` where supported. Link the relevant intent/spec clauses;
 state only this owner's outcome and its contribution, not a duplicate overall mission.
 Require the recipient to read the referenced source before dependent work and to name
-its revision with returned evidence. Propagate that reference to helpers and replacement
+its revision with returned evidence. Propagate that reference to subagents and replacement
 sessions. A follow-up that materially changes the intent first goes through the lead's
 acceptance/update path; an old brief must not silently override the new source.
 
 ## Discovery before the combined proposal
 
 Before team staffing, the lead uses relevant repository/connected evidence and current
-primary web sources to resolve discoverable facts. A bounded discovery helper may receive
+primary web sources to resolve discoverable facts. A bounded discovery subagent may receive
 a draft intent with explicit discovery-only authority, read scope, permitted disposable
 checks and a budget; it returns evidence and does not implement or become a continuing
 owner. The receiver checks the draft's exact reference without requiring active status.
-Do not relabel execution owners as helpers to bypass combined intent/roster confirmation.
+Do not relabel execution owners as subagents to bypass combined intent/roster confirmation.
 
 When execution is approved, pass the accepted intent reference and boundaries. Owners
 settle local factual/implementation gaps; they return only consequential unresolved choices
@@ -68,7 +68,7 @@ Two boundary cases, drawn from a real incident:
 
 ## The receiving end
 
-A worker whose session loads a role contract already knows how to read this brief. A worker that loads none (a freehand lane, an ad-hoc helper) gets one line instead: start by reading Skill(dispatched). Where that skill cannot reach the worker's harness, carry the license inline: repo claims here are provisional; verify them; a conflict with a binding line returns with evidence and a recommendation; at budget, return what you covered; no finding is a valid result.
+A worker whose session loads a role contract already knows how to read this brief. A worker that loads none (a freehand lane, an ad-hoc subagent) gets one line instead: start by reading Skill(dispatched). Where that skill cannot reach the worker's harness, carry the license inline: repo claims here are provisional; verify them; a conflict with a binding line returns with evidence and a recommendation; at budget, return what you covered; no finding is a valid result.
 
 The return contract has a fixed column when frozen items were listed, with three values: `Frozen items touched: none`, `Frozen items touched: <which>, <why the task required it>`, or `Frozen items: list unavailable, <why>` (the brief named a list the worker could not read, or the repository's frozen list could not be found). "Unavailable" is not "none"; a worker that could not read the list reports that, and does not report `none`. A return without this column when the brief listed frozen items is incomplete. This column makes the worker check the list before returning; it is a self-report, not evidence. Where the repository carries frozen checks, the checks are the evidence, and a self-report of `none` does not replace running them.
 
