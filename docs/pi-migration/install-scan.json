@@ -1,8 +1,8 @@
 {
-  "generatedAt": "2026-09-11T09:21:45.131Z",
+  "generatedAt": "2026-09-11T13:28:32.165Z",
   "stockVersion": "0.85.1",
   "node": "v26.5.0",
-  "installRoot": "/private/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-UksjNZ/engine",
+  "installRoot": "/private/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-IINCM6/engine",
   "features": [
     "runtime-factories",
     "reload",
@@ -96,8 +96,8 @@
     ]
   },
   "resolvedModulePaths": {
-    "total": 26254,
-    "insideInstall": 24234,
+    "total": 26256,
+    "insideInstall": 24236,
     "nodeCore": 2018,
     "allowedScratch": 2,
     "outside": [],
@@ -108,7 +108,7 @@
     {
       "seam": "rpc",
       "execPath": "/opt/homebrew/Cellar/node/26.5.0_1/bin/node",
-      "entry": "/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-UksjNZ/engine/node_modules/@earendil-works/pi-coding-agent/dist/rpc-entry.js"
+      "entry": "/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-IINCM6/engine/node_modules/@earendil-works/pi-coding-agent/dist/rpc-entry.js"
     },
     {
       "seam": "in-process",
@@ -117,7 +117,7 @@
     }
   ],
   "childEnv": {
-    "sessionDirFromGetState": "/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-UksjNZ/home/child/rpc-sessions/child/2026-09-11T09-21-42-974Z_01a08fc5-d83e-76d3-b964-255d7e8fd911.jsonl"
+    "sessionDirFromGetState": "/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-IINCM6/home/child/rpc-sessions/child/2026-09-11T13-28-29-986Z_01a090a7-c821-7472-9807-1a105f4316d3.jsonl"
   },
   "dynamicImports": [
     {
@@ -457,6 +457,14 @@
       "specifier": "pathToFileURL(join(\n  staged.root,\n  \"rubato-features/prompt-rules/index.mjs\",\n"
     },
     {
+      "path": "prompt-rules/role-prompt.mjs",
+      "specifier": "promptHref"
+    },
+    {
+      "path": "prompt-rules/role-prompt.mjs",
+      "specifier": "roleHref"
+    },
+    {
       "path": "provider-execution/extension.mjs",
       "specifier": "\"../providers/src/cursor-route.mjs\""
     },
@@ -675,6 +683,10 @@
     {
       "path": "tool-search/tool-search.test.mjs",
       "specifier": "pathToFileURL(join(stagedRoot, \"rubato-features/mcp/index.mjs\""
+    },
+    {
+      "path": "tui-input/patches.mjs",
+      "specifier": "bootChromeHref"
     },
     {
       "path": "tui-input/tui-input.test.mjs",
@@ -1016,6 +1028,7 @@
   ],
   "envIdentifiers": [
     "RUBATO_PI_CODING_AGENT_DIR",
+    "RUBATO_PI_ROLE",
     "SENPI_BIN",
     "SENPI_CODEMODE_FOREGROUND_SECONDS",
     "SENPI_CODEMODE_HARD_LIMIT_SECONDS",
@@ -1038,8 +1051,8 @@
     "@code-yeongyu/senpi-tui"
   ],
   "notes": [
-    "Measured 2026-09-11T09:21:45.131Z: 33 staged features, Node v26.5.0. CANDIDATE_FEATURE_NAMES=31.",
-    "Load report: 26254 urls, 24234 inside install, 2018 node-core, 2 scratch, 0 outside, 0 Senpi app.",
+    "Measured 2026-09-11T13:28:32.165Z: 33 staged features, Node v26.5.0. CANDIDATE_FEATURE_NAMES=31.",
+    "Load report: 26256 urls, 24236 inside install, 2018 node-core, 2 scratch, 0 outside, 0 Senpi app.",
     "Current restage matched CANDIDATE_FEATURE_NAMES.",
     "Fake user HOME ~/.senpi/agent, ~/.rubato-pi/engine, and parent node_modules/@code-yeongyu/senpi stub were present and not loaded.",
     "@code-yeongyu/senpi-pty remains a declared runtime dependency; replacement is deferred by the user."

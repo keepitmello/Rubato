@@ -24,6 +24,9 @@ const IM_PASTE_AFTER = "        this.defaultEditor.onPasteImage = () => {\n     
 const IM_TRIM_BEFORE = "            text = text.trim();\n            if (!text)\n                return;\n";
 const IM_TRIM_AFTER = "            text = text.trim();\n            if (!text) {\n                promoteBusyEnter(this);\n                return;\n            }\n";
 
+const UI_START_BEFORE = "        // Start the UI before initializing extensions so session_start handlers can use interactive dialogs\n        this.ui.start();\n";
+const UI_START_AFTER = "        // Start the UI before initializing extensions so session_start handlers can use interactive dialogs\n        const bootChromeHref = process.env.RUBATO_BOOT_CHROME_HREF;\n        if (bootChromeHref) {\n            await import(bootChromeHref).then(async (mod) => {\n                if (typeof mod.handoffBootChromeForStockPi === \"function\") await mod.handoffBootChromeForStockPi();\n            }).catch(() => {});\n        }\n        this.ui.start();\n";
+
 function replaceOnce(source, before, after, label) {
   const first = source.indexOf(before);
   if (first === -1) throw new Error("[tui-input:" + label + "] expected anchor is missing");
@@ -60,6 +63,7 @@ export function patchInteractiveTuiInput(source) {
   next = replaceOnce(next, "                await this.session.prompt(text, { streamingBehavior: \"steer\" });", "                await this.session.prompt(text, { streamingBehavior: busyEnterDelivery() });", "interactive-streaming-delivery");
   next = replaceOnce(next, IM_CLIP_BEFORE, IM_CLIP_AFTER, "interactive-clipboard-image");
   next = replaceOnce(next, IM_PASTE_BEFORE, IM_PASTE_AFTER, "interactive-recall-up");
+  next = replaceOnce(next, UI_START_BEFORE, UI_START_AFTER, "interactive-boot-chrome-handoff");
   return next;
 }
 

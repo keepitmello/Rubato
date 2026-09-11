@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
+import { homedir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { defaultAgentDir, launchEnv } from "./brand.mjs";
 import { enableRubatoCompileCache } from "./compile-cache.mjs";
@@ -12,7 +13,7 @@ import { withNoChangelog } from "./no-changelog.mjs";
 import { ensureSessionDefaults, sessionDefaultsLookCurrent } from "./session-defaults.mjs";
 import { replaceSystemPrompt } from "./system-prompt.mjs";
 import { SKILL_DIRS } from "./skills-section.mjs";
-import { enginePackageJson, senpiCli, senpiCliMain, senpiPackageJson } from "./engine-paths.mjs";
+import { engineMarkerPath, enginePackageJson, resolveStockEngineDir, senpiCli, senpiCliMain, senpiPackageJson } from "./engine-paths.mjs";
 import { releaseBootChrome, setBootChromeStatus } from "./boot-chrome.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -90,6 +91,141 @@ export function skillPathArgs(dirs = SKILL_DIRS) {
   return dirs.flatMap(({ dir }) => (existsSync(dir) ? ["--skill", dir] : []));
 }
 
+export const STOCK_PI_FALLBACK_NOTICE = "rubato: stock-pi candidate is not installed or invalid; falling back to senpi";
+
+const AGENT_DIR_ENV_NAMES = Object.freeze([
+  "RUBATO_PI_CODING_AGENT_DIR",
+  "SENPI_CODING_AGENT_DIR",
+  "PI_CODING_AGENT_DIR",
+]);
+
+export function isValidInstalledCandidateReceipt(receipt, root) {
+  if (!receipt || receipt.version !== 1 || receipt.state !== "ready") return false;
+  if (typeof receipt.candidateEntry !== "string" || receipt.candidateEntry.length === 0) return false;
+  if (!Array.isArray(receipt.features) || receipt.features.length === 0) return false;
+  if (!root) return true;
+  const entry = isAbsolute(receipt.candidateEntry) ? receipt.candidateEntry : join(root, receipt.candidateEntry);
+  return existsSync(entry);
+}
+
+export function readStockEngineReceipt(root) {
+  try {
+    return JSON.parse(readFileSync(join(root, "rubato-install.json"), "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+export function stockEngineReceiptPresent(root) {
+  return existsSync(join(root, "rubato-install.json"));
+}
+
+export function readEngineMarker(env = process.env) {
+  const path = engineMarkerPath(env);
+  if (!path) return null;
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+export function nodeSatisfiesCandidate(versionText = process.version) {
+  const match = /^v?(\d+)\.(\d+)/.exec(String(versionText));
+  if (!match) return false;
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  return (major === 24 && minor >= 15) || major >= 26;
+}
+
+export function resolveLaunchAgentDir(env = process.env, home = env.HOME || homedir()) {
+  for (const name of AGENT_DIR_ENV_NAMES) {
+    const value = env?.[name];
+    if (typeof value !== "string" || value.length === 0) continue;
+    if (value === "~") return home;
+    if (value.startsWith("~/") || value.startsWith("~\\")) return join(home, value.slice(2));
+    return value;
+  }
+  return defaultAgentDir(home);
+}
+
+/** RUBATO_ENGINE=stock-pi|senpi. Default stock-pi when a valid receipt exists. */
+export function resolveLaunchEngine({ env = process.env } = {}) {
+  const root = resolveStockEngineDir(env);
+  const present = stockEngineReceiptPresent(root);
+  const receipt = readStockEngineReceipt(root);
+  const valid = isValidInstalledCandidateReceipt(receipt, root);
+  let explicit = typeof env.RUBATO_ENGINE === "string" ? env.RUBATO_ENGINE.trim() : "";
+  let warning = null;
+  if (explicit && explicit !== "senpi" && explicit !== "stock-pi") {
+    warning = `rubato: unknown RUBATO_ENGINE=${explicit}; using default engine selection`;
+    explicit = "";
+  }
+  const marker = readEngineMarker(env);
+  let requested;
+  let source;
+  if (explicit === "senpi" || explicit === "stock-pi") {
+    requested = explicit;
+    source = "env";
+  } else if (marker?.engine === "senpi" || marker?.engine === "stock-pi") {
+    requested = marker.engine;
+    source = "marker";
+  } else if (valid) {
+    requested = "stock-pi";
+    source = "receipt";
+  } else {
+    requested = "senpi";
+    source = "default";
+  }
+  const brokenInstall = present && !valid;
+  const notice = (requested === "stock-pi" && !valid) || brokenInstall ? STOCK_PI_FALLBACK_NOTICE : null;
+  if (requested === "stock-pi" && valid) {
+    const entry = isAbsolute(receipt.candidateEntry) ? receipt.candidateEntry : join(root, receipt.candidateEntry);
+    return {
+      engine: "stock-pi",
+      requested: "stock-pi",
+      fallback: false,
+      notice: null,
+      warning,
+      root,
+      entry,
+      source,
+    };
+  }
+  return {
+    engine: "senpi",
+    requested: requested === "stock-pi" ? "stock-pi" : "senpi",
+    fallback: Boolean(notice),
+    notice,
+    warning,
+    root,
+    entry: null,
+    source,
+  };
+}
+
+/**
+ * stock-pi argv. Candidate already supplies providers, prompt-preset/rules,
+ * components, and the stock footer. Senpi -e overlays are not passed; the role
+ * system prompt IS passed (--system-prompt, identical to the senpi argv) and the
+ * candidate's rubato-role-prompt factory injects it on before_agent_start
+ * (prompt-preset yields to an explicit system prompt). Keep fullscreen TUI
+ * and ~/.agents/skills, then pass user args through.
+ */
+export function buildStockPiArgs(userArgs, { env = process.env } = {}) {
+  const interactiveTuiArgs = userArgs.some((token) => token === "--mode" || token.startsWith("--mode=")) ||
+    userArgs.some((token) => token === "--tui-mode" || token.startsWith("--tui-mode="))
+    ? []
+    : ["--tui-mode", "fullscreen"];
+  return [
+    "--system-prompt",
+    replaceSystemPrompt("", resolveRole({ env }), { env, argv: userArgs }),
+    ...interactiveTuiArgs,
+    ...skillPathArgs(),
+    ...userArgs,
+  ];
+}
+
 export function buildSenpiArgs(userArgs, { env = process.env } = {}) {
   const interactiveTuiArgs = userArgs.some((token) => token === "--mode" || token.startsWith("--mode=")) ||
     userArgs.some((token) => token === "--tui-mode" || token.startsWith("--tui-mode="))
@@ -117,43 +253,118 @@ export function sameNodeBinary(nodeBin, execPath = process.execPath) {
   return nodeBin === execPath;
 }
 
-export async function spawnRubatoPi({ args = process.argv.slice(2), env = process.env, agentDir = defaultAgentDir() } = {}) {
-  enableRubatoCompileCache(env);
-  assertExactPin();
-  const node = resolveNode24();
+const STRIP_SENPI_KEYS = Object.freeze(["SENPI_BIN", "SENPI_BRAND", "SENPI_CODING_AGENT_DIR"]);
+
+export function stripNoChangelogNodeOptions(value) {
+  if (typeof value !== "string" || value.trim() === "") return undefined;
+  const tokens = value.split(/\s+/).filter((token) => token.length > 0);
+  const kept = [];
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i];
+    if (token.includes("no-changelog-register")) continue;
+    // Separate form "--import <loader>": drop the flag together with its value.
+    if ((token === "--import" || token === "--require" || token === "-r") && tokens[i + 1]?.includes("no-changelog-register")) { i += 1; continue; }
+    kept.push(token);
+  }
+  return kept.length > 0 ? kept.join(" ") : undefined;
+}
+
+export function stockPiSupportEnv() {
+  return {
+    RUBATO_BOOT_CHROME_HREF: pathToFileURL(join(here, "boot-chrome.mjs")).href,
+    RUBATO_ROLE_PROMPT_MODULE: pathToFileURL(join(here, "system-prompt.mjs")).href,
+    RUBATO_ROLE_CONTRACT_MODULE: pathToFileURL(join(here, "role-contract.mjs")).href,
+  };
+}
+
+export function stockPiLaunchEnv(baseEnv, agentDir) {
+  const env = { ...launchEnv(baseEnv, agentDir), ...stockPiSupportEnv(), RUBATO_CANDIDATE_AGENT_DIR: agentDir };
+  for (const key of STRIP_SENPI_KEYS) delete env[key];
+  const nodeOptions = stripNoChangelogNodeOptions(env.NODE_OPTIONS);
+  if (nodeOptions) env.NODE_OPTIONS = nodeOptions;
+  else delete env.NODE_OPTIONS;
+  return env;
+}
+
+export function applyStockPiProcessEnv(nextEnv) {
+  for (const key of STRIP_SENPI_KEYS) delete process.env[key];
+  const stripped = stripNoChangelogNodeOptions(process.env.NODE_OPTIONS);
+  if (stripped) process.env.NODE_OPTIONS = stripped;
+  else delete process.env.NODE_OPTIONS;
+  Object.assign(process.env, nextEnv);
+  for (const key of STRIP_SENPI_KEYS) delete process.env[key];
+}
+
+function emitEngineNotice(notice) {
+  if (notice) console.error(notice);
+}
+
+function prepareAgentDir(agentDir) {
   mkdirSync(agentDir, { recursive: true });
-  // 우리가 소유한 전역 확장(현재 tps)을 senpi 가 자기 기본판으로 되돌리기 전에 깐다.
-  ensureAgentExtensions(agentDir);
-  // 지원 provider 는 정적이다. 예전에는 bridge 카탈로그를 매번 받아서 "새로 열린
-  // 프로바이더가 disabled 에 영영 남는" 경우를 막았는데, 이제 등록하는 것이 pinned
-  // native factory 뿐이라 런타임에 물을 대상이 없다.
   if (!sessionDefaultsLookCurrent(agentDir)) {
     ensureSessionDefaults(agentDir);
   }
+}
+
+async function runSameNode(entry, argv, nextEnv, { registerNoChangelog = false, stockPi = false } = {}) {
+  if (stockPi) applyStockPiProcessEnv(nextEnv);
+  else Object.assign(process.env, nextEnv);
+  if (registerNoChangelog) {
+    await import(new URL("./no-changelog-register.mjs", import.meta.url).href);
+  }
+  process.argv = [process.execPath, ...argv];
+  await import(pathToFileURL(entry).href);
+  return undefined;
+}
+
+export async function spawnRubatoPi({ args = process.argv.slice(2), env = process.env, agentDir } = {}) {
+  enableRubatoCompileCache(env);
+  const profileDir = agentDir ?? resolveLaunchAgentDir(env);
+  const selection = resolveLaunchEngine({ env });
+  const node = resolveNode24();
+  const stockPiReady = selection.engine === "stock-pi" && nodeSatisfiesCandidate(node.text ?? process.version);
+  if (selection.warning) console.error(selection.warning);
+  if (selection.engine === "stock-pi" && !stockPiReady) {
+    emitEngineNotice(STOCK_PI_FALLBACK_NOTICE);
+  } else {
+    emitEngineNotice(selection.notice);
+  }
+  prepareAgentDir(profileDir);
+  setBootChromeStatus("엔진을 불러오는 중");
+
+  if (stockPiReady) {
+    const entry = selection.entry;
+    if (!entry || !existsSync(entry)) {
+      emitEngineNotice(STOCK_PI_FALLBACK_NOTICE);
+    } else {
+      const argv = [entry, ...buildStockPiArgs(args, { env })];
+      const nextEnv = stockPiLaunchEnv(env, profileDir);
+      if (sameNodeBinary(node.bin)) {
+        return runSameNode(entry, argv, nextEnv, { stockPi: true });
+      }
+      releaseBootChrome();
+      return spawn(node.bin, [join(root, "bin", "rubato-pi.mjs"), ...args], {
+        env: { ...nextEnv, RUBATO_ENGINE: "stock-pi" },
+        stdio: "inherit",
+      });
+    }
+  }
+
+  assertExactPin();
+  // 우리가 소유한 전역 확장(현재 tps)을 senpi 가 자기 기본판으로 되돌리기 전에 깐다.
+  ensureAgentExtensions(profileDir);
   const argv = buildSenpiArgs(args, { env });
   const entry = argv[0];
   if (!existsSync(entry)) {
     throw new Error("pinned senpi CLI is missing; run bun install at the repository root");
   }
-  const nextEnv = withNoChangelog(launchEnv(env, agentDir));
-  setBootChromeStatus("엔진을 불러오는 중");
-  // 같은 Node 면 자식을 또 띄우지 않는다. cli.js 가 --import 보고 한 번 더
-  // spawn 하던 것과 합치면 기동마다 Node 를 세 번 올리는 셈이었다.
+  const nextEnv = withNoChangelog(launchEnv(env, profileDir));
   if (sameNodeBinary(node.bin)) {
-    Object.assign(process.env, nextEnv);
-    // NODE_OPTIONS --import 가 이미 같은 훅을 심은 채 이 프로세스가 떠 있으면
-    // (루바토 안에서 루바토를 띄운 경우) register() 를 한 번 더 부르면 로더가
-    // 두 겹이 되어 변환이 두 번 돌고 두 번째는 전부 drift 로 보인다.
-    // no-changelog-register 의 심볼 가드가 그 이중 등록을 막는다.
-    await import(new URL("./no-changelog-register.mjs", import.meta.url).href);
-    process.argv = [process.execPath, ...argv];
-    await import(pathToFileURL(entry).href);
-    return undefined;
+    return runSameNode(entry, argv, nextEnv, { registerNoChangelog: true });
   }
-  // Re-enter the launcher so the child owns both the splash and its awaited handoff.
   releaseBootChrome();
   return spawn(node.bin, [join(root, "bin", "rubato-pi.mjs"), ...args], {
-    env: launchEnv(env, agentDir),
+    env: launchEnv(env, profileDir),
     stdio: "inherit",
   });
 }

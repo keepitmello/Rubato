@@ -1,5 +1,6 @@
 import { createInstructionExtension } from "./instructions.mjs";
 import { createTodoExtension } from "./todo.mjs";
+import { createRolePromptExtensionFactories } from "./role-prompt.mjs";
 
 /**
  * Build stock-Pi extension factories from the canonical services created by the
@@ -27,10 +28,12 @@ export function createPromptRulesExtensionFactories({
       factory: createTodoExtension(),
     });
   }
+  factories.push(...createRolePromptExtensionFactories({ env }));
   return factories;
 }
 
 export { createInstructionExtension } from "./instructions.mjs";
 export { createTodoExtension, TODO_STATE_ENTRY_TYPE } from "./todo.mjs";
+export { createRolePromptExtension, createRolePromptExtensionFactories, ROLE_PROMPT_FACTORY_NAME } from "./role-prompt.mjs";
 
 export default createPromptRulesExtensionFactories;

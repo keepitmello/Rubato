@@ -142,6 +142,12 @@ export function finishBootChrome() {
   return finishPromise;
 }
 
+/** Stock-Pi path: release the splash immediately before the candidate TUI starts. */
+export async function handoffBootChromeForStockPi() {
+  setBootChromeStatus("화면을 여는 중");
+  return finishBootChrome();
+}
+
 /**
  * Take over the shell-phase renderer (boot-splash.mjs) started by rubato-pi.sh.
  * It is told to stop and we wait for its acknowledgement, so the next frame
