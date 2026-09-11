@@ -2,7 +2,8 @@
 # 번들된 스킬을 ~/.agents/skills 에 깐다. bundle-skills.sh 의 반대 방향이다.
 #
 # 이 레포만 clone 한 기기를 위한 것이다. rubato 는 `~/.agents/skills` 를 읽고
-# Claude Code 와 Codex 도 같은 자리를 보므로, 여기 풀어 두면 셋이 같은 스킬을 쓴다.
+# 기존 shared CLI도 이 위치를 사용한다. Codex 전용본은 rubato-codex 설치기가
+# 별도 플러그인으로 설치한다. 여기서는 Codex config/roles/plugin을 변경하지 않는다.
 #
 # 기본(첫 설치): 없는 것만 넣는다. 이미 있는 것은 그 기기 정본일 수 있다.
 # --sync-from <rev>: 업데이트용. 설치본이 그 rev 의 번들과 같으면 새 번들로

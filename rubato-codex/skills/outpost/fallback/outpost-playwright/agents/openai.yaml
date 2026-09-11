@@ -1,0 +1,6 @@
+interface:
+  display_name: "Outpost Playwright Fallback"
+  short_description: "Recover a failed Aside outpost through strict agbrowse automation"
+  default_prompt: "Use the Playwright fallback only after the main Aside outpost path has failed."
+policy:
+  allow_implicit_invocation: false

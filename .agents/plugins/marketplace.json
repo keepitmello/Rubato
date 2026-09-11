@@ -1,0 +1,20 @@
+{
+  "name": "rubato",
+  "interface": {
+    "displayName": "Rubato"
+  },
+  "plugins": [
+    {
+      "name": "rubato-codex",
+      "source": {
+        "source": "local",
+        "path": "./rubato-codex"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

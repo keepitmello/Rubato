@@ -1,22 +1,16 @@
 # Model allocation for the lead
 
-*Lead.* **Canonical routing guidance lives in Skill(model-guide)** (`~/.agents/skills/model-guide/SKILL.md`) — cognitive profiles, bottleneck routing, verifier pairings, and the current catalog mapping. Session continuity (continue an existing session or start fresh) lives in Skill(dispatching). Read it there; this file keeps only what is team-specific.
+*Lead.* Skill(model-guide) owns cognitive profiles, bottleneck routing, verifier pairings
+and exact catalog/effort values. Skill(dispatching) owns session continuity. This file
+only connects model selection to the combined proposal; it does not create another gate.
 
-The human operator chooses whether framing is used and which model is lead. You choose the smallest execution roster from model-guide's routing, explain it briefly, and wait for approval before spawning.
+Preserve the user's lead and framing choices. After useful discovery, select the smallest
+roster and present it with the intended result using the sibling
+`work-intent/templates/approval-message.md`. Explain each selected model's responsibility
+and why it fits in the user's language. Keep exact technical settings in the internal
+roster; explain their practical cost/effort when material.
 
-## What to show the user before spawn
-
-Keep the proposal short.
-
-```text
-팀 배치안
-- 프레이밍: 사용 / 기존 프레임 연결 / 생략
-- Lead: <model> — <why this lead fits>
-- Owner: <outcome> → <model> — <dominant bottleneck>
-- Owner: <outcome> → <model> — <dominant bottleneck>   # only if needed
-- Verifier: <model or none> — <why included or skipped>
-
-이 배치로 띄울까?
-```
-
-Wait for explicit confirmation. After approval, spawn only the approved teammates and record the actual roster if a mission artifact is being used.
+Wait for explicit confirmation of both intent and roster before staffing. One reply can
+accept clearly presented model/effort commitments together with the result. It does not
+waive other authorization requirements. Keep accepted owners for related follow-ups;
+ask only about a material staffing or intent delta, not every helper or repeated check.

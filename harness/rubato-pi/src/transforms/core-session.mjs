@@ -10,6 +10,7 @@ import {
   injectMcpCatalogOwnership, isToolSearchServiceUrl,
   injectToolSearchSameTurnCopy, isToolSearchToolUrl,
   injectMcpToolNamePrefix, isMcpNamingUrl, injectMcpProxyToolName, isMcpProxyUrl,
+  injectMcpAttachNonblocking, isMcpIndexUrl,
 } from "./core-tool-surface.mjs";
 import { injectToolDescriptions, isToolDefinitionWrapperUrl } from "./core-tool-descriptions.mjs";
 import { injectCompaction, injectContextTokensGuard, isCompactionUrl, isContextTokensUrl } from "./core-compaction.mjs";
@@ -76,6 +77,7 @@ export function applyCoreSessionTransforms(url, source, applyTransform) {
     source = applyTransform(source, injectToolSurface);
   }
   if (isApplyPatchExtensionUrl(url)) source = applyTransform(source, injectUniversalApplyPatch);
+  if (isMcpIndexUrl(url)) source = applyTransform(source, injectMcpAttachNonblocking);
   if (isMcpTierBUrl(url)) source = applyTransform(source, injectMcpSearchExposure);
   if (isMcpNamingUrl(url)) source = applyTransform(source, injectMcpToolNamePrefix);
   if (isMcpProxyUrl(url)) source = applyTransform(source, injectMcpProxyToolName);

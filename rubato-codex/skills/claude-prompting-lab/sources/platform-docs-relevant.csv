@@ -1,0 +1,95 @@
+categories,section,title,description,url,snapshot
+context_memory,Messages,Cache diagnostics (beta),Cache diagnostics,https://platform.claude.com/docs/en/build-with-claude/cache-diagnostics.md,2026-08-02
+context_memory,Messages,Compaction,,https://platform.claude.com/docs/en/build-with-claude/compaction.md,2026-08-02
+context_memory,Messages,Context editing,,https://platform.claude.com/docs/en/build-with-claude/context-editing.md,2026-08-02
+context_memory,Messages,Context windows,,https://platform.claude.com/docs/en/build-with-claude/context-windows.md,2026-08-02
+context_memory,Managed Agents,Dreams,,https://platform.claude.com/docs/en/managed-agents/dreams.md,2026-08-02
+context_memory,Managed Agents,Memory stores,Using agent memory,https://platform.claude.com/docs/en/managed-agents/memory.md,2026-08-02
+context_memory,Messages,Mid-conversation system messages and tool changes,,https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages.md,2026-08-02
+context_memory,Messages,Prompt caching,,https://platform.claude.com/docs/en/build-with-claude/prompt-caching.md,2026-08-02
+context_memory;skills_agents,Managed Agents,Session operations,,https://platform.claude.com/docs/en/managed-agents/session-operations.md,2026-08-02
+context_memory;skills_agents,Managed Agents,Start a session,,https://platform.claude.com/docs/en/managed-agents/sessions.md,2026-08-02
+context_memory;tools_output,Messages,Manage tool context,,https://platform.claude.com/docs/en/agents-and-tools/tool-use/manage-tool-context.md,2026-08-02
+context_memory;tools_output,Messages,Memory tool,,https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool.md,2026-08-02
+core_prompting,Best practices,Overview,Prompt engineering overview,https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/overview.md,2026-08-02
+core_prompting,Best practices,Prompting Claude Fable 5,,https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5.md,2026-08-02
+core_prompting,Best practices,Prompting Claude Opus 4.8,,https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-4-8.md,2026-08-02
+core_prompting,Best practices,Prompting Claude Opus 5,,https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5.md,2026-08-02
+core_prompting,Best practices,Prompting Claude Sonnet 5,,https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5.md,2026-08-02
+core_prompting,Best practices,Prompting best practices,,https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices.md,2026-08-02
+core_prompting,Models & pricing,System prompts,System Prompts,https://platform.claude.com/docs/en/release-notes/system-prompts.md,2026-08-02
+eval_guardrails,Best practices,Define success and build evaluations,Define success criteria and build evaluations,https://platform.claude.com/docs/en/test-and-evaluate/develop-tests.md,2026-08-02
+eval_guardrails,Best practices,Increase output consistency,,https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/increase-consistency.md,2026-08-02
+eval_guardrails,Best practices,Mitigate jailbreaks,Mitigate jailbreaks and prompt injections,https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/mitigate-jailbreaks.md,2026-08-02
+eval_guardrails,Best practices,Reduce hallucinations,,https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations.md,2026-08-02
+eval_guardrails,Best practices,Reduce prompt leak,,https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-prompt-leak.md,2026-08-02
+eval_guardrails,Best practices,Reducing latency,,https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency.md,2026-08-02
+eval_guardrails,Messages,Refusals and fallback,,https://platform.claude.com/docs/en/build-with-claude/refusals-and-fallback.md,2026-08-02
+eval_guardrails,Messages,Stop reasons and fallback,,https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons.md,2026-08-02
+eval_guardrails,Messages,Streaming refusals,Handle streaming refusals,https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/handle-streaming-refusals.md,2026-08-02
+language_use_cases,Other pages,Classification,,https://platform.claude.com/docs/en/about-claude/use-case-guides/classification.md,2026-08-02
+language_use_cases,Best practices,Content moderation,,https://platform.claude.com/docs/en/about-claude/use-case-guides/content-moderation.md,2026-08-02
+language_use_cases,Best practices,Customer support agent,,https://platform.claude.com/docs/en/about-claude/use-case-guides/customer-support-chat.md,2026-08-02
+language_use_cases,Best practices,Legal summarization,,https://platform.claude.com/docs/en/about-claude/use-case-guides/legal-summarization.md,2026-08-02
+language_use_cases,Messages,Multilingual support,,https://platform.claude.com/docs/en/build-with-claude/multilingual-support.md,2026-08-02
+language_use_cases,Best practices,Overview,Guides to common use cases,https://platform.claude.com/docs/en/about-claude/use-case-guides/overview.md,2026-08-02
+language_use_cases,Best practices,Ticket routing,,https://platform.claude.com/docs/en/about-claude/use-case-guides/ticket-routing.md,2026-08-02
+model_guides,Models & pricing,Choosing a model,Choosing the right model,https://platform.claude.com/docs/en/about-claude/models/choosing-a-model.md,2026-08-02
+model_guides,Models & pricing,Introducing Claude Fable 5 and Claude Mythos 5,,https://platform.claude.com/docs/en/about-claude/models/introducing-claude-fable-5-and-claude-mythos-5.md,2026-08-02
+model_guides,Models & pricing,Model IDs and versioning,,https://platform.claude.com/docs/en/about-claude/models/model-ids-and-versions.md,2026-08-02
+model_guides,Models & pricing,Model cards,Resources,https://platform.claude.com/docs/en/resources/overview.md,2026-08-02
+model_guides,Models & pricing,Model deprecations,,https://platform.claude.com/docs/en/about-claude/model-deprecations.md,2026-08-02
+model_guides,Models & pricing,Models overview,,https://platform.claude.com/docs/en/about-claude/models/overview.md,2026-08-02
+model_guides,Models & pricing,Upgrade between model versions,Migration guide,https://platform.claude.com/docs/en/about-claude/models/migration-guide.md,2026-08-02
+model_guides,Models & pricing,What's new in Claude Opus 5,,https://platform.claude.com/docs/en/about-claude/models/whats-new-opus-5.md,2026-08-02
+model_guides,Models & pricing,What's new in Claude Sonnet 5,,https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5.md,2026-08-02
+skills_agents,Managed Agents,Agent Skills,Skills,https://platform.claude.com/docs/en/managed-agents/skills.md,2026-08-02
+skills_agents,Managed Agents,Agent setup,Define your agent,https://platform.claude.com/docs/en/managed-agents/agent-setup.md,2026-08-02
+skills_agents,Messages,Best practices,Skill authoring best practices,https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices.md,2026-08-02
+skills_agents,Managed Agents,Define outcomes,,https://platform.claude.com/docs/en/managed-agents/define-outcomes.md,2026-08-02
+skills_agents,Managed Agents,Multiagent orchestration,,https://platform.claude.com/docs/en/managed-agents/multiagent-orchestration.md,2026-08-02
+skills_agents,Claude API skill,Overview,Claude API skill,https://platform.claude.com/docs/en/agents-and-tools/agent-skills/claude-api-skill.md,2026-08-02
+skills_agents,Messages,Overview,Agent Skills,https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview.md,2026-08-02
+skills_agents,Messages,Quickstart,Get started with Agent Skills in the API,https://platform.claude.com/docs/en/agents-and-tools/agent-skills/quickstart.md,2026-08-02
+skills_agents,Managed Agents,Session event stream,,https://platform.claude.com/docs/en/managed-agents/events-and-streaming.md,2026-08-02
+skills_agents,Messages,Skills for enterprise,,https://platform.claude.com/docs/en/agents-and-tools/agent-skills/enterprise.md,2026-08-02
+skills_agents,Messages,Skills in the API,Using Agent Skills with the API,https://platform.claude.com/docs/en/build-with-claude/skills-guide.md,2026-08-02
+skills_agents,Managed Agents,Tools,,https://platform.claude.com/docs/en/managed-agents/tools.md,2026-08-02
+thinking_effort,Messages,Effort,,https://platform.claude.com/docs/en/build-with-claude/effort.md,2026-08-02
+thinking_effort,Messages,Extended thinking (legacy),Extended thinking,https://platform.claude.com/docs/en/build-with-claude/extended-thinking.md,2026-08-02
+thinking_effort,Messages,Fast mode (research preview),,https://platform.claude.com/docs/en/build-with-claude/fast-mode.md,2026-08-02
+thinking_effort,Messages,Overview,Thinking,https://platform.claude.com/docs/en/build-with-claude/thinking.md,2026-08-02
+thinking_effort,Messages,Steering and cost control,Steering thinking,https://platform.claude.com/docs/en/build-with-claude/thinking-steering-and-cost.md,2026-08-02
+thinking_effort,Messages,Task budgets (beta),Task budgets,https://platform.claude.com/docs/en/build-with-claude/task-budgets.md,2026-08-02
+thinking_effort,Messages,Tool and multi-turn workflows,Thinking in tool and multi-turn workflows,https://platform.claude.com/docs/en/build-with-claude/thinking-tool-workflows.md,2026-08-02
+thinking_effort,Messages,Troubleshooting,Troubleshooting thinking,https://platform.claude.com/docs/en/build-with-claude/thinking-troubleshooting.md,2026-08-02
+tools_output,Messages,Advisor tool,,https://platform.claude.com/docs/en/agents-and-tools/tool-use/advisor-tool.md,2026-08-02
+tools_output,Messages,Bash tool,,https://platform.claude.com/docs/en/agents-and-tools/tool-use/bash-tool.md,2026-08-02
+tools_output,Messages,Citations,,https://platform.claude.com/docs/en/build-with-claude/citations.md,2026-08-02
+tools_output,Messages,Code execution tool,,https://platform.claude.com/docs/en/agents-and-tools/tool-use/code-execution-tool.md,2026-08-02
+tools_output,Messages,Computer use tool,,https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool.md,2026-08-02
+tools_output,Messages,Coordinates and bounding boxes,,https://platform.claude.com/docs/en/build-with-claude/vision-coordinates.md,2026-08-02
+tools_output,Messages,Define tools,,https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools.md,2026-08-02
+tools_output,Messages,Files API,,https://platform.claude.com/docs/en/build-with-claude/files.md,2026-08-02
+tools_output,Messages,Fine-grained tool streaming,,https://platform.claude.com/docs/en/agents-and-tools/tool-use/fine-grained-tool-streaming.md,2026-08-02
+tools_output,Messages,Handle tool calls,,https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls.md,2026-08-02
+tools_output,Messages,How tool use works,,https://platform.claude.com/docs/en/agents-and-tools/tool-use/how-tool-use-works.md,2026-08-02
+tools_output,Messages,Overview,Tool use with Claude,https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview.md,2026-08-02
+tools_output,Messages,Overview,Vision,https://platform.claude.com/docs/en/build-with-claude/vision.md,2026-08-02
+tools_output,Messages,PDF support,,https://platform.claude.com/docs/en/build-with-claude/pdf-support.md,2026-08-02
+tools_output,Messages,Parallel tool use,,https://platform.claude.com/docs/en/agents-and-tools/tool-use/parallel-tool-use.md,2026-08-02
+tools_output,Messages,Programmatic tool calling,,https://platform.claude.com/docs/en/agents-and-tools/tool-use/programmatic-tool-calling.md,2026-08-02
+tools_output,Messages,Search results,,https://platform.claude.com/docs/en/build-with-claude/search-results.md,2026-08-02
+tools_output,Messages,Server tools,,https://platform.claude.com/docs/en/agents-and-tools/tool-use/server-tools.md,2026-08-02
+tools_output,Messages,Strict tool use,,https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use.md,2026-08-02
+tools_output,Messages,Structured outputs,,https://platform.claude.com/docs/en/build-with-claude/structured-outputs.md,2026-08-02
+tools_output,Messages,Text editor tool,,https://platform.claude.com/docs/en/agents-and-tools/tool-use/text-editor-tool.md,2026-08-02
+tools_output,Messages,Tool Runner (SDK),Tool runner (SDK),https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-runner.md,2026-08-02
+tools_output,Messages,Tool combinations,,https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-combinations.md,2026-08-02
+tools_output,Messages,Tool reference,,https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-reference.md,2026-08-02
+tools_output,Messages,Tool search tool,,https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool.md,2026-08-02
+tools_output,Messages,Tool use with prompt caching,,https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-use-with-prompt-caching.md,2026-08-02
+tools_output,Messages,Troubleshooting,Troubleshooting tool use,https://platform.claude.com/docs/en/agents-and-tools/tool-use/troubleshooting-tool-use.md,2026-08-02
+tools_output,Messages,Tutorial: Build a tool-using agent,,https://platform.claude.com/docs/en/agents-and-tools/tool-use/build-a-tool-using-agent.md,2026-08-02
+tools_output,Messages,Web fetch tool,,https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-fetch-tool.md,2026-08-02
+tools_output,Messages,Web search tool,,https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool.md,2026-08-02

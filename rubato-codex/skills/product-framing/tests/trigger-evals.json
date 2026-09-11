@@ -1,0 +1,50 @@
+[
+  {
+    "query": "이번 주말 해커톤 나가는데 아이디어 기획 같이 잡아줘",
+    "should_trigger": true
+  },
+  {
+    "query": "이 서비스 아이디어가 실제로 가치가 있는지 만들기 전에 검증하고 싶어",
+    "should_trigger": true
+  },
+  {
+    "query": "구현하다 보니 이걸 왜 만드는지 흐려졌어. 원래 뭘 해결하려던 거였지",
+    "should_trigger": true
+  },
+  {
+    "query": "PRD 쓰기 전에 누구를 위한 제품인지부터 정리하자",
+    "should_trigger": true
+  },
+  {
+    "query": "기존 대안 대비 우리 제품이 왜 나은지 설명이 안 돼서 프레임을 다시 잡고 싶어",
+    "should_trigger": true
+  },
+  {
+    "query": "주최사 API를 어떻게 엮어야 심사에서 피상적이라는 소리를 안 들을까",
+    "should_trigger": true
+  },
+  {
+    "query": "새 기능 착수 전에 가치 게이트 돌려줘",
+    "should_trigger": true
+  },
+  {
+    "query": "이 로그인 버그 고쳐줘",
+    "should_trigger": false
+  },
+  {
+    "query": "이미 확정된 스펙대로 결제 모듈 구현해줘",
+    "should_trigger": false
+  },
+  {
+    "query": "발표 자료 디자인 예쁘게 다듬어줘",
+    "should_trigger": false
+  },
+  {
+    "query": "해커톤 끝났는데 회고 정리해줘",
+    "should_trigger": false
+  },
+  {
+    "query": "이 라이브러리 최신 버전 API 시그니처 알려줘",
+    "should_trigger": false
+  }
+]

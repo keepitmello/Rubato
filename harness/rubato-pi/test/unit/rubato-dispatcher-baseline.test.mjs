@@ -97,6 +97,13 @@ test("auth, update, and build remain launcher-owned passthrough commands", (t) =
   }
 });
 
+test("restart reinstalls the release hub LaunchAgent instead of kickstarting a drifted job", (t) => {
+  const harness = dispatcherHarness(t);
+  const result = harness.run(["restart"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(harness.engineArgs().join("\n"), /rubato-hub-restart\.mjs$/);
+});
+
 test("remote update-guard runs before delegation and never delegates when blocked", (t) => {
   // 5f3393e4d took the live-session guard off legacy `update` (git pull plus a
   // hub kickstart must land while sessions run) and left it on the signed

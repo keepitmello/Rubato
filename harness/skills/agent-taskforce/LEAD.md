@@ -2,7 +2,7 @@
 
 Run the team like a small company. Protect the goal and cross-workstream decisions; let each owner keep a bounded outcome through investigation, implementation, local debugging, and local verification. Add structure only when it buys clearer ownership or better evidence.
 
-This skill states only what running a *team* adds. General prompting, effort selection, and context design belong to `claude-prompting-lab`; product-value framing belongs to `product-framing`; runtime commands belong to the runtime guides. (`references/07-source-map.md` is for revising the skill, not ordinary runs.)
+This skill covers choosing and running a *team*. General prompting, effort selection, and context design belong to `claude-prompting-lab`; product-value framing belongs to `product-framing`; runtime commands belong to the runtime guides. (`references/07-source-map.md` is for revising the skill, not ordinary runs.)
 
 ## 1. First decide whether a team is needed
 
@@ -23,27 +23,56 @@ Two upstream choices belong to the human operator.
 1. Whether this run uses `/product-framing`, an existing active frame, or no framing step.
 2. Which model leads.
 
-If the operator already chose them, preserve those choices. If either is missing and materially affects the run, make one concise recommendation and ask before staffing. Do not silently invoke framing or replace the lead model.
+If the operator already chose them, preserve those choices. If either is missing and materially affects the run, investigate what can be established and include one recommendation in the combined intent/roster proposal before staffing. Do not silently invoke framing or replace the lead model.
 
 - **Framing selected**: run or link the framing process before irreversible implementation. An active `FRAME_LOCK` remains the canonical source for product value, users, and outcome invariants.
 - **Framing skipped**: use the user's directive, settled spec, ADR, or other named authority. Do not recreate a miniature framing process inside the team skill.
-- **Pure execution work**: clear bugs, refactors, migrations, infrastructure work, and settled specs usually need only a lightweight execution mission.
+- **Pure execution work**: clear bugs, refactors, migrations, infrastructure work, and settled specs need no new product framing. Reuse their existing authority; keep durable intent and execution state only when continuity needs them.
 
 `references/04-framing-bridge.md` covers active-frame authority and conflicts. It offers recommendation signals, not permission to override the operator's choice.
 
-## 3. Report the roster, then form the team
+## Resolve intent before staffing
 
-Before spawning any teammate, read Skill(model-guide) (`~/.agents/skills/model-guide/SKILL.md`) and design the smallest useful roster. Report the proposal in the user's language:
+Read the sibling `work-intent` skill and its alignment guide. Reuse the authority for
+this outcome; a new team or worktree is not a new intent. Inspect the relevant repository,
+documents and available external sources to resolve discoverable gaps. Keep uncertain
+findings provisional. Decide local methods yourself and recommend the best-supported
+direction; material user choices belong in the combined proposal, not a rolling interview.
+Stop discovery once enough is known to choose direction and ownership. A bounded discovery
+helper may work under a draft within existing permissions; continuing owners may not.
 
-- framing: used, linked, or skipped
-- lead model
-- each owned outcome, proposed model, and one-sentence fit rationale
-- verifier model or `none`, with the reason to include or skip it
-- any planned parallel boundary that matters
+Draft only when no existing source serves the purpose. Show the result, preserved behavior,
+non-goals and completion evidence in the user's language together with the roster, then
+wait for explicit confirmation of both intent and roster. Cite the actual human instruction
+accepting that proposal, not a generic earlier request or silence. Refer to the proposal
+and accepted intent revision in the existing mission; do not copy the roster into intent.
+Follow `work-intent` for partial approval, accepted corrections and changed-scope decisions.
 
-Inspect only enough context to make a sound proposal, report it in one message, and form the team in the same turn. The report is a notice the user can veto, not a gate you wait behind: the user sees the roster before any teammate has produced work and can cut or restaff it at any point. Wait for explicit confirmation only when the roster commits something hard to take back (paid external runs, a model the user has restricted, a budget beyond the request's scale) or when the user has asked to approve teams in this project. Record the actual roster in the mission when a durable mission is warranted.
+Keep frame/spec authority and local owner autonomy intact. Carry the exact `intent_ref`
+and canonical workspace in briefs and task metadata. Run-specific staffing, approval
+references and integration belong in mission. Intent acceptance does not replace any
+independent model, frame, budget or delivery permission.
 
-Any later spawn that adds a new teammate or materially changes model, cost, independence, or responsibility gets the same brief report before it starts. Recreating the same teammate after a crashed session does not need a new design decision; report the recovery in status and preserve the reported boundary.
+## 3. Confirm intent and roster together, then form the team
+
+Read the active runtime adapter and Skill(model-guide), preserve the chosen lead and
+framing, and design the smallest useful roster from the discovery evidence. Use the
+sibling `work-intent/templates/approval-message.md` for a readable combined proposal.
+Name each model and its responsibility, with supported effort when material, but translate
+internal role names and mechanisms into their practical effect for this user.
+
+Present one combined proposal and wait for explicit confirmation of both intent and roster
+before spawning continuing owners. The confirmation may approve the named recommendation
+and team together. Generic earlier requests, silence or approval of only one part do not
+complete this gate. The same human reply can satisfy model/budget approval when those exact
+commitments were clearly presented and are within that human's authority; it grants no
+unpresented external action or delivery permission.
+
+Keep approved owners through corrections and re-verification without asking again.
+Recreating the same lost teammate with the same boundary/model/effort is recovery, not a
+new proposal. Material restaffing, scope or cost changes get a concise delta proposal and
+confirmation before affected work. Bounded discovery helpers and ordinary helpers inside
+approved authority need no new team ceremony; they are not a workaround for this gate.
 
 ## 4. Build the smallest valid team
 
@@ -54,7 +83,7 @@ Start from one `workstream-owner`, not from a standing org chart.
 - Two owners plus one verifier is a useful shape for complex cross-layer delivery, not a default for every task.
 - Retire roles when the phase or workstream ends.
 
-Roles are responsibility contracts, not permanent model identities. Each owner keeps its bounded outcome end to end; whether a follow-up task continues an existing session or starts fresh follows Skill(dispatching), and model choice follows Skill(model-guide). `references/08-model-allocation.md` keeps only the team-specific proposal format.
+Roles are responsibility contracts, not permanent model identities. Each owner keeps its bounded outcome end to end within the authorized task type; whether a follow-up task continues an existing session or starts fresh follows Skill(dispatching), and model choice follows the active runtime's policy above. `references/08-model-allocation.md` keeps only the team-specific proposal format.
 
 Spawn teammates so the role contract in `teammate/` is present from their first token; `runtimes/` says how the active harness does that. Give the actual outcome, boundary, authority, context, and evidence fresh in the spawn prompt. Do not paste this skill wholesale into a teammate.
 
@@ -101,9 +130,19 @@ Add hooks or permanent rules only for deterministic failures observed repeatedly
 
 ## What to report to the user
 
-Before spawn, report the roster in one message. During and after the run, translate internal jargon into the user's language and show only:
+Before spawn, present intent and roster in one readable proposal and obtain combined confirmation. During and after the run, translate internal jargon into the user's language and show only:
 
 - results that changed or facts that were confirmed
 - verification evidence and failed checks
 - significant decisions or remaining gaps
 - any material restaffing from the reported roster
+
+## Accept against the intent
+
+Before final acceptance, reread the current intent and any linked acceptance
+criteria. Compare actual artifacts and delivery with that revision, not only board
+completion. On a material intent change, pause affected work, record the decision
+and refresh all affected owners' references; keep older evidence tied to its old
+revision. Fulfill the intent only when accepted evidence supports it. Update existing
+permanent documentation instead of creating another final summary. Keep historical
+intent records separate from current-system documentation.

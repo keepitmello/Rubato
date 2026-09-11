@@ -1,0 +1,19 @@
+{
+  "name": "rubato-codex",
+  "version": "0.1.0",
+  "description": "Native Codex taskforce roles, workflows, and shared board tools.",
+  "repository": "https://github.com/keepitmello/Rubato",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Rubato Codex",
+    "shortDescription": "Native Codex taskforce orchestration",
+    "longDescription": "Adds reusable taskforce workflows and a local shared work board while keeping Codex native sessions, agents, messages, and continuation.",
+    "developerName": "Rubato",
+    "category": "Developer Tools",
+    "capabilities": ["Read", "Write"],
+    "defaultPrompt": [
+      "Use the taskforce workflow for this substantial multi-workstream task."
+    ]
+  }
+}
