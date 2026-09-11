@@ -2,7 +2,7 @@
 
 ## 기본 엔진 전환
 
-후보(stock Pi 0.85.1 + 33 features)는 완성됐다. 제품 런처는 `RUBATO_ENGINE=stock-pi|senpi`를 읽는다. 유효한 `~/.rubato-pi/stock-engine/rubato-install.json`이 있으면 기본은 stock-pi이고, 없거나 깨지면 senpi로 떨어지며 한 줄 알림을 낸다. 라이브 `~/.rubato-pi` 전환은 merge 후 리드가 아래 한 명령으로 한다.
+후보(stock Pi 0.85.1 + 33 features)는 완성됐고 **2026-09-11 13:47Z에 라이브 기본 실행기로 전환됐다**(`rubato/base` `615f6dd61`). 제품 런처는 `RUBATO_ENGINE=stock-pi|senpi`를 읽는다. 유효한 `~/.rubato-pi/stock-engine/rubato-install.json`이 있으면 기본은 stock-pi이고, 없거나 깨지면 senpi로 떨어지며 한 줄 알림을 낸다. 전환/재설치는 아래 한 명령이다(전제: `harness/pi-runtime`에 `npm ci --workspaces=false --ignore-scripts`가 돼 있어야 한다 — 없으면 `cmd-shim`을 못 찾는다). 전환 read-back: anthropic/claude-opus-5·xai/grok-4.6 실제 응답 성공, openai-codex는 디스크 refresh token이 stale이라 재로그인 필요(엔진 무관). 전환 기록 정본은 lab `case-studies/runtime-migration/2026-09-11-stock-pi-cutover-record.md`.
 
 ```sh
 cd harness/pi-runtime
