@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url"
 
 import { HUB_LABEL, HUB_PORT_MAX, HUB_PORT_MIN, SUPPORTED_BUN_VERSION, ZMX_COMMIT } from "./constants.mjs"
 import { fileMode, pathExists, readJson, redact, run, SECRET_VALUE, sha256 } from "./lib.mjs"
-import { assertBunVersion, assertNoFunnel, assertNodeVersion, listManagedZmxSessions, serveHasRubatoTarget, serveStatus, tailscaleIdentity, waitForHealth } from "./system.mjs"
+import { assertBunVersion, assertNoFunnel, assertNodeVersion, canonicalHubEntryPath, launchAgentNeedsRepair, listManagedZmxSessions, serveHasRubatoTarget, serveStatus, tailscaleIdentity, waitForHealth } from "./system.mjs"
 
 export async function doctor(paths, options = {}) {
   const runner = options.runner ?? run
@@ -49,6 +49,12 @@ export async function doctor(paths, options = {}) {
     const result = await runner("/bin/launchctl", ["print", `gui/${process.getuid()}/${HUB_LABEL}`], { check: false, timeoutMs: 5_000 })
     if (result.code !== 0) throw new Error("hub LaunchAgent is not loaded")
     return { loaded: true }
+  })
+  await check("launchd-plist", async () => {
+    const plist = await readFile(paths.plist, "utf8")
+    const entryPath = canonicalHubEntryPath(paths)
+    if (launchAgentNeedsRepair(plist, { entryPath })) throw new Error("hub LaunchAgent does not run the installed release hub")
+    return { entryPath }
   })
   await check("localhost-health", async () => {
     if (!host) host = await readJson(paths.host)

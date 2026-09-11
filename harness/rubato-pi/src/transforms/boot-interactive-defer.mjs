@@ -4,6 +4,10 @@ export function isBootInteractiveModeUrl(url) {
   return url.includes("@code-yeongyu/senpi/dist/modes/interactive/interactive-mode.js");
 }
 
+export function isBootStartupIndicatorUrl(url) {
+  return url.includes("@code-yeongyu/senpi/dist/cli/startup-loading-indicator.js");
+}
+
 export function deferredExtensionsHref() {
   return new URL("../deferred-extensions.mjs", import.meta.url).href;
 }
@@ -200,4 +204,14 @@ ${DEFERRED_ASSIGNMENT}`,
     "interactive defer rebind activate",
   );
   return next;
+}
+
+/** Trust / first-run prompts must not sit under the boot splash. */
+export function injectStartupPromptReleasesBootChrome(source) {
+  return replaceOnce(
+    source,
+    "        indicator.pause();\n        try {\n            return await prompt(...args);\n",
+    `        indicator.pause();\n        try { (await import(${JSON.stringify(bootChromeHref())})).releaseBootChrome(); } catch {}\n        try {\n            return await prompt(...args);\n`,
+    "startup prompt releases boot chrome",
+  );
 }

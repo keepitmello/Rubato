@@ -1,0 +1,26 @@
+{
+  "name": "taskforce",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A cooperative shared work board for Codex native agent teams.",
+  "bin": {
+    "taskforce": "src/cli.js",
+    "taskforce-mcp": "src/mcp-server.js"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check:dist": "node scripts/build.mjs --check",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.9"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}

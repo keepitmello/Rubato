@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 1,
+  "managed": [
+    {
+      "id": "outpost-cli",
+      "kind": "managed-link",
+      "required": true,
+      "source": "skills/outpost/scripts/outpost",
+      "targetEnv": "OUTPOST_BIN_DIR",
+      "defaultTarget": "rubato-codex/bin/outpost",
+      "skills": ["outpost"],
+      "summary": "Expose the bundled Outpost launcher without replacing another installation."
+    },
+    {
+      "id": "public-browser-tools",
+      "kind": "npm-prefix",
+      "required": true,
+      "packages": ["agent-browser@0.33.2", "chrome-devtools-mcp@1.6.0"],
+      "allowScripts": ["agent-browser@0.33.2"],
+      "binaries": ["agent-browser", "chrome-devtools"],
+      "skills": ["browser-cli"],
+      "summary": "Install public browser CLIs into the Codex-managed dependency prefix."
+    },
+    {
+      "id": "insane-search-python",
+      "kind": "python-venv",
+      "required": true,
+      "packages": ["curl_cffi==0.15.0", "beautifulsoup4==4.15.0", "PyYAML==6.0.3", "pypdf==6.7.0", "markdownify==1.2.3"],
+      "binary": "insane-search",
+      "skills": ["insane-search"],
+      "summary": "Create an isolated Python environment and launcher for the bundled search engine."
+    },
+    {
+      "id": "aside-app",
+      "kind": "brew-cask",
+      "cask": "aside",
+      "platforms": ["darwin"],
+      "skills": ["aside-browser", "browser-cli", "outpost"],
+      "summary": "Install the signed Aside app through its public Homebrew cask when Homebrew is available."
+    }
+  ],
+  "readiness": [
+    {
+      "id": "opencodex",
+      "kind": "command",
+      "commands": ["ocx"],
+      "skills": ["model-guide"],
+      "setup": "installer",
+      "summary": "OpenCodex provider registration and authentication are handled separately by the installer."
+    },
+    {
+      "id": "aside",
+      "kind": "command",
+      "commands": ["aside"],
+      "skills": ["aside-browser", "browser-cli", "outpost"],
+      "setup": "interactive",
+      "summary": "Install Aside, sign in, and initialize an account before browser or Outpost use."
+    },
+    {
+      "id": "outpost-python",
+      "kind": "command",
+      "commands": ["python3"],
+      "skills": ["outpost"],
+      "setup": "system",
+      "summary": "The bundled Outpost launcher uses Python 3 standard-library modules."
+    },
+    {
+      "id": "browser-fallback",
+      "kind": "commands-all",
+      "commands": ["agent-browser", "codex-cloak-cdp"],
+      "skills": ["browser-cli", "outpost"],
+      "setup": "manual-optional",
+      "summary": "The shared Cloak browser is an explicit fallback; installation and browser lifecycle stay manual."
+    },
+    {
+      "id": "skills-cli",
+      "kind": "command",
+      "commands": ["npx"],
+      "skills": ["find-skills"],
+      "setup": "on-demand-network",
+      "summary": "The Skills CLI is intentionally invoked through npx only after the user chooses a package action."
+    },
+    {
+      "id": "insane-search-optional-python",
+      "kind": "python-packages",
+      "commands": ["python3"],
+      "packages": ["resiliparse", "pdfplumber", "nodriver", "patchright"],
+      "skills": ["insane-search"],
+      "setup": "manual-optional",
+      "summary": "Main-content extraction and stealth-browser transports degrade when these optional Python packages are absent."
+    },
+    {
+      "id": "insane-search-renderers",
+      "kind": "local-node-project",
+      "commands": ["npm"],
+      "source": "skills/insane-search/engine/templates/package.json",
+      "skills": ["insane-search"],
+      "setup": "manual-optional",
+      "summary": "Playwright/Patchright renderers require a local npm install and browser download only when that fallback is selected."
+    },
+    {
+      "id": "macos-computer-use",
+      "kind": "commands-any",
+      "commands": ["cua-driver", "peekaboo"],
+      "platforms": ["darwin"],
+      "skills": ["macos-computer-use"],
+      "setup": "os-permissions",
+      "summary": "A macOS backend plus Accessibility and Screen Recording permission must be prepared by the user."
+    },
+    {
+      "id": "imagen-proxy",
+      "kind": "command",
+      "commands": ["gti"],
+      "skills": ["imagen-proxy"],
+      "setup": "private-manual",
+      "summary": "The private image proxy and any paid WAN/FAL credentials are not distributed by this bundle."
+    },
+    {
+      "id": "codex-peer",
+      "kind": "command",
+      "commands": ["codex-peer"],
+      "skills": ["wy-server"],
+      "setup": "host-specific",
+      "summary": "Remote host registration, SSH trust, and the codex-peer installation remain machine-specific."
+    },
+    {
+      "id": "rubato-tui-runtime",
+      "kind": "source-tree",
+      "skills": ["rubato-tui-verify"],
+      "setup": "rubato-only",
+      "summary": "This conditional reference requires a Rubato checkout and Senpi build; it is not a Codex runtime replacement."
+    }
+  ],
+  "skillsWithoutExternalSetup": [
+    "agent-taskforce",
+    "claude-prompting-lab",
+    "codex-discusser",
+    "codex-reviewer",
+    "dispatched",
+    "dispatching",
+    "frontend-ux-router",
+    "humanize-korean",
+    "keep-simple",
+    "laws",
+    "metaframe",
+    "product-framing",
+    "product-reframing",
+    "return",
+    "supabase-postgres-best-practices",
+    "vercel-react-best-practices",
+    "wrapping-sessions"
+  ]
+}
