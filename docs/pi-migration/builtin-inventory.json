@@ -12,326 +12,491 @@
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/loop-guard/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "candidate-has",
+      "verdict": "candidate-has",
+      "evidence": "tool-guards: bootstrap.mjs name rubato-loop-guard -> loopGuardExtension; features/tool-guards/tool-guards.test.mjs (six identical attempts then veto)."
     },
     {
       "id": "hooks",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/hooks/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "candidate-has",
+      "verdict": "candidate-has",
+      "evidence": "tool-policy: bootstrap.mjs name rubato-hooks -> createHooksExtension; features/tool-policy/tool-policy.test.mjs (Pre/PostToolUse mutation and exit-2 blocking)."
     },
     {
       "id": "permission-system",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/permission-system/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "candidate-has",
+      "verdict": "candidate-has",
+      "evidence": "tool-policy: bootstrap.mjs name rubato-permission -> createPermissionExtension; features/tool-policy/tool-policy.test.mjs (permission presets deny without UI)."
     },
     {
       "id": "gpt-apply-patch",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/gpt-apply-patch/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "candidate-has",
+      "verdict": "candidate-has",
+      "evidence": "tool-guards: bootstrap.mjs name rubato-gpt-apply-patch -> registerApplyPatchExtension; features/tool-guards/tool-guards.test.mjs (registered apply_patch edits files)."
     },
     {
       "id": "imagegen",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/imagegen/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "candidate-has",
+      "verdict": "candidate-has",
+      "evidence": "media-tools: features/media-tools/src/imagegen + src/index.mjs; features/media-tools/media-tools.test.mjs (client generate_image against local fixtures)."
     },
     {
       "id": "openai-image-gen",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/openai-image-gen/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "candidate-has",
+      "verdict": "candidate-has",
+      "evidence": "media-tools registers src/openai-image-gen/* (index.mjs + media-tools.test.mjs closure). Native Responses parser gap remains per docs/pi-migration/media-tools.md; registration is present."
     },
     {
       "id": "prompt-preset",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/prompt-preset/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "needed-missing",
+      "verdict": "needed-missing",
+      "evidence": "Default-on Senpi model prompt builders (dist/core/extensions/builtin/prompt-preset/). Product does not disable it. docs/pi-migration/prompt-rules.md marks it pending: stock 0.85.1 does not consume Senpi model-select prompt return. Search of harness/rubato-pi found no owned port.",
+      "size": "large",
+      "productUse": "Live Senpi sessions get model-specific system prompts from this builtin.",
+      "dependencies": "prompt-rules (do not patch that dir), stock model-select prompt adapter, model corpus",
+      "estimatedSize": ">1 day plus a narrow stock adapter; not a copy of the preset tree"
     },
     {
       "id": "todowrite",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/todotools/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "candidate-has",
+      "verdict": "candidate-has",
+      "evidence": "prompt-rules: createTodoExtension in features/prompt-rules/index.mjs; features/prompt-rules/prompt-rules.test.mjs (todo persists senpi.todo-state after reload)."
     },
     {
       "id": "redraws",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/redraws.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "needed-missing",
+      "verdict": "needed-missing",
+      "evidence": "User command /tui (redraw stats). No stock/candidate equivalent. Debug-only; still a user command so not unused.",
+      "size": "small",
+      "productUse": "TUI redraw diagnostics.",
+      "dependencies": "pi-tui",
+      "estimatedSize": "small debug; recommend skip unless requested"
     },
     {
       "id": "anthropic-web-search",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/anthropic-web-search/index.js",
       "defaultPolicy": "disabled-by-rubato",
-      "status": "pending-contract-and-parity"
+      "status": "rubato-disabled",
+      "verdict": "rubato-disabled",
+      "evidence": "harness/rubato-pi/src/session-defaults.mjs DISABLED_WEB_SEARCH_EXTENSIONS + DISABLED_BUILTIN_EXTENSIONS; session-defaults.test.mjs asserts anthropic-web-search is disabled."
     },
     {
       "id": "anthropic-bash",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/anthropic-bash/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "unused",
+      "verdict": "unused",
+      "evidence": "PI_ANTHROPIC_BASH default-off. No harness/rubato-pi or packages enable path. docs/pi-migration/media-tools.md: stock Anthropic parser lacks server_tool_use, so payload inject is not parity."
     },
     {
       "id": "openai-web-search",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/openai-web-search/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "candidate-has",
+      "verdict": "candidate-has",
+      "evidence": "media-tools: features/media-tools/src/openai-web-search/index.js registered from src/index.mjs; media-tools.test.mjs closure lists that file."
     },
     {
       "id": "service-tier",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/service-tier.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "candidate-has",
+      "verdict": "candidate-has",
+      "evidence": "features/service-tier + bootstrap.mjs service-tier factory; features/service-tier/service-tier.test.mjs (stock AgentSession runs /fast)."
     },
     {
       "id": "reasoning",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/reasoning/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "stock-pi",
+      "verdict": "stock-pi",
+      "evidence": "User commands /reasoning and /efforts. Stock Pi 0.85.1 provides equivalent /thinking (set thinking level): node_modules/@earendil-works/pi-coding-agent/dist/core/slash-commands.js. Candidate has no extra reasoning extension."
     },
     {
       "id": "model-fallback",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/model-fallback/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "needed-missing",
+      "verdict": "needed-missing",
+      "evidence": "User command /fallback. No stock/candidate equivalent. Product disables automatic retry.modelFallback in session-defaults.mjs; that is not a drop of the command.",
+      "size": "small",
+      "productUse": "View/manage fallback chains.",
+      "dependencies": "settings retry.modelFallback (currently false)",
+      "estimatedSize": "small command; confirm whether to keep given automatic fallback is off"
     },
     {
       "id": "recommended-models",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/recommended-models/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "unused",
+      "verdict": "unused",
+      "evidence": "No harness/rubato-pi or packages path to recommended-models. Auto-switch only for provider-default/first-available; Rubato writes defaultProvider/defaultModel in settings.json so provenance is settings."
     },
     {
       "id": "bash-timeout",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/bash-timeout/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "candidate-has",
+      "verdict": "candidate-has",
+      "evidence": "tool-policy: bootstrap.mjs name rubato-bash-timeout -> createBashTimeoutExtension; features/tool-policy/tool-policy.test.mjs (bash timeout mutates missing values)."
     },
     {
       "id": "terminal",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/terminal/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "candidate-has",
+      "verdict": "candidate-has",
+      "evidence": "features/terminal + bootstrap.mjs terminal factory; features/terminal/terminal.test.mjs and terminal-native.test.mjs."
     },
     {
       "id": "tool-pair-guard",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/tool-pair-guard/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "candidate-has",
+      "verdict": "candidate-has",
+      "evidence": "tool-guards: bootstrap.mjs name rubato-tool-pair-guard -> toolPairGuardExtension; features/tool-guards/tool-guards.test.mjs (sanitizers preserve balanced payload identity)."
     },
     {
       "id": "compaction",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/compaction/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "needed-missing",
+      "verdict": "needed-missing",
+      "evidence": "Product transforms Senpi compaction builtin: harness/rubato-pi/src/transforms/core-compaction.mjs, core-compaction-policy.mjs (url .../builtin/compaction/policy.js and index.js), plus prune/utils/speculative. Candidate context-window is notes-aware and disables stock auto compaction (context-window.test.mjs); it is not a port of idle/openai-remote/circuit-breaker.",
+      "size": "large",
+      "productUse": "Idle/speculative/policy compaction and per-model thresholds in live Senpi sessions.",
+      "dependencies": "context-window/context-notes already exist (do not patch those dirs); Senpi compaction overlay is a separate runtime",
+      "estimatedSize": ">1 day; do not treat context-window as this builtin"
     },
     {
       "id": "history-search",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/history-search/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "needed-missing",
+      "verdict": "needed-missing",
+      "evidence": "User command /history. Stock /resume (pi-coding-agent/dist/core/slash-commands.js) and candidate session-picker (--resume TUI) are not a history search overlay.",
+      "size": "large",
+      "productUse": "Search past sessions from TUI.",
+      "dependencies": "session-picker is a different surface (do not patch that dir)",
+      "estimatedSize": ">1 day TUI overlay"
     },
     {
       "id": "help",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/help/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "needed-missing",
+      "verdict": "needed-missing",
+      "evidence": "User command /help overlay. Stock /hotkeys (dist/core/slash-commands.js) is keybinding list, not this help panel. Candidate has no /help.",
+      "size": "medium",
+      "productUse": "Show usage, keybindings, and commands.",
+      "dependencies": "stock TUI",
+      "estimatedSize": "medium TUI"
     },
     {
       "id": "import-repro",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/import-repro.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "needed-missing",
+      "verdict": "needed-missing",
+      "evidence": "User command /ir (pi.dev/CI gist import). No stock/candidate equivalent.",
+      "size": "small",
+      "productUse": "Import upstream Pi issue-analysis sessions.",
+      "dependencies": "none",
+      "estimatedSize": "small; upstream-Pi workflow, recommend skip unless requested"
     },
     {
       "id": "websearch",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/websearch/index.js",
       "defaultPolicy": "disabled-by-rubato",
-      "status": "pending-contract-and-parity"
+      "status": "rubato-disabled",
+      "verdict": "rubato-disabled",
+      "evidence": "harness/rubato-pi/src/session-defaults.mjs DISABLED_WEB_SEARCH_EXTENSIONS; session-defaults.test.mjs asserts websearch is disabled."
     },
     {
       "id": "webfetch",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/webfetch/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "candidate-has",
+      "verdict": "candidate-has",
+      "evidence": "media-tools webfetchExtension; features/media-tools/media-tools.test.mjs (staged SDK executes webfetch)."
     },
     {
       "id": "video-in",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/video-in/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "needed-missing",
+      "verdict": "needed-missing",
+      "evidence": "Product uses Senpi video-in: harness/rubato-pi/src/transforms/core-tool-surface.mjs isModelGatedMediaUrl endsWith /video-in/index.js; tool-surface.test.mjs loads videoInExtension and read_video. Candidate media-tools has no video-in (docs/pi-migration/media-tools.md: stock Model.input and catalog lack video). Existing media-tools dir is not owned here.",
+      "size": "large",
+      "productUse": "Model-gated read_video for video-capable models (kimi k3 in Senpi).",
+      "dependencies": "stock Model.input video modality + catalog metadata; media-tools owner if folded there",
+      "estimatedSize": ">1 day because it needs a Pi type/catalog change, not a tool copy"
     },
     {
       "id": "look-at",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/look-at/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "candidate-has",
+      "verdict": "candidate-has",
+      "evidence": "media-tools lookAtExtension; features/media-tools/media-tools.test.mjs (staged SDK executes look_at)."
     },
     {
       "id": "nested-agents-md",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/nested-agents-md/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "candidate-has",
+      "verdict": "candidate-has",
+      "evidence": "prompt-rules nestedAgentsBlocks in features/prompt-rules/instructions.mjs; prompt-rules.test.mjs (nested AGENTS.md on stock read)."
     },
     {
       "id": "rules",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/rules/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "candidate-has",
+      "verdict": "candidate-has",
+      "evidence": "prompt-rules instructions.mjs /rules and /reload-rules; prompt-rules.test.mjs (static rule + matching dynamic rule)."
     },
     {
       "id": "goal",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/goal/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "needed-missing",
+      "verdict": "needed-missing",
+      "evidence": "Tracked product path: harness/rubato-pi/src/codemode/index.ts (comment+session_start: goal builtin clears per-session counts; codemode re-publishes wake snapshot). /goal is a default-on Senpi user command (not in DISABLED_BUILTIN_EXTENSIONS). Do not cite untracked core-prompt-noise.mjs / prompt-noise.test.mjs.",
+      "size": "large",
+      "productUse": "Persistent /goal command and tools in live Senpi sessions; codemode coordinates wake-source counts with the builtin.",
+      "dependencies": "prompt-rules todo; session persistence; A8 must not patch frozen untracked prompt-noise files",
+      "estimatedSize": ">1 day (store, continuation, tools, reload reengagement)"
     },
     {
       "id": "loop",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/loop/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "needed-missing",
+      "verdict": "needed-missing",
+      "evidence": "User command /loop (scheduler). Distinct from loop-guard. No stock/candidate equivalent.",
+      "size": "large",
+      "productUse": "Scheduled ticks while a session is open.",
+      "dependencies": "session store, timers; not tool-guards",
+      "estimatedSize": ">1 day"
     },
     {
       "id": "cache-keepalive",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/cache-keepalive/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "unused",
+      "verdict": "unused",
+      "evidence": "Opt-in promptCache.keepAlive.enabled. Product session-defaults.mjs preserves user keepAlive subkeys but does not enable the builtin. Search: no builtin/cache-keepalive transform."
     },
     {
       "id": "ttsr",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/ttsr/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "needed-missing",
+      "verdict": "needed-missing",
+      "evidence": "User command /ttsr. No stock/candidate equivalent.",
+      "size": "large",
+      "productUse": "Stream-watch / nudge rules.",
+      "dependencies": "TUI + rule discovery",
+      "estimatedSize": ">1 day"
     },
     {
       "id": "btw",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/btw/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "needed-missing",
+      "verdict": "needed-missing",
+      "evidence": "User command /btw (side query widget). No stock/candidate equivalent.",
+      "size": "medium",
+      "productUse": "Side query without steering the main turn.",
+      "dependencies": "TUI widget",
+      "estimatedSize": "medium TUI"
     },
     {
       "id": "account",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/account/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "candidate-has",
+      "verdict": "candidate-has",
+      "evidence": "providers/auth-pool: features/providers/extension.mjs registerAccountCommand; features/providers/auth-pool/accounts.mjs registers /account; features/providers/auth-pool.test.mjs asserts commands.includes(\"account\"). CANDIDATE_FEATURE_NAMES includes providers."
     },
     {
       "id": "gpt-account",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/gpt-account.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "needed-missing",
+      "verdict": "needed-missing",
+      "evidence": "User command /gpt-account (Senpi Codex OAuth add/remove/pin). Stock Pi has /login/logout only (dist/core/slash-commands.js), not this command. Candidate providers import openai-codex credentials (features/providers/src/credential-import.mjs IMPORTABLE_PROVIDER_IDS) but do not register /gpt-account. Pair with A6; providers dir is A6-owned.",
+      "size": "medium",
+      "productUse": "Interactive Codex account add/pin/remove beside A6 legacy auth import.",
+      "dependencies": "A6 features/providers (auth-pool, credential-import); do not patch that dir from A8",
+      "estimatedSize": "medium; Codex OAuth UX on top of A6 import"
     },
     {
       "id": "claude-sdk-oauth",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/claude-sdk-oauth/index.js",
       "defaultPolicy": "disabled-by-rubato",
-      "status": "pending-contract-and-parity"
+      "status": "rubato-disabled",
+      "verdict": "rubato-disabled",
+      "evidence": "harness/rubato-pi/src/session-defaults.mjs DISABLED_OAUTH_EXTENSIONS; session-defaults.test.mjs asserts claude-sdk-oauth is disabled."
     },
     {
       "id": "cursor-cli-oauth",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/cursor-cli-oauth/index.js",
       "defaultPolicy": "disabled-by-rubato",
-      "status": "pending-contract-and-parity"
+      "status": "rubato-disabled",
+      "verdict": "rubato-disabled",
+      "evidence": "harness/rubato-pi/src/session-defaults.mjs DISABLED_OAUTH_EXTENSIONS (cursor-agent catalog must not mask Antigravity image models); session-defaults.test.mjs."
     },
     {
       "id": "config-reload",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/config-reload/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "needed-missing",
+      "verdict": "needed-missing",
+      "evidence": "Product patches Senpi watcher: harness/rubato-pi/src/transforms/core-routine-settings.mjs targets .../builtin/config-reload/routine-settings.js; agent-extensions.mjs comments that config-reload treats bannerless writes as reloads. Candidate reload feature is session reload veto (features/reload), not this fs watcher.",
+      "size": "large",
+      "productUse": "Auto-reload settings/extensions on disk change, with routine-settings filtering.",
+      "dependencies": "settings-manager, extension loader; do not conflate with features/reload",
+      "estimatedSize": ">1 day (watch engine, veto/deferral, shim filter)"
     },
     {
       "id": "tool-search",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/tool-search/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "candidate-has",
+      "verdict": "candidate-has",
+      "evidence": "features/tool-search + bootstrap.mjs tool-search factory; features/tool-search/tool-search.test.mjs."
     },
     {
       "id": "mcp",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/mcp/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "candidate-has",
+      "verdict": "candidate-has",
+      "evidence": "features/mcp + bootstrap.mjs mcp factory; features/mcp/mcp.test.mjs."
     },
     {
       "id": "codemode",
       "registration": "bundled-package",
       "source": "@code-yeongyu/senpi-codemode",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "pending-contract-and-parity"
+      "status": "candidate-has",
+      "verdict": "candidate-has",
+      "evidence": "features/codemode + bootstrap.mjs codemode factory; features/codemode/codemode.test.mjs and codemode-interpreters.test.mjs."
     },
     {
       "id": "diff",
       "registration": "generated-global-extension",
       "source": "dist/core/extensions/builtin/diff.js",
       "defaultPolicy": "generated-subject-to-extension-selection",
-      "status": "pending-contract-and-parity"
+      "status": "needed-missing",
+      "verdict": "needed-missing",
+      "evidence": "User command /diff (git status + VS Code). No stock slash equivalent (dist/core/slash-commands.js). Candidate has no /diff.",
+      "size": "medium",
+      "productUse": "Inspect git changes from TUI.",
+      "dependencies": "interactive TUI / VS Code",
+      "estimatedSize": "medium TUI"
     },
     {
       "id": "files",
       "registration": "generated-global-extension",
       "source": "dist/core/extensions/builtin/files.js",
       "defaultPolicy": "generated-subject-to-extension-selection",
-      "status": "pending-contract-and-parity"
+      "status": "needed-missing",
+      "verdict": "needed-missing",
+      "evidence": "User command /files (session file list + VS Code). No stock slash equivalent. Candidate has no /files.",
+      "size": "medium",
+      "productUse": "Open files touched this session.",
+      "dependencies": "interactive TUI / VS Code",
+      "estimatedSize": "medium TUI"
     },
     {
       "id": "prompt-url-widget",
       "registration": "generated-global-extension",
       "source": "dist/core/extensions/builtin/prompt-url-widget.js",
       "defaultPolicy": "generated-subject-to-extension-selection",
-      "status": "pending-contract-and-parity"
+      "status": "unused",
+      "verdict": "unused",
+      "evidence": "Senpi generated-global PR/issue widget. Mentioned only in agent-extensions.mjs comment; not in OWNED_AGENT_EXTENSIONS. No other product path."
     },
     {
       "id": "tps",
       "registration": "generated-global-extension",
       "source": "dist/core/extensions/builtin/tps.js",
       "defaultPolicy": "generated-subject-to-extension-selection",
-      "status": "pending-contract-and-parity"
+      "status": "unused",
+      "verdict": "unused",
+      "evidence": "Product tps.js is a silent occupancy shim (harness/rubato-pi/src/extensions/tps.mjs installTps is no-op) so Senpi TPS notices never return. Stock Pi 0.85.1 has no tps registration. The Senpi notice behavior is not used."
     }
   ],
   "baseline": {
     "name": "@code-yeongyu/senpi",
     "version": "2026.9.4-3"
-  }
+  },
+  "classifiedAt": "2026-09-11",
+  "verdictCounts": {
+    "stock-pi": 1,
+    "candidate-has": 20,
+    "rubato-disabled": 4,
+    "needed-missing": 16,
+    "unused": 5
+  },
+  "verdictRuleUserSlash": "User-invoked slash commands are not unused merely because product code does not call them. Rejudge vs stock Pi 0.85.1 equivalent command, candidate feature, else needed-missing."
 }

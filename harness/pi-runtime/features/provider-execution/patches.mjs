@@ -197,6 +197,13 @@ export function patchCodingAgentSdk(source) {
                         throw new Error("provider-execution session is not initialized");
                     return session.executeTool(toolName, params, executionOptions);
                 },
+                providerExecCwd: cwd,
+                providerExecAgentDir: agentDir,
+                providerExecLineageId: () => {
+                    if (!session)
+                        throw new Error("provider-execution session is not initialized");
+                    return session.sessionId;
+                },
                 transformHeaders: async (requestHeaders) => {`,
     "request-local-executor",
   );
@@ -205,6 +212,36 @@ export function patchCodingAgentSdk(source) {
     `    const session = new AgentSession({`,
     `    session = new AgentSession({`,
     "session-assignment",
+  );
+}
+
+export function patchExtensionToolResult(source) {
+  let next = replaceOnce(
+    source,
+    `                    if (handlerResult.usage !== undefined) {\n                        currentEvent.usage = handlerResult.usage;\n                        modified = true;\n                    }`,
+    `                    if (handlerResult.usage !== undefined) {\n                        currentEvent.usage = handlerResult.usage;\n                        modified = true;\n                    }\n                    if (handlerResult.addedToolNames !== undefined) {\n                        currentEvent.addedToolNames = handlerResult.addedToolNames;\n                        modified = true;\n                    }`,
+    "emit-added-tool-names",
+  );
+  return replaceOnce(
+    next,
+    `        return {\n            content: currentEvent.content,\n            details: currentEvent.details,\n            isError: currentEvent.isError,\n            usage: currentEvent.usage,\n        };`,
+    `        return {\n            content: currentEvent.content,\n            details: currentEvent.details,\n            isError: currentEvent.isError,\n            usage: currentEvent.usage,\n            addedToolNames: currentEvent.addedToolNames,\n        };`,
+    "return-added-tool-names",
+  );
+}
+
+export function patchAgentSessionAfterToolCall(source) {
+  let next = replaceOnce(
+    source,
+    `                    usage: result.usage,\n                })`,
+    `                    usage: result.usage,\n                    addedToolNames: result.addedToolNames,\n                })`,
+    "emit-session-added-tool-names",
+  );
+  return replaceOnce(
+    next,
+    `            return {\n                content: normalizedContent,\n                details: hookResult?.details,\n                isError: hookResult?.isError ?? isError,\n                usage: hookResult?.usage,\n            };`,
+    `            return {\n                content: normalizedContent,\n                details: hookResult?.details,\n                isError: hookResult?.isError ?? isError,\n                usage: hookResult?.usage,\n                addedToolNames: hookResult?.addedToolNames ?? result.addedToolNames,\n            };`,
+    "return-session-added-tool-names",
   );
 }
 
@@ -226,6 +263,14 @@ export const files = Object.freeze([
     fileURLToPath(new URL("./cursor-exec-bridge.mjs", import.meta.url)),
   ),
   file(
+    "dist/rubato-features/provider-execution/cursor-exec-journal.mjs",
+    fileURLToPath(new URL("./cursor-exec-journal.mjs", import.meta.url)),
+  ),
+  file(
+    "dist/rubato-features/provider-execution/cursor-host-mutation.mjs",
+    fileURLToPath(new URL("./cursor-host-mutation.mjs", import.meta.url)),
+  ),
+  file(
     "dist/rubato-features/provider-execution/THIRD_PARTY_NOTICES.md",
     fileURLToPath(new URL("./THIRD_PARTY_NOTICES.md", import.meta.url)),
   ),
@@ -239,6 +284,22 @@ export const patches = Object.freeze([
     path: "dist/core/sdk.js",
     preimageSha256: "6969bd56ba8e1628cd033bb15cb15fe38299f00b5ad84f4f8ef37a33a98681c9",
     apply: patchCodingAgentSdk,
+  }),
+  Object.freeze({
+    id: "provider-execution:extension-tool-result",
+    packageName: CODING_AGENT_PACKAGE_NAME,
+    version: PACKAGE_VERSION,
+    path: "dist/core/extensions/runner.js",
+    preimageSha256: "0de12ed1275e02595f92476eec3f61ae1f2e54fd2225ced721ddc90af58a5e61",
+    apply: patchExtensionToolResult,
+  }),
+  Object.freeze({
+    id: "provider-execution:session-after-tool-call",
+    packageName: CODING_AGENT_PACKAGE_NAME,
+    version: PACKAGE_VERSION,
+    path: "dist/core/agent-session.js",
+    preimageSha256: "fb8a3981c20c8c0bbd42231b1c99a10335fb3858b659056b341954de9cfa467f",
+    apply: patchAgentSessionAfterToolCall,
   }),
   Object.freeze({
     id: "provider-execution:agent-loop",

@@ -1,5 +1,8 @@
 import { createCursorExecBridge } from "./cursor-exec-bridge.mjs";
 
+export { createCursorExecJournal, cursorExecJournalPath } from "./cursor-exec-journal.mjs";
+export { resetCursorExecBridgeState } from "./cursor-exec-bridge.mjs";
+
 async function loadStagedCursorProvider(options) {
   const module = await import("../providers/src/cursor-route.mjs");
   return module.cursorDirectProvider(options);
@@ -19,6 +22,9 @@ function wrapStream(source) {
       return createCursorExecBridge({
         executeTool: options.providerExecuteTool,
         signal: options.signal,
+        cwd: options.providerExecCwd,
+        agentDir: options.providerExecAgentDir,
+        getLineageId: options.providerExecLineageId,
         onStart: options.onProviderToolExecutionStart,
         onUpdate: options.onProviderToolExecutionUpdate,
         onEnd: options.onProviderToolExecutionEnd,
