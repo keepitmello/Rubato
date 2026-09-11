@@ -61,9 +61,10 @@ goes to the same subagent as a follow-up, for the reason the lead keeps an owner
 corrections — it already holds the files and the refuted premises. A new subagent is
 for a different problem, a cold review, or one stuck on a wrong idea.
 
-The default way a teammate executes is to send independent slices out in parallel, up to
-the point where splitting costs more than it saves, and to keep diagnosis, integration,
-and anything with interpretation room. Two reasons. A teammate's context is the only
+A teammate delegates by cost, not by count: a slice goes out when running it in the
+teammate's own context would cost more than its brief and integration; slices that pass go
+out together, the rest stay. Diagnosis, integration, and anything with interpretation room
+stay with the teammate. Two reasons. A teammate's context is the only
 place its outcome is understood end to end, so transcript-heavy work goes out and
 judgment stays in. And the lead must not become the relay for a teammate's local
 delegation: if an owner had to route every slice through the lead, the seat that sees

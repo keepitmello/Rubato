@@ -118,7 +118,8 @@ the lead's workers. The runtime may spawn them as children of the root; that is
 parentage, not a worker role. A delegated owner or verifier follows its assigned
 instructions instead of this root-only lead section. Inherited conversation does
 not promote it to lead and does not make it the lead's subagent. It uses the same
-native spawn surface as the lead to run independent slices as its own subagents.
+native spawn surface as the lead for its own subagents, delegating where that costs
+less than its own context.
 If a native role was not loaded, use the matching bundled taskforce role named in
 the brief. A subagent sits under whoever spawned it, lead or teammate, is not on
 the team roster, and uses the receiving contract without taking over the workstream.

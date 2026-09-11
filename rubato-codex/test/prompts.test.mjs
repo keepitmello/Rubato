@@ -38,7 +38,7 @@ test('Rubato base keeps root leadership separate from delegated contracts', asyn
   }
   assert.equal(new Set(contracts).size, 3);
   assert.match(contracts[0], /You own one bounded outcome end to end/);
-  assert.match(contracts[0], /Independent slices go out in one turn as subagents/);
+  assert.match(contracts[0], /Delegate by cost, not by count/);
   assert.match(contracts[0], /Keep diagnosis, integration, and anything with interpretation room/);
   assert.match(contracts[0], /Record what you spawned/);
   assert.doesNotMatch(contracts[0], /You can run helpers under yourself/);
