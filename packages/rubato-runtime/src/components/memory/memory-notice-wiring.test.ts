@@ -85,7 +85,7 @@ function wiringFor(
 async function dispatchMcpResult(pi: MemoryFakeExtensionAPI, toolCallId: string): Promise<void> {
   await pi.dispatch("tool_result", {
     type: "tool_result",
-    toolName: "mcp_rubato-memory_memory",
+    toolName: "mcp__rubato-memory_memory",
     toolCallId,
     input: {},
     content: [],

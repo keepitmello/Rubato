@@ -1,0 +1,2 @@
+# This standalone runtime needs its own reproducible install, unlike Bun workspaces.
+!package-lock.json

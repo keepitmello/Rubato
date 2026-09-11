@@ -56,6 +56,32 @@ export function resolveEnginePluginDir(env = process.env) {
 }
 
 /**
+ * Product state dir (~/.rubato-pi). When HOME is set it wins, so a temp HOME
+ * cannot leak writes to the live profile via userInfo().homedir.
+ */
+export function rubatoStateDir(env = process.env) {
+  if (typeof env.HOME === "string" && env.HOME.trim() !== "") return join(env.HOME, ".rubato-pi");
+  const real = realUserHome();
+  return real ? join(real, ".rubato-pi") : "";
+}
+
+export function defaultStockEngineDir(home) {
+  return join(home, ".rubato-pi", "stock-engine");
+}
+
+export function resolveStockEngineDir(env = process.env) {
+  const pinned = env.RUBATO_STOCK_ENGINE_DIR;
+  if (typeof pinned === "string" && pinned.trim() !== "") return pinned;
+  const state = rubatoStateDir(env);
+  return state ? join(state, "stock-engine") : "";
+}
+
+export function engineMarkerPath(env = process.env) {
+  const state = rubatoStateDir(env);
+  return state ? join(state, "engine.json") : "";
+}
+
+/**
  * 우리가 빌드한 Rubato 확장. component 선택이 반영된 판이다.
  * 레포 밖에 둔다 — 이유는 파일 첫머리 주석에 있다.
  */

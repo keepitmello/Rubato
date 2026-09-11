@@ -64,7 +64,7 @@ async function dispatchMcpWrite(writeNoticeEnabled: boolean, toolCallId: string)
   await pi.dispatch("session_start", {}, eventCtx)
   await pi.dispatch("tool_result", {
     type: "tool_result",
-    toolName: "mcp_rubato-memory_memory",
+    toolName: "mcp__rubato-memory_memory",
     toolCallId,
     input: {},
     content: [],

@@ -20,7 +20,7 @@ import {
 import type { ComponentContext, RubatoComponent, SenpiExtensionAPI } from "../../extension/types"
 import { CATEGORY_UNAVAILABLE_MESSAGE_TYPE } from "./category-unavailable-warning"
 import { registerTaskCommands } from "./commands"
-import { composeTaskEngine, type TaskEngine } from "./engine"
+import { composeTaskEngine, type TaskEngine, type TaskRunnerFactories } from "./engine"
 import { TASK_USAGE_HINT_FLAG, wireEventBridge } from "./event-bridge"
 import { createLeadPollerLifecycle, type LeadPollerLifecycle } from "./lead-poller-lifecycle"
 import { TEAM_MEMBER_LIVENESS_MESSAGE_TYPE } from "./member-liveness"
@@ -45,6 +45,8 @@ export interface TaskComponentOptions {
   readonly loadConfig?: typeof loadSenpiRubatoConfig
   readonly loadSkills?: SkillLoader
   readonly resolveCwd?: () => string
+  /** Explicit child runner factories (stock Pi adapter); omitted for legacy Senpi defaults. */
+  readonly runnerFactories?: TaskRunnerFactories
 }
 
 export function createTaskComponent(options: TaskComponentOptions = {}): RubatoComponent {
@@ -81,6 +83,7 @@ export function createTaskComponent(options: TaskComponentOptions = {}): RubatoC
         loadSkills,
         sharedParentTools: () => ctx.getCapturedTools?.() ?? [],
         ...(ctx.idleCoordinator !== undefined && { coordinator: ctx.idleCoordinator }),
+        ...(options.runnerFactories === undefined ? {} : { runnerFactories: options.runnerFactories }),
       })
 
       pi.registerMessageRenderer?.(TASK_COMPLETION_MESSAGE_TYPE, renderTaskCompletion)
