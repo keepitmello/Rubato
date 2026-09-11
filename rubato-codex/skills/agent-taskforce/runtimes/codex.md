@@ -16,7 +16,11 @@ These installed native roles contain their role contract and `dispatched` as
 developer instructions. Send the task-specific brief, not a second copy of that
 contract. Seats, parentage and spawn surface follow the base instructions' Role
 selection section; this adapter only maps them to native operations. Spawn owners with
-`fork_turns: "none"` unless a short, named history slice is required.
+`fork_turns: "none"` unless a short, named history slice is required; spawn a verifier
+with `fork_turns: "none"` always. A child still loads the base instructions and the
+applicable AGENTS.md on its own; `developer_instructions` replaces only the parent's
+configured developer instructions. See `references/codex-role-toml.md` for what a role
+file can and cannot set.
 The installer replaces the configurable base instructions with Rubato's
 Codex-adapted working agreement. That base is shared and explicitly scopes its
 lead section to the main/root session; each native role supplies its distinct
