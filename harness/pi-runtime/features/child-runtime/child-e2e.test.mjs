@@ -42,12 +42,29 @@ test("staged stock child fixture consumes the in-process and RPC runner seams", 
     const result = await run(process.execPath, [join(staged.root, "rubato-features/rubato-components/fixtures/child-e2e.mjs")], {
       cwd: scratch,
       env,
-      timeout: 20_000,
+      timeout: 80_000,
       maxBuffer: 512 * 1024,
     })
     const receipt = JSON.parse(result.stdout.trim())
     assert.equal(receipt.ok, true)
     assert.match(receipt.rpcEntry, /node_modules[\\/]@earendil-works[\\/]pi-coding-agent[\\/]dist[\\/]rpc-entry\.js$/)
+    assert.equal(receipt.inProcess.notesInit, true)
+    assert.equal(receipt.inProcess.loopGuardBlocked, true)
+    assert.match(receipt.inProcess.loopGuardReason, /Loop guard blocked|blocked repeated call/)
+    assert.match(receipt.inProcess.bashCwd, /in-process-cwd/)
+    assert.equal(receipt.inProcess.bashParentProbeExists, false)
+    assert.equal(receipt.inProcess.parentProbeExists, false)
+    assert.match(receipt.inProcess.childProbe, /in-process-cwd[\\/]cwd-probe\.txt$/)
+    assert.equal(receipt.rpc.notesInit, true)
+    assert.equal(receipt.rpc.loopGuardBlocked, true)
+    assert.match(receipt.rpc.loopGuardReason, /Loop guard blocked|blocked repeated call|loop-guard:notice/)
+    assert.match(receipt.rpc.bashCwd, /rpc-cwd/)
+    assert.equal(receipt.rpc.bashParentProbeExists, false)
+    assert.equal(receipt.rpc.parentProbeExists, false)
+    assert.match(receipt.rpc.childProbe, /rpc-cwd[\\/]cwd-probe\.txt$/)
+    assert.equal(receipt.rpc.rpcExtensions.includes("provider-extension.mjs"), true)
+    assert.equal(receipt.rpc.rpcExtensions.includes("extension.mjs"), true)
+    assert.equal(receipt.rpc.rpcExtensions.includes("guard-extension.mjs"), true)
   } finally {
     await rm(scratch, { recursive: true, force: true })
   }

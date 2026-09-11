@@ -260,3 +260,10 @@ fullscreen의 시각 스타일이다. 다만 설정으로 제공되던 fullscree
 abort provenance, request-run, first-user persistence와 SDK catalog, context-notes 기반 저장·주입·reload/copy는
 실제 경로 검증 수준에 도달했으며 TUI/remote/context-notes window transition의 전체 제품 wiring은 아직
 완료가 아니다.
+
+## A5
+
+`session-picker`는 팩토리 없는 stock TUI patch(+ pager 파일)다. candidate 기본 경로는
+catalog 항목과 `CANDIDATE_FEATURE_NAMES` 등록으로 연다. bootstrap에 factory를 추가하지
+않는다. `session-catalog`가 선행 의존이다. 컴포넌트 선택은 검색 인덱스가 갱신된 뒤
+catalog path를 반환하고, `/resume` TUI 재결합은 native PTY에서 검증한다.

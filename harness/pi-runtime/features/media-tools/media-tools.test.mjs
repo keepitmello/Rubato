@@ -156,8 +156,21 @@ async function createLoopbackServer(t) {
 }
 
 test("media-tools source closure is runtime-owned and carries webfetch, look_at, and generate_image", async () => {
-	assert.equal(files.length, 38);
+	assert.equal(files.length, 43);
 	assert.equal(files.every((entry) => entry.target === "runtime"), true);
+	for (const relativePath of [
+		"src/openai-image-gen/externalize.js",
+		"src/openai-image-gen/gate.js",
+		"src/openai-image-gen/index.js",
+		"src/openai-image-gen/inject.js",
+		"src/openai-web-search/index.js",
+	]) {
+		assert.equal(
+			files.some((entry) => entry.path.endsWith(relativePath)),
+			true,
+			relativePath,
+		);
+	}
 	for (const sourceFile of sourceFiles(fileURLToPath(new URL("./src", import.meta.url)))) {
 		const source = readFileSync(sourceFile, "utf8");
 		assert.doesNotMatch(source, /["']@code-yeongyu\/senpi(?:["'/])/, `Senpi runtime import in ${sourceFile}`);

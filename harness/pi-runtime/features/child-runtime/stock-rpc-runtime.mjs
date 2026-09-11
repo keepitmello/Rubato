@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs"
-import { isAbsolute, join } from "node:path"
+import { isAbsolute, join, sep } from "node:path"
+import { pathToFileURL } from "node:url"
 
 const STOCK_PACKAGE = "@earendil-works/pi-coding-agent"
 const STOCK_RPC_ENTRY = `${STOCK_PACKAGE}/rpc-entry`
@@ -48,6 +49,87 @@ export function resolveStockChildProviderProfile({ root, agentDir, includeContex
   // provider-extension.mjs imports and binds provider-execution itself; the
   // prerequisite is staged but must not be passed as a standalone factory.
   return createStockChildFeatureProfile({ rpcExtensions: entries, agentDir })
+}
+
+const CHILD_OWNED_FILE_TOOLS = new Set(["read", "write", "edit", "ls", "grep", "find", "powershell", "bash"])
+
+function isChildNotesExtensionPath(entry) {
+  return typeof entry === "string" && entry.includes(`${sep}context-notes${sep}`) && entry.endsWith(`${sep}extension.mjs`)
+}
+
+function isChildGuardExtensionPath(entry) {
+  return typeof entry === "string" && entry.endsWith(`${sep}guard-extension.mjs`)
+}
+
+/**
+ * Load the child-safe in-process factories that correspond to a full-candidate
+ * profile. Provider registration stays on the injected parent ModelRuntime;
+ * only notes owner + tool guards are installed into the child session.
+ */
+export async function loadStockChildInProcessFactories({ root, agentDir, includeContextNotes = true, includeGuards = true } = {}) {
+  const profile = resolveStockChildProviderProfile({ root, agentDir, includeContextNotes, includeGuards })
+  const factories = []
+  for (const entry of profile.rpcExtensions) {
+    if (isChildNotesExtensionPath(entry)) {
+      const { createContextNotesExtension } = await import(pathToFileURL(entry).href)
+      factories.push({ name: "context-notes", factory: createContextNotesExtension({ agentDir, enabled: true }) })
+    } else if (isChildGuardExtensionPath(entry)) {
+      const { createStockChildGuardExtension } = await import(pathToFileURL(entry).href)
+      factories.push({ name: "child-guards", factory: createStockChildGuardExtension() })
+    }
+  }
+  return factories
+}
+
+/**
+ * Create an in-process child session that actually runs child-safe extensions.
+ * Passing factories to a ResourceLoader is not enough: stock getExtensions() is
+ * empty until reload(), and session_start (notes owner registration) only fires
+ * from bindExtensions().
+ */
+export async function createStockChildInProcessSession(options = {}, {
+  createAgentSession,
+  DefaultResourceLoader,
+  extensionFactories = [],
+} = {}) {
+  if (typeof createAgentSession !== "function") throw new TypeError("stock child in-process session requires createAgentSession")
+  if (typeof DefaultResourceLoader !== "function") throw new TypeError("stock child in-process session requires DefaultResourceLoader")
+  const cwd = options.cwd
+  const agentDir = options.agentDir
+  const settingsManager = options.settingsManager
+  if (typeof cwd !== "string" || cwd.length === 0) throw new Error("stock child in-process session requires cwd")
+  if (typeof agentDir !== "string" || agentDir.length === 0) throw new Error("stock child in-process session requires agentDir")
+  if (!settingsManager) throw new Error("stock child in-process session requires settingsManager")
+  const resourceLoader = new DefaultResourceLoader({
+    cwd,
+    agentDir,
+    settingsManager,
+    noExtensions: true,
+    noSkills: true,
+    noPromptTemplates: true,
+    noThemes: true,
+    noContextFiles: true,
+    extensionFactories,
+  })
+  await resourceLoader.reload()
+  const errors = resourceLoader.getExtensions()?.errors ?? []
+  if (errors.length > 0) throw new Error(`child extension load failed: ${JSON.stringify(errors)}`)
+  const customTools = Array.isArray(options.customTools)
+    ? options.customTools.filter((tool) => !CHILD_OWNED_FILE_TOOLS.has(tool?.name))
+    : options.customTools
+  const created = await createAgentSession({ ...options, resourceLoader, customTools })
+  const session = created?.session ?? created
+  if (typeof session?.bindExtensions !== "function") {
+    throw new Error("stock child in-process session did not expose bindExtensions")
+  }
+  await session.bindExtensions({
+    mode: "print",
+    uiContext: {
+      notify() {},
+      setStatus() {},
+    },
+  })
+  return session
 }
 
 /**

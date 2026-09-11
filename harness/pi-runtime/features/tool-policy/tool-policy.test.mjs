@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test, { after } from "node:test";
@@ -75,8 +75,10 @@ if (event.event === "PreToolUse" && event.tool_input.value === "deny") {
   const approvalRequests = [];
   const persisted = [];
   const followUps = [];
+  const permissionReplies = [];
   const toolFactory = (pi) => {
     extensionApi = pi;
+    pi.events.on("permission_replied", (data) => permissionReplies.push(data));
     pi.registerTool({
       name: "fixture",
       label: "fixture",
@@ -145,9 +147,11 @@ if (event.event === "PreToolUse" && event.tool_input.value === "deny") {
     approvalRequests,
     cwd,
     get executions() { return executions; },
+    followUps,
     persisted,
     policy,
     session,
+    permissionReplies,
   };
 }
 
@@ -213,8 +217,18 @@ test("permission presets deny asks without UI and always approval covers the ses
   await approved.api.executeTool("fixture", { value: "two" });
   assert.equal(approvals, 1, "always approval covers later matching calls in the same session");
   assert.equal(approved.executions, 2);
+  assert.ok(approved.permissionReplies.some((entry) => entry.reply === "always" && entry.toolName === "fixture"));
   await approved.session.extensionRunner.emit({ type: "session_shutdown", reason: "exit" });
   assert.deepEqual(approved.persisted, [{ permission: "fixture", pattern: "*", action: "allow" }]);
+});
+
+test("permission_replied payload names the allowed tool", async (t) => {
+  const fixture = await createFixture(t, { hooks: false, permission: { preset: "full-access" } });
+  await fixture.session.extensionRunner.emitToolCall({
+    type: "tool_call", toolCallId: "a3-permission", toolName: "lsp_diagnostics", input: {},
+  });
+  assert.ok(fixture.permissionReplies.some((entry) => entry.reply === "allow" && entry.toolName === "lsp_diagnostics"),
+    JSON.stringify(fixture.permissionReplies));
 });
 
 test("bash timeout mutates missing values, preserves explicit values, and contributes detach prompt", async (t) => {
@@ -244,4 +258,20 @@ test("command hook timeout kills its isolated subprocess and reports timeout wit
   assert.equal(result.timedOut, true);
   assert.equal(result.exitCode, null);
   assert.ok(Date.now() - started < 2_000);
+});
+
+test("candidate bootstrap registers tool-policy factories between loop-guard and tool-pair", async () => {
+  const source = await readFile(new URL("../rubato-components/bootstrap.mjs", import.meta.url), "utf8");
+  const names = [...source.matchAll(/\{ name: "([^"]+)"/g)].map((match) => match[1]);
+  const indexOf = (name) => {
+    const index = names.indexOf(name);
+    assert.notEqual(index, -1, `missing factory ${name}: ${names.join(",")}`);
+    return index;
+  };
+  assert.ok(indexOf("rubato-loop-guard") < indexOf("rubato-hooks"));
+  assert.ok(indexOf("rubato-hooks") < indexOf("rubato-permission"));
+  assert.ok(indexOf("rubato-permission") < indexOf("rubato-gpt-apply-patch"));
+  assert.ok(indexOf("rubato-gpt-apply-patch") < indexOf("rubato-bash-timeout"));
+  assert.ok(indexOf("rubato-bash-timeout") < indexOf("terminal"));
+  assert.ok(indexOf("terminal") < indexOf("rubato-tool-pair-guard"));
 });
