@@ -57,8 +57,8 @@ confirmation of both intent and roster before forming the team. A reply acceptin
 concrete proposal counts; a generic earlier implementation request or partial assent does
 not. Keep accepted owners for related corrections without asking again. Confirm material
 scope/roster/cost deltas, not routine implementation decisions or same-owner recovery.
-Fable and Astra still need task-and-effort approval; clearly presented commitments may be
-accepted in the same reply. Opus, Sol and Grok have no extra model gate. Ordinary bounded
+Model approval gates follow the bundled model-guide; clearly presented commitments may be
+accepted in the same reply. Ordinary bounded
 subagents inside approved authority need no new team ceremony. Do not change the lead's model.
 
 Give each owner a distinct write boundary. Native task names do not create

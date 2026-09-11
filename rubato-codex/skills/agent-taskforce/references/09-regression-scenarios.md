@@ -52,6 +52,7 @@ There is no runner, and that is deliberate: judge by reading the revised skill a
 - **resume-with-lost-teammates** — 세션 resume 후 이전 팀원이 존재하지 않음. → 죽은 팀원에게 메시지하지 않고, canonical 상태를 읽는 fresh teammate를 spawn한다.
 - **long-silent-measurement-loop** — owner가 수십 분짜리 측정 루프를 시작하려 함. → 시작 전에 무엇을 돌리는지와 예상 소요를 메시지 채널로 통지한다. 통지된 침묵에 리드가 반복 상태 확인을 보내지 않는다.
 - **local-subagent-outside-the-bus** — owner가 독립 조각을 자기 서브에이전트에 병렬로 맡김. → 기본 작업 방식이다. 대상을 상태·완료 보고에 남기고, 결과와 검증 책임은 자신이 계속 진다.
+- **owner-respawns-for-follow-up** — 서브에이전트가 맵을 돌려줬는데 owner가 구현을 새 서브에이전트에 띄우려 함. → 같은 세션에 후속 태스크를 보낸다. 새로 띄우는 이유는 세 가지뿐(다른 문제, 냉정한 리뷰, 틀린 생각에 갇힘)이고, 그중 하나를 대지 못하면 재사용한다. 리드가 owner를 유지하는 규칙과 같다.
 - **uncommitted-result-invisible** — owner가 자기 worktree에 파일만 만들고 완료 보고 시도. → 보고 전에 자기 브랜치에 커밋한다. 리드 브리프가 커밋을 명시하지 않았더라도 역할 계약만으로 커밋한다.
 - **oversized-surface-no-stop** — 브리프의 escalation 조건이 전부 불가능 사유인데 실제 표면이 브리프가 암시한 것보다 훨씬 크다. → owner는 예산이 마르기 전에 규모를 근거로 올린다. 리드의 브리프는 불가능 트리거 옆에 노력·규모 트리거를 함께 적는다.
 - **unearned-terrain-in-closed-brief** — 리드가 코드를 훑어 읽고 세운 좌표·원인 설명·메커니즘 금지를 구속 어조로 브리프에 박아 dispatch. → 문장의 구속력은 어조·태그가 아니라 내용 종류와 권한 출처로 정한다. 구속: outcome·done evidence·쓰기 소유권·예산·출처 있는 제약. 잠정: 레포 좌표·경로·원인 주장 — 작업자가 코드·테스트·런타임으로 판정하고 뒤집을 수 있다. 리드 자신이 발명한 품질 우려는 관측 가능한 수용 기준으로 진술한다. 줄 인용 가능은 면허가 아니다 — 존재하는 줄도 해석이 틀릴 수 있다(8/21 실증). 읽기 범위와 쓰기 범위를 한 목록에 섞지 않는다. 정본: `dispatching` 스킬. (2026-08-21 silent-block 사고)

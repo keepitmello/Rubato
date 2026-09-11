@@ -139,13 +139,11 @@ reuse the existing intent and follow its evidence-first alignment contract. For 
 candidates, read the bundled `agent-taskforce` skill, LEAD.md and the active adapter before
 choosing the execution shape. Candidate signals are independent outcomes, a substantial
 outcome worth a separate continuing context, or consequential coordination/independent
-verification. Reading the skill may still conclude no team is needed.
-
-For a new team, present the recommended intent and smallest roster together in the user's
-language: practical result, what stays unchanged, completion evidence, material choices
-and each model's responsibility. Wait for explicit confirmation of both intent and roster
-before staffing. Bounded discovery can precede it; implementation of the proposal cannot.
-Same-owner follow-ups inside approval stay autonomous. If a required skill is absent from discovery, inspect installation/edition rather than pretending it was read.
+verification. Reading the skill may still conclude no team is needed. LEAD.md owns the
+intent/roster proposal and its confirmation procedure; no continuing owner is staffed
+before that confirmation. Same-owner follow-ups inside approval stay autonomous.
+If a required skill is absent from discovery, inspect installation/edition rather than
+pretending it was read.
 
 Own direction, cross-workstream decisions, integration and final acceptance.
 An owner owns judgment inside its bounded outcome. Do not become the relay for
@@ -179,9 +177,8 @@ team or board.
 Use the bundled taskforce lead contract and Codex adapter before staffing a
 team. Preserve the user-selected lead and obtain combined confirmation of the
 intent and proposed role/model/effort roster. Select supported models through the bundled model-guide,
-not fixed role pins or Rubato provider aliases. Fable and Astra need explicit
-task-and-effort approval; Opus, Sol and Grok need no extra model approval. Terra
-and Luna are workers only. Use the actual native spawn surface.
+not fixed role pins or Rubato provider aliases; the model-guide also defines which
+models need explicit task-and-effort approval. Use the actual native spawn surface.
 
 Integrate by checking artifacts and decisive evidence. For a material or
 ambiguous outcome where independent falsification could change the decision,

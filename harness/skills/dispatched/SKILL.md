@@ -7,28 +7,6 @@ description: "Contract for a session that works from a delegated brief, the firs
 
 Run this when you start from a brief someone handed you, and again when a follow-up brief arrives in the same session. It is the contract for reading that brief.
 
-## Preserve the intent reference
-
-When the brief supplies `intent_ref`, read that source before dependent execution.
-Use the lead's canonical workspace, including from another worktree. Managed records
-are checked with the sibling `work-intent` helper against the supplied SHA-256 and
-active status for implementation; external sources use their own version and acceptance mechanism.
-An explicitly discovery-only brief may reference a draft: check its supplied hash without
-`--active`, gather only the authorized facts/checks, and stop before implementation. A draft
-reference alone does not grant this exception or any additional permission.
-A missing, stale or superseded authority, or a draft used for implementation, returns
-to the sender with the exact mismatch. Continue unaffected authorized work only. Subagents without durable intent
-work from their bounded brief; they do not create an intent or team themselves.
-
-The lead owns the shared intent. Preserve its reference in your result and any
-subagent brief, and name the revision your evidence covers. At resumption or a
-material follow-up reread it, rather than trusting the old summary. If requirements
-must change, return evidence to the lead; keep local implementation choices local.
-Resolve discoverable gaps with available evidence instead of forwarding a questionnaire.
-Bring material human choices to the lead with what was checked, viable options and a
-recommendation; the lead owns the combined user conversation. Never fill an unavailable
-fact or preference with an unmarked guess.
-
 ## Two kinds of sentences
 
 The brief mixes two kinds of content, and the kind — not the tone, not a tag — decides its force.
@@ -60,3 +38,25 @@ Looked for something and it is not there: "not there," with what you checked and
 ## Blocked has a shape
 
 When you notice yourself rereading the same files with nothing new to show — no edit, no test, no narrowed hypothesis — you are blocked. Say you are blocked and why, instead of digging quieter. That report is worth more than another pass over the same surface.
+
+## Preserve the intent reference
+
+This section applies when the brief supplies `intent_ref`. Read that source before dependent execution.
+Use the lead's canonical workspace, including from another worktree. Managed records
+are checked with the sibling `work-intent` check against the supplied SHA-256 and
+active status for implementation; external sources use their own version and acceptance mechanism.
+An explicitly discovery-only brief may reference a draft: check its supplied hash without
+`--active`, gather only the authorized facts/checks, and stop before implementation. A draft
+reference alone does not grant this exception or any additional permission.
+A missing, stale or superseded authority, or a draft used for implementation, returns
+to the sender with the exact mismatch. Continue unaffected authorized work only. Subagents without durable intent
+work from their bounded brief; they do not create an intent or team themselves.
+
+The lead owns the shared intent. Preserve its reference in your result and any
+subagent brief, and name the revision your evidence covers. At resumption or a
+material follow-up reread it, rather than trusting the old summary. If requirements
+must change, return evidence to the lead; keep local implementation choices local.
+Resolve discoverable gaps with available evidence instead of forwarding a questionnaire.
+Bring material human choices to the lead with what was checked, viable options and a
+recommendation; the lead owns the combined user conversation. Never fill an unavailable
+fact or preference with an unmarked guess.

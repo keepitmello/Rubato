@@ -1,6 +1,6 @@
 ---
 name: dispatching
-description: "Handing work to another session, or sending the next task to an existing one: decide continue-versus-fresh, separate binding from hints, carry budget and return contract, watch after dispatch. Read before every Agent spawn or AgentSend."
+description: "Handing work to another session, or sending the next task to an existing one: decide continue-versus-fresh, separate binding from hints, carry budget and return contract, watch after dispatch. Read before every spawn or follow-up."
 ---
 
 # Dispatching
@@ -80,7 +80,7 @@ Part of every dispatch is choosing who gets it. If an agent already worked on th
 
 Start a new agent for three reasons only: you want a second opinion that has not seen the first agent's thinking (a reviewer), the task is about a different problem, or the old agent is stuck on a wrong idea it cannot let go of. A reviewer starting cold is the point, not a cost. A stronger model being available is not one of the three; once you have decided on a new agent, Skill(model-guide) picks its model.
 
-If `AgentSend` says the agent cannot be continued (it was evicted, cancelled, crashed, or expired), start a new one and pass along whatever the old one left behind (its report, files, evidence) as leads to verify. If nothing was left, say so in the brief.
+If the runtime says the agent cannot be continued (it was evicted, cancelled, crashed, or expired), start a new one and pass along whatever the old one left behind (its report, files, evidence) as leads to verify. If nothing was left, say so in the brief.
 
 ## While it is out
 
