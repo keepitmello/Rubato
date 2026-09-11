@@ -19,6 +19,7 @@ export const SOURCE_ASSETS = Object.freeze({
   "runtime/lsp-daemon/NOTICE": "packages/lsp-daemon/NOTICE",
   "runtime/lsp-daemon/lsp-core-NOTICE": "packages/lsp-core/NOTICE",
   "bootstrap.mjs": "harness/pi-runtime/features/rubato-components/bootstrap.mjs",
+  "feature-toggles.mjs": "harness/pi-runtime/features/rubato-components/feature-toggles.mjs",
   "candidate-main.mjs": "harness/pi-runtime/features/rubato-components/candidate-main.mjs",
   "validate-stage.mjs": "harness/pi-runtime/features/rubato-components/validate-stage.mjs",
   "payload-manifest.mjs": "harness/pi-runtime/features/rubato-components/payload-manifest.mjs",

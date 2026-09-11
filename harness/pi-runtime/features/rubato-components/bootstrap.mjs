@@ -20,6 +20,7 @@ import codemode from "../codemode/src/index.ts";
 import { createRemovedToolHintRegistrar } from "../codemode/src/extension/stock-host-adapter.ts";
 import { createRubatoComponentExtension } from "./extensions/rubato.js";
 import { validateBuildReceipt } from "./payload-manifest.mjs";
+import { applyFeatureToggles, readDisabledFeatures } from "./feature-toggles.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 export async function validateRubatoBundleAssets() {
@@ -39,7 +40,7 @@ export async function validateRubatoBundleAssets() {
 /** Explicit stock ExtensionFactory assembly; no session/agent-loop replacement.
  * Current selected features only. The stage receipt continues to deny full parity.
  */
-export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager, modelRuntime, codemodeOptions, mcpOptions = {}, terminalOptions = {}, providerOptions = {} } = {}) {
+export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager, modelRuntime, codemodeOptions, mcpOptions = {}, terminalOptions = {}, providerOptions = {}, env = process.env } = {}) {
   if (!cwd || !agentDir) throw new Error("Rubato candidate requires explicit cwd and agentDir");
   if (!modelRuntime || typeof modelRuntime.streamSimple !== "function") throw new Error("Rubato candidate requires the parent's canonical stock ModelRuntime");
   const settings = settingsManager ?? SettingsManager.create(cwd, agentDir);
@@ -106,5 +107,7 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
       pi.on("session_shutdown", () => { unsubscribe?.(); unsubscribe = undefined; });
     } },
   ];
-  return { extensionFactories, servers, toolSearch, serviceTier, settingsManager: settings };
+  const toggles = applyFeatureToggles(extensionFactories, readDisabledFeatures({ agentDir, env }));
+  return { extensionFactories: toggles.extensionFactories, disabledFeatures: toggles.disabled, unknownDisabledFeatures: toggles.unknown,
+    servers, toolSearch, serviceTier, settingsManager: settings };
 }
