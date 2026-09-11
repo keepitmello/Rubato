@@ -60,7 +60,8 @@ createBashTimeoutExtension({
 ```
 
 세 factory는 각각 별도 extension factory로 등록해야 한다. grouped factory 하나로 등록하면 root가
-apply_patch와 terminal 사이에 bash-timeout을 놓거나 loop/hooks/permission의 veto 순서를 보존할 수 없다.
+loop/hooks/permission의 tool_call veto 순서를 보존할 수 없다. bash-timeout을 terminal 앞에 두는 것은
+등록 순서일 뿐, terminal이 tool_call veto를 걸지는 않는다.
 
 ## 실제 검증
 
@@ -81,8 +82,9 @@ profile, credential, provider 요청은 쓰지 않는다. 다음 경로를 고�
 
 ## 정확히 남은 경계
 
-- root bootstrap은 current settings/plugin/pre-session source와 command-hash trust storage를
-  `resolveSources`/`isTrusted`에 연결해야 한다. 지금 기본 두 JSON 파일만으로 전체 discovery parity를
+- A3가 catalog/CANDIDATE_FEATURE_NAMES/bootstrap에 세 factory를 연결했다. current settings/plugin/pre-session
+  source와 command-hash trust storage는 아직 없다. 후보 기본 경로는 `agentDir/hooks.json`만 신뢰하고
+  project `.senpi/hooks.json`은 untrusted로 남긴다. 기본 두 JSON 파일만으로 전체 discovery parity를
   주장하면 안 된다.
 - `/hooks` trust/status UI, running-hook status label, plugin `${PLUGIN_ROOT}` target containment,
   Senpi 전체 sensitive-output redactor와 invalid JSON/regex의 세부 diagnostic shape는 아직 없다.
@@ -95,3 +97,18 @@ profile, credential, provider 요청은 쓰지 않는다. 다음 경로를 고�
   canonical-parent marker는 생기지 않는다. bootstrap은 이를 silent success로 취급하면 안 된다.
 - command hooks의 specialized TUI progress/status와 permission dialog의 Senpi custom renderer는 stock
   기본 UI로 대체되어 있다. 실행 결정은 보존됐지만 화면 픽셀 parity 증거는 아니다.
+
+## A3 (2026-09-11)
+
+후보 기본 경로에 tool-policy를 세 개의 독립 factory로 등록했다. stock `ExtensionRunner`가 앞선
+`tool_call` veto를 멈추는 의미를 유지하려고 순서는 다음과 같다.
+
+`loop guard -> hooks -> permission -> apply_patch -> (기존 도구들) -> bash-timeout -> terminal -> tool-pair`
+
+`hooks`/`permission`은 loop 다음·apply_patch 앞에서 veto한다. `bash-timeout`을 terminal 앞에
+두는 것은 등록 순서다. terminal은 `tool_call` veto를 걸지 않으므로, 그 순서가 timeout 보정을
+terminal보다 먼저 막는다는 뜻은 아니다.
+
+Stop follow-up 실패는 제품 결함이 아니라 fixture 누락이었다. `createHooksExtension({ sendFollowUp })`는
+`continue-working`을 모았지만 `createFixture`가 그 배열을 반환하지 않아 `fixture.followUps`가
+`undefined`였다. 반환을 추가했고 모듈 테스트 5/5가 통과한다.

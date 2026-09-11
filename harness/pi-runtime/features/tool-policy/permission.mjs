@@ -326,7 +326,7 @@ export function createPermissionExtension(options = {}) {
         const id = `permission-${++counter}`;
         const info = { ...request, id, sessionID: ctx.sessionManager.getSessionId(), metadata: { toolName: event.toolName, ...event.input } };
         if (!ask) {
-          pi.events.emit("permission_replied", { requestID: id, sessionID: info.sessionID, reply: "allow" });
+          pi.events.emit("permission_replied", { requestID: id, sessionID: info.sessionID, reply: "allow", toolName: event.toolName });
           continue;
         }
         pi.events.emit("permission_asked", info);
@@ -347,7 +347,7 @@ export function createPermissionExtension(options = {}) {
         if (!reply || !["once", "always", "reject"].includes(reply.reply)) {
           reply = { reply: "reject", message: "Permission adapter returned an invalid reply." };
         }
-        pi.events.emit("permission_replied", { requestID: id, sessionID: info.sessionID, reply: reply.reply });
+        pi.events.emit("permission_replied", { requestID: id, sessionID: info.sessionID, reply: reply.reply, toolName: event.toolName });
         if (reply.reply === "reject") return { block: true, reason: reply.message || "The user rejected permission to use this specific tool call." };
         if (reply.reply === "always") {
           approved.push(...request.always.map((pattern) => ({ permission: request.permission, pattern, action: "allow" })));

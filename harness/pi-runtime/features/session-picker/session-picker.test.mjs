@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
-import { once } from "node:events";
+import { spawnSync } from "node:child_process";
 import {
   appendFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   utimesSync,
   writeFileSync,
@@ -17,7 +17,9 @@ import test, { after } from "node:test";
 import { stripVTControlCharacters } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { loadPiFeatures } from "../../feature-catalog.mjs";
+import { createTerminalSession } from "@code-yeongyu/senpi-pty";
+import { loadPiFeatures, PI_FEATURE_NAMES } from "../../feature-catalog.mjs";
+import { CANDIDATE_FEATURE_NAMES } from "../rubato-components/candidate-main.mjs";
 import { resolvePiRuntime } from "../../resolve-runtime.mjs";
 import { stagePiRuntime } from "../../stage-runtime.mjs";
 import {
@@ -146,8 +148,14 @@ const { SessionSelectorComponent } = await import(pathToFileURL(join(
   "dist/modes/interactive/components/session-selector.js",
 )));
 
-test("descriptor is stock-locked, drift-failing, and composes at shared main/UI targets", () => {
+test("descriptor is stock-locked, drift-failing, and composes at shared main/UI targets", async () => {
   assert.equal(feature.id, "session-picker");
+  assert.equal(PI_FEATURE_NAMES.includes("session-picker"), true);
+  assert.equal(CANDIDATE_FEATURE_NAMES.includes("session-picker"), true);
+  assert.deepEqual((await loadPiFeatures(["session-picker"])).map((entry) => entry.id), [
+    "session-catalog",
+    "session-picker",
+  ]);
   assert.equal(SESSION_PICKER_PAGE_SIZE, 12);
   assert.equal(SESSION_PICKER_SCAN_PAGE_SIZE, 200);
   assert.deepEqual(files.map((entry) => entry.path), [
@@ -251,7 +259,10 @@ test("actual selector renders newest first, pages near the tail, searches all pa
   selectedPath = undefined;
 
   for (const character of "deep-search-needle") list.handleInput(character);
-  await waitFor(() => visible(selector).includes("deep-search-needle"), "deep search result");
+  await waitFor(
+    () => list.getSelectedSessionPath() === records[2].path,
+    "deep search result selected from catalog pages",
+  );
   assert.ok(currentCalls.some((page) => page?.offset === 24 && page?.limit === 200), JSON.stringify(currentCalls));
   assert.match(visible(selector), /deep-search-needle/);
   list.handleInput("\r");
@@ -271,9 +282,7 @@ test("actual selector renders newest first, pages near the tail, searches all pa
   assert.equal(cancelled, 1);
 });
 
-test("pseudo-TTY /resume searches beyond the first page and rebinds the live session", async (t) => {
-  assert.equal(process.platform, "darwin", "the pseudo-TTY fixture uses macOS /usr/bin/script");
-  assert.equal(existsSync("/usr/bin/script"), true);
+test("native PTY /resume searches beyond the first page and rebinds the live session", async (t) => {
   const cwd = join(scratch, "pty-project");
   const agentDir = join(scratch, "pty-agent");
   const sessionDir = join(scratch, "pty-sessions");
@@ -281,7 +290,8 @@ test("pseudo-TTY /resume searches beyond the first page and rebinds the live ses
   const probeExtension = join(scratch, "pty-probe.mjs");
   mkdirSync(cwd, { recursive: true });
   mkdirSync(agentDir, { recursive: true });
-  const records = createSessions(sessionDir, cwd);
+  const canonicalCwd = realpathSync(cwd);
+  const records = createSessions(sessionDir, canonicalCwd);
   writeFileSync(probeExtension, `
 import { appendFileSync } from "node:fs";
 export default function sessionPickerProbe(pi) {
@@ -295,25 +305,22 @@ export default function sessionPickerProbe(pi) {
 }
 `);
 
-  const child = spawn("/usr/bin/script", [
-    "-q",
-    "/dev/null",
-    process.execPath,
-    runtime.patchableCliEntry,
-    "--session-dir",
-    sessionDir,
-    "--offline",
-    "--approve",
-    "--no-skills",
-    "--no-context-files",
-    "--no-themes",
-    "--no-extensions",
-    "--extension",
-    probeExtension,
-  ], {
-    cwd,
-    detached: true,
-    stdio: ["pipe", "pipe", "pipe"],
+  const session = createTerminalSession({
+    command: process.execPath,
+    args: [
+      runtime.patchableCliEntry,
+      "--session-dir",
+      sessionDir,
+      "--offline",
+      "--approve",
+      "--no-skills",
+      "--no-context-files",
+      "--no-themes",
+      "--no-extensions",
+      "--extension",
+      probeExtension,
+    ],
+    cwd: canonicalCwd,
     env: withoutNodeOptions(process.env, {
       PI_CODING_AGENT_DIR: agentDir,
       RUBATO_CONTEXT_MODE: "summary",
@@ -321,38 +328,59 @@ export default function sessionPickerProbe(pi) {
       TERM: "xterm-256color",
       FORCE_COLOR: "0",
     }),
+    cols: 120,
+    rows: 40,
+    timeoutMs: 45_000,
   });
+  assert.equal(
+    session.backend,
+    "native",
+    session.unavailableDiagnostic?.cause ?? JSON.stringify(session.native?.diagnostic ?? session.unavailableDiagnostic),
+  );
   let output = "";
   let exited = false;
-  child.stdout.setEncoding("utf8").on("data", (chunk) => { output += chunk; });
-  child.stderr.setEncoding("utf8").on("data", (chunk) => { output += chunk; });
-  child.once("exit", () => { exited = true; });
+  session.onData((chunk) => { output += chunk.toString("utf8"); });
+  session.onExit(() => { exited = true; });
   const stopOwnedProcess = () => {
-    if (exited) return;
-    try { process.kill(-child.pid, "SIGTERM"); }
-    catch (error) { if (error.code !== "ESRCH") throw error; }
+    if (session.status === "exited") return;
+    session.kill("SIGTERM");
   };
-  t.after(stopOwnedProcess);
+  t.after(async () => {
+    stopOwnedProcess();
+    await Promise.race([
+      session.waitExit().catch(() => undefined),
+      new Promise((resolveWait) => setTimeout(resolveWait, 2_000)),
+    ]);
+    if (session.status !== "exited") session.kill("SIGKILL");
+  });
 
   await waitFor(() => {
     if (exited) throw new Error(stripVTControlCharacters(output).slice(-2_000));
     return readJsonLines(probeLog).some((entry) => entry.reason === "startup");
   }, "initial TUI session", 20_000);
-  child.stdin.write("/resume\r");
+  assert.equal(session.write("/resume\r").ok, true);
   await waitFor(
     () => stripVTControlCharacters(output).includes("Resume Session (Current Folder)"),
     "rendered /resume selector",
     20_000,
   );
+  await waitFor(
+    () => stripVTControlCharacters(output).includes("picker-message-035"),
+    "newest page rendered before search",
+    20_000,
+  );
   assert.doesNotMatch(stripVTControlCharacters(output), /deep-search-needle/);
 
-  child.stdin.write("deep-search-needle");
+  for (const character of "deep-search-needle") {
+    assert.equal(session.write(character).ok, true);
+    await new Promise((resolveWait) => setTimeout(resolveWait, 15));
+  }
   await waitFor(
-    () => stripVTControlCharacters(output).includes("deep-search-needle"),
+    () => /›\s*deep-search-needle/.test(stripVTControlCharacters(output)),
     "old session rendered after search",
     20_000,
   );
-  child.stdin.write("\r");
+  assert.equal(session.write("\r").ok, true);
   const resumed = await waitFor(
     () => readJsonLines(probeLog).find((entry) => entry.reason === "resume"),
     "resumed session_start",
@@ -361,11 +389,11 @@ export default function sessionPickerProbe(pi) {
   assert.equal(resumed.id, records[2].id);
   assert.equal(resumed.file, records[2].path);
 
-  child.stdin.write("/quit\r");
+  assert.equal(session.write("/quit\r").ok, true);
   await Promise.race([
-    once(child, "exit"),
+    session.waitExit(),
     new Promise((_, reject) => setTimeout(() => reject(new Error(
-      `pseudo-TTY did not exit; output=${stripVTControlCharacters(output).slice(-2_000)}`,
+      `native PTY did not exit; output=${stripVTControlCharacters(output).slice(-2_000)}`,
     )), 10_000)),
   ]);
   assert.equal(exited, true);

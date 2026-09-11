@@ -24,7 +24,7 @@ test("current Rubato builds without Senpi and binds actual task/memory/MCP compo
   await assert.rejects(buildRubatoComponents({ outputRoot: build.root }), /EEXIST/);
   const features = await loadPiFeatures(["reload", "tool-execution", "input-lifecycle", "abort-provenance", "request-run",
     "extension-rpc", "service-tier", "tool-search", "mcp", "mcp-producers", "codemode", "child-runtime", "terminal", "providers",
-    "provider-execution", "media-tools", "tool-guards", "context-window", "session-catalog", "prompt-rules"]);
+    "provider-execution", "media-tools", "tool-guards", "tool-policy", "context-window", "session-catalog", "session-picker", "prompt-rules"]);
   const staged = await stagePiRuntime({ sourceRoot, outputRoot: join(scratch, "engine"), features: [...features, build.feature] });
   const buildReceiptPath = join(build.root, "rubato-build.json");
   const receiptText = await readFile(buildReceiptPath, "utf8");

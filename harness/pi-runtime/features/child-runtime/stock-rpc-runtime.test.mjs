@@ -12,6 +12,7 @@ import { Type } from "typebox"
 
 import {
   createStockChildFeatureProfile,
+  createStockChildInProcessSession,
   createStockRpcSpawnRuntime,
   resolveStockRpcEntry,
   STOCK_PI_PACKAGE,
@@ -30,6 +31,12 @@ describe("stock Pi child RPC runtime", () => {
     assert.deepEqual(profile.rpcExtensions, ["/provider.mjs", "/other.mjs"])
     assert.deepEqual(profile.inProcessFactories, [])
     assert.throws(() => createStockChildFeatureProfile({ rpcExtensions: ["relative.mjs"] }), /absolute, non-empty strings/)
+  })
+  test("in-process session factory fails closed without stock SDK seams", async () => {
+    await assert.rejects(
+      () => createStockChildInProcessSession({ cwd: RUNTIME_ROOT, agentDir: RUNTIME_ROOT, settingsManager: {} }),
+      /requires createAgentSession/
+    )
   })
 
   test("resolves the installed stock export, not Senpi's rpc entry", () => {

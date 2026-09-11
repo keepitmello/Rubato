@@ -77,3 +77,19 @@ absent. In-process children additionally use an empty extension loader, so
 Senpi builtin compaction/goal/todo extensions are absent; adding any of these
 requires a separate child-safe profile rather than forwarding the parent
 assembly.
+
+## A4 (2026-09-11)
+
+The full candidate now opts the child profile into context-notes owner + tool
+guards (`includeContextNotes`/`includeGuards` on bootstrap). In-process children
+reload a stock `DefaultResourceLoader` and `bindExtensions()` so `session_start`
+can register the notes gate; RPC children receive the same extension paths with
+`--extension`. Provider-only success is not the full-candidate claim. Child
+filesystem tools (`write`/`read`/...) are created from the child cwd; parent
+closures of those names are dropped before `createAgentSession`. Measured by
+`features/child-runtime/child-e2e.test.mjs` writing `cwd-probe.txt` in both seams.
+`bash` is in that child-owned set too: a parent bash closure would keep the
+parent `TerminalToolContext.cwd` when `executeTool` omits `execCtx`, so the
+helper drops it and the child uses stock bash created with the child cwd.
+Both seams measure this with `pwd > bash-cwd.txt`. Loop-guard inheritance is
+measured by blocking a repeated identical child tool call, not a hardcoded list.
