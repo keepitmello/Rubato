@@ -2,15 +2,10 @@ import * as breaker from "./circuit-breaker.mjs";
 import { shouldRunIdleCompaction } from "./idle.mjs";
 import { isOpenAiRemoteCompactionModel } from "./openai-remote-model.mjs";
 import { runOpenAiRemoteCompaction } from "./openai-remote.mjs";
+import { supportsAnthropicServerCompaction } from "./anthropic-server-compaction.mjs";
+import { SUMMARY_MODE, contextMode } from "./notes-flag.mjs";
 
-const HISTORY_NOTES_MODE = "history-notes";
-const SUMMARY_MODE = "summary";
-
-function contextMode(env) {
-  const raw = env.RUBATO_CONTEXT_MODE?.trim();
-  if (!raw) return HISTORY_NOTES_MODE;
-  return raw;
-}
+const SERVER_OWNED_COMPACTION_REASONS = new Set(["threshold", "overflow", "pre_prompt"]);
 
 /** Notes-aware window owns cuts in history-notes; this overlay must not compact there. */
 export function summaryCompactionAllowed(env, settings) {
@@ -52,6 +47,9 @@ export function createCompactionExtension({
       const settings = compactionSettingsFor(settingsManager, ctx.model);
       if (!summaryCompactionAllowed(env, settings)) return undefined;
       if (event.signal?.aborted) return { cancel: true };
+      if (supportsAnthropicServerCompaction(ctx.model) && SERVER_OWNED_COMPACTION_REASONS.has(event.reason)) {
+        return { cancel: true, rejectionCause: "external-owner", reason: "Anthropic server compaction owns compaction for this session" };
+      }
       if (!breaker.shouldBypass(state, { reason: event.reason }) && breaker.isTripped(state, now())) {
         return { cancel: true };
       }
@@ -89,6 +87,7 @@ export function createCompactionExtension({
       if (idleInFlight) return;
       const settings = compactionSettingsFor(settingsManager, ctx.model);
       if (!summaryCompactionAllowed(env, settings)) return;
+      if (supportsAnthropicServerCompaction(ctx.model)) return;
       const usage = ctx.getContextUsage?.();
       const contextWindow = usage?.contextWindow ?? ctx.model?.contextWindow;
       const decision = {

@@ -224,6 +224,217 @@ export interface Usage {`,
 	return next;
 }
 
+export function patchAnthropicMessagesNative(source) {
+	let next = replaceOnce(
+		source,
+		`                    else if (event.content_block.type === "tool_use") {
+                        const block = {
+                            type: "toolCall",
+                            id: event.content_block.id,
+                            name: isOAuth
+                                ? fromClaudeCodeName(event.content_block.name, context.tools)
+                                : event.content_block.name,
+                            arguments: event.content_block.input ?? {},
+                            partialJson: "",
+                            index: event.index,
+                        };
+                        output.content.push(block);
+                        stream.push({ type: "toolcall_start", contentIndex: output.content.length - 1, partial: output });
+                    }
+                }`,
+		`                    else if (event.content_block.type === "tool_use") {
+                        const block = {
+                            type: "toolCall",
+                            id: event.content_block.id,
+                            name: isOAuth
+                                ? fromClaudeCodeName(event.content_block.name, context.tools)
+                                : event.content_block.name,
+                            arguments: event.content_block.input ?? {},
+                            partialJson: "",
+                            index: event.index,
+                        };
+                        output.content.push(block);
+                        stream.push({ type: "toolcall_start", contentIndex: output.content.length - 1, partial: output });
+                    }
+                    else {
+                        const block = {
+                            type: "providerNative",
+                            subtype: event.content_block.type,
+                            raw: event.content_block,
+                            index: event.index,
+                        };
+                        output.content.push(block);
+                    }
+                }`,
+		"native-block-start",
+	);
+	next = replaceOnce(
+		next,
+		`                    else if (event.delta.type === "input_json_delta") {
+                        const index = blocks.findIndex((b) => b.index === event.index);
+                        const block = blocks[index];
+                        if (block && block.type === "toolCall") {
+                            block.partialJson += event.delta.partial_json;
+                            block.arguments = parseStreamingJson(block.partialJson);
+                            stream.push({
+                                type: "toolcall_delta",
+                                contentIndex: index,
+                                delta: event.delta.partial_json,
+                                partial: output,
+                            });
+                        }
+                    }`,
+		`                    else if (event.delta.type === "input_json_delta") {
+                        const index = blocks.findIndex((b) => b.index === event.index);
+                        const block = blocks[index];
+                        if (block && block.type === "toolCall") {
+                            block.partialJson += event.delta.partial_json;
+                            block.arguments = parseStreamingJson(block.partialJson);
+                            stream.push({
+                                type: "toolcall_delta",
+                                contentIndex: index,
+                                delta: event.delta.partial_json,
+                                partial: output,
+                            });
+                        }
+                        else if (block && block.type === "providerNative" && typeof block.raw === "object" && block.raw !== null && (block.raw.type === "server_tool_use" || block.raw.type === "mcp_tool_use")) {
+                            block.partialJson = (block.partialJson ?? "") + event.delta.partial_json;
+                        }
+                    }`,
+		"native-block-delta",
+	);
+	next = replaceOnce(
+		next,
+		`                        else if (block.type === "toolCall") {
+                            block.arguments = parseStreamingJson(block.partialJson);
+                            // Finalize in-place and strip the scratch buffer so replay only
+                            // carries parsed arguments.
+                            delete block.partialJson;
+                            stream.push({
+                                type: "toolcall_end",
+                                contentIndex: index,
+                                toolCall: block,
+                                partial: output,
+                            });
+                        }
+                    }`,
+		`                        else if (block.type === "toolCall") {
+                            block.arguments = parseStreamingJson(block.partialJson);
+                            // Finalize in-place and strip the scratch buffer so replay only
+                            // carries parsed arguments.
+                            delete block.partialJson;
+                            stream.push({
+                                type: "toolcall_end",
+                                contentIndex: index,
+                                toolCall: block,
+                                partial: output,
+                            });
+                        }
+                        else if (block.type === "providerNative") {
+                            const partialJson = block.partialJson;
+                            delete block.partialJson;
+                            if (partialJson !== undefined && typeof block.raw === "object" && block.raw !== null) {
+                                block.raw = { ...block.raw, input: parseStreamingJson(partialJson) };
+                            }
+                        }
+                    }`,
+		"native-block-stop",
+	);
+	next = replaceOnce(
+		next,
+		`    const converted = convertMessages(transformedMessages, isOAuthToken, cacheControl, compat.allowEmptySignature, deferredToolNames, normalizeToolName, model.compat?.supportsMidConvoEffort === true ? model.provider : undefined);`,
+		`    const converted = convertMessages(transformedMessages, isOAuthToken, cacheControl, compat.allowEmptySignature, deferredToolNames, normalizeToolName, model.compat?.supportsMidConvoEffort === true ? model.provider : undefined, model);`,
+		"convert-messages-model",
+	);
+	next = replaceOnce(
+		next,
+		`function convertMessages(transformedMessages, isOAuthToken, cacheControl, allowEmptySignature = false, deferredToolNames = new Set(), normalizeToolName = (name) => name, managedProvider) {`,
+		`const REPLAYABLE_ANTHROPIC_PROVIDER_NATIVE_TYPES = new Set([
+    "server_tool_use",
+    "web_search_tool_result",
+    "web_fetch_tool_result",
+    "code_execution_tool_result",
+    "bash_code_execution_tool_result",
+    "text_editor_code_execution_tool_result",
+    "tool_search_tool_result",
+    "container_upload",
+]);
+function pairedAnthropicNativeIds(content) {
+    const uses = new Set();
+    const results = new Set();
+    for (const block of content) {
+        if (block.type !== "providerNative" || typeof block.raw !== "object" || block.raw === null)
+            continue;
+        const raw = block.raw;
+        if (raw.type === "server_tool_use" && typeof raw.id === "string")
+            uses.add(raw.id);
+        if (typeof raw.tool_use_id === "string")
+            results.add(raw.tool_use_id);
+    }
+    const paired = new Set();
+    for (const id of uses) {
+        if (results.has(id))
+            paired.add(id);
+    }
+    return paired;
+}
+function convertMessages(transformedMessages, isOAuthToken, cacheControl, allowEmptySignature = false, deferredToolNames = new Set(), normalizeToolName = (name) => name, managedProvider, model) {`,
+		"convert-messages-helpers",
+	);
+	next = replaceOnce(
+		next,
+		`        else if (msg.role === "assistant") {
+            const blocks = [];
+            for (const block of msg.content) {`,
+		`        else if (msg.role === "assistant") {
+            const blocks = [];
+            const pairedNativeIds = pairedAnthropicNativeIds(msg.content);
+            for (const block of msg.content) {`,
+		"convert-messages-paired",
+	);
+	next = replaceOnce(
+		next,
+		`                else if (block.type === "toolCall") {
+                    blocks.push({
+                        type: "tool_use",
+                        id: block.id,
+                        name: isOAuthToken ? toClaudeCodeName(block.name) : block.name,
+                        input: block.arguments ?? {},
+                    });
+                }
+            }
+            if (blocks.length === 0)
+                continue;`,
+		`                else if (block.type === "toolCall") {
+                    blocks.push({
+                        type: "tool_use",
+                        id: block.id,
+                        name: isOAuthToken ? toClaudeCodeName(block.name) : block.name,
+                        input: block.arguments ?? {},
+                    });
+                }
+                else if (block.type === "providerNative") {
+                    const raw = block.raw;
+                    if (model &&
+                        msg.provider === model.provider &&
+                        msg.api === model.api &&
+                        msg.model === model.id &&
+                        typeof raw === "object" && raw !== null &&
+                        typeof raw.type === "string" &&
+                        REPLAYABLE_ANTHROPIC_PROVIDER_NATIVE_TYPES.has(raw.type)) {
+                        const useId = raw.type === "server_tool_use" ? raw.id : raw.tool_use_id;
+                        if (typeof useId !== "string" || pairedNativeIds.has(useId))
+                            blocks.push(raw);
+                    }
+                }
+            }
+            if (blocks.length === 0)
+                continue;`,
+		"convert-messages-replay",
+	);
+	return next;
+}
+
 function walk(directory) {
 	return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
 		const path = join(directory, entry.name);
@@ -253,6 +464,14 @@ export const patches = Object.freeze([
 		path: "dist/types.d.ts",
 		preimageSha256: "8c11014ea6c454bf60c7c22b65cdb00bebd834e4e9ebb07d3f0fffb6a58ea78a",
 		apply: patchPiAiTypes,
+	}),
+	Object.freeze({
+		id: "anthropic-messages-provider-native",
+		packageName: "@earendil-works/pi-ai",
+		version: VERSION,
+		path: "dist/api/anthropic-messages.js",
+		preimageSha256: "f748560c80fe91bb5736b62f6f34c5e2e2bfa224cd5eb959134ca903c226b604",
+		apply: patchAnthropicMessagesNative,
 	}),
 ]);
 export const files = Object.freeze(

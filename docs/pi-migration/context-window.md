@@ -156,3 +156,18 @@ checkout, shared stock fixture, or paid API was used.
 with context-window. In `RUBATO_CONTEXT_MODE=summary` it adds idle compact, a circuit
 breaker, and an OpenAI remote `session_before_compact` result. See
 `harness/pi-runtime/features/compaction/relationship.md`.
+
+
+## A13 note (2026-09-11)
+
+Summary mode is no longer env-only. `session_start` in the staged context-notes
+extension runs product `adoptContextMode` (user-explicit `RUBATO_CONTEXT_MODE`
+wins; else recorded mode / notes-window entries; else Astra → history-notes and
+every other model → summary) and writes the live env. The compaction overlay
+follows that live env. Stock `shouldCompact` uses the product client ratio
+(default 0.9). Client summarization prompts interpolate
+`COMPACTION_BRIEFING_GUIDANCE`. Anthropic server compaction is injected on the
+stock Messages params for supported Claude ids in summary mode and stays off
+in notes. A notes-window session opened with user-explicit summary fails
+loudly. In-process children no longer pass `enabled: true`, so they re-resolve
+the inherited `ORIGIN=session` env from their own model.

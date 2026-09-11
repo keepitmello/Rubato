@@ -72,7 +72,9 @@ export async function loadStockChildInProcessFactories({ root, agentDir, include
   for (const entry of profile.rpcExtensions) {
     if (isChildNotesExtensionPath(entry)) {
       const { createContextNotesExtension } = await import(pathToFileURL(entry).href)
-      factories.push({ name: "context-notes", factory: createContextNotesExtension({ agentDir, enabled: true }) })
+      // A4 required the notes owner on children; do not pass enabled:true — that
+      // freezes liveSwitch and blocks session_start from re-resolving the parent mode.
+      factories.push({ name: "context-notes", factory: createContextNotesExtension({ agentDir }) })
     } else if (isChildGuardExtensionPath(entry)) {
       const { createStockChildGuardExtension } = await import(pathToFileURL(entry).href)
       factories.push({ name: "child-guards", factory: createStockChildGuardExtension() })

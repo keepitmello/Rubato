@@ -124,7 +124,7 @@ async function createFixture({
       enabled: true,
       reserveTokens: 1,
       keepRecentTokens: 10,
-      thresholdRatio: 0.01,
+      thresholdRatio: 0.9,
       idleCompactionEnabled: true,
     },
   },
@@ -194,12 +194,15 @@ function project(name) {
 
 test("feature is additive-only and documents the notes vs summary relationship", () => {
   assert.equal(compactionFeature.id, "compaction");
-  assert.deepEqual(patches, []);
+  assert.equal(patches.length, 3);
+  assert.equal(new Set(patches.map((entry) => entry.path)).size, patches.length);
+  assert.ok(patches.every((entry) => entry.version === "0.85.1"));
+  assert.ok(patches.every((entry) => /^[a-f0-9]{64}$/.test(entry.preimageSha256)));
   assert.ok(files.every((entry) => existsSync(entry.sourcePath)));
   assert.match(readFileSync(join(staged.root, "rubato-features/compaction/relationship.md"), "utf8"), /history-notes/);
   assert.match(readFileSync(join(staged.root, "rubato-features/compaction/THIRD_PARTY_NOTICES.md"), "utf8"), /MIT/);
   for (const entry of files.filter((candidate) => candidate.path.endsWith(".mjs"))) {
-    const syntax = spawnSync(process.execPath, ["--check", join(staged.root, entry.path)], {
+    const syntax = spawnSync(process.execPath, ["--check", entry.sourcePath], {
       encoding: "utf8",
       env: withoutNodeOptions(process.env),
     });
@@ -239,6 +242,15 @@ test("summary-mode idle overlay compacts through the stock SDK; history-notes do
   const fixture = await createFixture({
     ...dirs,
     sessionManager: sdk.SessionManager.inMemory(dirs.cwd),
+    settings: {
+      compaction: {
+        enabled: true,
+        reserveTokens: 1,
+        keepRecentTokens: 10,
+        thresholdRatio: 0.01,
+        idleCompactionEnabled: true,
+      },
+    },
   });
   t.after(() => fixture.session.dispose());
   fixture.session.agent.streamFunction = () => complete(assistant("done", "stop", 4000));
@@ -256,6 +268,15 @@ test("summary-mode idle overlay compacts through the stock SDK; history-notes do
   const notes = await createFixture({
     ...notesDirs,
     sessionManager: sdk.SessionManager.inMemory(notesDirs.cwd),
+    settings: {
+      compaction: {
+        enabled: true,
+        reserveTokens: 1,
+        keepRecentTokens: 10,
+        thresholdRatio: 0.9,
+        idleCompactionEnabled: true,
+      },
+    },
   });
   t.after(() => notes.session.dispose());
   notes.session.agent.streamFunction = () => complete(assistant("done", "stop", 4000));
@@ -294,7 +315,7 @@ test("openai-remote session_before_compact supplies a result and skips the local
         enabled: true,
         reserveTokens: 1,
         keepRecentTokens: 10,
-        thresholdRatio: 0.01,
+        thresholdRatio: 0.99,
         idleCompactionEnabled: false,
       },
     },

@@ -31,6 +31,8 @@ const catalog = Object.freeze({
   "config-reload": { requires: [], load: () => import("./features/config-reload/feature.mjs") },
   "user-commands-agent": { requires: [], load: async () => (await import("./features/user-commands-agent/feature.mjs")).userCommandsAgentFeature },
   "user-commands-session": { requires: ["session-catalog"], load: async () => (await import("./features/user-commands-session/feature.mjs")).feature },
+  "remote-surface": { requires: ["request-run"], load: async () => (await import("./features/remote-surface/feature.mjs")).feature },
+  "tui-input": { requires: [], load: () => import("./features/tui-input/patches.mjs") },
 });
 
 export const PI_FEATURE_NAMES = Object.freeze(Object.keys(catalog));

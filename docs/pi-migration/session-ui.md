@@ -271,3 +271,32 @@ catalog path를 반환하고, `/resume` TUI 재결합은 native PTY에서 검증
 ## A11
 
 `/history` `/help` `/diff` `/files` `/tui` are owned by `features/user-commands-session/` with named factories `rubato-history-search` `rubato-help` `rubato-diff` `rubato-files` `rubato-redraws`. `/history` pages the candidate session-catalog API to Senpi recall (10,000 prompts): first catalog page renders, then remaining pages fill. Header discovery is catalog-owned; JSONL parse is per page. Render is asserted from stock `ctx.ui.custom` output in an isolated AgentSession; VS Code launches go through a spawn mock.
+## A16 remote
+
+`features/remote-surface/` is the candidate remote-surface consumer (ledger F02 / F08-e). Named factory `rubato-remote-surface` attaches to the existing hub/protocol; it does not reimplement the hub.
+
+Projection (conversationEntries, timeline presentation, message sanitization) and InteractiveActionDispatcher are reused from the product by import. surface.mjs is a stock port of the product remote-surface because that module pulls Senpi session-metrics/statusline. Stock has no getInteractiveControl; the factory binds a host adapter that submits via pi.sendUserMessage and aborts via session context.
+
+Candidate does not fall back to the default LaunchAgent socket. It connects only when RUBATO_HUB_SOCKET / options.socketPath / options.connect / options.protocol is explicit. Disable with rubato-features.json disabled: ["rubato-remote-surface"].
+
+Locked locally against a temp product hub: list, connect, input submit (action.accepted + agent.state), abort, disconnect while the run continues, reconnect snapshot. Large existing session resume is measured from a copied session file (never opened in place).
+
+## A15
+
+`features/tui-input/` owns Korean IME/unicode decode, image-attach gap, and busy-enter delivery on stock Pi 0.85.1. Named factories: `rubato-tui-unicode`, `rubato-tui-images`, `rubato-tui-busy-enter` (each independently disableable via `rubato-features.json`).
+
+Locked from product vs stock, not from the 0906 UI manifest:
+
+- Unicode: stock `StdinBuffer` used `data.toString()` + one UTF-16 unit. Port is the Senpi `StringDecoder` + `codePointAt` delta on `@earendil-works/pi-tui@0.85.1` `dist/stdin-buffer.js`.
+- Paste: stock already emits one `paste` event for bracketed paste and the editor inserts newlines / large-paste markers. No patch.
+- Select cancel: stock `tui.select.cancel` is `escape` and `ctrl+c`; `SelectList.onCancel` fires with no value and restores the editor. Locked as that product/stock behavior; no extra patch.
+- Images: stock Ctrl+V writes a temp path into the editor and submits it as text. Product keeps in-memory `[Image #N]` + `pendingImages`. Gap port: factory intercepts `input` to turn clipboard markers/temp paths into `ImageContent`; interactive-mode clipboard paste inserts a marker when the factory is on.
+- Busy-enter: stock Enter-while-streaming is `steer`. Product queues `followUp`, empty Enter toggles, Up recalls latest. Factory + interactive-mode patch.
+
+Decoration skip (not completion conditions): statusline watermark/model nicknames, boot splash/resonance/chrome, streaming-reveal typewriter, shortcut overlay, collapsible OSC-8 click expansion (stock already uses `MouseRegion`), editor mouse-drag selection (stock already click-to-cursor + screen copy-on-select), tmux warning copy, fullscreen visual style, paste-expand collapsed-marker repair.
+
+Row-level table: `harness/pi-runtime/features/tui-input/transforms-classification.md` (38 TUI rows: 19 must-port / 4 stock / 15 decoration). A15 actually ports unicode+images+busy-enter. Other must-port rows (tool-group, turn-work, thinking dock, model-picker rank, title-guard, `/resume` paging) belong to other workstreams.
+
+Tests (owner re-run): `cd harness/pi-runtime && env -u NODE_OPTIONS -u NODE_COMPILE_CACHE node --test --test-timeout=45000 features/tui-input/*.test.mjs` → 16 pass / 0 fail, including native PTY Hangul split UTF-8 and 3-line+large bracketed paste. interactive-mode imports live at `dist/modes/interactive/../../rubato-features/tui-input/`.
+
+Honest remaining gaps: Senpi `ImageMarkerRegistry` undo/renumber is not ported; drag-and-drop is a startup hint only (no handler in product or stock); remote `getInteractiveControl` is A16; unicode factory disable does not unpatch stdin-buffer.js.
