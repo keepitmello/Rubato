@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import http2 from "node:http2";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -105,7 +105,7 @@ function cursorExecNativeRead(path, toolCallId, index) {
   );
 }
 
-function cursorExecShell(command, workingDirectory, toolCallId, index) {
+function cursorExecShell(command, workingDirectory, toolCallId, index, execId = `guard-exec-${index}`) {
   return toBinary(
     proto.AgentServerMessageSchema,
     create(proto.AgentServerMessageSchema, {
@@ -113,7 +113,7 @@ function cursorExecShell(command, workingDirectory, toolCallId, index) {
         case: "execServerMessage",
         value: create(proto.ExecServerMessageSchema, {
           id: 100 + index,
-          execId: `guard-exec-${index}`,
+          execId,
           message: {
             case: "shellArgs",
             value: create(proto.ShellArgsSchema, { command, workingDirectory, toolCallId }),
@@ -146,6 +146,60 @@ function waitFor(promise, label, timeoutMs = 5_000) {
       timeout = setTimeout(() => reject(new Error(`timed out waiting for ${label}`)), timeoutMs);
     }),
   ]).finally(() => clearTimeout(timeout));
+}
+
+
+function cursorExecWrite(path, fileText, toolCallId, index, execId = `write-exec-${index}`) {
+  return toBinary(
+    proto.AgentServerMessageSchema,
+    create(proto.AgentServerMessageSchema, {
+      message: {
+        case: "execServerMessage",
+        value: create(proto.ExecServerMessageSchema, {
+          id: 300 + index,
+          execId,
+          message: {
+            case: "writeArgs",
+            value: create(proto.WriteArgsSchema, { path, fileText, toolCallId }),
+          },
+        }),
+      },
+    }),
+  );
+}
+
+function cursorExecPiEdit(path, edits, index, execId = `edit-exec-${index}`) {
+  return toBinary(
+    proto.AgentServerMessageSchema,
+    create(proto.AgentServerMessageSchema, {
+      message: {
+        case: "execServerMessage",
+        value: create(proto.ExecServerMessageSchema, {
+          id: 400 + index,
+          execId,
+          message: {
+            case: "piEditArgs",
+            value: create(proto.PiEditExecArgsSchema, {
+              path,
+              edits: edits.map((edit) => create(proto.PiEditReplacementSchema, edit)),
+            }),
+          },
+        }),
+      },
+    }),
+  );
+}
+
+function writeFakeCursorAuth(agentDir, label) {
+  mkdirSync(agentDir, { recursive: true });
+  writeFileSync(join(agentDir, "auth.json"), `${JSON.stringify({
+    cursor: {
+      type: "oauth",
+      access: `${label}-access-not-real`,
+      refresh: `${label}-refresh-not-real`,
+      expires: Date.now() + 60 * 60 * 1000,
+    },
+  }, null, 2)}\n`, { mode: 0o600 });
 }
 
 function selectedModel(baseUrl) {
@@ -866,4 +920,366 @@ test("an aborted actual Cursor shell exec records one error pair and no late sid
   assert.throws(() => readFileSync(sideEffectPath, "utf8"), (error) => error?.code === "ENOENT");
   assert.equal(session.agent.state.messages.slice(beforeNextTurn).some((message) =>
     message.role === "toolResult" && message.toolCallId === "abort-call-1"), false);
+});
+
+async function bindCursorSession(t, spec) {
+  const { cwd, agentDir, tools, observer, modelRuntime, baseUrl, rotationName } = spec;
+  mkdirSync(cwd, { recursive: true });
+  writeFakeCursorAuth(agentDir, rotationName ?? "a7");
+  const execution = providerExecution.createProviderExecution();
+  const env = {
+    HOME: isolatedHome,
+    PI_OFFLINE: "1",
+    RUBATO_SPEED_INDEX: "0",
+    RUBATO_NO_KIRO_ENSURE: "1",
+    RUBATO_PI_CODING_AGENT_DIR: agentDir,
+    CURSOR_CONVERSATION_ID_STORE: join(scratchRoot, `${rotationName ?? "a7"}-rotation.json`),
+    PATH: process.env.PATH,
+  };
+  const settingsManager = sdk.SettingsManager.inMemory();
+  const factories = [
+    ...guards.createToolGuardExtensionFactories(),
+    {
+      name: "rubato-providers",
+      factory: providers.createProvidersExtension({
+        env,
+        routeFactories: { cursor: execution.cursorRouteFactory },
+        kiro: { ensureKiro: async () => {} },
+      }),
+    },
+    { name: "rubato-provider-execution", factory: execution.extension },
+  ];
+  if (observer) factories.push({ name: "a7-observer", factory: observer });
+  const resourceLoader = new sdk.DefaultResourceLoader({
+    cwd,
+    agentDir,
+    settingsManager,
+    noExtensions: true,
+    noSkills: true,
+    noPromptTemplates: true,
+    noThemes: true,
+    noContextFiles: true,
+    extensionFactories: factories,
+  });
+  await resourceLoader.reload();
+  const created = await sdk.createAgentSession({
+    cwd,
+    agentDir,
+    model: selectedModel(baseUrl),
+    tools,
+    settingsManager,
+    resourceLoader,
+    sessionManager: sdk.SessionManager.inMemory(cwd),
+    ...(modelRuntime ? { modelRuntime } : {}),
+  });
+  t.after(() => created.session.dispose());
+  assert.deepEqual(created.extensionsResult.errors, []);
+  await created.session.bindExtensions({ onError: (error) => assert.fail(error) });
+  return { ...created, execution };
+}
+
+test("same Cursor exec identity does not run twice when the transport redelivers it concurrently and sequentially", async (t) => {
+  const cwd = join(scratchRoot, "dedup-cwd");
+  const agentDir = join(scratchRoot, "dedup-agent");
+  const sideEffect = join(cwd, "once.txt");
+  const command = "printf x >> once.txt";
+  const originalToolCallId = "shared-call-id";
+  const sameExecId = "same-frame-exec";
+  const otherExecId = "other-frame-exec";
+  const clientMessages = [];
+  let shellResults = 0;
+  let finished;
+  const done = new Promise((resolve) => { finished = resolve; });
+  const server = http2.createServer();
+  server.on("stream", (stream) => {
+    let buffer = Buffer.alloc(0);
+    let sentInitial = false;
+    stream.respond({ ":status": 200, "content-type": "application/connect+proto" });
+    stream.on("data", (chunk) => {
+      buffer = Buffer.concat([buffer, chunk]);
+      while (buffer.length >= 5) {
+        const length = buffer.readUInt32BE(1);
+        if (buffer.length < 5 + length) break;
+        const message = fromBinary(proto.AgentClientMessageSchema, buffer.subarray(5, 5 + length));
+        buffer = buffer.subarray(5 + length);
+        clientMessages.push(message);
+        if (message.message.case === "runRequest" && !sentInitial) {
+          sentInitial = true;
+          stream.write(connectFrame(cursorExecShell(command, cwd, originalToolCallId, 1, sameExecId)));
+          stream.write(connectFrame(cursorExecShell(command, cwd, originalToolCallId, 2, sameExecId)));
+          continue;
+        }
+        if (message.message.case !== "execClientMessage" || message.message.value.message.case !== "shellResult") continue;
+        shellResults += 1;
+        if (shellResults === 2) {
+          stream.write(connectFrame(cursorExecShell(command, cwd, originalToolCallId, 3, sameExecId)));
+        } else if (shellResults === 3) {
+          stream.write(connectFrame(cursorExecShell(command, cwd, originalToolCallId, 4, otherExecId)));
+        } else if (shellResults >= 4) {
+          stream.write(connectFrame(cursorInteraction("turnEnded", create(proto.TurnEndedUpdateSchema, { inputTokens: 1n, outputTokens: 1n }))));
+          finished?.();
+        }
+      }
+    });
+  });
+  const baseUrl = await listen(server);
+  t.after(() => closeServer(server));
+  const { session } = await bindCursorSession(t, { cwd, agentDir, tools: ["bash"], baseUrl, rotationName: "dedup" });
+  await waitFor(session.prompt("run once even if the frame is redelivered"), "dedup Cursor turn");
+  await waitFor(done, "dedup exec sequence");
+  assert.equal(readFileSync(sideEffect, "utf8"), "xx", "same execId runs once; a different execId with the same original toolCallId is a second frame");
+  const toolResults = session.agent.state.messages.filter((message) => message.role === "toolResult");
+  const toolCalls = session.agent.state.messages
+    .filter((message) => message.role === "assistant")
+    .flatMap((message) => message.content.filter((part) => part.type === "toolCall"));
+  assert.equal(toolCalls.length, 2, "transcript keeps one block per exec identity, not per suffixed redelivery");
+  assert.equal(toolResults.length, 2);
+  assert.equal(toolCalls[0].id, originalToolCallId);
+  assert.equal(toolCalls[1].id, `${originalToolCallId}-2`);
+  const wire = clientMessages.filter((message) => message.message.case === "execClientMessage" && message.message.value.message.case === "shellResult");
+  assert.equal(wire.length, 4, "each delivered frame still gets a wire answer");
+  assert.deepEqual(wire.map((message) => message.message.value.execId), [sameExecId, sameExecId, sameExecId, otherExecId]);
+});
+
+test("Cursor exec journal replays a completed identity and refuses unknown after a crash", async (t) => {
+  const cwd = join(scratchRoot, "journal-cwd");
+  const agentDir = join(scratchRoot, "journal-agent");
+  const command = "printf ran >> journal-side.txt";
+  const execId = "durable-exec-1";
+  const crashExecId = "crashed-exec-1";
+  const clientMessages = [];
+  let shellResults = 0;
+  let finished;
+  const done = new Promise((resolve) => { finished = resolve; });
+  const server = http2.createServer();
+  server.on("stream", (stream) => {
+    let buffer = Buffer.alloc(0);
+    let sentInitial = false;
+    stream.respond({ ":status": 200, "content-type": "application/connect+proto" });
+    stream.on("data", (chunk) => {
+      buffer = Buffer.concat([buffer, chunk]);
+      while (buffer.length >= 5) {
+        const length = buffer.readUInt32BE(1);
+        if (buffer.length < 5 + length) break;
+        const message = fromBinary(proto.AgentClientMessageSchema, buffer.subarray(5, 5 + length));
+        buffer = buffer.subarray(5 + length);
+        clientMessages.push(message);
+        if (message.message.case === "runRequest" && !sentInitial) {
+          sentInitial = true;
+          stream.write(connectFrame(cursorExecShell(command, cwd, "journal-call-1", 1, execId)));
+          continue;
+        }
+        if (message.message.case !== "execClientMessage" || message.message.value.message.case !== "shellResult") continue;
+        shellResults += 1;
+        if (shellResults === 1) {
+          stream.write(connectFrame(cursorExecShell(command, cwd, "journal-call-1", 2, execId)));
+        } else {
+          stream.write(connectFrame(cursorInteraction("turnEnded", create(proto.TurnEndedUpdateSchema, { inputTokens: 1n, outputTokens: 1n }))));
+          finished?.();
+        }
+      }
+    });
+  });
+  const baseUrl = await listen(server);
+  t.after(() => closeServer(server));
+  const { session } = await bindCursorSession(t, { cwd, agentDir, tools: ["bash"], baseUrl, rotationName: "journal" });
+  await waitFor(session.prompt("journal a native shell exec"), "journal Cursor turn");
+  await waitFor(done, "journal exec sequence");
+  assert.equal(readFileSync(join(cwd, "journal-side.txt"), "utf8"), "ran");
+  const journalPath = join(agentDir, "cursor-exec-journal.json");
+  assert.equal(existsSync(journalPath), true, "journal is durable under the session agentDir");
+  assert.equal(journalPath.startsWith(agentDir), true);
+  assert.equal(journalPath.includes(".cursor"), false);
+  const lineageId = session.sessionId;
+  assert.equal(typeof lineageId, "string");
+  assert.notEqual(lineageId, "");
+  const restarted = providerExecution.createCursorExecJournal({ journalPath, agentDir });
+  const replay = restarted.prepare({ lineageId, execId, toolCallId: "journal-call-1", toolName: "bash" });
+  assert.equal(replay.decision, "replay");
+  assert.equal(replay.entry.isError, false);
+  assert.equal(readFileSync(join(cwd, "journal-side.txt"), "utf8"), "ran");
+  const raw = JSON.parse(readFileSync(journalPath, "utf8"));
+  raw.entries[`${lineageId}\u0000${crashExecId}`] = {
+    lineageId,
+    execId: crashExecId,
+    toolName: "bash",
+    state: "executing",
+    pid: 999999,
+    updatedAt: Date.now(),
+  };
+  writeFileSync(journalPath, `${JSON.stringify(raw)}\n`);
+  const afterCrash = providerExecution.createCursorExecJournal({
+    journalPath,
+    agentDir,
+    isOwnerAlive: () => false,
+  });
+  const refused = afterCrash.prepare({ lineageId, execId: crashExecId, toolCallId: "journal-call-crash", toolName: "bash" });
+  assert.equal(refused.decision, "refuse");
+  assert.equal(refused.entry.state, "unknown");
+  assert.equal(readFileSync(join(cwd, "journal-side.txt"), "utf8"), "ran");
+});
+
+test("afterToolCall turning a Cursor exec into a failure is delivered as failure, preserving usage and addedToolNames", async (t) => {
+  const cwd = join(scratchRoot, "hook-cwd");
+  const agentDir = join(scratchRoot, "hook-agent");
+  const command = "printf ok >> hook-side.txt";
+  const clientMessages = [];
+  let finished;
+  const done = new Promise((resolve) => { finished = resolve; });
+  const server = http2.createServer();
+  server.on("stream", (stream) => {
+    let buffer = Buffer.alloc(0);
+    let sentExec = false;
+    stream.respond({ ":status": 200, "content-type": "application/connect+proto" });
+    stream.on("data", (chunk) => {
+      buffer = Buffer.concat([buffer, chunk]);
+      while (buffer.length >= 5) {
+        const length = buffer.readUInt32BE(1);
+        if (buffer.length < 5 + length) break;
+        const message = fromBinary(proto.AgentClientMessageSchema, buffer.subarray(5, 5 + length));
+        buffer = buffer.subarray(5 + length);
+        clientMessages.push(message);
+        if (message.message.case === "runRequest" && !sentExec) {
+          sentExec = true;
+          stream.write(connectFrame(cursorExecShell(command, cwd, "hook-call-1", 1, "hook-exec-1")));
+          continue;
+        }
+        if (message.message.case === "execClientMessage" && message.message.value.message.case === "shellResult") {
+          stream.write(connectFrame(cursorInteraction("turnEnded", create(proto.TurnEndedUpdateSchema, { inputTokens: 1n, outputTokens: 1n }))));
+          finished?.();
+        }
+      }
+    });
+  });
+  const baseUrl = await listen(server);
+  t.after(() => closeServer(server));
+  const observer = (pi) => {
+    pi.on("tool_result", (event) => {
+      if (event.toolName !== "bash") return undefined;
+      return { isError: true, usage: { input: 7 }, addedToolNames: ["from-hook"] };
+    });
+  };
+  const { session } = await bindCursorSession(t, { cwd, agentDir, tools: ["bash"], baseUrl, observer, rotationName: "hook" });
+  await waitFor(session.prompt("turn a successful exec into a failure"), "hook Cursor turn");
+  await waitFor(done, "hook exec sequence");
+  assert.equal(readFileSync(join(cwd, "hook-side.txt"), "utf8"), "ok", "afterToolCall runs after the side effect");
+  const toolResult = session.agent.state.messages.find((message) => message.role === "toolResult");
+  assert.equal(toolResult.isError, true);
+  assert.match(toolResult.content[0].text, /no output/, "hook omitted content, so the original bash result is kept");
+  assert.deepEqual(toolResult.usage, { input: 7 });
+  assert.deepEqual(toolResult.addedToolNames, ["from-hook"]);
+  const wire = clientMessages.find((message) => message.message.case === "execClientMessage" && message.message.value.message.case === "shellResult");
+  assert.equal(wire.message.value.message.value.result.case, "failure", "a hooked failure must not be a wire success");
+});
+
+test("Cursor native write/edit persist through hostWrite/hostEdit without activating model-hidden tools", async (t) => {
+  const cwd = join(scratchRoot, "host-cwd");
+  const agentDir = join(scratchRoot, "host-agent");
+  const clientMessages = [];
+  let finished;
+  const done = new Promise((resolve) => { finished = resolve; });
+  const server = http2.createServer();
+  server.on("stream", (stream) => {
+    let buffer = Buffer.alloc(0);
+    let sentWrite = false;
+    stream.respond({ ":status": 200, "content-type": "application/connect+proto" });
+    stream.on("data", (chunk) => {
+      buffer = Buffer.concat([buffer, chunk]);
+      while (buffer.length >= 5) {
+        const length = buffer.readUInt32BE(1);
+        if (buffer.length < 5 + length) break;
+        const message = fromBinary(proto.AgentClientMessageSchema, buffer.subarray(5, 5 + length));
+        buffer = buffer.subarray(5 + length);
+        clientMessages.push(message);
+        if (message.message.case === "runRequest" && !sentWrite) {
+          sentWrite = true;
+          stream.write(connectFrame(cursorExecWrite("host.txt", "alpha\n", "write-call-1", 1, "host-write-exec")));
+          continue;
+        }
+        if (message.message.case === "execClientMessage" && message.message.value.message.case === "writeResult") {
+          stream.write(connectFrame(cursorExecPiEdit("host.txt", [{ oldText: "alpha", newText: "beta" }], 1, "host-edit-exec")));
+          continue;
+        }
+        if (message.message.case === "execClientMessage" && message.message.value.message.case === "piEditResult") {
+          stream.write(connectFrame(cursorInteraction("turnEnded", create(proto.TurnEndedUpdateSchema, { inputTokens: 1n, outputTokens: 1n }))));
+          finished?.();
+        }
+      }
+    });
+  });
+  const baseUrl = await listen(server);
+  t.after(() => closeServer(server));
+  let api;
+  const observer = (pi) => { api = pi; };
+  const { session } = await bindCursorSession(t, { cwd, agentDir, tools: ["read"], baseUrl, observer, rotationName: "host" });
+  await waitFor(session.prompt("write then edit without exposing those tools"), "host mutation turn");
+  await waitFor(done, "host mutation sequence");
+  assert.equal(readFileSync(join(cwd, "host.txt"), "utf8"), "beta\n");
+  const active = api.getActiveTools();
+  assert.equal(active.includes("write"), false, "write stays model-hidden");
+  assert.equal(active.includes("edit"), false, "edit stays model-hidden");
+  await assert.rejects(
+    api.executeTool("write", { path: "host.txt", content: "nope" }),
+    /inactive|Unknown tool|not available/i,
+  );
+  const writeWire = clientMessages.find((message) => message.message.case === "execClientMessage" && message.message.value.message.case === "writeResult");
+  const editWire = clientMessages.find((message) => message.message.case === "execClientMessage" && message.message.value.message.case === "piEditResult");
+  assert.equal(writeWire.message.value.message.value.result.case, "success");
+  assert.equal(editWire.message.value.message.value.result.case, "success");
+});
+
+test("Cursor exec write and bash on a child-like session with shared ModelRuntime stay in the child cwd", async (t) => {
+  const parentCwd = join(scratchRoot, "child-parent-cwd");
+  const childCwd = join(scratchRoot, "child-session-cwd");
+  const parentAgent = join(scratchRoot, "child-parent-agent");
+  const childAgent = join(scratchRoot, "child-session-agent");
+  const sharedAgentDir = join(scratchRoot, "child-shared-agent");
+  mkdirSync(parentCwd, { recursive: true });
+  mkdirSync(sharedAgentDir, { recursive: true });
+  writeFakeCursorAuth(sharedAgentDir, "child-shared");
+  writeFileSync(join(parentCwd, "parent-only.txt"), "parent\n");
+  let requestIndex = 0;
+  const server = http2.createServer();
+  server.on("stream", (stream) => {
+    let buffer = Buffer.alloc(0);
+    let sent = false;
+    stream.respond({ ":status": 200, "content-type": "application/connect+proto" });
+    stream.on("data", (chunk) => {
+      buffer = Buffer.concat([buffer, chunk]);
+      while (buffer.length >= 5) {
+        const length = buffer.readUInt32BE(1);
+        if (buffer.length < 5 + length) break;
+        const message = fromBinary(proto.AgentClientMessageSchema, buffer.subarray(5, 5 + length));
+        buffer = buffer.subarray(5 + length);
+        if (message.message.case === "runRequest" && !sent) {
+          sent = true;
+          requestIndex += 1;
+          if (requestIndex === 1) {
+            stream.write(connectFrame(cursorExecWrite("cursor-child.txt", "from-child\n", "child-write-1", 1, "child-write-exec")));
+          } else {
+            stream.write(connectFrame(cursorExecShell("pwd > cursor-bash-cwd.txt && pwd", "", "child-bash-1", 2, "child-bash-exec")));
+          }
+          continue;
+        }
+        if (message.message.case === "execClientMessage") {
+          stream.write(connectFrame(cursorInteraction("turnEnded", create(proto.TurnEndedUpdateSchema, { inputTokens: 1n, outputTokens: 1n }))));
+        }
+      }
+    });
+  });
+  const baseUrl = await listen(server);
+  t.after(() => closeServer(server));
+  const sharedRuntime = await sdk.ModelRuntime.create({
+    authPath: join(sharedAgentDir, "auth.json"),
+    modelsPath: join(sharedAgentDir, "models.json"),
+  });
+  await bindCursorSession(t, { cwd: parentCwd, agentDir: parentAgent, tools: ["read", "bash"], baseUrl, modelRuntime: sharedRuntime, rotationName: "child-parent" });
+  const child = await bindCursorSession(t, { cwd: childCwd, agentDir: childAgent, tools: ["read", "bash"], baseUrl, modelRuntime: sharedRuntime, rotationName: "child-session" });
+  await waitFor(child.session.prompt("write in the child cwd"), "child write turn");
+  assert.equal(readFileSync(join(childCwd, "cursor-child.txt"), "utf8"), "from-child\n");
+  assert.equal(existsSync(join(parentCwd, "cursor-child.txt")), false);
+  await waitFor(child.session.prompt("bash pwd in the child cwd"), "child bash turn");
+  const bashCwd = readFileSync(join(childCwd, "cursor-bash-cwd.txt"), "utf8").trim();
+  assert.equal(existsSync(join(parentCwd, "cursor-bash-cwd.txt")), false);
+  assert.ok(bashCwd.endsWith("child-session-cwd"), bashCwd);
 });

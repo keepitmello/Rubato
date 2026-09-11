@@ -526,6 +526,8 @@ export const stream = (model, context, options) => {
         // transport fails, and the error path finalizes the synthesized call
         // just like the success path does.
         const inFlightDispatches = new Set();
+        // Survives HTTP/2 retries: suffixing toolCallId must not mint a new exec identity.
+        const execIdentities = new Map();
         // A dispatch can spawn another, so re-check rather than awaiting one
         // snapshot. The wait is bounded by the abort signal: exec handlers have
         // no cancellation contract, so a hung tool must not hold the terminal
@@ -696,6 +698,7 @@ export const stream = (model, context, options) => {
                     },
                     openToolCalls: new Map(),
                     resolvedMcpToolCallIds,
+                    execIdentities,
                     setTextBlock: (b) => {
                         currentTextBlock = b;
                     },
@@ -1370,7 +1373,7 @@ async function dispatchExecServerMessage(context) {
     switch (execCase) {
         case "readArgs": {
             const args = execMsg.message.value;
-            ensureUniqueCursorExecToolCallId(output, args);
+            ensureUniqueCursorExecToolCallId(output, args, state.execIdentities, cursorExecIdentity(execMsg));
             synthesizeCursorExecToolCall(output, stream, state, args.toolCallId, "read", {
                 path: args.path,
                 offset: args.offset,
@@ -1382,7 +1385,7 @@ async function dispatchExecServerMessage(context) {
         }
         case "lsArgs": {
             const args = execMsg.message.value;
-            ensureUniqueCursorExecToolCallId(output, args);
+            ensureUniqueCursorExecToolCallId(output, args, state.execIdentities, cursorExecIdentity(execMsg));
             // The bridge maps `ls` onto the local `ls` tool; mirror that here so
             // the synthesized block matches the toolResult's `toolName`.
             synthesizeCursorExecToolCall(output, stream, state, args.toolCallId, "ls", { path: piLsPath(args.path) });
@@ -1392,7 +1395,7 @@ async function dispatchExecServerMessage(context) {
         }
         case "grepArgs": {
             const args = execMsg.message.value;
-            ensureUniqueCursorExecToolCallId(output, args);
+            ensureUniqueCursorExecToolCallId(output, args, state.execIdentities, cursorExecIdentity(execMsg));
             // Cursor's model sometimes emits `grepArgs` with an empty `pattern`
             // and a non-empty `glob`, expecting grep to list files matching the
             // glob. Reject that up front with an actionable error.
@@ -1415,7 +1418,7 @@ async function dispatchExecServerMessage(context) {
         }
         case "writeArgs": {
             const args = execMsg.message.value;
-            ensureUniqueCursorExecToolCallId(output, args);
+            ensureUniqueCursorExecToolCallId(output, args, state.execIdentities, cursorExecIdentity(execMsg));
             // Match the bridge: prefer `fileText`, fall back to decoded `fileBytes`.
             const content = args.fileText ?? new TextDecoder().decode(args.fileBytes ?? new Uint8Array());
             synthesizeCursorExecToolCall(output, stream, state, args.toolCallId, "write", {
@@ -1433,7 +1436,7 @@ async function dispatchExecServerMessage(context) {
         }
         case "deleteArgs": {
             const args = execMsg.message.value;
-            ensureUniqueCursorExecToolCallId(output, args);
+            ensureUniqueCursorExecToolCallId(output, args, state.execIdentities, cursorExecIdentity(execMsg));
             synthesizeCursorExecToolCall(output, stream, state, args.toolCallId, "delete", { path: args.path });
             const { execResult } = await resolveExecHandler(args, execHandlers?.delete?.bind(execHandlers), onToolResult, (toolResult) => buildDeleteResultFromToolResult(args.path, toolResult), (reason) => buildDeleteRejectedResult(args.path, reason), (error) => buildDeleteErrorResult(args.path, error), { toolCallId: args.toolCallId, toolName: "delete" });
             sendExecClientMessage(h2Request, execMsg, "deleteResult", execResult);
@@ -1441,20 +1444,20 @@ async function dispatchExecServerMessage(context) {
         }
         case "shellArgs": {
             const args = execMsg.message.value;
-            ensureUniqueCursorExecToolCallId(output, args);
+            ensureUniqueCursorExecToolCallId(output, args, state.execIdentities, cursorExecIdentity(execMsg));
             const normalizedArgs = { ...args, workingDirectory: args.workingDirectory || process.cwd() };
             const shellTimeout = args.timeout && args.timeout > 0 ? args.timeout : undefined;
             synthesizeCursorExecToolCall(output, stream, state, args.toolCallId, "bash", {
                 command: composeShellCommand(args.command, args.workingDirectory || undefined),
                 timeout: shellTimeout,
             });
-            const { execResult } = await resolveExecHandler(normalizedArgs, execHandlers?.shell?.bind(execHandlers), onToolResult, (toolResult) => buildShellResultFromToolResult(normalizedArgs, toolResult), (reason) => buildShellRejectedResult(normalizedArgs.command, normalizedArgs.workingDirectory, reason), (error) => buildShellFailureResult(normalizedArgs.command, normalizedArgs.workingDirectory, error), { toolCallId: args.toolCallId, toolName: "bash" });
+            const { execResult } = await resolveExecHandler(args, execHandlers?.shell?.bind(execHandlers), onToolResult, (toolResult) => buildShellResultFromToolResult(normalizedArgs, toolResult), (reason) => buildShellRejectedResult(normalizedArgs.command, normalizedArgs.workingDirectory, reason), (error) => buildShellFailureResult(normalizedArgs.command, normalizedArgs.workingDirectory, error), { toolCallId: args.toolCallId, toolName: "bash" });
             sendExecClientMessage(h2Request, execMsg, "shellResult", sanitizeShellExecResult(execResult));
             return;
         }
         case "shellStreamArgs": {
             const args = execMsg.message.value;
-            ensureUniqueCursorExecToolCallId(output, args);
+            ensureUniqueCursorExecToolCallId(output, args, state.execIdentities, cursorExecIdentity(execMsg));
             const shellStreamTimeout = args.timeout && args.timeout > 0 ? args.timeout : undefined;
             synthesizeCursorExecToolCall(output, stream, state, args.toolCallId, "bash", {
                 command: composeShellCommand(args.command, args.workingDirectory || undefined),
@@ -1519,6 +1522,8 @@ async function dispatchExecServerMessage(context) {
         case "mcpArgs": {
             const args = execMsg.message.value;
             const mcpCall = decodeMcpCall(args);
+            ensureUniqueCursorExecToolCallId(output, mcpCall, state.execIdentities, cursorExecIdentity(execMsg));
+            mcpCall.cursorExecId = cursorExecIdentity(execMsg);
             // An approval probe, not an invocation: the frame asks whether the
             // call would be permitted. Only a definite allow is approved; without
             // a handler there is nothing to decide with, so it is refused. Either
@@ -1588,51 +1593,61 @@ async function dispatchExecServerMessage(context) {
         }
         case "piReadArgs": {
             const args = execMsg.message.value;
-            const toolCallId = randomUUID();
+            const piCall = { toolCallId: "", cursorExecId: cursorExecIdentity(execMsg) };
+            ensureUniqueCursorExecToolCallId(output, piCall, state.execIdentities, piCall.cursorExecId);
+            const toolCallId = piCall.toolCallId;
             const readArgs = piReadArgs(args.path, args.offset, args.limit);
             synthesizeCursorExecToolCall(output, stream, state, toolCallId, "read", readArgs ?? { path: args.path, offset: args.offset, limit: 0 });
-            const { execResult } = await resolveExecHandler({ args, toolCallId }, execHandlers?.piRead?.bind(execHandlers), onToolResult, buildPiReadResult, buildPiReadError, buildPiReadError, { toolCallId, toolName: "read" });
+            const { execResult } = await resolveExecHandler({ args, toolCallId, cursorExecId: cursorExecIdentity(execMsg) }, execHandlers?.piRead?.bind(execHandlers), onToolResult, buildPiReadResult, buildPiReadError, buildPiReadError, { toolCallId, toolName: "read" });
             sendExecClientMessage(h2Request, execMsg, "piReadResult", execResult);
             return;
         }
         case "piBashArgs": {
             const args = execMsg.message.value;
-            const toolCallId = randomUUID();
+            const piCall = { toolCallId: "", cursorExecId: cursorExecIdentity(execMsg) };
+            ensureUniqueCursorExecToolCallId(output, piCall, state.execIdentities, piCall.cursorExecId);
+            const toolCallId = piCall.toolCallId;
             synthesizeCursorExecToolCall(output, stream, state, toolCallId, "bash", {
                 command: args.command,
                 timeout: piTimeout(args.timeout),
             });
-            const { execResult } = await resolveExecHandler({ args, toolCallId }, execHandlers?.piBash?.bind(execHandlers), onToolResult, buildPiBashResult, buildPiBashError, buildPiBashError, { toolCallId, toolName: "bash" });
+            const { execResult } = await resolveExecHandler({ args, toolCallId, cursorExecId: cursorExecIdentity(execMsg) }, execHandlers?.piBash?.bind(execHandlers), onToolResult, buildPiBashResult, buildPiBashError, buildPiBashError, { toolCallId, toolName: "bash" });
             sendExecClientMessage(h2Request, execMsg, "piBashResult", execResult);
             return;
         }
         case "piEditArgs": {
             const args = execMsg.message.value;
-            const toolCallId = randomUUID();
+            const piCall = { toolCallId: "", cursorExecId: cursorExecIdentity(execMsg) };
+            ensureUniqueCursorExecToolCallId(output, piCall, state.execIdentities, piCall.cursorExecId);
+            const toolCallId = piCall.toolCallId;
             // `PiEditReplacement[]` maps 1:1 onto the local `edit` tool's
             // `edits[{oldText,newText}]` shape.
             synthesizeCursorExecToolCall(output, stream, state, toolCallId, "edit", {
                 path: args.path,
                 edits: args.edits.map((edit) => ({ oldText: edit.oldText, newText: edit.newText })),
             });
-            const { execResult } = await resolveExecHandler({ args, toolCallId }, execHandlers?.piEdit?.bind(execHandlers), onToolResult, buildPiEditResult, buildPiEditRejected, buildPiEditError, { toolCallId, toolName: "edit" });
+            const { execResult } = await resolveExecHandler({ args, toolCallId, cursorExecId: cursorExecIdentity(execMsg) }, execHandlers?.piEdit?.bind(execHandlers), onToolResult, buildPiEditResult, buildPiEditRejected, buildPiEditError, { toolCallId, toolName: "edit" });
             sendExecClientMessage(h2Request, execMsg, "piEditResult", execResult);
             return;
         }
         case "piWriteArgs": {
             const args = execMsg.message.value;
-            const toolCallId = randomUUID();
+            const piCall = { toolCallId: "", cursorExecId: cursorExecIdentity(execMsg) };
+            ensureUniqueCursorExecToolCallId(output, piCall, state.execIdentities, piCall.cursorExecId);
+            const toolCallId = piCall.toolCallId;
             synthesizeCursorExecToolCall(output, stream, state, toolCallId, "write", {
                 path: args.path,
                 content: args.content,
             });
-            const { execResult } = await resolveExecHandler({ args, toolCallId }, execHandlers?.piWrite?.bind(execHandlers), onToolResult, buildPiWriteResult, buildPiWriteRejected, buildPiWriteError, { toolCallId, toolName: "write" });
+            const { execResult } = await resolveExecHandler({ args, toolCallId, cursorExecId: cursorExecIdentity(execMsg) }, execHandlers?.piWrite?.bind(execHandlers), onToolResult, buildPiWriteResult, buildPiWriteRejected, buildPiWriteError, { toolCallId, toolName: "write" });
             sendExecClientMessage(h2Request, execMsg, "piWriteResult", execResult);
             return;
         }
         case "piGrepArgs": {
             const args = execMsg.message.value;
-            const toolCallId = randomUUID();
+            const piCall = { toolCallId: "", cursorExecId: cursorExecIdentity(execMsg) };
+            ensureUniqueCursorExecToolCallId(output, piCall, state.execIdentities, piCall.cursorExecId);
+            const toolCallId = piCall.toolCallId;
             synthesizeCursorExecToolCall(output, stream, state, toolCallId, "grep", {
                 pattern: args.pattern,
                 path: args.path || undefined,
@@ -1642,30 +1657,34 @@ async function dispatchExecServerMessage(context) {
                 context: args.context,
                 limit: piLimit(args.limit),
             });
-            const { execResult } = await resolveExecHandler({ args, toolCallId }, execHandlers?.piGrep?.bind(execHandlers), onToolResult, buildPiGrepResult, buildPiGrepError, buildPiGrepError, { toolCallId, toolName: "grep" });
+            const { execResult } = await resolveExecHandler({ args, toolCallId, cursorExecId: cursorExecIdentity(execMsg) }, execHandlers?.piGrep?.bind(execHandlers), onToolResult, buildPiGrepResult, buildPiGrepError, buildPiGrepError, { toolCallId, toolName: "grep" });
             sendExecClientMessage(h2Request, execMsg, "piGrepResult", execResult);
             return;
         }
         case "piFindArgs": {
             const args = execMsg.message.value;
-            const toolCallId = randomUUID();
+            const piCall = { toolCallId: "", cursorExecId: cursorExecIdentity(execMsg) };
+            ensureUniqueCursorExecToolCallId(output, piCall, state.execIdentities, piCall.cursorExecId);
+            const toolCallId = piCall.toolCallId;
             synthesizeCursorExecToolCall(output, stream, state, toolCallId, "find", {
                 pattern: args.pattern,
                 path: args.path || undefined,
                 limit: piLimit(args.limit),
             });
-            const { execResult } = await resolveExecHandler({ args, toolCallId }, execHandlers?.piFind?.bind(execHandlers), onToolResult, buildPiFindResult, buildPiFindError, buildPiFindError, { toolCallId, toolName: "find" });
+            const { execResult } = await resolveExecHandler({ args, toolCallId, cursorExecId: cursorExecIdentity(execMsg) }, execHandlers?.piFind?.bind(execHandlers), onToolResult, buildPiFindResult, buildPiFindError, buildPiFindError, { toolCallId, toolName: "find" });
             sendExecClientMessage(h2Request, execMsg, "piFindResult", execResult);
             return;
         }
         case "piLsArgs": {
             const args = execMsg.message.value;
-            const toolCallId = randomUUID();
+            const piCall = { toolCallId: "", cursorExecId: cursorExecIdentity(execMsg) };
+            ensureUniqueCursorExecToolCallId(output, piCall, state.execIdentities, piCall.cursorExecId);
+            const toolCallId = piCall.toolCallId;
             synthesizeCursorExecToolCall(output, stream, state, toolCallId, "ls", {
                 path: piLsPath(args.path),
                 limit: piLimit(args.limit),
             });
-            const { execResult } = await resolveExecHandler({ args, toolCallId }, execHandlers?.piLs?.bind(execHandlers), onToolResult, buildPiLsResult, buildPiLsError, buildPiLsError, { toolCallId, toolName: "ls" });
+            const { execResult } = await resolveExecHandler({ args, toolCallId, cursorExecId: cursorExecIdentity(execMsg) }, execHandlers?.piLs?.bind(execHandlers), onToolResult, buildPiLsResult, buildPiLsError, buildPiLsError, { toolCallId, toolName: "ls" });
             sendExecClientMessage(h2Request, execMsg, "piLsResult", execResult);
             return;
         }
@@ -1673,13 +1692,13 @@ async function dispatchExecServerMessage(context) {
             // Same `ShellArgs`/`ShellResult` pair as `shellArgs`, under its own
             // frame number, so the existing shell handler answers it unchanged.
             const args = execMsg.message.value;
-            ensureUniqueCursorExecToolCallId(output, args);
+            ensureUniqueCursorExecToolCallId(output, args, state.execIdentities, cursorExecIdentity(execMsg));
             const normalizedArgs = { ...args, workingDirectory: args.workingDirectory || process.cwd() };
             synthesizeCursorExecToolCall(output, stream, state, args.toolCallId, "bash", {
                 command: composeShellCommand(args.command, args.workingDirectory || undefined),
                 timeout: args.timeout && args.timeout > 0 ? args.timeout : undefined,
             });
-            const { execResult } = await resolveExecHandler(normalizedArgs, execHandlers?.shell?.bind(execHandlers), onToolResult, (toolResult) => buildShellResultFromToolResult(normalizedArgs, toolResult), (reason) => buildShellRejectedResult(normalizedArgs.command, normalizedArgs.workingDirectory, reason), (error) => buildShellFailureResult(normalizedArgs.command, normalizedArgs.workingDirectory, error), { toolCallId: args.toolCallId, toolName: "bash" });
+            const { execResult } = await resolveExecHandler(args, execHandlers?.shell?.bind(execHandlers), onToolResult, (toolResult) => buildShellResultFromToolResult(normalizedArgs, toolResult), (reason) => buildShellRejectedResult(normalizedArgs.command, normalizedArgs.workingDirectory, reason), (error) => buildShellFailureResult(normalizedArgs.command, normalizedArgs.workingDirectory, error), { toolCallId: args.toolCallId, toolName: "bash" });
             sendExecClientMessage(h2Request, execMsg, "miniSweAgentBashResult", sanitizeShellExecResult(execResult));
             return;
         }
@@ -2876,19 +2895,44 @@ function endCurrentThinkingBlock(output, stream, state) {
  * `toolCall` ids, which Anthropic later rejects wholesale on resume
  * (`tool_use` ids must be unique), bricking the session. Exported for tests.
  */
-export function ensureUniqueCursorExecToolCallId(output, args) {
+export function cursorExecIdentity(execMsg) {
+    const execId = typeof execMsg?.execId === "string" && execMsg.execId !== ""
+        ? execMsg.execId
+        : `id:${execMsg?.id}`;
+    return execId;
+}
+/**
+ * Assign a transcript toolCallId for this exec frame.
+ *
+ * The transport may suffix a colliding toolCallId so Anthropic resume stays
+ * unique. That suffix is display-only: the same execId always reuses the first
+ * assigned id and must not be treated as a new execution.
+ */
+export function ensureUniqueCursorExecToolCallId(output, args, execIdentities, execId) {
+    const identity = typeof execId === "string" && execId !== "" ? execId : undefined;
+    if (identity && execIdentities?.has(identity)) {
+        args.toolCallId = execIdentities.get(identity);
+        try { args.cursorExecId = identity; } catch { /* protobuf may ignore unknown fields */ }
+        return { existing: true, execId: identity };
+    }
     if (!args.toolCallId) {
         args.toolCallId = randomUUID();
-        return;
     }
-    const base = args.toolCallId;
-    let candidate = base;
-    let suffix = 2;
-    while (output.content.some((block) => block.type === "toolCall" && block.id === candidate)) {
-        candidate = `${base}-${suffix}`;
-        suffix += 1;
+    else {
+        const base = args.toolCallId;
+        let candidate = base;
+        let suffix = 2;
+        while (output.content.some((block) => block.type === "toolCall" && block.id === candidate)) {
+            candidate = `${base}-${suffix}`;
+            suffix += 1;
+        }
+        args.toolCallId = candidate;
     }
-    args.toolCallId = candidate;
+    if (identity) {
+        execIdentities?.set(identity, args.toolCallId);
+        try { args.cursorExecId = identity; } catch { /* protobuf may ignore unknown fields */ }
+    }
+    return { existing: false, execId: identity };
 }
 /**
  * Synthesize a completed `toolCall` content block for a Cursor exec-channel
@@ -2905,6 +2949,11 @@ export function ensureUniqueCursorExecToolCallId(output, args) {
  * the tool via the bridge and buffered the result. Exported for tests.
  */
 export function synthesizeCursorExecToolCall(output, stream, state, toolCallId, toolName, args) {
+    const existing = output.content.find((block) => block.type === "toolCall" && block.id === toolCallId);
+    if (existing) {
+        markCursorExecResolved(existing);
+        return existing;
+    }
     endCurrentTextBlock(output, stream, state);
     endCurrentThinkingBlock(output, stream, state);
     const block = {

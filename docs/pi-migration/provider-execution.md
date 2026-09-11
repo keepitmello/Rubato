@@ -204,3 +204,19 @@ The remaining exact gaps are: the stock-host stream-idle/empty-assistant watchdo
 pools and their login/refresh merge, model retry/fallback and fallback UI/events, error outcome
 metadata that cannot be inferred if a third-party `tool_result` hook replaces all details, and real
 capabilities for the unsupported Cursor exec variants above.
+
+## A7 (2026-09-11)
+
+F05-c/G07 counter-examples, closed against stock Pi 0.85.1 `AgentSession` plus the local HTTP/2/protobuf Cursor mock (no real Cursor account).
+
+1. **Same exec frame redelivery.** Transport may suffix `toolCallId` so transcript ids stay unique; that suffix is not the exec identity. Identity is `execId` (fallback `id:${execMsg.id}`), stored across HTTP/2 retries on the stream's `execIdentities` map. Concurrent and sequential redelivery of the same `execId` synthesizes one block, joins in-flight, and answers every wire frame. A different `execId` that reuses the original `toolCallId` is a new frame and is suffixed. Test: `same Cursor exec identity does not run twice when the transport redelivers it concurrently and sequentially`.
+
+2. **Durable journal.** Product contract: `prepared → executing → completed | failed | unknown`. `executing` left by a dead pid settles to `unknown` and never auto-retries. Completed/failed with a persisted result replay. Key is `{lineageId, execId}` — not the suffixed toolCallId. File is `{agentDir}/cursor-exec-journal.json` (isolated test agentDir, never `~/.cursor*`). Test: `Cursor exec journal replays a completed identity and refuses unknown after a crash`.
+
+3. **afterToolCall merge.** Stock `emitToolResult` / `AgentSession.afterToolCall` dropped `addedToolNames`. Provider-execution now patches those two coding-agent files so a hook can turn a success into `isError: true` while keeping omitted `content` and delivering `usage` / `addedToolNames`. The Cursor wire result is `failure`, not `success`. Test: `afterToolCall turning a Cursor exec into a failure is delivered as failure, preserving usage and addedToolNames`.
+
+4. **hostWrite/hostEdit vs inactive activation.** Model-visible `write`/`edit` removal is not native executor availability. Cursor `writeArgs` / `piEditArgs` persist through `hostWrite`/`hostEdit` + journal even when those tools are not in the session's active set. `activateInactiveTool` is not used for write/edit. Test: `Cursor native write/edit persist through hostWrite/hostEdit without activating model-hidden tools`.
+
+5. **Child cwd with shared ModelRuntime.** Request-local `providerExecuteTool` / `providerExecCwd` / lineage come from the `createAgentSession` closure, so a child-like session sharing the parent's `ModelRuntime` still journals and mutates in its own cwd. Empty Cursor `workingDirectory` no longer falls through to `process.cwd()` before the handler; bash without a server cwd uses the session bash tool cwd. Test: `Cursor exec write and bash on a child-like session with shared ModelRuntime stay in the child cwd`. This is the same shared-runtime seam A4 measured for file tools/bash; it is not the off-limits `features/child-runtime/**` RPC child process.
+
+Vendor `cursor-agent.js` was required so exec identity can be separated from the unique tool-call suffix at the dispatcher (the bridge never sees the unsuffixed id otherwise). `exec-modern.js` was not changed.
