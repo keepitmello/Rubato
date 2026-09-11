@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { buildRubatoComponents, rubatoComponentsFeature } from "../build-rubato.mjs";
 import { loadPiFeatures } from "../feature-catalog.mjs";
+import { CANDIDATE_FEATURE_NAMES } from "../features/rubato-components/candidate-main.mjs";
 import { stagePiRuntime } from "../stage-runtime.mjs";
 
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -22,9 +23,8 @@ test("current Rubato builds without Senpi and binds actual task/memory/MCP compo
   assert.deepEqual(build.receipt.externalImports, ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui", "typebox"]);
   assert.equal(build.receipt.fullRubatoParity, false);
   await assert.rejects(buildRubatoComponents({ outputRoot: build.root }), /EEXIST/);
-  const features = await loadPiFeatures(["reload", "tool-execution", "input-lifecycle", "abort-provenance", "request-run",
-    "extension-rpc", "service-tier", "tool-search", "mcp", "mcp-producers", "codemode", "child-runtime", "terminal", "providers",
-    "provider-execution", "media-tools", "tool-guards", "tool-policy", "context-window", "session-catalog", "session-picker", "prompt-rules"]);
+  // bootstrap.mjs imports every candidate feature statically, so the staged subset must mirror the candidate list.
+  const features = await loadPiFeatures(CANDIDATE_FEATURE_NAMES.filter((name) => name !== "runtime-factories"));
   const staged = await stagePiRuntime({ sourceRoot, outputRoot: join(scratch, "engine"), features: [...features, build.feature] });
   const buildReceiptPath = join(build.root, "rubato-build.json");
   const receiptText = await readFile(buildReceiptPath, "utf8");

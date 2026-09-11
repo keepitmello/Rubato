@@ -10,12 +10,19 @@ import { ToolSearchService, createToolSearchExtension } from "../tool-search/ind
 import { createServiceTierFeature } from "../service-tier/extension.mjs";
 import terminal from "../terminal/src/index.ts";
 import mediaTools from "../media-tools/src/index.mjs";
+import videoIn from "../video-in/src/index.mjs";
 import { loopGuardExtension, registerApplyPatchExtension, toolPairGuardExtension } from "../tool-guards/index.mjs";
 import { createBashTimeoutExtension, createHooksExtension, createPermissionExtension } from "../tool-policy/index.mjs";
 import { createProvidersExtension } from "../../node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/rubato-features/providers/extension.mjs";
 import { createProviderExecution } from "../../node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/rubato-features/provider-execution/extension.mjs";
+import { createGptAccountExtension } from "../../node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/rubato-features/providers/auth-pool/gpt-account.mjs";
 import { createContextNotesExtension } from "../../node_modules/@earendil-works/pi-coding-agent/dist/rubato-features/context-notes/extension.mjs";
 import { createPromptRulesExtensionFactories } from "../prompt-rules/index.mjs";
+import { createPromptPresetExtensionFactories } from "../prompt-preset/index.mjs";
+import { createCompactionExtensionFactories } from "../compaction/index.mjs";
+import { createConfigReloadExtensionFactories } from "../config-reload/index.mjs";
+import { createUserCommandsAgentFactories } from "../user-commands-agent/index.mjs";
+import { createUserCommandSessionFactories } from "../user-commands-session/index.mjs";
 import codemode from "../codemode/src/index.ts";
 import { createRemovedToolHintRegistrar } from "../codemode/src/extension/stock-host-adapter.ts";
 import { createRubatoComponentExtension } from "./extensions/rubato.js";
@@ -73,14 +80,24 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
       routeFactories: { ...providerOptions.routeFactories, cursor: providerExecution.cursorRouteFactory },
       agentDir,
       env: { ...process.env, ...providerOptions.env, RUBATO_PI_CODING_AGENT_DIR: agentDir } }) },
+    { name: "rubato-gpt-account", factory: createGptAccountExtension({
+      agentDir,
+      env: { ...process.env, ...providerOptions.env, RUBATO_PI_CODING_AGENT_DIR: agentDir },
+    }) },
     { name: "provider-execution", factory: providerExecution.extension },
     { name: "service-tier", factory: serviceTier.extension },
     { name: "rubato-gpt-apply-patch", factory: registerApplyPatchExtension },
     { name: "context-notes", factory: createContextNotesExtension({ agentDir }) },
+    ...createCompactionExtensionFactories({ settingsManager: settings, env }),
+    ...createPromptPresetExtensionFactories({ settingsManager: settings }),
     ...createPromptRulesExtensionFactories({ settingsManager: settings }),
+    ...createConfigReloadExtensionFactories({ settingsManager: settings, agentDir, cwd }),
+    ...createUserCommandsAgentFactories({ agentDir, env }),
+    ...createUserCommandSessionFactories(),
     { name: "rubato-bash-timeout", factory: createBashTimeoutExtension() },
     { name: "terminal", factory: (pi) => terminal(pi, { ...terminalOptions, createSettingsManager: () => settings }) },
     { name: "media-tools", factory: (pi) => mediaTools(pi, { createSettingsManager: () => settings }) },
+    { name: "rubato-video-in", factory: videoIn },
     { name: "codemode", factory: (pi) => codemode(pi, codemodeOptions) },
     { name: "tool-search", factory: createToolSearchExtension(toolSearch) },
     { name: "rubato-components", factory: async (pi) => {

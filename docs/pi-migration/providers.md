@@ -464,3 +464,7 @@ Follow-up (same owner): patched resolve now exercises `mergeRefreshedSlot` throu
 `auth.json`. A missing named slot fails closed instead of dropping the refresh. Legacy
 import is explicit (`RUBATO_LEGACY_AUTH_PATH` / `legacyPath`) and `agentDir` is required.
 The ModelRuntime pool import is package-relative (`../rubato-features/...`).
+
+`/gpt-account` is a separately named bootstrap factory `rubato-gpt-account`
+(Senpi builtin `gpt-account.js`) so `<agentDir>/rubato-features.json`
+`{ "disabled": ["rubato-gpt-account"] }` can turn it off without dropping providers.
