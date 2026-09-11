@@ -9,6 +9,7 @@ import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { CANDIDATE_FEATURE_NAMES } from "../features/rubato-components/candidate-main.mjs";
 import {
@@ -90,6 +91,44 @@ function nodeArgs(traceFile, rest) {
   return traceFile ? ["--import", traceFile, ...rest] : rest;
 }
 
+async function plantFakeUserSenpi({ scratch, home }) {
+  const senpiHome = join(home, ".senpi", "agent");
+  const engineHome = join(home, ".rubato-pi", "engine");
+  const parentSenpi = join(scratch, "node_modules", "@code-yeongyu", "senpi");
+  await mkdir(senpiHome, { recursive: true });
+  await mkdir(engineHome, { recursive: true });
+  await mkdir(parentSenpi, { recursive: true });
+  await writeFile(join(senpiHome, "index.js"), "export const marker = 'fake-user-senpi-agent';\n");
+  await writeFile(join(engineHome, "untouched"), "existing engine must not be loaded");
+  await writeFile(join(parentSenpi, "package.json"), `${JSON.stringify({ name: "@code-yeongyu/senpi", version: "0.0.0-fake-user-stub", type: "module", exports: { ".": "./index.js" } })}\n`);
+  await writeFile(join(parentSenpi, "index.js"), "throw new Error('fake user Senpi stub must not load');\n");
+  return { senpiHome, engineHome, parentSenpi };
+}
+
+test("Senpi load detector fires on crafted Senpi-app and escaped-install paths", async () => {
+  const scratch = await mkdtemp(join(tmpdir(), "rubato-isolated-detector-"));
+  try {
+    const installRoot = join(scratch, "engine");
+    await mkdir(installRoot);
+    await writeFile(join(installRoot, "keep"), "install");
+    const featureRoot = join(sourceRoot, "features");
+    const senpiReport = join(scratch, "senpi-loads.txt");
+    const escapeReport = join(scratch, "escaped-loads.txt");
+    const senpiUrl = pathToFileURL(join(await realpath(installRoot), "node_modules/@code-yeongyu/senpi/index.js")).href;
+    const escapedUrl = "file:///Users/example/Github-repos/rubato/node_modules/@earendil-works/pi-coding-agent/dist/main.js";
+    await writeFile(senpiReport, `${senpiUrl}\n`);
+    await writeFile(escapeReport, `${escapedUrl}\n`);
+    const senpiScan = await scanInstalledCandidate({ installRoot, featureRoot, loadReportPath: senpiReport });
+    assert.equal(senpiScan.resolvedModulePaths.senpiAppLoads.length > 0, true);
+    assert.throws(() => assertScanClean(senpiScan, { requireLoadReport: false }), /Senpi app package loaded/);
+    const escapeScan = await scanInstalledCandidate({ installRoot, featureRoot, loadReportPath: escapeReport });
+    assert.equal(escapeScan.resolvedModulePaths.outside.length > 0, true);
+    assert.throws(() => assertScanClean(escapeScan, { requireLoadReport: false }), /escaped the install/);
+  } finally {
+    await retirePath(scratch);
+  }
+});
+
 test("isolated candidate install pipeline blocks Senpi and keeps CANDIDATE_FEATURE_NAMES", { timeout: 600_000 }, async (t) => {
   if (!which("bun")) {
     t.skip("bun is required to build Rubato bundles");
@@ -154,6 +193,7 @@ test("isolated candidate install pipeline blocks Senpi and keeps CANDIDATE_FEATU
 
   traps = await chmodSenpiTraps(home);
   const env = isolatedEnv({ home, agentDir, binDir, poisonDir, loadReport });
+  const fakeUser = await plantFakeUserSenpi({ scratch, home });
   delete env.NODE_PATH;
   assert.equal(env.NODE_PATH, undefined);
   assert.equal(existsSync(join(binDir, "senpi")), false);
@@ -315,22 +355,32 @@ test("isolated candidate install pipeline blocks Senpi and keeps CANDIDATE_FEATU
       loadReportPath: installed ? loadReport : undefined,
       childReceipt,
       extraAllowed: [await realpath(scratch)],
-      notes: [
-        "First measured install (2026-09-11T06:36Z): 31 staged features, Node v26.5.0, load-report 26 urls (5 inside install, 20 node-core, 0 outside, 0 senpi-app).",
-        stagingBlock
-          ? "Current restage is blocked by concurrent A14 in-progress media-tools patches (native-block-delta vs stock pi-ai 0.85.1 anthropic-messages.js). Final rerun is a batch-end lead request."
-          : "Current restage matched CANDIDATE_FEATURE_NAMES.",
-        "@code-yeongyu/senpi-pty remains a declared runtime dependency; replacement is deferred by the user.",
-      ],
     });
     assertScanClean(scan, { requireLoadReport: Boolean(installed) });
     assert.deepEqual(scan.features, [...CANDIDATE_FEATURE_NAMES]);
     assert.equal(scan.senpiPty.decision, "deferred-by-user");
     assert.equal(scan.senpiPty.usageSites.length, 5);
+    assert.equal(scan.resolvedModulePaths.senpiAppLoads.length, 0);
+    if (installed) {
+      const loads = await readFile(loadReport, "utf8");
+      assert.equal(loads.includes("/@code-yeongyu/senpi/"), false, "parent Senpi stub must not appear in the load report");
+      assert.equal(loads.includes(".senpi/agent"), false);
+      assert.equal(loads.includes(".rubato-pi/engine"), false);
+      assert.equal(await readFile(join(fakeUser.engineHome, "untouched"), "utf8"), "existing engine must not be loaded");
+    }
+    const paths = scan.resolvedModulePaths;
+    scan.notes = [
+      `Measured ${scan.generatedAt}: ${installed ? installed.receipt.features.length : "uninstalled"} staged features, Node ${scan.node}. CANDIDATE_FEATURE_NAMES=${scan.features.length}.`,
+      `Load report: ${paths.total} urls, ${paths.insideInstall} inside install, ${paths.nodeCore} node-core, ${paths.allowedScratch} scratch, ${paths.outside.length} outside, ${paths.senpiAppLoads.length} Senpi app.`,
+      stagingBlock ? "Restage blocked by in-progress media-tools patches." : "Current restage matched CANDIDATE_FEATURE_NAMES.",
+      "Fake user HOME ~/.senpi/agent, ~/.rubato-pi/engine, and parent node_modules/@code-yeongyu/senpi stub were present and not loaded.",
+      "@code-yeongyu/senpi-pty remains a declared runtime dependency; replacement is deferred by the user.",
+    ];
     await writeFile(join(docsDir, "install-scan.json"), `${JSON.stringify(scan, null, 2)}\n`);
   });
 
   await t.test("install update then rollback", async () => {
+    await retirePath(join(scratch, "node_modules")).catch(() => {});
     const dest = installed ? engine : join(scratch, "stub-engine");
     if (!installed) {
       await mkdir(dest, { recursive: true });

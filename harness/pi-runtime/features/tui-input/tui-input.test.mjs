@@ -141,6 +141,23 @@ test("split Hangul UTF-8 becomes one character only after the stdin-buffer patch
   assert.deepEqual(emoji, ["😀"]);
 });
 
+test("8-bit meta stays below 0xC2 so Hangul leads are not stolen as Alt+letter", async () => {
+  const patchedFile = join(scratch, "stdin-patched-meta.mjs");
+  const stockPath = join(sourceRoot, "node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/stdin-buffer.js");
+  writeFileSync(patchedFile, patchStdinBufferUnicode(readFileSync(stockPath, "utf8")));
+  const { StdinBuffer } = await import(pathToFileURL(patchedFile).href + "?meta");
+  const meta = [];
+  const metaBuf = new StdinBuffer({ timeout: 5, escapeTimeout: 5 });
+  metaBuf.on("data", (chunk) => meta.push(chunk));
+  metaBuf.process(Buffer.from([0xa1]));
+  assert.deepEqual(meta, ["\x1b!"]);
+  const alt = [];
+  const altBuf = new StdinBuffer({ timeout: 5, escapeTimeout: 5 });
+  altBuf.on("data", (chunk) => alt.push(chunk));
+  altBuf.process(Buffer.from([0xe1]));
+  assert.deepEqual(alt, []);
+});
+
 test("bracketed paste is one StdinBuffer event including newlines", async () => {
   const { StdinBuffer } = await import(pathToFileURL(join(
     sourceRoot,

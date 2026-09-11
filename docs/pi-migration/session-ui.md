@@ -279,7 +279,7 @@ Projection (conversationEntries, timeline presentation, message sanitization) an
 
 Candidate does not fall back to the default LaunchAgent socket. It connects only when RUBATO_HUB_SOCKET / options.socketPath / options.connect / options.protocol is explicit. Disable with rubato-features.json disabled: ["rubato-remote-surface"].
 
-Locked locally against a temp product hub: list, connect, input submit (action.accepted + agent.state), abort, disconnect while the run continues, reconnect snapshot. Large existing session resume is measured from a copied session file (never opened in place).
+Locked locally against a temp product hub: list, connect, input submit (action.accepted + agent.state), abort, disconnect while the run continues, reconnect snapshot (last input, streamed text, abort state). Large-session resume uses a hermetic 25MiB synthetic JSONL fixture (no ~/.rubato or ~/.senpi copy).
 
 ## A15
 
@@ -287,7 +287,8 @@ Locked locally against a temp product hub: list, connect, input submit (action.a
 
 Locked from product vs stock, not from the 0906 UI manifest:
 
-- Unicode: stock `StdinBuffer` used `data.toString()` + one UTF-16 unit. Port is the Senpi `StringDecoder` + `codePointAt` delta on `@earendil-works/pi-tui@0.85.1` `dist/stdin-buffer.js`.
+- Unicode: stock `StdinBuffer` used `data.toString()` + one UTF-16 unit. Port is the Senpi `StringDecoder` + `codePointAt` delta on `@earendil-works/pi-tui@0.85.1` `dist/stdin-buffer.js`. 8-bit meta (single byte >127 → ESC+(byte-128), old Alt+letter) is kept only for 0x80–0xC1 so Hangul lead bytes (가 starts 0xEA) are not stolen. Modern terminals send ESC+letter for Alt; a lone 0xE1–0xFA is decoded as UTF-8, not Alt.
+- Images leftover `pi-clipboard-*` paths are attached only when they resolve under `os.tmpdir()`. Unsubmitted pending images are dropped on `session_start`, `session_shutdown`, and factory disable.
 - Paste: stock already emits one `paste` event for bracketed paste and the editor inserts newlines / large-paste markers. No patch.
 - Select cancel: stock `tui.select.cancel` is `escape` and `ctrl+c`; `SelectList.onCancel` fires with no value and restores the editor. Locked as that product/stock behavior; no extra patch.
 - Images: stock Ctrl+V writes a temp path into the editor and submits it as text. Product keeps in-memory `[Image #N]` + `pendingImages`. Gap port: factory intercepts `input` to turn clipboard markers/temp paths into `ImageContent`; interactive-mode clipboard paste inserts a marker when the factory is on.

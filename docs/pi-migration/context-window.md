@@ -171,3 +171,12 @@ stock Messages params for supported Claude ids in summary mode and stays off
 in notes. A notes-window session opened with user-explicit summary fails
 loudly. In-process children no longer pass `enabled: true`, so they re-resolve
 the inherited `ORIGIN=session` env from their own model.
+
+## A13 session-scope note (2026-09-11)
+
+In-process children re-resolve mode from their own model, but they must not
+write `process.env.RUBATO_CONTEXT_MODE`. Candidate forks of `config.mjs`,
+`engine-gate.mjs`, and `extensions/context-notes.mjs` bind mode per session id
+and SettingsManager (`propagateEnv: false` on the in-process factory). RPC
+children still inherit env and re-resolve in their own process. Overlay and
+stock `getCompactionSettings` therefore keep the parent session's gates.

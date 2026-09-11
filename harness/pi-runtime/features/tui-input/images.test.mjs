@@ -13,9 +13,9 @@
  *   hint — a regular image path is not converted to ImageContent.
  */
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import test, { after } from "node:test";
 
 import {
@@ -24,6 +24,8 @@ import {
   formatImageMarker,
   isTuiImagesEnabled,
   resetTuiImagesForTests,
+  isStockClipboardTempPath,
+  pendingImageCount,
   setTuiImagesEnabled,
   transformSubmittedImages,
 } from "./images.mjs";
@@ -49,15 +51,14 @@ function editorStub() {
 }
 
 function loadFactoryHandler() {
-  const handlers = [];
+  const handlers = {};
   createImagesExtension()({
     on(event, handler) {
-      handlers.push([event, handler]);
+      handlers[event] = handler;
     },
   });
-  assert.equal(handlers.length, 1);
-  assert.equal(handlers[0][0], "input");
-  return handlers[0][1];
+  assert.equal(typeof handlers.input, "function");
+  return handlers.input;
 }
 
 test("disabled factory flag keeps the stock clipboard fallback", () => {
@@ -98,6 +99,58 @@ test("stock pi-clipboard temp paths become ImageContent; other image paths do no
 
   assert.equal(transformSubmittedImages("첨부 " + droppedPath), undefined);
   assert.equal(transformSubmittedImages(droppedPath), undefined);
+});
+
+test("pi-clipboard filenames outside os.tmpdir() are not read into ImageContent", () => {
+  resetTuiImagesForTests();
+  const tmpRoot = realpathSync(tmpdir());
+  const parent = resolve(tmpRoot, "..");
+  let outsideDir;
+  try {
+    if (realpathSync(parent) !== tmpRoot) {
+      outsideDir = mkdtempSync(join(parent, "a15-tui-images-outside-"));
+    }
+  } catch {
+    outsideDir = undefined;
+  }
+  const name = "pi-clipboard-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.png";
+  if (outsideDir) {
+    const outsidePath = join(outsideDir, name);
+    writeFileSync(outsidePath, PNG);
+    try {
+      assert.equal(isStockClipboardTempPath(outsidePath), false);
+      assert.equal(transformSubmittedImages("첨부 " + outsidePath), undefined);
+    } finally {
+      rmSync(outsideDir, { recursive: true, force: true });
+    }
+  } else {
+    assert.equal(isStockClipboardTempPath("/etc/" + name), false);
+  }
+  const insidePath = join(scratch, name.replace("aaaa", "bbbb"));
+  writeFileSync(insidePath, PNG);
+  assert.equal(isStockClipboardTempPath(insidePath), true);
+});
+
+test("session end and disable drop unsubmitted pending images", () => {
+  resetTuiImagesForTests();
+  const handlers = {};
+  createImagesExtension()({
+    on(event, handler) {
+      handlers[event] = handler;
+    },
+  });
+  attachClipboardImage(editorStub(), { bytes: PNG, mimeType: "image/png" });
+  assert.equal(pendingImageCount(), 1);
+  handlers.session_shutdown();
+  assert.equal(pendingImageCount(), 0);
+  attachClipboardImage(editorStub(), { bytes: PNG, mimeType: "image/png" });
+  assert.equal(pendingImageCount(), 1);
+  handlers.session_start();
+  assert.equal(pendingImageCount(), 0);
+  attachClipboardImage(editorStub(), { bytes: PNG, mimeType: "image/png" });
+  assert.equal(pendingImageCount(), 1);
+  setTuiImagesEnabled(false);
+  assert.equal(pendingImageCount(), 0);
 });
 
 test("hand-typed marker with no pending payload stays text", () => {

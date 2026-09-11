@@ -276,7 +276,7 @@ node scripts/install-candidate.mjs --output /absolute/dir --rollback
 
 `@code-yeongyu/senpi-pty`는 선언된 런타임 의존이다. 교체 여부는 사용자 보류. 사용처와 대체 요건은 [install-scan.json](install-scan.json)과 아래 장부 입력이다.
 
-2026-09-11 측정: `npm ci`+stage 31 features, Node v26.5.0. Senpi 차단 CLI/RPC/자식/update→rollback **6/6 pass**, 27.8초. 로드 경로 26158개 중 install 안 24180, node-core 1976, 바깥/Senpi 앱 0. 같은 날 A14 `media-tools` 중간 패치가 잠깐 restage를 깨뜨린 적이 있다(`native-block-delta`). 최종 재실행은 배치 끝 리드 요청.
+2026-09-11 최종 재실행(`519cad3a4`): `npm ci`+stage **33 features** (`CANDIDATE_FEATURE_NAMES` 31 + `rubato-components`), Node v26.5.0. Senpi 차단 CLI/RPC/자식/update→rollback + 검출기 대조 **7/7 pass**, 27.6초. 로드 경로 **26254**개 중 install 안 **24234**, node-core **2018**, scratch 2, 바깥 0, Senpi 앱 0. 가짜 HOME `~/.senpi/agent`·`~/.rubato-pi/engine`와 상위 `node_modules/@code-yeongyu/senpi` 스텁은 존재했지만 로드되지 않음. 검출기는 조작 리포트에서 `Senpi app package loaded`와 `escaped the install` 둘 다 발화함을 테스트로 잠금.
 
 - 런타임: `features/terminal/src/manager.ts`, `runtime-session.ts` (SessionRegistry / TerminalSession / TerminalScreen)
 - 테스트: `terminal-native.test.mjs` (`loadPtyNative`), `terminal.test.mjs` (lock 해석), `session-picker.test.mjs:createTerminalSession` (native PTY `/resume`)
