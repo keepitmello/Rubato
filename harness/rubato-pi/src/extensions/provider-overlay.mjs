@@ -1,6 +1,7 @@
 import { builtinProviderIds, foreignProviderIds } from "../provider-ids.mjs";
 export { builtinProviderIds, foreignProviderIds };
 import { DIRECT_PROVIDER_IDS, directProviders, warnIgnoredDirectOptOut } from "../provider-direct.mjs";
+import { admitProviders, validateProviderAdmission } from "../provider-capabilities.mjs";
 import { importLegacyDirectCredentials, unavailableDirectProviders } from "../credential-import.mjs";
 import { ANTIGRAVITY_ENDPOINT, loadAntigravityProjectId, registerAntigravityLifecycle } from "../antigravity-route.mjs";
 import { importAntigravityKeychainCredential } from "../antigravity-keychain-import.mjs";
@@ -66,8 +67,12 @@ function parentSession(argv) {
 
 export default async function providerOverlay(pi, {
   env = process.env,
+  providerFactory = supportedProviders,
+  legacyCredentialImporter = importLegacyDirectCredentials,
+  availabilityChecker = unavailableDirectProviders,
   antigravityCredentialImporter = importAntigravityKeychainCredential,
   antigravityProjectLoader = loadAntigravityProjectId,
+  cursorNoticeRegistrar = registerCursorExecNotice,
   fetchImpl = globalThis.fetch,
   opencode,
 } = {}) {
@@ -78,21 +83,24 @@ export default async function providerOverlay(pi, {
   // `env` 를 넘긴다. 넘기지 않으면 native 층이 `process.env` 를 다시 읽고, 격리된
   // 세션(별도 profile, 별도 gate)이 그 지점에서 깨진다.
   const antigravity = {};
-  const natives = await supportedProviders({
+  const natives = await providerFactory({
     env,
     antigravity,
     cursor: { reactivateOnCredentialRotation: parentSession(process.argv) },
     ...(opencode ? { opencode } : {}),
   });
+  // A bad factory result must fail before credential imports or a partial
+  // provider registration. Keep the validated copy for the later write phase.
+  const admitted = validateProviderAdmission(natives);
   // 이관 결과를 삼키지 않는다. pinned ExtensionAPI 에는 `log` 가 없어서(agent-session.js
   // 의 extension 객체를 확인했다) `pi.log?.()` 는 영원히 조용한 no-op 이 된다. 그래서
   // 관측 가능한 두 경로만 쓴다: 이관이 **필요한데** 입력이 깨져 막힌 경우는 던지고,
   // 이관이 필요 없는 경우는 보장된 경고 한 줄을 낸다. 값은 어느 쪽에도 싣지 않는다.
-  const report = await importLegacyDirectCredentials({ env });
+  const report = await legacyCredentialImporter({ env });
   const rejectedIds = Object.keys(report.rejected ?? {});
   // provider 단위로 묻는다. Codex 가 멀쩡하다고 xAI 의 부재가 덮이면, 그 세션은
   // 부팅은 성공하고 첫 xAI 요청에서 죽는다.
-  const unavailable = await unavailableDirectProviders(report, env);
+  const unavailable = await availabilityChecker(report, env);
   // legacy/대상이 깨져서 못 채운 것만 부팅을 막는다. 그냥 로그인을 안 한 상태
   // (`absent`)는 정상이며, 로그인 흐름이 그것을 해결한다.
   const blocking = unavailable.filter((entry) => entry.reason !== "absent");
@@ -133,16 +141,13 @@ export default async function providerOverlay(pi, {
   }
 
   // 1) native 등록. `DIRECT_PROVIDER_IDS` 밖의 provider 는 손대지 않는다.
-  for (const provider of natives) {
-    if (!DIRECT_PROVIDER_IDS.includes(provider.id)) continue;
-    pi.registerProvider(provider);
-  }
+  admitProviders(pi, admitted);
   if (antigravity.stateStore && antigravity.lineage) {
     registerAntigravityLifecycle(pi, { ...antigravity, env });
   }
   // 지난 세션이 남긴 `unknown` server-driven tool call 을 세션 시작에 한 번 알린다.
   // journal 을 읽기만 한다 — 단일 owner 는 `cursor-exec-bridge` 다.
-  registerCursorExecNotice(pi);
+  cursorNoticeRegistrar(pi);
 
   // 2) foreign 정리. 지원 신원(`SUPPORTED_PROVIDER_IDS`)이 권위다.
   for (const id of foreignProviderIds(builtinProviderIds())) {

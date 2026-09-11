@@ -225,7 +225,7 @@ describe("createMemoryNudgeWiring", () => {
     expect(await wiring.nudgeTurns(repo, "session-clear", context.identity)).toBeUndefined()
   }, 30_000)
 
-  test("#given a bound non-auto identity #when a memory MCP tool call starts #then unforgeable identity and accepted-turn provenance are injected in place", async () => {
+  test("#given a bound non-auto identity #when a direct-surface memory tool call starts #then unforgeable identity and accepted-turn provenance are injected in place", async () => {
     // given
     const { context } = await fixture()
     const pi = new MemoryFakeExtensionAPI()
@@ -283,7 +283,7 @@ describe("createMemoryNudgeWiring", () => {
       toolCallId: string
       toolName: string
       input: Record<string, unknown>
-    } = { type: "tool_call", toolCallId: "call-mcp-1", toolName: "mcp_rubato-memory_memory_apply_patch", input: { reason: "save" } }
+    } = { type: "tool_call", toolCallId: "call-mcp-1", toolName: "mcp__rubato-memory_memory_apply_patch", input: { reason: "save" } }
 
     // when
     await pi.dispatch("tool_call", call, ctx)

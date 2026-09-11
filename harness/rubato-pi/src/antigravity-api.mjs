@@ -237,6 +237,12 @@ function providerError(error) {
   return String(error);
 }
 
+function responseHeaders(headers) {
+  if (!headers) return {};
+  if (typeof headers.entries === "function") return Object.fromEntries(headers.entries());
+  return Object.fromEntries(Object.entries(headers).map(([name, value]) => [name, String(value)]));
+}
+
 export function createAntigravityApi({
   fetchImpl = globalThis.fetch,
   endpoint = ANTIGRAVITY_ENDPOINT,
@@ -288,18 +294,21 @@ export function createAntigravityApi({
         }
         if (options.signal?.aborted) throw options.signal.reason ?? new DOMException("Aborted", "AbortError");
 
-        const body = buildAntigravityRequest(model, context, options, providerState);
+        let body = buildAntigravityRequest(model, context, options, providerState);
+        const replacement = await options.onPayload?.(body, model);
+        if (replacement !== undefined) body = replacement;
         const auditEnv = options.env && cacheAuditEnabled(options.env) ? options.env : process.env;
         const resolvedAudit = typeof audit?.wrapFetch === "function"
           ? audit
           : cacheAuditEnabled(auditEnv) ? cacheAudit(auditEnv) : undefined;
+        const baseFetch = options.fetch ?? fetchImpl;
         const fetch = typeof resolvedAudit?.wrapFetch === "function"
-          ? resolvedAudit.wrapFetch(fetchImpl, {
+          ? resolvedAudit.wrapFetch(baseFetch, {
               sessionId: options.sessionId,
               model: model.id,
               provider: model.provider,
             })
-          : fetchImpl;
+          : baseFetch;
         const response = await fetch(new URL("/v1internal:streamGenerateContent?alt=sse", endpoint), {
           method: "POST",
           headers: {
@@ -311,6 +320,10 @@ export function createAntigravityApi({
           body: JSON.stringify(body),
           signal: options.signal,
         });
+        await options.onResponse?.(
+          { status: response.status, headers: responseHeaders(response.headers) },
+          model,
+        );
         if (!response.ok) {
           const text = await response.text();
           throw new Error(`Antigravity HTTP ${response.status}: ${text.slice(0, 512)}`);
