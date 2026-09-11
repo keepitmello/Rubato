@@ -17,11 +17,11 @@ An explicitly discovery-only brief may reference a draft: check its supplied has
 `--active`, gather only the authorized facts/checks, and stop before implementation. A draft
 reference alone does not grant this exception or any additional permission.
 A missing, stale or superseded authority, or a draft used for implementation, returns
-to the sender with the exact mismatch. Continue unaffected authorized work only. Helpers without durable intent
+to the sender with the exact mismatch. Continue unaffected authorized work only. Subagents without durable intent
 work from their bounded brief; they do not create an intent or team themselves.
 
 The lead owns the shared intent. Preserve its reference in your result and any
-helper brief, and name the revision your evidence covers. At resumption or a
+subagent brief, and name the revision your evidence covers. At resumption or a
 material follow-up reread it, rather than trusting the old summary. If requirements
 must change, return evidence to the lead; keep local implementation choices local.
 Resolve discoverable gaps with available evidence instead of forwarding a questionnaire.

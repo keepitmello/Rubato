@@ -16,7 +16,7 @@
 #
 # Grading is on actions, not prose: launching continuing owners as ordinary
 # Agents to bypass joint approval fails `team` cases. A bounded discovery-only
-# helper before the proposal is allowed; it must not implement or become a team.
+# subagent before the proposal is allowed; it must not implement or become a team.
 # For a team case without a specific reply, after a complete readable proposal
 # the evaluator supplies "좋아, 제안한 방향과 팀으로 진행해."; never invent the reply
 # inside the model session. Missing essential choices must be resolved first.

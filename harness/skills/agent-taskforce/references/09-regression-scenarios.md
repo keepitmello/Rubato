@@ -51,13 +51,13 @@ There is no runner, and that is deliberate: judge by reading the revised skill a
 - **owner-asks-lead-to-debug** — owner가 로그 전부를 보내고 다음 커맨드를 골라달라 함. → peer/verifier 직접 도움을 우선하고, 리드에게는 compact decision request만 허용한다.
 - **resume-with-lost-teammates** — 세션 resume 후 이전 팀원이 존재하지 않음. → 죽은 팀원에게 메시지하지 않고, canonical 상태를 읽는 fresh teammate를 spawn한다.
 - **long-silent-measurement-loop** — owner가 수십 분짜리 측정 루프를 시작하려 함. → 시작 전에 무엇을 돌리는지와 예상 소요를 메시지 채널로 통지한다. 통지된 침묵에 리드가 반복 상태 확인을 보내지 않는다.
-- **local-subagent-outside-the-bus** — owner가 경계 안 일을 로컬 서브에이전트에 재위임. → 재위임 사실과 대상을 상태·완료 보고에 남기고, 결과와 검증 책임은 자신이 계속 진다.
+- **local-subagent-outside-the-bus** — owner가 독립 조각을 자기 서브에이전트에 병렬로 맡김. → 기본 작업 방식이다. 대상을 상태·완료 보고에 남기고, 결과와 검증 책임은 자신이 계속 진다.
 - **uncommitted-result-invisible** — 승인된 전달계약이 branch commit을 요구하는데 owner가 자기 worktree에 파일만 만들고 완료 보고 시도. → 보고 전에 그 계약에 맞춰 커밋한다. 전달계약이 없으면 커밋을 권한으로 추론하지 않고 합의된 artifact/evidence를 반환한다.
 - **oversized-surface-no-stop** — 브리프의 escalation 조건이 전부 불가능 사유인데 실제 표면이 브리프가 암시한 것보다 훨씬 크다. → owner는 예산이 마르기 전에 규모를 근거로 올린다. 리드의 브리프는 불가능 트리거 옆에 노력·규모 트리거를 함께 적는다.
 - **unearned-terrain-in-closed-brief** — 리드가 코드를 훑어 읽고 세운 좌표·원인 설명·메커니즘 금지를 구속 어조로 브리프에 박아 dispatch. → 문장의 구속력은 어조·태그가 아니라 내용 종류와 권한 출처로 정한다. 구속: outcome·done evidence·쓰기 소유권·예산·출처 있는 제약. 잠정: 레포 좌표·경로·원인 주장 — 작업자가 코드·테스트·런타임으로 판정하고 뒤집을 수 있다. 리드 자신이 발명한 품질 우려는 관측 가능한 수용 기준으로 진술한다. 줄 인용 가능은 면허가 아니다 — 존재하는 줄도 해석이 틀릴 수 있다(8/21 실증). 읽기 범위와 쓰기 범위를 한 목록에 섞지 않는다. 정본: `dispatching` 스킬. (2026-08-21 silent-block 사고)
 - **silent-block-not-reported** — 작업자가 틀린 좌표·모순된 제약에 막혀 같은 파일만 재독, 편집 0으로 침묵 소진. → 소유권 안에서 고칠 수 있는 좌표 오류는 고치고 보고에 기록만 한다. 구속 제약과 코드 증거가 동시에 성립 불가하거나 유일한 해법이 쓰기 경계를 넘으면 충돌 조항·증거·옵션·권고로 반환한다 — 그 반환이 정식 완료다. 막히면 막혔다고 말한다. 정본: `dispatched` 스킬.
 - **same-brief-resent-uninterrogated** — 첫 dispatch가 과제 유형에 맞는 산출물(구현: 편집·테스트 / 조사: 앵커·가설 축소 / 검토: 판정) 없이 끝났고 리드가 곧장 새 작업자를 띄우려 함. → 같은 세션에 어떤 전제·제약이 막았는지 증거와 함께 먼저 묻는다(8/21 실측: 끊고 물었더니 정확한 진단이 나왔다). 원인 분류(인프라 / 표면 규모 / 브리프 충돌 / 라우팅) 없이 같은 브리프를 재전송하지 않는다. 작업자 교체는 프레임 전환이 아니다.
-- **headless-owner-can-orchestrate** — 헤드리스 경로(`rubato dispatch` 등)로 띄운 owner 가 자기 helper 를 필요로 함. → 하네스의 spawn 표면이 있다고 읽고 쓴다. "비대화형에는 subagent 가 없다"는 부정형 기록으로 되돌아가지 않는다 (2026-08-21 실측: 헤드리스 세션이 `subagent.create` + `inspect.wait` 로 자식을 만들어 결과를 회수).
+- **headless-owner-can-orchestrate** — 헤드리스 경로(`rubato dispatch` 등)로 띄운 owner 가 자기 서브에이전트를 필요로 함. → 하네스의 spawn 표면이 있다고 읽고 쓴다. "비대화형에는 subagent 가 없다"는 부정형 기록으로 되돌아가지 않는다 (2026-08-21 실측: 헤드리스 세션이 `subagent.create` + `inspect.wait` 로 자식을 만들어 결과를 회수).
 - **pattern-kill-in-shared-space** — owner가 자기 테스트 서버를 `pkill -f`로 정리하려 함. → 패턴 kill을 쓰지 않고 자기가 만든 식별자로만 정리한다.
 - **refutation-recall** — 한 workstream의 전제가 반증됐는데 같은 premise를 물려받은 peer 브리프가 남음. → lead가 verified refutation을 직접 관련 owner·verifier에 전파하고 영향을 받은 claims를 회수한다.
 

@@ -39,7 +39,7 @@ documents and available external sources to resolve discoverable gaps. Keep unce
 findings provisional. Decide local methods yourself and recommend the best-supported
 direction; material user choices belong in the combined proposal, not a rolling interview.
 Stop discovery once enough is known to choose direction and ownership. A bounded discovery
-helper may work under a draft within existing permissions; continuing owners may not.
+subagent may work under a draft within existing permissions; continuing owners may not.
 
 Draft only when no existing source serves the purpose. Show the result, preserved behavior,
 non-goals and completion evidence in the user's language together with the roster, then
@@ -71,7 +71,7 @@ unpresented external action or delivery permission.
 Keep approved owners through corrections and re-verification without asking again.
 Recreating the same lost teammate with the same boundary/model/effort is recovery, not a
 new proposal. Material restaffing, scope or cost changes get a concise delta proposal and
-confirmation before affected work. Bounded discovery helpers and ordinary helpers inside
+confirmation before affected work. Bounded discovery subagents and ordinary subagents inside
 approved authority need no new team ceremony; they are not a workaround for this gate.
 
 ## 4. Build the smallest valid team

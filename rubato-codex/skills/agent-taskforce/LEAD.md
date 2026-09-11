@@ -21,7 +21,7 @@ than their reasoning transcript.
 
 Use continuing owners when independent outcomes or separate deep context repay
 coordination costs. For a small local fix or focused check, work directly or use
-a helper without a team board. Keep tightly coupled evolving decisions together.
+a subagent without a team board. Keep tightly coupled evolving decisions together.
 
 Preserve the user's selected lead and framing choice. Settled implementation,
 bugs and migrations do not need a new product-framing process. If an authoritative
@@ -35,7 +35,7 @@ documents and available external sources to resolve discoverable gaps. Keep unce
 findings provisional. Decide local methods yourself and recommend the best-supported
 direction; material user choices belong in the combined proposal, not a rolling interview.
 Stop discovery once enough is known to choose direction and ownership. A bounded discovery
-helper may work under a draft within existing permissions; continuing owners may not.
+subagent may work under a draft within existing permissions; continuing owners may not.
 
 Draft only when no existing source serves the purpose. Show the result, preserved behavior,
 non-goals and completion evidence in the user's language together with the roster, then
@@ -59,7 +59,7 @@ not. Keep accepted owners for related corrections without asking again. Confirm 
 scope/roster/cost deltas, not routine implementation decisions or same-owner recovery.
 Fable and Astra still need task-and-effort approval; clearly presented commitments may be
 accepted in the same reply. Opus, Sol and Grok have no extra model gate. Ordinary bounded
-helpers inside approved authority need no new team ceremony. Do not change the lead's model.
+subagents inside approved authority need no new team ceremony. Do not change the lead's model.
 
 Give each owner a distinct write boundary. Native task names do not create
 worktrees or filesystem isolation. Inspect existing modifications before

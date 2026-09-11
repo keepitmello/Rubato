@@ -101,6 +101,33 @@ test('lead prompts gather facts and recommend before seeking human choices', () 
   }
 });
 
+test('owners and verifiers are teammates who run subagents, not lead workers', () => {
+  const teammate = read('harness/prompts/core-teammate.pi.md');
+  assert.match(teammate, /with the lead and the other teammates/);
+  assert.match(teammate, /you are not the lead's worker/);
+  assert.match(teammate, /Independent slices go out in one turn as `Agent` subagents/);
+  assert.doesNotMatch(teammate, /may spawn `Agent` agents directly/);
+  assert.doesNotMatch(teammate, /Run this scope the way the lead runs the team/);
+  const lead = read('harness/prompts/core-lead.pi.md');
+  assert.match(lead, /they are teammates, not your workers/);
+  assert.match(lead, /subagents sit under whoever spawned them and are not on the team/);
+  const agent = read('harness/prompts/core-agent.pi.md');
+  assert.match(agent, /subagent of the session that sent this brief — the lead or a teammate/);
+  const owner = read('harness/skills/agent-taskforce/teammate/workstream-owner.md');
+  assert.match(owner, /Independent slices go out in one turn as subagents/);
+  assert.doesNotMatch(owner, /You can run helpers under yourself/);
+  // Seat identity is owned by the prompt pieces; skill docs and role contracts do not restate it.
+  for (const file of ['harness/prompts/core-lead.pi.md', 'harness/prompts/core-teammate.pi.md', 'harness/prompts/core-agent.pi.md',
+    'harness/skills/agent-taskforce/LEAD.md', 'harness/skills/agent-taskforce/TEAMMATE.md',
+    'harness/skills/agent-taskforce/teammate/workstream-owner.md', 'harness/skills/agent-taskforce/teammate/independent-verifier.md']) {
+    assert.doesNotMatch(read(file), /cognitively depth 0|Do not do this outcome as a subagent of the lead/, file);
+  }
+  for (const file of ['harness/skills/agent-taskforce/LEAD.md', 'harness/skills/agent-taskforce/TEAMMATE.md',
+    'harness/skills/agent-taskforce/teammate/workstream-owner.md', 'harness/skills/agent-taskforce/teammate/independent-verifier.md']) {
+    assert.doesNotMatch(read(file), /not the lead's worker|not your workers/, file);
+  }
+});
+
 test('alignment distinguishes access gaps, local judgment and human decisions with a stopping rule', () => {
   const s = read('harness/skills/work-intent/references/alignment.md');
   for (const pattern of [/Discoverable fact/, /Local implementation judgment/, /Human preference/,
@@ -133,7 +160,7 @@ test('draft discovery has an explicit non-implementation exception in receiving 
     assert.match(read(ed+'/skills/dispatched/SKILL.md'), /explicitly discovery-only/);
     assert.match(read(ed+'/skills/dispatched/SKILL.md'), /without\n`--active`/);
     assert.match(read(ed+'/skills/dispatched/SKILL.md'), /stop before implementation/);
-    assert.match(read(ed+'/skills/dispatching/SKILL.md'), /Do not relabel execution owners as helpers/);
+    assert.match(read(ed+'/skills/dispatching/SKILL.md'), /Do not relabel execution owners as subagents/);
   }
   for (const role of ['owner', 'verifier', 'helper']) {
     assert.match(read(`rubato-codex/agents/taskforce_${role}.toml`), /explicitly discovery-only/);
