@@ -21,7 +21,9 @@ async function stage(t) {
   return { scratch, staged };
 }
 
-test("service callback sees canonical services and registers on the same model runtime", async (t) => {
+// Each case stages a full stock runtime; under --test-concurrency=4 the three together
+// have exceeded the 45s file default on a loaded host, so give them their own budget.
+test("service callback sees canonical services and registers on the same model runtime", { timeout: 120_000 }, async (t) => {
   const { scratch, staged } = await stage(t);
   const { createAgentSessionServices } = await import(pathToFileURL(join(
     staged.root,
@@ -66,7 +68,7 @@ test("service callback sees canonical services and registers on the same model r
   assert.ok(service.modelRuntime.getRegisteredProviderIds().includes("runtime-factory-static"));
 });
 
-test("callback errors propagate and service replacement gets a fresh context", async (t) => {
+test("callback errors propagate and service replacement gets a fresh context", { timeout: 120_000 }, async (t) => {
   const { scratch, staged } = await stage(t);
   const { createAgentSessionServices } = await import(pathToFileURL(join(
     staged.root,
@@ -102,7 +104,7 @@ test("callback errors propagate and service replacement gets a fresh context", a
   assert.notEqual(contexts[0].settingsManager, contexts[1].settingsManager);
 });
 
-test("patched main forwards the callback through real RPC startup without paid providers", async (t) => {
+test("patched main forwards the callback through real RPC startup without paid providers", { timeout: 120_000 }, async (t) => {
   const { scratch, staged } = await stage(t);
   const marker = join(scratch, "callback.json");
   const wrapper = join(scratch, "invoke-main.mjs");

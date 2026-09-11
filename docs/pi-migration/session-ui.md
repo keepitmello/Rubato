@@ -267,3 +267,7 @@ abort provenance, request-run, first-user persistence와 SDK catalog, context-no
 catalog 항목과 `CANDIDATE_FEATURE_NAMES` 등록으로 연다. bootstrap에 factory를 추가하지
 않는다. `session-catalog`가 선행 의존이다. 컴포넌트 선택은 검색 인덱스가 갱신된 뒤
 catalog path를 반환하고, `/resume` TUI 재결합은 native PTY에서 검증한다.
+
+## A11
+
+`/history` `/help` `/diff` `/files` `/tui` are owned by `features/user-commands-session/` with named factories `rubato-history-search` `rubato-help` `rubato-diff` `rubato-files` `rubato-redraws`. `/history` pages the candidate session-catalog API to Senpi recall (10,000 prompts): first catalog page renders, then remaining pages fill. Header discovery is catalog-owned; JSONL parse is per page. Render is asserted from stock `ctx.ui.custom` output in an isolated AgentSession; VS Code launches go through a spawn mock.

@@ -115,3 +115,11 @@ attribution used by this derived slice. The installed Senpi package declares
 MIT but omits its root license file; the full text is cross-checked against the
 same-release Senpi codemode package, matching the repository's existing notice
 practice.
+
+
+## A9 note (2026-09-11)
+
+`rubato-prompt-preset` is a separately toggleable factory. Stock 0.85.1 consumes
+`before_agent_start.systemPrompt` and ignores Senpi `model_select` prompt returns, so
+the factory uses the public start hook only (no Pi patch). A completed role prompt
+passed as loader/`--system-prompt` `customPrompt` still outranks the preset body.

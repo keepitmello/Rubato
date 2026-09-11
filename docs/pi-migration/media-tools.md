@@ -147,6 +147,18 @@ parity는 아래 미완료 표에 남는다.
 | `openai-web-search` | `PI_OPENAI_WEB_SEARCH` default-on, supported Responses payload에 `web_search_preview`/source include 삽입 | payload hook은 공개 API로 가능하지만 native output/renderer end-to-end는 아직 검증하지 않았다. |
 | `read_video` | local video regular file, extension/MIME, nonempty/100MiB, pre/post-read abort, model capability activation | stock `Model.input` 타입과 bundled catalog에 `video`가 없고 Senpi Kimi k3의 `text,image,video` metadata도 없다. |
 
+## A10
+
+`read_video`는 후보 feature `video-in` (`rubato-video-in` factory)로 옮겼다. stock
+`Model.input` 타입은 그대로 `("text" | "image")[]`이고 bundled kimi-coding k3 catalog는
+`text,image`만 남긴다. 게이트는 owned registry(`kimi-coding/k3` + `model.input` overlay)가
+맡고, payload는 `@earendil-works/pi-ai@0.85.1` `dist/api/anthropic-messages.js`의
+`convertContentBlocks`와 user-content mapper만 앵커 패치해 `video/*` ImageContent를
+`{type:"video", source:{type:"base64", media_type, data}}`로 직렬화한다. catalog JSON과
+`transform-messages`는 패치하지 않는다. video 미지원 모델로의 전환은 공개 `context`
+훅에서 히스토리의 `video/*` ImageContent를 `[video omitted: mime, N bytes]` 텍스트로
+치환한다(세션 원본은 유지).
+
 client imagegen은 stock compat registry의 stable source id와 owned `openai-images` closure로
 닫았다. native image와 native Anthropic bash는 각각 provider parser 변경까지 필요하므로 이
 단위에서 client 경로로 가장하거나 payload 주입만 하고 완료 처리하지 않는다.
