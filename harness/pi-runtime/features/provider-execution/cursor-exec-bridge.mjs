@@ -7,7 +7,7 @@ import {
   piTimeout,
 } from "../../api/cursor-agent/pi-args.js";
 import { createCursorExecJournal, cursorExecJournalPath } from "./cursor-exec-journal.mjs";
-import { hostEdit, hostWrite } from "./cursor-host-mutation.mjs";
+import { createNativeFileTool } from "./cursor-host-mutation.mjs";
 
 const inFlight = new Map();
 const journals = new Map();
@@ -197,21 +197,17 @@ async function runJournaledTool(options, toolName, toolCallId, rawArgs, lineageI
 }
 
 async function runSideEffect(options, toolName, toolCallId, args) {
-  if (toolName === "write") {
-    const written = await hostWrite({ cwd: options.cwd, path: args.path, content: args.content, bytes: args.bytes });
-    return { content: [{ type: "text", text: "Successfully wrote " + written.bytes + " bytes to " + args.path }], isError: false };
-  }
-  if (toolName === "edit") {
-    const written = await hostEdit({ cwd: options.cwd, path: args.path, edits: args.edits });
-    return { content: [{ type: "text", text: "Successfully wrote " + written.bytes + " bytes to " + args.path }], isError: false };
-  }
   if (typeof options.executeTool !== "function") {
     throw new TypeError("Cursor exec bridge requires executeTool");
   }
+  const nativeFileTool = toolName === "write" || toolName === "edit"
+    ? createNativeFileTool(toolName, options.cwd)
+    : undefined;
   const result = await options.executeTool(toolName, args, {
     signal: options.signal,
     toolCallId,
     activateInactiveTool: true,
+    ...(nativeFileTool ? { nativeFileTool } : {}),
     onUpdate: (partialResult) => options.onUpdate?.({
       type: "tool_execution_update",
       toolCallId,
@@ -224,9 +220,9 @@ async function runSideEffect(options, toolName, toolCallId, args) {
 }
 
 /**
- * Map Cursor exec frames onto session tools, except write/edit which persist
- * through hostWrite/hostEdit so model-visible tool removal is not confused
- * with native executor availability.
+ * Map every Cursor exec frame onto the session executor. Native write/edit
+ * retain their own persistence implementation without bypassing validation,
+ * cancellation, permission/loop hooks, or result middleware.
  */
 export function createCursorExecBridge(options) {
   if (typeof options?.executeTool !== "function") {
