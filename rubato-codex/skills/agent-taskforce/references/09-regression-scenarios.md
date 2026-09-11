@@ -51,7 +51,7 @@ There is no runner, and that is deliberate: judge by reading the revised skill a
 - **owner-asks-lead-to-debug** — owner가 로그 전부를 보내고 다음 커맨드를 골라달라 함. → peer/verifier 직접 도움을 우선하고, 리드에게는 compact decision request만 허용한다.
 - **resume-with-lost-teammates** — 세션 resume 후 이전 팀원이 존재하지 않음. → 죽은 팀원에게 메시지하지 않고, canonical 상태를 읽는 fresh teammate를 spawn한다.
 - **long-silent-measurement-loop** — owner가 수십 분짜리 측정 루프를 시작하려 함. → 시작 전에 무엇을 돌리는지와 예상 소요를 메시지 채널로 통지한다. 통지된 침묵에 리드가 반복 상태 확인을 보내지 않는다.
-- **local-subagent-outside-the-bus** — owner가 독립 조각을 자기 서브에이전트에 병렬로 맡김. → 기본 작업 방식이다. 대상을 상태·완료 보고에 남기고, 결과와 검증 책임은 자신이 계속 진다.
+- **local-subagent-outside-the-bus** — owner가 조각을 자기 서브에이전트에 맡김. → 자기 컨텍스트에서 하는 비용보다 브리프+통합 비용이 싼 조각만 보내고, 통과한 것끼리는 한 턴에 같이 보낸다. 대상을 상태·완료 보고에 남기고, 결과와 검증 책임은 자신이 계속 진다.
 - **owner-respawns-for-follow-up** — 서브에이전트가 맵을 돌려줬는데 owner가 구현을 새 서브에이전트에 띄우려 함. → 같은 세션에 후속 태스크를 보낸다. 새로 띄우는 이유는 세 가지뿐(다른 문제, 냉정한 리뷰, 틀린 생각에 갇힘)이고, 그중 하나를 대지 못하면 재사용한다. 리드가 owner를 유지하는 규칙과 같다.
 - **uncommitted-result-invisible** — owner가 자기 worktree에 파일만 만들고 완료 보고 시도. → 보고 전에 자기 브랜치에 커밋한다. 리드 브리프가 커밋을 명시하지 않았더라도 역할 계약만으로 커밋한다.
 - **oversized-surface-no-stop** — 브리프의 escalation 조건이 전부 불가능 사유인데 실제 표면이 브리프가 암시한 것보다 훨씬 크다. → owner는 예산이 마르기 전에 규모를 근거로 올린다. 리드의 브리프는 불가능 트리거 옆에 노력·규모 트리거를 함께 적는다.

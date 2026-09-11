@@ -82,7 +82,7 @@ test("teammate prompt points helpers at Agent, not subagent", () => {
   // runtime skill in 785f6a3f9 ("rules in one place"); the role prompt keeps
   // the pointer (model-guide) and the mailbox (team_send). The seat rewrite made
   // parallel `Agent` subagents the default and reuse of the same subagent the rule.
-  assert.match(text, /Independent slices go out in one turn as `Agent` subagents/);
+  assert.match(text, /Delegate by cost, not by count/);
   assert.match(text, /goes to the same subagent with `AgentSend`/);
   assert.match(text, /choose each agent's model with Skill\(model-guide\)/);
   assert.match(text, /team_send/);
