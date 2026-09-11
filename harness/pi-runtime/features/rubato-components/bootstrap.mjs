@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import { readFile, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { SettingsManager, createAgentSession } from "../../node_modules/@earendil-works/pi-coding-agent/dist/index.js";
-import { createStockRpcSpawnRuntime, resolveStockChildProviderProfile } from "../child-runtime/stock-rpc-runtime.mjs";
+import { DefaultResourceLoader, SettingsManager, createAgentSession } from "../../node_modules/@earendil-works/pi-coding-agent/dist/index.js";
+import { createStockChildInProcessSession, createStockRpcSpawnRuntime, loadStockChildInProcessFactories, resolveStockChildProviderProfile } from "../child-runtime/stock-rpc-runtime.mjs";
 import { createMcpProducerRegistry } from "../mcp-producers/index.mjs";
 import { createMcpExtension } from "../mcp/index.mjs";
 import { ToolSearchService, createToolSearchExtension } from "../tool-search/index.mjs";
@@ -11,6 +11,7 @@ import { createServiceTierFeature } from "../service-tier/extension.mjs";
 import terminal from "../terminal/src/index.ts";
 import mediaTools from "../media-tools/src/index.mjs";
 import { loopGuardExtension, registerApplyPatchExtension, toolPairGuardExtension } from "../tool-guards/index.mjs";
+import { createBashTimeoutExtension, createHooksExtension, createPermissionExtension } from "../tool-policy/index.mjs";
 import { createProvidersExtension } from "../../node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/rubato-features/providers/extension.mjs";
 import { createProviderExecution } from "../../node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/rubato-features/provider-execution/extension.mjs";
 import { createContextNotesExtension } from "../../node_modules/@earendil-works/pi-coding-agent/dist/rubato-features/context-notes/extension.mjs";
@@ -49,14 +50,24 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
   const rpcSpawnRuntime = createStockRpcSpawnRuntime({
     rpcEntry: fileURLToPath(new URL("../../node_modules/@earendil-works/pi-coding-agent/dist/rpc-entry.js", import.meta.url)),
   });
-  const stockChildProfile = resolveStockChildProviderProfile({ root: fileURLToPath(new URL("../..", import.meta.url)) });
+  const runtimeRoot = fileURLToPath(new URL("../..", import.meta.url));
+  const stockChildProfile = resolveStockChildProviderProfile({ root: runtimeRoot, agentDir, includeContextNotes: true, includeGuards: true });
   const componentFactory = servers.wrapFactory(createRubatoComponentExtension({ createTaskOptions: ({ createTaskRunnerFactories }) => ({
     runnerFactories: createTaskRunnerFactories({ rpcSpawnRuntime, stockChildProfile, stockModelRuntime: modelRuntime,
-      createInProcessSession: async (options) => (await createAgentSession(options)).session }),
+      createInProcessSession: async (options) => createStockChildInProcessSession(options, {
+        createAgentSession,
+        DefaultResourceLoader,
+        extensionFactories: await loadStockChildInProcessFactories({ root: runtimeRoot, agentDir: options.agentDir ?? agentDir }),
+      }) }),
   }) }), { sourcePath: join(here, "extensions/rubato.js"), registrationCwd: cwd });
   const extensionFactories = [
     { name: "rubato-assets", factory: async () => validateRubatoBundleAssets() },
     { name: "rubato-loop-guard", factory: loopGuardExtension },
+    { name: "rubato-hooks", factory: createHooksExtension({
+      agentDir,
+      isTrusted: async (handler) => handler.source?.sourcePath === join(agentDir, "hooks.json"),
+    }) },
+    { name: "rubato-permission", factory: createPermissionExtension() },
     { name: "providers", factory: createProvidersExtension({ ...providerOptions,
       routeFactories: { ...providerOptions.routeFactories, cursor: providerExecution.cursorRouteFactory },
       env: { ...process.env, ...providerOptions.env, RUBATO_PI_CODING_AGENT_DIR: agentDir } }) },
@@ -65,6 +76,7 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
     { name: "rubato-gpt-apply-patch", factory: registerApplyPatchExtension },
     { name: "context-notes", factory: createContextNotesExtension({ agentDir }) },
     ...createPromptRulesExtensionFactories({ settingsManager: settings }),
+    { name: "rubato-bash-timeout", factory: createBashTimeoutExtension() },
     { name: "terminal", factory: (pi) => terminal(pi, { ...terminalOptions, createSettingsManager: () => settings }) },
     { name: "media-tools", factory: (pi) => mediaTools(pi, { createSettingsManager: () => settings }) },
     { name: "codemode", factory: (pi) => codemode(pi, codemodeOptions) },

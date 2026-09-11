@@ -22,7 +22,7 @@ Anthropic native bash, `read_video`는 parser/catalog 차이가 있어 아래 �
 공개 tag와 같은 exact npm 배포물의 compiled JS/source map을 함께 대조했다. `src/webfetch`
 8개, `src/look-at` 9개, `src/imagegen` 5개와 skill asset, exact Senpi-AI OpenAI provider closure
 8개를 소유한다. stock adapter/host/entry 5개와 LICENSE/notice를 합쳐 descriptor가
-`rubato-features/media-tools/` 아래 38개 file을 stage한다. 원래 Senpi package, global module,
+`rubato-features/media-tools/` 아래 file을 stage한다. 원래 Senpi package, global module,
 HOME fallback은 없다.
 
 webfetch의 exact direct dependencies는 다음과 같다.
@@ -105,7 +105,7 @@ stock `ModelRegistry.getProviderAuthStatus("openai").source === "stored"`로 같
 provider/model runner만 사용한다. 실제 stock SDK에 generic `executeTool`과 이 feature를 stage한
 뒤 다음을 확인하도록 구성했다.
 
-1. stage receipt 38개와 다섯 direct dependency exact version, `PI_WEBFETCH=off` gate
+1. stage receipt와 다섯 direct dependency exact version, `PI_WEBFETCH=off` gate
 2. `webfetch` redirect → HTML article Markdown, progress 3단계, noise 제거
 3. invalid scheme, oversized Content-Length의 bounded error result
 4. in-flight AbortSignal 뒤 response socket close와 test server의 전체 socket cleanup
@@ -129,6 +129,14 @@ env -u NODE_OPTIONS -u NODE_COMPILE_CACHE \
 standalone 전체 copy/stage를 포함하므로 300초는 느린 filesystem을 위한 bounded headroom이며
 provider timeout을 늘린 것이 아니다. native clone stager가 반영된 최근 전체 실행은 4 test
 모두 pass, fail/skip 0, 약 46.6초였다. 이 중 actual staged SDK integration은 약 41.5초였다.
+
+## A5
+
+9/8 wip 이후 runtime-owned closure는 43개다. 문서의 38은 webfetch 8 + look-at 9 +
+imagegen 5(+skill) + openai-images 8 + adapter/host/entry 5 + LICENSE/notice 기준이고,
+현재 `src/index.mjs`가 추가로 native `openai-image-gen` 4파일과 `openai-web-search`
+1파일을 등록한다. 이 다섯은 stray가 아니라 같은 feature의 native 경로다. parser
+parity는 아래 미완료 표에 남는다.
 
 ## 별도 미완료 contract
 
