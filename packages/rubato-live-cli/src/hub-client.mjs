@@ -206,6 +206,11 @@ function stringEnvironment(environment) {
 
 function defaultKickstart() {
   if (process.platform !== "darwin" || typeof process.getuid !== "function") return false;
+  const restart = process.env.RUBATO_HUB_RESTART;
+  if (restart) {
+    const result = spawnSync(process.execPath, [restart], { stdio: "ignore" });
+    return result.status === 0;
+  }
   const result = spawnSync("/bin/launchctl", ["kickstart", "-k", `gui/${process.getuid()}/${LAUNCHD_LABEL}`], { stdio: "ignore" });
   return result.status === 0;
 }

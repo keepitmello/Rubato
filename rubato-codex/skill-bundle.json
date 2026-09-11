@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "source": "../harness/skills",
+  "output": "skills",
+  "renames": {
+    "metaFrame": "metaframe"
+  },
+  "managed": [
+    "aside-browser",
+    "browser-cli",
+    "claude-prompting-lab",
+    "dispatched",
+    "find-skills",
+    "frontend-ux-router",
+    "humanize-korean",
+    "imagen-proxy",
+    "insane-search",
+    "keep-simple",
+    "laws",
+    "macos-computer-use",
+    "metaFrame",
+    "outpost",
+    "product-framing",
+    "product-reframing",
+    "supabase-postgres-best-practices",
+    "vercel-react-best-practices",
+    "work-intent",
+    "wy-server"
+  ],
+  "conditional": [
+    "return",
+    "rubato-tui-verify",
+    "wrapping-sessions"
+  ],
+  "preserved": [
+    "agent-taskforce",
+    "dispatching",
+    "model-guide"
+  ],
+  "nativeOnly": [
+    "codex-discusser",
+    "codex-reviewer"
+  ],
+  "excludedPatterns": [
+    "(^|/)__pycache__(/|$)",
+    "\\.pyc$",
+    "(^|/)\\.DS_Store$",
+    "(^|/)observations(/|$)",
+    "\\.bak-[^/]+$",
+    "\\.log$",
+    "~$"
+  ]
+}

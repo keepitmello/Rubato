@@ -8,7 +8,12 @@ import {
   isBootAuthStorageUrl,
   isBootModelRuntimeUrl,
 } from "./boot-catalog-slim.mjs";
-import { injectInteractiveDeferDialogs, isBootInteractiveModeUrl } from "./boot-interactive-defer.mjs";
+import {
+  injectInteractiveDeferDialogs,
+  injectStartupPromptReleasesBootChrome,
+  isBootInteractiveModeUrl,
+  isBootStartupIndicatorUrl,
+} from "./boot-interactive-defer.mjs";
 import { injectLoaderDeferHeavyBundles, isBootLoaderUrl } from "./boot-loader-defer.mjs";
 import { injectMainDeferCliModules, isBootMainUrl } from "./boot-main-defer.mjs";
 
@@ -23,6 +28,7 @@ export function applyBootPerfTransforms(url, source, applyTransform) {
   if (isBootAgentSessionUrl(url)) source = applyTransform(source, injectAgentSessionDeferExportHtml);
   if (isBootMainUrl(url)) source = applyTransform(source, injectMainDeferCliModules);
   if (isBootInteractiveModeUrl(url)) source = applyTransform(source, injectInteractiveDeferDialogs);
+  if (isBootStartupIndicatorUrl(url)) source = applyTransform(source, injectStartupPromptReleasesBootChrome);
   if (isBootModelRuntimeUrl(url)) source = applyTransform(source, injectModelRuntimeCatalogSlim);
   if (isBootAuthStorageUrl(url)) source = applyTransform(source, injectAuthStorageCatalogSlim);
   return source;

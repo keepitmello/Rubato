@@ -1,0 +1,4 @@
+interface:
+  display_name: "Vercel React Best Practices"
+  short_description: "Help with Vercel React Best Practices tasks"
+  default_prompt: "Use vercel-react-best-practices to handle this task."
