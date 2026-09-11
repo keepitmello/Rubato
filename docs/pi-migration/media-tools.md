@@ -162,3 +162,16 @@ parity는 아래 미완료 표에 남는다.
 client imagegen은 stock compat registry의 stable source id와 owned `openai-images` closure로
 닫았다. native image와 native Anthropic bash는 각각 provider parser 변경까지 필요하므로 이
 단위에서 client 경로로 가장하거나 payload 주입만 하고 완료 처리하지 않는다.
+
+## A14
+
+세 native 경로는 후보 `media-tools` feature에서 로컬 mock Responses/Anthropic stream으로
+잠갔다. 유료 계정·실네트워크는 쓰지 않는다.
+
+| 경로 | 사용자 결과 | stock 0.85.1 파일/줄 | 패치 |
+| --- | --- | --- | --- |
+| `openai-image-gen` | official OpenAI Responses의 `image_generation_call`이 `providerNative`로 남고, `message_end`가 `generated-images/<id>.png`로 externalize한 뒤 base64를 지운다 | `dist/api/openai-responses-shared.js` `createSlot` (약 343–410행)이 unknown item을 버린다 | `openai-responses-provider-native` (pristine `b5d9f001…222e3`) |
+| `openai-web-search` | `PI_OPENAI_WEB_SEARCH` default-on. payload에 `web_search_preview` + `web_search_call.action.sources` include. mock stream의 sources가 텍스트로 materialize된다 | 같은 `createSlot` fallback이 `web_search_call`을 `providerNative`로 보존 | 공개 `before_provider_request` hook + 위 parser fallback. 제품 `DISABLED_WEB_SEARCH_EXTENSIONS`는 `anthropic-web-search`/`websearch`만 끄고 openai native는 끄지 않는다 |
+| `anthropic-bash` | `PI_ANTHROPIC_BASH` default-off. 켜면 payload에 `bash_20250124` 삽입. mock Anthropic stream의 `server_tool_use` + `bash_code_execution_tool_result`가 메시지에 남고 다음 턴에 replay된다 | `dist/api/anthropic-messages.js` `content_block_start` (약 419–466행)이 `tool_use`만 처리하고 native 블록을 버린다 | `anthropic-messages-provider-native` (pristine `f748560c…b604`, A10 video 패치와 같은 preimage; catalog 순서상 media-tools 다음 video-in). convertContentBlocks 앵커는 그대로 둔다 |
+
+`read_video` context guard는 A10 `video-in` 소유이며 이 패치와 compose된다.
