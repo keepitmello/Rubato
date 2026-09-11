@@ -1,7 +1,8 @@
 ## Rubato Codex routing
 
 The installed Rubato Codex base supplies the common working agreement and
-root-only lead mindset. Native taskforce roles supply owner/verifier/helper
+root-only lead mindset; its Role selection section defines seats, parentage and
+spawn surface. Native taskforce roles supply owner, verifier and subagent
 instructions. Follow the assigned role, not the role of inherited conversation.
 
 Use this plugin's `agent-taskforce`, `dispatching`, `dispatched` and `model-guide`

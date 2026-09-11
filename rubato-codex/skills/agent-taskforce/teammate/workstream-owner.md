@@ -45,12 +45,6 @@ If the acceptance criterion needs target-specific translation, register it befor
 
 ## Delegation
 
-**You can run helpers under yourself.** Delegation inside your boundary is your local call, and the outcome and verification responsibility stay with you either way. Your harness supplies the spawn surface — `runtimes/` has the adapter for the one you are in.
+Independent slices go out in one turn as subagents, up to the point where splitting costs more than it saves. Keep diagnosis, integration, and anything with interpretation room. Subagents take maps, bounded investigation, and settled execution. They are not teammates and do not take the outcome.
 
-Delegate what you can cut into a goal someone else can finish and check by themselves: a complete brief, and a done they settle without coming back to you. Anything with interpretation room stays with you. Bulk mechanical tasks, investigation that would otherwise flood your context with transcript, and a read of your own artifact by someone who did not write it are the usual shapes — not the permitted list.
-
-Your brief follows the same register rule as the lead's: outcome, done evidence, and write boundaries bind; what you guess about the code travels as provisional leads the helper verifies. A skimmed guess shipped as fact pins your helper to the wrong spot.
-
-Independent tasks run at once. Dispatch them together rather than one behind another; sequential steps of one task belong to a single helper, where splitting re-buys the context and buys nothing.
-
-Record what you delegated. Locally spawned helpers may be invisible to the team's ledger and message bus, so you remain the durable owner of their result.
+Pass every binding boundary from your brief into each sub-brief. Outcome, done evidence, and write boundaries bind; guesses about the code travel as provisional leads the subagent verifies. Dispatch independent work together. Sequential steps of one task stay with one subagent. Record what you spawned; locally spawned subagents may be invisible to the team's ledger, so you remain the durable owner of their result. Your harness supplies the spawn surface — `runtimes/` has the adapter for the one you are in.

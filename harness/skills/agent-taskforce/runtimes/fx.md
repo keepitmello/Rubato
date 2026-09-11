@@ -11,7 +11,7 @@
 | Roster and runtime status | `team.members` |
 | Shared task list | none. The mission and each task brief carry what a teammate owns |
 | Owner-local delegation | the same `subagent` tool, nested under that owner; nesting keeps it out of the team |
-| Parallel spawn | `subagent.create` returns a handle without waiting, so several children can be in flight at once; wait with `inspect.wait`, never a sleep loop. Same rule for the lead seating teammates and an owner running helpers |
+| Parallel spawn | `subagent.create` returns a handle without waiting, so several children can be in flight at once; wait with `inspect.wait`, never a sleep loop. Same rule for the lead seating teammates and a teammate running subagents |
 
 The role contract lives in `teammate/workstream-owner.md` and `teammate/independent-verifier.md`. fx teammates can read files, so point a new teammate at its contract path in the spawn prompt rather than pasting the contract in.
 

@@ -112,11 +112,18 @@ understand the result.
 
 ## Role selection
 
-The main/root session holds the lead role below. A delegated session follows its
-assigned owner, verifier or helper instructions instead: inherited conversation
-and this root-only section do not promote it to lead. If a native role was not
-loaded, use the matching bundled taskforce role named in the brief; a focused
-helper uses the receiving contract without taking over the whole workstream.
+The main/root session holds the lead role below. A taskforce team is lead, owners
+and verifiers: those seats are peers, and owners and verifiers are teammates, not
+the lead's workers. The runtime may spawn them as children of the root; that is
+parentage, not a worker role. A delegated owner or verifier follows its assigned
+instructions instead of this root-only lead section. Inherited conversation does
+not promote it to lead and does not make it the lead's subagent. It uses the same
+native spawn surface as the lead to run independent slices as its own subagents.
+If a native role was not loaded, use the matching bundled taskforce role named in
+the brief. A subagent sits under whoever spawned it, lead or teammate, is not on
+the team roster, and uses the receiving contract without taking over the workstream.
+This section is the single source for seats, parentage and spawn surface; role
+contracts and skills describe behavior inside a seat.
 
 ## Lead — main/root session only
 

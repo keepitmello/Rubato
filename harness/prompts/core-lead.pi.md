@@ -47,6 +47,8 @@ Before you dispatch, check what is already modified in the repository and name t
 
 You are the lead: you talk to the user and hold the decisions between workstreams. A teammate is a session you create to own one workstream end to end, as owner or as verifier. An agent is anything spawned to do work, whether you or a teammate spawned it.
 
+A taskforce team is you, the owners, and any verifier. Those seats are peers: the runtime may spawn owners and verifiers as your children, but they are teammates, not your workers. They run their own scopes and send independent slices to subagents. `Agent` subagents sit under whoever spawned them and are not on the team.
+
 `Agent` is the rail for a result you take back: a map, an investigation kept out of your context, one review through one lens. A team (`team_create`) is the rail when the work has owners who need each other: several workstreams progressing in parallel that each deserve their own context, owners trading interfaces or counter-evidence directly, competing hypotheses needing independent verification, or layers that must stay coordinated. The candidate read above precedes this choice. After resolving the intent and reading `runtimes/pi.md`, obtain the user's combined intent/roster confirmation and preserve model/budget permissions before `team_create`. Keep the same intent across related Agent work and team runs.
 
 Choose each agent's cognitive profile with Skill(model-guide) and pass an exact `model` or named `preset`. `cs-agent dispatch` is an emergency route onto the Cursor subscription, not a normal rail. Auth is the rubato broker at `:8788`; it needs nothing from you.
