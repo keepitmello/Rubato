@@ -76,7 +76,7 @@ export function listNodeCandidates(home = homedir(), extra = []) {
   return bins;
 }
 
-export function pickNode(candidates, { version = versionOf } = {}) {
+export function pickNode(candidates, { version = versionOf, accepts = (node) => node.major >= MIN_MAJOR } = {}) {
   const seen = new Set();
   const found = [];
   for (const bin of candidates) {
@@ -84,7 +84,7 @@ export function pickNode(candidates, { version = versionOf } = {}) {
     if (seen.has(key)) continue;
     seen.add(key);
     const parsed = version(bin);
-    if (parsed && parsed.major >= MIN_MAJOR) found.push(parsed);
+    if (parsed && parsed.major >= MIN_MAJOR && accepts(parsed)) found.push(parsed);
   }
   found.sort((a, b) => {
     if (a.major === 24 && b.major !== 24) return -1;
@@ -92,4 +92,25 @@ export function pickNode(candidates, { version = versionOf } = {}) {
     return b.major - a.major || b.minor - a.minor || b.patch - a.patch;
   });
   return found[0] ?? null;
+}
+
+export function nodeSatisfiesCandidate(versionText = process.version) {
+  const match = /^v?(\d+)\.(\d+)/.exec(String(versionText));
+  if (!match) return false;
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  return (major === 24 && minor >= 15) || major >= 26;
+}
+
+/** Search compatible binaries before allowing the caller to fall back to Senpi. */
+export function selectNodeForEngine(engine, {
+  running = runningNode(),
+  candidates,
+  version = versionOf,
+} = {}) {
+  const accepts = (node) => engine !== "stock-pi" || nodeSatisfiesCandidate(node.text);
+  if (running && accepts(running)) return running;
+  const bins = candidates ?? listNodeCandidates(undefined, [process.execPath]);
+  const selected = pickNode(bins, { version, accepts });
+  return selected ?? running ?? pickNode(bins, { version });
 }
