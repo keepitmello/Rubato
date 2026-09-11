@@ -140,6 +140,8 @@ async function createLocalSession(options: Record<string, unknown>) {
   const extensionFactories = await loadStockChildInProcessFactories({
     root: runtimeRoot,
     agentDir: String(options.agentDir),
+    settingsManager: options.settingsManager,
+    propagateEnv: false,
   })
   const session = await createStockChildInProcessSession(options, {
     createAgentSession,

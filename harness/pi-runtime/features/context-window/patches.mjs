@@ -102,7 +102,7 @@ function patchAgentSessionRuntime(source) {
                     systemPrompt: this._systemPromptOverride ?? this._baseSystemPrompt,`,
     `            const previousSnapshot = await previousPrepareNextTurnWithContext?.({ ...turn, context }, signal);
             const nextContext = previousSnapshot?.context ?? context;
-            const liveWindowMessages = notesTurnMessages(turn, this.agent.state.messages);
+            const liveWindowMessages = notesTurnMessages(turn, this.agent.state.messages, this.sessionManager.getSessionId());
             return {
                 ...previousSnapshot,
                 context: {

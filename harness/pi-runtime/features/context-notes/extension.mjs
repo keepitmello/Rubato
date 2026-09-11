@@ -21,6 +21,9 @@ export function createContextNotesExtension(options = {}) {
     // engine marker set refers to Senpi-only lanes and must not gate this
     // stock adapter.
     requireEngine: options.requireEngine ?? false,
+    propagateEnv: options.propagateEnv,
+    settingsManager: options.settingsManager,
+    env: options.env,
   });
 }
 

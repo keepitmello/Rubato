@@ -266,13 +266,25 @@ test("candidate remote-surface local hub scenarios", { timeout: 90000 }, async (
   await t.test("reconnect and receive current state", async () => {
     const surface = getInstalledRemoteSurface({ liveSessionId: LIVE_SESSION_ID });
     assert.ok(surface);
+    const seqBefore = Math.max(0, ...recorder.outgoing.filter((frame) => frame?.kind === "surface.snapshot").map((frame) => frame.sourceSeq ?? 0));
     await waitUntil(() => surface.registered === true, { timeoutMs: 15000, label: "surface reconnected" });
-    await waitUntil(() => recorder.outgoing.some((frame) => frame?.kind === "surface.snapshot"), {
+    await waitUntil(() => recorder.outgoing.some((frame) => frame?.kind === "surface.snapshot" && (frame.sourceSeq ?? 0) > seqBefore), {
       label: "snapshot after reconnect",
     });
-    const snapshot = [...recorder.outgoing].reverse().find((frame) => frame?.kind === "surface.snapshot");
+    const snapshot = [...recorder.outgoing].reverse().find((frame) => frame?.kind === "surface.snapshot" && (frame.sourceSeq ?? 0) > seqBefore);
     assert.equal(snapshot.kind, "surface.snapshot");
-    assert.ok(Array.isArray(snapshot.state?.entries));
+    const entries = snapshot.state?.entries ?? [];
+    assert.ok(Array.isArray(entries));
+    const userTexts = entries.filter((entry) => entry.role === "user").map((entry) => entry.text);
+    const assistantTexts = entries.filter((entry) => entry.role === "assistant").map((entry) => entry.text);
+    assert.equal(userTexts.at(-1), "keep running after disconnect", "snapshot must keep the last input");
+    assert.equal(assistantTexts.at(-1), "still running", "snapshot must keep the streamed text that finished after disconnect");
+    assert.ok(userTexts.includes("stream from remote"), "snapshot must keep the aborted turn input");
+    const aborted = snapshot.state?.timeline?.runs?.some((run) => run.status === "interrupted")
+      || assistantTexts.includes("aborted")
+      || assistantTexts.filter((text) => text !== "still running").every((text) => text === "aborted" || text === "");
+    assert.equal(aborted, true, "snapshot must retain abort state of the first turn");
+    assert.equal(snapshot.summary?.execution, "idle");
   });
 });
 

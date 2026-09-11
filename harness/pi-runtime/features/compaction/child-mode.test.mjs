@@ -111,6 +111,8 @@ async function openInProcessChild(t, { name, model }) {
   const extensionFactories = await childRuntime.loadStockChildInProcessFactories({
     root: staged.root,
     agentDir,
+    settingsManager,
+    propagateEnv: false,
   });
   assert.equal(extensionFactories.some((entry) => entry.name === "context-notes"), true);
   const session = await childRuntime.createStockChildInProcessSession({
@@ -125,7 +127,7 @@ async function openInProcessChild(t, { name, model }) {
     extensionFactories,
   });
   t.after(() => session.dispose?.());
-  return session;
+  return { session, settingsManager };
 }
 
 function withoutNodeOptions(env) {
@@ -158,9 +160,11 @@ async function runRpcChild({ name, model, mode, origin }) {
   const probeOut = join(scratch, "rpc-" + name + "-mode.json");
   writeFileSync(probe, [
     "import { writeFileSync } from \"node:fs\";",
+    "const inherited = { mode: process.env.RUBATO_CONTEXT_MODE ?? null, origin: process.env.RUBATO_CONTEXT_MODE_ORIGIN ?? null };",
     "export default (pi) => {",
     "  pi.on(\"session_start\", (_event, ctx) => {",
     "    writeFileSync(" + JSON.stringify(probeOut) + ", JSON.stringify({",
+    "      inherited,",
     "      mode: process.env.RUBATO_CONTEXT_MODE ?? null,",
     "      origin: process.env.RUBATO_CONTEXT_MODE_ORIGIN ?? null,",
     "      modelProvider: ctx?.model?.provider ?? null,",
@@ -247,26 +251,32 @@ async function runRpcChild({ name, model, mode, origin }) {
 
 test("in-process child re-resolves inherited ORIGIN=session: Fable summary, Astra notes", async (t) => {
   withFreshMode(t, { mode: "history-notes", origin: "session" });
-  await openInProcessChild(t, { name: "inproc-fable", model: FABLE });
-  assert.equal(process.env.RUBATO_CONTEXT_MODE, "summary");
+  const fable = await openInProcessChild(t, { name: "inproc-fable", model: FABLE });
+  assert.equal(process.env.RUBATO_CONTEXT_MODE, "history-notes", "in-process Fable child must not overwrite process env");
   assert.equal(process.env.RUBATO_CONTEXT_MODE_ORIGIN, "session");
+  assert.equal(contextConfig.historyNotesEnabledForSession(fable.session.sessionManager.getSessionId()), false);
+  assert.equal(fable.settingsManager.getCompactionSettings().enabled, true, "Fable child summary must keep compaction settings on");
 
   withFreshMode(t, { mode: "summary", origin: "session" });
-  await openInProcessChild(t, { name: "inproc-astra", model: ASTRA });
-  assert.equal(process.env.RUBATO_CONTEXT_MODE, "history-notes");
+  const astra = await openInProcessChild(t, { name: "inproc-astra", model: ASTRA });
+  assert.equal(process.env.RUBATO_CONTEXT_MODE, "summary", "in-process Astra child must not overwrite process env");
   assert.equal(process.env.RUBATO_CONTEXT_MODE_ORIGIN, "session");
+  assert.equal(contextConfig.historyNotesEnabledForSession(astra.session.sessionManager.getSessionId()), true);
+  assert.equal(astra.settingsManager.getCompactionSettings().enabled, false, "Astra child notes must disable compaction settings");
 });
 
 test("in-process child keeps user-explicit env without origin marker", async (t) => {
   withFreshMode(t, { mode: "history-notes" });
-  await openInProcessChild(t, { name: "inproc-explicit-notes", model: FABLE });
+  const notes = await openInProcessChild(t, { name: "inproc-explicit-notes", model: FABLE });
   assert.equal(process.env.RUBATO_CONTEXT_MODE, "history-notes");
   assert.equal(process.env.RUBATO_CONTEXT_MODE_ORIGIN, undefined);
+  assert.equal(contextConfig.historyNotesEnabledForSession(notes.session.sessionManager.getSessionId()), true);
 
   withFreshMode(t, { mode: "summary" });
-  await openInProcessChild(t, { name: "inproc-explicit-summary", model: ASTRA });
+  const summary = await openInProcessChild(t, { name: "inproc-explicit-summary", model: ASTRA });
   assert.equal(process.env.RUBATO_CONTEXT_MODE, "summary");
   assert.equal(process.env.RUBATO_CONTEXT_MODE_ORIGIN, undefined);
+  assert.equal(contextConfig.historyNotesEnabledForSession(summary.session.sessionManager.getSessionId()), false);
 });
 
 test("RPC child re-resolves inherited ORIGIN=session through the default notes factory", async () => {
@@ -298,5 +308,6 @@ test("RPC child re-resolves inherited ORIGIN=session through the default notes f
     mode: "summary",
   });
   assert.equal(explicit.resolved.mode, "summary");
-  assert.equal(explicit.resolved.origin, null);
+  assert.equal(explicit.resolved.inherited?.origin ?? null, null, "RPC child must start with user-explicit summary (no ORIGIN marker)");
+  // Product setContextMode stamps ORIGIN=session after adopt; the mode must stay summary.
 });

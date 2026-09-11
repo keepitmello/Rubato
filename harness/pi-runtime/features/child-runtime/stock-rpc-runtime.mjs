@@ -66,7 +66,14 @@ function isChildGuardExtensionPath(entry) {
  * profile. Provider registration stays on the injected parent ModelRuntime;
  * only notes owner + tool guards are installed into the child session.
  */
-export async function loadStockChildInProcessFactories({ root, agentDir, includeContextNotes = true, includeGuards = true } = {}) {
+export async function loadStockChildInProcessFactories({
+  root,
+  agentDir,
+  includeContextNotes = true,
+  includeGuards = true,
+  settingsManager,
+  propagateEnv = false,
+} = {}) {
   const profile = resolveStockChildProviderProfile({ root, agentDir, includeContextNotes, includeGuards })
   const factories = []
   for (const entry of profile.rpcExtensions) {
@@ -74,7 +81,12 @@ export async function loadStockChildInProcessFactories({ root, agentDir, include
       const { createContextNotesExtension } = await import(pathToFileURL(entry).href)
       // A4 required the notes owner on children; do not pass enabled:true — that
       // freezes liveSwitch and blocks session_start from re-resolving the parent mode.
-      factories.push({ name: "context-notes", factory: createContextNotesExtension({ agentDir }) })
+      // propagateEnv:false keeps adoptContextMode from writing process.env, so a
+      // parent session in the same process keeps its own compaction/notes gates.
+      factories.push({
+        name: "context-notes",
+        factory: createContextNotesExtension({ agentDir, settingsManager, propagateEnv }),
+      })
     } else if (isChildGuardExtensionPath(entry)) {
       const { createStockChildGuardExtension } = await import(pathToFileURL(entry).href)
       factories.push({ name: "child-guards", factory: createStockChildGuardExtension() })
