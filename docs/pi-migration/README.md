@@ -44,6 +44,8 @@ needed-missing 런타임(기존 large): `prompt-preset`, `compaction`, `video-in
 
 needed-missing 사용자 명령: `history-search` `/history`, `diff`, `files`, `help`, `redraws` `/tui`, `model-fallback` `/fallback`, `import-repro` `/ir`, `loop`, `ttsr`, `btw`, `gpt-account`(A6 Codex credential import와 짝, `/gpt-account` 자체는 후보에 없음).
 
+A12: `features/user-commands-agent/` — `/goal` `rubato-goal`, `/loop` `rubato-loop`, `/btw` `rubato-btw`, `/ttsr` `rubato-ttsr` (스트림 품질 규칙 감시·상태), `/fallback` `rubato-model-fallback` (수동 전환, 자동 retry.modelFallback 끔), `/ir` `rubato-import-repro`.
+
 ## 네 번째 단위 — CLI 조립과 남은 기능군
 
 - **실제 후보 CLI:** stock main이 만든 canonical ModelRuntime/SettingsManager를 그대로

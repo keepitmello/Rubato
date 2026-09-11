@@ -19,12 +19,18 @@ const catalog = Object.freeze({
   providers: { requires: [], load: () => import("./features/providers/patches.mjs") },
   "runtime-factories": { requires: [], load: () => import("./features/runtime-factories/patches.mjs") },
   "media-tools": { requires: ["tool-execution"], load: () => import("./features/media-tools/patches.mjs") },
+  "video-in": { requires: ["tool-execution"], load: () => import("./features/video-in/patches.mjs") },
   "tool-guards": { requires: ["tool-execution"], load: async () => (await import("./features/tool-guards/feature.mjs")).toolGuardsFeature },
   "tool-policy": { requires: ["tool-execution"], load: async () => (await import("./features/tool-policy/feature.mjs")).toolPolicyFeature },
   "provider-execution": { requires: ["tool-execution", "providers"], load: async () => (await import("./features/provider-execution/patches.mjs")).providerExecutionFeature },
   "context-notes": { requires: [], load: () => import("./features/context-notes/patches.mjs") },
   "context-window": { requires: ["context-notes"], load: () => import("./features/context-window/patches.mjs") },
   "prompt-rules": { requires: [], load: () => import("./features/prompt-rules/feature.mjs") },
+  "prompt-preset": { requires: [], load: () => import("./features/prompt-preset/feature.mjs") },
+  compaction: { requires: [], load: () => import("./features/compaction/feature.mjs") },
+  "config-reload": { requires: [], load: () => import("./features/config-reload/feature.mjs") },
+  "user-commands-agent": { requires: [], load: async () => (await import("./features/user-commands-agent/feature.mjs")).userCommandsAgentFeature },
+  "user-commands-session": { requires: ["session-catalog"], load: async () => (await import("./features/user-commands-session/feature.mjs")).feature },
 });
 
 export const PI_FEATURE_NAMES = Object.freeze(Object.keys(catalog));

@@ -299,6 +299,7 @@ export const files = Object.freeze([
   ownedFile("dist/rubato-features/providers/auth-pool/state-store.mjs", source("./auth-pool/state-store.mjs")),
   ownedFile("dist/rubato-features/providers/auth-pool/rotation-stream.mjs", source("./auth-pool/rotation-stream.mjs")),
   ownedFile("dist/rubato-features/providers/auth-pool/accounts.mjs", source("./auth-pool/accounts.mjs")),
+  ownedFile("dist/rubato-features/providers/auth-pool/gpt-account.mjs", source("./auth-pool/gpt-account.mjs")),
   ownedFile("dist/rubato-features/providers/auth-pool/runtime-pool.mjs", source("./auth-pool/runtime-pool.mjs")),
   codingAgentFile("dist/rubato-features/providers/auth-pool/runtime-pool.mjs", source("./auth-pool/coding-agent-runtime-pool.mjs")),
   ownedFile(

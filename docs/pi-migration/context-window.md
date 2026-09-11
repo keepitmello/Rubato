@@ -147,3 +147,12 @@ checkout, shared stock fixture, or paid API was used.
   contract. There is no asynchronous or callback boundary between the
   controller's revision capture and the final commit checks, so this does not
   open a race on the supported path.
+
+
+## A9 note (2026-09-11)
+
+`rubato-compaction` is an overlay, not a second notes engine. In history-notes mode
+(the candidate default) it stays dormant so `applyCompaction` abort/stale rules stay
+with context-window. In `RUBATO_CONTEXT_MODE=summary` it adds idle compact, a circuit
+breaker, and an OpenAI remote `session_before_compact` result. See
+`harness/pi-runtime/features/compaction/relationship.md`.
