@@ -1,78 +1,33 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import {
-  appendFileSync,
-  copyFileSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { createWriteStream, mkdirSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { finished } from "node:stream/promises";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const runtimeRoot = join(here, "../..");
 const sdkEntry = join(runtimeRoot, "node_modules/@earendil-works/pi-coding-agent/dist/index.js");
-const RUBATO_AGENT_SESSION = join(
-  process.env.HOME ?? "",
-  ".rubato/agent/sessions/--Users-wy--/2026-08-19T06-30-56-241Z_01a018b7-39f1-7e0e-a810-d646a4133c52.jsonl",
-);
-const SENPI_SESSIONS = join(process.env.HOME ?? "", ".senpi/agent/sessions");
-const TARGET_BYTES = 25_408_662;
+/** Hermetic fixture size: 25 MiB of generated JSONL. Never copies ~/.rubato or ~/.senpi. */
+export const SYNTHETIC_RESUME_BYTES = 25 * 1024 * 1024;
 
-function largestJsonl(root) {
-  let bestPath;
-  let bestSize = 0;
-  const stack = [root];
-  while (stack.length > 0) {
-    const dir = stack.pop();
-    let ents;
-    try {
-      ents = readdirSync(dir, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const ent of ents) {
-      const full = join(dir, ent.name);
-      if (ent.isDirectory()) {
-        stack.push(full);
-        continue;
-      }
-      if (!ent.isFile() || !ent.name.endsWith(".jsonl")) continue;
-      let size = 0;
-      try {
-        size = statSync(full).size;
-      } catch {
-        continue;
-      }
-      if (size > bestSize) {
-        bestSize = size;
-        bestPath = full;
-      }
-    }
-  }
-  return bestPath ? { path: bestPath, size: bestSize } : null;
-}
-
-function synthesizeLargeSession(dest) {
+function synthesizeLargeSession(dest, targetBytes = SYNTHETIC_RESUME_BYTES) {
+  const stream = createWriteStream(dest);
   const header = JSON.stringify({
     type: "session",
     version: 3,
-    id: "00000000-0000-4000-8000-000000000001",
+    id: "synthetic-resume-25mib",
     timestamp: "2020-01-01T00:00:00.000Z",
     cwd: "/tmp",
-  }) + "\n";
-  writeFileSync(dest, header);
+  }) + String.fromCharCode(10);
+  stream.write(header);
   let bytes = Buffer.byteLength(header);
   let prev = null;
   let i = 0;
-  const payload = "s".repeat(16_384);
-  while (bytes < TARGET_BYTES) {
+  const payload = "s".repeat(32_768);
+  while (bytes < targetBytes) {
     const id = i.toString(16).padStart(8, "0");
     const assistant = i % 2 === 1;
     const message = assistant
@@ -88,56 +43,36 @@ function synthesizeLargeSession(dest) {
         },
         stopReason: "stop",
       }
-      : { role: "user", content: payload };
+      : { role: "user", content: [{ type: "text", text: payload }] };
     const line = JSON.stringify({
       type: "message",
       id,
       parentId: prev,
       timestamp: "2020-01-01T00:00:00.000Z",
       message,
-    }) + "\n";
-    appendFileSync(dest, line);
+    }) + String.fromCharCode(10);
+    stream.write(line);
     bytes += Buffer.byteLength(line);
     prev = id;
     i += 1;
   }
-}
-
-function copyCandidateSession(dest) {
-  try {
-    const bytes = statSync(RUBATO_AGENT_SESSION).size;
-    copyFileSync(RUBATO_AGENT_SESSION, dest);
-    return { synthesized: false, bytes };
-  } catch {
-    // Profile copy is optional; fall through to senpi or a synthetic file.
-  }
-  const senpi = largestJsonl(SENPI_SESSIONS);
-  if (senpi) {
-    copyFileSync(senpi.path, dest);
-    return { synthesized: false, bytes: senpi.size };
-  }
-  synthesizeLargeSession(dest);
-  return { synthesized: true, bytes: statSync(dest).size };
+  stream.end();
+  return { bytes, lines: i, close: () => finished(stream) };
 }
 
 function parseMetrics(stdout) {
-  const lines = String(stdout ?? "").trim().split("\n").filter(Boolean);
+  const lines = String(stdout ?? "").trim().split(String.fromCharCode(10)).filter(Boolean);
   const last = lines.at(-1);
   assert.ok(last, "child printed no metrics JSON");
   let measured;
-  try {
-    measured = JSON.parse(last);
-  } catch {
-    throw new Error("child metrics were not JSON");
-  }
+  try { measured = JSON.parse(last); }
+  catch { throw new Error("child metrics were not JSON"); }
   return measured;
 }
 
-test("copied large session resume does not kill SessionManager.open or createAgentSession", { timeout: 90_000 }, (t) => {
+test("synthetic 25MiB session resume does not kill SessionManager.open or createAgentSession", { timeout: 90_000 }, async (t) => {
   const scratch = mkdtempSync(join(tmpdir(), "rubato-remote-resume-"));
-  t.after(() => {
-    rmSync(scratch, { recursive: true, force: true });
-  });
+  t.after(() => { rmSync(scratch, { recursive: true, force: true }); });
   const cwd = join(scratch, "cwd");
   const agentDir = join(scratch, "agent");
   const sessionDir = join(scratch, "sessions");
@@ -145,8 +80,10 @@ test("copied large session resume does not kill SessionManager.open or createAge
   mkdirSync(agentDir, { recursive: true });
   mkdirSync(sessionDir, { recursive: true });
   const copy = join(sessionDir, "session.jsonl");
-  const { synthesized, bytes } = copyCandidateSession(copy);
-  assert.ok(bytes > 1_000_000, "resume fixture should be at least 1MB");
+  const generated = synthesizeLargeSession(copy);
+  await generated.close();
+  const bytes = statSync(copy).size;
+  assert.ok(bytes >= SYNTHETIC_RESUME_BYTES, "synthetic fixture must be at least 25MiB, got " + bytes);
 
   const evalScript = [
     "import { pathToFileURL } from 'node:url';",
@@ -199,8 +136,9 @@ test("copied large session resume does not kill SessionManager.open or createAge
   assert.ok(measured.entries > 0, "opened session had no entries");
 
   const diagnostic = {
-    synthesized,
+    synthesized: true,
     bytes,
+    targetBytes: SYNTHETIC_RESUME_BYTES,
     openMs: measured.openMs,
     bindMs: measured.bindMs,
     rssMb: Math.round(measured.rss / 1024 / 1024),
@@ -213,4 +151,3 @@ test("copied large session resume does not kill SessionManager.open or createAge
   assert.ok(measured.bindMs < 60_000, "createAgentSession bind stayed under 60s");
   assert.ok(measured.rss < 2 * 1024 * 1024 * 1024, "resume rss stayed under 2GiB");
 });
-

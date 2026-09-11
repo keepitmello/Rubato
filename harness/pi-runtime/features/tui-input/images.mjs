@@ -17,10 +17,12 @@
  * setTuiImagesEnabled(false) makes attachClipboardImage return false (interactive-mode
  * patch falls through to the stock temp file) and the input hook does not transform.
  */
-import { readFileSync, statSync } from "node:fs";
-import { extname } from "node:path";
+import { readFileSync, realpathSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, extname, isAbsolute, relative, resolve, sep } from "node:path";
 
 export const IMAGE_MARKER_PATTERN = /\[Image #([1-9]\d*)\]/g;
+const CLIPBOARD_NAME = /^pi-clipboard-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(?:png|jpe?g|webp|gif)$/i;
 const CLIPBOARD_PATH_PATTERN = /(?:^|\s)(\S*pi-clipboard-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(?:png|jpe?g|webp|gif))(?=\s|$)/gi;
 const IMAGE_EXT_MIME = {
   ".png": "image/png",
@@ -36,6 +38,7 @@ const pending = new Map();
 
 export function setTuiImagesEnabled(value) {
   enabled = value === true;
+  if (!enabled) pending.clear();
 }
 
 export function isTuiImagesEnabled() {
@@ -68,6 +71,24 @@ export function attachClipboardImage(editor, image) {
 
 function mimeForPath(filePath) {
   return IMAGE_EXT_MIME[extname(filePath).toLowerCase()] ?? null;
+}
+
+function resolveExisting(path) {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
+  }
+}
+
+/** Stock clipboard paste writes into os.tmpdir(); refuse any other directory. */
+export function isStockClipboardTempPath(filePath) {
+  if (typeof filePath !== "string" || !isAbsolute(filePath)) return false;
+  if (!CLIPBOARD_NAME.test(basename(filePath))) return false;
+  const candidate = resolveExisting(filePath);
+  const root = resolveExisting(tmpdir());
+  const rel = relative(root, candidate);
+  return rel !== "" && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
 }
 
 function readImageFile(filePath) {
@@ -114,6 +135,7 @@ export function transformSubmittedImages(text, existingImages) {
     clipboardPaths.push(match[1]);
   }
   for (const filePath of clipboardPaths) {
+    if (!isStockClipboardTempPath(filePath)) continue;
     const image = readImageFile(filePath);
     if (!image) continue;
     images.push(image);
@@ -130,9 +152,19 @@ export function resetTuiImagesForTests() {
   pending.clear();
 }
 
+export function pendingImageCount() {
+  return pending.size;
+}
+
+export function clearPendingImages() {
+  pending.clear();
+}
+
 export function createImagesExtension() {
   return function rubatoTuiImages(pi) {
     setTuiImagesEnabled(true);
+    pi.on("session_start", () => { pending.clear(); });
+    pi.on("session_shutdown", () => { pending.clear(); });
     pi.on("input", (event) => {
       if (!enabled) return { action: "continue" };
       const transformed = transformSubmittedImages(event.text, event.images);

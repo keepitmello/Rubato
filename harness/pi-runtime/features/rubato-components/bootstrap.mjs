@@ -67,7 +67,12 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
       createInProcessSession: async (options) => createStockChildInProcessSession(options, {
         createAgentSession,
         DefaultResourceLoader,
-        extensionFactories: await loadStockChildInProcessFactories({ root: runtimeRoot, agentDir: options.agentDir ?? agentDir }),
+        extensionFactories: await loadStockChildInProcessFactories({
+          root: runtimeRoot,
+          agentDir: options.agentDir ?? agentDir,
+          settingsManager: options.settingsManager,
+          propagateEnv: false,
+        }),
       }) }),
   }) }), { sourcePath: join(here, "extensions/rubato.js"), registrationCwd: cwd });
   const extensionFactories = [
@@ -89,7 +94,7 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
     { name: "provider-execution", factory: providerExecution.extension },
     { name: "service-tier", factory: serviceTier.extension },
     { name: "rubato-gpt-apply-patch", factory: registerApplyPatchExtension },
-    { name: "context-notes", factory: createContextNotesExtension({ agentDir }) },
+    { name: "context-notes", factory: createContextNotesExtension({ agentDir, settingsManager: settings }) },
     ...createCompactionExtensionFactories({ settingsManager: settings, env }),
     ...createPromptPresetExtensionFactories({ settingsManager: settings }),
     ...createPromptRulesExtensionFactories({ settingsManager: settings }),

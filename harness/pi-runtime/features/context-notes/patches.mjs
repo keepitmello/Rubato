@@ -28,15 +28,21 @@ const contextNoteSources = Object.freeze([
 
 export const patches = Object.freeze([]);
 
+// config.mjs + engine-gate.mjs + the installer are forked from harness/rubato-pi
+// so in-process children can bind mode per session without writing process.env.
+// Other context-notes sources stay the product copies.
+
 export const files = Object.freeze([
   ownedFile("dist/rubato-features/context-notes/extension.mjs", source("./extension.mjs")),
   ownedFile(
     "dist/rubato-features/context-notes/src/extensions/context-notes.mjs",
-    source("../../../rubato-pi/src/extensions/context-notes.mjs"),
+    source("./src/extensions/context-notes.mjs"),
   ),
   ...contextNoteSources.map((path) => ownedFile(
     `dist/rubato-features/context-notes/src/context-notes/${path}`,
-    source(`../../../rubato-pi/src/context-notes/${path}`),
+    source(path === "config.mjs" || path === "engine-gate.mjs"
+      ? `./src/context-notes/${path}`
+      : `../../../rubato-pi/src/context-notes/${path}`),
   )),
 ]);
 
