@@ -43,6 +43,37 @@ This is always a separate new session, never the resident verifier reused: a con
 
 Findings return to the lead; frame-invariant conflicts return as `FRAME_CONFLICT` evidence.
 
+## Seats and subagents
+
+A taskforce has three seats: lead, owner, verifier. They are peers. The lead holds the
+goal and cross-workstream decisions; an owner holds one outcome; a verifier holds one
+judgment. None of them is another's worker. The runtime usually spawns owners and
+verifiers as children of the lead's session — that is how the harness builds a tree,
+not a statement about who decides. A teammate decides everything inside its seat.
+
+Below a seat sit subagents. Any teammate, the lead included, may spawn them; they take
+maps, bounded investigation, and settled execution, and they return evidence to the
+session that spawned them. They are not on the roster, do not hold an outcome, and do
+not appear on the board unless shared work is explicitly assigned. A subagent spawned by
+the lead in a session with no team is the same kind of thing: a result to take back.
+A subagent is a session that remembers, not a disposable call: the next related slice
+goes to the same subagent as a follow-up, for the reason the lead keeps an owner through
+corrections — it already holds the files and the refuted premises. A new subagent is
+for a different problem, a cold review, or one stuck on a wrong idea.
+
+The default way a teammate executes is to send independent slices out in parallel, up to
+the point where splitting costs more than it saves, and to keep diagnosis, integration,
+and anything with interpretation room. Two reasons. A teammate's context is the only
+place its outcome is understood end to end, so transcript-heavy work goes out and
+judgment stays in. And the lead must not become the relay for a teammate's local
+delegation: if an owner had to route every slice through the lead, the seat that sees
+all workstreams would be spent transcribing one.
+
+Where these sentences live: the runtime prompt for each seat is the single source for
+seats, parentage and spawn surface (Pi: `core-lead` / `core-teammate` / `core-agent`;
+Codex: the base instructions' Role selection). Role contracts and this skill describe
+behavior inside a seat and defer to that prompt on conflict.
+
 ## Intervention ladder
 
 1. The owner updates reproduction, hypotheses, and alternatives.
