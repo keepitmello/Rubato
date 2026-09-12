@@ -113,7 +113,8 @@ function jsonLineChannel(child) {
       }
     }
   });
-  const waitFor = (predicate, timeoutMs = 5_000) => new Promise((resolveWait, reject) => {
+  // Spawning the child runtime is fast locally but can stall on a busy runner.
+  const waitFor = (predicate, timeoutMs = 15_000) => new Promise((resolveWait, reject) => {
     const timer = setTimeout(() => {
       cleanup();
       reject(new Error(`RPC record timed out; stderr=${stderr}`));

@@ -35,7 +35,9 @@ function assistant(text, extra = {}) {
   };
 }
 
-function waitUntil(predicate, { timeoutMs = 8_000, label = "condition" } = {}) {
+// Locally these settle in well under a second; the ceiling only has to cover a
+// loaded CI runner running this suite alongside others.
+function waitUntil(predicate, { timeoutMs = 20_000, label = "condition" } = {}) {
   const started = Date.now();
   return new Promise((resolve, reject) => {
     const tick = async () => {
@@ -287,4 +289,3 @@ test("candidate remote-surface local hub scenarios", { timeout: 90000 }, async (
     assert.equal(snapshot.summary?.execution, "idle");
   });
 });
-

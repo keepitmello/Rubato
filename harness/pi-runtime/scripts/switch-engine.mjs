@@ -1,13 +1,15 @@
-// Switch the product default engine between the installed stock-Pi candidate
-// and Senpi. Never writes the live profile; HOME (or {home}) chooses the
-// state dir. After switch, sessions are written by stock-pi. RUBATO_ENGINE=senpi
-// on the same profile is rollback-only (double-writer rule).
+// Select/update the product engine without modifying auth or session data.
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { installRubatoCandidate } from "./install-candidate.mjs";
+import {
+  isValidInstalledCandidateReceipt, resolveExecutionEngine, stockEngineDir as selectedStockDir,
+} from "../../rubato-pi/src/engine-selection.mjs";
+export { isValidInstalledCandidateReceipt } from "../../rubato-pi/src/engine-selection.mjs";
 
 export function stockEngineDir(home) {
   return join(home, ".rubato-pi", "stock-engine");
@@ -23,66 +25,56 @@ export function resolveSwitchHome({ home, env = process.env } = {}) {
   return homedir();
 }
 
-export function isValidInstalledCandidateReceipt(receipt, root) {
-  if (!receipt || receipt.version !== 1 || receipt.state !== "ready") return false;
-  if (typeof receipt.candidateEntry !== "string" || receipt.candidateEntry.length === 0) return false;
-  if (!Array.isArray(receipt.features) || receipt.features.length === 0) return false;
-  if (!root) return true;
-  const entry = isAbsolute(receipt.candidateEntry) ? receipt.candidateEntry : join(root, receipt.candidateEntry);
-  return existsSync(entry);
+function installRoot(home, env) {
+  return selectedStockDir({ ...env, HOME: home });
 }
 
 export async function readInstallReceipt(root) {
-  try {
-    return JSON.parse(await readFile(join(root, "rubato-install.json"), "utf8"));
-  } catch {
-    return null;
-  }
+  try { return JSON.parse(await readFile(join(root, "rubato-install.json"), "utf8")); }
+  catch { return null; }
 }
 
 export async function readEngineMarker(home) {
-  try {
-    return JSON.parse(await readFile(engineMarkerPath(home), "utf8"));
-  } catch {
-    return null;
-  }
+  try { return JSON.parse(await readFile(engineMarkerPath(home), "utf8")); }
+  catch { return null; }
 }
 
 async function writeEngineMarker(home, marker) {
   const path = engineMarkerPath(home);
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(marker, null, 2)}\n`);
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, `${JSON.stringify(marker, null, 2)}\n`, { flag: "wx" });
+    await rename(temporary, path);
+  } finally { await rm(temporary, { force: true }); }
   return marker;
 }
 
-export async function installStockEngine({
-  home,
-  outputRoot,
-  env = process.env,
-  install = installRubatoCandidate,
-} = {}) {
+export async function installStockEngine({ home, outputRoot, env = process.env, install = installRubatoCandidate } = {}) {
   const resolvedHome = resolveSwitchHome({ home, env });
-  const dest = outputRoot ?? stockEngineDir(resolvedHome);
+  const dest = outputRoot ?? installRoot(resolvedHome, env);
   const receipt = await readInstallReceipt(dest);
-  if (isValidInstalledCandidateReceipt(receipt, dest)) {
-    return { root: dest, receipt, skipped: true };
-  }
-  if (existsSync(dest)) {
-    throw new Error(`stock-engine exists but is not a valid candidate install: ${dest}`);
-  }
+  if (isValidInstalledCandidateReceipt(receipt, dest)) return { root: dest, receipt, skipped: true };
+  if (existsSync(dest)) throw new Error(`stock-engine exists but is not a valid candidate install: ${dest}`);
   return { skipped: false, ...(await install({ outputRoot: dest })) };
 }
 
-export async function switchEngine({
-  home,
-  engine = "stock-pi",
-  env = process.env,
-  installIfMissing = false,
-  install = installRubatoCandidate,
-} = {}) {
+/** Explicit refresh; unlike switch/install, an existing ready install is rebuilt. */
+export async function updateStockEngine({ home, env = process.env, install = installRubatoCandidate } = {}) {
+  const resolvedHome = resolveSwitchHome({ home, env });
+  const dest = installRoot(resolvedHome, env);
+  const receipt = await readInstallReceipt(dest);
+  if (existsSync(dest) && !isValidInstalledCandidateReceipt(receipt, dest)) {
+    throw new Error(`stock-engine exists but is not a valid candidate install: ${dest}`);
+  }
+  return install({ outputRoot: dest, mode: existsSync(dest) ? "update" : "install" });
+}
+
+export async function switchEngine({ home, engine = "stock-pi", env = process.env,
+  installIfMissing = false, install = installRubatoCandidate } = {}) {
   if (engine !== "stock-pi" && engine !== "senpi") throw new Error(`Unknown engine: ${engine}`);
   const resolvedHome = resolveSwitchHome({ home, env });
-  const dest = stockEngineDir(resolvedHome);
+  const dest = installRoot(resolvedHome, env);
   if (engine === "stock-pi") {
     const receipt = await readInstallReceipt(dest);
     if (!isValidInstalledCandidateReceipt(receipt, dest)) {
@@ -91,9 +83,7 @@ export async function switchEngine({
     }
   }
   const current = await readEngineMarker(resolvedHome);
-  const previous = current?.engine === "senpi" || current?.engine === "stock-pi"
-    ? current.engine
-    : "senpi";
+  const previous = current?.engine === "senpi" || current?.engine === "stock-pi" ? current.engine : "senpi";
   const marker = {
     engine,
     installedAt: current?.installedAt ?? new Date().toISOString(),
@@ -111,63 +101,55 @@ export async function rollbackEngine({ home, env = process.env } = {}) {
   if (!current) throw new Error("No engine marker to roll back");
   const previous = current.previous === "stock-pi" || current.previous === "senpi" ? current.previous : "senpi";
   const marker = {
-    engine: previous,
-    installedAt: current.installedAt,
-    switchedAt: new Date().toISOString(),
-    previous: current.engine,
-    installRoot: current.installRoot ?? stockEngineDir(resolvedHome),
+    engine: previous, installedAt: current.installedAt, switchedAt: new Date().toISOString(),
+    previous: current.engine, installRoot: current.installRoot ?? installRoot(resolvedHome, env),
     rolledBackAt: new Date().toISOString(),
   };
   await writeEngineMarker(resolvedHome, marker);
   return marker;
 }
 
-export async function engineStatus({ home, env = process.env } = {}) {
+export async function engineStatus({ home, env = process.env, selectNode } = {}) {
   const resolvedHome = resolveSwitchHome({ home, env });
-  const dest = stockEngineDir(resolvedHome);
+  const selection = resolveExecutionEngine({ env: { ...env, HOME: resolvedHome }, selectNode });
+  const dest = selection.root;
   const receipt = await readInstallReceipt(dest);
   const marker = await readEngineMarker(resolvedHome);
-  const valid = isValidInstalledCandidateReceipt(receipt, dest);
   return {
-    home: resolvedHome,
-    installRoot: dest,
-    installed: valid,
-    marker,
-    engine: marker?.engine ?? (valid ? "stock-pi" : "senpi"),
+    home: resolvedHome, installRoot: dest,
+    installed: isValidInstalledCandidateReceipt(receipt, dest), marker,
+    engine: selection.engine, requested: selection.requested, source: selection.source,
+    fallback: selection.fallback, notice: selection.notice, warning: selection.warning,
+    nodeAvailable: Boolean(selection.node), node: selection.node,
     receipt: receipt ? {
-      version: receipt.version,
-      state: receipt.state,
-      stockVersion: receipt.stockVersion,
-      candidateEntry: receipt.candidateEntry,
-      installedAt: receipt.installedAt,
+      version: receipt.version, state: receipt.state, stockVersion: receipt.stockVersion,
+      candidateEntry: receipt.candidateEntry, installedAt: receipt.installedAt,
       featureCount: Array.isArray(receipt.features) ? receipt.features.length : 0,
+      sourceSha256: receipt.sourceSha256 ?? null,
     } : null,
   };
 }
 
 function parseArgs(argv) {
-  let command;
-  const rest = [];
-  for (const arg of argv) {
-    if (!command && ["install", "switch", "rollback", "status"].includes(arg)) command = arg;
-    else rest.push(arg);
+  if (argv.length !== 1 || !["install", "update", "switch", "rollback", "status"].includes(argv[0])) {
+    throw new Error("Usage: node scripts/switch-engine.mjs install|update|switch|rollback|status");
   }
-  if (!command) throw new Error("Usage: node scripts/switch-engine.mjs install|switch|rollback|status");
-  return { command, rest };
+  return argv[0];
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const { command } = parseArgs(process.argv.slice(2));
-  const home = process.env.HOME;
-  const run = command === "install" ? installStockEngine({ home })
-    : command === "switch" ? switchEngine({ home, installIfMissing: true })
-    : command === "rollback" ? rollbackEngine({ home })
-    : engineStatus({ home });
-  run.then((result) => {
+  Promise.resolve().then(() => {
+    const command = parseArgs(process.argv.slice(2));
+    const home = process.env.HOME;
+    return command === "install" ? installStockEngine({ home })
+      : command === "update" ? updateStockEngine({ home })
+      : command === "switch" ? switchEngine({ home, installIfMissing: true })
+      : command === "rollback" ? rollbackEngine({ home })
+      : engineStatus({ home });
+  }).then((result) => {
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   }).catch((error) => {
-    console.error(error instanceof Error ? error.message : error);
+    console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
   });
 }
-
