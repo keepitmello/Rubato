@@ -9,7 +9,11 @@ import { injectCodexWsCacheTtl, isCodexWsCacheTtlUrl } from "./misc-codex-ws-cac
 import { injectAuthStorage, isAuthStorageUrl } from "./misc-auth-storage.mjs";
 import { injectAdaptiveToolTurnEffort, isAdaptiveToolTurnEffortUrl } from "./misc-adaptive-tool-turn-effort.mjs";
 import { injectAnthropicCompaction, isAnthropicCompactionUrl } from "./misc-anthropic-compaction.mjs";
-import { injectClaudeCodeVersion, isAnthropicMessagesUrl } from "./misc-claude-code-version.mjs";
+import {
+  injectClaudeCodeBillingHeader,
+  injectClaudeCodeVersion,
+  isAnthropicMessagesUrl,
+} from "./misc-claude-code-version.mjs";
 import {
   injectGoogleSharedInputGuard,
   injectTransformMessagesInputGuard,
@@ -49,7 +53,10 @@ export function applyMiscVendorTransforms(url, source, applyTransform) {
   if (isTuiEditorUrl(url)) source = applyTransform(source, injectTuiEditor);
   if (isTuiDollarUrl(url)) source = applyTransform(source, injectTuiDollar);
   if (isTuiSlashUrl(url)) source = applyTransform(source, injectTuiSlash);
-  if (isAnthropicMessagesUrl(url)) source = applyTransform(source, injectClaudeCodeVersion);
+  if (isAnthropicMessagesUrl(url)) {
+    source = applyTransform(source, injectClaudeCodeVersion);
+    source = applyTransform(source, injectClaudeCodeBillingHeader);
+  }
   if (isAdaptiveToolTurnEffortUrl(url)) source = applyTransform(source, injectAdaptiveToolTurnEffort);
   if (isAnthropicCompactionUrl(url)) source = applyTransform(source, injectAnthropicCompaction);
   if (isPiAiLazyUrl(url)) source = applyTransform(source, injectPiAiLazy);
@@ -67,6 +74,7 @@ export {
   injectAdaptiveToolTurnEffort,
   injectAnthropicCompaction,
   injectAuthStorage,
+  injectClaudeCodeBillingHeader,
   injectClaudeCodeVersion,
   injectGoogleSharedInputGuard,
   injectHighReasoning,
