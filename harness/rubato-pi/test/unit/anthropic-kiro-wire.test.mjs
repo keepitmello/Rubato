@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { CLAUDE_SETUP_TOKEN_FILE_ENV, CLAUDE_SETUP_TOKEN_PREFIX } from "../../src/anthropic-setup-token.mjs";
+import { CLAUDE_CODE_BILLING_HEADER, CLAUDE_CODE_VERSION } from "../../src/transforms/misc-claude-code-version.mjs";
 import { KIRO_API_KEY_ENV } from "../../src/kiro-route.mjs";
 import { directProviders } from "../../src/provider-direct.mjs";
 
@@ -147,7 +148,7 @@ test("setup-token 을 apiKey 로 주면 Claude CLI 신원이 정확히 한 번 �
   assert.equal(captured.headers["x-api-key"], undefined, "OAuth 경로에서 x-api-key 가 함께 나가면 안 된다");
 
   // 2) pinned 판이 소유하는 신원. Claude Code UA 만 현재 세대로 올린다.
-  assert.equal(captured.headers["user-agent"], "claude-cli/2.1.257");
+  assert.equal(captured.headers["user-agent"], `claude-cli/${CLAUDE_CODE_VERSION}`);
   assert.equal(captured.headers["x-app"], "cli");
 
   // 3) beta 목록. 각 값이 **정확히 한 번**이어야 한다 — 중복은 이중 적용의 신호다.
@@ -156,9 +157,10 @@ test("setup-token 을 apiKey 로 주면 Claude CLI 신원이 정확히 한 번 �
     assert.equal(betas.filter((entry) => entry === beta).length, 1, `${beta} 가 ${betas.join(",")} 에서 한 번이 아니다`);
   }
 
-  // 4) Claude Code system prompt 가 먼저, 우리 지침이 그 다음이다.
-  assert.equal(captured.body.system[0].text, "You are Claude Code, Anthropic's official CLI for Claude.");
-  assert.equal(captured.body.system[1].text, "우리 지침");
+  // 4) billing header, Claude Code identity, then our prompt.
+  assert.equal(captured.body.system[0].text, CLAUDE_CODE_BILLING_HEADER);
+  assert.equal(captured.body.system[1].text, "You are Claude Code, Anthropic's official CLI for Claude.");
+  assert.equal(captured.body.system[2].text, "우리 지침");
   assert.equal(
     captured.body.system.filter((part) => part.text.includes("official CLI")).length,
     1,
@@ -203,7 +205,7 @@ test("setup-token 이 아니면 x-api-key 경로이고 Claude 신원이 붙지 �
   ));
   assert.equal(captured.headers["x-api-key"], "sk-ant-api03-test-only");
   assert.equal(captured.headers.authorization, undefined);
-  assert.notEqual(captured.headers["user-agent"], "claude-cli/2.1.257");
+  assert.notEqual(captured.headers["user-agent"], `claude-cli/${CLAUDE_CODE_VERSION}`);
   assert.equal(captured.headers["x-app"], undefined);
   assert.deepEqual(captured.body.tools.map((tool) => tool.name), ["read"], "OAuth 가 아닌 경로에서 이름을 바꿨다");
   assert.equal(captured.body.system?.[0]?.text, undefined, "Claude Code system prompt 가 새어 나갔다");
@@ -245,7 +247,7 @@ test("Kiro 는 x-api-key 로 loopback 사이드카에 붙는다", async (t) => {
   assert.equal(captured.headers["x-api-key"], KIRO_KEY);
   assert.equal(captured.headers.authorization, undefined, "loopback key 를 Bearer 로 보내면 상류가 모른다");
   // Claude Code 신원이 붙어서는 안 된다. 상대는 AWS Kiro 다.
-  assert.notEqual(captured.headers["user-agent"], "claude-cli/2.1.257");
+  assert.notEqual(captured.headers["user-agent"], `claude-cli/${CLAUDE_CODE_VERSION}`);
   assert.equal(captured.headers["x-app"], undefined);
   assert.equal(captured.body.model, "claude-opus-5");
   assert.equal(captured.body.system?.[0]?.text, undefined, "Claude Code system prompt 가 새어 나갔다");
