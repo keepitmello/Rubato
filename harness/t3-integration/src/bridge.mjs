@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { SessionClient } from '../../pi-server/src/client.mjs';
 import { readDescriptor } from '../../pi-server/src/profile-server.mjs';
 import { EventProjection, importedId, textOf } from './events.mjs';
@@ -41,8 +40,8 @@ export class RubatoPiBridge {
   }
   async startSession(input) {
     if (input.runtimeMode !== 'full-access') throw new Error('Rubato preserves its existing tool policy; T3 approval modes are not implemented. Select Full access.');
-    if (this.sessions.has(input.threadId)) return copy(this.sessions.get(input.threadId).session);
     if (this.openings.has(input.threadId)) return this.openings.get(input.threadId);
+    if (this.sessions.has(input.threadId)) return copy(this.sessions.get(input.threadId).session);
     const opening = this.open(input).finally(() => this.openings.delete(input.threadId));
     this.openings.set(input.threadId, opening); return opening;
   }
@@ -173,6 +172,12 @@ export class RubatoPiBridge {
     const context = this.require(input.threadId);
     const operation = context.queue.then(async () => {
       if (context.stopped) throw new Error('Attachment closed before send');
+      if (input.continuation === true) {
+        const snapshot = await context.client.snapshot();
+        if (!snapshot.state.isStreaming) throw new Error('Pi has no running turn to reattach; send a new message explicitly');
+        const turnId = context.projection.begin();
+        return { threadId: input.threadId, turnId, resumeCursor: context.session.resumeCursor };
+      }
       if (input.attachments?.length) throw new Error('T3 file/image attachments are not supported by this integration');
       if (!input.input?.trim()) throw new Error('A non-empty prompt is required');
       if (input.interactionMode === 'plan') throw new Error('T3 plan mode is not mapped to Rubato policy');
