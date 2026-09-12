@@ -26,14 +26,8 @@ jobs:
         run: npm --prefix harness/pi-server install --ignore-scripts --workspaces=false
       - name: Test published upstream compatibility
         run: npm --prefix harness/pi-server test --workspaces=false
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          repository: pingdotgg/t3code
-          ref: 18d8cbfd920d0a53e5b5206456585aea767e852c
-          path: upstream-t3
-          persist-credentials: false
       - name: Capture the pinned public T3 source
-        run: git -C upstream-t3 archive --format=tar.gz --output="$RUNNER_TEMP/t3-source.tar.gz" HEAD
+        run: curl --fail --location --retry 2 https://codeload.github.com/pingdotgg/t3code/tar.gz/18d8cbfd920d0a53e5b5206456585aea767e852c --output "$RUNNER_TEMP/t3-source.tar.gz"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: t3-pinned-source
