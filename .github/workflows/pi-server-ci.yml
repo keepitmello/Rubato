@@ -3,9 +3,9 @@ name: Pi server integration
 on:
   push:
     branches: [codex/pi-server-t3-integration-20260913]
-    paths: ['harness/pi-server/**', '.github/workflows/pi-server-ci.yml']
+    paths: ['harness/pi-server/**', 'harness/t3-integration/**', '.github/workflows/pi-server-ci.yml']
   pull_request:
-    paths: ['harness/pi-server/**', '.github/workflows/pi-server-ci.yml']
+    paths: ['harness/pi-server/**', 'harness/t3-integration/**', '.github/workflows/pi-server-ci.yml']
   workflow_dispatch:
 
 permissions:
@@ -26,10 +26,12 @@ jobs:
         run: npm --prefix harness/pi-server install --ignore-scripts --workspaces=false
       - name: Test published upstream compatibility
         run: npm --prefix harness/pi-server test --workspaces=false
-      - name: Capture the pinned public T3 source
-        run: curl --fail --location --retry 2 https://codeload.github.com/pingdotgg/t3code/tar.gz/18d8cbfd920d0a53e5b5206456585aea767e852c --output "$RUNNER_TEMP/t3-source.tar.gz"
+      - name: Capture exact T3 contract dependencies
+        run: |
+          npm install --prefix "$RUNNER_TEMP/t3-deps" --ignore-scripts --no-audit effect@4.0.0-rc.112 typescript@7.0.2 @types/node@24.12.4
+          tar -czf "$RUNNER_TEMP/t3-contract-deps.tar.gz" -C "$RUNNER_TEMP/t3-deps" node_modules
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: t3-pinned-source
-          path: ${{ runner.temp }}/t3-source.tar.gz
+          name: t3-contract-deps
+          path: ${{ runner.temp }}/t3-contract-deps.tar.gz
           retention-days: 1
