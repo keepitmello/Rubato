@@ -1,3 +1,6 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { RemoteServiceProvider, createRemoteServiceEndpoint, replicatedState, RemoteServiceError } from '@earendil-works/chord';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
@@ -23,7 +26,7 @@ class RuntimeHandle {
     this.changed = changed;
     this.attachments = 0;
     this.calls = 0;
-    this.running = true; // Until the first authoritative state is available.
+    this.running = true;
     this.pendingUi = new Map();
     this.uiTimers = new Map();
     this.closed = false;
@@ -42,10 +45,7 @@ class RuntimeHandle {
       this.changed();
     });
   }
-  async start() {
-    this.acceptState(await this.worker.start());
-    return this;
-  }
+  async start() { this.acceptState(await this.worker.start()); return this; }
   publish() {
     this.state.state.status = this.closed ? 'unloaded' : this.running ? 'running' : this.pendingUi.size ? 'waiting' : 'idle';
     this.state.state.pendingUi = [...this.pendingUi.values()].map(json);
@@ -73,7 +73,6 @@ class RuntimeHandle {
       }
     }
     this.publish();
-    // agent_end alone is not quiescence: Pi may still drain a queued follow-up.
     if (event.type === 'agent_settled' || event.type === 'auto_compaction_end' || event.type === 'auto_retry_end') {
       void this.refresh().catch((error) => { this.lastError = error; });
     }
@@ -103,22 +102,18 @@ class RuntimeHandle {
       else if (!command.type.startsWith('get_')) await this.refresh();
       return response;
     } catch (error) {
-      // Failed preflight must not leave a permanently 'running' projection.
       await this.refresh().catch(() => {});
       throw error;
-    } finally {
-      this.calls--;
-      this.scheduleUnload();
-    }
+    } finally { this.calls--; this.scheduleUnload(); }
   }
   async snapshot() {
     this.calls++;
     try {
       const before = this.state.value.sequence;
-      const [state, messages] = await Promise.all([this.worker.request({ type: 'get_state' }), this.worker.request({ type: 'get_messages' })]);
+      const [state, messages] = await Promise.all([this.worker.request({ type: 'get_state' }), this.worker.request({ type: 'get_messages' }, { withBoundary: true })]);
       this.acceptState(state);
-      return json({ sessionId: this.metadata.id, runtimeId: this.worker.id, state, messages: messages.messages ?? messages,
-        before, sequence: this.state.value.sequence, pendingUi: [...this.pendingUi.values()] });
+      return json({ sessionId: this.metadata.id, runtimeId: this.worker.id, state, messages: messages.data.messages ?? messages.data,
+        before, sequence: messages.eventSequence, pendingUi: [...this.pendingUi.values()] });
     } finally { this.calls--; this.scheduleUnload(); }
   }
   async reply(response) {
@@ -133,8 +128,6 @@ class RuntimeHandle {
     this.pendingUi.delete(request.id);
     clearTimeout(this.uiTimers.get(request.id)); this.uiTimers.delete(request.id);
     this.publish();
-    // Query the runtime after it has accepted the response; never assume replying
-    // means its original prompt has already finished.
     await this.refresh();
     return null;
   }
@@ -160,13 +153,13 @@ class RuntimeHandle {
   }
 }
 
-/** Business adapter; the official router alone deduplicates runtime acquisition.
- * handles is a status projection/administrative view, NOT a session registry. */
+/** Official SessionRouter alone deduplicates runtime acquisition. */
 export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
   workerFactory = (metadata) => new RpcWorker(metadata), pollMs = 2000, onError = () => {} } = {}) {
   if (idleMs !== null && (!Number.isFinite(idleMs) || idleMs < 0)) throw new TypeError('Invalid idleMs');
   const files = new SessionFiles(sessionsDir);
   const handles = new Map();
+  const probes = new Map();
   const directory = replicatedState({ revision: 0, sessions: [] });
   let records = [];
   let refreshing;
@@ -183,9 +176,28 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
   };
   const refresh = () => refreshing ??= (async () => { metrics.lists++; records = await files.list(); publish(); return directory.value; })()
     .finally(() => { refreshing = undefined; });
+  const catalogue = (cwd) => {
+    if (typeof cwd !== 'string' || !path.isAbsolute(cwd)) throw invalid('Catalogue cwd must be absolute');
+    const existing = probes.get(cwd);
+    if (existing) return existing;
+    const operation = (async () => {
+      const root = await mkdtemp(path.join(tmpdir(), 'rubato-pi-catalogue-'));
+      let worker;
+      try {
+        const metadata = await new SessionFiles(root).create({ cwd });
+        worker = workerFactory(metadata);
+        const state = await worker.start();
+        const [models, commands] = await Promise.all([
+          worker.request({ type: 'get_available_models' }), worker.request({ type: 'get_commands' }),
+        ]);
+        return { models: models.models ?? [], commands: commands.commands ?? [], model: state.model ?? null };
+      } finally { await worker?.stop(); await rm(root, { force: true, recursive: true }); }
+    })().finally(() => probes.delete(cwd));
+    probes.set(cwd, operation);
+    return operation;
+  };
   const host = {
-    metrics,
-    directory,
+    metrics, directory,
     async resolveSession(id) { return files.resolve(id); },
     async openSession(metadata) {
       const began = performance.now();
@@ -200,11 +212,12 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
     serverServices: {
       attachClient(presentation) {
         return endpoint([
-          [Directory, { state: directory, list: async () => (await refresh()).sessions }],
+          [Directory, { state: directory, list: async () => (await refresh()).sessions,
+            transcript: async (id) => files.transcript(id), catalogue: async (cwd) => catalogue(cwd) }],
           [Management, {
             create: async (options) => {
               const created = await files.create(options);
-              if (refreshing) await refreshing; // Do not reuse a scan begun before creation.
+              if (refreshing) await refreshing;
               await refresh();
               return directory.value.sessions.find((item) => item.sessionId === created.id);
             },
@@ -226,6 +239,7 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
     },
     async close() {
       stopped = true; clearInterval(this.poller);
+      await Promise.allSettled([...probes.values()]);
       await Promise.all([...handles.values()].map((handle) => handle.close()));
     },
   };

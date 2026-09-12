@@ -1,6 +1,6 @@
-import { mkdir, readdir, realpath, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, realpath, stat, writeFile, readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { SessionManager } from '@earendil-works/pi-coding-agent';
+import { SessionManager, parseSessionEntries } from '@earendil-works/pi-coding-agent';
 import { SessionNotFoundError, SessionAmbiguousError } from '@earendil-works/pi-server';
 
 /** A view of existing Pi JSONL files, not a second conversation database. */
@@ -32,6 +32,22 @@ export class SessionFiles {
     if (!matches.length) throw new SessionNotFoundError();
     if (matches.length !== 1) throw new SessionAmbiguousError();
     return matches[0];
+  }
+  async transcript(id) {
+    const metadata = await this.resolve(id);
+    // Read-only: opening a SessionManager can migrate old files. Never rewrite
+    // a transcript simply because a presentation client wants to display it.
+    const entries = parseSessionEntries(await readFile(metadata.file, 'utf8'))
+      .filter((entry) => entry.type !== 'session');
+    const byId = new Map(entries.map((entry) => [entry.id, entry]));
+    const branch = [];
+    const seen = new Set();
+    let entry = entries.at(-1);
+    while (entry && !seen.has(entry.id)) {
+      seen.add(entry.id); branch.unshift(entry); entry = byId.get(entry.parentId);
+    }
+    return { sessionId: id, messages: branch.filter((entry) => entry.type === 'message')
+      .map((entry) => ({ entryId: entry.id, ...entry.message })) };
   }
   async create({ cwd, title } = {}) {
     if (typeof cwd !== 'string' || !path.isAbsolute(cwd)) throw new TypeError('cwd must be absolute');

@@ -21,6 +21,8 @@ export class SessionClient {
     return this.client.request(target, { serviceId: service.id, member, args }, AbortSignal.timeout(this.timeoutMs));
   }
   list() { return this.call(Directory, 'list', []); }
+  transcript(id) { return this.call(Directory, 'transcript', [id]); }
+  catalogue(cwd) { return this.call(Directory, 'catalogue', [cwd]); }
   create(options) { return this.call(Management, 'create', [options]); }
   attach(id) { return this.call(Management, 'attach', [id]); }
   detach() { return this.call(Management, 'detach', []); }
