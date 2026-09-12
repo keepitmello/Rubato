@@ -392,5 +392,6 @@ if [ -n "$UPDATE_NOTE" ]; then printf '%s\n\n' "$UPDATE_NOTE" >&2; fi
 
 # Engine selection (stock-pi vs senpi) is owned by launch.mjs via RUBATO_ENGINE
 # and ~/.rubato-pi/engine.json. This shell keeps splash/boot chrome and the
-# Senpi plugin build so an explicit senpi fallback still has an engine.
+# Senpi plugin build. Senpi fallback is retired: launch.mjs fails loud when
+# the stock-pi install is missing or invalid.
 exec "$NODE" "$ROOT/bin/rubato-pi.mjs" "$@"

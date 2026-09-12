@@ -257,16 +257,16 @@ async function fakeInstall({ outputRoot }) {
   return { root: outputRoot, receipt };
 }
 
-test("status reports fallback for a missing install, matching launch", async (t) => {
+test("status reports a hard error for a missing install, matching launch", async (t) => {
   const home = await scratch(t);
   await mkdir(join(home, ".rubato-pi"));
   await writeFile(join(home, ".rubato-pi/engine.json"), JSON.stringify({ engine: "stock-pi" }));
   const env = { HOME: home };
   const status = await engineStatus({ home, env, selectNode: () => node26 });
   const launch = resolveExecutionEngine({ env, selectNode: () => node26 });
-  assert.equal(status.engine, "senpi"); assert.equal(status.requested, "stock-pi");
-  assert.equal(status.fallback, true); assert.equal(status.installed, false);
-  assert.equal(status.engine, launch.engine); assert.equal(status.notice, launch.notice);
+  assert.equal(status.engine, "stock-pi"); assert.equal(status.requested, "stock-pi");
+  assert.equal(status.installed, false); assert.match(status.error, /not installed/);
+  assert.equal(status.engine, launch.engine); assert.equal(status.error, launch.error);
 });
 
 test("explicit engine and custom install root are honored by status/update", async (t) => {
@@ -277,21 +277,22 @@ test("explicit engine and custom install root are honored by status/update", asy
   await switchEngine({ home, env });
   assert.equal(resolveLaunchEngine({ env }).root, custom);
   const status = await engineStatus({ home, env: { ...env, RUBATO_ENGINE: "senpi" }, selectNode: () => node26 });
-  assert.equal(status.engine, "senpi"); assert.equal(status.source, "env");
+  assert.equal(status.engine, "stock-pi"); assert.equal(status.source, "env");
+  assert.match(status.error, /retired/);
   let call;
   await updateStockEngine({ home, env, install: async (options) => { call = options; } });
   assert.deepEqual(call, { outputRoot: custom, mode: "update" });
 });
 
-test("status and launch both report unsupported Node fallback", async (t) => {
+test("status and launch both report unsupported Node as a hard error", async (t) => {
   const home = await scratch(t);
   const env = { HOME: home };
   await installStockEngine({ home, env, install: fakeInstall });
   const selectNode = () => parseVersionText("v24.10.0", "/fixture/node24");
   const status = await engineStatus({ home, env, selectNode });
   const launch = resolveExecutionEngine({ env, selectNode });
-  assert.equal(status.engine, "senpi"); assert.equal(status.fallback, true);
-  assert.equal(status.notice, launch.notice); assert.match(status.notice, /Node/);
+  assert.equal(status.engine, "stock-pi");
+  assert.equal(status.error, launch.error); assert.match(status.error, /Node/);
 });
 
 test("compatible Node wins over an incompatible running 24.x", () => {

@@ -51,7 +51,7 @@ test("switch-engine install/switch/rollback/status against a temp HOME", async (
 
   const switched = await switchEngine({ home, install: fakeInstall });
   assert.equal(switched.engine, "stock-pi");
-  assert.equal(switched.previous, "senpi");
+  assert.equal(switched.previous, "stock-pi");
   const marker = JSON.parse(await readFile(engineMarkerPath(home), "utf8"));
   assert.equal(marker.engine, "stock-pi");
   assert.equal(marker.installRoot, dest);
@@ -62,16 +62,25 @@ test("switch-engine install/switch/rollback/status against a temp HOME", async (
   assert.equal(status.receipt.stockVersion, "0.85.1");
 
   const rolled = await rollbackEngine({ home });
-  assert.equal(rolled.engine, "senpi");
+  assert.equal(rolled.engine, "stock-pi");
   assert.equal(rolled.previous, "stock-pi");
   const after = JSON.parse(await readFile(engineMarkerPath(home), "utf8"));
-  assert.equal(after.engine, "senpi");
+  assert.equal(after.engine, "stock-pi");
   const still = JSON.parse(await readFile(join(dest, "rubato-install.json"), "utf8"));
   assert.equal(still.state, "ready");
 
   const reswitch = await switchEngine({ home });
   assert.equal(reswitch.engine, "stock-pi");
-  assert.equal(reswitch.previous, "senpi");
+  assert.equal(reswitch.previous, "stock-pi");
+});
+
+test("rollback to a senpi marker refuses instead of reviving senpi", async (t) => {
+  const scratch = await mkdtemp(join(tmpdir(), "rubato-switch-engine-senpi-rollback-"));
+  t.after(() => retirePath(scratch));
+  const home = join(scratch, "home");
+  await mkdir(join(home, ".rubato-pi"), { recursive: true });
+  await writeFile(engineMarkerPath(home), JSON.stringify({ engine: "stock-pi", previous: "senpi" }));
+  await assert.rejects(() => rollbackEngine({ home }), /retired senpi engine/);
 });
 
 test("switch without install fails closed; switch installIfMissing uses the injected installer", async (t) => {
