@@ -35,13 +35,27 @@ export async function stageAndPublishInstall(dest, { mode, build, retire, move =
     const scratch = await mkdtemp(join(dirname(dest), `.${basename(dest)}-stage-`));
     const staged = join(scratch, "candidate");
     const snapshot = `${dest}.previous`;
+    const retiring = `${dest}.previous-retiring`;
     let movedPrevious = false;
+    let movedStale = false;
     try {
       const result = await build(staged, present ? dest : null);
       // build() must finish validation and write its ready receipt before this.
       if (present) {
-        if (await exists(snapshot)) await retire(snapshot);
-        await move(dest, snapshot);
+        // Hold the existing snapshot aside instead of retiring it now: until the
+        // replacement is published it is the only restore point, and a failed
+        // move below must still leave something to roll back to.
+        if (await exists(retiring)) await retire(retiring);
+        if (await exists(snapshot)) {
+          await move(snapshot, retiring);
+          movedStale = true;
+        }
+        try {
+          await move(dest, snapshot);
+        } catch (error) {
+          if (movedStale) await move(retiring, snapshot);
+          throw error;
+        }
         movedPrevious = true;
       }
       try {
@@ -50,12 +64,15 @@ export async function stageAndPublishInstall(dest, { mode, build, retire, move =
         if (movedPrevious) {
           try {
             await move(snapshot, dest);
+            if (movedStale) await move(retiring, snapshot);
           } catch (restoreError) {
             throw new AggregateError([error, restoreError], `Install publication and restoration failed; previous install is at ${snapshot}`);
           }
         }
         throw error;
       }
+      // The new install is in place, so the superseded snapshot is now spare.
+      if (movedStale) await retire(retiring);
       return result;
     } finally {
       // Never clean the current install or its previous snapshot on failure.
