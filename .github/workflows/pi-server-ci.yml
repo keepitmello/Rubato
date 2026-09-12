@@ -26,12 +26,17 @@ jobs:
         run: npm --prefix harness/pi-server install --ignore-scripts --workspaces=false
       - name: Test published upstream compatibility
         run: npm --prefix harness/pi-server test --workspaces=false
-      - name: Capture exact T3 contract dependencies
+      - name: Capture reproducible public-source validation bundle
         run: |
-          npm install --prefix "$RUNNER_TEMP/t3-deps" --ignore-scripts --no-audit effect@4.0.0-rc.112 typescript@7.0.2 @types/node@24.12.4
-          tar -czf "$RUNNER_TEMP/t3-contract-deps.tar.gz" -C "$RUNNER_TEMP/t3-deps" node_modules
+          mkdir -p "$RUNNER_TEMP/rubato-validation"
+          git archive --format=tar.gz HEAD > "$RUNNER_TEMP/rubato-validation/rubato-source.tar.gz"
+          tar -czf "$RUNNER_TEMP/rubato-validation/pi-server-deps.tar.gz" -C harness/pi-server node_modules package-lock.json
+          cp "$(command -v node)" "$RUNNER_TEMP/rubato-validation/node"
+          git rev-parse HEAD > "$RUNNER_TEMP/rubato-validation/REVISION"
+          npm install --prefix "$RUNNER_TEMP/pi-sdk" --ignore-scripts --no-audit @earendil-works/pi-coding-agent@0.85.1
+          tar -czf "$RUNNER_TEMP/rubato-validation/pi-sdk-deps.tar.gz" -C "$RUNNER_TEMP/pi-sdk" node_modules package-lock.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: t3-contract-deps
-          path: ${{ runner.temp }}/t3-contract-deps.tar.gz
+          name: rubato-validation-bundle
+          path: ${{ runner.temp }}/rubato-validation/
           retention-days: 1
