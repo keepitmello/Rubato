@@ -17,7 +17,7 @@ const IDENTITY_REPLACEMENT = `text: "${CLAUDE_CODE_BILLING_HEADER}",
                 text: "You are Claude Code, Anthropic's official CLI for Claude.",`;
 
 export function isAnthropicMessagesUrl(url) {
-  return url.includes("@earendil-works/pi-ai/dist/api/anthropic-messages.js");
+  return url.includes("pi-ai/dist/api/anthropic-messages.js");
 }
 
 /**

@@ -1,7 +1,7 @@
 import { replaceOnce } from "./replace-once.mjs";
 
 export function isCursorConversationRotationUrl(url) {
-  return url.includes("@earendil-works/pi-ai/dist/api/cursor-conversation-rotation.js");
+  return url.includes("pi-ai/dist/api/cursor-conversation-rotation.js");
 }
 
 const FORGET_NEEDLE = `            persist();

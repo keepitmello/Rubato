@@ -226,7 +226,7 @@ const REPLAY_REPLACEMENT = `                else if (block.type === "providerNat
                 }`;
 
 export function isAnthropicCompactionUrl(url) {
-  return url.includes("@earendil-works/pi-ai/dist/api/anthropic-messages.js");
+  return url.includes("pi-ai/dist/api/anthropic-messages.js");
 }
 
 /**

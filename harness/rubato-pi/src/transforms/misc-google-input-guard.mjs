@@ -1,11 +1,11 @@
 import { replaceOnce } from "./misc-replace.mjs";
 
 export function isTransformMessagesUrl(url) {
-  return url.includes("@earendil-works/pi-ai/dist/api/transform-messages.js");
+  return url.includes("pi-ai/dist/api/transform-messages.js");
 }
 
 export function isGoogleSharedUrl(url) {
-  return url.includes("@earendil-works/pi-ai/dist/api/google-shared.js");
+  return url.includes("pi-ai/dist/api/google-shared.js");
 }
 
 const TRANSFORM_NEEDLE = "    const supportsImages = model.input.includes(\"image\");\n    const supportsVideo = model.input.includes(\"video\");";

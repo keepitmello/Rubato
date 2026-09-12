@@ -97,7 +97,7 @@ const WS_ITEMS_REPLACEMENT = `            const responseItems = convertResponses
             }).filter((item) => item.type !== "function_call_output" && item.type !== "custom_tool_call_output");`;
 
 export function isAstraCodexUrl(url) {
-  return url.includes("@earendil-works/pi-ai/dist/api/openai-codex-responses.js");
+  return url.includes("pi-ai/dist/api/openai-codex-responses.js");
 }
 
 /**
