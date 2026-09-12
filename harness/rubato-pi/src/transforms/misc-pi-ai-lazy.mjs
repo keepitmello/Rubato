@@ -9,7 +9,7 @@ const SETUP_NEEDLE = "        return cancellation;\n    });\n    Promise.all([in
 const SETUP_REPLACEMENT = "        return cancellation;\n    });\n    // Point local-work questions at the real provider stream as soon as setup\n    // resolves. Setup itself emits no events, so there is no window where the\n    // agent loop would consult a stale delegate.\n    void inner.then((source) => outer.setLocalWorkDelegate(source), () => {});\n    Promise.all([inner, iterator])";
 
 export function isPiAiLazyUrl(url) {
-  return url.includes("@earendil-works/pi-ai/dist/api/lazy.js");
+  return url.includes("pi-ai/dist/api/lazy.js");
 }
 
 /**

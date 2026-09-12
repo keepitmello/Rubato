@@ -6,7 +6,7 @@
 import { replaceOnce } from "./replace-once.mjs";
 
 export function isCursorAgentUrl(url) {
-  return url.includes("@earendil-works/pi-ai/dist/api/cursor-agent.js");
+  return url.includes("pi-ai/dist/api/cursor-agent.js");
 }
 
 const MAPS_NEEDLE = `const conversationStateCache = new Map();
