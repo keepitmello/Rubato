@@ -57,6 +57,11 @@ function warnOnce(error) {
 function isVendorTransformUrl(url) {
   return (
     url.includes("@code-yeongyu/senpi/") ||
+    // 포크 스코프: 핀(2026.9.4-3) 뒤 pi-ai/pi-tui/pi-agent-core 는
+    // @code-yeongyu/senpi-* 로 뜬다. 매처는 꼬리형이라 둘 다 잡는다.
+    url.includes("@code-yeongyu/senpi-ai/") ||
+    url.includes("@code-yeongyu/senpi-tui/") ||
+    url.includes("@code-yeongyu/senpi-agent-core/") ||
     url.includes("@earendil-works/pi-tui/") ||
     url.includes("@earendil-works/pi-ai/") ||
     url.includes("@earendil-works/pi-agent-core/") ||

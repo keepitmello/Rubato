@@ -22,7 +22,7 @@ export function thinkingLevelsHref() {
 }
 
 export function isThinkingLevelsUrl(url) {
-  return url.includes("@earendil-works/pi-ai/dist/models.js");
+  return url.includes("pi-ai/dist/models.js");
 }
 
 /**

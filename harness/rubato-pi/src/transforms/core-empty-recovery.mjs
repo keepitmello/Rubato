@@ -74,7 +74,7 @@ const RETRY_REPLACEMENT =
   "                currentStream = stream;\n";
 
 export function isEmptyRecoveryUrl(url) {
-  return url.includes("@earendil-works/pi-agent-core/dist/empty-assistant-recovery.js");
+  return url.includes("pi-agent-core/dist/empty-assistant-recovery.js");
 }
 
 /** Buffered thinking prefix must count as stream liveness for the start/idle guards. */

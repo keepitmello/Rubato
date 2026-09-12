@@ -13,7 +13,7 @@ const OPENAI_NEEDLE = "        case \"openai-codex-responses\":\n        case \"
 const OPENAI_REPLACEMENT = "        case \"openai-codex-responses\":\n        case \"azure-openai-responses\": {\n            const retention = resolveOpenAIResponsesCacheRetention(model.cacheRetention, env);\n            if (retention === \"none\")\n                return undefined;\n            // Azure stays on the 5-minute budget until its cache contract is verified.\n            if ((model.api === \"openai-responses\" || model.api === \"openai-codex-responses\") &&\n                isGpt56OrLaterModelId(model.id))\n                return PROMPT_CACHE_TTL_GPT56_SECONDS;\n            return PROMPT_CACHE_TTL_SHORT_SECONDS;\n        }";
 
 export function isPromptCacheTtlUrl(url) {
-  return url.includes("@earendil-works/pi-ai/dist/utils/prompt-cache-ttl.js");
+  return url.includes("pi-ai/dist/utils/prompt-cache-ttl.js");
 }
 
 /**

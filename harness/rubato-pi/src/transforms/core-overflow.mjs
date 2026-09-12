@@ -29,7 +29,7 @@ const SILENT_REPLACEMENT =
   "    }\n";
 
 export function isOverflowUrl(url) {
-  return url.includes("@earendil-works/pi-ai/dist/utils/overflow.js");
+  return url.includes("pi-ai/dist/utils/overflow.js");
 }
 
 /** pi-ai series 20260830-0449Z-codex-overflow-detection + Cursor cacheRead silent-overflow. */

@@ -7,7 +7,7 @@ const UNREF_NEEDLE = "    }, SESSION_WEBSOCKET_CACHE_TTL_MS);";
 const UNREF_REPLACEMENT = "    }, SESSION_WEBSOCKET_CACHE_TTL_MS);\n    entry.idleTimer.unref?.();";
 
 export function isCodexWsCacheTtlUrl(url) {
-  return url.includes("@earendil-works/pi-ai/dist/api/openai-codex-responses.js");
+  return url.includes("pi-ai/dist/api/openai-codex-responses.js");
 }
 
 /**

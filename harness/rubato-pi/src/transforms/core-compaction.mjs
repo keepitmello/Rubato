@@ -51,8 +51,7 @@ const CONTEXT_TOKENS_REPLACEMENT =
 /** pi-ai estimate.js and senpi compaction.js both expose this helper. */
 export function isContextTokensUrl(url) {
   return (
-    url.includes("@earendil-works/pi-ai/dist/utils/estimate.js") ||
-    url.includes("@code-yeongyu/senpi-ai/dist/utils/estimate.js") ||
+    url.includes("pi-ai/dist/utils/estimate.js") ||
     isCompactionUrl(url)
   );
 }
