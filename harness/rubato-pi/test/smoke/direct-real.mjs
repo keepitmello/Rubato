@@ -21,6 +21,7 @@ import { DISABLED_BUILTIN_EXTENSIONS } from "../../src/session-defaults.mjs";
 import { createLineReader, createRpcWaiter } from "./rpc-waiter.mjs";
 import { importLegacyDirectCredentials } from "../../src/credential-import.mjs";
 import { CLAUDE_SETUP_TOKEN_FILE_ENV, CLAUDE_SETUP_TOKEN_PREFIX } from "../../src/anthropic-setup-token.mjs";
+import { CLAUDE_CODE_VERSION } from "../../src/transforms/misc-claude-code-version.mjs";
 import { KIRO_CONFIG_PATH_ENV } from "../../src/kiro-route.mjs";
 import {
   ANTIGRAVITY_ENDPOINT,
@@ -1057,13 +1058,13 @@ async function runAnthropic(assertLiveAuth) {
       if (apiCalls.length === 0) {
         return fail("anthropic", gate, `no api.anthropic.com request captured; ${JSON.stringify(wireSummary(profile.wireLog))}`);
       }
-      const headersOk = apiCalls.every((entry) => entry.headers?.["user-agent"] === "claude-cli/2.1.257");
+      const headersOk = apiCalls.every((entry) => entry.headers?.["user-agent"] === `claude-cli/${CLAUDE_CODE_VERSION}`);
       const betaOk = apiCalls.some((entry) => String(entry.headers?.["anthropic-beta"] ?? "").includes("claude-code-20250219"));
       const cacheOk = apiCalls.some((entry) => JSON.stringify(entry.body ?? {}).includes('"ttl":"1h"') || JSON.stringify(entry.body ?? {}).includes("1h"));
       const tools = apiCalls.flatMap((entry) => entry.body?.tools ?? []);
       const nativeNames = tools.length === 0 || tools.some((tool) => tool.name === "Read" || tool.name === "read" || tool.name === "Bash");
       const doubled = tools.some((tool) => tool.name === "read_file");
-      if (!headersOk) return fail("anthropic", gate, `user-agent not claude-cli/2.1.257: ${apiCalls[0]?.headers?.["user-agent"]}`);
+      if (!headersOk) return fail("anthropic", gate, `user-agent not claude-cli/${CLAUDE_CODE_VERSION}: ${apiCalls[0]?.headers?.["user-agent"]}`);
       if (!betaOk) return fail("anthropic", gate, "missing claude-code beta header");
       if (!cacheOk) return fail("anthropic", gate, "cache retention 1h missing on wire");
       if (doubled) return fail("anthropic", gate, "bridge read_file mapping leaked onto the wire");
@@ -1143,9 +1144,9 @@ async function runAnthropicKeychain(assertLiveAuth) {
           `no api.anthropic.com request captured; text=${String(text).slice(0, 120)}; ${JSON.stringify(wireSummary(profile.wireLog))}`,
         );
       }
-      const headersOk = apiCalls.every((entry) => entry.headers?.["user-agent"] === "claude-cli/2.1.257");
+      const headersOk = apiCalls.every((entry) => entry.headers?.["user-agent"] === `claude-cli/${CLAUDE_CODE_VERSION}`);
       if (!headersOk) {
-        return fail("anthropic-keychain", gate, `user-agent not claude-cli/2.1.257: ${apiCalls[0]?.headers?.["user-agent"]}`);
+        return fail("anthropic-keychain", gate, `user-agent not claude-cli/${CLAUDE_CODE_VERSION}: ${apiCalls[0]?.headers?.["user-agent"]}`);
       }
       return pass(
         "anthropic-keychain",
