@@ -11,7 +11,7 @@
 | Roster and runtime status | lead `team_*` tools including `team_send` and shutdown request/response; members get `team_send` plus board tools from the member extension |
 | Shared task list | Rubato team tasklist on disk; board operations have one owner per process |
 | Owner-local spawn | the member process registers Agent tools so it can run subagents under itself; those children are not teammates |
-| Parallel spawn | `Agent` / `team_create`; completion notifications deliver terminal results, and `AgentOutput` reads an immediate midpoint snapshot |
+| Parallel spawn | `Agent` / `team_create`; completion notifications deliver a status ping. Owners peek their own helpers with `AgentOutput`. A taskforce lead reads the result path or board, not a child transcript. |
 
 The role build owns the whole system prompt. Lead gets `lead.md`; owners and verifiers get `teammate.md`; both prompts carry the shared brief-receiving and brief-writing contract. A plain `Agent` spawn gets `agent.md`, which carries the receive-and-return contract. Model calls authenticate through the existing Rubato broker at `:8788`, including `/login`. `RUBATO_PI_ROLE=owner|verifier` wins; a member env without that role is treated as owner. Verifiers retain write tools.
 

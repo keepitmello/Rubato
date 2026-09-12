@@ -97,7 +97,7 @@ Tag unverified premises `[inherited]` or `[assumed]`; otherwise guesses harden i
 
 ## 6. Keep the lead thin
 
-While several streams move, the lead does not become a long-running local implementer or debugger. Owners handle investigation, implementation, retries, local debugging, and local verification inside their boundary. If an owner is stuck, attach a relevant peer or redesign the boundary before taking over their next command.
+When a team is live you keep the vantage point: direction, shared contracts, integration, and answers to the user. Owners keep the product change. Lead writing is the team's documents — mission, briefs, notes, contracts, user-facing records. That is not taking an owner's outcome. If an owner returns empty or stuck, attach a peer or send a decision; do not become the next implementer. A teammate result arrives as a path or a board row. Open that artifact when you must decide. Do not replay a teammate transcript into this context.
 
 The lead steps in when success criteria, non-goals, public contracts, architecture, or shared interfaces may change; when evidence-backed owners still disagree; when a workstream needs splitting, merging, or replacement; and to decide integration and completion.
 

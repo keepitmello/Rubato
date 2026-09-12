@@ -91,7 +91,7 @@ export function createTaskComponent(options: TaskComponentOptions = {}): RubatoC
       pi.registerMessageRenderer?.(CATEGORY_UNAVAILABLE_MESSAGE_TYPE, renderCategoryUnavailable)
       const teamTools = createTeamToolContext(pi, ctx, engine)
       const skillInvocations = createSkillInvocationTracker(pi)
-      registerTaskTools(pi, engine, skillInvocations)
+      registerTaskTools(pi, engine, skillInvocations, teamTools.service.listTeams)
       if (!memberProcess) {
         registerTeamTools(pi, teamTools)
         registerRemovedTeamWaitHint(pi)
@@ -168,6 +168,7 @@ function registerTaskTools(
   pi: SenpiExtensionAPI,
   engine: TaskEngine,
   skillInvocations: SkillInvocationTracker,
+  listTeams: TeamToolsService["listTeams"],
 ): void {
   const resolveCallerSessionId = defaultResolveCallerSessionId
   const manager = engine.manager
@@ -187,7 +188,18 @@ function registerTaskTools(
     }),
   })
   pi.registerTool({ ...createTaskCancelTool({ manager }) })
-  pi.registerTool({ ...createTaskOutputTool({ manager, stateDir: engine.stateDir, resolveCallerSessionId }) })
+  pi.registerTool({
+    ...createTaskOutputTool({
+      manager,
+      stateDir: engine.stateDir,
+      resolveCallerSessionId,
+      ownsActiveTeam: async (sessionId) => {
+        if (isTeamMemberProcess()) return false
+        const teams = await listTeams()
+        return teams.some((team) => team.leadSessionId === sessionId)
+      },
+    }),
+  })
 }
 
 function createTeamToolContext(

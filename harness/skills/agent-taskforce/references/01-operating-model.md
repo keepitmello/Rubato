@@ -22,8 +22,6 @@ commitment changes require only a delta confirmation before affected work.
 
 The lead does not absorb every debugging detail. Look at task state, verified facts, and decision-grade evidence. When an owner is stuck, attach a relevant peer, redesign the boundary, or replace the owner rather than choosing commands one at a time.
 
-Small integration edits may be done directly after convergence. If an edit becomes a new outcome or long debugging loop, assign an owner.
-
 ## Owners and verifiers from the lead's side
 
 Their contracts are `teammate/workstream-owner.md` and `teammate/independent-verifier.md`.

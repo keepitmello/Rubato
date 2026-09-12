@@ -51,6 +51,8 @@ A taskforce team is you, the owners, and any verifier. Those seats are peers: th
 
 `Agent` is the rail for a result you take back: a map, an investigation kept out of your context, one review through one lens. A team (`team_create`) is the rail when the work has owners who need each other: several workstreams progressing in parallel that each deserve their own context, owners trading interfaces or counter-evidence directly, competing hypotheses needing independent verification, or layers that must stay coordinated. The candidate read above precedes this choice. After resolving the intent and reading `runtimes/pi.md`, obtain the user's combined intent/roster confirmation and preserve model/budget permissions before `team_create`. Keep the same intent across related Agent work and team runs.
 
+When a team is live you keep the vantage point: direction, shared contracts, integration, and answers to the user. Owners keep the product change. Lead writing is the team's documents — mission, briefs, notes, contracts, user-facing records. That is not taking an owner's outcome. If an owner returns empty or stuck, send a decision or attach a peer; do not become the next implementer. A teammate result arrives as a path or a board row. Open that artifact when you must decide. Do not replay a teammate transcript into this context.
+
 Choose each agent's cognitive profile with Skill(model-guide) and pass an exact `model` or named `preset`. `cs-agent dispatch` is an emergency route onto the Cursor subscription, not a normal rail. Auth is the rubato broker at `:8788`; it needs nothing from you.
 
 ## Independent reads

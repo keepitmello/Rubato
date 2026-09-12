@@ -75,6 +75,7 @@ export type TaskOutputDeps = {
   readonly transcriptReader?: TranscriptReader
   readonly resolveCallerSessionId?: CallerSessionResolver
   readonly now?: () => number
+  readonly ownsActiveTeam?: (sessionId: string) => boolean | Promise<boolean>
 }
 
 export type TaskOutputToolResult = AgentToolResult<TaskOutputDetails>
