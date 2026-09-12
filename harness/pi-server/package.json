@@ -1,0 +1,16 @@
+{
+  "name": "rubato-pi-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {"start": "node src/cli.mjs", "test": "node --test --test-timeout=90000 test/*.test.mjs"},
+  "engines": {"node": "^24.15.0 || >=26.0.0"},
+  "dependencies": {
+    "@earendil-works/chord": "0.85.1",
+    "@earendil-works/pi-agent-core": "0.85.1",
+    "@earendil-works/pi-client": "0.85.1",
+    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@earendil-works/pi-protocol": "0.85.1",
+    "@earendil-works/pi-server": "0.85.1"
+  }
+}
