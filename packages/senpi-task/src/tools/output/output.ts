@@ -27,9 +27,13 @@ export type TaskOutputInput = Static<typeof TaskOutputParams>
 const DEFAULT_TAIL_LINES = 60
 const BLOCKING_REMOVED_GUIDANCE = 'blocking removed - completion arrives as a notification; use mode:"tail" to peek.'
 
+export const LEAD_TEAM_OUTPUT_DENIED =
+  "A taskforce lead does not replay a child's transcript. Completion is a status ping; the body lives on the result path or board. Owners peek their own helpers with AgentOutput."
+
 const DESCRIPTION = [
   "Read one child agent, keyed by agentId. AgentOutput always returns immediately: mode='status' (default) returns the host snapshot, including the final output once terminal.",
   "mode='tail' returns the last tail_lines of the recorded transcript; mode='full' returns the whole transcript (capped, with a head/tail elision marker). Completion notifications already include the final result.",
+  "A taskforce lead does not use this to babysit a teammate. Completion is a status ping; the body lives on the result path. Owners peek their own helpers with this tool.",
   "READ-ONLY: this never revives, steers, or otherwise touches the child.",
   "Only the current session's children are visible.",
   "Peeking a still-running child ends the parent turn unless this round also did other work; completion wakes the parent.",
@@ -48,7 +52,14 @@ export function runTaskOutput(
   }
   if (callerSessionId === undefined) return Promise.resolve(notFound(agentId))
 
-  return outputForHandle(deps, agentId, params, callerSessionId)
+  return denyLeadTeamPeek(deps, callerSessionId).then((denied) =>
+    denied ? invalidArguments(LEAD_TEAM_OUTPUT_DENIED) : outputForHandle(deps, agentId, params, callerSessionId),
+  )
+}
+
+async function denyLeadTeamPeek(deps: TaskOutputDeps, callerSessionId: string): Promise<boolean> {
+  if (deps.ownsActiveTeam === undefined) return false
+  return (await deps.ownsActiveTeam(callerSessionId)) === true
 }
 
 function hasLegacyBlockingParam(params: object): boolean {

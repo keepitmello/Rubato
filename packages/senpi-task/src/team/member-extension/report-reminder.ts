@@ -1,7 +1,7 @@
 export const TEAM_REPORT_REMINDER_TYPE = "senpi-task:team-report-reminder"
 
 export const TEAM_REPORT_REMINDER_CONTENT =
-  "The lead does not see this session. If this turn produced an outcome, team_send it to the lead, then end your turn."
+  "The lead does not see this session. If this turn produced an outcome, persist it on the artifact or board and team_send affected peers. team_send the lead only when a shared contract changed or the batch is closed, then end your turn."
 
 export type ReportReminder = {
   onTeamSend(): void

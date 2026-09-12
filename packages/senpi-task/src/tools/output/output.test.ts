@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 
 import type { ResolvedModelRecord, TaskRecord } from "../../state"
 import { makeRecord } from "./__fixtures__/records"
-import { runTaskOutput, TaskOutputParams } from "./output"
+import { LEAD_TEAM_OUTPUT_DENIED, runTaskOutput, TaskOutputParams } from "./output"
 import type { OutputManager, TaskOutputDeps, TaskOutputToolResult, TranscriptReadResult } from "./types"
 
 function managerFrom(records: readonly TaskRecord[]): OutputManager {
@@ -187,6 +187,27 @@ describe("runTaskOutput", () => {
     const result = await runTaskOutput(deps, { agentId: "st_a", mode: "status" }, "session-parent")
 
     expect(result.details.kind).toBe("status")
+  })
+
+  test("#given a lead that owns an active team #when AgentOutput runs #then it is denied without reading the child", async () => {
+    const record = makeRecord({ task_id: "st_done", status: "completed", final_response: "secret body" })
+    const deps: TaskOutputDeps = { ...depsFrom([record]), ownsActiveTeam: () => true }
+
+    const result = await runTaskOutput(deps, { agentId: "st_done", mode: "tail" }, "session-parent")
+
+    expect(result.details).toEqual({ kind: "invalid_arguments", reason: LEAD_TEAM_OUTPUT_DENIED })
+    expect(firstText(result)).toBe(LEAD_TEAM_OUTPUT_DENIED)
+    expect(firstText(result)).not.toContain("secret body")
+  })
+
+  test("#given ownsActiveTeam is false #when AgentOutput runs #then the child remains readable", async () => {
+    const record = makeRecord({ task_id: "st_done", status: "completed", final_response: "the answer" })
+    const deps: TaskOutputDeps = { ...depsFrom([record]), ownsActiveTeam: () => false }
+
+    const result = await runTaskOutput(deps, { agentId: "st_done" }, "session-parent")
+
+    expect(result.details.kind).toBe("status")
+    expect(firstText(result)).toContain("the answer")
   })
 
   test("#given no agentId #when read #then invalid arguments are reported", async () => {
