@@ -83,6 +83,26 @@ test("rollback to a senpi marker refuses instead of reviving senpi", async (t) =
   await assert.rejects(() => rollbackEngine({ home }), /retired senpi engine/);
 });
 
+// Refusing a senpi rollback is only coherent if nothing still manufactures one.
+// switchEngine used to copy a senpi marker's engine into the new `previous`,
+// producing a marker whose only possible rollback was the refusal above.
+test("switching away from a senpi marker does not manufacture an un-rollbackable marker", async (t) => {
+  const scratch = await mkdtemp(join(tmpdir(), "rubato-switch-engine-from-senpi-"));
+  t.after(() => retirePath(scratch));
+  const home = join(scratch, "home");
+  await mkdir(join(home, ".rubato-pi"), { recursive: true });
+  await installStockEngine({ home, install: fakeInstall });
+  // A profile that predates the retirement: the marker still names senpi.
+  await writeFile(engineMarkerPath(home), JSON.stringify({ engine: "senpi", previous: "stock-pi" }));
+  const switched = await switchEngine({ home, install: fakeInstall });
+  assert.equal(switched.engine, "stock-pi");
+  assert.equal(switched.previous, "stock-pi");
+  const marker = JSON.parse(await readFile(engineMarkerPath(home), "utf8"));
+  assert.equal(marker.previous, "stock-pi");
+  const rolled = await rollbackEngine({ home });
+  assert.equal(rolled.engine, "stock-pi");
+});
+
 test("switch without install fails closed; switch installIfMissing uses the injected installer", async (t) => {
   const scratch = await mkdtemp(join(tmpdir(), "rubato-switch-engine-missing-"));
   t.after(() => retirePath(scratch));

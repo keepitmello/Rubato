@@ -83,12 +83,15 @@ export async function switchEngine({ home, engine = "stock-pi", env = process.en
     }
   }
   const current = await readEngineMarker(resolvedHome);
-  const previous = current?.engine === "senpi" || current?.engine === "stock-pi" ? current.engine : "stock-pi";
+  // Senpi rollback is retired, so a marker must never record senpi as the
+  // rollback target: writing `previous: "senpi"` here would manufacture a
+  // marker that rollbackEngine can only refuse. stock-pi is the only engine
+  // there is, so it is the only previous there can be.
   const marker = {
     engine,
     installedAt: current?.installedAt ?? new Date().toISOString(),
     switchedAt: new Date().toISOString(),
-    previous: previous === engine ? (current?.previous ?? "stock-pi") : previous,
+    previous: "stock-pi",
     installRoot: dest,
   };
   await writeEngineMarker(resolvedHome, marker);
@@ -99,8 +102,10 @@ export async function rollbackEngine({ home, env = process.env } = {}) {
   const resolvedHome = resolveSwitchHome({ home, env });
   const current = await readEngineMarker(resolvedHome);
   if (!current) throw new Error("No engine marker to roll back");
-  // Senpi rollback is retired (user decree 2026-09-13): there is no senpi engine to go back to.
-  if (current.previous === "senpi") throw new Error("rubato: cannot roll back to the retired senpi engine; run `rubato build` or switch-engine update to reinstall stock-pi");
+  // Senpi rollback is retired (user decree 2026-09-13): there is no senpi engine
+  // to go back to. switchEngine no longer writes this, but markers written
+  // before the retirement still carry it.
+  if (current.previous === "senpi") throw new Error("rubato: cannot roll back to the retired senpi engine; run `rubato update` to reinstall stock-pi");
   const previous = current.previous === "stock-pi" ? current.previous : "stock-pi";
   const marker = {
     engine: previous, installedAt: current.installedAt, switchedAt: new Date().toISOString(),
