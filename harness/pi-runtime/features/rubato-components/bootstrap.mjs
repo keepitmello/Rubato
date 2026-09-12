@@ -18,7 +18,6 @@ import { createProviderExecution } from "../../node_modules/@earendil-works/pi-c
 import { createGptAccountExtension } from "../../node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/rubato-features/providers/auth-pool/gpt-account.mjs";
 import { createContextNotesExtension } from "../../node_modules/@earendil-works/pi-coding-agent/dist/rubato-features/context-notes/extension.mjs";
 import { createPromptRulesExtensionFactories } from "../prompt-rules/index.mjs";
-import { createPromptPresetExtensionFactories } from "../prompt-preset/index.mjs";
 import { createCompactionExtensionFactories } from "../compaction/index.mjs";
 import { createConfigReloadExtensionFactories } from "../config-reload/index.mjs";
 import { createUserCommandsAgentFactories } from "../user-commands-agent/index.mjs";
@@ -96,7 +95,6 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
     { name: "rubato-gpt-apply-patch", factory: registerApplyPatchExtension },
     { name: "context-notes", factory: createContextNotesExtension({ agentDir, settingsManager: settings }) },
     ...createCompactionExtensionFactories({ settingsManager: settings, env }),
-    ...createPromptPresetExtensionFactories({ settingsManager: settings }),
     ...createPromptRulesExtensionFactories({ settingsManager: settings }),
     ...createConfigReloadExtensionFactories({ settingsManager: settings, agentDir, cwd }),
     ...createUserCommandsAgentFactories({ agentDir, env }),
