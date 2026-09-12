@@ -12,7 +12,15 @@ import {
   type ChildSpec,
 } from "@rubato/senpi-task"
 
-import { DEFAULT_RUNNER_FACTORIES, TASK_CHILD_UI_ONLY_TOOL_NAMES } from "./engine-runners"
+// The stock child factory is untyped ESM; the test only needs the runtime guard.
+// @ts-expect-error -- no declaration file for the .mjs factory
+import { createStockChildInProcessSession } from "../../../../../harness/pi-runtime/features/child-runtime/stock-rpc-runtime.mjs"
+import {
+  createStockInProcessSessionAdapter,
+  createTaskRunnerFactories,
+  DEFAULT_RUNNER_FACTORIES,
+  TASK_CHILD_UI_ONLY_TOOL_NAMES,
+} from "./engine-runners"
 import { TaskRuntimeContext } from "./runtime-context"
 
 // The adapter keeps the main Senpi entry type-only, so the stub tools below carry a local schema
@@ -123,5 +131,76 @@ describe("task child memory tool exclusion", () => {
 
     // then
     expect(typeof runner.start).toBe("function")
+  })
+})
+
+describe("stock in-process session adapter agentDir", () => {
+  class FakeResourceLoader {
+    readonly options: Record<string, unknown>
+    constructor(options: Record<string, unknown>) {
+      this.options = options
+    }
+    async reload() {}
+    getExtensions() {
+      return { errors: [] }
+    }
+  }
+
+  test("#given a stockChildProfile agentDir and child options that omit it #when the managed runner starts #then the inner session factory receives that agentDir", async () => {
+    let captured: CreateAgentSessionOptions | undefined
+    const fake = createFakeSession()
+    const factories = createTaskRunnerFactories({
+      stockChildProfile: { agentDir: "/explicit/parent-agent" },
+      createInProcessSession: async (options) => {
+        captured = options
+        return fake.session
+      },
+    })
+    const cwd = mkdtempSync(join(tmpdir(), "rubato-runtime-engine-runners-agentdir-"))
+    tempDirs.push(cwd)
+    const runner = factories.inProcess({
+      runtime: new TaskRuntimeContext(cwd),
+      sharedParentTools: () => [],
+      settings: RubatoTaskSettingsSchema.parse({}),
+    })
+
+    const handle = await runner.start({
+      taskId: "task-1",
+      cwd,
+      stateDir: join(cwd, ".rubato", "task"),
+      prompt: "do the work",
+      depth: 0,
+      parentSessionId: "parent-1",
+      rootSessionId: "root-1",
+    })
+    expect(captured?.agentDir).toBe("/explicit/parent-agent")
+    fake.resolvePrompt()
+    await handle.waitForOutcome()
+  })
+
+  test("#given options that omit agentDir #when the adapter wraps the stock child factory #then a child session is created instead of the agentDir throw", async () => {
+    const agentDir = mkdtempSync(join(tmpdir(), "rubato-runtime-stock-child-agent-"))
+    tempDirs.push(agentDir)
+    const adapted = createStockInProcessSessionAdapter(
+      async (options) =>
+        createStockChildInProcessSession(options, {
+          createAgentSession: async () => ({
+            session: {
+              bindExtensions: async () => {},
+            },
+          }),
+          DefaultResourceLoader: FakeResourceLoader,
+        }),
+      undefined,
+      undefined,
+      agentDir,
+    )
+
+    const session = await adapted({
+      cwd: agentDir,
+      settingsManager: { ok: true },
+    } as unknown as CreateAgentSessionOptions)
+
+    expect(typeof (session as { bindExtensions?: unknown }).bindExtensions).toBe("function")
   })
 })
