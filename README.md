@@ -53,5 +53,6 @@ Rubato Remote는 같은 Tailscale tailnet의 Mac에서 세션을 실행하고 iP
 
 ## 더 보기
 
+- [루바토가 추구하는 것](docs/philosophy/README.md) — 설계를 고칠 때 돌아와 읽는 목적과 우선순위
 - [하네스 사용법과 운영 구조](harness/README.md)
 - [Aside](harness/aside-cursor.md)
