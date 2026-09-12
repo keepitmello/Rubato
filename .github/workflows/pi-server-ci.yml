@@ -22,8 +22,13 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '24'
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: '1.4.0'
       - name: Install the isolated server dependencies
         run: npm --prefix harness/pi-server install --ignore-scripts --workspaces=false
+      - name: Install the actual stock Rubato dependency tree
+        run: npm --prefix harness/pi-runtime ci --ignore-scripts --workspaces=false
       - name: Test published upstream compatibility
         run: npm --prefix harness/pi-server test --workspaces=false
       - name: Capture this public source snapshot for offline integration work
@@ -33,7 +38,9 @@ jobs:
           git archive --format=tar.gz --output="$RUNNER_TEMP/pi-server-evidence/rubato-source.tar.gz" HEAD
           cp harness/pi-server/package-lock.json "$RUNNER_TEMP/pi-server-evidence/" || true
           tar -czf "$RUNNER_TEMP/pi-server-evidence/server-dependencies.tar.gz" -C harness/pi-server node_modules
+          tar -czf "$RUNNER_TEMP/pi-server-evidence/runtime-dependencies.tar.gz" -C harness/pi-runtime node_modules
           cp "$(command -v node)" "$RUNNER_TEMP/pi-server-evidence/node"
+          cp "$(command -v bun)" "$RUNNER_TEMP/pi-server-evidence/bun"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
