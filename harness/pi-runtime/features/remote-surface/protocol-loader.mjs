@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -44,6 +44,8 @@ export function resolveRemoteProtocolSource({
   env = process.env,
   fromFile = fileURLToPath(import.meta.url),
 } = {}) {
+  const bundled = join(dirname(fromFile), "protocol.mjs");
+  if (pathExists(bundled)) return { source: "bundled", path: bundled };
   const override = typeof env.RUBATO_REMOTE_PROTOCOL === "string" ? env.RUBATO_REMOTE_PROTOCOL.trim() : "";
   if (override) return { source: "env", path: override };
   const checkoutRoot = findCheckoutRoot(dirname(fromFile));
@@ -56,23 +58,48 @@ export function resolveRemoteProtocolSource({
   };
 }
 
+function writeCheckoutProtocolBundle(resolved, dest) {
+  const srcDir = dirname(resolved.entry);
+  const bun = bunExecutable();
+  const dist = join(resolved.checkoutRoot, "packages/rubato-remote-protocol/dist/index.mjs");
+  mkdirSync(dirname(dest), { recursive: true });
+  if (!bun) {
+    if (!pathExists(dist)) throw new Error("loading checkout protocol requires bun to bundle TypeScript");
+    copyFileSync(dist, dest);
+    return dest;
+  }
+  if (pathExists(dest) && statSync(dest).mtimeMs >= protocolSourceMtime(srcDir)) return dest;
+  const result = spawnSync(bun, ["build", resolved.entry, "--outfile", dest, "--target", "node", "--format", "esm"], {
+    encoding: "utf8",
+    timeout: 30_000,
+  });
+  if (result.status !== 0) {
+    throw new Error(`protocol bundle failed: ${String(result.stderr || result.stdout || result.status).trim()}`);
+  }
+  return dest;
+}
+
+/** Stage/install helper: emit a bun-built ESM next to the feature so runtime needs no checkout or bun. */
+export function materializeProtocolBundle({
+  fromFile = fileURLToPath(import.meta.url),
+  dest = join(tmpdir(), "rubato-remote-protocol-feature-bundle", "protocol.mjs"),
+} = {}) {
+  const resolved = resolveRemoteProtocolSource({ fromFile, env: {} });
+  if (resolved.source === "bundled" || resolved.source === "env") {
+    if (resolved.path !== dest) {
+      mkdirSync(dirname(dest), { recursive: true });
+      copyFileSync(resolved.path, dest);
+    }
+    return dest;
+  }
+  return writeCheckoutProtocolBundle(resolved, dest);
+}
+
 export async function loadRemoteProtocol(options = {}) {
   const resolved = resolveRemoteProtocolSource(options);
   let modulePath = resolved.path;
   if (resolved.source === "checkout") {
-    const srcDir = dirname(resolved.entry);
-    const bun = bunExecutable();
-    if (!bun) throw new Error("loading checkout protocol requires bun to bundle TypeScript");
-    if (!pathExists(modulePath) || statSync(modulePath).mtimeMs < protocolSourceMtime(srcDir)) {
-      mkdirSync(dirname(modulePath), { recursive: true });
-      const result = spawnSync(bun, ["build", resolved.entry, "--outfile", modulePath, "--target", "node", "--format", "esm"], {
-        encoding: "utf8",
-        timeout: 30_000,
-      });
-      if (result.status !== 0) {
-        throw new Error(`protocol bundle failed: ${String(result.stderr || result.stdout || result.status).trim()}`);
-      }
-    }
+    modulePath = writeCheckoutProtocolBundle(resolved, resolved.path);
   }
   const href = pathToFileURL(modulePath).href;
   const module = options.importModule ? await options.importModule(href) : await import(href);

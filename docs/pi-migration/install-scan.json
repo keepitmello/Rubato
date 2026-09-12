@@ -1,8 +1,8 @@
 {
-  "generatedAt": "2026-09-11T13:28:32.165Z",
+  "generatedAt": "2026-09-12T02:29:35.860Z",
   "stockVersion": "0.85.1",
   "node": "v26.5.0",
-  "installRoot": "/private/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-IINCM6/engine",
+  "installRoot": "/private/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-RJJEeu/engine",
   "features": [
     "runtime-factories",
     "reload",
@@ -34,7 +34,14 @@
     "user-commands-agent",
     "user-commands-session",
     "remote-surface",
-    "tui-input"
+    "tui-input",
+    "turn-chrome",
+    "statusline",
+    "tui-autocomplete",
+    "model-picker",
+    "thinking-levels",
+    "transcript-cache",
+    "title-guard"
   ],
   "senpiPty": {
     "package": "@code-yeongyu/senpi-pty@2026.9.4-3",
@@ -96,9 +103,9 @@
     ]
   },
   "resolvedModulePaths": {
-    "total": 26256,
-    "insideInstall": 24236,
-    "nodeCore": 2018,
+    "total": 26322,
+    "insideInstall": 24308,
+    "nodeCore": 2012,
     "allowedScratch": 2,
     "outside": [],
     "senpiAppLoads": []
@@ -108,7 +115,7 @@
     {
       "seam": "rpc",
       "execPath": "/opt/homebrew/Cellar/node/26.5.0_1/bin/node",
-      "entry": "/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-IINCM6/engine/node_modules/@earendil-works/pi-coding-agent/dist/rpc-entry.js"
+      "entry": "/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-RJJEeu/engine/node_modules/@earendil-works/pi-coding-agent/dist/rpc-entry.js"
     },
     {
       "seam": "in-process",
@@ -117,7 +124,7 @@
     }
   ],
   "childEnv": {
-    "sessionDirFromGetState": "/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-IINCM6/home/child/rpc-sessions/child/2026-09-11T13-28-29-986Z_01a090a7-c821-7472-9807-1a105f4316d3.jsonl"
+    "sessionDirFromGetState": "/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-RJJEeu/home/child/rpc-sessions/child/2026-09-12T02-29-33-639Z_01a09372-dd46-722e-8701-53c035a8bfaf.jsonl"
   },
   "dynamicImports": [
     {
@@ -553,6 +560,10 @@
       "specifier": "pathToFileURL(bundlePath"
     },
     {
+      "path": "remote-surface/protocol-loader.install.test.mjs",
+      "specifier": "pathToFileURL(fromFile"
+    },
+    {
       "path": "remote-surface/protocol-loader.mjs",
       "specifier": "href"
     },
@@ -683,6 +694,34 @@
     {
       "path": "tool-search/tool-search.test.mjs",
       "specifier": "pathToFileURL(join(stagedRoot, \"rubato-features/mcp/index.mjs\""
+    },
+    {
+      "path": "transcript-cache/measure-first-paint.mjs",
+      "specifier": "pathToFileURL(join(work, \"progressive-transcript-container.mjs\""
+    },
+    {
+      "path": "transcript-cache/measure-first-paint.mjs",
+      "specifier": "pathToFileURL(join(tuiPackage, \"dist/tui.js\""
+    },
+    {
+      "path": "transcript-cache/transcript-cache.test.mjs",
+      "specifier": "pathToFileURL(join(work, \"progressive-transcript-container.mjs\""
+    },
+    {
+      "path": "tui-autocomplete/capture-evidence.mjs",
+      "specifier": "pathToFileURL(join(work, \"autocomplete.js\""
+    },
+    {
+      "path": "tui-autocomplete/capture-evidence.mjs",
+      "specifier": "pathToFileURL(join(here, \"../model-picker/catalog.mjs\""
+    },
+    {
+      "path": "tui-autocomplete/tui-autocomplete.test.mjs",
+      "specifier": "pathToFileURL(join(work, \"autocomplete.js\""
+    },
+    {
+      "path": "tui-autocomplete/tui-autocomplete.test.mjs",
+      "specifier": "pathToFileURL(join(tuiDist, \"autocomplete.js\""
     },
     {
       "path": "tui-input/patches.mjs",
@@ -858,6 +897,10 @@
       "expr": "resolve(runtimeRoot, \"../../harness/rubato-pi/src/session-defaults.mjs\""
     },
     {
+      "path": "model-picker/patches.mjs",
+      "expr": "\"./catalog.mjs\", import.meta.url"
+    },
+    {
       "path": "prompt-preset/feature.mjs",
       "expr": "`./${name}`, import.meta.url"
     },
@@ -958,8 +1001,20 @@
       "expr": "\"./pager.mjs\", import.meta.url"
     },
     {
+      "path": "statusline/patches.mjs",
+      "expr": "\"./\" + name, import.meta.url"
+    },
+    {
       "path": "terminal/terminal.test.mjs",
       "expr": "\"./src\", import.meta.url"
+    },
+    {
+      "path": "thinking-levels/patches.mjs",
+      "expr": "\"./thinking-levels.mjs\", import.meta.url"
+    },
+    {
+      "path": "title-guard/patches.mjs",
+      "expr": "\"./title-guard.mjs\", import.meta.url"
     },
     {
       "path": "tool-execution/patches.mjs",
@@ -986,16 +1041,20 @@
       "expr": "`./${name}`, import.meta.url"
     },
     {
+      "path": "transcript-cache/patches.mjs",
+      "expr": "\"./progressive-transcript-container.mjs\", import.meta.url"
+    },
+    {
+      "path": "tui-autocomplete/patches.mjs",
+      "expr": "\"./inline.mjs\", import.meta.url"
+    },
+    {
       "path": "tui-input/patches.mjs",
       "expr": "`./${name}`, import.meta.url"
     },
     {
-      "path": "tui-input/patches.mjs",
-      "expr": "\"./busy-enter.mjs\", import.meta.url"
-    },
-    {
-      "path": "tui-input/patches.mjs",
-      "expr": "\"./images.mjs\", import.meta.url"
+      "path": "turn-chrome/patches.mjs",
+      "expr": "\"./\" + name, import.meta.url"
     },
     {
       "path": "user-commands-agent/feature.mjs",
@@ -1051,8 +1110,8 @@
     "@code-yeongyu/senpi-tui"
   ],
   "notes": [
-    "Measured 2026-09-11T13:28:32.165Z: 33 staged features, Node v26.5.0. CANDIDATE_FEATURE_NAMES=31.",
-    "Load report: 26256 urls, 24236 inside install, 2018 node-core, 2 scratch, 0 outside, 0 Senpi app.",
+    "Measured 2026-09-12T02:29:35.860Z: 40 staged features, Node v26.5.0. CANDIDATE_FEATURE_NAMES=38.",
+    "Load report: 26322 urls, 24308 inside install, 2012 node-core, 2 scratch, 0 outside, 0 Senpi app.",
     "Current restage matched CANDIDATE_FEATURE_NAMES.",
     "Fake user HOME ~/.senpi/agent, ~/.rubato-pi/engine, and parent node_modules/@code-yeongyu/senpi stub were present and not loaded.",
     "@code-yeongyu/senpi-pty remains a declared runtime dependency; replacement is deferred by the user."
