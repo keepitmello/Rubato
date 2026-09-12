@@ -92,8 +92,11 @@ test("staged native write/edit use real Pi validation and session middleware", {
   assert.equal(await readFile(join(cwd, "file"), "utf8"), "after");
 
   hooks.length = 0;
+  // Pi's validator coerces a number into a string, so `path: 123` would be
+  // accepted here exactly as it is for any registered tool. An empty path is
+  // the schema violation that must fail before permission or result hooks run.
   const invalid = await bridge.piWrite({ execId: "invalid", toolCallId: "invalid",
-    args: { path: 123, content: "bad" } });
+    args: { path: "", content: "bad" } });
   assert.equal(invalid.isError, true);
   assert.deepEqual(hooks, [], "real schema validation rejects before middleware");
 
