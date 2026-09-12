@@ -3,8 +3,8 @@ import { fileURLToPath } from "node:url";
 const TUI_PACKAGE = "@earendil-works/pi-tui";
 const AGENT_PACKAGE = "@earendil-works/pi-coding-agent";
 const VERSION = "0.85.1";
-const BUSY_IMPORT = "import { busyEnterDelivery, handlePendingRecallKey, promoteBusyEnter } from \"../../rubato-features/tui-input/busy-enter.mjs\";";
-const IMAGES_IMPORT = "import { attachClipboardImage } from \"../../rubato-features/tui-input/images.mjs\";";
+const BUSY_IMPORT = "import { BUSY_ENTER_STATUS, busyEnterDelivery, handlePendingRecallKey, promoteBusyEnter } from \"../../../../../../rubato-features/tui-input/busy-enter.mjs\";";
+const IMAGES_IMPORT = "import { attachClipboardImage } from \"../../../../../../rubato-features/tui-input/images.mjs\";";
 const CLIPBOARD_IMPORT = "import { extensionForImageMimeType, readClipboardImage } from \"../../utils/clipboard-image.js\";\n";
 
 const STDIN_IMPORT_BEFORE = "import { EventEmitter } from \"events\";\n";
@@ -23,6 +23,8 @@ const IM_PASTE_BEFORE = "        this.defaultEditor.onPasteImage = () => {\n    
 const IM_PASTE_AFTER = "        this.defaultEditor.onPasteImage = () => {\n            void this.handleClipboardPaste();\n        };\n        const originalHandleInput = this.defaultEditor.handleInput.bind(this.defaultEditor);\n        this.defaultEditor.handleInput = (data) => handlePendingRecallKey(this, data, () => originalHandleInput(data));\n    }\n";
 const IM_TRIM_BEFORE = "            text = text.trim();\n            if (!text)\n                return;\n";
 const IM_TRIM_AFTER = "            text = text.trim();\n            if (!text) {\n                promoteBusyEnter(this);\n                return;\n            }\n";
+const PENDING_HINT_BEFORE = "            const dequeueHint = this.getAppKeyDisplay(\"app.message.dequeue\");\n            const hintText = theme.fg(\"dim\", `↳ ${dequeueHint} to edit all queued messages`);\n            this.pendingMessagesContainer.addChild(new TruncatedText(hintText, 1, 0));\n";
+const PENDING_HINT_AFTER = "            const dequeueHint = this.getAppKeyDisplay(\"app.message.dequeue\");\n            const hintText = theme.fg(\"dim\", `↳ ${dequeueHint} to edit all queued messages`);\n            this.pendingMessagesContainer.addChild(new TruncatedText(hintText, 1, 0));\n            if (busyEnterDelivery() === \"followUp\") {\n                this.pendingMessagesContainer.addChild(new TruncatedText(theme.fg(\"dim\", BUSY_ENTER_STATUS), 1, 0));\n            }\n";
 
 const UI_START_BEFORE = "        // Start the UI before initializing extensions so session_start handlers can use interactive dialogs\n        this.ui.start();\n";
 const UI_START_AFTER = "        // Start the UI before initializing extensions so session_start handlers can use interactive dialogs\n        const bootChromeHref = process.env.RUBATO_BOOT_CHROME_HREF;\n        if (bootChromeHref) {\n            await import(bootChromeHref).then(async (mod) => {\n                if (typeof mod.handoffBootChromeForStockPi === \"function\") await mod.handoffBootChromeForStockPi();\n            }).catch(() => {});\n        }\n        this.ui.start();\n";
@@ -63,30 +65,22 @@ export function patchInteractiveTuiInput(source) {
   next = replaceOnce(next, "                await this.session.prompt(text, { streamingBehavior: \"steer\" });", "                await this.session.prompt(text, { streamingBehavior: busyEnterDelivery() });", "interactive-streaming-delivery");
   next = replaceOnce(next, IM_CLIP_BEFORE, IM_CLIP_AFTER, "interactive-clipboard-image");
   next = replaceOnce(next, IM_PASTE_BEFORE, IM_PASTE_AFTER, "interactive-recall-up");
+  next = replaceOnce(next, PENDING_HINT_BEFORE, PENDING_HINT_AFTER, "interactive-busy-status");
   next = replaceOnce(next, UI_START_BEFORE, UI_START_AFTER, "interactive-boot-chrome-handoff");
   return next;
 }
 
 export const files = Object.freeze([
   // Runtime copies: bootstrap.mjs imports ../tui-input/index.mjs from rubato-features/rubato-components/.
+  // interactive-mode.js imports these same runtime files
+  // (../../../../../../rubato-features/tui-input from dist/modes/interactive)
+  // so factory enabled flags and attachClipboardImage share one module instance.
   ...["index.mjs", "busy-enter.mjs", "images.mjs", "cancel.mjs"].map((name) => Object.freeze({
     target: "runtime",
     version: VERSION,
     path: `rubato-features/tui-input/${name}`,
     sourcePath: fileURLToPath(new URL(`./${name}`, import.meta.url)),
   })),
-  Object.freeze({
-    packageName: AGENT_PACKAGE,
-    version: VERSION,
-    path: "dist/rubato-features/tui-input/busy-enter.mjs",
-    sourcePath: fileURLToPath(new URL("./busy-enter.mjs", import.meta.url)),
-  }),
-  Object.freeze({
-    packageName: AGENT_PACKAGE,
-    version: VERSION,
-    path: "dist/rubato-features/tui-input/images.mjs",
-    sourcePath: fileURLToPath(new URL("./images.mjs", import.meta.url)),
-  }),
 ]);
 
 export const patches = Object.freeze([

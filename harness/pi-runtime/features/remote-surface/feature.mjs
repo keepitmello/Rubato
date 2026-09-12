@@ -1,6 +1,12 @@
 import { fileURLToPath } from "node:url";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { materializeProtocolBundle } from "./protocol-loader.mjs";
 
 const VERSION = "0.85.1";
+const PROTOCOL_BUNDLE = materializeProtocolBundle({
+  dest: join(tmpdir(), "rubato-remote-protocol-feature-bundle", "protocol.mjs"),
+});
 const RUNTIME_FILES = Object.freeze([
   "index.mjs",
   "surface.mjs",
@@ -29,6 +35,12 @@ export const files = Object.freeze([
     version: VERSION,
     path: "rubato-features/remote-surface/interactive-control-surface.mjs",
     sourcePath: fileURLToPath(new URL("../../../rubato-pi/src/interactive-control-surface.mjs", import.meta.url)),
+  }),
+  Object.freeze({
+    target: "runtime",
+    version: VERSION,
+    path: "rubato-features/remote-surface/protocol.mjs",
+    sourcePath: PROTOCOL_BUNDLE,
   }),
 ]);
 

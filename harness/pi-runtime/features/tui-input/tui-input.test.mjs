@@ -6,6 +6,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test, { after } from "node:test";
@@ -82,8 +83,6 @@ test("descriptor is stock-locked and listed on the candidate", async () => {
     "rubato-features/tui-input/busy-enter.mjs",
     "rubato-features/tui-input/images.mjs",
     "rubato-features/tui-input/cancel.mjs",
-    "dist/rubato-features/tui-input/busy-enter.mjs",
-    "dist/rubato-features/tui-input/images.mjs",
   ]);
 });
 
@@ -253,4 +252,11 @@ test("staged patches apply, stay unique, and compose with reload/session-picker"
   buffer.process(Buffer.from([HANGUL_GA[0]]));
   buffer.process(Buffer.from(HANGUL_GA.slice(1)));
   assert.deepEqual(chars, ["가"]);
+  const interactivePath = join(runtime.packages["@earendil-works/pi-coding-agent"].dir, "dist/modes/interactive/interactive-mode.js");
+  const interactiveSource = readFileSync(interactivePath, "utf8");
+  assert.match(interactiveSource, /from "\.\.\/\.\.\/\.\.\/\.\.\/\.\.\/\.\.\/rubato-features\/tui-input\/busy-enter\.mjs"/);
+  assert.match(interactiveSource, /BUSY_ENTER_STATUS/);
+  const fromInteractive = resolve(dirname(interactivePath), "../../../../../../rubato-features/tui-input/busy-enter.mjs");
+  const runtimeBusy = join(staged.root, "rubato-features/tui-input/busy-enter.mjs");
+  assert.equal(realpathSync(fromInteractive), realpathSync(runtimeBusy));
 });
