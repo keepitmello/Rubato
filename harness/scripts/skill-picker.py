@@ -1,16 +1,25 @@
 #!/usr/bin/env python3
-"""skill-picker — fx 카탈로그에 실을 스킬을 고르는 HTML을 만든다.
+"""skill-picker — 현재 스킬 안내문의 크기를 재거나 이전 선택 HTML을 만든다.
 
-fx는 스킬 카탈로그를 16KB로 자른다(context_limits.zig, skill_catalog_bytes).
-넘치면 뒤쪽이 통째로 빠지므로 무엇을 실을지 사람이 골라야 한다.
-
+  python3 harness/scripts/skill-picker.py --check
   python3 harness/scripts/skill-picker.py && open /tmp/skill-picker.html
 
-사용 근거는 세션 로그의 실제 로드로 잡는다. 카탈로그 등재 문자열은 세션마다
-전량 반복되므로 세면 전부 "사용 중"으로 보인다 — exec 인자로 SKILL.md를 읽은
-것만 센다. 로그 스캔은 9.5GB라 몇 분 걸리고, 결과는 CACHE에 남겨 재사용한다.
+--check 는 실제 세션과 같은 코드로 ~/.agents/skills와
+~/.rubato-pi/agent/skills를 읽어 전체 안내문 크기를 계산한다. 사용 기록은
+스캔하지 않는다.
+
+인자 없이 실행하면 세션 로그에서 SKILL.md를 실제로 읽은 기록을 찾아 선택 HTML에
+표시한다. 로그가 크면 몇 분 걸릴 수 있으며 결과는 CACHE에 남겨 재사용한다.
 """
 import json, os, re, subprocess, sys, time
+
+args = sys.argv[1:]
+if args not in ([], ["--check"]):
+    print("usage: skill-picker.py [--check]", file=sys.stderr)
+    sys.exit(2)
+if args == ["--check"]:
+    checker = os.path.join(os.path.dirname(__file__), "skill-catalog-check.mjs")
+    sys.exit(subprocess.run(["node", checker]).returncode)
 
 CACHE = "/tmp/skill-picker-loads"
 SESSIONS = os.path.expanduser("~/.codex/sessions")
