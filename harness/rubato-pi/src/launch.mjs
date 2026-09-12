@@ -115,12 +115,11 @@ export function resolveLaunchAgentDir(env = process.env, home = env.HOME || home
 }
 
 /**
- * stock-pi argv. Candidate already supplies providers, prompt-preset/rules,
+ * stock-pi argv. Candidate already supplies providers, prompt rules,
  * components, and the stock footer. Senpi -e overlays are not passed; the role
  * system prompt IS passed (--system-prompt, identical to the senpi argv) and the
- * candidate's rubato-role-prompt factory injects it on before_agent_start
- * (prompt-preset yields to an explicit system prompt). Keep fullscreen TUI
- * and ~/.agents/skills, then pass user args through.
+ * candidate's rubato-role-prompt factory injects it on before_agent_start.
+ * Keep fullscreen TUI and ~/.agents/skills, then pass user args through.
  */
 export function buildStockPiArgs(userArgs, { env = process.env } = {}) {
   const interactiveTuiArgs = userArgs.some((token) => token === "--mode" || token.startsWith("--mode=")) ||
