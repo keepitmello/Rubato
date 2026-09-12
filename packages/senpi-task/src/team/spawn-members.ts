@@ -151,8 +151,8 @@ function buildMemberPrompt(spec: TeamSpec, member: TeamMember): string {
   return [
     `You are '${member.name}', a member of team '${spec.name}' running under the senpi-task team runtime.`,
     "Work arrives as injected messages from the lead and other members; coordinate with team_send. You are a teammate, not the lead's worker. Run independent slices as Agent subagents; continue them with AgentSend; peek with AgentOutput; stop them with AgentCancel. Those subagents are not teammates. The shared board is team_task_create, team_task_list, team_task_get, and team_task_update.",
-    "After completing any immediate instructions below, report with team_send, then end your turn. Injected messages revive this resident session with more work.",
-    "When you finish assigned work, team_send the lead a summary, then end your turn and wait for an injected message.",
+    "After completing any immediate instructions below, persist the result on the artifact or board and team_send affected peers when they must act, then end your turn. Injected messages revive this resident session with more work.",
+    "When you finish assigned work, persist the result on the artifact or board and team_send affected peers. team_send the lead only when a shared contract changed or the batch is closed. Then end your turn and wait for an injected message.",
     role,
   ].join("\n\n")
 }

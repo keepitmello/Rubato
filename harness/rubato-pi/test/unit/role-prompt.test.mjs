@@ -23,15 +23,12 @@ test("lead prompt names the pi rails and no fx ones", () => {
   assert.match(text, /team_create/);
   assert.match(text, /`cs-agent dispatch` is an emergency route/);
   assert.match(text, /Auth is the rubato broker at `:8788`/);
-  assert.match(text, /report the roster in one message and form the team in the same turn/);
+  assert.match(text, /When a team is live you keep the vantage point/);
+  assert.match(text, /obtain the user's combined intent\/roster confirmation/);
   assert.doesNotMatch(text, /semantic `category`/);
   assert.doesNotMatch(text, /`subagent_type`/);
-  // team_create 승인 절차는 Skill(agent-taskforce) 가 소유하고, 일회성 Agent는
-  // lead 판단으로 바로 쓴다. 문장 대신 그 권한 배치를 고정한다.
-  // 785f6a3f9 reworded the contrast: teams form on veto, the one-off rail needs
-  // no approval, and the owner-discretion sentence lives in runtimes/pi.md now.
-  assert.match(text, /the user vetoes rather than approves/);
-  assert.match(text, /Read Skill\(agent-taskforce\) `LEAD\.md` and `runtimes\/pi\.md` before `team_create`/);
+  // Roster veto and LEAD.md read live in Skill(agent-taskforce) and the
+  // team_create tool text, not in the always-on lead prompt.
   // Phrased "You choose each child's model" until the vocabulary moved from child to
   // agent. The invariant is that the lead owns per-agent model choice, not the noun it
   // was written with — this is the third time this file pinned a sentence and broke on a
@@ -87,8 +84,8 @@ test("teammate prompt points helpers at Agent, not subagent", () => {
   assert.match(text, /choose each agent's model with Skill\(model-guide\)/);
   assert.match(text, /team_send/);
   const piRuntime = readFileSync(join(promptSourceRoot, "../skills/agent-taskforce/runtimes/pi.md"), "utf8");
-  assert.match(piRuntime, /completion notifications deliver terminal results/);
-  assert.match(piRuntime, /`AgentOutput` reads an immediate midpoint snapshot/);
+  assert.match(piRuntime, /completion notifications deliver a status ping/);
+  assert.match(piRuntime, /Owners peek their own helpers with `AgentOutput`/);
   assert.match(piRuntime, /Rubato team tasklist on disk/);
   assert.match(piRuntime, /Omit `effort` unless you need a manual override/);
   assert.doesNotMatch(text, /`AgentOutput` waits/);

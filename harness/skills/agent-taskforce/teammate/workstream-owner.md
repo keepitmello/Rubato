@@ -33,7 +33,7 @@ Contact affected peers directly by the runtime's assigned teammate name or ident
 
 Message only when someone must act: an interface changed, verified evidence changes another stream's judgment, a decision is needed, a handoff is ready, or a blocker needs action. Keep long logs and trial-and-error in artifacts; send the conclusion, impact, and path or reproduction command.
 
-Keep visible status current at meaningful checkpoints. Before a long-running build, loop, or measurement, tell the lead what is running through the message channel.
+Keep visible status current at meaningful checkpoints. Before a long-running build, loop, or measurement, tell affected peers or the status surface what is running.
 
 ## When you escalate
 
