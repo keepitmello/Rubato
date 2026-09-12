@@ -193,6 +193,36 @@ test("rename failure restores the current install", async (t) => {
   assert.equal(await readFile(join(dest, "ready"), "utf8"), "old");
 });
 
+test("a failed snapshot rotation keeps the previous install restorable", async (t) => {
+  const home = await scratch(t);
+  const dest = join(home, "engine");
+  await mkdir(dest); await writeFile(join(dest, "ready"), "old");
+  await mkdir(`${dest}.previous`); await writeFile(join(`${dest}.previous`, "ready"), "older");
+  await assert.rejects(stageAndPublishInstall(dest, { mode: "update", retire,
+    async build(stage) { await mkdir(stage); await writeFile(join(stage, "ready"), "new"); },
+    async move(from, to) {
+      if (from === dest && to === `${dest}.previous`) throw new Error("injected snapshot rotation");
+      return rename(from, to);
+    },
+  }), /injected snapshot rotation/);
+  assert.equal(await readFile(join(dest, "ready"), "utf8"), "old");
+  assert.equal(await readFile(join(`${dest}.previous`, "ready"), "utf8"), "older");
+  assert.deepEqual((await readdir(home)).sort(), ["engine", "engine.previous"]);
+});
+
+test("a published update retires the superseded snapshot", async (t) => {
+  const home = await scratch(t);
+  const dest = join(home, "engine");
+  await mkdir(dest); await writeFile(join(dest, "ready"), "old");
+  await mkdir(`${dest}.previous`); await writeFile(join(`${dest}.previous`, "ready"), "older");
+  await stageAndPublishInstall(dest, { mode: "update", retire,
+    async build(stage) { await mkdir(stage); await writeFile(join(stage, "ready"), "new"); },
+  });
+  assert.equal(await readFile(join(dest, "ready"), "utf8"), "new");
+  assert.equal(await readFile(join(`${dest}.previous`, "ready"), "utf8"), "old");
+  assert.deepEqual((await readdir(home)).sort(), ["engine", "engine.previous"]);
+});
+
 test("failed first install leaves a reusable destination", async (t) => {
   const dest = join(await scratch(t), "engine");
   await assert.rejects(stageAndPublishInstall(dest, { mode: "install", retire,
