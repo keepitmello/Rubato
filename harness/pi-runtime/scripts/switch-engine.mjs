@@ -83,12 +83,12 @@ export async function switchEngine({ home, engine = "stock-pi", env = process.en
     }
   }
   const current = await readEngineMarker(resolvedHome);
-  const previous = current?.engine === "senpi" || current?.engine === "stock-pi" ? current.engine : "senpi";
+  const previous = current?.engine === "senpi" || current?.engine === "stock-pi" ? current.engine : "stock-pi";
   const marker = {
     engine,
     installedAt: current?.installedAt ?? new Date().toISOString(),
     switchedAt: new Date().toISOString(),
-    previous: previous === engine ? (current?.previous ?? (engine === "stock-pi" ? "senpi" : "stock-pi")) : previous,
+    previous: previous === engine ? (current?.previous ?? "stock-pi") : previous,
     installRoot: dest,
   };
   await writeEngineMarker(resolvedHome, marker);
@@ -99,7 +99,9 @@ export async function rollbackEngine({ home, env = process.env } = {}) {
   const resolvedHome = resolveSwitchHome({ home, env });
   const current = await readEngineMarker(resolvedHome);
   if (!current) throw new Error("No engine marker to roll back");
-  const previous = current.previous === "stock-pi" || current.previous === "senpi" ? current.previous : "senpi";
+  // Senpi rollback is retired (user decree 2026-09-13): there is no senpi engine to go back to.
+  if (current.previous === "senpi") throw new Error("rubato: cannot roll back to the retired senpi engine; run `rubato build` or switch-engine update to reinstall stock-pi");
+  const previous = current.previous === "stock-pi" ? current.previous : "stock-pi";
   const marker = {
     engine: previous, installedAt: current.installedAt, switchedAt: new Date().toISOString(),
     previous: current.engine, installRoot: current.installRoot ?? installRoot(resolvedHome, env),
@@ -120,6 +122,7 @@ export async function engineStatus({ home, env = process.env, selectNode } = {})
     installed: isValidInstalledCandidateReceipt(receipt, dest), marker,
     engine: selection.engine, requested: selection.requested, source: selection.source,
     fallback: selection.fallback, notice: selection.notice, warning: selection.warning,
+    error: selection.error ?? null,
     nodeAvailable: Boolean(selection.node), node: selection.node,
     receipt: receipt ? {
       version: receipt.version, state: receipt.state, stockVersion: receipt.stockVersion,

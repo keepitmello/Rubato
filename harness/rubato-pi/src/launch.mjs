@@ -15,10 +15,10 @@ import { replaceSystemPrompt } from "./system-prompt.mjs";
 import { SKILL_DIRS } from "./skills-section.mjs";
 import { enginePackageJson, senpiCli, senpiCliMain, senpiPackageJson } from "./engine-paths.mjs";
 import { releaseBootChrome, setBootChromeStatus } from "./boot-chrome.mjs";
-import { resolveExecutionEngine, STOCK_PI_FALLBACK_NOTICE } from "./engine-selection.mjs";
+import { resolveExecutionEngine } from "./engine-selection.mjs";
 export {
   isValidInstalledCandidateReceipt, readStockEngineReceipt, stockEngineReceiptPresent,
-  readEngineMarker, resolveLaunchEngine, STOCK_PI_FALLBACK_NOTICE,
+  readEngineMarker, resolveLaunchEngine,
 } from "./engine-selection.mjs";
 export { nodeSatisfiesCandidate } from "./select-node.mjs";
 
@@ -204,10 +204,6 @@ export function applyStockPiProcessEnv(nextEnv) {
   for (const key of STRIP_SENPI_KEYS) delete process.env[key];
 }
 
-function emitEngineNotice(notice) {
-  if (notice) console.error(notice);
-}
-
 function prepareAgentDir(agentDir) {
   mkdirSync(agentDir, { recursive: true });
   if (!sessionDefaultsLookCurrent(agentDir)) {
@@ -232,16 +228,18 @@ export async function spawnRubatoPi({ args = process.argv.slice(2), env = proces
   const selection = resolveExecutionEngine({ env });
   const node = selection.node;
   if (!node) throw new Error("rubato-pi needs Node.js 24+ already installed. Default Node was not changed.");
+  // Senpi launch is retired (user decree 2026-09-13): a broken stock-pi install
+  // fails loud here instead of silently falling back to senpi.
+  if (selection.error) throw new Error(selection.error);
   const stockPiReady = selection.engine === "stock-pi";
   if (selection.warning) console.error(selection.warning);
-  emitEngineNotice(selection.notice);
   prepareAgentDir(profileDir);
   setBootChromeStatus("엔진을 불러오는 중");
 
   if (stockPiReady) {
     const entry = selection.entry;
     if (!entry || !existsSync(entry)) {
-      emitEngineNotice(STOCK_PI_FALLBACK_NOTICE);
+      throw new Error(`rubato: stock-pi entry is missing; run \`rubato build\` to reinstall it (senpi fallback is retired)`);
     } else {
       const argv = [entry, ...buildStockPiArgs(args, { env })];
       const nextEnv = stockPiLaunchEnv(env, profileDir);
@@ -256,6 +254,9 @@ export async function spawnRubatoPi({ args = process.argv.slice(2), env = proces
     }
   }
 
+  // Retired: the senpi branch below is unreachable (selection.error throws above
+  // whenever stock-pi is not launchable). It stays until the senpi excision
+  // workstream removes the senpi launch path, its args builder, and their tests.
   assertExactPin();
   // 우리가 소유한 전역 확장(현재 tps)을 senpi 가 자기 기본판으로 되돌리기 전에 깐다.
   ensureAgentExtensions(profileDir);

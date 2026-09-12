@@ -4,7 +4,6 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  STOCK_PI_FALLBACK_NOTICE,
   adapterPath,
   buildSenpiArgs,
   buildStockPiArgs,
@@ -64,38 +63,41 @@ test("valid receipt defaults the launcher to stock-pi", () => {
     assert.equal(resolved.source, "receipt");
     assert.equal(resolved.fallback, false);
     assert.equal(resolved.notice, null);
+    assert.equal(resolved.error, null);
     assert.equal(resolved.entry, planted.entry);
   });
 });
 
-test("missing receipt defaults to senpi without a fallback notice", () => {
+test("missing receipt stays on stock-pi with a hard repair error (no senpi fallback)", () => {
   withHome((home) => {
     const resolved = resolveLaunchEngine({ env: { HOME: home } });
-    assert.equal(resolved.engine, "senpi");
+    assert.equal(resolved.engine, "stock-pi");
     assert.equal(resolved.source, "default");
     assert.equal(resolved.fallback, false);
     assert.equal(resolved.notice, null);
+    assert.match(resolved.error, /not installed/);
+    assert.equal(resolved.entry, null);
   });
 });
 
-test("RUBATO_ENGINE=stock-pi with no receipt falls back to senpi with a notice", () => {
+test("RUBATO_ENGINE=stock-pi with no receipt is a hard repair error", () => {
   withHome((home) => {
     const resolved = resolveLaunchEngine({ env: { HOME: home, RUBATO_ENGINE: "stock-pi" } });
-    assert.equal(resolved.engine, "senpi");
-    assert.equal(resolved.fallback, true);
-    assert.equal(resolved.notice, STOCK_PI_FALLBACK_NOTICE);
+    assert.equal(resolved.engine, "stock-pi");
     assert.equal(resolved.source, "env");
+    assert.match(resolved.error, /not installed/);
   });
 });
 
-test("RUBATO_ENGINE=senpi wins even when a valid receipt exists", () => {
+test("RUBATO_ENGINE=senpi is retired even when a valid receipt exists", () => {
   withHome((home) => {
     plantReceipt(home);
     const resolved = resolveLaunchEngine({ env: { HOME: home, RUBATO_ENGINE: "senpi" } });
-    assert.equal(resolved.engine, "senpi");
+    assert.equal(resolved.engine, "stock-pi");
     assert.equal(resolved.source, "env");
     assert.equal(resolved.fallback, false);
     assert.equal(resolved.notice, null);
+    assert.match(resolved.error, /retired/);
   });
 });
 
@@ -109,18 +111,18 @@ test("engine.json marker selects stock-pi when the receipt is valid", () => {
     const resolved = resolveLaunchEngine({ env: { HOME: home } });
     assert.equal(resolved.engine, "stock-pi");
     assert.equal(resolved.source, "marker");
+    assert.equal(resolved.error, null);
     assert.equal(resolved.entry, planted.entry);
   });
 });
 
-test("engine.json stock-pi with a missing install falls back with a notice", () => {
+test("engine.json stock-pi with a missing install is a hard repair error", () => {
   withHome((home) => {
     mkdirSync(join(home, ".rubato-pi"), { recursive: true });
     writeFileSync(join(home, ".rubato-pi/engine.json"), JSON.stringify({ engine: "stock-pi", previous: "senpi" }));
     const resolved = resolveLaunchEngine({ env: { HOME: home } });
-    assert.equal(resolved.engine, "senpi");
-    assert.equal(resolved.fallback, true);
-    assert.equal(resolved.notice, STOCK_PI_FALLBACK_NOTICE);
+    assert.equal(resolved.engine, "stock-pi");
+    assert.match(resolved.error, /not installed/);
   });
 });
 
@@ -130,8 +132,9 @@ test("env RUBATO_ENGINE overrides the marker", () => {
     mkdirSync(join(home, ".rubato-pi"), { recursive: true });
     writeFileSync(join(home, ".rubato-pi/engine.json"), JSON.stringify({ engine: "stock-pi", previous: "senpi" }));
     const resolved = resolveLaunchEngine({ env: { HOME: home, RUBATO_ENGINE: "senpi" } });
-    assert.equal(resolved.engine, "senpi");
+    assert.equal(resolved.engine, "stock-pi");
     assert.equal(resolved.source, "env");
+    assert.match(resolved.error, /retired/);
   });
 });
 
