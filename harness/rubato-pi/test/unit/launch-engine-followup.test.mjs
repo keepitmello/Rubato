@@ -4,7 +4,6 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  STOCK_PI_FALLBACK_NOTICE,
   applyStockPiProcessEnv,
   resolveLaunchEngine,
   stockPiLaunchEnv,
@@ -28,23 +27,24 @@ function withHome(fn) {
   try { return fn(home); } finally { rmSync(home, { recursive: true, force: true }); }
 }
 
-test("a present but invalid receipt falls back to senpi with a notice", () => {
+test("a present but invalid receipt is a hard repair error (no senpi fallback)", () => {
   withHome((home) => {
     const planted = plantReceipt(home);
     rmSync(planted.entry);
     const resolved = resolveLaunchEngine({ env: { HOME: home } });
-    assert.equal(resolved.engine, "senpi");
-    assert.equal(resolved.fallback, true);
-    assert.equal(resolved.notice, STOCK_PI_FALLBACK_NOTICE);
+    assert.equal(resolved.engine, "stock-pi");
+    assert.match(resolved.error, /not valid/);
+    assert.equal(resolved.entry, null);
   });
 });
 
 test("unknown RUBATO_ENGINE warns and uses the default rule", () => {
   withHome((home) => {
     const resolved = resolveLaunchEngine({ env: { HOME: home, RUBATO_ENGINE: "stockpi" } });
-    assert.equal(resolved.engine, "senpi");
+    assert.equal(resolved.engine, "stock-pi");
     assert.match(resolved.warning, /unknown RUBATO_ENGINE=stockpi/);
     assert.equal(resolved.notice, null);
+    assert.match(resolved.error, /not installed/);
   });
 });
 

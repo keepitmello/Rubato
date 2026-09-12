@@ -4,8 +4,9 @@ import { homedir, userInfo } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { nodeSatisfiesCandidate, selectNodeForEngine } from "./select-node.mjs";
 
-export const STOCK_PI_FALLBACK_NOTICE = "rubato: stock-pi candidate is not installed or invalid; falling back to senpi";
-export const STOCK_PI_NODE_FALLBACK_NOTICE = "rubato: no Node ^24.15 || >=26 available for stock-pi; falling back to senpi";
+// Senpi fallback is retired (user decree 2026-09-13): rubato launches on
+// stock-pi or not at all. There is no fallback notice anymore; an unusable
+// install is a hard error carrying its repair.
 
 function stateHome(env) {
   if (typeof env.HOME === "string" && env.HOME.trim() !== "") return env.HOME;
@@ -50,33 +51,41 @@ export function resolveLaunchEngine({ env = process.env } = {}) {
   const valid = isValidInstalledCandidateReceipt(receipt, root);
   let explicit = typeof env.RUBATO_ENGINE === "string" ? env.RUBATO_ENGINE.trim() : "";
   let warning = null;
-  if (explicit && explicit !== "senpi" && explicit !== "stock-pi") {
-    warning = `rubato: unknown RUBATO_ENGINE=${explicit}; using default engine selection`;
+  let error = null;
+  const explicitSenpi = explicit === "senpi";
+  if (explicitSenpi) {
+    error = "rubato: the senpi engine is retired and can no longer run rubato; unset RUBATO_ENGINE to use stock-pi";
+    explicit = "";
+  } else if (explicit && explicit !== "stock-pi") {
+    warning = `rubato: unknown RUBATO_ENGINE=${explicit}; using stock-pi`;
     explicit = "";
   }
   const marker = readEngineMarker(env);
   let requested;
   let source;
-  if (explicit === "senpi" || explicit === "stock-pi") {
-    requested = explicit;
+  // The only launchable engine is stock-pi. requested/source still record where
+  // the request came from for status and diagnostics.
+  requested = "stock-pi";
+  if (explicit === "stock-pi" || explicitSenpi) {
     source = "env";
   } else if (marker?.engine === "senpi" || marker?.engine === "stock-pi") {
-    requested = marker.engine;
     source = "marker";
   } else if (valid) {
-    requested = "stock-pi";
     source = "receipt";
   } else {
-    requested = "senpi";
     source = "default";
   }
-  const notice = (requested === "stock-pi" && !valid) || (present && !valid) ? STOCK_PI_FALLBACK_NOTICE : null;
-  const engine = requested === "stock-pi" && valid ? "stock-pi" : "senpi";
+  if (error === null && !valid) {
+    error = present
+      ? `rubato: stock-pi engine at ${root} is not valid; run \`rubato build\` to reinstall it (senpi fallback is retired)`
+      : `rubato: stock-pi engine is not installed at ${root}; run \`rubato build\` to install it (senpi fallback is retired)`;
+  }
+  const engine = "stock-pi";
   return {
-    engine, requested, source, root, warning,
-    fallback: engine !== requested || Boolean(notice),
-    notice: engine === "stock-pi" ? null : notice,
-    entry: engine === "stock-pi"
+    engine, requested, source, root, warning, error,
+    fallback: false,
+    notice: null,
+    entry: valid
       ? (isAbsolute(receipt.candidateEntry) ? receipt.candidateEntry : join(root, receipt.candidateEntry))
       : null,
   };
@@ -85,8 +94,8 @@ export function resolveLaunchEngine({ env = process.env } = {}) {
 export function resolveExecutionEngine({ env = process.env, selectNode = selectNodeForEngine } = {}) {
   const selection = resolveLaunchEngine({ env });
   const node = selectNode(selection.engine);
-  if (selection.engine === "stock-pi" && (!node || !nodeSatisfiesCandidate(node.text))) {
-    return { ...selection, engine: "senpi", entry: null, fallback: true, notice: STOCK_PI_NODE_FALLBACK_NOTICE, node };
+  if (!node || !nodeSatisfiesCandidate(node.text)) {
+    return { ...selection, entry: null, error: selection.error ?? "rubato: no Node ^24.15 || >=26 available for stock-pi (senpi fallback is retired)", node };
   }
   return { ...selection, node };
 }
