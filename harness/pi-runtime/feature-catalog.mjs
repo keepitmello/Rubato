@@ -34,6 +34,7 @@ const catalog = Object.freeze({
   "tui-input": { requires: [], load: () => import("./features/tui-input/patches.mjs") },
   "turn-chrome": { requires: [], load: () => import("./features/turn-chrome/patches.mjs") },
   statusline: { requires: [], load: () => import("./features/statusline/patches.mjs") },
+  "startup-chrome": { requires: ["statusline"], load: () => import("./features/startup-chrome/patches.mjs") },
   "tui-autocomplete": { requires: [], load: () => import("./features/tui-autocomplete/patches.mjs") },
   "model-picker": { requires: [], load: () => import("./features/model-picker/patches.mjs") },
   "thinking-levels": { requires: [], load: () => import("./features/thinking-levels/patches.mjs") },
