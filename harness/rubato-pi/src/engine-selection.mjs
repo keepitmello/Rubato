@@ -7,6 +7,14 @@ import { nodeSatisfiesCandidate, selectNodeForEngine } from "./select-node.mjs";
 // Senpi fallback is retired (user decree 2026-09-13): rubato launches on
 // stock-pi or not at all. There is no fallback notice anymore; an unusable
 // install is a hard error carrying its repair.
+//
+// The repair has to name a command that installs the candidate unconditionally.
+// Two near misses: `rubato build` assembles the role system prompts
+// (harness/prompts/build.sh) and never touches the engine, and `rubato update`
+// returns early when the checkout is already current, so it cannot repair a
+// missing install. `npm run build` goes straight to build-active-engine.mjs →
+// updateStockEngine, which is what a broken install needs.
+export const ENGINE_REPAIR_HINT = "run `npm run build` inside the rubato checkout";
 
 function stateHome(env) {
   if (typeof env.HOME === "string" && env.HOME.trim() !== "") return env.HOME;
@@ -77,8 +85,8 @@ export function resolveLaunchEngine({ env = process.env } = {}) {
   }
   if (error === null && !valid) {
     error = present
-      ? `rubato: stock-pi engine at ${root} is not valid; run \`rubato build\` to reinstall it (senpi fallback is retired)`
-      : `rubato: stock-pi engine is not installed at ${root}; run \`rubato build\` to install it (senpi fallback is retired)`;
+      ? `rubato: stock-pi engine at ${root} is not valid; ${ENGINE_REPAIR_HINT} to reinstall it`
+      : `rubato: stock-pi engine is not installed at ${root}; ${ENGINE_REPAIR_HINT} to install it`;
   }
   const engine = "stock-pi";
   return {

@@ -2,22 +2,20 @@
 
 ## 기본 엔진 전환
 
-후보(stock Pi 0.85.1 + 33 features)는 완성됐고 **2026-09-11 13:47Z에 라이브 기본 실행기로 전환됐다**(`rubato/base` `615f6dd61`). 제품 런처는 `RUBATO_ENGINE=stock-pi|senpi`를 읽는다. 유효한 `~/.rubato-pi/stock-engine/rubato-install.json`이 있으면 기본은 stock-pi이고, 없거나 깨지면 senpi로 떨어지며 한 줄 알림을 낸다. 전환/재설치는 아래 한 명령이다(전제: `harness/pi-runtime`에 `npm ci --workspaces=false --ignore-scripts`가 돼 있어야 한다 — 없으면 `cmd-shim`을 못 찾는다). 전환 read-back: anthropic/claude-opus-5·xai/grok-4.6 실제 응답 성공, openai-codex는 디스크 refresh token이 stale이라 재로그인 필요(엔진 무관). 전환 기록 정본은 lab `case-studies/runtime-migration/2026-09-11-stock-pi-cutover-record.md`.
+후보(stock Pi 0.85.1 + 33 features)는 완성됐고 **2026-09-11 13:47Z에 라이브 기본 실행기로 전환됐다**(`rubato/base` `615f6dd61`). **2026-09-13에 senpi 폴백을 폐기했다**: 실행기는 stock-pi 하나뿐이다. 유효한 `~/.rubato-pi/stock-engine/rubato-install.json`이 없거나 깨지면 폴백 없이 수리 명령을 든 에러로 멈춘다(`rubato update`, 또는 체크아웃에서 `npm run build`). `RUBATO_ENGINE=senpi`도 같은 이유로 거부된다. 후보 설치는 `install.sh`와 `rubato update`가 맡고, 둘 다 `build-active-engine.mjs`를 거친다(전제: `harness/pi-runtime`에 `npm ci --workspaces=false --ignore-scripts`가 돼 있어야 한다 — 없으면 `cmd-shim`을 못 찾는다). 전환 read-back: anthropic/claude-opus-5·xai/grok-4.6 실제 응답 성공, openai-codex는 디스크 refresh token이 stale이라 재로그인 필요(엔진 무관). 전환 기록 정본은 lab `case-studies/runtime-migration/2026-09-11-stock-pi-cutover-record.md`.
 
 ```sh
 cd harness/pi-runtime
 env -u NODE_OPTIONS -u NODE_COMPILE_CACHE node scripts/switch-engine.mjs switch
 ```
 
-`switch`는 후보가 없으면 `~/.rubato-pi/stock-engine`에 설치한 뒤 `~/.rubato-pi/engine.json` 마커를 쓴다. 롤백은 마커만 되돌리고 설치는 남긴다.
+`switch`는 후보가 없으면 `~/.rubato-pi/stock-engine`에 설치한 뒤 `~/.rubato-pi/engine.json` 마커를 쓴다. 폴백 폐기 이후 마커의 `previous`는 항상 `stock-pi`이고, `rollback`은 설치를 남긴 채 마커만 되돌린다.
 
 ```sh
 node scripts/switch-engine.mjs rollback
-# 같은 프로필에서 임시로:
-RUBATO_ENGINE=senpi rubato
 ```
 
-전환 후 세션은 stock-pi가 쓴다. 같은 프로필에 `RUBATO_ENGINE=senpi`는 롤백 전용이다(double-writer). splash/boot chrome은 런처가 유지한다. 두 엔진은 같은 `agent/auth.json`을 공유하므로 `switch` 전에 실행 중인 Senpi 루바토 세션을 먼저 닫는다. 토큰 회전은 서버 측이라 롤백해도 이전 토큰은 돌아오지 않는다 — `refresh_token_reused`가 보이면 `/login`·`/gpt-account`로 재로그인한다.
+senpi로 돌아가는 경로는 없다. 폐기 이전에 쓰인 마커가 `previous: "senpi"`를 들고 있으면 `rollback`은 그 사실을 말하며 거부한다. splash/boot chrome은 런처가 유지한다. 토큰 회전은 서버 측이라 이전 토큰은 돌아오지 않는다 — `refresh_token_reused`가 보이면 `/login`·`/gpt-account`로 재로그인한다.
 
 알려진 한계: `@code-yeongyu/senpi-pty`는 선언된 런타임 의존이며 교체는 사용자 보류. 후보는 `fullRubatoParity: false`. stock-pi 경로는 Senpi `-e` overlay·no-changelog 로더를 넘기지 않는다. `--system-prompt`와 `rubato-role-prompt` factory가 제품 role prompt를 주입하고, 후보 `prompt-preset`은 그 값에 양보한다. `~/.agents/skills`와 `--tui-mode fullscreen`은 그대로 argv로 넘긴다.
 
