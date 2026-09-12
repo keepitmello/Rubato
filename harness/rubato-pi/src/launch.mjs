@@ -15,10 +15,10 @@ import { replaceSystemPrompt } from "./system-prompt.mjs";
 import { SKILL_DIRS } from "./skills-section.mjs";
 import { enginePackageJson, senpiCli, senpiCliMain, senpiPackageJson } from "./engine-paths.mjs";
 import { releaseBootChrome, setBootChromeStatus } from "./boot-chrome.mjs";
-import { resolveExecutionEngine } from "./engine-selection.mjs";
+import { ENGINE_REPAIR_HINT, resolveExecutionEngine } from "./engine-selection.mjs";
 export {
   isValidInstalledCandidateReceipt, readStockEngineReceipt, stockEngineReceiptPresent,
-  readEngineMarker, resolveLaunchEngine,
+  readEngineMarker, resolveLaunchEngine, ENGINE_REPAIR_HINT,
 } from "./engine-selection.mjs";
 export { nodeSatisfiesCandidate } from "./select-node.mjs";
 
@@ -227,7 +227,7 @@ export async function spawnRubatoPi({ args = process.argv.slice(2), env = proces
   const profileDir = agentDir ?? resolveLaunchAgentDir(env);
   const selection = resolveExecutionEngine({ env });
   const node = selection.node;
-  if (!node) throw new Error("rubato-pi needs Node.js 24+ already installed. Default Node was not changed.");
+  if (!node) throw new Error("rubato-pi needs Node.js ^24.15 || >=26 already installed. Default Node was not changed.");
   // Senpi launch is retired (user decree 2026-09-13): a broken stock-pi install
   // fails loud here instead of silently falling back to senpi.
   if (selection.error) throw new Error(selection.error);
@@ -239,7 +239,7 @@ export async function spawnRubatoPi({ args = process.argv.slice(2), env = proces
   if (stockPiReady) {
     const entry = selection.entry;
     if (!entry || !existsSync(entry)) {
-      throw new Error(`rubato: stock-pi entry is missing; run \`rubato build\` to reinstall it (senpi fallback is retired)`);
+      throw new Error(`rubato: stock-pi entry is missing; ${ENGINE_REPAIR_HINT} to reinstall it`);
     } else {
       const argv = [entry, ...buildStockPiArgs(args, { env })];
       const nextEnv = stockPiLaunchEnv(env, profileDir);

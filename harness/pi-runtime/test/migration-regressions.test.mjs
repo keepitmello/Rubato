@@ -12,8 +12,11 @@ import { stageAndPublishInstall } from "../scripts/install-transaction.mjs";
 import { sourceFingerprint } from "../scripts/source-fingerprint.mjs";
 import { engineStatus, installStockEngine, switchEngine, updateStockEngine } from "../scripts/switch-engine.mjs";
 import { buildActiveEngine } from "../../scripts/build-active-engine.mjs";
-import { resolveExecutionEngine, resolveLaunchEngine } from "../../rubato-pi/src/engine-selection.mjs";
+import { ENGINE_REPAIR_HINT, resolveExecutionEngine, resolveLaunchEngine } from "../../rubato-pi/src/engine-selection.mjs";
 import { nodeSatisfiesCandidate, parseVersionText, pickNode, selectNodeForEngine } from "../../rubato-pi/src/select-node.mjs";
+import { fileURLToPath } from "node:url";
+
+const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
 
 async function scratch(t) {
   const root = await mkdtemp(join(tmpdir(), "rubato-migration-regression-"));
@@ -22,6 +25,49 @@ async function scratch(t) {
 }
 const retire = (path) => rm(path, { recursive: true, force: true });
 const node26 = parseVersionText("v26.0.0", "/fixture/node26");
+
+/**
+ * The senpi fallback was retired, so an unusable install stops the session. That
+ * is only survivable if the error names a command that installs the candidate
+ * unconditionally. Two near misses are already on record: `rubato build`
+ * assembles the role system prompts and never touches the engine, and
+ * `rubato update` returns early when the checkout is current, so it repairs
+ * nothing for the user whose install is simply broken. This pins the hint to
+ * the wiring rather than to a string.
+ */
+test("the engine repair hint names a command that unconditionally installs the candidate", async () => {
+  const launcher = await readFile(join(repoRoot, "harness/scripts/rubato-pi.sh"), "utf8");
+  const buildSubcommand = /if \[ "\$\{1-\}" = "build" \]; then\s*\n\s*shift\s*\n\s*exec "([^"]+)"/.exec(launcher);
+  assert.ok(buildSubcommand, "rubato-pi.sh no longer dispatches a `build` subcommand the way this test reads it");
+  assert.match(buildSubcommand[1], /prompts\/build\.sh$/, "`rubato build` is the prompt builder");
+  assert.ok(!ENGINE_REPAIR_HINT.includes("rubato build"), "the hint must not send users to the prompt builder");
+
+  const update = await readFile(join(repoRoot, "harness/scripts/rubato-update.sh"), "utf8");
+  assert.match(update, /이미 최신입니다/, "rubato update still returns early when the checkout is current");
+  assert.ok(!ENGINE_REPAIR_HINT.includes("rubato update"), "a conditional command cannot be the repair route");
+
+  const pkg = JSON.parse(await readFile(join(repoRoot, "package.json"), "utf8"));
+  assert.match(pkg.scripts.build, /build-active-engine\.mjs/, "`npm run build` is the installer");
+  assert.ok(ENGINE_REPAIR_HINT.includes("npm run build"), "the hint names that installer");
+});
+
+/**
+ * Separate concern from the hint: the two paths that are supposed to leave a
+ * launchable engine behind must actually run the installer. A fresh clone that
+ * follows install.sh and then hard-errors on a missing engine is the hole this
+ * closes; update keeps the candidate in step with pulled sources.
+ */
+test("install and update both reach the stock candidate installer", async () => {
+  const install = await readFile(join(repoRoot, "install.sh"), "utf8");
+  assert.match(install, /build-active-engine\.mjs/, "a fresh install must leave a launchable engine behind");
+
+  const update = await readFile(join(repoRoot, "harness/scripts/rubato-update.sh"), "utf8");
+  assert.match(update, /build-active-engine\.mjs/, "update must refresh the only launchable engine");
+  // Gated like every other regeneration step. Running it unconditionally once
+  // aborted the update before prompts/shell/skills could regenerate.
+  assert.match(update, /need_candidate=0/, "the step has a need_ flag");
+  assert.match(update, /\[ "\$need_candidate" = 1 \]/, "and the step is gated on it");
+});
 
 for (const action of ["write", "edit"]) {
   test(`${action} preserves executable permission bits`, async (t) => {

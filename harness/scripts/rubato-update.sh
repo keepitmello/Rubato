@@ -96,7 +96,7 @@ printf '\n%s== 새 커밋 %s개 ==%s\n' "$BOLD" "$BEHIND" "$RST"
 git log --oneline --no-decorate "HEAD..origin/$BRANCH" | sed 's/^/  /'
 
 CHANGED="$(git diff --name-only "HEAD..origin/$BRANCH")"
-need_deps=0; need_prompts=0; need_engine=0; need_shell=0; need_extensions=0; need_hub=0
+need_deps=0; need_prompts=0; need_engine=0; need_shell=0; need_extensions=0; need_hub=0; need_candidate=0
 echo "$CHANGED" | grep -Eq '^(package\.json|bun\.lock|harness/rubato-pi/package\.json)$' && need_deps=1
 echo "$CHANGED" | grep -Eq '^harness/prompts/' && need_prompts=1
 # 자동 로드되는 사용자 확장. 설치기 자신이 바뀌어도 다시 깐다 — 설치 규칙이
@@ -105,6 +105,9 @@ echo "$CHANGED" | grep -Eq '^(harness/extensions/|harness/scripts/install-extens
 # engine source뿐 아니라 조립 규칙 자체가 바뀌어도 다시 만든다. builder만 바뀐
 # 업데이트를 건너뛰면 옛 manifest/import map을 신선하다고 오판한다.
 echo "$CHANGED" | grep -Eq '^(packages/|harness/scripts/build-engine\.mjs$)' && need_engine=1
+# stock-pi 후보는 harness/ 와 packages/ 전체를 지문으로 삼는다(source-fingerprint.mjs
+# 의 ROOTS). 그 안의 무엇이든 바뀌면 설치본이 새 소스와 어긋나므로 다시 깐다.
+echo "$CHANGED" | grep -Eq '^(package\.json$|bun\.lock$|harness/|packages/)' && need_candidate=1
 # 셸 설정은 alias 블록과 cmux Vault 등록이다. 둘 다 내 집(~/.zshrc, ~/.config/cmux)
 # 을 고치는 일이라 소스를 받는 것만으로는 반영되지 않는다.
 # install.sh 가 alias 목록을 들고 있고, scripts/ 에는 alias 가 가리키는 실체와
@@ -133,9 +136,10 @@ echo "  번들 스킬 → ~/.agents/skills"
 [ "$need_extensions" = 1 ] && echo "  번들 확장 → agentDir/extensions"
 [ "$need_shell" = 1 ]   && echo "  셸 alias 블록 · cmux 세션 복원"
 [ "$need_engine" = 1 ]  && echo "  엔진 플러그인 빌드 ${DIM}(몇 분 걸려요)${RST}"
+[ "$need_candidate" = 1 ] && echo "  stock-pi 엔진 설치 ${DIM}(몇 분 걸려요)${RST}"
 [ "$need_aside" = 1 ]   && echo "  Aside 프록시 재시작"
 [ "$need_hub" = 1 ]     && echo "  remote hub 재시작"
-[ "$need_deps$need_prompts$need_extensions$need_engine$need_shell$need_aside$need_hub" = "0000000" ] && echo "  ${DIM}그 외는 소스만 받으면 돼요${RST}"
+[ "$need_deps$need_prompts$need_extensions$need_engine$need_shell$need_aside$need_hub$need_candidate" = "00000000" ] && echo "  ${DIM}그 외는 소스만 받으면 돼요${RST}"
 
 # 로컬 수정이 있어도 멈추지 않는다.
 #
@@ -329,6 +333,23 @@ if [ "$need_engine" = 1 ]; then
     || fail "엔진 빌드에 실패했습니다. 손으로: node harness/scripts/build-engine.mjs --force"
   "$NODE" "$HARNESS/scripts/build-engine.mjs" --check >/dev/null 2>&1 \
     && ok "엔진 플러그인" || fail "엔진 산출물이 새 소스와 맞지 않습니다."
+fi
+
+# 세션이 실제로 도는 것은 stock-pi 후보다(senpi 폴백 폐기). 새 소스를 받아
+# 놓고 후보를 그대로 두면 낡은 후보로 도는데, 폴백이 있던 시절과 달리 이제는
+# 되돌아갈 자리가 없다. --check 는 지문만 비교하므로 이미 맞으면 즉시 끝난다.
+# 설치기가 없는 체크아웃(구 리비전·부분 트리)에서는 건너뛴다 — 여기서 죽으면
+# 나머지 재생성이 통째로 막힌다.
+if [ "$need_candidate" = 1 ] && [ -f "$HARNESS/scripts/build-active-engine.mjs" ]; then
+  [ -n "$NODE" ] || fail "node 가 없어 stock-pi 엔진을 설치할 수 없습니다. 소스는 받았지만 업데이트는 완료되지 않았습니다."
+  if "$NODE" "$HARNESS/scripts/build-active-engine.mjs" --check >/dev/null 2>&1; then
+    ok "stock-pi 엔진 — 그대로"
+  else
+    printf '  %s… stock-pi 엔진 설치 중%s\n' "$DIM" "$RST"
+    (cd "$REPO" && "$NODE" "$HARNESS/scripts/build-active-engine.mjs" >/dev/null 2>&1) \
+      && ok "stock-pi 엔진" \
+      || fail "stock-pi 엔진 설치에 실패했습니다. 손으로: node harness/scripts/build-active-engine.mjs"
+  fi
 fi
 
 if [ "$need_prompts" = 1 ]; then
