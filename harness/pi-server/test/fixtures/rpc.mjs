@@ -27,6 +27,7 @@ lines.on('line', (line) => {
     case 'steer': case 'follow_up': running = true; break;
     case 'abort': settle(); break;
     case 'set_session_name': manager.appendSessionInfo(command.name); break;
+    case 'get_commands': data = { commands: [] }; break;
     case 'get_available_models': data = { models: [] }; break;
     default: emit({ id: command.id, type: 'response', command: command.type, success: false, error: 'Unsupported fixture command' }); return;
   }
