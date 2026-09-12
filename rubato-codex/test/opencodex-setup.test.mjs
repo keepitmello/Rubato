@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { applyOpenCodexSetup, configureOpenCodexMultiAgent, configureOpenCodexRoster, OPENCODEX_VERSION, planOpenCodexSetup, registerOpenCodexProviders, removeManagedOpenCodex } from "../scripts/opencodex-setup.mjs";
+import { applyOpenCodexSetup, configureOpenCodexMultiAgent, configureOpenCodexRoster, OPENCODEX_VERSION, parseMultiAgentStatus, planOpenCodexSetup, registerOpenCodexProviders, removeManagedOpenCodex } from "../scripts/opencodex-setup.mjs";
 
 test("native-only plan never installs OpenCodex", async () => {
   const home = await mkdtemp(join(tmpdir(), "rubato-ocx-native-"));
@@ -115,13 +115,25 @@ test("roster prefers direct providers and never spends a slot twice", async () =
   assert.ok(roster.models.every((model) => model.includes("/")), "native models waste a roster slot");
 });
 
-test("multi-agent setup turns on keep-native-v1 so routed spawns can run", async () => {
+test("multi-agent setup sets mode v2 plus keep-native-v1 and reads the effective state back", async () => {
   const calls = [];
   const setup = { command: "/managed/ocx", selectedProviders: ["anthropic"] };
-  const configured = await configureOpenCodexMultiAgent(setup, { runner: async (command) => calls.push(command) });
+  const hybrid = "multi_agent_v2: OFF\nmulti_agent_mode: v2 hybrid — ChatGPT-native models use v1; routed models use v2\nkeep_native_chatgpt_on_v1: ON — ...\n";
+  const configured = await configureOpenCodexMultiAgent(setup, { runner: async (command) => { calls.push(command); return hybrid; } });
   assert.deepEqual(calls, ["/managed/ocx"]);
-  assert.equal(configured.keepNativeChatGptOnV1, true);
   assert.equal(configured.status, "configured");
+  assert.equal(configured.multiAgentMode, "v2");
+  assert.equal(configured.keepNativeChatGptOnV1, true);
+
+  // keep-native-v1 alone is inert in default mode: the installer must not report that as configured.
+  const inert = "multi_agent_mode: default — upstream model pins respected\nkeep_native_chatgpt_on_v1: ON — ...\n";
+  const unverified = await configureOpenCodexMultiAgent(setup, { runner: async () => inert });
+  assert.equal(unverified.status, "unverified");
+  assert.equal(unverified.multiAgentMode, "default");
+  assert.match(unverified.reason, /unreadable_encrypted_agent_task/);
+
+  assert.deepEqual(parseMultiAgentStatus("multi_agent_mode: v1 — ALL\nkeep_native_chatgpt_on_v1: OFF"), { multiAgentMode: "v1", keepNativeChatGptOnV1: false, hybrid: false });
+  assert.deepEqual(parseMultiAgentStatus(""), { multiAgentMode: undefined, keepNativeChatGptOnV1: undefined, hybrid: false });
 
   const planned = await configureOpenCodexMultiAgent(setup, { dryRun: true, runner: async () => assert.fail("dry run must not run the CLI") });
   assert.equal(planned.status, "planned");
