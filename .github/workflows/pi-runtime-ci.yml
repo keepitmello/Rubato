@@ -31,10 +31,11 @@ jobs:
         run: node --test harness/pi-runtime/test/migration-regressions.test.mjs
       - name: Install the isolated stock dependency tree
         run: npm --prefix harness/pi-runtime ci --workspaces=false --ignore-scripts
-      - name: Compose role prompts into the standard install location
+      - name: Compose role prompts and skills into the standard install location
         run: |
           bash harness/prompts/build.sh
           mkdir -p "$HOME/.agents"
           ln -sfn "$GITHUB_WORKSPACE/harness/prompts" "$HOME/.agents/rubato"
+          ln -sfn "$GITHUB_WORKSPACE/harness/skills" "$HOME/.agents/skills"
       - name: Staged SDK, CLI, child runtime, install and rollback tests
         run: env -u NODE_OPTIONS -u NODE_COMPILE_CACHE npm --prefix harness/pi-runtime test --workspaces=false
