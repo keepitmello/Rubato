@@ -14,6 +14,7 @@
     "smoke:local": "node test/smoke/local.mjs",
     "smoke:real": "node test/smoke/real.mjs",
     "smoke:direct": "node test/smoke/direct-real.mjs",
+    "smoke:surfaces": "node test/smoke/stock-surfaces.mjs",
     "test:context-notes": "node --test test/unit/context-notes-*.test.mjs",
     "check:context-notes-engine": "node scripts/check-history-notes-engine.mjs",
     "test:context-cost": "node --test test/unit/context-cost-*.test.mjs"
