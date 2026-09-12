@@ -62,6 +62,8 @@ export type TaskRunnerFactoryOptions = {
  * Adapt the legacy child option shape to stock Pi's SDK. Stock has no
  * authStorage/modelRegistry parameters; silently dropping those without a
  * canonical ModelRuntime would change provider/auth behaviour, so fail closed.
+ * Stock also refuses an implicit agentDir, so the parent's explicit dir from
+ * stockChildProfile is injected when the senpi-shaped caller omitted it.
  */
 export function createStockInProcessSessionAdapter(
   createSession: CreateChildSession,
@@ -79,10 +81,21 @@ export function createStockInProcessSessionAdapter(
     delete normalized.authStorage
     delete normalized.modelRegistry
     if (modelRuntime !== undefined) normalized.modelRuntime = modelRuntime
+    // Stock's child factory refuses an implicit agentDir (a silent default would
+    // strand the transcript outside discovery). Senpi never required the caller
+    // to pass one. The parent already knows the dir via stockChildProfile.
+    const incomingAgentDir = normalized.agentDir
+    const resolvedAgentDir =
+      typeof incomingAgentDir === "string" && incomingAgentDir.length > 0
+        ? incomingAgentDir
+        : typeof childAgentDir === "string" && childAgentDir.length > 0
+          ? childAgentDir
+          : undefined
+    if (resolvedAgentDir !== undefined) normalized.agentDir = resolvedAgentDir
     if (childExtensionFactories !== undefined && childExtensionFactories.length > 0) {
       normalized.resourceLoader = createChildResourceLoader({
         cwd: String(normalized.cwd),
-        agentDir: childAgentDir ?? String(normalized.agentDir ?? ""),
+        agentDir: resolvedAgentDir ?? "",
         settingsManager: normalized.settingsManager,
         extensionFactories: childExtensionFactories,
       })
