@@ -148,6 +148,7 @@
     "return",
     "supabase-postgres-best-practices",
     "vercel-react-best-practices",
+    "work-intent",
     "wrapping-sessions"
   ]
 }
