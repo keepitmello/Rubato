@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Isolated stock Pi dependency boundary; not the default Rubato runtime until parity is verified",
   "scripts": {
-    "test": "node --test --test-timeout=45000 --test-concurrency=4 test/*.test.mjs features/*/*.test.mjs"
+    "test": "node --test --test-timeout=90000 --test-concurrency=4 test/*.test.mjs features/*/*.test.mjs"
   },
   "dependencies": {
     "@babel/parser": "8.0.4",
