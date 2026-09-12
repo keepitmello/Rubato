@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname, isAbsolute, join } from "node:path";
+import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { defaultAgentDir, launchEnv } from "./brand.mjs";
@@ -13,8 +13,14 @@ import { withNoChangelog } from "./no-changelog.mjs";
 import { ensureSessionDefaults, sessionDefaultsLookCurrent } from "./session-defaults.mjs";
 import { replaceSystemPrompt } from "./system-prompt.mjs";
 import { SKILL_DIRS } from "./skills-section.mjs";
-import { engineMarkerPath, enginePackageJson, resolveStockEngineDir, senpiCli, senpiCliMain, senpiPackageJson } from "./engine-paths.mjs";
+import { enginePackageJson, senpiCli, senpiCliMain, senpiPackageJson } from "./engine-paths.mjs";
 import { releaseBootChrome, setBootChromeStatus } from "./boot-chrome.mjs";
+import { resolveExecutionEngine, STOCK_PI_FALLBACK_NOTICE } from "./engine-selection.mjs";
+export {
+  isValidInstalledCandidateReceipt, readStockEngineReceipt, stockEngineReceiptPresent,
+  readEngineMarker, resolveLaunchEngine, STOCK_PI_FALLBACK_NOTICE,
+} from "./engine-selection.mjs";
+export { nodeSatisfiesCandidate } from "./select-node.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -91,52 +97,11 @@ export function skillPathArgs(dirs = SKILL_DIRS) {
   return dirs.flatMap(({ dir }) => (existsSync(dir) ? ["--skill", dir] : []));
 }
 
-export const STOCK_PI_FALLBACK_NOTICE = "rubato: stock-pi candidate is not installed or invalid; falling back to senpi";
-
 const AGENT_DIR_ENV_NAMES = Object.freeze([
   "RUBATO_PI_CODING_AGENT_DIR",
   "SENPI_CODING_AGENT_DIR",
   "PI_CODING_AGENT_DIR",
 ]);
-
-export function isValidInstalledCandidateReceipt(receipt, root) {
-  if (!receipt || receipt.version !== 1 || receipt.state !== "ready") return false;
-  if (typeof receipt.candidateEntry !== "string" || receipt.candidateEntry.length === 0) return false;
-  if (!Array.isArray(receipt.features) || receipt.features.length === 0) return false;
-  if (!root) return true;
-  const entry = isAbsolute(receipt.candidateEntry) ? receipt.candidateEntry : join(root, receipt.candidateEntry);
-  return existsSync(entry);
-}
-
-export function readStockEngineReceipt(root) {
-  try {
-    return JSON.parse(readFileSync(join(root, "rubato-install.json"), "utf8"));
-  } catch {
-    return null;
-  }
-}
-
-export function stockEngineReceiptPresent(root) {
-  return existsSync(join(root, "rubato-install.json"));
-}
-
-export function readEngineMarker(env = process.env) {
-  const path = engineMarkerPath(env);
-  if (!path) return null;
-  try {
-    return JSON.parse(readFileSync(path, "utf8"));
-  } catch {
-    return null;
-  }
-}
-
-export function nodeSatisfiesCandidate(versionText = process.version) {
-  const match = /^v?(\d+)\.(\d+)/.exec(String(versionText));
-  if (!match) return false;
-  const major = Number(match[1]);
-  const minor = Number(match[2]);
-  return (major === 24 && minor >= 15) || major >= 26;
-}
 
 export function resolveLaunchAgentDir(env = process.env, home = env.HOME || homedir()) {
   for (const name of AGENT_DIR_ENV_NAMES) {
@@ -147,61 +112,6 @@ export function resolveLaunchAgentDir(env = process.env, home = env.HOME || home
     return value;
   }
   return defaultAgentDir(home);
-}
-
-/** RUBATO_ENGINE=stock-pi|senpi. Default stock-pi when a valid receipt exists. */
-export function resolveLaunchEngine({ env = process.env } = {}) {
-  const root = resolveStockEngineDir(env);
-  const present = stockEngineReceiptPresent(root);
-  const receipt = readStockEngineReceipt(root);
-  const valid = isValidInstalledCandidateReceipt(receipt, root);
-  let explicit = typeof env.RUBATO_ENGINE === "string" ? env.RUBATO_ENGINE.trim() : "";
-  let warning = null;
-  if (explicit && explicit !== "senpi" && explicit !== "stock-pi") {
-    warning = `rubato: unknown RUBATO_ENGINE=${explicit}; using default engine selection`;
-    explicit = "";
-  }
-  const marker = readEngineMarker(env);
-  let requested;
-  let source;
-  if (explicit === "senpi" || explicit === "stock-pi") {
-    requested = explicit;
-    source = "env";
-  } else if (marker?.engine === "senpi" || marker?.engine === "stock-pi") {
-    requested = marker.engine;
-    source = "marker";
-  } else if (valid) {
-    requested = "stock-pi";
-    source = "receipt";
-  } else {
-    requested = "senpi";
-    source = "default";
-  }
-  const brokenInstall = present && !valid;
-  const notice = (requested === "stock-pi" && !valid) || brokenInstall ? STOCK_PI_FALLBACK_NOTICE : null;
-  if (requested === "stock-pi" && valid) {
-    const entry = isAbsolute(receipt.candidateEntry) ? receipt.candidateEntry : join(root, receipt.candidateEntry);
-    return {
-      engine: "stock-pi",
-      requested: "stock-pi",
-      fallback: false,
-      notice: null,
-      warning,
-      root,
-      entry,
-      source,
-    };
-  }
-  return {
-    engine: "senpi",
-    requested: requested === "stock-pi" ? "stock-pi" : "senpi",
-    fallback: Boolean(notice),
-    notice,
-    warning,
-    root,
-    entry: null,
-    source,
-  };
 }
 
 /**
@@ -320,15 +230,12 @@ async function runSameNode(entry, argv, nextEnv, { registerNoChangelog = false, 
 export async function spawnRubatoPi({ args = process.argv.slice(2), env = process.env, agentDir } = {}) {
   enableRubatoCompileCache(env);
   const profileDir = agentDir ?? resolveLaunchAgentDir(env);
-  const selection = resolveLaunchEngine({ env });
-  const node = resolveNode24();
-  const stockPiReady = selection.engine === "stock-pi" && nodeSatisfiesCandidate(node.text ?? process.version);
+  const selection = resolveExecutionEngine({ env });
+  const node = selection.node;
+  if (!node) throw new Error("rubato-pi needs Node.js 24+ already installed. Default Node was not changed.");
+  const stockPiReady = selection.engine === "stock-pi";
   if (selection.warning) console.error(selection.warning);
-  if (selection.engine === "stock-pi" && !stockPiReady) {
-    emitEngineNotice(STOCK_PI_FALLBACK_NOTICE);
-  } else {
-    emitEngineNotice(selection.notice);
-  }
+  emitEngineNotice(selection.notice);
   prepareAgentDir(profileDir);
   setBootChromeStatus("엔진을 불러오는 중");
 
