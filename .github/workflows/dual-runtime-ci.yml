@@ -1,0 +1,53 @@
+name: Dual runtime checkpoints
+
+on:
+  push:
+    branches: [codex/dual-runtime-checkpoints-20260913]
+  pull_request:
+    paths:
+      - 'harness/pi-server/**'
+      - 'harness/t3-integration/**'
+      - 'docs/dual-runtime/**'
+      - '.github/workflows/dual-runtime-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checkpoint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Preserve exact source revision
+        run: |
+          mkdir -p "$RUNNER_TEMP/dual-runtime-checkpoint"
+          git archive --format=tar.gz HEAD > "$RUNNER_TEMP/dual-runtime-checkpoint/source.tar.gz"
+          git rev-parse HEAD > "$RUNNER_TEMP/dual-runtime-checkpoint/REVISION"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dual-runtime-source
+          path: ${{ runner.temp }}/dual-runtime-checkpoint/
+          retention-days: 30
+      - name: Install isolated Pi server dependencies
+        if: ${{ hashFiles('harness/pi-server/package.json') != '' }}
+        run: npm --prefix harness/pi-server install --ignore-scripts --workspaces=false
+      - name: Test isolated Pi server
+        if: ${{ hashFiles('harness/pi-server/package.json') != '' }}
+        run: |
+          set -o pipefail
+          npm --prefix harness/pi-server test --workspaces=false 2>&1 | tee "$RUNNER_TEMP/pi-server-tests.log"
+      - name: Preserve validation logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dual-runtime-validation
+          path: ${{ runner.temp }}/*-tests.log
+          if-no-files-found: ignore
+          retention-days: 30
