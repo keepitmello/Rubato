@@ -221,7 +221,7 @@ async function drain(stream) {
 
 test("feature stages one stock-bound closure and its default factory builds the admitted seven", async () => {
   assert.equal(providersFeature.id, "providers");
-  assert.equal(providersFeature.patches.length, 3);
+  assert.equal(providersFeature.patches.length, 5);
   assert.deepEqual(
     providersFeature.patches.map(({ path, preimageSha256 }) => ({ path, preimageSha256 })),
     [
@@ -236,6 +236,14 @@ test("feature stages one stock-bound closure and its default factory builds the 
       {
         path: "dist/core/model-runtime.js",
         preimageSha256: "32cd50599d9e6e001229090e3d0554b60e4addb8ab7b3165635a574feb660b74",
+      },
+      {
+        path: "dist/core/extensions/loader.js",
+        preimageSha256: "a1393de916487a2c47107ac7239f3139dcdb938705f88ba1ea5a954b3c8bb483",
+      },
+      {
+        path: "dist/core/extensions/runner.js",
+        preimageSha256: "0de12ed1275e02595f92476eec3f61ae1f2e54fd2225ced721ddc90af58a5e61",
       },
     ],
   );
@@ -331,6 +339,11 @@ test("actual stock SDK registers all seven and completes a Kiro Anthropic reques
   });
 
   assert.deepEqual(session.modelRuntime.getRegisteredProviderIds(), PROVIDER_IDS);
+  assert.deepEqual(
+    session.modelRuntime.getProviders().map((provider) => provider.id).sort(),
+    [...PROVIDER_IDS].sort(),
+  );
+  assert.equal(session.modelRuntime.getProviders().some((provider) => provider.id === "openai"), false);
   await session.prompt("hello Kiro");
   assert.equal(assistantText(session), "kiro-ok");
   assert.equal(captured.url, "/v1/messages?beta=true");
