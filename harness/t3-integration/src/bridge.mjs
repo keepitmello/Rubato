@@ -134,12 +134,16 @@ export class RubatoPiBridge {
           if (!context.client.client.connected || !context.client.client.attachment) {
             const descriptor = await readDescriptor(this.descriptorPath);
             if (descriptor.serverId !== context.session.resumeCursor.serverId) throw new Error('Pi server identity changed; refusing automatic redirection');
-            await context.client.close();
-            if (this.closed || context.stopped) continue;
-            const replacement = await new SessionClient({ ...descriptor, onError: this.onError }).connect();
-            if (this.closed || context.stopped) { await replacement.close(); continue; }
-            context.client = replacement;
-            await context.client.attach(context.sessionId);
+            this.descriptor = descriptor;
+            if (context.client.socketPath !== descriptor.socketPath) {
+              await context.client.abandon();
+              context.client = await new SessionClient({ ...descriptor, onError: this.onError }).connect();
+              await context.client.attach(context.sessionId);
+            } else if (context.client.client.connected) {
+              await context.client.attach(context.sessionId);
+            } else {
+              await context.client.reconnect(context.sessionId);
+            }
             await this.synchronize(context);
           } else if (context.needsSync) { context.needsSync = false; await this.synchronize(context); }
         } catch (error) {
