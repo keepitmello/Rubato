@@ -9,6 +9,7 @@
 // by the component's own handleMouse, which is what stock pi-tui offers.
 import { Container, truncateToWidth } from "@earendil-works/pi-tui";
 import { theme } from "../../modes/interactive/theme/theme.js";
+import { collapseConsecutiveTools } from "./assistant-phase.mjs";
 
 /** Tools whose result IS the content: grouping them leaves nothing to read. */
 export const UNGROUPED_TOOLS = new Set(["task", "team_create", "todo"]);
@@ -122,18 +123,14 @@ export class ToolGroupComponent extends Container {
 
   /** Names for the collapsed line; only failures take color. */
   formatNames() {
-    const seen = [];
-    for (const tool of this.tools) {
+    const seen = collapseConsecutiveTools(this.tools.map((tool) => {
       const name = tool.toolName ?? "?";
-      const failed = tool.result?.isError === true;
-      const diff = name === "edit" ? countDiff(tool.result?.details?.patch) : undefined;
-      const last = seen[seen.length - 1];
-      if (last && last.name === name && last.failed === failed && !diff && !last.diff) {
-        last.count += 1;
-        continue;
-      }
-      seen.push({ name, failed, diff, count: 1 });
-    }
+      return {
+        name,
+        failed: tool.result?.isError === true,
+        diff: name === "edit" ? countDiff(tool.result?.details?.patch) : undefined,
+      };
+    }));
     const shown = seen.slice(0, MAX_NAMES);
     const rest = seen.length - shown.length;
     const parts = shown.map(({ name, failed, diff, count }) => {
