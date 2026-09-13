@@ -58,7 +58,19 @@ export function patchOpenAiCodexResponsesAstra(source) {
 	let next = replaceOnce(source, BUILD_NEEDLE, `${ASTRA_CODEX_PRELUDE}${BUILD_NEEDLE}`, "helpers");
 	next = replaceOnce(next, TEMP_NEEDLE, TEMP_REPLACEMENT, "temperature");
 	next = replaceOnce(next, REASON_NEEDLE, REASON_REPLACEMENT, "configuration-update");
-	return replaceOnce(next, WS_NEEDLE, WS_REPLACEMENT, "ws-thinking");
+	next = replaceOnce(next, WS_NEEDLE, WS_REPLACEMENT, "ws-thinking");
+	next = replaceOnce(
+		next,
+		"const SESSION_WEBSOCKET_CACHE_TTL_MS = 5 * 60 * 1000;",
+		"const SESSION_WEBSOCKET_CACHE_TTL_MS = 30 * 60 * 1000;",
+		"ws-ttl",
+	);
+	return replaceOnce(
+		next,
+		"    }, SESSION_WEBSOCKET_CACHE_TTL_MS);",
+		"    }, SESSION_WEBSOCKET_CACHE_TTL_MS);\n    entry.idleTimer.unref?.();",
+		"ws-ttl-unref",
+	);
 }
 
 export function patchTransformMessagesPreserve(source) {
@@ -67,6 +79,12 @@ export function patchTransformMessagesPreserve(source) {
 		"export function transformMessages(messages, model, normalizeToolCallId) {",
 		"export function transformMessages(messages, model, normalizeToolCallId, options = {}) {",
 		"options-arg",
+	);
+	next = replaceOnce(
+		next,
+		"    if (model.input.includes(\"image\")) {",
+		"    if (model.input?.includes(\"image\")) {",
+		"input-guard",
 	);
 	next = replaceOnce(
 		next,

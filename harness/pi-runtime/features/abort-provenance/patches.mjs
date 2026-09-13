@@ -202,7 +202,9 @@ function patchAgentSessionRuntime(source) {
             pendingMessages: this.pendingMessageCount > 0,
         });
         this.abortRetry();
-        this.abortCompaction();
+        if (this.isCompacting) {
+            this.abortCompaction();
+        }
         this.abortBranchSummary();
         if (decision.abortCurrentAgent) {
             this.agent.abort();
