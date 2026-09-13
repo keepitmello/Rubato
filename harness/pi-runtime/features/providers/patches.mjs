@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { patchOpenAiCodexResponsesAstra, patchTransformMessagesPreserve } from "./astra-codex.mjs";
+import { patchEventStreamLocalWork, patchLazyLocalWork } from "./lazy-local-work.mjs";
 
 const PACKAGE_NAME = "@earendil-works/pi-ai";
 const PACKAGE_VERSION = "0.85.1";
@@ -384,6 +385,22 @@ export const patches = Object.freeze([
     path: "dist/api/transform-messages.js",
     preimageSha256: "e51975857b2fefa7e9cc108850ddab5a2fd1753a399f3cde00d76cd700ce6d10",
     apply: patchTransformMessagesPreserve,
+  }),
+  Object.freeze({
+    id: "providers:event-stream-local-work",
+    packageName: PACKAGE_NAME,
+    version: PACKAGE_VERSION,
+    path: "dist/utils/event-stream.js",
+    preimageSha256: "44a2498660ca61efa952ad6a3f10cc0491883411bd2b4572c9a392ec4e9553ec",
+    apply: patchEventStreamLocalWork,
+  }),
+  Object.freeze({
+    id: "providers:lazy-local-work",
+    packageName: PACKAGE_NAME,
+    version: PACKAGE_VERSION,
+    path: "dist/api/lazy.js",
+    preimageSha256: "4b8083fd71cbbe2ed01be00fc6ae9bc67f84aa7bf50ef815f7863e156a3e003c",
+    apply: patchLazyLocalWork,
   }),
 ]);
 

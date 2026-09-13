@@ -54,6 +54,8 @@ const cursorLazy = await import(
 const cursorEventStream = await import(
   pathToFileURL(join(piAiRoot, "dist/rubato-features/providers/cursor-event-stream.mjs")).href
 );
+const stockLazy = await import(pathToFileURL(join(piAiRoot, "dist/api/lazy.js")).href);
+const stockEventStream = await import(pathToFileURL(join(piAiRoot, "dist/utils/event-stream.js")).href);
 
 function environment(extra = {}) {
   return {
@@ -221,7 +223,7 @@ async function drain(stream) {
 
 test("feature stages one stock-bound closure and its default factory builds the admitted seven", async () => {
   assert.equal(providersFeature.id, "providers");
-  assert.equal(providersFeature.patches.length, 7);
+  assert.equal(providersFeature.patches.length, 9);
   assert.deepEqual(
     providersFeature.patches.map(({ path, preimageSha256 }) => ({ path, preimageSha256 })),
     [
@@ -252,6 +254,14 @@ test("feature stages one stock-bound closure and its default factory builds the 
       {
         path: "dist/api/transform-messages.js",
         preimageSha256: "e51975857b2fefa7e9cc108850ddab5a2fd1753a399f3cde00d76cd700ce6d10",
+      },
+      {
+        path: "dist/utils/event-stream.js",
+        preimageSha256: "44a2498660ca61efa952ad6a3f10cc0491883411bd2b4572c9a392ec4e9553ec",
+      },
+      {
+        path: "dist/api/lazy.js",
+        preimageSha256: "4b8083fd71cbbe2ed01be00fc6ae9bc67f84aa7bf50ef815f7863e156a3e003c",
       },
     ],
   );
@@ -311,6 +321,32 @@ test("Cursor adapter restores grouped catalogs and forwards local-work state thr
     api: selectedModel.api,
     provider: selectedModel.provider,
     model: selectedModel.id,
+    usage: { ...ZERO_COST, totalTokens: 0, cost: { ...ZERO_COST, total: 0 } },
+    stopReason: "stop",
+    timestamp: Date.now(),
+  };
+  inner.push({ type: "done", reason: "stop", message });
+  const settled = await drain(outer);
+  assert.equal(settled.result.stopReason, "stop");
+  assert.equal(outer.hasPendingLocalWork(), false);
+});
+
+test("stock lazy streams expose inner local-work", async () => {
+  const inner = new stockEventStream.AssistantMessageEventStream();
+  let finishWork;
+  const pending = new Promise((resolve) => { finishWork = resolve; });
+  const localWork = inner.trackLocalWork(pending);
+  const outer = stockLazy.lazyStream(model({ provider: "openai-codex", id: "lazy", api: "openai-responses" }), async () => inner);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(outer.hasPendingLocalWork(), true);
+  finishWork();
+  await localWork;
+  const message = {
+    role: "assistant",
+    content: [{ type: "text", text: "done" }],
+    api: "openai-responses",
+    provider: "openai-codex",
+    model: "lazy",
     usage: { ...ZERO_COST, totalTokens: 0, cost: { ...ZERO_COST, total: 0 } },
     stopReason: "stop",
     timestamp: Date.now(),
