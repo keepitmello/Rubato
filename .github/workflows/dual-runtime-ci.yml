@@ -79,10 +79,10 @@ jobs:
           echo "$T3_REVISION" > "$RUNNER_TEMP/t3-revision.log"
       - name: Apply guarded provider integration
         run: node harness/t3-integration/apply.mjs --t3 "$T3_SOURCE"
-      - name: Install actual T3 server workspace dependencies
+      - name: Install actual T3 workspace dependencies
         run: |
           set -o pipefail
-          pnpm --dir "$T3_SOURCE" install --frozen-lockfile --ignore-scripts --filter t3... --filter @t3tools/monorepo 2>&1 | tee "$RUNNER_TEMP/t3-install.log"
+          pnpm --dir "$T3_SOURCE" install --frozen-lockfile --ignore-scripts 2>&1 | tee "$RUNNER_TEMP/t3-install.log"
           npm --prefix harness/pi-server install --ignore-scripts --workspaces=false
       - name: Run provider and inventory integration tests
         run: |
