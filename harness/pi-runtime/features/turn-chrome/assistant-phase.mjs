@@ -77,17 +77,20 @@ export function assistantPaintsText(message) {
   return false;
 }
 
-/** Consecutive same-name tools share a count. bash·read·bash stays three names, not bash (2)·read. */
-export function collapseConsecutiveTools(items) {
+/** First-seen order, counted by name. bash·read·bash becomes bash (2)·read. */
+export function collapseToolsByName(items) {
   const seen = [];
+  const indexByKey = new Map();
   for (const item of items ?? []) {
     const name = item?.name ?? "?";
     const failed = item?.failed === true;
-    const last = seen[seen.length - 1];
-    if (last && last.name === name && last.failed === failed && !item?.diff && !last.diff) {
-      last.count += 1;
+    const key = `${failed ? "1" : "0"}\u0000${name}`;
+    const existing = indexByKey.get(key);
+    if (existing !== undefined && !item?.diff && !seen[existing].diff) {
+      seen[existing].count += 1;
       continue;
     }
+    indexByKey.set(key, seen.length);
     seen.push({ name, failed, count: 1, diff: item?.diff });
   }
   return seen;
