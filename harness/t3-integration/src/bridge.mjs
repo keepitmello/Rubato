@@ -152,6 +152,10 @@ export class RubatoPiBridge {
     return context;
   }
   async selectModel(context, selection) {
+    if (selection.model === 'rubato:select-model') {
+      if (context.session.model) return;
+      throw new Error('Select a real model from the provider list before sending a prompt');
+    }
     const split = selection.model.indexOf('/');
     if (split < 1) throw new Error('Pi model must be provider/modelId');
     const provider = selection.model.slice(0, split); const modelId = selection.model.slice(split + 1);
