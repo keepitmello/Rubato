@@ -14,7 +14,7 @@ cd Rubato
 ```
 
 공식 GUI는 T3 Code다. `./install.sh --apply --gui` 또는 적용 때 묻는 선택으로
-설치하고, 화면 제공자 이름은 Rubato다. 실행은 `rubato-gui`.
+설치하고, 화면 제공자 이름은 Rubato다. 터미널 실행기는 **Rubato CLI** (`rubato`)다.
 
 설치가 끝나면 새 셸을 열거나 안내된 rc 파일을 다시 읽는다.
 
@@ -29,8 +29,8 @@ credential은 저장소에 복사하지 않는다. 각 provider의 기존 로그
 ## 실행
 
 ```bash
-rubato       # 기본 세션
-rubato-pi    # rubato와 같은 실행기
+rubato       # Rubato CLI
+rubato-pi    # Rubato CLI와 같은 실행기 (내부 이름)
 rubato-gui   # 공식 GUI (T3)
 rubato-soul  # 역할별 프롬프트 없이 SOUL.md만 사용
 rubato dispatch <name> [grok|grokfast|fast|sol|fable] < brief.md
