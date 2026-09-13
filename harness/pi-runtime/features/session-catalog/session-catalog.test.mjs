@@ -279,3 +279,28 @@ test("subdirectory scans also keep jsonl files sitting in the sessions root", as
   });
   assert.deepEqual(new Set(page.sessions.map((session) => session.id)), new Set(["flat-today", "encoded"]));
 });
+
+test("listPage of the encoded cwd folder still finds jsonl in the sessions root", async () => {
+  const moduleUrl = pathToFileURL(join(patchedPackage, "dist/index.js")).href;
+  const { SessionManager } = await import(moduleUrl);
+  const agentDir = join(scratchRoot, "resume-agent");
+  const cwd = join(scratchRoot, "resume-cwd");
+  mkdirSync(cwd, { recursive: true });
+  const previous = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  try {
+    const nested = SessionManager.create(cwd, undefined, { id: "nested-encoded" });
+    nested.appendMessage(userMessage("nested"));
+    const encoded = nested.getSessionDir();
+    writeFileSync(
+      join(agentDir, "sessions", "flat-astra.jsonl"),
+      sessionJsonl({ id: "flat-astra", cwd, text: "astra work", timestamp: Date.now() + 1000 }),
+    );
+    const page = await SessionManager.listPage(cwd, encoded, undefined, { offset: 0, limit: 10 });
+    assert.ok(page.sessions.some((session) => session.id === "flat-astra"), "flat Astra jsonl in sessions/ must appear");
+    assert.ok(page.sessions.some((session) => session.id === "nested-encoded"), "encoded cwd jsonl must still appear");
+  } finally {
+    if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previous;
+  }
+});
