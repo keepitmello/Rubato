@@ -238,10 +238,10 @@ rubato_alias_block() {
 $ALIAS_BEGIN
 # 이 블록은 install.sh 가 관리한다. 손으로 고쳐도 다음 설치에 덮인다.
 RUBATO_HARNESS="$HARNESS"
-alias rubato="\$RUBATO_HARNESS/scripts/rubato-pi.sh"
-alias rubato-pi="\$RUBATO_HARNESS/scripts/rubato-pi.sh"
+alias rubato="sh \$RUBATO_HARNESS/scripts/rubato-pi.sh"
+alias rubato-pi="sh \$RUBATO_HARNESS/scripts/rubato-pi.sh"
 # 역할별 프롬프트 조립 없이 Documents/SOUL.md 만 시스템 프롬프트로.
-alias rubato-soul="\$RUBATO_HARNESS/scripts/rubato-soul.sh"
+alias rubato-soul="sh \$RUBATO_HARNESS/scripts/rubato-soul.sh"
 # msearch — 기억 검색. alias 는 사람이 쓰는 대화형 셸용이고,
 # 에이전트가 부르는 비대화형 bash 는 rc 를 안 읽으므로 ~/.local/bin 심링크가 정본이다.
 alias msearch="\$RUBATO_HARNESS/msearch/msearch"
@@ -300,12 +300,24 @@ DISPATCH_SRC="$HARNESS/scripts/rubato-dispatch.sh"
 OUTPOST_LINK="$HOME/.local/bin/outpost"
 OUTPOST_SRC="${AGENTS_SKILLS_DIR:-$HOME/.agents/skills}/outpost/scripts/outpost"
 [ -f "$OUTPOST_SRC" ] || OUTPOST_SRC="$HARNESS/skills/outpost/scripts/outpost"
+RUBATO_LINK="$HOME/.local/bin/rubato"
+RUBATO_SRC="$HARNESS/scripts/rubato-pi.sh"
 if [ "$APPLY" -eq 0 ]; then
   plan "$MSEARCH_LINK -> $MSEARCH_SRC 심링크를 만든다"
   plan "$DISPATCH_LINK -> $DISPATCH_SRC 심링크를 만든다"
   plan "$OUTPOST_LINK -> $OUTPOST_SRC 심링크를 만든다"
+  plan "$RUBATO_LINK 가 sh 로 $RUBATO_SRC 를 부르게 한다"
 else
   mkdir -p "$HOME/.local/bin"
+  chmod +x "$RUBATO_SRC" "$HARNESS/scripts/rubato-soul.sh" "$DISPATCH_SRC" 2>/dev/null || true
+  RUBATO_WRAP=$(printf '#!/bin/sh\nexec /bin/sh "%s" "$@"\n' "$RUBATO_SRC")
+  if [ -f "$RUBATO_LINK" ] && [ "$(cat "$RUBATO_LINK")" = "$RUBATO_WRAP" ]; then
+    ok "rubato PATH 래퍼 이미 맞다"
+  else
+    printf '%s\n' "$RUBATO_WRAP" > "$RUBATO_LINK"
+    chmod +x "$RUBATO_LINK"
+    ok "rubato 를 PATH 에 놓았다 ($RUBATO_LINK)"
+  fi
   if [ "$(readlink "$MSEARCH_LINK" 2>/dev/null)" = "$MSEARCH_SRC" ]; then
     ok "msearch 심링크 이미 맞다"
   else
@@ -449,7 +461,7 @@ elif [ "$CRED_OK" -eq 0 ]; then
 else
   say "비대화형으로 띄워 본다"
   probe="$(mktemp -d)"; (cd "$probe" && git init -q && echo x > a.md)
-  out="$(cd "$probe" && "$HARNESS/scripts/rubato-pi.sh" --print "Say only: ok" 2>&1 | tail -1)"
+  out="$(cd "$probe" && /bin/sh "$HARNESS/scripts/rubato-pi.sh" --print "Say only: ok" 2>&1 | tail -1)"
   rm -rf "$probe"
   if [ "$out" = "ok" ]; then ok "엔진 비대화 왕복 성공"
   else err "왕복 실패: $out"; add_manual "엔진 점검: rubato-pi.sh --print \"Say only: ok\""; fi
