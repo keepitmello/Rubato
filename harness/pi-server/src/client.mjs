@@ -9,12 +9,17 @@ export class SessionClient {
   constructor({ socketPath, serverId, timeoutMs = 30000, onError = () => {} }) {
     this.timeoutMs = timeoutMs;
     this.onError = onError;
+    this.socketPath = socketPath;
+    this.serverId = serverId;
     this.client = new Client({ serverId, transportFactory: createUnixTransportFactory({ path: socketPath }),
       maxFrameLength: 32 * 1024 * 1024, onListenerError: onError });
     this.bindings = new Set();
     this.closed = false;
   }
-  async connect() { await this.client.connect(); return this; }
+  async connect() {
+    if (this.closed) throw new Error('SessionClient is closed');
+    await this.client.connect(); return this;
+  }
   call(service, member, args, session = false) {
     const target = session ? this.client.attachment : { serverId: this.client.serverId };
     if (!target) return Promise.reject(new Error('No session is attached'));
@@ -44,11 +49,19 @@ export class SessionClient {
   subscribeDirectory(listener) { return this.subscribe(Directory, listener); }
   subscribeSession(listener) { return this.subscribe(Control, listener, true); }
   async reconnect(id) {
+    if (this.closed) throw new Error('SessionClient is closed');
     await this.clearBindings(); this.client.disconnect(); await this.client.reconnect();
     if (id) await this.attach(id);
     return id ? this.snapshot() : null;
   }
   async clearBindings() { await Promise.all([...this.bindings].map((binding) => binding.dispose())); this.bindings.clear(); }
+  /** Drop a disconnected client whose transport address is obsolete. No live transport or runtime is owned here. */
+  async abandon() {
+    if (this.closed) return;
+    this.closed = true;
+    await this.clearBindings();
+    this.client.disconnect();
+  }
   async close() {
     if (this.closed) return;
     this.closed = true;
