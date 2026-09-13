@@ -41,6 +41,8 @@ export {
   toolPairGuardExtension,
 } from "./tool-pair.mjs";
 
+export { demoteUnavailableToolReferences } from "./demote-unavailable.mjs";
+
 /** Load order is part of the contract: loop guard vetoes before later hooks or permissions. */
 export function createToolGuardExtensionFactories() {
   return [
