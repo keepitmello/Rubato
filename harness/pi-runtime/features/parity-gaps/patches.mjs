@@ -159,9 +159,9 @@ export const patches = Object.freeze([
 
 export const files = Object.freeze([
   Object.freeze({
-    target: "runtime",
+    packageName: AGENT,
     version: VERSION,
-    path: "rubato-features/parity-gaps/slim.mjs",
+    path: "dist/rubato-features/parity-gaps/slim.mjs",
     sourcePath: fileURLToPath(new URL("./slim.mjs", import.meta.url)),
   }),
 ]);
