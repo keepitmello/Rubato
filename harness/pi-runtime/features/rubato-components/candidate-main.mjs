@@ -1,7 +1,7 @@
 // Explicit incomplete-candidate entry. Never installs itself as the user's
 // default engine, and never chooses the user's normal profile implicitly.
 import { readFile } from "node:fs/promises";
-import { isAbsolute, join, resolve } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { validateCandidateStage } from "./validate-stage.mjs";
 
@@ -9,6 +9,17 @@ export const CANDIDATE_FEATURE_NAMES = Object.freeze(["runtime-factories", "relo
   "request-run", "extension-rpc", "service-tier", "tool-search", "mcp", "mcp-producers", "codemode",
   "child-runtime", "terminal", "providers", "provider-execution", "media-tools", "video-in", "tool-guards", "tool-policy", "context-window", "session-catalog", "session-picker", "prompt-rules", "compaction", "config-reload", "user-commands-agent", "user-commands-session", "remote-surface", "tui-input", "turn-chrome", "statusline", "startup-chrome", "tui-autocomplete", "model-picker", "thinking-levels", "transcript-cache", "title-guard"]);
 const requiredFeatures = [...CANDIDATE_FEATURE_NAMES, "rubato-components"];
+
+/** Pin the candidate onto `agentDir` without flattening sessions onto `agentDir/sessions`. */
+export function pinCandidateProfile(agentDir) {
+  process.env.PI_PACKAGE_DIR = fileURLToPath(new URL("../../node_modules/@earendil-works/pi-coding-agent", import.meta.url));
+  delete process.env.PI_MANAGED_INSTALL_ROOT;
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  process.env.RUBATO_PI_CODING_AGENT_DIR = agentDir;
+  // Stock SessionManager treats a set SESSION_DIR as a flat jsonl folder.
+  // Live sessions live in cwd-encoded subdirectories of agentDir/sessions.
+  delete process.env.PI_CODING_AGENT_SESSION_DIR;
+}
 
 export async function runRubatoCandidate(args = process.argv.slice(2)) {
   const requestedAgentDir = process.env.RUBATO_CANDIDATE_AGENT_DIR;
@@ -24,11 +35,7 @@ export async function runRubatoCandidate(args = process.argv.slice(2)) {
   // Set profile identity before importing any provider/state-owning module.
   // Wrappers may carry a live Senpi/Pi package or session location. Those
   // inherited defaults must not redirect this explicit incomplete candidate.
-  process.env.PI_PACKAGE_DIR = fileURLToPath(new URL("../../node_modules/@earendil-works/pi-coding-agent", import.meta.url));
-  delete process.env.PI_MANAGED_INSTALL_ROOT;
-  process.env.PI_CODING_AGENT_DIR = agentDir;
-  process.env.RUBATO_PI_CODING_AGENT_DIR = agentDir;
-  process.env.PI_CODING_AGENT_SESSION_DIR = join(agentDir, "sessions");
+  pinCandidateProfile(agentDir);
   const { createRubatoExtensionFactories, validateRubatoBundleAssets } = await import("./bootstrap.mjs");
   await validateRubatoBundleAssets();
   const { main } = await import("../../node_modules/@earendil-works/pi-coding-agent/dist/main.js");
