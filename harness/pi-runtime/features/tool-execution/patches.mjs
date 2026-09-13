@@ -246,6 +246,17 @@ import { executeRegisteredTool } from "../../../../../rubato-features/tool-execu
             getActiveTools: () => this.getActiveToolNames(),`,
     "bind-actions",
   );
+  next = replaceOnce(
+    next,
+    `    setActiveToolsByName(toolNames) {
+        const tools = [];`,
+    `    setActiveToolsByName(toolNames) {
+        // apply_patch is the model-facing editor; keep edit/write registered
+        // for exec-bridge, but never put them on the request.
+        toolNames = toolNames.filter((name) => name !== "edit" && name !== "write");
+        const tools = [];`,
+    "single-editor",
+  );
   return replaceOnce(
     next,
     `    _buildRuntime(options) {

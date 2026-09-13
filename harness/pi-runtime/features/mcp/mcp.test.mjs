@@ -227,6 +227,7 @@ test("stock AgentSession registers, activates, calls, shuts down, and restarts p
 
   assert.deepEqual(extensionsResult.errors, []);
   assert.deepEqual(extensionErrors, []);
+  await session.extensionRunner.emit({ type: "before_agent_start" });
   assert.ok(session.getAllTools().some(({ name }) => name === "mcp__fake_server_echo"));
   assert.ok(session.getActiveToolNames().includes("mcp__fake_server_echo"));
   const firstDefinition = session.getToolDefinition("mcp__fake_server_echo");
@@ -238,6 +239,7 @@ test("stock AgentSession registers, activates, calls, shuts down, and restarts p
   await waitForMarker(input.markerPath, "exit");
   const firstCycleMarkers = await markerLines(input.markerPath);
   await session.bindExtensions({ onError: (error) => extensionErrors.push(error) });
+  await session.extensionRunner.emit({ type: "before_agent_start" });
   const secondDefinition = session.getToolDefinition("mcp__fake_server_echo");
   assert.ok(secondDefinition);
   assert.notEqual(secondDefinition, firstDefinition);

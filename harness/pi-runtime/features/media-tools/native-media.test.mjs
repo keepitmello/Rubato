@@ -176,6 +176,8 @@ test("A10 convertContentBlocks anchors survive the anthropic native patch", () =
 	assert.match(patched, /subtype: event.content_block.type/);
 	assert.match(composed, /type: "video"/);
 	assert.match(composed, /subtype: event.content_block.type/);
+	assert.match(patched, /function isAnthropicWebSearchReplayBlock/);
+	assert.match(patched, /!model\.compat\?\.supportsWebSearch && isAnthropicWebSearchReplayBlock\(raw\)/);
 });
 
 test("native image injection keeps client and Responses tools mutually exclusive", () => {
