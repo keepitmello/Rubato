@@ -19,4 +19,4 @@ if ! head -c 1 "$SOUL" >/dev/null 2>&1; then
   exit 1
 fi
 export RUBATO_SYSTEM_PROMPT_FILE="$SOUL"
-exec "$HERE/rubato-pi.sh" "$@"
+exec /bin/sh "$HERE/rubato-pi.sh" "$@"

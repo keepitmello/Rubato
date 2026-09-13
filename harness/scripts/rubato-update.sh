@@ -410,7 +410,7 @@ fi
 # 허브 재시작은 세션이 있어도 한다. zmx 세션은 허브 프로세스가 아니라서
 # LaunchAgent 를 다시 심어도 안 죽는다. 허브 소스가 안 바뀌면 need_hub=0 이라 안 건드린다.
 if [ "$need_hub" = 1 ]; then
-  "$HERE/rubato-pi.sh" restart >/dev/null 2>&1 \
+  /bin/sh "$HERE/rubato-pi.sh" restart >/dev/null 2>&1 \
     && ok "remote hub 재시작" || warn "remote hub 재시작 경고 — 손으로: rubato restart"
 fi
 

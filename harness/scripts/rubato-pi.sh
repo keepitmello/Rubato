@@ -397,7 +397,7 @@ if [ -n "$UPDATE_NOTE" ] && [ -z "${RUBATO_NO_UPDATE_PROMPT-}" ]; then
       # 두 번째는 조용히 들어간다.
       RUBATO_NO_UPDATE_PROMPT=1 RUBATO_NO_SPLASH=1
       export RUBATO_NO_UPDATE_PROMPT RUBATO_NO_SPLASH
-      exec "$HERE/rubato-pi.sh" "$@"
+      exec /bin/sh "$HERE/rubato-pi.sh" "$@"
     fi
     printf '\n'
   fi
