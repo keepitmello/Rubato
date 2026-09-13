@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import { patchOpenAiCodexResponsesAstra, patchTransformMessagesPreserve } from "./astra-codex.mjs";
 
 const PACKAGE_NAME = "@earendil-works/pi-ai";
 const PACKAGE_VERSION = "0.85.1";
@@ -367,6 +368,22 @@ export const patches = Object.freeze([
     path: "dist/core/extensions/runner.js",
     preimageSha256: "0de12ed1275e02595f92476eec3f61ae1f2e54fd2225ced721ddc90af58a5e61",
     apply: patchRunnerFlushUnregister,
+  }),
+  Object.freeze({
+    id: "providers:astra-codex-cache-prefix",
+    packageName: PACKAGE_NAME,
+    version: PACKAGE_VERSION,
+    path: "dist/api/openai-codex-responses.js",
+    preimageSha256: "f5705d45ae72102110238d6265a548df3aef50b777f654f1f91a32d563c91b3e",
+    apply: patchOpenAiCodexResponsesAstra,
+  }),
+  Object.freeze({
+    id: "providers:transform-messages-preserve",
+    packageName: PACKAGE_NAME,
+    version: PACKAGE_VERSION,
+    path: "dist/api/transform-messages.js",
+    preimageSha256: "e51975857b2fefa7e9cc108850ddab5a2fd1753a399f3cde00d76cd700ce6d10",
+    apply: patchTransformMessagesPreserve,
   }),
 ]);
 
