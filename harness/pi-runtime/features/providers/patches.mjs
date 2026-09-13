@@ -120,6 +120,12 @@ function patchResolveAuth(sourceText) {
         credential = postView;`,
     "resolve-oauth-post-view",
   );
+  next = replaceOnce(
+    next,
+    "        catch (error) {\n            if (error instanceof ModelsError)\n                throw error;\n            throw new ModelsError(\"auth\", `Credential store modify failed for ${providerId}`, { cause: error });\n        }",
+    "        catch (error) {\n            const causeText = error?.cause instanceof Error ? error.cause.message : String(error?.cause ?? \"\");\n            const text = `${error?.message ?? \"\"} ${causeText}`;\n            if (/refresh_token_reused|already been used to generate a new access token/i.test(text)) {\n                const latest = await credentials.read(providerId, { signal }).catch(() => undefined);\n                if (latest?.type === \"oauth\" && latest.refresh === stored.refresh) {\n                    await credentials.delete(providerId, { signal }).catch(() => undefined);\n                }\n                throw new ModelsError(\"oauth\", `OAuth refresh failed for ${providerId}: refresh token already used. Run /login ${providerId} again.`, { cause: error });\n            }\n            if (error instanceof ModelsError)\n                throw error;\n            throw new ModelsError(\"auth\", `Credential store modify failed for ${providerId}`, { cause: error });\n        }",
+    "resolve-oauth-reuse",
+  );
   return preserveOAuthCredentialEnv(next);
 }
 
@@ -181,7 +187,7 @@ function patchModelRuntimePool(sourceText) {
     }`,
     "runtime-stream-pool",
   );
-  return replaceOnce(
+  next = replaceOnce(
     next,
     `    streamSimple(model, context, options) {
         return lazyStream(model, async () => {
@@ -193,6 +199,67 @@ function patchModelRuntimePool(sourceText) {
         return lazyStream(model, async () => streamWithCredentialPool(this, "streamSimple", model, context, options));
     }`,
     "runtime-stream-simple-pool",
+  );
+  return replaceOnce(
+    next,
+    `    unregisterProvider(providerId) {
+        this.extensionProviders.delete(providerId);
+        this.nativeExtensionProviders.delete(providerId);
+        this.recomposeProvider(providerId);`,
+    `    unregisterProvider(providerId) {
+        this.extensionProviders.delete(providerId);
+        this.nativeExtensionProviders.delete(providerId);
+        this.builtins.delete(providerId);
+        this.defaultBuiltins.delete(providerId);
+        this.recomposeProvider(providerId);`,
+    "unregister-drop-builtins",
+  );
+}
+
+function patchLoaderPendingUnregister(sourceText) {
+  let next = replaceOnce(
+    sourceText,
+    "        pendingProviderRegistrations: [],\n        pendingNativeProviderRegistrations: [],\n",
+    "        pendingProviderRegistrations: [],\n        pendingNativeProviderRegistrations: [],\n        pendingProviderUnregistrations: [],\n",
+    "loader-pending-unregisters",
+  );
+  return replaceOnce(
+    next,
+    `        unregisterProvider: (name) => {
+            runtime.pendingProviderRegistrations = runtime.pendingProviderRegistrations.filter((r) => r.name !== name);
+            runtime.pendingNativeProviderRegistrations = runtime.pendingNativeProviderRegistrations.filter((r) => r.provider.id !== name);
+        },`,
+    `        unregisterProvider: (name) => {
+            runtime.pendingProviderRegistrations = runtime.pendingProviderRegistrations.filter((r) => r.name !== name);
+            runtime.pendingNativeProviderRegistrations = runtime.pendingNativeProviderRegistrations.filter((r) => r.provider.id !== name);
+            runtime.pendingProviderUnregistrations.push(name);
+        },`,
+    "loader-queue-unregister",
+  );
+}
+
+function patchRunnerFlushUnregister(sourceText) {
+  return replaceOnce(
+    sourceText,
+    `        this.runtime.pendingNativeProviderRegistrations = [];
+        // From this point on, provider registration/unregistration takes effect immediately`,
+    `        this.runtime.pendingNativeProviderRegistrations = [];
+        for (const name of this.runtime.pendingProviderUnregistrations ?? []) {
+            try {
+                this.modelRegistry.unregisterProvider(name);
+            }
+            catch (err) {
+                this.emitError({
+                    extensionPath: "<providers>",
+                    event: "unregister_provider",
+                    error: err instanceof Error ? err.message : String(err),
+                    stack: err instanceof Error ? err.stack : undefined,
+                });
+            }
+        }
+        this.runtime.pendingProviderUnregistrations = [];
+        // From this point on, provider registration/unregistration takes effect immediately`,
+    "runner-flush-unregister",
   );
 }
 
@@ -284,6 +351,22 @@ export const patches = Object.freeze([
     path: "dist/core/model-runtime.js",
     preimageSha256: "32cd50599d9e6e001229090e3d0554b60e4addb8ab7b3165635a574feb660b74",
     apply: patchModelRuntimePool,
+  }),
+  Object.freeze({
+    id: "providers:loader-pending-unregister",
+    packageName: "@earendil-works/pi-coding-agent",
+    version: PACKAGE_VERSION,
+    path: "dist/core/extensions/loader.js",
+    preimageSha256: "a1393de916487a2c47107ac7239f3139dcdb938705f88ba1ea5a954b3c8bb483",
+    apply: patchLoaderPendingUnregister,
+  }),
+  Object.freeze({
+    id: "providers:runner-flush-unregister",
+    packageName: "@earendil-works/pi-coding-agent",
+    version: PACKAGE_VERSION,
+    path: "dist/core/extensions/runner.js",
+    preimageSha256: "0de12ed1275e02595f92476eec3f61ae1f2e54fd2225ced721ddc90af58a5e61",
+    apply: patchRunnerFlushUnregister,
   }),
 ]);
 
