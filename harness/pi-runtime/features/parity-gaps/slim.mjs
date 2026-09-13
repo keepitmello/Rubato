@@ -1,7 +1,7 @@
 /** Model-facing tool.description rewrites. Unknown names pass through unchanged. */
 
 export const SLIM_DESCRIPTIONS = Object.freeze({
-  todo: "Track phased tasks by verbatim content string — no auto-generated ids (no task-1). One op per call, batched with real work; never a solo todo turn. done/start/drop take the exact task or phase text from the latest todo result (view if lost). A user multi-step plan must init every item as its own task before working. Ops: init, start, done, drop, rm, append, view.",
+  todo: "Track phased tasks by verbatim content string — no auto-generated ids (no task-1). Task and phase text uses the user's conversational language (Korean conversation -> Korean tasks). One op per call, batched with real work; never a solo todo turn. done/start/drop take the exact task or phase text from the latest todo result (view if lost). A user multi-step plan must init every item as its own task before working. Ops: init, start, done, drop, rm, append, view.",
 
   Agent:
     "Start one child agent using exactly one of model or preset. Omit effort unless an explicit override is required. model is a complete provider/model id; missing models fail closed (no fallback). Prompt MUST be English. Spawns are async and return agentId immediately. If no independent work remains, end the turn; otherwise keep working. Pass summary (one line, ≤80 chars). AgentSend continues an existing child; Agent always spawns. AgentOutput peeks; AgentCancel ends a child.",

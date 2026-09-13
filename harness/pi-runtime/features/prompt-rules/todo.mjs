@@ -5,6 +5,7 @@ const DEFAULT_PHASE = "Tasks";
 const STATUSES = new Set(["pending", "in_progress", "completed", "abandoned"]);
 
 export const TODO_TOOL_DESCRIPTION = `Tasks are referenced by their verbatim content string, never by an auto-generated id.
+Task and phase text uses the user's conversational language (Korean conversation -> Korean tasks).
 
 Operations:
 - init: replace the list with list: [{phase, items}] or items: string[]
@@ -21,6 +22,7 @@ export const TASK_MANAGEMENT_SECTION = `
 ## Todo Management
 
 Use the todo tool for multi-step work. Mark each item done when it finishes and reconcile the list against the newest user message before ending a turn.
+Write task and phase text in the user's conversational language.
 </Task_Management>
 `;
 
@@ -245,6 +247,7 @@ export function createTodoExtension() {
       promptSnippet: "Track phased tasks with one op-based todo tool; reference tasks by exact content.",
       promptGuidelines: [
         "Reference todo tasks and phases by exact content/name.",
+        "Write task and phase text in the user's conversational language (Korean conversation -> Korean tasks).",
         "Mark completed work immediately and use drop for work no longer needed.",
       ],
       parameters: Params,
