@@ -9,6 +9,7 @@ import {
   patchOverflow,
   patchPromptCacheTtl,
   patchToolDescriptions,
+  files,
   patches,
 } from "./patches.mjs";
 
@@ -32,4 +33,6 @@ test("parity-gaps patches match stock preimages and apply", () => {
   assert.match(a, /atomicWriteAuthFileSync\(this\.authPath, next\)/);
   const t = patchToolDescriptions(readFileSync(join(ag, "core/tools/tool-definition-wrapper.js"), "utf8"));
   assert.match(t, /slimToolDescription\(definition\.name/);
+  assert.match(t, /from "\.\.\/\.\.\/rubato-features\/parity-gaps\/slim\.mjs"/);
+  assert.deepEqual(files.map((entry) => entry.path), ["dist/rubato-features/parity-gaps/slim.mjs"]);
 });
