@@ -53,6 +53,31 @@ fetch_now() {
   date +%s > "$STAMP"
 }
 
+# 공식 GUI(핀된 T3 + overlay)는 새 커밋이 없어도 깨진다. 데스크톱 산출물이
+# 사라지면 앱 껍데기만 남아 더블클릭해도 조용히 안 켜지고, 레포를 옮기면
+# 껍데기 런처가 없는 경로를 가리킨다. 받을 것이 없어도 그때는 다시 맞춘다.
+# install-gui.sh 는 멱등해서, 이미 맞는 설치는 빌드 없이 지나간다.
+GUI_T3_DIR="${RUBATO_T3_SOURCE:-$HOME/.rubato/t3-source}"
+GUI_LAUNCHER="/Applications/Rubato.app/Contents/MacOS/Rubato"
+gui_installed() {
+  [ -d "$GUI_T3_DIR/.git" ] || [ -d "/Applications/Rubato.app" ] || [ -d "/Applications/T3 Code.app" ]
+}
+gui_broken() {
+  gui_installed || return 1
+  [ -f "$GUI_T3_DIR/apps/desktop/dist-electron/main.cjs" ] || return 0
+  if [ -f "$GUI_LAUNCHER" ]; then
+    grep -qF "$HARNESS/t3-integration/start-gui.sh" "$GUI_LAUNCHER" || return 0
+  fi
+  return 1
+}
+repair_gui() {
+  gui_broken || return 0
+  warn "공식 GUI 설치가 깨져 있습니다. 다시 맞춥니다."
+  sh "$HARNESS/t3-integration/install-gui.sh" --apply \
+    && ok "공식 GUI를 다시 맞췄습니다" \
+    || fail "공식 GUI 복구에 실패했습니다."
+}
+
 # --check 는 세션을 띄울 때마다 돌아서 매번 fetch 한다. 보통 0.5초.
 #
 # 느린 네트워크에서 세션 시작이 매달리면 안 된다. macOS 기본에는 timeout(1)
@@ -72,6 +97,7 @@ REMOTE="$(git rev-parse "origin/$BRANCH" 2>/dev/null || echo "$LOCAL")"
 
 if [ "$LOCAL" = "$REMOTE" ]; then
   [ "$MODE" = check ] && exit 0
+  repair_gui
   ok "이미 최신입니다."
   exit 0
 fi
@@ -81,6 +107,7 @@ BEHIND="$(git rev-list --count "HEAD..origin/$BRANCH")"
 AHEAD="$(git rev-list --count "origin/$BRANCH..HEAD")"
 if [ "$BEHIND" -eq 0 ]; then
   [ "$MODE" = check ] && exit 0
+  repair_gui
   ok "받을 것이 없습니다. 로컬이 $AHEAD 커밋 앞서 있습니다."
   exit 0
 fi
@@ -129,10 +156,12 @@ if echo "$CHANGED" | grep -Eq '^packages/rubato-remote-hub/|^harness/scripts/rub
   /bin/launchctl print "gui/$(id -u)/$HUB_LABEL" >/dev/null 2>&1 && need_hub=1
 fi
 
-# 공식 GUI는 핀된 T3 + overlay다. 이 머신에 깔려 있고 핀/overlay가 바뀌면 다시 맞춘다.
+# 공식 GUI는 핀된 T3 + overlay다. 이 머신에 깔려 있고 핀/overlay가 바뀌면 다시
+# 맞춘다. 이미 깨져 있어도 마찬가지다.
 need_gui=0
-if [ -d "$HOME/.rubato/t3-source/.git" ] || [ -d "/Applications/Rubato.app" ] || [ -d "/Applications/T3 Code.app" ]; then
+if gui_installed; then
   echo "$CHANGED" | grep -Eq '^harness/t3-integration/' && need_gui=1
+  gui_broken && need_gui=1
 fi
 
 printf '\n%s== 다시 만들 것 ==%s\n' "$BOLD" "$RST"
