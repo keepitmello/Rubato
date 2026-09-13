@@ -50,14 +50,16 @@ function patchSessionManagerRuntime(source) {
     next,
     `    static async listAll(sessionDirOrOnProgress, onProgress) {`,
     `    static async listPage(cwd, sessionDir, onProgress, page = {}) {
-        const dir = sessionDir ? normalizePath(sessionDir) : getSessionsDir();
-        const filterCwd = sessionDir === undefined || dir !== getDefaultSessionDirPath(cwd);
         const resolvedCwd = resolvePath(cwd);
+        const encoded = getDefaultSessionDirPath(cwd);
+        const sessionsRoot = getSessionsDir();
+        const dir = sessionDir ? normalizePath(sessionDir) : encoded;
+        const defaultTree = !sessionDir || dir === encoded || dir === sessionsRoot;
         return listSessionCatalogPage({
-            root: dir,
-            includeSubdirectories: sessionDir === undefined,
+            root: defaultTree ? sessionsRoot : dir,
+            includeSubdirectories: defaultTree,
             readHeader: readSessionHeaderForDiscovery,
-            acceptHeader: (header) => !filterCwd || sessionCwdMatches(getSessionHeaderCwd(header), resolvedCwd),
+            acceptHeader: (header) => sessionCwdMatches(getSessionHeaderCwd(header), resolvedCwd),
             buildInfo: buildSessionInfo,
             onProgress,
             page,
