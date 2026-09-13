@@ -14,11 +14,8 @@ import {
   updateGoal,
 } from "./store.mjs";
 import {
-  DEFAULT_TODO_NAG_TEXT,
   openTodoCompletionError,
   openTodoTaskContents,
-  staleGoalTodoReminder,
-  todoResultAddsOpenTasks,
 } from "./todo-nag.mjs";
 
 export { WAKE_SOURCE_STATE_EVENT };
@@ -30,27 +27,15 @@ function isWakeSourceStateEvent(data) {
   return Boolean(data) && typeof data === "object" && typeof data.source === "string" && typeof data.activeCount === "number";
 }
 
-function resolveTodoNag(options = {}, env = process.env) {
-  if (typeof options.todoNag === "boolean") return options.todoNag;
-  if (typeof options.todoNagText === "string") return true;
-  const raw = env.RUBATO_GOAL_TODO_NAG;
-  if (raw === "0" || raw === "false") return false;
-  return true;
-}
-
 function toolText(text, details) {
   return { content: [{ type: "text", text }], details };
 }
 
 export function createGoalExtension(options = {}) {
-  const env = options.env ?? process.env;
-  const todoNagEnabled = resolveTodoNag(options, env);
-  const todoNagText = options.todoNagText ?? DEFAULT_TODO_NAG_TEXT;
   return (pi) => {
     const wakeSources = new Map();
     let started = false;
     let continuationPending = false;
-    let staleGoalReminderSentThisTurn = false;
 
     function snapshotWakeSources() {
       return Object.fromEntries(wakeSources);
@@ -89,17 +74,6 @@ export function createGoalExtension(options = {}) {
       continuationPending = false;
       const goal = await readGoal(refFor(ctx));
       if (goal?.status === "active" && activeWakeSourceCount() === 0) queueContinuation(goal);
-    });
-
-    pi.on("turn_start", () => { staleGoalReminderSentThisTurn = false; });
-
-    pi.on("tool_result", async (event, ctx) => {
-      if (!todoNagEnabled || event.toolName !== "todo" || event.isError || staleGoalReminderSentThisTurn) return;
-      if (!todoResultAddsOpenTasks(event.details)) return;
-      const reminder = staleGoalTodoReminder(await readGoal(refFor(ctx)), todoNagText);
-      if (reminder === undefined) return;
-      staleGoalReminderSentThisTurn = true;
-      return { content: [...event.content, { type: "text", text: reminder }] };
     });
 
     pi.on("agent_end", async (_event, ctx) => {

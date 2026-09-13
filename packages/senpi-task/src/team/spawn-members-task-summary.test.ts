@@ -45,3 +45,28 @@ describe("spawnTeamMembers task_summary", () => {
     expect(captured[0]?.task_summary).toBe("Investigate the failing test")
   })
 })
+
+describe("spawnTeamMembers model", () => {
+  test("#given a member with a model override #when spawned #then the manager start spec carries the model", async () => {
+    const spec = normalizeSenpiTeamSpec(
+      { members: [{ kind: "category", category: "grok", prompt: "work", model: "xai/grok-4.6:xhigh" }] },
+      "demo",
+    )
+    const captured: ManagerStartSpec[] = []
+
+    const result = await spawnTeamMembers({
+      spec,
+      teamRunId: "run-1",
+      manager: fakeManager(captured),
+      leadSessionId: "lead-session",
+      spawnDepth: 1,
+      maxParallel: 1,
+      deadlineAt: Date.now() + 60_000,
+      now: Date.now,
+    })
+
+    expect(result.failure).toBeUndefined()
+    expect(captured[0]?.category).toBe("grok")
+    expect(captured[0]?.model).toBe("xai/grok-4.6:xhigh")
+  })
+})

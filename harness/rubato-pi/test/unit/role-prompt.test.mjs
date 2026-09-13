@@ -169,8 +169,17 @@ test("model-guide and pi runtime tell Agent callers to use model or preset, not 
   assert.match(piRuntime, /Omit `effort` unless you need a manual override/);
   assert.match(modelGuide, /Never pass a category, task type, or `subagent_type`/);
   assert.match(piRuntime, /team_send/);
-  assert.match(piRuntime, /`team_create` takes the approved team specification and does not accept Agent `model`, `preset`, or `effort` parameters/);
+  assert.match(piRuntime, /live delegate `category`/);
+  assert.match(piRuntime, /may pass `model` as an exact provider\/model override/);
+  assert.doesNotMatch(piRuntime, /does not accept Agent `model`/);
   assert.doesNotMatch(piRuntime, /from the rubato-pi adapter/);
+});
+
+test("pi runtime lets team members pass an exact model override", () => {
+  const piRuntime = readFileSync(join(promptSourceRoot, "../skills/agent-taskforce/runtimes/pi.md"), "utf8");
+  assert.match(piRuntime, /live delegate `category`/);
+  assert.match(piRuntime, /may pass `model` as an exact provider\/model override/);
+  assert.doesNotMatch(piRuntime, /does not accept Agent `model`/);
 });
 
 test("role prompts delegate provider resolution and fallback to the harness", () => {

@@ -246,6 +246,7 @@ describe("team_create inline_spec schema shape", () => {
     // then: the model must see the spec shape in the schema structure, not an empty {} that invites stringified JSON
     expect(serialized).not.toBe("{}")
     expect(serialized).toContain("members")
+    expect(serialized).toContain("xai/grok-4.6:xhigh")
   })
 
   test("#given a JSON-stringified inline spec #when team_create runs #then the parsed object reaches the service", async () => {

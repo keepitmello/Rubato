@@ -148,7 +148,7 @@ test("/goal wake-source counts clear on session_start so codemode can republish"
   assert.match(wake.notices.at(-1).message, /Wake sources: senpi-codemode=2/);
 });
 
-test("/goal todo nag is default-on like Senpi and can be turned off", async () => {
+test("/goal does not append a create_goal nag onto todo tool results", async () => {
   const leakDir = join(runtimeRoot, "extensions", "goal", "no-session");
   const leakBefore = existsSync(leakDir) ? readdirSync(leakDir).sort() : [];
   const todoStub = { name: "todo-stub", factory: (pi) => {
@@ -165,8 +165,8 @@ test("/goal todo nag is default-on like Senpi and can be turned off", async () =
       },
     });
   } };
-  async function runTodo(todoNag) {
-    const fixture = await session({ only: ["rubato-goal"], extraFactories: [todoStub], noTools: "builtin", todoNag });
+  async function runTodo() {
+    const fixture = await session({ only: ["rubato-goal"], extraFactories: [todoStub], noTools: "builtin" });
     const contexts = [];
     let call = 0;
     fixture.session.agent.streamFunction = (_model, context) => {
@@ -182,12 +182,10 @@ test("/goal todo nag is default-on like Senpi and can be turned off", async () =
     const text = typeof result?.content === "string" ? result.content : (result?.content ?? []).filter((part) => part.type === "text").map((part) => part.text).join("\n");
     return { fixture, text, contexts };
   }
-  const on = await runTodo(true);
-  assert.match(on.text, /<system-reminder>/);
-  assert.equal(on.text.includes(DEFAULT_TODO_NAG_TEXT), true);
-  const off = await runTodo(false);
-  assert.equal(off.text.includes(DEFAULT_TODO_NAG_TEXT), false);
-  assert.doesNotMatch(off.text, /<system-reminder>/);
+  const result = await runTodo();
+  assert.equal(result.text.includes("todo updated"), true);
+  assert.doesNotMatch(result.text, /<system-reminder>/);
+  assert.equal(result.text.includes(DEFAULT_TODO_NAG_TEXT), false);
   const leakAfter = existsSync(leakDir) ? readdirSync(leakDir).sort() : [];
   assert.deepEqual(leakAfter, leakBefore, "goal store must not write into the worktree");
 });
