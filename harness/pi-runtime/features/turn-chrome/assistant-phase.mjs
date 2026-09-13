@@ -76,3 +76,19 @@ export function assistantPaintsText(message) {
   }
   return false;
 }
+
+/** Consecutive same-name tools share a count. bash·read·bash stays three names, not bash (2)·read. */
+export function collapseConsecutiveTools(items) {
+  const seen = [];
+  for (const item of items ?? []) {
+    const name = item?.name ?? "?";
+    const failed = item?.failed === true;
+    const last = seen[seen.length - 1];
+    if (last && last.name === name && last.failed === failed && !item?.diff && !last.diff) {
+      last.count += 1;
+      continue;
+    }
+    seen.push({ name, failed, count: 1, diff: item?.diff });
+  }
+  return seen;
+}

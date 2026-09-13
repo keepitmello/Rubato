@@ -9,7 +9,7 @@
 // come from the component's own handleMouse instead of the OSC-8 action bus.
 import { Container, truncateToWidth } from "@earendil-works/pi-tui";
 import { theme } from "../../modes/interactive/theme/theme.js";
-import { isToolUseEllipsisFiller, phaseForTextContent } from "./assistant-phase.mjs";
+import { collapseConsecutiveTools, isToolUseEllipsisFiller, phaseForTextContent } from "./assistant-phase.mjs";
 
 function compactDuration(ms) {
   return `${Math.max(1, Math.round(ms / 1000))}s`;
@@ -45,20 +45,7 @@ function thinkingStats(message, now = Date.now()) {
 }
 
 function compactTools(groups, width) {
-  const seen = [];
-  const indexByKey = new Map();
-  for (const group of groups) {
-    for (const item of group.workItems?.() ?? []) {
-      const key = `${item.failed ? "1" : "0"}\u0000${item.name}`;
-      const existing = indexByKey.get(key);
-      if (existing !== undefined) {
-        seen[existing].count += 1;
-        continue;
-      }
-      indexByKey.set(key, seen.length);
-      seen.push({ ...item, count: 1 });
-    }
-  }
+  const seen = collapseConsecutiveTools(groups.flatMap((group) => group.workItems?.() ?? []));
   const labels = seen.map(({ name, failed, count }) => `${failed ? "✗" : "✓"} ${name}${count > 1 ? ` (${count})` : ""}`);
   const full = labels.join(" · ");
   if ([...full].length <= width) return full;
@@ -82,11 +69,13 @@ export class TurnWorkSummaryComponent extends Container {
     this.expanded = false;
     this.requestCompleted = false;
     this.terminalStatus = undefined;
+    this.thinking = undefined;
   }
 
   /** Collapse the turn's own work only after the turn is over. */
   applyPresentation() {
     const collapsed = this.requestCompleted && !this.expanded;
+    this.thinking?.setTurnWorkCollapsed?.(collapsed);
     for (const component of this.assistants.keys()) {
       component.setTurnWorkCollapsed?.(collapsed);
       component.setHideProgress?.(collapsed);
@@ -108,6 +97,11 @@ export class TurnWorkSummaryComponent extends Container {
 
   trackToolGroup(group) {
     this.toolGroups.add(group);
+    if (this.requestCompleted) this.applyPresentation();
+  }
+
+  trackThinking(component) {
+    this.thinking = component;
     if (this.requestCompleted) this.applyPresentation();
   }
 
