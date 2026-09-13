@@ -166,6 +166,7 @@ test("Codex custom_tool_call replay drops fc_ item ids so the wire can mint ctc_
 	const patched = patchOpenAiResponsesShared(stock);
 	assert.match(patched, /if \(itemId && !itemId\.startsWith\("ctc_"\)\)/);
 	assert.match(patched, /type: "custom_tool_call"/);
+	assert.match(patched, /transformMessages\(context\.messages, model, normalizeToolCallId, options\)/);
 });
 
 test("A10 convertContentBlocks anchors survive the anthropic native patch", () => {

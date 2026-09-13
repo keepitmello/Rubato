@@ -218,6 +218,12 @@ export async function processResponsesStream(openaiStream, output, stream, model
                             call_id: callId,`,
 		"custom-tool-call-ctc-id",
 	);
+	next = replaceOnce(
+		next,
+		"    const transformedMessages = transformMessages(context.messages, model, normalizeToolCallId);",
+		"    const transformedMessages = transformMessages(context.messages, model, normalizeToolCallId, options);",
+		"transform-messages-options",
+	);
 	return next;
 }
 

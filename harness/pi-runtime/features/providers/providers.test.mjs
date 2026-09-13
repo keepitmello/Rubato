@@ -221,7 +221,7 @@ async function drain(stream) {
 
 test("feature stages one stock-bound closure and its default factory builds the admitted seven", async () => {
   assert.equal(providersFeature.id, "providers");
-  assert.equal(providersFeature.patches.length, 5);
+  assert.equal(providersFeature.patches.length, 7);
   assert.deepEqual(
     providersFeature.patches.map(({ path, preimageSha256 }) => ({ path, preimageSha256 })),
     [
@@ -244,6 +244,14 @@ test("feature stages one stock-bound closure and its default factory builds the 
       {
         path: "dist/core/extensions/runner.js",
         preimageSha256: "0de12ed1275e02595f92476eec3f61ae1f2e54fd2225ced721ddc90af58a5e61",
+      },
+      {
+        path: "dist/api/openai-codex-responses.js",
+        preimageSha256: "f5705d45ae72102110238d6265a548df3aef50b777f654f1f91a32d563c91b3e",
+      },
+      {
+        path: "dist/api/transform-messages.js",
+        preimageSha256: "e51975857b2fefa7e9cc108850ddab5a2fd1753a399f3cde00d76cd700ce6d10",
       },
     ],
   );
