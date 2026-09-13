@@ -1,6 +1,6 @@
 #!/bin/bash
 # T3 Code를 Rubato 공식 GUI로 깐다. 화면 제공자 이름은 Rubato다.
-# 내부 driver id는 rubato-pi로 남긴다.
+# 터미널 실행기는 Rubato CLI다. 내부 driver id는 rubato-pi로 남긴다.
 #
 # 기본은 계획만 출력한다. 적용은 --apply.
 set -uo pipefail

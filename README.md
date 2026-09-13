@@ -36,8 +36,10 @@ Rubato overlay를 얹고, 화면 제공자 이름을 **Rubato**로 연결한다.
 
 ## 자주 쓰는 명령
 
+터미널 실행기는 **Rubato CLI** (`rubato`)다. 공식 GUI는 T3다.
+
 ```bash
-rubato                # 새 세션
+rubato                # Rubato CLI 세션
 rubato-gui            # 공식 GUI (T3). 설치 때 --gui 를 고른 경우
 rubato update         # 변경 내용을 확인하고 업데이트
 rubato update --check # 업데이트 유무만 확인

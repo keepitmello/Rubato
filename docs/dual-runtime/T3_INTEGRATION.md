@@ -1,4 +1,4 @@
-# T3 ↔ Rubato/Pi 통합
+# T3 ↔ Rubato CLI 통합
 
 ## 조사 기준
 

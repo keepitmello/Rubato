@@ -4,7 +4,7 @@
 
 ## 자동으로 남기는 Pi control-path 지표
 
-`harness/pi-server/scripts/measure-lifecycle.mjs`는 실제 Rubato Pi server/client/process 수명주기를 사용하고 모델 대신 결정적인 시험용 child process를 연결한다. 따라서 다음 수치는 세션 관리 비용을 재현하는 용도이며 모델 추론/첫 토큰 시간은 포함하지 않는다.
+`harness/pi-server/scripts/measure-lifecycle.mjs`는 실제 Rubato CLI의 Pi server/client/process 수명주기를 사용하고 모델 대신 결정적인 시험용 child process를 연결한다. 따라서 다음 수치는 세션 관리 비용을 재현하는 용도이며 모델 추론/첫 토큰 시간은 포함하지 않는다.
 
 ```sh
 npm --prefix harness/pi-server install --ignore-scripts --workspaces=false

@@ -1,4 +1,4 @@
-/** Same provider/model order and labels as Rubato Pi `/model`. */
+/** Same provider/model order and labels as Rubato CLI `/model`. */
 export const PROVIDER_ORDER = [
   "openai-codex",
   "anthropic",

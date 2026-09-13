@@ -31,7 +31,7 @@ Electron 상태는 `~/Library/Application Support/Rubato/Codex`에 둡니다.
 원본 `/Applications/ChatGPT.app`을 그대로 실행하며 수정하거나 재서명하지 않습니다.
 `~/.codex`의 설정·세션은 복사하거나 수정하지 않습니다.
 기존 Pi/remote 도구의 사용자 데이터도 이동하지 않습니다. 앱 이름은 **Rubato**이며,
-이전 Pi 런타임과 구분할 때만 문서에서 **Rubato Pi**라고 부릅니다.
+터미널 실행기는 **Rubato CLI**라고 부릅니다.
 
 앱 설치·업데이트·검증 범위와 남은 런타임 확인 사항은
 [macOS 앱 안내](docs/macos-app.md)를 참고하세요. 아래 플러그인·전역 설정 적용
