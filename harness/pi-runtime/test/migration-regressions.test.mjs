@@ -76,6 +76,17 @@ test("rubato launch rebuilds a stale stock-engine before the session starts", as
   assert.match(launcher, /RUBATO_NO_ENGINE_BUILD/, "tests can still skip the rebuild");
 });
 
+test("rubato-pi.sh stays executable in the checkout", async () => {
+  const st = await stat(join(repoRoot, "harness/scripts/rubato-pi.sh"));
+  assert.equal(st.mode & 0o111, 0o111, "owner/group/other execute bits");
+});
+
+test("shell aliases invoke the launcher through sh so a dropped +x cannot block rubato", async () => {
+  const install = await readFile(join(repoRoot, "install.sh"), "utf8");
+  assert.match(install, /alias rubato="sh \\\$RUBATO_HARNESS\/scripts\/rubato-pi\.sh"/);
+  assert.match(install, /exec \/bin\/sh "%s" "\$@"/);
+});
+
 for (const action of ["write", "edit"]) {
   test(`${action} preserves executable permission bits`, async (t) => {
     const cwd = await scratch(t);

@@ -203,7 +203,7 @@ SESSION_DIR="$AGENT_DIR/dispatch/$NAME"
 LOG="$SESSION_DIR/last.log"
 OUT="$SESSION_DIR/last.stdout"
 
-if [[ ! -x "$LAUNCHER" ]]; then
+if [[ ! -f "$LAUNCHER" ]]; then
   echo "rubato dispatch: launcher not found: $LAUNCHER" >&2
   exit 127
 fi
@@ -215,7 +215,7 @@ fi
 
 mkdir -p "$SESSION_DIR"
 
-cmd=("$LAUNCHER" --print --session-dir "$SESSION_DIR" --name "$NAME")
+cmd=("/bin/sh" "$LAUNCHER" --print --session-dir "$SESSION_DIR" --name "$NAME")
 if [[ "$CONTINUE" -eq 1 ]]; then
   cmd+=(--continue)
 else
