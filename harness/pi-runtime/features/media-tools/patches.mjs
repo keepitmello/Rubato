@@ -403,6 +403,13 @@ function pairedAnthropicNativeIds(content) {
     }
     return paired;
 }
+function isAnthropicWebSearchReplayBlock(raw) {
+    if (!raw || typeof raw !== "object")
+        return false;
+    if (raw.type === "web_search_tool_result")
+        return true;
+    return raw.type === "server_tool_use" && raw.name === "web_search";
+}
 function convertMessages(transformedMessages, isOAuthToken, cacheControl, allowEmptySignature = false, deferredToolNames = new Set(), normalizeToolName = (name) => name, managedProvider, model) {`,
 		"convert-messages-helpers",
 	);
@@ -446,7 +453,8 @@ function convertMessages(transformedMessages, isOAuthToken, cacheControl, allowE
                         msg.model === model.id &&
                         typeof raw === "object" && raw !== null &&
                         typeof raw.type === "string" &&
-                        REPLAYABLE_ANTHROPIC_PROVIDER_NATIVE_TYPES.has(raw.type)) {
+                        REPLAYABLE_ANTHROPIC_PROVIDER_NATIVE_TYPES.has(raw.type) &&
+                        !( !model.compat?.supportsWebSearch && isAnthropicWebSearchReplayBlock(raw) )) {
                         const useId = raw.type === "server_tool_use" ? raw.id : raw.tool_use_id;
                         if (typeof useId !== "string" || pairedNativeIds.has(useId))
                             blocks.push(raw);

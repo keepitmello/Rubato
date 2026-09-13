@@ -156,7 +156,7 @@ export class ToolGroupComponent extends Container {
     const line = `${dim(`  • ${label}`)}  ${this.formatNames()}`;
     // Container.handleMouse reads this layout; a collapsed group does not use it.
     this.mouseLayout = undefined;
-    return ["", truncateToWidth(line, width, "")];
+    return [truncateToWidth(line, width, "")];
   }
 
   handleMouse(event) {

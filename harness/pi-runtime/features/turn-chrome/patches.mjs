@@ -177,7 +177,7 @@ const AM_TEXT = '            if (content.type === "text" && content.text.trim())
 const AM_TEXT_NEXT = '            if (content.type === "text" && content.text.trim() && !this.isHiddenByTurnChrome(message, content)) {';
 
 const AM_THINKING_SKIP = "                if (thinkingBlocks.length === 0) {\n                    continue;\n                }";
-const AM_THINKING_SKIP_NEXT = "                if (thinkingBlocks.length === 0 || this.turnWorkCollapsed) {\n                    continue;\n                }";
+const AM_THINKING_SKIP_NEXT = "                if (thinkingBlocks.length === 0 || this.turnWorkCollapsed || (this.hideThinkingBlock && message.content.some((c) => c.type === \"toolCall\"))) {\n                    continue;\n                }";
 
 const AM_AFTER = '                const hasVisibleContentAfter = message.content\n                    .slice(i + 1)\n                    .some((c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()));';
 const AM_AFTER_NEXT = '                const hasVisibleContentAfter = message.content\n                    .slice(i + 1)\n                    .some((c) => !this.isHiddenByTurnChrome(message, c) && ((c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim())));';
@@ -399,7 +399,7 @@ const IM_RENDER_ITEMS = "    renderSessionItems(items, options = {}) {\n        
 const IM_RENDER_ITEMS_NEXT = "    renderSessionItems(items, options = {}) {\n        this.pendingTools.clear();\n        this.closeToolGroup();\n        this.turnWorkSummary = undefined;";
 
 const IM_HISTORY_ASSISTANT = '            if (message.role === "assistant") {\n                this.addMessageToChat(message);';
-const IM_HISTORY_ASSISTANT_NEXT = '            if (message.role === "assistant") {\n                this.closeToolGroup();\n                this.addMessageToChat(message);';
+const IM_HISTORY_ASSISTANT_NEXT = '            if (message.role === "assistant") {\n                if (assistantPaintsText(message))\n                    this.closeToolGroup();\n                this.addMessageToChat(message);';
 
 const IM_HISTORY_TOOL = [
   "                        this.chatContainer.addChild(component);",

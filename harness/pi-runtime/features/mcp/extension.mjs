@@ -7,9 +7,13 @@ import { createMcpService, McpServiceError } from "./service.mjs";
 export function createMcpExtension(options) {
   return function rubatoMcpExtension(pi) {
     let service;
+    let attach = Promise.resolve();
     const search = options?.toolSearchService;
 
-    pi.on("session_start", async (_event, ctx) => {
+    // Attach in the background so session_start cannot pin the first prompt.
+    // before_agent_start still waits, so the first model turn sees the tools.
+    pi.on("session_start", (_event, ctx) => {
+      attach = (async () => {
       const ownedService = service ?? createMcpService(options);
       service = ownedService;
       let tools;
@@ -72,9 +76,15 @@ export function createMcpExtension(options) {
         });
         search.maybeRehydrateFromHistory(ctx.sessionManager.getEntries());
       }
+      })();
+    });
+
+    pi.on("before_agent_start", async () => {
+      await attach;
     });
 
     pi.on("session_shutdown", async () => {
+      await attach.catch(() => undefined);
       const ownedService = service;
       service = undefined;
       search?.clearFeed("mcp");
