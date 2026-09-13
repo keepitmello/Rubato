@@ -148,9 +148,10 @@ export class RubatoPiBridge {
         }
       }
     })();
-    this.recovering = recovery.finally(() => { if (this.recovering === recovery || this.recovering === wrapped) this.recovering = undefined; });
-    const wrapped = this.recovering;
-    return wrapped;
+    this.recovering = recovery;
+    const clear = () => { if (this.recovering === recovery) this.recovering = undefined; };
+    recovery.then(clear, clear);
+    return recovery;
   }
   require(threadId) {
     const context = this.sessions.get(threadId);
