@@ -19,6 +19,8 @@ test("Codex Responses freezes Astra effort as configuration_update and keeps WS 
 	assert.match(patched, /preserveThinking: !!fullBody\.reasoning/);
 	assert.match(patched, /preserveTextSignatures: true/);
 	assert.match(patched, /isAstraConfigurationUpdateModel\(model\)/);
+	assert.match(patched, /SESSION_WEBSOCKET_CACHE_TTL_MS = 30 \* 60 \* 1000/);
+	assert.match(patched, /entry\.idleTimer\.unref\?/);
 });
 
 test("transformMessages accepts senpi preserveThinking / preserveTextSignatures options", () => {

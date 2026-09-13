@@ -226,8 +226,44 @@ function patchAgentSessionRuntime(source) {
     `            getContextUsage: () => this.getContextUsage(),
             getMessageRevision: () => this.getMessageRevision(),
             applyCompaction: (precomputed, options) => this.applyCompaction(precomputed, options),
-            compact: (options) => {`,
-    "extension-bindings",
+           compact: (options) => {`,
+   "extension-bindings",
+ );
+  next = replaceOnce(
+    next,
+    `    _expandSkillCommand(text) {
+        if (!text.startsWith("/skill:"))
+            return text;`,
+    `    _expandSkillCommand(text) {
+        const expandOne = (raw) => {
+            const spaceIndex = raw.indexOf(" ");
+            const skillName = spaceIndex === -1 ? raw.slice(7) : raw.slice(7, spaceIndex);
+            const args = spaceIndex === -1 ? "" : raw.slice(spaceIndex + 1).trim();
+            const skill = this.resourceLoader.getSkills().skills.find((s) => s.name === skillName);
+            if (!skill)
+                return raw;
+            try {
+                const content = readFileSync(skill.filePath, "utf-8");
+                const body = stripFrontmatter(content).trim();
+                const skillBlock = \`<skill name="\${skill.name}" location="\${skill.filePath}">\\nReferences are relative to \${skill.baseDir}.\\n\\n\${body}\\n</skill>\`;
+                return args ? \`\${skillBlock}\\n\\n\${args}\` : skillBlock;
+            }
+            catch (err) {
+                this._extensionRunner.emitError({
+                    extensionPath: skill.filePath,
+                    event: "skill_expansion",
+                    error: err instanceof Error ? err.message : String(err),
+                });
+                return raw;
+            }
+        };
+        if (text.startsWith("/skill:") || text.startsWith("\$skill:"))
+            return expandOne(text.startsWith("\$skill:") ? \`/skill:\${text.slice(7)}\` : text);
+        return text.replace(/(^|\\s)([$/])skill:([a-zA-Z][a-zA-Z0-9:_-]*)(?=\\s|$)/g, (whole, lead, sigil, name) => {
+            const expanded = expandOne(\`/skill:\${name}\`);
+            return expanded === \`/skill:\${name}\` ? whole : \`\${lead}\${expanded}\`;
+        });`,
+    "inline-skill",
   );
   return next;
 }
