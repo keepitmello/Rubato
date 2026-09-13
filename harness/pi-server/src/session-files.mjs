@@ -46,8 +46,10 @@ export class SessionFiles {
     while (entry && !seen.has(entry.id)) {
       seen.add(entry.id); branch.unshift(entry); entry = byId.get(entry.parentId);
     }
-    return { sessionId: id, messages: branch.filter((entry) => entry.type === 'message')
-      .map((entry) => ({ entryId: entry.id, ...entry.message })) };
+    const selected = branch.findLast((entry) => entry.type === 'model_change');
+    return { sessionId: id, model: selected ? `${selected.provider}/${selected.modelId}` : null,
+      messages: branch.filter((entry) => entry.type === 'message')
+        .map((entry) => ({ entryId: entry.id, ...entry.message })) };
   }
   async create({ cwd, title } = {}) {
     if (typeof cwd !== 'string' || !path.isAbsolute(cwd)) throw new TypeError('cwd must be absolute');
