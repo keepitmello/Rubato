@@ -73,5 +73,6 @@ else
   warn "vp가 없어 데스크톱 바이너리는 안 만들었다. https://vite.plus 설치 뒤 다시 --apply"
 fi
 
-ok "GUI 설치 끝. 실행: rubato-gui"
+APP="$("$HERE/install-macos-app.sh")"
+ok "응용 프로그램: $APP  (더블클릭으로 켠다)"
 exit 0
