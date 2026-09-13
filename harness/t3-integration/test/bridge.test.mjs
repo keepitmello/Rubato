@@ -10,12 +10,13 @@ import { RpcWorker } from '../../pi-server/src/rpc-worker.mjs';
 import { SessionClient } from '../../pi-server/src/client.mjs';
 import { RubatoPiBridge } from '../src/bridge.mjs';
 import { EventProjection } from '../src/events.mjs';
+import {t3Modules} from './t3-source.mjs';
 const fixture = fileURLToPath(new URL('../../pi-server/test/fixtures/rpc.mjs', import.meta.url));
 const until = async (predicate) => { for (let i=0;i<300;i++) { if (await predicate()) return; await delay(10); } throw new Error('Condition did not settle'); };
 let decodeEvent = (value) => value;
 if (process.env.T3_SOURCE) {
   const { ProviderRuntimeEvent } = await import(`${process.env.T3_SOURCE}/packages/contracts/src/providerRuntime.ts`);
-  const Schema = await import(`${process.env.T3_SOURCE}/node_modules/effect/dist/Schema.js`);
+  const Schema = await t3Modules(process.env.T3_SOURCE).effect('Schema');
   decodeEvent = Schema.decodeUnknownSync(ProviderRuntimeEvent);
 }
 async function setup(t) {
