@@ -15,6 +15,7 @@ const catalog = Object.freeze({
   "session-catalog": { requires: [], load: () => import("./features/session-catalog/patches.mjs") },
   "session-picker": { requires: ["session-catalog"], load: () => import("./features/session-picker/patches.mjs") },
   "session-title": { requires: [], load: async () => (await import("./features/session-title/feature.mjs")).sessionTitleFeature },
+  "adapter-hooks": { requires: [], load: async () => (await import("./features/adapter-hooks/feature.mjs")).adapterHooksFeature },
   "child-runtime": { requires: [], load: async () => (await import("./features/child-runtime/feature.mjs")).childRuntimeFeature },
   terminal: { requires: ["tool-execution"], load: () => import("./features/terminal/patches.mjs") },
   providers: { requires: [], load: () => import("./features/providers/patches.mjs") },
