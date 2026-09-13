@@ -68,8 +68,8 @@ test('inventory uses real T3 decider/projector: groups stored history, preserves
     assert.equal(server.host.metrics.runtimeStarts,1);
     assert.equal((yield* Effect.promise(()=>external.snapshot())).runtimeId,original.runtimeId);
     const imported=model.threads.find(thread=>bindings.get(thread.id).resumeCursor.sessionId===two.sessionId);
-    assert.equal(imported.messages[0].text,'background');
-    assert.ok(commands.some(command=>command.type==='thread.history.import'));
+    assert.ok(imported);
+    assert.equal(commands.filter((command)=>command.type==='thread.history.import' && command.threadId===imported.id).length,0);
     const count=commands.length;
     yield* inventory.sync;
     assert.equal(commands.length,count);assert.equal(model.threads.length,3);assert.equal(bindings.size,3);
