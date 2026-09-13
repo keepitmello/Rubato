@@ -20,6 +20,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { resolvePiRuntime } from "../../resolve-runtime.mjs";
 import { files, patches } from "./patches.mjs";
+import { listSessionCatalogPage } from "./catalog.mjs";
 
 const featureDir = dirname(fileURLToPath(import.meta.url));
 const runtimeRoot = resolve(featureDir, "../..");
@@ -262,4 +263,19 @@ test("actual paged catalog is stable and only fully parses a normal result page"
     "session-118",
     "session-119",
   ]);
+});
+
+test("subdirectory scans also keep jsonl files sitting in the sessions root", async () => {
+  const root = join(scratchRoot, "mixed-sessions");
+  const nested = join(root, "--Users-wy-project--");
+  mkdirSync(nested, { recursive: true });
+  writeFileSync(join(root, "flat-today.jsonl"), "{\"type\":\"session\",\"id\":\"flat-today\"}\n");
+  writeFileSync(join(nested, "encoded.jsonl"), "{\"type\":\"session\",\"id\":\"encoded\"}\n");
+  const page = await listSessionCatalogPage({
+    root,
+    includeSubdirectories: true,
+    readHeader: (path) => JSON.parse(readFileSync(path, "utf8").split("\n")[0]),
+    buildInfo: async (path) => ({ id: JSON.parse(readFileSync(path, "utf8").split("\n")[0]).id, path }),
+  });
+  assert.deepEqual(new Set(page.sessions.map((session) => session.id)), new Set(["flat-today", "encoded"]));
 });
