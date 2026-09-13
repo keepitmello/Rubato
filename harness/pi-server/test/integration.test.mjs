@@ -100,6 +100,15 @@ test('directory subscriptions receive another client creation without runtime sp
   await unsubscribe();
 });
 
+test('client cleanup is idempotent after an explicit transport disconnect', async (t) => {
+  const env = await setup(t);
+  const client = await env.client();
+  client.client.disconnect();
+  await client.close();
+  await client.close();
+  assert.equal(client.client.disposed, true);
+});
+
 test('real built Rubato candidate starts and resumes through official server', { skip: !process.env.RUBATO_TEST_CANDIDATE }, async (t) => {
   const profile = await mkdtemp(path.join(tmpdir(), 'rb-profile-'));
   t.after(() => rm(profile, { recursive: true, force: true }));
