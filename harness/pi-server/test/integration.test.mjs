@@ -72,6 +72,26 @@ test('running A survives detach, B interaction, concurrent reattach, and reconne
   assert.equal(env.host.metrics.runtimeStarts, 3);
 });
 
+test('attach during idle unload waits for the old worker then starts a replacement', async (t) => {
+  const env = await setup(t, { idleMs: 30, pollMs: 0 });
+  const client = await env.client();
+  const session = await client.create({ cwd: env.root, title: 'Unload race' });
+  await client.attach(session.sessionId);
+  const original = await client.snapshot();
+  await client.command({ type: 'prompt', message: 'quick' });
+  await until(async () => !(await client.snapshot()).state.isStreaming);
+  await client.detach();
+  await until(async () => {
+    const item = (await client.list()).find((entry) => entry.sessionId === session.sessionId);
+    return item?.runtimeId === null;
+  });
+  await client.attach(session.sessionId);
+  const restored = await client.snapshot();
+  assert.notEqual(restored.runtimeId, original.runtimeId);
+  assert.equal(restored.sessionId, session.sessionId);
+  assert.equal(env.host.metrics.runtimeStarts, 2);
+});
+
 test('questions survive detach, validate exact offered answers, reject double replies', async (t) => {
   const env = await setup(t);
   const client = await env.client();

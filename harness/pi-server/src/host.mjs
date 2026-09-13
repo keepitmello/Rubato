@@ -168,8 +168,10 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
   const publish = () => {
     directory.state.sessions = records.map(({ file: _file, id, ...item }) => {
       const handle = handles.get(id);
-      return { ...item, sessionId: id, serverId, runtimeId: handle?.closed ? null : handle?.worker.id ?? null,
-        status: handle?.closed ? 'stored' : handle?.state.value.status ?? 'stored', attachments: handle?.attachments ?? 0 };
+      const live = handle && !handle.closed;
+      return { ...item, sessionId: id, serverId, runtimeId: live ? handle.worker.id : null,
+        status: !handle ? 'stored' : handle.closed ? 'unloading' : handle.state.value.status ?? 'stored',
+        attachments: handle?.attachments ?? 0 };
     });
     directory.state.revision++;
     directory.publish(BACKGROUND_CONTEXT);
@@ -221,7 +223,16 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
               await refresh();
               return directory.value.sessions.find((item) => item.sessionId === created.id);
             },
-            attach: async (id, context) => { await presentation.attachSession(id, context); return null; },
+            attach: async (id, context) => {
+              try { await presentation.attachSession(id, context); return null; }
+              catch (error) {
+                // Idle unload keeps the router lease until the child is physically
+                // gone. Retry once after exit so attach does not fail in that window.
+                if (!/unloading/i.test(`${error?.message ?? ''} ${error}`)) throw error;
+                await handles.get(id)?.terminated.catch(() => {});
+                await presentation.attachSession(id, context); return null;
+              }
+            },
             detach: async (context) => { await presentation.detachSession(context); return null; },
             unload: async (id) => {
               const handle = handles.get(id);
