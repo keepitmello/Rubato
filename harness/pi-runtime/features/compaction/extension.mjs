@@ -2,7 +2,7 @@ import * as breaker from "./circuit-breaker.mjs";
 import { shouldRunIdleCompaction } from "./idle.mjs";
 import { isOpenAiRemoteCompactionModel } from "./openai-remote-model.mjs";
 import { runOpenAiRemoteCompaction } from "./openai-remote.mjs";
-import { supportsAnthropicServerCompaction } from "./anthropic-server-compaction.mjs";
+import { ANTHROPIC_SERVER_COMPACTION_LANE_MARKER, supportsAnthropicServerCompaction } from "./anthropic-server-compaction.mjs";
 import { SUMMARY_MODE, contextMode } from "./notes-flag.mjs";
 
 const SERVER_OWNED_COMPACTION_REASONS = new Set(["threshold", "overflow", "pre_prompt"]);
@@ -39,6 +39,7 @@ export function createCompactionExtension({
   now = Date.now,
 } = {}) {
   if (!settingsManager) throw new TypeError("compaction requires the parent SettingsManager");
+  globalThis[Symbol.for(ANTHROPIC_SERVER_COMPACTION_LANE_MARKER)] = true;
   return (pi) => {
     let state = { consecutiveFailures: 0, trippedAt: null, lastYield: undefined };
     let idleInFlight = false;
