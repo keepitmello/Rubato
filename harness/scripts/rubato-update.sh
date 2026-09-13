@@ -129,6 +129,12 @@ if echo "$CHANGED" | grep -Eq '^packages/rubato-remote-hub/|^harness/scripts/rub
   /bin/launchctl print "gui/$(id -u)/$HUB_LABEL" >/dev/null 2>&1 && need_hub=1
 fi
 
+# 공식 GUI는 핀된 T3 + overlay다. 이 머신에 깔려 있고 핀/overlay가 바뀌면 다시 맞춘다.
+need_gui=0
+if [ -d "$HOME/.rubato/t3-source/.git" ] || [ -d "/Applications/Rubato.app" ] || [ -d "/Applications/T3 Code.app" ]; then
+  echo "$CHANGED" | grep -Eq '^harness/t3-integration/' && need_gui=1
+fi
+
 printf '\n%s== 다시 만들 것 ==%s\n' "$BOLD" "$RST"
 [ "$need_deps" = 1 ]    && echo "  의존성 설치"
 [ "$need_prompts" = 1 ] && echo "  시스템 프롬프트 합성"
@@ -139,7 +145,8 @@ echo "  번들 스킬 → ~/.agents/skills"
 [ "$need_candidate" = 1 ] && echo "  stock-pi 엔진 설치 ${DIM}(몇 분 걸려요)${RST}"
 [ "$need_aside" = 1 ]   && echo "  Aside 프록시 재시작"
 [ "$need_hub" = 1 ]     && echo "  remote hub 재시작"
-[ "$need_deps$need_prompts$need_extensions$need_engine$need_shell$need_aside$need_hub$need_candidate" = "00000000" ] && echo "  ${DIM}그 외는 소스만 받으면 돼요${RST}"
+[ "$need_gui" = 1 ]     && echo "  공식 GUI (핀된 T3 + overlay + Rubato.app)"
+[ "$need_deps$need_prompts$need_extensions$need_engine$need_shell$need_aside$need_hub$need_candidate$need_gui" = "000000000" ] && echo "  ${DIM}그 외는 소스만 받으면 돼요${RST}"
 
 # 로컬 수정이 있어도 멈추지 않는다.
 #
@@ -412,6 +419,14 @@ fi
 if [ "$need_hub" = 1 ]; then
   /bin/sh "$HERE/rubato-pi.sh" restart >/dev/null 2>&1 \
     && ok "remote hub 재시작" || warn "remote hub 재시작 경고 — 손으로: rubato restart"
+fi
+
+if [ "$need_gui" = 1 ]; then
+  if sh "$HARNESS/t3-integration/install-gui.sh" --apply; then
+    ok "공식 GUI를 핀에 맞췄습니다"
+  else
+    fail "공식 GUI 갱신에 실패했습니다. 소스는 받았지만 업데이트는 완료되지 않았습니다."
+  fi
 fi
 
 date +%s > "$STAMP"

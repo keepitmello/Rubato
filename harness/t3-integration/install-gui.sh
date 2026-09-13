@@ -39,7 +39,7 @@ if [ "$APPLY" -eq 0 ]; then
   plan "T3 $PIN 을 $T3_DIR 에 받는다"
   plan "overlay를 적용하고 제공자 이름을 Rubato로 쓴다"
   plan "T3 데이터는 $T3_HOME, Pi 서버는 $AGENT_DIR"
-  plan "데스크톱을 빌드할 수 있으면 빌드하고, rubato-gui 로 띄운다"
+  plan "데스크톱을 빌드할 수 있으면 빌드하고 /Applications/Rubato.app 을 만든다"
   exit 0
 fi
 
