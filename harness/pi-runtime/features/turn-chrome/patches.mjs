@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 const AGENT_PACKAGE = "@earendil-works/pi-coding-agent";
 const VERSION = "0.85.1";
 const RUNTIME_DIR = "dist/rubato-features/turn-chrome";
-const OWNED = ["assistant-phase.mjs", "working-phase.mjs", "tool-group.mjs", "turn-work-summary.mjs"];
+const OWNED = ["assistant-phase.mjs", "working-phase.mjs", "tool-group.mjs", "turn-thinking.mjs", "turn-work-summary.mjs"];
 
 function replaceOnce(source, before, after, label) {
   const first = source.indexOf(before);
@@ -123,7 +123,7 @@ const AM_THEME_IMPORT = 'import { getMarkdownTheme, theme } from "../theme/theme
 const AM_PHASE_IMPORT = 'import { isToolUseEllipsisFiller, phaseForTextContent } from "../../../rubato-features/turn-chrome/assistant-phase.mjs";\n';
 
 const AM_FIELDS = "    isStreaming = false;\n    thinkingVisibilityOverrides = new Map();";
-const AM_FIELDS_NEXT = "    isStreaming = false;\n    turnWorkCollapsed = false;\n    hideProgress = false;\n    showAbortWithTools = false;\n    thinkingVisibilityOverrides = new Map();";
+const AM_FIELDS_NEXT = "    isStreaming = false;\n    turnWorkCollapsed = false;\n    hideProgress = false;\n    showAbortWithTools = false;\n    hostThinking = false;\n    thinkingVisibilityOverrides = new Map();";
 
 const AM_METHODS_AT = "    setOutputPad(padding) {";
 const AM_METHODS = [
@@ -132,6 +132,15 @@ const AM_METHODS = [
   "        if (this.turnWorkCollapsed === collapsed)",
   "            return;",
   "        this.turnWorkCollapsed = collapsed;",
+  "        if (this.lastMessage) {",
+  "            this.updateContent(this.lastMessage);",
+  "        }",
+  "    }",
+  "    /** The turn owns one Thinking... toggle; this message must not paint its own. */",
+  "    setHostThinking(hosted) {",
+  "        if (this.hostThinking === hosted)",
+  "            return;",
+  "        this.hostThinking = hosted;",
   "        if (this.lastMessage) {",
   "            this.updateContent(this.lastMessage);",
   "        }",
@@ -147,7 +156,7 @@ const AM_METHODS = [
   "    }",
   "    isHiddenByTurnChrome(message, content) {",
   '        if (content.type === "thinking")',
-  "            return this.turnWorkCollapsed;",
+  "            return this.turnWorkCollapsed || this.hostThinking;",
   '        if (content.type !== "text")',
   "            return false;",
   "        if (isToolUseEllipsisFiller(message, content))",
@@ -177,7 +186,7 @@ const AM_TEXT = '            if (content.type === "text" && content.text.trim())
 const AM_TEXT_NEXT = '            if (content.type === "text" && content.text.trim() && !this.isHiddenByTurnChrome(message, content)) {';
 
 const AM_THINKING_SKIP = "                if (thinkingBlocks.length === 0) {\n                    continue;\n                }";
-const AM_THINKING_SKIP_NEXT = "                if (thinkingBlocks.length === 0 || this.turnWorkCollapsed || (this.hideThinkingBlock && message.content.some((c) => c.type === \"toolCall\"))) {\n                    continue;\n                }";
+const AM_THINKING_SKIP_NEXT = "                if (thinkingBlocks.length === 0 || this.turnWorkCollapsed || this.hostThinking) {\n                    continue;\n                }";
 
 const AM_AFTER = '                const hasVisibleContentAfter = message.content\n                    .slice(i + 1)\n                    .some((c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()));';
 const AM_AFTER_NEXT = '                const hasVisibleContentAfter = message.content\n                    .slice(i + 1)\n                    .some((c) => !this.isHiddenByTurnChrome(message, c) && ((c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim())));';
@@ -207,6 +216,7 @@ const IM_CHROME_IMPORTS = [
   IM_STATUS_IMPORT,
   'import { ToolGroupComponent } from "../../rubato-features/turn-chrome/tool-group.mjs";',
   'import { TurnWorkSummaryComponent } from "../../rubato-features/turn-chrome/turn-work-summary.mjs";',
+  'import { TurnThinkingComponent } from "../../rubato-features/turn-chrome/turn-thinking.mjs";',
   'import { THINKING_LABEL, nextWorkingLabel } from "../../rubato-features/turn-chrome/working-phase.mjs";',
   'import { assistantPaintsText } from "../../rubato-features/turn-chrome/assistant-phase.mjs";',
 ].join("\n");
@@ -247,6 +257,8 @@ const IM_HELPERS = [
   "                }",
   "                return;",
   "            }",
+  "            if (child instanceof TurnThinkingComponent || child instanceof TurnWorkSummaryComponent)",
+  "                continue;",
   "            if (child instanceof AssistantMessageComponent && !assistantPaintsText(child.lastMessage))",
   "                continue;",
   "            this.closeToolGroup();",
@@ -260,7 +272,14 @@ const IM_HELPERS = [
   "    startTurnWorkSummary() {",
   "        if (this.turnWorkSummary)",
   "            return;",
+  "        this.turnThinking = new TurnThinkingComponent(this.ui, {",
+  "            collapsed: this.hideThinkingBlock,",
+  "            outputPad: this.outputPad,",
+  "            markdownTheme: this.getMarkdownThemeWithSettings(),",
+  "        });",
   "        this.turnWorkSummary = new TurnWorkSummaryComponent(this.ui);",
+  "        this.turnWorkSummary.trackThinking(this.turnThinking);",
+  "        this.chatContainer.addChild(this.turnThinking);",
   "        this.chatContainer.addChild(this.turnWorkSummary);",
   "    }",
   "    /** Thinking or Working: the tail of the streaming message says which. */",
@@ -285,6 +304,7 @@ const IM_AGENT_START_NEXT = [
   "                // message has not been added yet at agent_start, so only reset",
   "                // here; message_start creates the component in place.",
   "                this.turnWorkSummary = undefined;",
+  "                this.turnThinking = undefined;",
   "                this.workingPhaseLabel = THINKING_LABEL;",
 ].join("\n");
 
@@ -304,7 +324,9 @@ const IM_MESSAGE_START_NEXT = [
   "                    this.streamingComponent = new AssistantMessageComponent(undefined, this.hideThinkingBlock, this.getMarkdownThemeWithSettings(), this.hiddenThinkingLabel, this.outputPad, this.getMarkdownTransformers());",
   "                    this.streamingMessage = event.message;",
   "                    this.chatContainer.addChild(this.streamingComponent);",
+  "                    this.streamingComponent.setHostThinking?.(true);",
   "                    this.turnWorkSummary?.trackAssistant(this.streamingComponent, this.streamingMessage);",
+  "                    this.turnThinking?.trackAssistant(this.streamingComponent, this.streamingMessage);",
   "                    this.applyWorkingPhase(this.streamingMessage);",
   "                    this.streamingComponent.updateContent(this.streamingMessage, true);",
 ].join("\n");
@@ -317,6 +339,7 @@ const IM_MESSAGE_UPDATE = [
 ].join("\n");
 const IM_MESSAGE_UPDATE_NEXT = [
   "                    this.turnWorkSummary?.trackAssistant(this.streamingComponent, this.streamingMessage);",
+  "                    this.turnThinking?.trackAssistant(this.streamingComponent, this.streamingMessage);",
   "                    this.applyWorkingPhase(this.streamingMessage);",
   "                    this.streamingComponent.updateContent(this.streamingMessage, true);",
   "                    for (const [contentIndex, content] of this.streamingMessage.content.entries()) {",
@@ -393,10 +416,11 @@ const IM_AGENT_END_NEXT = [
   "                // fold into the summary line, which a click reopens.",
   "                this.turnWorkSummary?.setRequestCompleted(true);",
   "                this.turnWorkSummary = undefined;",
+  "                this.turnThinking = undefined;",
 ].join("\n");
 
 const IM_RENDER_ITEMS = "    renderSessionItems(items, options = {}) {\n        this.pendingTools.clear();";
-const IM_RENDER_ITEMS_NEXT = "    renderSessionItems(items, options = {}) {\n        this.pendingTools.clear();\n        this.closeToolGroup();\n        this.turnWorkSummary = undefined;";
+const IM_RENDER_ITEMS_NEXT = "    renderSessionItems(items, options = {}) {\n        this.pendingTools.clear();\n        this.closeToolGroup();\n        this.turnWorkSummary = undefined;\n        this.turnThinking = undefined;";
 
 const IM_HISTORY_ASSISTANT = '            if (message.role === "assistant") {\n                this.addMessageToChat(message);';
 const IM_HISTORY_ASSISTANT_NEXT = '            if (message.role === "assistant") {\n                if (assistantPaintsText(message))\n                    this.closeToolGroup();\n                this.addMessageToChat(message);';
