@@ -29,7 +29,8 @@ cd Rubato
 ```
 
 적용 때 GUI를 고르거나 `./install.sh --apply --gui` 를 주면 T3 Code를 받아
-Rubato overlay를 얹고, 화면 제공자 이름을 **Rubato**로 연결한다. 실행은 `rubato-gui`.
+Rubato overlay를 얹고, 화면 제공자 이름을 **Rubato**로 연결한다.
+응용 프로그램에 **Rubato.app**이 생긴다. 터미널에서는 `rubato-gui`.
 
 설치 프로그램은 기존 credential을 복사하거나 새로 만들지 않는다. 연결 상태는 설치 후
 `rubato auth`로 확인한다.
