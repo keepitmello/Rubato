@@ -3,19 +3,19 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { collapseConsecutiveTools } from "./assistant-phase.mjs";
+import { collapseToolsByName } from "./assistant-phase.mjs";
 import { patchAssistantMessage, patchInteractiveTurnChrome } from "./patches.mjs";
 
 const stock = join(dirname(fileURLToPath(import.meta.url)), "../../node_modules/@earendil-works/pi-coding-agent/dist");
 
-test("bash·read·bash keeps two bash names; only consecutive names count", () => {
+test("bash·read·bash becomes bash (2)·read in first-seen order", () => {
   const named = (name) => ({ name, failed: false });
   assert.deepEqual(
-    collapseConsecutiveTools([named("bash"), named("read"), named("bash")]).map(({ name, count }) => `${name}:${count}`),
-    ["bash:1", "read:1", "bash:1"],
+    collapseToolsByName([named("bash"), named("read"), named("bash")]).map(({ name, count }) => `${name}:${count}`),
+    ["bash:2", "read:1"],
   );
   assert.deepEqual(
-    collapseConsecutiveTools([named("bash"), named("bash"), named("read")]).map(({ name, count }) => `${name}:${count}`),
+    collapseToolsByName([named("bash"), named("bash"), named("read")]).map(({ name, count }) => `${name}:${count}`),
     ["bash:2", "read:1"],
   );
 });
