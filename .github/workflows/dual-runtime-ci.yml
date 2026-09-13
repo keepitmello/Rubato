@@ -1,0 +1,139 @@
+name: Dual runtime checkpoints
+
+on:
+  push:
+    branches: [codex/dual-runtime-checkpoints-20260913]
+  pull_request:
+    paths:
+      - 'harness/pi-server/**'
+      - 'harness/t3-integration/**'
+      - 'rubato-codex/**'
+      - 'docs/dual-runtime/**'
+      - 'IMPLEMENTATION_HANDOFF.md'
+      - '.github/workflows/dual-runtime-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dual-runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checkpoint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Preserve exact source revision
+        run: |
+          mkdir -p "$RUNNER_TEMP/dual-runtime-checkpoint"
+          git archive --format=tar.gz HEAD > "$RUNNER_TEMP/dual-runtime-checkpoint/source.tar.gz"
+          git rev-parse HEAD > "$RUNNER_TEMP/dual-runtime-checkpoint/REVISION"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dual-runtime-source
+          path: ${{ runner.temp }}/dual-runtime-checkpoint/
+          retention-days: 30
+      - name: Install isolated Pi server dependencies
+        run: npm --prefix harness/pi-server install --ignore-scripts --workspaces=false
+      - name: Test isolated Pi server
+        run: |
+          set -o pipefail
+          npm --prefix harness/pi-server test --workspaces=false 2>&1 | tee "$RUNNER_TEMP/pi-server-tests.log"
+      - name: Measure synthetic Pi lifecycle control path
+        run: node harness/pi-server/scripts/measure-lifecycle.mjs | tee "$RUNNER_TEMP/pi-lifecycle-measurement.json"
+      - name: Preserve validation logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dual-runtime-validation
+          path: |
+            ${{ runner.temp }}/*-tests.log
+            ${{ runner.temp }}/pi-lifecycle-measurement.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+  codex-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Run audited Codex regression surface
+        run: |
+          set -o pipefail
+          node --test --test-timeout=45000 \
+            rubato-codex/test/skills-bundle.test.mjs \
+            rubato-codex/test/bundle-dependencies.test.mjs \
+            rubato-codex/test/prompts.test.mjs \
+            rubato-codex/test/providers.test.mjs \
+            rubato-codex/test/package.test.mjs \
+            rubato-codex/test/opencodex-setup.test.mjs \
+            2>&1 | tee "$RUNNER_TEMP/codex-audit-tests.log"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: codex-audit-validation
+          path: ${{ runner.temp }}/codex-audit-tests.log
+          if-no-files-found: ignore
+          retention-days: 30
+
+  t3-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Prepare exact T3 source and package manager
+        run: |
+          set -o pipefail
+          T3_REVISION=$(node --input-type=module -e "import fs from 'node:fs'; console.log(JSON.parse(fs.readFileSync('harness/t3-integration/upstream.json')).upstreamCommit)")
+          echo "T3_SOURCE=$RUNNER_TEMP/t3-source" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/t3-source"
+          curl --fail --location --retry 2 "https://codeload.github.com/pingdotgg/t3code/tar.gz/$T3_REVISION" --output "$RUNNER_TEMP/t3.tar.gz"
+          tar -xzf "$RUNNER_TEMP/t3.tar.gz" -C "$RUNNER_TEMP/t3-source" --strip-components=1
+          npm install --prefix "$RUNNER_TEMP/t3-tools" --no-audit pnpm@11.10.0
+          echo "$RUNNER_TEMP/t3-tools/node_modules/.bin" >> "$GITHUB_PATH"
+          echo "$T3_REVISION" > "$RUNNER_TEMP/t3-revision.log"
+      - name: Apply guarded provider integration
+        run: node harness/t3-integration/apply.mjs --t3 "$T3_SOURCE"
+      - name: Install actual T3 workspace dependencies
+        run: |
+          set -o pipefail
+          pnpm --dir "$T3_SOURCE" install --frozen-lockfile --ignore-scripts 2>&1 | tee "$RUNNER_TEMP/t3-install.log"
+          npm --prefix harness/pi-server install --ignore-scripts --workspaces=false
+      - name: Run provider and inventory integration tests
+        run: |
+          set -o pipefail
+          node --test --test-timeout=90000 harness/t3-integration/test/*.test.mjs 2>&1 | tee "$RUNNER_TEMP/t3-integration-tests.log"
+      - name: Typecheck the complete T3 server
+        run: |
+          set -o pipefail
+          pnpm --dir "$T3_SOURCE" --filter t3 typecheck 2>&1 | tee "$RUNNER_TEMP/t3-server-types.log"
+      - name: Build the complete T3 server bundle
+        run: |
+          set -o pipefail
+          pnpm --dir "$T3_SOURCE" --filter t3 build:bundle 2>&1 | tee "$RUNNER_TEMP/t3-server-build.log"
+      - name: Preserve T3 validation records
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: t3-integration-validation
+          path: ${{ runner.temp }}/t3-*.log
+          if-no-files-found: ignore
+          retention-days: 30
