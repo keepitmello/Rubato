@@ -9,7 +9,7 @@
 // come from the component's own handleMouse instead of the OSC-8 action bus.
 import { Container, truncateToWidth } from "@earendil-works/pi-tui";
 import { theme } from "../../modes/interactive/theme/theme.js";
-import { collapseConsecutiveTools, isToolUseEllipsisFiller, phaseForTextContent } from "./assistant-phase.mjs";
+import { collapseToolsByName, isToolUseEllipsisFiller, phaseForTextContent } from "./assistant-phase.mjs";
 
 function compactDuration(ms) {
   return `${Math.max(1, Math.round(ms / 1000))}s`;
@@ -45,7 +45,7 @@ function thinkingStats(message, now = Date.now()) {
 }
 
 function compactTools(groups, width) {
-  const seen = collapseConsecutiveTools(groups.flatMap((group) => group.workItems?.() ?? []));
+  const seen = collapseToolsByName(groups.flatMap((group) => group.workItems?.() ?? []));
   const labels = seen.map(({ name, failed, count }) => `${failed ? "✗" : "✓"} ${name}${count > 1 ? ` (${count})` : ""}`);
   const full = labels.join(" · ");
   if ([...full].length <= width) return full;
