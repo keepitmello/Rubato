@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 const VERSION = "0.85.1";
 const OWNED_FILES = [
   "apply-patch.mjs",
+  "demote-unavailable.mjs",
   "index.mjs",
   "loop-guard.mjs",
   "patch-engine.mjs",

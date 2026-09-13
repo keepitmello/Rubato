@@ -12,7 +12,9 @@ import {
   sanitizeAnthropicToolPairs,
   sanitizeOpenAIChatCompletionsPayload,
   sanitizeOpenAIResponsesPayload,
+  sanitizeToolPairs,
 } from "./tool-pair.mjs";
+import { demoteUnavailableToolReferences } from "./demote-unavailable.mjs";
 
 const featureDir = dirname(fileURLToPath(import.meta.url));
 const runtimeRoot = resolve(featureDir, "../..");
@@ -121,6 +123,58 @@ test("tool-pair sanitizers preserve balanced payload identity and repair all thr
     ["tool", "call_1"],
     ["user", undefined],
   ]);
+});
+
+test("unavailable history tool_use names are demoted to text with matching results", () => {
+  const payload = {
+    tools: [{ name: "apply_patch" }, { name: "read" }],
+    messages: [
+      {
+        role: "assistant",
+        content: [
+          { type: "tool_use", id: "w1", name: "write", input: { path: "a.ts" } },
+          { type: "tool_use", id: "r1", name: "read", input: { path: "a.ts" } },
+        ],
+      },
+      {
+        role: "user",
+        content: [
+          { type: "tool_result", tool_use_id: "w1", content: "wrote" },
+          { type: "tool_result", tool_use_id: "r1", content: "ok" },
+        ],
+      },
+    ],
+  };
+  const demoted = demoteUnavailableToolReferences(payload);
+  assert.notEqual(demoted, payload);
+  assert.equal(demoted.messages[0].content[0].type, "text");
+  assert.match(demoted.messages[0].content[0].text, /unavailable-tool-call name="write"/);
+  assert.match(demoted.messages[0].content[0].text, /apply_patch/);
+  assert.deepEqual(demoted.messages[0].content[1], payload.messages[0].content[1]);
+  assert.equal(demoted.messages[1].content[0].type, "text");
+  assert.match(demoted.messages[1].content[0].text, /unavailable-tool-result name="write"/);
+  assert.match(demoted.messages[1].content[0].text, /wrote/);
+  assert.deepEqual(demoted.messages[1].content[1], payload.messages[1].content[1]);
+  assert.equal(demoteUnavailableToolReferences(payload).messages[0].content[0].type, "text");
+
+  const alreadyAvailable = {
+    tools: [{ name: "write" }, { name: "read" }],
+    messages: payload.messages,
+  };
+  assert.equal(demoteUnavailableToolReferences(alreadyAvailable), alreadyAvailable);
+});
+
+test("sanitizeToolPairs demotes missing names before inventing pair results", () => {
+  const payload = {
+    tools: [{ name: "apply_patch" }],
+    messages: [
+      { role: "assistant", content: [{ type: "tool_use", id: "e1", name: "edit", input: {} }] },
+    ],
+  };
+  const sanitized = sanitizeToolPairs(payload);
+  assert.equal(sanitized.messages.length, 1);
+  assert.equal(sanitized.messages[0].content[0].type, "text");
+  assert.match(sanitized.messages[0].content[0].text, /unavailable-tool-call name="edit"/);
 });
 
 test("actual stock ExtensionRunner chains repaired provider payload into later handlers", async (t) => {
