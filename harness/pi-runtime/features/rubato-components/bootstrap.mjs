@@ -22,6 +22,7 @@ import { createCompactionExtensionFactories } from "../compaction/index.mjs";
 import { createConfigReloadExtensionFactories } from "../config-reload/index.mjs";
 import { createUserCommandsAgentFactories } from "../user-commands-agent/index.mjs";
 import { createUserCommandSessionFactories } from "../user-commands-session/index.mjs";
+import { createSessionTitleFactories } from "../session-title/index.mjs";
 import { createRemoteSurfaceFactories } from "../remote-surface/index.mjs";
 import { createTuiInputFactories } from "../tui-input/index.mjs";
 import codemode from "../codemode/src/index.ts";
@@ -99,6 +100,7 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
     ...createConfigReloadExtensionFactories({ settingsManager: settings, agentDir, cwd }),
     ...createUserCommandsAgentFactories({ agentDir, env }),
     ...createUserCommandSessionFactories(),
+    ...createSessionTitleFactories(),
     ...createRemoteSurfaceFactories(),
     ...createTuiInputFactories(),
     { name: "rubato-bash-timeout", factory: createBashTimeoutExtension() },
