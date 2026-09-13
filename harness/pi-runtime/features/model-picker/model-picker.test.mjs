@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import { loadPiFeatures, PI_FEATURE_NAMES } from "../../feature-catalog.mjs";
 import { CANDIDATE_FEATURE_NAMES } from "../rubato-components/candidate-main.mjs";
-import { sortModelItems, modelPickerLabel } from "./catalog.mjs";
+import { admitPickerItems, modelPickerLabel, PROVIDER_ORDER, sortModelItems } from "./catalog.mjs";
 import { feature, files, patches, patchModelSelector } from "./patches.mjs";
 
 const featureDir = dirname(fileURLToPath(import.meta.url));
@@ -42,12 +42,35 @@ test("sorts by provider groups and keeps xai/ vs cursor/ apart, Sol first", () =
   ]);
 });
 
+test("picker admits only the seven providers, current model excepted", () => {
+  const equal = (a, b) => a === b;
+  const openaiAstra = { provider: "openai", id: "gpt-6-astra", model: "api-astra" };
+  const admitted = admitPickerItems(
+    [
+      openaiAstra,
+      { provider: "openai-codex", id: "gpt-6-astra", model: "codex-astra" },
+      { provider: "anthropic", id: "claude-opus-5", model: "opus" },
+    ],
+    undefined,
+    equal,
+  );
+  assert.deepEqual(admitted.map((item) => `${item.provider}/${item.id}`), [
+    "openai-codex/gpt-6-astra",
+    "anthropic/claude-opus-5",
+  ]);
+  const keptCurrent = admitPickerItems([openaiAstra], "api-astra", equal);
+  assert.deepEqual(keptCurrent.map((item) => item.provider), ["openai"]);
+  assert.deepEqual([...PROVIDER_ORDER], [
+    "openai-codex", "anthropic", "xai", "google-antigravity", "kiro", "cursor", "opencode",
+  ]);
+});
+
 test("display labels and stock patch replace item.id", () => {
   assert.equal(modelPickerLabel({ provider: "cursor", id: "cursor-grok-4.6", model: {} }), "grok-4.6-fast");
   assert.equal(modelPickerLabel({ provider: "anthropic", id: "claude-fable-5-1", model: {} }), "Fable 5.1");
   assert.equal(modelPickerLabel({ provider: "openai-codex", id: "gpt-daybreak-blue-latest", model: { name: "Daybreak Blue" } }), "Daybreak Blue");
   const patched = patchModelSelector(readFileSync(stockPath, "utf8"));
-  assert.match(patched, /sortModelItems\(models\)/);
+  assert.match(patched, /sortModelItems\(admitPickerItems\(models, this.currentModel, modelsAreEqual\)\)/);
   assert.match(patched, /modelPickerLabel\(item\)/);
   assert.doesNotMatch(patched, /current model first, default model second/);
 });

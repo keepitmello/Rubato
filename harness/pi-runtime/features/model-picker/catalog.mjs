@@ -1,4 +1,4 @@
-const PROVIDER_ORDER = ["openai-codex", "anthropic", "xai", "google-antigravity", "kiro", "cursor", "opencode"];
+export const PROVIDER_ORDER = ["openai-codex", "anthropic", "xai", "google-antigravity", "kiro", "cursor", "opencode"];
 const MODEL_ORDER = {
   "openai-codex": ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra", "gpt-daybreak-blue-latest"],
   anthropic: ["claude-fable-5-1", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"],
@@ -8,6 +8,11 @@ const MODEL_ORDER = {
   cursor: ["gpt-5.6-sol", "claude-fable-5-1", "claude-opus-5", "cursor-grok-4.6", "gemini-3.8-flash", "kimi-k3", "composer-2.5"],
   opencode: ["muse-spark-1.3-contributor-free"],
 };
+
+export function admitPickerItems(models, currentModel, modelsAreEqual) {
+  return models.filter((item) =>
+    PROVIDER_ORDER.includes(item.provider) || (currentModel != null && modelsAreEqual(currentModel, item.model)));
+}
 
 function rankedIndex(values, value) {
   const index = values.indexOf(value);

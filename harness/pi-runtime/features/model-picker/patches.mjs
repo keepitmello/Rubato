@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
 const VERSION = "0.85.1";
-const CATALOG_IMPORT = 'import { modelPickerLabel, sortModelItems } from "../../../rubato-features/model-picker/catalog.mjs";';
+const CATALOG_IMPORT = 'import { admitPickerItems, modelPickerLabel, sortModelItems } from "../../../rubato-features/model-picker/catalog.mjs";';
 
 function replaceOnce(source, before, after, label) {
   const first = source.indexOf(before);
@@ -21,7 +21,7 @@ const IMPORT_BEFORE = 'import { keyDisplayText, keyHint } from "./keybinding-hin
 const IMPORT_AFTER = 'import { keyDisplayText, keyHint } from "./keybinding-hints.js";\n' + CATALOG_IMPORT + '\n/**\n * Component that renders a model selector with search\n */';
 
 const SORT_BEFORE = `    sortModels(models) {\n        const sorted = [...models];\n        // Sort: current model first, default model second, then by provider.\n        sorted.sort((a, b) => {\n            const aIsCurrent = modelsAreEqual(this.currentModel, a.model);\n            const bIsCurrent = modelsAreEqual(this.currentModel, b.model);\n            if (aIsCurrent && !bIsCurrent)\n                return -1;\n            if (!aIsCurrent && bIsCurrent)\n                return 1;\n            const aIsDefault = this.isDefaultModel(a.model);\n            const bIsDefault = this.isDefaultModel(b.model);\n            if (aIsDefault && !bIsDefault)\n                return -1;\n            if (!aIsDefault && bIsDefault)\n                return 1;\n            return a.provider.localeCompare(b.provider);\n        });\n        return sorted;\n    }`;
-const SORT_AFTER = `    sortModels(models) {\n        return sortModelItems(models);\n    }`;
+const SORT_AFTER = `    sortModels(models) {\n        return sortModelItems(admitPickerItems(models, this.currentModel, modelsAreEqual));\n    }`;
 
 const LABEL_BEFORE = '            const modelText = isSelected ? theme.fg("accent", item.id) : item.id;';
 const LABEL_AFTER = '            const label = modelPickerLabel(item);\n            const modelText = isSelected ? theme.fg("accent", label) : label;';
