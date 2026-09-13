@@ -2,6 +2,9 @@
   "upstreamCommit": "3138f5716098a331f9a7d4cfc1bcd07118967a83",
   "targets": {
     "apps/server/src/provider/builtInDrivers.ts": "0d9d3b5d3add4b49743dc05aba1f96edf29f23e9c24addd55e2a1f81ace4bb16",
-    "apps/server/src/serverRuntimeStartup.ts": "d6e0cd73e40c009dc39ed8438cc050c8bef1ff0d9a0bf4a5c709224a483c33f7"
+    "apps/server/src/serverRuntimeStartup.ts": "d6e0cd73e40c009dc39ed8438cc050c8bef1ff0d9a0bf4a5c709224a483c33f7",
+    "apps/desktop/scripts/electron-launcher.mjs": "42d64d7bba829c47bc0d04de7169275e3f77ecca60b9bd3b679fbe5752cd726e",
+    "apps/desktop/src/app/DesktopAssets.ts": "98b97e410921a36a6cdefeecd0df6dfb1e3f3ec0e3774ace6de43ac8d94f9977",
+    "apps/desktop/src/app/DesktopEnvironment.ts": "731f7b82ba918194d3402e70b5a9c7bf80fda651c3a2ee5bcda8937a7398aadd"
   }
 }

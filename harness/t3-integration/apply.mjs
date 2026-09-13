@@ -8,7 +8,9 @@ import { parseArgs } from 'node:util';
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
 const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/server/src/provider/RubatoPiInventory.ts'];
-const insertions = {
+// 값이 [anchor, addition] 이면 anchor 앞에 붙이고, [from, to, 'replace'] 면 갈아끼운다.
+// 앱 이름·번들 id·아이콘은 T3 가 const 로 박아둬서 앞에 덧붙이는 것으로는 못 바꾼다.
+const edits = {
   'apps/server/src/provider/builtInDrivers.ts': [
     ['import type { AnyProviderDriver } from "./ProviderDriver.ts";', 'import { RubatoPiDriver } from "./Drivers/RubatoPiDriver.ts";\n'],
     ['  AntigravityDriver,\n];', '  RubatoPiDriver,\n'],
@@ -18,16 +20,63 @@ const insertions = {
     ['      yield* runStartupPhase("provider-sessions.reconcile", reconcileProviderSessions);', '      const rubatoInventory = yield* makeRubatoPiInventory.pipe(Scope.provide(reactorScope));\n'],
     ['      yield* Effect.logDebug("startup phase: complete");', '      yield* rubatoInventory.start.pipe(Scope.provide(reactorScope));\n'],
   ],
+  // Dock 이름·아이콘·번들 id. 값 자체는 환경변수로 빼고 T3 기본값은 폴백으로 남긴다 —
+  // 경로를 여기 박으면 머신마다 다른 레포 위치를 못 따라간다. start-gui.sh 가 채운다.
+  'apps/desktop/scripts/electron-launcher.mjs': [
+    [
+      'const APP_DISPLAY_NAME = isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)";',
+      'const APP_DISPLAY_NAME =\n  process.env.RUBATO_GUI_APP_NAME || (isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)");',
+      'replace',
+    ],
+    [
+      ['const APP_BUNDLE_ID = isDevelopment', '  ? `com.t3tools.t3code.dev.${devBundleIdSuffix || "local"}`', '  : "com.t3tools.t3code";'].join('\n'),
+      ['const APP_BUNDLE_ID =', '  process.env.RUBATO_GUI_BUNDLE_ID ||', '  (isDevelopment', '    ? `com.t3tools.t3code.dev.${devBundleIdSuffix || "local"}`', '    : "com.t3tools.t3code");'].join('\n'),
+      'replace',
+    ],
+    [
+      'const productionMacIconPngPath = NodePath.join(repoRoot, "assets", "prod", "black-macos-1024.png");',
+      'const productionMacIconPngPath =\n  process.env.RUBATO_GUI_ICON_PNG ||\n  NodePath.join(repoRoot, "assets", "prod", "black-macos-1024.png");',
+      'replace',
+    ],
+    [
+      ['    NSScreenCaptureUsageDescription:', '      "T3 Code captures the active window when you use the snapshot shortcut.",', '    NSDocumentsFolderUsageDescription: "T3 Code reads project files you open in the desktop app.",'].join('\n'),
+      ['    NSScreenCaptureUsageDescription: `${APP_DISPLAY_NAME} captures the active window when you use the snapshot shortcut.`,', '    NSDocumentsFolderUsageDescription: `${APP_DISPLAY_NAME} reads project files you open in the desktop app.`,'].join('\n'),
+      'replace',
+    ],
+  ],
+  // 번들 plist 만으로는 안 된다. 소스에서 켠 앱(isPackaged=false)은 실행 중에
+  // 자기 png 로 Dock 타일을 다시 그린다.
+  'apps/desktop/src/app/DesktopAssets.ts': [
+    [
+      '  return environment.path.join(environment.rootDir, "assets", brand, fileName);',
+      '  if (ext === "png" && process.env.RUBATO_GUI_ICON_PNG) return process.env.RUBATO_GUI_ICON_PNG;\n  return environment.path.join(environment.rootDir, "assets", brand, fileName);',
+      'replace',
+    ],
+  ],
+  // 메뉴 막대와 정보 창에 쓰는 이름. 번들 이름과 따로 논다.
+  'apps/desktop/src/app/DesktopEnvironment.ts': [
+    [
+      'const APP_BASE_NAME = "T3 Code";',
+      'const APP_BASE_NAME = process.env.RUBATO_GUI_APP_NAME || "T3 Code";',
+      'replace',
+    ],
+    [
+      '    displayName: `${APP_BASE_NAME} (${stageLabel})`,',
+      '    displayName: process.env.RUBATO_GUI_APP_NAME || `${APP_BASE_NAME} (${stageLabel})`,',
+      'replace',
+    ],
+  ],
 };
 function transform(text, changes) {
-  for (const [anchor, addition] of changes) {
+  for (const [anchor, addition, mode] of changes) {
     if (text.split(anchor).length !== 2) throw new Error(`T3 integration anchor is missing or ambiguous: ${anchor}`);
-    text = text.replace(anchor, addition + anchor);
+    text = mode === 'replace' ? text.replace(anchor, addition) : text.replace(anchor, addition + anchor);
   }
   return text;
 }
 function untransform(text, changes) {
-  for (const [anchor, addition] of changes) text = text.replace(addition + anchor, anchor);
+  for (const [anchor, addition, mode] of changes)
+    text = mode === 'replace' ? text.replace(addition, anchor) : text.replace(addition + anchor, anchor);
   return text;
 }
 async function existing(file) {
@@ -57,11 +106,11 @@ export async function applyIntegration({t3,check=false,remove=false}) {
     const current = await existing(destination);
     let original;
     let next;
-    if (relative in insertions) {
+    if (relative in edits) {
       if (current===null) throw new Error(`T3 source file is missing: ${relative}`);
-      original = untransform(current,insertions[relative]);
+      original = untransform(current,edits[relative]);
       if (hash(original)!==upstream.targets[relative]) throw new Error(`T3 source changed outside this overlay: ${relative}`);
-      next = transform(original,insertions[relative]);
+      next = transform(original,edits[relative]);
       if (current!==original && current!==next) throw new Error(`Partial external edit in T3 target: ${relative}`);
     } else {
       original = old.files[relative]?.original ?? null;
