@@ -43,6 +43,7 @@ export interface PiBridge {
   stopSession(threadId: string): Promise<void>;
   listSessions(): ReadonlyArray<unknown>;
   hasSession(threadId: string): boolean;
+  ownsSession(sessionId: string): boolean;
   readThread(threadId: string): Promise<{threadId: string; turns: ReadonlyArray<{id:string;items:ReadonlyArray<unknown>}>}>;
   close(): Promise<void>;
 }
@@ -56,7 +57,7 @@ const decodeSnapshot = Schema.decodeUnknownSync(ServerProvider);
 
 export const RubatoPiDriver: ProviderDriver<RubatoPiConfig> = {
   driverKind: kind,
-  metadata: { displayName: "Rubato Pi", supportsMultipleInstances: true },
+  metadata: { displayName: "Rubato", supportsMultipleInstances: true },
   configSchema: RubatoPiConfig,
   defaultConfig: () => ({ bridgeModule: "", descriptorPath: "", catalogueCwd: "" }),
   create: ({ instanceId, displayName, accentColor, environment, enabled, config }) => Effect.gen(function* () {
@@ -90,11 +91,11 @@ export const RubatoPiDriver: ProviderDriver<RubatoPiConfig> = {
     const continuationIdentity = defaultProviderContinuationIdentity({driverKind:kind, instanceId});
     let current = decodeSnapshot({instanceId, driver:kind, enabled, installed:false, version:null,
       status:enabled ? "warning" : "disabled", auth:{status:"unknown"},
-      checkedAt:DateTime.formatIso(yield* DateTime.now), models:[], displayName:displayName ?? "Rubato Pi",
+      checkedAt:DateTime.formatIso(yield* DateTime.now), models:[], displayName:displayName ?? "Rubato",
       ...(accentColor ? {accentColor} : {}), showInteractionModeToggle:false,
       supportsConversationRollback:false, supportsTextGeneration:false,
       requiresNewThreadForModelChange:false, setup:{canAuthenticate:false,canInstall:false},
-      message:"Start the external Rubato Pi server; T3 connects without owning its process.",
+      message:"Start the external Rubato server; T3 connects without owning its process.",
     });
     const refreshFor = (cwd: string) => Effect.gen(function* () {
       const checkedAt = DateTime.formatIso(yield* DateTime.now);
@@ -114,7 +115,7 @@ export const RubatoPiDriver: ProviderDriver<RubatoPiConfig> = {
       provider:kind,
       capabilities:{sessionModelSwitch:"in-session",supportsConversationRollback:false,promptlessTurnContinuation:true},
       startSession: (input) => request("startSession", async () => {
-        if (!enabled) throw new Error("Rubato Pi provider is disabled");
+        if (!enabled) throw new Error("Rubato provider is disabled");
         return decodeSession(await bridge.startSession(input));
       }),
       sendTurn:(input) => request("sendTurn", async () => decodeTurn(await bridge.sendTurn(input))),

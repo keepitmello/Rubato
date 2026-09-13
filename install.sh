@@ -16,15 +16,20 @@ APPLY=0
 # 업데이트가 이걸 부른다 — alias 목록을 두 군데 두면 어깋나기 때문에
 # 정본은 여기 하나로 둔다. 의존성·빌드는 건드리지 않는다.
 ONLY_SHELL=0
+GUI=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --apply) APPLY=1 ;;
     --only-shell) ONLY_SHELL=1 ;;
+    --gui) GUI=1 ;;
+    --no-gui) GUI=0 ;;
     --help|-h)
-      printf '%s\n' '사용법: ./install.sh [--apply] [--only-shell]' '' \
+      printf '%s\n' '사용법: ./install.sh [--apply] [--only-shell] [--gui|--no-gui]' '' \
         '  인자 없음               설치 계획만 출력한다' \
         '  --apply                 이 클론에서 Rubato를 설치하고 검증한다' \
         '  --only-shell            셸 alias 블록과 cmux 세션 복원만 다시 심는다' \
+        '  --gui                   공식 GUI(T3)도 설치하고 Rubato로 연결한다' \
+        '  --no-gui                GUI 설치를 묻지 않고 건너뛴다' \
         '  (적용 시)               core.hooksPath=.githooks 로 푸시 게이트를 켠다'
       exit 0 ;;
     *) printf '모르는 옵션: %s\n' "$1" >&2; exit 2 ;;
@@ -240,6 +245,8 @@ $ALIAS_BEGIN
 RUBATO_HARNESS="$HARNESS"
 alias rubato="sh \$RUBATO_HARNESS/scripts/rubato-pi.sh"
 alias rubato-pi="sh \$RUBATO_HARNESS/scripts/rubato-pi.sh"
+# 공식 GUI(T3). 화면 제공자 이름은 Rubato다.
+alias rubato-gui="sh \$RUBATO_HARNESS/t3-integration/start-gui.sh"
 # 역할별 프롬프트 조립 없이 Documents/SOUL.md 만 시스템 프롬프트로.
 alias rubato-soul="sh \$RUBATO_HARNESS/scripts/rubato-soul.sh"
 # msearch — 기억 검색. alias 는 사람이 쓰는 대화형 셸용이고,
@@ -253,7 +260,7 @@ EOF
 }
 
 if [ "$APPLY" -eq 0 ]; then
-  plan "$RC 에 alias 블록을 넣는다 (rubato, rubato-pi, rubato-soul, msearch, dispatch)"
+  plan "$RC 에 alias 블록을 넣는다 (rubato, rubato-pi, rubato-gui, rubato-soul, msearch, dispatch)"
   plan "이미 있으면 블록을 이 클론으로 갈아끼운다"
 else
   touch "$RC"
@@ -469,11 +476,31 @@ fi
 
 fi   # ONLY_SHELL 스킵 끝
 
+if [ "$ONLY_SHELL" -eq 0 ]; then
+head_ "단계 7 · 공식 GUI (T3)"
+if [ -z "$GUI" ] && [ "$APPLY" -eq 1 ] && [ -t 0 ]; then
+  printf '  공식 GUI(T3 데스크톱)도 설치할까? [y/N] '
+  read -r _gui_ans
+  case "$_gui_ans" in y|Y|yes|YES) GUI=1 ;; *) GUI=0 ;; esac
+fi
+if [ "${GUI:-0}" = "1" ]; then
+  if [ "$APPLY" -eq 0 ]; then
+    sh "$HARNESS/t3-integration/install-gui.sh"
+  else
+    sh "$HARNESS/t3-integration/install-gui.sh" --apply || add_manual "GUI 설치 실패. harness/t3-integration/install-gui.sh --apply 를 다시 실행해라"
+  fi
+elif [ "$APPLY" -eq 0 ]; then
+  plan "GUI는 --gui 또는 적용 때 물어본다"
+else
+  say "건너뛴다. 나중에: ./install.sh --apply --gui"
+fi
+fi
+
 head_ "요약"
 if [ "$APPLY" -eq 0 ]; then
   say "계획만 보였다. 적용하려면: ./install.sh --apply"
 else
-  say "대화형은 'rubato', 비대화형 워커는 'rubato dispatch <name> < brief.md' 다."
+  say "대화형은 'rubato', GUI는 'rubato-gui', 비대화형 워커는 'rubato dispatch <name> < brief.md' 다."
 fi
 if [ "${#MANUAL[@]}" -gt 0 ]; then
   printf '\n%s남은 일%s\n' "$BOLD" "$RST"

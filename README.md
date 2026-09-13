@@ -28,6 +28,9 @@ cd Rubato
 ./install.sh --apply  # 설치하고 모델 연결까지 확인한다
 ```
 
+적용 때 GUI를 고르거나 `./install.sh --apply --gui` 를 주면 T3 Code를 받아
+Rubato overlay를 얹고, 화면 제공자 이름을 **Rubato**로 연결한다. 실행은 `rubato-gui`.
+
 설치 프로그램은 기존 credential을 복사하거나 새로 만들지 않는다. 연결 상태는 설치 후
 `rubato auth`로 확인한다.
 
@@ -35,6 +38,7 @@ cd Rubato
 
 ```bash
 rubato                # 새 세션
+rubato-gui            # 공식 GUI (T3). 설치 때 --gui 를 고른 경우
 rubato update         # 변경 내용을 확인하고 업데이트
 rubato update --check # 업데이트 유무만 확인
 rubato build          # 시스템 프롬프트와 엔진 산출물을 다시 빌드
@@ -44,6 +48,8 @@ rubato aside-cursor --install  # Aside Cursor 면 (127.0.0.1:18788)
 ```
 
 ## iPhone에서 원격 사용
+
+공식 GUI의 아이폰 앱은 T3 Code다. 맥에서 `rubato-gui`로 연 환경에 T3 Connect로 붙인다.
 
 Rubato Remote는 같은 Tailscale tailnet의 Mac에서 세션을 실행하고 iPhone PWA에서
 대화, 모델·명령 선택, 파일과 변경점 확인, 알림, 비상 터미널을 제어한다.
