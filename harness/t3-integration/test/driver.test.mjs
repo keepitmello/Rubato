@@ -3,17 +3,19 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { serveProfile } from '../../pi-server/src/profile-server.mjs';
 import { RpcWorker } from '../../pi-server/src/rpc-worker.mjs';
 import { SessionClient } from '../../pi-server/src/client.mjs';
+import {t3Modules} from './t3-source.mjs';
 const fixture = fileURLToPath(new URL('../../pi-server/test/fixtures/rpc.mjs', import.meta.url));
 
 test('actual T3 Driver factory, adapter contracts and scope cleanup use a non-owning Pi attachment', {skip: !process.env.T3_SOURCE}, async (t) => {
   const source = process.env.T3_SOURCE;
-  const Effect = await import(pathToFileURL(path.join(source, 'node_modules/effect/dist/Effect.js')));
-  const { RubatoPiDriver, rubatoBridgeFor } = await import(pathToFileURL(path.join(source, 'apps/server/src/provider/Drivers/RubatoPiDriver.ts')));
-  const { ProviderInstanceId, ThreadId } = await import(pathToFileURL(path.join(source, 'packages/contracts/src/index.ts')));
+  const modules = t3Modules(source);
+  const Effect = await modules.effect('Effect');
+  const { RubatoPiDriver, rubatoBridgeFor } = await modules.source('apps/server/src/provider/Drivers/RubatoPiDriver.ts');
+  const { ProviderInstanceId, ThreadId } = await modules.source('packages/contracts/src/index.ts');
   const root = await mkdtemp(path.join(tmpdir(), 'rb-driver-'));
   const server = await serveProfile({agentDir:root, workerFactory:(metadata) => new RpcWorker(metadata,{cliPath:fixture})});
   const external = await new SessionClient(server.descriptor).connect();
