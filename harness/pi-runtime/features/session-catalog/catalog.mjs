@@ -32,16 +32,18 @@ async function filesIn(directory) {
 }
 
 async function candidatePaths(root, includeSubdirectories) {
-  if (!includeSubdirectories) return filesIn(root);
+  const own = await filesIn(root);
+  if (!includeSubdirectories) return own;
   try {
     const entries = await readdir(root, { withFileTypes: true });
     const directories = entries
       .filter((entry) => entry.isDirectory() || entry.isSymbolicLink())
       .map((entry) => join(root, entry.name));
-    return (await Promise.all(directories.map(filesIn))).flat();
+    const nested = (await Promise.all(directories.map(filesIn))).flat();
+    return [...own, ...nested];
   }
   catch {
-    return [];
+    return own;
   }
 }
 
