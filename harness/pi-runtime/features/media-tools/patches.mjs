@@ -199,6 +199,25 @@ export async function processResponsesStream(openaiStream, output, stream, model
         else if (event.type === "response.completed" || event.type === "response.incomplete") {`,
 		"provider-native-done",
 	);
+	next = replaceOnce(
+		next,
+		`                    if (customInputProperty !== undefined) {
+                        output.push({
+                            type: "custom_tool_call",
+                            id: itemId,
+                            call_id: callId,`,
+		`                    if (customInputProperty !== undefined) {
+                        // Codex custom_tool_call item ids must be ctc_*. The Responses
+                        // normalizer prefixes fc_* for function_call pairing; sending that
+                        // id here 400s with invalid_id_prefix.
+                        if (itemId && !itemId.startsWith("ctc_"))
+                            itemId = undefined;
+                        output.push({
+                            type: "custom_tool_call",
+                            id: itemId,
+                            call_id: callId,`,
+		"custom-tool-call-ctc-id",
+	);
 	return next;
 }
 

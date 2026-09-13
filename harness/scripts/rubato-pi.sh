@@ -304,6 +304,22 @@ if [ -n "$ENGINE_PID" ]; then
   ENGINE_PID=""
 fi
 
+# stock-pi 설치본은 `rubato update` 가 git 이 이미 최신이면 다시 안 깐다.
+# 이 머신에서 커밋한 직후 `rubato` 만 치면 낡은 stock-engine 이 그대로 떴다.
+# 지문이 다르면 세션 전에 다시 깐다. --version/-v 는 기다리지 않는다.
+STOCK_REBUILD=1
+case "${1-}" in --version|-v|--help|-h) STOCK_REBUILD="" ;; esac
+if [ -n "$STOCK_REBUILD" ] && [ -z "${RUBATO_NO_ENGINE_BUILD-}" ] && [ -f "$HERE/build-active-engine.mjs" ]; then
+  splash step "엔진을 확인하는 중"
+  if ! "$NODE" "$HERE/build-active-engine.mjs" --check >/dev/null 2>&1; then
+    splash step "엔진을 다시 만드는 중"
+    if ! "$NODE" "$HERE/build-active-engine.mjs"; then
+      echo "rubato: stock-pi 엔진을 맞추지 못했습니다. 손으로: node harness/scripts/build-active-engine.mjs" >&2
+      exit 1
+    fi
+  fi
+fi
+
 # 기억 검색 생존 판정도 준비와 겹친다. 실패 문구 계약은 그대로 유지한다.
 if [ -n "$MSEARCH_PID" ]; then
   if [ -f "$MSEARCH_DONE" ]; then
