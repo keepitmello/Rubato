@@ -56,12 +56,13 @@ test('T3 creates a new Pi session, forwards questions, reconnects and continues 
   const turn = await bridge.sendTurn({ threadId:'new-thread', input:'question' });
   assert.ok(turn.turnId);
   await until(() => events.some((event) => event.type==='user-input.requested'));
-  const context = bridge.sessions.get('new-thread'); const runtimeId=context.runtimeId;
+  const context = bridge.sessions.get('new-thread'); const runtimeId=context.runtimeId; const presentationClient=context.client;
   context.client.client.disconnect();
   const firstRecovery = bridge.recover();
   const secondRecovery = bridge.recover();
   assert.equal(firstRecovery, secondRecovery);
   await Promise.all([firstRecovery, secondRecovery]);
+  assert.equal(context.client, presentationClient);
   assert.equal(context.runtimeId, runtimeId);
   assert.equal(service.host.metrics.runtimeStarts, 1);
   await bridge.respondToUserInput('new-thread','question-1',{'question-1':'yes'});
