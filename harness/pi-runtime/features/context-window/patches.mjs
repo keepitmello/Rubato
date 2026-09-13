@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
 const PACKAGE_VERSION = "0.85.1";
 
@@ -292,8 +294,11 @@ function patchAgentSessionTypes(source) {
 
 function patchMessagesRuntime(source) {
   const marker = 'import { notesAwareSummaryMessage } from "../rubato-features/context-notes/src/context-notes/engine-gate.mjs";';
+  const remapImport = 'import { remapHiddenCustomTurns } from "../rubato-features/context-window/remap-hidden-custom-turns.mjs";';
   unpatched(source, marker, "messages-runtime");
-  let next = `${marker}\n${source}`;
+  unpatched(source, remapImport, "messages-remap");
+  unpatched(source, "remapHiddenCustomTurns(messages", "messages-convertToLlm");
+  let next = `${marker}\n${remapImport}\n${source}`;
   next = replaceOnce(
     next,
     `export function createCompactionSummaryMessage(summary, tokensBefore, timestamp) {
@@ -303,6 +308,24 @@ function patchMessagesRuntime(source) {
     if (windowMessage) return windowMessage;
     return {`,
     "window-carrier",
+  );
+  next = replaceOnce(
+    next,
+    `export function convertToLlm(messages) {
+    return messages
+        .map((m) => {`,
+    `export function convertToLlm(messages) {
+    return remapHiddenCustomTurns(messages, (m) => {`,
+    "convertToLlm-remap",
+  );
+  next = replaceOnce(
+    next,
+    `    })
+        .filter((m) => m !== undefined);
+}`,
+    `    });
+}`,
+    "convertToLlm-remap-close",
   );
   return next;
 }
@@ -500,7 +523,20 @@ function patchPublicIndexTypes(source) {
   );
 }
 
-export const files = Object.freeze([]);
+const ownedFile = (path, sourcePath) => Object.freeze({
+  target: "package",
+  packageName: PACKAGE_NAME,
+  version: PACKAGE_VERSION,
+  path,
+  sourcePath,
+});
+
+export const files = Object.freeze([
+  ownedFile(
+    "dist/rubato-features/context-window/remap-hidden-custom-turns.mjs",
+    fileURLToPath(new URL("./remap-hidden-custom-turns.mjs", import.meta.url)),
+  ),
+]);
 
 export const patches = Object.freeze([
   patch("dist/core/agent-session.js", "fb8a3981c20c8c0bbd42231b1c99a10335fb3858b659056b341954de9cfa467f", patchAgentSessionRuntime),

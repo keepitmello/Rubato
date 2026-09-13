@@ -28,6 +28,7 @@ const MemberBaseSchema = z.object({
   cwd: z.string().optional(),
   worktreePath: z.string().optional(),
   task_summary: z.string().max(80).optional(),
+  model: z.string().min(1).optional(),
   subscriptions: z.array(z.string()).optional(),
   backendType: z.enum(["in-process", "tmux"]).default("in-process"),
   color: z.string().optional(),

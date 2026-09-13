@@ -222,3 +222,14 @@ describe("normalizeSenpiTeamSpec task_summary", () => {
   })
 })
 
+describe("normalizeSenpiTeamSpec model", () => {
+  test("#given a category member with an exact model override #when normalized #then the model survives the schema parse", () => {
+    const spec = normalizeSenpiTeamSpec(
+      { members: [{ kind: "category", category: "grok", prompt: "work", model: "xai/grok-4.6:xhigh" }] },
+      "demo",
+    )
+
+    expect(spec.members[0]).toMatchObject({ kind: "category", category: "grok", model: "xai/grok-4.6:xhigh" })
+  })
+})
+
