@@ -12,6 +12,7 @@ export class SessionClient {
     this.client = new Client({ serverId, transportFactory: createUnixTransportFactory({ path: socketPath }),
       maxFrameLength: 32 * 1024 * 1024, onListenerError: onError });
     this.bindings = new Set();
+    this.closed = false;
   }
   async connect() { await this.client.connect(); return this; }
   call(service, member, args, session = false) {
@@ -48,5 +49,10 @@ export class SessionClient {
     return id ? this.snapshot() : null;
   }
   async clearBindings() { await Promise.all([...this.bindings].map((binding) => binding.dispose())); this.bindings.clear(); }
-  async close() { await this.clearBindings(); await this.client.dispose(); }
+  async close() {
+    if (this.closed) return;
+    this.closed = true;
+    await this.clearBindings();
+    if (!this.client.disposed) await this.client.dispose();
+  }
 }
