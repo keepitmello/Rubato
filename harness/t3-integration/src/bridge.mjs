@@ -124,18 +124,21 @@ export class RubatoPiBridge {
       context.session.status = next; this.stateEvent(context);
     }
   }
-  async recover() {
-    if (this.closed || this.recovering) return;
-    this.recovering = true;
-    try {
+  recover() {
+    if (this.closed) return Promise.resolve();
+    if (this.recovering) return this.recovering;
+    const recovery = (async () => {
       for (const context of this.sessions.values()) {
-        if (context.stopped || context.syncing) continue;
+        if (this.closed || context.stopped || context.syncing) continue;
         try {
           if (!context.client.client.connected || !context.client.client.attachment) {
             const descriptor = await readDescriptor(this.descriptorPath);
             if (descriptor.serverId !== context.session.resumeCursor.serverId) throw new Error('Pi server identity changed; refusing automatic redirection');
             await context.client.close();
-            context.client = await new SessionClient({ ...descriptor, onError: this.onError }).connect();
+            if (this.closed || context.stopped) continue;
+            const replacement = await new SessionClient({ ...descriptor, onError: this.onError }).connect();
+            if (this.closed || context.stopped) { await replacement.close(); continue; }
+            context.client = replacement;
             await context.client.attach(context.sessionId);
             await this.synchronize(context);
           } else if (context.needsSync) { context.needsSync = false; await this.synchronize(context); }
@@ -144,7 +147,10 @@ export class RubatoPiBridge {
           this.onError(error);
         }
       }
-    } finally { this.recovering = false; }
+    })();
+    this.recovering = recovery.finally(() => { if (this.recovering === recovery || this.recovering === wrapped) this.recovering = undefined; });
+    const wrapped = this.recovering;
+    return wrapped;
   }
   require(threadId) {
     const context = this.sessions.get(threadId);
@@ -238,7 +244,9 @@ export class RubatoPiBridge {
     context.projection.event('session.exited', { exitKind: 'graceful', recoverable: true, reason: 'Presentation detached; Pi work is unchanged' });
   }
   async close() {
+    if (this.closed) return;
     this.closed = true; clearInterval(this.retryTimer);
+    await this.recovering?.catch(() => {});
     await Promise.allSettled([...this.openings.values()]);
     await Promise.all([...this.sessions.keys()].map((threadId) => this.stopSession(threadId)));
     await this.inventoryClient?.close();
