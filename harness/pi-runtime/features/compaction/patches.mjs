@@ -59,11 +59,29 @@ export function patchCompactionPromptsAndThreshold(source) {
     "Write a single updated briefing that merges the previous briefing with the new messages. Nothing from the previous briefing that the guidance below asks to preserve may be dropped.\n\n${COMPACTION_BRIEFING_GUIDANCE}",
     "update-instructions",
   );
-  return replaceOnce(
+  next = replaceOnce(
     next,
     "export function shouldCompact(contextTokens, contextWindow, settings) {\n    if (!settings.enabled)\n        return false;\n    return contextTokens > contextWindow - settings.reserveTokens;\n}",
     "export function shouldCompact(contextTokens, contextWindow, settings) {\n    if (!settings.enabled)\n        return false;\n    if (!(contextWindow > 0)) return false;\n    const ratio = resolveClientCompactionThresholdRatio({ model: settings.model, settings });\n    return contextTokens >= Math.floor(contextWindow * ratio);\n}",
     "should-compact-ratio",
+  );
+  next = replaceOnce(
+    next,
+    "    const llmMessages = convertToLlm(currentMessages);",
+    "    const llmMessages = convertToLlm(model?.provider === \"cursor\"\n        ? currentMessages.map((msg) => msg.role === \"assistant\" && Array.isArray(msg.content)\n            ? { ...msg, content: msg.content.filter((block) => block.type !== \"thinking\") }\n            : msg)\n        : currentMessages);",
+    "strip-cursor-thinking",
+  );
+  next = replaceOnce(
+    next,
+    "    if (response.content.some((block) => block.type === \"toolCall\")) {\n        throw new Error(\"Summarization attempted to call a tool\");\n    }",
+    "    if (response.content.some((block) => block.type === \"toolCall\")) {\n        const retried = await completeSummarization(model, buildSummarizationContext(promptText), completionOptions, streamFn, retry, callbacks);\n        if (retried.content.some((block) => block.type === \"toolCall\")) {\n            const budget = Math.min(20000, Math.max(2000, Math.floor(maxTokens * 3)));\n            const marker = \"[Automatic compaction summary unavailable: the summarization request returned a tool call instead of text, twice in a row. Preserving bounded raw context below instead of losing this segment.]\";\n            const body = conversationText.length <= budget ? conversationText : `${conversationText.slice(0, Math.floor((budget - 24) / 2))}\\n\\n[... elided ...]\\n\\n${conversationText.slice(conversationText.length - Math.floor((budget - 24) / 2))}`;\n            return { text: `${marker}\\n\\n<conversation-excerpt>\\n${body}\\n</conversation-excerpt>`, usage: retried.usage };\n        }\n        const textContent = contentText(retried.content);\n        return { text: textContent, usage: retried.usage };\n    }",
+    "summary-toolcall-fallback",
+  );
+  return replaceOnce(
+    next,
+    "    if (response.content.some((block) => block.type === \"toolCall\")) {\n        throw new Error(\"Turn prefix summarization attempted to call a tool\");\n    }",
+    "    if (response.content.some((block) => block.type === \"toolCall\")) {\n        const retried = await completeSummarization(model, buildSummarizationContext(promptText), createSummarizationOptions(model, maxTokens, apiKey, headers, env, signal, thinkingLevel, sessionId), streamFn, retry, callbacks);\n        if (retried.content.some((block) => block.type === \"toolCall\")) {\n            const budget = Math.min(20000, Math.max(2000, Math.floor(maxTokens * 3)));\n            const marker = \"[Automatic turn-prefix summary unavailable: the summarization request returned a tool call instead of text, twice in a row. The retained suffix below is authoritative; preserving a bounded raw excerpt of the discarded prefix instead of losing it.]\";\n            const body = conversationText.length <= budget ? conversationText : `${conversationText.slice(0, Math.floor((budget - 24) / 2))}\\n\\n[... elided ...]\\n\\n${conversationText.slice(conversationText.length - Math.floor((budget - 24) / 2))}`;\n            return { text: `${marker}\\n\\n<turn-prefix-excerpt>\\n${body}\\n</turn-prefix-excerpt>`, usage: retried.usage };\n        }\n        return { text: contentText(retried.content), usage: retried.usage };\n    }",
+    "turn-prefix-toolcall-fallback",
   );
 }
 
@@ -83,6 +101,18 @@ export function patchAnthropicMessagesServerCompaction(source) {
     'import Anthropic from "@anthropic-ai/sdk";',
     'import Anthropic from "@anthropic-ai/sdk";\n' + PARAMS_IMPORT,
     "anthropic-import",
+  );
+  next = replaceOnce(
+    next,
+    'const claudeCodeVersion = "2.1.251";',
+    'const claudeCodeVersion = "2.1.269";',
+    "claude-code-version",
+  );
+  next = replaceOnce(
+    next,
+    'text: "You are Claude Code, Anthropic\'s official CLI for Claude.",',
+    'text: "x-anthropic-billing-header: cc_version=2.1.269; cc_entrypoint=cli;",\n            },\n            {\n                type: "text",\n                text: "You are Claude Code, Anthropic\'s official CLI for Claude.",',
+    "claude-code-billing-header",
   );
   next = replaceOnce(
     next,
