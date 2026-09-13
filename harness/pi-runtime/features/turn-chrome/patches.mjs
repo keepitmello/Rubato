@@ -48,7 +48,7 @@ const TE_CLASS_HEAD = "const FALLBACK_PREVIEW_LINES = 10;\nexport class ToolExec
 const TE_CLASS_HEAD_NEXT = [
   "const FALLBACK_PREVIEW_LINES = 10;",
   "/** Tools whose result IS the content: collapsing them leaves nothing to read. */",
-  'const ALWAYS_EXPANDED_TOOLS = new Set(["todo", "task"]);',
+  'const ALWAYS_EXPANDED_TOOLS = new Set(["todo", "task", "team_create"]);',
   "const COLLAPSED_ERROR_TAIL_MAX_LENGTH = 160;",
   "/** A collapsed tool is its first meaningful line, plus the error tail if it failed. */",
   "function collapseToolLines(lines, isError) {",
@@ -69,7 +69,7 @@ const TE_FIELD_NEXT = "    hideComponent = false;\n    alwaysExpanded = false;\n
 
 const TE_GETTER_AT = "    getCallRenderer() {";
 const TE_GETTER = [
-  "    /** todo/task ignore the collapse: their result is the whole point. */",
+  "    /** todo/task/team_create ignore the collapse: their result is the whole point. */",
   "    get isExpanded() {",
   "        return this.alwaysExpanded || this.expanded;",
   "    }",

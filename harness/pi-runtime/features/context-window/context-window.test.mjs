@@ -167,13 +167,15 @@ const contextProtocol = await import(pathToFileURL(join(
 
 test("descriptor is stock-locked, drift-failing, and composes with shared core features", () => {
   assert.equal(feature.id, "context-window");
-  assert.deepEqual(files, []);
+  assert.equal(files.length, 1);
+  assert.equal(files[0].path, "dist/rubato-features/context-window/remap-hidden-custom-turns.mjs");
   assert.equal(patches.length, 11);
   assert.equal(new Set(patches.map((entry) => entry.path)).size, patches.length);
   assert.ok(patches.every((entry) => entry.packageName === "@earendil-works/pi-coding-agent"));
   assert.ok(patches.every((entry) => entry.version === "0.85.1"));
   assert.ok(patches.every((entry) => /^[a-f0-9]{64}$/.test(entry.preimageSha256)));
   assert.equal(staged.receipt.files.filter((entry) => entry.patches.some((id) => id.startsWith("context-window/"))).length, 11);
+  assert.equal(staged.receipt.addedFiles.filter((entry) => entry.feature === "context-window").length, 1);
 
   for (const entry of staged.receipt.files.filter((item) => item.patches.some((id) => id.startsWith("context-window/")))) {
     const syntax = entry.path.endsWith(".js")
@@ -185,6 +187,14 @@ test("descriptor is stock-locked, drift-failing, and composes with shared core f
     assert.equal(syntax.status, 0, `${entry.path}: ${syntax.stderr}`);
   }
 
+  const stockMessages = readFileSync(join(
+    sourceRoot,
+    "node_modules/@earendil-works/pi-coding-agent/dist/core/messages.js",
+  ), "utf8");
+  const patchedMessages = patches.find((entry) => entry.path === "dist/core/messages.js").apply(stockMessages);
+  assert.match(patchedMessages, /remapHiddenCustomTurns\(messages/);
+  assert.doesNotMatch(patchedMessages, /\.filter\(\(m\) => m !== undefined\)/);
+
   const stockAgentSession = readFileSync(join(
     sourceRoot,
     "node_modules/@earendil-works/pi-coding-agent/dist/core/agent-session.js",
@@ -195,6 +205,25 @@ test("descriptor is stock-locked, drift-failing, and composes with shared core f
     ),
     /expected anchor is missing/,
   );
+});
+
+test("staged convertToLlm remaps a trailing hidden custom to assistant before the user", async () => {
+  const { convertToLlm } = await import(pathToFileURL(join(runtime.codingAgentDir, "dist/core/messages.js")).href);
+  const converted = convertToLlm([
+    { role: "user", content: [{ type: "text", text: "ㅇㅇ 해봐." }], timestamp: 1 },
+    {
+      role: "custom",
+      customType: "rubato-memory:notice",
+      content: "<memory_notice>after compaction</memory_notice>",
+      display: false,
+      timestamp: 2,
+    },
+  ]);
+  assert.equal(converted.length, 2);
+  assert.equal(converted[0].role, "assistant");
+  assert.match(converted[0].content[0].text, /after compaction/);
+  assert.equal(converted[1].role, "user");
+  assert.equal(converted[1].content[0].text, "ㅇㅇ 해봐.");
 });
 
 test("actual SDK commits new_context once and the immediate provider turn uses only the live window", async (t) => {

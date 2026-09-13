@@ -18,13 +18,18 @@ const InlineTeamSpecMemberSchema = Type.Object(
         description: "Member kind; 'agent' is an alias for subagent_type. Inferred from the category/subagent_type field when omitted.",
       }),
     ),
-    category: Type.Optional(Type.String({ description: "Category to route this member through (kind category)." })),
+    category: Type.Optional(Type.String({ description: "Live delegate category (grok, deep, quick, …). Do not invent names; unknown categories are rejected with the available list." })),
     subagent_type: Type.Optional(Type.String({ description: "Agent definition to run this member as (kind subagent_type or agent)." })),
     prompt: Type.Optional(Type.String({ description: "Member instructions; MUST be written in English." })),
     task_summary: Type.Optional(
       Type.String({
         maxLength: TASK_SUMMARY_MAX_LENGTH,
         description: "One-line summary of this member's assigned work, shown in the task footer/widget UI. Longer values are force-truncated to 80 chars.",
+      }),
+    ),
+    model: Type.Optional(
+      Type.String({
+        description: "Exact provider/model id override for this member, same form as Agent (e.g. xai/grok-4.6:xhigh). Category must still be a live delegate category — do not invent category names.",
       }),
     ),
   },
