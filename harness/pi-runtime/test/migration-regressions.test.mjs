@@ -69,6 +69,13 @@ test("install and update both reach the stock candidate installer", async () => 
   assert.match(update, /\[ "\$need_candidate" = 1 \]/, "and the step is gated on it");
 });
 
+test("rubato launch rebuilds a stale stock-engine before the session starts", async () => {
+  const launcher = await readFile(join(repoRoot, "harness/scripts/rubato-pi.sh"), "utf8");
+  assert.match(launcher, /build-active-engine\.mjs" --check/, "launch fingerprints the installed candidate");
+  assert.match(launcher, /엔진을 다시 만드는 중/, "a stale candidate rebuilds before exec");
+  assert.match(launcher, /RUBATO_NO_ENGINE_BUILD/, "tests can still skip the rebuild");
+});
+
 for (const action of ["write", "edit"]) {
   test(`${action} preserves executable permission bits`, async (t) => {
     const cwd = await scratch(t);

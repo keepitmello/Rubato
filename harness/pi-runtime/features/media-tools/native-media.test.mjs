@@ -161,6 +161,13 @@ test("stock parser hashes match media-tools patch preimages", () => {
 	assert.equal(sha256(readFileSync(join(stockPiAi, "types.d.ts"))), byPath["dist/types.d.ts"].preimageSha256);
 });
 
+test("Codex custom_tool_call replay drops fc_ item ids so the wire can mint ctc_*", () => {
+	const stock = readFileSync(join(stockPiAi, "api/openai-responses-shared.js"), "utf8");
+	const patched = patchOpenAiResponsesShared(stock);
+	assert.match(patched, /if \(itemId && !itemId\.startsWith\("ctc_"\)\)/);
+	assert.match(patched, /type: "custom_tool_call"/);
+});
+
 test("A10 convertContentBlocks anchors survive the anthropic native patch", () => {
 	const stock = readFileSync(join(stockPiAi, "api/anthropic-messages.js"), "utf8");
 	const patched = patchAnthropicMessagesNative(stock);
