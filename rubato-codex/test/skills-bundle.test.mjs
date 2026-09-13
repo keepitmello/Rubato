@@ -31,7 +31,8 @@ test("manifest-driven bundle is deterministic and current", () => {
     path.join(packageDir, "scripts/build-skills.mjs"),
     "--check",
   ], { encoding: "utf8" });
-  assert.match(output, /25 source skills accounted for/);
+  const sourceCount = manifest.managed.length + manifest.conditional.length + manifest.preserved.length;
+  assert.equal(output.trim(), `skills bundle is current (${sourceCount} source skills accounted for)`);
 });
 
 test("rebuilding common skills cannot overwrite Codex-owned operating skills or references", async () => {
