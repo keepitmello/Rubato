@@ -1,6 +1,8 @@
 // Senpi-origin tool-call/result repair behavior; MIT attribution and license:
 // ./THIRD_PARTY_NOTICES.md
 
+import { demoteUnavailableToolReferences } from "./demote-unavailable.mjs";
+
 const SYNTHETIC_OUTPUT = "Tool output unavailable (interrupted before result)";
 
 /**
@@ -17,7 +19,7 @@ export function toolPairGuardExtension(pi) {
 
 export function sanitizeToolPairs(payload) {
   return sanitizeOpenAIChatCompletionsPayload(
-    sanitizeOpenAIResponsesPayload(sanitizeAnthropicToolPairs(payload)),
+    sanitizeOpenAIResponsesPayload(sanitizeAnthropicToolPairs(demoteUnavailableToolReferences(payload))),
   );
 }
 
