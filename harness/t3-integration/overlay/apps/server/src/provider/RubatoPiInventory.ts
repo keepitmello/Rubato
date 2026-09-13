@@ -63,6 +63,9 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
         // Old sessions without a cwd cannot be assigned an invented project.
         if (!entry.cwd || !entry.cwd.startsWith("/")) return;
         const binding = bindings.find((item) => item.providerInstanceId === instance.instanceId && cursorMatches(item.resumeCursor,entry));
+        // A T3 composer thread claims the Pi session before its binding lands.
+        // Importing it as a second thread duplicates the sidebar and the reply text.
+        if (!binding && bridge.ownsSession(entry.sessionId)) return;
         const threadId = binding?.threadId ?? ThreadId.make(`import:${instance.instanceId}:${entry.serverId}:${entry.sessionId}`);
         let thread = readModel.threads.find((item) => item.id === threadId);
         if (thread?.deletedAt !== null && thread?.deletedAt !== undefined) return;
@@ -97,9 +100,10 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
           thread = readModel.threads.find((item) => item.id===threadId);
         }
         if (!thread) return;
-        // Fetch the actual full projection only for a thread needing an import.
-        // A race with user input is rejected by T3's existing empty-thread guard.
-        if (thread.latestTurn===null && thread.session===null) {
+        const live = entry.runtimeId !== null && ["running", "waiting", "starting"].includes(entry.status);
+        // Live attach replays the snapshot as UI events. Importing the same
+        // transcript first concatenates the assistant text on one message.
+        if (!live && thread.latestTurn===null && thread.session===null) {
           const existing = yield* query.getThreadDetailById(threadId);
           if (Option.isSome(existing) && existing.value.messages.length===0) {
             const saved = yield* io("transcript", () => bridge.transcript(entry.sessionId));
@@ -108,7 +112,7 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
               threadId,messages:messages.map((message) => ({messageId:MessageId.make(message.id),role:message.role,text:message.text,createdAt:message.createdAt}))});
           }
         }
-        if (entry.runtimeId !== null && ['running','waiting','starting'].includes(entry.status) && !bridge.hasSession(threadId)) {
+        if (live && !bridge.hasSession(threadId) && !bridge.ownsSession(entry.sessionId)) {
           yield* service.startSession(threadId,{threadId,provider:instance.driverKind,providerInstanceId:instance.instanceId,
             cwd:entry.cwd,runtimeMode:thread.runtimeMode,resumeCursor:bridge.cursor(entry.sessionId)});
         }

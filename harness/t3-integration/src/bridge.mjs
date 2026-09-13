@@ -1,12 +1,31 @@
 import { SessionClient } from '../../pi-server/src/client.mjs';
 import { readDescriptor } from '../../pi-server/src/profile-server.mjs';
 import { EventProjection, importedId, textOf } from './events.mjs';
+import { catalogForPicker } from './model-catalog-order.mjs';
+import { readFile } from 'node:fs/promises';
 
 const copy = (value) => JSON.parse(JSON.stringify(value));
+async function imagesFromAttachments(attachments) {
+  const images = [];
+  for (const attachment of attachments ?? []) {
+    if (attachment?.type !== 'image' || typeof attachment.mimeType !== 'string') continue;
+    if (typeof attachment.dataUrl === 'string') {
+      const comma = attachment.dataUrl.indexOf(',');
+      const data = comma >= 0 ? attachment.dataUrl.slice(comma + 1) : attachment.dataUrl;
+      if (data) images.push({ type: 'image', data, mimeType: attachment.mimeType });
+      continue;
+    }
+    if (typeof attachment.path === 'string' && attachment.path.startsWith('/')) {
+      const data = Buffer.from(await readFile(attachment.path)).toString('base64');
+      images.push({ type: 'image', data, mimeType: attachment.mimeType });
+    }
+  }
+  return images;
+}
 export class RubatoPiBridge {
   constructor({ descriptorPath, instanceId, emit = () => {}, onError = () => {}, projectedMessages = async () => [] }) {
     Object.assign(this, { descriptorPath, instanceId, emit, onError, projectedMessages });
-    this.sessions = new Map(); this.openings = new Map(); this.catalogues = new Map(); this.closed = false;
+    this.sessions = new Map(); this.openings = new Map(); this.catalogues = new Map(); this.claimed = new Set(); this.closed = false;
     this.retryTimer = setInterval(() => { void this.recover().catch(onError); }, 1000);
     this.retryTimer.unref?.();
   }
@@ -27,9 +46,12 @@ export class RubatoPiBridge {
   async catalogue(cwd) {
     const cached = this.catalogues.get(cwd);
     if (cached && Date.now() - cached.at < 60000) return cached.value;
-    const value = (await this.connection()).catalogue(cwd);
-    this.catalogues.set(cwd, { at: Date.now(), value });
-    try { return await value; } catch (error) { this.catalogues.delete(cwd); throw error; }
+    const pending = (async () => {
+      const raw = await (await this.connection()).catalogue(cwd);
+      return { ...raw, models: catalogForPicker(raw.models ?? [], raw.model) };
+    })();
+    this.catalogues.set(cwd, { at: Date.now(), value: pending });
+    try { return await pending; } catch (error) { this.catalogues.delete(cwd); throw error; }
   }
   cursor(sessionId) { return { kind: 'rubato-pi', serverId: this.descriptor.serverId, sessionId }; }
   importedMessages(sessionId, messages) {
@@ -56,6 +78,7 @@ export class RubatoPiBridge {
     } else {
       sessionId = (await inventory.create({ cwd: input.cwd, title: input.title })).sessionId;
     }
+    this.claimed.add(sessionId);
     const client = await new SessionClient({ ...this.descriptor, onError: this.onError }).connect();
     const context = { client, sessionId, projection: new EventProjection({ threadId: input.threadId, sessionId,
       instanceId: this.instanceId, emit: this.emit }), session: {
@@ -193,14 +216,20 @@ export class RubatoPiBridge {
         const turnId = context.projection.begin();
         return { threadId: input.threadId, turnId, resumeCursor: context.session.resumeCursor };
       }
-      if (input.attachments?.length) throw new Error('T3 file/image attachments are not supported by this integration');
-      if (!input.input?.trim()) throw new Error('A non-empty prompt is required');
+      const images = await imagesFromAttachments(input.attachments);
+      if (!input.input?.trim() && images.length === 0) throw new Error('A non-empty prompt is required');
       if (input.interactionMode === 'plan') throw new Error('T3 plan mode is not mapped to Rubato policy');
       if (input.modelSelection) await this.selectModel(context, input.modelSelection);
       const running = context.session.status === 'running';
       const turnId = context.projection.begin();
       context.session.status = 'running'; this.stateEvent(context);
-      try { await context.client.command({ type: running ? 'steer' : 'prompt', message: input.input }); }
+      try {
+        await context.client.command({
+          type: running ? 'steer' : 'prompt',
+          message: input.input ?? '',
+          ...(images.length ? { images } : {}),
+        });
+      }
       catch (error) {
         if (!running) { context.projection.failed = true; context.projection.settle(); context.session.status = 'ready'; this.stateEvent(context); }
         throw error;
@@ -236,6 +265,9 @@ export class RubatoPiBridge {
   }
   listSessions() { return [...this.sessions.values()].map((context) => copy(context.session)); }
   hasSession(threadId) { return this.sessions.has(threadId); }
+  ownsSession(sessionId) {
+    return this.claimed.has(sessionId) || [...this.sessions.values()].some((context) => context.sessionId === sessionId);
+  }
   async readThread(threadId) {
     const context = this.require(threadId); const snapshot = await context.client.snapshot();
     return { threadId, turns: [{ id: context.projection.turnId ?? `pi-history:${context.sessionId}`, items: snapshot.messages }] };
@@ -245,6 +277,7 @@ export class RubatoPiBridge {
     const context = this.sessions.get(threadId);
     if (!context) return;
     context.stopped = true; this.sessions.delete(threadId);
+    if (![...this.sessions.values()].some((open) => open.sessionId === context.sessionId)) this.claimed.delete(context.sessionId);
     await context.client.close();
     context.projection.event('session.exited', { exitKind: 'graceful', recoverable: true, reason: 'Presentation detached; Pi work is unchanged' });
   }
