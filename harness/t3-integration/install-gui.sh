@@ -100,6 +100,17 @@ ok "T3 $PIN"
 "$NODE" "$HERE/apply.mjs" --t3 "$T3_DIR" || { err "overlay 적용 실패"; exit 1; }
 ok "Rubato overlay"
 
+# T3 는 assets 에서 아이콘을 읽어 Dock 타일과 런타임 번들 아이콘을 만든다.
+# 읽는 경로를 바꾸는 대신 그 자리에 Rubato 것을 깔아둔다 — 경로를 바꾸면 그
+# 절대 경로가 소스에 박혀 머신마다 달라지고, 레포를 옮기면 그림이 사라진다.
+# 위 checkout 이 매번 upstream 파일로 되돌리므로 여기서 다시 깐다.
+for target in assets/prod/black-macos-1024.png assets/prod/black-universal-1024.png; do
+  if [ -f "$T3_DIR/$target" ]; then
+    cp "$HERE/../../rubato-codex/macos/Rubato.png" "$T3_DIR/$target" || warn "아이콘 교체 실패: $target"
+  fi
+done
+ok "아이콘 Rubato"
+
 export RUBATO_GUI_T3_HOME="$T3_HOME"
 export RUBATO_GUI_BRIDGE="$BRIDGE"
 export RUBATO_GUI_DESCRIPTOR="$DESCRIPTOR"
