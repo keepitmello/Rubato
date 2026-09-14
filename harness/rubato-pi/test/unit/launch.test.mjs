@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { adapterPath, providerOverlayPath, buildSenpiArgs, leadOverlayPath, sameNodeBinary, senpiCliMainPath, senpiCliPath, senpiEntryPath, statuslinePath, readPinnedVersions } from "../../src/launch.mjs";
 import { PIN } from "../../src/policy.mjs";
+import { TOOL_GUIDELINES } from "../../src/system-prompt.mjs";
 
 test("launcher pins exact engine plugin and senpi versions", () => {
   assert.deepEqual(readPinnedVersions(), { engine: PIN.engine, senpi: PIN.senpi });
@@ -20,7 +21,7 @@ test("senpi argv replaces the system prompt and lets profile settings choose the
   // 생성물이 통째로 argv 에 실렸는지를 본다.
   assert.match(args[promptAt + 1], /`Agent` is the rail for a result you take back/);
   assert.match(args[promptAt + 1], /## Tool Guidelines/);
-  assert.match(args[promptAt + 1], /one eval cell/);
+  assert.ok(args[promptAt + 1].includes(TOOL_GUIDELINES));
   assert.doesNotMatch(args[promptAt + 1], /operating inside pi/);
   assert.doesNotMatch(args[promptAt + 1], /## Rails — fx/);
   assert.doesNotMatch(args[promptAt + 1], /Run `fx models`/);
@@ -40,7 +41,7 @@ test("member argv gets teammate prompt plus the same tool guidelines", () => {
   const prompt = args[args.indexOf("--system-prompt") + 1];
   assert.match(prompt, /# Workstream owner/);
   assert.match(prompt, /## Tool Guidelines/);
-  assert.match(prompt, /one eval cell/);
+  assert.ok(prompt.includes(TOOL_GUIDELINES));
   assert.doesNotMatch(prompt, /# Lead\n/);
   assert.doesNotMatch(prompt, /# Dispatching/);
   assert.doesNotMatch(prompt, /# Dispatched/);

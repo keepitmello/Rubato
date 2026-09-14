@@ -14,6 +14,7 @@ export class SessionClient {
     this.client = new Client({ serverId, transportFactory: createUnixTransportFactory({ path: socketPath }),
       maxFrameLength: 32 * 1024 * 1024, onListenerError: onError });
     this.bindings = new Set();
+    this.bindingDisposals = new WeakMap();
     this.closed = false;
   }
   async connect() {
@@ -44,7 +45,7 @@ export class SessionClient {
     const implementation = binding.use(service);
     await binding.rebind(true, BACKGROUND_CONTEXT);
     const unsubscribe = implementation.state.subscribe(listener);
-    return async () => { unsubscribe(); this.bindings.delete(binding); await binding.dispose(); };
+    return async () => { unsubscribe(); await this.disposeBinding(binding); };
   }
   subscribeDirectory(listener) { return this.subscribe(Directory, listener); }
   subscribeSession(listener) { return this.subscribe(Control, listener, true); }
@@ -54,7 +55,15 @@ export class SessionClient {
     if (id) await this.attach(id);
     return id ? this.snapshot() : null;
   }
-  async clearBindings() { await Promise.all([...this.bindings].map((binding) => binding.dispose())); this.bindings.clear(); }
+  disposeBinding(binding) {
+    let disposal = this.bindingDisposals.get(binding);
+    if (!disposal) {
+      disposal = Promise.resolve().then(() => binding.dispose()).finally(() => this.bindings.delete(binding));
+      this.bindingDisposals.set(binding, disposal);
+    }
+    return disposal;
+  }
+  async clearBindings() { await Promise.all([...this.bindings].map(binding => this.disposeBinding(binding))); }
   /** Drop a disconnected client whose transport address is obsolete. No live transport or runtime is owned here. */
   async abandon() {
     if (this.closed) return;

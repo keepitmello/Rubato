@@ -18,6 +18,34 @@ function once(source, before, after) {
   return source.slice(0, index) + after + source.slice(index + before.length);
 }
 
+// The CLI and a shared host must use the SAME project trust, model selection,
+// settings and resource bootstrap. Move the stock closure; do not copy its
+// policy into a second SDK-only implementation.
+function extractCliRuntimeFactory(source) {
+  const start = source.indexOf("    const trustStore = new ProjectTrustStore(agentDir);");
+  const end = source.indexOf('    time("createRuntime");', start);
+  if (start < 0 || end < 0 || source.includes("export function createCliRuntimeFactory(")) throw new Error("runtime-factories factory extraction anchor mismatch");
+  const original = source.slice(start, end);
+  const selection = `    const sessionCwd = sessionManager.getCwd();
+    const autoTrustOnReloadCwd = parsed.projectTrustOverride === undefined && !hasTrustRequiringProjectResources(sessionCwd)
+        ? sessionCwd
+        : undefined;
+`;
+  const body = once(once(original, selection, ""), 'createExtensionFactories: options?.createExtensionFactories,', 'createExtensionFactories,');
+  const replacement = `${selection}    const createRuntime = createCliRuntimeFactory({
+        cwd, agentDir, parsed, appMode, startupSettingsManager, extensionFactories, options,
+    });
+`;
+  const declaration = `export function createCliRuntimeFactory({ cwd, agentDir, parsed, appMode, startupSettingsManager, extensionFactories = builtInExtensions, options }) {
+    const createExtensionFactories = options?.createExtensionFactories;
+${body}    return createRuntime;
+}
+
+`;
+  let next = source.slice(0, start) + replacement + source.slice(end);
+  return once(next, "export async function main(", declaration + "export async function main(");
+}
+
 const transforms = {
   "dist/core/agent-session-services.js": (source) => {
     const marker = `    const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);`;
@@ -66,17 +94,27 @@ export interface CreateAgentSessionServicesOptions {`);
       "    modelRuntimeSignal?: AbortSignal;",
       "    modelRuntimeSignal?: AbortSignal;\n    createExtensionFactories?: CreateExtensionFactories;");
   },
-  "dist/main.js": (source) => once(source,
+  "dist/main.js": (source) => extractCliRuntimeFactory(once(source,
     `            modelRuntimeSignal: AbortSignal.timeout(15_000),`,
     `            modelRuntimeSignal: AbortSignal.timeout(15_000),
-            createExtensionFactories: options?.createExtensionFactories,`),
+            createExtensionFactories: options?.createExtensionFactories,`)),
   "dist/main.d.ts": (source) => {
     let next = once(source,
       'import type { InlineExtension } from "./core/extensions/types.ts";',
       'import type { InlineExtension } from "./core/extensions/types.ts";\nimport type { CreateExtensionFactories } from "./core/agent-session-services.ts";');
-    return once(next,
+    next = once(next,
       "    extensionFactories?: InlineExtension[];",
       "    extensionFactories?: InlineExtension[];\n    createExtensionFactories?: CreateExtensionFactories;");
+    return once(next, "export declare function main(", `export declare function createCliRuntimeFactory(context: {
+    cwd: string;
+    agentDir: string;
+    parsed: Args;
+    appMode: "interactive" | "rpc" | "print";
+    startupSettingsManager: SettingsManager;
+    extensionFactories?: InlineExtension[];
+    options?: MainOptions;
+}): import("./core/agent-session-runtime.ts").CreateAgentSessionRuntimeFactory;
+export declare function main(`);
   },
 };
 

@@ -66,7 +66,7 @@ const DEFAULT_INSTALLED_PROTOCOL = path.join(os.homedir(), ".local", "lib", "rub
 const KNOWN_HUB_FRAME_KINDS = ["hub.launch", "hub.registered", "hub.action"];
 
 function installedSurfaceKey(options = {}) {
-  return options.liveSessionId ?? process.env.RUBATO_LIVE_SESSION_ID ?? PROCESS_SURFACE_KEY;
+  return options.liveSessionId ?? (options.env ?? process.env).RUBATO_LIVE_SESSION_ID ?? PROCESS_SURFACE_KEY;
 }
 
 export function getInstalledRemoteSurface(options = {}) {
@@ -173,23 +173,31 @@ export async function loadRemoteProtocol(options = {}) {
 }
 
 function bindSurfaceEvents(pi, surface) {
+  surface.boundApis ??= new WeakSet();
+  if (surface.boundApis.has(pi)) return;
+  surface.boundApis.add(pi);
+  const reference = new WeakRef(surface);
   for (const eventName of SUBSCRIBED_EVENTS) {
     pi.on(eventName, (event, ctx) => {
-      if (surface.pi !== pi) return;
+      const surface = reference.deref();
+      if (!surface || surface.stopped || surface.pi !== pi) return;
       surface.observe(eventName, event, ctx);
     });
   }
   pi.events.on("rubato.remote.channel", (data) => {
-    if (surface.pi !== pi) return;
+    const surface = reference.deref();
+    if (!surface || surface.stopped || surface.pi !== pi) return;
     surface.observeChannel(data);
   });
   pi.events.on("interactive.ui.request", (data) => {
-    if (surface.pi !== pi) return;
+    const surface = reference.deref();
+    if (!surface || surface.stopped || surface.pi !== pi) return;
     surface.emit("ui.request", standardUiRequest(data) ?? data);
     surface.emit("agent.state", { execution: "idle", attention: true });
   });
   pi.events.on("interactive.ui.dismiss", (data) => {
-    if (surface.pi !== pi) return;
+    const surface = reference.deref();
+    if (!surface || surface.stopped || surface.pi !== pi) return;
     surface.emit("ui.dismiss", data);
     const native = tryCall(() => pi.getInteractiveControl?.()?.snapshot?.()) ?? {};
     surface.emit("agent.state", {
@@ -398,13 +406,16 @@ export function createUnixConnector(socketPath, protocol) {
 
 export class RemoteSurface {
   constructor(pi, protocol, options = {}) {
+    const env = options.env ?? process.env;
     this.pi = pi;
     this.protocol = protocol;
-    this.hostId = options.hostId ?? process.env.RUBATO_HOST_ID ?? uuidv7();
-    this.liveSessionId = options.liveSessionId ?? process.env.RUBATO_LIVE_SESSION_ID ?? uuidv7();
+    this.hosted = options.hosted === true;
+    this.hostId = options.hostId ?? env.RUBATO_HOST_ID ?? uuidv7();
+    this.liveSessionId = options.liveSessionId ?? env.RUBATO_LIVE_SESSION_ID ?? uuidv7();
+    this.managed = Boolean(env.RUBATO_LIVE_SESSION_ID) && env.RUBATO_LIVE_SESSION_ID === this.liveSessionId;
     this.surfaceInstanceId = options.surfaceInstanceId ?? randomUUID();
-    this.surfaceToken = options.surfaceToken ?? process.env.RUBATO_SURFACE_TOKEN;
-    this.connect = options.connect ?? createUnixConnector(options.socketPath ?? defaultHubSocketPath(), protocol);
+    this.surfaceToken = options.surfaceToken ?? env.RUBATO_SURFACE_TOKEN;
+    this.connect = options.connect ?? createUnixConnector(options.socketPath ?? defaultHubSocketPath(env), protocol);
     this.clock = options.clock ?? { now: Date.now, setTimeout, clearTimeout, setInterval, clearInterval };
     this.buffer = new SurfaceEventBuffer(options.buffer);
     this.connection = undefined;
@@ -463,6 +474,9 @@ export class RemoteSurface {
 
   stop() {
     this.stopped = true;
+    this.presentationClose?.(); this.presentationClose = undefined;
+    this.presentationBinding = undefined;
+    if (this.hosted) { this.pi = undefined; this.context = undefined; this.dispatcher = undefined; }
     if (this.reconnectTimer) this.clock.clearTimeout(this.reconnectTimer);
     if (this.heartbeat) this.clock.clearInterval(this.heartbeat);
     this.connection?.close();
@@ -729,7 +743,7 @@ export class RemoteSurface {
   }
 
   isManagedLiveSession() {
-    return Boolean(process.env.RUBATO_LIVE_SESSION_ID) && process.env.RUBATO_LIVE_SESSION_ID === this.liveSessionId;
+    return this.managed;
   }
 
   managedZmxName() {

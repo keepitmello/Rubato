@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, mkdir } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -131,10 +131,15 @@ test('client cleanup is idempotent after an explicit transport disconnect', asyn
 
 test('real built Rubato candidate starts and resumes through official server', { skip: !process.env.RUBATO_TEST_CANDIDATE }, async (t) => {
   const profile = await mkdtemp(path.join(tmpdir(), 'rb-profile-'));
+  await writeFile(path.join(profile, 'models.json'), JSON.stringify({ providers: { fixture: {
+    baseUrl: 'http://127.0.0.1:9/v1', api: 'openai-completions', apiKey: 'unused',
+    models: [{ id: 'local', contextWindow: 128000, maxTokens: 2048 }],
+  } } }));
   t.after(() => rm(profile, { recursive: true, force: true }));
   const env = await setup(t, { workerFactory: (metadata) => new RpcWorker(metadata, {
     cliPath: path.join(process.env.RUBATO_TEST_CANDIDATE, 'rubato-features/rubato-components/candidate-main.mjs'),
-    env: { RUBATO_CANDIDATE_AGENT_DIR: profile, HOME: profile } }) });
+    args: ['--offline', '--provider', 'fixture', '--model', 'local'],
+    env: { RUBATO_CANDIDATE_AGENT_DIR: profile, HOME: profile, PI_OFFLINE: '1' } }) });
   const client = await env.client();
   const created = await client.create({ cwd: env.root, title: 'Real Rubato control path' });
   await client.attach(created.sessionId);

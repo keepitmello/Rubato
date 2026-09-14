@@ -19,8 +19,8 @@ export interface ConfigNotice {
   readonly userConfigPath: string
 }
 
-export function getConfigNotices(): readonly ConfigNotice[] {
-  const paths = getConfigPaths()
+export function getConfigNotices(cwd = process.cwd()): readonly ConfigNotice[] {
+  const paths = getConfigPaths(cwd)
   const project = loadJsonFile(paths.project)
   if (!project?.lsp) return []
 
@@ -39,9 +39,9 @@ export function getConfigNotices(): readonly ConfigNotice[] {
   ]
 }
 
-function getConfigPaths(): { readonly project: string; readonly user: string } {
+function getConfigPaths(cwd: string): { readonly project: string; readonly user: string } {
   return {
-    project: join(process.cwd(), ".pi", "lsp-client.json"),
+    project: join(cwd, ".pi", "lsp-client.json"),
     user: join(resolve(process.env.HOME?.trim() || homedir()), ".pi", "lsp-client.json"),
   }
 }

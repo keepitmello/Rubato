@@ -13,14 +13,15 @@ export function invalidateStockUiHost(mode) {
 }
 
 /** Bind to the existing TUI; do not create another AgentSession or renderer. */
-export function bindStockUiHost(mode, ui) {
+export function bindStockUiHost(mode, ui, options = {}) {
   invalidateStockUiHost(mode);
-  const session = mode.session;
+  let session = mode.session;
   let active = true;
   let emit;
   let wrapped = false;
   let claim;
   let pending;
+  const disposers = new Set();
   const originals = new Map();
   const assertActive = () => {
     if (!active || mode.session !== session) throw new Error('Stock interactive control belongs to a stale session binding');
@@ -39,6 +40,12 @@ export function bindStockUiHost(mode, ui) {
     dismiss(request);
   };
   const port = {
+    env: options.env ?? process.env,
+    hosted: Boolean(options.onClose),
+    get active() { return active; },
+    run(fn) { assertActive(); return options.run ? options.run(fn) : fn(); },
+    onClose: options.onClose,
+    onDispose(fn) { disposers.add(fn); return () => disposers.delete(fn); },
     deactivate() {
       cancel();
       claim = undefined;
@@ -112,7 +119,14 @@ export function bindStockUiHost(mode, ui) {
         respond: guarded(port.respond),
       };
     },
-    dispose() { port.deactivate(); active = false; },
+    dispose() {
+      port.deactivate(); active = false;
+      for (const fn of disposers) fn();
+      disposers.clear();
+      // Stale capabilities still fail closed, but must not keep a detached
+      // renderer/session alive just because an extension retained its old UI.
+      mode = undefined; ui = undefined; session = undefined;
+    },
   };
   // ExtensionRunner wraps UI with an object spread; enumerable symbols survive
   // that wrapper without adding a user-facing string method to ExtensionUI.

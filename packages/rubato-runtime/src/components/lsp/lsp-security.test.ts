@@ -12,6 +12,23 @@ import { getConfigNotices } from "./adapter/migration-notices"
 import { createLspComponent } from "./index"
 
 describe("rubato-runtime lsp project config trust", () => {
+  it("uses each explicit session cwd for migration notices without changing process cwd", () => {
+    const root = mkdtempSync(join(tmpdir(), "rubato-lsp-cwds-"))
+    const originalCwd = process.cwd()
+    try {
+      for (const name of ["a", "b"]) {
+        const cwd = join(root, name)
+        mkdirSync(join(cwd, ".pi"), { recursive: true })
+        writeFileSync(join(cwd, ".pi/lsp-client.json"), JSON.stringify({ lsp: { [name]: { command: ["never-execute"] } } }))
+        const logger = new TestLogger()
+        createLspComponent({ resolveCwd: () => cwd }).register(new FakeExtensionAPI(), componentContext(logger))
+        expect(logger.warnings).toHaveLength(1)
+        expect(logger.warnings[0]?.details).toMatchObject({ serverIds: [name], configPath: join(cwd, ".pi/lsp-client.json") })
+      }
+      expect(process.cwd()).toBe(originalCwd)
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
   it("#given untrusted project-local LSP config #when shared server config merges #then arbitrary project commands are not launched", () => {
     // given
     const root = mkdtempSync(join(tmpdir(), "rubato-runtime-lsp-untrusted-"))

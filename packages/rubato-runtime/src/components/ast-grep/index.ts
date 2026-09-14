@@ -46,7 +46,10 @@ export function createAstGrepComponent(options: AstGrepComponentOptions = {}): R
         args: [entry, "mcp"],
         env: { [PROJECT_CWD_ENV]: env[PROJECT_CWD_ENV] ?? resolveCwd() },
         enabled: true,
-        lifecycle: "eager",
+        // Keep the discovered catalog, not an unused Node process per session.
+        // The MCP owner reconnects transparently on the first structural query.
+        lifecycle: "lazy",
+        idleTimeoutMin: 1,
         startupTimeoutMs: 2000,
       })
     },

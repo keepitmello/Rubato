@@ -1,24 +1,14 @@
 import { SessionClient } from '../../pi-server/src/client.mjs';
-import { readDescriptor } from '../../pi-server/src/profile-server.mjs';
+import { readDescriptor } from '../../pi-server/src/descriptor.mjs';
+import { ensureProfileEngine } from '../../pi-server/src/discovery.mjs';
 import { EventProjection, importedId, textOf } from './events.mjs';
 import { applySelectionOptions, catalogForPicker } from './model-catalog-order.mjs';
 import { readFile } from 'node:fs/promises';
-import { readFileSync, readdirSync, mkdirSync, openSync, closeSync, lstatSync, statSync, realpathSync, unlinkSync } from 'node:fs';
-import { spawn, execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { readFileSync, readdirSync, statSync, realpathSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
-import net from 'node:net';
 import os from 'node:os';
 
-const serverCli = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'pi-server', 'src', 'cli.mjs');
-let startingServer;
-// 서버가 kill -9 로 죽은 직후에는 owner.lock 이 아직 stale 로 안 넘어가서, 새로
-// 띄운 서버가 "Lock file is already being held" 로 즉사한다. 한 번만 띄우고
-// 기다리면 이미 죽은 프로세스를 40초 동안 기다리게 된다(실측 46초 복구). 죽은
-// 자리를 다시 채우도록 몇 초 간격으로 다시 띄운다.
-const SERVER_SPAWN_ROUNDS = 8;
-const SERVER_PROBES_PER_ROUND = 20;
-const SERVER_PROBE_MS = 250;
 // 소켓이 끊기면 pi-client 는 이 문구들로 던진다. 서버가 다시 떠도 이미 만들어 둔
 // 클라이언트는 되살아나지 않으니, 붙잡고 있던 것을 버리고 새 연결로 한 번 더 친다.
 const TRANSPORT_FAILURE = /transport closed|not connected|ECONNREFUSED|ECONNRESET|EPIPE|socket (?:closed|hang)/i;
@@ -66,71 +56,7 @@ function resolveNode() {
   for (const candidate of candidates) if (candidate && nodeMajor(candidate) >= 24) return candidate;
   return process.execPath;
 }
-// 서버 기동 실패는 더블클릭으로 켠 앱에서 아무 데도 안 남는다. stdio 를 버리면
-// 화면에는 "연결 실패" 만 뜨고 이유는 사라진다. 파일로 받아 두고 오류에 꼬리를 붙인다.
-function serverLog(agentDir) {
-  const file = path.join(agentDir, 'logs', 'pi-server.log');
-  try { mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 }); } catch { /* 이미 있다 */ }
-  return file;
-}
-function logTail(file, bytes = 800) {
-  try { return readFileSync(file, 'utf8').slice(-bytes).trim(); } catch { return ''; }
-}
-// createUnixServer 는 죽은 소켓만 치운다. 빈 일반 파일이 같은 이름이면
-// "Refusing to remove non-socket Unix listener path" 로 즉사한다.
-function removeStaleListener(socketPath) {
-  try { if (!lstatSync(socketPath).isSocket()) unlinkSync(socketPath); } catch { /* 없음 */ }
-}
-// descriptor 파일이 있다고 서버가 사는 것은 아니다. 서버가 죽어도 소켓 파일과
-// connection.json 은 그대로 남아서, 파일만 보면 붙었다고 착각하고 ECONNREFUSED 로
-// 끝난다. 화면에서는 모델 목록이 통째로 비어 보였다.
-function socketAlive(socketPath) {
-  return new Promise((resolve) => {
-    const probe = net.createConnection(socketPath);
-    const finish = (alive) => { probe.destroy(); resolve(alive); };
-    probe.once('connect', () => finish(true));
-    probe.once('error', () => finish(false));
-    probe.setTimeout(1000, () => finish(false));
-  });
-}
-async function liveDescriptor(descriptorPath) {
-  try {
-    const descriptor = await readDescriptor(descriptorPath);
-    return (await socketAlive(descriptor.socketPath)) ? descriptor : undefined;
-  } catch { return undefined; }
-}
-// 앱 번들을 바로 켜면 Pi 서버를 띄워 주는 셸 스크립트를 안 지난다. 사용자가
-// Dock 에 고정하는 것이 바로 그 번들이라, 서버가 없으면 여기서 띄운다.
-async function ensureDescriptor(descriptorPath) {
-  const live = await liveDescriptor(descriptorPath);
-  if (live) return live;
-  startingServer ??= (async () => {
-    const agentDir = path.dirname(path.dirname(descriptorPath));
-    const logFile = serverLog(agentDir);
-    const node = resolveNode();
-    for (let round = 0; round < SERVER_SPAWN_ROUNDS; round += 1) {
-      try { removeStaleListener((await readDescriptor(descriptorPath)).socketPath); }
-      catch { removeStaleListener(path.join(agentDir, 'server', 'pi.sock')); }
-      let sink;
-      try { sink = openSync(logFile, 'a'); } catch { sink = 'ignore'; }
-      const child = spawn(node, [serverCli, '--agent-dir', agentDir], {
-        detached: true,
-        stdio: ['ignore', sink, sink],
-        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-      });
-      child.unref();
-      if (sink !== 'ignore') closeSync(sink);
-      for (let probe = 0; probe < SERVER_PROBES_PER_ROUND; probe += 1) {
-        await new Promise((resolve) => { setTimeout(resolve, SERVER_PROBE_MS); });
-        const started = await liveDescriptor(descriptorPath);
-        if (started) return started;
-      }
-    }
-    const tail = logTail(logFile);
-    throw new Error(`Rubato session server did not start: ${serverCli}${tail ? `\n${tail}` : ''}`);
-  })().finally(() => { startingServer = undefined; });
-  return startingServer;
-}
+const ensureDescriptor = descriptorPath => ensureProfileEngine({ descriptorPath, nodeBin: resolveNode() });
 
 const copy = (value) => JSON.parse(JSON.stringify(value));
 async function imagesFromAttachments(attachments) {

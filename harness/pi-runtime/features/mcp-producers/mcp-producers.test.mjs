@@ -160,9 +160,12 @@ test("actual ast-grep producer and search producer reach staged Pi execution, ab
   await loader.reload();
   const sessionManager = sdk.SessionManager.inMemory(cwd);
   const { session, extensionsResult } = await sdk.createAgentSession({ cwd, agentDir, resourceLoader: loader, sessionManager });
-  t.after(() => session.dispose());
+  t.after(async () => { await session.extensionRunner.emit({ type: "session_shutdown", reason: "exit" }); session.dispose(); });
   const extensionErrors = [];
   await session.bindExtensions({ onError: (error) => extensionErrors.push(error) });
+  // MCP discovery is deliberately background work at session_start. The model
+  // turn's real readiness barrier, not bindExtensions completion, owns catalog availability.
+  await session.extensionRunner.emit({ type: "before_agent_start", prompt: "catalog readiness", systemPrompt: "" });
 
   assert.deepEqual(extensionsResult.errors, []);
   assert.deepEqual(extensionErrors, []);
@@ -170,7 +173,7 @@ test("actual ast-grep producer and search producer reach staged Pi execution, ab
   assert.deepEqual(
     registry.list().map(({ name, enabled, lifecycle, exposure }) => ({ name, enabled, lifecycle, exposure })),
     [
-      { name: "_ast_grep", enabled: true, lifecycle: "eager", exposure: "auto" },
+      { name: "_ast_grep", enabled: true, lifecycle: "lazy", exposure: "auto" },
       { name: "disabled", enabled: false, lifecycle: "lazy", exposure: "auto" },
       { name: "rubato-memory", enabled: true, lifecycle: "lazy", exposure: "search" },
     ],
@@ -185,6 +188,7 @@ test("actual ast-grep producer and search producer reach staged Pi execution, ab
   assert.equal(searchService.getCatalog().filter(({ group }) => group === "rubato-memory").length, 4);
   assert.equal(searchService.getCatalog().some(({ group }) => group === "_ast_grep"), false);
   await waitForMarker(memoryMarker, "exit");
+  await waitForMarker(astMarker, "exit");
 
   const direct = await session.executeTool(astEcho, { value: "direct" });
   assert.equal(direct.content[0].text, "echo:direct");
@@ -213,11 +217,12 @@ test("actual ast-grep producer and search producer reach staged Pi execution, ab
   });
   session.setActiveToolsByName(["tool_search", astEcho]);
   await session.reload();
+  await session.extensionRunner.emit({ type: "before_agent_start", prompt: "catalog readiness", systemPrompt: "" });
   assert.ok(session.getActiveToolNames().includes(memoryEcho));
   assert.equal(registry.list().length, 3, "producer declarations replace their prior loader generation");
 
   await session.extensionRunner.emit({ type: "session_shutdown", reason: "exit" });
-  await waitForMarker(astMarker, "exit", 2);
+  await waitForMarker(astMarker, "exit", 3);
   await waitForMarker(memoryMarker, "exit", 3);
   assert.deepEqual(extensionErrors, []);
 });
