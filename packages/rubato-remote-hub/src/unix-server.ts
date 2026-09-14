@@ -67,9 +67,12 @@ export class SurfaceSocketServer implements SurfaceActions {
   readonly #handoffs: EnvironmentHandoffStore<BootstrapLaunchPayload>
   readonly #credentials: SurfaceReconnectCredentials
   readonly #connections = new Map<LiveSessionId, Connection>()
+  readonly #sockets = new Set<Socket>()
+  readonly #handlers = new Set<Promise<void>>()
   readonly #pending = new Map<string, PendingAction>()
   readonly #handshakeTimeoutMs: number
   #server: Server | null = null
+  #closing: Promise<void> | null = null
   #control: RemoteHub | null = null
   #local: LocalControlServices | null = null
 
@@ -89,7 +92,7 @@ export class SurfaceSocketServer implements SurfaceActions {
   }
 
   async listen(): Promise<void> {
-    if (this.#server) throw new Error("surface socket already listening")
+    if (this.#server || this.#closing) throw new Error("surface socket already listening or closing")
     await ensurePrivateDirectory(this.#path.slice(0, this.#path.lastIndexOf("/")))
     await this.#credentials.load()
     await removeIfPresent(this.#path)
@@ -105,17 +108,28 @@ export class SurfaceSocketServer implements SurfaceActions {
     await chmod(this.#path, 0o600)
   }
 
-  async close(): Promise<void> {
+  close(): Promise<void> {
+    return this.#closing ??= this.#close().finally(() => { this.#closing = null })
+  }
+
+  async #close(): Promise<void> {
     const server = this.#server
     this.#server = null
-    for (const connection of this.#connections.values()) connection.socket.destroy()
+    if (!server) return // A previous close released this address; do not unlink its next owner.
+    // Include bootstrap/control/unregistered sockets, not only live surfaces.
+    for (const socket of this.#sockets) socket.destroy()
     this.#connections.clear()
     for (const pending of this.#pending.values()) {
       clearTimeout(pending.timeout)
       pending.reject(new Error("surface server closed"))
     }
     this.#pending.clear()
-    if (server) await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+    // Closing a socket does not settle already accepted async journal writes.
+    // Keep handlers concurrent (UI replies must unblock actions), but drain
+    // their work before reporting shutdown or allowing a replacement listener.
+    await Promise.all(this.#handlers)
+    this.#connections.clear()
     await removeIfPresent(this.#path)
   }
 
@@ -139,6 +153,8 @@ export class SurfaceSocketServer implements SurfaceActions {
   }
 
   #accept(socket: Socket): void {
+    if (!this.#server) { socket.destroy(); return }
+    this.#sockets.add(socket)
     socket.setNoDelay(true)
     const connection: Connection = { socket }
     const decoder = new JsonFrameDecoder()
@@ -146,10 +162,13 @@ export class SurfaceSocketServer implements SurfaceActions {
     handshake.unref()
     const finishHandshake = () => clearTimeout(handshake)
     socket.on("data", (chunk) => {
+      if (!this.#server) return
       try {
         for (const frame of decoder.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk)) {
           finishHandshake()
-          void this.#handle(connection, frame).catch((error) => this.#dropSurfaceFrame(connection, frame, error))
+          const handler = this.#handle(connection, frame).catch((error) => this.#dropSurfaceFrame(connection, frame, error))
+          this.#handlers.add(handler)
+          void handler.finally(() => this.#handlers.delete(handler))
         }
       } catch {
         finishHandshake()
@@ -158,6 +177,7 @@ export class SurfaceSocketServer implements SurfaceActions {
     })
     socket.on("close", () => {
       finishHandshake()
+      this.#sockets.delete(socket)
       if (connection.liveSessionId && this.#connections.get(connection.liveSessionId) === connection) {
         this.#connections.delete(connection.liveSessionId)
       }
