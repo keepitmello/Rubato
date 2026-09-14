@@ -3,7 +3,7 @@ import { readDescriptor } from '../../pi-server/src/profile-server.mjs';
 import { EventProjection, importedId, textOf } from './events.mjs';
 import { applySelectionOptions, catalogForPicker } from './model-catalog-order.mjs';
 import { readFile } from 'node:fs/promises';
-import { readFileSync, readdirSync, mkdirSync, openSync, closeSync, lstatSync, unlinkSync } from 'node:fs';
+import { readFileSync, readdirSync, mkdirSync, openSync, closeSync, lstatSync, statSync, realpathSync, unlinkSync } from 'node:fs';
 import { spawn, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -22,6 +22,31 @@ const SERVER_PROBE_MS = 250;
 // 소켓이 끊기면 pi-client 는 이 문구들로 던진다. 서버가 다시 떠도 이미 만들어 둔
 // 클라이언트는 되살아나지 않으니, 붙잡고 있던 것을 버리고 새 연결로 한 번 더 친다.
 const TRANSPORT_FAILURE = /transport closed|not connected|ECONNREFUSED|ECONNRESET|EPIPE|socket (?:closed|hang)/i;
+// 세션 디렉터리에는 사람이 연 대화만 쌓이지 않는다. 벤치·프로브·스모크가
+// 임시 폴더에서 같은 엔진을 돌리고, 그 폴더는 곧 사라진다. T3 는 세션의 cwd
+// 로 프로젝트를 만들기 때문에, 그것을 그대로 넘기면 사이드바에 열 수도 없는
+// 프로젝트가 생긴다. 사용자가 지웠던 'xai-priority-bench', 'proj-verify',
+// 'cwd' 프로젝트가 그렇게 생긴 것이다.
+//
+// 판단은 구조만 본다. 그 폴더가 아직 있는가, 임시 폴더인가. 첫 메시지 문구로
+// 기계를 맞히려 들지 않는다 — 프롬프트가 바뀌면 사람 대화를 지운다.
+// 지금 살아 있는 세션과 앱이 방금 만든 세션은 무조건 남긴다.
+const LIVE_STATUS = new Set(['running', 'waiting', 'starting']);
+const temporaryRoots = () => {
+  const roots = ['/tmp', '/private/tmp', '/var/tmp', '/private/var/tmp', os.tmpdir()];
+  try { roots.push(realpathSync(os.tmpdir())); } catch { /* 없으면 그대로 */ }
+  return [...new Set(roots)];
+};
+const insideTemporary = (cwd) => temporaryRoots().some((root) => cwd === root || cwd.startsWith(`${root}/`));
+export function userStartedSession(entry) {
+  if (entry?.runtimeId && LIVE_STATUS.has(entry.status)) return true;
+  const cwd = entry?.cwd;
+  if (typeof cwd !== 'string' || !path.isAbsolute(cwd)) return false;
+  if (insideTemporary(cwd)) return false;
+  // statSync 다. Github-repos/agent-taskforce 와 Rubato 는 심볼릭 링크라서
+  // lstat 으로 보면 폴더가 아니고, 실제 대화 146 개가 통째로 사라졌다.
+  try { return statSync(cwd).isDirectory(); } catch { return false; }
+}
 function nodeMajor(bin) {
   try { return Number(String(execFileSync(bin, ['-v'], { encoding: 'utf8' })).replace(/^v/, '').split('.')[0]); }
   catch { return 0; }
@@ -126,8 +151,9 @@ async function imagesFromAttachments(attachments) {
   return images;
 }
 export class RubatoPiBridge {
-  constructor({ descriptorPath, instanceId, emit = () => {}, onError = () => {}, projectedMessages = async () => [] }) {
-    Object.assign(this, { descriptorPath, instanceId, emit, onError, projectedMessages });
+  constructor({ descriptorPath, instanceId, emit = () => {}, onError = () => {}, projectedMessages = async () => [],
+    shows = userStartedSession }) {
+    Object.assign(this, { descriptorPath, instanceId, emit, onError, projectedMessages, shows });
     this.sessions = new Map(); this.openings = new Map(); this.catalogues = new Map(); this.claimed = new Set(); this.closed = false;
     this.retryTimer = setInterval(() => { void this.recover().catch(onError); }, 1000);
     this.retryTimer.unref?.();
@@ -157,7 +183,11 @@ export class RubatoPiBridge {
       return call(await this.connection());
     }
   }
-  async inventory() { return this.viaInventory((client) => client.list()); }
+  // 앱에 실어 보내는 목록. 앱이 만든 세션은 정책과 무관하게 앱의 것이다.
+  async inventory() {
+    const sessions = await this.viaInventory((client) => client.list());
+    return sessions.filter((entry) => this.claimed.has(entry.sessionId) || this.shows(entry));
+  }
   async transcript(id) { return this.viaInventory((client) => client.transcript(id)); }
   async catalogue(cwd) {
     const cached = this.catalogues.get(cwd);

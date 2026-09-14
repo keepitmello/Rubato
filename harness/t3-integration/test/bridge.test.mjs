@@ -9,6 +9,7 @@ import { serveProfile } from '../../pi-server/src/profile-server.mjs';
 import { RpcWorker } from '../../pi-server/src/rpc-worker.mjs';
 import { SessionClient } from '../../pi-server/src/client.mjs';
 import { RubatoPiBridge } from '../src/bridge.mjs';
+import { userStartedSession } from '../src/bridge.mjs';
 import { EventProjection } from '../src/events.mjs';
 import {t3Modules} from './t3-source.mjs';
 const fixture = fileURLToPath(new URL('../../pi-server/test/fixtures/rpc.mjs', import.meta.url));
@@ -24,7 +25,9 @@ async function setup(t) {
   const service = await serveProfile({ agentDir: root, idleMs: 60, workerFactory: (metadata) => new RpcWorker(metadata, { cliPath: fixture }) });
   const events = [];
   const bridge = new RubatoPiBridge({ descriptorPath: service.descriptorPath, instanceId: 'rubato-test',
-    emit: (event) => events.push(decodeEvent(event)) });
+    // 이 파일의 시험은 전송·부착 의미를 본다. 시험 세션은 임시 폴더에서 도니
+    // 기본 정책이면 목록에서 빠진다. 정책 자체는 아래 별도 시험에서 본다.
+    shows: () => true, emit: (event) => events.push(decodeEvent(event)) });
   const external = await new SessionClient(service.descriptor).connect();
   t.after(async () => { await bridge.close(); await external.close(); await service.close(); await rm(root, { force:true, recursive:true }); });
   return { root, service, events, bridge, external };
@@ -110,4 +113,30 @@ test('reconnect does not append a full answer over text already projected or sti
   p.seed([{id:`assistant:${itemId}`,text:'a',streaming:true}]);
   p.message({...message,content:[{type:'text',text:'abcdef'}]},true);
   assert.deepEqual(events.filter(e=>e.type==='content.delta').map(e=>e.payload.delta),['abc','def']);
+});
+
+test('the app is offered work a person opened, not a scratch run', () => {
+  assert.equal(userStartedSession({ sessionId:'a', cwd:'/private/tmp/bench', runtimeId:'r', status:'running' }), true);
+  assert.equal(userStartedSession({ sessionId:'b', cwd:'/private/tmp/bench', runtimeId:null, status:'stored' }), false);
+  assert.equal(userStartedSession({ sessionId:'c', cwd:path.join(tmpdir(), 'gone-' + Date.now()), status:'stored' }), false);
+  assert.equal(userStartedSession({ sessionId:'d', cwd:'/Users/nobody/deleted-project', status:'stored' }), false);
+  assert.equal(userStartedSession({ sessionId:'e', cwd:process.cwd(), status:'stored' }), true);
+  assert.equal(userStartedSession({ sessionId:'f', cwd:'relative/path', status:'stored' }), false);
+});
+
+test('a scratch session never reaches the app, and the app keeps what it made itself', async (t) => {
+  const { root, service, bridge } = await setup(t);
+  const policy = new RubatoPiBridge({ descriptorPath: service.descriptorPath, instanceId: 'rubato-policy' });
+  const external = await new SessionClient(service.descriptor).connect();
+  t.after(async () => { await policy.close(); await external.close(); });
+  const scratch = await external.create({ cwd: root, title: 'Bench run' });
+  const real = await external.create({ cwd: process.cwd(), title: 'Real work' });
+  const offered = await policy.inventory();
+  assert.equal(offered.some((entry) => entry.sessionId === scratch.sessionId), false, '임시 폴더 세션이 앱으로 넘어갔다');
+  assert.equal(offered.some((entry) => entry.sessionId === real.sessionId), true, '진짜 작업 폴더 세션이 빠졌다');
+  // 앱이 직접 만든 세션은 임시 폴더에서 돌아도 앱의 것이다.
+  const own = await policy.startSession({ threadId:'policy-thread', runtimeMode:'full-access', cwd:root });
+  assert.equal((await policy.inventory()).some((entry) => entry.sessionId === own.resumeCursor.sessionId), true,
+    '앱이 만든 세션이 정책에 걸려 사라졌다');
+  assert.ok((await bridge.inventory()).length >= 2, '정책은 이 다리에만 걸린다');
 });
