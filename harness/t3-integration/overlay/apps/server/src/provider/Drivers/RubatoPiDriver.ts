@@ -34,7 +34,7 @@ export interface PiBridge {
   cursor(id: string): {kind: string; serverId: string; sessionId: string};
   transcript(id: string): Promise<{messages: ReadonlyArray<unknown>}>;
   importedMessages(id: string, messages: ReadonlyArray<unknown>): ReadonlyArray<{id:string; role:"user"|"assistant"; text:string; createdAt:string}>;
-  catalogue(cwd: string): Promise<{models: ReadonlyArray<{provider:string; id:string; name:string; reasoning?:boolean}>; model:{provider:string;id:string}|null}>;
+  catalogue(cwd: string): Promise<{models: ReadonlyArray<{provider:string; id:string; name:string; reasoning?:boolean; capabilities?:{optionDescriptors?:ReadonlyArray<unknown>}|null}>; model:{provider:string;id:string}|null}>;
   startSession(input: unknown): Promise<unknown>;
   sendTurn(input: unknown): Promise<unknown>;
   interruptTurn(threadId: string): Promise<void>;
@@ -105,7 +105,7 @@ export const RubatoPiDriver: ProviderDriver<RubatoPiConfig> = {
         status:!enabled ? "disabled" : catalogue ? "ready" : "error",
         message:result?._tag === "Failure" ? result.failure.message : "Rubato profile policy; only Full access is supported. Existing extension questions still require a reply.",
         models:catalogue?.models.map((model) => ({slug:`${model.provider}/${model.id}`, name:model.name,
-          subProvider:model.provider, isCustom:false, capabilities:null,
+          subProvider:model.provider, isCustom:false, capabilities:model.capabilities ?? null,
           isDefault:catalogue.model?.provider===model.provider && catalogue.model?.id===model.id })) ?? [],
       });
       yield* PubSub.publish(updates, current);
