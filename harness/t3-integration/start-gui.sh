@@ -9,14 +9,7 @@ set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 T3_DIR="${RUBATO_T3_SOURCE:-$HOME/.rubato/t3-source}"
 T3_HOME="${RUBATO_T3_HOME:-$HOME/.rubato/t3-home}"
-AGENT_DIR="${RUBATO_PI_CODING_AGENT_DIR:-$HOME/.rubato-pi/agent}"
 BUNDLE="$T3_DIR/apps/desktop/dist-electron/main.cjs"
-
-# Dock 에 뜨는 이름·아이콘·번들 id. overlay 가 T3 런처를 이 값들에 맞춰 놨고,
-# 안 주면 T3 기본값("T3 Code (Alpha)")으로 돌아간다.
-export RUBATO_GUI_APP_NAME="${RUBATO_GUI_APP_NAME:-Rubato}"
-export RUBATO_GUI_BUNDLE_ID="${RUBATO_GUI_BUNDLE_ID:-app.rubato.t3}"
-export RUBATO_GUI_ICON_PNG="${RUBATO_GUI_ICON_PNG:-$HERE/../../rubato-codex/macos/Rubato.png}"
 
 # 더블클릭으로 켜면 stderr 를 아무도 안 본다. 실패는 창으로도 알린다.
 die() {
@@ -37,16 +30,8 @@ export PATH="$(dirname "$NODE"):$PATH"
 # 생기므로, 그 파일로 게이트하면 빌드가 없는 설치를 멀쩡하다고 오판한다.
 [ -f "$BUNDLE" ] || die "데스크톱이 아직 안 만들어졌다. 터미널에서 rubato update 를 돌려라."
 
-mkdir -p "$AGENT_DIR"
-if [ ! -S "$AGENT_DIR/server/pi.sock" ]; then
-  "$NODE" "$HERE/../pi-server/src/cli.mjs" --agent-dir "$AGENT_DIR" >/tmp/rubato-pi-server.log 2>&1 &
-  for _ in 1 2 3 4 5 6 7 8 9 10; do
-    [ -S "$AGENT_DIR/server/pi.sock" ] && break
-    sleep 0.3
-  done
-fi
-[ -S "$AGENT_DIR/server/pi.sock" ] || die "Rubato 세션 서버가 안 떴다. /tmp/rubato-pi-server.log 를 봐라."
-
+# Pi 세션 서버는 브리지가 띄운다. 여기서도 띄우면 살아있는지 판정하는 곳이
+# 둘이 되고, 앱 번들을 바로 켜는 경로는 어차피 이 스크립트를 안 지난다.
 export T3CODE_HOME="$T3_HOME"
 cd "$T3_DIR/apps/desktop" || die "T3 소스가 없다. 터미널에서 rubato update 를 돌려라."
 exec "$NODE" scripts/start-electron.mjs
