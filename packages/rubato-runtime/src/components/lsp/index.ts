@@ -38,6 +38,7 @@ interface ToolResultHandlerResult {
 }
 
 interface LspComponentOptions {
+	readonly resolveCwd?: () => string;
 	readonly postEdit?: {
 		readonly runDiagnostics?: DiagnosticsRunner;
 		readonly state?: LspPostEditSessionState;
@@ -49,22 +50,23 @@ const DEFAULT_POST_EDIT_SESSION_STATE = createLspPostEditSessionState();
 export { createLspPostEditSessionState };
 
 export function createLspComponent(options: LspComponentOptions = {}): RubatoComponent {
+	const resolveCwd = options.resolveCwd ?? (() => process.cwd());
 	const postEditState = options.postEdit?.state ?? createLspPostEditSessionState();
-	const runPostEditDiagnostics = options.postEdit?.runDiagnostics ?? runLspDiagnosticsForPostEdit;
+	const runPostEditDiagnostics = options.postEdit?.runDiagnostics ?? ((filePath) => runLspDiagnosticsForPostEdit(filePath, resolveCwd()));
 	return {
 		name: "lsp",
 		register(pi, ctx) {
 			registerLspFlags(pi);
 			if (ctx.config.getFlag(LSP_TOOLS_ENABLED_FLAG) === false) return;
 
-			for (const notice of getConfigNotices()) {
+			for (const notice of getConfigNotices(resolveCwd())) {
 				ctx.logger.warn(
 					"Rubato ignored project-local LSP commands; move custom commands to the user .pi config",
 					notice,
 				);
 			}
 
-			registerLspTools(pi);
+			registerLspTools(pi, resolveCwd);
 
 			if (ctx.config.getFlag(LSP_POST_EDIT_DIAGNOSTICS_ENABLED_FLAG) !== false) {
 				pi.on("tool_result", (event, eventCtx) =>
@@ -99,7 +101,7 @@ function registerLspFlags(pi: SenpiExtensionAPI): void {
 	});
 }
 
-function registerLspTools(pi: SenpiExtensionAPI): void {
+function registerLspTools(pi: SenpiExtensionAPI, resolveCwd: () => string): void {
 	for (const tool of [
 		lsp_diagnostics,
 		lsp_goto_definition,
@@ -108,7 +110,7 @@ function registerLspTools(pi: SenpiExtensionAPI): void {
 		lsp_prepare_rename,
 		lsp_rename,
 	]) {
-		pi.registerTool(withPackagedDaemonRuntime(tool));
+		pi.registerTool(withPackagedDaemonRuntime(tool, resolveCwd));
 	}
 }
 
@@ -123,7 +125,7 @@ type LspTool = {
 	): Promise<unknown>;
 };
 
-function withPackagedDaemonRuntime<TTool extends LspTool>(tool: TTool): TTool {
+function withPackagedDaemonRuntime<TTool extends LspTool>(tool: TTool, resolveCwd: () => string): TTool {
 	return {
 		...tool,
 		async execute(
@@ -134,7 +136,8 @@ function withPackagedDaemonRuntime<TTool extends LspTool>(tool: TTool): TTool {
 			ctx?: unknown,
 		): Promise<unknown> {
 			const args = isRecord(rawParams) ? rawParams : {};
-			return callPackagedDaemonTool(tool.name, args, signal === undefined ? {} : { signal });
+			const cwd = isRecord(ctx) && typeof ctx.cwd === "string" ? ctx.cwd : resolveCwd();
+			return callPackagedDaemonTool(tool.name, args, { cwd, ...(signal === undefined ? {} : { signal }) });
 		},
 	};
 }
@@ -158,8 +161,8 @@ export async function handlePostEditDiagnosticsToolResult(
 	return result?.content ? { content: result.content } : undefined;
 }
 
-async function runLspDiagnosticsForPostEdit(filePath: string): Promise<PostEditDiagnosticsOutcome> {
-	const result = await callPackagedDaemonTool("lsp_diagnostics", { filePath, severity: "error" });
+async function runLspDiagnosticsForPostEdit(filePath: string, cwd = process.cwd()): Promise<PostEditDiagnosticsOutcome> {
+	const result = await callPackagedDaemonTool("lsp_diagnostics", { filePath, severity: "error" }, { cwd });
 	return postEditOutcomeFromDaemonResult(result);
 }
 

@@ -52,11 +52,11 @@ const cachedClients = new Map<string, Promise<DaemonClientModule>>();
 export async function callPackagedDaemonTool(
 		name: string,
 		args: Record<string, unknown>,
-		options: { readonly signal?: AbortSignal } = {},
+		options: { readonly signal?: AbortSignal; readonly cwd?: string } = {},
 		importerUrl = import.meta.url,
 ): Promise<ToolExecutionResult> {
 	const client = await loadPackagedDaemonClient(importerUrl);
-	const context = currentSenpiRequestContext();
+	const context = currentSenpiRequestContext(options.cwd);
 	return client.callToolViaDaemon(toDaemonToolName(name), args, { context, signal: options.signal });
 }
 
@@ -64,8 +64,8 @@ export function clearPackagedDaemonToolClientCache(): void {
 	cachedClients.clear();
 }
 
-function currentSenpiRequestContext(): LspRequestContext {
-	const cwd = canonicalCwd();
+function currentSenpiRequestContext(requestCwd?: string): LspRequestContext {
+	const cwd = canonicalCwd(requestCwd);
 	const home = resolve(process.env.HOME?.trim() || homedir());
 	return {
 		cwd,
@@ -76,8 +76,8 @@ function currentSenpiRequestContext(): LspRequestContext {
 	};
 }
 
-function canonicalCwd(): string {
-	const cwd = resolve(process.cwd());
+function canonicalCwd(requestCwd = process.cwd()): string {
+	const cwd = resolve(requestCwd);
 	return existsSync(cwd) ? realpathSync(cwd) : cwd;
 }
 

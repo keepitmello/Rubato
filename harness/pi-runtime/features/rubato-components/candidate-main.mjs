@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 import { validateCandidateStage } from "./validate-stage.mjs";
 
 export const CANDIDATE_FEATURE_NAMES = Object.freeze(["runtime-factories", "reload", "tool-execution", "input-lifecycle", "abort-provenance",
-  "request-run", "extension-rpc", "service-tier", "tool-search", "mcp", "mcp-producers", "codemode",
-  "child-runtime", "terminal", "providers", "provider-execution", "media-tools", "video-in", "tool-guards", "tool-policy", "context-window", "session-catalog", "session-picker", "session-title", "adapter-hooks", "parity-gaps", "prompt-rules", "compaction", "config-reload", "user-commands-agent", "user-commands-session", "remote-surface", "tui-input", "turn-chrome", "statusline", "startup-chrome", "tui-autocomplete", "model-picker", "thinking-levels", "transcript-cache", "title-guard"]);
+  "request-run", "extension-rpc", "session-transport", "service-tier", "tool-search", "mcp", "mcp-producers", "codemode",
+  "child-runtime", "terminal", "providers", "provider-execution", "media-tools", "video-in", "tool-guards", "tool-policy", "context-window", "session-catalog", "session-picker", "session-title", "adapter-hooks", "parity-gaps", "prompt-rules", "compaction", "config-reload", "user-commands-agent", "user-commands-session", "remote-surface", "tui-input", "turn-chrome", "statusline", "startup-chrome", "tui-autocomplete", "model-picker", "thinking-levels", "transcript-cache", "title-guard", "session-ui"]);
 const requiredFeatures = [...CANDIDATE_FEATURE_NAMES, "rubato-components"];
 
 /** Pin the candidate onto `agentDir` without flattening sessions onto `agentDir/sessions`. */
@@ -21,8 +21,7 @@ export function pinCandidateProfile(agentDir) {
   delete process.env.PI_CODING_AGENT_SESSION_DIR;
 }
 
-export async function runRubatoCandidate(args = process.argv.slice(2)) {
-  const requestedAgentDir = process.env.RUBATO_CANDIDATE_AGENT_DIR;
+export async function prepareRubatoCandidate(requestedAgentDir) {
   if (!requestedAgentDir || !isAbsolute(requestedAgentDir)) throw new Error("Incomplete Rubato candidate requires an explicit absolute RUBATO_CANDIDATE_AGENT_DIR");
   const agentDir = resolve(requestedAgentDir);
   const receipt = JSON.parse(await readFile(new URL("../../rubato-pi-stage.json", import.meta.url), "utf8"));
@@ -38,6 +37,11 @@ export async function runRubatoCandidate(args = process.argv.slice(2)) {
   pinCandidateProfile(agentDir);
   const { createRubatoExtensionFactories, validateRubatoBundleAssets } = await import("./bootstrap.mjs");
   await validateRubatoBundleAssets();
+  return { agentDir, createRubatoExtensionFactories };
+}
+
+export async function runRubatoCandidate(args = process.argv.slice(2)) {
+  const { agentDir, createRubatoExtensionFactories } = await prepareRubatoCandidate(process.env.RUBATO_CANDIDATE_AGENT_DIR);
   const { main } = await import("../../node_modules/@earendil-works/pi-coding-agent/dist/main.js");
   await main(args, { createExtensionFactories: (context) => {
     if (context.agentDir !== agentDir || !context.settingsManager || !context.modelRuntime) {

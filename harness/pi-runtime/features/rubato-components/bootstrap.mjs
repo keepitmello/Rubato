@@ -50,7 +50,7 @@ export async function validateRubatoBundleAssets() {
 /** Explicit stock ExtensionFactory assembly; no session/agent-loop replacement.
  * Current selected features only. The stage receipt continues to deny full parity.
  */
-export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager, modelRuntime, codemodeOptions, mcpOptions = {}, terminalOptions = {}, providerOptions = {}, env = process.env } = {}) {
+export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager, modelRuntime, codemodeOptions, mcpOptions = {}, terminalOptions = {}, providerOptions = {}, env = process.env, hosted = false } = {}) {
   if (!cwd || !agentDir) throw new Error("Rubato candidate requires explicit cwd and agentDir");
   if (!modelRuntime || typeof modelRuntime.streamSimple !== "function") throw new Error("Rubato candidate requires the parent's canonical stock ModelRuntime");
   const settings = settingsManager ?? SettingsManager.create(cwd, agentDir);
@@ -63,7 +63,10 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
   });
   const runtimeRoot = fileURLToPath(new URL("../..", import.meta.url));
   const stockChildProfile = resolveStockChildProviderProfile({ root: runtimeRoot, agentDir, includeContextNotes: true, includeGuards: true });
-  const componentFactory = servers.wrapFactory(createRubatoComponentExtension({ createTaskOptions: ({ createTaskRunnerFactories }) => ({
+  const componentFactory = servers.wrapFactory(createRubatoComponentExtension({ resolveCwd: () => cwd, createTaskOptions: ({ createTaskRunnerFactories }) => ({
+    // Stock ExtensionAPI does not expose Senpi's registration-time pi.cwd.
+    // Bind task storage to this session, never the hosting process directory.
+    resolveCwd: () => cwd,
     runnerFactories: createTaskRunnerFactories({ rpcSpawnRuntime, stockChildProfile, stockModelRuntime: modelRuntime,
       createInProcessSession: async (options) => createStockChildInProcessSession(options, {
         createAgentSession,
@@ -87,10 +90,10 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
     { name: "providers", factory: createProvidersExtension({ ...providerOptions,
       routeFactories: { ...providerOptions.routeFactories, cursor: providerExecution.cursorRouteFactory },
       agentDir,
-      env: { ...process.env, ...providerOptions.env, RUBATO_PI_CODING_AGENT_DIR: agentDir } }) },
+      env: { ...env, ...providerOptions.env, RUBATO_PI_CODING_AGENT_DIR: agentDir } }) },
     { name: "rubato-gpt-account", factory: createGptAccountExtension({
       agentDir,
-      env: { ...process.env, ...providerOptions.env, RUBATO_PI_CODING_AGENT_DIR: agentDir },
+      env: { ...env, ...providerOptions.env, RUBATO_PI_CODING_AGENT_DIR: agentDir },
     }) },
     { name: "provider-execution", factory: providerExecution.extension },
     { name: "service-tier", factory: serviceTier.extension },
@@ -103,7 +106,7 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
     ...createUserCommandSessionFactories(),
     ...createSessionTitleFactories(),
     ...createAdapterHookFactories(),
-    ...createRemoteSurfaceFactories(),
+    ...createRemoteSurfaceFactories({ env, hosted }),
     ...createTuiInputFactories(),
     { name: "rubato-bash-timeout", factory: createBashTimeoutExtension() },
     { name: "terminal", factory: (pi) => terminal(pi, { ...terminalOptions, createSettingsManager: () => settings }) },

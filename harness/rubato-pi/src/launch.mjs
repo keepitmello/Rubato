@@ -233,7 +233,6 @@ export async function spawnRubatoPi({ args = process.argv.slice(2), env = proces
   if (selection.error) throw new Error(selection.error);
   const stockPiReady = selection.engine === "stock-pi";
   if (selection.warning) console.error(selection.warning);
-  prepareAgentDir(profileDir);
   setBootChromeStatus("엔진을 불러오는 중");
 
   if (stockPiReady) {
@@ -244,6 +243,17 @@ export async function spawnRubatoPi({ args = process.argv.slice(2), env = proces
       const argv = [entry, ...buildStockPiArgs(args, { env })];
       const nextEnv = stockPiLaunchEnv(env, profileDir);
       if (sameNodeBinary(node.bin)) {
+        const { installedSharedRuntime, isConversationLaunch, ensureProfileEngine } = await import('../../pi-server/src/discovery.mjs');
+        const runtimeRoot = installedSharedRuntime(env);
+        if (runtimeRoot && isConversationLaunch(args)) {
+          const descriptor = await ensureProfileEngine({ descriptorPath: join(profileDir, 'server', 'connection.json'),
+            nodeBin: node.bin, env: nextEnv, runtimeRoot, requireTerminal: true });
+          releaseBootChrome();
+          const { runTerminalClient } = await import('../../pi-server/src/terminal-client.mjs');
+          process.exitCode = await runTerminalClient({ descriptor, args: argv.slice(1), env: nextEnv });
+          return undefined;
+        }
+        prepareAgentDir(profileDir);
         return runSameNode(entry, argv, nextEnv, { stockPi: true });
       }
       releaseBootChrome();
@@ -257,6 +267,7 @@ export async function spawnRubatoPi({ args = process.argv.slice(2), env = proces
   // Retired: the senpi branch below is unreachable (selection.error throws above
   // whenever stock-pi is not launchable). It stays until the senpi excision
   // workstream removes the senpi launch path, its args builder, and their tests.
+  prepareAgentDir(profileDir);
   assertExactPin();
   // 우리가 소유한 전역 확장(현재 tps)을 senpi 가 자기 기본판으로 되돌리기 전에 깐다.
   ensureAgentExtensions(profileDir);

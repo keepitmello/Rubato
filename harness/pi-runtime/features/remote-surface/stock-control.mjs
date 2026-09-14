@@ -15,6 +15,8 @@ function contentFromInput(text, images) {
 export function attachStockInteractiveControl(pi, options = {}) {
   let ctx;
   let host;
+  let port;
+  let detached = false;
   const session = () => host?.session ?? options.session;
   const commands = () => host?.commandContext() ?? ctx;
   const previous = typeof pi.getInteractiveControl === "function" ? pi.getInteractiveControl.bind(pi) : undefined;
@@ -42,7 +44,7 @@ export function attachStockInteractiveControl(pi, options = {}) {
       return host.executeUserBash(command, excluded);
     },
     abortUserBash: async () => host?.abortUserBash(),
-    compact: (instructions) => new Promise((resolve, reject) => {
+    compact: async (instructions) => new Promise((resolve, reject) => {
       if (!ctx?.compact) return reject(new Error("compact is unavailable"));
       ctx.compact({ customInstructions: instructions, onComplete: resolve, onError: reject });
     }),
@@ -122,10 +124,29 @@ export function attachStockInteractiveControl(pi, options = {}) {
     },
     respondToUiRequest: (id, value) => host?.respond(id, value) ?? false,
   };
-  pi.on("session_start", (_event, nextCtx) => {
+  const bind = (_event, nextCtx) => {
+    const nextPort = nextCtx.ui?.[STOCK_UI_HOST];
+    if (port && nextPort === port) return;
     ctx = nextCtx;
-    host = ctx.ui?.[STOCK_UI_HOST]?.activate((name, data) => pi.events.emit(name, data));
-  });
-  pi.getInteractiveControl = () => previous?.() ?? control;
+    detached = false;
+    port = nextPort;
+    host = port?.activate((name, data) => pi.events.emit(name, data));
+    port?.onDispose(() => {
+      if (port !== nextPort) return;
+      host = undefined; ctx = undefined; port = undefined;
+      detached = true;
+    });
+  };
+  pi.on("session_start", bind);
+  pi.on("rubato.presentation.bind", bind);
+  const scoped = Object.fromEntries(Object.entries(control).map(([key, fn]) => {
+    const invoke = (...args) => {
+      if (detached || (options.hosted && !port)) throw new Error('Remote control belongs to a stale terminal presentation');
+      return port ? port.run(() => fn(...args)) : fn(...args);
+    };
+    // Keep each public method's original sync/Promise contract on stale ports.
+    return [key, fn.constructor.name === 'AsyncFunction' ? async (...args) => invoke(...args) : invoke];
+  }));
+  pi.getInteractiveControl = () => previous?.() ?? scoped;
   return control;
 }

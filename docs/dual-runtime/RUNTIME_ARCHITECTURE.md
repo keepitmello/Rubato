@@ -1,12 +1,73 @@
 # CLI / T3 공통 실행 구조 — 감사 후 권고 설계
 
-2026-09-15 · 기준 `rubato/base@94f0c7087` · 상태: **목록/갱신 비용 최적화 구현·격리 검증. 공통 엔진 통합 및 live 반영 전.**
+2026-09-15 · 상태: **CLI/T3 공통 엔진 구현·실설치 전환·재시작 및 관리형 CLI 실검증 완료.** 운영/복구 절차는 [공통 엔진 운영과 검증](COMMON_ENGINE_OPERATIONS.md)을 따른다.
 
-이 문서는 로컬 참고 문서 `hub-absorb-handoff.md`(허브 흡수 초안)를 대체하는 현재 설계 판단이다. 사용자 소유 원본 초안은 실패 이력으로 보존하며 이 변경에 포함해 배포하지 않는다. “허브를 Pi 서버에 흡수”라는 파일/프로세스 이동 자체가 목표가 아니다. 목표는 **같은 대화의 실행·기록 소유자 하나, CLI/T3의 동일 실행 공유, 불필요한 상시 비용 제거**다.
+이 문서는 로컬 참고 문서 `hub-absorb-handoff.md`(허브 흡수 초안)를 참고한 설계 판단이다. 사용자 소유 원본 초안은 수정하지 않는다. “허브를 Pi 서버에 흡수”라는 파일/프로세스 이동 자체가 목표가 아니다. 최신 목표와 이전 동일 대화 공유 설계의 적용 경계는 아래 §0을 따른다.
 
 근거 원장은 Rubato-lab의 `_workspace/runtime-architecture-20260915/`에 있다. `baseline.md`, `owner-design.md` §9, `design-review.md`, `lead-stock-control-probe.json`, `lead-lock-probe.json`, `lead-zmx-handoff-probe.json`, `lead-feasibility.md`를 함께 본다. 독립 검토는 초기 후보를 NOT READY로 판정했다. 아래는 그 지적과 리드의 설치본 재검증을 반영한 새 권고안이며, 이 전체 안이 독립 검토를 통과했다고 주장하지 않는다.
 
-## 1. 결론과 선택
+## 0. 최신 승인: CLI와 GUI 모두 하나의 프로필 엔진에 연결
+
+사용자 승인: “해보자. 코덱스 데스크탑 앱처럼 하나의 엔진이 여러 스레드를 관리하는 식으로. cli던 gui던”. Intent `dual-runtime-lifecycle` revision 5. GUI만의 실험에서 CLI/GUI 공통 엔진으로 범위를 넓혔다. 아래 §1 이후의 대화별 worker 설계는 이전 검토 기록이며 최신 목표로 구현하지 않는다.
+
+```text
+CLI 터미널 입출력 ─┐
+T3 기존 어댑터 ────┼─ 공식 Pi Server / SessionRouter (프로필당 1개 엔진 프로세스)
+                  │    ├─ 대화 A: AgentSession + JSONL + 세션별 확장/도구
+                  │    ├─ 대화 B: AgentSession + JSONL + 세션별 확장/도구
+                  │    └─ 대화 C: AgentSession + JSONL + 세션별 확장/도구
+                  └─ 화면/연결 종료와 엔진/대화 종료를 분리
+```
+
+구현 구조:
+- **공식 SessionRouter가 SDK 대화를 소유한다.** `SessionWorker`는 같은 프로세스 안에 대화별 AgentSession을 만들고, 기존 RPC 명령·질문 처리기를 세션 전용 transport로 재사용한다.
+- **CLI는 기존 UI를 그대로 쓰는 얇은 터미널이다.** native main/InteractiveMode가 엔진에서 동작하며, 별도 CLI 프로세스는 키 입력·화면 바이트·크기 변경·로컬 외부 editor만 전달한다. 새 renderer나 대화 DB를 만들지 않는다.
+- **선택 커서와 대화 수명을 분리한다.** /new·/resume·fork·import는 CLI의 선택을 바꾼다. GUI가 보던 원래 route/JSONL writer는 바꾸지 않는다. 대상 획득 실패 시 이전 대화를 보존한다.
+- UI 테마·키보드·이미지 상태와 cwd/환경/HTTP proxy pool은 명시적 async context에 격리한다. native trust·모델·설정·확장 factory는 공용 생성 경로를 사용한다. extension startup은 화면 재접속 때 반복하지 않는다.
+- 동일 대화의 CLI 제어권은 하나만 허용한다. GUI 관찰은 가능하고, CLI가 제어 중인 대화를 GUI에서 동시에 변경하려 하면 명시적으로 거부한다.
+- CLI와 T3가 같은 discovery/프로필 lock을 사용한다. 설치 receipt에 두 공통 실행 feature가 있으면 소스 launcher가 공통 엔진으로 연결한다. **이전 엔진이 실행 중이면 종료하거나 두 번째 엔진을 만들지 않는다.**
+- 초기 설정 파일 보정도 lock을 가진 엔진 한 곳에서만 수행한다. 여러 CLI가 동시에 settings/models JSON을 덮어쓰던 시작 경합을 제거했다.
+- 사용하지 않는 AST MCP 프로세스는 discovery 후 닫고, 도구 실행 때 다시 연결한다. 실행 후 유휴 1분에 회수한다. 도구 목록·검색·호출 의미는 유지한다.
+- 외부 도구 프로세스와 명시적으로 process 실행을 요청한 task child까지 없앤다는 뜻은 아니다. 일반 CLI/T3 대화의 완전한 엔진 중복을 제거한다.
+
+격리된 실제 소스 CLI 5개와 공식 GUI client를 동시에 실행했다. CLI마다 확인한 engine PID가 동일했고, 서로 다른 인증 환경으로 loopback provider를 호출했다. CLI 종료 후 GUI가 같은 runtime ID로 이어갔다. 실제 PTY의 한글 입력, /new, /resume 선택 및 정상 raw/alternate-screen 복원을 확인했다. native 저장/메모리 fork, import, writer 이름 변경, 제어 충돌, 질문/취소/재접속도 별도 검사했다.
+
+| 최종 동일 후보16, 짧은 local 응답 후 안정화 | 대화 엔진 | 전체 자식 포함 프로세스 | RSS 합계 | 엔진 유휴 CPU |
+|---|---:|---:|---:|---:|
+| 1대화 · 개별 실행 | 1 | 1 | 254 MiB | 1.60% |
+| 1대화 · 공통 엔진 | 1 | 2 | 313 MiB | 1.71% |
+| 5대화 · 개별 실행 | 5 | 5 | 1,284 MiB | 6.32% |
+| 5대화 · 공통 엔진 | 1 | 6 | 566 MiB | 1.94% |
+
+**5대화의 RSS는 약 56% 감소**했다. 반면 1대화에서는 얇은 CLI 클라이언트 때문에 약 59MiB가 늘었다. 모든 경우에 가벼워진다는 뜻이 아니라 여러 대화의 엔진 중복을 줄이는 구조다. 두 경로 모두 AST 유휴 회수를 켠 같은 Node24.18.0/Pi0.85.1/45-feature 후보를 사용했다. 5초 안정화 후 10초 유휴 CPU를 측정하고 RSS를 수집한 단일 표본이다. CPU는 고유 엔진 PID의 누적 사용 시간으로 계산한 한 코어 기준이며, 프런트엔드/도구 자식 CPU는 제외한다. RSS는 전체 관련 프로세스의 합계이지 물리 메모리/PSS나 모든 실사용 부하의 보장이 아니다. 유료 API는 호출하지 않았다.
+
+이전 즉시 측정은 AST eager→lazy 변경까지 포함해 1,916→695MiB(약64%)였다. 위 최종 동일 조건 비교와 혼용하지 않는다. 시작 속도 개선도 주장하지 않는다. 원본과 재현 명령: `_workspace/runtime-architecture-20260915/common-resource-final.md`.
+
+닫힌 UI 약한 참조 2개는 GUI actor를 유지한 채 모두 회수됐고, SDK 5개 로드/회수 4회에서도 잔존 참조는 매번 0이었다. 첫 메시지의 JSONL exclusive-create 충돌, 오래된 UI callback 보유, client unsubscribe/close 경합을 실패 증거로 재현한 뒤 수정했다. 답변을 기다리는 도구의 질문창을 닫을 때 생기던 종료 교착도 재현했다. 취소를 시작한 후 native 질문/입력/editor/custom UI의 대기까지 해제하고 도구 종료를 기다린다. remote-control 확장이 비활성인 경우에도 동작한다.
+
+**최종 전환:** 후보20의 관리형 CLI까지 검증한 뒤 공식 installer로 설치본을 교체하고 T3/프로필 엔진을 재시작했다. 실제 `rubato new --detach` 5개가 hub/zmx를 거쳐 같은 엔진 PID에 연결됐고, 한국어 native 렌더링·`/new`·기존 T3 bridge의 대화 재개가 통과했다. 검증용 JSONL 6개는 사용자 목록에서 별도 백업으로 옮겼다. 저장 대화483개와 원본 파일893개, 인증·설정·모델·신뢰 설정은 전환 전과 같고 기존 허브는 재시작하지 않았다.
+
+관리형 CLI의 surface는 SDK actor가 아니라 terminal presentation 소유다. 창별 환경/token을 명시적으로 넘기고 별도 presentation-bind에서 제어 capability를 갱신한다. `/new`·재개 시 확장 startup을 반복하지 않으며, 과거 actor의 종료가 현재 창의 `live.exited`로 전파되지 않는다. 닫힌 화면은 허브 연결·heartbeat를 정리한다.
+
+**검증 경계:** 관련 집중 검사72개와 자체 격리 native 검사2개, 실제 T3 Driver/공식 candidate 연결 검사는 통과했지만 전체 legacy/runtime suite는 green이 아니다. 설치 상태를 전제하는 legacy 검사, 기존 child write-tool 미발견 및 compaction adapter assertion 등이 남고, 전체 타입 검사에는 기존 오류3개가 남는다. 과거 광범위 검사38개 실패를 모두 baseline으로 입증한 것은 아니다. 임의 외부 확장의 전역 singleton 안전성·실제 유료 provider·장기 실사용 부하는 보장하지 않는다. `fullRubatoParity:false`를 유지한다.
+
+최신 재현 명령과 증거: Rubato-lab `_workspace/runtime-architecture-20260915/common-cli-implementation.md`. 아래는 이전 검토 기록이다.
+
+### 이전 revision 4의 제한적 비용 비교
+
+사용자는 동일 대화를 CLI/GUI에서 동시에 조작할 필요는 거의 없다고 명확히 했다. 현재 우선순위는 **대화 5개가 완전한 엔진 프로세스 5개를 요구하는 비용**이다. 따라서 §1 이하의 동일 대화·terminal handoff 설계를 이번 최적화의 필수 선행 작업이나 확정안으로 취급하지 않는다.
+
+- 공식 Pi Server/SessionRouter는 유지한다. 동일 세션 획득 중복 제거와 여러 세션을 한 프로세스에 호스팅하는 것은 다른 기능이다. 현재 Rubato의 `RpcWorker.start()`가 대화별 CLI 프로세스를 생성한다.
+- Node 24.18.0, Pi 0.85.1, 동일한 43-feature 후보/대화 5개로 비교한 제한적 실험: 별도 RPC 실행의 프로세스 트리 RSS 합계 **2,033,270,784 bytes**, 공유 SDK 호스트는 **628,572,160 bytes**. 엔진 프로세스는 5→1, MCP 등 자식을 포함하면 10→6이었다. 실제 물리 메모리 절감 보장이 아닌 단일 표본 RSS 비교다.
+- 공유 후보는 각 대화에 44개 확장 factory를 로드하고, 별도 JSONL·task 저장 경로 및 한 대화 dispose 후 다른 대화의 식별자/도구/모델 보존을 검증했다. UI는 probe 모형이며 모델 호출은 금지했다. 두 실험 모두 sandbox에서 LSP orphan sweep이 제한됐다. `fullRubatoParity:false`는 그대로다. 제품 기능 동등성이나 실제 CLI/GUI 동시 실행 검증으로 확대 해석하지 않는다.
+- 이 비교 당시에는 공유 실행 어댑터가 없었다. 이후 revision 5에서 위 후보를 구현했지만 설치/기본 경로 전환은 하지 않았다.
+- 안전한 전환에는 기존 RPC의 전역 stdin/signal/process-exit 처리를 세션 수명과 분리하고, memory/ast-grep 등 process cwd 기본값과 확장 상태 소유권을 점검해야 한다. 기존 launcher의 설정·권한·프롬프트·도구 의미론도 유지해야 한다. 단순 spawn 교체나 축약 RPC 재구현으로는 이를 입증할 수 없다.
+
+**비용 비교의 한계:** 절감 가능성은 크지만, "작은 옵션 변경만으로 동작을 유지한 전환"이라는 가정은 채택하지 않는다. 위 RSS 표본을 현재 제품 전체의 절감률로 제시하지 않는다.
+
+실험 원장: Rubato-lab `_workspace/runtime-architecture-20260915/shared-runtime-feasibility.md`. 최초 probe의 잘못된 process cwd로 기존 task 저장소의 만료 기록 2건이 TTL 정리된 사고와 미복구 경계도 그 원장에 기록했다.
+
+## 1. 이전 동일 대화 공유 설계: 결론과 선택
 
 **기존 live hub의 실행 관리 기반을 공통 세션 서비스로 정리하고, 실제 AgentSession을 가진 worker에 CLI와 T3가 함께 붙는다.** Pi 서버의 별도 worker 소유권을 영구 병존시키지 않는다. JSONL은 대화 원본이고, 목록·liveness·T3 projection은 각각 파생 뷰다.
 
