@@ -5,6 +5,7 @@ import openaiWebSearchExtension from "./openai-web-search/index.js";
 import anthropicBashExtension from "./anthropic-bash/index.js";
 import webfetchExtension, { isWebfetchEnabled } from "./webfetch/index.js";
 import lookAtExtension from "./look-at/index.js";
+import { installImageLimit } from "./host/image-limit.mjs";
 
 export {
 	imageGenExtension,
@@ -18,6 +19,7 @@ export {
 
 export function registerMediaTools(pi, host = {}) {
 	registerOpenAIImagesApiProvider();
+	installImageLimit(pi);
 	webfetchExtension(pi);
 	lookAtExtension(pi, host);
 	imageGenExtension(pi);
