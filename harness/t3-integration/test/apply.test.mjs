@@ -14,7 +14,7 @@ test('overlay is guarded, idempotent, reversible and rejects dirty upstream befo
     await mkdir(path.dirname(path.join(root,relative)),{recursive:true});
     if(entry.original!==null) await writeFile(path.join(root,relative),entry.original);
   }
-  const first=await applyIntegration({t3:root}); assert.equal(first.changes.length,7);
+  const first=await applyIntegration({t3:root}); assert.equal(first.changes.length,16);
   assert.equal((await applyIntegration({t3:root})).changes.length,0);
   const target=path.join(root,'apps/server/src/serverRuntimeStartup.ts');
   const good=await readFile(target,'utf8');
