@@ -22,6 +22,17 @@ lines.on('line', (line) => {
       manager.appendMessage({ role: 'user', content: command.message, timestamp: Date.now() });
       emit({ type: 'agent_start' });
       if (command.message === 'question') emit({ type: 'extension_ui_request', method: 'select', title: 'Choose', options: ['yes', 'no'], id: 'question-1' });
+      else if (command.message === 'lone') {
+        emit({ type: 'message_update', message: { role: 'assistant', timestamp: Date.now(),
+          content: [{ type: 'text', text: 'half of a pair \uD83D stays behind' }] } });
+        timer = setTimeout(settle, 50);
+      } else if (command.message === 'screenshots') {
+        for (let index = 0; index < 6; index++) {
+          emit({ type: 'message_update', message: { role: 'assistant', timestamp: Date.now(),
+            content: [{ type: 'image', mimeType: 'image/png', data: 'A'.repeat(3 * 1024 * 1024) }] } });
+        }
+        timer = setTimeout(settle, 50);
+      }
       else timer = setTimeout(settle, command.message === 'background' ? 10000 : 350);
       break;
     case 'steer': case 'follow_up': running = true; break;

@@ -8,6 +8,7 @@ import { createUnixServer } from '@earendil-works/pi-server/unix';
 import { Directory, Management, Control, COMMANDS, INPUT_COMMANDS, UI_METHODS, json } from './contracts.mjs';
 import { SessionFiles } from './session-files.mjs';
 import { RpcWorker } from './rpc-worker.mjs';
+import { wire, measure, EVENT_BUDGET, EVENTS_BUDGET } from './wire.mjs';
 
 const invalid = (message) => new RemoteServiceError('service_invalid_value', message);
 function endpoint(entries) {
@@ -29,6 +30,8 @@ class RuntimeHandle {
     this.running = true;
     this.pendingUi = new Map();
     this.uiTimers = new Map();
+    this.eventBytes = [];
+    this.eventTotal = 0;
     this.closed = false;
     this.state = replicatedState({ sessionId: metadata.id, runtimeId: worker.id, status: 'starting',
       sequence: 0, events: [], pendingUi: [] });
@@ -48,7 +51,7 @@ class RuntimeHandle {
   async start() { this.acceptState(await this.worker.start()); return this; }
   publish() {
     this.state.state.status = this.closed ? 'unloaded' : this.running ? 'running' : this.pendingUi.size ? 'waiting' : 'idle';
-    this.state.state.pendingUi = [...this.pendingUi.values()].map(json);
+    this.state.state.pendingUi = [...this.pendingUi.values()].map((request) => wire(request, EVENT_BUDGET));
     this.state.publish(BACKGROUND_CONTEXT);
     this.changed();
   }
@@ -62,8 +65,17 @@ class RuntimeHandle {
   onEvent(event) {
     if (this.closed) return;
     const sequence = ++this.state.state.sequence;
-    this.state.state.events.push({ sequence, event: json(event) });
-    if (this.state.state.events.length > 256) this.state.state.events.shift();
+    const framed = measure(event, EVENT_BUDGET);
+    this.state.state.events.push({ sequence, event: framed.value });
+    this.eventBytes.push(framed.bytes);
+    this.eventTotal += framed.bytes;
+    // Bounded by bytes as well as by count: one screenshot-heavy turn would
+    // otherwise grow the published state past anything a frame can carry, and
+    // the transport answers that by closing the connection.
+    while (this.state.state.events.length > 256 || (this.eventTotal > EVENTS_BUDGET && this.state.state.events.length > 1)) {
+      this.state.state.events.shift();
+      this.eventTotal -= this.eventBytes.shift();
+    }
     if (event.type === 'agent_start' || event.type === 'auto_compaction_start' || event.type === 'auto_retry_start') this.running = true;
     if (event.type === 'extension_ui_request' && UI_METHODS.has(event.method)) {
       this.pendingUi.set(event.id, event);
@@ -100,7 +112,7 @@ class RuntimeHandle {
       const response = await this.worker.request(json(command));
       if (command.type === 'get_state') this.acceptState(response);
       else if (!command.type.startsWith('get_')) await this.refresh();
-      return response;
+      return wire(response);
     } catch (error) {
       await this.refresh().catch(() => {});
       throw error;
@@ -112,7 +124,7 @@ class RuntimeHandle {
       const before = this.state.value.sequence;
       const [state, messages] = await Promise.all([this.worker.request({ type: 'get_state' }), this.worker.request({ type: 'get_messages' }, { withBoundary: true })]);
       this.acceptState(state);
-      return json({ sessionId: this.metadata.id, runtimeId: this.worker.id, state, messages: messages.data.messages ?? messages.data,
+      return wire({ sessionId: this.metadata.id, runtimeId: this.worker.id, state, messages: messages.data.messages ?? messages.data,
         before, sequence: messages.eventSequence, pendingUi: [...this.pendingUi.values()] });
     } finally { this.calls--; this.scheduleUnload(); }
   }
@@ -176,7 +188,7 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
     directory.state.revision++;
     directory.publish(BACKGROUND_CONTEXT);
   };
-  const refresh = () => refreshing ??= (async () => { metrics.lists++; records = await files.list(); publish(); return directory.value; })()
+  const refresh = () => refreshing ??= (async () => { metrics.lists++; records = wire(await files.list()); publish(); return directory.value; })()
     .finally(() => { refreshing = undefined; });
   const catalogue = (cwd) => {
     if (typeof cwd !== 'string' || !path.isAbsolute(cwd)) throw invalid('Catalogue cwd must be absolute');
@@ -215,7 +227,7 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
       attachClient(presentation) {
         return endpoint([
           [Directory, { state: directory, list: async () => (await refresh()).sessions,
-            transcript: async (id) => files.transcript(id), catalogue: async (cwd) => catalogue(cwd) }],
+            transcript: async (id) => wire(await files.transcript(id)), catalogue: async (cwd) => wire(await catalogue(cwd)) }],
           [Management, {
             create: async (options) => {
               const created = await files.create(options);
