@@ -24,6 +24,26 @@ node harness/pi-server/scripts/measure-lifecycle.mjs
 
 CI의 `dual-runtime-validation` 산출물에 `pi-lifecycle-measurement.json`을 함께 보존한다. CI 호스트 변동이 크므로 절대값 한 번으로 제품 결론을 내리지 않는다.
 
+## 저장 목록 최적화의 재현 측정
+
+`harness/pi-server/scripts/measure-session-index.mjs`는 명시한 기존 세션 디렉터리를 읽기만 한다. 모델 호출, 실행 중 서버 연결/재시작, 원본 migration, 사용자 설정 변경은 하지 않는다. 이력 본문이나 제목 대신 개수·bytes·결과 hash를 출력한다.
+
+```sh
+node --expose-gc harness/pi-server/scripts/measure-session-index.mjs \
+  --sessions-dir /absolute/path/to/agent/sessions --mode legacy --samples 5
+node --expose-gc harness/pi-server/scripts/measure-session-index.mjs \
+  --sessions-dir /absolute/path/to/agent/sessions --mode index --samples 6 --idle-ms 30000
+```
+
+- `legacy`: 변경 전 SDK 전체 조회 경로. 매번 JSONL 전체를 파싱한다.
+- `index`: 현재 경량 metadata index. 첫 조회와 이후 unchanged warm 조회를 분리한다.
+- `corpusBefore/After` fingerprint가 모두 같을 때 `metadataDigest`도 같아야 한다. 변경 중인 이력을 읽었다면 무조건 동등하다고 결론내리지 않는다.
+- `readStreams/applicationReadBytes`는 애플리케이션 IO이며 물리 디스크 IO가 아니다. OS page cache를 비우지 않는다.
+- `idle`은 현재 host의 실제 2초 poll을 격리 프로세스에서 측정한다. T3/소켓/worker를 띄우지 않으며, worker 생성 요청은 실패하게 설정한다.
+- inventory-only에서는 agent/TUI/provider SDK를 지연 로드한다. 첫 create/transcript에서 SDK를 로드하므로 이때의 지연과 이후 메모리는 별도다. 목록 전용 프로세스의 RSS를 전체 GUI 사용량처럼 제시하지 않는다.
+
+변경 없는 조회의 합격 기준은 JSONL read 0, text delta의 합격 기준은 세션 이벤트 유지 + directory revision 0이다. 손상 이력·제목 지우기·timestamp·정렬·동시 호출·rewrite/truncate·symlink/중복 ID는 `session-index.test.mjs`, 실제 directory 구독 및 상태 변경은 `directory-updates.test.mjs`로 대조한다. 전체 worker 통합 검증은 [공통 실행 설계](RUNTIME_ARCHITECTURE.md)의 G1/G2와 별개다.
+
 ## 완제품에서 별도로 재야 하는 지표
 
 같은 컴퓨터와 같은 저장소, 같은 모델/추론 강도, 같은 입력을 사용해 각 경로에서 최소 5회 반복하고 중앙값과 범위를 기록한다.

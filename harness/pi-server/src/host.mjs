@@ -50,10 +50,12 @@ class RuntimeHandle {
   }
   async start() { this.acceptState(await this.worker.start()); return this; }
   publish() {
+    const previousStatus = this.state.value.status;
     this.state.state.status = this.closed ? 'unloaded' : this.running ? 'running' : this.pendingUi.size ? 'waiting' : 'idle';
     this.state.state.pendingUi = [...this.pendingUi.values()].map((request) => wire(request, EVENT_BUDGET));
     this.state.publish(BACKGROUND_CONTEXT);
-    this.changed();
+    // Text deltas belong to the session stream, not the stored directory.
+    if (previousStatus !== this.state.value.status) this.changed();
   }
   acceptState(value) {
     if (value.sessionId !== this.metadata.id) throw new Error('A runtime cannot switch the persisted session behind its route');
@@ -174,17 +176,23 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
   const probes = new Map();
   const directory = replicatedState({ revision: 0, sessions: [] });
   let records = [];
+  let published = [];
   let refreshing;
   let stopped = false;
   const metrics = { runtimeStarts: 0, lists: 0, totalOpenMs: 0 };
   const publish = () => {
-    directory.state.sessions = records.map(({ file: _file, id, ...item }) => {
+    const sessions = records.map(({ file: _file, id, ...item }) => {
       const handle = handles.get(id);
       const live = handle && !handle.closed;
       return { ...item, sessionId: id, serverId, runtimeId: live ? handle.worker.id : null,
         status: !handle ? 'stored' : handle.closed ? 'unloading' : handle.state.value.status ?? 'stored',
         attachments: handle?.attachments ?? 0 };
     });
+    if (sessions.length === published.length && sessions.every((item, i) =>
+      Object.keys(item).length === Object.keys(published[i]).length &&
+      Object.keys(item).every((key) => Object.is(item[key], published[i][key])))) return;
+    published = sessions;
+    directory.state.sessions = sessions;
     directory.state.revision++;
     directory.publish(BACKGROUND_CONTEXT);
   };
