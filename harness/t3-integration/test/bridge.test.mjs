@@ -69,6 +69,26 @@ test('T3 creates a new Pi session, forwards questions, reconnects and continues 
   await until(() => events.some((event) => event.type==='turn.completed'));
   assert.equal((await bridge.inventory())[0].sessionId, session.resumeCursor.sessionId);
 });
+test('a dead socket on an inventory request reconnects inside the bridge instead of failing the caller', async (t) => {
+  const { root, bridge, external } = await setup(t);
+  await external.create({ cwd: root, title: 'Kept' });
+  const stale = await bridge.connection();
+  let failures = 0;
+  stale.list = () => { failures += 1; return Promise.reject(new Error('Byte transport closed')); };
+  assert.equal((await bridge.inventory()).length, 1);
+  // 두 번째 요청은 이미 새 연결을 쓴다. 죽은 클라이언트는 한 번만 맞고 버려진다.
+  assert.deepEqual((await bridge.catalogue(root)).models, []);
+  assert.equal(failures, 1);
+  assert.notEqual(bridge.inventoryClient, stale);
+});
+test('a failure the socket did not cause still reaches the caller', async (t) => {
+  const { bridge } = await setup(t);
+  const client = await bridge.connection();
+  let calls = 0;
+  client.list = () => { calls += 1; return Promise.reject(new Error('Session directory is unreadable')); };
+  await assert.rejects(bridge.inventory(), /unreadable/);
+  assert.equal(calls, 1);
+});
 test('normalizer emits valid text, reasoning, tool, confirmation and settled events', () => {
   const events=[]; const p=new EventProjection({threadId:'thread',sessionId:'session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
   const message={role:'assistant',timestamp:123,model:'fixture',content:[{type:'text',text:'hello'},{type:'thinking',thinking:'reason'}]};

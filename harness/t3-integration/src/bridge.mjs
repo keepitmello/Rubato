@@ -1,8 +1,111 @@
 import { SessionClient } from '../../pi-server/src/client.mjs';
 import { readDescriptor } from '../../pi-server/src/profile-server.mjs';
 import { EventProjection, importedId, textOf } from './events.mjs';
-import { catalogForPicker } from './model-catalog-order.mjs';
+import { applySelectionOptions, catalogForPicker } from './model-catalog-order.mjs';
 import { readFile } from 'node:fs/promises';
+import { readFileSync, readdirSync, mkdirSync, openSync, closeSync, lstatSync, unlinkSync } from 'node:fs';
+import { spawn, execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import net from 'node:net';
+import os from 'node:os';
+
+const serverCli = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'pi-server', 'src', 'cli.mjs');
+let startingServer;
+// 서버가 kill -9 로 죽은 직후에는 owner.lock 이 아직 stale 로 안 넘어가서, 새로
+// 띄운 서버가 "Lock file is already being held" 로 즉사한다. 한 번만 띄우고
+// 기다리면 이미 죽은 프로세스를 40초 동안 기다리게 된다(실측 46초 복구). 죽은
+// 자리를 다시 채우도록 몇 초 간격으로 다시 띄운다.
+const SERVER_SPAWN_ROUNDS = 8;
+const SERVER_PROBES_PER_ROUND = 20;
+const SERVER_PROBE_MS = 250;
+// 소켓이 끊기면 pi-client 는 이 문구들로 던진다. 서버가 다시 떠도 이미 만들어 둔
+// 클라이언트는 되살아나지 않으니, 붙잡고 있던 것을 버리고 새 연결로 한 번 더 친다.
+const TRANSPORT_FAILURE = /transport closed|not connected|ECONNREFUSED|ECONNRESET|EPIPE|socket (?:closed|hang)/i;
+function nodeMajor(bin) {
+  try { return Number(String(execFileSync(bin, ['-v'], { encoding: 'utf8' })).replace(/^v/, '').split('.')[0]); }
+  catch { return 0; }
+}
+// Pi 서버는 진짜 Node 로 띄워야 한다. 이 코드가 Electron 안에서 돌 때
+// execPath 를 그대로 쓰면 서버는 뜨지만 카탈로그 요청이 30초 타임아웃으로
+// 죽는다(같은 요청이 Node 서버에서는 4.6초에 230개를 돌려준다).
+// rubato CLI 가 고른 Node 를 먼저 쓰고, 없으면 흔한 자리를 훑는다.
+function resolveNode() {
+  if (!process.versions.electron) return process.execPath;
+  const home = os.homedir();
+  const candidates = [];
+  try { candidates.push(readFileSync(path.join(home, '.rubato-pi', 'node-path'), 'utf8').trim()); } catch { /* 캐시 없음 */ }
+  const nvmRoot = path.join(home, '.nvm', 'versions', 'node');
+  try { candidates.push(...readdirSync(nvmRoot).sort().reverse().map((version) => path.join(nvmRoot, version, 'bin', 'node'))); } catch { /* nvm 없음 */ }
+  candidates.push('/opt/homebrew/opt/node@24/bin/node', '/opt/homebrew/bin/node', '/usr/local/bin/node');
+  for (const candidate of candidates) if (candidate && nodeMajor(candidate) >= 24) return candidate;
+  return process.execPath;
+}
+// 서버 기동 실패는 더블클릭으로 켠 앱에서 아무 데도 안 남는다. stdio 를 버리면
+// 화면에는 "연결 실패" 만 뜨고 이유는 사라진다. 파일로 받아 두고 오류에 꼬리를 붙인다.
+function serverLog(agentDir) {
+  const file = path.join(agentDir, 'logs', 'pi-server.log');
+  try { mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 }); } catch { /* 이미 있다 */ }
+  return file;
+}
+function logTail(file, bytes = 800) {
+  try { return readFileSync(file, 'utf8').slice(-bytes).trim(); } catch { return ''; }
+}
+// createUnixServer 는 죽은 소켓만 치운다. 빈 일반 파일이 같은 이름이면
+// "Refusing to remove non-socket Unix listener path" 로 즉사한다.
+function removeStaleListener(socketPath) {
+  try { if (!lstatSync(socketPath).isSocket()) unlinkSync(socketPath); } catch { /* 없음 */ }
+}
+// descriptor 파일이 있다고 서버가 사는 것은 아니다. 서버가 죽어도 소켓 파일과
+// connection.json 은 그대로 남아서, 파일만 보면 붙었다고 착각하고 ECONNREFUSED 로
+// 끝난다. 화면에서는 모델 목록이 통째로 비어 보였다.
+function socketAlive(socketPath) {
+  return new Promise((resolve) => {
+    const probe = net.createConnection(socketPath);
+    const finish = (alive) => { probe.destroy(); resolve(alive); };
+    probe.once('connect', () => finish(true));
+    probe.once('error', () => finish(false));
+    probe.setTimeout(1000, () => finish(false));
+  });
+}
+async function liveDescriptor(descriptorPath) {
+  try {
+    const descriptor = await readDescriptor(descriptorPath);
+    return (await socketAlive(descriptor.socketPath)) ? descriptor : undefined;
+  } catch { return undefined; }
+}
+// 앱 번들을 바로 켜면 Pi 서버를 띄워 주는 셸 스크립트를 안 지난다. 사용자가
+// Dock 에 고정하는 것이 바로 그 번들이라, 서버가 없으면 여기서 띄운다.
+async function ensureDescriptor(descriptorPath) {
+  const live = await liveDescriptor(descriptorPath);
+  if (live) return live;
+  startingServer ??= (async () => {
+    const agentDir = path.dirname(path.dirname(descriptorPath));
+    const logFile = serverLog(agentDir);
+    const node = resolveNode();
+    for (let round = 0; round < SERVER_SPAWN_ROUNDS; round += 1) {
+      try { removeStaleListener((await readDescriptor(descriptorPath)).socketPath); }
+      catch { removeStaleListener(path.join(agentDir, 'server', 'pi.sock')); }
+      let sink;
+      try { sink = openSync(logFile, 'a'); } catch { sink = 'ignore'; }
+      const child = spawn(node, [serverCli, '--agent-dir', agentDir], {
+        detached: true,
+        stdio: ['ignore', sink, sink],
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+      });
+      child.unref();
+      if (sink !== 'ignore') closeSync(sink);
+      for (let probe = 0; probe < SERVER_PROBES_PER_ROUND; probe += 1) {
+        await new Promise((resolve) => { setTimeout(resolve, SERVER_PROBE_MS); });
+        const started = await liveDescriptor(descriptorPath);
+        if (started) return started;
+      }
+    }
+    const tail = logTail(logFile);
+    throw new Error(`Rubato session server did not start: ${serverCli}${tail ? `\n${tail}` : ''}`);
+  })().finally(() => { startingServer = undefined; });
+  return startingServer;
+}
 
 const copy = (value) => JSON.parse(JSON.stringify(value));
 async function imagesFromAttachments(attachments) {
@@ -35,19 +138,32 @@ export class RubatoPiBridge {
     if (this.connecting) return this.connecting;
     this.connecting = (async () => {
       await this.inventoryClient?.close();
-      this.descriptor = await readDescriptor(this.descriptorPath);
+      this.descriptor = await ensureDescriptor(this.descriptorPath);
       this.inventoryClient = await new SessionClient({ ...this.descriptor, onError: this.onError }).connect();
       return this.inventoryClient;
     })().finally(() => { this.connecting = undefined; });
     return this.connecting;
   }
-  async inventory() { return (await this.connection()).list(); }
-  async transcript(id) { return (await this.connection()).transcript(id); }
+  // 끊긴 소켓은 첫 요청에서야 드러난다. connected 플래그는 그 시점까지 참이라
+  // 요청 하나가 통째로 실패하고, 화면에는 모델 목록이 통째로 빈 채로 남았다.
+  // 그 한 번을 새 연결로 되받는다. 서버가 다시 떠야 하면 ensureDescriptor 가 띄운다.
+  async viaInventory(call) {
+    try { return await call(await this.connection()); }
+    catch (error) {
+      if (this.closed || !TRANSPORT_FAILURE.test(String(error?.message ?? error))) throw error;
+      const stale = this.inventoryClient;
+      this.inventoryClient = undefined;
+      await stale?.abandon().catch(() => {});
+      return call(await this.connection());
+    }
+  }
+  async inventory() { return this.viaInventory((client) => client.list()); }
+  async transcript(id) { return this.viaInventory((client) => client.transcript(id)); }
   async catalogue(cwd) {
     const cached = this.catalogues.get(cwd);
     if (cached && Date.now() - cached.at < 60000) return cached.value;
     const pending = (async () => {
-      const raw = await (await this.connection()).catalogue(cwd);
+      const raw = await this.viaInventory((client) => client.catalogue(cwd));
       return { ...raw, models: catalogForPicker(raw.models ?? [], raw.model) };
     })();
     this.catalogues.set(cwd, { at: Date.now(), value: pending });
@@ -198,11 +314,16 @@ export class RubatoPiBridge {
       await context.client.command({ type: 'set_model', provider, modelId });
       context.session.model = selection.model;
     }
-    for (const option of selection.options ?? []) {
-      if (option.id !== 'thinking' || typeof option.value !== 'string') throw new Error(`Unsupported Pi option: ${option.id}`);
+    const { thinking, fast } = applySelectionOptions(selection.options);
+    if (thinking !== undefined && thinking !== context.thinkingLevel) {
       const { levels } = await context.client.command({ type: 'get_available_thinking_levels' });
-      if (!levels.includes(option.value)) throw new Error('Thinking level is not supported by this model');
-      await context.client.command({ type: 'set_thinking_level', level: option.value });
+      if (!levels.includes(thinking)) throw new Error('Thinking level is not supported by this model');
+      await context.client.command({ type: 'set_thinking_level', level: thinking });
+      context.thinkingLevel = thinking;
+    }
+    if (fast !== undefined && fast !== context.fastMode) {
+      await context.client.command({ type: 'prompt', message: fast ? '/fast on' : '/fast off' });
+      context.fastMode = fast;
     }
     context.projection.event('session.configured', { config: { model: context.session.model } });
   }
