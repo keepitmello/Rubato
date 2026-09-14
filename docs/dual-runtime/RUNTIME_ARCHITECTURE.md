@@ -196,7 +196,7 @@ G1/G2가 실패하면 이유를 설계로 환류한다. GUI read-only/auto-fork�
 - 기존 CLI 외형/입력/부팅/피커/resume/remote/vault와 기존 T3 기능을 실제 표면에서 확인한다.
 - 서비스/worker crash/restart, unknown command outcome, 구버전 생존/전환, malformed/큰 파일, alias/중복 UUID를 시험한다.
 
-설계 단계 baseline은 CLI40, Pi15(+실제 candidate 1skip), T314, lead remote-surface9 시험과 격리 SDK/OS primitive 관측, 실제 zmx의 synthetic client 교체다. 공통 소유권 원칙과 목록 최적화 단위는 정리됐지만 worker 전환 세부까지 확정한 설계는 아니다. **전체 통합, 실제 `/resume` handoff, standard UI parity, 실제 제품 렌더 동등성은 여전히 미확인이다.** 이후 승인된 제품 코드 변경과 검증은 아래 §10에 기록한다. 설치본·사용자 세션 변경, commit/push/deploy는 하지 않았다.
+설계 단계 baseline은 CLI40, Pi15(+실제 candidate 1skip), T314, lead remote-surface9 시험과 격리 SDK/OS primitive 관측, 실제 zmx의 synthetic client 교체다. 공통 소유권 원칙과 목록 최적화 단위는 정리됐지만 worker 전환 세부까지 확정한 설계는 아니다. **전체 통합, 실제 `/resume` handoff, standard UI parity, 실제 제품 렌더 동등성은 여전히 미확인이다.** 이후 승인된 제품 코드 변경과 검증은 아래 §10 이후에 기록한다. 설계 단계에는 설치본·사용자 세션 변경, commit/push/deploy를 하지 않았다.
 
 ## 10. 승인 후 첫 구현 — 기존 연결/사용 방식은 유지
 
@@ -213,3 +213,29 @@ G1/G2가 실패하면 이유를 설계로 환류한다. GUI read-only/auto-fork�
 실측 원장은 `_workspace/runtime-architecture-20260915/real-index-final-{legacy,optimized}.json`, `event-fanout-after.json`, `host-import-{before,after}.json` 및 `resource-optimization.md`다. 재현 방법은 [측정 절차](PERFORMANCE_MEASUREMENT.md)를 따른다. 이 단계는 목록/갱신 비용 개선이며 이중 writer 방지나 CLI/T3 단일 worker 통합을 완료한 것이 아니다. 실행 중인 기존 서버를 재시작하지 않았으므로 live 적용 결과와 구분한다.
 
 같은 483개/736,255,621 bytes 이력에서 metadata 결과 hash는 모두 일치했다. 변경 전 조회 2회 중앙값 **2,376.151ms → warm 5회 중앙값 7.654ms**, warm JSONL 읽기 **483개/736MB → 0개/0bytes**. 첫 cold 조회는 **2,388.232ms**로 여전히 전체 parse 비용이 남는다. 격리된 현재 host의 30초 대기 측정은 한 코어 CPU **1.154%**, poll14회 동안 본문 read0/revision0/worker0이었다. 기존 live 프로세스의 CPU가 실제로 내려갔다고 주장하지 않는다.
+
+## 11. 승인된 푸시·live 반영
+
+후속 승인: "재시작/푸시 하고, 통합 작업까지 이어가보자". 목록 최적화 `47991db8c`를 `origin/rubato/base`에 전달하고 원격 SHA를 read-back했다. 활성 runtime/worker 0을 확인한 뒤 기존 Pi profile server만 정상 종료했으며 T3가 원래 복구 경로로 재시작했다. live hub·CLI·T3 앱과 설치 stock engine/config는 건드리지 않았다.
+
+483개 저장 세션의 serverId·socket·목록 metadata digest가 전후 동일하다. 같은 호스트에서 재시작 직전/직후 각각 30초 관측한 한 코어 CPU는 **85.88% → 3.08%**, 끝 RSS는 **1,146,535,936 → 378,044,416 bytes**였다. 이는 순차 idle 실측이며 GC/프로세스 나이가 달라 엄밀한 동조건 A/B는 아니다. 세부는 [측정 기록](PERFORMANCE_MEASUREMENT.md)을 따른다.
+
+## 12. 통합 첫 단위 — 실제 stock TUI 제어 연결
+
+설치 경로는 유지하고 후보 소스에 다음을 구현했다. 이 단계는 한 대화의 CLI/T3 worker 통합을 활성화하지 않는다.
+
+- `remote-surface/patches.mjs`: pristine stock0.85.1 hash를 검증하는 작은 TUI binding/invalidation hook. 새로운 AgentSession·renderer·writer를 만들지 않는다.
+- `stock-ui-host.mjs`: 기존 TUI의 binding에만 묶인 control port. 일반 extension event context를 command context로 오인하지 않고 **실제 현재 ExtensionRunner의 command actions**를 호출한다. new/fork/navigate/reload와 user bash가 원래 TUI 경로를 사용한다.
+- 세션 교체뿐 아니라 `/reload`의 **동일 AgentSession + 새 ExtensionRunner**도 오래된 제어 capability를 무효화한다. 과거 UI requestId의 늦은 응답은 새 질문에 적용되지 않는다.
+- bound extension UI의 select/confirm/input은 기존 실물 컴포넌트·callback·timeout·AbortSignal을 사용한다. 원격 응답과 terminal 응답 중 먼저 완료된 경로만 유효하며 reset/reload에서 pending promise를 정리한다. 비활성 factory는 기존 UI 함수를 바꾸지 않는다.
+- reload 중 factory를 끈 경우에도 기존 UI wrapper·event listener 참조를 해제하고 원래 native UI 함수로 돌아가는지 확인한다.
+- 허브와 surface dispatcher 두 곳의 FIFO가 질문 응답/abort를 막던 문제를 수정했다. 일반 변경 명령은 FIFO를 유지하고 `ui.respond`, `agent.abort`, `bash.abort`만 즉시 전달한다. 중복 요청은 진행 중에도 같은 결과를 공유하며 허브는 실제 dispatch 시 revision을 다시 확인한다.
+- 격리 통합 시험에서 shutdown 뒤에도 journal 쓰기가 남는 race를 발견했다. 허브 socket server는 미등록/control socket도 회수하고, 수신 완료한 비동기 frame 처리·기록이 끝나야 close를 완료한다. 중복 close는 같은 완료를 공유한다. 응답 통로를 다시 직렬화하거나 임의 sleep/retry로 증상을 숨기지 않았다.
+
+검증은 **격리 staged stock InteractiveMode + AgentSessionRuntime + 기존 Unix 허브/두 action queue**를 사용한다. 질문 12개에서 원격 응답, 키보드 Enter/Escape, 잘못된 값/중복/늦은 응답, timeout/abort, 겹친 질문, reload 정리, before-switch 허용/거부를 검사한다. fork/resume/new 후 원본 JSONL bytes가 보존되는지 확인하고, 응답 기능을 고의로 끈 negative control이 실제로 실패하는지도 검사한다. 터미널 출력만 억제했고 실물 컴포넌트 render/input을 사용했지만 **실제 PTY/zmx·T3 화면의 종단 간 동등성 시험은 아니다**.
+
+남은 gate: writer lifetime fence, process/attachment epoch, 같은 대화의 실제 CLI/T3 PID 공유, GUI-first terminal 비용, native `/resume` attachment routing. project-trust/shortcut의 별도 UI context, custom/editor UI, 입력/queue/timeline의 전체 parity는 이 시험으로 증명하지 않는다. 따라서 **G1/G2 전체 통과나 공통 엔진 전환 완료로 취급하지 않는다**.
+
+검사: stock remote/UI/input **22/22**, CLI+action dispatcher **45/45**, T3 **14/14**, hub typecheck 통과. Hub 전체는 **66/68**이며 HTTP message paging 2건은 변경 전 `47991db8c` 격리 사본에서도 동일하게 실패한다. 과거 `bb8c1492d`의 journal 조회 경로 변경과 기존 시험의 dispatched-page 가정이 어긋난 상태이며, 이번 queue 수정의 회귀로 보지 않는다. 이 단위에 HTTP 동작/시험 기대값의 별도 변경을 섞지 않는다.
+
+전체 **43개 feature**와 Rubato components를 조립한 격리 후보 빌드도 ready이며, 그 후보를 실제 실행 대상으로 한 Pi server 검사는 **27/27, skip0**이다. 빌드 receipt의 `fullRubatoParity: false`는 유지한다. 설치본 전환이나 유료 모델 호출을 하지 않았다.

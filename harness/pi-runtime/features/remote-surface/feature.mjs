@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { materializeProtocolBundle } from "./protocol-loader.mjs";
+import { patches } from "./patches.mjs";
 
 const VERSION = "0.85.1";
 const PROTOCOL_BUNDLE = materializeProtocolBundle({
@@ -11,12 +12,13 @@ const RUNTIME_FILES = Object.freeze([
   "index.mjs",
   "surface.mjs",
   "stock-control.mjs",
+  "stock-ui-host.mjs",
   "session-metrics.mjs",
   "protocol-loader.mjs",
   "THIRD_PARTY_NOTICES.md",
 ]);
 
-export const patches = Object.freeze([]);
+export { patches };
 export const files = Object.freeze([
   ...RUNTIME_FILES.map((name) => Object.freeze({
     target: "runtime",

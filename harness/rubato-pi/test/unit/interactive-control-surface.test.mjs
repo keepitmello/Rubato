@@ -6,6 +6,26 @@ function request(requestId, action, payload = {}, expectedRevision) {
   return { requestId, action, payload, ...(expectedRevision === undefined ? {} : { expectedRevision }) };
 }
 
+test("reply and abort settle a waiting action without releasing the mutation queue early", async () => {
+  let settle;
+  const waiting = new Promise(resolve => { settle = resolve; });
+  const calls = [];
+  const control = {
+    async newSession() { calls.push('new'); await waiting; },
+    respondToUiRequest(id) { calls.push('reply'); return id === 'question'; },
+    async abortAgent() { calls.push('abort'); settle(); },
+    setSessionName() { calls.push('rename'); },
+  };
+  const dispatcher = new InteractiveActionDispatcher({ getInteractiveControl: () => control });
+  const action = dispatcher.dispatch(request('new', 'session.new'));
+  const next = dispatcher.dispatch(request('rename', 'session.rename', { name: 'next' }));
+  await dispatcher.dispatch(request('reply', 'ui.respond', { requestId: 'question', value: true }));
+  assert.deepEqual(calls, ['new', 'reply']);
+  const abort = request('abort', 'agent.abort');
+  await Promise.all([dispatcher.dispatch(abort), dispatcher.dispatch(abort), action, next]);
+  assert.deepEqual(calls, ['new', 'reply', 'abort', 'rename']);
+});
+
 test("remote actions dereference the current control and preserve FIFO order", async () => {
   const calls = [];
   let releaseFirst;
