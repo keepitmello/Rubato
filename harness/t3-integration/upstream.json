@@ -5,6 +5,7 @@
     "apps/server/src/serverRuntimeStartup.ts": "d6e0cd73e40c009dc39ed8438cc050c8bef1ff0d9a0bf4a5c709224a483c33f7",
     "apps/server/src/provider/Layers/ProviderRegistry.ts": "4af8a237bc4f35b1777bedf1bc9e88ef4cb9c1c6be8f4ffeccf8bf23051ec1d8",
     "apps/server/src/provider/providerStatusCache.ts": "568f7ca9376f0da71ca7093ba6fd745fd69f285e9db5bda8b3cc2f6e1358eecd",
+    "apps/server/src/project/AgentSessionImporter.ts": "570590bea6ef16e5dee1fb77e74a0186491d2b400e9c8144de6960e08c5dfcb2",
     "apps/web/src/components/chat/ModelPickerContent.tsx": "21b3a1c5fea502124100121fca35af9ae4fb5fec5a3a1c88ad49df01279b19c3",
     "apps/desktop/scripts/electron-launcher.mjs": "42d64d7bba829c47bc0d04de7169275e3f77ecca60b9bd3b679fbe5752cd726e",
     "apps/desktop/src/app/DesktopStatePaths.ts": "ae9704d2e66e0033c853750368faea0fea7aa898681ee4931c296891915e510a",

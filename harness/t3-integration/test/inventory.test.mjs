@@ -28,8 +28,11 @@ test('inventory uses real T3 decider/projector: groups stored history, preserves
   const contracts = await from('packages/contracts/src/index.ts');
   const crypto = Crypto.make({randomBytes:size=>randomBytes(size),digest:(algorithm,data)=>Effect.succeed(createHash(algorithm.replace('-','').toLowerCase()).update(data).digest())});
   const root = await mkdtemp(path.join(tmpdir(),'rb-inventory-'));
-  const cwdA=path.join(root,'project-A'),cwdB=path.join(root,'project-B');
-  await mkdir(cwdA);await mkdir(cwdB);
+  // 두 프로젝트는 실재하는 작업 폴더여야 한다. 앱은 임시 폴더에서 돈 세션을
+  // 목록에 올리지 않는다(bridge.mjs 의 userStartedSession). 세션 파일은 여전히
+  // 임시 agentDir 에 쌓이고, 여기 폴더는 읽히지도 쓰이지도 않는다.
+  const here=fileURLToPath(new URL('..',import.meta.url));
+  const cwdA=path.join(here,'src'),cwdB=path.join(here,'test');
   const server = await serveProfile({agentDir:root,idleMs:50,workerFactory:metadata=>new RpcWorker(metadata,{cliPath:fixture})});
   const external=await new SessionClient(server.descriptor).connect();
   t.after(async()=>{await external.close();await server.close();await rm(root,{recursive:true,force:true});});

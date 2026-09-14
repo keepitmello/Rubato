@@ -14,7 +14,8 @@ test('overlay is guarded, idempotent, reversible and rejects dirty upstream befo
     await mkdir(path.dirname(path.join(root,relative)),{recursive:true});
     if(entry.original!==null) await writeFile(path.join(root,relative),entry.original);
   }
-  const first=await applyIntegration({t3:root}); assert.equal(first.changes.length,16);
+  // 설치된 매니페스트가 정본이다. 숫자를 박아 두면 파일을 하나 더 손댈 때마다 시험이 먼저 썩는다.
+  const first=await applyIntegration({t3:root}); assert.equal(first.changes.length,Object.keys(manifest.files).length);
   assert.equal((await applyIntegration({t3:root})).changes.length,0);
   const target=path.join(root,'apps/server/src/serverRuntimeStartup.ts');
   const good=await readFile(target,'utf8');
