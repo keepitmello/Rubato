@@ -1,78 +1,74 @@
 #!/bin/bash
-# /Applications/Rubato.app 을 만들어 Dock/Finder에서 더블클릭으로 켠다.
+# T3 런타임 번들을 더블클릭으로도 켜지게 만들고, /Applications 에 그 번들로 가는
+# 이름을 건다.
 #
-# 이 번들은 얇은 껍데기다. 실제로 Dock 에 뜨는 것은 T3 런처가 만드는
-# .electron-runtime/Rubato.app 이고, 껍데기는 LSUIElement 로 숨는다.
-# 껍데기에는 start-gui.sh 경로 말고 아무 상태도 굽지 않는다 — 예전에 검증용
-# /private/tmp 경로가 여기 박힌 채 남아서, tmp 가 비워진 뒤로 앱이 조용히
-# 안 켜졌다. 나머지 경로는 실행할 때 start-gui.sh 가 정한다.
+# 앱을 켜면 Dock 에 뜨는 것은 T3 런처가 만드는 .electron-runtime/Rubato.app 이다.
+# 사용자가 고정하는 것도 그것이다. 예전에는 이 자리에 얇은 껍데기 번들을 따로
+# 두었는데, 껍데기와 실행 중인 번들이 서로 다른 앱(번들 id 가 둘)이라 Dock 에
+# 아이콘이 둘 뜨고, 정작 실행 중인 번들은 인자 없이 켜면 맨 Electron 안내 화면이
+# 떴다. 그래서 껍데기를 없애고 런타임 번들 하나로 합친다.
+#
+# 합치는 방법은 Electron 규약이다. 인자 없이 켜면 Electron 은 번들 안
+# Contents/Resources/app 을 앱으로 삼는다. 거기에 T3 본체를 부르는 진입점만 넣는다.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 APP="${RUBATO_T3_APP:-/Applications/Rubato.app}"
 T3_DIR="${RUBATO_T3_SOURCE:-$HOME/.rubato/t3-source}"
 T3_HOME="${RUBATO_T3_HOME:-$HOME/.rubato/t3-home}"
-AGENT_DIR="${RUBATO_PI_CODING_AGENT_DIR:-$HOME/.rubato-pi/agent}"
+DESKTOP="$T3_DIR/apps/desktop"
+BUNDLE="$DESKTOP/.electron-runtime/Rubato.app"
 
-# 기본값이 아닌 것만 굽는다. 기본값은 start-gui.sh 가 $HOME 에서 다시 만든다.
-launch_env() {
-  [ "$T3_DIR" = "$HOME/.rubato/t3-source" ] || printf 'export RUBATO_T3_SOURCE=%q\n' "$T3_DIR"
-  [ "$T3_HOME" = "$HOME/.rubato/t3-home" ] || printf 'export RUBATO_T3_HOME=%q\n' "$T3_HOME"
-  [ "$AGENT_DIR" = "$HOME/.rubato-pi/agent" ] || printf 'export RUBATO_PI_CODING_AGENT_DIR=%q\n' "$AGENT_DIR"
-}
+. "$HERE/../scripts/find-node.sh"
+NODE="$(rubato_find_node)" || { printf 'Node 24+ 가 없다\n' >&2; exit 1; }
 
-LAUNCHER="$(printf '#!/bin/bash\n%sexec /bin/bash %q\n' "$(launch_env)" "$HERE/start-gui.sh")"
+# 번들은 T3 런처가 만든다. 여기서 직접 만들면 서명·헬퍼 번들 이름이 갈라진다.
+# 이 호출은 앱을 띄우지 않고 번들만 최신으로 맞춘다.
+(cd "$DESKTOP" && "$NODE" -e \
+  'import("./scripts/electron-launcher.mjs").then((m) => m.resolveElectronLaunchCommand([]))') >/dev/null
 
-read -r -d '' PLIST <<'PLIST' || true
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>CFBundleName</key><string>Rubato</string>
-  <key>CFBundleDisplayName</key><string>Rubato</string>
-  <key>CFBundleIdentifier</key><string>app.rubato.t3.launcher</string>
-  <key>CFBundleVersion</key><string>1</string>
-  <key>CFBundleShortVersionString</key><string>1.0</string>
-  <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleExecutable</key><string>Rubato</string>
-  <key>CFBundleIconFile</key><string>AppIcon</string>
-  <key>LSMinimumSystemVersion</key><string>13.0</string>
-  <key>LSUIElement</key><true/>
-  <key>NSHighResolutionCapable</key><true/>
-</dict>
-</plist>
-PLIST
+[ -d "$BUNDLE" ] || { printf '런타임 번들을 못 만들었다: %s\n' "$BUNDLE" >&2; exit 1; }
 
-CONTENTS="$APP/Contents"
-MACOS="$CONTENTS/MacOS"
-RES="$CONTENTS/Resources"
+# 기본값이 아닌 홈만 굽는다. 기본값은 진입점이 $HOME 에서 다시 만든다.
+if [ "$T3_HOME" = "$HOME/.rubato/t3-home" ]; then
+  HOME_LINE='process.env.T3CODE_HOME ||= path.join(os.homedir(), ".rubato", "t3-home");'
+else
+  HOME_JSON="$("$NODE" -e 'process.stdout.write(JSON.stringify(process.argv[1]))' "$T3_HOME")"
+  HOME_LINE="process.env.T3CODE_HOME ||= $HOME_JSON;"
+fi
 
-ICON=""
-for candidate in \
-  "$HERE/../../rubato-codex/macos/Rubato.icns" \
-  "$T3_DIR/apps/desktop/.electron-runtime/icon-prod.icns"
-do
-  [ -f "$candidate" ] && ICON="$candidate" && break
-done
+ENTRY="$BUNDLE/Contents/Resources/app"
+mkdir -p "$ENTRY"
+cat > "$ENTRY/package.json" <<'JSON'
+{ "name": "rubato", "productName": "Rubato", "main": "index.js" }
+JSON
+# 경로를 굽지 않는다. 이 파일은 항상 <desktop>/.electron-runtime/Rubato.app 안에
+# 있으므로 다섯 단계 위가 데스크톱 디렉터리다. 예전에 검증용 /private/tmp 경로가
+# 런처에 박힌 채 남아서, tmp 가 비워진 뒤로 앱이 조용히 안 켜졌다.
+cat > "$ENTRY/index.js" <<JS
+// Dock/Finder 로 켤 때의 진입점. 터미널 경로(start-gui.sh)는 main.cjs 를 직접
+// 넘기므로 이 파일을 지나지 않는다.
+const path = require("node:path");
+const os = require("node:os");
+const desktopDir = path.resolve(__dirname, "..", "..", "..", "..", "..");
+$HOME_LINE
+process.chdir(desktopDir);
+require(path.join(desktopDir, "dist-electron", "main.cjs"));
+JS
 
-# 같은 내용이면 손대지 않는다. 매번 지웠다 만들면 Dock 에 고정해둔 아이콘이
-# 업데이트마다 끊긴다.
-fresh=0
-[ -f "$MACOS/Rubato" ] && [ "$(cat "$MACOS/Rubato")" = "$LAUNCHER" ] || fresh=1
-[ -f "$CONTENTS/Info.plist" ] && [ "$(cat "$CONTENTS/Info.plist")" = "$PLIST" ] || fresh=1
-[ -z "$ICON" ] || [ -f "$RES/AppIcon.icns" ] || fresh=1
+# Resources 에 파일을 넣으면 런처가 걸어둔 애드혹 서명이 깨진다. 같은 인자로 다시 건다.
+codesign --force --deep --sign - --timestamp=none "$BUNDLE" >/dev/null 2>&1 || true
 
-if [ "$fresh" = 1 ]; then
+# /Applications 이름은 Finder·Spotlight 용이다. 복사본이 아니라 링크라서
+# 업데이트로 번들이 바뀌어도 따라간다. Dock 고정은 실행 중 뜨는 아이콘으로 한다
+# — 링크를 고정하면 macOS 가 실행 중인 번들과 같은 앱으로 못 알아보고 둘로 띄운다.
+if [ ! -L "$APP" ] || [ "$(readlink "$APP")" != "$BUNDLE" ]; then
   rm -rf "$APP"
-  mkdir -p "$MACOS" "$RES"
-  [ -z "$ICON" ] || cp "$ICON" "$RES/AppIcon.icns"
-  printf '%s\n' "$LAUNCHER" > "$MACOS/Rubato"
-  chmod +x "$MACOS/Rubato"
-  printf '%s\n' "$PLIST" > "$CONTENTS/Info.plist"
+  ln -s "$BUNDLE" "$APP"
 fi
 
 if [ -d "/Applications/T3 Code.app" ]; then
   rm -rf "/Applications/T3 Code.app"
 fi
 
-printf '%s\n' "$APP"
+printf '%s\n' "$BUNDLE"
