@@ -44,6 +44,16 @@ const edits = {
     ],
   ],
   // CLI /model 은 별을 그려도 순서는 안 바꾼다. T3 기본값은 즐겨찾기를 맨 위로 올린다.
+  // 위저드의 "최근 에이전트 세션 가져오기" 는 ~/.codex 와 ~/.claude 의 기록을
+  // 스레드로 만든다. Rubato 는 Rubato 세션만 보여준다. 화면에서 감추는 대신
+  // 서버에서 끊는다 — 모바일이든 웹이든 같은 RPC 하나로 들어오기 때문이다.
+  // 원본 대화는 두 홈 디렉터리에 그대로 남는다.
+  'apps/server/src/project/AgentSessionImporter.ts': [
+    [
+      '  const scanner = yield* AgentSessionScanner.AgentSessionScanner;',
+      '  if (!process.env.RUBATO_IMPORT_AGENT_HISTORY) {\n    return { importedCount: 0, skippedCount: 0 } satisfies AgentSessionImportResult;\n  }\n',
+    ],
+  ],
   'apps/web/src/components/chat/ModelPickerContent.tsx': [
     [
       '    return sortProviderModelItems(result, {\n      favoriteModelKeys: favoritesSet,\n      groupFavorites: selectedInstanceId !== "favorites",\n      instanceOrder: selectedInstanceId === "favorites" ? instanceOrder : [],\n    });',

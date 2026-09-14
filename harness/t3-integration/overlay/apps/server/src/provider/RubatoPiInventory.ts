@@ -18,6 +18,10 @@ function cursorMatches(value: unknown, summary: PiSummary): boolean {
     && "serverId" in value && value.serverId === summary.serverId
     && "sessionId" in value && value.sessionId === summary.sessionId;
 }
+// 위저드를 한 번 누른 설치에는 ~/.codex 와 ~/.claude 기록이 스레드로 남아 있다.
+// 새 임포트는 서버에서 막았지만, 이미 만들어진 사본은 그 설치에 그대로 있다.
+// 시작할 때 치운다. 원본 대화는 두 홈 디렉터리에 그대로 있다.
+const FOREIGN_IMPORT = /^import:(?:codex|claudeAgent):/;
 const io = <A>(method: string, action: () => Promise<A>) => Effect.tryPromise({try:action,
   catch:(cause) => new ProviderAdapterRequestError({provider:"rubato-pi",method,
     detail:cause instanceof Error ? cause.message : String(cause),cause})});
@@ -125,11 +129,25 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
       yield* syncInstance(instance).pipe(Effect.catch((cause) => Effect.logWarning("Rubato inventory is unavailable",{instanceId:instance.instanceId,cause})));
     }
   });
+  const dropForeignImports = Effect.gen(function* () {
+    // 서버에서 임포트를 다시 켠 설치라면, 그 사람이 일부러 가져온 것이다. 안 지운다.
+    if (process.env.RUBATO_IMPORT_AGENT_HISTORY) return;
+    const readModel = yield* query.getCommandReadModel();
+    const foreign = readModel.threads.filter((thread) =>
+      FOREIGN_IMPORT.test(thread.id) && (thread.deletedAt === null || thread.deletedAt === undefined));
+    if (foreign.length === 0) return;
+    for (const thread of foreign) {
+      yield* engine.dispatch({type:"thread.delete",commandId:yield* commandId,threadId:thread.id});
+    }
+    yield* Effect.logInfo("Removed imported Codex/Claude threads",{count:foreign.length});
+  });
   return {
     sync,
     start:Effect.gen(function* () {
       // Startup's caller runs this only after the normal command/event runtime
       // is activated. There is never a hidden synthetic prompt in this loop.
+      yield* dropForeignImports.pipe(Effect.catch((cause) =>
+        Effect.logWarning("Imported Codex/Claude threads could not be removed",{cause})));
       yield* Effect.forkScoped(Effect.forever(sync.pipe(Effect.andThen(Effect.sleep("5 seconds")))));
     }),
   };
