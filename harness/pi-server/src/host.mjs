@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, realpath, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -7,6 +7,7 @@ import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { createUnixServer } from '@earendil-works/pi-server/unix';
 import { Directory, Management, Control, COMMANDS, INPUT_COMMANDS, UI_METHODS, json } from './contracts.mjs';
 import { SessionFiles } from './session-files.mjs';
+import { readSessionMetadata } from './session-metadata.mjs';
 import { RpcWorker } from './rpc-worker.mjs';
 import { wire, measure, EVENT_BUDGET, EVENTS_BUDGET } from './wire.mjs';
 
@@ -107,6 +108,7 @@ class RuntimeHandle {
   async command(command) {
     if (!command || !COMMANDS.has(command.type)) throw invalid('Unsupported command for an attached session');
     if (this.closed) throw invalid('Runtime is unloading; attach again');
+    if (this.worker.presentationOwner && !command.type.startsWith('get_')) throw invalid('This conversation is controlled by a CLI terminal; detach it before controlling it from another window');
     this.calls++;
     clearTimeout(this.timer);
     if (INPUT_COMMANDS.has(command.type) || command.type === 'compact') { this.running = true; this.publish(); }
@@ -173,6 +175,10 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
   if (idleMs !== null && (!Number.isFinite(idleMs) || idleMs < 0)) throw new TypeError('Invalid idleMs');
   const files = new SessionFiles(sessionsDir);
   const handles = new Map();
+  // Prepared SDK inputs are in-process handoffs, never another catalogue or
+  // router. The official SessionRouter still owns acquisition and deduplication.
+  const prepared = new Map();
+  const presentations = new Map();
   const probes = new Map();
   const directory = replicatedState({ revision: 0, sessions: [] });
   let records = [];
@@ -220,10 +226,54 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
   };
   const host = {
     metrics, directory,
-    async resolveSession(id) { return files.resolve(id); },
+    async resolveImport(file) {
+      const source = await realpath(file);
+      const metadata = await readSessionMetadata(source, await stat(source, { bigint: true }));
+      if (!metadata) throw new Error('Import source is not a valid Pi session');
+      const filesWithId = (await files.list()).filter(item => item.id === metadata.id).map(item => item.file);
+      const activeFile = handles.get(metadata.id)?.metadata.file;
+      if (activeFile) filesWithId.push(activeFile);
+      if (filesWithId.some(file => file !== source)) throw new Error('Import would duplicate an existing conversation ID; use /fork or select the existing conversation');
+      return filesWithId.length ? source : undefined;
+    },
+    claimPresentation(id, owner) {
+      if (presentations.has(id) && presentations.get(id) !== owner) throw new Error('This conversation is already controlled by another CLI terminal');
+      const worker = handles.get(id)?.worker;
+      if (worker && (handles.get(id).running || handles.get(id).pendingUi.size)) throw new Error('Conversation is busy; wait for it to finish before attaching a CLI terminal');
+      presentations.set(id, owner);
+      if (worker) worker.presentationOwner = owner;
+      return () => {
+        if (presentations.get(id) !== owner) return;
+        presentations.delete(id);
+        const current = handles.get(id)?.worker;
+        if (current?.presentationOwner === owner) current.presentationOwner = undefined;
+      };
+    },
+    async prepareSession(metadata, creation) {
+      const previous = prepared.get(metadata.id);
+      if (previous) throw new Error('Session acquisition already in progress');
+      const active = handles.get(metadata.id);
+      if (active && active.metadata.file !== metadata.file) throw new Error('Session ID already belongs to a different file');
+      const record = { metadata, creation };
+      prepared.set(metadata.id, record);
+      record.ready = (async () => {
+        const stored = (await files.list()).filter(item => item.id === metadata.id);
+        if (stored.some(item => item.file !== metadata.file)) throw new Error('Session ID already belongs to a different persisted file; fork it instead of importing a duplicate');
+      })();
+      try { await record.ready; }
+      catch (error) { if (prepared.get(metadata.id) === record) prepared.delete(metadata.id); throw error; }
+      return () => { if (prepared.get(metadata.id) === record) prepared.delete(metadata.id); };
+    },
+    getSessionWorker(id) { return handles.get(id)?.worker; },
+    async resolveSession(id) {
+      const record = prepared.get(id);
+      if (record) { await record.ready; return record.metadata; }
+      return files.resolve(id);
+    },
     async openSession(metadata) {
       const began = performance.now();
-      const handle = new RuntimeHandle(metadata, workerFactory(metadata), { idleMs, changed: publish });
+      const handle = new RuntimeHandle(metadata, workerFactory(metadata, prepared.get(metadata.id)?.creation), { idleMs, changed: publish });
+      handle.worker.presentationOwner = presentations.get(metadata.id);
       try { await handle.start(); } catch (error) { await handle.close(); throw error; }
       metrics.runtimeStarts++; metrics.totalOpenMs += performance.now() - began;
       handles.set(metadata.id, handle);

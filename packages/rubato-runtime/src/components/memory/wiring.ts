@@ -26,6 +26,9 @@ export function createMemoryWiring(options: MemoryWiringOptions): MemoryWiring {
   const promptCache = new MemoryBlockCache()
   const lastEventCtx: { current?: unknown } = {}
   const activeSession: { current?: string } = {}
+  // Bind-time disk reconciliation outlives session_start. Its continuation must
+  // not attach UI/workers to a session that has already shut down or rebound.
+  const bindings = new Map<string, symbol>()
   const skillsUsageTrackersRef: { current: Map<string, SkillsUsageTracker> } = { current: new Map() }
   const memoryUsageTrackersRef: { current: Map<string, MemoryUsageTracker> } = { current: new Map() }
   const reflectionLive = createMemoryReflectionLiveWiring(options, activeSession, lastEventCtx)
@@ -153,14 +156,19 @@ export function createMemoryWiring(options: MemoryWiringOptions): MemoryWiring {
     },
 
     async afterBind(pi, sessionId, identity, eventCtx): Promise<void> {
+      const binding = Symbol(sessionId)
+      bindings.set(sessionId, binding)
+      const isCurrent = () => bindings.get(sessionId) === binding
       activeSession.current = sessionId
       lastEventCtx.current = eventCtx
       reflectionLive.attach(sessionId)
       registerMemoryFilesystemPolicy(pi, identity)
       await runtimeFor(identity).reconcile()
+      if (!isCurrent()) return
       if (branchEntryCount(eventCtx) > 0) {
         await journalWiringFor(identity).reconcileSession(eventCtx)
       }
+      if (!isCurrent()) return
       factsWiringFor(identity).reconcileExtractor()
       await reflectionLive.bind(
         pi,
@@ -180,6 +188,7 @@ export function createMemoryWiring(options: MemoryWiringOptions): MemoryWiring {
     },
 
     async onSessionShutdown(input: ShutdownDrainInput): Promise<void> {
+      bindings.delete(input.sessionId)
       reflectionLive.shutdown(options.sessions.get(input.sessionId)?.context?.identity)
       await shutdownDrain.run(input)
     },

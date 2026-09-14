@@ -42,20 +42,23 @@ export class TaskRuntimeContext {
   #modelRegistry: ChildModelRegistry | undefined
   #idle = true
   #transition: ParentTransition
-  #ui: CapturedUi | undefined
   #sessionId: string | undefined
   #sessionFile: string | undefined
   #mode: string | undefined
+  #modeContext: LiveTaskContext | undefined
+  #presentation: LiveTaskContext | undefined
 
   constructor(cwd: string) {
     this.#cwd = cwd
   }
 
   captureFrom(ctx: LiveTaskContext): void {
+    // Pi's context exposes live UI/mode getters. Keep that view across a terminal
+    // detach rather than retaining a dead editor and its original mode snapshot.
+    if (ctx.ui !== undefined) this.#presentation = ctx
     if (typeof ctx.cwd === "string" && ctx.cwd.length > 0) this.#cwd = ctx.cwd
     if (ctx.modelRegistry !== undefined) this.#modelRegistry = ctx.modelRegistry
-    if (ctx.ui !== undefined) this.#ui = ctx.ui
-    if (typeof ctx.mode === "string") this.#mode = ctx.mode
+    if (typeof ctx.mode === "string") { this.#mode = ctx.mode; this.#modeContext = ctx }
     if (ctx.sessionManager !== undefined) {
       this.#sessionId = ctx.sessionManager.getSessionId()
       this.#sessionFile = ctx.sessionManager.getSessionFile?.()
@@ -64,7 +67,8 @@ export class TaskRuntimeContext {
   }
 
   clearUi(): void {
-    this.#ui = undefined
+    this.#presentation = undefined
+    this.#modeContext = undefined
   }
 
   setTransition(transition: ParentTransition): void {
@@ -80,7 +84,7 @@ export class TaskRuntimeContext {
   }
 
   ui(): CapturedUi | undefined {
-    return this.#ui
+    return this.#presentation?.ui
   }
 
   sessionId(): string | undefined {
@@ -92,7 +96,7 @@ export class TaskRuntimeContext {
   }
 
   mode(): string | undefined {
-    return this.#mode
+    return this.#modeContext?.mode ?? this.#mode
   }
 
   parentState(): ParentState {
