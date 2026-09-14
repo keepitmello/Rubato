@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { createConnection, type Socket } from "node:net"
 import { join } from "node:path"
-import { stat } from "node:fs/promises"
+import { readFile, stat, writeFile } from "node:fs/promises"
 import { encodeFrame, JsonFrameDecoder, type BootstrapLaunchPayload } from "@rubato/remote-protocol"
 import { EnvironmentHandoffStore } from "../src/environment.js"
 import { EventJournal } from "../src/journal.js"
@@ -15,6 +15,78 @@ const cleanupTasks: Array<() => Promise<void>> = []
 afterEach(async () => Promise.all(cleanupTasks.splice(0).map((cleanup) => cleanup())))
 
 describe("Unix socket process registration", () => {
+  test("shutdown closes clients that never registered without waiting for the handshake timer", async () => {
+    const temporary = await temporaryDirectory()
+    const registry = new LiveRegistry(HOST_ID, { discover: async () => [] })
+    const journal = new EventJournal(join(temporary.path, 'journal'), join(temporary.path, 'snapshots'), HOST_ID)
+    await journal.load()
+    const socketPath = join(temporary.path, 'hub.sock')
+    const server = new SurfaceSocketServer(socketPath, registry, journal, new SurfaceTokenStore(),
+      new EnvironmentHandoffStore<BootstrapLaunchPayload>(), new SurfaceReconnectCredentials(join(temporary.path, 'key')),
+      { handshakeTimeoutMs: 60000 })
+    let client: Socket | undefined
+    try {
+      await server.listen()
+      client = await connect(socketPath)
+      const disconnected = new Promise<void>(resolve => client!.once('close', resolve))
+      await bounded(server.close())
+      await bounded(disconnected)
+      // The path can now belong to a replacement. Repeated close must not
+      // unlink an address this instance no longer owns.
+      await writeFile(socketPath, 'replacement-owner')
+      await server.close()
+      expect(await readFile(socketPath, 'utf8')).toBe('replacement-owner')
+    } finally {
+      client?.destroy()
+      await server.close()
+      await temporary.cleanup()
+    }
+  })
+
+  test("shutdown waits for accepted journal writes and concurrent close calls share completion", async () => {
+    const temporary = await temporaryDirectory()
+    const registry = new LiveRegistry(HOST_ID, { discover: async () => [] })
+    const journal = new EventJournal(join(temporary.path, 'journal'), join(temporary.path, 'snapshots'), HOST_ID)
+    await journal.load()
+    const entered = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    const append = journal.append.bind(journal)
+    journal.append = async (...args) => { entered.resolve(); await release.promise; return append(...args) }
+    const tokens = new SurfaceTokenStore()
+    const socketPath = join(temporary.path, 'hub.sock')
+    const server = new SurfaceSocketServer(socketPath, registry, journal, tokens,
+      new EnvironmentHandoffStore<BootstrapLaunchPayload>(), new SurfaceReconnectCredentials(join(temporary.path, 'key')))
+    let client: Socket | undefined
+    try {
+      await server.listen()
+      client = await connect(socketPath)
+      const registered = nextFrame(client)
+      const surfaceInstanceId = '00000000-0000-4000-8000-000000000001'
+      client.write(encodeFrame({ kind: 'surface.register', protocol: 'rubato.remote.v1', protocolRange: { min: 1, max: 1 },
+        surfaceInstanceId, token: tokens.issue(SESSION_ID), summary: unmanagedSummary() }))
+      await registered
+      client.write(encodeFrame({ kind: 'surface.event', protocol: 'rubato.remote.v1', surfaceInstanceId,
+        liveSessionId: SESSION_ID, sourceSeq: 1, at: new Date().toISOString(), type: 'session.changed', payload: { name: 'drained' } }))
+      await bounded(entered.promise)
+      const disconnected = new Promise<void>(resolve => client!.once('close', resolve))
+      const closing = server.close()
+      expect(server.close()).toBe(closing)
+      let done = false
+      void closing.then(() => { done = true })
+      await bounded(disconnected)
+      await new Promise(resolve => setImmediate(resolve))
+      expect(done).toBeFalse()
+      release.resolve()
+      await bounded(closing)
+      expect(await readFile(join(temporary.path, 'journal', `${SESSION_ID}.jsonl`), 'utf8')).toContain('drained')
+    } finally {
+      release.resolve()
+      client?.destroy()
+      await server.close()
+      await temporary.cleanup()
+    }
+  })
+
   test("requires a one-time launch token and installs the surface snapshot", async () => {
     const temporary = await temporaryDirectory()
     cleanupTasks.push(temporary.cleanup)

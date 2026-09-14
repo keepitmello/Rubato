@@ -46,6 +46,21 @@ node --expose-gc harness/pi-server/scripts/measure-session-index.mjs \
 
 ## 완제품에서 별도로 재야 하는 지표
 
+### 2026-09-15 승인된 live Pi server 적용
+
+목록 최적화 커밋 `47991db8c`를 `rubato/base`에 푸시한 뒤, 모든 세션이 stored이고 자식 worker가 없음을 확인해 기존 Pi profile server에만 SIGTERM을 보냈다. T3의 기존 복구 경로가 새 서버를 띄웠다. CLI/live hub 및 T3 앱 자체는 재시작하지 않았다.
+
+| 30초 live 관측 | 직전 서버 | 새 서버 |
+| --- | ---: | ---: |
+| PID | 41602 | 46489 |
+| 한 코어 CPU | 85.88% | 3.08% |
+| 관측 끝 RSS | 1,146,535,936 bytes | 378,044,416 bytes |
+| 저장 세션 수 | 483 | 483 |
+
+serverId·socket 주소 및 목록 metadata digest `a0371397fb8e3d3d1e6185cba729762417e5195a29ac951a34ae39337ad35331`는 전후 동일했다. 이는 같은 호스트의 순차 idle 관측이다. GC/프로세스 나이가 다르고 다른 작업의 부하를 통제하지 않았으므로 CPU/RSS의 엄밀한 동일 조건 벤치마크나 active-turn 개선율로 해석하지 않는다. 원장은 `_workspace/runtime-architecture-20260915/live-{directory,process}-*-restart.json`이다.
+
+같은 새 PID의 후속 30초 안정 관측(`live-process-settled.json`)은 CPU **2.97%**, 끝 RSS **198,918,144 bytes (189.7MiB)**였다. 최종 목록 read-back도 483개 및 동일 digest를 유지했다. 앞선 재시작 직후 관측을 이 값으로 덮어쓰지 않는다.
+
 같은 컴퓨터와 같은 저장소, 같은 모델/추론 강도, 같은 입력을 사용해 각 경로에서 최소 5회 반복하고 중앙값과 범위를 기록한다.
 
 | 지표 | Codex 경로 | T3/Pi 경로 |

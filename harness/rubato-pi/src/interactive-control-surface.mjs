@@ -31,8 +31,11 @@ export class InteractiveActionDispatcher {
     this.pruneRequests();
     const duplicate = this.requests.get(request.requestId);
     if (duplicate) return duplicate.promise;
-    const promise = this.tail.then(() => this.execute(request));
-    this.tail = promise.catch(() => undefined);
+    // A command may be waiting on this very reply/abort. Queue mutations, not
+    // the signals needed to settle them; both lanes still share request dedup.
+    const interrupt = ["agent.abort", "bash.abort", "ui.respond"].includes(request.action);
+    const promise = (interrupt ? Promise.resolve() : this.tail).then(() => this.execute(request));
+    if (!interrupt) this.tail = promise.catch(() => undefined);
     this.requests.set(request.requestId, { at: this.now(), promise });
     return promise;
   }

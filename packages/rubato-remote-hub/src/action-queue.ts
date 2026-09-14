@@ -15,6 +15,7 @@ export class SessionActionQueue {
   readonly #now: () => number
   readonly #chains = new Map<LiveSessionId, Promise<void>>()
   readonly #cache = new Map<RequestId, CachedResult>()
+  readonly #inflight = new Map<RequestId, Promise<ActionResultResponse>>()
 
   constructor(surface: SurfaceActions, revision: (id: LiveSessionId) => number, now: () => number = Date.now) {
     this.#surface = surface
@@ -26,35 +27,31 @@ export class SessionActionQueue {
     this.#purge()
     const cached = this.#cache.get(request.requestId)
     if (cached) return Promise.resolve(cached.result)
+    const inflight = this.#inflight.get(request.requestId)
+    if (inflight) return inflight
     const currentRevision = this.#revision(request.liveSessionId)
     if (request.expectedRevision !== undefined && request.expectedRevision !== currentRevision) {
       return Promise.reject(new ActionQueueError("stale_revision"))
     }
-    let resolveResult!: (result: ActionResultResponse) => void
-    let rejectResult!: (error: unknown) => void
-    const resultPromise = new Promise<ActionResultResponse>((resolve, reject) => {
-      resolveResult = resolve
-      rejectResult = reject
-    })
-    const previous = this.#chains.get(request.liveSessionId) ?? Promise.resolve()
-    const operation = previous.then(async () => {
-      const existing = this.#cache.get(request.requestId)
-      if (existing) {
-        resolveResult(existing.result)
-        return
+    // Replies and interrupts must reach a surface that is waiting inside an
+    // earlier action. Ordinary mutations remain FIFO per live session.
+    const interrupt = ["agent.abort", "bash.abort", "ui.respond"].includes(request.action)
+    const previous = interrupt ? Promise.resolve() : this.#chains.get(request.liveSessionId) ?? Promise.resolve()
+    const resultPromise = previous.then(async () => {
+      if (request.expectedRevision !== undefined && request.expectedRevision !== this.#revision(request.liveSessionId)) {
+        throw new ActionQueueError("stale_revision")
       }
-      try {
-        const result = await this.#surface.dispatch(request)
-        this.#cache.set(request.requestId, { result, expiresAt: this.#now() + 10 * 60 * 1000 })
-        resolveResult(result)
-      } catch (error) {
-        rejectResult(error)
-      }
+      const result = await this.#surface.dispatch(request)
+      this.#cache.set(request.requestId, { result, expiresAt: this.#now() + 10 * 60 * 1000 })
+      return result
     })
-    this.#chains.set(request.liveSessionId, operation)
-    void operation.finally(() => {
+    this.#inflight.set(request.requestId, resultPromise)
+    const cleanup = () => {
+      this.#inflight.delete(request.requestId)
       if (this.#chains.get(request.liveSessionId) === operation) this.#chains.delete(request.liveSessionId)
-    })
+    }
+    const operation = resultPromise.then(cleanup, cleanup)
+    if (!interrupt) this.#chains.set(request.liveSessionId, operation)
     return resultPromise
   }
 
