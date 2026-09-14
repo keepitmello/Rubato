@@ -138,7 +138,13 @@ else
   fi
 fi
 
-APP="$("$HERE/install-macos-app.sh")"
+# bash 로 부른다. 실행 비트는 전송 중에 쉽게 사라지고, 그때 이 줄은 조용히
+# 실패해서 아래의 "응용 프로그램: " 이 빈 경로를 성공처럼 찍었다.
+APP="$(bash "$HERE/install-macos-app.sh")" || APP=''
+if [ -z "$APP" ]; then
+  err "응용 프로그램을 만들지 못했다: $HERE/install-macos-app.sh"
+  exit 1
+fi
 if [ "$built" = 1 ]; then
   ok "응용 프로그램: $APP  (더블클릭으로 켠다)"
   exit 0
