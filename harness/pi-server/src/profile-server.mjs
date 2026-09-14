@@ -27,8 +27,11 @@ export async function serveProfile({ agentDir, socketPath, idleMs = 60000, worke
   if (Buffer.byteLength(socketPath) > 100) throw new Error('Socket path is too long; pass --socket with a shorter absolute path');
   let service;
   let compromised;
+  // 서버가 kill -9 로 죽으면 락은 stale 로 넘어갈 때까지 남고, 그 창이 그대로
+  // 앱의 복구 지연이 된다. 실측 41초. 살아있는 서버는 update 마다 mtime 을 새로
+  // 찍으므로 stale 은 update 의 세 배면 충분하다.
   const release = await lockfile.lock(agentDir, { lockfilePath: path.join(serverDir, 'owner.lock'),
-    stale: 30000, update: 10000, retries: 0,
+    stale: 15000, update: 5000, retries: 0,
     onCompromised(error) { compromised = error; onError(error); if (service) void service.close(); } });
   try {
     let previous;
