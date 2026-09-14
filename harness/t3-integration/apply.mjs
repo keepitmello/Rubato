@@ -7,9 +7,14 @@ import { parseArgs } from 'node:util';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
-const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/server/src/provider/RubatoPiInventory.ts'];
+const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/server/src/provider/RubatoPiInventory.ts', 'apps/web/src/components/RubatoIcon.tsx'];
 // 값이 [anchor, addition] 이면 anchor 앞에 붙이고, [from, to, 'replace'] 면 갈아끼운다.
-// 앱 이름·번들 id·아이콘은 T3 가 const 로 박아둬서 앞에 덧붙이는 것으로는 못 바꾼다.
+// 앱 이름·번들 id·상태 경로는 T3 가 const 로 박아둬서 앞에 덧붙이는 것으로는 못 바꾼다.
+//
+// 값은 환경변수가 아니라 소스에 직접 박는다. 환경변수로 주면 start-gui.sh 를 지나는
+// 실행만 Rubato 가 되고, 사용자가 Dock 에 고정하는 것은 앱이 실행 중에 만드는
+// .electron-runtime 번들이라 그 경로로 켜면 맨 T3 가 떴다. 아이콘도 같은 이유로
+// 여기서 경로를 바꾸는 대신, 설치기가 T3 가 읽는 자리에 Rubato 것을 깔아둔다.
 const edits = {
   'apps/server/src/provider/builtInDrivers.ts': [
     ['import type { AnyProviderDriver } from "./ProviderDriver.ts";', 'import { RubatoPiDriver } from "./Drivers/RubatoPiDriver.ts";\n'],
@@ -20,22 +25,42 @@ const edits = {
     ['      yield* runStartupPhase("provider-sessions.reconcile", reconcileProviderSessions);', '      const rubatoInventory = yield* makeRubatoPiInventory.pipe(Scope.provide(reactorScope));\n'],
     ['      yield* Effect.logDebug("startup phase: complete");', '      yield* rubatoInventory.start.pipe(Scope.provide(reactorScope));\n'],
   ],
-  // Dock 이름·아이콘·번들 id. 값 자체는 환경변수로 빼고 T3 기본값은 폴백으로 남긴다 —
-  // 경로를 여기 박으면 머신마다 다른 레포 위치를 못 따라간다. start-gui.sh 가 채운다.
+  // Rubato 카탈로그는 성공한 discovery 다. Codex/OpenCode 와 같이 취급해야
+  // 예전 캐시 extras 가 큐레이트 뒤에 붙어서 /model 순서와 갈라지지 않는다.
+  'apps/server/src/provider/Layers/ProviderRegistry.ts': [
+    [
+      '  if (!isAntigravity && !isCodex && provider.driver !== ProviderDriverKind.make("opencode")) {\n    return true;\n  }',
+      '  if (\n    !isAntigravity &&\n    !isCodex &&\n    provider.driver !== ProviderDriverKind.make("opencode") &&\n    provider.driver !== ProviderDriverKind.make("rubato-pi")\n  ) {\n    return true;\n  }',
+      'replace',
+    ],
+  ],
+  // 부팅 hydrate 가 예전 캐시 extras 를 산 목록 뒤에 이어 붙인다. 산 카탈로그가
+  // 있으면 Rubato 는 그걸 정본으로 쓴다.
+  'apps/server/src/provider/providerStatusCache.ts': [
+    [
+      '    models: mergeProviderModels(input.fallbackProvider.models, input.cachedProvider.models),',
+      '    models:\n      String(input.fallbackProvider.driver) === "rubato-pi" && input.fallbackProvider.models.length > 0\n        ? input.fallbackProvider.models\n        : mergeProviderModels(input.fallbackProvider.models, input.cachedProvider.models),',
+      'replace',
+    ],
+  ],
+  // CLI /model 은 별을 그려도 순서는 안 바꾼다. T3 기본값은 즐겨찾기를 맨 위로 올린다.
+  'apps/web/src/components/chat/ModelPickerContent.tsx': [
+    [
+      '    return sortProviderModelItems(result, {\n      favoriteModelKeys: favoritesSet,\n      groupFavorites: selectedInstanceId !== "favorites",\n      instanceOrder: selectedInstanceId === "favorites" ? instanceOrder : [],\n    });',
+      '    return sortProviderModelItems(result, {\n      favoriteModelKeys: favoritesSet,\n      groupFavorites: false,\n      instanceOrder: selectedInstanceId === "favorites" ? instanceOrder : [],\n    });',
+      'replace',
+    ],
+  ],
+  // 런타임 번들의 이름·번들 id. 아이콘은 이 파일이 assets 에서 읽어 만든다.
   'apps/desktop/scripts/electron-launcher.mjs': [
     [
       'const APP_DISPLAY_NAME = isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)";',
-      'const APP_DISPLAY_NAME =\n  process.env.RUBATO_GUI_APP_NAME || (isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)");',
+      'const APP_DISPLAY_NAME = isDevelopment ? "Rubato (Dev)" : "Rubato";',
       'replace',
     ],
     [
       ['const APP_BUNDLE_ID = isDevelopment', '  ? `com.t3tools.t3code.dev.${devBundleIdSuffix || "local"}`', '  : "com.t3tools.t3code";'].join('\n'),
-      ['const APP_BUNDLE_ID =', '  process.env.RUBATO_GUI_BUNDLE_ID ||', '  (isDevelopment', '    ? `com.t3tools.t3code.dev.${devBundleIdSuffix || "local"}`', '    : "com.t3tools.t3code");'].join('\n'),
-      'replace',
-    ],
-    [
-      'const productionMacIconPngPath = NodePath.join(repoRoot, "assets", "prod", "black-macos-1024.png");',
-      'const productionMacIconPngPath =\n  process.env.RUBATO_GUI_ICON_PNG ||\n  NodePath.join(repoRoot, "assets", "prod", "black-macos-1024.png");',
+      ['const APP_BUNDLE_ID = isDevelopment', '  ? `app.rubato.t3.dev.${devBundleIdSuffix || "local"}`', '  : "app.rubato.t3";'].join('\n'),
       'replace',
     ],
     [
@@ -44,12 +69,13 @@ const edits = {
       'replace',
     ],
   ],
-  // 번들 plist 만으로는 안 된다. 소스에서 켠 앱(isPackaged=false)은 실행 중에
-  // 자기 png 로 Dock 타일을 다시 그린다.
-  'apps/desktop/src/app/DesktopAssets.ts': [
+  // T3CODE_HOME 이 없을 때 쓰는 기본 상태 경로. 여기가 모든 경로의 뿌리라서,
+  // 이 한 줄이 설정·세션·로그를 통째로 Rubato 쪽으로 옮긴다. 뒤에 userdata 를
+  // 붙이는 것은 T3 쪽 코드이고, 설치기가 쓰는 settings.json 위치와 맞는다.
+  'apps/desktop/src/app/DesktopStatePaths.ts': [
     [
-      '  return environment.path.join(environment.rootDir, "assets", brand, fileName);',
-      '  if (ext === "png" && process.env.RUBATO_GUI_ICON_PNG) return process.env.RUBATO_GUI_ICON_PNG;\n  return environment.path.join(environment.rootDir, "assets", brand, fileName);',
+      '    input.joinPath(input.homeDirectory, ".t3"),',
+      '    input.joinPath(input.homeDirectory, ".rubato", "t3-home"),',
       'replace',
     ],
   ],
@@ -57,12 +83,139 @@ const edits = {
   'apps/desktop/src/app/DesktopEnvironment.ts': [
     [
       'const APP_BASE_NAME = "T3 Code";',
-      'const APP_BASE_NAME = process.env.RUBATO_GUI_APP_NAME || "T3 Code";',
+      'const APP_BASE_NAME = "Rubato";',
       'replace',
     ],
     [
       '    displayName: `${APP_BASE_NAME} (${stageLabel})`,',
-      '    displayName: process.env.RUBATO_GUI_APP_NAME || `${APP_BASE_NAME} (${stageLabel})`,',
+      '    displayName: APP_BASE_NAME,',
+      'replace',
+    ],
+  ],
+  // 모델 선택기와 목록 행의 제공자 글리프. 매핑에 없는 드라이버는 이름 앞
+  // 두 글자로 떨어져서 Rubato 가 "RU" 로 보였다.
+  'apps/web/src/components/chat/providerIconUtils.ts': [
+    ['import {\n  AntigravityIcon,', 'import { RubatoIcon } from "../RubatoIcon";\n'],
+    [
+      '  CursorIcon,\n  GrokIcon,\n  Icon,\n  OpenAI,\n  OpenCodeIcon,\n} from "../Icons";',
+      '  CursorIcon,\n  GrokIcon,\n  Icon,\n  KiroIcon,\n  OpenAI,\n  OpenCodeIcon,\n} from "../Icons";',
+      'replace',
+    ],
+    ['  [ProviderDriverKind.make("antigravity")]: AntigravityIcon,', '  [ProviderDriverKind.make("rubato-pi")]: RubatoIcon,\n'],
+    [
+      '  isUnavailable?: boolean | undefined;\n};\n\nfunction escapeRegExp(value: string): string {',
+      [
+        '  isUnavailable?: boolean | undefined;',
+        '};',
+        '',
+        'const VENDOR_ICONS: Record<string, Icon> = {',
+        '  "openai-codex": OpenAI,',
+        '  anthropic: ClaudeAI,',
+        '  xai: GrokIcon,',
+        '  "google-antigravity": AntigravityIcon,',
+        '  kiro: KiroIcon,',
+        '  cursor: CursorIcon,',
+        '  opencode: OpenCodeIcon,',
+        '};',
+        'const VENDOR_LABELS: Record<string, string> = {',
+        '  "openai-codex": "OpenAI",',
+        '  anthropic: "Claude",',
+        '  xai: "xAI",',
+        '  "google-antigravity": "Antigravity",',
+        '  kiro: "Kiro",',
+        '  cursor: "Cursor",',
+        '  opencode: "OpenCode",',
+        '};',
+        '',
+        'export function vendorForModel(model: Pick<ModelEsque, "slug" | "subProvider">): string | undefined {',
+        '  const sub = (model.subProvider ?? "").toLowerCase();',
+        '  if (sub && VENDOR_ICONS[sub]) return sub;',
+        '  const slug = model.slug.toLowerCase();',
+        '  const provider = slug.includes("/") ? slug.slice(0, slug.indexOf("/")) : "";',
+        '  return provider && VENDOR_ICONS[provider] ? provider : undefined;',
+        '}',
+        '',
+        'export function iconForProviderModel(',
+        '  driverKind: ProviderDriverKind,',
+        '  model: Pick<ModelEsque, "slug" | "subProvider">,',
+        '): Icon | null {',
+        '  const vendor = vendorForModel(model);',
+        '  return (vendor ? VENDOR_ICONS[vendor] : undefined) ?? PROVIDER_ICON_BY_PROVIDER[driverKind] ?? null;',
+        '}',
+        '',
+        'export function subProviderLabel(',
+        '  subProvider: string,',
+        '  model?: Pick<ModelEsque, "slug" | "subProvider">,',
+        '): string {',
+        '  const vendor = vendorForModel(model ?? { slug: "", subProvider });',
+        '  return (vendor && VENDOR_LABELS[vendor]) || subProvider;',
+        '}',
+        '',
+        'function escapeRegExp(value: string): string {',
+      ].join('\n'),
+      'replace',
+    ],
+  ],
+  'apps/web/src/components/chat/ModelListRow.tsx': [
+    [
+      '  PROVIDER_ICON_BY_PROVIDER,\n} from "./providerIconUtils";',
+      '  iconForProviderModel,\n  subProviderLabel,\n} from "./providerIconUtils";',
+      'replace',
+    ],
+    [
+      '  const ProviderIcon = PROVIDER_ICON_BY_PROVIDER[props.driverKind] ?? null;\n  const providerLabel = props.model.subProvider\n    ? `${props.providerDisplayName} · ${props.model.subProvider}`\n    : props.providerDisplayName;',
+      '  const ProviderIcon = iconForProviderModel(props.driverKind, props.model);\n  const providerLabel = props.model.subProvider\n    ? subProviderLabel(props.model.subProvider, props.model)\n    : props.providerDisplayName;',
+      'replace',
+    ],
+  ],
+  // 닫힌 트리거는 인스턴스(Rubato) 아이콘을 쓴다. 고른 모델의 레인 로고로 바꾼다.
+  'apps/web/src/components/chat/ProviderModelPicker.tsx': [
+    [
+      '  getTriggerDisplayModelLabel,\n  getTriggerDisplayModelName,\n} from "./providerIconUtils";',
+      '  getTriggerDisplayModelLabel,\n  getTriggerDisplayModelName,\n  iconForProviderModel,\n} from "./providerIconUtils";',
+      'replace',
+    ],
+    [
+      '  const showInstanceBadge =\n    activeEntry !== null && shouldShowInstanceBadge(activeEntry, props.instanceEntries);',
+      '  const showInstanceBadge =\n    activeEntry !== null && shouldShowInstanceBadge(activeEntry, props.instanceEntries);\n  const TriggerIcon =\n    selectedModel && activeEntry\n      ? iconForProviderModel(activeEntry.driverKind, selectedModel)\n      : null;',
+      'replace',
+    ],
+    [
+      '          {activeEntry && props.triggerLabel === undefined ? (\n            <ProviderInstanceIcon',
+      '          {activeEntry && props.triggerLabel === undefined ? (\n            TriggerIcon ? (\n              <TriggerIcon\n                className={cn("size-4 shrink-0", props.activeProviderIconClassName)}\n                aria-hidden\n              />\n            ) : (\n            <ProviderInstanceIcon',
+      'replace',
+    ],
+    [
+      '            />\n          ) : null}',
+      '            />\n            )\n          ) : null}',
+      'replace',
+    ],
+  ],
+  // 사이드바 왼쪽 위 워드마크. 원래 "T3" 글리프 + "Code" 글자다.
+  'apps/web/src/components/T3Wordmark.tsx': [
+    [
+      '      <path\n        d="M33.4509 93V47.56H15.5309V37H64.3309V47.56H46.4109V93H33.4509ZM86.7253 93.96C82.832 93.96 78.9653 93.4533 75.1253 92.44C71.2853 91.3733 68.032 89.88 65.3653 87.96L70.4053 78.04C72.5386 79.5867 75.0186 80.8133 77.8453 81.72C80.672 82.6267 83.5253 83.08 86.4053 83.08C89.6586 83.08 92.2186 82.44 94.0853 81.16C95.952 79.88 96.8853 78.12 96.8853 75.88C96.8853 73.7467 96.0586 72.0667 94.4053 70.84C92.752 69.6133 90.0853 69 86.4053 69H80.4853V60.44L96.0853 42.76L97.5253 47.4H68.1653V37H107.365V45.4L91.8453 63.08L85.2853 59.32H89.0453C95.9253 59.32 101.125 60.8667 104.645 63.96C108.165 67.0533 109.925 71.0267 109.925 75.88C109.925 79.0267 109.099 81.9867 107.445 84.76C105.792 87.48 103.259 89.6933 99.8453 91.4C96.432 93.1067 92.0586 93.96 86.7253 93.96Z"\n        fill="currentColor"\n      />',
+      '      <text\n        dominantBaseline="middle"\n        fill="currentColor"\n        fontSize="52"\n        fontWeight="600"\n        letterSpacing="-1"\n        x="15.5"\n        y="66"\n      >\n        Rubato\n      </text>',
+      'replace',
+    ],
+    [
+      '    <svg {...props} viewBox="15.5309 37 94.3941 56.96" xmlns="http://www.w3.org/2000/svg">',
+      '    <svg {...props} viewBox="15.5309 37 176 56.96" xmlns="http://www.w3.org/2000/svg">',
+      'replace',
+    ],
+  ],
+  // 워드마크 옆의 "Code" 글자. 워드마크가 이미 제품 이름을 다 쓴다.
+  // 지우는 대신 빈 글자로 둔다 — 치환을 되돌릴 때 빈 문자열은 파일 맨 앞에
+  // 원문을 다시 붙여 넣어서, overlay 제거가 원본을 복원하지 못한다.
+  'apps/web/src/components/sidebar/SidebarChrome.tsx': [
+    [
+      '        <T3Wordmark aria-label="T3" className="h-2.5 w-auto shrink-0" />',
+      '        <T3Wordmark aria-label="Rubato" className="h-2.5 w-auto shrink-0" />',
+      'replace',
+    ],
+    [
+      '        >\n          Code\n        </span>',
+      '        >\n          {null}\n        </span>',
       'replace',
     ],
   ],
