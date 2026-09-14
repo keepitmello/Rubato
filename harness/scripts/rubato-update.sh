@@ -58,16 +58,20 @@ fetch_now() {
 # 껍데기 런처가 없는 경로를 가리킨다. 받을 것이 없어도 그때는 다시 맞춘다.
 # install-gui.sh 는 멱등해서, 이미 맞는 설치는 빌드 없이 지나간다.
 GUI_T3_DIR="${RUBATO_T3_SOURCE:-$HOME/.rubato/t3-source}"
-GUI_LAUNCHER="/Applications/Rubato.app/Contents/MacOS/Rubato"
+# 실행되는 번들은 T3 런처가 만드는 런타임 번들 하나뿐이고, /Applications 의
+# 이름은 그리로 가는 링크다. 예전의 얇은 껍데기 번들이 남아 있는 설치도
+# 여기서 깨진 것으로 잡혀 다음 업데이트에 링크로 바뀐다.
+GUI_BUNDLE="$GUI_T3_DIR/apps/desktop/.electron-runtime/Rubato.app"
+GUI_ENTRY="$GUI_BUNDLE/Contents/Resources/app/index.js"
 gui_installed() {
   [ -d "$GUI_T3_DIR/.git" ] || [ -d "/Applications/Rubato.app" ] || [ -d "/Applications/T3 Code.app" ]
 }
 gui_broken() {
   gui_installed || return 1
   [ -f "$GUI_T3_DIR/apps/desktop/dist-electron/main.cjs" ] || return 0
-  if [ -f "$GUI_LAUNCHER" ]; then
-    grep -qF "$HARNESS/t3-integration/start-gui.sh" "$GUI_LAUNCHER" || return 0
-  fi
+  # 더블클릭 진입점이 없으면 눌러도 맨 Electron 안내 화면이 뜬다.
+  [ -f "$GUI_ENTRY" ] || return 0
+  [ "$(readlink /Applications/Rubato.app 2>/dev/null)" = "$GUI_BUNDLE" ] || return 0
   return 1
 }
 repair_gui() {
