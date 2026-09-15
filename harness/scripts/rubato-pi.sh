@@ -66,25 +66,7 @@ case "${1-}" in
     # "nothing to restart"; exit 1 means a restart was attempted and failed —
     # the two must not look alike.
     LAUNCHCTL_BIN="${RUBATO_LAUNCHCTL_BIN:-/bin/launchctl}"
-    PGREP_BIN="${RUBATO_PGREP_BIN:-/usr/bin/pgrep}"
-    OSASCRIPT_BIN="${RUBATO_OSASCRIPT_BIN:-/usr/bin/osascript}"
-    GUI_APP="${RUBATO_GUI_APP:-/Applications/Rubato.app}"
-    START_GUI="${RUBATO_START_GUI:-$HERE/../t3-integration/start-gui.sh}"
-    INSTALL_GUI="${RUBATO_INSTALL_GUI:-$HERE/../t3-integration/install-gui.sh}"
-    GUI_LOG="${RUBATO_GUI_LOG:-$HOME/.rubato-pi/logs/rubato-gui-restart.log}"
-    # Two different things ride in the desktop app, and only one of them is
-    # picked up by a relaunch. The bridge (harness/t3-integration/src/) is read
-    # from the repo when the app starts, so quitting and relaunching is enough.
-    # The pin and the overlay are compiled into the T3 server bundle, so they
-    # need a rebuild — and the window where the app is down is the only safe
-    # place to do it, since the build replaces the very dist the running app
-    # is reading. install-gui.sh is idempotent and skips the build when the
-    # pin and overlay fingerprint already match, so a plain restart stays fast;
-    # deciding what is stale belongs there, not duplicated here.
-    sync_gui_bundle() {
-      [ -f "$INSTALL_GUI" ] || return 0
-      sh "$INSTALL_GUI" --apply
-    }
+    RESTART_GUI="${RUBATO_RESTART_GUI:-$HERE/../t3-integration/restart-gui.sh}"
     RESTART_FAIL=0
     ENGINE_DONE=0
     HUB_DONE=0
@@ -128,106 +110,22 @@ case "${1-}" in
     fi
     # Desktop app last: it connects to the profile engine, so relaunching it
     # before the engine restart would attach it to an engine that is about to
-    # die. The app embeds the T3 server, which loads the bridge
-    # (harness/t3-integration/src/) from the repo at startup — a running app
-    # keeps executing the previous copy until it is relaunched.
-    #
-    # The relaunch is about picking up new source, not about recovering a
-    # connection: the engine reuses its serverId across restarts, so the
-    # bridge's 1s recover() and 5s inventory reattach on their own. The
-    # success line below says so.
-    #
-    # Quit is graceful only (osascript `quit` is the same event as Dock >
-    # Quit, so before-quit handlers flush first). The embedded server owns a
-    # SQLite database; a hard kill risks leaving that inconsistent, so kill
-    # never appears on this path. Relaunch goes through start-gui.sh, the
-    # single launcher — no second way to start the app.
-    #
-    # Detect the main Electron binary, not `Rubato.app` alone. Helper
-    # processes live under Rubato.app/Contents/Frameworks, so the short
-    # pattern keeps matching after the window is gone and the relaunch is
-    # skipped. The embedded T3 server uses the same Contents/MacOS/Electron
-    # path, so waiting on it still covers that child. nohup detaches the
-    # relaunch from this script's process group — otherwise the foreground
-    # job exiting can SIGHUP the new app before it appears.
-    GUI_PROC_PATTERN="${RUBATO_GUI_PROC_PATTERN:-Rubato\\.app/Contents/MacOS/Electron}"
-    GUI_WAIT_MAX="${RUBATO_GUI_WAIT_SECS:-30}"
-    case "$GUI_WAIT_MAX" in
-      ''|*[!0-9]*) GUI_WAIT_MAX=30 ;;
-    esac
-    if [ ! -e "$GUI_APP" ]; then
-      echo "데스크톱 앱이 없어 건너뜁니다."
-    elif ! "$PGREP_BIN" -f "$GUI_PROC_PATTERN" >/dev/null 2>&1; then
-      # A stopped app is not running old code, but its bundle can still be
-      # stale, and nothing else rebuilds it — start-gui.sh only launches.
-      # Bring the bundle up to the pin and leave the app off: `restart` does
-      # not decide that a machine wants a window open.
-      if [ ! -f "$INSTALL_GUI" ]; then
-        echo "데스크톱 앱은 이미 꺼져 있어 건너뜁니다."
-      elif sync_gui_bundle; then
-        echo "데스크톱 앱은 꺼져 있습니다. 번들만 새 코드로 맞췄으니 다음에 켜면 반영됩니다."
-        GUI_DONE=1
-      else
-        echo "데스크톱 앱은 꺼져 있고, 번들을 새 코드로 맞추지도 못했습니다. 켜면 옛 코드입니다 — 손으로: sh \"$INSTALL_GUI\" --apply" >&2
-        RESTART_FAIL=1
-      fi
+    # die. Everything about how the app is stopped, rebuilt and brought back
+    # lives in restart-gui.sh, which `rubato update` calls too — one place, so
+    # the two verbs cannot drift apart. Its exit code says which happened:
+    # 0 did something, 1 tried and failed, 2 no app on this machine.
+    if [ -f "$RESTART_GUI" ]; then
+      # `set -e` is on: capture the status instead of letting a non-zero exit
+      # end the run before the summary line.
+      GUI_STATUS=0
+      sh "$RESTART_GUI" || GUI_STATUS=$?
+      case "$GUI_STATUS" in
+        0) GUI_DONE=1 ;;
+        2) : ;;
+        *) RESTART_FAIL=1 ;;
+      esac
     else
-      GUI_QUIT_OK=1
-      if "$OSASCRIPT_BIN" -e 'tell application "Rubato" to quit' >/dev/null 2>&1; then
-        :
-      elif "$OSASCRIPT_BIN" -e 'tell application id "app.rubato.t3" to quit' >/dev/null 2>&1; then
-        :
-      else
-        GUI_QUIT_OK=0
-      fi
-      if [ "$GUI_QUIT_OK" = 0 ]; then
-        echo "데스크톱 앱에 종료를 요청하지 못했습니다. 옛 코드가 그대로입니다 — 손으로: osascript -e 'tell application \"Rubato\" to quit'" >&2
-        RESTART_FAIL=1
-      else
-        # Wait until the process is actually gone before relaunching — never
-        # assume, the same discipline restart-profile-engine.mjs uses when it
-        # waits for the socket to die instead of assuming.
-        GUI_WAIT=0
-        while "$PGREP_BIN" -f "$GUI_PROC_PATTERN" >/dev/null 2>&1 && [ "$GUI_WAIT" -lt "$GUI_WAIT_MAX" ]; do
-          sleep 1
-          GUI_WAIT=$((GUI_WAIT + 1))
-        done
-        if "$PGREP_BIN" -f "$GUI_PROC_PATTERN" >/dev/null 2>&1; then
-          echo "데스크톱 앱이 종료 요청을 받고도 끝나지 않았습니다. 옛 코드가 그대로입니다 — 다시 켜지 않았습니다. 손으로: osascript -e 'tell application \"Rubato\" to quit'" >&2
-          RESTART_FAIL=1
-        elif [ ! -x "$START_GUI" ]; then
-          echo "데스크톱 앱은 껐지만 다시 켤 진입점이 없습니다 ($START_GUI). 앱은 스스로 돌아오지 않습니다 — 손으로: sh \"$START_GUI\"" >&2
-          RESTART_FAIL=1
-        else
-          # The app is down: the one window where the bundle can be rebuilt.
-          # A failure here is reported but does not hold the app hostage —
-          # relaunching on the old bundle beats leaving the user with nothing.
-          if ! sync_gui_bundle; then
-            echo "핀·overlay 를 다시 얹지 못했습니다. 옛 번들 그대로 다시 켭니다 — 손으로: sh \"$INSTALL_GUI\" --apply" >&2
-            RESTART_FAIL=1
-          fi
-          mkdir -p "$(dirname "$GUI_LOG")" 2>/dev/null || true
-          nohup "$START_GUI" >>"$GUI_LOG" 2>&1 </dev/null &
-          GUI_PID=$!
-          sleep 1
-          GUI_STAT="$(ps -p "$GUI_PID" -o stat= 2>/dev/null || true)"
-          case "$GUI_STAT" in
-            ""|*Z*)
-              if wait "$GUI_PID" 2>/dev/null; then
-                echo "데스크톱 앱을 다시 켰습니다 (바뀐 브리지 코드를 읽습니다)."
-                GUI_DONE=1
-              else
-                echo "데스크톱 앱은 껐지만 다시 켜지지 않았습니다. 앱은 스스로 돌아오지 않습니다 — 손으로: sh \"$START_GUI\" (기록: $GUI_LOG)" >&2
-                RESTART_FAIL=1
-              fi
-              ;;
-            *)
-              echo "데스크톱 앱을 다시 켰습니다 (바뀐 브리지 코드를 읽습니다)."
-              GUI_DONE=1
-              ;;
-          esac
-        fi
-      fi
+      echo "데스크톱 앱이 없어 건너뜁니다."
     fi
     if [ "$ENGINE_DONE" = 0 ] && [ "$HUB_DONE" = 0 ] && [ "$GUI_DONE" = 0 ] && [ "$RESTART_FAIL" = 0 ]; then
       echo "재시작할 것이 없습니다 (프로필 엔진·remote hub·데스크톱 앱 모두 없음)."

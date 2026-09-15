@@ -16,6 +16,8 @@ const installGuiSource = readFileSync(
   fileURLToPath(new URL("../../../t3-integration/install-gui.sh", import.meta.url)),
   "utf8",
 );
+const restartGuiSource = fileURLToPath(new URL("../../../t3-integration/restart-gui.sh", import.meta.url));
+const restartGuiText = readFileSync(restartGuiSource, "utf8");
 const installMacosAppSource = readFileSync(
   fileURLToPath(new URL("../../../t3-integration/install-macos-app.sh", import.meta.url)),
   "utf8",
@@ -131,6 +133,9 @@ function restartHarness(t, { engineToken = "restarted", engineExit = 0, hubPrese
     RUBATO_OSASCRIPT_BIN: fakeOsascript,
     RUBATO_GUI_APP: guiApp,
     RUBATO_START_GUI: fakeStartGui,
+    // The real restart-gui.sh, driven through its own seams: the fixture
+    // exercises the actual quit/rebuild/relaunch code rather than a stand-in.
+    RUBATO_RESTART_GUI: restartGuiSource,
     RUBATO_INSTALL_GUI: installGui ? fakeInstallGui : join(root, "no-install-gui.sh"),
     RUBATO_GUI_LOG: join(root, "gui-restart.log"),
     RUBATO_GUI_WAIT_SECS: "2",
@@ -210,30 +215,23 @@ test("restart states the CLI-reattach consequence next to the engine restart", (
   // a running app no longer rides out the restart — it is quit and relaunched
   // for fresh bridge code, and the app step says so.
   assert.doesNotMatch(launcherText, /T3는 스스로 다시 붙습니다/);
-  assert.match(launcherText, /바뀐 브리지 코드를 읽습니다/);
+  assert.match(restartGuiText, /바뀐 브리지 코드를 읽습니다/);
 });
 
 test("restart quits the app gracefully and relaunches through the single launcher", () => {
-  assert.match(launcherText, /osascript/);
-  assert.match(launcherText, /start-gui\.sh/);
+  // The app is handled in one place now, shared with the updater.
+  assert.match(launcherText, /restart-gui\.sh/);
+  assert.match(restartGuiText, /osascript/);
+  assert.match(restartGuiText, /start-gui\.sh/);
   // Helpers live under Rubato.app/Contents/Frameworks — waiting on the
   // short pattern leaves the relaunch skipped after a successful quit.
-  assert.match(launcherText, /Contents\/MacOS\/Electron/);
-  assert.match(launcherText, /nohup/);
+  assert.match(restartGuiText, /Contents\/MacOS\/Electron/);
+  assert.match(restartGuiText, /nohup/);
   // The embedded server owns SQLite state; a hard kill risks leaving it
-  // inconsistent, so the app path never kills. (The engine comment mentions
-  // kill -9 only to forbid it, so the kill assertions are scoped to the app.)
-  assert.doesNotMatch(launcherText, /killall|pkill/);
-  assert.doesNotMatch(launcherText, /kill "\$GUI_PID"|kill \$GUI_PID/);
-  // Scoped to the desktop-app step: no kill of any form between the quit
-  // request and the relaunch. (The engine comment above mentions kill -9
-  // only to forbid it on the profile-lock path.)
-  const guiStep = launcherText.slice(
-    launcherText.indexOf("# Desktop app last"),
-    launcherText.indexOf("재시작할 것이 없습니다"),
-  );
-  // Comments explain the no-kill rule, so assert on code lines only.
-  const guiCode = guiStep.split("\n").filter((line) => !/^\s*#/.test(line)).join("\n");
+  // inconsistent, so the app path never kills. Comments explain the rule, so
+  // assert on code lines only.
+  assert.doesNotMatch(restartGuiText, /killall|pkill/);
+  const guiCode = restartGuiText.split("\n").filter((line) => !/^\s*#/.test(line)).join("\n");
   assert.doesNotMatch(guiCode, /kill/);
 });
 
@@ -336,13 +334,16 @@ test("restart brings a stopped app's bundle up to the pin without launching it",
   assert.equal(harness.quitCalls(), "");
 });
 
-test("updater GUI step rebuilds on disk without touching the running app", () => {
-  // need_gui routes through install-gui.sh --apply: pin checkout, overlay,
-  // on-disk bundle rebuild, /Applications relink. No quit, kill, or relaunch
-  // of the live process anywhere on that path — so the restart verb's new
-  // app relaunch cannot double-fire from an update. The updater is left alone.
-  assert.match(updateSource, /install-gui\.sh" --apply/);
+test("both verbs reach the app through the one script that owns it", () => {
+  // A rebuilt bundle that nobody relaunches is invisible: the updater used to
+  // stop at the disk and print "다음 세션부터 적용돼요", leaving the running app
+  // on old code. Both verbs now call restart-gui.sh, so quit/rebuild/relaunch
+  // is decided in one place and they cannot drift apart.
+  assert.match(updateSource, /restart-gui\.sh/);
+  assert.match(launcherText, /restart-gui\.sh/);
   assert.match(updateSource, /need_gui/);
+  // The installers stay pure disk work; stopping and starting the app is
+  // restart-gui.sh's job alone.
   for (const source of [installGuiSource, installMacosAppSource]) {
     assert.doesNotMatch(source, /osascript/);
     assert.doesNotMatch(source, /kickstart/);
