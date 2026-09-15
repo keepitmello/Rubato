@@ -85,12 +85,22 @@ build_desktop() {
   )
 }
 
-# 핀과 overlay 소스를 합친 지문. rubato update 가 매번 이 스크립트를 부르므로,
-# 이미 맞는 설치는 다시 빌드하지 않고 지나가야 한다.
+# 핀과 overlay 소스를 합친 지문. rubato update 와 rubato restart 가 매번 이
+# 스크립트를 부르므로, 이미 맞는 설치는 다시 빌드하지 않고 지나가야 한다.
+#
+# 여기에 들어가는 것은 **T3 번들에 컴파일돼 들어가는 것뿐**이다. src/ 는 아니다:
+# 브리지(src/bridge.mjs 등)는 번들에 들어가지 않고, 앱이 켜질 때
+# write-gui-settings.mjs 가 적어둔 절대경로로 레포에서 곧장 import 된다
+# (overlay/apps/server/src/provider/Drivers/RubatoPiDriver.ts 의
+# `import(config.bridgeModule)`). 그래서 브리지를 고쳤을 때 필요한 것은 앱을 껐다
+# 켜는 것뿐인데, 예전에는 src/ 가 이 지문에 섞여 있어서 한 줄만 고쳐도 데스크톱
+# 전체 빌드가 돌았다 — 결과 번들은 한 바이트도 달라지지 않는데.
+#
+# 이 식이 바뀌었으므로 기존 설치는 한 번 더 빌드하고, 그 다음부터 짧아진다.
 build_fingerprint() {
   {
     printf '%s\n' "$PIN"
-    find "$HERE/overlay" "$HERE/src" -type f -exec shasum -a 256 {} + 2>/dev/null | sort
+    find "$HERE/overlay" -type f -exec shasum -a 256 {} + 2>/dev/null | sort
     shasum -a 256 "$HERE/apply.mjs" "$HERE/write-gui-settings.mjs" 2>/dev/null
     shasum -a 256 "$HERE/../../rubato-codex/macos/Rubato.png" "$HERE/../../rubato-codex/macos/Rubato.icns" 2>/dev/null
   } | shasum -a 256 | cut -d' ' -f1

@@ -35,6 +35,11 @@ function dispatcherHarness(t) {
   const launcher = join(scripts, "rubato-pi.sh");
   copyFileSync(launcherSource, launcher);
   chmodSync(launcher, 0o755);
+  // `restart` sources this for its progress line and result shapes.
+  copyFileSync(
+    fileURLToPath(new URL("../../../scripts/rubato-progress.sh", import.meta.url)),
+    join(scripts, "rubato-progress.sh"),
+  );
 
   const argsPath = join(root, "engine-args.txt");
   const stdinPath = join(root, "engine-stdin.txt");
