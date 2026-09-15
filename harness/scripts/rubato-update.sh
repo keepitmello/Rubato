@@ -79,17 +79,21 @@ gui_broken() {
 }
 # 공식 GUI 는 받아온 커밋이 아니라 핀 + overlay 로 만들어진 산출물이다. 그래서
 # 원격에서 받을 것이 없어도 어긋난다 — 이 머신에서 핀이나 overlay 를 고친 경우가
-# 그렇고, 그때 "이미 최신입니다" 로 끝나면 고친 사람이 손으로 install-gui.sh 를
-# 찾아 쳐야 한다. 무엇이 stale 한지는 install-gui.sh 가 핀·overlay 지문으로
-# 이미 판단하고 맞으면 빌드 없이 지나가므로, 여기서 그 판단을 다시 만들지 않고
-# 설치돼 있으면 그냥 부른다. 판단의 정본은 한 곳에 둔다.
+# 그렇고, 그때 "이미 최신입니다" 로 끝나면 고친 사람이 손으로 설치 스크립트를
+# 찾아 쳐야 한다. 앱을 끄고·다시 만들고·켜는 일은 restart-gui.sh 가 전부 쥐고
+# 있고 `rubato restart` 도 같은 것을 부른다. 여기서 흉내내지 않는다 — 두 동사가
+# 갈라지는 자리가 그동안 여기였다.
 sync_gui() {
   gui_installed || return 0
   if gui_broken; then
     warn "공식 GUI 설치가 깨져 있습니다. 다시 맞춥니다."
   fi
-  sh "$HARNESS/t3-integration/install-gui.sh" --apply \
-    || fail "공식 GUI를 맞추지 못했습니다."
+  gui_status=0
+  sh "$HARNESS/t3-integration/restart-gui.sh" || gui_status=$?
+  case "$gui_status" in
+    0|2) : ;;
+    *) fail "공식 GUI를 맞추지 못했습니다." ;;
+  esac
 }
 
 # --check 는 세션을 띄울 때마다 돌아서 매번 fetch 한다. 보통 0.5초.
@@ -195,7 +199,7 @@ echo "  번들 스킬 → ~/.agents/skills"
 [ "$need_aside" = 1 ]   && echo "  Aside 프록시 재시작"
 [ "$need_hub" = 1 ]     && echo "  remote hub 재시작"
 [ "$need_profile" = 1 ] && echo "  프로필 엔진 재시작 ${DIM}(열린 CLI는 다시 붙여야 해요)${RST}"
-[ "$need_gui" = 1 ]     && echo "  공식 GUI (핀된 T3 + overlay + Rubato.app)"
+[ "$need_gui" = 1 ]     && echo "  공식 GUI (핀된 T3 + overlay + Rubato.app) ${DIM}(켜져 있으면 껐다 켭니다)${RST}"
 [ "$need_deps$need_prompts$need_extensions$need_engine$need_shell$need_aside$need_hub$need_profile$need_candidate$need_gui" = "0000000000" ] && echo "  ${DIM}그 외는 소스만 받으면 돼요${RST}"
 
 # 로컬 수정이 있어도 멈추지 않는다.
@@ -508,12 +512,13 @@ if [ "$need_profile" = 1 ]; then
 fi
 
 if [ "$need_gui" = 1 ]; then
-  if sh "$HARNESS/t3-integration/install-gui.sh" --apply; then
-    ok "공식 GUI를 핀에 맞췄습니다"
-  else
-    fail "공식 GUI 갱신에 실패했습니다. 소스는 받았지만 업데이트는 완료되지 않았습니다."
-  fi
+  gui_status=0
+  sh "$HARNESS/t3-integration/restart-gui.sh" || gui_status=$?
+  case "$gui_status" in
+    0|2) : ;;
+    *) fail "공식 GUI 갱신에 실패했습니다. 소스는 받았지만 업데이트는 완료되지 않았습니다." ;;
+  esac
 fi
 
 date +%s > "$STAMP"
-printf '\n%s✓%s 업데이트를 마쳤습니다. %s다음 세션부터 적용돼요.%s\n\n' "$GRN" "$RST" "$DIM" "$RST"
+printf '\n%s✓%s 업데이트를 마쳤습니다. %s열린 CLI 터미널은 다시 붙여야 해요.%s\n\n' "$GRN" "$RST" "$DIM" "$RST"
