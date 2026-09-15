@@ -68,6 +68,9 @@ export const versions = Object.fromEntries(["typebox", "@babel/parser"].map(name
   ({ session } = await sdk.createAgentSession({ cwd, agentDir, settingsManager, resourceLoader, sessionManager: sdk.SessionManager.inMemory(cwd) }));
   const errors = [];
   await session.bindExtensions({ onError: (error) => errors.push(error) });
+  // MCP attaches in the background on session_start; before_agent_start is the
+  // seam that awaits it, and every real turn passes through there.
+  await session.extensionRunner.emit({ type: "before_agent_start" });
   const markerCount = async (marker) => (await readFile(markerPath, "utf8")).split("\n").filter((line) => line === marker).length;
   const tool = () => session.getToolDefinition("mcp__composition_echo");
   const first = tool();
@@ -80,6 +83,8 @@ export const versions = Object.fromEntries(["typebox", "@babel/parser"].map(name
 
   veto = false;
   assert.deepEqual(await session.reload(), { cancelled: false });
+  // reload replays session_start, so the re-attach is in the background again.
+  await session.extensionRunner.emit({ type: "before_agent_start" });
   assert.notEqual(tool(), first);
   assert.equal(await markerCount("initialized"), 2);
   assert.equal(await markerCount("exit"), 1);
