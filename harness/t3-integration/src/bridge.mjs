@@ -3,6 +3,7 @@ import { readDescriptor } from '../../pi-server/src/descriptor.mjs';
 import { ensureProfileEngine } from '../../pi-server/src/discovery.mjs';
 import { EventProjection, importedId, messageKey, textOf } from './events.mjs';
 import { applySelectionOptions, catalogForPicker } from './model-catalog-order.mjs';
+import { controlCommandFor, rewriteSkillMentions, surfaceFromPiCommands } from './commands.mjs';
 import { readFile } from 'node:fs/promises';
 import { readFileSync, readdirSync, statSync, realpathSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -81,6 +82,7 @@ export class RubatoPiBridge {
     shows = userStartedSession }) {
     Object.assign(this, { descriptorPath, instanceId, emit, onError, projectedMessages, shows });
     this.sessions = new Map(); this.openings = new Map(); this.catalogues = new Map(); this.claimed = new Set(); this.closed = false;
+    this.skillNames = new Set();
     this.retryTimer = setInterval(() => { void this.recover().catch(onError); }, 1000);
     this.retryTimer.unref?.();
   }
@@ -120,7 +122,10 @@ export class RubatoPiBridge {
     if (cached && Date.now() - cached.at < 60000) return cached.value;
     const pending = (async () => {
       const raw = await this.viaInventory((client) => client.catalogue(cwd));
-      return { ...raw, models: catalogForPicker(raw.models ?? [], raw.model) };
+      const surface = surfaceFromPiCommands(raw.commands ?? []);
+      this.skillNames = surface.skillNames;
+      return { ...raw, models: catalogForPicker(raw.models ?? [], raw.model),
+        slashCommands: surface.slashCommands, skills: surface.skills };
     })();
     this.catalogues.set(cwd, { at: Date.now(), value: pending });
     try { return await pending; } catch (error) { this.catalogues.delete(cwd); throw error; }
@@ -297,23 +302,51 @@ export class RubatoPiBridge {
       if (!input.input?.trim() && images.length === 0) throw new Error('A non-empty prompt is required');
       if (input.interactionMode === 'plan') throw new Error('T3 plan mode is not mapped to Rubato policy');
       if (input.modelSelection) await this.selectModel(context, input.modelSelection);
+      const message = rewriteSkillMentions(input.input ?? '', this.skillNames);
+      const control = controlCommandFor(message);
       const running = context.session.status === 'running';
+      if (control && running) throw new Error(`Interrupt the current turn before /${control.name}`);
       const turnId = context.projection.begin();
       context.session.status = 'running'; this.stateEvent(context);
       try {
-        await context.client.command({
-          type: running ? 'steer' : 'prompt',
-          message: input.input ?? '',
-          ...(images.length ? { images } : {}),
-        });
+        if (control) {
+          context.projection.sawCompaction = false;
+          await context.client.command(control.rpc);
+          this.reportControl(context, control);
+        } else {
+          await context.client.command({
+            type: running ? 'steer' : 'prompt',
+            message,
+            ...(images.length ? { images } : {}),
+          });
+        }
       }
       catch (error) {
         if (!running) { context.projection.failed = true; context.projection.settle(); context.session.status = 'ready'; this.stateEvent(context); }
         throw error;
       }
+      if (control) { context.projection.settle(); context.session.status = 'ready'; this.stateEvent(context); }
       return { threadId: input.threadId, turnId, resumeCursor: context.session.resumeCursor };
     });
     context.queue = operation.catch(() => {}); return operation;
+  }
+  reportControl(context, control) {
+    if (control.name === 'name') context.projection.event('thread.metadata.updated', { name: control.args });
+    if (control.name === 'compact' && !context.projection.sawCompaction)
+      context.projection.event('thread.state.changed', { state: 'compacted' });
+  }
+  compact(threadId, customInstructions) {
+    const context = this.require(threadId);
+    const operation = context.queue.then(async () => {
+      if (context.stopped) throw new Error('Attachment closed before compact');
+      if (context.session.status === 'running') throw new Error('Interrupt the current turn before compacting');
+      context.projection.sawCompaction = false;
+      await context.client.command({ type: 'compact', ...(customInstructions ? { customInstructions } : {}) });
+      if (!context.projection.sawCompaction)
+        context.projection.event('thread.state.changed', { state: 'compacted' });
+    });
+    context.queue = operation.catch(() => {});
+    return operation;
   }
   async interruptTurn(threadId) {
     const context = this.require(threadId); context.projection.interrupted = true;

@@ -276,3 +276,84 @@ test('rewinding a Rubato thread forks Pi history, rebinds the live session, and 
   assert.equal(service.host.getSessionWorker(live.resumeCursor.sessionId)?.metadata.id, live.resumeCursor.sessionId);
   assert.equal(service.host.getSessionWorker(originalId), undefined, 'host kept the worker keyed on the abandoned session');
 });
+
+test('catalogue lists Rubato control commands and hides TUI duplicates', async (t) => {
+  const { root, bridge } = await setup(t);
+  const catalogue = await bridge.catalogue(root);
+  assert.deepEqual(catalogue.slashCommands.map((item) => item.name), ['compact', 'name', 'reload']);
+  assert.equal(catalogue.skills.length, 0);
+  assert.equal(catalogue.slashCommands.some((item) => item.name === 'model' || item.name === 'fork'), false);
+});
+
+test('an extension command typed as composer text still reaches Pi as a prompt', async (t) => {
+  const { root, events, bridge } = await setup(t);
+  await bridge.startSession({ threadId:'ext-thread', runtimeMode:'full-access', cwd:root });
+  const context = bridge.sessions.get('ext-thread');
+  const calls = [];
+  const original = context.client.command.bind(context.client);
+  context.client.command = async (command) => { calls.push(command); return original(command); };
+  await bridge.sendTurn({ threadId:'ext-thread', input:'/audit now' });
+  assert.equal(calls.at(-1).type, 'prompt');
+  assert.equal(calls.at(-1).message, '/audit now');
+  await until(() => events.some((event) => event.type==='turn.completed'));
+});
+
+test('a control command typed as composer text becomes its RPC command and T3 is told', async (t) => {
+  const { root, events, bridge } = await setup(t);
+  await bridge.startSession({ threadId:'ctl-thread', runtimeMode:'full-access', cwd:root });
+  const context = bridge.sessions.get('ctl-thread');
+  const calls = [];
+  const original = context.client.command.bind(context.client);
+  context.client.command = async (command) => {
+    calls.push(command);
+    if (command.type === 'compact' || command.type === 'reload') return { ok: true };
+    return original(command);
+  };
+  await bridge.sendTurn({ threadId:'ctl-thread', input:'/compact keep the plan' });
+  assert.deepEqual(calls.filter((command) => command.type !== 'get_state'), [
+    { type: 'compact', customInstructions: 'keep the plan' },
+  ]);
+  assert.ok(events.some((event) => event.type==='thread.state.changed' && event.payload.state==='compacted'));
+  calls.length = 0;
+  await bridge.sendTurn({ threadId:'ctl-thread', input:'/name Rewound' });
+  assert.deepEqual(calls.filter((command) => command.type === 'set_session_name'), [{ type: 'set_session_name', name: 'Rewound' }]);
+  assert.ok(events.some((event) => event.type==='thread.metadata.updated' && event.payload.name==='Rewound'));
+});
+
+test('a $skill chip is rewritten to /skill:name so Pi expands it', async (t) => {
+  const { root, events, bridge } = await setup(t);
+  await bridge.startSession({ threadId:'skill-thread', runtimeMode:'full-access', cwd:root });
+  bridge.skillNames = new Set(['ship-it']);
+  const context = bridge.sessions.get('skill-thread');
+  const calls = [];
+  const original = context.client.command.bind(context.client);
+  context.client.command = async (command) => { calls.push(command); return original(command); };
+  await bridge.sendTurn({ threadId:'skill-thread', input:'$ship-it the patch' });
+  assert.equal(calls.at(-1).type, 'prompt');
+  assert.equal(calls.at(-1).message, '/skill:ship-it the patch');
+  await until(() => events.some((event) => event.type==='turn.completed'));
+});
+
+test('native compact issues the compact RPC and reports compacted to T3', async (t) => {
+  const { root, events, bridge } = await setup(t);
+  await bridge.startSession({ threadId:'cmp-thread', runtimeMode:'full-access', cwd:root });
+  const context = bridge.sessions.get('cmp-thread');
+  const calls = [];
+  const original = context.client.command.bind(context.client);
+  context.client.command = async (command) => {
+    calls.push(command);
+    if (command.type === 'compact') return { ok: true };
+    return original(command);
+  };
+  await bridge.compact('cmp-thread');
+  assert.deepEqual(calls.filter((command) => command.type !== 'get_state'), [{ type: 'compact' }]);
+  assert.ok(events.some((event) => event.type==='thread.state.changed' && event.payload.state==='compacted'));
+});
+
+test('compaction_end from Pi is thread.state.changed compacted', () => {
+  const events=[]; const p=new EventProjection({threadId:'thread',sessionId:'session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
+  p.project({type:'compaction_end', reason:'manual', aborted:false});
+  assert.equal(events.some((event) => event.type==='thread.state.changed' && event.payload.state==='compacted'), true);
+  p.project({type:'compaction_end', reason:'manual', aborted:true});
+  assert.equal(events.filter((event) => event.type==='thread.state.changed').length, 1);
+});

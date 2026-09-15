@@ -81,3 +81,38 @@ test('T3 adapter rollback forks the Pi session and returns an updated resume cur
     assert.deepEqual(users, ['first']);
   })));
 });
+
+test('provider snapshot carries Rubato commands and skills in the T3 schema', {skip: !process.env.T3_SOURCE}, async (t) => {
+  const source = process.env.T3_SOURCE;
+  const modules = t3Modules(source);
+  const Effect = await modules.effect('Effect');
+  const Schema = await modules.effect('Schema');
+  const { RubatoPiDriver, rubatoBridgeFor } = await modules.source('apps/server/src/provider/Drivers/RubatoPiDriver.ts');
+  const { ProviderInstanceId, ServerProvider } = await modules.source('packages/contracts/src/index.ts');
+  const decodeSnapshot = Schema.decodeUnknownSync(ServerProvider);
+  const root = await mkdtemp(path.join(tmpdir(), 'rb-driver-cmds-'));
+  const server = await serveProfile({agentDir:root, workerFactory:(metadata) => new RpcWorker(metadata,{cliPath:fixture})});
+  t.after(async () => { await server.close(); await rm(root,{recursive:true,force:true}); });
+  await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const instance = yield* RubatoPiDriver.create({instanceId:ProviderInstanceId.make('rubato-cmds'), displayName:undefined,
+      environment:[],enabled:true,config:{bridgeModule:fileURLToPath(new URL('../src/bridge.mjs',import.meta.url)),descriptorPath:server.descriptorPath,catalogueCwd:root}});
+    const first = yield* instance.snapshot.getSnapshot;
+    assert.deepEqual(first.slashCommands.map((item) => item.name), ['compact', 'name', 'reload']);
+    assert.equal(first.slashCommands.some((item) => item.name === 'model' || item.name === 'fork'), false);
+    assert.equal(instance.adapter.compaction?.type, 'native');
+    const bridge = rubatoBridgeFor(instance);
+    bridge.catalogue = async () => ({
+      models: [], model: null,
+      slashCommands: first.slashCommands.concat([{ name: 'audit', description: 'Run an audit' }]),
+      skills: [{ name: 'ship-it', description: 'Ship the change', path: `${root}/SKILL.md`, enabled: true,
+        displayName: 'ship-it', shortDescription: 'Ship the change' }],
+    });
+    const snapshot = decodeSnapshot(yield* instance.snapshotForCwd(root));
+    assert.ok(snapshot.slashCommands.some((item) => item.name === 'compact'));
+    assert.ok(snapshot.slashCommands.some((item) => item.name === 'audit'));
+    assert.equal(snapshot.skills[0].name, 'ship-it');
+    assert.equal(snapshot.skills[0].enabled, true);
+    assert.equal(snapshot.workspaceSnapshots[0].cwd, root);
+    assert.equal(snapshot.workspaceSnapshots[0].skills[0].name, 'ship-it');
+  })));
+});
