@@ -129,13 +129,18 @@ export function patchAnthropicMessagesServerCompaction(source) {
                         };
                         output.content.push(block);
                     }`;
-  if (!next.includes("    return paired;\n}\nfunction convertMessages(") || !next.includes(nativeElse)) {
+  // Compaction-only staging is legitimate: without the media-tools native
+  // adapter there is no providerNative lane to extend, so the params seam is
+  // the whole job. Anything past this point must land, and replaceOnce says so
+  // out loud - a silently skipped adapter is how server compaction stayed off
+  // on stock 0.85.1 after upstream moved the helper insertion point.
+  if (!next.includes(nativeElse)) {
     return next;
   }
   const modelIdsLiteral = JSON.stringify([...ANTHROPIC_SERVER_COMPACTION_MODEL_IDS]);
   next = replaceOnce(
     next,
-    "    return paired;\n}\nfunction convertMessages(",
+    "    return paired;\n}\n",
     `    return paired;
 }
 function applyAnthropicCompactionUsage(usage, rawUsage) {
@@ -204,7 +209,7 @@ function lastReplayableAnthropicCompactionCut(messages, model) {
 function shouldOmitThinkingBeforeCompaction(cut, messageIndex, blockIndex) {
     return !!cut && (messageIndex < cut.messageIndex || (messageIndex === cut.messageIndex && blockIndex < cut.blockIndex));
 }
-function convertMessages(`,
+`,
     "anthropic-compaction-helpers",
   );
   next = replaceOnce(
@@ -342,13 +347,7 @@ function convertMessages(`,
     next,
     `                else if (block.type === "providerNative") {
                     const raw = block.raw;
-                    if (model &&
-                        msg.provider === model.provider &&
-                        msg.api === model.api &&
-                        msg.model === model.id &&
-                        typeof raw === "object" && raw !== null &&
-                        typeof raw.type === "string" &&
-                        REPLAYABLE_ANTHROPIC_PROVIDER_NATIVE_TYPES.has(raw.type)) {`,
+                    if (model &&`,
     `                else if (block.type === "providerNative") {
                     const raw = block.raw;
                     if (block.subtype === "compaction" && raw && typeof raw === "object" && raw.type === "compaction") {
@@ -359,13 +358,10 @@ function convertMessages(`,
                             blocks.push({ type: "compaction", content });
                         }
                     }
-                    else if (model &&
-                        msg.provider === model.provider &&
-                        msg.api === model.api &&
-                        msg.model === model.id &&
-                        typeof raw === "object" && raw !== null &&
-                        typeof raw.type === "string" &&
-                        REPLAYABLE_ANTHROPIC_PROVIDER_NATIVE_TYPES.has(raw.type)) {`,
+                    // Only the head of media-tools' replay guard is matched:
+                    // its condition keeps growing (web-search replay, e12ce4f2e)
+                    // and copying the whole thing here made this patch stale.
+                    else if (model &&`,
     "anthropic-compaction-replay",
   );
   return next + serverCompactionMarkerStatement(ANTHROPIC_SERVER_COMPACTION_ADAPTER_MARKER);

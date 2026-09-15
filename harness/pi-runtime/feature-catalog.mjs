@@ -11,11 +11,15 @@ const catalog = Object.freeze({
   "tool-search": { requires: ["tool-execution"], load: () => import("./features/tool-search/patches.mjs") },
   "extension-rpc": { requires: [], load: () => import("./features/extension-rpc/patches.mjs") },
   "session-transport": { requires: ["extension-rpc"], load: () => import("./features/session-transport/patches.mjs") },
+  // session-picker must reach dist/cli/session-picker.js before session-ui:
+  // session-ui only wires its close hook into finish() when the picker has
+  // already introduced it, and otherwise inserts a line that breaks the
+  // picker's own anchor. Catalog order is the staging order.
+  "session-catalog": { requires: [], load: () => import("./features/session-catalog/patches.mjs") },
+  "session-picker": { requires: ["session-catalog"], load: () => import("./features/session-picker/patches.mjs") },
   "session-ui": { requires: ["session-transport"], load: () => import("./features/session-ui/patches.mjs") },
   "request-run": { requires: ["input-lifecycle", "abort-provenance"], load: () => import("./features/request-run/patches.mjs") },
   "mcp-producers": { requires: ["mcp"], load: async () => (await import("./features/mcp-producers/feature.mjs")).mcpProducersFeature },
-  "session-catalog": { requires: [], load: () => import("./features/session-catalog/patches.mjs") },
-  "session-picker": { requires: ["session-catalog"], load: () => import("./features/session-picker/patches.mjs") },
   "session-title": { requires: [], load: async () => (await import("./features/session-title/feature.mjs")).sessionTitleFeature },
  "adapter-hooks": { requires: [], load: async () => (await import("./features/adapter-hooks/feature.mjs")).adapterHooksFeature },
   "parity-gaps": { requires: [], load: () => import("./features/parity-gaps/feature.mjs") },
