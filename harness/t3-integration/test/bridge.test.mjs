@@ -121,10 +121,11 @@ test('a subagent spawn is a collab agent item with the mobile task lifecycle', (
   assert.equal(startedItem.payload.title, 'Subagent task');
   assert.equal(startedItem.payload.detail, 'Audit auth');
   const started = events.find((event) => event.type==='task.started');
-  assert.equal(typeof started?.payload.taskId, 'string');
+  assert.equal(started?.payload.taskId, 'st_1');
   assert.equal(started.payload.agentKind, 'agent');
   assert.equal(started.payload.taskType, 'subagent');
-  assert.equal(started.payload.description, 'Audit auth');
+  assert.equal(started.payload.title, 'Audit auth');
+  assert.equal(started.payload.description, undefined);
   assert.equal(started.payload.toolUseId, 'spawn-1');
   const progress = events.find((event) => event.type==='task.progress' && event.payload.lastToolName);
   assert.ok(progress, 'mobile spawn batch has no task.progress tick');
@@ -144,7 +145,8 @@ test('a subagent spawn is a collab agent item with the mobile task lifecycle', (
   assert.ok(events.some((event) => event.type==='item.started' && event.payload.itemType==='collab_agent_tool_call' && event.payload.title==='Team'));
   const member = events.find((event) => event.type==='task.started' && event.payload.taskId==='st_alpha');
   assert.equal(member?.payload.agentKind, 'agent');
-  assert.equal(member.payload.description, 'Ship the patch');
+  assert.equal(member.payload.title, 'Ship the patch');
+  assert.equal(member.payload.description, undefined);
   p.project({type:'extension_event', name:'rubato.task.updated', data:{ parent_session_id:'session', tasks:[{
     task_id:'st_1', task_summary:'Audit auth', status:'running',
     live_progress:{ activity:'Audit auth · running grep TODO', started_at:2000, current_tool:'grep TODO',
@@ -152,9 +154,14 @@ test('a subagent spawn is a collab agent item with the mobile task lifecycle', (
   }]}});
   const live = events.filter((event) => event.type==='task.progress' && event.payload.lastToolName==='grep TODO');
   assert.equal(live.length, 1);
-  assert.equal(live[0].payload.taskId, started.payload.taskId, 'live tick must keep the spawn taskId, not the child id');
-  assert.equal(live[0].payload.description, 'Audit auth · running grep TODO');
+  assert.equal(live[0].payload.taskId, started.payload.taskId, 'live tick must keep the child taskId');
+  assert.equal(live[0].payload.taskId, 'st_1');
+  assert.equal(live[0].payload.lastToolName, 'grep TODO');
+  assert.equal(live[0].payload.summary, 'found three');
+  assert.equal(live[0].payload.description, 'found three');
   assert.equal(live[0].payload.agentKind, 'agent');
+  assert.equal(live[0].payload.description.includes('Speed'), false);
+  assert.equal(live[0].payload.description.includes('$'), false);
   p.project({type:'tool_execution_end', toolName:'AgentCancel', toolCallId:'cancel-1', args:{agentId:'st_1'}, result:{details:{agentId:'st_1', status:'cancelled'}}});
   assert.ok(events.some((event) => event.type==='task.completed' && event.payload.taskId===started.payload.taskId && event.payload.status==='stopped'));
 });
@@ -179,7 +186,9 @@ test('a team member tick updates that member only, and one finish does not compl
   }]}});
   const ticks = events.slice(before).filter((event) => event.type==='task.progress');
   assert.deepEqual(ticks.map((event) => event.payload.taskId), ['st_alpha']);
-  assert.equal(ticks[0].payload.description, 'Ship the patch · running bash git status');
+  assert.equal(ticks[0].payload.lastToolName, 'bash git status');
+  assert.equal(ticks[0].payload.description, 'bash git status');
+  assert.equal(ticks[0].payload.description.includes('Speed'), false);
   assert.equal(events.slice(before).some((event) => event.type==='task.progress' && event.payload.taskId==='st_beta'), false);
   assert.equal(events.slice(before).some((event) => event.payload.taskId===teamId && event.type==='task.completed'), false);
   p.project({type:'extension_event', name:'rubato.task.updated', data:{ parent_session_id:'session', tasks:[{
@@ -195,6 +204,87 @@ test('a team member tick updates that member only, and one finish does not compl
   const teamDone = events.filter((event) => event.type==='task.completed' && event.payload.taskId===teamId);
   assert.equal(teamDone.length, 1);
   assert.equal(teamDone[0].payload.status, 'completed');
+});
+
+test('a real Agent tool_execution_end payload opens one child row, and a tick emits task.progress', () => {
+  const events=[]; const p=new EventProjection({threadId:'thread',sessionId:'session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
+  p.project({type:'agent_start'});
+  p.project({type:'tool_execution_start', toolName:'Agent', toolCallId:'toolu_spawn', args:{summary:'Audit auth', prompt:'Inspect auth'}});
+  assert.equal(events.filter((event) => event.type==='task.started').length, 0, 'start must wait for agentId');
+  // Shape taken from the live JSONL toolResult for Agent (content + details.agentId).
+  p.project({type:'tool_execution_end', toolName:'Agent', toolCallId:'toolu_spawn', isError:false,
+    result:{content:[{type:'text', text:'Started agent Audit auth (st_01a0a358, running).'}],
+      details:{agentId:'st_01a0a358', status:'running', mode:'spawn', task_summary:'Audit auth', name:'st_01a0a358',
+        execution_mode:'in-process', model:'xai/grok-4.6'}}});
+  const started = events.filter((event) => event.type==='task.started');
+  assert.equal(started.length, 1);
+  assert.equal(started[0].payload.taskId, 'st_01a0a358');
+  assert.equal(started[0].payload.toolUseId, 'toolu_spawn');
+  assert.equal(started[0].payload.title, 'Audit auth');
+  assert.equal(started[0].payload.description, undefined);
+  const before = events.length;
+  p.project({type:'extension_event', name:'rubato.task.updated', data:{ parent_session_id:'session', tasks:[{
+    task_id:'st_01a0a358', task_summary:'Audit auth', status:'running', model:'xai/grok-4.6',
+    live_progress:{ activity:'Audit auth · model:xai/grok-4.6 · turn 13 (18 tools) · running · $0.0000 · Speed 488',
+      started_at:2000, current_tool:'read src/foo.ts', last_assistant_line:'looking at middleware', turns:13, tool_calls:18,
+      total_tokens:1200, output_tokens:80 },
+  }]}});
+  const ticks = events.slice(before).filter((event) => event.type==='task.progress');
+  assert.equal(ticks.length, 1, 'a running snapshot must emit task.progress');
+  assert.equal(ticks[0].payload.taskId, 'st_01a0a358');
+  assert.equal(ticks[0].payload.lastToolName, 'read src/foo.ts');
+  assert.equal(ticks[0].payload.summary, 'looking at middleware');
+  assert.equal(ticks[0].payload.description, 'looking at middleware');
+  assert.equal(ticks[0].payload.status, 'running');
+  assert.equal(ticks[0].payload.title, 'Audit auth');
+  assert.equal(JSON.stringify(ticks[0].payload).includes('Speed 488'), false);
+  assert.equal(JSON.stringify(ticks[0].payload).includes('$0.0000'), false);
+  assert.equal(ticks[0].payload.typedUsage?.totalTokens, 1200);
+  assert.equal(events.filter((event) => event.type==='task.started').length, 1);
+});
+
+test('a snapshot that arrives before spawn-ack still opens only one row', () => {
+  const events=[]; const p=new EventProjection({threadId:'thread',sessionId:'session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
+  p.project({type:'agent_start'});
+  p.project({type:'tool_execution_start', toolName:'Agent', toolCallId:'toolu_spawn', args:{summary:'Audit auth'}});
+  p.project({type:'extension_event', name:'rubato.task.updated', data:{ parent_session_id:'session', tasks:[{
+    task_id:'st_01a0a358', task_summary:'Audit auth', status:'running', model:'xai/grok-4.6',
+  }]}});
+  p.project({type:'tool_execution_end', toolName:'Agent', toolCallId:'toolu_spawn', isError:false,
+    result:{content:[{type:'text', text:'Started'}], details:{agentId:'st_01a0a358', status:'running', task_summary:'Audit auth', model:'xai/grok-4.6'}}});
+  const started = events.filter((event) => event.type==='task.started');
+  assert.equal(started.length, 1);
+  assert.equal(started[0].payload.taskId, 'st_01a0a358');
+  p.project({type:'extension_event', name:'rubato.task.updated', data:{ parent_session_id:'session', tasks:[{
+    task_id:'st_01a0a358', task_summary:'Audit auth', status:'running',
+    live_progress:{ current_tool:'read src/foo.ts', last_assistant_line:'looking at middleware', started_at:1 },
+  }]}});
+  const tick = events.find((event) => event.type==='task.progress' && event.payload.lastToolName==='read src/foo.ts');
+  assert.equal(tick.payload.taskId, 'st_01a0a358');
+  assert.equal(tick.payload.toolUseId, 'toolu_spawn');
+});
+
+test('a resync snapshot does not grow the task.started row count', () => {
+  const events=[]; const p=new EventProjection({threadId:'thread',sessionId:'session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
+  p.project({type:'agent_start'});
+  p.project({type:'tool_execution_end', toolName:'Agent', toolCallId:'toolu_spawn', isError:false,
+    result:{content:[{type:'text', text:'Started'}], details:{agentId:'st_live', status:'running', task_summary:'Audit auth', model:'fixture/model'}}});
+  const snapshot = {type:'extension_event', name:'rubato.task.updated', data:{ parent_session_id:'session', tasks:[{
+    task_id:'st_live', task_summary:'Audit auth', status:'running', model:'fixture/model',
+    live_progress:{ activity:'Audit auth · running read src/foo.ts', started_at:2000,
+      current_tool:'read src/foo.ts', last_assistant_line:'looking at middleware', turns:1, tool_calls:1 },
+  }]}};
+  p.project(snapshot);
+  const starts = events.filter((event) => event.type==='task.started').length;
+  const progress = events.filter((event) => event.type==='task.progress').length;
+  assert.equal(starts, 1);
+  assert.ok(progress >= 1, 'tick must produce task.progress');
+  // synchronize() replays the snapshot without reset(); maps persist, so a second
+  // announcement of the same running child must not open another start row.
+  p.project(snapshot);
+  p.project(snapshot);
+  assert.equal(events.filter((event) => event.type==='task.started').length, starts);
+  assert.equal(new Set(events.filter((event) => event.type==='task.started').map((event) => event.payload.taskId)).size, 1);
 });
 
 test('reconnect does not append a full answer over text already projected or still in flight', () => {
@@ -239,13 +329,15 @@ test('a live child tick on rubato.task.updated reaches T3 as task.progress', asy
   const { root, events, bridge } = await setup(t);
   await bridge.startSession({ threadId:'tick-thread', runtimeMode:'full-access', cwd:root });
   await bridge.sendTurn({ threadId:'tick-thread', input:'task-tick' });
-  await until(() => events.some((event) => event.type==='task.progress' && typeof event.payload?.description==='string' && event.payload.description.includes('running read')));
-  const progress = events.find((event) => event.type==='task.progress' && event.payload.description.includes('running read'));
+  await until(() => events.some((event) => event.type==='task.progress' && event.payload?.lastToolName==='read src/foo.ts'));
+  const progress = events.find((event) => event.type==='task.progress' && event.payload.lastToolName==='read src/foo.ts');
   assert.equal(typeof progress.payload.taskId, 'string');
   assert.ok(progress.payload.taskId.length > 0);
   assert.equal(progress.payload.agentKind, 'agent');
   assert.equal(progress.payload.lastToolName, 'read src/foo.ts');
-  assert.match(progress.payload.description, /Audit auth · running read src\/foo\.ts/);
+  assert.equal(progress.payload.summary, 'looking at middleware');
+  assert.equal(progress.payload.description.includes('Speed'), false);
+  assert.equal(progress.payload.description.includes('$0'), false);
 });
 
 test('rewinding a Rubato thread forks Pi history, rebinds the live session, and keeps the next prompt on that cursor', async (t) => {
