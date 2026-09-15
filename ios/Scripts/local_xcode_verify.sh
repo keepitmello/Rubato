@@ -23,6 +23,7 @@ xcodebuild \
   -scheme RubatoChatDemo \
   -configuration Debug \
   -destination "$DESTINATION" \
+  ONLY_ACTIVE_ARCH=YES \
   CODE_SIGNING_ALLOWED=NO \
   clean build
 
@@ -31,5 +32,6 @@ xcodebuild \
   -scheme RubatoChatDemo \
   -configuration Debug \
   -destination "$DESTINATION" \
+  ONLY_ACTIVE_ARCH=YES \
   CODE_SIGNING_ALLOWED=NO \
   test
