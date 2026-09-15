@@ -243,8 +243,12 @@ export class EventProjection {
       this.event('item.completed', { itemType: 'assistant_message',
         status: message.stopReason === 'error' ? 'failed' : 'completed', ...(detail ? { detail } : {}) }, { itemId });
       this.completed.add(itemId);
-      if (message.stopReason === 'error') this.failed = true;
-      if (message.stopReason === 'aborted') this.interrupted = true;
+      // The turn's outcome is its last assistant message, not a sticky OR over
+      // the whole turn. A provider retry inside one turn lands an errored empty
+      // message first and the real answer after it; the sticky flag closed that
+      // finished turn as `failed` and left a red row where nothing had failed.
+      this.failed = message.stopReason === 'error';
+      this.interrupted = message.stopReason === 'aborted';
     }
   }
   question(request) {

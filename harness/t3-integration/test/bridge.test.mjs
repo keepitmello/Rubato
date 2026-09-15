@@ -651,6 +651,29 @@ test('compaction_end from Pi is thread.state.changed compacted', () => {
   assert.equal(events.filter((event) => event.type==='thread.state.changed').length, 1);
 });
 
+test('a retried error inside one turn does not close the finished turn as failed', () => {
+  const events=[]; const p=new EventProjection({threadId:'thread',sessionId:'session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
+  p.project({type:'agent_start'});
+  // The provider drops an empty errored message and retries inside the same turn.
+  p.project({type:'message_end', message:{role:'assistant', timestamp:1, stopReason:'error', content:[{type:'text', text:''}]}});
+  p.project({type:'message_end', message:{role:'assistant', timestamp:2, stopReason:'stop', content:[{type:'text', text:'done'}]}});
+  p.project({type:'agent_settled'});
+  const completed = events.filter((event) => event.type==='turn.completed');
+  assert.equal(completed.length, 1);
+  assert.equal(completed[0].payload.state, 'completed');
+});
+
+test('a turn whose last assistant message errors still closes as failed', () => {
+  const events=[]; const p=new EventProjection({threadId:'thread',sessionId:'session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
+  p.project({type:'agent_start'});
+  p.project({type:'message_end', message:{role:'assistant', timestamp:1, stopReason:'stop', content:[{type:'text', text:'partial'}]}});
+  p.project({type:'message_end', message:{role:'assistant', timestamp:2, stopReason:'error', content:[{type:'text', text:''}]}});
+  p.project({type:'agent_settled'});
+  const completed = events.filter((event) => event.type==='turn.completed');
+  assert.equal(completed.length, 1);
+  assert.equal(completed[0].payload.state, 'failed');
+});
+
 test('assistant usage becomes thread.token-usage.updated in the meter shape', async () => {
   const events=[]; const p=new EventProjection({threadId:'thread',sessionId:'session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
   p.configureUsage({ maxTokens: 200000, compactsAutomatically: true });
