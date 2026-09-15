@@ -97,6 +97,113 @@ test('a dead socket on an inventory request reconnects inside the bridge instead
   assert.equal(failures, 1);
   assert.notEqual(bridge.inventoryClient, stale);
 });
+test('an idle provider queue is offered for recovery without deleting it', async () => {
+  const events = [];
+  const projection = new EventProjection({threadId:'stale-thread',sessionId:'stale-session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
+  const bridge = Object.create(RubatoPiBridge.prototype);
+  const commands = [];
+  const state = {isStreaming:false,isCompacting:false,pendingMessageCount:2,requestTimeline:{pendingInputs:[
+    {delivery:'steer',textPreview:'first'}, {delivery:'followUp',textPreview:'second'},
+  ]}};
+  const context = {sessionId:'stale-session',projection,session:{threadId:'stale-thread',status:'ready'},queue:Promise.resolve(),stopped:false,
+    client:{snapshot:async()=>({state}),command:async(command)=>{commands.push(command); if(command.type==='clear_queue') return {steering:['first'],followUp:['second']};}}};
+  bridge.sessions = new Map([['stale-thread',context]]);
+  assert.equal(bridge.offerStaleQueueRecovery(context,state),true);
+  assert.deepEqual(commands,[], 'detection must not delete queued input before the user decides');
+  const request = events.find((event)=>event.type==='user-input.requested');
+  assert.match(request.payload.questions[0].question,/first/);
+  await assert.rejects(bridge.sendTurn({threadId:'stale-thread',input:'new'}),/Resolve the recovered/);
+  assert.deepEqual(commands,[], 'another send must not overwrite the recovery choice');
+});
+
+test('queue recovery clears once and resumes full messages in their original order', async () => {
+  const events = [];
+  const projection = new EventProjection({threadId:'stale-thread',sessionId:'stale-session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
+  const bridge = Object.create(RubatoPiBridge.prototype);
+  const commands = [];
+  const state = {isStreaming:false,isCompacting:false,pendingMessageCount:3,requestTimeline:{pendingInputs:[
+    {delivery:'followUp',textPreview:'one'}, {delivery:'steer',textPreview:'two'}, {delivery:'followUp',textPreview:'three'},
+  ]}};
+  let running = false;
+  const context = {sessionId:'stale-session',projection,session:{threadId:'stale-thread',status:'ready'},queue:Promise.resolve(),stopped:false,
+    client:{snapshot:async()=>({state:{...state,isStreaming:running}}),command:async(command)=>{commands.push(command); if(command.type==='clear_queue') return {steering:['two full'],followUp:['one full','three full']}; running=true;}}};
+  bridge.sessions = new Map([['stale-thread',context]]);
+  bridge.offerStaleQueueRecovery(context,state);
+  const requestId = context.queueRecovery.id;
+  const result = await bridge.respondToUserInput('stale-thread',requestId,{[requestId]:'resume'});
+  assert.equal(result.recoveredMessageCount,3);
+  assert.deepEqual(commands,[
+    {type:'clear_queue'},
+    {type:'prompt',message:'one full'},
+    {type:'follow_up',message:'two full'},
+    {type:'follow_up',message:'three full'},
+  ]);
+  assert.equal(context.queueRecovery,undefined);
+  assert.ok(events.some((event)=>event.type==='user-input.resolved'));
+  assert.ok(events.some((event)=>event.type==='turn.started'));
+});
+
+test('a failed recovered send keeps the unsent messages for retry', async () => {
+  const projection = new EventProjection({threadId:'stale-thread',sessionId:'stale-session',instanceId:'instance',emit:()=>{}});
+  const bridge = Object.create(RubatoPiBridge.prototype);
+  const state = {isStreaming:false,isCompacting:false,pendingMessageCount:2,requestTimeline:{pendingInputs:[
+    {delivery:'steer',textPreview:'first'}, {delivery:'followUp',textPreview:'second'},
+  ]}};
+  let attempts = 0;
+  const context = {sessionId:'stale-session',projection,session:{threadId:'stale-thread',status:'ready'},queue:Promise.resolve(),stopped:false,
+    client:{snapshot:async()=>({state:{...state,isStreaming:attempts>0}}),command:async(command)=>{
+      if(command.type==='clear_queue') return {steering:['first'],followUp:['second']};
+      attempts += 1;
+      if(attempts===2) throw new Error('transport failed');
+    }}};
+  bridge.sessions = new Map([['stale-thread',context]]);
+  bridge.offerStaleQueueRecovery(context,state);
+  const requestId = context.queueRecovery.id;
+  await assert.rejects(bridge.respondToUserInput('stale-thread',requestId,{[requestId]:'resume'}),/transport failed/);
+  assert.deepEqual(context.queueRecovery.messages,['first','second']);
+  assert.equal(context.queueRecovery.nextIndex,1);
+  assert.equal(projection.questions.has(requestId),true);
+});
+
+test('a recovered send that never reaches the provider leaves the thread usable', async () => {
+  const projection = new EventProjection({threadId:'stale-thread',sessionId:'stale-session',instanceId:'instance',emit:()=>{}});
+  const bridge = Object.create(RubatoPiBridge.prototype);
+  const state = {isStreaming:false,isCompacting:false,pendingMessageCount:2,requestTimeline:{pendingInputs:[
+    {delivery:'steer',textPreview:'first'}, {delivery:'followUp',textPreview:'second'},
+  ]}};
+  const context = {sessionId:'stale-session',projection,session:{threadId:'stale-thread',status:'ready'},queue:Promise.resolve(),stopped:false,
+    client:{snapshot:async()=>({state}),command:async(command)=>{
+      if(command.type==='clear_queue') return {steering:['first'],followUp:['second']};
+      throw new Error('transport failed');
+    }}};
+  bridge.sessions = new Map([['stale-thread',context]]);
+  bridge.offerStaleQueueRecovery(context,state);
+  const requestId = context.queueRecovery.id;
+  await assert.rejects(bridge.respondToUserInput('stale-thread',requestId,{[requestId]:'resume'}),/transport failed/);
+  assert.equal(context.projection.turnId,undefined,'an opened turn nothing can settle must not outlive the failure');
+  assert.equal(context.session.status,'ready');
+  assert.equal(context.queueRecovery.nextIndex,0);
+  assert.equal(projection.questions.has(requestId),true);
+});
+
+test('discarding a recovered queue clears it without running any message', async () => {
+  const events = [];
+  const projection = new EventProjection({threadId:'stale-thread',sessionId:'stale-session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
+  const bridge = Object.create(RubatoPiBridge.prototype);
+  const commands = [];
+  const state = {isStreaming:false,isCompacting:false,pendingMessageCount:1,requestTimeline:{pendingInputs:[
+    {delivery:'steer',textPreview:'do not run'},
+  ]}};
+  const context = {sessionId:'stale-session',projection,session:{threadId:'stale-thread',status:'running'},queue:Promise.resolve(),stopped:false,
+    client:{snapshot:async()=>({state}),command:async(command)=>{commands.push(command); return {steering:['do not run'],followUp:[]};}}};
+  bridge.sessions = new Map([['stale-thread',context]]);
+  bridge.offerStaleQueueRecovery(context,state);
+  const requestId = context.queueRecovery.id;
+  await bridge.respondToUserInput('stale-thread',requestId,{[requestId]:'discard'});
+  assert.deepEqual(commands,[{type:'clear_queue'}]);
+  assert.equal(context.session.status,'ready');
+  assert.equal(events.some((event)=>event.type==='turn.started'),false);
+});
 test('a failure the socket did not cause still reaches the caller', async (t) => {
   const { bridge } = await setup(t);
   const client = await bridge.connection();
