@@ -140,6 +140,31 @@ else
   ok "푸시 전에 scripts/ci-local.sh 가 돈다"
 fi
 
+# T3 는 매 턴 `git add -A` 로 작업 폴더 스냅샷을 뜬다. 그 인덱스는 매번 새로
+# 만들어져서 stat 캐시가 없고, 비용이 "바뀐 파일"이 아니라 "레포 전체 파일"에
+# 비례한다. 우리 도구가 흘리는 산출물 폴더가 무시 목록 밖에 있으면 그 전부를
+# 매 턴 다시 해시한다 — 48만 파일짜리 _workspace 하나가 30초 타임아웃을 넘겨
+# 체크포인트를 매 턴 실패시켰고, 체크포인트가 없으면 메시지별 되감기 버튼도
+# 뜨지 않는다. 레포마다 손으로 .gitignore 를 고치는 대신 전역 목록에 한 번
+# 심는다. gitignore 는 이미 추적 중인 파일에는 영향을 주지 않으므로, 이 이름을
+# 정말 커밋하는 레포는 그대로 굴러간다.
+GIT_EXCLUDES="$(git config --global core.excludesFile 2>/dev/null || true)"
+[ -n "$GIT_EXCLUDES" ] || GIT_EXCLUDES="$HOME/.config/git/ignore"
+case "$GIT_EXCLUDES" in "~/"*) GIT_EXCLUDES="$HOME/${GIT_EXCLUDES#\~/}" ;; esac
+if grep -q 'rubato:artifact-dirs' "$GIT_EXCLUDES" 2>/dev/null; then
+  :
+elif [ "$APPLY" -eq 0 ]; then
+  plan "전역 git 무시 목록에 산출물 폴더 등록 ($GIT_EXCLUDES)"
+else
+  mkdir -p "$(dirname "$GIT_EXCLUDES")"
+  {
+    printf '\n# rubato:artifact-dirs — 에이전트 산출물. T3 체크포인트가 매 턴 해시하지 않도록 둔다.\n'
+    printf '_workspace/\n.outpost/\n.consult/\n.omo/\n.rubato-pi/\n'
+  } >> "$GIT_EXCLUDES"
+  git config --global core.excludesFile "$GIT_EXCLUDES"
+  ok "전역 git 무시 목록에 산출물 폴더를 넣었다 ($GIT_EXCLUDES)"
+fi
+
 # 첫 설치와 재설치 모두 옛 사용자 상태와 현재 프로젝트 설정을 Rubato 경로로
 # 옮긴다. dry-run에서는 계획만 보여준다.
 if [ "$APPLY" -eq 0 ]; then
