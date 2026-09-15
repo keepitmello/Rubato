@@ -62,7 +62,7 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
     rpcEntry: fileURLToPath(new URL("../../node_modules/@earendil-works/pi-coding-agent/dist/rpc-entry.js", import.meta.url)),
   });
   const runtimeRoot = fileURLToPath(new URL("../..", import.meta.url));
-  const stockChildProfile = resolveStockChildProviderProfile({ root: runtimeRoot, agentDir, includeContextNotes: true, includeGuards: true });
+  const stockChildProfile = resolveStockChildProviderProfile({ root: runtimeRoot, agentDir, includeContextNotes: true, includeGuards: true, includeRolePrompt: true });
   const componentFactory = servers.wrapFactory(createRubatoComponentExtension({ resolveCwd: () => cwd, createTaskOptions: ({ createTaskRunnerFactories }) => ({
     // Stock ExtensionAPI does not expose Senpi's registration-time pi.cwd.
     // Bind task storage to this session, never the hosting process directory.

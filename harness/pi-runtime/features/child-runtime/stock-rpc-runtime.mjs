@@ -35,14 +35,16 @@ export function createStockChildFeatureProfile({ rpcExtensions = [], inProcessFa
 }
 
 /** Resolve the staged Rubato provider-only extension closure for RPC children. */
-export function resolveStockChildProviderProfile({ root, agentDir, includeContextNotes = false, includeGuards = false } = {}) {
+export function resolveStockChildProviderProfile({ root, agentDir, includeContextNotes = false, includeGuards = false, includeRolePrompt = false } = {}) {
   if (typeof root !== "string" || root.length === 0) throw new Error("stock child provider profile requires the staged runtime root")
   const entries = [join(root, "rubato-features", "child-runtime", "provider-extension.mjs")]
   if (includeContextNotes) entries.push(join(root, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "rubato-features", "context-notes", "extension.mjs"))
   if (includeGuards) entries.push(join(root, "rubato-features", "child-runtime", "guard-extension.mjs"))
+  if (includeRolePrompt) entries.push(join(root, "rubato-features", "child-runtime", "role-prompt-extension.mjs"))
   const prerequisites = [join(root, "node_modules", "@earendil-works", "pi-coding-agent", "node_modules", "@earendil-works", "pi-ai", "dist", "rubato-features", "provider-execution", "extension.mjs")]
   if (includeContextNotes) prerequisites.push(join(root, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "rubato-features", "context-notes", "src", "extensions", "context-notes.mjs"))
   if (includeGuards) prerequisites.push(join(root, "rubato-features", "tool-guards", "index.mjs"))
+  if (includeRolePrompt) prerequisites.push(join(root, "rubato-features", "prompt-rules", "role-prompt.mjs"))
   for (const entry of [...entries, ...prerequisites]) {
     if (!existsSync(entry)) throw new Error(`stock child provider profile entry is missing: ${entry}`)
   }
@@ -61,20 +63,27 @@ function isChildGuardExtensionPath(entry) {
   return typeof entry === "string" && entry.endsWith(`${sep}guard-extension.mjs`)
 }
 
+function isChildRolePromptExtensionPath(entry) {
+  return typeof entry === "string" && entry.endsWith(`${sep}role-prompt-extension.mjs`)
+}
+
 /**
  * Load the child-safe in-process factories that correspond to a full-candidate
  * profile. Provider registration stays on the injected parent ModelRuntime;
- * only notes owner + tool guards are installed into the child session.
+ * only notes owner, tool guards and the role system prompt are installed into
+ * the child session.
  */
 export async function loadStockChildInProcessFactories({
   root,
   agentDir,
   includeContextNotes = true,
   includeGuards = true,
+  includeRolePrompt = true,
   settingsManager,
   propagateEnv = false,
+  env = process.env,
 } = {}) {
-  const profile = resolveStockChildProviderProfile({ root, agentDir, includeContextNotes, includeGuards })
+  const profile = resolveStockChildProviderProfile({ root, agentDir, includeContextNotes, includeGuards, includeRolePrompt })
   const factories = []
   for (const entry of profile.rpcExtensions) {
     if (isChildNotesExtensionPath(entry)) {
@@ -90,6 +99,9 @@ export async function loadStockChildInProcessFactories({
     } else if (isChildGuardExtensionPath(entry)) {
       const { createStockChildGuardExtension } = await import(pathToFileURL(entry).href)
       factories.push({ name: "child-guards", factory: createStockChildGuardExtension() })
+    } else if (isChildRolePromptExtensionPath(entry)) {
+      const { createStockChildRolePromptExtension } = await import(pathToFileURL(entry).href)
+      factories.push({ name: "rubato-role-prompt", factory: createStockChildRolePromptExtension({ env }) })
     }
   }
   return factories

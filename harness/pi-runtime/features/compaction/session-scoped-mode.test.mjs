@@ -12,6 +12,7 @@ import { feature as contextWindowFeature } from "../context-window/patches.mjs";
 import { providerExecutionFeature } from "../provider-execution/patches.mjs";
 import { providersFeature } from "../providers/patches.mjs";
 import { toolExecutionFeature } from "../tool-execution/patches.mjs";
+import { promptRulesFeature } from "../prompt-rules/feature.mjs";
 import { toolGuardsFeature } from "../tool-guards/feature.mjs";
 import { compactionFeature } from "./feature.mjs";
 
@@ -38,6 +39,7 @@ const staged = await stagePiRuntime({
     contextWindowFeature,
     compactionFeature,
     toolGuardsFeature,
+    promptRulesFeature,
     childRuntimeFeature,
   ],
 });
