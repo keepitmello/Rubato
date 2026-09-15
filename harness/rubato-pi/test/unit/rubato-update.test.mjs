@@ -153,6 +153,10 @@ function runUpdate(fixture, { path = process.env.PATH } = {}) {
       GIT_CONFIG_SYSTEM: "/dev/null",
       PATH: path,
       RUBATO_TEST_TRACE: fixture.trace,
+      // 픽스처 HOME 만으로는 격리가 끝나지 않는다. GUI 감지가 절대 경로로
+      // /Applications 를 읽어서, 앱이 깔린 기기에서는 need_gui=1 이 켜지고
+      // 픽스처에 없는 install-gui.sh 를 부르다 6 개가 깨졌다.
+      RUBATO_APPLICATIONS_DIR: join(fixture.root, "Applications"),
     },
   });
 }
