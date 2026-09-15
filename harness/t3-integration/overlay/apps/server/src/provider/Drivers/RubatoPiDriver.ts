@@ -45,6 +45,7 @@ export interface PiBridge {
   hasSession(threadId: string): boolean;
   ownsSession(sessionId: string): boolean;
   readThread(threadId: string): Promise<{threadId: string; turns: ReadonlyArray<{id:string;items:ReadonlyArray<unknown>}>}>;
+  rollbackThread(threadId: string, numTurns: number): Promise<{threadId: string; turns: ReadonlyArray<{id:string;items:ReadonlyArray<unknown>}>}>;
   close(): Promise<void>;
 }
 const bridges = new WeakMap<ProviderInstance, PiBridge>();
@@ -93,7 +94,7 @@ export const RubatoPiDriver: ProviderDriver<RubatoPiConfig> = {
       status:enabled ? "warning" : "disabled", auth:{status:"unknown"},
       checkedAt:DateTime.formatIso(yield* DateTime.now), models:[], displayName:displayName ?? "Rubato",
       ...(accentColor ? {accentColor} : {}), showInteractionModeToggle:false,
-      supportsConversationRollback:false, supportsTextGeneration:false,
+      supportsConversationRollback:true, supportsTextGeneration:false,
       requiresNewThreadForModelChange:false, setup:{canAuthenticate:false,canInstall:false},
       message:"Start the external Rubato server; T3 connects without owning its process.",
     });
@@ -113,7 +114,7 @@ export const RubatoPiDriver: ProviderDriver<RubatoPiConfig> = {
     });
     const adapter: ProviderAdapterShape<ProviderAdapterError> = {
       provider:kind,
-      capabilities:{sessionModelSwitch:"in-session",supportsConversationRollback:false,promptlessTurnContinuation:true},
+      capabilities:{sessionModelSwitch:"in-session",supportsConversationRollback:true,promptlessTurnContinuation:true},
       startSession: (input) => request("startSession", async () => {
         if (!enabled) throw new Error("Rubato provider is disabled");
         return decodeSession(await bridge.startSession(input));
@@ -129,7 +130,10 @@ export const RubatoPiDriver: ProviderDriver<RubatoPiConfig> = {
         const snapshot = await bridge.readThread(id);
         return {threadId:ThreadId.make(snapshot.threadId), turns:snapshot.turns.map((turn) => ({id:TurnId.make(turn.id),items:turn.items}))};
       }),
-      rollbackThread:() => Effect.fail(new ProviderAdapterRequestError({provider:kind,method:"rollbackThread",detail:"Pi history rollback is not exposed by this adapter"})),
+      rollbackThread:(id, numTurns) => request("rollbackThread", async () => {
+        const snapshot = await bridge.rollbackThread(id, numTurns);
+        return {threadId:ThreadId.make(snapshot.threadId), turns:snapshot.turns.map((turn) => ({id:TurnId.make(turn.id),items:turn.items}))};
+      }),
       stopAll:() => request("stopAll", () => Promise.all(bridge.listSessions().map((value) => decodeSession(value)).map((session) => bridge.stopSession(session.threadId))).then(() => undefined)),
       streamEvents:Stream.fromPubSub(events),
     };

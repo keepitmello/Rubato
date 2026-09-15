@@ -21,11 +21,12 @@ function endpoint(entries) {
 
 /** Owns ONE runtime handle acquired by the official SessionRouter. */
 class RuntimeHandle {
-  constructor(metadata, worker, { idleMs, changed }) {
+  constructor(metadata, worker, { idleMs, changed, adopt }) {
     this.metadata = metadata;
     this.worker = worker;
     this.idleMs = idleMs;
     this.changed = changed;
+    this.adopt = adopt;
     this.attachments = 0;
     this.calls = 0;
     this.running = true;
@@ -59,7 +60,16 @@ class RuntimeHandle {
     if (previousStatus !== this.state.value.status) this.changed();
   }
   acceptState(value) {
+    if (value.sessionId !== this.metadata.id) {
+      // fork/clone/new/switch replace the JSONL behind this worker. Re-key the
+      // route so attach/snapshot/inventory follow the live session, instead of
+      // treating a legitimate Pi identity change as a bug.
+      if (typeof value.sessionId !== 'string' || !value.sessionId || !this.adopt)
+        throw new Error('A runtime cannot switch the persisted session behind its route');
+      this.adopt(this, { id: value.sessionId, file: value.sessionFile });
+    }
     if (value.sessionId !== this.metadata.id) throw new Error('A runtime cannot switch the persisted session behind its route');
+    this.state.state.sessionId = this.metadata.id;
     this.running = Boolean(value.isStreaming || value.isCompacting || value.pendingMessageCount);
     this.latestState = json(value);
     this.publish();
@@ -272,12 +282,30 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
     },
     async openSession(metadata) {
       const began = performance.now();
-      const handle = new RuntimeHandle(metadata, workerFactory(metadata, prepared.get(metadata.id)?.creation), { idleMs, changed: publish });
+      const adopt = (target, next) => {
+        if (typeof next.id !== 'string' || !next.id)
+          throw new Error('A runtime cannot switch the persisted session behind its route');
+        const previous = target.metadata.id;
+        if (previous === next.id) return;
+        if (handles.get(previous) === target) handles.delete(previous);
+        target.metadata.id = next.id;
+        if (typeof next.file === 'string') target.metadata.file = next.file;
+        if (target.worker.metadata && target.worker.metadata !== target.metadata) {
+          target.worker.metadata.id = next.id;
+          if (typeof next.file === 'string') target.worker.metadata.file = next.file;
+        }
+        handles.set(next.id, target);
+        const owner = presentations.get(previous);
+        if (owner !== undefined) { presentations.delete(previous); presentations.set(next.id, owner); }
+        publish();
+        void refresh().catch(onError);
+      };
+      const handle = new RuntimeHandle(metadata, workerFactory(metadata, prepared.get(metadata.id)?.creation), { idleMs, changed: publish, adopt });
       handle.worker.presentationOwner = presentations.get(metadata.id);
       try { await handle.start(); } catch (error) { await handle.close(); throw error; }
       metrics.runtimeStarts++; metrics.totalOpenMs += performance.now() - began;
-      handles.set(metadata.id, handle);
-      handle.terminated.then(() => { if (handles.get(metadata.id) === handle) handles.delete(metadata.id); publish(); });
+      handles.set(handle.metadata.id, handle);
+      handle.terminated.then(() => { if (handles.get(handle.metadata.id) === handle) handles.delete(handle.metadata.id); publish(); });
       publish();
       return handle;
     },
