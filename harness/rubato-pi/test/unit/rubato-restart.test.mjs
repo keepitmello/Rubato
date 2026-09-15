@@ -44,7 +44,8 @@ function executable(path, source) {
 //   helpers-linger quit succeeded, but leftover Helper processes still
 //              match a naive `Rubato.app` pattern. Relaunch must still run.
 function restartHarness(t, { engineToken = "restarted", engineExit = 0, hubPresent = true, hubExit = 0,
-  guiMode = "absent", guiRelaunchExit = 0, guiRelaunchSleep = 0 } = {}) {
+  guiMode = "absent", guiRelaunchExit = 0, guiRelaunchSleep = 0,
+  installGui = false, installGuiExit = 0 } = {}) {
   const root = mkdtempSync(join(tmpdir(), "rubato-restart-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const scripts = join(root, "harness", "scripts");
@@ -109,6 +110,19 @@ function restartHarness(t, { engineToken = "restarted", engineExit = 0, hubPrese
       `exit ${guiRelaunchExit}\n`,
   );
 
+  // The bundle step. Absent by default so the pre-existing cases keep
+  // asserting the machine-without-an-installer behaviour; when present it
+  // records into the same log, which is what proves the ordering.
+  const fakeInstallGui = join(root, "fake-install-gui.sh");
+  if (installGui) {
+    executable(
+      fakeInstallGui,
+      "#!/bin/sh\n" +
+        `printf 'INSTALL-GUI %s\\n' "$*" >> '${log}'\n` +
+        `exit ${installGuiExit}\n`,
+    );
+  }
+
   const env = {
     ...process.env,
     HOME: join(root, "home"),
@@ -117,6 +131,7 @@ function restartHarness(t, { engineToken = "restarted", engineExit = 0, hubPrese
     RUBATO_OSASCRIPT_BIN: fakeOsascript,
     RUBATO_GUI_APP: guiApp,
     RUBATO_START_GUI: fakeStartGui,
+    RUBATO_INSTALL_GUI: installGui ? fakeInstallGui : join(root, "no-install-gui.sh"),
     RUBATO_GUI_LOG: join(root, "gui-restart.log"),
     RUBATO_GUI_WAIT_SECS: "2",
   };
@@ -282,6 +297,43 @@ test("restart relaunches even when Electron helpers still match Rubato.app", (t)
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /데스크톱 앱을 다시 켰습니다/);
   assert.equal(harness.relaunched(), "relaunched");
+});
+
+// The pin and the overlay are compiled into the T3 server bundle, so a
+// relaunch alone leaves them stale. `restart` is where a user expects new
+// code to take effect, and the window between quit and relaunch is the only
+// safe place to rebuild — the build replaces the dist a running app reads.
+test("restart rebuilds the bundle while the app is down, then relaunches", (t) => {
+  const harness = restartHarness(t, { guiMode: "running", installGui: true });
+  const result = harness.run(["restart"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /데스크톱 앱을 다시 켰습니다/);
+  assert.equal(harness.relaunched(), "relaunched");
+  const order = harness.calls();
+  assert.match(order, /INSTALL-GUI --apply/);
+  // Strictly between the quit and the relaunch: rebuilding under a live app
+  // would swap the dist it is reading.
+  assert.ok(order.indexOf("INSTALL-GUI") < order.indexOf("START-GUI"), order);
+});
+
+test("restart reports a failed rebuild but still brings the app back", (t) => {
+  const harness = restartHarness(t, { guiMode: "running", installGui: true, installGuiExit: 1 });
+  const result = harness.run(["restart"]);
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stderr, /옛 번들 그대로 다시 켭니다/);
+  // Leaving the user with no app would be worse than an old bundle.
+  assert.equal(harness.relaunched(), "relaunched");
+});
+
+test("restart brings a stopped app's bundle up to the pin without launching it", (t) => {
+  const harness = restartHarness(t, { hubPresent: false, guiMode: "off", installGui: true });
+  const result = harness.run(["restart"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /번들만 새 코드로 맞췄으니 다음에 켜면 반영됩니다/);
+  assert.match(harness.calls(), /INSTALL-GUI --apply/);
+  // `restart` does not decide that this machine wants a window open.
+  assert.equal(harness.relaunched(), undefined);
+  assert.equal(harness.quitCalls(), "");
 });
 
 test("updater GUI step rebuilds on disk without touching the running app", () => {

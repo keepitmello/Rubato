@@ -70,7 +70,21 @@ case "${1-}" in
     OSASCRIPT_BIN="${RUBATO_OSASCRIPT_BIN:-/usr/bin/osascript}"
     GUI_APP="${RUBATO_GUI_APP:-/Applications/Rubato.app}"
     START_GUI="${RUBATO_START_GUI:-$HERE/../t3-integration/start-gui.sh}"
+    INSTALL_GUI="${RUBATO_INSTALL_GUI:-$HERE/../t3-integration/install-gui.sh}"
     GUI_LOG="${RUBATO_GUI_LOG:-$HOME/.rubato-pi/logs/rubato-gui-restart.log}"
+    # Two different things ride in the desktop app, and only one of them is
+    # picked up by a relaunch. The bridge (harness/t3-integration/src/) is read
+    # from the repo when the app starts, so quitting and relaunching is enough.
+    # The pin and the overlay are compiled into the T3 server bundle, so they
+    # need a rebuild — and the window where the app is down is the only safe
+    # place to do it, since the build replaces the very dist the running app
+    # is reading. install-gui.sh is idempotent and skips the build when the
+    # pin and overlay fingerprint already match, so a plain restart stays fast;
+    # deciding what is stale belongs there, not duplicated here.
+    sync_gui_bundle() {
+      [ -f "$INSTALL_GUI" ] || return 0
+      sh "$INSTALL_GUI" --apply
+    }
     RESTART_FAIL=0
     ENGINE_DONE=0
     HUB_DONE=0
@@ -144,7 +158,19 @@ case "${1-}" in
     if [ ! -e "$GUI_APP" ]; then
       echo "데스크톱 앱이 없어 건너뜁니다."
     elif ! "$PGREP_BIN" -f "$GUI_PROC_PATTERN" >/dev/null 2>&1; then
-      echo "데스크톱 앱은 이미 꺼져 있어 건너뜁니다."
+      # A stopped app is not running old code, but its bundle can still be
+      # stale, and nothing else rebuilds it — start-gui.sh only launches.
+      # Bring the bundle up to the pin and leave the app off: `restart` does
+      # not decide that a machine wants a window open.
+      if [ ! -f "$INSTALL_GUI" ]; then
+        echo "데스크톱 앱은 이미 꺼져 있어 건너뜁니다."
+      elif sync_gui_bundle; then
+        echo "데스크톱 앱은 꺼져 있습니다. 번들만 새 코드로 맞췄으니 다음에 켜면 반영됩니다."
+        GUI_DONE=1
+      else
+        echo "데스크톱 앱은 꺼져 있고, 번들을 새 코드로 맞추지도 못했습니다. 켜면 옛 코드입니다 — 손으로: sh \"$INSTALL_GUI\" --apply" >&2
+        RESTART_FAIL=1
+      fi
     else
       GUI_QUIT_OK=1
       if "$OSASCRIPT_BIN" -e 'tell application "Rubato" to quit' >/dev/null 2>&1; then
@@ -173,6 +199,13 @@ case "${1-}" in
           echo "데스크톱 앱은 껐지만 다시 켤 진입점이 없습니다 ($START_GUI). 앱은 스스로 돌아오지 않습니다 — 손으로: sh \"$START_GUI\"" >&2
           RESTART_FAIL=1
         else
+          # The app is down: the one window where the bundle can be rebuilt.
+          # A failure here is reported but does not hold the app hostage —
+          # relaunching on the old bundle beats leaving the user with nothing.
+          if ! sync_gui_bundle; then
+            echo "핀·overlay 를 다시 얹지 못했습니다. 옛 번들 그대로 다시 켭니다 — 손으로: sh \"$INSTALL_GUI\" --apply" >&2
+            RESTART_FAIL=1
+          fi
           mkdir -p "$(dirname "$GUI_LOG")" 2>/dev/null || true
           nohup "$START_GUI" >>"$GUI_LOG" 2>&1 </dev/null &
           GUI_PID=$!

@@ -46,7 +46,7 @@ function write(path, text) {
 
 const INSTALL_SKILLS_SRC = join(dirname(fileURLToPath(import.meta.url)), "../../../scripts/install-skills.sh");
 
-function setupFixture({ dirty = false, conflict = false, evidence = false, decoyStash = false, rebuildFailure = "", skillUpdate = false, profileSrc = false, profileTest = false } = {}) {
+function setupFixture({ dirty = false, conflict = false, evidence = false, decoyStash = false, rebuildFailure = "", skillUpdate = false, profileSrc = false, profileTest = false, gui = false, remoteChange = true } = {}) {
   const root = mkdtempSync(join(tmpdir(), "rubato-update-"));
   const bare = join(root, "origin.git");
   const seed = join(root, "seed");
@@ -76,8 +76,21 @@ function setupFixture({ dirty = false, conflict = false, evidence = false, decoy
   if (skillUpdate) {
     write(join(seed, "harness/skills/demo/SKILL.md"), "v1\n");
   }
+  if (gui) {
+    // The GUI is an artifact of the pin plus the overlay, not of the commits
+    // we pull, so the updater has to reach it even on a no-op pull. Standing
+    // in for the real installer: it only records that it was asked.
+    write(
+      join(seed, "harness/t3-integration/install-gui.sh"),
+      '#!/bin/sh\nprintf \'install-gui %s\\n\' "$*" >> "$RUBATO_TEST_TRACE"\nexit 0\n',
+    );
+    chmodSync(join(seed, "harness/t3-integration/install-gui.sh"), 0o755);
+    // gui_installed() reads this path, so a bare .git marks "installed here".
+    mkdirSync(join(home, ".rubato/t3-source/.git"), { recursive: true });
+  }
   git(seed, ["add", "note.txt", "keep.txt", ".rubato/evidence/log.txt", "install.sh", "harness/prompts", "harness/scripts"]);
   if (skillUpdate) git(seed, ["add", "harness/skills"]);
+  if (gui) git(seed, ["add", "harness/t3-integration"]);
   git(seed, ["commit", "-m", "base"]);
   git(seed, ["branch", "-M", "rubato/base"]);
   git(seed, ["push", "-u", "origin", "rubato/base"]);
@@ -109,9 +122,11 @@ function setupFixture({ dirty = false, conflict = false, evidence = false, decoy
     write(join(seed, "harness/scripts/install-skills.sh"), "#!/bin/sh\nprintf 'skills\\n' >> \"$RUBATO_TEST_TRACE\"\nexit 42\n");
     chmodSync(join(seed, "harness/scripts/install-skills.sh"), 0o755);
   }
-  git(seed, ["add", "."]);
-  git(seed, ["commit", "-m", "remote"]);
-  git(seed, ["push", "origin", "rubato/base"]);
+  if (remoteChange) {
+    git(seed, ["add", "."]);
+    git(seed, ["commit", "-m", "remote"]);
+    git(seed, ["push", "origin", "rubato/base"]);
+  }
 
   write(join(local, "extra.txt"), "local-only\n");
   git(local, ["add", "extra.txt"]);
@@ -336,4 +351,25 @@ test("profile engine restart failure names the old engine as still running", () 
   assert.match(src, /timeout\*/);
   assert.match(src, /소켓은 살아 있는데 프로세스를 찾지 못했습니다/);
   assert.match(src, /SIGTERM 을 받고도 끝나지 않았습니다/);
+});
+
+// A machine that edited the pin or the overlay locally has nothing to pull,
+// and "이미 최신입니다" used to end the run there — leaving the GUI on the old
+// bundle and the person who made the edit hunting for install-gui.sh by hand.
+// Whether a rebuild is actually needed stays install-gui.sh's call.
+test("update with nothing to pull still puts the GUI back on the pin", () => {
+  const fixture = setupFixture({ gui: true, remoteChange: false });
+  const result = runUpdate(fixture);
+  const out = `${result.stdout}\n${result.stderr}`;
+  assert.equal(result.status, 0, out);
+  assert.match(out, /받을 것이 없습니다/);
+  assert.match(readFileSync(fixture.trace, "utf8"), /install-gui --apply/);
+});
+
+test("update leaves the GUI alone on a machine without one", () => {
+  const fixture = setupFixture({ remoteChange: false });
+  const result = runUpdate(fixture);
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  const trace = existsSync(fixture.trace) ? readFileSync(fixture.trace, "utf8") : "";
+  assert.doesNotMatch(trace, /install-gui/);
 });

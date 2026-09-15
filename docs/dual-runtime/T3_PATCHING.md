@@ -128,10 +128,17 @@ T3가 우리 이벤트를 전부 파일로 남긴다:
 | Pi 프로필 엔진 | `harness/pi-server/src/` | `rubato restart` (SIGTERM, `kill -9` 금지 — 락이 15초 stale로 남는다) |
 | 데스크톱 앱 | `harness/t3-integration/src/` (켤 때 한 번 읽는다) | `rubato restart` |
 | remote hub | `packages/rubato-remote-hub/` | `rubato restart` |
+| T3 서버 번들 | 핀 + `harness/t3-integration/overlay/` (번들에 컴파일돼 들어간다) | `rubato restart` (앱이 내려간 창에서 다시 만든다) |
 
-`rubato update`는 바뀐 경로를 보고 필요한 것만 재시작한다. 드라이버 오버레이
-(`harness/t3-integration/overlay/`)를 고쳤으면 서버 번들을 다시 만들어야 하므로
-`install-gui.sh --apply`까지 필요하다.
+**손으로 칠 명령은 `rubato update` 와 `rubato restart` 둘뿐이다.** 둘 다 GUI가 깔려
+있으면 `install-gui.sh --apply` 를 거치고, 다시 만들지 말지는 거기서 핀·overlay 지문으로
+판단한다 — 이미 맞는 설치는 빌드 없이 지나가므로 평소 재시작은 그대로 빠르다.
+
+둘의 차이는 무엇을 먼저 하느냐다. `update` 는 받아온 것을 보고 필요한 것만 다시 만들고,
+받을 것이 없어도 GUI는 맞춘다(이 머신에서 핀이나 overlay를 고친 경우가 그렇다).
+`restart` 는 떠 있는 것을 내리고 다시 올린다 — 앱이 내려간 그 창이 번들을 다시 만들 수
+있는 유일한 자리다. 빌드가 실행 중인 앱이 읽고 있는 `dist` 를 갈아끼우기 때문이다.
+앱이 꺼져 있으면 번들만 맞추고 켜지는 않는다.
 
 엔진 재시작은 진행 중이던 턴을 끊는다. 안전한 이유는 실측했다 — JSONL이 결과 없는 도구
 호출로 끝나도 프로바이더 변환층이 합성 결과를 채워서 세션이 그대로 열린다. **다만 CLI
@@ -157,7 +164,8 @@ T3가 우리 이벤트를 전부 파일로 남긴다:
 `rubato-update.sh`의 시험 6개가 오래 빨간 채였고 "원래 실패한다"로 굳어 있었다. 원인은 GUI
 감지가 `/Applications`를 절대 경로로 읽은 것 하나였다 — 픽스처 HOME·픽스처 git 설정·가짜
 PATH를 다 만들어 놓고 그 한 줄이 진짜 시스템을 봤다. 이음매
-(`RUBATO_APPLICATIONS_DIR`, `RUBATO_LAUNCHCTL_BIN`, `RUBATO_PGREP_BIN`, `RUBATO_GUI_PROC_PATTERN`)를
+(`RUBATO_APPLICATIONS_DIR`, `RUBATO_LAUNCHCTL_BIN`, `RUBATO_PGREP_BIN`, `RUBATO_GUI_PROC_PATTERN`,
+`RUBATO_START_GUI`, `RUBATO_INSTALL_GUI`)를
 쓴다. **항상 빨간 시험은 시험이 아니다. 알려진 실패 여섯 개는 일곱 번째 진짜 실패가 숨는 자리다.**
 
 프로세스를 찾는 패턴은 좁게 쓴다. `pgrep -f 'Rubato\.app'`은 `Contents/Frameworks` 밑 헬퍼까지

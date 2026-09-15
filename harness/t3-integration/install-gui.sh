@@ -93,8 +93,13 @@ if [ ! -d "$T3_DIR/.git" ]; then
     err "T3 클론 실패"; exit 1
   }
 fi
-git -C "$T3_DIR" fetch --depth 1 origin "$PIN" || { err "T3 fetch 실패"; exit 1; }
-git -C "$T3_DIR" checkout --force FETCH_HEAD || { err "T3 checkout 실패"; exit 1; }
+# `rubato restart` 도 이 스크립트를 거치므로, 핀이 이미 내려와 있으면 네트워크를
+# 치지 않는다. 그러지 않으면 비행기 안에서 앱을 다시 켜는 것조차 fetch 실패로
+# 막힌다. 받아야 할 때만 받고, 체크아웃은 FETCH_HEAD 가 아니라 핀 자체로 한다.
+if ! git -C "$T3_DIR" cat-file -e "$PIN^{commit}" 2>/dev/null; then
+  git -C "$T3_DIR" fetch --depth 1 origin "$PIN" || { err "T3 fetch 실패"; exit 1; }
+fi
+git -C "$T3_DIR" checkout --force "$PIN" || { err "T3 checkout 실패"; exit 1; }
 ok "T3 $PIN"
 
 "$NODE" "$HERE/apply.mjs" --t3 "$T3_DIR" || { err "overlay 적용 실패"; exit 1; }
