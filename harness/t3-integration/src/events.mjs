@@ -17,13 +17,55 @@ const nonempty = (value) => {
   return text ? text : undefined;
 };
 const record = (value) => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+const hasTaskIdentity = (value) => Boolean(nonempty(value.agentId) || nonempty(value.childId) || nonempty(value.task_id));
+const hasTaskBody = (value) => hasTaskIdentity(value) || nonempty(value.status) || value.progress || value.members
+  || value.live_progress;
+// Agent spawn is { content, details: { agentId, status, … } }. Walk one or two
+// `.details` wraps so a nested payload still yields agentId — the previous
+// one-liner returned the outer wrap whenever `.details.details` was truthy.
 const detailsOf = (value) => {
   const body = record(value);
-  return record(body.details?.details ? body.details : body.details ?? (body.agentId || body.childId || body.progress ? body : {}));
+  const nested = record(body.details);
+  const inner = record(nested.details);
+  if (hasTaskBody(inner)) return inner;
+  if (hasTaskBody(nested)) return nested;
+  if (hasTaskBody(body)) return body;
+  return nested;
 };
 const spawnLabel = (args, result) => nonempty(args.summary) || nonempty(detailsOf(result).task_summary)
   || nonempty(args.description) || nonempty(detailsOf(result).name) || nonempty(args.team_name)
   || nonempty(detailsOf(result).team_name) || (nonempty(args.prompt) ? nonempty(args.prompt).slice(0, 200) : undefined);
+const childIdOf = (details, fallback = {}) => nonempty(details.agentId) || nonempty(details.childId)
+  || nonempty(record(details.progress).childId) || nonempty(record(fallback).childId);
+// live_progress.activity is Rubato's CLI status line (title · model · turn N · $0 · Speed).
+// T3 already has title/model/status/lastToolName; do not forward that packed string.
+const liveFacts = (item) => {
+  const live = record(item.live_progress);
+  return {
+    currentTool: nonempty(live.current_tool) || nonempty(live.currentTool),
+    lastAssistantLine: nonempty(live.last_assistant_line) || nonempty(live.lastAssistantLine),
+    totalTokens: live.total_tokens ?? live.totalTokens,
+    outputTokens: live.output_tokens ?? live.outputTokens,
+    toolCalls: live.tool_calls ?? live.toolCalls,
+  };
+};
+const taskUsageOf = (item, live) => {
+  const stats = record(item.run_stats);
+  const total = asInt(live.totalTokens) ?? asInt(stats.total_tokens);
+  if (total === undefined) return;
+  const output = asInt(live.outputTokens) ?? asInt(stats.output_tokens);
+  const tools = asInt(live.toolCalls) ?? asInt(stats.tool_calls);
+  const duration = asInt(stats.runtime_ms);
+  return {
+    totalTokens: total,
+    ...(output !== undefined ? { outputTokens: output } : {}),
+    ...(tools !== undefined ? { toolUses: tools } : {}),
+    ...(duration !== undefined ? { durationMs: duration } : {}),
+  };
+};
+const FAILED_STATUS = new Set(['failed', 'error', 'denied', 'lost']);
+const STOPPED_STATUS = new Set(['cancelled', 'aborted', 'interrupted']);
+const LIVE_STATUS = new Set(['pending', 'running', 'waiting', 'idle']);
 export const toolType = (name) => SPAWN_TOOLS.has(name) ? 'collab_agent_tool_call'
   : name === 'bash' ? 'command_execution' : ['write', 'edit'].includes(name) ? 'file_change' : 'dynamic_tool_call';
 
@@ -62,7 +104,7 @@ export class EventProjection {
   constructor({ threadId, sessionId, instanceId, emit }) {
     Object.assign(this, { threadId, sessionId, instanceId, emit });
     this.text = new Map(); this.thinking = new Map(); this.completed = new Set(); this.questions = new Map();
-    this.tasks = new Map(); this.children = new Map();
+    this.tasks = new Map(); this.children = new Map(); this.spawns = new Map();
   }
   event(type, payload, fields = {}) {
     this.emit({ eventId: randomUUID(), provider: 'rubato-pi', providerInstanceId: this.instanceId,
@@ -72,7 +114,7 @@ export class EventProjection {
   reset(sessionId = this.sessionId) {
     this.sessionId = sessionId;
     this.text.clear(); this.thinking.clear(); this.completed.clear(); this.questions.clear();
-    this.tasks.clear(); this.children.clear();
+    this.tasks.clear(); this.children.clear(); this.spawns.clear();
     this.turnId = undefined; this.failed = false; this.interrupted = false; this.lastUsage = undefined;
   }
   configureUsage({ maxTokens, compactsAutomatically } = {}) {
@@ -155,24 +197,51 @@ export class EventProjection {
       ...(task.model ? { model: task.model } : {}), ...(task.workflowName ? { workflowName: task.workflowName } : {}),
       ...extra };
   }
-  startTask(toolCallId, { label, taskType, role, model, workflowName, taskId = toolCallId }) {
-    if (!nonempty(toolCallId) || this.tasks.has(toolCallId)) return this.tasks.get(toolCallId);
-    const task = { taskId, toolUseId: toolCallId, taskType, label, role, model, workflowName };
-    this.tasks.set(toolCallId, task);
-    this.event('task.started', { taskId, ...(label ? { description: label } : {}), ...this.linkage(task) });
+  indexTask(task, key) {
+    if (!nonempty(key)) return;
+    const held = this.tasks.get(key);
+    if (held && held !== task) return;
+    this.tasks.set(key, task);
+  }
+  startTask(key, { label, taskType, role, model, workflowName, taskId = key, toolUseId = key } = {}) {
+    const id = nonempty(taskId) || nonempty(key);
+    if (!id) return;
+    const existing = this.tasks.get(key) || this.tasks.get(id);
+    if (existing) {
+      this.indexTask(existing, key);
+      this.indexTask(existing, id);
+      if (nonempty(toolUseId) && toolUseId !== existing.taskId) {
+        this.indexTask(existing, toolUseId);
+        existing.toolUseId = toolUseId;
+      }
+      if (label && !existing.label) existing.label = label;
+      if (role && !existing.role) existing.role = role;
+      if (model && !existing.model) existing.model = model;
+      return existing;
+    }
+    const task = { taskId: id, toolUseId: nonempty(toolUseId) || id, taskType, label, role, model, workflowName };
+    this.indexTask(task, key);
+    this.indexTask(task, id);
+    this.indexTask(task, task.toolUseId);
+    // Title lives on linkage. Repeating it as description made every row say the
+    // same sentence twice before anything had happened.
+    this.event('task.started', { taskId: id, ...this.linkage(task) });
     return task;
   }
-  progressTask(task, { description, summary, lastToolName, status, error }) {
-    const text = nonempty(description) || nonempty(summary) || task.label || 'Subagent task';
-    this.event('task.progress', { taskId: task.taskId, description: text,
-      ...(nonempty(summary) ? { summary } : {}), ...(nonempty(lastToolName) ? { lastToolName } : {}),
-      ...(status ? { status } : {}), ...(nonempty(error) ? { error } : {}), ...this.linkage(task) });
+  progressTask(task, { description, summary, lastToolName, status, error, typedUsage }) {
+    const note = nonempty(summary);
+    const doing = nonempty(description) || note || 'running';
+    this.event('task.progress', { taskId: task.taskId, description: doing,
+      ...(note && note !== task.label ? { summary: note } : {}),
+      ...(nonempty(lastToolName) ? { lastToolName } : {}),
+      ...(status ? { status } : {}), ...(nonempty(error) ? { error } : {}),
+      ...(typedUsage ? { typedUsage } : {}), ...this.linkage(task) });
   }
   completeTask(task, status, summary) {
     if (task.done) return;
     task.done = true; task.terminal = status;
     this.event('task.completed', { taskId: task.taskId, status,
-      ...(nonempty(summary) ? { summary } : {}), ...this.linkage(task) });
+      ...(nonempty(summary) && summary !== task.label ? { summary } : {}), ...this.linkage(task) });
     this.maybeCompleteTeam(task);
   }
   // Member ids map at children[st_…] → the team spawn key. Prefer a task stored
@@ -192,43 +261,46 @@ export class EventProjection {
   }
   rememberChild(childId, toolCallId) {
     const id = nonempty(childId);
-    if (id) this.children.set(id, toolCallId);
+    if (id && nonempty(toolCallId)) this.children.set(id, toolCallId);
   }
   spawnTool(event) {
-    const args = record(event.args);
+    if (event.args) this.spawns.set(event.toolCallId, record(event.args));
+    const args = { ...this.spawns.get(event.toolCallId), ...record(event.args) };
     const result = event.result ?? event.partialResult ?? {};
     const details = detailsOf(result);
-    const progress = record(details.progress?.activity ? details : record(result).progress ? result : {});
+    const progress = record(details.progress?.activity || details.progress?.currentTool ? details : record(result).progress ? result : result);
     const label = spawnLabel(args, result);
     const taskType = event.toolName === 'team_create' ? 'local_workflow' : 'subagent';
     const workflowName = nonempty(args.team_name) || nonempty(details.team_name);
-    const task = this.startTask(event.toolCallId, { label, taskType,
-      role: nonempty(details.subagent_type) || nonempty(args.preset),
-      model: nonempty(details.model) || nonempty(args.model), workflowName });
-    this.rememberChild(details.agentId || details.childId || progress.childId, event.toolCallId);
+    const role = nonempty(details.subagent_type) || nonempty(args.preset);
+    const model = nonempty(details.model) || nonempty(args.model);
+    const childId = childIdOf(details, result);
+    // Do not announce a row on tool_execution_start: Agent has no agentId yet.
+    // Using the tool-call id there, then the snapshot's st_ id, is the duplicate.
+    const taskKey = childId || (taskType === 'local_workflow' ? event.toolCallId : undefined);
+    if (childId) this.rememberChild(childId, taskType === 'local_workflow' ? event.toolCallId : childId);
+    const task = taskKey ? this.startTask(taskKey, { label, taskType, role, model, workflowName,
+      taskId: childId || taskKey, toolUseId: event.toolCallId }) : undefined;
     if (event.type === 'tool_execution_update' && task) {
-      const activity = nonempty(progress.progress?.activity) || nonempty(progress.activity);
-      const summary = nonempty(progress.lastAssistantLine) || activity;
-      const lastToolName = nonempty(progress.currentTool);
-      if (activity || summary || lastToolName) this.progressTask(task, { description: activity || label, summary, lastToolName, status: 'running' });
+      const lastToolName = nonempty(progress.currentTool) || nonempty(progress.current_tool);
+      const lastLine = nonempty(progress.lastAssistantLine) || nonempty(progress.last_assistant_line);
+      if (lastToolName || lastLine) this.progressTask(task, { description: lastLine || lastToolName, summary: lastLine,
+        lastToolName, status: 'running' });
     }
     if (event.type === 'tool_execution_end' && task && !task.done) {
       const status = nonempty(details.status);
-      const failed = event.isError || status === 'failed' || status === 'error' || status === 'denied';
-      const stopped = status === 'cancelled' || status === 'aborted';
       // Agent spawn returns while the child is still running. Completing the
       // task here would tell mobile the subagent finished at ack time.
-      if (failed) this.completeTask(task, 'failed', label);
-      else if (stopped) this.completeTask(task, 'stopped', label);
+      if (event.isError || FAILED_STATUS.has(status)) this.completeTask(task, 'failed', label);
+      else if (STOPPED_STATUS.has(status)) this.completeTask(task, 'stopped', label);
       else if (status === 'completed') this.completeTask(task, 'completed', label);
-      else this.progressTask(task, { description: label, status: status === 'pending' ? 'pending' : 'running' });
       for (const member of details.members ?? []) {
         const memberId = nonempty(member.task_id);
         if (!memberId) continue;
         const memberLabel = nonempty(member.task_summary) || nonempty(member.name) || label;
         this.rememberChild(memberId, event.toolCallId);
         this.startTask(memberId, { taskId: memberId, label: memberLabel, taskType: 'subagent',
-          role: nonempty(member.role), workflowName: workflowName || label });
+          role: nonempty(member.role), workflowName: workflowName || label, toolUseId: event.toolCallId });
       }
     }
   }
@@ -242,6 +314,7 @@ export class EventProjection {
   }
   // pi.rpc.emit("rubato.task.updated") leaves the worker as {type:"extension_event",name,data}.
   // Live child ticks live on that snapshot, not on the Agent tool call (which ends at spawn-ack).
+  // T3's CANON log drops task.progress (transient), so absence there is not evidence of a miss.
   taskUpdated(event) {
     if (event.name !== 'rubato.task.updated') return;
     const tasks = record(event.data).tasks;
@@ -250,24 +323,26 @@ export class EventProjection {
       const item = record(raw);
       const childId = nonempty(item.task_id);
       if (!childId) continue;
-      const live = record(item.live_progress);
-      const label = nonempty(item.task_summary) || nonempty(item.name) || nonempty(live.activity);
+      const live = liveFacts(item);
+      const label = nonempty(item.task_summary) || nonempty(item.name);
       let task = this.taskForChild(childId);
       if (!task) {
         this.rememberChild(childId, childId);
         task = this.startTask(childId, { taskId: childId, label, taskType: 'subagent',
-          role: nonempty(item.agent_type), model: nonempty(item.model) });
-      }
+          role: nonempty(item.agent_type), model: nonempty(item.model), toolUseId: childId });
+      } else if (label && !task.label) task.label = label;
       if (!task || task.done) continue;
       const status = nonempty(item.status);
-      if (status === 'failed' || status === 'error') this.completeTask(task, 'failed', label);
-      else if (status === 'cancelled' || status === 'interrupted') this.completeTask(task, 'stopped', label);
+      if (FAILED_STATUS.has(status)) this.completeTask(task, 'failed', label);
+      else if (STOPPED_STATUS.has(status)) this.completeTask(task, 'stopped', label);
       else if (status === 'completed') this.completeTask(task, 'completed', nonempty(item.final_response) || label);
       else {
-        const activity = nonempty(live.activity);
-        this.progressTask(task, { description: activity || label, summary: nonempty(live.last_assistant_line) || activity,
-          lastToolName: nonempty(live.current_tool),
-          status: ['pending', 'running', 'waiting', 'idle'].includes(status) ? status : 'running' });
+        const doing = live.lastAssistantLine || live.currentTool;
+        const typedUsage = taskUsageOf(item, live);
+        const mapped = LIVE_STATUS.has(status) ? status : 'running';
+        if (!doing && !typedUsage && mapped === 'running') continue;
+        this.progressTask(task, { description: doing || 'running', summary: live.lastAssistantLine,
+          lastToolName: live.currentTool, status: mapped, typedUsage });
       }
     }
   }
