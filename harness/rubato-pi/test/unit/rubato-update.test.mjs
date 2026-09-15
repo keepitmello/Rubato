@@ -79,12 +79,13 @@ function setupFixture({ dirty = false, conflict = false, evidence = false, decoy
   if (gui) {
     // The GUI is an artifact of the pin plus the overlay, not of the commits
     // we pull, so the updater has to reach it even on a no-op pull. Standing
-    // in for the real installer: it only records that it was asked.
+    // in for restart-gui.sh, the one script that stops, rebuilds and restarts
+    // the app: it only records that it was asked.
     write(
-      join(seed, "harness/t3-integration/install-gui.sh"),
-      '#!/bin/sh\nprintf \'install-gui %s\\n\' "$*" >> "$RUBATO_TEST_TRACE"\nexit 0\n',
+      join(seed, "harness/t3-integration/restart-gui.sh"),
+      '#!/bin/sh\nprintf \'restart-gui\\n\' >> "$RUBATO_TEST_TRACE"\nexit 0\n',
     );
-    chmodSync(join(seed, "harness/t3-integration/install-gui.sh"), 0o755);
+    chmodSync(join(seed, "harness/t3-integration/restart-gui.sh"), 0o755);
     // gui_installed() reads this path, so a bare .git marks "installed here".
     mkdirSync(join(home, ".rubato/t3-source/.git"), { recursive: true });
   }
@@ -355,15 +356,27 @@ test("profile engine restart failure names the old engine as still running", () 
 
 // A machine that edited the pin or the overlay locally has nothing to pull,
 // and "이미 최신입니다" used to end the run there — leaving the GUI on the old
-// bundle and the person who made the edit hunting for install-gui.sh by hand.
-// Whether a rebuild is actually needed stays install-gui.sh's call.
+// bundle and the person who made the edit hunting for the installer by hand.
+// Whether anything actually needs rebuilding stays restart-gui.sh's call.
 test("update with nothing to pull still puts the GUI back on the pin", () => {
   const fixture = setupFixture({ gui: true, remoteChange: false });
   const result = runUpdate(fixture);
   const out = `${result.stdout}\n${result.stderr}`;
   assert.equal(result.status, 0, out);
   assert.match(out, /받을 것이 없습니다/);
-  assert.match(readFileSync(fixture.trace, "utf8"), /install-gui --apply/);
+  assert.match(readFileSync(fixture.trace, "utf8"), /restart-gui/);
+});
+
+// The updater used to stop at the disk: it rebuilt the bundle and told the
+// user to come back next session. A rebuild nobody relaunches is invisible,
+// so `update` alone has to carry the app across too.
+test("update brings the app across, not just the bundle on disk", () => {
+  const fixture = setupFixture({ gui: true });
+  const result = runUpdate(fixture);
+  const out = `${result.stdout}\n${result.stderr}`;
+  assert.equal(result.status, 0, out);
+  assert.match(readFileSync(fixture.trace, "utf8"), /restart-gui/);
+  assert.doesNotMatch(out, /다음 세션부터 적용/);
 });
 
 test("update leaves the GUI alone on a machine without one", () => {
@@ -371,5 +384,5 @@ test("update leaves the GUI alone on a machine without one", () => {
   const result = runUpdate(fixture);
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   const trace = existsSync(fixture.trace) ? readFileSync(fixture.trace, "utf8") : "";
-  assert.doesNotMatch(trace, /install-gui/);
+  assert.doesNotMatch(trace, /restart-gui/);
 });

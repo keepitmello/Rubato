@@ -125,20 +125,25 @@ T3가 우리 이벤트를 전부 파일로 남긴다:
 
 | 프로세스 | 무엇이 걸려 있나 | 재시작 |
 |---|---|---|
-| Pi 프로필 엔진 | `harness/pi-server/src/` | `rubato restart` (SIGTERM, `kill -9` 금지 — 락이 15초 stale로 남는다) |
-| 데스크톱 앱 | `harness/t3-integration/src/` (켤 때 한 번 읽는다) | `rubato restart` |
-| remote hub | `packages/rubato-remote-hub/` | `rubato restart` |
-| T3 서버 번들 | 핀 + `harness/t3-integration/overlay/` (번들에 컴파일돼 들어간다) | `rubato restart` (앱이 내려간 창에서 다시 만든다) |
+| Pi 프로필 엔진 | `harness/pi-server/src/` | `rubato update` · `rubato restart` (SIGTERM, `kill -9` 금지 — 락이 15초 stale로 남는다) |
+| 데스크톱 앱 | `harness/t3-integration/src/` (켤 때 한 번 읽는다) | `rubato update` · `rubato restart` |
+| remote hub | `packages/rubato-remote-hub/` | `rubato update` · `rubato restart` |
+| T3 서버 번들 | 핀 + `harness/t3-integration/overlay/` (번들에 컴파일돼 들어간다) | 같음 (앱이 내려간 창에서 다시 만든다) |
 
-**손으로 칠 명령은 `rubato update` 와 `rubato restart` 둘뿐이다.** 둘 다 GUI가 깔려
-있으면 `install-gui.sh --apply` 를 거치고, 다시 만들지 말지는 거기서 핀·overlay 지문으로
-판단한다 — 이미 맞는 설치는 빌드 없이 지나가므로 평소 재시작은 그대로 빠르다.
+**손으로 칠 명령은 `rubato update` 와 `rubato restart` 둘뿐이다.** 어느 쪽을 쳐도 앱까지
+간다. 앱을 끄고·번들을 다시 만들고·다시 켜는 일은 `harness/t3-integration/restart-gui.sh`
+하나가 쥐고 있고 두 동사가 그것을 부른다 — 앱을 다루는 자리가 둘이면 두 동사는 갈라진다.
+실제로 그동안 갈라져 있었다: `update` 는 디스크의 번들만 다시 만들고 "다음 세션부터
+적용돼요" 로 끝나서, 켜져 있는 앱은 옛 코드로 계속 돌았다.
 
-둘의 차이는 무엇을 먼저 하느냐다. `update` 는 받아온 것을 보고 필요한 것만 다시 만들고,
-받을 것이 없어도 GUI는 맞춘다(이 머신에서 핀이나 overlay를 고친 경우가 그렇다).
-`restart` 는 떠 있는 것을 내리고 다시 올린다 — 앱이 내려간 그 창이 번들을 다시 만들 수
-있는 유일한 자리다. 빌드가 실행 중인 앱이 읽고 있는 `dist` 를 갈아끼우기 때문이다.
-앱이 꺼져 있으면 번들만 맞추고 켜지는 않는다.
+다시 만들지 말지는 `install-gui.sh` 가 핀·overlay 지문으로 판단한다. 이미 맞는 설치는
+빌드 없이 지나가므로 평소 재시작은 그대로 빠르다. 핀이 이미 디스크에 있으면 네트워크도
+치지 않아서 오프라인에서도 앱을 다시 켤 수 있다.
+
+둘의 차이는 앞단뿐이다. `update` 는 원격에서 받아 바뀐 것만 다시 만들고, 받을 것이 없어도
+GUI 는 맞춘다(이 머신에서 핀이나 overlay 를 고친 경우가 그렇다). `restart` 는 받지 않고
+떠 있는 것만 내렸다 올린다. 앱이 꺼져 있으면 번들만 맞추고 켜지는 않는다 — 이 머신이 창을
+띄우고 싶어하는지는 재시작이 정할 일이 아니다.
 
 엔진 재시작은 진행 중이던 턴을 끊는다. 안전한 이유는 실측했다 — JSONL이 결과 없는 도구
 호출로 끝나도 프로바이더 변환층이 합성 결과를 채워서 세션이 그대로 열린다. **다만 CLI
