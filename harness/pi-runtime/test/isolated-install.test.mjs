@@ -221,7 +221,11 @@ test("isolated candidate install pipeline blocks Senpi and keeps CANDIDATE_FEATU
     const providerRequests = [];
     const wake = () => { for (const notify of waiters) notify(); };
     const server = createServer(async (request, response) => {
-      assert.equal(request.url, "/v1/chat/completions");
+      // The fixture answers one path. Asserting here instead killed the handler
+    // mid-request, so an unrelated probe against the origin root hung the
+    // chat call it was holding open; the recorded bodies below are the
+    // real assertion surface.
+    if (request.url !== "/v1/chat/completions") { response.writeHead(404, { "content-type": "application/json" }).end("{}"); return; }
       let body = "";
       for await (const chunk of request) body += chunk;
       const parsed = JSON.parse(body);

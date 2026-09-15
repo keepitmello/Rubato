@@ -63,7 +63,11 @@ test("actual candidate main RPC binds Rubato against canonical services across n
   const providerRequests = [];
   const wake = () => { for (const notify of waiters) notify(); };
   server = createServer(async (request, response) => {
-    assert.equal(request.url, "/v1/chat/completions");
+    // The fixture answers one path. Asserting here instead killed the handler
+  // mid-request, so an unrelated probe against the origin root hung the
+  // chat call it was holding open; the recorded bodies below are the
+  // real assertion surface.
+  if (request.url !== "/v1/chat/completions") { response.writeHead(404, { "content-type": "application/json" }).end("{}"); return; }
     let body = "";
     for await (const chunk of request) body += chunk;
     const parsed = JSON.parse(body);
@@ -166,7 +170,11 @@ test("actual candidate main RPC binds Rubato against canonical services across n
   const inspect = () => request("extension_request", { name: "candidate.inspect" });
   const initial = await inspect();
   const state = await request("get_state");
-  assert.equal(dirname(state.sessionFile), join(agentDir, "sessions"));
+  // What this guards is isolation: the candidate writes under its own agentDir
+  // and never into the live profile. Stock now files a session inside a
+  // cwd-encoded folder under sessions/ rather than directly in it (5c532f6f7,
+  // 05a15877f, 8dc148cc7), so the directory is a descendant, not the parent.
+  assert.ok(dirname(state.sessionFile).startsWith(join(agentDir, "sessions")), state.sessionFile);
   // tool_search is registered only when a deferred catalog exists; the default
   // small direct-exposure profile here intentionally has none.
   for (const name of ["Agent", "team_create", "memory", "memory_apply_patch", "bash_input", "eval", "webfetch", "look_at", "apply_patch"]) assert.ok(initial.tools.includes(name), `missing ${name}`);
