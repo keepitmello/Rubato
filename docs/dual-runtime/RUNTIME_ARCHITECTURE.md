@@ -1,14 +1,14 @@
-# CLI / T3 공통 실행 구조 — 감사 후 권고 설계
+# CLI / T3 공통 실행 구조
 
-2026-09-15 · 상태: **CLI/T3 공통 엔진 구현·실설치 전환·재시작 및 관리형 CLI 실검증 완료.** 운영/복구 절차는 [공통 엔진 운영과 검증](COMMON_ENGINE_OPERATIONS.md)을 따른다.
+2026-09-16 · 상태: **CLI/T3 공통 엔진 구현·실설치 전환·재시작 및 관리형 CLI 실검증 완료.** 열려 있는 것은 writer fence 부재, G1(공유 쓰기 제어), G2(terminal attachment identity) 셋이다. 운영/복구 절차는 [공통 엔진 운영과 검증](COMMON_ENGINE_OPERATIONS.md)을 따른다.
 
-이 문서는 로컬 참고 문서 `hub-absorb-handoff.md`(허브 흡수 초안)를 참고한 설계 판단이다. 사용자 소유 원본 초안은 수정하지 않는다. “허브를 Pi 서버에 흡수”라는 파일/프로세스 이동 자체가 목표가 아니다. 최신 목표와 이전 동일 대화 공유 설계의 적용 경계는 아래 §0을 따른다.
+이 문서는 로컬 참고 문서 `hub-absorb-handoff.md`(허브 흡수 초안)를 참고한 설계 판단이다. 사용자 소유 원본 초안은 수정하지 않는다. “허브를 Pi 서버에 흡수”라는 파일/프로세스 이동 자체가 목표가 아니다.
 
-근거 원장은 Rubato-lab의 `_workspace/runtime-architecture-20260915/`에 있다. `baseline.md`, `owner-design.md` §9, `design-review.md`, `lead-stock-control-probe.json`, `lead-lock-probe.json`, `lead-zmx-handoff-probe.json`, `lead-feasibility.md`를 함께 본다. 독립 검토는 초기 후보를 NOT READY로 판정했다. 아래는 그 지적과 리드의 설치본 재검증을 반영한 새 권고안이며, 이 전체 안이 독립 검토를 통과했다고 주장하지 않는다.
+근거 원장은 Rubato-lab의 `_workspace/runtime-architecture-20260915/`와 `_workspace/runtime-architecture-20260916/`에 있다. `baseline.md`, `owner-design.md` §9, `design-review.md`, `lead-stock-control-probe.json`, `lead-lock-probe.json`, `lead-zmx-handoff-probe.json`, `lead-feasibility.md`를 함께 본다. 독립 검토는 초기 후보를 NOT READY로 판정했다. 아래는 그 지적과 리드의 설치본 재검증을 반영한 새 권고안이며, 이 전체 안이 독립 검토를 통과했다고 주장하지 않는다.
 
-## 0. 최신 승인: CLI와 GUI 모두 하나의 프로필 엔진에 연결
+## 1. 현재 구조 — CLI와 GUI 모두 하나의 프로필 엔진에 연결
 
-사용자 승인: “해보자. 코덱스 데스크탑 앱처럼 하나의 엔진이 여러 스레드를 관리하는 식으로. cli던 gui던”. Intent `dual-runtime-lifecycle` revision 5. GUI만의 실험에서 CLI/GUI 공통 엔진으로 범위를 넓혔다. 아래 §1 이후의 대화별 worker 설계는 이전 검토 기록이며 최신 목표로 구현하지 않는다.
+사용자 승인: “해보자. 코덱스 데스크탑 앱처럼 하나의 엔진이 여러 스레드를 관리하는 식으로. cli던 gui던”. Intent `dual-runtime-lifecycle` revision 5. GUI만의 실험에서 CLI/GUI 공통 엔진으로 범위를 넓혔다.
 
 ```text
 CLI 터미널 입출력 ─┐
@@ -43,6 +43,8 @@ T3 기존 어댑터 ────┼─ 공식 Pi Server / SessionRouter (프로�
 
 이전 즉시 측정은 AST eager→lazy 변경까지 포함해 1,916→695MiB(약64%)였다. 위 최종 동일 조건 비교와 혼용하지 않는다. 시작 속도 개선도 주장하지 않는다. 원본과 재현 명령: `_workspace/runtime-architecture-20260915/common-resource-final.md`.
 
+**GUI actor는 TUI를 만들지 않는다 (2026-09-16 실측).** GUI/RPC로 만든 대화는 `appMode: 'rpc'`로 시작하므로([hosted-runtime.mjs](../../harness/pi-server/src/hosted-runtime.mjs)) `InteractiveMode` 생성자를 거치지 않는다. `InteractiveMode`는 terminal socket으로 붙은 presentation 경로([terminal-session.mjs](../../harness/pi-server/src/terminal-session.mjs))에서만 생성된다. 격리 엔진에 생성자 계수기를 주입해 확인했다: actor 0개와 GUI actor 1개에서 생성 0회, TUI actor 1개에서 1회다. 같은 30초 유휴 창의 한 코어 CPU / 끝 RSS는 0 actor **0.11% / 358.3MiB**, GUI actor 1개 **0.23% / 443.0MiB**, TUI actor 1개 **0.42% / 478.9MiB**였다. `InteractiveMode` 모듈 자체는 `main.js`의 정적 import로 엔진 시작 때 적재되지만 **적재는 생성이 아니고** `Tui.start` 전에는 render loop가 없다. 단일 표본이며 모델 호출·도구·다중 actor 부하·장기 유휴는 포함하지 않는다. 원장: `_workspace/runtime-architecture-20260916/gui-actor-tui-probe/`.
+
 닫힌 UI 약한 참조 2개는 GUI actor를 유지한 채 모두 회수됐고, SDK 5개 로드/회수 4회에서도 잔존 참조는 매번 0이었다. 첫 메시지의 JSONL exclusive-create 충돌, 오래된 UI callback 보유, client unsubscribe/close 경합을 실패 증거로 재현한 뒤 수정했다. 답변을 기다리는 도구의 질문창을 닫을 때 생기던 종료 교착도 재현했다. 취소를 시작한 후 native 질문/입력/editor/custom UI의 대기까지 해제하고 도구 종료를 기다린다. remote-control 확장이 비활성인 경우에도 동작한다.
 
 **최종 전환:** 후보20의 관리형 CLI까지 검증한 뒤 공식 installer로 설치본을 교체하고 T3/프로필 엔진을 재시작했다. 실제 `rubato new --detach` 5개가 hub/zmx를 거쳐 같은 엔진 PID에 연결됐고, 한국어 native 렌더링·`/new`·기존 T3 bridge의 대화 재개가 통과했다. 검증용 JSONL 6개는 사용자 목록에서 별도 백업으로 옮겼다. 저장 대화483개와 원본 파일893개, 인증·설정·모델·신뢰 설정은 전환 전과 같고 기존 허브는 재시작하지 않았다.
@@ -51,72 +53,9 @@ T3 기존 어댑터 ────┼─ 공식 Pi Server / SessionRouter (프로�
 
 **검증 경계:** 관련 집중 검사72개와 자체 격리 native 검사2개, 실제 T3 Driver/공식 candidate 연결 검사는 통과했지만 전체 legacy/runtime suite는 green이 아니다. 설치 상태를 전제하는 legacy 검사, 기존 child write-tool 미발견 및 compaction adapter assertion 등이 남고, 전체 타입 검사에는 기존 오류3개가 남는다. 과거 광범위 검사38개 실패를 모두 baseline으로 입증한 것은 아니다. 임의 외부 확장의 전역 singleton 안전성·실제 유료 provider·장기 실사용 부하는 보장하지 않는다. `fullRubatoParity:false`를 유지한다.
 
-최신 재현 명령과 증거: Rubato-lab `_workspace/runtime-architecture-20260915/common-cli-implementation.md`. 아래는 이전 검토 기록이다.
+최신 재현 명령과 증거: Rubato-lab `_workspace/runtime-architecture-20260915/common-cli-implementation.md`.
 
-### 이전 revision 4의 제한적 비용 비교
-
-사용자는 동일 대화를 CLI/GUI에서 동시에 조작할 필요는 거의 없다고 명확히 했다. 현재 우선순위는 **대화 5개가 완전한 엔진 프로세스 5개를 요구하는 비용**이다. 따라서 §1 이하의 동일 대화·terminal handoff 설계를 이번 최적화의 필수 선행 작업이나 확정안으로 취급하지 않는다.
-
-- 공식 Pi Server/SessionRouter는 유지한다. 동일 세션 획득 중복 제거와 여러 세션을 한 프로세스에 호스팅하는 것은 다른 기능이다. 현재 Rubato의 `RpcWorker.start()`가 대화별 CLI 프로세스를 생성한다.
-- Node 24.18.0, Pi 0.85.1, 동일한 43-feature 후보/대화 5개로 비교한 제한적 실험: 별도 RPC 실행의 프로세스 트리 RSS 합계 **2,033,270,784 bytes**, 공유 SDK 호스트는 **628,572,160 bytes**. 엔진 프로세스는 5→1, MCP 등 자식을 포함하면 10→6이었다. 실제 물리 메모리 절감 보장이 아닌 단일 표본 RSS 비교다.
-- 공유 후보는 각 대화에 44개 확장 factory를 로드하고, 별도 JSONL·task 저장 경로 및 한 대화 dispose 후 다른 대화의 식별자/도구/모델 보존을 검증했다. UI는 probe 모형이며 모델 호출은 금지했다. 두 실험 모두 sandbox에서 LSP orphan sweep이 제한됐다. `fullRubatoParity:false`는 그대로다. 제품 기능 동등성이나 실제 CLI/GUI 동시 실행 검증으로 확대 해석하지 않는다.
-- 이 비교 당시에는 공유 실행 어댑터가 없었다. 이후 revision 5에서 위 후보를 구현했지만 설치/기본 경로 전환은 하지 않았다.
-- 안전한 전환에는 기존 RPC의 전역 stdin/signal/process-exit 처리를 세션 수명과 분리하고, memory/ast-grep 등 process cwd 기본값과 확장 상태 소유권을 점검해야 한다. 기존 launcher의 설정·권한·프롬프트·도구 의미론도 유지해야 한다. 단순 spawn 교체나 축약 RPC 재구현으로는 이를 입증할 수 없다.
-
-**비용 비교의 한계:** 절감 가능성은 크지만, "작은 옵션 변경만으로 동작을 유지한 전환"이라는 가정은 채택하지 않는다. 위 RSS 표본을 현재 제품 전체의 절감률로 제시하지 않는다.
-
-실험 원장: Rubato-lab `_workspace/runtime-architecture-20260915/shared-runtime-feasibility.md`. 최초 probe의 잘못된 process cwd로 기존 task 저장소의 만료 기록 2건이 TTL 정리된 사고와 미복구 경계도 그 원장에 기록했다.
-
-## 1. 이전 동일 대화 공유 설계: 결론과 선택
-
-**기존 live hub의 실행 관리 기반을 공통 세션 서비스로 정리하고, 실제 AgentSession을 가진 worker에 CLI와 T3가 함께 붙는다.** Pi 서버의 별도 worker 소유권을 영구 병존시키지 않는다. JSONL은 대화 원본이고, 목록·liveness·T3 projection은 각각 파생 뷰다.
-
-```text
-CLI picker / attach ─┐
-T3 provider adapter ─┼── 공통 세션 서비스 (기존 live hub 기반)
-remote / vault ──────┘       │
-                            ├─ 저장 목록: 경량 metadata index (파생 상태)
-                            ├─ 실행 목록: worker identity / attachment / recovery
-                            └─ acquire / route / observe
-                                      │
-                         대화당 하나의 terminal-capable worker
-                         ├─ Pi AgentSession + SessionManager (기록 소유자)
-                         ├─ 기존 TUI / zmx 연결
-                         └─ 공통 control + event + snapshot port
-                                      │
-                                    JSONL
-```
-
-- 이미 CLI에서 돌고 있으면 T3는 **그 worker에 붙고** RPC worker를 새로 띄우지 않는다.
-- GUI에서 먼저 실행한 대화도 CLI 연결이 가능한 같은 종류의 worker를 쓴다. 나중에 CLI가 열렸다고 실행기를 교체하지 않는다.
-- GUI-only worker의 TUI는 terminal attachment가 없을 때 그리기/애니메이션을 멈출 수 있어야 한다. AgentSession은 필요한 작업을 계속한다. 이 성질은 아직 구현·실측되지 않았으므로 통합 진입 시험 대상이다.
-- 한 서비스가 명령 접수·worker 발견·정리 정책을 소유한다. hub와 Pi host가 각각 TTL/부착 상태를 판단하게 두지 않는다.
-- 서비스는 worker 프로세스의 생존과 동일하지 않다. 서비스 재시작 때 zmx/worker의 진행 중 작업을 죽이지 않고 다시 발견한다.
-- 기존 CLI 런처·피커·부팅 진입점은 유지한다. remote/vault/pairing/push 구현을 다시 만들지 않는다. `rubato-codex`는 이 설계 범위 밖이다.
-
-### 선택하지 않은 안
-
-| 안 | 판정과 이유 |
-|---|---|
-| 두 실행기를 유지하고 lease가 있으면 T3를 read-only로 전환 | 임시 안전장치는 될 수 있어도 동일 실행 공유가 아니다. 최종 목표로 채택하지 않는다. |
-| T3가 항상 fork | 대화 의미를 바꾸므로 채택하지 않는다. |
-| 모든 TUI를 원격 headless engine의 새 renderer로 재작성 | 장기 대안일 뿐 우선안이 아니다. 설치된 InteractiveMode는 AgentSession의 서로 다른 멤버 59개와 extension UI에 직접 의존한다. `/resume`뿐 아니라 custom UI·동기 속성까지 원격화해야 하므로 “얇은 연결”이 아니다. |
-| 현재 TUI control을 그대로 연결하면 완성 | 설치본 실험에서 반증됐다. 제어 포트를 먼저 보완해야 한다. |
-| 기존 hub 제거 후 Pi 서버에 기능 재구현 | 이미 있는 registry/remote/vault/control을 버리고 새 host에 중복 이식한다. 관측된 문제 해결에 필수적이지 않다. |
-
-GUI-only에서도 terminal-capable worker를 쓰는 선택은 TUI 재작성 비용을 피하는 대신 PTY/zmx/TUI 상태 비용을 가진다. 기존 RPC worker 대비 총 RSS/CPU를 재야 한다. 이 비용이나 terminal handoff 동등성이 기준을 못 맞추면 이 선택을 재검토하며, 실패한 설계를 그대로 구현하지 않는다.
-
-## 2. 확인된 사실과 철회한 주장
-
-### 최적화 전 저장 목록 비용은 실제 문제였다
-
-- 현재 profile: 483 JSONL, 736,255,621 bytes (약 702MiB).
-- worker 자식이 없는 30.28초 운영 프로세스 표본: CPU 한 코어의 96.2%, RSS 약 829→945MiB.
-- 별도 read-only 프로세스의 동일 이력 1회 조회: 모든 483 파일/736MB를 읽음, 2,532ms elapsed / 3,049ms CPU. 프로파일 상위는 session metadata 생성·문자열 디코딩·JSON 파싱이다.
-- `SessionFiles.list → SessionManager.listAll → buildSessionInfo`가 전체 본문을 매번 파싱한다. `resolve`도 전체 list를 다시 부른다. [session-files.mjs](../../harness/pi-server/src/session-files.mjs), [host.mjs](../../harness/pi-server/src/host.mjs).
-- 실제 metadata 변화 없는 text delta 250개가 directory revision 250개를 만든다. 저장 세션 1개/500개일 때 관측 burst 비용 4.57ms/223.67ms. **Chord는 같은 공개 sessions 배열 참조를 유지했으므로 전체 목록이 매번 전송된다고 주장하지 않는다.**
-
-96.2% CPU 전부가 목록 때문이라는 live A/B는 하지 않았다. 2.53초 pass와 2초 setInterval만으로 100% duty cycle이 증명되지 않는다. RSS 변화만으로 leak이라고 판정하지 않는다.
+## 2. 확인된 사실
 
 ### 이중 writer는 정상 append만으로 기본 분기를 갈라놓는다
 
@@ -124,24 +63,13 @@ GUI-only에서도 terminal-capable worker를 쓰는 선택은 TUI 재작성 비�
 
 따라서 lock은 append 한 줄 동안만 잡는 것이 아니라 **해당 대화를 hydrate한 AgentSession의 쓰기 수명 전체**를 보호해야 한다. leaf를 읽어 비교하는 것만으로는 check→append 경쟁이나 이미 만들어진 모델 context의 stale 상태를 막지 못한다.
 
-### 매핑 schema는 있지만 현재 stock adapter는 일부를 채우지 못한다
-
-hub protocol은 이미 `pi.{sessionId, sessionFile, leafId}`를 갖고 snapshot을 registry에 반영한다. “매핑이 없다”는 초기 결론은 틀렸다. 단, schema 존재가 설치본 값의 완전성을 뜻하지 않는다.
-
-설치된 stock Pi SDK + 실제 stock-control adapter를 격리 profile에서 실행한 결과:
-
-- SDK sessionFile 식별자는 있음 → control snapshot의 sessionFile은 없음.
-- `newSession`, `fork`, `reload`는 event context에 해당 기능이 없어 unavailable.
-- adapter의 `respondToUiRequest`는 상수 false이며 uiRequest는 undefined다.
-- 레거시 Senpi transform에는 더 풍부한 native control이 있지만 현재 stock install에서 같은 연결을 확인하지 못했다.
-
-원인: factory가 session 옵션 없이 설치되고, stock adapter가 일반 event context를 command context처럼 사용한다. [bootstrap.mjs](../../harness/pi-runtime/features/rubato-components/bootstrap.mjs), [stock-control.mjs](../../harness/pi-runtime/features/remote-surface/stock-control.mjs). 설치본 probe는 모델/TUI 렌더를 실행한 시험이 아니다.
-
 ### stock 런타임에는 전환 소유자가 따로 있다
 
 설치된 `AgentSessionRuntime`은 `AgentSession` 및 cwd-bound services의 교체를 소유하고, `InteractiveMode`는 그 runtimeHost에 연결된다. stock `switchSession`은 대상 SessionManager를 연 다음 기존 session을 abort/dispose하고, 이후 새 runtime을 만든다. **새 runtime 생성 실패 시 이전 실행을 그대로 유지하는 트랜잭션이 아니다.** extension event context에 몇 개 메서드를 덧붙이는 수준으로 이 문제를 해결했다고 볼 수 없다.
 
 또한 `/resume` selector의 rename은 `SessionManager.open(...).appendSessionInfo(...)`를 직접 호출한다. 입력/모델 turn만 fence를 적용하면 이 별도 writer를 놓친다. 서비스의 empty-session create, migration, fork/import와 함께 쓰기 진입점 목록에 포함한다.
+
+**`SessionManager.open` 자체가 이미 writer다 (2026-09-16 확인).** 빈 파일 초기화와 migration의 `_rewriteFile` 외에, `loadEntriesFromFile`이 끝 줄 개행을 고칠 때 `appendFileSync`를 부른다(설치본 `core/session-manager.js:321`). 따라서 fence는 append 지점이 아니라 모든 `open`/`create`/`wx` **앞에** 놓여야 하고, stock `switchSession`이 teardown보다 먼저 대상을 `open`한다는 위 사실과 겹쳐 읽는다. 또 `flock`은 프로세스 단위라 같은 엔진 안의 두 SessionManager를 막지 못하므로, [session-ui/patches.mjs](../../harness/pi-runtime/features/session-ui/patches.mjs)의 in-process live-writer 검사는 OS fence가 생겨도 대체되지 않는다. 설치된 Node24.18.0에는 `FileHandle.lock`도 `O_EXLOCK`도 없어 `flock(2)`에는 별도 네이티브 바인딩이 필요하고, 현재 `profile-server.mjs`가 쓰는 `proper-lockfile`은 stale-PID lease라 이 용도에 부적합하다. 쓰기 진입점 전수와 근거: `_workspace/runtime-architecture-20260916/gap-feasibility-map.md`.
 
 ## 3. 책임과 식별자
 
@@ -215,51 +143,17 @@ Mac 격리 primitive probe: owner 실행 중/ SIGSTOP 중에는 lock 획득 불�
 
 T3에서 작업 중인 worker를 zmx clients=0만 보고 멈추면 안 된다. 동시에 sidebar를 열었다는 이유로 모든 stored 대화를 살려 두어서도 안 된다. idle/unobserved worker 정리는 원본 보존 후 cooperative shutdown→물리 종료 확인 순서다. pending user question은 조용히 회수하거나 자동 응답하지 않는다.
 
-## 7. 저장 목록 설계 — 독립적인 첫 구현 단위
-
-외부 목록 필드(title/messageCount/created/modified/cwd/id)와 원본은 그대로 유지한다. T3 subscription 전환/새 프로토콜/worker 통합을 이 수정의 선행조건으로 만들지 않는다.
-
-1. 기존 `session-catalog`의 discovery/page 규칙을 검토해 재사용한다. 현재 helper는 page 단위 본문 parse를 줄이지만 permanent metadata cache는 아니며, transcript-cache는 TUI progressive renderer이므로 그대로 가져오면 문제를 해결하지 못한다.
-2. canonical file identity + inode/dev + size + mtime/ctime fingerprint로 metadata cache. profile 밖 symlink는 기존 보안 계약대로 제외. 글로벌 제한된 IO 동시성, 초기 상태부터 오류를 파일 단위로 격리한다.
-3. slim streaming parser는 기존 metadata 의미론을 재현하되 사용하지 않는 allMessagesText를 만들지 않는다. title clear, 첫 user text, message count, modified 기준은 기존 SDK와 differential test한다.
-4. 변경 없는 warm list는 JSONL open/parse 0. `resolve(id)`는 같은 index에서 찾되 missing/ambiguous/changed 상태를 정확히 처리한다. create는 만든 한 항목만 invalidation/upsert한다.
-5. 첫 단계는 안전하게 **변경 파일 재파싱**. append-tail 최적화는 실제 필요가 확인된 후 추가한다. size 증가만으로 append임을 추정하지 않는다. overwrite/truncate/rename/부분 JSONL line, parse 중 파일 변경을 처리하고 잘못된 캐시를 확정하지 않는다.
-6. 처음에는 기존 poll을 경량 readdir/stat invalidation에 사용해 호환성을 유지한다. watcher는 dirty hint일 뿐 유일한 정확성 근거가 아니다. watcher 유실/restart 시 bounded reconciliation이 복구한다.
-7. 내부 catalogue와 runtime summary를 분리하고 실제 표시 필드 변화 때만 Directory revision을 올린다. 기존 wire 응답 모양은 유지할 수 있다. text delta는 session stream에만 간다.
-8. cold start의 대형 단일 파일 비용도 따로 측정한다. 단순 cache로도 기준을 못 맞추면 rebuildable on-disk metadata cache 또는 lazy page를 비교한다. 새 대화 DB가 아니라 삭제해도 복구되는 파생 cache다. 목록 페이지/순서 변경은 별도 사용자 관측 변경으로 취급한다.
-
-## 8. 원본 보존 이행 순서와 정지 조건
-
-| 단계 | 산출물 / 범위 | 통과 조건 |
-|---|---|---|
-| 0 | 현재 CLI 관측 계약 + fixture/측정 유지 | picker/boot/new/attach/list/vault/exit75 기준, 실제 PTY capture 추가. 기존 자동 시험만으로 렌더 동등성을 선언하지 않음. |
-| 1 | 위 metadata index + no-op publish | unchanged warm list JSONL reads0, 변경 한 파일만 parse, metadata differential, polling CPU/RSS 전후, 재시작/corrupt/symlink/삭제 검증. T3/worker 정책 변경 없음. |
-| 2 | 격리 control/fence/terminal-handoff feasibility | 현재 stock pin으로 standard UI 양방향, session epoch 전환, 같은 프로세스 동시 CLI/T3 control, 아래 G1/G2 통과. live 설치는 건드리지 않음. |
-| 3 | common service acquire/worker/attachment 도입 | CLI-first 및 GUI-first 모두 same workerId, same logical branch. 신규 세션부터 opt-in, 구버전 live owner 보호. |
-| 4 | T3 binding/이벤트를 공통 control로 전환 | history/stream/reconnect/late reply/질문/model/effort/도구/large payload parity. 별도 Pi worker spawn 제거. |
-| 5 | 중복 host/TTL/poll 제거, 배포 전 검증 | remote/vault 동등성, 실측 개선, 고장 주입/롤백, 다른 machine 설치. 이후에만 기본 경로 전환. |
-
-단계1은 설계가 충분히 구체적이다. 전체 공통 엔진 통합은 다음 두 gate를 통과하기 전 큰 구현을 시작하지 않는다.
+## 7. 남은 gate — G1 / G2
 
 **G1 — control + ownership**: 실제 stock build를 사용하는 격리 worker에서 CLI/remote 입력, standard 질문/확인, abort, resume/fork/reload, epoch에 묶인 late response, 프로세스 pause/crash, 동시 acquire와 branch 보존. 전환 중 runtime 생성 실패, T3 A binding 보존, selector rename 및 extension `withSession`도 포함한다. SDK in-process mock만 통과하면 부족하다.
 
-**G2 — terminal-capable worker 비용 + handoff**: GUI-first로 뜬 worker에 CLI attach해 PID/worker/branch가 그대로인지; A의 `/resume`가 이미 살아 있는 B로 갔을 때 CLI view/attachment 이동 범위가 기존 의미와 맞고 대상 B 연결 및 T3 작업을 건드리지 않는지; terminal 없는 동안 TUI animation/render가 CPU를 쓰지 않는지. 기존 RPC 대비 process-tree RSS/CPU/FD와 cold/warm latency를 함께 비교한다. synthetic zmx client 교체 통과만으로 G2 전체를 닫지 않는다.
+**G2 — terminal handoff**: GUI-first로 뜬 worker에 CLI attach해 PID/worker/branch가 그대로인지; A의 `/resume`가 이미 살아 있는 B로 갔을 때 CLI view/attachment 이동 범위가 기존 의미와 맞고 대상 B 연결 및 T3 작업을 건드리지 않는지. 기존 RPC 대비 process-tree RSS/CPU/FD와 cold/warm latency를 함께 비교한다. synthetic zmx client 교체 통과만으로 G2 전체를 닫지 않는다.
+
+attachment id 부재는 2026-09-16에 코드로 확인했다. stock `SessionBeforeSwitchEvent`는 `{ type, reason, targetSessionFile? }`뿐이고(설치본 `extensions/types.d.ts:464-468`), Rubato의 terminal wire·open frame·`terminal-server`·`TerminalProcess` 어디에도 id가 없다(`terminal-session.mjs`의 `pid`는 엔진 pid다). 현재 설치본은 socket 1개 = `InteractiveMode` 1개 = cursor 1개이고 `claimPresentation`이 두 번째 CLI 제어자를 거부하므로 이 경쟁은 아직 만들어질 수 없다. id는 여러 terminal이 한 TUI를 공유하는 기능을 만들 때 함께 도입한다.
 
 G1/G2가 실패하면 이유를 설계로 환류한다. GUI read-only/auto-fork나 새 TUI를 몰래 대체안으로 도입하지 않는다. 별도 모델 리뷰를 추가하지 않고 리드가 직접 이어가라는 사용자 지시를 따른다.
 
-## 9. 완료 기준 / 현재 미확인
-
-완료는 클래스 수나 daemon 이름이 줄어드는 것이 아니라 다음 제품 결과다.
-
-- 동일 대화가 CLI/T3에서 하나의 worker/leaf owner를 공유한다. 동시 입력은 같은 진행 context에 들어가고 잘못된 thread로 전송되지 않는다.
-- 저장 이력 개수/총 bytes 증가가 idle CPU 및 토큰당 전체-catalogue 비용으로 곧장 번지지 않는다.
-- 화면을 닫아도 실행/질문은 정해진 정책대로 살아 있고, 보이지 않는 idle engine은 불필요하게 유지되지 않는다.
-- 기존 CLI 외형/입력/부팅/피커/resume/remote/vault와 기존 T3 기능을 실제 표면에서 확인한다.
-- 서비스/worker crash/restart, unknown command outcome, 구버전 생존/전환, malformed/큰 파일, alias/중복 UUID를 시험한다.
-
-설계 단계 baseline은 CLI40, Pi15(+실제 candidate 1skip), T314, lead remote-surface9 시험과 격리 SDK/OS primitive 관측, 실제 zmx의 synthetic client 교체다. 공통 소유권 원칙과 목록 최적화 단위는 정리됐지만 worker 전환 세부까지 확정한 설계는 아니다. **전체 통합, 실제 `/resume` handoff, standard UI parity, 실제 제품 렌더 동등성은 여전히 미확인이다.** 이후 승인된 제품 코드 변경과 검증은 아래 §10 이후에 기록한다. 설계 단계에는 설치본·사용자 세션 변경, commit/push/deploy를 하지 않았다.
-
-## 10. 승인 후 첫 구현 — 기존 연결/사용 방식은 유지
+## 8. 저장 목록 최적화 구현
 
 사용자 승인: "ㅇㅇ 리소스 최적화 최대한 진행해보자 너가 직접 해줘. 기존 동작이나 사용방식을 해치지 않으면서 내부 엔진 붙는 것만 바꾸면 될거같은데". 리드가 직접 구현했고 추가 에이전트는 사용하지 않았다.
 
@@ -275,13 +169,13 @@ G1/G2가 실패하면 이유를 설계로 환류한다. GUI read-only/auto-fork�
 
 같은 483개/736,255,621 bytes 이력에서 metadata 결과 hash는 모두 일치했다. 변경 전 조회 2회 중앙값 **2,376.151ms → warm 5회 중앙값 7.654ms**, warm JSONL 읽기 **483개/736MB → 0개/0bytes**. 첫 cold 조회는 **2,388.232ms**로 여전히 전체 parse 비용이 남는다. 격리된 현재 host의 30초 대기 측정은 한 코어 CPU **1.154%**, poll14회 동안 본문 read0/revision0/worker0이었다. 기존 live 프로세스의 CPU가 실제로 내려갔다고 주장하지 않는다.
 
-## 11. 승인된 푸시·live 반영
+## 9. 푸시·live 반영
 
 후속 승인: "재시작/푸시 하고, 통합 작업까지 이어가보자". 목록 최적화 `47991db8c`를 `origin/rubato/base`에 전달하고 원격 SHA를 read-back했다. 활성 runtime/worker 0을 확인한 뒤 기존 Pi profile server만 정상 종료했으며 T3가 원래 복구 경로로 재시작했다. live hub·CLI·T3 앱과 설치 stock engine/config는 건드리지 않았다.
 
 483개 저장 세션의 serverId·socket·목록 metadata digest가 전후 동일하다. 같은 호스트에서 재시작 직전/직후 각각 30초 관측한 한 코어 CPU는 **85.88% → 3.08%**, 끝 RSS는 **1,146,535,936 → 378,044,416 bytes**였다. 이는 순차 idle 실측이며 GC/프로세스 나이가 달라 엄밀한 동조건 A/B는 아니다. 세부는 [측정 기록](PERFORMANCE_MEASUREMENT.md)을 따른다.
 
-## 12. 통합 첫 단위 — 실제 stock TUI 제어 연결
+## 10. stock TUI 제어 연결
 
 설치 경로는 유지하고 후보 소스에 다음을 구현했다. 이 단계는 한 대화의 CLI/T3 worker 통합을 활성화하지 않는다.
 
@@ -295,7 +189,7 @@ G1/G2가 실패하면 이유를 설계로 환류한다. GUI read-only/auto-fork�
 
 검증은 **격리 staged stock InteractiveMode + AgentSessionRuntime + 기존 Unix 허브/두 action queue**를 사용한다. 질문 12개에서 원격 응답, 키보드 Enter/Escape, 잘못된 값/중복/늦은 응답, timeout/abort, 겹친 질문, reload 정리, before-switch 허용/거부를 검사한다. fork/resume/new 후 원본 JSONL bytes가 보존되는지 확인하고, 응답 기능을 고의로 끈 negative control이 실제로 실패하는지도 검사한다. 터미널 출력만 억제했고 실물 컴포넌트 render/input을 사용했지만 **실제 PTY/zmx·T3 화면의 종단 간 동등성 시험은 아니다**.
 
-남은 gate: writer lifetime fence, process/attachment epoch, 같은 대화의 실제 CLI/T3 PID 공유, GUI-first terminal 비용, native `/resume` attachment routing. project-trust/shortcut의 별도 UI context, custom/editor UI, 입력/queue/timeline의 전체 parity는 이 시험으로 증명하지 않는다. 따라서 **G1/G2 전체 통과나 공통 엔진 전환 완료로 취급하지 않는다**.
+남은 gate: writer lifetime fence, process/attachment epoch, 같은 대화의 실제 CLI/T3 PID 공유, native `/resume` attachment routing. project-trust/shortcut의 별도 UI context, custom/editor UI, 입력/queue/timeline의 전체 parity는 이 시험으로 증명하지 않는다. 따라서 **G1/G2 전체 통과로 취급하지 않는다**.
 
 검사: stock remote/UI/input **22/22**, CLI+action dispatcher **45/45**, T3 **14/14**, hub typecheck 통과. Hub 전체는 **66/68**이며 HTTP message paging 2건은 변경 전 `47991db8c` 격리 사본에서도 동일하게 실패한다. 과거 `bb8c1492d`의 journal 조회 경로 변경과 기존 시험의 dispatched-page 가정이 어긋난 상태이며, 이번 queue 수정의 회귀로 보지 않는다. 이 단위에 HTTP 동작/시험 기대값의 별도 변경을 섞지 않는다.
 
