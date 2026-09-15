@@ -54,6 +54,23 @@
 카탈로그의 모든 모델 행에 `contextWindow`가 있고 브릿지는 그 카탈로그를 이미 캐시하고
 있었다. 비울 자리가 아니라 **세션의 모델 id 로 찾을 자리**였다.
 
+확장 명령의 `notify`도 이 규칙이다. Pi RPC는 그걸 대화로 두지 않고 `extension_ui_request`
+이벤트(method `notify`, `notifyType` info/warning/error)로 흘린다. 호스트 `pendingUi`는
+`select`/`confirm`/`input`/`editor`만 담으므로, 스냅샷 재적용이 아니라 **이벤트 투영**이
+유일한 창구다. 여기서 빠지면 `/context-status`를 포함해 notify로 답하는 명령이 앱에서
+전부 침묵한다.
+
+T3 계약에는 `runtime.info`가 없다. `runtime.error`는 세션을 `error`로 바꾸고 행 제목을
+"Runtime error"로 덮는다 — 명령이 사용자에게 답하는 것과는 다른 말이다. 세 톤 모두
+`runtime.warning`으로 보낸다. ingestion이 이미 이 이벤트의 tone을 `info`로 두고 메시지를
+행 제목으로 쓰기 때문이다. 웹은 `circle-alert`, 모바일은 `warning` 아이콘을 붙이는데, 그건
+이벤트 종류의 칠이지 우리가 정보성 안내를 경고로 다시 이름 붙인 것이 아니다. info 전용
+칸은 없다. 침묵보다 경고 톤의 보이는 안내가 낫다. 메시지는 확장이 보낸 그대로
+`payload.message`에 두고, `detail`은 따로 온 것이 없으면 비운다.
+
+`setStatus`는 TUI 바닥 상태줄이다. 키로 덮어쓰고 `undefined`로 지운다. T3에 그런 표면이
+없고, 작업 로그 행으로 바꾸면 순간 표시가 영구 기록이 된다. 버린다.
+
 ## 모바일이 실제로 그리는 것은 좁다
 
 계약의 구조화된 필드를 채우는 것이 옳지만, **모바일은 그중 일부만 그린다.** `model`,
