@@ -2,8 +2,8 @@
 
 These tools require macOS, Node 24 or newer, and exactly Bun 1.4.0. They never enable Tailscale Funnel and never reset or clear the whole Serve configuration.
 
-For a short Korean walkthrough that starts with installation and ends with an iPhone
-checklist, see [USER-TEST.md](USER-TEST.md).
+The iPhone client is T3 Code via T3 Connect against `rubato-gui`. For a short Korean
+walkthrough of host install and `doctor`, see [USER-TEST.md](USER-TEST.md).
 
 ## Build and verify
 
@@ -46,7 +46,7 @@ rubato remote update --release /tmp/rubato-remote-build --public-key release-pub
 
 A developer-built release can be installed only with the explicit `--trusted-local-build` switch. Updates stop when a live session exists unless `--force-live` is supplied. zmx itself is never replaced while a managed zmx session exists.
 
-The installer atomically stages immutable releases under `~/.local/lib/rubato/remote/releases/`, atomically switches `remote/current`, configures a user LaunchAgent, writes owner-only state, records the logged-in Tailscale owner, encrypts the launch environment through the live CLI, configures only `/rubato` and `/rubato/api` Serve handlers, runs zmx and terminal bridge smoke checks, and writes an owner-only PNG QR code.
+The installer atomically stages immutable releases under `~/.local/lib/rubato/remote/releases/`, atomically switches `remote/current`, configures a user LaunchAgent, writes owner-only state, records the logged-in Tailscale owner, encrypts the launch environment through the live CLI, waits for hub `cli.health` on the unix socket, runs zmx and terminal bridge smoke checks, and writes an owner-only PNG QR code. It does not create Tailscale Serve `/rubato` routes.
 
 If Tailscale is not logged in, assets are staged but no release is activated. No auth key is generated; log in with `tailscale up` and rerun install.
 
@@ -58,7 +58,7 @@ rubato remote uninstall --yes
 rubato remote uninstall --yes --remove-push
 ```
 
-Uninstall stops by default when live sessions exist. It removes only Serve handlers whose target exactly matches this installation, preserving every unrelated handler and listener. Transcripts, journals, snapshots, artifacts, audit logs, encrypted launch environment, and push state are preserved. `--remove-registry` additionally removes host, owner, origin, and favorite records. `--remove-push` removes only the host's active Push profile while preserving VAPID/key material and reports that browser cleanup is still required. Removing a host in the PWA calls the authenticated host revoke endpoint first and calls browser `PushSubscription.unsubscribe()` when the last host is removed.
+Uninstall stops by default when live sessions exist. It still removes leftover `/rubato` Serve handlers whose target exactly matches this installation, so already-installed machines are scrubbed, and it preserves every unrelated handler and listener. Transcripts, journals, snapshots, artifacts, audit logs, encrypted launch environment, and push state are preserved. `--remove-registry` additionally removes host, owner, origin, and favorite records. `--remove-push` removes only the host's active Push profile while preserving VAPID/key material. The self-built PWA is discontinued, so uninstall does not ask for a browser unsubscribe.
 
 ## Qualification
 

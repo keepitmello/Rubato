@@ -55,10 +55,7 @@ rubato aside-cursor --install  # Aside Cursor 면 (127.0.0.1:18788)
 
 공식 GUI의 아이폰 앱은 T3 Code다. 맥에서 `rubato-gui`로 연 환경에 T3 Connect로 붙인다.
 
-Rubato Remote는 같은 Tailscale tailnet의 Mac에서 세션을 실행하고 iPhone PWA에서
-대화, 모델·명령 선택, 파일과 변경점 확인, 알림, 비상 터미널을 제어한다.
-
-- [설치부터 iPhone 확인까지 따라 하는 테스트 절차](scripts/remote-release/USER-TEST.md)
+- [호스트 허브 설치와 doctor](scripts/remote-release/USER-TEST.md)
 - [릴리스 빌드·업데이트·삭제 운영 문서](scripts/remote-release/README.md)
 
 ## 더 보기
