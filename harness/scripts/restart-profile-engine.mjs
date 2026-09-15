@@ -19,17 +19,23 @@ function pathVariants(dir) {
 }
 
 function listenerPid(agentDir) {
-  const listed = spawnSync('pgrep', ['-lf', 'cli.mjs --agent-dir'], { encoding: 'utf8' });
+  // `pgrep -l` means "list the full command line" on BSD and "list the process
+  // name" on procps, so `-lf` output cannot be parsed the same way on macOS and
+  // Linux: on Linux every row reads `1234 node` and no row ever contains
+  // cli.mjs. Take pids from pgrep and read each command line with ps, which
+  // prints the same thing on both.
+  const listed = spawnSync('pgrep', ['-f', 'cli.mjs --agent-dir'], { encoding: 'utf8' });
   if (listed.status !== 0) return;
   const dirs = pathVariants(agentDir);
   for (const line of listed.stdout.split('\n')) {
-    const match = line.match(/^(\d+)\s+(.*)$/);
-    if (!match) continue;
-    const pid = Number(match[1]);
+    const pid = Number(line.trim());
     if (!Number.isInteger(pid) || pid <= 1 || pid === process.pid) continue;
-    if (!match[2].includes('cli.mjs')) continue;
+    const inspected = spawnSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' });
+    if (inspected.status !== 0) continue;
+    const command = inspected.stdout.trim();
+    if (!command.includes('cli.mjs')) continue;
     for (const dir of dirs) {
-      if (match[2].includes(`--agent-dir ${dir}`)) return pid;
+      if (command.includes(`--agent-dir ${dir}`)) return pid;
     }
   }
 }
