@@ -116,7 +116,7 @@ test('owners and verifiers are teammates who run subagents, not lead workers', (
   const owner = read('harness/skills/agent-taskforce/teammate/workstream-owner.md');
   assert.match(owner, /Delegate by cost, not by count/);
   assert.doesNotMatch(owner, /You can run helpers under yourself/);
-  // Seat identity is owned by the prompt pieces; skill docs and role contracts do not restate it.
+  // Role identity is owned by the prompt pieces; skill docs and role contracts do not restate it.
   for (const file of ['harness/prompts/core-lead.pi.md', 'harness/prompts/core-teammate.pi.md', 'harness/prompts/core-agent.pi.md',
     'harness/skills/agent-taskforce/LEAD.md', 'harness/skills/agent-taskforce/TEAMMATE.md',
     'harness/skills/agent-taskforce/teammate/workstream-owner.md', 'harness/skills/agent-taskforce/teammate/independent-verifier.md']) {

@@ -14,6 +14,16 @@ function rolePrompt(role) {
 
 const promptSourceRoot = join(import.meta.dirname, "../../../prompts");
 
+// The invariant is "an exact model, or a named preset — never a category", not
+// the sentence that carries it. Pinning the phrase whole broke twice on
+// rewrites that kept the meaning: once when the noun moved from child to agent,
+// once when `model` gained the parenthetical `(provider/model)`. Assert the two
+// halves and let the prose move.
+function assertModelOrPreset(text) {
+  assert.match(text, /exact `model`/);
+  assert.match(text, /`preset`/);
+}
+
 test("lead prompt names the pi rails and no fx ones", () => {
   const text = rolePrompt("lead");
   assert.match(text, /running on Rubato's Senpi-based runtime/);
@@ -34,7 +44,7 @@ test("lead prompt names the pi rails and no fx ones", () => {
   // was written with — this is the third time this file pinned a sentence and broke on a
   // rewrite that kept the meaning. Assert the invariant.
   assert.match(text, /Choose each agent's cognitive profile with Skill\(model-guide\)/);
-  assert.match(text, /exact `model` or named `preset`/);
+  assertModelOrPreset(text);
   assert.match(text, /runtimes\/pi\.md/);
 
   assert.doesNotMatch(text, /fork of the fx harness/);
@@ -77,7 +87,7 @@ test("teammate prompt points helpers at Agent, not subagent", () => {
   assert.match(text, /`Agent`/);
   // Agent lifecycle and board detail moved from core-teammate.pi.md to the pi
   // runtime skill in 785f6a3f9 ("rules in one place"); the role prompt keeps
-  // the pointer (model-guide) and the mailbox (team_send). The seat rewrite made
+  // the pointer (model-guide) and the mailbox (team_send). That same rewrite made
   // parallel `Agent` subagents the default and reuse of the same subagent the rule.
   assert.match(text, /Delegate by cost, not by count/);
   assert.match(text, /goes to the same subagent with `AgentSend`/);
@@ -158,16 +168,20 @@ test("model-guide and pi runtime tell Agent callers to use model or preset, not 
   const modelGuide = readFileSync(join(promptSourceRoot, "../skills/model-guide/SKILL.md"), "utf8");
   const piRuntime = readFileSync(join(promptSourceRoot, "../skills/agent-taskforce/runtimes/pi.md"), "utf8");
   for (const text of [modelGuide, piRuntime]) {
-    assert.match(text, /exact `model` or named `preset`/);
+    assertModelOrPreset(text);
     assert.doesNotMatch(text, /Pass the corresponding semantic `category`/);
     assert.doesNotMatch(text, /`task` or `team_create`/);
   }
   // 7a4b8d79c changed Muse effort to high/xhigh like Grok, so the guide no
   // longer says Omit: it mandates per-model effort. The pi runtime still omits
-  // effort unless manually overridden.
-  assert.match(modelGuide, /Pass `effort` with the model/);
+  // effort unless manually overridden. The contrast is the invariant, not the
+  // sentence: the guide carries effort and never tells anyone to omit it.
+  assert.match(modelGuide, /`effort`/);
+  assert.doesNotMatch(modelGuide, /Omit `effort`/);
   assert.match(piRuntime, /Omit `effort` unless you need a manual override/);
-  assert.match(modelGuide, /Never pass a category, task type, or `subagent_type`/);
+  // The guide forbids it inline ("never a category, …"), the pi runtime as its
+  // own sentence ("Never pass a category, …"). Same fence, two shapes.
+  assert.match(modelGuide, /never (pass )?a category, task type, or `subagent_type`/i);
   assert.match(piRuntime, /team_send/);
   assert.match(piRuntime, /live delegate `category`/);
   assert.match(piRuntime, /may pass `model` as an exact provider\/model override/);
@@ -186,7 +200,10 @@ test("role prompts delegate provider resolution and fallback to the harness", ()
   // 785f6a3f9 moved the harness sentence out of the role fragments: roles point
   // at Skill(model-guide), and the guide names the harness. Guard the chain.
   const modelGuide = readFileSync(join(promptSourceRoot, "../skills/model-guide/SKILL.md"), "utf8");
-  assert.match(modelGuide, /The harness resolves a named `preset` against the live catalog/);
+  // Who resolves a preset, not the adjective in front of it. Pinning
+  // "a named `preset`" broke when the sentence dropped the adjective and the
+  // backticks around the noun.
+  assert.match(modelGuide, /harness resolves a[^.]*preset[^.]*against the live catalog/);
   for (const role of ["lead", "owner"]) {
     const text = rolePrompt(role);
     assert.match(text, /with Skill\(model-guide\)/);
