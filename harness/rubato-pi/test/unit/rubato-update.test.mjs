@@ -113,8 +113,6 @@ function setupFixture({ dirty = false, conflict = false, evidence = false, decoy
   } else if (rebuildFailure === "prompts") {
     write(join(seed, "harness/prompts/build.sh"), "#!/bin/sh\nprintf 'prompts\\n' >> \"$RUBATO_TEST_TRACE\"\nexit 42\n");
     chmodSync(join(seed, "harness/prompts/build.sh"), 0o755);
-  } else if (rebuildFailure === "engine") {
-    write(join(seed, "packages/component.txt"), "changed\n");
   } else if (rebuildFailure === "shell") {
     write(join(seed, "install.sh"), "#!/bin/sh\nprintf 'shell\\n' >> \"$RUBATO_TEST_TRACE\"\necho shell-failed >&2\nexit 42\n");
     chmodSync(join(seed, "install.sh"), 0o755);
@@ -311,7 +309,6 @@ test("updater pops only the stash it created when a substring decoy is already o
 
 for (const failure of [
   { kind: "deps", commands: { bun: "printf 'deps\\n' >> \"$RUBATO_TEST_TRACE\"\nexit 42", npm: "exit 0" }, message: /bun install 에 실패/ },
-  { kind: "engine", commands: { bun: "exit 0", node: "printf 'engine\\n' >> \"$RUBATO_TEST_TRACE\"\nexit 42" }, message: /엔진 빌드에 실패/ },
   { kind: "prompts", commands: {}, message: /시스템 프롬프트 합성에 실패/ },
   { kind: "shell", commands: {}, message: /셸 설정 갱신에 실패/ },
   { kind: "skills", commands: {}, message: /번들 스킬 설치에 실패/ },

@@ -1,10 +1,8 @@
-// Build the engine selected for launch, not an unrelated legacy output tree.
+// Build the engine selected for launch.
 //
 // Since the senpi fallback was retired, resolveLaunchEngine always reports
 // stock-pi, so this script has exactly one job: install or refresh the stock
-// candidate. The old `requested !== "stock-pi"` branch into the senpi plugin
-// build became unreachable and is gone; that plugin build is still reachable
-// on its own as `npm run build:senpi` until the senpi excision removes it.
+// candidate.
 import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";

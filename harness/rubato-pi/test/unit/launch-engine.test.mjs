@@ -4,16 +4,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  adapterPath,
-  buildSenpiArgs,
   buildStockPiArgs,
   isValidInstalledCandidateReceipt,
-  leadOverlayPath,
   nodeSatisfiesCandidate,
-  providerOverlayPath,
   resolveLaunchAgentDir,
   resolveLaunchEngine,
-  statuslinePath,
 } from "../../src/launch.mjs";
 import { defaultStockEngineDir } from "../../src/engine-paths.mjs";
 
@@ -141,20 +136,11 @@ test("env RUBATO_ENGINE overrides the marker", () => {
 test("buildStockPiArgs keeps fullscreen and user args and drops Senpi overlays", () => {
   const args = buildStockPiArgs(["--resume", "--model", "xai/grok-4.6"], { env: {} });
   assert.equal(args.includes("--system-prompt"), true);
-  const senpiPrompt = buildSenpiArgs(["--resume", "--model", "xai/grok-4.6"], { env: {} });
-  assert.equal(args[args.indexOf("--system-prompt") + 1], senpiPrompt[senpiPrompt.indexOf("--system-prompt") + 1]);
   assert.equal(args.includes("-e"), false);
-  assert.equal(args.includes(statuslinePath()), false);
-  assert.equal(args.includes(leadOverlayPath()), false);
-  assert.equal(args.includes(providerOverlayPath()), false);
-  assert.equal(args.includes(adapterPath()), false);
   assert.equal(args[args.indexOf("--tui-mode") + 1], "fullscreen");
   assert.deepEqual(args.slice(-3), ["--resume", "--model", "xai/grok-4.6"]);
   const rpc = buildStockPiArgs(["--mode", "rpc"]);
   assert.equal(rpc.includes("--tui-mode"), false);
-  const senpi = buildSenpiArgs(["--mode", "rpc"], { env: {} });
-  assert.equal(senpi.includes("--system-prompt"), true);
-  assert.equal(senpi.includes(adapterPath()), true);
 });
 
 test("resolveLaunchAgentDir honors existing profile env overrides", () => {

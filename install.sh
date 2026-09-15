@@ -187,11 +187,6 @@ else
   (cd "$REPO" && "$BUN" install) || { err "bun install 실패"; exit 1; }
   say "rubato-pi 를 깐다"
   npm install --prefix "$HARNESS/rubato-pi" >/dev/null 2>&1 || { err "rubato-pi 설치 실패"; exit 1; }
-  say "Rubato 엔진 확장을 빌드한다"
-  (cd "$REPO" && "$NODE24" "$HARNESS/scripts/build-engine.mjs" --force) \
-    >/dev/null 2>&1 || { err "엔진 확장 빌드 실패"; exit 1; }
-  "$NODE24" "$HARNESS/scripts/build-engine.mjs" --check >/dev/null 2>&1 \
-    || { err "엔진 확장 산출물이 소스와 맞지 않는다"; exit 1; }
   # 세션이 실제로 도는 엔진은 stock-pi 후보 하나뿐이다(senpi 폴백 폐기).
   # 이걸 빼면 설치는 성공했는데 `rubato` 가 "engine is not installed" 로
   # 죽는 상태가 만들어진다.

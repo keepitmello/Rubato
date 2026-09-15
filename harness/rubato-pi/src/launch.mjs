@@ -1,19 +1,16 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { defaultAgentDir, launchEnv } from "./brand.mjs";
 import { enableRubatoCompileCache } from "./compile-cache.mjs";
-import { ensureAgentExtensions } from "./agent-extensions.mjs";
-import { PIN } from "./policy.mjs";
 import { resolveRole } from "./role-contract.mjs";
 import { listNodeCandidates, pickNode, runningNode } from "./select-node.mjs";
-import { withNoChangelog } from "./no-changelog.mjs";
 import { ensureSessionDefaults, sessionDefaultsLookCurrent } from "./session-defaults.mjs";
 import { replaceSystemPrompt } from "./system-prompt.mjs";
 import { SKILL_DIRS } from "./skills-section.mjs";
-import { enginePackageJson, senpiCli, senpiCliMain, senpiPackageJson } from "./engine-paths.mjs";
+import { senpiCli, senpiCliMain } from "./engine-paths.mjs";
 import { releaseBootChrome, setBootChromeStatus } from "./boot-chrome.mjs";
 import { ENGINE_REPAIR_HINT, resolveExecutionEngine } from "./engine-selection.mjs";
 export {
@@ -43,35 +40,12 @@ export function senpiEntryPath(userArgs = []) {
   return senpiCliMain;
 }
 
-export function leadOverlayPath() {
-  return join(root, "src/extensions/lead-overlay.mjs");
-}
-
-export function adapterPath() {
-  return join(root, "src/extensions/adapter.mjs");
-}
-
 export function statuslinePath() {
   return join(root, "src/extensions/statusline.mjs");
 }
 
 export function providerOverlayPath() {
   return join(root, "src/extensions/provider-overlay.mjs");
-}
-
-export function readPinnedVersions() {
-  const engine = JSON.parse(readFileSync(enginePackageJson, "utf8"));
-  const senpi = JSON.parse(
-    readFileSync(senpiPackageJson, "utf8"),
-  );
-  return { engine: engine.version, senpi: senpi.version };
-}
-
-export function assertExactPin() {
-  const got = readPinnedVersions();
-  if (got.engine !== PIN.engine || got.senpi !== PIN.senpi) {
-    throw new Error(`rubato-pi pin mismatch: want ${PIN.engine}+${PIN.senpi}, got ${got.engine}+${got.senpi}`);
-  }
 }
 
 export function resolveNode24() {
@@ -131,29 +105,6 @@ export function buildStockPiArgs(userArgs, { env = process.env } = {}) {
     replaceSystemPrompt("", resolveRole({ env }), { env, argv: userArgs }),
     ...interactiveTuiArgs,
     ...skillPathArgs(),
-    ...userArgs,
-  ];
-}
-
-export function buildSenpiArgs(userArgs, { env = process.env } = {}) {
-  const interactiveTuiArgs = userArgs.some((token) => token === "--mode" || token.startsWith("--mode=")) ||
-    userArgs.some((token) => token === "--tui-mode" || token.startsWith("--tui-mode="))
-    ? []
-    : ["--tui-mode", "fullscreen"];
-  return [
-    senpiEntryPath(userArgs),
-    "--system-prompt",
-    replaceSystemPrompt("", resolveRole({ env }), { env, argv: userArgs }),
-    ...interactiveTuiArgs,
-    ...skillPathArgs(),
-    "-e",
-    statuslinePath(),
-    "-e",
-    leadOverlayPath(),
-    "-e",
-    providerOverlayPath(),
-    "-e",
-    adapterPath(),
     ...userArgs,
   ];
 }
@@ -263,26 +214,4 @@ export async function spawnRubatoPi({ args = process.argv.slice(2), env = proces
       });
     }
   }
-
-  // Retired: the senpi branch below is unreachable (selection.error throws above
-  // whenever stock-pi is not launchable). It stays until the senpi excision
-  // workstream removes the senpi launch path, its args builder, and their tests.
-  prepareAgentDir(profileDir);
-  assertExactPin();
-  // 우리가 소유한 전역 확장(현재 tps)을 senpi 가 자기 기본판으로 되돌리기 전에 깐다.
-  ensureAgentExtensions(profileDir);
-  const argv = buildSenpiArgs(args, { env });
-  const entry = argv[0];
-  if (!existsSync(entry)) {
-    throw new Error("pinned senpi CLI is missing; run bun install at the repository root");
-  }
-  const nextEnv = withNoChangelog(launchEnv(env, profileDir));
-  if (sameNodeBinary(node.bin)) {
-    return runSameNode(entry, argv, nextEnv, { registerNoChangelog: true });
-  }
-  releaseBootChrome();
-  return spawn(node.bin, [join(root, "bin", "rubato-pi.mjs"), ...args], {
-    env: launchEnv(env, profileDir),
-    stdio: "inherit",
-  });
 }

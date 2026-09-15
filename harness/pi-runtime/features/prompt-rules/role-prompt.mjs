@@ -1,6 +1,6 @@
 export const ROLE_PROMPT_FACTORY_NAME = "rubato-role-prompt";
 
-/** Inject the product role prompt on every agent start, matching Senpi adapter.mjs. */
+/** Inject the product role prompt on every agent start. */
 export function createRolePromptExtension({ env = process.env } = {}) {
   return async (pi) => {
     const promptHref = env.RUBATO_ROLE_PROMPT_MODULE;

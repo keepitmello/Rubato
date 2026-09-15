@@ -48,7 +48,7 @@ export function defaultAgentDir(home = homedir()) {
  * 목록을 env 로 넘기는 이유: 이 경로는 하네스가 아는 것이고 packages/ 쪽은
  * 몰라야 한다. 값이 없으면 packages 는 예전 argv 그대로 만든다.
  *
- * 여기에 lead-overlay/adapter 는 넣지 않는다. 그것들은 Rubato 컴포넌트·태스크 엔진·
+ * 여기에 부모 세션 전용 overlay 는 넣지 않는다. 그것들은 Rubato 컴포넌트·태스크 엔진·
  * statusline 을 자식에 다시 깔아서 `--no-extensions` 로 산 격리를 도로 무른다.
  */
 export function providerExtensionPaths() {
