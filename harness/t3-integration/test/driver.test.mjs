@@ -99,6 +99,7 @@ test('provider snapshot carries Rubato commands and skills in the T3 schema', {s
     const first = yield* instance.snapshot.getSnapshot;
     assert.deepEqual(first.slashCommands.map((item) => item.name), ['compact', 'name', 'reload']);
     assert.equal(first.slashCommands.some((item) => item.name === 'model' || item.name === 'fork'), false);
+    assert.equal(first.reportsContextWindow, true);
     assert.equal(instance.adapter.compaction?.type, 'native');
     const bridge = rubatoBridgeFor(instance);
     bridge.catalogue = async () => ({
