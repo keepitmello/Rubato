@@ -248,6 +248,17 @@ export class EventProjection {
     }
   }
   question(request) {
+    if (request.method === 'notify') {
+      // notifyType is info|warning|error. T3 has no runtime.info, and runtime.error
+      // fails the session and relabels the row "Runtime error". All three become
+      // runtime.warning so the message the command sent is what appears.
+      const message = nonempty(request.message);
+      if (message) this.event('runtime.warning', { message });
+      return;
+    }
+    // setStatus is the TUI footer; T3 has no keyed status bar. A work-log row
+    // would turn ephemeral chrome into a durable notice.
+    if (request.method === 'setStatus') return;
     if (this.questions.has(request.id)) return;
     this.questions.set(request.id, request);
     const title = request.title || request.message || 'Rubato request';

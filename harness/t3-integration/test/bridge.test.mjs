@@ -119,6 +119,45 @@ test('normalizer emits valid text, reasoning, tool, confirmation and settled eve
   assert.equal(events.filter(e=>e.type==='turn.completed').length,1);
   assert.equal(events.filter(e=>e.type==='content.delta'&&e.payload.streamKind==='assistant_text').map(e=>e.payload.delta).join(''),'hello');
 });
+test('extension notify of every tone is a contract-valid runtime.warning, and setStatus is dropped', () => {
+  const events=[]; const p=new EventProjection({threadId:'thread',sessionId:'session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
+  const status = '문맥 1 · 약 1200/64000토큰 · 노트 3개\n사용할 수 있어요.';
+  p.project({type:'extension_ui_request', id:'n-info', method:'notify', message:status, notifyType:'info'});
+  p.project({type:'extension_ui_request', id:'n-warn', method:'notify', message:'작업 노트 모드에서는 가지 요약을 만들지 않아요.', notifyType:'warning'});
+  p.project({type:'extension_ui_request', id:'n-err', method:'notify', message:'노트를 저장하지 못했어요.', notifyType:'error'});
+  p.project({type:'extension_ui_request', id:'n-empty', method:'notify', message:'   ', notifyType:'info'});
+  p.project({type:'extension_ui_request', id:'status-1', method:'setStatus', statusKey:'rubato-context-notes', statusText:'notes on'});
+  p.project({type:'extension_ui_request', id:'status-2', method:'setStatus', statusKey:'rubato-context-notes', statusText:undefined});
+  const warnings = events.filter((event) => event.type==='runtime.warning');
+  assert.deepEqual(warnings.map((event) => event.payload.message), [
+    status,
+    '작업 노트 모드에서는 가지 요약을 만들지 않아요.',
+    '노트를 저장하지 못했어요.',
+  ]);
+  assert.equal(warnings.every((event) => event.payload.detail === undefined), true);
+  assert.equal(events.some((event) => event.type==='runtime.error'), false);
+  assert.equal(events.filter((event) => event.type==='runtime.warning').length, 3);
+});
+test('a live notify on the session stream reaches T3 in the contract shape', async (t) => {
+  const { root, events, bridge } = await setup(t);
+  await bridge.startSession({ threadId:'notify-thread', runtimeMode:'full-access', cwd:root });
+  const context = bridge.sessions.get('notify-thread');
+  const message = '문맥 1 · 약 1200/64000토큰 · 노트 3개\n사용할 수 있어요.';
+  const next = context.sequence + 1;
+  bridge.applyState(context, {
+    runtimeId: context.runtimeId, status: 'idle', sequence: next, pendingUi: [],
+    events: [{ sequence: next, event: {
+      type: 'extension_ui_request', id: 'notify-status', method: 'notify', message, notifyType: 'info',
+    }}],
+  });
+  const warning = events.find((event) => event.type==='runtime.warning');
+  assert.equal(warning?.payload.message, message);
+  assert.equal(warning.payload.detail, undefined);
+  assert.equal(warning.threadId, 'notify-thread');
+  assert.equal(warning.provider, 'rubato-pi');
+  assert.equal(warning.providerInstanceId, 'rubato-test');
+  assert.equal(events.some((event) => event.type==='runtime.error'), false);
+});
 test('a subagent spawn is a collab agent item with the mobile task lifecycle', () => {
   const events=[]; const p=new EventProjection({threadId:'thread',sessionId:'session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
   p.project({type:'agent_start'});
