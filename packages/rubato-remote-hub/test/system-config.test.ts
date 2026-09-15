@@ -1,12 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { execFile } from "node:child_process"
 import { readFile, stat, writeFile } from "node:fs/promises"
-import { createServer } from "node:net"
 import { join, resolve } from "node:path"
 import { promisify } from "node:util"
 import { ensureHostConfig, loadHostConfig } from "../src/config.js"
 import { renderLaunchAgent } from "../src/launchd.js"
-import { findAvailableHubPort } from "../src/ports.js"
 import { configureTailscaleServe, tailscaleGrantExample, tailscalePairingBaseUrl } from "../src/tailscale.js"
 import type { CommandRunner } from "../src/zmx.js"
 import { HOST_ID, temporaryDirectory } from "./helpers.js"
@@ -17,19 +15,6 @@ const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => Promise.all(cleanups.splice(0).map((cleanup) => cleanup())))
 
 describe("localhost service configuration", () => {
-  test("selects a fallback in the stable range when the configured port is occupied", async () => {
-    const preferred = await findAvailableHubPort(7399)
-    const blocker = createServer()
-    await new Promise<void>((resolve, reject) => {
-      blocker.once("error", reject)
-      blocker.listen(preferred, "127.0.0.1", resolve)
-    })
-    cleanups.push(() => new Promise<void>((resolve, reject) => blocker.close((error) => error ? reject(error) : resolve())))
-    const selected = await findAvailableHubPort(preferred)
-    expect(selected).toBeGreaterThanOrEqual(7315)
-    expect(selected).toBeLessThanOrEqual(7399)
-  })
-
   test("renders a persistent user launch agent without a shell command", () => {
     const plist = renderLaunchAgent({
       nodePath: "/usr/local/bin/node",

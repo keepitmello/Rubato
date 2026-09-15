@@ -19,7 +19,6 @@ export interface HubPaths {
   readonly origins: string
   readonly journal: string
   readonly snapshots: string
-  readonly push: string
   readonly keys: string
   readonly socketDirectory: string
   readonly socket: string
@@ -34,7 +33,6 @@ export function defaultHubPaths(uid = process.getuid?.() ?? 0): HubPaths {
     origins: join(root, "origins.json"),
     journal: join(root, "journal"),
     snapshots: join(root, "snapshots"),
-    push: join(root, "push"),
     keys: join(root, "keys"),
     socketDirectory,
     socket: join(socketDirectory, "hub.sock"),
