@@ -101,6 +101,16 @@ const edits = {
       '    displayName: APP_BASE_NAME,',
       'replace',
     ],
+    // 서버 프로세스의 cwd 다. 서버는 이 값을 워크스페이스 루트로 삼아서 그 밖의
+    // 경로는 리뷰 diff 를 거부한다 (ReviewService.assertWorkspaceBoundCwd).
+    // upstream 은 packaged 일 때만 홈을 쓰는데, 우리는 소스 트리에서 실행하므로
+    // appRoot(=~/.rubato/t3-source) 가 잡혀서 사용자의 모든 프로젝트가 루트 밖이
+    // 됐다. 실행 형태와 무관하게 홈으로 둔다.
+    [
+      '    backendCwd: input.isPackaged ? homeDirectory : appRoot,',
+      '    backendCwd: homeDirectory,',
+      'replace',
+    ],
   ],
   // 모델 선택기와 목록 행의 제공자 글리프. 매핑에 없는 드라이버는 이름 앞
   // 두 글자로 떨어져서 Rubato 가 "RU" 로 보였다.
