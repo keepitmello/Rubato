@@ -1,5 +1,9 @@
 # T3 ↔ Rubato CLI 통합
 
+이 문서는 구조와 소유권이다. **기능을 하나 붙이러 왔다면
+[`T3_PATCHING.md`](T3_PATCHING.md)를 먼저 읽는다** — 무엇이 이미 막다른 길로 확인됐는지,
+화면에 닿는지를 어떻게 확인하는지, 고친 코드가 실제로 도는 자리가 어디인지를 담았다.
+
 ## 조사 기준
 
 2026-09-13 최종 재확인한 T3 `main`은 `3138f5716098a331f9a7d4cfc1bcd07118967a83`다. 최초 구현 기준 `cfeaca41ae27bdf2c203158d378c87c7308fea2a` 이후 20개 커밋을 비교했다. 우리가 직접 삽입하는 `apps/server/src/provider/builtInDrivers.ts`와 `apps/server/src/serverRuntimeStartup.ts`는 그 사이 바뀌지 않았고, 현재 HEAD로 고정점을 올린 뒤 전체 통합시험·T3 server 형 검사·server bundle 빌드를 다시 실행했다.
