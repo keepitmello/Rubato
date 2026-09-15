@@ -1,7 +1,7 @@
 import { SessionClient } from '../../pi-server/src/client.mjs';
 import { readDescriptor } from '../../pi-server/src/descriptor.mjs';
 import { ensureProfileEngine } from '../../pi-server/src/discovery.mjs';
-import { EventProjection, importedId, messageKey, textOf } from './events.mjs';
+import { EventProjection, importedId, messageKey, textOf, usageModelIdentity, windowFromModels } from './events.mjs';
 import { applySelectionOptions, catalogForPicker } from './model-catalog-order.mjs';
 import { controlCommandFor, rewriteSkillMentions, surfaceFromPiCommands } from './commands.mjs';
 import { readFile } from 'node:fs/promises';
@@ -148,6 +148,7 @@ export class RubatoPiBridge {
     if (cached && Date.now() - cached.at < 60000) return cached.value;
     const pending = (async () => {
       const raw = await this.viaInventory((client) => client.catalogue(cwd));
+      this.rememberWindows(raw.models ?? []);
       const surface = surfaceFromPiCommands(raw.commands ?? []);
       this.skillNames = surface.skillNames;
       return { ...raw, models: catalogForPicker(raw.models ?? [], raw.model),
@@ -221,8 +222,12 @@ export class RubatoPiBridge {
       for (const request of snapshot.pendingUi) context.projection.question(request);
       this.offerStaleQueueRecovery(context, snapshot.state);
       context.session.status = snapshot.state.isStreaming ? 'running' : 'ready';
+      if (!snapshot.state.isStreaming && context.projection.turnId) {
+        context.projection.interrupted = true;
+        context.projection.settle();
+      }
+      await this.configureUsage(context, snapshot.state, snapshot.messages);
       if (snapshot.state.model) context.session.model = `${snapshot.state.model.provider}/${snapshot.state.model.id}`;
-      this.configureUsage(context, snapshot.state);
       this.replayUsage(context, snapshot.messages);
       this.stateEvent(context);
       loading = false;
@@ -248,7 +253,11 @@ export class RubatoPiBridge {
       context.projection.project(record.event); context.sequence = record.sequence;
     }
     for (const request of state.pendingUi) context.projection.question(request);
-    const next = ['error', 'unloaded'].includes(state.status) ? 'error' : state.status === 'running' || state.status === 'waiting' ? 'running' : 'ready';
+    // Host status lags agent_settled (refresh is async). A settled projection
+    // with no turn is ready; trusting host 'running' here made rewind/sendTurn
+    // see a live turn and steer a fixture that never settles.
+    const next = ['error', 'unloaded'].includes(state.status) ? 'error'
+      : context.projection.turnId ? 'running' : 'ready';
     if (context.session.status !== next || context.session.activeTurnId !== context.projection.turnId) {
       context.session.status = next; this.stateEvent(context);
     }
@@ -383,6 +392,7 @@ export class RubatoPiBridge {
       if (context.session.status === 'running') throw new Error('Wait for this turn to settle before changing its model');
       const applied = await context.client.command({ type: 'set_model', provider, modelId });
       context.session.model = selection.model;
+      context.usageModel = selection.model;
       context.projection.configureUsage({ maxTokens: applied?.contextWindow });
     }
     const { thinking, fast } = applySelectionOptions(selection.options);
@@ -404,7 +414,17 @@ export class RubatoPiBridge {
       if (context.stopped) throw new Error('Attachment closed before send');
       if (input.continuation === true) {
         const snapshot = await context.client.snapshot();
-        if (!snapshot.state.isStreaming) throw new Error('Pi has no running turn to reattach; send a new message explicitly');
+        if (!snapshot.state.isStreaming) {
+          // Engine restart cuts the turn. T3 still asks to continue; leaving
+          // the projection open shows thinking with no stream behind it.
+          if (context.projection.turnId) {
+            context.projection.interrupted = true;
+            context.projection.settle();
+          }
+          context.session.status = 'ready';
+          this.stateEvent(context);
+          throw new Error('Pi has no running turn to reattach; send a new message explicitly');
+        }
         const turnId = context.projection.begin();
         return { threadId: input.threadId, turnId, resumeCursor: context.session.resumeCursor };
       }
@@ -527,7 +547,7 @@ export class RubatoPiBridge {
           this.applyState(context, state);
         });
         const snapshot = await context.client.snapshot();
-        this.adoptFork(context, snapshot);
+        await this.adoptFork(context, snapshot);
         loading = false;
         for (const state of buffered) if (state.sequence > snapshot.sequence) this.applyState(context, state);
         return { threadId, turns: [{ id: context.projection.turnId ?? `pi-history:${context.sessionId}`, items: snapshot.messages }] };
@@ -542,7 +562,7 @@ export class RubatoPiBridge {
     context.queue = operation.catch(() => {});
     return operation;
   }
-  adoptFork(context, snapshot) {
+  async adoptFork(context, snapshot) {
     const sessionId = snapshot.state?.sessionId ?? snapshot.sessionId;
     if (typeof sessionId !== 'string' || !sessionId) throw new Error('Pi fork did not return a session identity');
     this.claimed.add(sessionId);
@@ -560,13 +580,31 @@ export class RubatoPiBridge {
     context.sequence = snapshot.sequence;
     context.session.status = snapshot.state?.isStreaming ? 'running' : 'ready';
     context.session.updatedAt = new Date().toISOString();
-    this.configureUsage(context, snapshot.state);
+    await this.configureUsage(context, snapshot.state, snapshot.messages);
     this.replayUsage(context, snapshot.messages);
     this.stateEvent(context);
   }
-  configureUsage(context, state) {
+  rememberWindows(models) {
+    this.modelWindows ??= new Map();
+    for (const item of models ?? []) {
+      const identity = item?.provider && item?.id ? `${item.provider}/${item.id}` : undefined;
+      const window = windowFromModels(identity, [item]);
+      if (identity && window) this.modelWindows.set(identity, window);
+    }
+  }
+  async resolveUsageWindow(context, messages) {
+    const identity = usageModelIdentity({
+      usageModel: context.usageModel, sessionModel: context.session.model, messages,
+    });
+    if (!identity) return;
+    if (this.modelWindows?.has(identity)) return this.modelWindows.get(identity);
+    try { await this.catalogue(context.session.cwd); } catch { return; }
+    return this.modelWindows?.get(identity);
+  }
+  async configureUsage(context, state, messages) {
     context.projection.configureUsage({
-      maxTokens: state?.model?.contextWindow,
+      maxTokens: await this.resolveUsageWindow(context, messages),
+      replaceWindow: true,
       ...(typeof state?.autoCompactionEnabled === 'boolean' ? { compactsAutomatically: state.autoCompactionEnabled } : {}),
     });
   }
