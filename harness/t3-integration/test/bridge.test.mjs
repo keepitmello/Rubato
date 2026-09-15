@@ -152,6 +152,27 @@ test('a failed recovered send keeps the unsent messages for retry', async () => 
   assert.equal(projection.questions.has(requestId),true);
 });
 
+test('a recovered send that never reaches the provider leaves the thread usable', async () => {
+  const projection = new EventProjection({threadId:'stale-thread',sessionId:'stale-session',instanceId:'instance',emit:()=>{}});
+  const bridge = Object.create(RubatoPiBridge.prototype);
+  const state = {isStreaming:false,isCompacting:false,pendingMessageCount:2,requestTimeline:{pendingInputs:[
+    {delivery:'steer',textPreview:'first'}, {delivery:'followUp',textPreview:'second'},
+  ]}};
+  const context = {sessionId:'stale-session',projection,session:{threadId:'stale-thread',status:'ready'},queue:Promise.resolve(),stopped:false,
+    client:{snapshot:async()=>({state}),command:async(command)=>{
+      if(command.type==='clear_queue') return {steering:['first'],followUp:['second']};
+      throw new Error('transport failed');
+    }}};
+  bridge.sessions = new Map([['stale-thread',context]]);
+  bridge.offerStaleQueueRecovery(context,state);
+  const requestId = context.queueRecovery.id;
+  await assert.rejects(bridge.respondToUserInput('stale-thread',requestId,{[requestId]:'resume'}),/transport failed/);
+  assert.equal(context.projection.turnId,undefined,'an opened turn nothing can settle must not outlive the failure');
+  assert.equal(context.session.status,'ready');
+  assert.equal(context.queueRecovery.nextIndex,0);
+  assert.equal(projection.questions.has(requestId),true);
+});
+
 test('discarding a recovered queue clears it without running any message', async () => {
   const events = [];
   const projection = new EventProjection({threadId:'stale-thread',sessionId:'stale-session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
