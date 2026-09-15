@@ -72,6 +72,19 @@ test('T3 creates a new Pi session, forwards questions, reconnects and continues 
   await until(() => events.some((event) => event.type==='turn.completed'));
   assert.equal((await bridge.inventory())[0].sessionId, session.resumeCursor.sessionId);
 });
+test('continuation without a live Pi turn settles instead of leaving thinking open', async (t) => {
+  const { root, events, bridge } = await setup(t);
+  await bridge.startSession({ threadId:'idle-thread', runtimeMode:'full-access', cwd:root });
+  const before = events.filter((event) => event.type==='turn.started').length;
+  await assert.rejects(
+    () => bridge.sendTurn({ threadId:'idle-thread', continuation:true }),
+    /no running turn/,
+  );
+  const context = bridge.sessions.get('idle-thread');
+  assert.equal(context.session.status, 'ready');
+  assert.equal(context.projection.turnId, undefined);
+  assert.equal(events.filter((event) => event.type==='turn.started').length, before);
+});
 test('a dead socket on an inventory request reconnects inside the bridge instead of failing the caller', async (t) => {
   const { root, bridge, external } = await setup(t);
   await external.create({ cwd: root, title: 'Kept' });
@@ -213,6 +226,45 @@ test('normalizer emits valid text, reasoning, tool, confirmation and settled eve
   assert.equal(events.filter(e=>e.type==='turn.completed').length,1);
   assert.equal(events.filter(e=>e.type==='content.delta'&&e.payload.streamKind==='assistant_text').map(e=>e.payload.delta).join(''),'hello');
 });
+test('extension notify of every tone is a contract-valid runtime.warning, and setStatus is dropped', () => {
+  const events=[]; const p=new EventProjection({threadId:'thread',sessionId:'session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
+  const status = '문맥 1 · 약 1200/64000토큰 · 노트 3개\n사용할 수 있어요.';
+  p.project({type:'extension_ui_request', id:'n-info', method:'notify', message:status, notifyType:'info'});
+  p.project({type:'extension_ui_request', id:'n-warn', method:'notify', message:'작업 노트 모드에서는 가지 요약을 만들지 않아요.', notifyType:'warning'});
+  p.project({type:'extension_ui_request', id:'n-err', method:'notify', message:'노트를 저장하지 못했어요.', notifyType:'error'});
+  p.project({type:'extension_ui_request', id:'n-empty', method:'notify', message:'   ', notifyType:'info'});
+  p.project({type:'extension_ui_request', id:'status-1', method:'setStatus', statusKey:'rubato-context-notes', statusText:'notes on'});
+  p.project({type:'extension_ui_request', id:'status-2', method:'setStatus', statusKey:'rubato-context-notes', statusText:undefined});
+  const warnings = events.filter((event) => event.type==='runtime.warning');
+  assert.deepEqual(warnings.map((event) => event.payload.message), [
+    status,
+    '작업 노트 모드에서는 가지 요약을 만들지 않아요.',
+    '노트를 저장하지 못했어요.',
+  ]);
+  assert.equal(warnings.every((event) => event.payload.detail === undefined), true);
+  assert.equal(events.some((event) => event.type==='runtime.error'), false);
+  assert.equal(events.filter((event) => event.type==='runtime.warning').length, 3);
+});
+test('a live notify on the session stream reaches T3 in the contract shape', async (t) => {
+  const { root, events, bridge } = await setup(t);
+  await bridge.startSession({ threadId:'notify-thread', runtimeMode:'full-access', cwd:root });
+  const context = bridge.sessions.get('notify-thread');
+  const message = '문맥 1 · 약 1200/64000토큰 · 노트 3개\n사용할 수 있어요.';
+  const next = context.sequence + 1;
+  bridge.applyState(context, {
+    runtimeId: context.runtimeId, status: 'idle', sequence: next, pendingUi: [],
+    events: [{ sequence: next, event: {
+      type: 'extension_ui_request', id: 'notify-status', method: 'notify', message, notifyType: 'info',
+    }}],
+  });
+  const warning = events.find((event) => event.type==='runtime.warning');
+  assert.equal(warning?.payload.message, message);
+  assert.equal(warning.payload.detail, undefined);
+  assert.equal(warning.threadId, 'notify-thread');
+  assert.equal(warning.provider, 'rubato-pi');
+  assert.equal(warning.providerInstanceId, 'rubato-test');
+  assert.equal(events.some((event) => event.type==='runtime.error'), false);
+});
 test('a subagent spawn is a collab agent item with the mobile task lifecycle', () => {
   const events=[]; const p=new EventProjection({threadId:'thread',sessionId:'session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
   p.project({type:'agent_start'});
@@ -327,7 +379,7 @@ test('a real Agent tool_execution_end payload opens one child row, and a tick em
   assert.equal(started.length, 1);
   assert.equal(started[0].payload.taskId, 'st_01a0a358');
   assert.equal(started[0].payload.toolUseId, 'toolu_spawn');
-  assert.equal(started[0].payload.title, 'Audit auth');
+  assert.equal(started[0].payload.title, 'grok-4.6 · Audit auth');
   assert.equal(started[0].payload.description, undefined);
   const before = events.length;
   p.project({type:'extension_event', name:'rubato.task.updated', data:{ parent_session_id:'session', tasks:[{
@@ -343,7 +395,7 @@ test('a real Agent tool_execution_end payload opens one child row, and a tick em
   assert.equal(ticks[0].payload.summary, 'looking at middleware');
   assert.equal(ticks[0].payload.description, 'looking at middleware');
   assert.equal(ticks[0].payload.status, 'running');
-  assert.equal(ticks[0].payload.title, 'Audit auth');
+  assert.equal(ticks[0].payload.title, 'grok-4.6 · Audit auth');
   assert.equal(JSON.stringify(ticks[0].payload).includes('Speed 488'), false);
   assert.equal(JSON.stringify(ticks[0].payload).includes('$0.0000'), false);
   assert.equal(ticks[0].payload.typedUsage?.totalTokens, 1200);
@@ -392,6 +444,48 @@ test('a resync snapshot does not grow the task.started row count', () => {
   p.project(snapshot);
   assert.equal(events.filter((event) => event.type==='task.started').length, starts);
   assert.equal(new Set(events.filter((event) => event.type==='task.started').map((event) => event.payload.taskId)).size, 1);
+});
+
+test('spawn item and task share a toolCallId so mobile can drop the tool row', () => {
+  const events=[]; const p=new EventProjection({threadId:'thread',sessionId:'session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
+  p.project({type:'agent_start'});
+  p.project({type:'tool_execution_start', toolName:'Agent', toolCallId:'toolu_spawn',
+    args:{summary:'Audit auth', model:'xai/grok-4.6', effort:'high'}});
+  p.project({type:'tool_execution_end', toolName:'Agent', toolCallId:'toolu_spawn', isError:false,
+    result:{details:{agentId:'st_01', status:'running', task_summary:'Audit auth', model:'xai/grok-4.6'}}});
+  const item = events.find((event) => event.type==='item.started' && event.payload.itemType==='collab_agent_tool_call');
+  const task = events.find((event) => event.type==='task.started');
+  assert.equal(item.itemId, 'toolu_spawn');
+  assert.equal(item.payload.data.toolCallId, 'toolu_spawn');
+  assert.equal(task.payload.toolUseId, 'toolu_spawn');
+  assert.equal(item.itemId, task.payload.toolUseId);
+});
+
+test('subagent model and effort stay structured and reach the title mobile paints', () => {
+  const events=[]; const p=new EventProjection({threadId:'thread',sessionId:'session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
+  p.project({type:'agent_start'});
+  p.project({type:'tool_execution_start', toolName:'Agent', toolCallId:'toolu_spawn',
+    args:{summary:'재연결 직후 잘못된 컨텍스트 창 크기 전송 수정', model:'xai/grok-4.6', effort:'high', prompt:'do the work'}});
+  p.project({type:'tool_execution_end', toolName:'Agent', toolCallId:'toolu_spawn', isError:false,
+    result:{details:{agentId:'st_01', status:'running', task_summary:'재연결 직후 잘못된 컨텍스트 창 크기 전송 수정',
+      model:'xai/grok-4.6', resolved_model:{reasoning:'high', reasoning_effort:'high'}}}});
+  const started = events.find((event) => event.type==='task.started');
+  assert.equal(started.payload.model, 'xai/grok-4.6');
+  assert.equal(started.payload.effort, 'high');
+  assert.equal(started.payload.title.includes('xai/'), false);
+  assert.equal(started.payload.title.includes('grok-4.6'), true);
+  assert.equal(started.payload.title.includes('high'), true);
+  assert.ok(started.payload.title.length <= 37, started.payload.title);
+  p.project({type:'extension_event', name:'rubato.task.updated', data:{ parent_session_id:'session', tasks:[{
+    task_id:'st_01', task_summary:'재연결 직후 잘못된 컨텍스트 창 크기 전송 수정', status:'running', model:'xai/grok-4.6', effort:'high',
+    live_progress:{ last_assistant_line:"I will start from the usage-reporting commit", current_tool:'read events.mjs' },
+  }]}});
+  const tick = events.find((event) => event.type==='task.progress');
+  assert.equal(tick.payload.description, "I will start from the usage-reporting commit");
+  assert.equal(tick.payload.description.includes('grok'), false);
+  assert.equal(tick.payload.model, 'xai/grok-4.6');
+  assert.equal(tick.payload.effort, 'high');
+  assert.equal(tick.payload.title.includes('grok-4.6'), true);
 });
 
 test('reconnect does not append a full answer over text already projected or still in flight', () => {
@@ -609,3 +703,66 @@ test('attach replays last assistant usage and stays silent after compaction', ()
   bridge.replayUsage(context, [{ role:'assistant', stopReason:'stop', usage }, { role:'compactionSummary' }]);
   assert.equal(events.length, 0, 'pre-compaction usage must not become the meter after compact');
 });
+
+const CATALOGUE = [
+  { provider:'anthropic', id:'claude-opus-5', contextWindow:1000000 },
+  { provider:'xai', id:'grok-4.6', contextWindow:500000 },
+  { provider:'openai-codex', id:'gpt-5.6-sol', contextWindow:272000 },
+  { provider:'openai-codex', id:'gpt-5.6-terra', contextWindow:272000 },
+];
+const reattachContext = ({ stateModel, knownModel, maxTokens, models = CATALOGUE } = {}) => {
+  const events = [];
+  const projection = new EventProjection({ threadId:'thread', sessionId:'session', instanceId:'instance',
+    emit:(event) => events.push(decodeEvent(event)) });
+  if (maxTokens) projection.configureUsage({ maxTokens });
+  const bridge = Object.create(RubatoPiBridge.prototype);
+  bridge.projectedMessages = async () => [];
+  bridge.rememberWindows(models);
+  bridge.catalogue = async () => ({ models });
+  const usage = { input:2, output:962, cacheRead:489090, cacheWrite:0, reasoning:0, totalTokens:490570 };
+  const snapshot = {
+    runtimeId:'rt', sequence:1, pendingUi:[],
+    state:{ isStreaming:false, model:stateModel, autoCompactionEnabled:true },
+    messages:[
+      { role:'user', content:'hi' },
+      { role:'assistant', stopReason:'stop', provider:'anthropic', model:'claude-opus-5',
+        timestamp:1, content:[{ type:'text', text:'ok' }], usage },
+    ],
+  };
+  const context = {
+    session:{ threadId:'thread', status:'connecting', resumeCursor:{ kind:'rubato-pi' },
+      ...(knownModel ? { model:knownModel } : {}) },
+    projection,
+    client:{ subscribeSession: async () => () => {}, snapshot: async () => snapshot },
+  };
+  return { events, bridge, context };
+};
+
+test('reattach publishes the session model window even when get_state answers another family', async () => {
+  const { events, bridge, context } = reattachContext({
+    stateModel:{ provider:'openai-codex', id:'gpt-5.6-sol', contextWindow:272000 },
+  });
+  await bridge.synchronize(context);
+  const usageEvents = events.filter((event) => event.type === 'thread.token-usage.updated');
+  assert.equal(usageEvents.length, 1);
+  const usage = usageEvents[0].payload.usage;
+  assert.equal(usage.usedTokens, 490570);
+  assert.equal(usage.maxTokens, 1000000);
+  assert.equal(usage.inputTokens, 2);
+  assert.equal(usage.cachedInputTokens, 489090);
+  assert.equal(usage.outputTokens, 962);
+  assert.equal(usage.compactsAutomatically, true);
+  assert.equal(usageEvents.some((event) => event.payload.usage.maxTokens === 272000), false);
+});
+
+test('reattach omits the window when the session model is not in the catalogue', async () => {
+  const { events, bridge, context } = reattachContext({
+    stateModel:{ provider:'openai-codex', id:'gpt-5.6-sol', contextWindow:272000 },
+    models:[{ provider:'openai-codex', id:'gpt-5.6-sol', contextWindow:272000 }],
+  });
+  await bridge.synchronize(context);
+  const usage = events.find((event) => event.type === 'thread.token-usage.updated');
+  assert.equal(usage.payload.usage.usedTokens, 490570);
+  assert.equal('maxTokens' in usage.payload.usage, false);
+});
+

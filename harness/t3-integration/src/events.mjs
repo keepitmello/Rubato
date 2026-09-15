@@ -35,6 +35,30 @@ const detailsOf = (value) => {
 const spawnLabel = (args, result) => nonempty(args.summary) || nonempty(detailsOf(result).task_summary)
   || nonempty(args.description) || nonempty(detailsOf(result).name) || nonempty(args.team_name)
   || nonempty(detailsOf(result).team_name) || (nonempty(args.prompt) ? nonempty(args.prompt).slice(0, 200) : undefined);
+const effortOf = (args, details, item = {}) => nonempty(item.effort) || nonempty(args.effort) || nonempty(details.effort)
+  || nonempty(record(details.resolved_model).reasoning) || nonempty(record(details.resolved_model).reasoning_effort)
+  || nonempty(args.thinking);
+// Mobile paints title at text-sm, one line, after a 24px sparkles icon and 11px
+// chevron. On a 390pt phone that is ~287px ≈ 37 Latin glyphs at 14px.
+const PHONE_SPAWN_TITLE_GLYPHS = 37;
+const compactModelTag = (model, effort) => {
+  if (!model) return;
+  let id = model.includes('/') ? model.slice(model.indexOf('/') + 1) : model;
+  id = id.replace(/^claude-/, '').replace(/-\d{8}$/, '').replace(/-latest$/, '')
+    .replace(/-contributor-free$/, '');
+  if (!id) return;
+  return effort ? `${id} · ${effort}` : id;
+};
+const glyphs = (value) => [...value];
+export const displaySpawnTitle = (label, model, effort) => {
+  const tag = compactModelTag(model, effort);
+  const head = tag ? `${tag} · ` : '';
+  if (!label) return tag;
+  const text = glyphs(label);
+  if (head.length + text.length <= PHONE_SPAWN_TITLE_GLYPHS) return head + label;
+  const room = Math.max(1, PHONE_SPAWN_TITLE_GLYPHS - head.length - 1);
+  return head + text.slice(0, room).join('').trimEnd() + '…';
+};
 const childIdOf = (details, fallback = {}) => nonempty(details.agentId) || nonempty(details.childId)
   || nonempty(record(details.progress).childId) || nonempty(record(fallback).childId);
 // live_progress.activity is Rubato's CLI status line (title · model · turn N · $0 · Speed).
@@ -99,6 +123,49 @@ export const tokenUsageFrom = (usage, extras = {}) => {
   };
 };
 
+const modelIdentityOf = (model) => {
+  if (!model || typeof model !== 'object' || Array.isArray(model)) return;
+  const id = typeof model.id === 'string' && model.id ? model.id : undefined;
+  if (!id) return;
+  const provider = typeof model.provider === 'string' && model.provider ? model.provider : undefined;
+  return provider ? `${provider}/${id}` : id;
+};
+const messageModelIdentityOf = (message) => {
+  if (!message || typeof message !== 'object') return;
+  if (message.model && typeof message.model === 'object') return modelIdentityOf(message.model);
+  const id = typeof message.model === 'string' && message.model ? message.model : undefined;
+  if (!id) return;
+  if (id.includes('/')) return id;
+  const provider = typeof message.provider === 'string' && message.provider ? message.provider : undefined;
+  return provider ? `${provider}/${id}` : id;
+};
+export const lastAssistantOf = (messages) => {
+  for (let index = (messages?.length ?? 0) - 1; index >= 0; index--) {
+    const message = messages[index];
+    if (message?.role === 'compactionSummary') return;
+    if (message?.role === 'assistant') return message;
+  }
+};
+// The session's model is last-assistant, then an explicit usageModel (set_model),
+// then the stored session slug. get_state's row is not consulted: on reattach it
+// can still be a default catalog family.
+export const usageModelIdentity = ({ usageModel, sessionModel, messages } = {}) => {
+  if (typeof usageModel === 'string' && usageModel.includes('/')) return usageModel;
+  const assistant = messageModelIdentityOf(lastAssistantOf(messages));
+  if (assistant) return assistant;
+  if (typeof sessionModel === 'string' && sessionModel.includes('/')) return sessionModel;
+};
+export const windowFromModels = (identity, models) => {
+  if (!identity || !Array.isArray(models)) return;
+  const slash = identity.indexOf('/');
+  if (slash < 1) return;
+  const provider = identity.slice(0, slash);
+  const id = identity.slice(slash + 1);
+  const match = models.find((item) => item?.provider === provider && item?.id === id);
+  const window = asInt(match?.contextWindow);
+  return window > 0 ? window : undefined;
+};
+
 /** Only T3-normalized events leave this boundary; no Pi protocol types in UI. */
 export class EventProjection {
   constructor({ threadId, sessionId, instanceId, emit }) {
@@ -116,10 +183,12 @@ export class EventProjection {
     this.text.clear(); this.thinking.clear(); this.completed.clear(); this.questions.clear();
     this.tasks.clear(); this.children.clear(); this.spawns.clear();
     this.turnId = undefined; this.failed = false; this.interrupted = false; this.lastUsage = undefined;
+    this.maxTokens = undefined;
   }
-  configureUsage({ maxTokens, compactsAutomatically } = {}) {
+  configureUsage({ maxTokens, compactsAutomatically, replaceWindow } = {}) {
     const window = asInt(maxTokens);
     if (window > 0) this.maxTokens = window;
+    else if (replaceWindow) this.maxTokens = undefined;
     if (typeof compactsAutomatically === 'boolean') this.compactsAutomatically = compactsAutomatically;
   }
   usage(raw, message) {
@@ -179,6 +248,17 @@ export class EventProjection {
     }
   }
   question(request) {
+    if (request.method === 'notify') {
+      // notifyType is info|warning|error. T3 has no runtime.info, and runtime.error
+      // fails the session and relabels the row "Runtime error". All three become
+      // runtime.warning so the message the command sent is what appears.
+      const message = nonempty(request.message);
+      if (message) this.event('runtime.warning', { message });
+      return;
+    }
+    // setStatus is the TUI footer; T3 has no keyed status bar. A work-log row
+    // would turn ephemeral chrome into a durable notice.
+    if (request.method === 'setStatus') return;
     if (this.questions.has(request.id)) return;
     this.questions.set(request.id, request);
     const title = request.title || request.message || 'Rubato request';
@@ -192,9 +272,11 @@ export class EventProjection {
     }
   }
   linkage(task, extra = {}) {
+    const title = displaySpawnTitle(task.label, task.model, task.effort);
     return { taskType: task.taskType, agentKind: 'agent', toolUseId: task.toolUseId,
-      ...(task.label ? { title: task.label } : {}), ...(task.role ? { role: task.role } : {}),
-      ...(task.model ? { model: task.model } : {}), ...(task.workflowName ? { workflowName: task.workflowName } : {}),
+      ...(title ? { title } : {}), ...(task.role ? { role: task.role } : {}),
+      ...(task.model ? { model: task.model } : {}), ...(task.effort ? { effort: task.effort } : {}),
+      ...(task.workflowName ? { workflowName: task.workflowName } : {}),
       ...extra };
   }
   indexTask(task, key) {
@@ -203,7 +285,7 @@ export class EventProjection {
     if (held && held !== task) return;
     this.tasks.set(key, task);
   }
-  startTask(key, { label, taskType, role, model, workflowName, taskId = key, toolUseId = key } = {}) {
+  startTask(key, { label, taskType, role, model, effort, workflowName, taskId = key, toolUseId = key } = {}) {
     const id = nonempty(taskId) || nonempty(key);
     if (!id) return;
     const existing = this.tasks.get(key) || this.tasks.get(id);
@@ -217,31 +299,37 @@ export class EventProjection {
       if (label && !existing.label) existing.label = label;
       if (role && !existing.role) existing.role = role;
       if (model && !existing.model) existing.model = model;
+      if (effort && !existing.effort) existing.effort = effort;
+      if (!existing.turnId && this.turnId) existing.turnId = this.turnId;
       return existing;
     }
-    const task = { taskId: id, toolUseId: nonempty(toolUseId) || id, taskType, label, role, model, workflowName };
+    const task = { taskId: id, toolUseId: nonempty(toolUseId) || id, taskType, label, role, model, workflowName,
+      effort, turnId: this.turnId };
     this.indexTask(task, key);
     this.indexTask(task, id);
     this.indexTask(task, task.toolUseId);
     // Title lives on linkage. Repeating it as description made every row say the
     // same sentence twice before anything had happened.
-    this.event('task.started', { taskId: id, ...this.linkage(task) });
+    this.taskEvent('task.started', { taskId: id, ...this.linkage(task) }, task);
     return task;
+  }
+  taskEvent(type, payload, task) {
+    this.event(type, payload, (!this.turnId && task?.turnId) ? { turnId: task.turnId } : {});
   }
   progressTask(task, { description, summary, lastToolName, status, error, typedUsage }) {
     const note = nonempty(summary);
     const doing = nonempty(description) || note || 'running';
-    this.event('task.progress', { taskId: task.taskId, description: doing,
+    this.taskEvent('task.progress', { taskId: task.taskId, description: doing,
       ...(note && note !== task.label ? { summary: note } : {}),
       ...(nonempty(lastToolName) ? { lastToolName } : {}),
       ...(status ? { status } : {}), ...(nonempty(error) ? { error } : {}),
-      ...(typedUsage ? { typedUsage } : {}), ...this.linkage(task) });
+      ...(typedUsage ? { typedUsage } : {}), ...this.linkage(task) }, task);
   }
   completeTask(task, status, summary) {
     if (task.done) return;
     task.done = true; task.terminal = status;
-    this.event('task.completed', { taskId: task.taskId, status,
-      ...(nonempty(summary) && summary !== task.label ? { summary } : {}), ...this.linkage(task) });
+    this.taskEvent('task.completed', { taskId: task.taskId, status,
+      ...(nonempty(summary) && summary !== task.label ? { summary } : {}), ...this.linkage(task) }, task);
     this.maybeCompleteTeam(task);
   }
   // Member ids map at children[st_…] → the team spawn key. Prefer a task stored
@@ -274,12 +362,13 @@ export class EventProjection {
     const workflowName = nonempty(args.team_name) || nonempty(details.team_name);
     const role = nonempty(details.subagent_type) || nonempty(args.preset);
     const model = nonempty(details.model) || nonempty(args.model);
+    const effort = effortOf(args, details);
     const childId = childIdOf(details, result);
     // Do not announce a row on tool_execution_start: Agent has no agentId yet.
     // Using the tool-call id there, then the snapshot's st_ id, is the duplicate.
     const taskKey = childId || (taskType === 'local_workflow' ? event.toolCallId : undefined);
     if (childId) this.rememberChild(childId, taskType === 'local_workflow' ? event.toolCallId : childId);
-    const task = taskKey ? this.startTask(taskKey, { label, taskType, role, model, workflowName,
+    const task = taskKey ? this.startTask(taskKey, { label, taskType, role, model, effort, workflowName,
       taskId: childId || taskKey, toolUseId: event.toolCallId }) : undefined;
     if (event.type === 'tool_execution_update' && task) {
       const lastToolName = nonempty(progress.currentTool) || nonempty(progress.current_tool);
@@ -300,7 +389,8 @@ export class EventProjection {
         const memberLabel = nonempty(member.task_summary) || nonempty(member.name) || label;
         this.rememberChild(memberId, event.toolCallId);
         this.startTask(memberId, { taskId: memberId, label: memberLabel, taskType: 'subagent',
-          role: nonempty(member.role), workflowName: workflowName || label, toolUseId: event.toolCallId });
+          role: nonempty(member.role), model: nonempty(member.model) || model, effort: effortOf(member, member) || effort,
+          workflowName: workflowName || label, toolUseId: event.toolCallId });
       }
     }
   }
@@ -329,8 +419,11 @@ export class EventProjection {
       if (!task) {
         this.rememberChild(childId, childId);
         task = this.startTask(childId, { taskId: childId, label, taskType: 'subagent',
-          role: nonempty(item.agent_type), model: nonempty(item.model), toolUseId: childId });
+          role: nonempty(item.agent_type), model: nonempty(item.model), effort: effortOf({}, item, item),
+          toolUseId: childId });
       } else if (label && !task.label) task.label = label;
+      if (nonempty(item.model) && !task.model) task.model = item.model;
+      if (effortOf({}, item, item) && !task.effort) task.effort = effortOf({}, item, item);
       if (!task || task.done) continue;
       const status = nonempty(item.status);
       if (FAILED_STATUS.has(status)) this.completeTask(task, 'failed', label);
@@ -364,11 +457,13 @@ export class EventProjection {
         const itemType = toolType(event.toolName);
         const spawn = SPAWN_TOOLS.has(event.toolName);
         const title = spawn ? (event.toolName === 'team_create' ? 'Team' : 'Subagent task') : (event.toolName || 'Tool');
-        const detail = spawn ? spawnLabel(record(event.args), event.result ?? event.partialResult ?? {}) : undefined;
+        const rawLabel = spawn ? spawnLabel(record(event.args), event.result ?? event.partialResult ?? {}) : undefined;
+        const detail = rawLabel ? displaySpawnTitle(rawLabel) : undefined;
         const type = event.type === 'tool_execution_start' ? 'item.started' : event.type === 'tool_execution_end' ? 'item.completed' : 'item.updated';
+        const data = { ...record(event.result ?? event.partialResult ?? event.args ?? {}), toolCallId: event.toolCallId };
         this.event(type, { itemType, title, status: event.type === 'tool_execution_end' ? event.isError ? 'failed' : 'completed' : 'inProgress',
-          ...(detail ? { detail } : {}), data: event.result ?? event.partialResult ?? event.args ?? {} },
-          { itemId: `pi-tool:${this.sessionId}:${event.toolCallId}` });
+          ...(detail ? { detail } : {}), data },
+          { itemId: spawn ? event.toolCallId : `pi-tool:${this.sessionId}:${event.toolCallId}` });
         if (spawn) this.spawnTool(event);
         else if (CANCEL_TOOLS.has(event.toolName)) this.cancelTool(event);
         break;
