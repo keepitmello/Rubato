@@ -60,6 +60,32 @@ function resolveNode() {
 const ensureDescriptor = descriptorPath => ensureProfileEngine({ descriptorPath, nodeBin: resolveNode() });
 
 const copy = (value) => JSON.parse(JSON.stringify(value));
+const RECOVER_QUEUE_RESUME = 'resume';
+const RECOVER_QUEUE_DISCARD = 'discard';
+const staleQueue = (state) => state && !state.isStreaming && !state.isCompacting
+  && Number(state.pendingMessageCount) > 0;
+function queuedMessagesInOrder(state, cleared) {
+  const byDelivery = {
+    steer: [...(cleared?.steering ?? [])],
+    followUp: [...(cleared?.followUp ?? [])],
+  };
+  const ordered = [];
+  for (const pending of state?.requestTimeline?.pendingInputs ?? []) {
+    const queue = byDelivery[pending?.delivery];
+    if (queue?.length) ordered.push(queue.shift());
+  }
+  return [...ordered, ...byDelivery.steer, ...byDelivery.followUp]
+    .filter((message) => typeof message === 'string' && message.trim());
+}
+function queuedMessagePreview(state) {
+  const pending = state?.requestTimeline?.pendingInputs ?? [];
+  const lines = pending.slice(0, 3).map((item, index) => {
+    const preview = String(item?.textPreview ?? '').trim().slice(0, 160);
+    return `${index + 1}. ${preview || '(attachment or empty text)'}`;
+  });
+  if (pending.length > lines.length) lines.push(`…and ${pending.length - lines.length} more`);
+  return lines.join('\n');
+}
 async function imagesFromAttachments(attachments) {
   const images = [];
   for (const attachment of attachments ?? []) {
@@ -194,6 +220,7 @@ export class RubatoPiBridge {
       snapshot.messages.forEach((message, index) => context.projection.message(message,
         !(snapshot.state.isStreaming && index === snapshot.messages.length - 1 && !message.stopReason)));
       for (const request of snapshot.pendingUi) context.projection.question(request);
+      this.offerStaleQueueRecovery(context, snapshot.state);
       context.session.status = snapshot.state.isStreaming ? 'running' : 'ready';
       if (!snapshot.state.isStreaming && context.projection.turnId) {
         context.projection.interrupted = true;
@@ -273,6 +300,86 @@ export class RubatoPiBridge {
     if (!context || context.stopped) throw new Error(`No Pi attachment for ${threadId}`);
     return context;
   }
+  offerStaleQueueRecovery(context, state) {
+    if (!staleQueue(state) || context.queueRecovery) return false;
+    const requestId = `rubato-queue-recovery:${context.sessionId}`;
+    const count = Number(state.pendingMessageCount);
+    const preview = queuedMessagePreview(state);
+    const attachmentCount = (state?.requestTimeline?.pendingInputs ?? [])
+      .reduce((total, item) => total + (Number(item?.imageCount) || 0), 0);
+    const question = {
+      id: requestId,
+      method: 'rubato-queue-recovery',
+      state,
+    };
+    context.queueRecovery = question;
+    context.projection.questions.set(requestId, question);
+    context.projection.event('user-input.requested', { questions: [{
+      id: requestId,
+      header: 'Queued messages',
+      question: `Rubato found ${count} message${count === 1 ? '' : 's'} left in the provider queue after the turn stopped.${attachmentCount ? ` ${attachmentCount} legacy queued attachment${attachmentCount === 1 ? '' : 's'} cannot be restored.` : ''}${preview ? `\n\n${preview}` : ''}`,
+      options: [
+        { label: 'Resume in order', description: attachmentCount
+          ? 'Run the recovered text in order; legacy queued attachments are omitted.'
+          : 'Run the recovered messages in their original order.', value: RECOVER_QUEUE_RESUME },
+        { label: 'Discard', description: 'Remove the recovered messages without running them.', value: RECOVER_QUEUE_DISCARD },
+      ],
+      allowCustomAnswer: false,
+      multiSelect: false,
+    }] }, { requestId });
+    return true;
+  }
+  resolveQueueRecovery(context, requestId, decision) {
+    const operation = context.queue.then(async () => {
+      if (![RECOVER_QUEUE_RESUME, RECOVER_QUEUE_DISCARD].includes(decision))
+        throw new Error('Choose Resume in order or Discard');
+      const recovery = context.queueRecovery;
+      if (!recovery || recovery.id !== requestId) throw new Error('This queue recovery was already resolved');
+      if (!recovery.messages) {
+        const snapshot = await context.client.snapshot();
+        const cleared = staleQueue(snapshot.state)
+          ? await context.client.command({ type: 'clear_queue' })
+          : { steering: [], followUp: [] };
+        recovery.messages = queuedMessagesInOrder(snapshot.state, cleared);
+        recovery.nextIndex = 0;
+      }
+      const messages = recovery.messages;
+      if (decision === RECOVER_QUEUE_RESUME && messages.length > 0) {
+        const turnId = context.projection.begin();
+        context.session.status = 'running'; this.stateEvent(context);
+        try {
+          while (recovery.nextIndex < messages.length) {
+            const snapshot = await context.client.snapshot();
+            const type = snapshot.state.isStreaming ? 'follow_up' : 'prompt';
+            await context.client.command({ type, message: messages[recovery.nextIndex] });
+            recovery.nextIndex += 1;
+          }
+        } catch (error) {
+          // Nothing reached the provider, so no turn will ever settle the one we
+          // opened, and applyState reads running off projection.turnId. Close it
+          // here or the thread stays locked; the question survives for a retry.
+          if (recovery.nextIndex === 0) {
+            context.projection.failed = true; context.projection.settle();
+            context.session.status = 'ready'; this.stateEvent(context);
+          }
+          throw error;
+        }
+        this.finishQueueRecovery(context, requestId, decision);
+        return { turnId, recoveredMessageCount: messages.length };
+      }
+      this.finishQueueRecovery(context, requestId, decision);
+    });
+    context.queue = operation.catch(() => {});
+    return operation;
+  }
+  finishQueueRecovery(context, requestId, decision) {
+    context.projection.questions.delete(requestId);
+    context.queueRecovery = undefined;
+    context.projection.event('user-input.resolved', { answers: { [requestId]: decision } }, { requestId });
+    if (!context.projection.turnId) {
+      context.session.status = 'ready'; this.stateEvent(context);
+    }
+  }
   async selectModel(context, selection) {
     if (selection.model === 'rubato:select-model') {
       if (context.session.model) return;
@@ -321,6 +428,9 @@ export class RubatoPiBridge {
         const turnId = context.projection.begin();
         return { threadId: input.threadId, turnId, resumeCursor: context.session.resumeCursor };
       }
+      const beforeSend = await context.client.snapshot();
+      if (context.queueRecovery || this.offerStaleQueueRecovery(context, beforeSend.state))
+        throw new Error('Resolve the recovered queued messages before sending another prompt');
       const images = await imagesFromAttachments(input.attachments);
       if (!input.input?.trim() && images.length === 0) throw new Error('A non-empty prompt is required');
       if (input.interactionMode === 'plan') throw new Error('T3 plan mode is not mapped to Rubato policy');
@@ -375,6 +485,8 @@ export class RubatoPiBridge {
     const context = this.require(threadId); context.projection.interrupted = true;
     await context.client.command({ type: 'abort' });
     context.projection.settle(); context.session.status = 'ready'; this.stateEvent(context);
+    const snapshot = await context.client.snapshot();
+    this.offerStaleQueueRecovery(context, snapshot.state);
   }
   async respondToRequest(threadId, requestId, decision) {
     const context = this.require(threadId);
@@ -392,6 +504,8 @@ export class RubatoPiBridge {
     if (Array.isArray(value) && value.length === 1) value = value[0];
     if (value && typeof value === 'object' && Array.isArray(value.answers) && value.answers.length === 1) value = value.answers[0];
     if (typeof value !== 'string') throw new Error('This Pi question expects exactly one text answer');
+    if (context.queueRecovery?.id === requestId)
+      return this.resolveQueueRecovery(context, requestId, value);
     await context.client.reply({ id: requestId, value });
     context.projection.questions.delete(requestId);
     context.projection.event('user-input.resolved', { answers }, { requestId });
@@ -454,6 +568,7 @@ export class RubatoPiBridge {
     this.claimed.add(sessionId);
     context.sessionId = sessionId;
     context.session.resumeCursor = this.cursor(sessionId);
+    context.queueRecovery = undefined;
     context.projection.reset(sessionId);
     for (const message of snapshot.messages ?? []) {
       if (message?.role !== 'assistant') continue;
