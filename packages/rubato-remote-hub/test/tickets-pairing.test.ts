@@ -1,13 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { join } from "node:path"
 import { PairingService } from "../src/pairing.js"
-import { TicketStore } from "../src/tickets.js"
 import { temporaryDirectory } from "./helpers.js"
 
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => Promise.all(cleanups.splice(0).map((cleanup) => cleanup())))
 
-describe("pairing, exact CORS, and websocket tickets", () => {
+describe("pairing and exact CORS", () => {
   test("requires a valid one-use nonce and explicit approval before echoing exact Origin", async () => {
     const temporary = await temporaryDirectory()
     cleanups.push(temporary.cleanup)
@@ -32,23 +31,5 @@ describe("pairing, exact CORS, and websocket tickets", () => {
     expect(reloaded.isPaired("https://phone.example.ts.net")).toBeTrue()
     now += 10 * 60 * 1000 + 1
     expect(() => pairing.claim(pairing.issueNonce(1).nonce, "https://other.example", "owner@example.com")).not.toThrow()
-  })
-
-  test("binds 15-second tickets to owner and Origin and consumes them once", () => {
-    let now = 10_000
-    const tickets = new TicketStore({ now: () => now })
-    const issued = tickets.issue("https://phone.example.ts.net", "owner@example.com")
-    expect(tickets.consume(issued.ticket, "https://other.example", "owner@example.com")).toBeFalse()
-
-    const second = tickets.issue("https://phone.example.ts.net", "owner@example.com")
-    expect(tickets.consume(second.ticket, "https://phone.example.ts.net", "owner@example.com")).toBeTrue()
-    expect(tickets.consume(second.ticket, "https://phone.example.ts.net", "owner@example.com")).toBeFalse()
-
-    const headerless = tickets.issue("https://phone.example.ts.net", "owner@example.com")
-    expect(tickets.consumeForUpgrade(headerless.ticket, "https://phone.example.ts.net")).toBe("owner@example.com")
-
-    const expired = tickets.issue("https://phone.example.ts.net", "owner@example.com")
-    now += 15_001
-    expect(tickets.consume(expired.ticket, "https://phone.example.ts.net", "owner@example.com")).toBeFalse()
   })
 })

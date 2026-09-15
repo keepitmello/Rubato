@@ -13,23 +13,16 @@
     }
   },
   "scripts": {
-    "build": "esbuild src/main.ts src/index.ts --bundle --platform=node --format=esm --target=node24 --outdir=dist --external:hono --external:@hono/node-server --external:ws --external:web-push --external:@rubato/terminal-bridge",
+    "build": "esbuild src/main.ts src/index.ts --bundle --platform=node --format=esm --target=node24 --outdir=dist",
     "start": "node dist/main.js",
     "test": "bun test test/*.test.ts",
     "typecheck": "tsgo --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@hono/node-server": "1.19.17",
-    "@rubato/remote-protocol": "file:../rubato-remote-protocol",
-    "@rubato/terminal-bridge": "file:../rubato-terminal-bridge",
-    "hono": "4.13.5",
-    "web-push": "3.6.7",
-    "ws": "8.21.3"
+    "@rubato/remote-protocol": "file:../rubato-remote-protocol"
   },
   "devDependencies": {
     "@types/node": "26.2.0",
-    "@types/web-push": "3.6.4",
-    "@types/ws": "8.18.1",
     "bun-types": "1.4.0",
     "esbuild": "0.25.9"
   }
