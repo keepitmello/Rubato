@@ -33,8 +33,6 @@ node harness/pi-runtime/scripts/switch-engine.mjs update
 node harness/pi-runtime/scripts/switch-engine.mjs status
 ```
 
-센파이 복귀용 실행본만 만들 때는 `npm run build:senpi`를 사용해요. 실행본 갱신 전에는 기존 세션을 종료해요. 실행 중인 프로세스에 교체한 파일이 즉시 적용된다는 뜻은 아니에요.
-
 ## 이번에 실행한 검사와 남은 검증
 
 수정한 실제 모듈을 읽는 `test/migration-regressions.test.mjs`의 24개 검사를 리눅스·노드 22.16.0 환경에서 실행했고 모두 통과했어요. 이 검사는 파일시스템을 실제로 쓰며, 다운로드·조립과 파이 검증기·세션 인터페이스에는 시험용 구현을 넣어요. 원격 저장소 전체를 복제하거나 제품 의존성을 설치할 수 없는 작업 환경이라 파이 0.85.1 전체 실행 검사를 여기서 돌렸다고 주장하지 않아요.

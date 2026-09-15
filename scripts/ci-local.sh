@@ -19,9 +19,7 @@ node --test \
   scripts/check-third-party-notices.test.mjs \
   scripts/license-policy.test.mjs
 
-say "engine build and prompt synthesis"
-node harness/scripts/build-engine.mjs --force
-node harness/scripts/build-engine.mjs --check
+say "prompt synthesis"
 bash harness/prompts/build.sh
 mkdir -p "$HOME/.agents"
 ln -sfn "$REPO/harness/prompts" "$HOME/.agents/rubato"

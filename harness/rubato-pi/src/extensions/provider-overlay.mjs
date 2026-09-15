@@ -52,9 +52,9 @@ export async function supportedProviders({ env = process.env, antigravity, curso
 /**
  * 이 프로세스가 부모 세션인가.
  *
- * 부모는 `lead-overlay.mjs` 를 싣고 격리 자식은 provider overlay 만 싣는다 —
- * `extensions/adapter.mjs` 가 이미 같은 신호로 부모를 가른다. 새 판별자를 만들지 않고
- * 그것을 따른다: 두 개가 되면 언젠가 서로 어긋난다.
+ * 격리 자식은 provider overlay 만 싣는다. 부모 판별은 그 세션이 예전에 싣던
+ * `lead-overlay.mjs` argv 신호다. 새 판별자를 만들지 않는다: 두 개가 되면
+ * 언젠가 서로 어긋난다.
  */
 function parentSession(argv) {
   for (let i = 0; i < argv.length; i += 1) {

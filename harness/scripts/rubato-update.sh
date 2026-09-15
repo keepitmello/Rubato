@@ -141,15 +141,12 @@ printf '\n%s== 새 커밋 %s개 ==%s\n' "$BOLD" "$BEHIND" "$RST"
 git log --oneline --no-decorate "HEAD..origin/$BRANCH" | sed 's/^/  /'
 
 CHANGED="$(git diff --name-only "HEAD..origin/$BRANCH")"
-need_deps=0; need_prompts=0; need_engine=0; need_shell=0; need_extensions=0; need_hub=0; need_candidate=0
+need_deps=0; need_prompts=0; need_shell=0; need_extensions=0; need_hub=0; need_candidate=0
 echo "$CHANGED" | grep -Eq '^(package\.json|bun\.lock|harness/rubato-pi/package\.json)$' && need_deps=1
 echo "$CHANGED" | grep -Eq '^harness/prompts/' && need_prompts=1
 # 자동 로드되는 사용자 확장. 설치기 자신이 바뀌어도 다시 깐다 — 설치 규칙이
 # 바뀐 경우이므로 내용이 그대로여도 배치가 달라질 수 있다.
 echo "$CHANGED" | grep -Eq '^(harness/extensions/|harness/scripts/install-extensions\.sh)' && need_extensions=1
-# engine source뿐 아니라 조립 규칙 자체가 바뀌어도 다시 만든다. builder만 바뀐
-# 업데이트를 건너뛰면 옛 manifest/import map을 신선하다고 오판한다.
-echo "$CHANGED" | grep -Eq '^(packages/|harness/scripts/build-engine\.mjs$)' && need_engine=1
 # stock-pi 후보는 harness/ 와 packages/ 전체를 지문으로 삼는다(source-fingerprint.mjs
 # 의 ROOTS). 그 안의 무엇이든 바뀌면 설치본이 새 소스와 어긋나므로 다시 깐다.
 echo "$CHANGED" | grep -Eq '^(package\.json$|bun\.lock$|harness/|packages/)' && need_candidate=1
@@ -194,25 +191,23 @@ printf '\n%s== 다시 만들 것 ==%s\n' "$BOLD" "$RST"
 echo "  번들 스킬 → ~/.agents/skills"
 [ "$need_extensions" = 1 ] && echo "  번들 확장 → agentDir/extensions"
 [ "$need_shell" = 1 ]   && echo "  셸 alias 블록 · cmux 세션 복원"
-[ "$need_engine" = 1 ]  && echo "  엔진 플러그인 빌드 ${DIM}(몇 분 걸려요)${RST}"
 [ "$need_candidate" = 1 ] && echo "  stock-pi 엔진 설치 ${DIM}(몇 분 걸려요)${RST}"
 [ "$need_aside" = 1 ]   && echo "  Aside 프록시 재시작"
 [ "$need_hub" = 1 ]     && echo "  remote hub 재시작"
 [ "$need_profile" = 1 ] && echo "  프로필 엔진 재시작 ${DIM}(열린 CLI는 다시 붙여야 해요)${RST}"
 [ "$need_gui" = 1 ]     && echo "  공식 GUI (핀된 T3 + overlay + Rubato.app) ${DIM}(켜져 있으면 껐다 켭니다)${RST}"
-[ "$need_deps$need_prompts$need_extensions$need_engine$need_shell$need_aside$need_hub$need_profile$need_candidate$need_gui" = "0000000000" ] && echo "  ${DIM}그 외는 소스만 받으면 돼요${RST}"
+[ "$need_deps$need_prompts$need_extensions$need_shell$need_aside$need_hub$need_profile$need_candidate$need_gui" = "000000000" ] && echo "  ${DIM}그 외는 소스만 받으면 돼요${RST}"
 
 # 로컬 수정이 있어도 멈추지 않는다.
 #
 # 예전에는 dirty 면 그 자리에서 끝내고 사람에게 커밋/stash/버리기를 시켰다.
-# 그런데 이 레포는 가만히 둬도 dirty 가 된다 — 엔진 산출물이 추적되는데
+# 그런데 이 레포는 가만히 둬도 dirty 가 된다 — 예전에 엔진 산출물이 추적되는데
 # rubato 는 세션마다 빌드를 돌렸고, 산출물 첫 줄의 소스 해시가 매번 달라졌다.
 # 그래서 시키는 대로 정리해도 다음 세션에 또 걸렸다. 그 머신에서는 영구히
 # 막히는 구조였고, 사람에게 떠넘기는 분기 자체가 잘못이었다.
 #
-# 산출물은 이제 레포 밖에서 만든다(harness/scripts/build-engine.mjs). 그래서
-# 여기 남는 dirty 는 대개 진짜 사람 작업이다. 그것은 지키되, 업데이트는
-# 실패시키지 않는다.
+# 산출물은 이제 레포 밖에서 만든다. 그래서 여기 남는 dirty 는 대개 진짜
+# 사람 작업이다. 그것은 지키되, 업데이트는 실패시키지 않는다.
 #
 # `.rubato/evidence/` 는 판단에서 뺀다. 터미널 ANSI 캡처가 CRLF 인데
 # .gitattributes 의 `*.txt text eol=lf` 가 LF 로 바꾸려 들어서 clone 만 해도
@@ -384,16 +379,6 @@ if [ "$need_deps" = 1 ]; then
     && ok "엔진 의존성" || fail "bun install 에 실패했습니다. 소스는 받았지만 업데이트는 완료되지 않았습니다."
   "$NPM" install --prefix "$HARNESS/rubato-pi" >/dev/null 2>&1 \
     && ok "rubato-pi 의존성" || fail "rubato-pi 의존성 설치에 실패했습니다. 소스는 받았지만 업데이트는 완료되지 않았습니다."
-fi
-
-if [ "$need_engine" = 1 ]; then
-  [ -n "$BUN" ] || fail "bun 이 없어 엔진을 빌드할 수 없습니다. 소스는 받았지만 업데이트는 완료되지 않았습니다."
-  [ -n "$NODE" ] || fail "node 가 없어 엔진을 빌드할 수 없습니다. 소스는 받았지만 업데이트는 완료되지 않았습니다."
-  printf '  %s… 엔진 빌드 중%s\n' "$DIM" "$RST"
-  (cd "$REPO" && "$NODE" "$HARNESS/scripts/build-engine.mjs" --force >/dev/null 2>&1) \
-    || fail "엔진 빌드에 실패했습니다. 손으로: node harness/scripts/build-engine.mjs --force"
-  "$NODE" "$HARNESS/scripts/build-engine.mjs" --check >/dev/null 2>&1 \
-    && ok "엔진 플러그인" || fail "엔진 산출물이 새 소스와 맞지 않습니다."
 fi
 
 # 세션이 실제로 도는 것은 stock-pi 후보다(senpi 폴백 폐기). 새 소스를 받아

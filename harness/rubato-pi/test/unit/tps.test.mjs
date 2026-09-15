@@ -1,9 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtempSync, mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 import { formatNoticeLatency, formatTpsNotice, installTps, turnTokensPerSecond } from "../../src/extensions/tps.mjs";
 import { PROCESS_STARTED_AT as SHARED_PROCESS_STARTED_AT, processStartedAt } from "../../src/process-start.mjs";
 
@@ -63,25 +59,4 @@ test("offline timing helpers still exist and are not used as a live notice", () 
 test("every reader of timing.processStartedAt sees one value, not a fresh sample", () => {
   assert.equal(processStartedAt(), SHARED_PROCESS_STARTED_AT);
   assert.ok(Number.isInteger(SHARED_PROCESS_STARTED_AT));
-});
-
-test("the shim loads and installs as a real extension without emitting a notice", async () => {
-  const agentDir = mkdtempSync(join(tmpdir(), "rubato-ext-"));
-  mkdirSync(join(agentDir, "extensions"), { recursive: true });
-  const { ensureAgentExtensions } = await import("../../src/agent-extensions.mjs");
-  ensureAgentExtensions(agentDir);
-  const mod = await import(pathToFileURL(join(agentDir, "extensions", "tps.js")).href);
-  const seen = [];
-  const notices = [];
-  mod.default({
-    on: (name, handler) => {
-      seen.push(name);
-      handler({ message: { role: "assistant" }, messages: [assistant(USAGE)] }, {
-        hasUI: true,
-        ui: { notify: (text, level) => notices.push({ text, level }) },
-      });
-    },
-  });
-  assert.deepEqual(seen, []);
-  assert.deepEqual(notices, []);
 });
