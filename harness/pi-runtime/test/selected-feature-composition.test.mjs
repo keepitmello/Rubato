@@ -88,11 +88,15 @@ test("all selected hooks compose in one isolated stock SDK and standard binary",
   ({ session } = await sdk.createAgentSession({ cwd, agentDir, settingsManager, resourceLoader, sessionManager: sdk.SessionManager.inMemory(cwd) }));
   const errors = [];
   await session.bindExtensions({ onError: (error) => errors.push(error) });
+  // MCP attaches in the background on session_start and again after each
+  // reload; before_agent_start is the seam that awaits it.
+  await session.extensionRunner.emit({ type: "before_agent_start" });
   const before = await api.executeTool("composition_echo", { value: "before reload" });
   assert.equal(before.content[0].text, "before reload");
   assert.deepEqual(await session.reload(), { cancelled: true, reason: "selected-features test" });
   veto = false;
   assert.deepEqual(await session.reload(), { cancelled: false });
+  await session.extensionRunner.emit({ type: "before_agent_start" });
   const after = await api.executeTool("composition_echo", { value: "after reload" });
   assert.equal(after.content[0].text, "after reload");
   assert.deepEqual(hooks, [["call", "composition_echo"], ["result", "composition_echo"], ["call", "composition_echo"], ["result", "composition_echo"]]);
