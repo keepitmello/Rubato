@@ -69,6 +69,17 @@ if [ -n "$SYNC_FROM" ]; then
 fi
 
 added=0; current=0; replaced=0; kept=0
+# 남의 CLI 가 덮어쓴 자리는 "사람이 고친 자리" 가 아니다.
+#
+# 아래 보존 규칙은 설치본이 번들과 다르면 그 기기 사람의 손길로 보고 지킨다.
+# 그런데 Aside CLI 는 `aside guide` 로 가는 15줄 진입점 스텁을 같은 경로에 덮어
+# 쓴다. 우리 것은 계정 정책(모델 강제 금지, 프로파일 이름)을 담은 121줄이고,
+# 그것이 사라지면 세션이 `-m openai/gpt-5.6-sol` 같은 남의 계정 예시를 따라간다.
+# 보존 규칙으로는 영영 안 돌아오므로, 그 스텁임이 확실할 때만 되돌린다.
+foreign_stub() {
+  [ -f "$1/SKILL.md" ] || return 1
+  grep -q "This file is only an entry point" "$1/SKILL.md" 2>/dev/null
+}
 for dir in "$SRC"/*/; do
   name="$(basename "$dir")"
   [ -f "$dir/SKILL.md" ] || continue
@@ -83,6 +94,10 @@ for dir in "$SRC"/*/; do
     replaced=$((replaced + 1))
   elif same_tree "$dest" "$dir"; then
     current=$((current + 1))
+  elif foreign_stub "$dest"; then
+    rm -rf "$dest"
+    cp -R "$dir" "$dest"
+    replaced=$((replaced + 1))
   elif [ -n "$SYNC_FROM" ] && [ -d "$prev" ] && same_tree "$dest" "$prev"; then
     rm -rf "$dest"
     cp -R "$dir" "$dest"
