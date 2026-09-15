@@ -63,15 +63,18 @@ GUI_T3_DIR="${RUBATO_T3_SOURCE:-$HOME/.rubato/t3-source}"
 # 여기서 깨진 것으로 잡혀 다음 업데이트에 링크로 바뀐다.
 GUI_BUNDLE="$GUI_T3_DIR/apps/desktop/.electron-runtime/Rubato.app"
 GUI_ENTRY="$GUI_BUNDLE/Contents/Resources/app/index.js"
+# 이 한 경로만 격리 밖을 봤다. 픽스처 HOME 에서 도는 시험도 호스트의
+# /Applications 를 읽어서, 앱이 깔린 기기에서만 6 개가 빨갛게 나왔다.
+APPS_DIR="${RUBATO_APPLICATIONS_DIR:-/Applications}"
 gui_installed() {
-  [ -d "$GUI_T3_DIR/.git" ] || [ -d "/Applications/Rubato.app" ] || [ -d "/Applications/T3 Code.app" ]
+  [ -d "$GUI_T3_DIR/.git" ] || [ -d "$APPS_DIR/Rubato.app" ] || [ -d "$APPS_DIR/T3 Code.app" ]
 }
 gui_broken() {
   gui_installed || return 1
   [ -f "$GUI_T3_DIR/apps/desktop/dist-electron/main.cjs" ] || return 0
   # 더블클릭 진입점이 없으면 눌러도 맨 Electron 안내 화면이 뜬다.
   [ -f "$GUI_ENTRY" ] || return 0
-  [ "$(readlink /Applications/Rubato.app 2>/dev/null)" = "$GUI_BUNDLE" ] || return 0
+  [ "$(readlink "$APPS_DIR/Rubato.app" 2>/dev/null)" = "$GUI_BUNDLE" ] || return 0
   return 1
 }
 repair_gui() {
