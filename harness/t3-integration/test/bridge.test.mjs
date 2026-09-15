@@ -97,6 +97,23 @@ test('a dead socket on an inventory request reconnects inside the bridge instead
   assert.equal(failures, 1);
   assert.notEqual(bridge.inventoryClient, stale);
 });
+test('a message sent during a live turn waits for the next turn instead of steering into this one', async () => {
+  const projection = new EventProjection({threadId:'busy-thread',sessionId:'busy-session',instanceId:'instance',emit:()=>{}});
+  const bridge = Object.create(RubatoPiBridge.prototype);
+  bridge.skillNames = new Set();
+  const commands = [];
+  const state = {isStreaming:true,isCompacting:false,pendingMessageCount:0,requestTimeline:{pendingInputs:[]}};
+  const context = {sessionId:'busy-session',projection,session:{threadId:'busy-thread',status:'ready'},queue:Promise.resolve(),stopped:false,
+    client:{snapshot:async()=>({state}),command:async(command)=>{commands.push(command);}}};
+  bridge.sessions = new Map([['busy-thread',context]]);
+  await bridge.sendTurn({threadId:'busy-thread',input:'first'});
+  await bridge.sendTurn({threadId:'busy-thread',input:'while it runs'});
+  assert.deepEqual(commands,[
+    {type:'prompt',message:'first'},
+    {type:'follow_up',message:'while it runs'},
+  ]);
+});
+
 test('an idle provider queue is offered for recovery without deleting it', async () => {
   const events = [];
   const projection = new EventProjection({threadId:'stale-thread',sessionId:'stale-session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
@@ -733,7 +750,7 @@ const CATALOGUE = [
   { provider:'openai-codex', id:'gpt-5.6-sol', contextWindow:272000 },
   { provider:'openai-codex', id:'gpt-5.6-terra', contextWindow:272000 },
 ];
-const reattachContext = ({ stateModel, knownModel, maxTokens, models = CATALOGUE } = {}) => {
+const reattachContext = ({ stateModel, knownModel, maxTokens, models = CATALOGUE, messages } = {}) => {
   const events = [];
   const projection = new EventProjection({ threadId:'thread', sessionId:'session', instanceId:'instance',
     emit:(event) => events.push(decodeEvent(event)) });
@@ -746,7 +763,7 @@ const reattachContext = ({ stateModel, knownModel, maxTokens, models = CATALOGUE
   const snapshot = {
     runtimeId:'rt', sequence:1, pendingUi:[],
     state:{ isStreaming:false, model:stateModel, autoCompactionEnabled:true },
-    messages:[
+    messages: messages ?? [
       { role:'user', content:'hi' },
       { role:'assistant', stopReason:'stop', provider:'anthropic', model:'claude-opus-5',
         timestamp:1, content:[{ type:'text', text:'ok' }], usage },
@@ -758,7 +775,7 @@ const reattachContext = ({ stateModel, knownModel, maxTokens, models = CATALOGUE
     projection,
     client:{ subscribeSession: async () => () => {}, snapshot: async () => snapshot },
   };
-  return { events, bridge, context };
+  return { events, bridge, context, usage };
 };
 
 test('reattach publishes the session model window even when get_state answers another family', async () => {
@@ -787,5 +804,21 @@ test('reattach omits the window when the session model is not in the catalogue',
   const usage = events.find((event) => event.type === 'thread.token-usage.updated');
   assert.equal(usage.payload.usage.usedTokens, 490570);
   assert.equal('maxTokens' in usage.payload.usage, false);
+});
+
+// 새 대화는 assistant 메시지가 없어 식별자가 오직 세션 모델에서만 나온다. 그 대입이
+// configureUsage 뒤에 있던 동안, T3 기본 선택이 pi 기본 모델과 같은 새 대화는
+// (selectModel 이 통째로 건너뛴다) 창 없이 돌아 미터가 퍼센트를 못 그렸다.
+test('a fresh session with no assistant message still publishes the session model window', async () => {
+  const { events, bridge, context, usage } = reattachContext({
+    stateModel:{ provider:'anthropic', id:'claude-opus-5', contextWindow:1000000 },
+    messages:[{ role:'user', content:'hi' }],
+  });
+  await bridge.synchronize(context);
+  assert.equal(events.some((event) => event.type === 'thread.token-usage.updated'), false);
+  context.projection.usage(usage, { role:'assistant', provider:'anthropic', model:'claude-opus-5' });
+  const published = events.filter((event) => event.type === 'thread.token-usage.updated');
+  assert.equal(published.length, 1);
+  assert.equal(published[0].payload.usage.maxTokens, 1000000);
 });
 
