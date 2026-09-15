@@ -252,8 +252,12 @@ import { executeRegisteredTool } from "../../../../../rubato-features/tool-execu
         const tools = [];`,
     `    setActiveToolsByName(toolNames) {
         // apply_patch is the model-facing editor; keep edit/write registered
-        // for exec-bridge, but never put them on the request.
-        toolNames = toolNames.filter((name) => name !== "edit" && name !== "write");
+        // for exec-bridge, but never put them on the request. Only where
+        // apply_patch exists: senpi ships it, the stock engine does not, and
+        // dropping edit/write there left the model with no way to write a file
+        // at all.
+        if (this._toolRegistry.has("apply_patch"))
+            toolNames = toolNames.filter((name) => name !== "edit" && name !== "write");
         const tools = [];`,
     "single-editor",
   );
