@@ -12,7 +12,8 @@ test("required-executables.txt is a sorted unique list", async () => {
   assert.ok(required.includes("harness/scripts/rubato-update.sh"))
   assert.ok(required.includes("harness/scripts/install-skills.sh"))
   assert.ok(required.includes("scripts/ci-local.sh"))
-  assert.ok(required.includes(".githooks/pre-push"))
+  // `.githooks/pre-push` 는 d32e35ee5 에서 없앤 훅이다. 남은 훅만 본다.
+  assert.ok(required.includes(".githooks/pre-commit"))
   assert.deepEqual(required, [...required].sort())
   assert.equal(new Set(required).size, required.length)
 })
