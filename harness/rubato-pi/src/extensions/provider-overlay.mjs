@@ -70,8 +70,9 @@ export default async function providerOverlay(pi, {
   const natives = await providerFactory({
     env,
     antigravity,
-    // Isolated children only: brand.mjs hands this overlay to child sessions.
-    // A child must not reactivate cursor credentials on rotation.
+    // 이 overlay 를 싣는 것은 격리 자식뿐이다(`brand.mjs` 가 자식 env 에 경로를
+    // 싣는다). 자격이 회전했을 때 다시 살리는 일은 권위를 가진 부모의 몫이라
+    // 자식에서는 걸지 않는다.
     cursor: { reactivateOnCredentialRotation: false },
     ...(opencode ? { opencode } : {}),
   });
@@ -101,8 +102,10 @@ export default async function providerOverlay(pi, {
   // 기존 Codex/xAI 진단이 먼저다. 같은 target 이 깨졌을 때 Antigravity 이관이
   // 그 오류를 가리면 사용자는 원래 부팅 blocker 를 보지 못한다.
   //
-  // Isolated children only. Do not resolve Antigravity project ids here — each
-  // child would hit Keychain and loadCodeAssist. The parent candidate owns that.
+  // **이관은 자식이 하지 않는다.** 이 overlay 는 격리 memory/reflection 자식에만
+  // 실리는데, 걸어두면 자식마다 Keychain 을 읽고 `loadCodeAssist` 로 Google 에
+  // 요청한다 — 시작 부작용이 자식 수만큼 곱해진다. 권위를 가진 부모 후보가 그것을
+  // 소유한다.
   const antigravityEndpoint = env.RUBATO_ANTIGRAVITY_ENDPOINT || ANTIGRAVITY_ENDPOINT;
   const antigravityReport = await antigravityCredentialImporter({
     env,
