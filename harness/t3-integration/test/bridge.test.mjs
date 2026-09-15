@@ -516,3 +516,67 @@ test('attach replays last assistant usage and stays silent after compaction', ()
   assert.equal(events.length, 0, 'pre-compaction usage must not become the meter after compact');
 });
 
+const reattachContext = ({ stateModel, knownModel, maxTokens } = {}) => {
+  const events = [];
+  const projection = new EventProjection({ threadId:'thread', sessionId:'session', instanceId:'instance',
+    emit:(event) => events.push(decodeEvent(event)) });
+  if (maxTokens) projection.configureUsage({ maxTokens });
+  const bridge = Object.create(RubatoPiBridge.prototype);
+  bridge.projectedMessages = async () => [];
+  const usage = { input:2, output:962, cacheRead:489090, cacheWrite:0, reasoning:0, totalTokens:490570 };
+  const snapshot = {
+    runtimeId:'rt', sequence:1, pendingUi:[],
+    state:{ isStreaming:false, model:stateModel, autoCompactionEnabled:true },
+    messages:[
+      { role:'user', content:'hi' },
+      { role:'assistant', stopReason:'stop', provider:'anthropic', model:'claude-opus-5',
+        timestamp:1, content:[{ type:'text', text:'ok' }], usage },
+    ],
+  };
+  const context = {
+    session:{ threadId:'thread', status:'connecting', resumeCursor:{ kind:'rubato-pi' },
+      ...(knownModel ? { model:knownModel } : {}) },
+    projection,
+    client:{ subscribeSession: async () => () => {}, snapshot: async () => snapshot },
+  };
+  return { events, bridge, context };
+};
+
+test('reattach does not publish a context window that is not the session model', async () => {
+  const { events, bridge, context } = reattachContext({
+    stateModel:{ provider:'openai-codex', id:'gpt-5.6-terra', contextWindow:272000 },
+  });
+  await bridge.synchronize(context);
+  const usageEvents = events.filter((event) => event.type === 'thread.token-usage.updated');
+  assert.equal(usageEvents.length, 1);
+  const usage = usageEvents[0].payload.usage;
+  assert.equal(usage.usedTokens, 490570);
+  assert.equal(usage.inputTokens, 2);
+  assert.equal(usage.cachedInputTokens, 489090);
+  assert.equal(usage.outputTokens, 962);
+  assert.equal(usage.compactsAutomatically, true);
+  assert.equal('maxTokens' in usage, false);
+  assert.equal(usageEvents.some((event) => event.payload.usage.maxTokens === 272000), false);
+});
+
+test('reattach publishes the window only when snapshot model is the session', async () => {
+  const { events, bridge, context } = reattachContext({
+    stateModel:{ provider:'anthropic', id:'claude-opus-5', contextWindow:1000000 },
+  });
+  await bridge.synchronize(context);
+  const usage = events.find((event) => event.type === 'thread.token-usage.updated');
+  assert.equal(usage.payload.usage.maxTokens, 1000000);
+  assert.equal(usage.payload.usage.usedTokens, 490570);
+});
+
+test('recover does not replace a known session window with an unconfirmed snapshot model', async () => {
+  const { events, bridge, context } = reattachContext({
+    stateModel:{ provider:'openai-codex', id:'gpt-5.6-terra', contextWindow:272000 },
+    knownModel:'anthropic/claude-opus-5',
+    maxTokens:1000000,
+  });
+  await bridge.synchronize(context);
+  assert.equal(events.some((event) => event.type === 'thread.token-usage.updated'
+    && event.payload.usage.maxTokens === 272000), false);
+});
+

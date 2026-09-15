@@ -1,7 +1,7 @@
 import { SessionClient } from '../../pi-server/src/client.mjs';
 import { readDescriptor } from '../../pi-server/src/descriptor.mjs';
 import { ensureProfileEngine } from '../../pi-server/src/discovery.mjs';
-import { EventProjection, importedId, messageKey, textOf } from './events.mjs';
+import { EventProjection, confirmedUsageWindow, importedId, messageKey, textOf } from './events.mjs';
 import { applySelectionOptions, catalogForPicker } from './model-catalog-order.mjs';
 import { controlCommandFor, rewriteSkillMentions, surfaceFromPiCommands } from './commands.mjs';
 import { readFile } from 'node:fs/promises';
@@ -198,8 +198,8 @@ export class RubatoPiBridge {
         context.projection.interrupted = true;
         context.projection.settle();
       }
+      this.configureUsage(context, snapshot.state, snapshot.messages);
       if (snapshot.state.model) context.session.model = `${snapshot.state.model.provider}/${snapshot.state.model.id}`;
-      this.configureUsage(context, snapshot.state);
       this.replayUsage(context, snapshot.messages);
       this.stateEvent(context);
       loading = false;
@@ -459,13 +459,14 @@ export class RubatoPiBridge {
     context.sequence = snapshot.sequence;
     context.session.status = snapshot.state?.isStreaming ? 'running' : 'ready';
     context.session.updatedAt = new Date().toISOString();
-    this.configureUsage(context, snapshot.state);
+    this.configureUsage(context, snapshot.state, snapshot.messages);
     this.replayUsage(context, snapshot.messages);
     this.stateEvent(context);
   }
-  configureUsage(context, state) {
+  configureUsage(context, state, messages) {
     context.projection.configureUsage({
-      maxTokens: state?.model?.contextWindow,
+      maxTokens: confirmedUsageWindow(state, { knownModel: context.session.model, messages }),
+      replaceWindow: true,
       ...(typeof state?.autoCompactionEnabled === 'boolean' ? { compactsAutomatically: state.autoCompactionEnabled } : {}),
     });
   }
