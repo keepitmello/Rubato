@@ -226,8 +226,13 @@ export class RubatoPiBridge {
         context.projection.interrupted = true;
         context.projection.settle();
       }
-      await this.configureUsage(context, snapshot.state, snapshot.messages);
+      // 모델을 먼저 적는다. configureUsage 는 session.model 로 창 크기를 찾는데,
+      // 대입이 뒤에 있으면 새 대화(assistant 메시지가 아직 없는 세션)에서는 식별자가
+      // 없어 replaceWindow 가 창을 지운다. 그 다음 selectModel 은 고른 모델이
+      // 세션 모델과 같으면 통째로 건너뛰므로 — T3 기본 선택과 pi 기본 모델이 같은
+      // 흔한 경우다 — 창은 그 세션 내내 비어 있고 미터에 퍼센트가 안 뜬다.
       if (snapshot.state.model) context.session.model = `${snapshot.state.model.provider}/${snapshot.state.model.id}`;
+      await this.configureUsage(context, snapshot.state, snapshot.messages);
       this.replayUsage(context, snapshot.messages);
       this.stateEvent(context);
       loading = false;
@@ -447,8 +452,12 @@ export class RubatoPiBridge {
           await context.client.command(control.rpc);
           this.reportControl(context, control);
         } else {
+          // 턴이 도는 중에 보낸 말은 CLI 와 같은 자리에 붙는다 — 지금 작업에
+          // 끼어드는 steer 가 아니라, 이번 턴이 끝난 뒤 실행되는 대기열이다.
+          // 앱 컴포저에는 CLI 의 두 번째 Enter 같은 승격 수단이 없어서,
+          // 끼어들기가 필요하면 턴을 멈추고 다시 보낸다.
           await context.client.command({
-            type: running ? 'steer' : 'prompt',
+            type: running ? 'follow_up' : 'prompt',
             message,
             ...(images.length ? { images } : {}),
           });
