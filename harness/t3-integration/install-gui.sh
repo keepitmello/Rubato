@@ -37,15 +37,22 @@ BRIDGE="$HERE/src/bridge.mjs"
 DESCRIPTOR="$AGENT_DIR/server/connection.json"
 BUNDLE="$T3_DIR/apps/desktop/dist-electron/main.cjs"
 STAMP="$T3_DIR/.rubato-gui-build"
+DEPS_STAMP="$T3_DIR/.rubato-gui-deps"
 
 # T3 는 packageManager 로 pnpm 을 선언하고, 그 설치가 vite-plus 를 devDependency
 # 로 끌어온다. 그래서 전역 vp 가 없어도 빌드는 된다 — 예전에는 여기서 전역 vp 만
 # 찾다가, 없으면 빌드를 건너뛰고도 "더블클릭으로 켠다"고 말하는 빈 앱을 남겼다.
+#
+# 설치 여부는 vp 의 존재가 아니라 lockfile 로 판단한다. vp 만 보면, 핀이 올라가며
+# 새 의존성이 늘어도 옛 node_modules 를 그대로 쓰고 빌드에서 resolve 실패로 터진다
+# (@daypicker/react). 락파일이 달라졌으면 받는다.
 build_desktop() {
   (
     cd "$T3_DIR" || exit 1
     export PATH="$(dirname "$NODE"):$PATH" COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-    if [ ! -x node_modules/.bin/vp ]; then
+    want_deps="$(shasum -a 256 pnpm-lock.yaml 2>/dev/null | cut -d' ' -f1)"
+    if [ ! -x node_modules/.bin/vp ] || [ -z "$want_deps" ] \
+      || [ "$(cat "$DEPS_STAMP" 2>/dev/null || true)" != "$want_deps" ]; then
       if command -v vp >/dev/null 2>&1; then
         vp i || exit 1
       elif command -v corepack >/dev/null 2>&1; then
@@ -56,6 +63,7 @@ build_desktop() {
         printf '  pnpm 도 vp 도 없다\n' >&2
         exit 1
       fi
+      [ -n "$want_deps" ] && printf '%s\n' "$want_deps" > "$DEPS_STAMP"
     fi
     if [ -x node_modules/.bin/vp ]; then
       ./node_modules/.bin/vp run --filter @t3tools/desktop --filter t3 build
