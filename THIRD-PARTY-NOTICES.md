@@ -13,10 +13,10 @@ or a retained package production dependency.
 ## Copied or derived source
 
 ### pi-lsp-client
-- License: MIT, from `packages/rubato-runtime/plugin/LICENSE` and package NOTICE files.
+- License: MIT, from `packages/rubato-runtime/LICENSE` and package NOTICE files.
 - Copyright: Yeongyu Kim.
 - Upstream URL: https://github.com/code-yeongyu
-- Where-bundled: adapted LSP engine in `packages/lsp-core`; Senpi adapter descriptor, schema, renderer, path extraction, post-edit wiring, and migration-warning helpers in `packages/rubato-runtime`; runtime execution is packaged by `@rubato/lsp-daemon`. See `packages/lsp-core/NOTICE`, `packages/lsp-daemon/NOTICE`, and `packages/rubato-runtime/plugin/NOTICE`.
+- Where-bundled: adapted LSP engine in `packages/lsp-core`; Senpi adapter descriptor, schema, renderer, path extraction, post-edit wiring, and migration-warning helpers in `packages/rubato-runtime`; runtime execution is packaged by `@rubato/lsp-daemon`. See `packages/lsp-core/NOTICE`, `packages/lsp-daemon/NOTICE`, and `packages/rubato-runtime/NOTICE`.
 
 ### ast-grep-skill
 - License: MIT, from `packages/rubato-runtime/plugin/skills/ast-grep/LICENSE`.

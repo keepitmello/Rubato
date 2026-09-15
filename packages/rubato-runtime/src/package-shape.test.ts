@@ -98,21 +98,6 @@ describe("rubato-runtime package shape", () => {
     expect(Object.keys(readStringRecord(rootManifest, "dependencies"))).not.toContain(["vscode", "jsonrpc"].join("-"))
   })
 
-  test("#given the packaged senpi plugin manifest #when audited #then license and notice files ship with generated artifacts", async () => {
-    // given
-    const manifest = await readJsonObject("packages/rubato-runtime/plugin/package.json")
-
-    // when
-    const files = readStringArray(manifest, "files")
-
-    // then
-    expect(files).toContain("extensions")
-    expect(files).toContain("runtime")
-    expect(files).toContain("README.md")
-    expect(files).toContain("NOTICE")
-    expect(files).toContain("LICENSE")
-  })
-
   test("#given root workspace metadata #when audited #then the senpi adapter is registered", async () => {
     // given
     const rootManifest = await readJsonObject("package.json")
