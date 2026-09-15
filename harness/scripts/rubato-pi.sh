@@ -59,55 +59,118 @@ case "${1-}" in
       exit 2
     fi
     NODE="$(live_node)" || exit $?
-    # `restart` means "bring up whatever is running old code": the profile
-    # engine that serves conversations, the remote hub, AND the desktop app.
-    # Each side is skipped cleanly when it is not on this machine, and each
-    # line says which it did. Exit 0 covers "restarted" and
-    # "nothing to restart"; exit 1 means a restart was attempted and failed —
-    # the two must not look alike.
+    # `restart` 는 "이 워킹트리의 코드로 다시 만들고, 옛 코드로 도는 것을 그 위로
+    # 올린다" 이다. 받아오지는 않는다 — git pull 은 `rubato update` 의 몫이고, 그
+    # 경계가 두 동사의 전부다.
+    #
+    # 순서가 정해져 있다. 먼저 만들고 나중에 끈다: 빌드는 길면 몇 분인데 먼저 끄면
+    # 그동안 대화를 못 한다. 데스크톱 앱은 맨 뒤다 — 앱이 프로필 엔진에 붙으므로
+    # 엔진보다 먼저 켜면 곧 죽을 엔진에 붙는다.
+    #
+    # 이 기기에 없는 쪽은 조용히 건너뛰고, 한 줄씩 무엇을 했는지 말한다. 종료 0 은
+    # "다시 띄웠다"와 "다시 띄울 것이 없었다"를 함께 덮고, 1 은 하려다 실패했다는
+    # 뜻이다 — 둘이 같아 보이면 안 된다.
+    #
+    # 화면에는 진행만 남긴다. 각 단계의 수십 줄짜리 출력은 잘 끝났을 때 아무도
+    # 읽지 않으므로 기록으로 보내고, 실패했을 때만 어디를 볼지 말한다.
+    . "$HERE/rubato-progress.sh"
     LAUNCHCTL_BIN="${RUBATO_LAUNCHCTL_BIN:-/bin/launchctl}"
     RESTART_GUI="${RUBATO_RESTART_GUI:-$HERE/../t3-integration/restart-gui.sh}"
+    RESTART_LOG="${RUBATO_RESTART_LOG:-$HOME/.rubato-pi/logs/rubato-restart.log}"
+    mkdir -p "$(dirname "$RESTART_LOG")" 2>/dev/null || true
     RESTART_FAIL=0
+    BUILD_DONE=0
     ENGINE_DONE=0
     HUB_DONE=0
     GUI_DONE=0
-    # Profile engine first, via restart-profile-engine.mjs as it stands
-    # (SIGTERM only — kill -9 leaves the profile lock stale for 15s; the pid
-    # is matched by the --agent-dir the live socket points at). Its stderr
-    # already names in-flight turns being cut and flows to the user untouched.
-    if ENGINE_OUT="$("$NODE" "$HERE/restart-profile-engine.mjs")"; then
+    trap 'progress_stop' EXIT INT TERM
+    printf '\n'
+
+    # 1. 엔진을 이 워킹트리에 맞춘다.
+    #
+    # 대화가 실제로 실행하는 코드는 레포가 아니라 ~/.rubato-pi/stock-engine 의
+    # 설치본이다. 그것을 다시 만드는 자리는 그동안 세션 시작뿐이었고, 그래서
+    # `restart` 뒤에 `rubato attach` 로 돌아간 창은 옛 코드를 그대로 돌렸다.
+    # 지문이 맞으면 1초쯤에 지나간다 — 다시 만드는 것은 소스가 달라졌을 때뿐이다.
+    if [ -z "${RUBATO_NO_ENGINE_BUILD-}" ] && [ -f "$HERE/build-active-engine.mjs" ]; then
+      progress_start "엔진이 이 소스에 맞는지 보는 중"
+      if "$NODE" "$HERE/build-active-engine.mjs" --check >>"$RESTART_LOG" 2>&1; then
+        progress_stop
+        ui_skip "엔진은 이미 이 소스에 맞아요"
+      else
+        progress_start "엔진을 다시 만드는 중 (몇 분 걸려요)"
+        if "$NODE" "$HERE/build-active-engine.mjs" >>"$RESTART_LOG" 2>&1; then
+          progress_stop
+          ui_ok "엔진을 다시 만들었어요"
+          BUILD_DONE=1
+        else
+          progress_stop
+          ui_fail "엔진을 다시 만들지 못했습니다. 옛 코드가 그대로입니다 — 기록: $RESTART_LOG"
+          RESTART_FAIL=1
+        fi
+      fi
+    fi
+
+    # 2. 프로필 엔진. SIGTERM 만 쓴다 — kill -9 는 프로필 락을 15초 동안 stale 로
+    # 남긴다. pid 는 살아 있는 소켓이 가리키는 --agent-dir 로 찾는다.
+    # 이 helper 의 stderr 는 끊기는 대화 이름을 말하므로 그대로 사람에게 준다.
+    ENGINE_ERR="$(mktemp "${TMPDIR:-/tmp}/rubato-restart.XXXXXX" 2>/dev/null)" || ENGINE_ERR=""
+    progress_start "프로필 엔진을 다시 띄우는 중"
+    ENGINE_RC=0
+    if [ -n "$ENGINE_ERR" ]; then
+      ENGINE_OUT="$("$NODE" "$HERE/restart-profile-engine.mjs" 2>"$ENGINE_ERR")" || ENGINE_RC=$?
+      ENGINE_NOTE="$(cat "$ENGINE_ERR" 2>/dev/null || true)"
+      rm -f "$ENGINE_ERR"
+    else
+      ENGINE_OUT="$("$NODE" "$HERE/restart-profile-engine.mjs")" || ENGINE_RC=$?
+      ENGINE_NOTE=""
+    fi
+    progress_stop
+    if [ "$ENGINE_RC" -eq 0 ]; then
       case "$ENGINE_OUT" in
         restarted*)
-          echo "프로필 엔진을 재시작했습니다. 진행 중이던 턴은 끊겼고, 열린 CLI 터미널은 다시 붙여야 합니다."
+          ui_ok "프로필 엔진"
           ENGINE_DONE=1 ;;
         dead*)
-          echo "프로필 엔진은 이미 꺼져 있어 건너뜁니다." ;;
+          ui_skip "프로필 엔진은 이미 꺼져 있어요" ;;
         *)
-          echo "프로필 엔진이 없어 건너뜁니다." ;;
+          ui_skip "프로필 엔진이 없어요" ;;
       esac
     else
       case "$ENGINE_OUT" in
         no-pid*)
-          echo "프로필 엔진 소켓은 살아 있는데 프로세스를 찾지 못했습니다. 옛 코드가 그대로입니다 — 손으로: pgrep -lf 'cli.mjs --agent-dir'" >&2 ;;
+          ui_fail "프로필 엔진 소켓은 살아 있는데 프로세스를 찾지 못했습니다. 옛 코드가 그대로입니다 — 손으로: pgrep -lf 'cli.mjs --agent-dir'" ;;
         timeout*)
-          echo "프로필 엔진이 SIGTERM을 받고도 끝나지 않았습니다. 옛 코드가 그대로입니다 — 손으로: pgrep -lf 'cli.mjs --agent-dir'" >&2 ;;
+          ui_fail "프로필 엔진이 SIGTERM을 받고도 끝나지 않았습니다. 옛 코드가 그대로입니다 — 손으로: pgrep -lf 'cli.mjs --agent-dir'" ;;
         *)
-          echo "프로필 엔진을 재시작하지 못했습니다${ENGINE_OUT:+ ($ENGINE_OUT)}. 옛 코드가 그대로입니다 — 손으로: pgrep -lf 'cli.mjs --agent-dir'" >&2 ;;
+          ui_fail "프로필 엔진을 재시작하지 못했습니다${ENGINE_OUT:+ ($ENGINE_OUT)}. 옛 코드가 그대로입니다 — 손으로: pgrep -lf 'cli.mjs --agent-dir'" ;;
       esac
       RESTART_FAIL=1
     fi
-    # Remote hub, only when its launch agent is registered on this machine.
+    if [ -n "$ENGINE_NOTE" ]; then
+      printf '%s\n' "$ENGINE_NOTE" | while IFS= read -r ENGINE_LINE; do
+        if [ -n "$ENGINE_LINE" ]; then
+          printf '    \033[2m%s\033[0m\n' "$ENGINE_LINE" >&2
+        fi
+      done
+    fi
+
+    # 3. remote hub. 이 기기에 launch agent 이 등록돼 있을 때만.
     if "$LAUNCHCTL_BIN" print "gui/$(id -u)/com.keepitmello.rubato.remote-hub" >/dev/null 2>&1; then
-      if "$NODE" "$HERE/rubato-hub-restart.mjs" >/dev/null; then
-        echo "remote hub을 재시작했습니다."
+      progress_start "remote hub 을 다시 띄우는 중"
+      if "$NODE" "$HERE/rubato-hub-restart.mjs" >>"$RESTART_LOG" 2>&1; then
+        progress_stop
+        ui_ok "remote hub"
         HUB_DONE=1
       else
-        echo "remote hub 재시작에 실패했습니다. 옛 코드가 그대로입니다 — 손으로: node \"$HERE/rubato-hub-restart.mjs\"" >&2
+        progress_stop
+        ui_fail "remote hub 재시작에 실패했습니다. 옛 코드가 그대로입니다 — 손으로: node \"$HERE/rubato-hub-restart.mjs\""
         RESTART_FAIL=1
       fi
     else
-      echo "remote hub launch agent이 없어 건너뜁니다."
+      ui_skip "remote hub 은 이 기기에 없어요"
     fi
+
     # Desktop app last: it connects to the profile engine, so relaunching it
     # before the engine restart would attach it to an engine that is about to
     # die. Everything about how the app is stopped, rebuilt and brought back
@@ -125,11 +188,19 @@ case "${1-}" in
         *) RESTART_FAIL=1 ;;
       esac
     else
-      echo "데스크톱 앱이 없어 건너뜁니다."
+      ui_skip "데스크톱 앱이 없어요"
     fi
-    if [ "$ENGINE_DONE" = 0 ] && [ "$HUB_DONE" = 0 ] && [ "$GUI_DONE" = 0 ] && [ "$RESTART_FAIL" = 0 ]; then
-      echo "재시작할 것이 없습니다 (프로필 엔진·remote hub·데스크톱 앱 모두 없음)."
+
+    # 사람이 해야 할 일은 하나뿐이고, 마지막에 한 번만 말한다. 단계마다 붙이면
+    # 같은 말이 세 번 나오고, 정작 무엇을 하라는 것인지는 안 남는다.
+    if [ "$ENGINE_DONE" = 1 ]; then
+      printf '\n  대화는 그대로 있어요. 열어 둔 창은 연결이 끊겼으니 %srubato%s 를 다시 실행해 이어가세요.\n' \
+        "$PROGRESS_DIM" "$PROGRESS_RST"
     fi
+    if [ "$BUILD_DONE" = 0 ] && [ "$ENGINE_DONE" = 0 ] && [ "$HUB_DONE" = 0 ] && [ "$GUI_DONE" = 0 ] && [ "$RESTART_FAIL" = 0 ]; then
+      printf '\n  다시 띄울 것이 없었어요 (프로필 엔진·remote hub·데스크톱 앱 모두 이 기기에 없거나 꺼져 있어요).\n'
+    fi
+    printf '\n'
     exit "$RESTART_FAIL"
     ;;
   new|attach|list|kill|remote|vault-resume|vault-fork)

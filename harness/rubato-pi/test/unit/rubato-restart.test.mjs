@@ -32,6 +32,13 @@ function executable(path, source) {
 // each helper, and a fake launchctl that decides hub presence. The fake node
 // appends every invocation to a log so tests can prove each part ran.
 //
+// The engine-build step is faked the same way. `engineBuild` selects it:
+//
+//   fresh    build-active-engine.mjs --check says the install matches (exit 0)
+//   stale    --check says it does not (exit 10); the full build then succeeds
+//   fail     --check says stale and the full build fails
+//   absent   no build script on this machine at all
+//
 // The desktop-app step is faked the same way, and never touches the real
 // machine: RUBATO_GUI_APP points at a fixture bundle (or a missing path for
 // "not installed"), a stateful fake pgrep reports whether the app is running,
@@ -47,7 +54,7 @@ function executable(path, source) {
 //              match a naive `Rubato.app` pattern. Relaunch must still run.
 function restartHarness(t, { engineToken = "restarted", engineExit = 0, hubPresent = true, hubExit = 0,
   guiMode = "absent", guiRelaunchExit = 0, guiRelaunchSleep = 0,
-  installGui = false, installGuiExit = 0 } = {}) {
+  installGui = false, installGuiExit = 0, engineBuild = "fresh" } = {}) {
   const root = mkdtempSync(join(tmpdir(), "rubato-restart-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const scripts = join(root, "harness", "scripts");
@@ -55,15 +62,27 @@ function restartHarness(t, { engineToken = "restarted", engineExit = 0, hubPrese
   const launcher = join(scripts, "rubato-pi.sh");
   copyFileSync(launcherSource, launcher);
   chmodSync(launcher, 0o755);
+  // The launcher sources this for the progress line and the ✓/·/✗ shapes.
+  copyFileSync(
+    fileURLToPath(new URL("../../../scripts/rubato-progress.sh", import.meta.url)),
+    join(scripts, "rubato-progress.sh"),
+  );
+  // Presence alone decides whether the build step runs; the fake node answers.
+  if (engineBuild !== "absent") writeFileSync(join(scripts, "build-active-engine.mjs"), "");
 
   const log = join(root, "node-calls.log");
   writeFileSync(log, "");
   const fakeNode = join(root, "fake-node");
+  const checkExit = engineBuild === "fresh" ? 0 : 10;
+  const buildExit = engineBuild === "fail" ? 1 : 0;
   executable(
     fakeNode,
     "#!/bin/sh\n" +
       `printf '%s\\n' "$*" >> '${log}'\n` +
       "case \"$1\" in\n" +
+      `  *build-active-engine.mjs)\n` +
+      `    if [ "$2" = "--check" ]; then exit ${checkExit}; fi\n` +
+      `    exit ${buildExit} ;;\n` +
       `  *restart-profile-engine.mjs) printf 'ENGINE-STDERR-MARKER\\n' >&2; printf '%s\\n' '${engineToken}'; exit ${engineExit} ;;\n` +
       `  *rubato-hub-restart.mjs) printf '{"ok":true}\\n'; exit ${hubExit} ;;\n` +
       "esac\n" +
@@ -163,29 +182,30 @@ test("restart reaches the profile engine and the hub, and says which it did", (t
   assert.equal(result.status, 0, result.stderr);
   assert.match(harness.calls(), /restart-profile-engine\.mjs/);
   assert.match(harness.calls(), /rubato-hub-restart\.mjs/);
-  assert.match(result.stdout, /프로필 엔진을 재시작했습니다/);
-  assert.match(result.stdout, /remote hub을 재시작했습니다/);
+  assert.match(result.stdout, /✓ 프로필 엔진/);
+  assert.match(result.stdout, /✓ remote hub/);
   // The helper's stderr (in-flight turn names) flows to the user untouched.
   assert.match(result.stderr, /ENGINE-STDERR-MARKER/);
 });
 
 test("restart skips cleanly with exit 0 when neither side is present", (t) => {
-  const harness = restartHarness(t, { engineToken: "missing", engineExit: 0, hubPresent: false });
+  const harness = restartHarness(t, { engineToken: "missing", engineExit: 0, hubPresent: false, engineBuild: "absent" });
   const result = harness.run(["restart"]);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /프로필 엔진이 없어 건너뜁니다/);
-  assert.match(result.stdout, /remote hub launch agent이 없어 건너뜁니다/);
-  assert.match(result.stdout, /데스크톱 앱이 없어 건너뜁니다/);
-  assert.match(result.stdout, /재시작할 것이 없습니다/);
+  assert.match(result.stdout, /프로필 엔진이 없어요/);
+  assert.match(result.stdout, /remote hub 은 이 기기에 없어요/);
+  assert.match(result.stdout, /데스크톱 앱이 없어요/);
+  assert.match(result.stdout, /다시 띄울 것이 없었어요/);
   // Only the helper's own stderr flows through; the launcher adds no failure lines.
-  assert.equal(result.stderr, "ENGINE-STDERR-MARKER\n");
+  assert.match(result.stderr, /ENGINE-STDERR-MARKER/);
+  assert.doesNotMatch(result.stderr, /✗/);
 });
 
 test("restart keeps going to the hub when the engine reports dead, still exit 0", (t) => {
   const harness = restartHarness(t, { engineToken: "dead", engineExit: 0, hubPresent: true, hubExit: 0 });
   const result = harness.run(["restart"]);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /프로필 엔진은 이미 꺼져 있어 건너뜁니다/);
+  assert.match(result.stdout, /프로필 엔진은 이미 꺼져 있어요/);
   assert.match(harness.calls(), /rubato-hub-restart\.mjs/);
 });
 
@@ -209,13 +229,73 @@ test("hub failure exits nonzero and names the old hub as still running", (t) => 
   assert.match(result.stderr, /remote hub 재시작에 실패했습니다\. 옛 코드가 그대로입니다/);
 });
 
-test("restart states the CLI-reattach consequence next to the engine restart", () => {
-  assert.match(launcherText, /다시 붙여야 합니다/);
-  // The old "(T3는 스스로 다시 붙습니다)" parenthetical is gone on purpose:
-  // a running app no longer rides out the restart — it is quit and relaunched
-  // for fresh bridge code, and the app step says so.
-  assert.doesNotMatch(launcherText, /T3는 스스로 다시 붙습니다/);
+// What the user has to do afterwards is said once, at the end, and only when
+// something was actually cut. Repeating it on every step buried the one
+// sentence that asks for an action.
+test("restart closes with the one thing the user must do, only when a session was cut", (t) => {
+  const restarted = restartHarness(t, { engineToken: "restarted", hubPresent: true }).run(["restart"]);
+  assert.equal(restarted.status, 0, restarted.stderr);
+  assert.match(restarted.stdout, /rubato.* 를 다시 실행해 이어가세요/);
+  assert.equal(restarted.stdout.match(/다시 실행해 이어가세요/g).length, 1);
+  // Nothing was cut: no instruction to reattach anything.
+  const dead = restartHarness(t, { engineToken: "dead", hubPresent: true }).run(["restart"]);
+  assert.equal(dead.status, 0, dead.stderr);
+  assert.doesNotMatch(dead.stdout, /다시 실행해 이어가세요/);
+});
+
+test("restart says the app reads the new bridge code without rebuilding for it", () => {
   assert.match(restartGuiText, /바뀐 브리지 코드를 읽습니다/);
+  // The bridge is imported at runtime from the repo, so it is not part of what
+  // the bundle fingerprint guards. Keeping it there rebuilt all of T3 for a
+  // file that never reaches the bundle.
+  assert.doesNotMatch(installGuiSource, /find "\$HERE\/overlay" "\$HERE\/src"/);
+  assert.match(installGuiSource, /find "\$HERE\/overlay" -type f/);
+});
+
+// `restart` means "rebuild from this working tree, then bring the old code
+// down onto it". Conversations run the install under ~/.rubato-pi/stock-engine,
+// not the repo, and nothing in restart used to refresh it — so `restart`
+// followed by `rubato attach` re-entered old code.
+test("restart brings the engine up to this source before it kills anything", (t) => {
+  const harness = restartHarness(t, { engineBuild: "stale", hubPresent: true });
+  const result = harness.run(["restart"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /엔진을 다시 만들었어요/);
+  const order = harness.calls();
+  assert.ok(order.indexOf("build-active-engine.mjs") < order.indexOf("restart-profile-engine.mjs"), order);
+});
+
+test("restart skips the engine build when the install already matches this source", (t) => {
+  const harness = restartHarness(t, { engineBuild: "fresh", hubPresent: true });
+  const result = harness.run(["restart"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /엔진은 이미 이 소스에 맞아요/);
+  // Only the check ran; the minutes-long build did not.
+  assert.match(harness.calls(), /build-active-engine\.mjs --check/);
+  assert.doesNotMatch(harness.calls(), /build-active-engine\.mjs$/m);
+});
+
+test("a failed engine build exits nonzero and says the old code is still there", (t) => {
+  const harness = restartHarness(t, { engineBuild: "fail", hubPresent: true });
+  const result = harness.run(["restart"]);
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stderr, /엔진을 다시 만들지 못했습니다\. 옛 코드가 그대로입니다/);
+});
+
+// `restart` never reaches the network: pulling is what `rubato update` is for.
+test("restart does not pull", () => {
+  const block = launcherText.slice(launcherText.indexOf("  restart)"), launcherText.indexOf("  new|attach|list"));
+  // Comments say the rule out loud; assert on the code that obeys it.
+  const code = block.split("\n").filter((line) => !/^\s*#/.test(line)).join("\n");
+  assert.doesNotMatch(code, /git (pull|fetch)/);
+  assert.doesNotMatch(code, /rubato-update\.sh/);
+});
+
+// Each step's own output is dozens of lines nobody reads when it went well.
+test("restart keeps step output in a log instead of on the screen", () => {
+  assert.match(launcherText, /RESTART_LOG/);
+  assert.match(restartGuiText, /INSTALL_LOG/);
+  assert.match(restartGuiText, /sh "\$INSTALL_GUI" --apply >"\$INSTALL_LOG" 2>&1/);
 });
 
 test("restart quits the app gracefully and relaunches through the single launcher", () => {
@@ -239,7 +319,7 @@ test("restart relaunches the desktop app last, after engine and hub", (t) => {
   const harness = restartHarness(t, { engineToken: "restarted", engineExit: 0, hubPresent: true, hubExit: 0, guiMode: "running" });
   const result = harness.run(["restart"]);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /데스크톱 앱을 다시 켰습니다/);
+  assert.match(result.stdout, /✓ 데스크톱 앱/);
   assert.equal(harness.relaunched(), "relaunched");
   // Graceful quit only: the same event as Dock > Quit, never a kill.
   assert.match(harness.quitCalls(), /tell application "Rubato" to quit/);
@@ -256,7 +336,7 @@ test("restart still reports the app when the relauncher stays up", (t) => {
   const harness = restartHarness(t, { guiMode: "running", guiRelaunchSleep: 5 });
   const result = harness.run(["restart"]);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /데스크톱 앱을 다시 켰습니다/);
+  assert.match(result.stdout, /✓ 데스크톱 앱/);
   assert.equal(harness.relaunched(), "relaunched");
 });
 
@@ -264,7 +344,7 @@ test("restart skips cleanly when the app is installed but not running", (t) => {
   const harness = restartHarness(t, { engineToken: "restarted", engineExit: 0, hubPresent: false, guiMode: "off" });
   const result = harness.run(["restart"]);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /데스크톱 앱은 이미 꺼져 있어 건너뜁니다/);
+  assert.match(result.stdout, /데스크톱 앱은 이미 꺼져 있어요/);
   assert.equal(harness.relaunched(), undefined);
   assert.equal(harness.quitCalls(), "");
 });
@@ -274,7 +354,7 @@ test("restart fails without relaunching when the app refuses the quit request", 
   const result = harness.run(["restart"]);
   assert.equal(result.status, 1, result.stdout);
   assert.match(result.stderr, /데스크톱 앱에 종료를 요청하지 못했습니다\. 옛 코드가 그대로입니다/);
-  assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /다시 켰습니다/);
+  assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /✓ 데스크톱 앱/);
   // Never relaunched, and never told the user it will return on its own.
   assert.equal(harness.relaunched(), undefined);
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /스스로/);
@@ -293,7 +373,7 @@ test("restart relaunches even when Electron helpers still match Rubato.app", (t)
   const harness = restartHarness(t, { engineToken: "restarted", engineExit: 0, hubPresent: false, guiMode: "helpers-linger" });
   const result = harness.run(["restart"]);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /데스크톱 앱을 다시 켰습니다/);
+  assert.match(result.stdout, /✓ 데스크톱 앱/);
   assert.equal(harness.relaunched(), "relaunched");
 });
 
@@ -305,7 +385,7 @@ test("restart rebuilds the bundle while the app is down, then relaunches", (t) =
   const harness = restartHarness(t, { guiMode: "running", installGui: true });
   const result = harness.run(["restart"]);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /데스크톱 앱을 다시 켰습니다/);
+  assert.match(result.stdout, /✓ 데스크톱 앱/);
   assert.equal(harness.relaunched(), "relaunched");
   const order = harness.calls();
   assert.match(order, /INSTALL-GUI --apply/);
@@ -327,7 +407,7 @@ test("restart brings a stopped app's bundle up to the pin without launching it",
   const harness = restartHarness(t, { hubPresent: false, guiMode: "off", installGui: true });
   const result = harness.run(["restart"]);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /번들만 새 코드로 맞췄으니 다음에 켜면 반영됩니다/);
+  assert.match(result.stdout, /다음에 켜면 새 코드로 떠요/);
   assert.match(harness.calls(), /INSTALL-GUI --apply/);
   // `restart` does not decide that this machine wants a window open.
   assert.equal(harness.relaunched(), undefined);
