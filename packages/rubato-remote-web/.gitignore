@@ -1,5 +1,0 @@
-node_modules/
-dist/
-test-results/
-tsconfig.tsbuildinfo
-artifacts/playwright-report/
