@@ -8,6 +8,7 @@ export const TASK_PROMPT_SNIPPET = "Start one child agent with exactly one of mo
 
 export const TASK_PROMPT_GUIDELINES: readonly string[] = [
   "Start one child agent using exactly one of `model` or `preset`. Omit `effort` normally; the configured model default applies. Set `effort` only when an explicit manual override is required.",
+  "For Cursor Grok, use model `cursor/cursor-grok-4.6`; choose its Fast reasoning level with `effort`. Never pass an internal `*-fast` variant id.",
   "Spawns are asynchronous and return an agentId immediately; completion arrives as a notification. Do not wait on the child in this turn.",
   "Continue an existing child with AgentSend(agentId=\"st_...\", message=\"...\"); Agent always spawns.",
   "Use AgentOutput for one midpoint status or transcript peek; use AgentCancel to end a child.",
@@ -43,7 +44,7 @@ function renderTargetSection(
   gatedAgents: readonly TaskAgentInfo[],
 ): string {
   const modelLine =
-    '`model` is a complete provider/model id from the live host registry. Missing models fail closed with model_unavailable; there is no fallback. CORRECT: Agent(model="xai/grok-4.6", prompt="...")'
+    '`model` is a complete provider/model id from the live host registry. Missing models fail closed with model_unavailable; there is no fallback. Cursor Grok uses `cursor/cursor-grok-4.6`; select its Fast reasoning level with `effort`, never an internal `*-fast` variant id. CORRECT: Agent(model="cursor/cursor-grok-4.6", effort="xhigh", prompt="...")'
   if (!hasPresetRoute) {
     return `${modelLine}
 No presets are currently loaded; provide \`model\`.`

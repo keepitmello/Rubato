@@ -26,7 +26,7 @@ export const TaskToolParams = Type.Object({
   model: Type.Optional(
     Type.String({
       description:
-        "Complete provider/model id from the live host registry. Exactly one of model or preset is required. A missing model fails closed with no fallback.",
+        "Complete provider/model id from the live host registry. Exactly one of model or preset is required. A missing model fails closed with no fallback. Cursor Grok uses cursor/cursor-grok-4.6; choose its Fast reasoning level with effort, never an internal *-fast variant id.",
     }),
   ),
   preset: Type.Optional(
