@@ -49,22 +49,6 @@ export async function supportedProviders({ env = process.env, antigravity, curso
  * FX bridge 삭제 전에는 0번 단계로 bridge catalog provider 를 전부 등록하고 native 가
  * 그 위를 덮었다. 그 단계가 없어졌다 — 덮을 대상도, 받아올 catalog 도 없다.
  */
-/**
- * 이 프로세스가 부모 세션인가.
- *
- * 격리 자식은 provider overlay 만 싣는다. 부모 판별은 그 세션이 예전에 싣던
- * `lead-overlay.mjs` argv 신호다. 새 판별자를 만들지 않는다: 두 개가 되면
- * 언젠가 서로 어긋난다.
- */
-function parentSession(argv) {
-  for (let i = 0; i < argv.length; i += 1) {
-    if ((argv[i] === "-e" || argv[i] === "--extension") && argv[i + 1]?.endsWith("lead-overlay.mjs")) {
-      return true;
-    }
-  }
-  return false;
-}
-
 export default async function providerOverlay(pi, {
   env = process.env,
   providerFactory = supportedProviders,
@@ -86,7 +70,9 @@ export default async function providerOverlay(pi, {
   const natives = await providerFactory({
     env,
     antigravity,
-    cursor: { reactivateOnCredentialRotation: parentSession(process.argv) },
+    // Isolated children only: brand.mjs hands this overlay to child sessions.
+    // A child must not reactivate cursor credentials on rotation.
+    cursor: { reactivateOnCredentialRotation: false },
     ...(opencode ? { opencode } : {}),
   });
   // A bad factory result must fail before credential imports or a partial
@@ -115,15 +101,12 @@ export default async function providerOverlay(pi, {
   // 기존 Codex/xAI 진단이 먼저다. 같은 target 이 깨졌을 때 Antigravity 이관이
   // 그 오류를 가리면 사용자는 원래 부팅 blocker 를 보지 못한다.
   //
-  // **이관은 부모만 한다.** 격리 memory/reflection 자식도 같은 overlay 를 물려받으므로
-  // (`brand.mjs` 가 provider extension 경로를 자식에 싣는다) 걸지 않으면 자식마다 Keychain
-  // 을 읽고 `loadCodeAssist` 로 Google 에 요청한다 — 시작 부작용이 자식 수만큼 곱해진다.
-  // 대상에 이미 있으면 `already_present` 로 즉시 끝나므로 로그인된 기기에서는 값이 싸지만,
-  // 로그인 전에는 자식이 각자 네트워크를 때린다. 권위를 가진 쪽 하나만 이관한다.
+  // Isolated children only. Do not resolve Antigravity project ids here — each
+  // child would hit Keychain and loadCodeAssist. The parent candidate owns that.
   const antigravityEndpoint = env.RUBATO_ANTIGRAVITY_ENDPOINT || ANTIGRAVITY_ENDPOINT;
   const antigravityReport = await antigravityCredentialImporter({
     env,
-    enabled: parentSession(process.argv),
+    enabled: false,
     resolveProjectId: (token, { signal }) => antigravityProjectLoader(token.access, antigravityEndpoint, fetchImpl, signal),
   });
   if (["target_invalid_json", "target_not_an_object", "target_rejected_by_engine", "rejected"].includes(antigravityReport.status)) {

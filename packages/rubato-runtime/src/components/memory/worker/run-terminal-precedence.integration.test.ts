@@ -18,7 +18,7 @@ import { reconcileReflectionRuns } from "./run-reconciliation"
 import { writeRunJsonAtomic } from "./run-artifacts"
 import { waitForFilesystemState } from "./supervisor-test-signals"
 
-const supervisorPath = join(import.meta.dir, "../../../../plugin/extensions/memory-run-supervisor.mjs")
+const supervisorPath = join(import.meta.dir, "memory-run-supervisor.ts")
 const childPath = join(import.meta.dir, "__fixtures__", "supervisor-finished-child.ts")
 const roots: string[] = []
 const supervisors = new Set<ChildProcess>()

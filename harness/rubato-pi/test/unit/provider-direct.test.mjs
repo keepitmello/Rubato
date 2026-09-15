@@ -1088,37 +1088,20 @@ test("presence 판정도 custom agentDir 를 본다", async () => {
   }
 });
 
-// 격리 memory/reflection 자식도 같은 provider overlay 를 물려받는다(`brand.mjs` 가 그 경로를
-// 자식 env 에 싣는다). 그래서 이관을 걸지 않으면 자식마다 Keychain 을 읽고 loadCodeAssist 로
-// Google 에 요청한다 — 시작 부작용이 자식 수만큼 곱해진다. 권위를 가진 부모만 이관한다.
-test("Antigravity 이관은 부모 세션만 한다", async (t) => {
+// brand.mjs 가 이 overlay 를 격리 자식에만 싣는다. 자식이 Keychain 과 loadCodeAssist 를
+// 때리지 않도록 이관은 꺼 둔다.
+test("Antigravity 이관은 격리 자식에서 하지 않는다", async (t) => {
   const calls = [];
   const importer = async ({ enabled }) => {
     calls.push(enabled);
     return { status: enabled === true ? "already_present" : "disabled" };
   };
 
-  const childArgv = ["node", "senpi", "-p", "--no-extensions", "-e", "/x/provider-overlay.mjs"];
-  const parentArgv = ["node", "senpi", "-e", "/x/lead-overlay.mjs", "-e", "/x/provider-overlay.mjs"];
-  const original = process.argv;
-
-  try {
-    process.argv = childArgv;
-    await providerOverlay(recordingPi(), {
-      env: isolatedDirectEnv(t),
-      antigravityCredentialImporter: importer,
-    });
-    assert.equal(calls.at(-1), false, "자식이 이관을 시도했다");
-
-    process.argv = parentArgv;
-    await providerOverlay(recordingPi(), {
-      env: isolatedDirectEnv(t),
-      antigravityCredentialImporter: importer,
-    });
-    assert.equal(calls.at(-1), true, "부모가 이관을 건너뛰었다");
-  } finally {
-    process.argv = original;
-  }
+  await providerOverlay(recordingPi(), {
+    env: isolatedDirectEnv(t),
+    antigravityCredentialImporter: importer,
+  });
+  assert.equal(calls.at(-1), false, "자식이 이관을 시도했다");
 });
 
 test("자식 overlay 도 google-antigravity/gemini-3.8-flash 를 입학시킨다", async (t) => {
