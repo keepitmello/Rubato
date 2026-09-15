@@ -5,47 +5,7 @@ import {
 import { isUuid, isUuidV7, isZmxName } from "./identifiers.js"
 import type {
   ActionResultResponse,
-  ArtifactRequest,
-  ArtifactResponse,
-  CreateLiveSessionRequest,
-  CreateLiveSessionResponse,
-  EncryptedPushProfile,
-  FileReadRequest,
-  FileReadResponse,
-  GitDiffRequest,
-  GitDiffResponse,
-  GitStatusResponse,
-  HealthResponse,
-  HostDescriptionResponse,
-  HostInventory,
-  HostInventoryResponse,
-  ImageUploadRequest,
-  ImageUploadResponse,
-  MessagePageRequest,
-  MessagePageResponse,
-  PairApproveRequest,
-  PairApproveResponse,
-  PairClaimRequest,
-  PairClaimResponse,
   PairingQrPayload,
-  ProjectBrowseRequest,
-  ProjectBrowseResponse,
-  ProjectFavoritesUpdateRequest,
-  ProjectFavoritesUpdateResponse,
-  ProjectListResponse,
-  PushEnvelope,
-  PushProfileExportRequest,
-  PushProfileImportResponse,
-  PushRotateResponse,
-  PushSubscribeRequest,
-  PushSubscribeResponse,
-  RegisteredHost,
-  SnapshotResponse,
-  TerminateLiveSessionRequest,
-  TerminateLiveSessionResponse,
-  TicketResponse,
-  WebSocketTicketRequest,
-  TerminalTicketRequest,
 } from "./http.js"
 import type {
   BootstrapClaimFrame,
@@ -67,12 +27,10 @@ import type {
   SurfaceSummaryFrame,
   SurfaceToHubFrame,
 } from "./surface.js"
-import type { JsonObject } from "./types.js"
 import {
   actionRequestSchema,
   isJsonValue,
   liveSessionSummarySchema,
-  requestRunSummarySchema,
   requestTimelineSnapshotSchema,
   ProtocolValidationError,
   type ProtocolSchema,
@@ -252,11 +210,6 @@ export const surfaceReconnectCredentialPayloadSchema = makeSchema<SurfaceReconne
 })))
 
 export const sessionSnapshotStateSchema = makeSchema<SessionSnapshotState>(root(sessionSnapshotState))
-export const snapshotResponseSchema = makeSchema<SnapshotResponse>(root(object({
-  summary: nested(liveSessionSummarySchema), revision: nonNegativeInteger, lastSeq: nonNegativeInteger,
-  entries: arrayOf(conversationEntry), tree: arrayOf(object({ id: nonEmptyString, label: stringCheck, current: booleanCheck })),
-  commands: arrayOf(interactiveCommandDescriptor),
-}, { uiRequest, timeline: nested(requestTimelineSnapshotSchema) })))
 export const sessionSnapshotSchema = makeSchema<SessionSnapshot>((value, issues) => {
   object({
     schemaVersion: literal(1), liveSessionId: uuidV7, lastSeq: nonNegativeInteger, writtenAt: isoDate,
@@ -273,160 +226,12 @@ export const snapshotRequiredFrameSchema = makeSchema<SnapshotRequiredFrame>((va
   }
 })
 
-export const healthResponseSchema = makeSchema<HealthResponse>(root(object({ ok: literal(true), hostId: uuidV7 })))
-export const hostDescriptionResponseSchema = makeSchema<HostDescriptionResponse>((value, issues) => {
-  object({
-    hostId: uuidV7, displayName: nonEmptyString, ownerLogin: nonEmptyString, protocol: protocolRange,
-    negotiation: protocolNegotiation, capabilities: arrayOf(nonEmptyString), pushPublicKey: nonEmptyString,
-  })(value, "$", issues)
-  if (plainRecord(value)) validateNegotiatedRange(value["protocol"], value["negotiation"], "$", issues)
-})
-export const registeredHostSchema = makeSchema<RegisteredHost>((value, issues) => {
-  object({
-    hostId: uuidV7, displayName: nonEmptyString, baseUrl: httpsUrl, ownerLogin: nonEmptyString, pairedAt: isoDate,
-  }, { lastSeenAt: isoDate, protocolMin: positiveInteger, protocolMax: positiveInteger })(value, "$", issues)
-  if (plainRecord(value)) validateOptionalRangePair(value, "$", issues)
-})
-export const hostInventorySchema = makeSchema<HostInventory>(root(object({
-  host: nested(registeredHostSchema), sessions: arrayOf(nested(liveSessionSummarySchema)),
-  connection: oneOf(["online", "connecting", "offline", "incompatible", "denied"] as const),
-}, { problem: nonEmptyString })))
-export const hostInventoryResponseSchema = makeSchema<HostInventoryResponse>(root(object({
-  hostSeq: nonNegativeInteger, sessions: arrayOf(nested(liveSessionSummarySchema)),
-})))
-
 export const pairingQrPayloadSchema = makeSchema<PairingQrPayload>(root(object({
   type: literal("rubato-host-pair"), baseUrl: httpsUrl, hostId: uuidV7, nonce: opaqueCredential, expiresAt: isoDate,
 })))
-export const pairClaimRequestSchema = makeSchema<PairClaimRequest>(root(object({ nonce: opaqueCredential })))
-export const pairClaimResponseSchema = makeSchema<PairClaimResponse>(root(object({ claimId: uuid, expiresAt: isoDate })))
-export const pairApproveRequestSchema = makeSchema<PairApproveRequest>(root(object({ claimId: uuid, confirmed: literal(true) })))
-export const pairApproveResponseSchema = makeSchema<PairApproveResponse>(root(object({ paired: literal(true), origin: httpsOrigin })))
-export const webSocketTicketRequestSchema = makeSchema<WebSocketTicketRequest>(root(object({ purpose: literal("events") })))
-export const terminalTicketRequestSchema = makeSchema<TerminalTicketRequest>(root(object({ purpose: literal("terminal") })))
-export const ticketResponseSchema = makeSchema<TicketResponse>(root(object({ ticket: opaqueCredential, expiresAt: isoDate })))
-
-export const createLiveSessionRequestSchema = makeSchema<CreateLiveSessionRequest>(root(object({
-  cwd: pathString, attachAfterCreate: booleanCheck,
-}, {
-  name: boundedString(200), initialPrompt: boundedString(256 * 1024),
-  model: object({ provider: nonEmptyString, modelId: nonEmptyString }), thinkingLevel: nonEmptyString,
-  rubatoArgs: arrayOf(boundedString(4096), 64),
-})))
-export const createLiveSessionResponseSchema = makeSchema<CreateLiveSessionResponse>(root(object({
-  liveSessionId: uuidV7, zmxName,
-})))
-export const terminateLiveSessionRequestSchema = makeSchema<TerminateLiveSessionRequest>(root(object({}, { force: booleanCheck })))
-export const terminateLiveSessionResponseSchema = makeSchema<TerminateLiveSessionResponse>(root(object({ terminated: literal(true) })))
 export const actionResultResponseSchema = makeSchema<ActionResultResponse>(root(object({
   accepted: booleanCheck, revision: nonNegativeInteger, payload: jsonObject,
 })))
-
-export const messagePageRequestSchema = makeSchema<MessagePageRequest>(root(object({}, {
-  before: nonEmptyString, limit: integerRange(1, 100),
-})))
-export const messagePageResponseSchema = makeSchema<MessagePageResponse>(root(object({
-  entries: arrayOf(conversationEntry),
-}, { nextBefore: nonEmptyString, requestRuns: arrayOf(nested(requestRunSummarySchema)) })))
-export const imageUploadRequestSchema = makeSchema<ImageUploadRequest>(root(object({
-  fileName: boundedString(255), mimeType: oneOf(["image/png", "image/jpeg", "image/webp", "image/gif"] as const), dataBase64: base64,
-})))
-export const imageUploadResponseSchema = makeSchema<ImageUploadResponse>(root(object({
-  imageId: nonEmptyString, mimeType: nonEmptyString, byteLength: nonNegativeInteger,
-})))
-export const artifactRequestSchema = makeSchema<ArtifactRequest>(root(object({ artifactId: nonEmptyString })))
-export const artifactResponseSchema = makeSchema<ArtifactResponse>(root(object({
-  artifactId: nonEmptyString, contentType: nonEmptyString, encoding: oneOf(["utf8", "base64"] as const),
-  content: stringCheck, byteLength: nonNegativeInteger, truncated: booleanCheck,
-})))
-export const fileReadRequestSchema = makeSchema<FileReadRequest>(root(object({ path: pathString }, { maxBytes: integerRange(1, 8 * 1024 * 1024) })))
-export const fileReadResponseSchema = makeSchema<FileReadResponse>(root(object({
-  path: pathString, content: stringCheck, encoding: oneOf(["utf8", "base64"] as const),
-  byteLength: nonNegativeInteger, truncated: booleanCheck,
-}, { language: nonEmptyString })))
-
-const gitStatusEntry = object({ path: pathString, status: nonEmptyString })
-const gitDiffFile = object({ fileName: nonEmptyString, fileLang: stringCheck, content: stringCheck })
-const gitDiff = object({ oldFile: gitDiffFile, newFile: gitDiffFile, hunks: arrayOf(stringCheck) })
-export const gitStatusResponseSchema = makeSchema<GitStatusResponse>(root(object({ files: arrayOf(gitStatusEntry) })))
-export const gitDiffRequestSchema = makeSchema<GitDiffRequest>(root(object({}, { path: pathString, contextLines: integerRange(0, 1000) })))
-export const gitDiffResponseSchema = makeSchema<GitDiffResponse>(root(object({ diff: gitDiff, summary: stringCheck })))
-
-const projectChoice = object({ path: pathString, label: nonEmptyString, source: oneOf(["recent", "favorite", "browse"] as const) })
-export const projectListResponseSchema = makeSchema<ProjectListResponse>(root(object({ projects: arrayOf(projectChoice) })))
-export const projectFavoritesUpdateRequestSchema = makeSchema<ProjectFavoritesUpdateRequest>(root(object({ paths: arrayOf(pathString, 1000) })))
-export const projectFavoritesUpdateResponseSchema = makeSchema<ProjectFavoritesUpdateResponse>(root(object({ projects: arrayOf(projectChoice) })))
-export const projectBrowseRequestSchema = makeSchema<ProjectBrowseRequest>(root(object({}, {
-  path: pathString, showHidden: booleanCheck, cursor: nonEmptyString, limit: integerRange(1, 200),
-})))
-export const projectBrowseResponseSchema = makeSchema<ProjectBrowseResponse>(root(object({
-  path: pathString, directories: arrayOf(object({ name: nonEmptyString, path: pathString, symlink: booleanCheck }), 200),
-}, { parentPath: pathString, nextCursor: nonEmptyString })))
-
-const pushSubscription = object({
-  endpoint: httpsUrl,
-  keys: object({ auth: nonEmptyString, p256dh: nonEmptyString }),
-}, { expirationTime: nullable(nonNegativeInteger) })
-export const pushSubscribeRequestSchema = makeSchema<PushSubscribeRequest>(root(object({ subscription: pushSubscription })))
-export const pushSubscribeResponseSchema = makeSchema<PushSubscribeResponse>(root(object({ vapidPublicKey: nonEmptyString, createdAt: isoDate })))
-export const pushProfileExportRequestSchema = makeSchema<PushProfileExportRequest>(root(object({ destinationPublicKey: base64 })))
-const encryptedPushProfile = object({
-  schemaVersion: literal(1), ephemeralPublicKey: base64, salt: base64, nonce: base64, tag: base64, ciphertext: base64,
-})
-export const encryptedPushProfileSchema = makeSchema<EncryptedPushProfile>(root(encryptedPushProfile))
-export const pushProfileImportRequestSchema = encryptedPushProfileSchema
-export const pushProfileImportResponseSchema = makeSchema<PushProfileImportResponse>(root(object({ imported: literal(true), pwaOrigin: httpsOrigin })))
-export const pushRotateResponseSchema = makeSchema<PushRotateResponse>(root(object({ requiresResubscribe: literal(true), vapidPublicKey: nonEmptyString })))
-export const pushEnvelopeSchema = makeSchema<PushEnvelope>(root(object({
-  type: oneOf(["session-settled", "attention-required", "session-error", "team-failed"] as const),
-  hostId: uuidV7, liveSessionId: uuidV7, title: nonEmptyString, body: stringCheck, url: stringCheck,
-})))
-
-export const HTTP_REQUEST_SCHEMAS = Object.freeze({
-  pairClaim: pairClaimRequestSchema,
-  pairApprove: pairApproveRequestSchema,
-  webSocketTicket: webSocketTicketRequestSchema,
-  terminalTicket: terminalTicketRequestSchema,
-  createLiveSession: createLiveSessionRequestSchema,
-  terminateLiveSession: terminateLiveSessionRequestSchema,
-  messagePage: messagePageRequestSchema,
-  imageUpload: imageUploadRequestSchema,
-  action: actionRequestSchema,
-  artifact: artifactRequestSchema,
-  fileRead: fileReadRequestSchema,
-  gitDiff: gitDiffRequestSchema,
-  projectFavoritesUpdate: projectFavoritesUpdateRequestSchema,
-  projectBrowse: projectBrowseRequestSchema,
-  pushSubscribe: pushSubscribeRequestSchema,
-  pushProfileExport: pushProfileExportRequestSchema,
-  pushProfileImport: pushProfileImportRequestSchema,
-})
-
-export const HTTP_RESPONSE_SCHEMAS = Object.freeze({
-  health: healthResponseSchema,
-  hostDescription: hostDescriptionResponseSchema,
-  inventory: hostInventoryResponseSchema,
-  pairClaim: pairClaimResponseSchema,
-  pairApprove: pairApproveResponseSchema,
-  ticket: ticketResponseSchema,
-  createLiveSession: createLiveSessionResponseSchema,
-  terminateLiveSession: terminateLiveSessionResponseSchema,
-  actionResult: actionResultResponseSchema,
-  snapshot: snapshotResponseSchema,
-  messagePage: messagePageResponseSchema,
-  imageUpload: imageUploadResponseSchema,
-  artifact: artifactResponseSchema,
-  fileRead: fileReadResponseSchema,
-  gitStatus: gitStatusResponseSchema,
-  gitDiff: gitDiffResponseSchema,
-  projectList: projectListResponseSchema,
-  projectFavoritesUpdate: projectFavoritesUpdateResponseSchema,
-  projectBrowse: projectBrowseResponseSchema,
-  pushSubscribe: pushSubscribeResponseSchema,
-  pushProfileExport: encryptedPushProfileSchema,
-  pushProfileImport: pushProfileImportResponseSchema,
-  pushRotate: pushRotateResponseSchema,
-})
 
 function makeSchema<T>(validate: (input: unknown, issues: ValidationIssue[]) => void): ProtocolSchema<T> {
   const safeParse = (input: unknown): ValidationResult<T> => {

@@ -1,55 +1,17 @@
 import { describe, expect, test } from "bun:test"
 import * as protocolContract from "../src/index.js"
 import {
-  HTTP_REQUEST_SCHEMAS,
-  HTTP_RESPONSE_SCHEMAS,
-  REMOTE_HTTP_ROUTES,
   REMOTE_PROTOCOL_NAME,
   actionResultResponseSchema,
-  artifactRequestSchema,
-  artifactResponseSchema,
   bootstrapClaimFrameSchema,
-  createLiveSessionRequestSchema,
-  createLiveSessionResponseSchema,
-  encryptedPushProfileSchema,
-  fileReadRequestSchema,
-  fileReadResponseSchema,
-  gitDiffRequestSchema,
-  gitDiffResponseSchema,
-  gitStatusResponseSchema,
-  healthResponseSchema,
-  hostDescriptionResponseSchema,
-  hostInventoryResponseSchema,
-  hostInventorySchema,
   hubActionFrameSchema,
   hubLaunchFrameSchema,
   hubRegisteredFrameSchema,
   hubRejectedFrameSchema,
   hubToSurfaceFrameSchema,
-  imageUploadRequestSchema,
-  imageUploadResponseSchema,
-  messagePageRequestSchema,
-  messagePageResponseSchema,
-  pairApproveRequestSchema,
-  pairApproveResponseSchema,
-  pairClaimRequestSchema,
-  pairClaimResponseSchema,
   pairingQrPayloadSchema,
-  projectBrowseRequestSchema,
-  projectBrowseResponseSchema,
-  projectFavoritesUpdateRequestSchema,
-  projectFavoritesUpdateResponseSchema,
-  projectListResponseSchema,
-  pushEnvelopeSchema,
-  pushProfileExportRequestSchema,
-  pushProfileImportResponseSchema,
-  pushRotateResponseSchema,
-  pushSubscribeRequestSchema,
-  pushSubscribeResponseSchema,
-  registeredHostSchema,
   sessionSnapshotSchema,
   sessionSnapshotStateSchema,
-  snapshotResponseSchema,
   snapshotRequiredFrameSchema,
   surfaceActionResultFrameSchema,
   surfaceEventFrameSchema,
@@ -58,11 +20,6 @@ import {
   surfaceRegisterFrameSchema,
   surfaceSnapshotFrameSchema,
   surfaceToHubFrameSchema,
-  terminalTicketRequestSchema,
-  terminateLiveSessionRequestSchema,
-  terminateLiveSessionResponseSchema,
-  ticketResponseSchema,
-  webSocketTicketRequestSchema,
 } from "../src/index.js"
 
 const HOST_ID = "018f0c7a-2f3b-7c4d-8e5f-1234567890ab"
@@ -73,8 +30,6 @@ const AT = "2026-08-31T01:00:02.000Z"
 const { RemoteSurface } = await import(new URL("../../../harness/rubato-pi/src/extensions/remote-surface.mjs", import.meta.url).href)
 
 const fixtureUrls = {
-  host: new URL("./fixtures/host-description.v1.json", import.meta.url),
-  browse: new URL("./fixtures/project-browse.v1.json", import.meta.url),
   register: new URL("./fixtures/surface-register.v1.json", import.meta.url),
   event: new URL("./fixtures/surface-event.v1.json", import.meta.url),
   snapshot: new URL("./fixtures/session-snapshot.v1.json", import.meta.url),
@@ -244,128 +199,22 @@ describe("canonical surface and bootstrap frames", () => {
   })
 })
 
-describe("canonical host, pairing, and ticket contracts", () => {
-  test("validates host description, inventory, pairing, and tickets", async () => {
-    const hostDescription = await fixture("host")
-    const registration = await fixture("register")
-    const summary = registration["summary"]
-    const registered = {
-      hostId: HOST_ID,
-      displayName: "Mac mini",
+describe("canonical pairing QR payloads", () => {
+  test("validates add-host pairing QR payloads and rejects insecure base URLs", () => {
+    expectValid(pairingQrPayloadSchema, {
+      type: "rubato-host-pair",
       baseUrl: "https://mac-mini.example.ts.net/rubato/",
-      ownerLogin: "you@example.com",
-      pairedAt: AT,
-      lastSeenAt: AT,
-      protocolMin: 1,
-      protocolMax: 1,
-    }
-    expectValid(hostDescriptionResponseSchema, hostDescription)
-    expectValid(registeredHostSchema, registered)
-    expectValid(hostInventorySchema, { host: registered, sessions: [summary], connection: "online" })
-    expectValid(hostInventoryResponseSchema, { hostSeq: 8, sessions: [summary] })
-    expectValid(healthResponseSchema, { ok: true, hostId: HOST_ID })
-    expectValid(pairingQrPayloadSchema, { type: "rubato-host-pair", baseUrl: registered.baseUrl, hostId: HOST_ID, nonce: "nonce", expiresAt: AT })
-    expectValid(pairClaimRequestSchema, { nonce: "nonce" })
-    expectValid(pairClaimResponseSchema, { claimId: REQUEST_ID, expiresAt: AT })
-    expectValid(pairApproveRequestSchema, { claimId: REQUEST_ID, confirmed: true })
-    expectValid(pairApproveResponseSchema, { paired: true, origin: "https://phone.example.ts.net" })
-    expectValid(webSocketTicketRequestSchema, { purpose: "events" })
-    expectValid(terminalTicketRequestSchema, { purpose: "terminal" })
-    expectValid(ticketResponseSchema, { ticket: "one-time-ticket", expiresAt: AT })
-  })
-
-  test("rejects insecure hosts, partial ranges, and negotiation outside the advertised range", async () => {
-    const host = await fixture("host")
-    ;(host["negotiation"] as Record<string, unknown>)["version"] = 2
-    expect(hostDescriptionResponseSchema.safeParse(host).ok).toBe(false)
-    expect(registeredHostSchema.safeParse({
-      hostId: HOST_ID, displayName: "Mac", baseUrl: "http://mac.local/rubato/", ownerLogin: "owner", pairedAt: AT,
-    }).ok).toBe(false)
-    expect(registeredHostSchema.safeParse({
-      hostId: HOST_ID, displayName: "Mac", baseUrl: "https://mac.example/rubato/", ownerLogin: "owner", pairedAt: AT, protocolMin: 1,
-    }).ok).toBe(false)
-  })
-})
-
-describe("canonical session, project, file, artifact, and git HTTP contracts", () => {
-  test("validates lifecycle and paged content contracts", async () => {
-    const snapshot = await fixture("snapshot")
-    expectValid(createLiveSessionRequestSchema, {
-      cwd: "/Users/example/Projects/rubato",
-      name: "Remote protocol",
-      initialPrompt: "Complete the contracts",
-      model: { provider: "openai", modelId: "gpt-5.6" },
-      thinkingLevel: "high",
-      attachAfterCreate: false,
-      rubatoArgs: ["--no-update"],
+      hostId: HOST_ID,
+      nonce: "nonce",
+      expiresAt: AT,
     })
-    expectValid(createLiveSessionResponseSchema, { liveSessionId: LIVE_ID, zmxName: "rubato-018f0c7b2f3b" })
-    expectValid(terminateLiveSessionRequestSchema, { force: false })
-    expectValid(terminateLiveSessionResponseSchema, { terminated: true })
+    expect(pairingQrPayloadSchema.safeParse({
+      type: "rubato-host-pair",
+      baseUrl: "http://mac.local/rubato/",
+      hostId: HOST_ID,
+      nonce: "nonce",
+      expiresAt: AT,
+    }).ok).toBe(false)
     expectValid(actionResultResponseSchema, { accepted: true, revision: 124, payload: { queued: true } })
-    const state = snapshot["state"] as Record<string, unknown>
-    expectValid(snapshotResponseSchema, {
-      summary: snapshot["summary"], revision: state["revision"], lastSeq: snapshot["lastSeq"], entries: state["entries"], tree: state["tree"],
-      commands: state["commands"],
-      uiRequest: { requestId: REQUEST_ID, kind: "select", title: "Choose", options: [{ label: "A", value: "a" }] },
-    })
-    expect(snapshotResponseSchema.safeParse({
-      summary: snapshot["summary"], revision: state["revision"], lastSeq: snapshot["lastSeq"], entries: state["entries"], tree: state["tree"],
-    }).ok).toBe(false)
-    expectValid(messagePageRequestSchema, { before: "m1", limit: 100 })
-    expectValid(messagePageResponseSchema, { entries: (snapshot["state"] as Record<string, unknown>)["entries"], nextBefore: "m0" })
-  })
-
-  test("validates images, artifacts, files, git, and project browsing", async () => {
-    expectValid(imageUploadRequestSchema, { fileName: "screen.png", mimeType: "image/png", dataBase64: "aGVsbG8=" })
-    expectValid(imageUploadResponseSchema, { imageId: "image-1", mimeType: "image/png", byteLength: 5 })
-    expectValid(artifactRequestSchema, { artifactId: "artifact-1" })
-    expectValid(artifactResponseSchema, { artifactId: "artifact-1", contentType: "text/plain", encoding: "utf8", content: "output", byteLength: 6, truncated: false })
-    expectValid(fileReadRequestSchema, { path: "/Users/example/Projects/rubato/README.md", maxBytes: 65536 })
-    expectValid(fileReadResponseSchema, { path: "/Users/example/Projects/rubato/README.md", content: "# Rubato", encoding: "utf8", byteLength: 8, truncated: false, language: "markdown" })
-    expectValid(gitStatusResponseSchema, { files: [{ path: "/Users/example/Projects/rubato/src/a.ts", status: "modified" }] })
-    expectValid(gitDiffRequestSchema, { path: "/Users/example/Projects/rubato/src/a.ts", contextLines: 3 })
-    expectValid(gitDiffResponseSchema, { diff: { oldFile: { fileName: "a.ts", fileLang: "ts", content: "a" }, newFile: { fileName: "a.ts", fileLang: "ts", content: "b" }, hunks: ["@@ -1 +1 @@"] }, summary: "1 file changed" })
-
-    const browse = await fixture("browse")
-    expectValid(projectBrowseRequestSchema, { path: "/Users/example/Projects", showHidden: false, limit: 200 })
-    expectValid(projectBrowseResponseSchema, browse)
-    const projects = [{ path: "/Users/example/Projects/rubato", label: "Rubato", source: "favorite" }]
-    expectValid(projectListResponseSchema, { projects })
-    expectValid(projectFavoritesUpdateRequestSchema, { paths: ["/Users/example/Projects/rubato"] })
-    expectValid(projectFavoritesUpdateResponseSchema, { projects })
-  })
-})
-
-describe("canonical push transfer contracts", () => {
-  const encrypted = { schemaVersion: 1, ephemeralPublicKey: "AQ==", salt: "Ag==", nonce: "Aw==", tag: "BA==", ciphertext: "BQ==" }
-
-  test("validates subscription, encrypted transfer, rotation, and notification payloads", () => {
-    expectValid(pushSubscribeRequestSchema, { subscription: { endpoint: "https://push.example/subscription", expirationTime: null, keys: { auth: "auth", p256dh: "key" } } })
-    expectValid(pushSubscribeResponseSchema, { vapidPublicKey: "vapid", createdAt: AT })
-    expectValid(pushProfileExportRequestSchema, { destinationPublicKey: "AQ==" })
-    expectValid(encryptedPushProfileSchema, encrypted)
-    expectValid(pushProfileImportResponseSchema, { imported: true, pwaOrigin: "https://phone.example.ts.net" })
-    expectValid(pushRotateResponseSchema, { requiresResubscribe: true, vapidPublicKey: "next-vapid" })
-    expectValid(pushEnvelopeSchema, { type: "attention-required", hostId: HOST_ID, liveSessionId: LIVE_ID, title: "Input needed", body: "Choose an option", url: "/rubato/session" })
-  })
-
-  test("exports complete request and response schema registries", () => {
-    expect(Object.keys(HTTP_REQUEST_SCHEMAS).sort()).toEqual([
-      "action", "artifact", "createLiveSession", "fileRead", "gitDiff", "imageUpload", "messagePage", "pairApprove", "pairClaim",
-      "projectBrowse", "projectFavoritesUpdate", "pushProfileExport", "pushProfileImport", "pushSubscribe", "terminalTicket",
-      "terminateLiveSession", "webSocketTicket",
-    ])
-    expect(Object.keys(HTTP_RESPONSE_SCHEMAS)).toContain("snapshot")
-    expect(Object.keys(HTTP_RESPONSE_SCHEMAS)).toContain("pushProfileExport")
-    expect(REMOTE_HTTP_ROUTES.snapshot).toBe("/rubato/api/v1/live/:liveSessionId/snapshot")
-    expect(REMOTE_HTTP_ROUTES.projectsBrowse).toBe("/rubato/api/v1/projects/browse")
-  })
-
-  test("strict schemas reject unknown nested fields", () => {
-    const request = { subscription: { endpoint: "https://push.example/subscription", keys: { auth: "auth", p256dh: "key", secret: "leak" } } }
-    const result = pushSubscribeRequestSchema.safeParse(request)
-    expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.issues.map(({ path }) => path)).toContain("$.subscription.keys.secret")
   })
 })
