@@ -85,6 +85,13 @@ test("actual staged Pi discovers inactive MCP tools, invokes one in the same tur
   const errors = [];
   await session.bindExtensions({ onError: (error) => errors.push(error) });
 
+  // MCP attaches in the background so session_start cannot pin the first
+  // prompt; before_agent_start is what waits for it, and a real turn always
+  // passes through there. Asserting straight after bindExtensions raced that
+  // attach, and losing the race also orphaned the server the dispose hook was
+  // about to close, which left the runner alive until the CI timeout.
+  await session.extensionRunner.emit({ type: "before_agent_start" });
+
   const echoName = "mcp__fake_server_echo";
   assert.equal(errors.length, 0);
   assert.ok(session.getActiveToolNames().includes("tool_search"));
@@ -120,6 +127,8 @@ test("actual staged Pi discovers inactive MCP tools, invokes one in the same tur
   });
   session.setActiveToolsByName(["tool_search"]);
   await session.reload();
+  // reload replays session_start, so the re-attach is in the background again.
+  await session.extensionRunner.emit({ type: "before_agent_start" });
   assert.ok(session.getActiveToolNames().includes(echoName), "ownership-valid history restores the MCP tool");
   assert.equal((await markerLines(markerPath)).filter((line) => line === "initialized").length, 2);
 
