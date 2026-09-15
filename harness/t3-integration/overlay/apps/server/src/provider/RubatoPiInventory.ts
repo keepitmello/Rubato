@@ -105,6 +105,14 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
         }
         if (!thread) return;
         const live = entry.runtimeId !== null && ["running", "waiting", "starting"].includes(entry.status);
+        // After the profile engine is killed, Pi has no worker but T3 still
+        // has a running turn in SQLite. Attach anyway so the snapshot replay
+        // completes thinking instead of leaving it live with no stream.
+        const t3Live = thread.session != null && (
+          thread.session.status === "running" ||
+          thread.session.status === "starting" ||
+          thread.session.activeTurnId != null
+        );
         // Live attach replays the snapshot as UI events. Importing the same
         // transcript first concatenates the assistant text on one message.
         if (!live && thread.latestTurn===null && thread.session===null) {
@@ -116,7 +124,7 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
               threadId,messages:messages.map((message) => ({messageId:MessageId.make(message.id),role:message.role,text:message.text,createdAt:message.createdAt}))});
           }
         }
-        if (live && !bridge.hasSession(threadId) && !bridge.ownsSession(entry.sessionId)) {
+        if ((live || t3Live) && !bridge.hasSession(threadId) && !bridge.ownsSession(entry.sessionId)) {
           yield* service.startSession(threadId,{threadId,provider:instance.driverKind,providerInstanceId:instance.instanceId,
             cwd:entry.cwd,runtimeMode:thread.runtimeMode,resumeCursor:bridge.cursor(entry.sessionId)});
         }

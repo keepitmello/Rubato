@@ -194,6 +194,10 @@ export class RubatoPiBridge {
         !(snapshot.state.isStreaming && index === snapshot.messages.length - 1 && !message.stopReason)));
       for (const request of snapshot.pendingUi) context.projection.question(request);
       context.session.status = snapshot.state.isStreaming ? 'running' : 'ready';
+      if (!snapshot.state.isStreaming && context.projection.turnId) {
+        context.projection.interrupted = true;
+        context.projection.settle();
+      }
       if (snapshot.state.model) context.session.model = `${snapshot.state.model.provider}/${snapshot.state.model.id}`;
       this.configureUsage(context, snapshot.state);
       this.replayUsage(context, snapshot.messages);
@@ -297,7 +301,17 @@ export class RubatoPiBridge {
       if (context.stopped) throw new Error('Attachment closed before send');
       if (input.continuation === true) {
         const snapshot = await context.client.snapshot();
-        if (!snapshot.state.isStreaming) throw new Error('Pi has no running turn to reattach; send a new message explicitly');
+        if (!snapshot.state.isStreaming) {
+          // Engine restart cuts the turn. T3 still asks to continue; leaving
+          // the projection open shows thinking with no stream behind it.
+          if (context.projection.turnId) {
+            context.projection.interrupted = true;
+            context.projection.settle();
+          }
+          context.session.status = 'ready';
+          this.stateEvent(context);
+          throw new Error('Pi has no running turn to reattach; send a new message explicitly');
+        }
         const turnId = context.projection.begin();
         return { threadId: input.threadId, turnId, resumeCursor: context.session.resumeCursor };
       }
