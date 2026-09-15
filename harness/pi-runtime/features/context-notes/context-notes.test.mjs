@@ -163,6 +163,38 @@ test("feature is additive-only, stock-version locked, and has a complete source 
   }
 });
 
+test("a window carrier survives a mode another session resolved, and still obeys the person", async () => {
+  // Load the assembled copies: the fork's engine-gate resolves its siblings only
+  // once patches.mjs has laid them down next to it.
+  const notes = join(runtime.codingAgentDir, "dist/rubato-features/context-notes/src/context-notes");
+  const gate = await import(pathToFileURL(join(notes, "engine-gate.mjs")).href);
+  const config = await import(pathToFileURL(join(notes, "config.mjs")).href);
+  const protocol = await import(pathToFileURL(join(notes, "protocol.mjs")).href);
+  const carrier = protocol.encodeBootstrap(protocol.initialWindow(), "");
+  const savedMode = process.env.RUBATO_CONTEXT_MODE;
+  const savedOrigin = process.env.RUBATO_CONTEXT_MODE_ORIGIN;
+  try {
+    // One process holds many sessions. A neighbour resolving summary must not
+    // refuse this session's notes window.
+    config.setContextMode("summary");
+    assert.equal(gate.notesAwareSummaryMessage(carrier, 0)?.role, "user");
+
+    // A summary the person set for the whole process is intent, and still refuses.
+    delete process.env.RUBATO_CONTEXT_MODE_ORIGIN;
+    process.env.RUBATO_CONTEXT_MODE = "summary";
+    assert.throws(() => gate.notesAwareSummaryMessage(carrier, 0), /작업 노트 방식/);
+
+    process.env.RUBATO_CONTEXT_MODE = "history-notes";
+    assert.equal(gate.notesAwareSummaryMessage(carrier, 0)?.role, "user");
+  } finally {
+    if (savedMode === undefined) delete process.env.RUBATO_CONTEXT_MODE;
+    else process.env.RUBATO_CONTEXT_MODE = savedMode;
+    if (savedOrigin === undefined) delete process.env.RUBATO_CONTEXT_MODE_ORIGIN;
+    else process.env.RUBATO_CONTEXT_MODE_ORIGIN = savedOrigin;
+    config.resetContextModeResolution();
+  }
+});
+
 test("actual SDK injects stable history identity and keeps notes through reload and native clone", async (t) => {
   const cwd = join(scratch, "sdk-project");
   const agentDir = join(scratch, "sdk-agent");
