@@ -31,7 +31,6 @@ export async function buildRelease(options) {
       [options.bun ?? "bun", ["install", "--frozen-lockfile"], 10 * 60_000],
       ["npm", ["--prefix", "harness/rubato-pi", "test"], 10 * 60_000],
       ["npm", ["--prefix", "packages/rubato-remote-hub", "run", "build"], 5 * 60_000],
-      ["npm", ["--prefix", "packages/rubato-remote-web", "run", "build"], 10 * 60_000],
       ["npm", ["--prefix", "packages/rubato-live-cli", "run", "check"], 2 * 60_000],
       [options.bun ?? "bun", ["test", "packages/rubato-terminal-bridge/test"], 5 * 60_000],
       [options.bun ?? "bun", ["audit", "--production"], 5 * 60_000],
@@ -60,7 +59,6 @@ export async function buildRelease(options) {
   await mkdir(terminalModules, { recursive: true })
   await cp(join(repository, "packages", "rubato-terminal-bridge", "node_modules", "node-pty"), join(terminalModules, "node-pty"), { recursive: true, dereference: true })
   await cp(join(repository, "packages", "rubato-live-cli", "node_modules", "qrcode-terminal"), join(terminalModules, "qrcode-terminal"), { recursive: true, dereference: true })
-  await copyTree(join(repository, "packages", "rubato-remote-web", "dist"), join(output, "web"))
   await copyTree(join(repository, "packages", "rubato-live-cli"), join(output, "live-cli"), (source) => !source.includes(`${join("live-cli", "test")}`) && !source.includes("node_modules"))
   await copyTree(join(repository, "scripts", "remote-release"), join(output, "remote-release"), (source) => !source.includes("fixtures") && !source.endsWith(".test.mjs") && !source.endsWith("VERIFICATION.md"))
   await copyTree(join(repository, "packages", "rubato-remote-protocol", "src"), join(output, "remote-protocol", "src"))
