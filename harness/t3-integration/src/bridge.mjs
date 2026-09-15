@@ -338,11 +338,22 @@ export class RubatoPiBridge {
       if (decision === RECOVER_QUEUE_RESUME && messages.length > 0) {
         const turnId = context.projection.begin();
         context.session.status = 'running'; this.stateEvent(context);
-        while (recovery.nextIndex < messages.length) {
-          const snapshot = await context.client.snapshot();
-          const type = snapshot.state.isStreaming ? 'follow_up' : 'prompt';
-          await context.client.command({ type, message: messages[recovery.nextIndex] });
-          recovery.nextIndex += 1;
+        try {
+          while (recovery.nextIndex < messages.length) {
+            const snapshot = await context.client.snapshot();
+            const type = snapshot.state.isStreaming ? 'follow_up' : 'prompt';
+            await context.client.command({ type, message: messages[recovery.nextIndex] });
+            recovery.nextIndex += 1;
+          }
+        } catch (error) {
+          // Nothing reached the provider, so no turn will ever settle the one we
+          // opened, and applyState reads running off projection.turnId. Close it
+          // here or the thread stays locked; the question survives for a retry.
+          if (recovery.nextIndex === 0) {
+            context.projection.failed = true; context.projection.settle();
+            context.session.status = 'ready'; this.stateEvent(context);
+          }
+          throw error;
         }
         this.finishQueueRecovery(context, requestId, decision);
         return { turnId, recoveredMessageCount: messages.length };
