@@ -19,13 +19,11 @@ peekaboo help click
 
 With a snapshot, do not also pass `--app` or window flags. Prefer `set-value` for fields and `click` for semantic controls. Do not keep element IDs across navigation, rerender, or window changes.
 
-Some apps (notably Calculator) expose a CG window but no AX window. Screenshot capture can still succeed while `see` returns `ACCESSIBILITY_INCOMPLETE`. Re-observe; if AX stays empty, stop instead of guessing coordinates unless a fresh exact-window snapshot has coherent geometry.
+Some apps (notably Calculator) expose a CG window but no AX window. Screenshot capture can still succeed while `see` returns `ACCESSIBILITY_INCOMPLETE`. Re-observe; if AX stays empty, fall back to Cua Driver. If that surface is also empty, stop instead of guessing coordinates unless a fresh exact-window snapshot has coherent geometry.
 
-## Optional: Cua Driver
+## Fallback: Cua Driver
 
-Cua Driver is a local CLI (`cua-driver call`). Daemon, Accessibility, and Screen Recording can be healthy while a given window still has no AX surface.
-
-It is not part of the automatic chain. Use it only when explicitly requested.
+Use Cua Driver (`cua-driver call`) when Peekaboo is missing, cannot start, cannot bind, or cannot operate the required surface. Daemon, Accessibility, and Screen Recording can be healthy while a given window still has no AX surface.
 
 ```bash
 cua-driver status
