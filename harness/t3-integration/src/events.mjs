@@ -99,6 +99,42 @@ export const tokenUsageFrom = (usage, extras = {}) => {
   };
 };
 
+const modelIdentityOf = (model) => {
+  if (!model || typeof model !== 'object' || Array.isArray(model)) return;
+  const id = typeof model.id === 'string' && model.id ? model.id : undefined;
+  if (!id) return;
+  const provider = typeof model.provider === 'string' && model.provider ? model.provider : undefined;
+  return provider ? `${provider}/${id}` : id;
+};
+const messageModelIdentityOf = (message) => {
+  if (!message || typeof message !== 'object') return;
+  if (message.model && typeof message.model === 'object') return modelIdentityOf(message.model);
+  const id = typeof message.model === 'string' && message.model ? message.model : undefined;
+  if (!id) return;
+  if (id.includes('/')) return id;
+  const provider = typeof message.provider === 'string' && message.provider ? message.provider : undefined;
+  return provider ? `${provider}/${id}` : id;
+};
+export const lastAssistantOf = (messages) => {
+  for (let index = (messages?.length ?? 0) - 1; index >= 0; index--) {
+    const message = messages[index];
+    if (message?.role === 'compactionSummary') return;
+    if (message?.role === 'assistant') return message;
+  }
+};
+// maxTokens is the running session's contextWindow. A snapshot model we cannot
+// attribute to that session (default catalog row, provider not yet loaded) is
+// not a source: omit the denominator rather than publish another family's size.
+export const confirmedUsageWindow = (state, { knownModel, messages } = {}) => {
+  const identity = modelIdentityOf(state?.model);
+  if (!identity) return;
+  const assistant = messageModelIdentityOf(lastAssistantOf(messages));
+  const known = typeof knownModel === 'string' && knownModel ? knownModel : undefined;
+  if (identity !== assistant && identity !== known) return;
+  const window = asInt(state.model.contextWindow);
+  return window > 0 ? window : undefined;
+};
+
 /** Only T3-normalized events leave this boundary; no Pi protocol types in UI. */
 export class EventProjection {
   constructor({ threadId, sessionId, instanceId, emit }) {
@@ -116,10 +152,12 @@ export class EventProjection {
     this.text.clear(); this.thinking.clear(); this.completed.clear(); this.questions.clear();
     this.tasks.clear(); this.children.clear(); this.spawns.clear();
     this.turnId = undefined; this.failed = false; this.interrupted = false; this.lastUsage = undefined;
+    this.maxTokens = undefined;
   }
-  configureUsage({ maxTokens, compactsAutomatically } = {}) {
+  configureUsage({ maxTokens, compactsAutomatically, replaceWindow } = {}) {
     const window = asInt(maxTokens);
     if (window > 0) this.maxTokens = window;
+    else if (replaceWindow) this.maxTokens = undefined;
     if (typeof compactsAutomatically === 'boolean') this.compactsAutomatically = compactsAutomatically;
   }
   usage(raw, message) {
