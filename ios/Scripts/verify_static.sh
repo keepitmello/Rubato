@@ -30,6 +30,7 @@ swiftc -swift-version 6 -strict-concurrency=complete -typecheck \
   Sources/Services/MockChatSessionProvider.swift \
   Sources/Services/MockRubatoTransport.swift \
   Sources/Support/SampleData.swift \
+  Sources/Rubato/*.swift \
   Scripts/store_typecheck_stubs.swift \
   Sources/Store/ChatRoomStore.swift \
   Sources/App/AppModel.swift
@@ -46,7 +47,19 @@ root = Path(sys.argv[1])
 tmp = Path(sys.argv[2])
 source = (root / "Tests/ChatRoomStoreTests.swift").read_text()
 (tmp / "ChatRoomStoreTests.swift").write_text(
-    source.replace("@testable import RubatoChatDemo\n", "")
+    source.replace(
+        "import XCTest\n@testable import RubatoChatDemo\n",
+        """import Foundation
+
+class XCTestCase {}
+func XCTAssertEqual<T: Equatable>(_ lhs: T, _ rhs: T, _ message: String = "") {}
+func XCTAssertTrue(_ value: Bool, _ message: String = "") {}
+func XCTAssertFalse(_ value: Bool, _ message: String = "") {}
+func XCTAssertNil<T>(_ value: T?, _ message: String = "") {}
+func XCTFail(_ message: String = "") {}
+
+""",
+    )
 )
 PY_TEST
 swiftc -swift-version 6 -strict-concurrency=complete -typecheck \
