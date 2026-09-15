@@ -153,6 +153,18 @@ test("source projection rejects duplicate ids instead of silently choosing one",
   const f = setup(t); const all = f.entries;
   assert.throws(() => readAuthoritativeBranch({ getEntries: () => [...all, all[0]], getLeafId: f.manager.getLeafId }), /중복/);
 });
+test("a broken parent chain names the missing id and the entry that points at it", (t) => {
+  const f = setup(t); const all = f.entries.filter((entry) => entry.type !== "session");
+  const leaf = all.at(-1);
+  // A write that never reached disk leaves a child pointing at a parent that is
+  // not in the file. Repairing that needs both ids, so the message carries them.
+  const orphan = { ...leaf, parentId: "ce23ea13" };
+  const entries = [...all.slice(0, -1), orphan];
+  assert.throws(
+    () => readAuthoritativeBranch({ getEntries: () => entries, getLeafId: () => orphan.id }),
+    (error) => error.message.includes("ce23ea13") && error.message.includes(orphan.id),
+  );
+});
 test("window lineage must have consistent root, predecessor and sequence", () => {
   const root = initialWindow(); assert.throws(() => validateWindow({ ...root, previousWindowId: root.windowId }));
   const second = nextWindow(root); const wrong = { ...second, number: 3 };
