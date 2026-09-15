@@ -138,7 +138,11 @@ function closeServer(server) {
   return new Promise((resolve) => server.close(resolve));
 }
 
-function waitFor(promise, label, timeoutMs = 5_000) {
+// This deadline exists to turn a hang into a readable label, not to bound the
+// work: --test-timeout is the real bound. At 5s it was bounding the work, and
+// every CI failure in this file read "timed out waiting for <label>" at 5.3s
+// to 8.7s on a loaded runner that spawns real child processes.
+function waitFor(promise, label, timeoutMs = 60_000) {
   let timeout;
   return Promise.race([
     promise,
