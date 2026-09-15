@@ -303,7 +303,6 @@ UPDATE_DONE=""
 MSEARCH_PID=""
 MSEARCH_OUT=""
 MSEARCH_DONE=""
-ENGINE_PID=""
 cleanup() {
   splash close
   if [ -n "${SPLASH_PID-}" ]; then
@@ -316,10 +315,6 @@ cleanup() {
   if [ -n "${MSEARCH_PID-}" ]; then
     kill "$MSEARCH_PID" 2>/dev/null || true
     wait "$MSEARCH_PID" 2>/dev/null || true
-  fi
-  if [ -n "${ENGINE_PID-}" ]; then
-    kill "$ENGINE_PID" 2>/dev/null || true
-    wait "$ENGINE_PID" 2>/dev/null || true
   fi
   [ -n "${UPDATE_OUT-}" ] && rm -f "$UPDATE_OUT"
   [ -n "${UPDATE_DONE-}" ] && rm -f "$UPDATE_DONE"
@@ -410,21 +405,6 @@ if [ -n "$RUBATO_NEEDS_MIGRATION" ] && [ -f "$HERE/migrate-rubato-state.mjs" ]; 
   "$NODE" "$HERE/migrate-rubato-state.mjs" --cwd "$PWD"
 fi
 
-# 엔진 산출물을 레포 밖에 준비한다. 이미 신선하면 즉시 끝나고(해시 비교만
-# 한다), 소스를 고쳤거나 처음이면 그때만 다시 만든다.
-#
-# 레포 안이 아니라 밖에 만드는 이유는 engine-paths.mjs 첫머리에 있다 — 요약하면
-# 빌드가 추적 파일을 다시 쓰면 worktree 가 영구히 dirty 가 되어 업데이트가 막힌다.
-# 실패해도 여기서 세션을 막지 않는다. 산출물이 정말 없으면 assertEngineBuilt 가
-# 사유를 들고 세운다.
-if [ -z "${RUBATO_NO_ENGINE_BUILD-}" ] && [ -f "$HERE/build-engine.mjs" ]; then
-  splash step "엔진을 확인하는 중"
-  "$NODE" "$HERE/build-engine.mjs" >/dev/null 2>&1 &
-  ENGINE_PID=$!
-else
-  ENGINE_PID=""
-fi
-
 # cmux 세션 복원을 붙인다. 이게 없으면 cmux 를 꺼다 켜는 순간 세션이
 # 통째로 날아간다. cmux 를 안 쓰면 아무 일도 안 생기고, 이미 맞으면 조용하다.
 # 경로가 어긋난 때도(하네스를 옮기면 절대경로가 깨진다) 여기서 고친다.
@@ -438,12 +418,6 @@ fi
 # 처음 들어온 provider 경계가 맡는다.
 if [ -z "${RUBATO_NO_KIRO_HEAL-}" ] && [ -x "$HERE/kiro-setup.sh" ]; then
   "$HERE/kiro-setup.sh" heal >/dev/null 2>&1 || true
-fi
-
-# 신선도 검사/빌드는 위의 독립 준비와 겹치되, 엔진을 실행하기 전에는 끝나야 한다.
-if [ -n "$ENGINE_PID" ]; then
-  wait "$ENGINE_PID" || true
-  ENGINE_PID=""
 fi
 
 # stock-pi 설치본은 `rubato update` 가 git 이 이미 최신이면 다시 안 깐다.

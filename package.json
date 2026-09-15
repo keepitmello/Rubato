@@ -27,7 +27,6 @@
   "scripts": {
     "build": "node harness/scripts/build-active-engine.mjs --force",
     "build:check": "node harness/scripts/build-active-engine.mjs --check",
-    "build:senpi": "node harness/scripts/build-engine.mjs --force",
     "ci:local": "bash scripts/ci-local.sh && npm run test:pi-runtime",
     "test:migration": "node --test harness/pi-runtime/test/migration-regressions.test.mjs",
     "test:pi-runtime": "npm --prefix harness/pi-runtime test --workspaces=false",

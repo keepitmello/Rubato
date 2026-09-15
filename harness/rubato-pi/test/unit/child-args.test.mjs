@@ -6,32 +6,32 @@ import {
   parseExtensionEntries,
 } from "../../src/child-args.mjs";
 
-const lead = "/app/src/extensions/lead-overlay.mjs";
-const adapter = "/app/src/extensions/adapter.mjs";
+const first = "/app/src/extensions/first-overlay.mjs";
+const second = "/app/src/extensions/second-overlay.mjs";
 
 test("parses -e and --extension values from argv", () => {
   assert.deepEqual(
-    parseExtensionEntries(["node", "cli.js", "-e", lead, "--extension", adapter, "--mode", "rpc"]),
-    [lead, adapter],
+    parseExtensionEntries(["node", "cli.js", "-e", first, "--extension", second, "--mode", "rpc"]),
+    [first, second],
   );
 });
 
 test("task children keep the full extension list after --no-extensions", () => {
-  assert.deepEqual(buildChildExtensionArgs([lead, adapter], false), [
+  assert.deepEqual(buildChildExtensionArgs([first, second], false), [
     "--no-extensions",
     "--extension",
-    lead,
+    first,
     "--extension",
-    adapter,
+    second,
   ]);
 });
 
 test("DAG children drop the first extension", () => {
-  assert.deepEqual(buildChildExtensionArgs([lead, adapter], true), [
+  assert.deepEqual(buildChildExtensionArgs([first, second], true), [
     "--no-extensions",
     "--extension",
-    adapter,
+    second,
   ]);
-  assert.equal(hasExtension(["--extension", adapter], "lead-overlay.mjs"), false);
-  assert.equal(hasExtension(["--extension", lead, "--extension", adapter], "lead-overlay.mjs"), true);
+  assert.equal(hasExtension(["--extension", second], "first-overlay.mjs"), false);
+  assert.equal(hasExtension(["--extension", first, "--extension", second], "first-overlay.mjs"), true);
 });
