@@ -69,5 +69,30 @@ const clientPath = path.join(userdata, 'client-settings.json');
 let client = {};
 try { client = JSON.parse(await readFile(clientPath, 'utf8')); } catch { /* first install */ }
 if (!client || typeof client !== 'object') client = {};
-client.legacySidebarEnabled = true;
+
+// T3 는 이 셋을 "legacy" 로 분류해 기본으로 끄거나, 기본값이 언제든 바뀔 수
+// 있는 자리에 둔다. Rubato 쪽 기능이 거기 걸려 있어서 우리가 켠다.
+//
+// 매번 덮어쓰지는 않는다. 사용자가 끈 것을 업데이트마다 도로 켜는 건
+// 설정이 아니라 강요고, 그러면 사용자는 이 파일을 신뢰하지 않게 된다.
+// 그래서 묶음마다 판을 매기고, 그 판을 적용한 적이 있으면 건너뛴다.
+// 값을 새로 밀고 싶으면 판 번호를 올린다.
+const RECOMMENDED_REVISION = 1;
+const RECOMMENDED = {
+  // 원래 사이드바. 프로젝트별 트리가 Rubato 세션 목록과 맞는다.
+  legacySidebarEnabled: true,
+  // 컨텍스트 사용량 미터. 브릿지가 thread.token-usage.updated 를 보내는데
+  // 이 값이 꺼져 있으면 컴포저가 미터를 아예 안 그린다.
+  contextWindowMeterEnabled: true,
+  // 슬래시 메뉴의 스킬. 드라이버가 채우는 스킬 목록이 여기로 나온다.
+  // 기본값이 true 지만 업스트림이 뒤집으면 우리 기능이 조용히 사라진다.
+  showSkillsInSlashMenu: true,
+};
+const stampPath = path.join(userdata, '.rubato-gui-settings');
+let applied = 0;
+try { applied = Number(JSON.parse(await readFile(stampPath, 'utf8')).revision) || 0; } catch { /* 처음 */ }
+if (applied < RECOMMENDED_REVISION) {
+  Object.assign(client, RECOMMENDED);
+  await writeFile(stampPath, `${JSON.stringify({ revision: RECOMMENDED_REVISION })}\n`);
+}
 await writeFile(clientPath, `${JSON.stringify(client)}\n`);
