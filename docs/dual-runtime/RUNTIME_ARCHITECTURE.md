@@ -2,8 +2,6 @@
 
 2026-09-16 · 상태: **CLI/T3 공통 엔진 구현·실설치 전환·재시작 및 관리형 CLI 실검증 완료.** 열려 있는 것은 writer fence 부재, G1(공유 쓰기 제어), G2(terminal attachment identity) 셋이다. 운영/복구 절차는 [공통 엔진 운영과 검증](COMMON_ENGINE_OPERATIONS.md)을 따른다.
 
-이 문서는 로컬 참고 문서 `hub-absorb-handoff.md`(허브 흡수 초안)를 참고한 설계 판단이다. 사용자 소유 원본 초안은 수정하지 않는다. “허브를 Pi 서버에 흡수”라는 파일/프로세스 이동 자체가 목표가 아니다.
-
 근거 원장은 Rubato-lab의 `_workspace/runtime-architecture-20260915/`와 `_workspace/runtime-architecture-20260916/`에 있다. `baseline.md`, `owner-design.md` §9, `design-review.md`, `lead-stock-control-probe.json`, `lead-lock-probe.json`, `lead-zmx-handoff-probe.json`, `lead-feasibility.md`를 함께 본다. 독립 검토는 초기 후보를 NOT READY로 판정했다. 아래는 그 지적과 리드의 설치본 재검증을 반영한 새 권고안이며, 이 전체 안이 독립 검토를 통과했다고 주장하지 않는다.
 
 ## 1. 현재 구조 — CLI와 GUI 모두 하나의 프로필 엔진에 연결
