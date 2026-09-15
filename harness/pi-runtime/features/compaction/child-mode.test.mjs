@@ -14,6 +14,7 @@ import { providerExecutionFeature } from "../provider-execution/patches.mjs";
 import { toolExecutionFeature } from "../tool-execution/patches.mjs";
 import { feature as contextNotesFeature } from "../context-notes/patches.mjs";
 import { feature as contextWindowFeature } from "../context-window/patches.mjs";
+import { promptRulesFeature } from "../prompt-rules/feature.mjs";
 import { toolGuardsFeature } from "../tool-guards/feature.mjs";
 import { childRuntimeFeature } from "../child-runtime/feature.mjs";
 
@@ -39,6 +40,7 @@ const staged = await stagePiRuntime({
     contextNotesFeature,
     contextWindowFeature,
     toolGuardsFeature,
+    promptRulesFeature,
     childRuntimeFeature,
   ],
 });

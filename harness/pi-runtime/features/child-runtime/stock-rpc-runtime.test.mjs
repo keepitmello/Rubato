@@ -3,7 +3,7 @@ import { rm } from "node:fs/promises"
 import { spawn } from "node:child_process"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import assert from "node:assert/strict"
 import { once } from "node:events"
 import { describe, test } from "node:test"
@@ -18,8 +18,25 @@ import {
   STOCK_PI_PACKAGE,
   STOCK_PI_RPC_ENTRY,
 } from "./stock-rpc-runtime.mjs"
+import { createStockChildRolePromptExtension } from "./role-prompt-extension.mjs"
 
 const RUNTIME_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..")
+const ROLE_PROMPT_ENV = {
+  RUBATO_ROLE_PROMPT_MODULE: pathToFileURL(join(RUNTIME_ROOT, "..", "rubato-pi", "src", "system-prompt.mjs")).href,
+  RUBATO_ROLE_CONTRACT_MODULE: pathToFileURL(join(RUNTIME_ROOT, "..", "rubato-pi", "src", "role-contract.mjs")).href,
+}
+
+async function childSystemPrompt(env) {
+  const handlers = {}
+  await createStockChildRolePromptExtension({ env: { ...ROLE_PROMPT_ENV, ...env } })({
+    on(name, fn) { handlers[name] = fn },
+  })
+  const result = await handlers.before_agent_start(
+    { systemPrompt: "You are an expert coding assistant operating inside pi, a coding agent harness." },
+    { model: { id: "claude-opus-5", provider: "anthropic", name: "Claude Opus 5" } },
+  )
+  return result.systemPrompt
+}
 const PATCHABLE_RPC_ENTRY = join(
   RUNTIME_ROOT,
   "node_modules/@earendil-works/pi-coding-agent/dist/rpc-entry.js",
@@ -178,5 +195,21 @@ describe("stock Pi child RPC runtime", () => {
     } finally {
       session.dispose()
     }
+  })
+
+  test("an unmarked child gets the agent role prompt instead of stock pi's", async () => {
+    const prompt = await childSystemPrompt({})
+    assert.match(prompt, /# Assigned agent/)
+    assert.match(prompt, /# Working agreement/)
+    // Anthropic reads the system prompt to decide whether a plan-billed request
+    // is Claude Code; pi's own harness prompt is rejected as a third-party app.
+    assert.doesNotMatch(prompt, /operating inside pi, a coding agent harness/)
+  })
+
+  test("a child keeps the role its environment already names", async () => {
+    const member = await childSystemPrompt({ SENPI_TASK_MEMBER: "1" })
+    assert.match(member, /# Workstream owner/)
+    const explicit = await childSystemPrompt({ RUBATO_PI_ROLE: "verifier" })
+    assert.match(explicit, /# Workstream owner/)
   })
 })
