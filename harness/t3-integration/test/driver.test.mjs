@@ -32,6 +32,8 @@ test('actual T3 Driver factory, adapter contracts and scope cleanup use a non-ow
     const snapshot = yield* instance.snapshot.getSnapshot;
     assert.equal(snapshot.installed,true);
     assert.equal(snapshot.auth.status,'unknown');
+    assert.equal(snapshot.supportsConversationRollback,true);
+    assert.equal(instance.adapter.capabilities.supportsConversationRollback,true);
     const threadId = ThreadId.make('driver-thread');
     const session = yield* instance.adapter.startSession({threadId, runtimeMode:'full-access',resumeCursor:bridge.cursor(record.sessionId),cwd:root});
     assert.equal(session.status,'running');
@@ -45,4 +47,37 @@ test('actual T3 Driver factory, adapter contracts and scope cleanup use a non-ow
   })));
   assert.equal((await external.snapshot()).runtimeId,before.runtimeId);
   assert.equal((await external.snapshot()).state.isStreaming,true);
+});
+
+test('T3 adapter rollback forks the Pi session and returns an updated resume cursor', {skip: !process.env.T3_SOURCE}, async (t) => {
+  const source = process.env.T3_SOURCE;
+  const modules = t3Modules(source);
+  const Effect = await modules.effect('Effect');
+  const { setTimeout: delay } = await import('node:timers/promises');
+  const { RubatoPiDriver, rubatoBridgeFor } = await modules.source('apps/server/src/provider/Drivers/RubatoPiDriver.ts');
+  const { ProviderInstanceId, ThreadId } = await modules.source('packages/contracts/src/index.ts');
+  const root = await mkdtemp(path.join(tmpdir(), 'rb-driver-rewind-'));
+  const server = await serveProfile({agentDir:root, workerFactory:(metadata) => new RpcWorker(metadata,{cliPath:fixture})});
+  t.after(async () => { await server.close(); await rm(root,{recursive:true,force:true}); });
+  const until = async (predicate) => { for (let i=0;i<300;i++) { if (await predicate()) return; await delay(10); } throw new Error('Condition did not settle'); };
+  await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const instance = yield* RubatoPiDriver.create({instanceId:ProviderInstanceId.make('rubato-rewind'), displayName:undefined,
+      environment:[],enabled:true,config:{bridgeModule:fileURLToPath(new URL('../src/bridge.mjs',import.meta.url)),descriptorPath:server.descriptorPath,catalogueCwd:root}});
+    const bridge = rubatoBridgeFor(instance);
+    bridge.projectedMessages = async () => [];
+    const threadId = ThreadId.make('driver-rewind');
+    const session = yield* instance.adapter.startSession({threadId, runtimeMode:'full-access', cwd:root});
+    const original = session.resumeCursor.sessionId;
+    yield* instance.adapter.sendTurn({threadId, input:'first'});
+    yield* Effect.promise(() => until(() => bridge.sessions.get(threadId)?.session.status === 'ready'));
+    yield* instance.adapter.sendTurn({threadId, input:'second'});
+    yield* Effect.promise(() => until(() => bridge.sessions.get(threadId)?.session.status === 'ready'));
+    yield* instance.adapter.rollbackThread(threadId, 1);
+    const live = (yield* instance.adapter.listSessions()).find((item) => item.threadId === threadId);
+    assert.notEqual(live.resumeCursor.sessionId, original);
+    const snapshot = yield* instance.adapter.readThread(threadId);
+    const users = snapshot.turns[0].items.filter((message) => message.role==='user').map((message) =>
+      typeof message.content === 'string' ? message.content : '');
+    assert.deepEqual(users, ['first']);
+  })));
 });

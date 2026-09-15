@@ -9,9 +9,9 @@ export const INPUT_COMMANDS = new Set(['prompt', 'steer', 'follow_up']);
 export const COMMANDS = new Set([
   ...INPUT_COMMANDS, 'abort', 'clear_queue', 'get_state', 'get_messages', 'get_entries',
   'get_tree', 'get_session_stats', 'get_available_models', 'get_available_thinking_levels',
-  'get_commands', 'get_last_assistant_text', 'set_model', 'set_thinking_level',
+  'get_commands', 'get_last_assistant_text', 'get_fork_messages', 'set_model', 'set_thinking_level',
   'set_session_name', 'set_auto_compaction', 'set_auto_retry', 'abort_retry',
-  'set_steering_mode', 'set_follow_up_mode', 'compact',
+  'set_steering_mode', 'set_follow_up_mode', 'compact', 'fork',
 ]);
 export const UI_METHODS = new Set(['select', 'confirm', 'input', 'editor']);
 export const json = (value) => JSON.parse(JSON.stringify(value));

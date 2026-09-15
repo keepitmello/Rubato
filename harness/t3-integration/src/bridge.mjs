@@ -1,7 +1,7 @@
 import { SessionClient } from '../../pi-server/src/client.mjs';
 import { readDescriptor } from '../../pi-server/src/descriptor.mjs';
 import { ensureProfileEngine } from '../../pi-server/src/discovery.mjs';
-import { EventProjection, importedId, textOf } from './events.mjs';
+import { EventProjection, importedId, messageKey, textOf } from './events.mjs';
 import { applySelectionOptions, catalogForPicker } from './model-catalog-order.mjs';
 import { readFile } from 'node:fs/promises';
 import { readFileSync, readdirSync, statSync, realpathSync } from 'node:fs';
@@ -348,6 +348,68 @@ export class RubatoPiBridge {
   async readThread(threadId) {
     const context = this.require(threadId); const snapshot = await context.client.snapshot();
     return { threadId, turns: [{ id: context.projection.turnId ?? `pi-history:${context.sessionId}`, items: snapshot.messages }] };
+  }
+  // T3 drops N completed turns from the end. Pi fork(entryId, before) targets that
+  // user message's parent and writes a new session file. Rebind this attachment
+  // onto the forked id so resumeCursor/recover/listSessions follow it.
+  rollbackThread(threadId, numTurns) {
+    const context = this.require(threadId);
+    const operation = context.queue.then(async () => {
+      if (context.stopped) throw new Error('Attachment closed before rewind');
+      if (!Number.isInteger(numTurns) || numTurns < 1) throw new Error('numTurns must be an integer >= 1');
+      if (context.syncing) await context.syncing;
+      if (context.session.status === 'running') throw new Error('Interrupt the current turn before rewinding');
+      const listed = await context.client.command({ type: 'get_fork_messages' });
+      const messages = listed?.messages ?? listed;
+      if (!Array.isArray(messages) || messages.length === 0) throw new Error('This conversation has no user messages to rewind');
+      if (numTurns > messages.length) throw new Error('Cannot rewind more turns than this conversation has');
+      const target = messages[messages.length - numTurns];
+      if (typeof target?.entryId !== 'string') throw new Error('Pi fork boundary is missing');
+      await context.unsubscribe?.();
+      context.unsubscribe = undefined;
+      try {
+        const result = await context.client.command({ type: 'fork', entryId: target.entryId });
+        if (result?.cancelled) throw new Error('Rewind was cancelled');
+        const buffered = [];
+        let loading = true;
+        context.unsubscribe = await context.client.subscribeSession((state) => {
+          if (loading) { buffered.push(state); return; }
+          this.applyState(context, state);
+        });
+        const snapshot = await context.client.snapshot();
+        this.adoptFork(context, snapshot);
+        loading = false;
+        for (const state of buffered) if (state.sequence > snapshot.sequence) this.applyState(context, state);
+        return { threadId, turns: [{ id: context.projection.turnId ?? `pi-history:${context.sessionId}`, items: snapshot.messages }] };
+      } catch (error) {
+        if (!context.unsubscribe) {
+          try { context.unsubscribe = await context.client.subscribeSession((state) => this.applyState(context, state)); }
+          catch { /* rewind failed; recover() will resubscribe */ }
+        }
+        throw error;
+      }
+    });
+    context.queue = operation.catch(() => {});
+    return operation;
+  }
+  adoptFork(context, snapshot) {
+    const sessionId = snapshot.state?.sessionId ?? snapshot.sessionId;
+    if (typeof sessionId !== 'string' || !sessionId) throw new Error('Pi fork did not return a session identity');
+    this.claimed.add(sessionId);
+    context.sessionId = sessionId;
+    context.session.resumeCursor = this.cursor(sessionId);
+    context.projection.reset(sessionId);
+    for (const message of snapshot.messages ?? []) {
+      if (message?.role !== 'assistant') continue;
+      const itemId = messageKey(sessionId, message);
+      context.projection.text.set(itemId, textOf(message));
+      context.projection.completed.add(itemId);
+    }
+    context.runtimeId = snapshot.runtimeId;
+    context.sequence = snapshot.sequence;
+    context.session.status = snapshot.state?.isStreaming ? 'running' : 'ready';
+    context.session.updatedAt = new Date().toISOString();
+    this.stateEvent(context);
   }
   async stopSession(threadId) {
     await this.openings.get(threadId)?.catch(() => {});
