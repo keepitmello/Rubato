@@ -330,7 +330,11 @@ export default function sessionPickerProbe(pi) {
     }),
     cols: 120,
     rows: 40,
-    timeoutMs: 45_000,
+    // Session lifetime, not a budget for the interaction. The per-test
+    // timeout (--test-timeout) is the real bound; a loaded CI runner spent
+    // 45s before the large paste and then failed the next wait, so the
+    // recorded failure was this session being killed out from under it.
+    timeoutMs: 240_000,
   });
   assert.equal(
     session.backend,
