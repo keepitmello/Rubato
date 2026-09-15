@@ -41,6 +41,8 @@ function executable(path, source) {
 //   running   bundle present and running; quit succeeds, relaunch succeeds
 //   quit-fail running, but the quit request itself fails
 //   quit-hang running; quit is accepted but the process never goes away
+//   helpers-linger quit succeeded, but leftover Helper processes still
+//              match a naive `Rubato.app` pattern. Relaunch must still run.
 function restartHarness(t, { engineToken = "restarted", engineExit = 0, hubPresent = true, hubExit = 0,
   guiMode = "absent", guiRelaunchExit = 0, guiRelaunchSleep = 0 } = {}) {
   const root = mkdtempSync(join(tmpdir(), "rubato-restart-"));
@@ -75,7 +77,18 @@ function restartHarness(t, { engineToken = "restarted", engineExit = 0, hubPrese
   const guiState = join(root, "gui-state");
   writeFileSync(guiState, guiMode === "off" || guiMode === "absent" ? "stopped" : "running");
   const fakePgrep = join(root, "fake-pgrep");
-  executable(fakePgrep, "#!/bin/sh\n" + `if [ "$(cat '${guiState}')" = "running" ]; then exit 0; else exit 1; fi\n`);
+  executable(
+    fakePgrep,
+    "#!/bin/sh\n" +
+      `STATE="$(cat '${guiState}')"\n` +
+      (guiMode === "helpers-linger"
+        ? "if [ \"$STATE\" = \"running\" ]; then exit 0; fi\n" +
+          "case \"$2\" in\n" +
+          "  *Contents/MacOS/Electron*) exit 1 ;;\n" +
+          "  *) exit 0 ;;\n" +
+          "esac\n"
+        : "if [ \"$STATE\" = \"running\" ]; then exit 0; else exit 1; fi\n"),
+  );
   const quitLog = join(root, "osascript-calls.log");
   writeFileSync(quitLog, "");
   const fakeOsascript = join(root, "fake-osascript");
@@ -105,6 +118,7 @@ function restartHarness(t, { engineToken = "restarted", engineExit = 0, hubPrese
     RUBATO_GUI_APP: guiApp,
     RUBATO_START_GUI: fakeStartGui,
     RUBATO_GUI_LOG: join(root, "gui-restart.log"),
+    RUBATO_GUI_WAIT_SECS: "2",
   };
   mkdirSync(env.HOME, { recursive: true });
   return {
@@ -187,6 +201,10 @@ test("restart states the CLI-reattach consequence next to the engine restart", (
 test("restart quits the app gracefully and relaunches through the single launcher", () => {
   assert.match(launcherText, /osascript/);
   assert.match(launcherText, /start-gui\.sh/);
+  // Helpers live under Rubato.app/Contents/Frameworks — waiting on the
+  // short pattern leaves the relaunch skipped after a successful quit.
+  assert.match(launcherText, /Contents\/MacOS\/Electron/);
+  assert.match(launcherText, /nohup/);
   // The embedded server owns SQLite state; a hard kill risks leaving it
   // inconsistent, so the app path never kills. (The engine comment mentions
   // kill -9 only to forbid it, so the kill assertions are scoped to the app.)
@@ -256,6 +274,14 @@ test("restart does not relaunch when the app ignores the quit request", (t) => {
   assert.match(result.stderr, /종료 요청을 받고도 끝나지 않았습니다\. 옛 코드가 그대로입니다/);
   assert.match(result.stderr, /다시 켜지 않았습니다/);
   assert.equal(harness.relaunched(), undefined);
+});
+
+test("restart relaunches even when Electron helpers still match Rubato.app", (t) => {
+  const harness = restartHarness(t, { engineToken: "restarted", engineExit: 0, hubPresent: false, guiMode: "helpers-linger" });
+  const result = harness.run(["restart"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /데스크톱 앱을 다시 켰습니다/);
+  assert.equal(harness.relaunched(), "relaunched");
 });
 
 test("updater GUI step rebuilds on disk without touching the running app", () => {
