@@ -102,7 +102,12 @@ test("restart reinstalls the release hub LaunchAgent instead of kickstarting a d
   // The fake node records every invocation with overwrite, so the last call
   // (hub, after the profile engine) is what lands in engineArgs. Full
   // restart orchestration is covered in rubato-restart.test.mjs.
-  const result = harness.run(["restart"], "", { RUBATO_LAUNCHCTL_BIN: "/usr/bin/true" });
+  // Hermetic against the desktop too: the restart verb quits a running app
+  // via osascript, so the fixture points the bundle at a missing path.
+  const result = harness.run(["restart"], "", {
+    RUBATO_LAUNCHCTL_BIN: "/usr/bin/true",
+    RUBATO_GUI_APP: "/nonexistent/rubato-test-Rubato.app",
+  });
   assert.equal(result.status, 0, result.stderr);
   assert.match(harness.engineArgs().join("\n"), /rubato-hub-restart\.mjs$/);
 });

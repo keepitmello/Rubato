@@ -60,15 +60,21 @@ case "${1-}" in
     fi
     NODE="$(live_node)" || exit $?
     # `restart` means "bring up whatever is running old code": the profile
-    # engine that serves conversations AND the remote hub. Either side is
-    # skipped cleanly when it is not on this machine, and each line says
-    # which it did. Exit 0 covers "restarted" and "nothing to restart";
-    # exit 1 means a restart was attempted and failed — the two must not
-    # look alike.
+    # engine that serves conversations, the remote hub, AND the desktop app.
+    # Each side is skipped cleanly when it is not on this machine, and each
+    # line says which it did. Exit 0 covers "restarted" and
+    # "nothing to restart"; exit 1 means a restart was attempted and failed —
+    # the two must not look alike.
     LAUNCHCTL_BIN="${RUBATO_LAUNCHCTL_BIN:-/bin/launchctl}"
+    PGREP_BIN="${RUBATO_PGREP_BIN:-/usr/bin/pgrep}"
+    OSASCRIPT_BIN="${RUBATO_OSASCRIPT_BIN:-/usr/bin/osascript}"
+    GUI_APP="${RUBATO_GUI_APP:-/Applications/Rubato.app}"
+    START_GUI="${RUBATO_START_GUI:-$HERE/../t3-integration/start-gui.sh}"
+    GUI_LOG="${RUBATO_GUI_LOG:-$HOME/.rubato-pi/logs/rubato-gui-restart.log}"
     RESTART_FAIL=0
     ENGINE_DONE=0
     HUB_DONE=0
+    GUI_DONE=0
     # Profile engine first, via restart-profile-engine.mjs as it stands
     # (SIGTERM only — kill -9 leaves the profile lock stale for 15s; the pid
     # is matched by the --agent-dir the live socket points at). Its stderr
@@ -76,7 +82,7 @@ case "${1-}" in
     if ENGINE_OUT="$("$NODE" "$HERE/restart-profile-engine.mjs")"; then
       case "$ENGINE_OUT" in
         restarted*)
-          echo "프로필 엔진을 재시작했습니다. 진행 중이던 턴은 끊겼고, 열린 CLI 터미널은 다시 붙여야 합니다 (T3는 스스로 다시 붙습니다)."
+          echo "프로필 엔진을 재시작했습니다. 진행 중이던 턴은 끊겼고, 열린 CLI 터미널은 다시 붙여야 합니다."
           ENGINE_DONE=1 ;;
         dead*)
           echo "프로필 엔진은 이미 꺼져 있어 건너뜁니다." ;;
@@ -106,8 +112,79 @@ case "${1-}" in
     else
       echo "remote hub launch agent이 없어 건너뜁니다."
     fi
-    if [ "$ENGINE_DONE" = 0 ] && [ "$HUB_DONE" = 0 ] && [ "$RESTART_FAIL" = 0 ]; then
-      echo "재시작할 것이 없습니다 (프로필 엔진·remote hub 모두 없음)."
+    # Desktop app last: it connects to the profile engine, so relaunching it
+    # before the engine restart would attach it to an engine that is about to
+    # die. The app embeds the T3 server, which loads the bridge
+    # (harness/t3-integration/src/) from the repo at startup — a running app
+    # keeps executing the previous copy until it is relaunched.
+    #
+    # The relaunch is about picking up new source, not about recovering a
+    # connection: the engine reuses its serverId across restarts, so the
+    # bridge's 1s recover() and 5s inventory reattach on their own. The
+    # success line below says so.
+    #
+    # Quit is graceful only (osascript `quit` is the same event as Dock >
+    # Quit, so before-quit handlers flush first). The embedded server owns a
+    # SQLite database; a hard kill risks leaving that inconsistent, so kill
+    # never appears on this path. Relaunch goes through start-gui.sh, the
+    # single launcher — no second way to start the app.
+    if [ ! -e "$GUI_APP" ]; then
+      echo "데스크톱 앱이 없어 건너뜁니다."
+    elif ! "$PGREP_BIN" -f 'Rubato\.app' >/dev/null 2>&1; then
+      echo "데스크톱 앱은 이미 꺼져 있어 건너뜁니다."
+    else
+      GUI_QUIT_OK=1
+      if "$OSASCRIPT_BIN" -e 'tell application "Rubato" to quit' >/dev/null 2>&1; then
+        :
+      elif "$OSASCRIPT_BIN" -e 'tell application id "app.rubato.t3" to quit' >/dev/null 2>&1; then
+        :
+      else
+        GUI_QUIT_OK=0
+      fi
+      if [ "$GUI_QUIT_OK" = 0 ]; then
+        echo "데스크톱 앱에 종료를 요청하지 못했습니다. 옛 코드가 그대로입니다 — 손으로: osascript -e 'tell application \"Rubato\" to quit'" >&2
+        RESTART_FAIL=1
+      else
+        # Wait until the process is actually gone before relaunching — never
+        # assume, the same discipline restart-profile-engine.mjs uses when it
+        # waits for the socket to die instead of assuming.
+        GUI_WAIT=0
+        while "$PGREP_BIN" -f 'Rubato\.app' >/dev/null 2>&1 && [ "$GUI_WAIT" -lt 10 ]; do
+          sleep 1
+          GUI_WAIT=$((GUI_WAIT + 1))
+        done
+        if "$PGREP_BIN" -f 'Rubato\.app' >/dev/null 2>&1; then
+          echo "데스크톱 앱이 종료 요청을 받고도 끝나지 않았습니다. 옛 코드가 그대로입니다 — 다시 켜지 않았습니다. 손으로: osascript -e 'tell application \"Rubato\" to quit'" >&2
+          RESTART_FAIL=1
+        elif [ ! -x "$START_GUI" ]; then
+          echo "데스크톱 앱은 껐지만 다시 켤 진입점이 없습니다 ($START_GUI). 앱은 스스로 돌아오지 않습니다 — 손으로: sh \"$START_GUI\"" >&2
+          RESTART_FAIL=1
+        else
+          mkdir -p "$(dirname "$GUI_LOG")" 2>/dev/null || true
+          "$START_GUI" >>"$GUI_LOG" 2>&1 &
+          GUI_PID=$!
+          sleep 1
+          GUI_STAT="$(ps -p "$GUI_PID" -o stat= 2>/dev/null || true)"
+          case "$GUI_STAT" in
+            ""|*Z*)
+              if wait "$GUI_PID" 2>/dev/null; then
+                echo "데스크톱 앱을 다시 켰습니다 (바뀐 브리지 코드를 읽습니다)."
+                GUI_DONE=1
+              else
+                echo "데스크톱 앱은 껐지만 다시 켜지지 않았습니다. 앱은 스스로 돌아오지 않습니다 — 손으로: sh \"$START_GUI\" (기록: $GUI_LOG)" >&2
+                RESTART_FAIL=1
+              fi
+              ;;
+            *)
+              echo "데스크톱 앱을 다시 켰습니다 (바뀐 브리지 코드를 읽습니다)."
+              GUI_DONE=1
+              ;;
+          esac
+        fi
+      fi
+    fi
+    if [ "$ENGINE_DONE" = 0 ] && [ "$HUB_DONE" = 0 ] && [ "$GUI_DONE" = 0 ] && [ "$RESTART_FAIL" = 0 ]; then
+      echo "재시작할 것이 없습니다 (프로필 엔진·remote hub·데스크톱 앱 모두 없음)."
     fi
     exit "$RESTART_FAIL"
     ;;
