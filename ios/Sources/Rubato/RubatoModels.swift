@@ -182,7 +182,7 @@ final class RubatoSessionExtras: ObservableObject {
 }
 
 enum HostSettings {
-    static let defaultBaseURL = URL(string: "https://wy-mac.tail4fd4a3.ts.net")!
+    static let defaultBaseURL = URL(string: "https://woomac.tail843e49.ts.net")!
     private static let urlKey = "rubato.hostBaseURL"
     private static let pinKey = "rubato.pinnedSessionIDs"
 
