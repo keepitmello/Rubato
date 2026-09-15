@@ -195,6 +195,8 @@ export class RubatoPiBridge {
       for (const request of snapshot.pendingUi) context.projection.question(request);
       context.session.status = snapshot.state.isStreaming ? 'running' : 'ready';
       if (snapshot.state.model) context.session.model = `${snapshot.state.model.provider}/${snapshot.state.model.id}`;
+      this.configureUsage(context, snapshot.state);
+      this.replayUsage(context, snapshot.messages);
       this.stateEvent(context);
       loading = false;
       for (const state of buffered) if (state.sequence > snapshot.sequence) this.applyState(context, state);
@@ -272,8 +274,9 @@ export class RubatoPiBridge {
     const provider = selection.model.slice(0, split); const modelId = selection.model.slice(split + 1);
     if (selection.model !== context.session.model) {
       if (context.session.status === 'running') throw new Error('Wait for this turn to settle before changing its model');
-      await context.client.command({ type: 'set_model', provider, modelId });
+      const applied = await context.client.command({ type: 'set_model', provider, modelId });
       context.session.model = selection.model;
+      context.projection.configureUsage({ maxTokens: applied?.contextWindow });
     }
     const { thinking, fast } = applySelectionOptions(selection.options);
     if (thinking !== undefined && thinking !== context.thinkingLevel) {
@@ -442,7 +445,24 @@ export class RubatoPiBridge {
     context.sequence = snapshot.sequence;
     context.session.status = snapshot.state?.isStreaming ? 'running' : 'ready';
     context.session.updatedAt = new Date().toISOString();
+    this.configureUsage(context, snapshot.state);
+    this.replayUsage(context, snapshot.messages);
     this.stateEvent(context);
+  }
+  configureUsage(context, state) {
+    context.projection.configureUsage({
+      maxTokens: state?.model?.contextWindow,
+      ...(typeof state?.autoCompactionEnabled === 'boolean' ? { compactsAutomatically: state.autoCompactionEnabled } : {}),
+    });
+  }
+  replayUsage(context, messages) {
+    for (let index = (messages?.length ?? 0) - 1; index >= 0; index--) {
+      const message = messages[index];
+      if (message?.role === 'compactionSummary') return;
+      if (message?.role !== 'assistant') continue;
+      context.projection.usage(message.usage, message);
+      return;
+    }
   }
   async stopSession(threadId) {
     await this.openings.get(threadId)?.catch(() => {});
