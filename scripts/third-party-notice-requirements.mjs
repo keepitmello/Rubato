@@ -21,7 +21,7 @@ export const PACKAGE_NOTICE_REQUIREMENTS = [
     requiredTerms: ["pi-lsp-client", "@rubato/lsp-core"],
   },
   {
-    path: "packages/rubato-runtime/plugin",
+    path: "packages/rubato-runtime",
     requiredFiles: ["LICENSE", "NOTICE"],
     requiredTerms: ["pi-lsp-client", "oh-my-pi", "Yeongyu Kim"],
   },

@@ -1,4 +1,4 @@
-import { existsSync, statSync } from "node:fs"
+import { statSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 
 import type { ComponentContext, RubatoComponent, SenpiExtensionAPI } from "../../extension/types"
@@ -57,9 +57,5 @@ export function createAstGrepComponent(options: AstGrepComponentOptions = {}): R
 }
 
 function resolvePackagedAstGrepEntry(importerUrl: string = import.meta.url): string {
-  const packagedEntry = fileURLToPath(new URL("../runtime/ast-grep-mcp/cli.js", importerUrl))
-  if (existsSync(packagedEntry)) return packagedEntry
-
-  const sourceTreeEntry = fileURLToPath(new URL("../../../plugin/runtime/ast-grep-mcp/cli.js", importerUrl))
-  return existsSync(sourceTreeEntry) ? sourceTreeEntry : packagedEntry
+  return fileURLToPath(new URL("../runtime/ast-grep-mcp/cli.js", importerUrl))
 }

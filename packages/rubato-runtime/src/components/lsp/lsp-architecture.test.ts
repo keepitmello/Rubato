@@ -37,7 +37,6 @@ describe("rubato-runtime lsp architecture boundary", () => {
     const sourceFiles = listSourceFiles(COMPONENT_ROOT)
     const activePatternHits = collectPatternHits([
       "packages/rubato-runtime/package.json",
-      "packages/rubato-runtime/plugin/package.json",
       ...sourceFiles,
     ])
 

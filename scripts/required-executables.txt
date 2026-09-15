@@ -43,7 +43,6 @@ install.sh
 ios/Scripts/local_xcode_verify.sh
 ios/Scripts/regenerate_xcodeproj.py
 ios/Scripts/verify_static.sh
-packages/rubato-runtime/plugin/extensions/memory-run-supervisor.mjs
 packages/rubato-runtime/src/components/memory/worker/__fixtures__/supervisor-taskkill.ts
 scripts/check-executables.mjs
 scripts/ci-local.sh
