@@ -20,6 +20,8 @@
 set -u
 
 HERE="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
+# 진행 표시. tty 가 아니면 스스로 빠지므로 파이프·테스트가 보는 것은 그대로다.
+. "$HERE/../scripts/rubato-progress.sh"
 
 PGREP_BIN="${RUBATO_PGREP_BIN:-/usr/bin/pgrep}"
 OSASCRIPT_BIN="${RUBATO_OSASCRIPT_BIN:-/usr/bin/osascript}"
@@ -27,6 +29,10 @@ GUI_APP="${RUBATO_GUI_APP:-/Applications/Rubato.app}"
 START_GUI="${RUBATO_START_GUI:-$HERE/start-gui.sh}"
 INSTALL_GUI="${RUBATO_INSTALL_GUI:-$HERE/install-gui.sh}"
 GUI_LOG="${RUBATO_GUI_LOG:-$HOME/.rubato-pi/logs/rubato-gui-restart.log}"
+# 번들을 맞추는 일은 길면 몇 분이고 출력도 수십 줄이다. 그 수십 줄은 잘
+# 끝났을 때 아무도 읽지 않으므로 기록으로 보내고, 화면에는 진행만 남긴다.
+# 실패했을 때만 꼬리를 꺼낸다 — 그때는 읽어야 하는 내용이다.
+INSTALL_LOG="${RUBATO_GUI_INSTALL_LOG:-$HOME/.rubato-pi/logs/rubato-gui-install.log}"
 # 메인 Electron 바이너리로 찾는다. 헬퍼가 Rubato.app/Contents/Frameworks 밑에
 # 살아서 짧은 패턴은 창이 닫힌 뒤에도 계속 걸리고, 그러면 다시 켜기가 조용히
 # 건너뛰어진다. 내장 T3 서버도 같은 Contents/MacOS/Electron 경로를 쓰므로 이
@@ -39,11 +45,23 @@ esac
 
 sync_bundle() {
   [ -f "$INSTALL_GUI" ] || return 0
-  sh "$INSTALL_GUI" --apply
+  mkdir -p "$(dirname "$INSTALL_LOG")" 2>/dev/null || true
+  progress_start "데스크톱 번들을 맞추는 중"
+  sh "$INSTALL_GUI" --apply >"$INSTALL_LOG" 2>&1
+  sync_status=$?
+  progress_stop
+  if [ "$sync_status" -ne 0 ]; then
+    tail -n 12 "$INSTALL_LOG" 2>/dev/null | sed 's/^/    /' >&2
+    printf '    전체 기록: %s\n' "$INSTALL_LOG" >&2
+  fi
+  return "$sync_status"
 }
 
+# 어떻게 끝나든 그리던 줄과 커서는 되돌린다.
+trap 'progress_stop' EXIT INT TERM
+
 if [ ! -e "$GUI_APP" ]; then
-  echo "데스크톱 앱이 없어 건너뜁니다."
+  ui_skip "데스크톱 앱이 없어요"
   exit 2
 fi
 
@@ -53,14 +71,15 @@ if ! "$PGREP_BIN" -f "$GUI_PROC_PATTERN" >/dev/null 2>&1; then
   # 맞추고 앱은 그대로 둔다: 이 머신이 창을 띄우고 싶어하는지는 여기서 정할
   # 일이 아니다.
   if [ ! -f "$INSTALL_GUI" ]; then
-    echo "데스크톱 앱은 이미 꺼져 있어 건너뜁니다."
+    ui_skip "데스크톱 앱은 이미 꺼져 있어요"
     exit 2
   fi
   if sync_bundle; then
-    echo "데스크톱 앱은 꺼져 있습니다. 번들만 새 코드로 맞췄으니 다음에 켜면 반영됩니다."
+    ui_ok "데스크톱 번들"
+    ui_note "앱은 꺼져 있어요. 다음에 켜면 새 코드로 떠요."
     exit 0
   fi
-  echo "데스크톱 앱은 꺼져 있고, 번들을 새 코드로 맞추지도 못했습니다. 켜면 옛 코드입니다 — 손으로: sh \"$INSTALL_GUI\" --apply" >&2
+  ui_fail "데스크톱 앱은 꺼져 있고, 번들도 새 코드로 맞추지 못했습니다. 켜면 옛 코드입니다 — 손으로: sh \"$INSTALL_GUI\" --apply"
   exit 1
 fi
 
@@ -72,22 +91,24 @@ if "$OSASCRIPT_BIN" -e 'tell application "Rubato" to quit' >/dev/null 2>&1; then
 elif "$OSASCRIPT_BIN" -e 'tell application id "app.rubato.t3" to quit' >/dev/null 2>&1; then
   :
 else
-  echo "데스크톱 앱에 종료를 요청하지 못했습니다. 옛 코드가 그대로입니다 — 손으로: osascript -e 'tell application \"Rubato\" to quit'" >&2
+  ui_fail "데스크톱 앱에 종료를 요청하지 못했습니다. 옛 코드가 그대로입니다 — 손으로: osascript -e 'tell application \"Rubato\" to quit'"
   exit 1
 fi
 
 # 정말 사라졌는지 보고 나서 다시 켠다 — 넘겨짚지 않는다.
 GUI_WAIT=0
+progress_start "데스크톱 앱이 닫히기를 기다리는 중"
 while "$PGREP_BIN" -f "$GUI_PROC_PATTERN" >/dev/null 2>&1 && [ "$GUI_WAIT" -lt "$GUI_WAIT_MAX" ]; do
   sleep 1
   GUI_WAIT=$((GUI_WAIT + 1))
 done
+progress_stop
 if "$PGREP_BIN" -f "$GUI_PROC_PATTERN" >/dev/null 2>&1; then
-  echo "데스크톱 앱이 종료 요청을 받고도 끝나지 않았습니다. 옛 코드가 그대로입니다 — 다시 켜지 않았습니다. 손으로: osascript -e 'tell application \"Rubato\" to quit'" >&2
+  ui_fail "데스크톱 앱이 종료 요청을 받고도 끝나지 않았습니다. 옛 코드가 그대로입니다 — 다시 켜지 않았습니다. 손으로: osascript -e 'tell application \"Rubato\" to quit'"
   exit 1
 fi
 if [ ! -x "$START_GUI" ]; then
-  echo "데스크톱 앱은 껐지만 다시 켤 진입점이 없습니다 ($START_GUI). 앱은 스스로 돌아오지 않습니다 — 손으로: sh \"$START_GUI\"" >&2
+  ui_fail "데스크톱 앱은 껐지만 다시 켤 진입점이 없습니다 ($START_GUI). 앱은 스스로 돌아오지 않습니다 — 손으로: sh \"$START_GUI\""
   exit 1
 fi
 
@@ -95,28 +116,30 @@ fi
 # 앱을 볼모로 잡지 않는다 — 옛 번들로라도 돌아오는 편이 앱이 없는 것보다 낫다.
 RESTART_FAIL=0
 if ! sync_bundle; then
-  echo "핀·overlay 를 다시 얹지 못했습니다. 옛 번들 그대로 다시 켭니다 — 손으로: sh \"$INSTALL_GUI\" --apply" >&2
+  ui_fail "핀·overlay 를 다시 얹지 못했습니다. 옛 번들 그대로 다시 켭니다 — 손으로: sh \"$INSTALL_GUI\" --apply"
   RESTART_FAIL=1
 fi
 
 # nohup 으로 이 스크립트의 프로세스 그룹에서 떼어 놓는다. 그러지 않으면 앞단
 # 작업이 끝나면서 새로 뜬 앱에 SIGHUP 이 갈 수 있다.
 mkdir -p "$(dirname "$GUI_LOG")" 2>/dev/null || true
+progress_start "데스크톱 앱을 켜는 중"
 nohup "$START_GUI" >>"$GUI_LOG" 2>&1 </dev/null &
 GUI_PID=$!
 sleep 1
 GUI_STAT="$(ps -p "$GUI_PID" -o stat= 2>/dev/null || true)"
+progress_stop
 case "$GUI_STAT" in
   ""|*Z*)
     if wait "$GUI_PID" 2>/dev/null; then
-      echo "데스크톱 앱을 다시 켰습니다 (바뀐 브리지 코드를 읽습니다)."
+      ui_ok "데스크톱 앱 (바뀐 브리지 코드를 읽습니다)"
     else
-      echo "데스크톱 앱은 껐지만 다시 켜지지 않았습니다. 앱은 스스로 돌아오지 않습니다 — 손으로: sh \"$START_GUI\" (기록: $GUI_LOG)" >&2
+      ui_fail "데스크톱 앱은 껐지만 다시 켜지지 않았습니다. 앱은 스스로 돌아오지 않습니다 — 손으로: sh \"$START_GUI\" (기록: $GUI_LOG)"
       RESTART_FAIL=1
     fi
     ;;
   *)
-    echo "데스크톱 앱을 다시 켰습니다 (바뀐 브리지 코드를 읽습니다)."
+    ui_ok "데스크톱 앱 (바뀐 브리지 코드를 읽습니다)"
     ;;
 esac
 exit "$RESTART_FAIL"
