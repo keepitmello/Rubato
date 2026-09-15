@@ -1,21 +1,8 @@
 # Backend selection
 
-## Default: Codex Computer Use
+## Default: Peekaboo
 
-Use the skill-carried `cua_repl` MCP server first. It provides a persistent app binding, structured accessibility state, actions, and post-action inspection through one API. The tool's own description is the source of truth for initialization and available methods.
-
-The local launcher enables only the `computer` surface. Browser tasks remain on the existing browser tools.
-
-## Fallback: Peekaboo
-
-Use Peekaboo locally with `--no-remote` when:
-
-- the ChatGPT/Codex Computer Use runtime or plugin launcher is missing;
-- the MCP server fails to start or disconnects before an action;
-- app approval, macOS permission, or target binding prevents CUA access;
-- CUA cannot expose or operate the required surface.
-
-Peekaboo is a fallback, not a blind retry mechanism. After an uncertain mutating CUA action, observe first and replay only when the action is proven not to have occurred.
+Use local Peekaboo with `--no-remote`. It lists apps and windows, reads accessibility trees, captures screenshots, and performs snapshot-bound clicks and value changes.
 
 The default Peekaboo Bridge path previously failed exact-window target attribution on this machine. Keep `--no-remote` on every Peekaboo command.
 
@@ -32,6 +19,19 @@ peekaboo help click
 
 With a snapshot, do not also pass `--app` or window flags. Prefer `set-value` for fields and `click` for semantic controls. Do not keep element IDs across navigation, rerender, or window changes.
 
-## Optional Cua Driver
+Some apps (notably Calculator) expose a CG window but no AX window. Screenshot capture can still succeed while `see` returns `ACCESSIBILITY_INCOMPLETE`. Re-observe; if AX stays empty, stop instead of guessing coordinates unless a fresh exact-window snapshot has coherent geometry.
 
-Cua Driver may remain installed, but it is not part of the automatic chain. Use it only when explicitly requested or when its AX token path is specifically needed.
+## Optional: Cua Driver
+
+Cua Driver is a local CLI (`cua-driver call`). Daemon, Accessibility, and Screen Recording can be healthy while a given window still has no AX surface.
+
+It is not part of the automatic chain. Use it only when explicitly requested.
+
+```bash
+cua-driver status
+cua-driver permissions status --json
+printf '%s\n' '{}' | cua-driver call list_apps --json
+printf '%s\n' '{}' | cua-driver call get_accessibility_tree --json
+```
+
+`call` arguments go as JSON on stdin. `get_window_state` needs both `pid` and `window_id`.
