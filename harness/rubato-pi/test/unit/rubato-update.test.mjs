@@ -46,7 +46,7 @@ function write(path, text) {
 
 const INSTALL_SKILLS_SRC = join(dirname(fileURLToPath(import.meta.url)), "../../../scripts/install-skills.sh");
 
-function setupFixture({ dirty = false, conflict = false, evidence = false, decoyStash = false, rebuildFailure = "", skillUpdate = false } = {}) {
+function setupFixture({ dirty = false, conflict = false, evidence = false, decoyStash = false, rebuildFailure = "", skillUpdate = false, profileSrc = false, profileTest = false } = {}) {
   const root = mkdtempSync(join(tmpdir(), "rubato-update-"));
   const bare = join(root, "origin.git");
   const seed = join(root, "seed");
@@ -88,6 +88,8 @@ function setupFixture({ dirty = false, conflict = false, evidence = false, decoy
   git(local, ["config", "commit.gpgsign", "false"]);
 
   write(join(seed, "note.txt"), "remote\n");
+  if (profileSrc) write(join(seed, "harness/pi-server/src/host.mjs"), "changed\n");
+  if (profileTest) write(join(seed, "harness/pi-server/test/x.test.mjs"), "changed\n");
   if (skillUpdate) {
     write(join(seed, "harness/skills/demo/SKILL.md"), "v2\n");
     write(join(home, ".agents/skills/demo/SKILL.md"), "v1\n");
@@ -305,3 +307,29 @@ for (const failure of [
     assert.equal(git(fixture.local, ["rev-parse", "HEAD"]).stdout, git(fixture.local, ["rev-parse", "origin/rubato/base"]).stdout);
   });
 }
+
+test("unattended update restarts the profile engine when pi-server source changes, not when only tests change", () => {
+  const srcResult = runUpdate(setupFixture({ profileSrc: true }));
+  const srcOut = `${srcResult.stdout}\n${srcResult.stderr}`;
+  assert.match(srcOut, /프로필 엔진 재시작/);
+
+  const testResult = runUpdate(setupFixture({ profileTest: true }));
+  const testOut = `${testResult.stdout}\n${testResult.stderr}`;
+  assert.doesNotMatch(testOut, /프로필 엔진 재시작/);
+});
+
+test("unattended update does not restart the profile engine when pi-server source did not change", () => {
+  const result = runUpdate(setupFixture());
+  const out = `${result.stdout}\n${result.stderr}`;
+  assert.doesNotMatch(out, /프로필 엔진 재시작/);
+});
+
+test("profile engine restart failure names the old engine as still running", () => {
+  const src = readFileSync(SCRIPT_SRC, "utf8");
+  assert.doesNotMatch(src, /다음 세션이 새 엔진을 띄웁니다/);
+  assert.match(src, /옛 코드가 그대로입니다/);
+  assert.match(src, /no-pid\*/);
+  assert.match(src, /timeout\*/);
+  assert.match(src, /소켓은 살아 있는데 프로세스를 찾지 못했습니다/);
+  assert.match(src, /SIGTERM 을 받고도 끝나지 않았습니다/);
+});

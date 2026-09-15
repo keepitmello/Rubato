@@ -159,6 +159,11 @@ HUB_LABEL="com.keepitmello.rubato.remote-hub"
 if echo "$CHANGED" | grep -Eq '^packages/rubato-remote-hub/|^harness/scripts/rubato-update\.sh$'; then
   /bin/launchctl print "gui/$(id -u)/$HUB_LABEL" >/dev/null 2>&1 && need_hub=1
 fi
+# 프로필 엔진도 상주 프로세스라 소스를 받아도 옛 코드로 계속 돈다. 소켓을
+# 잡고 있는 프로세스에 SIGTERM 을 보낸다(cli.mjs 가 락을 풀고 끝낸다).
+# kill -9 는 락을 15초 stale 로 남기므로 쓰지 않는다. 엔진이 없으면 건너뛴다.
+need_profile=0
+echo "$CHANGED" | grep -Eq '^harness/pi-server/src/' && need_profile=1
 
 # 공식 GUI는 핀된 T3 + overlay다. 이 머신에 깔려 있고 핀/overlay가 바뀌면 다시
 # 맞춘다. 이미 깨져 있어도 마찬가지다.
@@ -178,8 +183,9 @@ echo "  번들 스킬 → ~/.agents/skills"
 [ "$need_candidate" = 1 ] && echo "  stock-pi 엔진 설치 ${DIM}(몇 분 걸려요)${RST}"
 [ "$need_aside" = 1 ]   && echo "  Aside 프록시 재시작"
 [ "$need_hub" = 1 ]     && echo "  remote hub 재시작"
+[ "$need_profile" = 1 ] && echo "  프로필 엔진 재시작 ${DIM}(열린 CLI는 다시 붙여야 해요)${RST}"
 [ "$need_gui" = 1 ]     && echo "  공식 GUI (핀된 T3 + overlay + Rubato.app)"
-[ "$need_deps$need_prompts$need_extensions$need_engine$need_shell$need_aside$need_hub$need_candidate$need_gui" = "000000000" ] && echo "  ${DIM}그 외는 소스만 받으면 돼요${RST}"
+[ "$need_deps$need_prompts$need_extensions$need_engine$need_shell$need_aside$need_hub$need_profile$need_candidate$need_gui" = "0000000000" ] && echo "  ${DIM}그 외는 소스만 받으면 돼요${RST}"
 
 # 로컬 수정이 있어도 멈추지 않는다.
 #
@@ -452,6 +458,28 @@ fi
 if [ "$need_hub" = 1 ]; then
   /bin/sh "$HERE/rubato-pi.sh" restart >/dev/null 2>&1 \
     && ok "remote hub 재시작" || warn "remote hub 재시작 경고 — 손으로: rubato restart"
+fi
+
+# 프로필 엔진. SIGTERM 으로 죽인다 — cli.mjs 가 락을 풀고 끝낸다. kill -9 는
+# 쓰지 않는다. 진행 중인 턴이 있으면 이름을 알리고 끊는다.
+if [ "$need_profile" = 1 ]; then
+  if [ -z "$NODE" ]; then
+    warn "node 가 없어 프로필 엔진을 재시작하지 못했습니다. 옛 코드가 그대로입니다"
+  else
+    if PROFILE_OUT="$("$NODE" "$HERE/restart-profile-engine.mjs")"; then
+      case "$PROFILE_OUT" in
+        restarted*) ok "프로필 엔진 재시작" ;;
+        dead*) ok "프로필 엔진 — 이미 꺼짐" ;;
+        *) ok "프로필 엔진 — 없음" ;;
+      esac
+    else
+      case "$PROFILE_OUT" in
+        no-pid*) warn "프로필 엔진 소켓은 살아 있는데 프로세스를 찾지 못했습니다. 옛 코드가 그대로입니다 — 손으로: pgrep -lf 'cli.mjs --agent-dir'" ;;
+        timeout*) warn "프로필 엔진이 SIGTERM 을 받고도 끝나지 않았습니다. 옛 코드가 그대로입니다 — 손으로: pgrep -lf 'cli.mjs --agent-dir'" ;;
+        *) warn "프로필 엔진을 재시작하지 못했습니다. 옛 코드가 그대로입니다 — 손으로: pgrep -lf 'cli.mjs --agent-dir'" ;;
+      esac
+    fi
+  fi
 fi
 
 if [ "$need_gui" = 1 ]; then
