@@ -95,7 +95,7 @@ export const RubatoPiDriver: ProviderDriver<RubatoPiConfig> = {
       status:enabled ? "warning" : "disabled", auth:{status:"unknown"},
       checkedAt:DateTime.formatIso(yield* DateTime.now), models:[], displayName:displayName ?? "Rubato",
       ...(accentColor ? {accentColor} : {}), showInteractionModeToggle:false,
-      supportsConversationRollback:true, supportsTextGeneration:false,
+      reportsContextWindow:true, supportsConversationRollback:true, supportsTextGeneration:false,
       requiresNewThreadForModelChange:false, setup:{canAuthenticate:false,canInstall:false},
       message:"Start the external Rubato server; T3 connects without owning its process.",
     });

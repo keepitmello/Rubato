@@ -357,3 +357,57 @@ test('compaction_end from Pi is thread.state.changed compacted', () => {
   p.project({type:'compaction_end', reason:'manual', aborted:true});
   assert.equal(events.filter((event) => event.type==='thread.state.changed').length, 1);
 });
+
+test('assistant usage becomes thread.token-usage.updated in the meter shape', async () => {
+  const events=[]; const p=new EventProjection({threadId:'thread',sessionId:'session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
+  p.configureUsage({ maxTokens: 200000, compactsAutomatically: true });
+  p.project({type:'agent_start'});
+  p.project({type:'message_end', message:{role:'assistant', timestamp:1, model:'fixture', stopReason:'stop',
+    content:[{type:'text', text:'ok'}],
+    usage:{ input:100, output:20, cacheRead:50, cacheWrite:0, reasoning:8, totalTokens:170 }}});
+  p.project({type:'agent_settled'});
+  const usage = events.find((event) => event.type==='thread.token-usage.updated');
+  assert.ok(usage, 'meter event was not emitted');
+  assert.deepEqual(usage.payload.usage, {
+    usedTokens: 170, lastUsedTokens: 170, maxTokens: 200000,
+    inputTokens: 100, lastInputTokens: 100,
+    cachedInputTokens: 50, lastCachedInputTokens: 50,
+    outputTokens: 20, lastOutputTokens: 20,
+    reasoningOutputTokens: 8, lastReasoningOutputTokens: 8,
+    compactsAutomatically: true,
+  });
+  assert.equal('totalProcessedTokens' in usage.payload.usage, false);
+  assert.equal('autoCompactThreshold' in usage.payload.usage, false);
+  assert.equal('toolUses' in usage.payload.usage, false);
+  p.project({type:'message_end', message:{role:'assistant', timestamp:2, stopReason:'aborted',
+    usage:{ input:1, output:1, cacheRead:0, cacheWrite:0, totalTokens:2 }}});
+  p.project({type:'message_end', message:{role:'assistant', timestamp:3, stopReason:'stop'}});
+  assert.equal(events.filter((event) => event.type==='thread.token-usage.updated').length, 1);
+  if (process.env.T3_SOURCE) {
+    const { deriveLatestContextWindowSnapshot } = await import(`${process.env.T3_SOURCE}/apps/web/src/lib/contextWindow.ts`);
+    const meter = deriveLatestContextWindowSnapshot([{
+      kind: 'context-window.updated', payload: usage.payload.usage, createdAt: usage.createdAt,
+    }]);
+    assert.equal(meter.usedTokens, 170);
+    assert.equal(meter.maxTokens, 200000);
+    assert.equal(meter.usedPercentage, 170 / 200000 * 100);
+    assert.equal(meter.compactsAutomatically, true);
+    assert.equal(meter.totalProcessedTokens, null);
+  }
+});
+
+test('attach replays last assistant usage and stays silent after compaction', () => {
+  const events=[]; const projection=new EventProjection({threadId:'thread',sessionId:'session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
+  projection.configureUsage({ maxTokens: 200000, compactsAutomatically: true });
+  const bridge = Object.create(RubatoPiBridge.prototype);
+  const context = { projection };
+  const usage = { input:100, output:20, cacheRead:50, cacheWrite:0, reasoning:8, totalTokens:170 };
+  bridge.replayUsage(context, [{ role:'user', content:'hi' }, { role:'assistant', stopReason:'stop', usage }]);
+  const event = events.find((item) => item.type==='thread.token-usage.updated');
+  assert.equal(event.payload.usage.usedTokens, 170);
+  assert.equal(event.payload.usage.maxTokens, 200000);
+  events.length = 0; projection.lastUsage = undefined;
+  bridge.replayUsage(context, [{ role:'assistant', stopReason:'stop', usage }, { role:'compactionSummary' }]);
+  assert.equal(events.length, 0, 'pre-compaction usage must not become the meter after compact');
+});
+

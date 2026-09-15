@@ -27,6 +27,36 @@ const spawnLabel = (args, result) => nonempty(args.summary) || nonempty(detailsO
 export const toolType = (name) => SPAWN_TOOLS.has(name) ? 'collab_agent_tool_call'
   : name === 'bash' ? 'command_execution' : ['write', 'edit'].includes(name) ? 'file_change' : 'dynamic_tool_call';
 
+// Meter usedTokens is last-assistant context size, not a chars/4 estimate and not
+// billed-session totals. maxTokens is the model's contextWindow when we have it.
+const asInt = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.round(value) : undefined;
+export const contextTokensOf = (usage) => {
+  if (!usage || typeof usage !== 'object' || Array.isArray(usage)) return;
+  const total = asInt(usage.totalTokens);
+  if (total > 0) return total;
+  const sum = (asInt(usage.input) ?? 0) + (asInt(usage.output) ?? 0)
+    + (asInt(usage.cacheRead) ?? 0) + (asInt(usage.cacheWrite) ?? 0);
+  return sum > 0 ? sum : undefined;
+};
+export const tokenUsageFrom = (usage, extras = {}) => {
+  const usedTokens = contextTokensOf(usage);
+  if (usedTokens === undefined) return;
+  const maxTokens = asInt(extras.maxTokens);
+  const inputTokens = asInt(usage.input);
+  const cachedInputTokens = asInt(usage.cacheRead);
+  const outputTokens = asInt(usage.output);
+  const reasoningOutputTokens = asInt(usage.reasoning);
+  return {
+    usedTokens, lastUsedTokens: usedTokens,
+    ...(maxTokens > 0 ? { maxTokens } : {}),
+    ...(inputTokens !== undefined ? { inputTokens, lastInputTokens: inputTokens } : {}),
+    ...(cachedInputTokens !== undefined ? { cachedInputTokens, lastCachedInputTokens: cachedInputTokens } : {}),
+    ...(outputTokens !== undefined ? { outputTokens, lastOutputTokens: outputTokens } : {}),
+    ...(reasoningOutputTokens !== undefined ? { reasoningOutputTokens, lastReasoningOutputTokens: reasoningOutputTokens } : {}),
+    ...(typeof extras.compactsAutomatically === 'boolean' ? { compactsAutomatically: extras.compactsAutomatically } : {}),
+  };
+};
+
 /** Only T3-normalized events leave this boundary; no Pi protocol types in UI. */
 export class EventProjection {
   constructor({ threadId, sessionId, instanceId, emit }) {
@@ -43,7 +73,21 @@ export class EventProjection {
     this.sessionId = sessionId;
     this.text.clear(); this.thinking.clear(); this.completed.clear(); this.questions.clear();
     this.tasks.clear(); this.children.clear();
-    this.turnId = undefined; this.failed = false; this.interrupted = false;
+    this.turnId = undefined; this.failed = false; this.interrupted = false; this.lastUsage = undefined;
+  }
+  configureUsage({ maxTokens, compactsAutomatically } = {}) {
+    const window = asInt(maxTokens);
+    if (window > 0) this.maxTokens = window;
+    if (typeof compactsAutomatically === 'boolean') this.compactsAutomatically = compactsAutomatically;
+  }
+  usage(raw, message) {
+    if (message?.stopReason === 'error' || message?.stopReason === 'aborted') return;
+    const snapshot = tokenUsageFrom(raw, { maxTokens: this.maxTokens, compactsAutomatically: this.compactsAutomatically });
+    if (!snapshot) return;
+    const key = JSON.stringify(snapshot);
+    if (key === this.lastUsage) return;
+    this.lastUsage = key;
+    this.event('thread.token-usage.updated', { usage: snapshot });
   }
   begin(turnId = randomUUID()) {
     if (this.turnId) return this.turnId;
@@ -231,8 +275,14 @@ export class EventProjection {
     switch (event.type) {
       case 'agent_start': this.begin(); break;
       case 'agent_settled': this.settle(); break;
-      case 'message_start': case 'message_update': this.message(event.message, false); break;
-      case 'message_end': this.message(event.message, true); break;
+      case 'message_start': case 'message_update':
+        this.message(event.message, false);
+        this.usage(event.usage ?? event.message?.usage, event.message);
+        break;
+      case 'message_end':
+        this.message(event.message, true);
+        this.usage(event.message?.usage ?? event.usage, event.message);
+        break;
       case 'extension_ui_request': this.question(event); break;
       case 'extension_event': this.taskUpdated(event); break;
       case 'tool_execution_start': case 'tool_execution_update': case 'tool_execution_end': {
