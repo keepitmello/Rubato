@@ -128,9 +128,22 @@ case "${1-}" in
     # SQLite database; a hard kill risks leaving that inconsistent, so kill
     # never appears on this path. Relaunch goes through start-gui.sh, the
     # single launcher — no second way to start the app.
+    #
+    # Detect the main Electron binary, not `Rubato.app` alone. Helper
+    # processes live under Rubato.app/Contents/Frameworks, so the short
+    # pattern keeps matching after the window is gone and the relaunch is
+    # skipped. The embedded T3 server uses the same Contents/MacOS/Electron
+    # path, so waiting on it still covers that child. nohup detaches the
+    # relaunch from this script's process group — otherwise the foreground
+    # job exiting can SIGHUP the new app before it appears.
+    GUI_PROC_PATTERN="${RUBATO_GUI_PROC_PATTERN:-Rubato\\.app/Contents/MacOS/Electron}"
+    GUI_WAIT_MAX="${RUBATO_GUI_WAIT_SECS:-30}"
+    case "$GUI_WAIT_MAX" in
+      ''|*[!0-9]*) GUI_WAIT_MAX=30 ;;
+    esac
     if [ ! -e "$GUI_APP" ]; then
       echo "데스크톱 앱이 없어 건너뜁니다."
-    elif ! "$PGREP_BIN" -f 'Rubato\.app' >/dev/null 2>&1; then
+    elif ! "$PGREP_BIN" -f "$GUI_PROC_PATTERN" >/dev/null 2>&1; then
       echo "데스크톱 앱은 이미 꺼져 있어 건너뜁니다."
     else
       GUI_QUIT_OK=1
@@ -149,11 +162,11 @@ case "${1-}" in
         # assume, the same discipline restart-profile-engine.mjs uses when it
         # waits for the socket to die instead of assuming.
         GUI_WAIT=0
-        while "$PGREP_BIN" -f 'Rubato\.app' >/dev/null 2>&1 && [ "$GUI_WAIT" -lt 10 ]; do
+        while "$PGREP_BIN" -f "$GUI_PROC_PATTERN" >/dev/null 2>&1 && [ "$GUI_WAIT" -lt "$GUI_WAIT_MAX" ]; do
           sleep 1
           GUI_WAIT=$((GUI_WAIT + 1))
         done
-        if "$PGREP_BIN" -f 'Rubato\.app' >/dev/null 2>&1; then
+        if "$PGREP_BIN" -f "$GUI_PROC_PATTERN" >/dev/null 2>&1; then
           echo "데스크톱 앱이 종료 요청을 받고도 끝나지 않았습니다. 옛 코드가 그대로입니다 — 다시 켜지 않았습니다. 손으로: osascript -e 'tell application \"Rubato\" to quit'" >&2
           RESTART_FAIL=1
         elif [ ! -x "$START_GUI" ]; then
@@ -161,7 +174,7 @@ case "${1-}" in
           RESTART_FAIL=1
         else
           mkdir -p "$(dirname "$GUI_LOG")" 2>/dev/null || true
-          "$START_GUI" >>"$GUI_LOG" 2>&1 &
+          nohup "$START_GUI" >>"$GUI_LOG" 2>&1 </dev/null &
           GUI_PID=$!
           sleep 1
           GUI_STAT="$(ps -p "$GUI_PID" -o stat= 2>/dev/null || true)"

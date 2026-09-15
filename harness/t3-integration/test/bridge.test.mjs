@@ -72,6 +72,19 @@ test('T3 creates a new Pi session, forwards questions, reconnects and continues 
   await until(() => events.some((event) => event.type==='turn.completed'));
   assert.equal((await bridge.inventory())[0].sessionId, session.resumeCursor.sessionId);
 });
+test('continuation without a live Pi turn settles instead of leaving thinking open', async (t) => {
+  const { root, events, bridge } = await setup(t);
+  await bridge.startSession({ threadId:'idle-thread', runtimeMode:'full-access', cwd:root });
+  const before = events.filter((event) => event.type==='turn.started').length;
+  await assert.rejects(
+    () => bridge.sendTurn({ threadId:'idle-thread', continuation:true }),
+    /no running turn/,
+  );
+  const context = bridge.sessions.get('idle-thread');
+  assert.equal(context.session.status, 'ready');
+  assert.equal(context.projection.turnId, undefined);
+  assert.equal(events.filter((event) => event.type==='turn.started').length, before);
+});
 test('a dead socket on an inventory request reconnects inside the bridge instead of failing the caller', async (t) => {
   const { root, bridge, external } = await setup(t);
   await external.create({ cwd: root, title: 'Kept' });
