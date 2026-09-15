@@ -179,10 +179,11 @@ test("a window carrier survives a mode another session resolved, and still obeys
     config.setContextMode("summary");
     assert.equal(gate.notesAwareSummaryMessage(carrier, 0)?.role, "user");
 
-    // A summary the person set for the whole process is intent, and still refuses.
+    // createAgentSession builds context before session_start. A process-wide
+    // summary must not refuse the carrier here; applyResolvedMode owns that.
     delete process.env.RUBATO_CONTEXT_MODE_ORIGIN;
     process.env.RUBATO_CONTEXT_MODE = "summary";
-    assert.throws(() => gate.notesAwareSummaryMessage(carrier, 0), /작업 노트 방식/);
+    assert.equal(gate.notesAwareSummaryMessage(carrier, 0)?.role, "user");
 
     process.env.RUBATO_CONTEXT_MODE = "history-notes";
     assert.equal(gate.notesAwareSummaryMessage(carrier, 0)?.role, "user");

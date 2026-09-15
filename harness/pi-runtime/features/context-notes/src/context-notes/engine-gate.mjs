@@ -1,8 +1,8 @@
 import { readAuthoritativeBranch } from "./history-source.mjs";
 import { assertCheckpointFresh } from "./checkpoint.mjs";
 import {
-  SUMMARY_MODE, contextMode, historyNotesEnabled, historyNotesEnabledForSession,
-  historyNotesEnabledForSettings, isUserExplicitContextMode,
+  historyNotesEnabled, historyNotesEnabledForSession,
+  historyNotesEnabledForSettings,
 } from "./config.mjs";
 import { BOOTSTRAP_PREFIX, bootstrapMessage, validateTransition } from "./protocol.mjs";
 
@@ -100,22 +100,11 @@ export function notesTurnMessages(turn, agentMessages, sessionId) {
 }
 
 export function notesAwareSummaryMessage(summary, timestamp) {
-  const message = bootstrapMessage(summary, timestamp);
-  // createCompactionSummaryMessage is a plain function: no session, no settings
-  // manager, and its callers are module-level helpers that have neither. Judging
-  // this by the process-wide mode was safe while one process held one session.
-  // The app-hosted server holds many, so whichever session resolved its mode last
-  // decided for every other one, and an Astra notes session died on a turn because
-  // a Claude session next to it had just resolved summary.
-  //
-  // Refuse only when the person set summary for the whole process: that value is
-  // intent for every session in it. A session-resolved value says nothing about
-  // this session, and resuming a notes session in summary is already refused at
-  // session_start, where the branch is in hand.
-  if (message && isUserExplicitContextMode() && contextMode() === SUMMARY_MODE) {
-    throw new Error("이 세션은 작업 노트 방식으로 이어져 있어요. history-notes 모드로 다시 열어 주세요. summary 비교 실험은 새 세션에서 시작해 주세요.");
-  }
-  return message;
+  // Translate a notes-window compaction into the user-message carrier.
+  // createAgentSession calls buildSessionContext() before session_start, so a
+  // process-wide mode cannot see the session's recorded history-notes branch.
+  // applyResolvedMode at session_start owns the resume refuse.
+  return bootstrapMessage(summary, timestamp);
 }
 
 export function installSettingsGate(SettingsManager) {

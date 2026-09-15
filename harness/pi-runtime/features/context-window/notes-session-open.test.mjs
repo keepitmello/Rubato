@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test, { after } from "node:test";
@@ -40,6 +40,10 @@ const modePolicy = await import(pathToFileURL(join(
 const contextConfig = await import(pathToFileURL(join(
   runtime.codingAgentDir,
   "dist/rubato-features/context-notes/src/context-notes/config.mjs",
+)));
+const { createContextNotesExtension } = await import(pathToFileURL(join(
+  runtime.codingAgentDir,
+  "dist/rubato-features/context-notes/extension.mjs",
 )));
 
 after(() => {
@@ -91,6 +95,7 @@ function writeNotesSession(name) {
   const manager = sdk.SessionManager.create(cwd, sessionDir);
   const window0 = protocol.initialWindow();
   manager.appendCustomEntry(protocol.INIT_ENTRY, { window: window0 });
+  manager.appendCustomEntry(protocol.MODE_ENTRY, { mode: "history-notes" });
   manager.appendMessage({
     role: "user",
     content: [{ type: "text", text: "keep this session as a notes window" }],
@@ -126,14 +131,68 @@ function copySession(sourcePath, name) {
 
 const source = writeNotesSession("notes-source");
 
-test("copied notes-window session throws NOTES_RESUME_IN_SUMMARY when opened with user-explicit summary", (t) => {
+function writeModels(agentDir) {
+  writeFileSync(join(agentDir, "models.json"), JSON.stringify({
+    providers: {
+      "openai-codex": {
+        baseUrl: "http://127.0.0.1:9/v1",
+        api: "openai-completions",
+        apiKey: "unused-test-key",
+        models: [{ id: "gpt-6-astra", input: ["text"], contextWindow: 100_000, maxTokens: 4096 }],
+      },
+    },
+  }));
+}
+
+const ASTRA = {
+  provider: "openai-codex",
+  id: "gpt-6-astra",
+  name: "gpt-6-astra",
+  api: "openai-completions",
+  baseUrl: "http://127.0.0.1:9/v1",
+  reasoning: false,
+  input: ["text"],
+  contextWindow: 100_000,
+  maxTokens: 4096,
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+};
+
+async function resumeNotesSession(t, { name, cwd, env }) {
+  const agentDir = join(scratch, name + "-agent");
+  mkdirSync(agentDir, { recursive: true });
+  writeModels(agentDir);
+  const { copyPath, sessionDir } = copySession(source.sourcePath, name);
+  const opened = sdk.SessionManager.open(copyPath, sessionDir, cwd);
+  const settingsManager = sdk.SettingsManager.inMemory();
+  const resourceLoader = new sdk.DefaultResourceLoader({
+    cwd, agentDir, settingsManager,
+    noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+    extensionFactories: [
+      { name: "context-notes", factory: createContextNotesExtension({ agentDir, settingsManager, env, propagateEnv: false }) },
+    ],
+  });
+  await resourceLoader.reload();
+  const errors = [];
+  const created = await sdk.createAgentSession({
+    cwd, agentDir, settingsManager, resourceLoader,
+    sessionManager: opened,
+    model: ASTRA,
+  });
+  t.after(() => created.session.dispose());
+  await created.session.bindExtensions({
+    mode: "rpc",
+    uiContext: { notify() {}, setStatus() {}, confirm: async () => false },
+    onError(error) { errors.push(error); },
+  });
+  return { session: created.session, errors, opened };
+}
+
+test("copied notes-window session still builds context when process env is user-explicit summary", (t) => {
   withMode(t, { mode: "summary" });
-  const { copyPath, sessionDir } = copySession(source.sourcePath, "open-summary");
+  const { copyPath, sessionDir } = copySession(source.sourcePath, "open-summary-context");
   const opened = sdk.SessionManager.open(copyPath, sessionDir, source.cwd);
-  assert.throws(
-    () => opened.buildSessionContext(),
-    { message: modePolicy.NOTES_RESUME_IN_SUMMARY },
-  );
+  const context = opened.buildSessionContext();
+  assert.ok(context.messages.some((message) => textOf(message).startsWith(protocol.BOOTSTRAP_PREFIX)));
 });
 
 test("copied notes-window session opens without NOTES_RESUME_IN_SUMMARY when env is unset", (t) => {
@@ -143,3 +202,19 @@ test("copied notes-window session opens without NOTES_RESUME_IN_SUMMARY when env
   const context = opened.buildSessionContext();
   assert.ok(context.messages.some((message) => textOf(message).startsWith(protocol.BOOTSTRAP_PREFIX)));
 });
+
+test("createAgentSession resumes a history-notes session when process env is user-explicit history-notes", async (t) => {
+  withMode(t, { mode: "history-notes" });
+  const { errors, opened } = await resumeNotesSession(t, { name: "resume-explicit-notes", cwd: source.cwd, env: { RUBATO_CONTEXT_MODE: "history-notes" } });
+  assert.equal(contextConfig.historyNotesEnabledForSession(opened.getSessionId()), true);
+  assert.deepEqual(errors.map((error) => error?.message ?? String(error)).filter((message) => message.includes("작업 노트 방식")), []);
+});
+
+test("createAgentSession resumes a history-notes session after a neighbor resolved summary", async (t) => {
+  withMode(t, { mode: "history-notes" });
+  contextConfig.setContextMode("summary");
+  const { errors } = await resumeNotesSession(t, { name: "resume-after-neighbor", cwd: source.cwd, env: { RUBATO_CONTEXT_MODE: "summary", RUBATO_CONTEXT_MODE_ORIGIN: "session" } });
+  const refused = errors.map((error) => error?.message ?? String(error)).filter((message) => message.includes("작업 노트 방식"));
+  assert.deepEqual(refused, []);
+});
+
