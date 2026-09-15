@@ -34,9 +34,10 @@ export interface PiBridge {
   cursor(id: string): {kind: string; serverId: string; sessionId: string};
   transcript(id: string): Promise<{messages: ReadonlyArray<unknown>}>;
   importedMessages(id: string, messages: ReadonlyArray<unknown>): ReadonlyArray<{id:string; role:"user"|"assistant"; text:string; createdAt:string}>;
-  catalogue(cwd: string): Promise<{models: ReadonlyArray<{provider:string; id:string; name:string; reasoning?:boolean; capabilities?:{optionDescriptors?:ReadonlyArray<unknown>}|null}>; model:{provider:string;id:string}|null}>;
+  catalogue(cwd: string): Promise<{models: ReadonlyArray<{provider:string; id:string; name:string; reasoning?:boolean; capabilities?:{optionDescriptors?:ReadonlyArray<unknown>}|null}>; model:{provider:string;id:string}|null; slashCommands?: ReadonlyArray<{name:string; description?:string; input?:{hint:string}}>; skills?: ReadonlyArray<{name:string; description?:string; path:string; scope?:string; enabled:boolean; displayName?:string; shortDescription?:string}>}>;
   startSession(input: unknown): Promise<unknown>;
   sendTurn(input: unknown): Promise<unknown>;
+  compact(threadId: string, customInstructions?: string): Promise<void>;
   interruptTurn(threadId: string): Promise<void>;
   respondToRequest(threadId: string, requestId: string, decision: string): Promise<void>;
   respondToUserInput(threadId: string, requestId: string, answers: unknown): Promise<void>;
@@ -108,6 +109,9 @@ export const RubatoPiDriver: ProviderDriver<RubatoPiConfig> = {
         models:catalogue?.models.map((model) => ({slug:`${model.provider}/${model.id}`, name:model.name,
           subProvider:model.provider, isCustom:false, capabilities:model.capabilities ?? null,
           isDefault:catalogue.model?.provider===model.provider && catalogue.model?.id===model.id })) ?? [],
+        slashCommands:catalogue?.slashCommands ?? [],
+        skills:catalogue?.skills ?? [],
+        workspaceSnapshots:catalogue ? [{cwd, checkedAt, slashCommands:catalogue.slashCommands ?? [], skills:catalogue.skills ?? []}] : [],
       });
       yield* PubSub.publish(updates, current);
       return current;
@@ -120,6 +124,7 @@ export const RubatoPiDriver: ProviderDriver<RubatoPiConfig> = {
         return decodeSession(await bridge.startSession(input));
       }),
       sendTurn:(input) => request("sendTurn", async () => decodeTurn(await bridge.sendTurn(input))),
+      compaction:{type:"native", start:(id) => request("compact", () => bridge.compact(id))},
       interruptTurn:(id) => request("interruptTurn", () => bridge.interruptTurn(id)),
       respondToRequest:(id, requestId, decision) => request("respondToRequest", () => bridge.respondToRequest(id,requestId,decision)),
       respondToUserInput:(id, requestId, answers) => request("respondToUserInput", () => bridge.respondToUserInput(id,requestId,answers)),

@@ -248,7 +248,15 @@ export class EventProjection {
         else if (CANCEL_TOOLS.has(event.toolName)) this.cancelTool(event);
         break;
       }
-      case 'auto_compaction_end': this.event('thread.state.changed', { state: 'compacted' }); break;
+      case 'compaction_end':
+        if (event.aborted) break;
+        this.sawCompaction = true;
+        this.event('thread.state.changed', { state: 'compacted' });
+        break;
+      case 'auto_compaction_end':
+        this.sawCompaction = true;
+        this.event('thread.state.changed', { state: 'compacted' });
+        break;
     }
   }
 }
