@@ -218,12 +218,35 @@ export async function configureOpenCodexRoster(setup, catalog, options = {}) {
   return { status: "configured", models: roster };
 }
 
-function defaultMultiAgentRunner(command, env) {
-  const result = spawnSync(command, ["v2", "keep-native-v1", "on"], { encoding: "utf8", env, timeout: 20_000 });
+const MULTI_AGENT_STEPS = Object.freeze([
+  ["v2", "mode", "v2"],
+  ["v2", "keep-native-v1", "on"],
+]);
+
+function runOcx(command, args, env) {
+  const result = spawnSync(command, args, { encoding: "utf8", env, timeout: 20_000 });
   if (result.error || result.status !== 0) {
     const detail = `${result.stderr || ""}${result.stdout || ""}`.trim();
-    throw new Error(`OpenCodex multi-agent setup failed${detail ? `: ${detail}` : ""}`);
+    throw new Error(`OpenCodex \`${args.join(" ")}\` failed${detail ? `: ${detail}` : ""}`);
   }
+  return `${result.stdout || ""}${result.stderr || ""}`;
+}
+
+function defaultMultiAgentRunner(command, env) {
+  for (const args of MULTI_AGENT_STEPS) runOcx(command, args, env);
+  return runOcx(command, ["v2", "status"], env);
+}
+
+/** Read the effective state back from `ocx v2 status` instead of assuming the writes took. */
+export function parseMultiAgentStatus(output) {
+  const text = String(output || "");
+  const mode = /multi_agent_mode:\s*(v2 hybrid|v2|v1|default)/.exec(text)?.[1];
+  const keep = /keep_native_chatgpt_on_v1:\s*(ON|OFF)/.exec(text)?.[1];
+  return {
+    multiAgentMode: mode === "v2 hybrid" ? "v2" : mode,
+    keepNativeChatGptOnV1: keep === "ON" ? true : keep === "OFF" ? false : undefined,
+    hybrid: mode === "v2 hybrid",
+  };
 }
 
 /**
@@ -233,7 +256,14 @@ function defaultMultiAgentRunner(command, env) {
  * routed provider receives ciphertext it cannot read and the spawn dies with
  * `unreadable_encrypted_agent_task` — the model override is accepted, then the run fails.
  * `keep-native-v1` stamps ChatGPT-native catalog rows as v1 while routed rows stay v2, which is
- * the one supported way out (opencodex issue #92).
+ * the one supported way out (opencodex issue #92). The flag only takes effect under
+ * `multi_agent_mode: v2` (`applyMultiAgentMode` ignores it in `default` mode, where the upstream
+ * pin keeps Sol/Terra/Astra on v2 and the spawn still dies), so both settings are applied and the
+ * effective state is read back from `ocx v2 status` rather than assumed.
+ *
+ * `ocx agent subagents set` rewrites the OpenCodex config without this flag (observed on 2.48),
+ * so the roster is configured first and this step runs last; a later manual roster edit needs
+ * `ocx v2 keep-native-v1 on` again.
  *
  * The cost is real and belongs in the install record: a v1-stamped row is an eligible LEAF
  * worker, so a sub-agent under a native parent cannot itself delegate, and the v2-only tools
@@ -243,11 +273,15 @@ function defaultMultiAgentRunner(command, env) {
  */
 export async function configureOpenCodexMultiAgent(setup, options = {}) {
   if (!setup?.selectedProviders?.length) return { status: "native-codex-only" };
-  if (options.dryRun) return { status: "planned", keepNativeChatGptOnV1: true };
-  await (options.runner || defaultMultiAgentRunner)(setup.command, options.env || process.env);
+  if (options.dryRun) return { status: "planned", multiAgentMode: "v2", keepNativeChatGptOnV1: true };
+  const output = await (options.runner || defaultMultiAgentRunner)(setup.command, options.env || process.env);
+  const effective = parseMultiAgentStatus(output);
+  const verified = effective.multiAgentMode === "v2" && effective.keepNativeChatGptOnV1 === true;
   return {
-    status: "configured",
-    keepNativeChatGptOnV1: true,
+    status: verified ? "configured" : "unverified",
+    multiAgentMode: effective.multiAgentMode,
+    keepNativeChatGptOnV1: effective.keepNativeChatGptOnV1,
+    ...(verified ? {} : { reason: "ocx v2 status did not report mode v2 with keep-native-v1 ON; routed sub-agents under a native parent will fail with unreadable_encrypted_agent_task" }),
     tradeoff: "native ChatGPT parents use the v1 surface: sub-agents under them are leaf workers and lose followup_task/interrupt_agent/list_agents",
   };
 }
