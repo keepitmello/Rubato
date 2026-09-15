@@ -46,6 +46,16 @@ DEPS_STAMP="$T3_DIR/.rubato-gui-deps"
 # 설치 여부는 vp 의 존재가 아니라 lockfile 로 판단한다. vp 만 보면, 핀이 올라가며
 # 새 의존성이 늘어도 옛 node_modules 를 그대로 쓰고 빌드에서 resolve 실패로 터진다
 # (@daypicker/react). 락파일이 달라졌으면 받는다.
+#
+# 도장은 build_desktop 안에서만 찍으면 안 된다. 지문이 맞아 빌드를 통째로 건너뛰는
+# 길에서는 node_modules 가 이미 이 핀의 것인데도 도장이 비어 있어, 다음 업데이트가
+# 멀쩡한 설치를 다시 받는다. 두 길 모두에서 남긴다.
+record_deps_stamp() {
+  deps_hash="$(cd "$T3_DIR" 2>/dev/null && shasum -a 256 pnpm-lock.yaml 2>/dev/null | cut -d' ' -f1)"
+  [ -n "$deps_hash" ] || return 0
+  [ "$(cat "$DEPS_STAMP" 2>/dev/null || true)" = "$deps_hash" ] && return 0
+  printf '%s\n' "$deps_hash" > "$DEPS_STAMP"
+}
 build_desktop() {
   (
     cd "$T3_DIR" || exit 1
@@ -135,6 +145,7 @@ WANT="$(build_fingerprint)"
 built=0
 if [ -f "$BUNDLE" ] && [ "$(cat "$STAMP" 2>/dev/null || true)" = "$WANT" ]; then
   ok "데스크톱은 이미 이 핀에 맞다"
+  record_deps_stamp
   built=1
 else
   say "데스크톱을 빌드한다 ${DIM}(처음이면 몇 분 걸려요)${RST}"
