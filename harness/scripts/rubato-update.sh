@@ -77,12 +77,19 @@ gui_broken() {
   [ "$(readlink "$APPS_DIR/Rubato.app" 2>/dev/null)" = "$GUI_BUNDLE" ] || return 0
   return 1
 }
-repair_gui() {
-  gui_broken || return 0
-  warn "공식 GUI 설치가 깨져 있습니다. 다시 맞춥니다."
+# 공식 GUI 는 받아온 커밋이 아니라 핀 + overlay 로 만들어진 산출물이다. 그래서
+# 원격에서 받을 것이 없어도 어긋난다 — 이 머신에서 핀이나 overlay 를 고친 경우가
+# 그렇고, 그때 "이미 최신입니다" 로 끝나면 고친 사람이 손으로 install-gui.sh 를
+# 찾아 쳐야 한다. 무엇이 stale 한지는 install-gui.sh 가 핀·overlay 지문으로
+# 이미 판단하고 맞으면 빌드 없이 지나가므로, 여기서 그 판단을 다시 만들지 않고
+# 설치돼 있으면 그냥 부른다. 판단의 정본은 한 곳에 둔다.
+sync_gui() {
+  gui_installed || return 0
+  if gui_broken; then
+    warn "공식 GUI 설치가 깨져 있습니다. 다시 맞춥니다."
+  fi
   sh "$HARNESS/t3-integration/install-gui.sh" --apply \
-    && ok "공식 GUI를 다시 맞췄습니다" \
-    || fail "공식 GUI 복구에 실패했습니다."
+    || fail "공식 GUI를 맞추지 못했습니다."
 }
 
 # --check 는 세션을 띄울 때마다 돌아서 매번 fetch 한다. 보통 0.5초.
@@ -104,7 +111,7 @@ REMOTE="$(git rev-parse "origin/$BRANCH" 2>/dev/null || echo "$LOCAL")"
 
 if [ "$LOCAL" = "$REMOTE" ]; then
   [ "$MODE" = check ] && exit 0
-  repair_gui
+  sync_gui
   ok "이미 최신입니다."
   exit 0
 fi
@@ -114,7 +121,7 @@ BEHIND="$(git rev-list --count "HEAD..origin/$BRANCH")"
 AHEAD="$(git rev-list --count "origin/$BRANCH..HEAD")"
 if [ "$BEHIND" -eq 0 ]; then
   [ "$MODE" = check ] && exit 0
-  repair_gui
+  sync_gui
   ok "받을 것이 없습니다. 로컬이 $AHEAD 커밋 앞서 있습니다."
   exit 0
 fi
@@ -168,12 +175,13 @@ fi
 need_profile=0
 echo "$CHANGED" | grep -Eq '^harness/pi-server/src/' && need_profile=1
 
-# 공식 GUI는 핀된 T3 + overlay다. 이 머신에 깔려 있고 핀/overlay가 바뀌면 다시
-# 맞춘다. 이미 깨져 있어도 마찬가지다.
+# 공식 GUI는 핀된 T3 + overlay다. 받아온 디프만 보면 이 머신에서 먼저 고쳐 둔
+# 핀·overlay 를 놓친다 — 그 경우 받을 것이 있어도 GUI 만 옛 번들로 남는다.
+# 깔려 있으면 항상 부르고, 다시 만들지 말지는 install-gui.sh 가 지문으로
+# 판단한다. 이미 맞는 설치는 빌드 없이 지나간다.
 need_gui=0
 if gui_installed; then
-  echo "$CHANGED" | grep -Eq '^harness/t3-integration/' && need_gui=1
-  gui_broken && need_gui=1
+  need_gui=1
 fi
 
 printf '\n%s== 다시 만들 것 ==%s\n' "$BOLD" "$RST"
