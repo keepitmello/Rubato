@@ -9,7 +9,7 @@ import test from "node:test"
 
 import { buildHubBundle } from "./build-release.mjs"
 
-test("release hub ESM bundle loads CommonJS web-push dependencies", async (t) => {
+test("release hub ESM bundle starts without an HTTP listener", async (t) => {
   const output = await mkdtemp(join(tmpdir(), "rubato-hub-bundle-"))
   t.after(() => rm(output, { recursive: true, force: true }))
   const repository = resolve(import.meta.dirname, "..", "..")

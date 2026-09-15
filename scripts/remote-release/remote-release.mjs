@@ -12,7 +12,6 @@ import {
   assertBunVersion,
   assertMacOS,
   assertNodeVersion,
-  configureServe,
   ensureStateLayout,
   guardUpdate,
   initializeIdentity,
@@ -20,7 +19,6 @@ import {
   installZmx,
   readServeStateRecord,
   removeRubatoServeRoute,
-  restoreServeSnapshot,
   serveStatus,
   setupInstructions,
   tailscaleIdentity,
@@ -79,12 +77,9 @@ export async function install(options) {
     throw error
   }
   await atomicSymlink(relativeTarget(final, paths.current), paths.current)
-  let serveTransaction = null
   try {
     await installLaunchAgent(paths, manifest.buildId, runner, bunPath, launcherPath, tailscalePath)
-    await waitForHealth(host.httpPort, { fetchImpl: options.fetchImpl ?? fetch })
-    serveTransaction = await configureServe(tailscaleCommand, host.httpPort, join(paths.current, "web"), runner)
-    await writeServeStateRecord(paths, "present")
+    await waitForHealth(paths.socket)
     await saveBaseline(paths, runner)
     await configureCmux(options.repository, runner)
     if (!options.skipSmoke) {
@@ -96,11 +91,6 @@ export async function install(options) {
     if (zmxBackup) await rm(zmxBackup, { force: true })
     return { installed: true, configured: true, buildId: manifest.buildId, url, instructions: setupInstructions(identity) }
   } catch (error) {
-    let serveRestoreError = null
-    if (serveTransaction) {
-      try { await restoreServeSnapshot(tailscaleCommand, serveTransaction.snapshot, serveTransaction.port, serveTransaction.webRoot, runner) }
-      catch (cause) { serveRestoreError = cause }
-    }
     if (zmxBackup) await rename(zmxBackup, paths.zmx).catch(() => {})
     else if (previousZmxHash === null) await rm(paths.zmx, { force: true })
     await runner("/bin/launchctl", ["bootout", `gui/${process.getuid()}`, paths.plist], { check: false, timeoutMs: 10_000 }).catch(() => {})
@@ -110,7 +100,6 @@ export async function install(options) {
       const prior = await readJson(join(previous, "release.json"), null)
       if (prior?.buildId) await installLaunchAgent(paths, prior.buildId, runner, bunPath, launcherPath, tailscalePath).catch(() => {})
     } else await rm(paths.current, { force: true })
-    if (serveRestoreError) throw new AggregateError([error, serveRestoreError], "installation failed and the exact pre-install Serve config could not be restored")
     throw error
   }
 }
@@ -182,9 +171,9 @@ export async function uninstall(options) {
     uninstalled: true,
     sessionsLeftRunning: sessions.length,
     pushProfileRevoked: options.removePush && hadPushProfile,
-    browserUnsubscribeRequired: hadPushProfile,
-    browserCleanupCompleted: false,
-    browserCleanupInstructions: hadPushProfile ? "Open Rubato on the paired PWA and remove this host to call PushSubscription.unsubscribe(); host-side uninstall cannot perform browser cleanup." : null,
+    browserUnsubscribeRequired: false,
+    browserCleanupCompleted: true,
+    browserCleanupInstructions: hadPushProfile ? "The self-built PWA is discontinued. Host push state was revoked; leftover browser subscriptions, if any, are inert." : null,
     registryRemovalIncludesBrowserCleanup: false,
     preserved: ["journal", "snapshots", "artifacts", "audit", "logs", "launch-env.enc", "serve-state.json", "installer-state signing key", ...(options.removeRegistry ? [] : ["host.json", "owner.json", "origins.json", "favorites.json"]), ...(options.removePush ? ["push-key-material"] : ["push"])],
   }

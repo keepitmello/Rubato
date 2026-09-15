@@ -56,16 +56,13 @@ export async function doctor(paths, options = {}) {
     if (launchAgentNeedsRepair(plist, { entryPath })) throw new Error("hub LaunchAgent does not run the installed release hub")
     return { entryPath }
   })
-  await check("localhost-health", async () => {
-    if (!host) host = await readJson(paths.host)
-    return waitForHealth(host.httpPort, { attempts: 1, fetchImpl: options.fetchImpl ?? fetch })
-  })
   await check("unix-socket", async () => {
     const info = await lstat(paths.socket)
     if (!info.isSocket()) throw new Error("hub control path is not a Unix socket")
     if ((info.mode & 0o077) !== 0 || info.uid !== process.getuid()) throw new Error("hub socket is not owner-only")
     return { mode: (info.mode & 0o777).toString(8) }
   })
+  await check("localhost-health", async () => waitForHealth(paths.socket, { attempts: 1 }))
   await check("zmx-integrity", async () => {
     if (!release) release = await readJson(join(paths.current, "release.json"))
     const hash = await sha256(paths.zmx)
@@ -93,18 +90,8 @@ export async function doctor(paths, options = {}) {
     if (!host) host = await readJson(paths.host)
     const status = await serveStatus(options.tailscale ?? "tailscale", runner)
     assertNoFunnel(status)
-    if (!serveHasRubatoTarget(status, host.httpPort)) throw new Error("scoped /rubato Serve route is missing or points elsewhere")
-    return { path: "/rubato", funnel: false }
-  })
-  await check("pwa", async () => {
-    const manifest = await readJson(join(paths.current, "web", "manifest.webmanifest"))
-    const sw = await readFile(join(paths.current, "web", "sw.js"), "utf8")
-    if (manifest.scope !== "/rubato/" || manifest.start_url !== "/rubato/" || !sw.trim()) throw new Error("PWA manifest or service worker is invalid")
-    return { scope: manifest.scope, serviceWorkerBytes: Buffer.byteLength(sw) }
-  })
-  await check("push-profile", async () => {
-    const entries = await readdir(paths.push).catch((error) => error?.code === "ENOENT" ? [] : Promise.reject(error))
-    return { configured: entries.length > 0, files: entries.length }
+    if (serveHasRubatoTarget(status, host.httpPort)) throw new Error("legacy /rubato Serve route is still present")
+    return { path: "/rubato", present: false, funnel: false }
   }, { warning: true })
   await check("cmux-vault", async () => {
     const script = join(options.repository ?? process.cwd(), "harness", "scripts", "cmux-vault.mjs")

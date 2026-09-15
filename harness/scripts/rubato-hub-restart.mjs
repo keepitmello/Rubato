@@ -39,8 +39,7 @@ export async function repairRemoteHubLaunchAgent({
 async function main() {
   const result = await repairRemoteHubLaunchAgent({ force: true })
   const paths = defaultPaths()
-  const host = await readJson(paths.host)
-  await waitForHealth(host.httpPort, { attempts: 80, delayMs: 500 })
+  await waitForHealth(paths.socket, { attempts: 80, delayMs: 500 })
   process.stdout.write(JSON.stringify({ ok: true, ...result }) + "\n")
 }
 

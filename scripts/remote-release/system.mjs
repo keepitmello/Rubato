@@ -2,6 +2,7 @@ import { createPrivateKey, createPublicKey, generateKeyPairSync, randomUUID, sig
 import { spawn } from "node:child_process"
 import { access, chmod, lstat, mkdir, readFile, readdir, readlink, realpath, rm, stat, writeFile } from "node:fs/promises"
 import { constants as fsConstants, existsSync } from "node:fs"
+import { createConnection } from "node:net"
 import { basename, dirname, join, relative, resolve } from "node:path"
 import { arch, platform, tmpdir } from "node:os"
 
@@ -156,18 +157,59 @@ export async function installLaunchAgent(paths, buildId, runner = run, bunPath =
   await runner("/bin/launchctl", ["kickstart", "-k", `${domain}/${HUB_LABEL}`])
 }
 
-export async function waitForHealth(port, { attempts = 40, delayMs = 250, fetchImpl = fetch } = {}) {
+export async function waitForHealth(socketPath, { attempts = 40, delayMs = 250 } = {}) {
+  if (typeof socketPath !== "string" || socketPath.length === 0) throw new Error("hub socket path is required")
   let last = "unreachable"
   for (let index = 0; index < attempts; index += 1) {
     try {
-      const response = await fetchImpl(`http://127.0.0.1:${port}/rubato/api/v1/health`, { signal: AbortSignal.timeout(1_000) })
-      const body = await response.json()
-      if (response.ok && body?.ok === true) return body
-      last = `HTTP ${response.status}`
+      const body = await probeHubHealth(socketPath)
+      if (body?.healthy === true) return body
+      last = "hub did not report healthy"
     } catch (error) { last = error instanceof Error ? error.message : String(error) }
     if (index + 1 < attempts) await new Promise((resolveDelay) => setTimeout(resolveDelay, delayMs))
   }
   throw new Error(`localhost hub health failed: ${last}`)
+}
+
+function probeHubHealth(socketPath) {
+  return new Promise((resolveHealth, reject) => {
+    const socket = createConnection(socketPath)
+    const requestId = randomUUID()
+    const payload = Buffer.from(JSON.stringify({
+      kind: "cli.health",
+      protocol: "rubato.remote.v1",
+      requestId,
+    }), "utf8")
+    const frame = Buffer.alloc(4 + payload.length)
+    frame.writeUInt32BE(payload.length, 0)
+    payload.copy(frame, 4)
+    const chunks = []
+    const timer = setTimeout(() => {
+      socket.destroy()
+      reject(new Error("hub health timed out"))
+    }, 1_000)
+    socket.once("connect", () => socket.write(frame))
+    socket.on("data", (chunk) => chunks.push(chunk))
+    socket.on("error", (error) => {
+      clearTimeout(timer)
+      reject(error)
+    })
+    socket.on("end", () => {
+      clearTimeout(timer)
+      try {
+        const buffer = Buffer.concat(chunks)
+        if (buffer.length < 4) throw new Error("truncated hub health frame")
+        const length = buffer.readUInt32BE(0)
+        const body = JSON.parse(buffer.subarray(4, 4 + length).toString("utf8"))
+        if (body?.kind !== "hub.control-result" || body.requestId !== requestId || body.ok !== true) {
+          throw new Error(String(body?.error ?? "hub health failed"))
+        }
+        resolveHealth(body.result)
+      } catch (error) {
+        reject(error)
+      }
+    })
+  })
 }
 
 export async function tailscaleIdentity(tailscale = "tailscale", runner = run) {
