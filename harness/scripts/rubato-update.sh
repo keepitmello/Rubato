@@ -455,9 +455,23 @@ fi
 
 # 허브 재시작은 세션이 있어도 한다. zmx 세션은 허브 프로세스가 아니라서
 # LaunchAgent 를 다시 심어도 안 죽는다. 허브 소스가 안 바뀌면 need_hub=0 이라 안 건드린다.
+#
+# 허브 헬퍼를 직접 부른다. 사용자용 `rubato restart` 는 프로필 엔진까지
+# 재시작하므로 여기서 쓰면 허브만 바뀐 업데이트가 살아 있는 대화를 죽인다
+# (need_hub=1, need_profile=0). 엔진 재시작은 아래 need_profile 게이트가 전담한다.
 if [ "$need_hub" = 1 ]; then
-  /bin/sh "$HERE/rubato-pi.sh" restart >/dev/null 2>&1 \
-    && ok "remote hub 재시작" || warn "remote hub 재시작 경고 — 손으로: rubato restart"
+  . "$HERE/find-node.sh"
+  HUB_NODE="$(rubato_find_node 2>/dev/null || true)"
+  [ -n "$HUB_NODE" ] || HUB_NODE="$NODE"
+  # 손으로 할 때도 허브만 짚는다. `rubato restart` 는 프로필 엔진까지
+  # 재시작하므로, 허브 하나 실패한 자리에서 권하면 대화를 죽인다.
+  if [ -z "$HUB_NODE" ]; then
+    warn "node 가 없어 remote hub 를 재시작하지 못했습니다. 옛 코드가 그대로입니다 — 손으로: node $HERE/rubato-hub-restart.mjs"
+  elif "$HUB_NODE" "$HERE/rubato-hub-restart.mjs" >/dev/null 2>&1; then
+    ok "remote hub 재시작"
+  else
+    warn "remote hub 재시작 실패. 옛 코드가 그대로입니다 — 손으로: node $HERE/rubato-hub-restart.mjs"
+  fi
 fi
 
 # 프로필 엔진. SIGTERM 으로 죽인다 — cli.mjs 가 락을 풀고 끝낸다. kill -9 는

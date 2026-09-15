@@ -59,7 +59,57 @@ case "${1-}" in
       exit 2
     fi
     NODE="$(live_node)" || exit $?
-    exec "$NODE" "$HERE/rubato-hub-restart.mjs"
+    # `restart` means "bring up whatever is running old code": the profile
+    # engine that serves conversations AND the remote hub. Either side is
+    # skipped cleanly when it is not on this machine, and each line says
+    # which it did. Exit 0 covers "restarted" and "nothing to restart";
+    # exit 1 means a restart was attempted and failed — the two must not
+    # look alike.
+    LAUNCHCTL_BIN="${RUBATO_LAUNCHCTL_BIN:-/bin/launchctl}"
+    RESTART_FAIL=0
+    ENGINE_DONE=0
+    HUB_DONE=0
+    # Profile engine first, via restart-profile-engine.mjs as it stands
+    # (SIGTERM only — kill -9 leaves the profile lock stale for 15s; the pid
+    # is matched by the --agent-dir the live socket points at). Its stderr
+    # already names in-flight turns being cut and flows to the user untouched.
+    if ENGINE_OUT="$("$NODE" "$HERE/restart-profile-engine.mjs")"; then
+      case "$ENGINE_OUT" in
+        restarted*)
+          echo "프로필 엔진을 재시작했습니다. 진행 중이던 턴은 끊겼고, 열린 CLI 터미널은 다시 붙여야 합니다 (T3는 스스로 다시 붙습니다)."
+          ENGINE_DONE=1 ;;
+        dead*)
+          echo "프로필 엔진은 이미 꺼져 있어 건너뜁니다." ;;
+        *)
+          echo "프로필 엔진이 없어 건너뜁니다." ;;
+      esac
+    else
+      case "$ENGINE_OUT" in
+        no-pid*)
+          echo "프로필 엔진 소켓은 살아 있는데 프로세스를 찾지 못했습니다. 옛 코드가 그대로입니다 — 손으로: pgrep -lf 'cli.mjs --agent-dir'" >&2 ;;
+        timeout*)
+          echo "프로필 엔진이 SIGTERM을 받고도 끝나지 않았습니다. 옛 코드가 그대로입니다 — 손으로: pgrep -lf 'cli.mjs --agent-dir'" >&2 ;;
+        *)
+          echo "프로필 엔진을 재시작하지 못했습니다${ENGINE_OUT:+ ($ENGINE_OUT)}. 옛 코드가 그대로입니다 — 손으로: pgrep -lf 'cli.mjs --agent-dir'" >&2 ;;
+      esac
+      RESTART_FAIL=1
+    fi
+    # Remote hub, only when its launch agent is registered on this machine.
+    if "$LAUNCHCTL_BIN" print "gui/$(id -u)/com.keepitmello.rubato.remote-hub" >/dev/null 2>&1; then
+      if "$NODE" "$HERE/rubato-hub-restart.mjs" >/dev/null; then
+        echo "remote hub을 재시작했습니다."
+        HUB_DONE=1
+      else
+        echo "remote hub 재시작에 실패했습니다. 옛 코드가 그대로입니다 — 손으로: node \"$HERE/rubato-hub-restart.mjs\"" >&2
+        RESTART_FAIL=1
+      fi
+    else
+      echo "remote hub launch agent이 없어 건너뜁니다."
+    fi
+    if [ "$ENGINE_DONE" = 0 ] && [ "$HUB_DONE" = 0 ] && [ "$RESTART_FAIL" = 0 ]; then
+      echo "재시작할 것이 없습니다 (프로필 엔진·remote hub 모두 없음)."
+    fi
+    exit "$RESTART_FAIL"
     ;;
   new|attach|list|kill|remote|vault-resume|vault-fork)
     NODE="$(live_node)" || exit $?
