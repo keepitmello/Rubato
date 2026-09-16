@@ -56,9 +56,18 @@ export function splitPackageVersion(value) {
   return { name: value.slice(0, separator), version: value.slice(separator + 1) }
 }
 
+// npm 의 license 필드는 SPDX 식별자여야 하지만 비표준 철자를 쓰는 패키지가 있다.
+// 그 철자는 승인 목록의 어떤 항목과도 안 맞아서 사람이 기록을 손으로 고쳐 왔고,
+// --update 가 그 손질을 원문으로 되돌려 CI 를 세웠다. 관측된 철자만 여기서 편다.
+const LICENSE_SPELLINGS = new Map([
+  ["apache 2.0", "Apache-2.0"],
+])
+
 export function normalizeLicense(metadata) {
   const raw = typeof metadata.license === "string" ? metadata.license : metadata.license?.type ?? (Array.isArray(metadata.licenses) ? metadata.licenses.map((item) => typeof item === "string" ? item : item?.type).filter(Boolean).join(" OR ") : "")
-  return String(raw).trim().replace(/^\((.*)\)$/, "$1") || "UNKNOWN"
+  const trimmed = String(raw).trim().replace(/^\((.*)\)$/, "$1")
+  if (trimmed === "") return "UNKNOWN"
+  return LICENSE_SPELLINGS.get(trimmed.toLowerCase()) ?? trimmed
 }
 
 export function licenseTerms(expression) {

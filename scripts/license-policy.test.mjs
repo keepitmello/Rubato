@@ -10,7 +10,11 @@ const root = resolve(import.meta.dirname, "..")
 test("full bun lock has a reviewed, exact license record for every registry package", async () => {
   const packages = lockedRegistryPackages(parseJsonc(await readFile(join(root, "bun.lock"), "utf8")))
   const policy = JSON.parse(await readFile(join(root, "third_party", "npm-license-policy.json"), "utf8"))
-  assert.ok(packages.length > 700, "expected the complete workspace lock, not direct dependencies only")
+  // The guard is against reading top-level deps instead of the transitive set:
+  // the root declares 5 direct dependencies against 423 locked registry packages.
+  // The old floor of 700 was calibrated before b8e9ab800 removed the HTTP,
+  // WebSocket and push layer along with its web dependency tree.
+  assert.ok(packages.length > 300, "expected the complete workspace lock, not direct dependencies only")
   assert.deepEqual(validatePolicy(packages, policy), [])
 })
 
