@@ -6,9 +6,9 @@ export type SenpiTeamSpecErrorCode =
 
 /**
  * Raised when a senpi-task team spec cannot be normalized or validated. Carries a typed `code` so
- * callers can distinguish the three reserved-name rejection paths (raw `lead` field, member named
- * a reserved `lead`) from schema and member-vocabulary failures. Every path that
- * throws this error spawns zero members.
+ * callers can distinguish the two reserved-name rejection paths (a raw `lead` field, or a member
+ * named `lead`) from schema and model-availability failures. Every path that throws this error
+ * spawns zero members.
  */
 export class SenpiTeamSpecError extends Error {
   readonly code: SenpiTeamSpecErrorCode

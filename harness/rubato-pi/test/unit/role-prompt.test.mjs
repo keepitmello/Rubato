@@ -183,16 +183,23 @@ test("model-guide and pi runtime tell Agent callers to use model or preset, not 
   // own sentence ("Never pass a category, …"). Same fence, two shapes.
   assert.match(modelGuide, /never (pass )?a category, task type, or `subagent_type`/i);
   assert.match(piRuntime, /team_send/);
-  assert.match(piRuntime, /live delegate `category`/);
-  assert.match(piRuntime, /may pass `model` as an exact provider\/model override/);
+  // 56cc65f87 replaced the category/subagent_type member vocabulary with an
+  // explicit owner|verifier role plus an exact model from the Agent catalog.
+  // Pin the new contract AND the absence of the old one: a member spec that
+  // still says "category" is rejected by the tool, so the skill must not teach it.
+  assert.match(piRuntime, /kind: owner\|verifier/);
+  assert.match(piRuntime, /exact `model` from the same live model catalog used by `Agent`/);
+  assert.doesNotMatch(piRuntime, /delegate `category`/);
   assert.doesNotMatch(piRuntime, /does not accept Agent `model`/);
   assert.doesNotMatch(piRuntime, /from the rubato-pi adapter/);
 });
 
-test("pi runtime lets team members pass an exact model override", () => {
+test("pi runtime makes every team member declare a role and an exact model", () => {
   const piRuntime = readFileSync(join(promptSourceRoot, "../skills/agent-taskforce/runtimes/pi.md"), "utf8");
-  assert.match(piRuntime, /live delegate `category`/);
-  assert.match(piRuntime, /may pass `model` as an exact provider\/model override/);
+  assert.match(piRuntime, /Every `team_create` member declares `kind: owner\|verifier`/);
+  assert.match(piRuntime, /plus optional `effort`/);
+  // The lead session is never a spawnable member; the schema has no lead field.
+  assert.match(piRuntime, /never declared as a member/);
   assert.doesNotMatch(piRuntime, /does not accept Agent `model`/);
 });
 
