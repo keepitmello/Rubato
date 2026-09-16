@@ -71,6 +71,7 @@ export function catalogSlugs() {
 }
 
 export function isPickerModel(item, current = null) {
+  if (item.provider === "openai") return false;
   if (current && current.provider === item.provider && current.id === item.id) return true;
   return (MODEL_ORDER[item.provider] ?? []).includes(item.id);
 }

@@ -87,3 +87,16 @@ test('selection options map T3 TraitsPicker ids onto Pi thinking and /fast', () 
   assert.deepEqual(applySelectionOptions([{ id: 'serviceTier', value: 'priority' }]), { thinking: undefined, fast: true });
   assert.throws(() => applySelectionOptions([{ id: 'unknown', value: 'x' }]), /Unsupported Pi option/);
 });
+
+test('T3 catalogue never lists the OpenAI API provider, even as the current model', () => {
+  const models = [
+    { provider: 'openai', id: 'gpt-6-astra', name: 'GPT-6 Astra', api: 'openai-responses' },
+    { provider: 'openai-codex', id: 'gpt-6-astra', name: 'GPT-6 Astra', api: 'openai-codex-responses' },
+    { provider: 'xai', id: 'grok-4.6', name: 'Grok 4.6' },
+  ];
+  const catalog = catalogForPicker(models, { provider: 'openai', id: 'gpt-6-astra' });
+  assert.deepEqual(catalog.map((item) => `${item.provider}/${item.id}`), [
+    'openai-codex/gpt-6-astra',
+    'xai/grok-4.6',
+  ]);
+});

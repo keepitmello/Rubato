@@ -8,6 +8,8 @@ import {
   SUPPORTED_PROVIDER_IDS,
   builtinProviderIds,
   foreignProviderIds,
+  installOpenAiApiRefusal,
+  refuseOpenAiApiModel,
 } from "../../src/provider-ids.mjs";
 
 test("supported ids stay out of the foreign disable list", () => {
@@ -17,6 +19,7 @@ test("supported ids stay out of the foreign disable list", () => {
   }
   assert.ok(foreign.includes("vercel-ai-gateway"));
   assert.ok(foreign.includes("alibaba-token-plan"));
+  assert.ok(foreign.includes("openai"));
 });
 
 test("frozen builtin ids match the installed pi-ai catalog union", async () => {
@@ -30,4 +33,24 @@ test("frozen builtin ids match the installed pi-ai catalog union", async () => {
     ]),
   ].sort();
   assert.deepEqual([...BUILTIN_PROVIDER_IDS].sort(), live);
+});
+
+test("openai API model selection and requests are refused", () => {
+  assert.doesNotThrow(() => refuseOpenAiApiModel({ provider: "openai-codex", id: "gpt-6-astra" }));
+  assert.throws(
+    () => refuseOpenAiApiModel({ provider: "openai", id: "gpt-6-astra" }),
+    /OpenAI API is disabled/,
+  );
+  const events = [];
+  const pi = { on: (name, handler) => events.push([name, handler]) };
+  installOpenAiApiRefusal(pi);
+  assert.deepEqual(events.map(([name]) => name), ["model_select", "before_provider_request"]);
+  const select = events[0][1];
+  const request = events[1][1];
+  assert.doesNotThrow(() => select({ model: { provider: "openai-codex", id: "gpt-6-astra" } }));
+  assert.throws(() => select({ model: { provider: "openai", id: "gpt-5.5" } }), /OpenAI API is disabled/);
+  assert.throws(
+    () => request({}, { model: { provider: "openai", id: "gpt-6-astra" } }),
+    /OpenAI API is disabled/,
+  );
 });
