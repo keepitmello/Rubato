@@ -8,8 +8,9 @@ const SORT_NEEDLE = "    sortModels(models) {\n        const sorted = [...models
 
 // B7: 피커에 드는 건 지원 7사만. models.json disabledProviders(39개)와
 // PROVIDER_ORDER는 오늘 겹치지 않아서(교집합 없음) 결과는 같고, 모르는
-// 신원(provider)은 기본 숨김이 안전하다. 현재 모델은 예외로 둔다.
-const SORT_REPLACEMENT = "    sortModels(models) {\n        return sortModelItems(models.filter((item) => PROVIDER_ORDER.includes(item.provider) || modelsAreEqual(this.currentModel, item.model)));\n    }";
+// 신원(provider)은 기본 숨김이 안전하다. 현재 모델은 예외로 두되 openai API
+// 는 예외에서 뺀다 — 과금 경로라 현재값이어도 고르면 안 된다.
+const SORT_REPLACEMENT = "    sortModels(models) {\n        return sortModelItems(models.filter((item) => item.provider !== \"openai\" && (PROVIDER_ORDER.includes(item.provider) || modelsAreEqual(this.currentModel, item.model))));\n    }";
 
 const LABEL_NEEDLE = "            const isCurrent = modelsAreEqual(this.currentModel, item.model);\n            const favoriteMarker = isFavoriteModel(this.favoriteIds, item.fullId)\n                ? theme.fg(\"success\", \"* \")\n                : theme.fg(\"dim\", \"  \");\n            let line = \"\";\n            if (isSelected) {\n                const prefix = theme.fg(\"accent\", \"→ \");\n                const modelText = `${favoriteMarker}${theme.fg(\"accent\", item.id)}`;\n                const providerBadge = theme.fg(\"muted\", `[${item.provider}]`);\n                const checkmark = isCurrent ? theme.fg(\"success\", \" ✓\") : \"\";\n                line = `${prefix}${modelText} ${providerBadge}${checkmark}`;\n            }\n            else {\n                const modelText = `  ${favoriteMarker}${item.id}`;\n                const providerBadge = theme.fg(\"muted\", `[${item.provider}]`);\n                const checkmark = isCurrent ? theme.fg(\"success\", \" ✓\") : \"\";\n                line = `${modelText} ${providerBadge}${checkmark}`;\n            }";
 
