@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { patchInteractiveTuiInput } from "../../../pi-runtime/features/tui-input/patches.mjs";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -11,7 +11,15 @@ const interactivePath = join(
   fileURLToPath(new URL("../../../pi-runtime/node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/interactive-mode.js", import.meta.url)),
 );
 
-test("stock interactive patch calls handoffBootChromeForStockPi immediately before ui.start", () => {
+// Reads the vendored stock engine, which lives in harness/pi-runtime's 524MB
+// dependency tree. ci-local.sh does not install that tree, so state the
+// precondition instead of failing on its absence; pi-runtime-ci installs it
+// and runs this file, which is where the assertion actually guards CI.
+const stockEngineInstalled = existsSync(interactivePath);
+
+test("stock interactive patch calls handoffBootChromeForStockPi immediately before ui.start", {
+  skip: stockEngineInstalled ? false : "stock engine absent; run `npm --prefix harness/pi-runtime ci` first",
+}, () => {
   const src = readFileSync(interactivePath, "utf8");
   const next = patchInteractiveTuiInput(src);
   assert.match(next, /RUBATO_BOOT_CHROME_HREF[\s\S]*handoffBootChromeForStockPi[\s\S]*this\.ui\.start\(\)/);
