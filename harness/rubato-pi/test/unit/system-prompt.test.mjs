@@ -240,7 +240,7 @@ test("print and json CLI flags are non-interactive; rpc and text are not", () =>
 
 test("print sessions inline the dispatched contract; interactive ones do not", () => {
   const dispatched = () => "# Dispatched\nProvisional: the sender's reading, not ground truth.";
-  const returned = () => "# Return\nBoss report only.";
+  const returned = () => "# Return\nActionable return.";
   const printed = replaceSystemPrompt("", "lead", {
     ...loaders(),
     argv: ["--print", "hello"],
@@ -250,7 +250,7 @@ test("print sessions inline the dispatched contract; interactive ones do not", (
   assert.match(printed, /# Dispatched/);
   assert.match(printed, /Provisional: the sender's reading/);
   assert.match(printed, /# Return/);
-  assert.match(printed, /Boss report only/);
+  assert.match(printed, /Actionable return/);
   assert.ok(printed.indexOf("Working agreement") < printed.indexOf("# Dispatched"));
   assert.ok(printed.indexOf("# Dispatched") < printed.indexOf("# Return"));
 
@@ -272,7 +272,7 @@ test("agent start inherits process argv so a print child keeps the contract afte
       ...loaders(),
       argv: ["--mode", "json"],
       dispatchedSkillSection: () => "# Dispatched\nProvisional: sender reading.",
-      returnSkillSection: () => "# Return\nBoss report only.",
+      returnSkillSection: () => "# Return\nActionable return.",
     },
   );
   assert.match(next, /# Dispatched/);
@@ -301,7 +301,7 @@ test("print sessions receive the bundled return contract and a concrete detail p
     home: () => "/tmp/fake-home",
   });
   assert.match(section, /# Return/);
-  assert.match(section, /Boss report only/);
+  assert.match(section, /Actionable return/);
   assert.doesNotMatch(section, /^---/);
   assert.match(section, /This run's detail file: \/tmp\/fake-home\/\.rubato-pi\/agent\/reports\/2026-09-02T00-00-00-000Z-return\.md/);
 });
@@ -327,4 +327,15 @@ test("return detail path sits next to the session file, or under reports when th
     }),
     "/tmp/agent-home/reports/2026-09-02T12-00-00-000Z-return.md",
   );
+});
+
+test("explicit owner and verifier identity survives a custom prompt and role rebuild", () => {
+  const customLoad = () => "# Custom user instructions\nPreserve this custom prompt.";
+  const hooks = { loadRolePrompt: customLoad, skillsSection: () => "", argv: [] };
+  const owner = replaceSystemPrompt("", "owner", hooks);
+  const verifier = replaceSystemPrompt(owner, "verifier", hooks);
+  assert.match(verifier, /Preserve this custom prompt/);
+  assert.match(verifier, /^Role: verifier$/m);
+  assert.doesNotMatch(verifier, /^Role: owner$/m);
+  assert.equal(replaceSystemPrompt(verifier, "verifier", hooks), verifier);
 });

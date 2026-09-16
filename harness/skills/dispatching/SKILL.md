@@ -47,7 +47,7 @@ Binding: the things you are the canon of:
 - The outcome and why it matters.
 - Done evidence: what will count as done for this outcome.
 - Write ownership and off-limits paths; these protect other sessions' work.
-- The budget: the elapsed time, spend, or scope growth at which the worker returns even though nothing is blocked. Name a number, and say that returning at budget with the surface still open is a valid completion.
+- The budget: the elapsed time, spend, or scope growth at which the worker returns even though nothing is blocked. Name a number, and say that returning at budget with the surface still open is a valid return, not proof that the outcome is satisfied.
 - Constraints that carry a named authority source: the user asked for it, a spec or active frame states it, an external contract or another session's ownership requires it. Name the source next to the constraint.
 - Frozen items: values, behaviors, feels, layouts, or copy the user has locked ("keep this", "do not touch", "freeze"). List each one in the brief with its source and date ("physics constants and the formula that uses them: frozen, user, 2026-08-14"). A frozen item that lives only in a document the worker was not told to read does not exist for that worker. If the task cannot be completed without changing a frozen item, the worker stops and returns with that conflict; it does not choose between the task and the freeze, and it does not satisfy the freeze by leaving the old value in a comment while replacing what uses it.
 
@@ -76,7 +76,7 @@ When the surface is visual or felt (a screen, a sound, a control feel), the retu
 
 Part of every dispatch is choosing who gets it. If an agent already worked on this same problem, send the next task to that agent: it has already read the files, and a new one would read them all again. This holds when the work moves from looking to building, from building to fixing a failed test, or when you changed your mind about the approach after seeing its report.
 
-Start a new agent for three reasons only: you want a second opinion that has not seen the first agent's thinking (a reviewer), the task is about a different problem, or the old agent is stuck on a wrong idea it cannot let go of. A reviewer starting cold is the point, not a cost. A stronger model being available is not one of the three; once you have decided on a new agent, Skill(model-guide) picks its model.
+A fresh session needs a concrete reason: a genuinely different outcome, independent review, a persistently refuted premise the old session cannot release, unavailable continuation, or an explicit approved reassignment whose remaining benefit repays the handoff. A stronger model merely being available is not enough. For an actual reassignment, preserve artifacts, current modifications, refuted hypotheses, remaining checks and authority; do not transfer an unexplained failure and call it escalation. Once a new assignment is justified, Skill(model-guide) chooses its model. Keep related work with the current session whenever it remains the useful choice.
 
 If `AgentSend` says the agent cannot be continued (it was evicted, cancelled, crashed, or expired), start a new one and pass along whatever the old one left behind (its report, files, evidence) as leads to verify. If nothing was left, say so in the brief.
 
@@ -84,8 +84,26 @@ If `AgentSend` says the agent cannot be continued (it was evicted, cancelled, cr
 
 A stalled worker has a shape you can see from outside: budget draining while nothing new appears (no edit, no test, no narrowed hypothesis appropriate to the task) and the same surface being read again. That shape, not elapsed time alone, is the signal.
 
-Cut in and ask. Asked directly, a worker usually knows exactly what blocked it, and the answer arrives in one exchange where another hour of silence would have produced nothing. Steering keeps the thread, as above; a replacement pays a cold read for the same brief.
+Ask the current owner what blocked progress and request the evidence needed to choose a response. A declared long-running check or expected dependency wait is not a stall merely because no message arrived. Owners manage local corrections, helpers and integration; the lead addresses intent, commitments and responsibility changes rather than selecting the next debugging command.
+
+Budget exhaustion, a failed test or repeated advice is not proof of model incapability. Distinguish target defects, invalid measurements, environment/permission failures, brief conflicts, oversized scope and a refuted approach. Continue, obtain bounded peer evidence, revise an authorized method or explicitly reassign according to that cause. Do not impose a retry count or cheapest-first failure ladder.
 
 ## When it comes back empty
 
 A dispatch that ends without the artifact its task type should produce (no edit or test for a build, no anchor or narrowed hypothesis for an investigation, no verdict for a review) is not finished, and not a reason to spawn the next worker. A visual or felt surface is the exception: a return after the first rendered state, carrying screenshots and the points to judge, has produced its artifact. That is a completed turn, not an empty one; the next move is showing it to the user, not resending the brief. For everything else: Recover the cause from the same session first. Ask which premise or constraint blocked it, with evidence. Classify (infrastructure failure, oversized surface, brief conflict, misrouting) before anything is resent. An unchanged brief handed to a new worker carries the shared cause with it; a worker swap is not a frame change.
+
+## Account for the extra context before delegating
+
+The sending owner chooses local support; the lead does not relay those assignments.
+Name what the separate session contributes and what work stays with the sender.
+Consider briefing, duplicate reading, result integration, waiting and shared resource
+contention as well as token volume. Do not fabricate savings from the mere presence
+of a cheaper model. Coupled judgment and implementation can remain in one strong
+session; bounded helpers still reason inside their assignment.
+
+For a technical integration assignment, name the accountable owner and shared write
+surface. For independent verification, send authoritative artifacts, acceptance
+criteria and actual state rather than the producer's reasoning or desired verdict.
+Use an existing approved verifier when it covers the claim. A verifier does not need
+a further verifier automatically, and the lead's fulfillment decision does not
+require redoing the owner's implementation or the verifier's checks.

@@ -1,33 +1,39 @@
 ---
 name: return
-description: "Final stdout contract from a non-interactive worker to its dispatcher: one executive layer, details in files."
+description: "Non-interactive worker stdout: one actionable result layer with details in files. Distinguish a valid return, unfinished work and a fulfilled outcome."
 ---
 
 # Return
 
-This is the contract for what you put on stdout when the session is non-interactive (`rubato dispatch` / `--print` / `--mode json`). Interactive and `--mode rpc` sessions ignore it. The caller is `rubato dispatch`; `--print` is the engine switch it already uses. Dispatch may truncate caller stdout further and leave the full answer in `last.stdout`.
+This contract applies to non-interactive `rubato dispatch` / `--print` /
+`--mode json` output. Interactive and `--mode rpc` sessions ignore it. The caller
+may truncate stdout and retain the full output in `last.stdout`.
 
-## Boss report only
+## Actionable return
 
-Final stdout is one layer: a report a client can act on without reading the repo.
+Keep stdout to a short result, any needed decision or approval, and evidence paths.
+State whether the assigned outcome is satisfied, partially covered at budget,
+blocked, measurement-invalid, or no longer required by an approved decision.
+A supported absent finding may satisfy an investigation; it does not automatically
+finish another workstream. A completed process is not mission acceptance.
 
-Include, and only include:
-
-- Done or not done — the outcome, in one sentence.
-- What the client must decide.
-- What still needs the user's approval.
-- Evidence as file paths.
-
-A few hundred characters. No code citations. No command output. No file:line lists. No commit dumps. No stack traces.
+Do not repeat code citations, command output, file/line lists, commit dumps or
+stack traces here. Put the technical record in the detail artifact.
 
 ## Detail file
 
-Write the technical record — files and lines changed, commands and their results, rationale, commit hash — to a file. Put that path on stdout as one line.
+Record the artifact state, actual changes/findings, checks and their results,
+intent/criterion revision, limitations, material support used, and what remains.
+Use an existing artifact for the same purpose; do not duplicate the whole record.
 
-Default location (harness fills the concrete path for this run below):
+Default path supplied by the harness:
 
-- Session file in use: `<session-file>.return.md`, next to the session.
-- `--no-session` or no session file: `~/.rubato-pi/agent/reports/<stamp>-return.md`, sibling of `sessions/`. Create the directory if needed.
-- `RUBATO_RETURN_DETAIL` overrides both.
+- With a session file: `<session-file>.return.md`.
+- Without one: `~/.rubato-pi/agent/reports/<stamp>-return.md`.
+- `RUBATO_RETURN_DETAIL` overrides the path when provided.
 
-If you cannot write the file, say so on stdout and stop. Do not pour the detail into stdout instead.
+Create needed directories. If the detail file cannot be written, report that
+delivery failure rather than claiming completion or flooding stdout. The sender
+uses the result for its own assigned responsibility; technical integration belongs
+to its named owner, independent verdict to its verifier, and user fulfillment
+discussion to the lead.

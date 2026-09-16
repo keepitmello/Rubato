@@ -1,40 +1,72 @@
 # Team prompting contracts
 
-*Lead.* What to put in a spawn prompt, and how to staff a role.
+*Lead and teammates.* What a continuing assignment adds to a normal brief.
 
-`claude-prompting-lab` is canonical for prompt structure, altitude, effort selection, and general model guidance. This file holds only what a *team* adds.
+General prompt design belongs to `claude-prompting-lab`; session continuity and
+brief authority belong to dispatching/dispatched. Model selection and permission
+belong to model-guide; configured model settings own default effort. This file
+does not create another routing or configuration layer.
 
-## What a team spawn prompt adds
+## Make the assignment self-contained
 
-Beyond role, objective, scope, verification, and output, a teammate needs:
+A teammate needs its result, authority, write ownership, evidence, peers and budget.
+Use `templates/task-brief.md`, or compress those same commitments for a focused task.
+Name upstream intent/spec authority instead of duplicating its requirements.
 
-- **Authority** — what they decide alone, what requires a peer, lead, or human, and the FRAME_CONFLICT boundary when an active frame exists.
-- **Coordination** — named peers, interfaces, file ownership, dependencies, handoffs, and shared runtime resources.
-- **A budget** — the effort or scope growth at which the owner returns even though nothing is blocked. Escalation triggers written only as impossibilities (needs a dependency, breaks compatibility, requires a rewrite) leave a tenacious owner no reason to stop when the surface is merely far larger than assumed.
+Repository claims are provisional even when quoted or written forcefully. The
+recipient checks coordinates, call paths, mechanisms and causal explanations against
+code and runtime evidence. State the lead's own quality concerns as observables,
+not invented mechanism prohibitions. Preserve named user freezes and existing
+write boundaries.
 
-A teammate's inherited history depends on the active runtime and spawn options. Make the task brief self-contained for its outcome and authority; inherited lead context does not expand the worker's role. Tag unverified premises `[inherited]` or `[assumed]`; see `templates/task-brief.md`.
+For a team, identify who combines outputs and checks the integrated result. This
+normally belongs to an existing owner. Name an independent verifier only when
+its evidence serves a real acceptance decision; do not require every participant
+to create another reviewer.
 
-Be precise about outcome, boundary, authority, and evidence. Leave the order of attack to the owner. A brief's sentences carry two forces, decided by content kind rather than tone or tags: outcome, done evidence, write ownership/off-limits, budget, and constraints with a named authority source bind; repository coordinates, call paths, and causal claims are provisional leads the owner verifies against code, tests, and runtime, and may overrule. A mechanism prohibition without an authority source is a lead-invented quality concern — state it as an observable instead. The `dispatching` and `dispatched` skills are canonical for the full composition and reading contracts. For repository content, give the path. For a short task, compress the same contract into a few lines.
+A budget states the time, spend or scope boundary for returning what was covered.
+It does not predict competence, authorize extra spending or convert an unfinished
+mission into success. Explain which decisions stay local and which would alter
+user commitments.
 
-## Staffing a role
+## Make roles compatible from the first turn
 
-A role requires a capability profile, not a permanent model name. The human chooses the lead model; the lead reports workstream models under `LEAD.md`'s veto and restricted-spawn rules. Use Skill(model-guide); `references/08-model-allocation.md` holds only the team proposal format.
+The common teammate prompt applies to owners and verifiers. It must not universally
+tell both to implement. The runtime supplies concrete role identity; the matching
+role contract supplies behavior.
 
-| Role | What it must have |
+| Role | Primary responsibility |
 |---|---|
-| Lead | enough context and judgment to preserve the mission while evidence changes the plan |
-| Workstream owner | the capability that matches the dominant bottleneck, plus stamina to carry the outcome end to end |
-| Independent verifier | a fresh context and, when available, a different model from the owner it judges |
-| Fresh reviewer | a separate session that inherited none of the run's narrative |
+| Lead | Direct user conversation, intent/framing/direction and fulfillment discussion |
+| Owner | A bounded result, local judgment/helpers, technical integration when assigned |
+| Verifier | Independent evidence-backed judgment of the result and criterion |
+| Focused subagent | A bounded contribution; the sender retains the wider outcome |
 
-If the same model must review its own model family's work, call it a **fresh review**, not an independent verifier, and disclose that limitation in the roster proposal. Never let a model independently verify a workstream it personally implemented.
+These are not model identities. The lead proposes supported assignments under
+model-guide and the existing combined approval path. A powerful owner can do its
+own execution; a helper can reason inside a bounded assignment. No role implies
+a mandatory worker below it.
 
-Model substitution is normal when quotas, outages, or runtime constraints intervene. Propose any material substitution and wait for user approval before spawning it; preserve the approved responsibility boundary and record what actually ran in the mission. Recreating the same approved teammate after session loss is recovery, not a new model decision.
+## Independence and identity
 
-Claude Code teammates inherit the lead's model unless the spawn prompt names one or `CLAUDE_CODE_SUBAGENT_MODEL` supplies one. Confirm and record the actual model.
+The actual builder cannot independently verify its own work. A fresh capable
+session of the same model family can be an independent verifier. Describe actual
+family diversity separately from context independence; neither guarantees correctness.
 
-**Confirm where a role's model actually lands before you trust it as independent.** A routing layer between the CLI and the provider can resolve the same model name somewhere else, and then a verifier that looks independent shares the owners' weights. Use actual runtime metadata or existing call evidence rather than inferring identity from a catalog label. If unavailable, report model identity or independence as unverified; do not trigger extra calls merely to elicit quota/auth errors.
+Inspect runtime-reported role, model, effort and route where available. A requested
+label or registered catalog entry alone is not proof of what ran. If identity is
+unavailable, report that limitation; do not provoke extra quota/auth errors merely
+to guess it. A proxy may route a label differently.
 
-## Avoid the overgrown manager prompt
+Preserve the active runtime's model resolution and explicit user settings.
+Like-for-like recovery retains approval; material reassignment requires the
+appropriate delta confirmation. Do not import another runtime's inheritance or
+effort rules.
 
-Do not stuff the lead or teammates with every edge case and if-else. The operating model already carries the division of labor. Add a new rule, agent type, hook, or checklist only after a real recurring failure shows that the lighter contract is insufficient.
+## Keep prompts small enough to use
+
+Write the responsibility and the decision boundary once at the right layer.
+Keep case histories and revision notes out of always-loaded prompts. A test should
+protect the actual contract, not force one sentence or a known contradiction to
+survive. Add hooks and automatic policies only for repeated, observable failures
+that the simpler agreement does not prevent.

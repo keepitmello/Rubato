@@ -1,40 +1,43 @@
 ---
 name: agent-taskforce
-description: "Read before the final execution-shape decision for independent outcomes, substantial continuing ownership or consequential coordination/review. Resolve intent from evidence, then confirm a readable intent/roster proposal before staffing. The skill may choose no team; it never requires an interview."
+description: "Read before deciding on continuing owners, independent outcomes or consequential coordination/review. Preserve the user conversation and frame; staff only when separate responsibility repays its cost. Resolve intent and confirm a readable intent/roster proposal. May choose no team."
 ---
 
 # Agent Taskforce
 
-Run the team like a small company: the lead protects the goal and cross-workstream decisions, each owner owns a bounded outcome end to end, and an independent verifier is added only when the risk justifies it. Responsibility, authority, and evidence over rules.
+The lead's primary job is to work directly with the user on intent, framing and
+direction throughout the run. Owners carry bounded outcomes end to end, including
+local judgment, delegation and technical integration. Verifiers own independent
+evidence and verdicts. These are responsibility boundaries, not model tiers.
 
 ## Which role are you in?
 
-- **You are deciding whether a team helps, assembling one, or running one** → read `LEAD.md`. It covers routing, the operator's framing and lead choices, roster report, staffing, delegation, integration, and completion.
-- **You were spawned into a workstream** → read `TEAMMATE.md`. It routes you to your role contract and the few shared documents that may apply.
-
-If neither fits — you are revising this skill — start from `references/07-source-map.md`.
+- Deciding on or operating a team: read `LEAD.md`.
+- Assigned as an owner or verifier: read `TEAMMATE.md` and its matching contract.
+- Revising this skill: start from `references/07-source-map.md` and preserve the
+  regression scenarios; do not turn observed incidents into a standing bureaucracy.
 
 ## Runtime
 
-This skill owns scope, responsibility, approved staffing, evidence, and completion. The active harness owns sessions, lifecycle, peer messaging, and visibility.
+The active harness owns sessions, lifecycle, messaging, tool availability and
+actual role/model identity. Read its adapter before staffing:
 
-Read the adapter for the harness you are in before staffing:
+- rubato-pi: `runtimes/pi.md`
+- Claude Code: `runtimes/claude-code.md`
+- fx: `runtimes/fx.md`
 
-- Claude Code → `runtimes/claude-code.md`
-- fx → `runtimes/fx.md`
-- rubato-pi / Senpi → `runtimes/pi.md`
+This is the Rubato/shared CLI edition. The separate `rubato-codex` plugin is not
+generated from these operating instructions and is outside this revision.
 
-This is the Rubato/shared CLI edition. Codex uses the separate `rubato-codex`
-plugin's taskforce, model-guide and native roles; do not install this edition
-as its operating layer or generate Codex role files from it.
+## Scope of this skill
 
-## What this skill does not contain
+This skill owns the choice of execution shape, team authority, approved staffing
+and the evidence path to acceptance. Skill(model-guide) owns model allocation and
+approval; configured model settings own default effort. Skill(dispatching) owns
+handoffs and continuity. General prompt/context guidance belongs to
+`claude-prompting-lab`; it does not override those runtime settings or model permissions.
+The user's optional product-value framing workflow belongs to `product-framing`.
 
-General prompting, effort selection, and context design belong to `claude-prompting-lab`. Product-value framing belongs to `product-framing`. The runtime's command surface belongs to the runtime's own guides. Use them alongside this skill rather than copying them here; where they disagree, they win.
-
-## Intent before staffing
-
-A skill read is not a team decision. For continuing-owner work, the lead reads the
-sibling `work-intent` skill and resolves the authoritative intent before staffing.
-Existing user/frame/spec authority stays intact. Small local/subagent work may leave
-without creating an intent, mission, board or extra approval ceremony.
+For continuing ownership, read the sibling `work-intent` and reuse existing
+user/frame/spec authority. A skill read is not a team decision. Small direct work
+and bounded support need no invented mission, board, interview or additional ceremony.

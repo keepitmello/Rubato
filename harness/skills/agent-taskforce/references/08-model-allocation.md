@@ -1,16 +1,26 @@
-# Model allocation for the lead
+# Model allocation in the combined proposal
 
-*Lead.* Skill(model-guide) owns cognitive profiles, bottleneck routing, verifier pairings
-and exact catalog/effort values. Skill(dispatching) owns session continuity. This file
-only connects model selection to the combined proposal; it does not create another gate.
+*Lead.* Skill(model-guide) owns model candidates, resource evidence, settings and
+approval. Skill(dispatching) owns continuity. This file adds no selection algorithm
+or permission gate.
 
-Preserve the user's lead and framing choices. After useful discovery, select the smallest
-roster and present it with the intended result using the sibling
-`work-intent/templates/approval-message.md`. Explain each selected model's responsibility
-and why it fits in the user's language. Keep exact technical settings in the internal
-roster; explain their practical cost/effort when material.
+Keep the user's lead model and framing choice. Present the intended result and
+smallest useful roster using `work-intent/templates/approval-message.md`. For each
+separate owner, give its outcome, actual model/settings and the concrete reason
+for assigning another context or resource. Do not label work "hard" as if this were
+a measurement. It is acceptable to say evidence does not distinguish candidates.
 
-Wait for explicit confirmation of both intent and roster before staffing. One reply can
-accept clearly presented model/effort commitments together with the result. It does not
-waive other authorization requirements. Keep accepted owners for related follow-ups;
-ask only about a material staffing or intent delta, not every helper or repeated check.
+Use current authorized availability and the user's resource preferences when
+task-specific evidence is absent. All approved models remain eligible for whole
+outcomes and independent review. Do not force a cheapest-first trial or add work
+merely to consume every model. Related follow-ups keep their existing owner.
+
+When results must be combined, name the integration owner and evidence path.
+Separate the local checks, independent verdict (if any), and the lead's discussion
+of fulfillment. A shared model family is not a reason to deny fresh verification.
+
+Record the exact proposal, human acceptance and actual runtime identity in existing
+mission/board state. One reply can cover clearly presented model/effort commitments
+and intent. Preserve existing model-specific restrictions; another assignment's
+approval is not a pool-wide grant. Material staffing, cost or intent deltas require
+the appropriate confirmation, not a new interview about settled choices.

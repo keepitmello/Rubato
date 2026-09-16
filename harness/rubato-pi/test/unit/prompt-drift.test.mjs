@@ -16,7 +16,7 @@
 // 새 블록을 버릴지, 역할 프롬프트 조각에 우리 문장으로 넣을지, extras 로 건질지.
 // 정하고 나서 아래 목록에 사유와 함께 적는다.
 
-import test from "node:test";
+import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
 import { extractHarnessExtras, loadRolePrompt } from "../../src/system-prompt.mjs";
@@ -25,6 +25,11 @@ import { senpiSystemPromptModule } from "../../src/engine-paths.mjs";
 // senpi 의 package.json exports 가 하위 경로를 막아서 require.resolve 로는 못 뚫는다.
 // 레포의 다른 테스트들과 같은 방식으로 dist 를 직접 가리킨다.
 const ENGINE_SYSTEM_PROMPT = senpiSystemPromptModule;
+
+// Build the candidate checkout, not a stale installation in the developer's home.
+import { createPromptFixture } from "../helpers/prompt-fixture.mjs";
+const promptFixture = createPromptFixture();
+after(() => promptFixture.dispose());
 
 async function loadEngineBuilder() {
   const mod = await import(pathToFileURL(ENGINE_SYSTEM_PROMPT).href);
@@ -165,8 +170,8 @@ test("drop 으로 표시한 블록은 재조립 결과에 섞이지 않는다", 
 // 참인지는 역할 프롬프트 조각을 봐야 안다 — 여기서 확인하지 않으면 역할 프롬프트에서 문장이
 // 지워졌을 때 drop 근거가 조용히 거짓이 된다. 그게 rg 줄에서 일어난 일이다.
 test("탐색 도구 안내는 역할 프롬프트 조각에 살아 있다", () => {
-  for (const role of ["lead", "teammate"]) {
-    const text = loadRolePrompt(role);
+  for (const role of ["lead", "owner", "verifier", "agent"]) {
+    const text = loadRolePrompt(role, { env: promptFixture.env });
     // 785f6a3f9 reworded the hook; the tool list it pins is unchanged.
     assert.match(
       text,

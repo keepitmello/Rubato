@@ -1,116 +1,137 @@
 # Operating model
 
-*Lead.* How the team is governed once it exists.
+*Lead and teammates.* Decision ownership while a team exists.
 
-## Lead
+## Lead: the user conversation
 
-The lead owns:
+The lead's primary responsibility is direct dialogue with the user about intent,
+framing, direction and choices as evidence changes. It preserves the user's reasons
+and commitments, resolves discoverable facts and presents only consequential
+unresolved decisions. It proposes staffing and maintains enough shared state for
+continuity; those are supporting duties, not the purpose of the role.
 
-- evidence-first intent resolution, the execution mission and completion criteria
-- the roster proposal, workstream boundaries, and resource allocation
-- cross-workstream contracts and teammate replacement
-- routing conflicts between an active frame and execution
-- integration and completion decisions
+The human owns lead-model choice, formal framing choice, and acceptance of the
+combined intent/roster proposal. Preserve actual approval references and the reviewed
+intent revision. Same-owner corrections and like-for-like recovery retain approval;
+material outcome, roster or cost changes need a concise delta confirmation. Follow
+work-intent and model-guide rather than adding another approval procedure.
 
-The human operator owns the framing choice, lead-model choice and approval of the
-combined intent/roster proposal. Before forming a team, the lead gathers available
-evidence, recommends the result and minimal team in the user's language, and waits for
-explicit confirmation of both intent and roster. Follow the sibling work-intent alignment
-contract for missing information, partial approvals and accepted corrections. Same-owner
-follow-ups and like-for-like recovery retain approval; material outcome, roster, cost or
-commitment changes require only a delta confirmation before affected work.
+The lead can read technical evidence needed for an honest user decision. It does
+not habitually repeat owner investigation, choose local debugging commands, perform
+technical integration or independently certify the team's work.
 
-The lead does not absorb every debugging detail. Look at task state, verified facts, and decision-grade evidence. When an owner is stuck, attach a relevant peer, redesign the boundary, or replace the owner rather than choosing commands one at a time.
+## Owners: execution and technical integration
 
-## Owners and verifiers from the lead's side
+An owner holds one bounded outcome through investigation, judgment, authorized
+implementation, correction, local verification and delivery. It chooses methods,
+manages local helpers and negotiates technical interfaces directly with peers.
+A disproved hypothesis changes the method, not automatically the owner or frame.
 
-Their contracts are `teammate/workstream-owner.md` and `teammate/independent-verifier.md`.
+Where outputs must work together, name one accountable integration owner and its
+write surface. Prefer an existing owner with the relevant state. Other owners
+deliver agreed artifacts; the integration owner combines them and checks combined
+behavior. This is work assigned to an owner, not a fourth standing role or a reason
+for the lead to become the implementer. An independent verifier, when assigned,
+checks integration evidence separately.
 
-- **An owner owns a bounded outcome, not a phase.** Investigation normally flows into implementation and local verification in the same context.
-- **A verifier inspects state, not narrative.** Failures go directly to the responsible owner; challenges to the acceptance criterion go to the lead.
+Technical conflicts inside accepted commitments are settled by the accountable
+owners using evidence. Unresolved choices that change priorities, scope, authority,
+cost or user-visible contracts return to the lead with options and a recommendation.
+The lead does not substitute rank or model tier for technical evidence.
 
-A resident verifier is optional. Add one when independent falsification is worth its cost. If a long run pulls the verifier deep into implementation discussion, its independence is gone and it cannot certify otherwise — use a fresh verifier for the final gate.
+## Verifiers: the result and its criterion
+
+The verifier checks the actual state and, where material, whether the acceptance
+criterion itself misses real failures or rejects real successes. Defects go directly
+to the responsible owner; challenges to intent or acceptance go to the lead.
+Finding no defect is valid. Verification does not require inventing a finding.
+
+Independence comes from a separate uncommitted context, access to authoritative
+artifacts, and responsibility for a verdict rather than the production narrative.
+A fresh capable session of the same model family can be an independent verifier.
+A different family can add diversity but does not establish independence on its own.
+A verifier that helped implement the change cannot certify that change independently.
 
 ## Milestone fresh review
 
-For long or high-risk runs, a fresh context re-examines the trajectory at phase and milestone gates. This is the team's main defense against the failure class no resident context can see: a criterion or instrument that is wrong the same way for everyone inside the run — every inside view confirms every other, and only an eye that inherited none of the run's premises asks whether the measuring itself is sound. Do not create the gate structure for short runs; but in any run long enough to have phase gates, the review is due at each gate: run it, or record at the gate why it was skipped. An unrecorded skip is indistinguishable from a forgotten one.
+For a long or consequential run, a fresh context may challenge shared premises,
+criteria or instruments that every resident context inherited. At actual milestone
+gates, run the review or record why it was omitted. Do not invent a gate structure
+for small tasks, and do not add another permanent reviewer.
 
-Give only the mission, authoritative artifacts, acceptance criteria, current results, and shared task state — never the lead's conversation narrative; the input spec is the contamination barrier. Ask: does a case exist that passes the current acceptance criterion and is still a failure — or genuinely succeeds yet fails it? Is any work continuing on a refuted premise? Is any stream stalled in a side path? Do the active frame's invariants still fit the evidence?
+Provide mission, authoritative artifacts, criteria, results and relevant shared
+state, not the lead's or builder's reasoning narrative. Ask whether something can
+pass yet fail the intended outcome, or succeed yet fail the instrument. Check
+continued work on refuted premises. A resident verifier deeply involved in the
+trajectory is not a fresh milestone reviewer; reuse an already approved genuinely
+fresh evidence path where it serves the same decision. A reviewer does not recursively
+request a reviewer by default.
 
-This is always a separate new session, never the resident verifier reused: a context cannot audit its own contamination, and asking it whether it is still clean asks exactly the question it cannot answer.
+## Peers and local support
 
-Findings return to the lead; frame-invariant conflicts return as `FRAME_CONFLICT` evidence.
+The team roles are lead, owner and verifier. They are peers. The runtime's spawn
+tree is parentage, not intelligence rank or decision authority. Subagents sit under
+their sender, are not roster members and do not own the wider outcome.
 
-## Roles and subagents
+Any teammate can use bounded support when its concrete benefit repays briefing,
+duplicate reading and integration. Helpers can investigate, test explanations and
+propose solutions within their assignment; the sender retains its outcome and
+judges the evidence. Local delegation does not route through the lead.
+Continue related work in the same available session. New work, independent review,
+a persistent wrong premise or an unavailable session may require a new context;
+a stronger model merely becoming available does not.
 
-A taskforce has three roles: lead, owner, verifier. They are peers. The lead holds the
-goal and cross-workstream decisions; an owner holds one outcome; a verifier holds one
-judgment. None of them is another's worker. The runtime usually spawns owners and
-verifiers as children of the lead's session — that is how the harness builds a tree,
-not a statement about who decides. A teammate decides everything inside its role.
+Runtime role prompts define role identity and tool surface; the role contracts
+define behavior. Keep contradictions out of these sources rather than relying on
+a lower-priority file to cancel a higher-priority instruction.
 
-Below those roles sit subagents. Any teammate, the lead included, may spawn them; they take
-maps, bounded investigation, and settled execution, and they return evidence to the
-session that spawned them. They are not on the roster, do not hold an outcome, and do
-not appear on the board unless shared work is explicitly assigned. A subagent spawned by
-the lead in a session with no team is the same kind of thing: a result to take back.
-A subagent is a session that remembers, not a disposable call: the next related slice
-goes to the same subagent as a follow-up, for the reason the lead keeps an owner through
-corrections — it already holds the files and the refuted premises. A new subagent is
-for a different problem, a cold review, or one stuck on a wrong idea.
+## Intervention
 
-A teammate delegates by cost, not by count: a slice goes out when running it in the
-teammate's own context would cost more than its brief and integration; slices that pass go
-out together, the rest stay. Diagnosis, integration, and anything with interpretation room
-stay with the teammate. Two reasons. A teammate's context is the only
-place its outcome is understood end to end, so transcript-heavy work goes out and
-judgment stays in. And the lead must not become the relay for a teammate's local
-delegation: if an owner had to route every slice through the lead, the one session that
-sees all workstreams would be spent transcribing one.
+Recover the cause with the existing owner first. Consider continued work, bounded
+advice or relevant peer evidence; then a scope/boundary change or explicit reassignment
+when warranted. A user goal or active-frame conflict goes to the lead and human.
+These are alternatives tied to causes, not a mandatory ladder of model tiers.
 
-Where these sentences live: the runtime prompt for each role is the single source for
-roles, parentage and spawn surface (Pi: `core-lead` / `core-teammate` / `core-agent`;
-Codex: the base instructions' Role selection). Role contracts and this skill describe
-behavior inside a role and defer to that prompt on conflict.
+Budget return is a control boundary, not model failure. A announced long-running
+check is not silence-based evidence of a stall. A meaningful stall is resource use
+without new artifacts, valid checks or appropriate hypothesis reduction. Do not
+mistake broken measurement, missing permissions or a contradictory brief for lack
+of intelligence. Never resend an unchanged brief to a new model without recovering
+what blocked the previous attempt.
 
-## Intervention ladder
+## Communication and refutation
 
-1. The owner updates reproduction, hypotheses, and alternatives.
-2. A relevant peer or verifier adds evidence or challenge.
-3. The lead splits, merges, replaces, or rules on a shared contract.
-4. A true active-frame conflict goes to the human and framing process.
+Status surfaces carry ordinary progress; artifacts carry detailed results. Messages
+carry material facts, impact, the affected peer and evidence references. Owner-verifier
+correction is direct. Avoid play-by-play, praise that hardens a tentative explanation,
+and relaying peer questions through the lead.
 
-Do not push a problem to a later rung that an earlier one can solve.
-
-## Communication policy
-
-Routine status belongs on the runtime status surface. Durable artifacts hold intermediate numbers, raw results, and long investigations. Messages are for material events that change another stream's judgment or require action.
-
-Good messages state the confirmed fact, impact, affected owner, and evidence path. Bad messages relay full transcripts, live play-by-play, or a peer question through the lead.
-
-Watch the lead's own outbound tone: **evaluative sentences** — "this is the best find of the day", "exactly right" — change no one's next action but linger as framing. A lead's repeated phrasing hardens into a teammate's premise long after the data behind it is gone. Praise and the lead's own reasoning belong in team documents and retrospectives, not the control channel.
+The lead retains cross-stream visibility and the conversation's reasons. It can
+notice a shared pattern and identify who should examine it; an owner performs the
+technical synthesis. Verified refutations are sent to every stream that inherited
+the premise, and affected claims are recalled before their results are relied on.
 
 ## Decision rights
 
-| Decision | Default owner |
+| Decision | Responsible party |
 |---|---|
-| whether to use framing | human operator |
-| lead model | human operator |
-| initial roster proposal | lead |
-| initial teammate spawn | lead, after combined intent/roster confirmation |
-| material restaffing or new teammate | lead, after delta confirmation |
-| implementation and debugging inside a workstream | owner |
-| interface between two streams | affected owners; lead if unresolved |
-| architecture, public contract, or high-blast-radius change | lead; human approval when needed |
-| changing an active frame invariant | human + framing/reopen process |
-| final integration and completion | lead, using the approved evidence path |
+| Framing choice, lead model, reserved acceptance choices | Human |
+| User intent, direction and consequential trade-offs | Lead with human |
+| Initial ownership/model proposal | Lead, then combined confirmation |
+| Material staffing or resource changes | Lead, then required delta confirmation |
+| Local methods, diagnosis, correction and helpers | Assigned owner |
+| Shared technical interface within accepted authority | Affected owners; one accountable owner if needed |
+| Combining artifacts and checking combined behavior | Named integration owner |
+| Independent checks and technical verdict | Assigned verifier |
+| Required external delivery operation | Assigned owner under explicit delivery authority |
+| Fulfillment communication against current intent | Lead using the agreed evidence path |
 
-## Plan approval
+Plan approval is selective: use it for irreversible commitments, destructive changes,
+public contracts or authority boundaries that require it, not ordinary owner methods.
 
-Do not impose plan approval on every teammate. Use it for destructive migrations, authorization boundaries, public contracts, large irreversible rewrites, or changes that may exceed an active frame.
+## Shared resources
 
-## File and resource ownership
-
-Never write the same file concurrently. When boundaries converge on one central file, reduce writers: one owner writes while others review or gather evidence.
-
-File separation does not separate process space, ports, CPU, memory, measurement capacity, or external quotas. Allocate shared resources in the mission when contention is material. Clean up only named identifiers you created, never by pattern kill.
+Never write the same file concurrently. When writers converge, assign one writer
+and let others collect evidence or review. Separate files do not isolate processes,
+ports, CPU, memory, measurement capacity or quotas; name shared resources when
+contention matters. Clean up only identifiers you created, never by pattern kill.

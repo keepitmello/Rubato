@@ -98,6 +98,20 @@ export function loadRolePrompt(role, {
   return readPromptFile(path, { readFile, materialize });
 }
 
+// Owner and verifier intentionally share the common teammate file. Keep their
+// concrete responsibility explicit even with a custom prompt or a reused session.
+// This is role identity, not a model/effort selector or an additional permission.
+export function assignedRoleSection(role) {
+  const contracts = {
+    lead: "Your primary responsibility is the conversation with the user: intent, framing and direction. With a team, owners perform technical execution/integration and verifiers hold independent verdicts.",
+    owner: "You own an assigned outcome through local judgment, authorized execution and evidence. Read the taskforce workstream-owner contract; technical integration belongs here when assigned.",
+    verifier: "You own an independent evidence-backed judgment. Read the taskforce independent-verifier contract. Do not implement the production change you will judge; the owner performs correction and integration.",
+    agent: "You are bounded support for the sending session, not a roster owner or lead. Reason inside the brief and return evidence; the sender retains its wider outcome.",
+  };
+  if (!Object.hasOwn(contracts, role)) return "";
+  return `## Runtime-assigned role\n\nRole: ${role}\n${contracts[role]}`;
+}
+
 export function modelIdentityLine(model) {
   const id = model?.id;
   if (typeof id !== "string" || id.length === 0) return "";
@@ -247,7 +261,7 @@ export function extractHarnessExtras(existing) {
 
 export function replaceSystemPrompt(existing, role, hooks = {}) {
   const load = hooks.loadRolePrompt ?? ((nextRole) => loadRolePrompt(nextRole, hooks));
-  const parts = [load(role).trim(), modelIdentityLine(hooks.model), TOOL_GUIDELINES];
+  const parts = [load(role).trim(), assignedRoleSection(role), modelIdentityLine(hooks.model), TOOL_GUIDELINES];
   const extras = extractHarnessExtras(existing ?? "");
   parts.push(...extras);
   // Senpi only appends its own skill listing when it builds the prompt itself,
