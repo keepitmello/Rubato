@@ -1,0 +1,22 @@
+{
+	"host": "win32-x64",
+	"contractFile": "senpi_pty.win32-x64.node",
+	"sha256": "7e4350f09195b6dd6a919c8924055c14a9c0d765cc8c3dfbfbe7b914be5709b7",
+	"upstreamArtifactName": "senpi_pty.win32-x64-msvc.node",
+	"rename": "napi --platform emits senpi_pty.win32-x64-msvc.node; @code-yeongyu/senpi-pty loadNativePty requires native/prebuilds/<platform>-<arch>/senpi_pty.<platform>-<arch>.node",
+	"pin": "@code-yeongyu/senpi-pty@2026.9.4-3",
+	"abi": "1",
+	"source": {
+		"repository": "https://github.com/code-yeongyu/senpi",
+		"crate": "crates/senpi-pty",
+		"tagMatchedForAbi": "v2026.9.4-3",
+		"tagCommit": "b0a446488dafc813ec2ff56e515668c0fa990027",
+		"libRsSha256AtTagAndRun": "7e60ef8e48f0b33c35ca1a4592e3acb7908a996c575f479b7f8d110bc3a9c299",
+		"workflow": ".github/workflows/native-prebuilds.yml",
+		"runId": 35078498005,
+		"runUrl": "https://github.com/code-yeongyu/senpi/actions/runs/35078498005",
+		"headSha": "a07f94adb3f0f2ccbeab735b939a31f46541a23a",
+		"artifact": "native-prebuild-win32-x64",
+		"npmShipsWin32Through2026_9_16_3": false
+	}
+}

@@ -16,6 +16,7 @@ const runtimeSources = [
 	join(featureDir, "LICENSE"),
 	join(featureDir, "THIRD_PARTY_NOTICES.md"),
 	...walk(join(featureDir, "src")),
+	...walk(join(featureDir, "native")),
 ].sort();
 
 export const patches = Object.freeze([]);

@@ -5,6 +5,7 @@ import {
 	type TerminalSessionExit,
 	type TerminalSessionOptions,
 } from "@code-yeongyu/senpi-pty";
+import { ensureVendoredSenpiPtyPrebuilds } from "./native-prebuild.ts";
 import { DEFAULT_SCROLLBACK, MAX_SESSION_OUTPUT_CHARS } from "./shared.ts";
 
 export interface TerminalRuntimeOptions extends TerminalSessionOptions {
@@ -39,6 +40,7 @@ export class TerminalRuntimeSession {
 			rows: options.rows,
 			scrollback: options.scrollback ?? DEFAULT_SCROLLBACK,
 		});
+		ensureVendoredSenpiPtyPrebuilds();
 		this.session = new TerminalSession(options);
 		this.unsubscribeData = this.session.onData((chunk) => {
 			const text = this.ingest(chunk);
