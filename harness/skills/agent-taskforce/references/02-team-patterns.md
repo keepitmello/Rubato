@@ -1,65 +1,67 @@
 # Team patterns
 
-*Lead.* Small shapes to staff into. Outcomes and communication paths matter more than role names. Re-form only when the work itself changes.
+*Lead.* Examples, not a required progression or staffing chart. Choose from the
+actual benefit of separation, not guessed difficulty or model tier.
 
-## 1. Single outcome owner
+## Direct work
 
-The default when one deep context can carry the work efficiently.
+The current session keeps a coupled outcome when separation offers no useful
+benefit. No team, invented board or duplicate model session is required. This is
+an execution shape, not the disappearance of the user-facing lead role.
 
-- owner: investigation, implementation, retries, local debugging, local verification
-- no resident verifier unless risk justifies one
+## One continuing owner
 
-A team skill may still be active while only one owner is spawned; do not invent parallelism to fill roles.
+The lead keeps the user conversation and evolving direction; one owner holds the
+execution state end to end. Use when that separation is useful even without
+parallelism. The owner integrates its own outcome. Add no resident verifier unless
+an independent evidence path warrants the extra context.
 
-## 2. Owner-verifier pair
+## Owner and verifier
 
-The economical shape for one bounded but material task.
+One owner implements and checks locally; a separate verifier challenges artifacts
+and acceptance evidence. Corrections and rechecks stay between them. The lead
+handles consequential intent choices and fulfillment communication, not a third
+technical pass. Same-family verification is possible with a fresh independent
+context; family diversity is optional.
 
-- owner: owns the outcome end to end
-- verifier: independently checks acceptance and realistic failure paths
+## Independent outcomes with explicit integration
 
-Use when the change is high-risk, acceptance is ambiguous, or a second model's blind spots are worth the cost.
+Two or more owners carry independently useful outcomes and exchange interfaces
+directly. One existing owner normally holds the combined result and integration
+checks. Add a separate integration workstream only if that is itself substantial,
+cleanly bounded work. A verifier can inspect the combined outcome without becoming
+the integration implementer.
 
-## 3. Adaptive delivery squad
+## Competing hypotheses
 
-- owner A: one independent layer or module outcome
-- owner B: another independent layer or module outcome
-- optional verifier: integration, runtime, and acceptance evidence
+Separate evidence lenses can help when they can genuinely test different
+explanations. Give each a falsifiable question rather than requiring disagreement.
+One owner synthesizes the technical findings; the lead does not choose a cause
+before evidence narrows it.
 
-Fits frontend/backend, service/migration, or other work with a real interface. Interface changes are negotiated directly between owners.
+Once a cause narrows, retire surplus investigation. The owner with useful verified
+context normally continues through the authorized fix and local verification.
+Transfer only when remaining work has a real boundary or evidence supports the
+change, accounting for the handoff.
 
-## 4. Competing-hypothesis cell
+## Discovery for a user decision
 
-- two or three owners: distinct root-cause hypotheses or evidence lenses
-- optional evidence integrator or verifier
+Researchers or critics can contribute distinct sources or alternatives while the
+lead and user keep defining the question. Their outputs inform framing; they do not
+silently settle user preferences or replace an active frame. If technical synthesis
+is substantial, an owner holds it rather than making the lead reproduce every source.
 
-Each owner proposes evidence that would refute their own and competing hypotheses. The lead does not choose a cause before reproduction evidence narrows it.
+## Focused independent lenses
 
-Once the cause narrows, retire surplus investigators. The owner with the deepest verified context normally continues through the fix and local verification. Split or transfer only when the remaining implementation is a clean, substantial outcome whose execution advantage exceeds the handoff cost.
+Separate reviews can cover material, non-overlapping claims. Assign a synthesis
+owner only if integration or severity calibration really needs one; otherwise each
+reviewer returns its evidence to the responsible owner. Do not turn a focused check
+into a swarm or add a reviewer for each reviewer.
 
-## 5. Discovery council
+## Re-form on evidence
 
-- two or three researchers, architects, or critics with genuinely different evidence sources or perspectives
-- lead: removes duplication and keeps the decision question alive
-- optional verifier: source coverage and contradiction checks
-
-If product framing was selected but is not settled, the council produces evidence for that process. It does not silently settle the frame.
-
-## 6. Review swarm
-
-- non-overlapping lenses such as security, performance, test coverage, or product alignment
-- one synthesis owner only if severity calibration is genuinely needed
-
-For an easy change, one focused fresh reviewer is better than a swarm.
-
-## Re-forming the team
-
-Re-form when:
-
-- the phase creates a genuinely new outcome boundary
-- a material pivot invalidates assumptions in existing contexts
-- one owner's boundary splits into independent outcomes
-- file or state contention removes the value of parallel writers
-- the approved model becomes unavailable or mismatched to the remaining bottleneck
-
-Do not re-form merely because investigation turned into implementation. Ownership continuity is the default.
+Dependencies, a material pivot, a refuted shared premise, converging write boundaries,
+loss of a session or actual resource availability may change the useful shape.
+Investigation becoming implementation, a passed time budget, repeated but useful
+advice or the existence of a stronger model is not an automatic restaffing trigger.
+Explain the specific change and obtain any required delta approval.

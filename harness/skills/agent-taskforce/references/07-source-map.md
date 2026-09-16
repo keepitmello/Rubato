@@ -42,9 +42,27 @@ Before adopting any revision, check the candidate against `references/09-regress
 
 ## Local roster policy
 
-Model routing (cognitive profiles, bottleneck routing, catalog mapping) moved to the standalone Skill(model-guide) at `~/.agents/skills/model-guide/SKILL.md`, because it applies to every child spawn, not only teams. `references/08-model-allocation.md` now keeps only the team-specific roster proposal format. Revise the active mapping without changing the owner-continuity principle when model behavior changes.
+Skill(model-guide) owns model selection from authorized resources, supported settings and relevant observations. Skill(dispatching) owns session continuity. `references/08-model-allocation.md` connects those choices to the team proposal without creating another approval gate. Model families are not permanent job titles; preserve the user's lead selection independently of execution allocation.
 
 
 ## Local prompt-design basis
 
 This revision also follows the attached `claude-prompting-lab`: keep always-loaded instructions small, state outcomes and authority affirmatively, choose orchestration before polishing wording, use progressive disclosure, and add permanent rules only after observed failures.
+
+## Accepted Pi revision, 2026-09-16
+
+The operator approved revising the Pi system prompts, taskforce and related skills
+after distinguishing user-facing leadership from execution. The lead's primary
+work is the continuing conversation and framing with the user. Owners retain
+whole outcomes and technical integration; verifiers retain independent evidence
+and verdicts. Acceptance uses that evidence without a duplicate lead execution pass.
+
+This is a local design decision, not a claim that a paper proved one universal
+topology. Earlier discussion of Fable/Astra economics does not establish a local
+subscription-cost coefficient or a guarantee that single-agent work always wins.
+Use live-task evidence to evaluate those hypotheses.
+
+Preserve historical scenario IDs in `09-regression-scenarios.md`; explicitly revise
+only expectations this decision supersedes. Static prompt/assembly tests and the
+live cases in `harness/prompts/evals/rail-choice.yaml` test different things.
+The Codex operating edition is outside this revision. Do not regenerate it.

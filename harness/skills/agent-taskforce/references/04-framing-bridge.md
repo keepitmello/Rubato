@@ -31,14 +31,14 @@ Confirm the frame is active and valid, approvals and permitted commitments cover
 ## Three grades of change
 
 1. **Local implementation change** — owner decides inside the frame variables and existing team contracts.
-2. **Team contract change** — affected owners align on evidence; lead decides the shared API, schema, architecture, or behavior while invariants hold.
+2. **Team contract change** — affected owners align on evidence and the named technical owner settles implementation choices within accepted authority. A changed public commitment, scope, cost or invariant goes to the lead and the appropriate human decision before adoption.
 3. **FRAME_CONFLICT** — evidence undermines an active invariant. Framing owns the reopen decision.
 
 ## Handling FRAME_CONFLICT
 
 1. Stop only affected frame-dependent work and gather evidence.
 2. The owner sends the invariant at risk, observed evidence, affected streams, and safe work that may continue using `templates/frame-conflict.md`.
-3. The lead first checks whether local iteration or a team-contract change resolves it.
+3. The responsible owners establish whether local iteration or an authorized technical-contract change resolves it; the lead checks the consequence for the user's intended result, not the next debugging command.
 4. A genuine conflict goes to the human; the lead does not edit the active frame.
 5. If reframing is requested, run it in a fresh context with the current frame, evidence, rejected candidates, and constraints — not the implementation narrative.
 
@@ -52,3 +52,5 @@ For high-risk integration or a long narrative-heavy run, a fresh session may com
 - Latest user directive vs active frame: raise a human reopen decision.
 - Reframing candidate vs active frame: candidate remains input until approved.
 - ADR vs frame: identify which assumption evidence undermines and escalate to its decision owner.
+
+The lead's continuing user dialogue is distinct from a formal framing workflow. Do not require a new FRAME_LOCK merely to discuss a finding or alternative with the user. User intent changes are not owned by an implementation or verification session.
