@@ -42,3 +42,7 @@ jobs:
         # time contend for a shared runner and fail a different one each run, so
         # the hosted job trades wall time for a deterministic result.
         run: env -u NODE_OPTIONS -u NODE_COMPILE_CACHE npm --prefix harness/pi-runtime run test:ci --workspaces=false
+      - name: Stock engine patch seams
+        # Lives in harness/rubato-pi but reads the vendored engine installed
+        # above, so this is the only lane where it can actually run.
+        run: env -u NODE_OPTIONS node --test harness/rubato-pi/test/unit/stock-boot-handoff.test.mjs
