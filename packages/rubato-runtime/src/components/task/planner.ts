@@ -31,11 +31,9 @@ export function plannedEffortSource(model: ResolvedModelMetadata | undefined): E
 }
 
 export function createTaskChildPlanner(
-  _rubatoConfig: RubatoConfig,
   agents: Readonly<Record<string, AgentDefinition>>,
   resolveRegistry: ResolveModelRegistry,
 ): ChildPlanner {
-  const availableAgents = listAvailableAgents(agents)
   return (spec): PlanResolution => {
     if (spec.preset !== undefined) {
       const agentResolution = resolveAgentTarget(spec.preset, spec.model, agents, resolveRegistry)
@@ -209,4 +207,3 @@ function resolveExactModel(model: string, resolveRegistry: ResolveModelRegistry)
     },
   }
 }
-import type { RubatoConfig } from "@rubato/config-core"

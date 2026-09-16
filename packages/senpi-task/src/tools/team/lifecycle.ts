@@ -28,7 +28,7 @@ function inlineTeamSpecMemberSchema(availableModels: AvailableModels) {
     {
       name: Type.Optional(Type.String({ description: "Member name; unique within the team, lowercase-stem normalized." })),
       kind: Type.Union([Type.Literal("owner"), Type.Literal("verifier")], {
-        description: "Taskforce seat. Owners hold one bounded outcome; verifiers independently judge results and acceptance criteria.",
+        description: "Taskforce role. Owners hold one bounded outcome; verifiers independently judge results and acceptance criteria.",
       }),
       model: teamMemberModelSchema(availableModels),
       effort: Type.Optional(TaskToolEffort),

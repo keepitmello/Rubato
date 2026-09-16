@@ -14,7 +14,7 @@ function registry(models: readonly SenpiModelPort[]): TaskModelRegistry {
 describe("createTaskChildPlanner", () => {
   test("admits an exact live model", () => {
     const models = registry([{ provider: "openai", id: "gpt-5.6-sol" }])
-    const planner = createTaskChildPlanner({}, BUILTIN_AGENTS, () => models)
+    const planner = createTaskChildPlanner(BUILTIN_AGENTS, () => models)
 
     const result = planner({ prompt: "work", parent_session_id: "parent", depth: 1, model: "openai/gpt-5.6-sol" })
 
@@ -22,7 +22,7 @@ describe("createTaskChildPlanner", () => {
   })
 
   test("fails closed for an unavailable exact model", () => {
-    const planner = createTaskChildPlanner({}, BUILTIN_AGENTS, () => registry([]))
+    const planner = createTaskChildPlanner(BUILTIN_AGENTS, () => registry([]))
 
     const result = planner({ prompt: "work", parent_session_id: "parent", depth: 1, model: "missing/model" })
 
@@ -30,7 +30,7 @@ describe("createTaskChildPlanner", () => {
   })
 
   test("requires only model or preset", () => {
-    const planner = createTaskChildPlanner({}, BUILTIN_AGENTS, () => registry([]))
+    const planner = createTaskChildPlanner(BUILTIN_AGENTS, () => registry([]))
 
     const result = planner({ prompt: "work", parent_session_id: "parent", depth: 1 })
 
