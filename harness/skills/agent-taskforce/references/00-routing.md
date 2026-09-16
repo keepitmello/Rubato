@@ -1,45 +1,50 @@
-# Routing: single session, subagent, agent team
+# Choose direct work, bounded support or continuing ownership
 
-*Lead.* Whether to form a team at all.
+*Lead.* Decide whether separate responsibility helps before staffing. This guidance
+uses the active runtime adapter; it is not a Claude Code-only team definition.
 
-"Agent team" below means Claude Code Agent Teams.
+## Keep the work in the current session
 
-## A single session is better
+Use direct work when the needed state is already here and the next decisions are
+tightly coupled. A strong model is allowed to investigate, implement and check its
+own authorized outcome. File count, unfamiliarity and a model tier are not sufficient
+reasons to make a team. Reading this skill creates no staffing obligation.
 
-- Work concentrates on one file or one evolving state.
-- Each step depends tightly on the result of the previous step.
-- Implementation and verification are short and clear.
-- Spawning several workers would cost more in file conflicts and explanation than it saves.
+## Use bounded support
 
-## A focused subagent is better
+A separate session can isolate noisy investigation, provide genuinely parallel
+evidence, answer a local question or supply a fresh review. Name the result that
+will change the sender's work, the boundary and the return condition. Include
+briefing, duplicate reading and integration when weighing its value. Do not
+require a fabricated numeric saving. Continue the same support session on related work.
 
-- You want to isolate noisy investigation or log analysis from the main context.
-- You only need the result back; workers don't need to talk to each other.
-- One fresh review is enough.
-- A short read-only review through one specific lens.
+## Use continuing owners
 
-## An agent team is better
+A team can be useful when one deep execution context should stay separate from the
+user's evolving conversation, when independent outcomes can progress, or when peers
+need sustained interface and evidence exchange. One owner is allowed; multiple
+owners are not a success metric. A continuing owner is not a short subagent used
+to bypass intent/roster approval.
 
-- One substantial bounded outcome benefits from an owner context separate from the lead, or two or more independent workstreams can make meaningful progress in parallel.
-- Owners need to exchange interfaces, findings, and counter-arguments directly.
-- The root cause is unclear and competing hypotheses need independent verification.
-- Different layers need coordinating — frontend/backend/test, or research/strategy/verification.
-- The main failure mode is a single lead absorbing every debugging narrative and judgment.
+Keep coupled state and local judgment together. Assign an integration owner only
+where outputs must be combined, normally an existing owner. Independent competing
+hypotheses can justify separate evidence collection, but "unknown cause" does not
+by itself require several investigators.
 
-The more of these get a "yes," the better the fit:
+## Use independent review for its evidence
 
-1. Can the work be split into non-overlapping outcome units?
-2. Is each outcome large enough to justify its own context?
-3. Would direct worker-to-worker conversation reduce lead relay?
-4. Can done evidence be defined independently for each?
-5. Is the extra token and coordination cost reasonable against the value?
+A fresh reviewer receives the authoritative artifacts, current outcome and acceptance
+criteria, not the builder's reasoning or desired verdict. It may be the same capable
+model family. Explain any actual family diversity separately. It is not a standing
+co-manager and does not automatically spawn its own reviewer.
 
-## A separate fresh session is better
+## Name the benefit, then preserve continuity
 
-- You need an independent reviewer who doesn't know the implementation path.
-- You need to check alignment with the active frame, or re-examine the frame itself.
-- You need judgment unswayed by a long-accumulated session narrative.
+The useful question is what separation buys in this run: user-conversation
+continuity, independent progress, isolated bulk context, fresh evidence or approved
+resource availability. Balance that against repeated work, waiting and coordination.
+This is a provisional execution choice, not a prediction of hidden task difficulty.
+Reconsider when observed dependencies or the user's needs change.
 
-A fresh session is not a standing co-manager. It reads the canonical artifacts and current results, renders a milestone judgment, and exits.
-
-This file decides *whether* to form a team. The human chooses framing and the lead model; `LEAD.md` then reports the smallest roster and forms the team.
+The human keeps the lead-model and formal framing choices. `LEAD.md` owns the
+combined intent/roster proposal, approval and material changes.

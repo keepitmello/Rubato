@@ -1,33 +1,61 @@
 # Runtime — rubato-pi
 
-*Lead and teammates.* What this harness supplies. The skill still owns scope, responsibility, approved staffing, evidence, and completion.
+*Lead and teammates.* The harness supplies execution; the skill supplies authority
+and responsibility. These are the Pi edition's surfaces, not Codex role files.
 
-| Concern | Where it lives |
+| Concern | Surface |
 |---|---|
-| Lead | the current `rubato-pi` session |
-| Teammate | a process member of a `team_create` run, spawned after combined intent/roster confirmation |
-| Spawn, configure, lifecycle | `Agent`, `team_create`, `dag` |
-| Peer message | `AgentSend` for spawned Agents; `team_send` for the team mailbox |
-| Roster and runtime status | lead `team_*` tools including `team_send` and shutdown request/response; members get `team_send` plus board tools from the member extension |
-| Shared task list | Rubato team tasklist on disk; board operations have one owner per process |
-| Owner-local spawn | the member process registers Agent tools so it can run subagents under itself; those children are not teammates |
-| Parallel spawn | `Agent` / `team_create`; completion notifications deliver a status ping. Owners peek their own helpers with `AgentOutput`. A taskforce lead reads the result path or board, not a child transcript. |
+| Lead | Current user-facing rubato-pi session |
+| Continuing owner/verifier | `team_create` member after combined intent/roster approval |
+| Bounded support | `Agent`, continued with `AgentSend` |
+| Agent status/results | `AgentOutput`; completion notifications are not work acceptance |
+| Team communication | Direct peer `team_send` mailbox |
+| Shared assignments/evidence | Team board/tasklist, including existing `metadata` |
+| Lifecycle | Existing `team_*` shutdown request/response tools |
+| Local delegation | Any teammate can spawn `Agent` support within its authority |
 
-The role build owns the whole system prompt. Lead gets `lead.md`; owners and verifiers get `teammate.md`; both prompts carry the shared brief-receiving and brief-writing contract. A plain `Agent` spawn gets `agent.md`, which carries the receive-and-return contract. Model calls authenticate through the existing Rubato broker at `:8788`, including `/login`. `RUBATO_PI_ROLE=owner|verifier` wins; a member env without that role is treated as owner. Verifiers retain write tools.
+`harness/prompts/build.sh` builds `.build/lead.pi.md`, `.build/teammate.pi.md`
+and `.build/agent.pi.md`. Owners and verifiers share the neutral teammate file;
+the runtime-assigned role identifies their different responsibility. Read the
+matching taskforce role contract. `RUBATO_PI_ROLE=owner|verifier` takes priority;
+a legacy member environment without an explicit role resolves to owner.
+Verifiers retain write tools for authorized fixtures; that does not authorize
+production repairs. Tool presence is not permission.
 
-`worktreePath` provisions a real worktree with `git worktree add`. Done evidence and budget return live in board-task `metadata`.
+A custom `RUBATO_SYSTEM_PROMPT_FILE` can replace the built role prose. Runtime
+identity still names the role; inspect the actual prompt path before claiming
+a source-fragment edit is active. Newly created or resumed sessions must load the
+intended local edition. Do not infer deployment from a source file alone.
 
-Choose an exact `model` or named `preset` when you spawn a one-off `Agent`. Omit `effort` unless you need a manual override. Every `team_create` member declares `kind: owner|verifier` and an exact `model` from the same live model catalog used by `Agent`, plus optional `effort`. The current session is the lead and is never declared as a member. Use the resolved model in Agent status to confirm that an independent verifier lands on a different family from the owner.
+Each `team_create` member declares `kind: owner|verifier` and an exact `model`
+from the same live model catalog used by `Agent`, plus optional `effort`. The current
+session is the lead and is never declared as a member. A one-off `Agent` takes an
+exact `model` or named `preset`. Omit `effort` unless a supported manual override is
+authorized; configured model defaults apply. Preserve restricted-model approval.
+Report requested settings separately from actual model and route metadata.
 
-Launcher: `harness/scripts/rubato-pi.sh` (`rubato` / `rubato-pi`). State: `~/.rubato-pi/agent`. Teammates run independent slices as `Agent` subagents; follow `LEAD.md`'s combined intent/roster confirmation before `team_create`; discovery subagents remain bounded by existing model/budget permissions. `/login` uses the broker. The TUI keeps `Tip:` lines and `/changelog` outside this surface.
+Owners manage their own helpers and may use `AgentOutput` for them. A team lead
+reads the result artifact or board rather than replaying an owner's transcript.
+The lead's own bounded discovery helper is distinct from a continuing owner.
+A read of taskforce may choose direct work instead of `team_create`.
 
-## Intent linkage
+`worktreePath` provisions an actual worktree. It does not isolate ports, processes,
+memory or quotas. Allocate shared resources when contention matters. The integration
+owner coordinates technical combination and checks; the lead does not supply an
+alternative session manager or become the technical integrator.
 
-Resolve the intent before staffing and carry its reference and the lead's canonical
-workspace in the mission and each owner brief. A provisioned worktree uses that same
-source, not a newly invented local intent. Where a board operation accepts `metadata`,
-carry `metadata.intent_ref`; do not add unsupported parameters to `team_create` or
-`Agent`. The runtime still owns lifecycle, and the board still owns assignment state.
-The `work-intent` check is an explicit helper call, not an automatic tool interceptor.
-When the intent changes, notify affected owners and preserve evidence against the
-revision actually checked; a new run does not require a new intent.
+## Intent linkage and state
+
+Carry the same `intent_ref` and canonical workspace through mission, briefs and
+existing board metadata. Do not add unsupported arguments to `team_create` or
+`Agent`. The work-intent check is an explicit helper, not an automatic interceptor.
+A provisioned worktree is not a new intent.
+
+A session ending or returning at budget does not complete an unsatisfied board
+outcome. Keep its evidence, remaining work and return reason in existing metadata.
+Refresh references on accepted intent changes and tie prior evidence to the
+revision actually checked.
+
+Launcher: `harness/scripts/rubato-pi.sh`. Session state:
+`~/.rubato-pi/agent`. Use the installed runtime's authentication and tool discovery;
+do not launch a substitute runtime to fill an observation gap.

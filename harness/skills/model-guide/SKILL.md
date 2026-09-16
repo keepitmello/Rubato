@@ -1,88 +1,140 @@
 ---
 name: model-guide
-description: "Routing guide for Agent, teammate, and verifier models. Fable/Astra are ultra-expensive: explicit user approval is mandatory for every dispatch, including verification."
+description: "Select an approved model and supported settings using continuity, available resources and relevant evidence. Roles do not pin models; no difficulty score or failure-first ladder. Preserve explicit approval for Fable, Sol and Astra."
 ---
 
-# Model Guide
+# Model guide
 
-Choose an Agent's model by the work's dominant bottleneck. Treat phase labels and permanent job titles as context around that choice. This guide has two layers: cognitive profiles that are durable across model generations (§1), and an operational note pinned to a date that you replace when the catalog changes (§2).
+Choose the execution resource, not an intelligence-based job title. An owner holds
+a bounded result end to end; a verifier holds a judgment independent of its production.
+Fable, Astra, Opus, Sol and Grok may fill either role when authorized and available.
+No family is reserved for planning, long sessions, implementation or review.
 
-Evidence base: `/Users/wy/Github-repos/rubato-lab/research/2026-08-20-model-cognition-column.md` — use it while revising this skill; normal runs use the mapping below.
+The user chooses the lead. Keep that conversational counterpart unless the user
+changes it. Execution allocation is a separate choice: use other approved models as
+owners or bounded support without asking the user to rotate the lead manually.
 
-Whether to reuse an existing agent or start a new one is decided in Skill(dispatching), before this guide. Come here once you know you need a new agent and have to pick its model.
+## Choose a session before choosing a model
 
-## 1. Cognitive profiles (durable)
+Read Skill(dispatching) first. An existing owner with relevant evidence, refuted
+hypotheses and current changes is not interchangeable with a cold replacement.
+Continue related work unless the reason for a fresh session outweighs that loss.
 
-Frontier models specialize in different kinds of uncertainty.
+For a new assignment:
 
-| Profile | Core loop | Strongest at | Characteristic failure |
-|---|---|---|---|
-| **Problem framer / human modeler** | keeps ambiguity open, models the person behind the request | UX, strategy, writing, co-defining what should be built | over-expansion, grand theories |
-| **Structurer / integrator** | orients in unfamiliar environments, decomposes and integrates long work | architecture, workstream boundaries, final integration | technical elegance overriding human purpose |
-| **Hypothesis converger** | problem → hypothesis → evidence → refutation → narrower hypothesis | root cause, invariants, algorithms, performance, verification | premature convergence on a wrong framing, then optimizing inside it |
-| **Action converger** | goal → act → observe → fix → act → done | settled changes rolled across many files, tools, prototypes | weak at discovering goals or reframing the problem |
+1. Respect explicit model selection, approvals, allowed providers, supported tools
+   and effort. A registered label is not proof of a usable route.
+2. Use relevant completed-work evidence and the user's reported experience where
+   available. Name their scope; absence of evidence is not evidence of inability.
+3. Consider current availability, competing assignments, quota headroom and user
+   resource preferences. Distinguish observed headroom from an older user report.
+4. Choose a candidate and explain the actual reason for it. When evidence does not
+   distinguish candidates, use authorized resource availability and allocation
+   preferences rather than inventing an aptitude story.
 
-Route by asking: **what part is hardest to get right?**
+Unknown work is not necessarily difficult. A broad change is not a difficulty
+measurement. Do not require a difficulty score, a cheapest-model trial, failed
+lower-tier attempts or a special request for "highest quality" before using a
+stronger model. Acceptance criteria stay the same for every selected model.
 
-| Dominant bottleneck | Owner profile |
-|---|---|
-| Understanding people, product value, or what should be built | problem framer — usually a framing step or human dialogue, not a standing teammate |
-| Cross-stream architecture, contracts, integration | structurer — usually the lead itself (the lead is whatever main session the user opened; this guide does not pick it) |
-| Discovering and proving the correct technical change | the outcome's current owner — diagnosis is judgment, not a delegable phase (see the debugging note) |
-| Executing a settled change across tools, files, runtime | action converger — a worker the owner dispatches |
-| Falsifying a material implementation | fresh verifier with a *different* profile from the writer |
+## Use the model pool without manufacturing work
 
-Two convergers are not interchangeable: a hypothesis converger compresses the answer space, an action converger compresses the action space. A patch built by an action converger is well checked by a hypothesis converger — their failure modes rarely overlap. Neither substitutes for a framer when the variables of the problem are themselves undecided.
+The operator's current working assumptions (2026-09-16) are Fable/Astra, then
+Opus/Sol, then Grok in overall capability, with the most subscription headroom on
+Grok and then Opus. These are operator-reported starting priors, not measured
+task-specific rankings, live remaining quotas or fixed assignments. New user
+direction and relevant observations can supersede them.
 
-Debugging is the case that tempts misrouting. The diagnosis is judgment, and judgment stays with the session that owns the outcome — lead and teammate alike. Default shape: a worker maps the terrain and gathers evidence, the owner reasons to the root cause, and execution of the settled fix routes by breadth as usual. Hand a debugging workstream to an Agent only when it is genuinely separable and runs parallel to other work; review it with the other model family.
+All five are ordinary candidates for a complete outcome. Allocate new independent
+work across the approved pool when that uses available resources well; do not leave
+a useful resource idle solely because it was called a "lead model." Equally, do not
+create helpers, duplicate a task, replace an effective owner or lower acceptance
+standards just to use every model. Utilization is considered across useful work,
+not a quota of model names inside each team.
 
-## 2. Roles and models (operational, pinned 2026-09-06)
+## Fast workers
 
-Every dispatch fills one of four roles. Pick the role from the bottleneck (§1), then take the model, effort, and approval rule from this table. Always pass an exact `model` (`provider/model`) or a named `preset` to `Agent`; never a category, task type, or `subagent_type`.
+Three fast, no-approval resources sit beside the five above and are the usual
+first choice for bounded support — maps, evidence gathering, settled execution,
+prototypes — whenever turnaround matters more than the last few points of precision:
+Muse Spark `opencode/muse-spark-1.3-contributor-free`, Gemini 3.8 Flash
+`cursor/gemini-3.8-flash`, and Cursor Fast `cursor/cursor-grok-4.6-high-fast`.
+Muse is the operator's preferred default worker; when it hits its free-tier
+limit, Grok `xai/grok-4.6` is the approved continuation. Their speed is an
+observed property, not a rank: they may also hold a bounded outcome when its
+acceptance criteria are met, and nothing here forbids a stronger model from
+doing the same work itself. The same acceptance criteria apply.
 
-| Role | What it holds | Model (exact id) | Effort | Approval |
-|---|---|---|---|---|
-| **Owner** — judgment | framing, architecture, diagnosis, proof; the outcome's decisions | Fable 5.1 `anthropic/claude-fable-5-1` (framing, structure) · Sol `openai-codex/gpt-5.6-sol` (hypothesis, proof) · Astra `openai-codex/gpt-6-astra` | `medium`; `high` when hard | **per dispatch, model and effort both** |
-| **Owner** — already-framed | a bounded technical outcome whose frame and goal are settled; when a complex task's bottleneck is judgment, a Grok owner is itself the bottleneck — ask for Fable or Sol and keep the judgment in this session until approved | Grok 4.6 `xai/grok-4.6` or Cursor Fast `cursor/cursor-grok-4.6-high-fast` | `high`; `xhigh` when hard | none |
-| **Fast Model** — default worker | settled execution, maps, evidence gathering, prototypes; anything where turnaround matters more than the last few points of precision | Muse Spark `opencode/muse-spark-1.3-contributor-free` · Gemini 3.8 Flash `cursor/gemini-3.8-flash` | `high`; `xhigh` when hard | none |
-| **Worker** — precise | a settled task that needs Grok's extra precision or its large quota | same Grok ids as above | `high`; `xhigh` when hard | none |
-| **Verifier** | falsifying a material artifact, from a *different* model family than its producer | Claude-family main session → Sol · Codex-family main session → Fable 5.1 | `medium` | same as the judgment owner row |
+Exact ids for the rest, as currently registered: Fable 5.1
+`anthropic/claude-fable-5-1`, Sol `openai-codex/gpt-5.6-sol`, Astra
+`openai-codex/gpt-6-astra`, Grok 4.6 `xai/grok-4.6`. Confirm against the live
+catalog the `Agent` schema lists; a stale id fails closed.
 
-Opus 5 has no slot.
+Token volume, API-equivalent dollars, elapsed time and subscription quota are
+different measurements. In particular, neither an API cache discount nor an
+operator report that Opus cache reads do not debit a plan establishes the other
+models' live plan coefficients. Do not hard-code those as prices or infer free
+compute. Preserve route/account and measurement date when resource evidence matters.
+Prefer available local evidence; lack of telemetry does not require a new service,
+calibration job or an interview before ordinary work.
 
-### Fast Model
+## Roles, settings and permissions are separate
 
-Muse Spark and Gemini 3.8 Flash sit at roughly Grok's level of capability and run several times faster, so they are the first choice for a worker and are fine to run as an `Agent` on their own. Reach for Grok instead when a task keeps tripping on precision, or when you want its quota rather than speed. All three are action convergers: they compress the action space, not the answer space, so none of them takes a judgment role.
+Use an exact `model` (`provider/model`) or a named `preset` accepted by the live
+harness; never a category, task type, or `subagent_type`. Resolve the exact route
+from the live catalog. Opus has a place in the pool; do not infer its ID from a
+different runtime. The same display name on two routes may spend different resources.
 
-### Owner role
+Omit `effort` normally so the configured model default applies. Preserve explicit
+user settings. Override only for a supported, authorized choice, not because of a
+role label, guessed difficulty or a universal low/high recommendation. A preset
+does not create another effort-precedence rule. Report requested settings separately
+from actual runtime-confirmed model and effort.
 
-- **Fable 5.1** — problem framer and structurer. As an Agent: framing, human-outcome review, cross-stream architecture, contracts, integration.
-- **GPT-5.6 Sol** — hypothesis converger. Default verifier, the supervisor when the owner is stuck, and the owner when the proof itself is the deliverable.
-- **Astra** — same effort and approval rule as Fable and Sol.
+Exactly specified unavailable models fail visibly rather than silently switching.
+The harness resolves a named preset against its actual configured policy; do not
+invent a fallback chain. Any resulting model still has to satisfy approval and
+assignment requirements.
 
-### Approval rule
+## Approval
 
-**Fable (including Fable 5.1), Sol, and Astra require the user's explicit approval for every dispatch, in every role — owner, worker, or verifier.** Before spawning, name the model, effort, and task and obtain approval. A verifier role, a routing default, a fallback, or a previous approval for a different task is NOT permission; approval is scoped to the specified task and effort, not to later spawns or new tasks in a resumed agent. A clear owner role may run on Grok without that approval; a judgment role may not. The verifier pairings in the table are defaults, not mandatory pairings, and never exceptions to this rule. Do not substitute Astra for a verifier automatically. A clear low-risk task may use owner self-verification only.
+This revision does not broaden permissions. Fable (including Fable 5.1), Sol and
+Astra require explicit user approval naming the outcome, model and effort before
+assignment, including verification. A readable combined intent/roster approval
+can satisfy that gate when it includes those commitments. Existing approval is
+for its stated scope, not an unlimited pool grant.
 
-### Routing order
+Corrections, retries and re-verification by the same approved owner on the same
+outcome retain that approval. A new outcome, materially changed roster or higher
+restricted-model effort requires the relevant confirmation. Opus and Grok have
+no additional model-specific gate, but team formation, write boundaries and
+delivery permissions still apply. A helper is not an approval bypass.
 
-1. Determine the main session's current model family now, not the family it started with; it may have changed during the session.
-2. Choose the role from the bottleneck; for an independent verifier, pick a different model family from the artifact's producer.
-3. Pass the exact `model` and `effort` from the table, or a named `preset`. The harness resolves a preset against the live catalog, admits it, and carries the runtime fallback chain; use an exact `model` when provider/model identity is itself a requirement.
-4. Say in one line which model or preset the agent runs on; report the resolved model when the runtime returns it.
+## Advice and review
 
-Choose the role at dispatch and predict the dominant bottleneck up front rather than planning to climb later. A stronger model existing is not by itself a reason for a new session; whether the next task continues or starts fresh belongs to Skill(dispatching).
+Advice is a bounded question whose answer can change the owner's next action.
+It may come from any relevant approved model. Keep the owner; integrate the evidence,
+not a command hierarchy. Repeated advice is not automatically waste or an automatic
+transfer trigger. If the adviser repeatedly has to reconstruct and direct the whole
+outcome, compare continuing, changing the brief, making it an owner or stopping that
+approach, including handoff costs. Do not use a fixed call count.
 
-## 3. Minimal shapes
+Independent verification starts with a fresh context, authoritative artifacts and
+acceptance criteria, without inheriting the builder's desired verdict or reasoning.
+Any capable approved model, including the same family in a separate session, may
+verify. Call this independent review; describe cross-family diversity only when
+actual model identity supports it. Neither a different family nor freshness alone
+guarantees correctness. Never let the actual builder certify its own work as
+independent.
 
-- One bounded, already-clear technical outcome → one owner. Grok may hold that role. That owner dispatches Fast Model workers for settled execution.
-- One material or judgment-heavy outcome → Fable or Sol owner after approval; if not approved, keep the judgment in the current session. Add a verifier when the outcome is material or ambiguous.
-- Two genuinely independent outcomes → two owners; verifier only if integration risk warrants.
-- Unclear root cause → the current owner diagnoses from a Fast Model worker's map. A separable parallel debugging workstream is a judgment role: ask for Sol, or Fable if the frame itself is wrong. Until approved, do not spawn a Grok owner for that role.
-- Product or UX uncertainty → framing before execution, then the chosen owners.
+## Learn without adding a routing bureaucracy
 
-Build the smallest roster that gives each distinct bottleneck one clear owner.
+Use existing result artifacts and measurement records when available. Distinguish
+a completed turn, valid budget return, accepted outcome, measurement failure and
+user rework. Record the actual model/effort/route, outcome and checked revision,
+evidence, and material assistance or reassignment when this changes future allocation.
+Do not invent self-grades or turn an unvalidated speed index into a quality rank.
 
-## Scope
-
-This skill owns model-to-work routing only. Team governance — roster approval, mission, contracts, completion — belongs to Skill(agent-taskforce). Brief-writing belongs to Skill(dispatching). Prompt structure and effort selection belong to claude-prompting-lab.
+Initial assignments and inherited stalled work are different samples. Do not compare
+their raw success rates as model ability. Keep observations task- and runtime-specific.
+No new router agent, universal score, forced tournament or learned selector is required.
