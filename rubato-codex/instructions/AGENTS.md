@@ -1,7 +1,7 @@
 ## Rubato Codex routing
 
 The installed Rubato Codex base supplies the common working agreement and
-root-only lead mindset; its Role selection section defines seats, parentage and
+root-only lead mindset; its Role selection section defines roles, parentage and
 spawn surface. Native taskforce roles supply owner, verifier and subagent
 instructions. Follow the assigned role, not the role of inherited conversation.
 

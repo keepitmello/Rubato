@@ -71,9 +71,8 @@ function transformText(relativePath, input) {
       .replace("Launch `outpost` on PATH", "Launch `${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost`");
   }
 
-  if (relativePath === "metaFrame/SKILL.md") {
+  if (relativePath === "metaframe/SKILL.md") {
     output = output
-      .replace("name: metaFrame", "name: metaframe")
       .replace("disable-model-invocation: true\nargument-hint: \"[task or current work]\"\n", "");
   }
 

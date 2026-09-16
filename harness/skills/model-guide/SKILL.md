@@ -36,11 +36,11 @@ Two convergers are not interchangeable: a hypothesis converger compresses the an
 
 Debugging is the case that tempts misrouting. The diagnosis is judgment, and judgment stays with the session that owns the outcome — lead and teammate alike. Default shape: a worker maps the terrain and gathers evidence, the owner reasons to the root cause, and execution of the settled fix routes by breadth as usual. Hand a debugging workstream to an Agent only when it is genuinely separable and runs parallel to other work; review it with the other model family.
 
-## 2. Seats and models (operational, pinned 2026-09-06)
+## 2. Roles and models (operational, pinned 2026-09-06)
 
-Every dispatch fills one of four seats. Pick the seat from the bottleneck (§1), then take the model, effort, and approval rule from this table. Always pass an exact `model` (`provider/model`) or a named `preset` to `Agent`; never a category, task type, or `subagent_type`.
+Every dispatch fills one of four roles. Pick the role from the bottleneck (§1), then take the model, effort, and approval rule from this table. Always pass an exact `model` (`provider/model`) or a named `preset` to `Agent`; never a category, task type, or `subagent_type`.
 
-| Seat | What it holds | Model (exact id) | Effort | Approval |
+| Role | What it holds | Model (exact id) | Effort | Approval |
 |---|---|---|---|---|
 | **Owner** — judgment | framing, architecture, diagnosis, proof; the outcome's decisions | Fable 5.1 `anthropic/claude-fable-5-1` (framing, structure) · Sol `openai-codex/gpt-5.6-sol` (hypothesis, proof) · Astra `openai-codex/gpt-6-astra` | `medium`; `high` when hard | **per dispatch, model and effort both** |
 | **Owner** — already-framed | a bounded technical outcome whose frame and goal are settled; when a complex task's bottleneck is judgment, a Grok owner is itself the bottleneck — ask for Fable or Sol and keep the judgment in this session until approved | Grok 4.6 `xai/grok-4.6` or Cursor Fast `cursor/cursor-grok-4.6-high-fast` | `high`; `xhigh` when hard | none |
@@ -52,9 +52,9 @@ Opus 5 has no slot.
 
 ### Fast Model
 
-Muse Spark and Gemini 3.8 Flash sit at roughly Grok's level of capability and run several times faster, so they are the first choice for a worker and are fine to run as an `Agent` on their own. Reach for Grok instead when a task keeps tripping on precision, or when you want its quota rather than speed. All three are action convergers: they compress the action space, not the answer space, so none of them takes a judgment seat.
+Muse Spark and Gemini 3.8 Flash sit at roughly Grok's level of capability and run several times faster, so they are the first choice for a worker and are fine to run as an `Agent` on their own. Reach for Grok instead when a task keeps tripping on precision, or when you want its quota rather than speed. All three are action convergers: they compress the action space, not the answer space, so none of them takes a judgment role.
 
-### Owner seat
+### Owner role
 
 - **Fable 5.1** — problem framer and structurer. As an Agent: framing, human-outcome review, cross-stream architecture, contracts, integration.
 - **GPT-5.6 Sol** — hypothesis converger. Default verifier, the supervisor when the owner is stuck, and the owner when the proof itself is the deliverable.
@@ -62,23 +62,23 @@ Muse Spark and Gemini 3.8 Flash sit at roughly Grok's level of capability and ru
 
 ### Approval rule
 
-**Fable (including Fable 5.1), Sol, and Astra require the user's explicit approval for every dispatch, in every role — owner, worker, or verifier.** Before spawning, name the model, effort, and task and obtain approval. A verifier role, a routing default, a fallback, or a previous approval for a different task is NOT permission; approval is scoped to the specified task and effort, not to later spawns or new tasks in a resumed agent. A clear owner seat may run on Grok without that approval; a judgment seat may not. The verifier pairings in the table are defaults, not mandatory pairings, and never exceptions to this rule. Do not substitute Astra for a verifier automatically. A clear low-risk task may use owner self-verification only.
+**Fable (including Fable 5.1), Sol, and Astra require the user's explicit approval for every dispatch, in every role — owner, worker, or verifier.** Before spawning, name the model, effort, and task and obtain approval. A verifier role, a routing default, a fallback, or a previous approval for a different task is NOT permission; approval is scoped to the specified task and effort, not to later spawns or new tasks in a resumed agent. A clear owner role may run on Grok without that approval; a judgment role may not. The verifier pairings in the table are defaults, not mandatory pairings, and never exceptions to this rule. Do not substitute Astra for a verifier automatically. A clear low-risk task may use owner self-verification only.
 
 ### Routing order
 
 1. Determine the main session's current model family now, not the family it started with; it may have changed during the session.
-2. Choose the seat from the bottleneck; for an independent verifier, pick a different model family from the artifact's producer.
+2. Choose the role from the bottleneck; for an independent verifier, pick a different model family from the artifact's producer.
 3. Pass the exact `model` and `effort` from the table, or a named `preset`. The harness resolves a preset against the live catalog, admits it, and carries the runtime fallback chain; use an exact `model` when provider/model identity is itself a requirement.
 4. Say in one line which model or preset the agent runs on; report the resolved model when the runtime returns it.
 
-Choose the seat at dispatch and predict the dominant bottleneck up front rather than planning to climb later. A stronger model existing is not by itself a reason for a new session; whether the next task continues or starts fresh belongs to Skill(dispatching).
+Choose the role at dispatch and predict the dominant bottleneck up front rather than planning to climb later. A stronger model existing is not by itself a reason for a new session; whether the next task continues or starts fresh belongs to Skill(dispatching).
 
 ## 3. Minimal shapes
 
-- One bounded, already-clear technical outcome → one owner. Grok may hold that seat. That owner dispatches Fast Model workers for settled execution.
+- One bounded, already-clear technical outcome → one owner. Grok may hold that role. That owner dispatches Fast Model workers for settled execution.
 - One material or judgment-heavy outcome → Fable or Sol owner after approval; if not approved, keep the judgment in the current session. Add a verifier when the outcome is material or ambiguous.
 - Two genuinely independent outcomes → two owners; verifier only if integration risk warrants.
-- Unclear root cause → the current owner diagnoses from a Fast Model worker's map. A separable parallel debugging workstream is a judgment seat: ask for Sol, or Fable if the frame itself is wrong. Until approved, do not spawn a Grok owner for that seat.
+- Unclear root cause → the current owner diagnoses from a Fast Model worker's map. A separable parallel debugging workstream is a judgment role: ask for Sol, or Fable if the frame itself is wrong. Until approved, do not spawn a Grok owner for that role.
 - Product or UX uncertainty → framing before execution, then the chosen owners.
 
 Build the smallest roster that gives each distinct bottleneck one clear owner.
