@@ -1,7 +1,23 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { applyContextNotesTransforms as apply, contextNotesTarget } from "../../src/transforms/core-context-notes.mjs";
+import { resetContextModeResolution, setContextMode } from "../../src/context-notes/config.mjs";
 import { initialWindow, encodeBootstrap } from "../../src/context-notes/protocol.mjs";
+
+function withContextMode(t, mode) {
+  const previous = process.env.RUBATO_CONTEXT_MODE;
+  const previousOrigin = process.env.RUBATO_CONTEXT_MODE_ORIGIN;
+  setContextMode(mode);
+  t.after(() => {
+    if (previous === undefined) delete process.env.RUBATO_CONTEXT_MODE;
+    else process.env.RUBATO_CONTEXT_MODE = previous;
+    if (previousOrigin === undefined) delete process.env.RUBATO_CONTEXT_MODE_ORIGIN;
+    else process.env.RUBATO_CONTEXT_MODE_ORIGIN = previousOrigin;
+    resetContextModeResolution();
+  });
+}
+
+test.beforeEach((t) => withContextMode(t, "history-notes"));
 
 const base="file:///repo/node_modules/@code-yeongyu/senpi/dist/core/";
 const sources={

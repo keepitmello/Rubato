@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { setContextMode } from "../../src/context-notes/config.mjs";
 import {
   ANTHROPIC_SERVER_COMPACTION_BETA,
   ANTHROPIC_SERVER_COMPACTION_EDIT_TYPE,
@@ -10,6 +11,8 @@ import {
   applyAnthropicServerCompaction,
   wrapAnthropicServerCompactionFetch,
 } from "../../src/anthropic-server-compaction-wire.mjs";
+
+setContextMode("summary");
 
 const MESSAGES_URL = "https://api.anthropic.com/v1/messages";
 // 단위 테스트는 트랜스폼을 거치지 않으므로 적용 표시를 직접 켠다.

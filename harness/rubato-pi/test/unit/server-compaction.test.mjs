@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { senpiDir } from "../../src/engine-paths.mjs";
+import { setContextMode } from "../../src/context-notes/config.mjs";
 import {
   SERVER_COMPACTION_DETAILS_SOURCE,
   findUnprojectedServerCompaction,
@@ -11,6 +12,8 @@ import {
   serverCompactionResult,
 } from "../../src/server-compaction-projection.mjs";
 import { installServerCompaction } from "../../src/extensions/server-compaction.mjs";
+
+setContextMode("summary");
 
 const { SessionManager } = await import(pathToFileURL(join(senpiDir, "dist", "core", "session-manager.js")).href);
 
