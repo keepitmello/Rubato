@@ -29,7 +29,7 @@
     "ci:local": "bash scripts/ci-local.sh && npm run test:pi-runtime",
     "test:migration": "node --test harness/pi-runtime/test/migration-regressions.test.mjs",
     "test:pi-runtime": "npm --prefix harness/pi-runtime test --workspaces=false",
-    "test": "npm run test:pi-runtime && npm --prefix harness/rubato-pi test && bun test packages/rubato-runtime packages/senpi-task && npm --prefix packages/rubato-remote-protocol test && npm --prefix packages/rubato-live-cli test && npm --prefix packages/rubato-remote-hub test && npm --prefix packages/rubato-terminal-bridge test",
+    "test": "npm run test:pi-runtime && npm --prefix harness/rubato-pi test && bun test packages/rubato-runtime packages/senpi-task packages/team-core packages/rubato-config-core packages/delegate-core && npm --prefix packages/rubato-remote-protocol test && npm --prefix packages/rubato-live-cli test && npm --prefix packages/rubato-remote-hub test && npm --prefix packages/rubato-terminal-bridge test",
     "typecheck": "tsgo --noEmit -p packages/rubato-runtime/tsconfig.json && tsgo --noEmit -p packages/senpi-task/tsconfig.json && npm --prefix packages/rubato-remote-protocol run typecheck && npm --prefix packages/rubato-remote-hub run typecheck && npm --prefix packages/rubato-terminal-bridge run typecheck"
   },
   "keywords": [
