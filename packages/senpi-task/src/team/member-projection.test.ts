@@ -41,7 +41,7 @@ describe("refreshTeamMemberStatuses", () => {
     const settings = taskSettings()
     const manager = new FakeTeamManager()
     const spec = normalizeSenpiTeamSpec(
-      { members: [{ name: "alpha", kind: "category", category: "quick", prompt: "work" }] },
+      { members: [{ name: "alpha", kind: "owner", model: "rubato-mock/mock-1", prompt: "work" }] },
       "squad",
     )
     const created = await createTeam(spec, "project", {

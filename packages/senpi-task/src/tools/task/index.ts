@@ -1,4 +1,4 @@
-export { listTaskAgents, listTaskCategories } from "./categories"
+export { listTaskAgents } from "./categories"
 export { TASK_PROMPT_GUIDELINES, TASK_PROMPT_SNIPPET, buildTaskToolDescription } from "./description"
 export { buildTaskExecute } from "./execute"
 export { TaskToolParams } from "./params"
@@ -24,7 +24,6 @@ export type {
   SkillResolution,
   TaskAgentInfo,
   TaskAncestry,
-  TaskCategoryInfo,
   TaskToolContext,
   TaskToolDeps,
   TaskToolDetails,

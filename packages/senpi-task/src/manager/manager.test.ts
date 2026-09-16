@@ -9,6 +9,7 @@ import { createTaskLifecycle } from "../lifecycle"
 import type { ResidentHandle, ResidencyRegistry } from "../lifecycle"
 import type { ResolvedModelRecord } from "../state"
 import { createTaskRecordStore } from "../store"
+import { RunnerError } from "../runners/in-process"
 import { CTX, makeDeps } from "../tools/task/__fixtures__/task-tool-fakes"
 import { buildTaskExecute } from "../tools/task/execute"
 import { renderTaskResultLines } from "../tools/task/renderers"
@@ -17,7 +18,7 @@ import {
   FakeRunner,
   baseSpec,
   cleanupProjects,
-  categoryPlanner,
+  modelPlanner,
   flush,
   makeHandle,
   makeManager,
@@ -25,7 +26,7 @@ import {
   tempProject,
 } from "./__fixtures__/manager-fakes"
 import { createTaskManager } from "./manager"
-import type { ChildPlanner, ManagedRunner, SpawnAdmission, TaskManager } from "./types"
+import type { ChildPlanner, ManagedRunner, ManagedStartSpec, SpawnAdmission, TaskManager } from "./types"
 
 const RENDERER_THEME = {
   fg: (_color: ThemeColor, text: string) => text,
@@ -69,7 +70,7 @@ function makeLifecycleManager(runner: ManagedRunner, config = settings({ default
   const manager = createTaskManager({
     store,
     runners: { "in-process": runner, process: runner },
-    planner: categoryPlanner(),
+    planner: modelPlanner(),
     config,
     cwd: project,
     destruction: { destroyResidentTask: (taskId) => lifecycle.destroyResidentTask(taskId, "cancel") },
@@ -90,6 +91,45 @@ function makeLifecycleManager(runner: ManagedRunner, config = settings({ default
 }
 
 describe("TaskManager.start", () => {
+  test("#given a transient session-create failure #when started #then it retries internally without another Agent call", async () => {
+    class OnceFlakyRunner extends FakeRunner {
+      attempts = 0
+
+      override start(spec: ManagedStartSpec): Promise<ManagedChildHandle> {
+        this.attempts += 1
+        if (this.attempts === 1) {
+          throw new RunnerError({ kind: "session-create-failed", message: "transient session creation failure" })
+        }
+        return super.start(spec)
+      }
+    }
+    const runner = new OnceFlakyRunner()
+    const { manager } = makeManager({ inProcess: runner })
+
+    const result = await manager.start(baseSpec())
+
+    expect(result.kind).toBe("started")
+    expect(runner.attempts).toBe(2)
+  })
+
+  test("#given an unclassified runner failure #when started #then it does not risk a duplicate child by retrying", async () => {
+    class BrokenRunner extends FakeRunner {
+      attempts = 0
+
+      override start(_spec: ManagedStartSpec): Promise<ManagedChildHandle> {
+        this.attempts += 1
+        throw new Error("unclassified runner failure")
+      }
+    }
+    const runner = new BrokenRunner()
+    const { manager } = makeManager({ inProcess: runner })
+
+    const result = await manager.start(baseSpec())
+
+    expect(result.kind).toBe("start_failed")
+    expect(runner.attempts).toBe(1)
+  })
+
   test("#given a valid spec #when started #then it returns a st_ id and running status with a persisted record", async () => {
     // given
     const { manager, store } = makeManager({})
@@ -140,14 +180,14 @@ describe("TaskManager.start", () => {
     expect(store.load(first.task_id)?.status).toBe("completed")
   })
 
-  test("#given two categories that resolve to different models #when both start under a shared limit of 1 #then both run", async () => {
+  test("#given two exact models #when both start under a shared limit of 1 #then both run", async () => {
     // given
-    const planner = categoryPlanner({ quick: "anthropic/claude", deep: "openai/gpt" })
+    const planner = modelPlanner({ quick: "anthropic/claude", deep: "openai/gpt" })
     const { manager, store } = makeManager({ planner, config: settings({ default_concurrency: 1, max_depth: 1 }) })
 
     // when
-    const a = await manager.start(baseSpec({ category: "quick", name: "a" }))
-    const b = await manager.start(baseSpec({ category: "deep", name: "b" }))
+    const a = await manager.start(baseSpec({ model: "anthropic/claude", name: "a" }))
+    const b = await manager.start(baseSpec({ model: "openai/gpt", name: "b" }))
 
     // then
     if (a.kind !== "started" || b.kind !== "started") throw new Error("expected started")
@@ -220,14 +260,13 @@ describe("TaskManager.start", () => {
       display: "Claude Sonnet 4",
       variant: "sonnet",
       reasoning_effort: "medium",
-      source: "category",
+      source: "model",
     }
     const planner: ChildPlanner = (spec) => ({
       kind: "resolved",
       plan: {
         model: spec.model ?? "anthropic/claude",
         resolved_model: resolvedModel,
-        ...(spec.category !== undefined ? { category: spec.category } : {}),
       },
     })
     const { manager, store } = makeManager({ planner })
@@ -260,11 +299,11 @@ describe("TaskManager.start", () => {
       model_id: "gpt-5.6-sol",
       display: "GPT-5.6 Sol",
       reasoning_effort: "xhigh",
-      source: "category",
+      source: "model",
     }
     const planner: ChildPlanner = () => ({
       kind: "resolved",
-      plan: { model: "openai/gpt-5.6-sol", resolved_model: resolvedModel, category: "ultrabrain" },
+      plan: { model: "openai/gpt-5.6-sol", resolved_model: resolvedModel },
     })
     const runner = new FakeRunner()
     runner.throwOnStart = true
@@ -472,7 +511,7 @@ describe("TaskManager pending cancellation", () => {
     const manager = createTaskManager({
       store,
       runners: { "in-process": runner, process: runner },
-      planner: categoryPlanner(),
+      planner: modelPlanner(),
       config,
       cwd: project,
     })

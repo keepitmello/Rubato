@@ -7,7 +7,6 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 
 import { TeamModeConfigSchema } from "../config"
-import { resolveCallerTeamLead } from "../resolve-caller-team-lead"
 import { loadTeamSpec } from "./loader"
 
 async function createTemporaryRoot(): Promise<string> {
@@ -48,12 +47,11 @@ describe("loadTeamSpec member name normalization", () => {
     const fixturePaths = getFixturePaths(rootDirectory, "autoname")
     await writeJsonFile(fixturePaths.userConfigPath, {
       name: "autoname",
-      lead: { kind: "subagent_type", subagent_type: "ultraworker" },
       members: [
-        { kind: "category", category: "quick", prompt: "Quick scout the workspace structure." },
-        { kind: "category", category: "deep", prompt: "Deep dive the runtime setup." },
-        { kind: "category", category: "deep", prompt: "Deep dive the mailbox implementation." },
-        { kind: "subagent_type", subagent_type: "atlas" },
+        { kind: "owner", model: "rubato-mock/mock-1", prompt: "Quick scout the workspace structure." },
+        { kind: "owner", model: "rubato-mock/mock-1", prompt: "Deep dive the runtime setup." },
+        { kind: "owner", model: "rubato-mock/mock-1", prompt: "Deep dive the mailbox implementation." },
+        { kind: "owner", model: "rubato-mock/mock-1", prompt: "Review the combined result." },
       ],
     })
 
@@ -61,33 +59,6 @@ describe("loadTeamSpec member name normalization", () => {
     const teamSpec = await loadTeamSpec("autoname", TeamModeConfigSchema.parse({ base_dir: fixturePaths.userBaseDir }), fixturePaths.projectRoot)
 
     // then
-    expect(teamSpec.leadAgentId).toBe("lead")
-    expect(teamSpec.members.map((member) => member.name)).toEqual(["lead", "quick-1", "deep-1", "deep-2", "atlas-1"])
-  })
-
-  test("injects the caller as lead for preset specs without explicit lead metadata", async () => {
-    // given
-    const rootDirectory = await createTemporaryRoot()
-    temporaryDirectories.push(rootDirectory)
-    const fixturePaths = getFixturePaths(rootDirectory, "caller-lead")
-    await writeJsonFile(fixturePaths.userConfigPath, {
-      name: "caller-lead",
-      members: [
-        { kind: "category", category: "quick", prompt: "Quick scout the workspace structure." },
-        { kind: "subagent_type", subagent_type: "atlas" },
-      ],
-    })
-
-    // when
-    const teamSpec = await loadTeamSpec(
-      "caller-lead",
-      TeamModeConfigSchema.parse({ base_dir: fixturePaths.userBaseDir }),
-      fixturePaths.projectRoot,
-      { callerTeamLead: resolveCallerTeamLead("\u200BUltraworker") },
-    )
-
-    // then
-    expect(teamSpec.leadAgentId).toBe("lead")
-    expect(teamSpec.members.map((member) => member.name)).toEqual(["lead", "quick-1", "atlas-1"])
+    expect(teamSpec.members.map((member) => member.name)).toEqual(["mock-1-1", "mock-1-2", "mock-1-3", "mock-1-4"])
   })
 })

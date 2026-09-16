@@ -124,10 +124,8 @@ describe("task-family custom message renderers", () => {
       agentId: "st_done",
       name: "worker",
       status: "completed" as const,
-      category: "quick",
       model: "requested/model",
       resolved_model: {
-        source: "category" as const,
         provider: "quotio-openai",
         model_id: "gpt-5.6-luna-fast",
         display: "quotio-openai/gpt-5.6-luna-fast",
@@ -150,7 +148,7 @@ describe("task-family custom message renderers", () => {
     // then
     expect(text).toContain("Agent complete · worker")
     expect(text).toContain("agentId st_done")
-    expect(text).toContain("category:quick(quotio-openai/gpt-5.6-luna-fast)")
+    expect(text).toContain("model:quotio-openai/gpt-5.6-luna-fast")
     expect(text).toContain("duration 1.25s")
     expect(text).toContain("tokens 321")
     expect(text).toContain("검증 작업을 완료했습니다.")
@@ -191,7 +189,6 @@ describe("task-family custom message renderers", () => {
       agentId: "st_team_member",
       name: "stats-member",
       status: "completed" as const,
-      category: "quick",
       model: "apitopia/z-ai/glm-5.2-ultrafast-unlocked",
       duration_ms: 65_000,
       run_stats: {

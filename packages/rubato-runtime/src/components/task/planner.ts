@@ -1,11 +1,9 @@
-import type { RubatoConfig } from "@rubato/config-core"
 import {
   resolveModelEffort,
   type EffortSource,
 } from "@rubato/model-core"
 import {
   resolveAgent,
-  resolveCategory,
   type AgentDefinition,
   type ChildPlanner,
   type PlanResolution,
@@ -32,52 +30,22 @@ export function plannedEffortSource(model: ResolvedModelMetadata | undefined): E
   return source === "model-default" || source === "manual-override" ? source : undefined
 }
 
-// The category-and-agent resolving ChildPlanner the manager consumes. Resolution order:
-// 1. a subagent_type naming a known agent wins. An explicit `model` still has to be in the live
-//    registry; missing models fail closed as model_unavailable instead of spawning headless.
-// 2. an explicit `model` alone is admitted only when the live registry can see that exact id.
-// 3. a category (or a subagent_type naming a category) resolves against rubato.json + the registry.
 export function createTaskChildPlanner(
-  rubatoConfig: RubatoConfig,
+  _rubatoConfig: RubatoConfig,
   agents: Readonly<Record<string, AgentDefinition>>,
   resolveRegistry: ResolveModelRegistry,
 ): ChildPlanner {
   const availableAgents = listAvailableAgents(agents)
   return (spec): PlanResolution => {
-    if (spec.subagent_type !== undefined) {
-      const agentResolution = resolveAgentTarget(spec.subagent_type, spec.model, agents, resolveRegistry)
+    if (spec.preset !== undefined) {
+      const agentResolution = resolveAgentTarget(spec.preset, spec.model, agents, resolveRegistry)
       if (agentResolution !== undefined) return withReasoningPolicy(agentResolution, spec.reasoning)
     }
 
-    if (spec.category === undefined && spec.subagent_type === undefined && spec.model !== undefined && spec.model.length > 0) {
+    if (spec.preset === undefined && spec.model !== undefined && spec.model.length > 0) {
       return withReasoningPolicy(resolveExactModel(spec.model, resolveRegistry), spec.reasoning)
     }
-
-    const categoryName = spec.category ?? spec.subagent_type
-    if (categoryName === undefined) {
-      return { kind: "error", error: { code: "invalid_target", message: "A task requires a category, subagent_type, or model." } }
-    }
-
-    const registry = resolveRegistry()
-    if (registry === undefined) {
-      return {
-        kind: "error",
-        error: { code: "model_unavailable", message: NO_REGISTRY_MESSAGE },
-      }
-    }
-
-    const resolution = resolveCategory(
-      categoryName,
-      rubatoConfig,
-      registry,
-      spec.model !== undefined && spec.model.length > 0 ? { modelOverride: spec.model } : {},
-    )
-    return withReasoningPolicy(toPlanResolution(
-      categoryName,
-      resolution,
-      availableAgents,
-      spec.model !== undefined ? explicitModelMetadata(spec.model) : undefined,
-    ), spec.reasoning)
+    return { kind: "error", error: { code: "invalid_target", message: "A task requires a model or preset." } }
   }
 }
 
@@ -111,8 +79,6 @@ function withReasoningPolicy(resolution: PlanResolution, reasoning: string | und
   }
 }
 
-// Agent-first target handling. Unknown and disabled names may retain category fallback, but a known
-// disabled name cannot use an explicit model to bypass agent disablement.
 function resolveAgentTarget(
   agentName: string,
   explicitModel: string | undefined,
@@ -172,7 +138,7 @@ function toAgentPlan(resolution: ResolvedAgentResult, explicitModel: ResolvedMod
       ? { fallback_models: resolution.fallback_models }
       : {}),
     ...(resolvedModel !== undefined ? { resolved_model: resolvedModel } : {}),
-    agentType: resolution.agentType,
+    preset: resolution.preset,
     ...(resolution.instructions !== undefined ? { instructions: resolution.instructions } : {}),
     ...(resolution.toolAllowlist !== undefined ? { toolAllowlist: resolution.toolAllowlist } : {}),
     ...(resolution.agentExecutionMode !== undefined ? { agentExecutionMode: resolution.agentExecutionMode } : {}),
@@ -186,76 +152,6 @@ function listAvailableAgents(agents: Readonly<Record<string, AgentDefinition>>):
     .filter(([, definition]) => definition.disable !== true)
     .map(([name]) => name)
     .sort()
-}
-
-function toPlanResolution(
-  categoryName: string,
-  resolution: ReturnType<typeof resolveCategory<SenpiModelPort>>,
-  availableAgents: readonly string[],
-  explicitModel?: ResolvedModelMetadata,
-): PlanResolution {
-  if (resolution.kind === "resolved") {
-    const explicitResolvedModel = explicitModel === undefined
-      ? undefined
-      : {
-          ...explicitModel,
-          ...(resolution.spec.variant !== undefined ? { variant: resolution.spec.variant } : {}),
-        }
-    return {
-      kind: "resolved",
-      plan: {
-        model: `${resolution.spec.provider}/${resolution.spec.modelId}`,
-        ...(explicitResolvedModel !== undefined
-          ? { requested_model: explicitResolvedModel }
-          : resolution.spec.requested_model !== undefined
-          ? { requested_model: resolution.spec.requested_model }
-          : {}),
-        ...(resolution.spec.fallback_models !== undefined
-          ? { fallback_models: resolution.spec.fallback_models }
-          : {}),
-        resolved_model: explicitResolvedModel ?? {
-          source: "category",
-          provider: resolution.spec.provider,
-          model_id: resolution.spec.modelId,
-          display: resolution.spec.displayName ?? `${resolution.spec.provider}/${resolution.spec.modelId}`,
-          ...(resolution.spec.variant !== undefined ? { variant: resolution.spec.variant } : {}),
-          ...(resolution.spec.reasoningEffort !== undefined ? { reasoning_effort: resolution.spec.reasoningEffort } : {}),
-          ...(resolution.spec.reasoning !== undefined ? { reasoning: resolution.spec.reasoning } : {}),
-        },
-        category: resolution.category,
-        ...(resolution.spec.prompt_append !== undefined && { promptAppend: resolution.spec.prompt_append }),
-      },
-    }
-  }
-  if (resolution.kind === "disabled") {
-    return {
-      kind: "error",
-      error: { code: "category_disabled", message: resolution.reason, availableCategories: resolution.availableCategories },
-    }
-  }
-  if (resolution.kind === "not_found") {
-    return {
-      kind: "error",
-      error: {
-        code: "unknown_target",
-        message: `Category "${categoryName}" not found.`,
-        availableAgents,
-        availableCategories: resolution.availableCategories,
-      },
-    }
-  }
-  return {
-    kind: "error",
-    error: {
-      code: "model_unavailable",
-      message: `No available model for category "${categoryName}" (attempted ${resolution.attemptedModel ?? "none"}).`,
-      availableCategories: resolution.availableCategories,
-      // Dead-chain detail rides the error so the warning layer can surface it without re-resolving.
-      category: categoryName,
-      ...(resolution.attempted_chain !== undefined && { attempted_chain: resolution.attempted_chain }),
-      ...(resolution.missing_providers !== undefined && { missing_providers: resolution.missing_providers }),
-    },
-  }
 }
 
 function explicitModelMetadata(model: string): ResolvedModelMetadata | undefined {
@@ -313,3 +209,4 @@ function resolveExactModel(model: string, resolveRegistry: ResolveModelRegistry)
     },
   }
 }
+import type { RubatoConfig } from "@rubato/config-core"

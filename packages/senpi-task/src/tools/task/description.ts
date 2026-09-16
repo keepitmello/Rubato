@@ -43,7 +43,7 @@ function renderTargetSection(
   gatedAgents: readonly TaskAgentInfo[],
 ): string {
   const modelLine =
-    '`model` is a complete provider/model id from the live host registry. Missing models fail closed with model_unavailable; there is no fallback. CORRECT: Agent(model="xai/grok-4.6", prompt="...")'
+    "`model` is a complete provider/model id from the live host registry. The tool schema lists admitted values; missing models fail closed with model_unavailable and there is no fallback."
   if (!hasPresetRoute) {
     return `${modelLine}
 No presets are currently loaded; provide \`model\`.`

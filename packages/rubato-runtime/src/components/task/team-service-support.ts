@@ -1,6 +1,4 @@
-import type { RubatoConfig } from "@rubato/config-core"
 import {
-  DEFAULT_CATEGORIES,
   SenpiTeamSpecError,
   loadTeamRegistry,
   normalizeSenpiTeamSpec,
@@ -8,6 +6,7 @@ import {
   resolveTeamRuntimeDirs,
   validateSenpiTeamMembers,
   type SenpiTeamMemberPorts,
+  type ModelCatalog,
   type ShutdownMessenger,
   type StateDirConfig,
   type TaskManager,
@@ -17,17 +16,18 @@ import type { TeamSpec } from "@rubato/team-core/types"
 
 export type ResolvedTeamSpec = { readonly spec: TeamSpec; readonly source: TeamSpecSource }
 
-// The senpi vocabulary the team spec validator checks against: a category is any built-in default or
-// rubato.json-declared category name; a subagent_type is any loaded agent definition. Membership-only
-// (the concrete model resolution happens later, at spawn, through the planner + live model registry).
-export function buildMemberPorts(rubatoConfig: RubatoConfig, agentNames: ReadonlySet<string>): SenpiTeamMemberPorts {
-  const categoryNames = new Set<string>([...Object.keys(DEFAULT_CATEGORIES), ...Object.keys(rubatoConfig.categories ?? {})])
-  return {
-    isCategoryResolvable: (category) => categoryNames.has(category),
-    isKnownAgent: (subagentType) => agentNames.has(subagentType),
-    categoryNames: [...categoryNames],
-    agentNames: [...agentNames],
+// One catalog owns explicit model admission for both Agent and team members.
+export function buildMemberPorts(models: ModelCatalog): SenpiTeamMemberPorts {
+  const ports: SenpiTeamMemberPorts = {
+    isModelAvailable: (model) => models.has(model),
   }
+  if (models.list !== undefined) {
+    Object.defineProperty(ports, "modelNames", {
+      enumerable: true,
+      get: () => models.list?.() ?? [],
+    })
+  }
+  return ports
 }
 
 function inlineTeamName(inlineSpec: unknown): string {

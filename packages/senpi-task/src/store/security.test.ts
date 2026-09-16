@@ -11,7 +11,7 @@ const RESOLVED_MODEL = {
   provider: "openai",
   model_id: "gpt-5.6-sol",
   display: "OpenAI GPT-5.6 SOL",
-  source: "category",
+  source: "model",
 } as const satisfies ResolvedModelRecord
 
 afterEach(() => {
@@ -188,7 +188,7 @@ describe("parseTaskRecord persisted boundary", () => {
 
     // then
     expect(result.records).toEqual([])
-    expect(result.diagnostics).toEqual([{ type: "parse_error", path, message: "resolved_model.source must be category or explicit or agent" }])
+    expect(result.diagnostics).toEqual([{ type: "parse_error", path, message: "resolved_model.source must be model or explicit or preset" }])
   })
 
   test("#given malformed known resolved model fields #when listed #then diagnostic is typed and record is skipped", () => {

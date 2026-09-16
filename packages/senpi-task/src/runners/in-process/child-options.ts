@@ -80,7 +80,7 @@ export function buildChildSessionOptions(input: BuildChildSessionOptionsInput): 
   const mergedCustomTools = mergeChildCustomTools(input.sharedParentTools, spec.memberScopedTools, {
     uiOnlyToolNames,
   })
-  const customTools = spec.agentType !== undefined && CURATED_READONLY_AGENT_NAMES.has(spec.agentType)
+  const customTools = spec.preset !== undefined && CURATED_READONLY_AGENT_NAMES.has(spec.preset)
     ? [...mergedCustomTools.filter((tool) => tool.name !== "bash"), createCuratedReadonlyBashTool(spec.cwd)]
     : mergedCustomTools
   const settingsManager = createRuntimeFallbackSettings(spec.selectedModel, spec.fallbackModels)

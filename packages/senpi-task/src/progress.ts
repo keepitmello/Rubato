@@ -19,8 +19,7 @@ export type ToolProgressDetails = {
 }
 
 export type ChildProgressTarget = {
-  readonly category?: string
-  readonly agentType?: string
+  readonly preset?: string
   readonly resolvedModel?: ResolvedModelRecord
   readonly model?: string
   readonly name?: string
@@ -55,8 +54,7 @@ export function createChildProgress(
     composeStatusLine({
       identity: taskIdentityLabel({ taskId, name: target.name, description: target.description, taskSummary: target.taskSummary }),
       target: formatStatusTarget({
-        category: target.category,
-        agentType: target.agentType,
+        preset: target.preset,
         resolvedModel,
         model,
         fallbackCount,

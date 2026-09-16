@@ -6,58 +6,84 @@ import { TASK_SUMMARY_MAX_LENGTH } from "../../task-summary"
 import { SenpiTeamRuntimeError, SenpiTeamSpecError } from "../../team"
 import type { CreatedMemberInfo } from "../../team"
 import type { ResolvedModelRecord } from "../../state"
-import { formatTargetIdentity, formatTargetWithModel } from "../../status-line"
+import { formatTargetWithModel } from "../../status-line"
 import { toolResult } from "../control"
+import { TaskToolEffort } from "../task/params"
 import type { TeamToolDeps, TeamToolsService } from "./types"
 
-const InlineTeamSpecMemberSchema = Type.Object(
-  {
-    name: Type.Optional(Type.String({ description: "Member name; unique within the team, lowercase-stem normalized." })),
-    kind: Type.Optional(
-      Type.Union([Type.Literal("category"), Type.Literal("subagent_type"), Type.Literal("agent")], {
-        description: "Member kind; 'agent' is an alias for subagent_type. Inferred from the category/subagent_type field when omitted.",
-      }),
-    ),
-    category: Type.Optional(Type.String({ description: "Live delegate category (grok, deep, quick, …). Do not invent names; unknown categories are rejected with the available list." })),
-    subagent_type: Type.Optional(Type.String({ description: "Agent definition to run this member as (kind subagent_type or agent)." })),
-    prompt: Type.Optional(Type.String({ description: "Member instructions; MUST be written in English." })),
-    task_summary: Type.Optional(
-      Type.String({
-        maxLength: TASK_SUMMARY_MAX_LENGTH,
-        description: "One-line summary of this member's assigned work, shown in the task footer/widget UI. Longer values are force-truncated to 80 chars.",
-      }),
-    ),
-    model: Type.Optional(
-      Type.String({
-        description: "Exact provider/model id override for this member, same form as Agent (e.g. xai/grok-4.6:xhigh). Category must still be a live delegate category — do not invent category names.",
-      }),
-    ),
-  },
-  { additionalProperties: true },
-)
+type AvailableModels = readonly string[] | (() => readonly string[])
 
-const InlineTeamSpecSchema = Type.Object(
-  {
-    name: Type.Optional(Type.String({ description: "Team name; defaults to a derived inline name when omitted." })),
-    members: Type.Optional(
-      Type.Union([Type.Array(InlineTeamSpecMemberSchema), InlineTeamSpecMemberSchema], {
-        description: "Team members (an array, or a single member object which is wrapped into one). The current session is always the lead; do not declare a lead member.",
+function teamMemberModelSchema(availableModels: AvailableModels) {
+  const schema = Type.String({
+    description: "Complete provider/model id from the same live host registry used by Agent. Unknown models fail closed.",
+  })
+  if (typeof availableModels !== "function" && availableModels.length > 0) {
+    Object.defineProperty(schema, "enum", { enumerable: true, value: [...availableModels].sort() })
+  }
+  return schema
+}
+
+function inlineTeamSpecMemberSchema(availableModels: AvailableModels) {
+  return Type.Object(
+    {
+      name: Type.Optional(Type.String({ description: "Member name; unique within the team, lowercase-stem normalized." })),
+      kind: Type.Union([Type.Literal("owner"), Type.Literal("verifier")], {
+        description: "Taskforce seat. Owners hold one bounded outcome; verifiers independently judge results and acceptance criteria.",
+      }),
+      model: teamMemberModelSchema(availableModels),
+      effort: Type.Optional(TaskToolEffort),
+      prompt: Type.String({ description: "Member instructions; MUST be written in English." }),
+      task_summary: Type.Optional(
+        Type.String({
+          maxLength: TASK_SUMMARY_MAX_LENGTH,
+          description: "One-line summary of this member's assigned work, shown in the task footer/widget UI. Longer values are force-truncated to 80 chars.",
+        }),
+      ),
+    },
+    { additionalProperties: false },
+  )
+}
+
+function inlineTeamSpecSchema(availableModels: AvailableModels) {
+  const memberSchema = inlineTeamSpecMemberSchema(availableModels)
+  return Type.Object(
+    {
+      name: Type.Optional(Type.String({ description: "Team name; defaults to a derived inline name when omitted." })),
+      members: Type.Array(memberSchema, {
+        minItems: 1,
+        maxItems: 8,
+        description: "Team members with an explicit owner or verifier kind. The current session is always the lead; do not declare a lead member.",
+      }),
+    },
+    { additionalProperties: false },
+  )
+}
+
+export function buildTeamCreateParams(availableModels: AvailableModels = []) {
+  const schema = Type.Object({
+    team_name: Type.Optional(
+      Type.String({ description: "Named team spec (project .rubato/teams or rubato.json) to create. Ignored when inline_spec is also provided." }),
+    ),
+    inline_spec: Type.Optional(
+      Type.Union([inlineTeamSpecSchema(availableModels), Type.String({ description: "The same spec as a JSON string; parsed automatically. Passing the object form is preferred." })], {
+        description: "Inline team spec, e.g. { name, members: [{ name, kind: 'owner'|'verifier', model, effort?, prompt }] }. Members use the same live model catalog as Agent. A JSON string of the same object is also accepted and parsed automatically. Takes precedence when team_name is also provided.",
       }),
     ),
-  },
-  { additionalProperties: true },
-)
+  })
+  if (typeof availableModels === "function") {
+    const model = schema.properties.inline_spec.anyOf[0].properties.members.items.properties.model
+    Object.defineProperty(model, "enum", {
+      enumerable: true,
+      get: () => {
+        const values = availableModels()
+        return values.length === 0 ? undefined : [...values].sort()
+      },
+    })
+  }
+  return schema
+}
 
-export const TeamCreateParams = Type.Object({
-  team_name: Type.Optional(
-    Type.String({ description: "Named team spec (project .rubato/teams or rubato.json) to create. Ignored when inline_spec is also provided." }),
-  ),
-  inline_spec: Type.Optional(
-    Type.Union([InlineTeamSpecSchema, Type.String({ description: "The same spec as a JSON string; parsed automatically. Passing the object form is preferred." })], {
-      description: "Inline team spec, e.g. { name, members: [{ name, category|subagent_type, prompt? }] }. A JSON string of the same object is also accepted and parsed automatically. Takes precedence when team_name is also provided.",
-    }),
-  ),
-})
+export const TeamCreateParams = buildTeamCreateParams()
 
 export const TeamDeleteParams = Type.Object({
   team_run_id: Type.String({ description: "Team run id to delete." }),
@@ -104,7 +130,7 @@ function coerceInlineSpec(input: unknown): { readonly ok: true; readonly spec: u
     const detail = error instanceof Error ? error.message : String(error)
     return {
       ok: false,
-      reason: `inline_spec is a string that is not valid JSON (${detail}). Pass the spec as a nested object like { name, members: [{ name, category|subagent_type, prompt? }] }, or as a valid JSON string of that object.`,
+      reason: `inline_spec is a string that is not valid JSON (${detail}). Pass the spec as a nested object like { name, members: [{ name, kind: "owner"|"verifier", model, effort?, prompt }] }, or as a valid JSON string of that object.`,
     }
   }
 }
@@ -172,9 +198,7 @@ export async function runTeamDelete(service: TeamToolsService, params: TeamDelet
 }
 
 function formatMemberRole(role: CreatedMemberInfo["role"]): string {
-  return formatTargetIdentity(
-    role.kind === "category" ? { category: role.category } : { agentType: role.subagentType },
-  ) ?? "task"
+  return role.kind
 }
 
 // Prompt excerpts stay in details, never in the text lines: echoing raw member prompts into the
@@ -182,19 +206,20 @@ function formatMemberRole(role: CreatedMemberInfo["role"]): string {
 // (e2e role detection, keyword triggers).
 function formatCreatedMemberLine(member: CreatedMemberInfo): string {
   const target = formatTargetWithModel({
-    category: member.role.kind === "category" ? member.role.category : undefined,
-    agentType: member.role.kind === "category" ? undefined : member.role.subagentType,
+    model: member.role.model,
     resolvedModel: member.model,
   })
-  return `- ${member.name} [${member.status}] ${target ?? formatMemberRole(member.role)} task:${member.taskId}`
+  const model = target === undefined ? "" : ` ${target}`
+  return `- ${member.name} [${member.status}] ${formatMemberRole(member.role)}${model} task:${member.taskId}`
 }
 
 export function createTeamCreateTool(deps: TeamToolDeps): ToolDefinition {
+  const parameters = buildTeamCreateParams(() => deps.models?.list?.() ?? [])
   return {
     name: "team_create",
     label: "Team Create",
     description: CREATE_DESCRIPTION,
-    parameters: TeamCreateParams,
+    parameters,
     execute: (_toolCallId: string, params: TeamCreateInput) => runTeamCreate(deps.service, params),
   }
 }

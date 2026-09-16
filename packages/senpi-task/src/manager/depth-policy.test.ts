@@ -33,7 +33,7 @@ describe("decideDepthPolicy", () => {
     const input = {
       childDepth: 3,
       maxDepth: 1,
-      targetAgentType: "explorer",
+      targetPreset: "explorer",
       allowedSubagents: ["explorer"] as const,
     }
 
@@ -51,7 +51,7 @@ describe("decideDepthPolicy", () => {
     const input = {
       childDepth: 2,
       maxDepth: 1,
-      targetAgentType: "writer",
+      targetPreset: "writer",
       allowedSubagents: ["explorer"] as const,
     }
 

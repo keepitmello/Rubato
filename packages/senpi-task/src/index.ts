@@ -81,7 +81,6 @@ export {
 export type {
   LoadTeamRegistryInput,
   LoadTeamRegistryResult,
-  NormalizeSenpiTeamSpecOptions,
   SenpiTeamMemberPorts,
   SenpiTeamSpecErrorCode,
   TeamRegistryEntry,
@@ -330,7 +329,6 @@ export {
   joinRendererTokens,
   linesComponent,
   listTaskAgents,
-  listTaskCategories,
   normalizeRendererText, recordSummary,
   rendererVisibleWidth,
   statusThemeColor,
@@ -338,13 +336,13 @@ export {
   taskResultLines,
 } from "./tools/task"
 export { createSenpiAgentHost, createSenpiAgentHandle, liveModelCatalog } from "./tools/host/senpi-agent-host"
+export type { ModelCatalog } from "@rubato/agent-core"
 export type {
   ResolveAncestry,
   SkillLoader,
   SkillResolution,
   TaskAgentInfo,
   TaskAncestry,
-  TaskCategoryInfo,
   TaskToolContext,
   SpawnPolicyVerdict,
   TaskToolDeps,
@@ -389,7 +387,6 @@ export type {
 export {
   TRANSCRIPT_MAX_CHARS,
   TaskOutputParams,
-  buildTaskSnapshot,
   childSessionDir,
   createTaskOutputTool,
   defaultTranscriptReader,
@@ -400,16 +397,13 @@ export {
   runTaskOutput,
 } from "./tools/output"
 export type {
-  LostBreadcrumbs,
   OutputManager,
   RenderOptions,
   RenderedTranscript,
-  SuspendedDetails,
   TaskOutputDeps,
   TaskOutputDetails,
   TaskOutputInput,
   TaskOutputToolResult,
-  TaskSnapshot,
   TranscriptEntry,
   TranscriptReadResult,
   TranscriptReader,

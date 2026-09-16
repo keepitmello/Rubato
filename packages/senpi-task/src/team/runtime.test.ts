@@ -22,9 +22,9 @@ function threeMemberSpec() {
   return normalizeSenpiTeamSpec(
     {
       members: [
-        { name: "alpha", kind: "category", category: "quick", prompt: "task alpha" },
-        { name: "beta", kind: "category", category: "deep", prompt: "task beta" },
-        { name: "gamma", kind: "subagent_type", subagent_type: "ultraworker", prompt: "task gamma" },
+        { name: "alpha", kind: "owner", model: "rubato-mock/mock-1", prompt: "task alpha" },
+        { name: "beta", kind: "owner", model: "rubato-mock/mock-1", prompt: "task beta" },
+        { name: "gamma", kind: "verifier", model: "rubato-mock/mock-1", prompt: "task gamma" },
       ],
     },
     "squad",
@@ -38,7 +38,7 @@ describe("createTeam", () => {
     const settings = taskSettings()
     const manager = new FakeTeamManager()
     const spec = normalizeSenpiTeamSpec(
-      { members: [{ name: "alpha", kind: "category", category: "quick", prompt: "task alpha" }] },
+      { members: [{ name: "alpha", kind: "verifier", model: "rubato-mock/mock-1", prompt: "task alpha" }] },
       "squad",
     )
 
@@ -59,6 +59,8 @@ describe("createTeam", () => {
     const started = manager.started[0]
     expect(started?.extensions).toEqual(["/tmp/rubato-member.js", "/tmp/mock-provider.ts"])
     expect(started?.memberEnv?.["SENPI_TASK_MEMBER"]).toBe(`${created.runtimeState.teamRunId}::alpha`)
+    expect(started?.memberEnv?.["RUBATO_PI_ROLE"]).toBe("verifier")
+    expect(created.runtimeState.members[0]?.kind).toBe("verifier")
     const config = JSON.parse(started?.memberEnv?.["SENPI_TASK_TEAM_CONFIG"] ?? "null")
     expect(config).toMatchObject({
       stateDir: join(stateDir.project_dir, ".rubato", "senpi-task"),
@@ -89,7 +91,6 @@ describe("createTeam", () => {
     for (const member of created.runtimeState.members) {
       expect(member.status).toBe("running")
       expect(member.sessionId).toMatch(/^sess-/)
-      expect(member.agentType).toBe("general-purpose")
     }
     expect(Object.keys(created.memberTaskIds).sort()).toEqual(["alpha", "beta", "gamma"])
     expect(manager.started).toHaveLength(3)
@@ -114,7 +115,7 @@ describe("createTeam", () => {
             model_id: "claude-opus-4-7",
             display: "Claude Opus 4.7",
             reasoning_effort: "high",
-            source: "category",
+            source: "model",
           },
         },
         { kind: "ok" },
@@ -137,7 +138,7 @@ describe("createTeam", () => {
     expect(alpha).toMatchObject({
       name: "alpha",
       status: "running",
-      role: { kind: "category", category: "quick" },
+      role: { kind: "owner", model: "rubato-mock/mock-1" },
       promptExcerpt: "task alpha",
     })
     expect(alpha?.taskId).toMatch(/^st_/)
@@ -145,7 +146,7 @@ describe("createTeam", () => {
     expect(beta?.model).toBeUndefined()
     expect(gamma).toMatchObject({
       name: "gamma",
-      role: { kind: "subagent_type", subagentType: "ultraworker" },
+      role: { kind: "verifier", model: "rubato-mock/mock-1" },
       promptExcerpt: "task gamma",
     })
   })
@@ -157,8 +158,8 @@ describe("createTeam", () => {
     const spec = normalizeSenpiTeamSpec(
       {
         members: [
-          { name: "alpha", kind: "category", category: "quick", prompt: "task alpha" },
-          { name: "beta", kind: "subagent_type", subagent_type: "ultraworker" },
+          { name: "alpha", kind: "owner", model: "rubato-mock/mock-1", prompt: "task alpha" },
+          { name: "beta", kind: "owner", model: "rubato-mock/mock-1", prompt: "task beta" },
         ],
       },
       "squad",
@@ -214,7 +215,7 @@ describe("createTeam", () => {
     const stateDir = stateDirConfig(projectDir)
     const worktreePath = join(projectDir, "wt", "alpha")
     const spec = normalizeSenpiTeamSpec(
-      { members: [{ name: "alpha", kind: "category", category: "quick", prompt: "x", worktreePath }] },
+      { members: [{ name: "alpha", kind: "owner", model: "rubato-mock/mock-1", prompt: "x", worktreePath }] },
       "squad",
     )
     const manager = new FakeTeamManager()

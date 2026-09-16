@@ -1,8 +1,6 @@
 import type { CompletionNotifier, TaskRecord, TaskRecordStore } from "@rubato/senpi-task"
 
-import type { CategoryConfigGenerations } from "./category-config-generation"
 import { createCompletionObservingStore } from "./completion-bridge"
-import { createConfigGenerationStampingStore } from "./config-generation-store"
 import type { TaskRuntimeContext } from "./runtime-context"
 import { createMutationNotifyingStore } from "./store-mutation-observer"
 import type { TaskTerminalObservers } from "./terminal-observers"
@@ -16,7 +14,6 @@ export interface TaskStoreChainDeps {
     readonly notifyOwnedMemberLiveness: (record: TaskRecord) => void
     readonly observers: TaskTerminalObservers
   }
-  readonly generations: CategoryConfigGenerations
 }
 
 export interface TaskStoreChain {
@@ -28,8 +25,7 @@ export interface TaskStoreChain {
 /**
  * The task record store wrapper chain, innermost first:
  * 1. completion-observing - terminal TRANSITIONS drive parent notification and member liveness (F7);
- * 2. config-generation stamping - a claimed record keeps the category config generation that planned it;
- * 3. mutation-notifying - the debounced UI sync plus the terminal status-edge ledger, which is the
+ * 2. mutation-notifying - the debounced UI sync plus the terminal status-edge ledger, which is the
  *    only layer that also sees the `lost` writes reconciliation makes through replace/mutate.
  */
 export function createTaskStoreChain(deps: TaskStoreChainDeps): TaskStoreChain {
@@ -39,9 +35,8 @@ export function createTaskStoreChain(deps: TaskStoreChainDeps): TaskStoreChain {
     wasBackground: deps.terminal.wasBackground,
     onTerminal: deps.terminal.notifyOwnedMemberLiveness,
   })
-  const stamping = createConfigGenerationStampingStore(observing, () => deps.generations.current()?.generation)
   const listeners = new Set<() => void>()
-  const store = createMutationNotifyingStore(stamping, () => {
+  const store = createMutationNotifyingStore(observing, () => {
     for (const listener of listeners) listener()
   }, deps.terminal.observers)
   return {

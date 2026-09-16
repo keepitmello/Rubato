@@ -130,9 +130,10 @@ test("transformed installed wrapper slims model-facing descriptions only", async
   assert.doesNotMatch(SLIM_DESCRIPTIONS.memory, /Read or write/);
   assert.match(SLIM_DESCRIPTIONS.team_create, /LEAD\.md/);
   assert.match(SLIM_DESCRIPTIONS.team_create, /runtimes\/pi\.md/);
-  assert.match(SLIM_DESCRIPTIONS.team_create, /smallest roster/);
-  assert.match(SLIM_DESCRIPTIONS.team_create, /live category/);
-  assert.match(SLIM_DESCRIPTIONS.team_create, /may pass model/);
+  assert.match(SLIM_DESCRIPTIONS.team_create, /smallest intent\/roster/);
+  assert.match(SLIM_DESCRIPTIONS.team_create, /explicit confirmation/);
+  assert.match(SLIM_DESCRIPTIONS.team_create, /live catalog/);
+  assert.match(SLIM_DESCRIPTIONS.team_create, /kind owner\|verifier/);
   assert.match(SLIM_DESCRIPTIONS.Agent, /If no independent work remains, end the turn/);
   assert.doesNotMatch(SLIM_DESCRIPTIONS.Agent, /do not wait this turn/);
 });

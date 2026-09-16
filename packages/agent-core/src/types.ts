@@ -21,6 +21,7 @@ export type AgentPreset = {
 
 export type ModelCatalog = {
   has(model: string): boolean
+  list?(): readonly string[]
 }
 
 export type PresetCatalog = {

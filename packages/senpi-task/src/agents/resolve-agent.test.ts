@@ -88,14 +88,14 @@ describe("resolveAgent", () => {
     // then
     expect(result.model).toBe("openai/gpt-5.6-luna-fast")
     expect(result.resolved_model).toEqual({
-      source: "agent",
+      source: "preset",
       provider: "openai",
       model_id: "gpt-5.6-luna-fast",
       display: "openai/gpt-5.6-luna-fast",
       variant: "low",
       reasoning: "low",
     })
-    expect(result.agentType).toBe("explore")
+    expect(result.preset).toBe("explore")
     expect(result.instructions).toBe("Inspect the codebase")
     expect(result.agentExecutionMode).toBe("in-process")
   })
@@ -135,14 +135,14 @@ describe("resolveAgent", () => {
     expect(result.model).toBe("openai/secondary")
     expect(result).toMatchObject({
       requested_model: {
-        source: "agent",
+        source: "preset",
         provider: "local",
         model_id: "primary",
         display: "local/primary",
       },
       fallback_models: [
         {
-          source: "agent",
+          source: "preset",
           provider: "google",
           model_id: "tertiary",
           display: "google/tertiary",

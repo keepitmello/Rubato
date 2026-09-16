@@ -16,7 +16,6 @@ describe("taskResultLines run stats", () => {
       agentId: "st_00000009",
       status: "completed",
       mode: "spawn" as const,
-      category: "deep",
       execution_mode: "in-process",
       model: "kimi-coding/kimi-k3-unlocked",
             run_stats: {
@@ -45,7 +44,6 @@ describe("taskResultLines run stats", () => {
       agentId: "st_00000009",
       status: "completed",
       mode: "spawn" as const,
-      category: "deep",
       execution_mode: "in-process",
       model: "kimi-coding/kimi-k3-unlocked",
             run_stats: {

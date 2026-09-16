@@ -243,7 +243,7 @@ describe("InProcessRunner", () => {
     })
 
     // when
-    const handle = await runner.start(baseSpec({ agentType: "explore", toolAllowlist: ["bash"] }))
+    const handle = await runner.start(baseSpec({ preset: "explore", toolAllowlist: ["bash"] }))
     fake.resolvePrompt()
     await handle.waitForIdle()
 
@@ -265,7 +265,7 @@ describe("InProcessRunner", () => {
     })
 
     // when
-    const handle = await runner.start(baseSpec({ agentType: "scout", toolAllowlist: ["bash"] }))
+    const handle = await runner.start(baseSpec({ preset: "scout", toolAllowlist: ["bash"] }))
     fake.resolvePrompt()
     await handle.waitForIdle()
 

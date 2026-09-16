@@ -8,7 +8,7 @@ export type RecordOverrides = {
   readonly parent_session_id?: string
   readonly execution_mode?: string
   readonly model?: string
-  readonly agent_type?: string
+  readonly preset?: string
   readonly category?: string
   readonly resolved_model?: ResolvedModelRecord
   readonly pid?: number
@@ -45,7 +45,7 @@ export function makeRecord(overrides: RecordOverrides = {}): TaskRecord {
     },
     ...(overrides.name !== undefined ? { name: overrides.name } : {}),
     ...(overrides.resolved_model === undefined ? {} : { resolved_model: overrides.resolved_model }),
-    ...(overrides.agent_type !== undefined ? { agent_type: overrides.agent_type } : {}),
+    ...(overrides.preset !== undefined ? { preset: overrides.preset } : {}),
     ...(overrides.category !== undefined ? { category: overrides.category } : {}),
     ...(overrides.pid !== undefined ? { pid: overrides.pid } : {}),
     ...(overrides.child_session_id !== undefined ? { child_session_id: overrides.child_session_id } : {}),

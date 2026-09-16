@@ -4,8 +4,7 @@ import type { TaskRecord, TaskRecordInput } from "./types"
 export function createTaskRecord(input: TaskRecordInput, nowMs?: number): TaskRecord {
   const timestamp = new Date().toISOString()
   const {
-    agent_type,
-    category,
+    preset,
     depth,
     description,
     execution_mode,
@@ -21,10 +20,8 @@ export function createTaskRecord(input: TaskRecordInput, nowMs?: number): TaskRe
     tool_allow,
     tool_deny,
     notify_on_terminal,
-    owner,
     pending_steering,
     task_seq,
-    config_generation,
     background_mode,
   } = input
   return {
@@ -46,18 +43,15 @@ export function createTaskRecord(input: TaskRecordInput, nowMs?: number): TaskRe
     ...(name === undefined ? {} : { name }),
     ...(task_summary === undefined ? {} : { task_summary }),
     ...(description === undefined ? {} : { description }),
-    ...(agent_type === undefined ? {} : { agent_type }),
-    ...(category === undefined ? {} : { category }),
+    ...(preset === undefined ? {} : { preset }),
     ...(requested_model === undefined ? {} : { requested_model }),
     ...(fallback_models === undefined ? {} : { fallback_models }),
     ...(fallback_attempts === undefined ? {} : { fallback_attempts }),
     ...(resolved_model === undefined ? {} : { resolved_model }),
     ...(tool_allow === undefined ? {} : { tool_allow }),
     ...(tool_deny === undefined ? {} : { tool_deny }),
-    ...(owner === undefined ? {} : { owner }),
     ...(pending_steering === undefined || pending_steering.length === 0 ? {} : { pending_steering }),
     ...(task_seq === undefined ? {} : { task_seq }),
-    ...(config_generation === undefined ? {} : { config_generation }),
     ...(background_mode === undefined ? {} : { background_mode }),
   }
 }

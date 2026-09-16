@@ -50,8 +50,8 @@ export function fakeRuntimeState(overrides: Partial<RuntimeState> = {}): Runtime
     createdAt: 1,
     status: "active",
     members: [
-      { name: "alpha", agentType: "general-purpose", status: "running", pendingInjectedMessageIds: [] },
-      { name: "beta", agentType: "general-purpose", status: "idle", pendingInjectedMessageIds: [] },
+      { name: "alpha", kind: "owner", status: "running", pendingInjectedMessageIds: [] },
+      { name: "beta", kind: "verifier", status: "idle", pendingInjectedMessageIds: [] },
     ],
     shutdownRequests: [],
     bounds: { maxMembers: 8, maxParallelMembers: 4, maxMessagesPerRun: 10000, maxWallClockMinutes: 120, maxMemberTurns: 500 },
@@ -79,7 +79,7 @@ export function fakeCreatedMember(overrides: Partial<CreatedMemberInfo> = {}): C
     name: "alpha",
     taskId: "st_a",
     status: "running",
-    role: { kind: "category", category: "deep" },
+    role: { kind: "owner", model: "rubato-mock/mock-1" },
     ...overrides,
   }
 }
@@ -90,7 +90,7 @@ export function fakeCreateResult(overrides: Partial<CreateTeamResult> = {}): Cre
     memberTaskIds: { alpha: "st_a", beta: "st_b" },
     members: [
       fakeCreatedMember(),
-      fakeCreatedMember({ name: "beta", taskId: "st_b", status: "idle", role: { kind: "subagent_type", subagentType: "ultraworker" } }),
+      fakeCreatedMember({ name: "beta", taskId: "st_b", status: "idle", role: { kind: "verifier", model: "rubato-mock/mock-1" } }),
     ],
     ...overrides,
   }

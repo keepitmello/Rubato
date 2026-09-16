@@ -57,14 +57,14 @@ describe("InProcessRunner runtime fallback", () => {
     })
     const fallbackModels = [
       {
-        source: "category" as const,
+        source: "model" as const,
         provider: "quotio-openai",
         model_id: "gpt-5.6-luna-fast",
         display: "quotio-openai/gpt-5.6-luna-fast",
         reasoning_effort: "minimal",
       },
       {
-        source: "category" as const,
+        source: "model" as const,
         provider: "example-gateway",
         model_id: "z-ai/glm-5.2-ultrafast-unlocked",
         display: "example-gateway/z-ai/glm-5.2-ultrafast-unlocked",
@@ -107,7 +107,7 @@ describe("InProcessRunner runtime fallback", () => {
       selectedModel: "kimi-coding/kimi-for-coding-highspeed-unlocked",
       fallbackModels: [
         {
-          source: "category" as const,
+          source: "model" as const,
           provider: "quotio-openai",
           model_id: "gpt-5.6-luna-fast",
           display: "quotio-openai/gpt-5.6-luna-fast",

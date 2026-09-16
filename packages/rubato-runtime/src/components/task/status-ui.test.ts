@@ -113,11 +113,10 @@ describe("createTaskStatusUi.syncNow", () => {
       task_id: "st_\u001b[31mred\u001b[0m",
       name: "한국어\u0007 작업",
       status: "running",
-      category: "ultra\u001b[2Jbrain",
       resolved_model: {
         provider: "openai",
         model_id: "gpt-5.6-sol",
-        source: "category",
+        source: "model",
         display: "GPT\u001b]0;hidden\u001b\\-5.6 Sol",
         reasoning_effort: "xhigh\u0085",
         variant: "sol\u001bc",
@@ -133,7 +132,7 @@ describe("createTaskStatusUi.syncNow", () => {
     expect(ui.statusCalls).toHaveLength(0)
     const widgetRow = ui.widgetCalls.at(-1)?.content?.[0] ?? ""
     expect(widgetRow).toContain("한")
-    expect(widgetRow).toContain("category:ultrabrain")
+    expect(widgetRow).toContain("model:openai/gpt-5.6-sol:xhigh")
     expect(widgetRow).toContain("openai/gpt-5.6-sol:xhigh")
     expect(widgetRow).toContain("in-process")
     expect(widgetRow).toContain("running")

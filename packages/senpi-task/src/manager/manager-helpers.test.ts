@@ -14,7 +14,6 @@ function spawnSpec(overrides: Partial<ManagerStartSpec>): ManagerStartSpec {
     prompt: "TASK: Audit the record plumbing.",
     parent_session_id: "session-1",
     depth: 1,
-    category: "quick",
     ...overrides,
   }
 }

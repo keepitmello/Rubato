@@ -214,13 +214,12 @@ describe("createTaskTool", () => {
           task_id: "st_0000000f",
           status: "pending",
           mode: "spawn",
-          category: "quick",
           resolved_model: {
             provider: "openai",
             model_id: "gpt-5.6-sol",
             display: "GPT-5.6 Sol",
             reasoning_effort: "xhigh",
-            source: "category",
+            source: "model",
           },
                   },
       },
@@ -231,7 +230,7 @@ describe("createTaskTool", () => {
     const [row = ""] = renderedLines(component, 72)
 
     // then
-    expect(row).toContain("category:quick(openai/gpt-5.6-sol:xhigh)")
+    expect(row).toContain("model:openai/gpt-5.6-sol:xhigh")
     expect(row).toContain(`${ANSI_ITALIC}background${ANSI_ITALIC_END}`)
     expect(rendererVisibleWidth(row)).toBeLessThanOrEqual(72)
   })
@@ -250,13 +249,12 @@ describe("createTaskTool", () => {
           task_id: "st_019f4d02",
           status: "running",
           mode: "spawn",
-          category: "ultrabrain",
           resolved_model: {
             provider: "rubato-mock",
             model_id: "mock-1",
             display: "rubato-mock/mock-1",
             reasoning_effort: "xhigh",
-            source: "category",
+            source: "model",
           },
                   },
       },
@@ -267,7 +265,7 @@ describe("createTaskTool", () => {
     const [row = ""] = renderedLines(component, 72)
 
     // then
-    expect(row).toContain("category:ultrabrain")
+    expect(row).toContain("model:rubato-mock/mock-1:xhigh")
     expect(row).toContain("rubato-mock/mock-1")
     expect(row).toContain("xhigh")
     expect(row).toContain(`${ANSI_ITALIC}background${ANSI_ITALIC_END}`)

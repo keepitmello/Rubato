@@ -7,7 +7,7 @@ const RESOLVED_MODEL = {
   model_id: "kimi-k3-unlocked",
   display: "Kimi K3 Unlocked",
   reasoning_effort: "max",
-  source: "category",
+  source: "model",
 } as const
 
 describe("child task progress", () => {
@@ -15,7 +15,7 @@ describe("child task progress", () => {
     // given
     const progress = createChildProgress(
       "st_00000001",
-      { category: "quick", taskSummary: "Audit the boundary", description: "quick label" },
+      { taskSummary: "Audit the boundary", description: "quick label" },
       1_000,
       () => 1_000,
     )
@@ -29,7 +29,7 @@ describe("child task progress", () => {
     let nowMs = 1_000
     const progress = createChildProgress(
       "st_00000001",
-      { category: "quick", resolvedModel: RESOLVED_MODEL },
+      { resolvedModel: RESOLVED_MODEL },
       1_000,
       () => nowMs,
     )
@@ -52,7 +52,7 @@ describe("child task progress", () => {
     const details = progress.details()
     expect(details).toEqual({
       progress: {
-        activity: "st_00000001 · category:quick(kimi-coding/kimi-k3-unlocked:max) · turn 1 (1 tool) · running",
+        activity: "st_00000001 · model:kimi-coding/kimi-k3-unlocked:max · turn 1 (1 tool) · running",
         startedAt: 1_000,
       },
       childId: "st_00000001",
@@ -70,21 +70,21 @@ describe("child task progress", () => {
     // given
     const progress = createChildProgress(
       "st_00000009",
-      { category: "quick", description: "Audit the waiting line", name: "task-1", resolvedModel: RESOLVED_MODEL },
+      { description: "Audit the waiting line", name: "task-1", resolvedModel: RESOLVED_MODEL },
       1_000,
       () => 2_000,
     )
 
     // then the id survives only as the correlation handle inside details, not as the lead token
     expect(progress.details().progress.activity).toBe(
-      "Audit the waiting line · category:quick(kimi-coding/kimi-k3-unlocked:max) · turn 0 · running",
+      "Audit the waiting line · model:kimi-coding/kimi-k3-unlocked:max · turn 0 · running",
     )
     expect(progress.details().childId).toBe("st_00000009")
   })
 
   test("#given a running tool #when composed #then the activity names the tool and pluralizes tool counts", () => {
     // given
-    const progress = createChildProgress("st_00000002", { agentType: "momus" }, 1_000, () => 2_000)
+    const progress = createChildProgress("st_00000002", { preset: "momus" }, 1_000, () => 2_000)
 
     // when
     progress.accept({ type: "tool_execution_start", toolName: "read", args: { path: "a.ts" } })
@@ -97,7 +97,7 @@ describe("child task progress", () => {
 
     // then
     const details = progress.details()
-    expect(details.progress.activity).toBe("st_00000002 · agent:momus · turn 1 (2 tools) · running grep TODO")
+    expect(details.progress.activity).toBe("st_00000002 · preset:momus · turn 1 (2 tools) · running grep TODO")
     expect(details.currentTool).toBe("grep TODO")
     expect(details.toolCalls).toBe(2)
   })
@@ -106,7 +106,7 @@ describe("child task progress", () => {
     // given
     const progress = createChildProgress(
       "st_00000004",
-      { category: "quick", resolvedModel: RESOLVED_MODEL },
+      { resolvedModel: RESOLVED_MODEL },
       1_000,
       () => 2_000,
     )
@@ -117,16 +117,16 @@ describe("child task progress", () => {
 
     // then
     expect(progress.details().progress.activity).toBe(
-      "st_00000004 · category:quick(anthropic-api/claude-haiku-4-5:medium) · fallback:2 · turn 0 · running",
+      "st_00000004 · model:anthropic-api/claude-haiku-4-5:medium · fallback:2 · turn 0 · running",
     )
   })
 
   test("#given no events yet #when composed #then activity has no turn-zero noise beyond the base status", () => {
     // given
-    const progress = createChildProgress("st_00000003", { category: "deep" }, 1_000, () => 1_000)
+    const progress = createChildProgress("st_00000003", {}, 1_000, () => 1_000)
 
     // then
-    expect(progress.details().progress.activity).toBe("st_00000003 · category:deep · turn 0 · running")
+    expect(progress.details().progress.activity).toBe("st_00000003 · turn 0 · running")
     expect(progress.contentText()).toBe("")
   })
 

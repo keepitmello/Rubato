@@ -28,6 +28,7 @@ describe("event-bridge native task RPC snapshots", () => {
         },
       },
     ])
+    expect(JSON.stringify(pi.rpcEvents)).not.toMatch(/category|subagent_type|agent_type/u)
   })
 
   it("#given an active captured session #when store mutations move its task through pending running and completed #then each lifecycle snapshot emits while foreign-session tasks stay excluded", async () => {

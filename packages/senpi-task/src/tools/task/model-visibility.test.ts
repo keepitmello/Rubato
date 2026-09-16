@@ -36,6 +36,10 @@ describe("agent model visibility", () => {
     const [line] = taskResultLines(output.details)
 
     expect(line).toContain("quotio-openai/gpt-5.6-luna-fast")
-    expect(output.details.resolved_model).toEqual(RESOLVED_MODEL)
+    expect(output.details.resolved_model).toEqual({
+      provider: RESOLVED_MODEL.provider,
+      model_id: RESOLVED_MODEL.model_id,
+      display: RESOLVED_MODEL.display,
+    })
   })
 })

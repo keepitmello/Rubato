@@ -86,7 +86,7 @@ async function givenTeamWithSuspendedMember() {
   const teamManager = new FakeTeamManager()
   const created = await createTeam(
     normalizeSenpiTeamSpec(
-      { members: [{ name: "alpha", kind: "category", category: "quick", prompt: "task alpha" }] },
+      { members: [{ name: "alpha", kind: "owner", model: "rubato-mock/mock-1", prompt: "task alpha" }] },
       "squad",
     ),
     "project",
@@ -132,7 +132,7 @@ async function givenTeamWithSuspendedMember() {
   createTaskManager({
     store,
     runners: { "in-process": new FakeRunner(), process: new FakeRunner() },
-    planner: () => ({ kind: "resolved", plan: { model: "anthropic/claude" } }),
+    planner: () => ({ kind: "resolved", plan: { kind: "owner", model: "anthropic/claude" } }),
     config: settings(),
     cwd: "/tmp/project",
     rpcRespawnRunner: respawnRunner,

@@ -46,7 +46,6 @@ describe("record-parse run_stats token totals", () => {
     expect(record.run_stats?.cost_status).toBeUndefined()
     expect(record.run_stats?.duration_status).toBeUndefined()
     expect(record.task_seq).toBeUndefined()
-    expect(record.config_generation).toBeUndefined()
     expect(record.background_mode).toBeUndefined()
   })
 
@@ -100,16 +99,15 @@ describe("record-parse run_stats token totals", () => {
 })
 
 describe("record-parse task ordinals and background mode", () => {
-  test("#given a persisted record with task_seq, config_generation and background_mode #when parsed #then all three round-trip exactly", () => {
+  test("#given a persisted record with task_seq and background_mode #when parsed #then both round-trip exactly", () => {
     // given
-    const stored = persisted({ task_seq: 7, config_generation: 3, background_mode: "promoted" })
+    const stored = persisted({ task_seq: 7, background_mode: "promoted" })
 
     // when
     const record: TaskRecord = parseTaskRecord(stored, "record.json")
 
     // then
     expect(record.task_seq).toBe(7)
-    expect(record.config_generation).toBe(3)
     expect(record.background_mode).toBe("promoted")
   })
 

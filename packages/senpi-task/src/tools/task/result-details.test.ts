@@ -6,13 +6,13 @@ import { recordDetails } from "./result-details"
 test("#given a record with fallback attempts #when result details are built #then the renderer receives the recorded history", () => {
   // given
   const fallbackAttempts = [
-    { provider: "kimi-coding", model_id: "kimi-for-coding-highspeed", display: "kimi-for-coding-highspeed", source: "category" as const },
+    { provider: "kimi-coding", model_id: "kimi-for-coding-highspeed", display: "kimi-for-coding-highspeed", source: "model" as const },
     {
       provider: "quotio-openai",
       model_id: "gpt-5.6-luna-fast",
       display: "gpt-5.6-luna-fast",
       reasoning_effort: "high",
-      source: "category" as const,
+      source: "model" as const,
     },
   ]
   const record = createTaskRecord({
@@ -29,7 +29,12 @@ test("#given a record with fallback attempts #when result details are built #the
   const details = recordDetails(record, "spawn")
 
   // then
-  expect(details.fallback_attempts).toEqual(fallbackAttempts)
+  expect(details.fallback_attempts).toEqual(fallbackAttempts.map(({ source: _source, ...attempt }) => attempt))
+  const serialized = JSON.stringify(details)
+  expect(serialized).not.toContain("category")
+  expect(serialized).not.toContain("subagent_type")
+  expect(serialized).not.toContain("agent_type")
+  expect(serialized).not.toContain('"source"')
 })
 
 test("#given a record with a task_summary #when result details are built #then the summary reaches the renderer details", () => {

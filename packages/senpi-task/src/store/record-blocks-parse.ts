@@ -141,9 +141,9 @@ function readEffortSource(record: Record<string, unknown>): ResolvedModelRecord[
 function readResolvedModelSource(record: Record<string, unknown>): ResolvedModelRecord["source"] {
   const source = readString(record, "source")
   switch (source) {
-    case "category":
+    case "model":
     case "explicit":
-    case "agent":
+    case "preset":
       return source
     default:
       throw new Error(`resolved_model.source must be ${RESOLVED_MODEL_SOURCES.join(" or ")}`)

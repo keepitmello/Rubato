@@ -29,7 +29,7 @@ const RESOLVED: ResolvedModelRecord = {
   model_id: "claude-opus-4",
   display: "Claude Opus 4",
   variant: "high",
-  source: "category",
+  source: "model",
 }
 
 const PLAN: ResolvedChildPlan = {
@@ -131,7 +131,7 @@ describe("buildRespawnManagedSpec", () => {
     const result = await manager.start(managerSpec({
       execution_mode: "in-process",
       prompt: "RAW PROMPT",
-      subagent_type: "explore",
+      preset: "explore",
       memberScopedTools: [makeTool("alpha_read")],
     }))
     if (result.kind !== "started") throw new Error("expected started")
@@ -156,7 +156,7 @@ describe("buildRespawnManagedSpec", () => {
       model: original.model,
       resolvedModel: RESOLVED,
       variant: "high",
-      agentType: "explore",
+      preset: "explore",
       instructions: "planner instructions",
       toolAllowlist: ["read", "bash"],
       toolDenylist: ["write", "edit"],

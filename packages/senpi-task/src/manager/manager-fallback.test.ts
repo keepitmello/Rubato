@@ -33,26 +33,25 @@ function fallbackPlanner() {
     plan: {
       model: "vendor-a/primary-model",
       requested_model: {
-        source: "category" as const,
+        source: "model" as const,
         provider: "vendor-a",
         model_id: "primary-model",
         display: "vendor-a/primary-model",
       },
       resolved_model: {
-        source: "category" as const,
+        source: "model" as const,
         provider: "vendor-a",
         model_id: "primary-model",
         display: "vendor-a/primary-model",
       },
       fallback_models: [
         {
-          source: "category" as const,
+          source: "model" as const,
           provider: "vendor-b",
           model_id: "fallback-model",
           display: "vendor-b/fallback-model",
         },
       ],
-      category: "quick",
     },
   })
 }
@@ -209,13 +208,13 @@ describe("TaskManager configured runtime fallback", () => {
           ...fallbackPlanner()().plan,
           fallback_models: [
             {
-              source: "category",
+              source: "model",
               provider: "vendor-b",
               model_id: "fallback-one",
               display: "vendor-b/fallback-one",
             },
             {
-              source: "category",
+              source: "model",
               provider: "vendor-c",
               model_id: "fallback-two",
               display: "vendor-c/fallback-two",
