@@ -9,6 +9,7 @@ import {
   sessionDefaultsLookCurrent,
   settingsLookCurrent,
 } from "../../src/session-defaults.mjs";
+import { foreignProviderIds } from "../../src/provider-ids.mjs";
 
 test("session defaults preserve a selected model without dropping other settings", () => {
   const written = {};
@@ -107,7 +108,7 @@ test("already-current session files are left untouched", () => {
   };
   const models = {
     providers: {},
-    disabledProviders: ["vercel-ai-gateway", "alibaba-token-plan"],
+    disabledProviders: foreignProviderIds(),
   };
   const files = {
     "/tmp/agent/settings.json": JSON.stringify(settings),
@@ -130,7 +131,12 @@ test("already-current session files are left untouched", () => {
 // 모르는 provider 를 열 수 있었으므로 "지금 무엇이 우리 것인가"를 런타임에 물어야 했다.
 // 이제 지원 목록이 정적이라 판정도 그 목록만 본다.
 test("지원하지 않는 id 를 끈 파일은 그대로 현재로 본다", () => {
-  assert.equal(modelsLookCurrent({ disabledProviders: ["vercel-ai-gateway", "newco"] }), true);
+  assert.equal(modelsLookCurrent({ disabledProviders: [...foreignProviderIds(), "newco"] }), true);
+});
+
+test("openai API 가 disabledProviders 에 없으면 현재가 아니다", () => {
+  assert.equal(modelsLookCurrent({ disabledProviders: ["vercel-ai-gateway", "alibaba-token-plan"] }), false);
+  assert.ok(foreignProviderIds().includes("openai"));
 });
 
 test("stale models that still disable a supported provider are not treated as current", () => {

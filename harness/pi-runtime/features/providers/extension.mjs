@@ -3,7 +3,7 @@ import { admitProviders } from "./src/provider-capabilities.mjs";
 import { registerAntigravityLifecycle } from "./src/antigravity-route.mjs";
 import { join } from "node:path";
 import { DIRECT_PROVIDER_IDS } from "./src/provider-direct.mjs";
-import { builtinProviderIds, foreignProviderIds } from "./src/provider-ids.mjs";
+import { builtinProviderIds, foreignProviderIds, installOpenAiApiRefusal } from "./src/provider-ids.mjs";
 import { importLegacyDirectCredentials, unavailableDirectProviders } from "./src/credential-import.mjs";
 import { registerAccountCommand } from "./auth-pool/accounts.mjs";
 
@@ -56,6 +56,7 @@ export function createProvidersExtension(options = {}) {
     }
     const providers = await createRubatoProviders({ ...options, antigravity, env });
     const admitted = admitProviders(pi, providers);
+    installOpenAiApiRefusal(pi);
     if (antigravity.stateStore && antigravity.lineage) {
       registerAntigravityLifecycle(pi, { ...antigravity, env });
     }

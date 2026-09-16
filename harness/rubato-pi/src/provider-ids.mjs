@@ -67,3 +67,29 @@ export function foreignProviderIds(builtinIds = BUILTIN_PROVIDER_IDS) {
   const ours = new Set(SUPPORTED_PROVIDER_IDS);
   return [...new Set(builtinIds)].filter((id) => typeof id === "string" && id.length > 0 && !ours.has(id));
 }
+
+/** pi-ai 의 API-key provider. Codex OAuth(`openai-codex`)와 다른 과금이다. */
+export const OPENAI_API_PROVIDER_ID = "openai";
+
+export function isOpenAiApiProvider(providerId) {
+  return providerId === OPENAI_API_PROVIDER_ID;
+}
+
+export function refuseOpenAiApiModel(model) {
+  if (!isOpenAiApiProvider(model?.provider)) return;
+  throw new Error("OpenAI API is disabled. Use openai-codex (ChatGPT OAuth), not the openai provider.");
+}
+
+/**
+ * Builtin catalog 는 unregister 해도 다시 살아난다. disabledProviders 가 빠져도
+ * `/model openai/...` 나 env 의 OPENAI_API_KEY 가 API 로 나가지 않게 요청을 끊는다.
+ */
+export function installOpenAiApiRefusal(pi) {
+  if (typeof pi?.on !== "function") return;
+  pi.on("model_select", (event) => {
+    refuseOpenAiApiModel(event?.model);
+  });
+  pi.on("before_provider_request", (event, ctx) => {
+    refuseOpenAiApiModel(ctx?.model ?? event?.model);
+  });
+}

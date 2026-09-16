@@ -1,4 +1,4 @@
-import { builtinProviderIds, foreignProviderIds } from "../provider-ids.mjs";
+import { builtinProviderIds, foreignProviderIds, installOpenAiApiRefusal } from "../provider-ids.mjs";
 export { builtinProviderIds, foreignProviderIds };
 import { DIRECT_PROVIDER_IDS, directProviders, warnIgnoredDirectOptOut } from "../provider-direct.mjs";
 import { admitProviders, validateProviderAdmission } from "../provider-capabilities.mjs";
@@ -128,6 +128,7 @@ export default async function providerOverlay(pi, {
 
   // 1) native 등록. `DIRECT_PROVIDER_IDS` 밖의 provider 는 손대지 않는다.
   admitProviders(pi, admitted);
+  installOpenAiApiRefusal(pi);
   if (antigravity.stateStore && antigravity.lineage) {
     registerAntigravityLifecycle(pi, { ...antigravity, env });
   }

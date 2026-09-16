@@ -95,7 +95,10 @@ export function settingsLookCurrent(current) {
 export function modelsLookCurrent(current) {
   if (!current || typeof current !== "object") return false;
   if (!Array.isArray(current.disabledProviders) || current.disabledProviders.length === 0) return false;
-  if (!current.disabledProviders.includes("vercel-ai-gateway")) return false;
+  // vercel 한 줄만 보면 잘린 목록도 현재로 승격된다. openai API 가 피커에
+  // 남은 이유가 그것이다 — foreign 전부를 끄고 우리 id 는 끄지 않았는지를 본다.
+  const required = foreignProviderIds(builtinProviderIds());
+  if (!required.every((id) => current.disabledProviders.includes(id))) return false;
   return !SUPPORTED_PROVIDER_IDS.some((id) => current.disabledProviders.includes(id));
 }
 
