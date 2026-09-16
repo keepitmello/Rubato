@@ -103,6 +103,14 @@ ocx agent subagents clear
 승인받아 쓸 때는 다섯 slot 중 하나와 교체하며 lead 모델은 바뀌지 않습니다. 실행 전
 `status`와 현재 Codex spawn schema를 다시 확인하세요.
 
+ChatGPT 네이티브 부모(Sol·Terra·Astra)가 라우팅된 자식(Grok·Claude 등)을 띄우려면
+OpenCodex가 `multi_agent_mode: v2` + `keep_native_chatgpt_on_v1: ON`이어야 합니다.
+설치기가 이 둘을 켜고 `ocx v2 status`로 실제 상태를 읽어 기록합니다. 그렇지 않으면
+Codex가 자식 작업을 ChatGPT 백엔드용으로 암호화해 보내 라우팅 provider가
+`unreadable_encrypted_agent_task`로 실패합니다. 관측된 OpenCodex 2.48에서는
+`ocx agent subagents set`이 이 플래그를 지우므로, roster를 손으로 바꾼 뒤에는
+`ocx v2 keep-native-v1 on`을 다시 실행하고 `ocx v2 status`에서 `v2 hybrid`를 확인하세요.
+
 Provider 등록, 모델 roster 등록, 인증, 실제 호출 성공은 각각 다른 상태입니다.
 특히 Anthropic 직접 provider는 등록돼 있어도 Rubato의 `setup-token-sub` 방식은 현재
 OpenCodex의 `renewableOAuth` local-import와 호환되지 않습니다. 지원되는 별도 로그인
