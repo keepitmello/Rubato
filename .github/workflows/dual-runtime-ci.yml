@@ -2,7 +2,17 @@ name: Dual runtime checkpoints
 
 on:
   push:
-    branches: [codex/dual-runtime-checkpoints-20260913]
+    # 기본 브랜치는 rubato/base 다. 여기에 이 브랜치만 적혀 있던 동안
+    # rubato-codex 변경을 rubato/base 로 직접 밀면 codex-audit 이 한 번도
+    # 돌지 않았다. PR 경로에만 걸려 있었기 때문이다.
+    branches: [rubato/base, codex/dual-runtime-checkpoints-20260913]
+    paths:
+      - 'harness/pi-server/**'
+      - 'harness/t3-integration/**'
+      - 'rubato-codex/**'
+      - 'docs/dual-runtime/**'
+      - 'IMPLEMENTATION_HANDOFF.md'
+      - '.github/workflows/dual-runtime-ci.yml'
   pull_request:
     paths:
       - 'harness/pi-server/**'
@@ -81,6 +91,10 @@ jobs:
             rubato-codex/test/package.test.mjs \
             rubato-codex/test/opencodex-setup.test.mjs \
             2>&1 | tee "$RUNNER_TEMP/codex-audit-tests.log"
+      - name: Generated role contracts match their source
+        # agents/taskforce_*.toml 은 scripts/build-roles.mjs 가 만든다. 소스
+        # 문장만 고치고 재생성을 잊으면 주입되는 계약이 조용히 옛것으로 남는다.
+        run: npm --prefix rubato-codex run check:roles
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
