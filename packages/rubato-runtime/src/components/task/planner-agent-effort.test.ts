@@ -34,7 +34,7 @@ describe("agent plans carrying configured effort", () => {
     } satisfies RubatoConfig
     const agents = mapRubatoConfigAgents(config)
     const models = registry([{ provider: "quotio-openai", id: "gpt-5.6-luna-fast" }])
-    const planner = createTaskChildPlanner(config, agents, () => models)
+    const planner = createTaskChildPlanner(agents, () => models)
 
     // when
     const plan = resolvedPlan(planner({ preset: "explore", prompt: "go", parent_session_id: "p", depth: 1 }))
@@ -54,7 +54,7 @@ describe("agent plans carrying configured effort", () => {
     } satisfies RubatoConfig
     const agents = mapRubatoConfigAgents(config)
     const models = registry([{ provider: "anthropic", id: "claude-opus-5" }])
-    const planner = createTaskChildPlanner(config, agents, () => models)
+    const planner = createTaskChildPlanner(agents, () => models)
 
     const plan = resolvedPlan(planner({ preset: "librarian", prompt: "go", parent_session_id: "p", depth: 1 }))
 
@@ -74,7 +74,7 @@ describe("agent plans carrying configured effort", () => {
     } satisfies RubatoConfig
     const agents = mapRubatoConfigAgents(config)
     const models = registry([{ provider: "quotio-openai", id: "gpt-5.6-luna-fast" }])
-    const planner = createTaskChildPlanner(config, agents, () => models)
+    const planner = createTaskChildPlanner(agents, () => models)
 
     // when
     const plan = resolvedPlan(planner({ preset: "explore", prompt: "go", parent_session_id: "p", depth: 1 }))
@@ -88,7 +88,7 @@ describe("agent plans carrying configured effort", () => {
     const config = { agents: { explore: { models: ["openai/plain"] } } } satisfies RubatoConfig
     const agents = mapRubatoConfigAgents(config)
     const models = registry([{ provider: "openai", id: "plain" }])
-    const planner = createTaskChildPlanner(config, agents, () => models)
+    const planner = createTaskChildPlanner(agents, () => models)
 
     // when
     const plan = resolvedPlan(planner({ preset: "explore", prompt: "go", parent_session_id: "p", depth: 1 }))

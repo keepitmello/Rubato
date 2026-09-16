@@ -190,7 +190,7 @@ export function composeTaskEngine(deps: ComposeTaskEngineDeps): TaskEngine {
   const factories = deps.runnerFactories ?? DEFAULT_RUNNER_FACTORIES
   const runnerContext: RunnerBuildContext = { runtime, sharedParentTools: deps.sharedParentTools, settings }
   const resolveRegistry: ResolveModelRegistry = () => runtime.modelRegistry()
-  const planner = createTaskChildPlanner(deps.rubatoConfig, agents, resolveRegistry)
+  const planner = createTaskChildPlanner(agents, resolveRegistry)
   const manager = createTaskManager({
     store: storeChain.store,
     runners: { "in-process": factories.inProcess(runnerContext), process: factories.process(runnerContext) },
