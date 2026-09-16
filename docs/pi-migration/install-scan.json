@@ -1,8 +1,8 @@
 {
-  "generatedAt": "2026-09-12T17:56:46.208Z",
+  "generatedAt": "2026-09-16T02:05:39.075Z",
   "stockVersion": "0.85.1",
   "node": "v26.5.0",
-  "installRoot": "/private/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-euBncx/engine",
+  "installRoot": "/private/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-dtDv75/engine",
   "features": [
     "runtime-factories",
     "reload",
@@ -11,6 +11,7 @@
     "abort-provenance",
     "request-run",
     "extension-rpc",
+    "session-transport",
     "service-tier",
     "tool-search",
     "mcp",
@@ -27,6 +28,9 @@
     "context-window",
     "session-catalog",
     "session-picker",
+    "session-title",
+    "adapter-hooks",
+    "parity-gaps",
     "prompt-rules",
     "compaction",
     "config-reload",
@@ -36,11 +40,13 @@
     "tui-input",
     "turn-chrome",
     "statusline",
+    "startup-chrome",
     "tui-autocomplete",
     "model-picker",
     "thinking-levels",
     "transcript-cache",
-    "title-guard"
+    "title-guard",
+    "session-ui"
   ],
   "senpiPty": {
     "package": "@code-yeongyu/senpi-pty@2026.9.4-3",
@@ -102,9 +108,9 @@
     ]
   },
   "resolvedModulePaths": {
-    "total": 26298,
-    "insideInstall": 24284,
-    "nodeCore": 2012,
+    "total": 26463,
+    "insideInstall": 24418,
+    "nodeCore": 2043,
     "allowedScratch": 2,
     "outside": [],
     "senpiAppLoads": []
@@ -114,7 +120,7 @@
     {
       "seam": "rpc",
       "execPath": "/opt/homebrew/Cellar/node/26.5.0_1/bin/node",
-      "entry": "/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-euBncx/engine/node_modules/@earendil-works/pi-coding-agent/dist/rpc-entry.js"
+      "entry": "/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-dtDv75/engine/node_modules/@earendil-works/pi-coding-agent/dist/rpc-entry.js"
     },
     {
       "seam": "in-process",
@@ -123,7 +129,7 @@
     }
   ],
   "childEnv": {
-    "sessionDirFromGetState": "/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-euBncx/home/child/rpc-sessions/child/2026-09-12T17-56-43-950Z_01a096c3-b72d-7192-9e89-1acbb6e35298.jsonl"
+    "sessionDirFromGetState": "/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-dtDv75/home/child/rpc-sessions/child/2026-09-16T02-05-36-871Z_01a0a7f6-60e7-70b7-a62d-c8d11354ada8.jsonl"
   },
   "dynamicImports": [
     {
@@ -133,6 +139,10 @@
     {
       "path": "abort-provenance/abort-provenance.test.mjs",
       "specifier": "streamUrl"
+    },
+    {
+      "path": "child-runtime/stock-rpc-runtime.mjs",
+      "specifier": "pathToFileURL(entry"
     },
     {
       "path": "child-runtime/stock-rpc-runtime.mjs",
@@ -295,6 +305,18 @@
       "specifier": "contextExtensionUrl"
     },
     {
+      "path": "context-notes/context-notes.test.mjs",
+      "specifier": "pathToFileURL(join(notes, \"engine-gate.mjs\""
+    },
+    {
+      "path": "context-notes/context-notes.test.mjs",
+      "specifier": "pathToFileURL(join(notes, \"config.mjs\""
+    },
+    {
+      "path": "context-notes/context-notes.test.mjs",
+      "specifier": "pathToFileURL(join(notes, \"protocol.mjs\""
+    },
+    {
       "path": "context-notes/src/extensions/context-notes.mjs",
       "specifier": "\"../engine-paths.mjs\""
     },
@@ -317,6 +339,10 @@
     {
       "path": "context-window/context-window.test.mjs",
       "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"dist/rubato-features/context-notes/src/context-notes/protocol.mjs\",\n"
+    },
+    {
+      "path": "context-window/context-window.test.mjs",
+      "specifier": "pathToFileURL(join(runtime.codingAgentDir, \"dist/core/messages.js\""
     },
     {
       "path": "context-window/context-window.test.mjs",
@@ -439,18 +465,6 @@
       "specifier": "\"./content.js\""
     },
     {
-      "path": "prompt-preset/prompt-preset.test.mjs",
-      "specifier": "pathToFileURL(runtime.sdkEntry"
-    },
-    {
-      "path": "prompt-preset/prompt-preset.test.mjs",
-      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js\",\n"
-    },
-    {
-      "path": "prompt-preset/prompt-preset.test.mjs",
-      "specifier": "pathToFileURL(join(\n  staged.root,\n  \"rubato-features/prompt-preset/index.mjs\",\n"
-    },
-    {
       "path": "prompt-rules/prompt-rules.test.mjs",
       "specifier": "pathToFileURL(runtime.sdkEntry"
     },
@@ -539,6 +553,14 @@
       "specifier": "pathToFileURL(join(piAiRoot, \"dist/rubato-features/providers/cursor-event-stream.mjs\""
     },
     {
+      "path": "providers/providers.test.mjs",
+      "specifier": "pathToFileURL(join(piAiRoot, \"dist/api/lazy.js\""
+    },
+    {
+      "path": "providers/providers.test.mjs",
+      "specifier": "pathToFileURL(join(piAiRoot, \"dist/utils/event-stream.js\""
+    },
+    {
       "path": "providers/vendor/pi-ai/api/cursor-agent.lazy.js",
       "specifier": "__rewriteRelativeImportExtension(runtimeSpecifier"
     },
@@ -583,6 +605,10 @@
       "specifier": "href"
     },
     {
+      "path": "remote-surface/test-fixtures/stock-ui-host.mjs",
+      "specifier": "pathToFileURL(file"
+    },
+    {
       "path": "request-run/request-run.test.mjs",
       "specifier": "moduleUrl"
     },
@@ -601,6 +627,10 @@
     {
       "path": "rubato-components/entry.ts",
       "specifier": "\"#rubato-task-runtime\""
+    },
+    {
+      "path": "runtime-factories/patches.mjs",
+      "specifier": "\"./core/agent-session-runtime.ts\""
     },
     {
       "path": "runtime-factories/runtime-factories.test.mjs",
@@ -631,6 +661,10 @@
       "specifier": "moduleUrl"
     },
     {
+      "path": "session-catalog/session-catalog.test.mjs",
+      "specifier": "moduleUrl"
+    },
+    {
       "path": "session-picker/session-picker.test.mjs",
       "specifier": "pathToFileURL(runtime.sdkEntry"
     },
@@ -641,6 +675,46 @@
     {
       "path": "session-picker/session-picker.test.mjs",
       "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"dist/modes/interactive/components/session-selector.js\",\n"
+    },
+    {
+      "path": "session-transport/patches.mjs",
+      "specifier": "\"./rpc-types.ts\""
+    },
+    {
+      "path": "session-transport/patches.mjs",
+      "specifier": "\"./rpc-types.ts\""
+    },
+    {
+      "path": "session-transport/session-transport-fixture.mjs",
+      "specifier": "pathToFileURL(path.join(root, file"
+    },
+    {
+      "path": "session-ui/native-ui-fixture.mjs",
+      "specifier": "pathToFileURL(path.join(root, file"
+    },
+    {
+      "path": "session-ui/patches.mjs",
+      "specifier": "\"./core/agent-session-runtime.ts\""
+    },
+    {
+      "path": "session-ui/patches.mjs",
+      "specifier": "\"./core/agent-session-runtime.ts\""
+    },
+    {
+      "path": "session-ui/patches.mjs",
+      "specifier": "\"./core/agent-session-runtime.ts\""
+    },
+    {
+      "path": "session-ui/patches.mjs",
+      "specifier": "\"./modes/interactive/interactive-mode.ts\""
+    },
+    {
+      "path": "session-ui/session-ui.test.mjs",
+      "specifier": "pathToFileURL(path.join(staged.root, file"
+    },
+    {
+      "path": "startup-chrome/startup-chrome.test.mjs",
+      "specifier": "pathToFileURL(join(\n    featureDir,\n    \"../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js\",\n  "
     },
     {
       "path": "terminal/src/host-sdk.ts",
@@ -815,19 +889,22 @@
     "context-window/context-window.test.mjs",
     "extension-rpc/extension-rpc.test.mjs",
     "input-lifecycle/input-lifecycle.test.mjs",
-    "prompt-preset/prompt-preset.test.mjs",
+    "parity-gaps/slim.mjs",
     "prompt-rules/prompt-rules.test.mjs",
     "providers/vendor/pi-ai/api/cursor-agent.js",
     "reload/reload.test.mjs",
     "remote-surface/local-hub.mjs",
     "remote-surface/protocol-loader.mjs",
     "remote-surface/remote-resume.test.mjs",
+    "remote-surface/stock-ui-host.test.mjs",
     "remote-surface/surface.mjs",
     "request-run/request-run.test.mjs",
     "runtime-factories/runtime-factories.test.mjs",
     "service-tier/service-tier.test.mjs",
     "session-catalog/session-catalog.test.mjs",
     "session-picker/session-picker.test.mjs",
+    "session-transport/session-transport.test.mjs",
+    "session-ui/session-ui.test.mjs",
     "terminal/src/extension.ts",
     "terminal/src/host/shell.ts",
     "terminal/src/monitor-registry.ts",
@@ -846,6 +923,10 @@
     {
       "path": "abort-provenance/patches.mjs",
       "expr": "\"./state.mjs\", import.meta.url"
+    },
+    {
+      "path": "adapter-hooks/feature.mjs",
+      "expr": "`./${name}`, import.meta.url"
     },
     {
       "path": "codemode/codemode-interpreters.test.mjs",
@@ -870,6 +951,10 @@
     {
       "path": "context-notes/patches.mjs",
       "expr": "relative, import.meta.url"
+    },
+    {
+      "path": "context-window/patches.mjs",
+      "expr": "\"./remap-hidden-custom-turns.mjs\", import.meta.url"
     },
     {
       "path": "extension-rpc/patches.mjs",
@@ -900,8 +985,8 @@
       "expr": "\"./catalog.mjs\", import.meta.url"
     },
     {
-      "path": "prompt-preset/feature.mjs",
-      "expr": "`./${name}`, import.meta.url"
+      "path": "parity-gaps/patches.mjs",
+      "expr": "\"./slim.mjs\", import.meta.url"
     },
     {
       "path": "prompt-rules/feature.mjs",
@@ -952,6 +1037,18 @@
       "expr": "new URL(\"./index.mjs\", import.meta.url"
     },
     {
+      "path": "remote-surface/stock-ui-host.test.mjs",
+      "expr": "'../..', import.meta.url"
+    },
+    {
+      "path": "remote-surface/stock-ui-host.test.mjs",
+      "expr": "'./test-fixtures/stock-ui-host.mjs', import.meta.url"
+    },
+    {
+      "path": "remote-surface/stock-ui-host.test.mjs",
+      "expr": "'./test-fixtures/stock-ui-host.mjs', import.meta.url"
+    },
+    {
       "path": "request-run/patches.mjs",
       "expr": "\"../../../rubato-pi/src/transforms/request-run-tracker.mjs\", import.meta.url"
     },
@@ -973,15 +1070,15 @@
     },
     {
       "path": "rubato-components/candidate-main.mjs",
+      "expr": "\"../../node_modules/@earendil-works/pi-coding-agent\", import.meta.url"
+    },
+    {
+      "path": "rubato-components/candidate-main.mjs",
       "expr": "new URL(\"../../rubato-pi-stage.json\", import.meta.url"
     },
     {
       "path": "rubato-components/candidate-main.mjs",
       "expr": "\"../..\", import.meta.url"
-    },
-    {
-      "path": "rubato-components/candidate-main.mjs",
-      "expr": "\"../../node_modules/@earendil-works/pi-coding-agent\", import.meta.url"
     },
     {
       "path": "service-tier/patches.mjs",
@@ -998,6 +1095,18 @@
     {
       "path": "session-picker/patches.mjs",
       "expr": "\"./pager.mjs\", import.meta.url"
+    },
+    {
+      "path": "session-title/feature.mjs",
+      "expr": "`./${name}`, import.meta.url"
+    },
+    {
+      "path": "session-ui/patches.mjs",
+      "expr": "'./context.mjs', import.meta.url"
+    },
+    {
+      "path": "startup-chrome/patches.mjs",
+      "expr": "\"./header.mjs\", import.meta.url"
     },
     {
       "path": "statusline/patches.mjs",
@@ -1099,7 +1208,8 @@
     "SENPI_CODING_AGENT_SESSION_DIR",
     "SENPI_GIT_BASH_PATH",
     "SENPI_HOOK_EVENT",
-    "SENPI_HOOK_SOURCE"
+    "SENPI_HOOK_SOURCE",
+    "SENPI_TASK_MEMBER"
   ],
   "recreatedAfterUpdate": [],
   "senpiAppPackagesMustNotResolve": [
@@ -1109,8 +1219,8 @@
     "@code-yeongyu/senpi-tui"
   ],
   "notes": [
-    "Measured 2026-09-12T17:56:46.208Z: 39 staged features, Node v26.5.0. CANDIDATE_FEATURE_NAMES=37.",
-    "Load report: 26298 urls, 24284 inside install, 2012 node-core, 2 scratch, 0 outside, 0 Senpi app.",
+    "Measured 2026-09-16T02:05:39.075Z: 45 staged features, Node v26.5.0. CANDIDATE_FEATURE_NAMES=43.",
+    "Load report: 26463 urls, 24418 inside install, 2043 node-core, 2 scratch, 0 outside, 0 Senpi app.",
     "Current restage matched CANDIDATE_FEATURE_NAMES.",
     "Fake user HOME ~/.senpi/agent, ~/.rubato-pi/engine, and parent node_modules/@code-yeongyu/senpi stub were present and not loaded.",
     "@code-yeongyu/senpi-pty remains a declared runtime dependency; replacement is deferred by the user."
