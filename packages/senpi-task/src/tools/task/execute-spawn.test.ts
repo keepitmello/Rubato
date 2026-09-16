@@ -79,8 +79,7 @@ describe("buildTaskExecute spawn", () => {
     expect(captured?.root_session_id).toBe("parent-session-1")
     expect(captured?.depth).toBe(1)
     expect(captured?.model).toBe("xai/grok-4.6")
-    expect(captured?.category).toBeUndefined()
-    expect(captured?.subagent_type).toBeUndefined()
+    expect(captured?.preset).toBeUndefined()
     expect(captured?.run_in_background).toBe(true)
   })
 
@@ -118,7 +117,12 @@ describe("buildTaskExecute spawn", () => {
       CTX,
     )
 
-    expect(result.details.resolved_model).toEqual(resolvedModel)
+    expect(result.details.resolved_model).toEqual({
+      provider: resolvedModel.provider,
+      model_id: resolvedModel.model_id,
+      display: resolvedModel.display,
+      reasoning_effort: resolvedModel.reasoning_effort,
+    })
     expect(Object.hasOwn(result.details, "prompt")).toBe(false)
   })
 

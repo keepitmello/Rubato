@@ -39,7 +39,7 @@ function ownedTeamRuntime(): RuntimeState {
     createdAt: 1_000,
     status: "active",
     leadSessionId: SESSION_ID,
-    members: [{ name: "reviewer", agentType: "general-purpose", status: "running", pendingInjectedMessageIds: [] }],
+    members: [{ name: "reviewer", kind: "verifier", status: "running", pendingInjectedMessageIds: [] }],
     shutdownRequests: [],
     bounds: {
       maxMembers: 8,

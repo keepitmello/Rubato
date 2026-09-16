@@ -18,8 +18,7 @@ describe("buildTaskExecute spawn validation", () => {
     const result = await execute("c", { prompt: "p", model: "kiro/claude-opus-5" }, undefined, undefined, CTX)
 
     expect(captured).toMatchObject({ prompt: "p", model: "kiro/claude-opus-5" })
-    expect(captured?.category).toBeUndefined()
-    expect(captured?.subagent_type).toBeUndefined()
+    expect(captured?.preset).toBeUndefined()
     expect(result.details.status).toBe("running")
   })
 
@@ -112,9 +111,8 @@ describe("buildTaskExecute spawn validation", () => {
 
     const result = await execute("c", { prompt: "review", preset: "explore" }, undefined, undefined, CTX)
 
-    expect(captured?.subagent_type).toBe("explore")
+    expect(captured?.preset).toBe("explore")
     expect(captured?.model).toBeUndefined()
-    expect(captured?.category).toBeUndefined()
     expect(result.details.status).toBe("running")
   })
 

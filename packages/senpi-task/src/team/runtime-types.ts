@@ -64,9 +64,7 @@ export type CreateTeamDeps = {
   readonly writeMemberMap?: (runtimeDir: string, map: MemberTaskMap) => Promise<void>
 }
 
-export type CreatedMemberRole =
-  | { readonly kind: "category"; readonly category: string }
-  | { readonly kind: "subagent_type"; readonly subagentType: string }
+export type CreatedMemberRole = { readonly kind: "owner" | "verifier"; readonly model: string }
 
 // Caller-facing view of one spawned member: identity and live status from the runtime state, the
 // role from the spec, the resolved model captured at spawn, and a bounded prompt excerpt.

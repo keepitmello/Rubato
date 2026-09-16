@@ -8,7 +8,7 @@ import type { TaskRecord, TaskTransition, TaskTransitionResult } from "../state"
 import { TaskRecordCollisionError, createTaskRecordStore } from "../store"
 import type { PersistedTaskEvent, TaskRecordStore } from "../store"
 import { collisionStore } from "./__fixtures__/collision-store"
-import { FakeRunner, baseSpec, categoryPlanner, cleanupProjects, flush, makeManager, settings, tempProject } from "./__fixtures__/manager-fakes"
+import { FakeRunner, baseSpec, modelPlanner, cleanupProjects, flush, makeManager, settings, tempProject } from "./__fixtures__/manager-fakes"
 import { createTaskManager } from "./manager"
 
 function firstAllocationFailsStore(inner: TaskRecordStore): TaskRecordStore {
@@ -62,7 +62,7 @@ function managerWithStore(
   const manager = createTaskManager({
     store,
     runners: { "in-process": inProcess, process },
-    planner: categoryPlanner(),
+    planner: modelPlanner(),
     config: settings({ default_concurrency: 5, max_depth: 1 }),
     cwd: project,
     ...(now === undefined ? {} : { now }),
@@ -254,7 +254,7 @@ describe("TaskManager claim characterization", () => {
     const collision = collisionStore(inner)
     const { manager } = managerWithStore(collision.store)
     const spec = normalizeSenpiTeamSpec(
-      { members: [{ name: "alpha", kind: "category", category: "quick", prompt: "work" }] },
+      { members: [{ name: "alpha", kind: "owner", model: "rubato-mock/mock-1", prompt: "work" }] },
       "collision-team",
     )
 

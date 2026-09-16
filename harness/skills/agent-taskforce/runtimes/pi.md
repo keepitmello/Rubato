@@ -17,7 +17,7 @@ The role build owns the whole system prompt. Lead gets `lead.md`; owners and ver
 
 `worktreePath` provisions a real worktree with `git worktree add`. Done evidence and budget return live in board-task `metadata`.
 
-Choose an exact `model` or named `preset` when you spawn a one-off `Agent`. Never pass a category, task type, or `subagent_type`. Omit `effort` unless you need a manual override. `team_create` itself does not take Agent `preset` or top-level `effort`. Each member uses a live delegate `category` (grok, deep, quick, … — never invent names) and may pass `model` as an exact provider/model override in the same form as Agent, including `:xhigh`. Use the resolved model in Agent status to confirm that an independent verifier lands on a different family from the owner.
+Choose an exact `model` or named `preset` when you spawn a one-off `Agent`. Omit `effort` unless you need a manual override. Every `team_create` member declares `kind: owner|verifier` and an exact `model` from the same live model catalog used by `Agent`, plus optional `effort`. The current session is the lead and is never declared as a member. Use the resolved model in Agent status to confirm that an independent verifier lands on a different family from the owner.
 
 Launcher: `harness/scripts/rubato-pi.sh` (`rubato` / `rubato-pi`). State: `~/.rubato-pi/agent`. Teammates run independent slices as `Agent` subagents; follow `LEAD.md`'s combined intent/roster confirmation before `team_create`; discovery subagents remain bounded by existing model/budget permissions. `/login` uses the broker. The TUI keeps `Tip:` lines and `/changelog` outside this surface.
 

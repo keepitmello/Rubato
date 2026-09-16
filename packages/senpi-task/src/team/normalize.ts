@@ -6,26 +6,9 @@ import { clampTaskSummary } from "../task-summary"
 import { SenpiTeamSpecError } from "./errors"
 
 /**
- * Sentinel identity for the current senpi session acting as the team lead. It is written as
- * `leadAgentId` and is NEVER a spawnable member. team-core's `validateSpec` would try to match it
- * to a member and reject; we deliberately parse with `TeamSpecSchema` and validate members locally
- * instead.
+ * Reserved identity for the current senpi session acting as the team lead. It is never a member.
  */
 export const TEAM_LEAD_SENTINEL = "lead"
-
-export type NormalizeSenpiTeamSpecOptions = {
-  readonly callerTeamLead?: unknown
-}
-
-function assertNoCallerTeamLead(options: NormalizeSenpiTeamSpecOptions | undefined, teamName: string): void {
-  if (options?.callerTeamLead !== undefined) {
-    throw new SenpiTeamSpecError(
-      `Team '${teamName}' passed a callerTeamLead option, which is not supported: the current senpi session is always the '${TEAM_LEAD_SENTINEL}' sentinel and team-core would otherwise insert a spawnable lead member.`,
-      "RESERVED_CALLER_TEAM_LEAD",
-      teamName,
-    )
-  }
-}
 
 function coerceStringSpec(rawSpec: unknown, teamName: string): unknown {
   if (typeof rawSpec !== "string") return rawSpec
@@ -34,7 +17,7 @@ function coerceStringSpec(rawSpec: unknown, teamName: string): unknown {
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     throw new SenpiTeamSpecError(
-      `Team '${teamName}' spec is a string that is not valid JSON (${detail}). Pass the spec as an object like { name?, members: [{ name, category|subagent_type, prompt? }] }, or as a valid JSON string of that object.`,
+      `Team '${teamName}' spec is a string that is not valid JSON (${detail}). Pass the spec as an object like { name?, members: [{ name, kind: 'owner'|'verifier', model, effort?, prompt }] }, or as a valid JSON string of that object.`,
       "INVALID_SPEC",
       teamName,
     )
@@ -63,15 +46,6 @@ function assertNoRawLeadField(rawSpec: unknown, teamName: string): void {
       teamName,
     )
   }
-}
-
-function remapAgentAliasKind(members: readonly unknown[]): unknown[] {
-  return members.map((member) => {
-    if (isPlainRecord(member) && member.kind === "agent") {
-      return { ...member, kind: "subagent_type" }
-    }
-    return member
-  })
 }
 
 // Harness-side length enforcement mirroring the task tool: an over-limit member task_summary is
@@ -104,18 +78,13 @@ function assertNoReservedMemberName(members: readonly unknown[], teamName: strin
  * Normalizes a raw senpi team spec (from an `rubato.json` `teams` value or an `.rubato/teams/<name>`
  * `config.json`) into a parsed team-core `TeamSpec`.
  *
- * Pipeline: reject the three reserved-name paths, run team-core `normalizeTeamSpecInput` WITHOUT the
- * `callerTeamLead` option, apply the senpi pre-normalizer (map the `agent` alias to `subagent_type`,
- * inject the record key as `name`, always set the `lead` sentinel), then parse with `TeamSpecSchema`.
- * team-core `validateSpec` / `loadTeamSpec` are never called: both hard-call the opencode-roster
- * eligibility check.
+ * Pipeline: reject reserved lead declarations, run team-core `normalizeTeamSpecInput`, inject the
+ * record key as `name`, then parse with `TeamSpecSchema`.
  */
 export function normalizeSenpiTeamSpec(
   rawSpec: unknown,
   teamName: string,
-  options?: NormalizeSenpiTeamSpecOptions,
 ): TeamSpec {
-  assertNoCallerTeamLead(options, teamName)
   const coerced = wrapSingleMember(coerceStringSpec(rawSpec, teamName))
   assertNoRawLeadField(coerced, teamName)
 
@@ -130,13 +99,11 @@ export function normalizeSenpiTeamSpec(
 
   const preNormalized: Record<string, unknown> = { ...normalized }
   if (Array.isArray(preNormalized.members)) {
-    const members = clampMemberTaskSummaries(remapAgentAliasKind(preNormalized.members))
+    const members = clampMemberTaskSummaries(preNormalized.members)
     assertNoReservedMemberName(members, teamName)
     preNormalized.members = members
   }
   preNormalized.name ??= teamName
-  preNormalized.leadAgentId = TEAM_LEAD_SENTINEL
-
   const parsed = TeamSpecSchema.safeParse(preNormalized)
   if (!parsed.success) {
     const firstIssue = parsed.error.issues[0]

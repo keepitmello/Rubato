@@ -28,6 +28,7 @@ import {
   type TaskLifecycle,
   type TaskManager,
   type TeamCoreConfig,
+  type ModelCatalog,
   type TeamToolsService,
 } from "@rubato/senpi-task"
 
@@ -58,8 +59,8 @@ export interface TeamServiceDeps {
   readonly runtime: TaskRuntimeContext
   readonly settings: RubatoTaskSettings
   readonly rubatoConfig: RubatoConfig
+  readonly models: ModelCatalog
   readonly cwd: string
-  readonly agentNames: ReadonlySet<string>
   readonly appendTaskEvent?: (taskId: string, event: PersistedTaskEvent) => void
   readonly now?: () => number
   readonly newMessageId?: () => string
@@ -127,7 +128,7 @@ export function createTeamService(deps: TeamServiceDeps): TeamToolsService {
   const stateDir = stateDirConfig(deps)
   const config: TeamCoreConfig = toTeamCoreConfig(deps.settings, teamStorageBaseDir(stateDir))
   const appendTaskEvent = deps.appendTaskEvent ?? createTaskEventAppender(stateDir)
-  const ports = buildMemberPorts(deps.rubatoConfig, deps.agentNames)
+  const ports = buildMemberPorts(deps.models)
   const rubatoTeams = deps.rubatoConfig.teams as Record<string, unknown> | undefined
   const runtimeDir = (teamRunId: string) => resolveTeamRuntimeDirs(stateDir, teamRunId).runtimeDir
   const memberExtensionEntryPath = resolveMemberExtensionEntryPath()

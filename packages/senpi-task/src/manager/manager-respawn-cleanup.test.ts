@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import type { RpcChildHandle, RpcRunnerSpec } from "../runners/types"
 import type { TaskRecord } from "../state"
 import { createTaskRecordStore } from "../store"
-import { FakeRunner, categoryPlanner, cleanupProjects, makeHandle, settings, tempProject } from "./__fixtures__/manager-fakes"
+import { FakeRunner, modelPlanner, cleanupProjects, makeHandle, settings, tempProject } from "./__fixtures__/manager-fakes"
 import type { ManagedStartSpec } from "./types"
 import { createTaskManager } from "./manager"
 import { createParentRegistrySessionContext } from "./parent-registry-context"
@@ -70,7 +70,7 @@ describe.each(cleanupStages)("TaskManager respawn %s cleanup", (cleanupStage) =>
     const manager = createTaskManager({
       store,
       runners: { "in-process": runner, process: runner },
-      planner: categoryPlanner(),
+      planner: modelPlanner(),
       config: settings(),
       cwd: project,
       rpcRespawnRunner: { start: async () => handle },
@@ -130,7 +130,7 @@ describe("TaskManager respawn launch trust boundary", () => {
     const manager = createTaskManager({
       store,
       runners: { "in-process": runner, process: runner },
-      planner: categoryPlanner(),
+      planner: modelPlanner(),
       config: settings(),
       cwd: project,
       rpcRespawnRunner: {
@@ -199,7 +199,7 @@ describe("TaskManager team-member respawn", () => {
     const options = {
       store,
       runners: { "in-process": runner, process: runner },
-      planner: categoryPlanner(),
+      planner: modelPlanner(),
       config: settings(),
       cwd: project,
       rpcRespawnRunner: {
@@ -228,7 +228,7 @@ describe("TaskManager respawn variant", () => {
     const record: TaskRecord = {
       ...respawnRecord(),
       resolved_model: {
-        source: "agent",
+        source: "preset",
         provider: "openai",
         model_id: "gpt-5.6-sol",
         display: "openai/gpt-5.6-sol",
@@ -262,7 +262,7 @@ describe("TaskManager respawn variant", () => {
     const manager = createTaskManager({
       store,
       runners: { "in-process": runner, process: runner },
-      planner: categoryPlanner(),
+      planner: modelPlanner(),
       config: settings(),
       cwd: project,
       rpcRespawnRunner: {
@@ -293,7 +293,7 @@ describe("TaskManager in-process respawn", () => {
       execution_mode: "in-process",
       host_pid: 7001,
       resolved_model: {
-        source: "agent",
+        source: "preset",
         provider: "anthropic",
         model_id: "claude",
         display: "Claude",
@@ -323,7 +323,7 @@ describe("TaskManager in-process respawn", () => {
     const manager = createTaskManager({
       store,
       runners: { "in-process": inProcessRunner, process: new FakeRunner() },
-      planner: categoryPlanner(),
+      planner: modelPlanner(),
       config: settings(),
       cwd: project,
       hostPid: 7001,
@@ -354,7 +354,7 @@ describe("TaskManager in-process respawn", () => {
       ...respawnRecord(),
       execution_mode: "in-process",
       resolved_model: {
-        source: "agent",
+        source: "preset",
         provider: "removed-provider",
         model_id: "removed-model",
         display: "Removed Model",
@@ -374,7 +374,7 @@ describe("TaskManager in-process respawn", () => {
     const manager = createTaskManager({
       store,
       runners: { "in-process": managedRunner, process: new FakeRunner() },
-      planner: categoryPlanner(),
+      planner: modelPlanner(),
       config: settings(),
       cwd: project,
     })
@@ -408,7 +408,7 @@ describe("TaskManager in-process respawn", () => {
     const manager = createTaskManager({
       store,
       runners: { "in-process": runner, process: new FakeRunner() },
-      planner: categoryPlanner(),
+      planner: modelPlanner(),
       config: settings(),
       cwd: project,
     })
@@ -438,7 +438,7 @@ describe("TaskManager guarded reattach", () => {
     const manager = createTaskManager({
       store,
       runners: { "in-process": new FakeRunner(), process: new FakeRunner() },
-      planner: categoryPlanner(),
+      planner: modelPlanner(),
       config: settings(),
       cwd: project,
       hostPid: 7001,
@@ -468,7 +468,7 @@ describe("TaskManager guarded reattach", () => {
     const manager = createTaskManager({
       store,
       runners: { "in-process": new FakeRunner(), process: new FakeRunner() },
-      planner: categoryPlanner(),
+      planner: modelPlanner(),
       config: settings(),
       cwd: project,
       hostPid: 7001,
@@ -503,7 +503,7 @@ describe("TaskManager guarded reattach", () => {
     const manager = createTaskManager({
       store,
       runners: { "in-process": new FakeRunner(), process: new FakeRunner() },
-      planner: categoryPlanner(),
+      planner: modelPlanner(),
       config: settings(),
       cwd: project,
       hostPid: 7001,
@@ -555,7 +555,7 @@ describe("TaskManager respawn continuation", () => {
     const manager = createTaskManager({
       store,
       runners: { "in-process": runner, process: runner },
-      planner: categoryPlanner(),
+      planner: modelPlanner(),
       config: settings(),
       cwd: project,
       rpcRespawnRunner: { start: async () => handle },

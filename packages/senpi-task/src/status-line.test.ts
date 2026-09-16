@@ -55,43 +55,41 @@ describe("formatStatusTarget", () => {
     // given / when / then
     expect(
       formatStatusTarget({
-        category: "quick",
+        preset: "quick",
         resolvedModel: {
           provider: "quotio-openai",
           model_id: "gpt-5.6-luna-fast",
           display: "gpt-5.6-luna-fast",
           reasoning_effort: "high",
-          source: "category",
         },
       }),
-    ).toBe("category:quick(quotio-openai/gpt-5.6-luna-fast:high)")
+    ).toBe("preset:quick(quotio-openai/gpt-5.6-luna-fast:high)")
   })
 
   test("#given only an agent type #when formatted #then the agent target shares the category grammar", () => {
     // given / when / then
-    expect(formatStatusTarget({ agentType: "momus" })).toBe("agent:momus")
+    expect(formatStatusTarget({ preset: "momus" })).toBe("preset:momus")
   })
 
   test("#given an agent type and resolved model #when formatted #then model metadata qualifies the agent exactly like a category", () => {
     // given / when / then
     expect(
       formatStatusTarget({
-        agentType: "momus",
+        preset: "momus",
         resolvedModel: {
           provider: "openai",
           model_id: "gpt-5.6-sol-fast",
           display: "gpt-5.6-sol-fast",
           reasoning: "high",
-          source: "agent",
         },
       }),
-    ).toBe("agent:momus(openai/gpt-5.6-sol-fast:high)")
+    ).toBe("preset:momus(openai/gpt-5.6-sol-fast:high)")
   })
 
   test("#given an agent type with only a raw model #when formatted #then the raw model qualifies the agent target", () => {
     // given / when / then
-    expect(formatStatusTarget({ agentType: "explore", model: "anthropic/claude-sonnet-4-6" })).toBe(
-      "agent:explore(anthropic/claude-sonnet-4-6)",
+    expect(formatStatusTarget({ preset: "explore", model: "anthropic/claude-sonnet-4-6" })).toBe(
+      "preset:explore(anthropic/claude-sonnet-4-6)",
     )
   })
 
@@ -100,89 +98,84 @@ describe("formatStatusTarget", () => {
     // given / when / then
     expect(
       formatStatusTarget({
-        category: "ultrabrain",
+        preset: "ultrabrain",
         resolvedModel: {
           provider: "openai",
           model_id: "gpt-5.6-sol",
           display: "GPT-5.6 Sol",
           reasoning_effort: "xhigh",
           variant: "sol",
-          source: "category",
         },
       }),
-    ).toBe("category:ultrabrain(openai/gpt-5.6-sol:xhigh)")
+    ).toBe("preset:ultrabrain(openai/gpt-5.6-sol:xhigh)")
   })
 
   test("#given resolved model metadata with variant only #when formatted #then the variant is rendered", () => {
     // given / when / then
     expect(
       formatStatusTarget({
-        category: "ultrabrain",
+        preset: "ultrabrain",
         resolvedModel: {
           provider: "openai",
           model_id: "gpt-5.6-sol",
           display: "GPT-5.6 Sol",
           variant: "sol",
-          source: "category",
         },
       }),
-    ).toBe("category:ultrabrain(openai/gpt-5.6-sol:sol)")
+    ).toBe("preset:ultrabrain(openai/gpt-5.6-sol:sol)")
   })
 
   test("#given resolved model metadata with reasoning effort only #when formatted #then the reasoning effort is rendered", () => {
     // given / when / then
     expect(
       formatStatusTarget({
-        category: "ultrabrain",
+        preset: "ultrabrain",
         resolvedModel: {
           provider: "openai",
           model_id: "gpt-5.6-sol",
           display: "GPT-5.6 Sol",
           reasoning_effort: "xhigh",
-          source: "category",
         },
       }),
-    ).toBe("category:ultrabrain(openai/gpt-5.6-sol:xhigh)")
+    ).toBe("preset:ultrabrain(openai/gpt-5.6-sol:xhigh)")
   })
 
   test("#given resolved model metadata without effort or variant #when formatted #then the model name is rendered without a suffix", () => {
     // given / when / then
     expect(
       formatStatusTarget({
-        category: "ultrabrain",
+        preset: "ultrabrain",
         resolvedModel: {
           provider: "openai",
           model_id: "gpt-5.6-sol",
           display: "GPT-5.6 Sol",
-          source: "category",
         },
       }),
-    ).toBe("category:ultrabrain(openai/gpt-5.6-sol)")
+    ).toBe("preset:ultrabrain(openai/gpt-5.6-sol)")
   })
   test("#given model metadata with terminal controls #when formatted #then every part is normalized", () => {
     // given / when / then
     expect(
       formatStatusTarget({
-        category: "quick",
+        preset: "quick",
         resolvedModel: {
           provider: "openai",
           model_id: "gpt-5.6-sol",
           display: "GPT\u001b]0;hidden\u0007-5.6 Sol",
           reasoning_effort: "xhigh\u0007",
           variant: "sol\u007f",
-          source: "category",
         },
       }),
-    ).toBe("category:quick(openai/gpt-5.6-sol:xhigh)")
+    ).toBe("preset:quick(openai/gpt-5.6-sol:xhigh)")
   })
 
   test("#given a category but only a raw model #when formatted #then the sanitized raw model qualifies the target", () => {
     // given / when / then
-    expect(formatStatusTarget({ category: "quick", model: "anthropic/claude-sonnet-4-5" })).toBe(
-      "category:quick(anthropic/claude-sonnet-4-5)",
+    expect(formatStatusTarget({ preset: "quick", model: "anthropic/claude-sonnet-4-5" })).toBe(
+      "preset:quick(anthropic/claude-sonnet-4-5)",
     )
     expect(formatStatusTarget({ model: "anthropic/claude-sonnet-4-5" })).toBe("model:anthropic/claude-sonnet-4-5")
-    expect(formatStatusTarget({ category: "quick", model: "raw\u001b[31m-model" })).toBe("category:quick(raw-model)")
+    expect(formatStatusTarget({ preset: "quick", model: "raw\u001b[31m-model" })).toBe("preset:quick(raw-model)")
   })
 
   test("#given no target facts #when formatted #then nothing is emitted", () => {

@@ -37,7 +37,7 @@ async function seedActiveTeam(config: TeamCoreConfig, memberNames: readonly stri
   const spec = TeamSpecSchema.parse({
     name: "shutdown-team",
     leadAgentId: "lead",
-    members: memberNames.map((name) => ({ kind: "category", category: "coder", prompt: "p", name })),
+    members: memberNames.map((name) => ({ kind: "owner", model: "rubato-mock/mock-1", prompt: "p", name })),
   })
   const state = await createRuntimeState(spec, "lead-session", "user", config)
   await transitionRuntimeState(state.teamRunId, (current) => ({ ...current, status: "active" }), config)

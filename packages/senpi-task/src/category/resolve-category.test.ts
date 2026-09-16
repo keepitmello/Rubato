@@ -162,14 +162,14 @@ describe("resolveCategory", () => {
     expect(resolved.spec.modelId).toBe("fallback-model")
     expect(resolved.spec).toMatchObject({
       requested_model: {
-        source: "category",
+        source: "model",
         provider: "vendor-a",
         model_id: "primary-model",
         display: "vendor-a/primary-model",
       },
       fallback_models: [
         {
-          source: "category",
+          source: "model",
           provider: "vendor-c",
           model_id: "final-model",
           display: "vendor-c/final-model",

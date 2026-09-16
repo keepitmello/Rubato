@@ -131,15 +131,16 @@ function buildMemberStartSpec(input: SpawnMembersInput, member: TeamMember): Man
     name: memberTaskName(input.teamRunId, member.name),
     execution_mode: "process",
     run_in_background: true,
-    ...(member.kind === "category" ? { category: member.category } : { subagent_type: member.subagent_type }),
+    model: member.model,
     ...(member.task_summary !== undefined ? { task_summary: member.task_summary } : {}),
-    ...(member.model !== undefined ? { model: member.model } : {}),
+    ...(member.effort !== undefined ? { reasoning: member.effort } : {}),
     ...(member.worktreePath !== undefined ? { cwd: member.worktreePath } : {}),
     ...(extensions !== undefined ? { extensions } : {}),
     ...(launch !== undefined ? {
       memberEnv: {
         SENPI_TASK_MEMBER: `${input.teamRunId}::${member.name}`,
         SENPI_TASK_TEAM_CONFIG: launch.teamConfig,
+        RUBATO_PI_ROLE: member.kind,
       },
     } : {}),
   }

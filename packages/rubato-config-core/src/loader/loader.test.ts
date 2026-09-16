@@ -40,7 +40,7 @@ describe("loadRubatoConfig", () => {
         "task": { "default_concurrency": 2, "wait": { "default_ms": 11000 } },
         "teams": {
           "alpha": {
-            "members": [{ "name": "one", "kind": "category", "category": "quick", "prompt": "go" }]
+            "members": [{ "name": "one", "kind": "owner", "model": "rubato-mock/mock-1", "prompt": "go" }]
           }
         }
       }`,
@@ -93,7 +93,7 @@ describe("loadRubatoConfig", () => {
       `{
         "teams": {
           "alpha": {
-            "members": [{ "name": "one", "kind": "category", "category": "quick", "prompt": "go" }]
+            "members": [{ "name": "one", "kind": "owner", "model": "rubato-mock/mock-1", "prompt": "go" }]
           }
         }
       }`,

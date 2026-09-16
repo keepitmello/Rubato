@@ -6,7 +6,7 @@ const BASE: ResolvedModelRecord = {
   provider: "openai",
   model_id: "gpt-5.6-sol",
   display: "GPT-5.6 Sol",
-  source: "category",
+  source: "model",
 }
 
 describe("readResolvedReasoning", () => {

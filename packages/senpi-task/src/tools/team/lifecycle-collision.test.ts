@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import type { ExtensionContext } from "@code-yeongyu/senpi"
 
 import { collisionStore } from "../../manager/__fixtures__/collision-store"
-import { FakeRunner, categoryPlanner, cleanupProjects, settings, tempProject } from "../../manager/__fixtures__/manager-fakes"
+import { FakeRunner, modelPlanner, cleanupProjects, settings, tempProject } from "../../manager/__fixtures__/manager-fakes"
 import { createTaskManager } from "../../manager"
 import { createTeam, normalizeSenpiTeamSpec } from "../../team"
 import { stateDirConfig, taskSettings } from "../../team/__fixtures__/runtime-fakes"
@@ -20,7 +20,7 @@ describe("team_create collision handling", () => {
     const manager = createTaskManager({
       store: collisionStore(inner).store,
       runners: { "in-process": new FakeRunner(), process: new FakeRunner() },
-      planner: categoryPlanner(),
+      planner: modelPlanner(),
       config: settings({ default_concurrency: 5, max_depth: 2 }),
       cwd: project,
     })
@@ -46,7 +46,7 @@ describe("team_create collision handling", () => {
     // when
     const result = await tool.execute(
       "collision-team-create",
-      { inline_spec: { name: "collision-team", members: [{ name: "alpha", kind: "category", category: "quick", prompt: "work" }] } },
+      { inline_spec: { name: "collision-team", members: [{ name: "alpha", kind: "owner", model: "rubato-mock/mock-1", prompt: "work" }] } },
       undefined,
       undefined,
       context,

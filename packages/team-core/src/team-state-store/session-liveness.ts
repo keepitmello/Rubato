@@ -31,7 +31,7 @@ export async function inspectWorkerMembers(
   ctx: TeamSessionContext,
   runtimeState: RuntimeState,
 ): Promise<WorkerLiveness[]> {
-  const workerMembers = runtimeState.members.filter((member) => member.agentType !== "leader")
+  const workerMembers = runtimeState.members
 
   return await Promise.all(workerMembers.map(async (member) => {
     if (member.status === "errored") {

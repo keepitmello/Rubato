@@ -34,20 +34,11 @@ function createSpec(name = `team-${randomUUID().slice(0, 8)}`): TeamSpec {
     version: 1,
     name,
     createdAt: Date.now(),
-    leadAgentId: "lead",
     members: [
       {
-        kind: "subagent_type",
-        name: "lead",
-        subagent_type: "ultraworker",
-        backendType: "in-process",
-        isActive: true,
-        color: "red",
-      },
-      {
-        kind: "category",
+        kind: "owner",
         name: "worker",
-        category: "deep",
+        model: "rubato-mock/mock-1",
         prompt: "implement task",
         backendType: "in-process",
         isActive: true,
@@ -62,29 +53,20 @@ function createSpecWithTwoWorkers(name = `team-${randomUUID().slice(0, 8)}`): Te
     version: 1,
     name,
     createdAt: Date.now(),
-    leadAgentId: "lead",
     members: [
       {
-        kind: "subagent_type",
-        name: "lead",
-        subagent_type: "ultraworker",
-        backendType: "in-process",
-        isActive: true,
-        color: "red",
-      },
-      {
-        kind: "category",
+        kind: "owner",
         name: "worker-a",
-        category: "deep",
+        model: "rubato-mock/mock-1",
         prompt: "implement task",
         backendType: "in-process",
         isActive: true,
         color: "blue",
       },
       {
-        kind: "category",
+        kind: "owner",
         name: "worker-b",
-        category: "deep",
+        model: "rubato-mock/mock-1",
         prompt: "implement task",
         backendType: "in-process",
         isActive: true,
@@ -261,7 +243,6 @@ describe("resumeAllTeams", () => {
       status: "active",
       leadSessionId: "ses_alive_lead",
       members: currentRuntimeState.members.map((member) => {
-        if (member.name === "lead") return { ...member, sessionId: "ses_alive_lead", status: "running" as const }
         if (member.name === "worker-a") return { ...member, sessionId: "ses_dead_a", status: "running" as const }
         if (member.name === "worker-b") return { ...member, sessionId: "ses_alive_b", status: "running" as const }
         return member
@@ -336,7 +317,6 @@ describe("resumeAllTeams", () => {
       status: "active",
       leadSessionId: "ses_alive_lead",
       members: currentRuntimeState.members.map((member) => {
-        if (member.name === "lead") return { ...member, sessionId: "ses_alive_lead", status: "running" as const }
         return {
           ...member,
           sessionId: "ses_worker",
@@ -387,7 +367,6 @@ describe("resumeAllTeams", () => {
       status: "active",
       leadSessionId: "ses_alive_lead",
       members: currentRuntimeState.members.map((member) => {
-        if (member.name === "lead") return { ...member, sessionId: "ses_alive_lead", status: "running" as const }
         return {
           ...member,
           sessionId: "ses_worker",
@@ -476,7 +455,6 @@ describe("resumeAllTeams", () => {
       status: "active",
       leadSessionId: "ses_alive_lead",
       members: currentRuntimeState.members.map((member) => {
-        if (member.name === "lead") return { ...member, sessionId: "ses_alive_lead", status: "running" as const }
         return { ...member, sessionId: "ses_dead_worker", status: "running" as const }
       }),
     }), config)
@@ -509,7 +487,6 @@ describe("resumeAllTeams", () => {
       status: "active",
       leadSessionId: "ses_alive_lead",
       members: currentRuntimeState.members.map((member) => {
-        if (member.name === "lead") return { ...member, sessionId: "ses_alive_lead", status: "running" as const }
         if (member.name === "worker-a") return { ...member, sessionId: undefined, status: "errored" as const }
         return { ...member, sessionId: "ses_dead_b", status: "running" as const }
       }),

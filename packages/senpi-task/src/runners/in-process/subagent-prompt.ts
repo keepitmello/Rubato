@@ -3,7 +3,7 @@ export type SubagentPromptInput = {
   readonly parentSessionId: string
   readonly rootSessionId: string
   readonly depth: number
-  readonly agentType?: string
+  readonly preset?: string
   readonly instructions?: string
   readonly prompt: string
 }
@@ -12,7 +12,7 @@ export type SubagentPromptInput = {
 // then the agent/category instructions, then the task text.
 export function buildSubagentPrompt(input: SubagentPromptInput): string {
   const lines = [
-    `You are running as a rubato senpi-task child${input.agentType ? ` "${input.agentType}"` : ""}.`,
+    `You are running as a rubato senpi-task child${input.preset ? ` "${input.preset}"` : ""}.`,
     `Task id: ${input.taskId}.`,
     `Parent session: ${input.parentSessionId}.`,
     `Root session: ${input.rootSessionId}.`,

@@ -3,7 +3,7 @@ import { Value } from "typebox/value"
 
 import { SenpiTeamRuntimeError, SenpiTeamSpecError } from "../../team"
 import { createFakeTeamService, fakeCreateResult, fakeCreatedMember, fakeDeleteResult } from "./__fixtures__/team-tool-fakes"
-import { TeamCreateParams, createTeamCreateTool, createTeamDeleteTool, runTeamCreate, runTeamDelete } from "./lifecycle"
+import { TeamCreateParams, buildTeamCreateParams, createTeamCreateTool, createTeamDeleteTool, runTeamCreate, runTeamDelete } from "./lifecycle"
 
 describe("team_create tool", () => {
   test("#given the team_create schema #when inspected #then it exposes no model-supplied lead_session_id override", () => {
@@ -34,17 +34,17 @@ describe("team_create tool", () => {
             fakeCreatedMember({
               name: "alpha",
               status: "running",
-              role: { kind: "category", category: "deep" },
+              role: { kind: "owner", model: "rubato-mock/mock-1" },
               model: {
                 provider: "anthropic",
                 model_id: "claude-opus-4-7",
                 display: "Claude Opus 4.7",
                 reasoning_effort: "high",
-                source: "category",
+                source: "explicit",
               },
               promptExcerpt: "Refactor the auth module",
             }),
-            fakeCreatedMember({ name: "beta", status: "idle", taskId: "st_b", role: { kind: "subagent_type", subagentType: "ultraworker" } }),
+            fakeCreatedMember({ name: "beta", status: "idle", taskId: "st_b", role: { kind: "verifier", model: "rubato-mock/mock-1" } }),
           ],
         }),
     })
@@ -56,24 +56,23 @@ describe("team_create tool", () => {
     const text = result.content[0]?.type === "text" ? result.content[0].text : ""
     const [firstLine = ""] = text.split("\n")
     expect(firstLine).toBe("Created team 'demo' (00000000-0000-4000-8000-000000000000) with 2 members.")
-    expect(text).toContain("- alpha [running] category:deep(anthropic/claude-opus-4-7:high) task:st_a")
+    expect(text).toContain("- alpha [running] owner model:anthropic/claude-opus-4-7:high task:st_a")
     expect(text).not.toContain("Refactor the auth module")
-    expect(text).toContain("- beta [idle] agent:ultraworker task:st_b")
-    expect(text).not.toContain("beta [idle] agent:ultraworker(")
+    expect(text).toContain("- beta [idle] verifier model:rubato-mock/mock-1 task:st_b")
     if (result.details.kind !== "created") throw new Error("expected created")
     expect(result.details.members[0]).toMatchObject({
       name: "alpha",
       status: "running",
-      role: "category:deep",
+      role: "owner",
       task_id: "st_a",
       prompt_excerpt: "Refactor the auth module",
     })
-    expect(result.details.members[1]).toMatchObject({ name: "beta", role: "agent:ultraworker", task_id: "st_b" })
+    expect(result.details.members[1]).toMatchObject({ name: "beta", role: "verifier", task_id: "st_b" })
   })
 
   test("#given the inline member schema #when inspected #then task_summary sits right after prompt with the length limit", () => {
     // given
-    const memberSchema = TeamCreateParams.properties.inline_spec.anyOf[0].properties.members.anyOf[0].items
+    const memberSchema = TeamCreateParams.properties.inline_spec.anyOf[0].properties.members.items
     const keys = Object.keys(memberSchema.properties)
 
     // then
@@ -90,7 +89,7 @@ describe("team_create tool", () => {
             fakeCreatedMember({
               name: "alpha",
               status: "running",
-              role: { kind: "category", category: "deep" },
+              role: { kind: "owner", model: "rubato-mock/mock-1" },
               taskSummary: "Refactor the auth module boundary",
             }),
           ],
@@ -114,26 +113,26 @@ describe("team_create tool", () => {
             fakeCreatedMember({
               name: "alpha",
               status: "running",
-              role: { kind: "category", category: "deep" },
+              role: { kind: "owner", model: "rubato-mock/mock-1" },
               model: {
                 provider: "anthropic",
                 model_id: "claude-opus-4-7",
                 display: "Claude Opus 4.7",
                 reasoning_effort: "high",
                 variant: "xhigh",
-                source: "category",
+                source: "explicit",
               },
             }),
             fakeCreatedMember({
               name: "beta",
               status: "running",
-              role: { kind: "category", category: "quick" },
+              role: { kind: "owner", model: "rubato-mock/mock-1" },
               model: {
                 provider: "openai",
                 model_id: "gpt-5.6-luna-fast",
                 display: "gpt-5.6-luna-fast",
                 variant: "max",
-                source: "category",
+                source: "explicit",
               },
             }),
           ],
@@ -145,8 +144,8 @@ describe("team_create tool", () => {
 
     // then
     const text = result.content[0]?.type === "text" ? result.content[0].text : ""
-    expect(text).toContain("category:deep(anthropic/claude-opus-4-7:high)")
-    expect(text).toContain("category:quick(openai/gpt-5.6-luna-fast:max)")
+    expect(text).toContain("model:anthropic/claude-opus-4-7:high")
+    expect(text).toContain("model:openai/gpt-5.6-luna-fast:max")
     expect(text).not.toContain("variant:")
     expect(text).not.toContain("undefined")
   })
@@ -161,7 +160,7 @@ describe("team_create tool", () => {
     // given
     const service = createFakeTeamService({
       createTeam: async () => {
-        throw new SenpiTeamSpecError("bad member", "UNKNOWN_SUBAGENT_TYPE", "demo")
+        throw new SenpiTeamSpecError("bad member", "MODEL_UNAVAILABLE", "demo")
       },
     })
 
@@ -169,7 +168,7 @@ describe("team_create tool", () => {
     const result = await runTeamCreate(service, { team_name: "demo" })
 
     // then
-    expect(result.details).toMatchObject({ kind: "spec_error", code: "UNKNOWN_SUBAGENT_TYPE" })
+    expect(result.details).toMatchObject({ kind: "spec_error", code: "MODEL_UNAVAILABLE" })
   })
 
   test("#given a bounds runtime error #when team_create runs #then it surfaces runtime_error with the code", async () => {
@@ -246,13 +245,18 @@ describe("team_create inline_spec schema shape", () => {
     // then: the model must see the spec shape in the schema structure, not an empty {} that invites stringified JSON
     expect(serialized).not.toBe("{}")
     expect(serialized).toContain("members")
-    expect(serialized).toContain("xai/grok-4.6:xhigh")
+    expect(serialized).toContain("Complete provider/model id")
+    expect(serialized).not.toContain("category")
+    expect(serialized).not.toContain("preset")
+    expect(serialized).toContain('"kind"')
+    expect(serialized).toContain('"owner"')
+    expect(serialized).toContain('"verifier"')
   })
 
   test("#given a JSON-stringified inline spec #when team_create runs #then the parsed object reaches the service", async () => {
     // given
     const service = createFakeTeamService({ createTeam: async () => fakeCreateResult() })
-    const payload = JSON.stringify({ name: "demo", members: [{ name: "alpha", kind: "category", category: "deep" }] })
+    const payload = JSON.stringify({ name: "demo", members: [{ name: "alpha", kind: "owner", model: "xai/grok-4.6", prompt: "work" }] })
 
     // when
     const result = await runTeamCreate(service, { inline_spec: payload })
@@ -261,31 +265,80 @@ describe("team_create inline_spec schema shape", () => {
     expect(result.details).toMatchObject({ kind: "created", team_name: "demo" })
     expect(service.calls[0]).toMatchObject({
       method: "createTeam",
-      args: [{ inlineSpec: { name: "demo", members: [{ name: "alpha", kind: "category", category: "deep" }] } }],
+      args: [{ inlineSpec: { name: "demo", members: [{ name: "alpha", kind: "owner", model: "xai/grok-4.6", prompt: "work" }] } }],
     })
   })
 
-  test("#given the team_create schema #when a single-member-object inline spec is validated #then it passes", () => {
-    // then: the wrap in normalizeSenpiTeamSpec only helps if the schema lets the object through
+  test("#given inline members #when schema validation runs #then owner or verifier kind is required independently from model", () => {
+    const verifier = {
+      inline_spec: {
+        name: "demo",
+        members: [{ name: "reviewer", kind: "verifier", model: "xai/grok-4.6", prompt: "review" }],
+      },
+    }
+    const missingKind = {
+      inline_spec: {
+        name: "demo",
+        members: [{ name: "reviewer", model: "xai/grok-4.6", prompt: "review" }],
+      },
+    }
+
+    expect(Value.Check(TeamCreateParams, verifier)).toBe(true)
+    expect(Value.Check(TeamCreateParams, missingKind)).toBe(false)
+    expect(Value.Check(TeamCreateParams, {
+      inline_spec: {
+        name: "demo",
+        members: [{ name: "reviewer", kind: "verifier", model: "xai/grok-4.6", prompt: "review", category: "deep" }],
+      },
+    })).toBe(false)
+  })
+
+  test("#given inline members #when schema validation runs #then owner or verifier kind is required independently from model", () => {
+    const verifier = {
+      inline_spec: {
+        name: "demo",
+        members: [{ name: "reviewer", kind: "verifier", model: "xai/grok-4.6", prompt: "review" }],
+      },
+    }
+    const missingKind = {
+      inline_spec: {
+        name: "demo",
+        members: [{ name: "reviewer", model: "xai/grok-4.6", prompt: "review" }],
+      },
+    }
+
+    expect(Value.Check(TeamCreateParams, verifier)).toBe(true)
+    expect(Value.Check(TeamCreateParams, missingKind)).toBe(false)
+    expect(Value.Check(TeamCreateParams, {
+      inline_spec: {
+        name: "demo",
+        members: [{ name: "reviewer", kind: "verifier", model: "xai/grok-4.6", prompt: "review", category: "deep" }],
+      },
+    })).toBe(false)
+  })
+
+  test("#given the team_create schema #when a single-member-object inline spec is validated #then it fails closed", () => {
     expect(
       Value.Check(TeamCreateParams, {
-        inline_spec: { name: "demo", members: { name: "alpha", kind: "category", category: "deep" } },
+        inline_spec: { name: "demo", members: { name: "alpha", kind: "owner", model: "xai/grok-4.6", prompt: "work" } },
       }),
-    ).toBe(true)
+    ).toBe(false)
   })
 
-  test("#given an inline spec whose members is a single object #when team_create runs #then the service receives it", async () => {
-    // given
-    const service = createFakeTeamService({ createTeam: async () => fakeCreateResult() })
+  test("#given live models #when the schema is built #then members share Agent's model enum", () => {
+    const schema = buildTeamCreateParams(["xai/grok-4.6", "openai/gpt-5.6-sol"])
+    const memberSchema = schema.properties.inline_spec.anyOf[0].properties.members.items
+    expect(Reflect.get(memberSchema.properties.model, "enum")).toEqual(["openai/gpt-5.6-sol", "xai/grok-4.6"])
+  })
 
-    // when
-    const result = await runTeamCreate(service, {
-      inline_spec: { name: "demo", members: { name: "alpha", kind: "category", category: "deep" } },
-    })
+  test("#given a late live registry #when the team schema is read #then its model enum updates", () => {
+    let models: readonly string[] = []
+    const schema = buildTeamCreateParams(() => models)
+    const memberSchema = schema.properties.inline_spec.anyOf[0].properties.members.items
+    expect(Reflect.get(memberSchema.properties.model, "enum")).toBeUndefined()
 
-    // then
-    expect(result.details).toMatchObject({ kind: "created" })
-    expect(service.calls[0]).toMatchObject({ method: "createTeam" })
+    models = ["xai/grok-4.6"]
+    expect(Reflect.get(memberSchema.properties.model, "enum")).toEqual(["xai/grok-4.6"])
   })
 
   test("#given a malformed JSON string inline spec #when team_create runs #then it rejects without calling the service", async () => {

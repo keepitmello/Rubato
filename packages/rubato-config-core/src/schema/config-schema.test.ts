@@ -45,7 +45,10 @@ describe("rubato config schema", () => {
       teams: {
         builders: {
           description: "Build team",
-          members: [{ name: "quick-one", kind: "category", category: "quick", prompt: "Help" }],
+          members: [
+            { name: "quick-one", kind: "owner", model: "openai/gpt-5", prompt: "Help" },
+            { name: "reviewer", kind: "verifier", model: "anthropic/claude", prompt: "Verify" },
+          ],
         },
       },
     }

@@ -67,8 +67,7 @@ function buildRecord(taskId: string, spec: ManagerStartSpec, status: TaskStatus,
     notification: { run_epoch: 0, notified_epoch: -1 },
     ...(resolvedModel !== undefined ? { resolved_model: resolvedModel } : {}),
     ...(spec.name !== undefined ? { name: spec.name } : {}),
-    ...(spec.category !== undefined ? { category: spec.category } : {}),
-    ...(spec.subagent_type !== undefined ? { agent_type: spec.subagent_type } : {}),
+    ...(spec.preset !== undefined ? { preset: spec.preset } : {}),
   }
 }
 

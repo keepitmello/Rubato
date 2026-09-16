@@ -137,7 +137,7 @@ async function seedTeamRuntime(cwd: string, leadSessionId: string, memberName = 
   const stateDir = { project_dir: cwd }
   const config = toTeamCoreConfig(settings, teamStorageBaseDir(stateDir))
   const spec = normalizeSenpiTeamSpec({
-    members: [{ name: memberName, kind: "category", category: "quick", prompt: "member" }],
+    members: [{ name: memberName, kind: "owner", model: "rubato-mock/mock-1", prompt: "member" }],
   }, "liveness-test")
   const runtime = await createRuntimeState(spec, leadSessionId, "project", config)
   await transitionRuntimeState(runtime.teamRunId, (state) => ({ ...state, status: "active" }), config)
@@ -216,7 +216,6 @@ describe("rubato-runtime task component wiring", () => {
     expect(pi.messageRenderers.map((entry) => entry.customType)).toEqual([
       "senpi-task.completion",
       "senpi-task.team-member-liveness",
-      "senpi-task.category-unavailable",
     ])
     // exactly the task event handlers (session lifecycle + transition-buffer edges), the
     // skill-invocation tracker subscriptions feeding the plan-gated agent gate, plus the

@@ -1,5 +1,5 @@
 import type { ExecutionMode, StartResult } from "../../manager"
-import type { TaskRecord } from "../../state"
+import type { ResolvedModelRecord, TaskRecord } from "../../state"
 import type { TaskToolDetails, TaskToolMode } from "./types"
 
 export type SingleSpawnParams = {
@@ -9,19 +9,24 @@ export type SingleSpawnParams = {
   readonly model?: string
 }
 
+function visibleModel(record: ResolvedModelRecord | undefined): Omit<ResolvedModelRecord, "source"> | undefined {
+  if (record === undefined) return undefined
+  const { source: _source, ...visible } = record
+  return visible
+}
+
 export function recordSummary(record: TaskRecord, includeLifecycle?: boolean) {
   return {
     task_id: record.task_id,
     status: record.status,
     task_summary: record.task_summary,
     name: record.name,
-    category: record.category,
+    preset: record.preset,
     execution_mode: record.execution_mode,
     model: record.model,
-    run_stats: record.run_stats,
+    ...(record.run_stats === undefined ? {} : { run_stats: record.run_stats }),
     ...(includeLifecycle && {
           description: record.description,
-          agent_type: record.agent_type,
           residency_state: record.residency_state,
           depth: record.depth,
           created_at: record.created_at,
@@ -36,9 +41,8 @@ export function recordDetails(record: TaskRecord, mode: TaskToolMode): TaskToolD
     ...rest,
     agentId: task_id,
     mode,
-    subagent_type: record.agent_type,
-    resolved_model: record.resolved_model,
-    fallback_attempts: record.fallback_attempts,
+    resolved_model: visibleModel(record.resolved_model),
+    fallback_attempts: record.fallback_attempts?.map((attempt) => visibleModel(attempt)!),
   }
 }
 
@@ -53,10 +57,10 @@ export function startedDetails(
     mode: "spawn",
     task_summary: params.summary,
     name: started.name,
-    subagent_type: params.preset,
+    preset: params.preset,
     execution_mode: executionMode,
     model: params.model,
-    resolved_model: started.resolved_model,
+    resolved_model: visibleModel(started.resolved_model),
     queue_position: started.queue_position,
   }
 }

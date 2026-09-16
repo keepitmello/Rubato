@@ -17,7 +17,7 @@ export type ResolveAgentOptions = {
 }
 
 type AgentPersona = {
-  readonly agentType: string
+  readonly preset: string
   readonly instructions?: string
   readonly toolAllowlist?: readonly string[]
   // The definition's disallowedTools, carried so the record's tool_deny -> ChildSpec.toolDenylist
@@ -125,7 +125,7 @@ export function resolveAgent<TModel extends SenpiModelPort>(
         candidates: directModels,
         selectedModel: candidate.model,
         ...(availableModels !== undefined ? { availableModels: new Set(availableModels) } : {}),
-        source: "agent",
+        source: "preset",
       }),
     )
   }
@@ -162,7 +162,7 @@ export function resolveAgent<TModel extends SenpiModelPort>(
             }),
             selectedModel: resolution.model,
             availableModels: availableModelSet,
-            source: "agent",
+            source: "preset",
           }),
         )
       }
@@ -178,7 +178,7 @@ function agentPersona(name: string, definition: AgentDefinition): AgentPersona {
   ).map((rule) => rule.pattern)
   const agentExecutionMode = toExecutionMode(definition.executionMode)
   return {
-    agentType: name,
+    preset: name,
     ...(definition.prompt !== undefined ? { instructions: definition.prompt } : {}),
     ...(toolAllowlist !== undefined ? { toolAllowlist } : {}),
     ...(definition.disallowedTools !== undefined ? { toolDenylist: definition.disallowedTools } : {}),
@@ -211,7 +211,7 @@ function resolvedAgent(
     model: display,
     ...runtimeModelChain,
     resolved_model: {
-      source: "agent",
+      source: "preset",
       provider: model.provider,
       model_id: model.modelId,
       display,

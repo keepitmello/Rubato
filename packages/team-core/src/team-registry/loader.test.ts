@@ -8,9 +8,6 @@ import path from "node:path"
 
 import { TeamModeConfigSchema } from "../config"
 
-const ORACLE_REJECTION_MESSAGE =
-  "Agent 'oracle' is read-only (cannot write files). Team members must write to mailbox inbox files. Use delegate-task with subagent_type: 'oracle' for read-only analysis instead."
-
 const { TeamSpecValidationError, loadAllTeamSpecs, loadTeamSpec } = await import("./loader")
 
 function createBaseSpec(teamName: string): {
@@ -18,7 +15,6 @@ function createBaseSpec(teamName: string): {
   name: string
   description: string
   createdAt: number
-  leadAgentId: string
   members: Array<Record<string, unknown>>
 } {
   return {
@@ -26,11 +22,10 @@ function createBaseSpec(teamName: string): {
     name: teamName,
     description: `${teamName} description`,
     createdAt: Date.now(),
-    leadAgentId: "lead",
     members: [
-      { kind: "category", name: "lead", category: "deep", prompt: "implement the leader task" },
-      { kind: "category", name: "reviewer", category: "quick", prompt: "review the current output" },
-      { kind: "category", name: "tester", category: "deep", prompt: "verify the resulting behavior" },
+      { kind: "owner", name: "implementer", model: "rubato-mock/mock-1", prompt: "implement the task" },
+      { kind: "owner", name: "reviewer", model: "rubato-mock/mock-1", prompt: "review the current output" },
+      { kind: "owner", name: "tester", model: "rubato-mock/mock-1", prompt: "verify the resulting behavior" },
     ],
   }
 }
@@ -84,7 +79,6 @@ describe("team-registry loader", () => {
     // then
     expect(teamSpec.name).toBe("alpha")
     expect(teamSpec.members).toHaveLength(3)
-    expect(teamSpec.leadAgentId).toBe("lead")
   })
 
   test("defaults version when omitted from stored specs", async () => {
@@ -123,103 +117,39 @@ describe("team-registry loader", () => {
     }
   })
 
-  test("derives leadAgentId and prepends lead shorthand to members", async () => {
-    // given
-    const rootDirectory = await createTemporaryRoot()
-    temporaryDirectories.push(rootDirectory)
-    const fixturePaths = getFixturePaths(rootDirectory, "lead-shorthand")
-    await writeJsonFile(fixturePaths.userConfigPath, {
-      name: "lead-shorthand",
-      description: "team with shorthand lead",
-      lead: { kind: "subagent_type", subagent_type: "ultraworker" },
-      members: [
-        { kind: "category", name: "scout-1", category: "deep", prompt: "Scout the src directory for auth patterns." },
-        { kind: "category", name: "scout-2", category: "quick", prompt: "Scout tests for auth coverage." },
-      ],
-    })
-
-    // when
-    const teamSpec = await loadTeamSpec("lead-shorthand", createConfig(fixturePaths.userBaseDir), fixturePaths.projectRoot)
-
-    // then
-    expect(teamSpec.leadAgentId).toBe("lead")
-    expect(teamSpec.members).toHaveLength(3)
-    expect(teamSpec.members[0]).toMatchObject({ kind: "subagent_type", name: "lead", subagent_type: "ultraworker" })
-  })
-
-  test("derives leadAgentId from the only member when no lead hint exists", async () => {
+  test("loads a single teammate without inventing a lead member", async () => {
     // given
     const rootDirectory = await createTemporaryRoot()
     temporaryDirectories.push(rootDirectory)
     const fixturePaths = getFixturePaths(rootDirectory, "solo")
     await writeJsonFile(fixturePaths.userConfigPath, {
       name: "solo",
-      members: [{ kind: "category", name: "solo-lead", category: "deep", prompt: "Implement the assigned work for the solo team." }],
+      members: [{ kind: "owner", name: "solo-owner", model: "rubato-mock/mock-1", prompt: "Implement the assigned work for the solo team." }],
     })
 
     // when
     const teamSpec = await loadTeamSpec("solo", createConfig(fixturePaths.userBaseDir), fixturePaths.projectRoot)
 
     // then
-    expect(teamSpec.leadAgentId).toBe("solo-lead")
     expect(teamSpec.members).toHaveLength(1)
   })
 
-  test("rejects multi-member specs without any lead indicator with a helpful message", async () => {
+  test("loads multiple owner and verifier teammates without a lead member", async () => {
     // given
     const rootDirectory = await createTemporaryRoot()
     temporaryDirectories.push(rootDirectory)
-    const fixturePaths = getFixturePaths(rootDirectory, "missing-lead")
+    const fixturePaths = getFixturePaths(rootDirectory, "peer-team")
     await writeJsonFile(fixturePaths.userConfigPath, {
-      name: "missing-lead",
+      name: "peer-team",
       members: [
-        { kind: "category", name: "member-1", category: "deep", prompt: "Implement the assigned work for member one." },
-        { kind: "category", name: "member-2", category: "quick", prompt: "Review the assigned work for member one." },
+        { kind: "owner", name: "member-1", model: "rubato-mock/mock-1", prompt: "Implement the assigned work for member one." },
+        { kind: "verifier", name: "member-2", model: "rubato-mock/mock-1", prompt: "Review the assigned work for member one." },
       ],
     })
 
-    // when
-    let thrownError: unknown
-    try {
-      await loadTeamSpec("missing-lead", createConfig(fixturePaths.userBaseDir), fixturePaths.projectRoot)
-    } catch (error) {
-      thrownError = error
-    }
+    const teamSpec = await loadTeamSpec("peer-team", createConfig(fixturePaths.userBaseDir), fixturePaths.projectRoot)
 
-    // then
-    expect(thrownError).toMatchObject({
-      name: TeamSpecValidationError.name,
-      message: "Invalid team spec field 'leadAgentId': leadAgentId required (or write a `lead: {...}` field, or mark one member with `isLead: true`)",
-      code: "INVALID_TEAM_SPEC",
-      field: "leadAgentId",
-    })
-  })
-
-  test("rejects oracle subagent members with the exact plan message", async () => {
-    // given
-    const rootDirectory = await createTemporaryRoot()
-    temporaryDirectories.push(rootDirectory)
-    const fixturePaths = getFixturePaths(rootDirectory, "oracle-team")
-    const teamSpec = createBaseSpec("oracle-team")
-    teamSpec.members = [{ kind: "subagent_type", name: "lead", subagent_type: "oracle" }]
-    await writeJsonFile(fixturePaths.userConfigPath, teamSpec)
-
-    // when
-    let thrownError: unknown
-    try {
-      await loadTeamSpec("oracle-team", createConfig(fixturePaths.userBaseDir), fixturePaths.projectRoot)
-    } catch (error) {
-      thrownError = error
-    }
-
-    // then
-    expect(thrownError).toMatchObject({
-      name: TeamSpecValidationError.name,
-      message: ORACLE_REJECTION_MESSAGE,
-      code: "INELIGIBLE_AGENT",
-      field: "subagent_type",
-      memberName: "lead",
-    })
+    expect(teamSpec.members.map((member) => member.kind)).toEqual(["owner", "verifier"])
   })
 
   test("prefers the project-scoped team spec when both scopes define the same name", async () => {
@@ -273,12 +203,11 @@ describe("team-registry loader", () => {
     const fixturePaths = getFixturePaths(rootDirectory, "too-many")
     const teamSpec = createBaseSpec("too-many")
     teamSpec.members = Array.from({ length: 9 }, (_, index) => ({
-      kind: "category",
+      kind: "owner",
       name: `member-${index}`,
-      category: "deep",
+      model: "rubato-mock/mock-1",
       prompt: `implement task number ${index}`,
     }))
-    teamSpec.leadAgentId = "member-0"
     await writeJsonFile(fixturePaths.userConfigPath, teamSpec)
 
     // when

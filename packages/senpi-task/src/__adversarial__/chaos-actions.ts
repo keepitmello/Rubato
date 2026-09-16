@@ -75,7 +75,6 @@ async function actStart(state: ChaosState): Promise<void> {
     parent_session_id: CHAOS_SESSION,
     root_session_id: CHAOS_SESSION,
     depth: 1,
-    category: "quick",
     model: CHAOS_MODEL,
     execution_mode: state.rng.bool() ? "in-process" : "process",
     run_in_background: background,

@@ -65,12 +65,10 @@ function optionalRendererText(value: string | undefined): string | undefined {
   return normalized.length === 0 ? undefined : normalized
 }
 
-// One target for every row shape: the shared status-line grammar (`category:<n>(<model>:<effort>)`
-// | `agent:<n>(<model>:<effort>)`), so agent-routed rows read exactly like category-routed rows.
+// One target for every row shape: an optional preset plus the resolved model.
 function recordStatusTarget(record: TaskRecord): string {
   return formatStatusTarget({
-    category: record.category,
-    agentType: record.agent_type,
+    preset: record.preset,
     resolvedModel: record.resolved_model,
     model: record.model,
     fallbackCount: record.fallback_attempts?.length,

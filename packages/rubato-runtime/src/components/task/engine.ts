@@ -23,12 +23,6 @@ import {
 
 import type { IdleInjectionCoordinator } from "../../extension/idle-injection-coordinator"
 import type { SenpiExtensionAPI } from "../../extension/types"
-import {
-  createCategoryConfigGenerations,
-  createGenerationObservingPlanner,
-  type CategoryConfigGenerations,
-} from "./category-config-generation"
-import { createCategoryUnavailableWarningPlanner } from "./category-unavailable-warning"
 import { createTaskStoreChain } from "./engine-store-chain"
 import {
   DEFAULT_RUNNER_FACTORIES,
@@ -51,9 +45,6 @@ export interface TaskEngine {
   readonly notifier: CompletionNotifier
   readonly runtime: TaskRuntimeContext
   readonly planner: ChildPlanner
-  // Session-local category config generations observed at the planner seam. Telemetry reads the
-  // current snapshot; every task record carries the generation that planned it.
-  readonly categoryConfigGenerations: CategoryConfigGenerations
   readonly agents: Readonly<Record<string, AgentDefinition>>
   readonly rubatoConfig: RubatoConfig
   readonly settings: RubatoTaskSettings
@@ -182,7 +173,6 @@ export function composeTaskEngine(deps: ComposeTaskEngineDeps): TaskEngine {
     return managerRef
   }
 
-  const categoryConfigGenerations = createCategoryConfigGenerations()
   const storeChain = createTaskStoreChain({
     baseStore,
     runtime,
@@ -192,7 +182,6 @@ export function composeTaskEngine(deps: ComposeTaskEngineDeps): TaskEngine {
       notifyOwnedMemberLiveness: (record) => void notifyOwnedMemberLiveness(record),
       observers: deps.terminalObservers ?? sharedTaskTerminalObservers(),
     },
-    generations: categoryConfigGenerations,
   })
 
   const registry = createManagerResidencyRegistry(getManager)
@@ -201,19 +190,7 @@ export function composeTaskEngine(deps: ComposeTaskEngineDeps): TaskEngine {
   const factories = deps.runnerFactories ?? DEFAULT_RUNNER_FACTORIES
   const runnerContext: RunnerBuildContext = { runtime, sharedParentTools: deps.sharedParentTools, settings }
   const resolveRegistry: ResolveModelRegistry = () => runtime.modelRegistry()
-  const basePlanner = createGenerationObservingPlanner({
-    planner: createTaskChildPlanner(deps.rubatoConfig, agents, resolveRegistry),
-    rubatoConfig: deps.rubatoConfig,
-    resolveRegistry,
-    generations: categoryConfigGenerations,
-  })
-  const planner = createCategoryUnavailableWarningPlanner({
-    planner: basePlanner,
-    pi: deps.pi,
-    runtime,
-    rubatoConfig: deps.rubatoConfig,
-    settings,
-  })
+  const planner = createTaskChildPlanner(deps.rubatoConfig, agents, resolveRegistry)
   const manager = createTaskManager({
     store: storeChain.store,
     runners: { "in-process": factories.inProcess(runnerContext), process: factories.process(runnerContext) },
@@ -243,7 +220,6 @@ export function composeTaskEngine(deps: ComposeTaskEngineDeps): TaskEngine {
     notifier,
     runtime,
     planner,
-    categoryConfigGenerations,
     agents,
     rubatoConfig: deps.rubatoConfig,
     settings,

@@ -6,7 +6,7 @@ import { spawnFakeChild } from "../runners/rpc/__fixtures__/spawn-fake"
 import { terminateRpcChild } from "../runners/rpc/terminate"
 import { RpcProcessRunner } from "../runners/rpc-process"
 import { createRpcManagedRunner } from "./runner"
-import { categoryPlanner, cleanupProjects, FakeRunner, settings, tempProject } from "./__fixtures__/manager-fakes"
+import { modelPlanner, cleanupProjects, FakeRunner, settings, tempProject } from "./__fixtures__/manager-fakes"
 import { createTaskManager } from "./manager"
 
 const children: ChildProcess[] = []
@@ -28,7 +28,7 @@ function createManager() {
       "in-process": new FakeRunner(),
       process: createRpcManagedRunner(processRunner),
     },
-    planner: categoryPlanner(),
+    planner: modelPlanner(),
     config: settings({ default_execution_mode: "process", default_concurrency: 2, max_depth: 2 }),
     cwd: project,
   })

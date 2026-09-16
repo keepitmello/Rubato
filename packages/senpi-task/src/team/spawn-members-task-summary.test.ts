@@ -23,7 +23,7 @@ describe("spawnTeamMembers task_summary", () => {
   test("#given a member with a task_summary #when spawned #then the manager start spec carries the summary", async () => {
     // given
     const spec = normalizeSenpiTeamSpec(
-      { members: [{ kind: "category", category: "quick", prompt: "work", task_summary: "Investigate the failing test" }] },
+      { members: [{ kind: "owner", model: "xai/grok-4.6", prompt: "work", task_summary: "Investigate the failing test" }] },
       "demo",
     )
     const captured: ManagerStartSpec[] = []
@@ -47,9 +47,9 @@ describe("spawnTeamMembers task_summary", () => {
 })
 
 describe("spawnTeamMembers model", () => {
-  test("#given a member with a model override #when spawned #then the manager start spec carries the model", async () => {
+  test("#given a member with a model and effort #when spawned #then the manager start spec carries both without category routing", async () => {
     const spec = normalizeSenpiTeamSpec(
-      { members: [{ kind: "category", category: "grok", prompt: "work", model: "xai/grok-4.6:xhigh" }] },
+      { members: [{ kind: "owner", model: "xai/grok-4.6", effort: "xhigh", prompt: "work" }] },
       "demo",
     )
     const captured: ManagerStartSpec[] = []
@@ -66,7 +66,8 @@ describe("spawnTeamMembers model", () => {
     })
 
     expect(result.failure).toBeUndefined()
-    expect(captured[0]?.category).toBe("grok")
-    expect(captured[0]?.model).toBe("xai/grok-4.6:xhigh")
+    expect(captured[0]?.preset).toBeUndefined()
+    expect(captured[0]?.model).toBe("xai/grok-4.6")
+    expect(captured[0]?.reasoning).toBe("xhigh")
   })
 })

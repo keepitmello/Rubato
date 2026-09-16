@@ -3,7 +3,7 @@ import { defineTool, type ToolDefinition } from "@code-yeongyu/senpi"
 import { normalizeTaskToolArguments } from "./argument-normalization"
 import { buildTaskToolDescription, TASK_PROMPT_GUIDELINES, TASK_PROMPT_SNIPPET } from "./description"
 import { buildTaskExecute } from "./execute"
-import { TaskToolParams } from "./params"
+import { buildTaskToolParams, TaskToolParams } from "./params"
 import { linesComponent, renderTaskCallLines, renderTaskResultComponent } from "./renderers"
 import type { TaskToolDeps, TaskToolDetails } from "./types"
 
@@ -13,13 +13,14 @@ export const TASK_TOOL_NAME = "Agent"
 // injected from the loaded agents, prompt-surface hints, host-backed spawn, and compact renderers.
 export function createTaskTool(deps: TaskToolDeps): ToolDefinition<typeof TaskToolParams, TaskToolDetails> {
   const execute = buildTaskExecute(deps)
+  const parameters = buildTaskToolParams(() => deps.models?.list?.() ?? [])
   return defineTool({
     name: TASK_TOOL_NAME,
     label: "Agent",
     description: buildTaskToolDescription({ rubatoConfig: deps.rubatoConfig, agents: deps.agents }),
     promptSnippet: TASK_PROMPT_SNIPPET,
     promptGuidelines: [...TASK_PROMPT_GUIDELINES],
-    parameters: TaskToolParams,
+    parameters,
     prepareArguments: normalizeTaskToolArguments,
     execute: (toolCallId, params, signal, onUpdate, ctx) => execute(toolCallId, params, signal, onUpdate, ctx),
     renderCall: (args, theme) =>

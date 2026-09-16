@@ -1,7 +1,7 @@
 export type DepthPolicyInput = {
   readonly childDepth: number
   readonly maxDepth: number
-  readonly targetAgentType?: string
+  readonly targetPreset?: string
   readonly allowedSubagents?: readonly string[]
 }
 
@@ -13,9 +13,9 @@ export type DepthDecision =
 // child is admitted only while its depth stays within maxDepth (default 1 comes from the caller).
 export function decideDepthPolicy(input: DepthPolicyInput): DepthDecision {
   if (
-    input.targetAgentType !== undefined &&
+    input.targetPreset !== undefined &&
     input.allowedSubagents !== undefined &&
-    input.allowedSubagents.includes(input.targetAgentType)
+    input.allowedSubagents.includes(input.targetPreset)
   ) {
     return { allowed: true, reason: "allowed-subagent" }
   }

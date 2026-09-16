@@ -30,8 +30,7 @@ export function taskSnapshot(
     name: bounded(record.name, MAX_SNAPSHOT_TEXT_LENGTH).value,
     task_summary: bounded(record.task_summary, MAX_SNAPSHOT_TEXT_LENGTH).value,
     description: description.value,
-    agent_type: bounded(record.agent_type, MAX_SNAPSHOT_TEXT_LENGTH).value,
-    category: bounded(record.category, MAX_SNAPSHOT_TEXT_LENGTH).value,
+    preset: bounded(record.preset, MAX_SNAPSHOT_TEXT_LENGTH).value,
     model: boundedRequired(record.model, MAX_SNAPSHOT_TEXT_LENGTH),
     ...(description.truncated ? { description_truncated: true } : {}),
     ...(record.child_session_id === undefined

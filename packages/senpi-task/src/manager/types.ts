@@ -1,5 +1,4 @@
 import type { ToolDefinition } from "@code-yeongyu/senpi"
-import type { DelegateFallbackEntry } from "@rubato/delegate-core"
 import type { RubatoTaskSettings } from "@rubato/config-core"
 
 import type { ResolvedModelRecord, TaskRecord, TaskRunStats, TaskStatus } from "../state"
@@ -34,7 +33,7 @@ export type ManagedStartSpec = {
   // matches on this pair - never on the human display string, which need not be a registry id.
   readonly resolvedModel?: ResolvedModelRecord
   readonly variant?: string
-  readonly agentType?: string
+  readonly preset?: string
   readonly instructions?: string
   readonly toolAllowlist?: readonly string[]
   // Names of tools the child must NOT get (the agent definition's disallowedTools), applied through
@@ -61,8 +60,7 @@ export type ManagerStartSpec = {
   readonly parent_session_id: string
   readonly root_session_id?: string
   readonly depth: number
-  readonly category?: string
-  readonly subagent_type?: string
+  readonly preset?: string
   readonly execution_mode?: ExecutionMode
   readonly model?: string
   readonly reasoning?: string
@@ -84,8 +82,7 @@ export type ResolvedChildPlan = {
   readonly resolved_model?: ResolvedModelRecord
   readonly variant?: string
   readonly agentExecutionMode?: ExecutionMode
-  readonly agentType?: string
-  readonly category?: string
+  readonly preset?: string
   readonly instructions?: string
   readonly toolAllowlist?: readonly string[]
   // The resolved agent's disallowedTools, threaded onto the record as tool_deny.
@@ -96,15 +93,9 @@ export type ResolvedChildPlan = {
 }
 
 export type PlanResolutionError = {
-  readonly code: "unknown_target" | "model_unavailable" | "category_disabled" | "invalid_target"
+  readonly code: "unknown_target" | "model_unavailable" | "invalid_target"
   readonly message: string
   readonly availableAgents?: readonly string[]
-  readonly availableCategories?: readonly string[]
-  // Dead-chain spawn detail: the category whose builtin fallback chain had zero resolvable rungs,
-  // the rungs that were attempted, and the chain providers missing from the live registry.
-  readonly category?: string
-  readonly attempted_chain?: readonly DelegateFallbackEntry[]
-  readonly missing_providers?: readonly string[]
 }
 
 export type PlanResolution =
@@ -134,8 +125,7 @@ export type StartResult =
       readonly kind: "start_failed"
       readonly task_id: string
       readonly name: string
-      readonly category?: string
-      readonly subagent_type?: string
+      readonly preset?: string
       readonly execution_mode: ExecutionMode
       readonly model: string
       readonly resolved_model?: ResolvedModelRecord

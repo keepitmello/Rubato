@@ -24,9 +24,9 @@ function threeMemberSpec() {
   return normalizeSenpiTeamSpec(
     {
       members: [
-        { name: "alpha", kind: "category", category: "quick", prompt: "task alpha" },
-        { name: "beta", kind: "category", category: "deep", prompt: "task beta" },
-        { name: "gamma", kind: "subagent_type", subagent_type: "ultraworker", prompt: "task gamma" },
+        { name: "alpha", kind: "owner", model: "rubato-mock/mock-1", prompt: "task alpha" },
+        { name: "beta", kind: "owner", model: "rubato-mock/mock-1", prompt: "task beta" },
+        { name: "gamma", kind: "owner", model: "rubato-mock/mock-1", prompt: "task gamma" },
       ],
     },
     "squad",
@@ -65,8 +65,8 @@ describe("createTeam failures", () => {
     const spec = normalizeSenpiTeamSpec(
       {
         members: [
-          { name: "alpha", kind: "category", category: "quick", prompt: "a" },
-          { name: "beta", kind: "category", category: "deep", prompt: "b" },
+          { name: "alpha", kind: "owner", model: "rubato-mock/mock-1", prompt: "a" },
+          { name: "beta", kind: "owner", model: "rubato-mock/mock-1", prompt: "b" },
         ],
       },
       "squad",

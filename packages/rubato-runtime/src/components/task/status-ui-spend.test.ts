@@ -28,12 +28,11 @@ describe("createTaskStatusUi spend", () => {
       set: () => 1,
       clear: () => undefined,
     }
-    const solo = record({ task_id: "st_solo", name: "Solo", status: "running", category: "quick" })
+    const solo = record({ task_id: "st_solo", name: "Solo", status: "running" })
     const member = record({
       task_id: "st_member",
       name: "Member",
       status: "running",
-      category: "quick",
       execution_mode: "process",
       pid: 4242,
     })

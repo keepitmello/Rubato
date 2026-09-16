@@ -6,7 +6,7 @@ import type { ManagedChildHandle } from "./child-handle"
 import {
   FakeRunner,
   baseSpec,
-  categoryPlanner,
+  modelPlanner,
   cleanupProjects,
   settings,
   tempProject,
@@ -58,7 +58,7 @@ function makeZeroCapManager(): TaskManager {
   managerRef = createTaskManager({
     store,
     runners: { "in-process": runner, process: runner },
-    planner: categoryPlanner(),
+    planner: modelPlanner(),
     config,
     cwd: project,
     destruction: { destroyResidentTask: (taskId) => lifecycle.destroyResidentTask(taskId, "cancel") },

@@ -99,7 +99,7 @@ function toChildSpec(spec: ManagedStartSpec, context: InProcessSessionContext): 
     ...(spec.requestedModel !== undefined ? { requestedModel: spec.requestedModel } : {}),
     ...(spec.fallbackModels !== undefined ? { fallbackModels: spec.fallbackModels } : {}),
     ...(spec.resolvedModel !== undefined ? { resolvedModel: spec.resolvedModel } : {}),
-    ...(spec.agentType !== undefined ? { agentType: spec.agentType } : {}),
+    ...(spec.preset !== undefined ? { preset: spec.preset } : {}),
     ...(spec.instructions !== undefined ? { instructions: spec.instructions } : {}),
     ...(spec.toolAllowlist !== undefined ? { toolAllowlist: spec.toolAllowlist } : {}),
     ...(spec.toolDenylist !== undefined ? { toolDenylist: spec.toolDenylist } : {}),

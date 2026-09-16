@@ -15,7 +15,7 @@ export function applyRuntimeFallbackEvent(
   const selector = readEventString(event, "to")
   const record = store.load(taskId)
   if (selector === undefined || record == null) return
-  const resolvedModel = parseModelSelector(selector, record.resolved_model?.source ?? "category")
+  const resolvedModel = parseModelSelector(selector, record.resolved_model?.source ?? "model")
   if (resolvedModel === undefined) return
   const fallbackModels = remainingFallbacks(record.fallback_models, resolvedModel)
   const fallbackAttempts = appendFallbackAttempts(

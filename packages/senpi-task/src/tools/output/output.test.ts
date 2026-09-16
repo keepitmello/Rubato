@@ -102,7 +102,7 @@ describe("runTaskOutput", () => {
       display: "GPT-5.6 Sol",
       reasoning_effort: "high",
       variant: "xhigh",
-      source: "category",
+      source: "model",
     } satisfies ResolvedModelRecord
     const record = {
       ...makeRecord({ task_id: "st_resolved", model: "openai/gpt-5.6-sol", status: "completed" }),

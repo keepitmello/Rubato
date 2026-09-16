@@ -21,7 +21,7 @@ export type TaskCallArgs = {
 }
 
 export function formatTaskTarget(args: Pick<TaskCallArgs, "preset">): string {
-  return formatTargetIdentity({ agentType: args.preset }) ?? "task"
+  return formatTargetIdentity({ preset: args.preset }) ?? "task"
 }
 
 export function formatTaskMode(): string {
@@ -43,7 +43,7 @@ export function renderTaskCallLines(
   return [taskCallLineForWidth(args, mode, plainMode, width)]
 }
 
-// The call row is intentionally label-only: the category/model context lives in the live progress
+// The call row is intentionally label-only: the preset/model context lives in the live progress
 // line (details.progress.activity) and the final result row, so repeating it here wasted the width
 // that the excerpt needs. The task_summary, when present, replaces the truncated prompt so the row
 // reads as WHAT was delegated instead of the prompt's first words.

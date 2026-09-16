@@ -6,48 +6,19 @@ export type DelegateTaskErrorPattern = {
 
 export const DELEGATE_TASK_ERROR_PATTERNS: readonly DelegateTaskErrorPattern[] = [
   {
-    pattern: "run_in_background",
-    errorType: "missing_run_in_background",
-    fixHint:
-      "Add run_in_background=false (for delegation) or run_in_background=true (for parallel exploration)",
-  },
-  {
-    pattern: "load_skills",
-    errorType: "missing_load_skills",
-    fixHint:
-      "Add load_skills=[] parameter (empty array if no skills needed). Note: Calling Skill tool does NOT populate this.",
-  },
-  {
-    pattern: "category OR subagent_type",
+    pattern: "exactly one of model or preset",
     errorType: "mutual_exclusion",
-    fixHint:
-      "Provide ONLY one of: category (e.g., 'general', 'quick') OR subagent_type (e.g., 'oracle', 'explore')",
+    fixHint: "Provide exactly one target: an exact provider/model id or a loaded preset name",
   },
   {
-    pattern: "Must provide either category or subagent_type",
-    errorType: "missing_category_or_agent",
-    fixHint: "Add either category='general' OR subagent_type='explore'",
+    pattern: "requires a model or preset",
+    errorType: "missing_target",
+    fixHint: "Add either model='provider/model' or preset='explore'",
   },
   {
-    pattern: "Unknown category",
-    errorType: "unknown_category",
-    fixHint: "Use a valid category from the Available list in the error message",
-  },
-  {
-    pattern: "Agent name cannot be empty",
-    errorType: "empty_agent",
-    fixHint: "Provide a non-empty subagent_type value",
-  },
-  {
-    pattern: "Unknown agent",
-    errorType: "unknown_agent",
-    fixHint: "Use a valid agent from the Available agents list in the error message",
-  },
-  {
-    pattern: "Cannot call primary agent",
-    errorType: "primary_agent",
-    fixHint:
-      "Primary agents cannot be called via task. Use a subagent like 'explore', 'oracle', or 'librarian'",
+    pattern: "model_unavailable",
+    errorType: "model_unavailable",
+    fixHint: "Use an exact model id admitted by the live model catalog",
   },
   {
     pattern: "Skills not found",

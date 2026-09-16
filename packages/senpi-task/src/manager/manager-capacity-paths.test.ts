@@ -7,7 +7,7 @@ import type { ChildPlanner, ResolvedChildPlan } from "./types"
 import {
   FakeRunner,
   baseSpec,
-  categoryPlanner,
+  modelPlanner,
   cleanupProjects,
   makeManager,
   settings,
@@ -21,11 +21,11 @@ const later = "vendor-c/later"
 function fallbackPlan(): ResolvedChildPlan {
   return {
     model: primary,
-    requested_model: { source: "category", provider: "vendor-a", model_id: "primary", display: primary },
-    resolved_model: { source: "category", provider: "vendor-a", model_id: "primary", display: primary },
+    requested_model: { source: "model", provider: "vendor-a", model_id: "primary", display: primary },
+    resolved_model: { source: "model", provider: "vendor-a", model_id: "primary", display: primary },
     fallback_models: [
-      { source: "category", provider: "vendor-b", model_id: "next", display: next },
-      { source: "category", provider: "vendor-c", model_id: "later", display: later },
+      { source: "model", provider: "vendor-b", model_id: "next", display: next },
+      { source: "model", provider: "vendor-c", model_id: "later", display: later },
     ],
   }
 }
@@ -45,7 +45,7 @@ function managerWithStore(store: TaskRecordStore, runner: FakeRunner) {
   return createTaskManager({
     store,
     runners: { "in-process": runner, process: new FakeRunner() },
-    planner: categoryPlanner(),
+    planner: modelPlanner(),
     config: settings({ default_concurrency: 1, max_depth: 1 }),
     cwd: tempProject(),
   })

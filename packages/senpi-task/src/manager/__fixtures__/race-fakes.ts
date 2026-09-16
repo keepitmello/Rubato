@@ -8,7 +8,7 @@ import { adaptInProcessHandle, adaptRpcHandle } from "../child-handle"
 import type { ManagedChildHandle } from "../child-handle"
 import { createTaskManager } from "../manager"
 import type { ManagedRunner, ManagedStartSpec, TaskManager } from "../types"
-import { categoryPlanner, settings, tempProject } from "./manager-fakes"
+import { modelPlanner, settings, tempProject } from "./manager-fakes"
 
 export type RaceFlavor = "in-process" | "rpc"
 
@@ -109,7 +109,7 @@ export function makeRaceHarness(flavor: RaceFlavor): RaceHarness {
   const manager = createTaskManager({
     store,
     runners: { "in-process": runner, process: runner },
-    planner: categoryPlanner(),
+    planner: modelPlanner(),
     config: settings({ default_concurrency: 5, max_depth: 1 }),
     cwd: project,
     destruction,

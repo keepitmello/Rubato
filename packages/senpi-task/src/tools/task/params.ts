@@ -21,28 +21,50 @@ export const TaskToolEffort = Type.Union(
 
 export type TaskToolEffort = (typeof AGENT_EFFORTS)[number]
 
-export const TaskToolParams = Type.Object({
-  prompt: Type.String({ description: "The instruction for the child agent. MUST be written in English." }),
-  model: Type.Optional(
-    Type.String({
-      description:
-        "Complete provider/model id from the live host registry. Exactly one of model or preset is required. A missing model fails closed with no fallback.",
-    }),
-  ),
-  preset: Type.Optional(
-    Type.String({
-      description:
-        "Named agent persona from the loaded agent set. Exactly one of model or preset is required. Cannot be combined with model.",
-    }),
-  ),
-  effort: Type.Optional(TaskToolEffort),
-  summary: Type.Optional(
-    Type.String({
-      maxLength: TASK_SUMMARY_MAX_LENGTH,
-      description:
-        "One-line summary of the delegated work, shown to the user in the task footer/widget UI instead of the raw prompt. Keep it within 80 chars; longer values are force-truncated.",
-    }),
-  ),
-})
+type AvailableModels = readonly string[] | (() => readonly string[])
+
+function modelSchema(availableModels: AvailableModels) {
+  const schema = Type.String({
+    description:
+      "Complete provider/model id from the live host registry. Exactly one of model or preset is required. A missing model fails closed with no fallback.",
+  })
+  if (typeof availableModels !== "function" && availableModels.length > 0) {
+    Object.defineProperty(schema, "enum", { enumerable: true, value: [...availableModels].sort() })
+  }
+  return schema
+}
+
+export function buildTaskToolParams(availableModels: AvailableModels = []) {
+  const schema = Type.Object({
+    prompt: Type.String({ description: "The instruction for the child agent. MUST be written in English." }),
+    model: Type.Optional(modelSchema(availableModels)),
+    preset: Type.Optional(
+      Type.String({
+        description:
+          "Named agent persona from the loaded agent set. Exactly one of model or preset is required. Cannot be combined with model.",
+      }),
+    ),
+    effort: Type.Optional(TaskToolEffort),
+    summary: Type.Optional(
+      Type.String({
+        maxLength: TASK_SUMMARY_MAX_LENGTH,
+        description:
+          "One-line summary of the delegated work, shown to the user in the task footer/widget UI instead of the raw prompt. Keep it within 80 chars; longer values are force-truncated.",
+      }),
+    ),
+  })
+  if (typeof availableModels === "function") {
+    Object.defineProperty(schema.properties.model, "enum", {
+      enumerable: true,
+      get: () => {
+        const values = availableModels()
+        return values.length === 0 ? undefined : [...values].sort()
+      },
+    })
+  }
+  return schema
+}
+
+export const TaskToolParams = buildTaskToolParams()
 
 export type TaskToolParamsStatic = Static<typeof TaskToolParams>

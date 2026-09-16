@@ -123,16 +123,15 @@ export class FakeRunner implements ManagedRunner {
   }
 }
 
-export function categoryPlanner(models: Record<string, string> = {}): ChildPlanner {
+export function modelPlanner(models: Record<string, string> = {}): ChildPlanner {
   return (spec: ManagerStartSpec) => {
-    const key = spec.category ?? spec.subagent_type ?? "default"
+    const key = spec.preset ?? "default"
     const model = spec.model ?? models[key] ?? "anthropic/claude"
     return {
       kind: "resolved",
       plan: {
         model,
-        ...(spec.category !== undefined ? { category: spec.category } : {}),
-        ...(spec.subagent_type !== undefined ? { agentType: spec.subagent_type } : {}),
+        ...(spec.preset !== undefined ? { preset: spec.preset } : {}),
       },
     }
   }
@@ -157,7 +156,7 @@ export function makeManager(options: {
   const manager = createTaskManager({
     store,
     runners: { "in-process": inProcess, process: processRunner },
-    planner: options.planner ?? categoryPlanner(),
+    planner: options.planner ?? modelPlanner(),
     config: options.config ?? settings({ default_concurrency: 5, max_depth: 1 }),
     cwd: project,
     ...(options.admit !== undefined && { admit: options.admit }),
@@ -170,7 +169,7 @@ export function baseSpec(overrides: Partial<ManagerStartSpec> = {}): ManagerStar
     prompt: "do the thing",
     parent_session_id: "parent-1",
     depth: 1,
-    category: "quick",
+    model: "anthropic/claude",
     ...overrides,
   }
 }

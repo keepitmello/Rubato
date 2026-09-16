@@ -66,7 +66,7 @@ export class MemberExtensionConfigError extends Error {
 }
 
 type ActiveRuntime = {
-  readonly poller: MemberSelfPoller
+  poller: MemberSelfPoller
   started: boolean
   pollTimer?: ReturnType<typeof setInterval>
   ackTimer?: ReturnType<typeof setInterval>

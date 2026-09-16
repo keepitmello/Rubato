@@ -63,7 +63,7 @@ export type ChildSpec = {
   readonly depth: number
   readonly parentSessionId: string
   readonly rootSessionId: string
-  readonly agentType?: string
+  readonly preset?: string
   readonly instructions?: string
   readonly prompt: string
 }
@@ -122,7 +122,7 @@ export class InProcessRunner {
       rootSessionId: spec.rootSessionId,
       depth: spec.depth,
       prompt: spec.prompt,
-      ...(spec.agentType !== undefined && { agentType: spec.agentType }),
+      ...(spec.preset !== undefined && { preset: spec.preset }),
       ...(spec.instructions !== undefined && { instructions: spec.instructions }),
     })
 

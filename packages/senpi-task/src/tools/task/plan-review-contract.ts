@@ -73,11 +73,11 @@ export type PlanReviewContractOutcome =
 // agents - consistent with the gate's closed default.
 export function planReviewContractOutcome(
   deps: TaskToolDeps,
-  subagentType: string,
+  preset: string,
   callerPrompt: string,
   sessionId: string,
 ): PlanReviewContractOutcome | undefined {
-  if (interactionPolicyForAgent(subagentType)?.promptContract !== "plan-review") return undefined
+  if (interactionPolicyForAgent(preset)?.promptContract !== "plan-review") return undefined
   const state = deps.resolveSkillInvocations?.(sessionId) ?? EMPTY_SKILL_INVOCATIONS
   const target = resolvePlanReviewTarget(callerPrompt, state)
   if (target.kind === "deny") return { kind: "deny", message: target.message }

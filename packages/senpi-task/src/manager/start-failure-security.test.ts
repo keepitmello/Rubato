@@ -27,7 +27,7 @@ const RESOLVED_MODEL: ResolvedModelRecord = {
   model_id: "gpt-5.6-sol",
   display: "GPT-5.6 Sol",
   reasoning_effort: "xhigh",
-  source: "category",
+  source: "model",
 }
 
 afterEach(cleanupProjects)
@@ -67,7 +67,6 @@ describe("TaskManager start failure security", () => {
       kind: "start_failed",
       task_id: capturedStart.task_id,
       name: capturedStart.task_id,
-      category: "ultrabrain",
       execution_mode: "in-process",
       model: "openai/gpt-5.6-sol",
       resolved_model: RESOLVED_MODEL,
@@ -106,7 +105,7 @@ describe("TaskManager start failure security", () => {
     runner.startError = ADVERSARIAL_ERROR
     const { manager } = makeManager({ process: runner })
     const spec = normalizeSenpiTeamSpec(
-      { members: [{ name: "alpha", kind: "category", category: "quick", prompt: "work" }] },
+      { members: [{ name: "alpha", kind: "owner", model: "rubato-mock/mock-1", prompt: "work" }] },
       "secure-team",
     )
 
@@ -147,7 +146,6 @@ describe("TaskManager start failure security", () => {
         prompt: "private prompt payload",
         parent_session_id: "parent-1",
         depth: 1,
-        category: "quick",
       })
 
       // then
@@ -175,7 +173,6 @@ describe("TaskManager start failure security", () => {
       prompt: "private prompt payload",
       parent_session_id: "parent-1",
       depth: 1,
-      category: "quick",
     })
 
     // then
@@ -199,7 +196,6 @@ describe("TaskManager start failure security", () => {
       prompt: "private prompt payload",
       parent_session_id: "parent-1",
       depth: 1,
-      category: "quick",
     })
 
     // then
@@ -221,7 +217,7 @@ describe("TaskManager start failure security", () => {
       const resolvedModel: ResolvedModelRecord = { ...RESOLVED_MODEL, source: "explicit" }
       const planner: ChildPlanner = () => ({
         kind: "resolved",
-        plan: { model: "openai/gpt-5.6-sol", resolved_model: resolvedModel, agentType: "momus" },
+        plan: { model: "openai/gpt-5.6-sol", resolved_model: resolvedModel, preset: "momus" },
       })
       const runner = new FakeRunner()
       runner.startError = new RunnerError({ kind, message: ADVERSARIAL_ERROR, cause: new Error(ADVERSARIAL_ERROR) })
@@ -232,7 +228,7 @@ describe("TaskManager start failure security", () => {
         prompt: "private prompt payload",
         parent_session_id: "parent-1",
         depth: 1,
-        subagent_type: "momus",
+        preset: "momus",
         name: "secure-agent",
         run_in_background: false,
       })
@@ -244,7 +240,7 @@ describe("TaskManager start failure security", () => {
         kind: "start_failed",
         task_id: result.task_id,
         name: "secure-agent",
-        subagent_type: "momus",
+        preset: "momus",
         execution_mode: "in-process",
         model: "openai/gpt-5.6-sol",
         resolved_model: resolvedModel,

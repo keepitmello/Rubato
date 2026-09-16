@@ -39,7 +39,7 @@ describe("createTaskRecordStore caching", () => {
     const project = tempProject()
     const writer = createTaskRecordStore({ project_dir: project })
     const resolvedModel = {
-      source: "agent" as const,
+      source: "preset" as const,
       provider: "openai",
       model_id: "gpt-5.6-luna-fast",
       display: "openai/gpt-5.6-luna-fast",

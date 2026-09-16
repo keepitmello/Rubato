@@ -82,14 +82,12 @@ export function linesComponent(lines: readonly string[] | WidthAwareLines): Line
   }
 }
 
-type TargetIdentity = Pick<TaskToolDetails, "category" | "subagent_type" | "model" | "resolved_model">
+type TargetIdentity = Pick<TaskToolDetails, "preset" | "model" | "resolved_model">
 
-// One target token per row, in the shared status-line grammar: `category:<n>(<model>:<effort>)` |
-// `agent:<n>(<model>:<effort>)` | `model:<m>`. No site composes its own agent/category branch.
+// One target token per row: `preset:<name>(<model>:<effort>)` or `model:<model>`.
 function taskTargetToken(details: TargetIdentity): string | undefined {
   const target = formatTargetWithModel({
-    category: details.category,
-    agentType: details.subagent_type,
+    preset: details.preset,
     resolvedModel: details.resolved_model,
     model: details.model,
   })

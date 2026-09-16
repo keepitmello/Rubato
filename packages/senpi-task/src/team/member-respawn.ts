@@ -83,6 +83,7 @@ export function createTeamMemberRespawnLaunchResolver(
           stateDir: resolveStateDir(options.stateDir),
           members: runtime.members.map((member) => member.name),
         }),
+        RUBATO_PI_ROLE: member.kind,
       },
     }
   }

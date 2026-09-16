@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 
 import { TASK_SUMMARY_MAX_LENGTH } from "../../task-summary"
-import { TaskToolParams } from "./params"
+import { buildTaskToolParams, TaskToolParams } from "./params"
 
 describe("TaskToolParams", () => {
   test("#given the schema #when inspected #then it exposes only prompt model XOR preset effort and summary", () => {
@@ -36,5 +36,19 @@ describe("TaskToolParams", () => {
   test("#given effort controls #when schemas are inspected #then only public Agent efforts are exposed", () => {
     const levels = TaskToolParams.properties.effort.anyOf.map((entry) => entry.const)
     expect(levels).toEqual(["minimal", "low", "medium", "high", "xhigh", "max"])
+  })
+
+  test("#given live models #when the schema is built #then model admission is encoded as an enum", () => {
+    const schema = buildTaskToolParams(["xai/grok-4.6", "openai/gpt-5.6-sol"])
+    expect(Reflect.get(schema.properties.model, "enum")).toEqual(["openai/gpt-5.6-sol", "xai/grok-4.6"])
+  })
+
+  test("#given a late live registry #when the schema is read #then the enum reflects its current models", () => {
+    let models: readonly string[] = []
+    const schema = buildTaskToolParams(() => models)
+    expect(Reflect.get(schema.properties.model, "enum")).toBeUndefined()
+
+    models = ["xai/grok-4.6"]
+    expect(Reflect.get(schema.properties.model, "enum")).toEqual(["xai/grok-4.6"])
   })
 })

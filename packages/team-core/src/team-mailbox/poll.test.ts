@@ -27,10 +27,10 @@ async function setupRuntime(memberNames: string[]): Promise<{ teamRunId: string;
     createdAt: Date.now(),
     leadAgentId: memberNames[0] ?? "m1",
     members: memberNames.map((memberName) => ({
-      kind: "subagent_type" as const,
+      kind: "owner" as const,
       name: memberName,
       backendType: "in-process" as const,
-      subagent_type: "general-purpose",
+      model: "rubato-mock/mock-1",
       isActive: true,
     })),
   } satisfies TeamSpec

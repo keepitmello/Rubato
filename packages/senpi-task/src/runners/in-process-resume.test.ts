@@ -134,7 +134,7 @@ describe("InProcessRunner resume", () => {
       },
     })
     const spec = baseSpec({
-      agentType: "explore",
+      preset: "explore",
       toolAllowlist: ["read", "bash", "team_send"],
       toolDenylist: ["grep"],
       memberScopedTools: [taskSend],

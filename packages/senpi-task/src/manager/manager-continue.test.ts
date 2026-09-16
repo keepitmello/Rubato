@@ -90,11 +90,11 @@ describe("TaskManager.continueTask", () => {
 })
 
 describe("TaskManager.sendToTask one-shot refusal", () => {
-  test("#given a momus child started through manager.start #when sent #then the outcome is one_shot_agent (guards the subagent_type -> agent_type rename)", async () => {
+  test("#given a momus child started through manager.start #when sent #then the outcome is one_shot_agent (guards the preset -> preset rename)", async () => {
     // given
     const inProcess = new FakeRunner()
     const { manager } = makeManager({ inProcess })
-    const started = await manager.start(baseSpec({ subagent_type: "momus" }))
+    const started = await manager.start(baseSpec({ preset: "momus" }))
     if (started.kind !== "started") throw new Error("expected started")
 
     // when

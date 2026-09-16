@@ -163,7 +163,6 @@ async function checkNoSlotLeak(state: ChaosState): Promise<Violation[]> {
       parent_session_id: state.harness.sessionId,
       root_session_id: state.harness.sessionId,
       depth: 1,
-      category: "quick",
       model: state.harness.model,
     })
     if (result.kind !== "started") continue

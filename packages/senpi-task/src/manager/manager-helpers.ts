@@ -16,8 +16,7 @@ export function buildRecordInput(input: {
   readonly taskSeq: number
 }): TaskRecordInput {
   const { spec, plan, name, executionMode, taskSeq } = input
-  const agentType = spec.subagent_type ?? plan.agentType
-  const category = spec.category ?? plan.category
+  const preset = spec.preset ?? plan.preset
   const runInBackground = spec.run_in_background === true
   return {
     name,
@@ -40,8 +39,7 @@ export function buildRecordInput(input: {
       ? { fallback_models: plan.fallback_models }
       : {}),
     ...(plan.resolved_model !== undefined ? { resolved_model: plan.resolved_model } : {}),
-    ...(agentType !== undefined ? { agent_type: agentType } : {}),
-    ...(category !== undefined ? { category } : {}),
+    ...(preset !== undefined ? { preset: preset } : {}),
     ...(plan.toolAllowlist !== undefined ? { tool_allow: plan.toolAllowlist } : {}),
     ...(plan.toolDenylist !== undefined ? { tool_deny: plan.toolDenylist } : {}),
   }
@@ -87,7 +85,7 @@ export function buildManagedSpec(input: {
       : {}),
     ...(plan.resolved_model !== undefined ? { resolvedModel: plan.resolved_model } : {}),
     ...(plan.variant !== undefined ? { variant: plan.variant } : {}),
-    ...(record.agent_type !== undefined ? { agentType: record.agent_type } : {}),
+    ...(record.preset !== undefined ? { preset: record.preset } : {}),
     ...(instructions !== undefined ? { instructions } : {}),
     ...(plan.toolAllowlist !== undefined ? { toolAllowlist: plan.toolAllowlist } : {}),
     ...(record.tool_deny !== undefined ? { toolDenylist: record.tool_deny } : {}),
@@ -149,7 +147,7 @@ export function buildRespawnManagedSpec(record: TaskRecord, stateDir: string): B
       // The persisted variant mirror carries the child's thinking level; recover it exactly like the
       // existing rpc respawn path does, or a rebuilt child silently loses its reasoning effort.
       ...(record.resolved_model?.variant === undefined ? {} : { variant: record.resolved_model.variant }),
-      ...(record.agent_type !== undefined ? { agentType: record.agent_type } : {}),
+      ...(record.preset !== undefined ? { preset: record.preset } : {}),
       ...(spawnSpec.instructions !== undefined ? { instructions: spawnSpec.instructions } : {}),
       ...(record.tool_allow !== undefined ? { toolAllowlist: record.tool_allow } : {}),
       ...(record.tool_deny !== undefined ? { toolDenylist: record.tool_deny } : {}),

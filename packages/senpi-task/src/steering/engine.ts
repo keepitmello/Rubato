@@ -268,11 +268,11 @@ export function createSteeringEngine(port: SteeringPort): SteeringEngine {
 }
 
 function oneShotPolicyDenial(record: TaskRecord): SendOutcome | undefined {
-  const agentType = record.agent_type
-  if (agentType === undefined) return undefined
-  const policy = interactionPolicyForAgent(agentType)
+  const preset = record.preset
+  if (preset === undefined) return undefined
+  const policy = interactionPolicyForAgent(preset)
   if (policy?.oneShot !== true) return undefined
-  return { kind: "one_shot_agent", task_id: record.task_id, agent: agentType, message: policy.sendDenialReminder }
+  return { kind: "one_shot_agent", task_id: record.task_id, agent: preset, message: policy.sendDenialReminder }
 }
 
 function scopeDenied(record: TaskRecord, input: SendInput): SendOutcome | undefined {

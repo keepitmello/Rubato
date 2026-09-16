@@ -4,7 +4,6 @@ import { ZodError } from "zod"
 
 import type { TeamModeConfig } from "../config"
 import { log } from "../logger"
-import type { NormalizeTeamSpecInputOptions } from "./team-spec-input-normalizer"
 import { TeamSpecSchema } from "../types"
 
 import type { TeamSpec } from "../types"
@@ -42,45 +41,6 @@ function createSpecialCaseValidationError(rawSpec: unknown): TeamSpecValidationE
     )
   }
 
-  for (const rawMember of rawMembers) {
-    if (!isJsonRecord(rawMember)) {
-      continue
-    }
-
-    const memberName = typeof rawMember.name === "string" ? rawMember.name : "<unknown>"
-    const hasKind = Object.hasOwn(rawMember, "kind")
-    const hasCategory = Object.hasOwn(rawMember, "category")
-    const hasSubagentType = Object.hasOwn(rawMember, "subagent_type")
-
-    if (hasCategory && hasSubagentType) {
-      return new TeamSpecValidationError(
-        `Member '${memberName}' specifies both 'category' and 'subagent_type'. Must specify exactly one via 'kind' discriminator.`,
-        "AMBIGUOUS_MEMBER_KIND",
-        "kind",
-        memberName,
-      )
-    }
-
-    if (!hasKind) {
-      return new TeamSpecValidationError(
-        `Member '${memberName}' missing 'kind' discriminator. Specify either {kind:'category', category, prompt} or {kind:'subagent_type', subagent_type}.`,
-        "MISSING_MEMBER_KIND",
-        "kind",
-        memberName,
-      )
-    }
-
-    if (rawMember.kind === "category" && !Object.hasOwn(rawMember, "prompt")) {
-      const category = typeof rawMember.category === "string" ? rawMember.category : "<unknown>"
-      return new TeamSpecValidationError(
-        `Member '${memberName}' uses category '${category}' but is missing required 'prompt' field. Category members must supply a task prompt.`,
-        "MISSING_CATEGORY_PROMPT",
-        "prompt",
-        memberName,
-      )
-    }
-  }
-
   return undefined
 }
 
@@ -101,7 +61,6 @@ function createZodValidationError(rawSpec: unknown, error: ZodError): TeamSpecVa
 
 async function loadTeamSpecFromEntry(
   entry: DiscoveredTeamSpec,
-  options?: NormalizeTeamSpecInputOptions,
 ): Promise<TeamSpec> {
   let rawText: string
   try {
@@ -125,7 +84,7 @@ async function loadTeamSpecFromEntry(
     )
   }
 
-  const normalizedRawSpec = normalizeTeamSpecInput(rawSpec, options)
+  const normalizedRawSpec = normalizeTeamSpecInput(rawSpec)
   const parsedSpec = TeamSpecSchema.safeParse(normalizedRawSpec)
   if (!parsedSpec.success) {
     throw createZodValidationError(normalizedRawSpec, parsedSpec.error)
@@ -142,7 +101,6 @@ export async function loadTeamSpec(
   teamName: string,
   config: TeamModeConfig,
   projectRoot: string,
-  options?: NormalizeTeamSpecInputOptions,
 ): Promise<TeamSpec> {
   const discoveredTeamSpecs = await discoverTeamSpecs(config, projectRoot)
   const matchedTeamSpec = discoveredTeamSpecs.find((entry) => entry.name === teamName)
@@ -158,7 +116,7 @@ export async function loadTeamSpec(
     )
   }
 
-  return loadTeamSpecFromEntry(matchedTeamSpec, options)
+  return loadTeamSpecFromEntry(matchedTeamSpec)
 }
 
 export async function loadAllTeamSpecs(

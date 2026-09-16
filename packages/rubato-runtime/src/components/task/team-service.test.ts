@@ -25,6 +25,8 @@ import { createTeamServiceTestModelRegistry } from "./team-service-test-model-re
 
 const MEMBER_TASK_ID = "st_00000001"
 const MESSAGE_ID = "77777777-7777-4777-8777-777777777777"
+const TEST_MODEL = "rubato-mock/mock-1"
+const TEST_MODELS = { has: (model: string) => model === TEST_MODEL, list: () => [TEST_MODEL] }
 const tempRoots: string[] = []
 
 afterEach(() => {
@@ -46,7 +48,7 @@ async function activeTeamHarness(sessionId?: string) {
   }
   const config = toTeamCoreConfig(engine.settings, teamStorageBaseDir(stateDir))
   const spec = normalizeSenpiTeamSpec(
-    { members: [{ name: "beta", kind: "category", category: "quick", prompt: "work" }] },
+    { members: [{ name: "beta", kind: "owner", model: TEST_MODEL, prompt: "work" }] },
     "squad",
   )
   const creating = await createRuntimeState(spec, "lead-session", "project", config)
@@ -65,8 +67,8 @@ async function activeTeamHarness(sessionId?: string) {
     runtime: engine.runtime,
     settings: engine.settings,
     rubatoConfig,
+    models: TEST_MODELS,
     cwd,
-    agentNames: new Set(Object.keys(engine.agents)),
     newMessageId: () => MESSAGE_ID,
   })
   return { runtimeState, service, stateDir }
@@ -77,7 +79,7 @@ function extensionOrderHarness() {
   tempRoots.push(cwd)
   mkdirSync(join(cwd, ".rubato"), { recursive: true })
   writeFileSync(join(cwd, ".rubato", "rubato.json"), `${JSON.stringify({
-    categories: { quick: { model: "rubato-mock/mock-1" } },
+    categories: { quick: { kind: "owner", model: "rubato-mock/mock-1" } },
   })}\n`)
   const started: ManagedStartSpec[] = []
   const runner: ManagedRunner = {
@@ -105,8 +107,8 @@ function extensionOrderHarness() {
     runtime: engine.runtime,
     settings: engine.settings,
     rubatoConfig,
+    models: TEST_MODELS,
     cwd,
-    agentNames: new Set(Object.keys(engine.agents)),
   })
   return { service, started }
 }
@@ -126,35 +128,22 @@ function fakeManagedHandle(spec: ManagedStartSpec): ManagedChildHandle {
   }
 }
 
-describe("createTeamService curated agent gating", () => {
-  test("#given a team member spec naming a curated read-only agent #when team_create validates members #then the curated rejection message surfaces", async () => {
-    // given the real engine whose agent registry now carries the builtin curated agents
-    const cwd = mkdtempSync(join(tmpdir(), "rubato-runtime-team-curated-"))
-    tempRoots.push(cwd)
-    const pi = new FakeExtensionAPI()
-    const rubatoConfig = loadRubatoConfig({ cwd }).config
-    const engine = composeTaskEngine({ pi, rubatoConfig, cwd, sharedParentTools: () => [] })
-    engine.runtime.captureFrom({ sessionManager: { getSessionId: () => "lead-session" } })
-    expect(Object.keys(engine.agents)).toContain("momus")
-    const service = createTeamService({
-      manager: engine.manager,
-      destruction: engine.lifecycle,
-      runtime: engine.runtime,
-      settings: engine.settings,
-      rubatoConfig,
-      cwd,
-      agentNames: new Set(Object.keys(engine.agents)),
-    })
+describe("createTeamService model validation", () => {
+  test("#given one unavailable model in a multi-member team #when validated #then zero members start", async () => {
+    const { service, started } = extensionOrderHarness()
 
-    // when / then the member-validation path rejects the curated agent with the documented message
     await expect(
       service.createTeam({
         inlineSpec: {
-          name: "curated-team",
-          members: [{ name: "momus", kind: "subagent_type", subagent_type: "momus", prompt: "review the plan" }],
+          name: "atomic-validation",
+          members: [
+            { name: "alpha", kind: "owner", model: TEST_MODEL, prompt: "work" },
+            { name: "beta", kind: "owner", model: "missing/model", prompt: "work" },
+          ],
         },
       }),
-    ).rejects.toThrow('curated read-only agent "momus" cannot be a team member; delegate via the task tool instead')
+    ).rejects.toMatchObject({ code: "MODEL_UNAVAILABLE" })
+    expect(started).toEqual([])
   })
 })
 
@@ -208,7 +197,7 @@ describe("createTeamService lead messaging", () => {
       await service.createTeam({
         inlineSpec: {
           name: "extension-order",
-          members: [{ name: "beta", kind: "category", category: "quick", prompt: "work" }],
+          members: [{ name: "beta", kind: "verifier", model: TEST_MODEL, prompt: "work" }],
         },
       })
 
@@ -218,6 +207,7 @@ describe("createTeamService lead messaging", () => {
         "/tmp/rubato.js",
         "/tmp/mock-provider.ts",
       ])
+      expect(started[0]?.memberEnv?.RUBATO_PI_ROLE).toBe("verifier")
     } finally {
       process.argv = originalArgv
     }
@@ -232,8 +222,8 @@ describe("createTeamService named-team lookup", () => {
     mkdirSync(join(cwd, ".rubato"), { recursive: true })
     writeFileSync(join(cwd, ".rubato", "rubato.json"), `${JSON.stringify({
       teams: {
-        "declared-a": { members: [{ name: "alpha", kind: "category", category: "quick", prompt: "work" }] },
-        "declared-b": { members: [{ name: "beta", kind: "category", category: "quick", prompt: "work" }] },
+        "declared-a": { members: [{ name: "alpha", kind: "owner", model: TEST_MODEL, prompt: "work" }] },
+        "declared-b": { members: [{ name: "beta", kind: "verifier", model: TEST_MODEL, prompt: "work" }] },
       },
     })}\n`)
     const pi = new FakeExtensionAPI()
@@ -246,8 +236,8 @@ describe("createTeamService named-team lookup", () => {
       runtime: engine.runtime,
       settings: engine.settings,
       rubatoConfig,
+      models: TEST_MODELS,
       cwd,
-      agentNames: new Set(Object.keys(engine.agents)),
     })
 
     // when / then

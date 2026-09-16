@@ -444,7 +444,7 @@ export function resolveCategory<TModel extends SenpiModelPort>(
     candidates: options.modelOverride === undefined ? [...categoryModelCandidates(config), ...chainCandidates] : [],
     selectedModel: selection.selectedModel,
     availableModels: availableModelSet,
-    source: "category",
+    source: "model",
   })
   const spec: ResolvedChildSpec<TModel> = {
     model: foundModel.model,
