@@ -59,5 +59,4 @@ jobs:
       - name: Remote production builds
         run: |
           npm --prefix packages/rubato-remote-hub run build
-          npm --prefix packages/rubato-remote-web run build
           npm --prefix packages/rubato-live-cli run check
