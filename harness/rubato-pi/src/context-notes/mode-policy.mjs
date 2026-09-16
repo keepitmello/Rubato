@@ -117,6 +117,12 @@ export async function considerContextModeSwitch({
   }
   const wanted = defaultContextModeForModel(model);
   if (!model || wanted === currentMode) return { action: "keep" };
+  // No recorded mode and no notes window: the first real model owns the
+  // default. Asking here would block T3 set_model before a provider binding
+  // exists, so the confirm can never be answered.
+  if (!recordedModeFromBranch(branch) && !hasNotesWindowEntries(branch)) {
+    return { action: "switch", mode: wanted };
+  }
   const key = modePairKey(currentMode, model);
   if (declined?.has(key)) return { action: "keep" };
   if (wanted === SUMMARY_MODE && hasNotesWindowBoundary(branch)) {

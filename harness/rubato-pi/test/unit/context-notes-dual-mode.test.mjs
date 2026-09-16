@@ -204,8 +204,19 @@ test("gates are present but dormant in summary mode; drift is recorded for a lat
   assert.throws(() => assertEngineParts(), /lane \(/);
 });
 
-test("considerContextModeSwitch never switches silently", async () => {
+test("considerContextModeSwitch adopts the model default when the session has no recorded mode", async () => {
+  const result = await considerContextModeSwitch({
+    model: ASTRA,
+    source: "set",
+    currentMode: SUMMARY_MODE,
+    confirm: async () => { throw new Error("fresh session must not confirm"); },
+  });
+  assert.deepEqual(result, { action: "switch", mode: HISTORY_NOTES_MODE });
+});
+
+test("considerContextModeSwitch never switches silently once a mode is recorded", async () => {
   const declined = new Set();
+  const recorded = [{ type: "custom", customType: MODE_ENTRY, data: { mode: SUMMARY_MODE } }];
   const window = nextWindow(initialWindow());
   const boundary = [{
     type: "compaction",
@@ -222,15 +233,18 @@ test("considerContextModeSwitch never switches silently", async () => {
   assert.equal(refused.refused, true);
   assert.equal(refused.action, "keep");
   const no = await considerContextModeSwitch({
-    model: ASTRA, source: "set", currentMode: SUMMARY_MODE, confirm: async () => false, declined,
+    model: ASTRA, source: "set", currentMode: SUMMARY_MODE, branch: recorded,
+    confirm: async () => false, declined,
   });
   assert.equal(no.declined, true);
   const again = await considerContextModeSwitch({
-    model: ASTRA, source: "set", currentMode: SUMMARY_MODE, confirm: async () => true, declined,
+    model: ASTRA, source: "set", currentMode: SUMMARY_MODE, branch: recorded,
+    confirm: async () => true, declined,
   });
   assert.equal(again.action, "keep");
   const yes = await considerContextModeSwitch({
-    model: ASTRA, source: "set", currentMode: SUMMARY_MODE, confirm: async () => true, declined: new Set(),
+    model: ASTRA, source: "set", currentMode: SUMMARY_MODE, branch: recorded,
+    confirm: async () => true, declined: new Set(),
   });
   assert.deepEqual(yes, { action: "switch", mode: HISTORY_NOTES_MODE });
 });

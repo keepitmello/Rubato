@@ -84,7 +84,8 @@ export async function installContextNotes(pi, options = {}) {
   const applyResolvedMode = (ctx, { persistIfMissing = false, allowModelDefault = true } = {}) => {
     const branch = sessionBranch(ctx);
     if (liveSwitch) {
-      if (isUserExplicitContextMode(liveEnv)) {
+      const userExplicit = isUserExplicitContextMode(liveEnv);
+      if (userExplicit) {
         bindMode(contextMode(liveEnv), ctx);
         if (liveMode === SUMMARY_MODE && hasNotesWindowEntries(branch)) {
           throw new Error(NOTES_RESUME_IN_SUMMARY);
@@ -97,7 +98,16 @@ export async function installContextNotes(pi, options = {}) {
         }
         bindMode(mode, ctx);
       }
-      if (persistIfMissing && !recordedModeFromBranch(branch)) persistMode(liveMode);
+      // Only persist a mode the session already committed to. Snapshot
+      // userExplicit before bindMode: setContextMode marks ORIGIN=session
+      // and would otherwise make the same check look inherited. A brand-new
+      // session_start often has no model (T3 set_model comes later); writing
+      // the no-model summary fallback would then force a blocking confirm.
+      if (
+        persistIfMissing
+        && !recordedModeFromBranch(branch)
+        && (userExplicit || hasNotesWindowEntries(branch))
+      ) persistMode(liveMode);
     }
     syncTools(notesActive());
     if (notesActive()) getController(ctx).showStatus();
