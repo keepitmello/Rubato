@@ -25,4 +25,4 @@ Do not infer the agent from the shell process name when the runtime identity is 
 
 Report the direction of control, the command or transfer result, and the authoritative final state. A reachable host, accepted dispatch, or created file is not completion unless it proves the requested outcome.
 
-For substantive work on the other computer, invoke `codex-peer` and let that computer's Codex perform the work. Never automate Jump Desktop or another remote-display client through Computer Use.
+For substantive work on the other computer, use a destination-side agent only when the current runtime exposes an authorized destination tool or an existing authorized peer session. Use `codex-peer` only when that skill is enabled and callable in the current runtime; if it is disabled or unavailable, do not invoke its scripts or re-enable it as a workaround. Local native collaboration runs on the current host and must not be described as remote execution. Create an App task only when the user explicitly asks for a new task. Never automate Jump Desktop or another remote-display client through Computer Use.

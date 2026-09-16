@@ -2,9 +2,7 @@
   "schemaVersion": 1,
   "source": "../harness/skills",
   "output": "skills",
-  "renames": {
-    "metaFrame": "metaframe"
-  },
+  "renames": {},
   "managed": [
     "aside-browser",
     "browser-cli",
@@ -18,7 +16,7 @@
     "keep-simple",
     "laws",
     "macos-computer-use",
-    "metaFrame",
+    "metaframe",
     "outpost",
     "product-framing",
     "product-reframing",

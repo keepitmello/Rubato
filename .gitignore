@@ -46,3 +46,9 @@ yarn.lock
 .dori/
 .dys/
 .playwright-mcp/
+
+# 파이썬 바이트코드 — 스킬을 실행만 해도 생긴다. 커밋되면 설치본과 번들이
+# 늘 달라 보여서 install-skills 가 그 스킬을 "사람이 고친 자리"로 보고 보존한다.
+__pycache__/
+*.pyc
+.pytest_cache/

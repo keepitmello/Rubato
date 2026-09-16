@@ -2,7 +2,7 @@
 
 Use Windows-native PowerShell for Windows apps, services, registry, GPU, ComfyUI, and power configuration. Use WSL for Linux repositories and containers.
 
-For substantive Mac diagnosis or changes, create a Mac Codex peer task:
+For substantive Mac diagnosis or changes, create a Mac Codex peer task only when `codex-peer` is enabled and callable in the current runtime and the user authorized a new destination task. If it is disabled or unavailable, do not invoke this script or re-enable the skill; use an existing authorized destination session that the current runtime can address, or the bounded `wy-server`/SSH paths below instead. Local native collaboration is not a Mac execution path.
 
 ```powershell
 python "$env:USERPROFILE\.codex\skills\codex-peer\scripts\codex_peer.py" --host mac --remote-path "<mac-home>/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" create --cwd "<mac-home>" --message "<task>"

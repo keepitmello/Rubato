@@ -1,6 +1,6 @@
-# metaFrame v3
+# metaframe v3
 
-metaFrame is a manually invoked Claude Code skill for opening a small amount of problem space before committing to a frame. It is meant to improve the use of capability already present in the model, not to replace the model with a decision system.
+metaframe is a manually invoked Claude Code skill for opening a small amount of problem space before committing to a frame. It is meant to improve the use of capability already present in the model, not to replace the model with a decision system.
 
 ## What this version keeps
 
@@ -25,21 +25,21 @@ metaFrame is a manually invoked Claude Code skill for opening a small amount of 
 The canonical copy lives in the shared skill store:
 
 ```text
-~/.agents/skills/metaFrame/
+~/.agents/skills/metaframe/
 ```
 
-Each CLI (`~/.claude/skills/`, `~/.codex/skills/`, `~/.grok/skills/`) symlinks to it. For a project-local install, copy into `.claude/skills/metaFrame/`.
+Each CLI (`~/.claude/skills/`, `~/.codex/skills/`, `~/.grok/skills/`) symlinks to it. For a project-local install, copy into `.claude/skills/metaframe/`.
 
 Invoke it manually:
 
 ```text
-/metaFrame
+/metaframe
 ```
 
 or pass the task as an argument:
 
 ```text
-/metaFrame Review this product decision before implementation.
+/metaframe Review this product decision before implementation.
 ```
 
 `disable-model-invocation: true` keeps the skill out of Claude's context until you invoke it. Once invoked, the skill text remains in that session, so use a new session or clear the context before unrelated work when you want a clean baseline.
@@ -47,7 +47,7 @@ or pass the task as an argument:
 ## Package shape
 
 ```text
-metaFrame/
+metaframe/
 ├── SKILL.md
 ├── README.md
 ├── DESIGN_NOTES.md

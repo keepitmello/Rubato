@@ -15,14 +15,14 @@ An owner retains judgment, diagnosis, implementation, correction and proof for
 one outcome. Workers take bounded maps, evidence gathering and settled execution.
 Do not delegate unresolved judgment to a cheap worker merely to fit a budget.
 
-| Seat | Selected external providers available | Native Codex only |
+| Role | Selected external providers available | Native Codex only |
 |---|---|---|
 | Owner | Fable for framing/structure; Sol for technical diagnosis/proof; Opus for broad judgment; Grok for already-framed outcomes | Sol |
 | Exceptional owner | Astra for a particularly difficult outcome, after approval | Astra only if explicitly requested and approved outside the default pool |
 | Worker | Available fast worker (for example Gemini Flash), or Grok for precise bounded execution | Terra for execution; Luna for simple maps/extraction |
 | Verifier | A fresh capable context, preferably a different family from the producer | Fresh Sol context |
 
-Terra and Luna never hold owner seats. Opus and Grok are permitted owners, not
+Terra and Luna never hold owner roles. Opus and Grok are permitted owners, not
 mandatory replacements for Fable or Sol. Match the work, not a permanent job
 title. Cognitive profiles are routing heuristics, not measured performance or
 price claims: framing keeps the problem open, structure integrates work,
@@ -34,7 +34,7 @@ steps. Keep diagnosis with the owner when the explanation is still uncertain.
 - Before forming a team, present outcome/role/model/effort and obtain roster
   confirmation as required by `../agent-taskforce/LEAD.md`.
 - Fable (every provider/version) and Astra require explicit approval naming the
-  task and effort before assignment, including owner, worker and verifier seats.
+  task and effort before assignment, including owner, worker and verifier roles.
   A roster approval satisfies this only if those details were included.
 - Opus, Sol and Grok do not need an additional model-specific approval. Neither
   do ordinary Terra/Luna/fast workers inside the approved outcome and team scope.

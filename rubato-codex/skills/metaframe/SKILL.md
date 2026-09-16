@@ -3,13 +3,13 @@ name: metaframe
 description: "Reopen the view when the problem framing has narrowed. Manual invocation."
 ---
 
-# metaFrame
+# metaframe
 
 Apply this to `$ARGUMENTS` when provided; otherwise apply it to the current task.
 
 Treat this skill as a way of attending, not a procedure to perform and not a request for longer reasoning.
 
-This is not `product-framing` (which converges on and locks a product frame) or `product-reframing` (which escapes an entrenched product frame through research). metaFrame works at the task level, locks nothing, and produces no artifact — it only keeps the first interpretation provisional and opens room for a better one.
+This is not `product-framing` (which converges on and locks a product frame) or `product-reframing` (which escapes an entrenched product frame through research). metaframe works at the task level, locks nothing, and produces no artifact — it only keeps the first interpretation provisional and opens room for a better one.
 
 Hold the immediate work together with the change it is meant to create. Keep the user's exact request, explicit boundaries, and available evidence as the center of gravity. Purposes, motives, and wider interpretations that were not stated remain provisional.
 

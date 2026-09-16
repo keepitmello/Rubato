@@ -9,10 +9,11 @@
 
 ## Cross-device Codex control
 
-- For diagnosis or changes on the other computer, use the installed `codex-peer` skill. The destination Codex owns its local terminal, files, applications, and verification.
+- For diagnosis or changes on the other computer, use a destination-side agent only when the current runtime exposes an authorized destination tool or an existing authorized peer session. Use `codex-peer` only when that skill is enabled and callable in the current runtime; if disabled or unavailable, do not invoke its scripts or re-enable it as a workaround. The destination Codex owns its local terminal, files, applications, and verification.
+- Native collaboration tools on the current host are local-only; do not describe them as executing on the other computer. Create an App task only when the user explicitly requests a new task.
 - Windows targets Mac with `--host mac`; Mac targets Windows with `--host windows`.
-- Prefer a new peer task with `create`. Desktop-loaded tasks can reject `send` with `already has an active writer`; do not interrupt or work around that lock.
-- `create` supports `--name`, `--cwd`, `--model`, and `--effort`. Its default is `gpt-5.6-terra` with `medium` effort. Use Luna for simple bounded work and reserve Sol for difficult, ambiguous, cross-boundary, or repeatedly failing work. Call `models` first for an explicit override.
+- When `codex-peer` is enabled and callable, prefer a new peer task with `create` only when a new destination task is authorized. Desktop-loaded tasks can reject `send` with `already has an active writer`; never interrupt or work around that lock.
+- Follow the destination runtime's currently exposed model/effort policy and the user's approval conditions; do not assume a fixed catalog or defaults. Preserve any explicit higher-cost or Sol approval requirement.
 - The destination Codex may use its own local Computer Use tools when available. Never use source-side Computer Use to operate Jump Desktop, Deskflow, Moonlight, Duo, RustDesk, or another remote-display/input client as a cross-device control path.
 - SSH remains the transport and bootstrap path for bounded probes, file transfer, and App Server. A successful SSH login is not proof that the destination Codex completed the requested work.
 

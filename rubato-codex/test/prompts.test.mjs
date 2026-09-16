@@ -22,9 +22,9 @@ test('Rubato base keeps root leadership separate from delegated contracts', asyn
   assert.match(base, /owners and verifiers are teammates, not\s+the lead's workers/);
   assert.match(base, /not make it the lead's subagent/);
   assert.match(base, /A subagent sits under whoever spawned it, lead or teammate/);
-  assert.match(base, /single source for seats, parentage and spawn surface/);
+  assert.match(base, /single source for roles, parentage and spawn surface/);
   assert.doesNotMatch(base, /cognitively depth 0/);
-  // Seat identity lives in base.md only; AGENTS.md and the role contracts do not restate it.
+  // Role identity lives in base.md only; AGENTS.md and the role contracts do not restate it.
   const agentsMd = await read('instructions/AGENTS.md');
   assert.doesNotMatch(agentsMd, /not the lead's workers|cognitively depth 0/);
   const contracts = [];

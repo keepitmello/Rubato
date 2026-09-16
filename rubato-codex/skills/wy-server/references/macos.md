@@ -1,6 +1,6 @@
 # macOS host
 
-For substantive Windows diagnosis or changes, create a Windows Codex peer task:
+For substantive Windows diagnosis or changes, create a Windows Codex peer task only when `codex-peer` is enabled and callable in the current runtime and the user authorized a new destination task. If it is disabled or unavailable, do not invoke this script or re-enable the skill; use an existing authorized destination session that the current runtime can address, or the bounded `wy-server`/SSH paths below instead. Local native collaboration is not a Windows execution path.
 
 ```bash
 python3 ~/.codex/skills/codex-peer/scripts/codex_peer.py --host windows create --cwd 'C:/Users/keepi' --message '<task>'
