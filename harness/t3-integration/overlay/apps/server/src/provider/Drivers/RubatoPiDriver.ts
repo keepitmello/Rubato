@@ -7,10 +7,15 @@ import * as Effect from "effect/Effect";
 import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import * as NodePath from "node:path";
 import { ProviderAdapterRequestError, ProviderDriverError } from "../Errors.ts";
 import { defaultProviderContinuationIdentity, type ProviderDriver, type ProviderInstance } from "../ProviderDriver.ts";
 import type { ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
 import type { ProviderAdapterError } from "../Errors.ts";
+
+/** Unix, Windows drive-letter, and UNC paths. Host platform must not gate this. */
+export const isAbsoluteLocalPath = (value: string): boolean =>
+  NodePath.posix.isAbsolute(value) || NodePath.win32.isAbsolute(value);
 
 const kind = ProviderDriverKind.make("rubato-pi");
 export const RubatoPiConfig = Schema.Struct({
@@ -65,9 +70,9 @@ export const RubatoPiDriver: ProviderDriver<RubatoPiConfig> = {
   create: ({ instanceId, displayName, accentColor, environment, enabled, config }) => Effect.gen(function* () {
     const fail = (cause: unknown) => new ProviderDriverError({ driver: kind, instanceId, detail: detail(cause), cause });
     if (environment.length !== 0) return yield* fail(new Error("Configure credentials in the external Rubato profile, not T3's child-process environment"));
-    if (!config.bridgeModule.startsWith("/") && !config.bridgeModule.startsWith("file:///"))
+    if (!isAbsoluteLocalPath(config.bridgeModule) && !config.bridgeModule.startsWith("file:///"))
       return yield* fail(new Error("bridgeModule must be an absolute local module path"));
-    if (!config.descriptorPath.startsWith("/") || !config.catalogueCwd.startsWith("/"))
+    if (!isAbsoluteLocalPath(config.descriptorPath) || !isAbsoluteLocalPath(config.catalogueCwd))
       return yield* fail(new Error("descriptorPath and catalogueCwd must be absolute paths"));
     const events = yield* PubSub.unbounded<ProviderRuntimeEvent>();
     const updates = yield* PubSub.unbounded<ServerProvider>();

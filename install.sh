@@ -181,12 +181,15 @@ head_ "단계 1 · 의존성"
 if [ "$APPLY" -eq 0 ]; then
   plan "bun install                        (엔진 senpi, 워크스페이스)"
   plan "npm install --prefix harness/rubato-pi"
+  plan "npm ci --prefix harness/pi-runtime"
   plan "build-active-engine.mjs            (stock-pi 후보 설치 — 유일한 실행기)"
 else
   say "엔진을 깐다 (bun)"
   (cd "$REPO" && "$BUN" install) || { err "bun install 실패"; exit 1; }
   say "rubato-pi 를 깐다"
   npm install --prefix "$HARNESS/rubato-pi" >/dev/null 2>&1 || { err "rubato-pi 설치 실패"; exit 1; }
+  say "pi-runtime 을 깐다"
+  npm ci --prefix "$HARNESS/pi-runtime" >/dev/null 2>&1 || { err "pi-runtime 설치 실패"; exit 1; }
   # 세션이 실제로 도는 엔진은 stock-pi 후보 하나뿐이다(senpi 폴백 폐기).
   # 이걸 빼면 설치는 성공했는데 `rubato` 가 "engine is not installed" 로
   # 죽는 상태가 만들어진다.

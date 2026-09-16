@@ -14,7 +14,7 @@ BUNDLE="$T3_DIR/apps/desktop/dist-electron/main.cjs"
 # 더블클릭으로 켜면 stderr 를 아무도 안 본다. 실패는 창으로도 알린다.
 die() {
   printf 'Rubato GUI: %s\n' "$1" >&2
-  if [ ! -t 2 ]; then
+  if [ ! -t 2 ] && [ "$(uname -s)" = Darwin ]; then
     /usr/bin/osascript -e "display alert \"Rubato\" message \"$1\"" >/dev/null 2>&1
   fi
   exit 1

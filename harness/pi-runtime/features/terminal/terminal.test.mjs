@@ -71,8 +71,12 @@ async function waitForProcessExit(pid, timeoutMs = 5_000) {
 }
 
 test("terminal source closure is runtime-owned and has no dependency on the Senpi application package", async () => {
-	assert.equal(files.length, 37);
+	assert.equal(files.length, 40);
 	assert.equal(files.every((entry) => entry.target === "runtime"), true);
+	assert.equal(
+		files.some((entry) => entry.path.endsWith("native/prebuilds/win32-x64/senpi_pty.win32-x64.node")),
+		true,
+	);
 	for (const sourceFile of sourceFiles(fileURLToPath(new URL("./src", import.meta.url)))) {
 		const source = readFileSync(sourceFile, "utf8");
 		assert.doesNotMatch(source, /["']@code-yeongyu\/senpi["']/, `Senpi app import in ${sourceFile}`);
@@ -114,6 +118,10 @@ test("staged stock SDK binds terminal tools and preserves a native PTY session a
 	const terminalFiles = staged.receipt.addedFiles.filter((entry) => entry.feature === "terminal");
 	assert.equal(terminalFiles.length, files.length);
 	assert.equal(terminalFiles.every((entry) => entry.path.startsWith("rubato-features/terminal/")), true);
+	assert.equal(
+		terminalFiles.some((entry) => entry.path.endsWith("native/prebuilds/win32-x64/senpi_pty.win32-x64.node")),
+		true,
+	);
 
 	const stagedEntry = join(outputRoot, "rubato-features/terminal/src/index.ts");
 	const terminal = await import(pathToFileURL(stagedEntry).href);
