@@ -36,6 +36,10 @@ Thumbs.db
 *.log
 npm-debug.log*
 package-lock.json
+# 워크스페이스 밖 하네스 패키지는 자기 의존성을 자기 잠금으로 설치한다.
+# 잠금이 레포에 없으면 CI 의 `npm ci` 가 EUSAGE 로 죽는다.
+!harness/pi-runtime/package-lock.json
+!harness/rubato-pi/package-lock.json
 yarn.lock
 
 # Local agent workspaces
