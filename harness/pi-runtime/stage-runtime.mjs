@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { chmod, cp, lstat, mkdir, readdir, readFile, readlink, realpath, stat, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { resolvePiRuntime } from "./resolve-runtime.mjs";
@@ -21,6 +21,10 @@ async function copyDependencyTree(source, output) {
   } else {
     await cp(source, output, { recursive: true, verbatimSymlinks: true, errorOnExist: true, force: false });
   }
+}
+
+function posixRel(from, to) {
+  return relative(from, to).split(sep).join("/");
 }
 
 function within(parent, child) {
@@ -118,7 +122,7 @@ export async function stagePiRuntime({ sourceRoot, outputRoot, features = [] } =
       if (!info.isFile()) throw new Error(`Pi owned source must be a regular file: ${file.sourcePath}`);
       const data = await readFile(file.sourcePath);
       additions.set(target, {
-        feature: feature.id, target: runtimeOwned ? "runtime" : "package", packageName: pkg?.name, path: relative(source.root, target),
+        feature: feature.id, target: runtimeOwned ? "runtime" : "package", packageName: pkg?.name, path: posixRel(source.root, target),
         sha256: sha256(data), mode: info.mode & 0o777, data,
       });
     }
@@ -141,7 +145,7 @@ export async function stagePiRuntime({ sourceRoot, outputRoot, features = [] } =
       if (typeof text !== "string" || text === current) throw new Error(`Pi patch did not produce a change: ${patchId}`);
       changes.set(target, {
         packageName: pkg.name,
-        path: relative(source.root, target),
+        path: posixRel(source.root, target),
         before,
         after: sha256(text),
         text,
@@ -208,13 +212,13 @@ export async function stagePiRuntime({ sourceRoot, outputRoot, features = [] } =
     // npm's implementation handles POSIX, cmd.exe and PowerShell, including
     // spaces in paths, without requiring Windows symlink privileges.
     await cmdShim(runtime.patchableCliEntry, binEntry);
-    receipt.binEntry = relative(canonicalOutput, binEntry);
+    receipt.binEntry = posixRel(canonicalOutput, binEntry);
     receipt.binShims = await Promise.all(["", ".cmd", ".ps1"].map(async (suffix) => ({
-      path: relative(canonicalOutput, `${binEntry}${suffix}`),
+      path: posixRel(canonicalOutput, `${binEntry}${suffix}`),
       sha256: sha256(await readFile(`${binEntry}${suffix}`)),
     })));
-    receipt.cliEntry = relative(canonicalOutput, runtime.patchableCliEntry);
-    receipt.rpcEntry = relative(canonicalOutput, runtime.patchableRpcEntry);
+    receipt.cliEntry = posixRel(canonicalOutput, runtime.patchableCliEntry);
+    receipt.rpcEntry = posixRel(canonicalOutput, runtime.patchableRpcEntry);
     receipt.state = "ready";
     await writeReceipt();
     return { root: canonicalOutput, receipt, runtime };

@@ -23,9 +23,15 @@ HERE="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
 # 진행 표시. tty 가 아니면 스스로 빠지므로 파이프·테스트가 보는 것은 그대로다.
 . "$HERE/../scripts/rubato-progress.sh"
 
+HOST_OS="${RUBATO_HOST_OS:-$(uname -s)}"
+is_darwin() { [ "$HOST_OS" = Darwin ]; }
+
 PGREP_BIN="${RUBATO_PGREP_BIN:-/usr/bin/pgrep}"
 OSASCRIPT_BIN="${RUBATO_OSASCRIPT_BIN:-/usr/bin/osascript}"
 GUI_APP="${RUBATO_GUI_APP:-/Applications/Rubato.app}"
+T3_DIR="${RUBATO_T3_SOURCE:-$HOME/.rubato/t3-source}"
+# 윈도우는 .app 이 없다. T3 가 켜는 것은 dist-electron/main.cjs 다.
+GUI_BUNDLE="${RUBATO_GUI_BUNDLE:-$T3_DIR/apps/desktop/dist-electron/main.cjs}"
 START_GUI="${RUBATO_START_GUI:-$HERE/start-gui.sh}"
 INSTALL_GUI="${RUBATO_INSTALL_GUI:-$HERE/install-gui.sh}"
 GUI_LOG="${RUBATO_GUI_LOG:-$HOME/.rubato-pi/logs/rubato-gui-restart.log}"
@@ -37,7 +43,12 @@ INSTALL_LOG="${RUBATO_GUI_INSTALL_LOG:-$HOME/.rubato-pi/logs/rubato-gui-install.
 # 살아서 짧은 패턴은 창이 닫힌 뒤에도 계속 걸리고, 그러면 다시 켜기가 조용히
 # 건너뛰어진다. 내장 T3 서버도 같은 Contents/MacOS/Electron 경로를 쓰므로 이
 # 패턴으로 기다리면 그 자식까지 덮는다.
-GUI_PROC_PATTERN="${RUBATO_GUI_PROC_PATTERN:-Rubato\\.app/Contents/MacOS/Electron}"
+# 비-Darwin 은 start-electron.mjs 가 넘기는 dist-electron/main.cjs 인자로 찾는다.
+if is_darwin; then
+  GUI_PROC_PATTERN="${RUBATO_GUI_PROC_PATTERN:-Rubato\\.app/Contents/MacOS/Electron}"
+else
+  GUI_PROC_PATTERN="${RUBATO_GUI_PROC_PATTERN:-dist-electron/main.cjs}"
+fi
 GUI_WAIT_MAX="${RUBATO_GUI_WAIT_SECS:-30}"
 case "$GUI_WAIT_MAX" in
   ''|*[!0-9]*) GUI_WAIT_MAX=30 ;;
@@ -61,8 +72,12 @@ sync_bundle() {
 trap 'progress_stop' EXIT INT TERM
 
 if [ ! -e "$GUI_APP" ]; then
-  ui_skip "데스크톱 앱이 없어요"
-  exit 2
+  # Darwin keeps the .app gate. Windows install never creates that path;
+  # presence is the T3 desktop build start-gui.sh already launches.
+  if is_darwin || [ ! -f "$GUI_BUNDLE" ]; then
+    ui_skip "데스크톱 앱이 없어요"
+    exit 2
+  fi
 fi
 
 if ! "$PGREP_BIN" -f "$GUI_PROC_PATTERN" >/dev/null 2>&1; then
@@ -86,13 +101,37 @@ fi
 # 종료는 graceful 만 쓴다. osascript `quit` 은 Dock > 종료 와 같은 이벤트라
 # before-quit 핸들러가 먼저 흐른다. 내장 서버가 SQLite 를 들고 있어서 강제
 # 종료는 그 파일을 어긋난 채로 남길 수 있다. 그래서 이 경로에 kill 은 없다.
-if "$OSASCRIPT_BIN" -e 'tell application "Rubato" to quit' >/dev/null 2>&1; then
-  :
-elif "$OSASCRIPT_BIN" -e 'tell application id "app.rubato.t3" to quit' >/dev/null 2>&1; then
-  :
+if is_darwin; then
+  if "$OSASCRIPT_BIN" -e 'tell application "Rubato" to quit' >/dev/null 2>&1; then
+    :
+  elif "$OSASCRIPT_BIN" -e 'tell application id "app.rubato.t3" to quit' >/dev/null 2>&1; then
+    :
+  else
+    ui_fail "데스크톱 앱에 종료를 요청하지 못했습니다. 옛 코드가 그대로입니다 — 손으로: osascript -e 'tell application \"Rubato\" to quit'"
+    exit 1
+  fi
+elif [ -n "${RUBATO_QUIT_GUI_BIN-}" ]; then
+  if ! "$RUBATO_QUIT_GUI_BIN" >/dev/null 2>&1; then
+    ui_fail "데스크톱 앱에 종료를 요청하지 못했습니다. 옛 코드가 그대로입니다 — 손으로: 창을 닫은 뒤 sh \"$START_GUI\""
+    exit 1
+  fi
 else
-  ui_fail "데스크톱 앱에 종료를 요청하지 못했습니다. 옛 코드가 그대로입니다 — 손으로: osascript -e 'tell application \"Rubato\" to quit'"
-  exit 1
+  # WM_CLOSE. Terminate/taskkill 은 SQLite 를 어긋나게 남길 수 있어 쓰지 않는다.
+  if ! command -v powershell.exe >/dev/null 2>&1; then
+    ui_fail "데스크톱 앱에 종료를 요청하지 못했습니다. 옛 코드가 그대로입니다 — 손으로: 창을 닫은 뒤 sh \"$START_GUI\""
+    exit 1
+  fi
+  if ! powershell.exe -NoProfile -Command '
+    $ok = $false
+    Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match "dist-electron[/\\]main\.cjs" } | ForEach-Object {
+      $p = Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue
+      if ($p) { if ($p.CloseMainWindow()) { $ok = $true } }
+    }
+    if (-not $ok) { exit 1 }
+  ' >/dev/null 2>&1; then
+    ui_fail "데스크톱 앱에 종료를 요청하지 못했습니다. 옛 코드가 그대로입니다 — 손으로: 창을 닫은 뒤 sh \"$START_GUI\""
+    exit 1
+  fi
 fi
 
 # 정말 사라졌는지 보고 나서 다시 켠다 — 넘겨짚지 않는다.
@@ -104,7 +143,11 @@ while "$PGREP_BIN" -f "$GUI_PROC_PATTERN" >/dev/null 2>&1 && [ "$GUI_WAIT" -lt "
 done
 progress_stop
 if "$PGREP_BIN" -f "$GUI_PROC_PATTERN" >/dev/null 2>&1; then
-  ui_fail "데스크톱 앱이 종료 요청을 받고도 끝나지 않았습니다. 옛 코드가 그대로입니다 — 다시 켜지 않았습니다. 손으로: osascript -e 'tell application \"Rubato\" to quit'"
+  if is_darwin; then
+    ui_fail "데스크톱 앱이 종료 요청을 받고도 끝나지 않았습니다. 옛 코드가 그대로입니다 — 다시 켜지 않았습니다. 손으로: osascript -e 'tell application \"Rubato\" to quit'"
+  else
+    ui_fail "데스크톱 앱이 종료 요청을 받고도 끝나지 않았습니다. 옛 코드가 그대로입니다 — 다시 켜지 않았습니다. 손으로: 창을 닫은 뒤 sh \"$START_GUI\""
+  fi
   exit 1
 fi
 if [ ! -x "$START_GUI" ]; then

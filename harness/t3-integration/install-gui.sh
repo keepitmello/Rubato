@@ -7,6 +7,9 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
+# Tests and callers may pin this. Unset means the machine we are on.
+HOST_OS="${RUBATO_HOST_OS:-$(uname -s)}"
+is_darwin() { [ "$HOST_OS" = Darwin ]; }
 APPLY=0
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -111,7 +114,11 @@ if [ "$APPLY" -eq 0 ]; then
   plan "T3 $PIN 을 $T3_DIR 에 받는다"
   plan "overlay를 적용하고 이름·아이콘·제공자를 Rubato로 쓴다"
   plan "T3 데이터는 $T3_HOME, Pi 서버는 $AGENT_DIR"
-  plan "데스크톱을 빌드하고 /Applications/Rubato.app 을 만든다"
+  if is_darwin; then
+    plan "데스크톱을 빌드하고 /Applications/Rubato.app 을 만든다"
+  else
+    plan "데스크톱을 빌드한다. 실행은 start-gui.sh (T3 electron)"
+  fi
   exit 0
 fi
 
@@ -172,16 +179,27 @@ else
   fi
 fi
 
-# bash 로 부른다. 실행 비트는 전송 중에 쉽게 사라지고, 그때 이 줄은 조용히
-# 실패해서 아래의 "응용 프로그램: " 이 빈 경로를 성공처럼 찍었다.
-APP="$(bash "$HERE/install-macos-app.sh")" || APP=''
-if [ -z "$APP" ]; then
-  err "응용 프로그램을 만들지 못했다: $HERE/install-macos-app.sh"
+# 맥 앱 번들은 맥에만 만든다. T3 런처는 비-Darwin 에서 electron 바이너리를
+# 그대로 돌려서, 윈도우는 start-gui.sh → start-electron.mjs 가 곧 실행 경로다.
+if is_darwin; then
+  # bash 로 부른다. 실행 비트는 전송 중에 쉽게 사라지고, 그때 이 줄은 조용히
+  # 실패해서 아래의 "응용 프로그램: " 이 빈 경로를 성공처럼 찍었다.
+  APP="$(bash "$HERE/install-macos-app.sh")" || APP=''
+  if [ -z "$APP" ]; then
+    err "응용 프로그램을 만들지 못했다: $HERE/install-macos-app.sh"
+    exit 1
+  fi
+  if [ "$built" = 1 ]; then
+    ok "응용 프로그램: $APP  (더블클릭으로 켠다)"
+    exit 0
+  fi
+  err "$APP 은 만들었지만 데스크톱이 없어서 아직 안 켜진다"
   exit 1
 fi
+
 if [ "$built" = 1 ]; then
-  ok "응용 프로그램: $APP  (더블클릭으로 켠다)"
+  ok "데스크톱. 실행: sh $HERE/start-gui.sh"
   exit 0
 fi
-err "$APP 은 만들었지만 데스크톱이 없어서 아직 안 켜진다"
+err "데스크톱이 없어서 아직 안 켜진다"
 exit 1

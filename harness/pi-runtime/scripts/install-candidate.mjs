@@ -30,6 +30,18 @@ function npmCli(execPath = process.execPath) {
   return join(dirname(execPath), process.platform === "win32" ? "npm.cmd" : "npm");
 }
 
+/** Node 20+ on Windows rejects execFile of `.cmd` without a shell (spawn EINVAL). */
+function runNpm(execPath, args, options) {
+  if (process.platform === "win32") {
+    return run(
+      execPath,
+      [join(dirname(execPath), "node_modules", "npm", "bin", "npm-cli.js"), ...args],
+      options,
+    );
+  }
+  return run(npmCli(execPath), args, options);
+}
+
 function cleanEnv(extra = {}) {
   const env = { ...process.env, ...extra };
   delete env.NODE_OPTIONS;
@@ -65,7 +77,7 @@ async function npmCi({ sourceRoot, npmRoot, execPath = process.execPath }) {
   await copyFile(join(sourceRoot, "package.json"), join(npmRoot, "package.json"));
   await copyFile(join(sourceRoot, "package-lock.json"), join(npmRoot, "package-lock.json"));
   const lockBefore = sha256(await readFile(join(npmRoot, "package-lock.json")));
-  const result = await run(npmCli(execPath), ["ci", "--workspaces=false", "--ignore-scripts", "--no-audit", "--no-fund"], {
+  const result = await runNpm(execPath, ["ci", "--workspaces=false", "--ignore-scripts", "--no-audit", "--no-fund"], {
     cwd: npmRoot,
     env: cleanEnv(),
     timeout: 300_000,

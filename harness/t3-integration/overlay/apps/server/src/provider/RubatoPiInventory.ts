@@ -9,7 +9,7 @@ import {ProjectionSnapshotQuery} from "../orchestration/Services/ProjectionSnaps
 import {ProviderInstanceRegistry} from "./Services/ProviderInstanceRegistry.ts";
 import {ProviderSessionDirectory} from "./Services/ProviderSessionDirectory.ts";
 import {ProviderService} from "./Services/ProviderService.ts";
-import {rubatoBridgeFor, type PiSummary} from "./Drivers/RubatoPiDriver.ts";
+import {isAbsoluteLocalPath, rubatoBridgeFor, type PiSummary} from "./Drivers/RubatoPiDriver.ts";
 import type {ProviderInstance} from "./ProviderDriver.ts";
 import {ProviderAdapterRequestError} from "./Errors.ts";
 
@@ -65,7 +65,7 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
     for (const entry of inventory) {
       yield* Effect.gen(function* () {
         // Old sessions without a cwd cannot be assigned an invented project.
-        if (!entry.cwd || !entry.cwd.startsWith("/")) return;
+        if (!entry.cwd || !isAbsoluteLocalPath(entry.cwd)) return;
         const binding = bindings.find((item) => item.providerInstanceId === instance.instanceId && cursorMatches(item.resumeCursor,entry));
         // A T3 composer thread claims the Pi session before its binding lands.
         // Importing it as a second thread duplicates the sidebar and the reply text.
@@ -79,7 +79,7 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
         if (!project) {
           const projectId = ProjectId.make(yield* crypto.randomUUIDv4);
           yield* engine.dispatch({type:"project.create",commandId:yield* commandId,projectId,
-            title:entry.cwd.split("/").filter(Boolean).at(-1) ?? entry.cwd,workspaceRoot:entry.cwd,
+            title:entry.cwd.split(/[\\/]/).filter(Boolean).at(-1) ?? entry.cwd,workspaceRoot:entry.cwd,
             createdAt:DateTime.formatIso(yield* DateTime.now)});
           readModel = yield* query.getCommandReadModel();
           project = readModel.projects.find((item) => item.id===projectId);
