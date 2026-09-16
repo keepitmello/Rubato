@@ -20,12 +20,11 @@ export type CompletionDetails = {
   readonly agentId: string
   readonly name: string
   readonly status: TaskStatus
-  readonly category?: string
-  readonly agent_type?: string
+  readonly preset?: string
   readonly model: string
-  readonly requested_model?: ResolvedModelRecord
-  readonly fallback_models?: readonly ResolvedModelRecord[]
-  readonly resolved_model?: ResolvedModelRecord
+  readonly requested_model?: Omit<ResolvedModelRecord, "source">
+  readonly fallback_models?: readonly Omit<ResolvedModelRecord, "source">[]
+  readonly resolved_model?: Omit<ResolvedModelRecord, "source">
   readonly duration_ms: number
   readonly tokens?: number
   readonly run_stats?: TaskRunStats

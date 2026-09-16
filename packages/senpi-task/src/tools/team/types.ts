@@ -1,4 +1,5 @@
 import type { RuntimeState, Task } from "@rubato/team-core/types"
+import type { ModelCatalog } from "@rubato/agent-core"
 
 import type { CreateTeamResult, DeleteTeamResult, SendTeamMessageInput, SendTeamMessageResult } from "../../team"
 
@@ -50,6 +51,7 @@ export type TeamToolsService = {
 
 export type TeamToolDeps = {
   readonly service: TeamToolsService
+  readonly models?: ModelCatalog
 }
 
 export type LeadTeamToolDeps = TeamToolDeps

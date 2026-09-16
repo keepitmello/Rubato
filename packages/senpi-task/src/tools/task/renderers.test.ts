@@ -153,7 +153,7 @@ describe("taskResultLines", () => {
       agentId: "st_0000000c",
       status: "pending",
       mode: "spawn" as const,
-      category: "ultrabrain",
+      preset: "ultrabrain",
       model: "openai/gpt-5.6-sol",
       resolved_model: {
         provider: "openai",
@@ -161,7 +161,7 @@ describe("taskResultLines", () => {
         display: "GPT-5.6 Sol",
         variant: "xhigh",
         reasoning_effort: "xhigh",
-        source: "category" as const,
+        source: "model" as const,
       },
             queue_position: 3,
       reason: "provider capacity",
@@ -171,7 +171,7 @@ describe("taskResultLines", () => {
     const row = taskResultLines(details).join(" ")
 
     // then
-    expect(row).toContain("category:ultrabrain(openai/gpt-5.6-sol:xhigh)")
+    expect(row).toContain("preset:ultrabrain(openai/gpt-5.6-sol:xhigh)")
     expect(row.match(/xhigh/gu)).toHaveLength(1)
     expect(row).toContain("background")
     expect(row).toContain("pending")
@@ -186,7 +186,7 @@ describe("taskResultLines", () => {
       agentId: "st_0000000c",
       status: "pending",
       mode: "spawn" as const,
-      category: "ultrabrain",
+      preset: "ultrabrain",
       model: "openai/gpt-5.6-sol",
       resolved_model: {
         provider: "openai",
@@ -194,7 +194,7 @@ describe("taskResultLines", () => {
         display: "GPT-5.6 Sol",
         reasoning_effort: "xhigh",
         variant: "sol",
-        source: "category" as const,
+        source: "model" as const,
       },
     }
 
@@ -202,7 +202,7 @@ describe("taskResultLines", () => {
     const row = taskResultLines(details).join(" ")
 
     // then
-    expect(row).toContain("category:ultrabrain(openai/gpt-5.6-sol:xhigh)")
+    expect(row).toContain("preset:ultrabrain(openai/gpt-5.6-sol:xhigh)")
     expect(row).not.toContain(":sol")
   })
 
@@ -212,14 +212,14 @@ describe("taskResultLines", () => {
       agentId: "st_0000000c",
       status: "pending",
       mode: "spawn" as const,
-      category: "ultrabrain",
+      preset: "ultrabrain",
       model: "openai/gpt-5.6-sol",
       resolved_model: {
         provider: "openai",
         model_id: "gpt-5.6-sol",
         display: "GPT-5.6 Sol",
         reasoning_effort: "xhigh",
-        source: "category" as const,
+        source: "model" as const,
       },
     }
 
@@ -227,7 +227,7 @@ describe("taskResultLines", () => {
     const row = taskResultLines(details).join(" ")
 
     // then
-    expect(row).toContain("category:ultrabrain(openai/gpt-5.6-sol:xhigh)")
+    expect(row).toContain("preset:ultrabrain(openai/gpt-5.6-sol:xhigh)")
   })
 
   test("#given resolved category metadata without effort or variant #when rendered #then the model is shown without a suffix", () => {
@@ -236,13 +236,13 @@ describe("taskResultLines", () => {
       agentId: "st_0000000c",
       status: "pending",
       mode: "spawn" as const,
-      category: "ultrabrain",
+      preset: "ultrabrain",
       model: "openai/gpt-5.6-sol",
       resolved_model: {
         provider: "openai",
         model_id: "gpt-5.6-sol",
         display: "GPT-5.6 Sol",
-        source: "category" as const,
+        source: "model" as const,
       },
     }
 
@@ -250,7 +250,7 @@ describe("taskResultLines", () => {
     const row = taskResultLines(details).join(" ")
 
     // then
-    expect(row).toContain("category:ultrabrain(openai/gpt-5.6-sol)")
+    expect(row).toContain("preset:ultrabrain(openai/gpt-5.6-sol)")
     expect(row).not.toContain(":xhigh")
     expect(row).not.toContain(":sol")
   })
@@ -261,12 +261,12 @@ describe("taskResultLines", () => {
       agentId: "st_0000000d",
       status: "completed",
       mode: "spawn",
-      subagent_type: "momus",
+      preset: "momus",
       model: "openai/manual",
           }).join(" ")
 
     // then
-    expect(row).toContain("agent:momus(openai/manual)")
+    expect(row).toContain("preset:momus(openai/manual)")
     expect(row).toContain("background")
     expect(row).not.toContain("prompt:")
     expect(row).not.toContain("reason:")
@@ -279,14 +279,14 @@ describe("taskResultLines", () => {
       agentId: "st_0000000e",
       status: "pending",
       mode: "spawn" as const,
-      category: "ultrabrain",
+      preset: "ultrabrain",
       model: "openai/gpt-5.6-sol",
       resolved_model: {
         provider: "openai",
         model_id: "gpt-5.6-sol",
         display: "OpenAI GPT-5.6 SOL",
         reasoning_effort: "xhigh",
-        source: "category" as const,
+        source: "model" as const,
       },
           }
 
@@ -295,8 +295,8 @@ describe("taskResultLines", () => {
     const compact = renderTaskResultComponent(details, ANSI_THEME).render(96).join(" ")
 
     // then
-    expect(plain).toContain("category:ultrabrain(openai/gpt-5.6-sol:xhigh)")
-    expect(compact).toContain("category:ultrabrain(openai/gpt-5.6-sol:xhigh)")
+    expect(plain).toContain("preset:ultrabrain(openai/gpt-5.6-sol:xhigh)")
+    expect(compact).toContain("preset:ultrabrain(openai/gpt-5.6-sol:xhigh)")
   })
 
   test("#given resolved category context #when the real result component renders at width 80 #then provider, model, and reasoning stay visible within bounds", () => {
@@ -305,14 +305,14 @@ describe("taskResultLines", () => {
       agentId: "st_0000000e",
       status: "pending",
       mode: "spawn" as const,
-      category: "ultrabrain",
+      preset: "ultrabrain",
       model: "openai/gpt-5.6-sol",
       resolved_model: {
         provider: "openai",
         model_id: "gpt-5.6-sol",
         display: "GPT-5.6 Sol",
         reasoning_effort: "xhigh",
-        source: "category" as const,
+        source: "model" as const,
       },
             queue_position: 12,
       reason: "긴 대기열 사유입니다. Provider capacity is constrained for this request.",
@@ -322,7 +322,7 @@ describe("taskResultLines", () => {
     const rendered = renderTaskResultComponent(details, ANSI_THEME).render(80)
 
     // then
-    expect(rendered.join(" ")).toContain("category:ultrabrain(openai/gpt-5.6-sol:xhigh)")
+    expect(rendered.join(" ")).toContain("preset:ultrabrain(openai/gpt-5.6-sol:xhigh)")
     for (const line of rendered) expect(rendererVisibleWidth(line)).toBeLessThanOrEqual(80)
   })
 
@@ -332,18 +332,18 @@ describe("taskResultLines", () => {
       agentId: "st_0000000f",
       status: "completed",
       mode: "spawn" as const,
-      category: "quick",
+      preset: "quick",
       model: "xai/grok-4.6",
       resolved_model: {
         provider: "quotio-openai",
         model_id: "gpt-5.6-luna-fast",
         display: "gpt-5.6-luna-fast",
         reasoning_effort: "high",
-        source: "category" as const,
+        source: "model" as const,
       },
       fallback_attempts: [
-        { provider: "kimi-coding", model_id: "kimi-for-coding-highspeed", display: "kimi-for-coding-highspeed", source: "category" as const },
-        { provider: "quotio-openai", model_id: "gpt-5.6-luna-fast", display: "gpt-5.6-luna-fast", reasoning_effort: "high", source: "category" as const },
+        { provider: "kimi-coding", model_id: "kimi-for-coding-highspeed", display: "kimi-for-coding-highspeed", source: "model" as const },
+        { provider: "quotio-openai", model_id: "gpt-5.6-luna-fast", display: "gpt-5.6-luna-fast", reasoning_effort: "high", source: "model" as const },
       ],
           }
 
@@ -353,7 +353,7 @@ describe("taskResultLines", () => {
 
     // then
     for (const row of [plain, compact]) {
-      expect(row).toContain("category:quick(quotio-openai/gpt-5.6-luna-fast:high)")
+      expect(row).toContain("preset:quick(quotio-openai/gpt-5.6-luna-fast:high)")
       expect(row).toContain("fallback:2")
     }
     expect(rendererVisibleWidth(compact)).toBeLessThanOrEqual(120)

@@ -69,7 +69,7 @@ describe("momus one-shot policy over the real TaskManager", () => {
     expect(firstId.startsWith("st_")).toBe(true)
     expect(inProcess.startedSpecs[0]?.prompt).toBe(canonical(PLAN_A))
     const firstRecord = store.load(firstId)
-    expect(firstRecord?.agent_type).toBe("momus")
+    expect(firstRecord?.preset).toBe("momus")
 
     // when step 2: momus is spawned with an explicit B path
     const second = await execute(

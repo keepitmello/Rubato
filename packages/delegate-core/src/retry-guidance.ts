@@ -15,7 +15,7 @@ export function buildRetryGuidance(errorInfo: DetectedError): string {
   }
 
   let guidance = `
- [task CALL FAILED - IMMEDIATE RETRY REQUIRED]
+ [Agent CALL FAILED - IMMEDIATE RETRY REQUIRED]
 
  **Error Type**: ${errorInfo.errorType}
  **Fix**: ${pattern.fixHint}
@@ -27,16 +27,14 @@ export function buildRetryGuidance(errorInfo: DetectedError): string {
   }
 
   guidance += `
- **Action**: Retry task NOW with corrected parameters.
+ **Action**: Retry Agent NOW with corrected parameters.
 
  Example of CORRECT call:
  \`\`\`
- task(
-   description="Task description",
+ Agent(
+   model="provider/model",
    prompt="Detailed prompt...",
-   category="unspecified-low",  // OR subagent_type="explore"
-   run_in_background=false,
-   load_skills=[]
+   summary="One-line delegated outcome"
  )
  \`\`\`
  `

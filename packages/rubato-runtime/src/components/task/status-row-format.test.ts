@@ -25,14 +25,13 @@ function longActiveRecord(): TaskRecord {
     task_id: "st_01active0123456789",
     name: "active-child",
     status: "running",
-    category: "ultrabrain",
     resolved_model: {
       provider: "rubato-mock",
       model_id: "mock-1",
       display: "rubato-mock/mock-1",
       reasoning_effort: "xhigh",
       variant: "xhigh",
-      source: "category",
+      source: "model",
     },
   })
 }
@@ -54,10 +53,10 @@ describe("buildWidgetRows", () => {
 
   it("#given an active task #when building a row #then useful identity and execution context remain", () => {
     const row = buildWidgetRows([
-      record({ task_id: "st_row", name: "finder", status: "running", agent_type: "explore", pid: 4242 }),
+      record({ task_id: "st_row", name: "finder", status: "running", preset: "explore", pid: 4242 }),
     ])[0] ?? ""
     expect(row).toContain("finder")
-    expect(row).toContain("agent:explore")
+    expect(row).toContain("preset:explore")
     expect(row).toContain("anthropic/")
     expect(row).toContain("in-process")
     expect(row).toContain("running")
@@ -68,7 +67,7 @@ describe("buildWidgetRows", () => {
     const row = buildWidgetRows([longActiveRecord()])[0] ?? ""
     expect(row).not.toContain("\n")
     for (const columns of [70, 72, 120]) expect(rendererVisibleWidth(row)).toBeLessThanOrEqual(columns)
-    expect(row).toContain("category:ultrabrain")
+    expect(row).toContain("model:rubato-mock/mock-1")
     expect(row).toContain("rubato-mock/mock-1")
     expect(row).toContain("xhigh")
     expect(row).toContain("in-process")
@@ -79,7 +78,7 @@ describe("buildWidgetRows", () => {
 describe("task_summary identity", () => {
   it("#given a record with a task_summary #when building the widget row #then the summary leads over name and description", () => {
     const row = buildWidgetRows([
-      record({ task_id: "st_sum", name: "finder", description: "quick label", task_summary: "Audit auth session flow", status: "running", category: "quick" }),
+      record({ task_id: "st_sum", name: "finder", description: "quick label", task_summary: "Audit auth session flow", status: "running" }),
     ])[0] ?? ""
     expect(row.startsWith("Audi")).toBe(true)
     expect(row).not.toContain("finder")
@@ -110,13 +109,12 @@ describe("backgroundWidgetRows", () => {
         description: "Plan the Spider-Man library",
         task_summary: "Plan the complete Spider-Man media library migration",
         status: "running",
-        category: "unspecified-high",
         resolved_model: {
           provider: "xai",
           model_id: "grok-4.6",
           display: "xai/grok-4.6",
           reasoning_effort: "high",
-          source: "category",
+          source: "model",
         },
       }),
     ], new Map([["st_wide", "running read src/library.ts"]]), now, () => stats, 220)[0] ?? ""
@@ -142,7 +140,7 @@ describe("backgroundWidgetRows", () => {
           model_id: "grok-4.6",
           display: "xai/grok-4.6",
           reasoning_effort: "high",
-          source: "category",
+          source: "model",
         },
       }),
     ], new Map(), now, () => stats, 220)[0] ?? ""
@@ -164,7 +162,7 @@ describe("backgroundWidgetRows", () => {
           model_id: "gpt-5.6-luna",
           display: "openai/gpt-5.6-luna",
           variant: "luna",
-          source: "category",
+          source: "model",
         },
       }),
     ], new Map(), now, () => stats, 220)[0] ?? ""
@@ -186,7 +184,7 @@ describe("backgroundWidgetRows", () => {
             provider: "openai",
             model_id: "gpt-5.6-sol",
             display,
-            source: "category",
+            source: "model",
           },
         }),
       ], new Map(), now, () => stats, 220)[0] ?? ""
@@ -208,7 +206,7 @@ describe("backgroundWidgetRows", () => {
           provider: "openai-codex",
           model_id: "gpt-6-astra",
           display: "GPT-6 Astra",
-          source: "category",
+          source: "model",
         },
       }),
     ], new Map(), now, () => stats, 220)[0] ?? ""
@@ -226,8 +224,8 @@ describe("backgroundWidgetRows", () => {
           resolved_model: {
             provider: "opencode",
             model_id: modelId,
-            display,
-            source: "category",
+            display: display ?? modelId,
+            source: "model",
           },
         }),
       ], new Map(), now, () => stats, 220)[0] ?? ""
@@ -248,7 +246,7 @@ describe("backgroundWidgetRows", () => {
           model_id: "cursor-grok-4.6",
           display: "Cursor Grok 4.6",
           reasoning: "high",
-          source: "category",
+          source: "model",
         },
       }),
     ], new Map(), now, () => stats, 220)[0] ?? ""
@@ -267,7 +265,7 @@ describe("backgroundWidgetRows", () => {
           model_id: "grok-4.6",
           display: "xai/grok-4.6",
           reasoning: "high",
-          source: "category",
+          source: "model",
         },
       }),
     ], new Map(), now, () => stats, 220)[0] ?? ""
@@ -285,7 +283,7 @@ describe("backgroundWidgetRows", () => {
           provider: "vendor",
           model_id: "gpt-5.6-solar",
           display: "vendor/gpt-5.6-solar",
-          source: "category",
+          source: "model",
         },
       }),
     ], new Map(), now, () => stats, 220)[0] ?? ""
@@ -299,7 +297,6 @@ describe("backgroundWidgetRows", () => {
         task_id: "st_narrow",
         task_summary: "Plan the complete Spider-Man media library migration",
         status: "running",
-        category: "unspecified-high",
       }),
     ], new Map([["st_narrow", "running"]]), now, () => stats, 90)[0] ?? ""
 
@@ -356,20 +353,19 @@ describe("formatTaskRow", () => {
       task_id: "st_resolved",
       name: "planner",
       status: "running",
-      category: "ultrabrain",
       execution_mode: "rpc",
-      model: "category/raw-fallback",
+      model: "mock/raw-fallback",
       resolved_model: {
         provider: "openai",
         model_id: "gpt-5.6-sol",
         display: "openai/gpt-5.6-sol",
         reasoning_effort: "xhigh",
         variant: "sol",
-        source: "category",
+        source: "model",
       },
     })
     expect(formatTaskRow(task)).toBe(
-      "planner (st_resolved) category:ultrabrain(openai/gpt-5.6-sol:xhigh) mode:rpc status:running",
+      "planner (st_resolved) model:openai/gpt-5.6-sol:xhigh mode:rpc status:running",
     )
   })
 
@@ -379,42 +375,40 @@ describe("formatTaskRow", () => {
       name: "task-2",
       description: "Audit the waiting line",
       status: "running",
-      category: "quick",
     }))
-    expect(row).toStartWith("Audit the waiting line (st_described) category:quick")
+    expect(row).toStartWith("Audit the waiting line (st_described) model:anthropic/claude-sonnet-4-6")
   })
 
   it("#given no resolved model #when formatting #then raw model remains", () => {
     const row = formatTaskRow(record({
       task_id: "st_legacy",
       status: "running",
-      agent_type: "explore",
+      preset: "explore",
       model: "anthropic/claude-sonnet-4-6",
     }))
-    expect(row).toBe("st_legacy agent:explore(anthropic/claude-sonnet-4-6) mode:in-process status:running")
+    expect(row).toBe("st_legacy preset:explore(anthropic/claude-sonnet-4-6) mode:in-process status:running")
   })
 
   it("#given empty resolved detail labels #when formatting #then they are omitted", () => {
     const row = formatTaskRow(record({
       task_id: "st_empty",
       status: "running",
-      category: "ultrabrain",
-      model: "category/raw-fallback",
+      model: "mock/raw-fallback",
       resolved_model: {
         provider: "google",
         model_id: "gemini-3.1-pro",
         display: "google/gemini-3.1-pro",
         reasoning_effort: "",
         variant: "",
-        source: "category",
+        source: "model",
       },
     }))
-    expect(row).toBe("st_empty category:ultrabrain(google/gemini-3.1-pro) mode:in-process status:running")
+    expect(row).toBe("st_empty model:google/gemini-3.1-pro mode:in-process status:running")
   })
 
   it("#given matching reasoning and variant #when formatting #then the effort renders once inside the target", () => {
     const row = formatTaskRow(longActiveRecord())
-    expect(row).toContain("category:ultrabrain(rubato-mock/mock-1:xhigh)")
+    expect(row).toContain("model:rubato-mock/mock-1:xhigh")
     expect(row).not.toContain("variant:")
     expect(row).not.toContain("reasoning:")
   })
@@ -423,7 +417,7 @@ describe("formatTaskRow", () => {
     const row = formatTaskRow(record({
       task_id: "st_cjk",
       status: "running",
-      agent_type: "explore",
+      preset: "explore",
       final_response: `${"界".repeat(40)}tail`,
     }))
     const progressPrefix = " progress:"

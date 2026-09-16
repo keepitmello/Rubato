@@ -5,7 +5,7 @@ import type { AgentDefinition } from "./types"
 
 /**
  * Bridge the already-loaded `rubato.json` agents (the rubato-config-core `RubatoAgentDef` shape) onto senpi-task
- * `AgentDefinition`s so `subagent_type` spawns and team membership can address user-defined agents.
+ * `AgentDefinition`s so `preset` spawns and team membership can address user-defined agents.
  *
  * The two shapes differ structurally: `RubatoAgentDef` keys the agent by its record name, uses snake_case
  * (`execution_mode`, `max_depth`, `allowed_subagents`), and expresses tools as a `{ name: boolean }`

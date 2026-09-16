@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
 import { messageability } from "../state"
-import type { TaskRecord } from "../state"
+import type { ResolvedModelRecord, TaskRecord } from "../state"
 import { excerptRendererPromptText, normalizeRendererText } from "../tools/task/renderers"
 import type { CompletionDetails, ParentNotifierMessage } from "./types"
 
@@ -13,6 +13,12 @@ export type BuildDetailsOptions = {
   readonly stateDir?: string
 }
 
+function visibleModel(record: ResolvedModelRecord | undefined): Omit<ResolvedModelRecord, "source"> | undefined {
+  if (record === undefined) return undefined
+  const { source: _source, ...visible } = record
+  return visible
+}
+
 export function buildCompletionDetails(record: TaskRecord, options: BuildDetailsOptions = {}): CompletionDetails {
   const finalResponse = finalResponseForNotification(record, options.stateDir)
   const runStats = record.run_stats
@@ -21,16 +27,15 @@ export function buildCompletionDetails(record: TaskRecord, options: BuildDetails
     agentId: record.task_id,
     name: record.name ?? record.task_id,
     status: record.status,
-    ...(record.category === undefined ? {} : { category: record.category }),
-    ...(record.agent_type === undefined ? {} : { agent_type: record.agent_type }),
+    ...(record.preset === undefined ? {} : { preset: record.preset }),
     model: record.model,
     ...(record.requested_model === undefined
       ? {}
-      : { requested_model: record.requested_model }),
+      : { requested_model: visibleModel(record.requested_model) }),
     ...(record.fallback_models === undefined
       ? {}
-      : { fallback_models: record.fallback_models }),
-    ...(record.resolved_model === undefined ? {} : { resolved_model: record.resolved_model }),
+      : { fallback_models: record.fallback_models.map((model) => visibleModel(model)!) }),
+    ...(record.resolved_model === undefined ? {} : { resolved_model: visibleModel(record.resolved_model) }),
     duration_ms: durationMs(record),
     ...(runStats === undefined ? {} : { run_stats: runStats }),
     final_response: finalResponse.text,

@@ -31,7 +31,7 @@ describe("createTeamMemberRespawnLaunchResolver", () => {
     const manager = new FakeTeamManager()
     const created = await createTeam(
       normalizeSenpiTeamSpec(
-        { members: [{ name: "alpha", kind: "category", category: "quick", prompt: "task alpha" }] },
+        { members: [{ name: "alpha", kind: "verifier", model: "rubato-mock/mock-1", prompt: "task alpha" }] },
         "squad",
       ),
       "project",
@@ -76,6 +76,7 @@ describe("createTeamMemberRespawnLaunchResolver", () => {
     expect(launch?.memberEnv).toMatchObject({
       SENPI_TASK_MEMBER: `${created.runtimeState.teamRunId}::alpha`,
       SENPI_TASK_MEMBER_TASK_ID: taskId,
+      RUBATO_PI_ROLE: "verifier",
     })
     expect(launch?.memberEnv?.SENPI_TASK_TEAM_CONFIG).not.toContain("untrusted")
   })
@@ -87,7 +88,7 @@ describe("createTeamMemberRespawnLaunchResolver", () => {
     const manager = new FakeTeamManager()
     const created = await createTeam(
       normalizeSenpiTeamSpec(
-        { members: [{ name: "alpha", kind: "category", category: "quick", prompt: "task alpha" }] },
+        { members: [{ name: "alpha", kind: "owner", model: "rubato-mock/mock-1", prompt: "task alpha" }] },
         "squad",
       ),
       "project",
@@ -121,7 +122,7 @@ describe("createTeamMemberRespawnLaunchResolver", () => {
     const manager = new FakeTeamManager()
     const created = await createTeam(
       normalizeSenpiTeamSpec(
-        { members: [{ name: "alpha", kind: "category", category: "quick", prompt: "task alpha" }] },
+        { members: [{ name: "alpha", kind: "owner", model: "rubato-mock/mock-1", prompt: "task alpha" }] },
         "squad",
       ),
       "project",

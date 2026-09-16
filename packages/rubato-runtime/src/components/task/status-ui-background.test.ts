@@ -96,7 +96,6 @@ describe("createTaskStatusUi.background progress", () => {
       task_id: "st_idle",
       name: "Idle child",
       status: "running",
-      category: "quick",
       created_at: new Date(currentTime).toISOString(),
     })
     let stats = { runtime_ms: 0, turns: 1, tool_calls: 2, speed_index: 40 }
@@ -191,10 +190,9 @@ describe("createTaskStatusUi.background progress", () => {
       task_id: "st_first",
       name: "Investigate the unexpectedly long background child description",
       status: "running",
-      category: "quick",
       model: "requested/model",
       resolved_model: {
-        source: "category",
+        source: "model",
         provider: "quotio-openai",
         model_id: "gpt-5.6-luna-fast",
         display: "quotio-openai/gpt-5.6-luna-fast",
@@ -202,13 +200,13 @@ describe("createTaskStatusUi.background progress", () => {
       },
       fallback_attempts: [
         {
-          source: "category",
+          source: "model",
           provider: "anthropic",
           model_id: "claude-haiku-4-5",
           display: "anthropic/claude-haiku-4-5",
         },
         {
-          source: "category",
+          source: "model",
           provider: "quotio-openai",
           model_id: "gpt-5.6-luna-fast",
           display: "quotio-openai/gpt-5.6-luna-fast",
@@ -220,10 +218,10 @@ describe("createTaskStatusUi.background progress", () => {
       task_id: "st_second",
       name: "Review tests",
       status: "running",
-      agent_type: "explore",
+      preset: "explore",
       model: "requested/model",
       resolved_model: {
-        source: "agent",
+        source: "preset",
         provider: "quotio-openai",
         model_id: "gpt-5.6-luna-fast",
         display: "quotio-openai/gpt-5.6-luna-fast",

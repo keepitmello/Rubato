@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 
 import { collisionStore } from "../../manager/__fixtures__/collision-store"
-import { FakeRunner, categoryPlanner, cleanupProjects, settings, tempProject } from "../../manager/__fixtures__/manager-fakes"
+import { FakeRunner, modelPlanner, cleanupProjects, settings, tempProject } from "../../manager/__fixtures__/manager-fakes"
 import { createTaskManager } from "../../manager"
 import { createTaskRecordStore } from "../../store"
 import { CTX, LIVE_MODEL, makeDeps } from "./__fixtures__/task-tool-fakes"
@@ -15,7 +15,7 @@ function buildCollisionExecute() {
   const manager = createTaskManager({
     store: collisionStore(inner).store,
     runners: { "in-process": new FakeRunner(), process: new FakeRunner() },
-    planner: categoryPlanner(),
+    planner: modelPlanner(),
     config: settings({ default_concurrency: 5, max_depth: 1 }),
     cwd: project,
   })

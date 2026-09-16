@@ -37,7 +37,7 @@ describe("agent plans carrying configured effort", () => {
     const planner = createTaskChildPlanner(config, agents, () => models)
 
     // when
-    const plan = resolvedPlan(planner({ subagent_type: "explore", prompt: "go", parent_session_id: "p", depth: 1 }))
+    const plan = resolvedPlan(planner({ preset: "explore", prompt: "go", parent_session_id: "p", depth: 1 }))
 
     // then
     expect(plan.model).toBe("quotio-openai/gpt-5.6-luna-fast")
@@ -56,7 +56,7 @@ describe("agent plans carrying configured effort", () => {
     const models = registry([{ provider: "anthropic", id: "claude-opus-5" }])
     const planner = createTaskChildPlanner(config, agents, () => models)
 
-    const plan = resolvedPlan(planner({ subagent_type: "librarian", prompt: "go", parent_session_id: "p", depth: 1 }))
+    const plan = resolvedPlan(planner({ preset: "librarian", prompt: "go", parent_session_id: "p", depth: 1 }))
 
     expect(plan.variant).toBe("high")
     expect(plan.resolved_model?.reasoning).toBe("high")
@@ -77,7 +77,7 @@ describe("agent plans carrying configured effort", () => {
     const planner = createTaskChildPlanner(config, agents, () => models)
 
     // when
-    const plan = resolvedPlan(planner({ subagent_type: "explore", prompt: "go", parent_session_id: "p", depth: 1 }))
+    const plan = resolvedPlan(planner({ preset: "explore", prompt: "go", parent_session_id: "p", depth: 1 }))
 
     // then
     expect(plan.variant).toBeUndefined()
@@ -91,7 +91,7 @@ describe("agent plans carrying configured effort", () => {
     const planner = createTaskChildPlanner(config, agents, () => models)
 
     // when
-    const plan = resolvedPlan(planner({ subagent_type: "explore", prompt: "go", parent_session_id: "p", depth: 1 }))
+    const plan = resolvedPlan(planner({ preset: "explore", prompt: "go", parent_session_id: "p", depth: 1 }))
 
     // then
     expect(plan.variant).toBeUndefined()

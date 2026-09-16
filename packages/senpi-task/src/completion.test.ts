@@ -13,20 +13,20 @@ function completedFallbackRecord() {
     model: "vendor-b/fallback-model",
     notify_on_terminal: false,
     requested_model: {
-      source: "category",
+      source: "model",
       provider: "vendor-a",
       model_id: "primary-model",
       display: "vendor-a/primary-model",
     },
     resolved_model: {
-      source: "category",
+      source: "model",
       provider: "vendor-b",
       model_id: "fallback-model",
       display: "vendor-b/fallback-model",
     },
     fallback_models: [
       {
-        source: "category",
+        source: "model",
         provider: "vendor-c",
         model_id: "final-model",
         display: "vendor-c/final-model",
@@ -61,13 +61,13 @@ describe("task completion fallback reporting", () => {
     const record = {
       ...completedFallbackRecord(),
       requested_model: {
-        source: "category" as const,
+        source: "model" as const,
         provider: "vendor-a",
         model_id: "primary-model",
         display: "vendor-a/primary-model",
       },
       resolved_model: {
-        source: "category" as const,
+        source: "model" as const,
         provider: "vendor-a",
         model_id: "primary-model",
         display: "vendor-a/primary-model",

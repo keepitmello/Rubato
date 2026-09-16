@@ -41,24 +41,24 @@ export type SenpiAgentHandleOptions = {
 export function liveModelCatalog(
   resolveRegistry: () => { getAvailable?: () => unknown } | undefined,
 ): ModelCatalog {
+  const availableModels = (): readonly string[] => {
+    const registry = resolveRegistry()
+    if (registry === undefined || typeof registry.getAvailable !== "function") return []
+    try {
+      const available = registry.getAvailable()
+      if (!Array.isArray(available)) return []
+      return available.flatMap((entry: { provider?: string; id?: string } | null | undefined) => (
+        typeof entry?.provider === "string" && typeof entry.id === "string"
+          ? [`${entry.provider}/${entry.id}`]
+          : []
+      ))
+    } catch {
+      return []
+    }
+  }
   return {
-    has(model) {
-      const registry = resolveRegistry()
-      if (registry === undefined || typeof registry.getAvailable !== "function") return false
-      const slash = model.indexOf("/")
-      if (slash <= 0) return false
-      const provider = model.slice(0, slash)
-      const modelId = model.slice(slash + 1)
-      try {
-        const available = registry.getAvailable()
-        if (!Array.isArray(available)) return false
-        return available.some((entry: { provider?: string; id?: string } | null | undefined) => (
-          entry?.provider === provider && entry?.id === modelId
-        ))
-      } catch {
-        return false
-      }
-    },
+    has: (model) => availableModels().includes(model),
+    list: availableModels,
   }
 }
 
@@ -141,7 +141,7 @@ export function startSpecFromResolved(spec: ResolvedAgentSpec, options: SenpiAge
     depth,
     run_in_background: true,
     execution_mode: executionModeFor(spec, options),
-    ...(preset === undefined ? { model: spec.model } : { subagent_type: preset }),
+    ...(preset === undefined ? { model: spec.model } : { preset: preset }),
     ...(spec.effortSource === "manual-override" && spec.effort !== undefined ? { reasoning: spec.effort } : {}),
     ...(spec.summary === undefined ? {} : { task_summary: spec.summary }),
     ...(preset === undefined && spec.instructions !== undefined ? { instructions: spec.instructions } : {}),

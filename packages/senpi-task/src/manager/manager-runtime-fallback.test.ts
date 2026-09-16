@@ -15,9 +15,8 @@ describe("TaskManager runtime fallback visibility", () => {
         kind: "resolved",
         plan: {
           model: "kimi-coding/kimi-for-coding-highspeed-unlocked",
-          category: "quick",
           resolved_model: {
-            source: "category",
+            source: "model",
             provider: "kimi-coding",
             model_id: "kimi-for-coding-highspeed-unlocked",
             display: "kimi-coding/kimi-for-coding-highspeed-unlocked",
@@ -45,7 +44,7 @@ describe("TaskManager runtime fallback visibility", () => {
     expect(store.load(started.task_id)).toMatchObject({
       model: "quotio-openai/gpt-5.6-luna-fast",
       resolved_model: {
-        source: "category",
+        source: "model",
         provider: "quotio-openai",
         model_id: "gpt-5.6-luna-fast",
         display: "quotio-openai/gpt-5.6-luna-fast",
@@ -76,9 +75,8 @@ describe("TaskManager runtime fallback visibility", () => {
           kind: "resolved",
           plan: {
             model: `${spec.provider}/${spec.modelId}`,
-            category: "quick",
             resolved_model: {
-              source: "category",
+              source: "model",
               provider: spec.provider,
               model_id: spec.modelId,
               display: `${spec.provider}/${spec.modelId}`,
@@ -100,7 +98,7 @@ describe("TaskManager runtime fallback visibility", () => {
       model: "quotio-openai/gpt-5.6-luna-fast",
       fallback_models: [
         {
-          source: "category",
+          source: "model",
           provider: "opencode-go",
           model_id: "minimax-m3",
           variant: "max",
@@ -123,7 +121,7 @@ describe("TaskManager runtime fallback visibility", () => {
     expect(record).toMatchObject({
       model: "opencode-go/minimax-m3",
       resolved_model: {
-        source: "category",
+        source: "model",
         provider: "opencode-go",
         model_id: "minimax-m3",
         reasoning_effort: "max",

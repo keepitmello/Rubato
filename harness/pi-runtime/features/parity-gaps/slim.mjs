@@ -16,7 +16,7 @@ export const SLIM_DESCRIPTIONS = Object.freeze({
     "Cancel a running child and release its resources. Terminal and not resumable. Cancelling a child that is not running is a no-op.",
 
   team_create:
-    "Create a team run from a named spec or an inline spec. The current session is the lead. Before spawning, read agent-taskforce LEAD.md and runtimes/pi.md, then report the smallest roster (outcomes, models, verifier or none) in one message and spawn in the same turn; the user vetoes rather than approves. inline_spec takes precedence over team_name. Members run as background children. Each member needs a live category (grok, deep, quick, … — do not invent names) and may pass model as an exact provider/model override like Agent. Member prompts MUST be in English. Returns invalid_arguments, spec_error, or runtime_error on failure.",
+    "Create a team run from a named spec or an inline spec. The current session is the lead. Before spawning, read agent-taskforce LEAD.md and runtimes/pi.md, then present the smallest intent/roster proposal and wait for explicit confirmation. inline_spec takes precedence over team_name. Members run as background children. Each member needs kind owner|verifier and an exact model from the same live catalog as Agent; effort is optional. Member prompts MUST be in English. Returns invalid_arguments, spec_error, or runtime_error on failure.",
 
   memory:
     'Write markdown memories in the Rubato memory repo; changes auto-commit. Frontmatter description is required on create; read_only: "true" blocks modification. Ops: str_replace, insert, delete, rename, update_description, create. Paths must be inside the memory repo. Keep [[path]] references consistent when creating or deleting.',

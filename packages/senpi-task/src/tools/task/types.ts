@@ -47,11 +47,6 @@ export type TaskSkillSummary = {
   readonly missing: readonly string[]
 }
 
-export type TaskCategoryInfo = {
-  readonly name: string
-  readonly description?: string
-}
-
 export type TaskAgentInfo = {
   readonly name: string
   readonly description?: string
@@ -77,13 +72,11 @@ export type TaskToolDetails = {
   readonly mode: TaskToolMode
   readonly task_summary?: string
   readonly name?: string
-  readonly category?: string
   readonly preset?: string
-  readonly subagent_type?: string
   readonly execution_mode?: string
   readonly model?: string
-  readonly resolved_model?: ResolvedModelRecord
-  readonly fallback_attempts?: readonly ResolvedModelRecord[]
+  readonly resolved_model?: Omit<ResolvedModelRecord, "source">
+  readonly fallback_attempts?: readonly Omit<ResolvedModelRecord, "source">[]
   readonly queue_position?: number
   readonly reason?: string
   readonly run_stats?: TaskRunStats

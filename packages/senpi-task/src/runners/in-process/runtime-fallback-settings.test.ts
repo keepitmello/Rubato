@@ -21,7 +21,7 @@ describe("createRuntimeFallbackSettings", () => {
       provider: "vendor",
       model_id: "fallback",
       display: "vendor/fallback",
-      source: "category",
+      source: "model",
     }
     const settings = createRuntimeFallbackSettings("vendor/primary", [fallback])
 

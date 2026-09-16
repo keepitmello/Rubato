@@ -4,13 +4,13 @@ import { baseSpec, cleanupProjects, flush, makeManager, settings } from "./__fix
 import type { ResolvedChildPlan } from "./types"
 
 const primary = {
-  source: "category",
+  source: "model",
   provider: "vendor-a",
   model_id: "primary",
   display: "vendor-a/primary",
 } as const
 const fallback = {
-  source: "category",
+  source: "model",
   provider: "vendor-b",
   model_id: "fallback",
   display: "vendor-b/fallback",
@@ -27,7 +27,6 @@ function spillPlan(): ResolvedChildPlan {
     requested_model: primary,
     resolved_model: primary,
     fallback_models: [fallback],
-    category: "quick",
   }
 }
 

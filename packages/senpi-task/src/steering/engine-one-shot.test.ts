@@ -19,7 +19,7 @@ describe("steering engine one-shot agent refusal", () => {
   test("#given a running resident momus child #when sent #then the outcome is one_shot_agent with the registry reminder and nothing is delivered", async () => {
     // given
     const harness = makeHarness()
-    const record = harness.seedRecord({ agent_type: "momus" })
+    const record = harness.seedRecord({ preset: "momus" })
     toRunning(harness, record)
     const fake = makeFakeHandle(record.task_id, "in-process")
     harness.setLive(record.task_id, fake.handle)
@@ -39,7 +39,7 @@ describe("steering engine one-shot agent refusal", () => {
   test("#given a pending momus child #when sent #then the outcome is one_shot_agent and nothing is queued", async () => {
     // given
     const harness = makeHarness()
-    const record = harness.seedRecord({ agent_type: "momus" })
+    const record = harness.seedRecord({ preset: "momus" })
 
     // when
     const outcome = await harness.engine.sendToTask({ idOrName: record.task_id, message: "pre-launch note" })
@@ -53,7 +53,7 @@ describe("steering engine one-shot agent refusal", () => {
   test("#given a completed resident momus child #when sent #then the outcome is one_shot_agent and no revive occurs", async () => {
     // given
     const harness = makeHarness()
-    const record = harness.seedRecord({ agent_type: "momus" })
+    const record = harness.seedRecord({ preset: "momus" })
     toCompleted(harness, record)
     const fake = makeFakeHandle(record.task_id, "in-process")
     harness.setLive(record.task_id, fake.handle)
@@ -74,7 +74,7 @@ describe("steering engine one-shot refusal vs scope ordering", () => {
   test("#given a foreign-owned momus child #when sent without all_scope #then the scope denial wins and the one-shot classification is not leaked", async () => {
     // given
     const harness = makeHarness()
-    const record = harness.seedRecord({ agent_type: "momus", parent_session_id: "parent-1", root_session_id: "parent-1" })
+    const record = harness.seedRecord({ preset: "momus", parent_session_id: "parent-1", root_session_id: "parent-1" })
     toRunning(harness, record)
     harness.setLive(record.task_id, makeFakeHandle(record.task_id, "in-process").handle)
 
@@ -89,7 +89,7 @@ describe("steering engine one-shot refusal vs scope ordering", () => {
   test("#given a foreign-owned momus child #when sent with all_scope #then the one-shot refusal applies", async () => {
     // given
     const harness = makeHarness()
-    const record = harness.seedRecord({ agent_type: "momus", parent_session_id: "parent-1", root_session_id: "parent-1" })
+    const record = harness.seedRecord({ preset: "momus", parent_session_id: "parent-1", root_session_id: "parent-1" })
     toRunning(harness, record)
     const fake = makeFakeHandle(record.task_id, "in-process")
     harness.setLive(record.task_id, fake.handle)

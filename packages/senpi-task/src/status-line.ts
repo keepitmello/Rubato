@@ -13,9 +13,8 @@ export type TaskIdentityInput = {
 }
 
 export type StatusTargetInput = {
-  readonly category?: string
-  readonly agentType?: string
-  readonly resolvedModel?: ResolvedModelRecord
+  readonly preset?: string
+  readonly resolvedModel?: Omit<ResolvedModelRecord, "source">
   // Raw model string used when no resolved model metadata exists (live/legacy tasks).
   readonly model?: string
   readonly fallbackCount?: number
@@ -46,20 +45,12 @@ export function taskIdentityLabel(input: TaskIdentityInput): string {
   return label === undefined ? excerptRendererText(input.taskId, IDENTITY_MAX_WIDTH) : excerptRendererText(label, IDENTITY_MAX_WIDTH)
 }
 
-// WHO it runs as: one routing identity, shared by category- and agent-routed tasks. Category wins
-// when both are present (a record never carries both, but a defensive caller might).
-export function formatTargetIdentity(input: Pick<StatusTargetInput, "category" | "agentType">): string | undefined {
-  const category = optionalRendererText(input.category)
-  if (category !== undefined) return `category:${category}`
-  const agentType = optionalRendererText(input.agentType)
-  if (agentType !== undefined) return `agent:${agentType}`
-  return undefined
+export function formatTargetIdentity(input: Pick<StatusTargetInput, "preset">): string | undefined {
+  const preset = optionalRendererText(input.preset)
+  return preset === undefined ? undefined : `preset:${preset}`
 }
 
-// WHO it runs as plus WHICH model it resolved to, in the single canonical grammar:
-//   category:<name>(<provider>/<model>:<effort>) | agent:<name>(<provider>/<model>:<effort>)
-// Agent and category targets share the exact same shape; without an identity the bare model token
-// is the only useful signal left.
+// WHO it runs as plus WHICH model it resolved to.
 export function formatTargetWithModel(input: StatusTargetInput): string | undefined {
   const identity = formatTargetIdentity(input)
   const model = formatStatusModel(input.resolvedModel) ?? optionalRendererText(input.model)
@@ -131,7 +122,7 @@ export function toolCountSuffix(toolCalls: number): string {
   return ` (${toolCalls} ${toolCalls === 1 ? "tool" : "tools"})`
 }
 
-function formatStatusModel(resolved: ResolvedModelRecord | undefined): string | undefined {
+function formatStatusModel(resolved: Omit<ResolvedModelRecord, "source"> | undefined): string | undefined {
   if (resolved === undefined) return undefined
   const provider = optionalRendererText(resolved.provider)
   const modelId = optionalRendererText(resolved.model_id)

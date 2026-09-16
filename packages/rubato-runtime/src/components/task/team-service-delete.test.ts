@@ -12,6 +12,8 @@ import { composeTaskEngine } from "./engine"
 import { createTeamService } from "./team-service"
 
 const tempRoots: string[] = []
+const TEST_MODEL = "rubato-mock/mock-1"
+const TEST_MODELS = { has: (model: string) => model === TEST_MODEL, list: () => [TEST_MODEL] }
 
 afterEach(() => {
   for (const root of tempRoots.splice(0)) rmSync(root, { recursive: true, force: true })
@@ -29,7 +31,7 @@ async function deletionHarness(sessionId: string) {
   }
   const config = toTeamCoreConfig(engine.settings, teamStorageBaseDir(stateDir))
   const spec = normalizeSenpiTeamSpec(
-    { members: [{ name: "beta", kind: "category", category: "quick", prompt: "work" }] },
+    { members: [{ name: "beta", kind: "owner", model: TEST_MODEL, prompt: "work" }] },
     "squad",
   )
   const creating = await createRuntimeState(spec, "lead-session", "project", config)
@@ -44,8 +46,8 @@ async function deletionHarness(sessionId: string) {
     runtime: engine.runtime,
     settings: engine.settings,
     rubatoConfig,
+    models: TEST_MODELS,
     cwd,
-    agentNames: new Set(Object.keys(engine.agents)),
   })
   return { runtimeState, service }
 }

@@ -1,66 +1,7 @@
 import { describe, expect, test } from "bun:test"
 
-import type { RubatoConfig } from "@rubato/config-core"
-
 import type { AgentDefinition } from "../../agents"
-import { CATEGORY_PROMPT_APPENDS } from "../../category"
-import { listTaskAgents, listTaskCategories } from "./categories"
-
-describe("listTaskCategories", () => {
-  test("#given empty rubato config #when listed #then builtin categories carry their descriptions", () => {
-    // given
-    const config: RubatoConfig = { categories: {}, agents: {} }
-
-    // when
-    const categories = listTaskCategories(config)
-
-    // then
-    const quick = categories.find((entry) => entry.name === "quick")
-    expect(quick).toBeDefined()
-    expect(quick?.description).toBeTruthy()
-  })
-
-  test("#given a custom rubato.json category #when listed #then it appears with its description", () => {
-    // given
-    const config: RubatoConfig = {
-      categories: { "release-crew": { description: "Ships the release train" } },
-      agents: {},
-    }
-
-    // when
-    const categories = listTaskCategories(config)
-
-    // then
-    const custom = categories.find((entry) => entry.name === "release-crew")
-    expect(custom).toEqual({ name: "release-crew", description: "Ships the release train" })
-  })
-
-  test("#given a disabled category #when listed #then it is omitted", () => {
-    // given
-    const config: RubatoConfig = {
-      categories: { quick: { disable: true } },
-      agents: {},
-    }
-
-    // when
-    const names = listTaskCategories(config).map((entry) => entry.name)
-
-    // then
-    expect(names).not.toContain("quick")
-  })
-
-  test("#given caller-directed builtin guidance #when worker appends are inspected #then only worker context remains", () => {
-    // given
-    const callerDirectedCategories = ["quick", "unspecified-low", "unspecified-high"]
-
-    // when / then
-    for (const category of callerDirectedCategories) {
-      expect(CATEGORY_PROMPT_APPENDS[category]).toContain("<Category_Context>")
-      expect(CATEGORY_PROMPT_APPENDS[category]).not.toContain("<Selection_Gate>")
-      expect(CATEGORY_PROMPT_APPENDS[category]).not.toContain("<Caller_Warning>")
-    }
-  })
-})
+import { listTaskAgents } from "./categories"
 
 describe("listTaskAgents", () => {
   test("#given loaded agent definitions #when listed #then names and descriptions surface, disabled excluded", () => {

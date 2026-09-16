@@ -92,7 +92,6 @@ describe("completion bridge live background promotion", () => {
       prompt: "work",
       parent_session_id: "parent-session",
       depth: 1,
-      category: "quick",
       run_in_background: false,
     })
     if (started.kind !== "started") throw new Error("expected started task")
@@ -116,7 +115,6 @@ describe("completion bridge live background promotion", () => {
       prompt: "work",
       parent_session_id: "parent-session",
       depth: 1,
-      category: "quick",
       run_in_background: false,
     })
     if (started.kind !== "started") throw new Error("expected started task")

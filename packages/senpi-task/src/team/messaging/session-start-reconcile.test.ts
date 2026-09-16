@@ -24,7 +24,7 @@ async function activeTeamWithMember(member = "beta") {
   const settings = taskSettings()
   const config = toTeamCoreConfig(settings, teamStorageBaseDir(stateDir))
   const spec = normalizeSenpiTeamSpec(
-    { members: [{ name: member, kind: "category", category: "quick", prompt: "p" }] },
+    { members: [{ name: member, kind: "owner", model: "rubato-mock/mock-1", prompt: "p" }] },
     "squad",
   )
   const created = await createTeam(spec, "project", {

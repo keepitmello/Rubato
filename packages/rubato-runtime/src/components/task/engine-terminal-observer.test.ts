@@ -153,8 +153,6 @@ describe("task engine terminal edge observation", () => {
 
     // then
     const persisted = createTaskRecordStore({ project_dir: project }).load(taskId)
-    expect(persisted?.config_generation).toBe(0)
-    expect(engine.categoryConfigGenerations.current()?.generation).toBe(0)
   })
 
   test("#given a resident record owned by a dead host #when the lifecycle reconciles it lost through replace #then exactly one ledger edge fires", async () => {

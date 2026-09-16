@@ -76,7 +76,7 @@ export async function createFallbackSessionHarness(errorMessage: string): Promis
   const settingsManager = createRuntimeFallbackSettings(
     "runtime-fallback-test/dead-primary",
     [{
-      source: "category",
+      source: "model",
       provider: "runtime-fallback-test",
       model_id: "healthy-fallback",
       display: "runtime-fallback-test/healthy-fallback",

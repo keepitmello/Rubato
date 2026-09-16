@@ -129,7 +129,7 @@ describe("runTaskSend one-shot agent refusal", () => {
     // given
     const inProcess = new FakeRunner()
     const { manager } = makeManager({ inProcess })
-    const started = await manager.start(baseSpec({ parent_session_id: "p1", subagent_type: "momus" }))
+    const started = await manager.start(baseSpec({ parent_session_id: "p1", preset: "momus" }))
     if (started.kind !== "started") throw new Error("expected started")
 
     // when
@@ -151,7 +151,7 @@ describe("runTaskSend one-shot agent refusal", () => {
     // given
     const inProcess = new FakeRunner()
     const { manager, store } = makeManager({ inProcess })
-    const started = await manager.start(baseSpec({ parent_session_id: "p1", subagent_type: "momus" }))
+    const started = await manager.start(baseSpec({ parent_session_id: "p1", preset: "momus" }))
     if (started.kind !== "started") throw new Error("expected started")
     inProcess.handles.get(started.task_id)?.settle({ status: "completed", finalResponse: "review done" })
     await flush()
@@ -172,7 +172,7 @@ describe("runTaskSend one-shot agent refusal", () => {
     // given
     const inProcess = new FakeRunner()
     const { manager, store } = makeManager({ inProcess })
-    const started = await manager.start(baseSpec({ parent_session_id: "p1", subagent_type: "explore" }))
+    const started = await manager.start(baseSpec({ parent_session_id: "p1", preset: "explore" }))
     if (started.kind !== "started") throw new Error("expected started")
     inProcess.handles.get(started.task_id)?.settle({ status: "completed", finalResponse: "first pass" })
     await flush()

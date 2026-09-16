@@ -30,8 +30,7 @@ export function parseTaskRecord(value: unknown, path: string, warnings?: string[
   const name = readOptionalString(value, "name")
   const taskSummary = readOptionalString(value, "task_summary")
   const description = readOptionalString(value, "description")
-  const agentType = readOptionalString(value, "agent_type")
-  const category = readOptionalString(value, "category")
+  const preset = readOptionalString(value, "preset")
   const toolAllow = readOptionalStringArray(value, "tool_allow")
   const toolDeny = readOptionalStringArray(value, "tool_deny")
   const pid = readOptionalNumber(value, "pid")
@@ -50,7 +49,6 @@ export function parseTaskRecord(value: unknown, path: string, warnings?: string[
   const pendingSteering = parseOptionalPendingSteering(value, path, warnings)
   const runStats = value["run_stats"] === undefined ? undefined : parseRunStats(value["run_stats"])
   const taskSeq = readOptionalNumber(value, "task_seq")
-  const configGeneration = readOptionalNumber(value, "config_generation")
   const backgroundMode = readOptionalBackgroundMode(value)
 
   return {
@@ -69,8 +67,7 @@ export function parseTaskRecord(value: unknown, path: string, warnings?: string[
     ...(name === undefined ? {} : { name }),
     ...(taskSummary === undefined ? {} : { task_summary: taskSummary }),
     ...(description === undefined ? {} : { description }),
-    ...(agentType === undefined ? {} : { agent_type: agentType }),
-    ...(category === undefined ? {} : { category }),
+    ...(preset === undefined ? {} : { preset: preset }),
     ...(toolAllow === undefined ? {} : { tool_allow: toolAllow }),
     ...(toolDeny === undefined ? {} : { tool_deny: toolDeny }),
     ...(requestedModel === undefined ? {} : { requested_model: requestedModel }),
@@ -87,7 +84,6 @@ export function parseTaskRecord(value: unknown, path: string, warnings?: string[
     ...(killed === undefined ? {} : { killed }),
     ...(runStats === undefined ? {} : { run_stats: runStats }),
     ...(taskSeq === undefined ? {} : { task_seq: taskSeq }),
-    ...(configGeneration === undefined ? {} : { config_generation: configGeneration }),
     ...(backgroundMode === undefined ? {} : { background_mode: backgroundMode }),
   }
 }

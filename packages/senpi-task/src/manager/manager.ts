@@ -87,6 +87,20 @@ type ReattachingTaskManager = TaskManager & {
 
 const NOOP_DESTRUCTION: DestructionPort = { destroyResidentTask: () => Promise.resolve() }
 const GENERIC_START_FAILURE_MESSAGE = "Task runner failed to start."
+const START_ATTEMPTS = 2
+const START_RETRY_DELAY_MS = 100
+
+function startFailureKind(error: unknown): string {
+  return RunnerError.is(error) ? error.failure.kind : "unclassified"
+}
+
+function retryableStartFailure(error: unknown): boolean {
+  return RunnerError.is(error) && error.failure.kind === "session-create-failed"
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds))
+}
 
 function publicStartFailureMessage(error: unknown): string {
   try {
@@ -215,11 +229,11 @@ class TaskManagerImpl implements TaskManager {
 
     const maxDepth = plan.maxDepth ?? this.#options.config.max_depth
     const allowedSubagents = [...(spec.allowed_subagents ?? []), ...(plan.allowedSubagents ?? [])]
-    const targetAgentType = spec.subagent_type ?? plan.agentType
+    const targetPreset = spec.preset ?? plan.preset
     const decision = decideDepthPolicy({
       childDepth: spec.depth,
       maxDepth,
-      ...(targetAgentType !== undefined ? { targetAgentType } : {}),
+      ...(targetPreset !== undefined ? { targetPreset } : {}),
       allowedSubagents,
     })
     if (!decision.allowed) {
@@ -262,8 +276,7 @@ class TaskManagerImpl implements TaskManager {
         kind: "start_failed",
         task_id: "",
         name: requestedName ?? "",
-        ...(spec.category ?? plan.category !== undefined ? { category: spec.category ?? plan.category } : {}),
-        ...(spec.subagent_type ?? plan.agentType !== undefined ? { subagent_type: spec.subagent_type ?? plan.agentType } : {}),
+        ...(spec.preset ?? plan.preset !== undefined ? { preset: spec.preset ?? plan.preset } : {}),
         execution_mode: executionMode,
         model: plan.model,
         ...(plan.resolved_model !== undefined ? { resolved_model: plan.resolved_model } : {}),
@@ -315,8 +328,7 @@ class TaskManagerImpl implements TaskManager {
         kind: "start_failed",
         task_id: claimed.task_id,
         name: registration.name,
-        ...(claimed.category !== undefined ? { category: claimed.category } : {}),
-        ...(claimed.agent_type !== undefined ? { subagent_type: claimed.agent_type } : {}),
+        ...(claimed.preset !== undefined ? { preset: claimed.preset } : {}),
         execution_mode: executionMode,
         model: claimed.model,
         ...(claimed.resolved_model !== undefined ? { resolved_model: claimed.resolved_model } : {}),
@@ -338,8 +350,7 @@ class TaskManagerImpl implements TaskManager {
           kind: "start_failed",
           task_id: finalRecord.task_id,
           name: registration.name,
-          ...(finalRecord.category !== undefined ? { category: finalRecord.category } : {}),
-          ...(finalRecord.agent_type !== undefined ? { subagent_type: finalRecord.agent_type } : {}),
+          ...(finalRecord.preset !== undefined ? { preset: finalRecord.preset } : {}),
           execution_mode: executionMode,
           model: finalRecord.model,
           ...(finalRecord.resolved_model !== undefined ? { resolved_model: finalRecord.resolved_model } : {}),
@@ -542,6 +553,29 @@ class TaskManagerImpl implements TaskManager {
   // Test-only observability for proving the release guard never grows unboundedly across revives.
   releasedKeyCount(): number { return this.#released.size }
 
+  async #startRunner(
+    taskId: string,
+    runner: ManagedRunner,
+    spec: ManagedStartSpec,
+  ): Promise<ManagedChildHandle> {
+    let lastError: unknown
+    for (let attempt = 1; attempt <= START_ATTEMPTS; attempt += 1) {
+      try {
+        return await runner.start(spec)
+      } catch (error) {
+        lastError = error
+        if (attempt >= START_ATTEMPTS || !retryableStartFailure(error)) throw error
+        log("senpi-task runner start retry", {
+          taskId,
+          attempt,
+          failureKind: startFailureKind(error),
+        })
+        await delay(START_RETRY_DELAY_MS)
+      }
+    }
+    throw lastError
+  }
+
   async #launch(context: LaunchContext): Promise<{ ok: true } | { ok: false; error: string }> {
     const { record, managedSpec, runner, model } = context
     const startResult = this.#options.store.transition(record.task_id, { type: "start", timestamp: nowIso(this.#now) })
@@ -554,9 +588,13 @@ class TaskManagerImpl implements TaskManager {
 
     let handle: ManagedChildHandle
     try {
-      handle = await runner.start(managedSpec)
+      handle = await this.#startRunner(record.task_id, runner, managedSpec)
     } catch (error) { // no-excuse-ok: catch - runner boundary converts every thrown value into a public classification.
       const message = publicStartFailureMessage(error)
+      log("senpi-task runner start failed", {
+        taskId: record.task_id,
+        failureKind: startFailureKind(error),
+      })
       this.#releaseSlot(record.task_id, model, record.notification.run_epoch)
       this.#options.store.transition(record.task_id, { type: "fail", timestamp: nowIso(this.#now), error_message: message })
       this.#options.store.appendEvent(record.task_id, { type: "task_start_failed", payload: { error_message: message } })
@@ -750,9 +788,13 @@ class TaskManagerImpl implements TaskManager {
 
     let handle: ManagedChildHandle
     try {
-      handle = await context.runner.start(context.managedSpec)
+      handle = await this.#startRunner(context.record.task_id, context.runner, context.managedSpec)
     } catch (error) {
       const message = publicStartFailureMessage(error)
+      log("senpi-task fallback runner start failed", {
+        taskId: context.record.task_id,
+        failureKind: startFailureKind(error),
+      })
       this.#releaseSlot(
         context.record.task_id,
         context.model,

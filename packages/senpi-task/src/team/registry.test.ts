@@ -6,10 +6,11 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { type SenpiTeamMemberPorts, loadTeamRegistry } from "./index"
 
 const created: string[] = []
+const MODEL = "rubato-mock/mock-1"
 
 const allowAll: SenpiTeamMemberPorts = {
-  isCategoryResolvable: () => true,
-  isKnownAgent: () => true,
+  isModelAvailable: (model) => model === MODEL,
+  modelNames: [MODEL],
 }
 
 function makeProjectDir(): string {
@@ -32,14 +33,14 @@ afterEach(() => {
 })
 
 describe("loadTeamRegistry", () => {
-  test("#given a rubato.json teams section with a category and agent-alias member #when loaded #then it round-trips into a team-core spec", async () => {
+  test("#given a rubato.json teams section with model members #when loaded #then it round-trips into a team-core spec", async () => {
     // given
     const projectRoot = makeProjectDir()
     const rubatoTeams = {
       "research-team": {
         members: [
-          { kind: "category", category: "quick", prompt: "investigate" },
-          { kind: "agent", subagent_type: "finder" },
+          { kind: "owner", model: MODEL, prompt: "investigate" },
+          { name: "finder", kind: "owner", model: MODEL, prompt: "find evidence" },
         ],
       },
     }
@@ -53,7 +54,6 @@ describe("loadTeamRegistry", () => {
     const entry = result.teams[0]
     expect(entry?.name).toBe("research-team")
     expect(entry?.source).toBe("rubato-json")
-    expect(entry?.spec.leadAgentId).toBe("lead")
     expect(entry?.spec.members).toHaveLength(2)
   })
 
@@ -61,10 +61,10 @@ describe("loadTeamRegistry", () => {
     // given
     const projectRoot = makeProjectDir()
     writeProjectTeamSpec(projectRoot, "shared", {
-      members: [{ kind: "subagent_type", subagent_type: "atlas" }],
+      members: [{ kind: "owner", model: MODEL, prompt: "project work" }],
     })
     const rubatoTeams = {
-      shared: { members: [{ kind: "category", category: "quick", prompt: "work" }] },
+      shared: { members: [{ kind: "owner", model: MODEL, prompt: "config work" }] },
     }
 
     // when
@@ -75,18 +75,17 @@ describe("loadTeamRegistry", () => {
     const entry = result.teams[0]
     expect(entry?.name).toBe("shared")
     expect(entry?.source).toBe("project")
-    expect(entry?.spec.members[0]?.kind).toBe("subagent_type")
+    expect(entry?.spec.members[0]?.kind).toBe("owner")
   })
 
   test("#given a member with an unresolvable kind #when loaded #then an error is recorded and zero teams spawn", async () => {
     // given
     const projectRoot = makeProjectDir()
     const rubatoTeams = {
-      "bad-team": { members: [{ kind: "unresolvable-kind", name: "x" }] },
+      "bad-team": { members: [{ name: "x", kind: "owner", model: "missing/model", prompt: "work" }] },
     }
     const ports: SenpiTeamMemberPorts = {
-      isCategoryResolvable: () => false,
-      isKnownAgent: () => false,
+      isModelAvailable: () => false,
     }
 
     // when
@@ -96,7 +95,7 @@ describe("loadTeamRegistry", () => {
     expect(result.teams).toEqual([])
     expect(result.errors).toHaveLength(1)
     expect(result.errors[0]?.name).toBe("bad-team")
-    expect(result.errors[0]?.code).toBe("UNRESOLVABLE_CATEGORY")
+    expect(result.errors[0]?.code).toBe("MODEL_UNAVAILABLE")
   })
 
   test("#given a team declaring a raw lead field #when loaded #then it is rejected and spawns zero members", async () => {
@@ -104,8 +103,8 @@ describe("loadTeamRegistry", () => {
     const projectRoot = makeProjectDir()
     const rubatoTeams = {
       "lead-field-team": {
-        lead: { kind: "subagent_type", subagent_type: "ultraworker" },
-        members: [{ kind: "category", category: "quick", prompt: "work" }],
+        lead: { kind: "owner", model: "rubato-mock/mock-1" },
+        members: [{ kind: "owner", model: MODEL, prompt: "work" }],
       },
     }
 

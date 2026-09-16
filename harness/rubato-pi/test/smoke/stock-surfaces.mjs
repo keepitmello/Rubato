@@ -82,12 +82,13 @@ async function resolveCandidate() {
     // candidate-main compares resolve(argv[1]) to import.meta.url. On macOS /tmp
     // is a symlink to /private/tmp; the un-realpathed argv exits 0 without running.
     const root = realpathSync(reuse);
-    return { root, candidateEntry: realpathSync(entry), built: false };
+    return { root, candidateEntry: realpathSync(entry), built: false, cleanupRoot: undefined };
   }
-  const outputRoot = mkdtempSync(join(tmpdir(), "rubato-stock-surfaces-"));
+  const cleanupRoot = mkdtempSync(join(tmpdir(), "rubato-stock-surfaces-"));
+  const outputRoot = join(cleanupRoot, "candidate");
   console.error(`building scratch candidate at ${outputRoot}`);
   const staged = await buildRubatoCandidate({ sourceRoot: piRuntimeRoot, outputRoot });
-  return { root: realpathSync(staged.root), candidateEntry: realpathSync(staged.candidateEntry), built: true };
+  return { root: realpathSync(staged.root), candidateEntry: realpathSync(staged.candidateEntry), built: true, cleanupRoot };
 }
 
 function writeObserveExtension(path, stagedRoot) {
@@ -477,7 +478,8 @@ async function checkTeamMember(session) {
         name: "smoke-team",
         members: [{
           name: "alice",
-          subagent_type: "smoke-member",
+          kind: "verifier",
+          model: "fixture/local-only",
           prompt: "Reply with exactly SMOKE_TEAM_OK and end your turn.",
         }],
       },
@@ -492,6 +494,9 @@ async function checkTeamMember(session) {
   }
   const member = details.members?.[0];
   if (!member) return fail(surface, `created team has no members; ${text.slice(0, 240)}`);
+  if (member.role !== "verifier") {
+    return fail(surface, `member '${member.name}' role=${member.role}; expected verifier`);
+  }
   if (member.status !== "running" && member.status !== "pending") {
     return fail(surface, `member '${member.name}' status=${member.status}; ${text.slice(0, 240)}`);
   }
@@ -673,7 +678,7 @@ async function main() {
       console.error(`kept profile ${profile.home}`);
     }
     if (candidate.built && process.env.RUBATO_SMOKE_KEEP !== "1" && !process.env.RUBATO_SMOKE_CANDIDATE_DIR) {
-      // Keep the built candidate when the operator passed a reuse dir; otherwise drop ours.
+      rmSync(candidate.cleanupRoot, { recursive: true, force: true });
     }
   }
 

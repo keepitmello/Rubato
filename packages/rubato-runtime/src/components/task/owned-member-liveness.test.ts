@@ -58,7 +58,7 @@ function activeTeamRuntime(): RuntimeState {
     createdAt: 1_000,
     status: "active",
     leadSessionId: "lead-session",
-    members: [{ name: "alpha", agentType: "general-purpose", status: "running", pendingInjectedMessageIds: [] }],
+    members: [{ name: "alpha", kind: "owner", status: "running", pendingInjectedMessageIds: [] }],
     shutdownRequests: [],
     bounds: {
       maxMembers: 8,

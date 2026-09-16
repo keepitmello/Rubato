@@ -21,7 +21,7 @@ export const RESIDENCY_STATES = [
 export type ResidencyState = (typeof RESIDENCY_STATES)[number]
 export type Messageability = "steer" | "revive" | "not-continuable"
 
-export const RESOLVED_MODEL_SOURCES = ["category", "explicit", "agent"] as const
+export const RESOLVED_MODEL_SOURCES = ["model", "explicit", "preset"] as const
 
 export type ResolvedModelSource = (typeof RESOLVED_MODEL_SOURCES)[number]
 
@@ -146,8 +146,7 @@ export type TaskRecordInput = {
   readonly parent_session_id: string
   readonly root_session_id: string
   readonly depth: number
-  readonly agent_type?: string
-  readonly category?: string
+  readonly preset?: string
   readonly execution_mode: string
   readonly model: string
   readonly requested_model?: ResolvedModelRecord
@@ -164,9 +163,6 @@ export type TaskRecordInput = {
   // Session-local spawn ordinal, assigned once per parent session at spawn. A relational key for
   // grouping a logical task's runs; absent on records persisted before ordinals shipped.
   readonly task_seq?: number
-  // Generation of the effective category/model configuration that planned this task. Absent when
-  // the planner did not stamp one (legacy records, non-category spawns).
-  readonly config_generation?: number
   // How the task ran relative to the parent turn: spawned in the foreground, spawned in the
   // background, or promoted to background mid-run. `notify_on_terminal` alone cannot tell the
   // last two apart. Absent on records persisted before the mode shipped.

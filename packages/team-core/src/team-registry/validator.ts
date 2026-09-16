@@ -1,16 +1,6 @@
-import { AGENT_ELIGIBILITY_REGISTRY } from "../types"
-
 import type { Member, TeamSpec } from "../types"
 
 const MAX_TEAM_MEMBERS = 8
-const HYPERPLAN_REQUIRED_CATEGORIES = [
-  "unspecified-low",
-  "unspecified-high",
-  "ultrabrain",
-  "artistry",
-] as const
-const UNKNOWN_SUBAGENT_MESSAGE =
-  "Unknown subagent_type '<name>'. Available ELIGIBLE agents: ultraworker, atlas, ultraworker-junior, hephaestus (if D-36 applied). Use delegate-task for read-only agents like oracle, librarian, explore, metis, momus, multimodal-looker."
 
 export class TeamSpecValidationError extends Error {
   constructor(
@@ -34,8 +24,6 @@ export function validateSpec(spec: TeamSpec): void {
   }
 
   const seenMemberNames = new Set<string>()
-  let leadMatchCount = 0
-
   for (const member of spec.members) {
     if (seenMemberNames.has(member.name)) {
       throw new TeamSpecValidationError(
@@ -47,69 +35,8 @@ export function validateSpec(spec: TeamSpec): void {
     }
 
     seenMemberNames.add(member.name)
-    validateMemberEligibility(member)
     validateDualSupport(member)
 
-    if (member.name === spec.leadAgentId) {
-      leadMatchCount += 1
-    }
-  }
-
-  if (leadMatchCount !== 1) {
-    throw new TeamSpecValidationError(
-      `Team '${spec.name}' leadAgentId '${spec.leadAgentId}' must match exactly one member.name.`,
-      "INVALID_LEAD_AGENT_ID",
-      "leadAgentId",
-    )
-  }
-
-  validateHyperplanComposition(spec)
-}
-
-function validateHyperplanComposition(spec: TeamSpec): void {
-  if (spec.name !== "hyperplan") {
-    return
-  }
-
-  const categories = new Set(
-    spec.members
-      .filter((member) => member.kind === "category")
-      .map((member) => member.category),
-  )
-
-  for (const category of HYPERPLAN_REQUIRED_CATEGORIES) {
-    if (!categories.has(category)) {
-      throw new TeamSpecValidationError(
-        `Hyperplan team must include category '${category}'.`,
-        "HYPERPLAN_REQUIRED_CATEGORY_MISSING",
-        "members",
-      )
-    }
-  }
-}
-
-export function validateMemberEligibility(member: Member): void {
-  if (member.kind !== "subagent_type") {
-    return
-  }
-
-  const eligibility = AGENT_ELIGIBILITY_REGISTRY[member.subagent_type]
-  if (!eligibility) {
-    throw new TeamSpecValidationError(
-      UNKNOWN_SUBAGENT_MESSAGE.replace("<name>", member.subagent_type),
-      "UNKNOWN_SUBAGENT_TYPE",
-      "subagent_type",
-      member.name,
-    )
-  }
-
-  if (eligibility.verdict === "hard-reject") {
-    throw new TeamSpecValidationError(
-      eligibility.rejectionMessage ?? `Agent '${member.subagent_type}' is not eligible as a team member.`,
-      "INELIGIBLE_AGENT",
-      "subagent_type",
-      member.name,
-    )
   }
 }
 
@@ -120,15 +47,6 @@ export function validateDualSupport(member: Member): void {
     throw new TeamSpecValidationError(
       `Member '${member.name}' prompt must not be empty after trimming whitespace.`,
       "EMPTY_PROMPT",
-      "prompt",
-      member.name,
-    )
-  }
-
-  if (member.kind === "category" && member.prompt.trim().length < 8) {
-    throw new TeamSpecValidationError(
-      `Member '${member.name}' category prompt must be at least 8 characters long.`,
-      "CATEGORY_PROMPT_TOO_SHORT",
       "prompt",
       member.name,
     )

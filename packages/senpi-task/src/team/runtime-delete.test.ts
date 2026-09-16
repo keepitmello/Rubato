@@ -43,7 +43,7 @@ describe("deleteTeam", () => {
         : {}),
     })
     const spec = normalizeSenpiTeamSpec(
-      { members: [{ name: "alpha", kind: "category", category: "quick", prompt: "done" }] },
+      { members: [{ name: "alpha", kind: "owner", model: "rubato-mock/mock-1", prompt: "done" }] },
       "squad",
     )
     const created = await createTeam(spec, "project", {
@@ -67,8 +67,8 @@ describe("deleteTeam", () => {
     const spec = normalizeSenpiTeamSpec(
       {
         members: [
-          { name: "alpha", kind: "category", category: "quick", prompt: "a" },
-          { name: "beta", kind: "category", category: "deep", prompt: "b" },
+          { name: "alpha", kind: "owner", model: "rubato-mock/mock-1", prompt: "a" },
+          { name: "beta", kind: "owner", model: "rubato-mock/mock-1", prompt: "b" },
         ],
       },
       "squad",
@@ -102,7 +102,7 @@ describe("deleteTeam", () => {
     const settings = taskSettings()
     const manager = new FakeTeamManager()
     const spec = normalizeSenpiTeamSpec(
-      { members: [{ name: "alpha", kind: "category", category: "quick", prompt: "a" }] },
+      { members: [{ name: "alpha", kind: "owner", model: "rubato-mock/mock-1", prompt: "a" }] },
       "squad",
     )
     const config = toTeamCoreConfig(settings, teamStorageBaseDir(stateDir))
@@ -126,7 +126,7 @@ describe("deleteTeam", () => {
     const settings = taskSettings()
     const manager = new FakeTeamManager()
     const spec = normalizeSenpiTeamSpec(
-      { members: [{ name: "alpha", kind: "category", category: "quick", prompt: "a" }] },
+      { members: [{ name: "alpha", kind: "owner", model: "rubato-mock/mock-1", prompt: "a" }] },
       "squad",
     )
     const created = await createTeam(spec, "project", {

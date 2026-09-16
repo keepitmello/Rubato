@@ -73,35 +73,8 @@ function serializeRuntimeState(runtimeState: RuntimeState): string {
   return `${JSON.stringify(parsedRuntimeState, null, 2)}\n`
 }
 
-
-
-function stripLegacyRuntimeStateMemberFields(member: unknown): unknown {
-  if (!isPlainRecord(member)) {
-    return member
-  }
-
-  const { delegateTaskCallsUsed: _delegateTaskCallsUsed, ...memberWithoutLegacyFields } = member
-  return memberWithoutLegacyFields
-}
-
-function stripLegacyRuntimeStateFields(rawState: unknown): unknown {
-  if (!isPlainRecord(rawState)) {
-    return rawState
-  }
-
-  const members = rawState["members"]
-  if (!Array.isArray(members)) {
-    return rawState
-  }
-
-  return {
-    ...rawState,
-    members: members.map(stripLegacyRuntimeStateMemberFields),
-  }
-}
-
 function validateRuntimeState(rawState: unknown, teamRunId: string): RuntimeState {
-  const parsedRuntimeState = RuntimeStateSchema.safeParse(stripLegacyRuntimeStateFields(rawState))
+  const parsedRuntimeState = RuntimeStateSchema.safeParse(rawState)
   if (!parsedRuntimeState.success) {
     throw new RuntimeStateError(
       `runtime state invalid for ${teamRunId}: ${parsedRuntimeState.error.message}`,
@@ -137,7 +110,7 @@ export async function createRuntimeState(
     leadSessionId,
     members: spec.members.map((member) => ({
       name: member.name,
-      agentType: spec.leadAgentId === member.name ? "leader" : "general-purpose",
+      kind: member.kind,
       status: "pending",
       color: member.color,
       worktreePath: member.worktreePath,

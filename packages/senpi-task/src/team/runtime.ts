@@ -132,9 +132,7 @@ function toCreatedMemberInfos(
       name: member.name,
       taskId: outcome.taskId,
       status: stateMember?.status ?? outcome.status,
-      role: member.kind === "category"
-        ? { kind: "category", category: member.category }
-        : { kind: "subagent_type", subagentType: member.subagent_type },
+      role: { kind: member.kind, model: member.model },
       ...(outcome.resolvedModel !== undefined ? { model: outcome.resolvedModel } : {}),
       ...(member.prompt !== undefined ? { promptExcerpt: excerptPrompt(member.prompt) } : {}),
       ...(member.task_summary !== undefined ? { taskSummary: member.task_summary } : {}),

@@ -18,14 +18,13 @@ import {
 } from "@rubato/senpi-task"
 
 import type { ComponentContext, RubatoComponent, SenpiExtensionAPI } from "../../extension/types"
-import { CATEGORY_UNAVAILABLE_MESSAGE_TYPE } from "./category-unavailable-warning"
 import { registerTaskCommands } from "./commands"
 import { composeTaskEngine, type TaskEngine, type TaskRunnerFactories } from "./engine"
 import { TASK_USAGE_HINT_FLAG, wireEventBridge } from "./event-bridge"
 import { createLeadPollerLifecycle, type LeadPollerLifecycle } from "./lead-poller-lifecycle"
 import { TEAM_MEMBER_LIVENESS_MESSAGE_TYPE } from "./member-liveness"
 import { TASK_COMPLETION_MESSAGE_TYPE } from "./parent-notifier"
-import { renderCategoryUnavailable, renderTaskCompletion, renderTeamMemberLiveness } from "./renderers"
+import { renderTaskCompletion, renderTeamMemberLiveness } from "./renderers"
 import { createResumptionChannelEmitter } from "./resumption-channel-emitter"
 import { createTeamMailboxReconciler, createTeamService } from "./team-service"
 import { createSessionTransitionBridge } from "./session-transition-bridge"
@@ -88,10 +87,10 @@ export function createTaskComponent(options: TaskComponentOptions = {}): RubatoC
 
       pi.registerMessageRenderer?.(TASK_COMPLETION_MESSAGE_TYPE, renderTaskCompletion)
       pi.registerMessageRenderer?.(TEAM_MEMBER_LIVENESS_MESSAGE_TYPE, renderTeamMemberLiveness)
-      pi.registerMessageRenderer?.(CATEGORY_UNAVAILABLE_MESSAGE_TYPE, renderCategoryUnavailable)
-      const teamTools = createTeamToolContext(pi, ctx, engine)
+      const models = liveModelCatalog(() => engine.runtime.modelRegistry())
+      const teamTools = createTeamToolContext(pi, ctx, engine, models)
       const skillInvocations = createSkillInvocationTracker(pi)
-      registerTaskTools(pi, engine, skillInvocations, teamTools.service.listTeams)
+      registerTaskTools(pi, engine, models, skillInvocations, teamTools.service.listTeams)
       if (!memberProcess) {
         registerTeamTools(pi, teamTools)
         registerRemovedTeamWaitHint(pi)
@@ -167,6 +166,7 @@ function registerTaskFlags(pi: SenpiExtensionAPI): void {
 function registerTaskTools(
   pi: SenpiExtensionAPI,
   engine: TaskEngine,
+  models: ReturnType<typeof liveModelCatalog>,
   skillInvocations: SkillInvocationTracker,
   listTeams: TeamToolsService["listTeams"],
 ): void {
@@ -177,7 +177,7 @@ function registerTaskTools(
       manager,
       rubatoConfig: engine.rubatoConfig,
       agents: engine.agents,
-      models: liveModelCatalog(() => engine.runtime.modelRegistry()),
+      models,
       resolveSkillInvocations: (sessionId: string) => skillInvocations.stateFor(sessionId),
     }),
   })
@@ -206,6 +206,7 @@ function createTeamToolContext(
   pi: SenpiExtensionAPI,
   ctx: ComponentContext,
   engine: TaskEngine,
+  models: ReturnType<typeof liveModelCatalog>,
 ): TeamToolContext {
   const serviceDeps = {
     manager: engine.manager,
@@ -213,8 +214,8 @@ function createTeamToolContext(
     runtime: engine.runtime,
     settings: engine.settings,
     rubatoConfig: engine.rubatoConfig,
+    models,
     cwd: engine.runtime.cwd(),
-    agentNames: new Set(Object.keys(engine.agents)),
   }
   const service = createTeamService(serviceDeps)
   const stateDir = {
@@ -233,16 +234,17 @@ function createTeamToolContext(
     logger: ctx.logger,
     ...(ctx.idleCoordinator !== undefined ? { coordinator: ctx.idleCoordinator } : {}),
   })
-  return { service, reconcileTeamMailbox: createTeamMailboxReconciler(serviceDeps), deliveryJournal, leadPollers }
+  return { service, models, reconcileTeamMailbox: createTeamMailboxReconciler(serviceDeps), deliveryJournal, leadPollers }
 }
 
 type TeamToolContext = {
   readonly service: TeamToolsService
+  readonly models: ReturnType<typeof liveModelCatalog>
   readonly reconcileTeamMailbox: () => Promise<void>
   readonly deliveryJournal: LeadDeliveryJournal
   readonly leadPollers: LeadPollerLifecycle
 }
 
 function registerTeamTools(pi: SenpiExtensionAPI, context: TeamToolContext): void {
-  for (const tool of buildLeadTeamTools({ service: context.service })) pi.registerTool({ ...tool })
+  for (const tool of buildLeadTeamTools({ service: context.service, models: context.models })) pi.registerTool({ ...tool })
 }

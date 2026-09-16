@@ -43,17 +43,17 @@ function createSpec(name = `team-${randomUUID().slice(0, 8)}`): TeamSpec {
     leadAgentId: "lead",
     members: [
       {
-        kind: "subagent_type",
+        kind: "owner",
         name: "lead",
-        subagent_type: "ultraworker",
+        model: "rubato-mock/mock-1",
         backendType: "in-process",
         isActive: true,
         color: "red",
       },
       {
-        kind: "category",
+        kind: "verifier",
         name: "worker",
-        category: "deep",
+        model: "rubato-mock/mock-1",
         prompt: "implement task",
         backendType: "in-process",
         isActive: true,
@@ -114,8 +114,8 @@ describe("runtime state store", () => {
       maxMemberTurns: 50,
     })
     expect(runtimeState.members).toEqual([
-      expect.objectContaining({ name: "lead", agentType: "leader", status: "pending", pendingInjectedMessageIds: [] }),
-      expect.objectContaining({ name: "worker", agentType: "general-purpose", status: "pending", pendingInjectedMessageIds: [] }),
+      expect.objectContaining({ name: "lead", status: "pending", pendingInjectedMessageIds: [] }),
+      expect.objectContaining({ name: "worker", kind: "verifier", status: "pending", pendingInjectedMessageIds: [] }),
     ])
     expect(persistedState.status).toBe("creating")
   })
@@ -192,7 +192,7 @@ describe("runtime state store", () => {
     expect(persistedState.status).toBe("creating")
   })
 
-  test("loadRuntimeState accepts legacy member delegate counters without preserving them", async () => {
+  test("loadRuntimeState rejects unknown persisted member fields", async () => {
     // given
     const baseDir = await createTemporaryBaseDir()
     temporaryDirectories.push(baseDir)
@@ -201,15 +201,17 @@ describe("runtime state store", () => {
     const statePath = path.join(baseDir, "runtime", runtimeState.teamRunId, "state.json")
     await writeFile(statePath, JSON.stringify({
       ...runtimeState,
-      members: runtimeState.members.map((member) => ({ ...member, delegateTaskCallsUsed: 3 })),
+      members: runtimeState.members.map((member) => ({
+        ...member,
+        delegateTaskCallsUsed: 3,
+      })),
     }))
 
     // when
-    const persistedState = await loadRuntimeState(runtimeState.teamRunId, config)
+    const persistedState = loadRuntimeState(runtimeState.teamRunId, config)
 
     // then
-    expect(persistedState.members).toHaveLength(2)
-    expect(Object.keys(persistedState.members[0] ?? {})).not.toContain("delegateTaskCallsUsed")
+    await expect(persistedState).rejects.toBeInstanceOf(RuntimeStateError)
   })
 
   test("listActiveTeams skips malformed runtime states and logs them", async () => {
