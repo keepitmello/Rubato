@@ -51,7 +51,10 @@ for name in orca-cli orchestration; do
 done
 
 same_tree() {
-  diff -qr -x .DS_Store -x .git "$1" "$2" >/dev/null 2>&1
+  # 런타임 부산물은 "사람이 고친 자리" 가 아니다. 파이썬을 쓰는 스킬(outpost,
+  # humanize-korean)은 실행만 해도 설치본에 __pycache__ 가 생기고, 그것 하나로
+  # 보존 규칙에 걸려 그 스킬은 영영 번들 갱신을 못 받는다.
+  diff -qr -x .DS_Store -x .git -x __pycache__ -x '*.pyc' -x .pytest_cache "$1" "$2" >/dev/null 2>&1
 }
 
 PREV=""

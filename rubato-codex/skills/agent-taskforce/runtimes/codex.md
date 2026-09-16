@@ -14,7 +14,7 @@ registry, scheduler, daemon or model runner.
 
 These installed native roles contain their role contract and `dispatched` as
 developer instructions. Send the task-specific brief, not a second copy of that
-contract. Seats, parentage and spawn surface follow the base instructions' Role
+contract. Roles, parentage and spawn surface follow the base instructions' Role
 selection section; this adapter only maps them to native operations. Spawn owners with
 `fork_turns: "none"` unless a short, named history slice is required; spawn a verifier
 with `fork_turns: "none"` always. A child still loads the base instructions and the
@@ -40,7 +40,7 @@ Use a fresh root after installing or changing the roles.
 
 | Intent | Native operation when advertised |
 |---|---|
-| New teammate or subagent | `spawn_agent` — lead seats owners/verifiers; any teammate seats subagents the same way |
+| New teammate or subagent | `spawn_agent` — the lead spawns owners/verifiers; any teammate spawns subagents the same way |
 | Follow-up or correction, including an idle owner | `followup_task` |
 | A fact for an active peer, not a new assignment | `send_message` |
 | Inspect the current team | `list_agents` |
