@@ -110,4 +110,18 @@ test("staged native write/edit use real Pi validation and session middleware", {
   assert.equal(replay.isError, false);
   assert.deepEqual(hooks, []);
   assert.equal(await readFile(join(cwd, "file"), "utf8"), "after");
+
+  let lateUpdates = 0;
+  const lateBridge = createCursorExecBridge({
+    cwd, agentDir, lineageId: "late-update",
+    executeTool: async (_name, _args, options) => {
+      const result = { content: [{ type: "text", text: "ok" }], details: {} };
+      setTimeout(() => options.onUpdate?.(result), 20);
+      return result;
+    },
+    onUpdate: () => { lateUpdates += 1; },
+  });
+  await lateBridge.piBash({ execId: "late", toolCallId: "late", args: { command: "true" } });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(lateUpdates, 0, "tool updates after the exec promise settles must not reach the agent");
 });
