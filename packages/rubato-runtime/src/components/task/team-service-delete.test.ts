@@ -12,7 +12,7 @@ import { composeTaskEngine } from "./engine"
 import { createTeamService } from "./team-service"
 
 const tempRoots: string[] = []
-const TEST_MODEL = "rubato-mock/mock-1"
+const TEST_MODEL = "xai/grok-4.6"
 const TEST_MODELS = { has: (model: string) => model === TEST_MODEL, list: () => [TEST_MODEL] }
 
 afterEach(() => {

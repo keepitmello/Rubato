@@ -1,3 +1,5 @@
+import { productCatalogAliases, productCatalogIdentity } from "@rubato/model-core"
+
 import { RunnerError } from "../in-process/runner-error"
 import type { RpcRunnerSpec } from "../types"
 import { type ModelCatalogProbeResult, parseModelCatalog, probeModelCatalog } from "./model-catalog-probe"
@@ -45,6 +47,14 @@ export function parentResolvesModel(registry: ParentModelFinder | undefined, mod
   const slash = model.indexOf("/")
   if (slash <= 0 || slash === model.length - 1) return false
   return registry.find(model.slice(0, slash), model.slice(slash + 1)) !== undefined
+}
+
+function catalogContains(models: ReadonlySet<string>, model: string): boolean {
+  return productCatalogAliases(productCatalogIdentity(model)).some((id: string) => models.has(id))
+}
+
+function parentResolvesProductModel(registry: ParentModelFinder | undefined, model: string): boolean {
+  return productCatalogAliases(productCatalogIdentity(model)).some((id: string) => parentResolvesModel(registry, id))
 }
 
 type ProbedCatalog = {
@@ -133,7 +143,7 @@ export function createRpcModelAdmission(options: RpcModelAdmissionOptions = {}):
     // The probe is a full senpi boot (`--list-models` with the parent's extensions): 8s idle on an
     // M4, 18s with the harness adapter, past the 20s budget on a loaded machine. The parent's own
     // registry answers the same question for free when it already resolves the model.
-    if (parentResolvesModel(parentRegistry(), model)) return
+    if (parentResolvesProductModel(parentRegistry(), model)) return
     const descriptor = buildSpawn(spec)
     const key = profileKey(descriptor)
     const cached = catalogs.get(key)
@@ -149,11 +159,11 @@ export function createRpcModelAdmission(options: RpcModelAdmissionOptions = {}):
       evict(key, catalog)
       throw error
     }
-    if (observed.models.has(model)) return
+    if (catalogContains(observed.models, model)) return
     evict(key, catalog)
     const confirming = probeCatalog(descriptor, model)
     const confirmed = await confirming
-    if (!confirmed.models.has(model)) throw absenceFailure(model, confirmed)
+    if (!catalogContains(confirmed.models, model)) throw absenceFailure(model, confirmed)
     catalogs.set(key, { catalog: confirming, cachedAt: now() })
   }
 }

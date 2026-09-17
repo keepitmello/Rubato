@@ -9,6 +9,7 @@ import type {
   ResolvedAgentSpec,
   Unsubscribe,
 } from "@rubato/agent-core"
+import { availableProductModelIds, productCatalogIdentity } from "@rubato/model-core"
 import type { RubatoConfig } from "@rubato/config-core"
 
 import type { AgentDefinition } from "../../agents"
@@ -47,17 +48,13 @@ export function liveModelCatalog(
     try {
       const available = registry.getAvailable()
       if (!Array.isArray(available)) return []
-      return available.flatMap((entry: { provider?: string; id?: string } | null | undefined) => (
-        typeof entry?.provider === "string" && typeof entry.id === "string"
-          ? [`${entry.provider}/${entry.id}`]
-          : []
-      ))
+      return availableProductModelIds(available)
     } catch {
       return []
     }
   }
   return {
-    has: (model) => availableModels().includes(model),
+    has: (model) => availableModels().includes(productCatalogIdentity(model)),
     list: availableModels,
   }
 }

@@ -19,7 +19,10 @@ test("descriptor is stock-locked and listed on the candidate", async () => {
   assert.equal(PI_FEATURE_NAMES.includes("model-picker"), true);
   assert.equal(CANDIDATE_FEATURE_NAMES.includes("model-picker"), true);
   assert.deepEqual((await loadPiFeatures(["model-picker"])).map((entry) => entry.id), ["model-picker"]);
-  assert.deepEqual(files.map((entry) => entry.path), ["dist/rubato-features/model-picker/catalog.mjs"]);
+  assert.deepEqual(files.map((entry) => entry.path), [
+    "dist/rubato-features/model-picker/product-model-catalog.mjs",
+    "dist/rubato-features/model-picker/catalog.mjs",
+  ]);
   assert.equal(patches[0].preimageSha256, sha256(readFileSync(stockPath)));
 });
 
@@ -59,7 +62,13 @@ test("picker admits only the seven providers, current model excepted", () => {
     "anthropic/claude-opus-5",
   ]);
   const keptCurrent = admitPickerItems([openaiAstra], "api-astra", equal);
-  assert.deepEqual(keptCurrent.map((item) => item.provider), ["openai"]);
+  assert.deepEqual(keptCurrent, []);
+  const keptOutside = admitPickerItems(
+    [{ provider: "openai-codex", id: "gpt-5.4", model: "legacy-sol" }],
+    "legacy-sol",
+    equal,
+  );
+  assert.deepEqual(keptOutside.map((item) => `${item.provider}/${item.id}`), ["openai-codex/gpt-5.4"]);
   assert.deepEqual([...PROVIDER_ORDER], [
     "openai-codex", "anthropic", "xai", "google-antigravity", "kiro", "cursor", "opencode",
   ]);
