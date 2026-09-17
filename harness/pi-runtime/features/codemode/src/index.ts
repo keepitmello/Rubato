@@ -11,6 +11,9 @@ import {
 	createExecuteTool,
 	createRuntime,
 	enabledLanguagesFrom,
+	isSameCodemodeSession,
+	sessionFileFromContext,
+	sessionIdFromEvent,
 	type SessionRuntime,
 } from "./extension/runtime-factory.ts";
 import { jsRuntimeInfo, jsRuntimeLabel } from "./extension/runtime-info.ts";
@@ -199,6 +202,22 @@ export default function senpiCodemode(pi: CodemodeExtensionAPI, options: SenpiCo
 	registerBunSkillContribution(pi);
 
 	pi.on("session_start", async (event, ctx) => {
+		const currentRuntime = activeRuntime;
+		const currentCells = activeCells;
+		if (
+			currentRuntime !== undefined &&
+			currentCells !== undefined &&
+			isSameCodemodeSession(currentRuntime, {
+				sessionFile: sessionFileFromContext(ctx),
+				sessionId: sessionIdFromEvent(event),
+			})
+		) {
+			activeContext = ctx;
+			activeModelId = ctx.model?.id;
+			registerEvalForRuntime(currentRuntime, activeModelId, currentCells);
+			currentCells.publishWakeSourceState();
+			return;
+		}
 		const previousCells = activeCells;
 		activeCells = undefined;
 		await previousCells?.dispose();
