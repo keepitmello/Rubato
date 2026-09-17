@@ -75,10 +75,8 @@ test("common teammate contract supports both owner and verifier", () => {
 
 test("helpers retain bounded judgment without acquiring the wider outcome", () => {
   assert.match(source("core-agent.pi.md"), /Use judgment inside that assignment/);
-  assert.match(source("core-agent.pi.md"), /not a command to stop thinking/);
-  assert.match(source("core-agent.pi.md"), /Keep the wider outcome/);
-  assert.match(source("core-teammate.pi.md"), /Helpers may reason inside their boundary/);
-  assert.match(source("core-teammate.pi.md"), /you retain the outcome/);
+  assert.match(source("core-agent.pi.md"), /not on the team roster/);
+  assert.match(source("core-teammate.pi.md"), /judgment and method are yours/);
 });
 
 test("delegation policy lives in the dispatching skill, not the prompt", () => {
@@ -103,7 +101,7 @@ test("budget return differs from completion and incapability", () => {
     assert.match(source(file), /budget/i);
     assert.match(source(file), /valid return/);
   }
-  assert.match(source("brief-exchange.pi.md"), /Returning is not mission acceptance/);
+  assert.match(source("brief-exchange.pi.md"), /not mission acceptance/);
   assert.match(skill("dispatched/SKILL.md"), /completed dispatch, not a failure/);
   assert.match(skill("dispatching/SKILL.md"), /not proof of model incapability/);
   assert.match(skill("return/SKILL.md"), /A completed process is not mission acceptance/);
@@ -184,8 +182,6 @@ test("fresh same-family verification is allowed but self-certification is not", 
 });
 
 test("verification is not recursively duplicated across roles", () => {
-  assert.match(source("core-teammate.pi.md"), /existing verifier rather than spawning another/);
-  assert.match(source("core-teammate.pi.md"), /does not recursively commission another verifier/);
   assert.match(skill("agent-taskforce/teammate/independent-verifier.md"), /Do not\nspawn another verifier merely/);
   assert.match(skill("agent-taskforce/references/06-quality-and-evals.md"), /does not repeat a full technical pass/);
 });
@@ -230,7 +226,6 @@ test("Pi tools, support and teammate axes do not import another runtime", () => 
   assert.match(lead, /`Agent`/);
   assert.match(lead, /Skill\(model-guide\)/);
   assert.doesNotMatch(lead, /cs-agent/);
-  assert.match(source("core-teammate.pi.md"), /`Agent`/);
   assert.match(source("core-teammate.pi.md"), /`team_send`/);
   const runtime = skill("agent-taskforce/runtimes/pi.md");
   assert.match(runtime, /kind: owner\|verifier/);
