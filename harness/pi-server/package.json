@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node src/cli.mjs",
+    "postinstall": "node scripts/patch-windows-ipc.mjs",
     "test": "node --test --test-timeout=90000 test/*.test.mjs"
   },
   "engines": {
