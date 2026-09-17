@@ -348,6 +348,15 @@ else
     chmod +x "$RUBATO_LINK"
     ok "rubato 를 PATH 에 놓았다 ($RUBATO_LINK)"
   fi
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+      WIN_BASH="$(cygpath -w "$(command -v bash)" 2>/dev/null || true)"
+      [ -n "$WIN_BASH" ] || WIN_BASH='C:\Program Files\Git\bin\bash.exe'
+      WIN_SRC="$(cygpath -w "$RUBATO_SRC")"
+      printf '@echo off\r\nsetlocal\r\n"%s" "%s" %%*\r\n' "$WIN_BASH" "$WIN_SRC" > "$RUBATO_LINK.cmd"
+      ok "rubato.cmd 를 PATH 에 놓았다 ($RUBATO_LINK.cmd)"
+      ;;
+  esac
   if [ "$(readlink "$MSEARCH_LINK" 2>/dev/null)" = "$MSEARCH_SRC" ]; then
     ok "msearch 심링크 이미 맞다"
   else
