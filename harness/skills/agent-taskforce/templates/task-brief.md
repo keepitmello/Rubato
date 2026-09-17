@@ -48,8 +48,8 @@ model incapability. Expected long-running checks should be visible in status.
 
 **Result contract:** artifact path; outcome status separate from session status;
 checked revision; decisive evidence; remaining uncertainty; required peer or user
-decision. Carry the frozen-item report and first-render return rule from dispatching
-when applicable.
+decision. Carry the frozen-item report and any explicit preview checkpoint from
+dispatching. Match the returned artifact to the assigned decision, not just its first render.
 
 ## Optional active-frame link
 

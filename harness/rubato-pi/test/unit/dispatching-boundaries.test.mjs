@@ -44,3 +44,10 @@ test('method freedom preserves delegated decisions and source-backed boundaries'
     assert.ok(text.includes(phrase), phrase);
   }
 });
+
+test('the task brief does not reintroduce the retired first-render rule', () => {
+  const brief = readFileSync(new URL('../../../skills/agent-taskforce/templates/task-brief.md', import.meta.url), 'utf8');
+  assert.match(brief, /any explicit preview checkpoint/);
+  assert.match(brief, /assigned decision, not just its first render/);
+  assert.doesNotMatch(brief, /first-render return rule/);
+});
