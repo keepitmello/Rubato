@@ -16,6 +16,7 @@ import { feature as contextNotesFeature } from "../context-notes/patches.mjs"
 import { feature as contextWindowFeature } from "../context-window/patches.mjs"
 import { toolGuardsFeature } from "../tool-guards/feature.mjs"
 import { childRuntimeFeature } from "./feature.mjs"
+import { promptRulesFeature } from "../prompt-rules/feature.mjs"
 
 const run = promisify(execFile)
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..")
@@ -31,7 +32,7 @@ test("staged stock child fixture consumes the in-process and RPC runner seams", 
       sourceRoot,
       outputRoot: join(scratch, "stage"),
       features: [toolExecutionFeature, providersFeature, providerExecutionFeature, contextNotesFeature, contextWindowFeature,
-        toolGuardsFeature, childRuntimeFeature, build.feature],
+        toolGuardsFeature, promptRulesFeature, childRuntimeFeature, build.feature],
     })
     const env = {
       HOME: join(scratch, "home"),
