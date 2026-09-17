@@ -224,21 +224,35 @@ export class EventProjection {
       }
     }
   }
+  reasoningItemId(itemId) {
+    return `${itemId}:reasoning`;
+  }
+  endReasoning(message) {
+    if (message?.role !== 'assistant') return;
+    const itemId = this.reasoningItemId(messageKey(this.sessionId, message));
+    if (this.completed.has(itemId)) return;
+    const detail = textOf(message, 'thinking');
+    this.event('item.completed', { itemType: 'assistant_message', status: 'completed',
+      ...(detail ? { detail } : {}) }, { itemId });
+    this.completed.add(itemId);
+  }
   message(message, complete) {
     if (message?.role !== 'assistant') return;
     const itemId = messageKey(this.sessionId, message);
-    for (const [type, cache, streamKind] of [['text', this.text, 'assistant_text'], ['thinking', this.thinking, 'reasoning_text']]) {
+    for (const [type, cache, streamKind, suffix] of [['text', this.text, 'assistant_text', ''], ['thinking', this.thinking, 'reasoning_text', ':reasoning']]) {
+      const streamId = suffix ? itemId + suffix : itemId;
       const full = textOf(message, type);
-      const previous = cache.get(itemId) ?? '';
+      const previous = cache.get(streamId) ?? '';
       if (!full.startsWith(previous)) {
         this.event('runtime.error', { message: 'Stored presentation text does not match the Pi transcript', class: 'validation_error' });
         continue;
       }
       const delta = full.slice(previous.length);
-      if (delta) this.event('content.delta', { streamKind, delta }, { itemId });
-      cache.set(itemId, full);
+      if (delta) this.event('content.delta', { streamKind, delta }, { itemId: streamId });
+      cache.set(streamId, full);
     }
     if (complete && !this.completed.has(itemId)) {
+      this.endReasoning(message);
       const detail = textOf(message);
       this.event('item.completed', { itemType: 'assistant_message',
         status: message.stopReason === 'error' ? 'failed' : 'completed', ...(detail ? { detail } : {}) }, { itemId });
@@ -449,6 +463,7 @@ export class EventProjection {
       case 'agent_settled': this.settle(); break;
       case 'message_start': case 'message_update':
         this.message(event.message, false);
+        if (event.assistantMessageEvent?.type === 'thinking_end') this.endReasoning(event.message);
         this.usage(event.usage ?? event.message?.usage, event.message);
         break;
       case 'message_end':

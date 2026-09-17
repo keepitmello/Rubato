@@ -573,3 +573,139 @@ test("Kiro and Antigravity abort with one terminal; Cursor abort and clean EOF d
   assert.equal(eof.stopReason, "error");
   assert.match(eof.errorMessage, /before turnEnded/);
 });
+
+function cursorUpdateHarness() {
+  const events = [];
+  let currentTextBlock = null;
+  let currentThinkingBlock = null;
+  return {
+    events,
+    stream: { push: (event) => events.push(event) },
+    state: {
+      get currentTextBlock() {
+        return currentTextBlock;
+      },
+      get currentThinkingBlock() {
+        return currentThinkingBlock;
+      },
+      setTextBlock: (block) => {
+        currentTextBlock = block;
+      },
+      setThinkingBlock: (block) => {
+        currentThinkingBlock = block;
+      },
+      openToolCalls: new Map(),
+      resolvedMcpToolCallIds: new Set(),
+    },
+    output: {
+      role: "assistant",
+      content: [],
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 },
+    },
+    usageState: { sawTokenDelta: false, sawTurnEndedUsage: false },
+  };
+}
+
+function applyCursorUpdate(session, updateCase, value = {}) {
+  cursorApi.processInteractionUpdate(
+    { message: { case: updateCase, value } },
+    session.output,
+    session.stream,
+    session.state,
+    session.usageState,
+  );
+}
+
+test("Cursor textDelta closes thinking so the answer does not keep the thinking run open", () => {
+  const session = cursorUpdateHarness();
+  applyCursorUpdate(session, "thinkingDelta", { text: "plan first" });
+  applyCursorUpdate(session, "textDelta", { text: "here is the answer" });
+
+  assert.deepEqual(session.events.map((event) => event.type), [
+    "thinking_start",
+    "thinking_delta",
+    "thinking_end",
+    "text_start",
+    "text_delta",
+  ]);
+  const thinking = session.output.content.find((block) => block.type === "thinking");
+  assert.equal(thinking.thinking, "plan first");
+  assert.equal(typeof thinking.startedAt, "number");
+  assert.equal(typeof thinking.endedAt, "number");
+  assert.ok(thinking.endedAt >= thinking.startedAt);
+  assert.equal(session.state.currentThinkingBlock, null);
+});
+
+test("Cursor thinkingCompleted applies thinkingDurationMs", () => {
+  const session = cursorUpdateHarness();
+  applyCursorUpdate(session, "thinkingDelta", { text: "reason" });
+  applyCursorUpdate(session, "thinkingCompleted", { thinkingDurationMs: 1500 });
+
+  const thinking = session.output.content[0];
+  assert.equal(thinking.endedAt - thinking.startedAt, 1500);
+  assert.equal(session.events.at(-1).type, "thinking_end");
+});
+
+test("Cursor interaction queries get an immediate client response so the turn is not held", () => {
+  const writes = [];
+  cursorApi.handleInteractionQuery(
+    create(cursorProto.InteractionQuerySchema, {
+      id: 7,
+      query: { case: "webSearchRequestQuery", value: create(cursorProto.WebSearchRequestQuerySchema, {}) },
+    }),
+    { write: (frame) => writes.push(frame) },
+  );
+  assert.equal(writes.length, 1);
+  const length = writes[0].readUInt32BE(1);
+  const reply = fromBinary(cursorProto.AgentClientMessageSchema, writes[0].subarray(5, 5 + length));
+  assert.equal(reply.message.case, "interactionResponse");
+  assert.equal(reply.message.value.id, 7);
+  assert.equal(reply.message.value.result.case, "webSearchRequestResponse");
+  assert.equal(reply.message.value.result.value.result.case, "rejected");
+});
+
+test("Cursor exec abort control trips the in-flight exec controller", () => {
+  const controller = new AbortController();
+  const state = { execAborts: new Map([[9, controller]]) };
+  cursorApi.handleExecServerControlMessage(
+    create(cursorProto.ExecServerControlMessageSchema, {
+      message: { case: "abort", value: create(cursorProto.ExecServerAbortSchema, { id: 9 }) },
+    }),
+    state,
+  );
+  assert.equal(controller.signal.aborted, true);
+});
+
+test("Cursor step, shell, and user-append updates are ingested without throwing", () => {
+  const session = cursorUpdateHarness();
+  applyCursorUpdate(session, "stepStarted", { stepId: 3 });
+  applyCursorUpdate(session, "stepCompleted", { stepId: 3, stepDurationMs: 12 });
+  applyCursorUpdate(session, "shellOutputDelta", {});
+  applyCursorUpdate(session, "userMessageAppended", {
+    userMessage: { text: "hi", messageId: "u1", isSimulatedMsg: false },
+  });
+  applyCursorUpdate(session, "userMessageAppended", {
+    userMessage: { text: "sim", messageId: "u2", isSimulatedMsg: true },
+  });
+  assert.equal(session.usageState.lastStepId, 3);
+  assert.equal(session.usageState.lastStepStatus, "completed");
+  assert.equal(session.usageState.lastStepDurationMs, 12);
+  assert.equal(session.usageState.lastAppendedUserMessageId, "u1");
+});
+
+test("Cursor summary frames are kept as cursor-summary, not Anthropic compaction", () => {
+  const session = cursorUpdateHarness();
+  applyCursorUpdate(session, "thinkingDelta", { text: "still thinking" });
+  applyCursorUpdate(session, "summaryStarted", {});
+  applyCursorUpdate(session, "summary", { summary: "earlier turns " });
+  applyCursorUpdate(session, "summary", { summary: "were folded" });
+  applyCursorUpdate(session, "summaryCompleted", {});
+
+  assert.equal(session.usageState.cursorSummary, "earlier turns were folded");
+  const block = session.output.content.find((item) => item.type === "providerNative");
+  assert.equal(block.subtype, "cursor-summary");
+  assert.deepEqual(block.raw, { type: "cursor-summary", content: "earlier turns were folded" });
+  assert.notEqual(block.subtype, "compaction");
+  assert.equal(session.state.currentThinkingBlock, null);
+  assert.ok(session.events.some((event) => event.type === "thinking_end"));
+});
