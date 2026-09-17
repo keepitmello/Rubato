@@ -20,7 +20,6 @@ import {
   promptNameForRole,
   returnSkillSection,
   skillMarkdownBody,
-  TOOL_GUIDELINES,
 } from "../../src/system-prompt.mjs";
 
 const body = "# Working agreement\nYou are on rubato.";
@@ -109,6 +108,23 @@ test("replaces senpi and legacy prompts instead of appending", () => {
   assert.equal(replaceSystemPrompt(next, "lead", loaders()), next);
 });
 
+test("stock pi appending project context and its own skills listing does not double them", () => {
+  // launch.mjs hands pi a finished prompt that already carries our listing;
+  // stock pi still appends <project_context>, its own listing and the cwd.
+  const launched = replaceSystemPrompt("", "lead", loaders());
+  const stockListing = "The following skills provide specialized instructions for specific tasks.\n"
+    + "Use the read tool to load a skill's file when the task matches its description.\n"
+    + "<available_skills>\n  <skill><name>demo</name></skill>\n  <skill><name>extra</name></skill>\n</available_skills>";
+  const fromPi = `${launched}\n\n<project_context>\n\n<project_instructions path="/ws/CLAUDE.md">\nrules\n</project_instructions>\n\n</project_context>\n\n${stockListing}\n\nCurrent working directory: /ws\n`;
+
+  const next = replaceSystemPrompt(fromPi, "lead", loaders());
+  assert.equal(next.match(/<project_context>/g).length, 1);
+  assert.equal(next.match(/<available_skills>/g).length, 1);
+  assert.match(next, /<name>extra<\/name>/, "keeps the runtime's fuller listing");
+  assert.equal(next.match(/Current working directory:/g).length, 1);
+  assert.equal(replaceSystemPrompt(next, "lead", loaders()), next);
+});
+
 test("owner replacement does not keep a previous legacy base", () => {
   const next = replaceSystemPrompt("legacy optimized prompt", "owner", loaders());
   assert.match(next, /teammate/);
@@ -141,24 +157,13 @@ test("a listing already in the prompt is not doubled", () => {
   assert.equal(next.match(/<available_skills>/g).length, 1);
 });
 
-test("every role gets the shared tool guidelines and not Senpi's body", () => {
+test("every role gets its role prompt and not Senpi's body or tool guidelines", () => {
   for (const role of ["lead", "owner", "verifier", "agent"]) {
     const next = replaceSystemPrompt("legacy optimized prompt\n## Intent Gate\n> I read this as", role, loaders());
-    assert.match(next, /## Tool Guidelines/);
-    assert.ok(next.includes(TOOL_GUIDELINES));
-    assert.match(next, /Use read to inspect files and apply_patch/);
-    assert.match(next, /Use tool_search for other capabilities/);
-    assert.match(next, /in this turn/);
-    assert.match(next, /Agent, eval, memory/);
+    assert.match(next, /Working agreement/);
+    assert.doesNotMatch(next, /## Tool Guidelines|tool_search/);
     assert.doesNotMatch(next, /Use edit|edits\[\]|Use write/);
-    assert.doesNotMatch(next, /Use eval when a step needs/);
-    assert.doesNotMatch(next, /one todo operation at a time/);
-    assert.match(next, /memory tool/);
-    assert.doesNotMatch(next, /I read this as/);
-    assert.doesNotMatch(next, /legacy optimized prompt/);
-    assert.doesNotMatch(next, /# Dispatching/);
-    assert.doesNotMatch(next, /# Dispatched/);
-    assert.doesNotMatch(next, /# Return/);
+    assert.doesNotMatch(next, /legacy optimized prompt|Intent Gate/);
   }
 });
 

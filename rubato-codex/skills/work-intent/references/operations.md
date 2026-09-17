@@ -37,7 +37,8 @@ Never fabricate this value. For a new taskforce, cite the actual human reply acc
 both the concrete intent summary and roster; the earlier generic task request does not
 approve a roster the user has not seen. Keep the proposal-message reference, its intent
 revision and the matching roster in the existing mission. Do not put staffing into intent.
-For non-team work, a precise current instruction may already cover the exact bounded change.
+For non-team work, cite the user's reply to the message that showed the intended result;
+the originating request is the `source`, never the approval.
 Resolve material outcome-blocking questions before activation. The CLI validates content
 integrity and status, not the meaning of open questions or the scope of a human reply.
 

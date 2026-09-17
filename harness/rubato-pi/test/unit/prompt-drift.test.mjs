@@ -60,7 +60,7 @@ const ENGINE_BLOCKS = [
   {
     probe: "Use bash for file operations like ls, rg, find",
     fate: "drop",
-    why: "base.pi.md 가 rg/ast_grep_search/lsp_find_references 까지 넣은 확장판을 갖는다. 이 줄이 사라진 것을 몇 달 몰랐던 것이 이 테스트를 만든 이유다",
+    why: "탐색 도구 안내는 도구 스키마와 eval 의 런타임 알림(파일시스템 순회 감지)이 맡는다. 역할 프롬프트는 도구 사용법을 싣지 않는다",
   },
   {
     probe: "Be concise in your responses",
@@ -166,20 +166,3 @@ test("drop 으로 표시한 블록은 재조립 결과에 섞이지 않는다", 
   }
 });
 
-// drop 은 "버려도 된다"가 아니라 "우리 판이 이미 있다"는 주장이다. 그 주장이
-// 참인지는 역할 프롬프트 조각을 봐야 안다 — 여기서 확인하지 않으면 역할 프롬프트에서 문장이
-// 지워졌을 때 drop 근거가 조용히 거짓이 된다. 그게 rg 줄에서 일어난 일이다.
-test("탐색 도구 안내는 역할 프롬프트 조각에 살아 있다", () => {
-  for (const role of ["lead", "owner", "verifier", "agent"]) {
-    const text = loadRolePrompt(role, { env: promptFixture.env });
-    // 785f6a3f9 reworded the hook; the tool list it pins is unchanged.
-    assert.match(
-      text,
-      /Search with the search tools/,
-      `${role} 역할 프롬프트에 탐색 도구 안내가 없다. 엔진도 안 넣고 역할 프롬프트도 없으면 세션은 파이썬 순회로 레포를 훑는다`,
-    );
-    for (const probe of ["rg", "ast_grep_search", "lsp_find_references"]) {
-      assert.ok(text.includes(probe), `${role} 역할 프롬프트가 ${probe} 를 안내하지 않는다`);
-    }
-  }
-});
