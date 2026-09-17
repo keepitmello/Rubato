@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 
-import type { ListedTask, TaskRecord, TaskStatus } from "@rubato/senpi-task"
+import type { ListedTask, TaskRecord, TaskStatus } from "@rubato/task"
 
 import type { CapturedUi } from "./runtime-context"
 import { createTaskStatusUi, type StatusUiManager, type StatusUiTimers } from "./status-ui"

@@ -13,7 +13,7 @@ import {
   type RunnerOutcome,
   type TaskRecord,
   type TaskStatus,
-} from "@rubato/senpi-task"
+} from "@rubato/task"
 
 import { FakeExtensionAPI } from "../../../test-support/fake-extension-api"
 import { composeTaskEngine, type TaskEngine, type TaskRunnerFactories } from "./engine"

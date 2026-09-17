@@ -1,5 +1,5 @@
 import type { RubatoTaskSettings } from "@rubato/config-core"
-import { isOwnedTeamMemberTask, type StateDirConfig, type TaskRecord } from "@rubato/senpi-task"
+import { isOwnedTeamMemberTask, type StateDirConfig, type TaskRecord } from "@rubato/task"
 
 import type { TaskRuntimeContext } from "./runtime-context"
 import type { TeamMemberLivenessNotifier } from "./member-liveness"

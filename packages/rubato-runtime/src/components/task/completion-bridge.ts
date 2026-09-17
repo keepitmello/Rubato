@@ -5,7 +5,7 @@ import type {
   TaskRecordStore,
   TaskStatus,
   TaskTransition,
-} from "@rubato/senpi-task"
+} from "@rubato/task"
 
 const TERMINAL_STATUSES: ReadonlySet<TaskStatus> = new Set([
   "completed",

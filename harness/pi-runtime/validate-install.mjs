@@ -2,7 +2,7 @@ import { readFile, realpath } from "node:fs/promises";
 import { findPackageJSON } from "node:module";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { pathToFileURL } from "node:url";
-import { STOCK_PI_PACKAGES, STOCK_PI_VERSION } from "./resolve-runtime.mjs";
+import { PI_PACKAGES, PI_VERSION } from "./resolve-runtime.mjs";
 
 const sections = ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"];
 const entries = (value) => Object.entries(value ?? {}).sort(([a], [b]) => a.localeCompare(b));
@@ -65,7 +65,7 @@ export async function validatePiInstall(runtime) {
   const manifest = JSON.parse(packageJson);
   const locked = JSON.parse(lock);
   const root = locked.packages?.[""];
-  if (locked.lockfileVersion !== 3 || !root || manifest.dependencies?.[STOCK_PI_PACKAGES[0]] !== STOCK_PI_VERSION) {
+  if (locked.lockfileVersion !== 3 || !root || manifest.dependencies?.[PI_PACKAGES[0]] !== PI_VERSION) {
     throw new Error("Pi install requires an exact stock dependency and a v3 root lock entry");
   }
   sameDeclarations(manifest, root, "root", true);
@@ -87,7 +87,7 @@ export async function validatePiInstall(runtime) {
     directDependencies.push(await validatePackage(runtime, locked, name, version, packageJsonPath));
   }
   const packages = [];
-  for (const name of STOCK_PI_PACKAGES) {
+  for (const name of PI_PACKAGES) {
     const selected = runtime.packages[name];
     packages.push(await validatePackage(runtime, locked, name, selected.version, selected.packageJsonPath));
   }

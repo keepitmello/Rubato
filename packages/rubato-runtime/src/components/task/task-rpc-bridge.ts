@@ -5,7 +5,7 @@ import {
   runTaskSend,
   type ManagedChildEvent,
   type TaskRecord,
-} from "@rubato/senpi-task"
+} from "@rubato/task"
 
 import type { SenpiExtensionAPI } from "../../extension/types"
 import type { TaskEngine } from "./engine"

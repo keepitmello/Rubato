@@ -1,4 +1,4 @@
-import type { ChildModelRegistry, ParentState } from "@rubato/senpi-task"
+import type { ChildModelRegistry, ParentState } from "@rubato/task"
 
 // Structural slice of senpi's ExtensionContext the task runtime reads. ExtensionContext satisfies it;
 // tests pass a tiny fake. `ui` lives on ExtensionContext (event/command contexts), NOT ExtensionAPI,

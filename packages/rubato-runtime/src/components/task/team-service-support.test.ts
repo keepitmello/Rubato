@@ -3,8 +3,8 @@ import { join } from "node:path"
 
 import { afterEach, describe, expect, test } from "bun:test"
 
-import { baseSpec, cleanupProjects, makeManager } from "../../../../senpi-task/src/manager/__fixtures__/manager-fakes"
-import { resolveTeamRuntimeDirs } from "@rubato/senpi-task"
+import { baseSpec, cleanupProjects, makeManager } from "../../../../task/src/manager/__fixtures__/manager-fakes"
+import { resolveTeamRuntimeDirs } from "@rubato/task"
 
 import { makeShutdownMessenger } from "./team-service-support"
 

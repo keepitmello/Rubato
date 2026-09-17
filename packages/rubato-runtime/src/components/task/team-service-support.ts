@@ -11,7 +11,7 @@ import {
   type StateDirConfig,
   type TaskManager,
   type TeamSpecSource,
-} from "@rubato/senpi-task"
+} from "@rubato/task"
 import type { TeamSpec } from "@rubato/team-core/types"
 
 export type ResolvedTeamSpec = { readonly spec: TeamSpec; readonly source: TeamSpecSource }

@@ -195,7 +195,7 @@ async function openChild(t, { name, model }) {
   mkdirSync(agentDir, { recursive: true });
   writeModels(agentDir);
   const settingsManager = sdk.SettingsManager.inMemory();
-  const extensionFactories = await childRuntime.loadStockChildInProcessFactories({
+  const extensionFactories = await childRuntime.loadPiChildInProcessFactories({
     root: staged.root,
     agentDir,
     settingsManager,

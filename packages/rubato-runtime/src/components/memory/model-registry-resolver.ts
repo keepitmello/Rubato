@@ -1,4 +1,4 @@
-import type { SenpiModelPort, SenpiModelRegistryPort } from "@rubato/senpi-task"
+import type { SenpiModelPort, SenpiModelRegistryPort } from "@rubato/task"
 
 export function resolveMemoryModelRegistry(
   eventContext: unknown,

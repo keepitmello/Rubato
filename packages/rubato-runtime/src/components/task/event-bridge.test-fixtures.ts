@@ -1,4 +1,4 @@
-import type { SuspendSummary, TaskRecord } from "@rubato/senpi-task"
+import type { SuspendSummary, TaskRecord } from "@rubato/task"
 
 export const fakeSummary: SuspendSummary = {
   suspended_in_process: 0,

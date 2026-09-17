@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 
-import type { ManagedChildHandle } from "@rubato/senpi-task"
+import type { ManagedChildHandle } from "@rubato/task"
 
 import { createManagerResidencyRegistry } from "./residency-registry"
 

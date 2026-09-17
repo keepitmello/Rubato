@@ -143,7 +143,7 @@ export function finishBootChrome() {
 }
 
 /** Stock-Pi path: release the splash immediately before the candidate TUI starts. */
-export async function handoffBootChromeForStockPi() {
+export async function handoffBootChromeForPi() {
   setBootChromeStatus("화면을 여는 중");
   return finishBootChrome();
 }

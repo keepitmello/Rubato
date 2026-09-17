@@ -4,12 +4,16 @@ import {
   type SessionMarkerIndex,
   type TaskRecord,
   type TaskStatus,
-} from "@rubato/senpi-task"
+} from "@rubato/task"
 
 import type { IdleInjectionCoordinator } from "../../extension/idle-injection-coordinator"
 import type { SenpiExtensionAPI } from "../../extension/types"
 
-export const TEAM_MEMBER_LIVENESS_MESSAGE_TYPE = "senpi-task.team-member-liveness"
+export const TEAM_MEMBER_LIVENESS_MESSAGE_TYPE = "rubato.task.team-member-liveness"
+export const LEGACY_TEAM_MEMBER_LIVENESS_MESSAGE_TYPE = "senpi-task.team-member-liveness"
+export function isTeamMemberLivenessMessageType(value: string | undefined): boolean {
+  return value === TEAM_MEMBER_LIVENESS_MESSAGE_TYPE || value === LEGACY_TEAM_MEMBER_LIVENESS_MESSAGE_TYPE
+}
 
 export type TeamMemberLivenessDetails = {
   readonly memberName: string
@@ -195,7 +199,7 @@ export function livenessContent(details: TeamMemberLivenessDetails): string {
 }
 
 function messageDeliveryKeys(message: Record<string, unknown>): readonly string[] {
-  if (message.customType === TEAM_MEMBER_LIVENESS_MESSAGE_TYPE) {
+  if (isTeamMemberLivenessMessageType(message.customType)) {
     const key = readDeliveryKey(message.details)
     return key === undefined ? [] : [key]
   }

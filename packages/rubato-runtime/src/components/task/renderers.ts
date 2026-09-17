@@ -4,8 +4,8 @@ import {
   linesComponent,
   normalizeRendererText,
   type CompletionDetails,
-} from "@rubato/senpi-task"
-import { buildNoticeBox, type NoticeSpec, type NoticeTone } from "@rubato/senpi-task/notice-box"
+} from "@rubato/task"
+import { buildNoticeBox, type NoticeSpec, type NoticeTone } from "@rubato/task/notice-box"
 
 import type { TeamMemberLivenessDetails } from "./member-liveness"
 

@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
-import { STOCK_PI_PACKAGES, STOCK_PI_VERSION } from "../resolve-runtime.mjs";
+import { PI_PACKAGES, PI_VERSION } from "../resolve-runtime.mjs";
 import { stagePiRuntime } from "../stage-runtime.mjs";
 
 const CODE = "#!/usr/bin/env node\nexport const marker = 'stock';\n";
@@ -17,20 +17,20 @@ async function fixture(t) {
   t.after(() => rm(parent, { recursive: true, force: true }));
   const sourceRoot = join(parent, "source");
   await mkdir(sourceRoot);
-  const manifest = { name: "fixture", private: true, dependencies: { [STOCK_PI_PACKAGES[0]]: STOCK_PI_VERSION } };
+  const manifest = { name: "fixture", private: true, dependencies: { [PI_PACKAGES[0]]: PI_VERSION } };
   const lock = { lockfileVersion: 3, packages: { "": manifest } };
   await writeFile(join(sourceRoot, "package.json"), JSON.stringify(manifest));
-  for (const name of STOCK_PI_PACKAGES) {
+  for (const name of PI_PACKAGES) {
     lock.packages[`node_modules/${name}`] = {
-      version: STOCK_PI_VERSION,
-      resolved: `https://registry.npmjs.org/${name}/-/${name.split("/").at(-1)}-${STOCK_PI_VERSION}.tgz`,
+      version: PI_VERSION,
+      resolved: `https://registry.npmjs.org/${name}/-/${name.split("/").at(-1)}-${PI_VERSION}.tgz`,
       integrity: `sha512-${Buffer.alloc(64).toString("base64")}`,
     };
     const root = join(sourceRoot, "node_modules", name);
     await mkdir(join(root, "dist", "bundle"), { recursive: true });
     await writeFile(join(root, "package.json"), JSON.stringify({
       name,
-      version: STOCK_PI_VERSION,
+      version: PI_VERSION,
       type: "module",
       main: "./dist/index.js",
       exports: { ".": { import: "./dist/index.js" }, "./rpc-entry": { import: "./dist/bundle/rpc-entry.js" } },
@@ -48,7 +48,7 @@ function patch(id, apply, overrides = {}) {
   return {
     id,
     packageName: "@earendil-works/pi-coding-agent",
-    version: STOCK_PI_VERSION,
+    version: PI_VERSION,
     path: "dist/index.js",
     preimageSha256: digest(CODE),
     apply,
@@ -70,7 +70,7 @@ test("stage keeps pristine source and records selected hooks on unbundled entrie
   assert.equal(result.receipt.files[0].after, digest(CODE.replace("stock", "adapted")));
   assert.equal(JSON.parse(await readFile(join(input.outputRoot, "rubato-pi-stage.json"), "utf8")).state, "ready");
   assert.equal(result.receipt.lockedPackages.length, 6);
-  assert.deepEqual(result.receipt.directDependencies.map(({ name }) => name), [STOCK_PI_PACKAGES[0]]);
+  assert.deepEqual(result.receipt.directDependencies.map(({ name }) => name), [PI_PACKAGES[0]]);
   assert.equal(result.receipt.binShims.length, 3);
   for (const shim of result.receipt.binShims) {
     const text = await readFile(join(input.outputRoot, shim.path), "utf8");
@@ -132,7 +132,7 @@ test("lock drift is rejected before any output exists", async (t) => {
   const input = await fixture(t);
   const lockPath = join(input.sourceRoot, "package-lock.json");
   const pristine = JSON.parse(await readFile(lockPath, "utf8"));
-  const name = STOCK_PI_PACKAGES[0];
+  const name = PI_PACKAGES[0];
   for (const mutate of [
     (lock) => { delete lock.packages[""]; },
     (lock) => { lock.packages[""].dependencies[name] = "^0.85.1"; },
@@ -231,7 +231,7 @@ test("owned modules are added separately from stock hooks with hashes and workin
   const sourcePath = join(input.parent, "state.mjs");
   const code = "export let count = 0; export const increment = () => ++count;\n";
   await writeFile(sourcePath, code);
-  const file = { packageName: STOCK_PI_PACKAGES[0], version: STOCK_PI_VERSION, path: "dist/rubato-features/counter/state.mjs", sourcePath };
+  const file = { packageName: PI_PACKAGES[0], version: PI_VERSION, path: "dist/rubato-features/counter/state.mjs", sourcePath };
   const staged = await stagePiRuntime({ ...input, features: [{ id: "counter", patches: [], files: [file] }] });
   assert.equal(staged.receipt.files.length, 0);
   assert.equal(staged.receipt.addedFiles.length, 1);
@@ -253,7 +253,7 @@ test("owned executable file permissions and receipt stay identical under a restr
   const previous = process.umask(0o077);
   try {
     const { receipt } = await stagePiRuntime({ ...input, features: [{ id: "worker", patches: [], files: [{
-      target: "runtime", version: STOCK_PI_VERSION, path: "rubato-features/worker/main.mjs", sourcePath,
+      target: "runtime", version: PI_VERSION, path: "rubato-features/worker/main.mjs", sourcePath,
     }] }] });
     assert.equal(receipt.addedFiles[0].mode, 0o755);
     assert.equal((await stat(join(input.outputRoot, receipt.addedFiles[0].path))).mode & 0o777, 0o755);
@@ -266,7 +266,7 @@ test("added files reject overwrites, duplicates, traversal, and invalid sources 
   const input = await fixture(t);
   const sourcePath = join(input.parent, "owned.mjs");
   await writeFile(sourcePath, "export {};\n");
-  const file = { packageName: STOCK_PI_PACKAGES[0], version: STOCK_PI_VERSION, path: "dist/rubato-features/owned.mjs", sourcePath };
+  const file = { packageName: PI_PACKAGES[0], version: PI_VERSION, path: "dist/rubato-features/owned.mjs", sourcePath };
   for (const files of [
     [{ ...file, path: "dist/index.js" }],
     [file, file],
@@ -282,12 +282,12 @@ test("added files reject overwrites, duplicates, traversal, and invalid sources 
 
 test("an added module cannot follow an ancestor symlink into another package", async (t) => {
   const input = await fixture(t);
-  const packageDir = join(input.sourceRoot, "node_modules", STOCK_PI_PACKAGES[0]);
+  const packageDir = join(input.sourceRoot, "node_modules", PI_PACKAGES[0]);
   await symlink("../../pi-ai/dist", join(packageDir, "dist/bridge"));
   const sourcePath = join(input.parent, "owned.mjs");
   await writeFile(sourcePath, "export {};\n");
   await assert.rejects(stagePiRuntime({ ...input, features: [{ id: "escape", patches: [], files: [{
-    packageName: STOCK_PI_PACKAGES[0], version: STOCK_PI_VERSION, path: "dist/bridge/unsafe.mjs", sourcePath,
+    packageName: PI_PACKAGES[0], version: PI_VERSION, path: "dist/bridge/unsafe.mjs", sourcePath,
   }] }] }), /parent escapes/);
   assert.equal(existsSync(input.outputRoot), false);
   assert.equal(existsSync(join(input.sourceRoot, "node_modules/@earendil-works/pi-ai/dist/unsafe.mjs")), false);
@@ -295,7 +295,7 @@ test("an added module cannot follow an ancestor symlink into another package", a
 
 test("independent runtime modules resolve root dependencies instead of Pi's nested versions", async (t) => {
   const input = await fixture(t);
-  for (const [parent, version] of [[input.sourceRoot, "new"], [join(input.sourceRoot, "node_modules", STOCK_PI_PACKAGES[0]), "pi-nested"]]) {
+  for (const [parent, version] of [[input.sourceRoot, "new"], [join(input.sourceRoot, "node_modules", PI_PACKAGES[0]), "pi-nested"]]) {
     const dependency = join(parent, "node_modules/fixture-schema");
     await mkdir(dependency, { recursive: true });
     await writeFile(join(dependency, "package.json"), JSON.stringify({ name: "fixture-schema", type: "module", exports: "./index.mjs" }));
@@ -304,14 +304,14 @@ test("independent runtime modules resolve root dependencies instead of Pi's nest
   const sourcePath = join(input.parent, "consumer.mjs");
   await writeFile(sourcePath, 'export { version } from "fixture-schema";\n');
   const result = await stagePiRuntime({ ...input, features: [{ id: "independent", patches: [], files: [{
-    target: "runtime", version: STOCK_PI_VERSION, path: "rubato-features/independent/consumer.mjs", sourcePath,
+    target: "runtime", version: PI_VERSION, path: "rubato-features/independent/consumer.mjs", sourcePath,
   }] }] });
   const added = result.receipt.addedFiles[0];
   assert.equal(added.target, "runtime");
   assert.equal(added.path, "rubato-features/independent/consumer.mjs");
   const consumer = await import(pathToFileURL(join(input.outputRoot, added.path)));
   assert.equal(consumer.version, "new");
-  const nested = await import(pathToFileURL(join(input.outputRoot, "node_modules", STOCK_PI_PACKAGES[0], "node_modules/fixture-schema/index.mjs")));
+  const nested = await import(pathToFileURL(join(input.outputRoot, "node_modules", PI_PACKAGES[0], "node_modules/fixture-schema/index.mjs")));
   assert.equal(nested.version, "pi-nested");
 });
 
@@ -319,12 +319,12 @@ test("runtime-owned files cannot escape their feature namespace or claim a packa
   const input = await fixture(t);
   const sourcePath = join(input.parent, "owned.mjs");
   await writeFile(sourcePath, "export {};\n");
-  const file = { target: "runtime", version: STOCK_PI_VERSION, path: "rubato-features/owned/test.mjs", sourcePath };
+  const file = { target: "runtime", version: PI_VERSION, path: "rubato-features/owned/test.mjs", sourcePath };
   for (const bad of [
     { ...file, path: "node_modules/new/other.mjs" },
     { ...file, path: "rubato-features/elsewhere/other.mjs" },
     { ...file, path: "rubato-features/owned/../../other.mjs" },
-    { ...file, packageName: STOCK_PI_PACKAGES[0] },
+    { ...file, packageName: PI_PACKAGES[0] },
   ]) {
     await assert.rejects(stagePiRuntime({ ...input, features: [{ id: "owned", patches: [], files: [bad] }] }));
     assert.equal(existsSync(input.outputRoot), false);

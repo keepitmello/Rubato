@@ -19,7 +19,7 @@ import {
   type TaskLifecycle,
   type TaskManager,
   type TaskRecord,
-} from "@rubato/senpi-task"
+} from "@rubato/task"
 
 import type { IdleInjectionCoordinator } from "../../extension/idle-injection-coordinator"
 import type { SenpiExtensionAPI } from "../../extension/types"

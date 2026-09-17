@@ -6,7 +6,7 @@ import type {
   TaskLifecycle,
   TaskRecord,
   TaskRunStats,
-} from "@rubato/senpi-task"
+} from "@rubato/task"
 
 import { FakeExtensionAPI } from "../../../test-support/fake-extension-api"
 import type { ComponentContext, SenpiExtensionAPI } from "../../extension/types"

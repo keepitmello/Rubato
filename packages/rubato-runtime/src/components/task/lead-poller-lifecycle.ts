@@ -10,7 +10,7 @@ import {
   type ParentState,
   type PersistedTaskEvent,
   type TeamCoreConfig,
-} from "@rubato/senpi-task"
+} from "@rubato/task"
 
 import type { IdleInjectionCoordinator } from "../../extension/idle-injection-coordinator"
 import type { ComponentLogger, SenpiExtensionAPI } from "../../extension/types"

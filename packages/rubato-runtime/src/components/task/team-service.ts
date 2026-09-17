@@ -30,7 +30,7 @@ import {
   type TeamCoreConfig,
   type ModelCatalog,
   type TeamToolsService,
-} from "@rubato/senpi-task"
+} from "@rubato/task"
 
 import type { TaskRuntimeContext } from "./runtime-context"
 import {

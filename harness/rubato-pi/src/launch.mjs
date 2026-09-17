@@ -14,7 +14,7 @@ import { senpiCli, senpiCliMain } from "./engine-paths.mjs";
 import { releaseBootChrome, setBootChromeStatus } from "./boot-chrome.mjs";
 import { ENGINE_REPAIR_HINT, resolveExecutionEngine } from "./engine-selection.mjs";
 export {
-  isValidInstalledCandidateReceipt, readStockEngineReceipt, stockEngineReceiptPresent,
+  isValidInstalledCandidateReceipt, readPiEngineReceipt, piEngineReceiptPresent,
   readEngineMarker, resolveLaunchEngine, ENGINE_REPAIR_HINT,
 } from "./engine-selection.mjs";
 export { nodeSatisfiesCandidate } from "./select-node.mjs";
@@ -89,13 +89,12 @@ export function resolveLaunchAgentDir(env = process.env, home = env.HOME || home
 }
 
 /**
- * stock-pi argv. Candidate already supplies providers, prompt rules,
- * components, and the stock footer. Senpi -e overlays are not passed; the role
- * system prompt IS passed (--system-prompt, identical to the senpi argv) and the
- * candidate's rubato-role-prompt factory injects it on before_agent_start.
+ * pi argv. Candidate already supplies providers, prompt rules,
+ * components, and the footer. Role system prompt is passed (--system-prompt)
+ * and the candidate's rubato-role-prompt factory injects it on before_agent_start.
  * Keep fullscreen TUI and ~/.agents/skills, then pass user args through.
  */
-export function buildStockPiArgs(userArgs, { env = process.env } = {}) {
+export function buildPiArgs(userArgs, { env = process.env } = {}) {
   const interactiveTuiArgs = userArgs.some((token) => token === "--mode" || token.startsWith("--mode=")) ||
     userArgs.some((token) => token === "--tui-mode" || token.startsWith("--tui-mode="))
     ? []
@@ -129,7 +128,7 @@ export function stripNoChangelogNodeOptions(value) {
   return kept.length > 0 ? kept.join(" ") : undefined;
 }
 
-export function stockPiSupportEnv() {
+export function piSupportEnv() {
   return {
     RUBATO_BOOT_CHROME_HREF: pathToFileURL(join(here, "boot-chrome.mjs")).href,
     RUBATO_ROLE_PROMPT_MODULE: pathToFileURL(join(here, "system-prompt.mjs")).href,
@@ -137,8 +136,8 @@ export function stockPiSupportEnv() {
   };
 }
 
-export function stockPiLaunchEnv(baseEnv, agentDir) {
-  const env = { ...launchEnv(baseEnv, agentDir), ...stockPiSupportEnv(), RUBATO_CANDIDATE_AGENT_DIR: agentDir };
+export function piLaunchEnv(baseEnv, agentDir) {
+  const env = { ...launchEnv(baseEnv, agentDir), ...piSupportEnv(), RUBATO_CANDIDATE_AGENT_DIR: agentDir };
   for (const key of STRIP_SENPI_KEYS) delete env[key];
   const nodeOptions = stripNoChangelogNodeOptions(env.NODE_OPTIONS);
   if (nodeOptions) env.NODE_OPTIONS = nodeOptions;
@@ -146,7 +145,7 @@ export function stockPiLaunchEnv(baseEnv, agentDir) {
   return env;
 }
 
-export function applyStockPiProcessEnv(nextEnv) {
+export function applyPiProcessEnv(nextEnv) {
   for (const key of STRIP_SENPI_KEYS) delete process.env[key];
   const stripped = stripNoChangelogNodeOptions(process.env.NODE_OPTIONS);
   if (stripped) process.env.NODE_OPTIONS = stripped;
@@ -163,7 +162,7 @@ function prepareAgentDir(agentDir) {
 }
 
 async function runSameNode(entry, argv, nextEnv, { registerNoChangelog = false, stockPi = false } = {}) {
-  if (stockPi) applyStockPiProcessEnv(nextEnv);
+  if (stockPi) applyPiProcessEnv(nextEnv);
   else Object.assign(process.env, nextEnv);
   if (registerNoChangelog) {
     await import(new URL("./no-changelog-register.mjs", import.meta.url).href);
@@ -179,20 +178,20 @@ export async function spawnRubatoPi({ args = process.argv.slice(2), env = proces
   const selection = resolveExecutionEngine({ env });
   const node = selection.node;
   if (!node) throw new Error("rubato-pi needs Node.js ^24.15 || >=26 already installed. Default Node was not changed.");
-  // Senpi launch is retired (user decree 2026-09-13): a broken stock-pi install
+  // Senpi launch is retired (user decree 2026-09-13): a broken pi install
   // fails loud here instead of silently falling back to senpi.
   if (selection.error) throw new Error(selection.error);
-  const stockPiReady = selection.engine === "stock-pi";
+  const stockPiReady = selection.engine === "pi" || selection.engine === "stock-pi";
   if (selection.warning) console.error(selection.warning);
   setBootChromeStatus("엔진을 불러오는 중");
 
   if (stockPiReady) {
     const entry = selection.entry;
     if (!entry || !existsSync(entry)) {
-      throw new Error(`rubato: stock-pi entry is missing; ${ENGINE_REPAIR_HINT} to reinstall it`);
+      throw new Error(`rubato: pi entry is missing; ${ENGINE_REPAIR_HINT} to reinstall it`);
     } else {
-      const argv = [entry, ...buildStockPiArgs(args, { env })];
-      const nextEnv = stockPiLaunchEnv(env, profileDir);
+      const argv = [entry, ...buildPiArgs(args, { env })];
+      const nextEnv = piLaunchEnv(env, profileDir);
       if (sameNodeBinary(node.bin)) {
         const { installedSharedRuntime, isConversationLaunch, ensureProfileEngine } = await import('../../pi-server/src/discovery.mjs');
         const runtimeRoot = installedSharedRuntime(env);
@@ -209,9 +208,14 @@ export async function spawnRubatoPi({ args = process.argv.slice(2), env = proces
       }
       releaseBootChrome();
       return spawn(node.bin, [join(root, "bin", "rubato-pi.mjs"), ...args], {
-        env: { ...nextEnv, RUBATO_ENGINE: "stock-pi" },
+        env: { ...nextEnv, RUBATO_ENGINE: "pi" },
         stdio: "inherit",
       });
     }
   }
 }
+
+export const buildStockPiArgs = buildPiArgs;
+export const stockPiSupportEnv = piSupportEnv;
+export const stockPiLaunchEnv = piLaunchEnv;
+export const applyStockPiProcessEnv = applyPiProcessEnv;

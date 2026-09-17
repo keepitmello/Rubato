@@ -3,7 +3,7 @@
 // Fields inside a line are separated by " · ", never emitted as `key:value` soup.
 
 import type { Theme, ThemeColor } from "@code-yeongyu/senpi"
-import { buildNoticeBox, noticeTone, type NoticeLine } from "@rubato/senpi-task/notice-box"
+import { buildNoticeBox, noticeTone, type NoticeLine } from "@rubato/task/notice-box"
 import {
   ELLIPSIS,
   excerptRendererText,
@@ -11,7 +11,7 @@ import {
   normalizeRendererText,
   optionalRendererText,
   rendererVisibleWidth,
-} from "@rubato/senpi-task/renderer-text"
+} from "@rubato/task/renderer-text"
 import { truncateToWidth } from "@earendil-works/pi-tui"
 
 /** The subset of Theme an entry renderer needs; keeps fakes cheap in tests. */

@@ -4,9 +4,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  applyStockPiProcessEnv,
+  applyPiProcessEnv,
   resolveLaunchEngine,
-  stockPiLaunchEnv,
+  piLaunchEnv,
   stripNoChangelogNodeOptions,
 } from "../../src/launch.mjs";
 import { defaultStockEngineDir } from "../../src/engine-paths.mjs";
@@ -32,7 +32,7 @@ test("a present but invalid receipt is a hard repair error (no senpi fallback)",
     const planted = plantReceipt(home);
     rmSync(planted.entry);
     const resolved = resolveLaunchEngine({ env: { HOME: home } });
-    assert.equal(resolved.engine, "stock-pi");
+    assert.equal(resolved.engine, "pi");
     assert.match(resolved.error, /not valid/);
     assert.equal(resolved.entry, null);
   });
@@ -41,15 +41,15 @@ test("a present but invalid receipt is a hard repair error (no senpi fallback)",
 test("unknown RUBATO_ENGINE warns and uses the default rule", () => {
   withHome((home) => {
     const resolved = resolveLaunchEngine({ env: { HOME: home, RUBATO_ENGINE: "stockpi" } });
-    assert.equal(resolved.engine, "stock-pi");
+    assert.equal(resolved.engine, "pi");
     assert.match(resolved.warning, /unknown RUBATO_ENGINE=stockpi/);
     assert.equal(resolved.notice, null);
     assert.match(resolved.error, /not installed/);
   });
 });
 
-test("stockPiLaunchEnv strips SENPI_BIN and no-changelog NODE_OPTIONS from env and process.env", () => {
-  const env = stockPiLaunchEnv({
+test("piLaunchEnv strips SENPI_BIN and no-changelog NODE_OPTIONS from env and process.env", () => {
+  const env = piLaunchEnv({
     SENPI_BIN: "/tmp/senpi",
     SENPI_BRAND: "x",
     SENPI_CODING_AGENT_DIR: "/tmp/senpi-agent",
@@ -72,7 +72,7 @@ test("stockPiLaunchEnv strips SENPI_BIN and no-changelog NODE_OPTIONS from env a
   process.env.SENPI_BIN = "/live/senpi";
   process.env.NODE_OPTIONS = "--import=file:///tmp/no-changelog-register.mjs";
   try {
-    applyStockPiProcessEnv(env);
+    applyPiProcessEnv(env);
     assert.equal(process.env.SENPI_BIN, undefined);
     assert.equal(process.env.NODE_OPTIONS, "--trace-uncaught");
     assert.equal(process.env.RUBATO_CANDIDATE_AGENT_DIR, "/tmp/agent");
