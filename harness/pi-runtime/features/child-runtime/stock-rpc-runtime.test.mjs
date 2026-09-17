@@ -107,7 +107,7 @@ describe("stock Pi child RPC runtime", () => {
           if (line === undefined) return
           clearTimeout(timer)
           try {
-            resolve(JSON.parse(line))
+            resolve(JSON.parse(line));
           } catch (error) {
             reject(error)
           }
@@ -208,8 +208,12 @@ describe("stock Pi child RPC runtime", () => {
 
   test("a child keeps the role its environment already names", async () => {
     const member = await childSystemPrompt({ SENPI_TASK_MEMBER: "1" })
-    assert.match(member, /# Workstream owner/)
+    assert.match(member, /^# Teammate$/m)
+    assert.match(member, /^Role: owner$/m)
+    assert.match(member, /technical integration belongs here when assigned/)
     const explicit = await childSystemPrompt({ RUBATO_PI_ROLE: "verifier" })
-    assert.match(explicit, /# Workstream owner/)
+    assert.match(explicit, /^# Teammate$/m)
+    assert.match(explicit, /^Role: verifier$/m)
+    assert.match(explicit, /Do not implement the production change you will judge/)
   })
 })
