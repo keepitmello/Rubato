@@ -12,13 +12,18 @@ const flatten = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) =
 
 test("Pi lead resolves intent and chooses shape before staffing", () => {
   const p = read("harness/prompts/core-lead.pi.md");
-  assert.match(p, /primary role is the conversation with the user/);
-  assert.match(p, /read Skill\(agent-taskforce\), LEAD.md and the active adapter before deciding/);
-  assert.match(p, /work-intent/);
-  assert.match(p, /no team helps/);
-  assert.match(p, /Without a team, perform the authorized work directly/);
-  assert.match(p, /explicit confirmation of both intent and roster/);
-  assert.match(p, /The user-selected lead is independent of execution allocation/);
+  assert.match(p, /Your role is the conversation:/);
+  assert.match(p, /frame the problem with the user/);
+  assert.match(p, /For durable intent read Skill\(work-intent\)/);
+  assert.match(p, /For a team read Skill\(agent-taskforce\) and LEAD.md/);
+  assert.match(p, /Then do the work here/);
+  assert.match(p, /form the team only on explicit confirmation of both/);
+  // The shortened prompt routes to the skill that owns staffing policy.
+  const lead = read("harness/skills/agent-taskforce/LEAD.md");
+  assert.match(lead, /Read the active adapter and Skill\(model-guide\)/);
+  assert.match(lead, /Compare direct work, focused\nsupport and a team/);
+  assert.match(lead, /Without a team, direct authorized work is normal/);
+  assert.match(lead, /Keep the user-selected lead independent of execution\nallocation/);
 });
 
 test("Pi combined approval preserves actual human assent, authority and continuity", () => {
@@ -50,14 +55,20 @@ test("Pi roles keep local reasoning, peer communication and user decisions disti
   const teammate = read("harness/prompts/core-teammate.pi.md");
   assert.match(teammate, /not the lead's worker/);
   assert.match(teammate, /sharing this prompt does not make a verifier an implementer/);
-  assert.match(teammate, /Helpers may reason inside their boundary/);
-  assert.match(teammate, /`team_send` directly/);
+  assert.match(teammate, /Inside their boundaries, judgment and method are yours/);
+  assert.match(teammate, /with `team_send` to the affected teammate/);
+  assert.match(teammate, /bring changes to user intent, authority or approved commitments to the lead/);
+  const peerContract = read("harness/skills/agent-taskforce/TEAMMATE.md");
+  assert.match(peerContract, /Helpers may reason within their scope; you retain your outcome/);
   const owner = read("harness/skills/agent-taskforce/teammate/workstream-owner.md");
   assert.match(owner, /lead is not your debugger/);
   assert.match(owner, /coordinate peer inputs, implement the shared integration/);
   const agent = read("harness/prompts/core-agent.pi.md");
-  assert.match(agent, /subagent of the session that sent this brief — the lead or a teammate/);
-  assert.match(agent, /Keep the wider outcome/);
+  assert.match(agent, /subagent of the session that sent this brief - the lead or a teammate/);
+  assert.match(agent, /not on the team roster/);
+  assert.match(agent, /Use judgment inside that assignment/);
+  assert.match(agent, /Implement only when the brief grants write ownership/);
+  assert.match(agent, /return evidence the sender can integrate/);
   for (const file of ["core-lead.pi.md", "core-teammate.pi.md", "core-agent.pi.md"]) {
     assert.doesNotMatch(read("harness/prompts/" + file),
       /cognitively depth 0|Do not do this outcome as a subagent of the lead/);
