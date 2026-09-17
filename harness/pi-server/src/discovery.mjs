@@ -66,7 +66,8 @@ export async function ensureProfileEngine({ descriptorPath, nodeBin = process.ex
             child = spawn(nodeBin, [serverCli, '--agent-dir', agentDir,
               ...(runtimeRoot ? ['--runtime-root', runtimeRoot] : [])], {
               cwd: agentDir, detached: true, stdio: ['ignore', sink.fd, sink.fd],
-              env: { ...env, ELECTRON_RUN_AS_NODE: '1' },
+              env: { ...env, ELECTRON_RUN_AS_NODE: '1',
+                NODE_OPTIONS: `${env.NODE_OPTIONS ?? ''} --experimental-strip-types`.trim() },
             });
             child.on('error', error => { spawnError = error; }); child.unref();
           } finally { await sink.close(); }
