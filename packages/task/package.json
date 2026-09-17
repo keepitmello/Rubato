@@ -49,6 +49,7 @@
   },
   "dependencies": {
     "@rubato/agent-core": "workspace:*",
+    "@rubato/model-core": "workspace:*",
     "@rubato/delegate-core": "workspace:*",
     "@rubato/config-core": "workspace:*",
     "@rubato/team-core": "workspace:*",

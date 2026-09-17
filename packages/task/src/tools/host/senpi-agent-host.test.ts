@@ -165,4 +165,19 @@ describe("liveModelCatalog", () => {
       "google-antigravity/gemini-3.8-flash",
     ])
   })
+
+  test("#given live extras and a Fast-only cursor row #when listed #then only catalog identities remain", () => {
+    const catalog = liveModelCatalog(() => ({
+      getAvailable: () => [
+        { provider: "xai", id: "grok-4.6" },
+        { provider: "cursor", id: "cursor-grok-4.6-high-fast" },
+        { provider: "cursor", id: "secret-lab" },
+      ],
+    }))
+
+    expect(catalog.has("cursor/cursor-grok-4.6")).toBe(true)
+    expect(catalog.has("cursor/cursor-grok-4.6-high-fast")).toBe(true)
+    expect(catalog.has("cursor/secret-lab")).toBe(false)
+    expect(catalog.list?.()).toEqual(["xai/grok-4.6", "cursor/cursor-grok-4.6"])
+  })
 })

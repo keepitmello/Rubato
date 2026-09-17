@@ -96,7 +96,7 @@ describe("task engine runner routing", () => {
       parent_session_id: "session-a",
       depth: 0,
       execution_mode: "process",
-      model: "rubato-mock/mock-1",
+      model: "xai/grok-4.6",
       run_in_background: true,
     })
 
@@ -116,7 +116,7 @@ describe("task engine runner routing", () => {
       parent_session_id: "session-a",
       depth: 0,
       execution_mode: "in-process",
-      model: "rubato-mock/mock-1",
+      model: "xai/grok-4.6",
       run_in_background: true,
     })
 

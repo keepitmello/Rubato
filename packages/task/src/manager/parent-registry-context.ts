@@ -1,4 +1,5 @@
 import type { CreateAgentSessionOptions } from "@code-yeongyu/senpi"
+import { launchProductModel } from "@rubato/model-core"
 
 import { asSenpiThinkingLevel } from "../senpi/thinking-level"
 import type {
@@ -37,7 +38,7 @@ export function createParentRegistrySessionContext(
   const provide = (spec: ManagedStartSpec): InProcessSessionContext => {
     const registry = resolveRegistry()
     if (registry === undefined) return {}
-    const model = spec.model === undefined ? undefined : findModelReference(registry, spec.model)
+    const model = spec.model === undefined ? undefined : findModelReference(registry, launchProductModel(spec.model))
     const modelRuntime = registry.modelRuntime
     const thinkingLevel = asSenpiThinkingLevel(spec.variant)
     return {
@@ -59,9 +60,10 @@ export function createParentRegistrySessionContext(
  * them, and an absent or edge-positioned slash yields undefined without a lookup.
  */
 export function findModelReference<TModel>(registry: ModelFinder<TModel>, modelReference: string): TModel | undefined {
-  const slash = modelReference.indexOf("/")
-  if (slash <= 0 || slash === modelReference.length - 1) return undefined
-  return registry.find(modelReference.slice(0, slash), modelReference.slice(slash + 1))
+  const launched = launchProductModel(modelReference)
+  const slash = launched.indexOf("/")
+  if (slash <= 0 || slash === launched.length - 1) return undefined
+  return registry.find(launched.slice(0, slash), launched.slice(slash + 1))
 }
 
 /**
@@ -87,7 +89,8 @@ export function resolveResumeContext(
   }
 
   // Key on the canonical provider+model_id pair, NOT on the display string.
-  const model = registry.find(resolvedModel.provider, resolvedModel.model_id)
+  // Presented catalog aliases (cursor Grok picker id → Fast live id) resolve the same way start does.
+  const model = findModelReference(registry, `${resolvedModel.provider}/${resolvedModel.model_id}`)
   if (model === undefined) {
     return {
       ok: false,

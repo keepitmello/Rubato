@@ -3,6 +3,20 @@ import { ModelRegistry, ModelRuntime } from "../../senpi-test-runtime"
 
 export function createTeamServiceTestModelRegistry(): SenpiModelRegistry {
   const modelRegistry = new ModelRegistry(ModelRuntime.createSync())
+  modelRegistry.registerProvider("xai", {
+    api: "openai-completions",
+    baseUrl: "https://example.test",
+    apiKey: "test-key",
+    models: [{
+      id: "grok-4.6",
+      name: "Grok 4.6",
+      reasoning: true,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 1,
+      maxTokens: 1,
+    }],
+  })
   modelRegistry.registerProvider("rubato-mock", {
     api: "openai-completions",
     baseUrl: "https://example.test",

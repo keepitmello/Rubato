@@ -3,6 +3,8 @@ import { createRequire } from "node:module"
 import { basename, delimiter, dirname, isAbsolute, join, resolve, sep } from "node:path"
 import { fileURLToPath } from "node:url"
 
+import { launchProductModel } from "@rubato/model-core"
+
 import type { RpcRunnerSpec } from "../types"
 import { asSenpiThinkingLevel } from "../../senpi/thinking-level"
 import { MEMBER_EXTENSION_BUNDLE_NAME, MEMBER_PROCESS_ENV_NAMES } from "../../team/member-extension/identity"
@@ -145,7 +147,7 @@ export function buildChildArgs(spec: RpcRunnerSpec): readonly string[] {
     if (entry.length > 0) args.push("--extension", entry)
   }
   if (spec.model !== undefined && spec.model.length > 0) {
-    args.push("--model", spec.model)
+    args.push("--model", launchProductModel(spec.model))
   }
   const thinkingLevel = asSenpiThinkingLevel(spec.reasoning ?? spec.variant)
   if (thinkingLevel !== undefined) {

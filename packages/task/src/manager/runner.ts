@@ -1,4 +1,5 @@
 import type { CreateAgentSessionOptions } from "@code-yeongyu/senpi"
+import { launchProductModel } from "@rubato/model-core"
 
 import type { ChildHandle as InProcessChildHandle } from "../runners/in-process/child-handle"
 import { RunnerError, type ChildSpec } from "../runners/in-process"
@@ -95,7 +96,7 @@ function toChildSpec(spec: ManagedStartSpec, context: InProcessSessionContext): 
     ...(context.modelRuntime !== undefined ? { modelRuntime: context.modelRuntime } : {}),
     ...(context.model !== undefined ? { model: context.model } : {}),
     ...(context.thinkingLevel !== undefined ? { thinkingLevel: context.thinkingLevel } : {}),
-    ...(spec.model !== undefined ? { selectedModel: spec.model } : {}),
+    ...(spec.model !== undefined ? { selectedModel: launchProductModel(spec.model) } : {}),
     ...(spec.requestedModel !== undefined ? { requestedModel: spec.requestedModel } : {}),
     ...(spec.fallbackModels !== undefined ? { fallbackModels: spec.fallbackModels } : {}),
     ...(spec.resolvedModel !== undefined ? { resolvedModel: spec.resolvedModel } : {}),

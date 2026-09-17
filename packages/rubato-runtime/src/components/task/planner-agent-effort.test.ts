@@ -28,19 +28,19 @@ describe("agent plans carrying configured effort", () => {
     const config = {
       agents: {
         explore: {
-          models: [{ model: "quotio-openai/gpt-5.6-luna-fast", reasoningEffort: "minimal" as const }],
+          models: [{ model: "opencode/muse-spark-1.3-contributor-free", reasoningEffort: "minimal" as const }],
         },
       },
     } satisfies RubatoConfig
     const agents = mapRubatoConfigAgents(config)
-    const models = registry([{ provider: "quotio-openai", id: "gpt-5.6-luna-fast" }])
+    const models = registry([{ provider: "opencode", id: "muse-spark-1.3-contributor-free" }])
     const planner = createTaskChildPlanner(agents, () => models)
 
     // when
     const plan = resolvedPlan(planner({ preset: "explore", prompt: "go", parent_session_id: "p", depth: 1 }))
 
     // then
-    expect(plan.model).toBe("quotio-openai/gpt-5.6-luna-fast")
+    expect(plan.model).toBe("opencode/muse-spark-1.3-contributor-free")
     expect(plan.variant).toBeUndefined()
   })
 
@@ -68,12 +68,12 @@ describe("agent plans carrying configured effort", () => {
       agents: {
         explore: {
           variant: "high",
-          models: [{ model: "quotio-openai/gpt-5.6-luna-fast", reasoningEffort: "minimal" as const }],
+          models: [{ model: "opencode/muse-spark-1.3-contributor-free", reasoningEffort: "minimal" as const }],
         },
       },
     } satisfies RubatoConfig
     const agents = mapRubatoConfigAgents(config)
-    const models = registry([{ provider: "quotio-openai", id: "gpt-5.6-luna-fast" }])
+    const models = registry([{ provider: "opencode", id: "muse-spark-1.3-contributor-free" }])
     const planner = createTaskChildPlanner(agents, () => models)
 
     // when
@@ -85,9 +85,9 @@ describe("agent plans carrying configured effort", () => {
 
   test("#given an agent with plain string models #when planned #then no variant is invented", () => {
     // given
-    const config = { agents: { explore: { models: ["openai/plain"] } } } satisfies RubatoConfig
+    const config = { agents: { explore: { models: ["cursor/composer-2.5"] } } } satisfies RubatoConfig
     const agents = mapRubatoConfigAgents(config)
-    const models = registry([{ provider: "openai", id: "plain" }])
+    const models = registry([{ provider: "cursor", id: "composer-2.5" }])
     const planner = createTaskChildPlanner(agents, () => models)
 
     // when

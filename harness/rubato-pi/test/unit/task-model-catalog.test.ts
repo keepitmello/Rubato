@@ -1,72 +1,56 @@
 import { describe, expect, test } from "bun:test"
 
-import { createTaskChildPlanner, plannedEffortSource } from "../../../../packages/rubato-runtime/src/components/task/planner"
-import { supportedProviders } from "../../src/extensions/provider-overlay.mjs"
+import { catalogSlugs } from "../../../../packages/model-core/src/product-model-catalog.mjs"
+import { createTaskChildPlanner } from "../../../../packages/rubato-runtime/src/components/task/planner"
+import { liveModelCatalog } from "../../../../packages/task/src/tools/host/senpi-agent-host"
+import { catalogForPicker } from "../../../t3-integration/src/model-catalog-order.mjs"
+import { admitPickerItems } from "../../../pi-runtime/features/model-picker/catalog.mjs"
 
 describe("picker and task model catalog parity", () => {
-  // FX bridge 삭제 전에는 이 목록이 bridge catalog(`FALLBACK_CATALOG`)에서 합성됐다.
-  // 이제 등록하는 것은 pinned native factory 뿐이므로 그 목록이 곧 picker 가 보는 것이다.
-  // env 를 비워 넘긴다 — Cursor 는 native 직결뿐이라 network canary 를 돌리지 않는다.
-  test("every model visible to the picker can override a task category", async () => {
-    const providers = await supportedProviders({ env: {} })
-    const models = providers.flatMap((provider) => provider.getModels())
-    // 빈 목록은 통과가 아니다. 등록이 조용히 죽으면 아래 루프가 0번 돌고 초록이 된다.
-    expect(models.length).toBeGreaterThan(0)
-    const registry = {
-      getAvailable: () => models,
-      find: (provider: string, modelId: string) =>
-        models.find((model) => model.provider === provider && model.id === modelId),
-    }
-    const planner = createTaskChildPlanner(
-      { categories: { sol: { model: "openai-codex/gpt-5.6-sol" } } },
-      {},
-      () => registry,
-    )
+  const live = [
+    { provider: "openai-codex", id: "gpt-5.6-sol", model: "sol" },
+    { provider: "anthropic", id: "claude-fable-5-1", model: "fable" },
+    { provider: "xai", id: "grok-4.6", model: "grok" },
+    { provider: "cursor", id: "cursor-grok-4.6-high-fast", model: "cursor-fast" },
+    { provider: "cursor", id: "composer-2.5", model: "composer" },
+    { provider: "cursor", id: "secret-lab", model: "secret" },
+    { provider: "unknown-lab", id: "secret", model: "lab" },
+  ]
 
-    for (const model of models) {
-      const id = `${model.provider}/${model.id}`
-      const result = planner({
-        prompt: "Use the selected model.",
-        parent_session_id: "parent-1",
-        depth: 0,
-        category: "sol",
-        model: id,
-      })
-      expect(result.kind, id).toBe("resolved")
-      if (result.kind !== "resolved") continue
-      expect(result.plan.model).toBe(id)
-      expect(result.plan.category).toBe("sol")
-      expect(result.plan.resolved_model?.source).toBe("explicit")
-    }
+  test("#given one live registry #when CLI GUI agent and team lists are built #then they share the product catalog", () => {
+    const cli = admitPickerItems(live, undefined, (a, b) => a === b).map((item) => `${item.provider}/${item.id}`)
+    const gui = catalogForPicker(live).map((item) => `${item.provider}/${item.id}`)
+    const tools = liveModelCatalog(() => ({ getAvailable: () => live }))
+    expect(cli).toEqual(gui)
+    expect(tools.list?.()).toEqual(gui)
+    expect(gui.every((slug) => catalogSlugs().includes(slug))).toBe(true)
+    expect(cli).not.toContain("cursor/secret-lab")
+    expect(cli).toContain("cursor/cursor-grok-4.6")
+    expect(cli).toContain("cursor/composer-2.5")
   })
 
-  test("google-antigravity/gemini-3.8-flash is picker-visible and planner-admitted", async () => {
-    const providers = await supportedProviders({ env: {} })
-    const antigravity = providers.find((provider) => provider.id === "google-antigravity")
-    expect(antigravity).toBeDefined()
-    const models = antigravity?.getModels() ?? []
-    const flash = models.find((model) => model.id === "gemini-3.8-flash")
-    expect(flash).toBeDefined()
-    expect(flash?.provider).toBe("google-antigravity")
-    expect(flash?.input).toEqual(["text", "image"])
-
-    const registry = {
+  test("#given a Fast-only cursor row #when planned as an agent #then the picker identity is admitted", () => {
+    const models = live.map(({ provider, id }) => ({ provider, id }))
+    const planner = createTaskChildPlanner({}, () => ({
       getAvailable: () => models,
       find: (provider: string, modelId: string) =>
         models.find((model) => model.provider === provider && model.id === modelId),
-    }
-    const planner = createTaskChildPlanner({}, {}, () => registry)
-    const result = planner({
-      prompt: "Use Flash.",
+    }))
+    const admitted = planner({
+      prompt: "Use Cursor Fast.",
       parent_session_id: "parent-1",
       depth: 0,
-      model: "google-antigravity/gemini-3.8-flash",
+      model: "cursor/cursor-grok-4.6",
     })
-    expect(result.kind).toBe("resolved")
-    if (result.kind !== "resolved") return
-    expect(result.plan.model).toBe("google-antigravity/gemini-3.8-flash")
-    expect(result.plan.variant).toBe("medium")
-    expect(result.plan.resolved_model?.reasoning).toBe("medium")
-    expect(plannedEffortSource(result.plan.resolved_model)).toBe("model-default")
+    expect(admitted.kind).toBe("resolved")
+    if (admitted.kind !== "resolved") return
+    expect(admitted.plan.model).toBe("cursor/cursor-grok-4.6")
+    const rejected = planner({
+      prompt: "Use a secret.",
+      parent_session_id: "parent-1",
+      depth: 0,
+      model: "cursor/secret-lab",
+    })
+    expect(rejected.kind).toBe("error")
   })
 })

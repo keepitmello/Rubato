@@ -37,6 +37,12 @@ export const files = Object.freeze([
   Object.freeze({
     packageName: PACKAGE_NAME,
     version: VERSION,
+    path: "dist/rubato-features/model-picker/product-model-catalog.mjs",
+    sourcePath: fileURLToPath(new URL("../../../../packages/model-core/src/product-model-catalog.mjs", import.meta.url)),
+  }),
+  Object.freeze({
+    packageName: PACKAGE_NAME,
+    version: VERSION,
     path: "dist/rubato-features/model-picker/catalog.mjs",
     sourcePath: fileURLToPath(new URL("./catalog.mjs", import.meta.url)),
   }),
