@@ -11,13 +11,6 @@ const BUNDLED_RETURN_SKILL = join(dirname(fileURLToPath(import.meta.url)), "../.
 const NON_INTERACTIVE_MODES = new Set(["json", "print"]);
 const DEFAULT_AGENT_DIR_SEGMENTS = [".rubato-pi", "agent"];
 
-export const TOOL_GUIDELINES = `## Tool Guidelines
-
-- Use read to inspect files and apply_patch to create, modify, rename or delete them. Keep patches focused and preserve unrelated changes.
-- Only core tools are exposed initially. Use tool_search for other capabilities, then call the activated tools in this turn. Names that match: Agent, eval, memory, lsp, ast-grep, bash_output, monitor, webfetch.
-- Save durable facts with memory tools; do not let bookkeeping delay the user's task.
-`.trim();
-
 export function rolePromptsRoot(env = process.env) {
   if (env.RUBATO_PROMPTS_DIR) return env.RUBATO_PROMPTS_DIR;
   return join(homedir(), ".agents", "rubato");
@@ -254,14 +247,24 @@ export function extractHarnessExtras(existing) {
   take(/<project_context>[\s\S]*?<\/project_context>/);
   take(/<memory>[\s\S]*?<\/memory>/);
   take(/<memory_metadata>[\s\S]*?<\/memory_metadata>/);
-  take(new RegExp(`${SKILLS_SECTION}[\\s\\S]*?(?=\\nCurrent working directory:|$)`));
+  // Stock pi appends its own <available_skills> listing even to a custom prompt,
+  // after the one launch.mjs already emitted, with <project_context> in between.
+  // Match each listing as a bounded block so the regex cannot swallow what sits
+  // between two of them, and keep only the last one: the runtime's, which sees
+  // every --skill directory and is the more complete list.
+  const listings = [...existing.matchAll(new RegExp(
+    `${SKILLS_SECTION}[\\s\\S]*?(?:</available_skills>|(?=\\n\\n<project_context>|\\nCurrent working directory:|$))`,
+    "g",
+  ))];
+  if (listings.length > 0) extras.push(listings[listings.length - 1][0].trim());
   take(/Current working directory: [^\n]+/);
   return extras;
 }
 
 export function replaceSystemPrompt(existing, role, hooks = {}) {
   const load = hooks.loadRolePrompt ?? ((nextRole) => loadRolePrompt(nextRole, hooks));
-  const parts = [load(role).trim(), assignedRoleSection(role), modelIdentityLine(hooks.model), TOOL_GUIDELINES];
+  // Tool usage lives in each tool's schema description; the prompt carries only role and identity.
+  const parts = [load(role).trim(), assignedRoleSection(role), modelIdentityLine(hooks.model)];
   const extras = extractHarnessExtras(existing ?? "");
   parts.push(...extras);
   // Senpi only appends its own skill listing when it builds the prompt itself,

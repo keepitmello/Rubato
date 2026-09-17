@@ -183,7 +183,7 @@ test("stock lifecycle events drive prompt context, compact cancellation, post-co
   assert.deepEqual(promptInput, { action: "continue" });
   const prompt = await fixture.session.extensionRunner.emitBeforeAgentStart("hello", undefined, "BASE", { cwd: fixture.cwd });
   assert.deepEqual(prompt.messages?.map(({ content }) => content), ["prompt-context"]);
-  assert.match(prompt.systemPrompt, /^BASE\n\nprompt-system\n## Bash Tool Timeout Policy/);
+  assert.equal(prompt.systemPrompt, "BASE\n\nprompt-system");
 
   const signal = new AbortController().signal;
   const compact = await fixture.session.extensionRunner.emit({
@@ -231,7 +231,7 @@ test("permission_replied payload names the allowed tool", async (t) => {
     JSON.stringify(fixture.permissionReplies));
 });
 
-test("bash timeout mutates missing values, preserves explicit values, and contributes detach prompt", async (t) => {
+test("bash timeout mutates missing values and preserves explicit values without touching the prompt", async (t) => {
   const fixture = await createFixture(t, { hooks: false });
   const missing = { command: "sleep 1" };
   assert.equal(await fixture.session.extensionRunner.emitToolCall({
@@ -242,8 +242,7 @@ test("bash timeout mutates missing values, preserves explicit values, and contri
   await fixture.session.extensionRunner.emitToolCall({ type: "tool_call", toolCallId: "bash-2", toolName: "bash", input: explicit });
   assert.equal(explicit.timeout, 7);
   const prompt = await fixture.session.extensionRunner.emitBeforeAgentStart("prompt", undefined, "BASE", { cwd: fixture.cwd });
-  assert.match(prompt.systemPrompt, /Default timeout: 42s/);
-  assert.match(prompt.systemPrompt, /~15s window/);
+  assert.equal(prompt, undefined, "no prompt contribution once the bash schema carries the timeout semantics");
 });
 
 test("command hook timeout kills its isolated subprocess and reports timeout without hanging", async (t) => {

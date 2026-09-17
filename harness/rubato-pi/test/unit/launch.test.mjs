@@ -1,18 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildPiArgs, sameNodeBinary } from "../../src/launch.mjs";
-import { TOOL_GUIDELINES } from "../../src/system-prompt.mjs";
 
 test("pi argv replaces the system prompt and lets profile settings choose the default model", () => {
   const args = buildPiArgs(["--mode", "rpc"], { env: {} });
   const promptAt = args.indexOf("--system-prompt");
   assert.ok(promptAt >= 0);
   assert.match(args[promptAt + 1], /Working agreement/);
-  // 785f6a3f9 이후 리드 프롬프트는 `Agent` 를 "rail" 로 부른다. 문구가 아니라
-  // 생성물이 통째로 argv 에 실렸는지를 본다.
-  assert.match(args[promptAt + 1], /`Agent` is the rail for a result you take back/);
-  assert.match(args[promptAt + 1], /## Tool Guidelines/);
-  assert.ok(args[promptAt + 1].includes(TOOL_GUIDELINES));
+  // 생성물이 통째로 argv 에 실렸는지를 본다: 리드 조각과 말투 조각까지.
+  assert.match(args[promptAt + 1], /# Lead\n/);
+  assert.match(args[promptAt + 1], /# 이 자리의 너/);
+  assert.doesNotMatch(args[promptAt + 1], /## Tool Guidelines/);
   assert.doesNotMatch(args[promptAt + 1], /operating inside pi/);
   assert.doesNotMatch(args[promptAt + 1], /## Rails — fx/);
   assert.doesNotMatch(args[promptAt + 1], /Run `fx models`/);
@@ -23,12 +21,10 @@ test("pi argv replaces the system prompt and lets profile settings choose the de
   assert.equal(args.includes("-e"), false);
 });
 
-test("member argv gets teammate prompt plus the same tool guidelines", () => {
+test("member argv gets the teammate prompt", () => {
   const args = buildPiArgs(["--mode", "rpc"], { env: { SENPI_TASK_MEMBER: "alpha" } });
   const prompt = args[args.indexOf("--system-prompt") + 1];
-  assert.match(prompt, /# Workstream owner/);
-  assert.match(prompt, /## Tool Guidelines/);
-  assert.ok(prompt.includes(TOOL_GUIDELINES));
+  assert.match(prompt, /# Teammate/);
   assert.doesNotMatch(prompt, /# Lead\n/);
   assert.doesNotMatch(prompt, /# Dispatching/);
   assert.doesNotMatch(prompt, /# Dispatched/);
@@ -74,7 +70,6 @@ test("print and json sessions inline the dispatched contract; interactive and rp
   assert.match(printed, /# Dispatched/);
   assert.match(printed, /Provisional:/);
   assert.match(printed, /# Return/);
-  assert.match(printed, /Boss report only/);
   assert.match(printed, /This run's detail file:/);
 
   const json = promptOf(["--mode", "json"]);
