@@ -1,4 +1,4 @@
-import type { TaskRecordStore } from "@rubato/senpi-task"
+import type { TaskRecordStore } from "@rubato/task"
 
 import { watchStatusEdge } from "./store-status-edge"
 import type { TaskTerminalObservers } from "./terminal-observers"

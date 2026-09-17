@@ -5,14 +5,22 @@ import { EventProjection, importedId, messageKey, textOf, usageModelIdentity, wi
 import { applySelectionOptions, catalogForPicker } from './model-catalog-order.mjs';
 import { controlCommandFor, rewriteSkillMentions, surfaceFromPiCommands } from './commands.mjs';
 import { readFile } from 'node:fs/promises';
-import { readFileSync, readdirSync, statSync, realpathSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, readdirSync, statSync, realpathSync } from 'node:fs';
+function t3BridgeLog(message, extra) {
+  try {
+    const dir = path.join(os.homedir(), '.rubato-pi', 'logs');
+    mkdirSync(dir, { recursive: true });
+    appendFileSync(path.join(dir, 't3-bridge.log'), `${new Date().toISOString()} ${message}${extra ? ` ${extra}` : ''}
+`);
+  } catch { /* ignore */ }
+}
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
 
 // 소켓이 끊기면 pi-client 는 이 문구들로 던진다. 서버가 다시 떠도 이미 만들어 둔
 // 클라이언트는 되살아나지 않으니, 붙잡고 있던 것을 버리고 새 연결로 한 번 더 친다.
-const TRANSPORT_FAILURE = /transport closed|not connected|ECONNREFUSED|ECONNRESET|EPIPE|socket (?:closed|hang)/i;
+const TRANSPORT_FAILURE = /transport closed|not connected|ECONNREFUSED|ECONNRESET|EPIPE|socket (?:closed|hang)|DisconnectedError|Client is disconnected|not supported on Windows/i;
 // 세션 디렉터리에는 사람이 연 대화만 쌓이지 않는다. 벤치·프로브·스모크가
 // 임시 폴더에서 같은 엔진을 돌리고, 그 폴더는 곧 사라진다. T3 는 세션의 cwd
 // 로 프로젝트를 만들기 때문에, 그것을 그대로 넘기면 사이드바에 열 수도 없는
@@ -58,6 +66,8 @@ function resolveNode() {
   return process.execPath;
 }
 const ensureDescriptor = descriptorPath => ensureProfileEngine({ descriptorPath, nodeBin: resolveNode() });
+t3BridgeLog('t3-bridge loaded');
+
 
 const copy = (value) => JSON.parse(JSON.stringify(value));
 const RECOVER_QUEUE_RESUME = 'resume';
@@ -118,10 +128,13 @@ export class RubatoPiBridge {
     if (this.connecting) return this.connecting;
     this.connecting = (async () => {
       await this.inventoryClient?.close();
+      t3BridgeLog('ensureDescriptor', this.descriptorPath);
       this.descriptor = await ensureDescriptor(this.descriptorPath);
+      t3BridgeLog('connect', this.descriptor?.socketPath);
       this.inventoryClient = await new SessionClient({ ...this.descriptor, onError: this.onError }).connect();
+      t3BridgeLog('connected');
       return this.inventoryClient;
-    })().finally(() => { this.connecting = undefined; });
+    })().catch((error) => { t3BridgeLog('connection failed', String(error?.message ?? error)); throw error; }).finally(() => { this.connecting = undefined; });
     return this.connecting;
   }
   // 끊긴 소켓은 첫 요청에서야 드러난다. connected 플래그는 그 시점까지 참이라
@@ -155,7 +168,7 @@ export class RubatoPiBridge {
         slashCommands: surface.slashCommands, skills: surface.skills };
     })();
     this.catalogues.set(cwd, { at: Date.now(), value: pending });
-    try { return await pending; } catch (error) { this.catalogues.delete(cwd); throw error; }
+    try { const value = await pending; t3BridgeLog('catalogue ok', String((value.models ?? []).length)); return value; } catch (error) { t3BridgeLog('catalogue fail', String(error?.message ?? error)); this.catalogues.delete(cwd); throw error; }
   }
   cursor(sessionId) { return { kind: 'rubato-pi', serverId: this.descriptor.serverId, sessionId }; }
   importedMessages(sessionId, messages) {
@@ -644,4 +657,4 @@ export class RubatoPiBridge {
     await this.inventoryClient?.close();
   }
 }
-export const createBridge = (options) => new RubatoPiBridge(options);
+export const createBridge = (options) => { t3BridgeLog('createBridge', options?.descriptorPath); return new RubatoPiBridge(options); };

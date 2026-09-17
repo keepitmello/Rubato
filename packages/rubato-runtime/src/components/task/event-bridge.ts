@@ -133,7 +133,7 @@ export function wireEventBridge(
     const sessionId = engine.runtime.sessionId() ?? "unknown-session"
     if (!guidanceGuard(sessionId)) return undefined
     pi.sendMessage(
-      { customType: "senpi-task.usage", content: TASK_USAGE_GUIDANCE, display: false, details: {} },
+      { customType: "rubato.task.usage", content: TASK_USAGE_GUIDANCE, display: false, details: {} },
       {},
     )
     return undefined

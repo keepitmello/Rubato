@@ -31,7 +31,7 @@
     "@rubato/memory-core": "workspace:*",
     "@rubato/model-core": "workspace:*",
     "@rubato/config-core": "workspace:*",
-    "@rubato/senpi-task": "workspace:*",
+    "@rubato/task": "workspace:*",
     "@rubato/team-core": "workspace:*",
     "@rubato/utils": "workspace:*",
     "@rubato/lsp-daemon": "file:../lsp-daemon",

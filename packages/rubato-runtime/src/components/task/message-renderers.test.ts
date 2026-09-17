@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 
 import type { MessageRenderer } from "@code-yeongyu/senpi"
-import { normalizeRendererText, rendererVisibleWidth } from "@rubato/senpi-task"
+import { normalizeRendererText, rendererVisibleWidth } from "@rubato/task"
 
 import { Theme } from "../../senpi-test-runtime"
 import { renderTaskCompletion, renderTeamMemberLiveness } from "./renderers"
@@ -110,7 +110,7 @@ describe("task-family custom message renderers", () => {
     }]
 
     // when
-    const lines = renderContentLines(renderTaskCompletion, "senpi-task.completion", "<task-notification>raw</task-notification>", details)
+    const lines = renderContentLines(renderTaskCompletion, "rubato.task.completion", "<task-notification>raw</task-notification>", details)
 
     // then
     expectSanitizedLines(lines)
@@ -139,7 +139,7 @@ describe("task-family custom message renderers", () => {
     // when
     const lines = renderContentLines(
       renderTaskCompletion,
-      "senpi-task.completion",
+      "rubato.task.completion",
       "<task-notification>\n<head>raw protocol body</head>\n</task-notification>",
       details,
     )
@@ -170,7 +170,7 @@ describe("task-family custom message renderers", () => {
     // when
     const lines = renderContentLines(
       renderTeamMemberLiveness,
-      "senpi-task.team-member-liveness",
+      "rubato.task.team-member-liveness",
       "raw liveness protocol",
       details,
     )
@@ -205,7 +205,7 @@ describe("task-family custom message renderers", () => {
     // when
     const lines = renderContentLines(
       renderTaskCompletion,
-      "senpi-task.completion",
+      "rubato.task.completion",
       "<task-notification>raw</task-notification>",
       details,
       140,
@@ -233,7 +233,7 @@ describe("task-family custom message renderers", () => {
     }]
 
     // when
-    const lines = renderContentLines(renderTaskCompletion, "senpi-task.completion", "<task-notification>raw</task-notification>", details, 54, true)
+    const lines = renderContentLines(renderTaskCompletion, "rubato.task.completion", "<task-notification>raw</task-notification>", details, 54, true)
     const normalizedLines = lines.map(normalizeRendererText)
     const continuationLine = normalizedLines.find((line) => line.includes("AgentSend")) ?? ""
 

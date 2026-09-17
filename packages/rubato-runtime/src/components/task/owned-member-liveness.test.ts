@@ -12,7 +12,7 @@ import {
   teamStorageBaseDir,
   toTeamCoreConfig,
   type TaskRecord,
-} from "@rubato/senpi-task"
+} from "@rubato/task"
 
 import { createOwnedMemberLivenessNotifier } from "./owned-member-liveness"
 import { TaskRuntimeContext } from "./runtime-context"

@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 
-import { STOCK_PI_PACKAGES, STOCK_PI_VERSION, resolvePiRuntime } from "../resolve-runtime.mjs";
+import { PI_PACKAGES, PI_VERSION, resolvePiRuntime } from "../resolve-runtime.mjs";
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -51,7 +51,7 @@ test("lock pins nested stock Pi integrity and the Windows shim generator", () =>
   for (const [packageName, integrity] of Object.entries(expectedIntegrity)) {
     const path = `node_modules/@earendil-works/pi-coding-agent/node_modules/${packageName}`;
     const entry = lock.packages[path];
-    assert.equal(entry.version, STOCK_PI_VERSION, packageName);
+    assert.equal(entry.version, PI_VERSION, packageName);
     assert.equal(entry.resolved, `https://registry.npmjs.org/${packageName}/-/${packageName.split("/")[1]}-0.85.1.tgz`);
     assert.equal(entry.integrity, integrity, packageName);
   }
@@ -69,7 +69,7 @@ test("lock pins nested stock Pi integrity and the Windows shim generator", () =>
 
 test("installed runtime exposes one coherent stock suite and an importable SDK", () => {
   const runtime = resolvePiRuntime({ root: runtimeRoot });
-  assert.deepEqual(Object.keys(runtime.packages), STOCK_PI_PACKAGES);
+  assert.deepEqual(Object.keys(runtime.packages), PI_PACKAGES);
 
   const profile = realpathSync(mkdtempSync(join(tmpdir(), "rubato-pi-sdk-profile-")));
   try {
@@ -84,7 +84,7 @@ test("installed runtime exposes one coherent stock suite and an importable SDK",
     );
     assertSuccess(result, "SDK import");
     assert.deepEqual(JSON.parse(result.stdout), {
-      version: STOCK_PI_VERSION,
+      version: PI_VERSION,
       createAgentSession: "function",
       discoverAndLoadExtensions: "function",
     });
@@ -106,7 +106,7 @@ test("bundled and unbundled CLI/RPC entries report the selected stock version", 
     ]) {
       const result = runNode([entry, "--version"], profile);
       assertSuccess(result, label);
-      assert.equal(result.stdout.trim(), STOCK_PI_VERSION, label);
+      assert.equal(result.stdout.trim(), PI_VERSION, label);
       assert.equal(result.stderr, "", label);
     }
   } finally {

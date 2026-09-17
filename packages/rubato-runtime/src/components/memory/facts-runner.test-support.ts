@@ -14,7 +14,7 @@ import {
   type TranscriptEntry,
 } from "@rubato/memory-core"
 import { RubatoMemorySettingsSchema } from "@rubato/config-core"
-import type { SenpiModelPort } from "@rubato/senpi-task"
+import type { SenpiModelPort } from "@rubato/task"
 
 import { FactsExtractorRunner, type FactsExtractorRunnerOptions } from "./facts-runner"
 import type { FactsRunLedger } from "./facts-runner-types"

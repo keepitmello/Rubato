@@ -36,8 +36,8 @@ const errors = [];
 try {
   await session.bindExtensions({ onError: (error) => errors.push(error) });
   assert.deepEqual(errors, [], "all component session_start handlers must bind");
-  assert.equal(existsSync(join(cwd, ".rubato/senpi-task/tasks")), true, "task lifecycle uses the session cwd");
-  assert.equal(existsSync(join(process.cwd(), ".rubato/senpi-task/tasks")), false, "host cwd must not be swept by another session");
+  assert.equal(existsSync(join(cwd, ".rubato/task/tasks")), true, "task lifecycle uses the session cwd");
+  assert.equal(existsSync(join(process.cwd(), ".rubato/task/tasks")), false, "host cwd must not be swept by another session");
   // MCP attaches in the background at session_start. Use its real pre-turn
   // readiness gate before inspecting/executing tools, without calling a model.
   await session.extensionRunner.emitBeforeAgentStart("offline component fixture", undefined, session.systemPrompt);

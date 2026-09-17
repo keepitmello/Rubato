@@ -147,7 +147,7 @@ echo "$CHANGED" | grep -Eq '^harness/prompts/' && need_prompts=1
 # 자동 로드되는 사용자 확장. 설치기 자신이 바뀌어도 다시 깐다 — 설치 규칙이
 # 바뀐 경우이므로 내용이 그대로여도 배치가 달라질 수 있다.
 echo "$CHANGED" | grep -Eq '^(harness/extensions/|harness/scripts/install-extensions\.sh)' && need_extensions=1
-# stock-pi 후보는 harness/ 와 packages/ 전체를 지문으로 삼는다(source-fingerprint.mjs
+# pi 엔진는 harness/ 와 packages/ 전체를 지문으로 삼는다(source-fingerprint.mjs
 # 의 ROOTS). 그 안의 무엇이든 바뀌면 설치본이 새 소스와 어긋나므로 다시 깐다.
 echo "$CHANGED" | grep -Eq '^(package\.json$|bun\.lock$|harness/|packages/)' && need_candidate=1
 # 셸 설정은 alias 블록과 cmux Vault 등록이다. 둘 다 내 집(~/.zshrc, ~/.config/cmux)
@@ -191,7 +191,7 @@ printf '\n%s== 다시 만들 것 ==%s\n' "$BOLD" "$RST"
 echo "  번들 스킬 → ~/.agents/skills"
 [ "$need_extensions" = 1 ] && echo "  번들 확장 → agentDir/extensions"
 [ "$need_shell" = 1 ]   && echo "  셸 alias 블록 · cmux 세션 복원"
-[ "$need_candidate" = 1 ] && echo "  stock-pi 엔진 설치 ${DIM}(몇 분 걸려요)${RST}"
+[ "$need_candidate" = 1 ] && echo "  pi 엔진 설치 ${DIM}(몇 분 걸려요)${RST}"
 [ "$need_aside" = 1 ]   && echo "  Aside 프록시 재시작"
 [ "$need_hub" = 1 ]     && echo "  remote hub 재시작"
 [ "$need_profile" = 1 ] && echo "  프로필 엔진 재시작 ${DIM}(열린 CLI는 다시 붙여야 해요)${RST}"
@@ -381,20 +381,20 @@ if [ "$need_deps" = 1 ]; then
     && ok "rubato-pi 의존성" || fail "rubato-pi 의존성 설치에 실패했습니다. 소스는 받았지만 업데이트는 완료되지 않았습니다."
 fi
 
-# 세션이 실제로 도는 것은 stock-pi 후보다(senpi 폴백 폐기). 새 소스를 받아
+# 세션이 실제로 도는 것은 pi 엔진다(senpi 폴백 폐기). 새 소스를 받아
 # 놓고 후보를 그대로 두면 낡은 후보로 도는데, 폴백이 있던 시절과 달리 이제는
 # 되돌아갈 자리가 없다. --check 는 지문만 비교하므로 이미 맞으면 즉시 끝난다.
 # 설치기가 없는 체크아웃(구 리비전·부분 트리)에서는 건너뛴다 — 여기서 죽으면
 # 나머지 재생성이 통째로 막힌다.
 if [ "$need_candidate" = 1 ] && [ -f "$HARNESS/scripts/build-active-engine.mjs" ]; then
-  [ -n "$NODE" ] || fail "node 가 없어 stock-pi 엔진을 설치할 수 없습니다. 소스는 받았지만 업데이트는 완료되지 않았습니다."
+  [ -n "$NODE" ] || fail "node 가 없어 pi 엔진을 설치할 수 없습니다. 소스는 받았지만 업데이트는 완료되지 않았습니다."
   if "$NODE" "$HARNESS/scripts/build-active-engine.mjs" --check >/dev/null 2>&1; then
-    ok "stock-pi 엔진 — 그대로"
+    ok "pi 엔진 — 그대로"
   else
-    printf '  %s… stock-pi 엔진 설치 중%s\n' "$DIM" "$RST"
+    printf '  %s… pi 엔진 설치 중%s\n' "$DIM" "$RST"
     (cd "$REPO" && "$NODE" "$HARNESS/scripts/build-active-engine.mjs" >/dev/null 2>&1) \
-      && ok "stock-pi 엔진" \
-      || fail "stock-pi 엔진 설치에 실패했습니다. 손으로: node harness/scripts/build-active-engine.mjs"
+      && ok "pi 엔진" \
+      || fail "pi 엔진 설치에 실패했습니다. 손으로: node harness/scripts/build-active-engine.mjs"
   fi
 fi
 

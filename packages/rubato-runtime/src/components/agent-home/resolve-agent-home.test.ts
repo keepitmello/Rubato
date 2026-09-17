@@ -33,7 +33,7 @@ describe("resolveAgentHome", () => {
 
       test("#then a blank value is ignored", () => {
         expect(resolveAgentHome({ env: { RUBATO_CODING_AGENT_DIR: "   " }, homeDir: HOME, exists: () => false })).toBe(
-          join(HOME, ".senpi", "agent"),
+          join(HOME, ".rubato-pi", "agent"),
         )
       })
     })
@@ -53,8 +53,8 @@ describe("resolveAgentHome", () => {
     })
 
     describe("#when only the engine layout exists", () => {
-      test("#then the legacy agent directory is used", () => {
-        expect(resolveAgentHome({ env: {}, homeDir: HOME, exists: () => false })).toBe(join(HOME, ".senpi", "agent"))
+      test("#then the live profile directory is used", () => {
+        expect(resolveAgentHome({ env: {}, homeDir: HOME, exists: () => false })).toBe(join(HOME, ".rubato-pi", "agent"))
       })
     })
   })

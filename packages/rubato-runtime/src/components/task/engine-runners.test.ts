@@ -10,7 +10,7 @@ import {
   type ChildSession,
   type ChildSessionListener,
   type ChildSpec,
-} from "@rubato/senpi-task"
+} from "@rubato/task"
 
 // The stock child factory is untyped ESM; the test only needs the runtime guard.
 // @ts-expect-error -- no declaration file for the .mjs factory

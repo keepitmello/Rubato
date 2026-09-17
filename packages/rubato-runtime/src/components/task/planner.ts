@@ -10,7 +10,7 @@ import {
   type ResolvedAgentResult,
   type SenpiModelPort,
   type SenpiModelRegistryPort,
-} from "@rubato/senpi-task"
+} from "@rubato/task"
 
 type ResolvedPlan = Extract<PlanResolution, { readonly kind: "resolved" }>["plan"]
 type ResolvedModelMetadata = NonNullable<ResolvedPlan["resolved_model"]>

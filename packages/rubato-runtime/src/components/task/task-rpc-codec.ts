@@ -3,8 +3,8 @@ import type {
   TaskRecord,
   TaskRunStats,
   ToolProgressDetails,
-} from "@rubato/senpi-task"
-import { recordSummary } from "@rubato/senpi-task"
+} from "@rubato/task"
+import { recordSummary } from "@rubato/task"
 
 export type TaskLiveProgressSnapshot = ReturnType<typeof liveProgressSnapshot>
 

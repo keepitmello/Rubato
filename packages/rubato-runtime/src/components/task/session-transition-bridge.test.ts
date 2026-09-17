@@ -6,7 +6,7 @@ import {
   type ParentNotifier,
   type ParentNotifierMessage,
   type TaskRecord,
-} from "@rubato/senpi-task"
+} from "@rubato/task"
 
 import { TaskRuntimeContext, type ParentTransition } from "./runtime-context"
 import { createSessionTransitionBridge, type FlushingNotifier } from "./session-transition-bridge"

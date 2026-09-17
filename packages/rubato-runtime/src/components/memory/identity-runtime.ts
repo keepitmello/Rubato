@@ -7,7 +7,7 @@ import {
   type MemoryIdentity,
   type ReservedRun,
 } from "@rubato/memory-core"
-import type { SenpiModelRegistryPort, SenpiModelPort } from "@rubato/senpi-task"
+import type { SenpiModelRegistryPort, SenpiModelPort } from "@rubato/task"
 
 import type { ComponentLogger } from "../../extension/types"
 import { resolveAgentHome } from "../agent-home/resolve-agent-home"

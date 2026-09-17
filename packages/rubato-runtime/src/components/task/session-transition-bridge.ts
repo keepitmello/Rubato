@@ -1,4 +1,4 @@
-import type { FlushInput, FlushResult } from "@rubato/senpi-task"
+import type { FlushInput, FlushResult } from "@rubato/task"
 
 import type { ParentTransition } from "./runtime-context"
 

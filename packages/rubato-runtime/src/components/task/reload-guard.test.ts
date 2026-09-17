@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 
-import type { TaskRecord } from "@rubato/senpi-task"
+import type { TaskRecord } from "@rubato/task"
 
 import { FakeExtensionAPI } from "../../../test-support/fake-extension-api"
 import {

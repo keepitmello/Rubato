@@ -15,7 +15,7 @@ import {
   type LeadDeliveryJournal,
   type SkillLoader,
   type TeamToolsService,
-} from "@rubato/senpi-task"
+} from "@rubato/task"
 
 import type { ComponentContext, RubatoComponent, SenpiExtensionAPI } from "../../extension/types"
 import { registerTaskCommands } from "./commands"

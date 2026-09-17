@@ -7,13 +7,14 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { installRubatoCandidate } from "./install-candidate.mjs";
 import {
-  isValidInstalledCandidateReceipt, resolveExecutionEngine, stockEngineDir as selectedStockDir,
+  isValidInstalledCandidateReceipt, resolveExecutionEngine, piEngineDir as selectedPiDir,
 } from "../../rubato-pi/src/engine-selection.mjs";
 export { isValidInstalledCandidateReceipt } from "../../rubato-pi/src/engine-selection.mjs";
 
-export function stockEngineDir(home) {
-  return join(home, ".rubato-pi", "stock-engine");
+export function piEngineDir(home) {
+  return join(home, ".rubato-pi", "pi");
 }
+export const stockEngineDir = (home) => join(home, ".rubato-pi", "stock-engine");
 
 export function engineMarkerPath(home) {
   return join(home, ".rubato-pi", "engine.json");
@@ -26,7 +27,7 @@ export function resolveSwitchHome({ home, env = process.env } = {}) {
 }
 
 function installRoot(home, env) {
-  return selectedStockDir({ ...env, HOME: home });
+  return selectedPiDir({ ...env, HOME: home });
 }
 
 export async function readInstallReceipt(root) {
@@ -50,36 +51,36 @@ async function writeEngineMarker(home, marker) {
   return marker;
 }
 
-export async function installStockEngine({ home, outputRoot, env = process.env, install = installRubatoCandidate } = {}) {
+export async function installPiEngine({ home, outputRoot, env = process.env, install = installRubatoCandidate } = {}) {
   const resolvedHome = resolveSwitchHome({ home, env });
   const dest = outputRoot ?? installRoot(resolvedHome, env);
   const receipt = await readInstallReceipt(dest);
   if (isValidInstalledCandidateReceipt(receipt, dest)) return { root: dest, receipt, skipped: true };
-  if (existsSync(dest)) throw new Error(`stock-engine exists but is not a valid candidate install: ${dest}`);
+  if (existsSync(dest)) throw new Error(`pi engine exists but is not a valid candidate install: ${dest}`);
   return { skipped: false, ...(await install({ outputRoot: dest })) };
 }
 
 /** Explicit refresh; unlike switch/install, an existing ready install is rebuilt. */
-export async function updateStockEngine({ home, env = process.env, install = installRubatoCandidate } = {}) {
+export async function updatePiEngine({ home, env = process.env, install = installRubatoCandidate } = {}) {
   const resolvedHome = resolveSwitchHome({ home, env });
   const dest = installRoot(resolvedHome, env);
   const receipt = await readInstallReceipt(dest);
   if (existsSync(dest) && !isValidInstalledCandidateReceipt(receipt, dest)) {
-    throw new Error(`stock-engine exists but is not a valid candidate install: ${dest}`);
+    throw new Error(`pi engine exists but is not a valid candidate install: ${dest}`);
   }
   return install({ outputRoot: dest, mode: existsSync(dest) ? "update" : "install" });
 }
 
-export async function switchEngine({ home, engine = "stock-pi", env = process.env,
+export async function switchEngine({ home, engine = "pi", env = process.env,
   installIfMissing = false, install = installRubatoCandidate } = {}) {
-  if (engine !== "stock-pi" && engine !== "senpi") throw new Error(`Unknown engine: ${engine}`);
+  if (engine !== "pi" && engine !== "stock-pi" && engine !== "senpi") throw new Error(`Unknown engine: ${engine}`);
   const resolvedHome = resolveSwitchHome({ home, env });
   const dest = installRoot(resolvedHome, env);
-  if (engine === "stock-pi") {
+  if (engine === "pi" || engine === "stock-pi") {
     const receipt = await readInstallReceipt(dest);
     if (!isValidInstalledCandidateReceipt(receipt, dest)) {
-      if (!installIfMissing) throw new Error("stock-pi is not installed; run install first");
-      await installStockEngine({ home: resolvedHome, install, env });
+      if (!installIfMissing) throw new Error("pi is not installed; run install first");
+      await installPiEngine({ home: resolvedHome, install, env });
     }
   }
   const current = await readEngineMarker(resolvedHome);
@@ -88,10 +89,10 @@ export async function switchEngine({ home, engine = "stock-pi", env = process.en
   // marker that rollbackEngine can only refuse. stock-pi is the only engine
   // there is, so it is the only previous there can be.
   const marker = {
-    engine,
+    engine: "pi",
     installedAt: current?.installedAt ?? new Date().toISOString(),
     switchedAt: new Date().toISOString(),
-    previous: "stock-pi",
+    previous: "pi",
     installRoot: dest,
   };
   await writeEngineMarker(resolvedHome, marker);
@@ -105,8 +106,8 @@ export async function rollbackEngine({ home, env = process.env } = {}) {
   // Senpi rollback is retired (user decree 2026-09-13): there is no senpi engine
   // to go back to. switchEngine no longer writes this, but markers written
   // before the retirement still carry it.
-  if (current.previous === "senpi") throw new Error("rubato: cannot roll back to the retired senpi engine; run `rubato update` to reinstall stock-pi");
-  const previous = current.previous === "stock-pi" ? current.previous : "stock-pi";
+  if (current.previous === "senpi") throw new Error("rubato: cannot roll back to the retired senpi engine; run `rubato update` to reinstall pi");
+  const previous = (current.previous === "pi" || current.previous === "stock-pi") ? "pi" : "pi";
   const marker = {
     engine: previous, installedAt: current.installedAt, switchedAt: new Date().toISOString(),
     previous: current.engine, installRoot: current.installRoot ?? installRoot(resolvedHome, env),
@@ -149,8 +150,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   Promise.resolve().then(() => {
     const command = parseArgs(process.argv.slice(2));
     const home = process.env.HOME;
-    return command === "install" ? installStockEngine({ home })
-      : command === "update" ? updateStockEngine({ home })
+    return command === "install" ? installPiEngine({ home })
+      : command === "update" ? updatePiEngine({ home })
       : command === "switch" ? switchEngine({ home, installIfMissing: true })
       : command === "rollback" ? rollbackEngine({ home })
       : engineStatus({ home });
@@ -161,3 +162,4 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     process.exitCode = 1;
   });
 }
+

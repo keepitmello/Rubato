@@ -34,7 +34,7 @@ function ctxFor(pi: FakeExtensionAPI, logger: ComponentLogger): ComponentContext
 // artifacts where the host's per-project readers never look.
 describe("task component session cwd anchoring", () => {
   beforeEach(() => {
-    delete process.env.SENPI_TASK_MEMBER
+    delete process.env.RUBATO_TASK_MEMBER
   })
 
   it("#given a host exposing the session cwd #when the component registers #then task state anchors at the session cwd, not the launch dir", () => {

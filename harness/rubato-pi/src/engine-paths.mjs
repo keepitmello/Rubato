@@ -2,7 +2,7 @@
 //
 // 런처는 worktree 밖의 프로필 디렉터리에 만든 Rubato bundle을 읽는다.
 // 생성물을 소스 트리에 두지 않아서 세션별 빌드가 git 상태를 더럽히지 않는다.
-// senpi 본체는 workspace에 설치된 고정 버전을 쓴다.
+// 워크스페이스에 남은 @code-yeongyu/senpi 는 레거시 테스트·트랜스폼 픽스처다.
 import { existsSync } from "node:fs";
 import { userInfo } from "node:os";
 import { dirname, join } from "node:path";
@@ -65,16 +65,28 @@ export function rubatoStateDir(env = process.env) {
   return real ? join(real, ".rubato-pi") : "";
 }
 
+export function defaultPiEngineDir(home) {
+  return join(home, ".rubato-pi", "pi");
+}
+
+/** Legacy cutover path. Existing installs and tests still plant receipts here. */
 export function defaultStockEngineDir(home) {
   return join(home, ".rubato-pi", "stock-engine");
 }
 
-export function resolveStockEngineDir(env = process.env) {
-  const pinned = env.RUBATO_STOCK_ENGINE_DIR;
+export function resolvePiEngineDir(env = process.env) {
+  const pinned = env.RUBATO_PI_ENGINE_DIR || env.RUBATO_STOCK_ENGINE_DIR;
   if (typeof pinned === "string" && pinned.trim() !== "") return pinned;
   const state = rubatoStateDir(env);
-  return state ? join(state, "stock-engine") : "";
+  if (!state) return "";
+  const next = join(state, "pi");
+  const legacy = join(state, "stock-engine");
+  if (existsSync(join(legacy, "rubato-install.json")) && !existsSync(join(next, "rubato-install.json"))) return legacy;
+  return next;
 }
+
+/** @deprecated Use resolvePiEngineDir. */
+export const resolveStockEngineDir = resolvePiEngineDir;
 
 export function engineMarkerPath(env = process.env) {
   const state = rubatoStateDir(env);
@@ -92,21 +104,25 @@ export const rubatoTaskExtension = join(enginePluginDir, "extensions", "rubato-t
 export const rubatoMemberExtension = join(enginePluginDir, "extensions", "rubato-member.js");
 export const enginePackageJson = join(enginePluginDir, "package.json");
 
-/** senpi 본체는 repository workspace에 설치한 것을 쓴다. */
-export const senpiDir = join(repoRoot, "node_modules", "@code-yeongyu", "senpi");
-export const senpiCli = join(senpiDir, "dist", "cli.js");
-export const senpiCliMain = join(senpiDir, "dist", "cli-main.js");
-export const senpiPackageJson = join(senpiDir, "package.json");
-export const senpiExtensionRunner = join(senpiDir, "dist", "core", "extensions", "runner.js");
-export const senpiSkillsModule = join(senpiDir, "dist", "core", "skills.js");
-export const senpiSystemPromptModule = join(senpiDir, "dist", "core", "system-prompt.js");
+/** Workspace leftover of the retired fork; tests/transforms that still import its dist. */
+export const legacySenpiDir = join(repoRoot, "node_modules", "@code-yeongyu", "senpi");
+/** @deprecated Use legacySenpiDir. */
+export const senpiDir = legacySenpiDir;
+export const senpiCli = join(legacySenpiDir, "dist", "cli.js");
+export const senpiCliMain = join(legacySenpiDir, "dist", "cli-main.js");
+export const senpiPackageJson = join(legacySenpiDir, "package.json");
+export const senpiExtensionRunner = join(legacySenpiDir, "dist", "core", "extensions", "runner.js");
+export const senpiSkillsModule = join(legacySenpiDir, "dist", "core", "skills.js");
+export const senpiSystemPromptModule = join(legacySenpiDir, "dist", "core", "system-prompt.js");
 
 /**
- * senpi 가 자기 node_modules 에 품고 있는 패키지. 워크스페이스 호이스팅 탓에
- * 로컬에 올라오기도 하므로 둘 다 본다 — 먼저 발견되는 쪽을 돌려준다.
+ * Packages nested under the leftover senpi install, or hoisted into the workspace.
  */
-export function senpiNested(...segments) {
-  const nested = join(senpiDir, "node_modules", ...segments);
+export function workspaceNested(...segments) {
+  const nested = join(legacySenpiDir, "node_modules", ...segments);
   if (existsSync(nested)) return nested;
   return join(repoRoot, "node_modules", ...segments);
 }
+
+/** @deprecated Use workspaceNested. */
+export const senpiNested = workspaceNested;

@@ -1,4 +1,4 @@
-import type { CompletionNotifier, TaskRecord, TaskRecordStore } from "@rubato/senpi-task"
+import type { CompletionNotifier, TaskRecord, TaskRecordStore } from "@rubato/task"
 
 import { createCompletionObservingStore } from "./completion-bridge"
 import type { TaskRuntimeContext } from "./runtime-context"

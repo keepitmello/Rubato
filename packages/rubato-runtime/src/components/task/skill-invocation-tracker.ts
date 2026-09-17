@@ -1,4 +1,4 @@
-import type { SkillInvocationState } from "@rubato/senpi-task"
+import type { SkillInvocationState } from "@rubato/task"
 
 import type { SenpiExtensionAPI } from "../../extension/types"
 

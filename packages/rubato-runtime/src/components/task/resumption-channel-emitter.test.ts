@@ -14,7 +14,7 @@ import {
   type ListScope,
   type ListedTask,
   type TaskRecord,
-} from "@rubato/senpi-task"
+} from "@rubato/task"
 
 import { FakeExtensionAPI } from "../../../test-support/fake-extension-api"
 import {
@@ -120,7 +120,7 @@ describe("createResumptionChannelEmitter", () => {
       {
         name: "wake_source_state",
         data: {
-          source: "senpi-task",
+          source: "rubato-task",
           activeCount: 1,
           channels: [{
             id: "st_00000001",
@@ -131,7 +131,7 @@ describe("createResumptionChannelEmitter", () => {
       },
       {
         name: "wake_source_state",
-        data: { source: "senpi-task", activeCount: 0, channels: [] },
+        data: { source: "rubato-task", activeCount: 0, channels: [] },
       },
     ])
   })
@@ -154,7 +154,7 @@ describe("createResumptionChannelEmitter", () => {
     expect(harness.emitted).toEqual([{
       name: "wake_source_state",
       data: {
-        source: "senpi-task",
+        source: "rubato-task",
         activeCount: 1,
         channels: [{
           id: member.task_id,
@@ -205,7 +205,7 @@ describe("createResumptionChannelEmitter", () => {
     expect(emitted).toEqual([{
       name: "wake_source_state",
       data: {
-        source: "senpi-task",
+        source: "rubato-task",
         activeCount: 1,
         channels: [{
           id: member.task_id,

@@ -932,7 +932,7 @@ test("each background source is unpacked from its own payload field", () => {
   );
   // Subagents belong to the widget, not the footer.
   assert.equal(backgroundEntriesFromEvent({
-    source: "senpi-task",
+    source: "rubato-task",
     channels: [{ id: "st_1", description: "reviewer", startedAtMs: 5 }],
   }), null);
   // A source we do not render must not be mistaken for an empty snapshot of one we do.
@@ -950,7 +950,7 @@ test("a background entry shows its model only when one is known", () => {
 
 test("the background line groups sources and folds overflow into a count", () => {
   const groups = new Map([
-    ["senpi-task", [
+    ["rubato-task", [
       { id: "a", description: "reviewer", startedAtMs: 0, model: "anthropic/claude-opus-5" },
       { id: "b", description: "builder", startedAtMs: 152_000, model: "xai/grok-4.6" },
     ]],
@@ -974,7 +974,7 @@ test("the tracker redraws on change and stays quiet on a repeat", () => {
   assert.equal(tracker.active(), true);
   assert.equal(tracker.accept({ source: "terminal-background-sessions", items: [] }), true);
   assert.equal(tracker.active(), false, "an empty snapshot must let the ticker stop");
-  assert.equal(tracker.accept({ source: "senpi-task", channels: [{ id: "st_1", description: "reviewer", startedAtMs: 5 }] }), false);
+  assert.equal(tracker.accept({ source: "rubato-task", channels: [{ id: "st_1", description: "reviewer", startedAtMs: 5 }] }), false);
   assert.equal(tracker.accept({ source: "unrelated", items: [] }), false);
 });
 

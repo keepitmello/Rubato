@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 
-import type { CancelOutcome, ListedTask, TaskRecord, TaskStatus } from "@rubato/senpi-task"
+import type { CancelOutcome, ListedTask, TaskRecord, TaskStatus } from "@rubato/task"
 
 import { FakeExtensionAPI } from "../../../test-support/fake-extension-api"
 import { registerTaskCommands, type CommandManager } from "./commands"

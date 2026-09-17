@@ -5,7 +5,7 @@
 # 그 사이에 스크립트가 끼면 토큰을 엉뚱한 곳에 쓰거나 갱신을 깨뜨린다.
 #
 # 세 자리가 다르다:
-#   xai         ~/.senpi/agent/auth.json 의 "xai"          OAuth (자동 갱신)
+#   xai         ~/.rubato-pi/agent/auth.json 의 "xai"          OAuth (자동 갱신)
 #   openai-codex 같은 파일의 "openai-codex"                OAuth (자동 갱신)
 #   anthropic   ~/.claude/auth/setup-token-<계정>          1년 장기 토큰 (sk-ant-oat...)
 #               없으면 Keychain "Claude Code-setup-token-<계정>"
@@ -16,7 +16,10 @@ ok()   { printf '  %s✓%s %s\n' "$GRN" "$RST" "$1"; }
 miss() { printf '  %s✗%s %s\n' "$YEL" "$RST" "$1"; }
 hint() { printf '      %s%s%s\n' "$DIM" "$1" "$RST"; }
 
-SENPI_AUTH="${SENPI_AUTH_PATH:-$HOME/.senpi/agent/auth.json}"
+AUTH_JSON="${RUBATO_AUTH_PATH:-$HOME/.rubato-pi/agent/auth.json}"
+if [ ! -f "$AUTH_JSON" ] && [ -f "${SENPI_AUTH_PATH:-$HOME/.senpi/agent/auth.json}" ]; then
+  AUTH_JSON="${SENPI_AUTH_PATH:-$HOME/.senpi/agent/auth.json}"
+fi
 # 정식 이름이 먼저다. `anthropic-setup-token.mjs` 가 `RUBATO_CLAUDE_*` 를 읽으므로, 이
 # 스크립트가 legacy 만 보면 정식 이름을 설정한 사람이 서로 다른 계정을 보게 된다.
 # legacy `FX_CLAUDE_*` 는 배포 대상이 다 옮겨질 때까지 읽고, 쓰였을 때 한 번만 알린다.
@@ -31,9 +34,9 @@ if [ -z "${RUBATO_CLAUDE_SETUP_TOKEN_FILE-}" ] && [ -n "${FX_CLAUDE_SETUP_TOKEN_
 fi
 
 # auth.json 에 특정 provider 키가 살아 있는지. 만료 시각도 같이 본다.
-senpi_has() {
-  [ -f "$SENPI_AUTH" ] || return 1
-  python3 - "$SENPI_AUTH" "$1" <<'PY' 2>/dev/null
+auth_has() {
+  [ -f "$AUTH_JSON" ] || return 1
+  python3 - "$AUTH_JSON" "$1" <<'PY' 2>/dev/null
 import json, sys, time
 path, key = sys.argv[1], sys.argv[2]
 try:
@@ -54,7 +57,7 @@ PY
 printf '\n%s== rubato auth ==%s\n' "$BOLD" "$RST"
 
 # --- xAI
-if left="$(senpi_has xai)"; then
+if left="$(auth_has xai)"; then
   case "$left" in
     expired) miss "xAI — 토큰이 만료됐다"; hint "rubato 를 한 번 띄우면 refresh 로 자동 갱신된다" ;;
     "")      ok   "xAI" ;;
@@ -62,11 +65,11 @@ if left="$(senpi_has xai)"; then
   esac
 else
   miss "xAI — 없다"
-  hint "senpi /login 으로 xAI 를 로그인하면 $SENPI_AUTH 에 들어간다"
+  hint "rubato /login 으로 xAI 를 로그인하면 $AUTH_JSON 에 들어간다"
 fi
 
 # --- Codex
-if left="$(senpi_has openai-codex)"; then
+if left="$(auth_has openai-codex)"; then
   case "$left" in
     expired) miss "Codex — 토큰이 만료됐다"; hint "rubato 를 한 번 띄우면 refresh 로 자동 갱신된다" ;;
     "")      ok   "Codex" ;;
@@ -74,7 +77,7 @@ if left="$(senpi_has openai-codex)"; then
   esac
 else
   miss "Codex — 없다"
-  hint "senpi /login 으로 OpenAI Codex 를 로그인한다"
+  hint "rubato 에서 /login 으로 OpenAI Codex 를 로그인한다"
 fi
 
 # --- Claude (장기 토큰)

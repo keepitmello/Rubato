@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process"
 import { stat } from "node:fs/promises"
 
-import type { SenpiLauncher } from "@rubato/senpi-task"
+import type { SenpiLauncher } from "@rubato/task"
 
 import { memoryChildExtensionArgs, memoryChildExtensionPaths } from "./child-extensions"
 import { expandCursorGrokVisibility } from "./cursor-grok-ids"

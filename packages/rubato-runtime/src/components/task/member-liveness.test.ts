@@ -3,7 +3,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { afterEach, describe, expect, test } from "bun:test"
-import type { TaskRecord } from "@rubato/senpi-task"
+import type { TaskRecord } from "@rubato/task"
 
 import { FakeExtensionAPI } from "../../../test-support/fake-extension-api"
 import { IdleInjectionCoordinator } from "../../extension/idle-injection-coordinator"

@@ -3,7 +3,7 @@ import {
   resolveCategory,
   type SenpiModelPort,
   type SenpiModelRegistryPort,
-} from "@rubato/senpi-task"
+} from "@rubato/task"
 
 import { chooseReflectionLaunchModel, type ReflectionLaunchCandidate } from "./model-cost"
 import { readModelPricing, selectRegistryFallbackModels } from "./registry-fallback"

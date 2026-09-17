@@ -5,7 +5,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 
 import { loadRubatoConfig } from "@rubato/config-core"
 import { createRuntimeState, transitionRuntimeState } from "@rubato/team-core/team-state-store"
-import { normalizeSenpiTeamSpec, teamStorageBaseDir, toTeamCoreConfig } from "@rubato/senpi-task"
+import { normalizeSenpiTeamSpec, teamStorageBaseDir, toTeamCoreConfig } from "@rubato/task"
 
 import { FakeExtensionAPI } from "../../../test-support/fake-extension-api"
 import { composeTaskEngine } from "./engine"

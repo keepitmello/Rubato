@@ -15,8 +15,8 @@ import test from "node:test";
 
 import {
   PiRuntimeResolutionError,
-  STOCK_PI_PACKAGES,
-  STOCK_PI_VERSION,
+  PI_PACKAGES,
+  PI_VERSION,
   resolvePiRuntime,
 } from "../resolve-runtime.mjs";
 
@@ -63,7 +63,7 @@ function makeStockFixture() {
     codingDir,
     {
       name: "@earendil-works/pi-coding-agent",
-      version: STOCK_PI_VERSION,
+      version: PI_VERSION,
       type: "module",
       main: "./dist/index.js",
       exports: {
@@ -81,10 +81,10 @@ function makeStockFixture() {
     ],
   );
 
-  for (const packageName of STOCK_PI_PACKAGES.slice(1)) {
+  for (const packageName of PI_PACKAGES.slice(1)) {
     const manifest = {
       name: packageName,
-      version: STOCK_PI_VERSION,
+      version: PI_VERSION,
       type: "module",
       main: "./dist/index.js",
     };
@@ -108,7 +108,7 @@ function expectResolutionError(code) {
 test("resolves the installed stock 0.85.1 distribution and keeps stock and patchable entries distinct", () => {
   const runtime = resolvePiRuntime({ root: installedRuntimeRoot });
 
-  assert.equal(runtime.version, STOCK_PI_VERSION);
+  assert.equal(runtime.version, PI_VERSION);
   assert.equal(runtime.root, installedRuntimeRoot);
   assert.match(runtime.sdkEntry, /pi-coding-agent\/dist\/index\.js$/);
   assert.match(runtime.cliEntry, /pi-coding-agent\/dist\/bundle\/cli\.js$/);
@@ -117,11 +117,11 @@ test("resolves the installed stock 0.85.1 distribution and keeps stock and patch
   assert.match(runtime.patchableRpcEntry, /pi-coding-agent\/dist\/rpc-entry\.js$/);
   assert.notEqual(runtime.cliEntry, runtime.patchableCliEntry);
   assert.notEqual(runtime.rpcEntry, runtime.patchableRpcEntry);
-  assert.deepEqual(Object.keys(runtime.packages), STOCK_PI_PACKAGES);
+  assert.deepEqual(Object.keys(runtime.packages), PI_PACKAGES);
 
-  for (const packageName of STOCK_PI_PACKAGES) {
+  for (const packageName of PI_PACKAGES) {
     assert.equal(runtime.packages[packageName].name, packageName);
-    assert.equal(runtime.packages[packageName].version, STOCK_PI_VERSION);
+    assert.equal(runtime.packages[packageName].version, PI_VERSION);
     assert.ok(runtime.packages[packageName].packageJsonPath.startsWith(`${runtime.root}/node_modules/`));
   }
 });
@@ -199,7 +199,7 @@ test("rejects different physical copies selected by two suite dependency edges",
   );
   writePackage(packageDir(join(coreDir, "node_modules"), "@earendil-works/pi-ai"), {
     name: "@earendil-works/pi-ai",
-    version: STOCK_PI_VERSION,
+    version: PI_VERSION,
     type: "module",
     main: "./dist/index.js",
     exports: { ".": { import: "./dist/index.js" } },

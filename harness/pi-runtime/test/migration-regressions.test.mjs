@@ -10,7 +10,7 @@ import { createNativeFileTool, hostEdit, hostWrite } from "../features/provider-
 import { executeRegisteredTool } from "../features/tool-execution/runtime.mjs";
 import { stageAndPublishInstall } from "../scripts/install-transaction.mjs";
 import { sourceFingerprint } from "../scripts/source-fingerprint.mjs";
-import { engineStatus, installStockEngine, switchEngine, updateStockEngine } from "../scripts/switch-engine.mjs";
+import { engineStatus, installPiEngine, switchEngine, updatePiEngine } from "../scripts/switch-engine.mjs";
 import { buildActiveEngine } from "../../scripts/build-active-engine.mjs";
 import { ENGINE_REPAIR_HINT, resolveExecutionEngine, resolveLaunchEngine } from "../../rubato-pi/src/engine-selection.mjs";
 import { nodeSatisfiesCandidate, parseVersionText, pickNode, selectNodeForEngine } from "../../rubato-pi/src/select-node.mjs";
@@ -328,7 +328,7 @@ test("status reports a hard error for a missing install, matching launch", async
   const env = { HOME: home };
   const status = await engineStatus({ home, env, selectNode: () => node26 });
   const launch = resolveExecutionEngine({ env, selectNode: () => node26 });
-  assert.equal(status.engine, "stock-pi"); assert.equal(status.requested, "stock-pi");
+  assert.equal(status.engine, "pi"); assert.equal(status.requested, "pi");
   assert.equal(status.installed, false); assert.match(status.error, /not installed/);
   assert.equal(status.engine, launch.engine); assert.equal(status.error, launch.error);
 });
@@ -337,25 +337,25 @@ test("explicit engine and custom install root are honored by status/update", asy
   const home = await scratch(t);
   const custom = join(home, "custom-engine");
   const env = { HOME: home, RUBATO_STOCK_ENGINE_DIR: custom };
-  await installStockEngine({ home, env, install: fakeInstall });
+  await installPiEngine({ home, env, install: fakeInstall });
   await switchEngine({ home, env });
   assert.equal(resolveLaunchEngine({ env }).root, custom);
   const status = await engineStatus({ home, env: { ...env, RUBATO_ENGINE: "senpi" }, selectNode: () => node26 });
-  assert.equal(status.engine, "stock-pi"); assert.equal(status.source, "env");
+  assert.equal(status.engine, "pi"); assert.equal(status.source, "env");
   assert.match(status.error, /retired/);
   let call;
-  await updateStockEngine({ home, env, install: async (options) => { call = options; } });
+  await updatePiEngine({ home, env, install: async (options) => { call = options; } });
   assert.deepEqual(call, { outputRoot: custom, mode: "update" });
 });
 
 test("status and launch both report unsupported Node as a hard error", async (t) => {
   const home = await scratch(t);
   const env = { HOME: home };
-  await installStockEngine({ home, env, install: fakeInstall });
+  await installPiEngine({ home, env, install: fakeInstall });
   const selectNode = () => parseVersionText("v24.10.0", "/fixture/node24");
   const status = await engineStatus({ home, env, selectNode });
   const launch = resolveExecutionEngine({ env, selectNode });
-  assert.equal(status.engine, "stock-pi");
+  assert.equal(status.engine, "pi");
   assert.equal(status.error, launch.error); assert.match(status.error, /Node/);
 });
 
@@ -363,7 +363,7 @@ test("compatible Node wins over an incompatible running 24.x", () => {
   const old = parseVersionText("v24.10.0", "/fixture/node24");
   const candidates = [old.bin, node26.bin];
   const version = (bin) => bin === old.bin ? old : node26;
-  assert.equal(selectNodeForEngine("stock-pi", { running: old, candidates, version }).bin, node26.bin);
+  assert.equal(selectNodeForEngine("pi", { running: old, candidates, version }).bin, node26.bin);
   assert.equal(pickNode(candidates, { version, accepts: (n) => nodeSatisfiesCandidate(n.text) }).bin, node26.bin);
   assert.equal(selectNodeForEngine("senpi", { running: old, candidates, version }).bin, old.bin);
   assert.equal(nodeSatisfiesCandidate("v25.9.0"), false);
@@ -389,7 +389,7 @@ test("default build updates selected stock output and check detects old source",
   const home = await scratch(t);
   const repo = join(home, "repo"); await mkdir(repo);
   const env = { HOME: home };
-  const installed = await installStockEngine({ home, env, install: fakeInstall });
+  const installed = await installPiEngine({ home, env, install: fakeInstall });
   let updates = 0;
   const opts = { env, repoRoot: repo, legacy: () => { throw new Error("must not build legacy output"); }, update: async () => { updates++; } };
   assert.equal(await buildActiveEngine({ ...opts, args: ["--check"] }), 10);

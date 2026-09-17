@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { afterEach, describe, expect, test } from "bun:test"
 
 import { loadRubatoConfig } from "@rubato/config-core"
-import { BUILTIN_AGENTS, buildTaskToolDescription } from "@rubato/senpi-task"
+import { BUILTIN_AGENTS, buildTaskToolDescription } from "@rubato/task"
 
 import { FakeExtensionAPI } from "../../../test-support/fake-extension-api"
 import { composeTaskEngine, type TaskEngine } from "./engine"

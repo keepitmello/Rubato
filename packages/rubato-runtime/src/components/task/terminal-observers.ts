@@ -1,4 +1,4 @@
-import type { TaskRecord, TaskStatus } from "@rubato/senpi-task"
+import type { TaskRecord, TaskStatus } from "@rubato/task"
 
 /**
  * One nonterminal -> terminal status edge for a task record. `previousStatus` is the status the

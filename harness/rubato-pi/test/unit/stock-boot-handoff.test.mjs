@@ -17,18 +17,18 @@ const interactivePath = join(
 // and runs this file, which is where the assertion actually guards CI.
 const stockEngineInstalled = existsSync(interactivePath);
 
-test("stock interactive patch calls handoffBootChromeForStockPi immediately before ui.start", {
+test("stock interactive patch calls handoffBootChromeForPi immediately before ui.start", {
   skip: stockEngineInstalled ? false : "stock engine absent; run `npm --prefix harness/pi-runtime ci` first",
 }, () => {
   const src = readFileSync(interactivePath, "utf8");
   const next = patchInteractiveTuiInput(src);
-  assert.match(next, /RUBATO_BOOT_CHROME_HREF[\s\S]*handoffBootChromeForStockPi[\s\S]*this\.ui\.start\(\)/);
+  assert.match(next, /RUBATO_BOOT_CHROME_HREF[\s\S]*handoffBootChromeForPi[\s\S]*this\.ui\.start\(\)/);
 });
 
 test("stock-pi handoff leaves zero splash frames after engine output", async () => {
   const source = `
     import { EventEmitter } from "node:events";
-    import { enterBootChrome, handoffBootChromeForStockPi } from ${JSON.stringify(chromeUrl)};
+    import { enterBootChrome, handoffBootChromeForPi } from ${JSON.stringify(chromeUrl)};
     const stdout = Object.assign(new EventEmitter(), {
       isTTY: true, columns: 80, rows: 24, fd: 1,
       write() { throw Error("boot output must not depend on the main-thread stream"); },
@@ -36,7 +36,7 @@ test("stock-pi handoff leaves zero splash frames after engine output", async () 
     const io = { stdout, stdin: { isTTY: true } };
     enterBootChrome([], io, { TERM: "xterm-256color" });
     process.stderr.write("ENGINE_READY");
-    await handoffBootChromeForStockPi();
+    await handoffBootChromeForPi();
     process.stdout.write("TUI_START");
     await new Promise((r) => setTimeout(r, 250));
   `;

@@ -1,7 +1,7 @@
 # Regression cases for discovery, joint approval and the first execution delegation.
 #
 # What this guards: Pi user-facing lead/teammate responsibility and the team_create tool
-# description in packages/senpi-task/src/tools/team/lifecycle.ts.
+# description in packages/task/src/tools/team/lifecycle.ts.
 #
 # Failure this suite exists for: the lead receives team-shaped work and
 # fans it out as several `Agent` spawns because the team path reads as a
@@ -26,7 +26,7 @@ version: 4
 suite: lead-rail-choice
 prompt_files:
   - harness/prompts/core-lead.pi.md
-  - packages/senpi-task/src/tools/team/lifecycle.ts
+  - packages/task/src/tools/team/lifecycle.ts
 trials: 3
 release_policy:
   team_cases_failures_allowed: 0

@@ -17,7 +17,7 @@ import {
   type CreateChildSession,
   type ManagedRunner,
   type RpcSpawnRuntime,
-} from "@rubato/senpi-task"
+} from "@rubato/task"
 
 import { MEMORY_APPLY_PATCH_TOOL_NAME, MEMORY_TOOL_NAME } from "../memory/tools"
 import type { TaskRuntimeContext } from "./runtime-context"

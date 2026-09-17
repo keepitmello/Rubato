@@ -91,7 +91,7 @@ describe("rubato-runtime package shape", () => {
       "@rubato/utils": "workspace:*",
       "@rubato/lsp-core": "workspace:*",
       "@rubato/memory-core": "workspace:*",
-      "@rubato/senpi-task": "workspace:*",
+      "@rubato/task": "workspace:*",
       "@rubato/lsp-daemon": "file:../lsp-daemon",
     })
     expect(Object.keys(dependencies)).not.toContain(["vscode", "jsonrpc"].join("-"))

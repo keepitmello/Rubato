@@ -1,4 +1,4 @@
-import { taskIdentityLabel, type TaskRecord } from "@rubato/senpi-task"
+import { taskIdentityLabel, type TaskRecord } from "@rubato/task"
 
 import type { SenpiExtensionAPI } from "../../extension/types"
 

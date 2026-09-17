@@ -9,7 +9,7 @@
 import { spawn } from "node:child_process"
 
 import type { RubatoConfig } from "@rubato/config-core"
-import type { SenpiModelPort, SenpiModelRegistryPort } from "@rubato/senpi-task"
+import type { SenpiModelPort, SenpiModelRegistryPort } from "@rubato/task"
 
 import { memoryChildExtensionArgs } from "../worker/child-extensions"
 import { resolveSenpiLaunch } from "../worker/senpi-command"

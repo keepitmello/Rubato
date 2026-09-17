@@ -1,4 +1,4 @@
-import type { TaskRecord, TaskRecordStore, TaskStatus } from "@rubato/senpi-task"
+import type { TaskRecord, TaskRecordStore, TaskStatus } from "@rubato/task"
 
 import type { TaskTerminalObservers } from "./terminal-observers"
 

@@ -3,19 +3,18 @@ import { homedir } from "node:os"
 import { join, resolve } from "node:path"
 
 /**
- * Where the senpi engine keeps its agent state for the install we are attached to.
+ * Where this install keeps agent state.
  *
- * The branded Rubato distribution stores that state under `~/.rubato/agent`, while a standalone
- * engine keeps it under `~/.senpi/agent`. A pre-unification Rubato release wrote it FLAT under
- * `~/.rubato`, so that layout is still detected as a fallback. Every layout can exist on the same
- * machine during the transition, so the location is resolved rather than assumed, and the
- * environment always wins over detection.
+ * Live Rubato stores it under `~/.rubato-pi/agent`. Older layouts still exist
+ * on disk (`~/.rubato/agent`, flat `~/.rubato`, `~/.senpi/agent`), so the
+ * location is resolved rather than assumed. Environment always wins.
  */
 
 export const AGENT_DIR_ENV_NAMES = [
+  "RUBATO_PI_CODING_AGENT_DIR",
   "RUBATO_CODING_AGENT_DIR",
-  "SENPI_CODING_AGENT_DIR",
   "PI_CODING_AGENT_DIR",
+  "SENPI_CODING_AGENT_DIR",
 ] as const
 
 /** Marker proving a directory really holds engine state rather than sharing its name. */
@@ -37,10 +36,16 @@ export function resolveAgentHome(options: ResolveAgentHomeOptions): string {
     if (configured) return resolve(configured)
   }
 
+  const live = join(homeDir, ".rubato-pi", "agent")
+  if (exists(join(live, AGENT_HOME_SENTINEL))) return live
+
   const brandedHome = join(homeDir, ".rubato")
   const canonical = join(brandedHome, "agent")
   if (exists(join(canonical, AGENT_HOME_SENTINEL))) return canonical
   if (exists(join(brandedHome, AGENT_HOME_SENTINEL))) return brandedHome
 
-  return join(homeDir, ".senpi", "agent")
+  const legacySenpi = join(homeDir, ".senpi", "agent")
+  if (exists(join(legacySenpi, AGENT_HOME_SENTINEL))) return legacySenpi
+
+  return live
 }

@@ -2,7 +2,7 @@ export const BUILD_RECEIPT_VERSION = 1;
 export const BUNDLE_ENTRIES = Object.freeze({
   "extensions/rubato.js": "harness/pi-runtime/features/rubato-components/entry.ts",
   "extensions/rubato-task.js": "packages/rubato-runtime/src/extension/rubato-task.ts",
-  "extensions/rubato-member.js": "packages/senpi-task/src/team/member-extension/index.ts",
+  "extensions/rubato-member.js": "packages/task/src/team/member-extension/index.ts",
   "extensions/rubato-memory-mcp.js": "packages/rubato-runtime/src/mcp/memory-server.ts",
   "extensions/memory-run-supervisor.mjs": "packages/rubato-runtime/src/components/memory/worker/memory-run-supervisor.ts",
   "runtime/ast-grep-mcp/cli.js": "packages/ast-grep-mcp/src/cli.ts",

@@ -9,14 +9,14 @@ import { createAgentSession, DefaultResourceLoader } from "@earendil-works/pi-co
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai"
 import { Type } from "typebox"
 
-import { InProcessRunner } from "../../../../packages/senpi-task/src/runners/in-process"
-import { RpcProcessRunner } from "../../../../packages/senpi-task/src/runners/rpc-process"
-import { buildRpcSpawn } from "../../../../packages/senpi-task/src/runners/rpc/spawn"
+import { InProcessRunner } from "../../../../packages/task/src/runners/in-process"
+import { RpcProcessRunner } from "../../../../packages/task/src/runners/rpc-process"
+import { buildRpcSpawn } from "../../../../packages/task/src/runners/rpc/spawn"
 import {
   createStockChildInProcessSession,
-  createStockRpcSpawnRuntime,
-  loadStockChildInProcessFactories,
-  resolveStockChildProviderProfile,
+  createPiRpcSpawnRuntime,
+  loadPiChildInProcessFactories,
+  resolvePiChildProviderProfile,
 } from "./stock-rpc-runtime.mjs"
 
 const runtimeRoot = dirname(dirname(dirname(dirname(fileURLToPath(import.meta.url)))))
@@ -137,7 +137,7 @@ async function createLocalSession(options: Record<string, unknown>) {
   modelRuntime.getAuth ??= async () => ({ auth: { apiKey: "fixture-local" } })
   modelRuntime.stream ??= textStream
   modelRuntime.streamSimple ??= modelRuntime.stream
-  const extensionFactories = await loadStockChildInProcessFactories({
+  const extensionFactories = await loadPiChildInProcessFactories({
     root: runtimeRoot,
     agentDir: String(options.agentDir),
     settingsManager: options.settingsManager,
@@ -298,7 +298,7 @@ async function runRpcFixture(root: string) {
   await writeFile(join(parentCwd, "parent-only.txt"), "parent")
   const capturePath = join(root, "rpc-provider-capture.jsonl")
   const providerPath = join(root, "rpc-provider.mjs")
-  const childProfile = resolveStockChildProviderProfile({ root: runtimeRoot, includeContextNotes: true, includeGuards: true })
+  const childProfile = resolvePiChildProviderProfile({ root: runtimeRoot, includeContextNotes: true, includeGuards: true })
   assert.equal(childProfile.rpcExtensions.some((entry) => entry.endsWith(`${join("context-notes", "extension.mjs")}`)), true)
   assert.equal(childProfile.rpcExtensions.some((entry) => entry.endsWith(`${join("child-runtime", "guard-extension.mjs")}`)), true)
   const eventStreamPath = pathToFileURL(join(
@@ -333,7 +333,7 @@ export default function fixtureProvider(pi) {
   });
 }
 `)
-  const runtime = createStockRpcSpawnRuntime({
+  const runtime = createPiRpcSpawnRuntime({
     rpcEntry,
     parentEnv: {
       ...process.env,

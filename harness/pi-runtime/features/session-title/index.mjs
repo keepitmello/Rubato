@@ -6,7 +6,7 @@ export function createSessionTitleFactories() {
   return [{
     name: SESSION_TITLE_FACTORY_NAME,
     factory: (pi) => {
-      if (process.env.SENPI_TASK_MEMBER) return;
+      if (process.env.RUBATO_TASK_MEMBER || process.env.SENPI_TASK_MEMBER) return;
       installSessionTitle(pi);
     },
   }];

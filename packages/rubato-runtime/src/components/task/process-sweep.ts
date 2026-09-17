@@ -13,6 +13,7 @@ import { resolveSenpiDaemonRuntime } from "../lsp/daemon-runtime"
 // functions. Mirrors the codex best-effort process-sweep pattern
 // (packages/rubato-codex/plugin/components/ — codex hook-sweep.ts).
 
+export const PI_RPC_CHILD_MARKER_ENV = "PI_CODING_AGENT_SESSION_DIR"
 export const SENPI_RPC_CHILD_MARKER_ENV = "SENPI_CODING_AGENT_SESSION_DIR"
 
 export type RubatoFamilySweep = () => Promise<unknown>
@@ -50,7 +51,7 @@ export function wireSessionStartProcessSweep(
   })
 
   pi.on("session_start", () => {
-    if (env[SENPI_RPC_CHILD_MARKER_ENV] !== undefined) {
+    if (env[PI_RPC_CHILD_MARKER_ENV] !== undefined || env[SENPI_RPC_CHILD_MARKER_ENV] !== undefined) {
       ctx.logger.info("rubato-runtime process sweep skipped: running inside a senpi-task RPC child")
       return undefined
     }

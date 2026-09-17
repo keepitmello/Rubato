@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { createTaskRecord, createTaskRecordStore, type TaskRecord, type TaskRecordStore } from "@rubato/senpi-task"
+import { createTaskRecord, createTaskRecordStore, type TaskRecord, type TaskRecordStore } from "@rubato/task"
 
 import { createMutationNotifyingStore } from "./store-mutation-observer"
 import { createTaskTerminalObservers, type TaskTerminalEdge } from "./terminal-observers"

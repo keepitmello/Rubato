@@ -64,7 +64,7 @@ async function rpcGetState(execPath, rpcEntry, env, sessionDir, packageDir) {
 async function inProcessProbe({ root, home, env }) {
   const runtimeUrl = pathToFileURL(join(root, "rubato-features/child-runtime/stock-rpc-runtime.mjs")).href;
   const sdkUrl = pathToFileURL(join(root, "node_modules/@earendil-works/pi-coding-agent/dist/index.js")).href;
-  const [{ loadStockChildInProcessFactories, createStockChildInProcessSession, createStockRpcSpawnRuntime, resolveStockRpcEntry }, sdk] = await Promise.all([
+  const [{ loadPiChildInProcessFactories, createStockChildInProcessSession, createPiRpcSpawnRuntime, resolveStockRpcEntry }, sdk] = await Promise.all([
     import(runtimeUrl),
     import(sdkUrl),
   ]);
@@ -72,7 +72,7 @@ async function inProcessProbe({ root, home, env }) {
   const agentDir = join(home, "in-process-agent");
   await mkdir(cwd, { recursive: true });
   await mkdir(agentDir, { recursive: true });
-  const factories = await loadStockChildInProcessFactories({ root, agentDir });
+  const factories = await loadPiChildInProcessFactories({ root, agentDir });
   const modelRuntime = await sdk.ModelRuntime.create({
     agentDir,
     modelsPath: null,
@@ -106,7 +106,7 @@ async function inProcessProbe({ root, home, env }) {
   });
   const probePath = join(cwd, "cwd-probe.txt");
   await writeFile(probePath, "in-process-child");
-  const spawnRuntime = createStockRpcSpawnRuntime({
+  const spawnRuntime = createPiRpcSpawnRuntime({
     rpcEntry: resolveStockRpcEntry({ root }),
     execPath: process.execPath,
     parentEnv: env,

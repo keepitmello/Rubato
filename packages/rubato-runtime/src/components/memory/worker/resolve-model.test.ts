@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 
 import { RubatoTaskSettingsSchema, type RubatoConfig } from "@rubato/config-core"
-import type { SenpiModelPort } from "@rubato/senpi-task"
+import type { SenpiModelPort } from "@rubato/task"
 
 import { resolveReflectionModel, shouldWarnCategoryUnavailable } from "./resolve-model"
 

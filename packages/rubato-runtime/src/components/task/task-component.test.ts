@@ -3,7 +3,7 @@ import {
   createCompletionNotifier,
   type PersistedTaskEvent,
   type TaskRecord,
-} from "@rubato/senpi-task"
+} from "@rubato/task"
 
 import type { SenpiExtensionAPI } from "../../extension/types"
 import { createParentNotifier } from "./parent-notifier"

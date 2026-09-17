@@ -11,7 +11,7 @@ import {
   teamStorageBaseDir,
   toTeamCoreConfig,
   type TaskRecord,
-} from "@rubato/senpi-task"
+} from "@rubato/task"
 
 import { FakeExtensionAPI } from "../../../test-support/fake-extension-api"
 import type { ComponentContext, ComponentLogger } from "../../extension/types"
@@ -172,13 +172,13 @@ function toolNames(pi: FakeExtensionAPI): string[] {
 
 describe("rubato-runtime task component wiring", () => {
   beforeEach(() => {
-    delete process.env.SENPI_TASK_MEMBER
+    delete process.env.RUBATO_TASK_MEMBER
   })
 
   it("#given an explicit team member process #when the task component registers #then Agent tools are wired without lead team tools", () => {
     // given
-    const previousMember = process.env.SENPI_TASK_MEMBER
-    process.env.SENPI_TASK_MEMBER = "11111111-1111-4111-8111-111111111111::alice"
+    const previousMember = process.env.RUBATO_TASK_MEMBER
+    process.env.RUBATO_TASK_MEMBER = "11111111-1111-4111-8111-111111111111::alice"
     const pi = new FakeExtensionAPI()
     const logger = createLogger()
 
@@ -186,8 +186,8 @@ describe("rubato-runtime task component wiring", () => {
       // when
       createTaskComponent({ resolveCwd: () => tempProject() }).register(pi, ctxFor(pi, logger))
     } finally {
-      if (previousMember === undefined) delete process.env.SENPI_TASK_MEMBER
-      else process.env.SENPI_TASK_MEMBER = previousMember
+      if (previousMember === undefined) delete process.env.RUBATO_TASK_MEMBER
+      else process.env.RUBATO_TASK_MEMBER = previousMember
     }
 
     // then members keep Agent helper spawn; lead team_* names stay off this process
@@ -214,8 +214,8 @@ describe("rubato-runtime task component wiring", () => {
     // Peer mail is a plain injected turn; completion, member liveness, and the dead-chain category
     // warning use structured renderers.
     expect(pi.messageRenderers.map((entry) => entry.customType)).toEqual([
-      "senpi-task.completion",
-      "senpi-task.team-member-liveness",
+      "rubato.task.completion",
+      "rubato.task.team-member-liveness",
     ])
     // exactly the task event handlers (session lifecycle + transition-buffer edges), the
     // skill-invocation tracker subscriptions feeding the plan-gated agent gate, plus the
@@ -395,7 +395,7 @@ describe("rubato-runtime task component wiring", () => {
       sessionManager: { getSessionId: () => "lead-a" },
     })
     expect(pi.messages).toHaveLength(1)
-    expect(pi.messages[0]?.message.customType).toBe("senpi-task.team-member-liveness")
+    expect(pi.messages[0]?.message.customType).toBe("rubato.task.team-member-liveness")
   })
 
   it("#given a liveness send before host persistence #when the process crashes and restarts #then no early ack suppresses replay and agent_end later commits the exact persisted marker", async () => {

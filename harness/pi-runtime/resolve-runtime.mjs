@@ -3,9 +3,9 @@ import { findPackageJSON } from "node:module";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 
-export const STOCK_PI_VERSION = "0.85.1";
+export const PI_VERSION = "0.85.1";
 
-export const STOCK_PI_PACKAGES = Object.freeze([
+export const PI_PACKAGES = Object.freeze([
   "@earendil-works/pi-coding-agent",
   "@earendil-works/pi-agent-core",
   "@earendil-works/pi-ai",
@@ -14,7 +14,7 @@ export const STOCK_PI_PACKAGES = Object.freeze([
   "@earendil-works/pi-telemetry",
 ]);
 
-const CODING_AGENT = STOCK_PI_PACKAGES[0];
+const CODING_AGENT = PI_PACKAGES[0];
 
 const DEPENDENCY_EDGES = Object.freeze([
   [CODING_AGENT, "@earendil-works/pi-agent-core"],
@@ -114,10 +114,10 @@ function resolvePackage(packageName, basePath, modulesBoundary, fromPackage = "<
       fromPackage,
     });
   }
-  if (manifest.version !== STOCK_PI_VERSION) {
-    fail("PI_RUNTIME_VERSION_MISMATCH", `${packageName} must be ${STOCK_PI_VERSION}, found ${String(manifest.version)}`, {
+  if (manifest.version !== PI_VERSION) {
+    fail("PI_RUNTIME_VERSION_MISMATCH", `${packageName} must be ${PI_VERSION}, found ${String(manifest.version)}`, {
       packageName,
-      expectedVersion: STOCK_PI_VERSION,
+      expectedVersion: PI_VERSION,
       actualVersion: manifest.version,
       packageJsonPath,
       fromPackage,
@@ -246,7 +246,7 @@ export function resolvePiRuntime({ root } = {}) {
     resolvedPackages.set(packageName, candidate);
   }
 
-  for (const packageName of STOCK_PI_PACKAGES) {
+  for (const packageName of PI_PACKAGES) {
     if (!resolvedPackages.has(packageName)) {
       fail("PI_RUNTIME_GRAPH_INVALID", `Resolver did not select ${packageName}`, { packageName });
     }
@@ -284,7 +284,7 @@ export function resolvePiRuntime({ root } = {}) {
   );
 
   const packages = Object.fromEntries(
-    STOCK_PI_PACKAGES.map((packageName) => {
+    PI_PACKAGES.map((packageName) => {
       const { manifest: _manifest, ...identity } = resolvedPackages.get(packageName);
       const declaredEntry = manifestPath(_manifest, ["exports", ".", "import"]) ?? _manifest.main;
       return [
@@ -299,7 +299,7 @@ export function resolvePiRuntime({ root } = {}) {
 
   return {
     root: runtimeRoot,
-    version: STOCK_PI_VERSION,
+    version: PI_VERSION,
     codingAgentDir: codingAgent.dir,
     sdkEntry,
     cliEntry,

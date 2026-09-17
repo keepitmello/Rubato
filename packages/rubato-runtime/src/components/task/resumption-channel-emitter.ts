@@ -5,13 +5,13 @@ import {
   type ListedTask,
   type StateDirConfig,
   type TaskRecord,
-} from "@rubato/senpi-task"
+} from "@rubato/task"
 
 import type { SenpiExtensionAPI } from "../../extension/types"
 import { isTerminal, taskStatusDescription } from "./status-row-format"
 
 export const RESUMPTION_CHANNEL_STATE_EVENT = "wake_source_state"
-const RESUMPTION_CHANNEL_SOURCE = "senpi-task"
+const RESUMPTION_CHANNEL_SOURCE = "rubato-task"
 
 type ResumptionChannel = {
   readonly id: string

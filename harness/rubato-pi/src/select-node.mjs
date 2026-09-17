@@ -102,13 +102,13 @@ export function nodeSatisfiesCandidate(versionText = process.version) {
   return (major === 24 && minor >= 15) || major >= 26;
 }
 
-/** Search compatible binaries before allowing the caller to fall back to Senpi. */
+/** Search compatible binaries for the pi engine. */
 export function selectNodeForEngine(engine, {
   running = runningNode(),
   candidates,
   version = versionOf,
 } = {}) {
-  const accepts = (node) => engine !== "stock-pi" || nodeSatisfiesCandidate(node.text);
+  const accepts = (node) => (engine !== "pi" && engine !== "stock-pi") || nodeSatisfiesCandidate(node.text);
   if (running && accepts(running)) return running;
   const bins = candidates ?? listNodeCandidates(undefined, [process.execPath]);
   const selected = pickNode(bins, { version, accepts });

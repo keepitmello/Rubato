@@ -61,7 +61,7 @@ const completionDetails = [
 
 function completionMessage(taskId: string) {
   return {
-    customType: "senpi-task.completion" as const,
+    customType: "rubato.task.completion" as const,
     content: `${taskId} completed`,
     display: false,
     details: [{ ...completionDetails[0]!, agentId: taskId }],
@@ -86,7 +86,7 @@ describe("createParentNotifier batched injection delivery", () => {
       {
         key: "task-completion:st_1",
         source: "task-completion",
-        customType: "senpi-task.completion",
+        customType: "rubato.task.completion",
         content: "st_1 completed",
         display: false,
         details: [{ ...completionDetails[0], agentId: "st_1" }],
@@ -185,6 +185,6 @@ describe("createParentNotifier batched injection delivery", () => {
     // then the completion still steers into the running turn through the rich channel
     expect(pi.sent).toHaveLength(1)
     expect(pi.sent[0]?.options).toMatchObject({ triggerTurn: true, deliverAs: "steer" })
-    expect(pi.sent[0]?.message.customType).toBe("senpi-task.completion")
+    expect(pi.sent[0]?.message.customType).toBe("rubato.task.completion")
   })
 })

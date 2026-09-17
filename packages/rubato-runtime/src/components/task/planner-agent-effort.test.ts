@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { RubatoConfig } from "@rubato/config-core"
-import { mapRubatoConfigAgents } from "@rubato/senpi-task"
+import { mapRubatoConfigAgents } from "@rubato/task"
 
 import { createTaskChildPlanner } from "./planner"
 

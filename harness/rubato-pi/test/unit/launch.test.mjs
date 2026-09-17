@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildStockPiArgs, sameNodeBinary } from "../../src/launch.mjs";
+import { buildPiArgs, sameNodeBinary } from "../../src/launch.mjs";
 import { TOOL_GUIDELINES } from "../../src/system-prompt.mjs";
 
-test("stock-pi argv replaces the system prompt and lets profile settings choose the default model", () => {
-  const args = buildStockPiArgs(["--mode", "rpc"], { env: {} });
+test("pi argv replaces the system prompt and lets profile settings choose the default model", () => {
+  const args = buildPiArgs(["--mode", "rpc"], { env: {} });
   const promptAt = args.indexOf("--system-prompt");
   assert.ok(promptAt >= 0);
   assert.match(args[promptAt + 1], /Working agreement/);
@@ -24,7 +24,7 @@ test("stock-pi argv replaces the system prompt and lets profile settings choose 
 });
 
 test("member argv gets teammate prompt plus the same tool guidelines", () => {
-  const args = buildStockPiArgs(["--mode", "rpc"], { env: { SENPI_TASK_MEMBER: "alpha" } });
+  const args = buildPiArgs(["--mode", "rpc"], { env: { SENPI_TASK_MEMBER: "alpha" } });
   const prompt = args[args.indexOf("--system-prompt") + 1];
   assert.match(prompt, /# Workstream owner/);
   assert.match(prompt, /## Tool Guidelines/);
@@ -36,38 +36,38 @@ test("member argv gets teammate prompt plus the same tool guidelines", () => {
 });
 
 test("an explicit --model is not overwritten", () => {
-  const args = buildStockPiArgs(["--model", "xai/grok-4.6"]);
+  const args = buildPiArgs(["--model", "xai/grok-4.6"]);
   assert.equal(args.filter((token) => token === "--model").length, 1);
   assert.equal(args[args.indexOf("--model") + 1], "xai/grok-4.6");
 });
 
 test("resuming a session does not override its persisted model", () => {
-  const args = buildStockPiArgs(["--session", "/tmp/session.jsonl"]);
+  const args = buildPiArgs(["--session", "/tmp/session.jsonl"]);
   assert.equal(args.includes("--model"), false);
   assert.deepEqual(args.slice(-2), ["--session", "/tmp/session.jsonl"]);
 });
 
 test("an explicit model still overrides a resumed session", () => {
-  const args = buildStockPiArgs(["--session", "/tmp/session.jsonl", "--model", "xai/grok-4.6"]);
+  const args = buildPiArgs(["--session", "/tmp/session.jsonl", "--model", "xai/grok-4.6"]);
   assert.equal(args.filter((token) => token === "--model").length, 1);
   assert.equal(args[args.indexOf("--model") + 1], "xai/grok-4.6");
 });
 
 test("interactive sessions default to fullscreen without overriding explicit modes", () => {
-  const interactive = buildStockPiArgs([]);
+  const interactive = buildPiArgs([]);
   assert.equal(interactive[interactive.indexOf("--tui-mode") + 1], "fullscreen");
 
-  const regular = buildStockPiArgs(["--tui-mode", "regular"]);
+  const regular = buildPiArgs(["--tui-mode", "regular"]);
   assert.equal(regular.filter((token) => token === "--tui-mode").length, 1);
   assert.equal(regular[regular.indexOf("--tui-mode") + 1], "regular");
 
-  assert.equal(buildStockPiArgs(["--mode", "rpc"]).includes("--tui-mode"), false);
-  assert.equal(buildStockPiArgs(["--mode=print"]).includes("--tui-mode"), false);
+  assert.equal(buildPiArgs(["--mode", "rpc"]).includes("--tui-mode"), false);
+  assert.equal(buildPiArgs(["--mode=print"]).includes("--tui-mode"), false);
 });
 
 test("print and json sessions inline the dispatched contract; interactive and rpc do not", () => {
   const promptOf = (userArgs) => {
-    const args = buildStockPiArgs(userArgs, { env: {} });
+    const args = buildPiArgs(userArgs, { env: {} });
     return args[args.indexOf("--system-prompt") + 1];
   };
   const printed = promptOf(["--print", "hello"]);

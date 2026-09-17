@@ -10,7 +10,7 @@ import {
   type TaskRecord,
   type TaskRunStats,
   type TaskStatus,
-} from "@rubato/senpi-task"
+} from "@rubato/task"
 
 const MAX_WIDGET_ROWS = 5
 const WIDGET_LINE_MAX = 70
