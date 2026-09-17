@@ -7,6 +7,33 @@ export type EvalNotifyMode = "wake" | "next-turn" | "off";
 
 export const DETACHED_EVAL_MESSAGE_TYPE = "senpi-codemode:detached-eval";
 
+/** Provider retry suffixes after the first line must not create a second wake. */
+export function detachedNotificationKey(cellId: string): string {
+	return cellId.split(/\r?\n/, 1)[0]?.trim() || cellId;
+}
+
+export function sessionIdFromEvent(event: unknown): string | undefined {
+	if (typeof event === "object" && event !== null && "sessionId" in event && typeof event.sessionId === "string") {
+		return event.sessionId;
+	}
+	return undefined;
+}
+
+export function sessionFileFromContext(ctx: { sessionManager?: { getSessionFile?: () => string } } | undefined): string | undefined {
+	const file = ctx?.sessionManager?.getSessionFile?.();
+	return typeof file === "string" && file.length > 0 ? file : undefined;
+}
+
+/** True when session_start is re-entering the already-running chat, not a new one. */
+export function isSameCodemodeSession(
+	current: { readonly sessionFile?: string; readonly sessionId: string } | undefined,
+	incoming: { readonly sessionFile?: string; readonly sessionId?: string },
+): boolean {
+	if (current === undefined) return false;
+	if (current.sessionFile && incoming.sessionFile) return current.sessionFile === incoming.sessionFile;
+	return incoming.sessionId !== undefined && incoming.sessionId === current.sessionId;
+}
+
 export interface EvalNotifierCustomMessage {
 	readonly customType: typeof DETACHED_EVAL_MESSAGE_TYPE;
 	readonly content: string;
@@ -41,9 +68,9 @@ export class EvalNotifier implements EvalDetachedCellNotifier {
 		if (mode === "off") return;
 		const ctx = this.#deps.getContext();
 		if (ctx === undefined || NON_INTERACTIVE_MODES.has(ctx.mode) || ctx.model === undefined) return;
-		const pending = cells.filter((cell) => !this.#notified.has(cell.cellId));
+		const pending = cells.filter((cell) => !this.#notified.has(detachedNotificationKey(cell.cellId)));
 		if (pending.length === 0) return;
-		for (const cell of pending) this.#notified.add(cell.cellId);
+		for (const cell of pending) this.#notified.add(detachedNotificationKey(cell.cellId));
 		// sendUserMessage records a user turn and the TUI labels it Steering.
 		// Custom messages join the current assistant turn instead.
 		this.#deps.sendMessage(

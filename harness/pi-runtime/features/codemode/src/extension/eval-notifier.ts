@@ -7,6 +7,11 @@ export type EvalNotifyMode = "wake" | "next-turn" | "off";
 
 export const DETACHED_EVAL_MESSAGE_TYPE = "senpi-codemode:detached-eval";
 
+/** Provider retry suffixes after the first line must not create a second wake. */
+export function detachedNotificationKey(cellId: string): string {
+	return cellId.split(/\r?\n/, 1)[0]?.trim() || cellId;
+}
+
 export interface EvalNotifierCustomMessage {
 	readonly customType: typeof DETACHED_EVAL_MESSAGE_TYPE;
 	readonly content: string;
@@ -41,9 +46,9 @@ export class EvalNotifier implements EvalDetachedCellNotifier {
 		if (mode === "off") return;
 		const ctx = this.#deps.getContext();
 		if (ctx === undefined || NON_INTERACTIVE_MODES.has(ctx.mode) || ctx.model === undefined) return;
-		const pending = cells.filter((cell) => !this.#notified.has(cell.cellId));
+		const pending = cells.filter((cell) => !this.#notified.has(detachedNotificationKey(cell.cellId)));
 		if (pending.length === 0) return;
-		for (const cell of pending) this.#notified.add(cell.cellId);
+		for (const cell of pending) this.#notified.add(detachedNotificationKey(cell.cellId));
 		// sendUserMessage records a user turn and the TUI labels it Steering.
 		// Custom messages join the current assistant turn instead.
 		this.#deps.sendMessage(

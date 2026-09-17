@@ -36,6 +36,7 @@ export interface RuntimeFactoryOptions {
 
 export type SessionRuntime = {
 	readonly sessionId: string;
+	readonly sessionFile: string | undefined;
 	readonly cwd: string;
 	readonly parallelPoolWidth: number;
 	readonly manager: CodemodeSessionManager;
@@ -61,6 +62,7 @@ export async function createRuntime(
 	};
 	const availability = await getInterpreterAvailability(settings, createInterpreterDetector());
 	const enabledLanguages = enabledLanguagesFrom(settings, availability);
+	const sessionFile = sessionFileFromContext(ctx);
 	const artifacts = resolveSessionArtifactsDir(ctx.sessionManager.getSessionFile());
 	const activeTools = new Set(pi.getActiveTools());
 	const executeTool = createExecuteTool(pi, activeTools);
@@ -80,6 +82,7 @@ export async function createRuntime(
 	});
 	return {
 		sessionId,
+		sessionFile,
 		cwd: ctx.cwd,
 		parallelPoolWidth,
 		manager,
@@ -103,10 +106,29 @@ export function createExecuteTool(pi: CodemodeRuntimeAPI, activeTools?: Readonly
 }
 
 function sessionIdFrom(event: unknown): string {
+	return sessionIdFromEvent(event) ?? crypto.randomUUID();
+}
+
+export function sessionIdFromEvent(event: unknown): string | undefined {
 	if (typeof event === "object" && event !== null && "sessionId" in event && typeof event.sessionId === "string") {
 		return event.sessionId;
 	}
-	return crypto.randomUUID();
+	return undefined;
+}
+
+export function sessionFileFromContext(ctx: { sessionManager?: { getSessionFile?: () => string } } | undefined): string | undefined {
+	const file = ctx?.sessionManager?.getSessionFile?.();
+	return typeof file === "string" && file.length > 0 ? file : undefined;
+}
+
+/** True when session_start is re-entering the already-running chat, not a new one. */
+export function isSameCodemodeSession(
+	current: { readonly sessionFile?: string; readonly sessionId: string } | undefined,
+	incoming: { readonly sessionFile?: string; readonly sessionId?: string },
+): boolean {
+	if (current === undefined) return false;
+	if (current.sessionFile && incoming.sessionFile) return current.sessionFile === incoming.sessionFile;
+	return incoming.sessionId !== undefined && incoming.sessionId === current.sessionId;
 }
 
 export function enabledLanguagesFrom(
