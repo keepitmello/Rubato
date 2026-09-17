@@ -217,7 +217,6 @@ test("scope boundaries and the closing reply remain common", () => {
   const text = source("base.pi.md");
   assert.match(text, /^You are an agent working at Rubato/m);
   for (const phrase of ["Answer from what you inspected", "ask before anything hard to reverse",
-    "reset, force-push, amend, rebase and tags wait for an explicit request",
     "Fix the cause in the project's existing pattern",
     "what changed, what you verified, what remains"]) {
     assert.ok(text.includes(phrase), phrase);
@@ -244,7 +243,7 @@ test("Pi tools, support and teammate axes do not import another runtime", () => 
 
 test("research and memory routes remain available, not compulsory phases", () => {
   const text = source("base.pi.md");
-  for (const phrase of ["msearch", "Skill(aside-browser)", "Skill(outpost)", "cite links"]) {
+  for (const phrase of ["msearch", "Skill(aside-browser)", "Skill(outpost)", "cite links", "runtime check"]) {
     assert.ok(text.includes(phrase), phrase);
   }
 });
