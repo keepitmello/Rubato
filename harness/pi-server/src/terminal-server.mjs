@@ -5,7 +5,7 @@ import { startTerminalSession } from './terminal-session.mjs';
 
 /** A byte-I/O endpoint of the SAME profile engine. No runtime acquisition here. */
 export async function startTerminalServer({ socketPath, host, descriptor, api, onError = () => {} }) {
-  if (Buffer.byteLength(socketPath) > 100) throw new Error('Terminal socket path exceeds platform limit');
+  if (process.platform !== 'win32' && Buffer.byteLength(socketPath) > 100) throw new Error('Terminal socket path exceeds platform limit');
   try {
     const previous = await lstat(socketPath);
     if (!previous.isSocket()) throw new Error('Refusing to replace a non-socket terminal path');
@@ -33,7 +33,7 @@ export async function startTerminalServer({ socketPath, host, descriptor, api, o
     });
   });
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socketPath, resolve); });
-  await chmod(socketPath, 0o600);
+  if (process.platform !== 'win32') await chmod(socketPath, 0o600);
   server.on('error', onError);
   let closing;
   return { socketPath, close: () => closing ??= (async () => {

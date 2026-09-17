@@ -8,6 +8,7 @@ import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as NodePath from "node:path";
+import { pathToFileURL } from "node:url";
 import { ProviderAdapterRequestError, ProviderDriverError } from "../Errors.ts";
 import { defaultProviderContinuationIdentity, type ProviderDriver, type ProviderInstance } from "../ProviderDriver.ts";
 import type { ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
@@ -81,7 +82,8 @@ export const RubatoPiDriver: ProviderDriver<RubatoPiConfig> = {
     }));
     const bridge = yield* Effect.tryPromise({
       try: async () => {
-        const module: unknown = await import(/* @vite-ignore */ config.bridgeModule);
+        const moduleHref = config.bridgeModule.startsWith("file:") ? config.bridgeModule : pathToFileURL(config.bridgeModule).href;
+        const module: unknown = await import(/* @vite-ignore */ moduleHref);
         if (!module || typeof module !== "object" || !("createBridge" in module) || typeof module.createBridge !== "function")
           throw new Error("bridgeModule must export createBridge");
         const factory = module.createBridge as (options: {descriptorPath:string; instanceId:string; emit:(event:unknown)=>void; projectedMessages:(id:string)=>Promise<never>}) => PiBridge;

@@ -16,11 +16,13 @@ export async function serveProfile({ agentDir, socketPath, idleMs = 60000, runti
   const serverDir = path.join(agentDir, 'server');
   await mkdir(serverDir, { recursive: true, mode: 0o700 });
   const descriptorPath = path.join(serverDir, 'connection.json');
-  socketPath ??= path.join(serverDir, 'pi.sock');
+  socketPath ??= process.platform === 'win32'
+    ? ['', '', '.', 'pipe', `rubato-pi-${path.basename(agentDir)}`].join('\\')
+    : path.join(serverDir, 'pi.sock');
   if (!path.isAbsolute(socketPath)) throw new TypeError('socketPath must be absolute');
   // UNIX paths are limited on macOS; fail explicitly instead of silently
   // changing to a different address or taking ownership of another socket.
-  if (Buffer.byteLength(socketPath) > 100) throw new Error('Socket path is too long; pass --socket with a shorter absolute path');
+  if (process.platform !== 'win32' && Buffer.byteLength(socketPath) > 100) throw new Error('Socket path is too long; pass --socket with a shorter absolute path');
   let service;
   let terminalServer;
   let compromised;
