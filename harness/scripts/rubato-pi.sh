@@ -243,6 +243,11 @@ for RUBATO_ARG in "$@"; do
   esac
 done
 
+# Windows Git Bash cannot host the Unix live hub. Direct session is the path.
+case "$(uname -s 2>/dev/null)" in
+  MINGW*|MSYS*|CYGWIN*) RUBATO_LIVE_DIRECT=1 ;;
+esac
+
 if [ -z "$RUBATO_LIVE_DIRECT" ] \
   && [ "${RUBATO_LIVE_MODE-}" != "off" ] \
   && [ -z "${ZMX_SESSION-}" ] \
@@ -431,7 +436,7 @@ if [ -z "${RUBATO_NO_KIRO_HEAL-}" ] && [ -x "$HERE/kiro-setup.sh" ]; then
   "$HERE/kiro-setup.sh" heal >/dev/null 2>&1 || true
 fi
 
-# stock-pi 설치본은 `rubato update` 가 git 이 이미 최신이면 다시 안 깐다.
+# pi 설치본은 `rubato update` 가 git 이 이미 최신이면 다시 안 깐다.
 # 이 머신에서 커밋한 직후 `rubato` 만 치면 낡은 stock-engine 이 그대로 떴다.
 # 지문이 다르면 세션 전에 다시 깐다. --version/-v 는 기다리지 않는다.
 STOCK_REBUILD=1
@@ -441,7 +446,7 @@ if [ -n "$STOCK_REBUILD" ] && [ -z "${RUBATO_NO_ENGINE_BUILD-}" ] && [ -f "$HERE
   if ! "$NODE" "$HERE/build-active-engine.mjs" --check >/dev/null 2>&1; then
     splash step "엔진을 다시 만드는 중"
     if ! "$NODE" "$HERE/build-active-engine.mjs"; then
-      echo "rubato: stock-pi 엔진을 맞추지 못했습니다. 손으로: node harness/scripts/build-active-engine.mjs" >&2
+      echo "rubato: pi 엔진을 맞추지 못했습니다. 손으로: node harness/scripts/build-active-engine.mjs" >&2
       exit 1
     fi
   fi
@@ -533,8 +538,8 @@ fi
 if [ -n "$UPDATE_NOTE" ]; then printf '%s\n\n' "$UPDATE_NOTE" >&2; fi
 
 
-# Engine selection (stock-pi vs senpi) is owned by launch.mjs via RUBATO_ENGINE
+# Engine selection is owned by launch.mjs via RUBATO_ENGINE
 # and ~/.rubato-pi/engine.json. This shell keeps splash/boot chrome and the
 # Senpi plugin build. Senpi fallback is retired: launch.mjs fails loud when
-# the stock-pi install is missing or invalid.
+# the pi install is missing or invalid.
 exec "$NODE" "$ROOT/bin/rubato-pi.mjs" "$@"

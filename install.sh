@@ -179,11 +179,11 @@ if [ "$ONLY_SHELL" -eq 0 ]; then
 
 head_ "단계 1 · 의존성"
 if [ "$APPLY" -eq 0 ]; then
-  plan "bun install                        (엔진 senpi, 워크스페이스)"
+  plan "bun install                        (워크스페이스)"
   plan "npm install --prefix harness/rubato-pi"
   plan "npm ci --prefix harness/pi-runtime"
   plan "npm ci --prefix harness/pi-server"
-  plan "build-active-engine.mjs            (stock-pi 후보 설치 — 유일한 실행기)"
+  plan "build-active-engine.mjs            (pi 엔진 설치 — 유일한 실행기)"
 else
   say "엔진을 깐다 (bun)"
   (cd "$REPO" && "$BUN" install) || { err "bun install 실패"; exit 1; }
@@ -193,14 +193,14 @@ else
   npm ci --prefix "$HARNESS/pi-runtime" >/dev/null 2>&1 || { err "pi-runtime 설치 실패"; exit 1; }
   say "pi-server 를 깐다"
   npm ci --prefix "$HARNESS/pi-server" >/dev/null 2>&1 || { err "pi-server 설치 실패"; exit 1; }
-  # 세션이 실제로 도는 엔진은 stock-pi 후보 하나뿐이다(senpi 폴백 폐기).
+  # 세션이 실제로 도는 엔진은 pi 하나뿐이다(senpi 폴백 폐기).
   # 이걸 빼면 설치는 성공했는데 `rubato` 가 "engine is not installed" 로
   # 죽는 상태가 만들어진다.
-  say "stock-pi 엔진을 깐다"
+  say "pi 엔진을 깐다"
   (cd "$REPO" && "$NODE24" "$HARNESS/scripts/build-active-engine.mjs") \
-    >/dev/null 2>&1 || { err "stock-pi 엔진 설치 실패"; exit 1; }
+    >/dev/null 2>&1 || { err "pi 엔진 설치 실패"; exit 1; }
   "$NODE24" "$HARNESS/scripts/build-active-engine.mjs" --check >/dev/null 2>&1 \
-    || { err "stock-pi 엔진이 소스와 맞지 않는다"; exit 1; }
+    || { err "pi 엔진이 소스와 맞지 않는다"; exit 1; }
   ok "의존성 설치 완료"
 fi
 
@@ -243,7 +243,7 @@ else
 fi
 
 head_ "단계 3.5 · 확장"
-# senpi 가 agentDir/extensions 를 훑어 자동으로 불러오는 사용자 확장이다.
+# 엔진이 agentDir/extensions 를 훑어 자동으로 불러오는 사용자 확장이다.
 # harness/rubato-pi/src/extensions/ 의 것들과 다르다 — 저쪽은 launch.mjs 가
 # 경로를 직접 지정해 실어 넣는 하네스 부품이라 설치라는 단계가 없다.
 if [ "$APPLY" -eq 0 ]; then
@@ -354,9 +354,15 @@ else
   case "$(uname -s)" in
     MINGW*|MSYS*|CYGWIN*)
       WIN_BASH="$(cygpath -w "$(command -v bash)" 2>/dev/null || true)"
-      [ -n "$WIN_BASH" ] || WIN_BASH='C:\Program Files\Git\bin\bash.exe'
+      [ -n "$WIN_BASH" ] || WIN_BASH='C:\Program Files\Git\usr\bin\bash.exe'
       WIN_SRC="$(cygpath -w "$RUBATO_SRC")"
-      printf '@echo off\r\nsetlocal\r\n"%s" "%s" %%*\r\n' "$WIN_BASH" "$WIN_SRC" > "$RUBATO_LINK.cmd"
+      # PowerShell PATH often has Git\cmd but not usr\bin, so dirname/uname
+      # vanish when this trampoline starts a non-login bash.
+      printf '@echo off\r\nsetlocal\r\nset "PATH=%s;%s;%s;%%PATH%%"\r\n"%s" "%s" %%*\r\n' \
+        'C:\Program Files\Git\usr\bin' \
+        'C:\Program Files\Git\bin' \
+        'C:\Program Files\Git\cmd' \
+        "$WIN_BASH" "$WIN_SRC" > "$RUBATO_LINK.cmd"
       ok "rubato.cmd 를 PATH 에 놓았다 ($RUBATO_LINK.cmd)"
       # PowerShell treats an extensionless file as a native Application and
       # fails to launch the POSIX wrapper. Keep only the .cmd trampoline.
@@ -473,7 +479,7 @@ if [ "$ONLY_SHELL" -eq 0 ]; then
 
 head_ "단계 5 · 크레덴셜 (읽기만 한다)"
 CRED_OK=1
-[ -f "$HOME/.senpi/agent/auth.json" ] && ok "xAI — ~/.senpi/agent/auth.json" \
+[ -f "$HOME/.rubato-pi/agent/auth.json" ] && ok "xAI — ~/.rubato-pi/agent/auth.json" \
   || { warn "xAI OAuth 가 없다"; CRED_OK=0; add_manual "xAI 로그인이 필요하다"; }
 # Claude 는 1년짜리 장기 setup-token 이다(sk-ant-oat...). 직결 Anthropic 경로
 # (`anthropic-setup-token.mjs`)는 파일을 먼저 보고 없으면 Keychain 으로 넘어간다.
@@ -488,13 +494,13 @@ else
   CRED_OK=0
   add_manual "claude setup-token 으로 받아 ~/.claude/auth/setup-token-$CLAUDE_ACCOUNT 에 넣어라"
 fi
-# Codex 는 senpi auth.json 의 openai-codex OAuth 로 직접 간다.
-if [ -f "$HOME/.senpi/agent/auth.json" ] && grep -q '"openai-codex"' "$HOME/.senpi/agent/auth.json" 2>/dev/null; then
-  ok "Codex — ~/.senpi/agent/auth.json (openai-codex)"
+# Codex 는 rubato auth.json 의 openai-codex OAuth 로 직접 간다.
+if [ -f "$HOME/.rubato-pi/agent/auth.json" ] && grep -q '"openai-codex"' "$HOME/.rubato-pi/agent/auth.json" 2>/dev/null; then
+  ok "Codex — ~/.rubato-pi/agent/auth.json (openai-codex)"
 else
   warn "Codex OAuth 가 없다"
   CRED_OK=0
-  add_manual "Codex 로그인이 필요하다 (senpi auth.json 의 openai-codex)"
+  add_manual "Codex 로그인이 필요하다 (rubato auth.json 의 openai-codex)"
 fi
 
 head_ "단계 6 · 확인"
