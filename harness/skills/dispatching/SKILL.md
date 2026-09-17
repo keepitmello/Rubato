@@ -33,10 +33,13 @@ owner. The receiver checks the draft's exact reference without requiring active 
 Do not relabel execution owners as subagents to bypass combined intent/roster confirmation.
 
 When execution is approved, pass the accepted intent reference and boundaries. Owners
-settle local factual/implementation gaps; they return only consequential unresolved choices
-with evidence, options and a recommendation. The lead consolidates any human decision in
-plain language rather than forwarding each worker's questions. Related follow-ups reuse
-approval and context; material intent/roster/cost changes require a delta confirmation.
+settle local factual/implementation gaps and already-delegated tradeoffs. If a choice
+would materially sacrifice an established benefit or change agreed priorities beyond
+that authority, return the evidence and recommendation before applying it broadly.
+The lead decides within its authority and consolidates only the remaining human decision.
+Related follow-ups reuse approval and context; material intent/roster/cost changes require
+a delta confirmation. Carry directly relevant prior failures with their conditions as
+source references, not technique bans or a requirement to reread the whole history.
 
 ## What binds, and what is a lead
 
@@ -51,11 +54,11 @@ Binding: the things you are the canon of:
 - Constraints that carry a named authority source: the user asked for it, a spec or active frame states it, an external contract or another session's ownership requires it. Name the source next to the constraint.
 - Frozen items: values, behaviors, feels, layouts, or copy the user has locked ("keep this", "do not touch", "freeze"). List each one in the brief with its source and date ("physics constants and the formula that uses them: frozen, user, 2026-08-14"). A frozen item that lives only in a document the worker was not told to read does not exist for that worker. If the task cannot be completed without changing a frozen item, the worker stops and returns with that conflict; it does not choose between the task and the freeze, and it does not satisfy the freeze by leaving the old value in a comment while replacing what uses it.
 
-Provisional: everything you believe about how the code is shaped: file coordinates, call paths, causal guesses, method ideas, suggested files to inspect. Ship them when they help (verified knowledge from earlier runs saves the worker a cold read), but they travel as leads the worker verifies against code, tests, and runtime, and may overrule. Being able to quote the line does not upgrade a lead: a correctly quoted line can still be a wrong interpretation. Provisionality does not survive serialization unless your register carries it; a guess shipped as fact pins the search to the wrong spot.
+Provisional: owner-chosen methods, sequence, candidate counts and comparison setup, plus beliefs about how the code is shaped: file coordinates, call paths, causal guesses, method ideas, suggested files to inspect. Ship them when they help (verified knowledge from earlier runs saves the worker a cold read), but they travel as leads the worker verifies against code, tests, and runtime, and may overrule. Being able to quote the line does not upgrade a lead: a correctly quoted line can still be a wrong interpretation. Provisionality does not survive serialization unless your register carries it; a guess shipped as fact pins the search to the wrong spot.
 
 Why frozen items need their own line: when a task and a rule conflict inside a worker, the task wins, because the task is what the worker is measured on. A rule arriving as background prose reads as a preference; the same rule arriving as a named fence with a stop instruction reads as a boundary.
 
-A quality concern you invented yourself is not a constraint. State it as something observable to verify (a measurement, a behavior), because a mechanism prohibition written without reading the code can forbid the only fix.
+A quality concern you invented yourself is not a constraint. State it as something observable to verify (a measurement, a behavior), because a mechanism prohibition written without reading the code can forbid the only fix. Preserve a baseline without freezing every alternative parameter. Keep coupled behavior together when the intended experience requires it; a one-variable comparison is a method, not default authority.
 
 Keep read scope apart from write scope. "Look at these files" is a lead; "do not write these files" is a fence. Do not mix them in one list.
 
@@ -70,7 +73,24 @@ A worker whose session loads a role contract already knows how to read this brie
 
 The return contract has a fixed column when frozen items were listed, with three values: `Frozen items touched: none`, `Frozen items touched: <which>, <why the task required it>`, or `Frozen items: list unavailable, <why>` (the brief named a list the worker could not read, or the repository's frozen list could not be found). "Unavailable" is not "none"; a worker that could not read the list reports that, and does not report `none`. A return without this column when the brief listed frozen items is incomplete. This column makes the worker check the list before returning; it is a self-report, not evidence. Where the repository carries frozen checks, the checks are the evidence, and a self-report of `none` does not replace running them.
 
-When the surface is visual or felt (a screen, a sound, a control feel), the return contract also stops at the first rendered state: the worker returns with screenshots or a recording after the first render, and does not continue to a second implementation turn on that surface until the user has seen the first. Say this in the brief even when the worker loads the frontend rules, because a worker on a freehand lane loads none; a worker that is not told to stop will finish. A worker that stops here has completed its turn; see "When it comes back empty".
+For visual or felt work (a screen, a sound, a control feel), name the decision the
+artifact must support and any explicit preview checkpoint in the brief. A first render
+is not an automatic stop. Within the accepted scope, the owner prepares a functioning,
+judgment-ready candidate and corrects inspectable omissions before returning it.
+An explicit first-preview checkpoint or user stop still binds, even if the candidate
+has known gaps; report those gaps rather than polishing past that boundary. Once a
+meaningful user preference is needed, show the useful candidate promptly instead of
+polishing unseen. A preview assignment does not authorize product integration.
+
+Use evidence the observer can actually inspect. Static frames do not prove full-speed
+rhythm. If an observation channel is unavailable, report that limit and request only
+the remaining observation; do not make a new tool a prerequisite for unrelated progress.
+Do not relabel an avoidable, inspectable loss as taste, or an optional improvement as a
+required repair. On receipt, return a supported in-scope failure to its implementation
+owner for correction and recheck of the changed result through the agreed evidence path.
+A reviewer does not repair production code it will independently judge. A review report
+or a first screenshot is not automatic user handoff. The lead handles acceptance and
+material choices without duplicating the owner's technical checks.
 
 ## Reuse the agent or start a new one
 
@@ -90,7 +110,17 @@ Budget exhaustion, a failed test or repeated advice is not proof of model incapa
 
 ## When it comes back empty
 
-A dispatch that ends without the artifact its task type should produce (no edit or test for a build, no anchor or narrowed hypothesis for an investigation, no verdict for a review) is not finished, and not a reason to spawn the next worker. A visual or felt surface is the exception: a return after the first rendered state, carrying screenshots and the points to judge, has produced its artifact. That is a completed turn, not an empty one; the next move is showing it to the user, not resending the brief. For everything else: Recover the cause from the same session first. Ask which premise or constraint blocked it, with evidence. Classify (infrastructure failure, oversized surface, brief conflict, misrouting) before anything is resent. An unchanged brief handed to a new worker carries the shared cause with it; a worker swap is not a frame change.
+Judge the return against its assignment. A judgment-ready preview completes a preview
+assignment; a screenshot of an absent promised behavior does not fulfill an implementation
+assignment. Budget, authority, observation limits and explicit checkpoints can all justify
+a valid return with work remaining. They are not proof that the requested outcome is done.
+
+Recover the cause from the same session first when the required result is missing.
+Ask which premise, constraint or capability blocked it, with evidence; use that cause to
+choose in-scope repair, a revised approach, a material decision or a stop at the boundary.
+Do not resend an unchanged brief to a new worker instead of diagnosing the shared cause.
+An auxiliary tool failure grants no new installation or environment-rebuild authority;
+use an authorized existing route or return the concrete gap that blocks progress.
 
 ## Account for the extra context before delegating
 

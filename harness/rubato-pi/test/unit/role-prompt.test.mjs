@@ -107,13 +107,13 @@ test("budget return differs from completion and incapability", () => {
   assert.match(skill("return/SKILL.md"), /A completed process is not mission acceptance/);
 });
 
-test("dispatching retains binding authority, freezes, first render and block recovery", () => {
+test("dispatching retains binding authority, freezes, explicit previews and block recovery", () => {
   const text = skill("dispatching/SKILL.md");
   for (const phrase of [
     "The outcome and why it matters", "Done evidence", "Write ownership and off-limits paths",
     "Name a number", "Provisional:", "read scope apart from write scope",
     "Frozen items touched: none", "Frozen items: list unavailable",
-    "self-report, not evidence", "stops at the first rendered state",
+    "self-report, not evidence", "explicit first-preview checkpoint or user stop still binds",
     "Recover the cause from the same session first", "nothing new appears",
   ]) assert.ok(text.includes(phrase), phrase);
   assert.match(text, /not elapsed time alone/);
