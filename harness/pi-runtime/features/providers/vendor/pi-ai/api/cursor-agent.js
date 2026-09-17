@@ -35,6 +35,7 @@ import { armExecHeartbeat } from "./cursor-agent/exec-lifecycle.js";
 import { buildMcpStateResult, buildNeutralHookResult, buildPiBashError, buildPiBashResult, buildPiEditError, buildPiEditRejected, buildPiEditResult, buildPiFindError, buildPiFindResult, buildPiGrepError, buildPiGrepResult, buildPiLsError, buildPiLsResult, buildPiReadError, buildPiReadResult, buildPiWriteError, buildPiWriteRejected, buildPiWriteResult, } from "./cursor-agent/exec-modern.js";
 import { AgentClientMessageSchema, AgentConversationTurnStructureSchema, AgentRunRequestSchema, AgentServerMessageSchema, AgentStoreConflictErrorSchema, AgentStoreConflictResultSchema, AssistantMessageSchema, BackgroundShellSpawnResultSchema, CanvasDiagnosticsErrorSchema, CanvasDiagnosticsResultSchema, ClientHeartbeatSchema, ComputerUseErrorSchema, ComputerUseResultSchema, ConversationActionSchema, ConversationSearchErrorSchema, ConversationSearchResultSchema, ConversationStateStructureSchema, ConversationStepSchema, ConversationTurnStructureSchema, DeleteErrorSchema, DeleteRejectedSchema, DeleteResultSchema, DeleteSuccessSchema, DiagnosticsErrorSchema, DiagnosticsRejectedSchema, DiagnosticsResultSchema, DiagnosticsSuccessSchema, ExecClientControlMessageSchema, ExecClientHeartbeatSchema, ExecClientMessageSchema, ExecClientStreamCloseSchema, ExecClientThrowSchema, FetchErrorSchema, FetchResultSchema, ForceBackgroundShellResultSchema, ForceBackgroundShellStatus, ForceBackgroundSubagentResultSchema, ForceBackgroundSubagentStatus, GetBlobResultSchema, GetUsableModelsRequestSchema, GetUsableModelsResponseSchema, GrepContentMatchSchema, GrepContentResultSchema, GrepCountResultSchema, GrepErrorSchema, GrepFileCountSchema, GrepFileMatchSchema, GrepFilesResultSchema, GrepResultSchema, GrepSuccessSchema, GrepUnionResultSchema, KvClientMessageSchema, ListMcpResourcesExecResultSchema, ListMcpResourcesSuccessSchema, LsDirectoryTreeNode_FileSchema, LsDirectoryTreeNodeSchema, LsErrorSchema, LsRejectedSchema, LsResultSchema, LsSuccessSchema, McpAllowlistPrecheckResultSchema, McpApprovedSchema, McpArgsSchema, McpErrorSchema, McpImageContentSchema, McpRejectedSchema, McpResultSchema, McpSuccessSchema, McpTextContentSchema, McpToolCallSchema, McpToolDefinitionSchema, McpToolErrorSchema, McpToolNotFoundSchema, McpToolResultContentItemSchema, McpToolResultSchema, ModelDetailsSchema, ReadErrorSchema, ReadMcpResourceExecResultSchema, ReadMcpResourceNotFoundSchema, ReadRejectedSchema, ReadResultSchema, ReadSuccessSchema, RecordScreenFailureSchema, RecordScreenResultSchema, RequestContextResultSchema, RequestContextSchema, RequestContextSuccessSchema, ResumeActionSchema, SelectedContextSchema, SelectedImageSchema, SetBlobResultSchema, ShellAllowlistPrecheckResultSchema, ShellFailureSchema, ShellRejectedSchema, ShellResultSchema, ShellStreamExitSchema, ShellStreamSchema, ShellStreamStartSchema, ShellStreamStderrSchema, ShellStreamStdoutSchema, ShellSuccessSchema, SmartModeClassifierErrorSchema, SmartModeClassifierResultSchema, SubagentAwaitNotFoundSchema, SubagentAwaitResultSchema, SubagentErrorSchema, SubagentResultSchema, ToolCallSchema, UserMessageActionSchema, UserMessageSchema, WebFetchAllowlistPrecheckResultSchema, WriteErrorSchema, WriteRejectedSchema, WriteResultSchema, WriteShellStdinErrorSchema, WriteShellStdinResultSchema, WriteSuccessSchema, } from "./cursor-agent/gen/agent_pb.js";
 import { composeShellCommand, omitUndefinedArgs, piLimit, piLsPath, piReadArgs, piTimeout, } from "./cursor-agent/pi-args.js";
+import { AskQuestionInteractionResponseSchema, AskQuestionRejectedSchema, AskQuestionResultSchema, CreatePlanErrorSchema, CreatePlanRequestResponseSchema, CreatePlanResultSchema, ExaFetchRequestResponseSchema, ExaFetchRequestResponse_RejectedSchema, ExaSearchRequestResponseSchema, ExaSearchRequestResponse_RejectedSchema, InteractionResponseSchema, SetupVmEnvironmentResultSchema, SetupVmEnvironmentSuccessSchema, SwitchModeRequestResponseSchema, SwitchModeRequestResponse_RejectedSchema, WebSearchRequestResponseSchema, WebSearchRequestResponse_RejectedSchema, } from "./cursor-agent/gen/agent_pb.js";
 import { buildRequestedModel } from "./cursor-agent/reasoning-params.js";
 import { CursorRetryableStreamError, cursorStreamRetryDelayMs, shouldRetryCursorStream, waitForCursorStreamRetry, } from "./cursor-agent/stream-retry.js";
 import { CURSOR_CONVERSATION_POISONED_MESSAGE, createConversationRotationStore, isZeroTokenResourceExhausted, resolveConversationRotationPersistPath, } from "./cursor-conversation-rotation.js";
@@ -685,7 +686,7 @@ export const stream = (model, context, options) => {
                 let currentThinkingBlock = null;
                 let currentToolCall = null;
                 const resolvedMcpToolCallIds = new Set();
-                usageState = { sawTokenDelta: false, sawTurnEndedUsage: false };
+                usageState = { sawTokenDelta: false, sawTurnEndedUsage: false, conversationId };
                 const state = {
                     get currentTextBlock() {
                         return currentTextBlock;
@@ -1038,7 +1039,114 @@ export async function handleServerMessage(msg, output, stream, state, blobStore,
         applyCheckpointTokenDetails(msg.message.value, output, usageState);
         onConversationCheckpoint?.(msg.message.value);
     }
+    else if (msgCase === "interactionQuery") {
+        handleInteractionQuery(msg.message.value, h2Request);
+    }
+    else if (msgCase === "execServerControlMessage") {
+        handleExecServerControlMessage(msg.message.value, state);
+    }
 }
+
+const CURSOR_INTERACTION_UNAVAILABLE = "Not available in Rubato";
+
+export function defaultInteractionQueryResult(queryCase) {
+    if (queryCase === "webSearchRequestQuery") {
+        return {
+            case: "webSearchRequestResponse",
+            value: create(WebSearchRequestResponseSchema, {
+                result: { case: "rejected", value: create(WebSearchRequestResponse_RejectedSchema, { reason: CURSOR_INTERACTION_UNAVAILABLE }) },
+            }),
+        };
+    }
+    if (queryCase === "askQuestionInteractionQuery") {
+        return {
+            case: "askQuestionInteractionResponse",
+            value: create(AskQuestionInteractionResponseSchema, {
+                result: create(AskQuestionResultSchema, {
+                    result: { case: "rejected", value: create(AskQuestionRejectedSchema, { reason: CURSOR_INTERACTION_UNAVAILABLE }) },
+                }),
+            }),
+        };
+    }
+    if (queryCase === "switchModeRequestQuery") {
+        return {
+            case: "switchModeRequestResponse",
+            value: create(SwitchModeRequestResponseSchema, {
+                result: { case: "rejected", value: create(SwitchModeRequestResponse_RejectedSchema, { reason: CURSOR_INTERACTION_UNAVAILABLE }) },
+            }),
+        };
+    }
+    if (queryCase === "exaSearchRequestQuery") {
+        return {
+            case: "exaSearchRequestResponse",
+            value: create(ExaSearchRequestResponseSchema, {
+                result: { case: "rejected", value: create(ExaSearchRequestResponse_RejectedSchema, { reason: CURSOR_INTERACTION_UNAVAILABLE }) },
+            }),
+        };
+    }
+    if (queryCase === "exaFetchRequestQuery") {
+        return {
+            case: "exaFetchRequestResponse",
+            value: create(ExaFetchRequestResponseSchema, {
+                result: { case: "rejected", value: create(ExaFetchRequestResponse_RejectedSchema, { reason: CURSOR_INTERACTION_UNAVAILABLE }) },
+            }),
+        };
+    }
+    if (queryCase === "createPlanRequestQuery") {
+        return {
+            case: "createPlanRequestResponse",
+            value: create(CreatePlanRequestResponseSchema, {
+                result: create(CreatePlanResultSchema, {
+                    result: { case: "error", value: create(CreatePlanErrorSchema, { error: CURSOR_INTERACTION_UNAVAILABLE }) },
+                }),
+            }),
+        };
+    }
+    if (queryCase === "setupVmEnvironmentArgs") {
+        return {
+            case: "setupVmEnvironmentResult",
+            value: create(SetupVmEnvironmentResultSchema, {
+                result: { case: "success", value: create(SetupVmEnvironmentSuccessSchema, {}) },
+            }),
+        };
+    }
+}
+
+export function handleInteractionQuery(query, h2Request) {
+    const result = defaultInteractionQueryResult(query.query?.case);
+    if (!result)
+        return;
+    const message = create(AgentClientMessageSchema, {
+        message: {
+            case: "interactionResponse",
+            value: create(InteractionResponseSchema, { id: query.id, result }),
+        },
+    });
+    h2Request.write(frameConnectMessage(toBinary(AgentClientMessageSchema, message)));
+}
+
+export function handleExecServerControlMessage(control, state) {
+    if (control.message?.case !== "abort")
+        return;
+    const id = control.message.value?.id;
+    state.execAborts?.get(id)?.abort();
+}
+
+function waitForExecAbort(signal) {
+    return new Promise((_, reject) => {
+        const abort = () => {
+            const error = new Error("Cursor exec aborted");
+            error.name = "AbortError";
+            reject(error);
+        };
+        if (signal.aborted) {
+            abort();
+            return;
+        }
+        signal.addEventListener("abort", abort, { once: true });
+    });
+}
+
 function handleKvServerMessage(kvMsg, blobStore, h2Request) {
     const kvCase = kvMsg.message.case;
     if (kvCase === "getBlobArgs") {
@@ -1328,18 +1436,24 @@ async function handleExecServerMessage(execMsg, h2Request, execHandlers, onToolR
         return;
     }
     const stopExecHeartbeat = armCursorExecHeartbeat(h2Request, execMsg);
+    state.execAborts ??= new Map();
+    const abortController = new AbortController();
+    state.execAborts.set(execMsg.id, abortController);
     try {
-        await dispatchExecServerMessage({
-            execMsg,
-            h2Request,
-            execHandlers,
-            onToolResult,
-            requestContextTools,
-            output,
-            stream,
-            state,
-            conversationId,
-        });
+        await Promise.race([
+            dispatchExecServerMessage({
+                execMsg,
+                h2Request,
+                execHandlers,
+                onToolResult,
+                requestContextTools,
+                output,
+                stream,
+                state,
+                conversationId,
+            }),
+            waitForExecAbort(abortController.signal),
+        ]);
     }
     catch (error) {
         log("error", "execDispatch", {
@@ -1347,9 +1461,10 @@ async function handleExecServerMessage(execMsg, h2Request, execHandlers, onToolR
             id: execMsg.id,
             execId: execMsg.execId,
         });
-        sendExecClientThrow(h2Request, execMsg, "Local exec dispatch failed", "exec_dispatch_failed");
+        sendExecClientThrow(h2Request, execMsg, abortController.signal.aborted ? "Cursor exec aborted" : "Local exec dispatch failed", abortController.signal.aborted ? "exec_aborted" : "exec_dispatch_failed");
     }
     finally {
+        state.execAborts.delete(execMsg.id);
         stopExecHeartbeat();
         sendExecClientStreamClose(h2Request, execMsg);
     }
@@ -2878,6 +2993,10 @@ function endCurrentThinkingBlock(output, stream, state) {
     const block = state.currentThinkingBlock;
     if (!block)
         return;
+    if (block.startedAt === undefined)
+        block.startedAt = Date.now();
+    if (block.endedAt === undefined)
+        block.endedAt = Date.now();
     const idx = output.content.indexOf(block);
     stream.push({
         type: "thinking_end",
@@ -2886,6 +3005,35 @@ function endCurrentThinkingBlock(output, stream, state) {
         partial: output,
     });
     state.setThinkingBlock(null);
+}
+
+const CURSOR_SUMMARY_SUBTYPE = "cursor-summary";
+
+function rememberCursorConversationSummary(usageState) {
+    const conversationId = usageState?.conversationId;
+    const summary = usageState?.cursorSummary;
+    if (!conversationId || typeof summary !== "string" || !summary)
+        return;
+    const cached = conversationStateCache.get(conversationId);
+    if (!cached)
+        return;
+    cached.summary = summary;
+}
+
+function appendOrUpdateCursorSummary(output, usageState) {
+    const summary = usageState?.cursorSummary;
+    if (typeof summary !== "string" || !summary)
+        return;
+    const existing = output.content.find((block) => block.type === "providerNative" && block.subtype === CURSOR_SUMMARY_SUBTYPE);
+    if (existing) {
+        existing.raw = { type: CURSOR_SUMMARY_SUBTYPE, content: summary };
+        return;
+    }
+    output.content.push({
+        type: "providerNative",
+        subtype: CURSOR_SUMMARY_SUBTYPE,
+        raw: { type: CURSOR_SUMMARY_SUBTYPE, content: summary },
+    });
 }
 /**
  * Ensure a Cursor exec frame's tool-call id is present and unique within the
@@ -3004,6 +3152,7 @@ export function processInteractionUpdate(update, output, stream, state, usageSta
     if (updateCase === "textDelta") {
         const delta = update.message.value.text || "";
         if (!state.currentTextBlock) {
+            endCurrentThinkingBlock(output, stream, state);
             const block = {
                 type: "text",
                 text: "",
@@ -3020,9 +3169,11 @@ export function processInteractionUpdate(update, output, stream, state, usageSta
     else if (updateCase === "thinkingDelta") {
         const delta = update.message.value.text || "";
         if (!state.currentThinkingBlock) {
+            endCurrentTextBlock(output, stream, state);
             const block = {
                 type: "thinking",
                 thinking: "",
+                startedAt: Date.now(),
                 [kStreamingBlockIndex]: output.content.length,
             };
             output.content.push(block);
@@ -3034,7 +3185,31 @@ export function processInteractionUpdate(update, output, stream, state, usageSta
         stream.push({ type: "thinking_delta", contentIndex: idx, delta, partial: output });
     }
     else if (updateCase === "thinkingCompleted") {
+        const block = state.currentThinkingBlock;
+        const durationMs = Number(update.message.value?.thinkingDurationMs);
+        if (block && Number.isFinite(durationMs) && durationMs >= 0) {
+            if (block.startedAt === undefined)
+                block.startedAt = Date.now() - durationMs;
+            block.endedAt = block.startedAt + durationMs;
+        }
         endCurrentThinkingBlock(output, stream, state);
+    }
+    else if (updateCase === "summaryStarted") {
+        endCurrentTextBlock(output, stream, state);
+        endCurrentThinkingBlock(output, stream, state);
+        usageState.cursorSummary = usageState.cursorSummary ?? "";
+    }
+    else if (updateCase === "summary") {
+        const delta = update.message.value.summary || "";
+        usageState.cursorSummary = (usageState.cursorSummary ?? "") + delta;
+        appendOrUpdateCursorSummary(output, usageState);
+        rememberCursorConversationSummary(usageState);
+    }
+    else if (updateCase === "summaryCompleted") {
+        endCurrentTextBlock(output, stream, state);
+        endCurrentThinkingBlock(output, stream, state);
+        appendOrUpdateCursorSummary(output, usageState);
+        rememberCursorConversationSummary(usageState);
     }
     else if (updateCase === "toolCallStarted" && selectConnectScmCall(update.message.value.toolCall)) {
         // `connect_scm` is resolved entirely server-side and has NO exec frame:
@@ -3217,6 +3392,23 @@ export function processInteractionUpdate(update, output, stream, state, usageSta
         output.usage.totalTokens =
             output.usage.input + output.usage.output + output.usage.cacheRead + output.usage.cacheWrite;
     }
+    else if (updateCase === "shellOutputDelta") {
+        usageState.lastShellOutputEvent = update.message.value.event?.case;
+    }
+    else if (updateCase === "stepStarted") {
+        usageState.lastStepId = update.message.value.stepId;
+        usageState.lastStepStatus = "started";
+    }
+    else if (updateCase === "stepCompleted") {
+        usageState.lastStepId = update.message.value.stepId;
+        usageState.lastStepStatus = "completed";
+        usageState.lastStepDurationMs = Number(update.message.value.stepDurationMs);
+    }
+    else if (updateCase === "userMessageAppended") {
+        const userMessage = update.message.value.userMessage;
+        if (userMessage && userMessage.isSimulatedMsg !== true)
+            usageState.lastAppendedUserMessageId = userMessage.messageId;
+    }
 }
 /**
  * Cursor's production schema (cursor-agent 2026.08.11) carries the billed
@@ -3232,7 +3424,9 @@ export function processInteractionUpdate(update, output, stream, state, usageSta
  * be avoided.
  */
 function applyBilledTurnEndedUsage(update, output, usageState) {
-    const { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens } = update;
+    const { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, reasoningTokens } = update;
+    if (reasoningTokens !== undefined)
+        usageState.reasoningTokens = Number(reasoningTokens);
     if (inputTokens === undefined &&
         outputTokens === undefined &&
         cacheReadTokens === undefined &&

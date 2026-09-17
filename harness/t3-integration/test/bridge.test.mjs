@@ -243,6 +243,19 @@ test('normalizer emits valid text, reasoning, tool, confirmation and settled eve
   assert.equal(events.filter(e=>e.type==='turn.completed').length,1);
   assert.equal(events.filter(e=>e.type==='content.delta'&&e.payload.streamKind==='assistant_text').map(e=>e.payload.delta).join(''),'hello');
 });
+test('thinking_end completes the reasoning stream before the turn settles', () => {
+  const events=[]; const p=new EventProjection({threadId:'thread',sessionId:'session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
+  const message={role:'assistant',timestamp:456,model:'fixture',content:[{type:'thinking',thinking:'plan',endedAt:1},{type:'text',text:'done'}]};
+  p.project({type:'agent_start'});
+  p.project({type:'message_update',message,assistantMessageEvent:{type:'thinking_end'}});
+  const reasoningDone = events.find(e=>e.type==='item.completed'&&String(e.itemId||'').endsWith(':reasoning'));
+  assert.ok(reasoningDone);
+  assert.equal(reasoningDone.payload.status,'completed');
+  assert.equal(events.some(e=>e.type==='turn.completed'),false);
+  p.project({type:'message_end',message:{...message,stopReason:'stop'}});
+  p.project({type:'agent_settled'});
+  assert.equal(events.filter(e=>e.type==='item.completed').length,2);
+});
 test('extension notify of every tone is a contract-valid runtime.warning, and setStatus is dropped', () => {
   const events=[]; const p=new EventProjection({threadId:'thread',sessionId:'session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
   const status = '문맥 1 · 약 1200/64000토큰 · 노트 3개\n사용할 수 있어요.';

@@ -203,20 +203,30 @@ async function runSideEffect(options, toolName, toolCallId, args) {
   const nativeFileTool = toolName === "write" || toolName === "edit"
     ? createNativeFileTool(toolName, options.cwd)
     : undefined;
-  const result = await options.executeTool(toolName, args, {
-    signal: options.signal,
-    toolCallId,
-    activateInactiveTool: true,
-    ...(nativeFileTool ? { nativeFileTool } : {}),
-    onUpdate: (partialResult) => options.onUpdate?.({
-      type: "tool_execution_update",
+  let acceptingUpdates = true;
+  try {
+    const result = await options.executeTool(toolName, args, {
+      signal: options.signal,
       toolCallId,
-      toolName,
-      args,
-      partialResult,
-    }),
-  });
-  return result;
+      activateInactiveTool: true,
+      ...(nativeFileTool ? { nativeFileTool } : {}),
+      onUpdate: (partialResult) => {
+        if (!acceptingUpdates)
+          return;
+        options.onUpdate?.({
+          type: "tool_execution_update",
+          toolCallId,
+          toolName,
+          args,
+          partialResult,
+        });
+      },
+    });
+    return result;
+  }
+  finally {
+    acceptingUpdates = false;
+  }
 }
 
 /**
