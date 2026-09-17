@@ -355,6 +355,9 @@ else
       WIN_SRC="$(cygpath -w "$RUBATO_SRC")"
       printf '@echo off\r\nsetlocal\r\n"%s" "%s" %%*\r\n' "$WIN_BASH" "$WIN_SRC" > "$RUBATO_LINK.cmd"
       ok "rubato.cmd 를 PATH 에 놓았다 ($RUBATO_LINK.cmd)"
+      # PowerShell treats an extensionless file as a native Application and
+      # fails to launch the POSIX wrapper. Keep only the .cmd trampoline.
+      rm -f "$RUBATO_LINK"
       ;;
   esac
   if [ "$(readlink "$MSEARCH_LINK" 2>/dev/null)" = "$MSEARCH_SRC" ]; then
