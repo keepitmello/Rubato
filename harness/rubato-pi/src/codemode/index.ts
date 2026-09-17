@@ -4,7 +4,12 @@ import type { AgentExecuteTool } from "./bridges/agent-bridge.ts";
 import type { EvalSchemaToolInfo } from "./bridges/schema-bridge.ts";
 import { type CompletionRequest, type CompletionResult, createCompletionHandler } from "./completion/handler.ts";
 import { defaultCodemodeSettings, resolveHardLimitSeconds } from "./config/settings.ts";
-import { EvalNotifier } from "./extension/eval-notifier.ts";
+import {
+	EvalNotifier,
+	isSameCodemodeSession,
+	sessionFileFromContext,
+	sessionIdFromEvent,
+} from "./extension/eval-notifier.ts";
 import { EVAL_CELLS_STATUS_KEY } from "./extension/eval-status.ts";
 import { EvalStatusTicker } from "./extension/eval-status-ticker.ts";
 import {
@@ -167,6 +172,22 @@ export default function senpiCodemode(pi: CodemodeExtensionAPI, options: SenpiCo
 	);
 
 	pi.on("session_start", async (event, ctx) => {
+		const currentRuntime = activeRuntime;
+		const currentCells = activeCells;
+		if (
+			currentRuntime !== undefined &&
+			currentCells !== undefined &&
+			isSameCodemodeSession(currentRuntime, {
+				sessionFile: sessionFileFromContext(ctx),
+				sessionId: sessionIdFromEvent(event),
+			})
+		) {
+			activeContext = ctx;
+			activeModelId = ctx.model?.id;
+			registerEvalForRuntime(currentRuntime, activeModelId, currentCells);
+			currentCells.publishWakeSourceState();
+			return;
+		}
 		const previousCells = activeCells;
 		activeCells = undefined;
 		await previousCells?.dispose();
