@@ -10,7 +10,7 @@ import type {
   ManagedRunner,
   ManagedStartSpec,
   RunnerOutcome,
-} from "@rubato/senpi-task"
+} from "@rubato/task"
 
 import { FakeExtensionAPI } from "../../../test-support/fake-extension-api"
 import { composeTaskEngine, type TaskRunnerFactories } from "./engine"

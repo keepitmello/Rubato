@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 
 import { RubatoTaskSettingsSchema } from "@rubato/config-core"
 import type { Message } from "@rubato/team-core/types"
-import { createLeadDeliveryJournal, toTeamCoreConfig, type LeadInjection } from "@rubato/senpi-task"
+import { createLeadDeliveryJournal, toTeamCoreConfig, type LeadInjection } from "@rubato/task"
 
 import type { IdleInjection } from "../../extension/idle-injection-coordinator"
 import { createLeadPollerLifecycle, type LeadPollerFactoryInput, type LeadPollerPort } from "./lead-poller-lifecycle"

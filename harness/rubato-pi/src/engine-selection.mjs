@@ -3,9 +3,15 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { nodeSatisfiesCandidate, selectNodeForEngine } from "./select-node.mjs";
+import {
+  ENGINE_ID, LEGACY_ENGINE_ID, RETIRED_ENGINE_ID,
+  PI_ENGINE_DIRNAME, LEGACY_PI_ENGINE_DIRNAME,
+  PI_ENGINE_DIR_ENV, LEGACY_PI_ENGINE_DIR_ENV,
+  isLaunchableEngineId, firstEnv,
+} from "./engine-id.mjs";
 
 // Senpi fallback is retired (user decree 2026-09-13): rubato launches on
-// stock-pi or not at all. There is no fallback notice anymore; an unusable
+// pi or not at all. There is no fallback notice anymore; an unusable
 // install is a hard error carrying its repair.
 //
 // The repair has to name a command that installs the candidate unconditionally.
@@ -13,7 +19,7 @@ import { nodeSatisfiesCandidate, selectNodeForEngine } from "./select-node.mjs";
 // (harness/prompts/build.sh) and never touches the engine, and `rubato update`
 // returns early when the checkout is already current, so it cannot repair a
 // missing install. `npm run build` goes straight to build-active-engine.mjs →
-// updateStockEngine, which is what a broken install needs.
+// updatePiEngine, which is what a broken install needs.
 export const ENGINE_REPAIR_HINT = "run `npm run build` inside the rubato checkout";
 
 function stateHome(env) {
@@ -21,11 +27,26 @@ function stateHome(env) {
   try { return userInfo().homedir; } catch { return homedir(); }
 }
 
-export function stockEngineDir(env = process.env) {
-  const pinned = env.RUBATO_STOCK_ENGINE_DIR;
-  if (typeof pinned === "string" && pinned.trim() !== "") return pinned;
-  return join(stateHome(env), ".rubato-pi", "stock-engine");
+export function defaultPiEngineDir(home) {
+  return join(home, ".rubato-pi", PI_ENGINE_DIRNAME);
 }
+
+export function legacyPiEngineDir(home) {
+  return join(home, ".rubato-pi", LEGACY_PI_ENGINE_DIRNAME);
+}
+
+export function piEngineDir(env = process.env) {
+  const pinned = firstEnv(env, [PI_ENGINE_DIR_ENV, LEGACY_PI_ENGINE_DIR_ENV]);
+  if (pinned) return pinned;
+  const home = stateHome(env);
+  const next = defaultPiEngineDir(home);
+  const legacy = legacyPiEngineDir(home);
+  if (piEngineReceiptPresent(legacy) && !piEngineReceiptPresent(next)) return legacy;
+  return next;
+}
+
+/** @deprecated Use piEngineDir. Kept so existing call sites keep resolving. */
+export const stockEngineDir = piEngineDir;
 
 function readJson(path) {
   try { return JSON.parse(readFileSync(path, "utf8")); } catch { return null; }
@@ -35,12 +56,12 @@ export function readEngineMarker(env = process.env) {
   return readJson(join(stateHome(env), ".rubato-pi", "engine.json"));
 }
 
-export function readStockEngineReceipt(root) {
+export function readPiEngineReceipt(root) {
   return readJson(join(root, "rubato-install.json"));
 }
 
-export function stockEngineReceiptPresent(root) {
-  return existsSync(join(root, "rubato-install.json"));
+export function piEngineReceiptPresent(root) {
+  return Boolean(root) && existsSync(join(root, "rubato-install.json"));
 }
 
 export function isValidInstalledCandidateReceipt(receipt, root) {
@@ -53,30 +74,28 @@ export function isValidInstalledCandidateReceipt(receipt, root) {
 }
 
 export function resolveLaunchEngine({ env = process.env } = {}) {
-  const root = stockEngineDir(env);
-  const present = stockEngineReceiptPresent(root);
-  const receipt = readStockEngineReceipt(root);
+  const root = piEngineDir(env);
+  const present = piEngineReceiptPresent(root);
+  const receipt = readPiEngineReceipt(root);
   const valid = isValidInstalledCandidateReceipt(receipt, root);
   let explicit = typeof env.RUBATO_ENGINE === "string" ? env.RUBATO_ENGINE.trim() : "";
   let warning = null;
   let error = null;
-  const explicitSenpi = explicit === "senpi";
-  if (explicitSenpi) {
-    error = "rubato: the senpi engine is retired and can no longer run rubato; unset RUBATO_ENGINE to use stock-pi";
+  const explicitRetired = explicit === RETIRED_ENGINE_ID;
+  if (explicitRetired) {
+    error = `rubato: the ${RETIRED_ENGINE_ID} engine is retired and can no longer run rubato; unset RUBATO_ENGINE to use ${ENGINE_ID}`;
     explicit = "";
-  } else if (explicit && explicit !== "stock-pi") {
-    warning = `rubato: unknown RUBATO_ENGINE=${explicit}; using stock-pi`;
+  } else if (explicit && !isLaunchableEngineId(explicit)) {
+    warning = `rubato: unknown RUBATO_ENGINE=${explicit}; using ${ENGINE_ID}`;
     explicit = "";
   }
   const marker = readEngineMarker(env);
   let requested;
   let source;
-  // The only launchable engine is stock-pi. requested/source still record where
-  // the request came from for status and diagnostics.
-  requested = "stock-pi";
-  if (explicit === "stock-pi" || explicitSenpi) {
+  requested = ENGINE_ID;
+  if (isLaunchableEngineId(explicit) || explicitRetired) {
     source = "env";
-  } else if (marker?.engine === "senpi" || marker?.engine === "stock-pi") {
+  } else if (marker?.engine === RETIRED_ENGINE_ID || isLaunchableEngineId(marker?.engine)) {
     source = "marker";
   } else if (valid) {
     source = "receipt";
@@ -85,10 +104,10 @@ export function resolveLaunchEngine({ env = process.env } = {}) {
   }
   if (error === null && !valid) {
     error = present
-      ? `rubato: stock-pi engine at ${root} is not valid; ${ENGINE_REPAIR_HINT} to reinstall it`
-      : `rubato: stock-pi engine is not installed at ${root}; ${ENGINE_REPAIR_HINT} to install it`;
+      ? `rubato: pi engine at ${root} is not valid; ${ENGINE_REPAIR_HINT} to reinstall it`
+      : `rubato: pi engine is not installed at ${root}; ${ENGINE_REPAIR_HINT} to install it`;
   }
-  const engine = "stock-pi";
+  const engine = ENGINE_ID;
   return {
     engine, requested, source, root, warning, error,
     fallback: false,
@@ -103,7 +122,7 @@ export function resolveExecutionEngine({ env = process.env, selectNode = selectN
   const selection = resolveLaunchEngine({ env });
   const node = selectNode(selection.engine);
   if (!node || !nodeSatisfiesCandidate(node.text)) {
-    return { ...selection, entry: null, error: selection.error ?? "rubato: no Node ^24.15 || >=26 available for stock-pi (senpi fallback is retired)", node };
+    return { ...selection, entry: null, error: selection.error ?? `rubato: no Node ^24.15 || >=26 available for ${ENGINE_ID} (${RETIRED_ENGINE_ID} fallback is retired)`, node };
   }
   return { ...selection, node };
 }

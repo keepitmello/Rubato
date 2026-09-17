@@ -6,7 +6,7 @@ import {
   detectBunBinary,
   resolveSenpiLauncher as resolveTaskSenpiLauncher,
   type SenpiLauncher,
-} from "@rubato/senpi-task"
+} from "@rubato/task"
 
 const SENPI_PACKAGE_DIR = join("@code-yeongyu", "senpi")
 const CLI_RELATIVE = join("dist", "cli.js")

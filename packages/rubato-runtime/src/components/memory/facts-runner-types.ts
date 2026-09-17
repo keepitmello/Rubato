@@ -1,5 +1,5 @@
 import type { FactsApplyRecovery, FactsQueue, MemoryIdentity } from "@rubato/memory-core"
-import type { SenpiModelPort, SenpiModelRegistryPort } from "@rubato/senpi-task"
+import type { SenpiModelPort, SenpiModelRegistryPort } from "@rubato/task"
 
 import type { ComponentLogger } from "../../extension/types"
 import type { SenpiRubatoConfigResult } from "../config-resolution"

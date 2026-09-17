@@ -8,7 +8,7 @@ const FORBIDDEN_IMPORT_PATTERNS = [
   "@earendil-works/",
   "@mariozechner/pi-",
   "@rubato/runtime",
-  "@rubato/senpi-task",
+  "@rubato/task",
 ]
 
 function collectSourceFiles(dir: string): string[] {

@@ -1,10 +1,14 @@
-import type { ParentNotifier, ParentNotifierMessage } from "@rubato/senpi-task"
+import type { ParentNotifier, ParentNotifierMessage } from "@rubato/task"
 
 import type { IdleInjectionCoordinator } from "../../extension/idle-injection-coordinator"
 import type { SenpiExtensionAPI } from "../../extension/types"
 
 // The senpi-task completion custom-message type; the component registers a renderer for it.
-export const TASK_COMPLETION_MESSAGE_TYPE = "senpi-task.completion"
+export const TASK_COMPLETION_MESSAGE_TYPE = "rubato.task.completion"
+export const LEGACY_TASK_COMPLETION_MESSAGE_TYPE = "senpi-task.completion"
+export function isTaskCompletionMessageType(value: string | undefined): boolean {
+  return value === TASK_COMPLETION_MESSAGE_TYPE || value === LEGACY_TASK_COMPLETION_MESSAGE_TYPE
+}
 
 /**
  * Adapt the engine's synchronous ParentNotifier.enqueue seam onto senpi delivery. EVERY delivered

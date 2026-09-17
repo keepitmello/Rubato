@@ -145,7 +145,7 @@ test("approval message remains readable and does not create another per-run docu
 });
 
 test("team-create tool describes sequence without pretending it enforces the whole policy", () => {
-  const s = read("packages/senpi-task/src/tools/team/lifecycle.ts");
+  const s = read("packages/task/src/tools/team/lifecycle.ts");
   assert.match(s, /before choosing the execution shape/i);
   assert.match(s, /resolve the intent/);
   assert.match(s, /does not load skills/);

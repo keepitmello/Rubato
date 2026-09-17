@@ -10,8 +10,8 @@
 // back to the plain message so the row never renders emptier than it did before.
 
 import type { AgentToolResult, Theme, ThemeColor } from "@code-yeongyu/senpi"
-import { normalizeRendererText } from "@rubato/senpi-task/renderer-text"
-import { linesComponent } from "@rubato/senpi-task/task-renderers"
+import { normalizeRendererText } from "@rubato/task/renderer-text"
+import { linesComponent } from "@rubato/task/task-renderers"
 
 import { formatRelativeAge } from "./status"
 import type { MemoryToolResultDetails, MemoryWriteNotice } from "./tools"

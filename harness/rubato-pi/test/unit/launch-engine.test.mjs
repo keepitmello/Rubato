@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  buildStockPiArgs,
+  buildPiArgs,
   isValidInstalledCandidateReceipt,
   nodeSatisfiesCandidate,
   resolveLaunchAgentDir,
@@ -50,11 +50,11 @@ test("receipt without candidateEntry is not launch-valid", () => {
   }, "/tmp"), false);
 });
 
-test("valid receipt defaults the launcher to stock-pi", () => {
+test("valid receipt defaults the launcher to pi", () => {
   withHome((home) => {
     const planted = plantReceipt(home);
     const resolved = resolveLaunchEngine({ env: { HOME: home } });
-    assert.equal(resolved.engine, "stock-pi");
+    assert.equal(resolved.engine, "pi");
     assert.equal(resolved.source, "receipt");
     assert.equal(resolved.fallback, false);
     assert.equal(resolved.notice, null);
@@ -63,10 +63,10 @@ test("valid receipt defaults the launcher to stock-pi", () => {
   });
 });
 
-test("missing receipt stays on stock-pi with a hard repair error (no senpi fallback)", () => {
+test("missing receipt stays on pi with a hard repair error (no senpi fallback)", () => {
   withHome((home) => {
     const resolved = resolveLaunchEngine({ env: { HOME: home } });
-    assert.equal(resolved.engine, "stock-pi");
+    assert.equal(resolved.engine, "pi");
     assert.equal(resolved.source, "default");
     assert.equal(resolved.fallback, false);
     assert.equal(resolved.notice, null);
@@ -78,7 +78,7 @@ test("missing receipt stays on stock-pi with a hard repair error (no senpi fallb
 test("RUBATO_ENGINE=stock-pi with no receipt is a hard repair error", () => {
   withHome((home) => {
     const resolved = resolveLaunchEngine({ env: { HOME: home, RUBATO_ENGINE: "stock-pi" } });
-    assert.equal(resolved.engine, "stock-pi");
+    assert.equal(resolved.engine, "pi");
     assert.equal(resolved.source, "env");
     assert.match(resolved.error, /not installed/);
   });
@@ -88,7 +88,7 @@ test("RUBATO_ENGINE=senpi is retired even when a valid receipt exists", () => {
   withHome((home) => {
     plantReceipt(home);
     const resolved = resolveLaunchEngine({ env: { HOME: home, RUBATO_ENGINE: "senpi" } });
-    assert.equal(resolved.engine, "stock-pi");
+    assert.equal(resolved.engine, "pi");
     assert.equal(resolved.source, "env");
     assert.equal(resolved.fallback, false);
     assert.equal(resolved.notice, null);
@@ -104,7 +104,7 @@ test("engine.json marker selects stock-pi when the receipt is valid", () => {
       engine: "stock-pi", previous: "senpi", installedAt: "2026-09-11T00:00:00.000Z",
     }));
     const resolved = resolveLaunchEngine({ env: { HOME: home } });
-    assert.equal(resolved.engine, "stock-pi");
+    assert.equal(resolved.engine, "pi");
     assert.equal(resolved.source, "marker");
     assert.equal(resolved.error, null);
     assert.equal(resolved.entry, planted.entry);
@@ -116,7 +116,7 @@ test("engine.json stock-pi with a missing install is a hard repair error", () =>
     mkdirSync(join(home, ".rubato-pi"), { recursive: true });
     writeFileSync(join(home, ".rubato-pi/engine.json"), JSON.stringify({ engine: "stock-pi", previous: "senpi" }));
     const resolved = resolveLaunchEngine({ env: { HOME: home } });
-    assert.equal(resolved.engine, "stock-pi");
+    assert.equal(resolved.engine, "pi");
     assert.match(resolved.error, /not installed/);
   });
 });
@@ -127,19 +127,19 @@ test("env RUBATO_ENGINE overrides the marker", () => {
     mkdirSync(join(home, ".rubato-pi"), { recursive: true });
     writeFileSync(join(home, ".rubato-pi/engine.json"), JSON.stringify({ engine: "stock-pi", previous: "senpi" }));
     const resolved = resolveLaunchEngine({ env: { HOME: home, RUBATO_ENGINE: "senpi" } });
-    assert.equal(resolved.engine, "stock-pi");
+    assert.equal(resolved.engine, "pi");
     assert.equal(resolved.source, "env");
     assert.match(resolved.error, /retired/);
   });
 });
 
-test("buildStockPiArgs keeps fullscreen and user args and drops Senpi overlays", () => {
-  const args = buildStockPiArgs(["--resume", "--model", "xai/grok-4.6"], { env: {} });
+test("buildPiArgs keeps fullscreen and user args and drops Senpi overlays", () => {
+  const args = buildPiArgs(["--resume", "--model", "xai/grok-4.6"], { env: {} });
   assert.equal(args.includes("--system-prompt"), true);
   assert.equal(args.includes("-e"), false);
   assert.equal(args[args.indexOf("--tui-mode") + 1], "fullscreen");
   assert.deepEqual(args.slice(-3), ["--resume", "--model", "xai/grok-4.6"]);
-  const rpc = buildStockPiArgs(["--mode", "rpc"]);
+  const rpc = buildPiArgs(["--mode", "rpc"]);
   assert.equal(rpc.includes("--tui-mode"), false);
 });
 

@@ -12,7 +12,7 @@ import {
   type ReservedRun,
 } from "@rubato/memory-core"
 import { RubatoMemorySettingsSchema, type RubatoConfig } from "@rubato/config-core"
-import type { SenpiModelPort } from "@rubato/senpi-task"
+import type { SenpiModelPort } from "@rubato/task"
 
 import type { SenpiRubatoConfigResult } from "../../config-resolution"
 import type { ResolveAndPreflightMemoryLaunch } from "./memory-launch-preflight"

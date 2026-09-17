@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 
-import { rendererVisibleWidth, type TaskRecord, type TaskStatus } from "@rubato/senpi-task"
+import { rendererVisibleWidth, type TaskRecord, type TaskStatus } from "@rubato/task"
 
 import { backgroundWidgetRows, buildWidgetRows, formatTaskRow } from "./status-row-format"
 

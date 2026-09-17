@@ -11,12 +11,12 @@ import { createAgentSession, ModelRuntime, SessionManager, SettingsManager } fro
 import { Type } from "typebox"
 
 import {
-  createStockChildFeatureProfile,
+  createPiChildFeatureProfile,
   createStockChildInProcessSession,
-  createStockRpcSpawnRuntime,
+  createPiRpcSpawnRuntime,
   resolveStockRpcEntry,
-  STOCK_PI_PACKAGE,
-  STOCK_PI_RPC_ENTRY,
+  PI_PACKAGE,
+  PI_RPC_ENTRY,
 } from "./stock-rpc-runtime.mjs"
 import { createStockChildRolePromptExtension } from "./role-prompt-extension.mjs"
 
@@ -44,10 +44,10 @@ const PATCHABLE_RPC_ENTRY = join(
 
 describe("stock Pi child RPC runtime", () => {
   test("builds a narrow provider-only child profile", () => {
-    const profile = createStockChildFeatureProfile({ rpcExtensions: ["/provider.mjs", "/provider.mjs", "/other.mjs"] })
+    const profile = createPiChildFeatureProfile({ rpcExtensions: ["/provider.mjs", "/provider.mjs", "/other.mjs"] })
     assert.deepEqual(profile.rpcExtensions, ["/provider.mjs", "/other.mjs"])
     assert.deepEqual(profile.inProcessFactories, [])
-    assert.throws(() => createStockChildFeatureProfile({ rpcExtensions: ["relative.mjs"] }), /absolute, non-empty strings/)
+    assert.throws(() => createPiChildFeatureProfile({ rpcExtensions: ["relative.mjs"] }), /absolute, non-empty strings/)
   })
   test("in-process session factory fails closed without stock SDK seams", async () => {
     await assert.rejects(
@@ -58,8 +58,8 @@ describe("stock Pi child RPC runtime", () => {
 
   test("resolves the installed stock export, not Senpi's rpc entry", () => {
     const entry = resolveStockRpcEntry({ root: RUNTIME_ROOT })
-    assert.equal(STOCK_PI_PACKAGE, "@earendil-works/pi-coding-agent")
-    assert.equal(STOCK_PI_RPC_ENTRY, `${STOCK_PI_PACKAGE}/rpc-entry`)
+    assert.equal(PI_PACKAGE, "@earendil-works/pi-coding-agent")
+    assert.equal(PI_RPC_ENTRY, `${PI_PACKAGE}/rpc-entry`)
     assert.match(entry, /@earendil-works\/pi-coding-agent/)
     assert.match(entry, /rpc-entry/)
     assert.doesNotMatch(entry, /@code-yeongyu\/senpi/)
@@ -67,7 +67,7 @@ describe("stock Pi child RPC runtime", () => {
   })
 
   test("never consults SENPI_BIN or PATH when selecting a child", () => {
-    const runtime = createStockRpcSpawnRuntime({
+    const runtime = createPiRpcSpawnRuntime({
       rpcEntry: PATCHABLE_RPC_ENTRY,
       parentEnv: { SENPI_BIN: "/global/senpi", PATH: "/global/bin" },
       execPath: "/usr/bin/node",
@@ -79,7 +79,7 @@ describe("stock Pi child RPC runtime", () => {
   })
 
   test("boots a real stock RPC child and answers the get_state readiness handshake", async (t) => {
-    const runtime = createStockRpcSpawnRuntime({ rpcEntry: PATCHABLE_RPC_ENTRY, parentEnv: {} })
+    const runtime = createPiRpcSpawnRuntime({ rpcEntry: PATCHABLE_RPC_ENTRY, parentEnv: {} })
     const root = mkdtempSync(join(tmpdir(), "rubato-stock-child-"))
     t.after(() => rm(root, { recursive: true, force: true }))
     const sessionDir = join(root, "sessions", "child")

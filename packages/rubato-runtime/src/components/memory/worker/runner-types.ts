@@ -1,5 +1,5 @@
 import type { MemoryIdentity, ReflectionOutcome, ReflectionTranscriptState, ReservedRun } from "@rubato/memory-core"
-import type { SenpiModelPort, SenpiModelRegistryPort } from "@rubato/senpi-task"
+import type { SenpiModelPort, SenpiModelRegistryPort } from "@rubato/task"
 
 import type { SenpiRubatoConfigResult } from "../../config-resolution"
 import type { ComponentLogger } from "../../../extension/types"

@@ -1,5 +1,5 @@
-import { taskIdentityLabel } from "@rubato/senpi-task"
-import type { CancelOutcome, ListScope, ListedTask, TaskRecord, TaskStatus } from "@rubato/senpi-task"
+import { taskIdentityLabel } from "@rubato/task"
+import type { CancelOutcome, ListScope, ListedTask, TaskRecord, TaskStatus } from "@rubato/task"
 
 import type { SenpiExtensionAPI } from "../../extension/types"
 import { formatTaskRow } from "./status-ui"

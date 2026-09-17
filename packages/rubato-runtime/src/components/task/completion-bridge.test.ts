@@ -12,7 +12,7 @@ import {
   type ManagedRunner,
   type ParentNotifierMessage,
   type TaskManager,
-} from "@rubato/senpi-task"
+} from "@rubato/task"
 
 import { createCompletionObservingStore } from "./completion-bridge"
 

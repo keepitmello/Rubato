@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 
-import { filterSharedParentTools } from "@rubato/senpi-task"
+import { filterSharedParentTools } from "@rubato/task"
 
 import { FakeExtensionAPI } from "../../test-support/fake-extension-api"
 import { installToolCaptureRegistry } from "./tool-capture-registry"

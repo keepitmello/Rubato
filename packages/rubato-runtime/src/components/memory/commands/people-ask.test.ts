@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { SenpiModelPort } from "@rubato/senpi-task"
+import type { SenpiModelPort } from "@rubato/task"
 
 import { MemoryFakeExtensionAPI } from "../memory.test-support"
 import { fakeCommandContext, fakeDeps, invoke } from "./commands.test-support"

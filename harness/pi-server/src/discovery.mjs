@@ -3,7 +3,7 @@ import { mkdir, open, readFile, realpath } from 'node:fs/promises';
 import { connect } from 'node:net';
 import path from 'node:path';
 import { readDescriptor } from './descriptor.mjs';
-import { resolveLaunchEngine, readStockEngineReceipt } from '../../rubato-pi/src/engine-selection.mjs';
+import { resolveLaunchEngine, readPiEngineReceipt } from '../../rubato-pi/src/engine-selection.mjs';
 
 const openings = new Map();
 const serverCli = path.join(import.meta.dirname, 'cli.mjs');
@@ -15,7 +15,7 @@ export function isConversationLaunch(args) {
 export function installedSharedRuntime(env = process.env) {
   const selection = resolveLaunchEngine({ env });
   if (selection.error) return undefined;
-  const features = readStockEngineReceipt(selection.root)?.features;
+  const features = readPiEngineReceipt(selection.root)?.features;
   return features?.includes('session-ui') && features.includes('session-transport') ? selection.root : undefined;
 }
 export function socketAlive(socketPath) {

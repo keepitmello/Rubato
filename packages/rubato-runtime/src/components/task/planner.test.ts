@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 
-import { BUILTIN_AGENTS, type SenpiModelPort } from "@rubato/senpi-task"
+import { BUILTIN_AGENTS, type SenpiModelPort } from "@rubato/task"
 
 import { createTaskChildPlanner, type TaskModelRegistry } from "./planner"
 

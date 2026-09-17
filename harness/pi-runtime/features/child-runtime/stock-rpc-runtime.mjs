@@ -14,7 +14,7 @@ const STOCK_RPC_ENTRY = `${STOCK_PACKAGE}/rpc-entry`
  * carry the parent's canonical modelRuntime separately through the task factory
  * options, while RPC children reproduce only this explicit provider profile.
  */
-export function createStockChildFeatureProfile({ rpcExtensions = [], inProcessFactories = [], agentDir } = {}) {
+export function createPiChildFeatureProfile({ rpcExtensions = [], inProcessFactories = [], agentDir } = {}) {
   if (!Array.isArray(rpcExtensions)) throw new TypeError("stock child rpcExtensions must be an array")
   const seen = new Set()
   const extensions = []
@@ -35,7 +35,7 @@ export function createStockChildFeatureProfile({ rpcExtensions = [], inProcessFa
 }
 
 /** Resolve the staged Rubato provider-only extension closure for RPC children. */
-export function resolveStockChildProviderProfile({ root, agentDir, includeContextNotes = false, includeGuards = false, includeRolePrompt = false } = {}) {
+export function resolvePiChildProviderProfile({ root, agentDir, includeContextNotes = false, includeGuards = false, includeRolePrompt = false } = {}) {
   if (typeof root !== "string" || root.length === 0) throw new Error("stock child provider profile requires the staged runtime root")
   const entries = [join(root, "rubato-features", "child-runtime", "provider-extension.mjs")]
   if (includeContextNotes) entries.push(join(root, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "rubato-features", "context-notes", "extension.mjs"))
@@ -50,7 +50,7 @@ export function resolveStockChildProviderProfile({ root, agentDir, includeContex
   }
   // provider-extension.mjs imports and binds provider-execution itself; the
   // prerequisite is staged but must not be passed as a standalone factory.
-  return createStockChildFeatureProfile({ rpcExtensions: entries, agentDir })
+  return createPiChildFeatureProfile({ rpcExtensions: entries, agentDir })
 }
 
 const CHILD_OWNED_FILE_TOOLS = new Set(["read", "write", "edit", "ls", "grep", "find", "powershell", "bash"])
@@ -73,7 +73,7 @@ function isChildRolePromptExtensionPath(entry) {
  * only notes owner, tool guards and the role system prompt are installed into
  * the child session.
  */
-export async function loadStockChildInProcessFactories({
+export async function loadPiChildInProcessFactories({
   root,
   agentDir,
   includeContextNotes = true,
@@ -83,7 +83,7 @@ export async function loadStockChildInProcessFactories({
   propagateEnv = false,
   env = process.env,
 } = {}) {
-  const profile = resolveStockChildProviderProfile({ root, agentDir, includeContextNotes, includeGuards, includeRolePrompt })
+  const profile = resolvePiChildProviderProfile({ root, agentDir, includeContextNotes, includeGuards, includeRolePrompt })
   const factories = []
   for (const entry of profile.rpcExtensions) {
     if (isChildNotesExtensionPath(entry)) {
@@ -182,7 +182,7 @@ export function resolveStockRpcEntry({ root } = {}) {
  * process's Node/Bun runtime is still used to execute the selected stock
  * entrypoint.
  */
-export function createStockRpcSpawnRuntime({
+export function createPiRpcSpawnRuntime({
   rpcEntry,
   execPath = process.execPath,
   platform = process.platform,
@@ -190,7 +190,7 @@ export function createStockRpcSpawnRuntime({
   metaUrl = import.meta.url,
 } = {}) {
   if (typeof rpcEntry !== "string" || rpcEntry.length === 0) {
-    throw new Error("createStockRpcSpawnRuntime requires runtime.patchableRpcEntry")
+    throw new Error("createPiRpcSpawnRuntime requires runtime.patchableRpcEntry")
   }
   if (!existsSync(rpcEntry) || !/[\\/]node_modules[\\/]@earendil-works[\\/]pi-coding-agent[\\/]dist[\\/]rpc-entry\.js$/.test(rpcEntry)) {
     throw new Error(`stock Pi runtime requires the staged unbundled Pi RPC entry: ${rpcEntry}`)
@@ -208,5 +208,5 @@ export function createStockRpcSpawnRuntime({
   }
 }
 
-export const STOCK_PI_PACKAGE = STOCK_PACKAGE
-export const STOCK_PI_RPC_ENTRY = STOCK_RPC_ENTRY
+export const PI_PACKAGE = STOCK_PACKAGE
+export const PI_RPC_ENTRY = STOCK_RPC_ENTRY

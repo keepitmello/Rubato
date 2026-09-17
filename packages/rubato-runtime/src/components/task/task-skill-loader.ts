@@ -1,6 +1,6 @@
 import { homedir } from "node:os"
 
-import { createFsSkillLoader, type SkillLoader } from "@rubato/senpi-task"
+import { createFsSkillLoader, type SkillLoader } from "@rubato/task"
 
 import { resolveAgentHome } from "../agent-home/resolve-agent-home"
 

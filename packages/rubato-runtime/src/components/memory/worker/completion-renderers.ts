@@ -1,6 +1,6 @@
 import type { EntryRenderer } from "@code-yeongyu/senpi"
 import type { ReflectionTrigger } from "@rubato/memory-core"
-import { normalizeRendererText } from "@rubato/senpi-task/renderer-text"
+import { normalizeRendererText } from "@rubato/task/renderer-text"
 
 import {
   REFLECTION_COMPLETION_ENTRY_TYPE,

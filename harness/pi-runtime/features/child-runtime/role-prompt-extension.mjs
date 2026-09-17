@@ -20,7 +20,9 @@ import { createRolePromptExtension } from "../prompt-rules/role-prompt.mjs"
  * lead.
  */
 export function createStockChildRolePromptExtension({ env = process.env } = {}) {
-  const named = env.RUBATO_PI_ROLE !== undefined || env.SENPI_TASK_MEMBER !== undefined ||
+  const named = env.RUBATO_PI_ROLE !== undefined || env.RUBATO_TASK_MEMBER !== undefined ||
+    env.SENPI_TASK_MEMBER !== undefined ||
+    env.PI_CODING_AGENT_SESSION_DIR !== undefined ||
     env.SENPI_CODING_AGENT_SESSION_DIR !== undefined
   return createRolePromptExtension({ env: named ? env : { ...env, RUBATO_PI_ROLE: "agent" } })
 }

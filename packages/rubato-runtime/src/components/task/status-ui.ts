@@ -7,7 +7,7 @@ import {
   type ManagedChildEvent,
   type TaskRecord,
   type TaskRunStats,
-} from "@rubato/senpi-task"
+} from "@rubato/task"
 
 import type { CapturedUi } from "./runtime-context"
 import {

@@ -1,5 +1,5 @@
-import type { ResidencyRegistry, ResidentHandle } from "@rubato/senpi-task"
-import type { ManagedChildHandle, TaskManager } from "@rubato/senpi-task"
+import type { ResidencyRegistry, ResidentHandle } from "@rubato/task"
+import type { ManagedChildHandle, TaskManager } from "@rubato/task"
 
 type ResidencyManager = Pick<TaskManager, "forget" | "getResidentHandle" | "residentTaskIds">
 
