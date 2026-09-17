@@ -133,6 +133,11 @@ describe("buildChildArgs", () => {
     expect(args).toEqual(["--no-extensions", "--extension", "/tmp/a.ts", "--extension", "/tmp/b.ts", "--model", "rubato-mock/mock-1"])
   })
 
+  test("#given the Cursor picker identity #when building child args #then --model is the live Fast row", () => {
+    const args = buildChildArgs({ ...baseSpec, model: "cursor/cursor-grok-4.6" })
+    expect(args).toEqual(["--no-extensions", "--model", "cursor/cursor-grok-4.6-high-fast"])
+  })
+
   test("#given a spec with neither model nor extensions #when building child args #then only no-extensions is present", () => {
     // when
     const args = buildChildArgs(baseSpec)

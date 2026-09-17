@@ -93,6 +93,21 @@ describe("findModelReference", () => {
     expect(findModelReference(registry, "trailing/")).toBeUndefined()
     expect(called).toBe(false)
   })
+
+  test("#given a presented catalog alias #when resolved #then find uses the launch id", () => {
+    const calls: Array<{ provider: string; modelId: string }> = []
+    const registry = {
+      find: (provider: string, modelId: string) => {
+        calls.push({ provider, modelId })
+        return { provider, id: modelId }
+      },
+    }
+
+    const model = findModelReference(registry, "cursor/cursor-grok-4.6")
+
+    expect(calls).toEqual([{ provider: "cursor", modelId: "cursor-grok-4.6-high-fast" }])
+    expect(model).toEqual({ provider: "cursor", id: "cursor-grok-4.6-high-fast" })
+  })
 })
 
 describe("createParentRegistrySessionContext", () => {

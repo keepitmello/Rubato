@@ -1,4 +1,6 @@
 import {
+  availableProductModelIds,
+  productCatalogIdentity,
   resolveModelEffort,
   type EffortSource,
 } from "@rubato/model-core"
@@ -105,9 +107,12 @@ function resolveAgentTarget(
   }
 
   const registry = resolveRegistry()
-  const resolution = resolveAgent(agentName, agents, registry)
+  const scoped = registry === undefined ? undefined : productScopedRegistry(registry)
+  const resolution = resolveAgent(agentName, agents, scoped)
   if (resolution.kind === "resolved") {
-    return { kind: "resolved", plan: toAgentPlan(resolution, undefined) }
+    const exact = resolveExactModel(resolution.model, resolveRegistry)
+    if (exact.kind === "error") return exact
+    return { kind: "resolved", plan: toAgentPlan({ ...resolution, model: exact.plan.model }, exact.plan.resolved_model) }
   }
   if (resolution.kind === "model_unavailable") {
     if (registry === undefined) {
@@ -165,18 +170,49 @@ function explicitModelMetadata(model: string): ResolvedModelMetadata | undefined
   }
 }
 
+function productScopedRegistry(registry: TaskModelRegistry): TaskModelRegistry {
+  const admitted = (): ReadonlySet<string> => {
+    try {
+      const available = registry.getAvailable()
+      if (!Array.isArray(available)) return new Set()
+      return new Set(availableProductModelIds(available))
+    } catch {
+      return new Set()
+    }
+  }
+  return {
+    getAvailable: () => {
+      try {
+        const available = registry.getAvailable()
+        if (!Array.isArray(available)) return []
+        const allowed = admitted()
+        return available.filter((entry) => {
+          if (typeof entry?.provider !== "string" || typeof entry.id !== "string") return false
+          return allowed.has(productCatalogIdentity(`${entry.provider}/${entry.id}`))
+        })
+      } catch {
+        return []
+      }
+    },
+    find: (provider, modelId) => {
+      if (!admitted().has(productCatalogIdentity(`${provider}/${modelId}`))) return undefined
+      return registry.find(provider, modelId)
+    },
+  }
+}
+
 function pickerVisible(registry: TaskModelRegistry, provider: string, modelId: string): boolean {
   try {
     const available = registry.getAvailable()
     if (!Array.isArray(available)) return false
-    return available.some((entry) => entry?.provider === provider && entry?.id === modelId)
+    return availableProductModelIds(available).includes(productCatalogIdentity(`${provider}/${modelId}`))
   } catch {
     return false
   }
 }
 
 function resolveExactModel(model: string, resolveRegistry: ResolveModelRegistry): PlanResolution {
-  const metadata = explicitModelMetadata(model)
+  const metadata = explicitModelMetadata(productCatalogIdentity(model))
   if (metadata === undefined) {
     return {
       kind: "error",
@@ -202,7 +238,7 @@ function resolveExactModel(model: string, resolveRegistry: ResolveModelRegistry)
   return {
     kind: "resolved",
     plan: {
-      model,
+      model: `${metadata.provider}/${metadata.model_id}`,
       resolved_model: metadata,
     },
   }

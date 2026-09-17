@@ -25,7 +25,7 @@ import { createTeamServiceTestModelRegistry } from "./team-service-test-model-re
 
 const MEMBER_TASK_ID = "st_00000001"
 const MESSAGE_ID = "77777777-7777-4777-8777-777777777777"
-const TEST_MODEL = "rubato-mock/mock-1"
+const TEST_MODEL = "xai/grok-4.6"
 const TEST_MODELS = { has: (model: string) => model === TEST_MODEL, list: () => [TEST_MODEL] }
 const tempRoots: string[] = []
 
@@ -79,7 +79,7 @@ function extensionOrderHarness() {
   tempRoots.push(cwd)
   mkdirSync(join(cwd, ".rubato"), { recursive: true })
   writeFileSync(join(cwd, ".rubato", "rubato.json"), `${JSON.stringify({
-    categories: { quick: { kind: "owner", model: "rubato-mock/mock-1" } },
+    categories: { quick: { kind: "owner", model: "xai/grok-4.6" } },
   })}\n`)
   const started: ManagedStartSpec[] = []
   const runner: ManagedRunner = {
