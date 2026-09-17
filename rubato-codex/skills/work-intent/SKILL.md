@@ -63,16 +63,19 @@ English. The actual approval message is not a dump of parser headings, IDs or pa
 Link existing frame/spec clauses instead of duplicating what they own. Roster and run
 progress stay in the mission; brief discovery findings need no separate report.
 
-For a taskforce, after discovery present **one combined proposal** covering the intended
-result, recommended direction and why, preserved/excluded behavior, completion evidence,
-remaining human choices if any, and the smallest role/model/effort roster with plain-language
-responsibilities. Use [the message guide](templates/approval-message.md); omit inapplicable
-parts. Avoid a questionnaire, a second intent-only approval, or technical-detail overload.
-The user should be able to approve the direction and team in one short reply.
+Whenever the work is large enough to record an intent, team or not, show the user your
+reading of it before activating anything: the intended result, the recommended direction
+and why, what stays unchanged, and how completion will be checked. For a taskforce, add
+the smallest role/model/effort roster with plain-language responsibilities so it is
+**one combined proposal**. Use [the message guide](templates/approval-message.md); omit
+inapplicable parts. Avoid a questionnaire, a second intent-only approval, or
+technical-detail overload. The user should be able to approve in one short reply.
 
-Wait for **explicit confirmation of both intent and roster before forming the team** in
-Pi and Codex alike. A reply approving the concrete combined proposal covers both; a
-generic earlier "implement it", silence, or approval of only one part does not. Keep a
+Wait for **explicit confirmation before activating an intent or forming a team**, in
+Pi and Codex alike. The originating request is the intent's source, not its approval;
+approval is the user's reply to the message that showed your reading. A reply approving
+the concrete combined proposal covers both intent and roster; a generic earlier
+"implement it", silence, or approval of only one part does not. Keep a
 new proposal in draft until accepted. An already active intent stays active when unchanged;
 its acceptance alone does not approve a newly proposed roster. Cite the actual human
 instruction/review, the proposal message, and the intent revision it covered. Store roster
@@ -90,8 +93,8 @@ blocks safe, meaningful discovery itself or prevents proposing any viable direct
 Otherwise batch remaining material choices into that proposal, with a recommendation and
 its consequence. Outcome-blocking choices stay open until the human resolves them or
 explicitly delegates a bounded choice. Local methods inside accepted scope stay autonomous.
-For substantial non-team work, use the same evidence-first approach, without inventing a
-roster; a precise current instruction can already authorize that exact bounded result.
+For substantial non-team work, use the same evidence-first approach without inventing a
+roster: the proposal is shorter, but it is still shown and answered before dependent work.
 
 Intent/roster confirmation preserves independent frame, model, budget, delivery and runtime
 permissions. An active `FRAME_LOCK` remains authoritative for product-value invariants.

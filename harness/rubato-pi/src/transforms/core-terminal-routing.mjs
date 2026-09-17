@@ -57,10 +57,14 @@ For observable state, discover \\\`\${monitor}\\\` and subscribe instead of poll
 }
 
 export function injectTerminalExtension(source) {
-  let next = replaceOnce(source,
-    "buildTerminalPromptSection({ evalOnly: isEvalOnlyRouting(pi) })",
-    'buildTerminalPromptSection({ bashEvalOnly: isEvalOnlyRouting(pi, "bash"), monitorEvalOnly: isEvalOnlyRouting(pi, "monitor") })',
-    "terminal per-tool prompt routing");
+  // The prompt section call is gone from current sources (tool schemas carry the
+  // guidance); only an older engine copy still has it to route.
+  const promptCall = "buildTerminalPromptSection({ evalOnly: isEvalOnlyRouting(pi) })";
+  let next = source.includes(promptCall)
+    ? replaceOnce(source, promptCall,
+      'buildTerminalPromptSection({ bashEvalOnly: isEvalOnlyRouting(pi, "bash"), monitorEvalOnly: isEvalOnlyRouting(pi, "monitor") })',
+      "terminal per-tool prompt routing")
+    : source;
   next = replaceOnce(next,
     "    if (stepAside) {\n        for (const companion of TERMINAL_COMPANION_TOOLS)\n            active.add(companion);",
     "    if (stepAside) {\n        // Companions remain discoverable rather than eagerly activated.",

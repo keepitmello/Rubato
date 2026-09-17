@@ -37,16 +37,8 @@ export function createBashTimeoutExtension(options = {}) {
       if (updated !== event.input) event.input.timeout = updated.timeout;
       return undefined;
     });
-    pi.on("before_agent_start", async (event, ctx) => {
-      const nativeAnthropic = options.isAnthropicBashEnabled?.(ctx) === true && ctx.model?.api === "anthropic-messages";
-      const foregroundWindowSeconds = nativeAnthropic
-        ? undefined
-        : options.resolveForegroundWindowSeconds?.(ctx);
-      return {
-        systemPrompt: `${event.systemPrompt}${buildBashTimeoutPrompt(defaults,
-          foregroundWindowSeconds === undefined ? {} : { foregroundWindowSeconds })}`,
-      };
-    });
+    // The bash tool's schema description already states the kill-deadline
+    // semantics and the foreground window, so nothing is added to the prompt.
   };
 }
 

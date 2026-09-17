@@ -2,12 +2,7 @@
 // before_agent_start. Kept short so it never crowds the model's working context.
 export const TASK_USAGE_GUIDANCE = [
   "<rubato-runtime-task>",
-  "Background task completions are automatically delivered as a status ping (name, id, status) — not the child's body. An idle session is always woken, and a running turn receives the ping at its next tool boundary. Owners report through team_send and peek their own helpers with AgentOutput. A taskforce lead reads the result path or board.",
-  "- /tasks shows this session's children. AgentOutput is for an owner peeking a helper (mode:\"tail\" for recent output), not for a taskforce lead babysitting a teammate.",
-  "- AgentSend always steers a message into the addressed child, while AgentCancel ends it.",
-  "- Team mail is steered into the recipient's running turn. Use team_send for mailbox updates; AgentSend continues a spawned Agent. Team mail never queues as editable follow-up work.",
-  "- The shared team board uses team_task_create / team_task_list / team_task_get / team_task_update; those ids are board work, not Agent sessions.",
-  "If no independent work remains, end your turn.",
+  "A child's completion arrives as a status ping (name, id, status), not its body; team mail is steered into your running turn. /tasks lists this session's children.",
   "</rubato-runtime-task>",
 ].join("\n")
 

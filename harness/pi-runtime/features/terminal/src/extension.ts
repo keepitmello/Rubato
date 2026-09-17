@@ -1,7 +1,7 @@
 import { isAbsolute, join } from "node:path";
 import { getShellEnv } from "./host/shell.ts";
 import { encodedSessionId } from "./host/sidecar-store.ts";
-import { isAnthropicBashEnabled, isEvalOnlyRouting } from "./host/routing.ts";
+import { isAnthropicBashEnabled } from "./host/routing.ts";
 import { TERMINAL_MONITOR_STATE_EVENT, WAKE_SOURCE_STATE_EVENT } from "./host/monitor-state-event.ts";
 import { SettingsManager, type ExtensionAPI, type ExtensionContext } from "./host-sdk.ts";
 import { acquireTerminalLease, releaseTerminalLease } from "./manifest-lease.ts";
@@ -9,7 +9,6 @@ import { MonitorNotifier } from "./monitor-notify.ts";
 import { MONITOR_STATUS_KEY } from "./monitor-status.ts";
 import { MonitorStatusTicker } from "./monitor-status-ticker.ts";
 import { getTerminalNotificationDelivery, TerminalNotifier } from "./notify.ts";
-import { buildTerminalPromptSection } from "./prompt.ts";
 import { type RestoreDigest, type RestoreHandlers, type RestoreOutcome, restoreTerminalState } from "./restore.ts";
 import type { TerminalRuntimeSession } from "./runtime-session.ts";
 import {
@@ -419,12 +418,7 @@ export function registerTerminalExtension(pi: ExtensionAPI, host: TerminalExtens
 		state.monitorNotifier?.noteActivity();
 	});
 
-	pi.on("before_agent_start", async (event) => {
-		if (state.steppedAside) return undefined;
-		return {
-			systemPrompt: `${event.systemPrompt}\n${buildTerminalPromptSection({ evalOnly: isEvalOnlyRouting(pi) })}`,
-		};
-	});
+	// The terminal tools describe themselves in their schemas; no prompt section is added.
 
 	pi.on("session_shutdown", async (event, ctx) => {
 		state.monitorNotifier?.dispose();
