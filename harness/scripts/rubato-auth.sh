@@ -1,10 +1,9 @@
 #!/bin/bash
-# rubato auth — 상태, 그리고 `login` 으로 엔진 OAuth.
+# rubato auth — 상태, 인터랙티브 로그인, 여러 계정 등록.
 #
-# 세 자리가 다르다:
-#   xai         ~/.rubato-pi/agent/auth.json 의 "xai"          OAuth
-#   openai-codex 같은 파일의 "openai-codex"                    OAuth
-#   anthropic   ~/.claude/auth/setup-token-<계정>              1년 장기 토큰
+# 자격증명은 프로바이더마다 자리가 다르다:
+#   oauth/api key   ~/.rubato-pi/agent/auth.json  accounts[]
+#   anthropic token ~/.claude/auth/setup-token-<계정>   1년 장기 토큰 (auth.json 에 복사하지 않음)
 set -uo pipefail
 
 HERE="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
