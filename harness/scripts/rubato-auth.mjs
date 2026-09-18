@@ -141,8 +141,8 @@ export function describeHealth(health) {
   if (health.state === "live") return formatLeft(health.leftMs);
   if (health.state === "renewable") return "곧 자동 갱신";
   if (health.state === "key") return "저장됨";
-  if (health.state === "stale") return "다시 로그인 필요";
-  return "로그인 안 됨";
+  if (health.state === "stale") return "재로그인 필요";
+  return "로그인 필요";
 }
 
 export function readAuthFile(path) {
@@ -275,7 +275,7 @@ export function printStatus({ stdout = process.stdout, env = process.env, home =
     if (!row.health.ok || row.health.state === "stale") hint(stdout, methodHint(row.provider.id));
     for (const line of row.lines) hint(stdout, line);
   });
-  stdout.write(`${DIM}남은 시간은 액세스 토큰 기준이다. 만료돼도 refresh 가 있으면 자동으로 갱신된다.${RST}\n\n`);
+  stdout.write(`${DIM}남은 시간은 액세스 토큰 기준이며, 만료되어도 갱신 토큰이 있으면 자동으로 이어집니다.${RST}\n\n`);
 }
 
 export function printUsage(stdout = process.stdout) {
@@ -311,7 +311,7 @@ export async function printProviderAccounts(providerId, ctx) {
   if (accounts.length === 0) hint(stdout, "(none)");
   else for (const account of accounts) hint(stdout, formatAccount(account));
   if (providerId === "anthropic" && !accounts.some((account) => account.source === "setup-token")) {
-    hint(stdout, `token file: ${claudeSetupTokenPath(ctx.env, ctx.home)}  (계정: ${claudeAccount(ctx.env)})`);
+    hint(stdout, `setup-token 파일: ${claudeSetupTokenPath(ctx.env, ctx.home)}  (계정 ${claudeAccount(ctx.env)})`);
   }
   stdout.write("\n");
   return accounts;
@@ -330,6 +330,19 @@ export async function createCliInteraction({
   // 않으면 그 readline 이 stdin 을 계속 쥐고 있어 로그인 후 메뉴가 키를 못 받는다.
   const open_prompts = new Set();
   const readLineHere = (signal) => readPromptLine(stdin, stdout, signal, open_prompts);
+  // 빈 입력은 취소다. 방향키만으로 도는 화면에서 프롬프트를 빠져나갈 길은 Enter
+  // 뿐인데, 그 빈 문자열을 그대로 흘려보내면 엔진이 키 없는 계정을 하나 만든다
+  // (실측: xAI API 키 자리에서 Enter → `login-3 | 로그인 필요`).
+  //
+  // `manual_code` 만 예외다. Antigravity 는 브라우저 콜백과 이 프롬프트를 경주시켜서,
+  // 여기서 던지면 콜백이 이길 수 있는 로그인까지 같이 무너진다.
+  const answerOrCancel = async (prompt) => {
+    const line = await readLineHere(prompt.signal);
+    if (prompt.type !== "manual_code" && String(line).trim() === "") {
+      throw new Error("취소했습니다.");
+    }
+    return line;
+  };
   return {
     close() {
       for (const rl of open_prompts) rl.close();
@@ -343,15 +356,16 @@ export async function createCliInteraction({
         prompt.options.forEach((option, index) => {
           stdout.write(`  ${index + 1}) ${option.label}\n`);
         });
-        const line = await readLineHere(prompt.signal);
+        const line = await answerOrCancel(prompt);
         const asNumber = Number.parseInt(line, 10);
         if (Number.isInteger(asNumber) && prompt.options[asNumber - 1]) return prompt.options[asNumber - 1].id;
         const match = prompt.options.find((option) => option.id === line || option.label === line);
         if (match) return match.id;
-        throw new Error(`Unknown login option: ${line}`);
+        throw new Error(`고를 수 없는 항목입니다: ${line}`);
       }
       stdout.write(`${prompt.message}\n`);
-      return readLineHere(prompt.signal);
+      if (prompt.type !== "manual_code") stdout.write(`${DIM}그냥 Enter 를 누르면 취소됩니다.${RST}\n`);
+      return answerOrCancel(prompt);
     },
     notify(event) {
       if (event.type === "auth_url") {
@@ -467,43 +481,43 @@ async function runEngineLogin(providerId, type, ctx) {
     stdout,
     openUrl: ctx.openUrl ?? ((url) => openBrowser(url)),
   });
-  stdout.write(`Logging in to ${LOGIN_LABELS[providerId] ?? providerId} (${type})…\n`);
+  stdout.write(`${LOGIN_LABELS[providerId] ?? providerId} 에 로그인합니다 (${type})…\n`);
   try {
     await loginWithRuntime(runtime, providerId, type, interaction);
   } finally {
     interaction.close?.();
   }
-  stdout.write(`Logged in. Credentials: ${authJsonPath(env, ctx.home)}\n`);
+  stdout.write(`로그인했습니다. 자격증명 위치: ${authJsonPath(env, ctx.home)}\n`);
 }
 
 async function addSetupToken(ctx) {
   const stdout = ctx.stdout ?? process.stdout;
-  stdout.write("Paste a sk-ant-oat… token (empty cancels).\n");
-  stdout.write(`Or run: claude setup-token\n`);
+  stdout.write("sk-ant-oat… 로 시작하는 토큰을 붙여넣어 주세요. 그냥 Enter 를 누르면 취소됩니다.\n");
+  stdout.write(`토큰이 없으면 먼저 실행해 주세요: claude setup-token\n`);
   const existing = setupTokenPresent(ctx);
-  if (existing) stdout.write(`Replace existing file: ${existing}\n`);
+  if (existing) stdout.write(`기존 파일을 덮어씁니다: ${existing}\n`);
   const token = await readLine(ctx);
   if (!token) {
-    stdout.write("Cancelled.\n");
+    stdout.write("취소했습니다.\n");
     return;
   }
   const path = writeSetupToken(token, ctx);
-  stdout.write(`Saved setup-token: ${path}\n`);
-  stdout.write(`${DIM}This stays in ~/.claude. It is not copied into auth.json.${RST}\n`);
+  stdout.write(`setup-token 을 저장했습니다: ${path}\n`);
+  stdout.write(`${DIM}이 토큰은 ~/.claude 에만 있고 auth.json 으로 복사하지 않습니다.${RST}\n`);
 }
 
 async function addStoredApiKey(providerId, ctx) {
   const stdout = ctx.stdout ?? process.stdout;
-  stdout.write(`Paste the API key for ${LOGIN_LABELS[providerId] ?? providerId} (empty cancels).\n`);
-  if (providerId === "kiro") stdout.write("Or run: harness/scripts/kiro-setup.sh\n");
-  if (providerId === "opencode") stdout.write("Or store it in Keychain service opencode.ai\n");
+  stdout.write(`${LOGIN_LABELS[providerId] ?? providerId} API 키를 붙여넣어 주세요. 그냥 Enter 를 누르면 취소됩니다.\n`);
+  if (providerId === "kiro") stdout.write("키 대신 이 스크립트를 써도 됩니다: harness/scripts/kiro-setup.sh\n");
+  if (providerId === "opencode") stdout.write("Keychain 서비스 opencode.ai 에 넣어 두어도 됩니다.\n");
   const key = await readLine(ctx);
   if (!key) {
-    stdout.write("Cancelled.\n");
+    stdout.write("취소했습니다.\n");
     return;
   }
   await storeApiKey(credentialsOf(ctx), providerId, key);
-  stdout.write(`Saved ${LOGIN_LABELS[providerId] ?? providerId} API key in auth.json.\n`);
+  stdout.write(`${LOGIN_LABELS[providerId] ?? providerId} API 키를 auth.json 에 저장했습니다.\n`);
 }
 
 export async function defaultLogin(providerId, method, ctx) {
@@ -634,7 +648,7 @@ async function withPlainTerminal(ctx, fn) {
 
 async function pause(ctx, message) {
   const stdout = ctx.stdout ?? process.stdout;
-  stdout.write(`${message}\n${DIM}아무 키나 누르면 돌아간다.${RST}\n`);
+  stdout.write(`${message}\n${DIM}아무 키나 누르면 돌아갑니다.${RST}\n`);
   await ctx.keys?.next();
 }
 
@@ -644,6 +658,15 @@ async function runGuarded(ctx, fn) {
   } catch (error) {
     await pause(ctx, `${YEL}${error instanceof Error ? error.message : String(error)}${RST}`);
   }
+}
+
+/**
+ * 성공 문구를 삼키고 돌리는 자리. 메뉴가 곧바로 다시 그려지면서 결과를 그대로
+ * 보여 주므로(고정됨 표시, 사라진 계정), 확인 한 줄은 화면에 남는 찌꺼기일 뿐이다.
+ * 실패는 예외로 올라오므로 `runGuarded` 가 그대로 보여 준다.
+ */
+function quietly(ctx) {
+  return { ...ctx, stdout: { write() {} } };
 }
 
 function accountDetail(account, slotByName, now) {
@@ -664,7 +687,7 @@ async function accountScreen(providerId, account, ctx) {
       : { label: "이 계정만 쓰도록 고정", value: "pin" },
     removable
       ? { label: "이 계정 삭제", value: "remove" }
-      : { label: "삭제할 수 없음 (파일이 원본이다)", value: undefined, disabled: true },
+      : { label: "여기서는 삭제할 수 없습니다 (원본 파일에서 관리합니다)", value: undefined, disabled: true },
     separator(),
     { label: "뒤로", value: BACK },
   ];
@@ -677,18 +700,18 @@ async function accountScreen(providerId, account, ctx) {
   });
   if (choice === QUIT) return QUIT;
   if (choice === BACK || choice === undefined) return BACK;
-  if (choice === "pin") await runGuarded(ctx, () => runPinCommand(providerId, account.name, ctx));
-  if (choice === "unpin") await runGuarded(ctx, () => runPinCommand(providerId, null, ctx));
+  if (choice === "pin") await runGuarded(ctx, () => runPinCommand(providerId, account.name, quietly(ctx)));
+  if (choice === "unpin") await runGuarded(ctx, () => runPinCommand(providerId, null, quietly(ctx)));
   if (choice === "remove") {
     const confirm = await runMenu({
       stdout: ctx.stdout ?? process.stdout,
       keys: ctx.keys,
-      title: `\n${BOLD}'${account.name}' 을 지운다. 되돌릴 수 없다.${RST}`,
+      title: `\n${BOLD}'${account.name}' 계정을 삭제합니다. 되돌릴 수 없습니다.${RST}`,
       hint: NAV_HINT,
-      items: [{ label: "그대로 둔다", value: BACK }, { label: "지운다", value: "yes" }],
+      items: [{ label: "취소", value: BACK }, { label: "삭제", value: "yes" }],
     });
     if (confirm === QUIT) return QUIT;
-    if (confirm === "yes") await runGuarded(ctx, () => runRemoveCommand(providerId, account.name, ctx));
+    if (confirm === "yes") await runGuarded(ctx, () => runRemoveCommand(providerId, account.name, quietly(ctx)));
   }
   return BACK;
 }
@@ -711,9 +734,9 @@ async function providerScreen(providerId, ctx) {
       items.push({ label: METHOD_LABELS[method] ?? method, value: { kind: "add", method } });
     }
     items.push(separator(), { label: "뒤로", value: BACK });
-    const header = accounts.length === 0 ? [`  ${DIM}등록된 계정이 없다.${RST}`] : [];
+    const header = accounts.length === 0 ? [`  ${DIM}등록된 계정이 없습니다.${RST}`] : [];
     if (providerId === "anthropic" && !accounts.some((account) => account.source === "setup-token")) {
-      header.push(`  ${DIM}setup-token 자리: ${claudeSetupTokenPath(ctx.env, ctx.home)} (계정 ${claudeAccount(ctx.env)})${RST}`);
+      header.push(`  ${DIM}setup-token 파일: ${claudeSetupTokenPath(ctx.env, ctx.home)} (계정 ${claudeAccount(ctx.env)})${RST}`);
     }
     const choice = await runMenu({
       stdout: ctx.stdout ?? process.stdout,
@@ -752,7 +775,7 @@ async function runInteractive(ctx) {
       stdout: ctx.stdout ?? process.stdout,
       keys: ctx.keys,
       title: `\n${BOLD}== rubato auth ==${RST}`,
-      header: [`  ${DIM}남은 시간은 액세스 토큰 기준이다. 만료돼도 자동으로 갱신된다.${RST}`],
+      header: [`  ${DIM}남은 시간은 액세스 토큰 기준이며, 만료되어도 자동으로 갱신됩니다.${RST}`],
       hint: NAV_HINT,
       items,
       index,
