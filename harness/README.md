@@ -24,7 +24,11 @@ rubato
 ```
 
 credential은 저장소에 복사하지 않는다. `rubato auth`가 연결 상태를 보여 주고,
-TTY에서는 프로바이더를 골라 OAuth·API 키·Anthropic 장기 setup-token을 추가한다.
+TTY에서는 **방향키만으로** 프로바이더와 계정을 다룬다 — ↑↓ 이동, Enter 선택,
+Esc 뒤로, q 종료. 명령어를 칠 일은 API 키와 setup-token 붙여넣기뿐이다.
+계정마다 남은 시간을 따로 보여 주고, 만료됐어도 refresh가 있으면 "곧 자동 갱신"이다.
+스크립트용 비대화 형태(`rubato auth login <provider> [oauth|token|key]`,
+`list`/`pin`/`unpin`/`remove`)는 그대로 남는다.
 
 ## 실행
 

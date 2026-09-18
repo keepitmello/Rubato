@@ -45,7 +45,7 @@ rubato update         # 변경 내용을 확인하고 업데이트
 rubato update --check # 업데이트 유무만 확인
 rubato restart        # 도는 것을 새 코드로 올린다 (엔진·remote hub·GUI)
 rubato build          # 시스템 프롬프트와 엔진 산출물을 다시 빌드
-rubato auth           # 연결 상태 확인, 로그인, 여러 계정 등록
+rubato auth           # 방향키로 연결 상태 확인·로그인·계정 관리
 rubato dispatch <name> grok < brief.md   # 비대화 워커. grokfast|fast|sol|fable
 rubato aside-cursor --install  # Aside Cursor 면 (127.0.0.1:18788)
 ```
