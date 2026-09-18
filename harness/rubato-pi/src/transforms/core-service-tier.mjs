@@ -20,6 +20,7 @@ const ANTHROPIC_MESSAGES_API = "anthropic-messages";
 const ANTHROPIC_FAST_BETA = "fast-mode-2026-02-01";
 const ANTHROPIC_FAST_SPEED = "fast";
 const ANTHROPIC_FAST_MODEL_ID = /^claude-opus-(?:5|4-8)(?:-\\d{8})?$/;
+const SUB_MODEL_SUFFIX = "-sub";
 function isAnthropicFastModel(model) {
     if (model?.api !== ANTHROPIC_MESSAGES_API) {
         return false;
@@ -27,7 +28,9 @@ function isAnthropicFastModel(model) {
     if (model.provider !== "anthropic" && !/api\\.anthropic\\.com/.test(String(model.baseUrl ?? ""))) {
         return false;
     }
-    const modelId = String(model.upstreamModelId ?? model.id ?? "").toLowerCase();
+    // \`[sub]\` rows are id-clones of the same upstream model; the account suffix is not a model.
+    const raw = String(model.upstreamModelId ?? model.id ?? "").toLowerCase();
+    const modelId = raw.endsWith(SUB_MODEL_SUFFIX) ? raw.slice(0, -SUB_MODEL_SUFFIX.length) : raw;
     return ANTHROPIC_FAST_MODEL_ID.test(modelId);
 }
 function supportsFastMode(model) {
