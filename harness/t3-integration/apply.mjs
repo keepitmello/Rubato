@@ -239,6 +239,33 @@ const edits = {
       'replace',
     ],
   ],
+
+  // Worked for 는 도구만 접는다. 어시스턴트 본문을 마지막 조각만 남기면
+  // 끝난 턴이 잘린 것처럼 보인다.
+  'apps/web/src/components/chat/MessagesTimeline.logic.ts': [
+    [
+      ' * Settled turns fold activity before their terminal assistant message behind\n * a "Worked for ..." row. A single ordinary activity after that message joins\n * the fold, while larger groups and failures stay visible as a trailing summary.',
+      ' * Settled turns fold tool activity behind a "Worked for ..." row. Assistant\n * prose stays visible in full — first line, last line, and everything\n * between. Picking leftover fragments is what made the final answer look\n * truncated. A single ordinary activity after the last message joins the\n * fold; larger groups and failures stay as a trailing summary.',
+      'replace',
+    ],
+    [
+      '    for (const [index, entry] of group.entries.entries()) {\n      if (entry.id === group.terminalEntry?.id) {\n        continue;\n      }',
+      '    for (const [index, entry] of group.entries.entries()) {\n      if (entry.kind === "message") {\n        continue;\n      }\n      if (entry.id === group.terminalEntry?.id) {\n        continue;\n      }',
+      'replace',
+    ],
+  ],
+  'apps/mobile/src/lib/threadActivity.ts': [
+    [
+      '  const firstAssistantMessageIdByTurn = new Map<TurnId, string>();\n  const terminalAssistantMessageIdByTurn = new Map<TurnId, string>();\n  for (const entry of feed) {\n    if (entry.type === "message" && entry.message.role === "assistant" && entry.message.turnId) {\n      if (!firstAssistantMessageIdByTurn.has(entry.message.turnId)) {\n        firstAssistantMessageIdByTurn.set(entry.message.turnId, entry.id);\n      }\n      terminalAssistantMessageIdByTurn.set(entry.message.turnId, entry.id);\n    }\n  }',
+      '  const terminalAssistantMessageIdByTurn = new Map<TurnId, string>();\n  for (const entry of feed) {\n    if (entry.type === "message" && entry.message.role === "assistant" && entry.message.turnId) {\n      terminalAssistantMessageIdByTurn.set(entry.message.turnId, entry.id);\n    }\n  }',
+      'replace',
+    ],
+    [
+      '    const firstAssistantMessageId = firstAssistantMessageIdByTurn.get(turnId);\n    const terminalAssistantMessageId = terminalAssistantMessageIdByTurn.get(turnId);\n    const hiddenEntryIds = new Set(\n      entries\n        .filter(\n          (entry) =>\n            entry.id !== firstAssistantMessageId &&\n            entry.id !== terminalAssistantMessageId &&\n            !(entry.type === "activity-group" && isUserInputActivityGroup(entry)),\n        )\n        .map((entry) => entry.id),\n    );',
+      '    const terminalAssistantMessageId = terminalAssistantMessageIdByTurn.get(turnId);\n    const hiddenEntryIds = new Set(\n      entries\n        .filter(\n          (entry) =>\n            entry.type !== "message" &&\n            !(entry.type === "activity-group" && isUserInputActivityGroup(entry)),\n        )\n        .map((entry) => entry.id),\n    );',
+      'replace',
+    ],
+  ],
 };
 function transform(text, changes) {
   for (const [anchor, addition, mode] of changes) {

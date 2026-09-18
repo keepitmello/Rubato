@@ -14,6 +14,8 @@
     "apps/web/src/components/chat/ModelListRow.tsx": "a5994b7ecc9027bf72208db834da47a62968d60198d07973230733e46399ea10",
     "apps/web/src/components/chat/ProviderModelPicker.tsx": "f1a8773eb0a59939217ecc3a5827566d18fa0b323a591ce985480002fba1f43e",
     "apps/web/src/components/T3Wordmark.tsx": "ba20ddca13c7436ca7ad1f25fbc1acc67b95b9242573fd6e70611f389deabf4d",
-    "apps/web/src/components/sidebar/SidebarChrome.tsx": "da2c901f0f963df91c55c515fc8735609770fe9d9718cf5f66a75682f42ff309"
+    "apps/web/src/components/sidebar/SidebarChrome.tsx": "da2c901f0f963df91c55c515fc8735609770fe9d9718cf5f66a75682f42ff309",
+    "apps/web/src/components/chat/MessagesTimeline.logic.ts": "a40631f65f9a2d611119e95ea450f4b34a07bae20c39453ffa6f11a7dc713c8a",
+    "apps/mobile/src/lib/threadActivity.ts": "4eadcea4eda8996642bec67f09565147e65eea2cf560795706ab6ae1deec8e32"
   }
 }
