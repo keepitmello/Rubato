@@ -102,15 +102,29 @@ test("withPickerIds 는 native filter 뒤에 겹친다", () => {
 
 test("두 번째 계정이 있으면 피커에 [sub] 행을 붙인다", () => {
   const provider = withSubAccountCopies({
-    getModels: () => [model("grok-4.6"), model("grok-4.3")],
-    filterModels: (models) => models.filter((entry) => entry.id === "grok-4.6"),
+    id: "anthropic",
+    getModels: () => [model("claude-opus-5"), model("claude-sonnet-5")],
+    filterModels: (models) => models.filter((entry) => entry.id === "claude-opus-5"),
   });
-  assert.deepEqual(provider.filterModels(provider.getModels()).map((entry) => entry.id), ["grok-4.6"]);
+  assert.deepEqual(provider.filterModels(provider.getModels()).map((entry) => entry.id), ["claude-opus-5"]);
   assert.deepEqual(
     provider.filterModels(provider.getModels(), { accounts: [{ name: "default" }, { name: "sub" }] }).map((entry) => entry.id),
-    ["grok-4.6", "grok-4.6-sub"],
+    ["claude-opus-5", "claude-opus-5-sub"],
   );
-  assert.ok(provider.getModels().some((entry) => entry.id === "grok-4.6-sub"));
+  assert.ok(provider.getModels().some((entry) => entry.id === "claude-opus-5-sub"));
+});
+
+// A stale second credential slot (a re-login appends one) used to grow `[sub]` rows on any
+// provider that was not named in the allowlist. xAI is single-account by design.
+test("명단에 없는 프로바이더는 계정이 둘이어도 [sub] 행이 없다", () => {
+  const provider = withSubAccountCopies({
+    id: "xai",
+    getModels: () => [model("grok-4.6")],
+    filterModels: (models) => models,
+  });
+  const credential = { accounts: [{ name: "default" }, { name: "login-2" }] };
+  assert.deepEqual(provider.filterModels(provider.getModels(), credential).map((entry) => entry.id), ["grok-4.6"]);
+  assert.deepEqual(provider.getModels().map((entry) => entry.id), ["grok-4.6"]);
 });
 
 test("Codex [sub] 는 Sol 과 Astra 만 붙는다", () => {

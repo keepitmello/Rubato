@@ -38,6 +38,37 @@ test("login appends a sibling slot and keeps the original flat projection", () =
   assert.equal(projectSlot(pooled, "sub").key, "key-b");
 });
 
+// `default` and `login-2` on xAI were one human logging in twice: identical JWT subject, two
+// slots, and a `[sub]` picker row for an account that did not exist.
+const accountJwt = (subject, issuer = "https://auth.x.ai") =>
+  `header.${Buffer.from(JSON.stringify({ iss: issuer, sub: subject })).toString("base64url")}.signature`;
+
+test("re-login as the same account refreshes its slot instead of minting a sibling", () => {
+  const current = { type: "oauth", access: accountJwt("user-1"), refresh: "r1", expires: 1 };
+  const again = appendLoginSlot(current, { type: "oauth", access: accountJwt("user-1"), refresh: "r1-next", expires: 2 });
+  assert.deepEqual(listSlots(again).map((slot) => slot.name), ["default"]);
+  assert.equal(again.refresh, "r1-next");
+  assert.equal(projectSlot(again, "default").refresh, "r1-next");
+
+  const second = appendLoginSlot(again, { type: "oauth", access: accountJwt("user-2"), refresh: "r2", expires: 3 });
+  assert.deepEqual(listSlots(second).map((slot) => slot.name), ["default", "sub"]);
+  const secondAgain = appendLoginSlot(second, { type: "oauth", access: accountJwt("user-2"), refresh: "r2-next", expires: 4 });
+  assert.deepEqual(listSlots(secondAgain).map((slot) => slot.name), ["default", "sub"]);
+  assert.equal(projectSlot(secondAgain, "sub").refresh, "r2-next");
+  assert.equal(secondAgain.refresh, "r1-next", "the secondary slot must stay off the flat projection");
+
+  assert.deepEqual(
+    listSlots(appendLoginSlot({ type: "api_key", key: "key-a" }, { type: "api_key", key: "key-a" })).map((slot) => slot.name),
+    ["default"],
+  );
+});
+
+test("an opaque access token is unknown, not the same account", () => {
+  const current = { type: "oauth", access: "opaque-1", refresh: "r1", expires: 1 };
+  const appended = appendLoginSlot(current, { type: "oauth", access: "opaque-2", refresh: "r2", expires: 2 });
+  assert.deepEqual(listSlots(appended).map((slot) => slot.name), ["default", "sub"]);
+});
+
 test("oauth refresh merges into the matching slot and leaves siblings", () => {
   const current = {
     type: "oauth",
