@@ -170,7 +170,7 @@ async function createPooledRuntime(auth) {
   return { agentDir, modelRuntime };
 }
 
-test("candidate ModelRuntime rotates a second stored account after a pre-output 429", async () => {
+test("candidate ModelRuntime keeps a session on the first account after a pre-output 429", async () => {
   const hits = [];
   const { modelRuntime } = await createPooledRuntime({
     xai: {
@@ -182,16 +182,36 @@ test("candidate ModelRuntime rotates a second stored account after a pre-output 
       ],
     },
   });
-  modelRuntime.registerNativeProvider(mockXaiProvider(hits));
+  let firstKey;
+  const provider = mockXaiProvider(hits, "never");
+  provider.streamSimple = function (_model, _context, options) {
+    hits.push(options.apiKey);
+    if (firstKey === undefined) firstKey = options.apiKey;
+    if (options.apiKey === firstKey) {
+      const error = new Error("Too Many Requests");
+      error.status = 429;
+      throw error;
+    }
+    return (async function* () {
+      yield { type: "start" };
+      yield { type: "text", text: "ok" };
+    })();
+  };
+  modelRuntime.registerNativeProvider(provider);
   const model = modelRuntime.getModels().find((entry) => entry.provider === "xai") ?? modelRuntime.getModel("xai", "grok-4.6");
   assert.ok(model, "expected a registered xai model");
-  const stream = modelRuntime.streamSimple(model, { messages: [{ role: "user", content: "hi" }] }, { sessionId: "affinity-1" });
-  const events = [];
-  for await (const event of stream) events.push(event);
-  assert.equal(hits.length, 2);
-  assert.ok(hits.includes("xai-key-a"));
-  assert.ok(hits.includes("xai-key-b"));
-  assert.equal(events.at(-1).text, "ok");
+  const first = await modelRuntime.streamSimple(model, { messages: [{ role: "user", content: "hi" }] }, { sessionId: "affinity-1" }).result();
+  assert.equal(first.stopReason, "error");
+  assert.match(String(first.errorMessage ?? ""), /Too Many Requests|no-turn-retry/);
+  assert.equal(hits.length, 1);
+  const retry = await modelRuntime.streamSimple(model, { messages: [{ role: "user", content: "hi" }] }, { sessionId: "affinity-1" }).result();
+  assert.equal(retry.stopReason, "error");
+  assert.deepEqual(hits, [firstKey, firstKey]);
+
+  const second = await modelRuntime.streamSimple(model, { messages: [{ role: "user", content: "hi" }] }, { sessionId: "affinity-2" }).result();
+  assert.equal(hits.length, 3);
+  assert.notEqual(hits[2], firstKey);
+  assert.equal(second.stopReason !== "error", true);
 });
 
 test("candidate ModelRuntime does not rotate after committed output", async () => {
@@ -368,4 +388,56 @@ test("staged pool helpers match the source copies", () => {
   assert.equal(typeof poolSlots.appendLoginSlot, "function");
   assert.equal(typeof poolSlots.mergeRefreshed, "function");
   assert.equal(typeof poolSlots.mergeRefreshedSlot, "function");
+});
+import { listRotationSlots } from "./auth-pool/rotation-stream.mjs";
+import { CredentialSlotRepository } from "./auth-pool/state-store.mjs";
+
+test("anthropic stored oauth plus setup-token are both rotation slots", async () => {
+  const slots = await listRotationSlots({
+    providerId: "anthropic",
+    credential: {
+      type: "oauth",
+      access: "oauth-access",
+      refresh: "oauth-refresh",
+      expires: Date.now() + 60_000,
+      accounts: [
+        { name: "default", source: "login", access: "oauth-access", refresh: "oauth-refresh", expires: Date.now() + 60_000 },
+      ],
+    },
+    env: () => undefined,
+    repository: new CredentialSlotRepository(),
+    discoverExtraSlots: async () => [{
+      name: "setup-token",
+      lane: "setup-token",
+      envVarName: "claude-setup-token",
+      key: "sk-ant-oat-test",
+      source: "setup-token",
+    }],
+  }, { acquireLeases: false });
+  assert.deepEqual(slots.map((slot) => `${slot.lane}:${slot.name}`), ["stored:default", "setup-token:setup-token"]);
+});
+
+test("anthropic stored oauth plus setup-token are both rotation slots", async () => {
+  const slots = await listRotationSlots({
+    providerId: "anthropic",
+    credential: {
+      type: "oauth",
+      access: "oauth-access",
+      refresh: "oauth-refresh",
+      expires: Date.now() + 60_000,
+      accounts: [
+        { name: "default", source: "login", access: "oauth-access", refresh: "oauth-refresh", expires: Date.now() + 60_000 },
+      ],
+    },
+    env: () => undefined,
+    repository: new CredentialSlotRepository(),
+    discoverExtraSlots: async () => [{
+      name: "setup-token",
+      lane: "setup-token",
+      envVarName: "claude-setup-token",
+      key: "sk-ant-oat-test",
+      source: "setup-token",
+    }],
+  }, { acquireLeases: false });
+  assert.deepEqual(slots.map((slot) => `${slot.lane}:${slot.name}`), ["stored:default", "setup-token:setup-token"]);
 });

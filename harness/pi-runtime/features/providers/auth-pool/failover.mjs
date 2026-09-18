@@ -14,7 +14,8 @@ export class CredentialFailoverError extends Error {
   }
 }
 
-function isAvailable(slot, now) {
+function isAvailable(slot, now, stickyName) {
+  if (stickyName !== undefined && slot.name === stickyName) return true;
   if (slot.blockReason === "auth_error" || slot.blockReason === "account_disabled") return false;
   if (slot.blockedUntil !== undefined && slot.blockedUntil > now) return false;
   return true;
@@ -42,7 +43,8 @@ export async function* runCredentialFailover(options) {
   let lastOriginal;
   while (true) {
     const slots = await options.listSlots();
-    const candidates = slots.filter((slot) => !attempted.has(slot.name) && isAvailable(slot, now()));
+    const stickyName = options.stickySlotName?.();
+    const candidates = slots.filter((slot) => !attempted.has(slot.name) && isAvailable(slot, now(), stickyName));
     if (candidates.length === 0) {
       const retryAt = soonestRetryAt(slots, now());
       throw lastError !== undefined && lastOriginal !== undefined
@@ -83,11 +85,8 @@ export async function* runCredentialFailover(options) {
         throw new CredentialFailoverError(action, error, { suppressTurnRetry: committedOutput });
       }
       await options.persistBlock(slot, action.block);
-      attempted.add(slot.name);
-      const failure = new CredentialFailoverError(action, error, { suppressTurnRetry: committedOutput });
-      lastError = failure;
       await options.onRotate?.({ slot, block: action.block, attempt: attempted.size, committedOutput });
-      if (committedOutput) throw failure;
+      throw new CredentialFailoverError(action, error, { suppressTurnRetry: committedOutput });
     }
   }
 }

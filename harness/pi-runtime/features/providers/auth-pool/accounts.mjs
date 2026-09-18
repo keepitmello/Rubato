@@ -1,5 +1,6 @@
 import { listSlots, pinSlot, removeSlot } from "./slots.mjs";
 import { discoverEnvSlots } from "./env-slots.mjs";
+import { discoverSetupTokenSlots } from "./setup-token-slots.mjs";
 import { CredentialSlotRepository, slotHealth } from "./state-store.mjs";
 
 const ACCOUNT_NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;
@@ -24,6 +25,7 @@ export async function summarizeCredentialAccounts(provider, stored, env = {}, re
   const now = Date.now();
   const pinned = stored?.pinned;
   const summaries = [];
+  const envGet = typeof env === "function" ? env : (name) => env[name];
   if (stored) {
     const state = await repository.listSlots(provider, "stored");
     for (const slot of listSlots(stored)) {
@@ -34,17 +36,26 @@ export async function summarizeCredentialAccounts(provider, stored, env = {}, re
         pinned: pinned === slot.name,
       });
     }
-    return summaries;
+  } else {
+    const state = await repository.listSlots(provider, "env");
+    for (const slot of discoverEnvSlots(provider, envGet)) {
+      const persisted = state[slot.name];
+      const revision = await repository.envCredentialRevision(slot.envVarName, slot.key);
+      const applicable = persisted?.credentialRevision === revision ? persisted : undefined;
+      summaries.push({
+        name: slot.name,
+        source: "env",
+        blocked: slotHealth(applicable, now) === "blocked",
+        pinned: pinned === slot.name,
+      });
+    }
   }
-  const state = await repository.listSlots(provider, "env");
-  for (const slot of discoverEnvSlots(provider, (name) => env[name])) {
-    const persisted = state[slot.name];
-    const revision = await repository.envCredentialRevision(slot.envVarName, slot.key);
-    const applicable = persisted?.credentialRevision === revision ? persisted : undefined;
+  for (const slot of await discoverSetupTokenSlots(provider, envGet)) {
+    const state = await repository.listSlots(provider, slot.lane ?? "setup-token");
     summaries.push({
       name: slot.name,
-      source: "env",
-      blocked: slotHealth(applicable, now) === "blocked",
+      source: "setup-token",
+      blocked: slotHealth(state[slot.name], now) === "blocked",
       pinned: pinned === slot.name,
     });
   }
@@ -81,7 +92,9 @@ export async function removeCredentialAccount(credentials, provider, name, env =
   const accounts = await getCredentialAccounts(credentials, provider, env, repo);
   const account = accounts.find((candidate) => candidate.name === name);
   if (!account) throw new Error(`Provider account not found: ${name}`);
-  if (account.source === "env") throw new Error(`Environment provider account cannot be removed: ${name}`);
+  if (account.source === "env" || account.source === "setup-token") {
+    throw new Error(`Environment provider account cannot be removed: ${name}`);
+  }
   const current = await credentials.read(provider);
   if (current === undefined) throw new Error(`No stored credential for provider: ${provider}`);
   const remaining = removeSlot(current, name);
