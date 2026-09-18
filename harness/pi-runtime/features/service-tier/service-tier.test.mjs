@@ -21,6 +21,8 @@ import {
   addServiceTierToPayload,
   applyAnthropicFastMode,
   createServiceTierFeature,
+  fastWireMode,
+  supportsFastMode,
 } from "./extension.mjs";
 import { files, patches, serviceTierRuntimeFeature } from "./patches.mjs";
 
@@ -494,6 +496,24 @@ for (const key of ["codex", "xai", "anthropic"]) {
     assert.deepEqual(restarted.extensionErrors, []);
   });
 }
+
+test("a [sub] account clone is judged on the model, not on the account suffix", () => {
+  // picker-catalog's cloneSubModels only appends "-sub" to the id, so the clone carries no
+  // upstreamModelId. T3 already strips the suffix before painting the Fast toggle; the engine
+  // that did not refused /fast on exactly those rows.
+  const sub = { ...MODELS.anthropic, id: `${MODELS.anthropic.id}-sub`, name: "Anthropic fixture [sub]" };
+  assert.equal(supportsFastMode(sub), true);
+  assert.equal(fastWireMode(sub), "anthropic-fast");
+
+  const unsupportedSub = {
+    ...MODELS.anthropicUnsupported,
+    id: `${MODELS.anthropicUnsupported.id}-sub`,
+  };
+  assert.equal(supportsFastMode(unsupportedSub), false);
+
+  const gatewaySub = { ...MODELS.kiro, id: `${MODELS.kiro.id}-sub` };
+  assert.equal(supportsFastMode(gatewaySub), false);
+});
 
 test("caller-owned wire fields are not overwritten or duplicated", () => {
   const featurePayload = { service_tier: "flex", keep: true };
