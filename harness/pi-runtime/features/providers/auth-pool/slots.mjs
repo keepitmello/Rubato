@@ -113,10 +113,48 @@ function nextLoginSlotName(credential) {
   throw new Error("Credential pool is full");
 }
 
+function decodeJwtClaims(token) {
+  if (typeof token !== "string") return undefined;
+  const parts = token.split(".");
+  if (parts.length !== 3) return undefined;
+  try {
+    const payload = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const json = typeof Buffer === "function"
+      ? Buffer.from(payload, "base64").toString("utf8")
+      : atob(payload + "=".repeat((4 - (payload.length % 4)) % 4));
+    const claims = JSON.parse(json);
+    return claims !== null && typeof claims === "object" ? claims : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Who a credential belongs to, when the credential says so. API keys are their own identity;
+ * OAuth access tokens carry an issuer/subject pair when they are JWTs. Opaque tokens (Anthropic)
+ * return undefined — unknown, never "same".
+ */
+export function loginAccountIdentity(source) {
+  if (typeof source?.key === "string" && source.key.length > 0) return `key:${source.key}`;
+  const claims = decodeJwtClaims(source?.access);
+  const subject = typeof claims?.sub === "string" ? claims.sub : "";
+  if (subject.length === 0) return undefined;
+  return `oauth:${typeof claims.iss === "string" ? claims.iss : ""}:${subject}`;
+}
+
 export function appendLoginSlot(current, flat) {
   if ("accounts" in flat && Array.isArray(flat.accounts) && flat.accounts.length > 0) return flat;
   if (!current) return flat;
-  return upsertSlot(current, slotFromFlatCredentialNamed(flat, nextLoginSlotName(current)));
+  const incoming = loginAccountIdentity(flat);
+  const existing = incoming === undefined
+    ? undefined
+    : listSlots(current).find((slot) => loginAccountIdentity(slot) === incoming);
+  if (!existing) return upsertSlot(current, slotFromFlatCredentialNamed(flat, nextLoginSlotName(current)));
+  // The same human logging in again — an expired token, a second browser round. Refresh the slot
+  // in place: appending here minted a phantom account that the picker then offered as a `[sub]` row.
+  const refreshed = slotFromFlatCredentialNamed(flat, existing.name);
+  const rebased = slotMirrorsFlat(current, existing) ? projectFlatFields(current, refreshed) : current;
+  return upsertSlot(rebased, { ...existing, ...refreshed });
 }
 
 export function mergeRefreshedSlot(current, name, refreshed) {
