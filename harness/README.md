@@ -23,8 +23,8 @@ rubato auth
 rubato
 ```
 
-credential은 저장소에 복사하지 않는다. 각 provider의 기존 로그인 상태를 확인하고,
-연결되지 않은 provider만 별도로 인증한다.
+credential은 저장소에 복사하지 않는다. `rubato auth`가 연결 상태를 보여 주고,
+TTY에서는 프로바이더를 골라 OAuth·API 키·Anthropic 장기 setup-token을 추가한다.
 
 ## 실행
 
@@ -92,7 +92,7 @@ rubato build
 
 ## 문제 해결
 
-1. `rubato auth`로 provider 연결 상태를 확인한다.
+1. `rubato auth`로 연결 상태를 확인하고 필요한 계정을 추가한다.
 2. `msearch --doctor`로 기억 검색 상태를 확인한다.
 3. `rubato build`로 엔진과 프롬프트를 다시 만든다.
 4. 그래도 실패하면 현재 commit, 실행한 명령, 첫 오류 메시지를 함께 이슈에 남긴다.
