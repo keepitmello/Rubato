@@ -1,5 +1,7 @@
 /** The single product catalog for every Rubato picker and spawn surface. */
 
+import { shortModelLabel } from "./model-label.mjs";
+
 export const PRODUCT_PROVIDER_ORDER = Object.freeze([
   "openai-codex",
   "anthropic",
@@ -121,13 +123,12 @@ export function productCatalogLabel(item) {
   if (typeof item.id === "string" && item.id.endsWith(SUB_SUFFIX)) {
     return `${productCatalogLabel({ ...item, id: item.id.slice(0, -SUB_SUFFIX.length) })} [sub]`;
   }
-  if (item.provider === "openai-codex" && item.id.startsWith("gpt-daybreak-blue-")) {
-    return item.model?.name ?? item.name ?? item.id;
-  }
-  if (item.provider === "cursor" && item.id === "cursor-grok-4.6") return "grok-4.6-fast";
-  if (item.id === "claude-opus-5") return "Opus 5";
-  if (item.id === "claude-fable-5-1") return "Fable 5.1";
-  return item.id;
+  // Lane suffixes that the short label drops on purpose: the footer renders them as separate
+  // badges, but the picker has no badge column, so these rows would otherwise be
+  // indistinguishable from their plain siblings.
+  if (item.provider === "cursor" && item.id === "cursor-grok-4.6") return `${shortModelLabel(item.id)} fast`;
+  if (item.id === "gemini-3.8-flash") return `${shortModelLabel(item.id)} Flash`;
+  return shortModelLabel(item.id);
 }
 
 export function productCatalogIdentity(model) {

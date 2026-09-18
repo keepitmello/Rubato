@@ -28,12 +28,21 @@ function patchFooter(source) {
 }
 
 const OWNED_FILES = ["brand.mjs", "speed-index.mjs", "cursor-grok-fast.mjs", "statusline.mjs", "footer.mjs"];
-export const files = Object.freeze(OWNED_FILES.map((name) => Object.freeze({
-  packageName: PACKAGE_NAME,
-  version: VERSION,
-  path: "dist/rubato-features/statusline/" + name,
-  sourcePath: fileURLToPath(new URL("./" + name, import.meta.url)),
-})));
+export const files = Object.freeze([
+  ...OWNED_FILES.map((name) => Object.freeze({
+    packageName: PACKAGE_NAME,
+    version: VERSION,
+    path: "dist/rubato-features/statusline/" + name,
+    sourcePath: fileURLToPath(new URL("./" + name, import.meta.url)),
+  })),
+  // Shared label rule: staged from packages/model-core, not from the shim next to this file.
+  Object.freeze({
+    packageName: PACKAGE_NAME,
+    version: VERSION,
+    path: "dist/rubato-features/statusline/model-label.mjs",
+    sourcePath: fileURLToPath(new URL("../../../../packages/model-core/src/model-label.mjs", import.meta.url)),
+  }),
+]);
 
 export const patches = Object.freeze([
   Object.freeze({
