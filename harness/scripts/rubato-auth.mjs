@@ -1,5 +1,8 @@
 #!/usr/bin/env node
-// `rubato auth` — 상태, 인터랙티브 로그인, 여러 계정 등록.
+// `rubato auth` — 상태, 방향키 로그인, 여러 계정 등록.
+//
+// TTY 에서는 명령어를 치지 않는다. 화살표로 고르고 Enter 로 들어가고 Esc 로 나온다.
+// 붙여넣기가 본질인 자리(API 키, setup-token)만 줄 입력을 쓴다.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
@@ -19,6 +22,7 @@ import {
 } from "../pi-runtime/features/providers/auth-pool/accounts.mjs";
 import { appendLoginSlot, listSlots } from "../pi-runtime/features/providers/auth-pool/slots.mjs";
 import { CredentialSlotRepository } from "../pi-runtime/features/providers/auth-pool/state-store.mjs";
+import { BACK, QUIT, SHOW_CURSOR, createKeyReader, runMenu } from "./auth-menu.mjs";
 
 export const PROVIDERS = Object.freeze([
   { id: "openai-codex", label: "Codex", aliases: ["openai-codex", "codex"], methods: ["oauth"] },
@@ -86,17 +90,59 @@ export function resolveLoginMethod(providerId, name) {
   return { id: method };
 }
 
-export function oauthPresence(entry) {
-  if (!entry || typeof entry !== "object") return { ok: false };
-  const token = typeof entry.access === "string" ? entry.access : typeof entry.key === "string" ? entry.key : "";
-  if (!token) return { ok: false };
-  const exp = entry.expires;
-  if (typeof exp === "number") {
-    const left = exp / 1000 - Date.now() / 1000;
-    if (left < 0) return { ok: true, left: "expired" };
-    return { ok: true, left: `${Math.floor(left / 3600)}h` };
+/**
+ * 자격증명 한 칸의 상태. **계정마다 따로 센다.**
+ *
+ * 예전에는 provider 의 flat 필드(`auth.json` 맨 위 `access`/`expires`) 하나만 읽었다.
+ * 두 번째 로그인은 `accounts[]` 에 슬롯으로 붙고 flat 은 첫 로그인 그대로 남으므로,
+ * 방금 로그인한 계정이 멀쩡한데도 화면은 죽은 첫 계정을 읽고 "만료"를 찍었다.
+ *
+ * `renewable` 은 만료됐지만 refresh token 이 있는 상태다 — 런타임이 다음 호출에서
+ * 스스로 갱신하므로 다시 로그인할 일이 아니다. 재로그인이 필요한 것은 `stale` 뿐이다.
+ */
+export function slotPresence(slot, now = Date.now()) {
+  if (!slot || typeof slot !== "object") return { ok: false, state: "absent" };
+  const access = typeof slot.access === "string" ? slot.access : "";
+  const key = typeof slot.key === "string" ? slot.key : "";
+  if (!access && !key) return { ok: false, state: "absent" };
+  if (!access) return { ok: true, state: "key" };
+  const expires = typeof slot.expires === "number" && slot.expires > 0 ? slot.expires : undefined;
+  if (expires === undefined) return { ok: true, state: "key" };
+  const leftMs = expires - now;
+  if (leftMs > 0) return { ok: true, state: "live", leftMs };
+  return typeof slot.refresh === "string" && slot.refresh
+    ? { ok: true, state: "renewable" }
+    : { ok: true, state: "stale" };
+}
+
+const STATE_RANK = Object.freeze({ live: 0, renewable: 1, key: 2, stale: 3, absent: 4 });
+
+/** provider 한 줄에 쓸 요약. 가장 건강한 계정이 대표한다. */
+export function credentialHealth(entry, extraSlots = [], now = Date.now()) {
+  const slots = [...listSlots(entry), ...extraSlots];
+  let best = { ok: false, state: "absent" };
+  for (const slot of slots) {
+    const presence = slot.source === "setup-token" ? { ok: true, state: "key" } : slotPresence(slot, now);
+    if (STATE_RANK[presence.state] < STATE_RANK[best.state]) best = presence;
+    else if (presence.state === "live" && best.state === "live" && presence.leftMs > best.leftMs) best = presence;
   }
-  return { ok: true, left: "" };
+  return { ...best, count: slots.length };
+}
+
+export function formatLeft(leftMs) {
+  const minutes = Math.floor(leftMs / 60_000);
+  if (minutes < 60) return `${Math.max(minutes, 1)}분 남음`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours}시간 남음`;
+  return `${Math.floor(hours / 24)}일 남음`;
+}
+
+export function describeHealth(health) {
+  if (health.state === "live") return formatLeft(health.leftMs);
+  if (health.state === "renewable") return "곧 자동 갱신";
+  if (health.state === "key") return "저장됨";
+  if (health.state === "stale") return "다시 로그인 필요";
+  return "로그인 안 됨";
 }
 
 export function readAuthFile(path) {
@@ -182,11 +228,11 @@ function hint(stdout, text) {
   stdout.write(`      ${DIM}${text}${RST}\n`);
 }
 
-function storedSlotLines(entry) {
+function storedSlotLines(entry, now = Date.now()) {
   if (!entry) return [];
   return listSlots(entry).map((slot) => {
     const pinned = entry.pinned === slot.name ? " | pinned" : "";
-    return `${slot.name} | ${slot.source ?? "login"}${pinned}`;
+    return `${slot.name} | ${slot.source ?? "login"} | ${describeHealth(slotPresence(slot, now))}${pinned}`;
   });
 }
 
@@ -201,37 +247,35 @@ function methodHint(id) {
   return `rubato auth login ${id}`;
 }
 
-export function printStatus({ stdout = process.stdout, env = process.env, home = env.HOME || homedir() } = {}) {
+/** provider 별 상태. TUI 목록과 `rubato auth status` 가 같은 계산을 쓴다. */
+export function collectStatus({ env = process.env, home = env.HOME || homedir(), now = Date.now() } = {}) {
   const authPath = authJsonPath(env, home);
   const auth = existsSync(authPath) ? readAuthFile(authPath) : {};
   const tokenPath = setupTokenPresent({ env, home });
-  stdout.write(`\n${BOLD}== rubato auth ==${RST}\n`);
-  PROVIDERS.forEach((provider, index) => {
+  return PROVIDERS.map((provider) => {
     const entry = auth[provider.id];
-    const presence = oauthPresence(entry);
-    const slots = storedSlotLines(entry);
-    const extra = [];
-    if (provider.id === "anthropic" && tokenPath) extra.push(`setup-token | setup-token`);
-    const connected = presence.ok || extra.length > 0;
-    const n = `${index + 1})`;
-    if (!connected) {
-      miss(stdout, `${n} ${provider.label} — 없다`);
-      hint(stdout, methodHint(provider.id));
-      return;
-    }
-    if (presence.left === "expired" && extra.length === 0) {
-      miss(stdout, `${n} ${provider.label} — 토큰이 만료됐다`);
-      hint(stdout, methodHint(provider.id));
-    } else if (presence.left && presence.left !== "expired") {
-      ok(stdout, `${n} ${provider.label}  (남은 시간 ~${presence.left}${slots.length > 1 ? `, ${slots.length} accounts` : ""})`);
-    } else {
-      const count = slots.length + extra.length;
-      ok(stdout, `${n} ${provider.label}${count > 1 ? `  (${count} accounts)` : ""}`);
-    }
-    for (const line of slots) hint(stdout, line);
-    for (const line of extra) hint(stdout, line);
+    const extra = provider.id === "anthropic" && tokenPath
+      ? [{ name: "setup-token", source: "setup-token" }]
+      : [];
+    const health = credentialHealth(entry, extra, now);
+    return {
+      provider,
+      health,
+      lines: [...storedSlotLines(entry, now), ...extra.map((slot) => `${slot.name} | setup-token | 저장됨`)],
+    };
   });
-  stdout.write("\n");
+}
+
+export function printStatus({ stdout = process.stdout, env = process.env, home = env.HOME || homedir() } = {}) {
+  stdout.write(`\n${BOLD}== rubato auth ==${RST}\n`);
+  collectStatus({ env, home }).forEach((row, index) => {
+    const n = `${index + 1})`;
+    const write = row.health.ok && row.health.state !== "stale" ? ok : miss;
+    write(stdout, `${n} ${row.provider.label} — ${describeHealth(row.health)}`);
+    if (!row.health.ok || row.health.state === "stale") hint(stdout, methodHint(row.provider.id));
+    for (const line of row.lines) hint(stdout, line);
+  });
+  stdout.write(`${DIM}남은 시간은 액세스 토큰 기준이다. 만료돼도 refresh 가 있으면 자동으로 갱신된다.${RST}\n\n`);
 }
 
 export function printUsage(stdout = process.stdout) {
@@ -247,12 +291,6 @@ export function printUsage(stdout = process.stdout) {
 
 export function printLoginUsage(stdout = process.stdout) {
   printUsage(stdout);
-}
-
-function printInteractiveHelp(stdout) {
-  stdout.write(`${DIM}  [1-${PROVIDERS.length}] provider   login <id> [oauth|token|key]\n`);
-  stdout.write(`  pin <id> <name>   unpin <id>   remove <id> <name>\n`);
-  stdout.write(`  q quit   ? help${RST}\n\n`);
 }
 
 function formatAccount(account) {
@@ -287,7 +325,16 @@ export async function createCliInteraction({
   const open = openUrl ?? ((url) => {
     stdout.write(`${url}\n`);
   });
+  // 열린 줄 입력을 붙잡아 둔다. Antigravity 는 브라우저 콜백과 수동 붙여넣기를
+  // 경주시키는데, 콜백이 이기면 붙여넣기 프롬프트는 영영 답을 받지 못한다. 닫지
+  // 않으면 그 readline 이 stdin 을 계속 쥐고 있어 로그인 후 메뉴가 키를 못 받는다.
+  const open_prompts = new Set();
+  const readLineHere = (signal) => readPromptLine(stdin, stdout, signal, open_prompts);
   return {
+    close() {
+      for (const rl of open_prompts) rl.close();
+      open_prompts.clear();
+    },
     async prompt(prompt) {
       if (prompt.type === "select") {
         const browser = prompt.options.find((option) => /browser/i.test(`${option.id} ${option.label}`));
@@ -296,7 +343,7 @@ export async function createCliInteraction({
         prompt.options.forEach((option, index) => {
           stdout.write(`  ${index + 1}) ${option.label}\n`);
         });
-        const line = await readPromptLine(stdin, stdout, prompt.signal);
+        const line = await readLineHere(prompt.signal);
         const asNumber = Number.parseInt(line, 10);
         if (Number.isInteger(asNumber) && prompt.options[asNumber - 1]) return prompt.options[asNumber - 1].id;
         const match = prompt.options.find((option) => option.id === line || option.label === line);
@@ -304,7 +351,7 @@ export async function createCliInteraction({
         throw new Error(`Unknown login option: ${line}`);
       }
       stdout.write(`${prompt.message}\n`);
-      return readPromptLine(stdin, stdout, prompt.signal);
+      return readLineHere(prompt.signal);
     },
     notify(event) {
       if (event.type === "auth_url") {
@@ -323,8 +370,9 @@ export async function createCliInteraction({
   };
 }
 
-async function readPromptLine(stdin, stdout, signal) {
+async function readPromptLine(stdin, stdout, signal, registry) {
   const rl = createInterface({ input: stdin, output: stdout });
+  registry?.add(rl);
   const onAbort = () => rl.close();
   signal?.addEventListener("abort", onAbort, { once: true });
   try {
@@ -332,6 +380,7 @@ async function readPromptLine(stdin, stdout, signal) {
     return await rl.question("> ");
   } finally {
     signal?.removeEventListener("abort", onAbort);
+    registry?.delete(rl);
     rl.close();
   }
 }
@@ -360,6 +409,34 @@ async function loadModelRuntime(root) {
   return ModelRuntime;
 }
 
+/**
+ * 스톡 엔진이 모르는 provider. 세션에서는 Rubato providers 확장이 붙여 주지만
+ * `rubato auth` 는 맨 런타임을 만들므로 여기서 직접 등록해야 한다. 등록하지 않으면
+ * `Unknown provider: google-antigravity` 로 로그인이 통째로 막힌다 (cursor 도 같다).
+ */
+const RUBATO_OWNED_PROVIDERS = Object.freeze({
+  "google-antigravity": async (env) => {
+    const { antigravityDirectProvider } = await import("../rubato-pi/src/antigravity-route.mjs");
+    const built = await antigravityDirectProvider({ env });
+    return built.provider;
+  },
+  cursor: async (env) => {
+    const { cursorDirectProvider } = await import("../rubato-pi/src/cursor-route.mjs");
+    return cursorDirectProvider({ env });
+  },
+  kiro: async (env) => {
+    const { kiroDirectProvider } = await import("../rubato-pi/src/kiro-route.mjs");
+    return kiroDirectProvider({ env });
+  },
+});
+
+export async function ensureProviderRegistered(runtime, providerId, env) {
+  if (runtime.models?.providers?.has?.(providerId)) return;
+  const build = RUBATO_OWNED_PROVIDERS[providerId];
+  if (!build) return;
+  runtime.registerNativeProvider(await build(env));
+}
+
 export async function loginWithRuntime(runtime, providerId, type, interaction) {
   if (typeof type === "object" && type !== null) {
     interaction = type;
@@ -383,6 +460,7 @@ async function runEngineLogin(providerId, type, ctx) {
     authPath: authJsonPath(env, ctx.home),
     refreshOnCreate: false,
   });
+  await ensureProviderRegistered(runtime, providerId, env);
   const openBrowser = ctx.openUrl ? undefined : await loadOpenBrowser(selection.root);
   const interaction = await createCliInteraction({
     stdin,
@@ -390,7 +468,11 @@ async function runEngineLogin(providerId, type, ctx) {
     openUrl: ctx.openUrl ?? ((url) => openBrowser(url)),
   });
   stdout.write(`Logging in to ${LOGIN_LABELS[providerId] ?? providerId} (${type})…\n`);
-  await loginWithRuntime(runtime, providerId, type, interaction);
+  try {
+    await loginWithRuntime(runtime, providerId, type, interaction);
+  } finally {
+    interaction.close?.();
+  }
   stdout.write(`Logged in. Credentials: ${authJsonPath(env, ctx.home)}\n`);
 }
 
@@ -522,116 +604,163 @@ export async function handleAuthArgs(argv, ctx) {
   }
 }
 
-function parseLine(line) {
-  return String(line ?? "").trim().split(/\s+/).filter(Boolean);
+// ── 방향키 화면들 ────────────────────────────────────────────────────────────
+
+export const METHOD_LABELS = Object.freeze({
+  oauth: "브라우저로 로그인",
+  api_key: "API 키 붙여넣기",
+  "setup-token": "setup-token 붙여넣기 (sk-ant-oat…)",
+});
+
+const HEALTH_GLYPH = Object.freeze({ live: `${GRN}✓${RST}`, renewable: `${GRN}✓${RST}`, key: `${GRN}✓${RST}`, stale: `${YEL}✗${RST}`, absent: `${DIM}·${RST}` });
+
+const NAV_HINT = `${DIM}↑↓ 이동 · Enter 선택 · Esc 뒤로 · q 종료${RST}`;
+
+function separator(label = "") {
+  return { separator: true, label: `${DIM}${label}${RST}` };
 }
 
-async function chooseMethod(spec, ctx) {
-  if (spec.methods.length === 1) return spec.methods[0];
+/** 로그인·붙여넣기처럼 줄 출력이 필요한 자리. 메뉴의 raw 모드를 잠시 놓는다. */
+async function withPlainTerminal(ctx, fn) {
   const stdout = ctx.stdout ?? process.stdout;
-  spec.methods.forEach((method, index) => {
-    stdout.write(`  ${index + 1}) ${method}\n`);
-  });
-  const line = await readLine(ctx);
-  const asNumber = Number.parseInt(line, 10);
-  if (Number.isInteger(asNumber) && spec.methods[asNumber - 1]) return spec.methods[asNumber - 1];
-  const resolved = resolveLoginMethod(spec.id, line);
-  if (resolved.id) return resolved.id;
-  throw new Error(`Unknown method: ${line}`);
+  ctx.keys?.suspend();
+  stdout.write(SHOW_CURSOR);
+  try {
+    return await fn();
+  } finally {
+    ctx.keys?.resume();
+  }
 }
 
-function printProviderMenu(spec, ctx) {
+async function pause(ctx, message) {
   const stdout = ctx.stdout ?? process.stdout;
-  stdout.write(`  a) add (${spec.methods.join(" / ")})\n`);
-  if (spec.methods.includes("setup-token")) stdout.write("  t) setup-token\n");
-  if (spec.methods.includes("api_key") && spec.methods.includes("oauth")) stdout.write("  k) API key\n");
-  stdout.write("  p <name> pin   r <name> remove   b back\n");
+  stdout.write(`${message}\n${DIM}아무 키나 누르면 돌아간다.${RST}\n`);
+  await ctx.keys?.next();
 }
 
-async function enterProvider(providerId, ctx) {
+async function runGuarded(ctx, fn) {
+  try {
+    await withPlainTerminal(ctx, fn);
+  } catch (error) {
+    await pause(ctx, `${YEL}${error instanceof Error ? error.message : String(error)}${RST}`);
+  }
+}
+
+function accountDetail(account, slotByName, now) {
+  const parts = [account.source];
+  const slot = slotByName.get(account.name);
+  parts.push(account.source === "setup-token" ? "저장됨" : describeHealth(slotPresence(slot, now)));
+  if (account.pinned) parts.push("고정됨");
+  if (account.blocked) parts.push("차단됨");
+  return parts.join(" · ");
+}
+
+async function accountScreen(providerId, account, ctx) {
   const spec = providerSpec(providerId);
-  const accounts = await printProviderAccounts(providerId, ctx);
-  if (accounts.length === 0 && spec.methods.length === 1) {
-    await loginProvider(providerId, spec.methods[0], ctx);
-    return;
+  const removable = account.source !== "env" && account.source !== "setup-token";
+  const items = [
+    account.pinned
+      ? { label: "고정 해제", value: "unpin" }
+      : { label: "이 계정만 쓰도록 고정", value: "pin" },
+    removable
+      ? { label: "이 계정 삭제", value: "remove" }
+      : { label: "삭제할 수 없음 (파일이 원본이다)", value: undefined, disabled: true },
+    separator(),
+    { label: "뒤로", value: BACK },
+  ];
+  const choice = await runMenu({
+    stdout: ctx.stdout ?? process.stdout,
+    keys: ctx.keys,
+    title: `\n${BOLD}${spec?.label ?? providerId} / ${account.name}${RST}`,
+    hint: NAV_HINT,
+    items,
+  });
+  if (choice === QUIT) return QUIT;
+  if (choice === BACK || choice === undefined) return BACK;
+  if (choice === "pin") await runGuarded(ctx, () => runPinCommand(providerId, account.name, ctx));
+  if (choice === "unpin") await runGuarded(ctx, () => runPinCommand(providerId, null, ctx));
+  if (choice === "remove") {
+    const confirm = await runMenu({
+      stdout: ctx.stdout ?? process.stdout,
+      keys: ctx.keys,
+      title: `\n${BOLD}'${account.name}' 을 지운다. 되돌릴 수 없다.${RST}`,
+      hint: NAV_HINT,
+      items: [{ label: "그대로 둔다", value: BACK }, { label: "지운다", value: "yes" }],
+    });
+    if (confirm === QUIT) return QUIT;
+    if (confirm === "yes") await runGuarded(ctx, () => runRemoveCommand(providerId, account.name, ctx));
   }
-  if (accounts.length === 0) {
-    const method = await chooseMethod(spec, ctx);
-    await loginProvider(providerId, method, ctx);
-    return;
-  }
-  printProviderMenu(spec, ctx);
-  const line = await readLine(ctx);
-  const args = parseLine(line);
-  const action = (args[0] ?? "").toLowerCase();
-  if (!action || action === "b" || action === "back") return;
-  if (action === "a" || action === "add") {
-    const method = args[1] ? resolveLoginMethod(providerId, args[1]).id : await chooseMethod(spec, ctx);
-    if (!method) throw new Error(`Unknown method: ${args[1]}`);
-    await loginProvider(providerId, method, ctx);
-    return;
-  }
-  if (action === "t" || action === "token") {
-    await loginProvider(providerId, "setup-token", ctx);
-    return;
-  }
-  if (action === "k" || action === "key") {
-    await loginProvider(providerId, "api_key", ctx);
-    return;
-  }
-  const typedMethod = resolveLoginMethod(providerId, action);
-  if (typedMethod.id && args.length === 1) {
-    await loginProvider(providerId, typedMethod.id, ctx);
-    return;
-  }
-  if ((action === "p" || action === "pin") && args[1]) {
-    await runPinCommand(providerId, args[1], ctx);
-    return;
-  }
-  if ((action === "r" || action === "remove") && args[1]) {
-    await runRemoveCommand(providerId, args[1], ctx);
-    return;
-  }
-  writeError(ctx, `Unknown action: ${line}`);
+  return BACK;
 }
 
-export async function handleAuthLine(line, ctx) {
-  const args = parseLine(line);
-  if (args.length === 0) {
-    printStatus(ctx);
-    return "ok";
+async function providerScreen(providerId, ctx) {
+  const spec = providerSpec(providerId);
+  let index = 0;
+  while (true) {
+    const now = Date.now();
+    const entry = await credentialsOf(ctx).read(providerId);
+    const slotByName = new Map(listSlots(entry).map((slot) => [slot.name, slot]));
+    const accounts = await listProviderAccounts(providerId, ctx);
+    const items = accounts.map((account) => ({
+      label: account.name,
+      detail: accountDetail(account, slotByName, now),
+      value: { kind: "account", account },
+    }));
+    if (items.length > 0) items.push(separator());
+    for (const method of spec.methods) {
+      items.push({ label: METHOD_LABELS[method] ?? method, value: { kind: "add", method } });
+    }
+    items.push(separator(), { label: "뒤로", value: BACK });
+    const header = accounts.length === 0 ? [`  ${DIM}등록된 계정이 없다.${RST}`] : [];
+    if (providerId === "anthropic" && !accounts.some((account) => account.source === "setup-token")) {
+      header.push(`  ${DIM}setup-token 자리: ${claudeSetupTokenPath(ctx.env, ctx.home)} (계정 ${claudeAccount(ctx.env)})${RST}`);
+    }
+    const choice = await runMenu({
+      stdout: ctx.stdout ?? process.stdout,
+      keys: ctx.keys,
+      title: `\n${BOLD}${spec.label}${RST}`,
+      header,
+      hint: NAV_HINT,
+      items,
+      index,
+    });
+    if (choice === QUIT) return QUIT;
+    if (choice === BACK || choice === undefined) return BACK;
+    index = items.findIndex((item) => item.value === choice);
+    if (choice.kind === "add") {
+      await runGuarded(ctx, () => loginProvider(providerId, choice.method, ctx));
+      continue;
+    }
+    if (choice.kind === "account") {
+      const result = await accountScreen(providerId, choice.account, ctx);
+      if (result === QUIT) return QUIT;
+    }
   }
-  const head = args[0].toLowerCase();
-  if (head === "q" || head === "quit" || head === "exit") return "quit";
-  if (head === "?" || head === "help") {
-    printUsage(ctx.stdout ?? process.stdout);
-    printInteractiveHelp(ctx.stdout ?? process.stdout);
-    return "ok";
-  }
-  if (head === "status") {
-    printStatus(ctx);
-    return "ok";
-  }
-  const asNumber = Number.parseInt(head, 10);
-  if (String(asNumber) === head && PROVIDERS[asNumber - 1]) {
-    await enterProvider(PROVIDERS[asNumber - 1].id, ctx);
-    return "ok";
-  }
-  const asProvider = resolveLoginProvider(head);
-  if (asProvider?.id && args.length === 1) {
-    await enterProvider(asProvider.id, ctx);
-    return "ok";
-  }
-  return handleAuthArgs(args, ctx);
 }
 
 async function runInteractive(ctx) {
-  printInteractiveHelp(ctx.stdout ?? process.stdout);
+  let index = 0;
   while (true) {
-    const line = await readLine(ctx);
-    const result = await handleAuthLine(line, ctx);
-    if (result === "quit") return;
-    if (result === "usage") printUsage(ctx.stdout ?? process.stdout);
+    const rows = collectStatus({ env: ctx.env, home: ctx.home });
+    const items = rows.map((row) => ({
+      label: `${HEALTH_GLYPH[row.health.state]} ${row.provider.label}`,
+      detail: `${describeHealth(row.health)}${row.health.count > 1 ? ` · 계정 ${row.health.count}` : ""}`,
+      value: row.provider.id,
+    }));
+    items.push(separator(), { label: "종료", value: QUIT });
+    const choice = await runMenu({
+      stdout: ctx.stdout ?? process.stdout,
+      keys: ctx.keys,
+      title: `\n${BOLD}== rubato auth ==${RST}`,
+      header: [`  ${DIM}남은 시간은 액세스 토큰 기준이다. 만료돼도 자동으로 갱신된다.${RST}`],
+      hint: NAV_HINT,
+      items,
+      index,
+      quitOnBack: true,
+    });
+    if (choice === QUIT || choice === BACK || choice === undefined) return;
+    index = items.findIndex((item) => item.value === choice);
+    if (await providerScreen(choice, ctx) === QUIT) return;
   }
 }
 
@@ -644,6 +773,7 @@ function withIo(io = {}) {
     home: io.home ?? env.HOME ?? homedir(),
     interactive: io.interactive,
     readLine: io.readLine,
+    keys: io.keys,
     login: io.login,
     credentials: io.credentials,
     repository: io.repository,
@@ -663,9 +793,19 @@ export async function main(argv = process.argv.slice(2), io = {}) {
     return;
   }
   if (argv.length === 0) {
-    printStatus(ctx);
     const interactive = ctx.interactive ?? Boolean(ctx.stdin?.isTTY);
-    if (interactive) await runInteractive(ctx);
+    if (!interactive) {
+      printStatus(ctx);
+      return;
+    }
+    const keys = ctx.keys ?? createKeyReader({ stdin: ctx.stdin ?? process.stdin });
+    ctx.keys = keys;
+    try {
+      await runInteractive(ctx);
+    } finally {
+      stdout.write(SHOW_CURSOR);
+      if (!io.keys) keys.close();
+    }
     return;
   }
   const result = await handleAuthArgs(argv, ctx);
