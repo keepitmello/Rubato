@@ -12,7 +12,12 @@ export const PRODUCT_PROVIDER_ORDER = Object.freeze([
 
 export const PRODUCT_MODEL_ORDER = Object.freeze({
   "openai-codex": Object.freeze(["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra", "gpt-daybreak-blue-latest"]),
-  anthropic: Object.freeze(["claude-fable-5-1", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"]),
+  anthropic: Object.freeze([
+    "claude-fable-5-1",
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "claude-haiku-4-5",
+  ]),
   xai: Object.freeze(["grok-4.6"]),
   "google-antigravity": Object.freeze(["gemini-3.8-flash"]),
   kiro: Object.freeze(["gpt-5.6-sol", "claude-opus-5"]),
@@ -49,6 +54,16 @@ function rankedIndex(values, value) {
   return index < 0 ? Number.MAX_SAFE_INTEGER : index;
 }
 
+const SUB_SUFFIX = "-sub";
+
+export function productCatalogBaseId(id) {
+  return typeof id === "string" && id.endsWith(SUB_SUFFIX) ? id.slice(0, -SUB_SUFFIX.length) : id;
+}
+
+function catalogOrderIds(order) {
+  return order.flatMap((id) => [id, `${id}${SUB_SUFFIX}`]);
+}
+
 export function catalogSlugs() {
   return PRODUCT_PROVIDER_ORDER.flatMap((provider) =>
     (PRODUCT_MODEL_ORDER[provider] ?? []).map((id) => `${provider}/${id}`),
@@ -57,12 +72,16 @@ export function catalogSlugs() {
 
 export function isProductCatalogRow(item) {
   if (item == null || item.provider === "openai") return false;
-  return (PRODUCT_MODEL_ORDER[item.provider] ?? []).includes(item.id);
+  const order = PRODUCT_MODEL_ORDER[item.provider] ?? [];
+  return order.includes(item.id) || order.includes(productCatalogBaseId(item.id));
 }
 
 export function isProductCatalogSlug(model) {
   if (typeof model !== "string") return false;
-  return catalogSlugs().includes(productCatalogIdentity(model));
+  const identity = productCatalogIdentity(model);
+  if (catalogSlugs().includes(identity)) return true;
+  if (!identity.endsWith(SUB_SUFFIX)) return false;
+  return catalogSlugs().includes(identity.slice(0, -SUB_SUFFIX.length));
 }
 
 export function admitProductCatalogItems(models, options = {}) {
@@ -92,16 +111,21 @@ export function sortProductCatalogItems(models) {
     const providerCompare = a.provider.localeCompare(b.provider);
     if (providerCompare !== 0) return providerCompare;
     const order = PRODUCT_MODEL_ORDER[a.provider] ?? [];
-    const modelRank = rankedIndex(order, a.id) - rankedIndex(order, b.id);
+    const ranked = catalogOrderIds(order);
+    const modelRank = rankedIndex(ranked, a.id) - rankedIndex(ranked, b.id);
     return modelRank !== 0 ? modelRank : a.id.localeCompare(b.id);
   });
 }
 
 export function productCatalogLabel(item) {
+  if (typeof item.id === "string" && item.id.endsWith(SUB_SUFFIX)) {
+    return `${productCatalogLabel({ ...item, id: item.id.slice(0, -SUB_SUFFIX.length) })} [sub]`;
+  }
   if (item.provider === "openai-codex" && item.id.startsWith("gpt-daybreak-blue-")) {
     return item.model?.name ?? item.name ?? item.id;
   }
   if (item.provider === "cursor" && item.id === "cursor-grok-4.6") return "grok-4.6-fast";
+  if (item.id === "claude-opus-5") return "Opus 5";
   if (item.id === "claude-fable-5-1") return "Fable 5.1";
   return item.id;
 }

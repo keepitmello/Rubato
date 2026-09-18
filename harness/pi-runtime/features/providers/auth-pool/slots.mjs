@@ -105,6 +105,7 @@ function slotFromFlatCredentialNamed(credential, name) {
 
 function nextLoginSlotName(credential) {
   const taken = new Set(listSlots(credential).map((slot) => slot.name));
+  if (!taken.has("sub")) return "sub";
   for (let index = 2; index < 1000; index++) {
     const candidate = `login-${index}`;
     if (!taken.has(candidate)) return candidate;

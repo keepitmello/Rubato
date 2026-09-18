@@ -23,7 +23,9 @@ export const MID_CONVERSATION_EFFORT_MODELS = Object.freeze([
 const MODEL_SET = new Set(MID_CONVERSATION_EFFORT_MODELS);
 
 export function isMidConversationEffortModel(modelId) {
-  return MODEL_SET.has(modelId);
+  if (typeof modelId !== "string") return false;
+  const wireId = modelId.endsWith("-sub") ? modelId.slice(0, -4) : modelId;
+  return MODEL_SET.has(wireId);
 }
 
 function sha(text) {

@@ -278,10 +278,17 @@ test("피커는 현재 세대만 남기고 getModels 저장분은 그대로다",
   assert.ok(xai.getModels().some((model) => model.id === "grok-4.3"), "pin 저장분에서 4.3 을 지우면 안 된다");
 
   const anthropicPicker = anthropic.filterModels(anthropic.getModels()).map((model) => model.id);
-  assert.deepEqual(anthropicPicker, ["claude-opus-5", "claude-sonnet-5", "claude-fable-5-1", "claude-haiku-4-5"]);
+  assert.deepEqual(anthropicPicker, [
+    "claude-fable-5-1",
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "claude-haiku-4-5",
+  ]);
   assert.ok(anthropic.getModels().some((model) => model.id === "claude-sonnet-4-5"));
   assert.ok(anthropic.getModels().some((model) => model.id === "claude-fable-5"), "pin 저장분의 Fable 5를 지우면 안 된다");
   assert.ok(anthropic.getModels().some((model) => model.id === "claude-fable-5-1"), "Fable 5.1 파생이 없다");
+  assert.ok(anthropic.getModels().some((model) => model.id === "claude-opus-5-sub"), "Opus 5 [sub] 파생이 없다");
+  assert.ok(anthropic.getModels().some((model) => model.id === "claude-fable-5-1-sub"), "Fable 5.1 [sub] 파생이 없다");
 
   const codexPicker = new Set(codex.filterModels(codex.getModels()).map((model) => model.id));
   assert.ok(codexPicker.has("gpt-5.6-sol"));
