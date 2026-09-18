@@ -18,7 +18,6 @@ import { senpiNested } from "./engine-paths.mjs";
 import { measurementRecorder, normalizeProviderUsage } from "./measurement-recorder.mjs";
 import { wrapAnthropicServerCompactionFetch } from "./anthropic-server-compaction-wire.mjs";
 import { midConversationEffort } from "./mid-conversation-effort.mjs";
-import { wrapThinkingDisplayFetch } from "./thinking-display.mjs";
 import { PROCESS_STARTED_AT } from "./process-start.mjs";
 import { resolveUpstreamFetch } from "./upstream-dispatcher.mjs";
 import { resolveCallIdentity } from "./speed-index-identity.mjs";
@@ -559,9 +558,6 @@ export function withRubatoStream(inner, { modelId = (model) => model?.id, report
       const effort = options.midConversationEffort ?? midConversationEffort();
       fetchImpl = effort.wrapFetch(fetchImpl, {
         sessionId: options.sessionId,
-        provider: model.provider,
-      });
-      fetchImpl = wrapThinkingDisplayFetch(fetchImpl, {
         provider: model.provider,
       });
       fetchImpl = wrapAnthropicServerCompactionFetch(fetchImpl, {
