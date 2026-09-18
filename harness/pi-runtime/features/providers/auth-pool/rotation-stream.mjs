@@ -5,6 +5,7 @@ import { classifyCredentialFailure } from "./classify.mjs";
 import { discoverEnvSlots } from "./env-slots.mjs";
 import { runCredentialFailover } from "./failover.mjs";
 import { acquireHalfOpenLease } from "./state-store.mjs";
+import { bindSessionSlot, boundSessionSlot } from "./affinity.mjs";
 
 function overlayState(slot, state) {
   if (!state) return slot;
@@ -17,6 +18,12 @@ function overlayState(slot, state) {
   };
 }
 
+async function discoveredExtraSlots(sources) {
+  if (typeof sources.discoverExtraSlots !== "function") return [];
+  const extra = await sources.discoverExtraSlots(sources);
+  return Array.isArray(extra) ? extra : [];
+}
+
 export async function listRotationSlots(sources, options = {}) {
   const acquireLeases = options.acquireLeases !== false;
   const { providerId, credential, env, repository } = sources;
@@ -26,6 +33,7 @@ export async function listRotationSlots(sources, options = {}) {
     if (!key) return [];
     return [{ name, envVarName, key, source: "env" }];
   });
+  const extraSlots = await discoveredExtraSlots(sources);
   if (credential) {
     const state = await repository.listSlots(providerId, "stored");
     const slots = [];
@@ -42,34 +50,42 @@ export async function listRotationSlots(sources, options = {}) {
       }
       slots.push(overlayState({ name: slot.name, lane: "stored", pinned: credential.pinned === slot.name }, current));
     }
-    if (policySlots.length === 0) return slots;
-    const namedSlots = await listEnvRotationSlots({ ...sources, credential: undefined, policy: { ...sources.policy, slots: {} } }, policySlots, acquireLeases);
+    const discovered = [...policySlots, ...extraSlots];
+    if (discovered.length === 0) return slots;
+    const namedSlots = await listEnvRotationSlots({ ...sources, credential: undefined, policy: { ...sources.policy, slots: {} } }, discovered, acquireLeases);
     return [...slots, ...namedSlots];
   }
-  const envSlots = [...discoverEnvSlots(providerId, env), ...policySlots];
+  const envSlots = [...discoverEnvSlots(providerId, env), ...policySlots, ...extraSlots];
   return listEnvRotationSlots(sources, envSlots, acquireLeases);
 }
 
 async function listEnvRotationSlots(sources, envSlots, acquireLeases = true) {
   if (envSlots.length === 0) return [];
   const { providerId, repository } = sources;
-  const state = await repository.listSlots(providerId, "env");
+  const stateByLane = {};
+  const stateOf = async (lane) => {
+    if (!stateByLane[lane]) stateByLane[lane] = await repository.listSlots(providerId, lane);
+    return stateByLane[lane];
+  };
   const slots = [];
   for (const slot of envSlots) {
+    const lane = slot.lane ?? (slot.source === "setup-token" ? "setup-token" : "env");
+    let state = await stateOf(lane);
     const persisted = state[slot.name];
     const revision = await repository.envCredentialRevision(slot.envVarName, slot.key);
     let applicable = persisted?.credentialRevision === revision ? persisted : undefined;
     if (acquireLeases && applicable?.blockedUntil !== undefined && applicable.blockedUntil <= (sources.now ?? Date.now)()) {
-      const lease = await acquireHalfOpenLease(repository, providerId, "env", slot.name, {
+      const lease = await acquireHalfOpenLease(repository, providerId, lane, slot.name, {
         now: (sources.now ?? Date.now)(),
       });
       if (!lease) continue;
-      const leased = await repository.listSlots(providerId, "env");
+      stateByLane[lane] = await repository.listSlots(providerId, lane);
+      const leased = stateByLane[lane];
       applicable = leased[slot.name];
     }
     slots.push(overlayState({
       name: slot.name,
-      lane: "env",
+      lane,
       envKey: slot.key,
       envVarName: slot.envVarName,
     }, applicable));
@@ -108,15 +124,24 @@ export function streamWithCredentialRotation(options) {
   const affinityKey = options.affinityKey ?? randomUUID();
   const useAffinity = sources.policy?.affinity !== false;
   const now = sources.now ?? Date.now;
+  const store = options.affinityStore;
+  const providerId = sources.providerId;
+  const readBound = () => boundSessionSlot(store, providerId, affinityKey);
   return runCredentialFailover({
     listSlots: () => listRotationSlots(sources),
+    stickySlotName: () => readBound()?.name,
     select: (candidates) => {
       const pinned = candidates.find((candidate) => candidate.pinned === true);
-      if (pinned) return pinned;
+      if (pinned) return bindSessionSlot(store, providerId, affinityKey, pinned);
+      const bound = readBound();
+      if (bound) {
+        const match = candidates.find((candidate) => candidate.name === bound.name);
+        if (match) return match;
+      }
       const ordered = useAffinity ? rendezvousOrder(affinityKey, candidates, hasher) : candidates;
       const winner = ordered[0];
       if (!winner) throw new Error("credential rotation selected from an empty candidate set");
-      return winner;
+      return bindSessionSlot(store, providerId, affinityKey, winner);
     },
     runAttempt,
     isCommittedOutput: (event) => event.type !== "start",
@@ -132,7 +157,7 @@ export function streamWithCredentialRotation(options) {
         : undefined);
     },
     persistBlock: async (slot, block) => {
-      const revision = slot.lane === "env" && slot.envVarName !== undefined && slot.envKey !== undefined
+      const revision = (slot.lane === "env" || slot.lane === "setup-token") && slot.envVarName !== undefined && slot.envKey !== undefined
         ? await sources.repository.envCredentialRevision(slot.envVarName, slot.envKey)
         : undefined;
       await sources.repository.mutateSlotState(sources.providerId, slot.lane, slot.name, (current) =>

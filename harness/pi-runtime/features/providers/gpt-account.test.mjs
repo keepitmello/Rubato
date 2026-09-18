@@ -9,11 +9,11 @@ import { resolvePiRuntime } from "../../resolve-runtime.mjs";
 import { stagePiRuntime } from "../../stage-runtime.mjs";
 import { providersFeature } from "./patches.mjs";
 import { applyFeatureToggles, readDisabledFeatures } from "../rubato-components/feature-toggles.mjs";
-import { createGptAccountExtension, GPT_ACCOUNT_FACTORY_NAME, OPENAI_CODEX_PROVIDER_ID } from "./auth-pool/gpt-account.mjs";
+import { createMultiAccountExtension, GPT_ACCOUNT_FACTORY_NAME, MULTI_ACCOUNT_COMMAND, MULTI_ACCOUNT_FACTORY_NAME, OPENAI_CODEX_PROVIDER_ID } from "./auth-pool/multi-account.mjs";
 import { listSlots } from "./auth-pool/slots.mjs";
 
 const sourceRuntimeRoot = join(import.meta.dirname, "../..");
-const scratchRoot = mkdtempSync(join(tmpdir(), "rubato-gpt-account-"));
+const scratchRoot = mkdtempSync(join(tmpdir(), "rubato-multi-account-"));
 after(() => rmSync(scratchRoot, { recursive: true, force: true }));
 
 const staged = await stagePiRuntime({
@@ -105,42 +105,65 @@ const seed = {
   },
 };
 
-test("/gpt-account add/remove/pin write through to auth.json", async () => {
+test("/multi-account openai-codex add/remove/pin write through to auth.json", async () => {
   const { agentDir, modelRuntime } = await createRuntime(seed);
   const host = commandHost();
-  await createGptAccountExtension({ agentDir })(host.pi);
-  const handler = host.commands.get("gpt-account").handler;
+  await createMultiAccountExtension({ agentDir })(host.pi);
+  const handler = host.commands.get(MULTI_ACCOUNT_COMMAND).handler;
   const notes = [];
   const ctx = ctxFor(modelRuntime, notes);
-  const added = await handler("add", ctx);
+  const added = await handler("openai-codex add", ctx);
   assert.equal(added.text, "added");
   let stored = JSON.parse(readFileSync(join(agentDir, "auth.json"), "utf-8"))[OPENAI_CODEX_PROVIDER_ID];
   assert.equal(listSlots(stored).length, 2);
   assert.equal(stored.accounts[1].access, "codex-access-2");
 
-  const pinned = await handler("pin login-2", ctx);
+  const pinned = await handler("openai-codex pin login-2", ctx);
   assert.equal(pinned.text, "pinned");
   stored = JSON.parse(readFileSync(join(agentDir, "auth.json"), "utf-8"))[OPENAI_CODEX_PROVIDER_ID];
   assert.equal(stored.pinned, "login-2");
 
-  const removed = await handler("remove default", ctx);
+  const removed = await handler("openai-codex remove default", ctx);
   assert.equal(removed.text, "removed");
   stored = JSON.parse(readFileSync(join(agentDir, "auth.json"), "utf-8"))[OPENAI_CODEX_PROVIDER_ID];
   assert.equal(listSlots(stored).length, 1);
   assert.equal(stored.accounts[0].name, "login-2");
 });
 
-test("rubato-features.json can disable the rubato-gpt-account factory", () => {
+test("rubato-features.json can disable the rubato-multi-account factory", () => {
   const agentDir = mkdtempSync(join(scratchRoot, "toggle-"));
   writeFileSync(join(agentDir, "rubato-features.json"), JSON.stringify({ disabled: [GPT_ACCOUNT_FACTORY_NAME] }));
   const factories = [
     { name: "providers", factory: () => {} },
-    { name: GPT_ACCOUNT_FACTORY_NAME, factory: createGptAccountExtension({ agentDir }) },
+    { name: MULTI_ACCOUNT_FACTORY_NAME, factory: createMultiAccountExtension({ agentDir }) },
   ];
   const disabled = readDisabledFeatures({ agentDir, env: {} });
   const result = applyFeatureToggles(factories, disabled);
   assert.deepEqual(result.extensionFactories.map((entry) => entry.name), ["providers"]);
-  assert.deepEqual(result.disabled, [GPT_ACCOUNT_FACTORY_NAME]);
+  assert.deepEqual(result.disabled, [MULTI_ACCOUNT_FACTORY_NAME]);
   const host = commandHost();
+  assert.equal(host.commands.has("multi-account"), false);
   assert.equal(host.commands.has("gpt-account"), false);
 });
+test("/gpt-account remains an openai-codex alias", async () => {
+  const { agentDir, modelRuntime } = await createRuntime(seed);
+  const host = commandHost();
+  await createMultiAccountExtension({ agentDir })(host.pi);
+  const handler = host.commands.get("gpt-account").handler;
+  const added = await handler("add", ctxFor(modelRuntime));
+  assert.equal(added.text, "added");
+  const stored = JSON.parse(readFileSync(join(agentDir, "auth.json"), "utf-8"))[OPENAI_CODEX_PROVIDER_ID];
+  assert.equal(listSlots(stored).length, 2);
+});
+
+test("/gpt-account remains an openai-codex alias", async () => {
+  const { agentDir, modelRuntime } = await createRuntime(seed);
+  const host = commandHost();
+  await createMultiAccountExtension({ agentDir })(host.pi);
+  const handler = host.commands.get("gpt-account").handler;
+  const added = await handler("add", ctxFor(modelRuntime));
+  assert.equal(added.text, "added");
+  const stored = JSON.parse(readFileSync(join(agentDir, "auth.json"), "utf-8"))[OPENAI_CODEX_PROVIDER_ID];
+  assert.equal(listSlots(stored).length, 2);
+});
+

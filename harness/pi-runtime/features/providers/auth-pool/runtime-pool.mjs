@@ -1,5 +1,7 @@
 import { dirname, join } from "node:path";
+import { sessionAffinityStore } from "./affinity.mjs";
 import { discoverEnvSlots } from "./env-slots.mjs";
+import { discoverSetupTokenSlots } from "./setup-token-slots.mjs";
 import { listSlots } from "./slots.mjs";
 import { CredentialSlotRepository } from "./state-store.mjs";
 import { listRotationSlots, streamWithCredentialRotation } from "./rotation-stream.mjs";
@@ -20,7 +22,10 @@ function storedCredentialSync(runtime, providerId) {
 
 function mightHoldCredentialPool(providerId, credential, env, policySlots) {
   const accounts = credential?.accounts;
-  return (Array.isArray(accounts) && accounts.length > 1) || Object.keys(policySlots ?? {}).length > 0 || discoverEnvSlots(providerId, env).length > 1;
+  if (Array.isArray(accounts) && accounts.length > 1) return true;
+  if (Object.keys(policySlots ?? {}).length > 0) return true;
+  if (discoverEnvSlots(providerId, env).length > 1) return true;
+  return providerId === "anthropic";
 }
 
 export function couldRotateCredentials(runtime, model, options) {
@@ -31,6 +36,7 @@ export function couldRotateCredentials(runtime, model, options) {
   if (runtime.snapshot?.storedProviders?.has(model.provider)) return true;
   if (storedCredentialSync(runtime, model.provider)) return true;
   const policySlots = runtime.config?.getProvider?.(model.provider)?.credentials?.slots;
+  if (model.provider === "anthropic") return true;
   return discoverEnvSlots(model.provider, env).length + Object.keys(policySlots ?? {}).length > 1;
 }
 
@@ -46,13 +52,14 @@ export async function credentialRotationSources(runtime, model, options) {
     env,
     repository,
     policy,
+    discoverExtraSlots: () => discoverSetupTokenSlots(model.provider, env, { signal: options?.signal }),
   };
   const slots = await listRotationSlots(sources, { acquireLeases: false });
   return slots.length > 1 ? sources : undefined;
 }
 
 function slotRequestOptions(options, slot) {
-  if (slot.lane === "env") return { ...options, apiKey: slot.envKey, slotName: undefined };
+  if (slot.lane === "env" || slot.lane === "setup-token") return { ...options, apiKey: slot.envKey, slotName: undefined };
   return { ...options, slotName: slot.name };
 }
 
@@ -64,6 +71,7 @@ export async function streamWithCredentialPool(runtime, method, model, context, 
   if (sources) {
     return streamWithCredentialRotation({
       sources,
+      affinityStore: sessionAffinityStore(runtime),
       ...(streamOptions?.affinityKey !== undefined
         ? { affinityKey: streamOptions.affinityKey }
         : streamOptions?.sessionId !== undefined

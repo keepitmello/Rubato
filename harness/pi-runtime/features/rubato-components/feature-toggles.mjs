@@ -21,8 +21,9 @@ export function readDisabledFeatures({ agentDir, env = process.env } = {}) {
     }
   }
   for (const name of String(env.RUBATO_DISABLED_FEATURES ?? "").split(",")) if (name.trim()) disabled.add(name.trim());
-  for (const name of disabled) if (REQUIRED_FACTORIES.includes(name)) throw new Error(`Rubato feature "${name}" is required and cannot be disabled`);
-  return disabled;
+  const canonical = new Set([...disabled].map(canonicalFactoryName));
+  for (const name of canonical) if (REQUIRED_FACTORIES.includes(name)) throw new Error(`Rubato feature "${name}" is required and cannot be disabled`);
+  return canonical;
 }
 
 /** Drops disabled named factories; unknown names are reported so typos do not silently keep a feature on. */
@@ -31,4 +32,11 @@ export function applyFeatureToggles(extensionFactories, disabled) {
   const unknown = [...disabled].filter((name) => !known.has(name));
   const kept = extensionFactories.filter((entry) => !disabled.has(entry.name));
   return { extensionFactories: kept, disabled: [...disabled].filter((name) => known.has(name)), unknown };
+}
+const FACTORY_ALIASES = Object.freeze({
+  "rubato-gpt-account": "rubato-multi-account",
+});
+
+function canonicalFactoryName(name) {
+  return FACTORY_ALIASES[name] ?? name;
 }
