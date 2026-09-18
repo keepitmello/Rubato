@@ -8,6 +8,9 @@
 # 기본(첫 설치): 없는 것만 넣는다. 이미 있는 것은 그 기기 정본일 수 있다.
 # --sync-from <rev>: 업데이트용. 설치본이 그 rev 의 번들과 같으면 새 번들로
 #   갈아끼운다. 사람이 고친 자리(번들과 다름)는 그대로 둔다.
+# --ask: 사람이 고친 자리를 그냥 두지 않고 하나씩 묻는다. y 면 백업하고 갈아
+#   끼운다. 세션 시작처럼 출력이 /dev/null 로 가는 자리에서는 절대 켜지 마라 —
+#   보이지 않는 프롬프트에서 멈춘다. `rubato update` 만 이걸 넘긴다.
 # --force: 있는 것도 전부 덮는다.
 set -euo pipefail
 
@@ -16,10 +19,14 @@ REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 DEST="${AGENTS_SKILLS_DIR:-$HOME/.agents/skills}"
 FORCE=0
 SYNC_FROM=""
+ASK=0
+BACKUP_ROOT="${AGENTS_SKILL_BACKUPS:-$HOME/.agents/skill-backups}/$(date -u +%Y%m%dT%H%M%SZ)"
+backup_used=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --force) FORCE=1 ;;
+    --ask) ASK=1 ;;
     --sync-from)
       [ "${2:-}" ] || { echo "install-skills: --sync-from 에 rev 가 없다" >&2; exit 2; }
       SYNC_FROM="$2"
@@ -83,6 +90,26 @@ foreign_stub() {
   [ -f "$1/SKILL.md" ] || return 1
   grep -q "This file is only an entry point" "$1/SKILL.md" 2>/dev/null
 }
+
+# 심링크는 낡은 사본이 아니라 "저기를 봐라" 는 뜻이다. 번들을 가리키면 늘
+# 최신이고, 다른 레포를 가리키면 그쪽이 정본이다. 어느 쪽이든 묻지 않는다.
+ask_replace() {
+  [ "$ASK" -eq 1 ] || return 1
+  # /dev/tty 가 있다고 사람이 있는 것은 아니다. 세션 시작처럼 stdin 이 막힌
+  # 자리에서 이 조건이 없으면 보이지 않는 프롬프트에서 그대로 멈춘다.
+  [ -t 0 ] && [ -e /dev/tty ] || return 1
+  local reply=""
+  printf '  %s — 설치본이 번들과 다릅니다. 최신으로 교체할까요? (기존은 백업) [y/N] ' "$1"
+  read -r reply || reply=""
+  case "$reply" in [yY] | [yY][eE][sS]) return 0 ;; *) return 1 ;; esac
+}
+
+backup_dest() {
+  mkdir -p "$BACKUP_ROOT"
+  cp -R "$2" "$BACKUP_ROOT/$1"
+  backup_used="$BACKUP_ROOT"
+}
+
 for dir in "$SRC"/*/; do
   name="$(basename "$dir")"
   [ -f "$dir/SKILL.md" ] || continue
@@ -102,6 +129,13 @@ for dir in "$SRC"/*/; do
     cp -R "$dir" "$dest"
     replaced=$((replaced + 1))
   elif [ -n "$SYNC_FROM" ] && [ -d "$prev" ] && same_tree "$dest" "$prev"; then
+    rm -rf "$dest"
+    cp -R "$dir" "$dest"
+    replaced=$((replaced + 1))
+  elif [ -L "$dest" ]; then
+    kept=$((kept + 1))
+  elif ask_replace "$name"; then
+    backup_dest "$name" "$dest"
     rm -rf "$dest"
     cp -R "$dir" "$dest"
     replaced=$((replaced + 1))
@@ -131,6 +165,9 @@ install_outpost_cli() {
 install_outpost_cli
 
 echo "install-skills: 새로 $added, 이미 최신 $current, 갱신 $replaced, 로컬 유지 $kept, 폐기 $removed -> $DEST"
+if [ -n "$backup_used" ]; then
+  echo "  (갈아끼우기 전 사본: $backup_used)"
+fi
 if [ "$kept" -gt 0 ]; then
   if [ -n "$SYNC_FROM" ]; then
     echo "  (로컬에서 고친 스킬은 두었다. 덮어쓰려면 --force)"
