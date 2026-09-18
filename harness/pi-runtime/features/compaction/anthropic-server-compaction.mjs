@@ -49,7 +49,9 @@ export function supportsAnthropicServerCompaction(model) {
   if (!model || typeof model !== "object") return false;
   if (model.provider !== "anthropic") return false;
   const id = typeof model.id === "string" ? model.id : model.modelId;
-  return typeof id === "string" && SERVER_COMPACTION_IDS.has(id);
+  if (typeof id !== "string") return false;
+  const wireId = id.endsWith("-sub") ? id.slice(0, -4) : id;
+  return SERVER_COMPACTION_IDS.has(wireId);
 }
 
 /**

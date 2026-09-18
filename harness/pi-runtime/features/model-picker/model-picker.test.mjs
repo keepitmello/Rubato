@@ -77,6 +77,9 @@ test("picker admits only the seven providers, current model excepted", () => {
 test("display labels and stock patch replace item.id", () => {
   assert.equal(modelPickerLabel({ provider: "cursor", id: "cursor-grok-4.6", model: {} }), "grok-4.6-fast");
   assert.equal(modelPickerLabel({ provider: "anthropic", id: "claude-fable-5-1", model: {} }), "Fable 5.1");
+  assert.equal(modelPickerLabel({ provider: "anthropic", id: "claude-opus-5", model: {} }), "Opus 5");
+  assert.equal(modelPickerLabel({ provider: "anthropic", id: "claude-opus-5-sub", model: {} }), "Opus 5 [sub]");
+  assert.equal(modelPickerLabel({ provider: "anthropic", id: "claude-fable-5-1-sub", model: {} }), "Fable 5.1 [sub]");
   assert.equal(modelPickerLabel({ provider: "openai-codex", id: "gpt-daybreak-blue-latest", model: { name: "Daybreak Blue" } }), "Daybreak Blue");
   const patched = patchModelSelector(readFileSync(stockPath, "utf8"));
   assert.match(patched, /sortModelItems\(admitPickerItems\(models, this.currentModel, modelsAreEqual\)\)/);

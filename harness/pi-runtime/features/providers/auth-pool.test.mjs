@@ -35,7 +35,7 @@ test("login appends a sibling slot and keeps the original flat projection", () =
   const pooled = appendLoginSlot(first, { type: "api_key", key: "key-b" });
   assert.equal(pooled.key, "key-a");
   assert.deepEqual(listSlots(pooled).map((slot) => slot.key), ["key-a", "key-b"]);
-  assert.equal(projectSlot(pooled, "login-2").key, "key-b");
+  assert.equal(projectSlot(pooled, "sub").key, "key-b");
 });
 
 test("oauth refresh merges into the matching slot and leaves siblings", () => {

@@ -74,4 +74,23 @@ describe("product model catalog", () => {
     expect(catalogSlugs()[0]).toBe("openai-codex/gpt-5.6-sol")
     expect(PRODUCT_MODEL_ORDER.cursor).toContain("composer-2.5")
   })
+
+  test("#given anthropic account rows #when labeled #then sub is a picker suffix not a different model family", () => {
+    expect(productCatalogLabel({ provider: "anthropic", id: "claude-opus-5" })).toBe("Opus 5")
+    expect(productCatalogLabel({ provider: "anthropic", id: "claude-opus-5-sub" })).toBe("Opus 5 [sub]")
+    expect(productCatalogLabel({ provider: "anthropic", id: "claude-fable-5-1-sub" })).toBe("Fable 5.1 [sub]")
+    expect(isProductCatalogSlug("anthropic/claude-opus-5-sub")).toBe(true)
+    expect(isProductCatalogSlug("anthropic/claude-fable-5-1-sub")).toBe(true)
+    expect(admitProductCatalogItems([
+      { provider: "anthropic", id: "claude-opus-5" },
+      { provider: "anthropic", id: "claude-opus-5-sub" },
+      { provider: "anthropic", id: "claude-fable-5-1" },
+      { provider: "anthropic", id: "claude-fable-5-1-sub" },
+    ]).map((item: { provider: string; id: string }) => `${item.provider}/${item.id}`)).toEqual([
+      "anthropic/claude-opus-5",
+      "anthropic/claude-opus-5-sub",
+      "anthropic/claude-fable-5-1",
+      "anthropic/claude-fable-5-1-sub",
+    ])
+  })
 })

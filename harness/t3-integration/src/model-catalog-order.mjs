@@ -41,7 +41,9 @@ export function modelSupportsFast(model) {
   if (model?.provider === "xai" && SERVICE_TIER_APIS.has(model.api)) return true;
   if (model?.api !== "anthropic-messages") return false;
   if (model.provider !== "anthropic" && !/api\.anthropic\.com/.test(String(model.baseUrl ?? ""))) return false;
-  return ANTHROPIC_FAST_MODEL_ID.test(String(model.upstreamModelId ?? model.id ?? "").toLowerCase());
+  const raw = String(model.upstreamModelId ?? model.id ?? "").toLowerCase();
+  const wireId = raw.endsWith("-sub") ? raw.slice(0, -4) : raw;
+  return ANTHROPIC_FAST_MODEL_ID.test(wireId);
 }
 
 export function optionDescriptorsFor(item) {

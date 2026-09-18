@@ -53,7 +53,10 @@ export async function listRotationSlots(sources, options = {}) {
     const discovered = [...policySlots, ...extraSlots];
     if (discovered.length === 0) return slots;
     const namedSlots = await listEnvRotationSlots({ ...sources, credential: undefined, policy: { ...sources.policy, slots: {} } }, discovered, acquireLeases);
-    return [...slots, ...namedSlots];
+    return [...slots, ...namedSlots.map((slot) => ({
+      ...slot,
+      pinned: credential.pinned === slot.name,
+    }))];
   }
   const envSlots = [...discoverEnvSlots(providerId, env), ...policySlots, ...extraSlots];
   return listEnvRotationSlots(sources, envSlots, acquireLeases);
@@ -131,6 +134,13 @@ export function streamWithCredentialRotation(options) {
     listSlots: () => listRotationSlots(sources),
     stickySlotName: () => readBound()?.name,
     select: (candidates) => {
+      if (options.requiredSlotName) {
+        const required = candidates.find((candidate) => candidate.name === options.requiredSlotName);
+        if (!required) {
+          throw new Error(`Account '${options.requiredSlotName}' is unavailable`);
+        }
+        return bindSessionSlot(store, providerId, affinityKey, required);
+      }
       const pinned = candidates.find((candidate) => candidate.pinned === true);
       if (pinned) return bindSessionSlot(store, providerId, affinityKey, pinned);
       const bound = readBound();

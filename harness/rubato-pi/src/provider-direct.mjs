@@ -19,6 +19,7 @@ import {
   OPENCODE_PICKER_IDS,
   XAI_PICKER_IDS,
   withPickerIds,
+  withSubAccountCopies,
 } from "./picker-catalog.mjs";
 import { withOpenCodeKeychain } from "./opencode-keychain.mjs";
 import { wrapProviderStreams } from "./rubato-stream.mjs";
@@ -118,7 +119,7 @@ const FABLE_51_ID = "claude-fable-5-1";
 const FABLE_51_TEMPLATE_ID = "claude-fable-5";
 
 /**
- * Fable 5.1 은 pinned anthropic catalog 에 없다. Rubato 가 파생하는 유일 Anthropic 모델이다.
+ * Fable 5.1 은 pinned anthropic catalog 에 없다. pin 의 Fable 5에서 파생한다.
  *
  * 필드를 손으로 다 적지 않는다. `api`, `cost`, `compat`, `thinkingLevelMap` 같은
  * 것을 빼뜨리면 provider 가 조용히 다른 요청을 만든다. pin 의 Fable 5를 틀로 쓰고
@@ -309,7 +310,7 @@ export async function directProviders({
 
   const store = speedIndexStore(env);
   store?.startProbes?.();
-  const wrap = (provider) => wrapProviderStreams(provider, { speedIndexStore: store });
+  const wrap = (provider) => wrapProviderStreams(withSubAccountCopies(provider), { speedIndexStore: store });
 
   return [
     wrap(codex),

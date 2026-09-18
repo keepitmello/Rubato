@@ -67,7 +67,7 @@ function fakePi() {
 }
 
 test("auto compaction is rejected with external-owner only for server-compaction models", () => {
-  for (const id of ["claude-fable-5-1", "claude-opus-5", "claude-sonnet-5"]) {
+  for (const id of ["claude-fable-5-1", "claude-fable-5-1-sub", "claude-opus-5", "claude-opus-5-sub", "claude-sonnet-5"]) {
     for (const reason of ["threshold", "overflow", "pre_prompt"]) {
       const result = serverCompactionRejection(anthropic(id), reason);
       assert.equal(result?.cancel, true, `${id}/${reason}`);

@@ -3,6 +3,7 @@ import test from "node:test";
 import { runCredentialFailover } from "./auth-pool/failover.mjs";
 import { listRotationSlots, streamWithCredentialRotation } from "./auth-pool/rotation-stream.mjs";
 import { CredentialSlotRepository } from "./auth-pool/state-store.mjs";
+import { requiredAccountSlotName, wireAccountModel } from "./auth-pool/runtime-pool.mjs";
 
 test("429 does not hop to another credential slot", async () => {
   const used = [];
@@ -23,6 +24,30 @@ test("429 does not hop to another credential slot", async () => {
     }
   }, /Too Many Requests/);
   assert.deepEqual(used, ["a"]);
+});
+
+test("a 401 does not permanently retire the only credential", async () => {
+  const blocked = [];
+  const attempt = async () => {
+    const error = new Error("Unauthorized");
+    error.status = 401;
+    throw error;
+  };
+  const run = (slots) => runCredentialFailover({
+    listSlots: async () => slots,
+    select: (candidates) => candidates[0],
+    runAttempt: attempt,
+    isCommittedOutput: () => false,
+    persistBlock: async (slot, block) => { blocked.push(`${slot.name}:${block.reason}`); },
+  });
+  await assert.rejects(async () => { for await (const _ of run([{ name: "default" }])) { /* drain */ } }, /Unauthorized/);
+  assert.deepEqual(blocked, [], "계정이 하나면 차단을 남기지 않는다");
+
+  await assert.rejects(
+    async () => { for await (const _ of run([{ name: "default" }, { name: "login-2" }])) { /* drain */ } },
+    /Unauthorized/,
+  );
+  assert.deepEqual(blocked, ["default:auth_error"], "넘어갈 계정이 있으면 그대로 차단한다");
 });
 
 test("session affinity stays on the first slot after 429; a new session can use the other", async () => {
@@ -97,4 +122,83 @@ test("stored oauth plus setup-token list as one pool", async () => {
     }],
   }, { acquireLeases: false });
   assert.deepEqual(slots.map((slot) => `${slot.lane}:${slot.name}`), ["stored:default", "setup-token:setup-token"]);
+});
+
+test("pinned setup-token wins over stored oauth in the same pool", async () => {
+  const slots = await listRotationSlots({
+    providerId: "anthropic",
+    credential: {
+      type: "oauth",
+      access: "a",
+      refresh: "r",
+      expires: 1,
+      pinned: "setup-token",
+      accounts: [{ name: "default", source: "login", access: "a", refresh: "r", expires: 1 }],
+    },
+    env: () => undefined,
+    repository: new CredentialSlotRepository(),
+    discoverExtraSlots: async () => [{
+      name: "setup-token",
+      lane: "setup-token",
+      envVarName: "claude-setup-token",
+      key: "sk-ant-oat-test",
+      source: "setup-token",
+    }],
+  }, { acquireLeases: false });
+  const setup = slots.find((slot) => slot.name === "setup-token");
+  const stored = slots.find((slot) => slot.name === "default");
+  assert.equal(setup.pinned, true);
+  assert.equal(stored.pinned, false);
+});
+
+test("sub model ids wire to the base model and require the sub account", () => {
+  const model = { provider: "anthropic", id: "claude-opus-5-sub" };
+  assert.equal(wireAccountModel(model).id, "claude-opus-5");
+  assert.equal(wireAccountModel({ provider: "openai-codex", id: "gpt-5.6-sol-sub" }).id, "gpt-5.6-sol");
+  assert.equal(requiredAccountSlotName(model, [{ name: "sub" }, { name: "setup-token", lane: "setup-token" }]), "sub");
+  assert.equal(requiredAccountSlotName({ provider: "anthropic", id: "claude-opus-5" }, [{ name: "sub" }, { name: "setup-token", lane: "setup-token" }]), "setup-token");
+  assert.equal(requiredAccountSlotName({ provider: "xai", id: "grok-4.6-sub" }, [{ name: "default" }, { name: "login-2" }]), "login-2");
+  assert.equal(requiredAccountSlotName({ provider: "anthropic", id: "claude-opus-5" }, [{ name: "default" }]), undefined);
+});
+
+test("requiredSlotName beats pin and session affinity", async () => {
+  const used = [];
+  const repository = new CredentialSlotRepository();
+  const sources = {
+    providerId: "anthropic",
+    credential: {
+      type: "oauth",
+      access: "a",
+      refresh: "r",
+      expires: 1,
+      pinned: "setup-token",
+      accounts: [{ name: "sub", source: "login", access: "a", refresh: "r", expires: 1 }],
+    },
+    env: () => undefined,
+    repository,
+    policy: {},
+    discoverExtraSlots: async () => [{
+      name: "setup-token",
+      lane: "setup-token",
+      envVarName: "claude-setup-token",
+      key: "sk-ant-oat-test",
+      source: "setup-token",
+    }],
+  };
+  const events = [];
+  for await (const event of streamWithCredentialRotation({
+    sources,
+    affinityStore: new Map(),
+    affinityKey: "s1",
+    requiredSlotName: "sub",
+    runAttempt: async (slot) => {
+      used.push(slot.name);
+      return (async function* () {
+        yield { type: "start" };
+        yield { type: "text", text: "ok" };
+      })();
+    },
+  })) events.push(event);
+  assert.deepEqual(used, ["sub"]);
+  assert.equal(events.at(-1).text, "ok");
 });
