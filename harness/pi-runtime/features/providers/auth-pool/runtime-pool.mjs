@@ -63,27 +63,48 @@ function slotRequestOptions(options, slot) {
   return { ...options, slotName: slot.name };
 }
 
+export function wireAccountModel(model) {
+  if (typeof model?.id !== "string" || !model.id.endsWith("-sub")) return model;
+  return { ...model, id: model.id.slice(0, -4) };
+}
+
+export function subAccountName(slots) {
+  if (slots.some((slot) => slot.name === "sub")) return "sub";
+  return slots.find((slot) => slot.name === "login-2")?.name;
+}
+
+export function requiredAccountSlotName(model, slots) {
+  const subName = subAccountName(slots);
+  if (typeof model?.id === "string" && model.id.endsWith("-sub")) return subName ?? "sub";
+  if (!subName) return undefined;
+  return slots.find((slot) => slot.name === "setup-token" || slot.lane === "setup-token")?.name
+    ?? slots.find((slot) => slot.name !== subName)?.name;
+}
+
 export async function streamWithCredentialPool(runtime, method, model, context, options) {
   const streamOptions = options;
+  const wire = wireAccountModel(model);
   const sources = couldRotateCredentials(runtime, model, streamOptions)
     ? await credentialRotationSources(runtime, model, streamOptions)
     : undefined;
   if (sources) {
+    const slots = await listRotationSlots(sources, { acquireLeases: false });
     return streamWithCredentialRotation({
       sources,
       affinityStore: sessionAffinityStore(runtime),
+      requiredSlotName: requiredAccountSlotName(model, slots),
       ...(streamOptions?.affinityKey !== undefined
         ? { affinityKey: streamOptions.affinityKey }
         : streamOptions?.sessionId !== undefined
           ? { affinityKey: streamOptions.sessionId }
           : {}),
       runAttempt: async (slot) => {
-        const prepared = await runtime.prepareRequest(model, slotRequestOptions(streamOptions, slot));
+        const prepared = await runtime.prepareRequest(wire, slotRequestOptions(streamOptions, slot));
         return prepared.provider[method](prepared.model, context, prepared.options);
       },
     });
   }
-  const prepared = await runtime.prepareRequest(model, options);
+  const prepared = await runtime.prepareRequest(wire, options);
   return prepared.provider[method](prepared.model, context, prepared.options);
 }
 
