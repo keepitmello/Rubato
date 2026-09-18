@@ -156,14 +156,32 @@ test("/gpt-account remains an openai-codex alias", async () => {
   assert.equal(listSlots(stored).length, 2);
 });
 
-test("/gpt-account remains an openai-codex alias", async () => {
-  const { agentDir, modelRuntime } = await createRuntime(seed);
+test("interactive /multi-account pins the chosen account", async () => {
+  const { agentDir, modelRuntime } = await createRuntime({
+    ...seed,
+    [OPENAI_CODEX_PROVIDER_ID]: {
+      ...seed[OPENAI_CODEX_PROVIDER_ID],
+      accounts: [
+        ...seed[OPENAI_CODEX_PROVIDER_ID].accounts,
+        { name: "login-2", source: "login", access: "codex-access-2", refresh: "codex-refresh-2", expires: Date.now() + 60 * 60 * 1000 },
+      ],
+    },
+  });
   const host = commandHost();
   await createMultiAccountExtension({ agentDir })(host.pi);
-  const handler = host.commands.get("gpt-account").handler;
-  const added = await handler("add", ctxFor(modelRuntime));
-  assert.equal(added.text, "added");
+  const handler = host.commands.get(MULTI_ACCOUNT_COMMAND).handler;
+  const notes = [];
+  const ctx = {
+    ...ctxFor(modelRuntime, notes),
+    ui: {
+      notify: (message) => notes.push(message),
+      select: async (_title, options) => options.find((option) => String(option).startsWith("login-2"))
+        ?? options.find((option) => String(option).includes("OpenAI Codex")),
+    },
+  };
+  const result = await handler("", ctx);
+  assert.equal(result.text, "pinned");
   const stored = JSON.parse(readFileSync(join(agentDir, "auth.json"), "utf-8"))[OPENAI_CODEX_PROVIDER_ID];
-  assert.equal(listSlots(stored).length, 2);
+  assert.equal(stored.pinned, "login-2");
+  assert.match(notes.join("\n"), /login-2/);
 });
-
