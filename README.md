@@ -32,8 +32,7 @@ cd Rubato
 Rubato overlay를 얹고, 화면 제공자 이름을 **Rubato**로 연결한다.
 응용 프로그램에 **Rubato.app**이 생긴다. 터미널에서는 `rubato-gui`.
 
-설치 프로그램은 기존 credential을 복사하거나 새로 만들지 않는다. 연결 상태는 설치 후
-`rubato auth`로 확인한다.
+설치 프로그램은 기존 credential을 복사하거나 새로 만들지 않는다. 연결은 설치 후 `rubato auth`로 확인하고 필요한 계정을 추가한다.
 
 ## 자주 쓰는 명령
 
@@ -46,7 +45,7 @@ rubato update         # 변경 내용을 확인하고 업데이트
 rubato update --check # 업데이트 유무만 확인
 rubato restart        # 도는 것을 새 코드로 올린다 (엔진·remote hub·GUI)
 rubato build          # 시스템 프롬프트와 엔진 산출물을 다시 빌드
-rubato auth           # provider 연결 상태 확인
+rubato auth           # 연결 상태 확인, 로그인, 여러 계정 등록
 rubato dispatch <name> grok < brief.md   # 비대화 워커. grokfast|fast|sol|fable
 rubato aside-cursor --install  # Aside Cursor 면 (127.0.0.1:18788)
 ```
