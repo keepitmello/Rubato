@@ -65,7 +65,10 @@ export function cloneSubModels(models) {
 function subCopyBases(models, providerId) {
   const bases = models.filter((model) => !isSubModelId(model?.id));
   const allow = SUB_PICKER_IDS[providerId];
-  if (!allow) return bases;
+  // Allowlist, not a fallthrough: `[sub]` is a curated pair of rows for the two providers we
+  // actually run two accounts on. A provider that merely happens to carry a leftover second
+  // credential slot (a re-login appends one) must not grow `[sub]` rows on its own.
+  if (!allow) return [];
   return bases.filter((model) => allow.includes(model.id));
 }
 
