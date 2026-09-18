@@ -5,10 +5,11 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
 import {
+  accountState,
+  bestState,
   createCliInteraction,
   createFileCredentials,
-  credentialHealth,
-  describeHealth,
+  describeState,
   handleAuthArgs,
   main,
   printStatus,
@@ -75,34 +76,28 @@ test("login methods follow each provider", () => {
   assert.equal(resolveLoginMethod("openai-codex", "token").error, "method");
 });
 
-test("slot presence separates renewable from stale", () => {
+// 액세스 토큰 만료는 고장이 아니다. 런타임이 쓰기 직전에 갱신하므로 refresh 가
+// 남아 있는 한 연결된 것이고, 갱신할 것이 없을 때만 재로그인을 말한다.
+test("an expired access token with a refresh token still counts as connected", () => {
   const now = Date.now();
-  assert.equal(slotPresence(undefined, now).ok, false);
-  assert.equal(slotPresence({ access: "tok" }, now).state, "key");
-  assert.equal(slotPresence({ access: "tok", expires: now + 3_600_000 }, now).state, "live");
-  assert.equal(slotPresence({ access: "tok", expires: now - 1000, refresh: "r" }, now).state, "renewable");
-  assert.equal(slotPresence({ access: "tok", expires: now - 1000 }, now).state, "stale");
+  assert.equal(slotPresence(undefined).ok, false);
+  assert.equal(slotPresence({ access: "tok" }).state, "connected");
+  assert.equal(slotPresence({ access: "tok", expires: now + 3_600_000 }).state, "connected");
+  assert.equal(slotPresence({ access: "tok", expires: now - 86_400_000, refresh: "r" }).state, "connected");
+  assert.equal(slotPresence({ access: "tok", expires: now - 1000 }).state, "stale");
 });
 
-// 회귀: 두 번째 로그인은 accounts[] 에 붙고 flat 필드는 첫 로그인 그대로 남는다.
-// flat 만 읽던 화면은 방금 로그인한 계정이 멀쩡한데도 "만료"를 찍었다.
-test("a fresh second account outranks the stale flat credential", () => {
-  const now = Date.now();
-  const health = credentialHealth({
-    type: "oauth",
-    access: "old",
-    expires: now - 86_400_000,
-    accounts: [
-      { name: "default", source: "login", access: "old", expires: now - 86_400_000 },
-      { name: "login-2", source: "login", access: "new", expires: now + 5 * 3_600_000 },
-    ],
-  }, [], now);
-  assert.equal(health.state, "live");
-  assert.equal(health.count, 2);
-  assert.match(describeHealth(health), /5시간 남음/);
+// 회귀: pool 이 실제 호출에서 차단한 계정을 파일만 보고 "연결됨"으로 보여 줬다.
+test("a pool block outranks a healthy-looking credential", () => {
+  const slot = { access: "tok", refresh: "r", expires: Date.now() + 86_400_000 };
+  assert.equal(accountState(slot, { source: "login" }), "connected");
+  assert.equal(accountState(slot, { source: "login", blocked: true }), "blocked");
+  assert.equal(bestState(["blocked", "connected"]), "connected");
+  assert.equal(bestState(["blocked", "absent"]), "blocked");
+  assert.equal(describeState("blocked"), "차단됨 · 재로그인 필요");
 });
 
-test("status lists every admitted provider and login hints", () => {
+test("status lists every admitted provider and login hints", async () => {
   const dir = tempHome();
   const authPath = join(dir, "auth.json");
   writeFileSync(authPath, JSON.stringify({
@@ -118,7 +113,7 @@ test("status lists every admitted provider and login hints", () => {
     },
   }));
   const { stdout, text } = capture();
-  printStatus({
+  await printStatus({
     stdout,
     env: isolatedEnv(dir, { RUBATO_AUTH_PATH: authPath }),
     home: dir,
