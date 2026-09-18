@@ -1,5 +1,38 @@
 # Failure recovery
 
+## Screen Recording denied while the settings list reads allowed
+
+Symptoms: `PERMISSION_ERROR_SCREEN_RECORDING`; every window reported as
+`<untitled>`; Apple's own `screencapture` failing with `could not create image
+from display`; or a TCC prompt that keeps returning and names an application you
+did not run.
+
+macOS grants Screen Recording to the *responsible process* — the ancestor
+application the chain was spawned under — not to the binary being executed. A
+long-lived agent server keeps whatever responsible process it was launched with,
+so granting `peekaboo`, `node`, or `python3` changes nothing while that server
+stays up. A forked or renamed app is named by its code signature, so the prompt
+can cite an upstream app that is not the one on screen.
+
+Identify the responsible application before editing any list:
+
+```bash
+# launchd becomes the responsible process, breaking the inherited chain.
+launchctl submit -l pbprobe -- /opt/homebrew/bin/peekaboo \
+  see --mode screen --no-elements --path /tmp/probe.png --no-remote
+sleep 5; launchctl remove pbprobe; ls -l /tmp/probe.png
+```
+
+A capture that succeeds under `launchctl` while the same command fails inline
+proves the denial belongs to an ancestor. The prompt naming that ancestor is
+itself visible in the probe screenshot.
+
+Then fix that application's row in System Settings > Privacy & Security > Screen
+Recording. A row can read "on" and still be denied: the grant is bound to the
+code signature, so an app updated after the grant no longer matches. Toggling the
+switch off and on does not re-bind it, and adding the same bundle again while the
+row exists is a no-op. Remove the row, then add the bundle back.
+
 ## Peekaboo
 
 - `Bridge operation target attribution failed`: add `--no-remote` and retry.
