@@ -20,7 +20,13 @@ import {
   pinCredentialAccount,
   removeCredentialAccount,
 } from "../pi-runtime/features/providers/auth-pool/accounts.mjs";
-import { appendLoginSlot, listSlots } from "../pi-runtime/features/providers/auth-pool/slots.mjs";
+import {
+  appendLoginSlot,
+  findSlot,
+  listSlots,
+  mergeRefreshedSlot,
+  projectSlot,
+} from "../pi-runtime/features/providers/auth-pool/slots.mjs";
 import { CredentialSlotRepository } from "../pi-runtime/features/providers/auth-pool/state-store.mjs";
 import { BACK, QUIT, SHOW_CURSOR, createKeyReader, runMenu } from "./auth-menu.mjs";
 
@@ -91,57 +97,47 @@ export function resolveLoginMethod(providerId, name) {
 }
 
 /**
- * 자격증명 한 칸의 상태. **계정마다 따로 센다.**
+ * 계정 하나의 상태. **남은 시간은 답이 아니다.**
  *
- * 예전에는 provider 의 flat 필드(`auth.json` 맨 위 `access`/`expires`) 하나만 읽었다.
- * 두 번째 로그인은 `accounts[]` 에 슬롯으로 붙고 flat 은 첫 로그인 그대로 남으므로,
- * 방금 로그인한 계정이 멀쩡한데도 화면은 죽은 첫 계정을 읽고 "만료"를 찍었다.
+ * `auth.json` 의 `expires` 는 액세스 토큰 수명이고, 런타임(`auth/resolve.js`)이 쓰기
+ * 직전에 5분 미만이면 스스로 갱신해 다시 저장한다. 그러니 "만료"는 고장이 아니라
+ * 그 계정으로 최근에 호출하지 않았다는 뜻일 뿐이고, 카운트다운은 사용자가 어떤
+ * 판단에도 쓸 수 없는 숫자다. 화면에서 뺀다.
  *
- * `renewable` 은 만료됐지만 refresh token 이 있는 상태다 — 런타임이 다음 호출에서
- * 스스로 갱신하므로 다시 로그인할 일이 아니다. 재로그인이 필요한 것은 `stale` 뿐이다.
+ * 진짜 신호는 두 개다. refresh 토큰조차 없는데 만료됐으면(`stale`) 갱신할 길이
+ * 없고, 실제 호출에서 인증을 거부당해 pool 이 차단한 계정(`blocked`)은 쓰이지
+ * 않는다. 나머지는 "연결됨"이고, 정말 살아 있는지는 `연결 확인`이 답한다.
  */
-export function slotPresence(slot, now = Date.now()) {
+export function slotPresence(slot) {
   if (!slot || typeof slot !== "object") return { ok: false, state: "absent" };
   const access = typeof slot.access === "string" ? slot.access : "";
   const key = typeof slot.key === "string" ? slot.key : "";
   if (!access && !key) return { ok: false, state: "absent" };
-  if (!access) return { ok: true, state: "key" };
+  if (!access) return { ok: true, state: "connected" };
   const expires = typeof slot.expires === "number" && slot.expires > 0 ? slot.expires : undefined;
-  if (expires === undefined) return { ok: true, state: "key" };
-  const leftMs = expires - now;
-  if (leftMs > 0) return { ok: true, state: "live", leftMs };
+  if (expires === undefined || expires > Date.now()) return { ok: true, state: "connected" };
   return typeof slot.refresh === "string" && slot.refresh
-    ? { ok: true, state: "renewable" }
+    ? { ok: true, state: "connected" }
     : { ok: true, state: "stale" };
 }
 
-const STATE_RANK = Object.freeze({ live: 0, renewable: 1, key: 2, stale: 3, absent: 4 });
-
-/** provider 한 줄에 쓸 요약. 가장 건강한 계정이 대표한다. */
-export function credentialHealth(entry, extraSlots = [], now = Date.now()) {
-  const slots = [...listSlots(entry), ...extraSlots];
-  let best = { ok: false, state: "absent" };
-  for (const slot of slots) {
-    const presence = slot.source === "setup-token" ? { ok: true, state: "key" } : slotPresence(slot, now);
-    if (STATE_RANK[presence.state] < STATE_RANK[best.state]) best = presence;
-    else if (presence.state === "live" && best.state === "live" && presence.leftMs > best.leftMs) best = presence;
-  }
-  return { ...best, count: slots.length };
+/** 화면에 쓸 계정 상태. pool 의 차단 기록이 파일의 내용보다 세다. */
+export function accountState(slot, account) {
+  if (account?.blocked) return "blocked";
+  if (account && account.source !== "login") return "connected";
+  return slotPresence(slot).state;
 }
 
-export function formatLeft(leftMs) {
-  const minutes = Math.floor(leftMs / 60_000);
-  if (minutes < 60) return `${Math.max(minutes, 1)}분 남음`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 48) return `${hours}시간 남음`;
-  return `${Math.floor(hours / 24)}일 남음`;
+const STATE_RANK = Object.freeze({ connected: 0, stale: 1, blocked: 2, absent: 3 });
+
+export function bestState(states) {
+  return states.reduce((best, state) => (STATE_RANK[state] < STATE_RANK[best] ? state : best), "absent");
 }
 
-export function describeHealth(health) {
-  if (health.state === "live") return formatLeft(health.leftMs);
-  if (health.state === "renewable") return "곧 자동 갱신";
-  if (health.state === "key") return "저장됨";
-  if (health.state === "stale") return "재로그인 필요";
+export function describeState(state) {
+  if (state === "connected") return "연결됨";
+  if (state === "blocked") return "차단됨 · 재로그인 필요";
+  if (state === "stale") return "재로그인 필요";
   return "로그인 필요";
 }
 
@@ -228,14 +224,6 @@ function hint(stdout, text) {
   stdout.write(`      ${DIM}${text}${RST}\n`);
 }
 
-function storedSlotLines(entry, now = Date.now()) {
-  if (!entry) return [];
-  return listSlots(entry).map((slot) => {
-    const pinned = entry.pinned === slot.name ? " | pinned" : "";
-    return `${slot.name} | ${slot.source ?? "login"} | ${describeHealth(slotPresence(slot, now))}${pinned}`;
-  });
-}
-
 function methodHint(id) {
   const spec = providerSpec(id);
   if (!spec) return `rubato auth login ${id}`;
@@ -247,35 +235,52 @@ function methodHint(id) {
   return `rubato auth login ${id}`;
 }
 
-/** provider 별 상태. TUI 목록과 `rubato auth status` 가 같은 계산을 쓴다. */
-export function collectStatus({ env = process.env, home = env.HOME || homedir(), now = Date.now() } = {}) {
-  const authPath = authJsonPath(env, home);
-  const auth = existsSync(authPath) ? readAuthFile(authPath) : {};
-  const tokenPath = setupTokenPresent({ env, home });
-  return PROVIDERS.map((provider) => {
-    const entry = auth[provider.id];
-    const extra = provider.id === "anthropic" && tokenPath
-      ? [{ name: "setup-token", source: "setup-token" }]
-      : [];
-    const health = credentialHealth(entry, extra, now);
-    return {
+/**
+ * provider 별 상태. TUI 목록과 `rubato auth status` 가 같은 계산을 쓴다.
+ *
+ * `auth.json` 만 보지 않는다. 실제 호출에서 거부당한 기록은 `credential-pool-state.json`
+ * 에 있고 그쪽이 더 센 증거다 — 파일에 멀쩡한 토큰이 있어도 pool 이 차단한 계정은
+ * 아무 요청에도 쓰이지 않는다.
+ */
+export async function collectStatus(ctx) {
+  const rows = [];
+  for (const provider of PROVIDERS) {
+    const entry = await credentialsOf(ctx).read(provider.id);
+    const slotByName = new Map(listSlots(entry).map((slot) => [slot.name, slot]));
+    const accounts = (await listProviderAccounts(provider.id, ctx)).map((account) => ({
+      ...account,
+      state: accountState(slotByName.get(account.name), account),
+    }));
+    rows.push({
       provider,
-      health,
-      lines: [...storedSlotLines(entry, now), ...extra.map((slot) => `${slot.name} | setup-token | 저장됨`)],
-    };
-  });
+      accounts,
+      state: bestState(accounts.map((account) => account.state)),
+      blockedCount: accounts.filter((account) => account.state === "blocked").length,
+    });
+  }
+  return rows;
 }
 
-export function printStatus({ stdout = process.stdout, env = process.env, home = env.HOME || homedir() } = {}) {
+function summaryOf(row) {
+  const parts = [describeState(row.state)];
+  if (row.state === "connected" && row.blockedCount > 0) parts.push(`${row.blockedCount}개 차단됨`);
+  if (row.accounts.length > 1) parts.push(`계정 ${row.accounts.length}`);
+  return parts.join(" · ");
+}
+
+export async function printStatus(ctx = {}) {
+  const stdout = ctx.stdout ?? process.stdout;
   stdout.write(`\n${BOLD}== rubato auth ==${RST}\n`);
-  collectStatus({ env, home }).forEach((row, index) => {
-    const n = `${index + 1})`;
-    const write = row.health.ok && row.health.state !== "stale" ? ok : miss;
-    write(stdout, `${n} ${row.provider.label} — ${describeHealth(row.health)}`);
-    if (!row.health.ok || row.health.state === "stale") hint(stdout, methodHint(row.provider.id));
-    for (const line of row.lines) hint(stdout, line);
+  const rows = await collectStatus(ctx);
+  rows.forEach((row, index) => {
+    const write = row.state === "connected" ? ok : miss;
+    write(stdout, `${index + 1}) ${row.provider.label} — ${summaryOf(row)}`);
+    if (row.state !== "connected") hint(stdout, methodHint(row.provider.id));
+    for (const account of row.accounts) {
+      hint(stdout, `${account.name} | ${account.source} | ${describeState(account.state)}${account.pinned ? " | 고정됨" : ""}`);
+    }
   });
-  stdout.write(`${DIM}남은 시간은 액세스 토큰 기준이며, 만료되어도 갱신 토큰이 있으면 자동으로 이어집니다.${RST}\n\n`);
+  stdout.write("\n");
 }
 
 export function printUsage(stdout = process.stdout) {
@@ -459,10 +464,9 @@ export async function loginWithRuntime(runtime, providerId, type, interaction) {
   await runtime.login(providerId, type ?? "oauth", interaction);
 }
 
-async function runEngineLogin(providerId, type, ctx) {
+async function engineRuntime(providerId, ctx) {
   const env = ctx.env ?? process.env;
   const stdout = ctx.stdout ?? process.stdout;
-  const stdin = ctx.stdin ?? process.stdin;
   const selection = resolveLaunchEngine({ env });
   if (selection.warning) stdout.write(`${selection.warning}\n`);
   if (selection.error) throw new Error(selection.error);
@@ -475,7 +479,14 @@ async function runEngineLogin(providerId, type, ctx) {
     refreshOnCreate: false,
   });
   await ensureProviderRegistered(runtime, providerId, env);
-  const openBrowser = ctx.openUrl ? undefined : await loadOpenBrowser(selection.root);
+  return { runtime, root: selection.root, env };
+}
+
+async function runEngineLogin(providerId, type, ctx) {
+  const stdout = ctx.stdout ?? process.stdout;
+  const stdin = ctx.stdin ?? process.stdin;
+  const { runtime, root, env } = await engineRuntime(providerId, ctx);
+  const openBrowser = ctx.openUrl ? undefined : await loadOpenBrowser(root);
   const interaction = await createCliInteraction({
     stdin,
     stdout,
@@ -488,6 +499,43 @@ async function runEngineLogin(providerId, type, ctx) {
     interaction.close?.();
   }
   stdout.write(`로그인했습니다. 자격증명 위치: ${authJsonPath(env, ctx.home)}\n`);
+}
+
+/**
+ * 계정 하나로 실제 갱신을 한 번 돌려 본다. 파일만 보고 추측하지 않고, 호출이
+ * 되는지를 직접 묻는 유일한 자리다.
+ *
+ * 성공하면 회전된 자격증명을 저장하고 pool 의 차단 기록을 지운다. `auth_error` 는
+ * pool 안에서 영구 차단이라 그 계정은 다시 선택되지 않고, 따라서 정상 경로의
+ * `onSuccess` 가 영영 실행되지 않는다 — 사람이 확인해 주는 이 자리가 유일한 해제다.
+ */
+export async function verifyAccount(providerId, accountName, ctx) {
+  const credentials = credentialsOf(ctx);
+  const current = await credentials.read(providerId);
+  const slot = findSlot(current, accountName);
+  if (!slot || typeof slot.refresh !== "string" || slot.refresh === "") {
+    return { kind: "unsupported" };
+  }
+  const { runtime } = await engineRuntime(providerId, ctx);
+  const refresh = runtime.models?.providers?.get(providerId)?.auth?.oauth?.refresh;
+  if (typeof refresh !== "function") return { kind: "unsupported" };
+  const view = projectSlot(current, accountName) ?? current;
+  let refreshed;
+  try {
+    refreshed = await refresh(view, undefined);
+  } catch (error) {
+    // 갱신 실패가 곧 사용 불가는 아니다. Cursor 의 액세스 토큰은 한 달 넘게 살아
+    // 있는데 갱신 엔드포인트는 따로 죽을 수 있다 — 지금은 되고 만료되면 끝나는
+    // 상태다. 그 둘을 한 낱말로 뭉뚱그리면 화면이 거짓말을 하게 된다.
+    const usable = slotPresence(slot).state === "connected"
+      && typeof slot.expires === "number" && slot.expires > Date.now();
+    return { kind: usable ? "renew_failed" : "stale", reason: error instanceof Error ? error.message : String(error), expires: slot.expires };
+  }
+  await credentials.modify(providerId, async (now) => mergeRefreshedSlot(now, accountName, refreshed));
+  await repositoryOf(ctx).mutateSlotState(providerId, "stored", accountName, (state) => (state
+    ? { ...state, failureCount: 0, lease: undefined, blockedUntil: undefined, blockReason: undefined, lastSuccessAt: Date.now() }
+    : state));
+  return { kind: "ok" };
 }
 
 async function addSetupToken(ctx) {
@@ -585,7 +633,7 @@ export async function handleAuthArgs(argv, ctx) {
     if (cmd === "login" || cmd === "add") return runLoginCommand(rest, ctx);
     if (cmd === "list") {
       if (!rest[0]) {
-        printStatus(ctx);
+        await printStatus(ctx);
         return "ok";
       }
       const id = await resolveProviderArg(rest[0], ctx);
@@ -626,7 +674,12 @@ export const METHOD_LABELS = Object.freeze({
   "setup-token": "setup-token 붙여넣기 (sk-ant-oat…)",
 });
 
-const HEALTH_GLYPH = Object.freeze({ live: `${GRN}✓${RST}`, renewable: `${GRN}✓${RST}`, key: `${GRN}✓${RST}`, stale: `${YEL}✗${RST}`, absent: `${DIM}·${RST}` });
+const STATE_GLYPH = Object.freeze({
+  connected: `${GRN}✓${RST}`,
+  blocked: `${YEL}✗${RST}`,
+  stale: `${YEL}✗${RST}`,
+  absent: `${DIM}·${RST}`,
+});
 
 const NAV_HINT = `${DIM}↑↓ 이동 · Enter 선택 · Esc 뒤로 · q 종료${RST}`;
 
@@ -669,19 +722,48 @@ function quietly(ctx) {
   return { ...ctx, stdout: { write() {} } };
 }
 
-function accountDetail(account, slotByName, now) {
-  const parts = [account.source];
-  const slot = slotByName.get(account.name);
-  parts.push(account.source === "setup-token" ? "저장됨" : describeHealth(slotPresence(slot, now)));
+function accountDetail(account) {
+  const parts = [account.source, describeState(account.state)];
   if (account.pinned) parts.push("고정됨");
-  if (account.blocked) parts.push("차단됨");
   return parts.join(" · ");
+}
+
+function untilDate(expires) {
+  return typeof expires === "number" && expires > 0
+    ? new Date(expires).toLocaleString("ko-KR", { dateStyle: "medium", timeStyle: "short" })
+    : "알 수 없음";
+}
+
+async function checkAccount(providerId, account, ctx) {
+  const stdout = ctx.stdout ?? process.stdout;
+  await runGuarded(ctx, async () => {
+    stdout.write(`${account.name} 계정으로 실제 갱신을 한 번 시도합니다…\n`);
+    const result = await verifyAccount(providerId, account.name, ctx);
+    if (result.kind === "unsupported") {
+      await pause(ctx, `${DIM}이 계정은 미리 확인할 방법이 없습니다. 실제로 써 봐야 알 수 있습니다.${RST}`);
+      return;
+    }
+    if (result.kind === "stale") {
+      await pause(ctx, `${YEL}갱신이 실패했고 지금 토큰도 만료됐습니다. 다시 로그인해 주세요.${RST}\n${DIM}${result.reason}${RST}`);
+      return;
+    }
+    if (result.kind === "renew_failed") {
+      await pause(ctx, [
+        `${YEL}지금 토큰은 쓸 수 있지만 갱신이 되지 않습니다.${RST}`,
+        `${DIM}${untilDate(result.expires)} 까지는 그대로 쓰이고, 그 뒤에는 다시 로그인해야 합니다.${RST}`,
+        `${DIM}${result.reason}${RST}`,
+      ].join("\n"));
+      return;
+    }
+    await pause(ctx, `${GRN}연결됐습니다.${RST}${account.state === "blocked" ? " 차단 기록도 지웠습니다." : ""}`);
+  });
 }
 
 async function accountScreen(providerId, account, ctx) {
   const spec = providerSpec(providerId);
   const removable = account.source !== "env" && account.source !== "setup-token";
   const items = [
+    { label: "연결 확인", value: "check" },
     account.pinned
       ? { label: "고정 해제", value: "unpin" }
       : { label: "이 계정만 쓰도록 고정", value: "pin" },
@@ -700,6 +782,7 @@ async function accountScreen(providerId, account, ctx) {
   });
   if (choice === QUIT) return QUIT;
   if (choice === BACK || choice === undefined) return BACK;
+  if (choice === "check") await checkAccount(providerId, account, ctx);
   if (choice === "pin") await runGuarded(ctx, () => runPinCommand(providerId, account.name, quietly(ctx)));
   if (choice === "unpin") await runGuarded(ctx, () => runPinCommand(providerId, null, quietly(ctx)));
   if (choice === "remove") {
@@ -720,13 +803,11 @@ async function providerScreen(providerId, ctx) {
   const spec = providerSpec(providerId);
   let index = 0;
   while (true) {
-    const now = Date.now();
-    const entry = await credentialsOf(ctx).read(providerId);
-    const slotByName = new Map(listSlots(entry).map((slot) => [slot.name, slot]));
-    const accounts = await listProviderAccounts(providerId, ctx);
+    const row = (await collectStatus(ctx)).find((candidate) => candidate.provider.id === providerId);
+    const accounts = row?.accounts ?? [];
     const items = accounts.map((account) => ({
       label: account.name,
-      detail: accountDetail(account, slotByName, now),
+      detail: accountDetail(account),
       value: { kind: "account", account },
     }));
     if (items.length > 0) items.push(separator());
@@ -764,10 +845,10 @@ async function providerScreen(providerId, ctx) {
 async function runInteractive(ctx) {
   let index = 0;
   while (true) {
-    const rows = collectStatus({ env: ctx.env, home: ctx.home });
+    const rows = await collectStatus(ctx);
     const items = rows.map((row) => ({
-      label: `${HEALTH_GLYPH[row.health.state]} ${row.provider.label}`,
-      detail: `${describeHealth(row.health)}${row.health.count > 1 ? ` · 계정 ${row.health.count}` : ""}`,
+      label: `${STATE_GLYPH[row.state]} ${row.provider.label}`,
+      detail: summaryOf(row),
       value: row.provider.id,
     }));
     items.push(separator(), { label: "종료", value: QUIT });
@@ -775,7 +856,6 @@ async function runInteractive(ctx) {
       stdout: ctx.stdout ?? process.stdout,
       keys: ctx.keys,
       title: `\n${BOLD}== rubato auth ==${RST}`,
-      header: [`  ${DIM}남은 시간은 액세스 토큰 기준이며, 만료되어도 자동으로 갱신됩니다.${RST}`],
       hint: NAV_HINT,
       items,
       index,
@@ -812,13 +892,13 @@ export async function main(argv = process.argv.slice(2), io = {}) {
     return;
   }
   if (argv[0] === "--status" || argv[0] === "status") {
-    printStatus(ctx);
+    await printStatus(ctx);
     return;
   }
   if (argv.length === 0) {
     const interactive = ctx.interactive ?? Boolean(ctx.stdin?.isTTY);
     if (!interactive) {
-      printStatus(ctx);
+      await printStatus(ctx);
       return;
     }
     const keys = ctx.keys ?? createKeyReader({ stdin: ctx.stdin ?? process.stdin });
