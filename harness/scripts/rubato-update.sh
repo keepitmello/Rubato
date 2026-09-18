@@ -411,7 +411,10 @@ fi
 # 스킬은 받을 때마다 맞춘다. 설치본이 받기 전 번들과 같으면 갱신하고
 # 로컬에서 고친 것은 둔다. 예전 설치기는 있는 스킬을 건너뛰어서, 내용이
 # 이번 커밋에 없어도 여기서 한 번 더 맞춰야 낡은 설치본이 풀린다.
-"$HARNESS/scripts/install-skills.sh" --sync-from "$LOCAL" \
+# 번들과 갈린 자리는 여기서만 물어본다 — `--yes` 와 세션 시작은 묻지 않는다.
+SKILL_ASK=""
+[ "$MODE" = yes ] || SKILL_ASK="--ask"
+"$HARNESS/scripts/install-skills.sh" --sync-from "$LOCAL" ${SKILL_ASK:+"$SKILL_ASK"} \
   && ok "번들 스킬" || fail "번들 스킬 설치에 실패했습니다. 소스는 받았지만 업데이트는 완료되지 않았습니다."
 
 # 확장은 덮어쓰지 않는다. 사람이 손본 판이 사는 자리라 새 파일만 넣고
