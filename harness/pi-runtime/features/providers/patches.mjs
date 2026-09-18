@@ -299,6 +299,7 @@ const rubatoSources = Object.freeze([
   "speed-index-routes.mjs",
   "speed-index-store.mjs",
   "speed-index.mjs",
+  "thinking-display.mjs",
   "upstream-dispatcher.mjs",
 ]);
 
