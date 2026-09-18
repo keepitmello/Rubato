@@ -7,6 +7,12 @@ export const AUTO_TIER = "auto";
 export const ANTHROPIC_FAST_BETA = "fast-mode-2026-02-01";
 
 const FAST_MODEL_SUFFIX = "-fast";
+// `[sub]` picker rows are id-clones of the same upstream model (picker-catalog.mjs
+// `cloneSubModels` only appends the suffix and never sets `upstreamModelId`), so the
+// account suffix must not decide fast capability. T3's catalog strips it before it
+// paints the Fast toggle (t3-integration/src/model-catalog-order.mjs); an engine that
+// kept the suffix refused `/fast` on the very rows whose toggle T3 shows.
+const SUB_MODEL_SUFFIX = "-sub";
 const FAST_ARGUMENTS = Object.freeze(["on", "off"]);
 const FAST_USAGE = "Usage: /fast [on|off]";
 const OPENAI_CODEX_RESPONSES_API = "openai-codex-responses";
@@ -83,9 +89,9 @@ export function isAnthropicFastModel(model, modelRegistry) {
   ) {
     return false;
   }
-  return ANTHROPIC_FAST_MODEL_ID.test(
-    String(requestModelId(modelRegistry, model) ?? "").toLowerCase(),
-  );
+  const raw = String(requestModelId(modelRegistry, model) ?? "").toLowerCase();
+  const wireId = raw.endsWith(SUB_MODEL_SUFFIX) ? raw.slice(0, -SUB_MODEL_SUFFIX.length) : raw;
+  return ANTHROPIC_FAST_MODEL_ID.test(wireId);
 }
 
 export function fastWireMode(model, modelRegistry) {

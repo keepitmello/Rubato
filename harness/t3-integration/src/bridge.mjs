@@ -202,7 +202,13 @@ export class RubatoPiBridge {
       provider: 'rubato-pi', providerInstanceId: this.instanceId, threadId: input.threadId, runtimeMode: input.runtimeMode,
       status: 'connecting', ...(input.cwd ? { cwd: input.cwd } : {}), resumeCursor: this.cursor(sessionId),
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-    }, sequence: 0, queue: Promise.resolve(), stopped: false };
+    }, sequence: 0, queue: Promise.resolve(), stopped: false,
+    // T3 paints the Fast toggle off on every attach (model-catalog-order.mjs
+    // `optionDescriptorsFor`), so an unknown belief here made the first selection
+    // differ from `false` and sent a `/fast off` nobody asked for: on a model Pi
+    // cannot serve fast that surfaced as a warning each session, and on one it can
+    // it overwrote the remembered tier with "auto". Start from what the toggle shows.
+    fastMode: false };
     try {
       this.sessions.set(input.threadId, context);
       await client.attach(sessionId);

@@ -657,6 +657,30 @@ test('a $skill chip is rewritten to /skill:name so Pi expands it', async (t) => 
   await until(() => events.some((event) => event.type==='turn.completed'));
 });
 
+// T3 paints the Fast toggle off on every attach, so a bridge that started from an unknown
+// belief sent a `/fast off` nobody asked for: a warning on models Pi cannot serve fast, and a
+// wiped remembered tier on the ones it can.
+test('a fresh attach sends no Fast command until the toggle actually moves', async (t) => {
+  const { root, bridge } = await setup(t);
+  await bridge.startSession({ threadId:'fast-thread', runtimeMode:'full-access', cwd:root });
+  const context = bridge.sessions.get('fast-thread');
+  context.session.model = 'anthropic/claude-opus-5';
+  const calls = [];
+  const original = context.client.command.bind(context.client);
+  context.client.command = async (command) => { calls.push(command); return original(command); };
+  const selection = (fast) => ({ model:'anthropic/claude-opus-5', options:[{ id:'fastMode', value:fast }] });
+
+  await bridge.selectModel(context, selection(false));
+  assert.deepEqual(calls, []);
+
+  await bridge.selectModel(context, selection(true));
+  assert.deepEqual(calls.map((command) => command.message), ['/fast on']);
+
+  calls.length = 0;
+  await bridge.selectModel(context, selection(false));
+  assert.deepEqual(calls.map((command) => command.message), ['/fast off']);
+});
+
 test('native compact issues the compact RPC and reports compacted to T3', async (t) => {
   const { root, events, bridge } = await setup(t);
   await bridge.startSession({ threadId:'cmp-thread', runtimeMode:'full-access', cwd:root });
