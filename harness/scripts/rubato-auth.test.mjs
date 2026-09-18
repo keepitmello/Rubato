@@ -7,16 +7,29 @@ import test from "node:test";
 import {
   createCliInteraction,
   createFileCredentials,
+  credentialHealth,
+  describeHealth,
   handleAuthArgs,
-  handleAuthLine,
   main,
-  oauthPresence,
   printStatus,
   resolveLoginMethod,
   resolveLoginProvider,
+  slotPresence,
   storeApiKey,
   writeSetupToken,
 } from "./rubato-auth.mjs";
+import { moveCursor, normalizeKey, renderMenu } from "./auth-menu.mjs";
+
+/** 미리 정한 키를 차례로 내주는 읽개. TTY 없이 방향키 화면을 몰고 다닌다. */
+function scriptedKeys(actions) {
+  const queue = [...actions];
+  return {
+    next: async () => queue.shift() ?? "quit",
+    suspend() {},
+    resume() {},
+    close() {},
+  };
+}
 
 function tempHome() {
   return mkdtempSync(join(tmpdir(), "rubato-auth-"));
@@ -62,10 +75,31 @@ test("login methods follow each provider", () => {
   assert.equal(resolveLoginMethod("openai-codex", "token").error, "method");
 });
 
-test("oauth presence reads access tokens without python", () => {
-  assert.equal(oauthPresence(undefined).ok, false);
-  assert.equal(oauthPresence({ access: "tok" }).ok, true);
-  assert.equal(oauthPresence({ expires: Date.now() - 1000, access: "tok" }).left, "expired");
+test("slot presence separates renewable from stale", () => {
+  const now = Date.now();
+  assert.equal(slotPresence(undefined, now).ok, false);
+  assert.equal(slotPresence({ access: "tok" }, now).state, "key");
+  assert.equal(slotPresence({ access: "tok", expires: now + 3_600_000 }, now).state, "live");
+  assert.equal(slotPresence({ access: "tok", expires: now - 1000, refresh: "r" }, now).state, "renewable");
+  assert.equal(slotPresence({ access: "tok", expires: now - 1000 }, now).state, "stale");
+});
+
+// 회귀: 두 번째 로그인은 accounts[] 에 붙고 flat 필드는 첫 로그인 그대로 남는다.
+// flat 만 읽던 화면은 방금 로그인한 계정이 멀쩡한데도 "만료"를 찍었다.
+test("a fresh second account outranks the stale flat credential", () => {
+  const now = Date.now();
+  const health = credentialHealth({
+    type: "oauth",
+    access: "old",
+    expires: now - 86_400_000,
+    accounts: [
+      { name: "default", source: "login", access: "old", expires: now - 86_400_000 },
+      { name: "login-2", source: "login", access: "new", expires: now + 5 * 3_600_000 },
+    ],
+  }, [], now);
+  assert.equal(health.state, "live");
+  assert.equal(health.count, 2);
+  assert.match(describeHealth(health), /5시간 남음/);
 });
 
 test("status lists every admitted provider and login hints", () => {
@@ -189,10 +223,9 @@ test("setup-token cannot be removed from auth.json", async () => {
   assert.match(ctx.text(), /cannot be removed|Environment provider account/);
 });
 
-test("interactive shell can pick a provider and add oauth", async () => {
+test("arrow keys alone reach a provider and start oauth", async () => {
   const dir = tempHome();
   const calls = [];
-  const lines = ["4", "oauth", "q"];
   const { stdout, text } = capture();
   await main([], {
     stdout,
@@ -200,11 +233,40 @@ test("interactive shell can pick a provider and add oauth", async () => {
     interactive: true,
     env: isolatedEnv(dir),
     home: dir,
-    readLine: async () => lines.shift() ?? "q",
+    // Anthropic 까지 ↓×3, Enter 로 진입, 계정이 없으니 첫 항목이 "브라우저로 로그인".
+    keys: scriptedKeys(["down", "down", "down", "enter", "enter", "quit", "quit"]),
     login: async (id, method) => { calls.push({ id, method }); },
   });
   assert.deepEqual(calls, [{ id: "anthropic", method: "oauth" }]);
   assert.match(text(), /Anthropic/);
+  assert.match(text(), /브라우저로 로그인/);
+});
+
+test("number keys still jump straight to a provider", async () => {
+  const dir = tempHome();
+  const calls = [];
+  const { stdout } = capture();
+  await main([], {
+    stdout,
+    stdin: { isTTY: true },
+    interactive: true,
+    env: isolatedEnv(dir),
+    home: dir,
+    keys: scriptedKeys(["5", "enter", "quit", "quit"]),
+    login: async (id, method) => { calls.push({ id, method }); },
+  });
+  assert.deepEqual(calls, [{ id: "kiro", method: "api_key" }]);
+});
+
+test("menu keys and rendering stay arrow-only", () => {
+  assert.equal(normalizeKey("", { name: "up" }), "up");
+  assert.equal(normalizeKey("\r", { name: "return" }), "enter");
+  assert.equal(normalizeKey("", { name: "c", ctrl: true }), "quit");
+  assert.equal(normalizeKey("z", { name: "z" }), undefined);
+  const items = [{ label: "a", value: 1 }, { separator: true, label: "" }, { label: "b", value: 2 }];
+  assert.equal(moveCursor(items, 0, 1), 2, "구분선은 건너뛴다");
+  const lines = renderMenu({ title: "T", items, cursor: 2, hint: "h" });
+  assert.match(lines.join("\n"), /❯/);
 });
 
 test("bare rubato auth is status-only when stdin is not a TTY", async () => {
@@ -223,20 +285,6 @@ test("bare rubato auth is status-only when stdin is not a TTY", async () => {
   });
   assert.deepEqual(lines, []);
   assert.match(text(), /rubato auth/);
-});
-
-test("handleAuthLine treats a provider name as a submenu", async () => {
-  const dir = tempHome();
-  const calls = [];
-  const ctx = {
-    ...capture(),
-    env: isolatedEnv(dir),
-    home: dir,
-    readLine: async () => "oauth",
-    login: async (id, method) => { calls.push({ id, method }); },
-  };
-  assert.equal(await handleAuthLine("codex", ctx), "ok");
-  assert.deepEqual(calls, [{ id: "openai-codex", method: "oauth" }]);
 });
 
 function existsOrMissing(path) {
