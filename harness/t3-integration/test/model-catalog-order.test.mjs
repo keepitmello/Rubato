@@ -31,7 +31,8 @@ test('T3 catalogue keeps the curated /model set and drops provider extras', () =
     'cursor/cursor-grok-4.6',
   ]);
   assert.equal(modelPickerLabel(catalog[1]), 'Fable 5.1');
-  assert.equal(modelPickerLabel(catalog[4]), 'grok-4.6-fast');
+  assert.equal(modelPickerLabel(catalog[3]), 'Grok 4.6');
+  assert.equal(modelPickerLabel(catalog[4]), 'Grok 4.6 fast');
   assert.deepEqual(catalogSlugs().slice(0, 6), [
     'openai-codex/gpt-5.6-sol',
     'openai-codex/gpt-5.6-terra',

@@ -20,6 +20,7 @@ test("descriptor is stock-locked and listed on the candidate", async () => {
   assert.equal(CANDIDATE_FEATURE_NAMES.includes("model-picker"), true);
   assert.deepEqual((await loadPiFeatures(["model-picker"])).map((entry) => entry.id), ["model-picker"]);
   assert.deepEqual(files.map((entry) => entry.path), [
+    "dist/rubato-features/model-picker/model-label.mjs",
     "dist/rubato-features/model-picker/product-model-catalog.mjs",
     "dist/rubato-features/model-picker/catalog.mjs",
   ]);
@@ -75,7 +76,11 @@ test("picker admits only the seven providers, current model excepted", () => {
 });
 
 test("display labels and stock patch replace item.id", () => {
-  assert.equal(modelPickerLabel({ provider: "cursor", id: "cursor-grok-4.6", model: {} }), "grok-4.6-fast");
+  assert.equal(modelPickerLabel({ provider: "cursor", id: "cursor-grok-4.6", model: {} }), "Grok 4.6 fast");
+  assert.equal(modelPickerLabel({ provider: "xai", id: "grok-4.6", model: {} }), "Grok 4.6");
+  assert.equal(modelPickerLabel({ provider: "openai-codex", id: "gpt-6-astra", model: {} }), "Astra 6");
+  assert.equal(modelPickerLabel({ provider: "openai-codex", id: "gpt-5.6-sol", model: {} }), "Sol 5.6");
+  assert.equal(modelPickerLabel({ provider: "google-antigravity", id: "gemini-3.8-flash", model: {} }), "Gemini 3.8 Flash");
   assert.equal(modelPickerLabel({ provider: "anthropic", id: "claude-fable-5-1", model: {} }), "Fable 5.1");
   assert.equal(modelPickerLabel({ provider: "anthropic", id: "claude-opus-5", model: {} }), "Opus 5");
   assert.equal(modelPickerLabel({ provider: "anthropic", id: "claude-opus-5-sub", model: {} }), "Opus 5 [sub]");

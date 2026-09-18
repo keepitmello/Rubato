@@ -1,3 +1,4 @@
+import { shortModelLabel } from "@rubato/model-core"
 import {
   excerptRendererText,
   formatLiveSpeed,
@@ -19,27 +20,6 @@ const PROGRESS_HEAD_MAX = 60
 const LIVE_TITLE_MAX = 32
 export const LIVE_STATUS_REFRESH_MS = 250
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const
-
-const MODEL_FAMILIES: ReadonlyArray<readonly [string, string]> = [
-  ["opus", "Opus"],
-  ["sonnet", "Sonnet"],
-  ["haiku", "Haiku"],
-  ["fable", "Fable"],
-  ["mythos", "Mythos"],
-  ["grok", "Grok"],
-  ["gemini", "Gemini"],
-  ["kimi", "Kimi"],
-  ["muse-spark", "Muse Spark"],
-  ["muse spark", "Muse Spark"],
-  ["gpt", "GPT"],
-]
-
-const MODEL_VARIANTS: ReadonlyArray<readonly [string, string]> = [
-  ["sol", "Sol"],
-  ["luna", "Luna"],
-  ["terra", "Terra"],
-  ["astra", "Astra"],
-]
 
 const TERMINAL_STATUSES: ReadonlySet<TaskStatus> = new Set(["completed", "error", "cancelled", "interrupted", "lost"])
 
@@ -179,42 +159,6 @@ function isFastModel(modelId: string): boolean {
   return bare === "cursor-grok-4.6"
 }
 
-function shortModelLabel(modelId: string): string {
-  const bare = modelId.split("/").pop() ?? modelId
-  const lc = bare.toLowerCase()
-  const variant = variantLabel(lc)
-  if (variant) return variant
-  for (const [key, label] of MODEL_FAMILIES) {
-    const idx = lc.indexOf(key)
-    if (idx < 0) continue
-    const tail = lc.slice(idx + key.length).replace(/^[-.\s]+/u, "")
-    const version = parseVersion(tail)
-    return version ? `${label} ${version}` : label
-  }
-  const colon = bare.indexOf(":")
-  return colon >= 0 ? bare.slice(0, colon) : bare
-}
-
-// A machine-local registry may report the same model as `gpt-5.6-sol` (id spelling) or `GPT-5.6 Sol`
-// (friendly display name), so every non-alphanumeric run counts as a separator here. Anchoring on
-// hyphen/dot alone made the rendered label depend on which spelling the catalog happened to carry.
-function isVariantSeparator(ch: string | undefined): boolean {
-  return ch === undefined || !/[a-z0-9]/u.test(ch)
-}
-
-function variantLabel(lc: string): string {
-  for (const [key, label] of MODEL_VARIANTS) {
-    const idx = lc.lastIndexOf(key)
-    if (idx < 0) continue
-    // Both edges must be separators: without the trailing check `solar` would render as `Sol`.
-    if (!isVariantSeparator(lc[idx - 1]) || !isVariantSeparator(lc[idx + key.length])) continue
-    const before = lc.slice(0, idx).replace(/[^a-z0-9]$/u, "").replace(/^gpt[^a-z0-9]/u, "")
-    const version = parseVersion(before.replace(/^[a-z]+[^a-z0-9]/u, "")) || parseVersion(before)
-    return version ? `${label} ${version}` : label
-  }
-  return ""
-}
-
 function formatEffort(level: string | undefined): string {
   if (!level || level === "off") return ""
   if (level === "xhigh") return "Xhigh"
@@ -227,26 +171,6 @@ function effortFromModelId(modelId: string): string {
   const colon = bare.lastIndexOf(":")
   if (colon < 0) return ""
   return formatEffort(bare.slice(colon + 1).toLowerCase())
-}
-
-function parseVersion(tail: string): string {
-  const parts: string[] = []
-  let part = ""
-  for (const ch of tail) {
-    if (ch >= "0" && ch <= "9") {
-      part += ch
-    } else if ((ch === "-" || ch === ".") && part) {
-      parts.push(part)
-      part = ""
-    } else {
-      break
-    }
-  }
-  if (part) parts.push(part)
-  while (parts.length > 0 && (parts.at(-1)?.length ?? 0) >= 6) parts.pop()
-  if (parts.length === 0) return ""
-  if (parts.length >= 2) return `${parts[0]}.${parts[1]}`
-  return parts[0] ?? ""
 }
 
 function formatElapsed(createdAt: string, now: number): string {
