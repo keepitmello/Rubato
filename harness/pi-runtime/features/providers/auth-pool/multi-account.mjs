@@ -18,6 +18,10 @@ const LIST_PROVIDERS = Object.freeze([
   "opencode",
   "kiro",
 ]);
+const CHOICE_CLOSE = "닫기";
+const CHOICE_BACK = "뒤로";
+const CHOICE_ADD = "계정 추가";
+const CHOICE_AUTO = "자동으로 나누기";
 
 function parseArgs(rawArgs) {
   return String(rawArgs ?? "").trim().split(/\s+/).filter(Boolean);
@@ -43,6 +47,25 @@ function providerLabel(provider) {
   if (provider === OPENAI_CODEX_PROVIDER_ID) return "OpenAI Codex";
   if (provider === ANTHROPIC_PROVIDER_ID) return "Anthropic";
   return provider;
+}
+
+function canSelect(ctx) {
+  return Boolean(ctx?.hasUI && typeof ctx.ui?.select === "function");
+}
+
+function accountChoice(account) {
+  const tag = account.pinned ? "쓰는 중" : account.blocked ? "막힘" : account.source;
+  return `${account.name}  (${tag})`;
+}
+
+function providerChoice(id, accounts) {
+  const pinned = accounts.find((account) => account.pinned);
+  const extra = accounts.length === 0
+    ? "없음"
+    : pinned
+      ? `${accounts.length} · ${pinned.name}`
+      : String(accounts.length);
+  return `${providerLabel(id)}  (${extra})`;
 }
 
 function authEventMessage(provider, event) {
@@ -114,6 +137,69 @@ async function addAccount(ctx, runtime, provider) {
   }
 }
 
+async function pinNamed(ctx, store, provider, name, env, repository) {
+  await pinCredentialAccount(store, provider, name, env, repository);
+  notify(ctx, `${providerLabel(provider)} → ${name}`);
+  return { text: "pinned" };
+}
+
+async function unpinNamed(ctx, store, provider, env, repository) {
+  await pinCredentialAccount(store, provider, null, env, repository);
+  notify(ctx, `${providerLabel(provider)} 자동으로 나눈다.`);
+  return { text: "unpinned" };
+}
+
+async function runProviderPicker(ctx, store, runtime, env, repository, provider) {
+  while (true) {
+    const accounts = await getCredentialAccounts(store, provider, env, repository);
+    const options = [
+      ...accounts.map((account) => accountChoice(account)),
+      CHOICE_ADD,
+      ...(accounts.some((account) => account.pinned) ? [CHOICE_AUTO] : []),
+      CHOICE_BACK,
+    ];
+    const choice = await ctx.ui.select(providerLabel(provider), options);
+    if (choice === undefined || choice === CHOICE_BACK) return "back";
+    if (choice === CHOICE_ADD) return addAccount(ctx, runtime, provider);
+    if (choice === CHOICE_AUTO) return unpinNamed(ctx, store, provider, env, repository);
+    const account = accounts.find((entry) => accountChoice(entry) === choice);
+    if (!account) return { text: "ok" };
+    if (account.pinned) {
+      notify(ctx, `${providerLabel(provider)} 이미 ${account.name}`);
+      return { text: "pinned" };
+    }
+    return pinNamed(ctx, store, provider, account.name, env, repository);
+  }
+}
+
+async function runAccountPicker(ctx, store, runtime, env, repository, startProvider) {
+  let provider = startProvider;
+  if (!provider && ctx?.model?.provider && LIST_PROVIDERS.includes(ctx.model.provider)) {
+    const current = await getCredentialAccounts(store, ctx.model.provider, env, repository);
+    if (current.length > 1) provider = ctx.model.provider;
+  }
+  while (true) {
+    if (!provider) {
+      const rows = [];
+      for (const id of LIST_PROVIDERS) {
+        const accounts = await getCredentialAccounts(store, id, env, repository);
+        rows.push({ id, label: providerChoice(id, accounts) });
+      }
+      const choice = await ctx.ui.select("계정", [...rows.map((row) => row.label), CHOICE_CLOSE]);
+      if (choice === undefined || choice === CHOICE_CLOSE) return { text: "ok" };
+      provider = rows.find((row) => row.label === choice)?.id;
+      if (!provider) return { text: "ok" };
+    }
+    const result = await runProviderPicker(ctx, store, runtime, env, repository, provider);
+    if (result === "back") {
+      if (startProvider) return { text: "ok" };
+      provider = undefined;
+      continue;
+    }
+    return result;
+  }
+}
+
 function resolveCommand(commandName, rawArgs) {
   const args = parseArgs(rawArgs);
   if (commandName === GPT_ACCOUNT_COMMAND) {
@@ -130,6 +216,9 @@ async function handleAccountAction({ commandName, rawArgs, ctx, store, runtime, 
   const action = resolved.args[0] ?? "list";
   const provider = resolved.provider;
   if (action === "list") {
+    if (canSelect(ctx) && resolved.args[0] !== "list") {
+      return runAccountPicker(ctx, store, runtime, env, repository, provider);
+    }
     return provider
       ? showProviderAccounts(ctx, store, provider, env, repository)
       : showAllAccounts(ctx, store, env, repository);
@@ -175,13 +264,13 @@ export function registerMultiAccountCommand(pi, { credentials, env = {}, poolSta
     }
   };
   pi.registerCommand(MULTI_ACCOUNT_COMMAND, {
-    description: "List and manage provider accounts for session-sticky load balancing.",
-    argumentHint: "[<provider>] [list | add | remove <name> | pin <name> | unpin]",
+    description: "Pick a provider account. Opens a list in the app.",
+    argumentHint: "",
     handler: handlerFor(MULTI_ACCOUNT_COMMAND),
   });
   pi.registerCommand(GPT_ACCOUNT_COMMAND, {
-    description: "OpenAI Codex alias for /multi-account openai-codex.",
-    argumentHint: "[add | remove <name> | pin <name> | unpin]",
+    description: "OpenAI Codex alias for /multi-account.",
+    argumentHint: "",
     handler: handlerFor(GPT_ACCOUNT_COMMAND),
   });
 }

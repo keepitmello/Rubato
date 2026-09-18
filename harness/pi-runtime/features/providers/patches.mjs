@@ -455,6 +455,3 @@ export const providersFeature = Object.freeze({
   patches,
   files,
 });
-  ownedFile("dist/rubato-features/providers/auth-pool/affinity.mjs", source("./auth-pool/affinity.mjs")),
-  ownedFile("dist/rubato-features/providers/auth-pool/setup-token-slots.mjs", source("./auth-pool/setup-token-slots.mjs")),
-  ownedFile("dist/rubato-features/providers/auth-pool/multi-account.mjs", source("./auth-pool/multi-account.mjs")),
