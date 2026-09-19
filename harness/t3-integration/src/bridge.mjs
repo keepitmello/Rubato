@@ -70,8 +70,6 @@ t3BridgeLog('t3-bridge loaded');
 
 
 const copy = (value) => JSON.parse(JSON.stringify(value));
-const RECOVER_QUEUE_RESUME = 'resume';
-const RECOVER_QUEUE_DISCARD = 'discard';
 const staleQueue = (state) => state && !state.isStreaming && !state.isCompacting
   && Number(state.pendingMessageCount) > 0;
 function queuedMessagesInOrder(state, cleared) {
@@ -86,15 +84,6 @@ function queuedMessagesInOrder(state, cleared) {
   }
   return [...ordered, ...byDelivery.steer, ...byDelivery.followUp]
     .filter((message) => typeof message === 'string' && message.trim());
-}
-function queuedMessagePreview(state) {
-  const pending = state?.requestTimeline?.pendingInputs ?? [];
-  const lines = pending.slice(0, 3).map((item, index) => {
-    const preview = String(item?.textPreview ?? '').trim().slice(0, 160);
-    return `${index + 1}. ${preview || '(attachment or empty text)'}`;
-  });
-  if (pending.length > lines.length) lines.push(`…and ${pending.length - lines.length} more`);
-  return lines.join('\n');
 }
 async function imagesFromAttachments(attachments) {
   const images = [];
@@ -239,7 +228,7 @@ export class RubatoPiBridge {
       snapshot.messages.forEach((message, index) => context.projection.message(message,
         !(snapshot.state.isStreaming && index === snapshot.messages.length - 1 && !message.stopReason)));
       for (const request of snapshot.pendingUi) context.projection.question(request);
-      this.offerStaleQueueRecovery(context, snapshot.state);
+      await this.drainStrandedQueue(context, snapshot.state);
       context.session.status = snapshot.state.isStreaming ? 'running' : 'ready';
       if (!snapshot.state.isStreaming && context.projection.turnId) {
         context.projection.interrupted = true;
@@ -324,107 +313,19 @@ export class RubatoPiBridge {
     if (!context || context.stopped) throw new Error(`No Pi attachment for ${threadId}`);
     return context;
   }
-  offerStaleQueueRecovery(context, state) {
-    if (!staleQueue(state) || context.queueRecovery) return false;
-    const requestId = `rubato-queue-recovery:${context.sessionId}`;
-    const count = Number(state.pendingMessageCount);
-    const preview = queuedMessagePreview(state);
-    const attachmentCount = (state?.requestTimeline?.pendingInputs ?? [])
-      .reduce((total, item) => total + (Number(item?.imageCount) || 0), 0);
-    const question = {
-      id: requestId,
-      method: 'rubato-queue-recovery',
-      state,
-    };
-    context.queueRecovery = question;
-    context.projection.questions.set(requestId, question);
-    context.projection.event('user-input.requested', { questions: [{
-      id: requestId,
-      header: 'Queued messages',
-      question: `Rubato found ${count} message${count === 1 ? '' : 's'} left in the provider queue after the turn stopped.${attachmentCount ? ` ${attachmentCount} legacy queued attachment${attachmentCount === 1 ? '' : 's'} cannot be restored.` : ''}${preview ? `\n\n${preview}` : ''}`,
-      options: [
-        { label: 'Resume in order', description: attachmentCount
-          ? 'Run the recovered text in order; legacy queued attachments are omitted.'
-          : 'Run the recovered messages in their original order.', value: RECOVER_QUEUE_RESUME },
-        { label: 'Discard', description: 'Remove the recovered messages without running them.', value: RECOVER_QUEUE_DISCARD },
-      ],
-      allowCustomAnswer: false,
-      multiSelect: false,
-    }] }, { requestId });
-    return true;
-  }
-  resolveQueueRecovery(context, requestId, decision) {
-    const operation = context.queue.then(() => this.applyQueueRecovery(context, requestId, decision));
-    context.queue = operation.catch(() => {});
-    return operation;
-  }
-  // Runs inside an already-owned queue slot so sendTurn can settle a recovery
-  // itself. Callers outside the chain go through resolveQueueRecovery.
-  async applyQueueRecovery(context, requestId, decision) {
-    if (![RECOVER_QUEUE_RESUME, RECOVER_QUEUE_DISCARD].includes(decision))
-      throw new Error('Choose Resume in order or Discard');
-    const recovery = context.queueRecovery;
-    if (!recovery || recovery.id !== requestId) throw new Error('This queue recovery was already resolved');
-    if (!recovery.messages) {
-      const snapshot = await context.client.snapshot();
-      const cleared = staleQueue(snapshot.state)
-        ? await context.client.command({ type: 'clear_queue' })
-        : { steering: [], followUp: [] };
-      recovery.messages = queuedMessagesInOrder(snapshot.state, cleared);
-      recovery.nextIndex = 0;
-    }
-    const messages = recovery.messages;
-    if (decision === RECOVER_QUEUE_RESUME && messages.length > 0) {
-      const turnId = context.projection.begin();
-      context.session.status = 'running'; this.stateEvent(context);
-      try {
-        while (recovery.nextIndex < messages.length) {
-          const snapshot = await context.client.snapshot();
-          const type = snapshot.state.isStreaming ? 'follow_up' : 'prompt';
-          await context.client.command({ type, message: messages[recovery.nextIndex] });
-          recovery.nextIndex += 1;
-        }
-      } catch (error) {
-        // Nothing reached the provider, so no turn will ever settle the one we
-        // opened, and applyState reads running off projection.turnId. Close it
-        // here or the thread stays locked; the question survives for a retry.
-        if (recovery.nextIndex === 0) {
-          context.projection.failed = true; context.projection.settle();
-          context.session.status = 'ready'; this.stateEvent(context);
-        }
-        throw error;
-      }
-      this.finishQueueRecovery(context, requestId, decision);
-      return { turnId, recoveredMessageCount: messages.length };
-    }
-    if (decision === RECOVER_QUEUE_DISCARD) this.reportDiscardedQueue(context, messages.slice(recovery.nextIndex ?? 0));
-    this.finishQueueRecovery(context, requestId, decision);
-  }
-  // Discarded text only exists in the provider queue, and clear_queue is what
-  // hands it back. Write it into the thread or the user loses a message they
-  // never saw: the card previews Pi's pending-input records, and an aborted
-  // turn can leave a queued message with no record behind it.
-  reportDiscardedQueue(context, messages) {
+  // Nothing of the user's should sit in Pi's queue. A queued message waits in
+  // T3, where it stays visible, editable and cancellable, and the row's Send
+  // now arrow promotes it to a steer. An abort can still strand a steer Pi had
+  // not read yet; drain it and write the text into the thread instead of
+  // letting it surface inside an unrelated turn later.
+  async drainStrandedQueue(context, state) {
+    if (!staleQueue(state)) return;
+    const cleared = await context.client.command({ type: 'clear_queue' });
+    const messages = queuedMessagesInOrder(state, cleared);
     if (!messages.length) return;
     context.projection.event('runtime.warning', { message:
-      `Discarded ${messages.length} queued message${messages.length === 1 ? '' : 's'} left by the stopped turn:\n${
+      `${messages.length} message${messages.length === 1 ? '' : 's'} never reached the model before the turn stopped:\n${
         messages.map((text, index) => `${index + 1}. ${text}`).join('\n')}` });
-  }
-  // A new prompt is itself the answer: the user moved on from what the stopped
-  // turn left queued. Refusing the send instead turned an unanswered card into
-  // a dead thread — every later prompt hit the same refusal, and the typed
-  // message was thrown away with it.
-  async settleQueueForNewPrompt(context, state) {
-    if (!context.queueRecovery && !this.offerStaleQueueRecovery(context, state)) return;
-    await this.applyQueueRecovery(context, context.queueRecovery.id, RECOVER_QUEUE_DISCARD);
-  }
-  finishQueueRecovery(context, requestId, decision) {
-    context.projection.questions.delete(requestId);
-    context.queueRecovery = undefined;
-    context.projection.event('user-input.resolved', { answers: { [requestId]: decision } }, { requestId });
-    if (!context.projection.turnId) {
-      context.session.status = 'ready'; this.stateEvent(context);
-    }
   }
   async selectModel(context, selection) {
     if (selection.model === 'rubato:select-model') {
@@ -475,7 +376,7 @@ export class RubatoPiBridge {
         return { threadId: input.threadId, turnId, resumeCursor: context.session.resumeCursor };
       }
       const beforeSend = await context.client.snapshot();
-      await this.settleQueueForNewPrompt(context, beforeSend.state);
+      await this.drainStrandedQueue(context, beforeSend.state);
       const images = await imagesFromAttachments(input.attachments);
       if (!input.input?.trim() && images.length === 0) throw new Error('A non-empty prompt is required');
       if (input.interactionMode === 'plan') throw new Error('T3 plan mode is not mapped to Rubato policy');
@@ -492,12 +393,13 @@ export class RubatoPiBridge {
           await context.client.command(control.rpc);
           this.reportControl(context, control);
         } else {
-          // 턴이 도는 중에 보낸 말은 CLI 와 같은 자리에 붙는다 — 지금 작업에
-          // 끼어드는 steer 가 아니라, 이번 턴이 끝난 뒤 실행되는 대기열이다.
-          // 앱 컴포저에는 CLI 의 두 번째 Enter 같은 승격 수단이 없어서,
-          // 끼어들기가 필요하면 턴을 멈추고 다시 보낸다.
+          // 대기열은 T3 가 쥔다: 큐에 든 말은 턴이 끝나야 나오는 팔로업이고,
+          // 그 행의 Send now 화살표가 승격이다. 그러니 턴이 도는 중에 여기까지
+          // 온 말은 승격된 말뿐이라 지금 턴에 끼어드는 steer 로 보낸다. 예전처럼
+          // Pi 의 follow_up 큐에 맡기면 T3 가 못 보는 두 번째 대기열이 생기고,
+          // 턴을 멈췄을 때 거기 남은 말을 되돌려줄 자리가 없었다.
           await context.client.command({
-            type: running ? 'follow_up' : 'prompt',
+            type: running ? 'steer' : 'prompt',
             message,
             ...(images.length ? { images } : {}),
           });
@@ -535,7 +437,7 @@ export class RubatoPiBridge {
     await context.client.command({ type: 'abort' });
     context.projection.settle(); context.session.status = 'ready'; this.stateEvent(context);
     const snapshot = await context.client.snapshot();
-    this.offerStaleQueueRecovery(context, snapshot.state);
+    await this.drainStrandedQueue(context, snapshot.state);
   }
   async respondToRequest(threadId, requestId, decision) {
     const context = this.require(threadId);
@@ -553,8 +455,6 @@ export class RubatoPiBridge {
     if (Array.isArray(value) && value.length === 1) value = value[0];
     if (value && typeof value === 'object' && Array.isArray(value.answers) && value.answers.length === 1) value = value.answers[0];
     if (typeof value !== 'string') throw new Error('This Pi question expects exactly one text answer');
-    if (context.queueRecovery?.id === requestId)
-      return this.resolveQueueRecovery(context, requestId, value);
     await context.client.reply({ id: requestId, value });
     context.projection.questions.delete(requestId);
     context.projection.event('user-input.resolved', { answers }, { requestId });
@@ -617,7 +517,6 @@ export class RubatoPiBridge {
     this.claimed.add(sessionId);
     context.sessionId = sessionId;
     context.session.resumeCursor = this.cursor(sessionId);
-    context.queueRecovery = undefined;
     context.projection.reset(sessionId);
     for (const message of snapshot.messages ?? []) {
       if (message?.role !== 'assistant') continue;
