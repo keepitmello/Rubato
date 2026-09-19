@@ -220,6 +220,30 @@ test("stateful wrapper는 inner error 뒤 terminal event를 하나만 낸다", a
   assert.match((await stream.result()).errorMessage, /HTTP 500/);
 });
 
+test("quota 429는 quota exceeded로 끝나서 재시도 분류기가 붙잡지 않는다", async () => {
+  const body = JSON.stringify({
+    error: {
+      code: 429,
+      message: "Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 14h32m21s.",
+      status: "RESOURCE_EXHAUSTED",
+      details: [{ reason: "QUOTA_EXHAUSTED" }],
+    },
+  });
+  const api = createAntigravityApi({
+    fetchImpl: async () => ({ ok: false, status: 429, text: async () => body }),
+    runStateful: async (_options, work) => work(state()),
+  });
+  const stream = api.stream(model, { messages: [] }, {
+    apiKey: "token",
+    env: { [ANTIGRAVITY_PROJECT_ENV]: "project-a" },
+  });
+  await eventsOf(stream);
+  const errorMessage = (await stream.result()).errorMessage;
+  assert.match(errorMessage, /quota exceeded/);
+  assert.match(errorMessage, /Individual quota reached/);
+  assert.doesNotMatch(errorMessage, /HTTP 429/);
+});
+
 // pinned encoder 의 `toolResult` 분기는 `model.input.includes("image")` 를 가드 없이 읽는다
 // (`api/google-shared.js:206`). catalog 가 `input` 없는 descriptor 를 주면 **도구 결과를 실을
 // 때만** TypeError 가 나서 턴이 통째로 빈다 — 도구 왕복이 없는 시험은 전부 통과하므로 오래
