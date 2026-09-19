@@ -136,6 +136,7 @@ function jsonLineChannel(child) {
 }
 
 const dependencies = await loadPiFeatures([
+  "codemode",
   "reload",
   "service-tier",
   "input-lifecycle",
@@ -164,6 +165,109 @@ const contextProtocol = await import(pathToFileURL(join(
   runtime.codingAgentDir,
   "dist/rubato-features/context-notes/src/context-notes/protocol.mjs",
 )));
+const { default: codemodeExtension } = await import(pathToFileURL(join(
+  staged.root, "rubato-features/codemode/src/index.ts",
+)));
+
+const noteCode = "await tool.notes_write_file({path:'work.md',text:'Goal, progress, latest result, next step'});";
+for (const [scenario, steps] of [
+  ["paired-eval", [noteCode + "await tool.new_context({});"]],
+  ["separate-eval", [noteCode, "await tool.new_context({});"]],
+  ["budget-checkpoint", ["@budget", noteCode]],
+  ["repair-missing-note", ["@budget", "@missed", noteCode]],
+  ["repair-exhausted", ["@budget", "@missed", "@missed"]],
+  ["repair-mixed-work", [
+    noteCode + "await tool.new_context({}); await tool.bash({command:'printf late-work'});",
+    noteCode + "await tool.new_context({});",
+  ]],
+]) {
+  test(`actual SDK and eval checkpoint lifecycle: ${scenario}`, async (t) => {
+    const cwd = join(scratch, scenario);
+    const agentDir = join(cwd, "agent");
+    const sessionDir = join(cwd, "sessions");
+    mkdirSync(join(cwd, ".senpi"), { recursive: true });
+    mkdirSync(agentDir);
+    mkdirSync(sessionDir);
+    writeModels(agentDir);
+    writeFileSync(join(cwd, ".senpi/codemode.json"), JSON.stringify({
+      languages: { py: false, js: true, rb: false, jl: false },
+      cellTimeoutSeconds: 10, foregroundWindowSeconds: 10, hardLimitSeconds: 15,
+    }));
+    const settingsManager = sdk.SettingsManager.inMemory();
+    const loader = new sdk.DefaultResourceLoader({
+      cwd, agentDir, settingsManager,
+      noExtensions: true, noSkills: true, noPromptTemplates: true,
+      noThemes: true, noContextFiles: true,
+      extensionFactories: [
+        { name: "context-notes", factory: createContextNotesExtension({ agentDir, enabled: true }) },
+        { name: "codemode", factory: (pi) => codemodeExtension(pi, {
+          complete: async () => { throw new Error("No live model calls in this fixture"); },
+        }) },
+      ],
+    });
+    await loader.reload();
+    const { session } = await sdk.createAgentSession({
+      cwd, agentDir, settingsManager, resourceLoader: loader,
+      sessionManager: sdk.SessionManager.create(cwd, sessionDir),
+      model: {
+        provider: "context-window-test", id: "fake-model", name: "Checkpoint eval fixture",
+        api: "openai-completions", baseUrl: "http://127.0.0.1:9/v1",
+        reasoning: false, input: ["text"], contextWindow: 100_000, maxTokens: 4096,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      },
+      tools: ["eval", "notes_write_file", "new_context", "bash"],
+    });
+    t.after(async () => {
+      await session.extensionRunner.emit({ type: "session_shutdown", reason: "exit" });
+      session.dispose();
+    });
+    const errors = [];
+    await session.bindExtensions({
+      mode: "rpc",
+      uiContext: { notify(message, level) { if (level === "error") errors.push(message); }, setStatus() {} },
+      onError: (error) => errors.push(error),
+    });
+    const contexts = [];
+    session.agent.streamFunction = (_model, context) => {
+      const index = contexts.length;
+      contexts.push(structuredClone(context.messages));
+      assert.ok(index <= steps.length, "checkpoint repair must not loop");
+      const step = steps[index];
+      const message = step === undefined || step.startsWith("@")
+        ? assistant([{ type: "text", text: step ?? "continued after checkpoint" }])
+        : assistant([{ type: "toolCall", name: "eval", id: `eval-${index}`,
+          arguments: { language: "js", code: step, summary: scenario } }], "toolUse");
+      if (step === "@budget") message.usage = usage(90_100, 1);
+      return completeStream(AssistantMessageEventStream, message);
+    };
+    await session.prompt("Original request must remain in history");
+    if (scenario === "repair-exhausted") {
+      assert.equal(contexts.length, steps.length, "only one repair attempt is allowed");
+      assert.equal(errors.length, 1);
+      assert.match(errors[0], /최신 작업 노트가 완성되지 않았/);
+      assert.equal(session.sessionManager.getEntries().filter((e) => e.type === "compaction").length, 0);
+      assert.match(JSON.stringify(session.messages), /Original request must remain/);
+      return;
+    }
+    assert.deepEqual(errors, []);
+    assert.equal(contexts.length, steps.length + 1, JSON.stringify(session.messages));
+    const entries = session.sessionManager.getEntries();
+    assert.equal(entries.filter((e) => e.type === "compaction").length, 1);
+    assert.equal(entries.some((e) => ["aborted", "error"].includes(e.message?.stopReason)), false);
+    const receipts = entries.filter((e) => e.message?.toolName === "eval").map((e) => e.message);
+    assert.ok(receipts.length > 0);
+    assert.ok(receipts.every((m) => !m.isError && m.details.toolCallCount > 0 &&
+      m.details.cells[0].status === "complete"), JSON.stringify(receipts));
+    assert.match(JSON.stringify(contexts.at(-1)), /rubato_context_window_v1/);
+    assert.doesNotMatch(JSON.stringify(contexts.at(-1)), /Original request must remain/);
+    if (scenario.startsWith("repair-")) {
+      assert.ok(entries.some((e) => e.customType === "rubato-context-checkpoint-request" &&
+        JSON.stringify(e.content).includes("다시 저장")));
+      assert.match(JSON.stringify(contexts.at(-2)), /Original request must remain/,
+        "the repair request must keep the old context");
+    }
+  });
+}
 
 test("descriptor is stock-locked, drift-failing, and composes with shared core features", () => {
   assert.equal(feature.id, "context-window");
