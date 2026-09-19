@@ -10,7 +10,7 @@ import { RpcWorker } from '../../pi-server/src/rpc-worker.mjs';
 import { SessionClient } from '../../pi-server/src/client.mjs';
 import { RubatoPiBridge } from '../src/bridge.mjs';
 import { userStartedSession } from '../src/bridge.mjs';
-import { EventProjection } from '../src/events.mjs';
+import { errorDetail, EventProjection } from '../src/events.mjs';
 import {t3Modules} from './t3-source.mjs';
 const fixture = fileURLToPath(new URL('../../pi-server/test/fixtures/rpc.mjs', import.meta.url));
 const until = async (predicate) => { for (let i=0;i<500;i++) { if (await predicate()) return; await delay(10); } throw new Error('Condition did not settle'); };
@@ -654,6 +654,31 @@ test('a turn whose last assistant message errors still closes as failed', () => 
   const completed = events.filter((event) => event.type==='turn.completed');
   assert.equal(completed.length, 1);
   assert.equal(completed[0].payload.state, 'failed');
+});
+
+test('errorDetail unwraps a JSON provider body', () => {
+  assert.equal(
+    errorDetail({ errorMessage: 'Antigravity quota exceeded: Individual quota reached. Resets in 14h.' }),
+    'Antigravity quota exceeded: Individual quota reached. Resets in 14h.',
+  );
+  assert.equal(
+    errorDetail({ errorMessage: 'OpenAI API error (403): {"type":"FreeTierError","message":"OpenCode\'s free tier can only be used from within OpenCode"}' }),
+    "OpenCode's free tier can only be used from within OpenCode",
+  );
+});
+
+test('a failed assistant message puts the provider error on the item and the turn', () => {
+  const events=[]; const p=new EventProjection({threadId:'thread',sessionId:'session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
+  p.project({type:'agent_start'});
+  p.project({type:'message_end', message:{role:'assistant', timestamp:1, stopReason:'error', errorMessage:'Antigravity HTTP 429: {"error":{"message":"Individual quota reached"}}', content:[]}});
+  p.project({type:'agent_settled'});
+  const item = events.find((event) => event.type==='item.completed' && !String(event.itemId).endsWith(':reasoning'));
+  assert.equal(item.payload.status, 'failed');
+  assert.equal(item.payload.detail, 'Individual quota reached');
+  const completed = events.filter((event) => event.type==='turn.completed');
+  assert.equal(completed.length, 1);
+  assert.equal(completed[0].payload.state, 'failed');
+  assert.equal(completed[0].payload.errorMessage, 'Individual quota reached');
 });
 
 test('assistant usage becomes thread.token-usage.updated in the meter shape', async () => {

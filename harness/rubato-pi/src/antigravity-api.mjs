@@ -237,6 +237,32 @@ function providerError(error) {
   return String(error);
 }
 
+function googleErrorMessage(text) {
+  try {
+    const parsed = JSON.parse(text);
+    const message = parsed?.error?.message;
+    return typeof message === "string" && message.trim() ? message.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isQuotaExhausted(status, text) {
+  return status === 429 && /quota reached|QUOTA_EXHAUSTED|RESOURCE_EXHAUSTED|quota exceeded/i.test(text);
+}
+
+function httpError(status, text) {
+  const body = text.slice(0, 512);
+  const inner = googleErrorMessage(text);
+  // pi-ai retries any message that contains "429" unless it also matches
+  // "quota exceeded". Antigravity says "quota reached", so the turn spun for
+  // the full retry budget and T3 looked hung.
+  if (isQuotaExhausted(status, text)) {
+    return new Error(`Antigravity quota exceeded: ${inner ?? body}`);
+  }
+  return new Error(`Antigravity HTTP ${status}: ${body}`);
+}
+
 function responseHeaders(headers) {
   if (!headers) return {};
   if (typeof headers.entries === "function") return Object.fromEntries(headers.entries());
@@ -326,7 +352,7 @@ export function createAntigravityApi({
         );
         if (!response.ok) {
           const text = await response.text();
-          throw new Error(`Antigravity HTTP ${response.status}: ${text.slice(0, 512)}`);
+          throw httpError(response.status, text);
         }
 
         eventStream.push({ type: "start", partial: output });
