@@ -97,7 +97,7 @@ test('a dead socket on an inventory request reconnects inside the bridge instead
   assert.equal(failures, 1);
   assert.notEqual(bridge.inventoryClient, stale);
 });
-test('a message sent during a live turn waits for the next turn instead of steering into this one', async () => {
+test('a message that reaches the bridge during a live turn is a steer, not a second queue', async () => {
   const projection = new EventProjection({threadId:'busy-thread',sessionId:'busy-session',instanceId:'instance',emit:()=>{}});
   const bridge = Object.create(RubatoPiBridge.prototype);
   bridge.skillNames = new Set();
@@ -107,158 +107,48 @@ test('a message sent during a live turn waits for the next turn instead of steer
     client:{snapshot:async()=>({state}),command:async(command)=>{commands.push(command);}}};
   bridge.sessions = new Map([['busy-thread',context]]);
   await bridge.sendTurn({threadId:'busy-thread',input:'first'});
-  await bridge.sendTurn({threadId:'busy-thread',input:'while it runs'});
+  await bridge.sendTurn({threadId:'busy-thread',input:'promoted with Send now'});
+  // T3 holds a queued message until the turn ends, so anything arriving mid-turn
+  // was promoted on purpose. Parking it in Pi's queue made both row buttons mean
+  // the same thing and hid the text from the surface that queued it.
   assert.deepEqual(commands,[
     {type:'prompt',message:'first'},
-    {type:'follow_up',message:'while it runs'},
+    {type:'steer',message:'promoted with Send now'},
   ]);
 });
 
-test('an idle provider queue is offered for recovery without deleting it', async () => {
-  const events = [];
-  const projection = new EventProjection({threadId:'stale-thread',sessionId:'stale-session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
-  const bridge = Object.create(RubatoPiBridge.prototype);
-  const commands = [];
-  const state = {isStreaming:false,isCompacting:false,pendingMessageCount:2,requestTimeline:{pendingInputs:[
-    {delivery:'steer',textPreview:'first'}, {delivery:'followUp',textPreview:'second'},
-  ]}};
-  const context = {sessionId:'stale-session',projection,session:{threadId:'stale-thread',status:'ready'},queue:Promise.resolve(),stopped:false,
-    client:{snapshot:async()=>({state}),command:async(command)=>{commands.push(command); if(command.type==='clear_queue') return {steering:['first'],followUp:['second']};}}};
-  bridge.sessions = new Map([['stale-thread',context]]);
-  assert.equal(bridge.offerStaleQueueRecovery(context,state),true);
-  assert.deepEqual(commands,[], 'detection must not delete queued input before the user decides');
-  const request = events.find((event)=>event.type==='user-input.requested');
-  assert.match(request.payload.questions[0].question,/first/);
-  assert.deepEqual(commands,[], 'detection must not delete queued input before the user decides');
-});
-
-test('a new prompt settles an unanswered recovery instead of refusing the send', async () => {
+test('a steer the stopped turn never read is drained back into the thread', async () => {
   const events = [];
   const projection = new EventProjection({threadId:'stale-thread',sessionId:'stale-session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
   const bridge = Object.create(RubatoPiBridge.prototype);
   bridge.skillNames = new Set();
   const commands = [];
-  const state = {isStreaming:false,isCompacting:false,pendingMessageCount:2,requestTimeline:{pendingInputs:[
-    {delivery:'steer',textPreview:'first'}, {delivery:'followUp',textPreview:'second'},
-  ]}};
-  const context = {sessionId:'stale-session',projection,session:{threadId:'stale-thread',status:'ready'},queue:Promise.resolve(),stopped:false,
-    client:{snapshot:async()=>({state}),command:async(command)=>{commands.push(command); if(command.type==='clear_queue') return {steering:['first'],followUp:['second']};}}};
-  bridge.sessions = new Map([['stale-thread',context]]);
-  bridge.offerStaleQueueRecovery(context,state);
-  await bridge.sendTurn({threadId:'stale-thread',input:'new'});
-  assert.deepEqual(commands,[{type:'clear_queue'},{type:'prompt',message:'new'}]);
-  assert.equal(context.queueRecovery,undefined);
-  const warning = events.find((event)=>event.type==='runtime.warning');
-  assert.match(warning.payload.message,/first[\s\S]*second/, 'discarded text must stay readable in the thread');
-  assert.ok(events.some((event)=>event.type==='user-input.resolved'),'the card must close with the send');
-});
-
-test('a stale queue found at send time does not swallow the prompt', async () => {
-  const events = [];
-  const projection = new EventProjection({threadId:'stale-thread',sessionId:'stale-session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
-  const bridge = Object.create(RubatoPiBridge.prototype);
-  bridge.skillNames = new Set();
-  const commands = [];
-  // An aborted turn can leave a queued message Pi never recorded as a pending
-  // input: count above zero, preview empty. That pair used to lock the thread.
+  // An abort can strand a steer Pi had not read: count above zero with no
+  // pending-input record behind it. Left alone it used to block every later
+  // prompt; run later it would surface inside an unrelated turn.
   const state = {isStreaming:false,isCompacting:false,pendingMessageCount:1,requestTimeline:{pendingInputs:[]}};
   const context = {sessionId:'stale-session',projection,session:{threadId:'stale-thread',status:'ready'},queue:Promise.resolve(),stopped:false,
-    client:{snapshot:async()=>({state}),command:async(command)=>{commands.push(command); if(command.type==='clear_queue') return {steering:[],followUp:['orphan']};}}};
+    client:{snapshot:async()=>({state}),command:async(command)=>{commands.push(command); if(command.type==='clear_queue') return {steering:['stranded'],followUp:[]};}}};
   bridge.sessions = new Map([['stale-thread',context]]);
   await bridge.sendTurn({threadId:'stale-thread',input:'new'});
   assert.deepEqual(commands,[{type:'clear_queue'},{type:'prompt',message:'new'}]);
-  assert.equal(context.queueRecovery,undefined);
-  assert.match(events.find((event)=>event.type==='runtime.warning').payload.message,/orphan/);
+  assert.match(events.find((event)=>event.type==='runtime.warning').payload.message,/stranded/);
+  assert.equal(events.some((event)=>event.type==='user-input.requested'),false,'a stranded message is reported, never asked about');
 });
 
-test('queue recovery clears once and resumes full messages in their original order', async () => {
-  const events = [];
-  const projection = new EventProjection({threadId:'stale-thread',sessionId:'stale-session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
+test('an empty provider queue costs no clear_queue call', async () => {
+  const projection = new EventProjection({threadId:'idle-thread',sessionId:'idle-session',instanceId:'instance',emit:()=>{}});
   const bridge = Object.create(RubatoPiBridge.prototype);
+  bridge.skillNames = new Set();
   const commands = [];
-  const state = {isStreaming:false,isCompacting:false,pendingMessageCount:3,requestTimeline:{pendingInputs:[
-    {delivery:'followUp',textPreview:'one'}, {delivery:'steer',textPreview:'two'}, {delivery:'followUp',textPreview:'three'},
-  ]}};
-  let running = false;
-  const context = {sessionId:'stale-session',projection,session:{threadId:'stale-thread',status:'ready'},queue:Promise.resolve(),stopped:false,
-    client:{snapshot:async()=>({state:{...state,isStreaming:running}}),command:async(command)=>{commands.push(command); if(command.type==='clear_queue') return {steering:['two full'],followUp:['one full','three full']}; running=true;}}};
-  bridge.sessions = new Map([['stale-thread',context]]);
-  bridge.offerStaleQueueRecovery(context,state);
-  const requestId = context.queueRecovery.id;
-  const result = await bridge.respondToUserInput('stale-thread',requestId,{[requestId]:'resume'});
-  assert.equal(result.recoveredMessageCount,3);
-  assert.deepEqual(commands,[
-    {type:'clear_queue'},
-    {type:'prompt',message:'one full'},
-    {type:'follow_up',message:'two full'},
-    {type:'follow_up',message:'three full'},
-  ]);
-  assert.equal(context.queueRecovery,undefined);
-  assert.ok(events.some((event)=>event.type==='user-input.resolved'));
-  assert.ok(events.some((event)=>event.type==='turn.started'));
+  const state = {isStreaming:false,isCompacting:false,pendingMessageCount:0,requestTimeline:{pendingInputs:[]}};
+  const context = {sessionId:'idle-session',projection,session:{threadId:'idle-thread',status:'ready'},queue:Promise.resolve(),stopped:false,
+    client:{snapshot:async()=>({state}),command:async(command)=>{commands.push(command);}}};
+  bridge.sessions = new Map([['idle-thread',context]]);
+  await bridge.sendTurn({threadId:'idle-thread',input:'new'});
+  assert.deepEqual(commands,[{type:'prompt',message:'new'}]);
 });
 
-test('a failed recovered send keeps the unsent messages for retry', async () => {
-  const projection = new EventProjection({threadId:'stale-thread',sessionId:'stale-session',instanceId:'instance',emit:()=>{}});
-  const bridge = Object.create(RubatoPiBridge.prototype);
-  const state = {isStreaming:false,isCompacting:false,pendingMessageCount:2,requestTimeline:{pendingInputs:[
-    {delivery:'steer',textPreview:'first'}, {delivery:'followUp',textPreview:'second'},
-  ]}};
-  let attempts = 0;
-  const context = {sessionId:'stale-session',projection,session:{threadId:'stale-thread',status:'ready'},queue:Promise.resolve(),stopped:false,
-    client:{snapshot:async()=>({state:{...state,isStreaming:attempts>0}}),command:async(command)=>{
-      if(command.type==='clear_queue') return {steering:['first'],followUp:['second']};
-      attempts += 1;
-      if(attempts===2) throw new Error('transport failed');
-    }}};
-  bridge.sessions = new Map([['stale-thread',context]]);
-  bridge.offerStaleQueueRecovery(context,state);
-  const requestId = context.queueRecovery.id;
-  await assert.rejects(bridge.respondToUserInput('stale-thread',requestId,{[requestId]:'resume'}),/transport failed/);
-  assert.deepEqual(context.queueRecovery.messages,['first','second']);
-  assert.equal(context.queueRecovery.nextIndex,1);
-  assert.equal(projection.questions.has(requestId),true);
-});
-
-test('a recovered send that never reaches the provider leaves the thread usable', async () => {
-  const projection = new EventProjection({threadId:'stale-thread',sessionId:'stale-session',instanceId:'instance',emit:()=>{}});
-  const bridge = Object.create(RubatoPiBridge.prototype);
-  const state = {isStreaming:false,isCompacting:false,pendingMessageCount:2,requestTimeline:{pendingInputs:[
-    {delivery:'steer',textPreview:'first'}, {delivery:'followUp',textPreview:'second'},
-  ]}};
-  const context = {sessionId:'stale-session',projection,session:{threadId:'stale-thread',status:'ready'},queue:Promise.resolve(),stopped:false,
-    client:{snapshot:async()=>({state}),command:async(command)=>{
-      if(command.type==='clear_queue') return {steering:['first'],followUp:['second']};
-      throw new Error('transport failed');
-    }}};
-  bridge.sessions = new Map([['stale-thread',context]]);
-  bridge.offerStaleQueueRecovery(context,state);
-  const requestId = context.queueRecovery.id;
-  await assert.rejects(bridge.respondToUserInput('stale-thread',requestId,{[requestId]:'resume'}),/transport failed/);
-  assert.equal(context.projection.turnId,undefined,'an opened turn nothing can settle must not outlive the failure');
-  assert.equal(context.session.status,'ready');
-  assert.equal(context.queueRecovery.nextIndex,0);
-  assert.equal(projection.questions.has(requestId),true);
-});
-
-test('discarding a recovered queue clears it without running any message', async () => {
-  const events = [];
-  const projection = new EventProjection({threadId:'stale-thread',sessionId:'stale-session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
-  const bridge = Object.create(RubatoPiBridge.prototype);
-  const commands = [];
-  const state = {isStreaming:false,isCompacting:false,pendingMessageCount:1,requestTimeline:{pendingInputs:[
-    {delivery:'steer',textPreview:'do not run'},
-  ]}};
-  const context = {sessionId:'stale-session',projection,session:{threadId:'stale-thread',status:'running'},queue:Promise.resolve(),stopped:false,
-    client:{snapshot:async()=>({state}),command:async(command)=>{commands.push(command); return {steering:['do not run'],followUp:[]};}}};
-  bridge.sessions = new Map([['stale-thread',context]]);
-  bridge.offerStaleQueueRecovery(context,state);
-  const requestId = context.queueRecovery.id;
-  await bridge.respondToUserInput('stale-thread',requestId,{[requestId]:'discard'});
-  assert.deepEqual(commands,[{type:'clear_queue'}]);
-  assert.equal(context.session.status,'ready');
-  assert.equal(events.some((event)=>event.type==='turn.started'),false);
-});
 test('a failure the socket did not cause still reaches the caller', async (t) => {
   const { bridge } = await setup(t);
   const client = await bridge.connection();

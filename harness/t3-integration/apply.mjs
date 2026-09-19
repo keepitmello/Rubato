@@ -254,6 +254,17 @@ const edits = {
       'replace',
     ],
   ],
+  // 큐에 든 말과 끼어드는 말은 다른 물건이다. T3 는 대기 메시지를 첫 툴 경계에서
+  // 내보내므로 ↑(Send now) 와 자동 방출이 같은 결과가 되고, Rubato 에서는 그 말이
+  // Pi 자신의 follow_up 큐로 들어가 T3 가 보여주지도 취소하지도 못했다. 루바토에서는
+  // 대기 메시지를 턴이 끝날 때까지 붙들어 둔다 — 그게 팔로업이고, ↑ 는 승격이다.
+  'apps/web/src/components/ChatView.tsx': [
+    [
+      '    if (!isQueuedMessageDue({ message: nextQueuedMessage, phase, latestToolActivityId })) return;\n    sendQueuedMessage(nextQueuedMessage);\n  }, [\n    isSendBusy,\n    latestToolActivityId,\n    nextQueuedMessage,\n    phase,\n    queueBlockedByPendingRequest,\n    queueSendGate,\n  ]);',
+      '    if (!isQueuedMessageDue({ message: nextQueuedMessage, phase, latestToolActivityId })) return;\n    // A queued message is a follow-up: it runs as its own turn once this one\n    // ends. Releasing it at a tool boundary would make the row\'s Send now\n    // arrow mean nothing — that arrow is the promotion to a steer.\n    if (phase === "running" && selectedProvider === ProviderDriverKind.make("rubato-pi")) return;\n    sendQueuedMessage(nextQueuedMessage);\n  }, [\n    isSendBusy,\n    latestToolActivityId,\n    nextQueuedMessage,\n    phase,\n    queueBlockedByPendingRequest,\n    queueSendGate,\n    selectedProvider,\n  ]);',
+      'replace',
+    ],
+  ],
   'apps/mobile/src/lib/threadActivity.ts': [
     [
       '  const firstAssistantMessageIdByTurn = new Map<TurnId, string>();\n  const terminalAssistantMessageIdByTurn = new Map<TurnId, string>();\n  for (const entry of feed) {\n    if (entry.type === "message" && entry.message.role === "assistant" && entry.message.turnId) {\n      if (!firstAssistantMessageIdByTurn.has(entry.message.turnId)) {\n        firstAssistantMessageIdByTurn.set(entry.message.turnId, entry.id);\n      }\n      terminalAssistantMessageIdByTurn.set(entry.message.turnId, entry.id);\n    }\n  }',
