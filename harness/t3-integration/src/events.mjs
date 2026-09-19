@@ -16,6 +16,22 @@ const nonempty = (value) => {
   const text = value.trim();
   return text ? text : undefined;
 };
+// Provider errors arrive as `errorMessage`, often wrapping a JSON body. T3 paints
+// `item.completed.detail` and `turn.completed.errorMessage`; empty failed items
+// look like a hang because the spinner has nothing to replace.
+export const errorDetail = (message) => {
+  const raw = nonempty(message?.errorMessage);
+  if (!raw) return;
+  const start = raw.indexOf('{');
+  if (start === -1) return raw;
+  try {
+    const parsed = JSON.parse(raw.slice(start));
+    const inner = nonempty(parsed?.error?.message) || nonempty(parsed?.message);
+    return inner ?? raw;
+  } catch {
+    return raw;
+  }
+};
 const record = (value) => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 const hasTaskIdentity = (value) => Boolean(nonempty(value.agentId) || nonempty(value.childId) || nonempty(value.task_id));
 const hasTaskBody = (value) => hasTaskIdentity(value) || nonempty(value.status) || value.progress || value.members
@@ -183,6 +199,7 @@ export class EventProjection {
     this.text.clear(); this.thinking.clear(); this.completed.clear(); this.questions.clear();
     this.tasks.clear(); this.children.clear(); this.spawns.clear();
     this.turnId = undefined; this.failed = false; this.interrupted = false; this.lastUsage = undefined;
+    this.lastError = undefined;
     this.maxTokens = undefined;
   }
   configureUsage({ maxTokens, compactsAutomatically, replaceWindow } = {}) {
@@ -202,12 +219,13 @@ export class EventProjection {
   }
   begin(turnId = randomUUID()) {
     if (this.turnId) return this.turnId;
-    this.turnId = turnId; this.failed = false; this.interrupted = false;
+    this.turnId = turnId; this.failed = false; this.interrupted = false; this.lastError = undefined;
     this.event('turn.started', {}); return turnId;
   }
   settle() {
     if (!this.turnId) return;
-    this.event('turn.completed', { state: this.interrupted ? 'interrupted' : this.failed ? 'failed' : 'completed' });
+    const state = this.interrupted ? 'interrupted' : this.failed ? 'failed' : 'completed';
+    this.event('turn.completed', { state, ...(state === 'failed' && this.lastError ? { errorMessage: this.lastError } : {}) });
     this.turnId = undefined;
   }
   seed(projected) {
@@ -253,7 +271,7 @@ export class EventProjection {
     }
     if (complete && !this.completed.has(itemId)) {
       this.endReasoning(message);
-      const detail = textOf(message);
+      const detail = textOf(message) || (message.stopReason === 'error' ? errorDetail(message) : undefined);
       this.event('item.completed', { itemType: 'assistant_message',
         status: message.stopReason === 'error' ? 'failed' : 'completed', ...(detail ? { detail } : {}) }, { itemId });
       this.completed.add(itemId);
@@ -263,6 +281,7 @@ export class EventProjection {
       // finished turn as `failed` and left a red row where nothing had failed.
       this.failed = message.stopReason === 'error';
       this.interrupted = message.stopReason === 'aborted';
+      this.lastError = this.failed ? errorDetail(message) : undefined;
     }
   }
   question(request) {
