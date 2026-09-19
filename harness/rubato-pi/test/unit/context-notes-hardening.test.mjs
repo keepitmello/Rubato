@@ -91,7 +91,8 @@ test("new work in the same tool batch is not dropped by scheduled new_context", 
   const f = setup(t); save(f); f.c.requestWindow(f.ctx);
   f.addMessage("toolResult", "FILE WAS CHANGED", { toolName: "write", toolCallId: "late" });
   await f.c.turnEnd({}, f.ctx);
-  assert.equal(f.c.window.number, 0); assert.ok(f.c.paused);
+  assert.equal(f.c.window.number, 0); assert.equal(f.c.checkpointRequested, true);
+  assert.equal(f.abort.signal.aborted, false);
 });
 test("management-only rounds after a checkpoint may transition", async (t) => {
   const f = setup(t); save(f);

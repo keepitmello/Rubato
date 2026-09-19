@@ -138,11 +138,16 @@ test("manual checkpoint turn rolls after saving a note even below the budget", a
   const f=setup(t); await f.c.manual(f.ctx); save(f); await f.c.turnEnd({},f.ctx);
   assert.equal(f.c.window.number,1); assert.equal(f.c.checkpointRequested,false);
 });
-test("checkpoint permission closes if its dedicated turn does not save a note", async(t)=>{
+test("an incomplete checkpoint gets one repair turn before stopping", async(t)=>{
   const f=setup(t); await f.c.manual(f.ctx);
   f.addMessage("assistant","continued without checkpoint");
   await f.c.turnEnd({},f.ctx);
-  assert.match(f.c.paused,/작업 노트를 저장하지 않았/);
+  assert.equal(f.abort.signal.aborted,false);
+  assert.equal(f.c.checkpointRequested,true); assert.equal(f.sent.length,2);
+  f.addMessage("assistant","still no checkpoint");
+  await f.c.turnEnd({},f.ctx);
+  assert.match(f.c.paused,/최신 작업 노트가 완성되지 않았/);
+  assert.equal(f.abort.signal.aborted,true); assert.equal(f.sent.length,2);
   assert.equal(f.c.checkpointRequested,false); assert.equal(f.c.window.number,0);
 });
 test("checkpoint turn never consumes the provider safety reserve", async(t)=>{

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { findReminder, reminderAnchor, reminderIndex, reminderMessage } from "./reminder.mjs";
-import { assertCheckpointFresh } from "./checkpoint.mjs";
+import { assertCheckpointFresh, CheckpointRefreshRequired } from "./checkpoint.mjs";
 import { readAuthoritativeBranch } from "./history-source.mjs";
 import { flushSessionJournal } from "./journal.mjs";
 import { contextNotesConfig, windowBudget } from "./config.mjs";
@@ -62,6 +62,7 @@ export class ContextNotesController {
     this.ctx = baseContext(ctx);
     this.pending = null;
     this.checkpointRequested = false;
+    this.checkpointRetried = false;
     this.fatal = null;
     this.paused = null;
     this.leaf = undefined;
@@ -281,7 +282,10 @@ export class ContextNotesController {
     this.refresh(ctx);
     const note = this.store.latestNoteForWindow(this.window.windowId, this.lastUser);
     if (!note) throw new Error("현재 요청을 반영한 작업 노트를 먼저 저장해 주세요. 이전 문맥은 그대로 유지했어요.");
-    assertCheckpointFresh(this.store.branch, note);
+    // A nested new_context call can run before its outer eval has returned.
+    // Only scheduling may defer that receipt; roll and the engine commit gate
+    // both require the completed, management-only tool round.
+    assertCheckpointFresh(this.store.branch, note, { allowPendingEval: true });
     this.pending = { sessionId: this.sessionId, windowId: this.window.windowId, userId: this.lastUser };
     return { scheduled: true, message: "현재 도구 묶음이 끝나면 요약 없이 새 문맥 창으로 넘어가요. 환경 상태는 유지돼요." };
   }
@@ -339,6 +343,7 @@ export class ContextNotesController {
       this.flush(ctx.sessionManager, committed.id);
       this.pending = null;
       this.checkpointRequested = false;
+      this.checkpointRetried = false;
       if (applyError || outcome?.applied !== true) {
         // The disk boundary may be committed while the engine's live state or
         // provider reset failed. Never run a second cut or claim success.
@@ -361,6 +366,10 @@ export class ContextNotesController {
       if (ctx.signal?.aborted || ["aborted", "error"].includes(_event?.message?.stopReason)) {
         this.pending = null;
         this.record("transition_cancelled");
+        if (ctx.signal?.aborted || _event?.message?.stopReason === "aborted") {
+          this.checkpointRequested = false;
+          return;
+        }
         if (!this.fatal && ctx.model?.contextWindow && this.usage().tokens >= this.usage().target &&
             !this.checkpointRequested) this.requestCheckpoint();
         return;
@@ -384,8 +393,7 @@ export class ContextNotesController {
         if (this.checkpointRequested) {
           if (fresh) await this.roll(ctx, usage.tokens >= usage.target ? "budget" : "manual");
           else {
-            this.checkpointRequested = false;
-            throw new Error("체크포인트 전용 턴이 작업 노트를 저장하지 않았어요. 이전 문맥은 그대로 유지했어요.");
+            throw new CheckpointRefreshRequired("체크포인트 전용 턴에 최신 작업 노트가 완성되지 않았어요. 이전 문맥은 그대로 유지했어요.");
           }
         } else if (ctx.model?.contextWindow && usage.tokens >= usage.hard) {
           if (note) await this.roll(ctx, "hard");
@@ -394,19 +402,35 @@ export class ContextNotesController {
           if (!fresh) this.requestCheckpoint();
         }
       }
-    } catch (error) { this.fail(error); }
+    } catch (error) {
+      // A stale/incomplete checkpoint is repairable by the same model. Do not
+      // turn the first validation rejection into a generic aborted run. Bound
+      // retries and retain the physical-window/storage failure safety stops.
+      if (error instanceof CheckpointRefreshRequired && !this.fatal &&
+          !ctx.signal?.aborted && !this.checkpointRetried) {
+        this.checkpointRequested = false;
+        try {
+          this.requestCheckpoint({ retry: true, reason: error.message });
+          this.record("checkpoint_retry", { reason: error.message });
+          return;
+        } catch (retryError) { error = retryError; }
+      }
+      this.checkpointRequested = false;
+      this.fail(error);
+    }
   }
 
-  requestCheckpoint() {
+  requestCheckpoint({ retry = false, reason } = {}) {
     const usage = this.usage(this.activeMessages);
     if (usage.tokens >= usage.full) {
       throw new Error("체크포인트 턴을 안전하게 실행할 여유도 남지 않았어요. 기록은 보존했으니 더 큰 한도로 같은 세션을 다시 열어 주세요.");
     }
     if (this.checkpointRequested) return { requested: true, repeated: true };
     this.checkpointRequested = true;
+    this.checkpointRetried = retry;
     this.paused = null;
     this.pi.sendMessage({ customType: "rubato-context-checkpoint-request", display: true,
-      content: "지금은 체크포인트 전용 턴이에요. 다른 작업을 진행하지 말고 현재 작업의 목표·결정·진행·실패 이유·다음 단계와 원문 항목 위치를 notes 도구에 저장한 뒤 new_context를 호출해 주세요. 다른 모델로 요약하지 마세요." },
+      content: `${reason ? `${reason}\n노트 저장 뒤 도착한 결과와 안내까지 반영해서 다시 저장해 주세요.\n` : ""}지금은 체크포인트 전용 턴이에요. 다른 작업을 진행하지 말고 현재 작업의 목표·결정·진행·실패 이유·다음 단계와 원문 항목 위치를 notes 도구에 저장한 뒤 new_context를 호출해 주세요. 다른 모델로 요약하지 마세요.` },
     { triggerTurn: true, deliverAs: "steer" });
     this.showStatus();
     return { requested: true };
