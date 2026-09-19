@@ -129,8 +129,46 @@ test('an idle provider queue is offered for recovery without deleting it', async
   assert.deepEqual(commands,[], 'detection must not delete queued input before the user decides');
   const request = events.find((event)=>event.type==='user-input.requested');
   assert.match(request.payload.questions[0].question,/first/);
-  await assert.rejects(bridge.sendTurn({threadId:'stale-thread',input:'new'}),/Resolve the recovered/);
-  assert.deepEqual(commands,[], 'another send must not overwrite the recovery choice');
+  assert.deepEqual(commands,[], 'detection must not delete queued input before the user decides');
+});
+
+test('a new prompt settles an unanswered recovery instead of refusing the send', async () => {
+  const events = [];
+  const projection = new EventProjection({threadId:'stale-thread',sessionId:'stale-session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
+  const bridge = Object.create(RubatoPiBridge.prototype);
+  bridge.skillNames = new Set();
+  const commands = [];
+  const state = {isStreaming:false,isCompacting:false,pendingMessageCount:2,requestTimeline:{pendingInputs:[
+    {delivery:'steer',textPreview:'first'}, {delivery:'followUp',textPreview:'second'},
+  ]}};
+  const context = {sessionId:'stale-session',projection,session:{threadId:'stale-thread',status:'ready'},queue:Promise.resolve(),stopped:false,
+    client:{snapshot:async()=>({state}),command:async(command)=>{commands.push(command); if(command.type==='clear_queue') return {steering:['first'],followUp:['second']};}}};
+  bridge.sessions = new Map([['stale-thread',context]]);
+  bridge.offerStaleQueueRecovery(context,state);
+  await bridge.sendTurn({threadId:'stale-thread',input:'new'});
+  assert.deepEqual(commands,[{type:'clear_queue'},{type:'prompt',message:'new'}]);
+  assert.equal(context.queueRecovery,undefined);
+  const warning = events.find((event)=>event.type==='runtime.warning');
+  assert.match(warning.payload.message,/first[\s\S]*second/, 'discarded text must stay readable in the thread');
+  assert.ok(events.some((event)=>event.type==='user-input.resolved'),'the card must close with the send');
+});
+
+test('a stale queue found at send time does not swallow the prompt', async () => {
+  const events = [];
+  const projection = new EventProjection({threadId:'stale-thread',sessionId:'stale-session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
+  const bridge = Object.create(RubatoPiBridge.prototype);
+  bridge.skillNames = new Set();
+  const commands = [];
+  // An aborted turn can leave a queued message Pi never recorded as a pending
+  // input: count above zero, preview empty. That pair used to lock the thread.
+  const state = {isStreaming:false,isCompacting:false,pendingMessageCount:1,requestTimeline:{pendingInputs:[]}};
+  const context = {sessionId:'stale-session',projection,session:{threadId:'stale-thread',status:'ready'},queue:Promise.resolve(),stopped:false,
+    client:{snapshot:async()=>({state}),command:async(command)=>{commands.push(command); if(command.type==='clear_queue') return {steering:[],followUp:['orphan']};}}};
+  bridge.sessions = new Map([['stale-thread',context]]);
+  await bridge.sendTurn({threadId:'stale-thread',input:'new'});
+  assert.deepEqual(commands,[{type:'clear_queue'},{type:'prompt',message:'new'}]);
+  assert.equal(context.queueRecovery,undefined);
+  assert.match(events.find((event)=>event.type==='runtime.warning').payload.message,/orphan/);
 });
 
 test('queue recovery clears once and resumes full messages in their original order', async () => {

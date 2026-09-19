@@ -354,47 +354,69 @@ export class RubatoPiBridge {
     return true;
   }
   resolveQueueRecovery(context, requestId, decision) {
-    const operation = context.queue.then(async () => {
-      if (![RECOVER_QUEUE_RESUME, RECOVER_QUEUE_DISCARD].includes(decision))
-        throw new Error('Choose Resume in order or Discard');
-      const recovery = context.queueRecovery;
-      if (!recovery || recovery.id !== requestId) throw new Error('This queue recovery was already resolved');
-      if (!recovery.messages) {
-        const snapshot = await context.client.snapshot();
-        const cleared = staleQueue(snapshot.state)
-          ? await context.client.command({ type: 'clear_queue' })
-          : { steering: [], followUp: [] };
-        recovery.messages = queuedMessagesInOrder(snapshot.state, cleared);
-        recovery.nextIndex = 0;
-      }
-      const messages = recovery.messages;
-      if (decision === RECOVER_QUEUE_RESUME && messages.length > 0) {
-        const turnId = context.projection.begin();
-        context.session.status = 'running'; this.stateEvent(context);
-        try {
-          while (recovery.nextIndex < messages.length) {
-            const snapshot = await context.client.snapshot();
-            const type = snapshot.state.isStreaming ? 'follow_up' : 'prompt';
-            await context.client.command({ type, message: messages[recovery.nextIndex] });
-            recovery.nextIndex += 1;
-          }
-        } catch (error) {
-          // Nothing reached the provider, so no turn will ever settle the one we
-          // opened, and applyState reads running off projection.turnId. Close it
-          // here or the thread stays locked; the question survives for a retry.
-          if (recovery.nextIndex === 0) {
-            context.projection.failed = true; context.projection.settle();
-            context.session.status = 'ready'; this.stateEvent(context);
-          }
-          throw error;
-        }
-        this.finishQueueRecovery(context, requestId, decision);
-        return { turnId, recoveredMessageCount: messages.length };
-      }
-      this.finishQueueRecovery(context, requestId, decision);
-    });
+    const operation = context.queue.then(() => this.applyQueueRecovery(context, requestId, decision));
     context.queue = operation.catch(() => {});
     return operation;
+  }
+  // Runs inside an already-owned queue slot so sendTurn can settle a recovery
+  // itself. Callers outside the chain go through resolveQueueRecovery.
+  async applyQueueRecovery(context, requestId, decision) {
+    if (![RECOVER_QUEUE_RESUME, RECOVER_QUEUE_DISCARD].includes(decision))
+      throw new Error('Choose Resume in order or Discard');
+    const recovery = context.queueRecovery;
+    if (!recovery || recovery.id !== requestId) throw new Error('This queue recovery was already resolved');
+    if (!recovery.messages) {
+      const snapshot = await context.client.snapshot();
+      const cleared = staleQueue(snapshot.state)
+        ? await context.client.command({ type: 'clear_queue' })
+        : { steering: [], followUp: [] };
+      recovery.messages = queuedMessagesInOrder(snapshot.state, cleared);
+      recovery.nextIndex = 0;
+    }
+    const messages = recovery.messages;
+    if (decision === RECOVER_QUEUE_RESUME && messages.length > 0) {
+      const turnId = context.projection.begin();
+      context.session.status = 'running'; this.stateEvent(context);
+      try {
+        while (recovery.nextIndex < messages.length) {
+          const snapshot = await context.client.snapshot();
+          const type = snapshot.state.isStreaming ? 'follow_up' : 'prompt';
+          await context.client.command({ type, message: messages[recovery.nextIndex] });
+          recovery.nextIndex += 1;
+        }
+      } catch (error) {
+        // Nothing reached the provider, so no turn will ever settle the one we
+        // opened, and applyState reads running off projection.turnId. Close it
+        // here or the thread stays locked; the question survives for a retry.
+        if (recovery.nextIndex === 0) {
+          context.projection.failed = true; context.projection.settle();
+          context.session.status = 'ready'; this.stateEvent(context);
+        }
+        throw error;
+      }
+      this.finishQueueRecovery(context, requestId, decision);
+      return { turnId, recoveredMessageCount: messages.length };
+    }
+    if (decision === RECOVER_QUEUE_DISCARD) this.reportDiscardedQueue(context, messages.slice(recovery.nextIndex ?? 0));
+    this.finishQueueRecovery(context, requestId, decision);
+  }
+  // Discarded text only exists in the provider queue, and clear_queue is what
+  // hands it back. Write it into the thread or the user loses a message they
+  // never saw: the card previews Pi's pending-input records, and an aborted
+  // turn can leave a queued message with no record behind it.
+  reportDiscardedQueue(context, messages) {
+    if (!messages.length) return;
+    context.projection.event('runtime.warning', { message:
+      `Discarded ${messages.length} queued message${messages.length === 1 ? '' : 's'} left by the stopped turn:\n${
+        messages.map((text, index) => `${index + 1}. ${text}`).join('\n')}` });
+  }
+  // A new prompt is itself the answer: the user moved on from what the stopped
+  // turn left queued. Refusing the send instead turned an unanswered card into
+  // a dead thread — every later prompt hit the same refusal, and the typed
+  // message was thrown away with it.
+  async settleQueueForNewPrompt(context, state) {
+    if (!context.queueRecovery && !this.offerStaleQueueRecovery(context, state)) return;
+    await this.applyQueueRecovery(context, context.queueRecovery.id, RECOVER_QUEUE_DISCARD);
   }
   finishQueueRecovery(context, requestId, decision) {
     context.projection.questions.delete(requestId);
@@ -453,8 +475,7 @@ export class RubatoPiBridge {
         return { threadId: input.threadId, turnId, resumeCursor: context.session.resumeCursor };
       }
       const beforeSend = await context.client.snapshot();
-      if (context.queueRecovery || this.offerStaleQueueRecovery(context, beforeSend.state))
-        throw new Error('Resolve the recovered queued messages before sending another prompt');
+      await this.settleQueueForNewPrompt(context, beforeSend.state);
       const images = await imagesFromAttachments(input.attachments);
       if (!input.input?.trim() && images.length === 0) throw new Error('A non-empty prompt is required');
       if (input.interactionMode === 'plan') throw new Error('T3 plan mode is not mapped to Rubato policy');
