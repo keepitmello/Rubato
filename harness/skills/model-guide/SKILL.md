@@ -54,13 +54,12 @@ not a quota of model names inside each team.
 
 ## Fast workers
 
-Three fast, no-approval resources sit beside the five above and are the usual
+Two fast, no-approval resources sit beside the five above and are the usual
 first choice for bounded support — maps, evidence gathering, settled execution,
 prototypes — whenever turnaround matters more than the last few points of precision:
-Muse Spark `opencode/muse-spark-1.3-contributor-free`, Gemini 3.8 Flash
-`cursor/gemini-3.8-flash`, and Cursor Fast `cursor/cursor-grok-4.6-high-fast`.
-Muse is the operator's preferred default worker; when it hits its free-tier
-limit, Grok `xai/grok-4.6` is the approved continuation. Their speed is an
+DeepSeek V4.1 Flash `b-ai/deepseek-v4.1-flash`, and Cursor Fast
+`cursor/cursor-grok-4.6-high-fast`.
+DeepSeek is the operator's preferred default worker. Their speed is an
 observed property, not a rank: they may also hold a bounded outcome when its
 acceptance criteria are met, and nothing here forbids a stronger model from
 doing the same work itself. The same acceptance criteria apply.

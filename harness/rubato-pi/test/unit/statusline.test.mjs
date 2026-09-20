@@ -97,6 +97,8 @@ test("shortens Claude-style model ids the way the statusline does", () => {
   assert.equal(shortModelLabel("opencode/muse-spark-1.3-contributor-free"), "Muse Spark 1.3");
   assert.equal(shortModelLabel("opencode/muse-spark-1.3-contributor-free:high"), "Muse Spark 1.3");
   assert.equal(shortModelLabel("Muse Spark 1.3 Free"), "Muse Spark 1.3");
+  assert.equal(shortModelLabel("b-ai/deepseek-v4.1-flash"), "DeepSeek Flash");
+  assert.equal(shortModelLabel("b-ai/deepseek-v4.1-flash:high"), "DeepSeek Flash");
   assert.equal(shortModelLabel("unknown-model:high"), "unknown-model");
 });
 
