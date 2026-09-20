@@ -10,16 +10,22 @@ class ConsultAsideContractTest(unittest.TestCase):
     def test_main_skill_stays_thin_and_points_at_outpost_cli(self) -> None:
         skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
 
-        self.assertIn('bin/outpost" list', skill)
-        self.assertIn('bin/outpost" doctor', skill)
-        self.assertIn('bin/outpost" send', skill)
-        self.assertIn('bin/outpost" recover', skill)
-        self.assertNotIn("--quality xhigh", skill)
+        # The Codex lane rewrites the command to a quoted absolute path, so the
+        # subcommand follows the closing quote there and a space here.
+        for subcommand in ("list", "doctor", "send", "recover"):
+            self.assertRegex(skill, rf'outpost"? {subcommand}')
+        # the skill calls its own CLI, and no source checkout path leaks in.
+        # The Codex lane rewrites the command to its own bin; that is the
+        # transform's contract, not this file's.
+        self.assertNotIn("<mac-home>", skill)
+        self.assertNotIn("harness/skills/outpost/scripts", skill)
+        self.assertIn("--quality xhigh", skill)
+        self.assertIn("gpt-5-6-thinking", skill)
         self.assertIn("gpt-6-pro", skill)
         self.assertIn("Exit `78`", skill)
         self.assertIn("Exit `79`", skill)
         self.assertIn("--quality pro", skill)
-        self.assertIn("There is no other", skill)
+        self.assertIn("two qualities", skill)
         self.assertIn("--to", skill)
         self.assertIn("Exit `77`", skill)
         self.assertIn("references/runbook.md", skill)
@@ -36,7 +42,9 @@ class ConsultAsideContractTest(unittest.TestCase):
         runbook = (ROOT / "references" / "runbook.md").read_text(encoding="utf-8")
 
         self.assertIn("run_aside_repl_outpost.py", runbook)
-        self.assertIn('bin/outpost" doctor', runbook)
+        self.assertRegex(runbook, r'outpost"? doctor')
+        self.assertNotIn("<mac-home>", runbook)
+        self.assertNotIn("harness/skills/outpost/scripts", runbook)
         self.assertIn("outpost-picker.json", runbook)
         self.assertIn("under 120 seconds", runbook)
         self.assertIn("submitElapsedSeconds", runbook)

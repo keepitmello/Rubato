@@ -66,9 +66,9 @@ function transformText(relativePath, input) {
   if (relativePath === "outpost/SKILL.md" || relativePath === "outpost/references/runbook.md") {
     output = output
       .replace(/^outpost /gm, '"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost" ')
-      .replace("`outpost` on\nPATH", "`${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost`")
-      .replace("`outpost` on PATH", "`${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost`")
-      .replace("Launch `outpost` on PATH", "Launch `${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost`");
+      // The Codex plugin installs its own bin; `~/.local/bin` is the Rubato CLI
+      // lane's. Point every "is it there?" check at the Codex copy.
+      .replaceAll("`command -v outpost`", '`command -v "${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost"`');
   }
 
   if (relativePath === "metaframe/SKILL.md") {
@@ -285,19 +285,33 @@ async function assertSame(expectedRoot, actualRoot) {
   }
 }
 
-await verifyInventory();
+// The installer stages skills with this, so what gets installed always comes
+// from the bundle. A committed copy that went stale (nobody ran build:skills)
+// then cannot reach an install.
+export async function buildSkills(outputRoot) {
+  await verifyInventory();
+  await mkdir(outputRoot, { recursive: true });
+  for (const name of managedNames) await copySkill(name, outputRoot);
+  return managedNames.length;
+}
 
-if (process.argv.includes("--check")) {
-  const temporary = await mkdtemp(path.join(os.tmpdir(), "rubato-codex-skills-"));
-  try {
-    for (const name of managedNames) await copySkill(name, temporary);
-    await assertSame(temporary, installedRoot);
-    process.stdout.write(`skills bundle is current (${sourceNames.length} source skills accounted for)\n`);
-  } finally {
-    await rm(temporary, { recursive: true, force: true });
+async function main() {
+  if (process.argv.includes("--check")) {
+    await verifyInventory();
+    const temporary = await mkdtemp(path.join(os.tmpdir(), "rubato-codex-skills-"));
+    try {
+      for (const name of managedNames) await copySkill(name, temporary);
+      await assertSame(temporary, installedRoot);
+      process.stdout.write(`skills bundle is current (${sourceNames.length} source skills accounted for)\n`);
+    } finally {
+      await rm(temporary, { recursive: true, force: true });
+    }
+    return;
   }
-} else {
-  await mkdir(installedRoot, { recursive: true });
-  for (const name of managedNames) await copySkill(name, installedRoot);
-  process.stdout.write(`built ${managedNames.length} managed skills; preserved ${manifest.preserved.length} Codex-owned source skills\n`);
+  const built = await buildSkills(installedRoot);
+  process.stdout.write(`built ${built} managed skills; preserved ${manifest.preserved.length} Codex-owned source skills\n`);
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  await main();
 }

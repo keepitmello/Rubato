@@ -54,7 +54,15 @@ PREFERRED_MODEL_RADIO = "최신"
 FORBIDDEN_MODEL_RADIOS = ("GPT-5.6 Sol", "5.6 Sol")
 # The only model an outpost turn may run on. The picker label is a moving
 # alias, so the run is judged by the slug ChatGPT reports for the answer.
-REQUIRED_MODEL_SLUG = "gpt-6-pro"
+# Each quality is one tier pick, and each tier runs one model. ChatGPT reports
+# the slug it actually ran, so a run checks that slug against the tier it asked
+# for. `pro` is the paid GPT-6 tier; `xhigh` is ChatGPT's `매우 높음`, which runs
+# GPT-5.6 — cheaper to spend, and never what a Pro packet should be answered by.
+QUALITY_MODEL_SLUGS: dict[str, str] = {
+    "pro": "gpt-6-pro",
+    "xhigh": "gpt-5-6-thinking",
+}
+QUALITIES = tuple(QUALITY_MODEL_SLUGS)
 WRONG_MODEL_EXIT = 78
 DUPLICATE_SEND_EXIT = 79
 DEFAULT_TIER_ALIASES = (
@@ -897,13 +905,48 @@ def confirm_model_slug(
     return str((payload or {}).get("modelSlug") or "")
 
 
-def wrong_model_message(observed: str, response_path: Path) -> str:
+def required_model_slug(quality: str | None) -> str:
+    return QUALITY_MODEL_SLUGS.get(str(quality or ""), QUALITY_MODEL_SLUGS["pro"])
+
+
+def wrong_model_message(observed: str, response_path: Path, required: str) -> str:
     return (
-        f"OUTPOST_WRONG_MODEL required={REQUIRED_MODEL_SLUG} "
+        f"OUTPOST_WRONG_MODEL required={required} "
         f"observed={observed or 'unknown'} response={response_path}\n"
-        "답변은 저장했지만 요청한 모델이 아닙니다. ChatGPT 모델 피커 계약을 "
-        "다시 확인하세요 (outpost doctor)."
+        "답변은 저장했지만 그 품질이 돌리는 모델이 아닙니다. ChatGPT 피커 "
+        "계약을 다시 확인하세요 (outpost doctor)."
     )
+
+
+# Aside's getByRole(role, {name}) resolves a string name but silently returns
+# zero matches for a RegExp, and it matches the aria-label only — never a name
+# that comes from the element's own text. The Pro pill and the model radios have
+# no aria-label, so the send died at select-tier while doctor's click fallback
+# covered for it. snapshot() prints the computed name, so resolve names there
+# and act on the ref locator. String names compare exactly; RegExp names test.
+NAME_LOOKUP_HELPERS = r"""
+function findRefByName(tree, role, name) {
+  var pattern = new RegExp('- ' + role + ' "([^"]*)" \\[ref=(e\\d+)\\]', 'g');
+  var matched = null;
+  var row;
+  while ((row = pattern.exec(tree)) !== null) {
+    var label = row[1];
+    if (name instanceof RegExp ? name.test(label) : label === name) matched = row[2];
+  }
+  return matched;
+}
+async function waitNamedRef(target, role, name, timeoutMs) {
+  var refDeadline = Date.now() + timeoutMs;
+  while (true) {
+    var tree = '';
+    try { tree = (await snapshot(target, { interactive: true })).tree; } catch (error) {}
+    var ref = findRefByName(tree, role, name);
+    if (ref) return target.locator(ref);
+    if (Date.now() >= refDeadline) return null;
+    await sleep(500);
+  }
+}
+"""
 
 
 def build_repl_script(
@@ -923,9 +966,9 @@ def build_repl_script(
     uploads: Sequence[dict[str, str]] | None = None,
 ) -> str:
     picker = picker or load_picker_contract()
-    if quality != "pro":
-        raise ValueError("outpost only runs the Pro tier")
-    target_label = picker["proLabel"]
+    target_label = str(picker.get(f"{quality}Label") or "").strip()
+    if not target_label:
+        raise ValueError(f"picker contract has no tier label for quality {quality}")
     target_model = str(picker.get("modelRadio") or PREFERRED_MODEL_RADIO)
     tier_pattern = tier_name_pattern(picker.get("tierAliases") or DEFAULT_TIER_ALIASES)
     model_pattern = r"^" + re.escape(target_model) + r"$"
@@ -956,6 +999,8 @@ var submitStage = 'open-isolated-tab';
 // Aside builds its role/accessible-name index inside snapshot(). getByRole()
 // returns zero matches on a page that was never snapshotted in this REPL
 // session, so every role lookup below primes the index first.
+// waitRole() takes a string name only. Use waitNamedRef() when the name is a
+// pattern or when the element carries no aria-label.
 async function primeRoles(target) {{
   try {{ await snapshot(target, {{ interactive: true }}); }} catch (error) {{}}
 }}
@@ -969,6 +1014,7 @@ async function waitRole(target, role, name, timeoutMs) {{
     await sleep(500);
   }}
 }}
+{NAME_LOOKUP_HELPERS}
 async function bodyTextOf(target) {{
   return await target.evaluate(function () {{
     return (document.body && document.body.innerText || '').trim();
@@ -1094,8 +1140,9 @@ var submitState = await Promise.race([
     await composer.waitFor({{ state: 'visible', timeout: 15000 }});
     submitStage = 'select-tier';
     // Closed Pro pill accessible name is quota+label, e.g. "6 Pro" or "6Pro".
-    var tierMatches = await waitRole(workPage, 'button', tierNameRe, 20000);
-    if (!tierMatches) {{
+    // The pill has no aria-label, so resolve its name off the snapshot tree.
+    var tierButton = await waitNamedRef(workPage, 'button', tierNameRe, 20000);
+    if (!tierButton) {{
       var foundTiers = await workPage.locator('button[aria-haspopup="menu"]').evaluateAll((els) =>
         els.map((el) => ({{
           text: (el.innerText || '').replace(/\\s+/g, ' ').trim(),
@@ -1108,7 +1155,6 @@ var submitState = await Promise.race([
         ' url=' + workPage.url()
       );
     }}
-    var tierButton = tierMatches.last();
     await tierButton.click();
     var performance = await waitRole(workPage, 'menuitem', '성능', 8000);
     if (!performance) throw new Error('performance menuitem not visible');
@@ -1152,7 +1198,8 @@ var submitState = await Promise.race([
     var modelMenu = await waitRole(workPage, 'menuitem', '모델 선택', 8000);
     if (!modelMenu) throw new Error('model menu not visible');
     await modelMenu.click();
-    var latest = await waitRole(workPage, 'menuitemradio', modelNameRe, 8000);
+    // The model radio has no aria-label either; its name is its own text.
+    var latest = await waitNamedRef(workPage, 'menuitemradio', modelNameRe, 8000);
     if (!latest) {{
       var foundRadios = await workPage.locator('[role="menuitemradio"]').evaluateAll((els) =>
         els.map((el) => (el.innerText || '').replace(/\\s+/g, ' ').trim())
@@ -1417,9 +1464,11 @@ var stopButton = workPage.locator(
   'button[data-testid="stop-button"], button[aria-label*="중지"], button[aria-label*="Stop"]'
 );
 var assistant = workPage.locator('[data-message-author-role="assistant"]').last();
-await primeRoles(workPage);
-var copyResponse = workPage.getByRole('button', {{ name: /^(응답 복사|Copy response)$/ }}).last();
-var rateLimitAfter = workPage.getByRole('heading', {{ name: '요청이 너무 많습니다' }});
+// Live locators: a RegExp name or a heading name never resolves through
+// getByRole() here, and these are re-checked on every poll.
+var copyResponse = workPage.locator(
+  'button[aria-label="응답 복사"], button[aria-label="Copy response"]'
+).last();
 var responseText = '';
 var backendExtracted = null;
 while (Date.now() < responseDeadline) {{
@@ -1435,7 +1484,7 @@ while (Date.now() < responseDeadline) {{
     recoveredFromBackend = true;
     break;
   }}
-  if (await rateLimitAfter.isVisible().catch(() => false)) {{
+  if ((await bodyTextOf(workPage)).indexOf('요청이 너무 많습니다') !== -1) {{
     await sleep(5000);
     continue;
   }}
@@ -1788,13 +1837,13 @@ var report = {{
   chatSurfaceOk: false,
   tierInnerText: [],
   tierRoleMatched: false,
-  tierFallback: false,
   performanceVisible: false,
   modelMenuVisible: false,
   latestRadioPresent: false,
   modelRadios: [],
   blockers: []
 }};
+{NAME_LOOKUP_HELPERS}
 var page = await openTab(projectUrl);
 await page.waitForLoadState('domcontentloaded');
 try {{
@@ -1824,36 +1873,17 @@ try {{
   report.tierInnerText = await page.locator('button[aria-haspopup="menu"]').evaluateAll((els) =>
     els.map((el) => (el.innerText || '').replace(/\\s+/g, ' ').trim()).filter(Boolean)
   ).catch(() => []);
-  await snapshot(page, {{ interactive: true }});
-  var tierButton = page.getByRole('button', {{ name: tierNameRe }}).last();
-  report.tierRoleMatched = (await tierButton.count()) > 0
+  // Doctor has to probe the same lookup send uses, or its green light is a lie.
+  // The click-every-menu fallback that used to cover for getByRole() is why
+  // doctor passed while every send died at select-tier.
+  var tierButton = await waitNamedRef(page, 'button', tierNameRe, 20000);
+  report.tierRoleMatched = !!tierButton
     && await tierButton.isVisible().catch(() => false);
-  if (!report.tierRoleMatched) {{
-    var menus = page.locator('button[aria-haspopup="menu"]');
-    var menuCount = await menus.count();
-    for (var i = menuCount - 1; i >= 0; i -= 1) {{
-      var candidate = menus.nth(i);
-      if (!(await candidate.isVisible().catch(() => false))) continue;
-      await candidate.click();
-      await sleep(800);
-      await snapshot(page, {{ interactive: true }});
-      var opened = await page.getByRole('menuitem', {{ name: '성능' }}).isVisible().catch(() => false);
-      if (opened) {{
-        report.tierRoleMatched = true;
-        report.tierFallback = true;
-        break;
-      }}
-      await page.keyboard.press('Escape');
-      await sleep(200);
-    }}
-  }}
   if (!report.tierRoleMatched) {{
     report.blockers.push('tier');
   }} else {{
-    if (!report.tierFallback) {{
-      await tierButton.click();
-      await sleep(800);
-    }}
+    await tierButton.click();
+    await sleep(800);
     await snapshot(page, {{ interactive: true }});
     report.performanceVisible = await page.getByRole('menuitem', {{ name: '성능' }})
       .isVisible().catch(() => false);
@@ -1970,7 +2000,7 @@ def run_doctor(args: argparse.Namespace) -> int:
 
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--quality", choices=("pro",))
+    parser.add_argument("--quality", choices=QUALITIES)
     parser.add_argument("--packet")
     parser.add_argument("--url", default=None)
     parser.add_argument("--project", default=None)
@@ -2162,6 +2192,7 @@ def recover_from_saved_state(args: argparse.Namespace) -> int:
     if not outpost_id:
         print("recover-from is missing outpost id", file=sys.stderr)
         return 2
+    required_slug = required_model_slug(evidence.get("quality"))
     daemon_error = ensure_aside_daemon()
     if daemon_error is not None:
         print(daemon_error, file=sys.stderr)
@@ -2190,14 +2221,14 @@ def recover_from_saved_state(args: argparse.Namespace) -> int:
         response_text = str(recovered["responseText"]) + format_attachments_section(saved_paths)
         response_path.write_text(response_text + "\n", encoding="utf-8")
         saved = {
-            "ok": str(recovered.get("modelSlug") or "") == REQUIRED_MODEL_SLUG,
+            "ok": str(recovered.get("modelSlug") or "") == required_slug,
             "id": outpost_id,
             "topic": evidence.get("topic") or "",
             "quality": evidence.get("quality") or args.quality or "",
             "model": str(recovered.get("modelSlug") or "") or evidence.get("model") or "",
             "modelSlug": str(recovered.get("modelSlug") or ""),
-            "modelOk": str(recovered.get("modelSlug") or "") == REQUIRED_MODEL_SLUG,
-            "requiredModel": REQUIRED_MODEL_SLUG,
+            "modelOk": str(recovered.get("modelSlug") or "") == required_slug,
+            "requiredModel": required_slug,
             "tier": evidence.get("tier") or "",
             "conversationUrl": recovered.get("conversationUrl") or conversation_url,
             "conversationId": recovered.get("conversationId") or evidence.get("conversationId") or "",
@@ -2231,8 +2262,11 @@ def recover_from_saved_state(args: argparse.Namespace) -> int:
             for p in saved_paths:
                 print(f"  - {p}", flush=True)
         recovered_state_slug = str(recovered.get("modelSlug") or "")
-        if recovered_state_slug != REQUIRED_MODEL_SLUG:
-            print(wrong_model_message(recovered_state_slug, response_path), file=sys.stderr)
+        if recovered_state_slug != required_slug:
+            print(
+                wrong_model_message(recovered_state_slug, response_path, required_slug),
+                file=sys.stderr,
+            )
             return WRONG_MODEL_EXIT
         print(
             f"OUTPOST_COMPLETE response={response_path} model={recovered_state_slug}",
@@ -2397,7 +2431,7 @@ def main(argv: Sequence[str]) -> int:
         "id": outpost_id,
         "topic": topic,
         "quality": args.quality,
-        "requiredModel": REQUIRED_MODEL_SLUG,
+        "requiredModel": required_model_slug(args.quality),
         "packetPath": packet_source,
         "packetSha": packet_sha,
         "responseOutput": str(response_path),
@@ -2522,7 +2556,7 @@ def main(argv: Sequence[str]) -> int:
             response_path.write_text(response_text + "\n", encoding="utf-8")
             stderr_path.write_text(exc.transcript, encoding="utf-8")
             recovered_slug = str(recovered.get("modelSlug") or "")
-            recovered_model_ok = recovered_slug == REQUIRED_MODEL_SLUG
+            recovered_model_ok = recovered_slug == required_model_slug(args.quality)
             recovered_evidence = attach_thread_fields(
                 {
                     "ok": recovered_model_ok,
@@ -2532,7 +2566,7 @@ def main(argv: Sequence[str]) -> int:
                     "model": recovered_slug or submitted.get("model") or "",
                     "modelSlug": recovered_slug,
                     "modelOk": recovered_model_ok,
-                    "requiredModel": REQUIRED_MODEL_SLUG,
+                    "requiredModel": required_model_slug(args.quality),
                     "tier": submitted.get("tier") or "",
                     "conversationUrl": persisted_conversation_url(
                         recovered.get("conversationUrl"),
@@ -2580,7 +2614,12 @@ def main(argv: Sequence[str]) -> int:
                 for p in saved_paths:
                     print(f"  - {p}", flush=True)
             if not recovered_model_ok:
-                print(wrong_model_message(recovered_slug, response_path), file=sys.stderr)
+                print(
+                    wrong_model_message(
+                        recovered_slug, response_path, required_model_slug(args.quality)
+                    ),
+                    file=sys.stderr,
+                )
                 return WRONG_MODEL_EXIT
             print(
                 f"OUTPOST_COMPLETE response={response_path} model={recovered_slug}",
@@ -2735,7 +2774,8 @@ def main(argv: Sequence[str]) -> int:
     )
     if not model_slug:
         model_slug = confirm_model_slug(outpost_id, conversation_for_check or None)
-    model_ok = model_slug == REQUIRED_MODEL_SLUG
+    required_slug = required_model_slug(args.quality)
+    model_ok = model_slug == required_slug
     evidence = attach_thread_fields(
         {
             "ok": model_ok,
@@ -2745,7 +2785,7 @@ def main(argv: Sequence[str]) -> int:
             "model": model_slug or submit_payload["model"],
             "modelSlug": model_slug,
             "modelOk": model_ok,
-            "requiredModel": REQUIRED_MODEL_SLUG,
+            "requiredModel": required_slug,
             "tier": submit_payload["tier"],
             "conversationUrl": persisted_conversation_url(
                 submit_payload.get("conversationUrl"),
@@ -2795,7 +2835,7 @@ def main(argv: Sequence[str]) -> int:
         for p in saved_paths:
             print(f"  - {p}", flush=True)
     if not model_ok:
-        print(wrong_model_message(model_slug, response_path), file=sys.stderr)
+        print(wrong_model_message(model_slug, response_path, required_slug), file=sys.stderr)
         return WRONG_MODEL_EXIT
     print(
         f"OUTPOST_COMPLETE response={response_path} model={model_slug}",
