@@ -57,9 +57,14 @@ export class RpcProcessRunner {
   }
 
   async start(specInput: RpcRunnerSpec): Promise<RpcChildHandle> {
+    // The runner's inherited extensions are the parent's child profile (provider,
+    // context-notes, guards, role prompt). A spec that names its own entries (a team
+    // member bundle) still needs that profile; without it the child boots with no
+    // provider binding and the context-notes gate aborts its first turn. Profile
+    // first so its session_start runs before the member extension injects work.
     const spec =
-      specInput.extensions === undefined && this.inheritedExtensions.length > 0
-        ? { ...specInput, extensions: this.inheritedExtensions }
+      this.inheritedExtensions.length > 0
+        ? { ...specInput, extensions: mergeExtensions(this.inheritedExtensions, specInput.extensions) }
         : specInput
     await this.modelAdmission(spec)
     const descriptor = this.buildSpawn(spec)
@@ -131,4 +136,8 @@ function defaultSpawnChild(
     windowsHide: true,
     detached: process.platform !== "win32",
   })
+}
+
+function mergeExtensions(inherited: readonly string[], own: readonly string[] | undefined): readonly string[] {
+  return [...new Set([...inherited, ...(own ?? [])])]
 }

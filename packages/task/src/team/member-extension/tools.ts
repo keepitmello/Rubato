@@ -74,7 +74,8 @@ export async function runMemberTaskSend(
     payload: { message_id: message.messageId, from: message.from, to: message.to, kind: message.kind },
   })
   deps.onSent?.()
-  return toolResult(`Message enqueued to ${input.to} (id: ${message.messageId}).`, {
+  // A member cannot see task records: say what storage establishes and no more.
+  return toolResult(`Message enqueued to ${input.to} (id: ${message.messageId}). Stored in the recipient inbox; delivery and processing are unconfirmed until the recipient acts on it.`, {
     kind: "team_message",
     message_id: message.messageId,
     to: input.to,

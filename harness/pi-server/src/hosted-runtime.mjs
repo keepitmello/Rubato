@@ -8,6 +8,27 @@ import { buildStockPiArgs, stockPiSupportEnv } from '../../rubato-pi/src/launch.
 // process-level configuration while an existing profile has live runtimes.
 let identity;
 
+const UNLOAD_DISPOSE = Symbol('rubato.hosted.unload-dispose');
+
+/**
+ * A hosted worker is disposed when the host reclaims it (idle unload after the last
+ * presentation detached, or server stop), never because the user quit: the session file
+ * survives and the next attach resumes it. Stock `dispose()` announces
+ * `session_shutdown reason:"quit"`, which the task lifecycle reads as "dispose every child",
+ * so a lead's team members were destroyed 60s after its tab detached. The rpc controller
+ * calls `dispose()` with no arguments, so bind the reason here: the original cleanup runs
+ * unchanged (the session-ui patch lets it take a reason) and only announces `unload`.
+ * A runtime that already carries a lifecycle (the CLI cursor) keeps its own dispose.
+ */
+export function announceUnloadOnDispose(runtime) {
+  if (!runtime || runtime.lifecycle || runtime.dispose?.[UNLOAD_DISPOSE]) return runtime;
+  const original = runtime.dispose;
+  const dispose = () => original.call(runtime, 'unload');
+  dispose[UNLOAD_DISPOSE] = true;
+  runtime.dispose = dispose;
+  return runtime;
+}
+
 export async function loadHostedRuntime({ runtimeRoot, agentDir }) {
   if (!path.isAbsolute(runtimeRoot ?? '') || !path.isAbsolute(agentDir ?? '')) throw new TypeError('Hosted runtime requires absolute runtimeRoot and agentDir');
   const root = await realpath(runtimeRoot);
@@ -93,6 +114,7 @@ export async function loadHostedRuntime({ runtimeRoot, agentDir }) {
         createRuntime: () => scope.run(async () => {
           try { runtime = await (creation?.createRuntime ? creation.createRuntime() : hosted.createRuntime(metadata)); }
           finally { creation = undefined; } // Startup's UI/trust callback must not pin a detached terminal.
+          announceUnloadOnDispose(runtime);
           api.configureHttp(runtime.services.settingsManager);
           // GUI actors need the same native theme/catalog bootstrap even when
           // there is no terminal main. No watcher belongs to an invisible actor.

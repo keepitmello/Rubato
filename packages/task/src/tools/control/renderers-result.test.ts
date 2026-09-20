@@ -31,6 +31,7 @@ const SEND_RESULT_RENDER_CASES = [
   ["not_found", { kind: "not_found", reason: "No task.", known_agents: ["alpha"] }, "[error]AgentSend not found: No task. known:alpha[/error]"],
   ["invalid_arguments", { kind: "invalid_arguments", reason: "message is required" }, "[error]AgentSend invalid: message is required[/error]"],
   ["team_message", { kind: "team_message", team: { kind: "to_lead", message_id: "msg-1" } }, "[success]AgentSend team message msg-1 enqueued to lead[/success]"],
+  ["team_message not live", { kind: "team_message", team: { kind: "to_members", message_id: "msg-2", recipients: ["beta"], not_live: [{ member: "beta", status: "completed", residency_state: "disposed", state: "disposed" }] } }, "[warning]AgentSend team message msg-2 stored for 1 member(s); no live execution: beta (disposed)[/warning]"],
   ["shutdown_requested", { kind: "shutdown_requested", team_run_id: "team-1", member: "atlas" }, "[warning]AgentSend shutdown requested team-1 member:atlas[/warning]"],
   ["shutdown_responded", { kind: "shutdown_responded", team_run_id: "team-1", member: "atlas", approved: false }, "[warning]AgentSend shutdown rejected team-1 member:atlas[/warning]"],
   ["shutdown_failed", { kind: "shutdown_failed", operation: "reject", team_run_id: "team-1", member: "atlas", code: "team_state_missing", reason: "Team state is unavailable." }, "[error]AgentSend shutdown reject failed team-1 member:atlas: Team state is unavailable.[/error]"],

@@ -323,7 +323,7 @@ describe("RpcProcessRunner", () => {
     expect(seen?.extensions).toEqual(["/tmp/mock.ts"])
   })
 
-  test("#given a spec that already carries extensions #when started #then inheritedExtensions do NOT override them", async () => {
+  test("#given a spec that already carries extensions #when started #then the child profile is merged in front of them", async () => {
     // given
     let seen: RpcRunnerSpec | undefined
     const runner = new RpcProcessRunner({
@@ -340,9 +340,10 @@ describe("RpcProcessRunner", () => {
     })
 
     // when
-    await runner.start(makeSpec({ extensions: ["/tmp/explicit.ts"] }))
+    await runner.start(makeSpec({ extensions: ["/tmp/explicit.ts", "/tmp/inherited.ts"] }))
 
-    // then
-    expect(seen?.extensions).toEqual(["/tmp/explicit.ts"])
+    // then: a team member names its own bundle, but still needs the parent's child
+    // profile (provider, context-notes, guards) that only the runner knows about.
+    expect(seen?.extensions).toEqual(["/tmp/inherited.ts", "/tmp/explicit.ts"])
   })
 })
