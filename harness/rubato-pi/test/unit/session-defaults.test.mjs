@@ -5,6 +5,7 @@ import {
   BAI_PROVIDER_ID,
   DEFAULT_BAI_PROVIDER,
   DISABLED_BUILTIN_EXTENSIONS,
+  baiProviderLooksCurrent,
   ensureModelsConfig,
   ensureSessionDefaults,
   modelsLookCurrent,
@@ -102,6 +103,31 @@ test("이미 있는 b-ai 키는 기본 템플릿이 덮지 않는다", () => {
   });
   assert.equal(next.providers[BAI_PROVIDER_ID].apiKey, "sk-local-keep");
   assert.equal(next.providers[BAI_PROVIDER_ID].models[0].id, BAI_FLASH_MODEL_ID);
+});
+
+// 회귀: 설치된 파일이 `input: ["text"]` 로 굳어 있으면 read 툴이 이미지를 빼고
+// pi-ai 가 요청에서 자리표시자로 바꾼다 — 붙여넣은 스크린샷이 조용히 사라지고
+// 모델은 그게 왜 왔는지도 모른다. 실측으로 이 모델은 이미지를 읽으므로 능력은
+// 템플릿이 소유한다. id 만 보고 현재라고 판정하던 동안에는 능력을 고쳐도
+// 이미 설치된 기기가 영원히 안 바뀌었다.
+test("b-ai 이미지 능력은 템플릿이 소유하고 굳은 설치는 다음 기동에 고쳐진다", () => {
+  assert.deepEqual([...DEFAULT_BAI_PROVIDER.models[0].input], ["text", "image"]);
+  assert.equal(baiProviderLooksCurrent({
+    [BAI_PROVIDER_ID]: { models: [{ id: BAI_FLASH_MODEL_ID, input: ["text"] }] },
+  }), false);
+  assert.equal(baiProviderLooksCurrent({
+    [BAI_PROVIDER_ID]: { models: [{ id: BAI_FLASH_MODEL_ID, input: ["text", "image"] }] },
+  }), true);
+  const next = ensureModelsConfig("/tmp/agent", {
+    exists: () => true,
+    readFile: () => JSON.stringify({
+      providers: { [BAI_PROVIDER_ID]: { apiKey: "sk-local-keep", models: [{ id: BAI_FLASH_MODEL_ID, input: ["text"] }] } },
+      disabledProviders: ["vercel-ai-gateway"],
+    }),
+    writeFile: () => {},
+  });
+  assert.deepEqual(next.providers[BAI_PROVIDER_ID].models[0].input, ["text", "image"]);
+  assert.equal(next.providers[BAI_PROVIDER_ID].apiKey, "sk-local-keep");
 });
 
 test("models.json reclaims a provider that became ours after it was disabled", () => {

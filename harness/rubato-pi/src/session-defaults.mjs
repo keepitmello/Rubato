@@ -26,7 +26,11 @@ export const DEFAULT_BAI_PROVIDER = Object.freeze({
       name: "v4.1 Flash",
       contextWindow: 1_000_000,
       maxTokens: 384_000,
-      input: Object.freeze(["text"]),
+      // 실측: api.b.ai 에 이미지 블록을 그대로 보내면 읽는다. `["text"]` 로 두면
+      // read 툴이 이미지를 빼고 안내 문구만 돌려주고, pi-ai 는 요청에서 이미지를
+      // 자리표시자로 바꾼다 — 붙여넣은 스크린샷이 조용히 사라지고 모델은 그게
+      // 왜 왔는지도 모른다. 능력은 벤더 사실이라 템플릿이 소유한다.
+      input: Object.freeze(["text", "image"]),
       reasoning: true,
       thinkingLevelMap: Object.freeze({
         minimal: null,
@@ -55,7 +59,11 @@ function hasBaiProvider(providers) {
 export function baiProviderLooksCurrent(providers) {
   if (!hasBaiProvider(providers)) return false;
   const models = providers[BAI_PROVIDER_ID].models;
-  return Array.isArray(models) && models.some((model) => model?.id === BAI_FLASH_MODEL_ID);
+  if (!Array.isArray(models)) return false;
+  const ours = models.find((model) => model?.id === BAI_FLASH_MODEL_ID);
+  // id 만 보면 이미 설치된 파일이 영원히 현재로 남아, 능력을 고쳐도 그 기기는
+  // 안 바뀐다. 이미지 능력을 현재성의 일부로 본다.
+  return Boolean(ours) && Array.isArray(ours.input) && ours.input.includes("image");
 }
 
 function ensureBaiProvider(providers) {
@@ -65,10 +73,11 @@ function ensureBaiProvider(providers) {
     next[BAI_PROVIDER_ID] = structuredClone(DEFAULT_BAI_PROVIDER);
     return next;
   }
+  const template = DEFAULT_BAI_PROVIDER.models[0];
   const models = Array.isArray(existing.models) ? [...existing.models] : [];
-  if (!models.some((model) => model?.id === BAI_FLASH_MODEL_ID)) {
-    models.push(structuredClone(DEFAULT_BAI_PROVIDER.models[0]));
-  }
+  const index = models.findIndex((model) => model?.id === BAI_FLASH_MODEL_ID);
+  if (index === -1) models.push(structuredClone(template));
+  else models[index] = { ...models[index], input: [...template.input] };
   next[BAI_PROVIDER_ID] = { ...structuredClone(DEFAULT_BAI_PROVIDER), ...existing, models };
   return next;
 }
