@@ -1,10 +1,10 @@
 import { sendMessage } from "@rubato/team-core/team-mailbox"
 
-import { readMemberTaskMap } from "../member-map"
+import { readMemberTaskMap, type MemberTaskMap } from "../member-map"
 import { TEAM_LEAD_SENTINEL } from "../normalize"
 import { resolveTeamRuntimeDirs } from "../storage"
 import { buildTeamMessage } from "./message"
-import type { MessagingEngineDeps, SendTeamMessageInput, SendTeamMessageResult } from "./types"
+import type { MessagingEngineDeps, NotLiveRecipient, SendTeamMessageInput, SendTeamMessageResult } from "./types"
 
 /**
  * Writes a message to the durable recipient inbox(es) and returns. Recipient-owned pollers perform
@@ -65,7 +65,43 @@ export async function sendTeamMessage(
     }
   }
 
-  return input.to === TEAM_LEAD_SENTINEL
-    ? { kind: "to_lead", messageId: sent.messageId }
-    : { kind: "to_members", messageId: sent.messageId, recipients: sent.deliveredTo }
+  if (input.to === TEAM_LEAD_SENTINEL) return { kind: "to_lead", messageId: sent.messageId }
+  const notLive = notLiveRecipients(sent.deliveredTo, memberTaskMap, deps.inspectMember)
+  return {
+    kind: "to_members",
+    messageId: sent.messageId,
+    recipients: sent.deliveredTo,
+    ...(notLive.length > 0 ? { notLive } : {}),
+  }
+}
+
+/**
+ * The inbox is durable, so acceptance says nothing about execution. A resident member's own
+ * poller will read the message; a suspended one reads it after the lead session resumes and
+ * revives it; a disposed, killed, cancelled or lost one never will.
+ */
+function notLiveRecipients(
+  recipients: readonly string[],
+  memberTaskMap: MemberTaskMap,
+  inspectMember: MessagingEngineDeps["inspectMember"],
+): NotLiveRecipient[] {
+  if (inspectMember === undefined) return []
+  const result: NotLiveRecipient[] = []
+  for (const member of recipients) {
+    const taskId = memberTaskMap[member]
+    if (taskId === undefined) continue
+    const view = inspectMember(taskId)
+    if (view === undefined) continue
+    const base = { member, status: view.status, residency_state: view.residency_state }
+    // A deliberate stop wins over a suspended residency: a killed or cancelled member must never
+    // be described as "reads it after revival" (the revival path itself refuses those records).
+    if (view.killed === true || view.status === "cancelled" || view.status === "lost") {
+      result.push({ ...base, state: "disposed" })
+    } else if (view.residency_state === "persisted_only" || view.residency_state === "rpc_detached") {
+      result.push({ ...base, state: "suspended" })
+    } else if (view.residency_state !== "resident") {
+      result.push({ ...base, state: "disposed" })
+    }
+  }
+  return result
 }

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { loadHostedRuntime } from '../src/hosted-runtime.mjs';
+import { announceUnloadOnDispose, loadHostedRuntime } from '../src/hosted-runtime.mjs';
 import { serveProfile } from '../src/profile-server.mjs';
 import { RpcWorker } from '../src/rpc-worker.mjs';
 
@@ -25,6 +25,21 @@ test('incomplete engine CLI never implicitly opens the normal profile', async t 
 test('hosted runtime requires absolute identity before loading any agent code', async () => {
   await assert.rejects(loadHostedRuntime({ runtimeRoot: 'relative', agentDir: '/profile' }), /absolute/);
   await assert.rejects(loadHostedRuntime({ runtimeRoot: '/build', agentDir: 'relative' }), /absolute/);
+});
+
+test('hosted worker dispose delegates to the original cleanup with reason unload, not quit', async () => {
+  const calls = [];
+  const runtime = { session: {}, async dispose(reason = 'quit') { calls.push({ self: this, reason }); return 'cleaned'; } };
+  assert.equal(announceUnloadOnDispose(runtime), runtime);
+  const once = runtime.dispose;
+  assert.equal(announceUnloadOnDispose(runtime).dispose, once, 'a second announce keeps the same dispose');
+  assert.equal(await runtime.dispose(), 'cleaned');
+  assert.equal(await runtime.dispose(), 'cleaned', 'repeat disposal reaches the original each time');
+  assert.deepEqual(calls.map(call => call.reason), ['unload', 'unload']);
+  assert.ok(calls.every(call => call.self === runtime), 'the original runs with its own this');
+  // The CLI cursor owns its own lifecycle and must keep it.
+  const cursor = { lifecycle: {}, dispose: async () => 'cursor' };
+  assert.equal(announceUnloadOnDispose(cursor).dispose, cursor.dispose);
 });
 
 test('failed engine selection releases the profile owner rather than blocking recovery', async t => {

@@ -92,6 +92,31 @@ test('attach during idle unload waits for the old worker then starts a replaceme
   assert.equal(env.host.metrics.runtimeStarts, 2);
 });
 
+test('idle unload waits while approved children still have work, then proceeds', async (t) => {
+  const env = await setup(t, { idleMs: 30, pollMs: 0 });
+  const client = await env.client();
+  const session = await client.create({ cwd: env.root, title: 'Busy children' });
+  await client.attach(session.sessionId);
+  const original = await client.snapshot();
+  await client.command({ type: 'prompt', message: 'busy-children' });
+  await until(async () => !(await client.snapshot()).state.isStreaming);
+  await client.detach();
+  await delay(150);
+  const held = (await client.list()).find((entry) => entry.sessionId === session.sessionId);
+  assert.equal(held.runtimeId, original.runtimeId, 'a lead with executing children is not unloaded on its own idle');
+  const handle = env.host.getSessionWorker(session.sessionId);
+  assert.ok(handle, 'worker stays resident');
+  await client.attach(session.sessionId);
+  await client.command({ type: 'prompt', message: 'idle-children' });
+  await until(async () => !(await client.snapshot()).state.isStreaming);
+  await client.detach();
+  await until(async () => {
+    const item = (await client.list()).find((entry) => entry.sessionId === session.sessionId);
+    return item?.runtimeId === null;
+  });
+  assert.equal(env.host.metrics.runtimeStarts, 1);
+});
+
 test('questions survive detach, validate exact offered answers, reject double replies', async (t) => {
   const env = await setup(t);
   const client = await env.client();
