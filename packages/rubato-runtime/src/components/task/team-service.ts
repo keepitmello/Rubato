@@ -169,6 +169,15 @@ export function createTeamService(deps: TeamServiceDeps): TeamToolsService {
         config,
         activeMembers: runtimeState.members.map((member) => member.name),
         appendEvent: appendTaskEvent,
+        inspectMember: (taskId) => {
+          const record = deps.manager.get(taskId)
+          if (record === undefined) return undefined
+          return {
+            status: record.status,
+            residency_state: record.residency_state,
+            ...(record.killed === true ? { killed: true } : {}),
+          }
+        },
         ...(deps.now !== undefined ? { now: deps.now } : {}),
         ...(deps.newMessageId !== undefined ? { newMessageId: deps.newMessageId } : {}),
       })

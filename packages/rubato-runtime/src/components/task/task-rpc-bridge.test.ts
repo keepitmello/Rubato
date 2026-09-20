@@ -109,6 +109,38 @@ describe("event-bridge native task telemetry and controls", () => {
     })
   })
 
+  it("#given running, waiting, foreign and suspended children #when the host asks for pending work #then only this session's executing work counts", async () => {
+    const running = taskRecord({ task_id: "st_running", status: "running" })
+    const queued = taskRecord({ task_id: "st_queued", status: "pending" })
+    const waiting = taskRecord({ task_id: "st_waiting", status: "completed" })
+    const suspended = taskRecord({ task_id: "st_suspended", status: "running", residency_state: "rpc_detached" })
+    const foreign = taskRecord({
+      task_id: "st_foreign",
+      status: "running",
+      parent_session_id: "other-session",
+      root_session_id: "other-session",
+    })
+    const { pi, invokeRpc } = wireHarness("parent-session", {
+      records: {
+        [running.task_id]: running,
+        [queued.task_id]: queued,
+        [waiting.task_id]: waiting,
+        [suspended.task_id]: suspended,
+        [foreign.task_id]: foreign,
+      },
+      withRpc: true,
+    })
+    await pi.dispatch("session_start", {}, {})
+
+    await expect(invokeRpc("rubato.task.pending-work", {})).resolves.toEqual({
+      active: 2,
+      tasks: [
+        { task_id: "st_running", status: "running" },
+        { task_id: "st_queued", status: "pending" },
+      ],
+    })
+  })
+
   it("#given a modern Senpi RPC API #when the bridge wires #then output send and cancel handlers reuse session-scoped task semantics", async () => {
     const current = taskRecord({ task_id: "st_current", status: "running" })
     const foreign = taskRecord({
@@ -125,6 +157,7 @@ describe("event-bridge native task telemetry and controls", () => {
     expect([...rpcHandlers.keys()].sort()).toEqual([
       "rubato.task.cancel",
       "rubato.task.output",
+      "rubato.task.pending-work",
       "rubato.task.send",
     ])
     await pi.dispatch("session_start", {}, {})

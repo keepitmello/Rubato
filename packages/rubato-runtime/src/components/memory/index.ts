@@ -190,7 +190,7 @@ function isSessionUi(value: unknown): value is SessionUi {
   return isRecord(value) && typeof value.notify === "function"
 }
 
-const SHUTDOWN_REASONS: readonly ShutdownReason[] = ["quit", "reload", "new", "resume", "fork"]
+const SHUTDOWN_REASONS: readonly ShutdownReason[] = ["quit", "unload", "reload", "new", "resume", "fork"]
 
 /** An unknown or absent reason drains conservatively: flush and enqueue, launch nothing. */
 function readShutdownReason(payload: unknown): ShutdownReason {

@@ -151,8 +151,11 @@ export async function releaseScopedHttpDispatcher() {
         'constructor(_session, _services, createRuntime, _diagnostics = [], _modelFallbackMessage, lifecycle) {\n        this.lifecycle = lifecycle;');
       next = once(next, '    async teardownCurrent(reason, targetSessionFile) {',
         '    async teardownCurrent(reason, targetSessionFile) {\n        if (this.lifecycle) return this.lifecycle.beforeSwitch({ reason, targetSessionFile, invalidate: () => this.beforeSessionInvalidate?.() });');
+      // A hosting server reclaims a runtime (idle unload, server stop) without the user quitting;
+      // it passes its own shutdown reason so the original cleanup order stays intact.
       next = once(next, '    async dispose() {',
-        '    async dispose() {\n        if (this.lifecycle) return this.lifecycle.dispose(() => this.beforeSessionInvalidate?.());');
+        '    async dispose(reason = "quit") {\n        if (this.lifecycle) return this.lifecycle.dispose(() => this.beforeSessionInvalidate?.());');
+      next = once(next, '            type: "session_shutdown",\n            reason: "quit",', '            type: "session_shutdown",\n            reason,');
       next = once(next, '        const sessionDir = this.session.sessionManager.getSessionDir();\n        if (!existsSync(sessionDir)) {',
         '        const existing = await this.lifecycle?.beforeImport?.(resolvedPath);\n        if (existing) return this.switchSession(existing);\n        const sessionDir = this.session.sessionManager.getSessionDir();\n        if (!existsSync(sessionDir)) {');
       next = once(next, '        const sessionManager = this.session.sessionManager;',

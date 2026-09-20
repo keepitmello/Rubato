@@ -36,6 +36,43 @@ describe("team messaging route", () => {
     expect(result.details).toEqual({ kind: "to_members", message_id: "m2", recipients: ["beta"] })
   })
 
+  test("#given a recipient with no execution #when enqueued #then the text says it will not be read", async () => {
+    const service = createFakeTeamService({
+      sendMessage: async () => ({
+        kind: "to_members",
+        messageId: "m3",
+        recipients: ["beta"],
+        notLive: [{ member: "beta", status: "completed", residency_state: "disposed", state: "disposed" }],
+      }),
+    })
+    const result = await runTeamSend(service, "run-1", TEAM_LEAD_SENTINEL, { to: "beta", body: "go" })
+    const text = result.content[0]?.type === "text" ? result.content[0].text : ""
+    expect(text).toContain("Message enqueued to 1 recipient(s): beta (id: m3).")
+    expect(text).toContain("Stored in beta's inbox. Last known execution state: completed/disposed.")
+    expect(text).toContain("delivery and resumed work are unconfirmed. Sending did not restart the task.")
+    expect(result.details).toEqual({
+      kind: "to_members",
+      message_id: "m3",
+      recipients: ["beta"],
+      not_live: [{ member: "beta", status: "completed", residency_state: "disposed", state: "disposed" }],
+    })
+  })
+
+  test("#given a suspended recipient #when enqueued #then the text says it waits for revival", async () => {
+    const service = createFakeTeamService({
+      sendMessage: async () => ({
+        kind: "to_members",
+        messageId: "m4",
+        recipients: ["beta"],
+        notLive: [{ member: "beta", status: "running", residency_state: "rpc_detached", state: "suspended" }],
+      }),
+    })
+    const result = await runTeamSend(service, "run-1", TEAM_LEAD_SENTINEL, { to: "beta", body: "go" })
+    const text = result.content[0]?.type === "text" ? result.content[0].text : ""
+    expect(text).toContain("Last known execution state: running/rpc_detached.")
+    expect(text).toContain("must be successfully resumed before it can process the message")
+  })
+
   test("#given a recipient backpressure error #when send runs #then it surfaces recipient_backpressure", async () => {
     const service = createFakeTeamService({
       sendMessage: async () => {

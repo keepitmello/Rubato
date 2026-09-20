@@ -9,6 +9,7 @@ let manager = SessionManager.open(args[args.indexOf('--session') + 1]);
 let running = false;
 let timer;
 let ui;
+let pendingWork = 0;
 const emit = (value) => process.stdout.write(JSON.stringify(value) + '\n');
 const settle = () => { clearTimeout(timer); running = false; emit({ type: 'agent_end', messages: [] }); emit({ type: 'agent_settled' }); };
 const userText = (message) => typeof message?.content === 'string' ? message.content
@@ -64,6 +65,10 @@ lines.on('line', (line) => {
         } });
         timer = setTimeout(settle, 50);
       }
+      else if (command.message === 'busy-children' || command.message === 'idle-children') {
+        pendingWork = command.message === 'busy-children' ? 1 : 0;
+        timer = setTimeout(settle, 10);
+      }
       else if (command.message === 'lone') {
         emit({ type: 'message_update', message: { role: 'assistant', timestamp: Date.now(),
           content: [{ type: 'text', text: 'half of a pair \uD83D stays behind' }] } });
@@ -82,6 +87,9 @@ lines.on('line', (line) => {
     case 'set_session_name': manager.appendSessionInfo(command.name); break;
     case 'get_commands': data = { commands: [] }; break;
     case 'get_available_models': data = { models: [] }; break;
+    case 'extension_request':
+      if (command.name !== 'rubato.task.pending-work') { emit({ id: command.id, type: 'response', command: command.type, success: false, error: 'Unknown extension RPC request' }); return; }
+      data = { active: pendingWork }; break;
     default: emit({ id: command.id, type: 'response', command: command.type, success: false, error: 'Unsupported fixture command' }); return;
   }
   emit({ id: command.id, type: 'response', command: command.type, success: true, data });

@@ -1,5 +1,6 @@
 import type { Message } from "@rubato/team-core/types"
 
+import type { ResidencyState, TaskStatus } from "../../state"
 import type { PersistedTaskEvent, StateDirConfig } from "../../store"
 import type { MemberTaskMap } from "../member-map"
 import type { TeamCoreConfig } from "../runtime-config"
@@ -18,12 +19,40 @@ export type MessagingEngineDeps = {
   readonly config: TeamCoreConfig
   readonly activeMembers: readonly string[]
   readonly appendEvent?: (taskId: string, event: PersistedTaskEvent) => void
+  /**
+   * Optional task-record view of a member. When present, a member-direction send reports recipients
+   * whose execution is suspended or gone, so "enqueued" is never mistaken for "will be read".
+   */
+  readonly inspectMember?: (taskId: string) => MemberExecutionView | undefined
   readonly now?: () => number
   readonly newMessageId?: () => string
 }
 
+export type MemberExecutionView = {
+  readonly status: TaskStatus
+  readonly residency_state: ResidencyState
+  readonly killed?: boolean
+}
+
+/** A recipient whose inbox accepted the message but whose execution cannot read it right now. */
+export type NotLiveRecipient = {
+  readonly member: string
+  readonly status: TaskStatus
+  readonly residency_state: ResidencyState
+  /**
+   * suspended: the message waits for a successful resume of the member; disposed: no live
+   * execution exists now (a stopped, killed or disposed record) and sending did not restart it.
+   */
+  readonly state: "suspended" | "disposed"
+}
+
 export type SendTeamMessageResult =
   | { readonly kind: "to_lead"; readonly messageId: string }
-  | { readonly kind: "to_members"; readonly messageId: string; readonly recipients: readonly string[] }
+  | {
+      readonly kind: "to_members"
+      readonly messageId: string
+      readonly recipients: readonly string[]
+      readonly notLive?: readonly NotLiveRecipient[]
+    }
 
 export type { Message, MemberTaskMap }
