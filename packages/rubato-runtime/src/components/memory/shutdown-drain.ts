@@ -10,7 +10,16 @@ import type { ComponentLogger } from "../../extension/types"
 /** Hard drain budget in milliseconds. Pinned by test: senpi blocks shutdown on this handler. */
 export const SESSION_SHUTDOWN_DRAIN_BUDGET_MS = 1500
 
-export type ShutdownReason = "quit" | "reload" | "new" | "resume" | "fork"
+/**
+ * `unload` is the hosted pi-server's end-of-residency reason: the worker is reclaimed (idle
+ * unload or server stop) while the session file stays resumable. For memory it is the same
+ * "last chance for this process" moment as a CLI `quit`, so both run the final launch steps.
+ */
+export type ShutdownReason = "quit" | "unload" | "reload" | "new" | "resume" | "fork"
+
+export function isFinalShutdown(reason: ShutdownReason): boolean {
+  return reason === "quit" || reason === "unload"
+}
 
 export interface ShutdownEvaluatorInput {
   readonly reason: ShutdownReason
@@ -124,7 +133,7 @@ export function createShutdownDrain(options: ShutdownDrainOptions): ShutdownDrai
       try {
         if (!(await runStep("journal-flush", () => options.steps.flushJournal(input.sessionId, signal)))) return
         if (!(await runStep("facts-enqueue", () => options.steps.enqueueFinalDelta(input.sessionId, signal)))) return
-        if (input.reason !== "quit") return
+        if (!isFinalShutdown(input.reason)) return
         if (!(await runStep("skills-usage-flush", () => options.steps.flushSkillsUsage(input.sessionId, signal)))) return
         if (!(await runStep("facts-launch", () => options.steps.launchFacts(input.sessionId, signal)))) return
         for (const evaluator of evaluators) {
