@@ -225,6 +225,14 @@ export class EventProjection {
   settle() {
     if (!this.turnId) return;
     const state = this.interrupted ? 'interrupted' : this.failed ? 'failed' : 'completed';
+    // `turn.completed.errorMessage` alone does not survive: T3 keeps the reason in
+    // one `session.lastError` slot, so the next failure overwrites it and the
+    // timeline is left with a half-written answer and no explanation. Claude's
+    // adapter emits `runtime.error` next to its failed turn for the same reason;
+    // that row sits at the turn and stays.
+    if (state === 'failed' && this.lastError) {
+      this.event('runtime.error', { message: this.lastError, class: 'provider_error' });
+    }
     this.event('turn.completed', { state, ...(state === 'failed' && this.lastError ? { errorMessage: this.lastError } : {}) });
     this.turnId = undefined;
   }
