@@ -12,6 +12,8 @@ import { RpcWorker } from './rpc-worker.mjs';
 import { wire, measure, EVENT_BUDGET, EVENTS_BUDGET } from './wire.mjs';
 
 const invalid = (message) => new RemoteServiceError('service_invalid_value', message);
+/** Answered by the task extension: how many approved children still have work to do. */
+export const PENDING_WORK_REQUEST = 'rubato.task.pending-work';
 function endpoint(entries) {
   const provider = new RemoteServiceProvider(entries.map(([service]) => service));
   for (const [service, implementation] of entries) provider.provide(service, implementation);
@@ -110,10 +112,29 @@ class RuntimeHandle {
   scheduleUnload() {
     clearTimeout(this.timer);
     if (this.closed || this.attachments || this.calls || this.running || this.pendingUi.size || this.idleMs === null) return;
-    this.timer = setTimeout(() => {
-      if (!this.attachments && !this.calls && !this.running && !this.pendingUi.size) void this.close();
-    }, this.idleMs);
+    this.timer = setTimeout(() => { void this.unloadWhenIdle(); }, this.idleMs);
     this.timer.unref?.();
+  }
+  /**
+   * Idle means "nothing to do", not merely "no window and no lead turn". A lead whose
+   * approved children are still executing keeps its runtime: unloading would suspend
+   * the children with it. Ask the runtime once; a runtime that cannot answer (no task
+   * extension, request error) unloads as before. Deferral re-arms the same idle timer,
+   * so the children's own budgets and stop policy decide when the lead may go.
+   */
+  async unloadWhenIdle() {
+    if (this.closed || this.attachments || this.calls || this.running || this.pendingUi.size) return;
+    const pending = await this.pendingWork();
+    if (this.closed || this.attachments || this.calls || this.running || this.pendingUi.size) return;
+    if (pending > 0) { this.deferredUnloads = (this.deferredUnloads ?? 0) + 1; this.scheduleUnload(); return; }
+    void this.close();
+  }
+  async pendingWork() {
+    try {
+      const result = await this.worker.request({ type: 'extension_request', name: PENDING_WORK_REQUEST });
+      const active = Number(result?.active);
+      return Number.isFinite(active) && active > 0 ? active : 0;
+    } catch { return 0; }
   }
   async command(command) {
     if (!command || !COMMANDS.has(command.type)) throw invalid('Unsupported command for an attached session');

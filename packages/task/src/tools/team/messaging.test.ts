@@ -48,7 +48,8 @@ describe("team messaging route", () => {
     const result = await runTeamSend(service, "run-1", TEAM_LEAD_SENTINEL, { to: "beta", body: "go" })
     const text = result.content[0]?.type === "text" ? result.content[0].text : ""
     expect(text).toContain("Message enqueued to 1 recipient(s): beta (id: m3).")
-    expect(text).toContain("Not live: beta (completed, disposed) has no execution")
+    expect(text).toContain("Stored in beta's inbox. Last known execution state: completed/disposed.")
+    expect(text).toContain("delivery and resumed work are unconfirmed. Sending did not restart the task.")
     expect(result.details).toEqual({
       kind: "to_members",
       message_id: "m3",
@@ -68,7 +69,8 @@ describe("team messaging route", () => {
     })
     const result = await runTeamSend(service, "run-1", TEAM_LEAD_SENTINEL, { to: "beta", body: "go" })
     const text = result.content[0]?.type === "text" ? result.content[0].text : ""
-    expect(text).toContain("is suspended")
+    expect(text).toContain("Last known execution state: running/rpc_detached.")
+    expect(text).toContain("must be successfully resumed before it can process the message")
   })
 
   test("#given a recipient backpressure error #when send runs #then it surfaces recipient_backpressure", async () => {

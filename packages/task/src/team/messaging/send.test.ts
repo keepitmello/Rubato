@@ -265,6 +265,24 @@ describe("sendTeamMessage execution honesty", () => {
     expect(unreadFiles(stateDir, "alpha")).toEqual([`${messageId}.json`])
   })
 
+  test("#given a cancelled member whose residency is still suspended #when the lead sends #then the stop wins over revival wording", async () => {
+    // given
+    const map: MemberTaskMap = { alpha: "st_a" }
+    const { stateDir, config } = await setup(map)
+
+    // when
+    const result = await sendTeamMessage(
+      { from: "lead", to: "alpha", body: "go" },
+      deps(stateDir, config, map, {
+        newMessageId: () => messageId,
+        inspectMember: () => ({ status: "cancelled", residency_state: "rpc_detached" }),
+      }),
+    )
+
+    // then
+    expect(result.kind === "to_members" && result.notLive?.[0]?.state).toBe("disposed")
+  })
+
   test("#given a killed resident member #when the lead sends #then it is reported as disposed", async () => {
     // given
     const map: MemberTaskMap = { alpha: "st_a" }

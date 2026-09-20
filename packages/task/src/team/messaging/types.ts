@@ -39,7 +39,10 @@ export type NotLiveRecipient = {
   readonly member: string
   readonly status: TaskStatus
   readonly residency_state: ResidencyState
-  /** suspended: revives on the lead session's resume; disposed: no execution will read it. */
+  /**
+   * suspended: the message waits for a successful resume of the member; disposed: no live
+   * execution exists now (a stopped, killed or disposed record) and sending did not restart it.
+   */
   readonly state: "suspended" | "disposed"
 }
 

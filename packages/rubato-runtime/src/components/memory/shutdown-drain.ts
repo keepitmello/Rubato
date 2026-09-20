@@ -11,13 +11,15 @@ import type { ComponentLogger } from "../../extension/types"
 export const SESSION_SHUTDOWN_DRAIN_BUDGET_MS = 1500
 
 /**
- * `unload` is the hosted pi-server's end-of-residency reason: the worker is reclaimed (idle
- * unload or server stop) while the session file stays resumable. For memory it is the same
- * "last chance for this process" moment as a CLI `quit`, so both run the final launch steps.
+ * `unload` is the hosted pi-server's reclaim reason: the worker goes away (idle unload or server
+ * stop) while the session file stays resumable. The process is ending, so anything only held in
+ * memory is PRESERVED (journal, final delta, skills usage); nothing new is LAUNCHED. Pending
+ * facts are picked up by the next bind's extractor reconcile, and evaluators wait for a quit.
  */
 export type ShutdownReason = "quit" | "unload" | "reload" | "new" | "resume" | "fork"
 
-export function isFinalShutdown(reason: ShutdownReason): boolean {
+/** Steps that only save state this process still holds; a process-ending reason runs them. */
+export function preservesProcessState(reason: ShutdownReason): boolean {
   return reason === "quit" || reason === "unload"
 }
 
@@ -133,8 +135,9 @@ export function createShutdownDrain(options: ShutdownDrainOptions): ShutdownDrai
       try {
         if (!(await runStep("journal-flush", () => options.steps.flushJournal(input.sessionId, signal)))) return
         if (!(await runStep("facts-enqueue", () => options.steps.enqueueFinalDelta(input.sessionId, signal)))) return
-        if (!isFinalShutdown(input.reason)) return
+        if (!preservesProcessState(input.reason)) return
         if (!(await runStep("skills-usage-flush", () => options.steps.flushSkillsUsage(input.sessionId, signal)))) return
+        if (input.reason !== "quit") return
         if (!(await runStep("facts-launch", () => options.steps.launchFacts(input.sessionId, signal)))) return
         for (const evaluator of evaluators) {
           const proceed = await runStep("shutdown-evaluator", async () => {
