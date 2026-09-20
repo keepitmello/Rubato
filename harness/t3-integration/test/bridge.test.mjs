@@ -686,6 +686,19 @@ test('a failed assistant message puts the provider error on the item and the tur
   assert.equal(completed.length, 1);
   assert.equal(completed[0].payload.state, 'failed');
   assert.equal(completed[0].payload.errorMessage, 'Individual quota reached');
+  // The reason has to outlive the turn: `session.lastError` holds one slot, so
+  // the row is what the timeline keeps when a later failure overwrites it.
+  const reason = events.filter((event) => event.type==='runtime.error');
+  assert.equal(reason.length, 1);
+  assert.equal(reason[0].payload.message, 'Individual quota reached');
+});
+
+test('a completed turn reports no runtime error', () => {
+  const events=[]; const p=new EventProjection({threadId:'thread',sessionId:'session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
+  p.project({type:'agent_start'});
+  p.project({type:'message_end', message:{role:'assistant', timestamp:1, stopReason:'stop', content:[{type:'text', text:'done'}]}});
+  p.project({type:'agent_settled'});
+  assert.equal(events.some((event) => event.type==='runtime.error'), false);
 });
 
 test('assistant usage becomes thread.token-usage.updated in the meter shape', async () => {
