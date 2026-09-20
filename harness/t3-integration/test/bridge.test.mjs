@@ -462,6 +462,18 @@ test('reconnect does not append a full answer over text already projected or sti
   assert.deepEqual(events.filter(e=>e.type==='content.delta').map(e=>e.payload.delta),['abc','def']);
 });
 
+test('re-attaching a thread whose assistant message errored does not fail the session', () => {
+  const events=[]; const p=new EventProjection({threadId:'thread',sessionId:'session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
+  const failed={role:'assistant',timestamp:1,stopReason:'error',errorMessage:'Request timed out.',content:[]};
+  p.message(failed,true);
+  const itemId=events.find((event)=>event.type==='item.completed').itemId;
+  // T3 keeps the provider error as that item's text, so the next attach seeds it.
+  p.seed([{id:`assistant:${itemId}`,text:'Request timed out.',streaming:false}]);
+  events.length=0;
+  p.message(failed,true);
+  assert.deepEqual(events,[]);
+});
+
 test('the app is offered work a person opened, not a scratch run', () => {
   assert.equal(userStartedSession({ sessionId:'a', cwd:'/private/tmp/bench', runtimeId:'r', status:'running' }), true);
   assert.equal(userStartedSession({ sessionId:'b', cwd:'/private/tmp/bench', runtimeId:null, status:'stored' }), false);

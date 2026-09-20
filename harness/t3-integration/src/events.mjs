@@ -273,10 +273,14 @@ export class EventProjection {
       const streamId = suffix ? itemId + suffix : itemId;
       const full = textOf(message, type);
       const previous = cache.get(streamId) ?? '';
-      if (!full.startsWith(previous)) {
-        this.event('runtime.error', { message: 'Stored presentation text does not match the Pi transcript', class: 'validation_error' });
-        continue;
-      }
+      // Not every stored item text is text we streamed. An assistant message that
+      // ended in a provider error has no text in Pi, so T3 keeps the error detail
+      // as the item's text; seeding that back in made this comparison fail on
+      // every attach to a thread that had ever failed, and `runtime.error` fails
+      // the whole session — one old timeout made the thread unresumable. The
+      // cache only decides which delta to send, so a mismatch means "send none",
+      // not "the transcript is broken". Keep `previous`: it is what T3 holds.
+      if (!full.startsWith(previous)) continue;
       const delta = full.slice(previous.length);
       if (delta) this.event('content.delta', { streamKind, delta }, { itemId: streamId });
       cache.set(streamId, full);
