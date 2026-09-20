@@ -27,23 +27,19 @@ test('hosted runtime requires absolute identity before loading any agent code', 
   await assert.rejects(loadHostedRuntime({ runtimeRoot: '/build', agentDir: 'relative' }), /absolute/);
 });
 
-test('hosted worker dispose announces unload, not quit, so resident children suspend instead of dying', async () => {
-  const emitted = []; let invalidated = 0, disposed = 0;
-  const runtime = {
-    session: { extensionRunner: { id: 'runner' }, dispose: () => { disposed++; } },
-    beforeSessionInvalidate: () => { invalidated++; },
-    dispose: async () => { emitted.push({ type: 'session_shutdown', reason: 'quit' }); },
-  };
-  const emit = async (runner, event) => { assert.equal(runner, runtime.session.extensionRunner); emitted.push(event); };
-  assert.equal(announceUnloadOnDispose(runtime, emit), runtime);
+test('hosted worker dispose delegates to the original cleanup with reason unload, not quit', async () => {
+  const calls = [];
+  const runtime = { session: {}, async dispose(reason = 'quit') { calls.push({ self: this, reason }); return 'cleaned'; } };
+  assert.equal(announceUnloadOnDispose(runtime), runtime);
   const once = runtime.dispose;
-  assert.equal(announceUnloadOnDispose(runtime, emit).dispose, once, 'a second announce keeps the same dispose');
-  await runtime.dispose();
-  assert.deepEqual(emitted, [{ type: 'session_shutdown', reason: 'unload' }]);
-  assert.equal(invalidated, 1); assert.equal(disposed, 1);
+  assert.equal(announceUnloadOnDispose(runtime).dispose, once, 'a second announce keeps the same dispose');
+  assert.equal(await runtime.dispose(), 'cleaned');
+  assert.equal(await runtime.dispose(), 'cleaned', 'repeat disposal reaches the original each time');
+  assert.deepEqual(calls.map(call => call.reason), ['unload', 'unload']);
+  assert.ok(calls.every(call => call.self === runtime), 'the original runs with its own this');
   // The CLI cursor owns its own lifecycle and must keep it.
   const cursor = { lifecycle: {}, dispose: async () => 'cursor' };
-  assert.equal(announceUnloadOnDispose(cursor, emit).dispose, cursor.dispose);
+  assert.equal(announceUnloadOnDispose(cursor).dispose, cursor.dispose);
 });
 
 test('failed engine selection releases the profile owner rather than blocking recovery', async t => {
