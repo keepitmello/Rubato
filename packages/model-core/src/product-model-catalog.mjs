@@ -10,6 +10,7 @@ export const PRODUCT_PROVIDER_ORDER = Object.freeze([
   "kiro",
   "cursor",
   "opencode",
+  "b-ai",
 ]);
 
 export const PRODUCT_MODEL_ORDER = Object.freeze({
@@ -25,6 +26,7 @@ export const PRODUCT_MODEL_ORDER = Object.freeze({
   kiro: Object.freeze(["gpt-5.6-sol", "claude-opus-5"]),
   cursor: Object.freeze(["gpt-5.6-sol", "claude-fable-5-1", "claude-opus-5", "cursor-grok-4.6", "gemini-3.8-flash", "kimi-k3", "composer-2.5"]),
   opencode: Object.freeze(["muse-spark-1.3-contributor-free"]),
+  "b-ai": Object.freeze(["deepseek-v4.1-flash"]),
 });
 
 export const CURSOR_GROK_PRESENTED_ID = "cursor/cursor-grok-4.6";
