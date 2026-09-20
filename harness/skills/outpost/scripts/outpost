@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 
 
 HERE = Path(__file__).resolve().parent
+ENGINE_NAME = "run_aside_repl_outpost"
 
 
 def load_module(name: str, path: Path):
@@ -21,6 +22,12 @@ def load_module(name: str, path: Path):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+# The engine owns the quality list; the CLI only reads it so a new quality is
+# added in one place.
+ENGINE = load_module(ENGINE_NAME, HERE / "run_aside_repl_outpost.py")
+QUALITIES = ENGINE.QUALITIES
 
 
 def infer_run_dir(packet: Path) -> Path:
@@ -51,11 +58,7 @@ def is_chatgpt_conversation_url(value: str | None) -> bool:
 
 def parse_send_tokens(tokens: Sequence[str], quality: str | None) -> tuple[str, str]:
     rest = list(tokens)
-    if rest and rest[0] == "xhigh":
-        raise ValueError(
-            "xhigh는 제거됐다: ChatGPT의 '매우 높음'은 GPT-5.6로 내려간다. pro만 쓴다"
-        )
-    if rest and rest[0] == "pro":
+    if rest and rest[0] in QUALITIES:
         if quality and quality != rest[0]:
             raise ValueError("quality was specified twice")
         quality = rest.pop(0)
@@ -64,8 +67,8 @@ def parse_send_tokens(tokens: Sequence[str], quality: str | None) -> tuple[str, 
     packet = rest.pop(0)
     if rest:
         raise ValueError(f"unexpected extra arguments: {' '.join(rest)}")
-    if quality != "pro":
-        raise ValueError("send requires --quality pro (xhigh는 GPT-5.6라 제거됨)")
+    if quality not in QUALITIES:
+        raise ValueError("send requires --quality " + "|".join(QUALITIES))
     return quality, packet
 
 
@@ -165,7 +168,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
 
     send = sub.add_parser("send", help="Open a new thread or continue with --to.")
     send.add_argument("tokens", nargs="*", help="pro and the packet path.")
-    send.add_argument("--quality", choices=("pro", "xhigh"))
+    send.add_argument("--quality", choices=QUALITIES)
     send.add_argument("--to", default=None, help="Thread id, last, /c/ URL, or result.json.")
     send.add_argument("--artifact", default=None, help="Save one generated zip here.")
     send.add_argument(
@@ -197,8 +200,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ValueError as error:
         print(str(error), file=sys.stderr)
         return 2
-    runner = load_module("run_aside_repl_outpost", HERE / "run_aside_repl_outpost.py")
-    return runner.main(engine_argv)
+    return ENGINE.main(engine_argv)
 
 
 if __name__ == "__main__":

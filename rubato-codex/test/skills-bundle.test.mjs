@@ -89,6 +89,18 @@ test("bundle omits local residue, private absolute paths, and credential materia
   }
 });
 
+test("outpost calls its own CLI, lane-neutral in the bundle and Codex-owned when generated", async () => {
+  const bundleSkill = await readFile(path.join(sourceRoot, "outpost/SKILL.md"), "utf8");
+  assert.ok(!bundleSkill.includes("rubato-codex"), "bundle outpost must not hardcode the Codex lane");
+  assert.ok(bundleSkill.includes("\noutpost send --quality pro"), "bundle outpost must call its own CLI");
+
+  const codexBin = '"${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost"';
+  const generatedSkill = await readFile(path.join(skillsRoot, "outpost/SKILL.md"), "utf8");
+  assert.ok(generatedSkill.includes(`${codexBin} send --quality pro`), "generated outpost must call the Codex bin");
+  const generatedRunbook = await readFile(path.join(skillsRoot, "outpost/references/runbook.md"), "utf8");
+  assert.ok(generatedRunbook.includes(`${codexBin} doctor`), "generated runbook must call the Codex bin");
+});
+
 test("Codex adaptations remove Claude setup and preserve native runtime boundaries", async () => {
   const insane = await readFile(path.join(skillsRoot, "insane-search/SKILL.md"), "utf8");
   assert.doesNotMatch(insane, /CLAUDE_PLUGIN_ROOT|STAR_ASK|AskUserQuestion/);

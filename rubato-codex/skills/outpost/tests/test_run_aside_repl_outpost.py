@@ -35,11 +35,9 @@ class AsideReplConsultTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             MODULE.parse_args([])
         self.assertEqual(MODULE.parse_args(["--quality", "pro", "--packet", "p"]).quality, "pro")
-        with self.assertRaises(SystemExit):
-            MODULE.parse_args(["--quality", "xhigh", "--packet", "p"])
-        self.assertEqual(MODULE.parse_args(["--quality", "pro", "--packet", "p"]).quality, "pro")
-        with self.assertRaises(SystemExit):
-            MODULE.parse_args(["--quality", "xhigh", "--packet", "p"])
+        self.assertEqual(
+            MODULE.parse_args(["--quality", "xhigh", "--packet", "p"]).quality, "xhigh"
+        )
         with self.assertRaises(SystemExit):
             MODULE.parse_args(["--quality", "high", "--packet", "p"])
 
@@ -233,7 +231,11 @@ class AsideReplConsultTest(unittest.TestCase):
         self.assertIn("[0-9]* ?Pro", script)
         self.assertIn("preferredModel", script)
         self.assertIn("modelRadios", script)
-        self.assertIn("tierFallback", script)
+        # doctor probes the same lookup send uses; no click fallback may cover
+        # for a failed name lookup and report a green light send cannot reach
+        self.assertIn("waitNamedRef(page, 'button', tierNameRe", script)
+        self.assertNotIn("tierFallback", script)
+        self.assertNotIn("menus.nth(", script)
         self.assertNotIn("insertText", script)
         self.assertNotIn("setInputFiles", script)
         self.assertNotIn("composer-submit-button", script)

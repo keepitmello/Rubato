@@ -11,6 +11,7 @@ import { discoverProviderCatalog, makeProviderPolicy, resolveProviderSelection }
 import { applyOpenCodexSetup, configureOpenCodexMultiAgent, configureOpenCodexRoster, planOpenCodexSetup, registerOpenCodexProviders } from "./opencodex-setup.mjs";
 import { configureOpenCodexAnthropicAuth } from "./anthropic-setup-token.mjs";
 import { applyBundleDependencies, planBundleDependencies } from "./bundle-dependencies.mjs";
+import { buildSkills } from "./build-skills.mjs";
 
 const ROLE_NAMES = ["taskforce_owner", "taskforce_verifier", "taskforce_helper"];
 const CONFIG_START = "# >>> rubato-codex managed bootstrap >>>";
@@ -305,6 +306,10 @@ async function stageLocalMarketplace(pluginRoot, repoRoot, stageRoot) {
   await copyFile(join(pluginRoot, ".mcp.json"), join(next, "rubato-codex", ".mcp.json"));
   await copyFile(join(pluginRoot, "bundle-dependencies.json"), join(next, "rubato-codex", "bundle-dependencies.json"));
   await cp(join(pluginRoot, "skills"), join(next, "rubato-codex", "skills"), { recursive: true });
+  // Managed skills come from the bundle here, not from the committed copy: a
+  // copy that went stale because nobody ran build:skills must not reach an
+  // install. Preserved Codex-owned skills keep coming from the copy above.
+  await buildSkills(join(next, "rubato-codex", "skills"));
   await cp(join(pluginRoot, "instructions"), join(next, "rubato-codex", "instructions"), { recursive: true });
   await mkdir(join(next, "rubato-codex", "scripts"), { recursive: true });
   await copyFile(
