@@ -23,7 +23,7 @@ export const DEFAULT_BAI_PROVIDER = Object.freeze({
   models: Object.freeze([
     Object.freeze({
       id: BAI_FLASH_MODEL_ID,
-      name: "DeepSeek V4.1 Flash",
+      name: "v4.1 Flash",
       contextWindow: 1_000_000,
       maxTokens: 384_000,
       input: Object.freeze(["text"]),

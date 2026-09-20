@@ -33,7 +33,7 @@ const EXACT_LABELS = Object.freeze({
   "gpt-daybreak-blue-latest": "Daybreak Blue",
   "gpt-daybreak-blue-latest-fast": "Daybreak Blue",
   "kimi-k3": "Kimi K3",
-  "deepseek-v4.1-flash": "DeepSeek Flash",
+  "deepseek-v4.1-flash": "v4.1 Flash",
 });
 
 function parseVersion(tail) {

@@ -7,7 +7,7 @@ import { parseArgs } from 'node:util';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
-const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/server/src/provider/RubatoPiInventory.ts', 'apps/web/src/components/RubatoIcon.tsx'];
+const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/server/src/provider/RubatoPiInventory.ts', 'apps/web/src/components/RubatoIcon.tsx', 'apps/web/src/components/DeepSeekIcon.tsx'];
 // 값이 [anchor, addition] 이면 anchor 앞에 붙이고, [from, to, 'replace'] 면 갈아끼운다.
 // 앱 이름·번들 id·상태 경로는 T3 가 const 로 박아둬서 앞에 덧붙이는 것으로는 못 바꾼다.
 //
@@ -115,7 +115,7 @@ const edits = {
   // 모델 선택기와 목록 행의 제공자 글리프. 매핑에 없는 드라이버는 이름 앞
   // 두 글자로 떨어져서 Rubato 가 "RU" 로 보였다.
   'apps/web/src/components/chat/providerIconUtils.ts': [
-    ['import {\n  AntigravityIcon,', 'import { RubatoIcon } from "../RubatoIcon";\n'],
+    ['import {\n  AntigravityIcon,', 'import { RubatoIcon } from "../RubatoIcon";\nimport { DeepSeekIcon } from "../DeepSeekIcon";\n'],
     [
       '  CursorIcon,\n  GrokIcon,\n  Icon,\n  OpenAI,\n  OpenCodeIcon,\n} from "../Icons";',
       '  CursorIcon,\n  GrokIcon,\n  Icon,\n  KiroIcon,\n  OpenAI,\n  OpenCodeIcon,\n} from "../Icons";',
@@ -136,6 +136,7 @@ const edits = {
         '  kiro: KiroIcon,',
         '  cursor: CursorIcon,',
         '  opencode: OpenCodeIcon,',
+        '  "b-ai": DeepSeekIcon,',
         '};',
         'const VENDOR_LABELS: Record<string, string> = {',
         '  "openai-codex": "OpenAI",',
@@ -145,6 +146,7 @@ const edits = {
         '  kiro: "Kiro",',
         '  cursor: "Cursor",',
         '  opencode: "OpenCode",',
+        '  "b-ai": "DeepSeek(b.ai)",',
         '};',
         '',
         'export function vendorForModel(model: Pick<ModelEsque, "slug" | "subProvider">): string | undefined {',
@@ -168,7 +170,7 @@ const edits = {
         '  model?: Pick<ModelEsque, "slug" | "subProvider">,',
         '): string {',
         '  const vendor = vendorForModel(model ?? { slug: "", subProvider });',
-        '  return (vendor && VENDOR_LABELS[vendor]) || subProvider;',
+        '  return VENDOR_LABELS[vendor ?? ""] || VENDOR_LABELS[subProvider.toLowerCase()] || subProvider;',
         '}',
         '',
         'function escapeRegExp(value: string): string {',

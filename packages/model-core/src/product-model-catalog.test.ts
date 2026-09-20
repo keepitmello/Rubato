@@ -76,7 +76,7 @@ describe("product model catalog", () => {
     expect(productCatalogLabel({ provider: "xai", id: "grok-4.6" })).toBe("Grok 4.6")
     expect(catalogSlugs()[0]).toBe("openai-codex/gpt-5.6-sol")
     expect(catalogSlugs()).toContain("b-ai/deepseek-v4.1-flash")
-    expect(productCatalogLabel({ provider: "b-ai", id: "deepseek-v4.1-flash" })).toBe("DeepSeek Flash")
+    expect(productCatalogLabel({ provider: "b-ai", id: "deepseek-v4.1-flash" })).toBe("v4.1 Flash")
     expect(PRODUCT_MODEL_ORDER.cursor).toContain("composer-2.5")
   })
 
