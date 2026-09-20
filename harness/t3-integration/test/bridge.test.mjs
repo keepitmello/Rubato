@@ -179,10 +179,17 @@ test('thinking_end completes the reasoning stream before the turn settles', () =
   const reasoningDone = events.find(e=>e.type==='item.completed'&&String(e.itemId||'').endsWith(':reasoning'));
   assert.ok(reasoningDone);
   assert.equal(reasoningDone.payload.status,'completed');
+  assert.equal(reasoningDone.payload.itemType,'reasoning');
+  assert.equal(events.some(e=>e.type==='item.completed'&&e.payload.itemType==='assistant_message'),false);
   assert.equal(events.some(e=>e.type==='turn.completed'),false);
   p.project({type:'message_end',message:{...message,stopReason:'stop'}});
   p.project({type:'agent_settled'});
   assert.equal(events.filter(e=>e.type==='item.completed').length,2);
+});
+test('text-only messages never fabricate a reasoning completion', () => {
+  const events=[]; const p=new EventProjection({threadId:'thread',sessionId:'session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
+  p.message({role:'assistant',timestamp:457,content:[{type:'text',text:'answer'}],stopReason:'stop'},true);
+  assert.deepEqual(events.filter(e=>e.type==='item.completed').map(e=>e.payload.itemType),['assistant_message']);
 });
 test('extension notify of every tone is a contract-valid runtime.warning, and setStatus is dropped', () => {
   const events=[]; const p=new EventProjection({threadId:'thread',sessionId:'session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
