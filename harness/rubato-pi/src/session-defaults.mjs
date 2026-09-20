@@ -11,6 +11,68 @@ export function modelsPath(agentDir) {
   return join(agentDir, "models.json");
 }
 
+/** Pi custom provider. The key stays local (`$BAI_API_KEY` or a literal apiKey). */
+export const BAI_PROVIDER_ID = "b-ai";
+export const BAI_FLASH_MODEL_ID = "deepseek-v4.1-flash";
+export const DEFAULT_BAI_PROVIDER = Object.freeze({
+  name: "B.AI",
+  baseUrl: "https://api.b.ai/v1",
+  api: "openai-completions",
+  apiKey: "$BAI_API_KEY",
+  authHeader: true,
+  models: Object.freeze([
+    Object.freeze({
+      id: BAI_FLASH_MODEL_ID,
+      name: "DeepSeek V4.1 Flash",
+      contextWindow: 1_000_000,
+      maxTokens: 384_000,
+      input: Object.freeze(["text"]),
+      reasoning: true,
+      thinkingLevelMap: Object.freeze({
+        minimal: null,
+        low: "low",
+        medium: null,
+        high: "high",
+        max: "max",
+      }),
+      compat: Object.freeze({
+        supportsStore: false,
+        supportsDeveloperRole: false,
+        supportsReasoningEffort: true,
+        maxTokensField: "max_tokens",
+        requiresReasoningContentOnAssistantMessages: true,
+        thinkingFormat: "deepseek",
+      }),
+    }),
+  ]),
+});
+
+function hasBaiProvider(providers) {
+  const bai = providers?.[BAI_PROVIDER_ID];
+  return bai != null && typeof bai === "object" && !Array.isArray(bai);
+}
+
+export function baiProviderLooksCurrent(providers) {
+  if (!hasBaiProvider(providers)) return false;
+  const models = providers[BAI_PROVIDER_ID].models;
+  return Array.isArray(models) && models.some((model) => model?.id === BAI_FLASH_MODEL_ID);
+}
+
+function ensureBaiProvider(providers) {
+  const next = { ...providers };
+  const existing = hasBaiProvider(next) ? next[BAI_PROVIDER_ID] : null;
+  if (!existing) {
+    next[BAI_PROVIDER_ID] = structuredClone(DEFAULT_BAI_PROVIDER);
+    return next;
+  }
+  const models = Array.isArray(existing.models) ? [...existing.models] : [];
+  if (!models.some((model) => model?.id === BAI_FLASH_MODEL_ID)) {
+    models.push(structuredClone(DEFAULT_BAI_PROVIDER.models[0]));
+  }
+  next[BAI_PROVIDER_ID] = { ...structuredClone(DEFAULT_BAI_PROVIDER), ...existing, models };
+  return next;
+}
+
 /**
  * 끄는 built-in OAuth extension.
  *
@@ -99,7 +161,8 @@ export function modelsLookCurrent(current) {
   // 남은 이유가 그것이다 — foreign 전부를 끄고 우리 id 는 끄지 않았는지를 본다.
   const required = foreignProviderIds(builtinProviderIds());
   if (!required.every((id) => current.disabledProviders.includes(id))) return false;
-  return !SUPPORTED_PROVIDER_IDS.some((id) => current.disabledProviders.includes(id));
+  if (SUPPORTED_PROVIDER_IDS.some((id) => current.disabledProviders.includes(id))) return false;
+  return baiProviderLooksCurrent(current.providers);
 }
 
 export function sessionDefaultsLookCurrent(
@@ -173,10 +236,11 @@ export function ensureModelsConfig(
 ) {
   const path = modelsPath(agentDir);
   const current = exists(path) ? JSON.parse(readFile(path, "utf8")) : {};
-  const providers =
+  const providers = ensureBaiProvider(
     current.providers && typeof current.providers === "object" && !Array.isArray(current.providers)
       ? current.providers
-      : {};
+      : {},
+  );
   const next = {
     ...current,
     providers,

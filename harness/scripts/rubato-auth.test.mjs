@@ -64,6 +64,8 @@ test("login aliases map to engine provider ids", () => {
   assert.deepEqual(resolveLoginProvider("anthropic"), { id: "anthropic" });
   assert.deepEqual(resolveLoginProvider("kiro"), { id: "kiro" });
   assert.deepEqual(resolveLoginProvider("opencode"), { id: "opencode" });
+  assert.deepEqual(resolveLoginProvider("deepseek"), { id: "b-ai" });
+  assert.deepEqual(resolveLoginProvider("b-ai"), { id: "b-ai" });
   assert.equal(resolveLoginProvider("nope").error, "unknown");
 });
 
@@ -72,6 +74,7 @@ test("login methods follow each provider", () => {
   assert.deepEqual(resolveLoginMethod("anthropic", "token"), { id: "setup-token" });
   assert.deepEqual(resolveLoginMethod("anthropic", "oauth"), { id: "oauth" });
   assert.deepEqual(resolveLoginMethod("kiro"), { id: "api_key" });
+  assert.deepEqual(resolveLoginMethod("b-ai"), { id: "api_key" });
   assert.deepEqual(resolveLoginMethod("xai", "key"), { id: "api_key" });
   assert.equal(resolveLoginMethod("openai-codex", "token").error, "method");
 });
@@ -125,6 +128,7 @@ test("status lists every admitted provider and login hints", async () => {
   assert.match(out, /Anthropic/);
   assert.match(out, /Kiro/);
   assert.match(out, /OpenCode/);
+  assert.match(out, /DeepSeek/);
   assert.match(out, /rubato auth login anthropic oauth/);
   assert.match(out, /rubato auth login anthropic token/);
   assert.doesNotMatch(out, /senpi \/login/);
@@ -161,6 +165,19 @@ test("storeApiKey appends another stored account", async () => {
   const stored = await credentials.read("kiro");
   assert.equal(stored.accounts.length, 2);
   assert.equal(stored.accounts[1].key, "second-key");
+});
+
+test("login deepseek key goes to the b-ai api_key method", async () => {
+  const calls = [];
+  const dir = tempHome();
+  const ctx = {
+    ...capture(),
+    env: { HOME: dir, RUBATO_AUTH_PATH: join(dir, "auth.json") },
+    home: dir,
+    login: async (id, method) => { calls.push({ id, method }); },
+  };
+  assert.equal(await handleAuthArgs(["login", "deepseek", "key"], ctx), "ok");
+  assert.deepEqual(calls, [{ id: "b-ai", method: "api_key" }]);
 });
 
 test("login anthropic oauth and token go through the same command", async () => {
