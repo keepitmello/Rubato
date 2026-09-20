@@ -9,7 +9,7 @@ import { toTeamCoreConfig } from "../runtime-config"
 import { ensureTeamRuntimeDirs, resolveTeamMemberInboxDir, resolveTeamRuntimeDirs, teamStorageBaseDir } from "../storage"
 import { cleanupMessagingTmp, stateDirConfig, tempProjectDir } from "./__fixtures__/messaging-fakes"
 import { sendTeamMessage } from "./send"
-import type { MemberTaskMap, MessagingEngineDeps } from "./types"
+import type { MemberTaskMap, MessagingEngineDeps, NotLiveRecipient } from "./types"
 
 const TEAM_RUN_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 
@@ -35,7 +35,7 @@ function deps(
   stateDir: ReturnType<typeof stateDirConfig>,
   config: ReturnType<typeof toTeamCoreConfig>,
   memberMap: MemberTaskMap,
-  options: Pick<MessagingEngineDeps, "appendEvent" | "newMessageId"> = {},
+  options: Pick<MessagingEngineDeps, "appendEvent" | "newMessageId" | "inspectMember"> = {},
 ): MessagingEngineDeps {
   return {
     teamRunId: TEAM_RUN_ID,
@@ -209,5 +209,95 @@ describe("sendTeamMessage pull-only delivery", () => {
 
     // then
     expect(attempt).rejects.toMatchObject({ name: "RecipientBackpressureError" })
+  })
+})
+
+describe("sendTeamMessage execution honesty", () => {
+  const messageId = "33333333-3333-4333-8333-333333333333"
+
+  test("#given a resident waiting member #when the lead sends #then the result carries no not-live entry", async () => {
+    // given
+    const map: MemberTaskMap = { alpha: "st_a" }
+    const { stateDir, config } = await setup(map)
+
+    // when
+    const result = await sendTeamMessage(
+      { from: "lead", to: "alpha", body: "go" },
+      deps(stateDir, config, map, {
+        newMessageId: () => messageId,
+        inspectMember: () => ({ status: "completed", residency_state: "resident" }),
+      }),
+    )
+
+    // then
+    expect(result).toEqual({ kind: "to_members", messageId, recipients: ["alpha"] })
+  })
+
+  test("#given a disposed member and a suspended member #when the lead broadcasts #then each is reported by state", async () => {
+    // given
+    const map: MemberTaskMap = { alpha: "st_a", beta: "st_b", gamma: "st_g" }
+    const { stateDir, config } = await setup(map)
+    const views = {
+      st_a: { status: "completed", residency_state: "disposed" },
+      st_b: { status: "running", residency_state: "rpc_detached" },
+      st_g: { status: "running", residency_state: "resident" },
+    } as const
+
+    // when
+    const result = await sendTeamMessage(
+      { from: "lead", to: "*", body: "status?" },
+      deps(stateDir, config, map, {
+        newMessageId: () => messageId,
+        inspectMember: (taskId) => views[taskId as keyof typeof views],
+      }),
+    )
+
+    // then
+    expect(result.kind).toBe("to_members")
+    if (result.kind !== "to_members") return
+    expect([...result.recipients].sort()).toEqual(["alpha", "beta", "gamma"])
+    const expected: NotLiveRecipient[] = [
+      { member: "alpha", status: "completed", residency_state: "disposed", state: "disposed" },
+      { member: "beta", status: "running", residency_state: "rpc_detached", state: "suspended" },
+    ]
+    expect([...(result.notLive ?? [])].sort((a, b) => a.member.localeCompare(b.member))).toEqual(expected)
+    // The inbox still accepted every message: honesty is added to the result, not subtracted from delivery.
+    expect(unreadFiles(stateDir, "alpha")).toEqual([`${messageId}.json`])
+  })
+
+  test("#given a cancelled member whose residency is still suspended #when the lead sends #then the stop wins over revival wording", async () => {
+    // given
+    const map: MemberTaskMap = { alpha: "st_a" }
+    const { stateDir, config } = await setup(map)
+
+    // when
+    const result = await sendTeamMessage(
+      { from: "lead", to: "alpha", body: "go" },
+      deps(stateDir, config, map, {
+        newMessageId: () => messageId,
+        inspectMember: () => ({ status: "cancelled", residency_state: "rpc_detached" }),
+      }),
+    )
+
+    // then
+    expect(result.kind === "to_members" && result.notLive?.[0]?.state).toBe("disposed")
+  })
+
+  test("#given a killed resident member #when the lead sends #then it is reported as disposed", async () => {
+    // given
+    const map: MemberTaskMap = { alpha: "st_a" }
+    const { stateDir, config } = await setup(map)
+
+    // when
+    const result = await sendTeamMessage(
+      { from: "lead", to: "alpha", body: "go" },
+      deps(stateDir, config, map, {
+        newMessageId: () => messageId,
+        inspectMember: () => ({ status: "running", residency_state: "resident", killed: true }),
+      }),
+    )
+
+    // then
+    expect(result.kind === "to_members" && result.notLive?.[0]?.state).toBe("disposed")
   })
 })

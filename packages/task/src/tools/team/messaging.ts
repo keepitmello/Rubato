@@ -10,9 +10,21 @@ export type LeadDeliveryView = "enqueued"
 export type MemberDeliveryOutcome = "enqueued"
 export type TeamSendMemberView = { readonly member: string; readonly outcome: MemberDeliveryOutcome }
 
+export type TeamSendNotLive = {
+  readonly member: string
+  readonly status: string
+  readonly residency_state: string
+  readonly state: "suspended" | "disposed"
+}
+
 export type TeamSendDetails =
   | { readonly kind: "to_lead"; readonly message_id: string }
-  | { readonly kind: "to_members"; readonly message_id: string; readonly recipients: readonly string[] }
+  | {
+      readonly kind: "to_members"
+      readonly message_id: string
+      readonly recipients: readonly string[]
+      readonly not_live?: readonly TeamSendNotLive[]
+    }
   | { readonly kind: MailboxErrorKind; readonly to: string; readonly reason: string }
 
 export type TeamSendInput = { readonly to: string; readonly body: string; readonly summary?: string }
@@ -47,11 +59,19 @@ export async function runTeamSend(
     switch (result.kind) {
       case "to_lead":
         return toolResult(`Message enqueued to lead (id: ${result.messageId}).`, { kind: "to_lead", message_id: result.messageId })
-      case "to_members":
-        return toolResult(
+      case "to_members": {
+        const notLive = result.notLive ?? []
+        const text = [
           `Message enqueued to ${result.recipients.length} recipient(s): ${result.recipients.join(", ")} (id: ${result.messageId}).`,
-          { kind: "to_members", message_id: result.messageId, recipients: result.recipients },
-        )
+          ...notLive.map(describeNotLive),
+        ].join("\n")
+        return toolResult(text, {
+          kind: "to_members",
+          message_id: result.messageId,
+          recipients: result.recipients,
+          ...(notLive.length > 0 ? { not_live: notLive } : {}),
+        })
+      }
       default:
         return assertNever(result)
     }
@@ -63,6 +83,17 @@ export async function runTeamSend(
     }
     throw error
   }
+}
+
+/**
+ * Acceptance into a durable inbox is not execution. Describe the observed state at send time
+ * without predicting the future: storage succeeded, delivery and resumed work are unconfirmed.
+ */
+function describeNotLive(entry: TeamSendNotLive): string {
+  const state = `Stored in ${entry.member}'s inbox. Last known execution state: ${entry.status}/${entry.residency_state}.`
+  return entry.state === "suspended"
+    ? `${state} Delivery remains pending; the member must be successfully resumed before it can process the message.`
+    : `${state} No live execution is currently available; delivery and resumed work are unconfirmed. Sending did not restart the task. Check the current task state before reporting progress.`
 }
 
 export function createTeamSendTool(deps: TeamToolDeps): ToolDefinition {

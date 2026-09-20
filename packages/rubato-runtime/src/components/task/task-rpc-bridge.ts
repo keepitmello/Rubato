@@ -21,6 +21,13 @@ import {
 } from "./task-rpc-codec"
 
 const TASK_UPDATED_EVENT = "rubato.task.updated"
+/**
+ * Answered for the hosting server before it reclaims an idle lead: approved children that still
+ * have work (queued, or running on a live handle). The host defers the unload while this is > 0,
+ * so children are not suspended just because the lead's own turn is idle and no window is open.
+ * A completed member waiting for mail is NOT work: it suspends cleanly and revives on resume.
+ */
+export const PENDING_WORK_REQUEST = "rubato.task.pending-work"
 const MAX_TASK_SNAPSHOTS = 256
 
 export interface TaskRpcBridge {
@@ -154,6 +161,16 @@ function registerTaskHandlers(
 ): void {
   const handle = pi.rpc?.handle
   if (handle === undefined) return
+  handle(PENDING_WORK_REQUEST, async () => {
+    const sessionId = currentSessionId()
+    if (sessionId === undefined) return { active: 0, tasks: [] }
+    const tasks = engine.manager
+      .list({ scope: "parent-session", session_id: sessionId })
+      .map((entry) => entry.record)
+      .filter((record) => isLive(record) && record.killed !== true && (record.status === "pending" || record.residency_state === "resident"))
+      .map((record) => ({ task_id: record.task_id, status: record.status }))
+    return { active: tasks.length, tasks }
+  })
   handle("rubato.task.send", async (data) => {
     const sessionId = currentSessionId()
     if (sessionId === undefined) return unavailable()
