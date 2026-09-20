@@ -24,6 +24,7 @@ test('a $skill chip becomes /skill:name; currency and unknown names stay prose',
   const names = new Set(['ship-it', 'review']);
   assert.equal(rewriteSkillMentions('$ship-it the patch', names), '/skill:ship-it the patch');
   assert.equal(rewriteSkillMentions('please $review this', names), 'please /skill:review this');
+  assert.equal(rewriteSkillMentions('$review then $ship-it please', names), '/skill:review then /skill:ship-it please');
   assert.equal(rewriteSkillMentions('echo $HOME then $unknown', names), 'echo $HOME then $unknown');
   assert.equal(rewriteSkillMentions('pay $20 tomorrow', names), 'pay $20 tomorrow');
 });

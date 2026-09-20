@@ -20,6 +20,9 @@
     "apps/web/src/components/sidebar/SidebarChrome.tsx": "da2c901f0f963df91c55c515fc8735609770fe9d9718cf5f66a75682f42ff309",
     "apps/web/src/components/chat/MessagesTimeline.logic.ts": "a40631f65f9a2d611119e95ea450f4b34a07bae20c39453ffa6f11a7dc713c8a",
     "apps/mobile/src/lib/threadActivity.ts": "4eadcea4eda8996642bec67f09565147e65eea2cf560795706ab6ae1deec8e32",
-    "apps/web/src/components/ChatView.tsx": "43c2dd30bf55e7ae01b945ba2ba616391b6e6392713257b14eaffdb1bba2db2f"
+    "apps/web/src/components/ChatView.tsx": "43c2dd30bf55e7ae01b945ba2ba616391b6e6392713257b14eaffdb1bba2db2f",
+    "apps/web/src/composer-logic.ts": "ddbfd43c3b3f74b8fa5235396d634d5c70ce66fc54c96ae481f9b0f2f58ec9f1",
+    "apps/web/src/composer-logic.test.ts": "ba320610466b3ad8d8f611f064c44aadd58dfef8ca364072a1eaa5c0a59ba366",
+    "packages/shared/src/composerTrigger.ts": "30c259a68403f01337f559c8011a4a958066ae735de58579e3a6984c3905ac01"
   }
 }
