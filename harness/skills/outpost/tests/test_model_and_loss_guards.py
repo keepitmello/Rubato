@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import tempfile
 import unittest
@@ -72,6 +73,53 @@ class ModelAndLossGuardTest(unittest.TestCase):
                         ]
                     )
         return code, result_path, sentinel
+
+    def test_daemon_uptime_and_its_display(self) -> None:
+        now = datetime.now(timezone.utc)
+        health = {"startedAt": (now - timedelta(seconds=125)).isoformat().replace("+00:00", "Z")}
+        self.assertAlmostEqual(MODULE.daemon_uptime_seconds(health) or 0, 125, delta=5)
+        self.assertEqual(MODULE.format_daemon_uptime(health), "2m")
+        self.assertEqual(MODULE.format_daemon_uptime({"startedAt": "not-a-date"}), "unknown")
+        self.assertEqual(MODULE.format_daemon_uptime(None), "unknown")
+
+    def test_a_settling_daemon_holds_the_send(self) -> None:
+        fresh = {"startedAt": datetime.now(timezone.utc).isoformat(), "ready": True}
+        with mock.patch.object(MODULE, "aside_daemon_health", return_value=fresh):
+            self.assertIn("has not settled", MODULE.wait_for_settled_daemon(0.01) or "")
+        settled = {
+            "startedAt": (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(),
+            "ready": True,
+        }
+        with mock.patch.object(MODULE, "aside_daemon_health", return_value=settled):
+            self.assertIsNone(MODULE.wait_for_settled_daemon(0.01))
+
+    def test_an_unreadable_health_endpoint_never_blocks(self) -> None:
+        # The endpoint is a bonus: not reading it is not evidence of a daemon
+        # that is about to restart.
+        with mock.patch.object(MODULE, "aside_daemon_health", return_value=None):
+            self.assertIsNone(MODULE.wait_for_settled_daemon(0.01))
+
+    def test_the_daemon_check_holds_a_send_that_would_race_a_restart(self) -> None:
+        with mock.patch.object(MODULE, "aside_repl_ping", return_value=True):
+            with mock.patch.object(
+                MODULE, "wait_for_settled_daemon", return_value="has not settled"
+            ) as settle:
+                self.assertEqual(MODULE.ensure_aside_daemon(), "has not settled")
+        settle.assert_called_once()
+
+    def test_a_failure_message_yields_the_stage_for_the_turn_record(self) -> None:
+        stage, detail = MODULE.failure_reason_from(
+            "exit 75 — 전송 안 됨\n"
+            "단계: select-tier (추론 수준/Pro 버튼)\n"
+            "tier button not visible: expected ...\n"
+        )
+        self.assertEqual(stage, "select-tier")
+        self.assertEqual(detail, "exit 75 — 전송 안 됨")
+
+    def test_a_failure_without_a_stage_line_still_yields_a_detail(self) -> None:
+        stage, detail = MODULE.failure_reason_from("aside daemon is not reachable")
+        self.assertEqual(stage, "")
+        self.assertEqual(detail, "aside daemon is not reachable")
 
     def test_each_quality_expects_exactly_one_model(self) -> None:
         self.assertEqual(tuple(MODULE.QUALITIES), ("pro", "xhigh"))

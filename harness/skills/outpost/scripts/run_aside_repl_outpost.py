@@ -16,13 +16,28 @@ import shutil
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from typing import Any, Callable, Sequence
+from urllib.error import URLError
 from urllib.parse import urlparse
+from urllib.request import urlopen
 from zipfile import BadZipFile, ZipFile
 
 
 SUBMIT_TIMEOUT_SECONDS = 120
 DEFAULT_RESPONSE_TIMEOUT_SECONDS = 3600
+# Aside's daemon serves this without the browser. A daemon that just came back
+# still has its browser starting, and a send that lands in that window dies with
+# "other side closed" — the failure the keepalive log shows over and over.
+ASIDE_HEALTH_URL = os.environ.get("ASIDE_HEALTH_URL", "http://127.0.0.1:21420/health")
+DAEMON_SETTLE_SECONDS = 20
+# Doctor rehearses the whole send path with this throwaway packet. It never
+# reaches ChatGPT: the rehearsal stops before the click.
+REHEARSAL_TOPIC = "outpost 리허설"
+REHEARSAL_PACKET = (
+    "# outpost 리허설\n\n"
+    "전송 경로를 리허설하려고 만든 패킷이다. 보내지 않는다.\n"
+)
 DEFAULT_CONFIG = Path.home() / ".codex" / "outpost.env"
 LEGACY_CONFIG = Path.home() / ".codex" / "consult.env"
 DEFAULT_PROJECT_NAME = "Work"
@@ -34,7 +49,12 @@ SUBMIT_UNKNOWN_MARKER = "ASIDE_REPL_SUBMIT_UNKNOWN "
 RESPONSE_MARKER = "ASIDE_REPL_RESPONSE_RESULT "
 BACKEND_RECOVERY_MARKER = "ASIDE_BACKEND_RECOVERY_RESULT "
 DOCTOR_MARKER = "OUTPOST_DOCTOR_RESULT "
+REHEARSAL_MARKER = "OUTPOST_REHEARSAL_RESULT "
+# The REPL drops a top-level `return`: the script then stops silently partway,
+# with no error and no output. The rehearsal ends with a sentinel throw instead.
+REHEARSAL_STOP = "OUTPOST_REHEARSAL_STOP"
 FAIL_STAGE_RE = re.compile(r"OUTPOST_FAIL stage=(\S+)\s+(.*)")
+STAGE_IN_MESSAGE_RE = re.compile(r"단계:\s*(\S+)")
 STAGE_HINTS = {
     "open-isolated-tab": "격리 탭",
     "load-work-project": "프로젝트 페이지",
@@ -964,6 +984,7 @@ def build_repl_script(
     follow_up: bool = False,
     picker: dict[str, Any] | None = None,
     uploads: Sequence[dict[str, str]] | None = None,
+    dry_run: bool = False,
 ) -> str:
     picker = picker or load_picker_contract()
     target_label = str(picker.get(f"{quality}Label") or "").strip()
@@ -994,6 +1015,8 @@ var targetModel = {js(target_model)};
 var tierNameRe = new RegExp({js(tier_pattern)});
 var modelNameRe = new RegExp({js(model_pattern)});
 var verifiedTier = null;
+var dryRun = {js(dry_run)};
+var modelRadiosSeen = [];
 var submitStartedAt = Date.now();
 var submitStage = 'open-isolated-tab';
 // Aside builds its role/accessible-name index inside snapshot(). getByRole()
@@ -1210,6 +1233,16 @@ var submitState = await Promise.race([
     }}
     if ((await latest.getAttribute('aria-checked')) !== 'true') await latest.click();
     if ((await latest.getAttribute('aria-checked')) !== 'true') throw new Error(targetModel + ' not checked');
+    if (dryRun) {{
+      // The rehearsal reports what the picker actually offers so doctor can
+      // refresh the saved contract from the same walk the send performs.
+      modelRadiosSeen = await workPage.locator('[role="menuitemradio"]').evaluateAll((els) =>
+        els.map((el) => ({{
+          name: (el.getAttribute('aria-label') || el.innerText || '').replace(/\\s+/g, ' ').trim(),
+          checked: el.getAttribute('aria-checked') === 'true'
+        }})).filter((row) => row.name)
+      ).catch(() => []);
+    }}
     await workPage.keyboard.press('Escape');
     submitStage = 'fill-composer';
     await composer.focus();
@@ -1269,7 +1302,7 @@ var submitState = await Promise.race([
         throw new Error('packet attachment missing before send');
       }}
     }}
-    return {{ workPage, ownedTargetId: ownedTab.targetId, send, assistantCountBefore }};
+    return {{ workPage, ownedTargetId: ownedTab.targetId, send, assistantCountBefore, composer }};
     }} catch (error) {{
       var failMessage = String(error && error.message || error);
       if (failMessage.indexOf('OUTPOST_FAIL stage=') === 0) throw error;
@@ -1282,6 +1315,35 @@ var submitState = await Promise.race([
   ))
 ]);
 var workPage = submitState.workPage;
+if (dryRun) {{
+  // The rehearsal is the send path minus the click: it proves every locator the
+  // send needs, puts the project composer back, and creates no conversation.
+  var rehearsal = {{
+    ok: true,
+    stage: 'ready-to-send',
+    url: workPage.url(),
+    expectedComposer: composerLabel,
+    composerLabels: await workPage.locator('#prompt-textarea').evaluateAll((els) =>
+      els.map((el) => el.getAttribute('aria-label'))
+    ).catch(() => []),
+    tierInnerText: await workPage.locator('button[aria-haspopup="menu"]').evaluateAll((els) =>
+      els.map((el) => (el.innerText || '').replace(/\\s+/g, ' ').trim()).filter(Boolean)
+    ).catch(() => []),
+    tierLabel: targetLabel,
+    tier: verifiedTier,
+    model: targetModel,
+    modelRadios: modelRadiosSeen,
+    latestRadioPresent: modelRadiosSeen.some((row) => row.name === targetModel)
+  }};
+  try {{
+    await submitState.composer.focus();
+    await workPage.keyboard.press('Meta+A');
+    await workPage.keyboard.press('Backspace');
+  }} catch (error) {{}}
+  await closeTab(workPage).catch(() => {{}});
+  console.log({js(REHEARSAL_MARKER)} + JSON.stringify(rehearsal));
+  throw new Error({js(REHEARSAL_STOP)});
+}}
 var assistantCountBefore = submitState.assistantCountBefore || 0;
 var remainingSubmitMs = 120000 - (Date.now() - submitStartedAt);
 if (remainingSubmitMs <= 0) throw new Error('pre-submit preparation exceeded 120 seconds');
@@ -1653,10 +1715,70 @@ def ensure_aside_daemon() -> str | None:
     subprocess.run(["open", "-a", "Aside"], check=False)
     for _attempt in range(5):
         if aside_repl_ping():
-            return None
+            return wait_for_settled_daemon()
         time.sleep(2)
         subprocess.run(["open", "-a", "Aside"], check=False)
     return "aside daemon is not reachable"
+
+
+def aside_daemon_health(timeout: float = 3.0) -> dict[str, Any] | None:
+    """Aside's own readiness report, or None when the endpoint cannot be read."""
+    try:
+        with urlopen(ASIDE_HEALTH_URL, timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (OSError, URLError, ValueError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def daemon_uptime_seconds(health: dict[str, Any] | None) -> float | None:
+    if not health:
+        return None
+    started = str(health.get("startedAt") or "").strip()
+    if not started:
+        return None
+    try:
+        parsed = datetime.fromisoformat(started.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return max(0.0, (datetime.now(timezone.utc) - parsed).total_seconds())
+
+
+def format_daemon_uptime(health: dict[str, Any] | None) -> str:
+    if not health:
+        return "unknown"
+    uptime = daemon_uptime_seconds(health)
+    if uptime is None:
+        return "unknown"
+    if uptime < 90:
+        return f"{uptime:.0f}s"
+    if uptime < 5400:
+        return f"{uptime / 60:.0f}m"
+    return f"{uptime / 3600:.1f}h"
+
+
+def wait_for_settled_daemon(deadline_seconds: float = 90.0) -> str | None:
+    """Hold a send until the daemon has been up long enough to be worth using.
+
+    Only blocks on what the health endpoint actually reports: an unreachable
+    endpoint is not evidence of an unstable daemon, so the caller proceeds.
+    """
+    end = time.monotonic() + deadline_seconds
+    while True:
+        health = aside_daemon_health()
+        if health is None:
+            return None
+        uptime = daemon_uptime_seconds(health)
+        if uptime is None or uptime >= DAEMON_SETTLE_SECONDS:
+            return None
+        if time.monotonic() >= end:
+            return (
+                f"aside daemon restarted {uptime:.0f}s ago and has not settled; "
+                "a send now would race the restart"
+            )
+        time.sleep(3)
 
 
 def transcript_lost_aside_daemon(transcript: str) -> bool:
@@ -1665,6 +1787,25 @@ def transcript_lost_aside_daemon(transcript: str) -> bool:
         "Aside daemon is not reachable" in clean
         or "other side closed" in clean
     )
+
+
+def failure_reason_from(message: str) -> tuple[str, str]:
+    """Stage name and a one-line reason from a failure message or a transcript."""
+    text = ANSI_RE.sub("", str(message or ""))
+    stage = ""
+    detail = ""
+    for line in text.splitlines():
+        match = FAIL_STAGE_RE.search(line)
+        if match:
+            stage, detail = match.group(1), match.group(2).strip()
+            continue
+        if not stage:
+            match = STAGE_IN_MESSAGE_RE.search(line)
+            if match:
+                stage = match.group(1)
+    if not detail:
+        detail = next((line.strip() for line in text.splitlines() if line.strip()), "")
+    return stage, detail[:200]
 
 
 def describe_pre_submit_failure(transcript: str) -> str:
@@ -1924,25 +2065,36 @@ def format_doctor_report(payload: dict[str, Any]) -> str:
     ok = bool(payload.get("ok"))
     lines = [
         f"OUTPOST_DOCTOR ok={'true' if ok else 'false'}",
-        f"url={payload.get('url') or '-'}",
-        f"composer expected={payload.get('expectedComposer') or '-'} "
-        f"visible={'true' if payload.get('composerOk') else 'false'} "
-        f"found={json.dumps(payload.get('composerLabels') or [], ensure_ascii=False)}",
-        f"chat surface toggle={'true' if payload.get('chatTogglePresent') else 'false'} "
-        f"chatChecked={'true' if payload.get('chatChecked') else 'false'} "
-        f"workChecked={'true' if payload.get('workChecked') else 'false'}",
-        f"tier roleMatch={'true' if payload.get('tierRoleMatched') else 'false'} "
-        f"innerText={json.dumps(payload.get('tierInnerText') or [], ensure_ascii=False)}",
-        f"performance={'true' if payload.get('performanceVisible') else 'false'} "
-        f"modelMenu={'true' if payload.get('modelMenuVisible') else 'false'} "
-        f"latest={'true' if payload.get('latestRadioPresent') else 'false'}",
-        f"radios={json.dumps(payload.get('modelRadios') or [], ensure_ascii=False)}",
+        f"daemon up={payload.get('daemonUptime') or 'unknown'} "
+        f"pid={payload.get('daemonPid') or '-'}",
     ]
+    if payload.get("stage") == "ready-to-send":
+        lines.extend(
+            [
+                f"rehearsal stage=ready-to-send url={payload.get('url') or '-'}",
+                f"composer expected={payload.get('expectedComposer') or '-'} "
+                f"found={json.dumps(payload.get('composerLabels') or [], ensure_ascii=False)}",
+                f"tier expected={payload.get('tierLabel') or '-'} "
+                f"verified={payload.get('tier') or '-'}",
+                f"model expected={payload.get('model') or '-'} "
+                f"present={'true' if payload.get('latestRadioPresent') else 'false'}",
+                f"radios={json.dumps(payload.get('modelRadios') or [], ensure_ascii=False)}",
+            ]
+        )
+    else:
+        lines.append(f"rehearsal stage={payload.get('stage') or '-'}")
+        if payload.get("detail"):
+            lines.append(f"detail={payload['detail']}")
+        if payload.get("pickerProbe"):
+            lines.append(
+                "picker probe="
+                + json.dumps(payload["pickerProbe"].get("tierInnerText") or [], ensure_ascii=False)
+            )
     blockers = payload.get("blockers") or []
     if blockers:
         lines.append("blockers=" + ",".join(str(b) for b in blockers))
     if not ok:
-        lines.append("exit 75 — ChatGPT UI가 send 계약과 다름. 패킷은 보내지 않음.")
+        lines.append("exit 75 — 리허설이 전송 직전까지 가지 못했다. 패킷은 보내지 않음.")
     return "\n".join(lines)
 
 
@@ -1970,20 +2122,65 @@ def run_doctor(args: argparse.Namespace) -> int:
     if daemon_error is not None:
         print(daemon_error, file=sys.stderr)
         return 75
-    script = build_doctor_script(project_url=project_url, project_name=project_name)
-    transcript = run_repl_process(script, timeout=60)
-    payload = marker_payload(transcript, DOCTOR_MARKER)
-    if payload is None:
-        print("exit 75 — doctor가 ChatGPT UI를 읽지 못함", file=sys.stderr)
-        print(transcript, file=sys.stderr)
-        return 75
-    contract = picker_from_doctor_payload(payload)
+    health = aside_daemon_health()
+    # Doctor walks the send path itself, with a throwaway packet, and stops at
+    # the click. Its green light is the send's own pre-submit path, so it can no
+    # longer pass on a lookup the send cannot perform.
+    rehearsal_id = secrets.token_hex(8)
+    script = build_repl_script(
+        project_url=project_url,
+        project_name=project_name,
+        quality="pro",
+        packet_name=f"outpost-{rehearsal_id}.md",
+        packet_base64=base64.b64encode(REHEARSAL_PACKET.encode("utf-8")).decode("ascii"),
+        topic=REHEARSAL_TOPIC,
+        outpost_id=rehearsal_id,
+        response_timeout_ms=1000,
+        picker=load_picker_contract(),
+        dry_run=True,
+    )
+    transcript = run_repl_process(script, timeout=SUBMIT_TIMEOUT_SECONDS)
+    payload = marker_payload(transcript, REHEARSAL_MARKER)
     wrote = None
-    if contract is not None:
-        wrote = save_picker_contract(contract)
+    if payload is not None:
         payload = dict(payload)
-        payload["pickerPath"] = str(wrote)
-        payload["picker"] = contract
+        contract = picker_from_doctor_payload(payload)
+        if contract is not None:
+            wrote = save_picker_contract(contract)
+            payload["pickerPath"] = str(wrote)
+            payload["picker"] = contract
+    else:
+        stage, detail = failure_reason_from(transcript)
+        payload = {
+            "ok": False,
+            "stage": stage or "rehearsal",
+            "detail": detail,
+            "blockers": ["rehearsal"],
+        }
+        # A renamed picker is the one drift the saved contract can absorb by
+        # itself, so read the live names before reporting it as a code problem.
+        if stage in {"select-tier", "verify-model"}:
+            probe = marker_payload(
+                run_repl_process(
+                    build_doctor_script(project_url=project_url, project_name=project_name),
+                    timeout=60,
+                ),
+                DOCTOR_MARKER,
+            )
+            if probe is not None:
+                payload["pickerProbe"] = probe
+                payload["url"] = probe.get("url") or ""
+                contract = picker_from_doctor_payload(probe)
+                if contract is not None:
+                    wrote = save_picker_contract(contract)
+                    payload["pickerPath"] = str(wrote)
+    # A reachable daemon is not a usable one: the browser behind it may still be
+    # starting, which is how a send dies right after a restart.
+    payload["daemonUptime"] = format_daemon_uptime(health)
+    payload["daemonPid"] = health.get("pid") if health else None
+    if health is not None and health.get("ready") is not True:
+        payload["blockers"] = list(payload.get("blockers") or []) + ["daemon-not-ready"]
+        payload["ok"] = False
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
@@ -2085,6 +2282,8 @@ def record_thread_outcome(
     response_output: str = "",
     json_output: str = "",
     submit_elapsed_seconds: float | None = None,
+    failure_stage: str = "",
+    failure_detail: str = "",
 ) -> None:
     if store is None or not thread:
         return
@@ -2098,6 +2297,8 @@ def record_thread_outcome(
             response_output=response_output,
             json_output=json_output,
             submit_elapsed_seconds=submit_elapsed_seconds,
+            failure_stage=failure_stage,
+            failure_detail=failure_detail,
         )
     except SESSIONS.UnknownThreadError:
         return
@@ -2526,12 +2727,15 @@ def main(argv: Sequence[str]) -> int:
     except SubmitUnknownError as exc:
         stderr_path.write_text(str(exc), encoding="utf-8")
         print(str(exc), file=sys.stderr)
+        stage, detail = failure_reason_from(exc)
         record_thread_outcome(
             store,
             thread,
             status="failed",
             outpost_id=outpost_id,
             json_output=str(json_path),
+            failure_stage=stage or "commit-user-turn",
+            failure_detail=detail,
         )
         return 76
     except SubmittedResponseError as exc:
@@ -2670,18 +2874,23 @@ def main(argv: Sequence[str]) -> int:
             target_id=str(submitted.get("targetId") or ""),
             json_output=str(json_path),
             submit_elapsed_seconds=round(exc.submit_elapsed, 3),
+            failure_stage=failure_reason_from(message)[0] or "recover-response",
+            failure_detail=failure_reason_from(message)[1],
         )
         print(message, file=sys.stderr)
         return 77
     except (TimeoutError, RuntimeError, json.JSONDecodeError) as exc:
         stderr_path.write_text(str(exc), encoding="utf-8")
         print(str(exc), file=sys.stderr)
+        stage, detail = failure_reason_from(exc)
         record_thread_outcome(
             store,
             thread,
             status="failed",
             outpost_id=outpost_id,
             json_output=str(json_path),
+            failure_stage=stage or "pre-submit",
+            failure_detail=detail,
         )
         return 75
     stderr_path.write_text(transcript, encoding="utf-8")
@@ -2761,6 +2970,8 @@ def main(argv: Sequence[str]) -> int:
             response_output=str(response_path),
             json_output=str(json_path),
             submit_elapsed_seconds=round(submit_elapsed, 3),
+            failure_stage=failure_reason_from(message)[0] or "await-response",
+            failure_detail=failure_reason_from(message)[1],
         )
         print(message, file=sys.stderr)
         return 77

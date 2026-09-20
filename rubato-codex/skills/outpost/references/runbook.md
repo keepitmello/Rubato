@@ -39,20 +39,33 @@ not a recoverable default.
 
 ## Doctor
 
-Probe the live ChatGPT project page without sending a packet:
+Rehearse the whole send path without spending a turn:
 
 ```bash
 "${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost" doctor
 "${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost" doctor --json
 ```
 
-It opens the configured project, checks the composer label, Chat surface,
-tier pill (`NPro` included), `성능` / `모델 선택`, and the `최신`
-radio, then closes the tab. If the live names still include `최신`, doctor
-writes `~/.codex/outpost-picker.json` so the next send uses those aliases
-instead of waiting for a code patch. Exit `0` if send would get past those
-locators or the contract was refreshed. Exit `75` if `최신` is gone.
-Never fills the composer and never clicks send.
+Doctor runs the send's own `build_repl_script(dry_run=True)` with a throwaway
+packet: it opens the configured project, picks the tier and model, fills the
+composer, attaches the packet, and waits for the send button — then clears the
+draft, closes the tab, and stops. It never clicks send, so no turn is spent and
+no conversation is created. A green doctor therefore means the send reaches the
+click; a red one names the stage that failed.
+
+It reports the daemon first (`daemon up=… pid=…`). Aside's app restarts every
+day or two, and a send that lands in that window dies with `other side closed`,
+so a daemon that is not `ready` blocks. `ensure_aside_daemon()` also waits for a
+just-restarted daemon to settle before a send starts.
+
+The rehearsal also reports the live picker names, and doctor writes
+`~/.codex/outpost-picker.json` from them so the next send follows the UI instead
+of waiting for a code patch. Exit `0` when the rehearsal reached the click or
+the contract was refreshed; exit `75` otherwise.
+
+A renamed picker is the one drift the contract absorbs on its own. When the
+rehearsal fails at `select-tier` or `verify-model`, doctor runs the older
+locator-only probe to read the names the live page actually uses.
 
 ## Launch the fast path
 
