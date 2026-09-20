@@ -203,8 +203,8 @@ const edits = {
       'replace',
     ],
     [
-      '          {activeEntry && props.triggerLabel === undefined ? (\n            <ProviderInstanceIcon',
-      '          {activeEntry && props.triggerLabel === undefined ? (\n            TriggerIcon ? (\n              <TriggerIcon\n                className={cn("size-4 shrink-0", props.activeProviderIconClassName)}\n                aria-hidden\n              />\n            ) : (\n            <ProviderInstanceIcon',
+      '          ) : activeEntry && props.triggerLabel === undefined ? (\n            <ProviderInstanceIcon',
+      '          ) : activeEntry && props.triggerLabel === undefined ? (\n            TriggerIcon ? (\n              <TriggerIcon\n                className={cn("size-4 shrink-0", props.activeProviderIconClassName)}\n                aria-hidden\n              />\n            ) : (\n            <ProviderInstanceIcon',
       'replace',
     ],
     [
@@ -231,8 +231,8 @@ const edits = {
   // 원문을 다시 붙여 넣어서, overlay 제거가 원본을 복원하지 못한다.
   'apps/web/src/components/sidebar/SidebarChrome.tsx': [
     [
-      '        <T3Wordmark aria-label="T3" className="h-2.5 w-auto shrink-0" />',
-      '        <T3Wordmark aria-label="Rubato" className="h-2.5 w-auto shrink-0" />',
+      '        <T3Wordmark aria-label="T3" className="h-[1cap] w-auto shrink-0" />',
+      '        <T3Wordmark aria-label="Rubato" className="h-[1cap] w-auto shrink-0" />',
       'replace',
     ],
     [
@@ -261,7 +261,7 @@ const edits = {
     ],
     [
       '    for (const [index, entry] of group.entries.entries()) {\n      if (entry.id === group.terminalEntry?.id) {\n        continue;\n      }',
-      '    let answerStartIndex = terminalEntryIndex;\n    while (answerStartIndex > 0 && group.entries[answerStartIndex - 1]?.kind === "message") {\n      answerStartIndex -= 1;\n    }\n    for (const [index, entry] of group.entries.entries()) {\n      if (entry.kind === "message" && index >= answerStartIndex) {\n        continue;\n      }',
+      '    let answerStartIndex = terminalEntryIndex;\n    while (answerStartIndex > 0 && group.entries[answerStartIndex - 1]?.kind === "message") {\n      answerStartIndex -= 1;\n    }\n    for (const [index, entry] of group.entries.entries()) {\n      // 사고 행은 남기지 않는다. 업스트림은 답변 뒤 thinking 을 그 턴의 접힘에\n      // 넣는데, 여기서 예외를 두면 그 규칙을 우리가 덮어쓴다.\n      if (\n        entry.kind === "message" &&\n        entry.message.role !== "reasoning" &&\n        index >= answerStartIndex\n      ) {\n        continue;\n      }',
       'replace',
     ],
   ],
@@ -272,8 +272,8 @@ const edits = {
       'replace',
     ],
     [
-      '    expect(rows.map((row) => row.id)).toEqual(["turn-fold:turn-1", "assistant-final-entry"]);\n  });\n\n  it("derives a sane duration for a steer-superseded turn with one instant commentary message", () => {',
-      '    expect(rows.map((row) => row.id)).toEqual([\n      "assistant-first-entry", "assistant-middle-entry", "assistant-final-entry",\n    ]);\n  });\n\n  it("derives a sane duration for a steer-superseded turn with one instant commentary message", () => {',
+      '    expect(rows.map((row) => row.id)).toEqual(["turn-fold:turn-1", "assistant-final-entry"]);\n  });\n\n  const reasoningEntry = (id: string, at: string, turnId: string | null) => ({',
+      '    expect(rows.map((row) => row.id)).toEqual([\n      "assistant-first-entry", "assistant-middle-entry", "assistant-final-entry",\n    ]);\n  });\n\n  const reasoningEntry = (id: string, at: string, turnId: string | null) => ({',
       'replace',
     ],
   ],
@@ -301,7 +301,7 @@ const edits = {
     ],
     [
       '    const firstAssistantMessageId = firstAssistantMessageIdByTurn.get(turnId);\n    const terminalAssistantMessageId = terminalAssistantMessageIdByTurn.get(turnId);\n    const hiddenEntryIds = new Set(\n      entries\n        .filter(\n          (entry) =>\n            entry.id !== firstAssistantMessageId &&\n            entry.id !== terminalAssistantMessageId &&\n            !(entry.type === "activity-group" && isUserInputActivityGroup(entry)),\n        )\n        .map((entry) => entry.id),\n    );',
-      '    const terminalAssistantMessageId = terminalAssistantMessageIdByTurn.get(turnId);\n    const terminalIndex = entries.findIndex((entry) => entry.id === terminalAssistantMessageId);\n    let answerStartIndex = terminalIndex;\n    while (answerStartIndex > 0 && entries[answerStartIndex - 1]?.type === "message") {\n      answerStartIndex -= 1;\n    }\n    const hiddenEntryIds = new Set(\n      entries\n        .filter(\n          (entry, index) =>\n            !(entry.type === "message" && index >= answerStartIndex) &&\n            !(entry.type === "activity-group" && isUserInputActivityGroup(entry)),\n        )\n        .map((entry) => entry.id),\n    );',
+      '    const terminalAssistantMessageId = terminalAssistantMessageIdByTurn.get(turnId);\n    const terminalIndex = entries.findIndex((entry) => entry.id === terminalAssistantMessageId);\n    let answerStartIndex = terminalIndex;\n    while (answerStartIndex > 0 && entries[answerStartIndex - 1]?.type === "message") {\n      answerStartIndex -= 1;\n    }\n    const hiddenEntryIds = new Set(\n      entries\n        .filter(\n          (entry, index) =>\n            // 사고 행은 웹과 같다. 업스트림이 접는 것을 우리가 남기지 않는다.\n            !(\n              entry.type === "message" &&\n              entry.message.role !== "reasoning" &&\n              index >= answerStartIndex\n            ) &&\n            !(entry.type === "activity-group" && isUserInputActivityGroup(entry)),\n        )\n        .map((entry) => entry.id),\n    );',
       'replace',
     ],
   ],
@@ -345,24 +345,27 @@ const edits = {
   // 슬래시 메뉴가 줄 맨 앞에서만 열렸다. 고른 스킬은 `$name` 칩이 되므로
   // 그 다음에 `/` 를 쳐도 목록이 안 떴다. 메뉴 쪽은 이미 중간에서도 스킬을
   // 남긴다. `/usr/bin` 과 `//` 는 경로로 보고 건너뛴다.
+  //
+  // 앵커의 `$` 는 업스트림이 통화 기호 전체(`\p{Sc}`)로 넓혔다. 우리가 더하는
+  // `/` 분기는 그대로 두고, 표지판만 새 모양을 따라간다.
   'apps/web/src/composer-logic.ts': [
     [
-      '  if (token.startsWith("$")) {\n    return {\n      kind: "skill",\n      query: token.slice(1),\n      rangeStart: tokenStart,\n      rangeEnd: cursor,\n    };\n  }\n  if (!token.startsWith("@")) {\n    return null;\n  }',
-      '  if (token.startsWith("$")) {\n    return {\n      kind: "skill",\n      query: token.slice(1),\n      rangeStart: tokenStart,\n      rangeEnd: cursor,\n    };\n  }\n  if (token.startsWith("/") && !token.includes("/", 1)) {\n    return {\n      kind: "slash-command",\n      query: token.slice(1),\n      rangeStart: tokenStart,\n      rangeEnd: cursor,\n    };\n  }\n  if (!token.startsWith("@")) {\n    return null;\n  }',
+      '  const skillPrefix = /^\\p{Sc}/u.exec(token);\n  if (skillPrefix) {\n    return {\n      kind: "skill",\n      query: token.slice(skillPrefix[0].length),\n      rangeStart: tokenStart,\n      rangeEnd: cursor,\n    };\n  }\n  if (!token.startsWith("@")) {\n    return null;\n  }',
+      '  const skillPrefix = /^\\p{Sc}/u.exec(token);\n  if (skillPrefix) {\n    return {\n      kind: "skill",\n      query: token.slice(skillPrefix[0].length),\n      rangeStart: tokenStart,\n      rangeEnd: cursor,\n    };\n  }\n  if (token.startsWith("/") && !token.includes("/", 1)) {\n    return {\n      kind: "slash-command",\n      query: token.slice(1),\n      rangeStart: tokenStart,\n      rangeEnd: cursor,\n    };\n  }\n  if (!token.startsWith("@")) {\n    return null;\n  }',
       'replace',
     ],
   ],
   'packages/shared/src/composerTrigger.ts': [
     [
-      '  if (token.startsWith("$")) {\n    return {\n      kind: "skill",\n      query: token.slice(1),\n      rangeStart: tokenStart,\n      rangeEnd: cursor,\n    };\n  }\n  if (!token.startsWith("@")) {\n    return null;\n  }',
-      '  if (token.startsWith("$")) {\n    return {\n      kind: "skill",\n      query: token.slice(1),\n      rangeStart: tokenStart,\n      rangeEnd: cursor,\n    };\n  }\n  if (token.startsWith("/") && !token.includes("/", 1)) {\n    return {\n      kind: "slash-command",\n      query: token.slice(1),\n      rangeStart: tokenStart,\n      rangeEnd: cursor,\n    };\n  }\n  if (!token.startsWith("@")) {\n    return null;\n  }',
+      '  const skillPrefix = /^\\p{Sc}/u.exec(token);\n  if (skillPrefix) {\n    return {\n      kind: "skill",\n      query: token.slice(skillPrefix[0].length),\n      rangeStart: tokenStart,\n      rangeEnd: cursor,\n    };\n  }\n  if (!token.startsWith("@")) {\n    return null;\n  }',
+      '  const skillPrefix = /^\\p{Sc}/u.exec(token);\n  if (skillPrefix) {\n    return {\n      kind: "skill",\n      query: token.slice(skillPrefix[0].length),\n      rangeStart: tokenStart,\n      rangeEnd: cursor,\n    };\n  }\n  if (token.startsWith("/") && !token.includes("/", 1)) {\n    return {\n      kind: "slash-command",\n      query: token.slice(1),\n      rangeStart: tokenStart,\n      rangeEnd: cursor,\n    };\n  }\n  if (!token.startsWith("@")) {\n    return null;\n  }',
       'replace',
     ],
   ],
   'apps/web/src/composer-logic.test.ts': [
     [
-      '  it("keeps slash command detection active for provider commands", () => {\n    const text = "/rev";\n    const trigger = detectComposerTrigger(text, text.length);\n\n    expect(trigger).toEqual({\n      kind: "slash-command",\n      query: "rev",\n      rangeStart: 0,\n      rangeEnd: text.length,\n    });\n  });\n\n  it("detects $skill trigger at cursor", () => {',
-      '  it("keeps slash command detection active for provider commands", () => {\n    const text = "/rev";\n    const trigger = detectComposerTrigger(text, text.length);\n\n    expect(trigger).toEqual({\n      kind: "slash-command",\n      query: "rev",\n      rangeStart: 0,\n      rangeEnd: text.length,\n    });\n  });\n\n  it("opens the slash menu from a bare slash after other text", () => {\n    const text = "then /";\n    expect(detectComposerTrigger(text, text.length)).toEqual({\n      kind: "slash-command",\n      query: "",\n      rangeStart: "then ".length,\n      rangeEnd: text.length,\n    });\n  });\n\n  it("detects a slash command after leading prose", () => {\n    const text = "please /rev";\n    expect(detectComposerTrigger(text, text.length)).toEqual({\n      kind: "slash-command",\n      query: "rev",\n      rangeStart: "please ".length,\n      rangeEnd: text.length,\n    });\n  });\n\n  it("detects a second slash after a skill mention", () => {\n    const text = "$review /sk";\n    expect(detectComposerTrigger(text, text.length)).toEqual({\n      kind: "slash-command",\n      query: "sk",\n      rangeStart: "$review ".length,\n      rangeEnd: text.length,\n    });\n  });\n\n  it("does not treat path-like tokens as slash commands", () => {\n    expect(detectComposerTrigger("see /usr/bin", "see /usr/bin".length)).toBeNull();\n    expect(detectComposerTrigger("note //", "note //".length)).toBeNull();\n  });\n\n  it("detects $skill trigger at cursor", () => {',
+      '  it("keeps slash command detection active for provider commands", () => {\n    const text = "/rev";\n    const trigger = detectComposerTrigger(text, text.length);\n\n    expect(trigger).toEqual({\n      kind: "slash-command",\n      query: "rev",\n      rangeStart: 0,\n      rangeEnd: text.length,\n    });\n  });',
+      '  it("keeps slash command detection active for provider commands", () => {\n    const text = "/rev";\n    const trigger = detectComposerTrigger(text, text.length);\n\n    expect(trigger).toEqual({\n      kind: "slash-command",\n      query: "rev",\n      rangeStart: 0,\n      rangeEnd: text.length,\n    });\n  });\n\n  it("opens the slash menu from a bare slash after other text", () => {\n    const text = "then /";\n    expect(detectComposerTrigger(text, text.length)).toEqual({\n      kind: "slash-command",\n      query: "",\n      rangeStart: "then ".length,\n      rangeEnd: text.length,\n    });\n  });\n\n  it("detects a slash command after leading prose", () => {\n    const text = "please /rev";\n    expect(detectComposerTrigger(text, text.length)).toEqual({\n      kind: "slash-command",\n      query: "rev",\n      rangeStart: "please ".length,\n      rangeEnd: text.length,\n    });\n  });\n\n  it("detects a second slash after a skill mention", () => {\n    const text = "$review /sk";\n    expect(detectComposerTrigger(text, text.length)).toEqual({\n      kind: "slash-command",\n      query: "sk",\n      rangeStart: "$review ".length,\n      rangeEnd: text.length,\n    });\n  });\n\n  it("does not treat path-like tokens as slash commands", () => {\n    expect(detectComposerTrigger("see /usr/bin", "see /usr/bin".length)).toBeNull();\n    expect(detectComposerTrigger("note //", "note //".length)).toBeNull();\n  });',
       'replace',
     ],
   ],
