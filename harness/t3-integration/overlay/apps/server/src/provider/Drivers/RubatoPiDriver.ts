@@ -55,6 +55,8 @@ export interface PiBridge {
   rollbackThread(threadId: string, numTurns: number): Promise<{threadId: string; turns: ReadonlyArray<{id:string;items:ReadonlyArray<unknown>}>}>;
   close(): Promise<void>;
 }
+/** 카탈로그 조회 결과. 기계 스냅샷 조립과 워크스페이스 조회가 같은 모양을 쓴다. */
+export type PiCatalogue = Awaited<ReturnType<PiBridge["catalogue"]>>;
 const bridges = new WeakMap<ProviderInstance, PiBridge>();
 export const rubatoBridgeFor = (instance: ProviderInstance): PiBridge | undefined => bridges.get(instance);
 const detail = (cause: unknown) => cause instanceof Error ? cause.message : String(cause);
@@ -106,22 +108,35 @@ export const RubatoPiDriver: ProviderDriver<RubatoPiConfig> = {
       requiresNewThreadForModelChange:false, setup:{canAuthenticate:false,canInstall:false},
       message:"Start the external Rubato server; T3 connects without owning its process.",
     });
-    const refreshFor = (cwd: string) => Effect.gen(function* () {
+    // 카탈로그 한 번 조회. 기계 스냅샷도 발행도 건드리지 않는다.
+    const probeCatalogue = (cwd: string) => Effect.gen(function* () {
       const checkedAt = DateTime.formatIso(yield* DateTime.now);
       const result = enabled ? yield* request("catalogue", () => bridge.catalogue(cwd)).pipe(Effect.result) : null;
-      const catalogue = result?._tag === "Success" ? result.success : null;
-      current = decodeSnapshot({...current, checkedAt, installed:catalogue !== null,
-        status:!enabled ? "disabled" : catalogue ? "ready" : "error",
-        message:result?._tag === "Failure" ? result.failure.message : "Rubato profile policy; only Full access is supported. Existing extension questions still require a reply.",
-        models:catalogue?.models.map((model) => ({slug:`${model.provider}/${model.id}`, name:model.name,
-          subProvider:model.provider, isCustom:false, capabilities:model.capabilities ?? null,
-          isDefault:catalogue.model?.provider===model.provider && catalogue.model?.id===model.id })) ?? [],
-        slashCommands:catalogue?.slashCommands ?? [],
-        skills:catalogue?.skills ?? [],
-        workspaceSnapshots:catalogue ? [{cwd, checkedAt, slashCommands:catalogue.slashCommands ?? [], skills:catalogue.skills ?? []}] : [],
-      });
+      return {checkedAt, catalogue: result?._tag === "Success" ? result.success : null,
+        failure: result?._tag === "Failure" ? result.failure : null};
+    });
+    const snapshotFrom = (probe: {readonly checkedAt: string; readonly catalogue: PiCatalogue | null;
+      readonly failure: {readonly message: string} | null}) => decodeSnapshot({...current,
+      checkedAt:probe.checkedAt, installed:probe.catalogue !== null,
+      status:!enabled ? "disabled" : probe.catalogue ? "ready" : "error",
+      message:probe.failure ? probe.failure.message : "Rubato profile policy; only Full access is supported. Existing extension questions still require a reply.",
+      models:probe.catalogue?.models.map((model) => ({slug:`${model.provider}/${model.id}`, name:model.name,
+        subProvider:model.provider, isCustom:false, capabilities:model.capabilities ?? null,
+        isDefault:probe.catalogue?.model?.provider===model.provider && probe.catalogue?.model?.id===model.id })) ?? [],
+      slashCommands:probe.catalogue?.slashCommands ?? [],
+      skills:probe.catalogue?.skills ?? [],
+    });
+    // 기계 스냅샷을 새로 쓰고 알리는 자리는 여기 하나뿐이다. workspaceSnapshots 는
+    // T3 registry 가 자기 목록으로 merge 하므로 드라이버가 싣지 않는다.
+    const refreshFor = (cwd: string) => Effect.gen(function* () {
+      current = snapshotFrom(yield* probeCatalogue(cwd));
       yield* PubSub.publish(updates, current);
       return current;
+    });
+    // 워크스페이스 조회는 스냅샷을 돌려주기만 한다. 여기서 발행하면 모든 클라이언트가
+    // config 를 새로 받아 화면 전체를 다시 그린다.
+    const snapshotForCwd = (cwd: string) => Effect.gen(function* () {
+      return snapshotFrom(yield* probeCatalogue(cwd));
     });
     const adapter: ProviderAdapterShape<ProviderAdapterError> = {
       provider:kind,
@@ -156,7 +171,7 @@ export const RubatoPiDriver: ProviderDriver<RubatoPiConfig> = {
       snapshot:{resolveMaintenance:() => Effect.succeed({provider:kind,packageName:null,update:null}),
         getSnapshot:Effect.sync(() => current),refresh:refreshFor(config.catalogueCwd),
         streamChanges:Stream.fromPubSub(updates),applyUsageLimits:() => Effect.void},
-      snapshotForCwd:(cwd) => refreshFor(cwd),
+      snapshotForCwd,
       refreshModels:() => refreshFor(config.catalogueCwd).pipe(Effect.asVoid),
       textGeneration:{generateCommitMessage:() => unsupported("generateCommitMessage"),generatePrContent:() => unsupported("generatePrContent"),
         generateBranchName:() => unsupported("generateBranchName"),generateThreadTitle:() => unsupported("generateThreadTitle")},

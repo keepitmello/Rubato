@@ -82,10 +82,12 @@ test('T3 adapter rollback forks the Pi session and returns an updated resume cur
   })));
 });
 
-test('provider snapshot carries Rubato commands and skills in the T3 schema', {skip: !process.env.T3_SOURCE}, async (t) => {
+test('provider snapshot carries Rubato commands and skills, and workspace probes stay unpublished', {skip: !process.env.T3_SOURCE}, async (t) => {
   const source = process.env.T3_SOURCE;
   const modules = t3Modules(source);
   const Effect = await modules.effect('Effect');
+  const Option = await modules.effect('Option');
+  const Stream = await modules.effect('Stream');
   const Schema = await modules.effect('Schema');
   const { RubatoPiDriver, rubatoBridgeFor } = await modules.source('apps/server/src/provider/Drivers/RubatoPiDriver.ts');
   const { ProviderInstanceId, ServerProvider } = await modules.source('packages/contracts/src/index.ts');
@@ -108,12 +110,20 @@ test('provider snapshot carries Rubato commands and skills in the T3 schema', {s
       skills: [{ name: 'ship-it', description: 'Ship the change', path: `${root}/SKILL.md`, enabled: true,
         displayName: 'ship-it', shortDescription: 'Ship the change' }],
     });
+    const machineBefore = yield* instance.snapshot.getSnapshot;
     const snapshot = decodeSnapshot(yield* instance.snapshotForCwd(root));
     assert.ok(snapshot.slashCommands.some((item) => item.name === 'compact'));
     assert.ok(snapshot.slashCommands.some((item) => item.name === 'audit'));
     assert.equal(snapshot.skills[0].name, 'ship-it');
     assert.equal(snapshot.skills[0].enabled, true);
-    assert.equal(snapshot.workspaceSnapshots[0].cwd, root);
-    assert.equal(snapshot.workspaceSnapshots[0].skills[0].name, 'ship-it');
+    // T3 registry 가 워크스페이스 목록을 자기 것으로 merge 하므로 드라이버 스냅샷에는 없다.
+    // 드라이버가 이 목록을 실어 보내면 다른 cwd 의 항목이 지워진다.
+    assert.equal(snapshot.workspaceSnapshots, undefined);
+    // 워크스페이스 조회는 기계 스냅샷을 건드리지 않는다.
+    assert.equal(yield* instance.snapshot.getSnapshot, machineBefore);
+    // 발행하지 않는다: 발행하면 모든 클라이언트가 config 를 새로 받아 전부 다시 그린다.
+    const published = yield* Stream.runHead(instance.snapshot.streamChanges).pipe(
+      Effect.timeoutOption('100 millis'));
+    assert.equal(Option.isNone(published), true);
   })));
 });
