@@ -1,8 +1,9 @@
 # Aside Outpost Runbook
 
 Operator and engine contract. The main session reads `SKILL.md` and calls
-`${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost`. This file is the configured project path, the same project page
-lifecycle, and recovery. There is no automatic alternate sender.
+`outpost`, which the skills bundle installs. The configured project path, the
+same project page lifecycle, and recovery live here.
+There is no automatic alternate sender.
 
 ## Preconditions
 
@@ -12,8 +13,9 @@ lifecycle, and recovery. There is no automatic alternate sender.
   select the ChatGPT project. `~/.codex/consult.env` and `CONSULT_*` still
   load when the new names are absent. The name is the visible project title, used as
   `{name}에서 새 채팅`. Default name is `Work` when unset.
-- The invocation contains exactly `--quality pro`. `xhigh` is gone: ChatGPT's
-  `매우 높음` tier answers as `gpt-5-6-thinking`, not GPT-6.
+- `--quality` is one of `pro` (ChatGPT's `Pro` tier with `최신`, answers as
+  `gpt-6-pro`) or `xhigh` (ChatGPT's `매우 높음`, answers as
+  `gpt-5-6-thinking`).
 - The packet is self-contained and safe to disclose to Aside and ChatGPT.
 - The packet's first line is one concise Markdown H1 containing only the subject
   title (`# <title>`). The calling main session owns it; the runner extracts it
@@ -54,7 +56,7 @@ Never fills the composer and never clicks send.
 
 ## Launch the fast path
 
-Launch `${CODEX_HOME:-$HOME/.codex}/rubato-codex/bin/outpost` as a background process. It drives the Aside REPL
+Launch `outpost` as a background process. It drives the Aside REPL
 engine and fills the output paths from the packet directory. `outpost list`
 shows `working` while that process is alive. When the process exits, an idle
 parent session is woken:
@@ -167,7 +169,7 @@ opens the saved `/c/` conversation instead of the project home.
 
 ## Accept or reject
 
-For `--quality pro` (the only quality), require:
+For `--quality pro`, require:
 
 ```text
 quality: pro
@@ -177,6 +179,9 @@ tier: Pro (N of M)
 modelSlug: gpt-6-pro
 submitElapsedSeconds: <120
 ```
+
+For `--quality xhigh`, the same shape with `tier: 매우 높음 (N of M)` and
+`modelSlug: gpt-5-6-thinking`.
 
 The project banner toggle is `button[data-tpp-toggle-value="chatgpt"|"work"]`.
 Switch to Chat before the picker. Work mode is not a outpost surface.
@@ -214,22 +219,33 @@ the conversation URL). The live ChatGPT page is only a secondary signal.
 ## Model is judged by the server, not the picker
 
 The picker label (`최신`) is a moving alias, and the tier list is model
-specific. The only accepted answer slug is `gpt-6-pro`. After the reply is
-read, the runner takes `metadata.model_slug` from the ChatGPT backend and
+specific. Each quality expects exactly one slug, from `QUALITY_MODEL_SLUGS` in
+the runner: `pro` -> `gpt-6-pro`, `xhigh` -> `gpt-5-6-thinking`. After the reply
+is read, the runner takes `metadata.model_slug` from the ChatGPT backend and
 stores it as `modelSlug` in `result.json`. A different slug still saves
-`response.md` but exits `78`; the run is not a Pro answer.
+`response.md` but exits `78`; the answer is not what the quality asked for.
 
-Observed slugs: `매우 높음` -> `gpt-5-6-thinking`, `Pro` + `최신` ->
-`gpt-6-pro`. That is why `xhigh` was removed instead of relabelled.
-
-## Aside role lookups need a snapshot first
+## Aside role lookups: snapshot first, string name only
 
 `getByRole` resolves against the index Aside builds inside `snapshot()`. On a
 page that was never snapshotted in the current REPL session it returns zero
-matches, including for elements that have an explicit `aria-label`. Every role
-lookup in the runner goes through `waitRole()`, which snapshots and then
-queries, and the doctor script snapshots before each role probe. A missing tier
-pill is therefore a real UI change, not a priming artifact.
+matches, including for elements that have an explicit `aria-label`.
+
+Two more limits sit on top of that, and both fail silently:
+
+- **The `name` must be a string.** Hand it a `RegExp` and it returns zero
+  matches with no error. The tier pill and the model radio were both probed
+  this way, so every send died at `select-tier` while `doctor` stayed green.
+- **Only the `aria-label` counts as a name.** An element named by its own text
+  — the Pro pill (`6 Pro`), the model radios (`최신`) — is invisible to it.
+
+String names go through `waitRole()`. Pattern names and text-named elements go
+through `waitNamedRef()`, which reads the computed name off the `snapshot()`
+tree (`- button "6 Pro" [ref=e66]`) and returns the ref locator. `doctor` probes
+the tier pill with `waitNamedRef()`, the same lookup `send` uses, so its green
+light cannot come from a path the send does not have. When a role probe misses,
+check the name's type and the element's `aria-label` before calling it a UI
+change.
 
 ## Nothing is lost after the send
 

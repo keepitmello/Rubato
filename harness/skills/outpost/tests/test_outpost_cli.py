@@ -82,10 +82,9 @@ class ConsultCliTest(unittest.TestCase):
             MODULE.build_engine_argv("send", args)
 
     def test_main_dispatches_send_to_engine(self) -> None:
-        with mock.patch.object(MODULE, "load_module") as load:
-            runner = mock.Mock()
-            runner.main.return_value = 0
-            load.return_value = runner
+        runner = mock.Mock()
+        runner.main.return_value = 0
+        with mock.patch.object(MODULE, "ENGINE", runner):
             result = MODULE.main(["send", "pro", "packet.md"])
         self.assertEqual(result, 0)
         sent = runner.main.call_args.args[0]
