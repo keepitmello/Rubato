@@ -38,6 +38,7 @@ export const PROVIDERS = Object.freeze([
   { id: "kiro", label: "Kiro", aliases: ["kiro"], methods: ["api_key"] },
   { id: "google-antigravity", label: "Antigravity", aliases: ["google-antigravity", "antigravity"], methods: ["oauth"] },
   { id: "opencode", label: "OpenCode", aliases: ["opencode"], methods: ["api_key"] },
+  { id: "b-ai", label: "DeepSeek", aliases: ["b-ai", "deepseek"], methods: ["api_key"] },
 ]);
 
 const METHOD_ALIASES = Object.freeze({
@@ -559,6 +560,7 @@ async function addStoredApiKey(providerId, ctx) {
   stdout.write(`${LOGIN_LABELS[providerId] ?? providerId} API 키를 붙여넣어 주세요. 그냥 Enter 를 누르면 취소됩니다.\n`);
   if (providerId === "kiro") stdout.write("키 대신 이 스크립트를 써도 됩니다: harness/scripts/kiro-setup.sh\n");
   if (providerId === "opencode") stdout.write("Keychain 서비스 opencode.ai 에 넣어 두어도 됩니다.\n");
+  if (providerId === "b-ai") stdout.write("B.AI 키입니다. 모델은 DeepSeek V4.1 Flash.\n");
   const key = await readLine(ctx);
   if (!key) {
     stdout.write("취소했습니다.\n");
@@ -573,7 +575,7 @@ export async function defaultLogin(providerId, method, ctx) {
     await addSetupToken(ctx);
     return;
   }
-  if (method === "api_key" && (providerId === "kiro" || providerId === "opencode")) {
+  if (method === "api_key" && (providerId === "kiro" || providerId === "opencode" || providerId === "b-ai")) {
     await addStoredApiKey(providerId, ctx);
     return;
   }

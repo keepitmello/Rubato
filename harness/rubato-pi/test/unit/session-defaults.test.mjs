@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  BAI_FLASH_MODEL_ID,
+  BAI_PROVIDER_ID,
+  DEFAULT_BAI_PROVIDER,
   DISABLED_BUILTIN_EXTENSIONS,
   ensureModelsConfig,
   ensureSessionDefaults,
@@ -68,6 +71,8 @@ test("models.json disables vercel and other foreign builtins without dropping us
     },
   });
   assert.equal(next.providers.custom.name, "mine");
+  assert.equal(next.providers[BAI_PROVIDER_ID].models[0].id, BAI_FLASH_MODEL_ID);
+  assert.equal(next.providers[BAI_PROVIDER_ID].apiKey, "$BAI_API_KEY");
   assert.ok(next.disabledProviders.includes("already-off"));
   assert.ok(next.disabledProviders.includes("vercel-ai-gateway"));
   assert.ok(next.disabledProviders.includes("alibaba-token-plan"));
@@ -81,6 +86,24 @@ test("models.json disables vercel and other foreign builtins without dropping us
 // 회귀: Codex 를 직접 물기 전에는 openai-codex 가 정당하게 disabled 로 박혔다.
 // 그 뒤 우리 프로바이더가 되었는데도 파일에 남은 옛 항목 탓에 피커에서 사라졌다.
 // 이제는 우리 것으로 돌아온 id 를 파일에서 회수한다.
+test("이미 있는 b-ai 키는 기본 템플릿이 덮지 않는다", () => {
+  const next = ensureModelsConfig("/tmp/agent", {
+    exists: () => true,
+    readFile: () => JSON.stringify({
+      providers: {
+        [BAI_PROVIDER_ID]: {
+          apiKey: "sk-local-keep",
+          models: [{ id: BAI_FLASH_MODEL_ID }],
+        },
+      },
+      disabledProviders: ["vercel-ai-gateway"],
+    }),
+    writeFile: () => {},
+  });
+  assert.equal(next.providers[BAI_PROVIDER_ID].apiKey, "sk-local-keep");
+  assert.equal(next.providers[BAI_PROVIDER_ID].models[0].id, BAI_FLASH_MODEL_ID);
+});
+
 test("models.json reclaims a provider that became ours after it was disabled", () => {
   const next = ensureModelsConfig("/tmp/agent", {
     exists: () => true,
@@ -107,7 +130,7 @@ test("already-current session files are left untouched", () => {
     theme: "dark",
   };
   const models = {
-    providers: {},
+    providers: { [BAI_PROVIDER_ID]: DEFAULT_BAI_PROVIDER },
     disabledProviders: foreignProviderIds(),
   };
   const files = {
@@ -131,7 +154,17 @@ test("already-current session files are left untouched", () => {
 // 모르는 provider 를 열 수 있었으므로 "지금 무엇이 우리 것인가"를 런타임에 물어야 했다.
 // 이제 지원 목록이 정적이라 판정도 그 목록만 본다.
 test("지원하지 않는 id 를 끈 파일은 그대로 현재로 본다", () => {
-  assert.equal(modelsLookCurrent({ disabledProviders: [...foreignProviderIds(), "newco"] }), true);
+  assert.equal(modelsLookCurrent({
+    providers: { [BAI_PROVIDER_ID]: DEFAULT_BAI_PROVIDER },
+    disabledProviders: [...foreignProviderIds(), "newco"],
+  }), true);
+});
+
+test("b-ai flash 가 없으면 models.json 은 현재가 아니다", () => {
+  assert.equal(modelsLookCurrent({
+    providers: {},
+    disabledProviders: foreignProviderIds(),
+  }), false);
 });
 
 test("openai API 가 disabledProviders 에 없으면 현재가 아니다", () => {
