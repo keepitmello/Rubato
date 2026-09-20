@@ -93,14 +93,13 @@ function notLiveRecipients(
     const view = inspectMember(taskId)
     if (view === undefined) continue
     const base = { member, status: view.status, residency_state: view.residency_state }
-    if (view.residency_state === "persisted_only" || view.residency_state === "rpc_detached") {
+    // A deliberate stop wins over a suspended residency: a killed or cancelled member must never
+    // be described as "reads it after revival" (the revival path itself refuses those records).
+    if (view.killed === true || view.status === "cancelled" || view.status === "lost") {
+      result.push({ ...base, state: "disposed" })
+    } else if (view.residency_state === "persisted_only" || view.residency_state === "rpc_detached") {
       result.push({ ...base, state: "suspended" })
-    } else if (
-      view.residency_state !== "resident" ||
-      view.killed === true ||
-      view.status === "cancelled" ||
-      view.status === "lost"
-    ) {
+    } else if (view.residency_state !== "resident") {
       result.push({ ...base, state: "disposed" })
     }
   }

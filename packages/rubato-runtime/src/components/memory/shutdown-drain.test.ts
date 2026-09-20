@@ -91,7 +91,7 @@ describe("session shutdown drain budget", () => {
     expect(signals[0]?.aborted).toBe(true)
   })
 
-  test("#given a hosted unload #when the drain runs #then it launches like a quit because the process is going away", async () => {
+  test("#given a hosted unload #when the drain runs #then held state is saved but no facts launch or evaluator starts", async () => {
     // given
     const order: string[] = []
     const drain = createShutdownDrain({ steps: recordingSteps(order) })
@@ -100,8 +100,8 @@ describe("session shutdown drain budget", () => {
     // when
     await drain.run({ reason: "unload", sessionId: SESSION, deadlineAt: openBudget(0), now: () => 0 })
 
-    // then
-    expect(order).toEqual(["a", "b", "c-prime", "c", "d1"])
+    // then: journal, final delta and skills usage are preserved; the next bind's reconcile launches facts
+    expect(order).toEqual(["a", "b", "c-prime"])
   })
 
   test("#given a reload shutdown #when the drain runs #then only the journal flush and the final enqueue run", async () => {

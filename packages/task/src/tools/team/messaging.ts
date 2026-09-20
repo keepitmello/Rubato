@@ -85,12 +85,15 @@ export async function runTeamSend(
   }
 }
 
-/** Acceptance into a durable inbox is not execution: say so in the same result the model reads. */
+/**
+ * Acceptance into a durable inbox is not execution. Describe the observed state at send time
+ * without predicting the future: storage succeeded, delivery and resumed work are unconfirmed.
+ */
 function describeNotLive(entry: TeamSendNotLive): string {
-  const where = `${entry.member} (${entry.status}, ${entry.residency_state})`
+  const state = `Stored in ${entry.member}'s inbox. Last known execution state: ${entry.status}/${entry.residency_state}.`
   return entry.state === "suspended"
-    ? `Not live: ${where} is suspended; the message is stored and will be read only after this session's resume revives the member.`
-    : `Not live: ${where} has no execution; the message is stored but no member will read it. Check team status before reporting progress.`
+    ? `${state} Delivery remains pending; the member must be successfully resumed before it can process the message.`
+    : `${state} No live execution is currently available; delivery and resumed work are unconfirmed. Sending did not restart the task. Check the current task state before reporting progress.`
 }
 
 export function createTeamSendTool(deps: TeamToolDeps): ToolDefinition {

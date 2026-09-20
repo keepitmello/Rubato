@@ -15,17 +15,15 @@ const UNLOAD_DISPOSE = Symbol('rubato.hosted.unload-dispose');
  * presentation detached, or server stop), never because the user quit: the session file
  * survives and the next attach resumes it. Stock `dispose()` announces
  * `session_shutdown reason:"quit"`, which the task lifecycle reads as "dispose every child",
- * so a lead's team members were destroyed 60s after its tab detached. Announce `unload`
- * instead so children suspend and revive on resume. A runtime that already carries a
- * lifecycle (the CLI cursor) keeps its own dispose.
+ * so a lead's team members were destroyed 60s after its tab detached. The rpc controller
+ * calls `dispose()` with no arguments, so bind the reason here: the original cleanup runs
+ * unchanged (the session-ui patch lets it take a reason) and only announces `unload`.
+ * A runtime that already carries a lifecycle (the CLI cursor) keeps its own dispose.
  */
-export function announceUnloadOnDispose(runtime, emitSessionShutdownEvent) {
+export function announceUnloadOnDispose(runtime) {
   if (!runtime || runtime.lifecycle || runtime.dispose?.[UNLOAD_DISPOSE]) return runtime;
-  const dispose = async () => {
-    await emitSessionShutdownEvent(runtime.session.extensionRunner, { type: 'session_shutdown', reason: 'unload' });
-    runtime.beforeSessionInvalidate?.();
-    runtime.session.dispose();
-  };
+  const original = runtime.dispose;
+  const dispose = () => original.call(runtime, 'unload');
   dispose[UNLOAD_DISPOSE] = true;
   runtime.dispose = dispose;
   return runtime;
@@ -47,7 +45,6 @@ export async function loadHostedRuntime({ runtimeRoot, agentDir }) {
   const { createCliRuntimeFactory, main } = await load(base + 'main.js');
   const { parseArgs } = await load(base + 'cli/args.js');
   const { createAgentSessionRuntime, AgentSessionRuntime } = await load(base + 'core/agent-session-runtime.js');
-  const { emitSessionShutdownEvent } = await load(base + 'core/extensions/runner.js');
   const { SettingsManager } = await load(base + 'core/settings-manager.js');
   const { SessionManager } = await load(base + 'core/session-manager.js');
   const { assertSessionCwdExists } = await load(base + 'core/session-cwd.js');
@@ -117,7 +114,7 @@ export async function loadHostedRuntime({ runtimeRoot, agentDir }) {
         createRuntime: () => scope.run(async () => {
           try { runtime = await (creation?.createRuntime ? creation.createRuntime() : hosted.createRuntime(metadata)); }
           finally { creation = undefined; } // Startup's UI/trust callback must not pin a detached terminal.
-          announceUnloadOnDispose(runtime, emitSessionShutdownEvent);
+          announceUnloadOnDispose(runtime);
           api.configureHttp(runtime.services.settingsManager);
           // GUI actors need the same native theme/catalog bootstrap even when
           // there is no terminal main. No watcher belongs to an invisible actor.

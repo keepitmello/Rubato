@@ -153,11 +153,19 @@ function teamMessageRow(details: Extract<SendResultDetails, { readonly kind: "te
   switch (details.kind) {
     case "to_lead":
       return { color: "success", text: `AgentSend team message ${details.message_id} enqueued to lead` }
-    case "to_members":
-      return {
-        color: "success",
-        text: `AgentSend team message ${details.message_id} enqueued to ${details.recipients.length} member(s)`,
+    case "to_members": {
+      const notLive = details.not_live ?? []
+      if (notLive.length === 0) {
+        return {
+          color: "success",
+          text: `AgentSend team message ${details.message_id} enqueued to ${details.recipients.length} member(s)`,
+        }
       }
+      return {
+        color: "warning",
+        text: `AgentSend team message ${details.message_id} stored for ${details.recipients.length} member(s); no live execution: ${notLive.map((entry) => `${entry.member} (${entry.state})`).join(", ")}`,
+      }
+    }
     case "recipient_backpressure":
     case "invalid_recipient":
     case "payload_too_large":
