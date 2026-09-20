@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { chmod, lstat, mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import test from "node:test";
 
 import { installPackage, uninstallPackage } from "../scripts/install.mjs";
@@ -388,6 +388,29 @@ test("update preserves prior disabled skills and checks newly bundled skill coll
     join(f.codexHome, "skills", "agent-taskforce", "SKILL.md"),
     join(f.codexHome, "skills", added, "SKILL.md"),
   ]);
+});
+
+test("a shared skill that links on into a checkout is still recognized", async () => {
+  const f = await fixture();
+  await installPackage(options(f));
+  const added = "new-portable-skill";
+  await mkdir(join(f.pluginRoot, "skills", added), { recursive: true });
+  await writeFile(join(f.pluginRoot, "skills", added, "SKILL.md"), `---\nname: ${added}\ndescription: fixture\n---\n`);
+  // The shared location itself points into a checkout, and Codex points at the
+  // shared location with a relative link — the shape a real machine has.
+  const checkout = join(f.root, "checkout", "harness", "skills", added);
+  await mkdir(checkout, { recursive: true });
+  await writeFile(join(checkout, "SKILL.md"), "shared source may be adapted by the bundle\n");
+  const shared = join(f.root, ".agents", "skills", added);
+  await mkdir(dirname(shared), { recursive: true });
+  await symlink(checkout, shared);
+  const codexSkills = join(f.codexHome, "skills");
+  await mkdir(codexSkills, { recursive: true });
+  await symlink(relative(codexSkills, shared), join(codexSkills, added));
+
+  await installPackage(options(f));
+  const state = JSON.parse(await readFile(join(f.codexHome, "rubato-codex", "install-state.json"), "utf8"));
+  assert.deepEqual(state.disabledSkillPaths, [join(codexSkills, added, "SKILL.md")]);
 });
 
 test("update refuses an unrecognized collision from a newly bundled skill", async () => {
