@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { loadHostedRuntime } from '../src/hosted-runtime.mjs';
+import { announceUnloadOnDispose, loadHostedRuntime } from '../src/hosted-runtime.mjs';
 import { serveProfile } from '../src/profile-server.mjs';
 import { RpcWorker } from '../src/rpc-worker.mjs';
 
@@ -25,6 +25,25 @@ test('incomplete engine CLI never implicitly opens the normal profile', async t 
 test('hosted runtime requires absolute identity before loading any agent code', async () => {
   await assert.rejects(loadHostedRuntime({ runtimeRoot: 'relative', agentDir: '/profile' }), /absolute/);
   await assert.rejects(loadHostedRuntime({ runtimeRoot: '/build', agentDir: 'relative' }), /absolute/);
+});
+
+test('hosted worker dispose announces unload, not quit, so resident children suspend instead of dying', async () => {
+  const emitted = []; let invalidated = 0, disposed = 0;
+  const runtime = {
+    session: { extensionRunner: { id: 'runner' }, dispose: () => { disposed++; } },
+    beforeSessionInvalidate: () => { invalidated++; },
+    dispose: async () => { emitted.push({ type: 'session_shutdown', reason: 'quit' }); },
+  };
+  const emit = async (runner, event) => { assert.equal(runner, runtime.session.extensionRunner); emitted.push(event); };
+  assert.equal(announceUnloadOnDispose(runtime, emit), runtime);
+  const once = runtime.dispose;
+  assert.equal(announceUnloadOnDispose(runtime, emit).dispose, once, 'a second announce keeps the same dispose');
+  await runtime.dispose();
+  assert.deepEqual(emitted, [{ type: 'session_shutdown', reason: 'unload' }]);
+  assert.equal(invalidated, 1); assert.equal(disposed, 1);
+  // The CLI cursor owns its own lifecycle and must keep it.
+  const cursor = { lifecycle: {}, dispose: async () => 'cursor' };
+  assert.equal(announceUnloadOnDispose(cursor, emit).dispose, cursor.dispose);
 });
 
 test('failed engine selection releases the profile owner rather than blocking recovery', async t => {

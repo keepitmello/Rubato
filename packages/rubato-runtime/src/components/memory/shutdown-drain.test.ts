@@ -91,6 +91,19 @@ describe("session shutdown drain budget", () => {
     expect(signals[0]?.aborted).toBe(true)
   })
 
+  test("#given a hosted unload #when the drain runs #then it launches like a quit because the process is going away", async () => {
+    // given
+    const order: string[] = []
+    const drain = createShutdownDrain({ steps: recordingSteps(order) })
+    drain.registerEvaluator(() => { order.push("d1") })
+
+    // when
+    await drain.run({ reason: "unload", sessionId: SESSION, deadlineAt: openBudget(0), now: () => 0 })
+
+    // then
+    expect(order).toEqual(["a", "b", "c-prime", "c", "d1"])
+  })
+
   test("#given a reload shutdown #when the drain runs #then only the journal flush and the final enqueue run", async () => {
     // given
     const order: string[] = []
