@@ -104,6 +104,70 @@ class ConsultSessionsTest(unittest.TestCase):
             self.assertEqual(listed[0]["threadId"], thread["threadId"])
             self.assertEqual(listed[0]["status"], "failed")
 
+    def test_a_failed_turn_records_why_and_the_list_shows_it(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            store = MODULE.SessionStore(Path(temp) / "sessions.json")
+            thread = store.create_thread(
+                topic="왜 죽었나",
+                quality="pro",
+                project_name="Work",
+                outpost_id="turn-1",
+                pid=os.getpid(),
+            )
+            store.finish_turn(
+                thread["threadId"],
+                status="failed",
+                outpost_id="turn-1",
+                failure_stage="select-tier",
+                failure_detail="tier button not visible",
+            )
+            listed = store.listed_threads()
+            self.assertEqual(MODULE.failure_reason(listed[0]), "select-tier")
+            table = MODULE.format_threads(listed)
+            self.assertIn("REASON", table)
+            self.assertIn("select-tier", table)
+
+    def test_a_finished_turn_clears_a_stale_failure_reason(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            store = MODULE.SessionStore(Path(temp) / "sessions.json")
+            thread = store.create_thread(
+                topic="다시 성공",
+                quality="pro",
+                project_name="Work",
+                outpost_id="turn-1",
+                pid=os.getpid(),
+            )
+            store.finish_turn(
+                thread["threadId"],
+                status="failed",
+                outpost_id="turn-1",
+                failure_stage="select-tier",
+                failure_detail="x",
+            )
+            store.finish_turn(
+                thread["threadId"],
+                status="finished",
+                outpost_id="turn-1",
+                response_output="response.md",
+            )
+            listed = store.listed_threads()
+            self.assertEqual(MODULE.failure_reason(listed[0]), "")
+            self.assertNotIn("failureStage", listed[0]["turns"][-1])
+
+    def test_a_turn_left_running_by_a_dead_process_says_so(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            store = MODULE.SessionStore(Path(temp) / "sessions.json")
+            store.create_thread(
+                topic="프로세스가 죽었다",
+                quality="pro",
+                project_name="Work",
+                outpost_id="turn-1",
+                pid=999999,
+            )
+            listed = store.listed_threads()
+            self.assertEqual(listed[0]["status"], "failed")
+            self.assertEqual(MODULE.failure_reason(listed[0]), "process-died")
+
     def test_same_thread_lock_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             store = MODULE.SessionStore(Path(temp) / "sessions.json")

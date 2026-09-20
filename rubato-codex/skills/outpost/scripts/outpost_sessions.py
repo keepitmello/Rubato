@@ -427,6 +427,8 @@ class SessionStore:
         response_output: str = "",
         json_output: str = "",
         submit_elapsed_seconds: float | None = None,
+        failure_stage: str = "",
+        failure_detail: str = "",
     ) -> dict[str, Any]:
         def mutate(thread: dict[str, Any]) -> None:
             apply_conversation_to_thread(thread, conversation_url)
@@ -445,6 +447,17 @@ class SessionStore:
                     turn["jsonOutput"] = json_output
                 if submit_elapsed_seconds is not None:
                     turn["submitElapsedSeconds"] = submit_elapsed_seconds
+                # A failure has to say why. Without it the next run cannot tell
+                # whether it met the same cause again, and every break reads as
+                # a new mystery.
+                if status == "finished":
+                    turn.pop("failureStage", None)
+                    turn.pop("failureDetail", None)
+                else:
+                    if failure_stage:
+                        turn["failureStage"] = failure_stage
+                    if failure_detail:
+                        turn["failureDetail"] = failure_detail
 
         return self._update(thread_id, mutate)
 
@@ -503,6 +516,10 @@ class SessionStore:
                 if isinstance(last, dict) and last.get("status") in {"running", "submitted"}:
                     last = dict(last)
                     last["status"] = "failed"
+                    last["failureStage"] = last.get("failureStage") or "process-died"
+                    last["failureDetail"] = last.get("failureDetail") or (
+                        "the runner process exited without recording an outcome"
+                    )
                     turns[-1] = last
         apply_conversation_to_thread(
             current,
@@ -572,12 +589,23 @@ class ThreadLock:
             self._handle = None
 
 
+def failure_reason(thread: dict[str, Any]) -> str:
+    """Stage name of the thread's last turn, when that turn did not finish."""
+    turns = thread.get("turns") if isinstance(thread.get("turns"), list) else []
+    if not turns or not isinstance(turns[-1], dict):
+        return ""
+    latest = turns[-1]
+    if str(latest.get("status") or "") == "finished":
+        return ""
+    return str(latest.get("failureStage") or "").strip()
+
+
 def format_threads(threads: list[dict[str, Any]], *, as_json: bool = False) -> str:
     if as_json:
         return json.dumps(threads, ensure_ascii=False, indent=2)
     if not threads:
         return "no outpost threads"
-    lines = ["THREAD\tSTATUS\tTURNS\tQUALITY\tTOPIC\tCONVERSATION"]
+    lines = ["THREAD\tSTATUS\tREASON\tTURNS\tQUALITY\tTOPIC\tCONVERSATION"]
     for thread in threads:
         turns = thread.get("turns") if isinstance(thread.get("turns"), list) else []
         lines.append(
@@ -585,6 +613,7 @@ def format_threads(threads: list[dict[str, Any]], *, as_json: bool = False) -> s
                 [
                     str(thread.get("threadId") or "-"),
                     live_status_label(thread.get("status")),
+                    failure_reason(thread) or "-",
                     str(len(turns)),
                     str(thread.get("quality") or "-"),
                     str(thread.get("topic") or "-"),

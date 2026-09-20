@@ -31,6 +31,43 @@ class AsideReplConsultTest(unittest.TestCase):
         self._sessions_env.start()
         self.addCleanup(self._sessions_env.stop)
 
+    def test_the_rehearsal_walks_the_send_path_and_stops_before_the_click(self) -> None:
+        script = MODULE.build_repl_script(
+            project_url="https://chatgpt.com/g/g-p-test-work/project",
+            quality="pro",
+            packet_name="outpost-abc.md",
+            packet_base64="cGFja2V0",
+            topic="리허설",
+            outpost_id="abc",
+            response_timeout_ms=1000,
+            dry_run=True,
+        )
+        self.assertIn("var dryRun = true;", script)
+        self.assertIn("OUTPOST_REHEARSAL_RESULT", script)
+        self.assertIn("OUTPOST_REHEARSAL_STOP", script)
+        # The rehearsal ends before the click, so it can never spend a turn.
+        self.assertLess(
+            script.index("OUTPOST_REHEARSAL_RESULT"),
+            script.index("submitState.send.click"),
+        )
+        # The pre-submit promise hands the composer over so the rehearsal can put
+        # the project draft back before it closes the tab.
+        self.assertIn("assistantCountBefore, composer }", script)
+        # A top-level `return` makes the REPL drop the whole script silently.
+        self.assertNotIn("\n  return;\n", script)
+
+    def test_a_real_send_is_not_a_rehearsal(self) -> None:
+        script = MODULE.build_repl_script(
+            project_url="https://chatgpt.com/g/g-p-test-work/project",
+            quality="pro",
+            packet_name="outpost-abc.md",
+            packet_base64="cGFja2V0",
+            topic="진짜 전송",
+            outpost_id="abc",
+            response_timeout_ms=1000,
+        )
+        self.assertIn("var dryRun = false;", script)
+
     def test_quality_flag_is_required_and_limited(self) -> None:
         with self.assertRaises(SystemExit):
             MODULE.parse_args([])
@@ -158,10 +195,14 @@ class AsideReplConsultTest(unittest.TestCase):
         self.assertIn("idMatched", pro)
         self.assertIn("packetUnread", pro)
         self.assertIn("assistant response text was empty", pro)
+        # The reply is saved before the real send path closes the tab. The
+        # rehearsal branch closes its own tab earlier and never reaches a reply.
         self.assertLess(
             pro.index("ASIDE_REPL_RESPONSE_RESULT"),
-            pro.index("closeTab(workPage)"),
+            pro.rindex("closeTab(workPage)"),
         )
+        self.assertIn("OUTPOST_REHEARSAL_RESULT", pro)
+        self.assertIn("var dryRun = false", pro)
         self.assertIn("pre-submit preparation exceeded 110 seconds", pro)
         self.assertIn("user turn committed after 120-second deadline", pro)
         self.assertIn("submitElapsedMs >= 120000", pro)
@@ -240,6 +281,77 @@ class AsideReplConsultTest(unittest.TestCase):
         self.assertNotIn("setInputFiles", script)
         self.assertNotIn("composer-submit-button", script)
         self.assertIn("closeTab", script)
+
+    def test_the_doctor_rehearses_the_send_path_with_a_throwaway_packet(self) -> None:
+        transcript = MODULE.REHEARSAL_MARKER + json.dumps(
+            {
+                "ok": True,
+                "stage": "ready-to-send",
+                "url": "https://chatgpt.com/g/g-p-test-work/project",
+                "tierInnerText": ["6 Pro"],
+                "modelRadios": [{"name": "최신", "checked": True}],
+            }
+        )
+        with mock.patch.object(MODULE, "ensure_aside_daemon", return_value=None):
+            with mock.patch.object(MODULE, "aside_daemon_health", return_value=None):
+                with mock.patch.object(MODULE, "save_picker_contract", return_value=Path("/tmp/x.json")):
+                    with mock.patch.object(MODULE, "build_repl_script") as build:
+                        build.return_value = "script"
+                        with mock.patch.object(
+                            MODULE, "run_repl_process", return_value=transcript
+                        ):
+                            args = MODULE.parse_args(
+                                [
+                                    "--doctor",
+                                    "--url", "https://chatgpt.com/g/g-p-test-work/project",
+                                    "--project", "Work",
+                                ]
+                            )
+                            code = MODULE.run_doctor(args)
+        self.assertEqual(code, 0)
+        # doctor and send must run one script, or doctor can pass on a lookup the
+        # send cannot perform — the bug that hid three broken sends.
+        self.assertTrue(build.call_args.kwargs["dry_run"])
+        self.assertEqual(build.call_args.kwargs["topic"], MODULE.REHEARSAL_TOPIC)
+
+    def test_the_doctor_report_reads_a_rehearsal_payload(self) -> None:
+        text = MODULE.format_doctor_report(
+            {
+                "ok": True,
+                "stage": "ready-to-send",
+                "url": "https://chatgpt.com/g/g-p-test-work/project",
+                "expectedComposer": "Work에서 새 채팅",
+                "composerLabels": ["Work에서 새 채팅"],
+                "tierLabel": "Pro",
+                "tier": "Pro (5 of 5)",
+                "model": "최신",
+                "latestRadioPresent": True,
+                "modelRadios": [{"name": "최신", "checked": True}],
+                "daemonUptime": "2h",
+                "daemonPid": 42,
+                "blockers": [],
+            }
+        )
+        self.assertIn("ok=true", text)
+        self.assertIn("daemon up=2h pid=42", text)
+        self.assertIn("stage=ready-to-send", text)
+        self.assertIn("Pro (5 of 5)", text)
+
+    def test_the_doctor_report_names_the_stage_a_rehearsal_failed_at(self) -> None:
+        text = MODULE.format_doctor_report(
+            {
+                "ok": False,
+                "stage": "select-tier",
+                "detail": "tier button not visible",
+                "blockers": ["rehearsal"],
+                "daemonUptime": "1m",
+                "daemonPid": 7,
+            }
+        )
+        self.assertIn("ok=false", text)
+        self.assertIn("stage=select-tier", text)
+        self.assertIn("detail=tier button not visible", text)
+        self.assertIn("blockers=rehearsal", text)
 
     def test_doctor_flag_does_not_need_packet(self) -> None:
         args = MODULE.parse_args(["--doctor"])
