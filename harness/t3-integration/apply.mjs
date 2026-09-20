@@ -240,17 +240,38 @@ const edits = {
     ],
   ],
 
-  // Worked for 는 도구만 접는다. 어시스턴트 본문을 마지막 조각만 남기면
-  // 끝난 턴이 잘린 것처럼 보인다.
+  // 이미 저장된 잘못된 사고 행은 본문에서만 제외한다. Pi 원본과 T3 DB는
+  // 건드리지 않고, 우리 브리지가 발급한 reasoning ID만 식별한다.
+  'apps/web/src/session-logic.ts': [
+    [
+      '  const showMessage = (message: ChatMessage) =>\n    message.role !== "user" || !foldedAnswerMessageIds.has(message.id);',
+      '  const showMessage = (message: ChatMessage) =>\n    !/^assistant:pi:[^:]+:[a-f0-9]{24}:reasoning$/.test(message.id) &&\n    (message.role !== "user" || !foldedAnswerMessageIds.has(message.id));',
+      'replace',
+    ],
+  ],
+  // 중간 발화는 완료 후 접되, 마지막 답변의 연속된 조각은 전부 남긴다.
+  // 사고/답변 분리는 브리지의 이벤트 타입이 맡는다.
   'apps/web/src/components/chat/MessagesTimeline.logic.ts': [
     [
       ' * Settled turns fold activity before their terminal assistant message behind\n * a "Worked for ..." row. A single ordinary activity after that message joins\n * the fold, while larger groups and failures stay visible as a trailing summary.',
-      ' * Settled turns fold tool activity behind a "Worked for ..." row. Assistant\n * prose stays visible in full — first line, last line, and everything\n * between. Picking leftover fragments is what made the final answer look\n * truncated. A single ordinary activity after the last message joins the\n * fold; larger groups and failures stay as a trailing summary.',
+      ' * Settled turns fold intermediate commentary and activity behind a "Worked for"\n * row. Keep the terminal run of assistant messages intact, not just its last\n * fragment. A single ordinary activity after the answer joins the fold;\n * larger groups and failures stay visible as a trailing summary.',
       'replace',
     ],
     [
       '    for (const [index, entry] of group.entries.entries()) {\n      if (entry.id === group.terminalEntry?.id) {\n        continue;\n      }',
-      '    for (const [index, entry] of group.entries.entries()) {\n      if (entry.kind === "message") {\n        continue;\n      }\n      if (entry.id === group.terminalEntry?.id) {\n        continue;\n      }',
+      '    let answerStartIndex = terminalEntryIndex;\n    while (answerStartIndex > 0 && group.entries[answerStartIndex - 1]?.kind === "message") {\n      answerStartIndex -= 1;\n    }\n    for (const [index, entry] of group.entries.entries()) {\n      if (entry.kind === "message" && index >= answerStartIndex) {\n        continue;\n      }',
+      'replace',
+    ],
+  ],
+  'apps/web/src/components/chat/MessagesTimeline.logic.test.ts': [
+    [
+      '  it("folds all assistant messages before the terminal message", () => {',
+      '  it("keeps all adjacent final answer fragments when there is no intervening work", () => {',
+      'replace',
+    ],
+    [
+      '    expect(rows.map((row) => row.id)).toEqual(["turn-fold:turn-1", "assistant-final-entry"]);\n  });\n\n  it("derives a sane duration for a steer-superseded turn with one instant commentary message", () => {',
+      '    expect(rows.map((row) => row.id)).toEqual([\n      "assistant-first-entry", "assistant-middle-entry", "assistant-final-entry",\n    ]);\n  });\n\n  it("derives a sane duration for a steer-superseded turn with one instant commentary message", () => {',
       'replace',
     ],
   ],
@@ -267,13 +288,55 @@ const edits = {
   ],
   'apps/mobile/src/lib/threadActivity.ts': [
     [
+      '        .filter((message) => message.role !== "user" || !foldedAnswerMessageIds.has(message.id))',
+      '        .filter((message) =>\n          !/^assistant:pi:[^:]+:[a-f0-9]{24}:reasoning$/.test(message.id) &&\n          (message.role !== "user" || !foldedAnswerMessageIds.has(message.id)))',
+      'replace',
+    ],
+    [
       '  const firstAssistantMessageIdByTurn = new Map<TurnId, string>();\n  const terminalAssistantMessageIdByTurn = new Map<TurnId, string>();\n  for (const entry of feed) {\n    if (entry.type === "message" && entry.message.role === "assistant" && entry.message.turnId) {\n      if (!firstAssistantMessageIdByTurn.has(entry.message.turnId)) {\n        firstAssistantMessageIdByTurn.set(entry.message.turnId, entry.id);\n      }\n      terminalAssistantMessageIdByTurn.set(entry.message.turnId, entry.id);\n    }\n  }',
       '  const terminalAssistantMessageIdByTurn = new Map<TurnId, string>();\n  for (const entry of feed) {\n    if (entry.type === "message" && entry.message.role === "assistant" && entry.message.turnId) {\n      terminalAssistantMessageIdByTurn.set(entry.message.turnId, entry.id);\n    }\n  }',
       'replace',
     ],
     [
       '    const firstAssistantMessageId = firstAssistantMessageIdByTurn.get(turnId);\n    const terminalAssistantMessageId = terminalAssistantMessageIdByTurn.get(turnId);\n    const hiddenEntryIds = new Set(\n      entries\n        .filter(\n          (entry) =>\n            entry.id !== firstAssistantMessageId &&\n            entry.id !== terminalAssistantMessageId &&\n            !(entry.type === "activity-group" && isUserInputActivityGroup(entry)),\n        )\n        .map((entry) => entry.id),\n    );',
-      '    const terminalAssistantMessageId = terminalAssistantMessageIdByTurn.get(turnId);\n    const hiddenEntryIds = new Set(\n      entries\n        .filter(\n          (entry) =>\n            entry.type !== "message" &&\n            !(entry.type === "activity-group" && isUserInputActivityGroup(entry)),\n        )\n        .map((entry) => entry.id),\n    );',
+      '    const terminalAssistantMessageId = terminalAssistantMessageIdByTurn.get(turnId);\n    const terminalIndex = entries.findIndex((entry) => entry.id === terminalAssistantMessageId);\n    let answerStartIndex = terminalIndex;\n    while (answerStartIndex > 0 && entries[answerStartIndex - 1]?.type === "message") {\n      answerStartIndex -= 1;\n    }\n    const hiddenEntryIds = new Set(\n      entries\n        .filter(\n          (entry, index) =>\n            !(entry.type === "message" && index >= answerStartIndex) &&\n            !(entry.type === "activity-group" && isUserInputActivityGroup(entry)),\n        )\n        .map((entry) => entry.id),\n    );',
+      'replace',
+    ],
+  ],
+  'apps/mobile/src/lib/threadActivity.test.ts': [
+    [
+      '  it("keeps the first and terminal assistant messages visible around settled work", () => {',
+      '  it("folds intermediate commentary and keeps the terminal answer visible", () => {',
+      'replace',
+    ],
+    [
+      '    expect(collapsed.map((entry) => entry.id)).toEqual([\n      "assistant-first",\n      "turn-fold:turn-1",\n      "assistant-final",\n    ]);\n    expect(collapsed[1]).toMatchObject({',
+      '    expect(collapsed.map((entry) => entry.id)).toEqual([\n      "turn-fold:turn-1",\n      "assistant-final",\n    ]);\n    expect(collapsed[0]).toMatchObject({',
+      'replace',
+    ],
+    [
+      '    expect(expanded.map((entry) => entry.id)).toEqual([\n      "assistant-first",\n      "turn-fold:turn-1",\n      "work-toggle:work-group:tool-completed",',
+      '    expect(expanded.map((entry) => entry.id)).toEqual([\n      "turn-fold:turn-1",\n      "assistant-first",\n      "work-toggle:work-group:tool-completed",',
+      'replace',
+    ],
+    [
+      '    expect(interrupted[1]).toMatchObject({\n      type: "turn-fold",\n      label: "You stopped after 19s",',
+      '    expect(interrupted[0]).toMatchObject({\n      type: "turn-fold",\n      label: "You stopped after 19s",',
+      'replace',
+    ],
+    [
+      '    expect(retimed[1]).toMatchObject({ type: "turn-fold", label: "Worked for 23s" });\n    expect(collapsed[1]).toMatchObject({ type: "turn-fold", label: "Worked for 17s" });',
+      '    expect(retimed[0]).toMatchObject({ type: "turn-fold", label: "Worked for 23s" });\n    expect(collapsed[0]).toMatchObject({ type: "turn-fold", label: "Worked for 17s" });',
+      'replace',
+    ],
+    [
+      '  it("folds assistant messages between the first and terminal messages", () => {',
+      '  it("keeps adjacent final answer fragments without intervening work", () => {',
+      'replace',
+    ],
+    [
+      '      "assistant-first",\n      "turn-fold:turn-1",\n      "assistant-final",\n    ]);\n  });\n\n  it("measures a steer-superseded turn from its user boundary through trailing work", () => {',
+      '      "assistant-first",\n      "assistant-middle",\n      "assistant-final",\n    ]);\n  });\n\n  it("measures a steer-superseded turn from its user boundary through trailing work", () => {',
       'replace',
     ],
   ],
@@ -319,10 +382,16 @@ export async function applyIntegration({t3,check=false,remove=false}) {
     let next;
     if (relative in edits) {
       if (current===null) throw new Error(`T3 source file is missing: ${relative}`);
-      original = untransform(current,edits[relative]);
+      // A previous overlay can have different replacements. Only trust its
+      // recorded original when the installed file still matches its hash;
+      // user edits must continue to fail before any writes.
+      const prior = old.files[relative];
+      const recorded = prior?.original !== null && typeof prior?.original === 'string'
+        && hash(current) === prior.installedHash;
+      original = recorded ? prior.original : untransform(current,edits[relative]);
       if (hash(original)!==upstream.targets[relative]) throw new Error(`T3 source changed outside this overlay: ${relative}`);
       next = transform(original,edits[relative]);
-      if (current!==original && current!==next) throw new Error(`Partial external edit in T3 target: ${relative}`);
+      if (!recorded && current!==original && current!==next) throw new Error(`Partial external edit in T3 target: ${relative}`);
     } else {
       original = old.files[relative]?.original ?? null;
       next = await readFile(path.join(root,'overlay',relative),'utf8');

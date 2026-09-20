@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,readFile,writeFile,rm} from 'node:fs/promises';
 import path from 'node:path';
 import {tmpdir} from 'node:os';
+import {createHash} from 'node:crypto';
 import {applyIntegration} from '../apply.mjs';
 
 test('overlay is guarded, idempotent, reversible and rejects dirty upstream before writes', {skip:!process.env.T3_SOURCE}, async(t)=>{
@@ -16,6 +17,16 @@ test('overlay is guarded, idempotent, reversible and rejects dirty upstream befo
   }
   // 설치된 매니페스트가 정본이다. 숫자를 박아 두면 파일을 하나 더 손댈 때마다 시험이 먼저 썩는다.
   const first=await applyIntegration({t3:root}); assert.equal(first.changes.length,Object.keys(manifest.files).length);
+  assert.equal((await applyIntegration({t3:root})).changes.length,0);
+  // An intact old replacement must upgrade even when the new transform can no
+  // longer reverse it. The manifest hash distinguishes it from a user's edit.
+  const priorTarget='apps/web/src/components/chat/MessagesTimeline.logic.ts';
+  const priorText=manifest.files[priorTarget].original+'\n// previous Rubato overlay\n';
+  const priorManifest=JSON.parse(await readFile(path.join(root,'.rubato-pi-overlay.json'),'utf8'));
+  priorManifest.files[priorTarget].installedHash=createHash('sha256').update(priorText).digest('hex');
+  await writeFile(path.join(root,priorTarget),priorText);
+  await writeFile(path.join(root,'.rubato-pi-overlay.json'),JSON.stringify(priorManifest));
+  assert.deepEqual((await applyIntegration({t3:root})).changes,[priorTarget]);
   assert.equal((await applyIntegration({t3:root})).changes.length,0);
   const target=path.join(root,'apps/server/src/serverRuntimeStartup.ts');
   const good=await readFile(target,'utf8');

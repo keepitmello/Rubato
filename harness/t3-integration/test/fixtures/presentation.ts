@@ -1,0 +1,157 @@
+  for (const family of ["grok", "gpt", "claude"]) {
+    for (const responseStreamingMode of ["token", "paragraph"] as const) {
+      it(`${family}/${responseStreamingMode}: reasoning cannot finalize prose; commentary folds after settle`, async () => {
+        const harness = await createHarness({ serverSettings: { responseStreamingMode } });
+        const events: any[] = [];
+        let sequence = 0;
+        const projection = new EventProjection({
+          threadId: "thread-1", sessionId: family, instanceId: "codex",
+          emit: (event: any) => events.push({
+            ...event,
+            createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, ++sequence)).toISOString(),
+          }),
+        });
+        const flush = () => harness.emitAndDrain(events.splice(0));
+        const read = async () => (await harness.readModel()).threads.find(t => t.id === "thread-1")!;
+        const webRows = (thread: any, expanded = false) => deriveMessagesTimelineRows({
+          timelineEntries: deriveTimelineEntries(thread.messages, [], deriveWorkLogEntries(thread.activities)),
+          isWorking: thread.latestTurn?.state === "running",
+          activeTurnStartedAt: thread.latestTurn?.state === "running" ? thread.latestTurn.startedAt : null,
+          latestTurn: thread.latestTurn,
+          runningTurnId: thread.session?.activeTurnId,
+          expandedTurnIds: expanded ? new Set(["turn-1" as never]) : new Set(),
+          turnDiffSummaries: [], supportsConversationRollback: false,
+        });
+        const mobileRows = (thread: any, expanded = false) => deriveThreadFeedPresentation(
+          buildThreadFeed(thread), thread.latestTurn,
+          expanded ? new Set(["turn-1" as never]) : new Set(),
+        );
+        const prose = (rows: any[]) => rows.filter(r => r.kind === "message" || r.type === "message")
+          .map(r => r.message?.text ?? r.text ?? "").join("\n");
+        const intermediate = `${family}: checking the workspace`;
+        const first = {
+          role: "assistant", timestamp: 100, model: family, stopReason: "toolUse",
+          content: [
+            { type: "thinking", thinking: `${family} PRIVATE THOUGHT before tool` },
+            { type: "text", text: intermediate },
+            { type: "toolCall", id: "call-1", name: "bash", arguments: { command: "pwd" } },
+          ],
+        };
+        projection.begin("turn-1");
+        projection.message(first, false);
+        projection.message(first, true);
+        projection.project({ type: "tool_execution_start", toolName: "bash", toolCallId: "call-1", args: { command: "pwd" } });
+        await flush();
+        let thread = await read();
+        expect(prose(webRows(thread))).toContain(intermediate);
+        expect(prose(mobileRows(thread))).toContain(intermediate);
+        expect(thread.messages.every(m => !m.text.includes("PRIVATE THOUGHT"))).toBe(true);
+
+        projection.project({ type: "tool_execution_end", toolName: "bash", toolCallId: "call-1", result: { content: [{ type: "text", text: "/workspace" }] }, isError: false });
+        const final = {
+          role: "assistant", timestamp: 200, model: family,
+          content: [
+            { type: "thinking", thinking: `${family} PRIVATE THOUGHT final` },
+            { type: "text", text: `${family}: final beginning\n\n` },
+          ],
+        };
+        // Providers may end reasoning before text, alongside it, or only at
+        // message_end. None of those endings may close the answer segment.
+        if (family === "claude") projection.endReasoning(final);
+        projection.message(final, false);
+        if (family === "gpt") projection.endReasoning(final);
+        await flush();
+        final.content[1].text += "final middle\n\nfinal end";
+        projection.message({ ...final, stopReason: "stop" }, true);
+        await flush();
+        thread = await read();
+        const answer = final.content[1].text;
+        expect(thread.messages.filter(m => m.role === "assistant").map(m => m.text))
+          .toEqual([intermediate, answer]);
+        expect(webRows(thread).some(r => r.kind === "turn-fold")).toBe(false);
+        projection.settle();
+        await flush();
+        thread = await read();
+        for (const rows of [webRows(thread), mobileRows(thread)]) {
+          expect(prose(rows)).not.toContain(intermediate);
+          expect(prose(rows)).toContain(answer);
+          expect(prose(rows)).not.toContain("PRIVATE THOUGHT");
+        }
+        expect(prose(webRows(thread, true))).toContain(intermediate);
+        expect(prose(mobileRows(thread, true))).toContain(intermediate);
+
+        // A fresh query and JSON round trip exercise what reload actually gets,
+        // independent of live client object identity or stream caches.
+        const reloaded = JSON.parse(JSON.stringify(await read()));
+        expect(prose(webRows(reloaded))).toBe(prose(webRows(thread)));
+        expect(prose(mobileRows(reloaded))).toBe(prose(mobileRows(thread)));
+
+        // Some providers split a final answer across adjacent assistant items.
+        const tail = { ...reloaded.messages.at(-1), id: "answer-tail", text: "final appendix",
+          createdAt: "2026-01-01T00:05:00.000Z", updatedAt: "2026-01-01T00:05:01.000Z" };
+        reloaded.messages.push(tail);
+        for (const rows of [webRows(reloaded), mobileRows(reloaded)]) {
+          expect(prose(rows)).toContain(answer);
+          expect(prose(rows)).toContain("final appendix");
+          expect(prose(rows)).not.toContain(intermediate);
+        }
+        // Legacy bad projections remain stored, but must not leak even when
+        // expanding work. Only our exact reasoning IDs are excluded.
+        reloaded.messages.push({ ...tail,
+          id: "assistant:pi:legacy:0123456789abcdef01234567:reasoning",
+          text: "PRIVATE THOUGHT from old projection" });
+        for (const rows of [webRows(reloaded, true), mobileRows(reloaded, true)]) {
+          expect(prose(rows)).not.toContain("PRIVATE THOUGHT");
+          expect(prose(rows)).toContain("final appendix");
+        }
+        for (const id of [
+          "assistant:pi:legacy:0123456789abcdef01234567",
+          "assistant:pi:legacy:zzz:reasoning",
+          "assistant:other:legacy:0123456789abcdef01234567:reasoning",
+        ]) {
+          reloaded.messages.push({ ...tail, id, text: `ordinary answer ${id}` });
+        }
+        for (const rows of [webRows(reloaded, true), mobileRows(reloaded, true)]) {
+          expect(prose(rows)).toContain("ordinary answer assistant:pi:legacy:0123456789abcdef01234567");
+          expect(prose(rows)).toContain("ordinary answer assistant:pi:legacy:zzz:reasoning");
+          expect(prose(rows)).toContain("ordinary answer assistant:other:legacy:0123456789abcdef01234567:reasoning");
+        }
+      });
+    }
+  }
+
+  // Optional private, local-only recording replay. Never put real user
+  // transcripts or provider credentials into this repository.
+  if (process.env.T3_REPLAY_MESSAGES) {
+    const recordings = JSON.parse(NodeFS.readFileSync(process.env.T3_REPLAY_MESSAGES, "utf8"));
+    for (const [family, messages] of Object.entries(recordings) as [string, any[]][]) {
+      it(`recorded ${family}: exact assistant text survives ingestion and reload`, async () => {
+        const harness = await createHarness();
+        const events: any[] = [];
+        let sequence = 0;
+        const projection = new EventProjection({
+          threadId: "thread-1", sessionId: family, instanceId: "codex",
+          emit: (event: any) => events.push({ ...event,
+            createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, ++sequence)).toISOString() }),
+        });
+        projection.begin("recorded-turn");
+        for (const message of messages) {
+          projection.message(message, false);
+          projection.message(message, true);
+          for (const call of message.content.filter((b: any) => b.type === "toolCall")) {
+            projection.project({ type: "tool_execution_start", toolName: call.name, toolCallId: call.id, args: {} });
+            projection.project({ type: "tool_execution_end", toolName: call.name, toolCallId: call.id,
+              result: { content: [{ type: "text", text: "recorded tool result omitted" }] }, isError: false });
+          }
+        }
+        projection.settle();
+        await harness.emitAndDrain(events);
+        const thread = (await harness.readModel()).threads.find(t => t.id === "thread-1")!;
+        const expected = messages.map(m => m.content.filter((b: any) => b.type === "text")
+          .map((b: any) => b.text).join("")).filter(Boolean);
+        expect(thread.messages.filter(m => m.text).map(m => m.text)).toEqual(expected);
+        const refreshed = (await harness.readModel()).threads.find(t => t.id === "thread-1")!;
+        expect(refreshed.messages).toEqual(thread.messages);
+      });
+    }
+  }

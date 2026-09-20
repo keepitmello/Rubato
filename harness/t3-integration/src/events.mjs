@@ -250,7 +250,11 @@ export class EventProjection {
     const itemId = this.reasoningItemId(messageKey(this.sessionId, message));
     if (this.completed.has(itemId)) return;
     const detail = textOf(message, 'thinking');
-    this.event('item.completed', { itemType: 'assistant_message', status: 'completed',
+    if (!detail) return;
+    // This closes a reasoning stream, not an assistant answer. T3 uses an
+    // assistant_message's detail as fallback prose and finalizes the active
+    // answer segment, so mislabelling this both leaks thoughts and cuts answers.
+    this.event('item.completed', { itemType: 'reasoning', status: 'completed',
       ...(detail ? { detail } : {}) }, { itemId });
     this.completed.add(itemId);
   }

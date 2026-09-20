@@ -1,6 +1,9 @@
 {
   "upstreamCommit": "cc839c42b1adfddd059142bb6d7151719080c4ea",
   "targets": {
+    "apps/mobile/src/lib/threadActivity.test.ts": "561ab3cb5fcd88fbcbf1c08185fe0cbbe279d3a751e9a8748553aa358d1a4416",
+    "apps/web/src/components/chat/MessagesTimeline.logic.test.ts": "77cf515b158da54f179eb93841fb5f0a9db707f8be475790fcdad1b66bc37d28",
+    "apps/web/src/session-logic.ts": "d128b7d536b09a845a5c35ef24be97ea8409d99f30ebe3ea6c14c9db062ee31b",
     "apps/server/src/provider/builtInDrivers.ts": "0d9d3b5d3add4b49743dc05aba1f96edf29f23e9c24addd55e2a1f81ace4bb16",
     "apps/server/src/serverRuntimeStartup.ts": "4aee19d8f7d842b1ea0d0d3485885a70699fe96e8af2193e9d42f7b94e7dd0f4",
     "apps/server/src/provider/Layers/ProviderRegistry.ts": "4af8a237bc4f35b1777bedf1bc9e88ef4cb9c1c6be8f4ffeccf8bf23051ec1d8",
