@@ -456,9 +456,14 @@ async function preflightLegacySkills(skillRecords, codexHome, previousState, leg
     let recognized = false;
     const info = await lstat(skillDir);
     if (info.isSymbolicLink()) {
-      const resolved = await realpath(skillDir);
-      recognized = basename(resolved).toLowerCase() === skill.name.toLowerCase()
-        && resolved.includes(`${sep}.agents${sep}skills${sep}`);
+      // The shared install is one hop away: ~/.codex/skills/<name> points at
+      // ~/.agents/skills/<name>, which may itself point into a checkout. Resolve
+      // that single hop — following the whole chain made every shared skill look
+      // foreign and stopped the installer on the first collision.
+      const target = await readlink(skillDir);
+      const pointed = isAbsolute(target) ? target : resolve(dirname(skillDir), target);
+      recognized = basename(pointed).toLowerCase() === skill.name.toLowerCase()
+        && pointed.includes(`${sep}.agents${sep}skills${sep}`);
     } else if (info.isDirectory()) {
       const currentSkill = await readOptional(join(skillDir, "SKILL.md"));
       recognized = currentSkill === skill.content;
