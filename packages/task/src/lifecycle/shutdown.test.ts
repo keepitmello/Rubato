@@ -96,6 +96,34 @@ describe("suspendOnSessionShutdown", () => {
     expect(summary).toEqual({ suspended_in_process: 0, suspended_rpc: 1, suspended_pending: 0, disposed: 0, failures: [] })
   })
 
+  test("#given a waiting rpc member #when the hosting server unloads the idle lead #then it suspends instead of dying", async () => {
+    // given
+    const store = tempStore()
+    seedRecord(store, {
+      task_id: "st_000000f7",
+      status: "completed",
+      residency_state: "resident",
+      execution_mode: "process",
+      host_pid: HOST,
+      pid: 77,
+    })
+    const order: CallLog = []
+    const registry = new OrderRegistry(order)
+    registry.add(fakeHandle("st_000000f7", "rpc", order, { pid: 77 }))
+    const lifecycle = createTaskLifecycle({ store, registry, config: settings() })
+
+    // when: the hosted pi-server reclaims an idle lead (tab detached), which is not a user quit
+    const summary = await lifecycle.suspendOnSessionShutdown({ parentSessionId: "parent-1", reason: "unload" })
+
+    // then: a waiting team member is suspended for revival, never disposed with cause cancel
+    const record = store.load("st_000000f7")
+    expect(record?.status).toBe("completed")
+    expect(record?.residency_state).toBe("rpc_detached")
+    expect(readEvents(store, "st_000000f7")).not.toContain("destroyed")
+    expect(readEvents(store, "st_000000f7").at(-1)).toBe("suspended")
+    expect(summary).toEqual({ suspended_in_process: 0, suspended_rpc: 1, suspended_pending: 0, disposed: 0, failures: [] })
+  })
+
   test("#given a resident of a different parent session #when this session shuts down #then it is untouched", async () => {
     // given
     const store = tempStore()
