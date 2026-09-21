@@ -45,8 +45,6 @@ describe("memory identity context", () => {
     expect(existsSync(paths.worktrees)).toBe(true)
     expect(existsSync(paths.viewers)).toBe(true)
     expect(existsSync(paths.pushQueue)).toBe(true)
-    expect(existsSync(paths.factsQueue)).toBe(true)
-    expect(existsSync(paths.facts)).toBe(true)
     expect(existsSync(paths.repo)).toBe(false)
   })
 })

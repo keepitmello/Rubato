@@ -25,38 +25,8 @@ describe("RubatoMemorySettingsSchema v2 block defaults", () => {
     expect(result.success).toBe(false)
   })
 
-  test("#given facts defaults #when parsing empty #then facts is enabled with debounce_settles 4", () => {
-    // given
-    const input = {}
 
-    // when
-    const parsed = RubatoMemorySettingsSchema.parse(input)
 
-    // then
-    expect(parsed.facts).toEqual({ enabled: true, debounce_settles: 4 })
-  })
-
-  test("#given facts with a category field #when parsed #then the strict schema rejects it", () => {
-    // given
-    const input = { facts: { category: "quick" } }
-
-    // when
-    const result = RubatoMemorySettingsSchema.safeParse(input)
-
-    // then
-    expect(result.success).toBe(false)
-  })
-
-  test("#given facts debounce_settles below 1 #when parsed #then validation fails", () => {
-    // given
-    const input = { facts: { debounce_settles: 0 } }
-
-    // when
-    const result = RubatoMemorySettingsSchema.safeParse(input)
-
-    // then
-    expect(result.success).toBe(false)
-  })
 
   test("#given dream defaults #when parsing empty #then dream is fully populated", () => {
     // given
@@ -123,44 +93,8 @@ describe("RubatoMemorySettingsSchema v2 block defaults", () => {
     expect(result.success).toBe(false)
   })
 
-  test("#given people defaults #when parsing empty #then people is enabled with limits", () => {
-    // given
-    const input = {}
 
-    // when
-    const parsed = RubatoMemorySettingsSchema.parse(input)
 
-    // then
-    expect(parsed.people).toEqual({ enabled: true, max_entries: 40, max_entry_chars: 200 })
-  })
-
-  test("#given people max_entries outside 1..100 #when parsed #then validation fails", () => {
-    // given
-    const tooLow = { people: { max_entries: 0 } }
-    const tooHigh = { people: { max_entries: 101 } }
-
-    // when
-    const lowResult = RubatoMemorySettingsSchema.safeParse(tooLow)
-    const highResult = RubatoMemorySettingsSchema.safeParse(tooHigh)
-
-    // then
-    expect(lowResult.success).toBe(false)
-    expect(highResult.success).toBe(false)
-  })
-
-  test("#given people max_entry_chars outside 50..500 #when parsed #then validation fails", () => {
-    // given
-    const tooLow = { people: { max_entry_chars: 49 } }
-    const tooHigh = { people: { max_entry_chars: 501 } }
-
-    // when
-    const lowResult = RubatoMemorySettingsSchema.safeParse(tooLow)
-    const highResult = RubatoMemorySettingsSchema.safeParse(tooHigh)
-
-    // then
-    expect(lowResult.success).toBe(false)
-    expect(highResult.success).toBe(false)
-  })
 
   test("#given soul defaults #when parsing empty #then edit_notice is true", () => {
     // given

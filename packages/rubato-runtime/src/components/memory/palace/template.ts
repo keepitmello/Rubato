@@ -8,10 +8,6 @@ import { PALACE_STYLES } from "./styles"
 export const PALACE_DATA_PLACEHOLDER = "<!--RUBATO_PALACE_DATA-->"
 export const PALACE_DATA_ELEMENT_ID = "rubato-palace-data"
 
-// The people tab and panel are stripped verbatim by the generator when `memory.people.enabled`
-// is false, so a disabled people layer leaves no tab, no panel and no payload behind.
-export const PALACE_PEOPLE_TAB = `<button class="tab" data-tab="people" type="button">People</button>`
-export const PALACE_PEOPLE_PANEL = `<section id="panel-people" hidden></section>`
 
 export const PALACE_TEMPLATE = `<!DOCTYPE html>
 <html lang="en">
@@ -37,14 +33,12 @@ ${PALACE_STYLES}</style>
     <button class="tab" data-tab="external" type="button">External</button>
     <button class="tab" data-tab="history" type="button">History</button>
     <button class="tab" data-tab="reflection" type="button">Reflection</button>
-    ${PALACE_PEOPLE_TAB}
   </nav>
   <main class="main">
     <section id="panel-core"></section>
     <section id="panel-external" hidden></section>
     <section id="panel-history" hidden></section>
     <section id="panel-reflection" hidden></section>
-    ${PALACE_PEOPLE_PANEL}
   </main>
   <footer class="footer" id="footer"></footer>
 </div>

@@ -188,7 +188,5 @@ export function gateProbe(input: { readonly lastDreamAtMs?: number | null; reado
 
 export const noopSteps: ShutdownDrainSteps = {
   flushJournal: async () => {},
-  enqueueFinalDelta: async () => {},
   flushSkillsUsage: async () => {},
-  launchFacts: async () => {},
 }

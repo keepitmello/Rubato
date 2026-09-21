@@ -4,7 +4,6 @@ import type { ComponentContext, SenpiExtensionAPI } from "../../extension/types"
 import { createDreamTriggerWiring, resolveDreamTriggerSettings } from "./dream-trigger"
 import { resolveMemorySettings } from "./identity-runtime"
 import { createMemoryNudgeWiring } from "./nudge-wiring"
-import type { PalacePeopleOptions } from "./palace/people"
 import { registerMemoryFilesystemPolicy } from "./policy-guard"
 import { createShutdownDrain, type ShutdownDrainInput, type ShutdownEvaluator } from "./shutdown-drain"
 import { type SkillsUsageTracker } from "./skills-usage"
@@ -41,7 +40,7 @@ export function createMemoryWiring(options: MemoryWiringOptions): MemoryWiring {
       onLiveCompletion: reflectionLive.onLiveReflectionCompleted,
     },
   )
-  const { resolveContext, journalWiringFor, factsWiringFor, runtimeFor } = runtimeWiring
+  const { resolveContext, journalWiringFor, runtimeFor } = runtimeWiring
 
   const nudgeWiring = createMemoryNudgeWiring({
     resolveContext,
@@ -93,19 +92,9 @@ export function createMemoryWiring(options: MemoryWiringOptions): MemoryWiring {
         if (identity === undefined) return
         await journalWiringFor(identity).journalFor(sessionId).flush(signal)
       },
-      enqueueFinalDelta: async (sessionId, signal) => {
-        const identity = resolveContext(sessionId)
-        if (identity === undefined || signal.aborted) return
-        await factsWiringFor(identity).enqueueSettled(sessionId, signal)
-      },
       flushSkillsUsage: async (_sessionId, signal) => {
         if (signal.aborted) return
         await flushSkillsUsageTrackers(signal)
-      },
-      launchFacts: async (sessionId, signal) => {
-        const identity = resolveContext(sessionId)
-        if (identity === undefined || signal.aborted) return
-        await factsWiringFor(identity).launchIfThresholdMet(signal)
       },
     },
   })
@@ -113,17 +102,9 @@ export function createMemoryWiring(options: MemoryWiringOptions): MemoryWiring {
   const dreamTriggerWiring = buildDreamTriggerWiring(options, runtimeWiring, activeSession)
   shutdownDrain.registerEvaluator(dreamTriggerWiring.shutdownEvaluator())
 
-  function resolvePalacePeople(): PalacePeopleOptions | undefined {
-    const people = resolveMemorySettings(options.loadConfig({ cwd: options.cwd() }).config.memory).people
-    return {
-      enabled: people.enabled,
-      limits: { maxEntries: people.max_entries, maxEntryChars: people.max_entry_chars },
-    }
-  }
-
   function loadCommandSettings(): MemoryCommandSettings {
     const resolved = options.loadConfig({ cwd: options.cwd() }).config
-    return { settings: resolveMemorySettings(resolved.memory), config: resolved }
+    return { settings: resolveMemorySettings(resolved.memory) }
   }
 
   return {
@@ -140,10 +121,8 @@ export function createMemoryWiring(options: MemoryWiringOptions): MemoryWiring {
         completionApi: createReflectionCompletionApi,
         resolveContext,
         journalWiringFor,
-        factsWiringFor,
         runtimeFor,
         triggerSessionFor: runtimeWiring.triggerSessionFor,
-        resolvePalacePeople,
         loadCommandSettings,
         lastEventCtx,
         activeSession,
@@ -169,7 +148,6 @@ export function createMemoryWiring(options: MemoryWiringOptions): MemoryWiring {
         await journalWiringFor(identity).reconcileSession(eventCtx)
       }
       if (!isCurrent()) return
-      factsWiringFor(identity).reconcileExtractor()
       await reflectionLive.bind(
         pi,
         sessionId,

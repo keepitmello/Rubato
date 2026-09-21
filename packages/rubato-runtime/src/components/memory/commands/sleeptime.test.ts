@@ -40,10 +40,6 @@ describe("/sleeptime", () => {
         enabled: { value: true, overridden: false },
         everyUserTurns: { value: 10, overridden: false },
       },
-      facts: {
-        enabled: { value: true, overridden: false },
-        debounceSettles: { value: 4, overridden: false },
-      },
       dream: {
         enabled: { value: true, overridden: false },
         idleMinutes: { value: 30, overridden: false },
@@ -51,11 +47,6 @@ describe("/sleeptime", () => {
         shutdownLaunch: { value: true, overridden: false },
         autoSelectMax: { value: 5, overridden: false },
         autoSelectMaxChars: { value: 150000, overridden: false },
-      },
-      people: {
-        enabled: { value: true, overridden: false },
-        maxEntries: { value: 40, overridden: false },
-        maxEntryChars: { value: 200, overridden: false },
       },
       soul: { editNotice: { value: true, overridden: false } },
     })
@@ -80,7 +71,6 @@ describe("/sleeptime", () => {
             sandbox: "required",
           },
           nudge: { enabled: false, every_user_turns: 20 },
-          facts: { enabled: false, debounce_settles: 8 },
           dream: {
             enabled: false,
             idle_minutes: 60,
@@ -89,7 +79,6 @@ describe("/sleeptime", () => {
             auto_select_max: 3,
             auto_select_max_chars: 25000,
           },
-          people: { enabled: false, max_entries: 20, max_entry_chars: 100 },
           soul: { edit_notice: false },
         },
       },
@@ -117,10 +106,6 @@ describe("/sleeptime", () => {
         enabled: { value: false, overridden: true },
         everyUserTurns: { value: 20, overridden: true },
       },
-      facts: {
-        enabled: { value: false, overridden: true },
-        debounceSettles: { value: 8, overridden: true },
-      },
       dream: {
         enabled: { value: false, overridden: true },
         idleMinutes: { value: 60, overridden: true },
@@ -128,11 +113,6 @@ describe("/sleeptime", () => {
         shutdownLaunch: { value: false, overridden: true },
         autoSelectMax: { value: 3, overridden: true },
         autoSelectMaxChars: { value: 25000, overridden: true },
-      },
-      people: {
-        enabled: { value: false, overridden: true },
-        maxEntries: { value: 20, overridden: true },
-        maxEntryChars: { value: 100, overridden: true },
       },
       soul: { editNotice: { value: false, overridden: true } },
     })
