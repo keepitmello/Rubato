@@ -61,7 +61,6 @@ Not saving is a valid outcome. Decide it deliberately.
 | A judgement with one current answer that would be **overwritten** if it changed | \`decisions/<question>.md\` |
 | A fact you **look up**, which gets updated but never reversed | \`reference/<topic>.md\` |
 | A repeatable procedure you would follow again | \`skills/<name>/SKILL.md\` |
-| A fact about a specific person | \`system/human.md\` for the primary human; \`people/<slug>/card.md\` otherwise |
 | Ephemeral state, speculation, or anything above | Nowhere |
 
 The test between the first two: **six months from now, if this changed, would you overwrite the file or append to it?** Overwrite means \`decisions/\`. Append means \`reference/\`.
