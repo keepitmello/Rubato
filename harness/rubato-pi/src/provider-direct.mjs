@@ -275,6 +275,7 @@ export async function directProviders({
   antigravity,
   opencode: opencodeOptions,
   env = process.env,
+  speedIndexStore: speedStore = speedIndexStore(env),
   nativeFactoryLoader = loadPinnedFactory,
   routeFactories = {},
 } = {}) {
@@ -335,7 +336,7 @@ export async function directProviders({
     { env, ...(opencodeOptions ?? {}) },
   );
 
-  const store = speedIndexStore(env);
+  const store = speedStore;
   store?.startProbes?.();
   const wrap = (provider) => wrapProviderStreams(withSubAccountCopies(provider), { speedIndexStore: store });
 

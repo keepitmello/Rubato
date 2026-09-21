@@ -239,6 +239,16 @@ export function createSpeedIndexStore({
   let cached;
   let lastTailAt = 0;
   const fileSizes = new Map();
+  const scoreListeners = new Set();
+
+  function notifyScore(store) {
+    if (scoreListeners.size === 0) return;
+    let result;
+    try { result = store.getCachedScore(); } catch { return; }
+    for (const listener of scoreListeners) {
+      try { listener(result); } catch { /* a GUI subscriber must not break recording */ }
+    }
+  }
 
   function baselineOf() {
     return mergeBaselines(localBaseline, bundledBaseline);
@@ -432,6 +442,7 @@ export function createSpeedIndexStore({
       remember(sample, { source: "own" });
       persist(sample);
       tryFreeze();
+      notifyScore(this);
       return sample;
     },
     setBaseline(next) {
@@ -462,6 +473,7 @@ export function createSpeedIndexStore({
     setActiveIdentity(identity) {
       activeIdentity = identity ? { ...identity } : undefined;
       cached = undefined;
+      notifyScore(this);
     },
     /**
      * Model selection changes which identity the footer scores. Samples already
@@ -471,12 +483,14 @@ export function createSpeedIndexStore({
     clearActiveIdentity() {
       activeIdentity = undefined;
       cached = undefined;
+      notifyScore(this);
     },
     /** A new or switched session starts from zero live samples. */
     resetSession() {
       sessionGroups.clear();
       activeIdentity = undefined;
       cached = undefined;
+      notifyScore(this);
     },
     refresh() {
       // Do not ingest history here. session_start calls refresh() before the
@@ -495,6 +509,11 @@ export function createSpeedIndexStore({
       const result = scoreGroup(samplesFor(identity), identity, baseline, { now: now(), cap });
       cached = { key, result };
       return result;
+    },
+    subscribe(listener) {
+      if (typeof listener !== "function") return () => {};
+      scoreListeners.add(listener);
+      return () => scoreListeners.delete(listener);
     },
     startProbes() {
       if (probesEnabled) health.start();
