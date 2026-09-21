@@ -1,6 +1,6 @@
 {
     "$schema": "cursor-variant-aliases/v1",
-    "source": "union of GetUsableModels live capture (204 ids) and cursor-agent CLI listing capture (203 ids), 2026-08-18; grok-4.7 rows from the 2026-09-22 GetUsableModels capture (the 4.7 ids dropped the `cursor-` prefix)",
+    "source": "union of GetUsableModels live capture (204 ids) and cursor-agent CLI listing capture (203 ids), 2026-08-18; grok-4.7 rows from the 2026-09-22 GetUsableModels capture (the 4.7 ids dropped the `cursor-` prefix); claude-fable-5-1 rows from the 2026-09-22 GetUsableModels capture",
     "aliases": {
         "claude-4-sonnet": {
             "targetId": "claude-4-sonnet",
@@ -92,6 +92,66 @@
             "targetId": "claude-fable-5",
             "level": "medium",
             "legacyVariantId": "claude-fable-5-medium",
+            "encoding": "legacy-variant"
+        },
+        "claude-fable-5-1-high": {
+            "targetId": "claude-fable-5-1",
+            "level": "high",
+            "legacyVariantId": "claude-fable-5-1-high",
+            "encoding": "legacy-variant"
+        },
+        "claude-fable-5-1-low": {
+            "targetId": "claude-fable-5-1",
+            "level": "low",
+            "legacyVariantId": "claude-fable-5-1-low",
+            "encoding": "legacy-variant"
+        },
+        "claude-fable-5-1-max": {
+            "targetId": "claude-fable-5-1",
+            "level": "max",
+            "legacyVariantId": "claude-fable-5-1-max",
+            "encoding": "legacy-variant"
+        },
+        "claude-fable-5-1-medium": {
+            "targetId": "claude-fable-5-1",
+            "level": "medium",
+            "legacyVariantId": "claude-fable-5-1-medium",
+            "encoding": "legacy-variant"
+        },
+        "claude-fable-5-1-xhigh": {
+            "targetId": "claude-fable-5-1",
+            "level": "xhigh",
+            "legacyVariantId": "claude-fable-5-1-xhigh",
+            "encoding": "legacy-variant"
+        },
+        "claude-fable-5-1-thinking-high": {
+            "targetId": "claude-fable-5-1-thinking",
+            "level": "high",
+            "legacyVariantId": "claude-fable-5-1-thinking-high",
+            "encoding": "legacy-variant"
+        },
+        "claude-fable-5-1-thinking-low": {
+            "targetId": "claude-fable-5-1-thinking",
+            "level": "low",
+            "legacyVariantId": "claude-fable-5-1-thinking-low",
+            "encoding": "legacy-variant"
+        },
+        "claude-fable-5-1-thinking-max": {
+            "targetId": "claude-fable-5-1-thinking",
+            "level": "max",
+            "legacyVariantId": "claude-fable-5-1-thinking-max",
+            "encoding": "legacy-variant"
+        },
+        "claude-fable-5-1-thinking-medium": {
+            "targetId": "claude-fable-5-1-thinking",
+            "level": "medium",
+            "legacyVariantId": "claude-fable-5-1-thinking-medium",
+            "encoding": "legacy-variant"
+        },
+        "claude-fable-5-1-thinking-xhigh": {
+            "targetId": "claude-fable-5-1-thinking",
+            "level": "xhigh",
+            "legacyVariantId": "claude-fable-5-1-thinking-xhigh",
             "encoding": "legacy-variant"
         },
         "claude-fable-5-xhigh": {

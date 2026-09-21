@@ -40,6 +40,10 @@ function gpt(levels, order = GPT_ORDER, window = 400000, maxWindow = 400000) {
  */
 export const CURSOR_MODEL_CAPABILITIES = {
     "claude-fable-5": claude(1000000, 1000000, ["low", "medium", "high", "xhigh", "max"], "300k"),
+    // Fable 5.1 은 `claude-fable-5` 와 같은 계열이고 노출 단계·window 도 같다. 표에 없던
+    // 동안 alias 도 없어서 discovery 의 `claude-fable-5-1-*` 가 베이스로 묶이지 않았고,
+    // 피커의 `claude-fable-5-1` 행이 조용히 비어 있었다 (2026-09-22 캡처로 확인).
+    "claude-fable-5-1": claude(1000000, 1000000, ["low", "medium", "high", "xhigh", "max"], "300k"),
     "claude-sonnet-5": claude(1000000, 1000000, ["low", "medium", "high", "xhigh", "max"], "300k"),
     "claude-opus-4-7": claude(1000000, 1000000, ["low", "medium", "high", "xhigh", "max"], "300k"),
     "claude-opus-4-8": claude(1000000, 1000000, ["low", "medium", "high", "xhigh", "max"], "300k"),
