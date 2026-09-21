@@ -6,6 +6,37 @@ import { DIRECT_PROVIDER_IDS } from "./src/provider-direct.mjs";
 import { builtinProviderIds, foreignProviderIds, installOpenAiApiRefusal } from "./src/provider-ids.mjs";
 import { importLegacyDirectCredentials, unavailableDirectProviders } from "./src/credential-import.mjs";
 import { registerAccountCommand } from "./auth-pool/accounts.mjs";
+import { createSpeedIndexStore } from "./src/speed-index-store.mjs";
+
+function sessionSpeedStore(agentDir, env) {
+  if (env?.RUBATO_SPEED_INDEX === "0" || process.env.NODE_TEST_CONTEXT) return undefined;
+  return createSpeedIndexStore({
+    agentDir,
+    autostartProbes: false,
+    probesEnabled: env?.RUBATO_SPEED_INDEX_PROBE !== "0",
+  });
+}
+
+function publishSessionSpeed(pi, store) {
+  if (!store || typeof pi?.rpc?.emit !== "function" || typeof store.subscribe !== "function") return;
+  let last;
+  const publish = () => {
+    const result = store.getCachedScore?.();
+    const speed = result?.status === "ready" && Number.isFinite(result.score) ? Math.round(result.score) : null;
+    if (last === speed) return;
+    last = speed;
+    pi.rpc.emit("rubato.speed.updated", { speed });
+  };
+  store.subscribe(publish);
+  pi.on?.("session_start", (event) => {
+    if (event?.reason === "reload") {
+      publish();
+      return;
+    }
+    last = undefined;
+    store.resetSession?.();
+  });
+}
 
 /**
  * Build the exact Rubato provider vector against this staged stock pi-ai.
@@ -54,7 +85,8 @@ export function createProvidersExtension(options = {}) {
         );
       }
     }
-    const providers = await createRubatoProviders({ ...options, antigravity, env });
+    const speedStore = options.speedIndexStore ?? sessionSpeedStore(agentDir, env);
+    const providers = await createRubatoProviders({ ...options, antigravity, env, speedIndexStore: speedStore });
     const admitted = admitProviders(pi, providers);
     installOpenAiApiRefusal(pi);
     if (antigravity.stateStore && antigravity.lineage) {
@@ -72,6 +104,7 @@ export function createProvidersExtension(options = {}) {
         ? join(agentDir, "credential-pool-state.json")
         : undefined,
     });
+    publishSessionSpeed(pi, speedStore);
     return admitted;
   };
 }

@@ -79,6 +79,7 @@ const childIdOf = (details, fallback = {}) => nonempty(details.agentId) || nonem
   || nonempty(record(details.progress).childId) || nonempty(record(fallback).childId);
 // live_progress.activity is Rubato's CLI status line (title · model · turn N · $0 · Speed).
 // T3 already has title/model/status/lastToolName; do not forward that packed string.
+// The numeric Speed Index travels as typedUsage.speedIndex / rubato.speed.updated.
 const liveFacts = (item) => {
   const live = record(item.live_progress);
   return {
@@ -96,11 +97,13 @@ const taskUsageOf = (item, live) => {
   const output = asInt(live.outputTokens) ?? asInt(stats.output_tokens);
   const tools = asInt(live.toolCalls) ?? asInt(stats.tool_calls);
   const duration = asInt(stats.runtime_ms);
+  const speed = asInt(stats.speed_index);
   return {
     totalTokens: total,
     ...(output !== undefined ? { outputTokens: output } : {}),
     ...(tools !== undefined ? { toolUses: tools } : {}),
     ...(duration !== undefined ? { durationMs: duration } : {}),
+    ...(speed !== undefined ? { speedIndex: speed } : {}),
   };
 };
 const FAILED_STATUS = new Set(['failed', 'error', 'denied', 'lost']);
@@ -378,11 +381,12 @@ export class EventProjection {
       ...(status ? { status } : {}), ...(nonempty(error) ? { error } : {}),
       ...(typedUsage ? { typedUsage } : {}), ...this.linkage(task) }, task);
   }
-  completeTask(task, status, summary) {
+  completeTask(task, status, summary, typedUsage) {
     if (task.done) return;
     task.done = true; task.terminal = status;
     this.taskEvent('task.completed', { taskId: task.taskId, status,
-      ...(nonempty(summary) && summary !== task.label ? { summary } : {}), ...this.linkage(task) }, task);
+      ...(nonempty(summary) && summary !== task.label ? { summary } : {}),
+      ...(typedUsage ? { typedUsage } : {}), ...this.linkage(task) }, task);
     this.maybeCompleteTeam(task);
   }
   // Member ids map at children[st_…] → the team spawn key. Prefer a task stored
@@ -479,18 +483,27 @@ export class EventProjection {
       if (effortOf({}, item, item) && !task.effort) task.effort = effortOf({}, item, item);
       if (!task || task.done) continue;
       const status = nonempty(item.status);
-      if (FAILED_STATUS.has(status)) this.completeTask(task, 'failed', label);
+      const typedUsage = taskUsageOf(item, live);
+      if (FAILED_STATUS.has(status)) this.completeTask(task, 'failed', label, typedUsage);
       else if (STOPPED_STATUS.has(status)) this.completeTask(task, 'stopped', label);
-      else if (status === 'completed') this.completeTask(task, 'completed', nonempty(item.final_response) || label);
+      else if (status === 'completed') this.completeTask(task, 'completed', nonempty(item.final_response) || label, typedUsage);
       else {
         const doing = live.lastAssistantLine || live.currentTool;
-        const typedUsage = taskUsageOf(item, live);
         const mapped = LIVE_STATUS.has(status) ? status : 'running';
         if (!doing && !typedUsage && mapped === 'running') continue;
         this.progressTask(task, { description: doing || 'running', summary: live.lastAssistantLine,
           lastToolName: live.currentTool, status: mapped, typedUsage });
       }
     }
+  }
+  // Lead Speed is a number, not the packed footer string. null means no comparable sample yet.
+  speedUpdated(event) {
+    if (event.name !== 'rubato.speed.updated') return;
+    const data = record(event.data);
+    if (!('speed' in data)) return;
+    const speed = data.speed === null ? null : asInt(data.speed);
+    if (data.speed !== null && speed === undefined) return;
+    this.event('thread.metadata.updated', { metadata: { speedIndex: speed } });
   }
   project(event) {
     switch (event.type) {
@@ -506,7 +519,7 @@ export class EventProjection {
         this.usage(event.message?.usage ?? event.usage, event.message);
         break;
       case 'extension_ui_request': this.question(event); break;
-      case 'extension_event': this.taskUpdated(event); break;
+      case 'extension_event': this.speedUpdated(event); this.taskUpdated(event); break;
       case 'tool_execution_start': case 'tool_execution_update': case 'tool_execution_end': {
         const itemType = toolType(event.toolName);
         const spawn = SPAWN_TOOLS.has(event.toolName);

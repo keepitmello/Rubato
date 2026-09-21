@@ -23,6 +23,12 @@
     "apps/web/src/components/ChatView.tsx": "bdc4fe3edaca440aa5b53bf24277ec926d1db454f201d5dd3439a1fcd31633e1",
     "apps/web/src/composer-logic.ts": "6b6b2b50bfd9a146eff4bea2b75aee902c49f9e3926118f86609eaf06b8756c3",
     "apps/web/src/composer-logic.test.ts": "0f621bd6e2a5375d06386856f44076bef98e70166b8bd4cdb569b48570f44bef",
-    "packages/shared/src/composerTrigger.ts": "f162906ade8b91a0c89fae70e8d7a6cfe786cf3eb4d39a64b401cd466e7a63ab"
+    "packages/shared/src/composerTrigger.ts": "f162906ade8b91a0c89fae70e8d7a6cfe786cf3eb4d39a64b401cd466e7a63ab",
+    "packages/contracts/src/providerRuntime.ts": "e71f22a1408477569c198a62ccddefdad184a5853bdf90d7844f318d2f3eb8c4",
+    "packages/client-runtime/src/state/subagentRuntime.ts": "b58ed42f197847aa01231f6d0d67a923709d4f128d7b1a219f46cdd2f2527cbc",
+    "apps/web/src/components/AgentsPanel.tsx": "db6afe4b4ffee4522509993407f25b4cfbe02cdfff7c88faa0900376ea4bab14",
+    "apps/web/src/components/chat/MessagesTimeline.tsx": "f0902a4f84a792008ff681218cebea0d0ae526fbb06a67c78aedcdf01598e919",
+    "apps/web/src/components/chat/ChatComposer.tsx": "4c897148f3ab5cba380b4d7f4e6959910e4506d1a1c8d04930a54119ceadcaff",
+    "apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts": "ffa0e6a7c8482c299486ade0b3666efafbd421a4e5855cde07ed23a030a8348b"
   }
 }

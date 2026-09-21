@@ -287,6 +287,21 @@ const edits = {
       '    if (!isQueuedMessageDue({ message: nextQueuedMessage, phase, latestToolActivityId })) return;\n    // A queued message is a follow-up: it runs as its own turn once this one\n    // ends. Releasing it at a tool boundary would make the row\'s Send now\n    // arrow mean nothing — that arrow is the promotion to a steer.\n    if (phase === "running" && selectedProvider === ProviderDriverKind.make("rubato-pi")) return;\n    sendQueuedMessage(nextQueuedMessage);\n  }, [\n    isSendBusy,\n    latestToolActivityId,\n    nextQueuedMessage,\n    phase,\n    queueBlockedByPendingRequest,\n    queueSendGate,\n    selectedProvider,\n  ]);',
       'replace',
     ],
+    [
+      'import {\n  deriveAgentPanelModel,\n  foldSubagentActivities,\n} from "@t3tools/client-runtime/state/subagentRuntime";',
+      'import {\n  deriveAgentPanelModel,\n  foldSubagentActivities,\n  formatSpeedLabel,\n  latestSessionSpeed,\n} from "@t3tools/client-runtime/state/subagentRuntime";',
+      'replace',
+    ],
+    [
+      '  const activeContextWindow = useMemo(\n    () => deriveLatestContextWindowSnapshot(threadActivities),\n    [threadActivities],\n  );',
+      '  const activeContextWindow = useMemo(\n    () => deriveLatestContextWindowSnapshot(threadActivities),\n    [threadActivities],\n  );\n  const sessionSpeedLabel = useMemo(\n    () =>\n      selectedProvider === ProviderDriverKind.make("rubato-pi")\n        ? formatSpeedLabel(latestSessionSpeed(threadActivities))\n        : null,\n    [selectedProvider, threadActivities],\n  );',
+      'replace',
+    ],
+    [
+      '                            activeContextWindow={activeContextWindow}',
+      '                            activeContextWindow={activeContextWindow}\n                            sessionSpeedLabel={sessionSpeedLabel}',
+      'replace',
+    ],
   ],
   'apps/mobile/src/lib/threadActivity.ts': [
     [
@@ -366,6 +381,125 @@ const edits = {
     [
       '  it("keeps slash command detection active for provider commands", () => {\n    const text = "/rev";\n    const trigger = detectComposerTrigger(text, text.length);\n\n    expect(trigger).toEqual({\n      kind: "slash-command",\n      query: "rev",\n      rangeStart: 0,\n      rangeEnd: text.length,\n    });\n  });',
       '  it("keeps slash command detection active for provider commands", () => {\n    const text = "/rev";\n    const trigger = detectComposerTrigger(text, text.length);\n\n    expect(trigger).toEqual({\n      kind: "slash-command",\n      query: "rev",\n      rangeStart: 0,\n      rangeEnd: text.length,\n    });\n  });\n\n  it("opens the slash menu from a bare slash after other text", () => {\n    const text = "then /";\n    expect(detectComposerTrigger(text, text.length)).toEqual({\n      kind: "slash-command",\n      query: "",\n      rangeStart: "then ".length,\n      rangeEnd: text.length,\n    });\n  });\n\n  it("detects a slash command after leading prose", () => {\n    const text = "please /rev";\n    expect(detectComposerTrigger(text, text.length)).toEqual({\n      kind: "slash-command",\n      query: "rev",\n      rangeStart: "please ".length,\n      rangeEnd: text.length,\n    });\n  });\n\n  it("detects a second slash after a skill mention", () => {\n    const text = "$review /sk";\n    expect(detectComposerTrigger(text, text.length)).toEqual({\n      kind: "slash-command",\n      query: "sk",\n      rangeStart: "$review ".length,\n      rangeEnd: text.length,\n    });\n  });\n\n  it("does not treat path-like tokens as slash commands", () => {\n    expect(detectComposerTrigger("see /usr/bin", "see /usr/bin".length)).toBeNull();\n    expect(detectComposerTrigger("note //", "note //".length)).toBeNull();\n  });',
+      'replace',
+    ],
+  ],
+  // Speed Index replaces the agent-row token counter, and the lead score sits
+  // in the composer footer. The packed CLI status line stays off the wire.
+  'packages/contracts/src/providerRuntime.ts': [
+    [
+      '  toolUses: Schema.optional(NonNegativeInt),\n  durationMs: Schema.optional(NonNegativeInt),\n});\nexport type RuntimeTaskUsage = typeof RuntimeTaskUsage.Type;',
+      '  toolUses: Schema.optional(NonNegativeInt),\n  durationMs: Schema.optional(NonNegativeInt),\n  speedIndex: Schema.optional(NonNegativeInt),\n});\nexport type RuntimeTaskUsage = typeof RuntimeTaskUsage.Type;',
+      'replace',
+    ],
+  ],
+  'packages/client-runtime/src/state/subagentRuntime.ts': [
+    [
+      '  readonly toolUses?: number;\n  readonly durationMs?: number;\n}',
+      '  readonly toolUses?: number;\n  readonly durationMs?: number;\n  readonly speedIndex?: number;\n}',
+      'replace',
+    ],
+    [
+      '    toolUses?: number;\n    durationMs?: number;\n  } = { totalTokens };',
+      '    toolUses?: number;\n    durationMs?: number;\n    speedIndex?: number;\n  } = { totalTokens };',
+      'replace',
+    ],
+    [
+      '  const durationMs = asCount(record.durationMs);\n  if (durationMs !== undefined) usage.durationMs = durationMs;\n  return usage;',
+      '  const durationMs = asCount(record.durationMs);\n  if (durationMs !== undefined) usage.durationMs = durationMs;\n  const speedIndex = asCount(record.speedIndex);\n  if (speedIndex !== undefined) usage.speedIndex = speedIndex;\n  return usage;',
+      'replace',
+    ],
+    [
+      '    toolUses?: number;\n    durationMs?: number;\n  } = { totalTokens: Math.max(current.totalTokens, incoming.totalTokens) };',
+      '    toolUses?: number;\n    durationMs?: number;\n    speedIndex?: number;\n  } = { totalTokens: Math.max(current.totalTokens, incoming.totalTokens) };',
+      'replace',
+    ],
+    [
+      '  const durationMs = pick(current.durationMs, incoming.durationMs);\n  if (durationMs !== undefined) merged.durationMs = durationMs;\n  return merged;',
+      '  const durationMs = pick(current.durationMs, incoming.durationMs);\n  if (durationMs !== undefined) merged.durationMs = durationMs;\n  const speedIndex = incoming.speedIndex !== undefined ? incoming.speedIndex : current.speedIndex;\n  if (speedIndex !== undefined) merged.speedIndex = speedIndex;\n  return merged;',
+      'replace',
+    ],
+    [
+      'export function formatSubagentTokenCount(totalTokens: number): string {',
+      'export function formatSpeedLabel(score: number | null | undefined): string {\n  return typeof score === "number" && Number.isFinite(score) ? `Speed ${Math.round(score)}` : "Speed —";\n}\n\nexport function latestSessionSpeed(\n  activities: readonly { kind: string; payload: unknown }[],\n): number | null {\n  for (let index = activities.length - 1; index >= 0; index -= 1) {\n    const activity = activities[index];\n    if (!activity || activity.kind !== "session.speed.updated") continue;\n    const payload = activity.payload;\n    if (!payload || typeof payload !== "object") return null;\n    const score = (payload as { speedIndex?: unknown }).speedIndex;\n    return typeof score === "number" && Number.isFinite(score) ? Math.round(score) : null;\n  }\n  return null;\n}\n\nexport function formatSubagentTokenCount(totalTokens: number): string {',
+      'replace',
+    ],
+  ],
+  'apps/web/src/components/AgentsPanel.tsx': [
+    [
+      '  formatSubagentModelLabel,\n  formatSubagentTokenCount,\n} from "@t3tools/client-runtime/state/subagentRuntime";',
+      '  formatSubagentModelLabel,\n  formatSpeedLabel,\n} from "@t3tools/client-runtime/state/subagentRuntime";',
+      'replace',
+    ],
+    [
+      '    agent.usage ? `${formatSubagentTokenCount(agent.usage.totalTokens)} tok` : "— tok",',
+      '    formatSpeedLabel(agent.usage?.speedIndex),',
+      'replace',
+    ],
+    [
+      '  const members = workflowMembers(group);\n  const failed = members.filter((member) => member.status === "failed").length;\n  // Coordinator usage may already aggregate members (panel-footer rule):\n  // count it only when there are no member rows to sum.\n  const totalTokens = members.reduce(\n    (sum, member) => sum + (member.usage?.totalTokens ?? 0),\n    members.length === 0 ? (group.workflow.usage?.totalTokens ?? 0) : 0,\n  );\n  const elapsed =',
+      '  const members = workflowMembers(group);\n  const failed = members.filter((member) => member.status === "failed").length;\n  const elapsed =',
+      'replace',
+    ],
+    [
+      '          <span>{members.length} agents</span>\n          <span className="tabular-nums">· {formatSubagentTokenCount(totalTokens)} tok</span>\n          {elapsed ? <span className="tabular-nums">· {elapsed}</span> : null}',
+      '          <span>{members.length} agents</span>\n          {elapsed ? <span className="tabular-nums">· {elapsed}</span> : null}',
+      'replace',
+    ],
+    [
+      '          {model.settledCount > 0 ? <span>{model.settledCount} settled</span> : null}\n        </span>\n        <span className="tabular-nums">Σ {formatSubagentTokenCount(model.totalTokens)} tok</span>\n      </footer>',
+      '          {model.settledCount > 0 ? <span>{model.settledCount} settled</span> : null}\n        </span>\n      </footer>',
+      'replace',
+    ],
+  ],
+  'apps/web/src/components/chat/MessagesTimeline.tsx': [
+    [
+      '  formatSubagentModelLabel,\n  formatSubagentTokenCount,\n  isActiveSubagentStatus,',
+      '  formatSubagentModelLabel,\n  formatSpeedLabel,\n  isActiveSubagentStatus,',
+      'replace',
+    ],
+    [
+      '    agent.usage && agent.usage.totalTokens > 0\n      ? `${formatSubagentTokenCount(agent.usage.totalTokens)} tok`\n      : null,',
+      '    formatSpeedLabel(agent.usage?.speedIndex),',
+      'replace',
+    ],
+  ],
+  'apps/web/src/components/chat/ChatComposer.tsx': [
+    [
+      'const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(props: {\n  compact: boolean;\n  activeContextWindow: ContextWindowSnapshot | null;',
+      'const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(props: {\n  compact: boolean;\n  activeContextWindow: ContextWindowSnapshot | null;\n  sessionSpeedLabel?: string | null;',
+      'replace',
+    ],
+    [
+      '  return (\n    <>\n      {props.activeContextWindow ? (',
+      '  return (\n    <>\n      {props.sessionSpeedLabel ? (\n        <span className="shrink-0 px-1 font-mono text-[11px] tabular-nums text-muted-foreground">\n          {props.sessionSpeedLabel}\n        </span>\n      ) : null}\n      {props.activeContextWindow ? (',
+      'replace',
+    ],
+    [
+      '  // Context window\n  activeContextWindow: ContextWindowSnapshot | null;',
+      '  // Context window\n  activeContextWindow: ContextWindowSnapshot | null;\n  sessionSpeedLabel?: string | null;',
+      'replace',
+    ],
+    [
+      '    activeThreadModelSelection,\n    activeContextWindow,\n    compactThreadUnavailable,',
+      '    activeThreadModelSelection,\n    activeContextWindow,\n    sessionSpeedLabel,\n    compactThreadUnavailable,',
+      'replace',
+    ],
+    [
+      '                  isComposerResting &&\n                    ((settings.contextWindowMeterEnabled && activeContextWindow) ||\n                    reserveContextWindowMeter\n                      ? "pr-28"\n                      : showComposerAttachAction\n                        ? "pr-20"\n                        : "pr-12"),',
+      '                  isComposerResting &&\n                    (sessionSpeedLabel\n                      ? "pr-44"\n                      : (settings.contextWindowMeterEnabled && activeContextWindow) ||\n                          reserveContextWindowMeter\n                        ? "pr-28"\n                        : showComposerAttachAction\n                          ? "pr-20"\n                          : "pr-12"),',
+      'replace',
+    ],
+    [
+      '                    activeContextWindow={\n                      settings.contextWindowMeterEnabled ? activeContextWindow : null\n                    }',
+      '                    activeContextWindow={\n                      settings.contextWindowMeterEnabled ? activeContextWindow : null\n                    }\n                    sessionSpeedLabel={sessionSpeedLabel}',
+      'replace',
+    ],
+  ],
+  'apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts': [
+    [
+      '    case "thread.token-usage.updated": {\n      const payload = buildContextWindowActivityPayload(event);',
+      '    case "thread.metadata.updated": {\n      const metadata = event.payload.metadata;\n      if (metadata === undefined || !("speedIndex" in metadata)) return [];\n      const raw = metadata.speedIndex;\n      const speedIndex =\n        typeof raw === "number" && Number.isFinite(raw) && raw >= 0 ? Math.round(raw) : null;\n      return [\n        {\n          id: EventId.make(`session-speed:${event.threadId}`),\n          createdAt: event.createdAt,\n          tone: "info",\n          kind: "session.speed.updated",\n          summary: speedIndex === null ? "Speed —" : `Speed ${speedIndex}`,\n          payload: { speedIndex },\n          turnId: toTurnId(event.turnId) ?? null,\n          ...maybeSequence,\n        },\n      ];\n    }\n\n    case "thread.token-usage.updated": {\n      const payload = buildContextWindowActivityPayload(event);',
       'replace',
     ],
   ],
