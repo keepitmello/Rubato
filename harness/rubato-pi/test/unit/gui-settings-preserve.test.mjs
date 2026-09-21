@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 // `rubato update`, and write-gui-settings.mjs is the step inside it that
 // touches the app's own settings file. It used to overwrite the model
 // selections outright, so each restart put the default model back to
-// xai/grok-4.6 and dropped the reasoning effort the user had chosen. What the
+// xai/grok-4.7 and dropped the reasoning effort the user had chosen. What the
 // installer owns is the wiring (driver, bridge path, descriptor path); the
 // preferences belong to whoever is using the app.
 const script = fileURLToPath(new URL("../../../t3-integration/write-gui-settings.mjs", import.meta.url));
@@ -41,7 +41,7 @@ function writeSettings(t, existing) {
 test("a first install gets a working default model", (t) => {
   const { settings } = writeSettings(t, null);
   assert.equal(settings.defaultModelSelection.instanceId, "rubato");
-  assert.equal(settings.defaultModelSelection.model, "xai/grok-4.6");
+  assert.equal(settings.defaultModelSelection.model, "xai/grok-4.7");
   // The keys must exist: an absent textGenerationModelSelection decodes to
   // codex and pulls a driver we just turned off back onto the screen.
   assert.ok(settings.textGenerationModelSelection);
@@ -59,8 +59,8 @@ test("a reinstall keeps the model the user chose, options and all", (t) => {
   assert.deepEqual(settings.defaultModelSelection, chosen);
   // Thread titles and commit messages are errands: they get the cheap model,
   // not whatever expensive one the user picked for the conversation.
-  assert.equal(settings.textGenerationModelSelection.model, "xai/grok-4.6");
-  assert.equal(settings.sourceControlWriterModelSelection.model, "xai/grok-4.6");
+  assert.equal(settings.textGenerationModelSelection.model, "xai/grok-4.7");
+  assert.equal(settings.sourceControlWriterModelSelection.model, "xai/grok-4.7");
 });
 
 test("a reinstall keeps an errand model the user set by hand", (t) => {
@@ -99,12 +99,12 @@ test("wiring is rewritten every time, because the repo can move", (t) => {
 
 test("a reordered model list survives, and new models join the end", (t) => {
   const { settings } = writeSettings(t, {
-    providerModelPreferences: { rubato: { hiddenModels: ["xai/grok-4.6"], modelOrder: ["anthropic/claude-opus-5"] } },
+    providerModelPreferences: { rubato: { hiddenModels: ["xai/grok-4.7"], modelOrder: ["anthropic/claude-opus-5"] } },
   });
   const order = settings.providerModelPreferences.rubato.modelOrder;
   assert.equal(order[0], "anthropic/claude-opus-5");
   assert.ok(order.length > 1, "catalog models should be appended");
-  assert.deepEqual(settings.providerModelPreferences.rubato.hiddenModels, ["xai/grok-4.6"]);
+  assert.deepEqual(settings.providerModelPreferences.rubato.hiddenModels, ["xai/grok-4.7"]);
 });
 
 // Fonts, themes and the rest of client-settings.json are values we never set.

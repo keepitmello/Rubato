@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 import { senpiNested } from "../../src/engine-paths.mjs";
-import { CURSOR_GROK_46_DEFAULT_LEVEL, CURSOR_GROK_46_FAST_BY_LEVEL, CURSOR_GROK_46_ID } from "../../src/cursor-grok-fast.mjs";
+import { CURSOR_GROK_DEFAULT_LEVEL, CURSOR_GROK_FAST_BY_LEVEL, CURSOR_GROK_ID } from "../../src/cursor-grok-fast.mjs";
 import { resolvedCursorCallIdentity } from "../../src/cursor-route.mjs";
 import { resolveAppliedEffort, resolveCallIdentity } from "../../src/speed-index-identity.mjs";
 import { withRubatoStream } from "../../src/rubato-stream.mjs";
@@ -18,11 +18,11 @@ const map = { off: "none", low: "low", medium: "medium", high: "high" };
 const codex = { provider: "openai-codex", id: "gpt-5.6-sol", thinkingLevelMap: map };
 const grok = {
   provider: "cursor",
-  id: CURSOR_GROK_46_ID,
+  id: CURSOR_GROK_ID,
   thinkingLevelMap: { off: null, low: "low", medium: "medium", high: "high", xhigh: "xhigh" },
-  compat: { cursorGrokFastByLevel: { ...CURSOR_GROK_46_FAST_BY_LEVEL } },
+  compat: { cursorGrokFastByLevel: { ...CURSOR_GROK_FAST_BY_LEVEL } },
 };
-const catalog = Object.values(CURSOR_GROK_46_FAST_BY_LEVEL).map((id) => ({ provider: "cursor", id }));
+const catalog = Object.values(CURSOR_GROK_FAST_BY_LEVEL).map((id) => ({ provider: "cursor", id }));
 
 function scriptedStream(events, { result } = {}) {
   return () => {
@@ -64,12 +64,12 @@ test("applied effort is call-time reasoning, not a UI label", () => {
 
 test("Cursor default and explicit effort report the post-pin variant", () => {
   const def = resolvedCursorCallIdentity(grok, {}, catalog);
-  assert.equal(def.identity.effort, CURSOR_GROK_46_DEFAULT_LEVEL);
-  assert.equal(def.identity.model, CURSOR_GROK_46_FAST_BY_LEVEL.high);
+  assert.equal(def.identity.effort, CURSOR_GROK_DEFAULT_LEVEL);
+  assert.equal(def.identity.model, CURSOR_GROK_FAST_BY_LEVEL.high);
   assert.equal(def.identity.effortSource, "thinkingSelection");
   const explicit = resolvedCursorCallIdentity(grok, { thinkingSelection: { level: "medium" } }, catalog);
   assert.equal(explicit.identity.effort, "medium");
-  assert.equal(explicit.identity.model, CURSOR_GROK_46_FAST_BY_LEVEL.medium);
+  assert.equal(explicit.identity.model, CURSOR_GROK_FAST_BY_LEVEL.medium);
 });
 
 test("outer stream records post-route identity after the Cursor pin callback", async () => {
@@ -91,7 +91,7 @@ test("outer stream records post-route identity after the Cursor pin callback", a
     speedIndexStore: store,
   }));
   assert.equal(store.samples.length, 1);
-  assert.equal(store.samples[0].model, CURSOR_GROK_46_FAST_BY_LEVEL.high);
+  assert.equal(store.samples[0].model, CURSOR_GROK_FAST_BY_LEVEL.high);
   assert.equal(store.samples[0].effort, "high");
   assert.equal(store.samples[0].streamKind, "main");
   assert.equal(store.samples[0].terminalStatus, "stop");
@@ -142,14 +142,14 @@ test("auxiliary streamKind is excluded; Cursor exec-resolved is diagnostic-only"
 
 
 test("thinkingLevelMap remaps requested effort; unsupported off:null is unknown", () => {
-  const remapped = { provider: "xai", id: "grok-4.6", thinkingLevelMap: { off: "none", high: "xhigh" } };
+  const remapped = { provider: "xai", id: "grok-4.7", thinkingLevelMap: { off: "none", high: "xhigh" } };
   const mapped = resolveAppliedEffort(remapped, { reasoning: "high" });
   assert.equal(mapped.effort, "xhigh");
   assert.equal(mapped.source, "thinkingLevelMap");
   const offNone = resolveAppliedEffort(remapped, {});
   assert.equal(offNone.effort, "none");
   assert.equal(offNone.source, "thinkingLevelMap");
-  const noOff = { provider: "cursor", id: CURSOR_GROK_46_ID, thinkingLevelMap: { off: null, high: "high" } };
+  const noOff = { provider: "cursor", id: CURSOR_GROK_ID, thinkingLevelMap: { off: null, high: "high" } };
   assert.equal(resolveAppliedEffort(noOff, { reasoning: "off" }).source, "unknown");
   assert.equal(resolveAppliedEffort(noOff, {}).source, "unknown");
   assert.equal(resolveAppliedEffort(noOff, {}).effort, undefined);
@@ -163,7 +163,7 @@ test("post-Cursor pin reports thinkingSelection, not a map guess", () => {
   const pinned = resolveAppliedEffort(grok, { thinkingSelection: { level: "medium" } });
   assert.equal(pinned.effort, "medium");
   assert.equal(pinned.source, "thinkingSelection");
-  const identity = resolveCallIdentity(grok, { thinkingSelection: { level: "medium", legacyVariantId: CURSOR_GROK_46_FAST_BY_LEVEL.medium } });
-  assert.equal(identity.model, CURSOR_GROK_46_FAST_BY_LEVEL.medium);
+  const identity = resolveCallIdentity(grok, { thinkingSelection: { level: "medium", legacyVariantId: CURSOR_GROK_FAST_BY_LEVEL.medium } });
+  assert.equal(identity.model, CURSOR_GROK_FAST_BY_LEVEL.medium);
   assert.equal(identity.effortSource, "thinkingSelection");
 });

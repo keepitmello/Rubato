@@ -3,7 +3,7 @@ import { buildRetryGuidance, detectDelegateTaskError } from "./index"
 
 describe("delegate task retry contract", () => {
   test("#given an unavailable model #when detected #then retry guidance preserves available options", () => {
-    const output = '[ERROR] model_unavailable. Available models: openai/gpt-5.6-sol, xai/grok-4.6'
+    const output = '[ERROR] model_unavailable. Available models: openai/gpt-5.6-sol, xai/grok-4.7'
     const error = detectDelegateTaskError(output)
 
     expect(error).toEqual({

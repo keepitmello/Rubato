@@ -38,7 +38,7 @@ async function turn(url, n, user) {
       "x-aside-session-id": SESSION,
     },
     body: JSON.stringify({
-      model: "cursor/grok-4.6",
+      model: "cursor/grok-4.7",
       stream: true,
       messages: [
         { role: "system", content: PREFIX },

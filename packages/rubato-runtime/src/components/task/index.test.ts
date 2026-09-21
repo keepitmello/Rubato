@@ -136,7 +136,7 @@ async function seedTeamRuntime(cwd: string, leadSessionId: string, memberName = 
   const stateDir = { project_dir: cwd }
   const config = toTeamCoreConfig(settings, teamStorageBaseDir(stateDir))
   const spec = normalizeSenpiTeamSpec({
-    members: [{ name: memberName, kind: "owner", model: "xai/grok-4.6", prompt: "member" }],
+    members: [{ name: memberName, kind: "owner", model: "xai/grok-4.7", prompt: "member" }],
   }, "liveness-test")
   const runtime = await createRuntimeState(spec, leadSessionId, "project", config)
   await transitionRuntimeState(runtime.teamRunId, (state) => ({ ...state, status: "active" }), config)
@@ -151,7 +151,7 @@ function terminalRecord(teamRunId: string, memberName = "crash"): TaskRecord {
     root_session_id: "lead-session",
     depth: 1,
     execution_mode: "process",
-    model: "xai/grok-4.6",
+    model: "xai/grok-4.7",
     status: "error",
     residency_state: "resident",
     created_at: "2026-07-29T00:00:00.000Z",

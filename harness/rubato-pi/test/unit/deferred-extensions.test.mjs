@@ -22,7 +22,7 @@ test("headless CLI covers print, json, rpc, and app-server", () => {
   assert.equal(isHeadlessCli(["--mode", "rpc"]), true);
   assert.equal(isHeadlessCli(["--mode=rpc"]), true);
   assert.equal(isHeadlessCli(["app-server"]), true);
-  assert.equal(isHeadlessCli(["--model", "xai/grok-4.6"]), false);
+  assert.equal(isHeadlessCli(["--model", "xai/grok-4.7"]), false);
 });
 
 test("only an interactive TTY defers extension activation", () => {

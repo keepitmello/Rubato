@@ -136,6 +136,29 @@ export function fable51Models(nativeModels) {
   }];
 }
 
+const GROK_47_ID = "grok-4.7";
+const GROK_47_TEMPLATE_ID = "grok-4.6";
+
+/**
+ * Grok 4.7 은 pinned xai catalog 에 없다. pin 을 올릴 수 없다 — 0.86.1 이 최신
+ * published 이고 그 카탈로그가 4.6 에서 멈춘다. 그래서 pin 의 Grok 4.6 에서 파생한다.
+ *
+ * 필드를 손으로 다 적지 않는다. `api`, `cost`, `compat`, `thinkingLevelMap` 같은 것을
+ * 빼뜨리면 provider 가 조용히 다른 요청을 만든다. xAI 가 보고하는 4.7 의 context
+ * (500k)·가격·reasoning 단계가 4.6 과 같아서 4.6 이 그대로 틀이 된다 — id 와 표시명만
+ * 덮는다 (2026-09-22 `GET /v1/language-models` 실측).
+ */
+export function grok47Models(nativeModels) {
+  if (nativeModels.some((model) => model.id === GROK_47_ID)) return [];
+  const template = nativeModels.find((model) => model.id === GROK_47_TEMPLATE_ID);
+  if (!template) throw new Error("pinned xai catalog has no grok-4.6 to derive Grok 4.7 from");
+  return [{
+    ...template,
+    id: GROK_47_ID,
+    name: "Grok 4.7",
+  }];
+}
+
 /**
  * Daybreak 모델 정의를 native 모델 하나에서 파생시킨다.
  *
@@ -274,7 +297,7 @@ export async function directProviders({
     CODEX_PICKER_IDS,
   );
 
-  // xAI 의 `xhigh` map 은 pinned 그대로다. grok-4.6 은 catalog 기본 차로다.
+  // xAI 의 `xhigh` map 은 pinned 그대로다. grok-4.7 은 catalog 기본 차로다.
   //
   // catalog 는 grok 의 `maxTokens` 를 contextWindow(500k)와 같게 두는데, 그러면 pi 가
   // 매 호출 `max_output_tokens = contextWindow - 현재 컨텍스트 추정 - 4096` 을 보낸다
@@ -282,7 +305,11 @@ export async function directProviders({
   // 넣어서, 값이 턴마다 바뀌면 접두사가 같아도 전부 miss 다 (2026-09-02 실측:
   // 동일 body 재전송 cached 7808 → max_output_tokens 만 바꾸면 512). 고정 상한을 줘서
   // 컨텍스트가 거의 찰 때까지 같은 값이 나가게 한다.
-  const xai = withPickerIds(withMaxTokensCap(xaiProvider(), XAI_MAX_OUTPUT_TOKENS), XAI_PICKER_IDS);
+  const xaiNative = xaiProvider();
+  const xai = withPickerIds(
+    withMaxTokensCap(withExtraModels(xaiNative, grok47Models(xaiNative.getModels())), XAI_MAX_OUTPUT_TOKENS),
+    XAI_PICKER_IDS,
+  );
 
   // Anthropic 은 pinned provider + setup-token fallback resolver 하나다. wire 와
   // tool 이름 규칙은 pin 이 소유한다. Fable 5.1 만 pin 에 없어 Fable 5에서 파생한다.

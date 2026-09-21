@@ -69,7 +69,7 @@ test("default lane is grok and stdout is the worker's final answer", (t) => {
     "--name",
     "job-a",
     "--model",
-    "xai/grok-4.6",
+    "xai/grok-4.7",
   ]);
   assert.equal(box.stdin(), "find the leak\n");
 });
@@ -78,7 +78,7 @@ test("grokfast selects the Cursor Fast wire id", (t) => {
   const box = harness(t);
   const result = box.run(["fast-job", "grokfast"]);
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(box.args().at(-1), "cursor/cursor-grok-4.6-high-fast");
+  assert.equal(box.args().at(-1), "cursor/grok-4.7-high-fast");
 });
 
 test("--continue resumes the named session without changing the model", (t) => {

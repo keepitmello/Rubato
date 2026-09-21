@@ -12,7 +12,7 @@ function levels(model, hooks) {
 }
 
 function allowXhigh(model) {
-  return model.thinkingLevelMap?.xhigh != null || /opus-5|sonnet-5|fable-5|gpt-5\.6|grok-4\.6/.test(model.id);
+  return model.thinkingLevelMap?.xhigh != null || /opus-5|sonnet-5|fable-5|gpt-5\.6|grok-4\.7/.test(model.id);
 }
 
 function allowMax(model) {
@@ -70,10 +70,10 @@ test("공식 OpenAI GPT-5.6 도 off/minimal 없이 low 부터 순환한다", () 
   );
 });
 
-test("Grok 4.6 은 맵이 막은 off/minimal/max 를 순환하지 않는다", () => {
+test("Grok 4.7 은 맵이 막은 off/minimal/max 를 순환하지 않는다", () => {
   assert.deepEqual(
     levels({
-      id: "grok-4.6",
+      id: "grok-4.7",
       reasoning: true,
       thinkingLevelMap: {
         off: null,

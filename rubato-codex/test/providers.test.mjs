@@ -23,7 +23,7 @@ test("OpenCodex catalog discovery exposes identifiers but no provider configurat
     port: 10100,
     providers: {
       openai: { authMode: "oauth", secret: "must-not-leak" },
-      xai: { authMode: "oauth", accessToken: "must-not-leak", models: ["grok-4.6", 42, " bad"] },
+      xai: { authMode: "oauth", accessToken: "must-not-leak", models: ["grok-4.7", 42, " bad"] },
       cursor: { authMode: "oauth", models: ["gpt-5.6-sol", "gpt-5.6-terra"], selectedModels: ["gpt-5.6-sol", null] },
     },
     disabledModels: ["xai/grok-disabled", false],
@@ -33,7 +33,7 @@ test("OpenCodex catalog discovery exposes identifiers but no provider configurat
   assert.equal(catalog.port, 10100);
   assert.deepEqual(catalog.providers.map((provider) => provider.id), ["anthropic", "cursor", "kiro", "xai"]);
   assert.deepEqual(catalog.providers.find((provider) => provider.id === "cursor").models, ["cursor/gpt-5.6-sol"]);
-  assert.deepEqual(catalog.providers.find((provider) => provider.id === "xai").models, ["xai/grok-4.6"]);
+  assert.deepEqual(catalog.providers.find((provider) => provider.id === "xai").models, ["xai/grok-4.7"]);
   assert.doesNotMatch(JSON.stringify(catalog), /secret|accessToken|must-not-leak/);
 });
 

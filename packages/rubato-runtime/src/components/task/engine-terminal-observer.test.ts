@@ -103,7 +103,7 @@ async function spawn(engine: TaskEngine, name: string): Promise<string> {
     prompt: `work ${name}`,
     parent_session_id: "parent-session",
     depth: 0,
-    model: "xai/grok-4.6",
+    model: "xai/grok-4.7",
     name,
   })
   if (result.kind !== "started") throw new Error(`spawn failed: ${result.kind}`)

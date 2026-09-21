@@ -256,7 +256,7 @@ describe("team_create inline_spec schema shape", () => {
   test("#given a JSON-stringified inline spec #when team_create runs #then the parsed object reaches the service", async () => {
     // given
     const service = createFakeTeamService({ createTeam: async () => fakeCreateResult() })
-    const payload = JSON.stringify({ name: "demo", members: [{ name: "alpha", kind: "owner", model: "xai/grok-4.6", prompt: "work" }] })
+    const payload = JSON.stringify({ name: "demo", members: [{ name: "alpha", kind: "owner", model: "xai/grok-4.7", prompt: "work" }] })
 
     // when
     const result = await runTeamCreate(service, { inline_spec: payload })
@@ -265,7 +265,7 @@ describe("team_create inline_spec schema shape", () => {
     expect(result.details).toMatchObject({ kind: "created", team_name: "demo" })
     expect(service.calls[0]).toMatchObject({
       method: "createTeam",
-      args: [{ inlineSpec: { name: "demo", members: [{ name: "alpha", kind: "owner", model: "xai/grok-4.6", prompt: "work" }] } }],
+      args: [{ inlineSpec: { name: "demo", members: [{ name: "alpha", kind: "owner", model: "xai/grok-4.7", prompt: "work" }] } }],
     })
   })
 
@@ -273,13 +273,13 @@ describe("team_create inline_spec schema shape", () => {
     const verifier = {
       inline_spec: {
         name: "demo",
-        members: [{ name: "reviewer", kind: "verifier", model: "xai/grok-4.6", prompt: "review" }],
+        members: [{ name: "reviewer", kind: "verifier", model: "xai/grok-4.7", prompt: "review" }],
       },
     }
     const missingKind = {
       inline_spec: {
         name: "demo",
-        members: [{ name: "reviewer", model: "xai/grok-4.6", prompt: "review" }],
+        members: [{ name: "reviewer", model: "xai/grok-4.7", prompt: "review" }],
       },
     }
 
@@ -288,7 +288,7 @@ describe("team_create inline_spec schema shape", () => {
     expect(Value.Check(TeamCreateParams, {
       inline_spec: {
         name: "demo",
-        members: [{ name: "reviewer", kind: "verifier", model: "xai/grok-4.6", prompt: "review", category: "deep" }],
+        members: [{ name: "reviewer", kind: "verifier", model: "xai/grok-4.7", prompt: "review", category: "deep" }],
       },
     })).toBe(false)
   })
@@ -297,13 +297,13 @@ describe("team_create inline_spec schema shape", () => {
     const verifier = {
       inline_spec: {
         name: "demo",
-        members: [{ name: "reviewer", kind: "verifier", model: "xai/grok-4.6", prompt: "review" }],
+        members: [{ name: "reviewer", kind: "verifier", model: "xai/grok-4.7", prompt: "review" }],
       },
     }
     const missingKind = {
       inline_spec: {
         name: "demo",
-        members: [{ name: "reviewer", model: "xai/grok-4.6", prompt: "review" }],
+        members: [{ name: "reviewer", model: "xai/grok-4.7", prompt: "review" }],
       },
     }
 
@@ -312,7 +312,7 @@ describe("team_create inline_spec schema shape", () => {
     expect(Value.Check(TeamCreateParams, {
       inline_spec: {
         name: "demo",
-        members: [{ name: "reviewer", kind: "verifier", model: "xai/grok-4.6", prompt: "review", category: "deep" }],
+        members: [{ name: "reviewer", kind: "verifier", model: "xai/grok-4.7", prompt: "review", category: "deep" }],
       },
     })).toBe(false)
   })
@@ -320,15 +320,15 @@ describe("team_create inline_spec schema shape", () => {
   test("#given the team_create schema #when a single-member-object inline spec is validated #then it fails closed", () => {
     expect(
       Value.Check(TeamCreateParams, {
-        inline_spec: { name: "demo", members: { name: "alpha", kind: "owner", model: "xai/grok-4.6", prompt: "work" } },
+        inline_spec: { name: "demo", members: { name: "alpha", kind: "owner", model: "xai/grok-4.7", prompt: "work" } },
       }),
     ).toBe(false)
   })
 
   test("#given live models #when the schema is built #then members share Agent's model enum", () => {
-    const schema = buildTeamCreateParams(["xai/grok-4.6", "openai/gpt-5.6-sol"])
+    const schema = buildTeamCreateParams(["xai/grok-4.7", "openai/gpt-5.6-sol"])
     const memberSchema = schema.properties.inline_spec.anyOf[0].properties.members.items
-    expect(Reflect.get(memberSchema.properties.model, "enum")).toEqual(["openai/gpt-5.6-sol", "xai/grok-4.6"])
+    expect(Reflect.get(memberSchema.properties.model, "enum")).toEqual(["openai/gpt-5.6-sol", "xai/grok-4.7"])
   })
 
   test("#given a late live registry #when the team schema is read #then its model enum updates", () => {
@@ -337,8 +337,8 @@ describe("team_create inline_spec schema shape", () => {
     const memberSchema = schema.properties.inline_spec.anyOf[0].properties.members.items
     expect(Reflect.get(memberSchema.properties.model, "enum")).toBeUndefined()
 
-    models = ["xai/grok-4.6"]
-    expect(Reflect.get(memberSchema.properties.model, "enum")).toEqual(["xai/grok-4.6"])
+    models = ["xai/grok-4.7"]
+    expect(Reflect.get(memberSchema.properties.model, "enum")).toEqual(["xai/grok-4.7"])
   })
 
   test("#given a malformed JSON string inline spec #when team_create runs #then it rejects without calling the service", async () => {

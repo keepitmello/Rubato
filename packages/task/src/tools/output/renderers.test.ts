@@ -116,7 +116,7 @@ describe("AgentOutput renderers", () => {
   test("#given a host snapshot #when the status row renders #then agentId status and model are shown", () => {
     const line = firstLine(
       renderTaskOutputResult(
-        toolResult("ignored", { kind: "status", snapshot: snapshot({ model: "xai/grok-4.6", effort: "high" }) }),
+        toolResult("ignored", { kind: "status", snapshot: snapshot({ model: "xai/grok-4.7", effort: "high" }) }),
         RESULT_OPTIONS,
         TEST_THEME,
       ),
@@ -124,7 +124,7 @@ describe("AgentOutput renderers", () => {
     )
 
     expect(line).toContain("AgentOutput st_done completed")
-    expect(line).toContain("model:xai/grok-4.6")
+    expect(line).toContain("model:xai/grok-4.7")
     expect(line).toContain("effort:high")
   })
 

@@ -103,10 +103,10 @@ describe("findModelReference", () => {
       },
     }
 
-    const model = findModelReference(registry, "cursor/cursor-grok-4.6")
+    const model = findModelReference(registry, "cursor/grok-4.7")
 
-    expect(calls).toEqual([{ provider: "cursor", modelId: "cursor-grok-4.6-high-fast" }])
-    expect(model).toEqual({ provider: "cursor", id: "cursor-grok-4.6-high-fast" })
+    expect(calls).toEqual([{ provider: "cursor", modelId: "grok-4.7-high-fast" }])
+    expect(model).toEqual({ provider: "cursor", id: "grok-4.7-high-fast" })
   })
 })
 

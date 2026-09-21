@@ -16,10 +16,10 @@ function model(id) {
 
 test("목록 순서로 남고, 없는 id 는 만들지 않는다", () => {
   const kept = keepPickerIds(
-    [model("grok-4.3"), model("grok-4.6"), model("grok-4.5")],
+    [model("grok-4.3"), model("grok-4.7"), model("grok-4.5")],
     XAI_PICKER_IDS,
   );
-  assert.deepEqual(kept.map((entry) => entry.id), ["grok-4.6"]);
+  assert.deepEqual(kept.map((entry) => entry.id), ["grok-4.7"]);
 });
 
 test("Anthropic 이전 세대와 dated id 는 빠진다", () => {
@@ -119,12 +119,12 @@ test("두 번째 계정이 있으면 피커에 [sub] 행을 붙인다", () => {
 test("명단에 없는 프로바이더는 계정이 둘이어도 [sub] 행이 없다", () => {
   const provider = withSubAccountCopies({
     id: "xai",
-    getModels: () => [model("grok-4.6")],
+    getModels: () => [model("grok-4.7")],
     filterModels: (models) => models,
   });
   const credential = { accounts: [{ name: "default" }, { name: "login-2" }] };
-  assert.deepEqual(provider.filterModels(provider.getModels(), credential).map((entry) => entry.id), ["grok-4.6"]);
-  assert.deepEqual(provider.getModels().map((entry) => entry.id), ["grok-4.6"]);
+  assert.deepEqual(provider.filterModels(provider.getModels(), credential).map((entry) => entry.id), ["grok-4.7"]);
+  assert.deepEqual(provider.getModels().map((entry) => entry.id), ["grok-4.7"]);
 });
 
 test("Codex [sub] 는 Sol 과 Astra 만 붙는다", () => {

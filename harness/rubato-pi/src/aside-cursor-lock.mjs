@@ -1,11 +1,18 @@
 // Aside models.json 잠금. Cursor 면을 카탈로그 리프레시가 지워도 다시 박는다.
-// xAI grok-4.6 은 catalog 기본 차로다. 예전 priority 프록시로 묶인 baseUrl 만
+// xAI grok 행은 catalog 기본 차로다. 예전 priority 프록시로 묶인 baseUrl 만
 // 공식 upstream 으로 되돌린다.
 
 import { ASIDE_CURSOR_API_KEY, ASIDE_CURSOR_DEFAULT_HOST, ASIDE_CURSOR_DEFAULT_PORT } from "./aside-cursor.mjs";
 
 export const ASIDE_XAI_OAUTH_PROVIDER = "xai-grok-oauth";
-export const ASIDE_XAI_PRIORITY_MODEL = "grok-4.6";
+/**
+ * 이 face 가 xAI 로 내보내는 grok 행의 접두사.
+ *
+ * 버전을 이름에 넣지 않는다. 되돌리는 대상은 "예전 lock 이 우리 face 로 묶어 둔 행"이지
+ * 특정 세대가 아니고, xAI 행 목록은 우리 카탈로그가 아니라 Aside 가 채운다 — 세대를
+ * 박아 두면 그 행이 사라지는 순간 이 분기가 조용히 죽는다.
+ */
+export const ASIDE_XAI_GROK_PREFIX = "grok-";
 export const ASIDE_XAI_UPSTREAM = "https://api.x.ai";
 /**
  * Aside 의 xAI 모델 `max_output_tokens` 상한. Aside 카탈로그는 maxTokens 를
@@ -42,8 +49,8 @@ const ASIDE_CURSOR_GROK_ROW = {
 
 export function asideCursorGrokAllowlist() {
   return [
-    structuredClone({ id: "cursor/grok-4.6", name: "Grok 4.6 Fast [Cursor]", ...ASIDE_CURSOR_GROK_ROW }),
-    structuredClone({ id: "cursor/grok-4.6-fast", name: "Grok 4.6 Fast [Cursor]", ...ASIDE_CURSOR_GROK_ROW }),
+    structuredClone({ id: "cursor/grok-4.7", name: "Grok 4.7 Fast [Cursor]", ...ASIDE_CURSOR_GROK_ROW }),
+    structuredClone({ id: "cursor/grok-4.7-fast", name: "Grok 4.7 Fast [Cursor]", ...ASIDE_CURSOR_GROK_ROW }),
     structuredClone({ id: "cursor/gemini-3.8-flash", name: "3.8 Flash [Cursor/Gemini]", ...ASIDE_CURSOR_GROK_ROW }),
   ];
 }
@@ -81,7 +88,7 @@ export function lockAsideModels(data, options = {}) {
   if (Array.isArray(xai?.models)) {
     const face = asideXaiFaceUrl(host, port);
     for (const model of xai.models) {
-      if (model?.id === ASIDE_XAI_PRIORITY_MODEL && model.baseUrl === face) {
+      if (typeof model?.id === "string" && model.id.startsWith(ASIDE_XAI_GROK_PREFIX) && model.baseUrl === face) {
         model.baseUrl = `${ASIDE_XAI_UPSTREAM}/v1`;
       }
       if (model && typeof model === "object" && model.reasoning === true

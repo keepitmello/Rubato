@@ -203,7 +203,7 @@ test("installer records provider subset and preserves it on an update without --
     providers: {
       openai: {},
       cursor: { models: ["gpt-5.6-sol"], selectedModels: ["gpt-5.6-sol"] },
-      xai: { models: ["grok-4.6"] },
+      xai: { models: ["grok-4.7"] },
       anthropic: { models: ["claude-opus-5"] },
     },
   }));
@@ -244,7 +244,7 @@ test("OpenCodex routing is reconciled after Codex plugin config rewrites", async
   const opencodexHome = join(f.root, "opencodex-home");
   await mkdir(opencodexHome, { recursive: true });
   await writeFile(join(opencodexHome, "config.json"), JSON.stringify({
-    providers: { xai: { models: ["grok-4.6"] } },
+    providers: { xai: { models: ["grok-4.7"] } },
   }));
   await mkdir(f.codexHome, { recursive: true });
   await writeFile(join(f.codexHome, "config.toml"), 'openai_base_url = "http://127.0.0.1:10100/v1"\nmodel_catalog_json = "/tmp/catalog.json"\n');
