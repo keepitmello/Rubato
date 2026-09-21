@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
-const VERSION = "0.85.1";
+import { PI_VERSION as VERSION } from "../../pi-version.mjs";
 const CATALOG_IMPORT = 'import { admitPickerItems, modelPickerLabel, sortModelItems } from "../../../rubato-features/model-picker/catalog.mjs";';
 
 function replaceOnce(source, before, after, label) {

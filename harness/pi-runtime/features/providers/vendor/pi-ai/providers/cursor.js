@@ -89,7 +89,7 @@ export function cursorProvider() {
         fetchModels: fetchCursorModels,
         api: cursorAgentApi(),
     });
-    // Stock 0.85.1 intentionally has no `restoreModels` factory option. Adapt
+    // Stock 0.86.1 intentionally has no `restoreModels` factory option. Adapt
     // the stored publication at the provider boundary instead of patching the
     // shared stock registry or silently restoring stale Cursor variants.
     const refreshModels = provider.refreshModels;

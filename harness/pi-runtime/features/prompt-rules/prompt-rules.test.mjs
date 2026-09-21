@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { PI_VERSION } from "../rubato-components/pi-version.mjs";
 import { spawnSync } from "node:child_process";
 import {
   existsSync,
@@ -31,6 +32,12 @@ const sdk = await import(pathToFileURL(runtime.sdkEntry));
 const { AssistantMessageEventStream } = await import(pathToFileURL(join(
   runtime.codingAgentDir,
   "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js",
+)).href);
+// 0.86.0: provider stream 입력이 Context -> TranscriptContext 로 바뀌었다. TranscriptContext
+// 에는 messages 만 있으므로 시스템 프롬프트와 도구 목록을 messages 에서 되짚어 읽는다.
+const { getCurrentSystemPrompt, getCurrentTools } = await import(pathToFileURL(join(
+  runtime.codingAgentDir,
+  "node_modules/@earendil-works/pi-ai/dist/utils/transcript.js",
 )).href);
 const promptRules = await import(pathToFileURL(join(
   staged.root,
@@ -185,7 +192,7 @@ test("feature is additive-only, stock-version locked, and stages a complete owne
     "rubato-features/prompt-rules/role-prompt.mjs",
     "rubato-features/prompt-rules/THIRD_PARTY_NOTICES.md",
   ]);
-  assert.ok(files.every((entry) => entry.target === "runtime" && entry.version === "0.85.1"));
+  assert.ok(files.every((entry) => entry.target === "runtime" && entry.version === PI_VERSION));
   assert.ok(files.every((entry) => existsSync(entry.sourcePath)));
   assert.equal(staged.receipt.addedFiles.filter((entry) => entry.feature === "prompt-rules").length, files.length);
   for (const entry of files.filter((candidate) => candidate.path.endsWith(".mjs"))) {
@@ -209,9 +216,9 @@ test("freshly staged stock SDK consumes native root, static rule, nested AGENTS,
   let call = 0;
   fixture.session.agent.streamFunction = (_model, context) => {
     contexts.push({
-      systemPrompt: context.systemPrompt,
+      systemPrompt: getCurrentSystemPrompt(context.messages),
       messages: structuredClone(context.messages),
-      tools: context.tools.map((tool) => tool.name),
+      tools: getCurrentTools(context.messages).map((tool) => tool.name),
     });
     const response = call === 0
       ? assistant([{ type: "toolCall", id: "read-nested", name: "read", arguments: { path: project.target } }], "toolUse")
@@ -245,7 +252,7 @@ test("freshly staged stock SDK consumes native root, static rule, nested AGENTS,
   const reloadedContexts = [];
   call = 0;
   fixture.session.agent.streamFunction = (_model, context) => {
-    reloadedContexts.push({ systemPrompt: context.systemPrompt, messages: structuredClone(context.messages) });
+    reloadedContexts.push({ systemPrompt: getCurrentSystemPrompt(context.messages), messages: structuredClone(context.messages) });
     const response = call === 0
       ? assistant([{ type: "toolCall", id: "read-reloaded", name: "read", arguments: { path: project.target } }], "toolUse")
       : assistant("reloaded done");
@@ -272,7 +279,7 @@ test("stock extension flags turn nested and rule injection off without disabling
   const contexts = [];
   let call = 0;
   fixture.session.agent.streamFunction = (_model, context) => {
-    contexts.push({ systemPrompt: context.systemPrompt, messages: structuredClone(context.messages) });
+    contexts.push({ systemPrompt: getCurrentSystemPrompt(context.messages), messages: structuredClone(context.messages) });
     const response = call === 0
       ? assistant([{ type: "toolCall", id: "read-disabled", name: "read", arguments: { path: project.target } }], "toolUse")
       : assistant("done");
@@ -300,7 +307,7 @@ test("todo tool persists senpi.todo-state and restores exact phase state after s
   const contexts = [];
   let call = 0;
   fixture.session.agent.streamFunction = (_model, context) => {
-    contexts.push({ systemPrompt: context.systemPrompt, messages: structuredClone(context.messages) });
+    contexts.push({ systemPrompt: getCurrentSystemPrompt(context.messages), messages: structuredClone(context.messages) });
     const responses = [
       assistant([{ type: "toolCall", id: "todo-init", name: "todo", arguments: {
         op: "init",

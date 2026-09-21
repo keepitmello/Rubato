@@ -257,12 +257,12 @@ test("patch manifest is version-locked, drift-strict, and keeps SettingsManager 
     [
       {
         target: "runtime",
-        version: "0.85.1",
+        version: "0.86.1",
         path: "rubato-features/service-tier/extension.mjs",
       },
       {
         target: "runtime",
-        version: "0.85.1",
+        version: "0.86.1",
         path: "rubato-features/service-tier/THIRD_PARTY_NOTICES.md",
       },
     ],
@@ -271,7 +271,7 @@ test("patch manifest is version-locked, drift-strict, and keeps SettingsManager 
   assert.equal(new Set(patches.map((patch) => patch.id)).size, patches.length);
   for (const spec of patches) {
     assert.equal(spec.packageName, "@earendil-works/pi-coding-agent");
-    assert.equal(spec.version, "0.85.1");
+    assert.equal(spec.version, "0.86.1");
     const pristine = readFileSync(join(pristinePackage, spec.path), "utf8");
     assert.equal(sha256(pristine), spec.preimageSha256, `${spec.path} hash`);
     const output = spec.apply(pristine);

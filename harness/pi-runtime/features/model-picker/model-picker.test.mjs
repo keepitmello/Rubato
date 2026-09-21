@@ -46,7 +46,7 @@ test("sorts by provider groups and keeps xai/ vs cursor/ apart, Sol first", () =
   ]);
 });
 
-test("picker admits only the seven providers, current model excepted", () => {
+test("picker admits only the product providers, current model excepted", () => {
   const equal = (a, b) => a === b;
   const openaiAstra = { provider: "openai", id: "gpt-6-astra", model: "api-astra" };
   const admitted = admitPickerItems(
@@ -71,7 +71,7 @@ test("picker admits only the seven providers, current model excepted", () => {
   );
   assert.deepEqual(keptOutside.map((item) => `${item.provider}/${item.id}`), ["openai-codex/gpt-5.4"]);
   assert.deepEqual([...PROVIDER_ORDER], [
-    "openai-codex", "anthropic", "xai", "google-antigravity", "kiro", "cursor", "opencode",
+    "openai-codex", "anthropic", "xai", "google-antigravity", "kiro", "cursor", "opencode", "b-ai",
   ]);
 });
 

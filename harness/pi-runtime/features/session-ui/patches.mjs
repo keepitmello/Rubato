@@ -1,33 +1,33 @@
 import { fileURLToPath } from 'node:url';
 const agent = '@earendil-works/pi-coding-agent', tui = '@earendil-works/pi-tui';
-const version = '0.85.1';
+const version = '0.86.1';
 const manifest = [
   [agent, 'dist/main.d.ts', 'cf197873ee07f73d5682fe2236e24989714d1f5c1acf8820264e570a5c17dadc', 4],
   [agent, 'dist/core/agent-session-runtime.d.ts', '4a18c0f51669b62a297c83334731c8bb5fed58016619a14d42edce414ff8d105', 5],
   [agent, 'dist/core/http-dispatcher.d.ts', 'd0a2f111c02c3126178a992a88d4a82b3f2bd99f6ae762a8dbd8336403b0d1e9', 5],
-  [agent, 'dist/modes/interactive/interactive-mode.d.ts', '25d25af71429fe0a38ec3b57701fa43a349e48a91cff4b96ad4a58216a54b6d5', 6],
-  [agent, 'dist/main.js', 'f0b7e5a8419af8d149ffe367af2992c76ce70b73484c15492bd50787d4f4962a', 4],
+  [agent, 'dist/modes/interactive/interactive-mode.d.ts', '462632cf8748c9c230f71b5787457a077a73fed8250c25ddd13a42a6dc520811', 6],
+  [agent, 'dist/main.js', 'e36837e55af695cbb95216763fbc929e87829ced837dd32f281bba8c8e50035c', 4],
   [agent, 'dist/cli/session-picker.js', 'b5b3cc89815cc11f4519af27b9abb5a972a110fcfa08096f70dc0623e763cd44', 5],
   [agent, 'dist/cli/file-processor.js', '4946f4e3e193713135a4924982d31c9403190befd421b7be9893d0e5c65055ae', 5],
   [agent, 'dist/cli/startup-ui.js', '0c74df92c94ff3ede0ed65d811b1604b305c7636b898e5023995f15618ea697b', 5],
-  [agent, 'dist/migrations.js', 'aa57901e3dd13f38d3d4e95b40ea3a9062e4943feff4535285cc41ece0d98f69', 4],
+  [agent, 'dist/migrations.js', '8514d2573b028baeba60635498a1c5f129a602abd203ea5c37a63df2eea3fb6b', 4],
   [agent, 'dist/utils/paths.js', '09046a2443dfb6434e4c5c62656fb73edc33e776dc6cc35b785ef1dbf8483c93', 5],
   [agent, 'dist/core/agent-session-runtime.js', '61375f59afc3395940c05832c3f992e8020139a2f4a53065cccacbc370b65f16', 5],
-  [agent, 'dist/core/session-manager.js', 'ccace64949db25379a43971ecea750c1b7ec6344e1bc31b9d5fe596ac2f1c9f3', 5],
+  [agent, 'dist/core/session-manager.js', '96bd76b298f3c0a6b6d9b57b727f0f9b1196fbfa83172071ac280a5a37f82a08', 5],
   [agent, 'dist/core/http-dispatcher.js', 'f9aa2c81b0a5958ffba6368506f24c9b202904c234ada19494cdc9c4a1d0e97b', 5],
-  [agent, 'dist/core/model-runtime.js', '32cd50599d9e6e001229090e3d0554b60e4addb8ab7b3165635a574feb660b74', 5],
+  [agent, 'dist/core/model-runtime.js', 'bae3c3feb7928c7702c3d98a3454660bee1647064dd449472fc6308c354fbc25', 5],
   [agent, 'dist/core/resolve-config-value.js', '01fdb1673990635bb419c7418eefa298b6a1c6fbb3c6193d3b05a4902e51992d', 5],
   [agent, 'dist/core/output-guard.js', 'e860db94650c57e07582c300983671737bf9e796682193b498f75e3dd72e9024', 5],
   [agent, 'dist/modes/print-mode.js', 'f2eb170b9620c1d37e68b788ff71257a4402a23e7f3999575feee8e5d9e13b3f', 5],
-  [agent, 'dist/modes/rpc/rpc-mode.js', 'e7e4724aa55c5aac73cf36793653b26736200e5c59d58373990fc31028f86477', 6],
-  [agent, 'dist/modes/interactive/interactive-mode.js', '802ff14f5a47710e5a46d8141b238c4d5ffca30e8ca26bad18f838eddbf086bf', 6],
+  [agent, 'dist/modes/rpc/rpc-mode.js', 'bdd94e753e6d19731d9fb9ea370462d095d64f1e78bddd7651320663fa57c4ff', 6],
+  [agent, 'dist/modes/interactive/interactive-mode.js', '8c9275944466afe2df78dcf02f2f6c83f6bc46fb0fdbd7257a3ef9d1da1ed027', 6],
   [agent, 'dist/modes/interactive/theme/theme.js', '5ced0adb09ca8ce0f9b4eefcf89825755e9873cd53388825694025a4b046d1d5', 7],
   [agent, 'dist/modes/interactive/external-editor.js', '27c7133602240acd07c849994a82058eb9ef3ae15299f386808c1dd0b85486d6', 6],
-  [agent, 'dist/utils/clipboard.js', '344311d1e7d8c2dd981a92260fea0af2cc9627b354ff3e61cd480a6e60f4aaa0', 5],
+  [agent, 'dist/utils/clipboard.js', '70bdfa46e024f1351a8dcdd7744242492315a5e3272031bebb5e50041efd493e', 5],
   [agent, 'dist/utils/shell.js', '9874bbe8f6e26dd05029c3487d7789b160e92470696b2168424394f5dd00a34a', 5],
-  [agent, 'dist/core/agent-session.js', 'fb8a3981c20c8c0bbd42231b1c99a10335fb3858b659056b341954de9cfa467f', 5],
+  [agent, 'dist/core/agent-session.js', 'edaff7055ced7d49d25135c92415fbbfd9c14c4a29be5a79510ab9216045d6d9', 5],
   [tui, 'dist/keys.js', '14b18205fd5e56ed3b183392c82bd72e41ba3dab1d345e47b2b17af6988493cc', 7],
-  [tui, 'dist/terminal.js', 'd0b29feb487659b65797e5ed706c6cbb4859be9359c8539851a2ec6419a2b048', 7],
+  [tui, 'dist/terminal.js', 'd9636fd679aed23830be7c8d248d9725883efd43469392228275dac6a85fcc68', 7],
   [tui, 'dist/keybindings.js', '499582d22b576b7e73952ec9e8ad72e833e76fb72005d98bad499b0b7eb6d936', 7],
   [tui, 'dist/terminal-image.js', '471f5ba18f5e23fd4f14358af615e1be0631f867189f428d023b069894130f62', 7],
 ];
@@ -219,6 +219,12 @@ export async function releaseScopedHttpDispatcher() {
     if (path.endsWith('/external-editor.js')) next = once(next, 'export async function editInExternalEditor(options) {',
       'export async function editInExternalEditor(options) {\n    if (uiScope()?.edit) return uiScope().edit(options);');
     if (path.endsWith('/interactive-mode.js')) {
+      // remote-surface 가 `bindStockUiHost(this, this.createExtensionUIContext())` 호출을 먼저 넣는다.
+      // 그게 없으면(단독 적용, 또는 remote-surface 없이 스테이징) 붙일 자리가 없으므로 건너뛰는 것이
+      // 맞다 — compaction:anthropic-server-params 의 providerNative 조기 반환과 같은 성질이다.
+      // 카탈로그의 session-ui.requires 가 remote-surface 를 앞세우므로 합성 경로에서는 반드시 참이지만,
+      // 순서가 뒤집히면 이 가드가 **조용히** 거짓이 되어 hosted 배선이 꺼진 후보가 나온다.
+      // 그 회귀는 session-ui.test.mjs 의 합성 단언이 잡는다 — 여기서 조용해도 거기서는 시끄럽다.
       if (next.includes('bindStockUiHost(')) next = once(next, 'bindStockUiHost(this, this.createExtensionUIContext())',
         'bindStockUiHost(this, this.createExtensionUIContext(), { env: process.env, onClose: uiScope()?.onClose, run: uiScope()?.run })');
       next = next.replaceAll('process.exit(', 'return process.exit(');

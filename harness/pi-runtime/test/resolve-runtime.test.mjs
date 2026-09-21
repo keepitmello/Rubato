@@ -105,7 +105,7 @@ function expectResolutionError(code) {
   return (error) => error instanceof PiRuntimeResolutionError && error.code === code;
 }
 
-test("resolves the installed stock 0.85.1 distribution and keeps stock and patchable entries distinct", () => {
+test("resolves the installed stock Pi distribution and keeps stock and patchable entries distinct", () => {
   const runtime = resolvePiRuntime({ root: installedRuntimeRoot });
 
   assert.equal(runtime.version, PI_VERSION);

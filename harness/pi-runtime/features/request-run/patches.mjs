@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
-const PACKAGE_VERSION = "0.85.1";
+const PACKAGE_VERSION = "0.86.1";
 const FEATURE_IMPORT = 'import { RequestRunTracker } from "../rubato-features/request-run/request-run-tracker.mjs";';
 
 function replaceOnce(source, before, after, label) {
@@ -78,12 +78,10 @@ function patchAgentSessionRuntime(source) {
   );
   next = replaceOnce(
     next,
-    `    async _emitAgentSettled() {
-        this._isAgentRunActive = false;
+    `        this._isAgentRunActive = false;
         try {
             await this._extensionRunner.emit({ type: "agent_settled" });`,
-    `    async _emitAgentSettled() {
-        this._isAgentRunActive = false;
+    `        this._isAgentRunActive = false;
         try {
             this._requestRunTracker.onAgentSettled();
             await this._extensionRunner.emit({ type: "agent_settled" });`,
@@ -418,9 +416,9 @@ export const files = Object.freeze([
 ]);
 
 export const patches = Object.freeze([
-  patch("dist/core/agent-session.js", "fb8a3981c20c8c0bbd42231b1c99a10335fb3858b659056b341954de9cfa467f", patchAgentSessionRuntime),
-  patch("dist/core/agent-session.d.ts", "db3bfd2ae08eda4936d8807656f06120e6e62672d6a7798bccba486a0dc994ea", patchAgentSessionTypes),
-  patch("dist/modes/rpc/rpc-mode.js", "e7e4724aa55c5aac73cf36793653b26736200e5c59d58373990fc31028f86477", patchRpcRuntime),
+  patch("dist/core/agent-session.js", "edaff7055ced7d49d25135c92415fbbfd9c14c4a29be5a79510ab9216045d6d9", patchAgentSessionRuntime),
+  patch("dist/core/agent-session.d.ts", "423bdca09eabd78aa1e729136dd9a1e2fff3b8116c6bc2d3fee3337b269a8432", patchAgentSessionTypes),
+  patch("dist/modes/rpc/rpc-mode.js", "bdd94e753e6d19731d9fb9ea370462d095d64f1e78bddd7651320663fa57c4ff", patchRpcRuntime),
   patch("dist/modes/rpc/rpc-types.d.ts", "e968e5be01dc7ad9615f938ae867ef136fa495f13dcf169942e9f781a299d9eb", patchRpcTypes),
 ]);
 

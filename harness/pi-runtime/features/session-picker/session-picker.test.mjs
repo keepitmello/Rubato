@@ -164,7 +164,7 @@ test("descriptor is stock-locked, drift-failing, and composes at shared main/UI 
   assert.equal(patches.length, 6);
   assert.equal(new Set(patches.map((entry) => entry.path)).size, patches.length);
   assert.ok(patches.every((entry) => entry.packageName === "@earendil-works/pi-coding-agent"));
-  assert.ok(patches.every((entry) => entry.version === "0.85.1"));
+  assert.ok(patches.every((entry) => entry.version === "0.86.1"));
   assert.ok(patches.every((entry) => /^[a-f0-9]{64}$/.test(entry.preimageSha256)));
 
   const receiptEntries = staged.receipt.files.filter((entry) =>
@@ -196,7 +196,7 @@ test("descriptor is stock-locked, drift-failing, and composes at shared main/UI 
   ), "utf8");
   assert.throws(
     () => patches.find((entry) => entry.path.endsWith("session-selector.js")).apply(
-      stockSelector.replace("allLoadSeq = 0;", "allLoadSeq = 1;"),
+      stockSelector.replace("    currentLoad = null;\n    allLoad = null;", "    currentLoad = null;\n    allLoad = undefined;"),
     ),
     /expected anchor is missing/,
   );

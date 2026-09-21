@@ -40,7 +40,10 @@ try {
   assert.equal(existsSync(join(process.cwd(), ".rubato/task/tasks")), false, "host cwd must not be swept by another session");
   // MCP attaches in the background at session_start. Use its real pre-turn
   // readiness gate before inspecting/executing tools, without calling a model.
-  await session.extensionRunner.emitBeforeAgentStart("offline component fixture", undefined, session.systemPrompt);
+  // 0.86.0 은 emitBeforeAgentStart 를 (prompt, images, systemPromptOptions) 로 바꿨다.
+  // 0.85.1 처럼 세 번째에 프롬프트 문자열을 넘기면 그게 옵션으로 해석돼
+  // cwd 가 undefined 가 되고 렌더가 터진다.
+  await session.extensionRunner.emitBeforeAgentStart("offline component fixture", undefined, { cwd });
   assert.deepEqual(errors, [], "pre-turn component readiness must not fail");
   const tools = api.getAllTools().map(({ name }) => name);
   for (const name of ["Agent", "AgentCancel", "AgentOutput", "lsp_diagnostics", "lsp_symbols", "team_create", "bash_input", "bash_output", "bash_resize", "kill_bash", "monitor"]) {

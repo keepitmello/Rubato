@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_NAME = "@earendil-works/pi-agent-core";
-const PACKAGE_VERSION = "0.85.1";
+const PACKAGE_VERSION = "0.86.1";
 const CODING_AGENT_PACKAGE_NAME = "@earendil-works/pi-coding-agent";
 
 function replaceOnce(source, before, after, label) {
@@ -16,9 +16,9 @@ function replaceOnce(source, before, after, label) {
 export function patchAgentLoop(source) {
   let next = replaceOnce(
     source,
-    `import { EventStream, validateToolArguments, } from "@earendil-works/pi-ai";`,
-    `import { EventStream, validateToolArguments, } from "@earendil-works/pi-ai";
-import { isCursorExecResolved } from "../../pi-ai/dist/utils/block-symbols.js";`,
+    `import { getDefaultStreamFn } from "./stream-fn.js";`,
+    `import { isCursorExecResolved } from "../../pi-ai/dist/utils/block-symbols.js";
+import { getDefaultStreamFn } from "./stream-fn.js";`,
     "resolved-import",
   );
   next = replaceOnce(
@@ -184,27 +184,25 @@ export function patchCodingAgentSdk(source) {
   );
   next = replaceOnce(
     next,
-    `                maxRetries: options?.maxRetries ?? providerRetrySettings.maxRetries,
-                maxRetryDelayMs: options?.maxRetryDelayMs ?? providerRetrySettings.maxRetryDelayMs,
-                transformHeaders: async (requestHeaders) => {`,
-    `                maxRetries: options?.maxRetries ?? providerRetrySettings.maxRetries,
-                maxRetryDelayMs: options?.maxRetryDelayMs ?? providerRetrySettings.maxRetryDelayMs,
-                // The ModelRuntime can be shared by parent and child sessions. Resolve
-                // tool ownership from this createAgentSession closure on every request;
-                // a provider-global extension binding can execute in the wrong cwd.
-                providerExecuteTool: (toolName, params, executionOptions) => {
-                    if (!session)
-                        throw new Error("provider-execution session is not initialized");
-                    return session.executeTool(toolName, params, executionOptions);
-                },
-                providerExecCwd: cwd,
-                providerExecAgentDir: agentDir,
-                providerExecLineageId: () => {
-                    if (!session)
-                        throw new Error("provider-execution session is not initialized");
-                    return session.sessionId;
-                },
-                transformHeaders: async (requestHeaders) => {`,
+    `            maxRetryDelayMs: options.maxRetryDelayMs ?? providerRetrySettings.maxRetryDelayMs,
+            transformHeaders: async (requestHeaders) => {`,
+    `            maxRetryDelayMs: options.maxRetryDelayMs ?? providerRetrySettings.maxRetryDelayMs,
+            // The ModelRuntime can be shared by parent and child sessions. Resolve
+            // tool ownership from this createAgentSession closure on every request;
+            // a provider-global extension binding can execute in the wrong cwd.
+            providerExecuteTool: (toolName, params, executionOptions) => {
+                if (!session)
+                    throw new Error("provider-execution session is not initialized");
+                return session.executeTool(toolName, params, executionOptions);
+            },
+            providerExecCwd: cwd,
+            providerExecAgentDir: agentDir,
+            providerExecLineageId: () => {
+                if (!session)
+                    throw new Error("provider-execution session is not initialized");
+                return session.sessionId;
+            },
+            transformHeaders: async (requestHeaders) => {`,
     "request-local-executor",
   );
   return replaceOnce(
@@ -282,7 +280,7 @@ export const patches = Object.freeze([
     packageName: CODING_AGENT_PACKAGE_NAME,
     version: PACKAGE_VERSION,
     path: "dist/core/sdk.js",
-    preimageSha256: "6969bd56ba8e1628cd033bb15cb15fe38299f00b5ad84f4f8ef37a33a98681c9",
+    preimageSha256: "3417c58edc5c02a4ae71a3604bbd04688d1741e0203497bf082a748ca843d850",
     apply: patchCodingAgentSdk,
   }),
   Object.freeze({
@@ -290,7 +288,7 @@ export const patches = Object.freeze([
     packageName: CODING_AGENT_PACKAGE_NAME,
     version: PACKAGE_VERSION,
     path: "dist/core/extensions/runner.js",
-    preimageSha256: "0de12ed1275e02595f92476eec3f61ae1f2e54fd2225ced721ddc90af58a5e61",
+    preimageSha256: "07a94efe560e6a460a415b2188c1c3c69ca151bd163c9b5f05347caf8403ace2",
     apply: patchExtensionToolResult,
   }),
   Object.freeze({
@@ -298,7 +296,7 @@ export const patches = Object.freeze([
     packageName: CODING_AGENT_PACKAGE_NAME,
     version: PACKAGE_VERSION,
     path: "dist/core/agent-session.js",
-    preimageSha256: "fb8a3981c20c8c0bbd42231b1c99a10335fb3858b659056b341954de9cfa467f",
+    preimageSha256: "edaff7055ced7d49d25135c92415fbbfd9c14c4a29be5a79510ab9216045d6d9",
     apply: patchAgentSessionAfterToolCall,
   }),
   Object.freeze({
@@ -306,7 +304,7 @@ export const patches = Object.freeze([
     packageName: PACKAGE_NAME,
     version: PACKAGE_VERSION,
     path: "dist/agent-loop.js",
-    preimageSha256: "6732a1c65c09577d2ffcb716b48e4f4673e57e3e333f10ebfce5132d82e4d7a2",
+    preimageSha256: "aedd3264c31a3b9f1c3dc52826871894c0653718021583abbdfbe1e6763cd3e6",
     apply: patchAgentLoop,
   }),
 ]);

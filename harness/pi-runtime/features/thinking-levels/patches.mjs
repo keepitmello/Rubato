@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_NAME = "@earendil-works/pi-ai";
-const VERSION = "0.85.1";
+const VERSION = "0.86.1";
 const LEVELS_IMPORT = 'import { supportedThinkingLevels as rubatoSupportedThinkingLevels } from "./rubato-features/thinking-levels/thinking-levels.mjs";';
 
 function replaceOnce(source, before, after, label) {
@@ -44,7 +44,7 @@ export const patches = Object.freeze([
     packageName: PACKAGE_NAME,
     version: VERSION,
     path: "dist/models.js",
-    preimageSha256: "42610d47fe293d99f4b05b147971e181c7312ea47c9be2906a4803955276a8a4",
+    preimageSha256: "75fa33149fb608bc4a7b7a0586c8ca8f0024465d580091b0c426c0baf3fbc80a",
     apply: patchThinkingLevels,
   }),
 ]);

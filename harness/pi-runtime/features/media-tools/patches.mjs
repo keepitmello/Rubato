@@ -2,7 +2,7 @@ import { readdirSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const VERSION = "0.85.1";
+const VERSION = "0.86.1";
 const featureDir = dirname(fileURLToPath(import.meta.url));
 
 function replaceOnce(source, before, after, label) {
@@ -220,8 +220,8 @@ export async function processResponsesStream(openaiStream, output, stream, model
 	);
 	next = replaceOnce(
 		next,
-		"    const transformedMessages = transformMessages(context.messages, model, normalizeToolCallId);",
-		"    const transformedMessages = transformMessages(context.messages, model, normalizeToolCallId, options);",
+		"    const transformedMessages = transformMessages(normalizedContext.messages, model, normalizeToolCallId);",
+		"    const transformedMessages = transformMessages(normalizedContext.messages, model, normalizeToolCallId, options);",
 		"transform-messages-options",
 	);
 	return next;
@@ -257,7 +257,7 @@ export function patchAnthropicMessagesNative(source) {
                             type: "toolCall",
                             id: event.content_block.id,
                             name: isOAuth
-                                ? fromClaudeCodeName(event.content_block.name, context.tools)
+                                ? fromClaudeCodeName(event.content_block.name, currentTools)
                                 : event.content_block.name,
                             arguments: event.content_block.input ?? {},
                             partialJson: "",
@@ -272,7 +272,7 @@ export function patchAnthropicMessagesNative(source) {
                             type: "toolCall",
                             id: event.content_block.id,
                             name: isOAuth
-                                ? fromClaudeCodeName(event.content_block.name, context.tools)
+                                ? fromClaudeCodeName(event.content_block.name, currentTools)
                                 : event.content_block.name,
                             arguments: event.content_block.input ?? {},
                             partialJson: "",
@@ -367,13 +367,13 @@ export function patchAnthropicMessagesNative(source) {
 	);
 	next = replaceOnce(
 		next,
-		`    const converted = convertMessages(transformedMessages, isOAuthToken, cacheControl, compat.allowEmptySignature, deferredToolNames, normalizeToolName, model.compat?.supportsMidConvoEffort === true ? model.provider : undefined);`,
-		`    const converted = convertMessages(transformedMessages, isOAuthToken, cacheControl, compat.allowEmptySignature, deferredToolNames, normalizeToolName, model.compat?.supportsMidConvoEffort === true ? model.provider : undefined, model);`,
+		`    const converted = convertMessages(conversationMessages, isOAuthToken, cacheControl, compat.allowEmptySignature, model.compat?.supportsMidConvoEffort === true ? model.provider : undefined, nativeToolChanges);`,
+		`    const converted = convertMessages(conversationMessages, isOAuthToken, cacheControl, compat.allowEmptySignature, model.compat?.supportsMidConvoEffort === true ? model.provider : undefined, nativeToolChanges, model);`,
 		"convert-messages-model",
 	);
 	next = replaceOnce(
 		next,
-		`function convertMessages(transformedMessages, isOAuthToken, cacheControl, allowEmptySignature = false, deferredToolNames = new Set(), normalizeToolName = (name) => name, managedProvider) {`,
+		`function convertMessages(transformedMessages, isOAuthToken, cacheControl, allowEmptySignature = false, managedProvider, nativeToolChanges = false) {`,
 		`const REPLAYABLE_ANTHROPIC_PROVIDER_NATIVE_TYPES = new Set([
     "server_tool_use",
     "web_search_tool_result",
@@ -410,15 +410,17 @@ function isAnthropicWebSearchReplayBlock(raw) {
         return true;
     return raw.type === "server_tool_use" && raw.name === "web_search";
 }
-function convertMessages(transformedMessages, isOAuthToken, cacheControl, allowEmptySignature = false, deferredToolNames = new Set(), normalizeToolName = (name) => name, managedProvider, model) {`,
+function convertMessages(transformedMessages, isOAuthToken, cacheControl, allowEmptySignature = false, managedProvider, nativeToolChanges = false, model) {`,
 		"convert-messages-helpers",
 	);
 	next = replaceOnce(
 		next,
 		`        else if (msg.role === "assistant") {
+            flushPendingSystemMessages();
             const blocks = [];
             for (const block of msg.content) {`,
 		`        else if (msg.role === "assistant") {
+            flushPendingSystemMessages();
             const blocks = [];
             const pairedNativeIds = pairedAnthropicNativeIds(msg.content);
             for (const block of msg.content) {`,
@@ -487,7 +489,7 @@ export const patches = Object.freeze([
 		packageName: "@earendil-works/pi-ai",
 		version: VERSION,
 		path: "dist/api/openai-responses-shared.js",
-		preimageSha256: "b5d9f001e97bfafa8dfeef2e292f923c39f77fa8aef014132bf3530760f222e3",
+		preimageSha256: "7846279b34c2a569bda2b0753c8b083f8b976204b4fdd7586095ebbb6a643410",
 		apply: patchOpenAiResponsesShared,
 	}),
 	Object.freeze({
@@ -495,7 +497,7 @@ export const patches = Object.freeze([
 		packageName: "@earendil-works/pi-ai",
 		version: VERSION,
 		path: "dist/types.d.ts",
-		preimageSha256: "8c11014ea6c454bf60c7c22b65cdb00bebd834e4e9ebb07d3f0fffb6a58ea78a",
+		preimageSha256: "2527dc035a85e40708478ba1349f35cf7e71c64c4ba50ae547a4188950b1b22b",
 		apply: patchPiAiTypes,
 	}),
 	Object.freeze({
@@ -503,7 +505,7 @@ export const patches = Object.freeze([
 		packageName: "@earendil-works/pi-ai",
 		version: VERSION,
 		path: "dist/api/anthropic-messages.js",
-		preimageSha256: "f748560c80fe91bb5736b62f6f34c5e2e2bfa224cd5eb959134ca903c226b604",
+		preimageSha256: "54f32708dc88d951d4c1aacd9e2e531da098967cb61b98a726b43e99277e7754",
 		apply: patchAnthropicMessagesNative,
 	}),
 ]);

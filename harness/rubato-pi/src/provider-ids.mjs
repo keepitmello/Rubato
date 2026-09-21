@@ -8,9 +8,13 @@ import { SUPPORTED_PROVIDER_IDS } from "./provider-capabilities.mjs";
 export { SUPPORTED_PROVIDER_IDS };
 
 /**
- * Senpi 2026.9.4-3 의 `getBuiltinProviders()` ∪ `builtinProviders().map(p => p.id)`.
+ * stock Pi 의 `getBuiltinProviders()` ∪ `builtinProviders().map(p => p.id)`.
  * `getBuiltinProviders()` 는 generated catalog 키만 보고 cursor/ollama/radius
  * 같은 credential-only lane 을 빠뜨리므로 둘을 합친 값이다.
+ *
+ * 여기 없는 builtin 은 foreign 으로 분류돼 Rubato 프로바이더 표면으로 샌다.
+ * 핀이 올라가 builtin 이 늘면(예: 0.86.1 의 `meta`) 이 목록이 먼저 어긋나고,
+ * `test/unit/provider-ids.test.mjs` 가 그 차이를 지목한다.
  */
 export const BUILTIN_PROVIDER_IDS = Object.freeze([
   "alibaba-token-plan",
@@ -31,6 +35,7 @@ export const BUILTIN_PROVIDER_IDS = Object.freeze([
   "groq",
   "huggingface",
   "kimi-coding",
+  "meta",
   "minimax",
   "minimax-cn",
   "mistral",

@@ -12,7 +12,7 @@
     "@babel/parser": "8.0.4",
     "@bufbuild/protobuf": "2.14.0",
     "@code-yeongyu/senpi-pty": "2026.9.4-3",
-    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@earendil-works/pi-coding-agent": "0.86.1",
     "@modelcontextprotocol/sdk": "1.30.0",
     "@mozilla/readability": "0.6.0",
     "cmd-shim": "8.0.0",

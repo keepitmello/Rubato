@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
-const PACKAGE_VERSION = "0.85.1";
+const PACKAGE_VERSION = "0.86.1";
 const FEATURE_IMPORT = 'import { AbortProvenance } from "../rubato-features/abort-provenance/state.mjs";';
 
 function replaceOnce(source, before, after, label) {
@@ -98,16 +98,29 @@ function patchAgentSessionRuntime(source) {
         }`,
     "extension-agent-end",
   );
+  // 0.86 added its own `_agentRunAbortRequested` guard at the same decision points. The
+  // patch keeps upstream's guards verbatim and interleaves ours: `takeStopContinuation()`
+  // is also armed by a provider-aborted agent_end, which no `abort()` call covers.
   next = replaceOnce(
     next,
     `    async _handlePostAgentRun() {
         const msg = this._lastAssistantMessage;
         this._lastAssistantMessage = undefined;
+        if (this._agentRunAbortRequested) {
+            this._finishCancelledRetry();
+            return false;
+        }
         if (!msg) {
             return false;
         }
         if (this._isRetryableError(msg) && (await this._prepareRetry(msg))) {
-            return true;
+            if (this._agentRunAbortRequested)
+                this._finishCancelledRetry();
+            return !this._agentRunAbortRequested;
+        }
+        if (this._agentRunAbortRequested) {
+            this._finishCancelledRetry();
+            return false;
         }
         if (msg.stopReason === "error" && this._retryAttempt > 0) {
             this._emit({
@@ -119,16 +132,24 @@ function patchAgentSessionRuntime(source) {
             this._retryAttempt = 0;
         }
         if (await this._checkCompaction(msg)) {
-            return true;
+            return !this._agentRunAbortRequested;
         }
         // The agent loop drains both queues before emitting agent_end. Any messages
         // here were queued by agent_end extension handlers and need a continuation.
-        return this.agent.hasQueuedMessages();
+        return !this._agentRunAbortRequested && this.agent.hasQueuedMessages();
     }`,
     `    async _handlePostAgentRun() {
         const msg = this._lastAssistantMessage;
         this._lastAssistantMessage = undefined;
-        if (!msg || this._abortProvenance.takeStopContinuation()) {
+        // The flag belongs to this post-run decision. Consume it up front so the early
+        // returns below cannot leak it into the next run, then re-check it after every
+        // await where a fresh abort can land.
+        const stopContinuation = this._abortProvenance.takeStopContinuation();
+        if (this._agentRunAbortRequested) {
+            this._finishCancelledRetry();
+            return false;
+        }
+        if (!msg || stopContinuation) {
             return false;
         }
         if (this._isRetryableError(msg)) {
@@ -136,9 +157,17 @@ function patchAgentSessionRuntime(source) {
             if (this._abortProvenance.takeStopContinuation()) {
                 return false;
             }
+            if (this._agentRunAbortRequested) {
+                this._finishCancelledRetry();
+                return false;
+            }
             if (retryPrepared) {
                 return true;
             }
+        }
+        if (this._agentRunAbortRequested) {
+            this._finishCancelledRetry();
+            return false;
         }
         if (msg.stopReason === "error" && this._retryAttempt > 0) {
             this._emit({
@@ -154,11 +183,11 @@ function patchAgentSessionRuntime(source) {
             return false;
         }
         if (compacted) {
-            return true;
+            return !this._agentRunAbortRequested;
         }
         // The agent loop drains both queues before emitting agent_end. Any messages
         // here were queued by agent_end extension handlers and need a continuation.
-        return this.agent.hasQueuedMessages();
+        return !this._agentRunAbortRequested && this.agent.hasQueuedMessages();
     }`,
     "post-run-stop",
   );
@@ -179,6 +208,9 @@ function patchAgentSessionRuntime(source) {
      * Abort current operation and wait for agent to become idle.
      */
     async abort() {
+        if (this._isAgentRunActive) {
+            this._agentRunAbortRequested = true;
+        }
         this.abortRetry();
         this.abortCompaction();
         this.abortBranchSummary();
@@ -201,6 +233,10 @@ function patchAgentSessionRuntime(source) {
             compacting: this.isCompacting,
             pendingMessages: this.pendingMessageCount > 0,
         });
+        // 0.86 owns this flag; a system abort must arm it the same way a user abort does.
+        if (this._isAgentRunActive) {
+            this._agentRunAbortRequested = true;
+        }
         this.abortRetry();
         if (this.isCompacting) {
             this.abortCompaction();
@@ -335,10 +371,10 @@ export interface SessionAbortEvent {
   );
   next = replaceOnce(
     next,
-    `    on(event: "session_shutdown", handler: ExtensionHandler<SessionShutdownEvent>): void;
+    `    on(event: "session_shutdown", handler: ExtensionHandler<SessionShutdownEvent>): () => void;
     on(event: "session_before_tree"`,
-    `    on(event: "session_shutdown", handler: ExtensionHandler<SessionShutdownEvent>): void;
-    on(event: "session_abort", handler: ExtensionHandler<SessionAbortEvent>): void;
+    `    on(event: "session_shutdown", handler: ExtensionHandler<SessionShutdownEvent>): () => void;
+    on(event: "session_abort", handler: ExtensionHandler<SessionAbortEvent>): () => void;
     on(event: "session_before_tree"`,
     "types-api-overload",
   );
@@ -375,9 +411,9 @@ export const files = Object.freeze([
 ]);
 
 export const patches = Object.freeze([
-  patch("dist/core/agent-session.js", "fb8a3981c20c8c0bbd42231b1c99a10335fb3858b659056b341954de9cfa467f", patchAgentSessionRuntime),
-  patch("dist/core/agent-session.d.ts", "db3bfd2ae08eda4936d8807656f06120e6e62672d6a7798bccba486a0dc994ea", patchAgentSessionTypes),
-  patch("dist/core/extensions/types.d.ts", "5baa29ca2f541f71f81a400dec25903abfbd03980bd4d9b691d10353e52d169a", patchExtensionTypes),
-  patch("dist/core/extensions/index.d.ts", "dc9bd3202b8d84b580d7002efad6738465c50556e2b27624193a6505b453c87d", patchExtensionIndexTypes),
-  patch("dist/index.d.ts", "f1cb93477c7357d08b839c0663d079b8f9bb949079ed7b50a71f8d2945cece90", patchPublicIndexTypes),
+  patch("dist/core/agent-session.js", "edaff7055ced7d49d25135c92415fbbfd9c14c4a29be5a79510ab9216045d6d9", patchAgentSessionRuntime),
+  patch("dist/core/agent-session.d.ts", "423bdca09eabd78aa1e729136dd9a1e2fff3b8116c6bc2d3fee3337b269a8432", patchAgentSessionTypes),
+  patch("dist/core/extensions/types.d.ts", "a4d5b8774fa8015b8a3274614f1398a6aeeffdd888c122910439666955dc2a52", patchExtensionTypes),
+  patch("dist/core/extensions/index.d.ts", "5b294bd70da0744cb18a45d1cfb774237986c047ec1996e03f24a9605efdd4ab", patchExtensionIndexTypes),
+  patch("dist/index.d.ts", "44bf19d2716cb18382aa6bd0ae88b7e03ee50ae75b56acb6d11beb40dfe99dea", patchPublicIndexTypes),
 ]);

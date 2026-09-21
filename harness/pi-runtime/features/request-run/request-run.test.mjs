@@ -161,7 +161,7 @@ test("manifest reuses the current Rubato tracker and composes strict stock patch
   for (const spec of patches) {
     const pristine = readFileSync(join(pristinePackage, spec.path), "utf8");
     assert.equal(spec.packageName, "@earendil-works/pi-coding-agent");
-    assert.equal(spec.version, "0.85.1");
+    assert.equal(spec.version, "0.86.1");
     assert.equal(sha256(pristine), spec.preimageSha256);
     const composed = readFileSync(join(patchedPackage, spec.path), "utf8");
     assert.notEqual(composed, pristine);

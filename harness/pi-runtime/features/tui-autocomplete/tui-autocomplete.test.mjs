@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, writeFileSync, rmSync, cpSync, mkdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync, rmSync, cpSync, mkdirSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test, { after } from "node:test";
@@ -13,6 +13,9 @@ import { inlineSlashTokenAt, isInlineDollarToken, getDollarInvocationContext } f
 
 const featureDir = dirname(fileURLToPath(import.meta.url));
 const tuiDist = join(featureDir, "../../node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist");
+// Stock 0.86 autocomplete.js imports ./utils.js, which imports get-east-asian-width.
+// The isolated fixture copies the module graph, so both must come along.
+const eastAsianWidthDir = join(tuiDist, "..", "..", "..", "get-east-asian-width");
 const scratch = mkdtempSync(join(tmpdir(), "rubato-tui-autocomplete-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -23,7 +26,7 @@ test("descriptor is stock-locked and listed on the candidate", async () => {
   assert.equal(CANDIDATE_FEATURE_NAMES.includes("tui-autocomplete"), true);
   assert.deepEqual((await loadPiFeatures(["tui-autocomplete"])).map((entry) => entry.id), ["tui-autocomplete"]);
   assert.equal(patches.length, 2);
-  assert.ok(patches.every((entry) => entry.version === "0.85.1"));
+  assert.ok(patches.every((entry) => entry.version === "0.86.1"));
   assert.deepEqual(files.map((entry) => entry.path), ["dist/rubato-features/tui-autocomplete/inline.mjs"]);
 });
 
@@ -50,6 +53,9 @@ test("stock editor only allows slash menu on line 0; patch allows line 1 /skill:
   mkdirSync(join(work, "rubato-features/tui-autocomplete"), { recursive: true });
   writeFileSync(join(work, "autocomplete.js"), patched);
   cpSync(join(tuiDist, "fuzzy.js"), join(work, "fuzzy.js"));
+  cpSync(join(tuiDist, "utils.js"), join(work, "utils.js"));
+  mkdirSync(join(work, "node_modules"), { recursive: true });
+  symlinkSync(eastAsianWidthDir, join(work, "node_modules/get-east-asian-width"), "dir");
   cpSync(join(featureDir, "inline.mjs"), join(work, "rubato-features/tui-autocomplete/inline.mjs"));
   const { CombinedAutocompleteProvider } = await import(pathToFileURL(join(work, "autocomplete.js")).href + "?patched");
   const provider = new CombinedAutocompleteProvider([

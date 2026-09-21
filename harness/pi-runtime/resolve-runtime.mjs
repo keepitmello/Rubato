@@ -1,9 +1,11 @@
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { findPackageJSON } from "node:module";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-export const PI_VERSION = "0.85.1";
+import { PI_VERSION } from "./pi-version.mjs";
+
+export { PI_VERSION };
 
 export const PI_PACKAGES = Object.freeze([
   "@earendil-works/pi-coding-agent",

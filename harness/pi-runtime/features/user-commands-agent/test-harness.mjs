@@ -14,6 +14,12 @@ const { AssistantMessageEventStream } = await import(pathToFileURL(join(
   runtime.codingAgentDir,
   "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js",
 )).href);
+// 0.86.0: provider stream 입력이 Context -> TranscriptContext 로 바뀌어
+// 시스템 프롬프트는 context.systemPrompt 가 아니라 messages 에서 읽는다.
+const { getCurrentSystemPrompt } = await import(pathToFileURL(join(
+  runtime.codingAgentDir,
+  "node_modules/@earendil-works/pi-ai/dist/utils/transcript.js",
+)).href);
 
 export function withoutNodeOptions(env, extra = {}) {
   const clean = { ...env, ...extra };
@@ -107,7 +113,11 @@ export async function createCommandSession(options = {}) {
   const settingsManager = sdk.SettingsManager.create(dirs.cwd, dirs.agentDir, { projectTrusted: true });
   const captures = options.captures ?? [];
   const streamSimple = options.streamSimple ?? ((model, context) => {
-    captures.push({ model: model.provider + "/" + model.id, context });
+    captures.push({
+      model: model.provider + "/" + model.id,
+      context,
+      systemPrompt: getCurrentSystemPrompt(context.messages),
+    });
     const last = context.messages?.at?.(-1);
     const text = typeof last?.content === "string" ? last.content : "fixture reply";
     return complete(options.btwReply ?? (String(text).includes("side") ? "side-answer" : "ok"));

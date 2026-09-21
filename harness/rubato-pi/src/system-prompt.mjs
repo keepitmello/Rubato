@@ -257,7 +257,15 @@ export function extractHarnessExtras(existing) {
     "g",
   ))];
   if (listings.length > 0) extras.push(listings[listings.length - 1][0].trim());
-  take(/Current working directory: [^\n]+/);
+  // 0.86.0 은 작업 디렉터리를 `Current working directory: …` 줄이 아니라
+  // `<cwd>…</cwd>` 섹션으로 렌더한다. 우리 핸들러는 엔진 프롬프트를 통째로
+  // 대체하므로(forceSystemPrompt) 추출한 것만 살아남는데, 이 패턴이 빗나가면
+  // 작업 디렉터리가 조용히 사라진다 (2026-09-21 0.86.1 실측: 0.85.1 은 1개
+  // 보존, 0.86.1 은 0개). 옛 형태로 정규화해 넣어 두 버전에서 같은 텍스트가
+  // 되게 한다 — 프리픽스가 버전 간에 흔들리지 않아야 캐시에도 낫다.
+  const cwdSection = existing.match(/<cwd>\s*\n?([^\n]*?)\s*\n?<\/cwd>/);
+  if (cwdSection) extras.push(`Current working directory: ${cwdSection[1].trim()}`);
+  else take(/Current working directory: [^\n]+/);
   return extras;
 }
 
