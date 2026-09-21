@@ -9,14 +9,6 @@
       "types": "./src/index.ts",
       "import": "./src/index.ts"
     },
-    "./agents-builtin": {
-      "types": "./src/agents/builtin/index.ts",
-      "import": "./src/agents/builtin/index.ts"
-    },
-    "./category-builtins": {
-      "types": "./src/category/builtins.ts",
-      "import": "./src/category/builtins.ts"
-    },
     "./category-resolver": {
       "types": "./src/category/resolver.ts",
       "import": "./src/category/resolver.ts"

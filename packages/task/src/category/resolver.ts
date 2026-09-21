@@ -9,18 +9,7 @@ import type {
   RubatoFallbackModels,
 } from "@rubato/config-core"
 
-import {
-  CATEGORY_DESCRIPTIONS,
-  CATEGORY_PROMPT_APPEND_RESOLVERS,
-  CATEGORY_PROMPT_APPENDS,
-  DEFAULT_CATEGORIES,
-  categoryGateModel,
-  isCategoryChainRungResolvable,
-  isCategoryChainViable,
-  isCategoryGateSatisfied,
-} from "./builtins"
 import { buildRuntimeModelChain, chainRungCandidates, type ModelChainCandidate } from "../model-chain"
-import { CATEGORY_FALLBACK_CHAINS } from "./fallback-chains"
 import type {
   CategoryModelSelection,
   CategoryResolutionResult,
@@ -174,15 +163,8 @@ function categoryModelCandidates(config: RubatoCategoryConfig): readonly ModelCh
   return [...primary, ...fallbacks]
 }
 
-function availableCategoryNames(config: RubatoConfig, availableModelIds?: ReadonlySet<string>): readonly string[] {
-  const names = Array.from(new Set([...Object.keys(DEFAULT_CATEGORIES), ...Object.keys(config.categories ?? {})])).sort()
-  if (availableModelIds === undefined) return names
-  const userCategories = config.categories ?? {}
-  return names.filter((name) => {
-    const hasExplicitUserConfig = getOwnRecordValue(userCategories, name) !== undefined
-    return isCategoryGateSatisfied(name, hasExplicitUserConfig, availableModelIds)
-      && isCategoryChainViable(name, hasExplicitUserConfig, availableModelIds)
-  })
+function availableCategoryNames(config: RubatoConfig): readonly string[] {
+  return Object.keys(config.categories ?? {}).sort()
 }
 
 // Gated listing for the disabled/not_found early returns. The registry is only consulted best
@@ -195,7 +177,7 @@ function gatedAvailableCategories<TModel extends SenpiModelPort>(
   try {
     const parsed = parseAvailableModels(senpiModelRegistry.getAvailable())
     if (!parsed.validContainer) return availableCategoryNames(config)
-    return availableCategoryNames(config, modelIdsOf(parsed.models))
+    return availableCategoryNames(config)
   } catch {
     return availableCategoryNames(config)
   }
@@ -258,15 +240,8 @@ function parseAvailableModels(models: unknown): AvailableModelsParseResult {
   return { models: models.map((model) => parseRegistryModel(model)).filter((model) => model !== undefined).map(formatModel).sort(), validContainer: true }
 }
 
-function promptAppendForCategory(categoryName: string, model: string | undefined, userPromptAppend: string | undefined): string | undefined {
-  const promptAppendResolver = getOwnRecordValue(CATEGORY_PROMPT_APPEND_RESOLVERS, categoryName)
-  const basePromptAppend = promptAppendResolver?.(model)
-    ?? getOwnRecordValue(CATEGORY_PROMPT_APPENDS, categoryName)
-    ?? ""
-  if (!userPromptAppend) {
-    return basePromptAppend || undefined
-  }
-  return basePromptAppend ? `${basePromptAppend}\n\n${userPromptAppend}` : userPromptAppend
+function promptAppendForCategory(userPromptAppend: string | undefined): string | undefined {
+  return userPromptAppend === undefined || userPromptAppend.length === 0 ? undefined : userPromptAppend
 }
 
 function nearestFallback(selection: CategoryModelSelection): string | undefined {
@@ -302,12 +277,11 @@ export function resolveCategory<TModel extends SenpiModelPort>(
     }
   }
 
-  const builtinConfig = getOwnRecordValue(DEFAULT_CATEGORIES, categoryName)
-  if (!builtinConfig && !userConfig) {
+  if (!userConfig) {
     return { kind: "not_found", category: categoryName, availableCategories: gatedAvailableCategories(rubatoConfig, senpiModelRegistry) }
   }
 
-  const config = { ...builtinConfig, ...userConfig }
+  const config = { ...userConfig }
   const availableModelsResult = parseAvailableModels(senpiModelRegistry.getAvailable())
   const availableModels = availableModelsResult.models
   if (!availableModelsResult.validContainer) {
@@ -321,43 +295,8 @@ export function resolveCategory<TModel extends SenpiModelPort>(
   }
 
   const availableModelIds = modelIdsOf(availableModels)
-  const gatedCategories = availableCategoryNames(rubatoConfig, availableModelIds)
-  const fallbackChain = getOwnRecordValue(CATEGORY_FALLBACK_CHAINS, categoryName)
-  const chainDead = fallbackChain !== undefined
-    && fallbackChain.length > 0
-    && !fallbackChain.some((rung) => isCategoryChainRungResolvable(rung, availableModelIds))
-  const deadChain = chainDead && fallbackChain !== undefined
-    ? { attempted_chain: fallbackChain, missing_providers: missingChainProviders(fallbackChain, availableModels) }
-    : undefined
-  if (!isCategoryGateSatisfied(categoryName, userConfig !== undefined, availableModelIds)) {
-    return {
-      kind: "model_unavailable",
-      category: categoryName,
-      attemptedModel: builtinConfig?.model ?? config.model,
-      availableModels,
-      availableCategories: gatedCategories,
-      ...(deadChain ?? {}),
-    }
-  }
-
-  // Dead-chain short-circuit: a builtin chain with zero resolvable rungs can never produce a model,
-  // so fail before resolution with the rungs that were attempted. An explicit user model or user
-  // fallback list opts the category out (its failure stays a plain user-model miss without chain
-  // details), and a caller-supplied system default remains the resolver's last resort.
-  const userHasCanonicalModels = (userConfig?.models?.length ?? 0) > 0
-  if (deadChain !== undefined && !userHasCanonicalModels && userConfig?.model === undefined && userConfig?.fallback_models === undefined && options.systemDefaultModel === undefined && options.modelOverride === undefined) {
-    return {
-      kind: "model_unavailable",
-      category: categoryName,
-      attemptedModel: builtinConfig?.model ?? config.model,
-      availableModels,
-      availableCategories: gatedCategories,
-      ...deadChain,
-    }
-  }
-
-  // Canonical models[] wins over the legacy model + fallback_models branch only when present;
-  // builtin categories have no models key and must keep their chain-based resolution.
+  const gatedCategories = availableCategoryNames(rubatoConfig)
+  // Canonical models[] wins over the legacy model + fallback_models branch when present.
   const canonicalChain = config.models !== undefined && config.models.length > 0
     ? categoryModelCandidates(config)
     : undefined
@@ -373,9 +312,7 @@ export function resolveCategory<TModel extends SenpiModelPort>(
         {
           userModel,
           userFallbackModels,
-          categoryDefaultModel: builtinConfig?.model,
           isUserConfiguredCategoryModel: false,
-          fallbackChain,
           availableModels: new Set(availableModels),
           systemDefaultModel: options.systemDefaultModel,
         },
@@ -422,7 +359,7 @@ export function resolveCategory<TModel extends SenpiModelPort>(
     }
   }
 
-  const prompt_append = promptAppendForCategory(categoryName, selection.selectedModel, userConfig?.prompt_append)
+  const prompt_append = promptAppendForCategory(userConfig?.prompt_append)
   const variant = userConfig?.variant ?? selection.variant ?? config.variant
   // Canonical reasoning outranks the legacy reasoningEffort, whether it sits on the category or
   // on the selected canonical models entry; legacy reasoningEffort is the final fallback.
@@ -430,16 +367,7 @@ export function resolveCategory<TModel extends SenpiModelPort>(
       ?? config.reasoning
       ?? config.reasoningEffort
   const availableModelSet = new Set(availableModels)
-  // Builtin chain rungs remaining after the selected one extend the runtime retry chain, appended
-  // after any user-configured fallback_models so user entries keep priority (dedupe keeps firsts).
-  const chainCandidates = fallbackChain === undefined
-    ? []
-    : chainRungCandidates({
-        chain: fallbackChain,
-        selectedModel: selection.selectedModel,
-        ...(selection.fallbackEntry !== undefined ? { selectedRungEntry: selection.fallbackEntry } : {}),
-        availableModels: availableModelSet,
-      })
+  const chainCandidates: readonly ModelChainCandidate[] = []
   const runtimeModelChain = buildRuntimeModelChain({
     candidates: options.modelOverride === undefined ? [...categoryModelCandidates(config), ...chainCandidates] : [],
     selectedModel: selection.selectedModel,
@@ -466,7 +394,7 @@ export function resolveCategory<TModel extends SenpiModelPort>(
     category: categoryName,
     spec,
     config,
-    description: userConfig?.description ?? getOwnRecordValue(CATEGORY_DESCRIPTIONS, categoryName),
+    description: userConfig?.description,
     modelSelection: selection,
     availableCategories: gatedCategories,
   }
