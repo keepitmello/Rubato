@@ -10,6 +10,7 @@ let running = false;
 let timer;
 let ui;
 let pendingWork = 0;
+let blockMessages = false;
 const emit = (value) => process.stdout.write(JSON.stringify(value) + '\n');
 const settle = () => { clearTimeout(timer); running = false; emit({ type: 'agent_end', messages: [] }); emit({ type: 'agent_settled' }); };
 const userText = (message) => typeof message?.content === 'string' ? message.content
@@ -28,7 +29,9 @@ lines.on('line', (line) => {
   let data = null;
   switch (command.type) {
     case 'get_state': data = { sessionId: manager.getSessionId(), sessionFile: manager.getSessionFile(), isStreaming: running, isCompacting: false, pendingMessageCount: 0 }; break;
-    case 'get_messages': data = { messages: manager.getBranch().filter((item) => item.type === 'message').map((item) => item.message) }; break;
+    case 'get_messages':
+      if (blockMessages) return;
+      data = { messages: manager.getBranch().filter((item) => item.type === 'message').map((item) => item.message) }; break;
     case 'get_fork_messages': data = { messages: manager.getEntries().filter((entry) => entry.type === 'message' && entry.message.role === 'user')
       .map((entry) => ({ entryId: entry.id, text: userText(entry.message) })).filter((item) => item.text) }; break;
     case 'fork': {
@@ -52,6 +55,7 @@ lines.on('line', (line) => {
       break;
     }
     case 'prompt':
+      if (command.message === '__block_messages') blockMessages = true;
       running = true;
       manager.appendMessage({ role: 'user', content: command.message, timestamp: Date.now() });
       emit({ type: 'agent_start' });
