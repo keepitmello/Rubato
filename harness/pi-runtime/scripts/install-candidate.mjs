@@ -55,8 +55,12 @@ export async function retirePath(path, { trashRoot } = {}) {
     await rm(path, { recursive: true, force: true });
     return { method: "rm", path };
   } catch (error) {
-    const trash = trashRoot ?? await mkdtemp(join(tmpdir(), "rubato-isolated-trash-"));
-    const dest = join(trash, `${Date.now()}-${basename(path)}`);
+    // A fresh mkdtemp per failure mints a trash root that nothing ever
+    // revisits, so the fallback leaked exactly when it was needed. Keep one
+    // stable root instead; scripts/sweep-scratch.mjs collects it.
+    const trash = trashRoot ?? join(tmpdir(), "rubato-isolated-trash");
+    await mkdir(trash, { recursive: true });
+    const dest = join(trash, `${Date.now()}-${process.pid}-${basename(path)}`);
     await rename(path, dest);
     return { method: "trash", path, trash: dest, error: error instanceof Error ? error.message : String(error) };
   }

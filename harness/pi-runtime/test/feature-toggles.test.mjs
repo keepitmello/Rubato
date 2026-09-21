@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -7,8 +7,9 @@ import { REQUIRED_FACTORIES, applyFeatureToggles, readDisabledFeatures } from ".
 
 const factories = [{ name: "rubato-assets" }, { name: "providers" }, { name: "rubato-components" }, { name: "rubato-goal" }, { name: "rubato-btw" }];
 
-test("disabled features come from the profile file and the environment, and unknown names are reported", async () => {
+test("disabled features come from the profile file and the environment, and unknown names are reported", async (t) => {
   const agentDir = await mkdtemp(join(tmpdir(), "rubato-toggles-"));
+  t.after(() => rm(agentDir, { recursive: true, force: true }));
   await writeFile(join(agentDir, "rubato-features.json"), JSON.stringify({ disabled: ["rubato-goal", "rubato-typo"] }));
   const disabled = readDisabledFeatures({ agentDir, env: { RUBATO_DISABLED_FEATURES: "rubato-btw, " } });
   assert.deepEqual([...disabled].sort(), ["rubato-btw", "rubato-goal", "rubato-typo"]);
@@ -18,8 +19,9 @@ test("disabled features come from the profile file and the environment, and unkn
   assert.deepEqual(result.unknown, ["rubato-typo"]);
 });
 
-test("missing profile file means nothing is disabled; required factories refuse to be disabled", async () => {
+test("missing profile file means nothing is disabled; required factories refuse to be disabled", async (t) => {
   const agentDir = await mkdtemp(join(tmpdir(), "rubato-toggles-"));
+  t.after(() => rm(agentDir, { recursive: true, force: true }));
   assert.equal(readDisabledFeatures({ agentDir, env: {} }).size, 0);
   for (const name of REQUIRED_FACTORIES) {
     assert.throws(() => readDisabledFeatures({ agentDir, env: { RUBATO_DISABLED_FEATURES: name } }), new RegExp(name));
