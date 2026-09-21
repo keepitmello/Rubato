@@ -196,6 +196,25 @@ export async function installContextNotes(pi, options = {}) {
     return { cancel: true, rejectionCause: "external-owner",
       reason: "작업 노트 모드에서는 요약 압축을 실행하지 않아요. /new-context를 사용해 주세요." };
   });
+  // T3의 컴팩션 컨트롤과 앱에서 친 /compact 는 이 명령으로 들어온다. 정리 방식이
+  // 모드마다 다르므로 분기는 여기서 한다 — 부르는 쪽은 모드를 모른 채 이름만 본다.
+  //
+  // 노트 모드의 컷을 session_before_compact 훅 안에서 돌릴 수는 없다: 엔진의
+  // compact() 가 훅을 부르기 전에 _compactionAbortController 를 세우고, 그 구간에는
+  // applyCompaction 이 isCompacting 으로 거부한다. 그래서 훅은 계속 거부만 하고,
+  // 컷은 이 명령이 훅 바깥에서 돈다.
+  pi.registerCommand("compact", {
+    description: "지금 문맥을 정리해요. 작업 노트 모드에서는 노트를 저장하고 새 문맥 창으로 넘어가요",
+    async handler(args, ctx) {
+      const customInstructions = typeof args === "string" ? args.trim() : "";
+      if (!notesActive()) {
+        ctx.compact?.(customInstructions ? { customInstructions } : undefined);
+        return;
+      }
+      try { await getController(ctx).manual(ctx); }
+      catch (error) { report(error, ctx); }
+    },
+  });
   pi.registerCommand("new-context", {
     description: "작업 노트를 저장하고 요약 없이 새 문맥 창으로 넘어가요",
     async handler(_args, ctx) {
