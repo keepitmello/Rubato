@@ -6,8 +6,13 @@ import { Directory, Management, Control } from './contracts.mjs';
 
 /** One presentation attachment; disconnect never stops the runtime. */
 export class SessionClient {
-  constructor({ socketPath, serverId, timeoutMs = 30000, onError = () => {} }) {
+  constructor({ socketPath, serverId, timeoutMs = 30000, sessionTimeoutMs = 0, onError = () => {} }) {
     this.timeoutMs = timeoutMs;
+    // Session control waits on the agent. A 30s AbortSignal cancelled in-flight
+    // prompt/snapshot, dropped the attachment, and T3 showed both
+    // "The operation was aborted due to timeout" and "No session is attached"
+    // while the turn was still running. Directory/management stay bounded.
+    this.sessionTimeoutMs = sessionTimeoutMs;
     this.onError = onError;
     this.socketPath = socketPath;
     this.serverId = serverId;
@@ -24,7 +29,9 @@ export class SessionClient {
   call(service, member, args, session = false) {
     const target = session ? this.client.attachment : { serverId: this.client.serverId };
     if (!target) return Promise.reject(new Error('No session is attached'));
-    return this.client.request(target, { serviceId: service.id, member, args: JSON.parse(JSON.stringify(args)) }, AbortSignal.timeout(this.timeoutMs));
+    const timeoutMs = session ? this.sessionTimeoutMs : this.timeoutMs;
+    const signal = timeoutMs > 0 ? AbortSignal.timeout(timeoutMs) : undefined;
+    return this.client.request(target, { serviceId: service.id, member, args: JSON.parse(JSON.stringify(args)) }, signal);
   }
   list() { return this.call(Directory, 'list', []); }
   transcript(id) { return this.call(Directory, 'transcript', [id]); }

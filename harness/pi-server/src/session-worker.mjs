@@ -5,7 +5,8 @@ import { randomUUID } from 'node:crypto';
  * Bootstrap is injected by the engine owner, never guessed from process cwd.
  */
 export class SessionWorker extends EventEmitter {
-  constructor(metadata, { createRuntime, runRpcMode, timeoutMs = 30000, deferSessionStart = false, disposeContext }) {
+  // Hosted prompt preflight and large get_messages can exceed 30s (astra notes).
+  constructor(metadata, { createRuntime, runRpcMode, timeoutMs = 120000, deferSessionStart = false, disposeContext }) {
     super();
     if (typeof createRuntime !== 'function' || typeof runRpcMode !== 'function') throw new TypeError('A hosted worker requires runtime and RPC factories');
     this.metadata = metadata;

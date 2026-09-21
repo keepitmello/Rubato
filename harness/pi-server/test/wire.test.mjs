@@ -85,3 +85,18 @@ test('a live turn with unencodable text and screenshot-sized events keeps its su
   await unsubscribe();
   assert.deepEqual(env.errors.map((error) => error.message), []);
 });
+
+test('session control RPCs do not inherit the directory AbortSignal timeout', async () => {
+  const signals = [];
+  const serverId = '00000000-0000-4000-8000-000000000001';
+  const client = new SessionClient({ socketPath: '/tmp/rb-unused.sock', serverId, timeoutMs: 40 });
+  client.client = {
+    attachment: { serverId, sessionId: 's', attachmentId: 'a' },
+    serverId,
+    request(_target, _call, signal) { signals.push(signal); return Promise.resolve(null); },
+  };
+  await client.command({ type: 'get_state' });
+  await client.list();
+  assert.equal(signals[0], undefined);
+  assert.ok(signals[1] instanceof AbortSignal);
+});

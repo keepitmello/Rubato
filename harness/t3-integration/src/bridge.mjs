@@ -282,34 +282,42 @@ export class RubatoPiBridge {
     if (this.closed) return Promise.resolve();
     if (this.recovering) return this.recovering;
     const recovery = (async () => {
-      for (const context of this.sessions.values()) {
-        if (this.closed || context.stopped || context.syncing) continue;
-        try {
-          if (!context.client.client.connected || !context.client.client.attachment) {
-            const descriptor = await readDescriptor(this.descriptorPath);
-            if (descriptor.serverId !== context.session.resumeCursor.serverId) throw new Error('Pi server identity changed; refusing automatic redirection');
-            this.descriptor = descriptor;
-            if (context.client.socketPath !== descriptor.socketPath) {
-              await context.client.abandon();
-              context.client = await new SessionClient({ ...descriptor, onError: this.onError }).connect();
-              await context.client.attach(context.sessionId);
-            } else if (context.client.client.connected) {
-              await context.client.attach(context.sessionId);
-            } else {
-              await context.client.reconnect(context.sessionId);
-            }
-            await this.synchronize(context);
-          } else if (context.needsSync) { context.needsSync = false; await this.synchronize(context); }
-        } catch (error) {
-          if (context.session.status !== 'error') { context.session.status = 'error'; this.stateEvent(context); }
-          this.onError(error);
-        }
-      }
+      await Promise.all([...this.sessions.values()].map((context) => {
+        if (this.closed || context.stopped || context.syncing) return;
+        const operation = context.queue.then(() => this.restoreSession(context));
+        context.queue = operation.catch(() => {});
+        return operation;
+      }));
     })();
     this.recovering = recovery;
     const clear = () => { if (this.recovering === recovery) this.recovering = undefined; };
     recovery.then(clear, clear);
     return recovery;
+  }
+  // Reattach on the session queue so recover cannot detach while sendTurn is
+  // mid-RPC. That race was "No session is attached" on a live astra turn.
+  async restoreSession(context) {
+    if (this.closed || context.stopped) return;
+    try {
+      if (context.client.client && (!context.client.client.connected || !context.client.client.attachment)) {
+        const descriptor = await readDescriptor(this.descriptorPath);
+        if (descriptor.serverId !== context.session.resumeCursor.serverId) throw new Error('Pi server identity changed; refusing automatic redirection');
+        this.descriptor = descriptor;
+        if (context.client.socketPath !== descriptor.socketPath) {
+          await context.client.abandon();
+          context.client = await new SessionClient({ ...descriptor, onError: this.onError }).connect();
+          await context.client.attach(context.sessionId);
+        } else if (context.client.client.connected) {
+          await context.client.attach(context.sessionId);
+        } else {
+          await context.client.reconnect(context.sessionId);
+        }
+        await this.synchronize(context);
+      } else if (context.needsSync) { context.needsSync = false; await this.synchronize(context); }
+    } catch (error) {
+      if (context.session.status !== 'error') { context.session.status = 'error'; this.stateEvent(context); }
+      this.onError(error);
+    }
   }
   require(threadId) {
     const context = this.sessions.get(threadId);
@@ -362,9 +370,10 @@ export class RubatoPiBridge {
     const context = this.require(input.threadId);
     const operation = context.queue.then(async () => {
       if (context.stopped) throw new Error('Attachment closed before send');
+      await this.restoreSession(context);
       if (input.continuation === true) {
-        const snapshot = await context.client.snapshot();
-        if (!snapshot.state.isStreaming) {
+        const state = await context.client.command({ type: 'get_state' });
+        if (!state.isStreaming) {
           // Engine restart cuts the turn. T3 still asks to continue; leaving
           // the projection open shows thinking with no stream behind it.
           if (context.projection.turnId) {
@@ -378,8 +387,10 @@ export class RubatoPiBridge {
         const turnId = context.projection.begin();
         return { threadId: input.threadId, turnId, resumeCursor: context.session.resumeCursor };
       }
-      const beforeSend = await context.client.snapshot();
-      await this.drainStrandedQueue(context, beforeSend.state);
+      // Send only needs live state. A full snapshot serializes the transcript
+      // (astra thinking/notes) and was aborting at 30s on every follow-up.
+      const beforeSend = await context.client.command({ type: 'get_state' });
+      await this.drainStrandedQueue(context, beforeSend);
       const images = await imagesFromAttachments(input.attachments);
       if (!input.input?.trim() && images.length === 0) throw new Error('A non-empty prompt is required');
       if (input.interactionMode === 'plan') throw new Error('T3 plan mode is not mapped to Rubato policy');
@@ -483,8 +494,8 @@ export class RubatoPiBridge {
     const context = this.require(threadId); context.projection.interrupted = true;
     await context.client.command({ type: 'abort' });
     context.projection.settle(); context.session.status = 'ready'; this.stateEvent(context);
-    const snapshot = await context.client.snapshot();
-    await this.drainStrandedQueue(context, snapshot.state);
+    const state = await context.client.command({ type: 'get_state' });
+    await this.drainStrandedQueue(context, state);
   }
   async respondToRequest(threadId, requestId, decision) {
     const context = this.require(threadId);
