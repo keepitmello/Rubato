@@ -97,5 +97,18 @@ describe("product model catalog", () => {
       "anthropic/claude-fable-5-1",
       "anthropic/claude-fable-5-1-sub",
     ])
+    expect(availableProductModelIds([
+      { provider: "anthropic", id: "claude-fable-5-1" },
+      { provider: "anthropic", id: "claude-fable-5-1-sub" },
+      { provider: "anthropic", id: "claude-opus-5" },
+      { provider: "openai-codex", id: "gpt-5.6-sol" },
+      { provider: "openai-codex", id: "gpt-5.6-sol-sub" },
+    ])).toEqual([
+      "openai-codex/gpt-5.6-sol",
+      "openai-codex/gpt-5.6-sol-sub",
+      "anthropic/claude-fable-5-1",
+      "anthropic/claude-fable-5-1-sub",
+      "anthropic/claude-opus-5",
+    ])
   })
 })

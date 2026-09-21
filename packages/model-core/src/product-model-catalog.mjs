@@ -153,7 +153,13 @@ export function availableProductModelIds(entries) {
       raw.add(`${entry.provider}/${entry.id}`);
     }
   }
-  return catalogSlugs().filter((slug) => productCatalogAliases(slug).some((alias) => raw.has(alias)));
+  const ids = [];
+  for (const slug of catalogSlugs()) {
+    if (productCatalogAliases(slug).some((alias) => raw.has(alias))) ids.push(slug);
+    const sub = `${slug}${SUB_SUFFIX}`;
+    if (raw.has(sub)) ids.push(sub);
+  }
+  return ids;
 }
 
 export function expandProductCatalogVisibility(visible) {
