@@ -121,25 +121,46 @@ describe("reflection health alert", () => {
     expect(api.entries).toHaveLength(0)
   })
 
-  test("#given the same fingerprint in a second session #when alerting runs #then the guard key admits the new session", async () => {
+  test("#given one unresolved streak across two sessions #when alerting runs #then the episode is announced once", async () => {
     // given
     const root = await failureStreak(3, "stable")
-    const seen = new Set<string>()
-    const once = (key: string): boolean => {
-      if (seen.has(key)) return false
-      seen.add(key)
-      return true
-    }
     const first = liveHarness("session-a")
     const second = liveHarness("session-b")
 
     // when
-    await emitReflectionHealthAlert(root, "agent-test", first.live, once)
-    await emitReflectionHealthAlert(root, "agent-test", second.live, once)
+    const firstEmitted = await emitReflectionHealthAlert(root, "agent-test", first.live, first.once)
+    const secondEmitted = await emitReflectionHealthAlert(root, "agent-test", second.live, second.once)
 
     // then
-    expect([...seen]).toEqual(["session-a:child_exit:stable", "session-b:child_exit:stable"])
-    expect(second.api.entries.filter((entry) => entry.customType === REFLECTION_HEALTH_ENTRY_TYPE)).toHaveLength(1)
+    expect(firstEmitted).toBe(true)
+    expect(secondEmitted).toBe(false)
+    expect(second.api.entries).toHaveLength(0)
+    expect(second.notifications).toEqual([])
+  })
+
+  test("#given reflection recovers and fails again #when the new episode alerts #then the notice returns", async () => {
+    // given: a streak announced once, then cleared by a success
+    const root = await failureStreak(3, "stable")
+    const first = liveHarness("session-a")
+    expect(await emitReflectionHealthAlert(root, "agent-test", first.live, first.once)).toBe(true)
+    await writeFile(
+      join(root, "recovered.json"),
+      JSON.stringify(completion("recovered", minutesAgo(30), "stable", "no_changes")),
+    )
+
+    // when: the same fingerprint fails again after that success
+    for (let index = 0; index < 3; index += 1) {
+      await writeFile(
+        join(root, `again-${index}.json`),
+        JSON.stringify(completion(`again-${index}`, minutesAgo(20 - index * 5), "stable")),
+      )
+    }
+    const second = liveHarness("session-b")
+    const emitted = await emitReflectionHealthAlert(root, "agent-test", second.live, second.once)
+
+    // then
+    expect(emitted).toBe(true)
+    expect(second.notifications).toHaveLength(1)
   })
 })
 
@@ -229,7 +250,12 @@ function daysAgo(days: number): string {
   return new Date(Date.now() - days * 24 * 60 * 60_000).toISOString()
 }
 
-function completion(runId: string, finishedAt: string, detail: string): Record<string, unknown> {
+function completion(
+  runId: string,
+  finishedAt: string,
+  detail: string,
+  outcome: "failed" | "no_changes" = "failed",
+): Record<string, unknown> {
   return {
     schemaVersion: 1,
     runId,
@@ -237,8 +263,8 @@ function completion(runId: string, finishedAt: string, detail: string): Record<s
     category: "quick",
     conversationIds: ["past-session"],
     trigger: "manual",
-    outcome: "failed",
-    reason: "child_exit",
+    outcome,
+    ...(outcome === "failed" ? { reason: "child_exit" } : {}),
     detail,
     startedAt: finishedAt,
     finishedAt,
