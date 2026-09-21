@@ -50,6 +50,7 @@ describe("resolveAgent", () => {
     const agents = roster({
       name: "explore",
       prompt: "Inspect the codebase",
+      model: "openai/gpt-5.6-luna-fast",
       disallowedTools: ["bash", "write"],
     })
     const models = registry([model("openai", "gpt-5.6-luna-fast")])
@@ -63,7 +64,7 @@ describe("resolveAgent", () => {
 
   test("#given an agent without disallowedTools #when resolved #then no denylist is forced onto the persona", () => {
     // given
-    const agents = roster({ name: "explore", prompt: "Inspect the codebase" })
+    const agents = roster({ name: "explore", prompt: "Inspect the codebase", model: "openai/gpt-5.6-luna-fast" })
     const models = registry([model("openai", "gpt-5.6-luna-fast")])
 
     // when
@@ -71,33 +72,6 @@ describe("resolveAgent", () => {
 
     // then
     expect(result.toolDenylist).toBeUndefined()
-  })
-
-  test("#given an agent fallback chain and matching live model #when resolved #then it returns agent metadata and persona", () => {
-    // given
-    const agents = roster({
-      name: "explore",
-      prompt: "Inspect the codebase",
-      executionMode: "in-process",
-    })
-    const models = registry([model("openai", "gpt-5.6-luna-fast")])
-
-    // when
-    const result = expectResolved(resolveAgent("explore", agents, models))
-
-    // then
-    expect(result.model).toBe("openai/gpt-5.6-luna-fast")
-    expect(result.resolved_model).toEqual({
-      source: "preset",
-      provider: "openai",
-      model_id: "gpt-5.6-luna-fast",
-      display: "openai/gpt-5.6-luna-fast",
-      variant: "low",
-      reasoning: "low",
-    })
-    expect(result.preset).toBe("explore")
-    expect(result.instructions).toBe("Inspect the codebase")
-    expect(result.agentExecutionMode).toBe("in-process")
   })
 
   test("#given def.model and def.models are both available #when resolved #then def.model wins", () => {
@@ -184,21 +158,6 @@ describe("resolveAgent", () => {
 
     // then
     expect(result.model).toBe("openai/available")
-  })
-
-  test("#given every configured model is keyless #when resolved #then the builtin fallback chain still resolves an available model", () => {
-    // given
-    const agents = roster({ name: "explore", models: ["anthropic/claude-haiku-4-5"] })
-    const models = catalogRegistry(
-      [model("openai", "gpt-5.6-luna-fast")],
-      [model("anthropic", "claude-haiku-4-5"), model("openai", "gpt-5.6-luna-fast")],
-    )
-
-    // when
-    const result = expectResolved(resolveAgent("explore", agents, models))
-
-    // then
-    expect(result.model).toBe("openai/gpt-5.6-luna-fast")
   })
 
   test("#given a disabled agent #when resolved #then it is hidden as not_found", () => {

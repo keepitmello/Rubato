@@ -1,7 +1,5 @@
-import { resolveModelForDelegateTask } from "@rubato/delegate-core"
-
 import type { SenpiModelPort, SenpiModelRegistryPort } from "../category"
-import { buildRuntimeModelChain, chainRungCandidates } from "../model-chain"
+import { buildRuntimeModelChain } from "../model-chain"
 import type { ResolvedModelRecord } from "../state"
 import { agentModelCandidates, type AgentModelCandidate } from "./agent-model-entry"
 import {
@@ -9,7 +7,6 @@ import {
   parseAvailableAgentModels,
   type ParsedAgentModel,
 } from "./agent-model-registry"
-import { AGENT_FALLBACK_CHAINS } from "./builtin/fallback-chains"
 import type { AgentDefinition } from "./types"
 
 export type ResolveAgentOptions = {
@@ -86,24 +83,16 @@ export function resolveAgent<TModel extends SenpiModelPort>(
     }
   }
 
-  const fallbackChain = Object.hasOwn(AGENT_FALLBACK_CHAINS, name)
-    ? AGENT_FALLBACK_CHAINS[name]
-    : undefined
   if (registry === undefined) {
-    const fallbackHead = fallbackChain?.[0]
-    const fallbackProvider = fallbackHead?.providers[0]
     const attemptedModel = definition.model
       ?? firstConfiguredModel(definition)
-      ?? (fallbackHead !== undefined && fallbackProvider !== undefined
-        ? `${fallbackProvider}/${fallbackHead.model}`
-        : undefined)
     return { kind: "model_unavailable", agent: name, attemptedModel, availableAgents }
   }
 
   // `find` answers from the whole catalog, so a configured model the machine has no credentials for
   // still resolves and the child dies on the first provider call. Gate every candidate on the
-  // auth-filtered available set so `models[]` and the builtin chain can actually take over. An
-  // unparseable available set keeps the find-only behavior rather than failing every resolution.
+  // auth-filtered available set so `models[]` can actually take over. An unparseable available set
+  // keeps the find-only behavior rather than failing every resolution.
   const availableModels = parseAvailableAgentModels(registry.getAvailable())
   let attemptedModel: string | undefined
   const configuredTuning = {
@@ -128,45 +117,6 @@ export function resolveAgent<TModel extends SenpiModelPort>(
         source: "preset",
       }),
     )
-  }
-
-  if (availableModels !== undefined && fallbackChain !== undefined) {
-    const resolution = resolveModelForDelegateTask(
-      { fallbackChain, availableModels: new Set(availableModels) },
-      {
-        connectedProviders: null,
-        hasProviderModelsCache: true,
-        hasConnectedProvidersCache: true,
-      },
-    )
-    if (resolution !== undefined && !("skipped" in resolution)) {
-      attemptedModel = resolution.model
-      const found = findExactAgentModel(resolution.model, registry)
-      if (found !== undefined) {
-        // A builtin chain rung carries its own variant, but an agent that configured tuning without
-        // naming a model still resolves here, so the configured values must win over the rung's.
-        const availableModelSet = new Set(availableModels)
-        return resolvedAgent(
-          context,
-          found,
-          configuredTuning.variant ?? resolution.variant,
-          configuredTuning.reasoningEffort,
-          buildRuntimeModelChain({
-            candidates: chainRungCandidates({
-              chain: fallbackChain,
-              selectedModel: resolution.model,
-              ...(resolution.fallbackEntry !== undefined
-                ? { selectedRungEntry: resolution.fallbackEntry }
-                : {}),
-              availableModels: availableModelSet,
-            }),
-            selectedModel: resolution.model,
-            availableModels: availableModelSet,
-            source: "preset",
-          }),
-        )
-      }
-    }
   }
 
   return { kind: "model_unavailable", agent: name, attemptedModel, availableAgents }

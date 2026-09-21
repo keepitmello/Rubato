@@ -25,7 +25,6 @@ export type SendResultDetails =
   | { readonly kind: "capacity_deferred"; readonly agentId: string; readonly reason: string }
   | { readonly kind: "queued"; readonly agentId: string; readonly queue_position: number }
   | { readonly kind: "not_continuable"; readonly agentId: string; readonly reason: string; readonly suggestion: string }
-  | { readonly kind: "one_shot_agent"; readonly agentId: string; readonly agent: string; readonly message: string }
   | { readonly kind: "scope_denied"; readonly agentId: string; readonly owning_session_id: string; readonly reason: string }
   | { readonly kind: "not_found"; readonly reason: string; readonly known_agents: readonly string[] }
   | { readonly kind: "invalid_arguments"; readonly reason: string }

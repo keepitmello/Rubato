@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { DISABLED_AGENT_NAMES, DISABLED_CATEGORY_NAMES, MEMORY_JOB_MODELS, MODEL_CATEGORY_CHAINS } from "./defaults.mjs";
+import { DISABLED_CATEGORY_NAMES, MEMORY_JOB_MODELS, MODEL_CATEGORY_CHAINS } from "./defaults.mjs";
 
 function readTaskSettings(cwd) {
   if (!cwd) return undefined;
@@ -54,7 +54,6 @@ export function loadRubatoPiRubatoConfig(options = {}) {
   const task = readTaskSettings(options.cwd);
   return {
     config: {
-      agents: Object.fromEntries(DISABLED_AGENT_NAMES.map((name) => [name, { disable: true }])),
       categories: {
         ...Object.fromEntries(DISABLED_CATEGORY_NAMES.map((name) => [name, { disable: true }])),
         ...Object.fromEntries(

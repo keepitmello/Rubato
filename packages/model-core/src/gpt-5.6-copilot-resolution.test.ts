@@ -12,12 +12,6 @@ describe("GitHub Copilot GPT-5.6 resolution", () => {
       expectedVariant: "medium",
     },
     {
-      name: "momus",
-      requirement: AGENT_MODEL_REQUIREMENTS.momus,
-      expectedModel: "github-copilot/gpt-5.6-terra",
-      expectedVariant: "high",
-    },
-    {
       name: "ultrabrain",
       requirement: CATEGORY_MODEL_REQUIREMENTS.ultrabrain,
       expectedModel: "github-copilot/gpt-5.6-sol",
@@ -58,47 +52,6 @@ describe("GitHub Copilot GPT-5.6 resolution", () => {
     })
   }
 
-  test("warm cache resolves transformed Vercel GPT-5.6 with high", () => {
-    // given
-    const availableModels = new Set(["vercel/openai/gpt-5.6-terra"])
-
-    // when
-    const result = resolveModelWithFallback({
-      fallbackChain: AGENT_MODEL_REQUIREMENTS.momus.fallbackChain,
-      availableModels,
-      systemDefaultModel: "system/default",
-    })
-
-    // then
-    expect(result).toEqual({
-      model: "vercel/openai/gpt-5.6-terra",
-      source: "provider-fallback",
-      variant: "high",
-    })
-  })
-
-  test("warm cache keeps transformed Vercel terra ahead of Copilot terra", () => {
-    // given
-    const availableModels = new Set([
-      "github-copilot/gpt-5.6-terra",
-      "vercel/openai/gpt-5.6-terra",
-    ])
-
-    // when
-    const result = resolveModelWithFallback({
-      fallbackChain: AGENT_MODEL_REQUIREMENTS.momus.fallbackChain,
-      availableModels,
-      systemDefaultModel: "system/default",
-    })
-
-    // then
-    expect(result).toEqual({
-      model: "vercel/openai/gpt-5.6-terra",
-      source: "provider-fallback",
-      variant: "high",
-    })
-  })
-
   test("Copilot is never included in a GPT-5.6 xhigh rung", () => {
     // given
     const requirements = [
@@ -118,28 +71,8 @@ describe("GitHub Copilot GPT-5.6 resolution", () => {
     expect(copilotXhighEntries).toEqual([])
   })
 
-  test("momus uses high for its Copilot Sol fallback when Terra is unavailable", () => {
-    // given
-    const availableModels = new Set(["github-copilot/gpt-5.6-sol"])
-
-    // when
-    const result = resolveModelWithFallback({
-      fallbackChain: AGENT_MODEL_REQUIREMENTS.momus.fallbackChain,
-      availableModels,
-      systemDefaultModel: "system/default",
-    })
-
-    // then
-    expect(result).toEqual({
-      model: "github-copilot/gpt-5.6-sol",
-      source: "provider-fallback",
-      variant: "high",
-    })
-  })
-
   const fallbackCases = [
     { name: "hephaestus", requirement: AGENT_MODEL_REQUIREMENTS.hephaestus },
-    { name: "momus", requirement: AGENT_MODEL_REQUIREMENTS.momus },
     { name: "deep", requirement: CATEGORY_MODEL_REQUIREMENTS.deep },
   ] as const
 

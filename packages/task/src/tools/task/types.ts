@@ -1,7 +1,7 @@
 import type { AgentHost, ModelCatalog } from "@rubato/agent-core"
 import type { RubatoConfig } from "@rubato/config-core"
 
-import type { AgentDefinition, SkillInvocationState } from "../../agents"
+import type { AgentDefinition } from "../../agents"
 import type { TaskManager } from "../../manager"
 import type { ResolvedModelRecord, TaskRunStats } from "../../state"
 import type { TaskToolParamsStatic } from "./params"
@@ -59,9 +59,6 @@ export type TaskToolDeps = {
   readonly models?: ModelCatalog
   readonly host?: AgentHost
   readonly resolveAncestry?: ResolveAncestry
-  // Session-scoped skill-invocation state for plan-gated agents (metis/momus). When absent the
-  // invocation gate fails CLOSED: without a resolver there is no proof ulw-plan was invoked.
-  readonly resolveSkillInvocations?: (sessionId: string) => SkillInvocationState
 }
 
 export type TaskToolMode = "spawn"

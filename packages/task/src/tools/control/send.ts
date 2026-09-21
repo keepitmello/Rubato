@@ -15,7 +15,6 @@ const DESCRIPTION = [
   "Send a follow-up instruction to a child agent, keyed by agentId.",
   "Plain-text messages always steer a running child immediately.",
   "A plain-text message to a finished resident child revives that same session; disposed, evicted, cancelled, and terminal-errored children are not revived.",
-  "One-shot agents (momus) always refuse AgentSend in every state; spawn a new momus instead.",
 ].join(" ")
 
 export type TaskSendDeps = {

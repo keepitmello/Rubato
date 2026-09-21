@@ -112,8 +112,6 @@ export function createSenpiAgentHandle(
         case "queued":
         case "capacity_deferred":
           return
-        case "one_shot_agent":
-          throw new Error(outcome.message)
         default:
           throw new Error(outcome.reason)
       }

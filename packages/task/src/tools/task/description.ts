@@ -1,6 +1,6 @@
 import type { RubatoConfig } from "@rubato/config-core"
 
-import { PLAN_GATED_AGENT_NAMES, type AgentDefinition } from "../../agents"
+import type { AgentDefinition } from "../../agents"
 import { listTaskAgents } from "./categories"
 import type { TaskAgentInfo } from "./types"
 
@@ -21,14 +21,11 @@ type DescriptionInput = {
 
 export function buildTaskToolDescription(input: DescriptionInput): string {
   const agents = listTaskAgents(input.agents)
-  const plainAgents = agents.filter((agent) => !PLAN_GATED_AGENT_NAMES.has(agent.name))
-  const gatedAgents = agents.filter((agent) => PLAN_GATED_AGENT_NAMES.has(agent.name))
-  const hasPresetRoute = plainAgents.length > 0 || gatedAgents.length > 0
   const contract =
     "Start one child agent using exactly one of `model` or `preset`. Omit `effort` normally; the configured model default applies. Set `effort` only when an explicit manual override is required."
   return `${contract}
 
-${renderTargetSection(hasPresetRoute, plainAgents, gatedAgents)}
+${renderTargetSection(agents)}
 
 Spawns are asynchronous and return an agentId immediately. Completion arrives as a notification.
 Pass summary (one line, <=80 chars) so the footer/widget UI shows what was delegated.
@@ -38,25 +35,16 @@ Prompts MUST be in English.`
 }
 
 function renderTargetSection(
-  hasPresetRoute: boolean,
-  plainAgents: readonly TaskAgentInfo[],
-  gatedAgents: readonly TaskAgentInfo[],
+  agents: readonly TaskAgentInfo[],
 ): string {
   const modelLine =
     "`model` is a complete provider/model id from the live host registry. The tool schema lists admitted values; missing models fail closed with model_unavailable and there is no fallback."
-  if (!hasPresetRoute) {
+  const first = agents[0]
+  if (first === undefined) {
     return `${modelLine}
 No presets are currently loaded; provide \`model\`.`
   }
-  const presetNames = plainAgents.map((agent) => agent.name).join(", ")
-  const presetLine =
-    plainAgents.length === 0
-      ? "`preset` invokes a loaded named agent."
-      : `\`preset\` invokes a loaded named agent. Available presets: ${presetNames}. CORRECT: Agent(preset="${plainAgents[0]?.name ?? "explore"}", prompt="...")`
-  const gatedLine =
-    gatedAgents.length === 0
-      ? ""
-      : `\nPlan-gated presets (spawnable only after the user explicitly requests the ulw-plan workflow, a .rubato/plans/*.md plan artifact was touched in this session, and start-work was never invoked): ${gatedAgents.map((agent) => agent.name).join(", ")}`
+  const presetNames = agents.map((agent) => agent.name).join(", ")
   return `${modelLine}
-${presetLine}${gatedLine}`
+\`preset\` invokes a loaded named agent. Available presets: ${presetNames}. CORRECT: Agent(preset="${first.name}", prompt="...")`
 }

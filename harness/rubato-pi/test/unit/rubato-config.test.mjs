@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DISABLED_AGENT_NAMES, DISABLED_CATEGORY_NAMES, MEMORY_JOB_MODELS, MODEL_CATEGORIES, MODEL_CATEGORY_CHAINS } from "../../src/defaults.mjs";
+import { DISABLED_CATEGORY_NAMES, MEMORY_JOB_MODELS, MODEL_CATEGORIES, MODEL_CATEGORY_CHAINS } from "../../src/defaults.mjs";
 import { loadRubatoPiRubatoConfig, pinMemoryJobsToGrok } from "../../src/rubato-config.mjs";
 
 test("task config maps model names and disables inactive category routing", () => {
@@ -30,14 +30,6 @@ test("semantic categories own ordered provider preference and fallback", () => {
     "kiro/gpt-5.6-sol",
     "openai-codex/gpt-5.6-sol",
   ]);
-});
-
-test("inactive agents this harness does not route are disabled", () => {
-  const { config } = loadRubatoPiRubatoConfig();
-  for (const name of DISABLED_AGENT_NAMES) {
-    assert.deepEqual(config.agents[name], { disable: true });
-  }
-  assert.deepEqual(Object.keys(config.agents).sort(), [...DISABLED_AGENT_NAMES].sort());
 });
 
 test("memory pin leaves absent settings to the memory schema and reopens quick as grok-only", () => {

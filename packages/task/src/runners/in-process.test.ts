@@ -231,48 +231,6 @@ describe("InProcessRunner", () => {
     expect(customNames).toEqual(["lsp_diagnostics", "grep"])
   })
 
-  test("#given a curated child with bash allowed #when the session is constructed #then a restricted bash override replaces the builtin", async () => {
-    // given
-    let captured: CreateAgentSessionOptions | undefined
-    const fake = createFakeSession()
-    const runner = new InProcessRunner({
-      createSession: async (options) => {
-        captured = options
-        return fake.session
-      },
-    })
-
-    // when
-    const handle = await runner.start(baseSpec({ preset: "explore", toolAllowlist: ["bash"] }))
-    fake.resolvePrompt()
-    await handle.waitForIdle()
-
-    // then
-    const bashTools = (captured?.customTools ?? []).filter((tool) => tool.name === "bash")
-    expect(bashTools).toHaveLength(1)
-    expect(bashTools[0]?.description).toContain("read-only")
-  })
-
-  test("#given a non-curated child #when the session is constructed #then no bash override is injected", async () => {
-    // given
-    let captured: CreateAgentSessionOptions | undefined
-    const fake = createFakeSession()
-    const runner = new InProcessRunner({
-      createSession: async (options) => {
-        captured = options
-        return fake.session
-      },
-    })
-
-    // when
-    const handle = await runner.start(baseSpec({ preset: "scout", toolAllowlist: ["bash"] }))
-    fake.resolvePrompt()
-    await handle.waitForIdle()
-
-    // then
-    expect((captured?.customTools ?? []).some((tool) => tool.name === "bash")).toBe(false)
-  })
-
   test("#given a started child #when the session is constructed #then a persisted session manager rooted at the spec session dir is used", async () => {
     let captured: CreateAgentSessionOptions | undefined
     const fake = createFakeSession()

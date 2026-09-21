@@ -25,20 +25,20 @@ function acceptRpcTypes(command: RpcCommand, response: RpcResponse, event: Agent
 }
 
 describe("pinned Senpi API surface", () => {
-  test("#given the senpi-task root import #when curated agent exports are used #then values and result types resolve", () => {
+  test("#given the senpi-task root import #when agent resolution exports are used #then values and result types resolve", () => {
     // given
     const options: ResolveAgentOptions = { modelOverride: "openai/explicit" }
+    const agents = { reviewer: senpiTask.defineAgent({ name: "reviewer" }) }
 
     // when
     const result: AgentResolutionResult = senpiTask.resolveAgent(
-      "explore",
-      senpiTask.BUILTIN_AGENTS,
+      "reviewer",
+      agents,
       undefined,
       options,
     )
 
     // then
-    expect(senpiTask.BUILTIN_AGENT_DEFAULTS).toHaveLength(4)
     expect(result.kind).toBe("resolved")
   })
 
