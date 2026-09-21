@@ -104,7 +104,7 @@ test('a message that reaches the bridge during a live turn is a steer, not a sec
   const commands = [];
   const state = {isStreaming:true,isCompacting:false,pendingMessageCount:0,requestTimeline:{pendingInputs:[]}};
   const context = {sessionId:'busy-session',projection,session:{threadId:'busy-thread',status:'ready'},queue:Promise.resolve(),stopped:false,
-    client:{snapshot:async()=>({state}),command:async(command)=>{commands.push(command);}}};
+    client:{command:async(command)=>{commands.push(command); if(command.type==='get_state') return state;}}};
   bridge.sessions = new Map([['busy-thread',context]]);
   await bridge.sendTurn({threadId:'busy-thread',input:'first'});
   await bridge.sendTurn({threadId:'busy-thread',input:'promoted with Send now'});
@@ -112,7 +112,9 @@ test('a message that reaches the bridge during a live turn is a steer, not a sec
   // was promoted on purpose. Parking it in Pi's queue made both row buttons mean
   // the same thing and hid the text from the surface that queued it.
   assert.deepEqual(commands,[
+    {type:'get_state'},
     {type:'prompt',message:'first'},
+    {type:'get_state'},
     {type:'steer',message:'promoted with Send now'},
   ]);
 });
@@ -128,10 +130,10 @@ test('a steer the stopped turn never read is drained back into the thread', asyn
   // prompt; run later it would surface inside an unrelated turn.
   const state = {isStreaming:false,isCompacting:false,pendingMessageCount:1,requestTimeline:{pendingInputs:[]}};
   const context = {sessionId:'stale-session',projection,session:{threadId:'stale-thread',status:'ready'},queue:Promise.resolve(),stopped:false,
-    client:{snapshot:async()=>({state}),command:async(command)=>{commands.push(command); if(command.type==='clear_queue') return {steering:['stranded'],followUp:[]};}}};
+    client:{command:async(command)=>{commands.push(command); if(command.type==='get_state') return state; if(command.type==='clear_queue') return {steering:['stranded'],followUp:[]};}}};
   bridge.sessions = new Map([['stale-thread',context]]);
   await bridge.sendTurn({threadId:'stale-thread',input:'new'});
-  assert.deepEqual(commands,[{type:'clear_queue'},{type:'prompt',message:'new'}]);
+  assert.deepEqual(commands,[{type:'get_state'},{type:'clear_queue'},{type:'prompt',message:'new'}]);
   assert.match(events.find((event)=>event.type==='runtime.warning').payload.message,/stranded/);
   assert.equal(events.some((event)=>event.type==='user-input.requested'),false,'a stranded message is reported, never asked about');
 });
@@ -143,10 +145,10 @@ test('an empty provider queue costs no clear_queue call', async () => {
   const commands = [];
   const state = {isStreaming:false,isCompacting:false,pendingMessageCount:0,requestTimeline:{pendingInputs:[]}};
   const context = {sessionId:'idle-session',projection,session:{threadId:'idle-thread',status:'ready'},queue:Promise.resolve(),stopped:false,
-    client:{snapshot:async()=>({state}),command:async(command)=>{commands.push(command);}}};
+    client:{command:async(command)=>{commands.push(command); if(command.type==='get_state') return state;}}};
   bridge.sessions = new Map([['idle-thread',context]]);
   await bridge.sendTurn({threadId:'idle-thread',input:'new'});
-  assert.deepEqual(commands,[{type:'prompt',message:'new'}]);
+  assert.deepEqual(commands,[{type:'get_state'},{type:'prompt',message:'new'}]);
 });
 
 test('a failure the socket did not cause still reaches the caller', async (t) => {
@@ -902,5 +904,20 @@ test('a fresh session with no assistant message still publishes the session mode
   const published = events.filter((event) => event.type === 'thread.token-usage.updated');
   assert.equal(published.length, 1);
   assert.equal(published[0].payload.usage.maxTokens, 1000000);
+});
+
+test('sendTurn keeps working after the transcript snapshot path hangs', async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'rb-t3-'));
+  const service = await serveProfile({ agentDir: root, idleMs: 60,
+    workerFactory: (metadata) => new RpcWorker(metadata, { cliPath: fixture, timeoutMs: 1500 }) });
+  const events = [];
+  const bridge = new RubatoPiBridge({ descriptorPath: service.descriptorPath, instanceId: 'rubato-test',
+    shows: () => true, emit: (event) => events.push(decodeEvent(event)) });
+  t.after(async () => { await bridge.close(); await service.close(); await rm(root, { force: true, recursive: true }); });
+  await bridge.startSession({ threadId: 'hang-thread', runtimeMode: 'full-access', cwd: root });
+  await bridge.sendTurn({ threadId: 'hang-thread', input: '__block_messages' });
+  await until(() => events.some((event) => event.type === 'turn.completed'));
+  await bridge.sendTurn({ threadId: 'hang-thread', input: 'still works' });
+  await until(() => events.filter((event) => event.type === 'turn.completed').length >= 2);
 });
 
