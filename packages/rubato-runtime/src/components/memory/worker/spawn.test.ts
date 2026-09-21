@@ -257,6 +257,53 @@ describe("memory child TUI loader inheritance", () => {
     expect(prepared.env.NODE_OPTIONS).toBe(HOOK)
     expect(prepared.env.SENPI_MEMORY_FACTS).toBe("1")
   })
+
+  // The host engine sets PI_PACKAGE_DIR for itself. senpi resolves its own shipped assets
+  // through the same name, so a child that inherited it read the host package's theme
+  // directory, missed grok-night.json, and died in theme init before doing any work.
+  test("#given a parent engine package location #when a reflection spawn is prepared #then the child is not pointed at the host's package", async () => {
+    const base = await root()
+    const prepared = await prepareReflectionSpawn({
+      run,
+      worktree: {
+        dir: base,
+        commonConfigPath: join(base, "config"),
+      } as unknown as ReflectionWorktree,
+      reflectionSessionsDir: join(base, "sessions"),
+      category: "quick",
+      model: "provider/model",
+      env: {
+        PI_PACKAGE_DIR: "/stock-engine/node_modules/@earendil-works/pi-coding-agent",
+        SENPI_PACKAGE_DIR: "/stock-engine/node_modules/@earendil-works/pi-coding-agent",
+        SENPI_MEMORY_REFLECTION: "parent-value",
+      },
+      mergePolicy: "auto",
+      skillsUsageSource: join(base, "skills.json"),
+      memoryUsageSource: join(base, "memory-usage.json"),
+      dreamStateSource: join(base, "dream.json"),
+      peoplePolicy: { enabled: true, max_entries: 40, max_entry_chars: 200 },
+      senpiCommand: "/custom/senpi",
+    })
+
+    expect(prepared.env.PI_PACKAGE_DIR).toBeUndefined()
+    expect(prepared.env.SENPI_PACKAGE_DIR).toBeUndefined()
+    // Everything else the parent carried still reaches the child.
+    expect(prepared.env.SENPI_MEMORY_REFLECTION).toBe("1")
+  })
+
+  test("#given a parent engine package location #when a facts spawn is prepared #then the child is not pointed at the host's package", async () => {
+    const prepared = await prepareFactsSpawn({
+      runId: "facts-1",
+      runDir: await root(),
+      payload,
+      model: "provider/model",
+      env: { PI_PACKAGE_DIR: "/stock-engine/node_modules/@earendil-works/pi-coding-agent" },
+      senpiCommand: "/custom/senpi",
+    })
+
+    expect(prepared.env.PI_PACKAGE_DIR).toBeUndefined()
+    expect(prepared.env.SENPI_MEMORY_FACTS).toBe("1")
+  })
 })
 
 describe("worker senpi prefix args", () => {

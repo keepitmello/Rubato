@@ -12,6 +12,25 @@ const SENPI_PACKAGE_DIR = join("@code-yeongyu", "senpi")
 const CLI_RELATIVE = join("dist", "cli.js")
 
 /**
+ * Package-location keys the host sets for its OWN engine.
+ *
+ * A memory child runs senpi, not the host engine, and senpi resolves its own shipped assets
+ * through the same names (`config.js` reads `PACKAGE_DIR` across the brand prefixes). Inheriting
+ * them aims the child's asset lookup at the host's package: with `PI_PACKAGE_DIR` on stock-pi's
+ * `pi-coding-agent`, `getBuiltinThemes()` read `grok-night.json` from a copy that never shipped
+ * it and threw, and `initTheme`'s fallback re-read the same missing file, so the child died in
+ * theme init before any reflection work.
+ */
+const ENGINE_LOCATION_KEYS = Object.freeze(["PI_PACKAGE_DIR", "SENPI_PACKAGE_DIR"])
+
+/** Parent environment with the host engine's package location removed for a senpi child. */
+export function memoryChildEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const child: NodeJS.ProcessEnv = { ...env }
+  for (const key of ENGINE_LOCATION_KEYS) delete child[key]
+  return child
+}
+
+/**
  * Resolve the senpi CLI to spawn reflection, dream, and facts children with.
  *
  * The previous resolution ended at a bare `"senpi"` when no executable was found, which is not a

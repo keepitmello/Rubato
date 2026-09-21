@@ -17,7 +17,11 @@ export function reflectionRemediation(reason: string | undefined, detail: string
   ) {
     return "the reflection child cannot see the configured category model; adjust memory.reflection category/model in your Rubato config"
   }
-  if (combined.includes("spawn") || combined.includes("enoent")) {
+  // Only a spawn that never produced a process means the launcher is missing, and that is what
+  // the `spawn_failed` reason records. Matching the substring instead caught every in-child
+  // `ENOENT`: a senpi child that died in theme init reading a missing file was reported as a
+  // launcher problem, and the user went looking for SENPI_BIN that was never the cause.
+  if (reason?.toLowerCase() === "spawn_failed") {
     return "senpi executable not resolvable for the reflection child; set SENPI_BIN"
   }
   if (combined.includes("api key") || combined.includes("auth_missing")) {

@@ -19,7 +19,7 @@ import type {
 } from "./spawn-types"
 import { memoryChildExtensionArgs } from "./child-extensions"
 import { cursorGrokLaunchModel } from "./cursor-grok-ids"
-import { resolveMemoryChildLaunch, resolveSenpiLaunch } from "./senpi-command"
+import { memoryChildEnv, resolveMemoryChildLaunch, resolveSenpiLaunch } from "./senpi-command"
 
 export async function prepareReflectionSpawn(input: PrepareReflectionSpawnInput): Promise<ReflectionSpawnArgs> {
   const sessionDir = join(input.reflectionSessionsDir, safeRunId(input.run.runId))
@@ -82,7 +82,7 @@ export async function prepareReflectionSpawn(input: PrepareReflectionSpawnInput)
     ...(dreamTarget === undefined ? {} : { dreamTarget }),
   }
   const env: NodeJS.ProcessEnv = {
-    ...input.env,
+    ...memoryChildEnv(input.env),
     MEMORY_DIR: input.worktree.dir,
     TRANSCRIPT_PATH: transcript,
     ...(dreamPaths === undefined ? {} : {
@@ -200,7 +200,7 @@ export async function prepareFactsSpawn(input: PrepareFactsSpawnInput): Promise<
   await writeFile(payload, serializeFactsPayload(input.payload), { encoding: "utf8", mode: 0o600 })
   await chmod(payload, 0o400)
   const env: NodeJS.ProcessEnv = {
-    ...input.env,
+    ...memoryChildEnv(input.env),
     FACTS_PAYLOAD_PATH: payload,
     FACTS_EXTRACTION_PATH: extraction,
     SENPI_MEMORY_FACTS: "1",
