@@ -159,19 +159,10 @@ else
   mkdir -p "$(dirname "$GIT_EXCLUDES")"
   {
     printf '\n# rubato:artifact-dirs — 에이전트 산출물. T3 체크포인트가 매 턴 해시하지 않도록 둔다.\n'
-    printf '_workspace/\n.outpost/\n.consult/\n.omo/\n.rubato-pi/\n'
+    printf '_workspace/\n.outpost/\n.consult/\n.rubato-pi/\n'
   } >> "$GIT_EXCLUDES"
   git config --global core.excludesFile "$GIT_EXCLUDES"
   ok "전역 git 무시 목록에 산출물 폴더를 넣었다 ($GIT_EXCLUDES)"
-fi
-
-# 첫 설치와 재설치 모두 옛 사용자 상태와 현재 프로젝트 설정을 Rubato 경로로
-# 옮긴다. dry-run에서는 계획만 보여준다.
-if [ "$APPLY" -eq 0 ]; then
-  plan "~/.omo와 현재 프로젝트 .omo를 .rubato로 충돌 없이 이관"
-else
-  "$NODE24" "$HARNESS/scripts/migrate-rubato-state.mjs" --cwd "$PWD" \
-    || { err "기존 설정 경로 이관 실패"; exit 1; }
 fi
 
 # --only-shell 이면 의존성·프롬프트·스킬은 손대지 않는다. 셸 설정만 다시 심는다.
