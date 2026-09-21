@@ -6,6 +6,7 @@ import { applySelectionOptions, catalogForPicker } from './model-catalog-order.m
 import { controlCommandFor, rewriteSkillMentions, surfaceFromPiCommands } from './commands.mjs';
 import { readFile } from 'node:fs/promises';
 import { appendFileSync, mkdirSync, readFileSync, readdirSync, statSync, realpathSync } from 'node:fs';
+import { setTimeout as delay } from 'node:timers/promises';
 function t3BridgeLog(message, extra) {
   try {
     const dir = path.join(os.homedir(), '.rubato-pi', 'logs');
@@ -102,6 +103,8 @@ async function imagesFromAttachments(attachments) {
   }
   return images;
 }
+/** 확장 명령으로 보낼 때의 슬래시 문장. 남은 인자는 그대로 명령 인자가 된다. */
+const slashText = (control) => `/${control.name}${control.args ? ` ${control.args}` : ''}`;
 export class RubatoPiBridge {
   constructor({ descriptorPath, instanceId, emit = () => {}, onError = () => {}, projectedMessages = async () => [],
     shows = userStartedSession }) {
@@ -390,8 +393,15 @@ export class RubatoPiBridge {
       try {
         if (control) {
           context.projection.sawCompaction = false;
-          await context.client.command(control.rpc);
-          this.reportControl(context, control);
+          if (control.name === 'compact' && await this.compactCommandAvailable(context)) {
+            // 정리 방식은 확장이 모드를 보고 고른다. 완료는 실제 컷이 만드는
+            // compaction_end 가 알리므로 여기서 'compacted' 를 지어내지 않는다.
+            await context.client.command({ type: 'prompt', message: slashText(control) });
+            await this.requireCutStarted(context);
+          } else {
+            await context.client.command(control.rpc);
+            this.reportControl(context, control);
+          }
         } else {
           // 대기열은 T3 가 쥔다: 큐에 든 말은 턴이 끝나야 나오는 팔로업이고,
           // 그 행의 Send now 화살표가 승격이다. 그러니 턴이 도는 중에 여기까지
@@ -419,12 +429,49 @@ export class RubatoPiBridge {
     if (control.name === 'compact' && !context.projection.sawCompaction)
       context.projection.event('thread.state.changed', { state: 'compacted' });
   }
+  /**
+   * 노트 모드의 수동 정리는 요약이 아니라 새 문맥 창이다. 그 컷은 session_before_compact
+   * 훅 안에서 돌릴 수 없어서(엔진이 그 구간에 applyCompaction 을 거부한다) 확장의
+   * compact 명령으로 보낸다. 명령이 없는 런타임 — 확장을 안 싣는 빌드 — 에서는 예전
+   * compact RPC 로 떨어진다. 명령 목록은 부착 동안 고정이라 한 번만 묻는다.
+   */
+  async compactCommandAvailable(context) {
+    if (context.compactCommand !== undefined) return context.compactCommand;
+    try {
+      const { commands } = await context.client.command({ type: 'get_commands' });
+      context.compactCommand = (commands ?? [])
+        .some((command) => command?.name === 'compact' && command.source === 'extension');
+    } catch { context.compactCommand = false; }
+    return context.compactCommand;
+  }
+  /**
+   * 노트 모드의 컷은 즉시 끝나거나(노트가 신선할 때), 체크포인트 전용 턴이 노트를
+   * 저장한 뒤에 끝난다. 둘 다 아니면 컷이 시작되지 않은 것이므로 T3 가 완료 이벤트를
+   * 10분 기다리다 세션을 타임아웃으로 잠그게 두지 않고 여기서 끊는다.
+   */
+  async requireCutStarted(context) {
+    for (let attempt = 0; attempt < 8; attempt++) {
+      if (context.projection.sawCompaction) return;
+      const state = await context.client.command({ type: 'get_state' });
+      if (state?.isStreaming === true || state?.isCompacting === true) return;
+      await delay(250);
+    }
+    throw new Error('새 문맥 창 전환이 시작되지 않았어요. 작업 노트 저장이 막혔는지 대화를 확인해 주세요');
+  }
   compact(threadId, customInstructions) {
     const context = this.require(threadId);
     const operation = context.queue.then(async () => {
       if (context.stopped) throw new Error('Attachment closed before compact');
       if (context.session.status === 'running') throw new Error('Interrupt the current turn before compacting');
       context.projection.sawCompaction = false;
+      if (await this.compactCommandAvailable(context)) {
+        await context.client.command({
+          type: 'prompt',
+          message: `/compact${customInstructions ? ` ${customInstructions}` : ''}`,
+        });
+        await this.requireCutStarted(context);
+        return;
+      }
       await context.client.command({ type: 'compact', ...(customInstructions ? { customInstructions } : {}) });
       if (!context.projection.sawCompaction)
         context.projection.event('thread.state.changed', { state: 'compacted' });
