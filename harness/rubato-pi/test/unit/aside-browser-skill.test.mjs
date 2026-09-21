@@ -20,7 +20,7 @@ function assertAccountPolicy(skill, label) {
   );
   assert.match(skill, /Omit `-m`/);
   assert.match(skill, /Never pass `openai\/gpt-5\.6-sol`/);
-  assert.match(skill, /Grok 4\.6/);
+  assert.match(skill, /Grok 4\.7/);
   assert.match(skill, /Default, Fast, Standard, Deep, Visual/);
 }
 
