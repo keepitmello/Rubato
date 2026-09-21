@@ -381,8 +381,24 @@ test("actual SDK injects stable history identity and keeps notes through reload 
   assert.match(clonedContext.systemPrompt, /Working across context windows/);
   assertNotesWindowPrecedes(clonedContext.messages,
     clonedContext.messages.find((message) => textOf(message).includes("continue from the cloned note")));
+  // T3 의 컴팩션 컨트롤은 이 이름으로 온다. 이름이 바뀌면 브리지는 조용히 예전
+  // compact RPC 로 떨어져 노트 모드에서 "Internal server error" 로 돌아간다.
+  assert.ok(host.session.extensionRunner.getCommand("compact"), "the compact command is what T3's control routes to");
   assert.deepEqual(extensionErrors, []);
   assert.deepEqual(uiNotices.filter((notice) => notice.level === "error"), []);
+  // 마지막으로 T3 의 컴팩션 컨트롤이 타는 길을 확인한다. 노트가 이 사용자 요청보다
+  // 오래됐으면 컷 대신 체크포인트 전용 턴을 요청하고, 신선하면 창을 넘긴다. 어느
+  // 쪽이든 노트 시스템에 닿아야 한다 — 요약 모드 분기로 새면 엔진이 거부해 조용히 끝난다.
+  const cutBefore = host.session.sessionManager.getEntries()
+    .filter((entry) => entry.type === "compaction" && entry.details?.reason === "manual").length;
+  await host.session.prompt("/compact");
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const afterCompact = host.session.sessionManager.getEntries();
+  assert.ok(
+    afterCompact.filter((entry) => entry.type === "compaction" && entry.details?.reason === "manual").length > cutBefore
+      || afterCompact.some((entry) => entry.customType === "rubato-context-checkpoint-request"),
+    "the compact command cuts the notes window or asks for the note first, instead of refusing",
+  );
 });
 
 test("actual unbundled RPC preserves context entries and injection over reload and clone", async (t) => {

@@ -580,7 +580,8 @@ test('a control command typed as composer text becomes its RPC command and T3 is
     return original(command);
   };
   await bridge.sendTurn({ threadId:'ctl-thread', input:'/compact keep the plan' });
-  assert.deepEqual(calls.filter((command) => command.type !== 'get_state'), [
+  // 브리지는 컴팩션을 보내기 전에 세션이 확장 compact 명령을 싣고 있는지 한 번 묻는다.
+  assert.deepEqual(calls.filter((command) => !['get_state','get_commands'].includes(command.type)), [
     { type: 'compact', customInstructions: 'keep the plan' },
   ]);
   assert.ok(events.some((event) => event.type==='thread.state.changed' && event.payload.state==='compacted'));
@@ -640,8 +641,67 @@ test('native compact issues the compact RPC and reports compacted to T3', async 
     return original(command);
   };
   await bridge.compact('cmp-thread');
-  assert.deepEqual(calls.filter((command) => command.type !== 'get_state'), [{ type: 'compact' }]);
+  assert.deepEqual(calls.filter((command) => !['get_state','get_commands'].includes(command.type)), [{ type: 'compact' }]);
   assert.ok(events.some((event) => event.type==='thread.state.changed' && event.payload.state==='compacted'));
+});
+
+// 노트 모드(Astra 기본)에서는 요약 컴팩션이 금지돼 있다. 그 컷은 session_before_compact
+// 훅 안에서 돌릴 수 없어서(엔진이 그 구간에 applyCompaction 을 거부한다) 확장의 compact
+// 명령으로 보낸다. 완료는 실제 컷이 만드는 compaction_end 가 알리므로 브리지가
+// 'compacted' 를 지어내면 안 된다.
+/** 확장이 compact 명령을 싣고 있는 런타임을 흉내낸다. 다른 명령은 진짜 클라이언트로 넘긴다. */
+const extensionCompact = (command) => command.type === 'get_commands'
+  ? { commands: [{ name: 'compact', description: '정리', source: 'extension' }] }
+  : undefined;
+const compactedEvents = (events) => events.filter((event) => event.type==='thread.state.changed' && event.payload.state==='compacted');
+
+test('a typed /compact reaches the extension command instead of the compact RPC', async (t) => {
+  const { root, events, bridge } = await setup(t);
+  await bridge.startSession({ threadId:'ext-thread', runtimeMode:'full-access', cwd:root });
+  const context = bridge.sessions.get('ext-thread');
+  const calls = [];
+  const original = context.client.command.bind(context.client);
+  context.client.command = async (command) => {
+    calls.push(command);
+    return extensionCompact(command) ?? original(command);
+  };
+  await bridge.sendTurn({ threadId:'ext-thread', input:'/compact keep the plan' });
+  assert.deepEqual(calls.filter((command) => command.type === 'prompt'), [
+    { type: 'prompt', message: '/compact keep the plan' },
+  ]);
+  assert.equal(calls.some((command) => command.type === 'compact'), false);
+  assert.deepEqual(compactedEvents(events), []);
+});
+
+test('native compact reaches the extension command and leaves completion to the real cut', async (t) => {
+  const { root, events, bridge } = await setup(t);
+  await bridge.startSession({ threadId:'ext-native', runtimeMode:'full-access', cwd:root });
+  const context = bridge.sessions.get('ext-native');
+  const calls = [];
+  const original = context.client.command.bind(context.client);
+  context.client.command = async (command) => {
+    calls.push(command);
+    return extensionCompact(command) ?? original(command);
+  };
+  await bridge.compact('ext-native');
+  assert.deepEqual(calls.filter((command) => command.type === 'prompt'), [{ type: 'prompt', message: '/compact' }]);
+  assert.equal(calls.some((command) => command.type === 'compact'), false);
+  assert.deepEqual(compactedEvents(events), []);
+  // 컷이 나중에 끝나면 그 이벤트가 T3 의 완료를 채운다.
+  context.projection.project({ type:'compaction_end', reason:'extension', aborted:false });
+  assert.equal(compactedEvents(events).length, 1);
+});
+
+test('a notes cut that never starts fails instead of leaving T3 waiting ten minutes', async (t) => {
+  const { root, bridge } = await setup(t);
+  await bridge.startSession({ threadId:'ext-dead', runtimeMode:'full-access', cwd:root });
+  const context = bridge.sessions.get('ext-dead');
+  context.client.command = async (command) => {
+    if (command.type === 'get_commands') return { commands: [{ name: 'compact', source: 'extension' }] };
+    if (command.type === 'get_state') return { isStreaming: false, isCompacting: false };
+    return { ok: true };
+  };
+  await assert.rejects(() => bridge.compact('ext-dead'), /문맥 창 전환이 시작되지 않았어요/);
 });
 
 test('compaction_end from Pi is thread.state.changed compacted', () => {
