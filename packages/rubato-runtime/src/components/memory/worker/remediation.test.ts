@@ -53,6 +53,19 @@ describe("reflectionRemediation", () => {
       expect(reflectionRemediation("spawn_failed", "execvp ENOENT")).toContain("SENPI_BIN")
     })
 
+    // The child's own startup ENOENT is not a launcher problem. The substring match sent this
+    // one to SENPI_BIN, so the user hunted an environment variable while the real error sat in
+    // the child log: senpi read a theme file out of the host engine's package.
+    test("#when the child died reading a missing file #then the launcher hint is not claimed", () => {
+      const hint = reflectionRemediation(
+        "child_exit",
+        "Error: ENOENT: no such file or directory, open '/Users/x/.rubato-pi/stock-engine/node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/grok-night.json'",
+      )
+
+      expect(hint).not.toContain("SENPI_BIN")
+      expect(hint).toContain("child-stderr.log")
+    })
+
     test("#when nothing matches #then the child log hint remains the default for post-spawn failures", () => {
       expect(reflectionRemediation("child_exit", "exit code 1")).toContain("child-stderr.log")
     })
