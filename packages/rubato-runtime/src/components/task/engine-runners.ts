@@ -1,8 +1,6 @@
 import type { ToolDefinition } from "@code-yeongyu/senpi"
 import type { RubatoConfig, RubatoTaskSettings } from "@rubato/config-core"
 import {
-  BUILTIN_AGENTS,
-  CURATED_READONLY_AGENT_NAMES,
   InProcessRunner,
   RpcProcessRunner,
   createInProcessManagedRunner,
@@ -121,15 +119,7 @@ export function createTaskRunnerFactories(options: TaskRunnerFactoryOptions = {}
 export const DEFAULT_RUNNER_FACTORIES: TaskRunnerFactories = createTaskRunnerFactories()
 
 export function resolveTaskAgents(config: RubatoConfig): Readonly<Record<string, AgentDefinition>> {
-  const merged: Record<string, AgentDefinition> = { ...BUILTIN_AGENTS }
-  for (const [name, definition] of Object.entries(mapRubatoConfigAgents(config))) {
-    merged[name] = { ...merged[name], ...definition }
-  }
-  for (const name of CURATED_READONLY_AGENT_NAMES) {
-    const definition = merged[name]
-    if (definition !== undefined) merged[name] = { ...definition, executionMode: "in-process" }
-  }
-  return merged
+  return { ...mapRubatoConfigAgents(config) }
 }
 
 function buildInProcessRunner(build: RunnerBuildContext, createSession?: CreateChildSession): ManagedRunner {

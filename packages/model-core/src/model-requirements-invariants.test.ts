@@ -5,12 +5,8 @@ const expectedAgents = [
   "ultraworker",
   "hephaestus",
   "oracle",
-  "librarian",
-  "explore",
   "multimodal-looker",
   "prometheus",
-  "metis",
-  "momus",
   "atlas",
   "ultraworker-junior",
 ] as const

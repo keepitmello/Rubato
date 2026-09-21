@@ -13,7 +13,7 @@ export const DELEGATE_TASK_ERROR_PATTERNS: readonly DelegateTaskErrorPattern[] =
   {
     pattern: "requires a model or preset",
     errorType: "missing_target",
-    fixHint: "Add either model='provider/model' or preset='explore'",
+    fixHint: "Add either model='provider/model' or a loaded preset name",
   },
   {
     pattern: "model_unavailable",

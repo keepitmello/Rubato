@@ -6,7 +6,6 @@ import { createSenpiAgentHost } from "../host/senpi-agent-host"
 import { agentPresetCatalog, closedModelCatalog } from "./catalogs"
 import type { TaskToolParamsStatic } from "./params"
 import { startedDetails } from "./result-details"
-import { evaluateSpawnPolicy } from "./spawn-policy"
 import { backgroundStartText } from "./start-presentation"
 import type { TaskToolContext, TaskToolDeps, TaskToolDetails } from "./types"
 
@@ -46,14 +45,7 @@ export function buildTaskExecute(deps: TaskToolDeps): TaskExecute {
     }, catalogs)
     if (!resolved.ok) return invalidArguments(resolved.error.message, resolved.error.code)
 
-    let spec = resolved.value
-    if (spec.preset !== undefined) {
-      const policy = evaluateSpawnPolicy(deps, spec.preset, spec.prompt, ctx.sessionManager.getSessionId())
-      if (policy.kind === "deny") {
-        return result(policy.message, { agentId: "", status: "denied", mode: "spawn", reason: policy.message })
-      }
-      if (policy.kind === "force") spec = { ...spec, prompt: policy.prompt }
-    }
+    const spec = resolved.value
 
     const host = deps.host ?? hostFromDeps(deps, ctx)
     try {

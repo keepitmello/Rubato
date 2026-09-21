@@ -7,7 +7,7 @@ export const SLIM_DESCRIPTIONS = Object.freeze({
     "Start one child agent using exactly one of model or preset. Omit effort unless an explicit override is required. model is a complete provider/model id; missing models fail closed (no fallback). Prompt MUST be English. Spawns are async and return agentId immediately. If no independent work remains, end the turn; otherwise keep working. Pass summary (one line, ≤80 chars). AgentSend continues an existing child; Agent always spawns. AgentOutput peeks; AgentCancel ends a child.",
 
   AgentSend:
-    "Send a follow-up to a child, keyed by agentId. A running child is steered immediately. A finished resident child is revived; disposed, evicted, cancelled, and terminal-errored children are not. One-shot agents (momus) always refuse AgentSend — spawn a new momus instead.",
+    "Send a follow-up to a child, keyed by agentId. A running child is steered immediately. A finished resident child is revived; disposed, evicted, cancelled, and terminal-errored children are not.",
 
   AgentOutput:
     "Read one child, keyed by agentId. Always returns immediately. mode=status (default) is the host snapshot; tail is recent transcript; full is the whole transcript (capped). Read-only: never revives or steers. A taskforce lead does not use this to babysit a teammate; owners peek their own helpers. Peeking a still-running child ends the parent turn unless this round also did other work.",

@@ -29,4 +29,3 @@ export type {
   TaskToolDetails,
   TaskToolMode,
 } from "./types"
-export { evaluateSpawnPolicy, type SpawnPolicyVerdict } from "./spawn-policy"

@@ -39,13 +39,6 @@ export const MEMORY_JOB_MODELS = Object.freeze([
   "cursor/cursor-grok-4.6-high-fast",
 ]);
 
-export const DISABLED_AGENT_NAMES = Object.freeze([
-  "explore",
-  "librarian",
-  "metis",
-  "momus",
-]);
-
 export const DISABLED_CATEGORY_NAMES = Object.freeze([
   "visual-engineering",
   "artistry",

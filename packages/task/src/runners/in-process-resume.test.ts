@@ -121,8 +121,8 @@ function baseSpec(overrides: Partial<ChildSpec> = {}): ChildSpec {
 }
 
 describe("InProcessRunner resume", () => {
-  test("#given a curated spec with allowlist, denylist, and member-scoped names #when resumed #then the tool surface matches the start surface exactly", async () => {
-    // given a curated agent whose start path builds the full tool surface
+  test("#given a preset spec with allowlist, denylist, and member-scoped names #when resumed #then the tool surface matches the start surface exactly", async () => {
+    // given a preset agent whose start path builds the full tool surface
     const taskSend = makeTool("team_send")
     const parentBash = makeTool("bash")
     const captured: CreateAgentSessionOptions[] = []
@@ -134,7 +134,7 @@ describe("InProcessRunner resume", () => {
       },
     })
     const spec = baseSpec({
-      preset: "explore",
+      preset: "test-preset",
       toolAllowlist: ["read", "bash", "team_send"],
       toolDenylist: ["grep"],
       memberScopedTools: [taskSend],
@@ -155,11 +155,9 @@ describe("InProcessRunner resume", () => {
     // the task/team family stays excluded; the member-scoped tool is re-resolved against the LIVE instance
     expect(resumeNames).not.toContain("team_task_create")
     expect((resumeOptions?.customTools ?? []).find((tool) => tool.name === "team_send")).toBe(taskSend)
-    // the curated read-only bash override is reinstalled over the parent's builtin bash
+    // the parent's bash closure rides through unchanged; the child owns its cwd through stock bash
     const resumeBash = (resumeOptions?.customTools ?? []).filter((tool) => tool.name === "bash")
-    expect(resumeBash).toHaveLength(1)
-    expect(resumeBash[0]?.description).toContain("read-only")
-    expect(resumeBash[0]).not.toBe(parentBash)
+    expect(resumeBash).toEqual([parentBash])
     // the allowlist and the denylist are re-applied through the same fields as start
     expect(resumeOptions?.tools).toEqual(["read", "bash", "team_send"])
     expect(resumeOptions?.excludeTools).toEqual(["grep"])

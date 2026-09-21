@@ -28,7 +28,6 @@ import { renderTaskCompletion, renderTeamMemberLiveness } from "./renderers"
 import { createResumptionChannelEmitter } from "./resumption-channel-emitter"
 import { createTeamMailboxReconciler, createTeamService } from "./team-service"
 import { createSessionTransitionBridge } from "./session-transition-bridge"
-import { createSkillInvocationTracker, type SkillInvocationTracker } from "./skill-invocation-tracker"
 import { wireSessionStartProcessSweep } from "./process-sweep"
 import { createTaskStatusUi } from "./status-ui"
 import { missingTaskCapabilities } from "./surface"
@@ -89,8 +88,7 @@ export function createTaskComponent(options: TaskComponentOptions = {}): RubatoC
       pi.registerMessageRenderer?.(TEAM_MEMBER_LIVENESS_MESSAGE_TYPE, renderTeamMemberLiveness)
       const models = liveModelCatalog(() => engine.runtime.modelRegistry())
       const teamTools = createTeamToolContext(pi, ctx, engine, models)
-      const skillInvocations = createSkillInvocationTracker(pi)
-      registerTaskTools(pi, engine, models, skillInvocations, teamTools.service.listTeams)
+      registerTaskTools(pi, engine, models, teamTools.service.listTeams)
       if (!memberProcess) {
         registerTeamTools(pi, teamTools)
         registerRemovedTeamWaitHint(pi)
@@ -167,7 +165,6 @@ function registerTaskTools(
   pi: SenpiExtensionAPI,
   engine: TaskEngine,
   models: ReturnType<typeof liveModelCatalog>,
-  skillInvocations: SkillInvocationTracker,
   listTeams: TeamToolsService["listTeams"],
 ): void {
   const resolveCallerSessionId = defaultResolveCallerSessionId
@@ -178,7 +175,6 @@ function registerTaskTools(
       rubatoConfig: engine.rubatoConfig,
       agents: engine.agents,
       models,
-      resolveSkillInvocations: (sessionId: string) => skillInvocations.stateFor(sessionId),
     }),
   })
   pi.registerTool({
