@@ -11,7 +11,6 @@ export const BUNDLE_ENTRIES = Object.freeze({
 export const SOURCE_ASSETS = Object.freeze({
   "extensions/reflection-persona.md": "packages/memory-core/src/reflection/assets/reflection-persona.md",
   "extensions/dream-persona.md": "packages/memory-core/src/reflection/assets/dream-persona.md",
-  "extensions/facts-persona.md": "packages/memory-core/src/facts/assets/facts-persona.md",
   "LICENSE.md": "LICENSE.md",
   "THIRD-PARTY-NOTICES.md": "THIRD-PARTY-NOTICES.md",
   "LICENSE": "packages/rubato-runtime/LICENSE",
