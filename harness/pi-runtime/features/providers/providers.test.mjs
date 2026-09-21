@@ -233,31 +233,31 @@ test("feature stages one stock-bound closure and its default factory builds the 
       },
       {
         path: "dist/models.js",
-        preimageSha256: "42610d47fe293d99f4b05b147971e181c7312ea47c9be2906a4803955276a8a4",
+        preimageSha256: "75fa33149fb608bc4a7b7a0586c8ca8f0024465d580091b0c426c0baf3fbc80a",
       },
       {
         path: "dist/core/model-runtime.js",
-        preimageSha256: "32cd50599d9e6e001229090e3d0554b60e4addb8ab7b3165635a574feb660b74",
+        preimageSha256: "bae3c3feb7928c7702c3d98a3454660bee1647064dd449472fc6308c354fbc25",
       },
       {
         path: "dist/core/extensions/loader.js",
-        preimageSha256: "a1393de916487a2c47107ac7239f3139dcdb938705f88ba1ea5a954b3c8bb483",
+        preimageSha256: "81106b07522aaf9197858c4679fecd7fbd23c346376d6e1f2cc3dd5294d543f4",
       },
       {
         path: "dist/core/extensions/runner.js",
-        preimageSha256: "0de12ed1275e02595f92476eec3f61ae1f2e54fd2225ced721ddc90af58a5e61",
+        preimageSha256: "07a94efe560e6a460a415b2188c1c3c69ca151bd163c9b5f05347caf8403ace2",
       },
       {
         path: "dist/api/openai-codex-responses.js",
-        preimageSha256: "f5705d45ae72102110238d6265a548df3aef50b777f654f1f91a32d563c91b3e",
+        preimageSha256: "6e69310d77278231cfc87d7f03ee815d4a0f2ff273e6c43fcee6835e7df2b0c7",
       },
       {
         path: "dist/api/transform-messages.js",
-        preimageSha256: "e51975857b2fefa7e9cc108850ddab5a2fd1753a399f3cde00d76cd700ce6d10",
+        preimageSha256: "9d747a3d64c533f7bfaf2a66e8446dc006086559d364a09d4c51d1c8c9c332e5",
       },
       {
         path: "dist/utils/event-stream.js",
-        preimageSha256: "44a2498660ca61efa952ad6a3f10cc0491883411bd2b4572c9a392ec4e9553ec",
+        preimageSha256: "29a6bb6b21387b8c1f2ecfb1ec508b4030aba3727373ab854d28333557f7a68e",
       },
       {
         path: "dist/api/lazy.js",

@@ -10,17 +10,25 @@ import { PI_PACKAGES, PI_VERSION, resolvePiRuntime } from "../resolve-runtime.mj
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
+// 레지스트리 tarball 의 SRI. 락이 진짜 값을 들고 있는지 보는 독립 기준이라
+// 락에서 읽으면 동어반복이 된다 — 그래서 손으로 박는다.
+//
+// **핀을 올릴 때 여기도 같이 갱신해야 한다.** `pi-coding-agent` 의
+// `npm-shrinkwrap.json` 이 형제 패키지들을 integrity 없이 싣기 때문에
+// `npm install` 로는 락에 이 값이 안 채워지고, 채우는 사람이 여기를 잊으면
+// 이 테스트가 낡은 값을 들고 조용히 통과한다 (2026-09-20 0.86.1 에서 실측).
+// 값은 `curl -sL $(npm view <pkg>@<ver> dist.tarball) | openssl dgst -sha512 -binary | openssl base64 -A`.
 const expectedIntegrity = {
   "@earendil-works/chord":
-    "sha512-VDlkEC3dhCzQ5fcyH1OhG19dq+6jCn+rqc/iXFivwDYGR5anwo2RCiXij9PpHhqNR5GuhhE+Er69Zi1Sn4eY6w==",
+    "sha512-GzUr5n4tFBHUYxN9CjcRHK8QWo9tbxNrZu6iWPQ+PFiFrLASvSZOKeAVAgh3gHv/t0X5OvUpFlrMQ/nEFfCYpg==",
   "@earendil-works/pi-agent-core":
-    "sha512-hIXIP3eAWueAYiAl8aMvWCvvZ8Q5gT3Dip5bE5uJyIGh4+YlWRjtMLI4BaeoXoSs93zndjue61u1B/vhefLnuA==",
+    "sha512-8TbBzhYsDeu5V1Zl2NsyrBqJAzX1EiEL3Np3ZjGpy0pSDdGRVOpcyW1qruLqfWmEqGcnxmvgnTMLS/wJNZO2XQ==",
   "@earendil-works/pi-ai":
-    "sha512-+VgVIJDkDO2efYJKEEqvPTH4zmnIaXdAppGbO+vKFA9qy5PdhFiAenuFAkU+oiCSfOC4dMHDyrjdQeL4ZoC5CQ==",
+    "sha512-1XHhI6D/fyQdsBieHC/E/4zGKVOoGe4yDyX67VXvzoYkFsX/qE7NpZE7E1RC8e6Bz8B9oG/P+MQFXikv2/BGEg==",
   "@earendil-works/pi-telemetry":
-    "sha512-Bg/YN6kA7Swja/NQxka8xFdecb4E/auIEGF2G5A25EaQXhRnPj300/7/KpgsDDMYUzHTDAv4RyUxaQPJKW81Rw==",
+    "sha512-SOcEqOS3oVGgKeahs2jHB906d8hFjuLP+RBee8xKYMRgw5KAeWHNg+YABfL0ALlp3Bt6tW4b632MLghc3vnTog==",
   "@earendil-works/pi-tui":
-    "sha512-OIzw9efInmO4WOBnD4TxcTdBjmzvYJpzslkgoUro946nEGoYWg5rwv1p4fDt3/JvMx9QybryUCUwlm7j8Dreig==",
+    "sha512-FU/zU/zG4RWokcZt+BVXXcieWi5ggvYnWP2kkB5XXjMaHRoy5BDhcZJ9JAnLTN9MwrCRoXgPQxOI0bFqwYeZkQ==",
 };
 
 function cleanEnv(profile) {
@@ -52,7 +60,7 @@ test("lock pins nested stock Pi integrity and the Windows shim generator", () =>
     const path = `node_modules/@earendil-works/pi-coding-agent/node_modules/${packageName}`;
     const entry = lock.packages[path];
     assert.equal(entry.version, PI_VERSION, packageName);
-    assert.equal(entry.resolved, `https://registry.npmjs.org/${packageName}/-/${packageName.split("/")[1]}-0.85.1.tgz`);
+    assert.equal(entry.resolved, `https://registry.npmjs.org/${packageName}/-/${packageName.split("/")[1]}-${PI_VERSION}.tgz`);
     assert.equal(entry.integrity, integrity, packageName);
   }
 

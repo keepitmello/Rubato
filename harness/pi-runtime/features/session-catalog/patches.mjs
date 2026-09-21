@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
-const PACKAGE_VERSION = "0.85.1";
+const PACKAGE_VERSION = "0.86.1";
 const CATALOG_IMPORT = 'import { listSessionCatalogPage } from "../rubato-features/session-catalog/catalog.mjs";';
 
 function replaceOnce(source, before, after, label) {
@@ -48,8 +48,8 @@ function patchSessionManagerRuntime(source) {
   );
   next = replaceOnce(
     next,
-    `    static async listAll(sessionDirOrOnProgress, onProgress) {`,
-    `    static async listPage(cwd, sessionDir, onProgress, page = {}) {
+    `    static async listAll(sessionDirOrOnProgress, onProgressOrSignal, signal) {`,
+    `    static async listPage(cwd, sessionDir, onProgress, page = {}, signal) {
         const resolvedCwd = resolvePath(cwd);
         const encoded = getDefaultSessionDirPath(cwd);
         const sessionsRoot = getSessionsDir();
@@ -63,24 +63,25 @@ function patchSessionManagerRuntime(source) {
             buildInfo: buildSessionInfo,
             onProgress,
             page,
+            signal,
         });
     }
-    static async listAllPage(sessionDirOrOnProgress, onProgress, page = {}) {
-        const customSessionDir = typeof sessionDirOrOnProgress === "string" ? normalizePath(sessionDirOrOnProgress) : undefined;
-        const progress = typeof sessionDirOrOnProgress === "function" ? sessionDirOrOnProgress : onProgress;
-        const effectivePage = typeof sessionDirOrOnProgress === "function"
-            ? (onProgress && typeof onProgress === "object" ? onProgress : page)
-            : page;
+    static async listAllPage(sessionDirOrProgress, progressOrPage, pageOrSignal, signal) {
+        const customSessionDir = typeof sessionDirOrProgress === "string" ? normalizePath(sessionDirOrProgress) : undefined;
+        const progress = typeof sessionDirOrProgress === "function" ? sessionDirOrProgress : progressOrPage;
+        const page = typeof sessionDirOrProgress === "function" ? progressOrPage : pageOrSignal;
+        const effectiveSignal = typeof sessionDirOrProgress === "function" ? pageOrSignal : signal;
         return listSessionCatalogPage({
             root: customSessionDir ?? getSessionsDir(),
             includeSubdirectories: customSessionDir === undefined,
             readHeader: readSessionHeaderForDiscovery,
             buildInfo: buildSessionInfo,
             onProgress: progress,
-            page: effectivePage,
+            page,
+            signal: effectiveSignal,
         });
     }
-    static async listAll(sessionDirOrOnProgress, onProgress) {`,
+    static async listAll(sessionDirOrOnProgress, onProgressOrSignal, signal) {`,
     "paged-api",
   );
   return next;
@@ -90,9 +91,8 @@ function patchSessionManagerTypes(source) {
   unpatched(source, "export interface SessionListPageResult", "session-manager-types");
   let next = replaceOnce(
     source,
-    `export type SessionListProgress = (loaded: number, total: number) => void;`,
-    `export type SessionListProgress = (loaded: number, total: number) => void;
-export interface SessionListPageOptions {
+    `export type SessionListProgress = `,
+    `export interface SessionListPageOptions {
     offset?: number;
     limit?: number;
     query?: string;
@@ -102,18 +102,19 @@ export interface SessionListPageResult {
     total: number;
     offset: number;
     hasMore: boolean;
-}`,
+}
+export type SessionListProgress = `,
     "page-types",
   );
   next = replaceOnce(
     next,
-    `    static list(cwd: string, sessionDir?: string, onProgress?: SessionListProgress): Promise<SessionInfo[]>;
+    `    static list(cwd: string, sessionDir?: string, onProgress?: SessionListProgress, signal?: AbortSignal): Promise<SessionInfo[]>;
     /**
      * List all sessions across all project directories.`,
-    `    static list(cwd: string, sessionDir?: string, onProgress?: SessionListProgress): Promise<SessionInfo[]>;
-    static listPage(cwd: string, sessionDir?: string, onProgress?: SessionListProgress, page?: SessionListPageOptions): Promise<SessionListPageResult>;
-    static listAllPage(onProgress?: SessionListProgress, page?: SessionListPageOptions): Promise<SessionListPageResult>;
-    static listAllPage(sessionDir?: string, onProgress?: SessionListProgress, page?: SessionListPageOptions): Promise<SessionListPageResult>;
+    `    static list(cwd: string, sessionDir?: string, onProgress?: SessionListProgress, signal?: AbortSignal): Promise<SessionInfo[]>;
+    static listPage(cwd: string, sessionDir?: string, onProgress?: SessionListProgress, page?: SessionListPageOptions, signal?: AbortSignal): Promise<SessionListPageResult>;
+    static listAllPage(onProgress?: SessionListProgress, page?: SessionListPageOptions, signal?: AbortSignal): Promise<SessionListPageResult>;
+    static listAllPage(sessionDir?: string, onProgress?: SessionListProgress, page?: SessionListPageOptions, signal?: AbortSignal): Promise<SessionListPageResult>;
     /**
      * List all sessions across all project directories.`,
     "page-methods",
@@ -131,8 +132,8 @@ export const files = Object.freeze([
 ]);
 
 export const patches = Object.freeze([
-  patch("dist/core/session-manager.js", "ccace64949db25379a43971ecea750c1b7ec6344e1bc31b9d5fe596ac2f1c9f3", patchSessionManagerRuntime),
-  patch("dist/core/session-manager.d.ts", "b349557f08b25c8655b041ee05d27ff824ffd7c805531ddb460d46b62e4445f7", patchSessionManagerTypes),
+  patch("dist/core/session-manager.js", "96bd76b298f3c0a6b6d9b57b727f0f9b1196fbfa83172071ac280a5a37f82a08", patchSessionManagerRuntime),
+  patch("dist/core/session-manager.d.ts", "4b39381623569d0ad6684a170966a092a078ef97359f6e9e7d215273655d15c8", patchSessionManagerTypes),
 ]);
 
 export const feature = Object.freeze({ id: "session-catalog", patches, files });

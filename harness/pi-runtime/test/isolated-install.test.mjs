@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { PI_VERSION } from "../resolve-runtime.mjs";
 import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
 import { existsSync } from "node:fs";
@@ -176,7 +177,7 @@ test("isolated candidate install pipeline blocks Senpi and keeps CANDIDATE_FEATU
     installed = await installRubatoCandidate({ outputRoot: engine, sourceRoot });
     t.diagnostic(`installed ${installed.receipt.features.length} features with ${installed.receipt.node.version}`);
     assert.equal(installed.receipt.state, "ready");
-    assert.equal(installed.receipt.stockVersion, "0.85.1");
+    assert.equal(installed.receipt.stockVersion, PI_VERSION);
     for (const name of CANDIDATE_FEATURE_NAMES) {
       assert.ok(installed.receipt.features.includes(name), `missing feature ${name}`);
     }
@@ -212,7 +213,7 @@ test("isolated candidate install pipeline blocks Senpi and keeps CANDIDATE_FEATU
       env,
       timeout: 30_000,
     });
-    assert.match(result.stdout, /0\.85\.1/, result.stderr || result.stdout);
+    assert.match(result.stdout, new RegExp(PI_VERSION.replace(/\./g, "\\.")), result.stderr || result.stdout);
   });
 
   await t.test("RPC inspect, prompt, tool, abort", { skip: runtimeSkip }, async (st) => {
@@ -390,7 +391,7 @@ test("isolated candidate install pipeline blocks Senpi and keeps CANDIDATE_FEATU
       await mkdir(dest, { recursive: true });
       await writeFile(join(dest, "marker.txt"), "first-install");
       await writeFile(join(dest, "rubato-install.json"), `${JSON.stringify({
-        version: 1, state: "ready", mode: "isolated-candidate", stockVersion: "0.85.1",
+        version: 1, state: "ready", mode: "isolated-candidate", stockVersion: PI_VERSION,
         features: [...CANDIDATE_FEATURE_NAMES, "rubato-components"],
         hashes: { stageReceipt: "first-install-stub", lock: "stub" },
       }, null, 2)}\n`);

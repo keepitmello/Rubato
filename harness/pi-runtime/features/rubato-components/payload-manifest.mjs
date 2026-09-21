@@ -22,6 +22,7 @@ export const SOURCE_ASSETS = Object.freeze({
   "feature-toggles.mjs": "harness/pi-runtime/features/rubato-components/feature-toggles.mjs",
   "candidate-main.mjs": "harness/pi-runtime/features/rubato-components/candidate-main.mjs",
   "validate-stage.mjs": "harness/pi-runtime/features/rubato-components/validate-stage.mjs",
+  "pi-version.mjs": "harness/pi-runtime/features/rubato-components/pi-version.mjs",
   "payload-manifest.mjs": "harness/pi-runtime/features/rubato-components/payload-manifest.mjs",
 });
 export const REQUIRED_PAYLOADS = Object.freeze([

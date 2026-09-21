@@ -58,7 +58,7 @@ test("patch manifest is version-locked, drift-strict, and produces valid JavaScr
 
   for (const spec of patches) {
     assert.equal(spec.packageName, "@earendil-works/pi-coding-agent");
-    assert.equal(spec.version, "0.85.1");
+    assert.equal(spec.version, "0.86.1");
 
     const pristine = readFileSync(join(pristinePackage, spec.path), "utf8");
     assert.equal(sha256(pristine), spec.preimageSha256, `${spec.path} hash`);

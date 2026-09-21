@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 
-const VERSION = "0.85.1";
+import { PI_VERSION as VERSION } from "../../pi-version.mjs";
 const RUNTIME_FILES = Object.freeze([
   "index.mjs",
   "eval-search-guard.mjs",

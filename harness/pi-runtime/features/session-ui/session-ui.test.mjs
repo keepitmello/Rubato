@@ -23,6 +23,33 @@ test('UI scope patches are pinned and reject a second application', async () => 
     assert.throws(() => patch.apply(patch.apply(text)), /anchor mismatch/);
   }
 });
+test('composed candidate keeps the hosted stock-UI wiring remote-surface introduces', async t => {
+  // session-ui 의 interactive-mode 단계는 remote-surface 가 넣는 `bindStockUiHost(...)` 호출에
+  // 옵션을 붙인다. 그 호출이 없으면 그 단계는 조용히 건너뛰므로, 순서가 뒤집히면 hosted 배선이
+  // 꺼진 후보가 소리 없이 나온다. 스테이징된 바이트를 직접 보는 이 단언이 그 회귀를 막는다.
+  //
+  // 회귀에 눈이 있는 것은 **아래 `bindStockUiHost` 정규식 하나뿐**이다(실측: 순서를 뒤집은
+  // 빌드에서 0, 올바른 빌드에서 1). `presentationOnly` 단언은 다른 단계(session-ui 의
+  // bindExtensions 배선)를 보는 것이라 이 회귀에는 반응하지 않는다 — 둘을 같은 근거로
+  // 세지 말 것.
+  const scratch = await mkdtemp(path.join(tmpdir(), 'rb-ui-compose-'));
+  t.after(() => rm(scratch, { recursive: true, force: true }));
+  const staged = await stagePiRuntime({
+    sourceRoot,
+    outputRoot: path.join(scratch, 'stage'),
+    features: await loadPiFeatures(['session-ui']),
+  });
+  assert.equal(staged.receipt.features.includes('remote-surface'), true);
+  const interactive = await readFile(
+    path.join(staged.root, 'node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/interactive-mode.js'),
+    'utf8',
+  );
+  assert.match(
+    interactive,
+    /bindStockUiHost\(this, this\.createExtensionUIContext\(\), \{ env: process\.env, onClose: uiScope\(\)\?\.onClose, run: uiScope\(\)\?\.run \}\)/,
+  );
+  assert.match(interactive, /presentationOnly: this\.options\.hosted === true/);
+});
 test('real theme, keybindings and keyboard/capabilities stay local across concurrent callbacks', { timeout: 60000 }, async t => {
   const scratch = await mkdtemp(path.join(tmpdir(), 'rb-ui-scope-'));
   t.after(() => rm(scratch, { recursive: true, force: true }));

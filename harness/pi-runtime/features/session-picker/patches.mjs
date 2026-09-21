@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
-const PACKAGE_VERSION = "0.85.1";
+const PACKAGE_VERSION = "0.86.1";
 const PAGER_IMPORT = 'import { SessionPickerPager } from "../../../rubato-features/session-picker/pager.mjs";';
 
 function replaceOnce(source, before, after, label) {
@@ -46,26 +46,6 @@ function patchSelectorRuntime(source) {
     onNeedMore;
     maxVisible = 10;`,
     "list-more-callback",
-  );
-  next = replaceOnce(
-    next,
-    `    setSessions(sessions, showCwd) {
-        this.allSessions = sessions;
-        this.showCwd = showCwd;
-        this.filterSessions(this.searchInput.getValue());
-    }`,
-    `    setSessions(sessions, showCwd) {
-        const selectedPath = canonicalizePath(this.getSelectedSessionPath());
-        this.allSessions = sessions;
-        this.showCwd = showCwd;
-        this.filterSessions(this.searchInput.getValue());
-        if (selectedPath) {
-            const nextIndex = this.filteredSessions.findIndex((entry) => canonicalizePath(entry.session.path) === selectedPath);
-            if (nextIndex !== -1)
-                this.selectedIndex = nextIndex;
-        }
-    }`,
-    "preserve-selected-path",
   );
   next = replaceOnce(
     next,
@@ -123,12 +103,10 @@ function patchSelectorRuntime(source) {
   );
   next = replaceOnce(
     next,
-    `    currentLoading = false;
-    allLoading = false;
-    allLoadSeq = 0;`,
-    `    currentLoading = false;
-    allLoading = false;
-    allLoadSeq = 0;
+    `    currentLoad = null;
+    allLoad = null;`,
+    `    currentLoad = null;
+    allLoad = null;
     currentPaging = new SessionPickerPager();
     allPaging = new SessionPickerPager();`,
     "scope-pagers",
@@ -136,175 +114,94 @@ function patchSelectorRuntime(source) {
   next = replaceOnce(
     next,
     `        // Start loading current sessions immediately
-        this.loadCurrentSessions();`,
+        void this.loadScope("current");`,
     `        this.sessionList.onNeedMore = (remaining) => {
             void this.loadMore(this.scope, remaining === true);
         };
         // Start loading current sessions immediately
-        this.loadCurrentSessions();`,
+        void this.loadScope("current");`,
     "bind-more-callback",
   );
   next = replaceOnce(
     next,
-    `    async loadScope(scope, reason) {
-        const showCwd = scope === "all";
-        // Mark loading
-        if (scope === "current") {
-            this.currentLoading = true;
-        }
-        else {
-            this.allLoading = true;
-        }
-        const seq = scope === "all" ? ++this.allLoadSeq : undefined;
-        this.header.setScope(scope);
-        this.header.setLoading(true);
-        this.requestRender();
-        const onProgress = (loaded, total) => {
-            if (scope !== this.scope)
-                return;
-            if (seq !== undefined && seq !== this.allLoadSeq)
-                return;
-            this.header.setProgress(loaded, total);
-            this.requestRender();
-        };
-        try {
-            const sessions = await (scope === "current"
-                ? this.currentSessionsLoader(onProgress)
-                : this.allSessionsLoader(onProgress));
-            if (scope === "current") {
-                this.currentSessions = sessions;
-                this.currentLoading = false;
-            }
-            else {
-                this.allSessions = sessions;
-                this.allLoading = false;
-            }
-            if (scope !== this.scope)
-                return;
-            if (seq !== undefined && seq !== this.allLoadSeq)
-                return;
-            this.header.setLoading(false);
-            this.sessionList.setSessions(sessions, showCwd);
-            this.requestRender();
-        }
-        catch (err) {
-            if (scope === "current") {
-                this.currentLoading = false;
-            }
-            else {
-                this.allLoading = false;
-            }
-            if (scope !== this.scope)
-                return;
-            if (seq !== undefined && seq !== this.allLoadSeq)
-                return;
-            const message = err instanceof Error ? err.message : String(err);
-            this.header.setLoading(false);
-            this.header.setStatusMessage({ type: "error", message: \`Failed to load sessions: \${message}\` }, 4000);
-            if (reason === "initial") {
-                this.sessionList.setSessions([], showCwd);
-            }
-            this.requestRender();
-        }
-    }`,
+    `    enterRenameMode(sessionPath, currentName) {
+        this.mode = "rename";`,
     `    disposePaging() {
         this.currentPaging.reset();
         this.allPaging.reset();
-        this.currentLoading = false;
-        this.allLoading = false;
+        this.cancelLoads();
     }
     pagingFor(scope) {
         return scope === "all" ? this.allPaging : this.currentPaging;
     }
-    async invokeLoader(scope, onProgress, page) {
-        const loader = scope === "current" ? this.currentSessionsLoader : this.allSessionsLoader;
-        return loader(onProgress, page);
-    }
-    applyPage(scope, pager, result, append, request) {
-        const current = scope === "all" ? (this.allSessions ?? []) : (this.currentSessions ?? []);
-        const sessions = pager.apply(result, current, { append, request });
-        if (scope === "current") {
-            this.currentSessions = sessions;
-            this.currentLoading = false;
-        }
-        else {
-            this.allSessions = sessions;
-            this.allLoading = false;
-        }
-        return sessions;
-    }
-    async loadScope(scope, reason) {
-        const showCwd = scope === "all";
+    enterRenameMode(sessionPath, currentName) {
+        this.mode = "rename";`,
+    "paging-helpers",
+  );
+  next = replaceOnce(
+    next,
+    `        const isActive = () => (scope === "current" ? this.currentLoad : this.allLoad) === controller;`,
+    `        const isActive = () => (scope === "current" ? this.currentLoad : this.allLoad) === controller;
         const pager = this.pagingFor(scope);
-        const generation = pager.reset();
-        if (scope === "current") {
-            this.currentLoading = true;
-        }
-        else {
-            this.allLoading = true;
-            this.allLoadSeq++;
-        }
-        this.header.setScope(scope);
-        this.header.setLoading(true);
-        this.requestRender();
-        const onProgress = (loaded, total) => {
-            if (scope !== this.scope || !pager.isCurrent(generation))
-                return;
-            this.header.setProgress(loaded, total);
-            this.requestRender();
-        };
-        try {
-            const request = pager.request();
-            const result = await this.invokeLoader(scope, onProgress, request);
-            if (!pager.isCurrent(generation))
-                return;
-            const sessions = this.applyPage(scope, pager, result, false, request);
-            if (scope !== this.scope)
-                return;
-            this.header.setLoading(false);
+        pager.reset();`,
+    "pager-reset",
+  );
+  next = replaceOnce(
+    next,
+    `            const sessions = await (scope === "current"
+                ? this.currentSessionsLoader(onProgress, controller.signal)
+                : this.allSessionsLoader(onProgress, controller.signal));`,
+    `            const loadPage = async (loader) => {
+                const request = pager.request();
+                const result = await loader(onProgress, request, controller.signal);
+                return pager.apply(result, [], { append: false, request });
+            };
+            const sessions = await (scope === "current"
+                ? loadPage(this.currentSessionsLoader)
+                : loadPage(this.allSessionsLoader));`,
+    "paged-first-page",
+  );
+  next = replaceOnce(
+    next,
+    `            this.header.setLoading(false);
+            this.sessionList.setSessions(sessions, showCwd);
+            this.requestRender();`,
+    `            this.header.setLoading(false);
             if (pager.hasMore) {
                 this.header.setProgress(sessions.length, pager.total);
             }
             this.sessionList.setSessions(sessions, showCwd);
-            this.requestRender();
-        }
-        catch (err) {
-            if (!pager.isCurrent(generation))
-                return;
-            if (scope === "current") {
-                this.currentLoading = false;
-            }
-            else {
-                this.allLoading = false;
-            }
-            if (scope !== this.scope)
-                return;
-            const message = err instanceof Error ? err.message : String(err);
-            this.header.setLoading(false);
-            this.header.setStatusMessage({ type: "error", message: \`Failed to load sessions: \${message}\` }, 4000);
-            if (reason === "initial") {
-                this.sessionList.setSessions([], showCwd);
-            }
-            this.requestRender();
-        }
-    }
-    async loadMore(scope, remaining) {
+            this.requestRender();`,
+    "paged-progress",
+  );
+  next = replaceOnce(
+    next,
+    `    toggleSortMode() {
+        // Cycle: threaded -> recent -> relevance -> threaded`,
+    `    async loadMore(scope, remaining) {
         const pager = this.pagingFor(scope);
         const generation = pager.beginMore();
         if (generation === undefined)
             return;
-        if (scope === "current" && this.currentLoading) {
+        if (scope === "current" ? this.currentLoad : this.allLoad) {
             pager.finishMore(generation);
             return;
         }
-        if (scope === "all" && this.allLoading) {
-            pager.finishMore(generation);
-            return;
+        const controller = new AbortController();
+        if (scope === "current") {
+            this.currentLoad = controller;
         }
-        this.header.setLoading(true);
-        this.requestRender();
+        else {
+            this.allLoad = controller;
+        }
+        const isActive = () => (scope === "current" ? this.currentLoad : this.allLoad) === controller;
+        const loader = scope === "current" ? this.currentSessionsLoader : this.allSessionsLoader;
+        if (scope === this.scope) {
+            this.header.setLoading(true);
+            this.requestRender();
+        }
         const onProgress = (loaded, total) => {
-            if (scope !== this.scope || !pager.isCurrent(generation))
+            if (!isActive() || scope !== this.scope)
                 return;
             this.header.setProgress(loaded, total);
             this.requestRender();
@@ -312,32 +209,50 @@ function patchSelectorRuntime(source) {
         try {
             do {
                 const request = pager.request({ remaining });
-                const result = await this.invokeLoader(scope, onProgress, request);
-                if (scope !== this.scope || !pager.isCurrent(generation))
+                const result = await loader(onProgress, request, controller.signal);
+                if (!isActive())
                     return;
-                const sessions = this.applyPage(scope, pager, result, true, request);
-                this.sessionList.setSessions(sessions, scope === "all");
-                this.header.setProgress(sessions.length, pager.total);
-                this.requestRender();
+                const current = scope === "all" ? (this.allSessions ?? []) : (this.currentSessions ?? []);
+                const sessions = pager.apply(result, current, { append: true, request });
+                if (scope === "current") {
+                    this.currentSessions = sessions;
+                }
+                else {
+                    this.allSessions = sessions;
+                }
+                if (scope === this.scope) {
+                    this.sessionList.setSessions(sessions, scope === "all");
+                    this.header.setProgress(sessions.length, pager.total);
+                    this.requestRender();
+                }
             } while (remaining && pager.hasMore);
-            if (scope === this.scope && pager.isCurrent(generation)) {
-                this.header.setLoading(false);
+        }
+        catch (err) {
+            if (isActive() && scope === this.scope) {
+                const message = err instanceof Error ? err.message : String(err);
+                this.header.setStatusMessage({ type: "error", message: \`Failed to load sessions: \${message}\` }, 4000);
                 this.requestRender();
             }
         }
-        catch (err) {
-            if (scope !== this.scope || !pager.isCurrent(generation))
-                return;
-            const message = err instanceof Error ? err.message : String(err);
-            this.header.setLoading(false);
-            this.header.setStatusMessage({ type: "error", message: \`Failed to load sessions: \${message}\` }, 4000);
-            this.requestRender();
-        }
         finally {
+            if (isActive()) {
+                if (scope === "current") {
+                    this.currentLoad = null;
+                }
+                else {
+                    this.allLoad = null;
+                }
+                if (scope === this.scope) {
+                    this.header.setLoading(false);
+                    this.requestRender();
+                }
+            }
             pager.finishMore(generation);
         }
-    }`,
-    "paged-loaders",
+    }
+    toggleSortMode() {
+        // Cycle: threaded -> recent -> relevance -> threaded`,
+    "load-more",
   );
   return next;
 }
@@ -365,19 +280,21 @@ function patchSelectorTypes(source) {
     `    private buildTreePrefix;
     handleInput(keyData: string): void;
 }
-type SessionsLoader = (onProgress?: SessionListProgress) => Promise<SessionInfo[]>;`,
+type SessionsLoader = (onProgress?: SessionListProgress, signal?: AbortSignal) => Promise<SessionInfo[]>;`,
     `    private buildTreePrefix;
     handleInput(keyData: string): void;
     private maybeRequestMore;
 }
-type SessionsLoader = (onProgress?: SessionListProgress, page?: SessionListPageOptions) => Promise<SessionInfo[] | SessionListPageResult>;`,
+type SessionsLoader = (onProgress?: SessionListProgress, page?: SessionListPageOptions, signal?: AbortSignal) => Promise<SessionInfo[] | SessionListPageResult>;`,
     "loader-type",
   );
   next = replaceOnce(
     next,
-    `    private allLoadSeq;
+    `    private currentLoad;
+    private allLoad;
     private mode;`,
-    `    private allLoadSeq;
+    `    private currentLoad;
+    private allLoad;
     private currentPaging;
     private allPaging;
     private mode;`,
@@ -390,10 +307,8 @@ type SessionsLoader = (onProgress?: SessionListProgress, page?: SessionListPageO
     `    private confirmRename;
     disposePaging(): void;
     private pagingFor;
-    private invokeLoader;
-    private applyPage;
-    private loadScope;
-    private loadMore;`,
+    private loadMore;
+    private loadScope;`,
     "pager-methods-type",
   );
   return next;
@@ -402,20 +317,20 @@ type SessionsLoader = (onProgress?: SessionListProgress, page?: SessionListPageO
 function patchInteractiveRuntime(source) {
   let next = replaceOnce(
     source,
-    `            const selector = new SessionSelectorComponent((onProgress) => SessionManager.list(this.sessionManager.getCwd(), this.sessionManager.getSessionDir(), onProgress), (onProgress) => this.sessionManager.usesDefaultSessionDir()
-                ? SessionManager.listAll(onProgress)
-                : SessionManager.listAll(this.sessionManager.getSessionDir(), onProgress), async (sessionPath) => {`,
-    `            const selector = new SessionSelectorComponent((onProgress, page) => page
-                ? SessionManager.listPage(this.sessionManager.getCwd(), this.sessionManager.getSessionDir(), onProgress, page)
-                : SessionManager.list(this.sessionManager.getCwd(), this.sessionManager.getSessionDir(), onProgress), (onProgress, page) => {
+    `            const selector = new SessionSelectorComponent((onProgress, signal) => SessionManager.list(this.sessionManager.getCwd(), this.sessionManager.getSessionDir(), onProgress, signal), (onProgress, signal) => this.sessionManager.usesDefaultSessionDir()
+                ? SessionManager.listAll(onProgress, signal)
+                : SessionManager.listAll(this.sessionManager.getSessionDir(), onProgress, signal), async (sessionPath) => {`,
+    `            const selector = new SessionSelectorComponent((onProgress, page, signal) => page
+                ? SessionManager.listPage(this.sessionManager.getCwd(), this.sessionManager.getSessionDir(), onProgress, page, signal)
+                : SessionManager.list(this.sessionManager.getCwd(), this.sessionManager.getSessionDir(), onProgress, signal), (onProgress, page, signal) => {
                 if (page) {
                     return this.sessionManager.usesDefaultSessionDir()
-                        ? SessionManager.listAllPage(onProgress, page)
-                        : SessionManager.listAllPage(this.sessionManager.getSessionDir(), onProgress, page);
+                        ? SessionManager.listAllPage(onProgress, page, signal)
+                        : SessionManager.listAllPage(this.sessionManager.getSessionDir(), onProgress, page, signal);
                 }
                 return this.sessionManager.usesDefaultSessionDir()
-                    ? SessionManager.listAll(onProgress)
-                    : SessionManager.listAll(this.sessionManager.getSessionDir(), onProgress);
+                    ? SessionManager.listAll(onProgress, signal)
+                    : SessionManager.listAll(this.sessionManager.getSessionDir(), onProgress, signal);
             }, async (sessionPath) => {`,
     "interactive-page-loaders",
   );
@@ -437,12 +352,12 @@ function patchInteractiveRuntime(source) {
 function patchMainRuntime(source) {
   return replaceOnce(
     source,
-    `            const selectedPath = await selectSession((onProgress) => SessionManager.list(cwd, sessionDir, onProgress), (onProgress) => SessionManager.listAll(sessionDir, onProgress), settingsManager);`,
-    `            const selectedPath = await selectSession((onProgress, page) => page
-                ? SessionManager.listPage(cwd, sessionDir, onProgress, page)
-                : SessionManager.list(cwd, sessionDir, onProgress), (onProgress, page) => page
-                ? SessionManager.listAllPage(sessionDir, onProgress, page)
-                : SessionManager.listAll(sessionDir, onProgress), settingsManager);`,
+    `            const selectedPath = await selectSession((onProgress, signal) => SessionManager.list(cwd, sessionDir, onProgress, signal), (onProgress, signal) => SessionManager.listAll(sessionDir, onProgress, signal), settingsManager);`,
+    `            const selectedPath = await selectSession((onProgress, page, signal) => page
+                ? SessionManager.listPage(cwd, sessionDir, onProgress, page, signal)
+                : SessionManager.list(cwd, sessionDir, onProgress, signal), (onProgress, page, signal) => page
+                ? SessionManager.listAllPage(sessionDir, onProgress, page, signal)
+                : SessionManager.listAll(sessionDir, onProgress, signal), settingsManager);`,
     "startup-page-loaders",
   );
 }
@@ -456,8 +371,8 @@ function patchPickerTypes(source) {
   );
   next = replaceOnce(
     next,
-    `type SessionsLoader = (onProgress?: SessionListProgress) => Promise<SessionInfo[]>;`,
-    `type SessionsLoader = (onProgress?: SessionListProgress, page?: SessionListPageOptions) => Promise<SessionInfo[] | SessionListPageResult>;`,
+    `type SessionsLoader = (onProgress?: SessionListProgress, signal?: AbortSignal) => Promise<SessionInfo[]>;`,
+    `type SessionsLoader = (onProgress?: SessionListProgress, page?: SessionListPageOptions, signal?: AbortSignal) => Promise<SessionInfo[] | SessionListPageResult>;`,
     "picker-loader-type",
   );
   return next;
@@ -519,12 +434,12 @@ export const files = Object.freeze([
 ]);
 
 export const patches = Object.freeze([
-  patch("dist/modes/interactive/components/session-selector.js", "d2effa5dc1c1dede7baf4080ac6b50bf1808932a4667288aa3255c485e1e8129", patchSelectorRuntime),
-  patch("dist/modes/interactive/components/session-selector.d.ts", "776a3ad2221b1cd6b3af9559921c6b592cbd048852495549001ca4b9a958263e", patchSelectorTypes),
-  patch("dist/modes/interactive/interactive-mode.js", "802ff14f5a47710e5a46d8141b238c4d5ffca30e8ca26bad18f838eddbf086bf", patchInteractiveRuntime),
-  patch("dist/main.js", "f0b7e5a8419af8d149ffe367af2992c76ce70b73484c15492bd50787d4f4962a", patchMainRuntime),
+  patch("dist/modes/interactive/components/session-selector.js", "926e788829f9cb8eb1792f56b5b23e74f575db88606968a60948e2ce45806296", patchSelectorRuntime),
+  patch("dist/modes/interactive/components/session-selector.d.ts", "b2c8a390ad9a001c93ee0e035525ade3300d6f2d2233bb58b59691f5f8392f39", patchSelectorTypes),
+  patch("dist/modes/interactive/interactive-mode.js", "8c9275944466afe2df78dcf02f2f6c83f6bc46fb0fdbd7257a3ef9d1da1ed027", patchInteractiveRuntime),
+  patch("dist/main.js", "e36837e55af695cbb95216763fbc929e87829ced837dd32f281bba8c8e50035c", patchMainRuntime),
   patch("dist/cli/session-picker.js", "b5b3cc89815cc11f4519af27b9abb5a972a110fcfa08096f70dc0623e763cd44", patchPickerRuntime),
-  patch("dist/cli/session-picker.d.ts", "43b7843f3104685c58d5967b9362a4aa9f62e7c7b38e4c75e7bc23291a14956c", patchPickerTypes),
+  patch("dist/cli/session-picker.d.ts", "ceb19ff55fbeea924167a77fb7cb373e03a265226b6abec580c4f7046a831734", patchPickerTypes),
 ]);
 
 export const feature = Object.freeze({ id: "session-picker", patches, files });

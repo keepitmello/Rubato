@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
-const VERSION = "0.85.1";
+const VERSION = "0.86.1";
 
 function replaceOnce(source, before, after, label) {
   const first = source.indexOf(before);
@@ -217,12 +217,12 @@ export const files = Object.freeze(RUNTIME_FILES.map((name) => Object.freeze({
 
 export const patches = Object.freeze([
   patch("tool-search:core/extensions/types.js", "dist/core/extensions/types.js", "447039081a7808371e07d85bacc719a11eea7b66f291b9949de33ef952a809fc", patchTypesRuntime),
-  patch("tool-search:core/extensions/types.d.ts", "dist/core/extensions/types.d.ts", "5baa29ca2f541f71f81a400dec25903abfbd03980bd4d9b691d10353e52d169a", patchTypesDeclarations),
-  patch("tool-search:core/agent-session.js", "dist/core/agent-session.js", "fb8a3981c20c8c0bbd42231b1c99a10335fb3858b659056b341954de9cfa467f", patchAgentSession),
+  patch("tool-search:core/extensions/types.d.ts", "dist/core/extensions/types.d.ts", "a4d5b8774fa8015b8a3274614f1398a6aeeffdd888c122910439666955dc2a52", patchTypesDeclarations),
+  patch("tool-search:core/agent-session.js", "dist/core/agent-session.js", "edaff7055ced7d49d25135c92415fbbfd9c14c4a29be5a79510ab9216045d6d9", patchAgentSession),
   patch("tool-search:core/extensions/index.js", "dist/core/extensions/index.js", "9a99fd14edb60079a3c604d6045cbad7d461c3ba1ce88331f5d549372f14c46d", patchExtensionRuntimeIndex),
-  patch("tool-search:core/extensions/index.d.ts", "dist/core/extensions/index.d.ts", "dc9bd3202b8d84b580d7002efad6738465c50556e2b27624193a6505b453c87d", patchExtensionTypesIndex),
+  patch("tool-search:core/extensions/index.d.ts", "dist/core/extensions/index.d.ts", "5b294bd70da0744cb18a45d1cfb774237986c047ec1996e03f24a9605efdd4ab", patchExtensionTypesIndex),
   patch("tool-search:index.js", "dist/index.js", "82cb4ea864f3d8816c06bc8f2f2d9a8d82d883297af179dc69d287d042834844", patchRootRuntimeIndex),
-  patch("tool-search:index.d.ts", "dist/index.d.ts", "f1cb93477c7357d08b839c0663d079b8f9bb949079ed7b50a71f8d2945cece90", patchRootTypesIndex),
+  patch("tool-search:index.d.ts", "dist/index.d.ts", "44bf19d2716cb18382aa6bd0ae88b7e03ee50ae75b56acb6d11beb40dfe99dea", patchRootTypesIndex),
 ]);
 
 export const toolSearchFeature = Object.freeze({ id: "tool-search", files, patches });

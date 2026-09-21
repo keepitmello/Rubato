@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { PI_VERSION } from "../resolve-runtime.mjs";
 import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -30,7 +31,7 @@ export const versions = Object.fromEntries(["typebox", "@babel/parser"].map(name
   [name, JSON.parse(readFileSync(findPackageJSON(name, import.meta.url), "utf8")).version]));\n`);
   const staged = await stagePiRuntime({ sourceRoot, outputRoot: join(scratch, "engine"), features: [
     { id: "reload", patches },
-    { id: "dependency-probe", patches: [], files: [{ target: "runtime", version: "0.85.1", path: "rubato-features/dependency-probe/probe.mjs", sourcePath: probePath }] },
+    { id: "dependency-probe", patches: [], files: [{ target: "runtime", version: PI_VERSION, path: "rubato-features/dependency-probe/probe.mjs", sourcePath: probePath }] },
   ] });
   const probe = await import(pathToFileURL(join(staged.root, "rubato-features/dependency-probe/probe.mjs")));
   assert.deepEqual(probe.versions, { typebox: "1.3.18", "@babel/parser": "8.0.4" });
@@ -41,12 +42,12 @@ export const versions = Object.fromEntries(["typebox", "@babel/parser"].map(name
   delete env.NODE_OPTIONS;
   delete env.NODE_COMPILE_CACHE;
   const nodeResult = await run(process.execPath, [staged.runtime.patchableCliEntry, "--version"], { cwd, env, timeout: 10_000 });
-  assert.equal(nodeResult.stdout.trim(), "0.85.1");
+  assert.equal(nodeResult.stdout.trim(), PI_VERSION);
   const bin = join(staged.root, staged.receipt.binEntry);
   const binResult = process.platform === "win32"
     ? await run(process.env.ComSpec ?? "cmd.exe", ["/d", "/s", "/c", `""${bin}.cmd" --version"`], { cwd, env, timeout: 10_000, windowsVerbatimArguments: true })
     : await run(bin, ["--version"], { cwd, env, timeout: 10_000 });
-  assert.equal(binResult.stdout.trim(), "0.85.1");
+  assert.equal(binResult.stdout.trim(), PI_VERSION);
 
   const sdk = await import(pathToFileURL(staged.runtime.sdkEntry));
   const markerPath = join(scratch, "mcp.log");

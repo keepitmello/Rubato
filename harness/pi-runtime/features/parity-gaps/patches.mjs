@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 
 const PI_AI = "@earendil-works/pi-ai";
 const AGENT = "@earendil-works/pi-coding-agent";
-const VERSION = "0.85.1";
+const VERSION = "0.86.1";
 
 function replaceOnce(source, before, after, label) {
   const first = source.indexOf(before);
@@ -16,8 +16,8 @@ function replaceOnce(source, before, after, label) {
 export function patchOverflow(source) {
   let next = replaceOnce(
     source,
-    "    /token limit exceeded/i, // Generic fallback\n    /^4(?:00|13)\\s*(?:status code)?\\s*\\(no body\\)/i, // Cerebras: 400/413 with no body",
-    "    /token limit exceeded/i, // Generic fallback\n    /conversation is too long/i, // ChatGPT / Codex backend\n    /please try a shorter message/i, // ChatGPT / Codex backend\n    /requested context length is too (?:large|long)/i, // ChatGPT / Codex backend\n    /^4(?:00|13)\\s*(?:status code)?\\s*\\(no body\\)/i, // Cerebras: 400/413 with no body",
+    "    /token limit exceeded/i, // Generic fallback\n];",
+    "    /token limit exceeded/i, // Generic fallback\n    /conversation is too long/i, // ChatGPT / Codex backend\n    /please try a shorter message/i, // ChatGPT / Codex backend\n    /requested context length is too (?:large|long)/i, // ChatGPT / Codex backend\n];",
     "overflow-codex-patterns",
   );
   return replaceOnce(
@@ -150,9 +150,9 @@ function patch(id, packageName, path, preimageSha256, apply) {
 }
 
 export const patches = Object.freeze([
-  patch("overflow", PI_AI, "dist/utils/overflow.js", "5537cdf670ea8592a46a48a61c847f47a72dd9cab8505165b8e3abc9cba978d3", patchOverflow),
-  patch("google-input-guard", PI_AI, "dist/api/google-shared.js", "c06c0d8eb5f7727dc8b3cd5b48cd099508bfda668b25e3ca06dde244b11a3be8", patchGoogleSharedInputGuard),
-  patch("prompt-cache-ttl", PI_AI, "dist/api/openai-responses.js", "87085aa3c3c865fb51774bc13b669599461fd29e497fc6063bd6f5b9b5262d33", patchPromptCacheTtl),
+  patch("overflow", PI_AI, "dist/utils/overflow.js", "90a6616007318492a573cf4b298c6be8c6dedfb3c7512aecffd370c253d853e2", patchOverflow),
+  patch("google-input-guard", PI_AI, "dist/api/google-shared.js", "0254007d8b7f0ebeb2b00f6a940041012c45220369f604f999c8e7019d36972a", patchGoogleSharedInputGuard),
+  patch("prompt-cache-ttl", PI_AI, "dist/api/openai-responses.js", "3e95145f94ac2a255d1adc0ae65cf02c2e6d479f7a2dbf5c466db21885c29ec6", patchPromptCacheTtl),
   patch("auth-storage", AGENT, "dist/core/auth-storage.js", "0b45029901579032b19273a1427f63b622df8e1aaf9ea185eb932c0d4898998c", patchAuthStorage),
   patch("tool-descriptions", AGENT, "dist/core/tools/tool-definition-wrapper.js", "b08ccb77cf3664c3b42e5cee858e150925c0eedbaca397474c3af3de22030abd", patchToolDescriptions),
 ]);

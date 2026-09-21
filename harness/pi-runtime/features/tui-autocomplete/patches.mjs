@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 const TUI_PACKAGE = "@earendil-works/pi-tui";
-const VERSION = "0.85.1";
+const VERSION = "0.86.1";
 const INLINE_IMPORT = 'import { getDollarInvocationContext, getDollarInvocationSuggestions, getInlineSkillSuggestions, inlineSlashTokenAt, isInlineDollarToken } from "./rubato-features/tui-autocomplete/inline.mjs";';
 const EDITOR_INLINE_IMPORT = 'import { inlineSlashTokenAt, isInlineDollarToken } from "../rubato-features/tui-autocomplete/inline.mjs";';
 
@@ -22,8 +22,8 @@ function patch(id, path, preimageSha256, apply) {
   return Object.freeze({ id, packageName: TUI_PACKAGE, version: VERSION, path, preimageSha256, apply });
 }
 
-const AC_IMPORT_BEFORE = 'import { fuzzyFilter } from "./fuzzy.js";\nconst PATH_DELIMITERS';
-const AC_IMPORT_AFTER = 'import { fuzzyFilter } from "./fuzzy.js";\n' + INLINE_IMPORT + '\nconst PATH_DELIMITERS';
+const AC_IMPORT_BEFORE = 'const PATH_DELIMITERS = new Set([" ", "\\t", \'"\', "\'", "="]);\n';
+const AC_IMPORT_AFTER = INLINE_IMPORT + '\n' + AC_IMPORT_BEFORE;
 
 const AC_LEADING_BEFORE = '        if (!options.force && textBeforeCursor.startsWith("/")) {\n            const spaceIndex = textBeforeCursor.indexOf(" ");\n            if (spaceIndex === -1) {\n                const prefix = textBeforeCursor.slice(1);';
 const AC_LEADING_AFTER = '        const dollarContext = getDollarInvocationContext(textBeforeCursor, cursorLine, this.commands);\n        if (dollarContext) {\n            const suggestions = getDollarInvocationSuggestions(this.commands, dollarContext.query, dollarContext.skillsOnly, fuzzyFilter);\n            if (suggestions.length === 0)\n                return null;\n            return {\n                items: suggestions,\n                prefix: dollarContext.prefix,\n            };\n        }\n        if (!options.force && cursorLine === 0 && textBeforeCursor.startsWith("/")) {\n            const spaceIndex = textBeforeCursor.indexOf(" ");\n            if (spaceIndex === -1) {\n                if (textBeforeCursor.slice(1).includes("/"))\n                    return null;\n                const prefix = textBeforeCursor.slice(1);';
@@ -68,8 +68,8 @@ export const files = Object.freeze([
 ]);
 
 export const patches = Object.freeze([
-  patch("tui-autocomplete:provider", "dist/autocomplete.js", "c616bdb2993cc0e8caf8bf6f32927a10d9226755de3afe8efd8b51e97f3ef2bd", patchTuiAutocomplete),
-  patch("tui-autocomplete:editor", "dist/components/editor.js", "9c0d4a853d30a77040319e245d474e02afebebde960161d3bc27b6081620db27", patchTuiEditor),
+  patch("tui-autocomplete:provider", "dist/autocomplete.js", "1b18b10ff6232f95b8fb5c57390e706686de31449a8f3bd45f34af1038b33e23", patchTuiAutocomplete),
+  patch("tui-autocomplete:editor", "dist/components/editor.js", "e6efdddb40ccf924616d1e61666c394ccd36d1db49e3a0fb11d555d81cf972a8", patchTuiEditor),
 ]);
 
 export const feature = Object.freeze({ id: "tui-autocomplete", patches, files });

@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
-const PACKAGE_VERSION = "0.85.1";
+import { PI_VERSION as PACKAGE_VERSION } from "../../pi-version.mjs";
 
 const source = (relative) => fileURLToPath(new URL(relative, import.meta.url));
 const ownedFile = (path, sourcePath) => Object.freeze({

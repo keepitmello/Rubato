@@ -3,6 +3,7 @@
 import { readFile } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { PI_VERSION } from "./pi-version.mjs";
 import { validateCandidateStage } from "./validate-stage.mjs";
 
 export const CANDIDATE_FEATURE_NAMES = Object.freeze(["runtime-factories", "reload", "tool-execution", "input-lifecycle", "abort-provenance",
@@ -25,7 +26,7 @@ export async function prepareRubatoCandidate(requestedAgentDir) {
   if (!requestedAgentDir || !isAbsolute(requestedAgentDir)) throw new Error("Incomplete Rubato candidate requires an explicit absolute RUBATO_CANDIDATE_AGENT_DIR");
   const agentDir = resolve(requestedAgentDir);
   const receipt = JSON.parse(await readFile(new URL("../../rubato-pi-stage.json", import.meta.url), "utf8"));
-  if (receipt.version !== 1 || receipt.state !== "ready" || receipt.stockVersion !== "0.85.1" ||
+  if (receipt.version !== 1 || receipt.state !== "ready" || receipt.stockVersion !== PI_VERSION ||
       receipt.entryMode !== "unbundled" || receipt.fullRubatoParity !== false ||
       !Array.isArray(receipt.features) || requiredFeatures.some((name) => !receipt.features.includes(name))) {
     throw new Error("Incomplete Rubato candidate is missing its selected runtime features");
