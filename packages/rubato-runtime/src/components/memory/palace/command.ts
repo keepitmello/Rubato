@@ -5,7 +5,6 @@
 import type { SenpiExtensionAPI } from "../../../extension/types"
 import type { MemoryIdentityContext } from "../context"
 import { generatePalaceHtml } from "./generator"
-import type { PalacePeopleOptions } from "./people"
 
 const UNBOUND_NOTICE = "memory is not bound in this session, so /palace has nothing to render"
 const REMOTE_ENV_KEYS = ["TMUX", "SSH_CONNECTION", "SSH_TTY", "SSH_CLIENT"] as const
@@ -30,24 +29,19 @@ export interface PalaceCommandContext {
 
 export type PalaceContextResolver = (ctx: PalaceCommandContext) => MemoryIdentityContext | undefined
 
-/** Resolves the people-panel gate; omitted resolvers fall back to the schema defaults. */
-export type PalacePeopleResolver = () => PalacePeopleOptions | undefined
-
 export function registerPalaceCommand(
   pi: SenpiExtensionAPI,
   resolve: PalaceContextResolver,
-  resolvePeople?: PalacePeopleResolver,
 ): void {
   pi.registerCommand("palace", {
     description: "Generate the memory palace HTML viewer for the bound identity.",
-    handler: (_args: string, ctx: PalaceCommandContext) => runPalaceCommand(resolve, ctx, resolvePeople),
+    handler: (_args: string, ctx: PalaceCommandContext) => runPalaceCommand(resolve, ctx),
   })
 }
 
 export async function runPalaceCommand(
   resolve: PalaceContextResolver,
   ctx: PalaceCommandContext,
-  resolvePeople?: PalacePeopleResolver,
 ): Promise<void> {
   const identityContext = resolve(ctx)
   if (identityContext === undefined) {
@@ -55,8 +49,7 @@ export async function runPalaceCommand(
     return
   }
 
-  const people = resolvePeople?.()
-  const { path } = await generatePalaceHtml(identityContext, people === undefined ? {} : { people })
+  const { path } = await generatePalaceHtml(identityContext, {})
   if (ctx.hasUI === false) {
     ctx.output?.(path)
     return

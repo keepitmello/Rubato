@@ -125,56 +125,6 @@ export function palaceClientScript(dataElementId: string): string {
     root.appendChild(runs);
   };
 
-  var renderPeople = function (root, section) {
-    if (!root) return;
-    var nodes = (section && section.nodes) || [];
-    var edges = (section && section.edges) || [];
-    if (nodes.length === 0) { root.appendChild(el('div', 'empty', 'No people recorded')); return; }
-    root.appendChild(el('div', 'panel-title', 'People graph'));
-    nodes.forEach(function (node) {
-      var card = el('article', 'person');
-      var head = el('div', 'person-head');
-      head.appendChild(el('span', 'person-name', node.displayName));
-      head.appendChild(el('span', 'person-slug', node.path));
-      if (node.kind) head.appendChild(pill(node.kind));
-      (node.aliases || []).forEach(function (alias) { head.appendChild(pill(alias, 'plain')); });
-      head.appendChild(pill(node.state, stateVariant(node.state)));
-      card.appendChild(head);
-      var outgoing = edges.filter(function (edge) { return edge.source === node.slug; });
-      if (outgoing.length === 0) {
-        card.appendChild(el('div', 'entry-body', 'No relationships recorded'));
-      } else {
-        var list = el('ul', 'edges');
-        outgoing.forEach(function (edge) {
-          var row = el('li', 'edge');
-          row.appendChild(el('span', 'edge-predicate', edge.predicate));
-          row.appendChild(el('span', 'edge-arrow', '->'));
-          row.appendChild(el('span', 'grow', edge.target));
-          if (!edge.targetSlug) row.appendChild(pill('no card', 'warn'));
-          list.appendChild(row);
-        });
-        card.appendChild(list);
-      }
-      root.appendChild(card);
-    });
-    var diagnostics = (section && section.diagnostics) || [];
-    if (diagnostics.length === 0) return;
-    root.appendChild(el('div', 'panel-title', 'Card diagnostics'));
-    var issues = el('ul', 'rows');
-    diagnostics.forEach(function (diagnostic) {
-      var row = el('li', 'row');
-      row.appendChild(el('span', 'grow', diagnostic.path));
-      row.appendChild(el('span', 'dim', diagnostic.message));
-      issues.appendChild(row);
-    });
-    root.appendChild(issues);
-  };
-
-  renderCore(document.getElementById('panel-core'), DATA.core);
-  renderExternal(document.getElementById('panel-external'), DATA.external);
-  renderHistory(document.getElementById('panel-history'), DATA.history);
-  renderReflection(document.getElementById('panel-reflection'), DATA.reflection);
-  if (DATA.people) renderPeople(document.getElementById('panel-people'), DATA.people);
 
   document.getElementById('tabs').addEventListener('click', function (event) {
     var button = event.target.closest('[data-tab]');
@@ -183,7 +133,7 @@ export function palaceClientScript(dataElementId: string): string {
     Array.prototype.forEach.call(document.querySelectorAll('[data-tab]'), function (tab) {
       tab.classList.toggle('active', tab === button);
     });
-    ['core', 'external', 'history', 'reflection', 'people'].forEach(function (panel) {
+    ['core', 'external', 'history', 'reflection'].forEach(function (panel) {
       var node = document.getElementById('panel-' + panel);
       if (node) node.hidden = panel !== name;
     });

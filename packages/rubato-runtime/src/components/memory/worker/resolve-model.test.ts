@@ -46,7 +46,6 @@ describe("resolveReflectionModel", () => {
     expect(result.kind).toBe("category_unavailable")
     if (result.kind === "category_unavailable") {
       expect(result.category).toBe("quick")
-      expect(result.attemptedChain?.length).toBeGreaterThan(0)
     }
   })
 

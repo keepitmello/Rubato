@@ -37,7 +37,6 @@ export function memorySettings(overrides: Partial<RubatoMemorySettings> = {}): R
       sandbox: "auto",
     },
     nudge: { enabled: true, every_user_turns: 10 },
-    facts: { enabled: true, debounce_settles: 4 },
     dream: {
       enabled: true,
       idle_minutes: 30,
@@ -46,7 +45,6 @@ export function memorySettings(overrides: Partial<RubatoMemorySettings> = {}): R
       auto_select_max: 5,
       auto_select_max_chars: 150000,
     },
-    people: { enabled: true, max_entries: 40, max_entry_chars: 200 },
     soul: { edit_notice: true },
     write_notice: { enabled: true },
     sync: { enabled: true },

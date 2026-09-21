@@ -1,11 +1,9 @@
 import { join } from "node:path"
 
-import { TranscriptJournal, sanitizeToSlug, type ReservedRun } from "@rubato/memory-core"
+import { TranscriptJournal, type ReservedRun } from "@rubato/memory-core"
 
 import type { MemoryIdentityContext } from "./context"
 import type { DreamTriggerSession } from "./dream-trigger"
-import { FactsExtractorRunner } from "./facts-runner"
-import { createMemoryFactsWiring, type MemoryFactsWiring } from "./facts-wiring"
 import {
   createIdentityRuntime,
   resolveMemorySettings,
@@ -24,13 +22,11 @@ import { resolveReflectionTriggerConfig, type ReflectionTriggerSession } from ".
 import { isRecord, sessionIdFrom } from "./wiring-context"
 import type { MemoryWiringOptions } from "./wiring-types"
 import type { ReflectionLiveSession, ReflectionSessionModel } from "./worker"
-import { buildFactsSandboxTransform, type SandboxPolicy } from "./sandbox"
 
 export interface MemoryRuntimeWiring {
   resolveContext(sessionId: string): MemoryIdentityContext | undefined
   resolveModelRegistry(): ReturnType<MemoryIdentityRuntimeDeps["resolveModelRegistry"]>
   journalWiringFor(identity: MemoryIdentityContext): MemoryJournalWiring
-  factsWiringFor(identity: MemoryIdentityContext): MemoryFactsWiring
   runtimeFor(identity: MemoryIdentityContext): MemoryIdentityRuntime
   triggerSessionFor(eventCtx: unknown): ReflectionTriggerSession | undefined
   dreamSessionById(sessionId: string): DreamTriggerSession | undefined
@@ -52,7 +48,6 @@ export function createMemoryRuntimeWiring(
 ): MemoryRuntimeWiring {
   const runtimes = new Map<string, MemoryIdentityRuntime>()
   const journals = new Map<string, MemoryJournalWiring>()
-  const factsWirings = new Map<string, MemoryFactsWiring>()
 
   const resolveContext = (sessionId: string): MemoryIdentityContext | undefined =>
     options.sessions.get(sessionId)?.context
@@ -85,54 +80,6 @@ export function createMemoryRuntimeWiring(
       ...(options.logger === undefined ? {} : { logger: options.logger }),
     })
     journals.set(identity.identity, wiring)
-    return wiring
-  }
-
-  function factsWiringFor(identity: MemoryIdentityContext): MemoryFactsWiring {
-    const cached = factsWirings.get(identity.identity)
-    if (cached !== undefined) return cached
-    const settings = resolveMemorySettings(options.loadConfig({ cwd: options.cwd() }).config.memory)
-    const sandboxPolicy = settings.agents[identity.identity]?.reflection?.sandbox
-      ?? settings.reflection.sandbox
-    const createExtractor = options.createFactsExtractor
-      ?? ((extractorOptions) => new FactsExtractorRunner(extractorOptions))
-    const extractor = createExtractor({
-      identity: {
-        id: identity.identity,
-        safeSlug: sanitizeToSlug(identity.identity),
-        paths: identity.identityPaths,
-      },
-      cwd: options.cwd(),
-      loadConfig: () => options.loadConfig({ cwd: options.cwd() }),
-      resolveModelRegistry,
-      env: options.env,
-      sandbox: buildFactsSandboxTransform({
-        policy: sandboxPolicy as SandboxPolicy,
-        onWarning: (warning, spawnArgs) => options.logger?.warn("memory facts sandbox degraded", {
-          identity: identity.identity,
-          runId: spawnArgs.runId,
-          warning,
-        }),
-      }),
-      ...(options.logger === undefined ? {} : { logger: options.logger }),
-    })
-    const wiring = createMemoryFactsWiring({
-      identity: identity.identity,
-      identityPaths: identity.identityPaths,
-      factsEnabled: () => {
-        const settings = resolveMemorySettings(options.loadConfig({ cwd: options.cwd() }).config.memory)
-        const override = settings.agents[identity.identity]?.facts
-        return override?.enabled ?? settings.facts.enabled
-      },
-      debounceSettles: () => {
-        const settings = resolveMemorySettings(options.loadConfig({ cwd: options.cwd() }).config.memory)
-        const override = settings.agents[identity.identity]?.facts
-        return override?.debounce_settles ?? settings.facts.debounce_settles
-      },
-      extractor,
-      ...(options.logger === undefined ? {} : { logger: options.logger }),
-    })
-    factsWirings.set(identity.identity, wiring)
     return wiring
   }
 
@@ -215,7 +162,6 @@ export function createMemoryRuntimeWiring(
     resolveContext,
     resolveModelRegistry,
     journalWiringFor,
-    factsWiringFor,
     runtimeFor,
     triggerSessionFor,
     dreamSessionById,

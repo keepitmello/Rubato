@@ -19,7 +19,6 @@ describe("memory config wiring", () => {
     expect(result.data.memory?.reflection.category).toBe("quick")
     expect(result.data.memory?.reflection.trigger).toEqual({ step_count: 25, on_compaction: true })
     expect(result.data.memory?.nudge).toEqual({ enabled: true, every_user_turns: 10 })
-    expect(result.data.memory?.facts).toEqual({ enabled: true, debounce_settles: 4 })
     expect(result.data.memory?.dream).toEqual({
       enabled: true,
       idle_minutes: 30,
@@ -28,7 +27,6 @@ describe("memory config wiring", () => {
       auto_select_max: 5,
       auto_select_max_chars: 150000,
     })
-    expect(result.data.memory?.people).toEqual({ enabled: true, max_entries: 40, max_entry_chars: 200 })
     expect(result.data.memory?.soul).toEqual({ edit_notice: true })
   })
 

@@ -45,11 +45,8 @@ export interface ShutdownDrainSteps {
   /** (a) IC-11 journal flush. */
   flushJournal(sessionId: string, signal: AbortSignal): Promise<void>
   /** (b) final un-enqueued transcript delta. */
-  enqueueFinalDelta(sessionId: string, signal: AbortSignal): Promise<void>
   /** (c') debounced skills-usage writer, flushed before any launch. */
   flushSkillsUsage(sessionId: string, signal: AbortSignal): Promise<void>
-  /** (c) facts child spawn, gated by the debounce threshold. */
-  launchFacts(sessionId: string, signal: AbortSignal): Promise<void>
 }
 
 export interface ShutdownDrain {
@@ -134,11 +131,9 @@ export function createShutdownDrain(options: ShutdownDrainOptions): ShutdownDrai
 
       try {
         if (!(await runStep("journal-flush", () => options.steps.flushJournal(input.sessionId, signal)))) return
-        if (!(await runStep("facts-enqueue", () => options.steps.enqueueFinalDelta(input.sessionId, signal)))) return
         if (!preservesProcessState(input.reason)) return
         if (!(await runStep("skills-usage-flush", () => options.steps.flushSkillsUsage(input.sessionId, signal)))) return
         if (input.reason !== "quit") return
-        if (!(await runStep("facts-launch", () => options.steps.launchFacts(input.sessionId, signal)))) return
         for (const evaluator of evaluators) {
           const proceed = await runStep("shutdown-evaluator", async () => {
             await evaluator(evaluatorInput)
