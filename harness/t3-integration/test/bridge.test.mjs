@@ -369,6 +369,36 @@ test('a real Agent tool_execution_end payload opens one child row, and a tick em
   assert.equal(events.filter((event) => event.type==='task.started').length, 1);
 });
 
+test('task speed index is a number, and the packed footer string stays off the wire', () => {
+  const events=[]; const p=new EventProjection({threadId:'thread',sessionId:'session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
+  p.project({type:'agent_start'});
+  p.project({type:'tool_execution_end', toolName:'Agent', toolCallId:'toolu_spawn', isError:false,
+    result:{content:[{type:'text', text:'Started'}], details:{agentId:'st_speed', status:'running', task_summary:'Audit auth', model:'xai/grok-4.7'}}});
+  p.project({type:'extension_event', name:'rubato.task.updated', data:{ parent_session_id:'session', tasks:[{
+    task_id:'st_speed', task_summary:'Audit auth', status:'running', model:'xai/grok-4.7',
+    live_progress:{ activity:'Audit auth · Speed 488', total_tokens:1200 },
+    run_stats:{ total_tokens:1200, speed_index:488 },
+  }]}});
+  const tick = events.find((event) => event.type==='task.progress');
+  assert.equal(tick.payload.typedUsage.speedIndex, 488);
+  assert.equal(JSON.stringify(tick.payload).includes('Speed 488'), false);
+  p.project({type:'extension_event', name:'rubato.task.updated', data:{ parent_session_id:'session', tasks:[{
+    task_id:'st_speed', status:'completed', final_response:'done',
+    run_stats:{ total_tokens:1400, speed_index:120 },
+  }]}});
+  const done = events.find((event) => event.type==='task.completed');
+  assert.equal(done.payload.typedUsage.speedIndex, 120);
+});
+
+test('lead speed is a metadata number, including an honest dash', () => {
+  const events=[]; const p=new EventProjection({threadId:'thread',sessionId:'session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
+  p.project({type:'extension_event', name:'rubato.speed.updated', data:{ speed: 140 }});
+  p.project({type:'extension_event', name:'rubato.speed.updated', data:{ speed: null }});
+  p.project({type:'extension_event', name:'rubato.speed.updated', data:{ speed: 'fast' }});
+  const speeds = events.filter((event) => event.type==='thread.metadata.updated');
+  assert.deepEqual(speeds.map((event) => event.payload.metadata.speedIndex), [140, null]);
+});
+
 test('a snapshot that arrives before spawn-ack still opens only one row', () => {
   const events=[]; const p=new EventProjection({threadId:'thread',sessionId:'session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
   p.project({type:'agent_start'});
