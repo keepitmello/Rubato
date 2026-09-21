@@ -4,7 +4,7 @@ import {
   getPatternModelIDAliasRules,
   resolveModelIDAlias,
 } from "./model-capability-aliases"
-import { AGENT_MODEL_REQUIREMENTS, CATEGORY_MODEL_REQUIREMENTS } from "./model-requirements"
+import { AGENT_MODEL_REQUIREMENTS } from "./model-requirements"
 
 export type ModelCapabilityGuardrailIssue =
   | {
@@ -56,12 +56,6 @@ export function getBuiltInRequirementModelIDs(): string[] {
   const modelIDs = new Set<string>()
 
   for (const requirement of Object.values(AGENT_MODEL_REQUIREMENTS)) {
-    for (const entry of requirement.fallbackChain) {
-      modelIDs.add(entry.model)
-    }
-  }
-
-  for (const requirement of Object.values(CATEGORY_MODEL_REQUIREMENTS)) {
     for (const entry of requirement.fallbackChain) {
       modelIDs.add(entry.model)
     }
