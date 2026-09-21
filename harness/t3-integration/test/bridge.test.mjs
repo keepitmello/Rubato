@@ -341,17 +341,17 @@ test('a real Agent tool_execution_end payload opens one child row, and a tick em
   p.project({type:'tool_execution_end', toolName:'Agent', toolCallId:'toolu_spawn', isError:false,
     result:{content:[{type:'text', text:'Started agent Audit auth (st_01a0a358, running).'}],
       details:{agentId:'st_01a0a358', status:'running', mode:'spawn', task_summary:'Audit auth', name:'st_01a0a358',
-        execution_mode:'in-process', model:'xai/grok-4.6'}}});
+        execution_mode:'in-process', model:'xai/grok-4.7'}}});
   const started = events.filter((event) => event.type==='task.started');
   assert.equal(started.length, 1);
   assert.equal(started[0].payload.taskId, 'st_01a0a358');
   assert.equal(started[0].payload.toolUseId, 'toolu_spawn');
-  assert.equal(started[0].payload.title, 'grok-4.6 · Audit auth');
+  assert.equal(started[0].payload.title, 'grok-4.7 · Audit auth');
   assert.equal(started[0].payload.description, undefined);
   const before = events.length;
   p.project({type:'extension_event', name:'rubato.task.updated', data:{ parent_session_id:'session', tasks:[{
-    task_id:'st_01a0a358', task_summary:'Audit auth', status:'running', model:'xai/grok-4.6',
-    live_progress:{ activity:'Audit auth · model:xai/grok-4.6 · turn 13 (18 tools) · running · $0.0000 · Speed 488',
+    task_id:'st_01a0a358', task_summary:'Audit auth', status:'running', model:'xai/grok-4.7',
+    live_progress:{ activity:'Audit auth · model:xai/grok-4.7 · turn 13 (18 tools) · running · $0.0000 · Speed 488',
       started_at:2000, current_tool:'read src/foo.ts', last_assistant_line:'looking at middleware', turns:13, tool_calls:18,
       total_tokens:1200, output_tokens:80 },
   }]}});
@@ -362,7 +362,7 @@ test('a real Agent tool_execution_end payload opens one child row, and a tick em
   assert.equal(ticks[0].payload.summary, 'looking at middleware');
   assert.equal(ticks[0].payload.description, 'looking at middleware');
   assert.equal(ticks[0].payload.status, 'running');
-  assert.equal(ticks[0].payload.title, 'grok-4.6 · Audit auth');
+  assert.equal(ticks[0].payload.title, 'grok-4.7 · Audit auth');
   assert.equal(JSON.stringify(ticks[0].payload).includes('Speed 488'), false);
   assert.equal(JSON.stringify(ticks[0].payload).includes('$0.0000'), false);
   assert.equal(ticks[0].payload.typedUsage?.totalTokens, 1200);
@@ -374,10 +374,10 @@ test('a snapshot that arrives before spawn-ack still opens only one row', () => 
   p.project({type:'agent_start'});
   p.project({type:'tool_execution_start', toolName:'Agent', toolCallId:'toolu_spawn', args:{summary:'Audit auth'}});
   p.project({type:'extension_event', name:'rubato.task.updated', data:{ parent_session_id:'session', tasks:[{
-    task_id:'st_01a0a358', task_summary:'Audit auth', status:'running', model:'xai/grok-4.6',
+    task_id:'st_01a0a358', task_summary:'Audit auth', status:'running', model:'xai/grok-4.7',
   }]}});
   p.project({type:'tool_execution_end', toolName:'Agent', toolCallId:'toolu_spawn', isError:false,
-    result:{content:[{type:'text', text:'Started'}], details:{agentId:'st_01a0a358', status:'running', task_summary:'Audit auth', model:'xai/grok-4.6'}}});
+    result:{content:[{type:'text', text:'Started'}], details:{agentId:'st_01a0a358', status:'running', task_summary:'Audit auth', model:'xai/grok-4.7'}}});
   const started = events.filter((event) => event.type==='task.started');
   assert.equal(started.length, 1);
   assert.equal(started[0].payload.taskId, 'st_01a0a358');
@@ -417,9 +417,9 @@ test('spawn item and task share a toolCallId so mobile can drop the tool row', (
   const events=[]; const p=new EventProjection({threadId:'thread',sessionId:'session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
   p.project({type:'agent_start'});
   p.project({type:'tool_execution_start', toolName:'Agent', toolCallId:'toolu_spawn',
-    args:{summary:'Audit auth', model:'xai/grok-4.6', effort:'high'}});
+    args:{summary:'Audit auth', model:'xai/grok-4.7', effort:'high'}});
   p.project({type:'tool_execution_end', toolName:'Agent', toolCallId:'toolu_spawn', isError:false,
-    result:{details:{agentId:'st_01', status:'running', task_summary:'Audit auth', model:'xai/grok-4.6'}}});
+    result:{details:{agentId:'st_01', status:'running', task_summary:'Audit auth', model:'xai/grok-4.7'}}});
   const item = events.find((event) => event.type==='item.started' && event.payload.itemType==='collab_agent_tool_call');
   const task = events.find((event) => event.type==='task.started');
   assert.equal(item.itemId, 'toolu_spawn');
@@ -432,27 +432,27 @@ test('subagent model and effort stay structured and reach the title mobile paint
   const events=[]; const p=new EventProjection({threadId:'thread',sessionId:'session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
   p.project({type:'agent_start'});
   p.project({type:'tool_execution_start', toolName:'Agent', toolCallId:'toolu_spawn',
-    args:{summary:'재연결 직후 잘못된 컨텍스트 창 크기 전송 수정', model:'xai/grok-4.6', effort:'high', prompt:'do the work'}});
+    args:{summary:'재연결 직후 잘못된 컨텍스트 창 크기 전송 수정', model:'xai/grok-4.7', effort:'high', prompt:'do the work'}});
   p.project({type:'tool_execution_end', toolName:'Agent', toolCallId:'toolu_spawn', isError:false,
     result:{details:{agentId:'st_01', status:'running', task_summary:'재연결 직후 잘못된 컨텍스트 창 크기 전송 수정',
-      model:'xai/grok-4.6', resolved_model:{reasoning:'high', reasoning_effort:'high'}}}});
+      model:'xai/grok-4.7', resolved_model:{reasoning:'high', reasoning_effort:'high'}}}});
   const started = events.find((event) => event.type==='task.started');
-  assert.equal(started.payload.model, 'xai/grok-4.6');
+  assert.equal(started.payload.model, 'xai/grok-4.7');
   assert.equal(started.payload.effort, 'high');
   assert.equal(started.payload.title.includes('xai/'), false);
-  assert.equal(started.payload.title.includes('grok-4.6'), true);
+  assert.equal(started.payload.title.includes('grok-4.7'), true);
   assert.equal(started.payload.title.includes('high'), true);
   assert.ok(started.payload.title.length <= 37, started.payload.title);
   p.project({type:'extension_event', name:'rubato.task.updated', data:{ parent_session_id:'session', tasks:[{
-    task_id:'st_01', task_summary:'재연결 직후 잘못된 컨텍스트 창 크기 전송 수정', status:'running', model:'xai/grok-4.6', effort:'high',
+    task_id:'st_01', task_summary:'재연결 직후 잘못된 컨텍스트 창 크기 전송 수정', status:'running', model:'xai/grok-4.7', effort:'high',
     live_progress:{ last_assistant_line:"I will start from the usage-reporting commit", current_tool:'read events.mjs' },
   }]}});
   const tick = events.find((event) => event.type==='task.progress');
   assert.equal(tick.payload.description, "I will start from the usage-reporting commit");
   assert.equal(tick.payload.description.includes('grok'), false);
-  assert.equal(tick.payload.model, 'xai/grok-4.6');
+  assert.equal(tick.payload.model, 'xai/grok-4.7');
   assert.equal(tick.payload.effort, 'high');
-  assert.equal(tick.payload.title.includes('grok-4.6'), true);
+  assert.equal(tick.payload.title.includes('grok-4.7'), true);
 });
 
 test('reconnect does not append a full answer over text already projected or still in flight', () => {
@@ -830,7 +830,7 @@ test('attach replays last assistant usage and stays silent after compaction', ()
 
 const CATALOGUE = [
   { provider:'anthropic', id:'claude-opus-5', contextWindow:1000000 },
-  { provider:'xai', id:'grok-4.6', contextWindow:500000 },
+  { provider:'xai', id:'grok-4.7', contextWindow:500000 },
   { provider:'openai-codex', id:'gpt-5.6-sol', contextWindow:272000 },
   { provider:'openai-codex', id:'gpt-5.6-terra', contextWindow:272000 },
 ];

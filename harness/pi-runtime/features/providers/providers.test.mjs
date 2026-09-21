@@ -294,7 +294,7 @@ test("Cursor adapter restores grouped catalogs and forwards local-work state thr
   await provider.refreshModels({
     stored: {
       checkedAt: 1,
-      models: [legacyModel("cursor-grok-4.6-low"), legacyModel("cursor-grok-4.6-high")],
+      models: [legacyModel("grok-4.7-low"), legacyModel("grok-4.7-high")],
     },
     allowNetwork: false,
     signal: new AbortController().signal,
@@ -303,7 +303,7 @@ test("Cursor adapter restores grouped catalogs and forwards local-work state thr
       return true;
     },
   });
-  assert.deepEqual(provider.getModels().map((entry) => entry.id), ["cursor-grok-4.6"]);
+  assert.deepEqual(provider.getModels().map((entry) => entry.id), ["grok-4.7"]);
 
   const inner = new cursorEventStream.AssistantMessageEventStream();
   let finishWork;

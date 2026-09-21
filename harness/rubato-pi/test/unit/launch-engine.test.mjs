@@ -134,11 +134,11 @@ test("env RUBATO_ENGINE overrides the marker", () => {
 });
 
 test("buildPiArgs keeps fullscreen and user args and drops Senpi overlays", () => {
-  const args = buildPiArgs(["--resume", "--model", "xai/grok-4.6"], { env: {} });
+  const args = buildPiArgs(["--resume", "--model", "xai/grok-4.7"], { env: {} });
   assert.equal(args.includes("--system-prompt"), true);
   assert.equal(args.includes("-e"), false);
   assert.equal(args[args.indexOf("--tui-mode") + 1], "fullscreen");
-  assert.deepEqual(args.slice(-3), ["--resume", "--model", "xai/grok-4.6"]);
+  assert.deepEqual(args.slice(-3), ["--resume", "--model", "xai/grok-4.7"]);
   const rpc = buildPiArgs(["--mode", "rpc"]);
   assert.equal(rpc.includes("--tui-mode"), false);
 });

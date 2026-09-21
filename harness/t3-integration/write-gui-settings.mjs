@@ -26,7 +26,7 @@ await mkdir(userdata, { recursive: true, mode: 0o700 });
 //          쓸 만한 값을 넣어 주는 것까지가 우리 몫이고, 그 뒤로는 사용자 것이다.
 //
 // 예전에는 이 둘을 가르지 않고 매번 전부 덮어썼다. 그래서 `rubato restart` 나
-// `rubato update` 를 할 때마다 사용자가 고른 기본 모델이 xai/grok-4.6 으로
+// `rubato update` 를 할 때마다 사용자가 고른 기본 모델이 xai/grok-4.7 로
 // 되돌아갔고, 고른 reasoningEffort 도 같이 사라졌다. 업데이트가 설정을 되돌리면
 // 사람은 그 설정 화면을 믿지 않게 된다.
 //
@@ -98,7 +98,7 @@ settings.providers = providers;
 // 뒤의 둘은 제목 짓기와 커밋 메시지 쓰기다. 기본 모델을 따라가게 하고 싶어지지만
 // 그러면 Opus 를 골라둔 사람이 제목 한 줄마다 Opus 값을 낸다. 잔일에는 싼 모델을
 // 둔다 — 사람이 그 자리를 직접 바꾼 적이 있으면 물론 그것을 지킨다.
-const modest = { instanceId: 'rubato', model: 'xai/grok-4.6' };
+const modest = { instanceId: 'rubato', model: 'xai/grok-4.7' };
 seedIfMissing(settings, 'defaultModelSelection', modest);
 seedIfMissing(settings, 'textGenerationModelSelection', modest);
 seedIfMissing(settings, 'sourceControlWriterModelSelection', modest);

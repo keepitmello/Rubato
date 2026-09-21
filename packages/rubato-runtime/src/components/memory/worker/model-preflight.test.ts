@@ -348,11 +348,11 @@ process.stdout.write("builtin/fallback\\n")
 
 
   test("#given a child catalog that only lists Cursor Grok Fast #when the presented id is preflighted #then it stays visible", async () => {
-    const item = await fixture('process.stdout.write("cursor/cursor-grok-4.6-high-fast\\n")')
+    const item = await fixture('process.stdout.write("cursor/grok-4.7-high-fast\\n")')
     const result = await preflightMemoryModels({
       candidates: [
-        { model: "cursor/cursor-grok-4.6", thinking: "high" },
-        { model: "xai/grok-4.6", thinking: "off" },
+        { model: "cursor/grok-4.7", thinking: "high" },
+        { model: "xai/grok-4.7", thinking: "off" },
       ],
       launch: item.launch,
       env: { PATH: process.env.PATH },
@@ -360,8 +360,8 @@ process.stdout.write("builtin/fallback\\n")
     })
     expect(result).toEqual({
       kind: "filtered",
-      candidates: [{ model: "cursor/cursor-grok-4.6", thinking: "high" }],
-      rejected: [{ model: "xai/grok-4.6", cause: "model_not_visible" }],
+      candidates: [{ model: "cursor/grok-4.7", thinking: "high" }],
+      rejected: [{ model: "xai/grok-4.7", cause: "model_not_visible" }],
     })
   })
 

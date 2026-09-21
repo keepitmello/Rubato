@@ -86,7 +86,7 @@
       "model": {
         "provider": "xai",
         "api": "openai-completions",
-        "id": "grok-4.6"
+        "id": "grok-4.7"
       },
       "now": 70000,
       "entries": [

@@ -216,7 +216,7 @@ test("apply_patch uses one editor across model families and executes JSON patche
   assert.ok(active.includes("apply_patch"));
   await handlers.get("model_select")({ model: ctx.model });
   assert.ok(!active.includes("edit") && !active.includes("write"));
-  await handlers.get("model_select")({ model: { id: "grok-4.6", provider: "xai", api: "openai-responses" } });
+  await handlers.get("model_select")({ model: { id: "grok-4.7", provider: "xai", api: "openai-responses" } });
   assert.equal(tools.get("apply_patch").freeform, undefined, "xAI Responses rejects custom/freeform tool types");
   assert.deepEqual(await handlers.get("tool_result")({ toolName: "apply_patch", details: { result: { failures: [{}] } } }), { isError: true });
 });

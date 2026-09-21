@@ -17,8 +17,8 @@ import {
 import { injectCompactionIndexReason } from "../../src/transforms/core-lane-policy.mjs";
 
 const CODEX = { provider: "openai-codex", id: "gpt-5.6-sol" };
-const CURSOR_GROK = { provider: "cursor", id: "cursor-grok-4.6-high-fast" };
-const XAI_GROK = { provider: "xai", id: "grok-4.6" };
+const CURSOR_GROK = { provider: "cursor", id: "grok-4.7-high-fast" };
+const XAI_GROK = { provider: "xai", id: "grok-4.7" };
 const CURSOR_GEMINI = { provider: "cursor", id: "gemini-3.8-flash" };
 const ANTIGRAVITY_GEMINI = { provider: "google-antigravity", id: "gemini-3.8-flash" };
 const FABLE = { provider: "anthropic", id: "claude-fable-5-1" };

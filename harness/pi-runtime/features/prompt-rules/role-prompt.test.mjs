@@ -35,13 +35,13 @@ test("role prompt dump matches senpi replaceSystemPrompt for lead/owner/verifier
     await createRolePromptExtensionFactories({ env })[0].factory(pi);
     const result = await handlers.before_agent_start(
       { systemPrompt: "" },
-      { model: { id: "grok-4.6", provider: "xai", name: "Grok 4.6" } },
+      { model: { id: "grok-4.7", provider: "xai", name: "Grok 4.7" } },
     );
     const dump = result.systemPrompt;
     assert.match(dump, /# Working agreement/);
     assert.match(dump, headings[role]);
     assert.match(dump, /The following skills provide specialized instructions|available_skills/);
-    assert.equal(dump, promptForAgentStart({ systemPrompt: "" }, { model: { id: "grok-4.6", provider: "xai", name: "Grok 4.6" } }, role, { env, argv: process.argv }));
+    assert.equal(dump, promptForAgentStart({ systemPrompt: "" }, { model: { id: "grok-4.7", provider: "xai", name: "Grok 4.7" } }, role, { env, argv: process.argv }));
     assert.match(senpi, headings[role]);
   }
 });

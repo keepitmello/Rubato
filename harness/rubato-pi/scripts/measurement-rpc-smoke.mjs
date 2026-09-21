@@ -12,7 +12,7 @@ const stderr = createWriteStream(join(runDir, "stderr.log"), { flags: "a" });
 const launcher = new URL("../../scripts/rubato-pi.sh", import.meta.url).pathname;
 const prompt = process.env.RUBATO_SMOKE_PROMPT
   ?? "Use the read tool exactly once to read /Users/wy/Github-repos/Rubato/harness/rubato-pi/package.json, then reply with only its package name.";
-const child = spawn(launcher, ["--mode", "rpc", "--model", process.env.RUBATO_SMOKE_MODEL ?? "xai/grok-4.6"], {
+const child = spawn(launcher, ["--mode", "rpc", "--model", process.env.RUBATO_SMOKE_MODEL ?? "xai/grok-4.7"], {
   cwd: process.env.RUBATO_SMOKE_CWD ?? runDir,
   env: process.env,
   stdio: ["pipe", "pipe", "pipe"],

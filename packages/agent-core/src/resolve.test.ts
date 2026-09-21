@@ -8,7 +8,7 @@ const models: ModelCatalog = {
     new Set([
       "openai/gpt-5.6-sol",
       "anthropic/claude-opus-5",
-      "xai/grok-4.6",
+      "xai/grok-4.7",
       "anthropic/claude-fable-5-1",
       "google-antigravity/gemini-3.8-flash",
       "openai-codex/gpt-5.6-luna-fast",
@@ -31,7 +31,7 @@ describe("resolveEffort", () => {
       effort: "high",
       effortSource: "model-default",
     })
-    expect(resolveEffort({ model: "xai/grok-4.6" })).toEqual({
+    expect(resolveEffort({ model: "xai/grok-4.7" })).toEqual({
       effort: "high",
       effortSource: "model-default",
     })
@@ -62,13 +62,13 @@ describe("resolveEffort", () => {
 
 describe("resolveAgentRequest", () => {
   test("#given an exact model #when resolved #then the spec records model-default effort", () => {
-    const result = resolveAgentRequest({ prompt: "Inspect", model: "xai/grok-4.6" }, catalogs)
+    const result = resolveAgentRequest({ prompt: "Inspect", model: "xai/grok-4.7" }, catalogs)
 
     expect(result).toEqual({
       ok: true,
       value: {
         prompt: "Inspect",
-        model: "xai/grok-4.6",
+        model: "xai/grok-4.7",
         effort: "high",
         effortSource: "model-default",
       },
@@ -125,7 +125,7 @@ describe("resolveAgentRequest", () => {
 
   test("#given both targets #when resolved #then validation fails before admission", () => {
     const result = resolveAgentRequest(
-      { prompt: "Inspect", model: "xai/grok-4.6", preset: "reviewer" },
+      { prompt: "Inspect", model: "xai/grok-4.7", preset: "reviewer" },
       catalogs,
     )
 

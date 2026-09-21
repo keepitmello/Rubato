@@ -152,7 +152,7 @@ const codexBody = () => ({
 });
 
 const xaiBody = () => ({
-  model: "grok-4.6",
+  model: "grok-4.7",
   instructions: "sys",
   tools: [{ type: "function", name: "read" }],
   input: [{ role: "user", content: "hi" }],
@@ -239,9 +239,9 @@ test("wrapFetch records an xAI-style responses exchange", async () => {
       input_tokens: 30,
       output_tokens: 4,
       input_tokens_details: { cached_tokens: seen.length === 1 ? 0 : 18 },
-    }, { model: "grok-4.6" }), { status: 200, headers: { "content-type": "text/event-stream" } });
+    }, { model: "grok-4.7" }), { status: 200, headers: { "content-type": "text/event-stream" } });
   };
-  const fetch = audit.wrapFetch(fake, { sessionId: "xai-1", model: "grok-4.6", provider: "xai" });
+  const fetch = audit.wrapFetch(fake, { sessionId: "xai-1", model: "grok-4.7", provider: "xai" });
   const first = xaiBody();
   await (await fetch("https://api.x.ai/v1/responses", { method: "POST", body: JSON.stringify(first) })).text();
   const second = xaiBody();

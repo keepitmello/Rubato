@@ -67,7 +67,7 @@ Do not copy Senpi's complete `pi-ai` tree. The selected closure is listed below.
 | Product identity | Staged request/stream path | Auth and catalog | Stock 0.85.1 status | Retained Rubato/Senpi behavior |
 |---|---|---|---|---|
 | `openai-codex/<id>` | stock `openaiCodexProvider()` -> stock Codex Responses WS/SSE -> Rubato stream decorator | stock OAuth; legacy import only when target lacks it; static stock catalog plus Rubato Daybreak | Native factory is used (`providers/openai-codex.js`) | 272K cap; Daybreak base/fast; selected picker; priority `/fast`. Astra configuration-update and cache patches remain open |
-| `xai/grok-4.6` | stock `xaiProvider()` -> stock OpenAI Responses-compatible xAI API -> decorator | `XAI_API_KEY` or stock xAI OAuth; legacy import eligible | Native factory and device OAuth are used | 65,536 output cap; `xhigh`; xAI priority `/fast`. Pools remain open |
+| `xai/grok-4.7` | stock `xaiProvider()` -> stock OpenAI Responses-compatible xAI API -> decorator | `XAI_API_KEY` or stock xAI OAuth; legacy import eligible | Native factory and device OAuth are used | 65,536 output cap; `xhigh`; xAI priority `/fast`. Pools remain open |
 | `cursor/<id>` | selected owned HTTP/2 Connect `AgentService/Run` -> Rubato canary/picker/error wrappers -> decorator | selected Cursor OAuth; per-account `GetUsableModels`; activation marker bound to credential+catalog generation | Provider is absent from stock; selected closure is staged into stock pi-ai | HTTP/2/protobuf transport, server-driven tool lifecycle, local-work heartbeat, catalog grouping, canary, Grok Fast pin, Gemini 3.8 grouping |
 | `anthropic/<id>` | stock Anthropic provider/API -> setup-token fallback -> Rubato effort/server-compaction wrappers -> decorator | stock stored OAuth/API key or env; then setup-token file, then Keychain | Native factory is used | selected picker/Fable compatibility; setup-token; Opus fast body+beta; mid-conversation effort marks; server compaction. Pools remain open |
 | `kiro/<id>` | owned route uses stock `createProvider()` and stock Anthropic Messages API -> loopback `kiro.rs`; lazy ensure on first stream | stored key, then `KIRO_API_KEY`, then Rubato Kiro config; no OAuth | Provider is absent; stock provider/API primitives are used | loopback-only gate, two-model catalog, lazy sidecar recovery; no `/fast` because it is a gateway path |
@@ -91,19 +91,19 @@ Evidence anchors:
 
 ## Model identity, aliases, effort, and `/fast`
 
-Provider prefix is routing identity, not decoration. Keep `xai/grok-4.6`,
-`cursor/cursor-grok-4.6`, `openai-codex/gpt-5.6-sol`, and similarly named models in other
+Provider prefix is routing identity, not decoration. Keep `xai/grok-4.7`,
+`cursor/grok-4.7`, `openai-codex/gpt-5.6-sol`, and similarly named models in other
 providers distinct; they use different credentials, quotas, and transports.
 
 The current picker policy is explicit (`picker-catalog.mjs:6-25`):
 
 - Codex: `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-6-astra`, and
   `gpt-daybreak-blue-latest`;
-- xAI: `grok-4.6`;
+- xAI: `grok-4.7`;
 - Anthropic: `claude-opus-5`, `claude-sonnet-5`, `claude-fable-5-1`,
   `claude-haiku-4-5`;
 - OpenCode: `muse-spark-1.3-contributor-free`;
-- Cursor: `cursor-grok-4.6`, `gpt-5.6-sol`, `claude-fable-5-1`, `claude-opus-5`,
+- Cursor: `grok-4.7`, `gpt-5.6-sol`, `claude-fable-5-1`, `claude-opus-5`,
   `gemini-3.8-flash`, `kimi-k3`, `composer-2.5` (`cursor-picker.mjs:14-22`).
 
 Picker filtering does not delete the provider's stored catalog. Daybreak is derived from Terra and
@@ -120,8 +120,8 @@ native catalog lacks it (`provider-direct.mjs:127-137`). xAI keeps the native th
   completions/responses-compatible.
 - direct Anthropic Opus 5/4.8: body `speed: "fast"` plus beta
   `fast-mode-2026-02-01`; Kiro and other Anthropic-message gateways are excluded.
-- Cursor Grok Fast is not `/fast`: the visible base `cursor-grok-4.6` is pinned at request time to
-  `cursor-grok-4.6-{low|medium|high|xhigh}-fast`
+- Cursor Grok Fast is not `/fast`: the visible base `grok-4.7` is pinned at request time to
+  `grok-4.7-{low|medium|high|xhigh}-fast`
   (`cursor-grok-fast.mjs:13-23,109-178`).
 
 Senpi's builtin service-tier module owns `/fast`, per-base-model SettingsManager memory, model-switch

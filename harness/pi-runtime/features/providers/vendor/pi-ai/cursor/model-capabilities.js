@@ -113,6 +113,15 @@ export const CURSOR_MODEL_CAPABILITIES = {
         parameterOrder: ["effort", "fast"],
         levels: ladder(["low", "medium", "high", "xhigh"]),
     },
+    // 4.7 은 같은 계열이되 id 에서 `cursor-` 접두사가 빠졌다 (2026-09-22 GetUsableModels
+    // 캡처: grok-4.7-{low,medium,high,xhigh}[-fast]). 노출 단계와 window 는 4.6 과 같고,
+    // xAI API 도 같은 reasoning_effort 넷을 보고한다. alias 표가 이 베이스로 묶는다.
+    "grok-4.7": {
+        evidence: "available-models",
+        window: 500_000,
+        parameterOrder: ["effort", "fast"],
+        levels: ladder(["low", "medium", "high", "xhigh"]),
+    },
     "cursor-grok-4.5": {
         evidence: "suffix-only",
         window: 500_000,

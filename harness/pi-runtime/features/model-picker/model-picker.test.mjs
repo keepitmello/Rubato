@@ -30,7 +30,7 @@ test("descriptor is stock-locked and listed on the candidate", async () => {
 test("sorts by provider groups and keeps xai/ vs cursor/ apart, Sol first", () => {
   const sorted = sortModelItems([
     { provider: "cursor", id: "composer-2.5", model: {} },
-    { provider: "xai", id: "grok-4.6", model: {} },
+    { provider: "xai", id: "grok-4.7", model: {} },
     { provider: "cursor", id: "gpt-5.6-sol", model: {} },
     { provider: "openai-codex", id: "gpt-5.6-luna", model: {} },
     { provider: "openai-codex", id: "gpt-5.6-sol", model: {} },
@@ -40,7 +40,7 @@ test("sorts by provider groups and keeps xai/ vs cursor/ apart, Sol first", () =
     "openai-codex/gpt-5.6-sol",
     "openai-codex/gpt-5.6-luna",
     "anthropic/claude-opus-5",
-    "xai/grok-4.6",
+    "xai/grok-4.7",
     "cursor/gpt-5.6-sol",
     "cursor/composer-2.5",
   ]);
@@ -76,8 +76,8 @@ test("picker admits only the product providers, current model excepted", () => {
 });
 
 test("display labels and stock patch replace item.id", () => {
-  assert.equal(modelPickerLabel({ provider: "cursor", id: "cursor-grok-4.6", model: {} }), "Grok 4.6 fast");
-  assert.equal(modelPickerLabel({ provider: "xai", id: "grok-4.6", model: {} }), "Grok 4.6");
+  assert.equal(modelPickerLabel({ provider: "cursor", id: "grok-4.7", model: {} }), "Grok 4.7 fast");
+  assert.equal(modelPickerLabel({ provider: "xai", id: "grok-4.7", model: {} }), "Grok 4.7");
   assert.equal(modelPickerLabel({ provider: "openai-codex", id: "gpt-6-astra", model: {} }), "Astra 6");
   assert.equal(modelPickerLabel({ provider: "openai-codex", id: "gpt-5.6-sol", model: {} }), "Sol 5.6");
   assert.equal(modelPickerLabel({ provider: "google-antigravity", id: "gemini-3.8-flash", model: {} }), "Gemini 3.8 Flash");

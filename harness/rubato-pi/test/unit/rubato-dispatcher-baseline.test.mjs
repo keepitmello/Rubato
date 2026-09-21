@@ -137,7 +137,7 @@ test("remote update-guard runs before delegation and never delegates when blocke
 
 test("ordinary arguments pass through unchanged to the existing engine", (t) => {
   const harness = dispatcherHarness(t);
-  const args = ["fix the cache", "--model", "xai/grok-4.6"];
+  const args = ["fix the cache", "--model", "xai/grok-4.7"];
   const result = harness.run(args);
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(harness.engineArgs(), [harness.engineEntry, ...args]);

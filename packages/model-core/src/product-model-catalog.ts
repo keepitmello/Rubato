@@ -12,6 +12,7 @@ export type ProductCatalogItem = {
 export const PRODUCT_PROVIDER_ORDER: readonly string[] = catalog.PRODUCT_PROVIDER_ORDER
 export const PRODUCT_MODEL_ORDER: Readonly<Record<string, readonly string[]>> = catalog.PRODUCT_MODEL_ORDER
 export const CURSOR_GROK_PRESENTED_ID: string = catalog.CURSOR_GROK_PRESENTED_ID
+export const CURSOR_GROK_BASE_ID: string = catalog.CURSOR_GROK_BASE_ID
 export const CURSOR_GROK_DEFAULT_FAST_ID: string = catalog.CURSOR_GROK_DEFAULT_FAST_ID
 export const CURSOR_GROK_LIVE_IDS: readonly string[] = catalog.CURSOR_GROK_LIVE_IDS
 

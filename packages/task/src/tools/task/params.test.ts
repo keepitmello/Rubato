@@ -39,8 +39,8 @@ describe("TaskToolParams", () => {
   })
 
   test("#given live models #when the schema is built #then model admission is encoded as an enum", () => {
-    const schema = buildTaskToolParams(["xai/grok-4.6", "openai/gpt-5.6-sol"])
-    expect(Reflect.get(schema.properties.model, "enum")).toEqual(["openai/gpt-5.6-sol", "xai/grok-4.6"])
+    const schema = buildTaskToolParams(["xai/grok-4.7", "openai/gpt-5.6-sol"])
+    expect(Reflect.get(schema.properties.model, "enum")).toEqual(["openai/gpt-5.6-sol", "xai/grok-4.7"])
   })
 
   test("#given a late live registry #when the schema is read #then the enum reflects its current models", () => {
@@ -48,7 +48,7 @@ describe("TaskToolParams", () => {
     const schema = buildTaskToolParams(() => models)
     expect(Reflect.get(schema.properties.model, "enum")).toBeUndefined()
 
-    models = ["xai/grok-4.6"]
-    expect(Reflect.get(schema.properties.model, "enum")).toEqual(["xai/grok-4.6"])
+    models = ["xai/grok-4.7"]
+    expect(Reflect.get(schema.properties.model, "enum")).toEqual(["xai/grok-4.7"])
   })
 })

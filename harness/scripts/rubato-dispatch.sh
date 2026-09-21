@@ -20,8 +20,8 @@ capped (RUBATO_DISPATCH_STDOUT_MAX, default 8192 bytes).
 --effort appends :LEVEL to the model unless it already has :suffix (senpi --model form).
 
 Models:
-  grok      xai/grok-4.6
-  grokfast  cursor/cursor-grok-4.6-high-fast
+  grok      xai/grok-4.7
+  grokfast  cursor/grok-4.7-high-fast
   fast      cursor/gemini-3.8-flash
   muse      opencode/muse-spark-1.3-contributor-free
   sol       openai-codex/gpt-5.6-sol
@@ -43,8 +43,8 @@ resolve_script_dir() {
 
 alias_to_model() {
   case "$1" in
-    grok) echo "xai/grok-4.6" ;;
-    grokfast) echo "cursor/cursor-grok-4.6-high-fast" ;;
+    grok) echo "xai/grok-4.7" ;;
+    grokfast) echo "cursor/grok-4.7-high-fast" ;;
     fast) echo "cursor/gemini-3.8-flash" ;;
     muse) echo "opencode/muse-spark-1.3-contributor-free" ;;
     sol) echo "openai-codex/gpt-5.6-sol" ;;

@@ -989,7 +989,7 @@ async function runRefreshRace(assertLiveAuth) {
 }
 
 async function runXai(assertLiveAuth) {
-  const gate = "Phase 1: xAI grok-4.6 keeps xhigh reasoning mapping on the wire";
+  const gate = "Phase 1: xAI grok-4.7 keeps xhigh reasoning mapping on the wire";
   if (!credentialPresent("xai")) {
     return skip("xai", gate, "credential absent in ~/.senpi/agent/auth.json");
   }
@@ -997,9 +997,9 @@ async function runXai(assertLiveAuth) {
   try {
     const env = childEnv(profile);
     await seedCredentials(env);
-    const session = spawnRpc(profile, { model: "xai/grok-4.6" });
+    const session = spawnRpc(profile, { model: "xai/grok-4.7" });
     try {
-      await setModel(session, "xai", "grok-4.6");
+      await setModel(session, "xai", "grok-4.7");
       await rpc(session, { id: "t", type: "set_thinking_level", level: "xhigh" }, "set_thinking_level");
       const ended = await promptTurn(session, "Reply with exactly this token and nothing else: XAI_OK", {
         id: "p",

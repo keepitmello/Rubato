@@ -1,4 +1,4 @@
-import { shortModelLabel } from "@rubato/model-core"
+import { CURSOR_GROK_BASE_ID, shortModelLabel } from "@rubato/model-core"
 import {
   excerptRendererText,
   formatLiveSpeed,
@@ -134,7 +134,7 @@ function liveTaskTitle(record: TaskRecord): string {
 function liveModelLabel(record: TaskRecord): string | undefined {
   const resolved = record.resolved_model
   // Display is incidental catalog metadata. The short label keys on provider/model_id so
-  // "Cursor Grok 4.6" and "cursor/cursor-grok-4.6" render as one Fast identity.
+  // "Cursor Grok 4.7" and "cursor/grok-4.7" render as one Fast identity.
   const modelId = resolved === undefined
     ? optionalRendererText(record.model)
     : `${resolved.provider}/${resolved.model_id}`
@@ -155,8 +155,10 @@ function formatModelWithEffort(modelId: string, level: string | undefined): stri
 function isFastModel(modelId: string): boolean {
   const bare = modelId.split("/").pop()?.split(":", 1)[0] ?? modelId
   if (/(?:^|[-.])fast$/iu.test(bare)) return true
-  // Rubato pins Cursor Grok 4.6 to Fast on the wire. The planner id stays the grouped base.
-  return bare === "cursor-grok-4.6"
+  // Rubato pins Cursor Grok to Fast on the wire. The planner id stays the grouped base.
+  // The base is the discovery id, so it follows Cursor's namespace — `cursor-grok-4.6`
+  // through 4.6, bare `grok-4.7` from 4.7 on.
+  return bare === CURSOR_GROK_ID
 }
 
 function formatEffort(level: string | undefined): string {

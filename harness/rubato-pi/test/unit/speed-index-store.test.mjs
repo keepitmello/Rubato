@@ -181,8 +181,8 @@ test("history ingest and auxiliary/error samples do not replace active identity"
   assert.equal(store.activeIdentity().effort, "medium");
   store.clearActiveIdentity();
   assert.equal(store.activeIdentity(), undefined);
-  store.setActiveIdentity({ provider: "xai", model: "grok-4.6", effort: "high" });
-  assert.equal(store.activeIdentity().model, "grok-4.6");
+  store.setActiveIdentity({ provider: "xai", model: "grok-4.7", effort: "high" });
+  assert.equal(store.activeIdentity().model, "grok-4.7");
   store.stop();
 });
 

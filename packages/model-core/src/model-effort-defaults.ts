@@ -1,4 +1,4 @@
-import { isClaudeFable5Model, isClaudeOpus5Model, isGrok46Model } from "./model-family-detectors"
+import { isClaudeFable5Model, isClaudeOpus5Model, isGrok47Model } from "./model-family-detectors"
 
 export const MODEL_DEFAULT_EFFORT_SOURCE = "model-default" as const
 export const MANUAL_OVERRIDE_EFFORT_SOURCE = "manual-override" as const
@@ -43,7 +43,7 @@ function isAntigravityFlash(model: string): boolean {
 export function configuredModelEffort(model: string): ConfiguredModelEffort | undefined {
   if (typeof model !== "string" || model.trim().length === 0) return undefined
   if (isSolModel(model) || isAntigravityFlash(model)) return "medium"
-  if (isClaudeOpus5Model(model) || isClaudeFable5Model(model) || isGrok46Model(model)) return "high"
+  if (isClaudeOpus5Model(model) || isClaudeFable5Model(model) || isGrok47Model(model)) return "high"
   return undefined
 }
 

@@ -63,8 +63,8 @@ be spawned, report that limitation; do not bypass native execution with another
 runner or silently substitute a provider.
 
 Native IDs such as `gpt-5.6-sol` do not use Rubato's `openai-codex/` prefix.
-External IDs retain their actual provider prefix: `xai/grok-4.6` and
-`cursor/grok-4.6` use different routes/accounts. Resolve Fable/Opus/Gemini against
+External IDs retain their actual provider prefix: `xai/grok-4.7` and
+`cursor/grok-4.7` use different routes/accounts. Resolve Fable/Opus/Gemini against
 the live catalog rather than assuming Rubato aliases or versions are identical.
 Never infer a Fast endpoint from a model name or manufacture supported effort.
 

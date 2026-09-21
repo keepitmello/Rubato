@@ -176,7 +176,7 @@ const ROSTER_PROVIDER_RANK = Object.freeze({ anthropic: 0, xai: 1, cursor: 2, ki
 const ROSTER_ROLES = Object.freeze([
   { suffix: "/claude-opus-5", pattern: /opus/i },
   { suffix: "/claude-fable-5-1", pattern: /fable/i },
-  { suffix: "/grok-4.6", pattern: /grok/i },
+  { suffix: "/grok-4.7", pattern: /grok/i },
   { suffix: "/claude-sonnet-5", pattern: /sonnet/i },
   { suffix: null, pattern: /gemini.*flash|flash.*gemini/i },
 ]);
@@ -193,7 +193,7 @@ export async function configureOpenCodexRoster(setup, catalog, options = {}) {
     .slice()
     .sort((left, right) => rank(left.id) - rank(right.id) || left.id.localeCompare(right.id))
     .flatMap((provider) => provider.models || []);
-  // One model answers at most one role: without this a single `grok-4.6` would win both the
+  // One model answers at most one role: without this a single `grok-4.7` would win both the
   // grok slot and any later pattern it happens to match, silently shrinking the roster.
   const taken = new Set();
   const external = [];

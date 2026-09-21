@@ -89,7 +89,7 @@ const MODELS = Object.freeze({
   }),
   xai: Object.freeze({
     provider: "xai",
-    id: "grok-4.6",
+    id: "grok-4.7",
     name: "xAI fixture",
     api: "openai-completions",
     baseUrl: "http://127.0.0.1:9/xai",
@@ -295,18 +295,18 @@ test("patched stock SettingsManager persists isolated per-model service tiers", 
 
   const writer = sdk.SettingsManager.create(cwd, agentDir);
   writer.setModelServiceTier("openai-codex", "gpt-5.6-sol", "priority");
-  writer.setModelServiceTier("xai", "grok-4.6", "auto");
+  writer.setModelServiceTier("xai", "grok-4.7", "auto");
   await writer.flush();
 
   const persisted = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8"));
   assert.deepEqual(persisted.modelServiceTiers, {
     "openai-codex/gpt-5.6-sol": "priority",
-    "xai/grok-4.6": "auto",
+    "xai/grok-4.7": "auto",
   });
 
   const reader = sdk.SettingsManager.create(cwd, agentDir);
   assert.equal(reader.getModelServiceTier("openai-codex", "gpt-5.6-sol"), "priority");
-  assert.equal(reader.getModelServiceTier("xai", "grok-4.6"), "auto");
+  assert.equal(reader.getModelServiceTier("xai", "grok-4.7"), "auto");
   assert.equal(reader.getModelServiceTier("anthropic", "claude-opus-5"), undefined);
 });
 
@@ -404,7 +404,7 @@ test("stock AgentSession runs /fast through real settings and all three request 
   const persisted = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8"));
   assert.deepEqual(persisted.modelServiceTiers, {
     "openai-codex/gpt-5.6-sol": "priority",
-    "xai/grok-4.6": "priority",
+    "xai/grok-4.7": "priority",
     "anthropic/claude-opus-5": "priority",
   });
   assert.equal("openai-codex/gpt-5.6-terra" in persisted.modelServiceTiers, false);

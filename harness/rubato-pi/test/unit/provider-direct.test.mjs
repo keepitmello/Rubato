@@ -25,7 +25,7 @@ import providerOverlayImpl from "../../src/extensions/provider-overlay.mjs";
 import { kRubatoStream } from "../../src/rubato-stream.mjs";
 
 const CATALOG = [
-  { id: "xai/grok-4.6", name: "Grok 4.6" },
+  { id: "xai/grok-4.7", name: "Grok 4.7" },
   { id: "openai-codex/gpt-5.6-sol", name: "Sol" },
   { id: "anthropic/claude-opus-5", name: "Opus 5" },
   { id: "kiro/claude-opus-5", name: "Opus 5 (Kiro)" },
@@ -259,11 +259,11 @@ test("Fable 5.1 파생은 틀이 없으면 조용히 넘어가지 않는다", ()
   assert.throws(() => fable51Models([{ id: "claude-opus-5" }]), /claude-fable-5/);
 });
 
-test("xAI: pinned grok-4.6 의 xhigh 가 picker 와 wire 에 남는다", async () => {
+test("xAI: pinned grok-4.7 의 xhigh 가 picker 와 wire 에 남는다", async () => {
   const [, xai] = await directProviders();
   assert.equal(xai.id, "xai");
-  const grok = xai.getModels().find((model) => model.id === "grok-4.6");
-  assert.ok(grok, "grok-4.6 이 없다");
+  const grok = xai.getModels().find((model) => model.id === "grok-4.7");
+  assert.ok(grok, "grok-4.7 이 없다");
   // picker 가 Shift+Tab 으로 xhigh 를 고를 수 있는 근거, 그리고 wire 로 나가는 값.
   assert.equal(grok.thinkingLevelMap.xhigh, "xhigh");
   assert.equal(grok.contextWindow, 500_000);
@@ -274,7 +274,7 @@ test("피커는 현재 세대만 남기고 getModels 저장분은 그대로다",
   const providers = await directProviders();
   const [codex, xai, , anthropic] = providers;
   const opencode = providers.at(-1);
-  assert.deepEqual(xai.filterModels(xai.getModels()).map((model) => model.id), ["grok-4.6"]);
+  assert.deepEqual(xai.filterModels(xai.getModels()).map((model) => model.id), ["grok-4.7"]);
   assert.ok(xai.getModels().some((model) => model.id === "grok-4.3"), "pin 저장분에서 4.3 을 지우면 안 된다");
 
   const anthropicPicker = anthropic.filterModels(anthropic.getModels()).map((model) => model.id);

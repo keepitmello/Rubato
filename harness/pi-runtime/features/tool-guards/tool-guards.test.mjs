@@ -236,7 +236,7 @@ test("actual registered apply_patch switches wire mode, edits files, marks parti
   assert.equal(session.getToolDefinition("apply_patch").constrainedSampling?.type, "grammar");
   await session.extensionRunner.emit({
     type: "model_select",
-    model: { id: "grok-4.6", api: "xai-responses", provider: "xai" },
+    model: { id: "grok-4.7", api: "xai-responses", provider: "xai" },
     source: "set",
   });
   assert.equal(session.getToolDefinition("apply_patch").constrainedSampling, undefined);

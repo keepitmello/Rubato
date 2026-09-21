@@ -86,12 +86,12 @@ test("provider registration and fresh exact-model roster are noninteractive and 
   const roster = await configureOpenCodexRoster(setup, {
     providers: [
       { id: "cursor", models: ["cursor/claude-fable-5-1", "cursor/claude-opus-5", "cursor/gemini-3.8-flash"] },
-      { id: "xai", models: ["xai/grok-4.6"] },
+      { id: "xai", models: ["xai/grok-4.7"] },
     ],
   }, { runner: async (command, models) => calls.push([command, ...models]) });
   // Every slot is routed: native gpt rows are spawn candidates without the roster, so spending a
   // slot on one wastes it. xai outranks cursor, and roles keep their order inside a provider.
-  assert.deepEqual(roster.models, ["xai/grok-4.6", "cursor/claude-opus-5", "cursor/claude-fable-5-1", "cursor/gemini-3.8-flash"]);
+  assert.deepEqual(roster.models, ["xai/grok-4.7", "cursor/claude-opus-5", "cursor/claude-fable-5-1", "cursor/gemini-3.8-flash"]);
   assert.deepEqual(calls[1], ["/managed/ocx", ...roster.models]);
 });
 
@@ -99,16 +99,16 @@ test("roster prefers direct providers and never spends a slot twice", async () =
   const setup = { command: "/managed/ocx", selectedProviders: ["anthropic", "cursor", "xai"] };
   const roster = await configureOpenCodexRoster(setup, {
     providers: [
-      { id: "cursor", models: ["cursor/claude-opus-5", "cursor/grok-4.6", "cursor/gemini-3.7-flash"] },
+      { id: "cursor", models: ["cursor/claude-opus-5", "cursor/grok-4.7", "cursor/gemini-3.7-flash"] },
       { id: "anthropic", models: ["anthropic/claude-opus-5", "anthropic/claude-fable-5-1", "anthropic/claude-sonnet-5"] },
-      { id: "xai", models: ["xai/grok-4.6"] },
+      { id: "xai", models: ["xai/grok-4.7"] },
     ],
   }, { runner: async () => {} });
   assert.deepEqual(roster.models, [
     "anthropic/claude-opus-5",
     "anthropic/claude-fable-5-1",
     "anthropic/claude-sonnet-5",
-    "xai/grok-4.6",
+    "xai/grok-4.7",
     "cursor/gemini-3.7-flash",
   ]);
   assert.equal(new Set(roster.models).size, roster.models.length);

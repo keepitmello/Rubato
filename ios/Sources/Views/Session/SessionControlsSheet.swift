@@ -251,7 +251,7 @@ struct SessionControlsSheet: View {
     private static let modelChoices: [ModelChoice] = [
         .init(provider: "openai-codex", modelId: "gpt-5.6-sol", label: "GPT-5.6 Sol", description: "Codex 기본 경로"),
         .init(provider: "kiro", modelId: "claude-opus-5", label: "Claude", description: "긴 글과 코드 작업"),
-        .init(provider: "cursor", modelId: "cursor-grok-4.6", label: "Grok 4.6", description: "Cursor Grok Fast")
+        .init(provider: "cursor", modelId: "grok-4.7", label: "Grok 4.7", description: "Cursor Grok Fast")
     ]
 
     private static let thinkingChoices: [(level: String, label: String)] = [

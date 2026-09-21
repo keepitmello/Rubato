@@ -44,7 +44,7 @@ test("lane-policy transform declares server-compaction models as external owners
     assert.equal(policy.disablesSenpiCompaction({ model: { provider: "anthropic", id }, cwd: dir }), true, id);
   }
   assert.equal(policy.disablesSenpiCompaction({ model: { provider: "anthropic", id: "claude-haiku-4-5" }, cwd: dir }), false);
-  assert.equal(policy.disablesSenpiCompaction({ model: { provider: "xai", id: "grok-4.6" }, cwd: dir }), false);
+  assert.equal(policy.disablesSenpiCompaction({ model: { provider: "xai", id: "grok-4.7" }, cwd: dir }), false);
   assert.equal(policy.disablesSenpiCompaction({ model: { provider: "cursor", id: "claude-opus-5" }, cwd: dir }), false);
   assert.match(mod.laneRejectionReason({ provider: "anthropic", id: "claude-fable-5-1" }), /Anthropic server compaction/);
   assert.match(mod.laneRejectionReason({ provider: "claude-sdk-oauth", id: "x" }), /Claude Agent SDK/);

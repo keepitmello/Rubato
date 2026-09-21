@@ -5,12 +5,12 @@ import { HubLifecycleClient } from "../src/hub-client.mjs";
 
 test("new options stop at -- and preserve engine argv exactly", () => {
   assert.deepEqual(
-    parseNewArguments(["--cwd", "/tmp/project", "--name=Demo", "--detach", "--", "prompt", "--model", "xai/grok-4.6"]),
+    parseNewArguments(["--cwd", "/tmp/project", "--name=Demo", "--detach", "--", "prompt", "--model", "xai/grok-4.7"]),
     {
       cwd: "/tmp/project",
       name: "Demo",
       detach: true,
-      args: ["prompt", "--model", "xai/grok-4.6"],
+      args: ["prompt", "--model", "xai/grok-4.7"],
     },
   );
   assert.throws(() => parseNewArguments(["--unknown"]), /unknown/);

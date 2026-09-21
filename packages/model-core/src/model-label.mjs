@@ -1,6 +1,6 @@
 /**
  * The one short model label for every Rubato surface: statusline footer, model picker,
- * Task widget rows. `openai-codex/gpt-6-astra` reads as `Astra 6`, `xai/grok-4.6` as `Grok 4.6`.
+ * Task widget rows. `openai-codex/gpt-6-astra` reads as `Astra 6`, `xai/grok-4.7` as `Grok 4.7`.
  *
  * Lane decoration (`[fast]`, `[priority]`, `[sub]`, effort) belongs to the caller — this
  * module only names the model.

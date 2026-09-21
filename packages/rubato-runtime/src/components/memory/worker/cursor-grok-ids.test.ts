@@ -20,12 +20,12 @@ describe("cursor Grok catalog identity", () => {
   })
 
   test("#given unrelated models #when expanded #then the set is unchanged", () => {
-    const source = new Set(["xai/grok-4.6"])
+    const source = new Set(["xai/grok-4.7"])
     expect(expandCursorGrokVisibility(source)).toEqual(source)
   })
 
   test("#given the presented picker id #when launching a child #then --model is the live Fast row", () => {
     expect(cursorGrokLaunchModel(CURSOR_GROK_PRESENTED_ID)).toBe(CURSOR_GROK_DEFAULT_FAST_ID)
-    expect(cursorGrokLaunchModel("xai/grok-4.6")).toBe("xai/grok-4.6")
+    expect(cursorGrokLaunchModel("xai/grok-4.7")).toBe("xai/grok-4.7")
   })
 })

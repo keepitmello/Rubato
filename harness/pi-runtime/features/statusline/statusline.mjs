@@ -1,5 +1,5 @@
 import { BRAND_NAME } from "./brand.mjs";
-import { presentCursorGrokFastModel } from "./cursor-grok-fast.mjs";
+import { CURSOR_GROK_ID, presentCursorGrokFastModel } from "./cursor-grok-fast.mjs";
 import { shortModelLabel } from "./model-label.mjs";
 import { formatSpeedIndex } from "./speed-index.mjs";
 
@@ -61,8 +61,8 @@ function isFastModel(modelId, model) {
   if (!modelId) return false;
   const bare = String(modelId).split("/").pop().split(":", 1)[0];
   if (/(?:^|[-.])fast$/i.test(bare)) return true;
-  // 피커 id 는 `cursor-grok-4.6` 그대로다. Fast 인지는 표시명·Fast map 으로 본다.
-  if (bare !== "cursor-grok-4.6") return false;
+  // 피커 id 는 `grok-4.7` 그대로다. Fast 인지는 표시명·Fast map 으로 본다.
+  if (bare !== CURSOR_GROK_ID) return false;
   if (model?.compat?.cursorGrokFastByLevel && Object.keys(model.compat.cursorGrokFastByLevel).length > 0) {
     return true;
   }

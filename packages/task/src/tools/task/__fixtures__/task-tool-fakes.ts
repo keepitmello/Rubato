@@ -5,7 +5,7 @@ import { createTaskRecord } from "../../../state"
 import type { TaskRecord } from "../../../state"
 import type { TaskToolContext, TaskToolDeps } from "../types"
 
-export const LIVE_MODEL = "xai/grok-4.6"
+export const LIVE_MODEL = "xai/grok-4.7"
 
 export const RUBATO_CONFIG: RubatoConfig = { categories: {}, agents: {} }
 

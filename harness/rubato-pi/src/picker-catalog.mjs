@@ -3,7 +3,7 @@
 //
 // Cursor 일곱은 `cursor-picker.mjs` 가 소유한다 (Grok Fast 접힘이 앞에 있다).
 
-export const XAI_PICKER_IDS = Object.freeze(["grok-4.6"]);
+export const XAI_PICKER_IDS = Object.freeze(["grok-4.7"]);
 
 export const OPENCODE_PICKER_IDS = Object.freeze(["muse-spark-1.3-contributor-free"]);
 

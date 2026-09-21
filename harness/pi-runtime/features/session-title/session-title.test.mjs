@@ -106,7 +106,7 @@ test("refreshSessionTitle names the topic and skips a later locked name", async 
   const ctx = {
     cwd: "/tmp/repo",
     ui: { setTitle() {} },
-    model: { provider: "xai", id: "grok-4.6" },
+    model: { provider: "xai", id: "grok-4.7" },
     modelRegistry: {
       find: (provider, id) => ({ provider, id }),
       async complete() {

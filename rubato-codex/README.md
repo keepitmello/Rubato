@@ -94,7 +94,7 @@ catalog가 비었으면 임의 ID를 쓰지 않고 `pending-catalog`로 남깁�
 
 ```sh
 ocx agent subagents status
-ocx agent subagents set gpt-5.6-sol,cursor/claude-fable-5-1,cursor/claude-opus-5,xai/grok-4.6,cursor/gemini-3.8-flash
+ocx agent subagents set gpt-5.6-sol,cursor/claude-fable-5-1,cursor/claude-opus-5,xai/grok-4.7,cursor/gemini-3.8-flash
 ocx agent subagents clear
 ```
 

@@ -4,7 +4,7 @@
 // 메시지, SSE, 사용량만 다룬다. Cursor Connect 를 부르지 않는다.
 
 import { createHash } from "node:crypto";
-import { CURSOR_GROK_46_ID } from "./cursor-grok-fast.mjs";
+import { CURSOR_GROK_FAST_NAME, CURSOR_GROK_ID } from "./cursor-grok-fast.mjs";
 import {
   CURSOR_GEMINI_38_FLASH_HIGH_ID,
   CURSOR_GEMINI_38_FLASH_ID,
@@ -19,19 +19,19 @@ const ASIDE_PREFIX = /^cursor\//;
 
 /** Aside allowlist id → pinned catalog id. Fast 행도 베이스로 접는다. */
 export function asideCursorModelId(raw) {
-  if (typeof raw !== "string" || raw.length === 0) return CURSOR_GROK_46_ID;
+  if (typeof raw !== "string" || raw.length === 0) return CURSOR_GROK_ID;
   let id = raw.trim();
   if (ASIDE_PREFIX.test(id)) id = id.slice("cursor/".length);
-  if (id === `${CURSOR_GROK_46_ID}-fast` || id === "grok-4.6-fast") return CURSOR_GROK_46_ID;
-  if (id === "grok-4.6") return CURSOR_GROK_46_ID;
+  if (id === `${CURSOR_GROK_ID}-fast`) return CURSOR_GROK_ID;
+  if (id === "grok-4.7") return CURSOR_GROK_ID;
   if (id === "claude-fable-5") return "claude-fable-5-1";
   return id;
 }
 
 export function asideCursorCatalog() {
   return [
-    { id: "cursor/grok-4.6", name: "Grok 4.6 Fast [Cursor]" },
-    { id: "cursor/grok-4.6-fast", name: "Grok 4.6 Fast [Cursor]" },
+    { id: "cursor/grok-4.7", name: "Grok 4.7 Fast [Cursor]" },
+    { id: "cursor/grok-4.7-fast", name: "Grok 4.7 Fast [Cursor]" },
     { id: "cursor/claude-fable-5-1", name: "Fable 5.1 [Cursor/Claude]" },
     { id: "cursor/claude-opus-5", name: "Opus 5 [Cursor/Claude]" },
     { id: "cursor/gemini-3.8-flash", name: "3.8 Flash [Cursor/Gemini]" },
@@ -88,10 +88,10 @@ export function openaiToPiContext(body = {}) {
 
 export function cursorModelStub(id) {
   const catalogId = asideCursorModelId(id);
-  const known = CURSOR_PICKER_IDS.includes(catalogId) || catalogId === CURSOR_GROK_46_ID;
+  const known = CURSOR_PICKER_IDS.includes(catalogId) || catalogId === CURSOR_GROK_ID;
   return {
-    id: known ? catalogId : CURSOR_GROK_46_ID,
-    name: catalogId === CURSOR_GROK_46_ID ? "Grok 4.6 Fast" : catalogId,
+    id: known ? catalogId : CURSOR_GROK_ID,
+    name: catalogId === CURSOR_GROK_ID ? CURSOR_GROK_FAST_NAME : catalogId,
     api: "cursor-agent",
     provider: "cursor",
     baseUrl: "https://api2.cursor.sh",

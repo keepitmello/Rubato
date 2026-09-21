@@ -49,8 +49,8 @@ test("current model identity is stated in the system prompt", () => {
     "You are Claude Opus 5 (anthropic/claude-opus-5).",
   );
   assert.equal(
-    modelIdentityLine({ provider: "xai", id: "grok-4.6", name: "Grok 4.6" }),
-    "You are Grok 4.6 (xai/grok-4.6).",
+    modelIdentityLine({ provider: "xai", id: "grok-4.7", name: "Grok 4.7" }),
+    "You are Grok 4.7 (xai/grok-4.7).",
   );
   assert.equal(modelIdentityLine(undefined), "");
   const model = { provider: "openai-codex", id: "gpt-5.6-sol", name: "GPT-5.6 Sol" };
@@ -240,7 +240,7 @@ test("print and json CLI flags are non-interactive; rpc and text are not", () =>
   assert.equal(isNonInteractiveCli(["--mode", "rpc"]), false);
   assert.equal(isNonInteractiveCli(["--mode", "text"]), false);
   assert.equal(isNonInteractiveCli([]), false);
-  assert.equal(isNonInteractiveCli(["--model", "xai/grok-4.6"]), false);
+  assert.equal(isNonInteractiveCli(["--model", "xai/grok-4.7"]), false);
 });
 
 test("print sessions inline the dispatched contract; interactive ones do not", () => {
@@ -271,7 +271,7 @@ test("print sessions inline the dispatched contract; interactive ones do not", (
 test("agent start inherits process argv so a print child keeps the contract after rebuild", () => {
   const next = promptForAgentStart(
     { systemPrompt: "" },
-    { model: { provider: "xai", id: "grok-4.6", name: "Grok 4.6" } },
+    { model: { provider: "xai", id: "grok-4.7", name: "Grok 4.7" } },
     "agent",
     {
       ...loaders(),

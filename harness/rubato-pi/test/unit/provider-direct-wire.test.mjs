@@ -147,17 +147,17 @@ test("Astra Fast 의 body 에 canonical model ID 와 service_tier:priority 가 �
   assert.equal(captured.body.service_tier, "priority");
 });
 
-test("xAI grok-4.6 streamSimple body 에 service_tier 가 없다", async () => {
+test("xAI grok-4.7 streamSimple body 에 service_tier 가 없다", async () => {
   const [, xai] = await directProviders();
   const captured = {};
-  const grok = modelById(xai, "grok-4.6");
-  assert.equal(grok.serviceTier, undefined, "전제: grok-4.6 은 catalog 기본 차로다");
+  const grok = modelById(xai, "grok-4.7");
+  assert.equal(grok.serviceTier, undefined, "전제: grok-4.7 은 catalog 기본 차로다");
   await drain(xai.streamSimple(
     grok,
     { messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }] },
     { fetch: capturingFetch(textDone(), captured), apiKey: API_KEY, maxRetries: 0, env: {} },
   ));
-  assert.equal(captured.body.model, "grok-4.6");
+  assert.equal(captured.body.model, "grok-4.7");
   assert.ok(!("service_tier" in captured.body), "기본 차로에 priority 를 넣지 않는다");
 });
 
@@ -341,7 +341,7 @@ test("프로세스를 새로 띄운 것과 같은 fresh module 에서도 signatu
 
 test("xAI xhigh 가 실제 body 에 실린다", async () => {
   const [, xai] = await directProviders();
-  const grok = xai.getModels().find((model) => model.id === "grok-4.6");
+  const grok = xai.getModels().find((model) => model.id === "grok-4.7");
   assert.equal(grok.thinkingLevelMap.xhigh, "xhigh", "전제: pinned map 이 xhigh 를 갖는다");
 
   const captured = {};
