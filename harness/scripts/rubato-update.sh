@@ -28,15 +28,6 @@ case "${1-}" in
   *) echo "쓰는 법: rubato-update.sh [--check|--yes]" >&2; exit 2 ;;
 esac
 
-# `rubato update` 자체도 설정 이관 진입점이다. 매 세션의 조용한 --check는
-# 파일을 건드리지 않고, 실제 업데이트 명령에서만 옮긴다.
-if [ "$MODE" != check ] && [ -f "$HERE/migrate-rubato-state.mjs" ]; then
-  . "$HERE/find-node.sh"
-  MIGRATION_NODE="$(rubato_find_node)" || fail "설정 경로를 옮기려면 Node.js 24+가 필요합니다."
-  "$MIGRATION_NODE" "$HERE/migrate-rubato-state.mjs" --cwd "$PWD" \
-    || fail "기존 설정 경로를 안전하게 옮기지 못했습니다."
-fi
-
 cd "$REPO"
 
 # 지금 브랜치가 rubato/base 가 아니면 건드리지 않는다. 남의 작업 위에 pull 하지 않는다.
