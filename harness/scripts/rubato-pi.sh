@@ -397,30 +397,6 @@ if [ -z "${RUBATO_NO_MSEARCH_CHECK-}" ] && [ -x "$MSEARCH_BIN" ]; then
   fi
 fi
 
-# 옛 설치의 사용자 상태와 현재 프로젝트 설정을 새 정본으로 옮긴다.
-# 홈과 cwd 조상에 옛 루트가 하나도 없으면 Node 프로세스조차 띄우지 않는다.
-RUBATO_NEEDS_MIGRATION=""
-if [ -e "$HOME/.omo" ] || [ -L "$HOME/.omo" ] \
-  || [ -e "$HOME/.rubato/.migration-archive/omo" ] \
-  || [ -e "$HOME/.rubato/.migration-archive/rubato" ]; then
-  RUBATO_NEEDS_MIGRATION=1
-else
-  MIGRATION_ROOT="$PWD"
-  MIGRATION_BOUNDARY="$HOME"
-  while [ "$MIGRATION_ROOT" != "$MIGRATION_BOUNDARY" ] && [ "$(dirname "$MIGRATION_ROOT")" != "$MIGRATION_ROOT" ]; do
-    if [ -e "$MIGRATION_ROOT/.omo" ] || [ -L "$MIGRATION_ROOT/.omo" ] \
-      || [ -e "$MIGRATION_ROOT/.rubato/.migration-archive/omo" ] \
-      || [ -e "$MIGRATION_ROOT/.rubato/.migration-archive/rubato" ]; then
-      RUBATO_NEEDS_MIGRATION=1
-      break
-    fi
-    MIGRATION_ROOT="$(dirname "$MIGRATION_ROOT")"
-  done
-fi
-if [ -n "$RUBATO_NEEDS_MIGRATION" ] && [ -f "$HERE/migrate-rubato-state.mjs" ]; then
-  "$NODE" "$HERE/migrate-rubato-state.mjs" --cwd "$PWD"
-fi
-
 # cmux 세션 복원을 붙인다. 이게 없으면 cmux 를 꺼다 켜는 순간 세션이
 # 통째로 날아간다. cmux 를 안 쓰면 아무 일도 안 생기고, 이미 맞으면 조용하다.
 # 경로가 어긋난 때도(하네스를 옮기면 절대경로가 깨진다) 여기서 고친다.
