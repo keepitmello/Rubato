@@ -121,6 +121,68 @@ test("canary 성공: 발견한 모델이 정규화된 채로 공개된다", asyn
   assert.deepEqual(provider.getModels().map((model) => model.id), ["composer-1", "gpt-5.6"]);
 });
 
+test("canary 는 써드파티가 discovery 앞에 있어도 grok 으로 먼저 돈다", async () => {
+  // Cursor 의 쿼터는 모델군별로 갈린다 — 써드파티(Claude·GPT)와 grok 이 다른 풀이다.
+  // discovery 순서(세대순)를 그대로 쓰면 앞의 소진된 써드파티에서 죽고, 그 실패는
+  // 우리가 돌리는 grok 의 가용성에 대해 아무것도 말하지 않는다.
+  const runs = [];
+  const provider = withCursorActivationCanary(
+    pinnedShapedCursor({
+      fetchModels: async () => [
+        discoveredModel("claude-4-sonnet"),
+        discoveredModel("claude-opus-5"),
+        discoveredModel("grok-4.7"),
+      ],
+    }),
+    {
+      markerStore: memoryMarkerStore(),
+      run: async ({ model }) => {
+        runs.push(model.id);
+        return { stopReason: "stop", content: [] };
+      },
+    },
+  );
+  const { context } = refreshContext();
+  await provider.refreshModels(context);
+
+  assert.deepEqual(runs, ["grok-4.7"], "canary 가 써드파티 모델로 돌면 grok 가용성을 증명하지 못한다");
+});
+
+test("모델에 묶인 거부는 다음 grok 후보로 넘어가고, 계정 수준 실패는 안 넘어간다", async () => {
+  const attempt = async (failure) => {
+    const runs = [];
+    const provider = withCursorActivationCanary(
+      pinnedShapedCursor({
+        fetchModels: async () => [discoveredModel("grok-4.7"), discoveredModel("cursor-grok-4.5")],
+      }),
+      {
+        markerStore: memoryMarkerStore(),
+        run: async ({ model }) => {
+          runs.push(model.id);
+          if (runs.length === 1) return failure;
+          return { stopReason: "stop", content: [] };
+        },
+      },
+    );
+    try {
+      await provider.refreshModels(refreshContext().context);
+      return { runs, ok: true };
+    } catch {
+      return { runs, ok: false };
+    }
+  };
+
+  // `resource_exhausted` 는 vendor 태그 없이 `unknown` 으로 온다 — 그 모델의 몫이므로 넘어간다.
+  const modelScoped = await attempt({ stopReason: "error", errorMessage: "Connect error resource_exhausted: Error" });
+  assert.deepEqual(modelScoped.runs, ["grok-4.7", "cursor-grok-4.5"], "한 모델의 거부가 계정 전체를 죽였다");
+  assert.equal(modelScoped.ok, true);
+
+  // 자격증명 문제는 모델을 바꿔도 같다. 두 번째 Run 을 낭비하지 않는다.
+  const accountLevel = await attempt({ stopReason: "error", cursorFailure: { kind: "auth" } });
+  assert.deepEqual(accountLevel.runs, ["grok-4.7"], "계정 수준 실패에 다음 모델을 시도했다");
+  assert.equal(accountLevel.ok, false);
+});
+
 test("canary 세션은 사용자 세션과 겹치지 않는 고유 id 다", async () => {
   const seen = [];
   const provider = withCursorActivationCanary(
