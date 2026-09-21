@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
-const PACKAGE_VERSION = "0.85.1";
+const PACKAGE_VERSION = "0.86.1";
 
 function replaceOnce(source, before, after, label) {
   const first = source.indexOf(before);
@@ -26,10 +26,8 @@ function patch(path, preimageSha256, apply) {
 function patchSettingsRuntime(source) {
   let next = replaceOnce(
     source,
-    `import { DEFAULT_HTTP_IDLE_TIMEOUT_MS, parseHttpIdleTimeoutMs } from "./http-dispatcher.js";
-function isMergeableObject(value) {`,
-    `import { DEFAULT_HTTP_IDLE_TIMEOUT_MS, parseHttpIdleTimeoutMs } from "./http-dispatcher.js";
-const MODEL_SERVICE_TIER_VALUES = new Set(["auto", "flex", "priority"]);
+    `function isMergeableObject(value) {`,
+    `const MODEL_SERVICE_TIER_VALUES = new Set(["auto", "flex", "priority"]);
 function modelMemoryKey(provider, modelId) {
     return \`${'${provider}'}/${'${modelId}'}\`;
 }
@@ -128,12 +126,12 @@ export type ModelServiceTier = "auto" | "flex" | "priority";
 export const patches = Object.freeze([
   patch(
     "dist/core/settings-manager.js",
-    "ee4f52d1dd4f1c18d5d814be4ba260ddf7fe40b7b70c2f0732a30a8b287111ad",
+    "5368b155ec26d88374cec9e66b8e588b5041a0fb0047414f70b34e13892c4f48",
     patchSettingsRuntime,
   ),
   patch(
     "dist/core/settings-manager.d.ts",
-    "a5318385802b507ce35bc3c5e430843d7366d3fb4d8ced6e4503ff8f76298f6f",
+    "0531dc8f094401117e237cc97d71b5524b4ff76bf958bda4f552268d76af7d44",
     patchSettingsTypes,
   ),
 ]);

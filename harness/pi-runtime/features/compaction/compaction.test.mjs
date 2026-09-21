@@ -196,7 +196,7 @@ test("feature is additive-only and documents the notes vs summary relationship",
   assert.equal(compactionFeature.id, "compaction");
   assert.equal(patches.length, 3);
   assert.equal(new Set(patches.map((entry) => entry.path)).size, patches.length);
-  assert.ok(patches.every((entry) => entry.version === "0.85.1"));
+  assert.ok(patches.every((entry) => entry.version === "0.86.1"));
   assert.ok(patches.every((entry) => /^[a-f0-9]{64}$/.test(entry.preimageSha256)));
   assert.ok(files.every((entry) => existsSync(entry.sourcePath)));
   assert.match(readFileSync(join(staged.root, "rubato-features/compaction/relationship.md"), "utf8"), /history-notes/);

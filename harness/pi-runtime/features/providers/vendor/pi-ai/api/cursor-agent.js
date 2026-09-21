@@ -24,7 +24,7 @@ import { calculateCost } from "../models.js";
 import { registerSessionResourceCleanup } from "../session-resources.js";
 import { clearStreamingPartialJson, kCursorExecResolved, kStreamingBlockIndex, kStreamingBlockKind, kStreamingEnvelopeId, kStreamingLastParseLen, kStreamingPartialJson, } from "../utils/block-symbols.js";
 // Cursor exec frames can perform local work while the wire is silent. Stock
-// Pi 0.85.1's generic stream has no local-work counter, so this provider-owned
+// Pi 0.86.1's generic stream has no local-work counter, so this provider-owned
 // transport uses the narrowly retained Senpi stream implementation.
 import { AssistantMessageEventStream } from "../rubato-features/providers/cursor-event-stream.mjs";
 import { providerHeadersToRecord } from "../utils/headers.js";

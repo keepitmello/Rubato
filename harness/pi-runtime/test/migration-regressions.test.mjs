@@ -1,6 +1,7 @@
 // Dependency-free regression tests. Production modules are imported unchanged;
 // only network/build work and the Pi validator/agent interface are test doubles.
 import assert from "node:assert/strict";
+import { PI_VERSION } from "../resolve-runtime.mjs";
 import test from "node:test";
 import { existsSync } from "node:fs";
 import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
@@ -316,7 +317,7 @@ test("concurrent install writers are refused", async (t) => {
 async function fakeInstall({ outputRoot }) {
   await mkdir(outputRoot, { recursive: true });
   await writeFile(join(outputRoot, "candidate.mjs"), "export {};\n");
-  const receipt = { version: 1, state: "ready", stockVersion: "0.85.1", features: ["fixture"], candidateEntry: "candidate.mjs" };
+  const receipt = { version: 1, state: "ready", stockVersion: PI_VERSION, features: ["fixture"], candidateEntry: "candidate.mjs" };
   await writeFile(join(outputRoot, "rubato-install.json"), JSON.stringify(receipt));
   return { root: outputRoot, receipt };
 }

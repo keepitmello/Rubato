@@ -20,9 +20,9 @@ function includesQuery(info, query) {
     .some((value) => String(value ?? "").toLowerCase().includes(query));
 }
 
-async function filesIn(directory) {
+async function filesIn(directory, signal) {
   try {
-    return (await readdir(directory))
+    return (await readdir(directory, { signal }))
       .filter((name) => name.endsWith(".jsonl"))
       .map((name) => join(directory, name));
   }
@@ -31,15 +31,15 @@ async function filesIn(directory) {
   }
 }
 
-async function candidatePaths(root, includeSubdirectories) {
-  const own = await filesIn(root);
+async function candidatePaths(root, includeSubdirectories, signal) {
+  const own = await filesIn(root, signal);
   if (!includeSubdirectories) return own;
   try {
-    const entries = await readdir(root, { withFileTypes: true });
+    const entries = await readdir(root, { withFileTypes: true, signal });
     const directories = entries
       .filter((entry) => entry.isDirectory() || entry.isSymbolicLink())
       .map((entry) => join(root, entry.name));
-    const nested = (await Promise.all(directories.map(filesIn))).flat();
+    const nested = (await Promise.all(directories.map((directory) => filesIn(directory, signal)))).flat();
     return [...own, ...nested];
   }
   catch {
@@ -47,10 +47,11 @@ async function candidatePaths(root, includeSubdirectories) {
   }
 }
 
-async function discoverCandidates({ root, includeSubdirectories, readHeader, acceptHeader }) {
-  const paths = await candidatePaths(root, includeSubdirectories);
+async function discoverCandidates({ root, includeSubdirectories, readHeader, acceptHeader, signal }) {
+  const paths = await candidatePaths(root, includeSubdirectories, signal);
   const candidates = await Promise.all(paths.map(async (path) => {
     try {
+      signal?.throwIfAborted();
       const [stats, header] = await Promise.all([
         stat(path),
         Promise.resolve().then(() => readHeader(path)),
@@ -67,17 +68,19 @@ async function discoverCandidates({ root, includeSubdirectories, readHeader, acc
     .sort((a, b) => b.mtimeMs - a.mtimeMs || comparePath(a, b));
 }
 
-async function loadInfos(candidates, buildInfo, onProgress, progressOffset, progressTotal) {
+async function loadInfos(candidates, buildInfo, onProgress, progressOffset, progressTotal, signal) {
   let next = 0;
   let loaded = 0;
   const results = new Array(candidates.length);
   const worker = async () => {
     while (next < candidates.length) {
+      signal?.throwIfAborted();
       const index = next++;
       try {
-        results[index] = await buildInfo(candidates[index].path);
+        results[index] = await buildInfo(candidates[index].path, signal);
       }
       catch {
+        signal?.throwIfAborted();
         results[index] = undefined;
       }
       loaded += 1;
@@ -101,6 +104,7 @@ export async function listSessionCatalogPage({
   buildInfo,
   onProgress,
   page = {},
+  signal,
 }) {
   if (typeof readHeader !== "function" || typeof buildInfo !== "function") {
     throw new TypeError("session catalog requires header and info readers");
@@ -108,10 +112,10 @@ export async function listSessionCatalogPage({
   const offset = integer(page.offset, 0);
   const limit = Math.min(MAX_SESSION_PAGE_SIZE, Math.max(1, integer(page.limit, DEFAULT_SESSION_PAGE_SIZE)));
   const query = String(page.query ?? "").trim().toLowerCase();
-  const candidates = await discoverCandidates({ root, includeSubdirectories, readHeader, acceptHeader });
+  const candidates = await discoverCandidates({ root, includeSubdirectories, readHeader, acceptHeader, signal });
 
   if (query) {
-    const infos = await loadInfos(candidates, buildInfo, onProgress, 0, candidates.length);
+    const infos = await loadInfos(candidates, buildInfo, onProgress, 0, candidates.length, signal);
     const matches = infos.filter((info) => includesQuery(info, query));
     const sessions = matches.slice(offset, offset + limit);
     return {
@@ -123,7 +127,7 @@ export async function listSessionCatalogPage({
   }
 
   const selected = candidates.slice(offset, offset + limit);
-  const sessions = await loadInfos(selected, buildInfo, onProgress, offset, candidates.length);
+  const sessions = await loadInfos(selected, buildInfo, onProgress, offset, candidates.length, signal);
   return {
     sessions,
     total: candidates.length,

@@ -2,7 +2,7 @@ import { readdirSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const VERSION = "0.85.1";
+const VERSION = "0.86.1";
 const featureDir = dirname(fileURLToPath(import.meta.url));
 
 function replaceOnce(source, before, after, label) {
@@ -105,7 +105,7 @@ export const patches = Object.freeze([
     packageName: "@earendil-works/pi-ai",
     version: VERSION,
     path: "dist/api/anthropic-messages.js",
-    preimageSha256: "f748560c80fe91bb5736b62f6f34c5e2e2bfa224cd5eb959134ca903c226b604",
+    preimageSha256: "54f32708dc88d951d4c1aacd9e2e531da098967cb61b98a726b43e99277e7754",
     apply: patchAnthropicMessagesVideo,
   }),
 ]);

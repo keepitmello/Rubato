@@ -1,8 +1,8 @@
 {
-  "generatedAt": "2026-09-16T02:05:39.075Z",
-  "stockVersion": "0.85.1",
+  "generatedAt": "2026-09-21T04:28:51.048Z",
+  "stockVersion": "0.86.1",
   "node": "v26.5.0",
-  "installRoot": "/private/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-dtDv75/engine",
+  "installRoot": "/private/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-QI8ofR/engine",
   "features": [
     "runtime-factories",
     "reload",
@@ -108,9 +108,9 @@
     ]
   },
   "resolvedModulePaths": {
-    "total": 26463,
-    "insideInstall": 24418,
-    "nodeCore": 2043,
+    "total": 26726,
+    "insideInstall": 24721,
+    "nodeCore": 2003,
     "allowedScratch": 2,
     "outside": [],
     "senpiAppLoads": []
@@ -120,7 +120,7 @@
     {
       "seam": "rpc",
       "execPath": "/opt/homebrew/Cellar/node/26.5.0_1/bin/node",
-      "entry": "/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-dtDv75/engine/node_modules/@earendil-works/pi-coding-agent/dist/rpc-entry.js"
+      "entry": "/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-QI8ofR/engine/node_modules/@earendil-works/pi-coding-agent/dist/rpc-entry.js"
     },
     {
       "seam": "in-process",
@@ -129,7 +129,7 @@
     }
   ],
   "childEnv": {
-    "sessionDirFromGetState": "/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-dtDv75/home/child/rpc-sessions/child/2026-09-16T02-05-36-871Z_01a0a7f6-60e7-70b7-a62d-c8d11354ada8.jsonl"
+    "sessionDirFromGetState": "/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-QI8ofR/home/child/rpc-sessions/child/2026-09-21T04-28-45-328Z_01a0c239-398f-7227-9ff0-b95fef51be44.jsonl"
   },
   "dynamicImports": [
     {
@@ -242,6 +242,10 @@
     },
     {
       "path": "compaction/summary-compaction-parity.test.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"node_modules/@earendil-works/pi-ai/dist/utils/transcript.js\",\n"
+    },
+    {
+      "path": "compaction/summary-compaction-parity.test.mjs",
       "specifier": "pathToFileURL(join(\n  runtime.packages[\"@earendil-works/pi-ai\"].dir,\n  \"dist/api/anthropic-messages.js\",\n"
     },
     {
@@ -302,6 +306,10 @@
     },
     {
       "path": "context-notes/context-notes.test.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"node_modules/@earendil-works/pi-ai/dist/utils/transcript.js\",\n"
+    },
+    {
+      "path": "context-notes/context-notes.test.mjs",
       "specifier": "contextExtensionUrl"
     },
     {
@@ -315,6 +323,22 @@
     {
       "path": "context-notes/context-notes.test.mjs",
       "specifier": "pathToFileURL(join(notes, \"protocol.mjs\""
+    },
+    {
+      "path": "context-notes/new-session-astra-mode.test.mjs",
+      "specifier": "pathToFileURL(runtime.sdkEntry"
+    },
+    {
+      "path": "context-notes/new-session-astra-mode.test.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"dist/rubato-features/context-notes/src/context-notes/mode-policy.mjs\",\n"
+    },
+    {
+      "path": "context-notes/new-session-astra-mode.test.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"dist/rubato-features/context-notes/src/context-notes/config.mjs\",\n"
+    },
+    {
+      "path": "context-notes/new-session-astra-mode.test.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"dist/rubato-features/context-notes/extension.mjs\",\n"
     },
     {
       "path": "context-notes/src/extensions/context-notes.mjs",
@@ -334,11 +358,19 @@
     },
     {
       "path": "context-window/context-window.test.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"node_modules/@earendil-works/pi-ai/dist/utils/transcript.js\",\n"
+    },
+    {
+      "path": "context-window/context-window.test.mjs",
       "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"dist/rubato-features/context-notes/extension.mjs\",\n"
     },
     {
       "path": "context-window/context-window.test.mjs",
       "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"dist/rubato-features/context-notes/src/context-notes/protocol.mjs\",\n"
+    },
+    {
+      "path": "context-window/context-window.test.mjs",
+      "specifier": "pathToFileURL(join(\n  staged.root, \"rubato-features/codemode/src/index.ts\",\n"
     },
     {
       "path": "context-window/context-window.test.mjs",
@@ -367,6 +399,10 @@
     {
       "path": "context-window/notes-session-open.test.mjs",
       "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"dist/rubato-features/context-notes/src/context-notes/config.mjs\",\n"
+    },
+    {
+      "path": "context-window/notes-session-open.test.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"dist/rubato-features/context-notes/extension.mjs\",\n"
     },
     {
       "path": "extension-rpc/extension-rpc.test.mjs",
@@ -426,6 +462,10 @@
     },
     {
       "path": "media-tools/media-tools.test.mjs",
+      "specifier": "pathToFileURL(join(staged.runtime.codingAgentDir, \"dist/core/system-prompt.js\""
+    },
+    {
+      "path": "media-tools/media-tools.test.mjs",
       "specifier": "pathToFileURL(join(dirname(stagedEntry"
     },
     {
@@ -474,6 +514,10 @@
     },
     {
       "path": "prompt-rules/prompt-rules.test.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"node_modules/@earendil-works/pi-ai/dist/utils/transcript.js\",\n"
+    },
+    {
+      "path": "prompt-rules/prompt-rules.test.mjs",
       "specifier": "pathToFileURL(join(\n  staged.root,\n  \"rubato-features/prompt-rules/index.mjs\",\n"
     },
     {
@@ -507,6 +551,10 @@
     {
       "path": "provider-execution/provider-execution.test.mjs",
       "specifier": "pathToFileURL(join(piAiRoot, \"dist/api/cursor-agent/gen/agent_pb.js\""
+    },
+    {
+      "path": "providers/auth-pool/setup-token-slots.mjs",
+      "specifier": "url.href"
     },
     {
       "path": "providers/auth-pool.test.mjs",
@@ -841,6 +889,10 @@
       "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js\",\n"
     },
     {
+      "path": "user-commands-agent/test-harness.mjs",
+      "specifier": "pathToFileURL(join(\n  runtime.codingAgentDir,\n  \"node_modules/@earendil-works/pi-ai/dist/utils/transcript.js\",\n"
+    },
+    {
       "path": "user-commands-session/history-search/catalog-index.mjs",
       "specifier": "url.href"
     },
@@ -982,6 +1034,14 @@
     },
     {
       "path": "model-picker/patches.mjs",
+      "expr": "\"../../../../packages/model-core/src/model-label.mjs\", import.meta.url"
+    },
+    {
+      "path": "model-picker/patches.mjs",
+      "expr": "\"../../../../packages/model-core/src/product-model-catalog.mjs\", import.meta.url"
+    },
+    {
+      "path": "model-picker/patches.mjs",
       "expr": "\"./catalog.mjs\", import.meta.url"
     },
     {
@@ -1011,6 +1071,14 @@
     {
       "path": "provider-execution/patches.mjs",
       "expr": "\"./THIRD_PARTY_NOTICES.md\", import.meta.url"
+    },
+    {
+      "path": "providers/auth-pool/setup-token-slots.mjs",
+      "expr": "\"../src/anthropic-setup-token.mjs\", import.meta.url"
+    },
+    {
+      "path": "providers/auth-pool/setup-token-slots.mjs",
+      "expr": "\"../../../../rubato-pi/src/anthropic-setup-token.mjs\", import.meta.url"
     },
     {
       "path": "providers/patches.mjs",
@@ -1111,6 +1179,10 @@
     {
       "path": "statusline/patches.mjs",
       "expr": "\"./\" + name, import.meta.url"
+    },
+    {
+      "path": "statusline/patches.mjs",
+      "expr": "\"../../../../packages/model-core/src/model-label.mjs\", import.meta.url"
     },
     {
       "path": "terminal/terminal.test.mjs",
@@ -1219,8 +1291,8 @@
     "@code-yeongyu/senpi-tui"
   ],
   "notes": [
-    "Measured 2026-09-16T02:05:39.075Z: 45 staged features, Node v26.5.0. CANDIDATE_FEATURE_NAMES=43.",
-    "Load report: 26463 urls, 24418 inside install, 2043 node-core, 2 scratch, 0 outside, 0 Senpi app.",
+    "Measured 2026-09-21T04:28:51.048Z: 45 staged features, Node v26.5.0. CANDIDATE_FEATURE_NAMES=43.",
+    "Load report: 26726 urls, 24721 inside install, 2003 node-core, 2 scratch, 0 outside, 0 Senpi app.",
     "Current restage matched CANDIDATE_FEATURE_NAMES.",
     "Fake user HOME ~/.senpi/agent, ~/.rubato-pi/engine, and parent node_modules/@code-yeongyu/senpi stub were present and not loaded.",
     "@code-yeongyu/senpi-pty remains a declared runtime dependency; replacement is deferred by the user."

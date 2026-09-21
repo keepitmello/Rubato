@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
-const PACKAGE_VERSION = "0.85.1";
+const PACKAGE_VERSION = "0.86.1";
 
 function replaceOnce(source, before, after, label) {
   const first = source.indexOf(before);
@@ -134,6 +134,9 @@ function patchLoader(source) {
     next,
     `        registerTool(tool) {
             assertActive();
+            if (typeof tool.parameters !== "object" || tool.parameters === null || Array.isArray(tool.parameters)) {
+                throw new Error(\`Tool "\${tool.name}" registered by extension "\${extension.path}" must define an object parameter schema.\`);
+            }
             extension.tools.set(tool.name, {
                 definition: tool,
                 sourceInfo: extension.sourceInfo,
@@ -143,6 +146,9 @@ function patchLoader(source) {
         registerCommand(name, options) {`,
     `        registerTool(tool) {
             assertActive();
+            if (typeof tool.parameters !== "object" || tool.parameters === null || Array.isArray(tool.parameters)) {
+                throw new Error(\`Tool "\${tool.name}" registered by extension "\${extension.path}" must define an object parameter schema.\`);
+            }
             extension.tools.set(tool.name, {
                 definition: tool,
                 sourceInfo: extension.sourceInfo,
@@ -194,8 +200,8 @@ function patchRunner(source) {
 function patchAgentSession(source) {
   let next = replaceOnce(
     source,
-    `import { contentText } from "@earendil-works/pi-ai";`,
-    `import { contentText, validateToolArguments } from "@earendil-works/pi-ai";`,
+    `import { contentText, getCurrentSystemMessage, retryDelayMs } from "@earendil-works/pi-ai";`,
+    `import { contentText, getCurrentSystemMessage, retryDelayMs, validateToolArguments } from "@earendil-works/pi-ai";`,
     "validation-import",
   );
   next = replaceOnce(
@@ -338,9 +344,9 @@ function patchRootTypesIndex(source) {
   );
   return replaceOnce(
     next,
-    `export type { AgentEndEvent,`,
+    `export type { AfterProviderResponseEvent, AgentEndEvent,`,
     `export type { ExecuteToolErrorCode, ExecuteToolHandler, ExecuteToolOptions, ExecuteToolResult, LazyToolActivator, RegisterLazyToolActivatorHandler } from "./core/extensions/index.ts";
-export type { AgentEndEvent,`,
+export type { AfterProviderResponseEvent, AgentEndEvent,`,
     "type-export",
   );
 }
@@ -362,15 +368,15 @@ export const files = Object.freeze([
 
 export const patches = Object.freeze([
   patch("tool-execution:core/extensions/types.js", "dist/core/extensions/types.js", "447039081a7808371e07d85bacc719a11eea7b66f291b9949de33ef952a809fc", patchTypesRuntime),
-  patch("tool-execution:core/extensions/types.d.ts", "dist/core/extensions/types.d.ts", "5baa29ca2f541f71f81a400dec25903abfbd03980bd4d9b691d10353e52d169a", patchTypesDeclarations),
-  patch("tool-execution:core/extensions/loader.js", "dist/core/extensions/loader.js", "a1393de916487a2c47107ac7239f3139dcdb938705f88ba1ea5a954b3c8bb483", patchLoader),
-  patch("tool-execution:core/extensions/runner.js", "dist/core/extensions/runner.js", "0de12ed1275e02595f92476eec3f61ae1f2e54fd2225ced721ddc90af58a5e61", patchRunner),
-  patch("tool-execution:core/agent-session.js", "dist/core/agent-session.js", "fb8a3981c20c8c0bbd42231b1c99a10335fb3858b659056b341954de9cfa467f", patchAgentSession),
-  patch("tool-execution:core/agent-session.d.ts", "dist/core/agent-session.d.ts", "db3bfd2ae08eda4936d8807656f06120e6e62672d6a7798bccba486a0dc994ea", patchAgentSessionDeclarations),
+  patch("tool-execution:core/extensions/types.d.ts", "dist/core/extensions/types.d.ts", "a4d5b8774fa8015b8a3274614f1398a6aeeffdd888c122910439666955dc2a52", patchTypesDeclarations),
+  patch("tool-execution:core/extensions/loader.js", "dist/core/extensions/loader.js", "81106b07522aaf9197858c4679fecd7fbd23c346376d6e1f2cc3dd5294d543f4", patchLoader),
+  patch("tool-execution:core/extensions/runner.js", "dist/core/extensions/runner.js", "07a94efe560e6a460a415b2188c1c3c69ca151bd163c9b5f05347caf8403ace2", patchRunner),
+  patch("tool-execution:core/agent-session.js", "dist/core/agent-session.js", "edaff7055ced7d49d25135c92415fbbfd9c14c4a29be5a79510ab9216045d6d9", patchAgentSession),
+  patch("tool-execution:core/agent-session.d.ts", "dist/core/agent-session.d.ts", "423bdca09eabd78aa1e729136dd9a1e2fff3b8116c6bc2d3fee3337b269a8432", patchAgentSessionDeclarations),
   patch("tool-execution:core/extensions/index.js", "dist/core/extensions/index.js", "9a99fd14edb60079a3c604d6045cbad7d461c3ba1ce88331f5d549372f14c46d", patchExtensionRuntimeIndex),
-  patch("tool-execution:core/extensions/index.d.ts", "dist/core/extensions/index.d.ts", "dc9bd3202b8d84b580d7002efad6738465c50556e2b27624193a6505b453c87d", patchExtensionTypesIndex),
+  patch("tool-execution:core/extensions/index.d.ts", "dist/core/extensions/index.d.ts", "5b294bd70da0744cb18a45d1cfb774237986c047ec1996e03f24a9605efdd4ab", patchExtensionTypesIndex),
   patch("tool-execution:index.js", "dist/index.js", "82cb4ea864f3d8816c06bc8f2f2d9a8d82d883297af179dc69d287d042834844", patchRootRuntimeIndex),
-  patch("tool-execution:index.d.ts", "dist/index.d.ts", "f1cb93477c7357d08b839c0663d079b8f9bb949079ed7b50a71f8d2945cece90", patchRootTypesIndex),
+  patch("tool-execution:index.d.ts", "dist/index.d.ts", "44bf19d2716cb18382aa6bd0ae88b7e03ee50ae75b56acb6d11beb40dfe99dea", patchRootTypesIndex),
 ]);
 
 export const toolExecutionFeature = Object.freeze({ id: "tool-execution", files, patches });

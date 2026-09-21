@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_NAME = "@earendil-works/pi-tui";
-const VERSION = "0.85.1";
+const VERSION = "0.86.1";
 const GUARD_IMPORT = 'import { installTitleGuard } from "./rubato-features/title-guard/title-guard.mjs";';
 const INJECT_MARKER = "rubato.titleGuard.injected";
 
@@ -46,7 +46,7 @@ export const patches = Object.freeze([
     packageName: PACKAGE_NAME,
     version: VERSION,
     path: "dist/terminal.js",
-    preimageSha256: "d0b29feb487659b65797e5ed706c6cbb4859be9359c8539851a2ec6419a2b048",
+    preimageSha256: "d9636fd679aed23830be7c8d248d9725883efd43469392228275dac6a85fcc68",
     apply: patchTerminalTitle,
   }),
 ]);

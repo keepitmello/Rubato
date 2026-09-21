@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { PI_VERSION } from "../resolve-runtime.mjs";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -22,7 +23,7 @@ async function fakeInstall({ outputRoot }) {
     state: "ready",
     mode: "isolated-candidate",
     fullRubatoParity: false,
-    stockVersion: "0.85.1",
+    stockVersion: PI_VERSION,
     features: ["rubato-components"],
     candidateEntry: entryRel,
     hashes: { stageReceipt: "fake", lock: "fake" },
@@ -59,7 +60,7 @@ test("switch-engine install/switch/rollback/status against a temp HOME", async (
   const status = await engineStatus({ home });
   assert.equal(status.installed, true);
   assert.equal(status.engine, "pi");
-  assert.equal(status.receipt.stockVersion, "0.85.1");
+  assert.equal(status.receipt.stockVersion, PI_VERSION);
 
   const rolled = await rollbackEngine({ home });
   assert.equal(rolled.engine, "pi");

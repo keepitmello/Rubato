@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
-const VERSION = "0.85.1";
+const VERSION = "0.86.1";
 const CONTAINER_IMPORT = 'import { DEFAULT_TAIL_BUDGET, DEFAULT_WARM_CHUNK_SIZE, ProgressiveTranscriptContainer } from "../../rubato-features/transcript-cache/progressive-transcript-container.mjs";';
 
 function replaceOnce(source, before, after, label) {
@@ -44,7 +44,7 @@ export const patches = Object.freeze([
     packageName: PACKAGE_NAME,
     version: VERSION,
     path: "dist/modes/interactive/interactive-mode.js",
-    preimageSha256: "802ff14f5a47710e5a46d8141b238c4d5ffca30e8ca26bad18f838eddbf086bf",
+    preimageSha256: "8c9275944466afe2df78dcf02f2f6c83f6bc46fb0fdbd7257a3ef9d1da1ed027",
     apply: patchInteractiveTranscript,
   }),
 ]);

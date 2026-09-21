@@ -3,6 +3,7 @@ import { readdir, readFile, realpath } from "node:fs/promises";
 import { dirname, extname, isAbsolute, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CANDIDATE_FEATURE_NAMES } from "../features/rubato-components/candidate-main.mjs";
+import { PI_VERSION } from "../resolve-runtime.mjs";
 import { DECLARED_PTY_PACKAGE, SENPI_APP_PACKAGES } from "../validate-install.mjs";
 
 const TEXT_EXT = new Set([".js", ".mjs", ".cjs", ".ts"]);
@@ -165,7 +166,7 @@ export async function scanInstalledCandidate({
 
   return {
     generatedAt: new Date().toISOString(),
-    stockVersion: "0.85.1",
+    stockVersion: PI_VERSION,
     node: process.version,
     installRoot: root,
     features: [...CANDIDATE_FEATURE_NAMES],

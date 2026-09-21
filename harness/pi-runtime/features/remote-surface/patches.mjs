@@ -21,8 +21,8 @@ export function patchStockUiHost(source) {
 }
 
 export const patches = Object.freeze([Object.freeze({
-  id: 'stock-ui-host', packageName: '@earendil-works/pi-coding-agent', version: '0.85.1',
+  id: 'stock-ui-host', packageName: '@earendil-works/pi-coding-agent', version: '0.86.1',
   path: 'dist/modes/interactive/interactive-mode.js',
-  preimageSha256: '802ff14f5a47710e5a46d8141b238c4d5ffca30e8ca26bad18f838eddbf086bf',
+  preimageSha256: '8c9275944466afe2df78dcf02f2f6c83f6bc46fb0fdbd7257a3ef9d1da1ed027',
   apply: patchStockUiHost,
 })]);

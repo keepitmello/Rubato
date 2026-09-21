@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 
 import { patches as compactionPatches } from "./patches.mjs";
 
-const VERSION = "0.85.1";
+const VERSION = "0.86.1";
 const RUNTIME_FILES = Object.freeze([
   "index.mjs",
   "extension.mjs",

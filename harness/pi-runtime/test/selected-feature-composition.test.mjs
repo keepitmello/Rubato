@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { PI_VERSION } from "../resolve-runtime.mjs";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -41,12 +42,12 @@ test("all selected hooks compose in one isolated stock SDK and standard binary",
   delete env.NODE_OPTIONS;
   delete env.NODE_COMPILE_CACHE;
   const cli = await run(process.execPath, [staged.runtime.patchableCliEntry, "--version"], { cwd, env, timeout: 10_000 });
-  assert.equal(cli.stdout.trim(), "0.85.1");
+  assert.equal(cli.stdout.trim(), PI_VERSION);
   const bin = join(staged.root, staged.receipt.binEntry);
   const binResult = process.platform === "win32"
     ? await run(process.env.ComSpec ?? "cmd.exe", ["/d", "/s", "/c", `""${bin}.cmd" --version"`], { cwd, env, timeout: 10_000, windowsVerbatimArguments: true })
     : await run(bin, ["--version"], { cwd, env, timeout: 10_000 });
-  assert.equal(binResult.stdout.trim(), "0.85.1");
+  assert.equal(binResult.stdout.trim(), PI_VERSION);
   let api;
   const hooks = [];
   const inputs = [];

@@ -9,7 +9,7 @@ function replaceOnce(source, before, after, label) {
 	return source.slice(0, first) + after + source.slice(first + before.length);
 }
 
-const BUILD_NEEDLE = `function buildRequestBody(model, context, options, cacheSessionId, grammarToolInputProperties = createGrammarToolInputProperties(context.tools, model.compat?.supportsOpenAIGrammarTools ?? false)) {`;
+const BUILD_NEEDLE = `function buildRequestBody(model, context, options, cacheSessionId, grammarToolInputProperties = createGrammarToolInputProperties(getDeclaredTools(context.messages), model.compat?.supportsOpenAIGrammarTools ?? false)) {`;
 
 const TEMP_NEEDLE = `    if (options?.temperature !== undefined) {
         body.temperature = options.temperature;
@@ -21,28 +21,22 @@ const TEMP_REPLACEMENT = `    // Rubato: Astra lists temperature/top_p as unsupp
         body.temperature = options.temperature;
     }`;
 
-const REASON_NEEDLE = `        if (effort !== null) {
-            body.reasoning = {
-                effort,
-                summary: options.reasoningSummary ?? "auto",
-            };
-        }
+// 0.86 builds request-level reasoning from `buildCodexReasoning` and adds an `off`
+// branch after it, so the old tail anchor is gone. The intent is unchanged: the Astra
+// configuration_update marks must be spliced in before the body leaves the builder.
+const REASON_NEEDLE = `    else if (model.reasoning && model.thinkingLevelMap?.off !== null) {
+        body.reasoning = { effort: model.thinkingLevelMap?.off ?? "none" };
     }
-    return body;
-}`;
+    return body;`;
 
-const REASON_REPLACEMENT = `        if (effort !== null) {
-            body.reasoning = {
-                effort,
-                summary: options.reasoningSummary ?? "auto",
-            };
-        }
+const REASON_REPLACEMENT = `    else if (model.reasoning && model.thinkingLevelMap?.off !== null) {
+        body.reasoning = { effort: model.thinkingLevelMap?.off ?? "none" };
     }
     applyAstraConfigurationUpdate(body, model, cacheSessionId, options?.reasoningEffort);
-    return body;
-}`;
+    return body;`;
 
-const WS_NEEDLE = `            const responseItems = convertResponsesMessages(model, { messages: [output] }, CODEX_TOOL_CALL_PROVIDERS, {
+// 0.86 passes a normalized transcript here instead of a bare `{ messages: [output] }`.
+const WS_NEEDLE = `            const responseItems = convertResponsesMessages(model, normalizeContext({ messages: [output] }), CODEX_TOOL_CALL_PROVIDERS, {
                 includeSystemPrompt: false,
                 grammarToolInputProperties,
             }).filter((item) => item.type !== "function_call_output" && item.type !== "custom_tool_call_output");`;

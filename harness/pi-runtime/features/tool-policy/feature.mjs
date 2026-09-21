@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 
-const VERSION = "0.85.1";
+import { PI_VERSION as VERSION } from "../../pi-version.mjs";
 const FILES = ["bash-timeout.mjs", "hooks.mjs", "index.mjs", "permission.mjs", "THIRD_PARTY_NOTICES.md"];
 
 export const toolPolicyFeature = Object.freeze({

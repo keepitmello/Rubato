@@ -118,16 +118,18 @@ test("/multi-account openai-codex add/remove/pin write through to auth.json", as
   assert.equal(listSlots(stored).length, 2);
   assert.equal(stored.accounts[1].access, "codex-access-2");
 
-  const pinned = await handler("openai-codex pin login-2", ctx);
+  // `87a70f86c` renamed the second login slot to `sub` (and updated auth-pool.test.mjs)
+  // but left this assertion on the old `login-2` name; `nextLoginSlotName` prefers `sub`.
+  const pinned = await handler("openai-codex pin sub", ctx);
   assert.equal(pinned.text, "pinned");
   stored = JSON.parse(readFileSync(join(agentDir, "auth.json"), "utf-8"))[OPENAI_CODEX_PROVIDER_ID];
-  assert.equal(stored.pinned, "login-2");
+  assert.equal(stored.pinned, "sub");
 
   const removed = await handler("openai-codex remove default", ctx);
   assert.equal(removed.text, "removed");
   stored = JSON.parse(readFileSync(join(agentDir, "auth.json"), "utf-8"))[OPENAI_CODEX_PROVIDER_ID];
   assert.equal(listSlots(stored).length, 1);
-  assert.equal(stored.accounts[0].name, "login-2");
+  assert.equal(stored.accounts[0].name, "sub");
 });
 
 test("rubato-features.json can disable the rubato-multi-account factory", () => {

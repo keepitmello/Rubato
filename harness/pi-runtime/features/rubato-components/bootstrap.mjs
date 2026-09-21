@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { PI_VERSION } from "./pi-version.mjs";
 import { DefaultResourceLoader, SettingsManager, createAgentSession } from "../../node_modules/@earendil-works/pi-coding-agent/dist/index.js";
 import { createStockChildInProcessSession, createPiRpcSpawnRuntime, loadPiChildInProcessFactories, resolvePiChildProviderProfile } from "../child-runtime/stock-rpc-runtime.mjs";
 import { createMcpProducerRegistry } from "../mcp-producers/index.mjs";
@@ -36,7 +37,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 export async function validateRubatoBundleAssets() {
   const receipt = JSON.parse(await readFile(join(here, "rubato-build.json"), "utf8"));
   const lockSha256 = createHash("sha256").update(await readFile(new URL("../../package-lock.json", import.meta.url))).digest("hex");
-  const payloads = validateBuildReceipt(receipt, { stockVersion: "0.85.1", lockSha256 });
+  const payloads = validateBuildReceipt(receipt, { stockVersion: PI_VERSION, lockSha256 });
   for (const entry of payloads) {
     const path = entry.path;
     const resolved = await realpath(join(here, path));

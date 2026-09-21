@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { PI_VERSION } from "../rubato-components/pi-version.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import {
@@ -28,10 +29,16 @@ const outputRoot = join(scratch, "engine");
 
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
-function withoutNodeOptions(env, extra = {}) {
+function withoutAmbientOverrides(env, extra = {}) {
   const copy = { ...env, ...extra };
   delete copy.NODE_OPTIONS;
   delete copy.NODE_COMPILE_CACHE;
+  // This agent session's own resolved context mode must not leak into a fixture
+  // child. ORIGIN=session tells the child to re-resolve the mode from its own
+  // model, and the fixture's fake model defaults to summary — so the explicit
+  // RUBATO_CONTEXT_MODE below would be ignored. new-session-astra-mode.test.mjs
+  // deletes the same pair for the same reason.
+  delete copy.RUBATO_CONTEXT_MODE_ORIGIN;
   return copy;
 }
 
@@ -61,6 +68,28 @@ function textOf(message) {
     .filter((part) => part.type === "text")
     .map((part) => part.text)
     .join("\n");
+}
+
+// The window carrier is found by content, not by index. 0.86.0's normalizeContext folds
+// the system prompt into a leading system message, so the carrier is no longer
+// messages[0]. Position is not part of the contract: every production consumer
+// (engine-gate.mjs notesWindowText/latestNotesWindow) also locates it by content.
+// What the anchor does encode is that the marker leads *within the carrier's body*,
+// which is what those consumers' startsWith() reads.
+function notesWindowMessage(messages) {
+  const carrier = messages.find((message) => textOf(message).includes("<rubato_context_window_v1>"));
+  assert.ok(carrier, "the notes window carrier is present in the transcript");
+  assert.match(textOf(carrier), /^<rubato_context_window_v1>/);
+  return carrier;
+}
+
+// The one ordering fact the feature needs: the model reads the window before the
+// user's own request, so the notes are instructions rather than an addendum.
+function assertNotesWindowPrecedes(messages, request) {
+  const carrier = notesWindowMessage(messages);
+  assert.ok(messages.indexOf(carrier) < messages.indexOf(request),
+    "the model reads the window before the user request");
+  return carrier;
 }
 
 function jsonLineChannel(child) {
@@ -108,6 +137,12 @@ const { AssistantMessageEventStream } = await import(pathToFileURL(join(
   runtime.codingAgentDir,
   "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js",
 )));
+// 0.86.0: provider stream 입력이 Context -> TranscriptContext 로 바뀌어
+// 시스템 프롬프트는 context.systemPrompt 가 아니라 messages 에서 읽는다.
+const { getCurrentSystemPrompt } = await import(pathToFileURL(join(
+  runtime.codingAgentDir,
+  "node_modules/@earendil-works/pi-ai/dist/utils/transcript.js",
+)).href);
 const contextExtensionUrl = pathToFileURL(join(
   runtime.codingAgentDir,
   "dist/rubato-features/context-notes/extension.mjs",
@@ -116,7 +151,7 @@ const { createContextNotesExtension } = await import(contextExtensionUrl);
 
 function completeStream(captured, context) {
   captured.push({
-    systemPrompt: context.systemPrompt,
+    systemPrompt: getCurrentSystemPrompt(context.messages),
     messages: structuredClone(context.messages),
   });
   const message = assistantMessage();
@@ -150,14 +185,14 @@ test("feature is additive-only, stock-version locked, and has a complete source 
   assert.equal(files.length, 13);
   assert.equal(new Set(files.map((entry) => entry.path)).size, files.length);
   assert.ok(files.every((entry) => entry.packageName === "@earendil-works/pi-coding-agent"));
-  assert.ok(files.every((entry) => entry.version === "0.85.1"));
+  assert.ok(files.every((entry) => entry.version === PI_VERSION));
   assert.ok(files.every((entry) => existsSync(entry.sourcePath)));
   assert.equal(staged.receipt.addedFiles.filter((entry) => entry.feature === "context-notes").length, files.length);
 
   for (const path of files.filter((entry) => entry.path.endsWith(".mjs")).map((entry) => entry.path)) {
     const syntax = spawnSync(process.execPath, ["--check", join(runtime.codingAgentDir, path)], {
       encoding: "utf8",
-      env: withoutNodeOptions(process.env),
+      env: withoutAmbientOverrides(process.env),
     });
     assert.equal(syntax.status, 0, `${path}: ${syntax.stderr}`);
   }
@@ -281,9 +316,9 @@ test("actual SDK injects stable history identity and keeps notes through reload 
   await host.session.prompt("remember this exact request");
   assert.equal(captured.length, 1, JSON.stringify({ extensionErrors, messages: host.session.messages }));
   assert.match(captured[0].systemPrompt, /Working across context windows/);
-  assert.match(textOf(captured[0].messages[0]), /^<rubato_context_window_v1>/);
   const deliveredUser = captured[0].messages.find((message) => textOf(message).includes("remember this exact request"));
   assert.ok(deliveredUser);
+  assertNotesWindowPrecedes(captured[0].messages, deliveredUser);
   assert.match(textOf(deliveredUser), /\[history: window_id="[^"]+" item_id="[^"]+"\]/);
 
   const sourceFile = host.session.sessionFile;
@@ -344,7 +379,8 @@ test("actual SDK injects stable history identity and keeps notes through reload 
   await host.session.prompt("continue from the cloned note");
   const clonedContext = captured.at(-1);
   assert.match(clonedContext.systemPrompt, /Working across context windows/);
-  assert.match(textOf(clonedContext.messages[0]), /^<rubato_context_window_v1>/);
+  assertNotesWindowPrecedes(clonedContext.messages,
+    clonedContext.messages.find((message) => textOf(message).includes("continue from the cloned note")));
   assert.deepEqual(extensionErrors, []);
   assert.deepEqual(uiNotices.filter((notice) => notice.level === "error"), []);
 });
@@ -404,7 +440,7 @@ export default function contextNotesProvider(pi) {
     "--extension", providerPath,
   ], {
     cwd,
-    env: withoutNodeOptions(process.env, {
+    env: withoutAmbientOverrides(process.env, {
       HOME: agentDir,
       PI_CODING_AGENT_DIR: agentDir,
       PI_OFFLINE: "1",
@@ -466,8 +502,9 @@ export default function contextNotesProvider(pi) {
   const contexts = readFileSync(capturePath, "utf8").trim().split("\n").map(JSON.parse);
   assert.equal(contexts.length, 3);
   for (const context of contexts) {
-    assert.match(context.systemPrompt, /Working across context windows/);
-    assert.match(textOf(context.messages[0]), /^<rubato_context_window_v1>/);
+    assert.match(getCurrentSystemPrompt(context.messages), /Working across context windows/);
+    assertNotesWindowPrecedes(context.messages,
+      context.messages.find((message) => message.role === "user" && !textOf(message).includes("<rubato_context_window_v1>")));
   }
   assert.match(
     textOf(contexts.at(-1).messages.find((message) => textOf(message).includes("rpc original request"))),

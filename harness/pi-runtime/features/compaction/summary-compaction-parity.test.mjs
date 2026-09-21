@@ -36,6 +36,12 @@ const { AssistantMessageEventStream } = await import(pathToFileURL(join(
   runtime.codingAgentDir,
   "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js",
 )).href);
+// 0.86.0: provider stream 입력이 Context -> TranscriptContext 로 바뀌어
+// 시스템 프롬프트는 context.systemPrompt 가 아니라 messages 에서 읽는다.
+const { getCurrentSystemPrompt } = await import(pathToFileURL(join(
+  runtime.codingAgentDir,
+  "node_modules/@earendil-works/pi-ai/dist/utils/transcript.js",
+)).href);
 const anthropicMessages = await import(pathToFileURL(join(
   runtime.packages["@earendil-works/pi-ai"].dir,
   "dist/api/anthropic-messages.js",
@@ -152,8 +158,15 @@ function sseResponse(body) {
 
 function contextText(context) {
   const parts = [];
-  if (typeof context?.systemPrompt === "string") parts.push(context.systemPrompt);
-  for (const message of context?.messages ?? []) {
+  const messages = context?.messages ?? [];
+  // 0.86.0 부터 시스템 프롬프트는 context.systemPrompt 가 아니라 messages 안에 있다.
+  // 예전 줄을 그대로 두면 조용히 무동작이 되어, 프롬프트에만 있는 문자열을 찾는
+  // 단언이 이유 없이 통과한다.
+  if (messages.length > 0) {
+    const prompt = getCurrentSystemPrompt(messages);
+    if (typeof prompt === "string" && prompt !== "") parts.push(prompt);
+  }
+  for (const message of messages) {
     if (typeof message.content === "string") parts.push(message.content);
     else if (Array.isArray(message.content)) {
       for (const block of message.content) {

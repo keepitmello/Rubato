@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
-const PACKAGE_VERSION = "0.85.1";
+const PACKAGE_VERSION = "0.86.1";
 const FEATURE_IMPORT = 'import { InputLifecycle } from "../rubato-features/input-lifecycle/state.mjs";';
 
 function replaceOnce(source, before, after, label) {
@@ -103,33 +103,102 @@ function patchAgentSessionRuntime(source) {
   );
   next = replaceOnce(
     next,
-    `            if (this._extensionRunner.hasHandlers("input")) {
-                const inputResult = await this._extensionRunner.emitInput(currentText, currentImages, options?.source ?? "interactive", this.isStreaming ? options?.streamingBehavior : undefined);`,
-    `            const inputSource = options?.source ?? "interactive";
-            const streamingBehavior = this.isStreaming ? options?.streamingBehavior : undefined;
-            inputId = this._inputLifecycle.begin({
-                sessionId: this.sessionId,
-                text: currentText,
-                images: currentImages,
-                source: inputSource,
-                streamingBehavior,
-            });
-            if (this._extensionRunner.hasHandlers("input")) {
-                const inputResult = await this._extensionRunner.emitInput(currentText, currentImages, inputSource, streamingBehavior, inputId);`,
-    "prompt-input-event",
+    `            const processedInput = await this._runInputHandlers(text, options?.images, options?.source ?? "interactive", this.isStreaming ? options?.streamingBehavior : undefined);
+            if (!processedInput) {
+                preflightResult?.(true);
+                return;
+            }
+            const { text: currentText, images: currentImages } = processedInput;`,
+    `            const processedInput = await this._runInputHandlers(text, options?.images, options?.source ?? "interactive", this.isStreaming ? options?.streamingBehavior : undefined);
+            if (!processedInput) {
+                preflightResult?.(true);
+                return;
+            }
+            const { text: currentText, images: currentImages } = processedInput;
+            inputId = processedInput.inputId;`,
+    "prompt-input-id-binding",
   );
+  // 0.86 moved the `input` emission into the shared `_runInputHandlers` helper that both
+  // `prompt()` and `_queueUserInput()` call, so the old inline emission is gone. The intent
+  // is unchanged: every input gets an id at admission, that id rides the `input` event, and
+  // the helper owns the terminal "handled" disposition because it owns the handling decision.
   next = replaceOnce(
     next,
-    `                if (inputResult.action === "handled") {
-                    preflightResult?.(true);
-                    return;
-                }`,
-    `                if (inputResult.action === "handled") {
-                    await this._emitInputDisposition(inputId, "handled");
-                    preflightResult?.(true);
-                    return;
-                }`,
-    "prompt-handled",
+    `    async _runInputHandlers(text, images, source, streamingBehavior) {
+        if (!this._extensionRunner.hasHandlers("input")) {
+            return { text, images };
+        }
+        const inputResult = await this._extensionRunner.emitInput(text, images, source, streamingBehavior);
+        if (inputResult.action === "handled") {
+            return undefined;
+        }
+        if (inputResult.action === "transform") {
+            return { text: inputResult.text, images: inputResult.images ?? images };
+        }
+        return { text, images };
+    }`,
+    `    async _runInputHandlers(text, images, source, streamingBehavior) {
+        const inputId = this._inputLifecycle.begin({
+            sessionId: this.sessionId,
+            text,
+            images,
+            source,
+            streamingBehavior,
+        });
+        if (!this._extensionRunner.hasHandlers("input")) {
+            return { text, images, inputId };
+        }
+        const inputResult = await this._extensionRunner.emitInput(text, images, source, streamingBehavior, inputId);
+        if (inputResult.action === "handled") {
+            await this._emitInputDisposition(inputId, "handled");
+            return undefined;
+        }
+        if (inputResult.action === "transform") {
+            return { text: inputResult.text, images: inputResult.images ?? images, inputId };
+        }
+        return { text, images, inputId };
+    }`,
+    "input-handlers-lifecycle",
+  );
+  // `steer()`/`followUp()` now reach the same seam as `prompt()`, so they are inputs too:
+  // without an id their queued message would fall back to stock string-identity removal,
+  // which is exactly the defect this feature exists to remove.
+  next = replaceOnce(
+    next,
+    `    async _queueUserInput(text, images, behavior, source) {
+        if (text.startsWith("/")) {
+            this._throwIfExtensionCommand(text);
+        }
+        const processedInput = await this._runInputHandlers(text, images, source, this.isStreaming ? behavior : undefined);
+        if (!processedInput)
+            return;
+        let expandedText = this._expandSkillCommand(processedInput.text);
+        expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
+        if (behavior === "steer") {
+            await this._queueSteer(expandedText, processedInput.images);
+        }
+        else {
+            await this._queueFollowUp(expandedText, processedInput.images);
+        }
+    }`,
+    `    async _queueUserInput(text, images, behavior, source) {
+        if (text.startsWith("/")) {
+            this._throwIfExtensionCommand(text);
+        }
+        const processedInput = await this._runInputHandlers(text, images, source, this.isStreaming ? behavior : undefined);
+        if (!processedInput)
+            return;
+        let expandedText = this._expandSkillCommand(processedInput.text);
+        expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
+        if (behavior === "steer") {
+            await this._queueSteer(expandedText, processedInput.images, processedInput.inputId);
+        }
+        else {
+            await this._queueFollowUp(expandedText, processedInput.images, processedInput.inputId);
+        }
+        await this._emitInputDisposition(processedInput.inputId, "queued");
+    }`,
+    "queue-user-input-lifecycle",
   );
   next = replaceOnce(
     next,
@@ -170,17 +239,22 @@ function patchAgentSessionRuntime(source) {
             messages.push(userMessage);`,
     "prompt-message-identity",
   );
+  // 0.86 renders the system prompt from options instead of assigning
+  // `agent.state.systemPrompt`, so the old tail anchor is gone; the disposition
+  // still belongs at the point where the prompt is definitely about to run.
   next = replaceOnce(
     next,
-    `                this.agent.state.systemPrompt = this._baseSystemPrompt;
-            }
+    `        if (!messages) {
+            return;
         }
-        catch (error) {`,
-    `                this.agent.state.systemPrompt = this._baseSystemPrompt;
-            }
-            await this._emitInputDisposition(inputId, "started");
+        preflightResult?.(true);
+        await this._runAgentPrompt(messages);`,
+    `        if (!messages) {
+            return;
         }
-        catch (error) {`,
+        await this._emitInputDisposition(inputId, "started");
+        preflightResult?.(true);
+        await this._runAgentPrompt(messages);`,
     "prompt-started",
   );
   next = replaceOnce(
@@ -342,10 +416,10 @@ export interface InputDispositionEvent {
   );
   next = replaceOnce(
     next,
-    `    on(event: "input", handler: ExtensionHandler<InputEvent, InputEventResult>): void;
+    `    on(event: "input", handler: ExtensionHandler<InputEvent, InputEventResult>): () => void;
     /** Register a tool`,
-    `    on(event: "input", handler: ExtensionHandler<InputEvent, InputEventResult>): void;
-    on(event: "input_disposition", handler: ExtensionHandler<InputDispositionEvent>): void;
+    `    on(event: "input", handler: ExtensionHandler<InputEvent, InputEventResult>): () => void;
+    on(event: "input_disposition", handler: ExtensionHandler<InputDispositionEvent>): () => void;
     /** Register a tool`,
     "types-api-overload",
   );
@@ -414,10 +488,10 @@ export const files = Object.freeze([
 ]);
 
 export const patches = Object.freeze([
-  patch("dist/core/agent-session.js", "fb8a3981c20c8c0bbd42231b1c99a10335fb3858b659056b341954de9cfa467f", patchAgentSessionRuntime),
-  patch("dist/core/extensions/types.d.ts", "5baa29ca2f541f71f81a400dec25903abfbd03980bd4d9b691d10353e52d169a", patchExtensionTypes),
-  patch("dist/core/extensions/runner.js", "0de12ed1275e02595f92476eec3f61ae1f2e54fd2225ced721ddc90af58a5e61", patchRunnerRuntime),
-  patch("dist/core/extensions/runner.d.ts", "5e6f5e8e5dffccc0f7e235964a75ac181d2c6e06b924e149370ad688a31d7193", patchRunnerTypes),
-  patch("dist/core/extensions/index.d.ts", "dc9bd3202b8d84b580d7002efad6738465c50556e2b27624193a6505b453c87d", patchExtensionIndexTypes),
-  patch("dist/index.d.ts", "f1cb93477c7357d08b839c0663d079b8f9bb949079ed7b50a71f8d2945cece90", patchPublicIndexTypes),
+  patch("dist/core/agent-session.js", "edaff7055ced7d49d25135c92415fbbfd9c14c4a29be5a79510ab9216045d6d9", patchAgentSessionRuntime),
+  patch("dist/core/extensions/types.d.ts", "a4d5b8774fa8015b8a3274614f1398a6aeeffdd888c122910439666955dc2a52", patchExtensionTypes),
+  patch("dist/core/extensions/runner.js", "07a94efe560e6a460a415b2188c1c3c69ca151bd163c9b5f05347caf8403ace2", patchRunnerRuntime),
+  patch("dist/core/extensions/runner.d.ts", "fc0f81468c51bacfc093ac09974aa8e8053ca463e205eb66a1c63b0b655f61b9", patchRunnerTypes),
+  patch("dist/core/extensions/index.d.ts", "5b294bd70da0744cb18a45d1cfb774237986c047ec1996e03f24a9605efdd4ab", patchExtensionIndexTypes),
+  patch("dist/index.d.ts", "44bf19d2716cb18382aa6bd0ae88b7e03ee50ae75b56acb6d11beb40dfe99dea", patchPublicIndexTypes),
 ]);

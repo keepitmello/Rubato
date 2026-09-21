@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 
 const TUI_PACKAGE = "@earendil-works/pi-tui";
 const AGENT_PACKAGE = "@earendil-works/pi-coding-agent";
-const VERSION = "0.85.1";
+const VERSION = "0.86.1";
 const BUSY_IMPORT = "import { BUSY_ENTER_STATUS, busyEnterDelivery, handlePendingRecallKey, promoteBusyEnter } from \"../../../../../../rubato-features/tui-input/busy-enter.mjs\";";
 const IMAGES_IMPORT = "import { attachClipboardImage } from \"../../../../../../rubato-features/tui-input/images.mjs\";";
 const CLIPBOARD_IMPORT = "import { extensionForImageMimeType, readClipboardImage } from \"../../utils/clipboard-image.js\";\n";
@@ -85,7 +85,7 @@ export const files = Object.freeze([
 
 export const patches = Object.freeze([
   patch("tui-input:unicode", TUI_PACKAGE, "dist/stdin-buffer.js", "37bcd9c0115f205ec05b7ed1ef44b9de96c6746612e263bd71fd32ba9457feb5", patchStdinBufferUnicode),
-  patch("tui-input:interactive", AGENT_PACKAGE, "dist/modes/interactive/interactive-mode.js", "802ff14f5a47710e5a46d8141b238c4d5ffca30e8ca26bad18f838eddbf086bf", patchInteractiveTuiInput),
+  patch("tui-input:interactive", AGENT_PACKAGE, "dist/modes/interactive/interactive-mode.js", "8c9275944466afe2df78dcf02f2f6c83f6bc46fb0fdbd7257a3ef9d1da1ed027", patchInteractiveTuiInput),
 ]);
 
 export const feature = Object.freeze({ id: "tui-input", patches, files });

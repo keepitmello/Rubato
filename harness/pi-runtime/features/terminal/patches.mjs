@@ -2,7 +2,7 @@ import { readdirSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const VERSION = "0.85.1";
+import { PI_VERSION as VERSION } from "../../pi-version.mjs";
 const featureDir = dirname(fileURLToPath(import.meta.url));
 
 function walk(directory) {

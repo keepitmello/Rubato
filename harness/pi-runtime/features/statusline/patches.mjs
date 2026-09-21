@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
-const VERSION = "0.85.1";
+const VERSION = "0.86.1";
 const FOOTER_IMPORT = 'import { theme } from "../theme/theme.js";\n';
 const FOOTER_IMPORT_AFTER = FOOTER_IMPORT + 'import { renderRubatoStatusline } from "../../../rubato-features/statusline/footer.mjs";\n';
 const RENDER_BEFORE = '    render(width) {\n        const state = this.session.state;';
@@ -50,7 +50,7 @@ export const patches = Object.freeze([
     packageName: PACKAGE_NAME,
     version: VERSION,
     path: 'dist/modes/interactive/components/footer.js',
-    preimageSha256: '05cc0ab96cbdacf15a34f4e2a9a3ee0395abaeaac638c1c153632cb0befbc9d1',
+    preimageSha256: '1f84d1c6c09aca4cf2882d3328c2bb3213304b36daa0949c28bd89b5cfb777b0',
     apply: patchFooter,
   }),
 ]);

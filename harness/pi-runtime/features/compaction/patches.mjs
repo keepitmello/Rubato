@@ -6,7 +6,7 @@ import {
 
 const PACKAGE_AGENT = "@earendil-works/pi-coding-agent";
 const PACKAGE_AI = "@earendil-works/pi-ai";
-const PACKAGE_VERSION = "0.85.1";
+const PACKAGE_VERSION = "0.86.1";
 
 function replaceOnce(source, before, after, label) {
   const first = source.indexOf(before);
@@ -88,8 +88,8 @@ export function patchCompactionPromptsAndThreshold(source) {
 export function patchSettingsCompactionKeys(source) {
   return replaceOnce(
     source,
-    "    getCompactionSettings() {\n        return {\n            enabled: this.getCompactionEnabled(),\n            reserveTokens: this.getCompactionReserveTokens(),\n            keepRecentTokens: this.getCompactionKeepRecentTokens(),\n        };\n    }",
-    "    getCompactionSettings() {\n        return {\n            enabled: this.getCompactionEnabled(),\n            reserveTokens: this.getCompactionReserveTokens(),\n            keepRecentTokens: this.getCompactionKeepRecentTokens(),\n            thresholdRatio: this.settings.compaction?.thresholdRatio,\n            models: this.settings.compaction?.models ?? this.settings.compaction?.thresholdByModel,\n        };\n    }",
+    "    getCompactionSettings(model) {\n        return {\n            enabled: this.getCompactionEnabled(),\n            reserveTokens: this.getCompactionReserveTokens(model),\n            keepRecentTokens: this.getCompactionKeepRecentTokens(model),\n        };\n    }",
+    "    getCompactionSettings(model) {\n        return {\n            enabled: this.getCompactionEnabled(),\n            reserveTokens: this.getCompactionReserveTokens(model),\n            keepRecentTokens: this.getCompactionKeepRecentTokens(model),\n            model,\n            thresholdRatio: this.settings.compaction?.thresholdRatio,\n            models: this.settings.compaction?.models ?? this.settings.compaction?.thresholdByModel,\n        };\n    }",
     "settings-threshold-keys",
   );
 }
@@ -314,11 +314,11 @@ function shouldOmitThinkingBeforeCompaction(cut, messageIndex, blockIndex) {
   );
   next = replaceOnce(
     next,
-    `    const loadedToolNames = new Set();
-    for (let i = 0; i < transformedMessages.length; i++) {`,
-    `    const loadedToolNames = new Set();
-    const compactionCut = lastReplayableAnthropicCompactionCut(transformedMessages, model);
-    for (let i = 0; i < transformedMessages.length; i++) {`,
+    `    for (let i = 0; i < transformedMessages.length; i++) {
+        const msg = transformedMessages[i];`,
+    `    const compactionCut = lastReplayableAnthropicCompactionCut(transformedMessages, model);
+    for (let i = 0; i < transformedMessages.length; i++) {
+        const msg = transformedMessages[i];`,
     "anthropic-compaction-cut",
   );
   next = replaceOnce(
@@ -379,9 +379,9 @@ function patch(packageName, path, preimageSha256, apply, id) {
 }
 
 export const patches = Object.freeze([
-  patch(PACKAGE_AGENT, "dist/core/compaction/compaction.js", "3d5f1f2a3e801c965214717b6abad1839239b4a030517bffdf0c8eff25df5c2a", patchCompactionPromptsAndThreshold, "compaction:prompts-threshold"),
-  patch(PACKAGE_AGENT, "dist/core/settings-manager.js", "ee4f52d1dd4f1c18d5d814be4ba260ddf7fe40b7b70c2f0732a30a8b287111ad", patchSettingsCompactionKeys, "compaction:settings-threshold-keys"),
-  patch(PACKAGE_AI, "dist/api/anthropic-messages.js", "f748560c80fe91bb5736b62f6f34c5e2e2bfa224cd5eb959134ca903c226b604", patchAnthropicMessagesServerCompaction, "compaction:anthropic-server-params"),
+  patch(PACKAGE_AGENT, "dist/core/compaction/compaction.js", "e304e621c33d8bb4f3ac8f2fa217f330492fc05fb49fc7a5b9572f6ff00f8319", patchCompactionPromptsAndThreshold, "compaction:prompts-threshold"),
+  patch(PACKAGE_AGENT, "dist/core/settings-manager.js", "5368b155ec26d88374cec9e66b8e588b5041a0fb0047414f70b34e13892c4f48", patchSettingsCompactionKeys, "compaction:settings-threshold-keys"),
+  patch(PACKAGE_AI, "dist/api/anthropic-messages.js", "54f32708dc88d951d4c1aacd9e2e531da098967cb61b98a726b43e99277e7754", patchAnthropicMessagesServerCompaction, "compaction:anthropic-server-params"),
 ]);
 
 export default patches;

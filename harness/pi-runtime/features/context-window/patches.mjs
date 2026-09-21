@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
-const PACKAGE_VERSION = "0.85.1";
+const PACKAGE_VERSION = "0.86.1";
 
 function replaceOnce(source, before, after, label) {
   const first = source.indexOf(before);
@@ -93,25 +93,34 @@ function patchAgentSessionRuntime(source) {
     async _emitAgentSettled() {`,
     "revision-api",
   );
+  // 0.86 renders the system prompt from `systemPromptOptions` instead of passing a
+  // `context.systemPrompt` override here, so the old anchor's tail is gone. The intent is
+  // unchanged: swap the provider context's messages for the live history-notes window.
   next = replaceOnce(
     next,
     `            const previousSnapshot = await previousPrepareNextTurnWithContext?.({ ...turn, context }, signal);
+            const nextContext = previousSnapshot?.context ?? context;`,
+    `            const previousSnapshot = await previousPrepareNextTurnWithContext?.({ ...turn, context }, signal);
             const nextContext = previousSnapshot?.context ?? context;
-            return {
+            const liveWindowMessages = notesTurnMessages(turn, this.agent.state.messages, this.sessionManager.getSessionId());`,
+    "next-turn-live-window",
+  );
+  next = replaceOnce(
+    next,
+    `            return {
                 ...previousSnapshot,
                 context: {
                     ...nextContext,
-                    systemPrompt: this._systemPromptOverride ?? this._baseSystemPrompt,`,
-    `            const previousSnapshot = await previousPrepareNextTurnWithContext?.({ ...turn, context }, signal);
-            const nextContext = previousSnapshot?.context ?? context;
-            const liveWindowMessages = notesTurnMessages(turn, this.agent.state.messages, this.sessionManager.getSessionId());
-            return {
+                    tools: this.agent.state.tools.slice(),
+                },`,
+    `            return {
                 ...previousSnapshot,
                 context: {
                     ...nextContext,
                     messages: liveWindowMessages ?? nextContext.messages,
-                    systemPrompt: this._systemPromptOverride ?? this._baseSystemPrompt,`,
-    "next-turn-live-window",
+                    tools: this.agent.state.tools.slice(),
+                },`,
+    "next-turn-live-window-apply",
   );
   next = replaceOnce(
     next,
@@ -575,17 +584,17 @@ export const files = Object.freeze([
 ]);
 
 export const patches = Object.freeze([
-  patch("dist/core/agent-session.js", "fb8a3981c20c8c0bbd42231b1c99a10335fb3858b659056b341954de9cfa467f", patchAgentSessionRuntime),
-  patch("dist/core/agent-session.d.ts", "db3bfd2ae08eda4936d8807656f06120e6e62672d6a7798bccba486a0dc994ea", patchAgentSessionTypes),
-  patch("dist/core/messages.js", "a4e4865e343bf87f8078f75ff179a2a77cd7c2700cf8473476bd4dc5ed36adb6", patchMessagesRuntime),
+  patch("dist/core/agent-session.js", "edaff7055ced7d49d25135c92415fbbfd9c14c4a29be5a79510ab9216045d6d9", patchAgentSessionRuntime),
+  patch("dist/core/agent-session.d.ts", "423bdca09eabd78aa1e729136dd9a1e2fff3b8116c6bc2d3fee3337b269a8432", patchAgentSessionTypes),
+  patch("dist/core/messages.js", "8688b3f6eb28865f779cac998bd4754d1a4f08703200dfe0dd5a799aa0d42ef6", patchMessagesRuntime),
   patch("dist/core/messages.d.ts", "fdd51b8371984b68f2631f9f64f1259ac77f2d5153068ce75d6158bca27e7a66", patchMessagesTypes),
-  patch("dist/core/sdk.js", "6969bd56ba8e1628cd033bb15cb15fe38299f00b5ad84f4f8ef37a33a98681c9", patchSdkRuntime),
-  patch("dist/core/settings-manager.js", "ee4f52d1dd4f1c18d5d814be4ba260ddf7fe40b7b70c2f0732a30a8b287111ad", patchSettingsRuntime),
-  patch("dist/core/extensions/types.d.ts", "5baa29ca2f541f71f81a400dec25903abfbd03980bd4d9b691d10353e52d169a", patchExtensionTypes),
-  patch("dist/core/extensions/runner.js", "0de12ed1275e02595f92476eec3f61ae1f2e54fd2225ced721ddc90af58a5e61", patchRunnerRuntime),
-  patch("dist/core/extensions/runner.d.ts", "5e6f5e8e5dffccc0f7e235964a75ac181d2c6e06b924e149370ad688a31d7193", patchRunnerTypes),
-  patch("dist/core/extensions/index.d.ts", "dc9bd3202b8d84b580d7002efad6738465c50556e2b27624193a6505b453c87d", patchExtensionIndexTypes),
-  patch("dist/index.d.ts", "f1cb93477c7357d08b839c0663d079b8f9bb949079ed7b50a71f8d2945cece90", patchPublicIndexTypes),
+  patch("dist/core/sdk.js", "3417c58edc5c02a4ae71a3604bbd04688d1741e0203497bf082a748ca843d850", patchSdkRuntime),
+  patch("dist/core/settings-manager.js", "5368b155ec26d88374cec9e66b8e588b5041a0fb0047414f70b34e13892c4f48", patchSettingsRuntime),
+  patch("dist/core/extensions/types.d.ts", "a4d5b8774fa8015b8a3274614f1398a6aeeffdd888c122910439666955dc2a52", patchExtensionTypes),
+  patch("dist/core/extensions/runner.js", "07a94efe560e6a460a415b2188c1c3c69ca151bd163c9b5f05347caf8403ace2", patchRunnerRuntime),
+  patch("dist/core/extensions/runner.d.ts", "fc0f81468c51bacfc093ac09974aa8e8053ca463e205eb66a1c63b0b655f61b9", patchRunnerTypes),
+  patch("dist/core/extensions/index.d.ts", "5b294bd70da0744cb18a45d1cfb774237986c047ec1996e03f24a9605efdd4ab", patchExtensionIndexTypes),
+  patch("dist/index.d.ts", "44bf19d2716cb18382aa6bd0ae88b7e03ee50ae75b56acb6d11beb40dfe99dea", patchPublicIndexTypes),
 ]);
 
 export const feature = Object.freeze({ id: "context-window", patches, files });

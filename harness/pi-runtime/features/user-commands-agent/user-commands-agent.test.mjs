@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { PI_VERSION } from "../rubato-components/pi-version.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { createInterface } from "node:readline";
@@ -47,7 +48,7 @@ async function session(options) {
 test("feature is additive-only, stock-version locked, and named factories match toggles", () => {
   assert.equal(userCommandsAgentFeature.id, "user-commands-agent");
   assert.deepEqual(patches, []);
-  assert.ok(files.every((entry) => entry.target === "runtime" && entry.version === "0.85.1"));
+  assert.ok(files.every((entry) => entry.target === "runtime" && entry.version === PI_VERSION));
   assert.ok(files.every((entry) => existsSync(entry.sourcePath)));
   assert.equal(PI_FEATURE_NAMES.includes("user-commands-agent"), true);
   assert.equal(CANDIDATE_FEATURE_NAMES.includes("user-commands-agent"), true);
@@ -204,7 +205,7 @@ test("/btw answers a side question without appending it as the main user turn", 
   const userTurns = fixture.session.messages.filter((message) => message.role === "user");
   assert.equal(userTurns.some((message) => String(message.content).includes("what was the last file")), false);
   assert.ok(captures.length >= 1, "side query should hit the model stream");
-  assert.match(captures[0].context.systemPrompt ?? "", /side question/);
+  assert.match(captures[0].systemPrompt ?? "", /side question/);
   assert.equal(typeof before, "number");
 });
 

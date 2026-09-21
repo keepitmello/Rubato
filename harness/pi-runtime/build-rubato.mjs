@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { mkdir, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolvePiRuntime } from "./resolve-runtime.mjs";
+import { PI_VERSION, resolvePiRuntime } from "./resolve-runtime.mjs";
 import { validatePiInstall } from "./validate-install.mjs";
 import { BUILD_RECEIPT_VERSION, BUNDLE_ENTRIES as entries, SOURCE_ASSETS, validateBuildReceipt } from "./features/rubato-components/payload-manifest.mjs";
 
@@ -130,7 +130,7 @@ export async function rubatoComponentsFeature(buildRoot, { sourceRoot = here } =
     }
   }
   return { id: "rubato-components", patches: [], files: [...paths.map(({ path }) => path), "rubato-build.json"].map((path) => ({
-    target: "runtime", version: "0.85.1", path: `rubato-features/rubato-components/${path}`, sourcePath: join(root, path),
+    target: "runtime", version: PI_VERSION, path: `rubato-features/rubato-components/${path}`, sourcePath: join(root, path),
   })) };
 }
 

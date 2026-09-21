@@ -181,9 +181,16 @@ test("stock lifecycle events drive prompt context, compact cancellation, post-co
 
   const promptInput = await fixture.session.extensionRunner.emitInput("hello", undefined, "interactive");
   assert.deepEqual(promptInput, { action: "continue" });
-  const prompt = await fixture.session.extensionRunner.emitBeforeAgentStart("hello", undefined, "BASE", { cwd: fixture.cwd });
+  // 0.86.0: 세 번째 인자가 systemPrompt 문자열에서 systemPromptOptions 객체로 바뀌었다.
+  const prompt = await fixture.session.extensionRunner.emitBeforeAgentStart("hello", undefined, { cwd: fixture.cwd });
   assert.deepEqual(prompt.messages?.map(({ content }) => content), ["prompt-context"]);
-  assert.equal(prompt.systemPrompt, "BASE\n\nprompt-system");
+  // 0.86.0 부터 핸들러가 돌려주는 systemPrompt 는 base 문자열이 아니라
+  // stock 이 렌더한 프롬프트에 이어 붙는 값이다. 그래서 base 에 묶지 않고
+  // 우리 블록이 끝에 실렸는지만 본다 — 그게 이 테스트의 의도다.
+  assert.ok(
+    prompt.systemPromptOptions.forceSystemPrompt.endsWith("prompt-system"),
+    "the extension's system prompt block must reach the rendered prompt",
+  );
 
   const signal = new AbortController().signal;
   const compact = await fixture.session.extensionRunner.emit({
@@ -241,8 +248,8 @@ test("bash timeout mutates missing values and preserves explicit values without 
   const explicit = { command: "sleep 1", timeout: 7 };
   await fixture.session.extensionRunner.emitToolCall({ type: "tool_call", toolCallId: "bash-2", toolName: "bash", input: explicit });
   assert.equal(explicit.timeout, 7);
-  const prompt = await fixture.session.extensionRunner.emitBeforeAgentStart("prompt", undefined, "BASE", { cwd: fixture.cwd });
-  assert.equal(prompt, undefined, "no prompt contribution once the bash schema carries the timeout semantics");
+  const prompt = await fixture.session.extensionRunner.emitBeforeAgentStart("prompt", undefined, { cwd: fixture.cwd });
+  assert.equal(prompt.systemPromptOptions.forceSystemPrompt, undefined, "no prompt contribution once the bash schema carries the timeout semantics");
 });
 
 test("command hook timeout kills its isolated subprocess and reports timeout without hanging", async (t) => {

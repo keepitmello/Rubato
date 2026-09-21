@@ -18,7 +18,7 @@
 import { fileURLToPath } from "node:url";
 
 const AGENT_PACKAGE = "@earendil-works/pi-coding-agent";
-const VERSION = "0.85.1";
+const VERSION = "0.86.1";
 const RUNTIME_DIR = "dist/rubato-features/turn-chrome";
 const OWNED = ["assistant-phase.mjs", "working-phase.mjs", "tool-group.mjs", "turn-thinking.mjs", "turn-work-summary.mjs"];
 
@@ -462,11 +462,11 @@ export const files = Object.freeze(OWNED.map((name) => Object.freeze({
 
 export const patches = Object.freeze([
   patch("turn-chrome:tool-execution", "dist/modes/interactive/components/tool-execution.js",
-    "3c7859cde2c4c937cd71865b106a8ee01b6a90b112d0fa78fd2da75b6edc6e2c", patchToolExecution),
+    "84c878b0b5f8fa7741c93126558f345d86bf0a3cc13b21e4e851bd1a522e7027", patchToolExecution),
   patch("turn-chrome:assistant-message", "dist/modes/interactive/components/assistant-message.js",
     "edbd1e712234609d2ad1078edcf960e3b6f549669075f1c5d1a7a4481e2b3d19", patchAssistantMessage),
   patch("turn-chrome:interactive", "dist/modes/interactive/interactive-mode.js",
-    "802ff14f5a47710e5a46d8141b238c4d5ffca30e8ca26bad18f838eddbf086bf", patchInteractiveTurnChrome),
+    "8c9275944466afe2df78dcf02f2f6c83f6bc46fb0fdbd7257a3ef9d1da1ed027", patchInteractiveTurnChrome),
 ]);
 
 export const feature = Object.freeze({ id: "turn-chrome", patches, files });

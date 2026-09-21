@@ -76,7 +76,7 @@ test("descriptor is stock-locked and listed on the candidate", async () => {
   assert.deepEqual((await loadPiFeatures(["tui-input"])).map((entry) => entry.id), ["tui-input"]);
   assert.deepEqual(TUI_INPUT_FACTORY_NAMES, ["rubato-tui-unicode", "rubato-tui-images", "rubato-tui-busy-enter"]);
   assert.equal(patches.length, 2);
-  assert.ok(patches.every((entry) => entry.version === "0.85.1"));
+  assert.ok(patches.every((entry) => entry.version === "0.86.1"));
   assert.ok(patches.every((entry) => /^[a-f0-9]{64}$/.test(entry.preimageSha256)));
   assert.deepEqual(files.map((entry) => entry.path), [
     "rubato-features/tui-input/index.mjs",

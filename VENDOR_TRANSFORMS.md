@@ -1,5 +1,17 @@
 # Vendor Transforms — 벤더 패치 오버레이 철거 기록과 유지보수 가이드
 
+> **은퇴한 경로다. Rubato의 엔진은 stock pi 하나다** (senpi 폐기: 2026-09-13 `1abef1bf0`).
+>
+> 이 문서가 설명하는 `harness/rubato-pi/src/transforms/` 로더는 **stock pi 런치가 싣지 않는다.**
+> `launch.mjs`의 `buildPiArgs`는 `--import no-changelog-register`를 넣지 않고,
+> `~/.rubato-pi/engine.json`의 엔진은 `stock-pi`이며, `engine-selection.mjs`는
+> "rubato launches on pi or not at all"로 senpi 폴백을 폐기했다. 그래서 여기 적힌
+> "엔진 버전 올릴 때" 절차를 그대로 따르면 **은퇴한 senpi 경로를 고치게 된다.**
+>
+> **live 패치 표면은 `harness/pi-runtime/features/*/patches.mjs`다** — 33 feature,
+> `preimageSha256` 검증, `stage-runtime.mjs`가 staged stock pi에 적용한다.
+> 엔진 버전을 올릴 때 볼 곳은 그쪽이다. 이 문서는 철거 당시의 기록으로만 남긴다.
+
 2026-08-31 ~ 09-01. 커밋 체인 `ca4b6fbbf..78c9b2310` (12개).
 
 ## 무엇을 했나

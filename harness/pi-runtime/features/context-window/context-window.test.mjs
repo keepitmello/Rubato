@@ -157,6 +157,12 @@ const { AssistantMessageEventStream } = await import(pathToFileURL(join(
   runtime.codingAgentDir,
   "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js",
 )));
+// 0.86 hands providers a normalized transcript: the prompt and the tool loadout are
+// message deltas, not top-level `context.systemPrompt` / `context.tools` fields.
+const { getCurrentSystemPrompt, getCurrentTools } = await import(pathToFileURL(join(
+  runtime.codingAgentDir,
+  "node_modules/@earendil-works/pi-ai/dist/utils/transcript.js",
+)));
 const { createContextNotesExtension } = await import(pathToFileURL(join(
   runtime.codingAgentDir,
   "dist/rubato-features/context-notes/extension.mjs",
@@ -276,7 +282,7 @@ test("descriptor is stock-locked, drift-failing, and composes with shared core f
   assert.equal(patches.length, 11);
   assert.equal(new Set(patches.map((entry) => entry.path)).size, patches.length);
   assert.ok(patches.every((entry) => entry.packageName === "@earendil-works/pi-coding-agent"));
-  assert.ok(patches.every((entry) => entry.version === "0.85.1"));
+  assert.ok(patches.every((entry) => entry.version === "0.86.1"));
   assert.ok(patches.every((entry) => /^[a-f0-9]{64}$/.test(entry.preimageSha256)));
   assert.equal(staged.receipt.files.filter((entry) => entry.patches.some((id) => id.startsWith("context-window/"))).length, 11);
   assert.equal(staged.receipt.addedFiles.filter((entry) => entry.feature === "context-window").length, 1);
@@ -406,9 +412,9 @@ test("actual SDK commits new_context once and the immediate provider turn uses o
   let call = 0;
   result.session.agent.streamFunction = (_model, context) => {
     contexts.push({
-      systemPrompt: context.systemPrompt,
+      systemPrompt: getCurrentSystemPrompt(context.messages),
       messages: structuredClone(context.messages),
-      toolNames: context.tools.map((tool) => tool.name),
+      toolNames: getCurrentTools(context.messages).map((tool) => tool.name),
     });
     const message = call === 0
       ? assistant([{ type: "toolCall", id: "write-1", name: "notes_write_file", arguments: {
@@ -431,7 +437,9 @@ test("actual SDK commits new_context once and the immediate provider turn uses o
   const writeResult = preCut.find((message) => message.role === "toolResult" && message.toolCallId === "write-1");
   assert.ok(writeAssistant && writeResult, "stock provider context preserves the complete tool-call/result pair without pruning");
 
-  const nextWindow = contexts[2].messages;
+  // The transcript carries the prompt as its leading system message; the window itself
+  // must be the only conversational turn the next provider request sees.
+  const nextWindow = contexts[2].messages.filter((message) => message.role !== "system");
   assert.equal(nextWindow.length, 1, JSON.stringify(nextWindow));
   assert.equal(nextWindow[0].role, "user");
   assert.match(textOf(nextWindow[0]), /^<rubato_context_window_v1>/);
@@ -444,8 +452,10 @@ test("actual SDK commits new_context once and the immediate provider turn uses o
     entry.details?.source === "rubato-history-notes-v1");
   assert.equal(compactions.length, 1);
   assert.equal(compactions[0].fromHook, true);
-  assert.equal(result.session.messages.length, 2, "new-window assistant is appended after the bootstrap carrier");
-  assert.match(textOf(result.session.messages[0]), /^<rubato_context_window_v1>/);
+  // The leading system message is the prompt, not conversation; the carrier and the reply are.
+  const conversation = result.session.messages.filter((message) => message.role !== "system");
+  assert.equal(conversation.length, 2, "new-window assistant is appended after the bootstrap carrier");
+  assert.match(textOf(conversation[0]), /^<rubato_context_window_v1>/);
   assert.deepEqual(compactionEvents.map((event) => [event.type, event.reason, event.aborted]), [
     ["compaction_start", "extension", undefined],
     ["compaction_end", "extension", false],
@@ -687,8 +697,9 @@ export default function contextWindowProbe(pi) {
 
   const contexts = readFileSync(capturePath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
   assert.equal(contexts.length, 3, JSON.stringify({ frames: channel.frames.slice(-12), stderr: channel.stderr() }));
-  assert.equal(contexts[2].messages.length, 1);
-  assert.match(textOf(contexts[2].messages[0]), /^<rubato_context_window_v1>/);
+  const windowMessages = contexts[2].messages.filter((message) => message.role !== "system");
+  assert.equal(windowMessages.length, 1, JSON.stringify(contexts[2]));
+  assert.match(textOf(windowMessages[0]), /^<rubato_context_window_v1>/);
   assert.doesNotMatch(JSON.stringify(contexts[2]), /rpc original message|rpc-note-body-must-not-leak/);
   assert.ok(channel.frames.some((frame) => frame.type === "compaction_end" && frame.reason === "extension" && frame.aborted === false));
 
