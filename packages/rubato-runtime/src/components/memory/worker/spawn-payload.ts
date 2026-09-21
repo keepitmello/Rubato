@@ -3,16 +3,12 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "nod
 
 import {
   loadDreamPersona,
-  loadFactsPersona,
   loadReflectionPersona,
-  serializeFactsPayload,
   type ReservedRun,
 } from "@rubato/memory-core"
 
 import { estimateSystemTokens } from "../commands/tokens"
 import type {
-  FactsSpawnArgs,
-  PrepareFactsSpawnInput,
   PrepareReflectionSpawnInput,
   ReflectionSpawnArgs,
   ReflectionSpawnPaths,
@@ -35,7 +31,6 @@ export async function prepareReflectionSpawn(input: PrepareReflectionSpawnInput)
     skillsUsage: join(sessionDir, "skills-usage.json"),
     memoryUsage: join(sessionDir, "memory-usage.json"),
     dreamState: join(sessionDir, "dream-state.json"),
-    dreamPolicy: join(sessionDir, "dream-policy.json"),
     systemTokens: join(sessionDir, "system-tokens.json"),
   } : undefined
   const payloadPaths = [
@@ -62,7 +57,6 @@ export async function prepareReflectionSpawn(input: PrepareReflectionSpawnInput)
       copyJsonOrEmpty(input.skillsUsageSource, dreamPaths.skillsUsage),
       copyJsonOrEmpty(input.memoryUsageSource, dreamPaths.memoryUsage),
       copyJsonOrEmpty(input.dreamStateSource, dreamPaths.dreamState),
-      writeFile(dreamPaths.dreamPolicy, `${JSON.stringify({ version: 1, people: input.peoplePolicy }, null, 2)}\n`, "utf8"),
       writeSystemTokenEstimate(input.worktree.dir, dreamPaths.systemTokens),
     ]),
   ])
@@ -89,7 +83,6 @@ export async function prepareReflectionSpawn(input: PrepareReflectionSpawnInput)
       SKILLS_USAGE_PATH: dreamPaths.skillsUsage,
       MEMORY_USAGE_PATH: dreamPaths.memoryUsage,
       DREAM_STATE_PATH: dreamPaths.dreamState,
-      DREAM_POLICY_PATH: dreamPaths.dreamPolicy,
       SYSTEM_TOKENS_PATH: dreamPaths.systemTokens,
       SYSTEM_TOKEN_BUDGET: String(input.systemTokenBudget),
       SYSTEM_TOKEN_TARGET: String(input.systemTokenTarget),
@@ -183,59 +176,6 @@ export async function prepareReflectionForkSpawn(input: PrepareReflectionSpawnIn
     fork: { parentSessionFile },
     args,
     cwd: input.parentCwd ?? base.cwd,
-  }
-}
-
-export async function prepareFactsSpawn(input: PrepareFactsSpawnInput): Promise<FactsSpawnArgs> {
-  await mkdir(input.runDir, { recursive: true, mode: 0o700 })
-  const payload = join(input.runDir, "facts-payload.json")
-  const extraction = join(input.runDir, "extraction.jsonl")
-  try {
-    await (input.chmodFile ?? chmod)(payload, 0o600)
-  } catch (error) {
-    if (errorCode(error) !== "ENOENT") throw error
-  }
-  // ONE serializer, shared with the byte cap's measurement: a second stringify here would let
-  // the written bytes drift past the cap the selection proved.
-  await writeFile(payload, serializeFactsPayload(input.payload), { encoding: "utf8", mode: 0o600 })
-  await chmod(payload, 0o400)
-  const env: NodeJS.ProcessEnv = {
-    ...memoryChildEnv(input.env),
-    FACTS_PAYLOAD_PATH: payload,
-    FACTS_EXTRACTION_PATH: extraction,
-    SENPI_MEMORY_FACTS: "1",
-    SENPI_PTY_FORCE_PIPE: "1",
-  }
-  const args = [
-    "-p",
-    "--system-prompt", loadFactsPersona(),
-    "--tools", "read,write",
-    "--no-extensions",
-    ...memoryChildExtensionArgs(env),
-    "--no-skills",
-    "--no-prompt-templates",
-    "--no-context-files",
-    "--session-dir", input.runDir,
-    "--model", cursorGrokLaunchModel(input.model),
-    ...(input.thinking === undefined ? [] : ["--thinking", input.thinking]),
-    `Read ${payload} and write only ${extraction} according to the system prompt.`,
-  ]
-  const launch = input.senpiCommand === undefined
-    ? resolveSenpiLaunch(input.env)
-    : { command: input.senpiCommand, prefixArgs: input.senpiPrefixArgs ?? [] }
-  return {
-    runId: input.runId,
-    attempt: input.attempt ?? 1,
-    hardDeadlineAt: input.hardDeadlineAt ?? Date.now() + 15 * 60_000,
-    model: cursorGrokLaunchModel(input.model),
-    ...(input.thinking === undefined ? {} : { thinking: input.thinking }),
-    ...(input.nextAttempt === undefined ? {} : { nextAttempt: input.nextAttempt }),
-    command: launch.command,
-    args: [...launch.prefixArgs, ...args],
-    cwd: input.runDir,
-    env,
-    detached: true,
-    paths: { runDir: input.runDir, payload, extraction },
   }
 }
 

@@ -19,7 +19,6 @@ const FULL_DEFAULTS: RubatoMemorySettings = {
     sandbox: "auto",
   },
   nudge: { enabled: true, every_user_turns: 10 },
-  facts: { enabled: true, debounce_settles: 4 },
   dream: {
     enabled: true,
     idle_minutes: 30,
@@ -28,7 +27,6 @@ const FULL_DEFAULTS: RubatoMemorySettings = {
     auto_select_max: 5,
     auto_select_max_chars: 150000,
   },
-  people: { enabled: true, max_entries: 40, max_entry_chars: 200 },
   soul: { edit_notice: true },
   write_notice: { enabled: true },
   sync: { enabled: true },
@@ -65,7 +63,6 @@ describe("RubatoMemorySettingsSchema defaults", () => {
         sandbox: "required",
       },
       nudge: { enabled: false, every_user_turns: 5 },
-      facts: { enabled: false, debounce_settles: 2 },
       dream: {
         enabled: false,
         idle_minutes: 0,
@@ -74,7 +71,6 @@ describe("RubatoMemorySettingsSchema defaults", () => {
         auto_select_max: 3,
         auto_select_max_chars: 100000,
       },
-      people: { enabled: false, max_entries: 20, max_entry_chars: 100 },
       soul: { edit_notice: false },
       write_notice: { enabled: false },
       sync: { remote: "file:///tmp/memory-mirror.git", enabled: true },

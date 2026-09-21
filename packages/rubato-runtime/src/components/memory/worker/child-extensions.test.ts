@@ -4,7 +4,7 @@ import { realpathSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { delimiter, join } from "node:path"
 
-import type { FactsPayload, ReflectionWorktree, ReservedRun } from "@rubato/memory-core"
+import type { ReflectionWorktree, ReservedRun } from "@rubato/memory-core"
 
 import { rmEfaultTolerant } from "../teardown.test-support"
 import {
@@ -12,7 +12,7 @@ import {
   memoryChildExtensionArgs,
   memoryChildExtensionPaths,
 } from "./child-extensions"
-import { prepareFactsSpawn, prepareReflectionForkSpawn, prepareReflectionSpawn } from "./spawn"
+import { prepareReflectionForkSpawn, prepareReflectionSpawn } from "./spawn"
 
 const roots: string[] = []
 
@@ -36,14 +36,6 @@ const run: ReservedRun = {
   request: { trigger: "manual", conversationIds: [], snapshots: [] },
 }
 
-const payload: FactsPayload = {
-  version: 1,
-  identity: "agent-test",
-  today: "2026-08-10",
-  entries: [],
-  knownPeople: [],
-  primaryHuman: { slug: "human", aliases: [] },
-}
 
 function reflectionInput(base: string, env: NodeJS.ProcessEnv) {
   return {
@@ -60,7 +52,6 @@ function reflectionInput(base: string, env: NodeJS.ProcessEnv) {
     skillsUsageSource: join(base, "skills.json"),
     memoryUsageSource: join(base, "memory-usage.json"),
     dreamStateSource: join(base, "dream.json"),
-    peoplePolicy: { enabled: true, max_entries: 40, max_entry_chars: 200 },
     senpiCommand: "/custom/senpi",
   }
 }
@@ -106,19 +97,6 @@ describe("memory child provider extensions", () => {
     expect(prepared.args).toContain("--no-context-files")
   })
 
-  test("#given a host provider extension #when a facts spawn is prepared #then the child loads it", async () => {
-    const prepared = await prepareFactsSpawn({
-      runId: "facts-1",
-      runDir: await root(),
-      payload,
-      model: "provider/model",
-      env: { [MEMORY_CHILD_EXTENSIONS_ENV]: OVERLAY },
-      senpiCommand: "/custom/senpi",
-    })
-
-    expect(prepared.args).toContain("--no-extensions")
-    expect(extensionEntries(prepared.args)).toEqual([OVERLAY])
-  })
 
   test("#given a host provider extension #when a fork spawn is prepared #then it loads before --fork and no isolation flag is reintroduced", async () => {
     const base = await root()

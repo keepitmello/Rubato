@@ -5,9 +5,7 @@
 // pushed through ctx.ui.notify so read-only output never enters model context.
 
 import type { GitExec, MemoryIdentityPaths } from "@rubato/memory-core"
-import type { RubatoConfig, RubatoMemorySettings } from "@rubato/config-core"
-
-import type { PeopleAskRunner } from "./people-ask"
+import type { RubatoMemorySettings } from "@rubato/config-core"
 
 export type NotifyLevel = "info" | "warning" | "error"
 
@@ -67,17 +65,10 @@ export interface DreamRequestSink {
   request(request: ManualDreamCommandRequest): Promise<DreamCommandOutcome>
 }
 
-/** `/facts retry` seam: triggers exactly ONE reconcile/launch attempt after an unpark. */
-export interface FactsRetrySink {
-  reconcile(): Promise<void>
-}
-
 export interface MemoryCommandSettings {
   readonly settings: RubatoMemorySettings
   /** Path of the Rubato config file users edit to change memory settings. */
   readonly configPath?: string
-  /** Full resolved config; `/people --ask` needs it to resolve the quick model category. */
-  readonly config?: RubatoConfig
 }
 
 export interface MemoryCommandDeps {
@@ -90,13 +81,9 @@ export interface MemoryCommandDeps {
   bustPromptCache(): void
   reflectionSink?: ReflectionRequestSink
   dreamSink?: DreamRequestSink
-  /** Absent means `/facts retry` still clears records but cannot trigger a launch itself. */
-  factsSink?: FactsRetrySink
   /** Senpi sessions root for `/search`; defaults to <agentDir>/sessions. */
   sessionsDir?(): string
   exec?: GitExec
-  /** Dialectic-lite seam for `/people --ask`; defaults to a real quick child. */
-  peopleAsk?: PeopleAskRunner
   /** Environment handed to command-spawned children; defaults to process.env. */
   env?: NodeJS.ProcessEnv
   now?(): number

@@ -8,7 +8,6 @@ import { hasMemoryCapabilities } from "./capabilities"
 import { registerMemoryCommands } from "./commands/register"
 import type { MemoryCommandIdentity, MemoryCommandSettings } from "./commands/types"
 import type { DreamTriggerWiring } from "./dream-trigger"
-import type { MemoryFactsWiring } from "./facts-wiring"
 import { registerMemoryGuard } from "./guard"
 import type { MemoryIdentityRuntime } from "./identity-runtime"
 import type { MemoryJournalWiring } from "./journal-wiring"
@@ -42,10 +41,8 @@ export function registerMemoryStatic(input: {
   readonly completionApi: (pi: SenpiExtensionAPI) => ReflectionCompletionApi | undefined
   readonly resolveContext: (sessionId: string) => MemoryIdentityContext | undefined
   readonly journalWiringFor: (identity: MemoryIdentityContext) => MemoryJournalWiring
-  readonly factsWiringFor: (identity: MemoryIdentityContext) => MemoryFactsWiring
   readonly runtimeFor: (identity: MemoryIdentityContext) => MemoryIdentityRuntime
   readonly triggerSessionFor: Parameters<typeof createReflectionTriggerWiring>[0]["resolveSession"]
-  readonly resolvePalacePeople: Parameters<typeof registerPalaceCommand>[2]
   readonly loadCommandSettings: () => MemoryCommandSettings
   readonly lastEventCtx: { current?: unknown }
   readonly activeSession: { current?: string }
@@ -60,8 +57,8 @@ export function registerMemoryStatic(input: {
 }): void {
   const {
     pi, ctx, options, promptCache, nudgeWiring, noticeWiring, dreamTriggerWiring,
-    completionApi, resolveContext, journalWiringFor, factsWiringFor, runtimeFor,
-    triggerSessionFor, resolvePalacePeople, loadCommandSettings, lastEventCtx,
+    completionApi, resolveContext, journalWiringFor, runtimeFor,
+    triggerSessionFor, loadCommandSettings, lastEventCtx,
     activeSession, skillsUsageTrackersRef, memoryUsageTrackersRef, onReflectionLaunch, onSettled, onMemoryWrite,
   } = input
   const api = completionApi(pi)
@@ -136,7 +133,6 @@ export function registerMemoryStatic(input: {
       return undefined
     }
     const result = await journalWiringFor(identity).reconcileSession(eventCtx)
-    await factsWiringFor(identity).onSettled(sessionId)
     await onSettled?.(sessionId, eventCtx)
     return result
   })
@@ -189,7 +185,6 @@ export function registerMemoryStatic(input: {
   registerPalaceCommand(
     pi,
     () => (activeSession.current === undefined ? undefined : resolveContext(activeSession.current)),
-    resolvePalacePeople,
   )
   registerMemoryCommands(pi, {
     contextForSession: (sessionId) => asCommandIdentity(resolveContext(sessionId)),
@@ -217,14 +212,6 @@ export function registerMemoryStatic(input: {
       },
     },
     dreamSink: { request: (request) => dreamTriggerWiring.requestManualDream(request) },
-    factsSink: {
-      // ONE attempt after a manual unpark: `reconcileExtractor` fires the extractor's own
-      // reconcile-then-launch path, which owns the re-entrancy latch, so this never loops.
-      reconcile: async () => {
-        const identity = activeSession.current === undefined ? undefined : resolveContext(activeSession.current)
-        if (identity !== undefined) factsWiringFor(identity).reconcileExtractor()
-      },
-    },
     sessionsDir: () => join(options.env.SENPI_CODING_AGENT_DIR ?? join(homedir(), ".senpi", "agent"), "sessions"),
   })
   const triggerWiring = createReflectionTriggerWiring({

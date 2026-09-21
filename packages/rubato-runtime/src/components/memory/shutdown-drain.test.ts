@@ -39,9 +39,7 @@ function recordingLogger(): { logger: ComponentLogger; warnings: string[] } {
 function recordingSteps(order: string[], overrides: Partial<ShutdownDrainSteps> = {}): ShutdownDrainSteps {
   return {
     flushJournal: async () => { order.push("a") },
-    enqueueFinalDelta: async () => { order.push("b") },
     flushSkillsUsage: async () => { order.push("c-prime") },
-    launchFacts: async () => { order.push("c") },
     ...overrides,
   }
 }
@@ -74,7 +72,7 @@ describe("session shutdown drain budget", () => {
     expect(deadlineAt).toBe(11_500)
   })
 
-  test("#given a quit shutdown #when the drain runs #then steps run in the a, b, c-prime, c, d order", async () => {
+  test("#given a quit shutdown #when the drain runs #then steps run in the a, c-prime, d order", async () => {
     // given
     const order: string[] = []
     const signals: AbortSignal[] = []
@@ -86,101 +84,9 @@ describe("session shutdown drain budget", () => {
     await drain.run({ reason: "quit", sessionId: SESSION, deadlineAt: openBudget(0), now: () => 0 })
 
     // then
-    expect(order).toEqual(["a", "b", "c-prime", "c", "d1", "d2"])
+    expect(order).toEqual(["a", "c-prime", "d1", "d2"])
     expect(signals).toHaveLength(1)
     expect(signals[0]?.aborted).toBe(true)
-  })
-
-  test("#given a hosted unload #when the drain runs #then held state is saved but no facts launch or evaluator starts", async () => {
-    // given
-    const order: string[] = []
-    const drain = createShutdownDrain({ steps: recordingSteps(order) })
-    drain.registerEvaluator(() => { order.push("d1") })
-
-    // when
-    await drain.run({ reason: "unload", sessionId: SESSION, deadlineAt: openBudget(0), now: () => 0 })
-
-    // then: journal, final delta and skills usage are preserved; the next bind's reconcile launches facts
-    expect(order).toEqual(["a", "b", "c-prime"])
-  })
-
-  test("#given a reload shutdown #when the drain runs #then only the journal flush and the final enqueue run", async () => {
-    // given
-    const order: string[] = []
-    const drain = createShutdownDrain({ steps: recordingSteps(order) })
-    drain.registerEvaluator(() => { order.push("d1") })
-
-    // when
-    for (const reason of ["reload", "new", "resume", "fork"] as const) {
-      await drain.run({ reason, sessionId: SESSION, deadlineAt: openBudget(0), now: () => 0 })
-    }
-
-    // then
-    expect(order).toEqual(["a", "b", "a", "b", "a", "b", "a", "b"])
-  })
-
-  test("#given a step that stalls two seconds on the injected clock #when quit drains #then it returns inside the budget and no later step starts", async () => {
-    // given
-    const order: string[] = []
-    const { logger, warnings } = recordingLogger()
-    let clock = 0
-    let releaseStall: (() => void) | undefined
-    const stalled = new Promise<void>((resolve) => { releaseStall = resolve })
-    const drain = createShutdownDrain({
-      logger,
-      steps: recordingSteps(order, {
-        enqueueFinalDelta: async () => {
-          order.push("b")
-          clock += 2_000
-          await stalled
-          order.push("b-late")
-        },
-      }),
-    })
-    drain.registerEvaluator(() => { order.push("d1") })
-    const startedAt = clock
-    const deadlineAt = shutdownDeadlineAt(() => startedAt)
-
-    // when
-    const realStart = Date.now()
-    await drain.run({ reason: "quit", sessionId: SESSION, deadlineAt, now: () => clock })
-    const elapsed = Date.now() - realStart
-
-    // then
-    expect(elapsed).toBeLessThan(SESSION_SHUTDOWN_DRAIN_BUDGET_MS)
-    expect(order).toEqual(["a", "b"])
-    expect(warnings).toHaveLength(1)
-    releaseStall?.()
-    await stalled
-  })
-
-  test("#given an aborted budget #when the stalled step finally settles #then no step that had not started ever starts", async () => {
-    // given
-    const order: string[] = []
-    let clock = 0
-    let releaseStall: (() => void) | undefined
-    const stalled = new Promise<void>((resolve) => { releaseStall = resolve })
-    let observedSignal: AbortSignal | undefined
-    const drain = createShutdownDrain({
-      steps: recordingSteps(order, {
-        flushJournal: async (_sessionId, signal) => {
-          order.push("a")
-          observedSignal = signal
-          clock += 2_000
-          await stalled
-        },
-      }),
-    })
-    drain.registerEvaluator(() => { order.push("d1") })
-
-    // when
-    await drain.run({ reason: "quit", sessionId: SESSION, deadlineAt: shutdownDeadlineAt(() => 0), now: () => clock })
-    releaseStall?.()
-    await stalled
-
-    // then
-    expect(observedSignal?.aborted).toBe(true)
-    expect(order).toEqual(["a"])
   })
 
   test("#given an evaluator that throws #when quit drains #then the throw is logged and the next evaluator still runs", async () => {
@@ -195,35 +101,10 @@ describe("session shutdown drain budget", () => {
     await drain.run({ reason: "quit", sessionId: SESSION, deadlineAt: openBudget(0), now: () => 0 })
 
     // then
-    expect(order).toEqual(["a", "b", "c-prime", "c", "d2"])
+    expect(order).toEqual(["a", "c-prime", "d2"])
     expect(warnings).toHaveLength(1)
   })
 
-  test("#given a bound session with journal rows #when session_shutdown fires #then the drain runs before the session is released", async () => {
-    // given
-    const root = realpathSync.native(await mkdtemp(join(tmpdir(), "rubato-memory-shutdown-")))
-    tempDirs.push(root)
-    const cwd = join(root, "project")
-    const env = { RUBATO_MEMORY_HOME: join(root, "memory") }
-    const identity = resolveMemoryIdentity("drain-agent", cwd, env)
-    const pi = new MemoryFakeExtensionAPI()
-    createMemoryComponent({
-      env,
-      loadConfig: () => loadedMemoryConfig(memorySettings({ agent: "drain-agent" })),
-      now: () => 0,
-      resolveCwd: () => cwd,
-    }).register(pi, componentContext())
-    await pi.dispatch("session_start", {}, sessionContext({ sessionId: SESSION }))
-    const journal = new TranscriptJournal({ journalDir: join(identity.paths.transcripts, SESSION) })
-    await journal.append([entry("user", "m1"), entry("assistant", "m1")])
-
-    // when
-    await pi.dispatch("session_shutdown", { type: "session_shutdown", reason: "quit" }, sessionContext({ sessionId: SESSION }))
-
-    // then
-    const queued = await readdir(identity.paths.factsQueue).catch(() => [] as string[])
-    expect(queued.filter((name) => name.endsWith(".json") && name !== "consumed.json")).toHaveLength(1)
-  })
 
   test("#given a memory home that is not a directory #when bind-time reconcile rejects #then it is logged instead of crashing the host", async () => {
     // given
@@ -273,7 +154,7 @@ describe("session shutdown drain budget", () => {
     await drain.run({ reason: "quit", sessionId: SESSION, deadlineAt: openBudget(0), now: () => 0 })
 
     // then
-    expect(order).toEqual(["b", "c-prime", "c"])
+    expect(order).toEqual(["c-prime"])
     expect(warnings).toHaveLength(1)
   })
 })

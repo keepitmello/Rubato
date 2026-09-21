@@ -31,10 +31,6 @@ export interface ResolvedSleeptimeSettings {
     readonly enabled: ResolvedSleeptimeValue<boolean>
     readonly everyUserTurns: ResolvedSleeptimeValue<number>
   }
-  readonly facts: {
-    readonly enabled: ResolvedSleeptimeValue<boolean>
-    readonly debounceSettles: ResolvedSleeptimeValue<number>
-  }
   readonly dream: {
     readonly enabled: ResolvedSleeptimeValue<boolean>
     readonly idleMinutes: ResolvedSleeptimeValue<number>
@@ -42,11 +38,6 @@ export interface ResolvedSleeptimeSettings {
     readonly shutdownLaunch: ResolvedSleeptimeValue<boolean>
     readonly autoSelectMax: ResolvedSleeptimeValue<number>
     readonly autoSelectMaxChars: ResolvedSleeptimeValue<number>
-  }
-  readonly people: {
-    readonly enabled: ResolvedSleeptimeValue<boolean>
-    readonly maxEntries: ResolvedSleeptimeValue<number>
-    readonly maxEntryChars: ResolvedSleeptimeValue<number>
   }
   readonly soul: {
     readonly editNotice: ResolvedSleeptimeValue<boolean>
@@ -64,9 +55,7 @@ export function resolveSleeptimeSettings(
   const agentOverride = settings.agents[agentId]
   const reflection = agentOverride?.reflection
   const nudge = agentOverride?.nudge
-  const facts = agentOverride?.facts
   const dream = agentOverride?.dream
-  const people = agentOverride?.people
   const soul = agentOverride?.soul
   const effectiveReflection = resolveAgentReflectionSettings(settings, agentId)
 
@@ -96,13 +85,6 @@ export function resolveSleeptimeSettings(
         nudge?.every_user_turns !== undefined,
       ),
     },
-    facts: {
-      enabled: resolved(facts?.enabled ?? settings.facts.enabled, facts?.enabled !== undefined),
-      debounceSettles: resolved(
-        facts?.debounce_settles ?? settings.facts.debounce_settles,
-        facts?.debounce_settles !== undefined,
-      ),
-    },
     dream: {
       enabled: resolved(dream?.enabled ?? settings.dream.enabled, dream?.enabled !== undefined),
       idleMinutes: resolved(dream?.idle_minutes ?? settings.dream.idle_minutes, dream?.idle_minutes !== undefined),
@@ -121,14 +103,6 @@ export function resolveSleeptimeSettings(
       autoSelectMaxChars: resolved(
         dream?.auto_select_max_chars ?? settings.dream.auto_select_max_chars,
         dream?.auto_select_max_chars !== undefined,
-      ),
-    },
-    people: {
-      enabled: resolved(people?.enabled ?? settings.people.enabled, people?.enabled !== undefined),
-      maxEntries: resolved(people?.max_entries ?? settings.people.max_entries, people?.max_entries !== undefined),
-      maxEntryChars: resolved(
-        people?.max_entry_chars ?? settings.people.max_entry_chars,
-        people?.max_entry_chars !== undefined,
       ),
     },
     soul: {
@@ -152,7 +126,7 @@ export function registerSleeptimeCommand(pi: SenpiExtensionAPI, deps: MemoryComm
       const { settings, configPath } = deps.loadSettings()
       const agentId = identity.identity
       const values = resolveSleeptimeSettings(settings, agentId)
-      const { reflection, nudge, facts, dream, people, soul } = values
+      const { reflection, nudge, dream, soul } = values
 
       const lines = [
         `# Sleeptime reflection: ${agentId}`,
@@ -168,19 +142,12 @@ export function registerSleeptimeCommand(pi: SenpiExtensionAPI, deps: MemoryComm
         `Nudge: ${nudge.enabled.value ? "on" : "off"}${mark(nudge.enabled)}`,
         `Nudge every: every ${nudge.everyUserTurns.value} turns${mark(nudge.everyUserTurns)}`,
         "",
-        `Facts: ${facts.enabled.value ? "on" : "off"}${mark(facts.enabled)}`,
-        `Facts debounce: debounce ${facts.debounceSettles.value} settles${mark(facts.debounceSettles)}`,
-        "",
         `Dream: ${dream.enabled.value ? "on" : "off"}${mark(dream.enabled)}`,
         `Dream idle: idle ${dream.idleMinutes.value} minutes${mark(dream.idleMinutes)}`,
         `Dream spacing: min ${dream.minHoursBetween.value}h between${mark(dream.minHoursBetween)}`,
         `Dream shutdown: shutdown launch ${dream.shutdownLaunch.value ? "on" : "off"}${mark(dream.shutdownLaunch)}`,
         `Dream select: select max ${dream.autoSelectMax.value}${mark(dream.autoSelectMax)}`,
         `Dream select chars: max ${dream.autoSelectMaxChars.value} chars${mark(dream.autoSelectMaxChars)}`,
-        "",
-        `People: ${people.enabled.value ? "on" : "off"}${mark(people.enabled)}`,
-        `People entries: max ${people.maxEntries.value} entries${mark(people.maxEntries)}`,
-        `People chars: max ${people.maxEntryChars.value} chars${mark(people.maxEntryChars)}`,
         "",
         `Soul: edit notice ${soul.editNotice.value ? "on" : "off"}${mark(soul.editNotice)}`,
         "",

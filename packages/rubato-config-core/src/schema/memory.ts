@@ -41,15 +41,6 @@ export const RubatoMemoryNudgeSchema = z.object({
 }).strict()
 
 // ---------------------------------------------------------------------------
-// Facts (category is deliberately NOT a knob: pinned "quick")
-// ---------------------------------------------------------------------------
-
-export const RubatoMemoryFactsSchema = z.object({
-  enabled: z.boolean().default(true),
-  debounce_settles: z.number().int().min(1).default(4),
-}).strict()
-
-// ---------------------------------------------------------------------------
 // Dream
 // ---------------------------------------------------------------------------
 
@@ -60,16 +51,6 @@ export const RubatoMemoryDreamSchema = z.object({
   shutdown_launch: z.boolean().default(true),
   auto_select_max: z.number().int().min(1).max(10).default(5),
   auto_select_max_chars: z.number().int().min(10000).default(150000),
-}).strict()
-
-// ---------------------------------------------------------------------------
-// People
-// ---------------------------------------------------------------------------
-
-export const RubatoMemoryPeopleSchema = z.object({
-  enabled: z.boolean().default(true),
-  max_entries: z.number().int().min(1).max(100).default(40),
-  max_entry_chars: z.number().int().min(50).max(500).default(200),
 }).strict()
 
 // ---------------------------------------------------------------------------
@@ -120,11 +101,6 @@ export const RubatoMemoryNudgeLayerSchema = z.object({
   every_user_turns: z.number().int().min(1).optional(),
 }).strict()
 
-export const RubatoMemoryFactsLayerSchema = z.object({
-  enabled: z.boolean().optional(),
-  debounce_settles: z.number().int().min(1).optional(),
-}).strict()
-
 export const RubatoMemoryDreamLayerSchema = z.object({
   enabled: z.boolean().optional(),
   idle_minutes: z.number().int().min(0).optional(),
@@ -132,12 +108,6 @@ export const RubatoMemoryDreamLayerSchema = z.object({
   shutdown_launch: z.boolean().optional(),
   auto_select_max: z.number().int().min(1).max(10).optional(),
   auto_select_max_chars: z.number().int().min(10000).optional(),
-}).strict()
-
-export const RubatoMemoryPeopleLayerSchema = z.object({
-  enabled: z.boolean().optional(),
-  max_entries: z.number().int().min(1).max(100).optional(),
-  max_entry_chars: z.number().int().min(50).max(500).optional(),
 }).strict()
 
 export const RubatoMemorySoulLayerSchema = z.object({
@@ -182,9 +152,7 @@ export const RubatoMemoryAgentOverridesSchema = z.preprocess(
   agent: z.string().min(1).optional(),
   reflection: RubatoMemoryReflectionLayerSchema.optional(),
   nudge: RubatoMemoryNudgeLayerSchema.optional(),
-  facts: RubatoMemoryFactsLayerSchema.optional(),
   dream: RubatoMemoryDreamLayerSchema.optional(),
-  people: RubatoMemoryPeopleLayerSchema.optional(),
   soul: RubatoMemorySoulLayerSchema.optional(),
   write_notice: RubatoMemoryWriteNoticeLayerSchema.optional(),
   sync: RubatoMemorySyncLayerSchema.optional(),
@@ -215,7 +183,6 @@ export const RubatoMemorySettingsSchema = z.preprocess(
     sandbox: "auto",
   }),
   nudge: RubatoMemoryNudgeSchema.default({ enabled: true, every_user_turns: 10 }),
-  facts: RubatoMemoryFactsSchema.default({ enabled: true, debounce_settles: 4 }),
   dream: RubatoMemoryDreamSchema.default({
     enabled: true,
     idle_minutes: 30,
@@ -224,7 +191,6 @@ export const RubatoMemorySettingsSchema = z.preprocess(
     auto_select_max: 5,
     auto_select_max_chars: 150000,
   }),
-  people: RubatoMemoryPeopleSchema.default({ enabled: true, max_entries: 40, max_entry_chars: 200 }),
   soul: RubatoMemorySoulSchema.default({ edit_notice: true }),
   write_notice: RubatoMemoryWriteNoticeSchema.default({ enabled: true }),
   sync: RubatoMemorySyncSchema.default({ enabled: true }),
@@ -247,9 +213,7 @@ export const RubatoMemorySettingsLayerSchema = z.preprocess(
   tool_exposure: z.enum(["direct", "search"]).optional(),
   reflection: RubatoMemoryReflectionLayerSchema.optional(),
   nudge: RubatoMemoryNudgeLayerSchema.optional(),
-  facts: RubatoMemoryFactsLayerSchema.optional(),
   dream: RubatoMemoryDreamLayerSchema.optional(),
-  people: RubatoMemoryPeopleLayerSchema.optional(),
   soul: RubatoMemorySoulLayerSchema.optional(),
   write_notice: RubatoMemoryWriteNoticeLayerSchema.optional(),
   sync: RubatoMemorySyncLayerSchema.optional(),
@@ -269,9 +233,7 @@ export type RubatoMemoryReflection = z.infer<typeof RubatoMemoryReflectionSchema
 export type RubatoMemorySync = z.infer<typeof RubatoMemorySyncSchema>
 export type RubatoMemorySearch = z.infer<typeof RubatoMemorySearchSchema>
 export type RubatoMemoryNudge = z.infer<typeof RubatoMemoryNudgeSchema>
-export type RubatoMemoryFacts = z.infer<typeof RubatoMemoryFactsSchema>
 export type RubatoMemoryDream = z.infer<typeof RubatoMemoryDreamSchema>
-export type RubatoMemoryPeople = z.infer<typeof RubatoMemoryPeopleSchema>
 export type RubatoMemorySoul = z.infer<typeof RubatoMemorySoulSchema>
 export type RubatoMemoryWriteNotice = z.infer<typeof RubatoMemoryWriteNoticeSchema>
 export type RubatoMemoryAgentOverrides = z.infer<typeof RubatoMemoryAgentOverridesSchema>

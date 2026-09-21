@@ -3,11 +3,11 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { isAbsolute, join } from "node:path"
 
-import { buildIdentityPaths, type FactsPayload, type ReflectionWorktree, type ReservedRun } from "@rubato/memory-core"
+import { buildIdentityPaths, type ReflectionWorktree, type ReservedRun } from "@rubato/memory-core"
 
 import { loadedMemoryConfig, memorySettings } from "../memory.test-support"
 import { prepareReflectionCandidateSpawn } from "./reflection-spawn-input"
-import { prepareFactsSpawn, prepareReflectionForkSpawn, prepareReflectionSpawn } from "./spawn"
+import { prepareReflectionForkSpawn, prepareReflectionSpawn } from "./spawn"
 import { existsSync, realpathSync } from "node:fs"
 import { rmEfaultTolerant } from "../teardown.test-support"
 
@@ -27,14 +27,6 @@ async function root(): Promise<string> {
   return path
 }
 
-const payload: FactsPayload = {
-  version: 1,
-  identity: "agent-test",
-  today: "2026-08-10",
-  entries: [],
-  knownPeople: [],
-  primaryHuman: { slug: "human", aliases: [] },
-}
 
 const run: ReservedRun = {
   runId: "run-1",
@@ -42,35 +34,7 @@ const run: ReservedRun = {
 }
 
 describe("worker payload mode relaxation", () => {
-  test("#given a missing facts payload from the first launch #when mode relaxation reports ENOENT #then preparation continues", async () => {
-    const runDir = await root()
 
-    const prepared = await prepareFactsSpawn({
-      runId: "facts-1",
-      runDir,
-      payload,
-      model: "provider/model",
-      env: {},
-      chmodFile: async () => { throw chmodFailure("ENOENT") },
-    })
-
-    expect(prepared.paths.payload).toBe(join(runDir, "facts-payload.json"))
-  })
-
-  test("#given facts payload mode relaxation fails unexpectedly #when preparation runs #then the chmod failure is surfaced", async () => {
-    const runDir = await root()
-
-    const failure = await prepareFactsSpawn({
-      runId: "facts-1",
-      runDir,
-      payload,
-      model: "provider/model",
-      env: {},
-      chmodFile: async () => { throw chmodFailure("EPERM") },
-    }).catch((error: unknown) => error)
-
-    expect((failure as NodeJS.ErrnoException).code).toBe("EPERM")
-  })
 
   test("#given reflection payload mode relaxation fails unexpectedly #when preparation runs #then the chmod failure is surfaced", async () => {
     const base = await root()
@@ -90,7 +54,6 @@ describe("worker payload mode relaxation", () => {
       skillsUsageSource: join(base, "skills.json"),
       memoryUsageSource: join(base, "memory-usage.json"),
       dreamStateSource: join(base, "dream.json"),
-      peoplePolicy: { enabled: true, max_entries: 40, max_entry_chars: 200 },
       chmodFile: async () => { throw chmodFailure("EACCES") },
     }).catch((error: unknown) => error)
 
@@ -125,7 +88,6 @@ describe("dream token budget launch contract", () => {
       skillsUsageSource: join(base, "skills.json"),
       memoryUsageSource: join(base, "memory-usage.json"),
       dreamStateSource: join(base, "dream.json"),
-      peoplePolicy: { enabled: true, max_entries: 40, max_entry_chars: 200 },
       systemTokenBudget: 100,
       systemTokenTarget: 80,
     })
@@ -181,36 +143,7 @@ describe("worker senpi command resolution", () => {
   // The senpi process had been launched from an environment whose PATH did not
   // contain the senpi bin dir, the PATH scan found nothing, and the resolver
   // handed the supervisor the bare name "senpi", which cannot be executed.
-  test("#given an env whose PATH cannot resolve senpi #when a facts spawn is prepared #then the command is executable rather than the bare name", async () => {
-    const runDir = await root()
 
-    const prepared = await prepareFactsSpawn({
-      runId: "facts-1",
-      runDir,
-      payload,
-      model: "provider/model",
-      env: { PATH: "/nonexistent-bin" },
-    })
-
-    expect(prepared.command).not.toBe("senpi")
-    expect(isAbsolute(prepared.command)).toBe(true)
-    expect(existsSync(prepared.command)).toBe(true)
-  })
-
-  test("#given an explicit senpiCommand #when a facts spawn is prepared #then the override is preserved", async () => {
-    const runDir = await root()
-
-    const prepared = await prepareFactsSpawn({
-      runId: "facts-1",
-      runDir,
-      payload,
-      model: "provider/model",
-      env: { PATH: "/nonexistent-bin" },
-      senpiCommand: "/custom/senpi",
-    })
-
-    expect(prepared.command).toBe("/custom/senpi")
-  })
 })
 
 describe("memory child TUI loader inheritance", () => {
@@ -236,7 +169,6 @@ describe("memory child TUI loader inheritance", () => {
       skillsUsageSource: join(base, "skills.json"),
       memoryUsageSource: join(base, "memory-usage.json"),
       dreamStateSource: join(base, "dream.json"),
-      peoplePolicy: { enabled: true, max_entries: 40, max_entry_chars: 200 },
       senpiCommand: "/custom/senpi",
     })
 
@@ -244,19 +176,6 @@ describe("memory child TUI loader inheritance", () => {
     expect(prepared.env.SENPI_MEMORY_REFLECTION).toBe("1")
   })
 
-  test("#given only a parent TUI loader hook #when a facts spawn is prepared #then NODE_OPTIONS is kept", async () => {
-    const prepared = await prepareFactsSpawn({
-      runId: "facts-1",
-      runDir: await root(),
-      payload,
-      model: "provider/model",
-      env: { NODE_OPTIONS: HOOK },
-      senpiCommand: "/custom/senpi",
-    })
-
-    expect(prepared.env.NODE_OPTIONS).toBe(HOOK)
-    expect(prepared.env.SENPI_MEMORY_FACTS).toBe("1")
-  })
 
   // The host engine sets PI_PACKAGE_DIR for itself. senpi resolves its own shipped assets
   // through the same name, so a child that inherited it read the host package's theme
@@ -281,7 +200,6 @@ describe("memory child TUI loader inheritance", () => {
       skillsUsageSource: join(base, "skills.json"),
       memoryUsageSource: join(base, "memory-usage.json"),
       dreamStateSource: join(base, "dream.json"),
-      peoplePolicy: { enabled: true, max_entries: 40, max_entry_chars: 200 },
       senpiCommand: "/custom/senpi",
     })
 
@@ -291,19 +209,6 @@ describe("memory child TUI loader inheritance", () => {
     expect(prepared.env.SENPI_MEMORY_REFLECTION).toBe("1")
   })
 
-  test("#given a parent engine package location #when a facts spawn is prepared #then the child is not pointed at the host's package", async () => {
-    const prepared = await prepareFactsSpawn({
-      runId: "facts-1",
-      runDir: await root(),
-      payload,
-      model: "provider/model",
-      env: { PI_PACKAGE_DIR: "/stock-engine/node_modules/@earendil-works/pi-coding-agent" },
-      senpiCommand: "/custom/senpi",
-    })
-
-    expect(prepared.env.PI_PACKAGE_DIR).toBeUndefined()
-    expect(prepared.env.SENPI_MEMORY_FACTS).toBe("1")
-  })
 })
 
 describe("worker senpi prefix args", () => {
@@ -324,7 +229,6 @@ describe("worker senpi prefix args", () => {
       skillsUsageSource: join(base, "skills.json"),
       memoryUsageSource: join(base, "memory-usage.json"),
       dreamStateSource: join(base, "dream.json"),
-      peoplePolicy: { enabled: true, max_entries: 40, max_entry_chars: 200 },
       senpiCommand: "/custom/senpi",
       senpiPrefixArgs: [PREFIX_MARKER],
     }

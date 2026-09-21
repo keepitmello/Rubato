@@ -90,9 +90,7 @@ describe("RubatoMemorySettingsLayerSchema", () => {
     // given
     const input = {
       nudge: { every_user_turns: 5 },
-      facts: { debounce_settles: 2 },
       dream: { idle_minutes: 0 },
-      people: { max_entries: 20 },
       soul: { edit_notice: false },
     }
 

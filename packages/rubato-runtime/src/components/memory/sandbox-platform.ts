@@ -1,7 +1,7 @@
 import { accessSync, constants, existsSync, mkdirSync, realpathSync } from "node:fs"
 import { basename, delimiter, dirname, isAbsolute, join } from "node:path"
 
-import type { FactsSpawnArgs, ReflectionSpawnArgs } from "./worker/spawn"
+import type { ReflectionSpawnArgs } from "./worker/spawn"
 import { SandboxUnavailableError, type SandboxPolicy } from "./sandbox-contracts"
 
 export interface PathSandboxInput {
@@ -30,7 +30,7 @@ export interface GenericSandboxTransform<T> {
   readonly warning?: string
 }
 
-export function buildPathSandboxTransform<T extends ReflectionSpawnArgs | FactsSpawnArgs>(
+export function buildPathSandboxTransform<T extends ReflectionSpawnArgs>(
   input: PathSandboxInput,
 ): GenericSandboxTransform<T> {
   if (input.policy === "off") return identityTransform()
@@ -223,7 +223,7 @@ function identityTransform<T>(warning?: string): GenericSandboxTransform<T> {
   })
 }
 
-function guardedSandboxedTransform<T extends ReflectionSpawnArgs | FactsSpawnArgs>(
+function guardedSandboxedTransform<T extends ReflectionSpawnArgs>(
   surface: "reflection" | "facts",
   command: string,
   env: NodeJS.ProcessEnv,
