@@ -158,7 +158,7 @@ function isFastModel(modelId: string): boolean {
   // Rubato pins Cursor Grok to Fast on the wire. The planner id stays the grouped base.
   // The base is the discovery id, so it follows Cursor's namespace — `cursor-grok-4.6`
   // through 4.6, bare `grok-4.7` from 4.7 on.
-  return bare === CURSOR_GROK_ID
+  return bare === CURSOR_GROK_BASE_ID
 }
 
 function formatEffort(level: string | undefined): string {
