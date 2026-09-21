@@ -275,6 +275,49 @@ export const CURSOR_CANARY_FAILURES = Object.freeze([
   "unknown",
 ]);
 
+/**
+ * canary 가 훑어 볼 모델 수. 계정이 쿼터를 남겨 둔 모델이 뒤에 있어도 활성화된다.
+ * 다만 계정이 정말 죽었으면 빨리 실패해야 하므로 상한을 둔다.
+ */
+export const CURSOR_CANARY_MODEL_ATTEMPTS = 3;
+
+/**
+ * 다음 모델을 시도하면 답이 달라질 수 있는 실패인가.
+ *
+ * 계정(`auth`/`oauth`/`no_credential`)과 환경(`transport`/`protocol`)과 취소는
+ * 모델을 바꿔도 같다. 나머지(`content`, `unknown`)는 그 모델에 묶인 거부일 수 있다 —
+ * 쿼터 소진(`resource_exhausted`)이 vendor 태그 없이 `unknown` 으로 오는 자리다.
+ */
+function isModelScopedCanaryFailure(error) {
+  return error?.reason === "content" || error?.reason === "unknown";
+}
+
+/**
+ * canary 후보 순서. **grok 행을 앞에 둔다.**
+ *
+ * Cursor 의 쿼터는 모델군별로 갈린다 — grok 과 써드파티(Claude·GPT 등)가 다른 풀이다.
+ * 그래서 써드파티 모델로 활성화를 증명하면 우리가 실제로 돌리는 grok 의 가용성과
+ * 무관한 답이 나온다: 이 계정은 Claude 가 소진돼도 grok 은 돌고, 그 반대도 그렇다.
+ * discovery 첫 행이 `claude-4-sonnet` 이라 활성화가 5일 동안 실패했고, 그동안
+ * 카탈로그가 얼어붙어 새 세대가 영영 들어오지 못했다 (2026-09-22).
+ *
+ * 피커가 공개할 행을 먼저 본다 — 그 첫 grok 이 우리가 실제로 돌리는 것이다. 저장분이
+ * 낡아 우리 피커 id 가 하나도 없을 때도 discovery 의 grok 행은 남아 있으므로(예:
+ * `cursor-grok-4.6`) 교착이 풀린다. grok 이 아예 없으면 피커 순서, 그다음 discovery
+ * 순서로 떨어진다 — 정적 후보는 두지 않는다.
+ */
+function cursorCanaryCandidates(models) {
+  const isGrok = (model) => typeof model?.id === "string" && /grok/i.test(model.id);
+  const published = presentCursorPicker(models);
+  const ordered = published.length > 0 ? published : models;
+  const seen = new Set();
+  return [...ordered.filter(isGrok), ...models.filter(isGrok), ...ordered].filter((model) => {
+    if (model == null || seen.has(model.id)) return false;
+    seen.add(model.id);
+    return true;
+  });
+}
+
 export const CURSOR_HTTP2_REQUIRED_MESSAGE =
   "Cursor requires HTTP/2 to api2.cursor.sh; there is no proxy fallback.";
 
@@ -447,29 +490,54 @@ async function defaultCursorRun({ provider, model, credential, sessionId, signal
  *
  * 모델은 discovery 결과에서 고른다. 정적 후보를 두지 않는다 — 계정에 없는 모델을
  * canary 로 쓰면 계정 문제와 모델 문제를 구분할 수 없다.
+ *
+ * 후보는 **grok 을 앞에 두고** 훑는다. Cursor 의 쿼터는 모델군별로 갈려서, 써드파티
+ * 모델로 증명한 활성화는 우리가 실제로 돌리는 grok 의 가용성과 무관하다. 실제로 이
+ * 계정은 Claude 계열이 `resource_exhausted` 인데 discovery 첫 행이 `claude-4-sonnet`
+ * 이라 활성화가 5일 동안 실패했고, 그동안 카탈로그가 얼어붙어 새 세대 모델이 영영
+ * 들어오지 못했다 (2026-09-22). 활성화가 증명해야 하는 것은 "아무 모델이나 도는가"가
+ * 아니라 "우리가 돌리는 모델이 도는가"다.
+ *
+ * 한 모델의 거부로 계정 전체를 죽이지 않도록 `attempts` 개까지 훑는다. 다만 취소와
+ * 계정·환경 수준 실패는 다음 모델을 시도해도 답이 같으므로 그 자리에서 던진다.
  */
-export async function runCursorCanary({ provider, models, credential, run = defaultCursorRun, signal, sessionId = cursorCanarySessionId() }) {
+export async function runCursorCanary({
+  provider,
+  models,
+  credential,
+  run = defaultCursorRun,
+  signal,
+  sessionId = cursorCanarySessionId(),
+  attempts = CURSOR_CANARY_MODEL_ATTEMPTS,
+}) {
   if (!cursorAccessToken(credential)) throw new CursorCanaryError("no_credential");
   if (!Array.isArray(models) || models.length === 0) throw new CursorCanaryError("no_trusted_catalog");
   if (!isCanarySessionId(sessionId)) throw new CursorCanaryError("unknown");
 
-  const model = models[0];
-  let output;
-  try {
-    output = await run({ provider, model, credential, sessionId, signal });
-  } catch (error) {
-    // 던져진 오류에도 같은 판정을 적용한다. transport 예외가 여기로 나오는 경로가 있다.
-    const rewritten = rewriteCursorHttp2Error(error);
-    const { kind, fallbackEligible } = cursorTerminalFailure(rewritten);
-    throw new CursorCanaryError(kind, { fallbackEligible, cause: rewritten });
+  let last;
+  for (const model of cursorCanaryCandidates(models).slice(0, Math.max(1, attempts))) {
+    let output;
+    try {
+      output = await run({ provider, model, credential, sessionId, signal });
+    } catch (error) {
+      // 던져진 오류에도 같은 판정을 적용한다. transport 예외가 여기로 나오는 경로가 있다.
+      const rewritten = rewriteCursorHttp2Error(error);
+      const { kind, fallbackEligible } = cursorTerminalFailure(rewritten);
+      last = new CursorCanaryError(kind, { fallbackEligible, cause: rewritten });
+      if (!isModelScopedCanaryFailure(last)) throw last;
+      continue;
+    }
+    if (output?.stopReason === "aborted") throw new CursorCanaryError("cancelled");
+    if (output?.stopReason === "error" || output?.errorMessage) {
+      rewriteCursorHttp2Message(output);
+      const { kind, fallbackEligible } = cursorTerminalFailure(output);
+      last = new CursorCanaryError(kind, { fallbackEligible, cause: output });
+      if (!isModelScopedCanaryFailure(last)) throw last;
+      continue;
+    }
+    return { ok: true, modelId: model.id, sessionId };
   }
-  if (output?.stopReason === "aborted") throw new CursorCanaryError("cancelled");
-  if (output?.stopReason === "error" || output?.errorMessage) {
-    rewriteCursorHttp2Message(output);
-    const { kind, fallbackEligible } = cursorTerminalFailure(output);
-    throw new CursorCanaryError(kind, { fallbackEligible, cause: output });
-  }
-  return { ok: true, modelId: model.id, sessionId };
+  throw last ?? new CursorCanaryError("no_trusted_catalog");
 }
 
 /**
