@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -91,6 +91,7 @@ test("stock config still resolves the launcher agent and sessions dirs", async (
     else process.env.PI_CODING_AGENT_DIR = previousAgent;
     if (previousSession === undefined) delete process.env.PI_CODING_AGENT_SESSION_DIR;
     else process.env.PI_CODING_AGENT_SESSION_DIR = previousSession;
+    rmSync(home, { recursive: true, force: true });
   }
 });
 
