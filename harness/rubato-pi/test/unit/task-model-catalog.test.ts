@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 
-import { catalogSlugs } from "../../../../packages/model-core/src/product-model-catalog.mjs"
+import { catalogSlugs, isProductCatalogSlug } from "../../../../packages/model-core/src/product-model-catalog.mjs"
 import { createTaskChildPlanner } from "../../../../packages/rubato-runtime/src/components/task/planner"
 import { liveModelCatalog } from "../../../../packages/task/src/tools/host/senpi-agent-host"
 import { catalogForPicker } from "../../../t3-integration/src/model-catalog-order.mjs"
@@ -9,7 +9,9 @@ import { admitPickerItems } from "../../../pi-runtime/features/model-picker/cata
 describe("picker and task model catalog parity", () => {
   const live = [
     { provider: "openai-codex", id: "gpt-5.6-sol", model: "sol" },
+    { provider: "openai-codex", id: "gpt-5.6-sol-sub", model: "sol-sub" },
     { provider: "anthropic", id: "claude-fable-5-1", model: "fable" },
+    { provider: "anthropic", id: "claude-fable-5-1-sub", model: "fable-sub" },
     { provider: "xai", id: "grok-4.6", model: "grok" },
     { provider: "cursor", id: "cursor-grok-4.6-high-fast", model: "cursor-fast" },
     { provider: "cursor", id: "composer-2.5", model: "composer" },
@@ -23,10 +25,13 @@ describe("picker and task model catalog parity", () => {
     const tools = liveModelCatalog(() => ({ getAvailable: () => live }))
     expect(cli).toEqual(gui)
     expect(tools.list?.()).toEqual(gui)
-    expect(gui.every((slug) => catalogSlugs().includes(slug))).toBe(true)
+    expect(gui.every((slug) => isProductCatalogSlug(slug))).toBe(true)
+    expect(gui.filter((slug) => !slug.endsWith("-sub")).every((slug) => catalogSlugs().includes(slug))).toBe(true)
     expect(cli).not.toContain("cursor/secret-lab")
     expect(cli).toContain("cursor/cursor-grok-4.6")
     expect(cli).toContain("cursor/composer-2.5")
+    expect(cli).toContain("anthropic/claude-fable-5-1-sub")
+    expect(cli).toContain("openai-codex/gpt-5.6-sol-sub")
   })
 
   test("#given a Fast-only cursor row #when planned as an agent #then the picker identity is admitted", () => {
@@ -52,5 +57,23 @@ describe("picker and task model catalog parity", () => {
       model: "cursor/secret-lab",
     })
     expect(rejected.kind).toBe("error")
+  })
+
+  test("#given a live [sub] account row #when planned as an agent #then the picker identity is admitted", () => {
+    const models = live.map(({ provider, id }) => ({ provider, id }))
+    const planner = createTaskChildPlanner({}, () => ({
+      getAvailable: () => models,
+      find: (provider: string, modelId: string) =>
+        models.find((model) => model.provider === provider && model.id === modelId),
+    }))
+    const admitted = planner({
+      prompt: "Use Fable on the second account.",
+      parent_session_id: "parent-1",
+      depth: 0,
+      model: "anthropic/claude-fable-5-1-sub",
+    })
+    expect(admitted.kind).toBe("resolved")
+    if (admitted.kind !== "resolved") return
+    expect(admitted.plan.model).toBe("anthropic/claude-fable-5-1-sub")
   })
 })

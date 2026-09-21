@@ -180,4 +180,24 @@ describe("liveModelCatalog", () => {
     expect(catalog.has("cursor/secret-lab")).toBe(false)
     expect(catalog.list?.()).toEqual(["xai/grok-4.6", "cursor/cursor-grok-4.6"])
   })
+
+  test("#given live [sub] account rows #when listed for spawn #then the picker identities stay in the catalog", () => {
+    const catalog = liveModelCatalog(() => ({
+      getAvailable: () => [
+        { provider: "anthropic", id: "claude-fable-5-1" },
+        { provider: "anthropic", id: "claude-fable-5-1-sub" },
+        { provider: "openai-codex", id: "gpt-5.6-sol" },
+        { provider: "openai-codex", id: "gpt-5.6-sol-sub" },
+      ],
+    }))
+
+    expect(catalog.has("anthropic/claude-fable-5-1-sub")).toBe(true)
+    expect(catalog.has("openai-codex/gpt-5.6-sol-sub")).toBe(true)
+    expect(catalog.list?.()).toEqual([
+      "openai-codex/gpt-5.6-sol",
+      "openai-codex/gpt-5.6-sol-sub",
+      "anthropic/claude-fable-5-1",
+      "anthropic/claude-fable-5-1-sub",
+    ])
+  })
 })
