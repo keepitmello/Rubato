@@ -117,8 +117,6 @@ function taskSendResultRow(details: SendResultDetails): ResultRow {
       return { color: "warning", text: `AgentSend deferred ${details.agentId}: ${details.reason}` }
     case "not_continuable":
       return { color: "warning", text: `AgentSend not continuable ${details.agentId}: ${details.reason} ${details.suggestion}` }
-    case "one_shot_agent":
-      return { color: "error", text: `AgentSend denied ${details.agentId} one-shot:${details.agent}` }
     case "scope_denied":
       return { color: "error", text: `AgentSend denied ${details.agentId} owner:${details.owning_session_id}` }
     case "not_found":

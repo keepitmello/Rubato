@@ -1,9 +1,7 @@
 import type { CreateAgentSessionOptions, SessionManager, ToolDefinition } from "@code-yeongyu/senpi"
 
-import { CURATED_READONLY_AGENT_NAMES } from "../../agents/builtin"
 import type { ChildSpec } from "../in-process"
 import { createChildResourceLoader } from "./child-loader"
-import { createCuratedReadonlyBashTool } from "./curated-readonly-bash"
 import { RunnerError } from "./runner-error"
 import { createRuntimeFallbackSettings } from "./runtime-fallback-settings"
 import { mergeChildCustomTools } from "./shared-tool-filter"
@@ -71,8 +69,8 @@ export function resolveMemberScopedToolNames(
 
 /**
  * Assemble the full CreateAgentSessionOptions for an in-process child: shared parent tools minus
- * the task/team family, member-scoped tools (the sanctioned bypass), the curated read-only bash
- * override, the allowlist on `tools`, the denylist on senpi's real deny field `excludeTools`
+ * the task/team family, member-scoped tools (the sanctioned bypass), the allowlist on `tools`,
+ * the denylist on senpi's real deny field `excludeTools`
  * (`tools:` alone does NOT deny), runtime fallback settings, and model/auth/runtime passthroughs.
  */
 export function buildChildSessionOptions(input: BuildChildSessionOptionsInput): CreateAgentSessionOptions {
@@ -80,9 +78,7 @@ export function buildChildSessionOptions(input: BuildChildSessionOptionsInput): 
   const mergedCustomTools = mergeChildCustomTools(input.sharedParentTools, spec.memberScopedTools, {
     uiOnlyToolNames,
   })
-  const customTools = spec.preset !== undefined && CURATED_READONLY_AGENT_NAMES.has(spec.preset)
-    ? [...mergedCustomTools.filter((tool) => tool.name !== "bash"), createCuratedReadonlyBashTool(spec.cwd)]
-    : mergedCustomTools
+  const customTools = mergedCustomTools
   const settingsManager = createRuntimeFallbackSettings(spec.selectedModel, spec.fallbackModels)
   return {
     cwd: spec.cwd,

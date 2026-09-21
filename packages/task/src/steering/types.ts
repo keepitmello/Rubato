@@ -49,9 +49,6 @@ export type SendOutcome =
   | { readonly kind: "capacity_deferred"; readonly task_id: string; readonly reason: string }
   | { readonly kind: "queued"; readonly task_id: string; readonly queue_position: number }
   | { readonly kind: "not_continuable"; readonly task_id: string; readonly reason: string; readonly suggestion: string }
-  // One-shot agents (see agents/interaction-policy.ts) refuse AgentSend in EVERY state; message is
-  // the registry's sendDenialReminder, surfaced to the caller verbatim.
-  | { readonly kind: "one_shot_agent"; readonly task_id: string; readonly agent: string; readonly message: string }
   | { readonly kind: "scope_denied"; readonly task_id: string; readonly owning_session_id: string; readonly reason: string }
   | { readonly kind: "not_found"; readonly reason: string; readonly suggestion: string }
 
