@@ -63,13 +63,13 @@ writeFileSync(join(work, "model-selector.patched.js"), selectorPatched);
 const { sortModelItems, modelPickerLabel } = await import(pathToFileURL(join(here, "../model-picker/catalog.mjs")).href);
 const models = [
   { provider: "cursor", id: "composer-2.5", model: { name: "Composer" } },
-  { provider: "xai", id: "grok-4.6", model: { name: "Grok" } },
+  { provider: "xai", id: "grok-4.7", model: { name: "Grok" } },
   { provider: "cursor", id: "gpt-5.6-sol", model: { name: "Sol" } },
   { provider: "openai-codex", id: "gpt-5.6-luna", model: { name: "Luna" } },
   { provider: "openai-codex", id: "gpt-5.6-sol", model: { name: "Sol" } },
   { provider: "anthropic", id: "claude-opus-5", model: { name: "Opus" } },
   { provider: "anthropic", id: "claude-fable-5-1", model: { name: "Fable" } },
-  { provider: "cursor", id: "cursor-grok-4.6", model: { name: "Grok Fast" } },
+  { provider: "cursor", id: "grok-4.7", model: { name: "Grok Fast" } },
 ];
 const sorted = sortModelItems(models);
 const pickerLines = ["Model selector (provider groups, Sol first)", "────────────────────────────────────────"];

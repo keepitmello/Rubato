@@ -14,8 +14,8 @@ describe("configuredModelEffort", () => {
     ["kiro/gpt-5.6-sol", "medium"],
     ["anthropic/claude-opus-5", "high"],
     ["anthropic/claude-fable-5-1", "high"],
-    ["xai/grok-4.6", "high"],
-    ["cursor/cursor-grok-4.6-high-fast", "high"],
+    ["xai/grok-4.7", "high"],
+    ["cursor/grok-4.7-high-fast", "high"],
     ["google-antigravity/gemini-3.8-flash", "medium"],
   ] as const)("#given %s #then the seeded default is %s", (model, effort) => {
     expect(configuredModelEffort(model)).toBe(effort)

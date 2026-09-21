@@ -77,7 +77,7 @@ test("shortens Claude-style model ids the way the statusline does", () => {
   assert.equal(shortModelLabel("anthropic/claude-opus-5:high"), "Opus 5");
   assert.equal(shortModelLabel("anthropic/claude-fable-5-1"), "Fable 5.1");
   assert.equal(shortModelLabel("claude-sonnet-4-6-20251001"), "Sonnet 4.6");
-  assert.equal(shortModelLabel("xai/grok-4.6"), "Grok 4.6");
+  assert.equal(shortModelLabel("xai/grok-4.7"), "Grok 4.7");
   assert.equal(shortModelLabel("gpt-5.6-sol"), "Sol 5.6");
   assert.equal(shortModelLabel("openai-codex/gpt-5.6-sol"), "Sol 5.6");
   assert.equal(shortModelLabel("gpt-5.6-luna"), "Luna 5.6");
@@ -124,47 +124,47 @@ test("does not read a variant token that merely prefixes a longer word", () => {
 
 test("appends reasoning effort next to the short model name", () => {
   assert.equal(formatModelWithEffort("anthropic/claude-opus-5", "high"), "Opus 5 high");
-  assert.equal(formatModelWithEffort("xai/grok-4.6", "xhigh"), "Grok 4.6 xhigh");
+  assert.equal(formatModelWithEffort("xai/grok-4.7", "xhigh"), "Grok 4.7 xhigh");
   assert.equal(
-    formatModelWithEffort("xai/grok-4.6", "xhigh", { id: "grok-4.6", provider: "xai", serviceTier: "priority" }),
-    "Grok 4.6 xhigh [priority]",
+    formatModelWithEffort("xai/grok-4.7", "xhigh", { id: "grok-4.7", provider: "xai", serviceTier: "priority" }),
+    "Grok 4.7 xhigh [priority]",
   );
   assert.equal(
-    formatModelWithEffort("xai/grok-4.6", "xhigh", { id: "grok-4.6", provider: "xai" }, undefined, true),
-    "Grok 4.6 xhigh [priority]",
+    formatModelWithEffort("xai/grok-4.7", "xhigh", { id: "grok-4.7", provider: "xai" }, undefined, true),
+    "Grok 4.7 xhigh [priority]",
   );
   assert.equal(
     formatModelWithEffort("openai-codex/gpt-5.6-sol", "high", { provider: "openai-codex" }, undefined, true),
     "Sol 5.6 high",
   );
-  assert.equal(formatModelWithEffort("cursor/cursor-grok-4.6", "high"), "Grok 4.6 high [fast]");
+  assert.equal(formatModelWithEffort("cursor/grok-4.7", "high"), "Grok 4.7 high [fast]");
   assert.equal(
-    formatModelWithEffort("cursor/cursor-grok-4.6", "high", {
-      name: "Grok 4.6 Fast",
-      compat: { cursorGrokFastByLevel: { high: "cursor-grok-4.6-high-fast" } },
+    formatModelWithEffort("cursor/grok-4.7", "high", {
+      name: "Grok 4.7 Fast",
+      compat: { cursorGrokFastByLevel: { high: "grok-4.7-high-fast" } },
     }),
-    "Grok 4.6 high [fast]",
+    "Grok 4.7 high [fast]",
   );
   assert.equal(
     formatModelWithEffort(
-      "cursor-grok-4.6",
+      "grok-4.7",
       "high",
-      { id: "cursor-grok-4.6", provider: "cursor", name: "Cursor Grok 4.6" },
+      { id: "grok-4.7", provider: "cursor", name: "Cursor Grok 4.7" },
       [
-        { id: "cursor-grok-4.6", provider: "cursor", name: "Cursor Grok 4.6" },
-        { id: "cursor-grok-4.6-high-fast", provider: "cursor", name: "cursor-grok-4.6-high-fast" },
+        { id: "grok-4.7", provider: "cursor", name: "Cursor Grok 4.7" },
+        { id: "grok-4.7-high-fast", provider: "cursor", name: "grok-4.7-high-fast" },
       ],
     ),
-    "Grok 4.6 high [fast]",
+    "Grok 4.7 high [fast]",
   );
   assert.equal(
     formatModelWithEffort(
-      "cursor-grok-4.6",
+      "grok-4.7",
       "high",
-      { id: "cursor-grok-4.6", provider: "cursor", name: "Cursor Grok 4.6" },
-      [{ id: "cursor-grok-4.6", provider: "cursor", name: "Cursor Grok 4.6" }],
+      { id: "grok-4.7", provider: "cursor", name: "Cursor Grok 4.7" },
+      [{ id: "grok-4.7", provider: "cursor", name: "Cursor Grok 4.7" }],
     ),
-    "Grok 4.6 high [fast]",
+    "Grok 4.7 high [fast]",
   );
   assert.equal(formatModelWithEffort("anthropic/claude-opus-5", "max"), "Opus 5 max");
   assert.equal(formatModelWithEffort("gpt-5.6-sol", "high"), "Sol 5.6 high");
@@ -275,7 +275,7 @@ test("cache policy distinguishes exact, minimum, and opaque provider guarantees"
   assert.deepEqual(resolveCachePolicy({ provider: "openai-codex", api: "openai-codex-responses" }), { kind: "opaque" });
   assert.deepEqual(resolveCachePolicy({ provider: "google-antigravity", api: "openai-completions", id: "gemini-3.8-flash" }), { kind: "opaque" });
   assert.deepEqual(resolveCachePolicy({ provider: "cursor", api: "cursor-agent", id: "gemini-3.8-flash" }), { kind: "opaque" });
-  assert.deepEqual(resolveCachePolicy({ provider: "xai", api: "openai-completions", id: "xai/grok-4.6" }), { kind: "opaque" });
+  assert.deepEqual(resolveCachePolicy({ provider: "xai", api: "openai-completions", id: "xai/grok-4.7" }), { kind: "opaque" });
 });
 
 test("cache policy never derives provider TTL from a configurable safe-wait budget", () => {
@@ -512,12 +512,12 @@ test("a restored Cursor Grok session reads Fast from the catalog, not the picker
   let factory;
   const ctx = {
     cwd: "/Users/wy/Github-repos/agent-taskforce",
-    model: { id: "cursor-grok-4.6", provider: "cursor", name: "Cursor Grok 4.6", contextWindow: 200_000 },
+    model: { id: "grok-4.7", provider: "cursor", name: "Cursor Grok 4.7", contextWindow: 200_000 },
     thinkingLevel: "high",
     modelRegistry: {
       getAll: () => [
-        { id: "cursor-grok-4.6", provider: "cursor", name: "Cursor Grok 4.6" },
-        { id: "cursor-grok-4.6-high-fast", provider: "cursor", name: "cursor-grok-4.6-high-fast" },
+        { id: "grok-4.7", provider: "cursor", name: "Cursor Grok 4.7" },
+        { id: "grok-4.7-high-fast", provider: "cursor", name: "grok-4.7-high-fast" },
       ],
     },
     getContextUsage: () => ({ tokens: 40_000, contextWindow: 200_000, percent: 20 }),
@@ -536,7 +536,7 @@ test("a restored Cursor Grok session reads Fast from the catalog, not the picker
     { getGitBranch: () => "", onBranchChange: () => () => {}, getExtensionStatuses: () => new Map() },
   );
   const line = footer.render(120)[0];
-  assert.match(line, /Grok 4\.6 high \[fast\]/);
+  assert.match(line, /Grok 4\.7 high \[fast\]/);
   assert.doesNotMatch(line, /Cache /);
 });
 
@@ -954,7 +954,7 @@ test("the background line groups sources and folds overflow into a count", () =>
   const groups = new Map([
     ["rubato-task", [
       { id: "a", description: "reviewer", startedAtMs: 0, model: "anthropic/claude-opus-5" },
-      { id: "b", description: "builder", startedAtMs: 152_000, model: "xai/grok-4.6" },
+      { id: "b", description: "builder", startedAtMs: 152_000, model: "xai/grok-4.7" },
     ]],
     ["terminal-background-sessions", [{ id: "bash_1", description: "build", startedAtMs: 254_000 }]],
     ["terminal-monitors", [{ id: "mon_1", description: "watch", startedAtMs: 164_000 }]],
@@ -1229,16 +1229,16 @@ test("ctxFromHostSession follows live session fields instead of a snapshot", () 
   const ctx = ctxFromHostSession(session, { setFooter() {} });
   assert.equal(ctx.model.id, "anthropic/claude-opus-5");
   session.thinkingLevel = "high";
-  session.model = { id: "xai/grok-4.6", contextWindow: 200_000 };
+  session.model = { id: "xai/grok-4.7", contextWindow: 200_000 };
   assert.equal(ctx.thinkingLevel, "high");
-  assert.equal(ctx.model.id, "xai/grok-4.6");
+  assert.equal(ctx.model.id, "xai/grok-4.7");
 });
 
 test("paintStatusLines stamps xAI /fast as [priority]", () => {
   const lines = paintStatusLines({
     ctx: {
       cwd: "/tmp/repo",
-      model: { id: "grok-4.6", provider: "xai", contextWindow: 500_000 },
+      model: { id: "grok-4.7", provider: "xai", contextWindow: 500_000 },
       thinkingLevel: "xhigh",
       isFastModeActive: () => true,
       getContextUsage: () => ({ tokens: 2_000, contextWindow: 500_000, percent: 0.4 }),
@@ -1248,7 +1248,7 @@ test("paintStatusLines stamps xAI /fast as [priority]", () => {
     width: 160,
     speedText: "Speed —",
   });
-  assert.match(lines.join("\n"), /Grok 4\.6 xhigh \[priority\]/);
+  assert.match(lines.join("\n"), /Grok 4\.7 xhigh \[priority\]/);
 });
 
 test("remote surface footer segment follows registered, degraded, and backoff state", () => {

@@ -1,6 +1,6 @@
 {
     "$schema": "cursor-variant-aliases/v1",
-    "source": "union of GetUsableModels live capture (204 ids) and cursor-agent CLI listing capture (203 ids), 2026-08-18",
+    "source": "union of GetUsableModels live capture (204 ids) and cursor-agent CLI listing capture (203 ids), 2026-08-18; grok-4.7 rows from the 2026-09-22 GetUsableModels capture (the 4.7 ids dropped the `cursor-` prefix)",
     "aliases": {
         "claude-4-sonnet": {
             "targetId": "claude-4-sonnet",
@@ -657,6 +657,50 @@
         "default": {
             "targetId": "default",
             "legacyVariantId": "default",
+            "encoding": "legacy-variant"
+        },
+        "grok-4.7-high": {
+            "targetId": "grok-4.7",
+            "level": "high",
+            "legacyVariantId": "grok-4.7-high",
+            "encoding": "legacy-variant"
+        },
+        "grok-4.7-high-fast": {
+            "targetId": "grok-4.7-high-fast",
+            "legacyVariantId": "grok-4.7-high-fast",
+            "encoding": "legacy-variant"
+        },
+        "grok-4.7-low": {
+            "targetId": "grok-4.7",
+            "level": "low",
+            "legacyVariantId": "grok-4.7-low",
+            "encoding": "legacy-variant"
+        },
+        "grok-4.7-low-fast": {
+            "targetId": "grok-4.7-low-fast",
+            "legacyVariantId": "grok-4.7-low-fast",
+            "encoding": "legacy-variant"
+        },
+        "grok-4.7-medium": {
+            "targetId": "grok-4.7",
+            "level": "medium",
+            "legacyVariantId": "grok-4.7-medium",
+            "encoding": "legacy-variant"
+        },
+        "grok-4.7-medium-fast": {
+            "targetId": "grok-4.7-medium-fast",
+            "legacyVariantId": "grok-4.7-medium-fast",
+            "encoding": "legacy-variant"
+        },
+        "grok-4.7-xhigh": {
+            "targetId": "grok-4.7",
+            "level": "xhigh",
+            "legacyVariantId": "grok-4.7-xhigh",
+            "encoding": "legacy-variant"
+        },
+        "grok-4.7-xhigh-fast": {
+            "targetId": "grok-4.7-xhigh-fast",
+            "legacyVariantId": "grok-4.7-xhigh-fast",
             "encoding": "legacy-variant"
         },
         "gemini-3-flash": {

@@ -13,6 +13,15 @@ export const PRODUCT_PROVIDER_ORDER = Object.freeze([
   "b-ai",
 ]);
 
+/**
+ * Cursor 의 Grok 행이 discovery 에서 오는 베이스 id.
+ *
+ * Cursor 는 4.7 부터 이 행을 `cursor-` 접두사 없이 내보낸다 (4.6 은 `cursor-grok-4.6`).
+ * 네임스페이스가 Cursor 손에 있어서 우리가 정하지 못하므로, 값은 여기 한 곳에 두고
+ * 표시 id·Fast 변형·라벨 판정이 전부 여기서 파생한다.
+ */
+export const CURSOR_GROK_BASE_ID = "grok-4.7";
+
 export const PRODUCT_MODEL_ORDER = Object.freeze({
   "openai-codex": Object.freeze(["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra", "gpt-daybreak-blue-latest"]),
   anthropic: Object.freeze([
@@ -21,22 +30,22 @@ export const PRODUCT_MODEL_ORDER = Object.freeze({
     "claude-sonnet-5",
     "claude-haiku-4-5",
   ]),
-  xai: Object.freeze(["grok-4.6"]),
+  xai: Object.freeze(["grok-4.7"]),
   "google-antigravity": Object.freeze(["gemini-3.8-flash"]),
   kiro: Object.freeze(["gpt-5.6-sol", "claude-opus-5"]),
-  cursor: Object.freeze(["gpt-5.6-sol", "claude-fable-5-1", "claude-opus-5", "cursor-grok-4.6", "gemini-3.8-flash", "kimi-k3", "composer-2.5"]),
+  cursor: Object.freeze(["gpt-5.6-sol", "claude-fable-5-1", "claude-opus-5", CURSOR_GROK_BASE_ID, "gemini-3.8-flash", "kimi-k3", "composer-2.5"]),
   opencode: Object.freeze(["muse-spark-1.3-contributor-free"]),
   "b-ai": Object.freeze(["deepseek-v4.1-flash"]),
 });
 
-export const CURSOR_GROK_PRESENTED_ID = "cursor/cursor-grok-4.6";
-export const CURSOR_GROK_DEFAULT_FAST_ID = "cursor/cursor-grok-4.6-high-fast";
+export const CURSOR_GROK_PRESENTED_ID = `cursor/${CURSOR_GROK_BASE_ID}`;
+export const CURSOR_GROK_DEFAULT_FAST_ID = `cursor/${CURSOR_GROK_BASE_ID}-high-fast`;
 export const CURSOR_GROK_LIVE_IDS = Object.freeze([
   CURSOR_GROK_DEFAULT_FAST_ID,
-  "cursor/cursor-grok-4.6-medium-fast",
-  "cursor/cursor-grok-4.6-low-fast",
-  "cursor/cursor-grok-4.6-xhigh-fast",
-  "cursor/cursor-grok-4.6-fast",
+  `cursor/${CURSOR_GROK_BASE_ID}-medium-fast`,
+  `cursor/${CURSOR_GROK_BASE_ID}-low-fast`,
+  `cursor/${CURSOR_GROK_BASE_ID}-xhigh-fast`,
+  `cursor/${CURSOR_GROK_BASE_ID}-fast`,
 ]);
 
 const LAUNCH_BY_PRESENTED = Object.freeze({
@@ -128,7 +137,7 @@ export function productCatalogLabel(item) {
   // Lane suffixes that the short label drops on purpose: the footer renders them as separate
   // badges, but the picker has no badge column, so these rows would otherwise be
   // indistinguishable from their plain siblings.
-  if (item.provider === "cursor" && item.id === "cursor-grok-4.6") return `${shortModelLabel(item.id)} fast`;
+  if (item.provider === "cursor" && item.id === CURSOR_GROK_BASE_ID) return `${shortModelLabel(item.id)} fast`;
   if (item.id === "gemini-3.8-flash") return `${shortModelLabel(item.id)} Flash`;
   return shortModelLabel(item.id);
 }

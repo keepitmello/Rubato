@@ -11,15 +11,15 @@ import {
 
 test('T3 catalogue keeps the curated /model set and drops provider extras', () => {
   const models = [
-    { provider: 'xai', id: 'grok-4.6', name: 'Grok 4.6', reasoning: true, thinkingLevelMap: { xhigh: 'xhigh' }, api: 'openai-completions' },
+    { provider: 'xai', id: 'grok-4.7', name: 'Grok 4.7', reasoning: true, thinkingLevelMap: { xhigh: 'xhigh' }, api: 'openai-completions' },
     { provider: 'anthropic', id: 'claude-opus-5', name: 'Claude Opus 5', reasoning: true, api: 'anthropic-messages' },
     { provider: 'anthropic', id: 'claude-fable-5-1', name: 'Claude Fable 5.1', reasoning: true, thinkingLevelMap: { max: 'max' } },
     { provider: 'anthropic', id: 'claude-opus-4-6', name: 'Claude Opus 4.6', reasoning: true },
     { provider: 'openai-codex', id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol', reasoning: true, thinkingLevelMap: { xhigh: 'xhigh', max: 'max' }, api: 'openai-codex-responses' },
     { provider: 'openai-codex', id: 'gpt-daybreak-blue-latest-fast', name: 'Daybreak Blue Fast', api: 'openai-codex-responses' },
     { provider: 'openai-codex', id: 'gpt-5.4', name: 'GPT-5.4', reasoning: true, api: 'openai-codex-responses' },
-    { provider: 'cursor', id: 'cursor-grok-4.6', name: 'Grok 4.6' },
-    { provider: 'cursor', id: 'cursor-grok-4.6-high-fast', name: 'Grok 4.6 High Fast' },
+    { provider: 'cursor', id: 'grok-4.7', name: 'Grok 4.7' },
+    { provider: 'cursor', id: 'grok-4.7-high-fast', name: 'Grok 4.7 High Fast' },
     { provider: 'unknown-lab', id: 'secret', name: 'Secret' },
   ];
   const catalog = catalogForPicker(models);
@@ -27,12 +27,12 @@ test('T3 catalogue keeps the curated /model set and drops provider extras', () =
     'openai-codex/gpt-5.6-sol',
     'anthropic/claude-fable-5-1',
     'anthropic/claude-opus-5',
-    'xai/grok-4.6',
-    'cursor/cursor-grok-4.6',
+    'xai/grok-4.7',
+    'cursor/grok-4.7',
   ]);
   assert.equal(modelPickerLabel(catalog[1]), 'Fable 5.1');
-  assert.equal(modelPickerLabel(catalog[3]), 'Grok 4.6');
-  assert.equal(modelPickerLabel(catalog[4]), 'Grok 4.6 fast');
+  assert.equal(modelPickerLabel(catalog[3]), 'Grok 4.7');
+  assert.equal(modelPickerLabel(catalog[4]), 'Grok 4.7 fast');
   assert.deepEqual(catalogSlugs().slice(0, 6), [
     'openai-codex/gpt-5.6-sol',
     'openai-codex/gpt-5.6-terra',
@@ -46,12 +46,12 @@ test('T3 catalogue keeps the curated /model set and drops provider extras', () =
 test('T3 catalogue keeps the current model even when it is outside the curated set', () => {
   const models = [
     { provider: 'openai-codex', id: 'gpt-5.4', name: 'GPT-5.4' },
-    { provider: 'xai', id: 'grok-4.6', name: 'Grok 4.6' },
+    { provider: 'xai', id: 'grok-4.7', name: 'Grok 4.7' },
   ];
   const catalog = catalogForPicker(models, { provider: 'openai-codex', id: 'gpt-5.4' });
   assert.deepEqual(catalog.map((item) => `${item.provider}/${item.id}`), [
     'openai-codex/gpt-5.4',
-    'xai/grok-4.6',
+    'xai/grok-4.7',
   ]);
 });
 
@@ -113,11 +113,11 @@ test('T3 catalogue never lists the OpenAI API provider, even as the current mode
   const models = [
     { provider: 'openai', id: 'gpt-6-astra', name: 'GPT-6 Astra', api: 'openai-responses' },
     { provider: 'openai-codex', id: 'gpt-6-astra', name: 'GPT-6 Astra', api: 'openai-codex-responses' },
-    { provider: 'xai', id: 'grok-4.6', name: 'Grok 4.6' },
+    { provider: 'xai', id: 'grok-4.7', name: 'Grok 4.7' },
   ];
   const catalog = catalogForPicker(models, { provider: 'openai', id: 'gpt-6-astra' });
   assert.deepEqual(catalog.map((item) => `${item.provider}/${item.id}`), [
     'openai-codex/gpt-6-astra',
-    'xai/grok-4.6',
+    'xai/grok-4.7',
   ]);
 });

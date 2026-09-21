@@ -8,7 +8,7 @@ import { createSenpiAgentHandle, createSenpiAgentHost, liveModelCatalog } from "
 
 const SPEC: ResolvedAgentSpec = {
   prompt: "Inspect the host",
-  model: "xai/grok-4.6",
+  model: "xai/grok-4.7",
   effort: "high",
   effortSource: "model-default",
 }
@@ -18,7 +18,7 @@ function record(agentId: string, status: "running" | "cancelled" | "completed" =
     task_id: agentId,
     name: "child",
     status,
-    model: "xai/grok-4.6",
+    model: "xai/grok-4.7",
     parent_session_id: "parent-1",
     ...(status === "completed" ? { final_response: "done" } : {}),
   })
@@ -68,14 +68,14 @@ describe("createSenpiAgentHost", () => {
         depth: 1,
         run_in_background: true,
         execution_mode: "in-process",
-        model: "xai/grok-4.6",
+        model: "xai/grok-4.7",
       },
     ])
     expect(sends).toEqual([{ idOrName: "st_1", message: "keep going" }])
     expect(snapshot).toEqual({
       agentId: "st_1",
       status: "running",
-      model: "xai/grok-4.6",
+      model: "xai/grok-4.7",
     })
     expect(cancels).toEqual(["st_1"])
   })
@@ -95,7 +95,7 @@ describe("createSenpiAgentHost", () => {
     expect(snapshot).toEqual({
       agentId: "st_done",
       status: "completed",
-      model: "xai/grok-4.6",
+      model: "xai/grok-4.7",
       output: "done",
     })
   })
@@ -147,21 +147,21 @@ describe("createSenpiAgentHost", () => {
 describe("liveModelCatalog", () => {
   test("#given no registry #when asked whether a model exists #then it fails closed", () => {
     const catalog = liveModelCatalog(() => undefined)
-    expect(catalog.has("xai/grok-4.6")).toBe(false)
+    expect(catalog.has("xai/grok-4.7")).toBe(false)
     expect(catalog.list?.()).toEqual([])
   })
 
   test("#given a live registry #when the exact provider/id is present #then it admits that model only", () => {
     const catalog = liveModelCatalog(() => ({
-      getAvailable: () => [{ provider: "xai", id: "grok-4.6" }, { provider: "google-antigravity", id: "gemini-3.8-flash" }],
+      getAvailable: () => [{ provider: "xai", id: "grok-4.7" }, { provider: "google-antigravity", id: "gemini-3.8-flash" }],
     }))
 
-    expect(catalog.has("xai/grok-4.6")).toBe(true)
+    expect(catalog.has("xai/grok-4.7")).toBe(true)
     expect(catalog.has("google-antigravity/gemini-3.8-flash")).toBe(true)
     expect(catalog.has("missing/model")).toBe(false)
-    expect(catalog.has("grok-4.6")).toBe(false)
+    expect(catalog.has("grok-4.7")).toBe(false)
     expect(catalog.list?.()).toEqual([
-      "xai/grok-4.6",
+      "xai/grok-4.7",
       "google-antigravity/gemini-3.8-flash",
     ])
   })
@@ -169,16 +169,16 @@ describe("liveModelCatalog", () => {
   test("#given live extras and a Fast-only cursor row #when listed #then only catalog identities remain", () => {
     const catalog = liveModelCatalog(() => ({
       getAvailable: () => [
-        { provider: "xai", id: "grok-4.6" },
-        { provider: "cursor", id: "cursor-grok-4.6-high-fast" },
+        { provider: "xai", id: "grok-4.7" },
+        { provider: "cursor", id: "grok-4.7-high-fast" },
         { provider: "cursor", id: "secret-lab" },
       ],
     }))
 
-    expect(catalog.has("cursor/cursor-grok-4.6")).toBe(true)
-    expect(catalog.has("cursor/cursor-grok-4.6-high-fast")).toBe(true)
+    expect(catalog.has("cursor/grok-4.7")).toBe(true)
+    expect(catalog.has("cursor/grok-4.7-high-fast")).toBe(true)
     expect(catalog.has("cursor/secret-lab")).toBe(false)
-    expect(catalog.list?.()).toEqual(["xai/grok-4.6", "cursor/cursor-grok-4.6"])
+    expect(catalog.list?.()).toEqual(["xai/grok-4.7", "cursor/grok-4.7"])
   })
 
   test("#given live [sub] account rows #when listed for spawn #then the picker identities stay in the catalog", () => {

@@ -32,9 +32,9 @@ test("member argv gets the teammate prompt", () => {
 });
 
 test("an explicit --model is not overwritten", () => {
-  const args = buildPiArgs(["--model", "xai/grok-4.6"]);
+  const args = buildPiArgs(["--model", "xai/grok-4.7"]);
   assert.equal(args.filter((token) => token === "--model").length, 1);
-  assert.equal(args[args.indexOf("--model") + 1], "xai/grok-4.6");
+  assert.equal(args[args.indexOf("--model") + 1], "xai/grok-4.7");
 });
 
 test("resuming a session does not override its persisted model", () => {
@@ -44,9 +44,9 @@ test("resuming a session does not override its persisted model", () => {
 });
 
 test("an explicit model still overrides a resumed session", () => {
-  const args = buildPiArgs(["--session", "/tmp/session.jsonl", "--model", "xai/grok-4.6"]);
+  const args = buildPiArgs(["--session", "/tmp/session.jsonl", "--model", "xai/grok-4.7"]);
   assert.equal(args.filter((token) => token === "--model").length, 1);
-  assert.equal(args[args.indexOf("--model") + 1], "xai/grok-4.6");
+  assert.equal(args[args.indexOf("--model") + 1], "xai/grok-4.7");
 });
 
 test("interactive sessions default to fullscreen without overriding explicit modes", () => {

@@ -12,8 +12,8 @@ describe("picker and task model catalog parity", () => {
     { provider: "openai-codex", id: "gpt-5.6-sol-sub", model: "sol-sub" },
     { provider: "anthropic", id: "claude-fable-5-1", model: "fable" },
     { provider: "anthropic", id: "claude-fable-5-1-sub", model: "fable-sub" },
-    { provider: "xai", id: "grok-4.6", model: "grok" },
-    { provider: "cursor", id: "cursor-grok-4.6-high-fast", model: "cursor-fast" },
+    { provider: "xai", id: "grok-4.7", model: "grok" },
+    { provider: "cursor", id: "grok-4.7-high-fast", model: "cursor-fast" },
     { provider: "cursor", id: "composer-2.5", model: "composer" },
     { provider: "cursor", id: "secret-lab", model: "secret" },
     { provider: "unknown-lab", id: "secret", model: "lab" },
@@ -28,7 +28,7 @@ describe("picker and task model catalog parity", () => {
     expect(gui.every((slug) => isProductCatalogSlug(slug))).toBe(true)
     expect(gui.filter((slug) => !slug.endsWith("-sub")).every((slug) => catalogSlugs().includes(slug))).toBe(true)
     expect(cli).not.toContain("cursor/secret-lab")
-    expect(cli).toContain("cursor/cursor-grok-4.6")
+    expect(cli).toContain("cursor/grok-4.7")
     expect(cli).toContain("cursor/composer-2.5")
     expect(cli).toContain("anthropic/claude-fable-5-1-sub")
     expect(cli).toContain("openai-codex/gpt-5.6-sol-sub")
@@ -45,11 +45,11 @@ describe("picker and task model catalog parity", () => {
       prompt: "Use Cursor Fast.",
       parent_session_id: "parent-1",
       depth: 0,
-      model: "cursor/cursor-grok-4.6",
+      model: "cursor/grok-4.7",
     })
     expect(admitted.kind).toBe("resolved")
     if (admitted.kind !== "resolved") return
-    expect(admitted.plan.model).toBe("cursor/cursor-grok-4.6")
+    expect(admitted.plan.model).toBe("cursor/grok-4.7")
     const rejected = planner({
       prompt: "Use a secret.",
       parent_session_id: "parent-1",

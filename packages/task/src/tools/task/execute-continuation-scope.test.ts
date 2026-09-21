@@ -28,14 +28,14 @@ describe("task tool spawn-only manager seam", () => {
 
     const first = await execute(
       "spawn-A",
-      { prompt: "own work", model: "xai/grok-4.6" },
+      { prompt: "own work", model: "xai/grok-4.7" },
       undefined,
       undefined,
       ctxFor("session-A"),
     )
     const second = await execute(
       "spawn-B",
-      { prompt: "more work", model: "xai/grok-4.6" },
+      { prompt: "more work", model: "xai/grok-4.7" },
       undefined,
       undefined,
       ctxFor("session-B"),

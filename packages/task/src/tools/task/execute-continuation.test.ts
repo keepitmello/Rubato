@@ -22,7 +22,7 @@ describe("buildTaskExecute spawn-only", () => {
     const execute = buildTaskExecute(makeDeps(manager))
 
     // when
-    const result = await execute("c", { prompt: "new work", model: "xai/grok-4.6" }, undefined, undefined, CTX)
+    const result = await execute("c", { prompt: "new work", model: "xai/grok-4.7" }, undefined, undefined, CTX)
 
     // then
     expect(sendToTaskCalls).toBe(0)

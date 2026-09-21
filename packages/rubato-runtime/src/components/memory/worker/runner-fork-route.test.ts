@@ -13,7 +13,7 @@ describe("reflection launch route", () => {
       // when
       const route = chooseMemoryLaunchRoute({
         surface: "reflection",
-        quick: { model: "xai/grok-4.6", cost: KIMI },
+        quick: { model: "xai/grok-4.7", cost: KIMI },
         session: { model: "openai/gpt-5.6-luna-fast", cost: LUNA },
         parentContextTokens: PARENT_P50,
         turns: MEMORY_WORKLOAD_PROFILES.reflection.turns,
@@ -22,7 +22,7 @@ describe("reflection launch route", () => {
 
       // then
       expect(route.route).toBe("quick")
-      expect(route.model).toBe("xai/grok-4.6")
+      expect(route.model).toBe("xai/grok-4.7")
       expect(route.reason).toBe("surface_excluded")
     })
   })

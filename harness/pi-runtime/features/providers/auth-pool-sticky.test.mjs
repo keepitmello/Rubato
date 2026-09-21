@@ -157,7 +157,7 @@ test("sub model ids wire to the base model and require the sub account", () => {
   assert.equal(wireAccountModel({ provider: "openai-codex", id: "gpt-5.6-sol-sub" }).id, "gpt-5.6-sol");
   assert.equal(requiredAccountSlotName(model, [{ name: "sub" }, { name: "setup-token", lane: "setup-token" }]), "sub");
   assert.equal(requiredAccountSlotName({ provider: "anthropic", id: "claude-opus-5" }, [{ name: "sub" }, { name: "setup-token", lane: "setup-token" }]), "setup-token");
-  assert.equal(requiredAccountSlotName({ provider: "xai", id: "grok-4.6-sub" }, [{ name: "default" }, { name: "login-2" }]), "login-2");
+  assert.equal(requiredAccountSlotName({ provider: "xai", id: "grok-4.7-sub" }, [{ name: "default" }, { name: "login-2" }]), "login-2");
   assert.equal(requiredAccountSlotName({ provider: "anthropic", id: "claude-opus-5" }, [{ name: "default" }]), undefined);
 });
 

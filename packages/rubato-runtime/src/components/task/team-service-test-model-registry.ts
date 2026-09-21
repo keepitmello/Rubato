@@ -8,8 +8,8 @@ export function createTeamServiceTestModelRegistry(): SenpiModelRegistry {
     baseUrl: "https://example.test",
     apiKey: "test-key",
     models: [{
-      id: "grok-4.6",
-      name: "Grok 4.6",
+      id: "grok-4.7",
+      name: "Grok 4.7",
       reasoning: true,
       input: ["text"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },

@@ -17,7 +17,7 @@ const MODELS = {
   default: undefined,
   claude: "anthropic/claude-fable-5-1",
   gpt: "openai-codex/gpt-6-astra",
-  grok: "xai/grok-4.6",
+  grok: "xai/grok-4.7",
   codex: "codex-5.3",
   kimi: "kimi-k2",
 };

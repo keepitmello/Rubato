@@ -151,7 +151,7 @@ function mockXaiProvider(hits, failKey = "xai-key-a") {
     name: "xAI",
     models: [{
       provider: "xai",
-      id: "grok-4.6",
+      id: "grok-4.7",
       name: "grok",
       api: "openai-responses",
       reasoning: false,
@@ -229,7 +229,7 @@ test("candidate ModelRuntime keeps a session on the first account after a pre-ou
     })();
   };
   modelRuntime.registerNativeProvider(provider);
-  const model = modelRuntime.getModels().find((entry) => entry.provider === "xai") ?? modelRuntime.getModel("xai", "grok-4.6");
+  const model = modelRuntime.getModels().find((entry) => entry.provider === "xai") ?? modelRuntime.getModel("xai", "grok-4.7");
   assert.ok(model, "expected a registered xai model");
   const first = await modelRuntime.streamSimple(model, { messages: [{ role: "user", content: "hi" }] }, { sessionId: "affinity-1" }).result();
   assert.equal(first.stopReason, "error");
@@ -269,7 +269,7 @@ test("candidate ModelRuntime does not rotate after committed output", async () =
     })();
   };
   modelRuntime.registerNativeProvider(provider);
-  const model = modelRuntime.getModels().find((entry) => entry.provider === "xai") ?? modelRuntime.getModel("xai", "grok-4.6");
+  const model = modelRuntime.getModels().find((entry) => entry.provider === "xai") ?? modelRuntime.getModel("xai", "grok-4.7");
   assert.ok(model, "expected a registered xai model");
   const result = await modelRuntime.streamSimple(model, { messages: [] }, { sessionId: "affinity-1" }).result();
   assert.equal(result.stopReason, "error");
@@ -332,7 +332,7 @@ function mockOauthXai(refreshImpl) {
     name: "xAI",
     models: [{
       provider: "xai",
-      id: "grok-4.6",
+      id: "grok-4.7",
       name: "grok",
       api: "openai-responses",
       reasoning: false,

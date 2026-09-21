@@ -58,7 +58,7 @@ Two fast, no-approval resources sit beside the five above and are the usual
 first choice for bounded support — maps, evidence gathering, settled execution,
 prototypes — whenever turnaround matters more than the last few points of precision:
 DeepSeek V4.1 Flash `b-ai/deepseek-v4.1-flash`, and Cursor Fast
-`cursor/cursor-grok-4.6-high-fast`.
+`cursor/grok-4.7-high-fast`.
 DeepSeek is the operator's preferred default worker. Their speed is an
 observed property, not a rank: they may also hold a bounded outcome when its
 acceptance criteria are met, and nothing here forbids a stronger model from
@@ -66,7 +66,7 @@ doing the same work itself. The same acceptance criteria apply.
 
 Exact ids for the rest, as currently registered: Fable 5.1
 `anthropic/claude-fable-5-1`, Sol `openai-codex/gpt-5.6-sol`, Astra
-`openai-codex/gpt-6-astra`, Grok 4.6 `xai/grok-4.6`. Confirm against the live
+`openai-codex/gpt-6-astra`, Grok 4.7 `xai/grok-4.7`. Confirm against the live
 catalog the `Agent` schema lists; a stale id fails closed.
 
 Token volume, API-equivalent dollars, elapsed time and subscription quota are
