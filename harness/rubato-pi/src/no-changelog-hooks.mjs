@@ -1,8 +1,3 @@
-// 은퇴한 senpi 경로의 로더다. Rubato의 엔진은 stock pi 하나이고, stock pi 런치는
-// 이 훅을 싣지 않는다 — `launch.mjs`의 `buildPiArgs`가 `--import no-changelog-register`
-// 를 넣지 않고 `registerNoChangelog`는 어디서도 true로 넘어오지 않는다.
-// live 패치 표면은 `harness/pi-runtime/features/*/patches.mjs`다.
-// 이 파일이 남아 있는 이유는 `transforms/`와 그 테스트가 직접 부르기 때문이다.
 import { stripChangelog } from "./no-changelog.mjs";
 import { applyContextNotesTransforms } from "./transforms/core-context-notes.mjs";
 import {

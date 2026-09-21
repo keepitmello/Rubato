@@ -2,10 +2,8 @@
 
 Rubato를 설치하고 매일 운영할 때 필요한 내용만 정리한다.
 
-엔진은 **stock pi 하나**다 (`@earendil-works/pi-coding-agent`, `harness/pi-runtime/features/*`로
-패치). `@code-yeongyu/senpi`는 2026-09-13에 폐기됐고(`engine-selection.mjs`:
-"rubato launches on pi or not at all"), `harness/rubato-pi/src/transforms/`는 그 시절 로더라
-실행 경로에 실리지 않는다. 엔진 버전을 올릴 때 보는 곳은 `harness/pi-runtime`이다.
+엔진은 **stock pi 하나**다 (`@earendil-works/pi-coding-agent`). 어댑터와 버전 핀은
+`harness/pi-runtime`이 갖는다.
 
 ## 설치
 

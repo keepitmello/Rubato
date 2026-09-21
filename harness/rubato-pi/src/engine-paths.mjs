@@ -104,14 +104,9 @@ export const rubatoTaskExtension = join(enginePluginDir, "extensions", "rubato-t
 export const rubatoMemberExtension = join(enginePluginDir, "extensions", "rubato-member.js");
 export const enginePackageJson = join(enginePluginDir, "package.json");
 
-/**
- * 은퇴한 senpi 포크의 워크스페이스 잔재. **이것은 실행 엔진이 아니다** —
- * Rubato의 엔진은 stock pi(`@earendil-works/pi-coding-agent`) 하나이고,
- * live 패치 표면은 `harness/pi-runtime/features/*`다. 여기서 dist를 읽는 것은
- * `transforms/`와 그 테스트뿐이다.
- */
+/** Workspace leftover of the retired fork; tests/transforms that still import its dist. */
 export const legacySenpiDir = join(repoRoot, "node_modules", "@code-yeongyu", "senpi");
-/** @deprecated Use legacySenpiDir. 은퇴 경로 전용 — 런타임에 쓰지 않는다. */
+/** @deprecated Use legacySenpiDir. */
 export const senpiDir = legacySenpiDir;
 export const senpiCli = join(legacySenpiDir, "dist", "cli.js");
 export const senpiCliMain = join(legacySenpiDir, "dist", "cli-main.js");
