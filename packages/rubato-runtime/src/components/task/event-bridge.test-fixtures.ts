@@ -18,7 +18,7 @@ export function taskRecord(
     parent_session_id: "parent-session",
     root_session_id: "parent-session",
     depth: 1,
-    preset: "explore",
+    preset: "scout",
     execution_mode: "in-process",
     model: "mock/worker",
     residency_state: "resident",
