@@ -27,6 +27,21 @@ case "${1-}" in
   "") ;;
   *) echo "쓰는 법: rubato-update.sh [--check|--yes]" >&2; exit 2 ;;
 esac
+# This updater owns the success trigger. A freshly pulled builder also supports
+# old updater processes that do not yet know about Speed collection.
+export RUBATO_SPEED_DATA_UPDATE_OWNER=1
+
+sync_speed_data() {
+  [ "${RUBATO_SPEED_DATA_UPLOAD-}" = 0 ] && return 0
+  speed_helper="$HARNESS/rubato-pi/scripts/auto-sync-speed-data.mjs"
+  [ -f "$speed_helper" ] || return 0
+  [ -f "$HERE/find-node.sh" ] || return 0
+  . "$HERE/find-node.sh"
+  speed_node="$(rubato_find_node 2>/dev/null || true)"
+  [ -n "$speed_node" ] || return 0
+  # The helper only detaches a child; no network request runs in the updater.
+  "$speed_node" "$speed_helper" || warn "속도 수집을 시작하지 못했습니다. 업데이트 결과에는 영향이 없습니다."
+}
 
 cd "$REPO"
 
@@ -107,6 +122,7 @@ REMOTE="$(git rev-parse "origin/$BRANCH" 2>/dev/null || echo "$LOCAL")"
 if [ "$LOCAL" = "$REMOTE" ]; then
   [ "$MODE" = check ] && exit 0
   sync_gui
+  sync_speed_data
   ok "이미 최신입니다."
   exit 0
 fi
@@ -117,6 +133,7 @@ AHEAD="$(git rev-list --count "origin/$BRANCH..HEAD")"
 if [ "$BEHIND" -eq 0 ]; then
   [ "$MODE" = check ] && exit 0
   sync_gui
+  sync_speed_data
   ok "받을 것이 없습니다. 로컬이 $AHEAD 커밋 앞서 있습니다."
   exit 0
 fi
@@ -513,4 +530,5 @@ if [ "$need_gui" = 1 ]; then
 fi
 
 date +%s > "$STAMP"
+sync_speed_data
 printf '\n%s✓%s 업데이트를 마쳤습니다. %s열린 CLI 터미널은 다시 붙여야 해요.%s\n\n' "$GRN" "$RST" "$DIM" "$RST"
