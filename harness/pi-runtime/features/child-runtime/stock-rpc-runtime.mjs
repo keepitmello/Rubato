@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs"
-import { isAbsolute, join, sep } from "node:path"
+import { dirname, isAbsolute, join, sep } from "node:path"
 import { pathToFileURL } from "node:url"
 
 const STOCK_PACKAGE = "@earendil-works/pi-coding-agent"
@@ -34,13 +34,23 @@ export function createPiChildFeatureProfile({ rpcExtensions = [], inProcessFacto
   })
 }
 
+export function serviceTierExtensionPath(root) {
+  return join(root, "rubato-features", "service-tier", "extension.mjs")
+}
+
+function requestedServiceTier(value) {
+  return value === "priority" || value === "auto" ? value : undefined
+}
+
 /** Resolve the staged Rubato provider-only extension closure for RPC children. */
-export function resolvePiChildProviderProfile({ root, agentDir, includeContextNotes = false, includeGuards = false, includeRolePrompt = false } = {}) {
+export function resolvePiChildProviderProfile({ root, agentDir, includeContextNotes = false, includeGuards = false, includeRolePrompt = false, serviceTier } = {}) {
   if (typeof root !== "string" || root.length === 0) throw new Error("stock child provider profile requires the staged runtime root")
   const entries = [join(root, "rubato-features", "child-runtime", "provider-extension.mjs")]
   if (includeContextNotes) entries.push(join(root, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "rubato-features", "context-notes", "extension.mjs"))
   if (includeGuards) entries.push(join(root, "rubato-features", "child-runtime", "guard-extension.mjs"))
   if (includeRolePrompt) entries.push(join(root, "rubato-features", "child-runtime", "role-prompt-extension.mjs"))
+  // Service-tier is not part of the default child closure. Only a requested tier loads it.
+  if (requestedServiceTier(serviceTier) !== undefined) entries.push(serviceTierExtensionPath(root))
   const prerequisites = [join(root, "node_modules", "@earendil-works", "pi-coding-agent", "node_modules", "@earendil-works", "pi-ai", "dist", "rubato-features", "provider-execution", "extension.mjs")]
   if (includeContextNotes) prerequisites.push(join(root, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "rubato-features", "context-notes", "src", "extensions", "context-notes.mjs"))
   if (includeGuards) prerequisites.push(join(root, "rubato-features", "tool-guards", "index.mjs"))
@@ -67,6 +77,10 @@ function isChildRolePromptExtensionPath(entry) {
   return typeof entry === "string" && entry.endsWith(`${sep}role-prompt-extension.mjs`)
 }
 
+function isChildServiceTierExtensionPath(entry) {
+  return typeof entry === "string" && entry.endsWith(`${sep}service-tier${sep}extension.mjs`)
+}
+
 /**
  * Load the child-safe in-process factories that correspond to a full-candidate
  * profile. Provider registration stays on the injected parent ModelRuntime;
@@ -82,8 +96,17 @@ export async function loadPiChildInProcessFactories({
   settingsManager,
   propagateEnv = false,
   env = process.env,
+  serviceTier,
 } = {}) {
-  const profile = resolvePiChildProviderProfile({ root, agentDir, includeContextNotes, includeGuards, includeRolePrompt })
+  const tier = requestedServiceTier(serviceTier)
+  const profile = resolvePiChildProviderProfile({
+    root,
+    agentDir,
+    includeContextNotes,
+    includeGuards,
+    includeRolePrompt,
+    ...(tier === undefined ? {} : { serviceTier: tier }),
+  })
   const factories = []
   for (const entry of profile.rpcExtensions) {
     if (isChildNotesExtensionPath(entry)) {
@@ -102,6 +125,17 @@ export async function loadPiChildInProcessFactories({
     } else if (isChildRolePromptExtensionPath(entry)) {
       const { createStockChildRolePromptExtension } = await import(pathToFileURL(entry).href)
       factories.push({ name: "rubato-role-prompt", factory: createStockChildRolePromptExtension({ env }) })
+    } else if (isChildServiceTierExtensionPath(entry)) {
+      const { createServiceTierFeature } = await import(pathToFileURL(entry).href)
+      // In-process children share the parent process. The tier rides the factory option,
+      // never RUBATO_SERVICE_TIER, so the parent and siblings cannot observe it.
+      const feature = createServiceTierFeature({
+        agentDir,
+        ...(settingsManager === undefined ? {} : { settingsManagerFactory: () => settingsManager }),
+        initialTier: tier,
+        readServiceTierEnv: false,
+      })
+      factories.push({ name: "service-tier", factory: feature.extension })
     }
   }
   return factories
@@ -205,6 +239,8 @@ export function createPiRpcSpawnRuntime({
     // `buildRpcSpawn` still calls this legacy-named hook; the value is a
     // stock-specific policy and does not resolve SENPI_BIN or PATH.
     resolveSenpiExecutable: () => null,
+    // Path only. buildRpcSpawn appends it when that child requested a tier.
+    serviceTierExtension: serviceTierExtensionPath(join(dirname(rpcEntry), "..", "..", "..", "..")),
   }
 }
 

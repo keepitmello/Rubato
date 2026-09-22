@@ -45,6 +45,7 @@ export type ManagedStartSpec = {
   readonly memberScopedTools?: readonly ToolDefinition[]
   readonly extensions?: readonly string[]
   readonly memberEnv?: Readonly<Record<string, string>>
+  readonly serviceTier?: "priority" | "auto"
 }
 
 export type ManagedRunner = {
@@ -73,6 +74,7 @@ export type ManagerStartSpec = {
   readonly memberScopedTools?: readonly ToolDefinition[]
   readonly extensions?: readonly string[]
   readonly memberEnv?: Readonly<Record<string, string>>
+  readonly service_tier?: "priority" | "auto"
 }
 
 export type ResolvedChildPlan = {

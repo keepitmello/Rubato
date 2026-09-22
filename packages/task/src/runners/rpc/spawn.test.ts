@@ -383,4 +383,48 @@ describe("buildRpcSpawn spawn strategy", () => {
     expect(descriptor.env.PI_CODING_AGENT_SESSION_DIR).toBe(resolveChildSessionDir(baseSpec.state_dir, baseSpec.task_id))
     expect(descriptor.args).toContain("/tmp/rubato-member.js")
   })
+
+  test("#given no service tier #when building #then the child env and args stay free of service-tier", () => {
+    const descriptor = buildRpcSpawn(
+      { ...baseSpec, extensions: ["/tmp/provider.mjs"] },
+      {
+        isBunBinary: false,
+        execPath: "/usr/bin/node",
+        platform: "linux",
+        parentEnv: { PATH: "/usr/bin" },
+        resolveRpcEntry: () => "/rpc-entry.js",
+        serviceTierExtension: "/staged/service-tier/extension.mjs",
+        ...noExecutable,
+      },
+    )
+
+    expect(descriptor.env.RUBATO_SERVICE_TIER).toBeUndefined()
+    expect(descriptor.args).not.toContain("/staged/service-tier/extension.mjs")
+  })
+
+  test("#given a priority tier #when building #then the env is set and the staged extension is appended without keeping a member bundle", () => {
+    const descriptor = buildRpcSpawn(
+      {
+        ...baseSpec,
+        service_tier: "priority",
+        memberEnv: { RUBATO_SERVICE_TIER: "priority" },
+        extensions: ["/tmp/rubato-member.js", "/tmp/provider.mjs"],
+      },
+      {
+        isBunBinary: false,
+        execPath: "/usr/bin/node",
+        platform: "linux",
+        parentEnv: { PATH: "/usr/bin" },
+        resolveRpcEntry: () => "/rpc-entry.js",
+        serviceTierExtension: "/staged/service-tier/extension.mjs",
+        ...noExecutable,
+      },
+    )
+
+    expect(descriptor.env.RUBATO_SERVICE_TIER).toBe("priority")
+    expect(descriptor.args).toContain("/staged/service-tier/extension.mjs")
+    expect(descriptor.args).toContain("/tmp/provider.mjs")
+    expect(descriptor.args).not.toContain("/tmp/rubato-member.js")
+    expect(descriptor.env.PI_CODING_AGENT_SESSION_DIR).toBe(resolveChildSessionDir(baseSpec.state_dir, baseSpec.task_id))
+  })
 })

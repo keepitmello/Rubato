@@ -73,7 +73,11 @@ export function resolveMemberScopedToolNames(
  * the denylist on senpi's real deny field `excludeTools`
  * (`tools:` alone does NOT deny), runtime fallback settings, and model/auth/runtime passthroughs.
  */
-export function buildChildSessionOptions(input: BuildChildSessionOptionsInput): CreateAgentSessionOptions {
+export type ChildSessionOptions = CreateAgentSessionOptions & {
+  readonly serviceTier?: "priority" | "auto"
+}
+
+export function buildChildSessionOptions(input: BuildChildSessionOptionsInput): ChildSessionOptions {
   const { spec, sessionManager, uiOnlyToolNames } = input
   const mergedCustomTools = mergeChildCustomTools(input.sharedParentTools, spec.memberScopedTools, {
     uiOnlyToolNames,
@@ -94,5 +98,8 @@ export function buildChildSessionOptions(input: BuildChildSessionOptionsInput): 
     settingsManager,
     ...(spec.toolAllowlist !== undefined && { tools: [...spec.toolAllowlist] }),
     ...(spec.toolDenylist !== undefined && { excludeTools: [...spec.toolDenylist] }),
+    // Stock ignores unknown session fields. Bootstrap reads this per child and must not see it
+    // when no tier was requested, or every in-process child would load service-tier.
+    ...(spec.serviceTier !== undefined ? { serviceTier: spec.serviceTier } : {}),
   }
 }
