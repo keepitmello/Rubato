@@ -244,5 +244,21 @@ export function createPiRpcSpawnRuntime({
   }
 }
 
+/**
+ * How a memory reflection/dream child runs on this engine: the parent's Node,
+ * the staged pi CLI, and the child provider extension. The child boots with
+ * `--no-extensions`, which stops discovery but still loads explicit `-e`
+ * entries, so the providers ride here and nothing else from the parent does.
+ */
+export function resolvePiMemoryChildLaunch({ root, execPath = process.execPath } = {}) {
+  if (typeof root !== "string" || root.length === 0) throw new Error("memory child launch requires the staged runtime root")
+  const cli = join(root, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "cli.js")
+  const providers = join(root, "rubato-features", "child-runtime", "provider-extension.mjs")
+  for (const entry of [cli, providers]) {
+    if (!existsSync(entry)) throw new Error(`memory child launch entry is missing: ${entry}`)
+  }
+  return Object.freeze({ command: execPath, prefixArgs: Object.freeze([cli, "-e", providers]) })
+}
+
 export const PI_PACKAGE = STOCK_PACKAGE
 export const PI_RPC_ENTRY = STOCK_RPC_ENTRY

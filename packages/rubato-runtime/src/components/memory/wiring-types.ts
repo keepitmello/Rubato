@@ -25,6 +25,8 @@ export interface MemoryWiringOptions {
   readonly refreshStatus?: typeof refreshMemoryStatus
   /** Injectable animation timers; tests drive frames without touching the wall clock. */
   readonly footerTimers?: MemoryFooterTimers
+  /** Host-owned child command: `command` plus the leading args (CLI entry, `-e` provider extensions). */
+  readonly childLaunch?: MemoryIdentityRuntimeDeps["childLaunch"]
 }
 
 export interface MemoryWiring {

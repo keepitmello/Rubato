@@ -4,7 +4,7 @@ import { dirname, isAbsolute, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PI_VERSION } from "./pi-version.mjs";
 import { DefaultResourceLoader, SettingsManager, createAgentSession } from "../../node_modules/@earendil-works/pi-coding-agent/dist/index.js";
-import { createStockChildInProcessSession, createPiRpcSpawnRuntime, loadPiChildInProcessFactories, resolvePiChildProviderProfile } from "../child-runtime/stock-rpc-runtime.mjs";
+import { createStockChildInProcessSession, createPiRpcSpawnRuntime, loadPiChildInProcessFactories, resolvePiChildProviderProfile, resolvePiMemoryChildLaunch } from "../child-runtime/stock-rpc-runtime.mjs";
 import { createMcpProducerRegistry } from "../mcp-producers/index.mjs";
 import { createMcpExtension } from "../mcp/index.mjs";
 import { ToolSearchService, createToolSearchExtension } from "../tool-search/index.mjs";
@@ -64,7 +64,8 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
   });
   const runtimeRoot = fileURLToPath(new URL("../..", import.meta.url));
   const stockChildProfile = resolvePiChildProviderProfile({ root: runtimeRoot, agentDir, includeContextNotes: true, includeGuards: true, includeRolePrompt: true });
-  const componentFactory = servers.wrapFactory(createRubatoComponentExtension({ resolveCwd: () => cwd, createTaskOptions: ({ createTaskRunnerFactories }) => ({
+  const memoryChildLaunch = resolvePiMemoryChildLaunch({ root: runtimeRoot });
+  const componentFactory = servers.wrapFactory(createRubatoComponentExtension({ resolveCwd: () => cwd, memoryChildLaunch, createTaskOptions: ({ createTaskRunnerFactories }) => ({
     // Stock ExtensionAPI does not expose Senpi's registration-time pi.cwd.
     // Bind task storage to this session, never the hosting process directory.
     resolveCwd: () => cwd,
