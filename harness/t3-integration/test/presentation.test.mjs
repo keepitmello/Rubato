@@ -32,7 +32,8 @@ test('Pi events survive T3 ingestion, persisted snapshots and web/mobile folds',
   try {
     const result = await promisify(execFile)(
       path.join(source, 'node_modules/.bin/vp'),
-      ['test', 'run', path.relative(path.join(source, 'apps/server'), generated)],
+      ['test', 'run', path.relative(path.join(source, 'apps/server'), generated),
+        ...(process.env.T3_PRESENTATION_TEST_NAME ? ['-t', process.env.T3_PRESENTATION_TEST_NAME] : [])],
       { cwd: path.join(source, 'apps/server'), timeout: 110_000, maxBuffer: 4 * 1024 * 1024 },
     );
     t.diagnostic(result.stdout);
