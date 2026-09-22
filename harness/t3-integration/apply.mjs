@@ -8,7 +8,7 @@ import { voiceEdits, voiceOverlays } from './voice-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
-const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/server/src/provider/RubatoPiInventory.ts', 'apps/server/src/provider/RubatoMobilePresentation.ts', 'apps/server/src/provider/RubatoMobileProtocol.ts', 'apps/web/src/components/RubatoIcon.tsx', 'apps/web/src/components/DeepSeekIcon.tsx', 'apps/web/src/components/AgentResultDetails.tsx', 'apps/server/src/workspace/createWorkspaceFile.ts', 'apps/web/src/components/files/NewMarkdownNoteDialog.tsx', 'apps/desktop/src/updates/RubatoUpdates.ts', 'apps/web/src/components/desktop/RubatoUpdateDialog.tsx'];
+const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/server/src/provider/RubatoPiInventory.ts', 'apps/web/src/components/RubatoIcon.tsx', 'apps/web/src/components/DeepSeekIcon.tsx', 'apps/web/src/components/AgentResultDetails.tsx', 'apps/server/src/workspace/createWorkspaceFile.ts', 'apps/web/src/components/files/NewMarkdownNoteDialog.tsx', 'apps/desktop/src/updates/RubatoUpdates.ts', 'apps/web/src/components/desktop/RubatoUpdateDialog.tsx'];
 // 값이 [anchor, addition] 이면 anchor 앞에 붙이고, [from, to, 'replace'] 면 갈아끼운다.
 // 앱 이름·번들 id·상태 경로는 T3 가 const 로 박아둬서 앞에 덧붙이는 것으로는 못 바꾼다.
 //
@@ -107,30 +107,6 @@ const edits = {
       ].join('\n')],
   ],
   'apps/server/src/ws.ts': [
-    [
-      'import { withTerminalOutputWindow } from "./terminal/OutputProtocol.ts";',
-      'import { withRubatoMobilePresentation } from "./provider/RubatoMobileProtocol.ts";\n',
-    ],
-    [
-      '          yield* RpcServer.make(WsRpcGroup, { disableTracing: true }).pipe(\n            Effect.provideService(RpcServer.Protocol, withTerminalOutputWindow(protocol)),',
-      [
-        '          let clientProtocol = protocol;',
-        '          if (clientOrigin.surface === "mobile") {',
-        '            const providers = yield* ProviderRegistry.ProviderRegistry;',
-        '            const query = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;',
-        '            clientProtocol = withRubatoMobilePresentation(protocol, {',
-        '              surface: clientOrigin.surface,',
-        '              providers: providers.getProviders,',
-        '              thread: (id) => query.getThreadDetailById(ThreadId.make(id)).pipe(',
-        '                Effect.map(Option.getOrUndefined), Effect.orDie,',
-        '              ),',
-        '            });',
-        '          }',
-        '          yield* RpcServer.make(WsRpcGroup, { disableTracing: true }).pipe(',
-        '            Effect.provideService(RpcServer.Protocol, withTerminalOutputWindow(clientProtocol)),',
-      ].join('\n'),
-      'replace',
-    ],
     ['        [WS_METHODS.projectsWriteFile]: (input) =>',
       [
         '        [WS_METHODS.projectsCreateFile]: (input) =>',
@@ -1099,6 +1075,16 @@ export async function applyIntegration({t3,check=false,remove=false}) {
     }
     manifest.files[relative] = {original,installedHash:next===null?null:hash(next)};
     planned.push({relative,destination,current,next});
+  }
+  // 이번 목록에서 빠진 이전 설치분은 되돌린다. 이것이 없으면 걷어낸 overlay 파일이
+  // 설치본에 고아로 남고, 다음 설치가 그것을 "사람이 넣은 파일"로 보게 된다.
+  for (const [relative,record] of Object.entries(old.files)) {
+    if (manifest.files[relative]) continue;
+    const destination = path.join(target,relative);
+    const current = await existing(destination);
+    if (current!==null && hash(current)!==record.installedHash)
+      throw new Error(`Installed file has local changes: ${relative}`);
+    planned.push({relative,destination,current,next:record.original});
   }
   if (!check) {
     for (const item of planned) if (item.current!==item.next) {

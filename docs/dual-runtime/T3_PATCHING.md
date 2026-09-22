@@ -82,42 +82,36 @@ T3 계약에는 `runtime.info`가 없다. `runtime.error`는 세션을 `error`�
 상태표시줄이 그대로 앱에 흘러나온다 — `$0.0000 · Speed 488` 같은 것. 줄의 주인공은 "지금
 무엇을 하는 중"이고 메타데이터는 짧은 접두사다.
 
-### 모델 로고는 모바일 연결의 표시 정보만 바꾼다
+### 모바일 모델 로고는 표시 변환으로 만들지 않는다 (2026-09-23 철회)
 
 앱스토어 모바일의 `ProviderIcon`은 서버가 보낸 driver 이름으로 내장 그림을 고른다.
-모르는 이름인 `rubato-pi`는 OpenAI로 표시한다. 서버에서 SVG를 보내도 읽는 칸이 없다.
+내장 그림은 Claude·Grok·Cursor·OpenCode 넷뿐이고, 모르는 이름인 `rubato-pi`는
+OpenAI로 표시한다. 서버가 SVG나 URL을 보내도 읽는 칸이 없다. `ServerProvider`는
+`displayName`·`accentColor`·`badgeLabel`까지 받으면서 아이콘만 driver 슬러그에
+묶여 있다.
 
-`RubatoMobileProtocol`은 `clientOrigin.surface === "mobile"`인 인증된 웹소켓에서만
-모델 계열별 표시 그룹을 내보낸다. Claude·Grok·OpenAI 계열은 해당 내장 로고를 쓰고,
-나머지 Cursor·OpenCode 경로도 앱에 있는 로고를 쓴다. Antigravity 🪐, DeepSeek 🐋,
-Gemini ✨, Kimi 🌙, Qwen 🐼, GLM 💎과 미분류 🤖는 모델 이름·짧은 이름에 이모지를
-붙인다. **이 경우 아이콘 칸은 여전히 OpenAI다.** 이모지는 아이콘 칸을 교체한 것이
-아니라, 이름을 읽고 구분할 수 있게 보완한 것이다.
-
-그림만 보고 driver 이름을 빌리면 안 된다. `codex`는 모바일이 `/feedback`을 가로채게
-하고, `antigravity`는 별도의 설정·전송 거부 조건을 켠다. OpenAI는 원래 fallback
-그림을 그대로 쓰고, Antigravity는 내장 그림이 있어도 이모지로 보완해 실행 동작을 지킨다.
+한 번은 모바일 연결에서만 Rubato 공급자 한 줄을 모델 계열별 표시용 줄로 쪼개
+(`rubatom_<hash>_<mark>`) 내장 로고를 고르게 했다. 서버 쪽 변환 자체는 목록·명령·
+설정·대화 snapshot/stream에서 정상 동작했지만 **공급자 instance ID가 바뀐다**는
+대가를 치렀고, 거기서 무너졌다.
 
 ```
-모바일 ◀── 표시용 그룹 ID + 내장 로고 이름 ── 서버 경계
-모바일 ──▶ 표시용 그룹 ID ── 원래 Rubato ID로 복원 ──▶ 실행·저장
-웹·데스크톱 ◀──────────────── 원래 Rubato 정보 ──────────▶ 실행·저장
+서버가 ID를 바꾼다          폰은 옛 ID를 자기 저장소에 들고 있다
+rubato ──▶ rubatom_…_claude   스레드 목록 캐시 · 입력창 초안 · 새 스레드로 이관된 초안
+                              → 목록에 없는 ID → 모델명이 슬러그로, 아이콘은 기본 글리프
 ```
 
-표시용 ID는 원래 instance ID에서 결정적으로 만든다. 재연결해도 같고 모델 slug와
-options는 바꾸지 않는다. 모델 목록뿐 아니라 대화 목록·상세 snapshot/stream·보관된
-대화·프로젝트 기본 모델·사용자 및 프로젝트 설정을 함께 변환한다. 들어오는 명령과
-설정은 원래 ID로 복원한 뒤 기존 RPC가 검사하고 저장한다. 사용자 메시지나 도구 결과의
-JSON을 재귀적으로 바꾸지 않는다.
+새 대화 화면은 저장값을 서버 목록에 대조해 안 맞으면 버리므로(`resolveDefaultableModelSelection`)
+멀쩡했고, 스레드 안 입력창은 그 대조 없이 저장값을 그대로 써서 깨졌다. 서버는 폰
+로컬 상태에 닿을 수 없으므로 서버 쪽으로 고칠 방법이 없다. 얻는 것은 로고 넷뿐이고
+글리프 없는 계열(DeepSeek·Gemini·Kimi 등)은 이모지를 붙여도 아이콘 칸이 그대로
+OpenAI라 로고가 겹쳐 보였다.
 
-표시 그룹은 설치·인증 대상이 아니다. 그룹에 실제 provider 설정을 저장하려 하면
-거부하고, 사라진 provider나 다른 계열의 모델을 고른 명령도 변경 전에 거부한다.
-업데이트 전에 모바일이 로컬에 보관한 미전송 초안은 원래 ID를 들고 있으므로 모델을
-다시 골라야 할 수 있다. 서버에 저장된 대화에는 표시용 ID가 들어가지 않는다.
-
-검증은 모바일 소비자·실제 RPC codec/projector와 인증된 웹소켓을 쓴다.
-`mobile-provider-presentation.test.mjs`는 목록·명령·설정·snapshot/stream을,
-`mobile-provider-websocket.test.mjs`는 모바일과 웹의 동시 연결 및 재연결을 확인한다.
+**공급자 ID는 표시를 위해 바꾸지 않는다.** ID는 폰·데스크톱의 로컬 상태가 붙잡는
+유일한 식별자다. 모바일 로고가 정말 필요하면 길은 둘뿐이다 — 우리가 빌드한 모바일
+앱을 설치하거나(개발자 계정 필요), `ServerProvider`에 아이콘 URL 칸을 추가하는
+upstream 변경. 후자는 upstream에 이미 있는 패턴이다(도구 활동 아이콘의
+`logoUrl`/`logoUrlDark`, `providerRuntime.ts`).
 이 시험은 앱스토어 실기기 화면을 대신하지 않는다.
 
 ## 두 줄로 보이면 잇는 키를 먼저 본다
