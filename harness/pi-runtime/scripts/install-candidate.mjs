@@ -6,6 +6,7 @@ import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { stageAndPublishInstall, withInstallLock } from "./install-transaction.mjs";
+import { lockPublishedPayload } from "./payload-lock.mjs";
 import { sourceFingerprint } from "./source-fingerprint.mjs";
 
 const run = promisify(execFile);
@@ -185,6 +186,9 @@ export async function installRubatoCandidate({
       }
     },
   });
+  // Lock only after the directory rename. The staging tree is deleted on
+  // failure, and an immutable file would make that cleanup throw.
+  await lockPublishedPayload(dest);
   // stagePiRuntime's return value contains absolute paths. Rebind those public
   // paths after the relocatable installation has been renamed into place.
   const { resolvePiRuntime } = await import("../resolve-runtime.mjs");
