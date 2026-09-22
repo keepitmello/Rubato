@@ -16,6 +16,7 @@ APPLY=0
 # 업데이트가 이걸 부른다 — alias 목록을 두 군데 두면 어깋나기 때문에
 # 정본은 여기 하나로 둔다. 의존성·빌드는 건드리지 않는다.
 ONLY_SHELL=0
+GUI_DONE=0
 GUI=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -524,21 +525,31 @@ fi
 if [ "${GUI:-0}" = "1" ]; then
   if [ "$APPLY" -eq 0 ]; then
     sh "$HARNESS/t3-integration/install-gui.sh"
+  elif sh "$HARNESS/t3-integration/install-gui.sh" --apply; then
+    GUI_DONE=1
   else
-    sh "$HARNESS/t3-integration/install-gui.sh" --apply || add_manual "GUI 설치 실패. harness/t3-integration/install-gui.sh --apply 를 다시 실행해라"
+    add_manual "GUI 설치 실패. harness/t3-integration/install-gui.sh --apply 를 다시 실행해라"
   fi
 elif [ "$APPLY" -eq 0 ]; then
   plan "GUI는 --gui 또는 적용 때 물어본다"
-else
+elif [ -z "$GUI" ]; then
+  # TTY 가 아니면 위의 질문이 아예 안 뜬다. 그때 조용히 지나가면 "설치는 끝났는데
+  # 앱이 없다" 만 남고, 그 상태를 되돌릴 안내가 어디에도 안 남는다 — 실제로 그것
+  # 때문에 맥에서 GUI 를 못 깐 사례가 있었다. 그래서 남은 일에 적는다.
   say "건너뛴다. 나중에: ./install.sh --apply --gui"
+  add_manual "GUI(데스크톱 앱)를 깔지 않았다. 쓰려면 ./install.sh --apply --gui"
+else
+  say "건너뛴다 (--no-gui)"
 fi
 fi
 
 head_ "요약"
 if [ "$APPLY" -eq 0 ]; then
   say "계획만 보였다. 적용하려면: ./install.sh --apply"
-else
+elif [ "$GUI_DONE" -eq 1 ]; then
   say "대화형은 'rubato', GUI는 'rubato-gui', 비대화형 워커는 'rubato dispatch <name> < brief.md' 다."
+else
+  say "대화형은 'rubato', 비대화형 워커는 'rubato dispatch <name> < brief.md>' 다."
 fi
 if [ "${#MANUAL[@]}" -gt 0 ]; then
   printf '\n%s남은 일%s\n' "$BOLD" "$RST"
