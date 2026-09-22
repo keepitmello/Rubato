@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { readPiEngineReceipt, resolveLaunchEngine } from "../rubato-pi/src/engine-selection.mjs";
 import { nodeSatisfiesCandidate, selectNodeForEngine } from "../rubato-pi/src/select-node.mjs";
 import { sourceFingerprint } from "../pi-runtime/scripts/source-fingerprint.mjs";
+import { startSpeedDataUpload } from "../rubato-pi/src/speed-data-auto.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -18,6 +19,7 @@ export async function buildActiveEngine({
     const { updatePiEngine } = await import("../pi-runtime/scripts/switch-engine.mjs");
     return updatePiEngine({ env });
   },
+  startSpeedData = startSpeedDataUpload,
 } = {}) {
   if (args.some((arg) => arg !== "--force" && arg !== "--check") ||
       (args.includes("--force") && args.includes("--check"))) throw new Error("Usage: build-active-engine.mjs [--force|--check]");
@@ -25,8 +27,12 @@ export async function buildActiveEngine({
   const receipt = readPiEngineReceipt(selection.root);
   const current = selection.engine === "pi" && receipt?.sourceSha256 === await sourceFingerprint(repoRoot);
   if (args.includes("--check")) return current ? 0 : 10;
-  if (!args.includes("--force") && current) return 0;
-  await update();
+  if (args.includes("--force") || !current) await update();
+  // Old updaters execute this freshly pulled file on their first update. New
+  // updaters own the post-update trigger, so the build must not launch it twice.
+  if (env.RUBATO_SPEED_DATA_UPDATE_OWNER !== "1") {
+    try { startSpeedData({ env }); } catch { /* Collection must never fail a build. */ }
+  }
   return 0;
 }
 
