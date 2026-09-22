@@ -42,6 +42,17 @@ test("#given pgrep names a pid #when the process table is read #then ps supplies
   assert.equal(rows.get(4321), "node /opt/x/cli.mjs --agent-dir /agent");
 });
 
+// `--agent-dir /x/agent` is a prefix of `--agent-dir /x/agent2`. Matching the prefix would
+// SIGTERM a profile that was never the one being restarted.
+test("#given an engine whose dir merely starts with the target #when the listener pid is looked up #then it is not mistaken for a match", () => {
+  const run = runner({
+    psRows: [" 4321 node /opt/x/cli.mjs --agent-dir /profiles/agent2"],
+  });
+
+  assert.equal(listenerPid("/profiles/agent", run), undefined, "the longer dir must not read as the shorter one");
+  assert.equal(listenerPid("/profiles/agent2", run), 4321, "and the row is reachable under its own dir");
+});
+
 async function scratch(t, prefix) {
   const dir = await mkdtemp(join(tmpdir(), prefix));
   t.after(() => rm(dir, { recursive: true, force: true }));

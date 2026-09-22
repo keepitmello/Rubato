@@ -57,13 +57,19 @@ export function processTable(run = spawnSync) {
 }
 
 // Exported so a test can point it at a process it spawned itself.
-export function listenerPid(agentDir) {
+export function listenerPid(agentDir, run = spawnSync) {
   const dirs = pathVariants(agentDir);
-  for (const [pid, command] of processTable()) {
+  for (const [pid, command] of processTable(run)) {
     if (pid === process.pid) continue;
     if (!command.includes('cli.mjs')) continue;
     for (const dir of dirs) {
-      if (command.includes(`--agent-dir ${dir}`)) return pid;
+      // The flag has to END at the dir: `--agent-dir /x/agent` is a prefix of
+      // `--agent-dir /x/agent2`, and matching that would SIGTERM an unrelated profile.
+      const flag = `--agent-dir ${dir}`;
+      const at = command.indexOf(flag);
+      if (at === -1) continue;
+      const rest = command.slice(at + flag.length);
+      if (rest === '' || /^\s/.test(rest)) return pid;
     }
   }
 }
