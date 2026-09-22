@@ -21,7 +21,7 @@ import { midConversationEffort } from "./mid-conversation-effort.mjs";
 import { PROCESS_STARTED_AT } from "./process-start.mjs";
 import { resolveUpstreamFetch } from "./upstream-dispatcher.mjs";
 import { resolveCallIdentity } from "./speed-index-identity.mjs";
-import { recordSpeedIndexCall, speedIndexStore } from "./speed-index-store.mjs";
+import { SPEED_CAPTURE_MILESTONES, SPEED_CAPTURE_VERSION, recordSpeedIndexCall, speedIndexStore } from "./speed-index-store.mjs";
 
 // native Cursor 가 이미 실행한 tool block 은 pi-ai 가 **module-local** `Symbol()` 로
 // 표지한다 (`utils/block-symbols.js`). `Symbol.for()` 로 같은 이름을 지어내도
@@ -189,12 +189,14 @@ function createCallState(model, options, modelId) {
     identity: resolveCallIdentity(model, options),
     speedIndexStore: speedStore,
     speedRecorded: false,
+    speedCapture: { captureVersion: SPEED_CAPTURE_VERSION, streamEventCount: 0, streamTerminalObserved: false },
     sentAtMs: monotonic(),
     sentAtWallMs: wallNow(),
     processStartedAt: options.processStartedAt ?? PROCESS_STARTED_AT,
     firstOutputAtMs: undefined,
     firstReasoningAtMs: undefined,
     firstTextAtMs: undefined,
+    lastContentAtMs: undefined,
     emittedDelta: false,
     // recorder 내부 dedupe 에 기대지 않는다. 계약은 "logical call 당 최대 한 번"이고,
     // 그 계약을 지키는 주체가 이 decorator 다.
@@ -313,18 +315,43 @@ function isWebSocketTransportError(errorMessage) {
 
 function observeDelta(state, event) {
   if (isReplayableContent(event)) state.emittedDelta = true;
-  // TTFT 는 빈 start/end 프레임이 아니라 사용자가 실제로 볼 첫 내용이다.
-  const isContentDelta = event.type === "text_delta" ||
-    event.type === "thinking_delta" || event.type === "toolcall_delta";
-  if (isContentDelta && state.firstOutputAtMs === undefined) state.firstOutputAtMs = state.monotonic();
-  // 빈 reasoning delta 는 사고 시계를 시작하지 않는다. Anthropic 은 display 가
-  // "omitted" 일 때 내용 없는 reasoning 블록을 먼저 열 수 있는데, 그걸 사고 시작으로
-  // 세면 업스트림 대기 시간이 think 로 옮겨가 delay 가 0 에 가까워진다.
-  if (event.type === "thinking_delta" && state.firstReasoningAtMs === undefined && event.delta) {
-    state.firstReasoningAtMs = state.monotonic();
+  const capture = state.speedCapture;
+  if (event.type === "toolcall_end") {
+    // Protocol block completion, NOT actual execution start or argument validation.
+    const elapsed = state.monotonic() - state.sentAtMs;
+    capture.firstToolCallEndMs ??= elapsed;
+    capture.lastToolCallEndMs = elapsed;
+    capture.toolCallEndCount = (capture.toolCallEndCount ?? 0) + 1;
+    return;
   }
-  if (event.type === "text_delta" && state.firstTextAtMs === undefined && event.delta) {
-    state.firstTextAtMs = state.monotonic();
+  const channel = event.type === "text_delta" ? "Text"
+    : event.type === "thinking_delta" ? "Reasoning"
+      : event.type === "toolcall_delta" ? "ToolArgument" : undefined;
+  // Empty deltas/start/end frames are not content. Hidden thinking stays unknown.
+  if (!channel || typeof event.delta !== "string" || event.delta.length === 0) return;
+  const at = state.monotonic();
+  const elapsed = at - state.sentAtMs;
+  state.firstOutputAtMs ??= at;
+  if (channel === "Reasoning") state.firstReasoningAtMs ??= at;
+  if (channel === "Text") state.firstTextAtMs ??= at;
+  capture.maxContentGapMs = Math.max(capture.maxContentGapMs ?? 0,
+    state.lastContentAtMs === undefined ? 0 : at - state.lastContentAtMs);
+  state.lastContentAtMs = at;
+  const prefix = channel[0].toLowerCase() + channel.slice(1);
+  const last = capture[`last${channel}Ms`];
+  capture[`first${channel}Ms`] ??= elapsed;
+  capture[`last${channel}Ms`] = elapsed;
+  capture[`${prefix}MaxGapMs`] = Math.max(capture[`${prefix}MaxGapMs`] ?? 0, last === undefined ? 0 : elapsed - last);
+  capture[`${prefix}DeltaCount`] = (capture[`${prefix}DeltaCount`] ?? 0) + 1;
+  const units = (capture[`${prefix}CodeUnits`] ?? 0) + event.delta.length;
+  capture[`${prefix}CodeUnits`] = units;
+  const milestones = capture[`${prefix}Milestones`] ??= [];
+  // Bounded snapshots preserve length-crossing times without storing every delta.
+  // The observed count records batching/overshoot rather than inventing smooth TPS.
+  for (let index = milestones.length; index < SPEED_CAPTURE_MILESTONES.length; index += 1) {
+    const target = SPEED_CAPTURE_MILESTONES[index];
+    if (units < target) break;
+    milestones.push([target, units, elapsed]);
   }
 }
 
@@ -448,7 +475,9 @@ function decorateStream(inner, state, options) {
           return step;
         }
         const event = step.value;
+        state.speedCapture.streamEventCount += 1;
         if (isTerminal(event)) {
+          state.speedCapture.streamTerminalObserved = true;
           state.ensureStarted();
           // 계측 종료는 종단 event 가 소비자에게 가기 **전**에 찍는다. 반대로 두면
           // 엔진이 다음 호출을 시작한 뒤 model.end 가 찍혀 구간이 겹친다.
@@ -523,6 +552,9 @@ export function withRubatoStream(inner, { modelId = (model) => model?.id, report
       streamKind: resolveSpeedIndexStreamKind(context, options),
       speedIndexStore: options.speedIndexStore ?? defaultSpeedIndexStore,
     }, modelId(model));
+    const lastRole = context?.messages?.at(-1)?.role;
+    state.speedCapture.requestKind = lastRole === "user" ? "user"
+      : lastRole === "toolResult" || lastRole === "tool" ? "tool" : "other";
     // transport 가 실제 wire body 를 알려주면 그것으로 계산을 시작한다. 알려주지
     // 않는 직결 provider 는 context 에서 만든 body 로 시작한다.
     const innerOptions = {

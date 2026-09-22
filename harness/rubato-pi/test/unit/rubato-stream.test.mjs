@@ -252,7 +252,7 @@ test("upstreamFetch 는 global Request 의 method+headers+body 를 전달한다"
 });
 
 test("timing 은 성공 턴에만 붙고 벽시계/단조시계를 주입받는다", async () => {
-  const times = [100, 350, 350, 600];
+  const times = [100, 350, 600];
   const message = assistant({ stopReason: "stop" });
   const inner = scriptedStream([
     { type: "start", partial: message },
