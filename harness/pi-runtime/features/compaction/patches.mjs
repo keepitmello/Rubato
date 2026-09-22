@@ -102,18 +102,15 @@ export function patchAnthropicMessagesServerCompaction(source) {
     'import Anthropic from "@anthropic-ai/sdk";\n' + PARAMS_IMPORT,
     "anthropic-import",
   );
-  next = replaceOnce(
-    next,
-    'const claudeCodeVersion = "2.1.251";',
-    'const claudeCodeVersion = "2.1.269";',
-    "claude-code-version",
-  );
-  next = replaceOnce(
-    next,
-    'text: "You are Claude Code, Anthropic\'s official CLI for Claude.",',
-    'text: "x-anthropic-billing-header: cc_version=2.1.269; cc_entrypoint=cli;",\n            },\n            {\n                type: "text",\n                text: "You are Claude Code, Anthropic\'s official CLI for Claude.",',
-    "claude-code-billing-header",
-  );
+  // Claude Code 신원(버전 상수·billing header)은 **여기서 굽지 않는다.**
+  //
+  // 그 값은 `rubato-pi/src/transforms/misc-claude-code-version.mjs` 가 선언하고,
+  // misc-vendor 의 load transform 이 로드 시점에 주입한다. 여기서 같은 needle 을
+  // 한 번 더 잡으면 빌드가 needle 을 먼저 소비해 런타임 transform 이 inert 로 죽고,
+  // 값이 두 곳(선언과 이 리터럴)으로 갈라진다. 실제로 그렇게 갈라져 있었다 —
+  // 상수만 2.1.280 으로 올려도 엔진은 여기 박힌 값을 계속 내보냈다.
+  //
+  // 이 패치는 컴팩션 seam 만 소유한다.
   next = replaceOnce(
     next,
     "    if (allowedFallbackModels && allowedFallbackModels.length > 0) {\n        params.fallbacks = allowedFallbackModels.map((fallback) => ({ model: fallback.model }));\n    }\n    return params;\n}",
