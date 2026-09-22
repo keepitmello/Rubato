@@ -97,6 +97,10 @@ test("channel timings and bounded milestones reach JSONL without content or scor
   assert.equal(sample.reasoningTokens, 60);
   assert.equal(sample.outputTokens, 100, "never subtract/reinterpret provider output usage");
   assert.equal(isScoreableSample(sample), true);
+  assert.deepEqual(done.rubatoSpeedIndex, {
+    version: 1, metricVersion: 1, status: fx.store.getCachedScore(sample).status,
+    score: fx.store.getCachedScore(sample).score ?? null,
+  }, "child consumers receive exactly the store's score, not an IPC-clock estimate");
   const legacy = Object.fromEntries(Object.entries(sample).filter(([key]) => [
     "schemaVersion", "epoch", "at", "provider", "model", "effort", "effortSource", "streamKind",
     "clientDurationMs", "networkStatus", "networkSource", "newInputTokens", "cacheReadTokens",

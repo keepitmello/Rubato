@@ -3,7 +3,8 @@
  * Speed score, fits a baseline, writes samples, or contacts a provider.
  */
 import * as legacy from "./speed-index.mjs";
-import { SPEED_CAPTURE_MILESTONES, SPEED_CAPTURE_VERSION } from "./speed-index-store.mjs";
+import { SPEED_CAPTURE_MILESTONES, SPEED_CAPTURE_VERSION } from "./speed-index-capture.mjs";
+import { isSpeedTierKey, speedTierKey } from "./speed-index-tier.mjs";
 
 export const DELIVERY_METRICS = Object.freeze([
   "wait",
@@ -13,7 +14,10 @@ const METRICS = [...DELIVERY_METRICS, "reasoning:first", "toolEnd:first", "toolE
 const REQUEST_KINDS = ["user", "tool", "other"];
 const finiteNonnegative = (value) => Number.isFinite(value) && value >= 0;
 const positiveInteger = (value) => Number.isSafeInteger(value) && value > 0;
-const identityOf = ({ provider, model, effort }) => ({ provider, model, effort });
+const identityOf = (sample) => ({
+  provider: sample.provider, model: sample.model, effort: sample.effort, tierKey: speedTierKey(sample),
+});
+const analysisIdentityKey = (sample) => `${legacy.identityKey(sample)}\0${speedTierKey(sample)}`;
 
 function countBy(values) {
   const counts = new Map();
@@ -157,7 +161,7 @@ function summaries(rows) {
   return Object.fromEntries(METRICS.map((metric) => [metric, metricSummary(rows, metric)]));
 }
 
-function rejection(sample, from, to) {
+export function speedSampleRejection(sample, from, to) {
   if (!sample || sample.schemaVersion !== legacy.SPEED_INDEX_SCHEMA_VERSION || sample.epoch !== legacy.SPEED_INDEX_EPOCH) return "schema";
   const time = typeof sample.at === "string" ? Date.parse(sample.at) : NaN;
   if (!Number.isFinite(time)) return "timestamp";
@@ -187,8 +191,10 @@ export function validateDeliveryProfile(profile) {
     total += cell.weight;
   }
   if (Math.abs(total - 1) > 1e-9) throw new Error("profile cell weights must sum to 1; missing cells are never reweighted");
+  const tierKey = profile.reference.tierKey ?? "unobserved";
+  if (!isSpeedTierKey(tierKey)) throw new Error("profile reference needs a valid observed tier key");
   return {
-    version: 1, id: profile.id, metric: profile.metric, reference: identityOf(profile.reference),
+    version: 1, id: profile.id, metric: profile.metric, reference: { ...identityOf(profile.reference), tierKey },
     cells: profile.cells.map(({ key, weight }) => ({ key, weight })),
   };
 }
@@ -206,7 +212,8 @@ export function compareDeliveryProfile(groups, rawProfile) {
     const missing = cells.filter((cell) => cell.count === 0 || cell.meanMs === null).map((cell) => cell.key);
     return { cells, missing, meanMs: missing.length ? null : cells.reduce((sum, cell) => sum + cell.weight * cell.meanMs, 0) };
   }
-  const referenceGroup = groups.find((group) => legacy.sameIdentity(group.identity, profile.reference));
+  const referenceGroup = groups.find((group) => legacy.sameIdentity(group.identity, profile.reference) &&
+    group.identity.tierKey === profile.reference.tierKey);
   const reference = weighted(referenceGroup);
   return {
     profile,
@@ -235,9 +242,9 @@ export function analyzeSpeedSamples(samples, {
   const excluded = [];
   const byIdentity = new Map();
   for (const sample of samples) {
-    const reason = rejection(sample, from, to);
+    const reason = speedSampleRejection(sample, from, to);
     if (reason) { excluded.push(reason); continue; }
-    const key = legacy.identityKey(sample);
+    const key = analysisIdentityKey(sample);
     const rows = byIdentity.get(key) ?? [];
     rows.push(sample);
     byIdentity.set(key, rows);
@@ -271,7 +278,7 @@ export function analyzeSpeedSamples(samples, {
     };
   });
   return {
-    analysisVersion: 1,
+    analysisVersion: 2,
     mode: "offline_experimental",
     window: { from: new Date(from).toISOString(), to: new Date(to).toISOString(), endExclusive: true },
     inputRows: samples.length,
@@ -286,6 +293,7 @@ export function analyzeSpeedSamples(samples, {
       "Reached-point means are conditional on reaching the point. Coverage and missing reasons are part of the result.",
       "No confidence intervals: calls from one process/hour are not independent observations.",
       "Provider buffering, task content, device/network, and hidden reasoning remain confounded.",
+      "Tier keys separate payload requests, weaker declarations, provider-reported service, and uncaptured history.",
       "First/last toolEnd are provider block ends, not tool execution readiness. Reasoning:first is diagnostic only.",
       "No imputation, server-time substitution, degraded-network removal, or throughput extrapolation.",
     ],

@@ -28,6 +28,15 @@ export function readOptionalNumber(record: Record<string, unknown>, key: string)
   return value
 }
 
+/** For fields where a recorded `null` is a known "no value" rather than a missing one. */
+export function readOptionalNumberOrNull(record: Record<string, unknown>, key: string): number | null | undefined {
+  const value = record[key]
+  if (value === undefined) return undefined
+  if (value === null) return null
+  if (typeof value !== "number") throw new Error(`${key} is not a number`)
+  return value
+}
+
 export function readOptionalBoolean(record: Record<string, unknown>, key: string): boolean | undefined {
   const value = record[key]
   if (value === undefined) return undefined

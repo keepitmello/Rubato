@@ -21,6 +21,7 @@ import { midConversationEffort } from "./mid-conversation-effort.mjs";
 import { PROCESS_STARTED_AT } from "./process-start.mjs";
 import { resolveUpstreamFetch } from "./upstream-dispatcher.mjs";
 import { resolveCallIdentity } from "./speed-index-identity.mjs";
+import { createSpeedTierCapture, observeSpeedRequestTier, observeSpeedResponseTier } from "./speed-index-tier.mjs";
 import { SPEED_CAPTURE_MILESTONES, SPEED_CAPTURE_VERSION, recordSpeedIndexCall, speedIndexStore } from "./speed-index-store.mjs";
 
 // native Cursor 가 이미 실행한 tool block 은 pi-ai 가 **module-local** `Symbol()` 로
@@ -190,6 +191,7 @@ function createCallState(model, options, modelId) {
     speedIndexStore: speedStore,
     speedRecorded: false,
     speedCapture: { captureVersion: SPEED_CAPTURE_VERSION, streamEventCount: 0, streamTerminalObserved: false },
+    speedTier: createSpeedTierCapture(model, options),
     sentAtMs: monotonic(),
     sentAtWallMs: wallNow(),
     processStartedAt: options.processStartedAt ?? PROCESS_STARTED_AT,
@@ -249,7 +251,8 @@ function createCallState(model, options, modelId) {
     if (state.speedRecorded || !state.speedIndexStore) return;
     state.speedRecorded = true;
     try {
-      recordSpeedIndexCall({
+      observeSpeedResponseTier(state.speedTier, message);
+      const sample = recordSpeedIndexCall({
         store: state.speedIndexStore,
         model: state.model,
         options: state.options,
@@ -260,6 +263,19 @@ function createCallState(model, options, modelId) {
         isCursorExecResolved,
         aborted: extra.aborted === true,
       });
+      if (message && sample?.streamKind === "main" && typeof state.speedIndexStore.getCachedScore === "function") {
+        // The task host must use this same calculation, not reconstruct a
+        // provider clock from IPC message arrival or duplicate baseline tables.
+        // This call's number is final here, so a not-yet-read history is read
+        // now rather than stamped as unavailable.
+        const result = state.speedIndexStore.getCachedScore(sample, { blockOnLoad: true });
+        message.rubatoSpeedIndex = {
+          version: 1,
+          metricVersion: result?.metricVersion ?? 1,
+          status: result?.status ?? "unavailable",
+          score: Number.isFinite(result?.score) ? result.score : null,
+        };
+      }
     } catch {}
   };
 
@@ -560,6 +576,14 @@ export function withRubatoStream(inner, { modelId = (model) => model?.id, report
     const innerOptions = {
       ...options,
       [kRubatoCallActive]: true,
+      ...(state.speedIndexStore ? { onPayload: (payload, requestModel) => {
+        const observe = (replacement) => {
+          observeSpeedRequestTier(state.speedTier, replacement === undefined ? payload : replacement, requestModel ?? model);
+          return replacement;
+        };
+        const result = options.onPayload?.(payload, requestModel);
+        return result && typeof result.then === "function" ? result.then(observe) : observe(result);
+      } } : {}),
       onResolvedCall: (identity) => {
         if (identity && typeof identity === "object") {
           state.identity = { ...state.identity, ...identity };

@@ -77,6 +77,11 @@ without delivery timestamps are not backfilled. The exporter reconstructs an
 allowlist; it never serializes the original row.
 
 - Provider/model/applied effort and bounded enum classifications.
+- `tierCaptureVersion: 1`, requested/served service tier, and request provenance.
+  Final request payloads are observed after the caller's request hook. A request
+  without an override is `unspecified`, not confirmed normal service. A served
+  tier is retained only when the response actually exposes it. Older rows remain
+  `unobserved`; unknown or mixed request tiers cannot establish a v2 reference.
 - Numeric usage, durations, channel counts/lengths, observed checkpoints, network
   classification, stream-observation flags, and terminal status.
 - A random persistent device ID, keyed pseudonymous process/record IDs, and UTC
@@ -92,7 +97,96 @@ can identify the GitHub account. Other collaborators can see the stored data.
 The format remains consumable by `scripts/analyze-speed-index.mjs` after download.
 Do not concatenate devices into a causal model ranking: device/network, time,
 request composition, and task selection remain confounded. The current analyzer's
-group averages are descriptive, not a fitted multi-device baseline.
+group averages are descriptive, not a fitted multi-device baseline. Explicit
+exported record IDs are deduplicated across input files; conflicting records with
+the same ID are rejected rather than counted twice.
+
+## One Speed: fixed delivery basket
+
+The UI still shows exactly one `Speed` number. The provider-side store computes
+it; task/agent hosts consume that same snapshot on the assistant message rather
+than recalculating from IPC arrival times or a separate reference constant.
+
+The v2 comparison uses a frozen weighted time basket:
+
+```text
+50% first non-reasoning output
+25% time to 256 UTF-16 units of text
+25% time to 256 UTF-16 units of tool arguments
+        → weighted mean time → round(100 × frozen reference time / target time)
+```
+
+These weights and the 256-unit point are comparison policy, not fitted workload
+frequencies. They do not claim to measure task completion or answer quality.
+Channel prefix times include initial waiting. Extending an output after a
+measured prefix cannot improve its score. Long delays remain in the arithmetic
+mean. Every component is fixed as a user/tool pair: a role with no observation
+closes registration instead of dropping out and handing its weight to the other
+role, and a missing cell is never filled by reweighting the cells that exist.
+
+Registration uses only `openai-codex/gpt-5.6-sol` at medium effort and an explicitly
+observed request tier. It freezes reference times, devices, request-origin roles,
+input/cache cells, and weights. Devices are equally weighted, then observed roles
+within each component, then cells within each role. First-output wait requires
+both user-origin and tool-origin calls. The default reference tier is
+`payload:unspecified:unknown` (observed no override, served tier unconfirmed).
+General/fast and observed/unobserved request tiers remain separate in both
+transitional legacy scores and v2.
+
+Targets use the same recent 30-day window and must cover every registered cell.
+Blocks are UTC calendar days of the observation, so an exported row whose wall
+time was floored to the hour lands in the same block as the raw row.
+Every cell must still have an observation after removing any one whole block.
+This is a structural support check, **not a confidence interval** or proof
+that two days are representative. Leave-one-block-out ranges stay in developer
+diagnostics; uncertainty neither discounts the point estimate nor adds UI
+numbers. Reached points before an error/abort remain observations; unreached
+points are not extrapolated. Selection bias among calls that reached 256 units
+and speed variation within a cell remain limitations.
+
+### One call, one number
+
+The provider boundary computes a call's score once and carries it on the
+assistant message. If the store has not finished reading history yet, that path
+reads what it needs for this call instead of stamping a transient "still
+loading" answer that the footer would later contradict.
+
+The task and agent hosts consume that snapshot; they never rebuild a score from
+IPC arrival clocks or a local reference table. A snapshot that explicitly has no
+score shows `Speed —` on the task row. A call with no provider Speed of its own
+(title, compaction) carries no snapshot and leaves the last measured value
+standing instead of erasing it. The GUI's sub-agent row renders a dash when it
+has no value; it does not yet receive an explicit "no score" for a task that had
+one before.
+
+### Preparing and activating a profile
+
+From a source checkout:
+
+```sh
+# Read-only proposal; unavailable if the new Sol reference is missing:
+node harness/rubato-pi/scripts/prepare-speed-index-profile.mjs
+# Offline replay, including a downloaded pseudonymous corpus:
+node harness/rubato-pi/scripts/analyze-speed-index.mjs /path/to/logs \
+  --profile /path/to/profile.json --format json
+# Explicit one-time local registration, only after inspecting a ready proposal:
+node harness/rubato-pi/scripts/prepare-speed-index-profile.mjs \
+  --output "$HOME/.rubato-pi/agent/speed-index/profile-v2.json"
+```
+
+Use the selected agent directory if it differs from the default. No profile is
+bundled or registered automatically, and no artificial model calls are made.
+Writing is exclusive: a different existing file is never overwritten.
+For live use, generate the profile from **that machine's own raw logs**. Do not
+copy a local profile between machines. Exported-device profiles are for offline
+comparison and cannot be activated against raw local logs.
+
+Restart the session after explicit registration. An absent profile keeps legacy
+scoring for the entire process. A present invalid profile or insufficient v2
+observations produces `Speed —`, never a per-model legacy fallback. V2 history is
+loaded asynchronously; rendering does not read log files, and a new session does
+not erase recent history. The frozen reference defines 100; current reference
+model observations are not forcibly pinned to 100.
 
 ## Batches, limits, and retries
 

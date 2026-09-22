@@ -1,33 +1,34 @@
 import { describe, expect, test } from "bun:test"
+import { formatSpeedIndexLabel, readTaskSpeedIndex } from "./task-speed-index"
 
-import {
-  formatSpeedIndexLabel,
-  rememberTaskSpeedRatio,
-  scoreTaskSpeedIndex,
-  taskSpeedRatio,
-} from "./task-speed-index"
-
-describe("taskSpeedIndex", () => {
-  test("#given a 64k cached call at the bundled median #when scored #then Speed is 100", () => {
-    expect(taskSpeedRatio(8658.089124999999, 80_000, 0.75)).toBeCloseTo(1, 5)
-    expect(scoreTaskSpeedIndex([1])).toBe(100)
-    expect(formatSpeedIndexLabel(100)).toBe("Speed 100")
+describe("provider-owned Speed snapshot", () => {
+  test("uses the observed score unchanged for either metric version", () => {
+    for (const metricVersion of [1, 2]) {
+      expect(readTaskSpeedIndex({
+        rubatoSpeedIndex: { version: 1, metricVersion, status: "ready", score: 147 },
+      })).toBe(147)
+    }
+    expect(formatSpeedIndexLabel(147)).toBe("Speed 147")
   })
 
-  test("#given twice the reference duration #when scored #then Speed is 50", () => {
-    const ratio = taskSpeedRatio(8658.089124999999 * 2, 80_000, 0.75)
-    expect(scoreTaskSpeedIndex([ratio ?? 0])).toBe(50)
+  test("an explicit no-score snapshot reads as a dash, not as a missing value", () => {
+    expect(readTaskSpeedIndex({
+      rubatoSpeedIndex: { version: 1, metricVersion: 2, status: "unavailable", score: null },
+    })).toBeNull()
+    expect(readTaskSpeedIndex({
+      rubatoSpeedIndex: { version: 1, metricVersion: 1, status: "unavailable", score: null },
+    })).toBeNull()
   })
 
-  test("#given an unmatched input band #when scored #then no Speed is emitted", () => {
-    expect(taskSpeedRatio(1000, 300, 0.8)).toBeUndefined()
-    expect(scoreTaskSpeedIndex([])).toBeUndefined()
+  test("missing, future and malformed snapshots never recreate a score", () => {
+    expect(readTaskSpeedIndex({})).toBeUndefined()
+    const good = { version: 1, metricVersion: 2, status: "ready", score: 100 }
+    for (const override of [
+      { version: 2 }, { metricVersion: 99 }, { status: "future-status" },
+      { score: null }, { score: -1 }, { score: Infinity }, { score: 1.1 }, { score: "100" },
+    ]) {
+      expect(readTaskSpeedIndex({ rubatoSpeedIndex: { ...good, ...override } })).toBeUndefined()
+    }
     expect(formatSpeedIndexLabel(undefined)).toBeUndefined()
-  })
-
-  test("#given more than 200 ratios #when remembered #then only the latest cap is kept", () => {
-    let ratios: number[] = []
-    for (let i = 0; i < 205; i += 1) ratios = rememberTaskSpeedRatio(ratios, 1)
-    expect(ratios).toHaveLength(200)
   })
 })

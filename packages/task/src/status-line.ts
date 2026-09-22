@@ -23,7 +23,8 @@ export type StatusTargetInput = {
 export type StatusLineStats = Pick<TaskRunStats, "turns" | "tool_calls"> & {
   readonly runtime_ms?: number
   readonly tokens_per_second?: number
-  readonly speed_index?: number
+  /** Provider Speed Index for the latest scored call; `null` is an explicit no-score dash. */
+  readonly speed_index?: number | null
   readonly cost_usd?: number
   readonly cache_hit_rate_last?: number
   readonly cache_hit_rate_run?: number
@@ -82,8 +83,10 @@ export function composeStatusLine(input: StatusLineInput): string {
 }
 
 export function formatLiveSpeed(stats: Pick<StatusLineStats, "speed_index"> | undefined): string | undefined {
-  if (stats?.speed_index === undefined || !Number.isFinite(stats.speed_index)) return undefined
-  return `Speed ${Math.round(stats.speed_index)}`
+  const score = stats?.speed_index
+  if (score === null) return "Speed —"
+  if (score === undefined || !Number.isFinite(score)) return undefined
+  return `Speed ${Math.round(score)}`
 }
 
 // Running task rows keep spend compact; cache-hit rate remains available in completed-run details.

@@ -7,7 +7,7 @@ import {
   type TaskRunStats,
   type TokenCoverageStatus,
 } from "../state"
-import { isRecord, readNumber, readOptionalNumber, readOptionalString } from "./scalar-read"
+import { isRecord, readNumber, readOptionalNumber, readOptionalNumberOrNull, readOptionalString } from "./scalar-read"
 
 // Parses the persisted run_stats block. Every optional field is absent-tolerant (records written
 // before a field shipped stay valid) but type-strict (a present field of the wrong shape rejects
@@ -21,7 +21,7 @@ export function parseRunStats(value: unknown): TaskRunStats {
   const totalTokens = readOptionalNumber(value, "total_tokens")
   const generationMs = readOptionalNumber(value, "generation_ms")
   const tokensPerSecond = readOptionalNumber(value, "tokens_per_second")
-  const speedIndex = readOptionalNumber(value, "speed_index")
+  const speedIndex = readOptionalNumberOrNull(value, "speed_index")
   const costUsd = readOptionalNumber(value, "cost_usd")
   const cacheHitRateLast = readOptionalNumber(value, "cache_hit_rate_last")
   const cacheHitRateRun = readOptionalNumber(value, "cache_hit_rate_run")
