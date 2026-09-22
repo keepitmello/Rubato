@@ -38,6 +38,36 @@ describe("manager run stats wiring", () => {
     expect(record?.run_stats?.runtime_ms).toBeGreaterThanOrEqual(0)
   })
 
+  test("#given a scored child call then an auxiliary call #when it completes #then the provider Speed persists", async () => {
+    // given
+    const { manager, store, inProcess } = makeManager()
+    const started = await manager.start(baseSpec())
+    if (started.kind !== "started") throw new Error(`unexpected start result: ${started.kind}`)
+    const fake = inProcess.handles.get(started.task_id)
+    if (fake === undefined) throw new Error("fake handle missing")
+
+    // when: a provider-observed call, then an auxiliary call that carries no provider Speed
+    fake.emit({
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "working" }],
+        usage: { output: 120, totalTokens: 300 },
+        rubatoSpeedIndex: { version: 1, metricVersion: 2, status: "ready", score: 173 },
+      },
+    })
+    fake.emit({
+      type: "message_end",
+      message: { role: "assistant", content: [{ type: "text", text: "session title" }], usage: { output: 4 } },
+    })
+    fake.settle({ status: "completed", finalResponse: "done" })
+    const final = await manager.waitFor(started.task_id)
+
+    // then: the auxiliary call must not erase the number the scored call produced
+    expect(final.status).toBe("completed")
+    expect(store.load(started.task_id)?.run_stats?.speed_index).toBe(173)
+  })
+
   test("#given a spawned child reporting cost and cache usage #when it completes #then cost and cache hit rate persist", async () => {
     // given
     const { manager, store, inProcess } = makeManager()
