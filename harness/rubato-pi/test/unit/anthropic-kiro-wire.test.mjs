@@ -219,9 +219,30 @@ test("pinned Anthropic 모델 metadata 를 다시 적지 않았다", async () =>
     pathToFileURL(senpiNested("@earendil-works/pi-ai/dist/providers/anthropic.js")).href
   );
   const native = pinned.anthropicProvider().getModels();
-  const ours = anthropic.getModels().map((model) => `${model.id}:${model.contextWindow}:${model.maxTokens}`);
+  const byId = new Map(native.map((model) => [model.id, model]));
+  const ours = anthropic.getModels();
+
+  // pin 에 있는 행은 손대지 않는다 — context window 나 maxTokens 를 우리가 다시 적으면
+  // 여기서 갈라진다.
   const pin = native.map((model) => `${model.id}:${model.contextWindow}:${model.maxTokens}`);
-  assert.deepEqual(ours, pin);
+  assert.deepEqual(
+    ours.filter((model) => byId.has(model.id)).map((model) => `${model.id}:${model.contextWindow}:${model.maxTokens}`),
+    pin,
+  );
+
+  // pin 에 없는 파생 행은 여기서만 늘어난다. 늘어나면 이 목록도 같이 고쳐야 한다.
+  // 두 번째 계정이 있는 기기에서는 파생 행마다 `[sub]` 사본도 함께 생긴다.
+  const derived = ours.filter((model) => !byId.has(model.id));
+  assert.deepEqual(
+    derived.map((model) => model.id).filter((id) => !id.endsWith("-sub")),
+    ["claude-opus-5-5"],
+  );
+
+  // 파생 행의 틀도 손으로 적지 않았다. id·표시명·가격만 다르고 나머지는 틀 그대로다.
+  const template = byId.get("claude-opus-5");
+  const { id: _derivedId, name: _derivedName, cost: _derivedCost, ...derivedRest } = derived[0];
+  const { id: _templateId, name: _templateName, cost: _templateCost, ...templateRest } = template;
+  assert.deepEqual(derivedRest, templateRest);
 });
 
 // -------------------------------------------------------------- Kiro wire

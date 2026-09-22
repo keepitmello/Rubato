@@ -53,7 +53,7 @@ async function send(model, { provider = "anthropic", headers = { "anthropic-beta
   return { raw, init, seen: seen[0] };
 }
 
-for (const model of ["claude-fable-5-1", "claude-opus-5", "claude-sonnet-5"]) {
+for (const model of ["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5"]) {
   test(`${model} gets compact beta and context_management edit`, async () => {
     const { raw, init, seen } = await send(model);
     assert.notEqual(seen.init.body, raw);
@@ -82,7 +82,7 @@ test("trigger sits at 65% of the model context window (35% left)", async () => {
   const { seen } = await send("claude-fable-5-1", { contextWindow: 1_000_000 });
   const edit = JSON.parse(seen.init.body).context_management.edits[0];
   assert.deepEqual(edit.trigger, { type: "input_tokens", value: 650_000 });
-  const small = await send("claude-opus-5", { contextWindow: 200_000 });
+  const small = await send("claude-opus-5-5", { contextWindow: 200_000 });
   assert.deepEqual(JSON.parse(small.seen.init.body).context_management.edits[0].trigger, { type: "input_tokens", value: 130_000 });
 });
 
@@ -118,7 +118,7 @@ test("non-Anthropic provider is untouched", async () => {
 
 test("existing anthropic-beta is preserved and compact beta is appended", () => {
   const headers = { "anthropic-beta": OAUTH_BETAS, "x-app": "cli" };
-  const applied = applyAnthropicServerCompaction(body("claude-opus-5"), headers, { provider: "anthropic" });
+  const applied = applyAnthropicServerCompaction(body("claude-opus-5-5"), headers, { provider: "anthropic" });
   assert.equal(applied.rewritten, true);
   assert.equal(applied.headers["x-app"], "cli");
   assert.equal(applied.headers["anthropic-beta"], `${OAUTH_BETAS},${ANTHROPIC_SERVER_COMPACTION_BETA}`);

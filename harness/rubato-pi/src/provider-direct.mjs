@@ -136,6 +136,48 @@ export function fable51Models(nativeModels) {
   }];
 }
 
+const OPUS_55_ID = "claude-opus-5-5";
+const OPUS_55_TEMPLATE_ID = "claude-opus-5";
+
+/**
+ * Opus 5.5 의 가격은 Opus 5 와 **다르다**. 틀에서 물려받으면 25% 과다 계상된다.
+ *
+ * 공식 가격표(platform.claude.com/docs/en/about-claude/pricing, 2026-09-22)의
+ * Opus 5.5 행: base input $4 / 5m cache write $5 / cache hit $0.20 / output $20.
+ * Opus 5 는 $5 / $6.25 / $0.50 / $25 다. `cacheRead` 는 base input 의 0.05배라는
+ * 각주도 0.20 을 확인해 준다 (다른 모델은 0.1배).
+ *
+ * `cost.cacheWrite` 는 pin 의 다른 행과 같이 5m 요율이다. Rubato 는 1h 캐시
+ * (`CACHE_RETENTION = "long"`, 5.5 는 $8)를 쓰지만 pin 의 cost 에는 1h 칸이 없어
+ * 다른 모델도 전부 5m 값만 싣는다.
+ */
+const OPUS_55_COST = Object.freeze({ input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 });
+
+/**
+ * Opus 5.5 는 pinned anthropic catalog 에 없다. pin 을 올릴 수 없다 — 0.86.1 이 최신
+ * published 이고 그 카탈로그가 Opus 5 에서 멈춘다. 그래서 pin 의 Opus 5 에서 파생한다.
+ *
+ * 필드를 손으로 다 적지 않는다. `api`, `compat`, `thinkingLevelMap` 같은 것을 빼뜨리면
+ * provider 가 조용히 다른 요청을 만든다. `GET /v1/models` 실측(2026-09-22)에서 5.5 의
+ * context(1M)·max output(128k)·effort 단계(low~max)·capability 플래그가 Opus 5 와
+ * 전부 같았으므로 Opus 5 가 틀이 된다. id·표시명·**가격**만 덮는다.
+ *
+ * 이 행만으로는 부족하다. setup-token 레인은 Claude Code 신원으로 나가고 Anthropic 이
+ * Opus 5.5 를 Claude Code 2.1.280 이상에만 연다 — 하한은
+ * `transforms/misc-claude-code-version.mjs` 가 소유한다.
+ */
+export function opus55Models(nativeModels) {
+  if (nativeModels.some((model) => model.id === OPUS_55_ID)) return [];
+  const template = nativeModels.find((model) => model.id === OPUS_55_TEMPLATE_ID);
+  if (!template) throw new Error("pinned anthropic catalog has no claude-opus-5 to derive Opus 5.5 from");
+  return [{
+    ...template,
+    id: OPUS_55_ID,
+    name: "Opus 5.5",
+    cost: OPUS_55_COST,
+  }];
+}
+
 const GROK_47_ID = "grok-4.7";
 const GROK_47_TEMPLATE_ID = "grok-4.6";
 
@@ -313,11 +355,15 @@ export async function directProviders({
   );
 
   // Anthropic 은 pinned provider + setup-token fallback resolver 하나다. wire 와
-  // tool 이름 규칙은 pin 이 소유한다. Fable 5.1 만 pin 에 없어 Fable 5에서 파생한다.
-  // 피커는 현재 세대(opus/sonnet/fable 5.1, haiku 4.5)로 줄인다.
+  // tool 이름 규칙은 pin 이 소유한다. Fable 5.1 과 Opus 5.5 만 pin 에 없어
+  // 각각 Fable 5·Opus 5 에서 파생한다.
+  // 피커는 현재 세대(fable 5.1, opus 5.5, sonnet 5, haiku 4.5)로 줄인다.
   const anthropicBase = withClaudeSetupToken(anthropicProvider(), anthropic ?? { env });
   const anthropicNative = withPickerIds(
-    withExtraModels(anthropicBase, fable51Models(anthropicBase.getModels())),
+    withExtraModels(anthropicBase, [
+      ...fable51Models(anthropicBase.getModels()),
+      ...opus55Models(anthropicBase.getModels()),
+    ]),
     ANTHROPIC_PICKER_IDS,
   );
 

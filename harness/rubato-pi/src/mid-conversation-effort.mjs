@@ -17,7 +17,7 @@ export const MID_CONVERSATION_EFFORT_BETA = "mid-conversation-output-config-2026
 export const MID_CONVERSATION_EFFORT_MODELS = Object.freeze([
   "claude-fable-5-1",
   "claude-mythos-5-1",
-  "claude-opus-5",
+  "claude-opus-5-5",
 ]);
 
 const MODEL_SET = new Set(MID_CONVERSATION_EFFORT_MODELS);

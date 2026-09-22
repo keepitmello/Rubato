@@ -34,12 +34,12 @@ test("sorts by provider groups and keeps xai/ vs cursor/ apart, Sol first", () =
     { provider: "cursor", id: "gpt-5.6-sol", model: {} },
     { provider: "openai-codex", id: "gpt-5.6-luna", model: {} },
     { provider: "openai-codex", id: "gpt-5.6-sol", model: {} },
-    { provider: "anthropic", id: "claude-opus-5", model: {} },
+    { provider: "anthropic", id: "claude-opus-5-5", model: {} },
   ]);
   assert.deepEqual(sorted.map((item) => `${item.provider}/${item.id}`), [
     "openai-codex/gpt-5.6-sol",
     "openai-codex/gpt-5.6-luna",
-    "anthropic/claude-opus-5",
+    "anthropic/claude-opus-5-5",
     "xai/grok-4.7",
     "cursor/gpt-5.6-sol",
     "cursor/composer-2.5",
@@ -53,14 +53,14 @@ test("picker admits only the product providers, current model excepted", () => {
     [
       openaiAstra,
       { provider: "openai-codex", id: "gpt-6-astra", model: "codex-astra" },
-      { provider: "anthropic", id: "claude-opus-5", model: "opus" },
+      { provider: "anthropic", id: "claude-opus-5-5", model: "opus" },
     ],
     undefined,
     equal,
   );
   assert.deepEqual(admitted.map((item) => `${item.provider}/${item.id}`), [
     "openai-codex/gpt-6-astra",
-    "anthropic/claude-opus-5",
+    "anthropic/claude-opus-5-5",
   ]);
   const keptCurrent = admitPickerItems([openaiAstra], "api-astra", equal);
   assert.deepEqual(keptCurrent, []);
@@ -82,8 +82,8 @@ test("display labels and stock patch replace item.id", () => {
   assert.equal(modelPickerLabel({ provider: "openai-codex", id: "gpt-5.6-sol", model: {} }), "Sol 5.6");
   assert.equal(modelPickerLabel({ provider: "google-antigravity", id: "gemini-3.8-flash", model: {} }), "Gemini 3.8 Flash");
   assert.equal(modelPickerLabel({ provider: "anthropic", id: "claude-fable-5-1", model: {} }), "Fable 5.1");
-  assert.equal(modelPickerLabel({ provider: "anthropic", id: "claude-opus-5", model: {} }), "Opus 5");
-  assert.equal(modelPickerLabel({ provider: "anthropic", id: "claude-opus-5-sub", model: {} }), "Opus 5 [sub]");
+  assert.equal(modelPickerLabel({ provider: "anthropic", id: "claude-opus-5-5", model: {} }), "Opus 5.5");
+  assert.equal(modelPickerLabel({ provider: "anthropic", id: "claude-opus-5-5-sub", model: {} }), "Opus 5.5 [sub]");
   assert.equal(modelPickerLabel({ provider: "anthropic", id: "claude-fable-5-1-sub", model: {} }), "Fable 5.1 [sub]");
   assert.equal(modelPickerLabel({ provider: "openai-codex", id: "gpt-daybreak-blue-latest", model: { name: "Daybreak Blue" } }), "Daybreak Blue");
   const patched = patchModelSelector(readFileSync(stockPath, "utf8"));

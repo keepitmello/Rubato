@@ -53,13 +53,14 @@ working experience, not a benchmark or a measured price/quota claim.
 
 Exact ids: DeepSeek V4.1 Flash `b-ai/deepseek-v4.1-flash`, Grok 4.7 via xAI
 `xai/grok-4.7` or Cursor `cursor/grok-4.7`, Fable 5.1 `anthropic/claude-fable-5-1`, Astra
-`openai-codex/gpt-6-astra`. Resolve Opus and alternative provider routes from the
-live catalog the `Agent` schema lists; a stale or unavailable id fails closed.
+`openai-codex/gpt-6-astra`, Opus 5.5 `anthropic/claude-opus-5-5`. Resolve alternative
+provider routes from the live catalog the `Agent` schema lists; a stale or
+unavailable id fails closed.
 
-A `-sub` id (`anthropic/claude-opus-5-sub`, `anthropic/claude-fable-5-1-sub`,
+A `-sub` id (`anthropic/claude-opus-5-5-sub`, `anthropic/claude-fable-5-1-sub`,
 `openai-codex/gpt-5.6-sol-sub`) is an id-clone of the same upstream model bound to
 the second account slot, not a different model or effort. The picker labels it
-`Opus 5 [sub]`. Rows appear only where a second account exists and only for the
+`Opus 5.5 [sub]`. Rows appear only where a second account exists and only for the
 curated pairs (Anthropic Fable/Opus, Codex Sol/Astra); a leftover credential slot
 elsewhere does not create them. The plain id and its `-sub` copy are separate
 routes and their availability is decided separately — one failing says nothing

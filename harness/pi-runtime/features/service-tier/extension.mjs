@@ -22,7 +22,8 @@ const SERVICE_TIER_APIS = new Set([
   "openai-responses",
   "openai-completions",
 ]);
-const ANTHROPIC_FAST_MODEL_ID = /^claude-opus-(?:5|4-8)(?:-\d{8})?$/;
+// 5-5 가 5 보다 앞에 온다 — 아니면 `claude-opus-5-5` 가 `5` 로만 매칭되고 꼬리에서 죽는다.
+const ANTHROPIC_FAST_MODEL_ID = /^claude-opus-(?:5-5|5|4-8)(?:-\d{8})?$/;
 
 const EMPTY_STATE = Object.freeze({
   revision: 0,

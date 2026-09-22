@@ -1,7 +1,17 @@
 import { replaceOnce } from "./misc-replace.mjs";
 
-/** Fable 5.1 이 요구하는 하한은 2.1.251. 이 기기 Claude Code 와 맞춘다. */
-export const CLAUDE_CODE_VERSION = "2.1.269";
+/**
+ * Anthropic 은 모델마다 Claude Code 하한을 둔다. 지금 가장 높은 하한이 이 값이다.
+ *
+ *   Fable 5.1 → 2.1.251, Opus 5.5 → 2.1.280
+ *
+ * 하한 아래로 보내면 서버가 `claude_code_version_too_old` 로 400 을 돌려준다 —
+ * `user-agent` 만 봐서 정해지는 값이다 (2026-09-22 실측: 같은 body 가
+ * `claude-cli/2.1.280` 으로는 통과하고 `claude-cli/2.1.277` 로는 거절된다).
+ * 그래서 이 상수는 "이 기기 Claude Code 와 맞춘다"가 아니라 **쓰는 모델의 하한을
+ * 덮는 값**이다. 기기 설치본이 이보다 낮아도 된다.
+ */
+export const CLAUDE_CODE_VERSION = "2.1.280";
 
 /** First OAuth system block. Routes the request onto the Claude Code weekly pool. */
 export const CLAUDE_CODE_BILLING_HEADER =

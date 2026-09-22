@@ -27,7 +27,7 @@ import { kRubatoStream } from "../../src/rubato-stream.mjs";
 const CATALOG = [
   { id: "xai/grok-4.7", name: "Grok 4.7" },
   { id: "openai-codex/gpt-5.6-sol", name: "Sol" },
-  { id: "anthropic/claude-opus-5", name: "Opus 5" },
+  { id: "anthropic/claude-opus-5-5", name: "Opus 5.5" },
   { id: "kiro/claude-opus-5", name: "Opus 5 (Kiro)" },
 ];
 
@@ -280,14 +280,14 @@ test("피커는 현재 세대만 남기고 getModels 저장분은 그대로다",
   const anthropicPicker = anthropic.filterModels(anthropic.getModels()).map((model) => model.id);
   assert.deepEqual(anthropicPicker, [
     "claude-fable-5-1",
-    "claude-opus-5",
+    "claude-opus-5-5",
     "claude-sonnet-5",
     "claude-haiku-4-5",
   ]);
   assert.ok(anthropic.getModels().some((model) => model.id === "claude-sonnet-4-5"));
   assert.ok(anthropic.getModels().some((model) => model.id === "claude-fable-5"), "pin 저장분의 Fable 5를 지우면 안 된다");
   assert.ok(anthropic.getModels().some((model) => model.id === "claude-fable-5-1"), "Fable 5.1 파생이 없다");
-  assert.ok(anthropic.getModels().some((model) => model.id === "claude-opus-5-sub"), "Opus 5 [sub] 파생이 없다");
+  assert.ok(anthropic.getModels().some((model) => model.id === "claude-opus-5-5-sub"), "Opus 5.5 [sub] 파생이 없다");
   assert.ok(anthropic.getModels().some((model) => model.id === "claude-fable-5-1-sub"), "Fable 5.1 [sub] 파생이 없다");
 
   const codexPicker = new Set(codex.filterModels(codex.getModels()).map((model) => model.id));
