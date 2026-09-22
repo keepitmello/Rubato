@@ -15,8 +15,10 @@ test('overlay is guarded, idempotent, reversible and rejects dirty upstream befo
     await mkdir(path.dirname(path.join(root,relative)),{recursive:true});
     if(entry.original!==null) await writeFile(path.join(root,relative),entry.original);
   }
-  // 설치된 매니페스트가 정본이다. 숫자를 박아 두면 파일을 하나 더 손댈 때마다 시험이 먼저 썩는다.
-  const first=await applyIntegration({t3:root}); assert.equal(first.changes.length,Object.keys(manifest.files).length);
+  // 새 overlay 파일도 포함한 이번 설치의 매니페스트와 비교한다.
+  const first=await applyIntegration({t3:root});
+  const installed=JSON.parse(await readFile(path.join(root,'.rubato-pi-overlay.json'),'utf8'));
+  assert.equal(first.changes.length,Object.keys(installed.files).length);
   assert.equal((await applyIntegration({t3:root})).changes.length,0);
   // An intact old replacement must upgrade even when the new transform can no
   // longer reverse it. The manifest hash distinguishes it from a user's edit.
