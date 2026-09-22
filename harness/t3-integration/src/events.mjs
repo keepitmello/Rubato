@@ -541,6 +541,13 @@ export class EventProjection {
     switch (event.type) {
       case 'agent_start': this.begin(); break;
       case 'agent_settled': this.settle(); break;
+      // Pi 세션은 첫 턴이 끝날 때 제목 확장이 주제를 보고 스스로 이름을 짓는다.
+      // 그 이름이 CLI 탭과 세션 목록에 뜨는 값이고, 앱 스레드 제목도 같은 것을
+      // 써야 두 화면이 갈라지지 않는다. /name 도 이 이벤트로 돌아온다.
+      case 'session_info_changed':
+        if (typeof event.name === 'string' && event.name.trim())
+          this.event('thread.metadata.updated', { name: event.name });
+        break;
       case 'message_start': case 'message_update':
         this.message(event.message, false);
         if (event.assistantMessageEvent?.type === 'thinking_end') this.endReasoning(event.message);
