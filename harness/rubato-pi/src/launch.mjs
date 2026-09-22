@@ -13,6 +13,7 @@ import { SKILL_DIRS } from "./skills-section.mjs";
 import { senpiCli, senpiCliMain } from "./engine-paths.mjs";
 import { releaseBootChrome, setBootChromeStatus } from "./boot-chrome.mjs";
 import { ENGINE_REPAIR_HINT, resolveExecutionEngine } from "./engine-selection.mjs";
+import { removeRetiredAgentExtensions } from "./retired-agent-extensions.mjs";
 export {
   isValidInstalledCandidateReceipt, readPiEngineReceipt, piEngineReceiptPresent,
   readEngineMarker, resolveLaunchEngine, ENGINE_REPAIR_HINT,
@@ -156,6 +157,7 @@ export function applyPiProcessEnv(nextEnv) {
 
 function prepareAgentDir(agentDir) {
   mkdirSync(agentDir, { recursive: true });
+  removeRetiredAgentExtensions(agentDir);
   if (!sessionDefaultsLookCurrent(agentDir)) {
     ensureSessionDefaults(agentDir);
   }

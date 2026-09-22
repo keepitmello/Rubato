@@ -4,6 +4,7 @@ import { connect } from 'node:net';
 import path from 'node:path';
 import { readDescriptor } from './descriptor.mjs';
 import { resolveLaunchEngine, readPiEngineReceipt } from '../../rubato-pi/src/engine-selection.mjs';
+import { removeRetiredAgentExtensions } from '../../rubato-pi/src/retired-agent-extensions.mjs';
 
 const openings = new Map();
 const serverCli = path.join(import.meta.dirname, 'cli.mjs');
@@ -39,6 +40,8 @@ export async function ensureProfileEngine({ descriptorPath, nodeBin = process.ex
   runtimeRoot = installedSharedRuntime(env), requireTerminal = false, timeoutMs = 40000 }) {
   if (!path.isAbsolute(descriptorPath)) throw new TypeError('Descriptor path must be absolute');
   const agentDir = path.dirname(path.dirname(descriptorPath));
+  // Every engine start (CLI and T3 bridge) passes here, before pi discovers agentDir/extensions.
+  removeRetiredAgentExtensions(agentDir);
   const expectedRoot = runtimeRoot && await realpath(runtimeRoot);
   const accept = descriptor => {
     if (requireTerminal && (!descriptor.terminalSocketPath || descriptor.runtimeRoot !== expectedRoot)) {
