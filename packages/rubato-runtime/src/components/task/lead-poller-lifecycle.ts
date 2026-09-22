@@ -36,6 +36,12 @@ export type LeadPollerLifecycleDeps = {
 
 export type LeadPollerLifecycle = {
   tick(): Promise<void>
+  /**
+   * Register a listener run after each periodic poll. The mailbox tick is the only edge that fires
+   * when mail or board state changes with no task-record write, so a producer that must react to
+   * those (the team batch wake) subscribes here instead of inventing a second timer.
+   */
+  onTick(listener: () => void): () => void
   resolveLeadPoller(teamRunId: string): LeadPollerPort | undefined
   resolveTeamRunId(explicit?: string): Promise<
     | { readonly ok: true; readonly teamRunId: string }
@@ -54,6 +60,7 @@ const POLL_INTERVAL_MS = 1_000
 
 export function createLeadPollerLifecycle(deps: LeadPollerLifecycleDeps): LeadPollerLifecycle {
   const pollers = new Map<string, OwnedPoller>()
+  const tickListeners = new Set<() => void>()
   const createPoller = deps.createPoller ?? createLeadPoller
   const readMap = deps.readMemberTaskMap ?? readMemberTaskMap
   const sink = createInjectionSink(deps)
@@ -156,15 +163,31 @@ export function createLeadPollerLifecycle(deps: LeadPollerLifecycleDeps): LeadPo
   }
 
   const disposeInterval = (deps.scheduleInterval ?? scheduleInterval)(() => {
-    void tick().catch((error: unknown) => {
-      deps.logger.warn("rubato-runtime lead poller tick failed", {
-        error: error instanceof Error ? error.message : String(error),
+    void tick()
+      .catch((error: unknown) => {
+        deps.logger.warn("rubato-runtime lead poller tick failed", {
+          error: error instanceof Error ? error.message : String(error),
+        })
       })
-    })
+      .finally(() => {
+        for (const listener of tickListeners) {
+          try {
+            listener()
+          } catch (error) {
+            deps.logger.warn("rubato-runtime lead poller tick listener failed", {
+              error: error instanceof Error ? error.message : String(error),
+            })
+          }
+        }
+      })
   }, POLL_INTERVAL_MS)
 
   return {
     tick,
+    onTick(listener) {
+      tickListeners.add(listener)
+      return () => tickListeners.delete(listener)
+    },
     resolveLeadPoller,
     resolveTeamRunId,
     resolveDefaultTeamRunId,

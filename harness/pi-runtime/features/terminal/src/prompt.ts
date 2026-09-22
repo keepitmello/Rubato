@@ -41,8 +41,10 @@ manual \`&\` backgrounding — use the built-in session tools:
     after registration, so watch an already-existing file with \`"modify"\`; registration needs the
     parent directory to exist already, so poll with a \`command\` when the run creates that
     directory too. This branch takes no \`filter\` and no \`persistent\`.
-  Identical updates are deduped; repeated monitor-only wakes pause the noisy monitor(s) that
-  caused them, not all monitors. Completion still wakes the session, and
+  This is for ordinary external state; a delegate's or teammate's progress, logs, task state or
+  result file is not a monitor target — its completion, failure or permission notification
+  already arrives. Identical updates are deduped; repeated monitor-only wakes pause the noisy
+  monitor(s) that caused them, not all monitors. Completion still wakes the session, and
   \`${monitor}({ action: "rearm", bash_id })\` resumes one while \`${monitor}({ action: "rearm" })\`
   resumes all paused monitors; real user input also resumes paused monitors.
 - \`bash_input({ bash_id, input, keys, submit })\` sends stdin or named keys (e.g.

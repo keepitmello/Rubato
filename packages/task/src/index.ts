@@ -430,9 +430,13 @@ export type {
 } from "./team"
 export {
   approveShutdown,
+  BATCH_WAKE_DEBOUNCE_MS,
   canClaimTeamTask,
   claimTeamTask,
+  countUnreadTeamMessages,
+  createTeamBatchWake,
   createTeamTask,
+  decideTeamBatchWake,
   DELETABLE_MEMBER_STATUSES,
   getTeamTask,
   isMemberDeletable,
@@ -449,12 +453,19 @@ export {
 export type {
   ApproveShutdownDeps,
   CreateTeamTaskInput,
+  DecideTeamBatchWakeInput,
   RejectShutdownDeps,
   RequestShutdownDeps,
   SenpiShutdownErrorCode,
   ShutdownMessageKind,
   ShutdownMessenger,
   ShutdownOutboundMessage,
+  TeamBatchDecision,
+  TeamBatchMember,
+  TeamBatchTeam,
+  TeamBatchWake,
+  TeamBatchWakePorts,
+  TeamBatchWakeResult,
   TeamTaskFilter,
   TeamTasklistContext,
 } from "./team"
