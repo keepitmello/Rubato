@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { listenerPid, processTable } from "../../scripts/restart-profile-engine.mjs";
+import { listenerPid, processTable } from "../../scripts/profile-engine-pid.mjs";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
