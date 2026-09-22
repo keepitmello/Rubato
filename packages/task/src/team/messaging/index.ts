@@ -14,6 +14,7 @@ export type {
 } from "./lead-poller"
 export { reclaimStaleTeamReservations } from "./reclaim"
 export type { ReclaimResult } from "./reclaim"
+export { countUnreadTeamMessages } from "./unread-count"
 export { DEFAULT_STALE_RESERVATION_TTL_MS, reconcileTeamMailboxOnSessionStart } from "./session-start-reconcile"
 export type { ReconcileTeamMailboxDeps } from "./session-start-reconcile"
 export { sendTeamMessage } from "./send"

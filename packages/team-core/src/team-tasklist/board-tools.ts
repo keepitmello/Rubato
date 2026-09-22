@@ -23,13 +23,13 @@ export const TEAM_BOARD_TOOLS = [
     name: TEAM_TASK_LIST,
     label: "Team Task List",
     description:
-      "List team work-board items, optionally filtered by status (pending, claimed, in_progress, completed, deleted) or owner. Agent session state lives in AgentOutput, not on this board.",
+      "List team work-board items, optionally filtered by status (pending, claimed, in_progress, completed, deleted) or owner. This board is the record of assigned work; Agent session state is not on it.",
   },
   {
     name: TEAM_TASK_GET,
     label: "Team Task Get",
     description:
-      "Read one team work-board item by id; returns not_found if absent. The task_id is a board id, not an Agent session agentId. Use AgentOutput for child Agent sessions.",
+      "Read one team work-board item by id; returns not_found if absent. The task_id is a board id, not an Agent session agentId. Child agent sessions are not on this board.",
   },
   {
     name: TEAM_TASK_UPDATE,

@@ -156,7 +156,8 @@ function removeRecord(
   // Record-last ordering: a crash mid-cleanup never orphans a record pointing at nothing.
   // (1) children/<taskId>/ recursively (session transcripts)
   rmSync(join(stateDir, "children", String(taskId)), { recursive: true, force: true })
-  // (2) completion spill file
+  // (2) per-run results and the legacy single spill file
+  rmSync(join(stateDir, "completion-results", String(taskId)), { recursive: true, force: true })
   rmSync(join(stateDir, "completion-results", `${taskId}.txt`), { force: true })
   // (3) task event log
   const logPath = join(stateDir, "logs", `${taskId}.jsonl`)

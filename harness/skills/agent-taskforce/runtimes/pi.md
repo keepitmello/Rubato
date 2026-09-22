@@ -8,7 +8,7 @@ and responsibility. These are the Pi edition's surfaces, not Codex role files.
 | Lead | Current user-facing rubato-pi session |
 | Continuing owner/verifier | `team_create` member after combined intent/roster approval |
 | Bounded support | `Agent`, continued with `AgentSend` |
-| Agent status/results | `AgentOutput`; completion notifications are not work acceptance |
+| Agent status/results | Completion pointer plus its result file; the notification is not work acceptance |
 | Team communication | Direct peer `team_send` mailbox |
 | Shared assignments/evidence | Team board/tasklist, including existing `metadata` |
 | Lifecycle | Existing `team_*` shutdown request/response tools |
@@ -44,9 +44,11 @@ in the English handoff. Unread mail and board ownership stay with the member;
 consumed requests need the handoff, and old verdicts do not cover later edits.
 Recovery does not authorize a model/cost change or reopening approved shutdown.
 
-Owners manage their own helpers and may use `AgentOutput` for them. A team lead
-reads the result artifact or board rather than replaying an owner's transcript.
-The lead's own bounded discovery helper is distinct from a continuing owner.
+A team lead and an owner read the result artifact or board rather than replaying a
+child's transcript; a completion carries its result file path. A teammate's normal
+turn end does not wake the lead — one aggregate wake arrives when the run's assigned
+board work is closed. The lead's own bounded discovery helper is distinct from a
+continuing owner.
 A read of taskforce may choose direct work instead of `team_create`.
 
 `worktreePath` provisions an actual worktree. It does not isolate ports, processes,

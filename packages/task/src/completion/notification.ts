@@ -1,5 +1,6 @@
-import { mkdirSync, writeFileSync } from "node:fs"
+import { mkdirSync } from "node:fs"
 import { join } from "node:path"
+import { writeFileAtomically } from "@rubato/utils"
 
 import { messageability } from "../state"
 import type { ResolvedModelRecord, TaskRecord } from "../state"
@@ -48,8 +49,9 @@ export function buildCompletionDetails(record: TaskRecord, options: BuildDetails
 export function buildCompletionMessage(details: readonly CompletionDetails[]): ParentNotifierMessage {
   return {
     customType: "rubato.task.completion",
-    // Status ping only. The child's body stays on `details` for the TUI; inlining it here
-    // overflowed the parent's model context. Owners report via team_send; AgentOutput peeks raw.
+    // Status pointer only: status, name, id and the result file path. The body lives in that file;
+    // `details` carries it for the TUI only (senpi's convertToLlm sends `content` alone for role
+    // "custom"), so inlining it in `content` is what used to overflow the parent's model context.
     content: completionMessageLines(details).join("\n"),
     display: false,
     details,
@@ -60,19 +62,30 @@ export function completionMessageLines(details: readonly CompletionDetails[], wi
   return details.flatMap((detail) => completionDetailLines(detail, width))
 }
 
+// EVERY delegated result is recoverable from a file, not only the ones that overflowed the transport
+// limit: the parent reads the file path instead of pulling the body into its context. `details.text`
+// stays capped so the display payload cannot grow without bound.
 function finalResponseForNotification(record: TaskRecord, stateDir: string | undefined): { readonly text: string; readonly file?: string } {
   const source = record.final_response ?? record.error_message ?? ""
-  if (source.length <= FINAL_RESPONSE_TRANSPORT_LIMIT) return { text: source }
-  if (stateDir === undefined) return { text: source.slice(0, FINAL_RESPONSE_TRANSPORT_LIMIT) }
-
-  const path = completionSpillPath(stateDir, record.task_id)
-  mkdirSync(join(stateDir, "completion-results"), { recursive: true })
-  writeFileSync(path, source, "utf8")
-  return { text: source.slice(0, FINAL_RESPONSE_TRANSPORT_LIMIT), file: `local://${path}` }
+  const text = source.length <= FINAL_RESPONSE_TRANSPORT_LIMIT
+    ? source
+    : source.slice(0, FINAL_RESPONSE_TRANSPORT_LIMIT)
+  if (stateDir === undefined) return { text }
+  return { text, file: writeCompletionResultFile(stateDir, record.task_id, record.notification.run_epoch, source) }
 }
 
-function completionSpillPath(stateDir: string, taskId: string): string {
-  return join(stateDir, "completion-results", `${taskId}.txt`)
+/**
+ * Persist one delegated result body under the state dir and return its absolute path. Called for
+ * every terminal child (including the team members whose individual notification is silenced), so a
+ * result stays readable even when no batch ever completes.
+ */
+export function writeCompletionResultFile(stateDir: string, taskId: string, epoch: number, body: string): string {
+  // A continuation has a new epoch. Its output must never change an already-issued result pointer.
+  const directory = join(stateDir, "completion-results", taskId)
+  const path = join(directory, `${epoch}.txt`)
+  mkdirSync(directory, { recursive: true })
+  writeFileAtomically(path, body)
+  return path
 }
 
 function durationMs(record: TaskRecord): number {
@@ -93,5 +106,9 @@ function completionDetailLines(detail: CompletionDetails, width: number | undefi
   const name = normalizeRendererText(detail.name)
   const id = normalizeRendererText(detail.agentId)
   const line = name === id ? `${status} ${id}` : `${status} ${name} ${id}`
-  return [width === undefined ? line : excerptRendererPromptText(line, width)]
+  const lines = [width === undefined ? line : excerptRendererPromptText(line, width)]
+  // The pointer is what the parent acts on; without it the notification is a wake with no address.
+  if (detail.final_response_file === undefined) return lines
+  const result = `result ${normalizeRendererText(detail.final_response_file)}`
+  return [...lines, width === undefined ? result : excerptRendererPromptText(result, width)]
 }

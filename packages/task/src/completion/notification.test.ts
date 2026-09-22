@@ -76,11 +76,43 @@ describe("buildCompletionDetails", () => {
     const details = buildCompletionDetails(completedRecord({ final_response: result }), { stateDir })
 
     // then
-    expect(details.final_response_file).toStartWith("local://")
+    const spillPath = details.final_response_file ?? ""
+    expect(spillPath).toStartWith(stateDir)
     expect(details.final_response.length).toBeLessThan(result.length)
-    const spillPath = details.final_response_file?.slice("local://".length) ?? ""
     expect(existsSync(spillPath)).toBe(true)
     expect(readFileSync(spillPath, "utf8")).toBe(result)
+  })
+
+  test("#given a short result #when details built with a state dir #then the body is still readable from a file", () => {
+    // given: the 2026-09-22 sample showed short bodies were recoverable only by peeking the child
+    const stateDir = tempStateDir()
+    const result = "short body the lead must be able to read"
+
+    // when
+    const details = buildCompletionDetails(completedRecord({ final_response: result }), { stateDir })
+
+    // then
+    expect(details.final_response).toBe(result)
+    const path = details.final_response_file ?? ""
+    expect(existsSync(path)).toBe(true)
+    expect(readFileSync(path, "utf8")).toBe(result)
+  })
+
+  test("a resumed run cannot overwrite the result named by an earlier notification", () => {
+    const stateDir = tempStateDir()
+    const first = buildCompletionDetails(completedRecord({ final_response: "first run" }), { stateDir })
+    const second = buildCompletionDetails(completedRecord({
+      final_response: "second run",
+      notification: { run_epoch: 1, notified_epoch: 0 },
+    }), { stateDir })
+    expect(first.final_response_file).not.toBe(second.final_response_file)
+    expect(readFileSync(first.final_response_file!, "utf8")).toBe("first run")
+    expect(readFileSync(second.final_response_file!, "utf8")).toBe("second run")
+  })
+
+  test("an empty child return still leaves a readable result file", () => {
+    const details = buildCompletionDetails(completedRecord({ final_response: "" }), { stateDir: tempStateDir() })
+    expect(readFileSync(details.final_response_file!, "utf8")).toBe("")
   })
 
   test("#given resident completed record #when details built #then continuation hint names AgentSend but never AgentOutput", () => {
@@ -141,10 +173,11 @@ describe("buildCompletionDetails", () => {
 })
 
 describe("buildCompletionMessage", () => {
-  test("#given a complete result #when notification built #then the ping carries status without inlining the body", () => {
+  test("#given a complete result #when notification built #then the ping carries status and the result path without inlining the body", () => {
     // given
     const fullResult = "child final text ".repeat(100)
-    const details = buildCompletionDetails(completedRecord({ final_response: fullResult }))
+    const stateDir = tempStateDir()
+    const details = buildCompletionDetails(completedRecord({ final_response: fullResult }), { stateDir })
 
     // when
     const message = buildCompletionMessage([details])
@@ -153,16 +186,19 @@ describe("buildCompletionMessage", () => {
     expect(message.customType).toBe("rubato.task.completion")
     expect(message.details).toEqual([details])
     expect(message.details[0]?.final_response).toBe(fullResult)
-    expect(message.content).toBe("completed summarize-logs st_deadbeef")
+    // The body stays on details (TUI only: senpi sends `content` alone for a custom role).
     expect(message.content).not.toContain(fullResult)
-    expect(message.content).not.toContain("result:")
     expect(message.content).not.toContain("AgentSend")
     expect(message.content).not.toContain("AgentOutput")
     expect(message.content).not.toContain("duration:")
     expect(message.content).not.toContain("<task-notification>")
+    // The pointer IS the message: an openable path the parent can read.
+    expect(message.content).toContain("completed summarize-logs st_deadbeef")
+    expect(message.content).toContain(`result ${details.final_response_file ?? ""}`)
+    expect(message.content).not.toContain("local://")
   })
 
-  test("#given a spilled result #when notification built #then the ping still omits the blob and the file stays on details", () => {
+  test("#given a spilled result #when notification built #then the ping points at the file and omits the blob", () => {
     // given
     const details = buildCompletionDetails(
       completedRecord({ final_response: "x".repeat(32_001) }),
@@ -173,9 +209,10 @@ describe("buildCompletionMessage", () => {
     const message = buildCompletionMessage([details])
 
     // then
-    expect(details.final_response_file).toStartWith("local://")
+    const path = details.final_response_file ?? ""
+    expect(path).not.toBe("")
+    expect(message.content).toContain(path)
     expect(message.content).not.toContain("x".repeat(100))
-    expect(message.content).not.toContain(details.final_response_file ?? "local://")
   })
 
   test("#given two details #when message built #then both completions appear in one content block", () => {

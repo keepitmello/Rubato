@@ -3,7 +3,6 @@ import {
   buildLeadTeamTools,
   createLeadDeliveryJournal,
   createTaskCancelTool,
-  createTaskOutputTool,
   createTaskSendTool,
   createTaskTool,
   liveModelCatalog,
@@ -28,6 +27,7 @@ import { renderTaskCompletion, renderTeamMemberLiveness } from "./renderers"
 import { createResumptionChannelEmitter } from "./resumption-channel-emitter"
 import { createTeamMailboxReconciler, createTeamService } from "./team-service"
 import { createSessionTransitionBridge } from "./session-transition-bridge"
+import { createRuntimeTeamBatchWake } from "./team-batch-wake"
 import { wireSessionStartProcessSweep } from "./process-sweep"
 import { createTaskStatusUi } from "./status-ui"
 import { missingTaskCapabilities } from "./surface"
@@ -88,7 +88,7 @@ export function createTaskComponent(options: TaskComponentOptions = {}): RubatoC
       pi.registerMessageRenderer?.(TEAM_MEMBER_LIVENESS_MESSAGE_TYPE, renderTeamMemberLiveness)
       const models = liveModelCatalog(() => engine.runtime.modelRegistry())
       const teamTools = createTeamToolContext(pi, ctx, engine, models)
-      registerTaskTools(pi, engine, models, teamTools.service.listTeams)
+      registerTaskTools(pi, engine, models)
       if (!memberProcess) {
         registerTeamTools(pi, teamTools)
         registerRemovedTeamWaitHint(pi)
@@ -120,10 +120,37 @@ export function createTaskComponent(options: TaskComponentOptions = {}): RubatoC
       })
       const transitions = createSessionTransitionBridge({ runtime: engine.runtime, notifier: engine.notifier })
 
+      const teamBatchWake = createRuntimeTeamBatchWake({
+        engine,
+        listTeams: teamTools.service.listTeams,
+        config: toTeamCoreConfig(engine.settings, teamStorageBaseDir({
+          project_dir: cwd,
+          ...(engine.settings.state_dir !== undefined ? { task: { state_dir: engine.settings.state_dir } } : {}),
+        })),
+        stateDir: {
+          project_dir: cwd,
+          ...(engine.settings.state_dir !== undefined ? { task: { state_dir: engine.settings.state_dir } } : {}),
+        },
+        sessionId: () => engine.runtime.sessionId(),
+        onError: (error) => {
+          ctx.logger.warn("Rubato task team batch wake failed", {
+            error: error instanceof Error ? error.message : String(error),
+          })
+        },
+      })
+      if (!memberProcess) {
+        // Two edges can newly make "the batch is finished" true: a task-record write (member turn
+        // ends) and a mailbox/board change with no record write. The second has no other signal, so
+        // the existing 1s poller tick drives it; both funnel through the wake's own serialization.
+        engine.onStoreMutation(() => teamBatchWake.schedule())
+        teamTools.leadPollers.onTick(() => teamBatchWake.schedule())
+      }
+
       wireEventBridge(pi, ctx, engine, statusUi, transitions, {
         reconcileTeamMailbox: teamTools.reconcileTeamMailbox,
         leadPollers: teamTools.leadPollers,
         resumptionChannels,
+        teamBatchWake,
       })
     },
   }
@@ -165,7 +192,6 @@ function registerTaskTools(
   pi: SenpiExtensionAPI,
   engine: TaskEngine,
   models: ReturnType<typeof liveModelCatalog>,
-  listTeams: TeamToolsService["listTeams"],
 ): void {
   const resolveCallerSessionId = defaultResolveCallerSessionId
   const manager = engine.manager
@@ -184,18 +210,10 @@ function registerTaskTools(
     }),
   })
   pi.registerTool({ ...createTaskCancelTool({ manager }) })
-  pi.registerTool({
-    ...createTaskOutputTool({
-      manager,
-      stateDir: engine.stateDir,
-      resolveCallerSessionId,
-      ownsActiveTeam: async (sessionId) => {
-        if (isTeamMemberProcess()) return false
-        const teams = await listTeams()
-        return teams.some((team) => team.leadSessionId === sessionId)
-      },
-    }),
-  })
+  // AgentOutput is gone from the model surface. A delegated result arrives as a completion pointer
+  // plus a result file path; peeking a child's transcript was how the lead's context filled up with
+  // execution logs, and the runtime's own diagnostics (status UI, /tasks, run logs) stay available to
+  // the human. Nothing internal depends on the tool being registered.
 }
 
 function createTeamToolContext(
