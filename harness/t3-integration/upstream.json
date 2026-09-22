@@ -1,6 +1,13 @@
 {
   "upstreamCommit": "c14f6015bfe479d313355cb234af1a5c16dbb15f",
   "targets": {
+    "apps/web/src/components/RightPanelTabs.tsx": "724fc2105d027f2166a9b3542eaf0f34b3a6039308ffaf38705417eb91897ba2",
+    "apps/web/src/components/files/FilePreviewPanel.tsx": "005464e53f23df5e5f58e74107b9477cb3707e6b45dc22a49500d3e31ca0891d",
+    "packages/contracts/src/project.ts": "5362694d4c38005945d08ab09ad51575330eaa2c67106ba52b709f8f3c8f88dc",
+    "packages/contracts/src/rpc.ts": "d2bbf1d3af080c6eb78c9f5e08d4e3b4db47d936ed8bb17ee9a69f7b8b14d5ad",
+    "packages/client-runtime/src/state/projectCommands.ts": "0e28116fbbc86302365f2444d8cd02915c813c0f3026ae41ed038b0fa850031e",
+    "apps/server/src/workspace/WorkspaceFileSystem.ts": "7eafd60becb68994b56253d54810b74f4dc67089fc9fe80c448c28f2c7a792f8",
+    "apps/server/src/auth/RpcAuthorization.ts": "1fcc54c257045fcf565896b9bc79f951e9985310cee7432221ad33db98ff5987",
     "apps/server/src/ws.ts": "15dde730c86fd1b8442954fb12f783651590cad63cf559aa75cc9c2fe18d6983",
     "apps/mobile/src/lib/threadActivity.test.ts": "03de2a540edec2c20668b866003c1811d0fde15c87e87dc0c8b7901f00c2ced2",
     "apps/web/src/components/chat/MessagesTimeline.logic.test.ts": "0d23c459ea5e12432f647b557f26340d2da7f63d046145f0331f0afb784f3b4d",

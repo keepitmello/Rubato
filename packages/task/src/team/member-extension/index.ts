@@ -33,6 +33,8 @@ import {
   createReportReminder,
 } from "./report-reminder"
 import { createMemberTaskSendTool } from "./tools"
+import { readMemberTaskMap } from "../member-map"
+import { resolveTeamRuntimeDirs } from "../storage"
 
 export {
   MEMBER_EXTENSION_BUNDLE_NAME,
@@ -161,11 +163,19 @@ export default async function registerMemberExtension(pi: ExtensionAPI): Promise
       { triggerTurn: true, deliverAs: "steer" },
     )
   })
+  const isCurrentMember = async (): Promise<boolean> => {
+    const { runtimeDir } = resolveTeamRuntimeDirs(
+      { project_dir: parsed.stateDir, task: { state_dir: parsed.stateDir } },
+      parsed.teamRunId,
+    )
+    return (await readMemberTaskMap(runtimeDir))[parsed.memberName] === parsed.taskId
+  }
   runtime.poller = createMemberSelfPoller({
     teamRunId: parsed.teamRunId,
     memberName: parsed.memberName,
     config: parsed.config,
     sessionDir: parsed.sessionDir,
+    isCurrentMember,
     inject: (content, messageId) => {
       reminder.onInboundWork()
       pi.sendMessage(
@@ -189,6 +199,7 @@ export default async function registerMemberExtension(pi: ExtensionAPI): Promise
     taskId: parsed.taskId,
     config: parsed.config,
     members: parsed.members,
+    isCurrentMember,
     appendEvent: (taskId, event) => store.appendEvent(taskId, event),
     onSent: () => reminder.onTeamSend(),
   }))
@@ -245,6 +256,7 @@ function createMemberBoardService(parsed: ParsedMemberExtensionEnv): TeamToolsSe
   }
   return {
     createTeam: unused("createTeam"),
+    replaceMember: unused("replaceMember"),
     deleteTeam: unused("deleteTeam"),
     sendMessage: unused("sendMessage"),
     status: unused("status"),

@@ -8,6 +8,7 @@ export {
   resolveProjectTeamSpecPath,
   resolveTeamMemberInboxDir,
   resolveTeamRuntimeDirs,
+  withTeamRuntimeMutation,
   teamStorageBaseDir,
 } from "./storage"
 export type { TeamRuntimeDirs } from "./storage"
@@ -20,6 +21,8 @@ export type {
   TeamSpecSource,
 } from "./registry"
 export { createTeam, deleteTeam, SenpiTeamRuntimeError } from "./runtime"
+export { replaceTeamMember, TeamMemberReplacementError } from "./replace-member"
+export type { ReplaceTeamMemberInput, ReplaceTeamMemberResult, ReplaceTeamMemberDeps } from "./replace-member"
 export type {
   CreateTeamDeps,
   CreateTeamResult,
@@ -44,11 +47,22 @@ export type { MemberStatusPort, RefreshTeamMemberStatusesDeps, RuntimeMemberStat
 export type { TeamMemberOwnershipDeps, TeamMemberTaskIdentity } from "./liveness-ownership"
 export { memberTaskName, spawnTeamMembers } from "./spawn-members"
 export type { SpawnMembersInput, SpawnMembersResult, SpawnedMember } from "./spawn-members"
+export { BATCH_WAKE_DEBOUNCE_MS, createTeamBatchWake, decideTeamBatchWake } from "./team-batch-wake"
+export type {
+  DecideTeamBatchWakeInput,
+  TeamBatchDecision,
+  TeamBatchMember,
+  TeamBatchTeam,
+  TeamBatchWake,
+  TeamBatchWakePorts,
+  TeamBatchWakeResult,
+} from "./team-batch-wake"
 export { createTeamMemberRespawnLaunchResolver, TeamMemberRespawnLaunchError } from "./member-respawn"
 export type { TeamMemberRespawnLaunchErrorCode, TeamMemberRespawnLaunchResolverOptions } from "./member-respawn"
 export {
   buildPeerMessageEnvelope,
   buildTeamMessage,
+  countUnreadTeamMessages,
   createLeadDeliveryJournal,
   createLeadPoller,
   createIncrementalSessionMarkerIndex,

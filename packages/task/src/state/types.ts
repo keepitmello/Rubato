@@ -99,6 +99,9 @@ export type TaskNotification = {
   readonly notified_epoch: number
   readonly notification_failed_epoch?: number
   readonly liveness_notified_epoch?: number
+  // Epoch durably published to the lead's inbox by the team-batch aggregate. The mailbox owns
+  // eventual delivery and persistence acknowledgment; an in-memory enqueue must never set this.
+  readonly aggregate_woken_epoch?: number
 }
 
 // The shape persisted today: process-mode children respawn over RPC from cwd alone, with

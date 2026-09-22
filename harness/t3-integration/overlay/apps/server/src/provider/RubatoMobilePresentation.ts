@@ -9,9 +9,13 @@ const object = (value: unknown): value is ObjectValue =>
 const marks = {
   claude: { driver: "claudeAgent", label: "Claude", emoji: "" },
   grok: { driver: "grok", label: "Grok", emoji: "" },
-  openai: { driver: "codex", label: "OpenAI", emoji: "" },
+  // The default glyph already is OpenAI. Pretending to be Codex also makes
+  // the stock composer consume /feedback instead of sending it to Rubato.
+  openai: { driver: "rubato-pi", label: "OpenAI", emoji: "" },
   cursor: { driver: "cursor", label: "Cursor", emoji: "" },
-  antigravity: { driver: "antigravity", label: "Antigravity", emoji: "" },
+  // Antigravity's driver name also enables client-side setup/send gates.
+  // Keep Rubato semantics rather than trading working sends for that glyph.
+  antigravity: { driver: "rubato-pi", label: "Antigravity", emoji: "🪐" },
   opencode: { driver: "opencode", label: "OpenCode", emoji: "" },
   deepseek: { driver: "rubato-pi", label: "DeepSeek", emoji: "🐋" },
   gemini: { driver: "rubato-pi", label: "Gemini", emoji: "✨" },

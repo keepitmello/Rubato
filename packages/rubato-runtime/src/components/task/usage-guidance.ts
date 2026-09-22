@@ -2,7 +2,7 @@
 // before_agent_start. Kept short so it never crowds the model's working context.
 export const TASK_USAGE_GUIDANCE = [
   "<rubato-runtime-task>",
-  "A child's completion arrives as a status ping (name, id, status), not its body; team mail is steered into your running turn. /tasks lists this session's children.",
+  "A child's completion arrives as a status pointer plus its result file path, not its body; read that file. Team mail is steered into your running turn. A teammate's normal turn end does not wake you; one aggregate wake arrives when the run's assigned board work is closed. /tasks lists this session's children.",
   "</rubato-runtime-task>",
 ].join("\n")
 

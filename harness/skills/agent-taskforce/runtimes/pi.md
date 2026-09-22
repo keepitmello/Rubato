@@ -8,10 +8,11 @@ and responsibility. These are the Pi edition's surfaces, not Codex role files.
 | Lead | Current user-facing rubato-pi session |
 | Continuing owner/verifier | `team_create` member after combined intent/roster approval |
 | Bounded support | `Agent`, continued with `AgentSend` |
-| Agent status/results | `AgentOutput`; completion notifications are not work acceptance |
+| Agent status/results | Completion pointer plus its result file; the notification is not work acceptance |
 | Team communication | Direct peer `team_send` mailbox |
 | Shared assignments/evidence | Team board/tasklist, including existing `metadata` |
 | Lifecycle | Existing `team_*` shutdown request/response tools |
+| Unavailable member recovery | Lead-only `team_replace_member`, keeping the same team/member address |
 | Local delegation | Any teammate can spawn `Agent` support within its authority |
 
 `harness/prompts/build.sh` builds `.build/lead.pi.md`, `.build/teammate.pi.md`
@@ -34,9 +35,20 @@ exact `model` or named `preset`. Omit `effort` unless a supported manual overrid
 authorized; configured model defaults apply. Preserve restricted-model approval.
 Report requested settings separately from actual model and route metadata.
 
-Owners manage their own helpers and may use `AgentOutput` for them. A team lead
-reads the result artifact or board rather than replaying an owner's transcript.
-The lead's own bounded discovery helper is distinct from a continuing owner.
+A completed resident teammate is waiting, not broken; continue it with `team_send`.
+For a failed/lost execution or a completed session that has been disposed/evicted,
+use `team_replace_member` with the current task id and an approved exact model.
+Do not create a separate team for its replacement: that splits peer addresses.
+Carry the same intent, artifact paths, checked revisions and outstanding requests
+in the English handoff. Unread mail and board ownership stay with the member;
+consumed requests need the handoff, and old verdicts do not cover later edits.
+Recovery does not authorize a model/cost change or reopening approved shutdown.
+
+A team lead and an owner read the result artifact or board rather than replaying a
+child's transcript; a completion carries its result file path. A teammate's normal
+turn end does not wake the lead — one aggregate wake arrives when the run's assigned
+board work is closed. The lead's own bounded discovery helper is distinct from a
+continuing owner.
 A read of taskforce may choose direct work instead of `team_create`.
 
 `worktreePath` provisions an actual worktree. It does not isolate ports, processes,

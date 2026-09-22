@@ -9,7 +9,6 @@ const legacyEditors = new Set(["edit", "write"]);
 export const SEARCH_HINT_KEYWORDS = Object.freeze({
   Agent: ["agents", "child agent"],
   AgentSend: ["agents"],
-  AgentOutput: ["agents"],
   AgentCancel: ["agents"],
   team_create: ["teams"],
   team_send: ["teams"],

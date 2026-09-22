@@ -19,6 +19,7 @@ import {
   type TaskLifecycle,
   type TaskManager,
   type TaskRecord,
+  type TaskRecordStore,
 } from "@rubato/task"
 
 import type { IdleInjectionCoordinator } from "../../extension/idle-injection-coordinator"
@@ -49,6 +50,9 @@ export interface TaskEngine {
   readonly rubatoConfig: RubatoConfig
   readonly settings: RubatoTaskSettings
   readonly stateDir: string
+  // The completion-observing record store. Exposed so the team layer can stamp its own notification
+  // bookkeeping (the aggregate-wake marker) through the same locked mutate path the notifier uses.
+  readonly store: TaskRecordStore
   readonly loadSkills: SkillLoader
   readonly memberLiveness: TeamMemberLivenessNotifier
   readonly notifyOwnedMemberLiveness: (record: TaskRecord) => Promise<void>
@@ -224,6 +228,7 @@ export function composeTaskEngine(deps: ComposeTaskEngineDeps): TaskEngine {
     rubatoConfig: deps.rubatoConfig,
     settings,
     stateDir: baseStore.stateDir,
+    store: storeChain.store,
     loadSkills,
     memberLiveness,
     notifyOwnedMemberLiveness,

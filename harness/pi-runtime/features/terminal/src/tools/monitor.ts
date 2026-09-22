@@ -189,8 +189,9 @@ export function createMonitorTool(ctx: TerminalToolContext) {
 		promptSnippet:
 			"Subscribe to a command's output or a file's create/modify event as injected events instead of polling",
 		promptGuidelines: [
-			"Waiting on observable state (CI checks, builds, log patterns, deploys, a file landing) means a monitor, never a foreground sleep/poll loop.",
-			'Waiting for one file to appear or change is the path branch: `monitor({ description, path, event? })` beats wrapping `test -f` in a shell poll loop; a file that already exists needs `event: "modify"`, since `create` only fires on appearance, and registration needs the parent directory to exist already — when the run creates that directory too, use the `command` branch instead.',
+			"Waiting on ordinary external state (CI checks, builds, log patterns, deploys) means a monitor, never a foreground sleep/poll loop.",
+			"Never monitor a delegate's or teammate's progress: its transcript, task state, logs, and result-file create/modify are not a completion signal. The runtime already sends the completion (with its result file path), the failure, or the permission notification, and a team lead gets one aggregate wake when the run's assigned board work is closed.",
+			'Outside delegation, waiting for one file to appear or change is the path branch: `monitor({ description, path, event? })` beats wrapping `test -f` in a shell poll loop; a file that already exists needs `event: "modify"`, since `create` only fires on appearance, and registration needs the parent directory to exist already — when the run creates that directory too, use the `command` branch instead.',
 			"Shape the command for the events you need: one-shot gate = `until <cond>; do sleep 1; done; printf 'READY\\n'` with filter ^READY$; stream = `tail -n 0 -F <log> | grep --line-buffered <pat>` with persistent: true, then kill_bash.",
 			"Sleep loops belong INSIDE the monitor command, never in your turn: about to sleep, re-poll bash_output, or foreground-block on a long command means register a monitor and keep working.",
 		],

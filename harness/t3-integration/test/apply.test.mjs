@@ -4,6 +4,7 @@ import {mkdtemp,mkdir,readFile,writeFile,rm} from 'node:fs/promises';
 import path from 'node:path';
 import {tmpdir} from 'node:os';
 import {createHash} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
 import {applyIntegration} from '../apply.mjs';
 
 test('overlay is guarded, idempotent, reversible and rejects dirty upstream before writes', {skip:!process.env.T3_SOURCE}, async(t)=>{
@@ -15,13 +16,12 @@ test('overlay is guarded, idempotent, reversible and rejects dirty upstream befo
     await mkdir(path.dirname(path.join(root,relative)),{recursive:true});
     if(entry.original!==null) await writeFile(path.join(root,relative),entry.original);
   }
-  // Newly guarded targets are absent from an older installation's manifest.
-  const upstream=JSON.parse(await readFile(new URL('../upstream.json',import.meta.url),'utf8'));
-  for(const relative of Object.keys(upstream.targets)) if(!manifest.files[relative]) {
+  // A new target may not be in the previous installation's manifest yet.
+  const pin=JSON.parse(await readFile(new URL('../upstream.json',import.meta.url),'utf8'));
+  for(const relative of Object.keys(pin.targets)) {
+    if(manifest.files[relative]) continue;
     await mkdir(path.dirname(path.join(root,relative)),{recursive:true});
-    const original=await readFile(path.join(source,relative),'utf8');
-    assert.equal(createHash('sha256').update(original).digest('hex'),upstream.targets[relative]);
-    await writeFile(path.join(root,relative),original);
+    await writeFile(path.join(root,relative),execFileSync('git',['-C',source,'show',`${pin.upstreamCommit}:${relative}`]));
   }
   // 새 overlay 파일도 포함한 이번 설치의 매니페스트와 비교한다.
   const first=await applyIntegration({t3:root});

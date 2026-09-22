@@ -75,6 +75,7 @@ export {
   resolveProjectTeamSpecPath,
   resolveTeamMemberInboxDir,
   resolveTeamRuntimeDirs,
+  withTeamRuntimeMutation,
   teamStorageBaseDir,
   validateSenpiTeamMembers,
 } from "./team"
@@ -429,9 +430,13 @@ export type {
 } from "./team"
 export {
   approveShutdown,
+  BATCH_WAKE_DEBOUNCE_MS,
   canClaimTeamTask,
   claimTeamTask,
+  countUnreadTeamMessages,
+  createTeamBatchWake,
   createTeamTask,
+  decideTeamBatchWake,
   DELETABLE_MEMBER_STATUSES,
   getTeamTask,
   isMemberDeletable,
@@ -448,12 +453,19 @@ export {
 export type {
   ApproveShutdownDeps,
   CreateTeamTaskInput,
+  DecideTeamBatchWakeInput,
   RejectShutdownDeps,
   RequestShutdownDeps,
   SenpiShutdownErrorCode,
   ShutdownMessageKind,
   ShutdownMessenger,
   ShutdownOutboundMessage,
+  TeamBatchDecision,
+  TeamBatchMember,
+  TeamBatchTeam,
+  TeamBatchWake,
+  TeamBatchWakePorts,
+  TeamBatchWakeResult,
   TeamTaskFilter,
   TeamTasklistContext,
 } from "./team"
@@ -488,3 +500,5 @@ export type {
 } from "./team"
 
 export * from "./tools/team"
+export { replaceTeamMember, TeamMemberReplacementError } from "./team"
+export type { ReplaceTeamMemberInput, ReplaceTeamMemberResult, ReplaceTeamMemberDeps } from "./team"

@@ -20,8 +20,9 @@ import {
   type DeleteTeamDeps,
   type DeleteTeamResult,
 } from "./runtime-types"
-import { memberTaskName, spawnTeamMembers, type SpawnMembersResult, type SpawnedMember } from "./spawn-members"
-import { ensureTeamRuntimeDirs, resolveTeamRuntimeDirs, teamStorageBaseDir } from "./storage"
+import { spawnTeamMembers, type SpawnMembersResult, type SpawnedMember } from "./spawn-members"
+import { parseTeamMemberTaskIdentity } from "./liveness-ownership"
+import { ensureTeamRuntimeDirs, resolveTeamRuntimeDirs, teamStorageBaseDir, withTeamRuntimeMutation } from "./storage"
 
 const MS_PER_MINUTE = 60_000
 
@@ -196,7 +197,8 @@ export function deleteTeam(teamRunId: string, deps: DeleteTeamDeps): Promise<Del
   const key = resolveTeamRuntimeDirs(deps.stateDir, teamRunId).runtimeDir
   const current = deleteOperations.get(key)
   if (current !== undefined) return current
-  const operation = performDeleteTeam(teamRunId, deps).finally(() => deleteOperations.delete(key))
+  const operation = withTeamRuntimeMutation(deps.stateDir, teamRunId, () => performDeleteTeam(teamRunId, deps))
+    .finally(() => deleteOperations.delete(key))
   deleteOperations.set(key, operation)
   return operation
 }
@@ -231,7 +233,9 @@ async function cancelMemberTasks(teamRunId: string, runtimeDir: string, deps: De
   const map = await readMemberTaskMap(runtimeDir)
   const cancelled: string[] = []
   for (const [memberName, taskId] of Object.entries(map)) {
-    if (deps.manager.get(taskId)?.name !== memberTaskName(teamRunId, memberName)) continue
+    const record = deps.manager.get(taskId)
+    const identity = record === undefined ? undefined : parseTeamMemberTaskIdentity(record)
+    if (identity?.teamRunId !== teamRunId || identity.memberName !== memberName) continue
     const outcome = await deps.manager.cancelTask(taskId, `delete team ${teamRunId}`)
     if (outcome.kind === "cancelled") {
       cancelled.push(taskId)

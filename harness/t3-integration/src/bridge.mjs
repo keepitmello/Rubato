@@ -204,10 +204,22 @@ export class RubatoPiBridge {
     try {
       this.sessions.set(input.threadId, context);
       await client.attach(sessionId);
-      await this.synchronize(context);
+      const snapshot = await this.synchronize(context);
       if (!input.resumeCursor && input.modelSelection) await this.selectModel(context, input.modelSelection);
+      this.mirrorSessionTitle(context, snapshot?.state?.sessionName, input.title);
       return copy(context.session);
     } catch (error) { this.sessions.delete(input.threadId); context.stopped = true; await client.close(); throw error; }
+  }
+  /**
+   * 세션 이름이 스레드 제목과 갈라졌으면 그 이름을 T3 에 알린다. 세션을 만들 때
+   * Pi 의 이름은 스레드 제목으로 시작하므로(pi-server 가 create 로 그 이름을
+   * 남긴다), 달라졌다는 것은 제목 확장이 주제를 보고 새로 지었다는 뜻이다.
+   * 앱이 꺼져 있던 사이에 지어진 제목을 다시 붙여 주는 자리이기도 하다.
+   */
+  mirrorSessionTitle(context, sessionName, threadTitle) {
+    const name = typeof sessionName === 'string' ? sessionName.trim() : '';
+    if (!name || name === String(threadTitle ?? '').trim()) return;
+    context.projection.event('thread.metadata.updated', { name });
   }
   async synchronize(context) {
     if (context.syncing) return context.syncing;
