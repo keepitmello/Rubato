@@ -85,23 +85,29 @@ if ! "$PGREP_BIN" -f "$GUI_PROC_PATTERN" >/dev/null 2>&1; then
   # 다시 만드는 것은 아무도 하지 않는다 — start-gui.sh 는 켜기만 한다. 번들만
   # 맞추고 앱은 그대로 둔다: 이 머신이 창을 띄우고 싶어하는지는 여기서 정할
   # 일이 아니다.
-  if [ ! -f "$INSTALL_GUI" ]; then
+  if [ "${RUBATO_GUI_UPDATE_RELAUNCH-}" = 1 ]; then
+    # 사용자가 업데이트를 누른 뒤 창을 닫아도 작업은 앱을 다시 열어야 한다.
+    # 아래 공통 sync/launch 경로로 간다. CLI의 '꺼진 앱은 그대로'는 유지한다.
+    GUI_ALREADY_CLOSED=1
+  elif [ ! -f "$INSTALL_GUI" ]; then
     ui_skip "데스크톱 앱은 이미 꺼져 있어요"
     exit 2
-  fi
-  if sync_bundle; then
+  elif sync_bundle; then
     ui_ok "데스크톱 번들"
     ui_note "앱은 꺼져 있어요. 다음에 켜면 새 코드로 떠요."
     exit 0
+  else
+    ui_fail "데스크톱 앱은 꺼져 있고, 번들도 새 코드로 맞추지 못했습니다. 켜면 옛 코드입니다 — 손으로: sh \"$INSTALL_GUI\" --apply"
+    exit 1
   fi
-  ui_fail "데스크톱 앱은 꺼져 있고, 번들도 새 코드로 맞추지 못했습니다. 켜면 옛 코드입니다 — 손으로: sh \"$INSTALL_GUI\" --apply"
-  exit 1
 fi
 
 # 종료는 graceful 만 쓴다. osascript `quit` 은 Dock > 종료 와 같은 이벤트라
 # before-quit 핸들러가 먼저 흐른다. 내장 서버가 SQLite 를 들고 있어서 강제
 # 종료는 그 파일을 어긋난 채로 남길 수 있다. 그래서 이 경로에 kill 은 없다.
-if is_darwin; then
+if [ "${GUI_ALREADY_CLOSED-}" = 1 ]; then
+  :
+elif is_darwin; then
   if "$OSASCRIPT_BIN" -e 'tell application "Rubato" to quit' >/dev/null 2>&1; then
     :
   elif "$OSASCRIPT_BIN" -e 'tell application id "app.rubato.t3" to quit' >/dev/null 2>&1; then
@@ -167,6 +173,19 @@ fi
 # 작업이 끝나면서 새로 뜬 앱에 SIGHUP 이 갈 수 있다.
 mkdir -p "$(dirname "$GUI_LOG")" 2>/dev/null || true
 progress_start "데스크톱 앱을 켜는 중"
+if [ -n "${RUBATO_GUI_UPDATE_NODE-}" ]; then
+  # GUI 업데이터가 자기 빌드 프로세스 그룹을 정리해도 새 앱은 살아야 한다.
+  # nohup은 SIGHUP만 무시할 뿐 그룹을 나누지 않는다.
+  if "$RUBATO_GUI_UPDATE_NODE" "$HERE/detach-gui.mjs" "$START_GUI" "$GUI_LOG"; then
+    progress_stop
+    ui_ok "데스크톱 실행 요청 (창 준비는 GUI 업데이터가 확인합니다)"
+  else
+    progress_stop
+    ui_fail "데스크톱 앱을 다시 실행하지 못했습니다. 기록: $GUI_LOG"
+    RESTART_FAIL=1
+  fi
+  exit "$RESTART_FAIL"
+fi
 nohup "$START_GUI" >>"$GUI_LOG" 2>&1 </dev/null &
 GUI_PID=$!
 sleep 1

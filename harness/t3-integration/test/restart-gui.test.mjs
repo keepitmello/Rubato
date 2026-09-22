@@ -71,8 +71,8 @@ function harness(t, {
     RUBATO_GUI_WAIT_SECS: '2',
   };
   return {
-    run() {
-      return spawnSync('sh', [restartGui], { cwd: root, env, encoding: 'utf8' });
+    run(extraEnv = {}) {
+      return spawnSync('sh', [restartGui], { cwd: root, env: { ...env, ...extraEnv }, encoding: 'utf8' });
     },
     calls() {
       return readFileSync(log, 'utf8');
@@ -139,6 +139,17 @@ test('Darwin running app still quits with osascript, not the Windows helper', (t
   assert.equal(h.relaunched(), 'relaunched');
   assert.match(h.calls(), /tell application "Rubato" to quit/);
   assert.doesNotMatch(h.calls(), /QUIT-GUI/);
+});
+
+test('GUI update reopens an app the user closed during the update', (t) => {
+  const h = harness(t, { hostOs: 'Darwin', app: true, running: false });
+  const result = h.run({ RUBATO_GUI_UPDATE_RELAUNCH: '1', RUBATO_GUI_UPDATE_NODE: process.execPath });
+  assert.equal(result.status, 0, result.stderr);
+  assert.doesNotMatch(h.calls(), /tell application/);
+  assert.match(h.calls(), /INSTALL-GUI --apply/);
+  // The detached launcher may still be starting at shell exit; its success
+  // is deliberately not reported as a loaded window by restart-gui.sh.
+  assert.match(result.stdout, /창 준비는 GUI 업데이터가 확인/);
 });
 
 test('restart-gui keeps Darwin Electron pattern and has no force-quit happy path', () => {

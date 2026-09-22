@@ -13,6 +13,7 @@ REPO="$(CDPATH= cd -- "$HERE/../.." && pwd)"
 HARNESS="$REPO/harness"
 BRANCH="rubato/base"
 STAMP="$HOME/.rubato-pi/last-update-check"
+LAUNCHCTL_BIN="${RUBATO_LAUNCHCTL_BIN:-/bin/launchctl}"
 
 BOLD=$'\033[1m'; DIM=$'\033[2m'; RED=$'\033[31m'; GRN=$'\033[32m'; YEL=$'\033[33m'; RST=$'\033[0m'
 ok()   { printf '  %s✓%s %s\n' "$GRN" "$RST" "$1"; }
@@ -48,9 +49,19 @@ cd "$REPO"
 # 지금 브랜치가 rubato/base 가 아니면 건드리지 않는다. 남의 작업 위에 pull 하지 않는다.
 CURRENT="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
 if [ "$CURRENT" != "$BRANCH" ]; then
+  if [ "${RUBATO_GUI_UPDATE-}" = 1 ]; then
+    fail "현재 브랜치는 $CURRENT 입니다. GUI 업데이트는 $BRANCH 에서만 가능합니다."
+  fi
   [ "$MODE" = check ] && exit 0
   warn "지금 브랜치가 $CURRENT 입니다. $BRANCH 가 아니면 업데이트하지 않습니다."
   exit 0
+fi
+
+# GUI에는 충돌을 해결할 터미널이 없다. 수정은 임의로 치우지 않고 앱을
+# 종료하기 전에 멈춘다. 기존 대화형 CLI의 업데이트 정책은 그대로 둔다.
+if [ "${RUBATO_GUI_UPDATE-}" = 1 ] && [ "$MODE" != check ]; then
+  gui_dirty="$(git status --porcelain -- . ':(exclude).rubato/evidence')" || fail "소스 상태를 확인하지 못했습니다."
+  [ -z "$gui_dirty" ] || fail "로컬 수정이 있어 자동 업데이트를 멈췄습니다. 수정 내용을 보존하거나 정리한 뒤 다시 시도해 주세요."
 fi
 
 fetch_now() {
@@ -109,7 +120,9 @@ sync_gui() {
 # 포기해도 이미 받아 둔 원격 ref 로 비교만 하고 세션은 그대로 진행한다.
 if [ "$MODE" = check ]; then
   git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=3 \
-      fetch --quiet origin "$BRANCH" 2>/dev/null || true
+      fetch --quiet origin "$BRANCH" 2>/dev/null || {
+        [ "${RUBATO_GUI_UPDATE-}" != 1 ] || fail "업데이트를 확인하지 못했습니다. 네트워크를 확인해 주세요."
+      }
   mkdir -p "$(dirname "$STAMP")"
   date +%s > "$STAMP"
 else
@@ -144,6 +157,10 @@ if [ "$MODE" = check ]; then
   exit 10
 fi
 
+if [ "${RUBATO_GUI_UPDATE-}" = 1 ] && [ "$AHEAD" -gt 0 ]; then
+  fail "로컬 커밋과 원격 업데이트가 갈라져 있습니다. 로컬 커밋을 보존한 채 멈췄습니다. 터미널에서 상태를 확인해 주세요."
+fi
+
 # 무엇이 바뀌는지 보여준다.
 printf '\n%s== 새 커밋 %s개 ==%s\n' "$BOLD" "$BEHIND" "$RST"
 git log --oneline --no-decorate "HEAD..origin/$BRANCH" | sed 's/^/  /'
@@ -172,7 +189,7 @@ echo "$CHANGED" | grep -Eq '^(install\.sh$|harness/scripts/)' && need_shell=1
 # provider-direct 등 다른 모듈도 import 하므로, 업데이트마다 재시작한다.
 # 이 기기에 등록돼 있을 때만.
 need_aside=0
-/bin/launchctl print "gui/$(id -u)/com.keepitmello.rubato.aside-cursor" >/dev/null 2>&1 && need_aside=1
+"$LAUNCHCTL_BIN" print "gui/$(id -u)/com.keepitmello.rubato.aside-cursor" >/dev/null 2>&1 && need_aside=1
 # Remote hub 도 launchd 상주라 소스만 받으면 옛 프로세스가 GC/유휴 정책을
 # 계속 돈다. zmx 세션은 허브 밖이라 kickstart -k 로도 안 죽는다.
 # 허브 소스가 바뀌고, 이 기기에 허브가 등록돼 있을 때만.
@@ -180,7 +197,7 @@ need_aside=0
 # 받으면 허브 소스는 이미 HEAD 인데 프로세스는 옛 코드로 남는 구멍이 있다.
 HUB_LABEL="com.keepitmello.rubato.remote-hub"
 if echo "$CHANGED" | grep -Eq '^packages/rubato-remote-hub/|^harness/scripts/rubato-update\.sh$'; then
-  /bin/launchctl print "gui/$(id -u)/$HUB_LABEL" >/dev/null 2>&1 && need_hub=1
+  "$LAUNCHCTL_BIN" print "gui/$(id -u)/$HUB_LABEL" >/dev/null 2>&1 && need_hub=1
 fi
 # 프로필 엔진도 상주 프로세스라 소스를 받아도 옛 코드로 계속 돈다. 소켓을
 # 잡고 있는 프로세스에 SIGTERM 을 보낸다(cli.mjs 가 락을 풀고 끝낸다).
@@ -306,6 +323,7 @@ printf '\n%s== 받는 중 ==%s\n' "$BOLD" "$RST"
 # 사람 작업은 손도 대지 않은 채 남는다 — 치웠다 되돌리는 것보다 안전하다.
 # 겹쳐서 거부당할 때만 잠시 치운다.
 if [ -n "$DIRTY" ] && ! git merge --ff-only "origin/$BRANCH" >/dev/null 2>&1; then
+  [ "${RUBATO_GUI_UPDATE-}" != 1 ] || fail "로컬 수정과 업데이트가 겹칩니다. 수정을 치우지 않고 멈췄습니다."
   # pathspec 을 주지 않는다. `git stash push -- <경로>` 는 이미 스테이징된
   # 변경을 제대로 집지 못해서, 치운 줄 알았는데 실제로는 그대로 남고
   # 다음 merge 가 똑같이 거부당한다. 이 레포는 여러 세션이 같이 쓰고
@@ -473,7 +491,7 @@ fi
 # 등록이 없는 기기(Aside 미사용)는 need_aside=0 이라 지나간다.
 if [ "$need_aside" = 1 ]; then
   ASIDE_LABEL="com.keepitmello.rubato.aside-cursor"
-  /bin/launchctl kickstart -k "gui/$(id -u)/$ASIDE_LABEL" >/dev/null 2>&1 \
+  "$LAUNCHCTL_BIN" kickstart -k "gui/$(id -u)/$ASIDE_LABEL" >/dev/null 2>&1 \
     && ok "Aside 프록시 재시작" || warn "Aside 프록시 재시작 경고 — 손으로: launchctl kickstart -k gui/\$(id -u)/$ASIDE_LABEL"
 fi
 
