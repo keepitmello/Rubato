@@ -12,7 +12,8 @@ test('mobile provider marks cross the actual T3 RPC codecs without changing stor
   const C = await modules.source('packages/contracts/src/index.ts');
   const { makeRubatoMobilePresentation, rubatoModelMark } = await modules.source('apps/server/src/provider/RubatoMobilePresentation.ts');
   const { withRubatoMobilePresentation } = await modules.source('apps/server/src/provider/RubatoMobileProtocol.ts');
-  const { buildModelOptions, resolveSelectableModelSelection } = await modules.source('apps/mobile/src/lib/modelOptions.ts');
+  const { buildModelOptions, resolveSelectableModelSelection, isModelSelectionUnavailable } =
+    await modules.source('apps/mobile/src/lib/modelOptions.ts');
   const { resolveThreadProviderInstance } = await modules.source('apps/mobile/src/features/threads/thread-provider-instance.ts');
   const { applyShellStreamEvent } = await modules.source('packages/client-runtime/src/state/shellReducer.ts');
   const { createEmptyReadModel, projectEvent } = await modules.source('apps/server/src/orchestration/projector.ts');
@@ -60,13 +61,13 @@ test('mobile provider marks cross the actual T3 RPC codecs without changing stor
   const view = makeRubatoMobilePresentation(providers);
   const selection = slug => view.selection({ instanceId: provider.instanceId, model: slug });
 
-  await t.test('all shipped glyphs are selected and missing glyphs add emoji to names only', () => {
+  await t.test('safe native glyphs are selected and other groups add emoji to names only', () => {
     const presented = decode('ServerConfig')(view.config(Schema.encodeSync(C.ServerConfig)(config())));
     const options = buildModelOptions(presented, null);
     const option = slug => options.find(row => row.selection.model === slug && row.selection.instanceId !== native.instanceId);
     for (const [slug, driver, emoji] of [
       [slugs[0], 'claudeAgent', ''], [slugs[1], 'claudeAgent', ''], [slugs[2], 'grok', ''],
-      [slugs[3], 'codex', ''], [slugs[4], 'cursor', ''], [slugs[5], 'antigravity', ''],
+      [slugs[3], 'rubato-pi', ''], [slugs[4], 'cursor', ''], [slugs[5], 'rubato-pi', '🪐'],
       [slugs[6], 'opencode', ''], [slugs[7], 'rubato-pi', '🐋'],
       [slugs[8], 'rubato-pi', '✨'], [slugs[9], 'rubato-pi', '🌙'],
       [slugs[10], 'rubato-pi', '🐼'], [slugs[11], 'rubato-pi', '💎'], [slugs[12], 'rubato-pi', '🤖'],
@@ -84,6 +85,29 @@ test('mobile provider marks cross the actual T3 RPC codecs without changing stor
     for (const row of presented.providers) assert.deepEqual(row.workspaceSnapshots, provider.workspaceSnapshots);
     assert.equal(rubatoModelMark('opencode/anthropic/claude-opus-5'), 'claude');
     assert.equal(rubatoModelMark('openai/o3'), 'openai');
+  });
+
+  await t.test('display groups never enable Codex feedback interception or Antigravity send gates', () => {
+    const presented = view.config(config());
+    const rubatoGroups = presented.providers.filter(row => row.instanceId !== native.instanceId);
+    // The stock composer consumes /feedback for driver=codex. Unknown drivers
+    // already render the same OpenAI glyph, so none should impersonate Codex.
+    assert.equal(rubatoGroups.some(row => row.driver === 'codex'), false);
+    for (const status of [
+      {}, { enabled: false }, { installed: false },
+      { auth: { status: 'unauthenticated' } }, { availability: 'unavailable' },
+      { models: [...provider.models.filter(model => model.slug !== slugs[5]),
+        { ...provider.models[5], slug: 'google-antigravity/gemini-alternative' }] },
+    ]) {
+      const canonicalConfig = { ...config(), providers: [{ ...provider, ...status }] };
+      const mobileConfig = makeRubatoMobilePresentation(canonicalConfig.providers).config(canonicalConfig);
+      const originalSelection = { instanceId: provider.instanceId, model: slugs[5] };
+      const mobileSelection = selection(slugs[5]);
+      assert.equal(isModelSelectionUnavailable(mobileConfig, mobileSelection),
+        isModelSelectionUnavailable(canonicalConfig, originalSelection));
+      assert.equal(resolveSelectableModelSelection(mobileConfig, mobileSelection) !== null,
+        resolveSelectableModelSelection(canonicalConfig, originalSelection) !== null);
+    }
   });
 
   let readModel = createEmptyReadModel(stamp);

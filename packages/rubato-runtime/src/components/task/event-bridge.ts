@@ -1,4 +1,6 @@
 import type { SessionShutdownEvent } from "@code-yeongyu/senpi"
+import type { TeamBatchWake } from "@rubato/task"
+
 import type { ComponentContext, SenpiExtensionAPI } from "../../extension/types"
 import type { TaskEngine } from "./engine"
 import type { LeadPollerLifecycle } from "./lead-poller-lifecycle"
@@ -16,6 +18,11 @@ type EventBridgeState = {
   readonly reconcileTeamMailbox: () => Promise<void>
   readonly leadPollers: Pick<LeadPollerLifecycle, "tick" | "shutdown">
   readonly resumptionChannels: Pick<ResumptionChannelEmitter, "emitSessionStart" | "emitShutdown">
+  // The team batch wake. Evaluated on every edge that can newly make "the whole batch is finished"
+  // true: session start (a restart may owe a wake the previous process never delivered), and each
+  // mailbox tick (the last fact can arrive after every member already parked). Store mutations cover
+  // the member turn ends themselves.
+  readonly teamBatchWake: Pick<TeamBatchWake, "evaluate">
 }
 
 // Session start runs the durable recovery chain in strict order: flush/drop buffered completions
@@ -68,6 +75,7 @@ export function wireEventBridge(
       ctx.logger.info("senpi-task ttl cleanup", { deleted: cleanup.deleted.length, retained: cleanup.retained.length })
     }
     await tickLeadPollersBestEffort(ctx, state)
+    await evaluateTeamBatchBestEffort(ctx, state)
     statusUi.scheduleSync()
     taskRpc.attach()
   })
@@ -155,6 +163,16 @@ async function tickLeadPollersBestEffort(ctx: ComponentContext, state: EventBrid
     await state.leadPollers.tick()
   } catch (error) {
     ctx.logger.warn("rubato-runtime task session-start lead poll failed", {
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+}
+
+async function evaluateTeamBatchBestEffort(ctx: ComponentContext, state: EventBridgeState): Promise<void> {
+  try {
+    await state.teamBatchWake.evaluate()
+  } catch (error) {
+    ctx.logger.warn("rubato-runtime task team batch wake failed", {
       error: error instanceof Error ? error.message : String(error),
     })
   }

@@ -60,6 +60,11 @@ They fix and integrate the product; you recheck the affected claim. Separate a
 regression from a stale expectation or invalid measurement. Do not create blockers
 from style preference or invented implausible cases.
 
+This route is unchanged when the lead suggested the disproved method: send the
+counterevidence to the owner who can correct it, not through the lead as a relay.
+Notify the lead as well only when accepted intent, criteria, authority or a shared
+commitment must change.
+
 Report PASS, CONDITIONAL PASS or FAIL for the artifact with evidence and unresolved
 conditions. When the required measurement could not be established, report
 MEASUREMENT-INVALID and withhold acceptance rather than laundering it into a pass

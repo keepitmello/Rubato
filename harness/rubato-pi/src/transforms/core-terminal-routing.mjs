@@ -51,7 +51,10 @@ The timeout is a process kill deadline, not the foreground wait.
 Completion is delivered automatically; do not poll or sleep to wait.
 Use tool_search to load terminal control tools when needed: bash_output for a peek,
 bash_input to steer, bash_resize to resize, kill_bash to stop your session tree.
-For observable state, discover \\\`\${monitor}\\\` and subscribe instead of polling.
+For ordinary external state (builds, servers, CI), discover \\\`\${monitor}\\\` and subscribe
+instead of polling. Never watch a delegate's or teammate's progress, logs, task state, or
+result file: that is not a completion signal, and the runtime already sends the completion,
+failure or permission notification.
 \`;
 }`, "compact terminal prompt");
 }

@@ -39,6 +39,10 @@ integrator. Resolve technical issues with the affected owners and verifier. Brin
 changes to accepted scope, public commitments, resource authority or user preferences
 to the lead with evidence, viable options and a recommendation.
 
+When a verifier refutes a method, keep correction and the recheck request with the
+responsible owner even if the lead originally suggested it. Send the changed
+artifact/revision back to that verifier; a prior verdict does not cover the edit.
+
 When evidence invalidates a premise shared with other owners, notify them and the
 lead promptly. The lead can recall affected claims; you still own the technical
 investigation or correction assigned to you.

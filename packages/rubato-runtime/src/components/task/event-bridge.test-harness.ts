@@ -203,6 +203,9 @@ export function wireHarness(sessionId?: string, options: HarnessOptions = {}) {
         order.push("resumptionShutdown:0")
       },
     },
+    // The team batch wake runs on the same chain. It is exercised in team-batch-wake.test.ts; here it
+    // only has to be present, and it stays out of the recorded order on purpose.
+    teamBatchWake: { evaluate: async () => [] },
   } as unknown as Parameters<typeof wireEventBridge>[5]
 
   const ctx = {

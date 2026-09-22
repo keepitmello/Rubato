@@ -79,7 +79,14 @@ export type CompletionRequest = {
   readonly tokens?: number
 }
 
-export type SkipReason = "sync-task" | "non-notifying-terminal" | "not-terminal" | "already-notified"
+export type SkipReason =
+  | "sync-task"
+  | "non-notifying-terminal"
+  | "not-terminal"
+  | "already-notified"
+  // A team member ending its turn normally is not the team's work ending: the epoch is recorded (so
+  // no retry or reconcile re-delivers it) and the aggregate team-batch wake is the lead's channel.
+  | "team-member-turn-end"
 
 export type DeliveredDecision = "wake" | "deliver_streaming"
 

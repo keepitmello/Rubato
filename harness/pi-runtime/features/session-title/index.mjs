@@ -15,7 +15,7 @@ export function createSessionTitleFactories() {
 export { installSessionTitle } from "./extension.mjs";
 export {
   TITLE_ENTRY,
-  TITLE_MODEL,
+  TITLE_MODELS,
   parseTitle,
   sanitizeTitle,
   shouldRetitle,
