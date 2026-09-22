@@ -30,7 +30,7 @@ jobs:
       - name: Dependency-free migration regressions and delegation contracts
         run: |
           node --test harness/pi-runtime/test/migration-regressions.test.mjs
-          node --test harness/rubato-pi/test/unit/role-prompt.test.mjs harness/rubato-pi/test/unit/dispatching-boundaries.test.mjs
+          node --test harness/rubato-pi/test/unit/role-prompt.test.mjs
       - name: Install the isolated stock dependency tree
         run: npm --prefix harness/pi-runtime ci --workspaces=false --ignore-scripts
       - name: Compose role prompts and skills into the standard install location

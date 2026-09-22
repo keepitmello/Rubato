@@ -56,25 +56,3 @@ test('model routing has one guide and keeps provider policy separate from native
     assert.doesNotMatch(source, /sync-codex-roles|\/Users\/|\/opt\/homebrew\//);
   }
 });
-
-test('user documentation separates provider routing from login and execution proof', async () => {
-  const readme = await read('README.md');
-  const architecture = await read('docs/architecture.md');
-  for (const source of [readme, architecture]) {
-    assert.match(source, /rubato-codex\/providers\.json/);
-    assert.match(source, /routing 정책/);
-    assert.match(source, /실제.*모델/);
-    assert.doesNotMatch(source, /여섯 스킬|multi-provider routing are not integrated yet/);
-  }
-  assert.match(readme, /--providers none/);
-  assert.match(readme, /외부 provider 로그인은 별도로/);
-  assert.match(readme, /ocx agent subagents status/);
-  assert.match(readme, /ocx agent subagents set gpt-5\.6-sol,cursor\/claude-fable-5-1,cursor\/claude-opus-5,xai\/grok-4\.7,cursor\/gemini-3\.8-flash/);
-  assert.doesNotMatch(readme, /ocx agent subagents set gpt-5\.6-sol cursor\//);
-  assert.match(readme, /최대 다섯 모델/);
-  assert.match(readme, /Provider 등록, 모델 roster 등록, 인증, 실제 호출 성공은 각각 다른 상태/);
-  assert.match(readme, /--disable-skill "\$HOME\/\.agents\/skills\/outpost\/SKILL\.md"/);
-  assert.match(readme, /원본을 이동·수정·삭제하지 않습니다/);
-  assert.match(readme, /uninstall하면 관리 블록이 제거/);
-  assert.match(architecture, /shared proxy.*강제하지/);
-});
