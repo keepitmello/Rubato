@@ -3,6 +3,10 @@ import {
   ANTHROPIC_SERVER_COMPACTION_MODEL_IDS,
   serverCompactionMarkerStatement,
 } from "./anthropic-server-compaction.mjs";
+import {
+  CLAUDE_CODE_BILLING_HEADER,
+  CLAUDE_CODE_VERSION,
+} from "../../../rubato-pi/src/transforms/misc-claude-code-version.mjs";
 
 const PACKAGE_AGENT = "@earendil-works/pi-coding-agent";
 const PACKAGE_AI = "@earendil-works/pi-ai";
@@ -102,15 +106,28 @@ export function patchAnthropicMessagesServerCompaction(source) {
     'import Anthropic from "@anthropic-ai/sdk";\n' + PARAMS_IMPORT,
     "anthropic-import",
   );
-  // Claude Code 신원(버전 상수·billing header)은 **여기서 굽지 않는다.**
+  // Claude Code 신원(버전 상수·billing header)을 굽는 자리는 여기 하나다.
   //
-  // 그 값은 `rubato-pi/src/transforms/misc-claude-code-version.mjs` 가 선언하고,
-  // misc-vendor 의 load transform 이 로드 시점에 주입한다. 여기서 같은 needle 을
-  // 한 번 더 잡으면 빌드가 needle 을 먼저 소비해 런타임 transform 이 inert 로 죽고,
-  // 값이 두 곳(선언과 이 리터럴)으로 갈라진다. 실제로 그렇게 갈라져 있었다 —
-  // 상수만 2.1.280 으로 올려도 엔진은 여기 박힌 값을 계속 내보냈다.
+  // 값은 `rubato-pi/src/transforms/misc-claude-code-version.mjs` 가 선언하고, 이
+  // 패치가 그 상수를 읽어 굽는다 — 리터럴을 여기 다시 적지 않는다. 실제로 여기에
+  // 리터럴이 박혀 있었고, 선언만 2.1.280 으로 올린 커밋(`3add4ee3c`)이 엔진에
+  // 아무 영향도 못 냈다. 값이 둘이면 어느 쪽이 이기는지가 순서에 달린다.
   //
-  // 이 패치는 컴팩션 seam 만 소유한다.
+  // misc-vendor 의 load transform 에도 같은 주입이 있는데, 그쪽은 이 파일에 닿지
+  // 않는다. 빌드가 stock `2.1.251` 을 그대로 남겨 두는 것을 확인했다
+  // (2026-09-23: 주입을 들어내고 구웠더니 엔진이 2.1.251 로 나가 400).
+  next = replaceOnce(
+    next,
+    'const claudeCodeVersion = "2.1.251";',
+    `const claudeCodeVersion = "${CLAUDE_CODE_VERSION}";`,
+    "claude-code-version",
+  );
+  next = replaceOnce(
+    next,
+    'text: "You are Claude Code, Anthropic\'s official CLI for Claude.",',
+    `text: "${CLAUDE_CODE_BILLING_HEADER}",\n            },\n            {\n                type: "text",\n                text: "You are Claude Code, Anthropic's official CLI for Claude.",`,
+    "claude-code-billing-header",
+  );
   next = replaceOnce(
     next,
     "    if (allowedFallbackModels && allowedFallbackModels.length > 0) {\n        params.fallbacks = allowedFallbackModels.map((fallback) => ({ model: fallback.model }));\n    }\n    return params;\n}",
