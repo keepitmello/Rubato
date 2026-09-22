@@ -108,7 +108,7 @@ These are behavior scenarios, not claims of live runs. Static contract tests and
 - **no-recursive-verification** — 이미 검증자가 있고 공통 지침에 독립 검토가 언급돼. → 오너나 검증자가 같은 주장을 검사할 검증자를 반복 생성하지 않아.
 - **budget-return-is-not-failure** — 예산에 도달했지만 가설과 결과가 진전돼. → 증거와 남은 일을 반환하고 지속 여부를 판단해. 모델 무능이나 전체 완료로 분류하지 않아.
 - **advice-count-is-not-escalation** — 같은 오너가 유용한 자문을 반복해서 받아. → 횟수만으로 오너를 바꾸지 않아. 자문의 실제 기여와 전달 비용을 봐.
-- **all-five-can-own** — 페이블·아스트라·오푸스·쏠·그록이 승인 범위 안에서 사용 가능해. → 어느 모델도 직함만으로 오너나 검증자 후보에서 제외하지 않아.
+- **all-five-can-own** — model-guide에서 허용한 모델이 승인 범위 안에서 사용 가능해. → 기본 배정은 역할 제한이 아니야. 어느 모델도 직함만으로 오너나 검증자 후보에서 제외하지 않아.
 - **no-lead-rotation-for-utilization** — 다른 모델 자원을 활용해야 해. → 사용자 선택 리드는 유지하고 새로 필요한 실행 배정을 조정해. 가용량을 맞추려고 불필요한 팀원이나 중복 작업을 만들지 않아.
 - **unknown-is-not-hard** — 낯선 기술 때문에 착수 전 정보가 적어. → 난이도 점수나 지능 부족을 지어내지 않고 확인 가능한 정보와 자원으로 배정해.
 - **same-quality-criterion** — 널널한 자원에 작업을 맡겨. → 완료 기준을 낮추지 않아. 수정·보조·검토를 포함해 실제로 끝낸 결과를 판단해.
