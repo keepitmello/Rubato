@@ -108,8 +108,11 @@ and relaying peer questions through the lead.
 
 The lead retains cross-stream visibility and the conversation's reasons. It can
 notice a shared pattern and identify who should examine it; an owner performs the
-technical synthesis. Verified refutations are sent to every stream that inherited
-the premise, and affected claims are recalled before their results are relied on.
+technical synthesis. Decision-changing evidence goes to the peers it affects — a
+verified refutation, and equally an accepted result or new user feedback that changes
+an ongoing assignment's premise. Send the changed fact, its artifact or revision and
+the remaining question; recall affected claims before their results are relied on.
+No broadcast, no per-turn digest, and a changed observation grants no new authority.
 
 ## Decision rights
 
