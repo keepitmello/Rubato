@@ -33,6 +33,7 @@ export type MemberSelfPollerDeps = {
   readonly inject: (content: string, messageId: string) => void
   readonly appendEvent?: (event: PersistedTaskEvent) => void
   readonly afterInject?: (message: Message) => Promise<void>
+  readonly isCurrentMember?: () => Promise<boolean>
 }
 
 export type MemberPollFilter = Readonly<{ from?: string }>
@@ -64,6 +65,7 @@ class InvalidReservedMessageError extends Error {
 export function createMemberSelfPoller(deps: MemberSelfPollerDeps): MemberSelfPoller {
   const pending = new Map<string, PendingDelivery>()
   let stopped = false
+  let recovered = false
   const state: MemberPollState = { pending, isStopped: () => stopped }
 
   const withLease = <T>(fn: () => Promise<T>): Promise<T> => withInboxConsumerLease(
@@ -87,6 +89,13 @@ export function createMemberSelfPoller(deps: MemberSelfPollerDeps): MemberSelfPo
     async pollOnce(filter = {}) {
       if (stopped) return
       await withLease(async () => {
+        if (deps.isCurrentMember !== undefined && !(await deps.isCurrentMember())) return
+        // A newly launched replacement may bind before its task mapping is published.
+        // Recover reservations on the first *current* poll, not just at session_start.
+        if (!recovered) {
+          await recoverReservations(deps)
+          recovered = true
+        }
         await checkPendingUnderLease()
         const messages = await listUnreadMessages(deps.teamRunId, deps.memberName, deps.config)
         for (const message of messages) {
@@ -97,11 +106,18 @@ export function createMemberSelfPoller(deps: MemberSelfPollerDeps): MemberSelfPo
     },
     async checkPendingAcks() {
       if (stopped) return
-      await withLease(checkPendingUnderLease)
+      await withLease(async () => {
+        if (deps.isCurrentMember !== undefined && !(await deps.isCurrentMember())) return
+        await checkPendingUnderLease()
+      })
     },
     async recoverReservations() {
       if (stopped) return
-      await withLease(async () => recoverReservations(deps))
+      await withLease(async () => {
+        if (deps.isCurrentMember !== undefined && !(await deps.isCurrentMember())) return
+        await recoverReservations(deps)
+        recovered = true
+      })
     },
     shutdown() {
       stopped = true

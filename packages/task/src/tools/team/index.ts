@@ -2,6 +2,7 @@ import type { ToolDefinition } from "@code-yeongyu/senpi"
 
 import { createTeamCreateTool, createTeamDeleteTool } from "./lifecycle"
 import { createTeamSendTool } from "./messaging"
+import { createTeamReplaceMemberTool } from "./replacement"
 import {
   createTeamApproveShutdownTool,
   createTeamRejectShutdownTool,
@@ -23,6 +24,7 @@ export {
 } from "./lifecycle"
 export type { TeamCreateDetails, TeamCreateInput, TeamCreateMemberView, TeamDeleteDetails, TeamDeleteInput } from "./lifecycle"
 export { TeamSendParams, createTeamSendTool, runTeamSend } from "./messaging"
+export { TeamReplaceMemberParams, createTeamReplaceMemberTool, runTeamReplaceMember } from "./replacement"
 export type {
   LeadDeliveryView,
   MemberDeliveryOutcome,
@@ -79,6 +81,7 @@ export type {
 export function buildLeadTeamTools(deps: LeadTeamToolDeps): ToolDefinition[] {
   return [
     createTeamCreateTool(deps),
+    createTeamReplaceMemberTool(deps),
     createTeamDeleteTool(deps),
     createTeamSendTool(deps),
     createTeamShutdownRequestTool(deps),

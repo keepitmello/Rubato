@@ -5,6 +5,7 @@ import {
   TEAM_LEAD_SENTINEL,
   claimTeamTask,
   createTeam,
+  replaceTeamMember,
   createTeamTask,
   createTaskRecordStore,
   deleteTeam,
@@ -18,6 +19,7 @@ import {
   approveShutdown,
   rejectShutdown,
   resolveTeamRuntimeDirs,
+  withTeamRuntimeMutation,
   sendTeamMessage,
   teamStorageBaseDir,
   toTeamCoreConfig,
@@ -150,6 +152,24 @@ export function createTeamService(deps: TeamServiceDeps): TeamToolsService {
         },
       })
     },
+    async replaceMember(input) {
+      assertCanonicalTeamRunId(input.teamRunId)
+      await assertOwnedTeam(deps, config, input.teamRunId)
+      return replaceTeamMember(input, {
+        manager: deps.manager,
+        destruction: deps.destruction,
+        stateDir,
+        taskSettings: deps.settings,
+        leadSessionId: requireLeadSession(deps),
+        spawnDepth: TEAM_MEMBER_SPAWN_DEPTH,
+        memberPorts: ports,
+        memberExtension: {
+          entryPath: memberExtensionEntryPath,
+          inheritedExtensions: parseExtensionEntries(process.argv),
+        },
+        ...(deps.now !== undefined ? { now: deps.now } : {}),
+      })
+    },
     deleteTeam: async (input) => {
       assertCanonicalTeamRunId(input.teamRunId)
       await assertOwnedTeam(deps, config, input.teamRunId)
@@ -184,7 +204,8 @@ export function createTeamService(deps: TeamServiceDeps): TeamToolsService {
     },
     status: async (teamRunId) => {
       await assertOwnedTeam(deps, config, teamRunId)
-      return refreshTeamMemberStatuses(teamRunId, { manager: deps.manager, config, runtimeDir: runtimeDir(teamRunId) })
+      return withTeamRuntimeMutation(stateDir, teamRunId, () =>
+        refreshTeamMemberStatuses(teamRunId, { manager: deps.manager, config, runtimeDir: runtimeDir(teamRunId) }))
     },
     listTeams: async () => toTeams(await listActiveTeams(config)),
     createTask: async (teamRunId, input) => {
@@ -215,28 +236,28 @@ export function createTeamService(deps: TeamServiceDeps): TeamToolsService {
     },
     requestShutdown: async (teamRunId, member) => {
       await assertOwnedTeam(deps, config, teamRunId)
-      return requestShutdown(teamRunId, member, {
+      return withTeamRuntimeMutation(stateDir, teamRunId, () => requestShutdown(teamRunId, member, {
         config,
         sendMessage: makeShutdownMessenger(deps.manager, stateDir, teamRunId),
         ...(deps.now !== undefined ? { now: deps.now } : {}),
-      })
+      }))
     },
     approveShutdown: async (teamRunId, member) => {
       await assertOwnedTeam(deps, config, teamRunId)
-      return approveShutdown(teamRunId, member, {
+      return withTeamRuntimeMutation(stateDir, teamRunId, () => approveShutdown(teamRunId, member, {
         config,
         sendMessage: makeShutdownMessenger(deps.manager, stateDir, teamRunId),
         cancelMemberTask: makeCancelMemberTask(deps.manager, stateDir, teamRunId),
         ...(deps.now !== undefined ? { now: deps.now } : {}),
-      })
+      }))
     },
     rejectShutdown: async (teamRunId, member, reason) => {
       await assertOwnedTeam(deps, config, teamRunId)
-      return rejectShutdown(teamRunId, member, reason, {
+      return withTeamRuntimeMutation(stateDir, teamRunId, () => rejectShutdown(teamRunId, member, reason, {
         config,
         sendMessage: makeShutdownMessenger(deps.manager, stateDir, teamRunId),
         ...(deps.now !== undefined ? { now: deps.now } : {}),
-      })
+      }))
     },
   }
   return service

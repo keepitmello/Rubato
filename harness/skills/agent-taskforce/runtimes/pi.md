@@ -12,6 +12,7 @@ and responsibility. These are the Pi edition's surfaces, not Codex role files.
 | Team communication | Direct peer `team_send` mailbox |
 | Shared assignments/evidence | Team board/tasklist, including existing `metadata` |
 | Lifecycle | Existing `team_*` shutdown request/response tools |
+| Unavailable member recovery | Lead-only `team_replace_member`, keeping the same team/member address |
 | Local delegation | Any teammate can spawn `Agent` support within its authority |
 
 `harness/prompts/build.sh` builds `.build/lead.pi.md`, `.build/teammate.pi.md`
@@ -33,6 +34,15 @@ session is the lead and is never declared as a member. A one-off `Agent` takes a
 exact `model` or named `preset`. Omit `effort` unless a supported manual override is
 authorized; configured model defaults apply. Preserve restricted-model approval.
 Report requested settings separately from actual model and route metadata.
+
+A completed resident teammate is waiting, not broken; continue it with `team_send`.
+For a failed/lost execution or a completed session that has been disposed/evicted,
+use `team_replace_member` with the current task id and an approved exact model.
+Do not create a separate team for its replacement: that splits peer addresses.
+Carry the same intent, artifact paths, checked revisions and outstanding requests
+in the English handoff. Unread mail and board ownership stay with the member;
+consumed requests need the handoff, and old verdicts do not cover later edits.
+Recovery does not authorize a model/cost change or reopening approved shutdown.
 
 Owners manage their own helpers and may use `AgentOutput` for them. A team lead
 reads the result artifact or board rather than replaying an owner's transcript.

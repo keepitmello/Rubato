@@ -1,5 +1,6 @@
 import { mkdir } from "node:fs/promises"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
+import { withLock } from "@rubato/team-core/team-state-store"
 
 import {
   getInboxDir,
@@ -36,6 +37,18 @@ export function resolveTeamRuntimeDirs(config: StateDirConfig, teamRunId: string
 
 export function resolveTeamMemberInboxDir(config: StateDirConfig, teamRunId: string, memberName: string): string {
   return getInboxDir(teamStorageBaseDir(config), teamRunId, memberName)
+}
+
+// Replacement and deletion share a cross-process lock outside the directory deletion removes.
+// State-file updates retain their own short lock; never hold that lock while launching a child.
+export async function withTeamRuntimeMutation<T>(
+  config: StateDirConfig,
+  teamRunId: string,
+  run: () => Promise<T>,
+): Promise<T> {
+  const { runtimeDir } = resolveTeamRuntimeDirs(config, teamRunId)
+  await mkdir(dirname(runtimeDir), { recursive: true, mode: 0o700 })
+  return withLock(`${runtimeDir}.mutation.lock`, run)
 }
 
 /**

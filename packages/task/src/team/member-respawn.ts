@@ -10,6 +10,7 @@ import { assembleMemberExtensions } from "./member-extensions"
 import type { TeamMemberExtensionConfig } from "./runtime-types"
 import { toTeamCoreConfig } from "./runtime-config"
 import { resolveTeamRuntimeDirs, teamStorageBaseDir } from "./storage"
+import { parseTeamMemberTaskIdentity } from "./liveness-ownership"
 
 type TeamMemberTaskIdentity = {
   readonly teamRunId: string
@@ -39,11 +40,7 @@ export type TeamMemberRespawnLaunchResolverOptions = {
 }
 
 function parseTeamMemberTaskName(name: string | undefined): TeamMemberTaskIdentity | undefined {
-  if (name === undefined) return undefined
-  const match = /^team:([0-9a-f-]{36}):([a-z0-9-]+)$/.exec(name)
-  const teamRunId = match?.[1]
-  const memberName = match?.[2]
-  return teamRunId === undefined || memberName === undefined ? undefined : { teamRunId, memberName }
+  return parseTeamMemberTaskIdentity({ name })
 }
 
 export function createTeamMemberRespawnLaunchResolver(
