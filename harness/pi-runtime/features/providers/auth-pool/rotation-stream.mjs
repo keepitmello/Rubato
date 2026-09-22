@@ -162,8 +162,13 @@ export function streamWithCredentialRotation(options) {
       cooldownCapMs: sources.policy?.cooldownCapMs,
     }),
     onSuccess: async (slot) => {
+      // failureCount 는 "연속 실패" 다 — 여기서 0 으로 되돌리지 않으면 총 실패 횟수가 되고,
+      // rateLimitCooldown 의 지수 백오프(60s × 2^n, 상한 48h)가 영영 줄지 않는다.
+      // 실측(2026-09-22): setup-token 슬롯이 failureCount 12 로 굳어 429 한 번마다 48시간을
+      // 다시 잠갔고, 그 슬롯에 하드로 묶인 fable·opus·sonnet·haiku 가 통째로 죽었다.
+      // `rubato auth` 의 수동 갱신은 이미 같은 자리에서 0 으로 되돌린다(rubato-auth.mjs:537).
       await sources.repository.mutateSlotState(sources.providerId, slot.lane, slot.name, (current) => current
-        ? { ...current, lastSuccessAt: now(), lease: undefined, blockedUntil: undefined, blockReason: undefined }
+        ? { ...current, failureCount: 0, lastSuccessAt: now(), lease: undefined, blockedUntil: undefined, blockReason: undefined }
         : undefined);
     },
     persistBlock: async (slot, block) => {
