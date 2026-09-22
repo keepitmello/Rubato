@@ -48,9 +48,18 @@ const detailsOf = (value) => {
   if (hasTaskBody(body)) return body;
   return nested;
 };
+const teamNameOf = (args, details = {}) => {
+  if (nonempty(details.team_name)) return nonempty(details.team_name);
+  if (args.inline_spec === undefined) return nonempty(args.team_name);
+  let spec = args.inline_spec;
+  if (typeof spec === 'string') {
+    try { spec = JSON.parse(spec); } catch { return; }
+  }
+  return nonempty(record(spec).name);
+};
 const spawnLabel = (args, result) => nonempty(args.summary) || nonempty(detailsOf(result).task_summary)
-  || nonempty(args.description) || nonempty(detailsOf(result).name) || nonempty(args.team_name)
-  || nonempty(detailsOf(result).team_name) || (nonempty(args.prompt) ? nonempty(args.prompt).slice(0, 200) : undefined);
+  || nonempty(args.description) || nonempty(detailsOf(result).name)
+  || teamNameOf(args, detailsOf(result)) || (nonempty(args.prompt) ? nonempty(args.prompt).slice(0, 200) : undefined);
 const effortOf = (args, details, item = {}) => nonempty(item.effort) || nonempty(args.effort) || nonempty(details.effort)
   || nonempty(record(details.resolved_model).reasoning) || nonempty(record(details.resolved_model).reasoning_effort)
   || nonempty(args.thinking);
@@ -339,6 +348,7 @@ export class EventProjection {
       ...(title ? { title } : {}), ...(task.role ? { role: task.role } : {}),
       ...(task.model ? { model: task.model } : {}), ...(task.effort ? { effort: task.effort } : {}),
       ...(task.workflowName ? { workflowName: task.workflowName } : {}),
+      ...(task.parentAgentId ? { parentAgentId: task.parentAgentId } : {}),
       ...extra };
   }
   indexTask(task, key) {
@@ -347,25 +357,33 @@ export class EventProjection {
     if (held && held !== task) return;
     this.tasks.set(key, task);
   }
-  startTask(key, { label, taskType, role, model, effort, workflowName, taskId = key, toolUseId = key } = {}) {
+  startTask(key, { label, taskType, role, model, effort, workflowName, parentAgentId, taskId = key, toolUseId = key } = {}) {
     const id = nonempty(taskId) || nonempty(key);
     if (!id) return;
     const existing = this.tasks.get(key) || this.tasks.get(id);
     if (existing) {
+      const previousLinkage = JSON.stringify(this.linkage(existing));
       this.indexTask(existing, key);
       this.indexTask(existing, id);
       if (nonempty(toolUseId) && toolUseId !== existing.taskId) {
         this.indexTask(existing, toolUseId);
         existing.toolUseId = toolUseId;
       }
-      if (label && !existing.label) existing.label = label;
+      if (label && (!existing.label || taskType === 'local_workflow')) existing.label = label;
       if (role && !existing.role) existing.role = role;
       if (model && !existing.model) existing.model = model;
       if (effort && !existing.effort) existing.effort = effort;
+      if (workflowName) existing.workflowName = workflowName;
+      if (parentAgentId) existing.parentAgentId = parentAgentId;
       if (!existing.turnId && this.turnId) existing.turnId = this.turnId;
+      // A child snapshot can precede team_create's response. Persist late
+      // membership/name metadata without restarting an already settled child.
+      if (JSON.stringify(this.linkage(existing)) !== previousLinkage) {
+        this.taskEvent('task.updated', { taskId: existing.taskId, ...this.linkage(existing) }, existing);
+      }
       return existing;
     }
-    const task = { taskId: id, toolUseId: nonempty(toolUseId) || id, taskType, label, role, model, workflowName,
+    const task = { taskId: id, toolUseId: nonempty(toolUseId) || id, taskType, label, role, model, workflowName, parentAgentId,
       effort, turnId: this.turnId };
     this.indexTask(task, key);
     this.indexTask(task, id);
@@ -420,9 +438,9 @@ export class EventProjection {
     const result = event.result ?? event.partialResult ?? {};
     const details = detailsOf(result);
     const progress = record(details.progress?.activity || details.progress?.currentTool ? details : record(result).progress ? result : result);
-    const label = spawnLabel(args, result);
     const taskType = event.toolName === 'team_create' ? 'local_workflow' : 'subagent';
-    const workflowName = nonempty(args.team_name) || nonempty(details.team_name);
+    const workflowName = teamNameOf(args, details);
+    const label = taskType === 'local_workflow' ? workflowName || 'Team' : spawnLabel(args, result);
     const role = nonempty(details.subagent_type) || nonempty(args.preset);
     const model = nonempty(details.model) || nonempty(args.model);
     const effort = effortOf(args, details);
@@ -443,7 +461,9 @@ export class EventProjection {
       const status = nonempty(details.status);
       // Agent spawn returns while the child is still running. Completing the
       // task here would tell mobile the subagent finished at ack time.
-      if (event.isError || FAILED_STATUS.has(status)) this.completeTask(task, 'failed', label);
+      const teamFailed = taskType === 'local_workflow'
+        && ['invalid_arguments', 'spec_error', 'runtime_error'].includes(details.kind);
+      if (event.isError || FAILED_STATUS.has(status) || teamFailed) this.completeTask(task, 'failed', nonempty(details.reason) || label);
       else if (STOPPED_STATUS.has(status)) this.completeTask(task, 'stopped', label);
       else if (status === 'completed') this.completeTask(task, 'completed', label);
       for (const member of details.members ?? []) {
@@ -453,7 +473,12 @@ export class EventProjection {
         this.rememberChild(memberId, event.toolCallId);
         this.startTask(memberId, { taskId: memberId, label: memberLabel, taskType: 'subagent',
           role: nonempty(member.role), model: nonempty(member.model) || model, effort: effortOf(member, member) || effort,
-          workflowName: workflowName || label, toolUseId: event.toolCallId });
+          workflowName: workflowName || label, parentAgentId: task.taskId, toolUseId: event.toolCallId });
+      }
+      // Completion may have arrived before the create response linked members.
+      for (const member of details.members ?? []) {
+        const child = this.tasks.get(nonempty(member.task_id));
+        if (child) this.maybeCompleteTeam(child);
       }
     }
   }
