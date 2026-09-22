@@ -132,8 +132,12 @@ printf '\n%s== 새 커밋 %s개 ==%s\n' "$BOLD" "$BEHIND" "$RST"
 git log --oneline --no-decorate "HEAD..origin/$BRANCH" | sed 's/^/  /'
 
 CHANGED="$(git diff --name-only "HEAD..origin/$BRANCH")"
+# 하네스의 npm 설치본은 워크스페이스 밖에 셋 있다(install.sh 단계 1 참고). 하나라도
+# 빠지면 그 패키지의 package.json 만 올라가고 node_modules 는 옛 판으로 남는다 —
+# 0.86.1 범프에서 pi-runtime 이 그렇게 남아 로컬 pi-runtime 스위트가 통째로
+# 버전 미스매치로 죽었다. 그래서 셋 다 본다.
 need_deps=0; need_prompts=0; need_shell=0; need_extensions=0; need_hub=0; need_candidate=0
-echo "$CHANGED" | grep -Eq '^(package\.json|bun\.lock|harness/rubato-pi/package\.json)$' && need_deps=1
+echo "$CHANGED" | grep -Eq '^(package\.json|bun\.lock|harness/(rubato-pi|pi-runtime|pi-server)/package(-lock)?\.json)$' && need_deps=1
 echo "$CHANGED" | grep -Eq '^harness/prompts/' && need_prompts=1
 # 자동 로드되는 사용자 확장. 설치기 자신이 바뀌어도 다시 깐다 — 설치 규칙이
 # 바뀐 경우이므로 내용이 그대로여도 배치가 달라질 수 있다.
@@ -370,6 +374,15 @@ if [ "$need_deps" = 1 ]; then
     && ok "엔진 의존성" || fail "bun install 에 실패했습니다. 소스는 받았지만 업데이트는 완료되지 않았습니다."
   "$NPM" install --prefix "$HARNESS/rubato-pi" >/dev/null 2>&1 \
     && ok "rubato-pi 의존성" || fail "rubato-pi 의존성 설치에 실패했습니다. 소스는 받았지만 업데이트는 완료되지 않았습니다."
+  # install.sh 단계 1 과 같은 목록이다. 여기서 빠뜨리면 그 패키지의 설치본만 옛
+  # 판으로 남고, 그 상태로 도는 시험은 전부 버전 미스매치로 죽는다.
+  "$NPM" ci --prefix "$HARNESS/pi-runtime" >/dev/null 2>&1 \
+    && ok "pi-runtime 의존성" || fail "pi-runtime 의존성 설치에 실패했습니다. 소스는 받았지만 업데이트는 완료되지 않았습니다."
+  # pi-server 의 package-lock.json 은 레포에 없다 (.gitignore 가 막고 예외는
+  # pi-runtime·rubato-pi 둘뿐). `npm ci` 는 잠금이 없거나 package.json 과
+  # 어긋나면 EUSAGE 로 죽으므로, 여기서는 잠금 없이도 맞추는 `npm install` 을 쓴다.
+  "$NPM" install --prefix "$HARNESS/pi-server" >/dev/null 2>&1 \
+    && ok "pi-server 의존성" || fail "pi-server 의존성 설치에 실패했습니다. 소스는 받았지만 업데이트는 완료되지 않았습니다."
 fi
 
 # 세션이 실제로 도는 것은 pi 엔진다(senpi 폴백 폐기). 새 소스를 받아

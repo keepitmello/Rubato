@@ -183,7 +183,10 @@ else
   say "pi-runtime 을 깐다"
   npm ci --prefix "$HARNESS/pi-runtime" >/dev/null 2>&1 || { err "pi-runtime 설치 실패"; exit 1; }
   say "pi-server 를 깐다"
-  npm ci --prefix "$HARNESS/pi-server" >/dev/null 2>&1 || { err "pi-server 설치 실패"; exit 1; }
+  # pi-server 의 package-lock.json 은 커밋돼 있지 않다 (.gitignore 예외는
+  # pi-runtime·rubato-pi 둘뿐). `npm ci` 는 잠금이 없으면 EUSAGE 로 죽으므로,
+  # 새 클론에서 이 단계가 설치를 통째로 멈춘다. 잠금 없이도 맞추는 install 을 쓴다.
+  npm install --prefix "$HARNESS/pi-server" >/dev/null 2>&1 || { err "pi-server 설치 실패"; exit 1; }
   # 세션이 실제로 도는 엔진은 pi 하나뿐이다(senpi 폴백 폐기).
   # 이걸 빼면 설치는 성공했는데 `rubato` 가 "engine is not installed" 로
   # 죽는 상태가 만들어진다.
