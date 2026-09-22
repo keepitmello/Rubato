@@ -34,6 +34,7 @@ export type MemberTaskSendDeps = {
   readonly onSent?: () => void
   readonly now?: () => number
   readonly newMessageId?: () => string
+  readonly isCurrentMember?: () => Promise<boolean>
 }
 
 export class UnknownMemberRecipientError extends Error {
@@ -53,6 +54,9 @@ export async function runMemberTaskSend(
 ): Promise<AgentToolResult<MemberTaskSendDetails>> {
   const recipients = new Set([...deps.members, TEAM_LEAD_SENTINEL])
   if (!recipients.has(input.to)) throw new UnknownMemberRecipientError(input.to, deps.members)
+  if (deps.isCurrentMember !== undefined && !(await deps.isCurrentMember())) {
+    throw new Error("This execution is not the team's active member. If still starting, retry after activation; a replaced execution must not use the peer address.")
+  }
 
   const message = buildTeamMessage({
     from: deps.memberName,
@@ -88,7 +92,7 @@ export function createMemberTaskSendTool(
   return defineTool({
     name: "team_send",
     label: "Team Send",
-    description: "Send a durable message to another team member or the team lead.",
+    description: "Send a durable message to a peer. Technical defects, counterevidence and rechecks go directly to the responsible owner, even when the lead proposed the method. Send the lead intent/criterion/authority changes or an unresolvable execution failure, not routine technical relay. Enqueued is not evidence of receipt or action.",
     parameters: MemberTaskSendParams,
     execute: (_toolCallId, params) => runMemberTaskSend(deps, params),
   })

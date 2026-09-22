@@ -45,7 +45,13 @@
         let thread = await read();
         expect(prose(webRows(thread))).toContain(intermediate);
         expect(prose(mobileRows(thread))).toContain(intermediate);
-        expect(thread.messages.every(m => !m.text.includes("PRIVATE THOUGHT"))).toBe(true);
+        // The pinned T3 now persists thoughts as dedicated reasoning messages.
+        // Guard answer separation, not the obsolete assumption that thoughts
+        // are dropped from storage entirely.
+        expect(thread.messages.filter(m => m.role !== "reasoning")
+          .every(m => !m.text.includes("PRIVATE THOUGHT"))).toBe(true);
+        expect(thread.messages.filter(m => m.role === "reasoning").map(m => m.text))
+          .toEqual([`${family} PRIVATE THOUGHT before tool`]);
 
         projection.project({ type: "tool_execution_end", toolName: "bash", toolCallId: "call-1", result: { content: [{ type: "text", text: "/workspace" }] }, isError: false });
         const final = {
@@ -68,6 +74,8 @@
         const answer = final.content[1].text;
         expect(thread.messages.filter(m => m.role === "assistant").map(m => m.text))
           .toEqual([intermediate, answer]);
+        expect(thread.messages.filter(m => m.role === "reasoning").map(m => m.text))
+          .toEqual([`${family} PRIVATE THOUGHT before tool`, `${family} PRIVATE THOUGHT final`]);
         expect(webRows(thread).some(r => r.kind === "turn-fold")).toBe(false);
         projection.settle();
         await flush();
@@ -87,8 +95,11 @@
         expect(prose(mobileRows(reloaded))).toBe(prose(mobileRows(thread)));
 
         // Some providers split a final answer across adjacent assistant items.
-        const tail = { ...reloaded.messages.at(-1), id: "answer-tail", text: "final appendix",
-          createdAt: "2026-01-01T00:05:00.000Z", updatedAt: "2026-01-01T00:05:01.000Z" };
+        const lastAnswer = reloaded.messages.findLast(m => m.role === "assistant")!;
+        // Keep this synthetic segment adjacent to the answer, before any
+        // separately stored reasoning item that follows it in the event order.
+        const tail = { ...lastAnswer, id: "answer-tail", text: "final appendix",
+          createdAt: new Date(Date.parse(lastAnswer.createdAt) + 1).toISOString() };
         reloaded.messages.push(tail);
         for (const rows of [webRows(reloaded), mobileRows(reloaded)]) {
           expect(prose(rows)).toContain(answer);
@@ -181,9 +192,67 @@
         const thread = (await harness.readModel()).threads.find(t => t.id === "thread-1")!;
         const expected = messages.map(m => m.content.filter((b: any) => b.type === "text")
           .map((b: any) => b.text).join("")).filter(Boolean);
-        expect(thread.messages.filter(m => m.text).map(m => m.text)).toEqual(expected);
+        expect(thread.messages.filter(m => m.role === "assistant" && m.text).map(m => m.text)).toEqual(expected);
         const refreshed = (await harness.readModel()).threads.find(t => t.id === "thread-1")!;
         expect(refreshed.messages).toEqual(thread.messages);
       });
     }
   }
+
+  // Rubato 의 스레드 제목은 T3 의 배경 텍스트 생성이 아니라 Pi 세션이 짓는다.
+  // 세션이 이름을 바꾸면 브리지가 그 이름을 thread.metadata.updated 로 내보내고,
+  // 인제션이 그것을 스레드 제목으로 앉힌다. 첫 메시지가 제목으로 굳어 있던
+  // 스레드에서도 앉아야 한다 — 안 그러면 앱에는 지어진 제목이 영영 안 뜬다.
+  it("mirrors a Rubato session title onto a thread that still carries its seed title", async () => {
+    const harness = await createHarness({ threadTitle: "루바토 cli쓸때 스레드 제목 지어주는 로직이 있었는데…" });
+    const events: any[] = [];
+    let sequence = 0;
+    const projection = new EventProjection({
+      threadId: "thread-1", sessionId: "rubato", instanceId: "rubato",
+      emit: (event: any) => events.push({ ...event,
+        createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, ++sequence)).toISOString() }),
+    });
+    projection.project({ type: "session_info_changed", name: "스레드 제목 배선" });
+    await harness.emitAndDrain(events);
+    const thread = (await harness.readModel()).threads.find(t => t.id === "thread-1")!;
+    expect(thread.title).toBe("스레드 제목 배선");
+    expect(thread.titleState?.source).toBe("generated");
+  });
+
+  it("keeps a title the user set themselves when the session renames itself", async () => {
+    const harness = await createHarness({ threadTitle: "내가 정한 제목" });
+    await harness.dispatch({
+      type: "thread.meta.update",
+      commandId: CommandId.make("cmd-title-manual"),
+      threadId: ThreadId.make("thread-1"),
+      title: "내가 정한 제목",
+    });
+    const events: any[] = [];
+    let sequence = 0;
+    const projection = new EventProjection({
+      threadId: "thread-1", sessionId: "rubato", instanceId: "rubato",
+      emit: (event: any) => events.push({ ...event,
+        createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, ++sequence)).toISOString() }),
+    });
+    projection.project({ type: "session_info_changed", name: "Pi 가 지은 제목" });
+    await harness.emitAndDrain(events);
+    const thread = (await harness.readModel()).threads.find(t => t.id === "thread-1")!;
+    expect(thread.title).toBe("내가 정한 제목");
+  });
+
+  // 자기 제목을 스스로 짓는 제공자(Codex·OpenCode)는 T3 의 생성이 이기게 둔다.
+  // 위 완화가 그쪽까지 열리면 배경 생성이 만든 제목을 제공자 이름이 덮는다.
+  it("still refuses a provider title for providers that generate their own", async () => {
+    const harness = await createHarness({ threadTitle: "첫 메시지 그대로" });
+    harness.emit({
+      type: "thread.metadata.updated",
+      eventId: asEventId("evt-codex-title"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: "2026-01-01T00:00:00.000Z",
+      threadId: asThreadId("thread-1"),
+      payload: { name: "Codex 가 지은 제목" },
+    });
+    await harness.drain();
+    const thread = (await harness.readModel()).threads.find(t => t.id === "thread-1")!;
+    expect(thread.title).toBe("첫 메시지 그대로");
+  });

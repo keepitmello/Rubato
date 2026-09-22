@@ -20,9 +20,12 @@ import { createTaskComponent, wireEventBridge } from "./index"
 import type { CapturedUi } from "./runtime-context"
 import { createSessionTransitionBridge } from "./session-transition-bridge"
 
-const TASK_TOOL_NAMES = ["Agent", "AgentSend", "AgentCancel", "AgentOutput"]
+// AgentOutput is gone from the model surface: a delegated result arrives as a completion pointer
+// plus its result file path.
+const TASK_TOOL_NAMES = ["Agent", "AgentSend", "AgentCancel"]
 const TEAM_TOOL_NAMES = [
   "team_create",
+  "team_replace_member",
   "team_delete",
   "team_send",
   "team_shutdown_request",
@@ -98,6 +101,10 @@ const noopResumptionChannels = {
   emitShutdown: () => Promise.resolve(),
 }
 
+// The team batch wake is exercised in its own tests (packages/task team-batch-wake + the runtime
+// wiring test); these bridge-order tests only need the session_start chain to call it.
+const noopTeamBatchWake = { evaluate: () => Promise.resolve([]) }
+
 // Build the real engine and wire its event bridge over a fake ExtensionAPI so tests can drive the
 // registered handlers and observe the captured-ui bridge (todo 18: cleared on switch/shutdown).
 function wiredBridge(): {
@@ -126,6 +133,7 @@ function wiredBridge(): {
       shutdown: () => { leadCalls.shutdowns += 1 },
     },
     resumptionChannels: noopResumptionChannels,
+    teamBatchWake: noopTeamBatchWake,
   })
   return { pi, engine, reconcileCalls, leadCalls }
 }
@@ -344,6 +352,7 @@ describe("rubato-runtime task component wiring", () => {
         shutdown: () => undefined,
       },
       resumptionChannels: noopResumptionChannels,
+      teamBatchWake: noopTeamBatchWake,
     })
 
     // when
@@ -382,6 +391,7 @@ describe("rubato-runtime task component wiring", () => {
       reconcileTeamMailbox: () => Promise.resolve(),
       leadPollers: { tick: () => Promise.resolve(), shutdown: () => undefined },
       resumptionChannels: noopResumptionChannels,
+      teamBatchWake: noopTeamBatchWake,
     })
 
     await pi.dispatch("session_start", {}, {
@@ -441,6 +451,7 @@ describe("rubato-runtime task component wiring", () => {
       reconcileTeamMailbox: () => Promise.resolve(),
       leadPollers: { tick: () => Promise.resolve(), shutdown: () => undefined },
       resumptionChannels: noopResumptionChannels,
+      teamBatchWake: noopTeamBatchWake,
     })
     const sessionFile = join(cwd, "lead-session.jsonl")
     const liveContext = {

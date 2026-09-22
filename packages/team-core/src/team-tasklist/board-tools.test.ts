@@ -53,7 +53,7 @@ test("#given each board tool description #when read #then it distinguishes board
   }
 
   expect(TEAM_BOARD_TOOLS[0]?.description).toMatch(/does not start an Agent session/i)
-  expect(TEAM_BOARD_TOOLS[1]?.description).toMatch(/AgentOutput/)
+  expect(TEAM_BOARD_TOOLS[1]?.description).toMatch(/not on it/)
   expect(TEAM_BOARD_TOOLS[2]?.description).toMatch(/not an Agent session agentId/)
   expect(TEAM_BOARD_TOOLS[3]?.description).toMatch(/not Agent session lifecycle/)
 })

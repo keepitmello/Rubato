@@ -36,6 +36,17 @@ test("loaded terminal prompt uses direct calls when eval and native tools coexis
   assert.doesNotMatch(prompt, /tool\.(bash|monitor)/);
 });
 
+test("loaded terminal prompt keeps ordinary external watching and refuses delegate-progress watching", async () => {
+  const { buildTerminalPromptSection } = await moduleFor("terminal/prompt.js");
+  const prompt = buildTerminalPromptSection({ bashEvalOnly: false, monitorEvalOnly: false });
+  // Ordinary external state keeps the subscribe-instead-of-polling guidance.
+  assert.match(prompt, /ordinary external state/);
+  assert.match(prompt, /discover `monitor`/);
+  // A delegate's or teammate's progress is not a monitor target: the runtime already notifies.
+  assert.match(prompt, /Never watch a delegate's or teammate's progress/);
+  assert.match(prompt, /completion,\nfailure or permission notification/);
+});
+
 test("partial SDK overrides render bash and monitor independently", async () => {
   const { isEvalOnlyRouting } = await moduleFor("eval-only-routing.js");
   const { buildTerminalPromptSection } = await moduleFor("terminal/prompt.js");

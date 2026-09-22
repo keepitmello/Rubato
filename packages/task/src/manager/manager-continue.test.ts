@@ -60,7 +60,7 @@ describe("TaskManager.continueTask", () => {
     expect(record?.notification.run_epoch).toBe(1)
   })
 
-  test("#given a cancelled child #when continued #then it is not continuable and suggests AgentOutput", async () => {
+  test("#given a cancelled child #when continued #then it is not continuable and points at the result file", async () => {
     // given
     const { manager, store } = makeManager({})
     const started = await manager.start(baseSpec())
@@ -73,7 +73,7 @@ describe("TaskManager.continueTask", () => {
     // then
     expect(result.kind).toBe("not_continuable")
     if (result.kind !== "not_continuable") throw new Error("expected not_continuable")
-    expect(result.suggestion).toContain("AgentOutput")
+    expect(result.suggestion).toContain("result file")
   })
 
   test("#given an unknown task id #when continued #then it is not continuable", async () => {

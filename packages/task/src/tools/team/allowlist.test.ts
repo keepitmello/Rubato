@@ -23,6 +23,7 @@ describe("member child team-tool allowlist", () => {
     const names = tools.map((tool) => tool.name)
     expect(names).toEqual([
       "team_create",
+      "team_replace_member",
       "team_delete",
       "team_send",
       "team_shutdown_request",

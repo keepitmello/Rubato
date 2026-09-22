@@ -1,7 +1,8 @@
 import { log } from "@rubato/utils"
 
 import type { TaskRecord, TaskStatus } from "../state"
-import { buildCompletionDetails, buildCompletionMessage } from "./notification"
+import { parseTeamMemberTaskIdentity } from "../team/liveness-ownership"
+import { buildCompletionDetails, buildCompletionMessage, writeCompletionResultFile } from "./notification"
 import { routeCompletion, shouldNotifyStatus } from "./routing"
 import type {
   CompletionDetails,
@@ -118,6 +119,21 @@ export function createCompletionNotifier(deps: CompletionNotifierDeps): Completi
 
     if (record.notification.notified_epoch >= record.notification.run_epoch) {
       return { kind: "skipped", reason: "already-notified" }
+    }
+
+    // A teammate ending a turn is silent to the lead. Members are resident: every turn end re-enters
+    // the same terminal status, so delivering here produced one lead wake per member turn (18 in the
+    // 2026-09-21 sample) with no work actually finished. The epoch is still stamped so retries and
+    // reconcile never re-deliver it; the aggregate team-batch wake carries the lead's one report.
+    // Abnormal terminals (error/lost) keep the existing notification path.
+    if (record.status === "completed" && parseTeamMemberTaskIdentity(record) !== undefined) {
+      // The result body still becomes a readable file: the aggregate wake points at it, and it must
+      // survive a batch that never completes.
+      if (deps.stateDir !== undefined) {
+        writeCompletionResultFile(deps.stateDir, record.task_id, record.notification.run_epoch, record.final_response ?? "")
+      }
+      persistNotified(deps.store, record.task_id, record.notification.run_epoch)
+      return { kind: "skipped", reason: "team-member-turn-end" }
     }
 
     const details = buildDetails(record, request.tokens)

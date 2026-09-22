@@ -1,7 +1,7 @@
 import { basename } from "node:path";
 import {
   TITLE_ENTRY,
-  TITLE_MODEL,
+  TITLE_MODELS,
   TITLE_SYSTEM_PROMPT,
   buildTitlePrompt,
   isTitleLocked,
@@ -29,15 +29,17 @@ export function paintTabTitle(ctx, name) {
   ctx?.ui?.setTitle?.(tabTitle(name, cwdName(ctx)));
 }
 
+// 후보를 앞에서부터 훑어 인증이 서 있는 첫 모델을 고른다. find() 는 인증을 보지
+// 않으므로, 자격이 없는 후보로 complete() 를 부르면 제목이 통째로 실패한다.
+// 마지막 폴백은 세션 모델이다.
 export function pickTitleModel(registry, fallback) {
-  const found = registry?.find?.(TITLE_MODEL.provider, TITLE_MODEL.id);
-  if (!found) return fallback;
-  // find() does no auth check; without Codex credentials complete() would
-  // throw, so fall back to the session model instead of failing the title.
-  if (typeof registry.hasConfiguredAuth === "function" && !registry.hasConfiguredAuth(found)) {
-    return fallback;
+  for (const candidate of TITLE_MODELS) {
+    const found = registry?.find?.(candidate.provider, candidate.id);
+    if (!found) continue;
+    if (typeof registry.hasConfiguredAuth === "function" && !registry.hasConfiguredAuth(found)) continue;
+    return { model: found, ...(candidate.reasoning ? { reasoning: candidate.reasoning } : {}) };
   }
-  return found;
+  return { model: fallback };
 }
 
 export function titleFromResponse(response) {
@@ -49,7 +51,7 @@ export async function refreshSessionTitle(pi, ctx, state) {
   const texts = userTextsFromEntries(ctx.sessionManager?.getEntries?.() ?? ctx.sessionManager?.getBranch?.() ?? []);
   if (texts.length === 0) return;
 
-  const model = pickTitleModel(ctx.modelRegistry, ctx.model);
+  const { model, reasoning } = pickTitleModel(ctx.modelRegistry, ctx.model);
   const complete = ctx.modelRegistry?.complete;
   if (!model || typeof complete !== "function") return;
 
@@ -65,6 +67,7 @@ export async function refreshSessionTitle(pi, ctx, state) {
   }, {
     cacheRetention: "none",
     sessionId: `rubato-title-${Date.now()}`,
+    ...(reasoning ? { reasoning } : {}),
   });
 
   const proposed = titleFromResponse(response);

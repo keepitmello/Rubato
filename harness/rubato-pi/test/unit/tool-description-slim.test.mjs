@@ -51,6 +51,18 @@ function definition(name, extras = {}) {
   };
 }
 
+test("slim catalog drops AgentOutput and scopes monitor away from delegate progress", () => {
+  // The model-facing description is the slim string (core-tool-descriptions replaces definition.description).
+  assert.equal("AgentOutput" in SLIM_DESCRIPTIONS, false);
+  assert.equal(slimToolDescription({ name: "AgentOutput" }), undefined);
+  const monitor = SLIM_DESCRIPTIONS.monitor;
+  assert.match(monitor, /Subscribe instead of polling/);
+  assert.match(monitor, /Never subscribe to a delegate's or teammate's progress/);
+  assert.match(monitor, /not a completion signal/);
+  // Ordinary terminal watching guidance is untouched.
+  assert.match(SLIM_DESCRIPTIONS.bash, /Do not sleep or poll — use monitor/);
+});
+
 test("isToolDefinitionWrapperUrl matches the installed wrapper only", () => {
   const path = join(senpiDir, WRAPPER_REL);
   assert.equal(isToolDefinitionWrapperUrl(pathToFileURL(path).href), true);

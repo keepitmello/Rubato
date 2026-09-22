@@ -7,7 +7,7 @@ import { parseArgs } from 'node:util';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
-const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/server/src/provider/RubatoPiInventory.ts', 'apps/server/src/provider/RubatoMobilePresentation.ts', 'apps/server/src/provider/RubatoMobileProtocol.ts', 'apps/web/src/components/RubatoIcon.tsx', 'apps/web/src/components/DeepSeekIcon.tsx', 'apps/web/src/components/AgentResultDetails.tsx'];
+const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/server/src/provider/RubatoPiInventory.ts', 'apps/server/src/provider/RubatoMobilePresentation.ts', 'apps/server/src/provider/RubatoMobileProtocol.ts', 'apps/web/src/components/RubatoIcon.tsx', 'apps/web/src/components/DeepSeekIcon.tsx', 'apps/web/src/components/AgentResultDetails.tsx', 'apps/server/src/workspace/createWorkspaceFile.ts', 'apps/web/src/components/files/NewMarkdownNoteDialog.tsx'];
 // 값이 [anchor, addition] 이면 anchor 앞에 붙이고, [from, to, 'replace'] 면 갈아끼운다.
 // 앱 이름·번들 id·상태 경로는 T3 가 const 로 박아둬서 앞에 덧붙이는 것으로는 못 바꾼다.
 //
@@ -16,6 +16,43 @@ const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/se
 // .electron-runtime 번들이라 그 경로로 켜면 맨 T3 가 떴다. 아이콘도 같은 이유로
 // 여기서 경로를 바꾸는 대신, 설치기가 T3 가 읽는 자리에 Rubato 것을 깔아둔다.
 const edits = {
+  // Creation is a separate RPC so an older server cannot silently ignore a
+  // create-only flag and route the request to its overwriting writeFile method.
+  'packages/contracts/src/rpc.ts': [
+    ['  projectsWriteFile: "projects.writeFile",', '  projectsCreateFile: "projects.createFile",\n'],
+    ['const WsProjectsWriteFileRpc = Rpc.make(WS_METHODS.projectsWriteFile, {', 'const WsProjectsCreateFileRpc = Rpc.make(WS_METHODS.projectsCreateFile, {\n  payload: ProjectWriteFileInput,\n  success: ProjectWriteFileResult,\n  error: Schema.Union([ProjectWriteFileError, EnvironmentAuthorizationError]),\n});\n\n'],
+    ['  WsProjectsWriteFileRpc,\n', '  WsProjectsCreateFileRpc,\n'],
+  ],
+  'packages/contracts/src/project.ts': [
+    ['  readonly operationPath?: string;\n  readonly cause?: unknown;\n};', '  readonly operationPath?: string;\n  readonly cause?: unknown;\n  readonly message?: string;\n};', 'replace'],
+  ],
+  'packages/client-runtime/src/state/projectCommands.ts': [
+    ['    writeFile: createEnvironmentRpcCommand(runtime, {',
+      '    createFile: createEnvironmentRpcCommand(runtime, {\n      label: "environment-data:projects:create-file",\n      tag: WS_METHODS.projectsCreateFile,\n      scheduler: fileScheduler,\n      concurrency: {\n        mode: "serial",\n        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.cwd, input.relativePath]),\n      },\n    }),\n'],
+  ],
+  'apps/server/src/auth/RpcAuthorization.ts': [
+    ['  [WS_METHODS.projectsWriteFile]: AuthOrchestrationOperateScope,', '  [WS_METHODS.projectsCreateFile]: AuthOrchestrationOperateScope,\n'],
+  ],
+  'apps/server/src/workspace/WorkspaceFileSystem.ts': [
+    ['import * as WorkspaceEntries from "./WorkspaceEntries.ts";', 'import { createWorkspaceFile } from "./createWorkspaceFile.ts";\n'],
+    ['    readonly writeFile: (\n      input: ProjectWriteFileInput,', '    readonly writeFile: (\n      input: ProjectWriteFileInput & { readonly createOnly?: boolean },', 'replace'],
+    ['    yield* fileSystem.makeDirectory(path.dirname(target.absolutePath), { recursive: true }).pipe(',
+      [
+        '    if (input.createOnly) {',
+        '      yield* Effect.tryPromise({',
+        '        try: () => createWorkspaceFile(input.cwd, target.relativePath, input.contents),',
+        '        catch: (cause) => new WorkspaceFileSystemOperationError({',
+        '          workspaceRoot: input.cwd, relativePath: input.relativePath,',
+        '          resolvedPath: target.absolutePath, operationPath: target.absolutePath,',
+        '          operation: "write-file", cause,',
+        '        }),',
+        '      });',
+        '      yield* workspaceEntries.refresh(input.cwd);',
+        '      return { relativePath: target.relativePath };',
+        '    }',
+        '',
+      ].join('\n')],
+  ],
   'apps/server/src/ws.ts': [
     [
       'import { withTerminalOutputWindow } from "./terminal/OutputProtocol.ts";',
@@ -39,6 +76,45 @@ const edits = {
         '          yield* RpcServer.make(WsRpcGroup, { disableTracing: true }).pipe(',
         '            Effect.provideService(RpcServer.Protocol, withTerminalOutputWindow(clientProtocol)),',
       ].join('\n'),
+      'replace',
+    ],
+    ['        [WS_METHODS.projectsWriteFile]: (input) =>',
+      [
+        '        [WS_METHODS.projectsCreateFile]: (input) =>',
+        '          observeRpcEffect(',
+        '            WS_METHODS.projectsCreateFile,',
+        '            workspaceFileSystem.writeFile({ ...input, createOnly: true }).pipe(',
+        '              Effect.mapError((cause) => new ProjectWriteFileError({',
+        '                cwd: input.cwd, relativePath: input.relativePath,',
+        '                ...projectFileFailureContext(cause),',
+        '                message: cause._tag === "WorkspaceFileSystemOperationError" && cause.cause instanceof Error',
+        '                  ? cause.cause.message : cause.message,',
+        '                cause,',
+        '              })),',
+        '            ),',
+        '            { "rpc.aggregate": "workspace" },',
+        '          ),',
+        '',
+      ].join('\n')],
+  ],
+  'apps/web/src/components/RightPanelTabs.tsx': [
+    ['import type { RightPanelSurface } from "~/rightPanelStore";', 'import { NewMarkdownNoteDialog, type MarkdownNoteTarget } from "./files/NewMarkdownNoteDialog";\n'],
+    ['  FileDiff,\n  Files,', '  FileDiff,\n  FilePenLine,\n  Files,', 'replace'],
+    ['interface RightPanelTabsProps {', 'interface RightPanelTabsProps {\n  noteTarget?: MarkdownNoteTarget | undefined;', 'replace'],
+    ['function RightPanelEmptyState(props: {', 'function RightPanelEmptyState(props: {\n  onAddNote?: (() => void) | undefined;', 'replace'],
+    ['  const [renamingDevice, setRenamingDevice] = useState<string | null>(null);', '  const [newNoteTarget, setNewNoteTarget] = useState<MarkdownNoteTarget | null>(null);\n'],
+    ['    {\n      label: "Diff",\n      icon: FileDiff,\n      shortcut: "D",\n      available: props.diffAvailable,\n      disabledReason: SURFACE_UNAVAILABLE_HINTS.diff,',
+      '    {\n      label: "Markdown note",\n      icon: FilePenLine,\n      shortcut: "N",\n      available: props.onAddNote !== undefined,\n      disabledReason: SURFACE_UNAVAILABLE_HINTS.files,\n      onClick: () => props.onAddNote?.(),\n      badgeCount: 0,\n    },\n'],
+    ['    {\n      label: "Diff",\n      icon: FileDiff,\n      shortcut: "D",\n      available: props.diffAvailable,\n      disabledReason: SURFACE_DISABLED_REASONS.diff,',
+      '    {\n      label: "Markdown note",\n      icon: FilePenLine,\n      shortcut: "N",\n      available: props.noteTarget !== undefined,\n      disabledReason: SURFACE_DISABLED_REASONS.files,\n      onClick: () => setNewNoteTarget(props.noteTarget ?? null),\n    },\n'],
+    ['            onAddFiles={props.onAddFiles}', '            onAddNote={props.noteTarget ? () => setNewNoteTarget(props.noteTarget!) : undefined}\n'],
+    ['    </PreviewPanelShell>', '      {newNoteTarget ? <NewMarkdownNoteDialog target={newNoteTarget} onClose={() => setNewNoteTarget(null)} /> : null}\n'],
+  ],
+  'apps/web/src/components/files/FilePreviewPanel.tsx': [
+    ['const RENDER_MARKDOWN_STORAGE_KEY = "t3code.renderMarkdown";\n', '// Markdown reading mode is local to the opened file.\n', 'replace'],
+    [
+      '  // Reading markdown rendered is a preference, not a property of one file. Keeping\n  // it on the panel meant a thread switch dropped it and forced source back.\n  const [renderMarkdownPreferred, setRenderMarkdownPreferred] = useLocalStorage(\n    RENDER_MARKDOWN_STORAGE_KEY,\n    false,\n    Schema.Boolean,\n  );',
+      '  // Files open for reading; an explicit line reveal still opens source.\n  const [renderMarkdownPreferred, setRenderMarkdownPreferred] = useState(true);\n  useEffect(() => setRenderMarkdownPreferred(true), [relativePath, revealRequestId]);',
       'replace',
     ],
   ],
@@ -313,6 +389,14 @@ const edits = {
   // Pi 자신의 follow_up 큐로 들어가 T3 가 보여주지도 취소하지도 못했다. 루바토에서는
   // 대기 메시지를 턴이 끝날 때까지 붙들어 둔다 — 그게 팔로업이고, ↑ 는 승격이다.
   'apps/web/src/components/ChatView.tsx': [
+    ...[10, 12].map((indent) => {
+      const spaces = ' '.repeat(indent);
+      return [
+        `\n${spaces}onAddFiles={addFilesSurface}`,
+        `\n${spaces}noteTarget={activeWorkspaceRoot ? { threadRef: activeThreadRef, cwd: activeWorkspaceRoot } : undefined}\n${spaces}onAddFiles={addFilesSurface}`,
+        'replace',
+      ];
+    }),
     [
       '    if (!isQueuedMessageDue({ message: nextQueuedMessage, phase, latestToolActivityId })) return;\n    sendQueuedMessage(nextQueuedMessage);\n  }, [\n    isSendBusy,\n    latestToolActivityId,\n    nextQueuedMessage,\n    phase,\n    queueBlockedByPendingRequest,\n    queueSendGate,\n  ]);',
       '    if (!isQueuedMessageDue({ message: nextQueuedMessage, phase, latestToolActivityId })) return;\n    // A queued message is a follow-up: it runs as its own turn once this one\n    // ends. Releasing it at a tool boundary would make the row\'s Send now\n    // arrow mean nothing — that arrow is the promotion to a steer.\n    if (phase === "running" && selectedProvider === ProviderDriverKind.make("rubato-pi")) return;\n    sendQueuedMessage(nextQueuedMessage);\n  }, [\n    isSendBusy,\n    latestToolActivityId,\n    nextQueuedMessage,\n    phase,\n    queueBlockedByPendingRequest,\n    queueSendGate,\n    selectedProvider,\n  ]);',
@@ -602,6 +686,20 @@ const edits = {
     ],
   ],
   'apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts': [
+    [
+      '        if (thread.titleState?.source !== "manual" && canReplaceThreadTitle(thread.title)) {',
+      [
+        '        // Rubato 의 스레드 제목은 Pi 세션이 짓는다. 그 엔진은 T3 의 배경',
+        '        // 텍스트 생성을 대신 해 주지 않으므로(드라이버가 unsupported) 여기서',
+        '        // 첫 메시지를 제목으로 굳히면 앱에는 영영 지어진 제목이 안 뜬다.',
+        '        // 사용자가 직접 고친 제목은 위 조건이 계속 지킨다.',
+        '        if (',
+        '          thread.titleState?.source !== "manual" &&',
+        '          (canReplaceThreadTitle(thread.title) || String(event.provider) === "rubato-pi")',
+        '        ) {',
+      ].join('\n'),
+      'replace',
+    ],
     [
       '                  summary: truncateDetail(event.payload.summary),\n                  detail: truncateDetail(event.payload.summary),',
       '                  summary: truncateDetail(event.payload.summary),\n                  detail: event.payload.summary,',

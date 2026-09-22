@@ -74,7 +74,7 @@ async function activeTeamHarness(sessionId?: string) {
   return { runtimeState, service, stateDir }
 }
 
-function extensionOrderHarness() {
+function extensionOrderHarness(beforeStart?: (spec: ManagedStartSpec) => Promise<void>) {
   const cwd = mkdtempSync(join(tmpdir(), "rubato-runtime-team-service-extensions-"))
   tempRoots.push(cwd)
   mkdirSync(join(cwd, ".rubato"), { recursive: true })
@@ -83,9 +83,10 @@ function extensionOrderHarness() {
   })}\n`)
   const started: ManagedStartSpec[] = []
   const runner: ManagedRunner = {
-    start: (spec) => {
+    start: async (spec) => {
       started.push(spec)
-      return Promise.resolve(fakeManagedHandle(spec))
+      await beforeStart?.(spec)
+      return fakeManagedHandle(spec)
     },
   }
   const rubatoConfig = loadRubatoConfig({ cwd }).config
@@ -110,7 +111,8 @@ function extensionOrderHarness() {
     models: TEST_MODELS,
     cwd,
   })
-  return { service, started }
+  const store = createTaskRecordStore({ project_dir: cwd, task: { state_dir: engine.stateDir } })
+  return { service, started, engine, store }
 }
 
 function fakeManagedHandle(spec: ManagedStartSpec): ManagedChildHandle {
@@ -144,6 +146,63 @@ describe("createTeamService model validation", () => {
       }),
     ).rejects.toMatchObject({ code: "MODEL_UNAVAILABLE" })
     expect(started).toEqual([])
+  })
+})
+
+describe("createTeamService member recovery", () => {
+  test("real manager keeps the peer identity across repeated replacements without execution-name collisions", async () => {
+    const { service, started, engine, store } = extensionOrderHarness()
+    const created = await service.createTeam({
+      inlineSpec: { name: "recovery", members: [{ name: "beta", kind: "verifier", model: TEST_MODEL, prompt: "Verify." }] },
+    })
+    const teamRunId = created.runtimeState.teamRunId
+    const oldId = created.memberTaskIds.beta!
+    store.mutate(oldId, (record) => ({ ...record, status: "error", error_message: "auth unavailable" }))
+    const input = { teamRunId, member: "beta", expectedTaskId: oldId, model: TEST_MODEL, prompt: "Recheck evidence.md revision B." }
+    await expect(service.replaceMember({ ...input, model: "missing/model" })).rejects.toMatchObject({ code: "MODEL_UNAVAILABLE" })
+    expect(started).toHaveLength(1)
+    expect(engine.manager.get(oldId)?.residency_state).toBe("resident")
+    const first = await service.replaceMember(input)
+    expect(engine.manager.get(oldId)?.residency_state).toBe("disposed")
+    expect(started.at(-1)?.memberEnv?.RUBATO_TASK_MEMBER).toBe(`${teamRunId}::beta`)
+    expect(started.at(-1)?.memberEnv?.RUBATO_PI_ROLE).toBe("verifier")
+    await expect(service.replaceMember(input)).rejects.toMatchObject({ code: "stale_member" })
+    store.mutate(first.member.taskId, (record) => ({ ...record, status: "error" }))
+    const second = await service.replaceMember({ ...input, expectedTaskId: first.member.taskId })
+    expect(new Set(started.map((spec) => spec.taskId)).size).toBe(3)
+    expect(engine.manager.get(second.member.taskId)?.name).not.toBe(engine.manager.get(first.member.taskId)?.name)
+    await service.deleteTeam({ teamRunId, force: true })
+    expect(engine.manager.get(second.member.taskId)?.status).toBe("cancelled")
+  })
+
+  test("shutdown requested during launch waits for publication and stops the replacement, not the stale attempt", async () => {
+    let blockReplacement = false
+    let entered!: () => void
+    let release!: () => void
+    const launching = new Promise<void>((resolve) => { entered = resolve })
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const { service, engine, store } = extensionOrderHarness(async () => {
+      if (blockReplacement) { entered(); await gate }
+    })
+    const created = await service.createTeam({
+      inlineSpec: { name: "recovery-shutdown", members: [{ name: "beta", kind: "verifier", model: TEST_MODEL, prompt: "Verify." }] },
+    })
+    const teamRunId = created.runtimeState.teamRunId
+    const oldId = created.memberTaskIds.beta!
+    store.mutate(oldId, (record) => ({ ...record, status: "error" }))
+    blockReplacement = true
+    const replacing = service.replaceMember({
+      teamRunId, member: "beta", expectedTaskId: oldId, model: TEST_MODEL, prompt: "Recheck evidence.md revision B.",
+    })
+    await launching
+    const shuttingDown = service.requestShutdown(teamRunId, "beta")
+    release()
+    const replacement = await replacing
+    await shuttingDown
+    await service.approveShutdown(teamRunId, "beta")
+    expect(engine.manager.get(replacement.member.taskId)?.status).toBe("cancelled")
+    expect(engine.manager.get(oldId)?.status).toBe("error")
+    await service.deleteTeam({ teamRunId, force: true })
   })
 })
 
