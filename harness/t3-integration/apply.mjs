@@ -7,7 +7,7 @@ import { parseArgs } from 'node:util';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
-const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/server/src/provider/RubatoPiInventory.ts', 'apps/web/src/components/RubatoIcon.tsx', 'apps/web/src/components/DeepSeekIcon.tsx', 'apps/web/src/components/AgentResultDetails.tsx'];
+const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/server/src/provider/RubatoPiInventory.ts', 'apps/server/src/provider/RubatoMobilePresentation.ts', 'apps/server/src/provider/RubatoMobileProtocol.ts', 'apps/web/src/components/RubatoIcon.tsx', 'apps/web/src/components/DeepSeekIcon.tsx', 'apps/web/src/components/AgentResultDetails.tsx'];
 // 값이 [anchor, addition] 이면 anchor 앞에 붙이고, [from, to, 'replace'] 면 갈아끼운다.
 // 앱 이름·번들 id·상태 경로는 T3 가 const 로 박아둬서 앞에 덧붙이는 것으로는 못 바꾼다.
 //
@@ -16,6 +16,32 @@ const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/se
 // .electron-runtime 번들이라 그 경로로 켜면 맨 T3 가 떴다. 아이콘도 같은 이유로
 // 여기서 경로를 바꾸는 대신, 설치기가 T3 가 읽는 자리에 Rubato 것을 깔아둔다.
 const edits = {
+  'apps/server/src/ws.ts': [
+    [
+      'import { withTerminalOutputWindow } from "./terminal/OutputProtocol.ts";',
+      'import { withRubatoMobilePresentation } from "./provider/RubatoMobileProtocol.ts";\n',
+    ],
+    [
+      '          yield* RpcServer.make(WsRpcGroup, { disableTracing: true }).pipe(\n            Effect.provideService(RpcServer.Protocol, withTerminalOutputWindow(protocol)),',
+      [
+        '          let clientProtocol = protocol;',
+        '          if (clientOrigin.surface === "mobile") {',
+        '            const providers = yield* ProviderRegistry.ProviderRegistry;',
+        '            const query = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;',
+        '            clientProtocol = withRubatoMobilePresentation(protocol, {',
+        '              surface: clientOrigin.surface,',
+        '              providers: providers.getProviders,',
+        '              thread: (id) => query.getThreadDetailById(ThreadId.make(id)).pipe(',
+        '                Effect.map(Option.getOrUndefined), Effect.orDie,',
+        '              ),',
+        '            });',
+        '          }',
+        '          yield* RpcServer.make(WsRpcGroup, { disableTracing: true }).pipe(',
+        '            Effect.provideService(RpcServer.Protocol, withTerminalOutputWindow(clientProtocol)),',
+      ].join('\n'),
+      'replace',
+    ],
+  ],
   'apps/server/src/provider/builtInDrivers.ts': [
     ['import type { AnyProviderDriver } from "./ProviderDriver.ts";', 'import { RubatoPiDriver } from "./Drivers/RubatoPiDriver.ts";\n'],
     ['  AntigravityDriver,\n];', '  RubatoPiDriver,\n'],
