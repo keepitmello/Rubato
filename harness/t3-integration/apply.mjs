@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
 import { parseArgs } from 'node:util';
+import { voiceEdits, voiceOverlays } from './voice-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -778,6 +779,10 @@ const edits = {
     ],
   ],
 };
+overlays.push(...voiceOverlays);
+for (const [relative, changes] of Object.entries(voiceEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
 function transform(text, changes) {
   for (const [anchor, addition, mode] of changes) {
     if (text.split(anchor).length !== 2) throw new Error(`T3 integration anchor is missing or ambiguous: ${anchor}`);
