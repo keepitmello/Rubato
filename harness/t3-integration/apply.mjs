@@ -294,7 +294,7 @@ const edits = {
     ],
     [
       '  const activeContextWindow = useMemo(\n    () => deriveLatestContextWindowSnapshot(threadActivities),\n    [threadActivities],\n  );',
-      '  const activeContextWindow = useMemo(\n    () => deriveLatestContextWindowSnapshot(threadActivities),\n    [threadActivities],\n  );\n  const sessionSpeedLabel = useMemo(\n    () =>\n      selectedProvider === ProviderDriverKind.make("rubato-pi")\n        ? formatSpeedLabel(latestSessionSpeed(threadActivities))\n        : null,\n    [selectedProvider, threadActivities],\n  );',
+      '  const activeContextWindow = useMemo(\n    () => deriveLatestContextWindowSnapshot(threadActivities),\n    [threadActivities],\n  );\n  const sessionSpeedLabel = useMemo(() => {\n    if (selectedProvider !== ProviderDriverKind.make("rubato-pi")) return null;\n    const score = latestSessionSpeed(threadActivities);\n    return score === null ? null : formatSpeedLabel(score);\n  }, [selectedProvider, threadActivities]);',
       'replace',
     ],
     [
@@ -466,16 +466,6 @@ const edits = {
   ],
   'apps/web/src/components/chat/ChatComposer.tsx': [
     [
-      'const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(props: {\n  compact: boolean;\n  activeContextWindow: ContextWindowSnapshot | null;',
-      'const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(props: {\n  compact: boolean;\n  activeContextWindow: ContextWindowSnapshot | null;\n  sessionSpeedLabel?: string | null;',
-      'replace',
-    ],
-    [
-      '  return (\n    <>\n      {props.activeContextWindow ? (',
-      '  return (\n    <>\n      {props.sessionSpeedLabel ? (\n        <span className="shrink-0 px-1 font-mono text-[11px] tabular-nums text-muted-foreground">\n          {props.sessionSpeedLabel}\n        </span>\n      ) : null}\n      {props.activeContextWindow ? (',
-      'replace',
-    ],
-    [
       '  // Context window\n  activeContextWindow: ContextWindowSnapshot | null;',
       '  // Context window\n  activeContextWindow: ContextWindowSnapshot | null;\n  sessionSpeedLabel?: string | null;',
       'replace',
@@ -491,8 +481,8 @@ const edits = {
       'replace',
     ],
     [
-      '                    activeContextWindow={\n                      settings.contextWindowMeterEnabled ? activeContextWindow : null\n                    }',
-      '                    activeContextWindow={\n                      settings.contextWindowMeterEnabled ? activeContextWindow : null\n                    }\n                    sessionSpeedLabel={sessionSpeedLabel}',
+      '                  {showComposerAttachAction ? (',
+      '                  {sessionSpeedLabel ? (\n                    <span className="shrink-0 px-1 font-mono text-[11px] tabular-nums text-muted-foreground">\n                      {sessionSpeedLabel}\n                    </span>\n                  ) : null}\n                  {showComposerAttachAction ? (',
       'replace',
     ],
   ],

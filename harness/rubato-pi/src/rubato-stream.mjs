@@ -281,15 +281,20 @@ function createCallState(model, options, modelId) {
 /**
  * Senpi's current main agent loop does not tag provider calls with a stream kind.
  * A non-empty tool registry is the positive evidence that this is the normal
- * reasoning/tool loop. Title, compaction, branch-summary, and /btw contexts have
- * no tools and therefore remain fail-closed auxiliary calls. Explicit tags still
- * win for tests and future engine versions.
+ * reasoning/tool loop. Stock Pi folds that registry into the leading system
+ * message (`toolsAdded`) before the provider stream sees the context, so the
+ * hosted Rubato app must read that too. Title, compaction, branch-summary, and
+ * /btw contexts have no tools and therefore remain fail-closed auxiliary calls.
+ * Explicit tags still win for tests and future engine versions.
  */
 export function resolveSpeedIndexStreamKind(context, options = {}) {
   if (typeof options.streamKind === "string" && options.streamKind.length > 0) {
     return options.streamKind;
   }
-  return Array.isArray(context?.tools) && context.tools.length > 0 ? "main" : "auxiliary";
+  if (Array.isArray(context?.tools) && context.tools.length > 0) return "main";
+  const first = Array.isArray(context?.messages) ? context.messages[0] : undefined;
+  const added = first?.role === "system" ? first.toolsAdded : undefined;
+  return Array.isArray(added) && added.length > 0 ? "main" : "auxiliary";
 }
 
 function isReplayableContent(event) {
