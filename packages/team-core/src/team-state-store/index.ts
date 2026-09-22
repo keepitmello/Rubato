@@ -7,3 +7,4 @@ export {
   saveRuntimeState,
   transitionRuntimeState,
 } from "./store"
+export { withLock } from "./locks"

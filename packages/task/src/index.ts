@@ -75,6 +75,7 @@ export {
   resolveProjectTeamSpecPath,
   resolveTeamMemberInboxDir,
   resolveTeamRuntimeDirs,
+  withTeamRuntimeMutation,
   teamStorageBaseDir,
   validateSenpiTeamMembers,
 } from "./team"
@@ -488,3 +489,5 @@ export type {
 } from "./team"
 
 export * from "./tools/team"
+export { replaceTeamMember, TeamMemberReplacementError } from "./team"
+export type { ReplaceTeamMemberInput, ReplaceTeamMemberResult, ReplaceTeamMemberDeps } from "./team"

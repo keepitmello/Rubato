@@ -20,6 +20,7 @@ export function createFakeTeamService(overrides: Partial<TeamToolsService> = {})
   return {
     calls,
     createTeam: (input) => record("createTeam", [input], overrides.createTeam && (() => overrides.createTeam!(input))),
+    replaceMember: (input) => record("replaceMember", [input], overrides.replaceMember && (() => overrides.replaceMember!(input))),
     deleteTeam: (input) => record("deleteTeam", [input], overrides.deleteTeam && (() => overrides.deleteTeam!(input))),
     sendMessage: (teamRunId, input) =>
       record("sendMessage", [teamRunId, input], overrides.sendMessage && (() => overrides.sendMessage!(teamRunId, input))),

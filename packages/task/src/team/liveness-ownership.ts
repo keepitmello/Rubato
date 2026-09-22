@@ -18,7 +18,8 @@ export type TeamMemberOwnershipDeps = {
   readonly loadRuntimeState?: (teamRunId: string, config: Parameters<typeof loadRuntimeState>[1]) => Promise<RuntimeState>
 }
 
-const TEAM_MEMBER_NAME_PATTERN = /^team:([0-9a-f-]{36}):([a-z0-9-]+)$/i
+// The mailbox identity is stable; a replacement is a distinct execution attempt.
+const TEAM_MEMBER_NAME_PATTERN = /^team:([0-9a-f-]{36}):([a-z0-9-]+)(?:@([0-9a-f-]{36}))?$/i
 
 export function parseTeamMemberTaskIdentity(record: Pick<TaskRecord, "name">): TeamMemberTaskIdentity | undefined {
   const match = TEAM_MEMBER_NAME_PATTERN.exec(record.name ?? "")

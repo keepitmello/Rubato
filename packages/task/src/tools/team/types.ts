@@ -1,7 +1,7 @@
 import type { RuntimeState, Task } from "@rubato/team-core/types"
 import type { ModelCatalog } from "@rubato/agent-core"
 
-import type { CreateTeamResult, DeleteTeamResult, SendTeamMessageInput, SendTeamMessageResult } from "../../team"
+import type { CreateTeamResult, DeleteTeamResult, SendTeamMessageInput, SendTeamMessageResult, ReplaceTeamMemberInput, ReplaceTeamMemberResult } from "../../team"
 
 export type ActiveTeamSummary = {
   readonly teamRunId: string
@@ -36,6 +36,7 @@ export type UpdateTeamTaskServiceInput = {
 
 export type TeamToolsService = {
   createTeam(input: CreateTeamToolInput): Promise<CreateTeamResult>
+  replaceMember(input: ReplaceTeamMemberInput): Promise<ReplaceTeamMemberResult>
   deleteTeam(input: { readonly teamRunId: string; readonly force?: boolean }): Promise<DeleteTeamResult>
   sendMessage(teamRunId: string, input: SendTeamMessageInput): Promise<SendTeamMessageResult>
   status(teamRunId: string): Promise<RuntimeState>

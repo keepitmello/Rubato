@@ -31,6 +31,7 @@ export type SpawnMembersInput = {
   readonly deadlineAt: number
   readonly now: () => number
   readonly memberExtension?: SpawnMemberExtensionConfig
+  readonly attemptId?: string
 }
 
 export type SpawnMembersResult = {
@@ -128,7 +129,7 @@ function buildMemberStartSpec(input: SpawnMembersInput, member: TeamMember): Man
     parent_session_id: input.leadSessionId,
     root_session_id: input.leadSessionId,
     depth: input.spawnDepth,
-    name: memberTaskName(input.teamRunId, member.name),
+    name: memberTaskName(input.teamRunId, member.name) + (input.attemptId === undefined ? "" : `@${input.attemptId}`),
     execution_mode: "process",
     run_in_background: true,
     model: member.model,
