@@ -2,9 +2,11 @@
  * Pure Speed Index math. Scores are derived from samples + an immutable baseline.
  * They are never persisted.
  *
- * Higher is faster. 100 means the group's typical matched call takes as long as
- * the frozen reference cell. The product rewards finishing the same input sooner
- * and does not normalize by output tokens.
+ * Higher is faster. 100 means this call took as long as Sol medium typically
+ * takes to write the same number of output tokens. That typical time is a
+ * fixed wait (first token and setup) plus a per-token generation cost, fit
+ * from Sol medium calls and scaled so their median ratio is 1. Input size is
+ * not a second axis: the wait is already in the clock.
  */
 
 export const SPEED_INDEX_METRIC_VERSION = 1;
@@ -15,6 +17,12 @@ export const REFERENCE_IDENTITY = Object.freeze({
   provider: "openai-codex",
   model: "gpt-5.6-sol",
   effort: "medium",
+});
+
+/** Sol medium pace. Wait is the fixed part; the slope is generation. */
+export const REFERENCE_PACE = Object.freeze({
+  ttftMs: 3960,
+  msPerOutputToken: 16.647,
 });
 
 export const MIN_REFERENCE_CALLS = 500;
@@ -369,17 +377,10 @@ export function mergeBaselines(preferred, fallback) {
   };
 }
 
-function supportedCellMedian(baseline, key) {
-  if (!baseline || baseline.status !== "frozen" || !key) return undefined;
-  const match = baseline.cells?.find((entry) => entry.key === key && entry.supported);
-  if (!match || !(match.medianMs > 0)) return undefined;
-  return match.medianMs;
-}
-
-export function referenceDurationFor(sample, baseline, fallbackBaseline) {
-  const cell = sampleCell(sample);
-  if (!cell) return undefined;
-  return supportedCellMedian(baseline, cell.key) ?? supportedCellMedian(fallbackBaseline, cell.key);
+export function referenceDurationFor(sample, _baseline, _fallbackBaseline) {
+  const output = sample?.outputTokens;
+  if (!Number.isFinite(output) || output < 1) return undefined;
+  return REFERENCE_PACE.ttftMs + REFERENCE_PACE.msPerOutputToken * output;
 }
 
 export function speedRatio(sample, baseline, fallbackBaseline) {
