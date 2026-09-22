@@ -18,21 +18,49 @@ function pathVariants(dir) {
   return variants;
 }
 
-function listenerPid(agentDir) {
-  // `pgrep -l` means "list the full command line" on BSD and "list the process
-  // name" on procps, so `-lf` output cannot be parsed the same way on macOS and
-  // Linux: on Linux every row reads `1234 node` and no row ever contains
-  // cli.mjs. Take pids from pgrep and read each command line with ps, which
-  // prints the same thing on both.
-  const listed = spawnSync('pgrep', ['-f', 'cli.mjs --agent-dir'], { encoding: 'utf8' });
-  if (listed.status !== 0) return;
+/** Every pid the machine will name, paired with the command line `ps` prints for it.
+ *
+ * `pgrep -l` means "list the full command line" on BSD and "list the process name" on
+ * procps, so `-lf` output cannot be parsed the same way on macOS and Linux: on Linux
+ * every row reads `1234 node` and no row ever contains cli.mjs. Take pids from pgrep and
+ * read each command line with ps, which prints the same thing on both.
+ *
+ * pgrep is not reliable on its own, either. On macOS it reports nothing at all for some
+ * processes whose command line `ps` shows in full — measured on this machine: the running
+ * profile engine was absent from `pgrep -f node` while `ps -p <pid> -o command=` printed
+ * it. A miss here does not fail loudly; it reports no-pid, leaves the old engine running,
+ * and the machine keeps serving code from before the update. So scan ps as well and merge
+ * by pid, rather than trusting either source alone.
+ */
+export function processTable(run = spawnSync) {
+  const rows = new Map();
+  const listed = run('pgrep', ['-f', 'cli.mjs --agent-dir'], { encoding: 'utf8' });
+  if (listed.status === 0) {
+    for (const line of listed.stdout.split('\n')) {
+      const pid = Number(line.trim());
+      if (!Number.isInteger(pid) || pid <= 1) continue;
+      const inspected = run('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' });
+      if (inspected.status === 0) rows.set(pid, inspected.stdout.trim());
+    }
+  }
+  const scanned = run('ps', ['-eo', 'pid=,command='], { encoding: 'utf8' });
+  if (scanned.status === 0) {
+    for (const line of scanned.stdout.split('\n')) {
+      const match = /^\s*(\d+)\s+(\S.*)$/.exec(line);
+      if (match === null) continue;
+      const pid = Number(match[1]);
+      if (pid <= 1 || rows.has(pid)) continue;
+      rows.set(pid, match[2]);
+    }
+  }
+  return rows;
+}
+
+// Exported so a test can point it at a process it spawned itself.
+export function listenerPid(agentDir) {
   const dirs = pathVariants(agentDir);
-  for (const line of listed.stdout.split('\n')) {
-    const pid = Number(line.trim());
-    if (!Number.isInteger(pid) || pid <= 1 || pid === process.pid) continue;
-    const inspected = spawnSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' });
-    if (inspected.status !== 0) continue;
-    const command = inspected.stdout.trim();
+  for (const [pid, command] of processTable()) {
+    if (pid === process.pid) continue;
     if (!command.includes('cli.mjs')) continue;
     for (const dir of dirs) {
       if (command.includes(`--agent-dir ${dir}`)) return pid;
