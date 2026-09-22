@@ -7,7 +7,7 @@ import { parseArgs } from 'node:util';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
-const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/server/src/provider/RubatoPiInventory.ts', 'apps/server/src/provider/RubatoMobilePresentation.ts', 'apps/server/src/provider/RubatoMobileProtocol.ts', 'apps/web/src/components/RubatoIcon.tsx', 'apps/web/src/components/DeepSeekIcon.tsx', 'apps/web/src/components/AgentResultDetails.tsx', 'apps/server/src/workspace/createWorkspaceFile.ts', 'apps/web/src/components/files/NewMarkdownNoteDialog.tsx'];
+const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/server/src/provider/RubatoPiInventory.ts', 'apps/server/src/provider/RubatoMobilePresentation.ts', 'apps/server/src/provider/RubatoMobileProtocol.ts', 'apps/web/src/components/RubatoIcon.tsx', 'apps/web/src/components/DeepSeekIcon.tsx', 'apps/web/src/components/AgentResultDetails.tsx', 'apps/server/src/workspace/createWorkspaceFile.ts', 'apps/web/src/components/files/NewMarkdownNoteDialog.tsx', 'apps/desktop/src/updates/RubatoUpdates.ts', 'apps/web/src/components/desktop/RubatoUpdateDialog.tsx'];
 // 값이 [anchor, addition] 이면 anchor 앞에 붙이고, [from, to, 'replace'] 면 갈아끼운다.
 // 앱 이름·번들 id·상태 경로는 T3 가 const 로 박아둬서 앞에 덧붙이는 것으로는 못 바꾼다.
 //
@@ -16,6 +16,58 @@ const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/se
 // .electron-runtime 번들이라 그 경로로 켜면 맨 T3 가 떴다. 아이콘도 같은 이유로
 // 여기서 경로를 바꾸는 대신, 설치기가 T3 가 읽는 자리에 Rubato 것을 깔아둔다.
 const edits = {
+  'apps/desktop/src/window/DesktopWindow.ts': [
+    ['import * as Electron from "electron";', 'import { attachRubatoUpdates } from "../updates/RubatoUpdates.ts";\n'],
+    ['    window.webContents.on("did-finish-load", () => {',
+      '    attachRubatoUpdates(window, Electron, environment.desktopSettingsPath, applicationUrl);\n\n'],
+  ],
+  'apps/desktop/src/preload.ts': [
+    ['  getPathForFile: (file: File) => webUtils.getPathForFile(file),',
+      [
+        '  rubatoUpdate: {',
+        '    getState: () => ipcRenderer.invoke("rubato:update:get"),',
+        '    respond: (id, action) => ipcRenderer.invoke("rubato:update:action", { id, action }),',
+        '    onState: (listener) => {',
+        '      const handler = (_event: Electron.IpcRendererEvent, state: unknown) => {',
+        '        if (!state || typeof state !== "object" || !("phase" in state)) return;',
+        '        if (!["idle", "available", "running", "failed"].includes(String(state.phase))) return;',
+        '        listener(state as Parameters<typeof listener>[0]);',
+        '      };',
+        '      ipcRenderer.on("rubato:update:state", handler);',
+        '      return () => ipcRenderer.removeListener("rubato:update:state", handler);',
+        '    },',
+        '  },',
+        '',
+      ].join('\n')],
+  ],
+  'packages/contracts/src/ipc.ts': [
+    ['export interface DesktopBridge {',
+      [
+        'export type RubatoUpdateAction = "update" | "later" | "dismiss" | "log";',
+        'export interface RubatoUpdateState {',
+        '  phase: "idle" | "available" | "running" | "failed";',
+        '  id?: string;',
+        '  message?: string;',
+        '  detail?: string;',
+        '  log?: string;',
+        '}',
+        '',
+      ].join('\n')],
+    ['  getAppBranding: () => DesktopAppBranding | null;',
+      [
+        '  rubatoUpdate?: {',
+        '    getState: () => Promise<RubatoUpdateState>;',
+        '    respond: (id: string, action: RubatoUpdateAction) => Promise<void>;',
+        '    onState: (listener: (state: RubatoUpdateState) => void) => () => void;',
+        '  };',
+        '',
+      ].join('\n')],
+  ],
+  'apps/web/src/routes/__root.tsx': [
+    ['import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";',
+      'import { RubatoUpdateDialog } from "../components/desktop/RubatoUpdateDialog";\n'],
+    ['          <SshPasswordPromptDialog />', '          <RubatoUpdateDialog />\n'],
+  ],
   // Creation is a separate RPC so an older server cannot silently ignore a
   // create-only flag and route the request to its overwriting writeFile method.
   'packages/contracts/src/rpc.ts': [

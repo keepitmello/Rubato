@@ -1,6 +1,10 @@
 {
   "upstreamCommit": "c14f6015bfe479d313355cb234af1a5c16dbb15f",
   "targets": {
+    "apps/desktop/src/preload.ts": "320a4a8af4b31302fa0280942b3f3e4de8877a16e810c25e409aa091ff1829ab",
+    "packages/contracts/src/ipc.ts": "d87bcb5c9e9417fb6fa1f71ceb4ba8fb05723cb48cdfb8ed1a5022a33fded7da",
+    "apps/web/src/routes/__root.tsx": "2007517276accffce4462887676e35e23f97264ec0f50e5012c1e4e1c04a7a98",
+    "apps/desktop/src/window/DesktopWindow.ts": "51972da9cc7ce9fe12072d1aa553bf16144a177b2f5721f8da0e6cb9021da6ad",
     "apps/web/src/components/RightPanelTabs.tsx": "724fc2105d027f2166a9b3542eaf0f34b3a6039308ffaf38705417eb91897ba2",
     "apps/web/src/components/files/FilePreviewPanel.tsx": "005464e53f23df5e5f58e74107b9477cb3707e6b45dc22a49500d3e31ca0891d",
     "packages/contracts/src/project.ts": "5362694d4c38005945d08ab09ad51575330eaa2c67106ba52b709f8f3c8f88dc",

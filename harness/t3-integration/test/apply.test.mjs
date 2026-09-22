@@ -24,6 +24,8 @@ test('overlay is guarded, idempotent, reversible and rejects dirty upstream befo
     await writeFile(path.join(root,relative),execFileSync('git',['-C',source,'show',`${pin.upstreamCommit}:${relative}`]));
   }
   // 새 overlay 파일도 포함한 이번 설치의 매니페스트와 비교한다.
+  await mkdir(path.join(root,'apps/desktop/src/updates'),{recursive:true});
+  await mkdir(path.join(root,'apps/web/src/components/desktop'),{recursive:true});
   const first=await applyIntegration({t3:root});
   const installed=JSON.parse(await readFile(path.join(root,'.rubato-pi-overlay.json'),'utf8'));
   assert.equal(first.changes.length,Object.keys(installed.files).length);

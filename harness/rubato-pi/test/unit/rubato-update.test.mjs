@@ -178,10 +178,42 @@ function runUpdate(fixture, { path = process.env.PATH, args = ["--yes"], env = {
       // /Applications 를 읽어서, 앱이 깔린 기기에서는 need_gui=1 이 켜지고
       // 픽스처에 없는 install-gui.sh 를 부르다 6 개가 깨졌다.
       RUBATO_APPLICATIONS_DIR: join(fixture.root, "Applications"),
+      // HOME does not isolate launchd's gui/<uid> services.
+      RUBATO_LAUNCHCTL_BIN: "/usr/bin/false",
       ...env,
     },
   });
 }
+
+test("GUI update refuses dirty source without stash, reset, or rebuild", () => {
+  const fixture = setupFixture({ dirty: true, conflict: true });
+  const before = git(fixture.local, ["rev-parse", "HEAD"]).stdout;
+  const result = runUpdate(fixture, { env: { RUBATO_GUI_UPDATE: "1" } });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /로컬 수정/);
+  assert.equal(git(fixture.local, ["rev-parse", "HEAD"]).stdout, before);
+  assert.equal(git(fixture.local, ["stash", "list"]).stdout, "");
+  assert.equal(readFileSync(join(fixture.local, "note.txt"), "utf8"), "local-wip\n");
+  assert.equal(existsSync(fixture.trace), false);
+});
+
+test("GUI update preserves divergent local commits instead of resetting", () => {
+  const fixture = setupFixture();
+  const before = git(fixture.local, ["rev-parse", "HEAD"]).stdout;
+  const result = runUpdate(fixture, { env: { RUBATO_GUI_UPDATE: "1" } });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /로컬 커밋/);
+  assert.equal(git(fixture.local, ["rev-parse", "HEAD"]).stdout, before);
+  assert.equal(existsSync(fixture.trace), false);
+});
+
+test("GUI update check reports network failure rather than cached availability", () => {
+  const fixture = setupFixture();
+  git(fixture.local, ["remote", "set-url", "origin", join(fixture.root, "missing.git")]);
+  const result = runUpdate(fixture, { args: ["--check"], env: { RUBATO_GUI_UPDATE: "1" } });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /네트워크/);
+});
 
 test("successful updates and no-op updates invoke the background collection starter", () => {
   for (const remoteChange of [true, false]) {
