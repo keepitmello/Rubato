@@ -12,6 +12,7 @@ import { MEMBER_EXTENSION_BUNDLE_NAME, MEMBER_PROCESS_ENV_NAMES } from "../../te
 const require = createRequire(import.meta.url)
 
 const SESSION_DIR_ENV = "PI_CODING_AGENT_SESSION_DIR"
+const SERVICE_TIER_ENV = "RUBATO_SERVICE_TIER"
 const PI_BIN_ENV = "RUBATO_PI_BIN"
 const SENPI_BIN_ENV = "SENPI_BIN"
 const RPC_ENTRY_SPECIFIER = "@code-yeongyu/senpi/rpc-entry"
@@ -42,6 +43,8 @@ export type RpcSpawnRuntime = {
   readonly sessionDirEnvName?: string
   // Injectable so tests can pin the executable-vs-fallback branch; defaults to resolveSenpiExecutable.
   readonly resolveSenpiExecutable?: (runtime: RpcSpawnRuntime) => string | null
+  // Staged service-tier extension. Appended only when this child requested a tier.
+  readonly serviceTierExtension?: string
 }
 
 /**
@@ -213,11 +216,36 @@ function buildChildProfile(
   return { env, spec: extensions === spec.extensions ? spec : { ...spec, extensions } }
 }
 
+function requestedServiceTier(value: string | undefined): "priority" | "auto" | undefined {
+  return value === "priority" || value === "auto" ? value : undefined
+}
+
+function specWithoutServiceTierEnv(spec: RpcSpawnSpec): RpcSpawnSpec {
+  const memberEnv = spec.memberEnv
+  if (memberEnv?.[SERVICE_TIER_ENV] === undefined) return spec
+  const rest = { ...memberEnv }
+  delete rest[SERVICE_TIER_ENV]
+  if (Object.keys(rest).length === 0) {
+    const { memberEnv: _memberEnv, ...without } = spec
+    return without
+  }
+  return { ...spec, memberEnv: rest }
+}
+
+function withServiceTierExtension(spec: RpcSpawnSpec, extension: string | undefined): RpcSpawnSpec {
+  if (extension === undefined || extension.length === 0 || spec.extensions?.includes(extension)) return spec
+  return { ...spec, extensions: [...(spec.extensions ?? []), extension] }
+}
+
 export function buildRpcSpawn(spec: RpcSpawnSpec, runtime?: Partial<RpcSpawnRuntime>): RpcSpawnDescriptor {
   const resolved: RpcSpawnRuntime = { ...defaultRuntime(), ...runtime }
-  const profile = buildChildProfile(spec, resolved)
-  const env = profile.env
-  const childArgs = buildChildArgs(profile.spec)
+  const tier = requestedServiceTier(spec.service_tier)
+  // memberEnv's presence is the member-bundle filter. A fast non-member child must still drop
+  // rubato-member.js, so the tier env is applied after that filter, not by inventing member identity.
+  const profile = buildChildProfile(tier === undefined ? spec : specWithoutServiceTierEnv(spec), resolved)
+  const env = tier === undefined ? profile.env : { ...profile.env, [SERVICE_TIER_ENV]: tier }
+  const childSpec = tier === undefined ? profile.spec : withServiceTierExtension(profile.spec, resolved.serviceTierExtension)
+  const childArgs = buildChildArgs(childSpec)
   const launcher = resolveSenpiLauncher(resolved)
   if (launcher !== null) {
     return {

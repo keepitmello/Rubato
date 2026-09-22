@@ -15,6 +15,7 @@ const FAST_MODEL_SUFFIX = "-fast";
 const SUB_MODEL_SUFFIX = "-sub";
 const FAST_ARGUMENTS = Object.freeze(["on", "off"]);
 const FAST_USAGE = "Usage: /fast [on|off]";
+const SERVICE_TIER_ENV = "RUBATO_SERVICE_TIER";
 const OPENAI_CODEX_RESPONSES_API = "openai-codex-responses";
 const SERVICE_TIER_APIS = new Set([
   "openai-codex-responses",
@@ -122,6 +123,10 @@ export function applyAnthropicFastMode(payload, enabled) {
   };
 }
 
+function explicitServiceTier(value) {
+  return value === PRIORITY_TIER || value === AUTO_TIER ? value : undefined;
+}
+
 function toCompletions(values, prefix) {
   const matches = values.filter((value) => value.startsWith(prefix.trim()));
   return matches.length > 0 ? matches.map((value) => ({ value, label: value })) : null;
@@ -155,11 +160,18 @@ function stateFor(model, modelRegistry, active, rememberedTier) {
  * Stock 0.85.1 does not expose `setSessionFastMode`; getState/onChange is the
  * explicit boundary for a later footer/RPC adapter. `agentDir` must be supplied
  * by SDK embedders that do not use Pi's normal PI_CODING_AGENT_DIR resolution.
+ *
+ * `initialTier` forces a child's starting tier without writing the remembered
+ * setting. `RUBATO_SERVICE_TIER` is read only when `readServiceTierEnv` is set,
+ * which the RPC default export uses. The parent factory leaves both unset.
  */
 export function createServiceTierFeature({
   SettingsManager = StockSettingsManager,
   agentDir,
   settingsManagerFactory,
+  initialTier,
+  env = process.env,
+  readServiceTierEnv = false,
 } = {}) {
   const listeners = new Set();
   let publicState = EMPTY_STATE;
@@ -188,6 +200,10 @@ export function createServiceTierFeature({
     let sessionFastMode = false;
     publicState = EMPTY_STATE;
 
+    const readOverride = () => explicitServiceTier(initialTier) ?? (
+      readServiceTierEnv ? explicitServiceTier(env?.[SERVICE_TIER_ENV]) : undefined
+    );
+
     const readRememberedTier = (ctx, model = ctx.model) => {
       if (!model) return undefined;
       const memoryModel = resolveServiceTierMemoryModel(ctx.modelRegistry, model);
@@ -211,7 +227,8 @@ export function createServiceTierFeature({
         return;
       }
 
-      const rememberedTier = readRememberedTier(ctx, model);
+      const override = readOverride();
+      const rememberedTier = override ?? readRememberedTier(ctx, model);
       const baseModel = findBaseModel(ctx.modelRegistry, model);
       const active = rememberedTier === PRIORITY_TIER || (
         rememberedTier === undefined && modelServiceTier(ctx.modelRegistry, model) === PRIORITY_TIER
@@ -316,5 +333,7 @@ export function createServiceTierFeature({
   });
 }
 
-export const serviceTierFeature = createServiceTierFeature();
+// RPC children load this default export and have no factory options. The requested
+// tier arrives as RUBATO_SERVICE_TIER on that process only; the parent factory does not.
+export const serviceTierFeature = createServiceTierFeature({ readServiceTierEnv: true });
 export default serviceTierFeature.extension;
