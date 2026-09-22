@@ -369,15 +369,37 @@ const edits = {
     ],
   ],
   // 사이드바 왼쪽 위 워드마크. 원래 "T3" 글리프 + "Code" 글자다.
+  //
+  // 워드마크는 이미지가 아니라 CLI 가 쓰는 수학 볼드 이탤릭 문자열
+  // "𝒓𝒖𝒃𝒂𝒕𝒐" 다 (harness/pi-runtime/features/statusline/brand.mjs).
+  // 벡터 자산이 없으므로 같은 문자열을 같은 폰트 스택으로 그린다 — 이 글리프를
+  // 가진 폰트가 STIX 두 Math 뿐이라 터미널도 같은 모양을 낸다.
+  // (previews/rubato-resonance/index.html 과 같은 스택이다.)
+  //
+  // viewBox 는 그 폰트의 잉크 경계에 맞춘다. 원래 T3 글리프의 viewBox 는
+  // 글자 위아래로 여백이 많아서, 같은 h-* 클래스라도 잉크가 상자의 68% 밖에
+  // 안 됐다. 잉크에 맞추면 클래스가 곧 크기가 된다 — 잉크/상자 = 0.95.
+  // 값은 STIXTwoMath.otf 의 1000upm 좌표다: 잉크 x 23..3193, y -15..705 에
+  // 사방 20 을 더해 0 0 3210 760, 텍스트는 그만큼 밀어 넣는다.
   'apps/web/src/components/T3Wordmark.tsx': [
     [
       '      <path\n        d="M33.4509 93V47.56H15.5309V37H64.3309V47.56H46.4109V93H33.4509ZM86.7253 93.96C82.832 93.96 78.9653 93.4533 75.1253 92.44C71.2853 91.3733 68.032 89.88 65.3653 87.96L70.4053 78.04C72.5386 79.5867 75.0186 80.8133 77.8453 81.72C80.672 82.6267 83.5253 83.08 86.4053 83.08C89.6586 83.08 92.2186 82.44 94.0853 81.16C95.952 79.88 96.8853 78.12 96.8853 75.88C96.8853 73.7467 96.0586 72.0667 94.4053 70.84C92.752 69.6133 90.0853 69 86.4053 69H80.4853V60.44L96.0853 42.76L97.5253 47.4H68.1653V37H107.365V45.4L91.8453 63.08L85.2853 59.32H89.0453C95.9253 59.32 101.125 60.8667 104.645 63.96C108.165 67.0533 109.925 71.0267 109.925 75.88C109.925 79.0267 109.099 81.9867 107.445 84.76C105.792 87.48 103.259 89.6933 99.8453 91.4C96.432 93.1067 92.0586 93.96 86.7253 93.96Z"\n        fill="currentColor"\n      />',
-      '      <text\n        dominantBaseline="middle"\n        fill="currentColor"\n        fontSize="52"\n        fontWeight="600"\n        letterSpacing="-1"\n        x="15.5"\n        y="66"\n      >\n        Rubato\n      </text>',
+      [
+        '      <text',
+        '        fill="currentColor"',
+        `        fontFamily={'"STIX Two Math", "Cambria Math", "Apple Symbols", serif'}`,
+        '        fontSize="1000"',
+        '        x="-3"',
+        '        y="725"',
+        '      >',
+        '        𝒓𝒖𝒃𝒂𝒕𝒐',
+        '      </text>',
+      ].join('\n'),
       'replace',
     ],
     [
       '    <svg {...props} viewBox="15.5309 37 94.3941 56.96" xmlns="http://www.w3.org/2000/svg">',
-      '    <svg {...props} viewBox="15.5309 37 176 56.96" xmlns="http://www.w3.org/2000/svg">',
+      '    <svg {...props} viewBox="0 0 3210 760" xmlns="http://www.w3.org/2000/svg">',
       'replace',
     ],
   ],
@@ -387,7 +409,10 @@ const edits = {
   'apps/web/src/components/sidebar/SidebarChrome.tsx': [
     [
       '        <T3Wordmark aria-label="T3" className="h-[1cap] w-auto shrink-0" />',
-      '        <T3Wordmark aria-label="Rubato" className="h-[1cap] w-auto shrink-0" />',
+      // 1cap 은 지금 폰트의 캡 높이라 UI 글자 크기 설정을 따라간다. 워드마크는
+      // 그 1.2배 — 잉크가 상자의 0.95 라서 실제 잉크는 1.14cap 이고, 인터페이스
+      // 20px(글자 0.875rem = 17.5px, 캡 12.5px)에서 14.5px 다. 원래 8px 이었다.
+      '        <T3Wordmark aria-label="Rubato" className="h-[1.2cap] w-auto shrink-0" />',
       'replace',
     ],
     [
