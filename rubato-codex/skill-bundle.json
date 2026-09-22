@@ -27,7 +27,6 @@
   ],
   "conditional": [
     "return",
-    "rubato-tui-verify",
     "wrapping-sessions"
   ],
   "preserved": [

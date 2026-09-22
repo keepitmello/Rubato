@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { remapHiddenCustomTurns } from "../../src/transforms/remap-hidden-custom-turns.mjs";
+import { remapHiddenCustomTurns } from "../../../pi-runtime/features/context-window/remap-hidden-custom-turns.mjs";
 import { ASTRA_CODEX_PRELUDE } from "../../src/transforms/misc-astra-codex.mjs";
 
 const { applyAstraConfigurationUpdate } = new Function(

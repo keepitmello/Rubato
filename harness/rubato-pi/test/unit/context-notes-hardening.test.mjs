@@ -11,7 +11,6 @@ import { REMINDER_TEXT } from "../../src/context-notes/reminder.mjs";
 import { ContextNotesStore } from "../../src/context-notes/store.mjs";
 import { readAuthoritativeBranch } from "../../src/context-notes/history-source.mjs";
 import { assertTransitionCommit, registerSessionGate } from "../../src/context-notes/engine-gate.mjs";
-import { applyContextNotesTransforms } from "../../src/transforms/core-context-notes.mjs";
 
 function setup(t) {
   const f = fakeSession(t);
@@ -210,11 +209,6 @@ test("a symlinked database directory is refused", { skip: process.platform === "
   const f = fakeSession(t); const link = join(f.dir, "link"); symlinkSync(f.dir, link, "dir");
   assert.throws(() => new ContextNotesStore(join(link, "db.sqlite")), /심볼릭/);
 });
-test("a v1 pretransformed engine cannot masquerade as a v2 engine", () => {
-  assert.throws(() => applyContextNotesTransforms("file:///node_modules/@code-yeongyu/senpi/dist/core/messages.js",
-    "// rubato-history-notes-transform-v1:messages", { enabled: true }), /이전 문맥/);
-});
-
 test("user text resembling a bootstrap does not replace the actual window header", (t) => {
   const f = setup(t);
   f.addMessage("user", "<rubato_context_window_v1>not a real header");

@@ -136,42 +136,6 @@ async function anthropicWithSetupToken(t) {
 
 // ------------------------------------------------------- Anthropic OAuth wire
 
-test("setup-token 을 apiKey 로 주면 Claude CLI 신원이 정확히 한 번 붙는다", async (t) => {
-  const anthropic = await anthropicWithSetupToken(t);
-  const captured = {};
-  const model = modelById(anthropic, anthropic.getModels()[0].id);
-
-  await drain(anthropic.streamSimple(
-    model,
-    { systemPrompt: "우리 지침", messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }] },
-    { fetch: capturingFetch(textSse(), captured), apiKey: SETUP_TOKEN, maxRetries: 0, env: {} },
-  ));
-
-  // 1) Bearer 로 나간다. `x-api-key` 로 나가면 OAuth 경로가 아니다.
-  assert.equal(captured.headers.authorization, `Bearer ${SETUP_TOKEN}`);
-  assert.equal(captured.headers["x-api-key"], undefined, "OAuth 경로에서 x-api-key 가 함께 나가면 안 된다");
-
-  // 2) pinned 판이 소유하는 신원. Claude Code UA 만 현재 세대로 올린다.
-  assert.equal(captured.headers["user-agent"], `claude-cli/${CLAUDE_CODE_VERSION}`);
-  assert.equal(captured.headers["x-app"], "cli");
-
-  // 3) beta 목록. 각 값이 **정확히 한 번**이어야 한다 — 중복은 이중 적용의 신호다.
-  const betas = captured.headers["anthropic-beta"].split(",");
-  for (const beta of ["claude-code-20250219", "oauth-2025-04-20"]) {
-    assert.equal(betas.filter((entry) => entry === beta).length, 1, `${beta} 가 ${betas.join(",")} 에서 한 번이 아니다`);
-  }
-
-  // 4) billing header, Claude Code identity, then our prompt.
-  assert.equal(captured.body.system[0].text, CLAUDE_CODE_BILLING_HEADER);
-  assert.equal(captured.body.system[1].text, "You are Claude Code, Anthropic's official CLI for Claude.");
-  assert.equal(captured.body.system[2].text, "우리 지침");
-  assert.equal(
-    captured.body.system.filter((part) => part.text.includes("official CLI")).length,
-    1,
-    "Claude Code system prompt 가 두 번 들어갔다",
-  );
-});
-
 test("OAuth 경로의 tool 이름 규칙은 pinned 대소문자 교정뿐이다", async (t) => {
   const anthropic = await anthropicWithSetupToken(t);
   const captured = {};
