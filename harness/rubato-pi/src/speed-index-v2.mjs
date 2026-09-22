@@ -79,7 +79,11 @@ export function validateSpeedV2Profile(raw) {
     for (const device of raw.devices) {
       const cells = component.cells.filter((cell) => cell.device === device);
       if (!cells.length) return undefined;
-      if (component.metric === "wait" && new Set(cells.map((cell) => cell.condition.split(":")[0])).size !== 2) return undefined;
+      // Every component is a fixed user/tool pair. A registered profile that
+      // lost one role would score a different basket than the reference names,
+      // so validation enforces the same shape registration does.
+      const roles = new Set(cells.map((cell) => cell.condition.split(":")[0]));
+      if (roles.size !== 2 || !roles.has("user") || !roles.has("tool")) return undefined;
     }
   }
   if (Math.abs(referenceTime - raw.referenceTimeMs) > 1e-9 * Math.max(1, referenceTime)) return undefined;

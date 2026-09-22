@@ -56,6 +56,44 @@ async function drain(stream) {
   for await (const _event of stream) { /* consume through the actual decorator */ }
 }
 
+/** The provider boundary's stamping decision, with the store's answer controlled. */
+async function stampedSnapshot(result) {
+  const done = message("stop", [{ type: "text", text: "ok" }]);
+  const store = {
+    processId: "1-1-a",
+    networkHealth: { classify: () => ({ status: "healthy", source: "probe" }) },
+    record: (sample) => sample,
+    getCachedScore: () => result,
+  };
+  const stream = withRubatoStream(() => {
+    const native = createAssistantMessageEventStream();
+    native.push({ type: "done", reason: "stop", message: done });
+    native.end(done);
+    return native;
+  })(model, { messages: [{ role: "user", content: "SECRET" }] }, {
+    env: {}, streamKind: "main", reasoning: "medium", speedIndexStore: store,
+    monotonic: () => 1000,
+    wallNow: () => 1_800_000_000_000,
+  });
+  await drain(stream);
+  return done.rubatoSpeedIndex;
+}
+
+test("a call still waiting on history carries no snapshot, while a final no-score stamps a dash", async () => {
+  // The footer will answer this call a moment later, so the call must not
+  // assert "no score" now. Absence of a snapshot leaves the last value standing.
+  assert.equal(await stampedSnapshot({
+    metricVersion: 2, status: "unavailable", reason: "history_loading", score: undefined,
+  }), undefined);
+  // A complete basket that this model simply does not cover is a final answer.
+  assert.deepEqual(await stampedSnapshot({
+    metricVersion: 2, status: "unavailable", reason: "target_cells", score: undefined,
+  }), { version: 1, metricVersion: 2, status: "unavailable", score: null });
+  assert.deepEqual(await stampedSnapshot({
+    metricVersion: 2, status: "ready", reason: undefined, score: 171,
+  }), { version: 1, metricVersion: 2, status: "ready", score: 171 });
+});
+
 test("channel timings and bounded milestones reach JSONL without content or score changes", async (t) => {
   const done = message("toolUse", [{ type: "toolCall", id: "secret-id", name: "secret-tool", arguments: { path: "/SECRET" } }]);
   const fx = fixture(t, [
