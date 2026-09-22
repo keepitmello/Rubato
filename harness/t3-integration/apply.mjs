@@ -294,7 +294,7 @@ const edits = {
     ],
     [
       '  const activeContextWindow = useMemo(\n    () => deriveLatestContextWindowSnapshot(threadActivities),\n    [threadActivities],\n  );',
-      '  const activeContextWindow = useMemo(\n    () => deriveLatestContextWindowSnapshot(threadActivities),\n    [threadActivities],\n  );\n  const sessionSpeedLabel = useMemo(() => {\n    if (selectedProvider !== ProviderDriverKind.make("rubato-pi")) return null;\n    const score = latestSessionSpeed(threadActivities);\n    return score === null ? null : formatSpeedLabel(score);\n  }, [selectedProvider, threadActivities]);',
+      '  const activeContextWindow = useMemo(\n    () => deriveLatestContextWindowSnapshot(threadActivities),\n    [threadActivities],\n  );\n  const sessionSpeedLabel = useMemo(() => {\n    const score = activeContextWindow?.speedIndex ?? latestSessionSpeed(threadActivities);\n    return score === null ? null : formatSpeedLabel(score);\n  }, [activeContextWindow, threadActivities]);',
       'replace',
     ],
     [
@@ -392,6 +392,11 @@ const edits = {
       '  toolUses: Schema.optional(NonNegativeInt),\n  durationMs: Schema.optional(NonNegativeInt),\n  speedIndex: Schema.optional(NonNegativeInt),\n});\nexport type RuntimeTaskUsage = typeof RuntimeTaskUsage.Type;',
       'replace',
     ],
+    [
+      '  durationMs: Schema.optional(NonNegativeInt),\n  compactsAutomatically: Schema.optional(Schema.Boolean),',
+      '  durationMs: Schema.optional(NonNegativeInt),\n  speedIndex: Schema.optional(NonNegativeInt),\n  compactsAutomatically: Schema.optional(Schema.Boolean),',
+      'replace',
+    ],
   ],
   'packages/client-runtime/src/state/subagentRuntime.ts': [
     [
@@ -482,7 +487,14 @@ const edits = {
     ],
     [
       '                  {showComposerAttachAction ? (',
-      '                  {sessionSpeedLabel ? (\n                    <span className="shrink-0 px-1 font-mono text-[11px] tabular-nums text-muted-foreground">\n                      {sessionSpeedLabel}\n                    </span>\n                  ) : null}\n                  {showComposerAttachAction ? (',
+      '                  {sessionSpeedLabel ? (\n                    <span className="shrink-0 px-1 font-mono text-sm tabular-nums text-secondary-label">\n                      {sessionSpeedLabel}\n                    </span>\n                  ) : null}\n                  {showComposerAttachAction ? (',
+      'replace',
+    ],
+  ],
+  'apps/web/src/lib/contextWindow.ts': [
+    [
+      '      toolUses: asFiniteNumber(payload?.toolUses),\n      durationMs: asFiniteNumber(payload?.durationMs),\n      compactsAutomatically: asBoolean(payload?.compactsAutomatically) ?? false,',
+      '      toolUses: asFiniteNumber(payload?.toolUses),\n      durationMs: asFiniteNumber(payload?.durationMs),\n      speedIndex: asFiniteNumber(payload?.speedIndex),\n      compactsAutomatically: asBoolean(payload?.compactsAutomatically) ?? false,',
       'replace',
     ],
   ],

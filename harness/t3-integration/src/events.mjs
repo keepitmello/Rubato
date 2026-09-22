@@ -139,6 +139,7 @@ export const tokenUsageFrom = (usage, extras = {}) => {
     ...(outputTokens !== undefined ? { outputTokens, lastOutputTokens: outputTokens } : {}),
     ...(reasoningOutputTokens !== undefined ? { reasoningOutputTokens, lastReasoningOutputTokens: reasoningOutputTokens } : {}),
     ...(typeof extras.compactsAutomatically === 'boolean' ? { compactsAutomatically: extras.compactsAutomatically } : {}),
+    ...(asInt(extras.speedIndex) !== undefined ? { speedIndex: asInt(extras.speedIndex) } : {}),
   };
 };
 
@@ -204,6 +205,7 @@ export class EventProjection {
     this.turnId = undefined; this.failed = false; this.interrupted = false; this.lastUsage = undefined;
     this.lastError = undefined;
     this.maxTokens = undefined;
+    this.speedIndex = undefined;
   }
   configureUsage({ maxTokens, compactsAutomatically, replaceWindow } = {}) {
     const window = asInt(maxTokens);
@@ -213,7 +215,11 @@ export class EventProjection {
   }
   usage(raw, message) {
     if (message?.stopReason === 'error' || message?.stopReason === 'aborted') return;
-    const snapshot = tokenUsageFrom(raw, { maxTokens: this.maxTokens, compactsAutomatically: this.compactsAutomatically });
+    const snapshot = tokenUsageFrom(raw, {
+      maxTokens: this.maxTokens,
+      compactsAutomatically: this.compactsAutomatically,
+      speedIndex: this.speedIndex,
+    });
     if (!snapshot) return;
     const key = JSON.stringify(snapshot);
     if (key === this.lastUsage) return;
@@ -503,6 +509,7 @@ export class EventProjection {
     if (!('speed' in data)) return;
     const speed = data.speed === null ? null : asInt(data.speed);
     if (data.speed !== null && speed === undefined) return;
+    this.speedIndex = speed === null ? undefined : speed;
     this.event('thread.metadata.updated', { metadata: { speedIndex: speed } });
   }
   project(event) {

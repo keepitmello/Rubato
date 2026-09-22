@@ -86,6 +86,7 @@ export function createProvidersExtension(options = {}) {
       }
     }
     const speedStore = options.speedIndexStore ?? sessionSpeedStore(agentDir, env);
+    if (options.modelRuntime && speedStore) options.modelRuntime.speedIndexStore = speedStore;
     const providers = await createRubatoProviders({ ...options, antigravity, env, speedIndexStore: speedStore });
     const admitted = admitProviders(pi, providers);
     installOpenAiApiRefusal(pi);
