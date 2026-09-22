@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test"
 
+import { CURSOR_GROK_BASE_ID, CURSOR_GROK_PRESENTED_ID } from "@rubato/model-core"
+
 import { ModelRegistry, ModelRuntime } from "@code-yeongyu/senpi"
 
 import { createParentRegistrySessionContext, findModelReference, resolveResumeContext } from "./parent-registry-context"
@@ -103,10 +105,11 @@ describe("findModelReference", () => {
       },
     }
 
-    const model = findModelReference(registry, "cursor/grok-4.7")
+    const model = findModelReference(registry, CURSOR_GROK_PRESENTED_ID)
+    const fastId = `${CURSOR_GROK_BASE_ID}-high-fast`
 
-    expect(calls).toEqual([{ provider: "cursor", modelId: "grok-4.7-high-fast" }])
-    expect(model).toEqual({ provider: "cursor", id: "grok-4.7-high-fast" })
+    expect(calls).toEqual([{ provider: "cursor", modelId: fastId }])
+    expect(model).toEqual({ provider: "cursor", id: fastId })
   })
 })
 

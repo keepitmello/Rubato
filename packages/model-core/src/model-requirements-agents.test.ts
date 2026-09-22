@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import { AGENT_MODEL_REQUIREMENTS } from "./model-requirements"
+import { PRODUCT_MODEL_ORDER } from "./product-model-catalog"
+
+// 현재 세대 Fable id 는 카탈로그가 소유한다. 여기서 손으로 적으면 세대가 바뀔 때마다
+// 이 테스트가 먼저 깨진다.
+const CURRENT_FABLE = PRODUCT_MODEL_ORDER.anthropic[0]
 
 describe("AGENT_MODEL_REQUIREMENTS", () => {
   test("oracle has gpt-5.6-sol xhigh as primary", () => {
@@ -87,7 +92,7 @@ describe("AGENT_MODEL_REQUIREMENTS", () => {
     })
   })
 
-  test("prometheus uses Fable 5.1 xhigh before Kimi K3 max", () => {
+  test("prometheus uses the current Fable at xhigh before Kimi K3 max", () => {
     // given
     const prometheus = AGENT_MODEL_REQUIREMENTS["prometheus"]
 
@@ -98,7 +103,7 @@ describe("AGENT_MODEL_REQUIREMENTS", () => {
     expect(prometheus.fallbackChain).toHaveLength(2)
     expect(primary).toEqual({
       providers: ["anthropic", "github-copilot", "opencode", "vercel"],
-      model: "claude-fable-5-1",
+      model: CURRENT_FABLE,
       variant: "xhigh",
     })
     expect(kimiFallback).toEqual({

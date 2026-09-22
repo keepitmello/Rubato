@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { senpiDir } from "../../src/engine-paths.mjs";
+import { ANTHROPIC_SERVER_COMPACTION_MODEL_IDS } from "../../src/anthropic-server-compaction.mjs";
 import { setContextMode } from "../../src/context-notes/config.mjs";
 import {
   SERVER_COMPACTION_DETAILS_SOURCE,
@@ -67,16 +68,19 @@ function fakePi() {
 }
 
 test("auto compaction is rejected with external-owner only for server-compaction models", () => {
-  for (const id of ["claude-fable-5-1", "claude-fable-5-1-sub", "claude-opus-5-5", "claude-opus-5-5-sub", "claude-sonnet-5"]) {
-    for (const reason of ["threshold", "overflow", "pre_prompt"]) {
-      const result = serverCompactionRejection(anthropic(id), reason);
-      assert.equal(result?.cancel, true, `${id}/${reason}`);
-      assert.equal(result.rejectionCause, "external-owner");
-      assert.match(result.reason, /Anthropic server compaction/);
+  // 지원 목록의 현재 세대 id 는 소스가 소유한다. `[sub]` 는 판정에서 떨어지고 베이스로 본다.
+  for (const base of ANTHROPIC_SERVER_COMPACTION_MODEL_IDS) {
+    for (const id of [base, `${base}-sub`]) {
+      for (const reason of ["threshold", "overflow", "pre_prompt"]) {
+        const result = serverCompactionRejection(anthropic(id), reason);
+        assert.equal(result?.cancel, true, `${id}/${reason}`);
+        assert.equal(result.rejectionCause, "external-owner");
+        assert.match(result.reason, /Anthropic server compaction/);
+      }
+      // 투영 자체(extension) 와 사용자의 수동 /compact 는 통과해야 한다.
+      assert.equal(serverCompactionRejection(anthropic(id), "extension"), undefined, `${id}/extension`);
+      assert.equal(serverCompactionRejection(anthropic(id), "manual"), undefined, `${id}/manual`);
     }
-    // 투영 자체(extension) 와 사용자의 수동 /compact 는 통과해야 한다.
-    assert.equal(serverCompactionRejection(anthropic(id), "extension"), undefined, `${id}/extension`);
-    assert.equal(serverCompactionRejection(anthropic(id), "manual"), undefined, `${id}/manual`);
   }
   for (const model of [
     anthropic("claude-haiku-4-5"),
@@ -94,10 +98,10 @@ test("auto compaction is rejected with external-owner only for server-compaction
 test("session_before_compact handler mirrors the pure decision through the extension surface", async () => {
   const pi = fakePi();
   installServerCompaction(pi);
-  const blocked = await pi.emit("session_before_compact", { reason: "threshold" }, { model: anthropic("claude-opus-5-5") });
+  const blocked = await pi.emit("session_before_compact", { reason: "threshold" }, { model: anthropic(ANTHROPIC_SERVER_COMPACTION_MODEL_IDS[0]) });
   assert.deepEqual(blocked, { cancel: true, rejectionCause: "external-owner", reason: "Anthropic server compaction owns compaction for this session" });
   assert.equal(await pi.emit("session_before_compact", { reason: "threshold" }, { model: anthropic("claude-haiku-4-5") }), undefined);
-  assert.equal(await pi.emit("session_before_compact", { reason: "extension" }, { model: anthropic("claude-opus-5-5") }), undefined);
+  assert.equal(await pi.emit("session_before_compact", { reason: "extension" }, { model: anthropic(ANTHROPIC_SERVER_COMPACTION_MODEL_IDS[0]) }), undefined);
 });
 
 test("projection appends exactly one CompactionEntry with the server summary and the assistant entry as firstKept", async () => {

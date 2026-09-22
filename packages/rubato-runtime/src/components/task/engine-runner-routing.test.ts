@@ -14,7 +14,11 @@ import type {
 
 import { FakeExtensionAPI } from "../../../test-support/fake-extension-api"
 import { composeTaskEngine, type TaskRunnerFactories } from "./engine"
+import { PRODUCT_MODEL_ORDER } from "@rubato/model-core"
 import { createTeamServiceTestModelRegistry } from "./team-service-test-model-registry"
+
+// 테스트용 모델 registry 는 현재 xai 피커 행을 등록한다. 값은 제품 카탈로그가 소유한다.
+const TEST_MODEL = `xai/${PRODUCT_MODEL_ORDER.xai[0]}`
 
 const tempRoots: string[] = []
 
@@ -96,7 +100,7 @@ describe("task engine runner routing", () => {
       parent_session_id: "session-a",
       depth: 0,
       execution_mode: "process",
-      model: "xai/grok-4.7",
+      model: TEST_MODEL,
       run_in_background: true,
     })
 
@@ -116,7 +120,7 @@ describe("task engine runner routing", () => {
       parent_session_id: "session-a",
       depth: 0,
       execution_mode: "in-process",
-      model: "xai/grok-4.7",
+      model: TEST_MODEL,
       run_in_background: true,
     })
 

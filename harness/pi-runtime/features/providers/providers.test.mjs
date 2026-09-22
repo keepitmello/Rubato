@@ -10,6 +10,7 @@ import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 
 import { resolvePiRuntime } from "../../resolve-runtime.mjs";
 import { stagePiRuntime } from "../../stage-runtime.mjs";
+import { CURSOR_GROK_BASE_ID, PRODUCT_MODEL_ORDER } from "../model-picker/product-model-catalog.mjs";
 import { providersFeature } from "./patches.mjs";
 
 const PROVIDER_IDS = Object.freeze([
@@ -298,7 +299,7 @@ test("Cursor adapter restores grouped catalogs and forwards local-work state thr
   await provider.refreshModels({
     stored: {
       checkedAt: 1,
-      models: [legacyModel("grok-4.7-low"), legacyModel("grok-4.7-high")],
+      models: [legacyModel(`${CURSOR_GROK_BASE_ID}-low`), legacyModel(`${CURSOR_GROK_BASE_ID}-high`)],
     },
     allowNetwork: false,
     signal: new AbortController().signal,
@@ -307,7 +308,7 @@ test("Cursor adapter restores grouped catalogs and forwards local-work state thr
       return true;
     },
   });
-  assert.deepEqual(provider.getModels().map((entry) => entry.id), ["grok-4.7"]);
+  assert.deepEqual(provider.getModels().map((entry) => entry.id), [CURSOR_GROK_BASE_ID]);
 
   const inner = new cursorEventStream.AssistantMessageEventStream();
   let finishWork;
@@ -427,7 +428,7 @@ test("actual stock SDK preserves Antigravity OAuth env and request/response hook
   };
   const selectedModel = model({
     provider: "google-antigravity",
-    id: "gemini-3.8-flash",
+    id: PRODUCT_MODEL_ORDER["google-antigravity"][0],
     api: "rubato-antigravity",
     baseUrl,
     input: ["text", "image"],
@@ -559,7 +560,7 @@ test("Kiro and Antigravity abort with one terminal; Cursor abort and clean EOF d
     ],
     [
       "google-antigravity",
-      model({ provider: "google-antigravity", id: "gemini-3.8-flash", api: "rubato-antigravity", baseUrl: "http://127.0.0.1:9" }),
+      model({ provider: "google-antigravity", id: PRODUCT_MODEL_ORDER["google-antigravity"][0], api: "rubato-antigravity", baseUrl: "http://127.0.0.1:9" }),
       { env: { RUBATO_ANTIGRAVITY_PROJECT: "local-project" }, antigravityState: { sessionId: "abort", stepIndex: 0 } },
     ],
   ]) {

@@ -17,7 +17,11 @@ import {
 
 import { FakeExtensionAPI } from "../../../test-support/fake-extension-api"
 import { composeTaskEngine, type TaskEngine, type TaskRunnerFactories } from "./engine"
+import { PRODUCT_MODEL_ORDER } from "@rubato/model-core"
 import { createTeamServiceTestModelRegistry } from "./team-service-test-model-registry"
+
+// 테스트용 모델 registry 는 현재 xai 피커 행을 등록한다. 값은 제품 카탈로그가 소유한다.
+const TEST_MODEL = `xai/${PRODUCT_MODEL_ORDER.xai[0]}`
 import { createTaskTerminalObservers, type TaskTerminalEdge } from "./terminal-observers"
 
 const roots: string[] = []
@@ -103,7 +107,7 @@ async function spawn(engine: TaskEngine, name: string): Promise<string> {
     prompt: `work ${name}`,
     parent_session_id: "parent-session",
     depth: 0,
-    model: "xai/grok-4.7",
+    model: TEST_MODEL,
     name,
   })
   if (result.kind !== "started") throw new Error(`spawn failed: ${result.kind}`)

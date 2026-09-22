@@ -27,7 +27,13 @@ import {
   ANTHROPIC_SUB_PICKER_IDS,
   XAI_PICKER_IDS,
 } from "../../src/picker-catalog.mjs";
+import { PRODUCT_MODEL_ORDER } from "../../../../packages/model-core/src/product-model-catalog.mjs";
 import { kRubatoStream } from "../../src/rubato-stream.mjs";
+
+// 현재 세대 id 는 소스/카탈로그가 소유한다 — 여기서 손으로 적으면 세대가 바뀔 때마다 깨진다.
+const FABLE_ID = ANTHROPIC_PICKER_IDS[0];
+const XAI_GROK = XAI_PICKER_IDS[0];
+const ANTIGRAVITY_FLASH = PRODUCT_MODEL_ORDER["google-antigravity"][0];
 
 const CATALOG = [
   { id: "xai/grok-4.7", name: "Grok 4.7" },
@@ -252,23 +258,23 @@ test("Fable 5.1 은 pin 의 Fable 5에서 id·이름만 덮는다", () => {
     cost: { input: 10, output: 50 },
   };
   const [model] = fable51Models([template]);
-  assert.equal(model.id, "claude-fable-5-1");
+  assert.equal(model.id, FABLE_ID);
   assert.equal(model.name, "Fable 5.1");
   assert.equal(model.api, "anthropic-messages");
   assert.deepEqual(model.thinkingLevelMap, template.thinkingLevelMap);
   assert.deepEqual(model.cost, template.cost);
-  assert.deepEqual(fable51Models([{ ...template, id: "claude-fable-5-1" }]), []);
+  assert.deepEqual(fable51Models([{ ...template, id: FABLE_ID }]), []);
 });
 
 test("Fable 5.1 파생은 틀이 없으면 조용히 넘어가지 않는다", () => {
   assert.throws(() => fable51Models([{ id: "claude-opus-5" }]), /claude-fable-5/);
 });
 
-test("xAI: pinned grok-4.7 의 xhigh 가 picker 와 wire 에 남는다", async () => {
+test("xAI: pinned 현재 grok 의 xhigh 가 picker 와 wire 에 남는다", async () => {
   const [, xai] = await directProviders();
   assert.equal(xai.id, "xai");
-  const grok = xai.getModels().find((model) => model.id === "grok-4.7");
-  assert.ok(grok, "grok-4.7 이 없다");
+  const grok = xai.getModels().find((model) => model.id === XAI_GROK);
+  assert.ok(grok, `${XAI_GROK} 이 없다`);
   // picker 가 Shift+Tab 으로 xhigh 를 고를 수 있는 근거, 그리고 wire 로 나가는 값.
   assert.equal(grok.thinkingLevelMap.xhigh, "xhigh");
   assert.equal(grok.contextWindow, 500_000);
@@ -1115,7 +1121,7 @@ test("Antigravity 이관은 격리 자식에서 하지 않는다", async (t) => 
   assert.equal(calls.at(-1), false, "자식이 이관을 시도했다");
 });
 
-test("자식 overlay 도 google-antigravity/gemini-3.8-flash 를 입학시킨다", async (t) => {
+test("자식 overlay 도 현재 Antigravity flash 를 입학시킨다", async (t) => {
   const original = process.argv;
   const pi = recordingPi();
   try {
@@ -1126,8 +1132,8 @@ test("자식 overlay 도 google-antigravity/gemini-3.8-flash 를 입학시킨다
   }
   const antigravity = pi.registered.get("google-antigravity");
   assert.ok(antigravity, "자식이 google-antigravity 를 등록하지 않았다");
-  const flash = antigravity.getModels?.().find((entry) => entry.id === "gemini-3.8-flash");
-  assert.ok(flash, "자식 catalog 에 gemini-3.8-flash 가 없다");
+  const flash = antigravity.getModels?.().find((entry) => entry.id === ANTIGRAVITY_FLASH);
+  assert.ok(flash, `자식 catalog 에 ${ANTIGRAVITY_FLASH} 가 없다`);
   assert.equal(flash.provider, "google-antigravity");
   assert.deepEqual(flash.input, ["text", "image"]);
 });

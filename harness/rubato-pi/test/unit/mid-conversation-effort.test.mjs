@@ -2,11 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   MID_CONVERSATION_EFFORT_BETA,
+  MID_CONVERSATION_EFFORT_MODELS,
   appendMidConversationEffortBeta,
   createMidConversationEffort,
   nextEffortSessionState,
 } from "../../src/mid-conversation-effort.mjs";
 import { withRubatoStream } from "../../src/rubato-stream.mjs";
+
+// 지원 목록의 현재 세대 id 는 소스가 소유한다 — 여기서 손으로 적으면 세대가 바뀔 때마다 깨진다.
+const FABLE_MODEL = MID_CONVERSATION_EFFORT_MODELS[0];
 
 const MESSAGES_URL = "https://api.anthropic.com/v1/messages";
 const OAUTH_BETAS = "claude-code-20250219,oauth-2025-04-20";
@@ -18,7 +22,7 @@ function assistant(text) {
   return { role: "assistant", content: [{ type: "text", text }] };
 }
 
-function body({ model = "claude-fable-5-1", effort = "high", messages, extra } = {}) {
+function body({ model = FABLE_MODEL, effort = "high", messages, extra } = {}) {
   return {
     model,
     max_tokens: 64,
@@ -106,7 +110,7 @@ test("first request anchors base and leaves the body untouched", async () => {
   const state = effort.store.get("sess-1");
   assert.equal(state.baseEffort, "high");
   assert.deepEqual(state.marks, []);
-  assert.ok(state.lineage.startsWith("claude-fable-5-1\n"));
+  assert.ok(state.lineage.startsWith(`${FABLE_MODEL}\n`));
 });
 
 test("a level change marks just before the last message and freezes top-level effort", async () => {
@@ -201,7 +205,7 @@ test("lineage change resets the base", async () => {
   assert.deepEqual(state.marks, []);
 
   const { seen: modelSeen, fetchImpl: modelFetch } = createHarness();
-  await send(modelFetch, body({ model: "claude-fable-5-1", effort: "high", messages: [user("hi")] }));
+  await send(modelFetch, body({ model: FABLE_MODEL, effort: "high", messages: [user("hi")] }));
   const switched = body({ model: "claude-opus-5", effort: "low", messages: [user("hi"), assistant("yo"), user("again")] });
   const switchedSend = await send(modelFetch, switched);
   assert.equal(modelSeen[1].init.body, switchedSend.raw);
@@ -223,7 +227,7 @@ test("out-of-range mark resets instead of emitting an invalid body", async () =>
   const boxed = createMidConversationEffort();
   boxed.store.set("sess-1", {
     lineage: nextEffortSessionState(undefined, {
-      model: "claude-fable-5-1",
+      model: FABLE_MODEL,
       messages: [user("hi")],
       effort: "high",
     }).lineage,
@@ -267,7 +271,7 @@ test("withRubatoStream wires the effort wrapper for anthropic even without cache
   };
   const decorated = withRubatoStream(inner);
   const stream = decorated(
-    { provider: "anthropic", id: "claude-fable-5-1", api: "anthropic-messages" },
+    { provider: "anthropic", id: FABLE_MODEL, api: "anthropic-messages" },
     { messages: [] },
     {
       env: {},

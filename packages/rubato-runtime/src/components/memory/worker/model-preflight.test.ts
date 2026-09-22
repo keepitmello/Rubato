@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+import { CURSOR_GROK_DEFAULT_FAST_ID, CURSOR_GROK_PRESENTED_ID, PRODUCT_MODEL_ORDER } from "@rubato/model-core"
 import { preflightMemoryModels, resetModelPreflightCacheForTests } from "./model-preflight"
 import type { MemoryModelChain } from "./memory-model-attempts"
 
@@ -348,11 +349,11 @@ process.stdout.write("builtin/fallback\\n")
 
 
   test("#given a child catalog that only lists Cursor Grok Fast #when the presented id is preflighted #then it stays visible", async () => {
-    const item = await fixture('process.stdout.write("cursor/grok-4.7-high-fast\\n")')
+    const item = await fixture(`process.stdout.write("${CURSOR_GROK_DEFAULT_FAST_ID}\\n")`)
     const result = await preflightMemoryModels({
       candidates: [
-        { model: "cursor/grok-4.7", thinking: "high" },
-        { model: "xai/grok-4.7", thinking: "off" },
+        { model: CURSOR_GROK_PRESENTED_ID, thinking: "high" },
+        { model: `xai/${PRODUCT_MODEL_ORDER.xai[0]}`, thinking: "off" },
       ],
       launch: item.launch,
       env: { PATH: process.env.PATH },
@@ -360,8 +361,8 @@ process.stdout.write("builtin/fallback\\n")
     })
     expect(result).toEqual({
       kind: "filtered",
-      candidates: [{ model: "cursor/grok-4.7", thinking: "high" }],
-      rejected: [{ model: "xai/grok-4.7", cause: "model_not_visible" }],
+      candidates: [{ model: CURSOR_GROK_PRESENTED_ID, thinking: "high" }],
+      rejected: [{ model: `xai/${PRODUCT_MODEL_ORDER.xai[0]}`, cause: "model_not_visible" }],
     })
   })
 
