@@ -12,6 +12,7 @@ import { senpiNested } from "../../src/engine-paths.mjs";
 import {
   kRubatoStream,
   measurementBodyFromContext,
+  resolveSpeedIndexStreamKind,
   settleAbortedToolUse,
   withRubatoStream,
   wrapProviderStreams,
@@ -770,4 +771,15 @@ test("push/end 같은 원본 메서드가 private field 를 잃지 않는다", a
   stream.push({ type: "start", partial: message });
   stream.push({ type: "done", reason: "stop", message });
   assert.deepEqual((await drain(stream)).map((event) => event.type), ["start", "done"]);
+});
+
+test("stock Pi의 toolsAdded 도 본편 호출로 센다", () => {
+  assert.equal(resolveSpeedIndexStreamKind({ tools: [{ name: "read" }] }), "main");
+  assert.equal(resolveSpeedIndexStreamKind({
+    messages: [{ role: "system", content: "", toolsAdded: [{ name: "read" }] }, { role: "user", content: "hi" }],
+  }), "main");
+  assert.equal(resolveSpeedIndexStreamKind({
+    messages: [{ role: "system", content: "title only" }, { role: "user", content: "name this" }],
+  }), "auxiliary");
+  assert.equal(resolveSpeedIndexStreamKind({ messages: [] }, { streamKind: "compaction" }), "compaction");
 });
