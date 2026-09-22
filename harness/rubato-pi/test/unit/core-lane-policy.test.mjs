@@ -14,6 +14,9 @@ import {
 } from "../../src/transforms/core-lane-policy.mjs";
 import { ANTHROPIC_SERVER_COMPACTION_MODEL_IDS } from "../../src/anthropic-server-compaction.mjs";
 
+// 지원 목록의 fable 행은 소스가 소유한다.
+const SERVER_FABLE = ANTHROPIC_SERVER_COMPACTION_MODEL_IDS.find((id) => id.includes("fable"));
+
 const LANE_POLICY = join(senpiDir, "dist/core/extensions/builtin/compaction/lane-policy.js");
 const INDEX = join(senpiDir, "dist/core/extensions/builtin/compaction/index.js");
 
@@ -46,11 +49,11 @@ test("lane-policy transform declares server-compaction models as external owners
   assert.equal(policy.disablesSenpiCompaction({ model: { provider: "anthropic", id: "claude-haiku-4-5" }, cwd: dir }), false);
   assert.equal(policy.disablesSenpiCompaction({ model: { provider: "xai", id: "grok-4.7" }, cwd: dir }), false);
   assert.equal(policy.disablesSenpiCompaction({ model: { provider: "cursor", id: "claude-opus-5" }, cwd: dir }), false);
-  assert.match(mod.laneRejectionReason({ provider: "anthropic", id: "claude-fable-5-1" }), /Anthropic server compaction/);
+  assert.match(mod.laneRejectionReason({ provider: "anthropic", id: SERVER_FABLE }), /Anthropic server compaction/);
   assert.match(mod.laneRejectionReason({ provider: "claude-sdk-oauth", id: "x" }), /Claude Agent SDK/);
   // 수동 /compact 만 서버 컴팩션 모델에서 통과한다; SDK 레인은 그대로 막힌다.
-  assert.equal(mod.laneAllowsManualCompaction({ provider: "anthropic", id: "claude-fable-5-1" }, "manual"), true);
-  assert.equal(mod.laneAllowsManualCompaction({ provider: "anthropic", id: "claude-fable-5-1" }, "threshold"), false);
+  assert.equal(mod.laneAllowsManualCompaction({ provider: "anthropic", id: SERVER_FABLE }, "manual"), true);
+  assert.equal(mod.laneAllowsManualCompaction({ provider: "anthropic", id: SERVER_FABLE }, "threshold"), false);
   assert.equal(mod.laneAllowsManualCompaction({ provider: "claude-sdk-oauth", id: "x" }, "manual"), false);
   // 적용 표시가 붙어야 와이어가 켜진다.
   assert.equal(globalThis[Symbol.for("rubato.anthropicServerCompaction.lane")], true);

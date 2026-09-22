@@ -3,11 +3,17 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   CURSOR_GROK_FAST_NAME,
+  CURSOR_GROK_ID,
   cursorGrokFastVariantId,
   pinCursorGrokFastSelection,
   presentCursorGrokFast,
   presentCursorGrokFastModel,
 } from "../../src/cursor-grok-fast.mjs";
+
+// 세대 id 는 `cursor-grok-fast.mjs` 가 한 곳에서 소유한다. 여기서 손으로 적으면
+// 세대가 바뀔 때마다 이 테스트가 먼저 깨진다.
+const fastId = (level) => `${CURSOR_GROK_ID}-${level}-fast`;
+const legacyId = (level) => `${CURSOR_GROK_ID}-${level}`;
 
 // selection-descriptor 는 변형 id 를 alias 표에서 푼다. 그 표는 우리가 소유한
 // `cursor/model-capabilities.js`(vendored)이고, 런타임에는 이 파일이 pinned pi-ai 의
@@ -19,8 +25,8 @@ const { resolveCursorSelectionDescriptor } = await import(
 
 function grokBase() {
   return {
-    id: "grok-4.7",
-    name: "Cursor Grok 4.7",
+    id: CURSOR_GROK_ID,
+    name: "Cursor Grok",
     api: "cursor-agent",
     provider: "cursor",
     reasoning: true,
@@ -33,11 +39,11 @@ function grokBase() {
       xhigh: "xhigh",
       max: null,
     },
-    upstreamModelId: "grok-4.7-medium",
+    upstreamModelId: legacyId("medium"),
     compat: {
       cursorReasoning: {
-        capabilityId: "grok-4.7",
-        representativeVariantId: "grok-4.7-medium",
+        capabilityId: CURSOR_GROK_ID,
+        representativeVariantId: legacyId("medium"),
       },
     },
   };
@@ -51,13 +57,13 @@ test("피커에는 베이스 하나만 남고 이름이 Fast 다", () => {
   const presented = presentCursorGrokFast([
     { id: "composer-2.5", name: "Composer 2.5", provider: "cursor" },
     grokBase(),
-    grokFast("grok-4.7-high-fast"),
-    grokFast("grok-4.7-low-fast"),
-    grokFast("grok-4.7-xhigh-fast"),
+    grokFast(fastId("high")),
+    grokFast(fastId("low")),
+    grokFast(fastId("xhigh")),
   ]);
-  const grok = presented.filter((model) => String(model.id).includes("grok-4.7"));
+  const grok = presented.filter((model) => String(model.id).includes(CURSOR_GROK_ID));
   assert.equal(grok.length, 1);
-  assert.equal(grok[0].id, "grok-4.7");
+  assert.equal(grok[0].id, CURSOR_GROK_ID);
   assert.equal(grok[0].name, CURSOR_GROK_FAST_NAME);
   assert.deepEqual(grok[0].thinkingLevelMap.high, "high");
   assert.ok(presented.some((model) => model.id === "composer-2.5"));
@@ -65,11 +71,11 @@ test("피커에는 베이스 하나만 남고 이름이 Fast 다", () => {
 
 test("베이스가 없고 Fast 변형만 있으면 묶어서 보여 준다", () => {
   const presented = presentCursorGrokFast([
-    grokFast("grok-4.7-high-fast"),
-    grokFast("grok-4.7-medium-fast"),
+    grokFast(fastId("high")),
+    grokFast(fastId("medium")),
   ]);
   assert.equal(presented.length, 1);
-  assert.equal(presented[0].id, "grok-4.7");
+  assert.equal(presented[0].id, CURSOR_GROK_ID);
   assert.equal(presented[0].name, CURSOR_GROK_FAST_NAME);
   assert.equal(presented[0].thinkingLevelMap.high, "high");
   assert.equal(presented[0].thinkingLevelMap.medium, "medium");
@@ -81,10 +87,10 @@ function presentedGrok(fastIds) {
 }
 
 test("effort 를 바꾸면 wire id 가 Fast suffix 를 유지한다", () => {
-  const model = presentedGrok(["grok-4.7-low-fast", "grok-4.7-medium-fast", "grok-4.7-high-fast", "grok-4.7-xhigh-fast"]);
+  const model = presentedGrok([fastId("low"), fastId("medium"), fastId("high"), fastId("xhigh")]);
   assert.equal(
     resolveCursorSelectionDescriptor(grokBase(), { level: "high", source: "explicit" }).modelId,
-    "grok-4.7-high",
+    legacyId("high"),
     "전제: 핀 없으면 effort 가 Fast 를 푼다",
   );
 
@@ -99,12 +105,12 @@ test("effort 를 바꾸면 wire id 가 Fast suffix 를 유지한다", () => {
 });
 
 test("effort 가 없으면 발견한 Fast 중 기본 high 로 고정한다", () => {
-  const model = presentedGrok(["grok-4.7-high-fast"]);
+  const model = presentedGrok([fastId("high")]);
   const { options } = pinCursorGrokFastSelection(model, {});
-  assert.equal(options.thinkingSelection.legacyVariantId, "grok-4.7-high-fast");
+  assert.equal(options.thinkingSelection.legacyVariantId, fastId("high"));
   assert.equal(
     resolveCursorSelectionDescriptor(model, options.thinkingSelection).modelId,
-    "grok-4.7-high-fast",
+    fastId("high"),
   );
 });
 
@@ -114,49 +120,49 @@ test("catalog 에 Fast 행이 없어도 표시와 pin 은 Fast 다", () => {
   const { options } = pinCursorGrokFastSelection(presented[0], {
     thinkingSelection: { level: "high", source: "explicit" },
   });
-  assert.equal(options.thinkingSelection.legacyVariantId, "grok-4.7-high-fast");
+  assert.equal(options.thinkingSelection.legacyVariantId, fastId("high"));
   assert.equal(
     resolveCursorSelectionDescriptor(presented[0], options.thinkingSelection).modelId,
-    "grok-4.7-high-fast",
+    fastId("high"),
   );
 });
 
 test("발견하지 않은 Fast variant id 는 만들지 않는다", () => {
-  const model = presentCursorGrokFast([grokFast("grok-4.7-medium-fast")])[0];
-  assert.equal(model.id, "grok-4.7");
+  const model = presentCursorGrokFast([grokFast(fastId("medium"))])[0];
+  assert.equal(model.id, CURSOR_GROK_ID);
   assert.equal(model.name, CURSOR_GROK_FAST_NAME);
   assert.equal(model.thinkingLevelMap.high, null);
   assert.equal(model.thinkingLevelMap.medium, "medium");
-  assert.equal(model.upstreamModelId, "grok-4.7-medium-fast");
+  assert.equal(model.upstreamModelId, fastId("medium"));
   const { options } = pinCursorGrokFastSelection(model, {
     thinkingSelection: { level: "high", source: "explicit" },
   });
-  assert.equal(options.thinkingSelection.legacyVariantId, "grok-4.7-medium-fast");
+  assert.equal(options.thinkingSelection.legacyVariantId, fastId("medium"));
   assert.equal(
     resolveCursorSelectionDescriptor(model, options.thinkingSelection).modelId,
-    "grok-4.7-medium-fast",
+    fastId("medium"),
   );
 });
 
 test("저장분 베이스도 catalog 에 Fast 가 있으면 pin 한다", () => {
-  const catalog = [grokBase(), grokFast("grok-4.7-high-fast"), grokFast("grok-4.7-xhigh-fast")];
+  const catalog = [grokBase(), grokFast(fastId("high")), grokFast(fastId("xhigh"))];
   const options = { thinkingSelection: { level: "high", source: "explicit" } };
   const { options: pinned } = pinCursorGrokFastSelection(grokBase(), options, catalog);
-  assert.equal(pinned.thinkingSelection.legacyVariantId, "grok-4.7-high-fast");
+  assert.equal(pinned.thinkingSelection.legacyVariantId, fastId("high"));
   assert.equal(
     resolveCursorSelectionDescriptor(grokBase(), pinned.thinkingSelection).modelId,
-    "grok-4.7-high-fast",
+    fastId("high"),
   );
 });
 
 test("저장분 베이스는 catalog 에 없는 Fast id 를 만들지 않는다", () => {
-  const catalog = [grokBase(), grokFast("grok-4.7-medium-fast")];
+  const catalog = [grokBase(), grokFast(fastId("medium"))];
   const { options } = pinCursorGrokFastSelection(
     grokBase(),
     { thinkingSelection: { level: "high", source: "explicit" } },
     catalog,
   );
-  assert.equal(options.thinkingSelection.legacyVariantId, "grok-4.7-medium-fast");
+  assert.equal(options.thinkingSelection.legacyVariantId, fastId("medium"));
 });
 
 test("다른 모델은 손대지 않는다", () => {
@@ -166,9 +172,9 @@ test("다른 모델은 손대지 않는다", () => {
 });
 
 test("저장분 베이스도 catalog 에 Fast 가 있으면 표시 정체성이 Fast 다", () => {
-  const catalog = [grokBase(), grokFast("grok-4.7-high-fast"), grokFast("grok-4.7-medium-fast")];
+  const catalog = [grokBase(), grokFast(fastId("high")), grokFast(fastId("medium"))];
   const presented = presentCursorGrokFastModel(grokBase(), catalog);
-  assert.equal(presented.id, "grok-4.7");
+  assert.equal(presented.id, CURSOR_GROK_ID);
   assert.equal(presented.name, CURSOR_GROK_FAST_NAME);
   assert.ok(presented.compat.cursorGrokFastByLevel.high);
 });
@@ -176,25 +182,25 @@ test("저장분 베이스도 catalog 에 Fast 가 있으면 표시 정체성이 
 test("catalog 에 Fast 행이 없어도 표시 정체성은 Fast 다", () => {
   const presented = presentCursorGrokFastModel(grokBase(), [grokBase()]);
   assert.equal(presented.name, CURSOR_GROK_FAST_NAME);
-  assert.equal(presented.compat.cursorGrokFastByLevel.high, "grok-4.7-high-fast");
+  assert.equal(presented.compat.cursorGrokFastByLevel.high, fastId("high"));
 });
 
 test("묶인 대표 leftover 와 빈 catalog 도 high-fast 로 덮는다", () => {
   const leftover = {
-    thinkingSelection: { level: "high", source: "legacy-variant", legacyVariantId: "grok-4.7-medium" },
+    thinkingSelection: { level: "high", source: "legacy-variant", legacyVariantId: legacyId("medium") },
   };
   const { options } = pinCursorGrokFastSelection(grokBase(), leftover, [grokBase()]);
-  assert.equal(options.thinkingSelection.legacyVariantId, "grok-4.7-high-fast");
+  assert.equal(options.thinkingSelection.legacyVariantId, fastId("high"));
   assert.equal(
     resolveCursorSelectionDescriptor(grokBase(), options.thinkingSelection).modelId,
-    "grok-4.7-high-fast",
+    fastId("high"),
   );
 });
 
 test("non-fast variant 모델 id 도 Fast 로 다시 핀다", () => {
-  const medium = { ...grokBase(), id: "grok-4.7-medium", name: "grok-4.7-medium" };
+  const medium = { ...grokBase(), id: legacyId("medium"), name: legacyId("medium") };
   const { options } = pinCursorGrokFastSelection(medium, {
     thinkingSelection: { level: "high", source: "explicit" },
   });
-  assert.equal(options.thinkingSelection.legacyVariantId, "grok-4.7-high-fast");
+  assert.equal(options.thinkingSelection.legacyVariantId, fastId("high"));
 });

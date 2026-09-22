@@ -21,6 +21,9 @@ import {
   titleFromResponse,
 } from "../../src/extensions/session-title.mjs";
 
+// 제목 체인의 b-ai 행은 소스가 소유한다 — 여기서 손으로 적으면 세대가 바뀔 때마다 깨진다.
+const TITLE_FLASH_ID = TITLE_MODELS[0].id;
+
 function userEntry(text) {
   return { type: "message", message: { role: "user", content: [{ type: "text", text }] } };
 }
@@ -304,22 +307,22 @@ test("session.rename locks later auto titles and survives resume", () => {
 
 test("pickTitleModel walks the model chain and titleFromResponse reads complete() output", () => {
   assert.deepEqual(TITLE_MODELS, [
-    { provider: "b-ai", id: "deepseek-v4.1-flash", reasoning: "low" },
+    { provider: "b-ai", id: TITLE_FLASH_ID, reasoning: "low" },
     { provider: "openai-codex", id: "gpt-5.6-luna" },
   ]);
-  const flash = { provider: "b-ai", id: "deepseek-v4.1-flash" };
+  const flash = { provider: "b-ai", id: TITLE_FLASH_ID };
   const luna = { provider: "openai-codex", id: "gpt-5.6-luna" };
   const seen = [];
   const byId = (provider, id) => {
     seen.push([provider, id]);
-    return id === "deepseek-v4.1-flash" ? flash : luna;
+    return id === TITLE_FLASH_ID ? flash : luna;
   };
   // 값싼 1순위가 인증까지 서 있으면 그것을 쓰고, 추론 강도를 함께 넘긴다.
   assert.deepEqual(pickTitleModel({ find: byId }, { id: "fallback" }), {
     model: flash,
     reasoning: "low",
   });
-  assert.deepEqual(seen, [["b-ai", "deepseek-v4.1-flash"]]);
+  assert.deepEqual(seen, [["b-ai", TITLE_FLASH_ID]]);
   // 자격 없는 후보는 건너뛴다. luna 는 추론 강도를 지정하지 않는다.
   const noAuthForFlash = { find: byId, hasConfiguredAuth: (model) => model !== flash };
   assert.deepEqual(pickTitleModel(noAuthForFlash, { id: "fallback" }), { model: luna });
@@ -353,7 +356,7 @@ test("the title completion carries the candidate reasoning level", async () => {
   };
   await refreshSessionTitle(pi, ctx, { lastAuto: undefined, locked: false });
   assert.equal(calls.length, 1);
-  assert.equal(calls[0][0].id, "deepseek-v4.1-flash");
+  assert.equal(calls[0][0].id, TITLE_FLASH_ID);
   assert.equal(calls[0][2].reasoning, "low");
   assert.equal(calls[0][2].cacheRetention, "none");
   assert.match(calls[0][2].sessionId, /^rubato-title-/);

@@ -34,7 +34,12 @@ import {
   verifyCursorActivationMarker,
   withCursorActivationCanary,
 } from "../../src/cursor-route.mjs";
+import { CURSOR_GROK_ID } from "../../src/cursor-grok-fast.mjs";
 import { senpiNested } from "../../src/engine-paths.mjs";
+
+// 현재 세대 cursor grok id 는 `cursor-grok-fast.mjs` 가 소유한다.
+const grokFast = (level) => `${CURSOR_GROK_ID}-${level}-fast`;
+const grokLegacy = (level) => `${CURSOR_GROK_ID}-${level}`;
 
 const piAi = (...segments) => pathToFileURL(join(senpiNested("@earendil-works/pi-ai"), ...segments)).href;
 const { createProvider } = await import(piAi("dist/index.js"));
@@ -759,7 +764,7 @@ test("server-exec 표지와 local-work 위임은 pinned 그대로다", async () 
 test("격리 child 처럼 getModels 에 Fast 행이 없어도 stream 은 high-fast 로 pin 한다", async () => {
   let seen;
   const inner = {
-    getModels: () => [discoveredModel("grok-4.7")],
+    getModels: () => [discoveredModel(CURSOR_GROK_ID)],
     streamSimple(_model, _context, options) {
       seen = options.thinkingSelection;
       return { [Symbol.asyncIterator]: async function* () {} };
@@ -772,17 +777,17 @@ test("격리 child 처럼 getModels 에 Fast 행이 없어도 stream 은 high-fa
     run: async () => ({ stopReason: "stop" }),
   });
   provider.streamSimple(
-    discoveredModel("grok-4.7"),
+    discoveredModel(CURSOR_GROK_ID),
     { messages: [] },
-    { thinkingSelection: { level: "high", source: "legacy-variant", legacyVariantId: "grok-4.7-medium" } },
+    { thinkingSelection: { level: "high", source: "legacy-variant", legacyVariantId: grokLegacy("medium") } },
   );
-  assert.equal(seen?.legacyVariantId, "grok-4.7-high-fast");
+  assert.equal(seen?.legacyVariantId, grokFast("high"));
 });
 
 test("저장분 베이스 stream 도 catalog Fast 로 pin 한다", async () => {
   let seen;
   const inner = {
-    getModels: () => [discoveredModel("grok-4.7"), discoveredModel("grok-4.7-high-fast")],
+    getModels: () => [discoveredModel(CURSOR_GROK_ID), discoveredModel(grokFast("high"))],
     streamSimple(_model, _context, options) {
       seen = options.thinkingSelection;
       return { [Symbol.asyncIterator]: async function* () {} };
@@ -795,11 +800,11 @@ test("저장분 베이스 stream 도 catalog Fast 로 pin 한다", async () => {
     run: async () => ({ stopReason: "stop" }),
   });
   provider.streamSimple(
-    discoveredModel("grok-4.7"),
+    discoveredModel(CURSOR_GROK_ID),
     { messages: [] },
     { thinkingSelection: { level: "high", source: "explicit" } },
   );
-  assert.equal(seen?.legacyVariantId, "grok-4.7-high-fast");
+  assert.equal(seen?.legacyVariantId, grokFast("high"));
 });
 
 test("피커 filterModels 는 쓰던 일곱만 남긴다", async () => {

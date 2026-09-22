@@ -35,6 +35,8 @@ import {
   truncateToWidth,
 } from "../../src/statusline.mjs";
 import { BRAND_NAME } from "../../src/brand.mjs";
+import { CURSOR_GROK_ID } from "../../src/cursor-grok-fast.mjs";
+import { BAI_FLASH_MODEL_ID } from "../../src/session-defaults.mjs";
 import { installStatusline, extensionStatusLine, canSetFooter, hookExtensionRunnerFooter, ctxFromHostSession, paintStatusLines, registerFooterHost, footerHost, fallbackStatusLines, RUBATO_FOOTER_HOST } from "../../src/extensions/statusline.mjs";
 import { createBackgroundTracker } from "../../src/background-tracker.mjs";
 
@@ -97,8 +99,8 @@ test("shortens Claude-style model ids the way the statusline does", () => {
   assert.equal(shortModelLabel("opencode/muse-spark-1.3-contributor-free"), "Muse Spark 1.3");
   assert.equal(shortModelLabel("opencode/muse-spark-1.3-contributor-free:high"), "Muse Spark 1.3");
   assert.equal(shortModelLabel("Muse Spark 1.3 Free"), "Muse Spark 1.3");
-  assert.equal(shortModelLabel("b-ai/deepseek-v4.1-flash"), "v4.1 Flash");
-  assert.equal(shortModelLabel("b-ai/deepseek-v4.1-flash:high"), "v4.1 Flash");
+  assert.equal(shortModelLabel(`b-ai/${BAI_FLASH_MODEL_ID}`), "v4.1 Flash");
+  assert.equal(shortModelLabel(`b-ai/${BAI_FLASH_MODEL_ID}:high`), "v4.1 Flash");
   assert.equal(shortModelLabel("unknown-model:high"), "unknown-model");
 });
 
@@ -137,32 +139,32 @@ test("appends reasoning effort next to the short model name", () => {
     formatModelWithEffort("openai-codex/gpt-5.6-sol", "high", { provider: "openai-codex" }, undefined, true),
     "Sol 5.6 high",
   );
-  assert.equal(formatModelWithEffort("cursor/grok-4.7", "high"), "Grok 4.7 high [fast]");
+  assert.equal(formatModelWithEffort(`cursor/${CURSOR_GROK_ID}`, "high"), "Grok 4.7 high [fast]");
   assert.equal(
-    formatModelWithEffort("cursor/grok-4.7", "high", {
+    formatModelWithEffort(`cursor/${CURSOR_GROK_ID}`, "high", {
       name: "Grok 4.7 Fast",
-      compat: { cursorGrokFastByLevel: { high: "grok-4.7-high-fast" } },
+      compat: { cursorGrokFastByLevel: { high: `${CURSOR_GROK_ID}-high-fast` } },
     }),
     "Grok 4.7 high [fast]",
   );
   assert.equal(
     formatModelWithEffort(
-      "grok-4.7",
+      CURSOR_GROK_ID,
       "high",
-      { id: "grok-4.7", provider: "cursor", name: "Cursor Grok 4.7" },
+      { id: CURSOR_GROK_ID, provider: "cursor", name: "Cursor Grok 4.7" },
       [
-        { id: "grok-4.7", provider: "cursor", name: "Cursor Grok 4.7" },
-        { id: "grok-4.7-high-fast", provider: "cursor", name: "grok-4.7-high-fast" },
+        { id: CURSOR_GROK_ID, provider: "cursor", name: "Cursor Grok 4.7" },
+        { id: `${CURSOR_GROK_ID}-high-fast`, provider: "cursor", name: "grok-high-fast" },
       ],
     ),
     "Grok 4.7 high [fast]",
   );
   assert.equal(
     formatModelWithEffort(
-      "grok-4.7",
+      CURSOR_GROK_ID,
       "high",
-      { id: "grok-4.7", provider: "cursor", name: "Cursor Grok 4.7" },
-      [{ id: "grok-4.7", provider: "cursor", name: "Cursor Grok 4.7" }],
+      { id: CURSOR_GROK_ID, provider: "cursor", name: "Cursor Grok 4.7" },
+      [{ id: CURSOR_GROK_ID, provider: "cursor", name: "Cursor Grok 4.7" }],
     ),
     "Grok 4.7 high [fast]",
   );
@@ -512,12 +514,12 @@ test("a restored Cursor Grok session reads Fast from the catalog, not the picker
   let factory;
   const ctx = {
     cwd: "/Users/wy/Github-repos/agent-taskforce",
-    model: { id: "grok-4.7", provider: "cursor", name: "Cursor Grok 4.7", contextWindow: 200_000 },
+    model: { id: CURSOR_GROK_ID, provider: "cursor", name: "Cursor Grok", contextWindow: 200_000 },
     thinkingLevel: "high",
     modelRegistry: {
       getAll: () => [
-        { id: "grok-4.7", provider: "cursor", name: "Cursor Grok 4.7" },
-        { id: "grok-4.7-high-fast", provider: "cursor", name: "grok-4.7-high-fast" },
+        { id: CURSOR_GROK_ID, provider: "cursor", name: "Cursor Grok" },
+        { id: `${CURSOR_GROK_ID}-high-fast`, provider: "cursor", name: "grok-high-fast" },
       ],
     },
     getContextUsage: () => ({ tokens: 40_000, contextWindow: 200_000, percent: 20 }),

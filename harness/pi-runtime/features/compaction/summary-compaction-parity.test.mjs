@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { resolvePiRuntime } from "../../resolve-runtime.mjs";
 import { stagePiRuntime } from "../../stage-runtime.mjs";
+import { PRODUCT_MODEL_ORDER } from "../model-picker/product-model-catalog.mjs";
 import { runtimeFactoriesFeature } from "../runtime-factories/feature.mjs";
 import { compactionFeature } from "./feature.mjs";
 
@@ -59,7 +60,8 @@ const { COMPACTION_BRIEFING_GUIDANCE } = compaction;
 const CONTEXT_WINDOW = 200_000;
 const PRODUCT_RATIO = 0.9;
 const SERVER_TRIGGER_RATIO = 0.65;
-const FABLE = { provider: "anthropic", id: "claude-fable-5-1" };
+// 서버 컴팩션 지원 목록은 현재 세대 id 를 담는다 — 여기서 손으로 적으면 세대가 바뀔 때마다 깨진다.
+const FABLE = { provider: "anthropic", id: PRODUCT_MODEL_ORDER.anthropic[0] };
 
 after(() => {
   restoreEnv("HOME", previousEnv.HOME);

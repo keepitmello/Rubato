@@ -21,11 +21,13 @@ import {
 import { FakeExtensionAPI } from "../../../test-support/fake-extension-api"
 import { composeTaskEngine } from "./engine"
 import { createTeamService } from "./team-service"
+import { PRODUCT_MODEL_ORDER } from "@rubato/model-core"
 import { createTeamServiceTestModelRegistry } from "./team-service-test-model-registry"
 
 const MEMBER_TASK_ID = "st_00000001"
 const MESSAGE_ID = "77777777-7777-4777-8777-777777777777"
-const TEST_MODEL = "xai/grok-4.7"
+// 테스트용 모델 registry 는 현재 xai 피커 행을 등록한다. 값은 제품 카탈로그가 소유한다.
+const TEST_MODEL = `xai/${PRODUCT_MODEL_ORDER.xai[0]}`
 const TEST_MODELS = { has: (model: string) => model === TEST_MODEL, list: () => [TEST_MODEL] }
 const tempRoots: string[] = []
 
@@ -79,7 +81,7 @@ function extensionOrderHarness(beforeStart?: (spec: ManagedStartSpec) => Promise
   tempRoots.push(cwd)
   mkdirSync(join(cwd, ".rubato"), { recursive: true })
   writeFileSync(join(cwd, ".rubato", "rubato.json"), `${JSON.stringify({
-    categories: { quick: { kind: "owner", model: "xai/grok-4.7" } },
+    categories: { quick: { kind: "owner", model: TEST_MODEL } },
   })}\n`)
   const started: ManagedStartSpec[] = []
   const runner: ManagedRunner = {

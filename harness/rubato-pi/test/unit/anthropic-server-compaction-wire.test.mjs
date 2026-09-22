@@ -4,6 +4,7 @@ import { setContextMode } from "../../src/context-notes/config.mjs";
 import {
   ANTHROPIC_SERVER_COMPACTION_BETA,
   ANTHROPIC_SERVER_COMPACTION_EDIT_TYPE,
+  ANTHROPIC_SERVER_COMPACTION_MODEL_IDS,
 } from "../../src/anthropic-server-compaction.mjs";
 import { COMPACTION_BRIEFING_GUIDANCE } from "../../src/compaction-guidance.mjs";
 import {
@@ -19,6 +20,10 @@ const MESSAGES_URL = "https://api.anthropic.com/v1/messages";
 globalThis[Symbol.for("rubato.anthropicServerCompaction.adapter")] = true;
 globalThis[Symbol.for("rubato.anthropicServerCompaction.lane")] = true;
 const OAUTH_BETAS = "claude-code-20250219,oauth-2025-04-20";
+
+// 지원 목록의 현재 세대 id 는 소스가 소유한다 — 여기서 손으로 적으면 세대가 바뀔 때마다 깨진다.
+const SERVER_FABLE = ANTHROPIC_SERVER_COMPACTION_MODEL_IDS.find((id) => id.includes("fable"));
+const SERVER_OPUS = ANTHROPIC_SERVER_COMPACTION_MODEL_IDS.find((id) => id.includes("opus"));
 
 function body(model, extra = {}) {
   return JSON.stringify({
@@ -53,7 +58,7 @@ async function send(model, { provider = "anthropic", headers = { "anthropic-beta
   return { raw, init, seen: seen[0] };
 }
 
-for (const model of ["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5"]) {
+for (const model of ANTHROPIC_SERVER_COMPACTION_MODEL_IDS) {
   test(`${model} gets compact beta and context_management edit`, async () => {
     const { raw, init, seen } = await send(model);
     assert.notEqual(seen.init.body, raw);
@@ -74,15 +79,15 @@ for (const model of ["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5"]) 
 test("server instructions are the same briefing guidance the client compaction uses", () => {
   assert.match(COMPACTION_BRIEFING_GUIDANCE, /next worker/);
   assert.match(COMPACTION_BRIEFING_GUIDANCE, /<summary><\/summary>/);
-  const edit = JSON.parse(applyAnthropicServerCompaction(body("claude-fable-5-1"), {}, { provider: "anthropic" }).bodyText).context_management.edits[0];
+  const edit = JSON.parse(applyAnthropicServerCompaction(body(SERVER_FABLE), {}, { provider: "anthropic" }).bodyText).context_management.edits[0];
   assert.equal(edit.instructions, COMPACTION_BRIEFING_GUIDANCE);
 });
 
 test("trigger sits at 65% of the model context window (35% left)", async () => {
-  const { seen } = await send("claude-fable-5-1", { contextWindow: 1_000_000 });
+  const { seen } = await send(SERVER_FABLE, { contextWindow: 1_000_000 });
   const edit = JSON.parse(seen.init.body).context_management.edits[0];
   assert.deepEqual(edit.trigger, { type: "input_tokens", value: 650_000 });
-  const small = await send("claude-opus-5-5", { contextWindow: 200_000 });
+  const small = await send(SERVER_OPUS, { contextWindow: 200_000 });
   assert.deepEqual(JSON.parse(small.seen.init.body).context_management.edits[0].trigger, { type: "input_tokens", value: 130_000 });
 });
 
@@ -94,7 +99,7 @@ test("trigger never drops below the Anthropic 50k floor and is omitted without a
 });
 
 test("the wire stays off when a required transform did not apply", () => {
-  const raw = body("claude-fable-5-1");
+  const raw = body(SERVER_FABLE);
   const off = applyAnthropicServerCompaction(raw, { "anthropic-beta": OAUTH_BETAS }, { provider: "anthropic", armed: false });
   assert.equal(off.rewritten, false);
   assert.equal(off.bodyText, raw);
@@ -118,7 +123,7 @@ test("non-Anthropic provider is untouched", async () => {
 
 test("existing anthropic-beta is preserved and compact beta is appended", () => {
   const headers = { "anthropic-beta": OAUTH_BETAS, "x-app": "cli" };
-  const applied = applyAnthropicServerCompaction(body("claude-opus-5-5"), headers, { provider: "anthropic" });
+  const applied = applyAnthropicServerCompaction(body(SERVER_OPUS), headers, { provider: "anthropic" });
   assert.equal(applied.rewritten, true);
   assert.equal(applied.headers["x-app"], "cli");
   assert.equal(applied.headers["anthropic-beta"], `${OAUTH_BETAS},${ANTHROPIC_SERVER_COMPACTION_BETA}`);

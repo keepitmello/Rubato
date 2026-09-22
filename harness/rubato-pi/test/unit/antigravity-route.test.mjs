@@ -25,9 +25,12 @@ function response(json, { ok = true, status = 200 } = {}) {
   return { ok, status, json: async () => json };
 }
 
-test("catalog는 gemini-3.8-flash를 image 능력과 함께 공개한다", () => {
-  const flash = antigravityModels().find((entry) => entry.id === "gemini-3.8-flash");
-  assert.ok(flash, "gemini-3.8-flash 가 Antigravity catalog 에 없다");
+// Antigravity flash id 는 카탈로그(antigravity-route)가 소유한다.
+const ANTIGRAVITY_FLASH = antigravityModels()[0].id;
+
+test("catalog는 현재 flash 를 image 능력과 함께 공개한다", () => {
+  const flash = antigravityModels().find((entry) => entry.id === ANTIGRAVITY_FLASH);
+  assert.ok(flash, `${ANTIGRAVITY_FLASH} 가 Antigravity catalog 에 없다`);
   assert.equal(flash.provider, ANTIGRAVITY_PROVIDER_ID);
   assert.deepEqual(flash.input, ["text", "image"]);
   assert.equal(flash.reasoning, true);
@@ -37,7 +40,7 @@ test("catalog는 gemini-3.8-flash를 image 능력과 함께 공개한다", () =>
 });
 
 test("catalog model baseUrl follows the endpoint override", () => {
-  const flash = antigravityModels("http://127.0.0.1:18888/custom").find((entry) => entry.id === "gemini-3.8-flash");
+  const flash = antigravityModels("http://127.0.0.1:18888/custom").find((entry) => entry.id === ANTIGRAVITY_FLASH);
   assert.equal(flash.baseUrl, "http://127.0.0.1:18888/custom");
 });
 
@@ -45,7 +48,7 @@ test("well-formed catalog model survives pinned attribution .includes", async ()
   const { mergeProviderAttributionHeaders } = await import(
     pathToFileURL(join(senpiNested("@code-yeongyu/senpi"), "dist/core/provider-attribution.js")).href
   );
-  const flash = antigravityModels().find((entry) => entry.id === "gemini-3.8-flash");
+  const flash = antigravityModels().find((entry) => entry.id === ANTIGRAVITY_FLASH);
   const settings = { getEnableInstallTelemetry: () => true };
   assert.doesNotThrow(() => mergeProviderAttributionHeaders(flash, settings, "child-session"));
 });
