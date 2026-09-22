@@ -7,6 +7,8 @@ import * as Effect from "effect/Effect";
 import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+// Imported sessions may use either path syntax, independently of the server OS.
+// @effect-diagnostics-next-line nodeBuiltinImport:off
 import * as NodePath from "node:path";
 import { pathToFileURL } from "node:url";
 import { ProviderAdapterRequestError, ProviderDriverError } from "../Errors.ts";

@@ -15,6 +15,14 @@ test('overlay is guarded, idempotent, reversible and rejects dirty upstream befo
     await mkdir(path.dirname(path.join(root,relative)),{recursive:true});
     if(entry.original!==null) await writeFile(path.join(root,relative),entry.original);
   }
+  // Newly guarded targets are absent from an older installation's manifest.
+  const upstream=JSON.parse(await readFile(new URL('../upstream.json',import.meta.url),'utf8'));
+  for(const relative of Object.keys(upstream.targets)) if(!manifest.files[relative]) {
+    await mkdir(path.dirname(path.join(root,relative)),{recursive:true});
+    const original=await readFile(path.join(source,relative),'utf8');
+    assert.equal(createHash('sha256').update(original).digest('hex'),upstream.targets[relative]);
+    await writeFile(path.join(root,relative),original);
+  }
   // 새 overlay 파일도 포함한 이번 설치의 매니페스트와 비교한다.
   const first=await applyIntegration({t3:root});
   const installed=JSON.parse(await readFile(path.join(root,'.rubato-pi-overlay.json'),'utf8'));
