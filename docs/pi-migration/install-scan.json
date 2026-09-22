@@ -1,8 +1,8 @@
 {
-  "generatedAt": "2026-09-21T04:28:51.048Z",
+  "generatedAt": "2026-09-21T17:01:10.138Z",
   "stockVersion": "0.86.1",
   "node": "v26.5.0",
-  "installRoot": "/private/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-QI8ofR/engine",
+  "installRoot": "/private/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-v3fvy7/engine",
   "features": [
     "runtime-factories",
     "reload",
@@ -120,7 +120,7 @@
     {
       "seam": "rpc",
       "execPath": "/opt/homebrew/Cellar/node/26.5.0_1/bin/node",
-      "entry": "/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-QI8ofR/engine/node_modules/@earendil-works/pi-coding-agent/dist/rpc-entry.js"
+      "entry": "/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-v3fvy7/engine/node_modules/@earendil-works/pi-coding-agent/dist/rpc-entry.js"
     },
     {
       "seam": "in-process",
@@ -129,7 +129,7 @@
     }
   ],
   "childEnv": {
-    "sessionDirFromGetState": "/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-QI8ofR/home/child/rpc-sessions/child/2026-09-21T04-28-45-328Z_01a0c239-398f-7227-9ff0-b95fef51be44.jsonl"
+    "sessionDirFromGetState": "/var/folders/cm/mntd4dnd54bb6w4h36nsc31m0000gn/T/rubato-isolated-install-v3fvy7/home/child/rpc-sessions/child/2026-09-21T17-01-07-904Z_01a0c4ea-0bbf-7730-8ef1-af0a04abe514.jsonl"
   },
   "dynamicImports": [
     {
@@ -941,7 +941,6 @@
     "context-window/context-window.test.mjs",
     "extension-rpc/extension-rpc.test.mjs",
     "input-lifecycle/input-lifecycle.test.mjs",
-    "parity-gaps/slim.mjs",
     "prompt-rules/prompt-rules.test.mjs",
     "providers/vendor/pi-ai/api/cursor-agent.js",
     "reload/reload.test.mjs",
@@ -1291,7 +1290,7 @@
     "@code-yeongyu/senpi-tui"
   ],
   "notes": [
-    "Measured 2026-09-21T04:28:51.048Z: 45 staged features, Node v26.5.0. CANDIDATE_FEATURE_NAMES=43.",
+    "Measured 2026-09-21T17:01:10.138Z: 45 staged features, Node v26.5.0. CANDIDATE_FEATURE_NAMES=43.",
     "Load report: 26726 urls, 24721 inside install, 2003 node-core, 2 scratch, 0 outside, 0 Senpi app.",
     "Current restage matched CANDIDATE_FEATURE_NAMES.",
     "Fake user HOME ~/.senpi/agent, ~/.rubato-pi/engine, and parent node_modules/@code-yeongyu/senpi stub were present and not loaded.",
