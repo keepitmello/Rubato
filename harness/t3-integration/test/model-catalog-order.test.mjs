@@ -12,7 +12,7 @@ import {
 test('T3 catalogue keeps the curated /model set and drops provider extras', () => {
   const models = [
     { provider: 'xai', id: 'grok-4.7', name: 'Grok 4.7', reasoning: true, thinkingLevelMap: { xhigh: 'xhigh' }, api: 'openai-completions' },
-    { provider: 'anthropic', id: 'claude-opus-5', name: 'Claude Opus 5', reasoning: true, api: 'anthropic-messages' },
+    { provider: 'anthropic', id: 'claude-opus-5-5', name: 'Claude Opus 5.5', reasoning: true, api: 'anthropic-messages' },
     { provider: 'anthropic', id: 'claude-fable-5-1', name: 'Claude Fable 5.1', reasoning: true, thinkingLevelMap: { max: 'max' } },
     { provider: 'anthropic', id: 'claude-opus-4-6', name: 'Claude Opus 4.6', reasoning: true },
     { provider: 'openai-codex', id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol', reasoning: true, thinkingLevelMap: { xhigh: 'xhigh', max: 'max' }, api: 'openai-codex-responses' },
@@ -26,7 +26,7 @@ test('T3 catalogue keeps the curated /model set and drops provider extras', () =
   assert.deepEqual(catalog.map((item) => `${item.provider}/${item.id}`), [
     'openai-codex/gpt-5.6-sol',
     'anthropic/claude-fable-5-1',
-    'anthropic/claude-opus-5',
+    'anthropic/claude-opus-5-5',
     'xai/grok-4.7',
     'cursor/grok-4.7',
   ]);
@@ -75,28 +75,28 @@ test('reasoning models expose effort, and fast-capable models expose Fast', () =
     thinkingLevelMap: { max: 'max' },
   });
   assert.deepEqual(fable.optionDescriptors.map((item) => item.id), ['reasoningEffort']);
-  assert.equal(modelSupportsFast({ provider: 'anthropic', id: 'claude-opus-5', api: 'anthropic-messages' }), true);
+  assert.equal(modelSupportsFast({ provider: 'anthropic', id: 'claude-opus-5-5', api: 'anthropic-messages' }), true);
   assert.equal(modelSupportsFast({ provider: 'anthropic', id: 'claude-fable-5-1', api: 'anthropic-messages' }), false);
 });
 
 test('T3 catalogue shows Anthropic account copies next to the base model', () => {
   const catalog = catalogForPicker([
-    { provider: 'anthropic', id: 'claude-opus-5', name: 'Claude Opus 5', reasoning: true, api: 'anthropic-messages' },
-    { provider: 'anthropic', id: 'claude-opus-5-sub', name: 'Claude Opus 5 [sub]', reasoning: true, api: 'anthropic-messages' },
+    { provider: 'anthropic', id: 'claude-opus-5-5', name: 'Claude Opus 5.5', reasoning: true, api: 'anthropic-messages' },
+    { provider: 'anthropic', id: 'claude-opus-5-5-sub', name: 'Claude Opus 5.5 [sub]', reasoning: true, api: 'anthropic-messages' },
     { provider: 'anthropic', id: 'claude-fable-5-1', name: 'Claude Fable 5.1', reasoning: true, thinkingLevelMap: { max: 'max' } },
     { provider: 'anthropic', id: 'claude-fable-5-1-sub', name: 'Claude Fable 5.1 [sub]', reasoning: true, thinkingLevelMap: { max: 'max' } },
   ]);
   assert.deepEqual(catalog.map((item) => `${item.provider}/${item.id}`), [
     'anthropic/claude-fable-5-1',
     'anthropic/claude-fable-5-1-sub',
-    'anthropic/claude-opus-5',
-    'anthropic/claude-opus-5-sub',
+    'anthropic/claude-opus-5-5',
+    'anthropic/claude-opus-5-5-sub',
   ]);
   assert.equal(modelPickerLabel(catalog[0]), 'Fable 5.1');
   assert.equal(modelPickerLabel(catalog[1]), 'Fable 5.1 [sub]');
-  assert.equal(modelPickerLabel(catalog[2]), 'Opus 5');
-  assert.equal(modelPickerLabel(catalog[3]), 'Opus 5 [sub]');
-  assert.equal(modelSupportsFast({ provider: 'anthropic', id: 'claude-opus-5-sub', api: 'anthropic-messages' }), true);
+  assert.equal(modelPickerLabel(catalog[2]), 'Opus 5.5');
+  assert.equal(modelPickerLabel(catalog[3]), 'Opus 5.5 [sub]');
+  assert.equal(modelSupportsFast({ provider: 'anthropic', id: 'claude-opus-5-5-sub', api: 'anthropic-messages' }), true);
 });
 
 test('selection options map T3 TraitsPicker ids onto Pi thinking and /fast', () => {

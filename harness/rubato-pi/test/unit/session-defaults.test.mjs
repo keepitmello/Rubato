@@ -47,7 +47,7 @@ test("session defaults initialize Opus only when no model was selected", () => {
     writeFile: () => {},
   });
   assert.equal(next.defaultProvider, "anthropic");
-  assert.equal(next.defaultModel, "claude-opus-5");
+  assert.equal(next.defaultModel, "claude-opus-5-5");
 });
 
 test("session defaults preserve an explicit thinking visibility preference", () => {
