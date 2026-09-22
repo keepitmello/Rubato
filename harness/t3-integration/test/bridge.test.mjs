@@ -744,6 +744,24 @@ test('compaction_end from Pi is thread.state.changed compacted', () => {
   assert.equal(events.filter((event) => event.type==='thread.state.changed').length, 1);
 });
 
+test('notes transitions carry their mode, and failures never report a completed cut', () => {
+  const events = [];
+  const p = new EventProjection({ threadId:'thread', sessionId:'session', instanceId:'instance',
+    emit:event=>events.push(decodeEvent(event)) });
+  p.project({ type:'compaction_end', reason:'extension', aborted:false,
+    result:{ details:{ source:'rubato-history-notes-v1', window:{ windowId:'window-2' } } } });
+  assert.deepEqual(compactedEvents(events).map((e) => e.payload), [
+    { state:'compacted', detail:{ contextMode:'history-notes', windowId:'window-2' } },
+  ]);
+  for (const type of ['compaction_end', 'auto_compaction_end']) {
+    p.project({ type, aborted:true });
+    p.project({ type, aborted:false, errorMessage:'storage failed' });
+  }
+  assert.equal(compactedEvents(events).length, 1);
+  p.project({ type:'compaction_end', reason:'manual', result:{ summary:'Real summary' } });
+  assert.deepEqual(compactedEvents(events).at(-1).payload, { state:'compacted' });
+});
+
 test('a retried error inside one turn does not close the finished turn as failed', () => {
   const events=[]; const p=new EventProjection({threadId:'thread',sessionId:'session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
   p.project({type:'agent_start'});

@@ -568,11 +568,15 @@ export class EventProjection {
         break;
       }
       case 'compaction_end':
-        if (event.aborted) break;
+        if (event.aborted || event.errorMessage) break;
         this.sawCompaction = true;
-        this.event('thread.state.changed', { state: 'compacted' });
+        this.event('thread.state.changed', { state: 'compacted',
+          ...(event.result?.details?.source === 'rubato-history-notes-v1'
+            ? { detail: { contextMode: 'history-notes', windowId: event.result.details.window?.windowId } }
+            : {}) });
         break;
       case 'auto_compaction_end':
+        if (event.aborted || event.errorMessage) break;
         this.sawCompaction = true;
         this.event('thread.state.changed', { state: 'compacted' });
         break;

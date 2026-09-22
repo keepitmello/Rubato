@@ -18,10 +18,10 @@ function unpatched(source, marker, label) {
   }
 }
 
-function patch(path, preimageSha256, apply) {
+function patch(path, preimageSha256, apply, packageName = PACKAGE_NAME) {
   return Object.freeze({
     id: `context-window:${path}`,
-    packageName: PACKAGE_NAME,
+    packageName,
     version: PACKAGE_VERSION,
     path,
     preimageSha256,
@@ -180,12 +180,22 @@ function patchAgentSessionRuntime(source) {
             }
             const sessionContext = this.sessionManager.buildSessionContext();
             this.agent.state.messages = sessionContext.messages;
+            if (precomputed.details?.source === "rubato-history-notes-v1") {
+                // Retire only checkpoint requests belonging to the completed
+                // window, before the loop can emit or persist queued messages.
+                // User input and unrelated extension notifications stay ordered.
+                this.agent.removeQueuedMessages((message) =>
+                    message.role === "custom" &&
+                    message.customType === "rubato-context-checkpoint-request" &&
+                    message.details?.windowId !== precomputed.details.window.windowId);
+            }
             precomputed.estimatedTokensAfter = estimateMessagesTokens(sessionContext.messages);
             this.getMessageRevision();
             // A precomputed window has no generation phase. Publish start only
             // after its atomic commit so synchronous listeners cannot mutate the
             // checked source between validation and persistence.
-            this._emit({ type: "compaction_start", reason });
+            this._emit({ type: "compaction_start", reason,
+                contextMode: precomputed.details?.source === "rubato-history-notes-v1" ? "history-notes" : "summary" });
             started = true;
             await this._extensionRunner.emit({
                 type: "session_compact",
@@ -283,7 +293,8 @@ function patchAgentSessionTypes(source) {
     `    type: "compaction_start";
     reason: "manual" | "threshold" | "overflow";`,
     `    type: "compaction_start";
-    reason: "manual" | "threshold" | "overflow" | "extension";`,
+    reason: "manual" | "threshold" | "overflow" | "extension";
+    contextMode?: "history-notes" | "summary";`,
     "compaction-start-reason",
   );
   next = replaceOnce(
@@ -568,6 +579,91 @@ function patchPublicIndexTypes(source) {
   );
 }
 
+function patchAgentQueues(source) {
+  return replaceOnce(source,
+    `    /** Remove all queued steering messages. */
+    clearSteeringQueue() {`,
+    `    /** Remove selected queued messages without changing the order of the rest. */
+    removeQueuedMessages(predicate) {
+        for (const queue of [this.steeringQueue, this.followUpQueue]) {
+            queue.messages = queue.messages.filter((message) => !predicate(message));
+        }
+    }
+    /** Remove all queued steering messages. */
+    clearSteeringQueue() {`,
+    "remove-queued-messages");
+}
+
+function patchAgentQueueTypes(source) {
+  return replaceOnce(source,
+    `    /** Remove all queued steering messages. */
+    clearSteeringQueue(): void;`,
+    `    /** Remove selected queued messages without changing the order of the rest. */
+    removeQueuedMessages(predicate: (message: AgentMessage) => boolean): void;
+    /** Remove all queued steering messages. */
+    clearSteeringQueue(): void;`,
+    "remove-queued-messages-types");
+}
+
+function patchInteractivePresentation(source) {
+  let next = replaceOnce(source,
+    'import { createCompactionSummaryMessage } from "../../core/messages.js";',
+    'import { createContextTransitionMessage } from "../../rubato-features/context-window/presentation.mjs";',
+    "presentation-import");
+  next = replaceOnce(next,
+    "this.addMessageToChat(createCompactionSummaryMessage(event.result.summary, event.result.tokensBefore, new Date().toISOString()));",
+    "this.addMessageToChat(createContextTransitionMessage(event.result.summary, event.result.tokensBefore, new Date().toISOString()));",
+    "live-presentation");
+  next = replaceOnce(next,
+    "            const messages = sessionEntryToContextMessages(entry);",
+    `            const messages = entry.type === "compaction"
+                ? [createContextTransitionMessage(entry.summary, entry.tokensBefore, entry.timestamp)]
+                : sessionEntryToContextMessages(entry);`,
+    "restored-presentation");
+  return replaceOnce(next,
+    "this.showStatusIndicator(new CompactionStatusIndicator(this.ui, event.reason));\n                this.ui.requestRender();",
+    "this.showStatusIndicator(new CompactionStatusIndicator(this.ui, event.reason, event.contextMode));\n                this.ui.requestRender();",
+    "progress-presentation");
+}
+
+function patchCompactionComponent(source) {
+  const next = `import { decodeBootstrap } from "../../../rubato-features/context-notes/src/context-notes/protocol.mjs";\n${source}`;
+  return replaceOnce(next,
+    `    updateDisplay() {
+        this.clear();
+        const content = new Container();`,
+    `    updateDisplay() {
+        this.clear();
+        if (decodeBootstrap(this.message.summary)) {
+            this.addChild(new Text(theme.fg("customMessageLabel", "Context Optimized"), 0, 0));
+            return;
+        }
+        const content = new Container();`,
+    "notes-component");
+}
+
+function patchCompactionStatus(source) {
+  return replaceOnce(source,
+    `    constructor(ui, reason) {
+        const cancelHint = \`(\${keyText("app.interrupt")} to cancel)\`;
+        const label = reason === "manual"`,
+    `    constructor(ui, reason, contextMode) {
+        const cancelHint = \`(\${keyText("app.interrupt")} to cancel)\`;
+        const label = contextMode === "history-notes" ? "Optimizing context..." : reason === "manual"`,
+    "notes-progress");
+}
+
+function patchCompactionStatusTypes(source) {
+  return replaceOnce(
+    replaceOnce(source,
+      'export type CompactionStatusReason = "manual" | "threshold" | "overflow";',
+      'export type CompactionStatusReason = "manual" | "threshold" | "overflow" | "extension";',
+      "status-reason-types"),
+    "constructor(ui: TUI, reason: CompactionStatusReason);",
+    'constructor(ui: TUI, reason: CompactionStatusReason, contextMode?: "history-notes" | "summary");',
+    "status-mode-types");
+}
+
 const ownedFile = (path, sourcePath) => Object.freeze({
   target: "package",
   packageName: PACKAGE_NAME,
@@ -578,12 +674,22 @@ const ownedFile = (path, sourcePath) => Object.freeze({
 
 export const files = Object.freeze([
   ownedFile(
+    "dist/rubato-features/context-window/presentation.mjs",
+    fileURLToPath(new URL("./presentation.mjs", import.meta.url)),
+  ),
+  ownedFile(
     "dist/rubato-features/context-window/remap-hidden-custom-turns.mjs",
     fileURLToPath(new URL("./remap-hidden-custom-turns.mjs", import.meta.url)),
   ),
 ]);
 
 export const patches = Object.freeze([
+  patch("dist/modes/interactive/interactive-mode.js", "8c9275944466afe2df78dcf02f2f6c83f6bc46fb0fdbd7257a3ef9d1da1ed027", patchInteractivePresentation),
+  patch("dist/modes/interactive/components/compaction-summary-message.js", "4b8858901b0182a85a7628313d398049ee23a27c00a2fe9416eeb14edae3c087", patchCompactionComponent),
+  patch("dist/modes/interactive/components/status-indicator.js", "8b38a337bbe71204b3fc7dce61cd49195f18d176bfdab2fe2a92ff5120f54e71", patchCompactionStatus),
+  patch("dist/modes/interactive/components/status-indicator.d.ts", "282b21352f9f6e2b607169db5c6e9e089a3f8d3ca6e8c464a1e7aff4c3e6bb30", patchCompactionStatusTypes),
+  patch("dist/agent.js", "d81d9c9b57d61e052542b70f772e2ac0ff7b9d9e43910583b42c47709cad39e6", patchAgentQueues, "@earendil-works/pi-agent-core"),
+  patch("dist/agent.d.ts", "baca5ee2e9ad8809848f64cee5c993323a107695a57bf68047cd9f5a9afcd2b4", patchAgentQueueTypes, "@earendil-works/pi-agent-core"),
   patch("dist/core/agent-session.js", "edaff7055ced7d49d25135c92415fbbfd9c14c4a29be5a79510ab9216045d6d9", patchAgentSessionRuntime),
   patch("dist/core/agent-session.d.ts", "423bdca09eabd78aa1e729136dd9a1e2fff3b8116c6bc2d3fee3337b269a8432", patchAgentSessionTypes),
   patch("dist/core/messages.js", "8688b3f6eb28865f779cac998bd4754d1a4f08703200dfe0dd5a799aa0d42ef6", patchMessagesRuntime),

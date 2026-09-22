@@ -180,6 +180,8 @@ for (const [scenario, steps] of [
   ["paired-eval", [noteCode + "await tool.new_context({});"]],
   ["separate-eval", [noteCode, "await tool.new_context({});"]],
   ["budget-checkpoint", ["@budget", noteCode]],
+  ["queued-checkpoint", ["@budget", "@busy", noteCode]],
+  ["proactive-checkpoint", ["@budget", noteCode + "await tool.new_context({});"]],
   ["repair-missing-note", ["@budget", "@missed", noteCode]],
   ["repair-exhausted", ["@budget", "@missed", "@missed"]],
   ["repair-mixed-work", [
@@ -239,6 +241,15 @@ for (const [scenario, steps] of [
       contexts.push(structuredClone(context.messages));
       assert.ok(index <= steps.length, "checkpoint repair must not loop");
       const step = steps[index];
+      if (step === "@budget" && ["queued-checkpoint", "proactive-checkpoint"].includes(scenario)) {
+        // An unrelated notification is ahead of the checkpoint in the default
+        // one-at-a-time steering queue. The next turn has not seen the request.
+        session.agent.steer({ role: "custom", customType: "unrelated-notice",
+          content: "Keep this notification", display: true, timestamp: Date.now() });
+        if (scenario === "proactive-checkpoint") {
+          session.agent.steer({ role: "user", content: "Preserve queued user input", timestamp: Date.now() });
+        }
+      }
       const message = step === undefined || step.startsWith("@")
         ? assistant([{ type: "text", text: step ?? "continued after checkpoint" }])
         : assistant([{ type: "toolCall", name: "eval", id: `eval-${index}`,
@@ -266,6 +277,18 @@ for (const [scenario, steps] of [
       m.details.cells[0].status === "complete"), JSON.stringify(receipts));
     assert.match(JSON.stringify(contexts.at(-1)), /rubato_context_window_v1/);
     assert.doesNotMatch(JSON.stringify(contexts.at(-1)), /Original request must remain/);
+    if (["queued-checkpoint", "proactive-checkpoint"].includes(scenario)) {
+      const boundary = entries.findIndex((e) => e.type === "compaction");
+      assert.equal(entries.slice(boundary + 1).some((e) => e.customType === "rubato-context-checkpoint-request"), false,
+        "a previous window's checkpoint must never be delivered or persisted after its commit");
+      assert.doesNotMatch(JSON.stringify(contexts.at(-1)), /체크포인트 전용 턴/);
+      assert.ok(entries.some((e) => e.customType === "unrelated-notice"), "unrelated notifications survive");
+      assert.equal(entries.filter((e) => e.customType === "rubato-context-checkpoint-request").length,
+        scenario === "queued-checkpoint" ? 1 : 0);
+      if (scenario === "proactive-checkpoint") {
+        assert.match(JSON.stringify(contexts.at(-1)), /Preserve queued user input/);
+      }
+    }
     if (scenario.startsWith("repair-")) {
       assert.ok(entries.some((e) => e.customType === "rubato-context-checkpoint-request" &&
         JSON.stringify(e.content).includes("다시 저장")));
@@ -277,15 +300,15 @@ for (const [scenario, steps] of [
 
 test("descriptor is stock-locked, drift-failing, and composes with shared core features", () => {
   assert.equal(feature.id, "context-window");
-  assert.equal(files.length, 1);
-  assert.equal(files[0].path, "dist/rubato-features/context-window/remap-hidden-custom-turns.mjs");
-  assert.equal(patches.length, 11);
+  assert.equal(files.length, 2);
+  assert.ok(files.some((entry) => entry.path === "dist/rubato-features/context-window/remap-hidden-custom-turns.mjs"));
+  assert.equal(patches.length, 17);
   assert.equal(new Set(patches.map((entry) => entry.path)).size, patches.length);
-  assert.ok(patches.every((entry) => entry.packageName === "@earendil-works/pi-coding-agent"));
+  assert.ok(patches.every((entry) => ["@earendil-works/pi-coding-agent", "@earendil-works/pi-agent-core"].includes(entry.packageName)));
   assert.ok(patches.every((entry) => entry.version === "0.86.1"));
   assert.ok(patches.every((entry) => /^[a-f0-9]{64}$/.test(entry.preimageSha256)));
-  assert.equal(staged.receipt.files.filter((entry) => entry.patches.some((id) => id.startsWith("context-window/"))).length, 11);
-  assert.equal(staged.receipt.addedFiles.filter((entry) => entry.feature === "context-window").length, 1);
+  assert.equal(staged.receipt.files.filter((entry) => entry.patches.some((id) => id.startsWith("context-window/"))).length, 17);
+  assert.equal(staged.receipt.addedFiles.filter((entry) => entry.feature === "context-window").length, 2);
 
   for (const entry of staged.receipt.files.filter((item) => item.patches.some((id) => id.startsWith("context-window/")))) {
     const syntax = entry.path.endsWith(".js")
@@ -315,6 +338,52 @@ test("descriptor is stock-locked, drift-failing, and composes with shared core f
     ),
     /expected anchor is missing/,
   );
+});
+
+test("actual terminal renders notes transitions, not the model's raw window carrier, live and on resume", async () => {
+  const dist = join(runtime.codingAgentDir, "dist");
+  const { initTheme } = await import(pathToFileURL(join(dist, "modes/interactive/theme/theme.js")));
+  const { InteractiveMode } = await import(pathToFileURL(join(dist, "modes/interactive/interactive-mode.js")));
+  const { CompactionSummaryMessageComponent } = await import(pathToFileURL(join(dist,
+    "modes/interactive/components/compaction-summary-message.js")));
+  const { CompactionStatusIndicator } = await import(pathToFileURL(join(dist,
+    "modes/interactive/components/status-indicator.js")));
+  initTheme("dark");
+  const summary = contextProtocol.encodeBootstrap(
+    contextProtocol.nextWindow(contextProtocol.initialWindow()), "PRIVATE NOTE PATH");
+  for (const [text, expected] of [[summary, "Context Optimized"], ["Real summary", "Compacted from"]]) {
+    const entry = { type: "compaction", summary: text, tokensBefore: 12345, timestamp: new Date().toISOString() };
+    const restored = [];
+    InteractiveMode.prototype.renderSessionEntries.call({ renderSessionItems: (items) => restored.push(...items) }, [entry]);
+    const live = [];
+    await InteractiveMode.prototype.handleEvent.call({
+      isInitialized: true,
+      settingsManager: { getShowTerminalProgress: () => false },
+      clearStatusIndicator() {},
+      sessionManager: { buildContextEntries: () => [entry] },
+      chatContainer: { clear() {} }, renderSessionEntries() {},
+      addMessageToChat: (message) => live.push(message),
+      footer: { invalidate() {} }, flushCompactionQueue() {}, ui: { requestRender() {} },
+    }, { type: "compaction_end", reason: "extension", result: entry });
+    assert.equal(live.length, 1);
+    assert.equal(restored.length, 1);
+    for (const message of [...live, ...restored]) {
+      assert.equal(message.role, "compactionSummary");
+      const component = new CompactionSummaryMessageComponent(message);
+      for (const expanded of [false, true]) {
+        component.setExpanded(expanded);
+        const rendered = component.render(100).join("\n");
+        assert.match(rendered, new RegExp(expected));
+        assert.doesNotMatch(rendered, /rubato_context_window_v1|PRIVATE NOTE PATH/);
+        if (text === summary) assert.doesNotMatch(rendered, /Compacted|\\[compaction\\]/);
+      }
+    }
+  }
+  const status = new CompactionStatusIndicator({ requestRender() {} }, "extension", "history-notes");
+  try {
+    assert.match(status.render(100).join("\n"), /Optimizing context/);
+    assert.doesNotMatch(status.render(100).join("\n"), /compacting/i);
+  } finally { status.dispose(); }
 });
 
 test("staged convertToLlm remaps a trailing hidden custom to assistant before the user", async () => {
@@ -503,16 +572,23 @@ test("actual SDK commits new_context once and the immediate provider turn uses o
 
   const revisionBeforeRace = probeContext.getMessageRevision();
   probeApi.appendEntry("rubato.context-window.test-race", { marker: true });
+  const stillNeeded = { role: "custom", customType: "rubato-context-checkpoint-request",
+    content: "Still pending", details: { windowId: raceWindow.windowId }, display: true, timestamp: Date.now() };
+  result.session.agent.steer(stillNeeded);
   const compactionsBeforeRace = result.session.sessionManager.getEntries().filter((entry) => entry.type === "compaction").length;
   assert.deepEqual(await probeContext.applyCompaction({}, {
     reason: "extension",
     expectedRevision: revisionBeforeRace,
   }), { applied: false, reason: "stale" });
+  assert.equal(result.session.agent.hasQueuedMessages(), true, "a rejected cut must not retire its request");
   assert.deepEqual(await probeContext.applyCompaction({}, {
     reason: "extension",
     expectedRevision: probeContext.getMessageRevision(),
     signal: AbortSignal.abort(),
   }), { applied: false, reason: "stale" });
+  assert.equal(result.session.agent.hasQueuedMessages(), true, "a cancelled cut must not retire its request");
+  result.session.agent.removeQueuedMessages((message) => message === stillNeeded);
+  assert.equal(result.session.agent.hasQueuedMessages(), false);
   assert.equal(result.session.sessionManager.getEntries().filter((entry) => entry.type === "compaction").length, compactionsBeforeRace);
   assert.deepEqual(errors, []);
   assert.deepEqual(notices.filter((notice) => notice.level === "error"), []);

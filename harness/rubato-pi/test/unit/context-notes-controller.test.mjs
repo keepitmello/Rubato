@@ -140,15 +140,26 @@ test("manual checkpoint turn rolls after saving a note even below the budget", a
 });
 test("an incomplete checkpoint gets one repair turn before stopping", async(t)=>{
   const f=setup(t); await f.c.manual(f.ctx);
+  f.append({type:"custom_message",...f.sent.at(-1)[0]});
   f.addMessage("assistant","continued without checkpoint");
   await f.c.turnEnd({},f.ctx);
   assert.equal(f.abort.signal.aborted,false);
   assert.equal(f.c.checkpointRequested,true); assert.equal(f.sent.length,2);
+  f.append({type:"custom_message",...f.sent.at(-1)[0]});
   f.addMessage("assistant","still no checkpoint");
   await f.c.turnEnd({},f.ctx);
   assert.match(f.c.paused,/최신 작업 노트가 완성되지 않았/);
   assert.equal(f.abort.signal.aborted,true); assert.equal(f.sent.length,2);
   assert.equal(f.c.checkpointRequested,false); assert.equal(f.c.window.number,0);
+});
+test("a queued checkpoint is not retried before its own delivery", async(t)=>{
+  const f=setup(t); await f.c.manual(f.ctx);
+  f.append({type:"custom_message",customType:"unrelated-notification",content:"Keep working"});
+  f.addMessage("assistant","has not received the checkpoint yet");
+  await f.c.turnEnd({},f.ctx);
+  assert.equal(f.sent.length,1);
+  assert.equal(f.c.checkpointRetried,false);
+  assert.equal(f.abort.signal.aborted,false);
 });
 test("checkpoint turn never consumes the provider safety reserve", async(t)=>{
   const f=setup(t); f.addMessage("toolResult","a".repeat(120000),{toolName:"read"});

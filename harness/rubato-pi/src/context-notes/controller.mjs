@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { findReminder, reminderAnchor, reminderIndex, reminderMessage } from "./reminder.mjs";
 import { assertCheckpointFresh, CheckpointRefreshRequired } from "./checkpoint.mjs";
 import { readAuthoritativeBranch } from "./history-source.mjs";
@@ -62,6 +62,7 @@ export class ContextNotesController {
     this.ctx = baseContext(ctx);
     this.pending = null;
     this.checkpointRequested = false;
+    this.checkpointRequestId = null;
     this.checkpointRetried = false;
     this.fatal = null;
     this.paused = null;
@@ -392,7 +393,11 @@ export class ContextNotesController {
         }
         if (this.checkpointRequested) {
           if (fresh) await this.roll(ctx, usage.tokens >= usage.target ? "budget" : "manual");
-          else {
+          else if (this.store.branch.some((entry) => entry.type === "custom_message" &&
+              entry.customType === "rubato-context-checkpoint-request" &&
+              entry.details?.requestId === this.checkpointRequestId)) {
+            // A steering request can wait behind another notification. A turn
+            // that has not received it is not a failed checkpoint attempt.
             throw new CheckpointRefreshRequired("체크포인트 전용 턴에 최신 작업 노트가 완성되지 않았어요. 이전 문맥은 그대로 유지했어요.");
           }
         } else if (ctx.model?.contextWindow && usage.tokens >= usage.hard) {
@@ -428,8 +433,10 @@ export class ContextNotesController {
     if (this.checkpointRequested) return { requested: true, repeated: true };
     this.checkpointRequested = true;
     this.checkpointRetried = retry;
+    this.checkpointRequestId = randomUUID();
     this.paused = null;
     this.pi.sendMessage({ customType: "rubato-context-checkpoint-request", display: true,
+      details: { windowId: this.window.windowId, requestId: this.checkpointRequestId },
       content: `${reason ? `${reason}\n노트 저장 뒤 도착한 결과와 안내까지 반영해서 다시 저장해 주세요.\n` : ""}지금은 체크포인트 전용 턴이에요. 다른 작업을 진행하지 말고 현재 작업의 목표·결정·진행·실패 이유·다음 단계와 원문 항목 위치를 notes 도구에 저장한 뒤 new_context를 호출해 주세요. 다른 모델로 요약하지 마세요.` },
     { triggerTurn: true, deliverAs: "steer" });
     this.showStatus();
