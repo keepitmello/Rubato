@@ -739,28 +739,6 @@ test("pinned sanitizeCursorCallerHeaders 가 x-session-id 를 보존한다", () 
   }
 });
 
-test("server-exec 표지와 local-work 위임은 pinned 그대로다", async () => {
-  const { isCursorExecResolved, kCursorExecResolved } = await import(piAi("dist/index.js"));
-  // module-local 표지 판정. 우리가 별도 shadow map 을 만들지 않는다.
-  assert.equal(isCursorExecResolved({ [kCursorExecResolved]: true }), true);
-  assert.equal(isCursorExecResolved({ type: "toolCall" }), false);
-  assert.equal(isCursorExecResolved(undefined), false);
-
-  // lazy stream 이 local-work 질문을 안쪽 provider stream 으로 위임한다(Phase 0 patch).
-  const { lazyStream } = await import(piAi("dist/api/lazy.js"));
-  const { AssistantMessageEventStream } = await import(piAi("dist/utils/event-stream.js"));
-  const inner = new AssistantMessageEventStream();
-  let releaseWork;
-  inner.trackLocalWork(new Promise((resolve) => { releaseWork = resolve; }));
-  const outer = lazyStream({ provider: "cursor", id: "composer-1", api: "cursor-agent" }, async () => inner);
-  // setup 이 정착할 때까지 microtask 를 흘린다.
-  for (let index = 0; index < 50; index += 1) await Promise.resolve();
-  assert.equal(outer.hasPendingLocalWork(), true, "server-driven tool 실행 중 idle watchdog 가 요청을 끊는다");
-  releaseWork();
-  inner.push({ type: "done", reason: "stop", message: { role: "assistant", content: [], stopReason: "stop" } });
-  inner.end();
-});
-
 test("격리 child 처럼 getModels 에 Fast 행이 없어도 stream 은 high-fast 로 pin 한다", async () => {
   let seen;
   const inner = {

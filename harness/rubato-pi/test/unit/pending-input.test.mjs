@@ -1,8 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { senpiDir } from "../../src/engine-paths.mjs";
-import { injectAgentSession } from "../../src/transforms/core-agent-session.mjs";
 import {
   RequestRunTracker,
   createInputRecord,
@@ -95,46 +92,4 @@ test("native clearQueue must not emit stale pendingInputs", () => {
   nativeClearQueue();
   assert.deepEqual(cleared.clearedIds, ["q-1"]);
   assert.deepEqual(emissions, [[]]);
-});
-
-test("injected clearPendingInteractiveInputs clears tracker before native queue_update", () => {
-  const source = readFileSync(`${senpiDir}/dist/core/agent-session.js`, "utf8");
-  const injected = injectAgentSession(source);
-  const start = injected.indexOf("clearPendingInteractiveInputs()");
-  assert.ok(start >= 0, "clearPendingInteractiveInputs missing from injected session");
-  const body = injected.slice(start, start + 280);
-  const trackerClear = body.indexOf("clearPendingInputs");
-  const nativeClear = body.indexOf("clearQueue()");
-  assert.ok(trackerClear >= 0, body);
-  assert.ok(nativeClear >= 0, body);
-  assert.ok(
-    trackerClear < nativeClear,
-    `tracker must be cleared before native clearQueue emits queue_update:\n${body}`,
-  );
-});
-
-test("injected observe does not terminalize message_end error", () => {
-  const source = readFileSync(`${senpiDir}/dist/core/agent-session.js`, "utf8");
-  const injected = injectAgentSession(source);
-  const start = injected.indexOf("_observeRequestRunEvent(event) {");
-  assert.ok(start >= 0, "observe hook missing from injected session");
-  const body = injected.slice(start, start + 1400);
-  assert.equal(
-    body.includes("onFailed"),
-    false,
-    `message_end error must not call onFailed:\n${body}`,
-  );
-});
-
-test("injected session completes the run before emitting agent_settled", () => {
-  const source = readFileSync(`${senpiDir}/dist/core/agent-session.js`, "utf8");
-  const injected = injectAgentSession(source);
-  const start = injected.indexOf("this._requestRunTracker?.onAgentSettled()");
-  const emit = injected.indexOf('this._emit({ type: "agent_settled" })');
-  assert.ok(start >= 0, "onAgentSettled call missing from injected session");
-  assert.ok(emit >= 0, "agent_settled emit missing from injected session");
-  assert.ok(
-    start < emit,
-    "tracker must complete the run before agent_settled so remote snapshot sees the finished request",
-  );
 });

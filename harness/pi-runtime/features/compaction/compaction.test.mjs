@@ -18,6 +18,7 @@ import { stagePiRuntime } from "../../stage-runtime.mjs";
 import { runtimeFactoriesFeature } from "../runtime-factories/feature.mjs";
 import { applyFeatureToggles } from "../rubato-components/feature-toggles.mjs";
 import { compactionFeature, files, patches } from "./feature.mjs";
+import { CLAUDE_CODE_BILLING_HEADER, CLAUDE_CODE_VERSION } from "../../../rubato-pi/src/transforms/misc-claude-code-version.mjs";
 
 const featureDir = dirname(fileURLToPath(import.meta.url));
 const sourceRoot = resolve(featureDir, "../..");
@@ -208,6 +209,17 @@ test("feature is additive-only and documents the notes vs summary relationship",
     });
     assert.equal(syntax.status, 0, `${entry.path}: ${syntax.stderr}`);
   }
+});
+
+test("the staged engine sends the declared Claude Code identity, not stock's", () => {
+  // 이 패치가 유일한 주입점이다. 빠지면 stock 2.1.251 이 그대로 나가 400 을 받는다
+  // (2026-09-23 실측). 선언을 올려도 구운 엔진이 안 따라가면 여기서 깨진다.
+  const wire = readFileSync(join(
+    runtime.codingAgentDir,
+    "node_modules/@earendil-works/pi-ai/dist/api/anthropic-messages.js",
+  ), "utf8");
+  assert.ok(wire.includes(`const claudeCodeVersion = "${CLAUDE_CODE_VERSION}";`));
+  assert.ok(wire.includes(CLAUDE_CODE_BILLING_HEADER));
 });
 
 test("product threshold and circuit-breaker match the overlay contract", () => {
