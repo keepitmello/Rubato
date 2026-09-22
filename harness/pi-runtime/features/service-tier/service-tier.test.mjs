@@ -515,6 +515,78 @@ test("a [sub] account clone is judged on the model, not on the account suffix", 
   assert.equal(supportsFastMode(gatewaySub), false);
 });
 
+const CODEX = {
+  id: "gpt-5.6-sol",
+  provider: "openai-codex",
+  api: "openai-codex-responses",
+};
+
+function tierSettings(remembered) {
+  return {
+    getModelServiceTier: () => remembered,
+    setModelServiceTier() {},
+    async flush() {},
+  };
+}
+
+async function driveTier(feature, { remembered, model = CODEX } = {}) {
+  const handlers = {};
+  let payload;
+  await feature.extension({
+    on(name, fn) { handlers[name] = fn; },
+    registerCommand() {},
+    async setModel() {},
+  });
+  const ctx = {
+    cwd: "/tmp",
+    model,
+    modelRegistry: { find: () => undefined },
+    isProjectTrusted: () => false,
+    ui: { notify() {} },
+  };
+  await handlers.session_start({}, ctx);
+  payload = handlers.before_provider_request({ payload: { keep: true } }, ctx);
+  return { state: feature.getState(), payload, remembered };
+}
+
+test("session_start honors an explicit tier and ignores ambient env unless asked", async () => {
+  const forced = createServiceTierFeature({
+    initialTier: "priority",
+    settingsManagerFactory: () => tierSettings("auto"),
+    env: { RUBATO_SERVICE_TIER: "auto" },
+  });
+  const forcedRun = await driveTier(forced);
+  assert.equal(forcedRun.state.active, true);
+  assert.equal(forcedRun.payload.service_tier, "priority");
+
+  const parent = createServiceTierFeature({
+    settingsManagerFactory: () => tierSettings(undefined),
+    env: { RUBATO_SERVICE_TIER: "priority" },
+  });
+  const parentRun = await driveTier(parent);
+  assert.equal(parentRun.state.active, false);
+  assert.equal(parentRun.payload.service_tier, undefined);
+
+  const fromEnv = createServiceTierFeature({
+    readServiceTierEnv: true,
+    settingsManagerFactory: () => tierSettings("auto"),
+    env: { RUBATO_SERVICE_TIER: "priority" },
+  });
+  const envRun = await driveTier(fromEnv);
+  assert.equal(envRun.state.active, true);
+  assert.equal(envRun.payload.service_tier, "priority");
+
+  const disabled = createServiceTierFeature({
+    initialTier: "auto",
+    settingsManagerFactory: () => tierSettings("priority"),
+  });
+  const disabledRun = await driveTier(disabled, {
+    model: { ...CODEX, serviceTier: "priority" },
+  });
+  assert.equal(disabledRun.state.active, false);
+  assert.equal(disabledRun.payload.service_tier, undefined);
+});
+
 test("caller-owned wire fields are not overwritten or duplicated", () => {
   const featurePayload = { service_tier: "flex", keep: true };
   assert.equal(addServiceTierToPayload(featurePayload, "priority"), featurePayload);

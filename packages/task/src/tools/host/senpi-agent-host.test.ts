@@ -4,7 +4,7 @@ import type { ResolvedAgentSpec } from "@rubato/agent-core"
 
 import type { ManagerStartSpec, StartResult, TaskManager } from "../../manager"
 import { makeRecord } from "../output/__fixtures__/records"
-import { createSenpiAgentHandle, createSenpiAgentHost, liveModelCatalog } from "./senpi-agent-host"
+import { createSenpiAgentHandle, createSenpiAgentHost, liveModelCatalog, startSpecFromResolved, type SenpiAgentHostOptions } from "./senpi-agent-host"
 
 const SPEC: ResolvedAgentSpec = {
   prompt: "Inspect the host",
@@ -141,6 +141,36 @@ describe("createSenpiAgentHost", () => {
 
     expect(error?.code).toBe("model_unavailable")
     expect(error?.message).toBe("model missing")
+  })
+})
+
+describe("startSpecFromResolved service tier", () => {
+  const options = {
+    manager: {
+      start: async () => {
+        throw new Error("unused")
+      },
+      sendToTask: async () => {
+        throw new Error("unused")
+      },
+      cancelTask: async () => {
+        throw new Error("unused")
+      },
+      get: () => undefined,
+      subscribeChild: () => () => {},
+    },
+    models: { has: () => true },
+    parentSessionId: () => "parent-1",
+  } satisfies SenpiAgentHostOptions
+
+  test("#given fast is unset #when the start spec is built #then service_tier is absent", () => {
+    const spec = startSpecFromResolved(SPEC, options)
+    expect("service_tier" in spec).toBe(false)
+  })
+
+  test("#given fast is requested #when the start spec is built #then service_tier is priority", () => {
+    const spec = startSpecFromResolved({ ...SPEC, fast: true }, options)
+    expect(spec.service_tier).toBe("priority")
   })
 })
 

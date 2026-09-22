@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test"
 import { createTaskRecord } from "../state"
 import type { TaskRecord } from "../state"
 import { parseTaskRecord } from "../store/record-parse"
-import { buildRecordInput, promotedBackgroundMode } from "./manager-helpers"
+import { buildManagedSpec, buildRecordInput, promotedBackgroundMode } from "./manager-helpers"
 import { TaskSequence } from "./task-sequence"
 import type { ManagerStartSpec, ResolvedChildPlan } from "./types"
 
@@ -145,5 +145,65 @@ describe("task_summary record roundtrip", () => {
 
     // then
     expect(reparsed.task_summary).toBe("Audit the record plumbing")
+  })
+})
+
+describe("buildManagedSpec service tier", () => {
+  function record() {
+    return createTaskRecord({
+      parent_session_id: "session-1",
+      root_session_id: "session-1",
+      depth: 1,
+      execution_mode: "process",
+      model: "anthropic/claude-opus-4",
+      notify_on_terminal: true,
+    })
+  }
+
+  test("#given no service_tier #when the managed spec is built #then neither serviceTier nor memberEnv is set", () => {
+    const built = buildManagedSpec({
+      record: record(),
+      spec: spawnSpec({}),
+      plan: PLAN,
+      cwd: "/tmp",
+      stateDir: "/tmp/state",
+    })
+
+    expect("serviceTier" in built).toBe(false)
+    expect("memberEnv" in built).toBe(false)
+  })
+
+  test("#given a priority tier #when the managed spec is built #then the tier and env channel are set", () => {
+    const built = buildManagedSpec({
+      record: record(),
+      spec: spawnSpec({ service_tier: "priority" }),
+      plan: PLAN,
+      cwd: "/tmp",
+      stateDir: "/tmp/state",
+    })
+
+    expect(built.serviceTier).toBe("priority")
+    expect(built.memberEnv).toEqual({ RUBATO_SERVICE_TIER: "priority" })
+  })
+
+  test("#given an existing member env and a tier #when the managed spec is built #then both survive", () => {
+    const child = record()
+    const built = buildManagedSpec({
+      record: child,
+      spec: spawnSpec({
+        service_tier: "auto",
+        memberEnv: { RUBATO_TASK_MEMBER: "run::alpha" },
+      }),
+      plan: PLAN,
+      cwd: "/tmp",
+      stateDir: "/tmp/state",
+    })
+
+    expect(built.serviceTier).toBe("auto")
+    expect(built.memberEnv).toEqual({
+      RUBATO_TASK_MEMBER: "run::alpha",
+      RUBATO_TASK_MEMBER_TASK_ID: child.task_id,
+      RUBATO_SERVICE_TIER: "auto",
+    })
   })
 })
