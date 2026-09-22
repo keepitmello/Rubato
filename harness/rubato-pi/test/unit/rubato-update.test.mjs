@@ -46,7 +46,7 @@ function write(path, text) {
 
 const INSTALL_SKILLS_SRC = join(dirname(fileURLToPath(import.meta.url)), "../../../scripts/install-skills.sh");
 
-function setupFixture({ dirty = false, conflict = false, evidence = false, decoyStash = false, rebuildFailure = "", skillUpdate = false, profileSrc = false, profileTest = false, gui = false, remoteChange = true } = {}) {
+function setupFixture({ dirty = false, conflict = false, evidence = false, decoyStash = false, rebuildFailure = "", skillUpdate = false, profileSrc = false, profileTest = false, gui = false, remoteChange = true, speedData = false } = {}) {
   const root = mkdtempSync(join(tmpdir(), "rubato-update-"));
   const bare = join(root, "origin.git");
   const seed = join(root, "seed");
@@ -73,6 +73,11 @@ function setupFixture({ dirty = false, conflict = false, evidence = false, decoy
   chmodSync(join(seed, "install.sh"), 0o755);
   cpSync(INSTALL_SKILLS_SRC, join(seed, "harness/scripts/install-skills.sh"));
   chmodSync(join(seed, "harness/scripts/install-skills.sh"), 0o755);
+  if (speedData) {
+    write(join(seed, "harness/scripts/find-node.sh"), `rubato_find_node() { printf '%s\\n' '${process.execPath}'; }\n`);
+    write(join(seed, "harness/rubato-pi/scripts/auto-sync-speed-data.mjs"),
+      'import { appendFileSync } from "node:fs";\nappendFileSync(process.env.RUBATO_TEST_TRACE, "speed-data\\n");\nprocess.exitCode = Number(process.env.RUBATO_TEST_SPEED_EXIT ?? 0);\n');
+  }
   if (skillUpdate) {
     write(join(seed, "harness/skills/demo/SKILL.md"), "v1\n");
   }
@@ -92,6 +97,7 @@ function setupFixture({ dirty = false, conflict = false, evidence = false, decoy
   git(seed, ["add", "note.txt", "keep.txt", ".rubato/evidence/log.txt", "install.sh", "harness/prompts", "harness/scripts"]);
   if (skillUpdate) git(seed, ["add", "harness/skills"]);
   if (gui) git(seed, ["add", "harness/t3-integration"]);
+  if (speedData) git(seed, ["add", "harness/rubato-pi/scripts"]);
   git(seed, ["commit", "-m", "base"]);
   git(seed, ["branch", "-M", "rubato/base"]);
   git(seed, ["push", "-u", "origin", "rubato/base"]);
@@ -155,13 +161,14 @@ function setupFixture({ dirty = false, conflict = false, evidence = false, decoy
   return { root, local, home, dest, localOnly, decoySha, trace };
 }
 
-function runUpdate(fixture, { path = process.env.PATH } = {}) {
-  return spawnSync("sh", [fixture.dest, "--yes"], {
+function runUpdate(fixture, { path = process.env.PATH, args = ["--yes"], env = {} } = {}) {
+  return spawnSync("sh", [fixture.dest, ...args], {
     cwd: fixture.local,
     encoding: "utf8",
     env: {
       ...process.env,
       HOME: fixture.home,
+      USERPROFILE: fixture.home,
       GIT_OK: "1",
       GIT_CONFIG_GLOBAL: "/dev/null",
       GIT_CONFIG_SYSTEM: "/dev/null",
@@ -171,9 +178,39 @@ function runUpdate(fixture, { path = process.env.PATH } = {}) {
       // /Applications 를 읽어서, 앱이 깔린 기기에서는 need_gui=1 이 켜지고
       // 픽스처에 없는 install-gui.sh 를 부르다 6 개가 깨졌다.
       RUBATO_APPLICATIONS_DIR: join(fixture.root, "Applications"),
+      ...env,
     },
   });
 }
+
+test("successful updates and no-op updates invoke the background collection starter", () => {
+  for (const remoteChange of [true, false]) {
+    const fixture = setupFixture({ speedData: true, remoteChange });
+    const result = runUpdate(fixture);
+    assert.equal(result.status, 0, result.stderr + result.stdout);
+    assert.equal(readFileSync(fixture.trace, "utf8"), "speed-data\n");
+  }
+});
+
+test("read-only checks, disabled collection and failed updates do not launch collection", () => {
+  for (const options of [
+    { args: ["--check"] },
+    { env: { RUBATO_SPEED_DATA_UPLOAD: "0" } },
+    { failure: "skills" },
+  ]) {
+    const fixture = setupFixture({ speedData: true, rebuildFailure: options.failure ?? "" });
+    const result = runUpdate(fixture, options);
+    assert.equal(result.status, options.failure ? 1 : options.args ? 10 : 0, result.stderr + result.stdout);
+    assert.doesNotMatch(existsSync(fixture.trace) ? readFileSync(fixture.trace, "utf8") : "", /speed-data/);
+  }
+});
+
+test("collection starter failure does not change a successful updater result", () => {
+  const fixture = setupFixture({ speedData: true });
+  const result = runUpdate(fixture, { env: { RUBATO_TEST_SPEED_EXIT: "42" } });
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  assert.match(result.stdout, /업데이트 결과에는 영향이 없습니다/);
+});
 
 function fakePath(fixture, commands) {
   const bin = join(fixture.root, "fake-bin");
