@@ -5,7 +5,16 @@ import {
   CURSOR_GROK_FAST_NAME,
   CURSOR_GROK_ID,
 } from "../../src/cursor-grok-fast.mjs";
-import { CURSOR_PICKER_IDS, presentCursorPicker } from "../../src/cursor-picker.mjs";
+import {
+  CURSOR_GEMINI_38_FLASH_HIGH_ID,
+  CURSOR_GEMINI_38_FLASH_ID,
+  CURSOR_PICKER_IDS,
+  presentCursorPicker,
+} from "../../src/cursor-picker.mjs";
+
+// 피커 목록의 현재 세대 id 는 `cursor-picker.mjs` 가 소유한다 — 여기서 손으로 적으면
+// 세대가 바뀔 때마다 깨진다. fable 행은 export 된 상수가 없어 목록에서 찾는다.
+const CURSOR_FABLE_ID = CURSOR_PICKER_IDS.find((id) => id.startsWith("claude-fable"));
 
 // discovery 는 베이스 id 를 주지 않는다 — alias 표가 묶어야 피커에 행이 생긴다.
 // 런타임에 실리는 표(vendored)를 읽는다. 워크스페이스 stock 사본은 다른 세대다.
@@ -30,32 +39,32 @@ function discovered(rawIds) {
     }));
 }
 
-test("discovery 의 fable-5-1 변형이 베이스 하나로 묶여 피커에 남는다", () => {
-  // 2026-09-22 GetUsableModels 캡처의 실제 id 들. 표에 항목이 없던 동안에는
-  // 베이스로 묶이지 않아 `claude-fable-5-1` 행이 조용히 비어 있었다.
+test("discovery 의 fable 변형이 베이스 하나로 묶여 피커에 남는다", () => {
+  // GetUsableModels 캡처의 실제 id 들. 표에 항목이 없던 동안에는
+  // 베이스로 묶이지 않아 `claude-fable-5-2` 행이 조용히 비어 있었다.
   const presented = presentCursorPicker(discovered([
-    "claude-fable-5-1-high",
-    "claude-fable-5-1-low",
-    "claude-fable-5-1-medium",
-    "claude-fable-5-1-xhigh",
-    "claude-fable-5-1-max",
-    "claude-fable-5-1-thinking-high",
+    `${CURSOR_FABLE_ID}-high`,
+    `${CURSOR_FABLE_ID}-low`,
+    `${CURSOR_FABLE_ID}-medium`,
+    `${CURSOR_FABLE_ID}-xhigh`,
+    `${CURSOR_FABLE_ID}-max`,
+    `${CURSOR_FABLE_ID}-thinking-high`,
     "composer-2.5",
   ]));
-  const fable = presented.find((model) => model.id === "claude-fable-5-1");
-  assert.ok(fable, "fable-5-1 행이 피커에 없다");
+  const fable = presented.find((model) => model.id === CURSOR_FABLE_ID);
+  assert.ok(fable, "fable 행이 피커에 없다");
   assert.equal(fable.contextWindow, 1_000_000);
-  assert.equal(fable.upstreamModelId, "claude-fable-5-1-medium");
+  assert.equal(fable.upstreamModelId, `${CURSOR_FABLE_ID}-medium`);
   assert.equal(fable.thinkingLevelMap.xhigh, "xhigh");
 });
 
 test("discovery 의 grok 변형도 베이스 하나로 묶여 피커에 남는다", () => {
   const presented = presentCursorPicker(discovered([
-    "grok-4.7-high",
-    "grok-4.7-low",
-    "grok-4.7-medium",
-    "grok-4.7-xhigh",
-    "grok-4.7-high-fast",
+    `${CURSOR_GROK_ID}-high`,
+    `${CURSOR_GROK_ID}-low`,
+    `${CURSOR_GROK_ID}-medium`,
+    `${CURSOR_GROK_ID}-xhigh`,
+    `${CURSOR_GROK_ID}-high-fast`,
     "composer-2.5",
   ]));
   const grok = presented.filter((model) => String(model.id).includes("grok"));
@@ -72,9 +81,9 @@ test("피커에는 쓰던 일곱만, 목록 순서로 남는다", () => {
     cursor("gpt-5.6-sol"),
     cursor("claude-opus-5-thinking"),
     cursor("claude-opus-5"),
-    cursor("gemini-3.8-flash"),
+    cursor(CURSOR_GEMINI_38_FLASH_ID),
     cursor("kimi-k3"),
-    cursor("claude-fable-5-1"),
+    cursor(CURSOR_FABLE_ID),
     cursor(CURSOR_GROK_ID),
     cursor("default"),
   ]);
@@ -89,29 +98,29 @@ test("discovery 에 없는 id 는 만들지 않는다", () => {
   assert.deepEqual(presented.map((model) => model.id), ["gpt-5.6-sol", "composer-2.5"]);
 });
 
-test("gemini-3.8-flash 변형은 베이스 하나로 접힌 뒤 남는다", () => {
-  // pinned grouping 이 3.8 을 묶지 못해 discovery 는 variant id 로 온다.
+test("gemini 변형은 베이스 하나로 접힌 뒤 남는다", () => {
+  // pinned grouping 이 이 세대를 묶지 못해 discovery 는 variant id 로 온다.
   const presented = presentCursorPicker([
-    cursor("gemini-3.8-flash-medium"),
-    cursor("gemini-3.8-flash-high"),
-    cursor("gemini-3.8-flash-low"),
+    cursor(`${CURSOR_GEMINI_38_FLASH_ID}-medium`),
+    cursor(`${CURSOR_GEMINI_38_FLASH_ID}-high`),
+    cursor(`${CURSOR_GEMINI_38_FLASH_ID}-low`),
     cursor("composer-2.5"),
   ]);
-  assert.deepEqual(presented.map((model) => model.id), ["gemini-3.8-flash", "composer-2.5"]);
+  assert.deepEqual(presented.map((model) => model.id), [CURSOR_GEMINI_38_FLASH_ID, "composer-2.5"]);
   // display 는 베이스, wire 는 high 고정 — 베어 id 는 캐시 0%라서.
-  assert.equal(presented[0].upstreamModelId, "gemini-3.8-flash-high");
-  assert.equal(presented[0].compat?.cursorReasoning?.representativeVariantId, "gemini-3.8-flash-high");
+  assert.equal(presented[0].upstreamModelId, CURSOR_GEMINI_38_FLASH_HIGH_ID);
+  assert.equal(presented[0].compat?.cursorReasoning?.representativeVariantId, CURSOR_GEMINI_38_FLASH_HIGH_ID);
   assert.equal(presented[0].contextWindow, 1_048_576);
   assert.equal(presented[0].maxTokens, 65_536);
 });
 
-test("gemini-3.8-flash 베이스가 오면 그대로 남는다", () => {
+test("gemini 베이스가 오면 그대로 남는다", () => {
   const presented = presentCursorPicker([
-    cursor("gemini-3.8-flash"),
+    cursor(CURSOR_GEMINI_38_FLASH_ID),
     cursor("kimi-k3"),
   ]);
-  assert.deepEqual(presented.map((model) => model.id), ["gemini-3.8-flash", "kimi-k3"]);
-  assert.equal(presented[0].upstreamModelId, "gemini-3.8-flash-high");
+  assert.deepEqual(presented.map((model) => model.id), [CURSOR_GEMINI_38_FLASH_ID, "kimi-k3"]);
+  assert.equal(presented[0].upstreamModelId, CURSOR_GEMINI_38_FLASH_HIGH_ID);
 });
 
 test("grouped 3.7 저장분만 있으면 3.8을 만들지 않는다", () => {
@@ -122,21 +131,21 @@ test("grouped 3.7 저장분만 있으면 3.8을 만들지 않는다", () => {
   assert.deepEqual(presented.map((model) => model.id), ["composer-2.5"]);
 });
 
-test("grouped 3.7 위에 3.8 변형이 있으면 3.8로 접힌다", () => {
+test("grouped 3.7 위에 현재 변형이 있으면 현재 세대로 접힌다", () => {
   const presented = presentCursorPicker([
     cursor("gemini-3.7-flash"),
-    cursor("gemini-3.8-flash-high"),
-    cursor("gemini-3.8-flash-medium"),
+    cursor(`${CURSOR_GEMINI_38_FLASH_ID}-high`),
+    cursor(`${CURSOR_GEMINI_38_FLASH_ID}-medium`),
     cursor("composer-2.5"),
   ]);
-  assert.deepEqual(presented.map((model) => model.id), ["gemini-3.8-flash", "composer-2.5"]);
+  assert.deepEqual(presented.map((model) => model.id), [CURSOR_GEMINI_38_FLASH_ID, "composer-2.5"]);
 });
 
 test("Grok Fast 변형은 베이스 하나로 접힌 뒤 남는다", () => {
   const presented = presentCursorPicker([
     cursor("composer-2.5"),
-    cursor("grok-4.7-high-fast"),
-    cursor("grok-4.7-low-fast"),
+    cursor(`${CURSOR_GROK_ID}-high-fast`),
+    cursor(`${CURSOR_GROK_ID}-low-fast`),
   ]);
   assert.equal(presented.length, 2);
   assert.equal(presented[0].id, CURSOR_GROK_ID);

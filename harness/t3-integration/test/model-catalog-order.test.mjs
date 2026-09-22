@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { CURSOR_GROK_BASE_ID } from '../../../packages/model-core/src/product-model-catalog.mjs';
 import {
   MODEL_ORDER,
   applySelectionOptions,
@@ -10,20 +11,24 @@ import {
   optionDescriptorsFor,
 } from '../src/model-catalog-order.mjs';
 
+// 현재 세대 xai/cursor 행은 카탈로그가 소유한다. 여기서 손으로 적으면 세대가 바뀔 때마다
+// 이 테스트가 먼저 깨지고, 고치는 일은 값을 다시 베끼는 일이 된다.
+const XAI_GROK = MODEL_ORDER.xai[0];
+const CURSOR_GROK_FAST = `${CURSOR_GROK_BASE_ID}-high-fast`;
+
 test('T3 catalogue keeps the curated /model set and drops provider extras', () => {
-  // 현재 세대 anthropic 행은 카탈로그가 소유한다. 여기서 손으로 적으면 세대가 바뀔 때마다
-  // 이 테스트가 먼저 깨지고, 깨진 자리를 다시 베끼는 것 말고는 하는 일이 없어진다.
+  // 현재 세대 anthropic 행은 카탈로그가 소유한다.
   const [fable, opus] = MODEL_ORDER.anthropic;
   const models = [
-    { provider: 'xai', id: 'grok-4.7', name: 'Grok 4.7', reasoning: true, thinkingLevelMap: { xhigh: 'xhigh' }, api: 'openai-completions' },
+    { provider: 'xai', id: XAI_GROK, name: 'Grok', reasoning: true, thinkingLevelMap: { xhigh: 'xhigh' }, api: 'openai-completions' },
     { provider: 'anthropic', id: opus, name: 'Claude Opus', reasoning: true, api: 'anthropic-messages' },
     { provider: 'anthropic', id: fable, name: 'Claude Fable', reasoning: true, thinkingLevelMap: { max: 'max' } },
     { provider: 'anthropic', id: 'claude-opus-4-6', name: 'Claude Opus 4.6', reasoning: true },
     { provider: 'openai-codex', id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol', reasoning: true, thinkingLevelMap: { xhigh: 'xhigh', max: 'max' }, api: 'openai-codex-responses' },
     { provider: 'openai-codex', id: 'gpt-daybreak-blue-latest-fast', name: 'Daybreak Blue Fast', api: 'openai-codex-responses' },
     { provider: 'openai-codex', id: 'gpt-5.4', name: 'GPT-5.4', reasoning: true, api: 'openai-codex-responses' },
-    { provider: 'cursor', id: 'grok-4.7', name: 'Grok 4.7' },
-    { provider: 'cursor', id: 'grok-4.7-high-fast', name: 'Grok 4.7 High Fast' },
+    { provider: 'cursor', id: CURSOR_GROK_BASE_ID, name: 'Grok' },
+    { provider: 'cursor', id: CURSOR_GROK_FAST, name: 'Grok High Fast' },
     { provider: 'unknown-lab', id: 'secret', name: 'Secret' },
   ];
   const catalog = catalogForPicker(models);
@@ -31,9 +36,10 @@ test('T3 catalogue keeps the curated /model set and drops provider extras', () =
     'openai-codex/gpt-5.6-sol',
     `anthropic/${fable}`,
     `anthropic/${opus}`,
-    'xai/grok-4.7',
-    'cursor/grok-4.7',
+    `xai/${XAI_GROK}`,
+    `cursor/${CURSOR_GROK_BASE_ID}`,
   ]);
+  // 라벨 텍스트는 세대별 사실이다 — 세대가 바뀌면 사람이 한 번 확인한다.
   assert.equal(modelPickerLabel(catalog[1]), 'Fable 5.1');
   assert.equal(modelPickerLabel(catalog[3]), 'Grok 4.7');
   assert.equal(modelPickerLabel(catalog[4]), 'Grok 4.7 fast');
@@ -51,12 +57,12 @@ test('T3 catalogue keeps the curated /model set and drops provider extras', () =
 test('T3 catalogue keeps the current model even when it is outside the curated set', () => {
   const models = [
     { provider: 'openai-codex', id: 'gpt-5.4', name: 'GPT-5.4' },
-    { provider: 'xai', id: 'grok-4.7', name: 'Grok 4.7' },
+    { provider: 'xai', id: XAI_GROK, name: 'Grok' },
   ];
   const catalog = catalogForPicker(models, { provider: 'openai-codex', id: 'gpt-5.4' });
   assert.deepEqual(catalog.map((item) => `${item.provider}/${item.id}`), [
     'openai-codex/gpt-5.4',
-    'xai/grok-4.7',
+    `xai/${XAI_GROK}`,
   ]);
 });
 
@@ -101,8 +107,7 @@ test('T3 catalogue shows Anthropic account copies next to the base model', () =>
   assert.equal(modelPickerLabel(catalog[0]), 'Fable 5.1');
   assert.equal(modelPickerLabel(catalog[1]), 'Fable 5.1 [sub]');
   assert.equal(modelPickerLabel(catalog[2]), 'Opus 5.5');
-  assert.equal(modelPickerLabel(catalog[3]), 'Opus 5.5 [sub]');
-  assert.equal(modelSupportsFast({ provider: 'anthropic', id: `${opus}-sub`, api: 'anthropic-messages' }), true);
+  assert.equal(modelPickerLabel(catalog[3]), 'Opus 5.5 [sub]');  assert.equal(modelSupportsFast({ provider: 'anthropic', id: `${opus}-sub`, api: 'anthropic-messages' }), true);
 });
 
 test('selection options map T3 TraitsPicker ids onto Pi thinking and /fast', () => {
@@ -119,11 +124,11 @@ test('T3 catalogue never lists the OpenAI API provider, even as the current mode
   const models = [
     { provider: 'openai', id: 'gpt-6-astra', name: 'GPT-6 Astra', api: 'openai-responses' },
     { provider: 'openai-codex', id: 'gpt-6-astra', name: 'GPT-6 Astra', api: 'openai-codex-responses' },
-    { provider: 'xai', id: 'grok-4.7', name: 'Grok 4.7' },
+    { provider: 'xai', id: XAI_GROK, name: 'Grok' },
   ];
   const catalog = catalogForPicker(models, { provider: 'openai', id: 'gpt-6-astra' });
   assert.deepEqual(catalog.map((item) => `${item.provider}/${item.id}`), [
     'openai-codex/gpt-6-astra',
-    'xai/grok-4.7',
+    `xai/${XAI_GROK}`,
   ]);
 });

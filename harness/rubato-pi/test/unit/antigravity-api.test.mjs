@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { PRODUCT_MODEL_ORDER } from "../../../../packages/model-core/src/product-model-catalog.mjs";
 import {
   ANTIGRAVITY_API,
   ANTIGRAVITY_PROJECT_ENV,
@@ -11,9 +12,13 @@ import {
   withAntigravityCapabilities,
 } from "../../src/antigravity-api.mjs";
 
+// Antigravity flash id 는 제품 카탈로그가 소유한다 — 여기서 손으로 적으면 세대가 바뀔 때마다 깨진다.
+const FLASH_ID = PRODUCT_MODEL_ORDER["google-antigravity"][0];
+const wireId = (level) => `${FLASH_ID}-${level}`;
+
 const model = Object.freeze({
-  id: "gemini-3.8-flash",
-  name: "Gemini 3.8 Flash",
+  id: FLASH_ID,
+  name: "Gemini Flash",
   api: ANTIGRAVITY_API,
   provider: "google-antigravity",
   contextWindow: 1_048_576,
@@ -66,13 +71,13 @@ test("usage는 cache와 reasoning을 이중 계상하지 않는다", () => {
 });
 
 test("wire model은 reasoning tier를 고정한다", () => {
-  assert.equal(resolveAntigravityWireModel("gemini-3.8-flash", "medium"), "gemini-3.8-flash-medium");
+  assert.equal(resolveAntigravityWireModel(FLASH_ID, "medium"), wireId("medium"));
 });
 
 test("Flash는 생략된 reasoning을 medium으로 보낸다", () => {
-  assert.equal(resolveAntigravityWireModel("gemini-3.8-flash"), "gemini-3.8-flash-medium");
-  assert.equal(resolveAntigravityWireModel("gemini-3.8-flash", undefined), "gemini-3.8-flash-medium");
-  assert.equal(resolveAntigravityWireModel("gemini-3.8-flash", "low"), "gemini-3.8-flash-low");
+  assert.equal(resolveAntigravityWireModel(FLASH_ID), wireId("medium"));
+  assert.equal(resolveAntigravityWireModel(FLASH_ID, undefined), wireId("medium"));
+  assert.equal(resolveAntigravityWireModel(FLASH_ID, "low"), wireId("low"));
 });
 
 test("request가 project, lineage, image, tool identity와 서명을 보존한다", () => {
@@ -93,7 +98,7 @@ test("request가 project, lineage, image, tool identity와 서명을 보존한�
   }, state());
 
   assert.equal(wire.project, "project-a");
-  assert.equal(wire.model, "gemini-3.8-flash-high");
+  assert.equal(wire.model, wireId("high"));
   assert.equal(wire.request.sessionId, "wire-session");
   assert.equal(wire.request.labels.last_step_index, "1");
   const flat = wire.request.contents.flatMap((content) => content.parts);
@@ -333,6 +338,6 @@ test("cacheAudit wrapFetch는 fetch 호출 시점에 sessionId를 받는다", as
   await eventsOf(stream);
   assert.equal(seen.length, 1);
   assert.equal(seen[0].sessionId, "sess-hook");
-  assert.equal(seen[0].model, "gemini-3.8-flash");
+  assert.equal(seen[0].model, FLASH_ID);
   assert.equal(seen[0].provider, "google-antigravity");
 });

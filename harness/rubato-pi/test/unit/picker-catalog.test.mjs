@@ -14,12 +14,17 @@ function model(id) {
   return { id, name: id };
 }
 
+// 피커 명단의 현재 세대 id 는 `picker-catalog.mjs` 가 소유한다 — 여기서 손으로 적으면
+// 세대가 바뀔 때마다 깨진다.
+const CURRENT_XAI = XAI_PICKER_IDS[0];
+const [CURRENT_FABLE, CURRENT_OPUS] = ANTHROPIC_PICKER_IDS;
+
 test("목록 순서로 남고, 없는 id 는 만들지 않는다", () => {
   const kept = keepPickerIds(
-    [model("grok-4.3"), model("grok-4.7"), model("grok-4.5")],
+    [model("grok-4.3"), model(CURRENT_XAI), model("grok-4.5")],
     XAI_PICKER_IDS,
   );
-  assert.deepEqual(kept.map((entry) => entry.id), ["grok-4.7"]);
+  assert.deepEqual(kept.map((entry) => entry.id), [...XAI_PICKER_IDS]);
 });
 
 test("Anthropic 이전 세대와 dated id 는 빠진다", () => {
@@ -28,11 +33,11 @@ test("Anthropic 이전 세대와 dated id 는 빠진다", () => {
       model("claude-sonnet-4-5"),
       model("claude-sonnet-5"),
       model("claude-opus-4-8"),
-      model("claude-opus-5-5"),
+      model(CURRENT_OPUS),
       model("claude-haiku-4-5-20251001"),
       model("claude-haiku-4-5"),
       model("claude-fable-5"),
-      model("claude-fable-5-1"),
+      model(CURRENT_FABLE),
     ],
     ANTHROPIC_PICKER_IDS,
   );
@@ -103,15 +108,15 @@ test("withPickerIds 는 native filter 뒤에 겹친다", () => {
 test("두 번째 계정이 있으면 피커에 [sub] 행을 붙인다", () => {
   const provider = withSubAccountCopies({
     id: "anthropic",
-    getModels: () => [model("claude-opus-5-5"), model("claude-sonnet-5")],
-    filterModels: (models) => models.filter((entry) => entry.id === "claude-opus-5-5"),
+    getModels: () => [model(CURRENT_OPUS), model("claude-sonnet-5")],
+    filterModels: (models) => models.filter((entry) => entry.id === CURRENT_OPUS),
   });
-  assert.deepEqual(provider.filterModels(provider.getModels()).map((entry) => entry.id), ["claude-opus-5-5"]);
+  assert.deepEqual(provider.filterModels(provider.getModels()).map((entry) => entry.id), [CURRENT_OPUS]);
   assert.deepEqual(
     provider.filterModels(provider.getModels(), { accounts: [{ name: "default" }, { name: "sub" }] }).map((entry) => entry.id),
-    ["claude-opus-5-5", "claude-opus-5-5-sub"],
+    [CURRENT_OPUS, `${CURRENT_OPUS}-sub`],
   );
-  assert.ok(provider.getModels().some((entry) => entry.id === "claude-opus-5-5-sub"));
+  assert.ok(provider.getModels().some((entry) => entry.id === `${CURRENT_OPUS}-sub`));
 });
 
 // A stale second credential slot (a re-login appends one) used to grow `[sub]` rows on any
@@ -149,13 +154,13 @@ test("Codex [sub] 는 Sol 과 Astra 만 붙는다", () => {
 test("Anthropic [sub] 는 Fable 과 Opus 만 붙는다", () => {
   const provider = withSubAccountCopies({
     id: "anthropic",
-    getModels: () => [model("claude-fable-5-1"), model("claude-opus-5-5"), model("claude-sonnet-5"), model("claude-haiku-4-5")],
+    getModels: () => [model(CURRENT_FABLE), model(CURRENT_OPUS), model("claude-sonnet-5"), model("claude-haiku-4-5")],
     filterModels: (models) => models,
   });
   const credential = { accounts: [{ name: "default" }, { name: "sub" }] };
   assert.deepEqual(
     provider.filterModels(provider.getModels(), credential).map((entry) => entry.id),
-    ["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5", "claude-haiku-4-5", "claude-fable-5-1-sub", "claude-opus-5-5-sub"],
+    [CURRENT_FABLE, CURRENT_OPUS, "claude-sonnet-5", "claude-haiku-4-5", `${CURRENT_FABLE}-sub`, `${CURRENT_OPUS}-sub`],
   );
   const stored = provider.getModels().map((entry) => entry.id);
   assert.equal(stored.includes("claude-sonnet-5-sub"), false);

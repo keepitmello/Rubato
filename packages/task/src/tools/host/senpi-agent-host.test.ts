@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 
 import type { ResolvedAgentSpec } from "@rubato/agent-core"
+import { CURSOR_GROK_BASE_ID, CURSOR_GROK_DEFAULT_FAST_ID, CURSOR_GROK_PRESENTED_ID, PRODUCT_MODEL_ORDER } from "@rubato/model-core"
 
 import type { ManagerStartSpec, StartResult, TaskManager } from "../../manager"
 import { makeRecord } from "../output/__fixtures__/records"
@@ -175,59 +176,64 @@ describe("startSpecFromResolved service tier", () => {
 })
 
 describe("liveModelCatalog", () => {
+  // 세대 id 는 카탈로그가 소유한다 — 여기서 손으로 적으면 세대가 바뀔 때마다 깨진다.
+  const XAI_GROK = PRODUCT_MODEL_ORDER.xai[0]
+  const ANTIGRAVITY_FLASH = PRODUCT_MODEL_ORDER["google-antigravity"][0]
+  const ANTHROPIC_FABLE = PRODUCT_MODEL_ORDER.anthropic[0]
+
   test("#given no registry #when asked whether a model exists #then it fails closed", () => {
     const catalog = liveModelCatalog(() => undefined)
-    expect(catalog.has("xai/grok-4.7")).toBe(false)
+    expect(catalog.has(`xai/${XAI_GROK}`)).toBe(false)
     expect(catalog.list?.()).toEqual([])
   })
 
   test("#given a live registry #when the exact provider/id is present #then it admits that model only", () => {
     const catalog = liveModelCatalog(() => ({
-      getAvailable: () => [{ provider: "xai", id: "grok-4.7" }, { provider: "google-antigravity", id: "gemini-3.8-flash" }],
+      getAvailable: () => [{ provider: "xai", id: XAI_GROK }, { provider: "google-antigravity", id: ANTIGRAVITY_FLASH }],
     }))
 
-    expect(catalog.has("xai/grok-4.7")).toBe(true)
-    expect(catalog.has("google-antigravity/gemini-3.8-flash")).toBe(true)
+    expect(catalog.has(`xai/${XAI_GROK}`)).toBe(true)
+    expect(catalog.has(`google-antigravity/${ANTIGRAVITY_FLASH}`)).toBe(true)
     expect(catalog.has("missing/model")).toBe(false)
-    expect(catalog.has("grok-4.7")).toBe(false)
+    expect(catalog.has(XAI_GROK)).toBe(false)
     expect(catalog.list?.()).toEqual([
-      "xai/grok-4.7",
-      "google-antigravity/gemini-3.8-flash",
+      `xai/${XAI_GROK}`,
+      `google-antigravity/${ANTIGRAVITY_FLASH}`,
     ])
   })
 
   test("#given live extras and a Fast-only cursor row #when listed #then only catalog identities remain", () => {
     const catalog = liveModelCatalog(() => ({
       getAvailable: () => [
-        { provider: "xai", id: "grok-4.7" },
-        { provider: "cursor", id: "grok-4.7-high-fast" },
+        { provider: "xai", id: XAI_GROK },
+        { provider: "cursor", id: `${CURSOR_GROK_BASE_ID}-high-fast` },
         { provider: "cursor", id: "secret-lab" },
       ],
     }))
 
-    expect(catalog.has("cursor/grok-4.7")).toBe(true)
-    expect(catalog.has("cursor/grok-4.7-high-fast")).toBe(true)
+    expect(catalog.has(CURSOR_GROK_PRESENTED_ID)).toBe(true)
+    expect(catalog.has(CURSOR_GROK_DEFAULT_FAST_ID)).toBe(true)
     expect(catalog.has("cursor/secret-lab")).toBe(false)
-    expect(catalog.list?.()).toEqual(["xai/grok-4.7", "cursor/grok-4.7"])
+    expect(catalog.list?.()).toEqual([`xai/${XAI_GROK}`, CURSOR_GROK_PRESENTED_ID])
   })
 
   test("#given live [sub] account rows #when listed for spawn #then the picker identities stay in the catalog", () => {
     const catalog = liveModelCatalog(() => ({
       getAvailable: () => [
-        { provider: "anthropic", id: "claude-fable-5-1" },
-        { provider: "anthropic", id: "claude-fable-5-1-sub" },
+        { provider: "anthropic", id: ANTHROPIC_FABLE },
+        { provider: "anthropic", id: `${ANTHROPIC_FABLE}-sub` },
         { provider: "openai-codex", id: "gpt-5.6-sol" },
         { provider: "openai-codex", id: "gpt-5.6-sol-sub" },
       ],
     }))
 
-    expect(catalog.has("anthropic/claude-fable-5-1-sub")).toBe(true)
+    expect(catalog.has(`anthropic/${ANTHROPIC_FABLE}-sub`)).toBe(true)
     expect(catalog.has("openai-codex/gpt-5.6-sol-sub")).toBe(true)
     expect(catalog.list?.()).toEqual([
       "openai-codex/gpt-5.6-sol",
       "openai-codex/gpt-5.6-sol-sub",
-      "anthropic/claude-fable-5-1",
-      "anthropic/claude-fable-5-1-sub",
+      `anthropic/${ANTHROPIC_FABLE}`,
+      `anthropic/${ANTHROPIC_FABLE}-sub`,
     ])
   })
 })

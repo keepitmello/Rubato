@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { loadPiFeatures, PI_FEATURE_NAMES } from "../../feature-catalog.mjs";
 import { CANDIDATE_FEATURE_NAMES } from "../rubato-components/candidate-main.mjs";
 import { MODEL_ORDER, admitPickerItems, modelPickerLabel, PROVIDER_ORDER, sortModelItems } from "./catalog.mjs";
+import { CURSOR_GROK_BASE_ID, PRODUCT_MODEL_ORDER } from "./product-model-catalog.mjs";
 import { feature, files, patches, patchModelSelector } from "./patches.mjs";
 
 const featureDir = dirname(fileURLToPath(import.meta.url));
@@ -80,11 +81,13 @@ test("picker admits only the product providers, current model excepted", () => {
 });
 
 test("display labels and stock patch replace item.id", () => {
-  assert.equal(modelPickerLabel({ provider: "cursor", id: "grok-4.7", model: {} }), "Grok 4.7 fast");
+  // 특수 케이스 라벨(cursor grok 의 `fast`, antigravity 의 `Flash`)은 카탈로그의 현재
+  // id 로 판정된다. fixture 가 그 id 를 따라가야 단언이 값이 아니라 파이프라인을 본다.
+  assert.equal(modelPickerLabel({ provider: "cursor", id: CURSOR_GROK_BASE_ID, model: {} }), "Grok 4.7 fast");
   assert.equal(modelPickerLabel({ provider: "xai", id: "grok-4.7", model: {} }), "Grok 4.7");
   assert.equal(modelPickerLabel({ provider: "openai-codex", id: "gpt-6-astra", model: {} }), "Astra 6");
   assert.equal(modelPickerLabel({ provider: "openai-codex", id: "gpt-5.6-sol", model: {} }), "Sol 5.6");
-  assert.equal(modelPickerLabel({ provider: "google-antigravity", id: "gemini-3.8-flash", model: {} }), "Gemini 3.8 Flash");
+  assert.equal(modelPickerLabel({ provider: "google-antigravity", id: PRODUCT_MODEL_ORDER["google-antigravity"][0], model: {} }), "Gemini 3.8 Flash");
   assert.equal(modelPickerLabel({ provider: "anthropic", id: "claude-fable-5-1", model: {} }), "Fable 5.1");
   assert.equal(modelPickerLabel({ provider: "anthropic", id: "claude-opus-5-5", model: {} }), "Opus 5.5");
   assert.equal(modelPickerLabel({ provider: "anthropic", id: "claude-opus-5-5-sub", model: {} }), "Opus 5.5 [sub]");

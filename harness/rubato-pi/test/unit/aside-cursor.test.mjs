@@ -15,6 +15,12 @@ import {
   resolveCursorModel,
 } from "../../src/aside-cursor.mjs";
 import { activateCursorProvider, applyAsideModelsLock, createAsideCursorHandler } from "../../src/aside-cursor-server.mjs";
+import { CURSOR_GROK_ID } from "../../src/cursor-grok-fast.mjs";
+import { CURSOR_PICKER_IDS } from "../../src/cursor-picker.mjs";
+
+// 현재 세대 cursor 피커 id 는 `cursor-picker.mjs` 가 소유한다.
+const CURSOR_FABLE_ID = CURSOR_PICKER_IDS.find((id) => id.startsWith("claude-fable"));
+const CURSOR_GEMINI_ID = CURSOR_PICKER_IDS.find((id) => id.startsWith("gemini"));
 import {
   asideCursorFaceUrl,
   asideModelsUnlocked,
@@ -25,11 +31,11 @@ import {
 } from "../../src/aside-cursor-lock.mjs";
 
 test("Aside Fast id folds onto the pinned Grok 4.7 base", () => {
-  assert.equal(asideCursorModelId("cursor/grok-4.7-fast"), "grok-4.7");
-  assert.equal(asideCursorModelId("cursor/grok-4.7"), "grok-4.7");
-  assert.equal(asideCursorModelId("grok-4.7-fast"), "grok-4.7");
-  assert.equal(asideCursorModelId("cursor/claude-fable-5"), "claude-fable-5-1");
-  assert.equal(asideCursorModelId("cursor/claude-fable-5-1"), "claude-fable-5-1");
+  assert.equal(asideCursorModelId(`cursor/${CURSOR_GROK_ID}-fast`), CURSOR_GROK_ID);
+  assert.equal(asideCursorModelId(`cursor/${CURSOR_GROK_ID}`), CURSOR_GROK_ID);
+  assert.equal(asideCursorModelId(`${CURSOR_GROK_ID}-fast`), CURSOR_GROK_ID);
+  assert.equal(asideCursorModelId("cursor/claude-fable-5"), CURSOR_FABLE_ID);
+  assert.equal(asideCursorModelId(`cursor/${CURSOR_FABLE_ID}`), CURSOR_FABLE_ID);
 });
 
 test("conversation key prefers Aside session header over message hash", () => {
@@ -105,17 +111,17 @@ test("cache hit treats exclusive and inclusive input the same", () => {
 
 test("ungrouped bases resolve to a live wire variant", () => {
   const live = [
-    { id: "gemini-3.8-flash-high", provider: "cursor", api: "cursor-agent" },
-    { id: "claude-fable-5-1-medium", provider: "cursor", api: "cursor-agent" },
+    { id: `${CURSOR_GEMINI_ID}-high`, provider: "cursor", api: "cursor-agent" },
+    { id: `${CURSOR_FABLE_ID}-medium`, provider: "cursor", api: "cursor-agent" },
   ];
-  assert.equal(resolveCursorModel("cursor/gemini-3.8-flash", live).id, "gemini-3.8-flash-high");
-  assert.equal(resolveCursorModel("cursor/claude-fable-5-1", live).id, "claude-fable-5-1-medium");
-  assert.equal(resolveCursorModel("cursor/gemini-3.8-flash", []).id, "gemini-3.8-flash");
+  assert.equal(resolveCursorModel(`cursor/${CURSOR_GEMINI_ID}`, live).id, `${CURSOR_GEMINI_ID}-high`);
+  assert.equal(resolveCursorModel(`cursor/${CURSOR_FABLE_ID}`, live).id, `${CURSOR_FABLE_ID}-medium`);
+  assert.equal(resolveCursorModel(`cursor/${CURSOR_GEMINI_ID}`, []).id, CURSOR_GEMINI_ID);
 });
 
 test("catalog miss still stubs a cursor-agent Grok Fast model", () => {
-  const stub = resolveCursorModel("cursor/grok-4.7-fast", []);
-  assert.equal(stub.id, "grok-4.7");
+  const stub = resolveCursorModel(`cursor/${CURSOR_GROK_ID}-fast`, []);
+  assert.equal(stub.id, CURSOR_GROK_ID);
   assert.equal(stub.api, "cursor-agent");
   assert.equal(stub.provider, "cursor");
   assert.equal(cursorModelStub("cursor/kimi-k3").id, "kimi-k3");
@@ -141,7 +147,7 @@ test("handler streams OpenAI chunks from a fake Cursor provider", async () => {
     path: "/v1/chat/completions",
     headers: { "x-aside-session-id": "aside-1" },
     body: {
-      model: "cursor/grok-4.7-fast",
+      model: `cursor/${CURSOR_GROK_ID}-fast`,
       stream: true,
       messages: [{ role: "user", content: "hello" }],
     },
@@ -149,7 +155,7 @@ test("handler streams OpenAI chunks from a fake Cursor provider", async () => {
   assert.equal(status, 200);
   assert.match(body, /"content":"hi"/);
   assert.match(body, /\[DONE\]/);
-  assert.equal(calls[0].modelId, "grok-4.7");
+  assert.equal(calls[0].modelId, CURSOR_GROK_ID);
   assert.equal(calls[0].sessionId, "aside-1");
   assert.equal(calls[0].apiKey, "test-key");
   assert.equal(ASIDE_CURSOR_API_KEY, "rubato-cursor");
@@ -158,9 +164,9 @@ test("handler streams OpenAI chunks from a fake Cursor provider", async () => {
 test("Aside lock seeds Cursor Grok rows on an empty models file", () => {
   const locked = lockAsideModels({});
   assert.deepEqual(locked.providers.cursor.models.map((model) => model.id), [
-    "cursor/grok-4.7",
-    "cursor/grok-4.7-fast",
-    "cursor/gemini-3.8-flash",
+    `cursor/${CURSOR_GROK_ID}`,
+    `cursor/${CURSOR_GROK_ID}-fast`,
+    `cursor/${CURSOR_GEMINI_ID}`,
   ]);
 });
 
@@ -181,9 +187,9 @@ test("Aside lock points Cursor at this process and leaves xAI on default", () =>
   assert.equal(locked.providers.cursor.apiKey, ASIDE_CURSOR_API_KEY);
   assert.equal(locked.providers.cursor.api, "openai-completions");
   assert.deepEqual(locked.providers.cursor.models.map((model) => model.id), [
-    "cursor/grok-4.7",
-    "cursor/grok-4.7-fast",
-    "cursor/gemini-3.8-flash",
+    `cursor/${CURSOR_GROK_ID}`,
+    `cursor/${CURSOR_GROK_ID}-fast`,
+    `cursor/${CURSOR_GEMINI_ID}`,
   ]);
   assert.equal(locked.providers["xai-grok-oauth"].models[0].baseUrl, "https://api.x.ai/v1");
   assert.equal(locked.providers["xai-grok-oauth"].models[1].baseUrl, "https://api.x.ai/v1");
@@ -231,8 +237,8 @@ test("catalog refresh failure does not kill the Aside Cursor process", async () 
     path: "/v1/models",
   });
   assert.equal(status, 200);
-  assert.match(body, /cursor\/grok-4.7/);
-  assert.match(body, /cursor\/gemini-3.8-flash/);
+  assert.ok(body.includes(`cursor/${CURSOR_GROK_ID}`));
+  assert.ok(body.includes(`cursor/${CURSOR_GEMINI_ID}`));
 });
 
 test("launchd plist keeps the process alive after crash", () => {

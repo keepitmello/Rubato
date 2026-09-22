@@ -14,7 +14,11 @@ import test from "node:test";
 import { CLAUDE_SETUP_TOKEN_FILE_ENV, CLAUDE_SETUP_TOKEN_PREFIX } from "../../src/anthropic-setup-token.mjs";
 import { CLAUDE_CODE_BILLING_HEADER, CLAUDE_CODE_VERSION } from "../../src/transforms/misc-claude-code-version.mjs";
 import { KIRO_API_KEY_ENV } from "../../src/kiro-route.mjs";
+import { ANTHROPIC_PICKER_IDS } from "../../src/picker-catalog.mjs";
 import { directProviders } from "../../src/provider-direct.mjs";
+
+// 파생되는 현재 세대 opus 행은 피커 명단이 소유한다.
+const DERIVED_OPUS = ANTHROPIC_PICKER_IDS.find((id) => id.startsWith("claude-opus-5-"));
 
 /** 실제 token 과 겹칠 수 없는 값. 접두만 진짜와 같게 둔다 — 그 접두가 판정을 만든다. */
 const SETUP_TOKEN = `${CLAUDE_SETUP_TOKEN_PREFIX}-test-only-not-a-real-token`;
@@ -235,7 +239,7 @@ test("pinned Anthropic 모델 metadata 를 다시 적지 않았다", async () =>
   const derived = ours.filter((model) => !byId.has(model.id));
   assert.deepEqual(
     derived.map((model) => model.id).filter((id) => !id.endsWith("-sub")),
-    ["claude-opus-5-5"],
+    [DERIVED_OPUS],
   );
 
   // 파생 행의 틀도 손으로 적지 않았다. id·표시명·가격만 다르고 나머지는 틀 그대로다.

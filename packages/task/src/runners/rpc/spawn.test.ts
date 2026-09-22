@@ -3,6 +3,7 @@ import { homedir, tmpdir } from "node:os"
 import { dirname, isAbsolute, join, relative, sep } from "node:path"
 import { describe, expect, test } from "bun:test"
 
+import { CURSOR_GROK_DEFAULT_FAST_ID, CURSOR_GROK_PRESENTED_ID } from "@rubato/model-core"
 import {
   buildChildArgs,
   buildRpcModelCatalogSpawn,
@@ -141,8 +142,8 @@ describe("buildChildArgs", () => {
   })
 
   test("#given the Cursor picker identity #when building child args #then --model is the live Fast row", () => {
-    const args = buildChildArgs({ ...baseSpec, model: "cursor/grok-4.7" })
-    expect(args).toEqual(["--no-extensions", "--model", "cursor/grok-4.7-high-fast"])
+    const args = buildChildArgs({ ...baseSpec, model: CURSOR_GROK_PRESENTED_ID })
+    expect(args).toEqual(["--no-extensions", "--model", CURSOR_GROK_DEFAULT_FAST_ID])
   })
 
   test("#given a spec with neither model nor extensions #when building child args #then only no-extensions is present", () => {

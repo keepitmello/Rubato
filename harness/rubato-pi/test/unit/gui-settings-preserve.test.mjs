@@ -5,6 +5,10 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { PRODUCT_MODEL_ORDER } from "../../../../packages/model-core/src/product-model-catalog.mjs";
+
+// 설치기가 시드하는 기본 모델은 제품 카탈로그의 현재 xai 행이다.
+const DEFAULT_MODEL = `xai/${PRODUCT_MODEL_ORDER.xai[0]}`;
 
 // `install-gui.sh --apply` runs on every `rubato restart` and every
 // `rubato update`, and write-gui-settings.mjs is the step inside it that
@@ -41,7 +45,7 @@ function writeSettings(t, existing) {
 test("a first install gets a working default model", (t) => {
   const { settings } = writeSettings(t, null);
   assert.equal(settings.defaultModelSelection.instanceId, "rubato");
-  assert.equal(settings.defaultModelSelection.model, "xai/grok-4.7");
+  assert.equal(settings.defaultModelSelection.model, DEFAULT_MODEL);
   // The keys must exist: an absent textGenerationModelSelection decodes to
   // codex and pulls a driver we just turned off back onto the screen.
   assert.ok(settings.textGenerationModelSelection);
@@ -59,8 +63,8 @@ test("a reinstall keeps the model the user chose, options and all", (t) => {
   assert.deepEqual(settings.defaultModelSelection, chosen);
   // Thread titles and commit messages are errands: they get the cheap model,
   // not whatever expensive one the user picked for the conversation.
-  assert.equal(settings.textGenerationModelSelection.model, "xai/grok-4.7");
-  assert.equal(settings.sourceControlWriterModelSelection.model, "xai/grok-4.7");
+  assert.equal(settings.textGenerationModelSelection.model, DEFAULT_MODEL);
+  assert.equal(settings.sourceControlWriterModelSelection.model, DEFAULT_MODEL);
 });
 
 test("a reinstall keeps an errand model the user set by hand", (t) => {
