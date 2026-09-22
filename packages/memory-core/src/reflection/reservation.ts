@@ -154,6 +154,23 @@ export class ReflectionReservationStore {
     })
   }
 
+  /**
+   * Give the queued run a fresh id when its current id already names a finished run.
+   *
+   * Ids used to come from a per-process counter, so a request queued by one process could carry
+   * the id of a run another process had already completed. Launching it would write into that
+   * run's directory and completion record. Returns the new id, or null when nothing changed.
+   */
+  async reissuePendingRunId(isTaken: (runId: string) => Promise<boolean>): Promise<string | null> {
+    return this.locked(undefined, async () => {
+      const current = await this.readStateUnlocked()
+      if (current.pending === undefined || !(await isTaken(current.pending.runId))) return null
+      const runId = this.createRunId()
+      await this.writeStateUnlocked({ ...current, pending: { ...current.pending, runId } })
+      return runId
+    })
+  }
+
   async readState(): Promise<ReservationState> {
     return this.locked(undefined, () => this.readStateUnlocked())
   }

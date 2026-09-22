@@ -10,6 +10,7 @@ import type { RunLivenessSeams } from "./run-liveness"
 
 export type ReservationStatePort = ReflectionReservationPort & {
   readState(): Promise<{ readonly active?: ReservedRun }>
+  reissuePendingRunId?(isTaken: (runId: string) => Promise<boolean>): Promise<string | null>
 }
 
 export interface RunFinalizationContext extends RunLivenessSeams {

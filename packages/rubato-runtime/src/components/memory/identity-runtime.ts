@@ -42,7 +42,12 @@ export interface MemoryIdentityRuntimeDeps {
   readonly logger?: ComponentLogger
   /** Agent home resolved for the sandbox writable grant; defaults to resolveAgentHome on process.env. */
   readonly resolveAgentDir?: () => string
-  readonly childLaunch?: { readonly command: string; readonly prefixArgs: readonly string[] }
+  /** Host-owned child command, leading args, and any env the host engine needs in a child. */
+  readonly childLaunch?: {
+    readonly command: string
+    readonly prefixArgs: readonly string[]
+    readonly env?: Readonly<Record<string, string>>
+  }
 }
 
 export interface MemoryIdentityRuntime {
@@ -132,7 +137,11 @@ export function createIdentityRuntime(
     ...(deps.liveSession === undefined ? {} : { liveSession: deps.liveSession }),
     ...(deps.childLaunch === undefined
       ? {}
-      : { senpiCommand: deps.childLaunch.command, senpiPrefixArgs: deps.childLaunch.prefixArgs }),
+      : {
+          senpiCommand: deps.childLaunch.command,
+          senpiPrefixArgs: deps.childLaunch.prefixArgs,
+          ...(deps.childLaunch.env === undefined ? {} : { env: { ...process.env, ...deps.childLaunch.env } }),
+        }),
   })
   const launch = (run: ReservedRun): void => {
     void runner.launch(run).then((result) => {

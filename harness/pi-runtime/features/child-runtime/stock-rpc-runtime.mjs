@@ -257,7 +257,14 @@ export function resolvePiMemoryChildLaunch({ root, execPath = process.execPath }
   for (const entry of [cli, providers]) {
     if (!existsSync(entry)) throw new Error(`memory child launch entry is missing: ${entry}`)
   }
-  return Object.freeze({ command: execPath, prefixArgs: Object.freeze([cli, "-e", providers]) })
+  // Without the notes extension a history-notes session refuses every request
+  // (engine-gate), and history-notes is the default. A one-shot print child
+  // has no notes window to keep, so it runs in summary mode.
+  return Object.freeze({
+    command: execPath,
+    prefixArgs: Object.freeze([cli, "-e", providers]),
+    env: Object.freeze({ RUBATO_CONTEXT_MODE: "summary" }),
+  })
 }
 
 export const PI_PACKAGE = STOCK_PACKAGE
