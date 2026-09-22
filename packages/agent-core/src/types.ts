@@ -36,6 +36,8 @@ export type ResolvedAgentSpec = {
   readonly preset?: string
   readonly summary?: string
   readonly instructions?: string
+  // Child-only priority request. Absent means the spawn must not grow a service-tier field.
+  readonly fast?: boolean
 }
 
 export type AgentStatus =

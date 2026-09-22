@@ -255,3 +255,69 @@ describe("variant threading", () => {
     expect(captured?.thinkingLevel).toBe("high")
   })
 })
+
+describe("service tier threading", () => {
+  test("#given a managed spec with a service tier #when the rpc adapter starts #then service_tier reaches the rpc spec", async () => {
+    let captured: RpcRunnerSpec | undefined
+    const runner: RpcRunnerLike = {
+      start: async (spec) => {
+        captured = spec
+        return fakeRpcHandle()
+      },
+    }
+
+    await createRpcManagedRunner(runner).start({
+      ...managedSpec(),
+      serviceTier: "priority",
+      memberEnv: { RUBATO_SERVICE_TIER: "priority" },
+    })
+
+    expect(captured?.service_tier).toBe("priority")
+    expect(captured?.memberEnv).toEqual({ RUBATO_SERVICE_TIER: "priority" })
+  })
+
+  test("#given a managed spec without a service tier #when the rpc adapter starts #then no service_tier field is set", async () => {
+    let captured: RpcRunnerSpec | undefined
+    const runner: RpcRunnerLike = {
+      start: async (spec) => {
+        captured = spec
+        return fakeRpcHandle()
+      },
+    }
+
+    await createRpcManagedRunner(runner).start(managedSpec())
+
+    expect(captured).toBeDefined()
+    expect("service_tier" in (captured ?? {})).toBe(false)
+    expect(captured?.memberEnv).toBeUndefined()
+  })
+
+  test("#given a managed spec with a service tier #when the in-process adapter starts #then the tier reaches the child spec", async () => {
+    let captured: ChildSpec | undefined
+    const runner: InProcessRunnerLike = {
+      start: (spec) => {
+        captured = spec
+        return Promise.resolve(fakeInProcessHandle({ status: "completed", finalResponse: "ok" }))
+      },
+    }
+
+    await createInProcessManagedRunner(runner).start({ ...managedSpec(), serviceTier: "priority" })
+
+    expect(captured?.serviceTier).toBe("priority")
+  })
+
+  test("#given a managed spec without a service tier #when the in-process adapter starts #then no tier field is set", async () => {
+    let captured: ChildSpec | undefined
+    const runner: InProcessRunnerLike = {
+      start: (spec) => {
+        captured = spec
+        return Promise.resolve(fakeInProcessHandle({ status: "completed", finalResponse: "ok" }))
+      },
+    }
+
+    await createInProcessManagedRunner(runner).start(managedSpec())
+
+    expect(captured).toBeDefined()
+    expect("serviceTier" in (captured ?? {})).toBe(false)
+  })
+})
