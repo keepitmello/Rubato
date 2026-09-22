@@ -150,7 +150,12 @@ export function effectiveDuration(sample) {
   if (sample?.networkStatus === "healthy") return sample.clientDurationMs;
   // Probe warmup has not classified the route yet. That is not a slow path, so the
   // first turns in a session can still paint Speed N. Degraded stays out.
-  if (sample?.networkStatus === "unknown" && sample?.networkSource === "probe") {
+  // Custom providers have no probe route. Their client duration is the only
+  // clock, so they still score; a declared degraded probe stays excluded.
+  if (
+    sample?.networkStatus === "unknown"
+    && (sample?.networkSource === "probe" || sample?.networkSource === "undeclared")
+  ) {
     return sample.clientDurationMs;
   }
   return undefined;

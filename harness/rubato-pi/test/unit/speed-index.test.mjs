@@ -168,6 +168,11 @@ test("unknown effort, degraded network, auxiliary stream, and errors are unscore
     serverDurationMs: 350,
   })), 800);
   assert.equal(effectiveDuration(sample({
+    networkStatus: "unknown",
+    networkSource: "undeclared",
+    clientDurationMs: 800,
+  })), 800);
+  assert.equal(effectiveDuration(sample({
     networkStatus: "degraded",
     networkSource: "probe",
     clientDurationMs: 800,

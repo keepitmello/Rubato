@@ -250,6 +250,11 @@ const edits = {
       '  const showMessage = (message: ChatMessage) =>\n    !/^assistant:pi:[^:]+:[a-f0-9]{24}:reasoning$/.test(message.id) &&\n    (message.role !== "user" || !foldedAnswerMessageIds.has(message.id));',
       'replace',
     ],
+    [
+      '    if (activity.kind === "context-window.updated") continue;\n    if (activity.kind === "turn.plan.updated") continue;',
+      '    if (activity.kind === "context-window.updated") continue;\n    if (activity.kind === "session.speed.updated") continue;\n    if (activity.kind === "turn.plan.updated") continue;',
+      'replace',
+    ],
   ],
   // 중간 발화는 완료 후 접되, 마지막 답변의 연속된 조각은 전부 남긴다.
   // 사고/답변 분리는 브리지의 이벤트 타입이 맡는다.
@@ -317,6 +322,11 @@ const edits = {
     [
       '    const firstAssistantMessageId = firstAssistantMessageIdByTurn.get(turnId);\n    const terminalAssistantMessageId = terminalAssistantMessageIdByTurn.get(turnId);\n    const hiddenEntryIds = new Set(\n      entries\n        .filter(\n          (entry) =>\n            entry.id !== firstAssistantMessageId &&\n            entry.id !== terminalAssistantMessageId &&\n            !(entry.type === "activity-group" && isUserInputActivityGroup(entry)),\n        )\n        .map((entry) => entry.id),\n    );',
       '    const terminalAssistantMessageId = terminalAssistantMessageIdByTurn.get(turnId);\n    const terminalIndex = entries.findIndex((entry) => entry.id === terminalAssistantMessageId);\n    // 웹과 같은 규칙이다. 답변은 마지막 조각만 남기지 않고, 사고 행은 덩어리에\n    // 넣지 않는다.\n    let answerStartIndex = terminalIndex;\n    while (answerStartIndex > 0) {\n      const previous = entries[answerStartIndex - 1];\n      if (previous?.type !== "message" || previous.message.role !== "assistant") break;\n      answerStartIndex -= 1;\n    }\n    const hiddenEntryIds = new Set(\n      entries\n        .filter(\n          (entry, index) =>\n            !(\n              entry.type === "message" &&\n              entry.message.role === "assistant" &&\n              index >= answerStartIndex\n            ) &&\n            !(entry.type === "activity-group" && isUserInputActivityGroup(entry)),\n        )\n        .map((entry) => entry.id),\n    );',
+      'replace',
+    ],
+    [
+      '    if (activity.kind === "context-window.updated") continue;\n    if (activity.summary === "Checkpoint captured") continue;',
+      '    if (activity.kind === "context-window.updated") continue;\n    if (activity.kind === "session.speed.updated") continue;\n    if (activity.summary === "Checkpoint captured") continue;',
       'replace',
     ],
   ],

@@ -1,7 +1,8 @@
 /**
- * Every provider registered in provider-direct.mjs must declare a probe origin
- * or a trustworthy server-duration source. Missing / loopback / opaque →
- * network_unknown and Speed —.
+ * Direct providers declare a probe origin or a trustworthy server-duration
+ * source. A missing route still scores on client duration so custom
+ * registrations (b-ai, models.json) can paint Speed N. Loopback stays
+ * unsupported. A declared degraded probe still excludes the call.
  *
  * Origins are the actual non-loopback request hosts pinned factories use.
  * Kiro is a loopback sidecar; v1 does not probe it and does not score it.
@@ -19,6 +20,7 @@ export const SPEED_INDEX_NETWORK_ROUTES = Object.freeze({
     origin: "https://daily-cloudcode-pa.googleapis.com",
   }),
   opencode: Object.freeze({ kind: "probe", origin: "https://opencode.ai/zen/v1" }),
+  "b-ai": Object.freeze({ kind: "probe", origin: "https://api.b.ai/v1" }),
 });
 
 export function networkRouteFor(providerId) {
