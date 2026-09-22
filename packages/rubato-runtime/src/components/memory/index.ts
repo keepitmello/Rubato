@@ -29,6 +29,11 @@ export interface MemoryComponentOptions {
   readonly resolveCwd?: () => string
   readonly createRuntime?: MemoryWiringOptions["createRuntime"]
   readonly refreshStatus?: MemoryWiringOptions["refreshStatus"]
+  /**
+   * How to spawn reflection/dream children. The host owns its engine, so it names the command;
+   * without one the worker falls back to resolving a senpi CLI.
+   */
+  readonly childLaunch?: MemoryWiringOptions["childLaunch"]
 }
 
 type SessionUi = { notify(message: string, level: "error" | "warning"): void }
@@ -78,6 +83,7 @@ export function createMemoryComponent(options: MemoryComponentOptions = {}): Rub
         logger: ctx.logger,
         ...(options.createRuntime === undefined ? {} : { createRuntime: options.createRuntime }),
         ...(options.refreshStatus === undefined ? {} : { refreshStatus: options.refreshStatus }),
+        ...(options.childLaunch === undefined ? {} : { childLaunch: options.childLaunch }),
         // Reuse the boot snapshot: registration must not add a loadConfig() call, because the
         // enablement latch depends on the ORDER of reads across boot -> session_start -> reload.
         toolExposure: bootConfig.tool_exposure,

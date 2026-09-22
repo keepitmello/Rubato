@@ -4,7 +4,11 @@ import type { RubatoComponent } from "../../../../packages/rubato-runtime/src/ex
 
 // Existing components remain the implementation owners. Candidate builds must
 // surface failed registration; the legacy optional startup policy is unchanged.
-export const createRubatoComponentExtension = (options: { resolveCwd?: () => string; createTaskOptions?: (module: any) => any } = {}) => {
+export const createRubatoComponentExtension = (options: {
+  resolveCwd?: () => string;
+  createTaskOptions?: (module: any) => any;
+  memoryChildLaunch?: { command: string; prefixArgs: readonly string[] };
+} = {}) => {
   const task: RubatoComponent = {
     name: "task",
     async register(pi, ctx) {
@@ -13,7 +17,8 @@ export const createRubatoComponentExtension = (options: { resolveCwd?: () => str
       await taskModule.createTaskComponent(taskOptions).register(pi, ctx);
     },
   };
-  return composeRubatoExtension(createRubatoComponents(task, options), { logger: {
+  const { createTaskOptions: _createTaskOptions, ...componentOptions } = options;
+  return composeRubatoExtension(createRubatoComponents(task, componentOptions), { logger: {
   info: (message, details) => console.info(message, details),
   warn: (message, details) => {
     if (message.includes("ExtensionAPI version mismatch") || message.includes("component skipped")) throw new Error(`${message}: ${JSON.stringify(details)}`);

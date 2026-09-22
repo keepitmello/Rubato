@@ -95,6 +95,7 @@ export function createMemoryRuntimeWiring(
       resolveParentContextTokens,
       resolveParentSessionFile,
       resolveParentCacheReusable,
+      ...(options.childLaunch === undefined ? {} : { childLaunch: options.childLaunch }),
       ...(options.logger === undefined ? {} : { logger: options.logger }),
       ...(liveSession === undefined
         ? {}
