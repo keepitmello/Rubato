@@ -81,26 +81,26 @@ describe("product model catalog", () => {
   })
 
   test("#given anthropic account rows #when labeled #then sub is a picker suffix not a different model family", () => {
-    expect(productCatalogLabel({ provider: "anthropic", id: "claude-opus-5" })).toBe("Opus 5")
-    expect(productCatalogLabel({ provider: "anthropic", id: "claude-opus-5-sub" })).toBe("Opus 5 [sub]")
+    expect(productCatalogLabel({ provider: "anthropic", id: "claude-opus-5-5" })).toBe("Opus 5.5")
+    expect(productCatalogLabel({ provider: "anthropic", id: "claude-opus-5-5-sub" })).toBe("Opus 5.5 [sub]")
     expect(productCatalogLabel({ provider: "anthropic", id: "claude-fable-5-1-sub" })).toBe("Fable 5.1 [sub]")
-    expect(isProductCatalogSlug("anthropic/claude-opus-5-sub")).toBe(true)
+    expect(isProductCatalogSlug("anthropic/claude-opus-5-5-sub")).toBe(true)
     expect(isProductCatalogSlug("anthropic/claude-fable-5-1-sub")).toBe(true)
     expect(admitProductCatalogItems([
-      { provider: "anthropic", id: "claude-opus-5" },
-      { provider: "anthropic", id: "claude-opus-5-sub" },
+      { provider: "anthropic", id: "claude-opus-5-5" },
+      { provider: "anthropic", id: "claude-opus-5-5-sub" },
       { provider: "anthropic", id: "claude-fable-5-1" },
       { provider: "anthropic", id: "claude-fable-5-1-sub" },
     ]).map((item: { provider: string; id: string }) => `${item.provider}/${item.id}`)).toEqual([
-      "anthropic/claude-opus-5",
-      "anthropic/claude-opus-5-sub",
+      "anthropic/claude-opus-5-5",
+      "anthropic/claude-opus-5-5-sub",
       "anthropic/claude-fable-5-1",
       "anthropic/claude-fable-5-1-sub",
     ])
     expect(availableProductModelIds([
       { provider: "anthropic", id: "claude-fable-5-1" },
       { provider: "anthropic", id: "claude-fable-5-1-sub" },
-      { provider: "anthropic", id: "claude-opus-5" },
+      { provider: "anthropic", id: "claude-opus-5-5" },
       { provider: "openai-codex", id: "gpt-5.6-sol" },
       { provider: "openai-codex", id: "gpt-5.6-sol-sub" },
     ])).toEqual([
@@ -108,7 +108,7 @@ describe("product model catalog", () => {
       "openai-codex/gpt-5.6-sol-sub",
       "anthropic/claude-fable-5-1",
       "anthropic/claude-fable-5-1-sub",
-      "anthropic/claude-opus-5",
+      "anthropic/claude-opus-5-5",
     ])
   })
 })

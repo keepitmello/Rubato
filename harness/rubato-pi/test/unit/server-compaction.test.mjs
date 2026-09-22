@@ -67,7 +67,7 @@ function fakePi() {
 }
 
 test("auto compaction is rejected with external-owner only for server-compaction models", () => {
-  for (const id of ["claude-fable-5-1", "claude-fable-5-1-sub", "claude-opus-5", "claude-opus-5-sub", "claude-sonnet-5"]) {
+  for (const id of ["claude-fable-5-1", "claude-fable-5-1-sub", "claude-opus-5-5", "claude-opus-5-5-sub", "claude-sonnet-5"]) {
     for (const reason of ["threshold", "overflow", "pre_prompt"]) {
       const result = serverCompactionRejection(anthropic(id), reason);
       assert.equal(result?.cancel, true, `${id}/${reason}`);
@@ -94,10 +94,10 @@ test("auto compaction is rejected with external-owner only for server-compaction
 test("session_before_compact handler mirrors the pure decision through the extension surface", async () => {
   const pi = fakePi();
   installServerCompaction(pi);
-  const blocked = await pi.emit("session_before_compact", { reason: "threshold" }, { model: anthropic("claude-opus-5") });
+  const blocked = await pi.emit("session_before_compact", { reason: "threshold" }, { model: anthropic("claude-opus-5-5") });
   assert.deepEqual(blocked, { cancel: true, rejectionCause: "external-owner", reason: "Anthropic server compaction owns compaction for this session" });
   assert.equal(await pi.emit("session_before_compact", { reason: "threshold" }, { model: anthropic("claude-haiku-4-5") }), undefined);
-  assert.equal(await pi.emit("session_before_compact", { reason: "extension" }, { model: anthropic("claude-opus-5") }), undefined);
+  assert.equal(await pi.emit("session_before_compact", { reason: "extension" }, { model: anthropic("claude-opus-5-5") }), undefined);
 });
 
 test("projection appends exactly one CompactionEntry with the server summary and the assistant entry as firstKept", async () => {

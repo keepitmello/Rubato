@@ -16,7 +16,7 @@ export const ANTHROPIC_COMPACTION_BLOCK_TYPE = "compaction";
 export const ANTHROPIC_COMPACTION_DELTA_TYPE = "compaction_delta";
 
 export const ANTHROPIC_SERVER_COMPACTION_MODEL_IDS = Object.freeze([
-  "claude-opus-5",
+  "claude-opus-5-5",
   "claude-sonnet-5",
   "claude-fable-5-1",
 ]);

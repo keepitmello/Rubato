@@ -28,7 +28,7 @@ test("Anthropic 이전 세대와 dated id 는 빠진다", () => {
       model("claude-sonnet-4-5"),
       model("claude-sonnet-5"),
       model("claude-opus-4-8"),
-      model("claude-opus-5"),
+      model("claude-opus-5-5"),
       model("claude-haiku-4-5-20251001"),
       model("claude-haiku-4-5"),
       model("claude-fable-5"),
@@ -103,15 +103,15 @@ test("withPickerIds 는 native filter 뒤에 겹친다", () => {
 test("두 번째 계정이 있으면 피커에 [sub] 행을 붙인다", () => {
   const provider = withSubAccountCopies({
     id: "anthropic",
-    getModels: () => [model("claude-opus-5"), model("claude-sonnet-5")],
-    filterModels: (models) => models.filter((entry) => entry.id === "claude-opus-5"),
+    getModels: () => [model("claude-opus-5-5"), model("claude-sonnet-5")],
+    filterModels: (models) => models.filter((entry) => entry.id === "claude-opus-5-5"),
   });
-  assert.deepEqual(provider.filterModels(provider.getModels()).map((entry) => entry.id), ["claude-opus-5"]);
+  assert.deepEqual(provider.filterModels(provider.getModels()).map((entry) => entry.id), ["claude-opus-5-5"]);
   assert.deepEqual(
     provider.filterModels(provider.getModels(), { accounts: [{ name: "default" }, { name: "sub" }] }).map((entry) => entry.id),
-    ["claude-opus-5", "claude-opus-5-sub"],
+    ["claude-opus-5-5", "claude-opus-5-5-sub"],
   );
-  assert.ok(provider.getModels().some((entry) => entry.id === "claude-opus-5-sub"));
+  assert.ok(provider.getModels().some((entry) => entry.id === "claude-opus-5-5-sub"));
 });
 
 // A stale second credential slot (a re-login appends one) used to grow `[sub]` rows on any
@@ -149,13 +149,13 @@ test("Codex [sub] 는 Sol 과 Astra 만 붙는다", () => {
 test("Anthropic [sub] 는 Fable 과 Opus 만 붙는다", () => {
   const provider = withSubAccountCopies({
     id: "anthropic",
-    getModels: () => [model("claude-fable-5-1"), model("claude-opus-5"), model("claude-sonnet-5"), model("claude-haiku-4-5")],
+    getModels: () => [model("claude-fable-5-1"), model("claude-opus-5-5"), model("claude-sonnet-5"), model("claude-haiku-4-5")],
     filterModels: (models) => models,
   });
   const credential = { accounts: [{ name: "default" }, { name: "sub" }] };
   assert.deepEqual(
     provider.filterModels(provider.getModels(), credential).map((entry) => entry.id),
-    ["claude-fable-5-1", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5", "claude-fable-5-1-sub", "claude-opus-5-sub"],
+    ["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5", "claude-haiku-4-5", "claude-fable-5-1-sub", "claude-opus-5-5-sub"],
   );
   const stored = provider.getModels().map((entry) => entry.id);
   assert.equal(stored.includes("claude-sonnet-5-sub"), false);
