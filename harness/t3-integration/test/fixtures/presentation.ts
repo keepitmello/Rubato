@@ -187,3 +187,61 @@
       });
     }
   }
+
+  // Rubato 의 스레드 제목은 T3 의 배경 텍스트 생성이 아니라 Pi 세션이 짓는다.
+  // 세션이 이름을 바꾸면 브리지가 그 이름을 thread.metadata.updated 로 내보내고,
+  // 인제션이 그것을 스레드 제목으로 앉힌다. 첫 메시지가 제목으로 굳어 있던
+  // 스레드에서도 앉아야 한다 — 안 그러면 앱에는 지어진 제목이 영영 안 뜬다.
+  it("mirrors a Rubato session title onto a thread that still carries its seed title", async () => {
+    const harness = await createHarness({ threadTitle: "루바토 cli쓸때 스레드 제목 지어주는 로직이 있었는데…" });
+    const events: any[] = [];
+    let sequence = 0;
+    const projection = new EventProjection({
+      threadId: "thread-1", sessionId: "rubato", instanceId: "rubato",
+      emit: (event: any) => events.push({ ...event,
+        createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, ++sequence)).toISOString() }),
+    });
+    projection.project({ type: "session_info_changed", name: "스레드 제목 배선" });
+    await harness.emitAndDrain(events);
+    const thread = (await harness.readModel()).threads.find(t => t.id === "thread-1")!;
+    expect(thread.title).toBe("스레드 제목 배선");
+    expect(thread.titleState?.source).toBe("generated");
+  });
+
+  it("keeps a title the user set themselves when the session renames itself", async () => {
+    const harness = await createHarness({ threadTitle: "내가 정한 제목" });
+    await harness.dispatch({
+      type: "thread.meta.update",
+      commandId: CommandId.make("cmd-title-manual"),
+      threadId: ThreadId.make("thread-1"),
+      title: "내가 정한 제목",
+    });
+    const events: any[] = [];
+    let sequence = 0;
+    const projection = new EventProjection({
+      threadId: "thread-1", sessionId: "rubato", instanceId: "rubato",
+      emit: (event: any) => events.push({ ...event,
+        createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, ++sequence)).toISOString() }),
+    });
+    projection.project({ type: "session_info_changed", name: "Pi 가 지은 제목" });
+    await harness.emitAndDrain(events);
+    const thread = (await harness.readModel()).threads.find(t => t.id === "thread-1")!;
+    expect(thread.title).toBe("내가 정한 제목");
+  });
+
+  // 자기 제목을 스스로 짓는 제공자(Codex·OpenCode)는 T3 의 생성이 이기게 둔다.
+  // 위 완화가 그쪽까지 열리면 배경 생성이 만든 제목을 제공자 이름이 덮는다.
+  it("still refuses a provider title for providers that generate their own", async () => {
+    const harness = await createHarness({ threadTitle: "첫 메시지 그대로" });
+    harness.emit({
+      type: "thread.metadata.updated",
+      eventId: asEventId("evt-codex-title"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: "2026-01-01T00:00:00.000Z",
+      threadId: asThreadId("thread-1"),
+      payload: { name: "Codex 가 지은 제목" },
+    });
+    await harness.drain();
+    const thread = (await harness.readModel()).threads.find(t => t.id === "thread-1")!;
+    expect(thread.title).toBe("첫 메시지 그대로");
+  });

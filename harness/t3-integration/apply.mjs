@@ -663,6 +663,20 @@ const edits = {
   ],
   'apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts': [
     [
+      '        if (thread.titleState?.source !== "manual" && canReplaceThreadTitle(thread.title)) {',
+      [
+        '        // Rubato 의 스레드 제목은 Pi 세션이 짓는다. 그 엔진은 T3 의 배경',
+        '        // 텍스트 생성을 대신 해 주지 않으므로(드라이버가 unsupported) 여기서',
+        '        // 첫 메시지를 제목으로 굳히면 앱에는 영영 지어진 제목이 안 뜬다.',
+        '        // 사용자가 직접 고친 제목은 위 조건이 계속 지킨다.',
+        '        if (',
+        '          thread.titleState?.source !== "manual" &&',
+        '          (canReplaceThreadTitle(thread.title) || String(event.provider) === "rubato-pi")',
+        '        ) {',
+      ].join('\n'),
+      'replace',
+    ],
+    [
       '                  summary: truncateDetail(event.payload.summary),\n                  detail: truncateDetail(event.payload.summary),',
       '                  summary: truncateDetail(event.payload.summary),\n                  detail: event.payload.summary,',
       'replace',

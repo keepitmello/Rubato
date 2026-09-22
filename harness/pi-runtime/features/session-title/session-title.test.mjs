@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   TITLE_ENTRY,
-  TITLE_MODEL,
+  TITLE_MODELS,
   buildTitlePrompt,
   isTitleLocked,
   lastAutoTitle,
@@ -302,25 +302,61 @@ test("session.rename locks later auto titles and survives resume", () => {
   assert.deepEqual(names, ["Protocol work"]);
 });
 
-test("pickTitleModel prefers luna and titleFromResponse reads complete() output", () => {
-  assert.deepEqual(TITLE_MODEL, { provider: "openai-codex", id: "gpt-5.6-luna" });
+test("pickTitleModel walks the model chain and titleFromResponse reads complete() output", () => {
+  assert.deepEqual(TITLE_MODELS, [
+    { provider: "b-ai", id: "deepseek-v4.1-flash", reasoning: "low" },
+    { provider: "openai-codex", id: "gpt-5.6-luna" },
+  ]);
+  const flash = { provider: "b-ai", id: "deepseek-v4.1-flash" };
   const luna = { provider: "openai-codex", id: "gpt-5.6-luna" };
   const seen = [];
-  const found = pickTitleModel({ find: (...args) => (seen.push(args), luna) }, { id: "fallback" });
-  assert.equal(found, luna);
-  assert.deepEqual(seen, [["openai-codex", "gpt-5.6-luna"]]);
-  assert.equal(pickTitleModel({ find: () => undefined }, { id: "fallback" }).id, "fallback");
+  const byId = (provider, id) => {
+    seen.push([provider, id]);
+    return id === "deepseek-v4.1-flash" ? flash : luna;
+  };
+  // 값싼 1순위가 인증까지 서 있으면 그것을 쓰고, 추론 강도를 함께 넘긴다.
+  assert.deepEqual(pickTitleModel({ find: byId }, { id: "fallback" }), {
+    model: flash,
+    reasoning: "low",
+  });
+  assert.deepEqual(seen, [["b-ai", "deepseek-v4.1-flash"]]);
+  // 자격 없는 후보는 건너뛴다. luna 는 추론 강도를 지정하지 않는다.
+  const noAuthForFlash = { find: byId, hasConfiguredAuth: (model) => model !== flash };
+  assert.deepEqual(pickTitleModel(noAuthForFlash, { id: "fallback" }), { model: luna });
+  // 사슬에 아무것도 없거나 전부 자격이 없으면 세션 모델로 떨어진다.
   const fallback = { id: "fallback" };
-  assert.equal(
-    pickTitleModel({ find: () => luna, hasConfiguredAuth: () => true }, fallback),
-    luna,
-  );
-  assert.equal(
-    pickTitleModel({ find: () => luna, hasConfiguredAuth: () => false }, fallback),
-    fallback,
+  assert.deepEqual(pickTitleModel({ find: () => undefined }, fallback), { model: fallback });
+  assert.deepEqual(
+    pickTitleModel({ find: () => flash, hasConfiguredAuth: () => false }, fallback),
+    { model: fallback },
   );
   assert.equal(titleFromResponse({ content: [{ type: "text", text: "<title>Ok</title>" }] }), "Ok");
   paintTabTitle({ cwd: "/tmp/repo", ui: { setTitle: (title) => assert.equal(title, "repo") } });
+});
+
+test("the title completion carries the candidate reasoning level", async () => {
+  const calls = [];
+  const entries = [userEntry("제목 뽑을 때 추론은 낮게")];
+  const pi = { getSessionName: () => undefined, setSessionName() {}, appendEntry() {} };
+  const ctx = {
+    cwd: "/tmp/repo",
+    ui: { setTitle() {} },
+    model: { provider: "xai", id: "grok-4.7" },
+    modelRegistry: {
+      find: (provider, id) => ({ provider, id }),
+      complete: async (...args) => {
+        calls.push(args);
+        return { content: [{ type: "text", text: "<title>Title effort</title>" }] };
+      },
+    },
+    sessionManager: { getEntries: () => entries },
+  };
+  await refreshSessionTitle(pi, ctx, { lastAuto: undefined, locked: false });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0].id, "deepseek-v4.1-flash");
+  assert.equal(calls[0][2].reasoning, "low");
+  assert.equal(calls[0][2].cacheRetention, "none");
+  assert.match(calls[0][2].sessionId, /^rubato-title-/);
 });
 
 function settledHarness({ locked = false, startEntries = [] } = {}) {

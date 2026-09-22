@@ -1,4 +1,10 @@
-export const TITLE_MODEL = Object.freeze({ provider: "openai-codex", id: "gpt-5.6-luna" });
+// 제목은 짧은 문장 하나라 값싼 모델이면 충분하다. 앞에서부터 인증이 서 있는
+// 후보를 쓰고, 다 없으면 세션 모델로 떨어진다. CLI 탭 제목과 앱 스레드 제목이
+// 같은 값을 쓰므로 이 사슬 하나가 정본이다.
+export const TITLE_MODELS = Object.freeze([
+  Object.freeze({ provider: "b-ai", id: "deepseek-v4.1-flash", reasoning: "low" }),
+  Object.freeze({ provider: "openai-codex", id: "gpt-5.6-luna" }),
+]);
 export const TITLE_ENTRY = "rubato-pi.session-title";
 
 export const TITLE_SYSTEM_PROMPT = `Name this coding-agent session.
