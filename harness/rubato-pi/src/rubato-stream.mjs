@@ -269,12 +269,17 @@ function createCallState(model, options, modelId) {
         // This call's number is final here, so a not-yet-read history is read
         // now rather than stamped as unavailable.
         const result = state.speedIndexStore.getCachedScore(sample, { blockOnLoad: true });
-        message.rubatoSpeedIndex = {
-          version: 1,
-          metricVersion: result?.metricVersion ?? 1,
-          status: result?.status ?? "unavailable",
-          score: Number.isFinite(result?.score) ? result.score : null,
-        };
+        // A store that still cannot read its history has no answer for this
+        // call yet. Stamping that as "unavailable" would assert a no-score the
+        // footer contradicts a moment later, so the call carries no snapshot.
+        if (result?.reason !== "history_loading") {
+          message.rubatoSpeedIndex = {
+            version: 1,
+            metricVersion: result?.metricVersion ?? 1,
+            status: result?.status ?? "unavailable",
+            score: Number.isFinite(result?.score) ? result.score : null,
+          };
+        }
       }
     } catch {}
   };

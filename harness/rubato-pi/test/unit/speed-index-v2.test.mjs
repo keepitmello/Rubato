@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
@@ -225,6 +226,26 @@ test("the current process is not counted twice and unsupported models never use 
   assert.equal(store.getCachedScore(target).matched, before.matched);
   assert.equal(store.getCachedScore({ ...target, model: "absent" }).reason, "target_cells");
   assert.equal(store.getCachedScore({ ...target, model: "absent" }).metricVersion, 2);
+});
+
+test("a stored profile that lost one role is rejected instead of scoring another basket", () => {
+  const frozen = profile();
+  const biased = JSON.parse(JSON.stringify(frozen));
+  delete biased.hash;
+  // Only text:256 loses a role: the wait component keeps both, so a validator
+  // that checks wait alone still accepts this basket.
+  const text = biased.components.find((component) => component.metric === "text:256");
+  const kept = text.cells.filter((cell) => cell.condition.startsWith("tool:"));
+  assert.equal(text.cells.length - kept.length, 1, "the fixture must actually lose one cell");
+  text.cells = kept.map((cell) => ({ ...cell, weight: cell.weight * (text.cells.length / kept.length) }));
+  biased.referenceTimeMs = biased.components.reduce((sum, component) => sum +
+    component.cells.reduce((inner, cell) => inner + cell.weight * cell.referenceMeanMs, 0) * component.weight, 0);
+  biased.hash = createHash("sha256").update(JSON.stringify(biased)).digest("hex");
+  // The same shape with both roles is the valid profile, so the rejection is
+  // the missing role and not the recomputed weights or hash.
+  assert.ok(validateSpeedV2Profile(frozen));
+  assert.equal(validateSpeedV2Profile(biased), undefined);
+  assert.equal(scoreSpeedV2(rows({ model: "target" }), target, biased, { now }).reason, "no_profile");
 });
 
 test("an unreadable sample directory is not an empty history", async (t) => {
