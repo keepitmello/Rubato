@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { join } from "node:path"
 
 import {
@@ -41,6 +42,7 @@ export interface MemoryIdentityRuntimeDeps {
   readonly logger?: ComponentLogger
   /** Agent home resolved for the sandbox writable grant; defaults to resolveAgentHome on process.env. */
   readonly resolveAgentDir?: () => string
+  readonly childLaunch?: { readonly command: string; readonly prefixArgs: readonly string[] }
 }
 
 export interface MemoryIdentityRuntime {
@@ -52,7 +54,15 @@ export interface MemoryIdentityRuntime {
   reconcile(): Promise<void>
 }
 
-let runCounter = 0
+/**
+ * Run ids key durable records (`completions/<runId>.json`, `runs/<runId>/`), so they must be unique
+ * across processes, not just within one. An in-process counter restarted at `reflection-run-1` on
+ * every launch; the first run after a restart reused a finished run's id, its settlement found a
+ * different completion record under that name, and the scheduler failed reconcile on every bind.
+ */
+export function createReflectionRunId(now: () => number = Date.now): string {
+  return `reflection-${new Date(now()).toISOString().replace(/[-:.]/g, "")}-${randomUUID().slice(0, 8)}`
+}
 
 function asMemoryIdentity(context: MemoryIdentityContext): MemoryIdentity {
   return {
@@ -73,7 +83,7 @@ export function createIdentityRuntime(
     config: resolveReflectionTriggerConfig(settings, identity.identity),
     getJournal: async (conversationId: string) =>
       new TranscriptJournal({ journalDir: `${identity.identityPaths.transcripts}/${conversationId}` }),
-    createRunId: () => `reflection-run-${++runCounter}`,
+    createRunId: () => createReflectionRunId(),
   })
 
   let builtSandbox: SandboxTransform | undefined
@@ -120,6 +130,9 @@ export function createIdentityRuntime(
     getTranscriptState: async (conversationId) =>
       new TranscriptJournal({ journalDir: join(identity.identityPaths.transcripts, conversationId) }).getState(),
     ...(deps.liveSession === undefined ? {} : { liveSession: deps.liveSession }),
+    ...(deps.childLaunch === undefined
+      ? {}
+      : { senpiCommand: deps.childLaunch.command, senpiPrefixArgs: deps.childLaunch.prefixArgs }),
   })
   const launch = (run: ReservedRun): void => {
     void runner.launch(run).then((result) => {
