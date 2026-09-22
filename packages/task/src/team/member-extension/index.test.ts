@@ -8,6 +8,8 @@ import { TeamModeConfigSchema } from "@rubato/team-core/config"
 import { sendMessage } from "@rubato/team-core/team-mailbox"
 
 import { TEAM_BOARD_TOOL_NAMES } from "@rubato/team-core/team-tasklist"
+import { writeMemberTaskMap } from "../member-map"
+import { resolveTeamRuntimeDirs } from "../storage"
 
 import registerMemberExtension from "./index"
 import { TEAM_REPORT_REMINDER_CONTENT, TEAM_REPORT_REMINDER_TYPE } from "./report-reminder"
@@ -37,6 +39,10 @@ describe("member extension lifecycle", () => {
       body: "start only after bind",
       timestamp: 1,
     }, TEAM_RUN_ID, config, { isLead: true, activeMembers: ["alice"] })
+    await writeMemberTaskMap(
+      resolveTeamRuntimeDirs({ project_dir: root, task: { state_dir: stateDir } }, TEAM_RUN_ID).runtimeDir,
+      { alice: "st_00000001" },
+    )
 
     const handlers = new Map<string, Array<() => unknown | Promise<unknown>>>()
     const toolNames: string[] = []

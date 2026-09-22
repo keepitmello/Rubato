@@ -8,6 +8,7 @@ export {
   resolveProjectTeamSpecPath,
   resolveTeamMemberInboxDir,
   resolveTeamRuntimeDirs,
+  withTeamRuntimeMutation,
   teamStorageBaseDir,
 } from "./storage"
 export type { TeamRuntimeDirs } from "./storage"
@@ -20,6 +21,8 @@ export type {
   TeamSpecSource,
 } from "./registry"
 export { createTeam, deleteTeam, SenpiTeamRuntimeError } from "./runtime"
+export { replaceTeamMember, TeamMemberReplacementError } from "./replace-member"
+export type { ReplaceTeamMemberInput, ReplaceTeamMemberResult, ReplaceTeamMemberDeps } from "./replace-member"
 export type {
   CreateTeamDeps,
   CreateTeamResult,
