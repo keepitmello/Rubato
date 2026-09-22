@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import { loadPiFeatures, PI_FEATURE_NAMES } from "../../feature-catalog.mjs";
 import { CANDIDATE_FEATURE_NAMES } from "../rubato-components/candidate-main.mjs";
-import { admitPickerItems, modelPickerLabel, PROVIDER_ORDER, sortModelItems } from "./catalog.mjs";
+import { MODEL_ORDER, admitPickerItems, modelPickerLabel, PROVIDER_ORDER, sortModelItems } from "./catalog.mjs";
 import { feature, files, patches, patchModelSelector } from "./patches.mjs";
 
 const featureDir = dirname(fileURLToPath(import.meta.url));
@@ -28,18 +28,21 @@ test("descriptor is stock-locked and listed on the candidate", async () => {
 });
 
 test("sorts by provider groups and keeps xai/ vs cursor/ apart, Sol first", () => {
+  // 세대 id 를 손으로 적지 않는다 — 정렬은 카탈로그 순서를 읽으므로, 픽스처가
+  // 카탈로그에 없는 세대를 가리키면 정렬 결과가 조용히 달라진다.
+  const opus = MODEL_ORDER.anthropic[1];
   const sorted = sortModelItems([
     { provider: "cursor", id: "composer-2.5", model: {} },
     { provider: "xai", id: "grok-4.7", model: {} },
     { provider: "cursor", id: "gpt-5.6-sol", model: {} },
     { provider: "openai-codex", id: "gpt-5.6-luna", model: {} },
     { provider: "openai-codex", id: "gpt-5.6-sol", model: {} },
-    { provider: "anthropic", id: "claude-opus-5-5", model: {} },
+    { provider: "anthropic", id: opus, model: {} },
   ]);
   assert.deepEqual(sorted.map((item) => `${item.provider}/${item.id}`), [
     "openai-codex/gpt-5.6-sol",
     "openai-codex/gpt-5.6-luna",
-    "anthropic/claude-opus-5-5",
+    `anthropic/${opus}`,
     "xai/grok-4.7",
     "cursor/gpt-5.6-sol",
     "cursor/composer-2.5",
@@ -49,18 +52,19 @@ test("sorts by provider groups and keeps xai/ vs cursor/ apart, Sol first", () =
 test("picker admits only the product providers, current model excepted", () => {
   const equal = (a, b) => a === b;
   const openaiAstra = { provider: "openai", id: "gpt-6-astra", model: "api-astra" };
+  const opus = MODEL_ORDER.anthropic[1];
   const admitted = admitPickerItems(
     [
       openaiAstra,
       { provider: "openai-codex", id: "gpt-6-astra", model: "codex-astra" },
-      { provider: "anthropic", id: "claude-opus-5-5", model: "opus" },
+      { provider: "anthropic", id: opus, model: "opus" },
     ],
     undefined,
     equal,
   );
   assert.deepEqual(admitted.map((item) => `${item.provider}/${item.id}`), [
     "openai-codex/gpt-6-astra",
-    "anthropic/claude-opus-5-5",
+    `anthropic/${opus}`,
   ]);
   const keptCurrent = admitPickerItems([openaiAstra], "api-astra", equal);
   assert.deepEqual(keptCurrent, []);
