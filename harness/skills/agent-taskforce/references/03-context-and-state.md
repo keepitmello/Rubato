@@ -35,25 +35,24 @@ Use `templates/mission.md` for runs that need durable resumption — its section
 
 ## Artifact handoff
 
-Save long investigations, benchmarks, reproduction logs, and design analyses in the run's named artifact area, with one writer per artifact. Reuse the existing artifact for the same purpose; new versions belong in Git, not `final-v2` copies. Send recipients a short conclusion, the affected decision or workstream, the path or reproduction command, and remaining uncertainty. Avoid copying the same content into several contexts.
+Save long investigations, benchmarks, reproduction logs, and design analyses in the run's named artifact area, with one writer per artifact. Reuse the existing artifact for the same purpose; new versions belong in Git, not `final-v2` copies. Send recipients a short conclusion, the affected decision or workstream, the path or reproduction command, and remaining uncertainty. A reference sent to another session must be readable there: session-local notes and virtual note paths are not a shared artifact. Avoid copying the same content into several contexts.
 
 ## Context reset and resume
 
-Do not rely on compaction alone. Make work resumable through the mission, tests, changed-files lists, and decision artifacts. If a teammate session is lost, spawn a fresh owner that reads the canonical state rather than pretending to recover the exact old context.
+Do not rely on compaction alone. Make work resumable through the mission, tests, changed-files lists, and decision artifacts. When continuing work, recover the current request and actual state together with any accepted result — its input or revision and what the user actually said about it — and keep that evidence apart from the predecessor's method and causal story. Read what can change the next decision; small settled tasks need only their affected context, and new work does not need an invented baseline. If a teammate execution is lost, recover it at the same address (`team_replace_member`) with the canonical state rather than pretending to restore the old context; a user stop or exhausted budget is not a lost execution.
 
 After your context was compacted, the **latest user message is still the primary task**. Answer or act on it before status recovery, memory saves, or team reconciliation. Do not open with a "context restored" status report unless the user asked for status. Reread canonical sources as needed, but that reread must not replace the current turn's answer.
 
 At a real handoff or session end, leave:
 
 - completed work with evidence
+- accepted results, with the revision/input and the conditions of that acceptance
 - remaining work
 - current blocker
-- exact next action
+- recommended next action (a recommendation for the next owner to re-judge, not a fact)
 - current failures and unverified claims
 
-When material approval, restaffing, criterion change, or refutation affects later work, record it. Also record the skill's own procedure activations in the durable artifact, each as a dated line: milestone fresh review run or skipped (and why), verification contracts created or waived, post-completion reopens, retractions and where they were propagated. An unrecorded activation is invisible to every future session — including the one deciding whether a procedure needs to become mandatory. Beyond that, do not maintain a procedural diary for events that change no future decision.
-
-Before closing a session, reread the handoff documents end to end against the retraction entries — retractions spread across several documents, and hand-tracking them is exactly where stale claims survive into the handoff.
+Record decisions and procedure outcomes when they change later authority, acceptance, responsibility or recovery — a fresh review run or waived, a verification contract created or waived, a reopen, a retraction and where it went. When a result is accepted or an interpretation changes, update the existing project entry so the next owner finds the actual result and the remaining question; keep deep history retrievable instead of copying it into every handoff. At a handoff, check the current entry and the affected references against material corrections, and widen into history only when a conflict warrants it. Routine progress needs no procedural diary.
 
 ## What to prune from context
 
