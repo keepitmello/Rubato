@@ -15,7 +15,7 @@ export const TaskCancelParams = Type.Object({
 export type TaskCancelInput = Static<typeof TaskCancelParams> & { readonly reason?: string }
 
 const DESCRIPTION = [
-  "Cancel a running child agent and release its resources; the cancelled status is preserved so AgentOutput can still report the outcome.",
+  "Cancel a running child agent and release its resources; the cancelled status is preserved so the record and its result file stay readable.",
   "Cancel is terminal and NOT resumable; cancelling a child that is not running is a no-op that reports its unchanged status.",
   "Use this to end work you no longer need.",
 ].join(" ")

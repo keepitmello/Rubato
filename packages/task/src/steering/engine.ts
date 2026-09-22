@@ -15,8 +15,8 @@ import {
   type SteeringPort,
 } from "./types"
 
-const TASK_OUTPUT_SUGGESTION = "Use AgentOutput to read the final result."
-const NOT_FOUND_SUGGESTION = "Use /tasks to see available agents, or AgentOutput to read a known agent."
+const RESULT_FILE_SUGGESTION = "Read the completion's result file for the final result."
+const NOT_FOUND_SUGGESTION = "Use /tasks to see available agents in this session."
 
 export function createSteeringEngine(port: SteeringPort): SteeringEngine {
   // Prelaunch steering is DURABLE: messages sent to a still-pending (queued) child append to the
@@ -54,7 +54,7 @@ export function createSteeringEngine(port: SteeringPort): SteeringEngine {
 
     const mode = messageability(record.status, record.residency_state)
     if (mode === "not-continuable") {
-      return { kind: "not_continuable", task_id: record.task_id, reason: notContinuableReason(record), suggestion: TASK_OUTPUT_SUGGESTION }
+      return { kind: "not_continuable", task_id: record.task_id, reason: notContinuableReason(record), suggestion: RESULT_FILE_SUGGESTION }
     }
     const handle = port.liveHandle(record.task_id)
     if (handle === undefined) {
@@ -62,7 +62,7 @@ export function createSteeringEngine(port: SteeringPort): SteeringEngine {
         kind: "not_continuable",
         task_id: record.task_id,
         reason: `Task ${record.task_id} has no resident session in this process.`,
-        suggestion: TASK_OUTPUT_SUGGESTION,
+        suggestion: RESULT_FILE_SUGGESTION,
       }
     }
 

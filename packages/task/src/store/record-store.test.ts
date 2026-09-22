@@ -226,6 +226,9 @@ describe("createTaskRecordStore remove artifacts", () => {
     const spillDir = join(stateDir, "completion-results")
     mkdirSync(spillDir, { recursive: true })
     writeFileSync(join(spillDir, `${TASK_ID}.txt`), "spilled final response", "utf8")
+    mkdirSync(join(spillDir, TASK_ID), { recursive: true })
+    writeFileSync(join(spillDir, TASK_ID, "0.txt"), "first run", "utf8")
+    writeFileSync(join(spillDir, TASK_ID, "1.txt"), "resumed run", "utf8")
 
     return stateDir
   }
@@ -245,6 +248,7 @@ describe("createTaskRecordStore remove artifacts", () => {
     expect(existsSync(logPath)).toBe(true)
     expect(existsSync(childDir)).toBe(true)
     expect(existsSync(spillPath)).toBe(true)
+    expect(existsSync(join(stateDir, "completion-results", TASK_ID, "1.txt"))).toBe(true)
 
     // when
     store.remove(TASK_ID)
@@ -254,6 +258,7 @@ describe("createTaskRecordStore remove artifacts", () => {
     expect(existsSync(logPath)).toBe(false)
     expect(existsSync(childDir)).toBe(false)
     expect(existsSync(spillPath)).toBe(false)
+    expect(existsSync(join(stateDir, "completion-results", TASK_ID))).toBe(false)
   })
 
   test("#given a partially-cleaned task (children dir already gone) #when remove is called #then it still deletes log + record without throwing", () => {

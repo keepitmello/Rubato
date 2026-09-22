@@ -301,6 +301,37 @@ describe("lead poller lifecycle", () => {
     expect(h.soon).toBe(1)
   })
 
+  test("#given a tick listener #when the periodic tick runs #then the listener fires after the poll", async () => {
+    // given: the team batch wake needs the mailbox tick edge, which no task-record write produces
+    const h = harness()
+    const calls: string[] = []
+    h.lifecycle.onTick(() => calls.push("after-tick"))
+
+    // when
+    h.intervals[0]?.tick()
+    await settleTick()
+
+    // then
+    expect(calls).toEqual(["after-tick"])
+  })
+
+  test("#given a throwing tick listener #when the periodic tick runs #then the interval survives", async () => {
+    // given
+    const h = harness()
+    const calls: string[] = []
+    h.lifecycle.onTick(() => {
+      throw new Error("listener failed")
+    })
+    h.lifecycle.onTick(() => calls.push("second"))
+
+    // when
+    h.intervals[0]?.tick()
+    await settleTick()
+
+    // then
+    expect(calls).toEqual(["second"])
+  })
+
   test("#given the component shuts down #when disposed #then the interval and every poller stop", async () => {
     // given
     const h = harness()
@@ -315,6 +346,13 @@ describe("lead poller lifecycle", () => {
     expect(h.created[0]?.poller.shutdowns).toBe(1)
   })
 })
+
+// The interval driver runs its listeners in the tick's finally, so a test must let that chain settle.
+function settleTick(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0)
+  })
+}
 
 function messageFrom(from: string): Message {
   return { version: 1, messageId: "11111111-1111-4111-8111-111111111111", from, to: "lead", kind: "message", body: "done", timestamp: 1 }

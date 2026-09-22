@@ -10,7 +10,7 @@ export const TASK_PROMPT_GUIDELINES: readonly string[] = [
   "Start one child agent using exactly one of `model` or `preset`. Omit `effort` normally; the configured model default applies. Set `effort` only when an explicit manual override is required.",
   "Spawns are asynchronous and return an agentId immediately; completion arrives as a notification. Do not wait on the child in this turn.",
   "Continue an existing child with AgentSend(agentId=\"st_...\", message=\"...\"); Agent always spawns.",
-  "Use AgentOutput for one midpoint status or transcript peek; use AgentCancel to end a child.",
+  "Completion arrives as a status pointer plus a result file path; read that file instead of peeking the child. Use AgentCancel to end a child.",
   "Pass summary (one line, <=80 chars) on every spawn: the user's footer/widget UI shows it instead of the raw prompt, so it should say WHAT was delegated.",
 ]
 
@@ -30,7 +30,7 @@ ${renderTargetSection(agents)}
 Spawns are asynchronous and return an agentId immediately. Completion arrives as a notification.
 Pass summary (one line, <=80 chars) so the footer/widget UI shows what was delegated.
 AgentSend continues an existing child; Agent always spawns.
-Use AgentOutput for status or a transcript peek; AgentCancel to end a child.
+Completion arrives as a status pointer plus a result file path; read that file instead of peeking the child. AgentCancel ends a child.
 Prompts MUST be in English.`
 }
 
