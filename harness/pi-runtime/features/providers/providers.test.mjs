@@ -56,6 +56,9 @@ const cursorEventStream = await import(
 );
 const stockLazy = await import(pathToFileURL(join(piAiRoot, "dist/api/lazy.js")).href);
 const stockEventStream = await import(pathToFileURL(join(piAiRoot, "dist/utils/event-stream.js")).href);
+const speedStores = await import(
+  pathToFileURL(join(piAiRoot, "dist/rubato-features/providers/src/speed-index-store.mjs")).href
+);
 
 function environment(extra = {}) {
   return {
@@ -84,7 +87,7 @@ function model({ provider, id, api, baseUrl, input = ["text"] }) {
   };
 }
 
-function textSse(text) {
+function textSse(text, usage = { input_tokens: 2, output_tokens: 0 }) {
   const events = [
     {
       type: "message_start",
@@ -95,7 +98,7 @@ function textSse(text) {
         model: "local",
         content: [],
         stop_reason: null,
-        usage: { input_tokens: 2, output_tokens: 0 },
+        usage,
       },
     },
     { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
@@ -140,7 +143,7 @@ function authData() {
   };
 }
 
-async function startSession(t, { selectedModel, env, observers = [] }) {
+async function startSession(t, { selectedModel, env, observers = [], speedIndexStore, enableTools = false }) {
   const root = mkdtempSync(join(scratchRoot, "session-"));
   const cwd = join(root, "cwd");
   const agentDir = join(root, "agent");
@@ -164,6 +167,7 @@ async function startSession(t, { selectedModel, env, observers = [] }) {
         factory: feature.createProvidersExtension({
           env: { ...env, RUBATO_PI_CODING_AGENT_DIR: agentDir },
           kiro: { ensureKiro: async () => {} },
+          speedIndexStore,
         }),
       },
       ...observers.map((factory, index) => ({ name: `observer-${index}`, factory })),
@@ -177,7 +181,7 @@ async function startSession(t, { selectedModel, env, observers = [] }) {
     settingsManager,
     resourceLoader,
     sessionManager: sdk.SessionManager.inMemory(cwd),
-    noTools: "all",
+    noTools: enableTools ? undefined : "all",
   });
   assert.deepEqual(result.extensionsResult.errors, []);
   const extensionErrors = [];
@@ -443,6 +447,54 @@ test("actual stock SDK preserves Antigravity OAuth env and request/response hook
   assert.equal(responses.length, 1);
   assert.equal(responses[0].status, 200);
   assert.equal(responses[0].headers["x-rubato-mock"], "antigravity");
+});
+
+test("actual stock SDK carries the shared Speed and final requested tier through message_end JSON", async (t) => {
+  let sent;
+  const server = http.createServer(async (request, response) => {
+    let body = "";
+    for await (const chunk of request) body += chunk;
+    sent = JSON.parse(body);
+    response.writeHead(200, { "content-type": "text/event-stream" });
+    response.end(textSse("speed-ok", {
+      input_tokens: 20_000, cache_read_input_tokens: 60_000, output_tokens: 0,
+    }));
+  });
+  const baseUrl = await listen(server);
+  t.after(() => closeServer(server));
+  const store = speedStores.createSpeedIndexStore({
+    agentDir: join(scratchRoot, "speed-fixture"),
+    probesEnabled: false,
+  });
+  t.after(() => store.stop());
+  const session = await startSession(t, {
+    selectedModel: model({ provider: "kiro", id: "claude-opus-5", api: "anthropic-messages", baseUrl }),
+    env: environment({ KIRO_BASE_URL: baseUrl, KIRO_API_KEY: "kiro-test-not-real" }),
+    speedIndexStore: store,
+    enableTools: true,
+    observers: [(pi) => pi.on("before_provider_request", (event) => ({ ...event.payload, speed: "fast" }))],
+  });
+  const messages = [];
+  session.subscribe((event) => {
+    if (event.type === "message_end" && event.message?.role === "assistant") {
+      messages.push(JSON.parse(JSON.stringify(event)).message);
+    }
+  });
+  await session.prompt("hello Speed");
+  assert.equal(assistantText(session), "speed-ok");
+  assert.equal(sent.speed, "fast");
+  const samples = readFileSync(store.ownPath, "utf8").trim().split("\n").map(JSON.parse);
+  assert.equal(samples.length, 1);
+  assert.equal(samples[0].tierRequestSource, "payload");
+  assert.equal(samples[0].requestedServiceTier, "fast");
+  assert.equal(samples[0].servedServiceTier, "unknown");
+  assert.equal(messages.length, 1);
+  const expected = store.getCachedScore(samples[0]);
+  assert.equal(expected.status, "ready", JSON.stringify({ expected, sample: samples[0] }));
+  assert.deepEqual(messages[0].rubatoSpeedIndex, {
+    version: 1, metricVersion: 1, status: "ready", score: expected.score,
+  });
+  assert.deepEqual(session.agent.state.messages.at(-1).rubatoSpeedIndex, messages[0].rubatoSpeedIndex);
 });
 
 test("actual stock SDK completes Cursor HTTP/2 Connect and exposes the request hook", async (t) => {

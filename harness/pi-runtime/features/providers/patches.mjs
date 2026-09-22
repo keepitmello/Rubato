@@ -299,9 +299,13 @@ const rubatoSources = Object.freeze([
   "provider-direct.mjs",
   "provider-ids.mjs",
   "rubato-stream.mjs",
+  "speed-analysis.mjs",
+  "speed-index-capture.mjs",
   "speed-index-identity.mjs",
   "speed-index-routes.mjs",
   "speed-index-store.mjs",
+  "speed-index-tier.mjs",
+  "speed-index-v2.mjs",
   "speed-index.mjs",
   "upstream-dispatcher.mjs",
 ]);

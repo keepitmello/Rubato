@@ -339,7 +339,7 @@ describe("run stats tracker", () => {
     expect(snapshot.tokens_per_second).toBeUndefined()
   })
 
-  test("#given a cached 64k prompt at the bundled median #when snapshotted #then Speed Index is 100", () => {
+  test("#given a provider-owned Speed snapshot #when IPC timing differs #then the score stays unchanged", () => {
     let nowMs = 1_000
     const tracker = createRunStatsTracker(1_000, () => nowMs)
     nowMs = 1_000
@@ -351,8 +351,24 @@ describe("run stats tracker", () => {
         role: "assistant",
         content: [{ type: "text", text: "ok" }],
         usage: { output: 20, input: 20_000, cacheRead: 60_000, cacheWrite: 0 },
+        rubatoSpeedIndex: { version: 1, metricVersion: 2, status: "ready", score: 173 },
       },
     })
-    expect(tracker.snapshot(nowMs).speed_index).toBe(100)
+    expect(tracker.snapshot(nowMs).speed_index).toBe(173)
+    tracker.accept({
+      type: "message_end",
+      message: {
+        role: "assistant", content: [], usage: { input: 20_000, cacheRead: 60_000, output: 20 },
+        rubatoSpeedIndex: { version: 1, metricVersion: 2, status: "unavailable", score: null },
+      },
+    })
+    expect(tracker.snapshot(nowMs).speed_index).toBeNull()
+    // An auxiliary call carries no provider Speed of its own: it must not erase
+    // the number the last scored call produced.
+    tracker.accept({
+      type: "message_end",
+      message: { role: "assistant", content: [{ type: "text", text: "title" }], usage: { output: 3 } },
+    })
+    expect(tracker.snapshot(nowMs).speed_index).toBeNull()
   })
 })
