@@ -26,6 +26,7 @@ import {
   type ReservationRunResult,
   type ReservationStatePort,
 } from "./run-finalization"
+import { readReflectionCompletion } from "./completion"
 import { classifyRunProcess, signalRecordedProcessGroup, waitUntil as waitForTime } from "./run-liveness"
 import { parseReservationRunLedger, type ReservationRunLedger } from "./reservation-run-ledger"
 import { waitForRunSentinel, type SentinelWaitResult } from "./run-sentinel"
@@ -58,6 +59,8 @@ export async function reconcileReflectionRuns(
     hostname: options.hostname ?? readHostname,
   }
   const results: ReflectionRunReconcileResult[] = []
+  const reused = await retireReusedRunIds(context)
+  if (reused !== undefined) results.push(reused)
   const prelaunch = await reconcilePrelaunch(context)
   if (prelaunch !== undefined) results.push(prelaunch)
   const runsDir = join(options.identity.paths.reflection, "runs")
@@ -70,6 +73,27 @@ export async function reconcileReflectionRuns(
     if (result !== undefined) results.push({ runId: result.runId, outcome: result.outcome })
   }
   return results
+}
+
+/**
+ * Unwedge state left by per-process run ids (fixed at the source in identity-runtime).
+ *
+ * A reservation reserved after a run of the same id had already finished is a reused id, not
+ * that run: settling it compares against the finished run's completion record and throws on
+ * every bind, so no reflection ever launches again. Release it without writing a completion
+ * record, and give a queued request whose id is taken a fresh one before it can launch.
+ */
+async function retireReusedRunIds(context: ReconcileContext): Promise<ReflectionRunReconcileResult | undefined> {
+  const completionsDir = join(context.identity.paths.reflection, "completions")
+  await context.reservation.reissuePendingRunId?.(async (runId) =>
+    (await readReflectionCompletion(completionsDir, runId)) !== null)
+  const active = (await context.reservation.readState()).active
+  if (active?.reservedAt === undefined) return undefined
+  const finished = await readReflectionCompletion(completionsDir, active.runId)
+  if (finished === null || Date.parse(finished.finishedAt) > Date.parse(active.reservedAt)) return undefined
+  const transition = await context.reservation.complete(active.runId, "failed")
+  if (transition.launch !== undefined) context.launch?.(transition.launch)
+  return { runId: active.runId, outcome: "failed" }
 }
 
 async function reconcilePrelaunch(context: ReconcileContext): Promise<ReflectionRunReconcileResult | undefined> {
