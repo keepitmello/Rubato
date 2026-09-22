@@ -122,7 +122,7 @@ test("dispatching retains binding authority, freezes, explicit previews and bloc
 
 test("approval is not broadened by role or model changes", () => {
   const guide = skill("model-guide/SKILL.md");
-  assert.match(guide, /Fable \(including Fable 5\.1\), Sol and\nAstra require explicit user approval/);
+  assert.match(guide, /Fable \(including Fable 5\.1\) and Astra require explicit user approval/);
   assert.match(guide, /outcome, model and effort/);
   assert.match(guide, /same approved owner on the same\noutcome retain that approval/);
   assert.match(guide, /new outcome, materially changed roster or higher/);
@@ -133,14 +133,20 @@ test("approval is not broadened by role or model changes", () => {
   assert.match(lead, /Partial|partial/);
 });
 
-test("all five models are ordinary owner and verifier candidates", () => {
+test("default allocation preserves flexible roles without including Sol", () => {
   const guide = skill("model-guide/SKILL.md");
-  assert.match(guide, /Fable, Astra, Opus, Sol and Grok may fill either role/);
+  assert.match(guide, /DeepSeek, Grok, Opus, Fable and Astra may fill either role/);
+  assert.match(guide, /Default owner and bounded support: \*\*DeepSeek\*\*/);
+  assert.match(guide, /When independent verification is useful: \*\*Grok\*\* by default/);
+  assert.match(guide, /DeepSeek, Grok and Opus can all own or verify/);
+  assert.match(guide, /propose \*\*Fable or Astra\*\*/);
+  assert.match(guide, /A failed DeepSeek attempt is\s+not a prerequisite/);
   assert.match(guide, /initial assignments|Initial assignments/);
   assert.doesNotMatch(guide, /Opus 5 has no slot/);
   assert.doesNotMatch(guide, /a Grok owner is itself the bottleneck/);
-  assert.doesNotMatch(guide, /same effort and approval rule as Fable and Sol/);
   assert.match(guide, /Acceptance criteria stay the same/);
+  assert.match(guide, /Do not create a verifier merely to complete a\s+pair/);
+  assert.match(guide, /do not leave a useful resource idle solely because it was called\s+a "lead model/);
   assert.match(guide, /not a quota of model names inside each team/);
 });
 
@@ -160,8 +166,9 @@ test("model selection preserves configured effort and exact runtime identity", (
 
 test("resource reports do not become live quota or universal aptitude claims", () => {
   const guide = skill("model-guide/SKILL.md");
-  assert.match(guide, /operator-reported starting priors/);
-  assert.match(guide, /not measured/);
+  assert.match(guide, /operator reports comparable performance from DeepSeek, Grok and Opus/);
+  assert.match(guide, /DeepSeek the cheapest and fastest/);
+  assert.match(guide, /working experience, not a benchmark or a measured price\/quota claim/);
   assert.match(guide, /Token volume, API-equivalent dollars, elapsed time and subscription quota are/);
   assert.match(guide, /not.*live plan coefficients|live plan coefficients/);
   assert.match(guide, /Do not hard-code those as prices/);
