@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { chmodSync, closeSync, constants, existsSync, fsyncSync, linkSync, mkdirSync, openSync, readFileSync, readdirSync, statSync, unlinkSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -24,24 +25,15 @@ import {
   validateBaseline,
 } from "./speed-index.mjs";
 import { normalizeProviderUsage } from "./measurement-recorder.mjs";
+import { SPEED_CAPTURE_FIELDS, sanitizeCapture } from "./speed-index-capture.mjs";
+import { SPEED_TIER_FIELDS, sanitizeSpeedTier } from "./speed-index-tier.mjs";
+import { isSpeedTierKey, speedTierKey } from "./speed-index-tier.mjs";
+import {
+  SPEED_V2_PROFILE_FILE, scoreSpeedV2, speedV2Identity, speedV2IdentityKey, validateSpeedV2Profile,
+} from "./speed-index-v2.mjs";
+export { SPEED_CAPTURE_VERSION, SPEED_CAPTURE_MILESTONES } from "./speed-index-capture.mjs";
 
-// Capture evolves independently of the scoring epoch. All times are observed
-// offsets from the outer provider-call start, not server decode timestamps.
-export const SPEED_CAPTURE_VERSION = 1;
-export const SPEED_CAPTURE_MILESTONES = Object.freeze([64, 256, 1024, 4096, 16384, 65536]);
-const CAPTURE_CHANNELS = ["Text", "Reasoning", "ToolArgument"];
-const CAPTURE_NUMBERS = [
-  "streamEventCount", "maxContentGapMs",
-  "firstToolCallEndMs", "lastToolCallEndMs", "toolCallEndCount",
-  ...CAPTURE_CHANNELS.flatMap((channel) => {
-    const prefix = channel[0].toLowerCase() + channel.slice(1);
-    return [`first${channel}Ms`, `last${channel}Ms`, `${prefix}DeltaCount`, `${prefix}CodeUnits`, `${prefix}MaxGapMs`];
-  }),
-];
-const CAPTURE_MILESTONES = ["textMilestones", "reasoningMilestones", "toolArgumentMilestones"];
-const CAPTURE_FIELDS = new Set([
-  "captureVersion", "requestKind", "streamTerminalObserved", ...CAPTURE_NUMBERS, ...CAPTURE_MILESTONES,
-]);
+const CAPTURE_FIELDS = new Set([...SPEED_CAPTURE_FIELDS, ...SPEED_TIER_FIELDS]);
 
 export const SAMPLE_FIELDS = Object.freeze([
   "schemaVersion",
@@ -175,40 +167,11 @@ export function sanitizeSample(raw) {
     sample[key] = value;
   }
   Object.assign(sample, sanitizeCapture(raw));
+  Object.assign(sample, sanitizeSpeedTier(raw));
   if (sample.schemaVersion !== SPEED_INDEX_SCHEMA_VERSION) return undefined;
   if (sample.epoch !== SPEED_INDEX_EPOCH) return undefined;
   if (typeof sample.at !== "string") return undefined;
   return sample;
-}
-
-function sanitizeCapture(raw) {
-  if (raw?.captureVersion !== SPEED_CAPTURE_VERSION) return {};
-  const capture = { captureVersion: SPEED_CAPTURE_VERSION };
-  if (["user", "tool", "other"].includes(raw.requestKind)) capture.requestKind = raw.requestKind;
-  if (typeof raw.streamTerminalObserved === "boolean") capture.streamTerminalObserved = raw.streamTerminalObserved;
-  for (const key of CAPTURE_NUMBERS) {
-    const value = raw[key];
-    if (!Number.isFinite(value) || value < 0) continue;
-    if ((key.endsWith("Count") || key.endsWith("CodeUnits")) && !Number.isSafeInteger(value)) continue;
-    capture[key] = value;
-  }
-  // A milestone is [target UTF-16 units, cumulative observed units, elapsed ms].
-  // Rebuild numeric tuples; never let nested content through the allowlist.
-  for (const key of CAPTURE_MILESTONES) {
-    if (!Array.isArray(raw[key])) continue;
-    const rows = [];
-    for (const row of raw[key].slice(0, SPEED_CAPTURE_MILESTONES.length)) {
-      if (!Array.isArray(row) || row.length !== 3) continue;
-      const [target, units, ms] = row;
-      if (!SPEED_CAPTURE_MILESTONES.includes(target) || !Number.isSafeInteger(units) || units < target ||
-          !Number.isFinite(ms) || ms < 0) continue;
-      const previous = rows.at(-1);
-      if (previous && (target <= previous[0] || units < previous[1] || ms < previous[2])) continue;
-      rows.push([target, units, ms]);
-    }
-    if (rows.length > 0) capture[key] = rows;
-  }
-  return capture;
 }
 
 function parseLine(line) {
@@ -249,7 +212,15 @@ function identityFromSample(sample) {
     model: sample.model,
     effort: sample.effort,
     effortSource: sample.effortSource,
+    ...sanitizeSpeedTier(sample),
   };
+}
+
+// Historical untagged groups keep their key, but newly observed tiers never
+// pool in either the transitional legacy display or the new calculator.
+function storeIdentityKey(sample) {
+  const tier = speedTierKey(sample);
+  return `${identityKey(sample)}${tier === "unobserved" ? "" : `\0${tier}`}`;
 }
 
 function positiveMs(...candidates) {
@@ -272,6 +243,7 @@ export function createSpeedIndexStore({
   windowMs = SAMPLE_WINDOW_MS,
   cap = MATCHED_CAP,
   bundledBaselinePath = BUNDLED_BASELINE_PATH,
+  deliveryProfile,
 } = {}) {
   const root = agentDir ? join(agentDir, "speed-index") : undefined;
   const dir = root ? join(root, "samples") : undefined;
@@ -279,6 +251,26 @@ export function createSpeedIndexStore({
   const ownName = sampleFileName({ startedAt, pid, nonce });
   const ownPath = dir ? join(dir, ownName) : undefined;
   const ownProcessId = processId({ startedAt, pid, nonce });
+  const profilePath = root ? join(root, SPEED_V2_PROFILE_FILE) : undefined;
+  // Registration is explicit. An absent new profile keeps the old display for
+  // the whole process; a present but invalid one fails closed, never falls back
+  // per model to a differently defined number.
+  const deliveryMode = deliveryProfile !== undefined || Boolean(profilePath && existsSync(profilePath));
+  let profile = deliveryProfile;
+  if (profile === undefined && deliveryMode) {
+    try { profile = JSON.parse(readFileSync(profilePath, "utf8")); } catch { profile = null; }
+  }
+  profile = validateSpeedV2Profile(profile);
+  const deliveryOwn = [];
+  let deliveryHistory = [];
+  let deliveryRevision = 0;
+  let deliveryLoaded = !deliveryMode || !dir;
+  let deliveryLoading;
+  let deliveryLoadSeq = 0;
+  let deliveryAppliedSeq = 0;
+  let lastDeliveryLoad = -Infinity;
+  let expiryTimer;
+  let stopped = false;
   const health = networkHealth ?? createNetworkHealth({ autostart: false });
   const groups = new Map();
   const diagnostics = [];
@@ -308,12 +300,20 @@ export function createSpeedIndexStore({
   }
 
   function remember(sample, { source } = {}) {
-    if (source === "own" && shouldAdoptIdentity(sample)) {
+    if (source === "own" && (shouldAdoptIdentity(sample) ||
+      (deliveryMode && sample.streamKind === "main" && (!sample.exclusion || sample.exclusion === "aborted") &&
+        sample.effort && sample.effortSource !== "unknown"))) {
       activeIdentity = identityFromSample(sample);
     }
     cached = undefined;
+    if (deliveryMode && source === "own" && sample.captureVersion === 1) {
+      deliveryOwn.push(sample);
+      const cutoff = now() - windowMs;
+      while (deliveryOwn.length && Date.parse(deliveryOwn[0].at) < cutoff) deliveryOwn.shift();
+      deliveryRevision += 1;
+    }
     if (source === "own" && isScoreableSample(sample)) {
-      const key = identityKey(sample);
+      const key = storeIdentityKey(sample);
       const live = sessionGroups.get(key) ?? [];
       live.push(sample);
       sessionGroups.set(key, live.slice(-cap));
@@ -324,7 +324,7 @@ export function createSpeedIndexStore({
       calibration.push(sample);
     }
     if (isScoreableSample(sample)) {
-      const key = identityKey(sample);
+      const key = storeIdentityKey(sample);
       const rows = groups.get(key) ?? [];
       rows.push(sample);
       rows.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
@@ -360,7 +360,10 @@ export function createSpeedIndexStore({
   function pruneExpired() {
     if (!dir || !existsSync(dir)) return;
     const cutoff = now() - windowMs;
-    for (const name of readdirSync(dir)) {
+    let names;
+    // A directory we cannot list is not a directory we may prune or treat as empty.
+    try { names = readdirSync(dir); } catch { return; }
+    for (const name of names) {
       if (!name.endsWith(".jsonl")) continue;
       const started = startedAtFromName(name);
       const path = join(dir, name);
@@ -438,6 +441,90 @@ export function createSpeedIndexStore({
     try { chmodSync(ownPath, 0o600); } catch {}
   }
 
+  /**
+   * A missing directory is an empty history. Any other readdir failure is not
+   * "no samples": stay unloaded so the next attempt retries instead of scoring
+   * an empty basket as if it were the truth.
+   */
+  function deliveryFileNames() {
+    let names;
+    try {
+      names = readdirSync(dir);
+    } catch (error) {
+      return error?.code === "ENOENT" ? [] : undefined;
+    }
+    const cutoff = now() - windowMs;
+    const eligible = [];
+    for (const name of names) {
+      if (!/^\d+-\d+-[0-9a-f]+\.jsonl$/i.test(name) || join(dir, name) === ownPath) continue;
+      // mtime is never older than the rows inside, so an out-of-window file
+      // cannot contribute to the window.
+      try { if (statSync(join(dir, name)).mtimeMs < cutoff) continue; } catch { continue; }
+      eligible.push(name);
+    }
+    return eligible;
+  }
+
+  function acceptDeliveryText(text, rows) {
+    // No partial-tail ingestion. Each refresh replaces this snapshot, so
+    // retries, truncated files and multibyte cursor offsets cannot double
+    // observations. Own records are kept separately and their file skipped.
+    const complete = text.slice(0, text.lastIndexOf("\n") + 1);
+    const cutoff = now() - windowMs;
+    for (const line of complete.split("\n")) {
+      const sample = parseLine(line);
+      if (sample?.captureVersion === 1 && Date.parse(sample.at) >= cutoff) rows.push(sample);
+    }
+  }
+
+  function applyDeliveryRows(rows, seq) {
+    if (seq < deliveryAppliedSeq) return;
+    deliveryAppliedSeq = seq;
+    deliveryHistory = rows;
+    deliveryLoaded = true;
+    deliveryRevision += 1;
+    cached = undefined;
+    notifyScore(store);
+  }
+
+  /**
+   * The provider boundary stamps one call with one score. It must not freeze the
+   * transient "still reading history" answer, so that path may read history now.
+   * Once per process, and only when a profile is registered.
+   */
+  function loadDeliveryHistorySync() {
+    if (!deliveryMode || !dir || deliveryLoaded) return;
+    const seq = ++deliveryLoadSeq;
+    const names = deliveryFileNames();
+    if (names === undefined) return;
+    const rows = [];
+    for (const name of names) {
+      try { acceptDeliveryText(readFileSync(join(dir, name), "utf8"), rows); } catch { continue; }
+    }
+    applyDeliveryRows(rows, seq);
+  }
+
+  async function refreshDeliveryHistory({ force = false } = {}) {
+    if (!deliveryMode || !dir || stopped) return;
+    if (deliveryLoading) return deliveryLoading;
+    if (!force && now() - lastDeliveryLoad < tailMs) return;
+    lastDeliveryLoad = now();
+    const seq = ++deliveryLoadSeq;
+    deliveryLoading = (async () => {
+      const names = deliveryFileNames();
+      if (names === undefined) return;
+      const rows = [];
+      for (const name of names) {
+        let text;
+        try { text = await readFile(join(dir, name), "utf8"); } catch { continue; }
+        acceptDeliveryText(text, rows);
+      }
+      if (stopped) return;
+      applyDeliveryRows(rows, seq);
+    })().finally(() => { deliveryLoading = undefined; });
+    return deliveryLoading;
+  }
+
   if (baselinePath) localBaseline = loadBaseline(baselinePath);
   bundledBaseline = loadBundledBaseline(bundledBaselinePath);
   pruneExpired();
@@ -457,7 +544,7 @@ export function createSpeedIndexStore({
     if (!identity) {
       return [...sessionGroups.values()].flat();
     }
-    return sessionGroups.get(identityKey(identity)) ?? [];
+    return sessionGroups.get(storeIdentityKey(identity)) ?? [];
   }
 
   function calibrationProgress() {
@@ -471,12 +558,17 @@ export function createSpeedIndexStore({
     return { status: "calibrating", count: calibration.length, required: MIN_REFERENCE_CALLS };
   }
 
-  return {
+  const store = {
     dir,
     root,
     baselinePath,
     ownPath,
     processId: ownProcessId,
+    deliveryMode,
+    deliveryProfilePath: profilePath,
+    getDeliveryProfile: () => profile,
+    refreshDeliveryHistory,
+    ready: () => deliveryLoading ?? Promise.resolve(),
     networkHealth: health,
     get groups() {
       ensureHistory();
@@ -496,6 +588,7 @@ export function createSpeedIndexStore({
       persist(sample);
       tryFreeze();
       notifyScore(this);
+      void refreshDeliveryHistory();
       return sample;
     },
     setBaseline(next) {
@@ -549,17 +642,44 @@ export function createSpeedIndexStore({
       // Do not ingest history here. session_start calls refresh() before the
       // TUI paints; tailing sample files would put the 1.3s read back on boot.
       cached = undefined;
+      void refreshDeliveryHistory();
     },
     tail(options) {
       ensureHistory();
       return tail(options);
     },
-    getCachedScore(identity = activeIdentity) {
+    getCachedScore(identity = activeIdentity, { blockOnLoad = false } = {}) {
+      if (deliveryMode) {
+        if (!deliveryLoaded && blockOnLoad) loadDeliveryHistorySync();
+        if (!deliveryLoaded) return { metricVersion: 2, status: "unavailable", reason: "history_loading", score: undefined, matched: 0, valid: 0, coverage: 0 };
+        const target = isSpeedTierKey(identity?.tierKey)
+          ? { provider: identity.provider, model: identity.model, effort: identity.effort, tierKey: identity.tierKey }
+          : speedV2Identity(identity);
+        const key = `v2:${speedV2IdentityKey(target)}:${deliveryRevision}`;
+        const clock = now();
+        if (cached?.key === key && clock < cached.expiresAt) return cached.result;
+        const rows = [...deliveryHistory, ...deliveryOwn];
+        const result = scoreSpeedV2(rows, target, profile, { now: clock });
+        let expiresAt = Infinity;
+        for (const row of rows) {
+          const time = Date.parse(row.at);
+          const expiry = time >= clock ? time + 1 : time + windowMs + 1;
+          if (expiry > clock) expiresAt = Math.min(expiresAt, expiry);
+        }
+        cached = { key, result, expiresAt };
+        clearTimeout(expiryTimer);
+        if (Number.isFinite(expiresAt)) {
+          expiryTimer = setTimeout(() => { cached = undefined; notifyScore(store); },
+            Math.min(2_147_483_647, Math.max(1, expiresAt - clock)));
+          expiryTimer.unref?.();
+        }
+        return result;
+      }
       const baseline = baselineOf();
-      const key = `${identityKey(identity)}\0${baseline?.hash ?? ""}\0${samplesFor(identity).length}`;
+      const key = `${storeIdentityKey(identity)}\0${baseline?.hash ?? ""}\0${samplesFor(identity).length}`;
       if (cached && cached.key === key) return cached.result;
       // No windowMs: current-session samples are already the scope.
-      const result = scoreGroup(samplesFor(identity), identity, baseline, { now: now(), cap });
+      const result = { metricVersion: 1, ...scoreGroup(samplesFor(identity), identity, baseline, { now: now(), cap }) };
       cached = { key, result };
       return result;
     },
@@ -572,12 +692,16 @@ export function createSpeedIndexStore({
       if (probesEnabled) health.start();
     },
     stop() {
+      stopped = true;
+      clearTimeout(expiryTimer);
       health.stop();
     },
     _ingestFile: ingestFile,
     _tail: tail,
     _loadAll: ensureHistory,
   };
+  void refreshDeliveryHistory();
+  return store;
 }
 
 let singleton;
@@ -648,6 +772,7 @@ export function recordSpeedIndexCall({
     reasoning: identity.reasoning,
     streamKind,
     ...sanitizeCapture(state?.speedCapture),
+    ...sanitizeSpeedTier(state?.speedTier),
     ...(Number.isFinite(clientDurationMs) ? { clientDurationMs } : {}),
     ...(() => {
       const serverDurationMs = network.source === "server_duration"

@@ -1,6 +1,7 @@
 /** Allowlisted, pseudonymous wire rows. Never serialize the source sample. */
 import { createHmac } from "node:crypto";
 import { sanitizeSample } from "./speed-index-store.mjs";
+import { sanitizeSpeedTier } from "./speed-index-tier.mjs";
 
 export const SPEED_DATA_VERSION = 1;
 export const SPEED_DATA_DISABLED_FILE = "github-sync.disabled";
@@ -50,6 +51,7 @@ export function exportSpeedSample(raw, { deviceId, secret, recordKey, from, to }
     // Keep time-block analysis possible without disclosing exact wall times.
     at: new Date(Math.floor(time / 3_600_000) * 3_600_000).toISOString(),
     provider: raw.provider, model: raw.model,
+    ...sanitizeSpeedTier(sample),
   };
   if (typeof raw.processId === "string" && raw.processId.length > 0) {
     row.processId = pseudonym(secret, "process", raw.processId);

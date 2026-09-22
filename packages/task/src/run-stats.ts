@@ -1,6 +1,6 @@
 import type { ManagedChildEvent } from "./manager/child-handle"
 import type { CostReportStatus, TaskRunStats, TokenCoverageStatus } from "./state"
-import { rememberTaskSpeedRatio, scoreTaskSpeedIndex, taskSpeedRatio } from "./task-speed-index"
+import { readTaskSpeedIndex } from "./task-speed-index"
 
 export type RunStatsTracker = {
   accept(event: ManagedChildEvent): boolean
@@ -26,7 +26,7 @@ export function createRunStatsTracker(startedAt: number, now: () => number = Dat
   let cacheableTokens = 0
   let turnsReportingUsage = 0
   let latestCacheHitRate: number | undefined
-  let speedRatios: number[] = []
+  let speedIndex: number | null | undefined
   const evalRunCallIds = new Set<string>()
   let anonymousEvalRuns = 0
 
@@ -83,6 +83,11 @@ export function createRunStatsTracker(startedAt: number, now: () => number = Dat
       generationMs += window
       windowStart = timestamp
       const usage = readUsage(event.message)
+      // Only a message that carries a snapshot moves the row's Speed. Auxiliary
+      // calls (title, compaction) have no provider Speed of their own and must
+      // not erase the last measured one.
+      const reportedSpeed = readTaskSpeedIndex(event.message)
+      if (reportedSpeed !== undefined) speedIndex = reportedSpeed
       if (Object.keys(usage).length > 0) turnsReportingUsage += 1
       if (window === 0 && (usage.output ?? 0) > 0) collapsedWindows += 1
       outputTokens += usage.output ?? 0
@@ -96,12 +101,6 @@ export function createRunStatsTracker(startedAt: number, now: () => number = Dat
       const requestCacheableTokens = (usage.input ?? 0) + requestCacheReadTokens + requestCacheWriteTokens
       const requestCacheHitRate = boundedCacheHitRate(requestCacheReadTokens, requestCacheableTokens)
       if (requestCacheHitRate !== undefined) latestCacheHitRate = requestCacheHitRate
-      if (window > 0 && requestCacheableTokens > 0 && requestCacheHitRate !== undefined) {
-        speedRatios = rememberTaskSpeedRatio(
-          speedRatios,
-          taskSpeedRatio(window, requestCacheableTokens, requestCacheHitRate),
-        )
-      }
       inputTokens += usage.input ?? 0
       cacheReadTokens += requestCacheReadTokens
       cacheWriteTokens += requestCacheWriteTokens
@@ -125,7 +124,6 @@ export function createRunStatsTracker(startedAt: number, now: () => number = Dat
       const throughputWindowMs =
         collapsedWindows > 0 ? undefined : generationMs > 0 ? generationMs : runtimeMs
       const tps = throughputWindowMs === undefined ? undefined : tokensPerSecond(outputTokens, throughputWindowMs)
-      const speedIndex = scoreTaskSpeedIndex(speedRatios)
       const runCacheHitRate = boundedCacheHitRate(cacheReadTokens, cacheableTokens)
       const costReported = sawCost && Number.isFinite(costUsd)
       return {
