@@ -16,6 +16,7 @@ import {
   formatSpeedIndex,
   freezeBaseline,
   freezeProvisionalBaseline,
+  referenceDurationFor,
   validateBaseline,
 } from "../../src/speed-index.mjs";
 import { installStatusline } from "../../src/extensions/statusline.mjs";
@@ -115,22 +116,23 @@ test("a sparse local v1 still scores bundled large-context cells", () => {
   store.stop();
 });
 
-test("a matched call halves and doubles the score against the bundled reference cell", () => {
+test("a matched call halves and doubles the score against Sol's pace for the same output", () => {
   const dir = mkdtempSync(join(tmpdir(), "si-v0-ratio-"));
   const bundled = loadBundledBaseline();
   const cell = bundled.cells.find((entry) => entry.key === "65536:131072:gte50" && entry.supported);
   assert.ok(cell, "expected the 64k-128k cached cell to be supported in v0");
+  const pace = referenceDurationFor(call());
 
   const fast = createSpeedIndexStore({ agentDir: dir, autostartProbes: false, pid: 2, startedAt: 2, nonce: "a2" });
-  fast.record(call({ clientDurationMs: cell.medianMs / 2 }));
+  fast.record(call({ clientDurationMs: pace / 2 }));
   assert.equal(fast.getCachedScore(REFERENCE_IDENTITY).score, 200);
   fast.stop();
 
   const slow = createSpeedIndexStore({ agentDir: mkdtempSync(join(tmpdir(), "si-v0-slow-")), autostartProbes: false, pid: 3, startedAt: 3, nonce: "a3" });
-  slow.record(call({ clientDurationMs: cell.medianMs * 2 }));
+  slow.record(call({ clientDurationMs: pace * 2 }));
   assert.equal(slow.getCachedScore(REFERENCE_IDENTITY).score, 50);
   // Multiple current-session calls aggregate through the matched-cell ratio math.
-  slow.record(call({ clientDurationMs: cell.medianMs * 2 }));
+  slow.record(call({ clientDurationMs: pace * 2 }));
   const aggregated = slow.getCachedScore(REFERENCE_IDENTITY);
   assert.equal(aggregated.matched, 2);
   assert.equal(aggregated.score, 50);
@@ -140,9 +142,8 @@ test("a matched call halves and doubles the score against the bundled reference 
 test("historical samples from other processes never reach the live score", () => {
   const dir = mkdtempSync(join(tmpdir(), "si-hist-"));
   const seed = createSpeedIndexStore({ agentDir: dir, autostartProbes: false, pid: 4, startedAt: 4, nonce: "b1" });
-  const bundled = loadBundledBaseline();
-  const cell = bundled.cells.find((entry) => entry.key === "65536:131072:gte50");
-  for (let i = 0; i < 20; i += 1) seed.record(call({ clientDurationMs: cell.medianMs / 4 }));
+  const pace = referenceDurationFor(call());
+  for (let i = 0; i < 20; i += 1) seed.record(call({ clientDurationMs: pace / 4 }));
   assert.equal(seed.getCachedScore(REFERENCE_IDENTITY).matched, 20);
   seed.stop();
 
@@ -152,7 +153,7 @@ test("historical samples from other processes never reach the live score", () =>
   const live = fresh.getCachedScore(REFERENCE_IDENTITY);
   assert.equal(live.matched, 0);
   assert.equal(formatSpeedIndex(live).text, "Speed —");
-  fresh.record(call({ clientDurationMs: cell.medianMs }));
+  fresh.record(call({ clientDurationMs: pace }));
   assert.equal(fresh.getCachedScore(REFERENCE_IDENTITY).matched, 1);
   assert.equal(fresh.getCachedScore(REFERENCE_IDENTITY).score, 100);
   fresh.stop();

@@ -16,6 +16,7 @@ import {
   scoreFromRatios,
   scoreGroup,
   speedRatio,
+  referenceDurationFor,
 } from "../../src/speed-index.mjs";
 
 const now = 1_700_000_000_000;
@@ -80,16 +81,16 @@ test("IQR / median > 1.0 leaves a cell unsupported; sparse cells never borrow", 
   assert.equal(byKey["16384:32768:lt50"].count, 19);
   assert.ok(byKey["512:1024:lt50"].iqrRatio > 1);
   assert.equal(byKey["512:1024:lt50"].supported, false);
-  assert.equal(speedRatio(sample({ fullInputTokens: 20000, newInputTokens: 20000, cacheReadTokens: 0, cacheHitRate: 0 }), baseline), undefined);
+  assert.equal(speedRatio(sample({ outputTokens: 0 }), baseline), undefined);
 });
 
-test("baseline 100, 2x and 0.5x ratios, median-log aggregation", () => {
-  const reference = many(20);
-  const baseline = freezeBaseline(reference, { now: () => now, minReferenceCalls: 20 });
-  const same = sample();
-  assert.equal(speedRatio(same, baseline), 1);
-  assert.equal(speedRatio(sample({ clientDurationMs: 500 }), baseline), 2);
-  assert.equal(speedRatio(sample({ clientDurationMs: 2000 }), baseline), 0.5);
+test("same output length is the work; half the time is twice as fast", () => {
+  const pace = referenceDurationFor(sample());
+  const baseline = freezeBaseline(many(20), { now: () => now, minReferenceCalls: 20 });
+  assert.equal(speedRatio(sample({ clientDurationMs: pace }), baseline), 1);
+  assert.equal(speedRatio(sample({ clientDurationMs: pace / 2 }), baseline), 2);
+  assert.equal(speedRatio(sample({ clientDurationMs: pace * 2 }), baseline), 0.5);
+  assert.equal(speedRatio(sample({ outputTokens: undefined }), baseline), undefined);
   assert.equal(scoreFromRatios([1, 1, 1]), 100);
   assert.equal(scoreFromRatios([2, 2, 2]), 200);
   assert.equal(scoreFromRatios([0.5, 0.5, 0.5]), 50);
@@ -102,16 +103,17 @@ test("one matched call scores; zero matched is a dash; no baseline is unavailabl
   const opts = { now };
   assert.equal(scoreGroup([], identity, undefined, opts).reason, "no_baseline");
   assert.equal(formatSpeedIndex(scoreGroup([], identity, baseline, opts)).text, "Speed —");
-  const single = scoreGroup(many(1), identity, baseline, opts);
+  const pace = referenceDurationFor(sample());
+  const single = scoreGroup(many(1, { clientDurationMs: pace }), identity, baseline, opts);
   assert.equal(single.status, "ready");
   assert.equal(single.matched, 1);
   assert.equal(formatSpeedIndex(single).text, "Speed 100");
-  const ready = scoreGroup(many(30), identity, baseline, opts);
+  const ready = scoreGroup(many(30, { clientDurationMs: pace }), identity, baseline, opts);
   assert.equal(ready.status, "ready");
   assert.equal(formatSpeedIndex(ready).text, "Speed 100");
-  // An unmatched cell contributes nothing but never blocks the matched ones.
-  const unmatched = sample({ newInputTokens: 1000, cacheReadTokens: 0, fullInputTokens: 1000, cacheHitRate: 0, clientDurationMs: 1000 });
-  const mixed = [...many(2), ...Array.from({ length: 20 }, () => unmatched)];
+  // A call with no output has no same-work comparison, and does not block the rest.
+  const unmatched = sample({ outputTokens: 0, clientDurationMs: pace });
+  const mixed = [...many(2, { clientDurationMs: pace }), ...Array.from({ length: 20 }, () => unmatched)];
   const covered = scoreGroup(mixed, identity, baseline, opts);
   assert.equal(covered.status, "ready");
   assert.equal(covered.matched, 2);
@@ -127,8 +129,9 @@ test("mergeBaselines keeps bundled coverage where local cells are unsupported", 
   const byKey = Object.fromEntries(merged.cells.map((cell) => [cell.key, cell]));
   assert.equal(byKey["256:512:gte50"]?.supported, true);
   assert.equal(byKey["65536:131072:gte50"]?.supported, true);
-  assert.equal(speedRatio(sample({ fullInputTokens: 80_000, cacheHitRate: 0.75, cacheReadTokens: 60_000, newInputTokens: 20_000, clientDurationMs: 1000 }), local), undefined);
-  assert.equal(speedRatio(sample({ fullInputTokens: 80_000, cacheHitRate: 0.75, cacheReadTokens: 60_000, newInputTokens: 20_000, clientDurationMs: 1000 }), merged), 1);
+  const paced = sample({ fullInputTokens: 80_000, cacheHitRate: 0.75, cacheReadTokens: 60_000, newInputTokens: 20_000, clientDurationMs: referenceDurationFor(sample()) });
+  assert.equal(speedRatio(paced, local), 1);
+  assert.equal(speedRatio(paced, merged), 1);
   assert.equal(mergeBaselines(undefined, bundled), bundled);
   assert.equal(mergeBaselines(local, undefined), local);
 });
