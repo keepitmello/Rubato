@@ -69,6 +69,15 @@ Exact ids for the rest, as currently registered: Fable 5.1
 `openai-codex/gpt-6-astra`, Grok 4.7 `xai/grok-4.7`. Confirm against the live
 catalog the `Agent` schema lists; a stale id fails closed.
 
+A `-sub` id (`anthropic/claude-opus-5-sub`, `anthropic/claude-fable-5-1-sub`,
+`openai-codex/gpt-5.6-sol-sub`) is an id-clone of the same upstream model bound to
+the second account slot, not a different model or effort. The picker labels it
+`Opus 5 [sub]`. Rows appear only where a second account exists and only for the
+curated pairs (Anthropic Fable/Opus, Codex Sol/Astra); a leftover credential slot
+elsewhere does not create them. The plain id and its `-sub` copy are separate
+routes whose availability is decided separately - one failing says nothing about
+the other, so read the live catalog and record which route actually ran.
+
 Token volume, API-equivalent dollars, elapsed time and subscription quota are
 different measurements. In particular, neither an API cache discount nor an
 operator report that Opus cache reads do not debit a plan establishes the other
