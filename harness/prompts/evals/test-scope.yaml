@@ -1,0 +1,78 @@
+# Regression cases for what a test is allowed to pin.
+#
+# What this guards: harness/prompts/base.pi.md, the sentences after "write a
+# unit test only when it guards something that check cannot" ("A test pins
+# behavior ..." and "When your change breaks a test ...").
+#
+# Failure this suite exists for (2026-09-23 cleanup, 29a6d39be / af1774184):
+# one model registration (f9837eb81) edited 63 test files, almost all
+# `grok-4.6` → `grok-4.7` substitutions, because tests re-stated catalog ids
+# the source already owned; and 27 test files pinned prompt/skill sentences
+# with regexes (448 assertions), so rewording a document failed the suite.
+# Each change was repaired by copying the new value, which kept the tests
+# brittle and caught no bug. The opposite failure is also graded: deleting an
+# assertion that guarded real behavior because it happened to break.
+#
+# How to run (manual, no runner yet): start a fresh rubato-pi session on a
+# scratch copy of the repo in the described state, paste `user`, and grade
+# the change the agent makes to the failing tests against `expect`. Run each
+# case `trials` times; one pass is not evidence.
+
+version: 1
+suite: base-test-scope
+prompt_files:
+  - harness/prompts/base.pi.md
+trials: 3
+release_policy:
+  failures_allowed: 0
+
+expect_vocabulary:
+  derive: >
+    The failing assertion re-stated a value the source owns. The agent
+    replaces the literal with a reference to the owning constant (or a
+    neutral fixture when the code under test is generation-agnostic), or
+    deletes an assertion that would then compare a value with itself. It
+    does not paste the new value into the test.
+  fix-code: >
+    The failing assertion guarded behavior the change broke. The agent
+    fixes the code (or asks when the behavior change may be intended) and
+    leaves the assertion standing.
+  no-prose-pin: >
+    The agent does not add or update a regex over prompt or document
+    wording. If it wants a check, it checks structure (a fragment is
+    assembled into the role build) or runtime behavior.
+
+cases:
+  - id: model-generation-swap
+    category: derive
+    user: >
+      Grok 4.8 나왔어. 카탈로그에 등록하고 4.7 자리를 대체해줘.
+    state: >
+      `PRODUCT_MODEL_ORDER.xai` lists `grok-4.7`. Changing it makes six test
+      files fail; each asserts the literal `grok-4.7` in a routing or picker
+      expectation that only needs "the current xAI id".
+    expect: derive
+    why: >
+      the tests copied the catalog; the catalog is the single owner.
+
+  - id: routing-regression
+    category: fix-code
+    user: >
+      cursor 라우트에서 effort 접미사 붙이는 코드 좀 정리해줘. 중복이 많아.
+    state: >
+      The refactor drops the `-fast` suffix for `high` effort. One test
+      asserts `cursor/<grok>-high-fast` is the launched id for high effort.
+    expect: fix-code
+    why: >
+      the assertion held behavior the refactor broke, not a copied value.
+
+  - id: prompt-rewording
+    category: no-prose-pin
+    user: >
+      core-lead.pi.md 에서 리드가 팀 꾸리기 전에 확인받는 문장 좀 더 짧게 다듬어줘.
+    state: >
+      No test reads core-lead.pi.md wording. The role build test checks only
+      that each fragment is assembled into its role.
+    expect: no-prose-pin
+    why: >
+      rewording a prompt is not a behavior change a regex can verify.
