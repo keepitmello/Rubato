@@ -120,6 +120,38 @@
     }
   }
 
+  it("notes and summary transitions keep distinct labels through ingestion, reload and GUI rows", async () => {
+    const harness = await createHarness();
+    const events: any[] = [];
+    let sequence = 0;
+    const projection = new EventProjection({
+      threadId: "thread-1", sessionId: "notes-label", instanceId: "codex",
+      emit: (event: any) => events.push({
+        ...event, createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, ++sequence)).toISOString(),
+      }),
+    });
+    projection.begin("turn-1");
+    projection.project({ type: "compaction_end", reason: "extension", aborted: false,
+      result: { details: { source: "rubato-history-notes-v1", window: { windowId: "window-2" } } } });
+    projection.project({ type: "compaction_end", reason: "manual", aborted: false,
+      result: { summary: "Actual summary" } });
+    projection.project({ type: "compaction_end", aborted: true });
+    projection.project({ type: "compaction_end", errorMessage: "storage failed" });
+    projection.settle();
+    await harness.emitAndDrain(events);
+    const thread = JSON.parse(JSON.stringify((await harness.readModel()).threads.find(t => t.id === "thread-1")!));
+    expect(thread.activities.filter((a: any) => a.kind === "context-compaction").map((a: any) => a.summary))
+      .toEqual(["Context Optimized", "Context compacted"]);
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: deriveTimelineEntries(thread.messages, [], deriveWorkLogEntries(thread.activities)),
+      isWorking: false, activeTurnStartedAt: null, latestTurn: thread.latestTurn,
+      runningTurnId: null, expandedTurnIds: new Set(), turnDiffSummaries: [],
+      supportsConversationRollback: false,
+    });
+    expect(rows.filter(r => r.kind === "context-compaction").map(r => r.label))
+      .toEqual(["Context Optimized", "Context compacted"]);
+  });
+
   // Optional private, local-only recording replay. Never put real user
   // transcripts or provider credentials into this repository.
   if (process.env.T3_REPLAY_MESSAGES) {

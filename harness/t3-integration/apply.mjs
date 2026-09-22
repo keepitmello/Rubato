@@ -510,6 +510,20 @@ const edits = {
   ],
   'apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts': [
     [
+      '      const summary =\n        beforeTokens !== undefined && afterTokens !== undefined\n          ? `Compacted context ${formatTokens(beforeTokens)} → ${formatTokens(afterTokens)} tokens`\n          : "Context compacted";',
+      [
+        '      const detail = event.payload.detail;',
+        '      const notesWindow = detail !== null && typeof detail === "object" &&',
+        '        "contextMode" in detail && detail.contextMode === "history-notes";',
+        '      const summary = notesWindow',
+        '        ? "Context Optimized"',
+        '        : beforeTokens !== undefined && afterTokens !== undefined',
+        '          ? `Compacted context ${formatTokens(beforeTokens)} → ${formatTokens(afterTokens)} tokens`',
+        '          : "Context compacted";',
+      ].join('\n'),
+      'replace',
+    ],
+    [
       '    case "thread.token-usage.updated": {\n      const payload = buildContextWindowActivityPayload(event);',
       '    case "thread.metadata.updated": {\n      const metadata = event.payload.metadata;\n      if (metadata === undefined || !("speedIndex" in metadata)) return [];\n      const raw = metadata.speedIndex;\n      const speedIndex =\n        typeof raw === "number" && Number.isFinite(raw) && raw >= 0 ? Math.round(raw) : null;\n      return [\n        {\n          id: EventId.make(`session-speed:${event.threadId}`),\n          createdAt: event.createdAt,\n          tone: "info",\n          kind: "session.speed.updated",\n          summary: speedIndex === null ? "Speed —" : `Speed ${speedIndex}`,\n          payload: { speedIndex },\n          turnId: toTurnId(event.turnId) ?? null,\n          ...maybeSequence,\n        },\n      ];\n    }\n\n    case "thread.token-usage.updated": {\n      const payload = buildContextWindowActivityPayload(event);',
       'replace',
