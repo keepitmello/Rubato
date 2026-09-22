@@ -161,12 +161,9 @@ function prepareAgentDir(agentDir) {
   }
 }
 
-async function runSameNode(entry, argv, nextEnv, { registerNoChangelog = false, stockPi = false } = {}) {
+async function runSameNode(entry, argv, nextEnv, { stockPi = false } = {}) {
   if (stockPi) applyPiProcessEnv(nextEnv);
   else Object.assign(process.env, nextEnv);
-  if (registerNoChangelog) {
-    await import(new URL("./no-changelog-register.mjs", import.meta.url).href);
-  }
   process.argv = [process.execPath, ...argv];
   await import(pathToFileURL(entry).href);
   return undefined;

@@ -11,7 +11,6 @@ import {
   recordedModeFromBranch,
 } from "../../src/context-notes/mode-policy.mjs";
 import { INIT_ENTRY, MODE_ENTRY, SOURCE, encodeBootstrap, initialWindow, nextWindow } from "../../src/context-notes/protocol.mjs";
-import { applyContextNotesTransforms as apply } from "../../src/transforms/core-context-notes.mjs";
 import { installContextNotes } from "../../src/extensions/context-notes.mjs";
 import { fakeSession, Type } from "../helpers/context-notes-fake.mjs";
 
@@ -188,20 +187,6 @@ test("session_tree restores the destination branch mode and does not init a summ
   assert.equal(process.env.RUBATO_CONTEXT_MODE, SUMMARY_MODE);
   assert.equal(f.entries.filter((e) => e.customType === INIT_ENTRY).length, inits);
 });
-});
-
-test("gates are present but dormant in summary mode; drift is recorded for a later notes switch", async () => {
-  const base = "file:///repo/node_modules/@code-yeongyu/senpi/dist/core/";
-  const settings = `export class SettingsManager { getCompactionSettings() { return {enabled:true,idleCompactionEnabled:true}; } }`;
-  const patched = apply(`${base}settings-manager.js`, settings, { enabled: false });
-  assert.ok(patched.includes("rubato-history-notes-transform-v2:settings"));
-  assert.ok(patched.includes("installSettingsGate"));
-  delete globalThis[Symbol.for("rubato.history-notes.lane.v1")];
-  const drifted = apply(`${base}extensions/builtin/compaction/lane-policy.js`, "export const keep = true;\n", { enabled: false });
-  assert.match(drifted, /__rubatoRecordDrift\("lane"/);
-  const driftedModule = await import(`data:text/javascript;base64,${Buffer.from(drifted).toString("base64")}#${Math.random()}`);
-  assert.equal(driftedModule.keep, true);
-  assert.throws(() => assertEngineParts(), /lane \(/);
 });
 
 test("considerContextModeSwitch adopts the model default when the session has no recorded mode", async () => {

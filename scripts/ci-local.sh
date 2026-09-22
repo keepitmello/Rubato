@@ -30,5 +30,4 @@ say "rubato-pi unit tests"
 # because undici happened to be hoisted into the root tree by the web layer;
 # removing that layer took it with it. Install what the package declares.
 npm --prefix harness/rubato-pi ci --workspaces=false --ignore-scripts
-export NODE_OPTIONS="--import=file://$REPO/harness/rubato-pi/src/no-changelog-register.mjs"
 npm --prefix harness/rubato-pi test
