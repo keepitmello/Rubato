@@ -100,12 +100,47 @@ export async function streamWithCredentialPool(runtime, method, model, context, 
           : {}),
       runAttempt: async (slot) => {
         const prepared = await runtime.prepareRequest(wire, slotRequestOptions(streamOptions, slot));
-        return prepared.provider[method](prepared.model, context, prepared.options);
+        return callProviderStream(prepared, method, context, runtime);
       },
     });
   }
   const prepared = await runtime.prepareRequest(wire, options);
-  return prepared.provider[method](prepared.model, context, prepared.options);
+  return callProviderStream(prepared, method, context, runtime);
 }
 
 export { listSlots };
+
+const SPEED_WRAP = Symbol.for("rubato.stream.decorated");
+let speedWrap;
+
+async function loadSpeedWrap() {
+  if (speedWrap !== undefined) return speedWrap;
+  try {
+    speedWrap = await import("../src/rubato-stream.mjs");
+  } catch {
+    speedWrap = null;
+  }
+  return speedWrap;
+}
+
+// Direct providers are already wrapped. Custom registrations (b-ai, models.json)
+// reach this pool unwrapped, so every model call records here when a store is bound.
+export function invokeProviderStream(prepared, method, context, store, wrap) {
+  const provider = prepared?.provider;
+  const source = provider?.[method];
+  if (typeof source !== "function") {
+    throw new TypeError(`Provider has no ${method}`);
+  }
+  const stream = store && wrap && !provider[SPEED_WRAP]
+    ? wrap(source, store)
+    : source;
+  return stream.call(provider, prepared.model, context, prepared.options);
+}
+
+async function callProviderStream(prepared, method, context, runtime) {
+  const wrapModule = runtime?.speedIndexStore ? await loadSpeedWrap() : null;
+  const wrap = wrapModule
+    ? (source, store) => wrapModule.withRubatoStream(source, { speedIndexStore: store })
+    : null;
+  return invokeProviderStream(prepared, method, context, runtime?.speedIndexStore, wrap);
+}

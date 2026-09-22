@@ -4,6 +4,7 @@ import { runCredentialFailover } from "./auth-pool/failover.mjs";
 import { listRotationSlots, streamWithCredentialRotation } from "./auth-pool/rotation-stream.mjs";
 import { CredentialSlotRepository } from "./auth-pool/state-store.mjs";
 import { requiredAccountSlotName, wireAccountModel } from "./auth-pool/runtime-pool.mjs";
+import { invokeProviderStream } from "./auth-pool/runtime-pool.mjs";
 
 test("429 does not hop to another credential slot", async () => {
   const used = [];
@@ -24,6 +25,29 @@ test("429 does not hop to another credential slot", async () => {
     }
   }, /Too Many Requests/);
   assert.deepEqual(used, ["a"]);
+});
+
+test("unwrapped providers record speed; already wrapped providers are not wrapped again", () => {
+  const calls = [];
+  const raw = function streamSimple(model, _context, options) {
+    calls.push(["raw", model.id, options?.tag]);
+    return "raw";
+  };
+  const prepared = { provider: { streamSimple: raw }, model: { id: "deepseek-v4.1-flash" } };
+  const wrap = (source, store) => function wrapped(model, context, options) {
+    calls.push(["wrap", store, model.id]);
+    return source.call(this, model, context, options);
+  };
+  assert.equal(invokeProviderStream(prepared, "streamSimple", {}, "store", wrap), "raw");
+  assert.deepEqual(calls, [["wrap", "store", "deepseek-v4.1-flash"], ["raw", "deepseek-v4.1-flash", undefined]]);
+  calls.length = 0;
+  prepared.provider[Symbol.for("rubato.stream.decorated")] = true;
+  assert.equal(invokeProviderStream(prepared, "streamSimple", {}, "store", wrap), "raw");
+  assert.deepEqual(calls, [["raw", "deepseek-v4.1-flash", undefined]]);
+  calls.length = 0;
+  delete prepared.provider[Symbol.for("rubato.stream.decorated")];
+  assert.equal(invokeProviderStream(prepared, "streamSimple", {}, undefined, wrap), "raw");
+  assert.deepEqual(calls, [["raw", "deepseek-v4.1-flash", undefined]]);
 });
 
 test("a 401 does not permanently retire the only credential", async () => {

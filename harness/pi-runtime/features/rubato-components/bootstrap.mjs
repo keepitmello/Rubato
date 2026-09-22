@@ -91,6 +91,7 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
     { name: "providers", factory: createProvidersExtension({ ...providerOptions,
       routeFactories: { ...providerOptions.routeFactories, cursor: providerExecution.cursorRouteFactory },
       agentDir,
+      modelRuntime,
       env: { ...env, ...providerOptions.env, RUBATO_PI_CODING_AGENT_DIR: agentDir } }) },
     { name: "rubato-multi-account", factory: createGptAccountExtension({
       agentDir,
