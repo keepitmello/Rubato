@@ -66,6 +66,8 @@ export type ChildSpec = {
   readonly preset?: string
   readonly instructions?: string
   readonly prompt: string
+  // Requested provider tier. Absent means the child session options must not grow a tier field.
+  readonly serviceTier?: "priority" | "auto"
 }
 
 export type CreateChildSession = (options: CreateAgentSessionOptions) => Promise<ChildSession>

@@ -52,6 +52,12 @@ export function buildTaskToolParams(availableModels: AvailableModels = []) {
           "One-line summary of the delegated work, shown to the user in the task footer/widget UI instead of the raw prompt. Keep it within 80 chars; longer values are force-truncated.",
       }),
     ),
+    fast: Type.Optional(
+      Type.Boolean({
+        description:
+          "Request the provider priority service tier for this child. Omit normally; the child then keeps today's tier behavior.",
+      }),
+    ),
   })
   if (typeof availableModels === "function") {
     Object.defineProperty(schema.properties.model, "enum", {

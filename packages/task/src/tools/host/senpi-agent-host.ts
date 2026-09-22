@@ -140,6 +140,8 @@ export function startSpecFromResolved(spec: ResolvedAgentSpec, options: SenpiAge
     ...(spec.effortSource === "manual-override" && spec.effort !== undefined ? { reasoning: spec.effort } : {}),
     ...(spec.summary === undefined ? {} : { task_summary: spec.summary }),
     ...(preset === undefined && spec.instructions !== undefined ? { instructions: spec.instructions } : {}),
+    // fast is a child priority request. Leave the field off unless it was actually requested.
+    ...(spec.fast === true ? { service_tier: "priority" as const } : {}),
   }
 }
 

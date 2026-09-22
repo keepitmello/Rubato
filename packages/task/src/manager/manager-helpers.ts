@@ -65,9 +65,7 @@ export function buildManagedSpec(input: {
   const { record, spec, plan, cwd, stateDir } = input
   const prompt = plan.promptAppend ? `${spec.prompt}\n\n${plan.promptAppend}` : spec.prompt
   const instructions = spec.instructions ?? plan.instructions
-  const memberEnv = spec.memberEnv === undefined
-    ? undefined
-    : { ...spec.memberEnv, RUBATO_TASK_MEMBER_TASK_ID: record.task_id }
+  const memberEnv = memberEnvWithServiceTier(spec.memberEnv, spec.service_tier, record.task_id)
   return {
     taskId: record.task_id,
     cwd: spec.cwd ?? cwd,
@@ -95,6 +93,22 @@ export function buildManagedSpec(input: {
       : {}),
     ...(spec.extensions !== undefined ? { extensions: spec.extensions } : {}),
     ...(memberEnv !== undefined ? { memberEnv } : {}),
+    ...(spec.service_tier !== undefined ? { serviceTier: spec.service_tier } : {}),
+  }
+}
+
+// The tier rides the existing per-child env channel. A missing tier must not create memberEnv:
+// that field's absence is what keeps a non-member child's spawn identical to today.
+function memberEnvWithServiceTier(
+  base: Readonly<Record<string, string>> | undefined,
+  serviceTier: "priority" | "auto" | undefined,
+  taskId: string,
+): Readonly<Record<string, string>> | undefined {
+  if (base === undefined && serviceTier === undefined) return undefined
+  return {
+    ...(base ?? {}),
+    ...(base !== undefined ? { RUBATO_TASK_MEMBER_TASK_ID: taskId } : {}),
+    ...(serviceTier !== undefined ? { RUBATO_SERVICE_TIER: serviceTier } : {}),
   }
 }
 

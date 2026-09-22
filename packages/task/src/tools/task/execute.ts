@@ -45,7 +45,9 @@ export function buildTaskExecute(deps: TaskToolDeps): TaskExecute {
     }, catalogs)
     if (!resolved.ok) return invalidArguments(resolved.error.message, resolved.error.code)
 
-    const spec = resolved.value
+    // fast is not an admission input. Attach it only when requested so an omitted or false
+    // value leaves the resolved spec byte-identical to today.
+    const spec = params.fast === true ? { ...resolved.value, fast: true } : resolved.value
 
     const host = deps.host ?? hostFromDeps(deps, ctx)
     try {

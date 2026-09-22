@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { rm } from "node:fs/promises"
 import { spawn } from "node:child_process"
 import { tmpdir } from "node:os"
@@ -14,7 +14,10 @@ import {
   createPiChildFeatureProfile,
   createStockChildInProcessSession,
   createPiRpcSpawnRuntime,
+  loadPiChildInProcessFactories,
+  resolvePiChildProviderProfile,
   resolveStockRpcEntry,
+  serviceTierExtensionPath,
   PI_PACKAGE,
   PI_RPC_ENTRY,
 } from "./stock-rpc-runtime.mjs"
@@ -215,5 +218,66 @@ describe("stock Pi child RPC runtime", () => {
     assert.match(explicit, /^# Teammate$/m)
     assert.match(explicit, /^Role: verifier$/m)
     assert.match(explicit, /Do not implement the production change you will judge/)
+  })
+})
+
+function stageChildRoot() {
+  const root = mkdtempSync(join(tmpdir(), "rubato-child-tier-"))
+  const touch = (path) => {
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, "")
+  }
+  touch(join(root, "rubato-features", "child-runtime", "provider-extension.mjs"))
+  touch(join(
+    root,
+    "node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/rubato-features/provider-execution/extension.mjs",
+  ))
+  const tierExtension = serviceTierExtensionPath(root)
+  mkdirSync(dirname(tierExtension), { recursive: true })
+  writeFileSync(tierExtension, `
+export function createServiceTierFeature(options = {}) {
+  const extension = () => {}
+  extension.initialTier = options.initialTier
+  extension.readServiceTierEnv = options.readServiceTierEnv
+  return { extension }
+}
+`)
+  return root
+}
+
+describe("child service-tier closure", () => {
+  test("includes the service-tier extension only when a tier is requested", async () => {
+    const root = stageChildRoot()
+    const plain = resolvePiChildProviderProfile({ root })
+    const fast = resolvePiChildProviderProfile({ root, serviceTier: "priority" })
+    assert.equal(plain.rpcExtensions.some((entry) => entry.endsWith(join("service-tier", "extension.mjs"))), false)
+    assert.equal(fast.rpcExtensions.some((entry) => entry === serviceTierExtensionPath(root)), true)
+
+    const plainFactories = await loadPiChildInProcessFactories({
+      root,
+      includeContextNotes: false,
+      includeGuards: false,
+      includeRolePrompt: false,
+    })
+    const fastFactories = await loadPiChildInProcessFactories({
+      root,
+      includeContextNotes: false,
+      includeGuards: false,
+      includeRolePrompt: false,
+      serviceTier: "priority",
+    })
+    assert.equal(plainFactories.some((entry) => entry.name === "service-tier"), false)
+    assert.equal(fastFactories.length, 1)
+    assert.equal(fastFactories[0].name, "service-tier")
+    assert.equal(fastFactories[0].factory.initialTier, "priority")
+    assert.equal(fastFactories[0].factory.readServiceTierEnv, false)
+  })
+
+  test("createPiRpcSpawnRuntime exposes the staged service-tier path for a later per-child append", () => {
+    const runtime = createPiRpcSpawnRuntime({ rpcEntry: PATCHABLE_RPC_ENTRY, parentEnv: {} })
+    assert.equal(
+      runtime.serviceTierExtension.endsWith(join("rubato-features", "service-tier", "extension.mjs")),
+      true,
+    )
   })
 })

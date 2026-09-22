@@ -32,6 +32,7 @@ export type RpcRunnerSpec = {
   // registered is reproducible in the detached child without inheriting the parent's whole package set.
   readonly extensions?: readonly string[]
   readonly memberEnv?: Readonly<Record<string, string>>
+  readonly service_tier?: "priority" | "auto"
 }
 
 export type ChildEventListener = (event: AgentSessionEvent) => void
