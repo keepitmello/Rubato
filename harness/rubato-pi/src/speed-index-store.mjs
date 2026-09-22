@@ -25,6 +25,24 @@ import {
 } from "./speed-index.mjs";
 import { normalizeProviderUsage } from "./measurement-recorder.mjs";
 
+// Capture evolves independently of the scoring epoch. All times are observed
+// offsets from the outer provider-call start, not server decode timestamps.
+export const SPEED_CAPTURE_VERSION = 1;
+export const SPEED_CAPTURE_MILESTONES = Object.freeze([64, 256, 1024, 4096, 16384, 65536]);
+const CAPTURE_CHANNELS = ["Text", "Reasoning", "ToolArgument"];
+const CAPTURE_NUMBERS = [
+  "streamEventCount", "maxContentGapMs",
+  "firstToolCallEndMs", "lastToolCallEndMs", "toolCallEndCount",
+  ...CAPTURE_CHANNELS.flatMap((channel) => {
+    const prefix = channel[0].toLowerCase() + channel.slice(1);
+    return [`first${channel}Ms`, `last${channel}Ms`, `${prefix}DeltaCount`, `${prefix}CodeUnits`, `${prefix}MaxGapMs`];
+  }),
+];
+const CAPTURE_MILESTONES = ["textMilestones", "reasoningMilestones", "toolArgumentMilestones"];
+const CAPTURE_FIELDS = new Set([
+  "captureVersion", "requestKind", "streamTerminalObserved", ...CAPTURE_NUMBERS, ...CAPTURE_MILESTONES,
+]);
+
 export const SAMPLE_FIELDS = Object.freeze([
   "schemaVersion",
   "epoch",
@@ -44,11 +62,13 @@ export const SAMPLE_FIELDS = Object.freeze([
   "cacheReadTokens",
   "cacheWriteTokens",
   "outputTokens",
+  "reasoningTokens",
   "fullInputTokens",
   "cacheHitRate",
   "terminalStatus",
   "processId",
   "exclusion",
+  ...CAPTURE_FIELDS,
 ]);
 
 export const BASELINE_FILE = "baseline-v1.json";
@@ -147,15 +167,48 @@ export function sanitizeSample(raw) {
   }
   const sample = {};
   for (const key of SAMPLE_FIELDS) {
+    if (CAPTURE_FIELDS.has(key)) continue;
     if (!Object.prototype.hasOwnProperty.call(raw, key)) continue;
     const value = raw[key];
     if (value === undefined) continue;
+    if (key === "reasoningTokens" && (!Number.isFinite(value) || value < 0)) continue;
     sample[key] = value;
   }
+  Object.assign(sample, sanitizeCapture(raw));
   if (sample.schemaVersion !== SPEED_INDEX_SCHEMA_VERSION) return undefined;
   if (sample.epoch !== SPEED_INDEX_EPOCH) return undefined;
   if (typeof sample.at !== "string") return undefined;
   return sample;
+}
+
+function sanitizeCapture(raw) {
+  if (raw?.captureVersion !== SPEED_CAPTURE_VERSION) return {};
+  const capture = { captureVersion: SPEED_CAPTURE_VERSION };
+  if (["user", "tool", "other"].includes(raw.requestKind)) capture.requestKind = raw.requestKind;
+  if (typeof raw.streamTerminalObserved === "boolean") capture.streamTerminalObserved = raw.streamTerminalObserved;
+  for (const key of CAPTURE_NUMBERS) {
+    const value = raw[key];
+    if (!Number.isFinite(value) || value < 0) continue;
+    if ((key.endsWith("Count") || key.endsWith("CodeUnits")) && !Number.isSafeInteger(value)) continue;
+    capture[key] = value;
+  }
+  // A milestone is [target UTF-16 units, cumulative observed units, elapsed ms].
+  // Rebuild numeric tuples; never let nested content through the allowlist.
+  for (const key of CAPTURE_MILESTONES) {
+    if (!Array.isArray(raw[key])) continue;
+    const rows = [];
+    for (const row of raw[key].slice(0, SPEED_CAPTURE_MILESTONES.length)) {
+      if (!Array.isArray(row) || row.length !== 3) continue;
+      const [target, units, ms] = row;
+      if (!SPEED_CAPTURE_MILESTONES.includes(target) || !Number.isSafeInteger(units) || units < target ||
+          !Number.isFinite(ms) || ms < 0) continue;
+      const previous = rows.at(-1);
+      if (previous && (target <= previous[0] || units < previous[1] || ms < previous[2])) continue;
+      rows.push([target, units, ms]);
+    }
+    if (rows.length > 0) capture[key] = rows;
+  }
+  return capture;
 }
 
 function parseLine(line) {
@@ -594,6 +647,7 @@ export function recordSpeedIndexCall({
     effortSource: identity.effortSource,
     reasoning: identity.reasoning,
     streamKind,
+    ...sanitizeCapture(state?.speedCapture),
     ...(Number.isFinite(clientDurationMs) ? { clientDurationMs } : {}),
     ...(() => {
       const serverDurationMs = network.source === "server_duration"
@@ -608,6 +662,7 @@ export function recordSpeedIndexCall({
     ...(Number.isFinite(usage?.cacheReadTokens) ? { cacheReadTokens: usage.cacheReadTokens } : {}),
     ...(Number.isFinite(usage?.cacheWriteTokens) ? { cacheWriteTokens: usage.cacheWriteTokens } : {}),
     ...(Number.isFinite(usage?.outputTokens) ? { outputTokens: usage.outputTokens } : {}),
+    ...(Number.isFinite(usage?.reasoningTokens) ? { reasoningTokens: usage.reasoningTokens } : {}),
     ...(Number.isFinite(usage?.fullInputTokens) ? { fullInputTokens: usage.fullInputTokens } : {}),
     ...(Number.isFinite(usage?.cacheHitRate) ? { cacheHitRate: usage.cacheHitRate } : {}),
     terminalStatus,
