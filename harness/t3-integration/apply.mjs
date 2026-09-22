@@ -7,7 +7,7 @@ import { parseArgs } from 'node:util';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
-const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/server/src/provider/RubatoPiInventory.ts', 'apps/web/src/components/RubatoIcon.tsx', 'apps/web/src/components/DeepSeekIcon.tsx'];
+const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/server/src/provider/RubatoPiInventory.ts', 'apps/web/src/components/RubatoIcon.tsx', 'apps/web/src/components/DeepSeekIcon.tsx', 'apps/web/src/components/AgentResultDetails.tsx'];
 // 값이 [anchor, addition] 이면 anchor 앞에 붙이고, [from, to, 'replace'] 면 갈아끼운다.
 // 앱 이름·번들 id·상태 경로는 T3 가 const 로 박아둬서 앞에 덧붙이는 것으로는 못 바꾼다.
 //
@@ -409,6 +409,18 @@ const edits = {
     ],
   ],
   'packages/client-runtime/src/state/subagentRuntime.ts': [
+    // Completion detail retains the report; summaries and live activity stay bounded.
+    [
+      '        const summary = asString(payload.summary) ?? asString(payload.detail);',
+      '        const summary = asString(payload.detail) ?? asString(payload.summary);',
+      'replace',
+    ],
+    ...[
+      '\n              agent.error = agent.error ?? bounded(summary);',
+      '\n              agent.result = agent.result ?? bounded(summary);',
+      '\n            agent.error = agent.error ?? bounded(summary);',
+      '\n            agent.result = bounded(summary);',
+    ].map((line) => [line, line.replace('bounded(summary)', 'summary'), 'replace']),
     [
       '  readonly toolUses?: number;\n  readonly durationMs?: number;\n}',
       '  readonly toolUses?: number;\n  readonly durationMs?: number;\n  readonly speedIndex?: number;\n}',
@@ -441,6 +453,61 @@ const edits = {
     ],
   ],
   'apps/web/src/components/AgentsPanel.tsx': [
+    [
+      'import { useEffect, useRef, useState } from "react";',
+      'import { useEffect, useId, useRef, useState } from "react";\nimport { AgentResultDetails } from "./AgentResultDetails";',
+      'replace',
+    ],
+    [
+      '/** Flat, non-interactive agent status line. No unfold. */\nfunction AgentRow({ agent }: { agent: RuntimeSubagent }) {',
+      '/** Stable collapsed row with an inline report; opening never starts child work. */\nfunction AgentRow({ agent }: { agent: RuntimeSubagent }) {\n  const [open, setOpen] = useState(false);\n  const detailsId = useId();',
+      'replace',
+    ],
+    [
+      '    <div className="grid h-[3.875rem] grid-cols-[0.375rem_minmax(0,1fr)_auto] grid-rows-[1.25rem_1.125rem_1rem] items-center gap-x-2 rounded-md px-1.5 py-1">',
+      [
+        '    <div className="min-w-0">',
+        '    <button',
+        '      type="button"',
+        '      aria-expanded={open}',
+        '      aria-controls={detailsId}',
+        '      aria-label={`${agent.title}: ${open ? "Hide" : "Show"} report. ${statusLabel}`}',
+        '      onClick={() => setOpen((value) => !value)}',
+        '      className="grid h-[3.875rem] w-full cursor-pointer grid-cols-[0.375rem_minmax(0,1fr)_auto] grid-rows-[1.25rem_1.125rem_1rem] items-center gap-x-2 rounded-md px-1.5 py-1 text-left hover:bg-accent/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"',
+        '    >',
+      ].join('\n'),
+      'replace',
+    ],
+    [
+      '        {activity ?? statusLabel}',
+      '        {activity ? (activity.length > 180 ? `${activity.slice(0, 177)}...` : activity) : statusLabel}',
+      'replace',
+    ],
+    [
+      '          <AgentElapsed agent={agent} />',
+      '          <AgentElapsed agent={agent} />\n          {open ? <ChevronDown aria-hidden className="size-3" /> : <ChevronRight aria-hidden className="size-3" />}',
+      'replace',
+    ],
+    [
+      '      <span className="sr-only">{statusLabel}</span>\n    </div>',
+      [
+        '      <span className="sr-only">{statusLabel}</span>',
+        '    </button>',
+        '    {open ? (',
+        '      <div',
+        '        id={detailsId}',
+        '        role="region"',
+        '        aria-label={`${agent.title} report`}',
+        '        tabIndex={0}',
+        '        className="mx-1.5 mb-2 max-h-96 min-w-0 overflow-y-auto overscroll-contain rounded-md border border-border/60 bg-card/30 p-3 focus-visible:outline-2 focus-visible:outline-ring"',
+        '      >',
+        '        <AgentResultDetails agent={agent} />',
+        '      </div>',
+        '    ) : null}',
+        '    </div>',
+      ].join('\n'),
+      'replace',
+    ],
     [
       '  formatSubagentModelLabel,\n  formatSubagentTokenCount,\n} from "@t3tools/client-runtime/state/subagentRuntime";',
       '  formatSubagentModelLabel,\n  formatSpeedLabel,\n} from "@t3tools/client-runtime/state/subagentRuntime";',
@@ -509,6 +576,11 @@ const edits = {
     ],
   ],
   'apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts': [
+    [
+      '                  summary: truncateDetail(event.payload.summary),\n                  detail: truncateDetail(event.payload.summary),',
+      '                  summary: truncateDetail(event.payload.summary),\n                  detail: event.payload.summary,',
+      'replace',
+    ],
     [
       '      const summary =\n        beforeTokens !== undefined && afterTokens !== undefined\n          ? `Compacted context ${formatTokens(beforeTokens)} → ${formatTokens(afterTokens)} tokens`\n          : "Context compacted";',
       [
