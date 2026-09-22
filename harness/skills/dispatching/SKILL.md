@@ -98,7 +98,7 @@ Part of every dispatch is choosing who gets it. If an agent already worked on th
 
 A fresh session needs a concrete reason: a genuinely different outcome, independent review, a persistently refuted premise the old session cannot release, unavailable continuation, or an explicit approved reassignment whose remaining benefit repays the handoff. A stronger model merely being available is not enough. For an actual reassignment, preserve artifacts, current modifications, refuted hypotheses, remaining checks and authority; do not transfer an unexplained failure and call it escalation. Once a new assignment is justified, Skill(model-guide) chooses its model. Keep related work with the current session whenever it remains the useful choice.
 
-If `AgentSend` says the agent cannot be continued (it was evicted, cancelled, crashed, or expired), start a new one and pass along whatever the old one left behind (its report, files, evidence) as leads to verify. If nothing was left, say so in the brief.
+If `AgentSend` says the agent cannot be continued, first tell why. Evicted, crashed or expired is an execution failure: when the assignment still permits it, start a new one (or `team_replace_member` for a teammate) and pass along whatever the old one left behind (its report, files, evidence) as leads to verify; if nothing was left, say so in the brief. Cancelled by the user, an explicit stop or an exhausted budget is not permission to restart the same work under a new session — report the remaining gap instead of silently changing the owner.
 
 ## While it is out
 

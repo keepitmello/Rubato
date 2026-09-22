@@ -17,7 +17,7 @@ Give the fresh context:
 - confirmed facts and authoritative evidence;
 - genuinely unresolved unknowns.
 
-Leave out the current conclusion, preferred remedy, production transcript, and summaries written around the current theory. A summary can carry the same anchor as the full conversation.
+Leave out the sender's desired verdict and advocacy: the preferred remedy, the production transcript, and summaries written around the current theory. A summary can carry the same anchor as the full conversation. Do not leave out evidence: accepted results, baselines, constraints and failed attempts stay reachable so the reviewer can consult them after forming an initial reading — a fresh context is not evidence deprivation. An explicitly blinded study keeps its own stated boundary.
 
 A compact request is enough:
 
