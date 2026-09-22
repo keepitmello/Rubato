@@ -69,16 +69,22 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
     // Bind task storage to this session, never the hosting process directory.
     resolveCwd: () => cwd,
     runnerFactories: createTaskRunnerFactories({ rpcSpawnRuntime, stockChildProfile, stockModelRuntime: modelRuntime,
-      createInProcessSession: async (options) => createStockChildInProcessSession(options, {
-        createAgentSession,
-        DefaultResourceLoader,
-        extensionFactories: await loadPiChildInProcessFactories({
-          root: runtimeRoot,
-          agentDir: options.agentDir ?? agentDir,
-          settingsManager: options.settingsManager,
-          propagateEnv: false,
-        }),
-      }) }),
+      createInProcessSession: async (options) => {
+        // The factory list is per child. An unset tier must not pass serviceTier, or every
+        // in-process child would load the extension the parent profile deliberately omits.
+        const serviceTier = options.serviceTier;
+        return createStockChildInProcessSession(options, {
+          createAgentSession,
+          DefaultResourceLoader,
+          extensionFactories: await loadPiChildInProcessFactories({
+            root: runtimeRoot,
+            agentDir: options.agentDir ?? agentDir,
+            settingsManager: options.settingsManager,
+            propagateEnv: false,
+            ...(serviceTier === undefined ? {} : { serviceTier }),
+          }),
+        });
+      } }),
   }) }), { sourcePath: join(here, "extensions/rubato.js"), registrationCwd: cwd });
   const extensionFactories = [
     { name: "rubato-assets", factory: async () => validateRubatoBundleAssets() },

@@ -73,6 +73,7 @@ export function createRpcManagedRunner(runner: RpcRunnerLike): ManagedRunner {
         ...(spec.variant !== undefined ? { variant: spec.variant } : {}),
         ...(spec.extensions !== undefined ? { extensions: spec.extensions } : {}),
         ...(spec.memberEnv !== undefined ? { memberEnv: spec.memberEnv } : {}),
+        ...(spec.serviceTier !== undefined ? { service_tier: spec.serviceTier } : {}),
       }
       return adaptRpcHandle(await runner.start(rpcSpec))
     },
@@ -106,5 +107,6 @@ function toChildSpec(spec: ManagedStartSpec, context: InProcessSessionContext): 
     ...(spec.toolDenylist !== undefined ? { toolDenylist: spec.toolDenylist } : {}),
     ...(spec.memberScopedToolNames !== undefined ? { memberScopedToolNames: spec.memberScopedToolNames } : {}),
     ...(spec.memberScopedTools !== undefined ? { memberScopedTools: spec.memberScopedTools } : {}),
+    ...(spec.serviceTier !== undefined ? { serviceTier: spec.serviceTier } : {}),
   }
 }

@@ -4,9 +4,14 @@ import { TASK_SUMMARY_MAX_LENGTH } from "../../task-summary"
 import { buildTaskToolParams, TaskToolParams } from "./params"
 
 describe("TaskToolParams", () => {
-  test("#given the schema #when inspected #then it exposes only prompt model XOR preset effort and summary", () => {
+  test("#given the schema #when inspected #then it exposes prompt model XOR preset effort summary and fast", () => {
     expect(TaskToolParams.type).toBe("object")
-    expect(Object.keys(TaskToolParams.properties)).toEqual(["prompt", "model", "preset", "effort", "summary"])
+    expect(Object.keys(TaskToolParams.properties)).toEqual(["prompt", "model", "preset", "effort", "summary", "fast"])
+  })
+
+  test("#given the schema #when fast is inspected #then it is an optional boolean", () => {
+    expect(TaskToolParams.properties.fast.type).toBe("boolean")
+    expect(TaskToolParams.required).not.toContain("fast")
   })
 
   test("#given the schema #when properties are inspected #then removed public fields are absent", () => {

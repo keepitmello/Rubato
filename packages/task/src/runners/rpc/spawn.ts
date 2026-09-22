@@ -12,6 +12,7 @@ import { MEMBER_EXTENSION_BUNDLE_NAME, MEMBER_PROCESS_ENV_NAMES } from "../../te
 const require = createRequire(import.meta.url)
 
 const SESSION_DIR_ENV = "PI_CODING_AGENT_SESSION_DIR"
+const SERVICE_TIER_ENV = "RUBATO_SERVICE_TIER"
 const PI_BIN_ENV = "RUBATO_PI_BIN"
 const SENPI_BIN_ENV = "SENPI_BIN"
 const RPC_ENTRY_SPECIFIER = "@code-yeongyu/senpi/rpc-entry"
@@ -42,6 +43,8 @@ export type RpcSpawnRuntime = {
   readonly sessionDirEnvName?: string
   // Injectable so tests can pin the executable-vs-fallback branch; defaults to resolveSenpiExecutable.
   readonly resolveSenpiExecutable?: (runtime: RpcSpawnRuntime) => string | null
+  // Staged service-tier extension. Appended only when this child requested a tier.
+  readonly serviceTierExtension?: string
 }
 
 /**
@@ -196,21 +199,58 @@ function defaultRuntime(): RpcSpawnRuntime {
  */
 /**
  * The env/extension preamble shared by the real child and the catalog probe. Both MUST strip member
- * identity identically, so the rule lives in exactly one place: a divergence here would silently leak
- * member identity into one of the two spawns.
+ * identity identically, so every rule lives in exactly one place: a divergence here would silently
+ * leak member identity — or a service tier — into one of the two spawns. The tier is applied here
+ * rather than by a caller pre-processing the spec, because a caller that forgot to could not be
+ * told apart from one that did.
  */
 function buildChildProfile(
   spec: RpcSpawnSpec,
   resolved: RpcSpawnRuntime,
 ): { readonly env: NodeJS.ProcessEnv; readonly spec: RpcSpawnSpec } {
+  const tier = requestedServiceTier(spec.service_tier)
+  // The tier never rides memberEnv: that field's presence is the member-bundle filter, and a
+  // non-member child that asked for fast must still drop rubato-member.js.
+  const base = tier === undefined ? spec : specWithoutServiceTierEnv(spec)
   const env: NodeJS.ProcessEnv = { ...resolved.parentEnv }
   for (const name of MEMBER_PROCESS_ENV_NAMES) delete env[name]
-  Object.assign(env, spec.memberEnv)
-  env[resolved.sessionDirEnvName ?? SESSION_DIR_ENV] = resolveChildSessionDir(spec.state_dir, spec.task_id)
-  const extensions = spec.memberEnv === undefined
-    ? spec.extensions?.filter((entry) => basename(entry) !== MEMBER_EXTENSION_BUNDLE_NAME)
-    : spec.extensions
-  return { env, spec: extensions === spec.extensions ? spec : { ...spec, extensions } }
+  // An RPC child inherits the parent env and hands its own argv extensions to its children
+  // (team-service `inheritedExtensions`), so without these two the tier of a fast child would
+  // reach a grandchild that never asked for one. Both are re-applied below for this child only.
+  delete env[SERVICE_TIER_ENV]
+  Object.assign(env, base.memberEnv)
+  if (tier !== undefined) env[SERVICE_TIER_ENV] = tier
+  env[resolved.sessionDirEnvName ?? SESSION_DIR_ENV] = resolveChildSessionDir(base.state_dir, base.task_id)
+  const dropMemberBundle = base.memberEnv === undefined
+  const extensions = base.extensions?.filter((entry) =>
+    !(dropMemberBundle && basename(entry) === MEMBER_EXTENSION_BUNDLE_NAME) &&
+    !(tier === undefined && isServiceTierExtensionEntry(entry)),
+  )
+  const offered = tier === undefined || extensions === undefined ||
+    resolved.serviceTierExtension === undefined || extensions.includes(resolved.serviceTierExtension)
+    ? extensions
+    : [...extensions, resolved.serviceTierExtension]
+  return { env, spec: offered === base.extensions ? base : { ...base, extensions: offered } }
+}
+
+function requestedServiceTier(value: string | undefined): "priority" | "auto" | undefined {
+  return value === "priority" || value === "auto" ? value : undefined
+}
+
+function isServiceTierExtensionEntry(entry: string): boolean {
+  return basename(entry) === "extension.mjs" && basename(dirname(entry)) === "service-tier"
+}
+
+function specWithoutServiceTierEnv(spec: RpcSpawnSpec): RpcSpawnSpec {
+  const memberEnv = spec.memberEnv
+  if (memberEnv?.[SERVICE_TIER_ENV] === undefined) return spec
+  const rest = { ...memberEnv }
+  delete rest[SERVICE_TIER_ENV]
+  if (Object.keys(rest).length === 0) {
+    const { memberEnv: _memberEnv, ...without } = spec
+    return without
+  }
+  return { ...spec, memberEnv: rest }
 }
 
 export function buildRpcSpawn(spec: RpcSpawnSpec, runtime?: Partial<RpcSpawnRuntime>): RpcSpawnDescriptor {
