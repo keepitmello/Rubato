@@ -10,9 +10,14 @@ after successful updates/builds, gated by existing write access to the private
 
 After pulling this revision with `rubato update`, the updater starts the collector
 in a detached background process. A normal no-op update also triggers it.
-Read-only `rubato update --check` and failed updates do not trigger it.
+Read-only `rubato update --check` does not trigger it. The new updater starts it
+only after its required update steps succeed.
 The freshly pulled builder covers the first update from an older updater; new
 updaters own the final trigger to avoid launching twice in the same update.
+On that first older-updater run, collection starts after successful engine
+installation, before the old updater's remaining steps. A later GUI/skill failure
+can therefore coexist with a successful collection attempt; collection is not an
+update-completion signal. Failed engine installations do not launch collection.
 
 This rollout was authorized for the maintainer's family/friend/maintainer group.
 Installing the public Rubato repository does **not** grant access to its private
