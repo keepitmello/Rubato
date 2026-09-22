@@ -226,3 +226,50 @@ test("requiredSlotName beats pin and session affinity", async () => {
   assert.deepEqual(used, ["sub"]);
   assert.equal(events.at(-1).text, "ok");
 });
+
+// 회귀: 성공이 failureCount 를 되돌리지 않아 지수 백오프가 영영 줄지 않았다.
+// 실측(2026-09-22 `credential-pool-state.json`): anthropic `setup-token` 슬롯이
+// `failureCount: 12` 로 굳어 있었고, 그 상태에서는 429 한 번이 곧바로 상한 48시간을
+// 다시 잠갔다. 그 슬롯에 하드로 묶인 fable·opus·sonnet·haiku 가 통째로 죽었다.
+test("a successful call clears the consecutive-failure count", async () => {
+  const repository = new CredentialSlotRepository();
+  const token = "sk-ant-oat-test";
+  const revision = await repository.envCredentialRevision("claude-setup-token", token);
+  await repository.mutateSlotState("anthropic", "setup-token", "setup-token", () => ({
+    failureCount: 12,
+    credentialRevision: revision,
+    blockedUntil: 1,
+    blockReason: "rate_limit",
+  }));
+  const sources = {
+    providerId: "anthropic",
+    credential: undefined,
+    env: () => undefined,
+    repository,
+    policy: {},
+    discoverExtraSlots: async () => [{
+      name: "setup-token",
+      lane: "setup-token",
+      envVarName: "claude-setup-token",
+      key: token,
+      source: "setup-token",
+    }],
+  };
+  const events = [];
+  for await (const event of streamWithCredentialRotation({
+    sources,
+    affinityStore: new Map(),
+    affinityKey: "s1",
+    requiredSlotName: "setup-token",
+    runAttempt: async () => (async function* () {
+      yield { type: "start" };
+      yield { type: "text", text: "ok" };
+    })(),
+  })) events.push(event);
+  assert.equal(events.at(-1).text, "ok");
+
+  const state = await repository.listSlots("anthropic", "setup-token");
+  assert.equal(state["setup-token"].failureCount, 0, "성공한 호출은 연속 실패 횟수를 0 으로 되돌린다");
+  assert.equal(state["setup-token"].blockedUntil, undefined);
+  assert.equal(state["setup-token"].blockReason, undefined);
+});
