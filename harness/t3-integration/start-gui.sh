@@ -28,10 +28,10 @@ export PATH="$(dirname "$NODE"):$PATH"
 
 # 소스가 아니라 산출물을 본다. 클론만 해도 scripts/start-electron.mjs 는
 # 생기므로, 그 파일로 게이트하면 빌드가 없는 설치를 멀쩡하다고 오판한다.
-[ -f "$BUNDLE" ] || die "데스크톱이 아직 안 만들어졌다. 터미널에서 rubato update 를 돌려라."
+[ -f "$BUNDLE" ] || die "데스크톱이 아직 안 만들어졌다. Rubato 클론에서 ./install.sh --apply --gui 를 돌려라."
 
 # Pi 세션 서버는 브리지가 띄운다. 여기서도 띄우면 살아있는지 판정하는 곳이
 # 둘이 되고, 앱 번들을 바로 켜는 경로는 어차피 이 스크립트를 안 지난다.
 export T3CODE_HOME="$T3_HOME"
-cd "$T3_DIR/apps/desktop" || die "T3 소스가 없다. 터미널에서 rubato update 를 돌려라."
+cd "$T3_DIR/apps/desktop" || die "T3 소스가 없다. Rubato 클론에서 ./install.sh --apply --gui 를 돌려라."
 exec "$NODE" scripts/start-electron.mjs
