@@ -1,13 +1,13 @@
 ---
 name: model-guide
-description: "Select an approved model and supported settings using continuity, available resources and relevant evidence. Roles do not pin models; no difficulty score or failure-first ladder. Preserve explicit approval for Fable, Sol and Astra."
+description: "Use when selecting an agent model, provider route or effort setting for delegated work, including implementation and independent verification."
 ---
 
 # Model guide
 
 Choose the execution resource, not an intelligence-based job title. An owner holds
 a bounded result end to end; a verifier holds a judgment independent of its production.
-Fable, Astra, Opus, Sol and Grok may fill either role when authorized and available.
+DeepSeek, Grok, Opus, Fable and Astra may fill either role when authorized and available.
 No family is reserved for planning, long sessions, implementation or review.
 
 The user chooses the lead. Keep that conversational counterpart unless the user
@@ -37,37 +37,33 @@ measurement. Do not require a difficulty score, a cheapest-model trial, failed
 lower-tier attempts or a special request for "highest quality" before using a
 stronger model. Acceptance criteria stay the same for every selected model.
 
+## Default allocation
+
+The operator reports comparable performance from DeepSeek, Grok and Opus, with
+DeepSeek the cheapest and fastest of the three (2026-09-22). This is the user's
+working experience, not a benchmark or a measured price/quota claim.
+
+- Default owner and bounded support: **DeepSeek**.
+- When independent verification is useful: **Grok** by default.
+- **DeepSeek, Grok and Opus can all own or verify.** These defaults reflect cost
+  and speed preferences, not role restrictions or an intelligence ranking.
+- For difficult topics, design or judgment, propose **Fable or Astra** when their
+  contribution is worth it, with explicit approval. A failed DeepSeek attempt is
+  not a prerequisite.
+
+Exact ids: DeepSeek V4.1 Flash `b-ai/deepseek-v4.1-flash`, Grok 4.7 via xAI
+`xai/grok-4.7` or Cursor `cursor/grok-4.7`, Fable 5.1 `anthropic/claude-fable-5-1`, Astra
+`openai-codex/gpt-6-astra`. Resolve Opus and alternative provider routes from the
+live catalog the `Agent` schema lists; a stale or unavailable id fails closed.
+
 ## Use the model pool without manufacturing work
 
-The operator's current working assumptions (2026-09-16) are Fable/Astra, then
-Opus/Sol, then Grok in overall capability, with the most subscription headroom on
-Grok and then Opus. These are operator-reported starting priors, not measured
-task-specific rankings, live remaining quotas or fixed assignments. New user
-direction and relevant observations can supersede them.
-
-All five are ordinary candidates for a complete outcome. Allocate new independent
-work across the approved pool when that uses available resources well; do not leave
-a useful resource idle solely because it was called a "lead model." Equally, do not
-create helpers, duplicate a task, replace an effective owner or lower acceptance
-standards just to use every model. Utilization is considered across useful work,
-not a quota of model names inside each team.
-
-## Fast workers
-
-Two fast, no-approval resources sit beside the five above and are the usual
-first choice for bounded support — maps, evidence gathering, settled execution,
-prototypes — whenever turnaround matters more than the last few points of precision:
-DeepSeek V4.1 Flash `b-ai/deepseek-v4.1-flash`, and Cursor Fast
-`cursor/grok-4.7-high-fast`.
-DeepSeek is the operator's preferred default worker. Their speed is an
-observed property, not a rank: they may also hold a bounded outcome when its
-acceptance criteria are met, and nothing here forbids a stronger model from
-doing the same work itself. The same acceptance criteria apply.
-
-Exact ids for the rest, as currently registered: Fable 5.1
-`anthropic/claude-fable-5-1`, Sol `openai-codex/gpt-5.6-sol`, Astra
-`openai-codex/gpt-6-astra`, Grok 4.7 `xai/grok-4.7`. Confirm against the live
-catalog the `Agent` schema lists; a stale id fails closed.
+Allocate new independent work across the approved pool when that uses available
+resources well; do not leave a useful resource idle solely because it was called
+a "lead model." Equally, do not create helpers, duplicate a task, replace an
+effective owner or lower acceptance standards just to use every model.
+Do not create a verifier merely to complete a pair. Utilization is considered
+across useful work, not a quota of model names inside each team.
 
 A `-sub` id (`anthropic/claude-opus-5-sub`, `anthropic/claude-fable-5-1-sub`,
 `openai-codex/gpt-5.6-sol-sub`) is an id-clone of the same upstream model bound to
@@ -106,15 +102,14 @@ assignment requirements.
 
 ## Approval
 
-This revision does not broaden permissions. Fable (including Fable 5.1), Sol and
-Astra require explicit user approval naming the outcome, model and effort before
-assignment, including verification. A readable combined intent/roster approval
+Fable (including Fable 5.1) and Astra require explicit user approval naming the
+outcome, model and effort before assignment, including verification. A readable combined intent/roster approval
 can satisfy that gate when it includes those commitments. Existing approval is
 for its stated scope, not an unlimited pool grant.
 
 Corrections, retries and re-verification by the same approved owner on the same
 outcome retain that approval. A new outcome, materially changed roster or higher
-restricted-model effort requires the relevant confirmation. Opus and Grok have
+restricted-model effort requires the relevant confirmation. DeepSeek, Grok and Opus have
 no additional model-specific gate, but team formation, write boundaries and
 delivery permissions still apply. A helper is not an approval bypass.
 
