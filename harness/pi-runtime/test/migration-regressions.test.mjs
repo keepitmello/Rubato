@@ -70,6 +70,34 @@ test("install and update both reach the stock candidate installer", async () => 
   assert.match(update, /\[ "\$need_candidate" = 1 \]/, "and the step is gated on it");
 });
 
+/**
+ * A harness package outside the workspace only has its node_modules refreshed if
+ * the update step names it. pi-runtime was missing here: its package.json moved to
+ * 0.86.1 while its installed copy stayed at 0.85.1, so `npm run test:pi-runtime`
+ * failed every test with a version mismatch until someone installed it by hand.
+ */
+test("update installs every harness package the installer does", async () => {
+  const install = await readFile(join(repoRoot, "install.sh"), "utf8");
+  const update = await readFile(join(repoRoot, "harness/scripts/rubato-update.sh"), "utf8");
+  for (const name of ["rubato-pi", "pi-runtime", "pi-server"]) {
+    assert.match(install, new RegExp(`harness/${name}`), `install.sh installs ${name}`);
+    assert.match(update, new RegExp(`HARNESS/${name}`), `update must install ${name} too`);
+  }
+  assert.match(
+    update,
+    /harness\/\(rubato-pi\|pi-runtime\|pi-server\)\/package/,
+    "and their package files must be what turns the dependency step on",
+  );
+  // `npm ci` needs a committed lock file. pi-server's is gitignored, so naming it
+  // there would abort the update on any checkout that never made one by hand —
+  // including the fresh clone whose package.json change is what turns this step on.
+  assert.match(
+    update,
+    /"\$NPM" install --prefix "\$HARNESS\/pi-server"/,
+    "pi-server has no committed lock, so it must install rather than npm ci",
+  );
+});
+
 test("rubato launch rebuilds a stale stock-engine before the session starts", async () => {
   const launcher = await readFile(join(repoRoot, "harness/scripts/rubato-pi.sh"), "utf8");
   assert.match(launcher, /build-active-engine\.mjs" --check/, "launch fingerprints the installed candidate");
