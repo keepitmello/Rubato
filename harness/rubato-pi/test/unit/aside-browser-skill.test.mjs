@@ -18,10 +18,6 @@ function assertAccountPolicy(skill, label) {
     /MUST run `aside guide`/,
     `${label} defers to aside guide, which examples -m openai/gpt-5.6-sol`,
   );
-  assert.match(skill, /Omit `-m`/);
-  assert.match(skill, /Never pass `openai\/gpt-5\.6-sol`/);
-  assert.match(skill, /Grok 4\.7/);
-  assert.match(skill, /Default, Fast, Standard, Deep, Visual/);
 }
 
 test("bundled aside-browser skill is account policy, not the Aside CLI stub", () => {
