@@ -580,6 +580,11 @@ export function withRubatoStream(inner, { modelId = (model) => model?.id, report
     // 않는 직결 provider 는 context 에서 만든 body 로 시작한다.
     const innerOptions = {
       ...options,
+      // Rubato always asks for the long prompt-cache tier (Anthropic 1h). It used to come
+      // only from PI_CACHE_RETENTION in the CLI launch env, so an engine started by T3 or
+      // `rubato restart` wrote 5-minute entries: 0 of ~1,900 Anthropic writes 2026-09-16..23
+      // were 1h. The provider layer owns it now; only an explicit "none" (titles) opts out.
+      cacheRetention: options.cacheRetention === "none" ? "none" : "long",
       [kRubatoCallActive]: true,
       ...(state.speedIndexStore ? { onPayload: (payload, requestModel) => {
         const observe = (replacement) => {
