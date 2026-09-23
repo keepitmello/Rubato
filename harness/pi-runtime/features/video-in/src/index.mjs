@@ -96,6 +96,9 @@ export default function videoInExtension(pi) {
   pi.on("session_start", async (_event, ctx) => {
     syncToolActivation(ctx.model);
   });
+  pi.on("before_run", async (_event, ctx) => {
+    syncToolActivation(ctx?.model);
+  });
   pi.on("model_select", async (event, ctx) => {
     syncToolActivation(event.model ?? ctx?.model);
   });
