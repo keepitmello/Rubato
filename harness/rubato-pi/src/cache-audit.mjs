@@ -14,6 +14,8 @@
 //   `cached_tokens`. Codex 기본 전송은 WebSocket 이라 실사 훅이 안 보이므로
 //   `rubato-stream` 이 audit 켜진 세션에서만 `options.transport = "sse"` 를 넣는다.
 // - xAI OpenAI-Responses (`/v1/responses`) — 같은 구간·usage. SDK 기본이 SSE.
+// - OpenAI Chat Completions (`/chat/completions`) — tools/messages. DeepSeek 계열(b-ai)이
+//   이 경로다. usage 는 `prompt_cache_hit_tokens` 또는 `prompt_tokens_details.cached_tokens`.
 // - Gemini/Antigravity (`streamGenerateContent`) — params/systemInstruction/
 //   functionDeclarations/contents. usageMetadata 의 cachedContentTokenCount.
 //
@@ -99,6 +101,51 @@ export function responsesSegments(body) {
   if (Array.isArray(tools)) tools.forEach((tool, index) => push("tools", index, tool));
   if (Array.isArray(input)) input.forEach((item, index) => push("input", index, item));
   return segments;
+}
+
+/**
+ * Chat Completions body 를 params → tools → messages 순서로 구간화한다. system 은
+ * messages 안에 있으므로 따로 떼지 않는다.
+ */
+export function chatCompletionsSegments(body) {
+  const segments = [];
+  const push = (section, index, value) => {
+    const serialized = JSON.stringify(value);
+    segments.push({ section, index, digest: sha(serialized), bytes: Buffer.byteLength(serialized) });
+  };
+  const { tools, messages, stream_options, ...rest } = body ?? {};
+  push("params", 0, rest);
+  if (Array.isArray(tools)) tools.forEach((tool, index) => push("tools", index, tool));
+  if (Array.isArray(messages)) messages.forEach((message, index) => push("messages", index, message));
+  return segments;
+}
+
+/** Chat Completions SSE 에서 id·model·마지막 usage·오류를 모은다. */
+export function parseChatCompletionsSse(text) {
+  const summary = { id: undefined, model: undefined, usage: undefined, errors: [] };
+  for (const rawLine of text.split(/\r?\n/)) {
+    if (!rawLine.startsWith("data:")) continue;
+    const payload = rawLine.slice(5).trim();
+    if (!payload || payload === "[DONE]") continue;
+    let event;
+    try { event = JSON.parse(payload); } catch { continue; }
+    if (event?.error) summary.errors.push(event.error);
+    summary.id ??= event?.id;
+    summary.model ??= event?.model;
+    if (event?.usage) summary.usage = event.usage;
+  }
+  return summary;
+}
+
+/** Chat Completions usage 를 Responses 와 같은 이름으로 맞춘다 (보고서가 한 갈래로 읽게). */
+export function normalizeChatCompletionsUsage(usage = {}) {
+  const cached = usage.prompt_cache_hit_tokens ?? usage.prompt_tokens_details?.cached_tokens ?? null;
+  return {
+    input_tokens: usage.prompt_tokens ?? null,
+    cached_tokens: cached,
+    cache_miss_tokens: usage.prompt_cache_miss_tokens ?? null,
+    output_tokens: usage.completion_tokens ?? null,
+  };
 }
 
 const ANTIGRAVITY_PARAM_FIELDS = ["project", "requestId", "sessionId", "labels", "generationConfig"];
@@ -271,6 +318,7 @@ export function parseResponsesSse(text) {
 function responsesFamilyFromUrl(url) {
   if (/\/codex\/responses(\?|$)/.test(url)) return "codex";
   if (/\/v1\/responses(\?|$)/.test(url)) return "xai";
+  if (/\/chat\/completions(\?|$)/.test(url)) return "completions";
   return undefined;
 }
 
@@ -455,7 +503,8 @@ export function createCacheAudit({ env = process.env, dir = env.RUBATO_CACHE_AUD
     const tag = `${String(seq).padStart(4, "0")}-${(sessionId ?? "anon").slice(0, 8)}`;
     let parsed;
     try { parsed = JSON.parse(bodyText); } catch { parsed = undefined; }
-    const segments = parsed ? responsesSegments(parsed) : [];
+    const chat = family === "completions";
+    const segments = parsed ? (chat ? chatCompletionsSegments(parsed) : responsesSegments(parsed)) : [];
     const changed = firstChangedAnthropicSegment(state.segments, segments);
     const previousSegments = state.segments;
     state.segments = segments;
@@ -478,11 +527,16 @@ export function createCacheAudit({ env = process.env, dir = env.RUBATO_CACHE_AUD
       injected: [],
       bodyBytes: Buffer.byteLength(bodyText),
       bodyDigest: sha(bodyText),
-      counts: {
-        instructions: segments.filter((segment) => segment.section === "instructions").length,
-        tools: segments.filter((segment) => segment.section === "tools").length,
-        input: segments.filter((segment) => segment.section === "input").length,
-      },
+      counts: chat
+        ? {
+          tools: segments.filter((segment) => segment.section === "tools").length,
+          messages: segments.filter((segment) => segment.section === "messages").length,
+        }
+        : {
+          instructions: segments.filter((segment) => segment.section === "instructions").length,
+          tools: segments.filter((segment) => segment.section === "tools").length,
+          input: segments.filter((segment) => segment.section === "input").length,
+        },
       sharedPrefixSegments: changed ? changed.position : segments.length,
       previousSegments: previousSegments.length,
       ...(changed ? { firstChanged: changed } : { identicalToPrevious: previousSegments.length > 0 }),
@@ -511,6 +565,19 @@ export function createCacheAudit({ env = process.env, dir = env.RUBATO_CACHE_AUD
         try {
           const text = await new Response(observe).text();
           const responsePath = writeRaw(`${tag}.response.sse`, text);
+          if (chat) {
+            const chatSse = parseChatCompletionsSse(text);
+            record(`${family}.response`, {
+              ...base,
+              id: chatSse.id,
+              model: chatSse.model,
+              usage: normalizeChatCompletionsUsage(chatSse.usage),
+              errors: chatSse.errors,
+              responseHeaders: redactHeaders(responseHeaders),
+              files: { sse: responsePath },
+            });
+            return;
+          }
           const sse = parseResponsesSse(text);
           const completed = sse.completed;
           const created = sse.created;
@@ -689,7 +756,11 @@ export function isXaiResponsesModel(model) {
   return model?.api === "openai-responses" && model?.provider === "xai";
 }
 
-/** Anthropic Messages + Codex Responses + xAI Responses 직결 경로. */
+export function isChatCompletionsModel(model) {
+  return model?.api === "openai-completions";
+}
+
+/** Anthropic Messages + Codex Responses + xAI Responses + Chat Completions 직결 경로. */
 export function isCacheAuditModel(model) {
-  return isAnthropicMessagesModel(model) || isCodexResponsesModel(model) || isXaiResponsesModel(model);
+  return isAnthropicMessagesModel(model) || isCodexResponsesModel(model) || isXaiResponsesModel(model) || isChatCompletionsModel(model);
 }
