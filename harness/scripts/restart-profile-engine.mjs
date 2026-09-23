@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { spawnSync } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,38 +6,8 @@ import { readDescriptor } from '../pi-server/src/descriptor.mjs';
 import { socketAlive } from '../pi-server/src/discovery.mjs';
 import { SessionClient } from '../pi-server/src/client.mjs';
 import { resolveLaunchAgentDir } from '../rubato-pi/src/launch.mjs';
-
-function pathVariants(dir) {
-  const variants = new Set([dir, path.resolve(dir)]);
-  try { variants.add(realpathSync(dir)); } catch {}
-  for (const value of [...variants]) {
-    if (value.startsWith('/private/')) variants.add(value.slice('/private'.length));
-    else if (value.startsWith('/')) variants.add(`/private${value}`);
-  }
-  return variants;
-}
-
-function listenerPid(agentDir) {
-  // `pgrep -l` means "list the full command line" on BSD and "list the process
-  // name" on procps, so `-lf` output cannot be parsed the same way on macOS and
-  // Linux: on Linux every row reads `1234 node` and no row ever contains
-  // cli.mjs. Take pids from pgrep and read each command line with ps, which
-  // prints the same thing on both.
-  const listed = spawnSync('pgrep', ['-f', 'cli.mjs --agent-dir'], { encoding: 'utf8' });
-  if (listed.status !== 0) return;
-  const dirs = pathVariants(agentDir);
-  for (const line of listed.stdout.split('\n')) {
-    const pid = Number(line.trim());
-    if (!Number.isInteger(pid) || pid <= 1 || pid === process.pid) continue;
-    const inspected = spawnSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' });
-    if (inspected.status !== 0) continue;
-    const command = inspected.stdout.trim();
-    if (!command.includes('cli.mjs')) continue;
-    for (const dir of dirs) {
-      if (command.includes(`--agent-dir ${dir}`)) return pid;
-    }
-  }
-}
+// Process lookup lives apart so a test can reach it without the pi-server client above.
+import { listenerPid } from './profile-engine-pid.mjs';
 
 async function runningTurns(descriptor) {
   const client = await new SessionClient({ ...descriptor, timeoutMs: 2500 }).connect();
