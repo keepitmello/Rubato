@@ -76,21 +76,6 @@ test("install and update both reach the stock candidate installer", async () => 
  * 0.86.1 while its installed copy stayed at 0.85.1, so `npm run test:pi-runtime`
  * failed every test with a version mismatch until someone installed it by hand.
  */
-/**
- * The profile engine reads provider and model code out of the runtime root when it
- * starts. Refreshing the candidate without restarting the engine therefore leaves the
- * machine serving the old model list: registering Opus 5.5 that way put the derivation
- * in the staged candidate while the running engine kept answering with Opus 5.
- */
-test("update restarts the profile engine whenever it refreshes the engine candidate", async () => {
-  const update = await readFile(join(repoRoot, "harness/scripts/rubato-update.sh"), "utf8");
-  assert.match(
-    update,
-    /\[ "\$need_candidate" = 1 \] && need_profile=1/,
-    "a refreshed candidate must also restart the profile engine that reads it",
-  );
-});
-
 test("update installs every harness package the installer does", async () => {
   const install = await readFile(join(repoRoot, "install.sh"), "utf8");
   const update = await readFile(join(repoRoot, "harness/scripts/rubato-update.sh"), "utf8");

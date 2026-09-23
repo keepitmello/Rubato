@@ -46,7 +46,7 @@ function write(path, text) {
 
 const INSTALL_SKILLS_SRC = join(dirname(fileURLToPath(import.meta.url)), "../../../scripts/install-skills.sh");
 
-function setupFixture({ dirty = false, conflict = false, evidence = false, decoyStash = false, rebuildFailure = "", skillUpdate = false, profileSrc = false, profileTest = false, gui = false, remoteChange = true, speedData = false } = {}) {
+function setupFixture({ dirty = false, conflict = false, evidence = false, decoyStash = false, rebuildFailure = "", skillUpdate = false, profileSrc = false, profileTest = false, profileRuntimeSrc = false, gui = false, remoteChange = true, speedData = false } = {}) {
   const root = mkdtempSync(join(tmpdir(), "rubato-update-"));
   const bare = join(root, "origin.git");
   const seed = join(root, "seed");
@@ -110,6 +110,7 @@ function setupFixture({ dirty = false, conflict = false, evidence = false, decoy
   write(join(seed, "note.txt"), "remote\n");
   if (profileSrc) write(join(seed, "harness/pi-server/src/host.mjs"), "changed\n");
   if (profileTest) write(join(seed, "harness/pi-server/test/x.test.mjs"), "changed\n");
+  if (profileRuntimeSrc) write(join(seed, "harness/pi-runtime/features/providers/host.mjs"), "changed\n");
   if (skillUpdate) {
     write(join(seed, "harness/skills/demo/SKILL.md"), "v2\n");
     write(join(home, ".agents/skills/demo/SKILL.md"), "v1\n");
@@ -402,6 +403,16 @@ test("unattended update restarts the profile engine when pi-server source change
   const testResult = runUpdate(setupFixture({ profileTest: true }));
   const testOut = `${testResult.stdout}\n${testResult.stderr}`;
   assert.doesNotMatch(testOut, /프로필 엔진 재시작/);
+});
+
+test("a refreshed engine candidate restarts the engine even outside pi-server source", () => {
+  // The engine reads provider and model code out of the runtime root when it starts, so a
+  // candidate refresh that skips the restart leaves the machine serving the old model list:
+  // registering Opus 5.5 that way put the derivation in the staged candidate while the running
+  // engine kept answering with Opus 5.
+  const result = runUpdate(setupFixture({ profileRuntimeSrc: true }));
+  const out = `${result.stdout}\n${result.stderr}`;
+  assert.match(out, /프로필 엔진 재시작/);
 });
 
 test("unattended update does not restart the profile engine when pi-server source did not change", () => {

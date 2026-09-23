@@ -178,6 +178,10 @@ test("descriptor is stock-locked, drift-failing, and composes at shared main/UI 
     receiptEntries.find((entry) => entry.path.endsWith("dist/modes/interactive/interactive-mode.js")).patches,
     [
       "reload/reload-veto:dist/modes/interactive/interactive-mode.js",
+      // context-window patches the same file for its own presentation work. It is listed here
+      // because this assertion pins the exact composition of a shared UI target, not just
+      // session-picker's own entry.
+      "context-window/context-window:dist/modes/interactive/interactive-mode.js",
       "session-picker/session-picker:dist/modes/interactive/interactive-mode.js",
     ],
   );

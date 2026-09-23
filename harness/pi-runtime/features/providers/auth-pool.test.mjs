@@ -239,10 +239,15 @@ test("candidate ModelRuntime keeps a session on the first account after a pre-ou
   assert.equal(retry.stopReason, "error");
   assert.deepEqual(hits, [firstKey, firstKey]);
 
+  // A second session on the same base id is pinned to the same account: `requiredAccountSlotName`
+  // sends the base row to the primary slot and leaves the second login to the `-sub` rows. So once
+  // the primary is rate-limited the pool reports the pinned account instead of quietly spending the
+  // other login, and it never reaches the provider. Rotation across accounts is covered by
+  // "session affinity stays on the first slot after 429; a new session can use the other".
   const second = await modelRuntime.streamSimple(model, { messages: [{ role: "user", content: "hi" }] }, { sessionId: "affinity-2" }).result();
-  assert.equal(hits.length, 3);
-  assert.notEqual(hits[2], firstKey);
-  assert.equal(second.stopReason !== "error", true);
+  assert.equal(hits.length, 2);
+  assert.equal(second.stopReason, "error");
+  assert.match(String(second.errorMessage ?? ""), /Account 'default' is unavailable/);
 });
 
 test("candidate ModelRuntime does not rotate after committed output", async () => {

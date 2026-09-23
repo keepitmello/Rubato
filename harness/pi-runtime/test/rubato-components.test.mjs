@@ -43,8 +43,10 @@ test("current Rubato builds without Senpi and binds actual task/memory/MCP compo
   for (const exposure of ["direct", "search"]) {
     const cwd = join(scratch, `project-${exposure}`), home = join(scratch, `home-${exposure}`), agentDir = join(home, "agent");
     await Promise.all([mkdir(join(cwd, ".rubato"), { recursive: true }), mkdir(agentDir, { recursive: true })]);
+    // The layer schema is strict, so a key it does not know (the retired `facts` layer) rejects the
+    // whole file and the defaults silently win.
     await writeFile(join(cwd, ".rubato/rubato.jsonc"), JSON.stringify({ memory: {
-      agent: "wrong-host-cwd", tool_exposure: exposure === "direct" ? "search" : "direct", reflection: { enabled: false }, facts: { enabled: false }, dream: { enabled: false, shutdown_launch: false }, sync: { enabled: false },
+      agent: "wrong-host-cwd", tool_exposure: exposure === "direct" ? "search" : "direct", reflection: { enabled: false }, dream: { enabled: false, shutdown_launch: false }, sync: { enabled: false },
     } }));
     const env = { PATH: process.env.PATH, HOME: home, LANG: "en_US.UTF-8", PI_CODING_AGENT_DIR: agentDir,
       PI_OFFLINE: "1", NO_COLOR: "1", XDG_CONFIG_HOME: join(home, ".config"), XDG_DATA_HOME: join(home, ".local/share"),
