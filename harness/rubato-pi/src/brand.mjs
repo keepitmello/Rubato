@@ -87,7 +87,8 @@ export function launchEnv(baseEnv, agentDir) {
   applyChildExtensionsEnv(env, providerExtensionPaths(), delimiter);
   // canonical 이름 하나만 아이에게 넘긴다. 예전 `FX_CACHE_RETENTION` 은 FX bridge
   // config 만 읽었고, 그 bridge 는 없다.
-  env.PI_CACHE_RETENTION = env.PI_CACHE_RETENTION ?? CACHE_RETENTION;
+  // Children read it too; the provider stream also forces the long tier (rubato-stream.mjs).
+  env.PI_CACHE_RETENTION = CACHE_RETENTION;
   if (env.RUBATO_MEASUREMENT === "1" && !env.RUBATO_MEASUREMENT_LOG) {
     env.RUBATO_MEASUREMENT_LOG = defaultMeasurementLogPath(agentDir);
   }
