@@ -291,7 +291,7 @@ describe("createMemoryPromptHandler", () => {
       "BASE PROMPT",
       "",
       `<!-- senpi-memory:${IDENTITY}:begin -->`,
-      "Reminder: <projection> holds local paths of memory projections. <memory> is your persistent memory across conversations. Consult it BEFORE asking the user anything it may already answer. Save durable facts, preferences, decisions, and corrections with the memory tools when they emerge — but never instead of answering a direct user question or request. Route facts about a person to their record under people/; the primary human's card is people/human/card.md, or system/human.md in a repository that still carries that older file.",
+      "Reminder: <projection> holds local paths of memory projections. <memory> is your persistent memory across conversations. Consult it BEFORE asking the user anything it may already answer. Save durable facts, preferences, decisions, and corrections with the memory tools when they emerge — but never instead of answering a direct user question or request.",
       "",
       "<self>",
       "<projection>$MEMORY_DIR/system/persona.md</projection>",

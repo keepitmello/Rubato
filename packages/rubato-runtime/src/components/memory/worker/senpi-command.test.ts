@@ -106,6 +106,9 @@ describe("resolveSenpiLaunch", () => {
 
     // then
     expect(child.exitCode).toBe(0)
-    expect(child.stdout.toString().trim()).toMatch(/^\d{4}\.\d+\.\d+/)
+    // The launcher prints the engine's version, not the wrapper package's date version
+    // (`@code-yeongyu/senpi` is 2026.9.4-3 but its CLI reports 0.86.1). What this guards is
+    // that the restricted-PATH fallback resolves to something that actually runs.
+    expect(child.stdout.toString().trim()).toMatch(/^\d+\.\d+\.\d+/)
   }, 30_000)
 })
