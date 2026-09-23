@@ -56,7 +56,7 @@ function harness(provider, userAt) {
     appendUsage: (kind, p, m, u, note) => { const entry = { kind, provider: p, note, at: Date.now() }; warms.push(entry); return entry; },
   };
   const warmer = new CacheWarmer(models, sessionManager, () => "idle");
-  return { warmer, warms, calls };
+  return { warmer, warms, calls, branch };
 }
 
 async function advance(ms) {
@@ -104,4 +104,16 @@ test("a request that disabled caching is not warmed", () => {
   const { warmer } = harness("anthropic", 0);
   warmer.start({ model: model("anthropic"), context: {}, options: { cacheRetention: "none" } }, () => true);
   assert.equal(warmer.status.state, "inactive");
+});
+
+test("a response that server-compacted ends warming instead of replaying the old prefix", async (t) => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+  t.after(() => mock.timers.reset());
+  const { warmer, warms, branch } = harness("anthropic", 0);
+  warmer.start({ model: model("anthropic"), context: {}, options: {} }, () => true);
+  branch.push({ type: "message", message: { role: "assistant", usage, content: [{ type: "providerNative", subtype: "compaction", raw: { type: "compaction", content: "summary" } }] } });
+  warmer.onAgentSettled();
+  await advance(40 * MIN);
+  assert.equal(warms.length, 0);
+  assert.match(warmer.status.reason, /server compaction replaced the prefix/);
 });
