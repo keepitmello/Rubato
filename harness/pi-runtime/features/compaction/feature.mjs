@@ -36,9 +36,15 @@ const packageFile = (packageName, path, relative) => Object.freeze({
   sourcePath: source(relative),
 });
 
+// context-budget.mjs is owned by rubato-pi (the notes controller and providers use the
+// same file). The copy in this directory only re-exports it for source-tree imports.
+const CONTEXT_BUDGET_SOURCE = "../../../rubato-pi/src/context-budget.mjs";
+
 export const patches = compactionPatches;
 export const files = Object.freeze([
   ...RUNTIME_FILES.map(runtimeFile),
+  Object.freeze({ ...runtimeFile("context-budget.mjs"), sourcePath: source(CONTEXT_BUDGET_SOURCE) }),
+  packageFile("@earendil-works/pi-ai", "dist/rubato-features/compaction/context-budget.mjs", CONTEXT_BUDGET_SOURCE),
   packageFile("@earendil-works/pi-coding-agent", "dist/rubato-features/compaction/threshold.mjs", "./threshold.mjs"),
   packageFile("@earendil-works/pi-coding-agent", "dist/rubato-features/compaction/guidance.mjs", "./guidance.mjs"),
   packageFile("@earendil-works/pi-ai", "dist/rubato-features/compaction/notes-flag.mjs", "./notes-flag.mjs"),

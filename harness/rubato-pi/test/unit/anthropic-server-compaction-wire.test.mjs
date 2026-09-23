@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { setContextMode } from "../../src/context-notes/config.mjs";
+import { hardSafetyLine } from "../../src/context-budget.mjs";
 import {
   ANTHROPIC_SERVER_COMPACTION_BETA,
   ANTHROPIC_SERVER_COMPACTION_EDIT_TYPE,
@@ -13,7 +14,8 @@ import {
   wrapAnthropicServerCompactionFetch,
 } from "../../src/anthropic-server-compaction-wire.mjs";
 
-setContextMode("summary");
+// 노트 모드에서도 서버 컴팩션은 켜진다 — 모드와 무관하다는 것을 여기서 보인다.
+setContextMode("history-notes");
 
 const MESSAGES_URL = "https://api.anthropic.com/v1/messages";
 // 단위 테스트는 트랜스폼을 거치지 않으므로 적용 표시를 직접 켠다.
@@ -46,7 +48,9 @@ function hasCompactEdit(payload) {
     && payload.context_management.edits.some((edit) => edit?.type === ANTHROPIC_SERVER_COMPACTION_EDIT_TYPE);
 }
 
-async function send(model, { provider = "anthropic", headers = { "anthropic-beta": OAUTH_BETAS }, extra, contextWindow } = {}) {
+const WINDOW = 1_000_000;
+
+async function send(model, { provider = "anthropic", headers = { "anthropic-beta": OAUTH_BETAS }, extra, contextWindow = WINDOW } = {}) {
   const seen = [];
   const fetchImpl = wrapAnthropicServerCompactionFetch(async (url, init) => {
     seen.push({ url, init });
@@ -68,8 +72,8 @@ for (const model of ANTHROPIC_SERVER_COMPACTION_MODEL_IDS) {
     assert.deepEqual(payload.context_management.edits[0], {
       type: ANTHROPIC_SERVER_COMPACTION_EDIT_TYPE,
       instructions: COMPACTION_BRIEFING_GUIDANCE,
+      trigger: { type: "input_tokens", value: hardSafetyLine({ contextWindow: WINDOW }) },
     });
-    assert.ok(!("trigger" in payload.context_management.edits[0]));
     assert.equal(betaOf(seen.init.headers).startsWith(OAUTH_BETAS), true);
     assert.ok(betaOf(seen.init.headers).split(",").map((entry) => entry.trim()).includes(ANTHROPIC_SERVER_COMPACTION_BETA));
     assert.notEqual(seen.init.headers, init.headers);
@@ -79,16 +83,26 @@ for (const model of ANTHROPIC_SERVER_COMPACTION_MODEL_IDS) {
 test("server instructions are the same briefing guidance the client compaction uses", () => {
   assert.match(COMPACTION_BRIEFING_GUIDANCE, /next worker/);
   assert.match(COMPACTION_BRIEFING_GUIDANCE, /<summary><\/summary>/);
-  const edit = JSON.parse(applyAnthropicServerCompaction(body(SERVER_FABLE), {}, { provider: "anthropic" }).bodyText).context_management.edits[0];
+  const edit = JSON.parse(applyAnthropicServerCompaction(body(SERVER_FABLE), {}, { provider: "anthropic", contextWindow: WINDOW }).bodyText).context_management.edits[0];
   assert.equal(edit.instructions, COMPACTION_BRIEFING_GUIDANCE);
 });
 
-test("trigger sits at 65% of the model context window (35% left)", async () => {
-  const { seen } = await send(SERVER_FABLE, { contextWindow: 1_000_000 });
-  const edit = JSON.parse(seen.init.body).context_management.edits[0];
-  assert.deepEqual(edit.trigger, { type: "input_tokens", value: 650_000 });
-  const small = await send(SERVER_OPUS, { contextWindow: 200_000 });
-  assert.deepEqual(JSON.parse(small.seen.init.body).context_management.edits[0].trigger, { type: "input_tokens", value: 130_000 });
+test("Claude has no automatic threshold: the trigger is the shared hard safety line, not 65%", async () => {
+  // 1M Claude with the current catalog max output (128K). The line is the same rule the
+  // notes controller uses for DeepSeek/Gemini: window - output reserve - safety margin.
+  const claude = { contextWindow: 1_000_000, maxTokens: 128_000 };
+  const line = hardSafetyLine(claude);
+  assert.equal(anthropicServerCompactionTrigger(claude.contextWindow, claude).value, line);
+  assert.notEqual(line, 650_000);
+  assert.ok(line > 900_000 && line < claude.contextWindow);
+  assert.equal(line, hardSafetyLine({ contextWindow: 1_000_000, maxTokens: 384_000 }), "DeepSeek-sized max output does not move the line");
+  const { seen } = await send(SERVER_FABLE, { contextWindow: claude.contextWindow });
+  assert.deepEqual(JSON.parse(seen.init.body).context_management.edits[0].trigger, { type: "input_tokens", value: line });
+});
+
+test("no window means no edit at all: an edit without trigger would compact at the 150K default", async () => {
+  const raw = body(SERVER_OPUS);
+  assert.deepEqual(applyAnthropicServerCompaction(raw, {}, { provider: "anthropic" }), { bodyText: raw, headers: {}, rewritten: false });
 });
 
 test("trigger never drops below the Anthropic 50k floor and is omitted without a window", () => {
@@ -100,10 +114,10 @@ test("trigger never drops below the Anthropic 50k floor and is omitted without a
 
 test("the wire stays off when a required transform did not apply", () => {
   const raw = body(SERVER_FABLE);
-  const off = applyAnthropicServerCompaction(raw, { "anthropic-beta": OAUTH_BETAS }, { provider: "anthropic", armed: false });
+  const off = applyAnthropicServerCompaction(raw, { "anthropic-beta": OAUTH_BETAS }, { provider: "anthropic", contextWindow: WINDOW, armed: false });
   assert.equal(off.rewritten, false);
   assert.equal(off.bodyText, raw);
-  const on = applyAnthropicServerCompaction(raw, { "anthropic-beta": OAUTH_BETAS }, { provider: "anthropic" });
+  const on = applyAnthropicServerCompaction(raw, { "anthropic-beta": OAUTH_BETAS }, { provider: "anthropic", contextWindow: WINDOW });
   assert.equal(on.rewritten, true);
 });
 
@@ -123,7 +137,7 @@ test("non-Anthropic provider is untouched", async () => {
 
 test("existing anthropic-beta is preserved and compact beta is appended", () => {
   const headers = { "anthropic-beta": OAUTH_BETAS, "x-app": "cli" };
-  const applied = applyAnthropicServerCompaction(body(SERVER_OPUS), headers, { provider: "anthropic" });
+  const applied = applyAnthropicServerCompaction(body(SERVER_OPUS), headers, { provider: "anthropic", contextWindow: WINDOW });
   assert.equal(applied.rewritten, true);
   assert.equal(applied.headers["x-app"], "cli");
   assert.equal(applied.headers["anthropic-beta"], `${OAUTH_BETAS},${ANTHROPIC_SERVER_COMPACTION_BETA}`);
@@ -133,7 +147,7 @@ test("existing context_management edits are merged without a duplicate compact e
   const raw = body("claude-sonnet-5", {
     context_management: { edits: [{ type: "clear_tool_uses_20250919" }, { type: ANTHROPIC_SERVER_COMPACTION_EDIT_TYPE }] },
   });
-  const applied = applyAnthropicServerCompaction(raw, { "anthropic-beta": OAUTH_BETAS }, { provider: "anthropic" });
+  const applied = applyAnthropicServerCompaction(raw, { "anthropic-beta": OAUTH_BETAS }, { provider: "anthropic", contextWindow: WINDOW });
   const payload = JSON.parse(applied.bodyText);
   const types = payload.context_management.edits.map((edit) => edit.type);
   assert.deepEqual(types, ["clear_tool_uses_20250919", ANTHROPIC_SERVER_COMPACTION_EDIT_TYPE]);

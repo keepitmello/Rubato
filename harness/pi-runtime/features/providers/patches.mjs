@@ -279,6 +279,7 @@ const rubatoSources = Object.freeze([
   "antigravity-state.mjs",
   "cache-audit.mjs",
   "compaction-guidance.mjs",
+  "context-budget.mjs",
   "context-notes/checkpoint.mjs",
   "context-notes/config.mjs",
   "context-notes/engine-gate.mjs",
