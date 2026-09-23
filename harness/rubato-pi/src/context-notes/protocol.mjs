@@ -6,6 +6,7 @@ export const PREPARE_ENTRY = "rubato.context-window.prepare.v1";
 export const MODE_ENTRY = "rubato.context-mode.v1";
 export const NOTE_ENTRY = "rubato.context-note.v1";
 export const REMINDER_ENTRY = "rubato.context-window.reminder.v1";
+export const NUDGE_ENTRY = "rubato.context-note.nudge.v1";
 export const BOOTSTRAP_PREFIX = "<rubato_context_window_v1>\n";
 export const BOOTSTRAP_END = "\n</rubato_context_window_v1>";
 

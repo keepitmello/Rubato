@@ -3,6 +3,12 @@
 // process re-resolves from its own model and session record.
 // In-process children bind mode per session/SettingsManager and omit process.env
 // writes (propagateEnv:false) so a parent session's gates stay put.
+import { contextBudgetSettings } from "./context-budget.mjs";
+
+// Per-model lines live in context-budget.mjs so the Anthropic server-compaction
+// wire and the notes controller compute the same safety line.
+export { contextStrategy, windowBudget } from "./context-budget.mjs";
+
 export const HISTORY_NOTES_MODE = "history-notes";
 export const SUMMARY_MODE = "summary";
 export const CONTEXT_MODE_ORIGIN = "session";
@@ -97,18 +103,6 @@ export function contextNotesConfig(env = process.env) {
     maxOutputChars: 24_000,
     maxHintBytes: 4000,
     hintFiles: 5,
+    ...contextBudgetSettings(env),
   });
-}
-
-export function windowBudget(model, config = contextNotesConfig()) {
-  const full = Number(model?.contextWindow);
-  if (!Number.isSafeInteger(full) || full < 8192) {
-    throw new Error("모델의 문맥 한도를 읽지 못했어요. 새 문맥 모드에서는 한도가 명시된 모델을 사용해 주세요.");
-  }
-  // Codex-aligned stages on the physical window: reminder at target-6144,
-  // strong checkpoint at 90%, harness cut at 95%. An explicit override is the
-  // 90% line, still capped so it cannot pass the physical 90% ceiling.
-  const target = Math.min(config.windowTokens ?? Math.floor(full * 0.9), Math.floor(full * 0.9));
-  const hard = Math.floor(full * 0.95);
-  return { target, hard, reminder: Math.min(config.reminderTokens, Math.floor(target / 2)), full };
 }

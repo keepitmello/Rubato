@@ -44,6 +44,11 @@ export const files = Object.freeze([
       ? `./src/context-notes/${path}`
       : `../../../rubato-pi/src/context-notes/${path}`),
   )),
+  // Per-model context lines, shared byte-for-byte with the server-compaction wire.
+  ownedFile(
+    "dist/rubato-features/context-notes/src/context-notes/context-budget.mjs",
+    source("../../../rubato-pi/src/context-budget.mjs"),
+  ),
 ]);
 
 export const feature = Object.freeze({ id: "context-notes", patches, files });

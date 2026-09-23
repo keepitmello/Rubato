@@ -204,25 +204,29 @@ test("stock-locked patches compose and keep the product guidance string", () => 
   }
 });
 
-test("product mode table: Astra notes, other models summary, env wins, inherited origin re-resolves", () => {
+test("product mode table: every model notes, externally managed context summary, env wins", () => {
+  const EXTERNAL = { provider: "claude-sdk-oauth", id: "claude-fable-5-1" };
   assert.equal(modePolicy.defaultContextModeForModel(ASTRA), contextConfig.HISTORY_NOTES_MODE);
-  assert.equal(modePolicy.defaultContextModeForModel(FABLE), contextConfig.SUMMARY_MODE);
-  assert.equal(modePolicy.adoptContextMode({ env: {}, model: ASTRA }), contextConfig.HISTORY_NOTES_MODE);
-  assert.equal(modePolicy.adoptContextMode({ env: {}, model: FABLE }), contextConfig.SUMMARY_MODE);
+  assert.equal(modePolicy.defaultContextModeForModel(FABLE), contextConfig.HISTORY_NOTES_MODE);
+  assert.equal(modePolicy.defaultContextModeForModel(EXTERNAL), contextConfig.SUMMARY_MODE);
+  assert.equal(modePolicy.adoptContextMode({ env: {}, model: FABLE }), contextConfig.HISTORY_NOTES_MODE);
   assert.equal(modePolicy.adoptContextMode({ env: { RUBATO_CONTEXT_MODE: "summary" }, model: ASTRA }), contextConfig.SUMMARY_MODE);
   assert.equal(modePolicy.adoptContextMode({
     env: { RUBATO_CONTEXT_MODE: "history-notes", RUBATO_CONTEXT_MODE_ORIGIN: "session" },
     branch: [],
-    model: FABLE,
+    model: EXTERNAL,
   }), contextConfig.SUMMARY_MODE);
 });
 
-test("session_start default model activates summary overlay; Astra stays notes; env wins", async (t) => {
+test("session_start: Claude and Astra start in notes with client auto-compaction off; env summary still wins", async (t) => {
   withFreshMode(t);
-  const summary = await openSession(t, { name: "default-summary", model: FABLE });
-  assert.equal(process.env.RUBATO_CONTEXT_MODE, "summary");
-  assert.equal(summary.settingsManager.getCompactionSettings().enabled, true);
-  assert.equal(compaction.summaryCompactionAllowed(process.env, summary.settingsManager.getCompactionSettings()), true);
+  const claude = await openSession(t, { name: "default-claude-notes", model: FABLE });
+  assert.equal(process.env.RUBATO_CONTEXT_MODE, "history-notes");
+  // Rubato's client/generic auto-compaction never runs for Claude; its window belongs to
+  // Anthropic server compaction.
+  assert.equal(claude.settingsManager.getCompactionSettings().enabled, false);
+  assert.equal(compaction.summaryCompactionAllowed(process.env, { enabled: true }), false);
+  assert.equal(compaction.supportsAnthropicServerCompaction(FABLE), true);
 
   withFreshMode(t);
   const notes = await openSession(t, { name: "default-notes", model: ASTRA });

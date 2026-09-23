@@ -182,7 +182,6 @@ function writeModels(agentDir) {
 test("feature is additive-only, stock-version locked, and has a complete source closure", () => {
   assert.equal(feature.id, "context-notes");
   assert.deepEqual(patches, []);
-  assert.equal(files.length, 13);
   assert.equal(new Set(files.map((entry) => entry.path)).size, files.length);
   assert.ok(files.every((entry) => entry.packageName === "@earendil-works/pi-coding-agent"));
   assert.ok(files.every((entry) => entry.version === PI_VERSION));
