@@ -4,6 +4,7 @@ import {
   anthropicServerCompactionArmed,
   supportsAnthropicServerCompaction,
 } from "./anthropic-server-compaction.mjs";
+import { hardSafetyLine } from "./context-budget.mjs";
 import { COMPACTION_BRIEFING_GUIDANCE } from "./guidance.mjs";
 
 let warnedDisarmed = false;
@@ -56,32 +57,32 @@ export function shouldRewriteAnthropicServerCompaction({ body, provider }) {
   });
 }
 
-/** 컨텍스트 창 중 이만큼 찼을 때 서버 컴팩션을 돌린다 (= 35% 남았을 때). */
-export const ANTHROPIC_SERVER_COMPACTION_TRIGGER_RATIO = 0.65;
 /** Anthropic 이 허용하는 trigger 최소값. */
 export const ANTHROPIC_SERVER_COMPACTION_TRIGGER_MIN = 50_000;
 
 /**
- * Anthropic 기본 trigger 는 150k 라서 1M 창에서는 15% 만 쓰고 압축된다. 모델의
- * contextWindow 를 알면 그 65% 지점을 trigger 로 보낸다. 모르면 undefined (기본값에 맡김).
+ * Claude 에는 자동 컴팩션 임계점이 없다 (2026-09-23 사용자 결정). 서버 컴팩션은 다른
+ * 모델과 같은 비상선 — 창 - 출력 예약 - 여유분 (`context-budget.mjs`) — 에서만 돈다.
+ *
+ * trigger 를 빼면 꺼지는 게 아니라 Anthropic 기본값 150,000 에서 돈다. 그래서 선을 계산할
+ * 수 없으면(창을 모르면) undefined 를 돌려주고, 부르는 쪽은 서버 컴팩션 edit 자체를 붙이지 않는다.
  */
-export function anthropicServerCompactionTrigger(contextWindow) {
-  const window = Number(contextWindow);
-  if (!Number.isFinite(window) || window <= 0) return undefined;
-  const value = Math.max(ANTHROPIC_SERVER_COMPACTION_TRIGGER_MIN, Math.floor(window * ANTHROPIC_SERVER_COMPACTION_TRIGGER_RATIO));
-  return { type: "input_tokens", value };
+export function anthropicServerCompactionTrigger(contextWindow, { maxTokens } = {}) {
+  const line = hardSafetyLine({ contextWindow: Number(contextWindow), maxTokens });
+  if (line === undefined) return undefined;
+  return { type: "input_tokens", value: Math.max(ANTHROPIC_SERVER_COMPACTION_TRIGGER_MIN, line) };
 }
 
 /**
  * 기존 `context_management` 는 유지하고 `compact_20260112` edit 만 합친다.
  * `instructions` 는 클라이언트 컴팩션과 같은 인계 지침(`compaction-guidance.mjs`) — Anthropic 기본
  * 프롬프트를 완전히 대체한다. pause_after_compaction 은 넣지 않는다 (기본값).
- * trigger 는 contextWindow 를 알 때만 붙는다.
+ * trigger 를 계산할 수 없으면 edit 를 붙이지 않는다 — trigger 없는 edit 는 150K 에서 돈다.
  */
-export function mergeAnthropicServerCompactionEdit(body, { contextWindow } = {}) {
-  const edit = { type: ANTHROPIC_SERVER_COMPACTION_EDIT_TYPE, instructions: COMPACTION_BRIEFING_GUIDANCE };
-  const trigger = anthropicServerCompactionTrigger(contextWindow);
-  if (trigger) edit.trigger = trigger;
+export function mergeAnthropicServerCompactionEdit(body, { contextWindow, maxTokens } = {}) {
+  const trigger = anthropicServerCompactionTrigger(contextWindow, { maxTokens });
+  if (!trigger) return body;
+  const edit = { type: ANTHROPIC_SERVER_COMPACTION_EDIT_TYPE, instructions: COMPACTION_BRIEFING_GUIDANCE, trigger };
   const existing = body.context_management;
   if (!existing || typeof existing !== "object" || Array.isArray(existing)) {
     body.context_management = { edits: [edit] };
@@ -109,6 +110,9 @@ export function applyAnthropicServerCompaction(bodyText, headers, { provider, co
   if (!shouldRewriteAnthropicServerCompaction({ body, provider })) {
     return { bodyText, headers, rewritten: false };
   }
+  if (!anthropicServerCompactionTrigger(contextWindow)) {
+    return { bodyText, headers, rewritten: false };
+  }
   const before = bodyText;
   mergeAnthropicServerCompactionEdit(body, { contextWindow });
   const nextHeaders = appendAnthropicServerCompactionBeta(headers);
@@ -133,8 +137,10 @@ export function wrapAnthropicServerCompactionFetch(baseFetch, { provider, contex
 export function applyAnthropicServerCompactionParams(params, model, { armed = true } = {}) {
   if (!armed || !params || typeof params !== "object") return params;
   if (!supportsAnthropicServerCompaction(model)) return params;
+  const window = { contextWindow: model?.contextWindow, maxTokens: model?.maxTokens };
+  if (!anthropicServerCompactionTrigger(window.contextWindow, window)) return params;
   const next = { ...params };
-  mergeAnthropicServerCompactionEdit(next, { contextWindow: model?.contextWindow });
+  mergeAnthropicServerCompactionEdit(next, window);
   const betas = Array.isArray(next.betas) ? next.betas.slice() : [];
   if (!betas.includes(ANTHROPIC_SERVER_COMPACTION_BETA)) betas.push(ANTHROPIC_SERVER_COMPACTION_BETA);
   next.betas = betas;

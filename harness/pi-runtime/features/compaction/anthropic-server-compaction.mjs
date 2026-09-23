@@ -1,4 +1,4 @@
-import { historyNotesEnabled } from "./notes-flag.mjs";
+import { ANTHROPIC_SERVER_COMPACTION_MODEL_IDS, isAnthropicServerCompactionModel } from "./context-budget.mjs";
 
 // Anthropic 서버 컴팩션(beta `compact-2026-01-12`) 을 쓰는 모델의 **유일한** 판별점.
 //
@@ -14,13 +14,8 @@ export const ANTHROPIC_SERVER_COMPACTION_EDIT_TYPE = "compact_20260112";
 export const ANTHROPIC_COMPACTION_BLOCK_TYPE = "compaction";
 export const ANTHROPIC_COMPACTION_DELTA_TYPE = "compaction_delta";
 
-export const ANTHROPIC_SERVER_COMPACTION_MODEL_IDS = Object.freeze([
-  "claude-opus-5-5",
-  "claude-sonnet-5",
-  "claude-fable-5-1",
-]);
-
-const SERVER_COMPACTION_IDS = new Set(ANTHROPIC_SERVER_COMPACTION_MODEL_IDS);
+// 목록은 context-budget.mjs 가 소유한다 — 문맥 전략(server-compaction)과 같은 판별을 쓴다.
+export { ANTHROPIC_SERVER_COMPACTION_MODEL_IDS };
 
 // 필수 트랜스폼이 실제로 적용됐는지 알리는 표시. 로더(`no-changelog-hooks.mjs`) 는 니들이 어긋나면
 // 경고만 내고 원본을 태우므로, 어댑터 패치(블록 수신·재전송) 나 레인 패치(senpi 자동 컴팩션
@@ -45,13 +40,9 @@ export function anthropicServerCompactionArmed() {
  * 세션 설정을 받는다. provider 가 `anthropic` 이고 id 가 지원 목록에 있을 때만 true.
  */
 export function supportsAnthropicServerCompaction(model) {
-  if (historyNotesEnabled()) return false;
-  if (!model || typeof model !== "object") return false;
-  if (model.provider !== "anthropic") return false;
-  const id = typeof model.id === "string" ? model.id : model.modelId;
-  if (typeof id !== "string") return false;
-  const wireId = id.endsWith("-sub") ? id.slice(0, -4) : id;
-  return SERVER_COMPACTION_IDS.has(wireId);
+  // 작업 노트가 켜져 있는지와는 무관하다. 노트는 모든 모델의 작업기억이고, Claude 의
+  // 창은 노트 모드에서도 서버 컴팩션이 소유한다 (2026-09-23 핸드오프 §4.5).
+  return isAnthropicServerCompactionModel(model);
 }
 
 /**

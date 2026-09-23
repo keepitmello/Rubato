@@ -56,10 +56,15 @@ const compaction = await import(pathToFileURL(join(
   "rubato-features/compaction/index.mjs",
 )).href);
 
+// The copy the staged pi-ai params patch actually imports.
+const contextBudget = await import(pathToFileURL(join(
+  runtime.packages["@earendil-works/pi-ai"].dir,
+  "dist/rubato-features/compaction/context-budget.mjs",
+)).href);
+
 const { COMPACTION_BRIEFING_GUIDANCE } = compaction;
 const CONTEXT_WINDOW = 200_000;
 const PRODUCT_RATIO = 0.9;
-const SERVER_TRIGGER_RATIO = 0.65;
 // 서버 컴팩션 지원 목록은 현재 세대 id 를 담는다 — 여기서 손으로 적으면 세대가 바뀔 때마다 깨진다.
 const FABLE = { provider: "anthropic", id: PRODUCT_MODEL_ORDER.anthropic[0] };
 
@@ -202,7 +207,7 @@ async function drain(stream) {
   return events;
 }
 
-async function captureAnthropicRequest(mode) {
+async function captureAnthropicRequest(mode, overrides = {}) {
   process.env.RUBATO_CONTEXT_MODE = mode;
   const captured = { url: undefined, headers: undefined, body: undefined };
   const stream = anthropicMessages.streamSimple(
@@ -211,6 +216,7 @@ async function captureAnthropicRequest(mode) {
       api: "anthropic-messages",
       baseUrl: "http://127.0.0.1:9",
       contextWindow: CONTEXT_WINDOW,
+      ...overrides,
     }),
     {
       systemPrompt: "parity-system",
@@ -344,25 +350,29 @@ test("client compact prompt contains COMPACTION_BRIEFING_GUIDANCE", async (t) =>
   assert.equal(summarizer.includes(COMPACTION_BRIEFING_GUIDANCE), true);
 });
 
-test("Anthropic summary-mode request carries compact-2026-01-12, compact_20260112 edit with briefing guidance and 65% trigger", async (t) => {
-  t.after(() => delete process.env.RUBATO_CONTEXT_MODE);
-  const captured = await captureAnthropicRequest("summary");
-  assert.ok(captured.body, "mock fetch was not called");
-  assert.equal(betaList(captured).includes("compact-2026-01-12"), true);
-  const edit = compactEdit(captured.body);
-  assert.ok(edit, "missing compact_20260112 edit");
-  assert.equal(edit.instructions, COMPACTION_BRIEFING_GUIDANCE);
-  assert.deepEqual(edit.trigger, {
-    type: "input_tokens",
-    value: Math.floor(CONTEXT_WINDOW * SERVER_TRIGGER_RATIO),
+for (const mode of ["summary", "history-notes"]) {
+  test(`Anthropic ${mode} request carries compact-2026-01-12 and a compact_20260112 edit at the hard safety line`, async (t) => {
+    t.after(() => delete process.env.RUBATO_CONTEXT_MODE);
+    const captured = await captureAnthropicRequest(mode);
+    assert.ok(captured.body, "mock fetch was not called");
+    assert.equal(betaList(captured).includes("compact-2026-01-12"), true);
+    const edit = compactEdit(captured.body);
+    assert.ok(edit, "missing compact_20260112 edit: notes must not switch server compaction off");
+    assert.equal(edit.instructions, COMPACTION_BRIEFING_GUIDANCE);
+    assert.deepEqual(edit.trigger, {
+      type: "input_tokens",
+      value: contextBudget.hardSafetyLine({ contextWindow: CONTEXT_WINDOW, maxTokens: 4096 }),
+    });
   });
-});
+}
 
-test("notes mode does not rewrite Anthropic request", async (t) => {
+test("1M Claude: the server trigger is window - output reserve - margin, not 65%", async (t) => {
   t.after(() => delete process.env.RUBATO_CONTEXT_MODE);
-  const captured = await captureAnthropicRequest("history-notes");
-  assert.ok(captured.body, "mock fetch was not called");
-  assert.equal(betaList(captured).includes("compact-2026-01-12"), false);
-  assert.equal(compactEdit(captured.body), undefined);
-  assert.equal(captured.body.context_management, undefined);
+  const claude = { contextWindow: 1_000_000, maxTokens: 128_000 };
+  const captured = await captureAnthropicRequest("history-notes", claude);
+  const trigger = compactEdit(captured.body)?.trigger;
+  const line = contextBudget.hardSafetyLine(claude);
+  assert.deepEqual(trigger, { type: "input_tokens", value: line });
+  assert.equal(line, claude.contextWindow - contextBudget.outputReserveTokens(claude) - contextBudget.safetyMarginTokens(claude));
+  assert.notEqual(trigger.value, 650_000);
 });
