@@ -558,6 +558,136 @@ const edits = {
       'replace',
     ],
   ],
+  // 레거시 사이드바의 프로젝트별 스레드 목록: Show more 가 꼬리를 통째로 펼치던 것을
+  // 한 번에 한 페이지씩 연다. 페이지 크기는 그 프로젝트가 이미 보여주는 "Visible
+  // threads" 수와 같다. 상태는 프로젝트별로 연 페이지 수(Map)이고, 목록을 자르는
+  // 자리가 둘(스레드 목록과 ⌘ 점프 목록)이라 둘이 같은 수를 봐야 한다.
+  'apps/web/src/components/LegacySidebar.tsx': [
+    [
+      'interface SidebarProjectItemProps {\n  project: SidebarProjectSnapshot;\n  isThreadListExpanded: boolean;',
+      'interface SidebarProjectItemProps {\n  project: SidebarProjectSnapshot;\n  revealedThreadPages: number;',
+      'replace',
+    ],
+    [
+      '  const {\n    project,\n    isThreadListExpanded,\n    activeRouteThreadKey,',
+      '  const {\n    project,\n    revealedThreadPages,\n    activeRouteThreadKey,',
+      'replace',
+    ],
+    [
+      '    const hasOverflowingThreads = visibleProjectThreads.length > sidebarThreadPreviewCount;\n    const previewThreads =\n      isThreadListExpanded || !hasOverflowingThreads\n        ? visibleProjectThreads\n        : visibleProjectThreads.slice(0, sidebarThreadPreviewCount);',
+      [
+        '    const hasOverflowingThreads = visibleProjectThreads.length > sidebarThreadPreviewCount;',
+        '    // Rubato: one press reveals one page — the "Visible threads" count this',
+        '    // project already previews — instead of dumping the whole tail at once.',
+        '    const revealedThreadCount =',
+        '      sidebarThreadPreviewCount * (1 + Math.max(0, revealedThreadPages));',
+        '    const previewThreads =',
+        '      visibleProjectThreads.length <= revealedThreadCount',
+        '        ? visibleProjectThreads',
+        '        : visibleProjectThreads.slice(0, revealedThreadCount);',
+        '    const hasHiddenThreads = previewThreads.length < visibleProjectThreads.length;',
+      ].join('\n'),
+      'replace',
+    ],
+    [
+      '    return {\n      hasOverflowingThreads,\n      hiddenThreadStatus: resolveProjectStatusIndicator(',
+      '    return {\n      hasOverflowingThreads,\n      hasHiddenThreads,\n      hiddenThreadStatus: resolveProjectStatusIndicator(',
+      'replace',
+    ],
+    [
+      '  const {\n    hasOverflowingThreads,\n    hiddenThreadStatus,\n    renderedThreads,\n    showEmptyThreadState,\n    shouldShowThreadPanel,\n  } = useMemo(() => {',
+      '  const {\n    hasOverflowingThreads,\n    hasHiddenThreads,\n    hiddenThreadStatus,\n    renderedThreads,\n    showEmptyThreadState,\n    shouldShowThreadPanel,\n  } = useMemo(() => {',
+      'replace',
+    ],
+    [
+      '    isThreadListExpanded,\n    pinnedCollapsedThread,',
+      '    revealedThreadPages,\n    pinnedCollapsedThread,',
+      'replace',
+    ],
+    [
+      '  shouldShowThreadPanel: boolean;\n  isThreadListExpanded: boolean;\n  activeRouteThreadKey: string | null;',
+      '  shouldShowThreadPanel: boolean;\n  hasHiddenThreads: boolean;\n  activeRouteThreadKey: string | null;',
+      'replace',
+    ],
+    [
+      '    shouldShowThreadPanel,\n    isThreadListExpanded,',
+      '    shouldShowThreadPanel,\n    hasHiddenThreads,',
+      'replace',
+    ],
+    [
+      '      {projectExpanded && hasOverflowingThreads && !isThreadListExpanded && (',
+      '      {projectExpanded && hasOverflowingThreads && hasHiddenThreads && (',
+      'replace',
+    ],
+    [
+      '      {projectExpanded && hasOverflowingThreads && isThreadListExpanded && (',
+      '      {projectExpanded && hasOverflowingThreads && !hasHiddenThreads && (',
+      'replace',
+    ],
+    [
+      '        isThreadListExpanded={isThreadListExpanded}',
+      '        hasHiddenThreads={hasHiddenThreads}',
+      'replace',
+    ],
+    [
+      '  expandedThreadListsByProject: ReadonlySet<string>;',
+      '  revealedThreadPagesByProject: ReadonlyMap<string, number>;',
+      'replace',
+    ],
+    [
+      '    expandedThreadListsByProject,\n    activeRouteProjectKey,',
+      '    revealedThreadPagesByProject,\n    activeRouteProjectKey,',
+      'replace',
+    ],
+    [
+      '                      <SidebarProjectItem\n                        project={project}\n                        isThreadListExpanded={expandedThreadListsByProject.has(project.projectKey)}',
+      '                      <SidebarProjectItem\n                        project={project}\n                        revealedThreadPages={revealedThreadPagesByProject.get(project.projectKey) ?? 0}',
+      'replace',
+    ],
+    [
+      '              <SidebarProjectListRow\n                key={project.projectKey}\n                project={project}\n                isThreadListExpanded={expandedThreadListsByProject.has(project.projectKey)}',
+      '              <SidebarProjectListRow\n                key={project.projectKey}\n                project={project}\n                revealedThreadPages={revealedThreadPagesByProject.get(project.projectKey) ?? 0}',
+      'replace',
+    ],
+    [
+      '        const isThreadListExpanded = expandedThreadListsByProject.has(project.projectKey);\n        const hasOverflowingThreads = projectThreads.length > sidebarThreadPreviewCount;\n        const previewThreads =\n          isThreadListExpanded || !hasOverflowingThreads\n            ? projectThreads\n            : projectThreads.slice(0, sidebarThreadPreviewCount);',
+      [
+        '        const revealedThreadCount =',
+        '          sidebarThreadPreviewCount *',
+        '          (1 + Math.max(0, revealedThreadPagesByProject.get(project.projectKey) ?? 0));',
+        '        const previewThreads =',
+        '          projectThreads.length <= revealedThreadCount',
+        '            ? projectThreads',
+        '            : projectThreads.slice(0, revealedThreadCount);',
+      ].join('\n'),
+      'replace',
+    ],
+    [
+      '      sidebarThreadPreviewCount,\n      expandedThreadListsByProject,',
+      '      sidebarThreadPreviewCount,\n      revealedThreadPagesByProject,',
+      'replace',
+    ],
+    [
+      '  const [expandedThreadListsByProject, setExpandedThreadListsByProject] = useState<\n    ReadonlySet<string>\n  >(() => new Set());',
+      '  const [revealedThreadPagesByProject, setRevealedThreadPagesByProject] = useState<\n    ReadonlyMap<string, number>\n  >(() => new Map());',
+      'replace',
+    ],
+    [
+      '  const expandThreadListForProject = useCallback((projectKey: string) => {\n    setExpandedThreadListsByProject((current) => {\n      if (current.has(projectKey)) return current;\n      const next = new Set(current);\n      next.add(projectKey);\n      return next;\n    });\n  }, []);',
+      '  const expandThreadListForProject = useCallback((projectKey: string) => {\n    setRevealedThreadPagesByProject((current) => {\n      const next = new Map(current);\n      next.set(projectKey, (current.get(projectKey) ?? 0) + 1);\n      return next;\n    });\n  }, []);',
+      'replace',
+    ],
+    [
+      '  const collapseThreadListForProject = useCallback((projectKey: string) => {\n    setExpandedThreadListsByProject((current) => {\n      if (!current.has(projectKey)) return current;\n      const next = new Set(current);\n      next.delete(projectKey);\n      return next;\n    });\n  }, []);',
+      '  const collapseThreadListForProject = useCallback((projectKey: string) => {\n    setRevealedThreadPagesByProject((current) => {\n      if (!current.has(projectKey)) return current;\n      const next = new Map(current);\n      next.delete(projectKey);\n      return next;\n    });\n  }, []);',
+      'replace',
+    ],
+    [
+      '        expandedThreadListsByProject={expandedThreadListsByProject}',
+      '        revealedThreadPagesByProject={revealedThreadPagesByProject}',
+      'replace',
+    ],
+  ],
   // Speed Index replaces the agent-row token counter, and the lead score sits
   // in the composer footer. The packed CLI status line stays off the wire.
   'packages/contracts/src/providerRuntime.ts': [
