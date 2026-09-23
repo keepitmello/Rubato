@@ -10,8 +10,7 @@ import { resolveSenpiDaemonRuntime } from "../lsp/daemon-runtime"
 // extension session start, mirroring the task component's session-start
 // recovery chain event ("session_start"). No config keys — hygiene always
 // runs and each family self-throttles via its stamp file inside the sweep
-// functions. Mirrors the codex best-effort process-sweep pattern
-// (packages/rubato-codex/plugin/components/ — codex hook-sweep.ts).
+// functions.
 
 export const PI_RPC_CHILD_MARKER_ENV = "PI_CODING_AGENT_SESSION_DIR"
 export const SENPI_RPC_CHILD_MARKER_ENV = "SENPI_CODING_AGENT_SESSION_DIR"

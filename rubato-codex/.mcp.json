@@ -1,9 +1,0 @@
-{
-  "mcpServers": {
-    "taskforce": {
-      "command": "sh",
-      "args": ["./scripts/taskforce-mcp.sh"],
-      "cwd": "."
-    }
-  }
-}
