@@ -33,7 +33,7 @@ test("role prompt dump matches senpi replaceSystemPrompt for lead/owner/verifier
     const handlers = {};
     const pi = { on(name, fn) { handlers[name] = fn; } };
     await createRolePromptExtensionFactories({ env })[0].factory(pi);
-    const result = await handlers.before_agent_start(
+    const result = await handlers.system_prompt(
       { systemPrompt: "" },
       { model: { id: "grok-4.7", provider: "xai", name: "Grok 4.7" } },
     );

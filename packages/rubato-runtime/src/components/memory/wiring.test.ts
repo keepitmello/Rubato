@@ -146,8 +146,8 @@ describe("memory pressure compile wiring", () => {
     const eventCtx = sessionContext("session-pressure")
 
     const [below] = await pi.dispatch(
-      "before_agent_start",
-      { type: "before_agent_start", prompt: "continue", systemPrompt: "BASE" },
+      "system_prompt",
+      { type: "system_prompt", systemPrompt: "BASE" },
       eventCtx,
     )
     await writeFile(
@@ -159,8 +159,8 @@ describe("memory pressure compile wiring", () => {
       authorName: "Pressure Agent",
     })
     const [pressured] = await pi.dispatch(
-      "before_agent_start",
-      { type: "before_agent_start", prompt: "continue", systemPrompt: "BASE" },
+      "system_prompt",
+      { type: "system_prompt", systemPrompt: "BASE" },
       eventCtx,
     )
 
@@ -215,8 +215,8 @@ describe("memory projection config wiring", () => {
 
   async function promptFor(pi: MemoryFakeExtensionAPI): Promise<string> {
     const [result] = await pi.dispatch(
-      "before_agent_start",
-      { type: "before_agent_start", prompt: "continue", systemPrompt: "BASE" },
+      "system_prompt",
+      { type: "system_prompt", systemPrompt: "BASE" },
       sessionContext("session-projection"),
     )
     return (result as { systemPrompt?: string } | undefined)?.systemPrompt ?? ""

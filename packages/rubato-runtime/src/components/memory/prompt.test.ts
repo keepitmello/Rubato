@@ -95,13 +95,24 @@ function beforeAgentStart(systemPrompt: string): unknown {
   return { type: "before_agent_start", prompt: "hello", systemPrompt }
 }
 
+// One prompted turn as the host runs it: the session prompt is composed on `system_prompt`,
+// then `before_agent_start` delivers the turn's late notices.
 async function dispatchEvent(
   pi: FakeExtensionAPI,
   payload: unknown,
   ctx: unknown,
 ): Promise<BeforeAgentStartEventResult | undefined> {
-  const results = await pi.dispatch("before_agent_start", payload, ctx)
-  return results[0] as BeforeAgentStartEventResult | undefined
+  const [composed] = await pi.dispatch("system_prompt", { ...(payload as object), type: "system_prompt" }, ctx)
+  const [started] = await pi.dispatch("before_agent_start", payload, ctx)
+  const systemPrompt = (composed as BeforeAgentStartEventResult | undefined)?.systemPrompt
+  const message = (started as BeforeAgentStartEventResult | undefined)?.message
+  if (systemPrompt === undefined && message === undefined) return undefined
+  return { ...(systemPrompt === undefined ? {} : { systemPrompt }), ...(message === undefined ? {} : { message }) }
+}
+
+function onPromptTurn(pi: FakeExtensionAPI, handler: (payload: unknown, ctx?: unknown) => unknown): void {
+  pi.on("system_prompt", handler)
+  pi.on("before_agent_start", handler)
 }
 
 function boundHandler(repo: CountingRepo, context: MemoryIdentityContext) {
@@ -123,7 +134,7 @@ describe("createMemoryPromptHandler", () => {
     // given
     const { repo } = await fixture()
     const pi = new FakeExtensionAPI()
-    pi.on("before_agent_start", createMemoryPromptHandler({ resolveContext: () => undefined, createRepo: () => repo }))
+    onPromptTurn(pi, createMemoryPromptHandler({ resolveContext: () => undefined, createRepo: () => repo }))
 
     // when
     const result = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1", 2))
@@ -137,7 +148,7 @@ describe("createMemoryPromptHandler", () => {
     // given
     const { repo, context } = await fixture()
     const pi = new FakeExtensionAPI()
-    pi.on("before_agent_start", boundHandler(repo, context))
+    onPromptTurn(pi, boundHandler(repo, context))
 
     // when
     const result = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), {})
@@ -151,7 +162,7 @@ describe("createMemoryPromptHandler", () => {
     // given
     const { repo, context } = await fixture()
     const pi = new FakeExtensionAPI()
-    pi.on("before_agent_start", boundHandler(repo, context))
+    onPromptTurn(pi, boundHandler(repo, context))
 
     // when
     const result = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1", 3))
@@ -172,7 +183,7 @@ describe("createMemoryPromptHandler", () => {
     // given
     const { repo, context } = await fixture()
     const pi = new FakeExtensionAPI()
-    pi.on("before_agent_start", createMemoryPromptHandler({
+    onPromptTurn(pi, createMemoryPromptHandler({
       resolveContext: () => context,
       createRepo: () => repo,
     }))
@@ -193,7 +204,7 @@ describe("createMemoryPromptHandler", () => {
     // given
     const { repo, context } = await fixture()
     const pi = new FakeExtensionAPI()
-    pi.on("before_agent_start", boundHandler(repo, context))
+    onPromptTurn(pi, boundHandler(repo, context))
     const persistedEntries = [{ type: "custom_message", customType: "rubato-memory:notice" }]
 
     // when
@@ -213,7 +224,7 @@ describe("createMemoryPromptHandler", () => {
     const { repo, context } = await fixture()
     let turns: number | undefined
     const pi = new FakeExtensionAPI()
-    pi.on("before_agent_start", createMemoryPromptHandler({
+    onPromptTurn(pi, createMemoryPromptHandler({
       resolveContext: () => context,
       createRepo: () => repo,
       resolveNudgeTurns: async () => turns,
@@ -236,7 +247,7 @@ describe("createMemoryPromptHandler", () => {
     // given
     const { repo, context } = await fixture()
     const pi = new FakeExtensionAPI()
-    pi.on("before_agent_start", createMemoryPromptHandler({
+    onPromptTurn(pi, createMemoryPromptHandler({
       resolveContext: () => context,
       createRepo: () => repo,
       resolveNudgeTurns: async (_repo, sessionId) => sessionId === "session-after-threshold" ? 12 : undefined,
@@ -265,7 +276,7 @@ describe("createMemoryPromptHandler", () => {
     // given
     const { repo, context } = await fixture()
     const pi = new FakeExtensionAPI()
-    pi.on("before_agent_start", createMemoryPromptHandler({
+    onPromptTurn(pi, createMemoryPromptHandler({
       resolveContext: () => context,
       createRepo: () => repo,
       resolveCompileWarnTokens: () => 30_000,
@@ -301,7 +312,7 @@ describe("createMemoryPromptHandler", () => {
     const boundary = Math.floor(MEMORY_PRESSURE_SOFT_RATIO * advisory)
     const { repo, context } = await fixtureAtSystemTokens(boundary)
     const pi = new FakeExtensionAPI()
-    pi.on("before_agent_start", createMemoryPromptHandler({
+    onPromptTurn(pi, createMemoryPromptHandler({
       resolveContext: () => context,
       createRepo: () => repo,
       resolveCompileWarnTokens: () => advisory,
@@ -325,7 +336,7 @@ describe("createMemoryPromptHandler", () => {
     // given
     const { repo, context } = await fixture()
     const pi = new FakeExtensionAPI()
-    pi.on("before_agent_start", createMemoryPromptHandler({
+    onPromptTurn(pi, createMemoryPromptHandler({
       resolveContext: () => context,
       createRepo: () => repo,
       resolveNudgeTurns: async () => 2,
@@ -347,7 +358,7 @@ describe("createMemoryPromptHandler", () => {
     const { repo, context } = await fixture()
     let pending = true
     const pi = new FakeExtensionAPI()
-    pi.on("before_agent_start", createMemoryPromptHandler({
+    onPromptTurn(pi, createMemoryPromptHandler({
       resolveContext: () => context,
       createRepo: () => repo,
       resolveCompactPriorityNotice: () => {
@@ -373,7 +384,7 @@ describe("createMemoryPromptHandler", () => {
     // given
     const { repo, context } = await fixture()
     const pi = new FakeExtensionAPI()
-    pi.on("before_agent_start", createMemoryPromptHandler({
+    onPromptTurn(pi, createMemoryPromptHandler({
       resolveContext: () => context,
       createRepo: () => repo,
       resolveSoulNotice: async () => ({ sha: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678" }),
@@ -403,7 +414,7 @@ describe("createMemoryPromptHandler", () => {
       { agentId: IDENTITY, authorName: "Prompt Agent" },
     )
     const pi = new FakeExtensionAPI()
-    pi.on("before_agent_start", createMemoryPromptHandler({
+    onPromptTurn(pi, createMemoryPromptHandler({
       resolveContext: () => context,
       createRepo: () => repo,
       resolveSoulNotice: (repoArg) => consumeSoulNoticeDelta(repoArg, watermark),
@@ -430,7 +441,7 @@ describe("createMemoryPromptHandler", () => {
     const foreignPi = new FakeExtensionAPI()
     foreignPi.on("before_agent_start", () => ({ systemPrompt: "BASE PROMPT\n\nFOREIGN EXTENSION TEXT" }))
     const memoryPi = new FakeExtensionAPI()
-    memoryPi.on("before_agent_start", boundHandler(repo, context))
+    onPromptTurn(memoryPi, boundHandler(repo, context))
 
     // when — mirror the host runner: the next handler receives the previous handler's prompt
     const [foreign] = await foreignPi.dispatch("before_agent_start", beforeAgentStart("BASE PROMPT"), eventContext("session-1", 0))
@@ -447,7 +458,7 @@ describe("createMemoryPromptHandler", () => {
     // given
     const { repo, context } = await fixture()
     const pi = new FakeExtensionAPI()
-    pi.on("before_agent_start", boundHandler(repo, context))
+    onPromptTurn(pi, boundHandler(repo, context))
 
     // when
     const first = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1", 1))
@@ -464,7 +475,7 @@ describe("createMemoryPromptHandler", () => {
     // given
     const { repo, context } = await fixture()
     const pi = new FakeExtensionAPI()
-    pi.on("before_agent_start", boundHandler(repo, context))
+    onPromptTurn(pi, boundHandler(repo, context))
     const first = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1", 1))
     expect(repo.headCalls).toBe(1)
 
@@ -486,7 +497,7 @@ describe("createMemoryPromptHandler", () => {
     // given
     const { repo, context } = await fixture()
     const pi = new FakeExtensionAPI()
-    pi.on("before_agent_start", boundHandler(repo, context))
+    onPromptTurn(pi, boundHandler(repo, context))
     const first = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1", 1))
 
     // when — the host carries last turn's prompt forward with our block inside
@@ -502,9 +513,7 @@ describe("createMemoryPromptHandler", () => {
     // given
     const { repo, context } = await fixture("PERSONA_BODY_SENTINEL")
     const pi = new FakeExtensionAPI()
-    pi.on(
-      "before_agent_start",
-      createMemoryPromptHandler({
+    onPromptTurn(pi, createMemoryPromptHandler({
         resolveContext: () => context,
         createRepo: () => repo,
         resolveProject: () => [],
@@ -530,9 +539,7 @@ describe("createMemoryPromptHandler", () => {
     const warnTokens = 100
     const { repo, context } = await fixtureAtSystemTokens(Math.ceil(warnTokens * MEMORY_PRESSURE_SOFT_RATIO) + 10)
     const pi = new FakeExtensionAPI()
-    pi.on(
-      "before_agent_start",
-      createMemoryPromptHandler({
+    onPromptTurn(pi, createMemoryPromptHandler({
         resolveContext: () => context,
         createRepo: () => repo,
         resolveCompileWarnTokens: () => warnTokens,
@@ -558,7 +565,7 @@ describe("createMemoryPromptHandler", () => {
       resolveProject: () => project,
     })
     const pi = new FakeExtensionAPI()
-    pi.on("before_agent_start", handler)
+    onPromptTurn(pi, handler)
 
     // when
     const on = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1", 2))

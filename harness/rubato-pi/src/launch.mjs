@@ -92,7 +92,8 @@ export function resolveLaunchAgentDir(env = process.env, home = env.HOME || home
 /**
  * pi argv. Candidate already supplies providers, prompt rules,
  * components, and the footer. Role system prompt is passed (--system-prompt)
- * and the candidate's rubato-role-prompt factory injects it on before_agent_start.
+ * and the candidate's rubato-role-prompt factory composes it on the session-prompt
+ * feature's `system_prompt` event, which runs for every request whatever started the run.
  * Keep fullscreen TUI and ~/.agents/skills, then pass user args through.
  */
 export function buildPiArgs(userArgs, { env = process.env } = {}) {

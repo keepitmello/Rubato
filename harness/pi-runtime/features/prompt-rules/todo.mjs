@@ -237,7 +237,7 @@ export function createTodoExtension() {
     };
     pi.on("session_start", (_event, ctx) => sync(ctx));
     pi.on("session_tree", (_event, ctx) => sync(ctx));
-    pi.on("before_agent_start", (event) => ({
+    pi.on("system_prompt", (event) => ({
       systemPrompt: `${event.systemPrompt}\n${TASK_MANAGEMENT_SECTION}`,
     }));
     pi.registerTool({

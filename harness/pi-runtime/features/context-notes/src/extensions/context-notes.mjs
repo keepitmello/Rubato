@@ -171,13 +171,15 @@ export async function installContextNotes(pi, options = {}) {
       else syncTools(false);
     } catch (error) { report(error, ctx); }
   });
-  pi.on("before_agent_start", async (event, ctx) => {
+  pi.on("before_agent_start", async (_event, ctx) => {
     if (!notesActive()) return;
-    try {
-      getController(ctx).admit();
-      const base = event.systemPrompt ?? ctx.getSystemPrompt?.() ?? "";
-      return { systemPrompt: base.includes(GUIDANCE) ? base : `${base}\n\n${GUIDANCE}` };
-    } catch (error) { report(error, ctx); throw error; }
+    try { getController(ctx).admit(); }
+    catch (error) { report(error, ctx); throw error; }
+  });
+  pi.on("system_prompt", async (event, ctx) => {
+    if (!notesActive()) return;
+    const base = event.systemPrompt ?? ctx.getSystemPrompt?.() ?? "";
+    return { systemPrompt: base.includes(GUIDANCE) ? base : `${base}\n\n${GUIDANCE}` };
   });
   pi.on("context", async (event, ctx) => {
     if (!notesActive()) return;

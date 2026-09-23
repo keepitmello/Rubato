@@ -61,10 +61,12 @@ export interface MemoryPromptInjectionOptions {
 }
 
 /**
- * Per-run memory injection. The stable projection composes with the event's systemPrompt (never
- * rebuilds it), while session-volatile recall and maintenance notices return as a late hidden
- * custom message. convertToLlm maps those to role:user; rubato-pi remaps display:false
- * customs to assistant turns before the latest user message (session 01a068e3).
+ * Memory injection, split by lifetime. On `system_prompt` the stable projection composes with the
+ * session prompt (never rebuilds it); that event runs for every request, so the block must be a
+ * pure function of repo state. On `before_agent_start` the session-volatile recall and maintenance
+ * notices return as a late hidden custom message — they are consumed once per prompted run.
+ * convertToLlm maps those to role:user; rubato-pi remaps display:false customs to assistant turns
+ * before the latest user message (session 01a068e3).
  * Unbound/disabled sessions return undefined so the handler chain passes through.
  */
 export function createMemoryPromptHandler(
@@ -78,34 +80,40 @@ export function createMemoryPromptHandler(
   // the notice message is dropped entirely.
   const recallNoticeGuard = createOncePerSessionGuard()
   return async (payload, eventCtx) => {
-    const systemPrompt = readSystemPrompt(payload)
-    if (systemPrompt === undefined) return undefined
+    const kind = readEventKind(payload)
+    if (kind === undefined) return undefined
     const session = readPromptSession(eventCtx)
     if (session === undefined) return undefined
     const context = options.resolveContext(session.id)
     if (context === undefined) return undefined
-
     const repo = createRepo(context)
+
+    if (kind === "system_prompt") {
+      const systemPrompt = readSystemPrompt(payload)
+      if (systemPrompt === undefined) return undefined
+      const project = normalizeProject(options.resolveProject?.(context.identity))
+      // The template stays a pure template id; the cache folds output-affecting options
+      // (the project whitelist) into its own variant, so callers cannot forget to encode one.
+      const block = await cache.compile(repo, `${MEMORY_PROMPT_TEMPLATE}:${context.identity}`, {
+        agentId: context.identity,
+        project,
+      })
+      // Pressure advises trimming system/ because it is expensive every turn. With an empty
+      // whitelist it is not in the prompt at all, so the advice would be noise about a cost nobody pays.
+      const pressureBlock = project.length > 0
+        ? await addMemoryPressureMetadata(
+          block,
+          repo,
+          options.resolveCompileWarnTokens?.(context.identity),
+        )
+        : block
+      const composed = options.searchExposure?.() === true ? `${pressureBlock}\n\n${MEMORY_TOOL_DISCOVERY_NOTE}` : pressureBlock
+      return { systemPrompt: replaceMemoryBlock(systemPrompt, markMemoryBlock(context.identity, composed)) }
+    }
+
     const nudgeTurns = await options.resolveNudgeTurns?.(repo, session.id, context.identity)
     const soulNotice = await options.resolveSoulNotice?.(repo, session.id, context.identity)
     const compactPriority = options.resolveCompactPriorityNotice?.(session.id) === true
-    const project = normalizeProject(options.resolveProject?.(context.identity))
-    // The template stays a pure template id; the cache folds output-affecting options
-    // (the project whitelist) into its own variant, so callers cannot forget to encode one.
-    const block = await cache.compile(repo, `${MEMORY_PROMPT_TEMPLATE}:${context.identity}`, {
-      agentId: context.identity,
-      project,
-    })
-    // Pressure advises trimming system/ because it is expensive every turn. With an empty
-    // whitelist it is not in the prompt at all, so the advice would be noise about a cost nobody pays.
-    const pressureBlock = project.length > 0
-      ? await addMemoryPressureMetadata(
-        block,
-        repo,
-        options.resolveCompileWarnTokens?.(context.identity),
-      )
-      : block
-    const composed = options.searchExposure?.() === true ? `${pressureBlock}\n\n${MEMORY_TOOL_DISCOVERY_NOTE}` : pressureBlock
     const includeRecall = !hasMemoryNotice(session.entries) && recallNoticeGuard(session.id)
     const notice = renderMemoryNotice(
       includeRecall ? session.priorMessageCount : undefined,
@@ -113,13 +121,8 @@ export function createMemoryPromptHandler(
       soulNotice,
       compactPriority,
     )
-    const updatedSystemPrompt = replaceMemoryBlock(
-      systemPrompt,
-      markMemoryBlock(context.identity, composed),
-    )
-    if (notice === undefined) return { systemPrompt: updatedSystemPrompt }
+    if (notice === undefined) return undefined
     return {
-      systemPrompt: updatedSystemPrompt,
       message: {
         customType: MEMORY_NOTICE_CUSTOM_TYPE,
         content: notice,
@@ -192,9 +195,13 @@ function defaultCreateRepo(context: MemoryIdentityContext): GitMemoryRepo {
   return new GitMemoryRepo({ dir: context.identityPaths.repo, agentId: context.identity })
 }
 
+function readEventKind(payload: unknown): "system_prompt" | "before_agent_start" | undefined {
+  if (!isRecord(payload)) return undefined
+  return payload.type === "system_prompt" || payload.type === "before_agent_start" ? payload.type : undefined
+}
+
 function readSystemPrompt(payload: unknown): string | undefined {
   if (!isRecord(payload)) return undefined
-  if (payload.type !== "before_agent_start") return undefined
   return typeof payload.systemPrompt === "string" ? payload.systemPrompt : undefined
 }
 

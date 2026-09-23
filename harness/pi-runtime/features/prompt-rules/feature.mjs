@@ -9,6 +9,7 @@ const RUNTIME_FILES = Object.freeze([
   "THIRD_PARTY_NOTICES.md",
 ]);
 
+// The `system_prompt` event these handlers use is the session-prompt feature's engine patch.
 export const patches = Object.freeze([]);
 export const files = Object.freeze(RUNTIME_FILES.map((name) => Object.freeze({
   target: "runtime",

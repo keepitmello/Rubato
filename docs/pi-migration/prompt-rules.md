@@ -123,3 +123,17 @@ practice.
 `before_agent_start.systemPrompt` and ignores Senpi `model_select` prompt returns, so
 the factory uses the public start hook only (no Pi patch). A completed role prompt
 passed as loader/`--system-prompt` `customPrompt` still outranks the preset body.
+
+## Session prompt (2026-09-23)
+
+Prompt contributors (role prompt, todo, rules, context-notes guidance, media sections,
+memory block) now answer the `system_prompt` event from the `session-prompt` feature
+instead of returning `before_agent_start.systemPrompt`. Stock only emits
+`before_agent_start` from `prompt()`, so a run started by
+`sendCustomMessage(..., { triggerTurn: true })` — a terminal notification or child wake —
+went out without any of them. The cache audit showed the wake request's system dropping
+to the Claude Code identity blocks, a prefix miss on the wake and again on the next
+turn, and Fable 5.1 / Opus 5.5 dropping every earlier thinking block as
+`prefix_binding_mismatch`. `system_prompt` is composed in the forced-prompt projection,
+so every provider request carries the same text until session state changes.
+`before_agent_start` stays for per-run side effects and hidden messages only.
