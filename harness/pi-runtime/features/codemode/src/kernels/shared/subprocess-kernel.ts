@@ -2,6 +2,7 @@ import type { HostToKernelMessage, KernelToHostMessage } from "../../bridge/prot
 import { decodeBridgeFrame, encodeBridgeFrame, isKernelToHostMessage } from "../../bridge/protocol.ts";
 import type { KernelInterruptHandle } from "../../tool/types.ts";
 import type { KernelResult, KernelRunInput, SubprocessKernelOptions, ToolCallMessage } from "./subprocess-contract.ts";
+import { bindToHostLifetime } from "./host-lifetime.ts";
 import { type SubprocessLike, SubprocessProcess, type SubprocessSpawn, spawnSubprocess } from "./subprocess-process.ts";
 import { SubprocessRunQueue } from "./subprocess-queue.ts";
 import {
@@ -134,6 +135,7 @@ export class SubprocessKernel {
 
 	private spawnProcess(): void {
 		const child = spawnSubprocess(this.options.spawn, this.options);
+		bindToHostLifetime(child);
 		const process = new SubprocessProcess(child, {
 			onLine: (source, line) => this.handleLine(source, line),
 			onStderr: (source, data) => this.handleMessage(source, { type: "text", stream: "stderr", data }),

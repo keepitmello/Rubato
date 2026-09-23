@@ -237,6 +237,88 @@ test(
 	},
 );
 
+// A host that dies mid-cell cannot shut its kernels down, and a busy cell never
+// reads the stdin EOF that would end the runner. The kernels must still go.
+const hostLifetimeDriver = `
+const [src, pyPath, rbPath] = process.argv.slice(1);
+const { spawn } = await import("node:child_process");
+const { startBridgeServer } = await import(src + "/bridge/http-server.ts");
+const { defaultSpawn } = await import(src + "/kernels/py/process.ts");
+const { PythonKernel } = await import(src + "/kernels/py/kernel.ts");
+const { RubyKernel } = await import(src + "/kernels/rb/kernel.ts");
+const pids = [];
+const expected = [pyPath, rbPath].filter(Boolean).length;
+let ready = 0;
+const bridge = await startBridgeServer({
+	onCall: async () => {
+		if (++ready === expected) process.stdout.write(JSON.stringify(pids) + "\\n");
+		return {};
+	},
+	onEmit: async () => undefined,
+	onCompletion: async () => ({ text: "" }),
+});
+const connection = { port: bridge.port, token: bridge.token, parallelPoolWidth: 2 };
+if (pyPath) {
+	const kernel = await PythonKernel.start({
+		interpreterPath: pyPath, cwd: process.cwd(), sessionId: "py-host-lifetime", connection,
+		spawnProcess: (options) => { const child = defaultSpawn(options); pids.push(child.pid); return child; },
+	});
+	void kernel.run({ cellId: "busy", code: 'tool.ready(value="py")\\nwhile True:\\n    pass' });
+}
+if (rbPath) {
+	const kernel = RubyKernel.start({
+		command: rbPath, cwd: process.cwd(), sessionId: "rb-host-lifetime", connection,
+		spawn: (command, args, options) => {
+			const child = spawn(command, [...args], { ...options, stdio: "pipe", detached: process.platform !== "win32" });
+			pids.push(child.pid);
+			return child;
+		},
+	});
+	void kernel.run({ cellId: "busy", code: 'tool.ready(value: "rb")\\nloop {}' });
+}
+`;
+
+test(
+	"kernels busy in a cell exit when their host is killed",
+	{ skip: detected.py.ok || detected.rb.ok ? false : "neither python nor ruby is available" },
+	async (t) => {
+		const cwd = mkdtempSync(join(tmpdir(), "rubato-codemode-host-lifetime-"));
+		const src = fileURLToPath(new URL("./src", import.meta.url));
+		const host = spawn(
+			process.execPath,
+			[
+				"--input-type=module",
+				"-e",
+				hostLifetimeDriver,
+				src,
+				detected.py.ok ? detected.py.path : "",
+				detected.rb.ok ? detected.rb.path : "",
+			],
+			{ cwd, stdio: ["ignore", "pipe", "pipe"], windowsHide: true },
+		);
+		let kernelPids = [];
+		t.after(async () => {
+			host.kill("SIGKILL");
+			for (const pid of kernelPids) killOwnedProcess(pid);
+			rmSync(cwd, { recursive: true, force: true });
+		});
+		let stderr = "";
+		host.stderr.on("data", (chunk) => (stderr += String(chunk)));
+		kernelPids = await new Promise((resolvePids, reject) => {
+			let stdout = "";
+			host.stdout.on("data", (chunk) => {
+				stdout += String(chunk);
+				if (stdout.includes("\n")) resolvePids(JSON.parse(stdout));
+			});
+			host.once("exit", (code) => reject(new Error(`host exited early (${code}): ${stderr.slice(-2_000)}`)));
+		});
+		for (const pid of kernelPids) assert.equal(isProcessAlive(pid), true, `kernel ${pid} should be running its cell`);
+
+		host.kill("SIGKILL");
+		for (const pid of kernelPids) await waitForProcessExit(pid);
+	},
+);
+
 test(
 	"Julia kernel preserves state and tools across cells, restarts on interrupt, and shutdown reaps every process",
 	{ skip: detected.jl.ok ? false : "julia is unavailable on this host" },

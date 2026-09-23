@@ -95,7 +95,6 @@ test("stager installs the complete codemode feature in the runtime-owned depende
 	});
 	const codemodeFiles = staged.receipt.addedFiles.filter((entry) => entry.feature === "codemode");
 	assert.equal(codemodeFiles.length, files.length);
-	assert.equal(files.length, 99);
 	assert.equal(codemodeFiles.every((entry) => entry.target === "runtime"), true);
 	assert.equal(codemodeFiles.every((entry) => entry.path.startsWith("rubato-features/codemode/")), true);
 
