@@ -45,3 +45,41 @@ test("role prompt dump matches senpi replaceSystemPrompt for lead/owner/verifier
     assert.match(senpi, headings[role]);
   }
 });
+
+test("the skills listing stays pinned to the session until /reload", async () => {
+  // The listing sits ahead of the whole history; a description edited on disk must not
+  // rewrite the cached prefix mid-session or on restart. /reload takes the new listing.
+  const env = { RUBATO_PI_ROLE: "lead", RUBATO_ROLE_PROMPT_MODULE: promptHref, RUBATO_ROLE_CONTRACT_MODULE: roleHref };
+  const listing = (description) =>
+    `The following skills provide specialized instructions for specific tasks.\n<available_skills>\n  <skill><name>demo</name><description>${description}</description></skill>\n</available_skills>`;
+  const branch = [];
+  const ctx = {
+    model: { id: "claude-opus-5", provider: "anthropic", name: "Claude Opus 5" },
+    sessionManager: { getSessionId: () => "session-pin", getBranch: () => branch },
+  };
+  const boot = async () => {
+    const handlers = {};
+    const pi = {
+      on(name, fn) { handlers[name] = fn; },
+      appendEntry(customType, data) { branch.push({ type: "custom", customType, data }); },
+    };
+    await createRolePromptExtensionFactories({ env })[0].factory(pi);
+    return handlers;
+  };
+  const compose = async (handlers, description) =>
+    (await handlers.system_prompt({ systemPrompt: `BASE\n\n${listing(description)}` }, ctx)).systemPrompt;
+
+  let handlers = await boot();
+  await handlers.session_start({ reason: "startup" }, ctx);
+  assert.match(await compose(handlers, "first"), /first/);
+  assert.match(await compose(handlers, "edited on disk"), /first/);
+  assert.doesNotMatch(await compose(handlers, "edited on disk"), /edited on disk/);
+
+  handlers = await boot();
+  await handlers.session_start({ reason: "resume" }, ctx);
+  assert.match(await compose(handlers, "edited on disk"), /first/, "a restart keeps the pinned listing");
+
+  await handlers.session_start({ reason: "reload" }, ctx);
+  assert.match(await compose(handlers, "edited on disk"), /edited on disk/);
+  assert.match(await compose(handlers, "later edit"), /edited on disk/);
+});
