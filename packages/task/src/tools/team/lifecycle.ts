@@ -8,7 +8,7 @@ import type { CreatedMemberInfo } from "../../team"
 import type { ResolvedModelRecord } from "../../state"
 import { formatTargetWithModel } from "../../status-line"
 import { toolResult } from "../control"
-import { TaskToolEffort } from "../task/params"
+import { stableModelEnum, TaskToolEffort } from "../task/params"
 import type { TeamToolDeps, TeamToolsService } from "./types"
 
 type AvailableModels = readonly string[] | (() => readonly string[])
@@ -74,10 +74,7 @@ export function buildTeamCreateParams(availableModels: AvailableModels = []) {
     const model = schema.properties.inline_spec.anyOf[0].properties.members.items.properties.model
     Object.defineProperty(model, "enum", {
       enumerable: true,
-      get: () => {
-        const values = availableModels()
-        return values.length === 0 ? undefined : [...values].sort()
-      },
+      get: stableModelEnum(availableModels),
     })
   }
   return schema

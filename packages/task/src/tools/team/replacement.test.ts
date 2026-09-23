@@ -32,7 +32,7 @@ describe("team_replace_member tool", () => {
     expect(TeamReplaceMemberParams.properties).not.toHaveProperty("kind")
   })
 
-  test("requires a handoff and exposes the current exact model catalog", () => {
+  test("requires a handoff and exposes a model catalog that only grows", () => {
     let models = ["rubato-mock/mock-1"]
     const tool = createTeamReplaceMemberTool({
       service: createFakeTeamService(), models: { has: (model) => models.includes(model), list: () => models },
@@ -41,8 +41,10 @@ describe("team_replace_member tool", () => {
     expect(Value.Check(tool.parameters, { ...input, prompt: "" })).toBe(false)
     expect(Value.Check(tool.parameters, { ...input, model: "missing/model" })).toBe(false)
     expect(Value.Check(tool.parameters, { ...input, kind: "owner" })).toBe(false)
+    // The schema heads the cached prefix, so a catalog change must not drop a listed model;
+    // availability is checked when the tool runs.
     models = ["other/model"]
-    expect(Value.Check(tool.parameters, input)).toBe(false)
+    expect(Value.Check(tool.parameters, input)).toBe(true)
     expect(Value.Check(tool.parameters, { ...input, model: "other/model" })).toBe(true)
     expect(tool.description).toContain("user approval")
   })
