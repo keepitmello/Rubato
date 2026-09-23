@@ -11,6 +11,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { stagePiRuntime } from "../../stage-runtime.mjs";
 import { toolExecutionFeature } from "../tool-execution/index.mjs";
+import { sessionPromptFeature } from "../session-prompt/patches.mjs";
 import { feature, files } from "./patches.mjs";
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -305,7 +306,7 @@ test("staged stock SDK executes webfetch, look_at, and client generate_image aga
 	const staged = await stagePiRuntime({
 		sourceRoot: runtimeRoot,
 		outputRoot,
-		features: [toolExecutionFeature, feature],
+		features: [toolExecutionFeature, sessionPromptFeature, feature],
 	});
 	const mediaFiles = staged.receipt.addedFiles.filter((entry) => entry.feature === "media-tools");
 	assert.equal(mediaFiles.length, files.length);
@@ -444,9 +445,8 @@ test("staged stock SDK executes webfetch, look_at, and client generate_image aga
 		realpathSync(imageSkill.filePath),
 		realpathSync(join(outputRoot, "rubato-features/media-tools/src/imagegen/skill/SKILL.md")),
 	);
-	const { buildSystemPrompt } = await import(pathToFileURL(join(staged.runtime.codingAgentDir, "dist/core/system-prompt.js")).href);
-	const imagePrompt = await session.extensionRunner.emitBeforeAgentStart("fixture", [], { cwd });
-	assert.match(buildSystemPrompt(imagePrompt.systemPromptOptions), /## Image Generation/);
+	const imagePrompt = await session.extensionRunner.emitSystemPrompt({ cwd });
+	assert.match(imagePrompt, /## Image Generation/);
 
 	const updates = [];
 	const fetched = await extensionApi.executeTool(

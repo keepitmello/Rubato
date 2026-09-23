@@ -1,6 +1,6 @@
 export const ROLE_PROMPT_FACTORY_NAME = "rubato-role-prompt";
 
-/** Inject the product role prompt on every agent start. */
+/** Compose the product role prompt into the session system prompt (every request, every run shape). */
 export function createRolePromptExtension({ env = process.env } = {}) {
   return async (pi) => {
     const promptHref = env.RUBATO_ROLE_PROMPT_MODULE;
@@ -11,7 +11,7 @@ export function createRolePromptExtension({ env = process.env } = {}) {
       import(roleHref),
     ]);
     const role = resolveRole({ env });
-    pi.on("before_agent_start", async (event, ctx) => ({
+    pi.on("system_prompt", async (event, ctx) => ({
       systemPrompt: promptForAgentStart(event, ctx, role),
     }));
   };

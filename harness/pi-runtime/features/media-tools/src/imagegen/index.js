@@ -41,7 +41,7 @@ export function registerImageGenExtension(pi, baseDir = IMAGEGEN_BASE_DIR) {
         const skillPath = await bundledSkillPath(baseDir);
         return skillPath === undefined ? undefined : { skillPaths: [skillPath] };
     });
-    pi.on("before_agent_start", async (event, ctx) => {
+    pi.on("system_prompt", async (event, ctx) => {
         if (!(await isImageGenActive(ctx)))
             return undefined;
         return { systemPrompt: `${event.systemPrompt}\n${IMAGE_GEN_SECTION}` };

@@ -53,7 +53,7 @@ export default function openaiImageGenExtension(pi) {
         await ensureFresh(model, ctx);
         return applyImageGenerationTools(event.payload, state.kind);
     });
-    pi.on("before_agent_start", async (event, ctx) => {
+    pi.on("system_prompt", async (event, ctx) => {
         await ensureFresh(ctx.model, ctx);
         if (state.kind !== "native")
             return undefined;

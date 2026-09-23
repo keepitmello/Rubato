@@ -420,16 +420,16 @@ export function createHooksExtension(options = {}) {
       return { action: "continue" };
     });
 
-    pi.on("before_agent_start", (event) => {
+    pi.on("before_agent_start", () => {
       const pending = promptContexts.shift();
       if (!pending) return undefined;
-      return {
-        ...(pending.contexts.length === 0 ? {} : { message: {
-          customType: "senpi.hook", content: pending.contexts.join("\n\n"), display: false,
-          details: { event: "UserPromptSubmit" },
-        } }),
-        ...(pending.systemMessages.length === 0 ? {} : { systemPrompt: `${event.systemPrompt}\n\n${pending.systemMessages.join("\n\n")}` }),
-      };
+      // Hook output belongs to this turn, so it rides in the turn's hidden message.
+      // Folding it into the system prompt changed the session prefix for one run only.
+      const parts = [...pending.contexts, ...pending.systemMessages];
+      return { message: {
+        customType: "senpi.hook", content: parts.join("\n\n"), display: false,
+        details: { event: "UserPromptSubmit" },
+      } };
     });
 
     pi.on("tool_call", async (event, ctx) => {

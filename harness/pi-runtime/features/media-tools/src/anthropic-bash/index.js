@@ -105,7 +105,7 @@ export default function anthropicBashExtension(pi) {
 	pi.on("before_provider_request", (event, ctx) => {
 		return addAnthropicBashToPayload(ctx.model?.api, event.payload);
 	});
-	pi.on("before_agent_start", async (event, ctx) => {
+	pi.on("system_prompt", async (event, ctx) => {
 		if (ctx.model?.api !== "anthropic-messages") return undefined;
 		if (!isAnthropicBashEnabled()) return undefined;
 		return { systemPrompt: `${event.systemPrompt}\n${ANTHROPIC_BASH_SECTION}` };

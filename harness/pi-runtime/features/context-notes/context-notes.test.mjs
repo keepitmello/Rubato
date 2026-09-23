@@ -125,7 +125,7 @@ function jsonLineChannel(child) {
   return { frames, request, waitFor, stderr: () => stderr };
 }
 
-const dependencies = await loadPiFeatures(["reload", "session-catalog"]);
+const dependencies = await loadPiFeatures(["reload", "session-catalog", "session-prompt"]);
 const staged = await stagePiRuntime({
   sourceRoot,
   outputRoot,
