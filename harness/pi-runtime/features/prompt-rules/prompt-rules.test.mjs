@@ -104,7 +104,7 @@ function textOf(message) {
     .join("\n");
 }
 
-async function createFixture({ cwd, agentDir, homeDir, sessionManager, flags = new Map(), tools = ["read", "todo"] }) {
+async function createFixture({ cwd, agentDir, homeDir, sessionManager, flags = new Map(), tools = ["read", "todo"], extraFactories = [] }) {
   writeFileSync(join(agentDir, "models.json"), JSON.stringify({
     providers: {
       "prompt-rules-test": {
@@ -128,12 +128,13 @@ async function createFixture({ cwd, agentDir, homeDir, sessionManager, flags = n
     settingsManager,
     extensionFlagValues: flags,
     modelRuntimeSignal: AbortSignal.timeout(5_000),
-    createExtensionFactories: ({ settingsManager: canonicalSettings }) => (
-      promptRules.createPromptRulesExtensionFactories({
+    createExtensionFactories: ({ settingsManager: canonicalSettings }) => [
+      ...promptRules.createPromptRulesExtensionFactories({
         settingsManager: canonicalSettings,
         env: { HOME: homeDir },
-      })
-    ),
+      }),
+      ...extraFactories,
+    ],
     resourceLoaderOptions: {
       noExtensions: true,
       noSkills: true,
@@ -233,6 +234,54 @@ test("a wake-started run carries the same session prompt as a prompted run", asy
   assert.equal(prompts.length, 2);
   assert.match(prompts[0], /<Task_Management>/);
   assert.equal(prompts[1], prompts[0]);
+});
+
+test("a wake-started first run waits for before_run readiness before declaring its tools", async (t) => {
+  // MCP attaches in the background after session_start and used to be awaited only on
+  // before_agent_start. A reopened session whose first run was a wake sent its first
+  // request without those tools, then added them one request later: two full misses.
+  let release;
+  const attached = new Promise((resolve) => { release = resolve; });
+  const lateTool = {
+    name: "late_tool",
+    label: "Late tool",
+    description: "Registered after an async attach.",
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+    async execute() { return { content: [{ type: "text", text: "ok" }] }; },
+  };
+  const lateAttach = (pi) => {
+    let attach = Promise.resolve();
+    pi.on("session_start", () => {
+      attach = attached.then(() => {
+        pi.registerTool(lateTool);
+        if (!pi.getActiveTools().includes("late_tool")) pi.setActiveTools([...pi.getActiveTools(), "late_tool"]);
+      });
+    });
+    pi.on("before_run", async () => { await attach; });
+  };
+  const project = createInstructionProject("wake-tools");
+  const fixture = await createFixture({
+    ...project,
+    sessionManager: sdk.SessionManager.inMemory(project.cwd),
+    extraFactories: [{ name: "late-attach", factory: lateAttach }],
+    tools: ["read", "todo", "late_tool"],
+  });
+  t.after(() => fixture.session.dispose());
+  const toolLists = [];
+  fixture.session.agent.streamFunction = (_model, context) => {
+    toolLists.push(getCurrentTools(context.messages).map((tool) => tool.name));
+    return complete(assistant("ok"));
+  };
+
+  setTimeout(() => release(), 20);
+  await fixture.session.sendCustomMessage(
+    { customType: "wake-fixture", content: "background job finished", display: false },
+    { triggerTurn: true },
+  );
+
+  assert.deepEqual(fixture.errors, []);
+  assert.equal(toolLists.length, 1);
+  assert.ok(toolLists[0].includes("late_tool"), JSON.stringify(toolLists[0]));
 });
 
 test("freshly staged stock SDK consumes native root, static rule, nested AGENTS, and matching dynamic rule", async (t) => {
