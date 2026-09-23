@@ -208,7 +208,12 @@ echo "$CHANGED" | grep -Eq '^harness/pi-server/src/' && need_profile=1
 # 깔고 엔진을 옛 코드로 두면, 피커에 새 모델이 안 뜨는 식으로 조용히 어긋난다 —
 # Opus 5.5 등록이 정확히 그렇게 됐다: 후보에는 파생 코드가 들어갔는데 도는 엔진이
 # 옛 목록을 계속 내줬다. 후보가 바뀌면 엔진도 같이 다시 띄운다.
-[ "$need_candidate" = 1 ] && need_profile=1
+# 다만 테스트만 바뀐 업데이트는 뺀다. 엔진이 읽는 것은 코드뿐이라 테스트 파일은
+# 도는 엔진에 아무 영향이 없고, 상주 엔진을 끊으면 살아 있는 CLI 세션이 죽는다.
+if [ "$need_candidate" = 1 ] \
+  && echo "$CHANGED" | grep -Ev '(^|/)test/|\.test\.' | grep -Eq '^(package\.json$|bun\.lock$|harness/|packages/)'; then
+  need_profile=1
+fi
 
 # 공식 GUI는 핀된 T3 + overlay다. 받아온 디프만 보면 이 머신에서 먼저 고쳐 둔
 # 핀·overlay 를 놓친다 — 그 경우 받을 것이 있어도 GUI 만 옛 번들로 남는다.
