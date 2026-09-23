@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
-import { chmod, copyFile, lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, lstat, mkdir, mkdtemp, readFile, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { stageAndPublishInstall, withInstallLock } from "./install-transaction.mjs";
-import { lockPublishedPayload } from "./payload-lock.mjs";
+import { lockPublishedPayload, removeTree } from "./payload-lock.mjs";
 import { sourceFingerprint } from "./source-fingerprint.mjs";
 
 const run = promisify(execFile);
@@ -53,7 +53,10 @@ function cleanEnv(extra = {}) {
 /** Prefer a trash move when recursive delete is blocked by a local wrapper. */
 export async function retirePath(path, { trashRoot } = {}) {
   try {
-    await rm(path, { recursive: true, force: true });
+    // removeTree clears Darwin's user-immutable flag when that is what blocks
+    // the delete. Without it every retired engine fails here and lands in the
+    // fallback below, which nothing ever revisits.
+    await removeTree(path);
     return { method: "rm", path };
   } catch (error) {
     // A fresh mkdtemp per failure mints a trash root that nothing ever
