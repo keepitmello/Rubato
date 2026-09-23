@@ -8,8 +8,6 @@
 
 새 기기는 이 레포를 clone 한 뒤 설치기가 이것을 `~/.agents/skills` 로 풀어 준다.
 Rubato와 기존 shared CLI는 이 설치본을 사용한다.
-Codex는 별도 `rubato-codex` 플러그인으로 설치하며, 그 설치기가 공유 중복을 비활성화한다.
-taskforce·dispatching·model-guide의 Codex 전용본은 `rubato-codex/skills`가 정본이다.
 
 담긴 스킬 26개 (그중 10개는 이 레포가 정본이라 그대로 두었다).
 바깥 정본에서 온 것은 심링크 실체를 따라가 떴다.

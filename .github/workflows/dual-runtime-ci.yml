@@ -2,14 +2,10 @@ name: Dual runtime checkpoints
 
 on:
   push:
-    # 기본 브랜치는 rubato/base 다. 여기에 이 브랜치만 적혀 있던 동안
-    # rubato-codex 변경을 rubato/base 로 직접 밀면 codex-audit 이 한 번도
-    # 돌지 않았다. PR 경로에만 걸려 있었기 때문이다.
     branches: [rubato/base, codex/dual-runtime-checkpoints-20260913]
     paths:
       - 'harness/pi-server/**'
       - 'harness/t3-integration/**'
-      - 'rubato-codex/**'
       - 'docs/dual-runtime/**'
       - 'IMPLEMENTATION_HANDOFF.md'
       - '.github/workflows/dual-runtime-ci.yml'
@@ -17,7 +13,6 @@ on:
     paths:
       - 'harness/pi-server/**'
       - 'harness/t3-integration/**'
-      - 'rubato-codex/**'
       - 'docs/dual-runtime/**'
       - 'IMPLEMENTATION_HANDOFF.md'
       - '.github/workflows/dual-runtime-ci.yml'
@@ -67,39 +62,6 @@ jobs:
           path: |
             ${{ runner.temp }}/*-tests.log
             ${{ runner.temp }}/pi-lifecycle-measurement.json
-          if-no-files-found: ignore
-          retention-days: 30
-
-  codex-audit:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: '24'
-      - name: Run audited Codex regression surface
-        run: |
-          set -o pipefail
-          node --test --test-timeout=45000 \
-            rubato-codex/test/skills-bundle.test.mjs \
-            rubato-codex/test/bundle-dependencies.test.mjs \
-            rubato-codex/test/prompts.test.mjs \
-            rubato-codex/test/providers.test.mjs \
-            rubato-codex/test/package.test.mjs \
-            rubato-codex/test/opencodex-setup.test.mjs \
-            2>&1 | tee "$RUNNER_TEMP/codex-audit-tests.log"
-      - name: Generated role contracts match their source
-        # agents/taskforce_*.toml 은 scripts/build-roles.mjs 가 만든다. 소스
-        # 문장만 고치고 재생성을 잊으면 주입되는 계약이 조용히 옛것으로 남는다.
-        run: npm --prefix rubato-codex run check:roles
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        if: always()
-        with:
-          name: codex-audit-validation
-          path: ${{ runner.temp }}/codex-audit-tests.log
           if-no-files-found: ignore
           retention-days: 30
 

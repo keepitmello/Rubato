@@ -1,4 +1,0 @@
-interface:
-  display_name: "Find Skills"
-  short_description: "Help with Find Skills tasks"
-  default_prompt: "Use find-skills to handle this task."

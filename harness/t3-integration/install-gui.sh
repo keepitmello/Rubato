@@ -105,7 +105,7 @@ build_fingerprint() {
     printf '%s\n' "$PIN"
     find "$HERE/overlay" -type f -exec shasum -a 256 {} + 2>/dev/null | sort
     shasum -a 256 "$HERE/apply.mjs" "$HERE/write-gui-settings.mjs" 2>/dev/null
-    shasum -a 256 "$HERE/../../rubato-codex/macos/Rubato.png" "$HERE/../../rubato-codex/macos/Rubato.icns" 2>/dev/null
+    shasum -a 256 "$HERE/assets/Rubato.png" "$HERE/assets/Rubato.icns" 2>/dev/null
   } | shasum -a 256 | cut -d' ' -f1
 }
 
@@ -146,7 +146,7 @@ ok "Rubato overlay"
 # 위 checkout 이 매번 upstream 파일로 되돌리므로 여기서 다시 깐다.
 for target in assets/prod/black-macos-1024.png assets/prod/black-universal-1024.png; do
   if [ -f "$T3_DIR/$target" ]; then
-    cp "$HERE/../../rubato-codex/macos/Rubato.png" "$T3_DIR/$target" || warn "아이콘 교체 실패: $target"
+    cp "$HERE/assets/Rubato.png" "$T3_DIR/$target" || warn "아이콘 교체 실패: $target"
   fi
 done
 ok "아이콘 Rubato"
