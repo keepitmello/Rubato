@@ -3,7 +3,8 @@
 // 작업 노트/원문 기록은 모든 모델이 쓴다. 창을 끝내는 방식만 모델의 경제성으로 고른다
 // (2026-09-23 핸드오프 §4, 사용자 결정):
 //
-//   notes-rollover     Astra: 90% 목표, 95% 비상선, 90~95% 는 노트 갱신 + new_context 전용 구간.
+//   notes-rollover     Codex(openai-codex/* — Sol·Terra·Luna·Astra, `-sub` 포함): 같은 레인·272K 창이라
+//                      한 전략이다. 90% 목표, 95% 비상선, 90~95% 는 노트 갱신 + new_context 전용 구간.
 //                      Grok: 200K 가격 경계에서는 자르지 않고 300K 부터 자연 경계에서 전환,
 //                      320K 에서 적극 유도, 400K 비상선.
 //   server-compaction  Claude: Anthropic 서버 컴팩션이 창을 소유한다. 자동 임계점은 없고
@@ -57,8 +58,9 @@ export function isAnthropicServerCompactionModel(model) {
   return SERVER_COMPACTION_IDS.has(wireModelId(model));
 }
 
-function isAstra(model) {
-  return model?.provider === "openai-codex" && wireModelId(model) === "gpt-6-astra";
+// The whole Codex lane shares one window shape, so it shares Astra's rollover strategy.
+function isCodex(model) {
+  return model?.provider === "openai-codex" && wireModelId(model) !== "";
 }
 
 function isGrok(model) {
@@ -68,7 +70,7 @@ function isGrok(model) {
 
 export function contextStrategy(model) {
   if (isAnthropicServerCompactionModel(model)) return SERVER_COMPACTION_STRATEGY;
-  if (isAstra(model) || isGrok(model)) return NOTES_ROLLOVER_STRATEGY;
+  if (isCodex(model) || isGrok(model)) return NOTES_ROLLOVER_STRATEGY;
   return HARD_SAFETY_STRATEGY;
 }
 

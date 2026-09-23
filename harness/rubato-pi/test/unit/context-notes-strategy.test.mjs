@@ -213,6 +213,7 @@ test("a server compaction that shrinks the context does not hide accumulated wor
 test("system-prompt guidance is a pure function of the model; Astra's text is unchanged", () => {
   assert.equal(guidanceFor(ASTRA), GUIDANCE);
   assert.equal(guidanceFor({ ...ASTRA, id: "gpt-6-astra-sub" }), GUIDANCE);
+  assert.equal(guidanceFor({ ...ASTRA, id: "gpt-5.6-sol" }), GUIDANCE, "the Codex lane shares Astra's text");
   for (const model of [GROK, OPUS, DEEPSEEK, GEMINI]) {
     assert.equal(guidanceFor(model), guidanceFor({ ...model }));
     assert.notEqual(guidanceFor(model), GUIDANCE, `${model.id} does not get Astra's 90%/95% text`);

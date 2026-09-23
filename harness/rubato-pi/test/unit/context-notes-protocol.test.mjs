@@ -26,7 +26,12 @@ test("Astra keeps 90% target, 95% hard and the reminder 6144 tokens before the t
   assert.equal(astra.hard, 258400);
   assert.equal(astra.reminderAt, 238656);
   assert.equal(astra.soft, astra.target);
-  assert.equal(windowBudget({ ...ASTRA, id: "gpt-6-astra-sub" }).strategy, "notes-rollover");
+  // The whole Codex lane shares Astra's lines.
+  for (const id of ["gpt-6-astra-sub", "gpt-5.6-sol", "gpt-5.6-sol-sub", "gpt-5.6-terra", "gpt-5.6-luna"]) {
+    const codex = windowBudget({ ...ASTRA, id });
+    assert.equal(codex.strategy, "notes-rollover", id);
+    assert.deepEqual([codex.reminderAt, codex.target, codex.hard], [astra.reminderAt, astra.target, astra.hard], id);
+  }
   // An explicit override lowers the target but never raises a line past 90%.
   assert.equal(windowBudget(ASTRA, contextNotesConfig({ RUBATO_CONTEXT_WINDOW_TOKENS: "900000" })).target, 244800);
   assert.equal(windowBudget(ASTRA, contextNotesConfig({ RUBATO_CONTEXT_WINDOW_TOKENS: "200000" })).target, 200000);
@@ -51,7 +56,8 @@ test("Claude has no Rubato line; its only line is the server-compaction safety l
 });
 
 test("DeepSeek, Gemini and other models only have a computed hard safety line", () => {
-  for (const model of [DEEPSEEK, GEMINI, { provider: "openai-codex", id: "gpt-5.6-sol", contextWindow: 272000, maxTokens: 128000 }]) {
+  const HAIKU = { provider: "anthropic", id: "claude-haiku-4-5", contextWindow: 200000, maxTokens: 64000 };
+  for (const model of [DEEPSEEK, GEMINI, HAIKU]) {
     const budget = windowBudget(model, contextNotesConfig({}));
     assert.equal(budget.strategy, "hard-safety");
     assert.equal(budget.hard, hardSafetyLine(model));
