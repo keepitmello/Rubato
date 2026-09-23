@@ -75,6 +75,11 @@ export default function lookAtExtension(pi, host = {}) {
     pi.on("model_select", async (_event, ctx) => {
         syncToolActivation(ctx);
     });
+    // Re-check at every run start so the first request of any run (a wake in a reopened
+    // session included) declares the loadout for the model it actually uses.
+    pi.on("before_run", async (_event, ctx) => {
+        syncToolActivation(ctx);
+    });
     registerLookAtCommand(pi, {
         store,
         adaptContext,

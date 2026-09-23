@@ -11,7 +11,7 @@ export function createMcpExtension(options) {
     const search = options?.toolSearchService;
 
     // Attach in the background so session_start cannot pin the first prompt.
-    // before_agent_start still waits, so the first model turn sees the tools.
+    // before_agent_start and before_run still wait, so the first model turn sees the tools.
     pi.on("session_start", (_event, ctx) => {
       attach = (async () => {
       const ownedService = service ?? createMcpService(options);
@@ -79,8 +79,13 @@ export function createMcpExtension(options) {
       })();
     });
 
+    // A run must not declare its tools before the MCP tools exist. before_run covers every
+    // run shape, including a wake that starts the first run of a reopened session.
     pi.on("before_agent_start", async () => {
       await attach;
+    });
+    pi.on("before_run", async () => {
+      await attach.catch(() => undefined);
     });
 
     pi.on("session_shutdown", async () => {

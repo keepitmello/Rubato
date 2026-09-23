@@ -13,6 +13,13 @@
 // request, from the session's current prompt options, whatever started the run. The
 // composition is a pure function of session state, so every request sees the same text
 // until that state changes.
+//
+// `before_run` is the same idea for the tool loadout: it fires at the start of every run,
+// before the first request declares its tools. Readiness waits (MCP attach) and
+// model-gated tool syncs belong there, not on `before_agent_start`. A session reopened
+// by a wake used to send its first request without the MCP tools and with look_at /
+// read_video gated on the wrong model, then flip back one request later — two full
+// misses on every lane without native tool additions (2026-09-21..23: 30 resets).
 
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
 const VERSION = "0.86.1";
@@ -106,6 +113,23 @@ export function patchAgentSession(source) {
     }
     /** Restore the active tool loadout declared by the session transcript, if it declares one. */`,
     "compose-method",
+  );
+  next = replaceOnce(
+    next,
+    `    async _runAgentPrompt(messages) {
+        this._agentRunAbortRequested = false;
+        this._isAgentRunActive = true;
+        try {
+            await this.agent.prompt(messages);`,
+    `    async _runAgentPrompt(messages) {
+        this._agentRunAbortRequested = false;
+        this._isAgentRunActive = true;
+        try {
+            // Every run shape passes here before its tool loadout is declared, including a
+            // wake started by sendCustomMessage(triggerTurn), which skips before_agent_start.
+            await this._extensionRunner?.emit({ type: "before_run" });
+            await this.agent.prompt(messages);`,
+    "before-run",
   );
   return replaceOnce(
     next,
