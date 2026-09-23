@@ -9,6 +9,7 @@
     "apps/server/src/orchestration/Layers/OrchestrationEngine.ts": "0cc9fc4dd6decd87d60b2055c701c1b0a9d20d2fd480f443b34e011a8da50c9f",
     "apps/desktop/src/window/DesktopWindow.ts": "51972da9cc7ce9fe12072d1aa553bf16144a177b2f5721f8da0e6cb9021da6ad",
     "apps/web/src/components/RightPanelTabs.tsx": "724fc2105d027f2166a9b3542eaf0f34b3a6039308ffaf38705417eb91897ba2",
+    "apps/web/src/components/LegacySidebar.tsx": "4845a94f73b056aa6d4565560b8793796b96a0ba081615a466a8fb53d6c77906",
     "apps/web/src/components/files/FilePreviewPanel.tsx": "005464e53f23df5e5f58e74107b9477cb3707e6b45dc22a49500d3e31ca0891d",
     "packages/contracts/src/project.ts": "5362694d4c38005945d08ab09ad51575330eaa2c67106ba52b709f8f3c8f88dc",
     "packages/contracts/src/rpc.ts": "d2bbf1d3af080c6eb78c9f5e08d4e3b4db47d936ed8bb17ee9a69f7b8b14d5ad",
