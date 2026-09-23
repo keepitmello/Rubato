@@ -50,6 +50,21 @@ export function rubatoWarmingIntervalMs(model) {
 function stopsAfterPrefill(model) {
     return model?.provider === "openai-codex";
 }
+/**
+ * Whether the latest response carried an Anthropic server compaction block. After one, the
+ * request the warmer holds is the pre-compaction prefix: nothing will read it again, and
+ * replaying it crosses the compaction trigger and makes the server summarize a second time.
+ */
+export function lastResponseCompacted(entries) {
+    for (let index = entries.length - 1; index >= 0; index--) {
+        const entry = entries[index];
+        if (entry?.type !== "message" || entry.message?.role !== "assistant")
+            continue;
+        const content = entry.message.content;
+        return Array.isArray(content) && content.some((block) => block?.type === "providerNative" && block.subtype === "compaction");
+    }
+    return false;
+}
 /** Timestamp of the latest user-authored message on the branch. */
 export function lastUserInputAt(entries) {
     for (let index = entries.length - 1; index >= 0; index--) {
@@ -135,6 +150,24 @@ export function lastUserInputAt(entries) {
             return;
         }`,
     "schedule-deadline",
+  );
+  next = replaceOnce(
+    next,
+    `    async refresh(run) {
+        run.timer = undefined;
+        if (!this.validateRun(run))
+            return;`,
+    `    async refresh(run) {
+        run.timer = undefined;
+        if (!this.validateRun(run))
+            return;
+        // The response to the held request may have compacted since start(); that request is
+        // then a dead prefix, and replaying it would compact again.
+        if (lastResponseCompacted(this.sessionManager.getBranch())) {
+            this.stop("server compaction replaced the prefix");
+            return;
+        }`,
+    "refresh-compaction",
   );
   next = replaceOnce(
     next,
