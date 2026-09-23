@@ -18,8 +18,8 @@ const asJson = rest.includes("--json");
 const events = readFileSync(path, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
 const requests = new Map();
 const responses = new Map();
-const REQUEST_TYPES = new Set(["anthropic.request", "codex.request", "xai.request", "antigravity.request"]);
-const RESPONSE_TYPES = new Set(["anthropic.response", "codex.response", "xai.response", "antigravity.response"]);
+const REQUEST_TYPES = new Set(["anthropic.request", "codex.request", "xai.request", "completions.request", "antigravity.request"]);
+const RESPONSE_TYPES = new Set(["anthropic.response", "codex.response", "xai.response", "completions.response", "antigravity.response"]);
 for (const event of events) {
   if (sessionFilter && event.sessionId !== sessionFilter) continue;
   if (REQUEST_TYPES.has(event.type)) requests.set(event.seq, event);
@@ -27,7 +27,7 @@ for (const event of events) {
 }
 
 function isOpenAiStyle(request) {
-  return request?.type === "codex.request" || request?.type === "xai.request";
+  return request?.type === "codex.request" || request?.type === "xai.request" || request?.type === "completions.request";
 }
 
 function isAntigravityStyle(request) {
