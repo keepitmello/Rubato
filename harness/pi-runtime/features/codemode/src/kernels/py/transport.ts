@@ -8,6 +8,7 @@ import {
 	isKernelToHostMessage,
 	type KernelToHostMessage,
 } from "../../bridge/protocol.ts";
+import { bindToHostLifetime } from "../shared/host-lifetime.ts";
 import { type CodemodeRuntimeAssetEnvironment, resolveCodemodeRuntimeAsset } from "../shared/runtime-asset.ts";
 import {
 	defaultSpawn,
@@ -86,6 +87,7 @@ export class PythonKernelTransport {
 			env: { ...process.env, ...options.env, PYTHONUNBUFFERED: "1", PYTHONIOENCODING: "utf-8" },
 		};
 		const child = (options.spawnProcess ?? defaultSpawn)(spawnOptions);
+		bindToHostLifetime(child);
 		const transport = new PythonKernelTransport(options, child);
 		try {
 			await transport.#initialize();
