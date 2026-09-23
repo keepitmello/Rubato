@@ -3,7 +3,7 @@
 // to boot. Darwin's user-immutable flag rejects that copy. Directory rename
 // still publishes a replacement, which is how install and rollback move a tree.
 import { execFile } from "node:child_process";
-import { lstat, readFile } from "node:fs/promises";
+import { lstat, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
@@ -62,4 +62,23 @@ export function lockPublishedPayload(root) {
 
 export function unlockPublishedPayload(root) {
   return setPublishedPayloadImmutable(root, false);
+}
+
+/**
+ * Removes a tree, clearing Darwin's user-immutable flag when that is what
+ * blocks the delete.
+ *
+ * A published payload carries `uchg` on its receipts and lockfile, so a plain
+ * recursive delete fails with EPERM on every retired engine. Callers that
+ * only want the tree gone should not have to know that.
+ */
+export async function removeTree(path) {
+  try {
+    await rm(path, { recursive: true, force: true });
+    return;
+  } catch (error) {
+    if (!payloadLockSupported()) throw error;
+    await run("chflags", ["-R", "nouchg", path]).catch(() => {});
+    await rm(path, { recursive: true, force: true });
+  }
 }

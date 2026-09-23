@@ -5,9 +5,9 @@
   "type": "module",
   "description": "Isolated stock Pi dependency boundary; not the default Rubato runtime until parity is verified",
   "scripts": {
-    "sweep:scratch": "node scripts/sweep-scratch.mjs",
-    "test": "node scripts/sweep-scratch.mjs && node --test --test-timeout=90000 --test-concurrency=4 test/*.test.mjs features/*/*.test.mjs",
-    "test:ci": "node scripts/sweep-scratch.mjs && node --test --test-timeout=300000 --test-concurrency=1 test/*.test.mjs features/*/*.test.mjs"
+    "sweep:scratch": "node ../scripts/sweep-scratch.mjs",
+    "test": "node ../scripts/sweep-scratch.mjs && node --test --test-timeout=90000 --test-concurrency=4 test/*.test.mjs features/*/*.test.mjs",
+    "test:ci": "node ../scripts/sweep-scratch.mjs && node --test --test-timeout=300000 --test-concurrency=1 test/*.test.mjs features/*/*.test.mjs"
   },
   "dependencies": {
     "@babel/parser": "8.0.4",
