@@ -11,8 +11,10 @@ const { createRubatoExtensionFactories } = await import(pathToFileURL(join(root,
 // not process cwd, must select both tool configuration and local storage.
 const cwd = join(process.cwd(), "session-cwd"), agentDir = process.env.PI_CODING_AGENT_DIR;
 await mkdir(join(cwd, ".rubato"), { recursive: true });
+// The layer schema is strict, so a key it does not know (the retired `facts` layer) rejects the
+// whole file and the defaults silently win. Keep this in step with RubatoMemorySettingsLayerSchema.
 await writeFile(join(cwd, ".rubato/rubato.jsonc"), JSON.stringify({ memory: {
-  agent: "stock-integration", tool_exposure: exposure, reflection: { enabled: false }, facts: { enabled: false },
+  agent: "stock-integration", tool_exposure: exposure, reflection: { enabled: false },
   dream: { enabled: false, shutdown_launch: false }, sync: { enabled: false },
 } }));
 const settingsManager = sdk.SettingsManager.inMemory();
@@ -46,7 +48,9 @@ try {
   await session.extensionRunner.emitBeforeAgentStart("offline component fixture", undefined, { cwd });
   assert.deepEqual(errors, [], "pre-turn component readiness must not fail");
   const tools = api.getAllTools().map(({ name }) => name);
-  for (const name of ["Agent", "AgentCancel", "AgentOutput", "lsp_diagnostics", "lsp_symbols", "team_create", "bash_input", "bash_output", "bash_resize", "kill_bash", "monitor"]) {
+  // AgentOutput is not here on purpose: the task component stopped registering it, so a delegated
+  // result arrives as a completion pointer plus a result file path instead of a transcript peek.
+  for (const name of ["Agent", "AgentCancel", "lsp_diagnostics", "lsp_symbols", "team_create", "bash_input", "bash_output", "bash_resize", "kill_bash", "monitor"]) {
     assert.ok(tools.includes(name), `existing Rubato tool missing: ${name}`);
   }
   assert.equal(assembled.servers.list().some(({ name }) => name === "_ast_grep"), true);
