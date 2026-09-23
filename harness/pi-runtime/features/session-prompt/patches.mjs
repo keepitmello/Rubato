@@ -48,7 +48,10 @@ export function patchRunner(source) {
      */
     async emitSystemPrompt(systemPromptOptions) {
         const options = normalizeBuildSystemPromptOptions(systemPromptOptions);
-        let current = buildSystemPrompt(options);
+        // basePrompt is the engine rendering before any handler. A handler that rebuilds the
+        // prompt from scratch (the Rubato role prompt) uses it to keep what earlier handlers added.
+        const basePrompt = buildSystemPrompt(options);
+        let current = basePrompt;
         let changed = false;
         const ctx = Object.defineProperties({}, Object.getOwnPropertyDescriptors(this.createContext()));
         ctx.getSystemPrompt = () => {
@@ -58,7 +61,7 @@ export function patchRunner(source) {
         for (const { ext, handlers } of snapshotEventHandlers(this.extensions, "system_prompt")) {
             for (const handler of handlers) {
                 try {
-                    const event = { type: "system_prompt", systemPrompt: current, systemPromptOptions: options };
+                    const event = { type: "system_prompt", systemPrompt: current, basePrompt, systemPromptOptions: options };
                     const result = await handler(event, ctx);
                     if (result && typeof result.systemPrompt === "string") {
                         current = result.systemPrompt;

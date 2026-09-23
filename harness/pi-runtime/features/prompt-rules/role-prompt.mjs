@@ -32,15 +32,22 @@ export function createRolePromptExtension({ env = process.env } = {}) {
       if (event?.reason === "reload") repin.add(id);
     });
     pi.on("system_prompt", async (event, ctx) => {
-      const composed = promptForAgentStart(event, ctx, role);
+      // The role prompt rebuilds the whole prompt from the engine rendering. Handlers that ran
+      // before it (context-notes guidance, project rules, todo) appended to that rendering; carry
+      // their additions over instead of dropping them. Until 2026-09-23 they were silently lost.
+      const base = typeof event.basePrompt === "string" ? event.basePrompt : undefined;
+      const current = typeof event.systemPrompt === "string" ? event.systemPrompt : "";
+      const additions = base !== undefined && current.startsWith(base) ? current.slice(base.length) : "";
+      const rebuilt = promptForAgentStart(base === undefined ? event : { ...event, systemPrompt: base }, ctx, role);
+      const composed = additions.trim().length > 0 ? `${rebuilt}\n\n${additions.trim()}` : rebuilt;
       if (typeof skillsListingOf !== "function" || typeof withSkillsListing !== "function") return { systemPrompt: composed };
-      const current = skillsListingOf(composed);
+      const liveListing = skillsListingOf(composed);
       const id = sessionIdOf(ctx);
-      if (current === undefined || id === undefined) return { systemPrompt: composed };
+      if (liveListing === undefined || id === undefined) return { systemPrompt: composed };
       let listing = repin.has(id) ? undefined : pinned.get(id) ?? recordedListing(ctx);
       if (listing === undefined) {
         repin.delete(id);
-        listing = current;
+        listing = liveListing;
         try { pi.appendEntry?.(SKILLS_LISTING_ENTRY_TYPE, { listing }); } catch {}
       }
       pinned.set(id, listing);
