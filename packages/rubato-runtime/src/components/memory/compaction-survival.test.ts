@@ -162,10 +162,10 @@ async function settle(pi: MemoryFakeExtensionAPI): Promise<void> {
   await pi.dispatch("agent_settled", { type: "agent_settled" }, sessionEventContext())
 }
 
-async function beforeAgentStart(pi: MemoryFakeExtensionAPI): Promise<string> {
+async function composedPrompt(pi: MemoryFakeExtensionAPI): Promise<string> {
   const results = await pi.dispatch(
-    "before_agent_start",
-    { type: "before_agent_start", prompt: "continue", systemPrompt: BASE_SYSTEM_PROMPT },
+    "system_prompt",
+    { type: "system_prompt", systemPrompt: BASE_SYSTEM_PROMPT },
     sessionEventContext(),
   )
   const result = results[0] as BeforeAgentStartEventResult | undefined
@@ -199,7 +199,7 @@ describe("compaction survival + trigger integration", () => {
       repoPathHash: createHash("sha256").update(identity.paths.repo, "utf8").digest("hex"),
     })
 
-    const baseline = memoryBlock(await beforeAgentStart(pi), identity.id)
+    const baseline = memoryBlock(await composedPrompt(pi), identity.id)
     expect(baseline).toContain(PERSONA_BODY)
 
     await compact(pi, true)
@@ -214,7 +214,7 @@ describe("compaction survival + trigger integration", () => {
     expect(readLedger().pendingCompaction).toBe(false)
 
     // Memory content is independent of compaction: the next run's audit injects the same block.
-    const after = memoryBlock(await beforeAgentStart(pi), identity.id)
+    const after = memoryBlock(await composedPrompt(pi), identity.id)
     expect(after).toBe(baseline)
     expect(after).toContain(PERSONA_BODY)
   }, 30_000)

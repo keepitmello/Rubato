@@ -16,6 +16,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { resolvePiRuntime } from "../../resolve-runtime.mjs";
 import { stagePiRuntime } from "../../stage-runtime.mjs";
+import { sessionPromptFeature } from "../session-prompt/patches.mjs";
 import { runtimeFactoriesFeature } from "../runtime-factories/feature.mjs";
 import { files, patches, promptRulesFeature } from "./feature.mjs";
 
@@ -25,7 +26,7 @@ const scratch = mkdtempSync(join(tmpdir(), "rubato-prompt-rules-"));
 const staged = await stagePiRuntime({
   sourceRoot,
   outputRoot: join(scratch, "stage"),
-  features: [runtimeFactoriesFeature, promptRulesFeature],
+  features: [runtimeFactoriesFeature, sessionPromptFeature, promptRulesFeature],
 });
 const runtime = resolvePiRuntime({ root: staged.root });
 const sdk = await import(pathToFileURL(runtime.sdkEntry));
@@ -203,6 +204,35 @@ test("feature is additive-only, stock-version locked, and stages a complete owne
     assert.equal(syntax.status, 0, `${entry.path}: ${syntax.stderr}`);
   }
   assert.match(readFileSync(join(staged.root, "rubato-features/prompt-rules/THIRD_PARTY_NOTICES.md"), "utf8"), /MIT/);
+});
+
+test("a wake-started run carries the same session prompt as a prompted run", async (t) => {
+  // A background notification or child completion starts its run through
+  // sendCustomMessage(triggerTurn), which never emits before_agent_start. The session
+  // prompt must not depend on that event: a wake request that loses it rewrites the
+  // cached prefix twice and runs the model without its instructions (audit 2026-09-23).
+  const project = createInstructionProject("wake-prompt");
+  const fixture = await createFixture({
+    ...project,
+    sessionManager: sdk.SessionManager.inMemory(project.cwd),
+  });
+  t.after(() => fixture.session.dispose());
+  const prompts = [];
+  fixture.session.agent.streamFunction = (_model, context) => {
+    prompts.push(getCurrentSystemPrompt(context.messages));
+    return complete(assistant("ok"));
+  };
+
+  await fixture.session.prompt("hello");
+  await fixture.session.sendCustomMessage(
+    { customType: "wake-fixture", content: "background job finished", display: false },
+    { triggerTurn: true },
+  );
+
+  assert.deepEqual(fixture.errors, []);
+  assert.equal(prompts.length, 2);
+  assert.match(prompts[0], /<Task_Management>/);
+  assert.equal(prompts[1], prompts[0]);
 });
 
 test("freshly staged stock SDK consumes native root, static rule, nested AGENTS, and matching dynamic rule", async (t) => {

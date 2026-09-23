@@ -252,7 +252,7 @@ export default function openaiWebSearchExtension(pi) {
     pi.on("session_shutdown", async (_event, ctx) => {
         clearUi(ctx);
     });
-    pi.on("before_agent_start", async (event, ctx) => {
+    pi.on("system_prompt", async (event, ctx) => {
         if (!supportsNativeOpenAiWebSearch(ctx.model)) {
             return undefined;
         }

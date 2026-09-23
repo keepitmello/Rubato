@@ -183,14 +183,10 @@ test("stock lifecycle events drive prompt context, compact cancellation, post-co
   assert.deepEqual(promptInput, { action: "continue" });
   // 0.86.0: 세 번째 인자가 systemPrompt 문자열에서 systemPromptOptions 객체로 바뀌었다.
   const prompt = await fixture.session.extensionRunner.emitBeforeAgentStart("hello", undefined, { cwd: fixture.cwd });
-  assert.deepEqual(prompt.messages?.map(({ content }) => content), ["prompt-context"]);
-  // 0.86.0 부터 핸들러가 돌려주는 systemPrompt 는 base 문자열이 아니라
-  // stock 이 렌더한 프롬프트에 이어 붙는 값이다. 그래서 base 에 묶지 않고
-  // 우리 블록이 끝에 실렸는지만 본다 — 그게 이 테스트의 의도다.
-  assert.ok(
-    prompt.systemPromptOptions.forceSystemPrompt.endsWith("prompt-system"),
-    "the extension's system prompt block must reach the rendered prompt",
-  );
+  // Hook output is this turn's news: context and systemMessage ride the turn's hidden
+  // message, and the session system prompt stays untouched so the cached prefix holds.
+  assert.deepEqual(prompt.messages?.map(({ content }) => content), ["prompt-context\n\nprompt-system"]);
+  assert.equal(prompt.systemPromptOptions.forceSystemPrompt, undefined);
 
   const signal = new AbortController().signal;
   const compact = await fixture.session.extensionRunner.emit({

@@ -34,7 +34,7 @@ async function childSystemPrompt(env) {
   await createStockChildRolePromptExtension({ env: { ...ROLE_PROMPT_ENV, ...env } })({
     on(name, fn) { handlers[name] = fn },
   })
-  const result = await handlers.before_agent_start(
+  const result = await handlers.system_prompt(
     { systemPrompt: "You are an expert coding assistant operating inside pi, a coding agent harness." },
     { model: { id: "claude-opus-5", provider: "anthropic", name: "Claude Opus 5" } },
   )

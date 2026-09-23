@@ -88,7 +88,7 @@ export function registerMemoryStatic(input: {
     cache: promptCache,
     searchExposure: () => toolExposure === "search",
     // An unreadable config must not take the prompt down with it. Both resolvers below run
-    // inside before_agent_start, so a throw here rejects prompt assembly outright instead of
+    // inside prompt assembly, so a throw here rejects it outright instead of
     // degrading. They fail toward the safe default: empty project whitelist, no advisory.
     resolveCompileWarnTokens: () => {
       try {
@@ -114,6 +114,9 @@ export function registerMemoryStatic(input: {
       return true
     },
   })
+  // The memory block is part of the session prompt (every request); the notices ride the
+  // prompted run's hidden message. One handler serves both and branches on the event type.
+  pi.on("system_prompt", (payload, eventCtx) => promptHandler(payload, eventCtx))
   pi.on("before_agent_start", (payload, eventCtx) => {
     lastEventCtx.current = eventCtx
     return promptHandler(payload, eventCtx)

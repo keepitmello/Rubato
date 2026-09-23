@@ -573,7 +573,7 @@ export function createInstructionExtension({ settingsManager, env = process.env 
     pi.on("session_compact", reset);
     pi.on("session_shutdown", reset);
 
-    pi.on("before_agent_start", async (event, ctx) => {
+    pi.on("system_prompt", async (event, ctx) => {
       const mode = ruleMode();
       if (mode === "off" || mode === "dynamic") return undefined;
       const rules = loadCandidates({
