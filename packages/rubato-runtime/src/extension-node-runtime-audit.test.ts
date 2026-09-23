@@ -10,7 +10,6 @@ const PACKAGE_ROOT = resolve(import.meta.dir, "..")
 const BUNDLE_INPUT_SOURCES = [
   "rubato-runtime/src",
   "memory-core/src",
-  "senpi-task/src",
   "rubato-config-core/src",
   "delegate-core/src",
   "team-core/src",
