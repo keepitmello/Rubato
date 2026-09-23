@@ -14,6 +14,8 @@ import { INIT_ENTRY, MODE_ENTRY, SOURCE, encodeBootstrap, initialWindow, nextWin
 
 const ASTRA = { provider: "openai-codex", id: "gpt-6-astra" };
 const FABLE = { provider: "anthropic", id: "claude-fable-5-1" };
+// The only summary default left: a provider whose context an external executor owns.
+const EXTERNAL = { provider: "claude-sdk-oauth", id: "claude-fable-5-1" };
 
 function withMode(t, mode, { origin } = {}) {
   const previous = process.env.RUBATO_CONTEXT_MODE;
@@ -31,11 +33,14 @@ function withMode(t, mode, { origin } = {}) {
   });
 }
 
-test("Astra defaults to history-notes and Fable to summary; user env wins", () => {
+test("every model defaults to history-notes except an externally managed context; user env wins", () => {
   assert.equal(defaultContextModeForModel(ASTRA), HISTORY_NOTES_MODE);
-  assert.equal(defaultContextModeForModel(FABLE), SUMMARY_MODE);
+  assert.equal(defaultContextModeForModel(FABLE), HISTORY_NOTES_MODE);
+  assert.equal(defaultContextModeForModel({ provider: "b-ai", id: "deepseek-v4.1-flash" }), HISTORY_NOTES_MODE);
+  assert.equal(defaultContextModeForModel(EXTERNAL), SUMMARY_MODE);
   assert.equal(adoptContextMode({ env: {}, model: ASTRA }), HISTORY_NOTES_MODE);
-  assert.equal(adoptContextMode({ env: {}, model: FABLE }), SUMMARY_MODE);
+  assert.equal(adoptContextMode({ env: {}, model: FABLE }), HISTORY_NOTES_MODE);
+  assert.equal(adoptContextMode({ env: {}, model: EXTERNAL }), SUMMARY_MODE);
   assert.equal(adoptContextMode({ env: { RUBATO_CONTEXT_MODE: "summary" }, model: ASTRA }), SUMMARY_MODE);
 });
 
@@ -44,19 +49,19 @@ test("recorded mode and notes-window entries win over the model rule; inherited 
   assert.equal(adoptContextMode({
     env: { RUBATO_CONTEXT_MODE: SUMMARY_MODE, RUBATO_CONTEXT_MODE_ORIGIN: CONTEXT_MODE_ORIGIN },
     branch: recorded,
-    model: FABLE,
+    model: EXTERNAL,
   }), HISTORY_NOTES_MODE);
   const windowed = [{ type: "custom", customType: INIT_ENTRY, data: { window: initialWindow() } }];
-  assert.equal(adoptContextMode({ env: {}, branch: windowed, model: FABLE }), HISTORY_NOTES_MODE);
+  assert.equal(adoptContextMode({ env: {}, branch: windowed, model: EXTERNAL }), HISTORY_NOTES_MODE);
   assert.equal(adoptContextMode({
     env: { RUBATO_CONTEXT_MODE: HISTORY_NOTES_MODE, RUBATO_CONTEXT_MODE_ORIGIN: CONTEXT_MODE_ORIGIN },
     branch: [],
-    model: FABLE,
+    model: EXTERNAL,
   }), SUMMARY_MODE);
   assert.equal(adoptContextMode({
     env: { RUBATO_CONTEXT_MODE: HISTORY_NOTES_MODE },
     branch: [],
-    model: FABLE,
+    model: EXTERNAL,
   }), HISTORY_NOTES_MODE);
 });
 
@@ -83,7 +88,7 @@ test("considerContextModeSwitch never switches silently once a mode is recorded"
     model: ASTRA, source: "restore", currentMode: SUMMARY_MODE, confirm: async () => true,
   }), { action: "keep" });
   const refused = await considerContextModeSwitch({
-    model: FABLE, source: "set", currentMode: HISTORY_NOTES_MODE, branch: boundary,
+    model: EXTERNAL, source: "set", currentMode: HISTORY_NOTES_MODE, branch: boundary,
     confirm: async () => true, notify: () => {},
   });
   assert.equal(refused.refused, true);

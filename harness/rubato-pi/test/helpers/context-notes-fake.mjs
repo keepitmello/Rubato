@@ -45,7 +45,9 @@ export function fakeSession(t, options = {}) {
   const abort = new AbortController();
   const confirms = [];
   let confirmAnswer = true;
-  const ctx = { sessionManager: manager, agentDir: dir, model: { id: "test-model", provider: "test", contextWindow: 32000 },
+  // The rollover mechanics under test are Astra's notes-rollover strategy (90%/95% lines).
+  // Tests of other strategies replace ctx.model.
+  const ctx = { sessionManager: manager, agentDir: dir, model: { id: "gpt-6-astra", provider: "openai-codex", contextWindow: 32000 },
     ui: {
       notify: (...args) => notices.push(args),
       setStatus: (...args) => notices.push(args),

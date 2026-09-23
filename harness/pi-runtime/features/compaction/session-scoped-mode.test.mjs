@@ -63,7 +63,9 @@ const compaction = await import(pathToFileURL(join(
 )).href);
 
 const ASTRA = { provider: "openai-codex", id: "gpt-6-astra" };
-const FABLE = { provider: "anthropic", id: "claude-fable-5-1" };
+// Every product model now starts in notes. The one summary default left is a provider
+// whose context an external executor owns; it stands in for "a model that adopts summary".
+const EXTERNAL = { provider: "claude-sdk-oauth", id: "claude-fable-5-1" };
 
 after(() => {
   if (previousMode === undefined) delete process.env.RUBATO_CONTEXT_MODE;
@@ -101,11 +103,11 @@ function writeModels(agentDir) {
         apiKey: "unused-test-key",
         models: [{ id: ASTRA.id, input: ["text"], contextWindow: 100_000, maxTokens: 4096 }],
       },
-      anthropic: {
-        baseUrl: "https://api.anthropic.com",
-        api: "anthropic-messages",
+      [EXTERNAL.provider]: {
+        baseUrl: "http://127.0.0.1:9/v1",
+        api: "openai-completions",
         apiKey: "unused-test-key",
-        models: [{ id: FABLE.id, input: ["text"], contextWindow: 100_000, maxTokens: 4096 }],
+        models: [{ id: EXTERNAL.id, input: ["text"], contextWindow: 100_000, maxTokens: 4096 }],
       },
     },
   }));
@@ -216,9 +218,9 @@ async function openChild(t, { name, model }) {
   return { session, settingsManager };
 }
 
-test("parent Fable summary overlay stays on after in-process Astra notes child adopts", async (t) => {
+test("parent external-context summary overlay stays on after in-process Astra notes child adopts", async (t) => {
   withFreshMode(t);
-  const parent = await openParent(t, { name: "parent-summary", model: FABLE });
+  const parent = await openParent(t, { name: "parent-summary", model: EXTERNAL });
   assert.equal(parent.settingsManager.getCompactionSettings().enabled, true, "parent summary baseline: overlay settings on");
   assert.equal(compaction.summaryCompactionAllowed(process.env, parent.settingsManager.getCompactionSettings()), true);
   assert.equal(notesEnabledForSession(parent.session), false, "parent summary baseline: notes gate off");
@@ -239,7 +241,7 @@ test("parent Fable summary overlay stays on after in-process Astra notes child a
   assert.equal(isNotesCompactVeto(await emitBeforeCompact(parent.session)), false, "parent summary must not inherit the child notes veto");
 });
 
-test("parent Astra notes compact veto survives in-process Fable summary child adopt", async (t) => {
+test("parent Astra notes compact veto survives in-process external-context summary child adopt", async (t) => {
   withFreshMode(t);
   const parent = await openParent(t, { name: "parent-notes", model: ASTRA });
   assert.equal(parent.settingsManager.getCompactionSettings().enabled, false, "parent notes baseline: overlay settings off");
@@ -247,9 +249,9 @@ test("parent Astra notes compact veto survives in-process Fable summary child ad
   assert.equal(isNotesCompactVeto(await emitBeforeCompact(parent.session)), true, "parent notes baseline: compact veto");
   assert.equal(compactionEntries(parent.session).length, 0);
 
-  const child = await openChild(t, { name: "child-summary", model: FABLE });
+  const child = await openChild(t, { name: "child-summary", model: EXTERNAL });
   assert.notEqual(child.settingsManager, parent.settingsManager);
-  assert.equal(notesEnabledForSession(child.session), false, "child Fable must adopt summary");
+  assert.equal(notesEnabledForSession(child.session), false, "child external must adopt summary");
   assert.equal(child.settingsManager.getCompactionSettings().enabled, true, "child summary must not inherit the parent notes settings wrap");
   assert.equal(isNotesCompactVeto(await emitBeforeCompact(child.session)), false, "child summary must not veto compact as notes");
 

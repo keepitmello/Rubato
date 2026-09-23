@@ -60,7 +60,9 @@ const notesExtension = join(
 );
 
 const ASTRA = { provider: "openai-codex", id: "gpt-6-astra" };
-const FABLE = { provider: "anthropic", id: "claude-fable-5-1" };
+// Every product model now starts in notes. The one summary default left is a provider
+// whose context an external executor owns; it stands in for "a model that adopts summary".
+const EXTERNAL = { provider: "claude-sdk-oauth", id: "claude-fable-5-1" };
 
 after(() => {
   if (previousMode === undefined) delete process.env.RUBATO_CONTEXT_MODE;
@@ -251,13 +253,13 @@ async function runRpcChild({ name, model, mode, origin }) {
   }
 }
 
-test("in-process child re-resolves inherited ORIGIN=session: Fable summary, Astra notes", async (t) => {
+test("in-process child re-resolves inherited ORIGIN=session: external-context summary, Astra notes", async (t) => {
   withFreshMode(t, { mode: "history-notes", origin: "session" });
-  const fable = await openInProcessChild(t, { name: "inproc-fable", model: FABLE });
-  assert.equal(process.env.RUBATO_CONTEXT_MODE, "history-notes", "in-process Fable child must not overwrite process env");
+  const external = await openInProcessChild(t, { name: "inproc-external", model: EXTERNAL });
+  assert.equal(process.env.RUBATO_CONTEXT_MODE, "history-notes", "in-process external child must not overwrite process env");
   assert.equal(process.env.RUBATO_CONTEXT_MODE_ORIGIN, "session");
-  assert.equal(contextConfig.historyNotesEnabledForSession(fable.session.sessionManager.getSessionId()), false);
-  assert.equal(fable.settingsManager.getCompactionSettings().enabled, true, "Fable child summary must keep compaction settings on");
+  assert.equal(contextConfig.historyNotesEnabledForSession(external.session.sessionManager.getSessionId()), false);
+  assert.equal(external.settingsManager.getCompactionSettings().enabled, true, "external child summary must keep compaction settings on");
 
   withFreshMode(t, { mode: "summary", origin: "session" });
   const astra = await openInProcessChild(t, { name: "inproc-astra", model: ASTRA });
@@ -269,7 +271,7 @@ test("in-process child re-resolves inherited ORIGIN=session: Fable summary, Astr
 
 test("in-process child keeps user-explicit env without origin marker", async (t) => {
   withFreshMode(t, { mode: "history-notes" });
-  const notes = await openInProcessChild(t, { name: "inproc-explicit-notes", model: FABLE });
+  const notes = await openInProcessChild(t, { name: "inproc-explicit-notes", model: EXTERNAL });
   assert.equal(process.env.RUBATO_CONTEXT_MODE, "history-notes");
   assert.equal(process.env.RUBATO_CONTEXT_MODE_ORIGIN, undefined);
   assert.equal(contextConfig.historyNotesEnabledForSession(notes.session.sessionManager.getSessionId()), true);
@@ -282,16 +284,16 @@ test("in-process child keeps user-explicit env without origin marker", async (t)
 });
 
 test("RPC child re-resolves inherited ORIGIN=session through the default notes factory", async () => {
-  const fable = await runRpcChild({
-    name: "fable",
-    model: FABLE,
+  const external = await runRpcChild({
+    name: "external",
+    model: EXTERNAL,
     mode: "history-notes",
     origin: "session",
   });
-  assert.equal(fable.resolved.mode, "summary");
-  assert.equal(fable.resolved.origin, "session");
-  assert.equal(fable.resolved.modelProvider, FABLE.provider);
-  assert.equal(fable.resolved.modelId, FABLE.id);
+  assert.equal(external.resolved.mode, "summary");
+  assert.equal(external.resolved.origin, "session");
+  assert.equal(external.resolved.modelProvider, EXTERNAL.provider);
+  assert.equal(external.resolved.modelId, EXTERNAL.id);
 
   const astra = await runRpcChild({
     name: "astra",
