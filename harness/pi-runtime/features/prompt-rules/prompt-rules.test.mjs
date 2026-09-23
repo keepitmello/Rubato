@@ -104,7 +104,7 @@ function textOf(message) {
     .join("\n");
 }
 
-async function createFixture({ cwd, agentDir, homeDir, sessionManager, flags = new Map(), tools = ["read", "todo"], extraFactories = [] }) {
+async function createFixture({ cwd, agentDir, homeDir, sessionManager, flags = new Map(), tools = ["read", "todo"], extraFactories = [], env: extraEnv = {} }) {
   writeFileSync(join(agentDir, "models.json"), JSON.stringify({
     providers: {
       "prompt-rules-test": {
@@ -131,7 +131,7 @@ async function createFixture({ cwd, agentDir, homeDir, sessionManager, flags = n
     createExtensionFactories: ({ settingsManager: canonicalSettings }) => [
       ...promptRules.createPromptRulesExtensionFactories({
         settingsManager: canonicalSettings,
-        env: { HOME: homeDir },
+        env: { HOME: homeDir, ...extraEnv },
       }),
       ...extraFactories,
     ],
@@ -234,6 +234,33 @@ test("a wake-started run carries the same session prompt as a prompted run", asy
   assert.equal(prompts.length, 2);
   assert.match(prompts[0], /<Task_Management>/);
   assert.equal(prompts[1], prompts[0]);
+});
+
+test("the role prompt keeps the rules and todo sections composed before it", async (t) => {
+  // In production the role prompt is active and rebuilds the prompt; sections contributed by
+  // handlers registered before it were dropped from every real request until 2026-09-23.
+  const project = createInstructionProject("role-keeps-sections");
+  const rubatoPi = resolve(sourceRoot, "../rubato-pi/src");
+  const fixture = await createFixture({
+    ...project,
+    sessionManager: sdk.SessionManager.inMemory(project.cwd),
+    env: {
+      RUBATO_PI_ROLE: "lead",
+      RUBATO_ROLE_PROMPT_MODULE: pathToFileURL(join(rubatoPi, "system-prompt.mjs")).href,
+      RUBATO_ROLE_CONTRACT_MODULE: pathToFileURL(join(rubatoPi, "role-contract.mjs")).href,
+    },
+  });
+  t.after(() => fixture.session.dispose());
+  const prompts = [];
+  fixture.session.agent.streamFunction = (_model, context) => {
+    prompts.push(getCurrentSystemPrompt(context.messages));
+    return complete(assistant("ok"));
+  };
+  await fixture.session.prompt("hello");
+  assert.deepEqual(fixture.errors, []);
+  assert.match(prompts[0], /# Working agreement/);
+  assert.match(prompts[0], /<Task_Management>/);
+  assert.match(prompts[0], /STATIC_RULE_ONLY/);
 });
 
 test("a wake-started first run waits for before_run readiness before declaring its tools", async (t) => {
