@@ -80,7 +80,7 @@ export async function installContextNotes(pi, options = {}) {
   const Type = options.Type ?? await loadTypebox();
   const toolDefinitions = createContextNotesTools(getController, Type, notesActive);
   for (const tool of toolDefinitions) pi.registerTool(tool);
-  const syncTools = (enabled) => syncNotesToolActivation(pi, enabled, toolDefinitions);
+  const syncTools = (enabled) => syncNotesToolActivation(pi, enabled);
   const applyResolvedMode = (ctx, { persistIfMissing = false, allowModelDefault = true } = {}) => {
     const branch = sessionBranch(ctx);
     if (liveSwitch) {
