@@ -154,8 +154,8 @@ test("brand-new session selecting Astra adopts notes without a confirm", async (
   const created = await sdk.createAgentSession({
     cwd, agentDir, settingsManager, resourceLoader,
     sessionManager: sdk.SessionManager.inMemory(cwd),
-    // T3 starts the runtime before set_model(astra). A non-notes default
-    // here is the hosted path: session_start has no Astra in hand.
+    // T3 starts the runtime before set_model(astra): session_start has another
+    // model in hand. Claude defaults to notes too, so no mode switch is pending.
     model: modelFor(FABLE),
   });
   t.after(() => created.session.dispose());
@@ -193,8 +193,10 @@ test("brand-new session selecting Astra adopts notes without a confirm", async (
     true,
     "Astra's model default must win once set_model lands",
   );
+  // Claude already started the blank session in notes (every model does now), so the
+  // Astra select keeps that mode. The notes window it opened pins the mode on reopen.
   assert.equal(
-    modePolicy.recordedModeFromBranch(created.session.sessionManager.getBranch()),
+    modePolicy.adoptContextMode({ env: {}, branch: created.session.sessionManager.getBranch(), allowModelDefault: false }),
     contextConfig.HISTORY_NOTES_MODE,
   );
   assert.deepEqual(errors, []);

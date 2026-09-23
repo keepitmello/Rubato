@@ -1,26 +1,22 @@
 import { createHash, randomUUID } from "node:crypto";
-import { findReminder, reminderAnchor, reminderIndex, reminderMessage } from "./reminder.mjs";
+import { NUDGE_TEXT, findNudges, findReminder, reminderAnchor, reminderIndex, reminderMessage } from "./reminder.mjs";
 import { assertCheckpointFresh, CheckpointRefreshRequired } from "./checkpoint.mjs";
 import { readAuthoritativeBranch } from "./history-source.mjs";
 import { flushSessionJournal } from "./journal.mjs";
-import { contextNotesConfig, windowBudget } from "./config.mjs";
+import { contextNotesConfig, contextStrategy, windowBudget } from "./config.mjs";
 import { assertEngineParts, registerSessionGate } from "./engine-gate.mjs";
 import { ContextNotesStore, databasePath } from "./store.mjs";
-import { SOURCE, INIT_ENTRY, NOTE_ENTRY, PREPARE_ENTRY, REMINDER_ENTRY, initialWindow, nextWindow,
-  branchWindow, decodeBootstrap, encodeBootstrap, lastUserId, messageText, notePath } from "./protocol.mjs";
+import { SOURCE, INIT_ENTRY, NOTE_ENTRY, NUDGE_ENTRY, PREPARE_ENTRY, REMINDER_ENTRY, initialWindow, nextWindow,
+  branchWindow, decodeBootstrap, encodeBootstrap, isWindowCompaction, lastUserId, messageText, notePath } from "./protocol.mjs";
 
-export const GUIDANCE = `# Working across context windows
-This session uses history and working notes instead of conversation summarization.
-Use notes_write_file / notes_append_to_file to maintain the goal, decisions, progress,
+const NOTES_TOOLS_TEXT = `Use notes_write_file / notes_append_to_file to maintain the goal, decisions, progress,
 failed approaches and why they failed, learnings, unresolved issues and next steps.
 Include window_id and item_id references to every active user request and important
 observations/tool results. history_list_windows, history_list_items,
 history_search_contents and history_read_item recover the original record.
-Search is case-sensitive literal substring search, not semantic search.
-When the remaining budget warning appears, save a checkpoint with the notes tools,
-then call new_context. At the 90% line stop new work, save once, and call new_context.
-If the window still grows to 95%, the harness starts a new window without a summary.
-Do not include a summary argument: new_context takes none.
+Search is case-sensitive literal substring search, not semantic search.`;
+
+const NEW_WINDOW_TEXT = `Do not include a summary argument: new_context takes none.
 The new window contains stable instructions, window IDs and a small list of note paths,
 not the old conversation or the contents of all notes. Read relevant notes first and
 follow their references into history when needed. Notes are working aids, not new
@@ -29,6 +25,58 @@ Notes and history here are scoped to this session and its current branch. A new
 window is NOT a new session; filesystem state, jobs and pending user inputs remain.
 Never use another model or compaction tool to summarize as a fallback. A storage,
 checkpoint or transition failure must be surfaced and must not discard the old window.`;
+
+// Astra's text is kept byte-for-byte: it is part of every Astra session's cached prefix.
+export const GUIDANCE = `# Working across context windows
+This session uses history and working notes instead of conversation summarization.
+${NOTES_TOOLS_TEXT}
+When the remaining budget warning appears, save a checkpoint with the notes tools,
+then call new_context. At the 90% line stop new work, save once, and call new_context.
+If the window still grows to 95%, the harness starts a new window without a summary.
+${NEW_WINDOW_TEXT}`;
+
+const SOFT_ZONE_GUIDANCE = `# Working across context windows
+This session uses history and working notes instead of conversation summarization.
+${NOTES_TOOLS_TEXT}
+Keep notes current while you work. Once the window is past its soft line, finish the
+current subtask or tool loop, save a checkpoint with the notes tools, then call
+new_context. When the remaining budget warning appears, stop new work, save once, and
+call new_context. At the hard line the harness starts a new window without a summary.
+${NEW_WINDOW_TEXT}`;
+
+const SERVER_COMPACTION_GUIDANCE = `# Working notes and history
+This session keeps working notes and the original history next to the provider's own
+context compaction. Notes are your durable working memory: they survive compaction and
+window changes exactly as written, while a compaction summary does not.
+${NOTES_TOOLS_TEXT}
+Keep notes current while you work; a periodic notice asks you to refresh them. Nothing
+starts a new window automatically. At a natural boundary you may save a current note
+and call new_context to start a fresh window without a summary.
+${NEW_WINDOW_TEXT}`;
+
+const HARD_SAFETY_GUIDANCE = `# Working across context windows
+This session uses history and working notes instead of conversation summarization.
+${NOTES_TOOLS_TEXT}
+Keep notes current while you work; a periodic notice asks you to refresh them. Nothing
+starts a new window automatically. When a unit of work is done and a fresh window would
+help, save a current note and call new_context. Close to the physical limit the harness
+asks for a checkpoint-only turn, then starts a new window without a summary.
+${NEW_WINDOW_TEXT}`;
+
+/** System-prompt guidance for the model's context strategy. A pure function of the model. */
+export function guidanceFor(model, config = contextNotesConfig()) {
+  const strategy = contextStrategy(model);
+  if (strategy === "server-compaction") return SERVER_COMPACTION_GUIDANCE;
+  if (strategy === "hard-safety") return HARD_SAFETY_GUIDANCE;
+  let budget;
+  try { budget = windowBudget(model, config); } catch { return GUIDANCE; }
+  return budget.soft < budget.target ? SOFT_ZONE_GUIDANCE : GUIDANCE;
+}
+
+function contextSize(usage) {
+  const total = (usage?.input || 0) + (usage?.output || 0) + (usage?.cacheRead || 0) + (usage?.cacheWrite || 0);
+  return Number.isFinite(total) ? total : 0;
+}
 
 function identity(message) {
   return JSON.stringify([message?.role, message?.timestamp, message?.toolCallId,
@@ -132,6 +180,9 @@ export class ContextNotesController {
     const built = ctx.sessionManager.buildSessionContext?.();
     if (Array.isArray(built?.messages)) this.activeMessages = built.messages;
     this.reminderEntry = findReminder(branch, this.window.windowId);
+    const nudges = new Set(findNudges(branch, this.window.windowId));
+    // Branch order is the order the notices were first sent; keep it for co-anchored ones.
+    this.anchoredEntries = branch.filter((entry) => nudges.has(entry) || entry === this.reminderEntry);
     this.bootstrap = boundary?.summary ?? encodeBootstrap(this.window,
       branch.find((entry) => entry.customType === INIT_ENTRY)?.data?.hint ?? "No notes yet.");
     return this.window;
@@ -162,8 +213,42 @@ export class ContextNotesController {
     // declare the window full while the footer still shows it half-empty.
     const tokens = sampled > 0 ? sampled : estimated;
     const budget = windowBudget(this.ctx.model, this.config);
-    return { tokens, estimated, ...budget, remaining: Math.max(0, budget.target - tokens),
+    return { tokens, estimated, ...budget, remaining: Math.max(0, (budget.target ?? budget.full) - tokens),
       sampled: sampled > 0 };
+  }
+
+  /**
+   * Context accumulated in this window since the latest note (or nudge, or window start).
+   * Sums the increases of the provider's own context meter across responses, so a server
+   * compaction that shrinks the context does not hide the work done before or after it.
+   */
+  noteGrowth(liveTokens) {
+    const branch = this.store.branch ?? [];
+    const windowId = this.window.windowId;
+    let start = -1;
+    let previous;
+    for (let i = branch.length - 1; i >= 0; i -= 1) {
+      const entry = branch[i];
+      if (entry.type === "custom" && entry.data?.windowId === windowId &&
+          (entry.customType === NOTE_ENTRY || entry.customType === NUDGE_ENTRY)) {
+        const at = entry.customType === NOTE_ENTRY ? entry.data.savedAtTokens : entry.data.atTokens;
+        previous = Number.isFinite(at) && at > 0 ? at : undefined;
+        start = i;
+        break;
+      }
+      if (isWindowCompaction(entry) || (entry.type === "custom" && entry.customType === INIT_ENTRY)) { start = i; break; }
+    }
+    let growth = 0;
+    for (const entry of branch.slice(start + 1)) {
+      const message = entry.type === "message" ? entry.message : undefined;
+      if (message?.role !== "assistant" || ["error", "aborted"].includes(message.stopReason)) continue;
+      const size = contextSize(message.usage);
+      if (!(size > 0)) continue;
+      if (previous !== undefined && size > previous) growth += size - previous;
+      previous = size;
+    }
+    if (previous !== undefined && liveTokens > previous) growth += liveTokens - previous;
+    return growth;
   }
 
   admit(messages) {
@@ -181,7 +266,7 @@ export class ContextNotesController {
       this.showStatus({ ...usage, remaining: 0 });
       throw new Error(`체크포인트 턴을 안전하게 실행할 여유도 남지 않았어요. 기록은 보존했으니 더 큰 한도로 같은 세션을 다시 열어 주세요.`);
     }
-    if (usage.tokens >= usage.hard && !this.checkpointRequested) {
+    if (usage.hard !== undefined && usage.tokens >= usage.hard && !this.checkpointRequested) {
       throw new Error(`현재 문맥이 창 한도 ${usage.hard}토큰에 도달했어요. 기록은 보존했으며 요약은 실행하지 않았어요. 체크포인트가 있으면 새 창으로 넘어갑니다.`);
     }
     this.paused = null;
@@ -191,16 +276,33 @@ export class ContextNotesController {
     this.refresh(ctx);
     this.admit(event.messages);
     const before = this.usage(event.messages);
-    if (!this.reminderEntry && before.remaining <= before.reminder && event.messages.length) {
+    if (!this.reminderEntry && before.reminderAt !== undefined && before.tokens >= before.reminderAt && event.messages.length) {
       this.pi.appendEntry(REMINDER_ENTRY, reminderAnchor(event.messages, this.window.windowId));
       this.refresh(ctx, true);
       if (!this.reminderEntry) throw new Error("문맥 안내를 저장하지 못했어요.");
       this.flush(ctx.sessionManager, this.reminderEntry.id);
       this.record("reminder_recorded", { window_id: this.window.windowId });
+    } else if (!this.reminderEntry && !this.checkpointRequested && before.nudgeTokens && event.messages.length) {
+      const growth = this.noteGrowth(before.tokens);
+      if (growth >= before.nudgeTokens) {
+        const count = this.anchoredEntries.length;
+        this.pi.appendEntry(NUDGE_ENTRY, { ...reminderAnchor(event.messages, this.window.windowId, NUDGE_TEXT),
+          atTokens: before.tokens, growth });
+        this.refresh(ctx, true);
+        const saved = this.anchoredEntries.at(-1);
+        if (this.anchoredEntries.length !== count + 1 || saved?.customType !== NUDGE_ENTRY) throw new Error("노트 갱신 안내를 저장하지 못했어요.");
+        this.flush(ctx.sessionManager, saved.id);
+        this.record("note_nudge_recorded", { window_id: this.window.windowId, tokens: before.tokens, growth,
+          interval: before.nudgeTokens });
+      }
     }
-    const at = this.reminderEntry ? reminderIndex(event.messages, this.reminderEntry) : -1;
+    const anchored = new Map();
+    for (const entry of this.anchoredEntries) {
+      const index = reminderIndex(event.messages, entry);
+      anchored.set(index, [...(anchored.get(index) ?? []), entry]);
+    }
     const occurrences = new Map();
-    const messages = event.messages.map((message) => {
+    const annotated = event.messages.map((message) => {
       if (message.role !== "user" && message.role !== "toolResult") return message;
       if (messageText(message) === this.bootstrap) return message;
       const id = message.__piSessionContextEntryId;
@@ -216,7 +318,8 @@ export class ContextNotesController {
       const content = typeof message.content === "string" ? [{ type: "text", text: message.content }] : [...(message.content ?? [])];
       return { ...message, content: [...content, { type: "text", text: marker }] };
     });
-    if (at >= 0) messages.splice(at + 1, 0, reminderMessage(this.reminderEntry));
+    const messages = annotated.flatMap((message, index) =>
+      [message, ...(anchored.get(index) ?? []).map(reminderMessage)]);
     const hasBootstrap = messages.some((m) => messageText(m) === this.bootstrap);
     if (!hasBootstrap) messages.unshift({ role: "user", timestamp: 0, content: [{ type: "text", text: this.bootstrap }] });
     // Include annotations, bootstrap, reminder and tool schemas in the fallback
@@ -300,12 +403,8 @@ export class ContextNotesController {
     const throughUserId = this.lastUser;
     const note = this.store.latestNoteForWindow(old.windowId, this.lastUser);
     if (!note) throw new Error("새 사용자 요청을 반영한 노트가 없어서 문맥 전환을 중단했어요. 노트를 갱신해 주세요.");
-    if (reason !== "hard") {
-      assertCheckpointFresh(this.store.branch, note);
-      if (reason === "budget" && note.savedAtTokens < this.usage().target - this.usage().reminder) {
-        throw new Error("문맥 한도에 도달했지만 최근 작업 노트가 없어요. 기록을 남긴 채 중단했어요.");
-      }
-    }
+    // A fresh note has nothing after it but management calls, however early it was saved.
+    if (reason !== "hard") assertCheckpointFresh(this.store.branch, note);
     if (typeof ctx.applyCompaction !== "function" || typeof ctx.getMessageRevision !== "function") {
       throw new Error("설치된 엔진에 문맥 교체 인터페이스가 없어요.");
     }
@@ -371,8 +470,8 @@ export class ContextNotesController {
           this.checkpointRequested = false;
           return;
         }
-        if (!this.fatal && ctx.model?.contextWindow && this.usage().tokens >= this.usage().target &&
-            !this.checkpointRequested) this.requestCheckpoint();
+        if (!this.fatal && ctx.model?.contextWindow && this.usage().target !== undefined &&
+            this.usage().tokens >= this.usage().target && !this.checkpointRequested) this.requestCheckpoint();
         return;
       }
       this.refresh(ctx, true);
@@ -391,8 +490,9 @@ export class ContextNotesController {
           try { assertCheckpointFresh(this.store.branch, note); fresh = true; }
           catch { /* request a checkpoint-only turn below */ }
         }
+        const past = (line) => line !== undefined && usage.tokens >= line;
         if (this.checkpointRequested) {
-          if (fresh) await this.roll(ctx, usage.tokens >= usage.target ? "budget" : "manual");
+          if (fresh) await this.roll(ctx, past(usage.target) ? "budget" : "manual");
           else if (this.store.branch.some((entry) => entry.type === "custom_message" &&
               entry.customType === "rubato-context-checkpoint-request" &&
               entry.details?.requestId === this.checkpointRequestId)) {
@@ -400,17 +500,36 @@ export class ContextNotesController {
             // that has not received it is not a failed checkpoint attempt.
             throw new CheckpointRefreshRequired("체크포인트 전용 턴에 최신 작업 노트가 완성되지 않았어요. 이전 문맥은 그대로 유지했어요.");
           }
-        } else if (ctx.model?.contextWindow && usage.tokens >= usage.hard) {
-          if (note) await this.roll(ctx, "hard");
+        } else if (ctx.model?.contextWindow && (past(usage.hard) || past(usage.target))) {
+          // Rollover-only buffer: from the target line the window only serves a note
+          // update and new_context. A fresh note rolls now; a stale one gets a
+          // checkpoint-only turn first, also at the hard line (the stale cut below is
+          // the last resort after that turn failed twice).
+          if (fresh) await this.roll(ctx, "budget");
           else this.requestCheckpoint();
-        } else if (ctx.model?.contextWindow && usage.tokens >= usage.target) {
-          if (!fresh) this.requestCheckpoint();
+        } else if (ctx.model?.contextWindow && past(usage.soft) && fresh) {
+          // Soft zone: roll at a natural boundary, a turn that ended on a fresh note.
+          await this.roll(ctx, "budget");
         }
       }
     } catch (error) {
       // A stale/incomplete checkpoint is repairable by the same model. Do not
       // turn the first validation rejection into a generic aborted run. Bound
       // retries and retain the physical-window/storage failure safety stops.
+      if (error instanceof CheckpointRefreshRequired && !this.fatal && !ctx.signal?.aborted && this.checkpointRetried) {
+        // The rollover-only buffer failed twice. At the hard line cut with the latest note
+        // rather than dead-end the session; the original record stays readable in history.
+        try {
+          const usage = this.usage();
+          const note = this.store.latestNoteForWindow(this.window.windowId, this.lastUser);
+          if (usage.hard !== undefined && usage.tokens >= usage.hard && note) {
+            this.checkpointRequested = false;
+            this.record("hard_rollover_stale_note", { window_id: this.window.windowId, tokens: usage.tokens });
+            await this.roll(ctx, "hard");
+            return;
+          }
+        } catch (rollError) { error = rollError; }
+      }
       if (error instanceof CheckpointRefreshRequired && !this.fatal &&
           !ctx.signal?.aborted && !this.checkpointRetried) {
         this.checkpointRequested = false;

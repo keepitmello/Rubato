@@ -194,12 +194,28 @@ test("admit over the experiment budget starts a checkpoint turn instead of dead-
   assert.equal(f.c.checkpointRequested,true); assert.equal(f.sent.length,1);
   assert.doesNotThrow(()=>f.c.admit(f.build().messages));
 });
-test("95 percent hard line rolls even if the latest note is stale", async(t)=>{
+test("95 percent hard line asks for a checkpoint turn before it would cut with a stale note", async(t)=>{
   const f=setup(t); save(f);
-  f.addMessage("toolResult","a".repeat(100000),{toolName:"read"});
+  f.addMessage("toolResult","more work after the note",{toolName:"read"});
+  f.ctx.getContextUsage=()=>({tokens:31000}); // past 95% (30,400) of the 32K window, below the physical limit
   f.c.refresh(f.ctx);
   await f.c.turnEnd({},f.ctx);
+  assert.equal(f.c.window.number,0); assert.equal(f.c.checkpointRequested,true); assert.equal(f.sent.length,1);
+  // The rollover-only turn is ignored twice: only then the harness cuts with the stale note.
+  f.append({type:"custom_message",...f.sent.at(-1)[0]}); f.addMessage("assistant","kept working");
+  await f.c.turnEnd({},f.ctx);
+  assert.equal(f.c.window.number,0); assert.equal(f.sent.length,2);
+  f.append({type:"custom_message",...f.sent.at(-1)[0]}); f.addMessage("assistant","still working");
+  await f.c.turnEnd({},f.ctx);
   assert.equal(f.c.window.number,1);
+  assert.equal(f.c.store.diagnostics().filter(e=>e.event==="hard_rollover_stale_note").length,1);
+});
+test("a fresh note past the 90% target rolls at the turn boundary without another turn", async(t)=>{
+  const f=setup(t);
+  f.addMessage("toolResult","a".repeat(40000),{toolName:"read"});
+  save(f); f.c.refresh(f.ctx);
+  await f.c.turnEnd({},f.ctx);
+  assert.equal(f.c.window.number,1); assert.equal(f.sent.length,0);
 });
 test("turn end remains idle while no model context window is available", async(t)=>{
   const f=setup(t); f.ctx.model={}; f.c.refresh(f.ctx);

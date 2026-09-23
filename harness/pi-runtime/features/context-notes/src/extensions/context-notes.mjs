@@ -4,7 +4,7 @@ import {
   HISTORY_NOTES_MODE, SUMMARY_MODE, contextMode, historyNotesEnabled,
   isUserExplicitContextMode, setContextMode,
 } from "../context-notes/config.mjs";
-import { ContextNotesController, GUIDANCE } from "../context-notes/controller.mjs";
+import { ContextNotesController, guidanceFor } from "../context-notes/controller.mjs";
 import { assertEngineParts } from "../context-notes/engine-gate.mjs";
 import {
   NOTES_RESUME_IN_SUMMARY,
@@ -179,7 +179,10 @@ export async function installContextNotes(pi, options = {}) {
   pi.on("system_prompt", async (event, ctx) => {
     if (!notesActive()) return;
     const base = event.systemPrompt ?? ctx.getSystemPrompt?.() ?? "";
-    return { systemPrompt: base.includes(GUIDANCE) ? base : `${base}\n\n${GUIDANCE}` };
+    // The text follows the model's context strategy (Astra's is unchanged); it is a pure
+    // function of the model, so every request of a session sees the same prompt.
+    const guidance = guidanceFor(ctx.model);
+    return { systemPrompt: base.includes(guidance) ? base : `${base}\n\n${guidance}` };
   });
   pi.on("context", async (event, ctx) => {
     if (!notesActive()) return;
@@ -238,7 +241,8 @@ export async function installContextNotes(pi, options = {}) {
       try {
         const c = getController(ctx);
         const usage = c.usage();
-        ctx.ui?.notify?.(`문맥 ${c.window.number + 1} · 약 ${usage.tokens}/${usage.target}토큰 · 노트 ${c.store.noteVersions.size}개\n${c.fatal ?? c.paused ?? "사용할 수 있어요."}`, c.fatal || c.paused ? "warning" : "info");
+        const line = usage.target ?? usage.safetyLine ?? usage.full;
+        ctx.ui?.notify?.(`문맥 ${c.window.number + 1} · 약 ${usage.tokens}/${line}토큰 · ${usage.strategy} · 노트 ${c.store.noteVersions.size}개\n${c.fatal ?? c.paused ?? "사용할 수 있어요."}`, c.fatal || c.paused ? "warning" : "info");
       } catch (error) { report(error, ctx); }
     },
   });
