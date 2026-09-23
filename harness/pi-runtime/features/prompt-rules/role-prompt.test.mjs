@@ -83,3 +83,21 @@ test("the skills listing stays pinned to the session until /reload", async () =>
   assert.match(await compose(handlers, "edited on disk"), /edited on disk/);
   assert.match(await compose(handlers, "later edit"), /edited on disk/);
 });
+
+test("contributions made before the role prompt survive its rebuild", async () => {
+  // context-notes guidance, project rules and the todo section are appended by handlers that
+  // run before the role prompt; the rebuild used to drop them.
+  const env = { RUBATO_PI_ROLE: "lead", RUBATO_ROLE_PROMPT_MODULE: promptHref, RUBATO_ROLE_CONTRACT_MODULE: roleHref };
+  const handlers = {};
+  await createRolePromptExtensionFactories({ env })[0].factory({ on(name, fn) { handlers[name] = fn; } });
+  const base = "You are an expert coding assistant operating inside pi.\n\n<cwd>\n/tmp/x\n</cwd>";
+  const result = await handlers.system_prompt(
+    { systemPrompt: `${base}\n<Task_Management>todo</Task_Management>\n\nEARLIER_GUIDANCE`, basePrompt: base },
+    { model: { id: "claude-opus-5", provider: "anthropic", name: "Claude Opus 5" } },
+  );
+  assert.match(result.systemPrompt, /# Working agreement/);
+  assert.match(result.systemPrompt, /<Task_Management>todo<\/Task_Management>/);
+  assert.match(result.systemPrompt, /EARLIER_GUIDANCE$/);
+  assert.equal(result.systemPrompt.match(/Current working directory: \/tmp\/x/g)?.length, 1);
+  assert.doesNotMatch(result.systemPrompt, /operating inside pi/);
+});
