@@ -4,7 +4,7 @@ import { Type, type Static } from "typebox"
 import { TASK_SUMMARY_MAX_LENGTH } from "../../task-summary"
 import { SenpiTeamRuntimeError, SenpiTeamSpecError, TeamMemberReplacementError } from "../../team"
 import { toolResult } from "../control"
-import { TaskToolEffort } from "../task/params"
+import { stableModelEnum, TaskToolEffort } from "../task/params"
 import type { TeamToolDeps, TeamToolsService } from "./types"
 
 export const TeamReplaceMemberParams = Type.Object({
@@ -58,10 +58,7 @@ export function createTeamReplaceMemberTool(deps: TeamToolDeps): ToolDefinition 
   Object.defineProperty(parameters.properties.model, "enum", {
     configurable: true,
     enumerable: true,
-    get: () => {
-      const models = deps.models?.list?.() ?? []
-      return models.length === 0 ? undefined : [...models].sort()
-    },
+    get: stableModelEnum(() => deps.models?.list?.() ?? []),
   })
   return {
     name: "team_replace_member",
