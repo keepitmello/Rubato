@@ -8,7 +8,7 @@ import { validateCandidateStage } from "./validate-stage.mjs";
 
 export const CANDIDATE_FEATURE_NAMES = Object.freeze(["runtime-factories", "reload", "tool-execution", "input-lifecycle", "abort-provenance",
   "request-run", "extension-rpc", "session-transport", "service-tier", "tool-search", "mcp", "mcp-producers", "codemode",
-  "child-runtime", "terminal", "providers", "provider-execution", "media-tools", "video-in", "tool-guards", "tool-policy", "context-window", "session-catalog", "session-picker", "session-title", "adapter-hooks", "parity-gaps", "prompt-rules", "compaction", "config-reload", "user-commands-agent", "user-commands-session", "remote-surface", "tui-input", "turn-chrome", "statusline", "startup-chrome", "tui-autocomplete", "model-picker", "thinking-levels", "transcript-cache", "title-guard", "session-ui"]);
+  "child-runtime", "terminal", "providers", "provider-execution", "media-tools", "video-in", "tool-guards", "tool-policy", "context-window", "session-catalog", "session-picker", "session-title", "adapter-hooks", "parity-gaps", "prompt-rules", "cache-warming", "compaction", "config-reload", "user-commands-agent", "user-commands-session", "remote-surface", "tui-input", "turn-chrome", "statusline", "startup-chrome", "tui-autocomplete", "model-picker", "thinking-levels", "transcript-cache", "title-guard", "session-ui"]);
 const requiredFeatures = [...CANDIDATE_FEATURE_NAMES, "rubato-components"];
 
 /** Pin the candidate onto `agentDir` without flattening sessions onto `agentDir/sessions`. */
