@@ -238,6 +238,26 @@ export function promptForAgentStart(event, ctx, role, hooks = {}) {
   });
 }
 
+const SKILLS_LISTING_END = "</available_skills>";
+
+/** The skills listing block inside a composed prompt, or undefined when it has none. */
+export function skillsListingOf(prompt) {
+  if (typeof prompt !== "string") return undefined;
+  const start = prompt.indexOf(SKILLS_SECTION);
+  if (start < 0) return undefined;
+  const end = prompt.indexOf(SKILLS_LISTING_END, start);
+  if (end < 0) return undefined;
+  return prompt.slice(start, end + SKILLS_LISTING_END.length);
+}
+
+/** Swap the prompt's skills listing for `listing`; unchanged when either side has none. */
+export function withSkillsListing(prompt, listing) {
+  const current = skillsListingOf(prompt);
+  if (current === undefined || typeof listing !== "string" || current === listing) return prompt;
+  const start = prompt.indexOf(current);
+  return prompt.slice(0, start) + listing + prompt.slice(start + current.length);
+}
+
 export function extractHarnessExtras(existing) {
   const extras = [];
   const take = (pattern) => {
