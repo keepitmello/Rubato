@@ -39,6 +39,7 @@ const catalog = Object.freeze({
   "context-notes": { requires: ["session-prompt"], load: () => import("./features/context-notes/patches.mjs") },
   "context-window": { requires: ["context-notes"], load: () => import("./features/context-window/patches.mjs") },
   "prompt-rules": { requires: ["session-prompt"], load: () => import("./features/prompt-rules/feature.mjs") },
+  "cache-warming": { requires: [], load: () => import("./features/cache-warming/patches.mjs") },
   compaction: { requires: [], load: () => import("./features/compaction/feature.mjs") },
   "config-reload": { requires: [], load: () => import("./features/config-reload/feature.mjs") },
   "user-commands-agent": { requires: [], load: async () => (await import("./features/user-commands-agent/feature.mjs")).userCommandsAgentFeature },
