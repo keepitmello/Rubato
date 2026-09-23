@@ -16,7 +16,6 @@
 # 다시 돌린다. 이 레포 쪽만 고치면 다음 실행이 조용히 되돌린다 — agent-taskforce 의
 # `snapshot.sh` 에서 실제로 겪은 실패다.
 #
-# Codex 전용 운영 스킬은 rubato-codex/skills 가 소유하며 여기서 복사하지 않는다.
 set -euo pipefail
 
 SRC="${AGENTS_SKILLS_DIR:-$HOME/.agents/skills}"
@@ -86,8 +85,6 @@ cat > "$DEST/README.md" <<EOF
 
 새 기기는 이 레포를 clone 한 뒤 설치기가 이것을 \`~/.agents/skills\` 로 풀어 준다.
 Rubato와 기존 shared CLI는 이 설치본을 사용한다.
-Codex는 별도 \`rubato-codex\` 플러그인으로 설치하며, 그 설치기가 공유 중복을 비활성화한다.
-taskforce·dispatching·model-guide의 Codex 전용본은 \`rubato-codex/skills\`가 정본이다.
 
 담긴 스킬 ${count}개 (그중 ${kept}개는 이 레포가 정본이라 그대로 두었다).
 바깥 정본에서 온 것은 심링크 실체를 따라가 떴다.

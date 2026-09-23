@@ -1,5 +1,8 @@
 # Dual-runtime 성능 비교 절차
 
+> **2026-09-23 폐기.** Codex 레인(`rubato-codex`)은 쓰지 않기로 하고 레포에서 들어냈다.
+> 비교 대상 한 쪽이 사라졌으니 이 절차는 기록으로만 남긴다. Pi 쪽 지표 수집은 그대로 돈다.
+
 이 문서는 `Codex Desktop + rubato-codex`와 `T3 + Pi server + rubato-pi`를 같은 제품 수준까지 올린 뒤 비교하기 위한 측정 절차다. 현재 단계에서 어느 쪽이 더 빠르거나 가볍다고 결론내리지 않는다.
 
 ## 자동으로 남기는 Pi control-path 지표

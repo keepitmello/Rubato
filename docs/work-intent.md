@@ -116,9 +116,7 @@
 이전의 사전 보고 방식을 요구하던 회귀 시나리오도 사용자 요구에 맞게 바꿨어.
 
 ```sh
-node --test harness/rubato-pi/test/unit/work-intent.test.mjs rubato-codex/test/work-intent.test.mjs
-node rubato-codex/scripts/build-skills.mjs --check
-node rubato-codex/scripts/build-roles.mjs --check
+node --test harness/rubato-pi/test/unit/work-intent.test.mjs
 ```
 
 저장 도구 시험, 지침 연결과 생성물 검사, 실제 모델 동작 시험은 구분해.

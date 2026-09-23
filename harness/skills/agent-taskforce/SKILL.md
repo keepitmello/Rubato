@@ -26,9 +26,6 @@ actual role/model identity. Read its adapter before staffing:
 - Claude Code: `runtimes/claude-code.md`
 - fx: `runtimes/fx.md`
 
-This is the Rubato/shared CLI edition. The separate `rubato-codex` plugin is not
-generated from these operating instructions and is outside this revision.
-
 ## Scope of this skill
 
 This skill owns the choice of execution shape, team authority, approved staffing

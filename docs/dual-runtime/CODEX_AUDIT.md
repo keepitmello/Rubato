@@ -1,5 +1,9 @@
 # Codex 실행 경로 감사
 
+> **2026-09-23 폐기.** Codex 레인(`rubato-codex`)은 쓰지 않기로 하고 레포에서 들어냈다.
+> 필요한 자산은 `harness/t3-integration/assets/` 로 옮겼다. 이 문서는 그때의 감사
+> 기록이고, 아래의 경로·명령·시험 파일은 더 이상 존재하지 않는다.
+
 ## 조사 기준
 
 2026-09-13. 현재 병합 대상 Rubato 기준은 `rubato/base`의 `942c781cb4dfac5129b16108e4dd88bfa2bf3a74`다. 작업 브랜치는 `codex/dual-runtime-checkpoints-20260913`이다.
