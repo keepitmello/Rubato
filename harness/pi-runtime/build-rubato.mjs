@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +10,18 @@ import { BUILD_RECEIPT_VERSION, BUNDLE_ENTRIES as entries, SOURCE_ASSETS, valida
 
 const here = dirname(fileURLToPath(import.meta.url));
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+
+// bun 설치기는 ~/.bun/bin 을 대화형 셸의 rc 에만 넣는다. 그래서 SSH 로 부른
+// `rubato update` 같은 비대화형 실행에서는 PATH 의 "bun" 이 ENOENT 로 죽었다.
+// remote-surface 의 bunExecutable() 과 같은 순서로 찾는다.
+function defaultBunExecutable() {
+  if (process.platform === "win32") return "bun.exe";
+  const fromEnv = process.env.BUN_INSTALL ? join(process.env.BUN_INSTALL, "bin", "bun") : undefined;
+  for (const candidate of [fromEnv, join(process.env.HOME ?? "", ".bun/bin/bun")]) {
+    if (candidate && existsSync(candidate)) return candidate;
+  }
+  return "bun";
+}
 
 function within(parent, path) {
   const rel = relative(parent, path);
@@ -59,7 +72,7 @@ function runBuilder(config, bunExecutable) {
  * Output is a feature payload, not a default-engine installation or a parity claim.
  */
 export async function buildRubatoComponents({ repoRoot = resolve(here, "../.."), sourceRoot = here, outputRoot,
-  bunExecutable = process.platform === "win32" ? "bun.exe" : "bun", fixtureEntries = {} } = {}) {
+  bunExecutable = defaultBunExecutable(), fixtureEntries = {} } = {}) {
   const runtime = resolvePiRuntime({ root: sourceRoot });
   const install = await validatePiInstall(runtime);
   const repo = await realpath(repoRoot);
