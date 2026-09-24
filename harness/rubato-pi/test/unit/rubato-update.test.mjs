@@ -45,8 +45,9 @@ function write(path, text) {
 }
 
 const INSTALL_SKILLS_SRC = join(dirname(fileURLToPath(import.meta.url)), "../../../scripts/install-skills.sh");
+const SSH_HOSTS_SRC = join(dirname(fileURLToPath(import.meta.url)), "../../../scripts/ssh-remote-hosts.mjs");
 
-function setupFixture({ dirty = false, conflict = false, evidence = false, decoyStash = false, rebuildFailure = "", skillUpdate = false, profileSrc = false, profileTest = false, profileRuntimeSrc = false, gui = false, remoteChange = true, speedData = false } = {}) {
+function setupFixture({ dirty = false, conflict = false, evidence = false, decoyStash = false, rebuildFailure = "", skillUpdate = false, profileSrc = false, profileTest = false, profileRuntimeSrc = false, gui = false, remoteChange = true, speedData = false, sshRemotes = false } = {}) {
   const root = mkdtempSync(join(tmpdir(), "rubato-update-"));
   const bare = join(root, "origin.git");
   const seed = join(root, "seed");
@@ -80,6 +81,25 @@ function setupFixture({ dirty = false, conflict = false, evidence = false, decoy
   }
   if (skillUpdate) {
     write(join(seed, "harness/skills/demo/SKILL.md"), "v1\n");
+  }
+  if (sshRemotes) {
+    write(join(seed, "harness/scripts/find-node.sh"), `rubato_find_node() { printf '%s\\n' '${process.execPath}'; }\n`);
+    cpSync(SSH_HOSTS_SRC, join(seed, "harness/scripts/ssh-remote-hosts.mjs"));
+    // 데스크톱 연결 카탈로그: 켜진 SSH 환경 둘(하나는 꺼진 기계), 앱에서 꺼 둔
+    // SSH 환경 하나, SSH 가 아닌 환경 하나.
+    write(join(home, ".rubato/t3-home/userdata/connection-catalog.json"), JSON.stringify({
+      schemaVersion: 1,
+      targets: [],
+      profiles: [
+        { _tag: "SshConnectionProfile", connectionId: "ssh:a", environmentId: "a", label: "wsl", target: { alias: "wy-wsl", hostname: "127.0.0.1", username: null, port: null } },
+        { _tag: "SshConnectionProfile", connectionId: "ssh:b", environmentId: "b", label: "off", target: { alias: "sleeping-box", hostname: "10.0.0.9", username: "me", port: 2200 } },
+        { _tag: "SshConnectionProfile", connectionId: "ssh:c", environmentId: "c", label: "disabled", target: { alias: "disabled-box", hostname: "10.0.0.8", username: null, port: null } },
+        { _tag: "BearerConnectionProfile", connectionId: "bearer:d", environmentId: "d", label: "lan" },
+      ],
+      credentials: [],
+      remoteDpopTokens: [],
+      disabledEnvironmentIds: ["c"],
+    }));
   }
   if (gui) {
     // The GUI is an artifact of the pin plus the overlay, not of the commits
@@ -255,6 +275,36 @@ function fakePath(fixture, commands) {
   }
   return `${bin}:${process.env.PATH}`;
 }
+
+// ssh 대역: 호출을 적고, sleeping-box 는 꺼진 기계처럼 접속부터 실패한다.
+function sshPath(fixture) {
+  return fakePath(fixture, {
+    ssh: 'printf \'ssh %s\\n\' "$*" >> "$RUBATO_TEST_TRACE"\ncase "$*" in *sleeping-box*) exit 255 ;; esac\ncase "$*" in *"rubato update"*) echo "  ✓ 이미 최신입니다." ;; esac\nexit 0',
+  });
+}
+
+test("update also updates enabled desktop SSH environments and skips unreachable ones", () => {
+  for (const remoteChange of [true, false]) {
+    const fixture = setupFixture({ sshRemotes: true, remoteChange });
+    const result = runUpdate(fixture, { path: sshPath(fixture) });
+    assert.equal(result.status, 0, result.stderr + result.stdout);
+    const trace = readFileSync(fixture.trace, "utf8");
+    assert.match(trace, /ssh -o BatchMode=yes -o ConnectTimeout=5 wy-wsl RUBATO_UPDATE_NO_REMOTES=1 sh -lc "rubato update --yes"/);
+    assert.match(trace, /-p 2200 me@sleeping-box true/);
+    assert.doesNotMatch(trace, /sleeping-box RUBATO_UPDATE/);
+    assert.doesNotMatch(trace, /disabled-box/);
+    assert.match(result.stdout, /원격 wy-wsl — ✓ 이미 최신입니다\./);
+    assert.match(result.stdout, /원격 sleeping-box — 연결되지 않아 건너뜁니다/);
+  }
+});
+
+test("a remote-side update does not fan out again, and checks never touch remotes", () => {
+  for (const options of [{ env: { RUBATO_UPDATE_NO_REMOTES: "1" } }, { args: ["--check"] }]) {
+    const fixture = setupFixture({ sshRemotes: true });
+    runUpdate(fixture, { path: sshPath(fixture), ...options });
+    assert.doesNotMatch(existsSync(fixture.trace) ? readFileSync(fixture.trace, "utf8") : "", /^ssh /m);
+  }
+});
 
 function backupBranch(local) {
   const listed = git(local, ["for-each-ref", "--format=%(refname:short)", "refs/heads/rubato/update-backup-*"]).stdout
