@@ -21,6 +21,21 @@ With a snapshot, do not also pass `--app` or window flags. Prefer `set-value` fo
 
 Some apps (notably Calculator) expose a CG window but no AX window. Screenshot capture can still succeed while `see` returns `ACCESSIBILITY_INCOMPLETE`. Re-observe; if AX stays empty, fall back to Cua Driver. If that surface is also empty, stop instead of guessing coordinates unless a fresh exact-window snapshot has coherent geometry.
 
+### Electron and Chromium apps (Rubato, Slack, VS Code, Discord, ...)
+
+A window that shows only window buttons and empty groups is usually web content whose accessibility tree is off, not an app without controls. Two separate limits hide it:
+
+1. Electron builds the web AX tree only after an assistive client sets `AXManualAccessibility` on the app. Peekaboo does not. Run `scripts/enable-web-ax.sh <App name | pid>` once; it lasts until the app quits. Do not make the app keep accessibility always on — Chromium then maintains the tree continuously, which costs CPU and memory on this machine.
+2. Web trees are deep. Peekaboo's default traversal stops early, so pass `--depth 40 --max-elements 2000` to `see` for these windows. Do not raise it globally with `PEEKABOO_AX_MAX_*`; native apps get slower for nothing.
+
+```bash
+~/.agents/skills/macos-computer-use/scripts/enable-web-ax.sh Rubato
+peekaboo see --window-id <id> --depth 40 --max-elements 2000 --no-remote --json
+peekaboo click --on <element-id> --snapshot <snapshot> --no-remote --json
+```
+
+Measured on Rubato (Electron 44), settings screen: 12 elements before, 26 after `AXManualAccessibility` at default depth, 125 with `--depth 40` — every sidebar item, toggle and row button by name. Coordinate clicking on such a window is the last resort, not the default.
+
 ## Fallback: Cua Driver
 
 Use Cua Driver (`cua-driver call`) when Peekaboo is missing, cannot start, cannot bind, or cannot operate the required surface. Daemon, Accessibility, and Screen Recording can be healthy while a given window still has no AX surface.
