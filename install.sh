@@ -523,9 +523,11 @@ if [ -z "$GUI" ] && [ "$APPLY" -eq 1 ] && [ -t 0 ]; then
   case "$_gui_ans" in y|Y|yes|YES) GUI=1 ;; *) GUI=0 ;; esac
 fi
 if [ "${GUI:-0}" = "1" ]; then
+  # install-gui.sh 는 bash 스크립트다(pipefail). 우분투의 sh 는 dash 라서
+  # sh 로 부르면 첫 줄에서 죽는다. 맥은 sh 가 bash 라 드러나지 않았다.
   if [ "$APPLY" -eq 0 ]; then
-    sh "$HARNESS/t3-integration/install-gui.sh"
-  elif sh "$HARNESS/t3-integration/install-gui.sh" --apply; then
+    bash "$HARNESS/t3-integration/install-gui.sh"
+  elif bash "$HARNESS/t3-integration/install-gui.sh" --apply; then
     GUI_DONE=1
   else
     add_manual "GUI 설치 실패. harness/t3-integration/install-gui.sh --apply 를 다시 실행해라"

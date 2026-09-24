@@ -17,6 +17,16 @@ const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/se
 // .electron-runtime 번들이라 그 경로로 켜면 맨 T3 가 떴다. 아이콘도 같은 이유로
 // 여기서 경로를 바꾸는 대신, 설치기가 T3 가 읽는 자리에 Rubato 것을 깔아둔다.
 const edits = {
+  // SSH 원격 환경. 원본은 원격에 GitHub 의 T3 릴리스를 받아 띄우는데, 그 서버에는
+  // Rubato 제공자가 없다. 원격에도 Rubato 를 깔아 두고(install-gui.sh 가
+  // ~/.rubato/t3-remote-server.mjs 를 만든다) 그것을 node 로 부른다. 경로는 원격
+  // 실행기의 cwd 인 원격 $HOME 기준이다 — 실행기가 경로를 작은따옴표로 넘겨서 ~ 가
+  // 풀리지 않는다.
+  'apps/desktop/src/main.ts': [
+    ['  return { archiveVersion: environment.appVersion };',
+      '  return { nodeScriptPath: ".rubato/t3-remote-server.mjs", nodeEngineRange: serverPackageJson.engines.node };',
+      'replace'],
+  ],
   'apps/desktop/src/window/DesktopWindow.ts': [
     ['import * as Electron from "electron";', 'import { attachRubatoUpdates } from "../updates/RubatoUpdates.ts";\n'],
     ['    window.webContents.on("did-finish-load", () => {',
