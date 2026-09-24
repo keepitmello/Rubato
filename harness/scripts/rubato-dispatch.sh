@@ -9,7 +9,7 @@ DEFAULT_STDOUT_MAX=8192
 
 usage() {
   cat <<'USAGE'
-Usage: rubato dispatch <name> [deepseek|grok|grokfast|sol|fable|astra|opus] [--model PROVIDER/MODEL[:THINKING]] [--effort LEVEL] [--cwd DIR] < brief.md
+Usage: rubato dispatch <name> [deepseek|grok|grokfast|fable|astra|opus] [--model PROVIDER/MODEL[:THINKING]] [--effort LEVEL] [--cwd DIR] < brief.md
        rubato dispatch <name> --continue < followup.md
 
 `dispatch` on PATH is the same command.
@@ -28,7 +28,6 @@ Models (no alias = deepseek):
   deepseek  b-ai/deepseek-v4.1-flash:high
   grok      xai/grok-4.7
   grokfast  cursor/grok-4.7
-  sol       openai-codex/gpt-5.6-sol
   fable     anthropic/claude-fable-5-1
   astra     openai-codex/gpt-6-astra:xhigh
   opus      anthropic/claude-opus-5-5:high
@@ -51,7 +50,6 @@ alias_to_model() {
     deepseek) echo "b-ai/deepseek-v4.1-flash:high" ;;
     grok) echo "xai/grok-4.7" ;;
     grokfast) echo "cursor/grok-4.7" ;;
-    sol) echo "openai-codex/gpt-5.6-sol" ;;
     fable) echo "anthropic/claude-fable-5-1" ;;
     astra) echo "openai-codex/gpt-6-astra:xhigh" ;;
     opus) echo "anthropic/claude-opus-5-5:high" ;;
@@ -162,7 +160,7 @@ while [[ $# -gt 0 ]]; do
       CWD="$2"
       shift 2
       ;;
-    deepseek|grok|grokfast|sol|fable|astra|opus)
+    deepseek|grok|grokfast|fable|astra|opus)
       if [[ -n "$MODEL_ALIAS" ]]; then
         echo "rubato dispatch: model already set to $MODEL_ALIAS" >&2
         exit 2
