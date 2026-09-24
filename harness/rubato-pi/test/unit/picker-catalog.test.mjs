@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   ANTHROPIC_PICKER_IDS,
   CODEX_PICKER_IDS,
+  CODEX_SUB_PICKER_IDS,
   OPENCODE_PICKER_IDS,
   XAI_PICKER_IDS,
   keepPickerIds,
@@ -18,6 +19,8 @@ function model(id) {
 // 세대가 바뀔 때마다 깨진다.
 const CURRENT_XAI = XAI_PICKER_IDS[0];
 const [CURRENT_FABLE, CURRENT_OPUS] = ANTHROPIC_PICKER_IDS;
+const [CODEX_SOL, CODEX_LUNA, CODEX_ASTRA, CODEX_DAYBREAK] = CODEX_PICKER_IDS;
+const [CODEX_SOL_SUB, CODEX_ASTRA_SUB] = CODEX_SUB_PICKER_IDS;
 
 test("목록 순서로 남고, 없는 id 는 만들지 않는다", () => {
   const kept = keepPickerIds(
@@ -45,41 +48,38 @@ test("Anthropic 이전 세대와 dated id 는 빠진다", () => {
 });
 
 test("Codex 피커는 base 만 남기고 Fast 는 /fast 다", () => {
-  assert.deepEqual([...CODEX_PICKER_IDS], [
-    "gpt-5.6-sol",
-    "gpt-5.6-terra",
-    "gpt-5.6-luna",
-    "gpt-6-astra",
-    "gpt-daybreak-blue-latest",
-  ]);
   const kept = keepPickerIds(
     [
-      model("gpt-5.6-sol"),
-      model("gpt-5.6-sol-fast"),
-      model("gpt-6-astra"),
-      model("gpt-6-astra-fast"),
-      model("gpt-daybreak-blue-latest-fast"),
+      model(CODEX_SOL),
+      model(`${CODEX_SOL}-fast`),
+      model(CODEX_ASTRA),
+      model(`${CODEX_ASTRA}-fast`),
+      model(`${CODEX_DAYBREAK}-fast`),
     ],
     CODEX_PICKER_IDS,
   );
-  assert.deepEqual(kept.map((entry) => entry.id), ["gpt-5.6-sol", "gpt-6-astra"]);
+  assert.deepEqual(kept.map((entry) => entry.id), [CODEX_SOL, CODEX_ASTRA]);
 });
 
-test("Codex 는 5.6과 Astra, Daybreak만 남긴다", () => {
+test("Codex 는 현재 세대 Sol·Luna·Astra·Daybreak 만 남긴다", () => {
   const kept = keepPickerIds(
     [
       model("gpt-5.4"),
       model("gpt-5.6-sol"),
+      model("gpt-5.6-terra"),
       model("gpt-5.5"),
-      model("gpt-6-astra"),
-      model("gpt-daybreak-blue-latest"),
+      model(CODEX_SOL),
+      model(CODEX_LUNA),
+      model(CODEX_ASTRA),
+      model(CODEX_DAYBREAK),
     ],
     CODEX_PICKER_IDS,
   );
   assert.deepEqual(kept.map((entry) => entry.id), [
-    "gpt-5.6-sol",
-    "gpt-6-astra",
-    "gpt-daybreak-blue-latest",
+    CODEX_SOL,
+    CODEX_LUNA,
+    CODEX_ASTRA,
+    CODEX_DAYBREAK,
   ]);
 });
 
@@ -135,20 +135,19 @@ test("명단에 없는 프로바이더는 계정이 둘이어도 [sub] 행이 �
 test("Codex [sub] 는 Sol 과 Astra 만 붙는다", () => {
   const provider = withSubAccountCopies({
     id: "openai-codex",
-    getModels: () => [model("gpt-5.6-sol"), model("gpt-5.6-terra"), model("gpt-5.6-luna"), model("gpt-6-astra"), model("gpt-daybreak-blue-latest")],
+    getModels: () => [model(CODEX_SOL), model(CODEX_LUNA), model(CODEX_ASTRA), model(CODEX_DAYBREAK)],
     filterModels: (models) => models,
   });
   const credential = { accounts: [{ name: "default" }, { name: "sub" }] };
   assert.deepEqual(
     provider.filterModels(provider.getModels(), credential).map((entry) => entry.id),
-    ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra", "gpt-daybreak-blue-latest", "gpt-5.6-sol-sub", "gpt-6-astra-sub"],
+    [CODEX_SOL, CODEX_LUNA, CODEX_ASTRA, CODEX_DAYBREAK, `${CODEX_SOL_SUB}-sub`, `${CODEX_ASTRA_SUB}-sub`],
   );
   const stored = provider.getModels().map((entry) => entry.id);
-  assert.equal(stored.includes("gpt-5.6-sol-sub"), true);
-  assert.equal(stored.includes("gpt-6-astra-sub"), true);
-  assert.equal(stored.includes("gpt-5.6-terra-sub"), false);
-  assert.equal(stored.includes("gpt-5.6-luna-sub"), false);
-  assert.equal(stored.includes("gpt-daybreak-blue-latest-sub"), false);
+  assert.equal(stored.includes(`${CODEX_SOL}-sub`), true);
+  assert.equal(stored.includes(`${CODEX_ASTRA}-sub`), true);
+  assert.equal(stored.includes(`${CODEX_LUNA}-sub`), false);
+  assert.equal(stored.includes(`${CODEX_DAYBREAK}-sub`), false);
 });
 
 test("Anthropic [sub] 는 Fable 과 Opus 만 붙는다", () => {

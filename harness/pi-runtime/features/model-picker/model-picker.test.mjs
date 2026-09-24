@@ -32,20 +32,22 @@ test("sorts by provider groups and keeps xai/ vs cursor/ apart, Sol first", () =
   // 세대 id 를 손으로 적지 않는다 — 정렬은 카탈로그 순서를 읽으므로, 픽스처가
   // 카탈로그에 없는 세대를 가리키면 정렬 결과가 조용히 달라진다.
   const opus = MODEL_ORDER.anthropic[1];
+  const [codexSol, codexLuna] = MODEL_ORDER["openai-codex"];
+  const cursorSol = MODEL_ORDER.cursor[0];
   const sorted = sortModelItems([
     { provider: "cursor", id: "composer-2.5", model: {} },
     { provider: "xai", id: "grok-4.7", model: {} },
-    { provider: "cursor", id: "gpt-5.6-sol", model: {} },
-    { provider: "openai-codex", id: "gpt-5.6-luna", model: {} },
-    { provider: "openai-codex", id: "gpt-5.6-sol", model: {} },
+    { provider: "cursor", id: cursorSol, model: {} },
+    { provider: "openai-codex", id: codexLuna, model: {} },
+    { provider: "openai-codex", id: codexSol, model: {} },
     { provider: "anthropic", id: opus, model: {} },
   ]);
   assert.deepEqual(sorted.map((item) => `${item.provider}/${item.id}`), [
-    "openai-codex/gpt-5.6-sol",
-    "openai-codex/gpt-5.6-luna",
+    `openai-codex/${codexSol}`,
+    `openai-codex/${codexLuna}`,
     `anthropic/${opus}`,
     "xai/grok-4.7",
-    "cursor/gpt-5.6-sol",
+    `cursor/${cursorSol}`,
     "cursor/composer-2.5",
   ]);
 });
@@ -86,6 +88,7 @@ test("display labels and stock patch replace item.id", () => {
   assert.equal(modelPickerLabel({ provider: "cursor", id: CURSOR_GROK_BASE_ID, model: {} }), "Grok 4.7 fast");
   assert.equal(modelPickerLabel({ provider: "xai", id: "grok-4.7", model: {} }), "Grok 4.7");
   assert.equal(modelPickerLabel({ provider: "openai-codex", id: "gpt-6-astra", model: {} }), "Astra 6");
+  assert.equal(modelPickerLabel({ provider: "openai-codex", id: MODEL_ORDER["openai-codex"][0], model: {} }), "Sol 6");
   assert.equal(modelPickerLabel({ provider: "openai-codex", id: "gpt-5.6-sol", model: {} }), "Sol 5.6");
   assert.equal(modelPickerLabel({ provider: "google-antigravity", id: PRODUCT_MODEL_ORDER["google-antigravity"][0], model: {} }), "Gemini 3.8 Flash");
   assert.equal(modelPickerLabel({ provider: "anthropic", id: "claude-fable-5-1", model: {} }), "Fable 5.1");

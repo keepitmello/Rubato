@@ -17,6 +17,7 @@ import {
   daybreakModels,
   directProviders,
   fable51Models,
+  gpt6CodexModels,
   nativeProviderFactoryLoader,
   providerDirectEnabled,
   warnIgnoredDirectOptOut,
@@ -25,6 +26,7 @@ import providerOverlayImpl from "../../src/extensions/provider-overlay.mjs";
 import {
   ANTHROPIC_PICKER_IDS,
   ANTHROPIC_SUB_PICKER_IDS,
+  CODEX_PICKER_IDS,
   XAI_PICKER_IDS,
 } from "../../src/picker-catalog.mjs";
 import { PRODUCT_MODEL_ORDER } from "../../../../packages/model-core/src/product-model-catalog.mjs";
@@ -249,6 +251,31 @@ test("Daybreak 파생은 틀이 없으면 조용히 넘어가지 않는다", () 
   assert.throws(() => daybreakModels([{ id: "gpt-5.4" }]), /gpt-5\.6-terra/);
 });
 
+test("GPT-6 Sol·Luna 는 상류 0.87.1 정의 그대로 주입된다", () => {
+  const [sol, luna] = gpt6CodexModels([{ id: "gpt-5.6-terra" }]);
+  assert.equal(sol.id, "gpt-6-sol");
+  assert.equal(sol.name, "GPT-6 Sol");
+  assert.equal(sol.api, "openai-codex-responses");
+  assert.equal(sol.provider, "openai-codex");
+  assert.equal(sol.contextWindow, 272_000);
+  assert.equal(sol.maxTokens, 128_000);
+  // 5.6 에서 파생하면 이 값들이 틀린다 — 6 은 가격이 절반이고 effort 단계가 더 넓다.
+  assert.deepEqual(sol.cost, {
+    input: 2,
+    output: 10,
+    cacheRead: 0.2,
+    cacheWrite: 2.5,
+    tiers: [{ inputTokensAbove: 272_000, input: 4, output: 15, cacheRead: 0.4, cacheWrite: 5 }],
+  });
+  assert.equal(sol.thinkingLevelMap.off, "none");
+  assert.equal(sol.thinkingLevelMap.medium, "medium");
+  assert.equal(luna.id, "gpt-6-luna");
+  assert.equal(luna.cost.input, 0.1);
+  // pin 이 앞서면 주입은 스스로 빈다.
+  assert.deepEqual(gpt6CodexModels([{ id: "gpt-6-sol" }, { id: "gpt-6-luna" }]), []);
+  assert.deepEqual(gpt6CodexModels([{ id: "gpt-6-sol" }]).map((model) => model.id), ["gpt-6-luna"]);
+});
+
 test("Fable 5.1 은 pin 의 Fable 5에서 id·이름만 덮는다", () => {
   const template = {
     id: "claude-fable-5",
@@ -301,13 +328,18 @@ test("피커는 현재 세대만 남기고 getModels 저장분은 그대로다",
   }
 
   const codexPicker = new Set(codex.filterModels(codex.getModels()).map((model) => model.id));
-  assert.ok(codexPicker.has("gpt-5.6-sol"));
-  assert.ok(codexPicker.has("gpt-6-astra"));
-  assert.ok(codexPicker.has("gpt-daybreak-blue-latest"));
-  assert.ok(!codexPicker.has("gpt-5.6-sol-fast"));
-  assert.ok(!codexPicker.has("gpt-6-astra-fast"));
-  assert.ok(!codexPicker.has("gpt-daybreak-blue-latest-fast"));
+  // 명단의 모든 행이 실제로 올라온다 — pin 에 없는 행은 우리가 주입한다. 주입이 빠지면
+  // picker 는 조용히 빈 자리를 만들고 스폰 목록에서도 사라진다.
+  for (const id of CODEX_PICKER_IDS) {
+    assert.ok(codexPicker.has(id), `${id} 가 피커에 없다`);
+    assert.ok(!codexPicker.has(`${id}-fast`), `${id}-fast 는 피커가 아니라 /fast 다`);
+  }
+  assert.ok(!codexPicker.has("gpt-5.6-sol"), "이전 세대가 피커에 남았다");
+  assert.ok(!codexPicker.has("gpt-5.6-terra"));
+  assert.ok(!codexPicker.has("gpt-5.6-luna"));
   assert.ok(!codexPicker.has("gpt-5.4"));
+  // Daybreak 파생의 틀이다. 저장분에서 지우면 주입이 아니라 throw 로 바뀐다.
+  assert.ok(codex.getModels().some((model) => model.id === "gpt-5.6-terra"), "Daybreak 파생 틀을 지우면 안 된다");
   assert.ok(codex.getModels().some((model) => model.id === "gpt-6-astra-fast"), "/fast 가 쓸 Fast 변형을 저장분에서 지우면 안 된다");
 
   assert.equal(opencode.id, "opencode");
