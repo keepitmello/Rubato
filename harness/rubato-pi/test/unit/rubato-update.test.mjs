@@ -85,19 +85,16 @@ function setupFixture({ dirty = false, conflict = false, evidence = false, decoy
   if (sshRemotes) {
     write(join(seed, "harness/scripts/find-node.sh"), `rubato_find_node() { printf '%s\\n' '${process.execPath}'; }\n`);
     cpSync(SSH_HOSTS_SRC, join(seed, "harness/scripts/ssh-remote-hosts.mjs"));
-    // 데스크톱 연결 카탈로그: 켜진 SSH 환경 둘(하나는 꺼진 기계), 앱에서 꺼 둔
-    // SSH 환경 하나, SSH 가 아닌 환경 하나.
-    write(join(home, ".rubato/t3-home/userdata/connection-catalog.json"), JSON.stringify({
-      schemaVersion: 1,
-      targets: [],
+    // overlay 가 카탈로그 옆에 쓰는 사이드카: 켜진 SSH 환경 둘(하나는 꺼진
+    // 기계), 앱에서 꺼 둔 SSH 환경 하나, SSH 가 아닌 프로필 하나.
+    write(join(home, ".rubato/t3-home/userdata/ssh-environments.json"), JSON.stringify({
+      version: 1,
       profiles: [
         { _tag: "SshConnectionProfile", connectionId: "ssh:a", environmentId: "a", label: "wsl", target: { alias: "wy-wsl", hostname: "127.0.0.1", username: null, port: null } },
         { _tag: "SshConnectionProfile", connectionId: "ssh:b", environmentId: "b", label: "off", target: { alias: "sleeping-box", hostname: "10.0.0.9", username: "me", port: 2200 } },
         { _tag: "SshConnectionProfile", connectionId: "ssh:c", environmentId: "c", label: "disabled", target: { alias: "disabled-box", hostname: "10.0.0.8", username: null, port: null } },
         { _tag: "BearerConnectionProfile", connectionId: "bearer:d", environmentId: "d", label: "lan" },
       ],
-      credentials: [],
-      remoteDpopTokens: [],
       disabledEnvironmentIds: ["c"],
     }));
   }

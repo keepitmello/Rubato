@@ -22,6 +22,42 @@ const edits = {
   // ~/.rubato/t3-remote-server.mjs 를 만든다) 그것을 node 로 부른다. 경로는 원격
   // 실행기의 cwd 인 원격 $HOME 기준이다 — 실행기가 경로를 작은따옴표로 넘겨서 ~ 가
   // 풀리지 않는다.
+  // `rubato update` 는 데스크톱에 붙인 SSH 환경도 올린다(harness/scripts/
+  // ssh-remote-hosts.mjs). 그런데 연결 카탈로그는 safeStorage 로 암호화돼 있어
+  // 셸에서 읽을 수 없다. 암호화 직전의 평문을 카탈로그 스키마로 읽어 비밀이
+  // 없는 SSH 프로필만 옆에 ssh-environments.json 으로 둔다. 실패는 무시한다 — 이것 때문에
+  // 카탈로그 저장이 실패하면 안 된다.
+  'apps/desktop/src/app/DesktopConnectionCatalogStore.ts': [
+    ['      document: { version: 1, encryptedCatalog },\n      suffix,\n    });\n',
+      [
+        '      document: { version: 1, encryptedCatalog },',
+        '      suffix,',
+        '    });',
+        '    yield* Schema.decodeEffect(RuntimeConnectionCatalogDocumentJson)(catalog).pipe(',
+        '      Effect.flatMap((doc) =>',
+        '        Schema.encodeEffect(',
+        '          Schema.fromJsonString(',
+        '            Schema.Struct({',
+        '              version: Schema.Finite,',
+        '              disabledEnvironmentIds: Schema.Array(Schema.String),',
+        '              profiles: Schema.Array(SshConnectionProfile),',
+        '            }),',
+        '          ),',
+        '        )({',
+        '          version: 1,',
+        '          disabledEnvironmentIds: doc.disabledEnvironmentIds,',
+        '          profiles: doc.profiles.filter(Schema.is(SshConnectionProfile)),',
+        '        }),',
+        '      ),',
+        '      Effect.flatMap((text) =>',
+        '        fileSystem.writeFileString(path.join(environment.stateDir, "ssh-environments.json"), `${text}\\n`),',
+        '      ),',
+        '      Effect.ignore,',
+        '    );',
+        '',
+      ].join('\n'),
+      'replace'],
+  ],
   'apps/desktop/src/main.ts': [
     ['  return { archiveVersion: environment.appVersion };',
       '  return { nodeScriptPath: ".rubato/t3-remote-server.mjs", nodeEngineRange: serverPackageJson.engines.node };',
