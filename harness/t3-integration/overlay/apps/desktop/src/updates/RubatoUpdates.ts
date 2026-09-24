@@ -277,8 +277,9 @@ export function attachRubatoUpdates(window: BrowserWindow, electron: ElectronSer
     initializing = (async () => {
       const stateDir = directory();
       await mkdir(stateDir, { recursive: true, mode: 0o700 });
-      // T3's settings live in DesktopEnvironment.desktopSettingsPath, not
-      // Electron's Chromium userData directory.
+      // write-gui-settings.mjs writes the provider wiring to the server
+      // settings (userdata/settings.json). desktop-settings.json only holds
+      // window state, so reading it left every install without an updater.
       const settings = await read<{ providerInstances?: { rubato?: { config?: { bridgeModule?: string } } } }>(settingsPath);
       const bridge = settings?.providerInstances?.rubato?.config?.bridgeModule;
       if (!bridge || !path.isAbsolute(bridge) || window.isDestroyed()) return;
