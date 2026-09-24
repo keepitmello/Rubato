@@ -11,7 +11,7 @@ Run this when you start from a brief someone handed you, and again when a follow
 
 The brief mixes two kinds of content, and the kind — not the tone, not a tag — decides its force.
 
-Binding: the outcome and its done evidence, write ownership and off-limits paths, the budget, and constraints with a named authority source — the user, a spec or frame, an external contract, another session's ownership. These hold regardless of what you infer, because another session may be holding the same repository.
+Binding: the outcome and its done evidence, write ownership and off-limits paths, the budget, frozen items, and constraints with a named authority source — the user, a spec or frame, an external contract, another session's ownership. These hold regardless of what you infer, because another session may be holding the same repository.
 
 Provisional: every claim about how the code is shaped — where things are, how a mechanism works, why it fails, which files matter. These are the sender's reading, not ground truth, however confidently written. Code, tests, and runtime evidence settle them.
 
@@ -28,6 +28,16 @@ You already know this code; use that, do not start over. Follow the direction th
 A merely wrong coordinate you can correct inside your outcome and write ownership is yours to fix: fix it, note it in your report, keep going. Do not escalate what you can settle.
 
 Return instead of working around it when the conflict is real: a binding constraint and the code evidence cannot both hold, the only viable fix crosses write ownership or off-limits, or the outcome is unreachable without changing the requirements. Report the conflicting clause, the evidence, viable options, and your recommendation. That return is a completed dispatch, not a failure.
+
+## Frozen items
+
+A frozen item is something the user locked (a value, behavior, feel, layout or copy), listed with its source. If the task cannot be finished without changing one, stop and return with that conflict. Do not pick between the task and the freeze, and do not keep the old value in a comment while replacing what uses it.
+
+When the brief listed frozen items, your return carries one line: `Frozen items touched: none`, `Frozen items touched: <which>, <why the task required it>`, or `Frozen items: list unavailable, <why>` when you could not read the list. That line is a self-report; where the repository has frozen checks, run them as the evidence.
+
+## Visual or felt work
+
+When the brief names the decision an artifact (a screen, a sound, a control feel) must support, hand back a working, judgment-ready candidate and fix the omissions you can inspect yourself; a first render is not an automatic stop. An explicit preview checkpoint or user stop still binds even with known gaps: report the gaps instead of polishing past it. Once a user preference becomes the deciding question, show the useful candidate promptly rather than polishing it unseen. Use evidence the observer can actually inspect. A static frame does not prove full-speed rhythm; if an observation channel is unavailable, report that limit, ask only for the missing observation, and keep going on the rest of your authorized work.
 
 ## Other valid endings
 
