@@ -114,6 +114,7 @@ if [ "$APPLY" -eq 0 ]; then
   plan "T3 $PIN 을 $T3_DIR 에 받는다"
   plan "overlay를 적용하고 이름·아이콘·제공자를 Rubato로 쓴다"
   plan "T3 데이터는 $T3_HOME, Pi 서버는 $AGENT_DIR"
+  plan "SSH 원격 진입점 $HOME/.rubato/t3-remote-server.mjs 를 만든다"
   if is_darwin; then
     plan "데스크톱을 빌드하고 /Applications/Rubato.app 을 만든다"
   else
@@ -157,6 +158,24 @@ export RUBATO_GUI_DESCRIPTOR="$DESCRIPTOR"
 export RUBATO_GUI_CATALOGUE="${HOME}"
 "$NODE" "$HERE/write-gui-settings.mjs" || { err "T3 설정 실패"; exit 1; }
 ok "제공자 이름 Rubato, 프로젝트 트리 사이드바"
+
+# 다른 기계의 데스크톱이 이 기계를 SSH 환경으로 붙일 때 부르는 진입점이다.
+# overlay 가 데스크톱의 원격 실행기를 원격 $HOME 기준 이 경로로 고정한다
+# (apply.mjs 의 apps/desktop/src/main.ts 편집). 경로를 바꾸면 거기도 바꿔야 한다.
+REMOTE_ENTRY="$HOME/.rubato/t3-remote-server.mjs"
+mkdir -p "$(dirname "$REMOTE_ENTRY")"
+"$NODE" -e '
+const [out, mod, t3Source, t3Home, node] = process.argv.slice(1);
+const q = JSON.stringify;
+const url = require("node:url").pathToFileURL(mod).href;
+require("node:fs").writeFileSync(out, [
+  "// install-gui.sh 가 만든다. 고치지 말고 install-gui.sh --apply 를 다시 돌려라.",
+  `import { startRemoteServer } from ${q(url)};`,
+  `await startRemoteServer({ t3Source: ${q(t3Source)}, t3Home: ${q(t3Home)}, node: ${q(node)} });`,
+  "",
+].join("\n"));
+' "$REMOTE_ENTRY" "$HERE/remote-server.mjs" "$T3_DIR" "$T3_HOME" "$NODE" \
+  && ok "SSH 원격 진입점 $REMOTE_ENTRY" || warn "SSH 원격 진입점을 만들지 못했다: $REMOTE_ENTRY"
 
 WANT="$(build_fingerprint)"
 built=0
