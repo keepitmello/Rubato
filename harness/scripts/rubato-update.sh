@@ -44,6 +44,49 @@ sync_speed_data() {
   "$speed_node" "$speed_helper" || warn "속도 수집을 시작하지 못했습니다. 업데이트 결과에는 영향이 없습니다."
 }
 
+# 이 기계의 데스크톱이 SSH 환경으로 붙여 둔 기계도 같이 올린다. 원격 서버는 그
+# 기계에 깔린 Rubato 로 뜨므로(t3-integration/remote-server.mjs), 여기만 올리면
+# 앱과 원격 서버의 코드가 어긋난다. 원격에서 `rubato update` 를 돌리면 그쪽
+# restart-gui.sh 가 SSH 로 뜬 서버를 내리고, 앱이 다시 붙을 때 새 코드로 뜬다.
+#
+# 꺼져 있는 기계는 건너뛴다 — 데스크탑이 꺼져 있다고 이 기계의 업데이트가
+# 실패하면 안 된다. 이 기계가 이미 최신이어도 원격은 지난번에 꺼져 있어서
+# 뒤처졌을 수 있으므로, 성공으로 끝나는 모든 길에서 부른다. 원격 쪽은
+# RUBATO_UPDATE_NO_REMOTES=1 로 불러 거기서 다시 퍼지지 않게 한다.
+sync_ssh_remotes() {
+  [ "${RUBATO_UPDATE_NO_REMOTES-}" = 1 ] && return 0
+  hosts_helper="$HERE/ssh-remote-hosts.mjs"
+  [ -f "$hosts_helper" ] || return 0
+  [ -f "$HERE/find-node.sh" ] || return 0
+  . "$HERE/find-node.sh"
+  hosts_node="$(rubato_find_node 2>/dev/null || true)"
+  [ -n "$hosts_node" ] || return 0
+  hosts="$("$hosts_node" "$hosts_helper" 2>/dev/null || true)"
+  [ -n "$hosts" ] || return 0
+  remote_logs="$HOME/.rubato-pi/logs"
+  mkdir -p "$remote_logs" 2>/dev/null || true
+  tab="$(printf '\t')"
+  printf '%s\n' "$hosts" | while IFS="$tab" read -r alias user port; do
+    [ -n "$alias" ] || continue
+    dest="$alias"
+    [ -n "$user" ] && dest="$user@$alias"
+    set -- -o BatchMode=yes -o ConnectTimeout=5
+    [ -n "$port" ] && set -- "$@" -p "$port"
+    remote_log="$remote_logs/rubato-update-remote-$alias.log"
+    if ! ssh "$@" "$dest" true </dev/null >/dev/null 2>&1; then
+      warn "원격 $alias — 연결되지 않아 건너뜁니다. 켜진 뒤 그쪽에서 rubato update 로 맞춰요."
+      continue
+    fi
+    printf '  %s원격 %s 업데이트 중…%s\n' "$DIM" "$alias" "$RST"
+    if ssh "$@" "$dest" 'RUBATO_UPDATE_NO_REMOTES=1 sh -lc "rubato update --yes"' </dev/null >"$remote_log" 2>&1; then
+      last="$(sed "s/$(printf '\033')\[[0-9;]*[A-Za-z]//g" "$remote_log" | grep -v '^[[:space:]]*$' | tail -n 1 | sed 's/^[[:space:]]*//')"
+      ok "원격 $alias — ${last:-업데이트를 마쳤습니다}"
+    else
+      warn "원격 $alias 업데이트에 실패했습니다. 이 기계의 업데이트는 끝났습니다 — 기록: $remote_log"
+    fi
+  done
+}
+
 cd "$REPO"
 
 # 지금 브랜치가 rubato/base 가 아니면 건드리지 않는다. 남의 작업 위에 pull 하지 않는다.
@@ -137,6 +180,7 @@ if [ "$LOCAL" = "$REMOTE" ]; then
   sync_gui
   sync_speed_data
   ok "이미 최신입니다."
+  sync_ssh_remotes
   exit 0
 fi
 
@@ -148,6 +192,7 @@ if [ "$BEHIND" -eq 0 ]; then
   sync_gui
   sync_speed_data
   ok "받을 것이 없습니다. 로컬이 $AHEAD 커밋 앞서 있습니다."
+  sync_ssh_remotes
   exit 0
 fi
 
@@ -559,4 +604,5 @@ fi
 
 date +%s > "$STAMP"
 sync_speed_data
+sync_ssh_remotes
 printf '\n%s✓%s 업데이트를 마쳤습니다. %s열린 CLI 터미널은 다시 붙여야 해요.%s\n\n' "$GRN" "$RST" "$DIM" "$RST"
