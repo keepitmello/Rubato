@@ -307,12 +307,18 @@ test("session.rename locks later auto titles and survives resume", () => {
 });
 
 test("pickTitleModel walks the model chain and titleFromResponse reads complete() output", () => {
-  assert.deepEqual(TITLE_MODELS, [
-    { provider: "b-ai", id: TITLE_FLASH_ID, reasoning: "low" },
-    { provider: "openai-codex", id: "gpt-5.6-luna" },
-  ]);
+  // 사슬을 손으로 베끼지 않는다. 값싼 1순위는 b-ai, 2순위는 카탈로그에 실제로 있는
+  // codex 행이어야 한다 — 등록되지 않은 id 를 적으면 그 rung 은 조용히 죽는다.
+  assert.equal(TITLE_MODELS[0].provider, "b-ai");
+  assert.equal(TITLE_MODELS[0].id, TITLE_FLASH_ID);
+  assert.equal(TITLE_MODELS[0].reasoning, "low");
+  assert.equal(TITLE_MODELS[1].provider, "openai-codex");
+  assert.ok(
+    PRODUCT_MODEL_ORDER["openai-codex"].includes(TITLE_MODELS[1].id),
+    `${TITLE_MODELS[1].id} 가 카탈로그에 없다`,
+  );
   const flash = { provider: "b-ai", id: TITLE_FLASH_ID };
-  const luna = { provider: "openai-codex", id: "gpt-5.6-luna" };
+  const luna = { provider: "openai-codex", id: TITLE_MODELS[1].id };
   const seen = [];
   const byId = (provider, id) => {
     seen.push([provider, id]);
