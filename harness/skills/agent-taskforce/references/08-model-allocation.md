@@ -7,8 +7,9 @@ or permission gate.
 Keep the user's lead model and framing choice. Present the intended result and
 smallest useful roster using `work-intent/templates/approval-message.md`. For each
 separate owner, give its outcome, actual model/settings and the concrete reason
-for assigning another context or resource. Do not label work "hard" as if this were
-a measurement. It is acceptable to say evidence does not distinguish candidates.
+for assigning another context or resource. Name the judgment that makes the model
+fit, as your reading rather than a measurement. It is acceptable to say evidence
+does not distinguish candidates.
 
 Use current authorized availability and the user's resource preferences when
 task-specific evidence is absent. All approved models remain eligible for whole
@@ -17,7 +18,7 @@ merely to consume every model. Related follow-ups keep their existing owner.
 
 When results must be combined, name the integration owner and evidence path.
 Separate the local checks, independent verdict (if any), and the lead's discussion
-of fulfillment. A shared model family is not a reason to deny fresh verification.
+of fulfillment.
 
 Record the exact proposal, human acceptance and actual runtime identity in existing
 mission/board state. One reply can cover clearly presented model/effort commitments

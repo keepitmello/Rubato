@@ -44,7 +44,8 @@ can support a direction and a useful ownership decision; do not solve the whole
 technical problem merely to estimate its difficulty.
 
 A bounded discovery agent may gather authorized evidence under a draft with a
-budget; it does not implement or become a continuing owner. Draft only when no
+budget; it does not implement or become a continuing owner. Execution owners are
+not relabeled as discovery subagents to skip the combined confirmation. Draft only when no
 existing source serves the purpose. Show the result, preserved behavior, non-goals,
 completion evidence, meaningful choices and smallest useful roster together in the
 user's language, using the sibling `work-intent/templates/approval-message.md`.
@@ -117,11 +118,9 @@ Notice patterns across streams, and propagate verified refutations to every affe
 owner. Preserve contradictions without deciding a technical cause from authority
 alone. A named owner synthesizes technical evidence or implements a shared fix.
 
-When an owner returns empty or appears stalled, recover the cause in that session.
-Distinguish infrastructure, an oversized surface, brief conflict, measurement failure
-and a refuted approach. Choose continued work, bounded advice, a boundary change or
-explicit reassignment from that evidence, not elapsed time or a fixed retry count.
-Do not become the next implementer because an owner was blocked.
+When an owner returns short or reports a block, recover the cause in that session
+as Skill(dispatching) "When it comes back short" describes. Do not become the next
+implementer because an owner was blocked.
 
 ## 7. Use evidence without duplicating execution
 
