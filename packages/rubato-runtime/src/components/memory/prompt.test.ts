@@ -81,14 +81,8 @@ async function fixtureAtSystemTokens(tokens: number): Promise<{ repo: CountingRe
   return fixture("A".repeat(tokens * 4 - Buffer.byteLength(header, "utf8") - 1))
 }
 
-function eventContext(sessionId: string, branchLength: number, entries: readonly unknown[] = []): unknown {
-  return {
-    sessionManager: {
-      getSessionId: () => sessionId,
-      getBranch: () => Array.from({ length: branchLength }, (_, index) => ({ index })),
-      getEntries: () => entries,
-    },
-  }
+function eventContext(sessionId: string): unknown {
+  return { sessionManager: { getSessionId: () => sessionId } }
 }
 
 function beforeAgentStart(systemPrompt: string): unknown {
@@ -137,7 +131,7 @@ describe("createMemoryPromptHandler", () => {
     onPromptTurn(pi, createMemoryPromptHandler({ resolveContext: () => undefined, createRepo: () => repo }))
 
     // when
-    const result = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1", 2))
+    const result = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1"))
 
     // then
     expect(result).toBeUndefined()
@@ -158,14 +152,14 @@ describe("createMemoryPromptHandler", () => {
     expect(repo.headCalls).toBe(0)
   }, 30_000)
 
-  test("#given a bound identity #when before_agent_start dispatches #then the prompt gains a stable sentinel block and recall metadata arrives late", async () => {
+  test("#given a bound identity #when before_agent_start dispatches #then the prompt gains a stable sentinel block and no late notice rides along", async () => {
     // given
     const { repo, context } = await fixture()
     const pi = new FakeExtensionAPI()
     onPromptTurn(pi, boundHandler(repo, context))
 
     // when
-    const result = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1", 3))
+    const result = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1"))
 
     // then
     expect(result?.systemPrompt).toContain("BASE PROMPT")
@@ -174,52 +168,10 @@ describe("createMemoryPromptHandler", () => {
     expect(result?.systemPrompt).toContain("first")
     expect(result?.systemPrompt).toContain(`- AGENT_ID: ${IDENTITY}`)
     expect(result?.systemPrompt).not.toContain("CONVERSATION_ID")
-    expect(result?.systemPrompt).not.toContain("previous messages")
-    expect(result?.message).toMatchObject({ customType: "rubato-memory:notice", display: false })
-    expect(result?.message?.content).toContain("- 3 previous messages")
+    expect(result?.message).toBeUndefined()
   }, 30_000)
 
-  test("#given repeated turns in one session #when no volatile notice is pending #then the recall line rides only the first turn and later turns send no message", async () => {
-    // given
-    const { repo, context } = await fixture()
-    const pi = new FakeExtensionAPI()
-    onPromptTurn(pi, createMemoryPromptHandler({
-      resolveContext: () => context,
-      createRepo: () => repo,
-    }))
-
-    // when
-    const first = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1", 3))
-    const second = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1", 4))
-    const otherSession = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-2", 9))
-
-    // then
-    expect(first?.message?.content).toContain("- 3 previous messages")
-    expect(second?.message).toBeUndefined()
-    expect(second?.systemPrompt).toBe(first?.systemPrompt)
-    expect(otherSession?.message?.content).toContain("- 9 previous messages")
-  }, 30_000)
-
-  test("#given a resumed session whose recall notice is persisted #when a new handler starts #then the recall line is not sent again", async () => {
-    // given
-    const { repo, context } = await fixture()
-    const pi = new FakeExtensionAPI()
-    onPromptTurn(pi, boundHandler(repo, context))
-    const persistedEntries = [{ type: "custom_message", customType: "rubato-memory:notice" }]
-
-    // when
-    const resumed = await dispatchEvent(
-      pi,
-      beforeAgentStart("BASE PROMPT"),
-      eventContext("session-1", 143, persistedEntries),
-    )
-
-    // then
-    expect(resumed?.message).toBeUndefined()
-    expect(resumed?.systemPrompt).toContain("BASE PROMPT")
-  }, 30_000)
-
-  test("#given a session whose recall line was already sent #when a nudge becomes due #then the notice returns carrying only the nudge", async () => {
+  test("#given quiet turns #when a nudge becomes due #then only that turn carries the notice", async () => {
     // given
     const { repo, context } = await fixture()
     let turns: number | undefined
@@ -231,16 +183,16 @@ describe("createMemoryPromptHandler", () => {
     }))
 
     // when
-    const first = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1", 1))
-    const quiet = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1", 2))
+    const first = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1"))
+    const quiet = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1"))
     turns = 12
-    const nudged = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1", 3))
+    const nudged = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1"))
 
     // then
-    expect(first?.message?.content).toContain("previous messages")
+    expect(first?.message).toBeUndefined()
     expect(quiet?.message).toBeUndefined()
+    expect(nudged?.message).toMatchObject({ customType: "rubato-memory:notice", display: false })
     expect(nudged?.message?.content).toContain(MEMORY_NUDGE_METADATA_TOKEN)
-    expect(nudged?.message?.content).not.toContain("previous messages")
   }, 30_000)
 
   test("#given the same identity and HEAD across sessions and turns #when volatile notices change #then the system block stays byte-identical and notices travel as a late message", async () => {
@@ -257,17 +209,16 @@ describe("createMemoryPromptHandler", () => {
     }))
 
     // when
-    const beforeThreshold = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-before-threshold", 2))
-    const afterThreshold = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-after-threshold", 12))
+    const beforeThreshold = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-before-threshold"))
+    const afterThreshold = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-after-threshold"))
 
     // then
     expect(afterThreshold?.systemPrompt).toBe(beforeThreshold?.systemPrompt)
-    expect(beforeThreshold?.message).toMatchObject({
+    expect(beforeThreshold?.message).toBeUndefined()
+    expect(afterThreshold?.message).toMatchObject({
       customType: "rubato-memory:notice",
       display: false,
     })
-    expect(beforeThreshold?.message?.content).toContain("2 previous messages")
-    expect(afterThreshold?.message?.content).toContain("12 previous messages")
     expect(afterThreshold?.message?.content).toContain(MEMORY_NUDGE_METADATA_TOKEN)
     expect(afterThreshold?.message?.content).toContain(MEMORY_SOUL_METADATA_TOKEN)
   }, 30_000)
@@ -284,7 +235,7 @@ describe("createMemoryPromptHandler", () => {
     }))
 
     // when
-    const result = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1", 0))
+    const result = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1"))
 
     // then
     expect(result?.systemPrompt).toBe([
@@ -320,7 +271,7 @@ describe("createMemoryPromptHandler", () => {
     }))
 
     // when
-    const result = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1", 0))
+    const result = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1"))
 
     // then
     expect(boundary).toBe(24_000)
@@ -343,7 +294,7 @@ describe("createMemoryPromptHandler", () => {
     }))
 
     // when
-    const result = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1", 2))
+    const result = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1"))
 
     // then
     expect(result?.systemPrompt).not.toContain(MEMORY_NUDGE_METADATA_TOKEN)
@@ -369,8 +320,8 @@ describe("createMemoryPromptHandler", () => {
     }))
 
     // when
-    const first = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1", 1))
-    const second = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1", 2))
+    const first = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1"))
+    const second = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1"))
 
     // then
     expect(first?.message?.content).toContain(MEMORY_COMPACT_PRIORITY_TOKEN)
@@ -391,7 +342,7 @@ describe("createMemoryPromptHandler", () => {
     }))
 
     // when
-    const result = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1", 2))
+    const result = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1"))
 
     // then
     expect(result?.systemPrompt).not.toContain(MEMORY_SOUL_METADATA_TOKEN)
@@ -421,14 +372,14 @@ describe("createMemoryPromptHandler", () => {
     }))
 
     // when
-    const first = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1", 1))
-    const second = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1", 1))
-    const third = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1", 1))
+    const first = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1"))
+    const second = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1"))
+    const third = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1"))
 
     // then
     expect(first?.message?.content).toContain(MEMORY_SOUL_METADATA_TOKEN)
-    // Later turns carry no notice at all: the recall line is once-per-session and the soul delta was
-    // already consumed, so nothing volatile is left to say.
+    // Later turns carry no notice at all: the soul delta was already consumed, so nothing volatile
+    // is left to say.
     expect(second?.message?.content ?? "").not.toContain(MEMORY_SOUL_METADATA_TOKEN)
     expect(third?.message?.content ?? "").not.toContain(MEMORY_SOUL_METADATA_TOKEN)
     expect(second?.systemPrompt).toBe(first?.systemPrompt)
@@ -444,9 +395,9 @@ describe("createMemoryPromptHandler", () => {
     onPromptTurn(memoryPi, boundHandler(repo, context))
 
     // when — mirror the host runner: the next handler receives the previous handler's prompt
-    const [foreign] = await foreignPi.dispatch("before_agent_start", beforeAgentStart("BASE PROMPT"), eventContext("session-1", 0))
+    const [foreign] = await foreignPi.dispatch("before_agent_start", beforeAgentStart("BASE PROMPT"), eventContext("session-1"))
     const foreignPrompt = (foreign as BeforeAgentStartEventResult).systemPrompt ?? ""
-    const result = await dispatchEvent(memoryPi, beforeAgentStart(foreignPrompt), eventContext("session-1", 0))
+    const result = await dispatchEvent(memoryPi, beforeAgentStart(foreignPrompt), eventContext("session-1"))
 
     // then
     expect(result?.systemPrompt).toContain("FOREIGN EXTENSION TEXT")
@@ -461,8 +412,8 @@ describe("createMemoryPromptHandler", () => {
     onPromptTurn(pi, boundHandler(repo, context))
 
     // when
-    const first = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1", 1))
-    const second = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1", 1))
+    const first = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1"))
+    const second = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1"))
 
     // then
     expect(second?.systemPrompt).toBe(first?.systemPrompt)
@@ -476,14 +427,14 @@ describe("createMemoryPromptHandler", () => {
     const { repo, context } = await fixture()
     const pi = new FakeExtensionAPI()
     onPromptTurn(pi, boundHandler(repo, context))
-    const first = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1", 1))
+    const first = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1"))
     expect(repo.headCalls).toBe(1)
 
     // when
     await writeFile(join(repo.dir, "system/persona.md"), "---\ndescription: Persona\n---\nsecond\n")
     await repo.commitWrite(["system/persona.md"], "update persona", { agentId: IDENTITY, authorName: "Prompt Agent" })
     const headCallsAfterCommit = repo.headCalls
-    const second = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1", 1))
+    const second = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1"))
 
     // then
     expect(first?.systemPrompt).toContain("first")
@@ -498,10 +449,10 @@ describe("createMemoryPromptHandler", () => {
     const { repo, context } = await fixture()
     const pi = new FakeExtensionAPI()
     onPromptTurn(pi, boundHandler(repo, context))
-    const first = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1", 1))
+    const first = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1"))
 
     // when — the host carries last turn's prompt forward with our block inside
-    const second = await dispatchEvent(pi, beforeAgentStart(first?.systemPrompt ?? ""), eventContext("session-1", 2))
+    const second = await dispatchEvent(pi, beforeAgentStart(first?.systemPrompt ?? ""), eventContext("session-1"))
 
     // then
     expect(second?.systemPrompt?.match(new RegExp(`<!-- senpi-memory:${IDENTITY}:begin -->`, "g"))).toHaveLength(1)
@@ -521,7 +472,7 @@ describe("createMemoryPromptHandler", () => {
     )
 
     // when
-    const result = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1", 2))
+    const result = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1"))
 
     // then
     const prompt = result?.systemPrompt ?? ""
@@ -548,7 +499,7 @@ describe("createMemoryPromptHandler", () => {
     )
 
     // when
-    const result = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1", 2))
+    const result = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1"))
 
     // then
     expect(result?.systemPrompt ?? "").not.toContain(MEMORY_PRESSURE_METADATA_TOKEN)
@@ -568,11 +519,11 @@ describe("createMemoryPromptHandler", () => {
     onPromptTurn(pi, handler)
 
     // when
-    const on = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1", 2))
+    const on = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-1"))
     project = []
-    const off = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-2", 2))
+    const off = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-2"))
     project = ["system/persona.md"]
-    const backOn = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-3", 2))
+    const backOn = await dispatchEvent(pi, beforeAgentStart("BASE PROMPT"), eventContext("session-3"))
 
     // then
     expect(on?.systemPrompt ?? "").toContain("PERSONA_BODY_SENTINEL")
