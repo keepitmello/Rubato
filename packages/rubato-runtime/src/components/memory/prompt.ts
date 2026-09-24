@@ -7,7 +7,6 @@ import {
   replaceMemoryBlock,
 } from "@rubato/memory-core"
 
-import { createOncePerSessionGuard } from "../task/usage-guidance"
 import type { MemoryIdentityContext } from "./context"
 import { estimateSystemTokens, MEMORY_PRESSURE_SOFT_RATIO } from "./status"
 
@@ -25,8 +24,6 @@ const MEMORY_TOOL_DISCOVERY_NOTE =
 
 export interface MemoryPromptSession {
   readonly id: string
-  readonly priorMessageCount: number
-  readonly entries: readonly unknown[]
 }
 
 export interface MemoryPromptInjectionOptions {
@@ -74,11 +71,8 @@ export function createMemoryPromptHandler(
 ): (payload: unknown, eventCtx?: unknown) => Promise<BeforeAgentStartEventResult | undefined> {
   const cache = options.cache ?? new MemoryBlockCache()
   const createRepo = options.createRepo ?? defaultCreateRepo
-  // The recall-count line is a per-session fact, not per-turn news: repeating it every turn only
-  // changed the number, never the action. Nudge fires on the configured cadence, not every turn
-  // after the threshold. Soul notices stay event-driven. When only the recall line would render,
-  // the notice message is dropped entirely.
-  const recallNoticeGuard = createOncePerSessionGuard()
+  // Every notice line is event-driven: nudge fires on the configured cadence, soul on a new
+  // reflection commit, compact priority once after compaction. A turn with none sends no message.
   return async (payload, eventCtx) => {
     const kind = readEventKind(payload)
     if (kind === undefined) return undefined
@@ -114,13 +108,7 @@ export function createMemoryPromptHandler(
     const nudgeTurns = await options.resolveNudgeTurns?.(repo, session.id, context.identity)
     const soulNotice = await options.resolveSoulNotice?.(repo, session.id, context.identity)
     const compactPriority = options.resolveCompactPriorityNotice?.(session.id) === true
-    const includeRecall = !hasMemoryNotice(session.entries) && recallNoticeGuard(session.id)
-    const notice = renderMemoryNotice(
-      includeRecall ? session.priorMessageCount : undefined,
-      nudgeTurns,
-      soulNotice,
-      compactPriority,
-    )
+    const notice = renderMemoryNotice(nudgeTurns, soulNotice, compactPriority)
     if (notice === undefined) return undefined
     return {
       message: {
@@ -151,14 +139,12 @@ async function addMemoryPressureMetadata(
 }
 
 function renderMemoryNotice(
-  previousMessageCount: number | undefined,
   nudgeTurns: number | undefined,
   soulNotice: { readonly sha: string } | undefined,
   compactPriority = false,
 ): string | undefined {
   if (
-    previousMessageCount === undefined
-    && nudgeTurns === undefined
+    nudgeTurns === undefined
     && soulNotice === undefined
     && !compactPriority
   ) {
@@ -173,9 +159,6 @@ function renderMemoryNotice(
           + "Do not open with a context-restored status report unless the user asked for status.",
       ]
       : []),
-    ...(previousMessageCount === undefined
-      ? []
-      : [`- ${previousMessageCount} previous messages between you and the user are stored in recall memory`]),
     ...(nudgeTurns === undefined
       ? []
       : [
@@ -210,22 +193,10 @@ function readPromptSession(eventCtx: unknown): MemoryPromptSession | undefined {
   const manager = isRecord(eventCtx.sessionManager) ? eventCtx.sessionManager : undefined
   if (manager === undefined) return undefined
   const getSessionId = manager.getSessionId
-  const getBranch = manager.getBranch
-  const getEntries = manager.getEntries
-  if (typeof getSessionId !== "function" || typeof getBranch !== "function") return undefined
+  if (typeof getSessionId !== "function") return undefined
   const id = Reflect.apply(getSessionId, manager, [])
-  const branch = Reflect.apply(getBranch, manager, [])
-  if (typeof id !== "string" || id.length === 0 || !Array.isArray(branch)) return undefined
-  const entries = typeof getEntries === "function" ? Reflect.apply(getEntries, manager, []) : []
-  return { id, priorMessageCount: branch.length, entries: Array.isArray(entries) ? entries : [] }
-}
-
-function hasMemoryNotice(entries: readonly unknown[]): boolean {
-  return entries.some((entry) =>
-    isRecord(entry)
-    && entry.type === "custom_message"
-    && entry.customType === MEMORY_NOTICE_CUSTOM_TYPE
-  )
+  if (typeof id !== "string" || id.length === 0) return undefined
+  return { id }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
