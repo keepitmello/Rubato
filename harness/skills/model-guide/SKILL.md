@@ -39,17 +39,13 @@ stronger model. Acceptance criteria stay the same for every selected model.
 
 ## Default allocation
 
-The operator reports comparable performance from DeepSeek, Grok and Opus, with
-DeepSeek the cheapest and fastest of the three (2026-09-22). This is the user's
-working experience, not a benchmark or a measured price/quota claim.
+DeepSeek and Grok are comparable; DeepSeek is cheaper and faster. Opus 5.5 is on par
+with or slightly ahead of Fable and Astra at a much lower cost.
 
-- Default owner and bounded support: **DeepSeek**.
-- When independent verification is useful: **Grok** by default.
-- **DeepSeek, Grok and Opus can all own or verify.** These defaults reflect cost
-  and speed preferences, not role restrictions or an intelligence ranking.
-- For difficult topics, design or judgment, propose **Fable or Astra** when their
-  contribution is worth it, with explicit approval. A failed DeepSeek attempt is
-  not a prerequisite.
+- Default owner and bounded support: **DeepSeek**. Independent verification: **Grok**.
+- Difficult topics, design or judgment: **Opus**.
+- **Fable or Astra** when their contribution is worth it over Opus, with explicit approval.
+- Any of these can own or verify.
 
 Exact ids: DeepSeek V4.1 Flash `b-ai/deepseek-v4.1-flash`, Grok 4.7 via xAI
 `xai/grok-4.7` or Cursor `cursor/grok-4.7`, Fable 5.1 `anthropic/claude-fable-5-1`, Astra
