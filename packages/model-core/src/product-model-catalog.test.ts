@@ -21,13 +21,14 @@ import {
 const XAI_GROK = PRODUCT_MODEL_ORDER.xai[0]
 const BAI_FLASH = PRODUCT_MODEL_ORDER["b-ai"][0]
 const [FABLE, OPUS] = PRODUCT_MODEL_ORDER.anthropic
+const [SOL] = PRODUCT_MODEL_ORDER["openai-codex"]
 const pick = (item: { provider: string; id: string }) => `${item.provider}/${item.id}`
 
 describe("product model catalog", () => {
   test("#given live extras #when admitted #then only curated rows remain unless kept as current", () => {
     const models = [
       { provider: "openai", id: "gpt-6-astra" },
-      { provider: "openai-codex", id: "gpt-5.6-sol" },
+      { provider: "openai-codex", id: SOL },
       { provider: "cursor", id: CURSOR_GROK_BASE_ID },
       { provider: "cursor", id: `${CURSOR_GROK_BASE_ID}-high-fast` },
       { provider: "unknown-lab", id: "secret" },
@@ -35,7 +36,7 @@ describe("product model catalog", () => {
     ]
 
     expect(admitProductCatalogItems(models).map(pick)).toEqual([
-      "openai-codex/gpt-5.6-sol",
+      `openai-codex/${SOL}`,
       CURSOR_GROK_PRESENTED_ID,
     ])
     expect(admitProductCatalogItems([
@@ -45,7 +46,7 @@ describe("product model catalog", () => {
       admitProductCatalogItems(models, { keep: (item: { provider: string; id: string }) => item.provider === "openai-codex" && item.id === "gpt-5.4" })
         .map(pick),
     ).toEqual([
-      "openai-codex/gpt-5.6-sol",
+      `openai-codex/${SOL}`,
       CURSOR_GROK_PRESENTED_ID,
       "openai-codex/gpt-5.4",
     ])
@@ -73,10 +74,10 @@ describe("product model catalog", () => {
     const sorted = sortProductCatalogItems([
       { provider: "cursor", id: "composer-2.5" },
       { provider: "xai", id: XAI_GROK },
-      { provider: "openai-codex", id: "gpt-5.6-sol" },
+      { provider: "openai-codex", id: SOL },
     ])
     expect(sorted.map(pick)).toEqual([
-      "openai-codex/gpt-5.6-sol",
+      `openai-codex/${SOL}`,
       `xai/${XAI_GROK}`,
       "cursor/composer-2.5",
     ])
@@ -85,7 +86,7 @@ describe("product model catalog", () => {
     expect(productCatalogLabel({ provider: "cursor", id: "composer-2.5" })).toBe("Composer 2.5")
     expect(productCatalogLabel({ provider: "openai-codex", id: "gpt-6-astra" })).toBe("Astra 6")
     expect(productCatalogLabel({ provider: "xai", id: XAI_GROK })).toBe("Grok 4.7")
-    expect(catalogSlugs()[0]).toBe("openai-codex/gpt-5.6-sol")
+    expect(catalogSlugs()[0]).toBe(`openai-codex/${SOL}`)
     expect(catalogSlugs()).toContain(`b-ai/${BAI_FLASH}`)
     expect(productCatalogLabel({ provider: "b-ai", id: BAI_FLASH })).toBe("v4.1 Flash")
     expect(PRODUCT_MODEL_ORDER.cursor).toContain("composer-2.5")
@@ -113,11 +114,11 @@ describe("product model catalog", () => {
       { provider: "anthropic", id: FABLE },
       { provider: "anthropic", id: `${FABLE}-sub` },
       { provider: "anthropic", id: OPUS },
-      { provider: "openai-codex", id: "gpt-5.6-sol" },
-      { provider: "openai-codex", id: "gpt-5.6-sol-sub" },
+      { provider: "openai-codex", id: SOL },
+      { provider: "openai-codex", id: `${SOL}-sub` },
     ])).toEqual([
-      "openai-codex/gpt-5.6-sol",
-      "openai-codex/gpt-5.6-sol-sub",
+      `openai-codex/${SOL}`,
+      `openai-codex/${SOL}-sub`,
       `anthropic/${FABLE}`,
       `anthropic/${FABLE}-sub`,
       `anthropic/${OPUS}`,

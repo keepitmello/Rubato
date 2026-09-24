@@ -15,7 +15,7 @@
  *   "compaction": {
  *     "thresholdRatio": 0.9,
  *     "models": {
- *       "openai-codex/gpt-5.6-sol": 0.88
+ *       "openai-codex/gpt-6-sol": 0.88
  *     }
  *   }
  *

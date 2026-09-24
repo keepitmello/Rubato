@@ -14,6 +14,8 @@ const SPEC: ResolvedAgentSpec = {
   effortSource: "model-default",
 }
 
+const CODEX_SOL = PRODUCT_MODEL_ORDER["openai-codex"][0]
+
 function record(agentId: string, status: "running" | "cancelled" | "completed" = "running") {
   return makeRecord({
     task_id: agentId,
@@ -222,16 +224,16 @@ describe("liveModelCatalog", () => {
       getAvailable: () => [
         { provider: "anthropic", id: ANTHROPIC_FABLE },
         { provider: "anthropic", id: `${ANTHROPIC_FABLE}-sub` },
-        { provider: "openai-codex", id: "gpt-5.6-sol" },
-        { provider: "openai-codex", id: "gpt-5.6-sol-sub" },
+        { provider: "openai-codex", id: CODEX_SOL },
+        { provider: "openai-codex", id: `${CODEX_SOL}-sub` },
       ],
     }))
 
     expect(catalog.has(`anthropic/${ANTHROPIC_FABLE}-sub`)).toBe(true)
-    expect(catalog.has("openai-codex/gpt-5.6-sol-sub")).toBe(true)
+    expect(catalog.has(`openai-codex/${CODEX_SOL}-sub`)).toBe(true)
     expect(catalog.list?.()).toEqual([
-      "openai-codex/gpt-5.6-sol",
-      "openai-codex/gpt-5.6-sol-sub",
+      `openai-codex/${CODEX_SOL}`,
+      `openai-codex/${CODEX_SOL}-sub`,
       `anthropic/${ANTHROPIC_FABLE}`,
       `anthropic/${ANTHROPIC_FABLE}-sub`,
     ])

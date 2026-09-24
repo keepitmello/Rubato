@@ -26,7 +26,7 @@ function providerAndId(model: string): { readonly provider: string; readonly id:
 
 function isSolModel(model: string): boolean {
   const id = providerAndId(model).id
-  return id.startsWith("gpt-5.6-sol") || id.startsWith("gpt-5-6-sol")
+  return id.startsWith("gpt-5.6-sol") || id.startsWith("gpt-5-6-sol") || id.startsWith("gpt-6-sol")
 }
 
 function isAntigravityFlash(model: string): boolean {
