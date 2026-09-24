@@ -58,7 +58,8 @@ sync_bundle() {
   [ -f "$INSTALL_GUI" ] || return 0
   mkdir -p "$(dirname "$INSTALL_LOG")" 2>/dev/null || true
   progress_start "데스크톱 번들을 맞추는 중"
-  sh "$INSTALL_GUI" --apply >"$INSTALL_LOG" 2>&1
+  # install-gui.sh 는 bash 스크립트다. 리눅스의 sh(dash)로는 못 돈다.
+  bash "$INSTALL_GUI" --apply >"$INSTALL_LOG" 2>&1
   sync_status=$?
   progress_stop
   if [ "$sync_status" -ne 0 ]; then
@@ -97,7 +98,7 @@ if ! "$PGREP_BIN" -f "$GUI_PROC_PATTERN" >/dev/null 2>&1; then
     ui_note "앱은 꺼져 있어요. 다음에 켜면 새 코드로 떠요."
     exit 0
   else
-    ui_fail "데스크톱 앱은 꺼져 있고, 번들도 새 코드로 맞추지 못했습니다. 켜면 옛 코드입니다 — 손으로: sh \"$INSTALL_GUI\" --apply"
+    ui_fail "데스크톱 앱은 꺼져 있고, 번들도 새 코드로 맞추지 못했습니다. 켜면 옛 코드입니다 — 손으로: bash \"$INSTALL_GUI\" --apply"
     exit 1
   fi
 fi
@@ -165,7 +166,7 @@ fi
 # 앱을 볼모로 잡지 않는다 — 옛 번들로라도 돌아오는 편이 앱이 없는 것보다 낫다.
 RESTART_FAIL=0
 if ! sync_bundle; then
-  ui_fail "핀·overlay 를 다시 얹지 못했습니다. 옛 번들 그대로 다시 켭니다 — 손으로: sh \"$INSTALL_GUI\" --apply"
+  ui_fail "핀·overlay 를 다시 얹지 못했습니다. 옛 번들 그대로 다시 켭니다 — 손으로: bash \"$INSTALL_GUI\" --apply"
   RESTART_FAIL=1
 fi
 
