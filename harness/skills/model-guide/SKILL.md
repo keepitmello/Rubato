@@ -5,133 +5,120 @@ description: "Use when selecting an agent model, provider route or effort settin
 
 # Model guide
 
-Choose the execution resource, not an intelligence-based job title. An owner holds
-a bounded result end to end; a verifier holds a judgment independent of its production.
-DeepSeek, Grok, Opus, Fable and Astra may fill either role when authorized and available.
-No family is reserved for planning, long sessions, implementation or review.
+Match the model to the hardest judgment the work needs. Owner and verifier are
+responsibility boundaries, not model tiers: any approved model can own a bounded
+result end to end or hold an independent judgment.
 
-The user chooses the lead. Keep that conversational counterpart unless the user
-changes it. Execution allocation is a separate choice: use other approved models as
-owners or bounded support without asking the user to rotate the lead manually.
+The user chooses the lead model, and it stays until the user changes it. Models for
+owners, verifiers and helpers are a separate choice you make here.
 
 ## Choose a session before choosing a model
 
-Read Skill(dispatching) first. An existing owner with relevant evidence, refuted
-hypotheses and current changes is not interchangeable with a cold replacement.
-Continue related work unless the reason for a fresh session outweighs that loss.
+Read Skill(dispatching) first. An existing session holding the relevant code,
+refuted hypotheses and current changes usually beats a fresh session of any model.
+Choose a model only once a new session is justified.
 
-For a new assignment:
+## Start from the hardest judgment
 
-1. Respect explicit model selection, approvals, allowed providers, supported tools
-   and effort. A registered label is not proof of a usable route.
-2. Use relevant completed-work evidence and the user's reported experience where
-   available. Name their scope; absence of evidence is not evidence of inability.
-3. Consider current availability, competing assignments, quota headroom and user
-   resource preferences. Distinguish observed headroom from an older user report.
-4. Choose a candidate and explain the actual reason for it. When evidence does not
-   distinguish candidates, use authorized resource availability and allocation
-   preferences rather than inventing an aptitude story.
+Name the hardest judgment in this assignment (finding the intended result,
+locating an unclear cause, designing, carrying out a settled change, verifying)
+and the understanding already built up around it. Read that from checkable
+evidence. Unfamiliar or broad work is not automatically hard, and an unsettled
+surface does not bar any model from owning it. Say that this is your reading, not
+a measurement.
 
-Unknown work is not necessarily difficult. A broad change is not a difficulty
-measurement. Do not require a difficulty score, a cheapest-model trial, failed
-lower-tier attempts or a special request for "highest quality" before using a
-stronger model. Acceptance criteria stay the same for every selected model.
+Then weigh, in this order:
+
+1. Explicit user choices: selected model, approvals, allowed providers, effort.
+   A registered label is not proof that a route works.
+2. Evidence from completed work and the user's reported experience, with its scope.
+3. Current availability, quota headroom and competing assignments. Keep an
+   observed headroom apart from an older user report.
+
+Give the actual reason for the pick. When evidence does not separate candidates,
+say so and choose by availability and the user's resource preferences. A stronger
+model can own from the first assignment; it needs no prior lower-tier failure.
+Acceptance criteria stay the same whichever model runs.
 
 ## Default allocation
 
-- Default owner and bounded support: **DeepSeek**. Independent verification: **Grok**.
-- Difficult topics, design or judgment: **Opus**.
+This records the user's experience so far. Update it here when new experience
+changes it.
+
+- Owners and bounded support: **DeepSeek**. Independent verification: **Grok**.
+- Intent, design, unclear causes and other judgment-heavy work: **Opus**.
 - **Fable or Astra** when their contribution is worth it over Opus, with explicit approval.
 - Any of these can own or verify.
 
 Exact ids: DeepSeek V4.1 Flash `b-ai/deepseek-v4.1-flash`, Grok 4.7 via xAI
-`xai/grok-4.7` or Cursor `cursor/grok-4.7`, Fable 5.1 `anthropic/claude-fable-5-1`, Astra
-`openai-codex/gpt-6-astra`, Opus 5.5 `anthropic/claude-opus-5-5`. Resolve alternative
-provider routes from the live catalog the `Agent` schema lists; a stale or
+`xai/grok-4.7` or Cursor `cursor/grok-4.7`, Opus 5.5 `anthropic/claude-opus-5-5`,
+Fable 5.1 `anthropic/claude-fable-5-1`, Astra `openai-codex/gpt-6-astra`. The
+`Agent` schema lists the live catalog; resolve other routes there. A stale or
 unavailable id fails closed.
 
-A `-sub` id (`anthropic/claude-opus-5-5-sub`, `anthropic/claude-fable-5-1-sub`,
-`openai-codex/gpt-5.6-sol-sub`) is an id-clone of the same upstream model bound to
-the second account slot, not a different model or effort. The picker labels it
-`Opus 5.5 [sub]`. Rows appear only where a second account exists and only for the
-curated pairs (Anthropic Fable/Opus, Codex Sol/Astra); a leftover credential slot
-elsewhere does not create them. The plain id and its `-sub` copy are separate
-routes and their availability is decided separately — one failing says nothing
-about the other, so read the live catalog and record which route actually ran.
+A `-sub` id is the same model on the user's second account. It is a separate route
+with its own availability, so record which route actually ran.
 
-## Use the model pool without manufacturing work
+## Use the pool for real work
 
-Allocate new independent work across the approved pool when that uses available
-resources well; do not leave a useful resource idle solely because it was called
-a "lead model." Equally, do not create helpers, duplicate a task, replace an
-effective owner or lower acceptance standards just to use every model.
-Do not create a verifier merely to complete a pair. Utilization is considered
-across useful work, not a quota of model names inside each team.
+Spread independent work across the approved pool when that uses available
+resources well; a model sitting idle is not a reason to hold back useful work.
+Every helper, parallel task or verifier still has to earn its place by what it
+contributes. Keep the chosen lead, the effective owners and the acceptance bar
+as they are.
 
-Token volume, API-equivalent dollars, elapsed time and subscription quota are
-different measurements. In particular, neither an API cache discount nor an
-operator report that Opus cache reads do not debit a plan establishes the other
-models' live plan coefficients. Do not hard-code those as prices or infer free
-compute. Preserve route/account and measurement date when resource evidence matters.
-Prefer available local evidence; lack of telemetry does not require a new service,
-calibration job or an interview before ordinary work.
+Tokens, API-equivalent dollars, elapsed time and subscription quota are different
+measurements, and one route's pricing or plan treatment says nothing about
+another's. When resource evidence matters, keep its route/account and date. Use
+local evidence you already have; ordinary work does not wait for new telemetry.
 
-## Roles, settings and permissions are separate
+## Settings and actual identity
 
-Use an exact `model` (`provider/model`) or a named `preset` accepted by the live
-harness; never a category, task type, or `subagent_type`. Resolve the exact route
-from the live catalog. Opus has a place in the pool; do not infer its ID from a
-different runtime. The same display name on two routes may spend different resources.
+Pass an exact `provider/model` or a named `preset` the live harness accepts. The
+same display name on two routes may spend different resources.
 
-Omit `effort` normally so the configured model default applies. Preserve explicit
-user settings. Override only for a supported, authorized choice, not because of a
-role label, guessed difficulty or a universal low/high recommendation. A preset
-does not create another effort-precedence rule. Report requested settings separately
-from actual runtime-confirmed model and effort.
+Omit `effort` so the configured default applies. Keep explicit user settings;
+override only for a supported, authorized reason; a role label or your reading of
+difficulty is not one. Report the requested model and
+effort separately from what the runtime confirms actually ran. If identity is not
+reported, say so rather than provoking errors to find out.
 
-Exactly specified unavailable models fail visibly rather than silently switching.
-The harness resolves a named preset against its actual configured policy; do not
-invent a fallback chain. Any resulting model still has to satisfy approval and
-assignment requirements.
+An exactly specified model that is unavailable fails visibly. The harness resolves
+a preset by its own configured policy; any result still needs its approval.
 
 ## Approval
 
 Fable (including Fable 5.1) and Astra require explicit user approval naming the
-outcome, model and effort before assignment, including verification. A readable combined intent/roster approval
-can satisfy that gate when it includes those commitments. Existing approval is
-for its stated scope, not an unlimited pool grant.
+outcome, model and effort before assignment, including verification. A readable
+combined intent/roster approval satisfies that gate when it includes those
+commitments. An approval covers its stated scope, not the whole pool.
 
 Corrections, retries and re-verification by the same approved owner on the same
-outcome retain that approval. A new outcome, materially changed roster or higher
-restricted-model effort requires the relevant confirmation. DeepSeek, Grok and Opus have
-no additional model-specific gate, but team formation, write boundaries and
-delivery permissions still apply. A helper is not an approval bypass.
+outcome keep that approval. A new outcome, a materially changed roster or a higher
+restricted-model effort needs the relevant confirmation. DeepSeek, Grok and Opus
+have no model-specific gate; team formation, write boundaries and delivery
+permissions still apply, and a helper does not bypass any approval.
 
-## Advice and review
+## Advice and independent verification
 
-Advice is a bounded question whose answer can change the owner's next action.
-It may come from any relevant approved model. Keep the owner; integrate the evidence,
-not a command hierarchy. Repeated advice is not automatically waste or an automatic
-transfer trigger. If the adviser repeatedly has to reconstruct and direct the whole
-outcome, compare continuing, changing the brief, making it an owner or stopping that
-approach, including handoff costs. Do not use a fixed call count.
+Advice is a bounded question whose answer can change the owner's next action; any
+relevant approved model can give it. The owner keeps the outcome and integrates the
+evidence. Judge advice by what it changed, not by a call count. If the adviser keeps
+having to reconstruct and direct the whole outcome, weigh continuing, revising the
+brief, making the adviser the owner or stopping that approach, handoff cost included.
 
-Independent verification starts with a fresh context, authoritative artifacts and
-acceptance criteria, without inheriting the builder's desired verdict or reasoning.
-Any capable approved model, including the same family in a separate session, may
-verify. Call this independent review; describe cross-family diversity only when
-actual model identity supports it. Neither a different family nor freshness alone
-guarantees correctness. Never let the actual builder certify its own work as
-independent.
+Independent verification needs a fresh session reading the authoritative artifacts
+and acceptance criteria, not the builder's reasoning or desired verdict. Any capable
+approved model can verify, the builder's own family included; the actual builder
+never certifies its own work as independent. Call it cross-family review only when
+the actual model identities differ. Neither freshness nor a different family
+guarantees correctness.
 
-## Learn without adding a routing bureaucracy
+## Learn from results
 
-Use existing result artifacts and measurement records when available. Distinguish
-a completed turn, valid budget return, accepted outcome, measurement failure and
-user rework. Record the actual model/effort/route, outcome and checked revision,
-evidence, and material assistance or reassignment when this changes future allocation.
-Do not invent self-grades or turn an unvalidated speed index into a quality rank.
-
-Initial assignments and inherited stalled work are different samples. Do not compare
-their raw success rates as model ability. Keep observations task- and runtime-specific.
-No new router agent, universal score, forced tournament or learned selector is required.
+When a result should change future allocation, record the actual model, effort and
+route, the outcome and checked revision, the evidence, and any material help or
+reassignment. Keep a completed turn, a valid budget return, an accepted outcome, a
+measurement failure and user rework apart. A first assignment and inherited stalled
+work are different samples; do not compare their success rates as model ability.
+Fold what holds up into the default allocation above.

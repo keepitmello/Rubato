@@ -49,18 +49,9 @@ a mandatory worker below it.
 
 ## Independence and identity
 
-The actual builder cannot independently verify its own work. A fresh capable
-session of the same model family can be an independent verifier. Describe actual
-family diversity separately from context independence; neither guarantees correctness.
-
-Inspect runtime-reported role, model, effort and route where available. A requested
-label or registered catalog entry alone is not proof of what ran. If identity is
-unavailable, report that limitation; do not provoke extra quota/auth errors merely
-to guess it. A proxy may route a label differently.
-
-Preserve the active runtime's model resolution and explicit user settings.
-Like-for-like recovery retains approval; material reassignment requires the
-appropriate delta confirmation. Do not import another runtime's inheritance or
+Which models may verify independently, how to report the identity that actually
+ran and when approval carries over belong to Skill(model-guide). Use the active
+runtime's own model resolution; do not import another runtime's inheritance or
 effort rules.
 
 ## Keep prompts small enough to use
