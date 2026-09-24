@@ -66,7 +66,7 @@ const edits = {
   'apps/desktop/src/window/DesktopWindow.ts': [
     ['import * as Electron from "electron";', 'import { attachRubatoUpdates } from "../updates/RubatoUpdates.ts";\n'],
     ['    window.webContents.on("did-finish-load", () => {',
-      '    attachRubatoUpdates(window, Electron, environment.desktopSettingsPath, applicationUrl);\n\n'],
+      '    attachRubatoUpdates(window, Electron, environment.serverSettingsPath, applicationUrl);\n\n'],
   ],
   'apps/desktop/src/preload.ts': [
     ['  getPathForFile: (file: File) => webUtils.getPathForFile(file),',
