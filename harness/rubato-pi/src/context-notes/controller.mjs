@@ -6,6 +6,7 @@ import { flushSessionJournal } from "./journal.mjs";
 import { contextNotesConfig, contextStrategy, windowBudget } from "./config.mjs";
 import { assertEngineParts, registerSessionGate } from "./engine-gate.mjs";
 import { ContextNotesStore, databasePath } from "./store.mjs";
+import { trimRequestImages } from "./request-images.mjs";
 import { SOURCE, INIT_ENTRY, NOTE_ENTRY, NUDGE_ENTRY, PREPARE_ENTRY, REMINDER_ENTRY, initialWindow, nextWindow,
   branchWindow, decodeBootstrap, encodeBootstrap, isWindowCompaction, lastUserId, messageText, notePath } from "./protocol.mjs";
 
@@ -301,8 +302,12 @@ export class ContextNotesController {
       const index = reminderIndex(event.messages, entry);
       anchored.set(index, [...(anchored.get(index) ?? []), entry]);
     }
+    // Anthropic caps a request by bytes and every guard here counts tokens, so the pixels of
+    // the oldest images go before the request is assembled. The record keeps them; only the
+    // request loses them.
+    const carried = trimRequestImages(event.messages);
     const occurrences = new Map();
-    const annotated = event.messages.map((message) => {
+    const annotated = carried.map((message) => {
       if (message.role !== "user" && message.role !== "toolResult") return message;
       if (messageText(message) === this.bootstrap) return message;
       const id = message.__piSessionContextEntryId;
