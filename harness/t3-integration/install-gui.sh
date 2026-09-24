@@ -171,7 +171,7 @@ const url = require("node:url").pathToFileURL(mod).href;
 require("node:fs").writeFileSync(out, [
   "// install-gui.sh 가 만든다. 고치지 말고 install-gui.sh --apply 를 다시 돌려라.",
   `import { startRemoteServer } from ${q(url)};`,
-  `await startRemoteServer({ t3Source: ${q(t3Source)}, t3Home: ${q(t3Home)}, node: ${q(node)} });`,
+  `startRemoteServer({ t3Source: ${q(t3Source)}, t3Home: ${q(t3Home)}, node: ${q(node)} });`,
   "",
 ].join("\n"));
 ' "$REMOTE_ENTRY" "$HERE/remote-server.mjs" "$T3_DIR" "$T3_HOME" "$NODE" \

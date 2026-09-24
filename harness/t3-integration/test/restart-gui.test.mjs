@@ -22,6 +22,7 @@ function harness(t, {
   quitFail = false,
   quitHang = false,
   installGui = true,
+  sshServers = 2,
 } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'rb-restart-gui-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -56,6 +57,8 @@ function harness(t, {
   executable(fakeStart, `#!/bin/sh\nprintf 'START-GUI\\n' >> '${log}'\nprintf 'relaunched' > '${relaunch}'\nexit 0\n`);
   const fakeInstall = join(root, 'fake-install-gui.sh');
   executable(fakeInstall, `#!/bin/sh\nprintf 'INSTALL-GUI %s\\n' "$*" >> '${log}'\nexit 0\n`);
+  const fakeSshServers = join(root, 'fake-restart-ssh-servers.sh');
+  executable(fakeSshServers, `#!/bin/sh\nprintf 'SSH-SERVERS\\n' >> '${log}'\nexit ${sshServers}\n`);
   const env = {
     ...process.env,
     HOME: home,
@@ -69,6 +72,7 @@ function harness(t, {
     RUBATO_INSTALL_GUI: installGui ? fakeInstall : join(root, 'no-install-gui.sh'),
     RUBATO_GUI_LOG: join(root, 'gui-restart.log'),
     RUBATO_GUI_WAIT_SECS: '2',
+    RUBATO_RESTART_SSH_SERVERS: fakeSshServers,
   };
   return {
     run(extraEnv = {}) {
@@ -91,6 +95,22 @@ test('non-Darwin without .app still restarts when the desktop build exists', (t)
   assert.match(result.stdout, /데스크톱 번들/);
   assert.match(h.calls(), /INSTALL-GUI --apply/);
   assert.equal(h.relaunched(), undefined);
+});
+
+test('headless host restarts SSH-launched servers after syncing the bundle', (t) => {
+  const h = harness(t, { app: false, bundle: true, running: false, sshServers: 0 });
+  const result = h.run();
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  assert.match(h.calls(), /INSTALL-GUI --apply\nSSH-SERVERS/);
+  const failed = harness(t, { app: false, bundle: true, running: false, sshServers: 1 }).run();
+  assert.equal(failed.status, 1, failed.stderr + failed.stdout);
+});
+
+test('running app restart also restarts SSH-launched servers', (t) => {
+  const h = harness(t, { app: false, bundle: true, running: true, sshServers: 0 });
+  const result = h.run();
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  assert.match(h.calls(), /INSTALL-GUI --apply\nSSH-SERVERS\nSTART-GUI/);
 });
 
 test('non-Darwin without .app or desktop build still skips', (t) => {
