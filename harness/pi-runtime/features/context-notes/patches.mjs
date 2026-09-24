@@ -21,6 +21,7 @@ const contextNoteSources = Object.freeze([
   "journal.mjs",
   "mode-policy.mjs",
   "protocol.mjs",
+  "request-images.mjs",
   "reminder.mjs",
   "store.mjs",
   "tools.mjs",
