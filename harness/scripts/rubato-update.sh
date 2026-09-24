@@ -15,7 +15,10 @@ BRANCH="rubato/base"
 STAMP="$HOME/.rubato-pi/last-update-check"
 LAUNCHCTL_BIN="${RUBATO_LAUNCHCTL_BIN:-/bin/launchctl}"
 
-BOLD=$'\033[1m'; DIM=$'\033[2m'; RED=$'\033[31m'; GRN=$'\033[32m'; YEL=$'\033[33m'; RST=$'\033[0m'
+# \$'...' 는 bash 문법이다. 이 스크립트는 sh 로 도는데 우분투의 sh(dash)는 그것을
+# 글자 그대로 둬서 색 대신 '$\033[33m' 이 찍혔다. printf 로 만든다.
+ESC="$(printf '\033')"
+BOLD="$ESC[1m"; DIM="$ESC[2m"; RED="$ESC[31m"; GRN="$ESC[32m"; YEL="$ESC[33m"; RST="$ESC[0m"
 ok()   { printf '  %s✓%s %s\n' "$GRN" "$RST" "$1"; }
 warn() { printf '  %s!%s %s\n' "$YEL" "$RST" "$1"; }
 err()  { printf '  %s✗%s %s\n' "$RED" "$RST" "$1" >&2; }
@@ -132,6 +135,9 @@ gui_installed() {
 gui_broken() {
   gui_installed || return 1
   [ -f "$GUI_T3_DIR/apps/desktop/dist-electron/main.cjs" ] || return 0
+  # 아래 둘은 맥 앱 번들 얘기다. 다른 OS 에는 .app 도 /Applications 도 없어서,
+  # 보면 매번 '깨져 있다' 가 된다.
+  [ "$(uname -s)" = Darwin ] || return 1
   # 더블클릭 진입점이 없으면 눌러도 맨 Electron 안내 화면이 뜬다.
   [ -f "$GUI_ENTRY" ] || return 0
   [ "$(readlink "$APPS_DIR/Rubato.app" 2>/dev/null)" = "$GUI_BUNDLE" ] || return 0
