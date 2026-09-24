@@ -234,6 +234,98 @@ export function daybreakModels(nativeModels) {
   return [base, fast];
 }
 
+const GPT6_CODEX_IDS = Object.freeze(["gpt-6-sol", "gpt-6-luna"]);
+
+/**
+ * 핀 카탈로그(pi-ai 0.86.1)에 아직 없는 GPT-6 두 행.
+ *
+ * 정의는 상류 0.87.1 의 `dist/providers/data/openai-codex.json` 에서 그대로 옮겼다.
+ * `cost`·`thinkingLevelMap` 을 손으로 다시 적으면 조용히 달라지고, 5.6 에서 파생하지도
+ * 않는다 — 6 은 개명이 아니라 다른 모델이다: 컨텍스트는 같은 272K 지만 가격이 절반이고
+ * (2/10 대 5/30) thinkingLevelMap 이 off·low·medium 을 더 갖는다.
+ *
+ * `inputLimits`(0.87.0 신설)만 뺐다 — 0.86.1 은 그 필드를 읽지 않는다. 핀을 0.87 이상으로
+ * 올리면 네이티브가 이 id 를 갖게 되어 이 주입은 스스로 빈다.
+ */
+export function gpt6CodexModels(nativeModels) {
+  const missing = GPT6_CODEX_IDS.filter((id) => !nativeModels.some((model) => model.id === id));
+  if (missing.length === 0) return [];
+  // 모듈 상수를 그대로 넘기지 않는다. 이 파일의 파생들은 행을 제자리에서 고친다
+  // (`daybreakModels` 의 `delete`) — 공유하면 다음 호출이 그 흔적을 물려받는다.
+  return GPT6_CODEX_ROWS.filter((row) => missing.includes(row.id)).map((row) => ({ ...row }));
+}
+
+const GPT6_CODEX_COMPAT = Object.freeze({
+  supportsOpenAIGrammarTools: true,
+  supportsAdditionalTools: true,
+  supportsToolSearch: true,
+  supportsMidConvoSystemMessages: true,
+});
+
+/** 0.87.1 의 thinkingLevelMap 과 같은 값. `off` 는 0.86.1 도 아는 단계다. */
+const GPT6_CODEX_THINKING_LEVEL_MAP = Object.freeze({
+  off: "none",
+  minimal: "low",
+  low: "low",
+  medium: "medium",
+  high: "high",
+  xhigh: "xhigh",
+  max: "max",
+});
+
+/** 0.87.1 의 cost 그대로. 5.6 의 값을 물려받으면 두 배로 계상된다. */
+const GPT6_SOL_COST = Object.freeze({
+  input: 2,
+  output: 10,
+  cacheRead: 0.2,
+  cacheWrite: 2.5,
+  tiers: Object.freeze([
+    Object.freeze({ inputTokensAbove: 272_000, input: 4, output: 15, cacheRead: 0.4, cacheWrite: 5 }),
+  ]),
+});
+
+const GPT6_LUNA_COST = Object.freeze({
+  input: 0.1,
+  output: 0.5,
+  cacheRead: 0.01,
+  cacheWrite: 0.125,
+  tiers: Object.freeze([
+    Object.freeze({ inputTokensAbove: 272_000, input: 0.2, output: 0.75, cacheRead: 0.02, cacheWrite: 0.25 }),
+  ]),
+});
+
+// 행 자체는 얼리지 않는다 — Daybreak 처럼 파생 단계가 `delete`·덮어쓰기로 손대는 자리다.
+const GPT6_CODEX_ROWS = Object.freeze([
+  {
+    id: "gpt-6-sol",
+    name: "GPT-6 Sol",
+    api: "openai-codex-responses",
+    provider: "openai-codex",
+    baseUrl: "https://chatgpt.com/backend-api",
+    reasoning: true,
+    input: ["text", "image"],
+    cost: GPT6_SOL_COST,
+    contextWindow: 272_000,
+    maxTokens: 128_000,
+    thinkingLevelMap: GPT6_CODEX_THINKING_LEVEL_MAP,
+    compat: GPT6_CODEX_COMPAT,
+  },
+  {
+    id: "gpt-6-luna",
+    name: "GPT-6 Luna",
+    api: "openai-codex-responses",
+    provider: "openai-codex",
+    baseUrl: "https://chatgpt.com/backend-api",
+    reasoning: true,
+    input: ["text", "image"],
+    cost: GPT6_LUNA_COST,
+    contextWindow: 272_000,
+    maxTokens: 128_000,
+    thinkingLevelMap: GPT6_CODEX_THINKING_LEVEL_MAP,
+    compat: GPT6_CODEX_COMPAT,
+  },
+]);
+
 /**
  * Bind native provider loading to one explicit pi-ai package root.
  *
@@ -335,8 +427,12 @@ export async function directProviders({
   ]);
 
   const codexNative = withContextWindowCap(openaiCodexProvider(), 272_000);
+  const codexNativeModels = codexNative.getModels();
   const codex = withPickerIds(
-    withExtraModels(codexNative, daybreakModels(codexNative.getModels())),
+    withExtraModels(codexNative, [
+      ...daybreakModels(codexNativeModels),
+      ...gpt6CodexModels(codexNativeModels),
+    ]),
     CODEX_PICKER_IDS,
   );
 
