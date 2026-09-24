@@ -34,6 +34,7 @@ T3_DIR="${RUBATO_T3_SOURCE:-$HOME/.rubato/t3-source}"
 GUI_BUNDLE="${RUBATO_GUI_BUNDLE:-$T3_DIR/apps/desktop/dist-electron/main.cjs}"
 START_GUI="${RUBATO_START_GUI:-$HERE/start-gui.sh}"
 INSTALL_GUI="${RUBATO_INSTALL_GUI:-$HERE/install-gui.sh}"
+RESTART_SSH_SERVERS="${RUBATO_RESTART_SSH_SERVERS:-$HERE/restart-ssh-servers.sh}"
 GUI_LOG="${RUBATO_GUI_LOG:-$HOME/.rubato-pi/logs/rubato-gui-restart.log}"
 # 번들을 맞추는 일은 길면 몇 분이고 출력도 수십 줄이다. 그 수십 줄은 잘
 # 끝났을 때 아무도 읽지 않으므로 기록으로 보내고, 화면에는 진행만 남긴다.
@@ -69,6 +70,15 @@ sync_bundle() {
   return "$sync_status"
 }
 
+# 번들을 맞춘 뒤, 다른 기계의 데스크톱이 SSH 환경으로 여기 띄워 둔 서버를 내린다.
+# 데스크톱이 다시 붙으면서 새 코드로 띄운다. 내릴 것이 없으면(2) 조용히 지나간다.
+restart_ssh_servers() {
+  [ -f "$RESTART_SSH_SERVERS" ] || return 0
+  ssh_status=0
+  sh "$RESTART_SSH_SERVERS" || ssh_status=$?
+  [ "$ssh_status" -ne 1 ]
+}
+
 # 어떻게 끝나든 그리던 줄과 커서는 되돌린다.
 trap 'progress_stop' EXIT INT TERM
 
@@ -96,6 +106,8 @@ if ! "$PGREP_BIN" -f "$GUI_PROC_PATTERN" >/dev/null 2>&1; then
   elif sync_bundle; then
     ui_ok "데스크톱 번들"
     ui_note "앱은 꺼져 있어요. 다음에 켜면 새 코드로 떠요."
+    # 창이 없는 기계(WSL 등)도 다른 기계의 SSH 환경으로 서버를 돌릴 수 있다.
+    restart_ssh_servers || exit 1
     exit 0
   else
     ui_fail "데스크톱 앱은 꺼져 있고, 번들도 새 코드로 맞추지 못했습니다. 켜면 옛 코드입니다 — 손으로: bash \"$INSTALL_GUI\" --apply"
@@ -169,6 +181,7 @@ if ! sync_bundle; then
   ui_fail "핀·overlay 를 다시 얹지 못했습니다. 옛 번들 그대로 다시 켭니다 — 손으로: bash \"$INSTALL_GUI\" --apply"
   RESTART_FAIL=1
 fi
+restart_ssh_servers || RESTART_FAIL=1
 
 # nohup 으로 이 스크립트의 프로세스 그룹에서 떼어 놓는다. 그러지 않으면 앞단
 # 작업이 끝나면서 새로 뜬 앱에 SIGHUP 이 갈 수 있다.
