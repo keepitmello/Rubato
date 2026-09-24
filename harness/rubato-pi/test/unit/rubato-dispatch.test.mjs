@@ -57,28 +57,56 @@ function harness(t) {
   };
 }
 
-test("default lane is grok and stdout is the worker's final answer", (t) => {
+test("no alias runs the deepseek lane and stdout is the worker's final answer", (t) => {
   const box = harness(t);
+  const explicit = box.run(["job-a", "deepseek"], "find the leak\n");
+  assert.equal(explicit.status, 0, explicit.stderr);
+  const deepseekArgs = box.args();
   const result = box.run(["job-a"], "find the leak\n");
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, "worker-ok\n");
-  assert.deepEqual(box.args(), [
+  assert.deepEqual(box.args(), deepseekArgs);
+  assert.deepEqual(box.args().slice(0, 5), [
     "--print",
     "--session-dir",
     join(box.home, ".rubato-pi", "agent", "dispatch", "job-a"),
     "--name",
     "job-a",
-    "--model",
-    "xai/grok-4.7",
   ]);
   assert.equal(box.stdin(), "find the leak\n");
 });
 
-test("grokfast selects the Cursor Fast wire id", (t) => {
+test("--effort replaces an alias's default level", (t) => {
   const box = harness(t);
-  const result = box.run(["fast-job", "grokfast"]);
+  const result = box.run(["job-a", "astra", "--effort", "low"]);
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(box.args().at(-1), "cursor/grok-4.7-high-fast");
+  assert.match(box.args().at(-1), /^openai-codex\/[^:]+:low$/);
+});
+
+test("the caller's Pi session env does not reach the worker", (t) => {
+  const box = harness(t);
+  const scripts = join(box.root, "scripts");
+  const envPath = join(box.root, "env.txt");
+  writeFileSync(join(scripts, "rubato-pi.sh"), `#!/bin/sh\nenv > "${envPath}"\n`);
+  chmodSync(join(scripts, "rubato-pi.sh"), 0o755);
+  const caller = join(box.root, "caller-pi-agent");
+  const result = box.run(["job-a"], "hi\n", {
+    PI_CODING_AGENT_DIR: caller,
+    PI_CODING_AGENT_SESSION_DIR: join(caller, "sessions"),
+    PI_MODEL: "claude-opus-5-5",
+    PI_PROVIDER: "anthropic",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const env = Object.fromEntries(
+    readFileSync(envPath, "utf8").split("\n").filter(Boolean).map((line) => {
+      const at = line.indexOf("=");
+      return [line.slice(0, at), line.slice(at + 1)];
+    }),
+  );
+  for (const key of ["PI_CODING_AGENT_DIR", "PI_CODING_AGENT_SESSION_DIR", "PI_MODEL", "PI_PROVIDER"]) {
+    assert.equal(env[key], undefined, key);
+  }
+  assert.equal(env.RUBATO_PI_CODING_AGENT_DIR, join(box.home, ".rubato-pi", "agent"));
 });
 
 test("--continue resumes the named session without changing the model", (t) => {

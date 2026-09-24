@@ -9,24 +9,29 @@ DEFAULT_STDOUT_MAX=8192
 
 usage() {
   cat <<'USAGE'
-Usage: rubato dispatch <name> [grok|grokfast|fast|muse|sol|fable|astra] [--model PROVIDER/MODEL[:THINKING]] [--effort LEVEL] [--cwd DIR] < brief.md
+Usage: rubato dispatch <name> [deepseek|grok|grokfast|sol|fable|astra|opus] [--model PROVIDER/MODEL[:THINKING]] [--effort LEVEL] [--cwd DIR] < brief.md
        rubato dispatch <name> --continue < followup.md
 
 `dispatch` on PATH is the same command.
 The full last answer stays in the worker session dir. Caller stdout is
 capped (RUBATO_DISPATCH_STDOUT_MAX, default 8192 bytes).
 
---model takes a full id like anthropic/claude-fable-5-1 and wins over the alias.
---effort appends :LEVEL to the model unless it already has :suffix (senpi --model form).
+The worker is a fresh Rubato session in ~/.rubato-pi/agent, not a child of the
+caller: the caller's Pi session env (PI_CODING_AGENT_DIR, PI_MODEL, ...) is dropped,
+so a Pi-based caller's extensions do not load into the worker.
 
-Models:
+--model takes a full id like anthropic/claude-fable-5-1 and wins over the alias.
+--effort sets :LEVEL (senpi --model form). It replaces an alias's default level;
+with --model it is appended only when the id has no :suffix yet.
+
+Models (no alias = deepseek):
+  deepseek  b-ai/deepseek-v4.1-flash:high
   grok      xai/grok-4.7
-  grokfast  cursor/grok-4.7-high-fast
-  fast      cursor/gemini-3.8-flash
-  muse      opencode/muse-spark-1.3-contributor-free
+  grokfast  cursor/grok-4.7
   sol       openai-codex/gpt-5.6-sol
   fable     anthropic/claude-fable-5-1
-  astra     openai-codex/gpt-6-astra:medium
+  astra     openai-codex/gpt-6-astra:xhigh
+  opus      anthropic/claude-opus-5-5:high
 USAGE
 }
 
@@ -43,13 +48,13 @@ resolve_script_dir() {
 
 alias_to_model() {
   case "$1" in
+    deepseek) echo "b-ai/deepseek-v4.1-flash:high" ;;
     grok) echo "xai/grok-4.7" ;;
-    grokfast) echo "cursor/grok-4.7-high-fast" ;;
-    fast) echo "cursor/gemini-3.8-flash" ;;
-    muse) echo "opencode/muse-spark-1.3-contributor-free" ;;
+    grokfast) echo "cursor/grok-4.7" ;;
     sol) echo "openai-codex/gpt-5.6-sol" ;;
     fable) echo "anthropic/claude-fable-5-1" ;;
-    astra) echo "openai-codex/gpt-6-astra:medium" ;;
+    astra) echo "openai-codex/gpt-6-astra:xhigh" ;;
+    opus) echo "anthropic/claude-opus-5-5:high" ;;
     *) return 1 ;;
   esac
 }
@@ -157,7 +162,7 @@ while [[ $# -gt 0 ]]; do
       CWD="$2"
       shift 2
       ;;
-    grok|grokfast|fast|muse|sol|fable|astra)
+    deepseek|grok|grokfast|sol|fable|astra|opus)
       if [[ -n "$MODEL_ALIAS" ]]; then
         echo "rubato dispatch: model already set to $MODEL_ALIAS" >&2
         exit 2
@@ -182,14 +187,17 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-MODEL_ALIAS="${MODEL_ALIAS:-grok}"
+MODEL_ALIAS="${MODEL_ALIAS:-deepseek}"
 if [[ -n "$MODEL_DIRECT" ]]; then
   MODEL="$MODEL_DIRECT"
 else
   MODEL="$(alias_to_model "$MODEL_ALIAS")"
 fi
 if [[ -n "$EFFORT" ]]; then
-  if [[ "$MODEL" != *:* ]]; then
+  if [[ -z "$MODEL_DIRECT" ]]; then
+    # 별칭에 구운 effort 는 기본값일 뿐이다. --effort 가 오면 그것이 이긴다.
+    MODEL="${MODEL%%:*}:$EFFORT"
+  elif [[ "$MODEL" != *:* ]]; then
     MODEL="$MODEL:$EFFORT"
   else
     echo "rubato dispatch: --effort ignored, model already has :suffix: $MODEL" >&2
@@ -214,6 +222,16 @@ if [[ -n "$CWD" && ! -d "$CWD" ]]; then
 fi
 
 mkdir -p "$SESSION_DIR"
+
+# 호출자가 Pi 세션(루바토든 stock Pi 든)이면 그 세션의 신원이 env 로 새어 들어온다.
+# 런처는 agent 디렉터리를 PI_CODING_AGENT_DIR 로도 찾으므로, 그대로 두면 워커가 호출자의
+# 디렉터리와 확장을 싣고 도구 이름이 부딪쳐 켜지자마자 죽는다. PI_CODING_AGENT_SESSION_DIR
+# 는 역할을 lead 대신 agent 로 바꾸고, PI_MODEL·PI_PROVIDER 는 호출자의 모델이다.
+# 워커는 호출자의 자식이 아니라 위 AGENT_DIR 의 새 세션이니, 신원은 벗기고 자리는 박는다.
+unset PI_CODING_AGENT_DIR PI_CODING_AGENT_SESSION_DIR SENPI_CODING_AGENT_SESSION_DIR \
+  PI_SESSION_FILE PI_SESSION_ID PI_MODEL PI_PROVIDER PI_REASONING_LEVEL \
+  PI_PACKAGE_DIR PI_MANAGED_INSTALL_ROOT PI_CODING_AGENT
+export RUBATO_PI_CODING_AGENT_DIR="$AGENT_DIR"
 
 cmd=("/bin/sh" "$LAUNCHER" --print --session-dir "$SESSION_DIR" --name "$NAME")
 if [[ "$CONTINUE" -eq 1 ]]; then

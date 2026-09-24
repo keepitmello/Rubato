@@ -182,7 +182,7 @@ rubato update         # 변경 내용을 확인하고 업데이트
 rubato update --check # 업데이트 유무만 확인
 rubato restart        # 도는 것을 새 코드로 올린다 (엔진·remote hub·GUI)
 rubato build          # 시스템 프롬프트와 엔진 산출물을 다시 빌드
-rubato dispatch <name> grok < brief.md   # 비대화 워커. grokfast|fast|sol|fable
+rubato dispatch <name> [별칭] < brief.md # 비대화 워커. 별칭·모델은 dispatch --help
 msearch "<query>"     # 기억 검색
 ```
 

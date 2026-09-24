@@ -46,9 +46,9 @@ rubato       # Rubato CLI
 rubato-pi    # Rubato CLI와 같은 실행기 (내부 이름)
 rubato-gui   # 공식 GUI (T3)
 rubato-soul  # 역할별 프롬프트 없이 SOUL.md만 사용
-rubato dispatch <name> [grok|grokfast|fast|sol|fable] < brief.md
+rubato dispatch <name> [별칭] < brief.md
              # 비대화 워커. 브리프는 stdin, 끝나면 최종 답만 stdout.
-             # PATH의 `dispatch`도 같은 명령이다.
+             # PATH의 `dispatch`도 같은 명령이다. 별칭·모델은 `dispatch --help`.
 rubato aside-cursor --install  # Aside Cursor 면. 설명은 aside-cursor.md
 ```
 
