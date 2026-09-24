@@ -15,6 +15,8 @@ import {
 // 이 테스트가 먼저 깨지고, 고치는 일은 값을 다시 베끼는 일이 된다.
 const XAI_GROK = MODEL_ORDER.xai[0];
 const CURSOR_GROK_FAST = `${CURSOR_GROK_BASE_ID}-high-fast`;
+const CODEX_ORDER = MODEL_ORDER['openai-codex'];
+const [CODEX_SOL, CODEX_DAYBREAK] = CODEX_ORDER;
 
 test('T3 catalogue keeps the curated /model set and drops provider extras', () => {
   // 현재 세대 anthropic 행은 카탈로그가 소유한다.
@@ -24,8 +26,8 @@ test('T3 catalogue keeps the curated /model set and drops provider extras', () =
     { provider: 'anthropic', id: opus, name: 'Claude Opus', reasoning: true, api: 'anthropic-messages' },
     { provider: 'anthropic', id: fable, name: 'Claude Fable', reasoning: true, thinkingLevelMap: { max: 'max' } },
     { provider: 'anthropic', id: 'claude-opus-4-6', name: 'Claude Opus 4.6', reasoning: true },
-    { provider: 'openai-codex', id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol', reasoning: true, thinkingLevelMap: { xhigh: 'xhigh', max: 'max' }, api: 'openai-codex-responses' },
-    { provider: 'openai-codex', id: 'gpt-daybreak-blue-latest-fast', name: 'Daybreak Blue Fast', api: 'openai-codex-responses' },
+    { provider: 'openai-codex', id: CODEX_SOL, name: 'GPT-6 Sol', reasoning: true, thinkingLevelMap: { xhigh: 'xhigh', max: 'max' }, api: 'openai-codex-responses' },
+    { provider: 'openai-codex', id: `${CODEX_DAYBREAK}-fast`, name: 'Daybreak Blue Fast', api: 'openai-codex-responses' },
     { provider: 'openai-codex', id: 'gpt-5.4', name: 'GPT-5.4', reasoning: true, api: 'openai-codex-responses' },
     { provider: 'cursor', id: CURSOR_GROK_BASE_ID, name: 'Grok' },
     { provider: 'cursor', id: CURSOR_GROK_FAST, name: 'Grok High Fast' },
@@ -33,7 +35,7 @@ test('T3 catalogue keeps the curated /model set and drops provider extras', () =
   ];
   const catalog = catalogForPicker(models);
   assert.deepEqual(catalog.map((item) => `${item.provider}/${item.id}`), [
-    'openai-codex/gpt-5.6-sol',
+    `openai-codex/${CODEX_SOL}`,
     `anthropic/${fable}`,
     `anthropic/${opus}`,
     `xai/${XAI_GROK}`,
@@ -43,13 +45,9 @@ test('T3 catalogue keeps the curated /model set and drops provider extras', () =
   assert.equal(modelPickerLabel(catalog[1]), 'Fable 5.1');
   assert.equal(modelPickerLabel(catalog[3]), 'Grok 4.7');
   assert.equal(modelPickerLabel(catalog[4]), 'Grok 4.7 fast');
-  // 첫 여섯은 Codex 다섯 + anthropic 첫 행이다 — provider 경계가 계약이다.
-  assert.deepEqual(catalogSlugs().slice(0, 6), [
-    'openai-codex/gpt-5.6-sol',
-    'openai-codex/gpt-5.6-terra',
-    'openai-codex/gpt-5.6-luna',
-    'openai-codex/gpt-6-astra',
-    'openai-codex/gpt-daybreak-blue-latest',
+  // 앞은 Codex 전부 + anthropic 첫 행이다 — provider 경계가 계약이다.
+  assert.deepEqual(catalogSlugs().slice(0, CODEX_ORDER.length + 1), [
+    ...CODEX_ORDER.map((id) => `openai-codex/${id}`),
     `anthropic/${MODEL_ORDER.anthropic[0]}`,
   ]);
 });
@@ -69,7 +67,7 @@ test('T3 catalogue keeps the current model even when it is outside the curated s
 test('reasoning models expose effort, and fast-capable models expose Fast', () => {
   const sol = optionDescriptorsFor({
     provider: 'openai-codex',
-    id: 'gpt-5.6-sol',
+    id: CODEX_SOL,
     reasoning: true,
     thinkingLevelMap: { xhigh: 'xhigh', max: 'max' },
     api: 'openai-codex-responses',

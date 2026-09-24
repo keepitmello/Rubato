@@ -3,7 +3,7 @@
 // 같은 값을 쓰므로 이 사슬 하나가 정본이다.
 export const TITLE_MODELS = Object.freeze([
   Object.freeze({ provider: "b-ai", id: "deepseek-v4.1-flash", reasoning: "low" }),
-  Object.freeze({ provider: "openai-codex", id: "gpt-5.6-luna" }),
+  Object.freeze({ provider: "openai-codex", id: "gpt-6-luna" }),
 ]);
 export const TITLE_ENTRY = "rubato-pi.session-title";
 

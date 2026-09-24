@@ -92,12 +92,12 @@ Evidence anchors:
 ## Model identity, aliases, effort, and `/fast`
 
 Provider prefix is routing identity, not decoration. Keep `xai/grok-4.7`,
-`cursor/grok-4.7`, `openai-codex/gpt-5.6-sol`, and similarly named models in other
+`cursor/grok-4.7`, `openai-codex/gpt-6-sol`, and similarly named models in other
 providers distinct; they use different credentials, quotas, and transports.
 
 The current picker policy is explicit (`picker-catalog.mjs:6-25`):
 
-- Codex: `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-6-astra`, and
+- Codex: `gpt-6-sol`, `gpt-6-luna`, `gpt-6-astra`, and
   `gpt-daybreak-blue-latest`;
 - xAI: `grok-4.7`;
 - Anthropic: `claude-opus-5`, `claude-sonnet-5`, `claude-fable-5-1`,
@@ -107,7 +107,10 @@ The current picker policy is explicit (`picker-catalog.mjs:6-25`):
   `gemini-3.8-flash`, `kimi-k3`, `composer-2.5` (`cursor-picker.mjs:14-22`).
 
 Picker filtering does not delete the provider's stored catalog. Daybreak is derived from Terra and
-adds low/medium/high/xhigh/max (`provider-direct.mjs:105-165`). Fable 5.1 is derived only if the
+adds low/medium/high/xhigh/max (`provider-direct.mjs:105-165`). GPT-6 Sol and Luna are not derived:
+the pin (0.86.1) stops at 5.6, so their rows are injected verbatim from the upstream 0.87.1 catalog
+(`gpt6CodexModels`, same file) and the injection empties itself once the pin carries the ids.
+Fable 5.1 is derived only if the
 native catalog lacks it (`provider-direct.mjs:127-137`). xAI keeps the native thinking map and caps
 `maxTokens` to 65,536 so `max_output_tokens` remains stable across turns
 (`provider-direct.mjs:212-236,280-284`).

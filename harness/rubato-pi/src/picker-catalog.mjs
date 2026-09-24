@@ -17,15 +17,14 @@ export const ANTHROPIC_PICKER_IDS = Object.freeze([
 // Codex Fast 는 피커 행이 아니라 `/fast` 토글이다. getModels() 저장분의 `-fast`
 // 변형은 그대로 두고, 피커에만 base 를 올린다.
 export const CODEX_PICKER_IDS = Object.freeze([
-  "gpt-5.6-sol",
-  "gpt-5.6-terra",
-  "gpt-5.6-luna",
+  "gpt-6-sol",
+  "gpt-6-luna",
   "gpt-6-astra",
   "gpt-daybreak-blue-latest",
 ]);
 
 /** Codex `[sub]` 는 Sol 과 Astra 만. Terra/Luna/Daybreak 는 한 계정으로만 고른다. */
-export const CODEX_SUB_PICKER_IDS = Object.freeze(["gpt-5.6-sol", "gpt-6-astra"]);
+export const CODEX_SUB_PICKER_IDS = Object.freeze(["gpt-6-sol", "gpt-6-astra"]);
 
 /** Anthropic `[sub]` 는 Fable 과 Opus 만. Sonnet/Haiku 는 한 계정으로만 고른다. */
 export const ANTHROPIC_SUB_PICKER_IDS = Object.freeze(["claude-fable-5-1", "claude-opus-5-5"]);
