@@ -39,9 +39,6 @@ stronger model. Acceptance criteria stay the same for every selected model.
 
 ## Default allocation
 
-DeepSeek and Grok are comparable; DeepSeek is cheaper and faster. Opus 5.5 is on par
-with or slightly ahead of Fable and Astra at a much lower cost.
-
 - Default owner and bounded support: **DeepSeek**. Independent verification: **Grok**.
 - Difficult topics, design or judgment: **Opus**.
 - **Fable or Astra** when their contribution is worth it over Opus, with explicit approval.
