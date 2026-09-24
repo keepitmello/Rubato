@@ -5,9 +5,9 @@ description: "Use when selecting an agent model, provider route or effort settin
 
 # Model guide
 
-Match the model to the hardest judgment the work needs. Owner and verifier are
-responsibility boundaries, not model tiers: any approved model can own a bounded
-result end to end or hold an independent judgment.
+Start from the default allocation and use a stronger model when the work looks
+hard. Owner and verifier are responsibility boundaries, not model tiers: any
+approved model can own a bounded result end to end or hold an independent judgment.
 
 The user chooses the lead model, and it stays until the user changes it. Models for
 owners, verifiers and helpers are a separate choice you make here.
@@ -18,37 +18,31 @@ Read Skill(dispatching) first. An existing session holding the relevant code,
 refuted hypotheses and current changes usually beats a fresh session of any model.
 Choose a model only once a new session is justified.
 
-## Start from the hardest judgment
+## Pick the model
 
-Name the hardest judgment in this assignment (finding the intended result,
-locating an unclear cause, designing, carrying out a settled change, verifying)
-and the understanding already built up around it. Read that from checkable
-evidence. Unfamiliar or broad work is not automatically hard, and an unsettled
-surface does not bar any model from owning it. Say that this is your reading, not
-a measurement.
+Explicit user choices come first: a selected model, approvals, allowed providers
+and effort.
 
-Then weigh, in this order:
+For a subagent or helper, use the default below without further deliberation.
+If the work looks hard to you, use a stronger model instead; that call needs no
+measurement or prior failure.
 
-1. Explicit user choices: selected model, approvals, allowed providers, effort.
-   A registered label is not proof that a route works.
-2. Evidence from completed work and the user's reported experience, with its scope.
-3. Current availability, quota headroom and competing assignments. Keep an
-   observed headroom apart from an older user report.
+For a team, put the defaults in the combined intent/roster proposal and name a
+stronger model where the work looks hard, with a one-line reason. The user knows
+best how hard the work is; their correction to the roster decides.
 
-Give the actual reason for the pick. When evidence does not separate candidates,
-say so and choose by availability and the user's resource preferences. A stronger
-model can own from the first assignment; it needs no prior lower-tier failure.
-Acceptance criteria stay the same whichever model runs.
+If a chosen route is unavailable or out of quota, pick another approved one and
+say which ran. A registered label is not proof that a route works. Acceptance
+criteria stay the same whichever model runs.
 
 ## Default allocation
 
 This records the user's experience so far. Update it here when new experience
 changes it.
 
-- Owners and bounded support: **DeepSeek**. Independent verification: **Grok**.
-- Intent, design, unclear causes and other judgment-heavy work: **Opus**.
-- **Fable or Astra** when their contribution is worth it over Opus, with explicit approval.
-- Any of these can own or verify.
+- Default for owners and helpers: **DeepSeek**. Default verifier: **Grok**.
+- Stronger: **Opus**. **Fable or Astra** with explicit approval.
+- Any approved model can own or verify.
 
 Exact ids: DeepSeek V4.1 Flash `b-ai/deepseek-v4.1-flash`, Grok 4.7 via xAI
 `xai/grok-4.7` or Cursor `cursor/grok-4.7`, Opus 5.5 `anthropic/claude-opus-5-5`,

@@ -85,7 +85,7 @@ These are behavior scenarios, not claims of live runs. Static contract tests and
 - **cross-model-verifier-soft-default** — 독립 검증이 필요해. → 별도 문맥, 실제 산출물과 수용 기준, 판정 책임으로 독립성을 확보해. 모델 계열 다양성은 선택 사항이며 승인과 실제 실행 식별자를 지켜.
 - **owner-different-verifier** — 구현자가 자신의 결과를 독립 검증했다고 하려 해. → 같은 구현 세션의 자체 검사는 독립 검증이 아니야. 같은 계열의 새 유능한 세션은 검증자가 될 수 있어.
 - **no-standing-fable-teammate** — 페이블이나 아스트라를 오너로 배정할 수 있어. → 처음부터 승인된 전체 결과를 맡길 수 있으며, 실패한 하위 모델이나 정식 프레이밍이 선행 조건이 아니야. 이름을 채우기 위한 상시 팀원은 만들지 않아.
-- **hardest-judgment-picks-model** — 새 배정의 핵심이 의도 탐색·설계·원인 규명이야. → 확인 가능한 근거로 가장 어려운 판단을 짚고 기본 배치(Opus)를 제안해. 그 판단은 측정값이 아니라 리드의 읽기라고 말해. 팀을 나눌지는 난이도가 아니라 분리 이득으로 정해. (2026-09-24 사용자 합의, 철학 README "가장 어려운 판단부터")
+- **default-then-stronger** — 새 배정이야. → 서브에이전트·보조는 기본(DeepSeek)으로 바로 띄우고, 어려워 보이면 더 강한 모델을 써. 실패나 측정을 선행 조건으로 두지 않아. 팀은 기본 배치에 어려워 보이는 곳만 강한 모델을 한 줄 이유와 함께 제안하고, 일의 어려움을 가장 잘 아는 사용자의 수정이 결정해. (2026-09-24 사용자 합의)
 
 ## Evidence-first alignment and combined confirmation
 
