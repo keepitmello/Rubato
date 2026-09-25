@@ -207,15 +207,17 @@ export function ensureSessionDefaults(
     // 눌러 펴고 그 안에서 사고가 흐른다. false 로 두면 접기 자체가 사라져
     // 산문이 본문에 그대로 쏟아진다.
     hideThinkingBlock: current.hideThinkingBlock ?? true,
-    // 기본 3회(2+4+8초)는 provider 가 잠깐 흔들리는 경우를 못 덮는다. 5회면 약
-    // 62초까지 버틴다. 사용자가 적어 둔 값은 건드리지 않는다.
+    // 기본 3회(2+4+8초)는 provider 가 잠깐 흔들리는 경우를 못 덮는다. 5회(약
+    // 62초)는 핫스팟처럼 연결이 10초씩 막히는 회선에서 한 턴이 3분 가까이 다
+    // 쓰고 끝났다(2026-09-25). 8회면 2+4+8+16+32+60+60+60 ≈ 4분을 버틴다.
+    // 사용자가 적어 둔 값은 건드리지 않는다 — 이미 5 가 적힌 설치는 그대로 5 다.
     //
     // modelFallback 은 엔진 기본이 true 다(senpi retry-fallback/settings.js).
     // 켜져 있으면 거절(refusal)을 만났을 때 같은 모델로 재시도하는 대신 체인의
     // 다음 모델로 갈아타고, 그 전환은 pinned 라 쿨다운 뒤에도 안 돌아온다 —
     // 사용자가 고른 모델이 조용히 바뀐 채로 세션이 이어진다. 우리는 거기서
     // 턴을 멈추고 에러를 그대로 보여주는 쪽을 고른다.
-    retry: { maxRetries: 5, modelFallback: false, ...current.retry },
+    retry: { maxRetries: 8, modelFallback: false, ...current.retry },
     promptCache: promptCacheDefaults(current),
     tips: false,
     disabledBuiltinExtensions: [...disabled],
