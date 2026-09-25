@@ -163,6 +163,58 @@
       .toEqual(["Context Optimized", "Context compacted"]);
   });
 
+  it("a retry chain is one updating work row; only the exhausted chain leaves an error answer", async () => {
+    const harness = await createHarness();
+    const events: any[] = [];
+    let sequence = 0;
+    const projection = new EventProjection({
+      threadId: "thread-1", sessionId: "retry", instanceId: "codex",
+      emit: (event: any) => events.push({
+        ...event, createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, ++sequence)).toISOString(),
+      }),
+    });
+    const failed = (timestamp: number, errorMessage: string) => ({ role: "assistant", timestamp,
+      model: "claude-opus-5-5", stopReason: "error", errorMessage, content: [] });
+    const retry = (message: any, attempt: number) => {
+      projection.message(message, true);
+      projection.project({ type: "auto_retry_start", attempt, maxAttempts: 3, delayMs: 1000,
+        errorMessage: message.errorMessage });
+    };
+    const read = async () => JSON.parse(JSON.stringify(
+      (await harness.readModel()).threads.find(t => t.id === "thread-1")!));
+    const warnings = (thread: any) => deriveWorkLogEntries(thread.activities)
+      .filter((entry: any) => entry.tone === "info").map((entry: any) => entry.label);
+    const answers = (thread: any) => thread.messages.filter((m: any) => m.role === "assistant").map((m: any) => m.text);
+
+    projection.begin("turn-1");
+    retry(failed(1, "Connection error."), 1);
+    await harness.emitAndDrain(events.splice(0));
+    expect(warnings(await read())).toEqual(["재시도 중 (1/3): Connection error."]);
+    retry(failed(2, "Request timed out."), 2);
+    projection.message({ role: "assistant", timestamp: 3, model: "claude-opus-5-5", stopReason: "stop",
+      content: [{ type: "text", text: "recovered answer" }] }, true);
+    projection.project({ type: "auto_retry_end", success: true, attempt: 2 });
+    projection.settle();
+    await harness.emitAndDrain(events.splice(0));
+    let thread = await read();
+    expect(answers(thread)).toEqual(["recovered answer"]);
+    expect(warnings(thread)).toEqual(["2번 재시도 끝에 이어감: Request timed out."]);
+    expect(thread.latestTurn.state).toBe("completed");
+
+    projection.begin("turn-2");
+    retry(failed(4, "Connection error."), 1);
+    projection.message(failed(5, "Connection error."), true);
+    projection.project({ type: "auto_retry_end", success: false, attempt: 1, finalError: "Connection error." });
+    projection.settle();
+    await harness.emitAndDrain(events.splice(0));
+    thread = await read();
+    expect(answers(thread)).toEqual(["recovered answer", "Connection error."]);
+    expect(warnings(thread)).toEqual(["2번 재시도 끝에 이어감: Request timed out.", "1번 재시도 모두 실패: Connection error."]);
+    expect(thread.activities.filter((a: any) => a.kind === "runtime.error").map((a: any) => a.payload.message))
+      .toEqual(["Connection error."]);
+    expect(thread.latestTurn.state).toBe("error");
+  });
+
   // Optional private, local-only recording replay. Never put real user
   // transcripts or provider credentials into this repository.
   if (process.env.T3_REPLAY_MESSAGES) {
