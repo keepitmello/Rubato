@@ -9,7 +9,7 @@
 // come from the component's own handleMouse instead of the OSC-8 action bus.
 import { Container, truncateToWidth } from "@earendil-works/pi-tui";
 import { theme } from "../../modes/interactive/theme/theme.js";
-import { collapseToolsByName, isToolUseEllipsisFiller, phaseForTextContent } from "./assistant-phase.mjs";
+import { compactTools, isToolUseEllipsisFiller, phaseForTextContent } from "./assistant-phase.mjs";
 
 function compactDuration(ms) {
   return `${Math.max(1, Math.round(ms / 1000))}s`;
@@ -42,22 +42,6 @@ function thinkingStats(message, now = Date.now()) {
   }
   closeRun();
   return { steps, thoughtMs };
-}
-
-function compactTools(groups, width) {
-  const seen = collapseToolsByName(groups.flatMap((group) => group.workItems?.() ?? []));
-  const labels = seen.map(({ name, failed, count }) => `${failed ? "✗" : "✓"} ${name}${count > 1 ? ` (${count})` : ""}`);
-  const full = labels.join(" · ");
-  if ([...full].length <= width) return full;
-  const shown = [];
-  for (let index = 0; index < labels.length; index++) {
-    const suffix = ` · …+${labels.length - index - 1}`;
-    const candidate = `${[...shown, labels[index]].join(" · ")}${suffix}`;
-    if ([...candidate].length > width) break;
-    shown.push(labels[index]);
-  }
-  const remaining = labels.length - shown.length;
-  return remaining > 0 ? `${shown.join(" · ")}${shown.length > 0 ? " · " : ""}…+${remaining}` : full;
 }
 
 export class TurnWorkSummaryComponent extends Container {

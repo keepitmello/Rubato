@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { collapseToolsByName } from "./assistant-phase.mjs";
+import { collapseToolsByName, compactTools } from "./assistant-phase.mjs";
 import { patchAssistantMessage, patchInteractiveTurnChrome } from "./patches.mjs";
 
 const stock = join(dirname(fileURLToPath(import.meta.url)), "../../node_modules/@earendil-works/pi-coding-agent/dist");
@@ -18,6 +18,13 @@ test("bash·read·bash becomes bash (2)·read in first-seen order", () => {
     collapseToolsByName([named("bash"), named("bash"), named("read")]).map(({ name, count }) => `${name}:${count}`),
     ["bash:2", "read:1"],
   );
+});
+
+test("turn summary names tools from the component's Set of groups", () => {
+  const group = (...names) => ({ workItems: () => names.map((name) => ({ name, failed: name === "eval" })) });
+  const groups = new Set([group("bash", "read"), group("bash", "eval")]);
+  assert.equal(compactTools(groups, 80), "✓ bash (2) · ✓ read · ✗ eval");
+  assert.equal(compactTools(groups, 16), "✓ bash (2) · …+2");
 });
 
 test("turn chrome hosts thinking on one toggle and skips per-message thinking", () => {
