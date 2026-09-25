@@ -1,5 +1,20 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
+import { trimRequestImages } from '../../rubato-pi/src/context-notes/request-images.mjs';
+
+// get_messages carries every image the session ever saw as inline base64, and the
+// frame limit below stops the whole session when a response crosses it. A session
+// that is far inside its token window can still cross it: 41 screenshots made a
+// 36MB history, and the thread could no longer be opened. Readers of the history
+// (the T3 bridge) use its text, so the oldest pixels give way first.
+const trimHistoryImages = (value) => {
+  const data = value.data;
+  const messages = Array.isArray(data) ? data : data?.messages;
+  if (!Array.isArray(messages)) return value;
+  const trimmed = trimRequestImages(messages);
+  if (trimmed === messages) return value;
+  return { ...value, data: Array.isArray(data) ? trimmed : { ...data, messages: trimmed } };
+};
 
 /** Same host contract as RpcWorker, but the SDK runtime lives in this process.
  * Bootstrap is injected by the engine owner, never guessed from process cwd.
@@ -37,7 +52,8 @@ export class SessionWorker extends EventEmitter {
     // Keep the existing RPC value boundary: no shared mutable session objects.
     let record;
     try {
-      const encoded = JSON.stringify(value);
+      const pendingType = value?.type === 'response' ? this.pending.get(value.id)?.type : undefined;
+      const encoded = JSON.stringify(pendingType === 'get_messages' && value.success ? trimHistoryImages(value) : value);
       if (Buffer.byteLength(encoded) > 32 * 1024 * 1024) throw new Error('Pi RPC frame exceeds limit');
       record = JSON.parse(encoded);
       if (!record || typeof record !== 'object' || Array.isArray(record) || typeof record.type !== 'string') {
@@ -84,7 +100,7 @@ export class SessionWorker extends EventEmitter {
         this.pending.delete(id);
         reject(new Error(`Pi RPC timed out: ${command.type}; outcome may be unknown`));
       }, this.options.timeoutMs);
-      this.pending.set(id, { resolve, reject, timer, withBoundary });
+      this.pending.set(id, { resolve, reject, timer, withBoundary, type: command.type });
       Promise.resolve().then(() => this.controller.dispatch({ ...command, id })).catch(error => {
         if (this.pending.delete(id)) { clearTimeout(timer); reject(error); }
       });
