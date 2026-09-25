@@ -16,7 +16,9 @@ export function createToolSearchTool(service) {
   return {
     name: TOOL_SEARCH_TOOL_NAME,
     label: "Tool search",
-    description: "Search available tool catalogs by capability and activate matching tools.",
+    // Fixed text on purpose: this definition sits in the cached prefix, so it must not
+    // list the catalog, which grows as servers attach.
+    description: "Search available tool catalogs by capability and activate matching tools. Most tools start inactive to keep the prompt small: when an instruction, skill or message names a tool you do not have, search for that name before calling it.",
     promptSnippet: "Search available tool catalogs by capability; matched tools activate for the next model turn.",
     parameters: PARAMETERS,
     executionMode: "parallel",

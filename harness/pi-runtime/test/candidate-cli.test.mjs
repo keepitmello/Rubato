@@ -112,7 +112,7 @@ test("actual candidate main RPC binds Rubato against canonical services across n
     let context;
     pi.on("session_start", (event, ctx) => { context = ctx; pi.rpc.emit("candidate.ready", { reason: event.reason }); });
     pi.rpc.handle("candidate.inspect", () => ({ tools: pi.getAllTools().map(tool => tool.name), providers: context.modelRegistry.getRegisteredProviderIds() }));
-    pi.rpc.handle("candidate.execute", ({ name, params }) => pi.executeTool(name, params));
+    pi.rpc.handle("candidate.execute", ({ name, params }) => pi.executeTool(name, params, { activateInactiveTool: true }));
   };\n`);
   const env = { PATH: process.env.PATH, HOME: home, LANG: "en_US.UTF-8", RUBATO_CANDIDATE_AGENT_DIR: agentDir,
     PI_CODING_AGENT_DIR: liveDir, RUBATO_PI_CODING_AGENT_DIR: liveDir, PI_PACKAGE_DIR: liveDir,
@@ -175,8 +175,7 @@ test("actual candidate main RPC binds Rubato against canonical services across n
   // cwd-encoded folder under sessions/ rather than directly in it (5c532f6f7,
   // 05a15877f, 8dc148cc7), so the directory is a descendant, not the parent.
   assert.ok(dirname(state.sessionFile).startsWith(join(agentDir, "sessions")), state.sessionFile);
-  // tool_search is registered only when a deferred catalog exists; the default
-  // small direct-exposure profile here intentionally has none.
+  // Registered, not necessarily active: most tools wait in the tool_search catalog.
   for (const name of ["Agent", "team_create", "memory", "memory_apply_patch", "bash_input", "eval", "webfetch", "look_at", "apply_patch"]) assert.ok(initial.tools.includes(name), `missing ${name}`);
   for (const name of ["openai-codex", "xai", "cursor", "anthropic", "kiro", "google-antigravity", "opencode"]) assert.ok(initial.providers.includes(name), `missing ${name}`);
   const promptAndSettle = async (message) => {
