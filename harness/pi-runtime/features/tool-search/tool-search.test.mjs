@@ -136,3 +136,57 @@ test("actual staged Pi discovers inactive MCP tools, invokes one in the same tur
   await waitForMarker(markerPath, "exit", 2);
   assert.equal(errors.length, 0);
 });
+
+test("only the direct tool set starts active; other extension tools wait in the search catalog", async (t) => {
+  const cwd = join(scratchRoot, "surface-project");
+  const agentDir = join(scratchRoot, "surface-agent");
+  await Promise.all([mkdir(cwd), mkdir(agentDir)]);
+
+  const runtime = resolvePiRuntime({ root: stagedRoot });
+  const sdk = await import(pathToFileURL(runtime.sdkEntry));
+  const searchRuntime = await import(pathToFileURL(join(stagedRoot, "rubato-features/tool-search/index.mjs")));
+  const tool = (name, extra = {}) => ({
+    name,
+    label: name,
+    description: `${name} fixture capability`,
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+    async execute() { return { content: [{ type: "text", text: name }] }; },
+    ...extra,
+  });
+  const loader = new sdk.DefaultResourceLoader({
+    cwd,
+    agentDir,
+    noExtensions: true,
+    noSkills: true,
+    noPromptTemplates: true,
+    noThemes: true,
+    noContextFiles: true,
+    extensionFactories: [
+      { name: "rubato-tool-search", factory: searchRuntime.createToolSearchExtension(new searchRuntime.ToolSearchService()) },
+      {
+        name: "surface-fixture",
+        factory: (pi) => {
+          pi.registerTool(tool("todo"));
+          pi.registerTool(tool("team_create"));
+          pi.registerTool(tool("mode_gated", { allowLazyActivation: false }));
+        },
+      },
+    ],
+  });
+  await loader.reload();
+  const { session } = await sdk.createAgentSession({ cwd, agentDir, resourceLoader: loader, sessionManager: sdk.SessionManager.inMemory(cwd) });
+  t.after(() => session.dispose());
+  await session.bindExtensions({});
+
+  const active = session.getActiveToolNames();
+  assert.ok(active.includes("todo"), JSON.stringify(active));
+  assert.ok(active.includes("tool_search"), JSON.stringify(active));
+  assert.ok(!active.includes("team_create"), JSON.stringify(active));
+  assert.ok(active.includes("mode_gated"), "an owner that forbids lazy activation keeps its tool");
+  assert.ok(!active.includes("grep"), "engine builtins stay out");
+  assert.ok(!session.getAllTools().some(({ name, exposure }) => name === "grep" && exposure === "search"));
+
+  const search = await session.executeTool("tool_search", { query: "team_create" });
+  assert.deepEqual(search.details.activated, ["team_create"]);
+  assert.ok(session.getActiveToolNames().includes("team_create"));
+});
