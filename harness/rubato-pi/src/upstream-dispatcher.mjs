@@ -13,17 +13,40 @@ export const UPSTREAM_DISPATCHER_FLAG = "RUBATO_UPSTREAM_DISPATCHER";
 
 /** 오리진별로 풀이 잡히므로 프로바이더끼리 연결을 안 뺏는다. */
 export const UPSTREAM_CONNECTIONS = 16;
-/** 청크 사이 간격. 0 은 죽은 스트림을 영영 붙든다. */
+/**
+ * 청크 사이 간격. 0 은 죽은 스트림을 영영 붙든다.
+ *
+ * 죽은 스트림을 더 빨리 끊으려고 낮추지 않는다. 이 Agent 는 fetch 를 쓰는 provider
+ * 전부가 함께 쓰고, 성공한 스트림에서 잰 내용 간격이 이미 크다 — 2026-09-25
+ * speed-index 실측(성공 약 5.2만 건): xAI 92.6s, cursor 42.7s, codex 30.0s,
+ * Anthropic Opus 5.5 9.6s (첫 출력까지는 76.4s). ping 같은 비내용 바이트는
+ * 재지 않았으므로 내용 간격이 바이트 간격의 상한일 뿐이고, 그 이상 근거가 없다.
+ */
 export const UPSTREAM_BODY_TIMEOUT_MS = 120_000;
 export const UPSTREAM_HEADERS_TIMEOUT_MS = 600_000;
+/**
+ * IPv6/IPv4 happy-eyeballs 한 주소의 시도 기한. 엔진 dispatcher
+ * (`pi-coding-agent/dist/core/http-dispatcher.js` 의 DEFAULT_AUTO_SELECT_FAMILY_ATTEMPT_TIMEOUT_MS)
+ * 와 같은 값이다. 이 Agent 는 엔진 dispatcher 를 우회하므로 그 설정도 따라오지 않는다 —
+ * 지정하지 않으면 Node 기본(250~500ms)이라 핫스팟처럼 지연이 큰 회선에서 멀쩡한
+ * 연결 시도를 끊고 다음 주소로 넘어간다. api.anthropic.com 은 A 와 AAAA 가 둘 다 있다.
+ */
+export const UPSTREAM_AUTO_SELECT_FAMILY_ATTEMPT_TIMEOUT_MS = 2_000;
 
-function createAgent() {
-  return new Agent({
+export function upstreamAgentOptions() {
+  return {
     connections: UPSTREAM_CONNECTIONS,
     allowH2: false,
     bodyTimeout: UPSTREAM_BODY_TIMEOUT_MS,
     headersTimeout: UPSTREAM_HEADERS_TIMEOUT_MS,
-  });
+    connect: {
+      autoSelectFamilyAttemptTimeout: UPSTREAM_AUTO_SELECT_FAMILY_ATTEMPT_TIMEOUT_MS,
+    },
+  };
+}
+
+function createAgent() {
+  return new Agent(upstreamAgentOptions());
 }
 
 let agent;
