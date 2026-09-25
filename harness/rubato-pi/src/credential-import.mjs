@@ -110,7 +110,7 @@ export function defaultTargetAuthPath(home = homedir(), env = process.env) {
 async function loadReadOnlyStorage() {
   const module = await import(pathToFileURL(join(senpiDir, "dist/core/auth-storage.js")).href);
   if (typeof module.ReadOnlyAuthStorage !== "function") {
-    throw new Error("pinned senpi has no ReadOnlyAuthStorage");
+    throw new Error("pinned engine has no ReadOnlyAuthStorage");
   }
   return module.ReadOnlyAuthStorage;
 }
@@ -222,7 +222,7 @@ export async function readLegacyCandidates(legacyPath, { read = readFileSync, Re
 async function loadBackend() {
   const module = await import(pathToFileURL(join(senpiDir, "dist/core/auth-storage.js")).href);
   if (typeof module.FileAuthStorageBackend !== "function") {
-    throw new Error("pinned senpi has no FileAuthStorageBackend");
+    throw new Error("pinned engine has no FileAuthStorageBackend");
   }
   return module.FileAuthStorageBackend;
 }

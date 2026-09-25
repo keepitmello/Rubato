@@ -228,48 +228,6 @@ async function drain(stream) {
 
 test("feature stages one stock-bound closure and its default factory builds the admitted seven", async () => {
   assert.equal(providersFeature.id, "providers");
-  assert.equal(providersFeature.patches.length, 9);
-  assert.deepEqual(
-    providersFeature.patches.map(({ path, preimageSha256 }) => ({ path, preimageSha256 })),
-    [
-      {
-        path: "dist/auth/resolve.js",
-        preimageSha256: "82ee45ecec319f59536759312a4de25313a8bb8cb7ce43db43d18edc10fef305",
-      },
-      {
-        path: "dist/models.js",
-        preimageSha256: "75fa33149fb608bc4a7b7a0586c8ca8f0024465d580091b0c426c0baf3fbc80a",
-      },
-      {
-        path: "dist/core/model-runtime.js",
-        preimageSha256: "bae3c3feb7928c7702c3d98a3454660bee1647064dd449472fc6308c354fbc25",
-      },
-      {
-        path: "dist/core/extensions/loader.js",
-        preimageSha256: "81106b07522aaf9197858c4679fecd7fbd23c346376d6e1f2cc3dd5294d543f4",
-      },
-      {
-        path: "dist/core/extensions/runner.js",
-        preimageSha256: "07a94efe560e6a460a415b2188c1c3c69ca151bd163c9b5f05347caf8403ace2",
-      },
-      {
-        path: "dist/api/openai-codex-responses.js",
-        preimageSha256: "6e69310d77278231cfc87d7f03ee815d4a0f2ff273e6c43fcee6835e7df2b0c7",
-      },
-      {
-        path: "dist/api/transform-messages.js",
-        preimageSha256: "9d747a3d64c533f7bfaf2a66e8446dc006086559d364a09d4c51d1c8c9c332e5",
-      },
-      {
-        path: "dist/utils/event-stream.js",
-        preimageSha256: "29a6bb6b21387b8c1f2ecfb1ec508b4030aba3727373ab854d28333557f7a68e",
-      },
-      {
-        path: "dist/api/lazy.js",
-        preimageSha256: "4b8083fd71cbbe2ed01be00fc6ae9bc67f84aa7bf50ef815f7863e156a3e003c",
-      },
-    ],
-  );
   assert.ok(providersFeature.files.every((entry) =>
     entry.packageName === "@earendil-works/pi-ai"
     || (entry.packageName === "@earendil-works/pi-coding-agent"

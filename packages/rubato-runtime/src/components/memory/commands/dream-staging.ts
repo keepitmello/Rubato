@@ -29,7 +29,7 @@ export async function stageDreamTranscript(
 ): Promise<StagedDreamTranscript> {
   const filePath = resolve(cwd, inputPath)
   const metadata = await stat(filePath)
-  if (!metadata.isFile()) throw new TypeError("--from transcript:<path> must name a senpi session JSONL file")
+  if (!metadata.isFile()) throw new TypeError("--from transcript:<path> must name a session JSONL file")
   if (metadata.size > MAX_TRANSCRIPT_BYTES) throw new TypeError("--from transcript file exceeds the 64 MiB limit")
 
   const bytes = await readFile(filePath)
@@ -60,7 +60,7 @@ export async function stageDreamTranscript(
     if (item !== undefined) normalized.push(item)
   }
   if (!hasSessionHeader || normalized.length === 0) {
-    throw new TypeError("--from accepts only senpi session JSONL with a session header and message rows")
+    throw new TypeError("--from accepts only session JSONL with a session header and message rows")
   }
 
   const capturedAtById = new Map(normalized.map((item) => [String(item.value.id), item.capturedAt]))
@@ -69,7 +69,7 @@ export async function stageDreamTranscript(
     projectTranscriptEntries(projection, capturedAtById.get(projection.messageId) ?? fallbackCapturedAt),
   )
   if (entries.length === 0) {
-    throw new TypeError("--from senpi session JSONL contains no stageable user or assistant messages")
+    throw new TypeError("--from session JSONL contains no stageable user or assistant messages")
   }
 
   const conversationId = `from-transcript-${sha1(filePath).slice(0, 12)}`

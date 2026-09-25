@@ -63,7 +63,7 @@ export function registerDreamCommand(pi: SenpiExtensionAPI, deps: MemoryCommandD
         } else if (parsed.flags.has("from")) {
           const source = requiredValue(parsed.flags.get("from"), "--from")
           if (!source.startsWith("transcript:") || source.slice("transcript:".length).length === 0) {
-            throw new TypeError("--from expects transcript:<path> to a senpi session JSONL file")
+            throw new TypeError("--from expects transcript:<path> to a session JSONL file")
           }
           const staged = await stageDreamTranscript(
             source.slice("transcript:".length),

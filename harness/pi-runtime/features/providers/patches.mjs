@@ -39,6 +39,29 @@ function replaceOnce(sourceText, before, after, label) {
   return sourceText.slice(0, first) + after + sourceText.slice(first + before.length);
 }
 
+// Stock retry classification reads only the error text, so "terminated" after committed
+// text or tool output is retried and replays it. Providers and the credential pool mark
+// those failures with the prefix owned by auth-pool/classify.mjs; stock must honor it.
+// Both the session retry decision and interactive error display go through this function.
+function patchRetrySuppression(sourceText) {
+  const next = replaceOnce(
+    sourceText,
+    "function buildProviderErrorPattern(patterns) {",
+    'import { TURN_RETRY_SUPPRESSION_PREFIX } from "../rubato-features/providers/auth-pool/classify.mjs";\nfunction buildProviderErrorPattern(patterns) {',
+    "retry-suppression-import",
+  );
+  return replaceOnce(
+    next,
+    `    const errorMessage = message.errorMessage;
+    if (NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN.test(errorMessage))`,
+    `    const errorMessage = message.errorMessage;
+    if (errorMessage.startsWith(TURN_RETRY_SUPPRESSION_PREFIX))
+        return false;
+    if (NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN.test(errorMessage))`,
+    "retry-suppression",
+  );
+}
+
 function patchResolveAuth(sourceText) {
   let next = replaceOnce(
     sourceText,
@@ -410,6 +433,14 @@ export const patches = Object.freeze([
     path: "dist/api/lazy.js",
     preimageSha256: "4b8083fd71cbbe2ed01be00fc6ae9bc67f84aa7bf50ef815f7863e156a3e003c",
     apply: patchLazyLocalWork,
+  }),
+  Object.freeze({
+    id: "providers:retry-suppression",
+    packageName: PACKAGE_NAME,
+    version: PACKAGE_VERSION,
+    path: "dist/utils/retry.js",
+    preimageSha256: "292e2a6654fdd48d6f020eedb2084a70b3ccceb289c37c65ad2d41c45dc664dc",
+    apply: patchRetrySuppression,
   }),
 ]);
 

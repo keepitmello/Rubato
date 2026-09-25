@@ -226,8 +226,8 @@ export async function importAntigravityKeychainCredential({
   const module = ReadOnlyAuthStorage && backendFactory ? undefined : await loadAuthStorageModule();
   const Parser = ReadOnlyAuthStorage ?? module?.ReadOnlyAuthStorage;
   const Backend = backendFactory ?? module?.FileAuthStorageBackend;
-  if (typeof Parser !== "function") throw new Error("pinned senpi has no ReadOnlyAuthStorage");
-  if (typeof Backend !== "function") throw new Error("pinned senpi has no FileAuthStorageBackend");
+  if (typeof Parser !== "function") throw new Error("pinned engine has no ReadOnlyAuthStorage");
+  if (typeof Backend !== "function") throw new Error("pinned engine has no FileAuthStorageBackend");
 
   // 1) 대상을 먼저 본다. 있으면 Keychain 을 **읽지도 않는다** — 프롬프트를 띄우지 않는다.
   if (antigravityCredentialPresent(targetPath, { read, ReadOnlyAuthStorage: Parser })) {

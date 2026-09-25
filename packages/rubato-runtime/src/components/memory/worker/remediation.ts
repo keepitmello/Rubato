@@ -22,7 +22,7 @@ export function reflectionRemediation(reason: string | undefined, detail: string
   // `ENOENT`: a senpi child that died in theme init reading a missing file was reported as a
   // launcher problem, and the user went looking for SENPI_BIN that was never the cause.
   if (reason?.toLowerCase() === "spawn_failed") {
-    return "senpi executable not resolvable for the reflection child; set SENPI_BIN"
+    return "engine executable not resolvable for the reflection child; set SENPI_BIN"
   }
   if (combined.includes("api key") || combined.includes("auth_missing")) {
     return "run /login <provider>"

@@ -34,8 +34,12 @@ const { isCursorExecResolved } = await import(
 );
 export { isCursorExecResolved };
 
-/** 엔진(agent-session TURN_RETRY_SUPPRESSION_PREFIX)이 재시도 금지로 읽는 접두사. */
-export const NO_TURN_RETRY_PREFIX = "senpi:no-turn-retry:";
+/**
+ * 엔진이 재시도 금지로 읽는 접두사. 정본은 `auth-pool/classify.mjs` 의
+ * `TURN_RETRY_SUPPRESSION_PREFIX` 이고 stock `utils/retry.js` 패치가 그걸 읽는다.
+ * 이 파일은 레포 경로에서도 테스트되므로 import 대신 같은 값을 두고, 테스트가 둘을 맞춰 본다.
+ */
+export const NO_TURN_RETRY_PREFIX = "rubato:no-turn-retry:";
 
 /** 한 logical model call 에 decorator 가 두 번 걸리지 않게 하는 표지. */
 export const kRubatoStream = Symbol.for("rubato.stream.decorated");
@@ -400,7 +404,7 @@ function attachTiming(state, message) {
  * 종료 정착표(설계 문서)를 여기서 지킨다:
  * - 텍스트·도구 델타 전 오류 → 그대로 error, 재시도 허용
  * - 사고만 나간 오류 → 그대로 error, 재시도 허용 (사고는 재시도가 두 번 그리지 않는다)
- * - 텍스트·도구 델타 후 오류 → `senpi:no-turn-retry:` 로 재시도 금지
+ * - 텍스트·도구 델타 후 오류 → `NO_TURN_RETRY_PREFIX` 로 재시도 금지
  * - 사용자 중단 또는 WebSocket 단절 + 완성된 미실행 tool → `toolUse` done
  *   (응답 전체가 성공한 게 아니라, 프로토콜상 끝난 item 을 소켓과 함께 롤백하지 않는다)
  * - 잘린 도구·텍스트만 있는 전송 실패는 성공으로 바꾸지 않는다

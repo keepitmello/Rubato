@@ -25,7 +25,7 @@ export type TaskModelRegistry = SenpiModelRegistryPort<SenpiModelPort>
 
 export type ResolveModelRegistry = () => TaskModelRegistry | undefined
 
-const NO_REGISTRY_MESSAGE = "No senpi model registry is available yet to resolve a task model."
+const NO_REGISTRY_MESSAGE = "No model registry is available yet to resolve a task model."
 
 export function plannedEffortSource(model: ResolvedModelMetadata | undefined): EffortSource | undefined {
   const source = model?.effortSource
