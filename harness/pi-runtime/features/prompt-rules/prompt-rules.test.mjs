@@ -311,6 +311,67 @@ test("a wake-started first run waits for before_run readiness before declaring i
   assert.ok(toolLists[0].includes("late_tool"), JSON.stringify(toolLists[0]));
 });
 
+test("a tool activated mid-session is declared after the history, not in the leading tool list", async (t) => {
+  // The leading system message is the cached prefix. The composed-prompt projection used to
+  // fold every later tool declaration into it, so one tool_search activation rewrote the
+  // prefix ahead of the whole history even on lanes that load late tools natively.
+  let api;
+  const lateTool = {
+    name: "late_tool",
+    label: "Late tool",
+    description: "Activated partway through the session.",
+    // Stock renders snippets and guidelines of the selected tools into its base prompt.
+    promptSnippet: "late_tool: LATE_SNIPPET_ONLY",
+    promptGuidelines: ["LATE_GUIDELINE_ONLY"],
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+    async execute() { return { content: [{ type: "text", text: "ok" }] }; },
+  };
+  const capture = (pi) => {
+    api = pi;
+    pi.registerTool(lateTool);
+    pi.on("session_start", () => pi.setActiveTools(pi.getActiveTools().filter((name) => name !== "late_tool")));
+  };
+  const project = createInstructionProject("late-tool-history");
+  const rubatoPi = resolve(sourceRoot, "../rubato-pi/src");
+  const fixture = await createFixture({
+    ...project,
+    sessionManager: sdk.SessionManager.inMemory(project.cwd),
+    extraFactories: [{ name: "late-tool", factory: capture }],
+    tools: ["read", "todo", "late_tool"],
+    env: {
+      RUBATO_PI_ROLE: "lead",
+      RUBATO_ROLE_PROMPT_MODULE: pathToFileURL(join(rubatoPi, "system-prompt.mjs")).href,
+      RUBATO_ROLE_CONTRACT_MODULE: pathToFileURL(join(rubatoPi, "role-contract.mjs")).href,
+    },
+  });
+  t.after(() => fixture.session.dispose());
+  const requests = [];
+  fixture.session.agent.streamFunction = (_model, context) => {
+    requests.push(context.messages);
+    return complete(assistant("ok"));
+  };
+
+  await fixture.session.prompt("hello");
+  api.setActiveTools([...api.getActiveTools(), "late_tool"]);
+  await fixture.session.prompt("again");
+
+  assert.deepEqual(fixture.errors, []);
+  assert.equal(requests.length, 2);
+  const [first, second] = requests;
+  const headTools = (messages) => (messages[0].toolsAdded ?? []).map((tool) => tool.name);
+  assert.equal(first[0].role, "system");
+  assert.ok(!headTools(first).includes("late_tool"), JSON.stringify(headTools(first)));
+  assert.deepEqual(headTools(second), headTools(first));
+  assert.equal(second[0].content, first[0].content);
+  assert.ok(getCurrentTools(second).some((tool) => tool.name === "late_tool"));
+  const declaration = second.findIndex((message, index) => index > 0
+    && message.role === "system"
+    && message.toolsAdded?.some((tool) => tool.name === "late_tool"));
+  const againIndex = second.findIndex((message) => message.role === "user" && textOf(message).includes("again"));
+  assert.ok(declaration > 0 && declaration < againIndex, `declaration ${declaration}, prompt ${againIndex}`);
+  assert.equal(second[declaration].content, "");
+});
+
 test("freshly staged stock SDK consumes native root, static rule, nested AGENTS, and matching dynamic rule", async (t) => {
   const project = createInstructionProject("instructions-on");
   const fixture = await createFixture({

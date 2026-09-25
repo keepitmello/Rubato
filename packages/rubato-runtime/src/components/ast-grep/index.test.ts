@@ -75,6 +75,7 @@ describe("createAstGrepComponent", () => {
           lifecycle: "lazy",
           idleTimeoutMin: 1,
           startupTimeoutMs: 2000,
+          exposure: "search",
         },
       },
     ])

@@ -74,7 +74,8 @@ test("all selected hooks compose in one isolated stock SDK and standard binary",
       }] }) },
       { name: "composition-contract", factory: (pi) => {
       api = pi;
-      pi.registerTool({ name: "composition_echo", label: "Echo", description: "Local composition fixture",
+      // Declared direct: this fixture checks hook composition, not the default tool surface.
+      pi.registerTool({ name: "composition_echo", label: "Echo", description: "Local composition fixture", exposure: "direct",
         parameters: { type: "object", properties: { value: { type: "string" } }, required: ["value"] },
         execute: async (_id, args) => ({ content: [{ type: "text", text: args.value }], details: {} }),
       });
@@ -114,7 +115,7 @@ test("all selected hooks compose in one isolated stock SDK and standard binary",
   session.setActiveToolsByName(api.getActiveTools().filter((name) => name !== "mcp__selected_echo"));
   const evaluated = await api.executeTool("eval", {
     language: "js", code: 'await tool.mcp__selected_echo({value: "eval to MCP"})', summary: "All feature tool bridge",
-  });
+  }, { activateInactiveTool: true });
   assert.match(evaluated.content.filter(({ type }) => type === "text").map(({ text }) => text).join("\n"), /echo:eval to MCP/);
   assert.deepEqual(hooks.slice(-4), [["call", "eval"], ["call", "mcp__selected_echo"], ["result", "mcp__selected_echo"], ["result", "eval"]]);
   await session.prompt("same input");

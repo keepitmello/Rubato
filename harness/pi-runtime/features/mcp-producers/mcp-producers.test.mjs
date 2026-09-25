@@ -173,7 +173,7 @@ test("actual ast-grep producer and search producer reach staged Pi execution, ab
   assert.deepEqual(
     registry.list().map(({ name, enabled, lifecycle, exposure }) => ({ name, enabled, lifecycle, exposure })),
     [
-      { name: "_ast_grep", enabled: true, lifecycle: "lazy", exposure: "auto" },
+      { name: "_ast_grep", enabled: true, lifecycle: "lazy", exposure: "search" },
       { name: "disabled", enabled: false, lifecycle: "lazy", exposure: "auto" },
       { name: "rubato-memory", enabled: true, lifecycle: "lazy", exposure: "search" },
     ],
@@ -182,15 +182,15 @@ test("actual ast-grep producer and search producer reach staged Pi execution, ab
   const astEcho = "mcp__ast_grep_echo";
   const memoryEcho = "mcp__rubato-memory_echo";
   const memorySlow = "mcp__rubato-memory_slow";
-  assert.ok(session.getActiveToolNames().includes(astEcho), "small auto-exposed ast-grep catalog stays direct");
+  assert.ok(!session.getActiveToolNames().includes(astEcho), "ast-grep declares search exposure and starts inactive");
   assert.ok(session.getActiveToolNames().includes("tool_search"));
   assert.ok(!session.getActiveToolNames().includes(memoryEcho));
   assert.equal(searchService.getCatalog().filter(({ group }) => group === "rubato-memory").length, 4);
-  assert.equal(searchService.getCatalog().some(({ group }) => group === "_ast_grep"), false);
+  assert.equal(searchService.getCatalog().some(({ group }) => group === "_ast_grep"), true);
   await waitForMarker(memoryMarker, "exit");
   await waitForMarker(astMarker, "exit");
 
-  const direct = await session.executeTool(astEcho, { value: "direct" });
+  const direct = await session.executeTool(astEcho, { value: "direct" }, { activateInactiveTool: true });
   assert.equal(direct.content[0].text, "echo:direct");
   const search = await session.executeTool("tool_search", {
     query: "echo a string value",

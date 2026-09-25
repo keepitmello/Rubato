@@ -7,21 +7,21 @@ export const CONTEXT_NOTES_TOOL_NAMES = Object.freeze([
   "notes_append_to_file", "new_context", "get_context_remaining",
 ]);
 
-// In notes mode the tools are active from the start, in one fixed order. They used to be
-// search-exposed and activated one by one as the model found them, usually around the
-// point the window filled up. No lane declares native mid-conversation tool additions, so
-// each activation rewrote the tool list ahead of the whole history and missed the cache
-// (Codex 2026-09-21..23: 27 activations, ~200k tokens each). Ten schemas in the cached
-// prefix cost far less than one of those misses.
-export function syncNotesToolActivation(pi, enabled) {
+// The notes tools are search-exposed: in notes mode tool_search can activate them, in
+// summary mode nothing can. An activation is declared mid-conversation (`toolsAdded`)
+// and the session-prompt projection keeps it there, so the cached prefix survives on
+// lanes with native tool additions. Keeping all eleven in every prefix instead
+// (2026-09-23) cost ~2.3k tokens per request for tools most windows never call.
+export function syncNotesToolActivation(pi, enabled, definitions = []) {
+  for (const definition of definitions) {
+    if (definition.allowLazyActivation === enabled) continue;
+    definition.allowLazyActivation = enabled;
+    pi.registerTool({ ...definition });
+  }
   if (typeof pi.getActiveTools !== "function" || typeof pi.setActiveTools !== "function") return;
   const notes = new Set(CONTEXT_NOTES_TOOL_NAMES);
   const current = pi.getActiveTools();
-  // Only add what is missing and only remove what is present: a resync must never move
-  // a tool, because the order is part of the cached prefix too.
-  const next = enabled
-    ? [...current, ...CONTEXT_NOTES_TOOL_NAMES.filter((name) => !current.includes(name))]
-    : current.filter((name) => !notes.has(name));
+  const next = enabled ? current : current.filter((name) => !notes.has(name));
   if (next.length !== current.length) pi.setActiveTools(next);
 }
 
@@ -75,7 +75,7 @@ export function createContextNotesTools(getController, T, notesActive = historyN
       {}, (c) => ({ ...c.usage(), window: c.window, mode: "history-notes" })],
   ];
   return definitions.map(([name, label, description, properties, action, executionMode = "parallel"]) => ({
-    name, label, description, executionMode,
+    name, label, description, exposure: "search", allowLazyActivation: false, executionMode,
     parameters: T.Object(properties, { additionalProperties: false }),
     async execute(id, params, signal, _onUpdate, ctx) {
       signal?.throwIfAborted();
