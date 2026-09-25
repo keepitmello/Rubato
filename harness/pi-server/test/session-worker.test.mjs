@@ -97,3 +97,24 @@ test('malformed output closes only its own worker and preserves the failure', as
     await b.worker.stop();
   }
 });
+
+test('history with more inline images than one frame holds keeps the newest and the session alive', async () => {
+  // 3 x 16MB of base64 (12MB decoded each): 48MB encoded, over the 32MB frame limit.
+  const image = (tag) => ({ type: 'image', mimeType: 'image/png', data: tag.repeat(16 * 1024 * 1024) });
+  const messages = ['A', 'B', 'C'].map((tag) => ({ role: 'toolResult', content: [{ type: 'text', text: tag }, image(tag)] }));
+  const f = fixture('images', {
+    runRpcMode: async (_runtime, transport) => ({
+      dispatch: async (command) => transport.output({ type: 'response', id: command.id, success: true,
+        data: command.type === 'get_state' ? { sessionId: 'images' } : { messages } }),
+      close: async () => transport.onClose(),
+    }),
+  });
+  await f.worker.start();
+  const { data } = await f.worker.request({ type: 'get_messages' }, { withBoundary: true });
+  const kinds = data.messages.map((message) => message.content[1].type);
+  assert.deepEqual(kinds, ['text', 'text', 'image']);
+  assert.equal(data.messages[2].content[1].data, messages[2].content[1].data);
+  assert.equal(messages[0].content[1].type, 'image', 'the live session history is not mutated');
+  assert.equal(f.worker.closed, false);
+  await f.worker.stop();
+});
