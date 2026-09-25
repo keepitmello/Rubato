@@ -497,7 +497,8 @@ test('reconnect does not append a full answer over text already projected or sti
 test('re-attaching a thread whose assistant message errored does not fail the session', () => {
   const events=[]; const p=new EventProjection({threadId:'thread',sessionId:'session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
   const failed={role:'assistant',timestamp:1,stopReason:'error',errorMessage:'Request timed out.',content:[]};
-  p.message(failed,true);
+  // The error is final only once its turn settles; a retry would have replaced it.
+  p.begin(); p.message(failed,true); p.settle();
   const itemId=events.find((event)=>event.type==='item.completed').itemId;
   // T3 keeps the provider error as that item's text, so the next attach seeds it.
   p.seed([{id:`assistant:${itemId}`,text:'Request timed out.',streaming:false}]);
@@ -783,6 +784,77 @@ test('a turn whose last assistant message errors still closes as failed', () => 
   const completed = events.filter((event) => event.type==='turn.completed');
   assert.equal(completed.length, 1);
   assert.equal(completed[0].payload.state, 'failed');
+});
+
+// Shape of session 01a0d770 (2026-09-25) lines 39-60: empty errored attempts,
+// some retried into a real answer, one chain exhausted, one cancelled.
+const failedAttempt = (timestamp, errorMessage) => ({ role:'assistant', timestamp, provider:'anthropic',
+  model:'claude-opus-5-5', stopReason:'error', errorMessage, content:[] });
+const answer = (timestamp, text = 'ok') => ({ role:'assistant', timestamp, provider:'anthropic',
+  model:'claude-opus-5-5', stopReason:'toolUse', content:[{ type:'text', text }] });
+const retryProjection = () => {
+  const events=[]; const p=new EventProjection({threadId:'thread',sessionId:'session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
+  const failedItems = () => events.filter((event) => event.type==='item.completed' && event.payload.status==='failed');
+  // T3 upserts activities by id; collapse the stream the way the thread does.
+  const retryRows = () => [...new Map(events.filter((event) => event.type==='runtime.warning')
+    .map((event) => [event.eventId, event.payload.message])).values()];
+  return { events, p, failedItems, retryRows };
+};
+const attempt = (p, message, retry, maxAttempts = 10) => {
+  p.project({ type:'message_end', message });
+  p.project({ type:'auto_retry_start', attempt:retry, maxAttempts, delayMs:2000, errorMessage:message.errorMessage });
+  p.project({ type:'agent_start' });
+};
+
+test('failed attempts that a retry recovers leave one retry row, not an error line each', () => {
+  const { events, p, failedItems, retryRows } = retryProjection();
+  p.project({ type:'agent_start' });
+  attempt(p, failedAttempt(1, 'Connection error.'), 1);
+  attempt(p, failedAttempt(2, 'Request timed out.'), 2);
+  p.project({ type:'message_end', message:answer(3, 'recovered') });
+  p.project({ type:'auto_retry_end', success:true, attempt:2 });
+  p.project({ type:'agent_settled' });
+  assert.deepEqual(failedItems(), []);
+  assert.deepEqual(retryRows(), ['2번 재시도 끝에 이어감: Request timed out.']);
+  assert.equal(events.some((event) => event.type==='runtime.error'), false);
+  assert.equal(events.find((event) => event.type==='turn.completed').payload.state, 'completed');
+});
+
+test('an exhausted retry chain still ends on the provider error', () => {
+  const { events, p, failedItems, retryRows } = retryProjection();
+  p.project({ type:'agent_start' });
+  attempt(p, failedAttempt(1, 'Connection error.'), 1, 4);
+  attempt(p, failedAttempt(2, 'Request timed out.'), 2, 4);
+  attempt(p, failedAttempt(3, 'Connection error.'), 3, 4);
+  attempt(p, failedAttempt(4, 'Connection error.'), 4, 4);
+  p.project({ type:'message_end', message:failedAttempt(5, 'Connection error.') });
+  p.project({ type:'auto_retry_end', success:false, attempt:4, finalError:'Connection error.' });
+  p.project({ type:'agent_settled' });
+  assert.deepEqual(failedItems().map((event) => event.payload.detail), ['Connection error.']);
+  assert.deepEqual(retryRows(), ['4번 재시도 모두 실패: Connection error.']);
+  assert.deepEqual(events.filter((event) => event.type==='runtime.error').map((event) => event.payload.message), ['Connection error.']);
+  assert.equal(events.find((event) => event.type==='turn.completed').payload.state, 'failed');
+});
+
+test('a retry cancelled during backoff closes the turn as interrupted', () => {
+  const { events, p, failedItems, retryRows } = retryProjection();
+  p.project({ type:'agent_start' });
+  p.project({ type:'message_end', message:failedAttempt(1, 'Connection error.') });
+  p.project({ type:'auto_retry_start', attempt:1, maxAttempts:10, delayMs:2000, errorMessage:'Connection error.' });
+  p.project({ type:'auto_retry_end', success:false, attempt:1, finalError:'Retry cancelled' });
+  p.project({ type:'agent_settled' });
+  assert.deepEqual(failedItems(), []);
+  assert.deepEqual(retryRows(), ['재시도 중단 (1번째에서): Connection error.']);
+  assert.equal(events.some((event) => event.type==='runtime.error'), false);
+  assert.equal(events.find((event) => event.type==='turn.completed').payload.state, 'interrupted');
+});
+
+test('reopening a session does not replay retried attempts as error lines', () => {
+  const { p, failedItems } = retryProjection();
+  // get_messages returns every stored attempt; no retry events come with it.
+  for (const message of [failedAttempt(1, 'Connection error.'), answer(2),
+    failedAttempt(3, 'Connection error.'), failedAttempt(4, 'Request timed out.'), answer(5)]) p.message(message, true);
+  assert.deepEqual(failedItems(), []);
 });
 
 test('errorDetail unwraps a JSON provider body', () => {
