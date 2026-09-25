@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
 	MANY_IMAGE_MAX_DIMENSION,
+	compactStoredImage,
 	installImageLimit,
 	limitImageBlock,
 	limitInlineImages,
@@ -104,4 +105,22 @@ test("context hook downscales only the request copy", async () => {
 	assert.match(result.messages[0].content[0].text, /2000px many-image limit/);
 	assert.equal(messages[0].content[0], large);
 	handlers.session_shutdown();
+});
+
+test("tool-result images are stored at the size the model sees, and kept when shrinking fails", async () => {
+	const handlers = {};
+	installImageLimit({ on(event, handler) { handlers[event] = handler; } });
+	assert.equal(typeof handlers.tool_result, "function");
+	const text = { type: "text", text: "screenshot" };
+	assert.equal(await handlers.tool_result({ type: "tool_result", content: [text] }), undefined);
+
+	const large = image(pngHeader(924, 2000));
+	const shrunk = await compactStoredImage(large, {
+		process: async () => ({ ok: true, data: "c21hbGw=", mimeType: "image/jpeg", hints: [] }),
+	});
+	assert.deepEqual(shrunk, { type: "image", data: "c21hbGw=", mimeType: "image/jpeg" });
+	const failed = await compactStoredImage(large, { process: async () => ({ ok: false }) });
+	assert.equal(failed, large);
+	const small = image(pngHeader(800, 600));
+	assert.equal(await compactStoredImage(small, { process: async () => { throw new Error("must not touch"); } }), small);
 });

@@ -3,6 +3,17 @@ import { processImage } from "./image-process.mjs";
 /** Anthropic many-image requests (>20 image/document blocks) reject any side over this. */
 export const MANY_IMAGE_MAX_DIMENSION = 2000;
 
+/**
+ * Anthropic downsizes any image whose long side is over 1568px before the model sees it, so
+ * pixels past that are bytes the session carries for nothing. A tool-result screenshot is
+ * stored once and re-sent on every later turn: 22 PNG screenshots were 22.6MB in one session,
+ * and 5.0MB as 1568px JPEG. Bigger histories cross the request byte cap, and trimming old
+ * images to fit changes the prompt prefix and throws away the cache.
+ */
+export const STORED_IMAGE_MAX_DIMENSION = 1568;
+/** Base64 characters. Screenshots land well under this as JPEG and well over it as PNG. */
+export const STORED_IMAGE_MAX_BASE64 = 512 * 1024;
+
 export function isVideoMimeType(mimeType) {
 	return typeof mimeType === "string" && mimeType.toLowerCase().startsWith("video/");
 }
@@ -108,6 +119,37 @@ async function defaultProcess(bytes, mimeType, maxDimension) {
 	});
 }
 
+async function storedProcess(bytes, mimeType) {
+	return processImage(bytes, mimeType, {
+		autoResizeImages: true,
+		resizeOptions: {
+			maxWidth: STORED_IMAGE_MAX_DIMENSION,
+			maxHeight: STORED_IMAGE_MAX_DIMENSION,
+			maxBytes: STORED_IMAGE_MAX_BASE64,
+		},
+	});
+}
+
+/**
+ * Shrink one tool-result image to what the model can actually see before it is stored.
+ * Unlike the request-time limit, a failure keeps the original: this copy is the record.
+ */
+export async function compactStoredImage(block, options = {}) {
+	if (block?.type !== "image" || typeof block.data !== "string" || block.data.length === 0) return block;
+	if (isVideoMimeType(block.mimeType)) return block;
+	const bytes = Buffer.from(block.data, "base64");
+	const dimensions = readImageDimensions(bytes);
+	if (dimensions && !exceedsLimit(dimensions, STORED_IMAGE_MAX_DIMENSION) && block.data.length < STORED_IMAGE_MAX_BASE64) {
+		return block;
+	}
+	const processed = await (options.process ?? storedProcess)(bytes, block.mimeType);
+	if (processed?.ok !== true || typeof processed.data !== "string" || processed.data.length === 0) return block;
+	if (processed.data.length >= block.data.length) return block;
+	const image = { type: "image", data: processed.data, mimeType: processed.mimeType ?? block.mimeType };
+	const hints = Array.isArray(processed.hints) ? processed.hints.filter((hint) => typeof hint === "string" && hint.length > 0) : [];
+	return hints.length === 0 ? image : [image, { type: "text", text: hints.join("\n") }];
+}
+
 /**
  * Downscale one ImageContent block so neither side exceeds Anthropic's
  * many-image cap. Video attachments stay untouched. If resize fails, replace
@@ -175,6 +217,17 @@ export function installImageLimit(pi) {
 	for (const event of ["session_start", "session_shutdown"]) {
 		pi.on(event, () => cache.clear());
 	}
+	pi.on("tool_result", async (event) => {
+		if (!Array.isArray(event.content) || !event.content.some((block) => block?.type === "image")) return;
+		const content = [];
+		let changed = false;
+		for (const block of event.content) {
+			const compacted = await compactStoredImage(block);
+			if (compacted !== block) changed = true;
+			pushLimited(content, compacted);
+		}
+		if (changed) return { content };
+	});
 	pi.on("context", async (event) => {
 		const messages = await limitInlineImages(event.messages, { cache });
 		if (messages === event.messages) return;
