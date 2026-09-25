@@ -12,12 +12,14 @@ import { senpiNested } from "../../src/engine-paths.mjs";
 import {
   kRubatoStream,
   measurementBodyFromContext,
+  NO_TURN_RETRY_PREFIX,
   resolveSpeedIndexStreamKind,
   settleAbortedToolUse,
   withRubatoStream,
   wrapProviderStreams,
 } from "../../src/rubato-stream.mjs";
 import { bindUpstreamFetch, upstreamFetch } from "../../src/upstream-dispatcher.mjs";
+import { TURN_RETRY_SUPPRESSION_PREFIX } from "../../../pi-runtime/features/providers/auth-pool/classify.mjs";
 
 // 실제 엔진이 쓰는 stream 구현으로 위임을 검사한다. 손으로 만든 대역은
 // hasPendingLocalWork/result 의 실제 의미를 갖지 않는다.
@@ -289,7 +291,7 @@ test("델타 전 오류는 재시도 가능하고, 델타 후 오류는 재시�
     { type: "text_delta", contentIndex: 0, delta: "안녕" },
     { type: "error", reason: "error", error: after },
   ]))(model, context, { env: {} }))).at(-1);
-  assert.equal(afterLast.error.errorMessage, "senpi:no-turn-retry:terminated");
+  assert.equal(afterLast.error.errorMessage, `${NO_TURN_RETRY_PREFIX}terminated`);
 });
 
 test("사고 델타만 있으면 전송 오류는 재시도하고, 텍스트·도구가 나간 뒤에만 막는다", async () => {
@@ -308,7 +310,7 @@ test("사고 델타만 있으면 전송 오류는 재시도하고, 텍스트·�
     { type: "text_delta", contentIndex: 1, delta: "안녕" },
     { type: "error", reason: "error", error: afterText },
   ]))(model, context, { env: {} }))).at(-1);
-  assert.equal(afterTextLast.error.errorMessage, "senpi:no-turn-retry:WebSocket error");
+  assert.equal(afterTextLast.error.errorMessage, `${NO_TURN_RETRY_PREFIX}WebSocket error`);
 });
 
 test("WebSocket 단절 + 완성된 미실행 tool 은 턴을 죽이지 않고 toolUse 로 정착한다", async () => {
@@ -341,7 +343,7 @@ test("WebSocket 단절 + 잘린 도구는 실행하지 않고 재시도를 막�
   ]))(model, context, { env: {} }))).at(-1);
   assert.equal(last.type, "error");
   assert.equal(last.error.stopReason, "error");
-  assert.equal(last.error.errorMessage, "senpi:no-turn-retry:WebSocket error");
+  assert.equal(last.error.errorMessage, `${NO_TURN_RETRY_PREFIX}WebSocket error`);
   assert.equal(last.error.content[0].partialJson, '{"cmd":"rm -r');
 });
 
@@ -375,7 +377,7 @@ test("중단이 아닌 전송 실패는 도구가 있어도 성공으로 바꾸�
     { type: "error", reason: "error", error: message },
   ]))(model, context, { env: {} }))).at(-1);
   assert.equal(last.type, "error");
-  assert.ok(last.error.errorMessage.startsWith("senpi:no-turn-retry:"));
+  assert.ok(last.error.errorMessage.startsWith(NO_TURN_RETRY_PREFIX));
 });
 
 test("pi-ai 가 표지한 exec-resolved block 은 실행할 tool 로 세지 않는다", () => {
@@ -410,7 +412,7 @@ test("exec-resolved block 만 남은 중단은 toolUse 로 바뀌지 않는다",
   assert.equal(last.error.stopReason, "aborted", "toolUse 로 재분료하지 않는다");
   assert.ok(last.error.errorMessage, "errorMessage 를 지우면 엔진이 성공으로 읽는다");
   assert.ok(
-    last.error.errorMessage.startsWith("senpi:no-turn-retry:"),
+    last.error.errorMessage.startsWith(NO_TURN_RETRY_PREFIX),
     "사용자가 멈춘 턴은 재시도 대상이 아니다",
   );
 });
@@ -426,7 +428,7 @@ test("델타 전 중단도 재시도하지 않고, provider 가 error 로 라벨
   ]))(model, context, { env: {}, signal }))).at(-1);
   assert.equal(last.type, "error");
   assert.equal(last.error.stopReason, "aborted");
-  assert.equal(last.error.errorMessage, "senpi:no-turn-retry:Request was aborted");
+  assert.equal(last.error.errorMessage, `${NO_TURN_RETRY_PREFIX}Request was aborted`);
 });
 
 test("중단이 아닌 델타 전 전송 실패는 여전히 재시도 가능한 error 다", async () => {
@@ -642,7 +644,7 @@ test("중단 + 잘린 인자만 남은 턴은 error 로 정착하고 재시도�
   ]))(model, context, { env: {}, signal }))).at(-1);
   assert.equal(last.type, "error");
   assert.equal(last.error.stopReason, "aborted");
-  assert.ok(last.error.errorMessage.startsWith("senpi:no-turn-retry:"));
+  assert.ok(last.error.errorMessage.startsWith(NO_TURN_RETRY_PREFIX));
 });
 
 test("직결 context 의 toolResult 신원(toolCallId/toolName)이 계측 body 에 남는다", async () => {
@@ -733,7 +735,7 @@ test("result() 만 기다린 중단 턴도 재시도를 막는다", async () => 
   const settled = await stream.result();
   assert.equal(settled.stopReason, "aborted");
   assert.ok(
-    settled.errorMessage.startsWith("senpi:no-turn-retry:"),
+    settled.errorMessage.startsWith(NO_TURN_RETRY_PREFIX),
     `iteration 경로와 정착이 갈리면 안 된다: ${settled.errorMessage}`,
   );
   assert.equal(recorder.calls.endCall, 1);
@@ -782,4 +784,8 @@ test("stock Pi의 toolsAdded 도 본편 호출로 센다", () => {
     messages: [{ role: "system", content: "title only" }, { role: "user", content: "name this" }],
   }), "auxiliary");
   assert.equal(resolveSpeedIndexStreamKind({ messages: [] }, { streamKind: "compaction" }), "compaction");
+});
+
+test("the stream's retry-suppression prefix is the one the patched engine reads", () => {
+  assert.equal(NO_TURN_RETRY_PREFIX, TURN_RETRY_SUPPRESSION_PREFIX);
 });

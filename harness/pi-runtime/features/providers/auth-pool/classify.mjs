@@ -1,7 +1,7 @@
 export const COOLDOWN_BASE_MS = 60_000;
 export const COOLDOWN_CAP_MS = 48 * 60 * 60 * 1_000;
 export const RETRY_SAME_MAX_ATTEMPTS = 2;
-export const TURN_RETRY_SUPPRESSION_PREFIX = "senpi:no-turn-retry:";
+export const TURN_RETRY_SUPPRESSION_PREFIX = "rubato:no-turn-retry:";
 
 const INVALID_KEY_TEXT = /invalid[ _-]?(?:api[ _-]?)?key|authentication[_ ]?error|invalid x-api-key|unauthorized/i;
 const ACCOUNT_SCOPED_403_TEXT = /account|credential|token|api[ _-]?key|organization|subscription/i;

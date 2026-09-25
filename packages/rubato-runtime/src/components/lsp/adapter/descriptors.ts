@@ -197,5 +197,5 @@ export const lsp_rename = defineTool({
 })
 
 async function descriptorOnlyExecute(): Promise<never> {
-  throw new Error("Senpi LSP descriptors must be wrapped with the packaged daemon runtime before execution")
+  throw new Error("LSP descriptors must be wrapped with the packaged daemon runtime before execution")
 }

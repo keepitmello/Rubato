@@ -55,6 +55,26 @@ async function settle(stream) {
   try { await iterator.return(undefined); } catch { /* keep original failure */ }
 }
 
+function isAbortedEvent(event) {
+  return event?.reason === "aborted" || event?.error?.stopReason === "aborted";
+}
+
+/**
+ * 이 실패를 다른 계정으로 넘길 수 없을 때, 던지지 않고 provider 의 종단 event 를 그대로 둔다.
+ *
+ * 사용자 중단과 출력이 이미 나간 뒤의 실패가 그렇다. 여기서 `Error` 로 다시 던지면
+ * `lazyStream` 이 빈 `stopReason: "error"` 메시지를 새로 만든다 — 중단이 실패로 둔갑해
+ * GUI 에 빨간 줄로 뜨고, 이미 나간 텍스트와 usage 가 사라진다(2026-09-25 Opus 재현).
+ */
+function passThroughTerminal(event, committedOutput) {
+  const message = event.error;
+  if (!isAbortedEvent(event) && committedOutput && message && typeof message.errorMessage === "string"
+    && !message.errorMessage.startsWith(TURN_RETRY_SUPPRESSION_PREFIX)) {
+    message.errorMessage = `${TURN_RETRY_SUPPRESSION_PREFIX}${message.errorMessage}`;
+  }
+  return event;
+}
+
 export async function* runCredentialFailover(options) {
   const now = options.now ?? Date.now;
   const classify = options.classify ?? classifyCredentialFailure;
@@ -85,7 +105,18 @@ export async function* runCredentialFailover(options) {
       attemptStream = await options.runAttempt(slot);
       for await (const event of attemptStream) {
         const failure = options.errorFromEvent?.(event);
-        if (failure !== undefined) throw failure;
+        if (failure !== undefined) {
+          if (!committedOutput && !isAbortedEvent(event)) throw failure;
+          if (!isAbortedEvent(event)) {
+            const action = classify(failure, { failureCount: (slot.failureCount ?? 0) + (retriesBySlot.get(slot.name) ?? 0) });
+            if (action.kind === "failover") {
+              if (shouldPersistBlock(action.block, slots)) await options.persistBlock(slot, action.block);
+              await options.onRotate?.({ slot, block: action.block, attempt: attempted.size, committedOutput });
+            }
+          }
+          yield passThroughTerminal(event, committedOutput);
+          return;
+        }
         committedOutput ||= options.isCommittedOutput(event);
         yield event;
       }
