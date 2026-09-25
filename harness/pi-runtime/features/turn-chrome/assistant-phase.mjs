@@ -77,6 +77,25 @@ export function assistantPaintsText(message) {
   return false;
 }
 
+/**
+ * Pi keeps every failed attempt in the session, retried or not. An errored
+ * assistant message ended its turn only if the user speaks next; another
+ * assistant message first means auto-retry replaced it, and its "Error:" line
+ * would stack one per attempt on replay.
+ */
+export function retriedErrorMessages(items) {
+  const retried = new Set();
+  let pending;
+  for (const item of items ?? []) {
+    if (item?.role === "user") pending = undefined;
+    else if (item?.role === "assistant") {
+      if (pending) retried.add(pending);
+      pending = item.stopReason === "error" ? item : undefined;
+    }
+  }
+  return retried;
+}
+
 /** First-seen order, counted by name. bash·read·bash becomes bash (2)·read. */
 export function collapseToolsByName(items) {
   const seen = [];
