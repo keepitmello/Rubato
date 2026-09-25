@@ -124,7 +124,7 @@ describe("/search", () => {
     const text = await invoke(pi, "search", "linter", ctx)
 
     // then
-    expect(text).toContain("no senpi sessions directory")
+    expect(text).toContain("no sessions directory")
     expect(ctx.ui.notifications.at(-1)?.level).toBe("error")
   })
 })

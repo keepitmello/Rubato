@@ -20,7 +20,7 @@ export function resolveSenpiDaemonRuntime(
   }
   if (!hasCliOverride || !hasVersionOverride) {
     if (!isAbsolute(packagedRuntime.cliPath)) {
-      throw new Error("Packaged Senpi LSP daemon CLI path must be absolute")
+      throw new Error("Packaged LSP daemon CLI path must be absolute")
     }
     return { cliPath: packagedRuntime.cliPath, version: validateDaemonVersion(packagedRuntime.version) }
   }
@@ -36,10 +36,10 @@ export function resolveSenpiDaemonRuntime(
 export function resolveSenpiPackagedDaemonRuntime(importerUrl: string = import.meta.url): SenpiDaemonRuntime {
   const cliPath = fileURLToPath(new URL("../runtime/lsp-daemon/dist/cli.js", importerUrl))
   const packageJsonPath = fileURLToPath(new URL("../runtime/lsp-daemon/dist/package.json", importerUrl))
-  if (!existsSync(cliPath)) throw new Error(`Senpi packaged LSP daemon CLI is missing: ${cliPath}`)
+  if (!existsSync(cliPath)) throw new Error(`Packaged LSP daemon CLI is missing: ${cliPath}`)
   const parsed: unknown = JSON.parse(readFileSync(packageJsonPath, "utf8"))
   if (!isRecord(parsed) || typeof parsed.version !== "string" || parsed.version.length === 0) {
-    throw new Error(`Senpi packaged LSP daemon version is missing: ${packageJsonPath}`)
+    throw new Error(`Packaged LSP daemon version is missing: ${packageJsonPath}`)
   }
   return { cliPath, version: parsed.version }
 }

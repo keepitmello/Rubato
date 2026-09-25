@@ -85,7 +85,7 @@ describe("resolveSenpiLaunch", () => {
     }))
 
     // when / then
-    expect(resolve).toThrow("Unable to resolve a runnable Senpi launcher")
+    expect(resolve).toThrow("Unable to resolve a runnable engine launcher")
   }, 30_000)
 
   test("#given the real restricted PATH fallback #when launched #then Senpi prints its version", () => {

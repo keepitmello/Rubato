@@ -69,7 +69,7 @@ export function registerSearchCommand(pi: SenpiExtensionAPI, deps: MemoryCommand
       if (sessionsDir === undefined || !existsSync(sessionsDir)) {
         return respond(
           ctx,
-          `no senpi sessions directory found at ${sessionsDir ?? "<unknown>"}; start a session first or check the agent directory`,
+          `no sessions directory found at ${sessionsDir ?? "<unknown>"}; start a session first or check the agent directory`,
           "error",
         )
       }

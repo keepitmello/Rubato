@@ -60,7 +60,7 @@ export function resolveSenpiLaunch(
   if (entry !== undefined && isAbsolute(entry) && existsSync(entry)) {
     return { command: runtime.execPath, prefixArgs: [entry] }
   }
-  throw new Error("Unable to resolve a runnable Senpi launcher")
+  throw new Error("Unable to resolve a runnable engine launcher")
 }
 
 /**

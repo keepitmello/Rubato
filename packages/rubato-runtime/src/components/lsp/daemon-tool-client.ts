@@ -34,7 +34,7 @@ type SenpiLspToolName = keyof typeof DAEMON_TOOL_NAMES;
 
 class UnsupportedSenpiLspToolError extends Error {
 	constructor(readonly toolName: string) {
-		super(`Unsupported Senpi LSP daemon tool: ${toolName}`);
+		super(`Unsupported LSP daemon tool: ${toolName}`);
 		this.name = "UnsupportedSenpiLspToolError";
 	}
 }
