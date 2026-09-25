@@ -51,6 +51,8 @@ export function createAstGrepComponent(options: AstGrepComponentOptions = {}): R
         lifecycle: "lazy",
         idleTimeoutMin: 1,
         startupTimeoutMs: 2000,
+        // Three schemas (~2.9k tokens) most turns never call; tool_search activates them.
+        exposure: "search",
       })
     },
   }

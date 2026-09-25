@@ -3,6 +3,21 @@ import { fileURLToPath } from "node:url";
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
 const VERSION = "0.86.1";
 
+/**
+ * The tools the model sees from the first request. Every other extension tool starts
+ * inactive and is catalogued for tool_search; activating one declares it mid-conversation
+ * (`toolsAdded`), which Anthropic (`tool_addition`) and Codex (`additional_tools`) load
+ * without touching the cached prefix. Before this, all ~50 tools rode in every prefix
+ * (Opus 5.5: 20.1k of a 27.7k first request, 2026-09-24).
+ *
+ * The policy only fills in tools that declare nothing. Out of scope: a declared `exposure`
+ * (memory's `memory.tool_exposure` defaults to "direct"), engine builtins (grep/find/ls/
+ * edit/write stay registered-but-inactive and uncatalogued), MCP tools (their server's
+ * exposure owns them), `allowLazyActivation: false` tools, and tools an owner activates
+ * itself (the terminal extension keeps bash's companions on for background sessions).
+ */
+export const DIRECT_TOOL_NAMES = Object.freeze(["read", "bash", "apply_patch", "todo", "tool_search"]);
+
 function replaceOnce(source, before, after, label) {
   const first = source.indexOf(before);
   if (first === -1) throw new Error(`[tool-search:${label}] expected anchor is missing`);
@@ -91,7 +106,10 @@ export type ToolInfo = Pick<ToolDefinition, "name" | "description" | "parameters
     `/** Tool info with normalized exposure and source metadata. */
 export type ToolInfo = Pick<ToolDefinition, "name" | "label" | "description" | "parameters" | "promptGuidelines"> & {
     sourceInfo: SourceInfo;
+    /** Effective exposure after the Rubato tool surface policy. */
     exposure: ToolExposure;
+    /** Exposure the definition itself declared. */
+    declaredExposure: ToolExposure;
     searchText?: string;
     searchKeywords: readonly string[];
     searchGroup?: string;
@@ -104,6 +122,21 @@ export type ToolInfo = Pick<ToolDefinition, "name" | "label" | "description" | "
 function patchAgentSession(source) {
   let next = replaceOnce(
     source,
+    `export class AgentSession {`,
+    `// Rubato tool surface policy; the list is DIRECT_TOOL_NAMES in features/tool-search/patches.mjs.
+const RUBATO_DIRECT_TOOL_NAMES = new Set(${JSON.stringify(DIRECT_TOOL_NAMES)});
+function rubatoToolExposure(definition, sourceInfo) {
+    if (definition?.exposure === "search" || definition?.exposure === "direct")
+        return definition.exposure;
+    if (!definition || sourceInfo?.source === "builtin" || definition.mcpExposure !== undefined || definition.allowLazyActivation === false)
+        return "direct";
+    return RUBATO_DIRECT_TOOL_NAMES.has(definition.name) ? "direct" : "search";
+}
+export class AgentSession {`,
+    "surface-policy",
+  );
+  next = replaceOnce(
+    next,
     `        return Array.from(this._toolDefinitions.values()).map(({ definition, sourceInfo }) => ({
             name: definition.name,
             description: definition.description,
@@ -112,7 +145,7 @@ function patchAgentSession(source) {
             sourceInfo,
         }));`,
     `        return Array.from(this._toolDefinitions.values()).map(({ definition, sourceInfo }) => {
-            const exposure = definition.exposure === "search" ? "search" : "direct";
+            const exposure = rubatoToolExposure(definition, sourceInfo);
             return {
                 name: definition.name,
                 label: definition.label,
@@ -121,6 +154,7 @@ function patchAgentSession(source) {
                 promptGuidelines: definition.promptGuidelines,
                 sourceInfo,
                 exposure,
+                declaredExposure: definition.exposure === "search" ? "search" : "direct",
                 searchText: exposure === "search" ? definition.searchText : undefined,
                 searchKeywords: definition.searchKeywords ?? [],
                 searchGroup: definition.searchGroup,
@@ -134,7 +168,10 @@ function patchAgentSession(source) {
     `        this._toolRegistry = toolRegistry;
         const nextActiveToolNames =`,
     `        this._toolRegistry = toolRegistry;
-        const isDirectlyExposed = (name) => this._toolDefinitions.get(name)?.definition.exposure !== "search";
+        const isDirectlyExposed = (name) => {
+            const entry = this._toolDefinitions.get(name);
+            return rubatoToolExposure(entry?.definition, entry?.sourceInfo) !== "search";
+        };
         const nextActiveToolNames =`,
     "direct-exposure-helper",
   );
