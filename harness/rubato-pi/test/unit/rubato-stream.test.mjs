@@ -12,6 +12,7 @@ import { senpiNested } from "../../src/engine-paths.mjs";
 import {
   kRubatoStream,
   measurementBodyFromContext,
+  isReplayableContent,
   NO_TURN_RETRY_PREFIX,
   resolveSpeedIndexStreamKind,
   settleAbortedToolUse,
@@ -20,6 +21,7 @@ import {
 } from "../../src/rubato-stream.mjs";
 import { bindUpstreamFetch, upstreamFetch } from "../../src/upstream-dispatcher.mjs";
 import { TURN_RETRY_SUPPRESSION_PREFIX } from "../../../pi-runtime/features/providers/auth-pool/classify.mjs";
+import { isCommittedOutput } from "../../../pi-runtime/features/providers/auth-pool/rotation-stream.mjs";
 
 // 실제 엔진이 쓰는 stream 구현으로 위임을 검사한다. 손으로 만든 대역은
 // hasPendingLocalWork/result 의 실제 의미를 갖지 않는다.
@@ -788,4 +790,21 @@ test("stock Pi의 toolsAdded 도 본편 호출로 센다", () => {
 
 test("the stream's retry-suppression prefix is the one the patched engine reads", () => {
   assert.equal(NO_TURN_RETRY_PREFIX, TURN_RETRY_SUPPRESSION_PREFIX);
+});
+
+// 회귀(2026-09-25 핫스팟 세션): 계정 풀은 사고(thinking) event 도 커밋으로 셌다. 그래서 사고만
+// 나오고 `terminated` 로 끊긴 턴에 재시도 금지 접두사가 붙었고, 접두사를 읽는 stock retry
+// 패치 아래에서는 그 턴이 세션 재시도를 못 받는다. 두 층의 기준은 같아야 한다.
+test("계정 풀의 커밋 판정은 decorator 의 재생 가능 판정과 같다 — 사고는 커밋이 아니다", () => {
+  const types = [
+    "start", "thinking_start", "thinking_delta", "thinking_end",
+    "text_start", "text_delta", "text_end",
+    "toolcall_start", "toolcall_delta", "toolcall_end",
+    "done", "error",
+  ];
+  for (const type of types) {
+    assert.equal(isCommittedOutput({ type }), isReplayableContent({ type }), type);
+  }
+  assert.equal(isCommittedOutput({ type: "thinking_delta" }), false);
+  assert.equal(isCommittedOutput({ type: "text_delta" }), true);
 });

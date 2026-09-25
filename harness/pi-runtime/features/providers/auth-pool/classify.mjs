@@ -8,7 +8,10 @@ const ACCOUNT_SCOPED_403_TEXT = /account|credential|token|api[ _-]?key|organizat
 const RATE_LIMIT_TEXT = /rate[ _-]?limit|too many requests|resource_exhausted/i;
 const BILLING_TEXT = /billing|credits?[ _-]?(?:required|exhausted|balance)|insufficient[ _-]?(?:funds|quota|credit)|payment[ _-]?required|quota[ _-]?exhausted/i;
 const OVERLOAD_TEXT = /overloaded/i;
-const NETWORK_TEXT = /econnreset|econnrefused|etimedout|enotfound|socket hang up|fetch failed|network error|request timed out/i;
+// `connection error` 는 Anthropic/OpenAI SDK 의 APIConnectionError("Connection error."),
+// `terminated`·`other side closed` 는 undici 가 소켓을 잃을 때 올리는 문구다. 빠져 있으면
+// 연결 단계 실패가 풀 안의 즉시 재시도를 못 받고 세션 백오프로 바로 넘어간다.
+const NETWORK_TEXT = /econnreset|econnrefused|etimedout|enotfound|socket hang up|fetch failed|network error|request timed out|connection error|\bterminated\b|other side closed/i;
 const FAIL_FAST_TEXT = /context[ _-]?(?:length|window)|maximum context|invalid[ _-]?model|model[ _-]?not[ _-]?found|malformed[ _-]?stream|premature[ _-]?(?:close|stream)/i;
 const ABORT_TEXT = /\baborted?\b/i;
 

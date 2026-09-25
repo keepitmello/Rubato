@@ -324,7 +324,8 @@ export function resolveSpeedIndexStreamKind(context, options = {}) {
   return Array.isArray(added) && added.length > 0 ? "main" : "auxiliary";
 }
 
-function isReplayableContent(event) {
+/** 풀의 커밋 판정(`auth-pool/rotation-stream.mjs` 의 `isCommittedOutput`)도 이 기준을 따른다. */
+export function isReplayableContent(event) {
   // 재시도가 화면에 같은 내용을 두 번 그리게 되는 델타만 센다.
   // 사고 델타만 나간 턴에서 WebSocket 이 끊기면 엔진이 같은 턴을 다시
   // 보내야 한다 — 접두사를 붙이면 재시도·폴백이 둘 다 막혀 턴이 그대로 죽는다.

@@ -136,6 +136,15 @@ test("429 failovers; 401 blocks the account", () => {
   assert.equal(auth.block.reason, "auth_error");
 });
 
+// 2026-09-25 핫스팟 세션: SDK 의 "Connection error." 와 undici 의 "terminated" 가 네트워크
+// 실패로 안 잡혀, 아무것도 안 나간 연결 실패도 풀 안의 즉시 재시도를 못 받았다.
+test("연결 단계 실패 문구는 같은 계정 즉시 재시도 대상이다", () => {
+  for (const text of ["Connection error.", "terminated", "other side closed", "Request timed out."]) {
+    assert.equal(classifyCredentialFailure(new Error(text)).kind, "retry_same", text);
+  }
+  assert.equal(classifyCredentialFailure(new Error("Request was aborted")).kind, "fail_request");
+});
+
 test("pin wins over HRW; numbered env slots are gap-tolerant", () => {
   const slots = [{ name: "default" }, { name: "login-2" }];
   const pinned = selectSlot(slots, { pinnedSlot: "login-2", hasher: sha256SlotHasher, affinityKey: "session-1" });
@@ -412,6 +421,59 @@ test("providers extension requires agentDir and does not invent a legacy path", 
     registerCommand: (name) => commands.push(name),
   });
   assert.ok(commands.includes("account"));
+});
+
+// 계정 풀을 지난 결과를 stock 재시도 판정(패치된 utils/retry.js)에 그대로 넣어 본다.
+// 사고만 나오고 끊긴 턴은 세션 재시도를 받아야 하고, 텍스트가 나간 턴은 받지 않아야 한다.
+test("candidate ModelRuntime: 사고만 나간 뒤 끊긴 턴은 세션 재시도 대상, 텍스트 뒤는 아니다", async () => {
+  const { isRetryableAssistantError } = await import(pathToFileURL(join(piAiRoot, "dist/utils/retry.js")).href);
+  const run = async (delta) => {
+    const hits = [];
+    const { modelRuntime } = await createPooledRuntime({
+      xai: {
+        type: "api_key",
+        key: "xai-key-a",
+        accounts: [
+          { name: "default", source: "login", key: "xai-key-a" },
+          { name: "login-2", source: "login", key: "xai-key-b" },
+        ],
+      },
+    });
+    const provider = mockXaiProvider(hits, "never");
+    provider.streamSimple = function (_model, _context, options) {
+      hits.push(options.apiKey);
+      const content = delta.type === "thinking_delta"
+        ? [{ type: "thinking", thinking: delta.delta }]
+        : [{ type: "text", text: delta.delta }];
+      const failed = {
+        role: "assistant",
+        content,
+        stopReason: "error",
+        errorMessage: "terminated",
+        usage: { input: 1200, output: 3, cacheRead: 0, cacheWrite: 0, totalTokens: 1203 },
+      };
+      return (async function* () {
+        yield { type: "start", partial: { role: "assistant", content: [] } };
+        yield delta;
+        yield { type: "error", reason: "error", error: failed };
+      })();
+    };
+    modelRuntime.registerNativeProvider(provider);
+    const model = modelRuntime.getModels().find((entry) => entry.provider === "xai") ?? modelRuntime.getModel("xai", "grok-4.7");
+    const result = await modelRuntime.streamSimple(model, { messages: [] }, { sessionId: "affinity-1" }).result();
+    return { result, hits };
+  };
+
+  const thinking = await run({ type: "thinking_delta", delta: "생각" });
+  assert.equal(thinking.result.errorMessage, "terminated");
+  assert.deepEqual(thinking.result.content, [{ type: "thinking", thinking: "생각" }], "사고와 usage 가 빈 메시지로 바뀌지 않는다");
+  assert.equal(thinking.result.usage.input, 1200);
+  assert.equal(isRetryableAssistantError(thinking.result), true);
+  assert.equal(thinking.hits.length, 1);
+
+  const text = await run({ type: "text_delta", delta: "안녕" });
+  assert.match(text.result.errorMessage, /no-turn-retry:terminated$/);
+  assert.equal(isRetryableAssistantError(text.result), false);
 });
 
 test("coding-agent runtime-pool import is package-relative", () => {

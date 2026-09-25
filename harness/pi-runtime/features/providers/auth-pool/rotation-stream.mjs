@@ -113,6 +113,23 @@ function blockPatch(block, current, now, credentialRevision, policy) {
   return { ...base, blockReason: block.reason };
 }
 
+const COMMITTED_OUTPUT_EVENTS = new Set([
+  "text_start", "text_delta", "text_end",
+  "toolcall_start", "toolcall_delta", "toolcall_end",
+]);
+
+/**
+ * 이 event 가 나간 뒤에는 턴을 다시 보낼 수 없는가 — 재시도 금지 접두사와 계정 전환 금지의 기준.
+ *
+ * 텍스트와 도구만 센다. 사고(thinking)는 재시도가 다시 그려도 실패한 턴을 엔진이 걷어내므로
+ * 커밋이 아니다. 사고까지 세면 사고만 나오고 끊긴 턴(2026-09-25 핫스팟 세션의 `terminated`)에
+ * 접두사가 붙고, 접두사를 읽는 stock `utils/retry.js` 패치가 그 턴의 세션 재시도를 막는다.
+ * 기준의 정본은 rubato-stream 의 `isReplayableContent` 이고, 테스트가 둘을 맞춰 본다.
+ */
+export function isCommittedOutput(event) {
+  return COMMITTED_OUTPUT_EVENTS.has(event?.type);
+}
+
 function errorFromEvent(event) {
   if (event.type !== "error") return undefined;
   const message = event.error?.errorMessage ?? event.error?.message ?? "provider stream error";
@@ -154,7 +171,7 @@ export function streamWithCredentialRotation(options) {
       return bindSessionSlot(store, providerId, affinityKey, winner);
     },
     runAttempt,
-    isCommittedOutput: (event) => event.type !== "start",
+    isCommittedOutput,
     errorFromEvent,
     classify: (error, context) => classifyCredentialFailure(error, {
       ...context,
