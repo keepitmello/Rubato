@@ -123,7 +123,7 @@ const AM_THEME_IMPORT = 'import { getMarkdownTheme, theme } from "../theme/theme
 const AM_PHASE_IMPORT = 'import { isToolUseEllipsisFiller, phaseForTextContent } from "../../../rubato-features/turn-chrome/assistant-phase.mjs";\n';
 
 const AM_FIELDS = "    isStreaming = false;\n    thinkingVisibilityOverrides = new Map();";
-const AM_FIELDS_NEXT = "    isStreaming = false;\n    turnWorkCollapsed = false;\n    hideProgress = false;\n    showAbortWithTools = false;\n    hostThinking = false;\n    thinkingVisibilityOverrides = new Map();";
+const AM_FIELDS_NEXT = "    isStreaming = false;\n    turnWorkCollapsed = false;\n    hideProgress = false;\n    showAbortWithTools = false;\n    hostThinking = false;\n    errorRetried = false;\n    thinkingVisibilityOverrides = new Map();";
 
 const AM_METHODS_AT = "    setOutputPad(padding) {";
 const AM_METHODS = [
@@ -176,6 +176,15 @@ const AM_METHODS = [
   "            this.updateContent(this.lastMessage);",
   "        }",
   "    }",
+  "    /** Auto-retry replaced this attempt; the retry indicator already said why. */",
+  "    setErrorRetried(retried) {",
+  "        if (this.errorRetried === retried)",
+  "            return;",
+  "        this.errorRetried = retried;",
+  "        if (this.lastMessage) {",
+  "            this.updateContent(this.lastMessage);",
+  "        }",
+  "    }",
   "    setOutputPad(padding) {",
 ].join("\n");
 
@@ -196,6 +205,9 @@ const AM_AFTER_NEXT = '                const hasVisibleContentAfter = message.co
 const AM_ABORT = '        else if (!hasToolCalls) {\n            if (message.stopReason === "aborted") {';
 const AM_ABORT_NEXT = '        else if (!hasToolCalls || (this.showAbortWithTools && message.stopReason === "aborted")) {\n            if (message.stopReason === "aborted") {';
 
+const AM_ERROR = '            else if (message.stopReason === "error") {';
+const AM_ERROR_NEXT = '            else if (message.stopReason === "error" && !this.errorRetried) {';
+
 export function patchAssistantMessage(source) {
   unpatched(source, "isHiddenByTurnChrome", "assistant-message");
   let next = replaceOnce(source, AM_THEME_IMPORT, AM_THEME_IMPORT + AM_PHASE_IMPORT, "assistant-phase-import");
@@ -206,6 +218,7 @@ export function patchAssistantMessage(source) {
   next = replaceOnce(next, AM_THINKING_SKIP, AM_THINKING_SKIP_NEXT, "assistant-thinking-skip");
   next = replaceOnce(next, AM_AFTER, AM_AFTER_NEXT, "assistant-spacer-filter");
   next = replaceOnce(next, AM_ABORT, AM_ABORT_NEXT, "assistant-abort-once");
+  next = replaceOnce(next, AM_ERROR, AM_ERROR_NEXT, "assistant-retried-error");
   return next;
 }
 
@@ -218,7 +231,7 @@ const IM_CHROME_IMPORTS = [
   'import { TurnWorkSummaryComponent } from "../../rubato-features/turn-chrome/turn-work-summary.mjs";',
   'import { TurnThinkingComponent } from "../../rubato-features/turn-chrome/turn-thinking.mjs";',
   'import { THINKING_LABEL, nextWorkingLabel } from "../../rubato-features/turn-chrome/working-phase.mjs";',
-  'import { assistantPaintsText } from "../../rubato-features/turn-chrome/assistant-phase.mjs";',
+  'import { assistantPaintsText, retriedErrorMessages } from "../../rubato-features/turn-chrome/assistant-phase.mjs";',
 ].join("\n");
 
 const IM_HELPERS_AT = "    addCustomEntryToChat(entry) {";
@@ -320,6 +333,7 @@ const IM_MESSAGE_START = [
 ].join("\n");
 const IM_MESSAGE_START_NEXT = [
   '                else if (event.message.role === "assistant") {',
+  "                    this.retryableErrorComponent = undefined;",
   "                    this.startTurnWorkSummary();",
   "                    this.streamingComponent = new AssistantMessageComponent(undefined, this.hideThinkingBlock, this.getMarkdownThemeWithSettings(), this.hiddenThinkingLabel, this.outputPad, this.getMarkdownTransformers());",
   "                    this.streamingMessage = event.message;",
@@ -378,7 +392,19 @@ const IM_ABORT_NEXT = [
   "                        this.pendingTools.clear();",
   "                    }",
   '                    else if (this.streamingMessage.stopReason === "error") {',
+  "                        // Kept until auto_retry_start says whether this was final.",
+  "                        this.retryableErrorComponent = this.streamingComponent;",
   "                        if (!errorMessage) {",
+].join("\n");
+
+const IM_RETRY_START = '            case "auto_retry_start": {\n';
+const IM_RETRY_START_NEXT = [
+  '            case "auto_retry_start": {',
+  "                // The attempt is not the answer. Its Error: line would stack once per",
+  "                // retry; the retry indicator carries the reason and the count.",
+  "                this.retryableErrorComponent?.setErrorRetried?.(true);",
+  "                this.retryableErrorComponent = undefined;",
+  "",
 ].join("\n");
 
 const IM_TOOL_START = [
@@ -420,10 +446,10 @@ const IM_AGENT_END_NEXT = [
 ].join("\n");
 
 const IM_RENDER_ITEMS = "    renderSessionItems(items, options = {}) {\n        this.pendingTools.clear();";
-const IM_RENDER_ITEMS_NEXT = "    renderSessionItems(items, options = {}) {\n        this.pendingTools.clear();\n        this.closeToolGroup();\n        this.turnWorkSummary = undefined;\n        this.turnThinking = undefined;";
+const IM_RENDER_ITEMS_NEXT = "    renderSessionItems(items, options = {}) {\n        this.pendingTools.clear();\n        this.closeToolGroup();\n        this.turnWorkSummary = undefined;\n        this.turnThinking = undefined;\n        const retriedErrors = retriedErrorMessages(items);";
 
 const IM_HISTORY_ASSISTANT = '            if (message.role === "assistant") {\n                this.addMessageToChat(message);';
-const IM_HISTORY_ASSISTANT_NEXT = '            if (message.role === "assistant") {\n                if (assistantPaintsText(message))\n                    this.closeToolGroup();\n                this.addMessageToChat(message);';
+const IM_HISTORY_ASSISTANT_NEXT = '            if (message.role === "assistant") {\n                if (assistantPaintsText(message))\n                    this.closeToolGroup();\n                this.addMessageToChat(message);\n                if (retriedErrors.has(message))\n                    this.chatContainer.children.at(-1)?.setErrorRetried?.(true);';
 
 const IM_HISTORY_TOOL = [
   "                        this.chatContainer.addChild(component);",
@@ -444,6 +470,7 @@ export function patchInteractiveTurnChrome(source) {
   next = replaceOnce(next, IM_MESSAGE_UPDATE, IM_MESSAGE_UPDATE_NEXT, "message-update-interleave");
   next = replaceOnce(next, IM_MESSAGE_UPDATE_ATTACH, IM_MESSAGE_UPDATE_ATTACH_NEXT, "message-update-attach");
   next = replaceOnce(next, IM_ABORT, IM_ABORT_NEXT, "abort-once");
+  next = replaceOnce(next, IM_RETRY_START, IM_RETRY_START_NEXT, "retry-hides-attempt-error");
   next = replaceOnce(next, IM_TOOL_START, IM_TOOL_START_NEXT, "tool-start-attach");
   next = replaceOnce(next, IM_TOOL_END, IM_TOOL_END_NEXT, "tool-end-refresh");
   next = replaceOnce(next, IM_AGENT_END, IM_AGENT_END_NEXT, "agent-end-turn-work");
