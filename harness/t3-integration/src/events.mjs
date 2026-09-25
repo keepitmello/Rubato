@@ -212,7 +212,7 @@ export class EventProjection {
     this.text.clear(); this.thinking.clear(); this.completed.clear(); this.questions.clear();
     this.tasks.clear(); this.children.clear(); this.spawns.clear();
     this.turnId = undefined; this.failed = false; this.interrupted = false; this.lastUsage = undefined;
-    this.lastError = undefined;
+    this.lastError = undefined; this.pendingError = undefined; this.retry = undefined;
     this.maxTokens = undefined;
     this.speedIndex = undefined;
   }
@@ -238,10 +238,13 @@ export class EventProjection {
   begin(turnId = randomUUID()) {
     if (this.turnId) return this.turnId;
     this.turnId = turnId; this.failed = false; this.interrupted = false; this.lastError = undefined;
+    this.pendingError = undefined; this.retry = undefined;
     this.event('turn.started', {}); return turnId;
   }
   settle() {
     if (!this.turnId) return;
+    this.flushError();
+    this.retry = undefined;
     const state = this.interrupted ? 'interrupted' : this.failed ? 'failed' : 'completed';
     // `turn.completed.errorMessage` alone does not survive: T3 keeps the reason in
     // one `session.lastError` slot, so the next failure overwrites it and the
@@ -305,9 +308,18 @@ export class EventProjection {
     }
     if (complete && !this.completed.has(itemId)) {
       this.endReasoning(message);
-      const detail = textOf(message) || (message.stopReason === 'error' ? errorDetail(message) : undefined);
-      this.event('item.completed', { itemType: 'assistant_message',
-        status: message.stopReason === 'error' ? 'failed' : 'completed', ...(detail ? { detail } : {}) }, { itemId });
+      // A later assistant message means the held error was retried, not final.
+      this.pendingError = undefined;
+      const text = textOf(message);
+      const detail = text || (message.stopReason === 'error' ? errorDetail(message) : undefined);
+      const payload = { itemType: 'assistant_message',
+        status: message.stopReason === 'error' ? 'failed' : 'completed', ...(detail ? { detail } : {}) };
+      // An empty errored message is only an answer if nothing retries it. Pi
+      // stores every failed attempt, and painting each as its own assistant row
+      // stacked "Connection error." lines under a turn that went on to succeed.
+      // Hold it until the retry row replaces it or the turn settles on it.
+      if (message.stopReason === 'error' && !text) this.pendingError = { itemId, payload };
+      else this.event('item.completed', payload, { itemId });
       this.completed.add(itemId);
       // The turn's outcome is its last assistant message, not a sticky OR over
       // the whole turn. A provider retry inside one turn lands an errored empty
@@ -317,6 +329,34 @@ export class EventProjection {
       this.interrupted = message.stopReason === 'aborted';
       this.lastError = this.failed ? errorDetail(message) : undefined;
     }
+  }
+  flushError() {
+    const held = this.pendingError;
+    this.pendingError = undefined;
+    if (held) this.event('item.completed', held.payload, { itemId: held.itemId });
+  }
+  // One retry chain is one work-log row. T3 upserts activities by id, so each
+  // attempt rewrites the same row instead of stacking another beside it.
+  retryRow(message) {
+    this.event('runtime.warning', { message }, { eventId: this.retry.eventId });
+  }
+  retryStarted(event) {
+    this.pendingError = undefined;
+    this.retry ??= { eventId: randomUUID() };
+    this.retry.error = errorDetail(event) ?? this.retry.error ?? 'Unknown error';
+    this.retryRow(`재시도 중 (${event.attempt}/${event.maxAttempts}): ${this.retry.error}`);
+  }
+  retryEnded(event) {
+    if (!this.retry) return;
+    const error = this.retry.error;
+    if (event.success) this.retryRow(`${event.attempt}번 재시도 끝에 이어감: ${error}`);
+    else if (event.finalError === 'Retry cancelled') {
+      // The CLI's Escape cancels the backoff sleep. No message follows, so the
+      // last errored attempt would otherwise close the turn as a failure.
+      this.interrupted = true;
+      this.retryRow(`재시도 중단 (${event.attempt}번째에서): ${error}`);
+    } else this.retryRow(`${event.attempt}번 재시도 모두 실패: ${error}`);
+    this.retry = undefined;
   }
   question(request) {
     if (request.method === 'notify') {
@@ -557,6 +597,8 @@ export class EventProjection {
         this.message(event.message, true);
         this.usage(event.message?.usage ?? event.usage, event.message);
         break;
+      case 'auto_retry_start': this.retryStarted(event); break;
+      case 'auto_retry_end': this.retryEnded(event); break;
       case 'extension_ui_request': this.question(event); break;
       case 'extension_event': this.speedUpdated(event); this.taskUpdated(event); break;
       case 'tool_execution_start': case 'tool_execution_update': case 'tool_execution_end': {
