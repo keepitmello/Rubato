@@ -117,6 +117,9 @@ def check_api_key() -> bool:
     key = os.getenv("OPENAI_API_KEY", "").strip()
     if not key and env_file.is_file():
         for line in env_file.read_text(encoding="utf-8", errors="replace").splitlines():
+            # 검색·색인은 python-dotenv 로 읽어 셸 문법 `export KEY=...` 도 받는다.
+            # 진단이 그 줄을 못 읽으면 멀쩡한 설치를 "키 없음"으로 판정한다.
+            line = line.strip().removeprefix("export ").lstrip()
             if line.startswith("OPENAI_API_KEY="):
                 key = line.split("=", 1)[1].strip().strip('"').strip("'")
                 break
