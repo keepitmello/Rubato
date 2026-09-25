@@ -64,12 +64,14 @@ try {
     const search = await api.executeTool("tool_search", { query: "memory create edit blocks", source: "mcp", group: "rubato-memory" });
     assert.ok(search.details.activated.includes(memoryTool), JSON.stringify(search));
   } else {
-    assert.equal(api.getActiveTools().includes("memory"), true, "memory stays direct by default");
+    // "direct" is the transport (an extension tool, not an MCP server); like other tools it
+    // waits in the tool_search catalog until activated.
+    assert.equal(api.getActiveTools().includes("memory"), false, "memory registers directly but starts inactive");
     assert.equal(tools.includes("memory_apply_patch"), true);
   }
   const memory = await api.executeTool(memoryTool, { command: "create", file_path: "facts/fixture.md",
     description: "Component integration evidence", file_text: "stock Pi memory write", reason: "local integration fixture",
-  });
+  }, { activateInactiveTool: true });
   assert.notEqual(memory.isError, true, JSON.stringify(memory));
   const memoryStatus = await session.extensionRunner.requestRpc("rubato.memory.status");
   assert.equal(memoryStatus.schemaVersion, 1);

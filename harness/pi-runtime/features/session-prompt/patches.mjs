@@ -20,6 +20,15 @@
 // by a wake used to send its first request without the MCP tools and with look_at /
 // read_video gated on the wrong model, then flip back one request later — two full
 // misses on every lane without native tool additions (2026-09-21..23: 30 resets).
+//
+// The projection keeps the transcript's tool history in place. Stock collapses every
+// system message into the head, so a tool activated mid-session moved into the leading
+// tool list and rewrote the prefix ahead of the whole history — even on lanes that load
+// later tools natively (Anthropic `tool_addition`, Codex `additional_tools`). The head now
+// carries the tools the first system message declared; later system messages keep their
+// `toolsAdded`/`toolsRemoved` and drop their text, which the composed prompt already
+// renders. Replaying the result yields the same current tools, and a lane that cannot take
+// mid-conversation system messages still collapses it in the provider.
 
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
 const VERSION = "0.86.1";
@@ -97,6 +106,45 @@ export function patchAgentSession(source) {
             if (forced === undefined)
                 return transformed;`,
     "projection-compose",
+  );
+  next = replaceOnce(
+    next,
+    `            const current = getCurrentSystemMessage(transformed);
+            const head = {
+                role: "system",
+                content: forced,
+                ...(current?.toolsAdded ? { toolsAdded: current.toolsAdded } : {}),
+                timestamp: current?.timestamp ?? Date.now(),
+            };
+            return [head, ...transformed.filter((message) => message.role !== "system")];`,
+    `            const firstIndex = transformed.findIndex((message) => message.role === "system");
+            const first = firstIndex === -1 ? undefined : transformed[firstIndex];
+            const head = {
+                role: "system",
+                content: forced,
+                ...(first?.toolsAdded?.length ? { toolsAdded: first.toolsAdded } : {}),
+                ...(first?.toolsRemoved?.length ? { toolsRemoved: first.toolsRemoved } : {}),
+                timestamp: first?.timestamp ?? Date.now(),
+            };
+            const rest = [];
+            for (let index = 0; index < transformed.length; index++) {
+                const message = transformed[index];
+                if (message.role !== "system") {
+                    rest.push(message);
+                    continue;
+                }
+                if (index === firstIndex || (!message.toolsAdded?.length && !message.toolsRemoved?.length))
+                    continue;
+                rest.push({
+                    role: "system",
+                    content: "",
+                    ...(message.toolsAdded?.length ? { toolsAdded: message.toolsAdded } : {}),
+                    ...(message.toolsRemoved?.length ? { toolsRemoved: message.toolsRemoved } : {}),
+                    timestamp: message.timestamp,
+                });
+            }
+            return [head, ...rest];`,
+    "projection-tool-history",
   );
   next = replaceOnce(
     next,
