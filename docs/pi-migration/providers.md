@@ -210,7 +210,9 @@ named `accounts`, optional pin, append-on-login, named refresh merge, numbered e
 affinity, cooldown/half-open health, and pre-output-only failover. The model runtime enters rotation
 only for multiple slots and never for an explicit request key or runtime key
 (`senpi/dist/core/model-runtime.js:17-23,483-639`). Post-output failure is prefixed
-`senpi:no-turn-retry:` so the session layer cannot replay committed text/tool output.
+`senpi:no-turn-retry:` so the session layer cannot replay committed text/tool output. Rubato keeps
+the rule with the prefix `rubato:no-turn-retry:` (`auth-pool/classify.mjs`), which the stock
+`utils/retry.js` patch reads; thinking-only output is not committed.
 
 This pool behavior is genuinely retained product behavior. It requires a narrow stock host seam in
 model request preparation and credential login/refresh storage; provider factories alone cannot

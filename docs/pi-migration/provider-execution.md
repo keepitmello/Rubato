@@ -141,8 +141,13 @@ Current Senpi's account pool is a separate request-preparation layer:
   still supplement the stored lane;
 - auth/billing failures block that account, rate limits apply a bounded persisted cooldown and
   half-open lease, and provider/network faults retry the same account rather than poisoning it;
-- rotation is allowed only before committed output. After any non-`start` event, failure carries
-  the no-turn-retry marker so text or tool effects cannot be replayed on another account.
+- rotation is allowed only before committed output. In Senpi any non-`start` event counted as
+  committed. Rubato's `auth-pool/rotation-stream.mjs` counts only text and tool-call events, the
+  same rule as `rubato-stream.mjs` `isReplayableContent`: a thinking-only failure stays retryable.
+  After committed output the failure carries `rubato:no-turn-retry:`, which the stock
+  `utils/retry.js` patch (`providers:retry-suppression`) reads, so text or tool effects are not
+  replayed by the session retry or on another account. The pool retries the same account in-call
+  only when nothing, not even `start`, has reached the consumer.
 
 Evidence is current Senpi
 `core/model-runtime.js:483-639`,
