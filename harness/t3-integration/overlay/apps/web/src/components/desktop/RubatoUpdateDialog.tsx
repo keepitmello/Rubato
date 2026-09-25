@@ -37,12 +37,16 @@ export function RubatoUpdateDialog() {
     try { await bridge.respond(state.id, action); }
     catch {
       setError("요청을 전달하지 못했어요. 잠시 뒤 다시 눌러 주세요.");
+      // The prompt may have expired behind us (window reopened, app state
+      // reset). Resync so a dead prompt cannot trap the user in a modal.
+      void bridge.getState().then(setState).catch(() => {});
     } finally { inFlight.current = false; setResponding(false); }
   };
   if (state.phase === "idle") return null;
   const running = state.phase === "running";
   const failed = state.phase === "failed";
-  const dismiss = () => { if (!running) void respond(failed ? "dismiss" : "later"); };
+  // Esc / outside click only hides the prompt. Only the "나중에" button snoozes it.
+  const dismiss = () => { if (!running) void respond("dismiss"); };
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) dismiss(); }}>

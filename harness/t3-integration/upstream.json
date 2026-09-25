@@ -50,6 +50,7 @@
     "packages/tailscale/src/tailscale.ts": "67383d55b6b2852d1f3b4f0b9f62086584078ecb18458b96374a5fb41c9275d6",
     "packages/tailscale/src/tailscale.test.ts": "683f124d29df0af2112ff0b82bc379ae50bc731f27ab45f426d5384af90ad010",
     "apps/desktop/src/main.ts": "e76eb4c3f393d1e92645094fb4d53e431a15bcdaa6411ee1c7f681aa980dd541",
-    "apps/desktop/src/app/DesktopConnectionCatalogStore.ts": "842f43e5306559b64319a2c69116839abd828b5efdaa7a0f6b690f1607e08237"
+    "apps/desktop/src/app/DesktopConnectionCatalogStore.ts": "842f43e5306559b64319a2c69116839abd828b5efdaa7a0f6b690f1607e08237",
+    "apps/desktop/src/window/DesktopApplicationMenu.ts": "71dd9aa4beaa8d2c69a6188e21191d056cd127a93ca68f94e65ef34fbc4d9ca1"
   }
 }
