@@ -95,3 +95,20 @@ export function collapseToolsByName(items) {
   }
   return seen;
 }
+
+/** One line of tool names for the turn summary, cut to fit with …+N. */
+export function compactTools(groups, width) {
+  const seen = collapseToolsByName([...groups].flatMap((group) => group.workItems?.() ?? []));
+  const labels = seen.map(({ name, failed, count }) => `${failed ? "✗" : "✓"} ${name}${count > 1 ? ` (${count})` : ""}`);
+  const full = labels.join(" · ");
+  if ([...full].length <= width) return full;
+  const shown = [];
+  for (let index = 0; index < labels.length; index++) {
+    const suffix = ` · …+${labels.length - index - 1}`;
+    const candidate = `${[...shown, labels[index]].join(" · ")}${suffix}`;
+    if ([...candidate].length > width) break;
+    shown.push(labels[index]);
+  }
+  const remaining = labels.length - shown.length;
+  return remaining > 0 ? `${shown.join(" · ")}${shown.length > 0 ? " · " : ""}…+${remaining}` : full;
+}
