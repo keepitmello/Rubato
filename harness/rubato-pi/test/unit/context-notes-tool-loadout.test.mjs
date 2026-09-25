@@ -5,28 +5,31 @@ import { CONTEXT_NOTES_TOOL_NAMES, syncNotesToolActivation } from "../../src/con
 
 function fakePi(active) {
   const writes = [];
+  const registered = [];
   return {
     writes,
+    registered,
     getActiveTools: () => [...active],
     setActiveTools(next) { writes.push(next); active = [...next]; },
+    registerTool(definition) { registered.push(definition); },
     get active() { return active; },
   };
 }
 
-// The tool list heads the cached prefix, so a resync may add or remove notes tools
-// but must never move one that is already there.
-test("notes mode activates every notes tool once and a resync never reorders", () => {
-  const pi = fakePi(["read", "bash"]);
-  syncNotesToolActivation(pi, true);
-  assert.deepEqual(pi.active, ["read", "bash", ...CONTEXT_NOTES_TOOL_NAMES]);
+// Notes tools stay out of the prefix: notes mode only makes them findable, tool_search
+// activates one when the model asks, and summary mode takes them away again.
+test("notes mode makes the notes tools searchable without activating them", () => {
+  const definitions = CONTEXT_NOTES_TOOL_NAMES.map((name) => ({ name, exposure: "search", allowLazyActivation: false }));
+  const pi = fakePi(["read", "bash", "tool_search"]);
 
-  pi.setActiveTools([...pi.active, "tool_search"]);
-  const before = [...pi.active];
-  const writes = pi.writes.length;
-  syncNotesToolActivation(pi, true);
-  assert.deepEqual(pi.active, before);
-  assert.equal(pi.writes.length, writes);
-
-  syncNotesToolActivation(pi, false);
+  syncNotesToolActivation(pi, true, definitions);
   assert.deepEqual(pi.active, ["read", "bash", "tool_search"]);
+  assert.equal(pi.writes.length, 0);
+  assert.ok(pi.registered.every((definition) => definition.allowLazyActivation === true));
+  assert.equal(pi.registered.length, CONTEXT_NOTES_TOOL_NAMES.length);
+
+  pi.setActiveTools([...pi.active, "notes_write_file"]);
+  syncNotesToolActivation(pi, false, definitions);
+  assert.deepEqual(pi.active, ["read", "bash", "tool_search"]);
+  assert.ok(definitions.every((definition) => definition.allowLazyActivation === false));
 });
