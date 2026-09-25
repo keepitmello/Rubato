@@ -233,6 +233,8 @@ test("model fallback 은 기본으로 꺼진 채로 쓴다", () => {
   });
   assert.equal(next.retry.modelFallback, false);
   assert.equal(JSON.parse(written["/tmp/agent/settings.json"]).retry.modelFallback, false);
+  // 불안정한 회선에서 5회(약 62초)는 턴마다 바닥났다. 새 설치는 8회(약 4분)다.
+  assert.equal(next.retry.maxRetries, 8);
 });
 
 // 사용자가 직접 켜 둔 값은 우리 기본값이 덮지 않는다.
