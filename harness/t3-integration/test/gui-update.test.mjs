@@ -192,11 +192,12 @@ test('real detached worker survives its parent process-group exit, relaunches an
   assert.notEqual(worker.pid, result.appPid);
 });
 
-function uiHarness(t, h, responses = [1]) {
+function uiHarness(t, h, responses = [1], overrides = {}) {
   const window = new EventEmitter();
   const bars = [];
   const dialogs = [];
   const launched = [];
+  const notices = [];
   window.isDestroyed = () => false;
   window.setProgressBar = (value) => bars.push(value);
   const electron = {
@@ -209,10 +210,12 @@ function uiHarness(t, h, responses = [1]) {
     stateDir: h.directory, helper: '/unused', now: () => 1000,
     check: async () => ({ available: true, revision: 'revision-1', commits: 2 }),
     launch: async (token) => { launched.push(token); }, watchMs: 10_000,
+    notify: async (notice) => { notices.push(notice); },
+    ...overrides,
   };
   const controller = createRubatoUpdater(window, { ...options, message: electron.dialog.showMessageBox });
   t.after(() => controller.stop());
-  return { controller, dialogs, launched, bars };
+  return { controller, dialogs, launched, bars, notices };
 }
 
 test('in-app prompt: later never launches; repeated checks do not nag', async (t) => {
@@ -275,4 +278,77 @@ test('a failed job is visible once after reopening, with access to its log', asy
   assert.equal(ui.dialogs.filter((dialog) => dialog.type === 'error').length, 1);
   assert.equal(ui.dialogs[0].detail, 'test failure');
   assert.equal((await readJson(path.join(h.directory, 'seen.json'))).token, token);
+});
+
+test('in-app prompt: closing without a choice does not snooze; the next launch asks again', async (t) => {
+  const h = await fixture(t);
+  const first = uiHarness(t, h, [-1]);
+  await first.controller.tick();
+  assert.equal(first.dialogs.length, 1);
+  assert.equal(await readJson(path.join(h.directory, 'later.json')), null);
+  first.controller.stop();
+  const relaunched = uiHarness(t, h, [1]);
+  await relaunched.controller.tick();
+  assert.equal(relaunched.dialogs.length, 1);
+});
+
+test('menu check: skips the snooze and interval, and answers up-to-date and failures', async (t) => {
+  const h = await fixture(t);
+  const snoozed = uiHarness(t, h, [1, 1]);
+  await snoozed.controller.tick();
+  await snoozed.controller.tick();
+  assert.equal(snoozed.dialogs.length, 1);
+  await snoozed.controller.tick(true);
+  assert.equal(snoozed.dialogs.length, 2);
+
+  const current = uiHarness(t, h, [], { check: async () => ({ available: false }) });
+  await current.controller.tick();
+  assert.deepEqual(current.notices, []);
+  await current.controller.tick(true);
+  assert.equal(current.notices.length, 1);
+  assert.equal(current.notices[0].type, 'info');
+
+  const broken = uiHarness(t, h, [], { check: async () => { throw new Error('현재 브랜치는 dev 입니다.'); } });
+  await broken.controller.tick();
+  assert.deepEqual(broken.notices, []);
+  await broken.controller.tick(true);
+  assert.equal(broken.notices[0].type, 'error');
+  assert.match(broken.notices[0].detail, /브랜치/);
+});
+
+test('menu check: a click during the startup check is carried, not dropped', async (t) => {
+  const h = await fixture(t);
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let checks = 0;
+  const ui = uiHarness(t, h, [], { check: async () => { checks++; await gate; return { available: false }; } });
+  const startup = ui.controller.tick();
+  await delay(0);
+  await ui.controller.tick(true);
+  release();
+  await startup;
+  assert.equal(checks, 1);
+  assert.equal(ui.notices.length, 1);
+});
+
+test('menu check: a prompt already on screen answers it; closing it does not re-open it', async (t) => {
+  const h = await fixture(t);
+  let answer;
+  const window = new EventEmitter();
+  window.isDestroyed = () => false;
+  window.setProgressBar = () => {};
+  const dialogs = [];
+  const controller = createRubatoUpdater(window, {
+    stateDir: h.directory, helper: '/unused', now: () => 1000,
+    check: async () => ({ available: true, revision: 'revision-1', commits: 1 }),
+    message: (prompt) => { dialogs.push(prompt); return new Promise((resolve) => { answer = resolve; }); },
+  });
+  t.after(() => controller.stop());
+  const shown = controller.tick();
+  await delay(0);
+  await controller.tick(true);
+  answer({ response: -1 });
+  await shown;
+  await delay(0);
+  assert.equal(dialogs.length, 1);
 });

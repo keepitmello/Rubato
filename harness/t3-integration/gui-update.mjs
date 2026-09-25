@@ -70,7 +70,13 @@ export async function checkForUpdate({ root = repo, env = process.env } = {}) {
     await exec('/bin/bash', [path.join(root, 'harness/scripts/rubato-update.sh'), '--check'],
       { cwd: root, env: { ...env, RUBATO_GUI_UPDATE: '1' }, timeout: 20_000, maxBuffer: 128 * 1024 });
   } catch (error) {
-    if (error.code !== 10) throw new Error('업데이트를 확인하지 못했어요. 네트워크를 확인한 뒤 다시 시도해 주세요.', { cause: error });
+    if (error.code !== 10) {
+      // rubato-update.sh names the real reason (wrong branch, offline). Saying
+      // "network" for a checkout on another branch sent people the wrong way.
+      const reason = String(error.stderr ?? '').replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
+        .split('\n').map((line) => line.replace(/^\s*✗\s*/, '').trim()).filter(Boolean).at(-1);
+      throw new Error(reason || '업데이트를 확인하지 못했어요. 네트워크를 확인한 뒤 다시 시도해 주세요.', { cause: error });
+    }
     available = true;
   }
   if (!available) return { available: false };
