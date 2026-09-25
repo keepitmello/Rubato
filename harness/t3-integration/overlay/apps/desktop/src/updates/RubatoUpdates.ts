@@ -8,11 +8,17 @@ import type { BrowserWindow, IpcMainInvokeEvent } from "electron";
 import type { RubatoUpdateState } from "@t3tools/contracts";
 
 type Prompt = { type: "info" | "error"; title: string; message: string; detail: string; buttons: string[] };
-type ElectronServices = Pick<typeof import("electron"), "ipcMain">;
+type Notice = { type: "info" | "error"; message: string; detail?: string };
+type ElectronServices = Pick<typeof import("electron"), "ipcMain" | "dialog">;
 type Update = { available: boolean; revision?: string; commits?: number };
 type Result = { token: string; status: string; pid?: number; message?: string };
 const exec = promisify(execFile);
 const CHECK_INTERVAL = 4 * 60 * 60_000;
+// Prompt answers. The index is the button index; closing without choosing a
+// button (Esc, outside click, window closed, app quit) is not a "later".
+const UPDATE = 0;
+const LATER = 1;
+const CLOSED = -1;
 // Capture the one-shot handoff before T3 starts its backend. Update-only flags
 // must not leak into model tools, terminals, or a future unrelated CLI update.
 const restartToken = process.env.RUBATO_GUI_UPDATE_TOKEN;
@@ -46,6 +52,9 @@ export function createRubatoUpdater(
     stateDir: string;
     helper: string;
     message: (prompt: Prompt) => Promise<{ response: number }>;
+    // Result of a check the user asked for from the menu. A background check
+    // stays silent when there is nothing to update or the check fails.
+    notify?: (notice: Notice) => Promise<unknown>;
     progress?: (value: number) => void;
     check?: () => Promise<Update>;
     launch?: (token: string) => Promise<void>;
@@ -69,10 +78,22 @@ export function createRubatoUpdater(
     if (!window.isDestroyed()) window.setProgressBar(value);
     options.progress?.(value);
   };
-  const message = options.message;
+  // A prompt on screen already answers a menu request made meanwhile.
+  let prompting = false;
+  const message = async (prompt: Prompt) => {
+    prompting = true;
+    try { return await options.message(prompt); } finally { prompting = false; }
+  };
+  const notify = options.notify ?? (async () => {});
   const check = options.check ?? (async () => {
-    const { stdout } = await exec("/bin/bash", [helper, "check"], { timeout: 25_000, maxBuffer: 128 * 1024 });
-    return JSON.parse(stdout) as Update;
+    try {
+      const { stdout } = await exec("/bin/bash", [helper, "check"], { timeout: 25_000, maxBuffer: 128 * 1024 });
+      return JSON.parse(stdout) as Update;
+    } catch (error) {
+      // gui-update.mjs prints the reason (wrong branch, offline, …) as its last line.
+      const reason = String((error as { stderr?: unknown }).stderr ?? "").trim().split("\n").at(-1);
+      throw new Error(reason || "업데이트를 확인하지 못했어요.", { cause: error });
+    }
   });
   const launch = options.launch ?? (async (token: string) => {
     const log = await open(logPath, "a", 0o600);
@@ -101,7 +122,10 @@ export function createRubatoUpdater(
     progress(-1);
   };
   const report = async () => {
-    if (watching || stopped) return false;
+    if (stopped) return false;
+    // Another report owns the job (e.g. a failure prompt is waiting for the
+    // user). Checking now would open a second prompt over it.
+    if (watching) return true;
     watching = true;
     try {
       const result = await read<Result>(resultPath);
@@ -132,25 +156,41 @@ export function createRubatoUpdater(
       watcher.unref();
     }
   };
-  const tick = async () => {
+  // manual: the user asked from the menu. It skips the check interval and the
+  // "later" snooze, and always answers, even when there is nothing to update.
+  // A request that lands while another tick holds the lock (e.g. the startup
+  // check of a window the menu just opened) is carried into that tick or run
+  // right after it, not dropped.
+  let manualRequested = false;
+  const tick = async (manual = false) => {
+    if (manual && !prompting) manualRequested = true;
     if (stopped || busy || window.isDestroyed()) return;
     busy = true;
     try {
-      if (await report()) { watch(); return; }
-      if (now() < nextCheck) return;
+      if (await report()) { manualRequested = false; watch(); return; }
+      if (!manualRequested && now() < nextCheck) return;
       nextCheck = now() + CHECK_INTERVAL;
-      const update = await check();
-      if (!update.available || !update.revision || stopped) return;
-      const postponed = await read<{ revision: string; until: number }>(path.join(stateDir, "later.json"));
-      if (postponed?.revision === update.revision && postponed.until > now()) return;
+      let update: Update;
+      try { update = await check(); }
+      finally { manual = manualRequested; manualRequested = false; }
+      if (stopped) return;
+      if (!update.available || !update.revision) {
+        if (manual) await notify({ type: "info", message: "최신 버전이에요." }).catch(console.warn);
+        return;
+      }
+      const laterPath = path.join(stateDir, "later.json");
+      const postponed = await read<{ revision: string; until: number }>(laterPath);
+      if (!manual && postponed?.revision === update.revision && postponed.until > now()) return;
       const answer = await message({
         type: "info", title: "Rubato 업데이트",
         message: "새 업데이트가 있어요.",
         detail: `새 변경 ${update.commits ?? 1}개를 받을 수 있어요.\n업데이트하면 앱이 닫혔다가 자동으로 다시 열려요. 진행 중인 작업이 끊길 수 있으니 먼저 마쳐 주세요.`,
         buttons: ["업데이트", "나중에"],
       });
-      if (answer.response !== 0 || stopped) {
-        await write(path.join(stateDir, "later.json"), { revision: update.revision, until: now() + 24 * 60 * 60_000 });
+      if (answer.response !== UPDATE || stopped) {
+        if (answer.response === LATER) {
+          await write(laterPath, { revision: update.revision, until: now() + 24 * 60 * 60_000 });
+        }
         return;
       }
       expectedToken = randomUUID();
@@ -167,7 +207,14 @@ export function createRubatoUpdater(
       // An offline background check is not "up to date", nor a recurring modal.
       console.warn("Rubato update check:", error);
       nextCheck = now() + 15 * 60_000;
-    } finally { busy = false; }
+      if (manual && !stopped) {
+        await notify({ type: "error", message: "업데이트를 확인하지 못했어요.",
+          detail: error instanceof Error ? error.message : String(error) }).catch(console.warn);
+      }
+    } finally {
+      busy = false;
+      if (manualRequested && !stopped) void tick();
+    }
   };
   const timer = setInterval(() => { void tick(); }, 60_000);
   timer.unref();
@@ -189,6 +236,7 @@ let pending: { id: string; resolve: (answer: { response: number }) => void } | u
 const windows = new Map<number, BrowserWindow>();
 const applicationUrls = new Map<number, string>();
 let registered = false;
+let attached = false;
 let initializing: Promise<void> | undefined;
 const STATE_CHANNEL = "rubato:update:state";
 const ACTION_CHANNEL = "rubato:update:action";
@@ -265,14 +313,17 @@ export function attachRubatoUpdates(window: BrowserWindow, electron: ElectronSer
         publish({ ...state, log });
         return;
       }
-      const valid = state.phase === "available" ? ["update", "later"] : ["dismiss"];
+      // "dismiss" on an available prompt is a close without a choice: hidden
+      // now, asked again on the next check or launch — never a 24h snooze.
+      const valid = state.phase === "available" ? ["update", "later", "dismiss"] : ["dismiss"];
       if (typeof action !== "string" || !valid.includes(action)) throw new Error("Invalid update action");
       const request = pending;
       pending = undefined;
       publish({ phase: action === "update" ? "running" : "idle" });
-      request.resolve({ response: action === "update" ? 0 : 1 });
+      request.resolve({ response: action === "update" ? UPDATE : action === "later" ? LATER : CLOSED });
     });
   }
+  attached = true;
   if (!controller && !initializing) {
     initializing = (async () => {
       const stateDir = directory();
@@ -291,6 +342,13 @@ export function attachRubatoUpdates(window: BrowserWindow, electron: ElectronSer
           publish({ phase: prompt.type === "error" ? "failed" : "available",
             id, message: prompt.message, detail: prompt.detail });
         }),
+        notify: async (notice) => {
+          if (window.isDestroyed()) return;
+          await electron.dialog.showMessageBox(window, {
+            type: notice.type, title: "Rubato 업데이트", message: notice.message,
+            detail: notice.detail, buttons: ["확인"],
+          });
+        },
         progress: (value) => {
           if (!pending) publish({ phase: value === 2 ? "running" : "idle" });
         },
@@ -305,8 +363,26 @@ export function attachRubatoUpdates(window: BrowserWindow, electron: ElectronSer
       controller?.stop();
       controller = undefined;
       initializing = undefined;
-      pending?.resolve({ response: 1 });
+      // Quitting or closing the window is not an answer. The next window asks again.
+      pending?.resolve({ response: CLOSED });
       pending = undefined;
+      state = { phase: "idle" };
     }
   });
+}
+
+/** The app menu's "Check for Updates..." goes here once this updater is wired in. */
+export function rubatoUpdatesAttached() {
+  return attached;
+}
+
+/**
+ * A check the user asked for. Resolves false when no updater could be set up
+ * (no Rubato bridge configured), so the caller can fall back. Never rejects.
+ */
+export async function checkRubatoUpdatesNow(): Promise<boolean> {
+  await initializing;
+  if (!controller) return false;
+  await controller.tick(true).catch(console.warn);
+  return true;
 }

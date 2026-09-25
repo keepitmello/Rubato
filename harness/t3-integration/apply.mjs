@@ -68,6 +68,22 @@ const edits = {
     ['    window.webContents.on("did-finish-load", () => {',
       '    attachRubatoUpdates(window, Electron, environment.serverSettingsPath, applicationUrl);\n\n'],
   ],
+  // 앱 메뉴의 "Check for Updates..." 는 T3 자체 업데이터로 간다. 소스로 빌드한
+  // Rubato 앱에서는 그 업데이터가 꺼져 있어서 "Updates unavailable" 만 떴다.
+  // 알림을 닫은 뒤 다시 부를 길이 이 메뉴뿐이라 Rubato 업데이트 확인으로 돌린다.
+  // Rubato 업데이터를 못 차린 경우(브리지 설정 없음)에만 원래 동작으로 간다.
+  'apps/desktop/src/window/DesktopApplicationMenu.ts': [
+    ['import * as DesktopWindow from "./DesktopWindow.ts";',
+      'import { checkRubatoUpdatesNow, rubatoUpdatesAttached } from "../updates/RubatoUpdates.ts";\n'],
+    ['const handleCheckForUpdatesMenuClick = Effect.gen(function* () {\n',
+      'const handleCheckForUpdatesMenuClick = Effect.gen(function* () {\n' +
+      '  if (rubatoUpdatesAttached()) {\n' +
+      '    const rubatoWindow = yield* DesktopWindow.DesktopWindow;\n' +
+      '    yield* rubatoWindow.revealOrCreateMain;\n' +
+      '    if (yield* Effect.promise(() => checkRubatoUpdatesNow())) return;\n' +
+      '  }\n',
+      'replace'],
+  ],
   'apps/desktop/src/preload.ts': [
     ['  getPathForFile: (file: File) => webUtils.getPathForFile(file),',
       [
