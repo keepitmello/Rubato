@@ -220,6 +220,37 @@ const edits = {
     ['import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";', 'import { makeRubatoPiInventory } from "./provider/RubatoPiInventory.ts";\n'],
     ['      yield* runStartupPhase("provider-sessions.reconcile", reconcileProviderSessions);', '      const rubatoInventory = yield* makeRubatoPiInventory.pipe(Scope.provide(reactorScope));\n'],
     ['      yield* Effect.logDebug("startup phase: complete");', '      yield* rubatoInventory.start.pipe(Scope.provide(reactorScope));\n'],
+    // 데스크톱 백엔드는 자기를 띄운 앱과 수명을 같이한다. 앱은 정상 종료 때만
+    // SIGTERM 을 보내서, 앱이 크래시로 죽으면 서버가 launchd 밑에 고아로 남았다.
+    // 다시 켠 앱이 새 서버를 띄우면 둘이 같은 state.sqlite 와 같은 Pi 세션에 붙어
+    // 모든 이벤트를 제 턴 ID 로 한 번씩 더 썼다(답·생각 중복, 도구 묶음 끊김).
+    // 부모가 바뀌면 자기에게 SIGTERM 을 보내 정상 종료 경로로 내려간다.
+    ['import * as Scope from "effect/Scope";', 'import * as Schedule from "effect/Schedule";\n'],
+    [
+      '    yield* Effect.addFinalizer(() => Scope.close(reactorScope, Exit.void));\n',
+      [
+        '    yield* Effect.addFinalizer(() => Scope.close(reactorScope, Exit.void));',
+        '',
+        '    // Rubato: a desktop backend lives only as long as the app that spawned it.',
+        '    // The app sends SIGTERM on a normal quit; after a crash this process was',
+        '    // reparented to launchd and kept writing beside the next backend.',
+        '    if (serverConfig.mode === "desktop") {',
+        '      const parentPid = process.ppid;',
+        '      yield* Effect.sync(() => process.ppid !== parentPid).pipe(',
+        '        Effect.repeat({ until: (orphaned) => orphaned, schedule: Schedule.spaced("2 seconds") }),',
+        '        Effect.andThen(',
+        '          Effect.logWarning("desktop app exited without stopping its backend; shutting down", {',
+        '            parentPid,',
+        '          }),',
+        '        ),',
+        '        Effect.andThen(Effect.sync(() => process.kill(process.pid, "SIGTERM"))),',
+        '        Effect.forkIn(reactorScope),',
+        '      );',
+        '    }',
+        '',
+      ].join('\n'),
+      'replace',
+    ],
   ],
   // Rubato 카탈로그는 성공한 discovery 다. Codex/OpenCode 와 같이 취급해야
   // 예전 캐시 extras 가 큐레이트 뒤에 붙어서 /model 순서와 갈라지지 않는다.
