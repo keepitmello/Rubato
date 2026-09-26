@@ -7,6 +7,7 @@ import {
   createLockRecord,
   installHooks,
   memoryWriterLockPath,
+  recordStoreRoot,
   withLock,
   type GitCommitAuthor,
   type MemoryIdentityPaths,
@@ -27,6 +28,8 @@ export interface MemoryEngineSession {
 export interface MemoryEngineSessionOptions {
   readonly lockWaitTimeoutMs?: number
   readonly lockRetryDelayMs?: number
+  /** Where the writing session came from; store.json records it (the store is created here). */
+  readonly origin?: { readonly root?: string; readonly home?: boolean }
 }
 
 export async function prepareMemoryEngineSession(
@@ -37,6 +40,10 @@ export async function prepareMemoryEngineSession(
   // First-write seam: runtime dirs (including the locks directory) must exist before the writer
   // lock publishes into them; reads never create identity storage.
   await ensureIdentityRuntimeDirs(identityPaths)
+  recordStoreRoot(
+    { paths: identityPaths, home: options.origin?.home === true, ...(options.origin?.root === undefined ? {} : { root: options.origin.root }) },
+    { create: true },
+  )
   const repo = new GitMemoryRepo({ dir: identityPaths.repo, agentId: identity })
   const lock = createMemoryWriterLock(identity, identityPaths, options)
   if (!existsSync(join(identityPaths.repo, ".git"))) {

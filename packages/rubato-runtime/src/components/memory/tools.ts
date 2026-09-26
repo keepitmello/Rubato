@@ -207,7 +207,10 @@ function createMemoryApplyPatchTool(
 }
 
 async function prepareEngine(context: MemoryIdentityContext, options: MemoryToolsOptions) {
-  return prepareMemoryEngineSession(context.identity, context.identityPaths, options)
+  return prepareMemoryEngineSession(context.identity, context.identityPaths, {
+    ...options,
+    origin: { ...(context.root === undefined ? {} : { root: context.root }), home: context.home === true },
+  })
 }
 
 function readToolProvenance(value: unknown): MemoryToolProvenance | undefined {

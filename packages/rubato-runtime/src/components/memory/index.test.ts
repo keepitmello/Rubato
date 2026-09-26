@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs"
+import { execFileSync } from "node:child_process"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -30,8 +31,9 @@ function recordingLauncher() {
   return { reasons, launch: (reason: string) => (reasons.push(reason), true) }
 }
 
-function setup(options: { readonly agent?: string; readonly hasUI?: boolean } = {}) {
+function setup(options: { readonly agent?: string; readonly hasUI?: boolean; readonly git?: boolean } = {}) {
   const { cwd, memoryHome } = fixture()
+  if (options.git === true) execFileSync("git", ["init", "-q"], { cwd })
   const pi = new MemoryFakeExtensionAPI()
   const dream = recordingLauncher()
   createMemoryComponent({
@@ -97,6 +99,18 @@ describe("stores are named only", () => {
     expect(result.isError).toBe(true)
     expect(result.content[0]?.text).toContain(MEMORY_UNBOUND_MESSAGE)
     expect(existsSync(join(memoryHome, "agents"))).toBe(false)
+  })
+
+  test("#given a folder in a git repository and no config #when a session starts and then writes #then the store appears only at the write, named after the root, with the root recorded", async () => {
+    const { pi, session, memoryHome, cwd } = setup({ git: true })
+    const storeDir = join(memoryHome, "agents", "project")
+
+    await pi.dispatch("session_start", {}, session)
+    expect(existsSync(storeDir)).toBe(false)
+    const result = await executeMemory(pi, session, { command: "create", reason: "why", file_path: "decisions/a.md", description: "a" })
+
+    expect(result.isError).not.toBe(true)
+    expect(JSON.parse(readFileSync(join(storeDir, "store.json"), "utf8"))).toEqual({ roots: [realpathSync.native(cwd)] })
   })
 
   test("#given a named store #when the first write lands #then the store starts from an empty commit with no seed files", async () => {
