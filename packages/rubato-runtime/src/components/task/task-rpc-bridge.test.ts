@@ -112,7 +112,11 @@ describe("event-bridge native task telemetry and controls", () => {
   it("#given running, waiting, foreign and suspended children #when the host asks for pending work #then only this session's executing work counts", async () => {
     const running = taskRecord({ task_id: "st_running", status: "running" })
     const queued = taskRecord({ task_id: "st_queued", status: "pending" })
-    const waiting = taskRecord({ task_id: "st_waiting", status: "completed" })
+    const waiting = taskRecord({
+      task_id: "st_waiting",
+      status: "completed",
+      notification: { run_epoch: 0, notified_epoch: 0 },
+    })
     const suspended = taskRecord({ task_id: "st_suspended", status: "running", residency_state: "rpc_detached" })
     const foreign = taskRecord({
       task_id: "st_foreign",
@@ -134,11 +138,35 @@ describe("event-bridge native task telemetry and controls", () => {
 
     await expect(invokeRpc("rubato.task.pending-work", {})).resolves.toEqual({
       active: 2,
+      undelivered: 0,
       tasks: [
         { task_id: "st_running", status: "running" },
         { task_id: "st_queued", status: "pending" },
       ],
     })
+  })
+
+  it("#given completions not yet handed to the lead #when pending work is asked #then they count as undelivered until delivered", async () => {
+    let queued = 1
+    const owed = taskRecord({ task_id: "st_owed", status: "completed", notification: { run_epoch: 1, notified_epoch: 0 } })
+    const delivered = taskRecord({ task_id: "st_delivered", status: "error", notification: { run_epoch: 1, notified_epoch: 1 } })
+    const failed = taskRecord({
+      task_id: "st_failed",
+      status: "completed",
+      notification: { run_epoch: 1, notified_epoch: 0, notification_failed_epoch: 1 },
+    })
+    const cancelled = taskRecord({ task_id: "st_cancelled", status: "cancelled", notification: { run_epoch: 1, notified_epoch: 0 } })
+    const sync = taskRecord({ task_id: "st_sync", status: "completed", notify_on_terminal: false })
+    const { pi, invokeRpc } = wireHarness("parent-session", {
+      records: Object.fromEntries([owed, delivered, failed, cancelled, sync].map((record) => [record.task_id, record])),
+      withRpc: true,
+      queuedInjections: () => queued,
+    })
+    await pi.dispatch("session_start", {}, {})
+
+    await expect(invokeRpc("rubato.task.pending-work", {})).resolves.toMatchObject({ active: 0, undelivered: 2 })
+    queued = 0
+    await expect(invokeRpc("rubato.task.pending-work", {})).resolves.toMatchObject({ active: 0, undelivered: 1 })
   })
 
   it("#given a modern Senpi RPC API #when the bridge wires #then output send and cancel handlers reuse session-scoped task semantics", async () => {

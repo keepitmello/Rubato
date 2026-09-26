@@ -1,4 +1,5 @@
 import type { WakeSourceStateItem } from "./host/monitor-state-event.ts";
+import type { HeldBackground } from "./pending-work.ts";
 import { TerminalManager, type TerminalManagerOptions } from "./manager.ts";
 import { type MonitorEvent, MonitorRegistry, type MonitorSnapshotEntry } from "./monitor-registry.ts";
 import type { TerminalRuntimeSession } from "./runtime-session.ts";
@@ -27,6 +28,7 @@ export class TerminalSessionBundle {
 	#parkedMonitorEvents: MonitorEvent[] = [];
 	#parkedExits = new Map<string, TerminalRuntimeSession>();
 	#backgrounds = new Map<string, WakeSourceStateItem>();
+	#boundedBackgrounds = new Set<string>();
 	#torndown = false;
 
 	constructor(options: TerminalManagerOptions) {
@@ -59,14 +61,26 @@ export class TerminalSessionBundle {
 		return [...this.#backgrounds.values()];
 	}
 
-	notifyBackgroundStart(id: string, description: string, startedAtMs = Date.now()): void {
+	/** Background sessions that notify on exit, and whether each is killed at its own deadline. */
+	heldBackgrounds(): readonly HeldBackground[] {
+		return [...this.#backgrounds.values()].map((entry) => ({
+			id: entry.id,
+			startedAtMs: entry.startedAtMs,
+			bounded: this.#boundedBackgrounds.has(entry.id),
+		}));
+	}
+
+	notifyBackgroundStart(id: string, description: string, startedAtMs = Date.now(), bounded = false): void {
 		if (this.#torndown) return;
 		this.#backgrounds.set(id, { id, description, startedAtMs });
+		if (bounded) this.#boundedBackgrounds.add(id);
+		else this.#boundedBackgrounds.delete(id);
 		this.#sinks?.onBackgroundState(this.backgroundSnapshot());
 	}
 
 	notifyBackgroundExit(id: string, runtime: TerminalRuntimeSession): void {
 		if (this.#torndown) return;
+		this.#boundedBackgrounds.delete(id);
 		if (this.#backgrounds.delete(id)) this.#sinks?.onBackgroundState(this.backgroundSnapshot());
 		if (this.#sinks) {
 			this.#sinks.onBackgroundExit(id, runtime);
@@ -81,6 +95,7 @@ export class TerminalSessionBundle {
 		this.#parkedMonitorEvents = [];
 		this.#parkedExits.clear();
 		this.monitors.dispose();
+		this.#boundedBackgrounds.clear();
 		if (this.#backgrounds.size > 0) {
 			this.#backgrounds.clear();
 			this.#sinks?.onBackgroundState([]);

@@ -54,6 +54,8 @@ export interface MonitorSnapshotEntry {
 	readonly paused: boolean;
 	/** Epoch milliseconds when the watch registered; feeds the footer's live elapsed label. */
 	readonly startedAtMs: number;
+	/** No deadline of its own: watches until its command exits or kill_bash stops it. */
+	readonly persistent?: boolean;
 }
 
 export interface MonitorRegistryOptions {
@@ -81,6 +83,7 @@ export interface RegisterMonitorOptions {
 	readonly description: string;
 	readonly runtime: TerminalRuntimeSession;
 	readonly filter?: RegExp;
+	readonly persistent?: boolean;
 }
 
 interface PendingFileRegistration {
@@ -127,6 +130,7 @@ interface MonitorRecord {
 	readonly startedAtMs: number;
 	readonly runtime: TerminalRuntimeSession;
 	readonly filter: RegExp | undefined;
+	readonly persistent: boolean;
 	lineBuffer: string;
 	mutedDropped: number;
 	paused: boolean;
@@ -165,6 +169,7 @@ export class MonitorRegistry {
 			description: record.description,
 			paused: record.paused,
 			startedAtMs: record.startedAtMs,
+			persistent: "persistent" in record && record.persistent,
 		}));
 	}
 
@@ -484,6 +489,7 @@ export class MonitorRegistry {
 			startedAtMs: Date.now(),
 			runtime: options.runtime,
 			filter: options.filter,
+			persistent: options.persistent === true,
 			lineBuffer: "",
 			mutedDropped: 0,
 			paused: false,

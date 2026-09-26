@@ -116,6 +116,11 @@ export class MonitorNotifier {
 		this.#schedule(settings.coalesceWindowMs);
 	}
 
+	/** Events accepted for the next coalesced delivery and not yet sent. */
+	hasQueuedEvents(): boolean {
+		return this.#events.length > 0 || this.#overflow.size > 0;
+	}
+
 	/** Any explicit user or tool activity breaks a consecutive monitor-only wake streak. */
 	noteActivity(): void {
 		this.#consecutiveWakes = 0;

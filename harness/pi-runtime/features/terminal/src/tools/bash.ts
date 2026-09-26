@@ -193,16 +193,18 @@ function resolveAutoDetachDelayMs(
 	return Math.max(0, Math.trunc(windowSeconds * 1000));
 }
 
+/** Returns whether the detached session now has a kill deadline of its own. */
 function scheduleDetachedSweep(
 	ctx: TerminalToolContext,
 	id: string,
 	runtime: TerminalRuntimeSession,
 	timeoutMs: number | undefined,
 	startedAt: number,
-): void {
-	if (timeoutMs === undefined) return;
+): boolean {
+	if (timeoutMs === undefined) return false;
 	const deadlineMs = timeoutMs + KILLED_SESSION_EXIT_GRACE_MS;
-	if (!Number.isFinite(deadlineMs) || deadlineMs > MAX_TIMEOUT_MS || runtime.exited) return;
+	if (!Number.isFinite(deadlineMs) || deadlineMs > MAX_TIMEOUT_MS) return false;
+	if (runtime.exited) return true;
 
 	const remainingMs = Math.max(0, deadlineMs - (Date.now() - startedAt));
 	let timer: ReturnType<typeof setTimeout> | undefined;
@@ -216,12 +218,13 @@ function scheduleDetachedSweep(
 	unsubscribeExit = runtime.session.onExit(clearSweep);
 	if (runtime.exited) {
 		clearSweep();
-		return;
+		return true;
 	}
 	timer = setTimeout(() => {
 		clearSweep();
 		if (!runtime.exited) void ctx.manager.stop(id).catch(() => {});
 	}, remainingMs);
+	return true;
 }
 
 async function runForeground(
@@ -305,8 +308,8 @@ async function runForeground(
 	}
 
 	if (outcome === "detached") {
-		scheduleDetachedSweep(ctx, id, runtime, timeoutMs, startedAt);
-		ctx.onBackgroundStart?.(id, input.description ?? input.command, startedAt);
+		const killedAtDeadline = scheduleDetachedSweep(ctx, id, runtime, timeoutMs, startedAt);
+		ctx.onBackgroundStart?.(id, input.description ?? input.command, startedAt, killedAtDeadline);
 		if (ctx.onBackgroundExit) runtime.session.onExit(() => ctx.onBackgroundExit?.(id, runtime));
 		const delta = runtime.readDelta();
 		const partialOutput = formatTerminalToolOutput(delta.text).text || "(no output yet)";
@@ -378,7 +381,7 @@ async function runBackground(
 		cwd,
 		envOverrides: sessionEnvOverrides(ctx, execCtx),
 	});
-	ctx.onBackgroundStart?.(id, input.description ?? input.command, Date.now());
+	ctx.onBackgroundStart?.(id, input.description ?? input.command, Date.now(), false);
 	if (ctx.onBackgroundExit) runtime.session.onExit(() => ctx.onBackgroundExit?.(id, runtime));
 
 	// Capture any output the command emits within a short grace window (or its exit).

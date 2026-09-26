@@ -20,8 +20,11 @@ export interface TerminalToolContext {
 	 * expose PI_* session metadata to spawned commands like the core bash tool does.
 	 */
 	readonly getSessionContext?: () => import("../host-sdk.ts").ExtensionContext | undefined;
-	/** Registers a session when it transitions to background liveness. */
-	readonly onBackgroundStart?: (id: string, description: string, startedAtMs: number) => void;
+	/**
+	 * Registers a session when it transitions to background liveness. `bounded` means the
+	 * session is killed at its own deadline, so its exit notification is guaranteed to come.
+	 */
+	readonly onBackgroundStart?: (id: string, description: string, startedAtMs: number, bounded?: boolean) => void;
 	/** Notified when a background session exits, so the notify layer can wake the agent. */
 	readonly onBackgroundExit?: (id: string, runtime: TerminalRuntimeSession) => void;
 	/** Session-scoped monitor state, sharing the terminal manager's bash-id namespace. */

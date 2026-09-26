@@ -7,6 +7,7 @@ import {
   type TaskRecord,
 } from "@rubato/task"
 
+import type { IdleInjectionCoordinator } from "../../extension/idle-injection-coordinator"
 import type { SenpiExtensionAPI } from "../../extension/types"
 import type { TaskEngine } from "./engine"
 import {
@@ -28,6 +29,7 @@ const TASK_UPDATED_EVENT = "rubato.task.updated"
  * A completed member waiting for mail is NOT work: it suspends cleanly and revives on resume.
  */
 export const PENDING_WORK_REQUEST = "rubato.task.pending-work"
+const NOTIFYING_TERMINAL_STATUSES = new Set<TaskRecord["status"]>(["completed", "error", "lost"])
 const MAX_TASK_SNAPSHOTS = 256
 
 export interface TaskRpcBridge {
@@ -40,6 +42,7 @@ export interface TaskRpcBridge {
 export function wireTaskRpcBridge(
   pi: SenpiExtensionAPI,
   engine: TaskEngine,
+  coordinator?: Pick<IdleInjectionCoordinator, "pendingCount">,
 ): TaskRpcBridge {
   const subscriptions = new Map<string, () => void>()
   const liveProgress = new Map<string, TaskLiveProgressSnapshot>()
@@ -135,7 +138,7 @@ export function wireTaskRpcBridge(
     emit(selection)
   }
 
-  registerTaskHandlers(pi, engine, () => (disposed ? undefined : activeSessionId))
+  registerTaskHandlers(pi, engine, () => (disposed ? undefined : activeSessionId), coordinator)
 
   return {
     attach() {
@@ -158,18 +161,24 @@ function registerTaskHandlers(
   pi: SenpiExtensionAPI,
   engine: TaskEngine,
   currentSessionId: () => string | undefined,
+  coordinator: Pick<IdleInjectionCoordinator, "pendingCount"> | undefined,
 ): void {
   const handle = pi.rpc?.handle
   if (handle === undefined) return
+  // `undelivered` is a completion between the child's terminal write and the wake it becomes:
+  // owed by the record, or queued in the idle-injection coordinator. The host reads `active` only;
+  // a one-shot run also waits for these so it exits after the wake, not before it.
   handle(PENDING_WORK_REQUEST, async () => {
     const sessionId = currentSessionId()
-    if (sessionId === undefined) return { active: 0, tasks: [] }
-    const tasks = engine.manager
+    if (sessionId === undefined) return { active: 0, undelivered: 0, tasks: [] }
+    const records = engine.manager
       .list({ scope: "parent-session", session_id: sessionId })
       .map((entry) => entry.record)
+    const tasks = records
       .filter((record) => isLive(record) && record.killed !== true && (record.status === "pending" || record.residency_state === "resident"))
       .map((record) => ({ task_id: record.task_id, status: record.status }))
-    return { active: tasks.length, tasks }
+    const undelivered = records.filter(owesCompletion).length + (coordinator?.pendingCount() ?? 0)
+    return { active: tasks.length, undelivered, tasks }
   })
   handle("rubato.task.send", async (data) => {
     const sessionId = currentSessionId()
@@ -226,6 +235,15 @@ function toRpcChildControlDetails(details: { readonly kind: string; readonly age
 
 function isLive(record: TaskRecord): boolean {
   return record.status === "pending" || record.status === "running"
+}
+
+// A failed delivery is not waited for: only a later session_start reconcile can retry it.
+function owesCompletion(record: TaskRecord): boolean {
+  const { run_epoch, notified_epoch, notification_failed_epoch } = record.notification
+  return record.notify_on_terminal
+    && NOTIFYING_TERMINAL_STATUSES.has(record.status)
+    && notified_epoch < run_epoch
+    && notification_failed_epoch !== run_epoch
 }
 
 function unavailable() {
