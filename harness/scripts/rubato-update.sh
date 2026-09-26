@@ -261,6 +261,8 @@ echo "$CHANGED" | grep -Eq '^harness/pi-server/src/' && need_profile=1
 # 옛 목록을 계속 내줬다. 후보가 바뀌면 엔진도 같이 다시 띄운다.
 # 다만 테스트만 바뀐 업데이트는 뺀다. 엔진이 읽는 것은 코드뿐이라 테스트 파일은
 # 도는 엔진에 아무 영향이 없고, 상주 엔진을 끊으면 살아 있는 CLI 세션이 죽는다.
+# 이 판단은 미리 보는 계획까지다. 설치 지문은 테스트 파일도 세므로 아래 설치
+# 단계가 실제로 다시 깔면, 그때는 need_profile=1 로 바뀌어 엔진도 다시 띄운다.
 if [ "$need_candidate" = 1 ] \
   && echo "$CHANGED" | grep -Ev '(^|/)test/|\.test\.' | grep -Eq '^(package\.json$|bun\.lock$|harness/|packages/)'; then
   need_profile=1
@@ -492,9 +494,15 @@ if [ "$need_candidate" = 1 ] && [ -f "$HARNESS/scripts/build-active-engine.mjs" 
     ok "pi 엔진 — 그대로"
   else
     printf '  %s… pi 엔진 설치 중%s\n' "$DIM" "$RST"
-    (cd "$REPO" && "$NODE" "$HARNESS/scripts/build-active-engine.mjs" >/dev/null 2>&1) \
-      && ok "pi 엔진" \
-      || fail "pi 엔진 설치에 실패했습니다. 손으로: node harness/scripts/build-active-engine.mjs"
+    # 새로 깔았으면 프로필 엔진은 무엇이 바뀌었든 다시 띄운다 — 옛 엔진을 새 설치본과
+    # 짝지어 두면 옛 검증기가 새 영수증을 거부한다. 재시작은 아래 need_profile 게이트
+    # 한 곳이 하고, 빌드는 그래서 스스로 재시작하지 않는다(RUBATO_PROFILE_RESTART_OWNER).
+    if (cd "$REPO" && RUBATO_PROFILE_RESTART_OWNER=1 "$NODE" "$HARNESS/scripts/build-active-engine.mjs" >/dev/null 2>&1); then
+      ok "pi 엔진"
+      need_profile=1
+    else
+      fail "pi 엔진 설치에 실패했습니다. 손으로: node harness/scripts/build-active-engine.mjs"
+    fi
   fi
 fi
 

@@ -108,6 +108,9 @@ case "${1-}" in
     # 설치본이다. 그것을 다시 만드는 자리는 그동안 세션 시작뿐이었고, 그래서
     # `restart` 뒤에 `rubato attach` 로 돌아간 창은 옛 코드를 그대로 돌렸다.
     # 지문이 맞으면 1초쯤에 지나간다 — 다시 만드는 것은 소스가 달라졌을 때뿐이다.
+    # 빌드는 새로 깐 뒤 프로필 엔진을 스스로 다시 띄우는데, 여기서는 아래 2 단계가
+    # 그 일을 맡는다(RUBATO_PROFILE_RESTART_OWNER). 둘 다 하면 2 단계가 방금 새로
+    # 띄운 엔진이 아니라 "이미 꺼져 있어요"를 말한다.
     if [ -z "${RUBATO_NO_ENGINE_BUILD-}" ] && [ -f "$HERE/build-active-engine.mjs" ]; then
       progress_start "엔진이 이 소스에 맞는지 보는 중"
       if "$NODE" "$HERE/build-active-engine.mjs" --check >>"$RESTART_LOG" 2>&1; then
@@ -115,7 +118,7 @@ case "${1-}" in
         ui_skip "엔진은 이미 이 소스에 맞아요"
       else
         progress_start "엔진을 다시 만드는 중 (몇 분 걸려요)"
-        if "$NODE" "$HERE/build-active-engine.mjs" >>"$RESTART_LOG" 2>&1; then
+        if RUBATO_PROFILE_RESTART_OWNER=1 "$NODE" "$HERE/build-active-engine.mjs" >>"$RESTART_LOG" 2>&1; then
           progress_stop
           ui_ok "엔진을 다시 만들었어요"
           BUILD_DONE=1
@@ -420,16 +423,24 @@ fi
 # pi 설치본은 `rubato update` 가 git 이 이미 최신이면 다시 안 깐다.
 # 이 머신에서 커밋한 직후 `rubato` 만 치면 낡은 stock-engine 이 그대로 떴다.
 # 지문이 다르면 세션 전에 다시 깐다. --version/-v 는 기다리지 않는다.
+# 다시 깔면 빌드가 도는 프로필 엔진도 새 설치본 위로 다시 띄운다 — 옛 엔진을 새
+# 설치본과 짝지어 두면 옛 검증기가 새 영수증을 거부해 GUI 카탈로그까지 죽는다.
+# 20 은 이 명령이 그 엔진 안의 대화에서 돌아(dispatch 등) 다시 깔지 않았다는 뜻이다.
+# 엔진과 설치본이 둘 다 옛 코드로 맞물려 있으니 세션은 그대로 띄운다.
 STOCK_REBUILD=1
 case "${1-}" in --version|-v|--help|-h) STOCK_REBUILD="" ;; esac
 if [ -n "$STOCK_REBUILD" ] && [ -z "${RUBATO_NO_ENGINE_BUILD-}" ] && [ -f "$HERE/build-active-engine.mjs" ]; then
   splash step "엔진을 확인하는 중"
   if ! "$NODE" "$HERE/build-active-engine.mjs" --check >/dev/null 2>&1; then
     splash step "엔진을 다시 만드는 중"
-    if ! "$NODE" "$HERE/build-active-engine.mjs"; then
-      echo "rubato: pi 엔진을 맞추지 못했습니다. 손으로: node harness/scripts/build-active-engine.mjs" >&2
-      exit 1
-    fi
+    STOCK_REBUILD_RC=0
+    "$NODE" "$HERE/build-active-engine.mjs" || STOCK_REBUILD_RC=$?
+    case "$STOCK_REBUILD_RC" in
+      0|20) : ;;
+      *)
+        echo "rubato: pi 엔진을 맞추지 못했습니다. 손으로: node harness/scripts/build-active-engine.mjs" >&2
+        exit 1 ;;
+    esac
   fi
 fi
 

@@ -47,7 +47,7 @@ function write(path, text) {
 const INSTALL_SKILLS_SRC = join(dirname(fileURLToPath(import.meta.url)), "../../../scripts/install-skills.sh");
 const SSH_HOSTS_SRC = join(dirname(fileURLToPath(import.meta.url)), "../../../scripts/ssh-remote-hosts.mjs");
 
-function setupFixture({ dirty = false, conflict = false, evidence = false, decoyStash = false, rebuildFailure = "", skillUpdate = false, profileSrc = false, profileTest = false, profileRuntimeSrc = false, gui = false, remoteChange = true, speedData = false, sshRemotes = false } = {}) {
+function setupFixture({ dirty = false, conflict = false, evidence = false, decoyStash = false, rebuildFailure = "", skillUpdate = false, profileSrc = false, profileTest = false, profileRuntimeSrc = false, staleEngine = false, gui = false, remoteChange = true, speedData = false, sshRemotes = false } = {}) {
   const root = mkdtempSync(join(tmpdir(), "rubato-update-"));
   const bare = join(root, "origin.git");
   const seed = join(root, "seed");
@@ -78,6 +78,18 @@ function setupFixture({ dirty = false, conflict = false, evidence = false, decoy
     write(join(seed, "harness/scripts/find-node.sh"), `rubato_find_node() { printf '%s\\n' '${process.execPath}'; }\n`);
     write(join(seed, "harness/rubato-pi/scripts/auto-sync-speed-data.mjs"),
       'import { appendFileSync } from "node:fs";\nappendFileSync(process.env.RUBATO_TEST_TRACE, "speed-data\\n");\nprocess.exitCode = Number(process.env.RUBATO_TEST_SPEED_EXIT ?? 0);\n');
+  }
+  if (staleEngine) {
+    // The installed engine is behind the source, so the build really replaces it. Both
+    // helpers only record: nothing here reaches a real engine or profile engine.
+    write(join(seed, "harness/scripts/build-active-engine.mjs"),
+      'import { appendFileSync } from "node:fs";\n' +
+      'if (process.argv[2] === "--check") process.exit(10);\n' +
+      'appendFileSync(process.env.RUBATO_TEST_TRACE, `build owner=${process.env.RUBATO_PROFILE_RESTART_OWNER ?? ""}\\n`);\n');
+    write(join(seed, "harness/scripts/restart-profile-engine.mjs"),
+      'import { appendFileSync } from "node:fs";\n' +
+      'appendFileSync(process.env.RUBATO_TEST_TRACE, "restart-profile-engine\\n");\n' +
+      'process.stdout.write("restarted\\n");\n');
   }
   if (skillUpdate) {
     write(join(seed, "harness/skills/demo/SKILL.md"), "v1\n");
@@ -459,6 +471,22 @@ test("a refreshed engine candidate restarts the engine even outside pi-server so
   // engine kept answering with Opus 5.
   const result = runUpdate(setupFixture({ profileRuntimeSrc: true }));
   const out = `${result.stdout}\n${result.stderr}`;
+  assert.match(out, /프로필 엔진 재시작/);
+});
+
+// The plan above leaves test-only pulls alone, but the install fingerprint counts test files,
+// so the build can still replace the engine. When it does, the engine restarts — once, from the
+// updater's own step, never from the build as well.
+test("an update whose build replaces the engine restarts the profile engine exactly once", () => {
+  const fixture = setupFixture({ profileTest: true, staleEngine: true });
+  const result = runUpdate(fixture);
+  const out = `${result.stdout}\n${result.stderr}`;
+  assert.equal(result.status, 0, out);
+  const trace = readFileSync(fixture.trace, "utf8").split("\n").filter(Boolean);
+  assert.deepEqual(trace.filter((line) => line.startsWith("build")), ["build owner=1"], trace.join("\n"));
+  assert.equal(trace.filter((line) => line === "restart-profile-engine").length, 1, trace.join("\n"));
+  assert.ok(trace.indexOf("build owner=1") < trace.indexOf("restart-profile-engine"), trace.join("\n"));
+  assert.match(out, /✓.*pi 엔진/);
   assert.match(out, /프로필 엔진 재시작/);
 });
 

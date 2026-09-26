@@ -10,6 +10,7 @@ import { readPiEngineReceipt, resolveLaunchEngine } from "../rubato-pi/src/engin
 import { nodeSatisfiesCandidate, selectNodeForEngine } from "../rubato-pi/src/select-node.mjs";
 import { sourceFingerprint } from "../pi-runtime/scripts/source-fingerprint.mjs";
 import { startSpeedDataUpload } from "../rubato-pi/src/speed-data-auto.mjs";
+import { replaceLiveEngine } from "./replace-live-engine.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -20,6 +21,7 @@ export async function buildActiveEngine({
     return updatePiEngine({ env });
   },
   startSpeedData = startSpeedDataUpload,
+  replaceEngine = replaceLiveEngine,
 } = {}) {
   if (args.some((arg) => arg !== "--force" && arg !== "--check") ||
       (args.includes("--force") && args.includes("--check"))) throw new Error("Usage: build-active-engine.mjs [--force|--check]");
@@ -27,13 +29,16 @@ export async function buildActiveEngine({
   const receipt = readPiEngineReceipt(selection.root);
   const current = selection.engine === "pi" && receipt?.sourceSha256 === await sourceFingerprint(repoRoot);
   if (args.includes("--check")) return current ? 0 : 10;
-  if (args.includes("--force") || !current) await update();
+  // A real rebuild restarts the profile engine onto it (replace-live-engine.mjs); a current
+  // install touches neither. Exit 20 means the rebuild was refused inside an engine conversation.
+  let code = 0;
+  if (args.includes("--force") || !current) code = await replaceEngine({ replace: update, env });
   // Old updaters execute this freshly pulled file on their first update. New
   // updaters own the post-update trigger, so the build must not launch it twice.
   if (env.RUBATO_SPEED_DATA_UPDATE_OWNER !== "1") {
     try { startSpeedData({ env }); } catch { /* Collection must never fail a build. */ }
   }
-  return 0;
+  return code;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
