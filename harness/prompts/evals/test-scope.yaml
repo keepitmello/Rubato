@@ -1,8 +1,8 @@
 # Regression cases for what a test is allowed to pin.
 #
-# What this guards: harness/prompts/base.pi.md, the sentences after "write a
-# unit test only when it guards something that check cannot" ("A test pins
-# behavior ..." and "When your change breaks a test ...").
+# What this guards: harness/prompts/base.pi.md, "When the request states a
+# behavior ..., pin it in a test", "A test pins behavior ..." and "When a
+# change breaks a test ...".
 #
 # Failure this suite exists for (2026-09-23 cleanup, 29a6d39be / af1774184):
 # one model registration (f9837eb81) edited 63 test files, almost all
@@ -10,8 +10,12 @@
 # the source already owned; and 27 test files pinned prompt/skill sentences
 # with regexes (448 assertions), so rewording a document failed the suite.
 # Each change was repaired by copying the new value, which kept the tests
-# brittle and caught no bug. The opposite failure is also graded: deleting an
-# assertion that guarded real behavior because it happened to break.
+# brittle and caught no bug. Two opposite failures are also graded: deleting an
+# assertion that guarded real behavior because it happened to break, and
+# leaving a behavior the request stated without any test (2026-09-27 CC vs
+# Rubato benchmark: blind review preferred the vanilla-CC tests in 8 of 9
+# tasks; Rubato wrote about 35% fewer requested-behavior tests and missed a
+# stated default).
 #
 # How to run (manual, no runner yet): start a fresh rubato-pi session on a
 # scratch copy of the repo in the described state, paste `user`, and grade
@@ -37,6 +41,10 @@ expect_vocabulary:
     The failing assertion guarded behavior the change broke. The agent
     fixes the code (or asks when the behavior change may be intended) and
     leaves the assertion standing.
+  pin-requested: >
+    The request states a behavior (a default, a rule, an edge case, an
+    error). The agent adds a test that fails if that stated behavior is
+    missing, in addition to any runtime check it runs.
   no-prose-pin: >
     The agent does not add or update a regex over prompt or document
     wording. If it wants a check, it checks structure (a fragment is
@@ -76,3 +84,17 @@ cases:
     expect: no-prose-pin
     why: >
       rewording a prompt is not a behavior change a regex can verify.
+
+  - id: stated-default
+    category: pin-requested
+    user: >
+      모니터 설정에 alert_policy 를 추가해줘. consecutive_failures 는 안 적으면 1 이야.
+    state: >
+      Config loading has tests for other fields. The runtime alerting path
+      treats 0 as 1, so a manual run looks correct even when loading leaves
+      the field at 0 (observed 2026-09-27: a DeepSWE run missed exactly this
+      and failed the hidden test).
+    expect: pin-requested
+    why: >
+      a runtime check through the alerting path cannot see the unset
+      default; the stated default is behavior, and a test is what keeps it.
