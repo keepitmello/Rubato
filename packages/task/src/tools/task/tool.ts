@@ -11,12 +11,15 @@ export const TASK_TOOL_NAME = "Agent"
 
 // Assembles the senpi ToolDefinition: a TypeBox param schema, a description whose preset list is
 // injected from the loaded agents, prompt-surface hints, host-backed spawn, and compact renderers.
+// Declared direct: delegation is the one extension tool worth its ~650 prefix tokens in every
+// session; AgentSend/AgentCancel only matter once a child exists and stay behind tool_search.
 export function createTaskTool(deps: TaskToolDeps): ToolDefinition<typeof TaskToolParams, TaskToolDetails> {
   const execute = buildTaskExecute(deps)
   const parameters = buildTaskToolParams(() => deps.models?.list?.() ?? [])
   return defineTool({
     name: TASK_TOOL_NAME,
     label: "Agent",
+    exposure: "direct",
     description: buildTaskToolDescription({ rubatoConfig: deps.rubatoConfig, agents: deps.agents }),
     promptSnippet: TASK_PROMPT_SNIPPET,
     promptGuidelines: [...TASK_PROMPT_GUIDELINES],
