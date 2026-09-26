@@ -1,6 +1,6 @@
 ---
 name: browser-cli
-description: "Only when manual browser control is required (direct tab control, snapshots, Playwright scripts). Everyday web work goes to aside-browser."
+description: "Only when manual browser control is required (direct tab control, snapshots, Playwright scripts). Everyday web work goes to aside."
 
 ---
 
@@ -9,8 +9,8 @@ description: "Only when manual browser control is required (direct tab control, 
 ## Hierarchy
 
 - This skill is the entry router. Choose the browser backend here first.
-- After choosing Aside (`aside exec` or `aside repl`), read the `aside-browser` skill before using the CLI. That skill owns Aside session, tab, snapshot, download, and REPL details.
-- Do not load `aside-browser` for agent-browser/Cloak, the built-in Browser, or chrome-devtools.
+- After choosing Aside (`aside exec` or `aside repl`), read the `aside` skill before using the CLI. That skill owns Aside session, tab, snapshot, download, and REPL details.
+- Do not load `aside` for agent-browser/Cloak, the built-in Browser, or chrome-devtools.
 
 ## Route
 
@@ -33,7 +33,7 @@ aside --version
 aside exec --help
 ```
 
-Then read `aside-browser` and run Aside in an interactive PTY with one self-contained task. Omit `-m` unless overriding the default model. Never pass Sol.
+Then read `aside` and run Aside in an interactive PTY with one self-contained task. Omit `-m` unless overriding the default model. Never pass Sol.
 
 ```bash
 aside exec "<complete browser task, constraints, approval boundaries, and required evidence>"
@@ -49,7 +49,7 @@ Do not duplicate the same task in another browser agent while Aside is still run
 
 ## Manual alternatives
 
-For direct Aside control, read `aside-browser` and inspect `aside repl --help`. Do not duplicate Aside REPL APIs here.
+For direct Aside control, read `aside` and inspect `aside repl --help`. Do not duplicate Aside REPL APIs here.
 
 For the explicit `agent-browser` fallback, use the shared headless Cloak process on `9333`; use the separate shared headed process on `9334` only when necessary. Separate tasks with unique `--session` values and tab labels, reuse a suitable owned tab, and never launch another browser for the same mode.
 

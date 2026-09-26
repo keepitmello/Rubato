@@ -46,11 +46,13 @@ if [ ! -d "$SRC" ]; then
 fi
 mkdir -p "$DEST"
 
-# 번들에서 뺀 Orca 스킬은 설치본에도 남기지 않는다. 일반 로컬 스킬은
-# 보존하지만, 이 둘은 Orca 가 심은 디스커버리 스텁이라 업데이트 때 지운다.
+# 일반 로컬 스킬은 보존하지만, 남이 심은 디스커버리 스텁은 업데이트 때 지운다.
+# orca-cli·orchestration 은 번들에서 뺀 Orca 스텁이다. aside-browser 는 Aside CLI
+# 가 업데이트마다 그 이름이 있는 자리를 자기 스텁으로 다시 쓰므로(심링크면 링크를
+# 따라 번들까지) 번들은 `aside` 로 옮겼고, 옛 이름은 비워 둬야 Aside 가 다시 쓰지 않는다.
 removed=0
-for name in orca-cli orchestration; do
-  if [ -e "$DEST/$name" ]; then
+for name in orca-cli orchestration aside-browser; do
+  if [ -e "$DEST/$name" ] || [ -L "$DEST/$name" ]; then
     rm -rf "$DEST/$name"
     removed=$((removed + 1))
   fi
