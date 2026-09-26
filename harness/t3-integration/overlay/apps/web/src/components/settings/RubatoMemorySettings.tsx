@@ -1,4 +1,11 @@
-import { ChevronDownIcon, ChevronRightIcon, PlayIcon, RefreshCwIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  PlayIcon,
+  RefreshCwIcon,
+  Trash2Icon,
+} from "lucide-react";
 import * as Option from "effect/Option";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -11,8 +18,10 @@ import {
   type DreamPublish,
   type DreamRunDetail,
   type DreamRunSummary,
+  type MemoryFileEntry,
   type MemoryStatus,
   type MemoryStoreStatus,
+  type MemoryStoreSummary,
 } from "../../state/rubatoMemory";
 import ChatMarkdown from "../ChatMarkdown";
 import { Badge } from "../ui/badge";
@@ -85,16 +94,6 @@ async function confirm(message: string, destructive = false): Promise<boolean> {
   return answer ? await answer : window.confirm(message);
 }
 
-/** Stores worth a row by default: the ones in use. Test leftovers wait behind a toggle. */
-function isActive(store: MemoryStoreStatus) {
-  return (
-    store.enabled ||
-    store.pendingRunId !== undefined ||
-    store.running !== null ||
-    store.lastDreamAt !== undefined
-  );
-}
-
 /** The primary environment's id once its HTTP connection is ready; null until then. */
 function useReadyEnvironmentId(): EnvironmentId {
   const environmentId = usePrimaryEnvironmentId();
@@ -102,45 +101,103 @@ function useReadyEnvironmentId(): EnvironmentId {
   return Option.isSome(prepared) ? environmentId : null;
 }
 
+/** A store from its directory, plus what the dream CLI knows once that answers. */
+type StoreView = MemoryStoreSummary & {
+  readonly lastDreamAt?: string;
+  readonly newSessions?: number;
+  readonly due?: boolean;
+  readonly lastGuiRun?: MemoryStoreStatus["lastGuiRun"];
+};
+
+function mergeStores(summaries: readonly MemoryStoreSummary[], status: MemoryStatus | null): StoreView[] {
+  const byName = new Map(status?.stores.map((entry) => [entry.store, entry]) ?? []);
+  const merged = summaries.map((summary): StoreView => {
+    const cli = byName.get(summary.store);
+    if (!cli) return summary;
+    return {
+      ...summary,
+      roots: summary.roots ?? (cli.roots ? [...cli.roots] : null),
+      home: summary.home ?? cli.home ?? null,
+      enabled: cli.enabled,
+      pendingRunId: cli.pendingRunId ?? null,
+      running: summary.running ?? cli.running,
+      newSessions: cli.newSessions,
+      due: cli.due,
+      lastGuiRun: cli.lastGuiRun,
+      ...(cli.lastDreamAt ? { lastDreamAt: cli.lastDreamAt } : {}),
+    };
+  });
+  const activity = (store: StoreView) =>
+    [store.lastChangeAt, store.lastDreamAt].filter(Boolean).toSorted().at(-1) ?? "";
+  return merged.toSorted(
+    (a, b) => activity(b).localeCompare(activity(a)) || a.store.localeCompare(b.store),
+  );
+}
+
+function tildePath(value: string, home: string | null): string {
+  return home && (value === home || value.startsWith(`${home}/`)) ? `~${value.slice(home.length)}` : value;
+}
+
+function whereLabel(store: StoreView, home: string | null): string {
+  if (store.home) return "Home folder";
+  if (store.roots && store.roots.length > 0) return store.roots.map((root) => tildePath(root, home)).join(", ");
+  return "Project folder unknown";
+}
+
 export function RubatoMemorySettingsPanel() {
   const environmentId = useReadyEnvironmentId();
+  const [summaries, setSummaries] = useState<MemoryStoreSummary[] | null>(null);
+  const [memoryRoot, setMemoryRoot] = useState<string | null>(null);
   const [status, setStatus] = useState<MemoryStatus | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [storesError, setStoresError] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedStore, setSelectedStore] = useState<string | null>(null);
-  const [showAll, setShowAll] = useState(false);
   const [historySignal, setHistorySignal] = useState(0);
   const loadingRef = useRef(false);
+
+  const loadStores = useCallback(async () => {
+    if (environmentId === null) return;
+    try {
+      const next = await rubatoMemory.stores(environmentId);
+      setSummaries(next.stores);
+      setMemoryRoot(next.memoryRoot);
+      setStoresError(null);
+    } catch (error) {
+      setStoresError(error instanceof Error ? error.message : String(error));
+    }
+  }, [environmentId]);
 
   const refresh = useCallback(async () => {
     if (environmentId === null || loadingRef.current) return;
     loadingRef.current = true;
     setLoading(true);
     try {
-      const next = await rubatoMemory.status(environmentId);
-      setStatus(next);
-      setLoadError(null);
-      setSelectedStore(
-        (current) =>
-          current ??
-          next.stores.find((store) => store.pendingRunId !== undefined)?.store ??
-          next.stores.find((store) => store.enabled)?.store ??
-          null,
-      );
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : String(error));
+      await Promise.all([
+        loadStores(),
+        rubatoMemory.status(environmentId).then(
+          (next) => {
+            setStatus(next);
+            setStatusError(null);
+          },
+          (error: unknown) => setStatusError(error instanceof Error ? error.message : String(error)),
+        ),
+      ]);
     } finally {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [environmentId]);
+  }, [environmentId, loadStores]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
+  const stores = useMemo(() => (summaries ? mergeStores(summaries, status) : null), [summaries, status]);
+  const home = memoryRoot?.endsWith("/.rubato/memory") ? memoryRoot.slice(0, -"/.rubato/memory".length) : null;
+
   // A dream runs for minutes. While one is going, look again every 15 seconds.
-  const anyRunning = status?.stores.some((store) => store.running !== null) ?? false;
+  const anyRunning = stores?.some((store) => store.running !== null) ?? false;
   const wasRunning = useRef(false);
   useEffect(() => {
     if (!anyRunning) {
@@ -153,18 +210,40 @@ export function RubatoMemorySettingsPanel() {
     return () => window.clearInterval(timer);
   }, [anyRunning, refresh]);
 
-  const updateConfig = async (
-    change: Parameters<typeof rubatoMemory.config>[1],
-    optimistic: (current: MemoryStatus) => MemoryStatus,
-  ) => {
-    const previous = status;
-    if (previous) setStatus(optimistic(previous));
+  const saveConfig = async (change: Parameters<typeof rubatoMemory.config>[1], undo: () => void) => {
     try {
       await rubatoMemory.config(environmentId, change);
     } catch (error) {
-      setStatus(previous);
+      undo();
       reportError("Could not save the setting", error);
     }
+  };
+
+  const setCategory = (category: string) => {
+    const previous = status;
+    if (previous) setStatus({ ...previous, category });
+    void saveConfig({ category }, () => setStatus(previous));
+  };
+  const setPublish = (publish: DreamPublish) => {
+    const previous = status;
+    if (previous) setStatus({ ...previous, publish });
+    void saveConfig({ publish }, () => setStatus(previous));
+  };
+  const setEnabled = (store: string, enabled: boolean) => {
+    const previousSummaries = summaries;
+    const previousStatus = status;
+    setSummaries((current) =>
+      current?.map((entry) => (entry.store === store ? { ...entry, enabled } : entry)) ?? current,
+    );
+    setStatus((current) =>
+      current
+        ? { ...current, stores: current.stores.map((entry) => (entry.store === store ? { ...entry, enabled } : entry)) }
+        : current,
+    );
+    void saveConfig({ store, enabled }, () => {
+      setSummaries(previousSummaries);
+      setStatus(previousStatus);
+    });
   };
 
   const runNow = async (store: string) => {
@@ -175,46 +254,79 @@ export function RubatoMemorySettingsPanel() {
         title: `Dream started for ${store}`,
         description: "This can take several minutes. The result appears in the history.",
       });
-      setSelectedStore(store);
       await refresh();
     } catch (error) {
       reportError("Could not start the dream", error);
     }
   };
 
-  const visibleStores = useMemo(() => {
-    const stores = status?.stores ?? [];
-    const rank = (store: MemoryStoreStatus) =>
-      (store.pendingRunId !== undefined ? 0 : 4) + (store.enabled ? 0 : 2) + (store.lastDreamAt ? 0 : 1);
-    const sorted = stores.toSorted((a, b) => rank(a) - rank(b) || a.store.localeCompare(b.store));
-    return showAll ? sorted : sorted.filter(isActive);
-  }, [showAll, status]);
-  const hiddenCount = (status?.stores.length ?? 0) - (status?.stores.filter(isActive).length ?? 0);
-  const ladder = status?.categories.find((entry) => entry.name === status.category);
+  const selected = selectedStore ? stores?.find((entry) => entry.store === selectedStore) : undefined;
+  if (selectedStore && stores && !selected) {
+    // Deleted, or gone from disk since the list was read.
+    setSelectedStore(null);
+  }
 
+  if (selected) {
+    return (
+      <SettingsPageContainer>
+        <StoreDetail
+          environmentId={environmentId}
+          store={selected}
+          home={home}
+          historySignal={historySignal}
+          onBack={() => setSelectedStore(null)}
+          onToggle={(enabled) => setEnabled(selected.store, enabled)}
+          onRun={() => void runNow(selected.store)}
+          onChanged={() => void refresh()}
+          onDeleted={() => {
+            setSelectedStore(null);
+            void refresh();
+          }}
+        />
+      </SettingsPageContainer>
+    );
+  }
+
+  const ladder = status?.categories.find((entry) => entry.name === status.category);
   return (
     <SettingsPageContainer>
       <SettingsSection
-        id="memory-dream"
-        title="Dreams"
+        id="memory-stores"
+        title="Stores"
         headerAction={
-          <Button
-            size="xs"
-            variant="ghost"
-            disabled={loading}
-            onClick={() => void refresh()}
-            aria-label="Refresh"
-          >
+          <Button size="xs" variant="ghost" disabled={loading} onClick={() => void refresh()}>
             {loading ? <Spinner className="size-3.5" /> : <RefreshCwIcon className="size-3.5" />}
             Refresh
           </Button>
         }
       >
-        {loadError ? (
-          <SettingsRow title="Could not load memory status" description={loadError} />
+        {storesError ? <SettingsRow title="Could not load memory stores" description={storesError} /> : null}
+        {stores === null && !storesError ? (
+          <SettingsRow title="Loading memory stores" control={<Spinner className="size-4" />} />
+        ) : null}
+        {stores?.length === 0 ? (
+          <SettingsRow
+            title="No memory yet"
+            description="Memory is created automatically the first time the agent saves something in a project."
+          />
+        ) : null}
+        {stores?.map((store) => (
+          <StoreRow
+            key={store.store}
+            store={store}
+            home={home}
+            onOpen={() => setSelectedStore(store.store)}
+            onToggle={(enabled) => setEnabled(store.store, enabled)}
+          />
+        ))}
+      </SettingsSection>
+
+      <SettingsSection id="memory-dream" title="Dreams">
+        {statusError ? (
+          <SettingsRow title="Could not load dream settings" description={statusError} />
         ) : status === null ? (
           <SettingsRow
-            title="Loading memory status"
+            title="Loading dream settings"
             description="Scanning sessions can take a few seconds."
             control={<Spinner className="size-4" />}
           />
@@ -231,8 +343,7 @@ export function RubatoMemorySettingsPanel() {
                 <Select
                   value={status.category}
                   onValueChange={(next) => {
-                    if (typeof next !== "string" || next === status.category) return;
-                    void updateConfig({ category: next }, (current) => ({ ...current, category: next }));
+                    if (typeof next === "string" && next !== status.category) setCategory(next);
                   }}
                 >
                   <SelectTrigger size="sm" aria-label="Dream model ladder">
@@ -261,16 +372,14 @@ export function RubatoMemorySettingsPanel() {
               title="Publish"
               description={
                 status.publish === "review"
-                  ? "Dream edits wait on a branch until you approve them in the history below."
+                  ? "Dream edits wait on a branch until you approve them in the store's history."
                   : "Dream edits are merged into the store as soon as the dream ends."
               }
               control={
                 <Select
                   value={status.publish}
                   onValueChange={(next) => {
-                    if (next !== "review" && next !== "auto") return;
-                    const publish: DreamPublish = next;
-                    void updateConfig({ publish }, (current) => ({ ...current, publish }));
+                    if (next === "review" || next === "auto") setPublish(next);
                   }}
                 >
                   <SelectTrigger size="sm" aria-label="Dream publish mode">
@@ -287,117 +396,374 @@ export function RubatoMemorySettingsPanel() {
         )}
       </SettingsSection>
 
-      {status ? (
-        <SettingsSection id="memory-stores" title="Stores">
-          {visibleStores.length === 0 ? (
-            <SettingsRow title="No stores in use" description="Show all stores below to turn one on." />
-          ) : null}
-          {visibleStores.map((store) => (
-            <StoreRow
-              key={store.store}
-              store={store}
-              selected={selectedStore === store.store}
-              onSelect={() => setSelectedStore(store.store)}
-              onToggle={(enabled) =>
-                void updateConfig({ store: store.store, enabled }, (current) => ({
-                  ...current,
-                  stores: current.stores.map((entry) =>
-                    entry.store === store.store ? { ...entry, enabled } : entry,
-                  ),
-                }))
-              }
-              onRun={() => void runNow(store.store)}
-            />
-          ))}
-          {hiddenCount > 0 ? (
-            <div className="px-3 py-2 sm:px-4">
-              <Button size="xs" variant="ghost-muted" onClick={() => setShowAll((value) => !value)}>
-                {showAll ? "Show stores in use" : `Show ${count(hiddenCount, "unused store")}`}
-              </Button>
-            </div>
-          ) : null}
-        </SettingsSection>
-      ) : null}
-
-      {status && selectedStore ? (
-        <DreamHistory
-          key={`${selectedStore}:${historySignal}`}
-          environmentId={environmentId}
-          store={selectedStore}
-          pendingRunId={status.stores.find((entry) => entry.store === selectedStore)?.pendingRunId}
-          onReviewed={() => void refresh()}
-        />
-      ) : null}
-
       <SelfFilesSection environmentId={environmentId} />
     </SettingsPageContainer>
   );
 }
 
-function StoreRow({
-  store,
-  selected,
-  onSelect,
-  onToggle,
-  onRun,
-}: {
-  store: MemoryStoreStatus;
-  selected: boolean;
-  onSelect: () => void;
-  onToggle: (enabled: boolean) => void;
-  onRun: () => void;
-}) {
+function StoreBadges({ store }: { store: StoreView }) {
   const last = store.lastGuiRun;
   return (
+    <span className="flex flex-wrap items-center gap-1.5">
+      {store.running ? (
+        <Badge variant="info">
+          <Spinner className="size-3" />
+          Dreaming {store.running.startedAt ? `(started ${ago(store.running.startedAt)})` : ""}
+        </Badge>
+      ) : null}
+      {store.pendingRunId ? <Badge variant="warning">Needs review</Badge> : null}
+      {store.due && !store.running ? <Badge variant="secondary">Dream due</Badge> : null}
+      {!store.running && last && last.status === "failed" ? (
+        <span className="text-destructive-foreground" title={last.reason}>
+          Last run failed: {(last.reason ?? "").split("\n")[0]}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+function storeFacts(store: StoreView): string {
+  return [
+    count(store.files, "file"),
+    store.lastChangeAt ? `Updated ${ago(store.lastChangeAt)}` : "No changes yet",
+    store.lastDreamAt ? `Last dream ${ago(store.lastDreamAt)}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function StoreRow({
+  store,
+  home,
+  onOpen,
+  onToggle,
+}: {
+  store: StoreView;
+  home: string | null;
+  onOpen: () => void;
+  onToggle: (enabled: boolean) => void;
+}) {
+  return (
     <SettingsRow
-      className={cn(selected && "bg-accent/40")}
-      title={
-        <button type="button" className="text-left hover:underline" onClick={onSelect}>
-          {store.store}
-        </button>
+      className="cursor-pointer hover:bg-accent/30"
+      onClick={onOpen}
+      title={store.store}
+      description={
+        <span className="block truncate" title={whereLabel(store, home)}>
+          {whereLabel(store, home)}
+        </span>
       }
-      description={`${store.lastDreamAt ? `Last dream ${ago(store.lastDreamAt)}` : "No dreams yet"} · ${count(store.newSessions, "new session")}`}
       status={
-        <span className="flex flex-wrap items-center gap-1.5">
-          {store.running ? (
-            <Badge variant="info">
-              <Spinner className="size-3" />
-              Running {store.running.startedAt ? `(started ${ago(store.running.startedAt)})` : ""}
-            </Badge>
-          ) : null}
-          {store.pendingRunId ? (
-            <Badge variant="warning" render={<button type="button" onClick={onSelect} />}>
-              Needs review
-            </Badge>
-          ) : null}
-          {store.due && !store.running ? <Badge variant="secondary">Due</Badge> : null}
-          {!store.running && last && last.status === "failed" ? (
-            <span className="text-destructive-foreground" title={last.reason}>
-              Last run failed: {(last.reason ?? "").split("\n")[0]}
-            </span>
-          ) : null}
+        <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span>{storeFacts(store)}</span>
+          <StoreBadges store={store} />
         </span>
       }
       control={
-        <>
-          <Button
-            size="xs"
-            variant="outline"
-            disabled={store.running !== null}
-            onClick={onRun}
-            aria-label={`Run ${store.store} now`}
-          >
-            <PlayIcon className="size-3" />
-            Run now
-          </Button>
+        <span
+          className="flex items-center gap-2"
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+        >
+          <span className="text-xs text-muted-foreground">Dreams</span>
           <Switch
             aria-label={`Dreams for ${store.store}`}
             checked={store.enabled}
             onCheckedChange={(enabled) => onToggle(enabled)}
           />
-        </>
+          <Button size="icon-xs" variant="ghost" aria-label={`Open ${store.store}`} onClick={onOpen}>
+            <ChevronRightIcon className="size-4" />
+          </Button>
+        </span>
       }
     />
+  );
+}
+
+function StoreDetail({
+  environmentId,
+  store,
+  home,
+  historySignal,
+  onBack,
+  onToggle,
+  onRun,
+  onChanged,
+  onDeleted,
+}: {
+  environmentId: EnvironmentId;
+  store: StoreView;
+  home: string | null;
+  historySignal: number;
+  onBack: () => void;
+  onToggle: (enabled: boolean) => void;
+  onRun: () => void;
+  onChanged: () => void;
+  onDeleted: () => void;
+}) {
+  const [deleting, setDeleting] = useState(false);
+  const deleteStore = async () => {
+    const ok = await confirm(
+      `Delete the memory store "${store.store}"? It is archived to ~/.rubato/backups first. If an agent saves memory in this project again, a new empty store is created.`,
+      true,
+    );
+    if (!ok) return;
+    setDeleting(true);
+    try {
+      const result = await rubatoMemory.deleteStore(environmentId, store.store);
+      toastManager.add({
+        type: "success",
+        title: `Deleted ${store.store}`,
+        description: `Archived to ${tildePath(result.archive, home)}`,
+      });
+      onDeleted();
+    } catch (error) {
+      reportError("Could not delete the store", error);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <>
+      <div>
+        <Button size="xs" variant="ghost" onClick={onBack}>
+          <ChevronLeftIcon className="size-3.5" />
+          All stores
+        </Button>
+      </div>
+      <SettingsSection id="memory-store" title={store.store}>
+        <SettingsRow
+          title={whereLabel(store, home)}
+          description={storeFacts(store)}
+          status={<StoreBadges store={store} />}
+          control={
+            <>
+              <Button
+                size="xs"
+                variant="outline"
+                disabled={store.running !== null}
+                onClick={onRun}
+                aria-label={`Run a dream for ${store.store} now`}
+              >
+                <PlayIcon className="size-3" />
+                Dream now
+              </Button>
+              <span className="text-xs text-muted-foreground">Dreams</span>
+              <Switch
+                aria-label={`Dreams for ${store.store}`}
+                checked={store.enabled}
+                onCheckedChange={(enabled) => onToggle(enabled)}
+              />
+            </>
+          }
+        />
+      </SettingsSection>
+
+      <StoreFiles environmentId={environmentId} store={store.store} onChanged={onChanged} />
+
+      <DreamHistory
+        key={`${store.store}:${historySignal}`}
+        environmentId={environmentId}
+        store={store.store}
+        pendingRunId={store.pendingRunId ?? undefined}
+        onReviewed={onChanged}
+      />
+
+      <SettingsSection id="memory-store-delete" title="Delete">
+        <SettingsRow
+          title="Delete store"
+          description="Archives the store to ~/.rubato/backups, then removes it from memory."
+          control={
+            <Button
+              size="xs"
+              variant="destructive-outline"
+              disabled={deleting || store.running !== null}
+              onClick={() => void deleteStore()}
+            >
+              {deleting ? <Spinner className="size-3" /> : <Trash2Icon className="size-3" />}
+              Delete store…
+            </Button>
+          }
+        />
+      </SettingsSection>
+    </>
+  );
+}
+
+const FOLDER_ORDER = ["decisions", "reference", "skills"];
+
+function groupFiles(files: readonly MemoryFileEntry[]) {
+  const groups = new Map<string, MemoryFileEntry[]>();
+  for (const file of files) {
+    const slash = file.path.indexOf("/");
+    const folder = slash === -1 ? "" : file.path.slice(0, slash);
+    groups.set(folder, [...(groups.get(folder) ?? []), file]);
+  }
+  const rank = (folder: string) => {
+    const index = FOLDER_ORDER.indexOf(folder);
+    return folder === "" ? 1000 : index === -1 ? 100 : index;
+  };
+  return [...groups.entries()].toSorted(
+    ([a], [b]) => rank(a) - rank(b) || a.localeCompare(b),
+  );
+}
+
+function StoreFiles({
+  environmentId,
+  store,
+  onChanged,
+}: {
+  environmentId: EnvironmentId;
+  store: string;
+  onChanged: () => void;
+}) {
+  const [files, setFiles] = useState<MemoryFileEntry[] | null>(null);
+  const [truncated, setTruncated] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+  const [signal, setSignal] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    rubatoMemory
+      .files(environmentId, store)
+      .then((result) => {
+        if (cancelled) return;
+        setFiles(result.files);
+        setTruncated(result.truncated);
+        setError(null);
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [environmentId, store, signal]);
+
+  const remove = async (file: string) => {
+    const ok = await confirm(
+      `Delete ${file} from ${store}? The deletion is committed to the store, so git history keeps the old version.`,
+      true,
+    );
+    if (!ok) return;
+    try {
+      await rubatoMemory.deleteFile(environmentId, store, file);
+      toastManager.add({ type: "success", title: `Deleted ${file}` });
+      if (open === file) setOpen(null);
+      setSignal((value) => value + 1);
+      onChanged();
+    } catch (cause) {
+      reportError(`Could not delete ${file}`, cause);
+    }
+  };
+
+  return (
+    <SettingsSection id="memory-files" title={files ? `Files · ${files.length}` : "Files"}>
+      {error ? <SettingsRow title="Could not load files" description={error} /> : null}
+      {files === null && !error ? (
+        <SettingsRow title="Loading files" control={<Spinner className="size-4" />} />
+      ) : null}
+      {files?.length === 0 ? <SettingsRow title="This store has no files yet" /> : null}
+      {files
+        ? groupFiles(files).map(([folder, entries]) => (
+            <details key={folder || "."} open className="group px-3 py-2 sm:px-4">
+              <summary className="flex cursor-pointer list-none items-center gap-1.5 py-1 text-sm font-medium">
+                <ChevronRightIcon className="size-3.5 text-muted-foreground transition-transform group-open:rotate-90" />
+                {folder ? `${folder}/` : "Top level"}
+                <span className="text-xs font-normal text-muted-foreground">{entries.length}</span>
+              </summary>
+              <ul className="mt-1 space-y-0.5">
+                {entries.map((file) => (
+                  <li key={file.path}>
+                    <div className="group/file flex items-start gap-2 rounded-md px-2 py-1.5 hover:bg-accent/40">
+                      <button
+                        type="button"
+                        className="min-w-0 flex-1 text-left"
+                        aria-expanded={open === file.path}
+                        onClick={() => setOpen(open === file.path ? null : file.path)}
+                      >
+                        <span className="block truncate font-mono text-xs text-foreground">
+                          {folder ? file.path.slice(folder.length + 1) : file.path}
+                        </span>
+                        {file.description ? (
+                          <span className="block truncate text-xs text-muted-foreground">
+                            {file.description}
+                          </span>
+                        ) : null}
+                      </button>
+                      <Button
+                        size="icon-xs"
+                        variant="ghost-muted"
+                        className="opacity-0 group-hover/file:opacity-100 focus-visible:opacity-100"
+                        aria-label={`Delete ${file.path}`}
+                        onClick={() => void remove(file.path)}
+                      >
+                        <Trash2Icon className="size-3.5" />
+                      </Button>
+                    </div>
+                    {open === file.path ? (
+                      <FileViewer environmentId={environmentId} store={store} path={file.path} />
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ))
+        : null}
+      {truncated ? (
+        <p className="px-4 py-2 text-xs text-muted-foreground">Showing the first 5,000 files.</p>
+      ) : null}
+    </SettingsSection>
+  );
+}
+
+function FileViewer({
+  environmentId,
+  store,
+  path,
+}: {
+  environmentId: EnvironmentId;
+  store: string;
+  path: string;
+}) {
+  const [content, setContent] = useState<{ text: string; truncated: boolean } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    rubatoMemory
+      .file(environmentId, store, path)
+      .then((result) => {
+        if (!cancelled) setContent({ text: result.content, truncated: result.truncated });
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [environmentId, store, path]);
+
+  if (error) return <p className="px-2 pb-2 text-sm text-destructive-foreground">{error}</p>;
+  if (!content)
+    return (
+      <div className="flex items-center gap-2 px-2 pb-2 text-sm text-muted-foreground">
+        <Spinner className="size-3.5" /> Loading
+      </div>
+    );
+  const body = path.endsWith(".md") ? content.text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "") : null;
+  return (
+    <div className="mx-2 mb-2 max-h-[32rem] overflow-auto rounded-lg border border-border/60 px-4 py-3">
+      {body !== null ? (
+        <ChatMarkdown text={body} cwd={undefined} />
+      ) : (
+        <pre className="font-mono text-xs whitespace-pre-wrap">{content.text}</pre>
+      )}
+      {content.truncated ? (
+        <p className="mt-2 text-xs text-muted-foreground">Showing the first 1 MB.</p>
+      ) : null}
+    </div>
   );
 }
 
@@ -436,7 +802,7 @@ function DreamHistory({
   }, [environmentId, store, signal, pendingRunId]);
 
   return (
-    <SettingsSection id="memory-history" title={`Dream history · ${store}`}>
+    <SettingsSection id="memory-history" title="Dream history">
       {error ? <SettingsRow title="Could not load the history" description={error} /> : null}
       {runs === null && !error ? (
         <SettingsRow title="Loading history" control={<Spinner className="size-4" />} />

@@ -16,6 +16,9 @@ export interface MemoryStoreStatus {
   readonly pendingRunId?: string;
   readonly newSessions: number;
   readonly due: boolean;
+  readonly roots?: readonly string[];
+  readonly home?: boolean;
+  readonly files?: number;
   readonly running: { readonly startedAt?: string; readonly source: "gui" | "other" } | null;
   readonly lastGuiRun: {
     readonly startedAt?: string;
@@ -23,6 +26,24 @@ export interface MemoryStoreStatus {
     readonly runId?: string;
     readonly reason?: string;
   } | null;
+}
+
+/** One store as its directory shows it; fast, no session scan. */
+export interface MemoryStoreSummary {
+  readonly store: string;
+  /** Project folders the store belongs to; null when the store predates store.json. */
+  readonly roots: readonly string[] | null;
+  readonly home: boolean | null;
+  readonly files: number;
+  readonly lastChangeAt: string | null;
+  readonly pendingRunId: string | null;
+  readonly enabled: boolean;
+  readonly running: { readonly startedAt?: string; readonly source: "gui" | "other" } | null;
+}
+
+export interface MemoryFileEntry {
+  readonly path: string;
+  readonly description: string | null;
 }
 
 export interface MemoryStatus {
@@ -113,6 +134,22 @@ async function call<T>(
 }
 
 export const rubatoMemory = {
+  stores: (env: EnvironmentId | null) =>
+    call<{ memoryRoot: string; stores: MemoryStoreSummary[] }>(env, "stores"),
+  files: (env: EnvironmentId | null, store: string) =>
+    call<{ store: string; files: MemoryFileEntry[]; truncated: boolean }>(env, "files", { store }),
+  file: (env: EnvironmentId | null, store: string, path: string) =>
+    call<{ store: string; path: string; content: string; truncated: boolean }>(env, "file", {
+      store,
+      path,
+    }),
+  deleteFile: (env: EnvironmentId | null, store: string, path: string) =>
+    call<{ store: string; path: string; commit: string | null }>(env, "delete-file", {
+      store,
+      path,
+    }),
+  deleteStore: (env: EnvironmentId | null, store: string) =>
+    call<{ store: string; archive: string }>(env, "delete-store", { store, confirm: store }),
   status: (env: EnvironmentId | null) => call<MemoryStatus>(env, "status"),
   runs: (env: EnvironmentId | null, store: string) =>
     call<{ store: string; pendingRunId: string | null; runs: DreamRunSummary[] }>(env, "runs", {
