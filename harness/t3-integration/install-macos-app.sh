@@ -56,8 +56,9 @@ process.chdir(desktopDir);
 require(path.join(desktopDir, "dist-electron", "main.cjs"));
 JS
 
-# Resources 에 파일을 넣으면 런처가 걸어둔 애드혹 서명이 깨진다. 같은 인자로 다시 건다.
-codesign --force --deep --sign - --timestamp=none "$BUNDLE" >/dev/null 2>&1 || true
+# Resources 에 파일을 넣으면 런처가 걸어둔 애드혹 서명이 깨진다. 다시 서명하되
+# 이 머신의 로컬 인증서로 건다 — 애드혹이면 다시 만들 때마다 macOS 권한이 풀린다.
+bash "$HERE/mac-signing.sh" sign "$BUNDLE" || true
 
 # /Applications 이름은 Finder·Spotlight 용이다. 복사본이 아니라 링크라서
 # 업데이트로 번들이 바뀌어도 따라간다. Dock 고정은 실행 중 뜨는 아이콘으로 한다

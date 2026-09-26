@@ -6,6 +6,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { parseArgs } from 'node:util';
 import { memoryEdits, memoryOverlays } from './memory-edits.mjs';
 import { voiceEdits, voiceOverlays } from './voice-edits.mjs';
+import { permissionEdits, permissionOverlays } from './permission-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -65,9 +66,10 @@ const edits = {
       'replace'],
   ],
   'apps/desktop/src/window/DesktopWindow.ts': [
-    ['import * as Electron from "electron";', 'import { attachRubatoUpdates } from "../updates/RubatoUpdates.ts";\n'],
+    // macOS 권한 설정 화면(permission-edits.mjs)의 IPC 도 여기서 건다.
+    ['import * as Electron from "electron";', 'import { attachRubatoUpdates } from "../updates/RubatoUpdates.ts";\nimport { attachRubatoPermissions } from "../permissions/RubatoPermissions.ts";\n'],
     ['    window.webContents.on("did-finish-load", () => {',
-      '    attachRubatoUpdates(window, Electron, environment.serverSettingsPath, applicationUrl);\n\n'],
+      '    attachRubatoUpdates(window, Electron, environment.serverSettingsPath, applicationUrl);\n    attachRubatoPermissions(window, Electron, applicationUrl);\n\n'],
   ],
   // 앱 메뉴의 "Check for Updates..." 는 T3 자체 업데이터로 간다. 소스로 빌드한
   // Rubato 앱에서는 그 업데이터가 꺼져 있어서 "Updates unavailable" 만 떴다.
@@ -1487,8 +1489,8 @@ const edits = {
       'replace'],
   ],
 };
-overlays.push(...voiceOverlays);
-for (const [relative, changes] of Object.entries(voiceEdits)) {
+overlays.push(...voiceOverlays, ...permissionOverlays);
+for (const [relative, changes] of [...Object.entries(voiceEdits), ...Object.entries(permissionEdits)]) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 // Settings > 기억 (memory-edits.mjs) registers after the rest, so its anchors see their edits.

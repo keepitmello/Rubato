@@ -104,7 +104,7 @@ build_fingerprint() {
   {
     printf '%s\n' "$PIN"
     find "$HERE/overlay" -type f -exec shasum -a 256 {} + 2>/dev/null | sort
-    shasum -a 256 "$HERE/apply.mjs" "$HERE/write-gui-settings.mjs" 2>/dev/null
+    shasum -a 256 "$HERE/apply.mjs" "$HERE/voice-edits.mjs" "$HERE/memory-edits.mjs" "$HERE/permission-edits.mjs" "$HERE/write-gui-settings.mjs" 2>/dev/null
     shasum -a 256 "$HERE/assets/Rubato.png" "$HERE/assets/Rubato.icns" 2>/dev/null
   } | shasum -a 256 | cut -d' ' -f1
 }
