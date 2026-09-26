@@ -9,32 +9,16 @@ export const MEMORY_ROOT_ENV_VAR = "RUBATO_MEMORY_HOME"
 export const AGENTS_DIRNAME = "agents"
 export const REPO_DIRNAME = "repo"
 export const RUNTIME_DIRNAME = "runtime"
-export const RUNTIME_SUBDIRNAMES = [
-  "locks",
-  "transcripts",
-  "reflection",
-  "reflection-sessions",
-  "worktrees",
-  "viewers",
-  "push-queue",
-  "notices",
-  "tool-receipts",
-] as const
-export type RuntimeSubdirname = (typeof RUNTIME_SUBDIRNAMES)[number]
+/** Self store: the resident user.md/soul.md every session loads at start. */
+export const SELF_DIRNAME = "self"
 
 export interface MemoryIdentityPaths {
   root: string
   repo: string
   runtime: string
   locks: string
-  transcripts: string
-  reflection: string
-  reflectionSessions: string
+  /** Where the dream checks out the branch it edits. */
   worktrees: string
-  viewers: string
-  pushQueue: string
-  notices: string
-  toolReceipts: string
 }
 
 export function defaultMemoryRoot(): string {
@@ -57,13 +41,11 @@ export function buildIdentityPaths(memoryRoot: string, id: string): MemoryIdenti
     repo: join(root, REPO_DIRNAME),
     runtime,
     locks: join(runtime, "locks"),
-    transcripts: join(runtime, "transcripts"),
-    reflection: join(runtime, "reflection"),
-    reflectionSessions: join(runtime, "reflection-sessions"),
     worktrees: join(runtime, "worktrees"),
-    viewers: join(runtime, "viewers"),
-    pushQueue: join(runtime, "push-queue"),
-    notices: join(runtime, "notices"),
-    toolReceipts: join(runtime, "tool-receipts"),
   }
+}
+
+/** Repository holding the resident files: `<memory-root>/self/repo`. */
+export function selfRepoPath(memoryRoot: string): string {
+  return join(memoryRoot, SELF_DIRNAME, REPO_DIRNAME)
 }

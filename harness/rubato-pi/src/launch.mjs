@@ -135,6 +135,8 @@ export function piSupportEnv() {
     RUBATO_BOOT_CHROME_HREF: pathToFileURL(join(here, "boot-chrome.mjs")).href,
     RUBATO_ROLE_PROMPT_MODULE: pathToFileURL(join(here, "system-prompt.mjs")).href,
     RUBATO_ROLE_CONTRACT_MODULE: pathToFileURL(join(here, "role-contract.mjs")).href,
+    // The memory component asks `rubato dream --due` at session start and end; this is the CLI it runs.
+    RUBATO_DREAM_CLI: join(here, "..", "..", "..", "packages", "rubato-runtime", "src", "dream", "cli.ts"),
   };
 }
 

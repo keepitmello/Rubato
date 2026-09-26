@@ -9,61 +9,12 @@ function expectedHash(input: string): string {
   return createHash("sha256").update(input, "utf8").digest("hex").slice(0, 8)
 }
 
-describe("resolveMemoryIdentity auto mode", () => {
-  it("#given the same cwd #when resolved repeatedly #then the id is deterministic", () => {
-    // given
-    const cwd = "/repo/alpha"
-    // when
-    const first = resolveMemoryIdentity("auto", cwd, {})
-    const second = resolveMemoryIdentity("auto", cwd, {})
-    const fromUndefined = resolveMemoryIdentity(undefined, cwd, {})
-    const fromEmpty = resolveMemoryIdentity("", cwd, {})
-    const fromBlank = resolveMemoryIdentity("   ", cwd, {})
-    // then
-    expect(second.id).toBe(first.id)
-    expect(second.paths).toEqual(first.paths)
-    expect(fromUndefined.id).toBe(first.id)
-    expect(fromEmpty.id).toBe(first.id)
-    expect(fromBlank.id).toBe(first.id)
-  })
-
-  it("#given two projects with the same basename #when resolved #then slugs match but ids differ", () => {
-    // given / when
-    const one = resolveMemoryIdentity("auto", "/repo/alpha", {})
-    const two = resolveMemoryIdentity("auto", "/other/alpha", {})
-    // then
-    expect(one.safeSlug).toBe("alpha")
-    expect(two.safeSlug).toBe("alpha")
-    expect(one.id).not.toBe(two.id)
-  })
-
-  it("#given cwd spelling variants #when resolved #then normalization yields the same id", () => {
-    // given / when
-    const clean = resolveMemoryIdentity("auto", "/repo/alpha", {})
-    const trailing = resolveMemoryIdentity("auto", "/repo/alpha/", {})
-    const dotted = resolveMemoryIdentity("auto", "/repo/./alpha", {})
-    // then
-    expect(trailing.id).toBe(clean.id)
-    expect(dotted.id).toBe(clean.id)
-  })
-
-  it("#given a project path #when resolved #then the id is basename slug plus sha256-8 of the full path", () => {
-    // given
-    const cwd = "/x/My Proj"
-    // when
-    const identity = resolveMemoryIdentity("auto", cwd, {})
-    // then
-    expect(identity.safeSlug).toBe("my-proj")
-    expect(identity.id).toBe(`my-proj-${expectedHash(resolve(cwd))}`)
-  })
-
-  it("#given no root override #when resolved #then paths live under ~/.rubato/memory/agents/<id>", () => {
-    // given / when
-    const identity = resolveMemoryIdentity("auto", "/repo/alpha", {})
-    // then
-    const expectedRoot = join(homedir(), ".rubato", "memory", AGENTS_DIRNAME, identity.id)
-    expect(identity.paths.root).toBe(expectedRoot)
-    expect(identity.paths.repo).toBe(join(expectedRoot, "repo"))
+describe("resolveMemoryIdentity unnamed folders", () => {
+  it("#given memory.agent unset, blank, or auto #when resolved #then the folder has no store", () => {
+    // given / when / then
+    for (const value of [undefined, null, "", "   ", "auto"]) {
+      expect(resolveMemoryIdentity(value, "/repo/alpha", {})).toBeUndefined()
+    }
   })
 })
 
@@ -72,9 +23,9 @@ describe("resolveMemoryIdentity explicit mode", () => {
     // given / when
     const identity = resolveMemoryIdentity("backend-lead", "/repo/alpha", {})
     // then
-    expect(identity.safeSlug).toBe("backend-lead")
-    expect(identity.id).toBe("backend-lead")
-    expect(identity.paths.root).toBe(
+    expect(identity!.safeSlug).toBe("backend-lead")
+    expect(identity!.id).toBe("backend-lead")
+    expect(identity!.paths.root).toBe(
       join(homedir(), ".rubato", "memory", AGENTS_DIRNAME, "backend-lead"),
     )
   })
@@ -84,9 +35,9 @@ describe("resolveMemoryIdentity explicit mode", () => {
     const identity = resolveMemoryIdentity("Backend Lead", "/repo/alpha", {})
     // then
     const expectedId = `backend-lead-${expectedHash("Backend Lead")}`
-    expect(identity.safeSlug).toBe("backend-lead")
-    expect(identity.id).toBe(expectedId)
-    expect(identity.id).not.toBe("backend-lead")
+    expect(identity!.safeSlug).toBe("backend-lead")
+    expect(identity!.id).toBe(expectedId)
+    expect(identity!.id).not.toBe("backend-lead")
   })
 
   it("#given an explicit id with surrounding whitespace #when resolved #then it matches the trimmed form", () => {
@@ -94,18 +45,15 @@ describe("resolveMemoryIdentity explicit mode", () => {
     const padded = resolveMemoryIdentity("  backend-lead  ", "/repo/alpha", {})
     const plain = resolveMemoryIdentity("backend-lead", "/repo/alpha", {})
     // then
-    expect(padded.id).toBe(plain.id)
+    expect(padded!.id).toBe(plain!.id)
   })
 
-  it("#given the exact keyword 'auto' #when compared with 'Auto' #then only lowercase triggers auto mode", () => {
+  it("#given 'Auto' #when resolved #then only the lowercase keyword means unnamed", () => {
     // given / when
-    const keyword = resolveMemoryIdentity("auto", "/repo/alpha", {})
     const named = resolveMemoryIdentity("Auto", "/repo/alpha", {})
     // then
-    expect(keyword.id).toBe(`alpha-${expectedHash(resolve("/repo/alpha"))}`)
-    expect(named.safeSlug).toBe("auto")
-    expect(named.id).toBe(`auto-${expectedHash("Auto")}`)
-    expect(named.id).not.toBe(keyword.id)
+    expect(named?.safeSlug).toBe("auto")
+    expect(named?.id).toBe(`auto-${expectedHash("Auto")}`)
   })
 })
 
@@ -117,21 +65,21 @@ describe("resolveMemoryIdentity root override", () => {
     // when
     const identity = resolveMemoryIdentity("../evil", "/repo/alpha", env)
     // then
-    expect(identity.paths.root).toBe(
+    expect(identity!.paths.root).toBe(
       join(overrideRoot, AGENTS_DIRNAME, `evil-${expectedHash("../evil")}`),
     )
-    expect(identity.paths.repo).toBe(join(identity.paths.root, "repo"))
-    expect(identity.paths.pushQueue).toBe(join(identity.paths.root, "runtime", "push-queue"))
+    expect(identity!.paths.repo).toBe(join(identity!.paths.root, "repo"))
+    expect(identity!.paths.locks).toBe(join(identity!.paths.root, "runtime", "locks"))
   })
 
   it("#given a relative RUBATO_MEMORY_HOME #when resolved #then it resolves against the cwd argument", () => {
     // given
     const env = { [MEMORY_ROOT_ENV_VAR]: "qa-home" }
     // when
-    const identity = resolveMemoryIdentity("auto", "/work/proj", env)
+    const identity = resolveMemoryIdentity("backend-lead", "/work/proj", env)
     // then (Windows qualifies the drive; resolve() is the platform semantics the impl applies)
-    expect(identity.paths.root).toBe(
-      join(resolve("/work/proj", "qa-home"), AGENTS_DIRNAME, identity.id),
+    expect(identity!.paths.root).toBe(
+      join(resolve("/work/proj", "qa-home"), AGENTS_DIRNAME, identity!.id),
     )
   })
 
@@ -143,8 +91,8 @@ describe("resolveMemoryIdentity root override", () => {
       // when
       const identity = resolveMemoryIdentity("backend-lead", "/repo/alpha")
       // then
-      expect(identity.paths.root).toBe(
-        join(resolve("/repo/alpha", join(tmpdir(), "qa-process-env-home")), AGENTS_DIRNAME, identity.id),
+      expect(identity!.paths.root).toBe(
+        join(resolve("/repo/alpha", join(tmpdir(), "qa-process-env-home")), AGENTS_DIRNAME, identity!.id),
       )
     } finally {
       if (previous === undefined) {
@@ -159,7 +107,7 @@ describe("resolveMemoryIdentity root override", () => {
 describe("resolveMemoryIdentity input guards", () => {
   it("#given an empty cwd #when resolved #then it throws a TypeError", () => {
     // given / when / then
-    expect(() => resolveMemoryIdentity("auto", "", {})).toThrow(TypeError)
-    expect(() => resolveMemoryIdentity("auto", "   ", {})).toThrow(TypeError)
+    expect(() => resolveMemoryIdentity("backend-lead", "", {})).toThrow(TypeError)
+    expect(() => resolveMemoryIdentity("backend-lead", "   ", {})).toThrow(TypeError)
   })
 })

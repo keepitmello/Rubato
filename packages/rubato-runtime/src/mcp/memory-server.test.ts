@@ -1,16 +1,12 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test"
-import { createHash } from "node:crypto"
-import { existsSync, mkdtempSync, readdirSync, readFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { rmSyncEfaultTolerant } from "../components/memory/teardown.test-support"
 
 import { GitMemoryRepo, buildIdentityPaths, parseMemoryFile } from "@rubato/memory-core"
 
-import { createMemoryBinding } from "../components/memory/binding"
-import { createMemoryIdentityContext } from "../components/memory/context"
-import { MemoryFakeExtensionAPI } from "../components/memory/memory.test-support"
-import { ACCEPTED_TURNS_ENTRY_TYPE, createMemoryNudgeWiring } from "../components/memory/nudge-wiring"
+import { MEMORY_UNBOUND_MESSAGE } from "../components/memory/tool-metadata"
 import { handleMemoryMcpRequest } from "./memory-server"
 
 const roots: string[] = []
@@ -18,10 +14,8 @@ const roots: string[] = []
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), "rubato-memory-mcp-"))
   roots.push(root)
-  return {
-    cwd: join(root, "project"),
-    env: { ...process.env, RUBATO_MEMORY_HOME: join(root, "memory-home") },
-  }
+  const paths = buildIdentityPaths(join(root, "memory-home"), "proj")
+  return { root, paths, provenance: { sessionId: "session-1", identityId: "proj", repoPath: paths.repo } }
 }
 
 afterEach(() => {
@@ -33,6 +27,10 @@ afterEach(() => {
 // Each case drives real git subprocesses through a fresh repository; the 5s default is not a
 // budget these operations fit on a loaded Windows runner.
 setDefaultTimeout(process.platform === "win32" ? 30_000 : 5_000)
+
+function call(id: number, name: string, args: Record<string, unknown>) {
+  return handleMemoryMcpRequest({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } })
+}
 
 describe("rubato-memory MCP server", () => {
   test("#given initialize #then server info and tool capabilities are returned", async () => {
@@ -48,201 +46,32 @@ describe("rubato-memory MCP server", () => {
     expect(tools.map((tool) => tool.name)).toEqual(["memory", "memory_apply_patch"])
   })
 
-  test("#given a fresh project #when create then str_replace run through tools/call #then the memory repo records them", async () => {
-    const { cwd, env } = fixture()
-    const created = await handleMemoryMcpRequest(
-      { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "memory", arguments: {
-        command: "create", reason: "Record preference", file_path: "system/human/preferences.md",
-        description: "User preferences", file_text: "theme: dark",
-      } } },
-      { cwd, env },
-    )
+  test("#given the session's bound store #when create then str_replace run #then that store records them with the session trailer", async () => {
+    const { paths, provenance } = fixture()
+    const created = await call(3, "memory", {
+      command: "create", reason: "Record why", file_path: "decisions/cache-key.md",
+      description: "Cache key", file_text: "- prompt hash", provenance,
+    })
     expect((created?.result as { isError?: boolean } | undefined)?.isError).toBeFalsy()
-
-    const replaced = await handleMemoryMcpRequest(
-      { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "memory", arguments: {
-        command: "str_replace", reason: "Switch theme", file_path: "system/human/preferences.md",
-        old_string: "theme: dark", new_string: "theme: light",
-      } } },
-      { cwd, env },
-    )
+    const replaced = await call(4, "memory", {
+      command: "str_replace", reason: "Model joins the key", file_path: "decisions/cache-key.md",
+      old_string: "- prompt hash", new_string: "- prompt hash plus model", provenance,
+    })
     expect((replaced?.result as { isError?: boolean } | undefined)?.isError).toBeFalsy()
 
-    const agentsDir = join(String(env.RUBATO_MEMORY_HOME), "agents")
-    const identityDir = readdirSync(agentsDir)[0]
-    expect(identityDir).toBeDefined()
-    const repoDir = join(agentsDir, String(identityDir), "repo")
-    const profile = parseMemoryFile(readFileSync(join(repoDir, "system/human/preferences.md"), "utf8"))
-    const repo = new GitMemoryRepo({ dir: repoDir, agentId: String(identityDir) })
-    expect(profile.frontmatter.description).toBe("User preferences")
-    expect(profile.body.trim()).toBe("theme: light")
-    expect((await repo.log({ limit: 2 })).map((entry) => entry.subject)).toEqual(["Switch theme", "Record preference"])
+    const file = parseMemoryFile(readFileSync(join(paths.repo, "decisions/cache-key.md"), "utf8"))
+    expect(file.body.trim()).toBe("- prompt hash plus model")
+    const log = await new GitMemoryRepo({ dir: paths.repo, agentId: "proj" }).log({ limit: 2 })
+    expect(log.map((entry) => entry.subject)).toEqual(["Model joins the key", "Record why"])
+    expect(log[0]?.trailers["Rubato-Session"]).toBe("session-1")
   })
 
-  test("#given injected provenance for a non-auto identity #when an MCP memory call runs #then it writes that bound repo with durable turn trailers", async () => {
-    // given
-    const { cwd, env } = fixture()
-    const identityId = "explicit-agent-deadbeef"
-    const paths = buildIdentityPaths(String(env.RUBATO_MEMORY_HOME), identityId)
-    const repo = new GitMemoryRepo({ dir: paths.repo, agentId: identityId })
-    await repo.init({ installHooks: () => undefined })
-    const context = createMemoryIdentityContext({
-      identity: identityId,
-      identityPaths: paths,
-      binding: createMemoryBinding({ identity: identityId, repoPath: paths.repo, boundAt: 1 }),
-    })
-    const pi = new MemoryFakeExtensionAPI()
-    const nudge = createMemoryNudgeWiring({
-      resolveContext: () => context,
-      resolveSettings: () => ({ enabled: true, everyUserTurns: 2 }),
-    })
-    nudge.register(pi)
-    const eventContext = {
-      sessionManager: {
-        getSessionId: () => "session-mcp",
-        getEntries: () => [{
-          type: "custom",
-          customType: ACCEPTED_TURNS_ENTRY_TYPE,
-          data: { version: 1, sessionId: "session-mcp", priorUserTurns: 3, sessionBaselineTurns: 1 },
-        }],
-      },
-    }
-    await pi.dispatch("session_start", {}, eventContext)
-    expect(await nudge.nudgeTurns(repo, "session-mcp", identityId)).toBe(2)
-
-    // when
-    const result = await handleMemoryMcpRequest(
-      { jsonrpc: "2.0", id: 6, method: "tools/call", params: { name: "memory", arguments: {
-        command: "create",
-        reason: "Record bound identity",
-        file_path: "bound.md",
-        description: "Bound",
-        provenance: {
-          sessionId: "session-mcp",
-          userTurns: 3,
-          identityId,
-          repoPath: paths.repo,
-        },
-      } } },
-      { cwd, env },
-    )
-
-    // then
-    expect((result?.result as { isError?: boolean } | undefined)?.isError).toBeFalsy()
-    const committed = parseMemoryFile(await repo.show("HEAD", "bound.md"))
-    expect(committed.frontmatter.description).toBe("Bound")
-    expect(committed.body.trim()).toBe("")
-    expect((await repo.log({ limit: 1 }))[0]?.trailers).toEqual({
-      "Rubato-Writer": "memory-tool",
-      "Rubato-Session": "session-mcp",
-      "Rubato-Turn": "3",
-    })
-    expect(await nudge.nudgeTurns(repo, "session-mcp", identityId)).toBeUndefined()
-    expect(readdirSync(join(String(env.RUBATO_MEMORY_HOME), "agents"))).toEqual([identityId])
-  })
-
-  test("#given injected provenance with a toolCallId #when an MCP memory call commits #then an out-of-band receipt lands under runtime/tool-receipts", async () => {
-    // given
-    const { cwd, env } = fixture()
-    const identityId = "receipt-agent-deadbeef"
-    const paths = buildIdentityPaths(String(env.RUBATO_MEMORY_HOME), identityId)
-    const repo = new GitMemoryRepo({ dir: paths.repo, agentId: identityId })
-    await repo.init({ installHooks: () => undefined })
-
-    // when
-    const result = await handleMemoryMcpRequest(
-      { jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "memory", arguments: {
-        command: "create",
-        reason: "rewrite persona",
-        file_path: "system/persona.md",
-        description: "Persona",
-        file_text: "v2 soul",
-        provenance: {
-          sessionId: "session-mcp",
-          userTurns: 3,
-          identityId,
-          repoPath: paths.repo,
-          toolCallId: "call-receipt-1",
-        },
-      } } },
-      { cwd, env },
-    )
-
-    // then
-    expect((result?.result as { isError?: boolean } | undefined)?.isError).toBeFalsy()
-    const key = createHash("sha256").update("call-receipt-1").digest("hex").slice(0, 32)
-    const receipt = JSON.parse(readFileSync(join(paths.toolReceipts, `${key}.json`), "utf8")) as Record<string, unknown>
-    expect(receipt["version"]).toBe(1)
-    expect(receipt["toolCallId"]).toBe("call-receipt-1")
-    expect(receipt["sha"]).toBe(await repo.head())
-    expect(receipt["subject"]).toBe("rewrite persona")
-    expect(receipt["affectedPaths"]).toEqual(["system/persona.md"])
-  })
-
-  test("#given no injected toolCallId #when an MCP memory call commits #then no receipt is written", async () => {
-    // given
-    const { cwd, env } = fixture()
-
-    // when
-    const created = await handleMemoryMcpRequest(
-      { jsonrpc: "2.0", id: 8, method: "tools/call", params: { name: "memory", arguments: {
-        command: "create", reason: "standalone write", file_path: "notes.md",
-        description: "Note", file_text: "standalone",
-      } } },
-      { cwd, env },
-    )
-
-    // then
-    expect((created?.result as { isError?: boolean } | undefined)?.isError).toBeFalsy()
-    const agentsDir = join(String(env.RUBATO_MEMORY_HOME), "agents")
-    const [identityDir] = readdirSync(agentsDir)
-    const repoDir = join(agentsDir, String(identityDir), "repo")
-    const repo = new GitMemoryRepo({ dir: repoDir, agentId: String(identityDir) })
-    expect((await repo.log({ limit: 1 }))[0]?.subject).toBe("standalone write")
-    expect(parseMemoryFile(await repo.show("HEAD", "notes.md")).body.trim()).toBe("standalone")
-    const receiptsDir = join(agentsDir, String(identityDir), "runtime", "tool-receipts")
-    expect(existsSync(receiptsDir) ? readdirSync(receiptsDir) : []).toEqual([])
-  })
-
-  test("#given a failing MCP memory call with a toolCallId #when the call errors #then no receipt is written", async () => {
-    // given
-    const { cwd, env } = fixture()
-    const identityId = "receipt-failure-agent"
-    const paths = buildIdentityPaths(String(env.RUBATO_MEMORY_HOME), identityId)
-    const repo = new GitMemoryRepo({ dir: paths.repo, agentId: identityId })
-    await repo.init({ installHooks: () => undefined })
-
-    // when
-    const result = await handleMemoryMcpRequest(
-      { jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "memory", arguments: {
-        command: "str_replace",
-        reason: "edit a missing file",
-        file_path: "system/persona.md",
-        old_string: "nothing",
-        new_string: "something",
-        provenance: {
-          sessionId: "session-mcp",
-          userTurns: 3,
-          identityId,
-          repoPath: paths.repo,
-          toolCallId: "call-failed-1",
-        },
-      } } },
-      { cwd, env },
-    )
-
-    // then
-    expect((result?.result as { isError?: boolean } | undefined)?.isError).toBe(true)
-    const key = createHash("sha256").update("call-failed-1").digest("hex").slice(0, 32)
-    expect(existsSync(join(paths.toolReceipts, `${key}.json`))).toBe(false)
-  })
-
-  test("#given an unknown tool name #when called #then an error result is returned", async () => {
-    const { cwd, env } = fixture()
-    const result = await handleMemoryMcpRequest(
-      { jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "nope", arguments: {} } },
-      { cwd, env },
-    )
-    expect((result?.result as { isError?: boolean } | undefined)?.isError).toBe(true)
+  test("#given no bound store #when a memory call arrives #then it says memory is off and creates nothing", async () => {
+    const { root } = fixture()
+    const result = await call(5, "memory_apply_patch", { reason: "r", input: "*** Begin Patch\n*** End Patch" })
+    const payload = result?.result as { isError?: boolean; content?: Array<{ text: string }> } | undefined
+    expect(payload?.isError).toBe(true)
+    expect(payload?.content?.[0]?.text).toContain(MEMORY_UNBOUND_MESSAGE)
+    expect(existsSync(join(root, "memory-home"))).toBe(false)
   })
 })

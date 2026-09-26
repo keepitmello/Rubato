@@ -16,7 +16,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { RubatoMemorySettingsSchema } from "@rubato/config-core"
-import { resolveMemoryIdentity, resolveMemoryRoot } from "@rubato/memory-core"
+import { buildIdentityPaths, resolveMemoryRoot } from "@rubato/memory-core"
 
 import { loadSenpiRubatoConfig } from "../components/config-resolution"
 import { dreamLadder } from "./ladder"
@@ -58,9 +58,9 @@ async function main(argv: readonly string[]): Promise<number> {
   const userConfig = loadSenpiRubatoConfig({ cwd: homedir(), env }).config
   const memory = userConfig.memory ?? RubatoMemorySettingsSchema.parse({})
   const dream = memory.dream
-  const category = dream.category ?? memory.reflection.category
+  const category = dream.category
   const memoryRoot = resolveMemoryRoot(env, homedir())
-  const pathsOf = (store: string) => resolveMemoryIdentity(store, homedir(), env).paths
+  const pathsOf = (store: string) => buildIdentityPaths(memoryRoot, store)
 
   const states = new Map<string, DreamState>()
   for (const store of listExistingStores(memoryRoot)) states.set(store, await readDreamState(pathsOf(store)))
@@ -95,7 +95,6 @@ async function main(argv: readonly string[]): Promise<number> {
   const statuses: StoreStatus[] = []
   for (const [store, state] of states) {
     const pending = await readPendingReview(pathsOf(store))
-    // Per store only: memory.dream.enabled still gates the old in-session dream until it is removed.
     const enabled = dream.stores[store]?.enabled === true
     const newSessions = sessionsByStore.get(store)?.length ?? 0
     const lastMs = state.last_dream_at === undefined ? 0 : Date.parse(state.last_dream_at)
@@ -121,6 +120,11 @@ async function main(argv: readonly string[]): Promise<number> {
   if (unknown.length > 0) {
     process.stderr.write(`rubato dream: no memory store named ${unknown.join(", ")}\n`)
     return 2
+  }
+  // Nothing due is the common answer to the session-start/end ask: finish before touching the engine.
+  if (targets.length === 0) {
+    if (json) process.stdout.write(`${JSON.stringify({ runs: [] }, null, 2)}\n`)
+    return 0
   }
   const ladder = dreamLadder(userConfig, category)
   const launch = await resolveLaunch(env)

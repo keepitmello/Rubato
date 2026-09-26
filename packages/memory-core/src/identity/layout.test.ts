@@ -8,30 +8,8 @@ import {
   MEMORY_ROOT_ENV_VAR,
   REPO_DIRNAME,
   RUNTIME_DIRNAME,
-  RUNTIME_SUBDIRNAMES,
   resolveMemoryRoot,
 } from "./layout"
-
-describe("memory identity layout constants", () => {
-  it("#given the layout module #when constants are inspected #then they pin the decided directory names", () => {
-    // given / when / then
-    expect(MEMORY_ROOT_ENV_VAR).toBe("RUBATO_MEMORY_HOME")
-    expect(AGENTS_DIRNAME).toBe("agents")
-    expect(REPO_DIRNAME).toBe("repo")
-    expect(RUNTIME_DIRNAME).toBe("runtime")
-    expect([...RUNTIME_SUBDIRNAMES]).toEqual([
-      "locks",
-      "transcripts",
-      "reflection",
-      "reflection-sessions",
-      "worktrees",
-      "viewers",
-      "push-queue",
-      "notices",
-      "tool-receipts",
-    ])
-  })
-})
 
 describe("defaultMemoryRoot", () => {
   it("#given no override #when the default root is computed #then it is ~/.rubato/memory", () => {
@@ -86,24 +64,6 @@ describe("buildIdentityPaths", () => {
     expect(paths.repo).toBe(join(root, "repo"))
     expect(paths.runtime).toBe(runtime)
     expect(paths.locks).toBe(join(runtime, "locks"))
-    expect(paths.transcripts).toBe(join(runtime, "transcripts"))
-    expect(paths.reflection).toBe(join(runtime, "reflection"))
-    expect(paths.reflectionSessions).toBe(join(runtime, "reflection-sessions"))
     expect(paths.worktrees).toBe(join(runtime, "worktrees"))
-    expect(paths.viewers).toBe(join(runtime, "viewers"))
-    expect(paths.pushQueue).toBe(join(runtime, "push-queue"))
-    expect(paths.notices).toBe(join(runtime, "notices"))
-    expect(paths.toolReceipts).toBe(join(runtime, "tool-receipts"))
-  })
-
-  it("#given built paths #when runtime subdirs are enumerated #then every declared subdir is present under runtime", () => {
-    // given
-    const paths = buildIdentityPaths("/mem", "abc-0123abcd")
-    // when
-    const allPaths = Object.values(paths)
-    // then
-    for (const subdir of RUNTIME_SUBDIRNAMES) {
-      expect(allPaths).toContain(join(paths.runtime, subdir))
-    }
   })
 })

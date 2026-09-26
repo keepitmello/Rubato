@@ -14,8 +14,7 @@ await mkdir(join(cwd, ".rubato"), { recursive: true });
 // The layer schema is strict, so a key it does not know (the retired `facts` layer) rejects the
 // whole file and the defaults silently win. Keep this in step with RubatoMemorySettingsLayerSchema.
 await writeFile(join(cwd, ".rubato/rubato.jsonc"), JSON.stringify({ memory: {
-  agent: "stock-integration", tool_exposure: exposure, reflection: { enabled: false },
-  dream: { enabled: false, shutdown_launch: false }, sync: { enabled: false },
+  agent: "stock-integration", tool_exposure: exposure,
 } }));
 const settingsManager = sdk.SettingsManager.inMemory();
 const modelRuntime = await sdk.ModelRuntime.create({ authPath: join(agentDir, "auth.json"), modelsPath: null, allowModelNetwork: false, refreshOnCreate: false });
@@ -76,18 +75,15 @@ try {
     description: "Component integration evidence", file_text: "stock Pi memory write", reason: "local integration fixture",
   }, { activateInactiveTool: true });
   assert.notEqual(memory.isError, true, JSON.stringify(memory));
-  const memoryStatus = await session.extensionRunner.requestRpc("rubato.memory.status");
-  assert.equal(memoryStatus.schemaVersion, 1);
-  assert.ok(memoryStatus.repo.headSha, "actual memory commit is visible to the existing RPC consumer");
-  const writeNotices = session.sessionManager.getEntries().filter((entry) => entry.customType === "rubato-memory:write-updated");
-  assert.equal(writeNotices.length, exposure === "search" ? 1 : 0, "MCP receipt feeds exactly one write notice; direct rendering does not duplicate it");
+  const memorySha = /committed(?: locally)? \(([0-9a-f]{7,})\)/.exec(JSON.stringify(memory))?.[1];
+  assert.ok(memorySha, `the memory write commits into the named store: ${JSON.stringify(memory)}`);
   const tier = await session.extensionRunner.requestRpc("rubato.service-tier.status");
   assert.equal(tier.active, false);
   assert.equal(session.sessionManager.getEntries().some((entry) => entry.customType === "senpi-memory.session-binding"), true);
   const declaration = assembled.servers.list().find(({ name }) => name === "_ast_grep");
   assert.equal(declaration.env.RUBATO_AST_GREP_PROJECT_CWD, cwd, "AST MCP receives the session project, not the engine cwd");
   assert.match(declaration.args[0], /rubato-features\/rubato-components\/runtime\/ast-grep-mcp\/cli\.js$/);
-  process.stdout.write(`RUBATO_COMPONENT_RESULT ${JSON.stringify({ tools: tools.length, exposure, memorySha: memoryStatus.repo.headSha,
+  process.stdout.write(`RUBATO_COMPONENT_RESULT ${JSON.stringify({ tools: tools.length, exposure, memorySha,
     declaredServers: assembled.servers.list().map(({ name }) => name), requestTimeline: typeof session.requestTimelineSnapshot === "function" })}\n`);
 } finally {
   await session.extensionRunner.emit({ type: "session_shutdown", reason: "exit" });

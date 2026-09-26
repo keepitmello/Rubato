@@ -5,7 +5,6 @@ import { NoEffectiveChangesError, type GitCommitAuthor, type GitMemoryRepo } fro
 import { parseMemoryFile, renderMemoryFile, type ParsedMemoryFile } from "../memfs/frontmatter"
 import { validateMemoryPath, validateRepositoryPath } from "../memfs/paths"
 import type { LockDomain } from "../locks"
-import { SOUL_EDIT_RESULT_LINE, touchesSoulPath } from "../soul"
 import { MemoryToolError } from "./tool-errors"
 
 export type MemoryCommand =
@@ -18,7 +17,6 @@ export type MemoryCommand =
 
 export interface MemoryToolProvenance {
   readonly sessionId: string
-  readonly userTurns: number
 }
 
 export interface MemoryToolParams {
@@ -87,7 +85,7 @@ export async function runMemoryTool(options: RunMemoryToolOptions): Promise<Memo
         ? `Memory ${params.command} committed locally (${result.sha.slice(0, 7)}).`
         : `Memory ${params.command} committed (${result.sha.slice(0, 7)}); harness will sync after the turn.`
       return {
-        message: touchesSoulPath(affectedPaths) ? `${summary}\n${SOUL_EDIT_RESULT_LINE}` : summary,
+        message: summary,
         commit: {
           sha: result.sha,
           subject: reason.split(/\r?\n/, 1)[0] ?? reason,
@@ -261,7 +259,6 @@ function memoryCommitMessage(reason: string, provenance: MemoryToolProvenance | 
     "",
     "Rubato-Writer: memory-tool",
     `Rubato-Session: ${provenance.sessionId}`,
-    `Rubato-Turn: ${provenance.userTurns}`,
   ].join("\n")
 }
 

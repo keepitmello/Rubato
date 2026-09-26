@@ -32,7 +32,7 @@ afterEach(async () => {
 })
 
 const SEEDS = [
-  { relativePath: "system/persona.md", content: "---\ndescription: Persona\n---\nseeded persona\n" },
+  { relativePath: "decisions/cache-key.md", content: "---\ndescription: Cache key\n---\nseeded\n" },
 ]
 
 async function harness(options: { readonly seeded?: boolean } = {}) {
@@ -156,6 +156,6 @@ describe("/memory-repository", () => {
     const text = await invoke(pi, "memory-repository", "status", ctx)
 
     // then
-    expect(text).toContain("not bound")
+    expect(text).toContain("memory.agent")
   })
 })

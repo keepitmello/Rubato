@@ -102,7 +102,7 @@ describe("runMemoryTool", () => {
         file_path: "provenance.md",
         description: "Provenance",
         author: AUTHOR,
-        provenance: { sessionId: "session-provenance", userTurns: 7 },
+        provenance: { sessionId: "session-provenance" },
       },
     })
 
@@ -110,7 +110,6 @@ describe("runMemoryTool", () => {
     expect((await setup.repo.log({ limit: 1 }))[0]?.trailers).toEqual({
       "Rubato-Writer": "memory-tool",
       "Rubato-Session": "session-provenance",
-      "Rubato-Turn": "7",
     })
   })
 
