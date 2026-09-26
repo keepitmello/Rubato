@@ -1,5 +1,5 @@
 ---
-name: "aside-browser"
+name: "aside"
 version: 4
 description: "Use when research quality depends on broad, fresh, high-recall evidence collection, or when the task requires direct browser interaction."
 ---
