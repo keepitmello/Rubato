@@ -30,8 +30,7 @@ const origin = createServer(async (req, res) => {
 });
 origin.listen(0, '127.0.0.1'); await once(origin, 'listening');
 const cwd = path.join(process.cwd(), 'project'); await mkdir(path.join(cwd, '.rubato'), { recursive: true });
-await writeFile(path.join(cwd, '.rubato/rubato.jsonc'), JSON.stringify({ memory: { agent: 'process-fixture',
-  reflection: { enabled: false }, facts: { enabled: false }, dream: { enabled: false, shutdown_launch: false }, sync: { enabled: false } } }));
+await writeFile(path.join(cwd, '.rubato/rubato.jsonc'), JSON.stringify({ memory: { agent: 'process-fixture' } }));
 await writeFile(path.join(profile, 'settings.json'), JSON.stringify({ quietStartup: true, theme: 'dark', defaultProvider: 'fixture', defaultModel: 'local' }));
 await writeFile(path.join(profile, 'models.json'), JSON.stringify({ providers: { fixture: {
   baseUrl: `http://127.0.0.1:${origin.address().port}/v1`, api: 'openai-completions', apiKey: '$RUBATO_TEST_KEY',

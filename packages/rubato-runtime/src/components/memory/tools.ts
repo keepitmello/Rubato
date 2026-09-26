@@ -137,11 +137,9 @@ function createMemoryTool(
     name: MEMORY_TOOL_NAME,
     label: "Memory",
     description: MEMORY_TOOL_DESCRIPTION,
-    promptSnippet: "memory - edit Rubato memory blocks (create/str_replace/insert/delete/rename/update_description); auto-commits each change",
+    promptSnippet: "memory - edit Rubato memory files (create/str_replace/insert/delete/rename/update_description); auto-commits each change",
     promptGuidelines: [
-      "Write memory when a thread of work closes, not every turn: save only the why git cannot answer (the reason for the approach, rejected candidates, how the cause was narrowed, the forcing constraint, what is unresolved). Not saving is a valid outcome.",
-      "One file answers one question with its current answer: msearch for the file that already answers it, overwrite its conclusion or delete it when meaningless; never append corrections, dates or outdated markers beside it.",
-      "Memory files are markdown with a YAML `description` line, which is what search shows; keep it accurate.",
+      "Read Skill(memory-discipline) before writing memory. Write when a thread of work closes, only the why git cannot answer, one current answer per file; not saving is a valid outcome.",
     ],
     parameters: MemoryToolParams,
     executionMode: "sequential",
