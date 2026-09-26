@@ -812,6 +812,43 @@ const edits = {
       ].join('\n'),
       'replace',
     ],
+    // 스레드 행의 제목 폭을 돌려받는다. 상태는 글자 알약 대신 색 점(이름은 툴팁)으로,
+    // 시간은 "15m ago" 대신 "15m" 로 줄인다. 시간 칸의 최소 폭은 마우스를 올리면 그
+    // 자리에 뜨는 보관 버튼(min-w-6)만큼만 잡는다.
+    [
+      '          {threadStatus && <ThreadStatusLabel status={threadStatus} />}',
+      '          {threadStatus && <ThreadStatusLabel status={threadStatus} compact />}',
+      'replace',
+    ],
+    [
+      'import { formatRelativeTimeLabel } from "../timestampFormat";',
+      'import { formatRelativeTime } from "../timestampFormat";',
+      'replace',
+    ],
+    [
+      'function SidebarThreadDetailPrewarmer(',
+      [
+        '// Rubato: the thread row shows "15m", not "15m ago", so the title keeps the width.',
+        'function formatSidebarThreadTime(isoDate: string): string {',
+        '  const relative = formatRelativeTime(isoDate);',
+        '  if (!relative) return "";',
+        '  return relative.suffix === null ? "now" : relative.value;',
+        '}',
+        '',
+        'function SidebarThreadDetailPrewarmer(',
+      ].join('\n'),
+      'replace',
+    ],
+    [
+      '                    {formatRelativeTimeLabel(\n',
+      '                    {formatSidebarThreadTime(\n',
+      'replace',
+    ],
+    [
+      'className={`flex min-w-12 justify-end ${',
+      'className={`flex min-w-6 justify-end ${',
+      'replace',
+    ],
     [
       '        isThreadListExpanded={isThreadListExpanded}',
       '        hiddenThreadCount={hiddenThreadCount}\n        threadListExpanded={threadListExpanded}',
