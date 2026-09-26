@@ -18,7 +18,7 @@ Identify the responsible application before editing any list:
 
 ```bash
 # launchd becomes the responsible process, breaking the inherited chain.
-launchctl submit -l pbprobe -- /opt/homebrew/bin/peekaboo \
+launchctl submit -l pbprobe -- "$(command -v peekaboo)" \
   see --mode screen --no-elements --path /tmp/probe.png --no-remote
 sleep 5; launchctl remove pbprobe; ls -l /tmp/probe.png
 ```
@@ -33,21 +33,27 @@ code signature, so an app updated after the grant no longer matches. Toggling th
 switch off and on does not re-bind it, and adding the same bundle again while the
 row exists is a no-op. Remove the row, then add the bundle back.
 
-## Peekaboo
-
-- `Bridge operation target attribution failed`: add `--no-remote` and retry.
-- `multiple eligible windows`: add `--window-title` or take a fresh `see` snapshot.
-- `Do not combine an explicit --snapshot with --app`: drop `--app` and window flags when using `--snapshot`.
-- `ACCESSIBILITY_INCOMPLETE` / `WINDOW_NOT_FOUND`: the process may have no AX window. Screenshot capture can still work. Re-observe once; if AX stays empty, fall back to Cua Driver.
-- `Coordinates ... outside target window`: AX and WindowServer geometry disagree. Re-observe; if still incoherent, stop instead of guessing.
-- `success: true` with an unverifiable effect: read the real app state before claiming success.
-- A custom or canvas control lacks an AX press: re-observe, then use snapshot-bound coordinates only if the window geometry is coherent.
-- Failure clearly occurred before action dispatch: a Cua Driver retry is allowed.
-- Timeout, disconnect, or error during or after action dispatch: treat delivery as unknown. Re-observe before deciding whether Cua Driver may be used.
+Cua Driver is not affected: its daemon is its own responsible process, so its grants are CuaDriver.app's own (`cua-driver permissions status --json` names the identity it answered for).
 
 ## Cua Driver
 
-- `ax_window_unresolved`: the CG window exists but no AXWindow reports that `window_id`. Same class of failure as Peekaboo `ACCESSIBILITY_INCOMPLETE`. If both backends lack AX, stop.
+- `stale_element_token`: the token came from another session. Put the same `"session"` label on every call and re-read with `get_window_state`.
+- `ax_window_unresolved`: the CG window exists but no AXWindow reports that `window_id`. Bring the app forward and re-observe; with Stage Manager on, strip windows often have no AX window. If Peekaboo also lacks AX, stop.
 - `Missing required integer field`: `call` takes JSON on stdin, not flags. `get_window_state` needs `pid` and `window_id`.
+- `"status":"refused"`: nothing was dispatched; a Peekaboo retry is allowed.
+- Any other failure during or after dispatch: treat delivery as unknown. Re-observe before deciding whether Peekaboo may be used.
+- A key combo is never read back (`effect: "unverifiable"`): check the app state.
 - Expected state is already present: do not repeat the mutation.
 - Resulting state cannot be determined: stop and report the ambiguity.
+
+## Peekaboo
+
+- `Bridge operation target attribution failed`: add `--no-remote` and retry.
+- `only an executable-name or fuzzy match, which is not allowed for mutation`: target by `--pid` or bundle id.
+- `multiple eligible windows`: add `--window-title` or take a fresh `see` snapshot.
+- `Do not combine an explicit --snapshot with --app`: drop `--app` and window flags when using `--snapshot`.
+- `The focused element frame is outside the exact target window bounds`: the window is a Stage Manager thumbnail or off screen. Bring the app forward, re-observe, and retry.
+- `ACCESSIBILITY_INCOMPLETE` / `WINDOW_NOT_FOUND`: the process may have no AX window. Screenshot capture can still work. Re-observe once; if AX stays empty, stop.
+- `Coordinates ... outside target window`: AX and WindowServer geometry disagree. Re-observe; if still incoherent, stop instead of guessing.
+- `dispatched_unverified` / `retry_safe: false`: the action may have landed. Read the real app state before any retry.
+- A custom or canvas control lacks an AX press: re-observe, then use snapshot-bound coordinates only if the window geometry is coherent.
