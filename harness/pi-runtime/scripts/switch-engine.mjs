@@ -139,6 +139,17 @@ export async function engineStatus({ home, env = process.env, selectNode } = {})
   };
 }
 
+// `update` always replaces an existing install, so the profile engine running it is
+// restarted onto the new build (harness/scripts/replace-live-engine.mjs). install/switch only
+// write a missing install, which no running engine can have loaded.
+async function updateLiveEngine(home) {
+  const { replaceLiveEngine } = await import("../../scripts/replace-live-engine.mjs");
+  let result = { replaced: false };
+  const code = await replaceLiveEngine({ replace: async () => { result = await updatePiEngine({ home }); } });
+  if (code !== 0) process.exitCode = code;
+  return result;
+}
+
 function parseArgs(argv) {
   if (argv.length !== 1 || !["install", "update", "switch", "rollback", "status"].includes(argv[0])) {
     throw new Error("Usage: node scripts/switch-engine.mjs install|update|switch|rollback|status");
@@ -151,7 +162,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     const command = parseArgs(process.argv.slice(2));
     const home = process.env.HOME;
     return command === "install" ? installPiEngine({ home })
-      : command === "update" ? updatePiEngine({ home })
+      : command === "update" ? updateLiveEngine(home)
       : command === "switch" ? switchEngine({ home, installIfMissing: true })
       : command === "rollback" ? rollbackEngine({ home })
       : engineStatus({ home });
