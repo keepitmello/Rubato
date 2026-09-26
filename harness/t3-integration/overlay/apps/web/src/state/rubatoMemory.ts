@@ -1,8 +1,9 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 
+import { rubatoHttpAccess } from "./rubatoHttp";
 import { readPreparedConnection } from "./session";
 
-/** The route Rubato adds to the T3 server on this Mac for Settings > 기억. */
+/** The route Rubato adds to the T3 server on this Mac for Settings > Memory. */
 const MEMORY_ROUTE = "/rubato/memory";
 
 export type DreamPublish = "review" | "auto";
@@ -74,37 +75,25 @@ export class MemoryRequestError extends Error {
   }
 }
 
-function connectionFor(environmentId: EnvironmentId | null) {
-  const prepared = environmentId === null ? null : readPreparedConnection(environmentId);
-  if (!prepared) throw new MemoryRequestError("unavailable", "이 Mac 에 연결돼 있지 않아.");
-  const authorization = prepared.httpAuthorization;
-  // A relay connection signs each request with a DPoP proof; this route is not on that surface.
-  if (authorization?._tag === "Dpop")
-    throw new MemoryRequestError("unavailable", "이 연결에서는 기억 설정을 열 수 없어.");
-  return {
-    baseUrl: prepared.httpBaseUrl.replace(/\/+$/, ""),
-    headers:
-      authorization === null
-        ? {}
-        : ({ authorization: `Bearer ${authorization.token}` } as Record<string, string>),
-  };
-}
-
 async function call<T>(
   environmentId: EnvironmentId | null,
   action: string,
   body: Record<string, unknown> = {},
 ): Promise<T> {
-  const connection = connectionFor(environmentId);
-  const response = await fetch(`${connection.baseUrl}${MEMORY_ROUTE}/${action}`, {
+  const prepared = environmentId === null ? null : readPreparedConnection(environmentId);
+  if (!prepared) throw new MemoryRequestError("unavailable", "This Mac is not connected.");
+  const access = await rubatoHttpAccess(prepared);
+  if (!access)
+    throw new MemoryRequestError("unavailable", "Memory settings are not available on this connection.");
+  const response = await fetch(`${access.baseUrl}${MEMORY_ROUTE}/${action}`, {
     method: "POST",
-    credentials: "include",
-    headers: { ...connection.headers, "content-type": "application/json" },
+    credentials: access.credentials,
+    headers: { ...access.headers, "content-type": "application/json" },
     body: JSON.stringify(body),
   }).catch((cause: unknown) => {
     throw new MemoryRequestError(
       "network",
-      cause instanceof Error ? `이 Mac 에 닿지 못했어: ${cause.message}` : "이 Mac 에 닿지 못했어.",
+      cause instanceof Error ? `Could not reach this Mac: ${cause.message}` : "Could not reach this Mac.",
     );
   });
   const payload = (await response.json().catch(() => null)) as
@@ -114,10 +103,10 @@ async function call<T>(
   if (!response.ok || payload === null || (payload as { error?: unknown }).error) {
     const error = (payload as { error?: { code?: string; message?: string } } | null)?.error;
     if (response.status === 401)
-      throw new MemoryRequestError("unauthorized", "이 연결은 기억 설정을 바꿀 권한이 없어.");
+      throw new MemoryRequestError("unauthorized", "This connection is not allowed to change memory settings.");
     throw new MemoryRequestError(
       error?.code ?? `http-${response.status}`,
-      error?.message ?? `요청이 실패했어 (HTTP ${response.status}).`,
+      error?.message ?? `Request failed (HTTP ${response.status}).`,
     );
   }
   return payload as T;

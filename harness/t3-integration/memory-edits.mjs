@@ -4,6 +4,9 @@
 export const memoryOverlays = [
   'apps/server/src/RubatoMemory.ts',
   'apps/web/src/state/rubatoMemory.ts',
+  // Auth for fetches to Rubato routes; the voice client uses it too.
+  'apps/web/src/state/rubatoHttp.ts',
+  'apps/web/src/state/rubatoHttp.test.ts',
   'apps/web/src/components/settings/RubatoMemorySettings.tsx',
   'apps/web/src/routes/settings.memory.tsx',
 ];
