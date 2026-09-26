@@ -43,7 +43,7 @@ describe("/sleeptime", () => {
       dream: {
         enabled: { value: true, overridden: false },
         idleMinutes: { value: 30, overridden: false },
-        minHoursBetween: { value: 24, overridden: false },
+        minHoursBetween: { value: memorySettings().dream.min_hours_between, overridden: false },
         shutdownLaunch: { value: true, overridden: false },
         autoSelectMax: { value: 5, overridden: false },
         autoSelectMaxChars: { value: 150000, overridden: false },

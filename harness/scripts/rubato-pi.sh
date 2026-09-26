@@ -35,6 +35,11 @@ if [ "${1-}" = "build" ]; then
   shift
   exec "$HERE/../prompts/build.sh" "$@"
 fi
+if [ "${1-}" = "dream" ]; then
+  shift
+  # 기억 저장소별 꿈. bun 은 설치 요건이라 여기서 바로 부른다.
+  exec bun "$HERE/../../packages/rubato-runtime/src/dream/cli.ts" "$@"
+fi
 if [ "${1-}" = "aside-cursor" ]; then
   shift
   exec "$HERE/rubato-aside-cursor.sh" "$@"

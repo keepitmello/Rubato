@@ -1,4 +1,4 @@
-import type { RubatoMemorySettings } from "@rubato/config-core"
+import { RubatoMemorySettingsSchema, type RubatoMemorySettings } from "@rubato/config-core"
 
 import { FakeExtensionAPI } from "../../../test-support/fake-extension-api"
 import type { ComponentContext } from "../../extension/types"
@@ -23,37 +23,9 @@ export class MemoryFakeExtensionAPI extends FakeExtensionAPI {
   }
 }
 
+// Defaults come from the schema that owns them; a hand copy here drifted every time a default moved.
 export function memorySettings(overrides: Partial<RubatoMemorySettings> = {}): RubatoMemorySettings {
-  return {
-    enabled: true,
-    agent: "auto",
-    tool_exposure: "direct",
-    reflection: {
-      enabled: true,
-      trigger: { step_count: 25, on_compaction: true },
-      merge: "auto",
-      category: "quick",
-      timeout_minutes: 15,
-      sandbox: "auto",
-    },
-    nudge: { enabled: true, every_user_turns: 10 },
-    dream: {
-      enabled: true,
-      idle_minutes: 30,
-      min_hours_between: 24,
-      shutdown_launch: true,
-      auto_select_max: 5,
-      auto_select_max_chars: 150000,
-    },
-    soul: { edit_notice: true },
-    write_notice: { enabled: true },
-    sync: { enabled: true },
-    search: { enabled: true },
-    compile_warn_tokens: 30000,
-    project: [],
-    agents: {},
-    ...overrides,
-  }
+  return { ...RubatoMemorySettingsSchema.parse({}), ...overrides }
 }
 
 export function loadedMemoryConfig(memory: RubatoMemorySettings): SenpiRubatoConfigResult {
