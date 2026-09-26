@@ -51,6 +51,10 @@
     "packages/tailscale/src/tailscale.test.ts": "683f124d29df0af2112ff0b82bc379ae50bc731f27ab45f426d5384af90ad010",
     "apps/desktop/src/main.ts": "e76eb4c3f393d1e92645094fb4d53e431a15bcdaa6411ee1c7f681aa980dd541",
     "apps/desktop/src/app/DesktopConnectionCatalogStore.ts": "842f43e5306559b64319a2c69116839abd828b5efdaa7a0f6b690f1607e08237",
-    "apps/desktop/src/window/DesktopApplicationMenu.ts": "71dd9aa4beaa8d2c69a6188e21191d056cd127a93ca68f94e65ef34fbc4d9ca1"
+    "apps/desktop/src/window/DesktopApplicationMenu.ts": "71dd9aa4beaa8d2c69a6188e21191d056cd127a93ca68f94e65ef34fbc4d9ca1",
+    "apps/web/src/components/settings/settingsSearch.ts": "6350dfb5208ae986426e416743476b769aee56da6fce491bf6ad15695f610c73",
+    "apps/web/src/components/settings/SettingsSidebarNav.tsx": "02f6b7a283cc7d6db28913b626d5a095d4220e201270386af6cc26a03a055879",
+    "apps/web/src/routes/settings.tsx": "0269e97687928ebc1ea38e9a95ba15ee7fe11eb94226c09c99472d8f1d399362",
+    "apps/web/src/routeTree.gen.ts": "bae0e06c1ba534ca05bf9af20e3fd8eaff8230a972563c03d8afe16257ead8d6"
   }
 }
