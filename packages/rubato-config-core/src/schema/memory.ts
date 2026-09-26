@@ -44,10 +44,20 @@ export const RubatoMemoryNudgeSchema = z.object({
 // Dream
 // ---------------------------------------------------------------------------
 
+export const RubatoMemoryDreamStoreSchema = z.object({
+  enabled: z.boolean().default(false),
+}).strict()
+
 export const RubatoMemoryDreamSchema = z.object({
   enabled: z.boolean().default(true),
+  // Category ladder the dream child runs on; unset falls back to reflection.category.
+  category: z.string().min(1).optional(),
+  // "review": a dream's edits wait on a branch until the user approves them. "auto": they merge.
+  publish: z.enum(["review", "auto"]).default("review"),
+  // Stores the daily dream maintains, keyed by memory store name (memory.agent). Off unless listed.
+  stores: z.record(z.string(), RubatoMemoryDreamStoreSchema).default({}),
   idle_minutes: z.number().int().min(0).default(30),
-  min_hours_between: z.number().int().min(1).default(24),
+  min_hours_between: z.number().int().min(1).default(20),
   shutdown_launch: z.boolean().default(true),
   auto_select_max: z.number().int().min(1).max(10).default(5),
   auto_select_max_chars: z.number().int().min(10000).default(150000),
@@ -103,6 +113,9 @@ export const RubatoMemoryNudgeLayerSchema = z.object({
 
 export const RubatoMemoryDreamLayerSchema = z.object({
   enabled: z.boolean().optional(),
+  category: z.string().min(1).optional(),
+  publish: z.enum(["review", "auto"]).optional(),
+  stores: z.record(z.string(), RubatoMemoryDreamStoreSchema.partial()).optional(),
   idle_minutes: z.number().int().min(0).optional(),
   min_hours_between: z.number().int().min(1).optional(),
   shutdown_launch: z.boolean().optional(),
@@ -185,8 +198,10 @@ export const RubatoMemorySettingsSchema = z.preprocess(
   nudge: RubatoMemoryNudgeSchema.default({ enabled: true, every_user_turns: 10 }),
   dream: RubatoMemoryDreamSchema.default({
     enabled: true,
+    publish: "review",
+    stores: {},
     idle_minutes: 30,
-    min_hours_between: 24,
+    min_hours_between: 20,
     shutdown_launch: true,
     auto_select_max: 5,
     auto_select_max_chars: 150000,

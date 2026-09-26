@@ -1260,10 +1260,10 @@ def search_memories(query: str, transcript_path: str = "", limit: int = RETURN_K
 
 
 def log_recall(query: str, memories: list[dict[str, object]], caller: str) -> None:
-    """재인출 신호 적재 — '자주 떠올린 기억은 강해진다'의 데이터 기반.
+    """CLI 검색 기록 — 무엇을 찾았고 무엇이 돌아왔나. shadow/eval은 기록 안 함.
 
-    CLI가 신뢰 기준을 통과해 실제 반환한 검색만 기록한다. shadow/eval은 기록 안 함.
-    maintainer distill이 집계해 자주 인출된 기억을 MEMORY 승격 후보로 검토.
+    빈 결과도 남긴다. 적중만 남기면 로그가 "검색은 늘 뭔가를 찾는다"로 읽혀
+    회수율을 잴 수 없다.
     """
     if os.getenv("ROO_RECALL_LOG", "1") == "0":
         return
@@ -1286,6 +1286,41 @@ def log_recall(query: str, memories: list[dict[str, object]], caller: str) -> No
             handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
     except Exception:
         pass  # 신호 적재 실패가 검색을 막으면 안 됨
+
+
+SYMPTOM_SECTION = "증상"
+ANSWER_SECTION = "결론"
+
+
+def _markdown_section(text: str, heading: str) -> str | None:
+    match = re.search(rf"^##\s+{re.escape(heading)}\s*$(.*?)(?=^##\s|\Z)", text, re.M | re.S)
+    return match.group(1).strip() if match else None
+
+
+def answer_symptom_hits(memories: list[dict[str, object]]) -> list[dict[str, object]]:
+    """증상 절로 걸린 결과는 그 파일의 결론으로 바꿔 돌려준다.
+
+    `## 증상` 은 다음 질문자가 들고 올 생 에러·원문과 어휘를 맞추려고 둔 검색 단서다.
+    찾은 사람에게 필요한 건 답이므로, 증상으로 걸리면 같은 파일의 결론을 보여 준다.
+    같은 파일이 이미 결과에 있으면 한 번만 둔다.
+    """
+    out: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for memory in memories:
+        rel = str(memory.get("rel_path", ""))
+        if rel and rel in seen:
+            continue
+        if str(memory.get("section", "")).strip() == SYMPTOM_SECTION and rel:
+            try:
+                answer = _markdown_section((MEMORY_ROOT / rel).read_text(encoding="utf-8"), ANSWER_SECTION)
+            except OSError:
+                answer = None
+            if answer:
+                memory = {**memory, "section": f"{ANSWER_SECTION} (증상으로 찾음)", "content": answer, "content_preview": answer}
+        if rel:
+            seen.add(rel)
+        out.append(memory)
+    return out
 
 
 def format_context(memories: list[dict[str, object]], include_paths: bool = False) -> str:
@@ -1540,21 +1575,23 @@ def current_scope() -> str | None:
 
 
 
-def resolve_scope(args: argparse.Namespace) -> str | None:
-    """None 이면 전체 검색.
+WIDENED_SCOPE_NOTICE = "(이 폴더에는 기억 저장소가 없어 모든 저장소에서 찾았다. 다른 프로젝트의 판단일 수 있다.)"
 
-    기본은 현재 프로젝트다 — 대개는 지금 있는 곳의 기억을 찾는다. 단, 현재 저장소가
-    색인에 없으면(아직 안 쌓였거나 다른 곳에서 실행 중) 조용히 0건을 주는 대신
-    전체로 넘어간다. 검색이 안 되는 것보다 넓게 찾아주는 편이 낫다.
+
+def resolve_scope(args: argparse.Namespace) -> tuple[str | None, bool]:
+    """(스코프, 넓혔나). 스코프 None 이면 전체 검색.
+
+    기본은 현재 프로젝트다. 현재 폴더에 저장소가 없으면 전체로 넓히되, 넓혔다는 사실을
+    결과에 붙인다 — 조용히 넓히면 다른 프로젝트의 결정이 이 프로젝트의 답처럼 읽힌다.
     """
     if args.all:
-        return None
+        return None, False
     if args.scope:
-        return args.scope
+        return args.scope, False
     scope = current_scope()
-    if scope is None:
-        return None
-    return scope if scope in indexed_scopes() else None
+    if scope is not None and scope in indexed_scopes():
+        return scope, False
+    return None, True
 
 
 def ensure_index_fresh(quiet: bool = True) -> None:
@@ -1590,8 +1627,10 @@ def run_cli(args: argparse.Namespace) -> int:
         print("query is required", file=sys.stderr)
         return 2
     ensure_index_fresh(quiet=args.json or args.dual_run)
-    memories = search_results(query, limit=args.limit, scope=resolve_scope(args))
+    scope, widened = resolve_scope(args)
+    memories = search_results(query, limit=args.limit, scope=scope)
     if not memories:
+        log_recall(query, [], caller="cli")
         print("[]" if args.json else "NO RELEVANT MEMORY")
         return 0
     gated, metrics, notice = prepare_for_serialization(memories, query=query, lane=args.lane)
@@ -1605,12 +1644,15 @@ def run_cli(args: argparse.Namespace) -> int:
         )
         return 0
     log_recall(query, gated, caller="cli")
+    gated = answer_symptom_hits(gated)
     if args.json:
         print(json_context(gated))
     else:
         rendered = format_context(gated, include_paths=True)
         if notice:
             rendered = f"{rendered}\n\n{notice}"
+        if widened:
+            rendered = f"{rendered}\n\n{WIDENED_SCOPE_NOTICE}"
         print(rendered)
     return 0
 

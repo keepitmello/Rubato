@@ -68,6 +68,22 @@ msearch --doctor     # 저장소와 검색 인덱스 상태 확인
 검색 인덱스가 멈춰도 기억 파일은 그대로 남는다. `msearch --doctor`의 안내에 따라
 인덱스를 다시 만들면 된다.
 
+## 꿈 — 기억 정리
+
+기억 저장소는 프로젝트 `.rubato/rubato.jsonc` 의 `memory.agent` 로 이름을 붙인 폴더에만 있다.
+꿈은 켠 저장소마다 그 폴더에서 열린 세션(사용자 말과 턴마다 마지막 답)과 그사이 커밋을 읽고,
+"왜"만 현재 답으로 고치고 코드와 어긋난 결론을 바로잡는다. 결과는 브랜치로 기다린다.
+
+```bash
+rubato dream                  # 저장소별 켜짐·마지막 실행·새 세션·검토 대기
+rubato dream --due            # 켠 저장소 중 때가 된 것만 실행
+rubato dream <저장소>          # 지금 실행
+rubato dream --approve <저장소> # 기다리는 결과를 저장소에 넣기 (--reject 는 버리기)
+```
+
+켜기·모델·발행 방식은 `~/.rubato/rubato.jsonc` 의 `memory.dream`(`stores.<이름>.enabled`,
+`category`, `publish: "review" | "auto"`)이다. 실행 기록은 저장소의 `runtime/dream/runs/` 에 남는다.
+
 ## 업데이트
 
 ```bash
