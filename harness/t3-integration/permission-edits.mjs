@@ -1,6 +1,7 @@
-// macOS 권한 설정 화면. 에이전트 도구(screencapture, Peekaboo, osascript)는 Rubato
-// 앱의 자식이라 macOS 가 권한을 Rubato.app 기준으로 본다. 설정 → macOS 권한에서
-// 화면 기록·손쉬운 사용·전체 디스크 접근·자동화 상태를 보고 바로 요청한다.
+// macOS 권한 설정 화면. 세션이 돌리는 명령(screencapture, osascript)은 Rubato
+// 앱의 자식이라 macOS 가 권한을 Rubato.app 기준으로 본다. 컴퓨터 유즈 백엔드인
+// Cua Driver 는 자기 데몬 앱의 권한을 쓴다. 설정 → macOS 권한 한 화면에서 Rubato 앱의
+// 화면 기록·손쉬운 사용·전체 디스크 접근·자동화와 Cua Driver 설치·실행·권한을 맞춘다.
 // 데스크톱 쪽 등록(attachRubatoPermissions)은 DesktopWindow 편집이 apply.mjs 에
 // 있어서 거기서 같이 건다 — 같은 앵커에 두 번 붙이면 되돌리기가 어긋난다.
 export const permissionOverlays = [
@@ -12,13 +13,24 @@ export const permissionOverlays = [
 const permissionTypes = [
   'export type RubatoPermissionId = "screen" | "accessibility" | "fullDisk" | "automation";',
   'export type RubatoPermissionStatus = "granted" | "denied" | "unknown";',
-  'export type RubatoPermissionAction = "request" | "open" | "reset" | "relaunch";',
+  'export type RubatoPermissionAction =',
+  '  | "request" | "open" | "reset" | "relaunch"',
+  '  | "cua-install" | "cua-start" | "cua-grant" | "cua-update";',
   'export interface RubatoPermissionsState {',
   '  appPath: string | null;',
   '  bundleId: string | null;',
   '  /** "stable" keeps grants across rebuilds; "adhoc" loses them on every rebuild. */',
   '  signing: "stable" | "adhoc" | "unknown";',
   '  items: Array<{ id: RubatoPermissionId; status: RubatoPermissionStatus }>;',
+  '  /** Cua Driver, the computer-use backend. Its grants belong to its own daemon app. */',
+  '  cua: {',
+  '    installed: boolean;',
+  '    version: string | null;',
+  '    latest: string | null;',
+  '    running: boolean;',
+  '    accessibility: RubatoPermissionStatus;',
+  '    screenRecording: RubatoPermissionStatus;',
+  '  };',
   '}',
   '',
 ].join('\n');
@@ -96,7 +108,7 @@ export const permissionEdits = {
         '    id: "rubato-permissions",',
         '    title: "macOS Permissions",',
         '    to: "/settings/permissions",',
-        '    searchTerms: ["permissions privacy screen recording accessibility full disk access automation 화면 기록 손쉬운 사용 전체 디스크 자동화 권한"],',
+        '    searchTerms: ["permissions privacy screen recording accessibility full disk access automation computer use cua driver 화면 기록 손쉬운 사용 전체 디스크 자동화 권한 컴퓨터 유즈"],',
         '    desktopOnly: true,',
         '    macOnly: true,',
         '  },',

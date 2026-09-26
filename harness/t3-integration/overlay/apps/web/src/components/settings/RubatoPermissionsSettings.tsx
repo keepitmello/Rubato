@@ -14,7 +14,7 @@ import { searchableSetting } from "./settingsSearch";
 const PERMISSIONS: Record<RubatoPermissionId, { title: string; description: string }> = {
   screen: {
     title: "Screen Recording",
-    description: "Lets agents capture the screen to check their work (screencapture, Peekaboo).",
+    description: "Lets session commands such as screencapture capture the screen.",
   },
   accessibility: {
     title: "Accessibility",
@@ -48,7 +48,7 @@ function hint(id: RubatoPermissionId, status: RubatoPermissionStatus): string | 
   if (id === "fullDisk")
     return "If Rubato is not in the list, drag the Rubato icon shown over System Settings into the list.";
   if (id === "automation" && status === "unknown")
-    return "The status can't be read without Full Disk Access. Request checks it right away.";
+    return "macOS doesn't report this without asking. Request checks it right away.";
   return STALE_HINT;
 }
 
@@ -128,7 +128,7 @@ export function RubatoPermissionsSettings() {
       >
         <SettingsRow
           title="Agent permissions"
-          description="Tools agents run (screencapture, Peekaboo, osascript) use the Rubato app's permissions. Allowing them here applies to every session."
+          description="Commands a session runs (screencapture, osascript) use the Rubato app's permissions. Allowing them here applies to every session. Computer use in other apps goes through Cua Driver below, which has its own permissions."
           status={
             state?.signing === "stable"
               ? "This app has a stable signature, so permissions survive rubato update and restart."
@@ -200,6 +200,84 @@ export function RubatoPermissionsSettings() {
         })}
         {error ? <SettingsRow title="Error" description={error} /> : null}
       </SettingsSection>
+      {state ? <CuaDriverSection cua={state.cua} busy={busy} act={act} /> : null}
     </SettingsPageContainer>
+  );
+}
+
+function StatusBadge({ status }: { status: RubatoPermissionStatus }) {
+  return (
+    <Badge size="sm" variant={STATUS[status].variant}>
+      {STATUS[status].label}
+    </Badge>
+  );
+}
+
+/** Computer use: Cua Driver runs as its own daemon app with its own macOS permissions. */
+function CuaDriverSection({
+  cua,
+  busy,
+  act,
+}: {
+  cua: RubatoPermissionsState["cua"];
+  busy: string | null;
+  act: (id: RubatoPermissionId | null, action: RubatoPermissionAction) => Promise<void>;
+}) {
+  const updatable = cua.installed && cua.latest !== null && cua.latest !== cua.version;
+  const granted = cua.accessibility === "granted" && cua.screenRecording === "granted";
+  const button = (action: RubatoPermissionAction, label: string, busyLabel: string) => (
+    <Button size="xs" disabled={busy !== null} onClick={() => void act(null, action)}>
+      {busy === `app:${action}` ? busyLabel : label}
+    </Button>
+  );
+  return (
+    <SettingsSection title="Computer use">
+      <SettingsRow
+        title={
+          <span className="flex items-center gap-2">
+            Cua Driver
+            <Badge size="sm" variant={cua.installed ? (updatable ? "info" : "success") : "warning"}>
+              {cua.installed ? (updatable ? `${cua.latest} available` : cua.version) : "Not installed"}
+            </Badge>
+          </span>
+        }
+        description="Lets agents read, click and type in other apps, including windows behind the one you are using."
+        status={cua.running && granted ? "Ready for agents." : undefined}
+        control={
+          !cua.installed
+            ? button("cua-install", "Install", "Installing…")
+            : updatable
+              ? button("cua-update", "Update", "Updating…")
+              : null
+        }
+      />
+      {cua.installed ? (
+        <>
+          <SettingsRow
+            title={
+              <span className="flex items-center gap-2">
+                Running
+                <Badge size="sm" variant={cua.running ? "success" : "warning"}>
+                  {cua.running ? "On" : "Off"}
+                </Badge>
+              </span>
+            }
+            description="Starts with Rubato. Agents can't use it while it is off."
+            control={cua.running ? null : button("cua-start", "Start", "Starting…")}
+          />
+          <SettingsRow
+            title={
+              <span className="flex items-center gap-2">
+                Accessibility and Screen Recording
+                <StatusBadge status={cua.accessibility} />
+                <StatusBadge status={cua.screenRecording} />
+              </span>
+            }
+            description="Granted to the CuaDriver app itself. Set up walks through the macOS prompts one by one and checks that it can read the screen."
+            control={granted ? null : button("cua-grant", "Set up", "Waiting…")}
+          />
+        </>
+      ) : null}
+    </SettingsSection>
   );
 }
