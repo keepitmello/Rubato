@@ -85,7 +85,7 @@ export const permissionEdits = {
       '  | "/settings/snap-shot"\n  | "/settings/permissions"\n  | "/settings/providers"',
       'replace'],
     ['  "/settings/snap-shot": "SnapShots",\n',
-      '  "/settings/snap-shot": "SnapShots",\n  "/settings/permissions": "macOS 권한",\n',
+      '  "/settings/snap-shot": "SnapShots",\n  "/settings/permissions": "macOS Permissions",\n',
       'replace'],
     ['  "/settings/snap-shot": null,\n',
       '  "/settings/snap-shot": null,\n  "/settings/permissions": null,\n',
@@ -94,7 +94,7 @@ export const permissionEdits = {
       [
         '  {',
         '    id: "rubato-permissions",',
-        '    title: "macOS 권한",',
+        '    title: "macOS Permissions",',
         '    to: "/settings/permissions",',
         '    searchTerms: ["permissions privacy screen recording accessibility full disk access automation 화면 기록 손쉬운 사용 전체 디스크 자동화 권한"],',
         '    desktopOnly: true,',

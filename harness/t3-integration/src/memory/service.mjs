@@ -85,20 +85,20 @@ export function createMemoryService(options = {}) {
     const result = await run([...rubato, 'dream', ...args], { timeoutMs });
     if (result.code !== 0) {
       const detail = (result.stderr || result.stdout).trim().split('\n').slice(-6).join('\n');
-      throw new MemoryRequestError(502, 'dream-cli-failed', detail || `rubato dream exited with ${result.code}`);
+      throw new MemoryRequestError(502, 'dream-cli-failed', detail || `rubato dream exited with code ${result.code}.`);
     }
     try { return JSON.parse(result.stdout); }
-    catch { throw new MemoryRequestError(502, 'dream-cli-output', 'rubato dream --json did not print JSON'); }
+    catch { throw new MemoryRequestError(502, 'dream-cli-output', 'rubato dream --json did not print JSON.'); }
   }
 
   // A store is what the CLI would list: a directory under agents/ holding a git repo.
   function assertStore(store) {
-    if (typeof store !== 'string' || !STORE_NAME.test(store)) throw bad('store name is not valid');
-    if (!existsSync(path.join(storePaths(store).repo, '.git'))) throw new MemoryRequestError(404, 'no-store', `no memory store named ${store}`);
+    if (typeof store !== 'string' || !STORE_NAME.test(store)) throw bad('Store name is not valid.');
+    if (!existsSync(path.join(storePaths(store).repo, '.git'))) throw new MemoryRequestError(404, 'no-store', `No memory store named ${store}.`);
     return store;
   }
   function assertRunId(runId) {
-    if (typeof runId !== 'string' || !RUN_ID.test(runId)) throw bad('run id is not valid');
+    if (typeof runId !== 'string' || !RUN_ID.test(runId)) throw bad('Run id is not valid.');
     return runId;
   }
 
@@ -156,7 +156,7 @@ export function createMemoryService(options = {}) {
     const record = Array.isArray(output?.runs) ? output.runs[0] : undefined;
     if (record) return { startedAt: marker.startedAt, status: record.status, runId: record.runId || undefined, reason: record.reason };
     const log = (await readText(path.join(paths.gui, 'last.log'))) ?? '';
-    return { startedAt: marker.startedAt, status: 'failed', reason: log.trim().split('\n').slice(-4).join('\n') || 'the run ended without output' };
+    return { startedAt: marker.startedAt, status: 'failed', reason: log.trim().split('\n').slice(-4).join('\n') || 'The run ended without output.' };
   }
 
   async function status() {
@@ -243,7 +243,7 @@ export function createMemoryService(options = {}) {
     assertRunId(runId);
     const dir = path.join(paths.runs, runId);
     const record = await readJson(path.join(dir, 'run.json'));
-    if (!record) throw new MemoryRequestError(404, 'no-run', `no dream run ${runId} in ${store}`);
+    if (!record) throw new MemoryRequestError(404, 'no-run', `No dream run ${runId} in ${store}.`);
     const pending = await readJson(path.join(paths.dream, 'pending.json'));
     const [report, candidates, diff] = await Promise.all([
       readText(path.join(dir, 'out', 'report.md')),
@@ -265,7 +265,7 @@ export function createMemoryService(options = {}) {
 
   async function startDream({ store }) {
     const paths = storePaths(assertStore(store));
-    if (running.has(store) || (await runningState(store))) throw new MemoryRequestError(409, 'running', `a dream is already running for ${store}`);
+    if (running.has(store) || (await runningState(store))) throw new MemoryRequestError(409, 'running', `A dream is already running for ${store}.`);
     await mkdir(paths.gui, { recursive: true });
     const out = openSync(path.join(paths.gui, 'last.out.json'), 'w');
     const err = openSync(path.join(paths.gui, 'last.log'), 'w');
@@ -290,7 +290,7 @@ export function createMemoryService(options = {}) {
 
   async function review({ store, decision }) {
     assertStore(store);
-    if (decision !== 'approve' && decision !== 'reject') throw bad('decision must be approve or reject');
+    if (decision !== 'approve' && decision !== 'reject') throw bad('Decision must be approve or reject.');
     return cli([decision === 'approve' ? '--approve' : '--reject', store, '--json'], 180_000);
   }
 
@@ -309,25 +309,25 @@ export function createMemoryService(options = {}) {
   async function setConfig(input) {
     const edits = [];
     if (input.category !== undefined) {
-      if (typeof input.category !== 'string' || !CATEGORY.test(input.category)) throw bad('category is not valid');
+      if (typeof input.category !== 'string' || !CATEGORY.test(input.category)) throw bad('Category is not valid.');
       edits.push([['memory', 'dream', 'category'], input.category]);
     }
     if (input.publish !== undefined) {
-      if (input.publish !== 'review' && input.publish !== 'auto') throw bad('publish must be review or auto');
+      if (input.publish !== 'review' && input.publish !== 'auto') throw bad('Publish must be review or auto.');
       edits.push([['memory', 'dream', 'publish'], input.publish]);
     }
     if (input.store !== undefined || input.enabled !== undefined) {
       assertStore(input.store);
-      if (typeof input.enabled !== 'boolean') throw bad('enabled must be true or false');
+      if (typeof input.enabled !== 'boolean') throw bad('Enabled must be true or false.');
       edits.push([['memory', 'dream', 'stores', input.store, 'enabled'], input.enabled]);
     }
-    if (edits.length === 0) throw bad('nothing to change');
+    if (edits.length === 0) throw bad('Nothing to change.');
     const { file, text } = await readConfigText();
-    try { if ((await lstat(file)).isSymbolicLink()) throw new MemoryRequestError(409, 'config-symlink', 'refusing to edit a symlinked rubato.jsonc'); }
+    try { if ((await lstat(file)).isSymbolicLink()) throw new MemoryRequestError(409, 'config-symlink', 'rubato.jsonc is a symlink; edit it directly.'); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
     const errors = [];
     jsonc.parse(text, errors, { allowTrailingComma: true });
-    if (errors.length > 0) throw new MemoryRequestError(409, 'config-parse', `${file} does not parse; fix it before saving here`);
+    if (errors.length > 0) throw new MemoryRequestError(409, 'config-parse', `${file} does not parse. Fix it before saving here.`);
     let next = text.trim() === '' ? '{\n}\n' : text;
     for (const [keyPath, value] of edits) {
       next = jsonc.applyEdits(next, jsonc.modify(next, keyPath, value, { formattingOptions: { insertSpaces: true, tabSize: 2, eol: '\n' } }));
@@ -341,18 +341,18 @@ export function createMemoryService(options = {}) {
     await mkdir(selfRepo, { recursive: true });
     if (existsSync(path.join(selfRepo, '.git'))) return;
     const init = await git(selfRepo, ['init', '-q']);
-    if (init.code !== 0) throw new MemoryRequestError(500, 'git-init', init.stderr.trim() || 'git init failed');
+    if (init.code !== 0) throw new MemoryRequestError(500, 'git-init', init.stderr.trim() || 'git init failed.');
   }
   async function commitSelf(file, message) {
     const add = await git(selfRepo, ['add', '--', file]);
-    if (add.code !== 0) throw new MemoryRequestError(500, 'git-add', add.stderr.trim() || 'git add failed');
+    if (add.code !== 0) throw new MemoryRequestError(500, 'git-add', add.stderr.trim() || 'git add failed.');
     const staged = await git(selfRepo, ['diff', '--cached', '--quiet', '--', file]);
     if (staged.code === 0) return null;
     // Commit as the user's git identity when there is one; a fresh machine may have none.
     const identity = (await git(selfRepo, ['config', 'user.email'])).stdout.trim() === ''
       ? ['-c', 'user.name=Rubato', '-c', 'user.email=rubato@localhost'] : [];
     const commit = await run(['git', '-C', selfRepo, ...identity, 'commit', '-q', '-m', message, '--', file]);
-    if (commit.code !== 0) throw new MemoryRequestError(500, 'git-commit', commit.stderr.trim() || 'git commit failed');
+    if (commit.code !== 0) throw new MemoryRequestError(500, 'git-commit', commit.stderr.trim() || 'git commit failed.');
     return (await git(selfRepo, ['rev-parse', 'HEAD'])).stdout.trim();
   }
   function lineDelta(before, after) {
@@ -372,9 +372,9 @@ export function createMemoryService(options = {}) {
   }
 
   async function saveSelf({ file, content, summary }) {
-    if (!SELF_FILES.has(file)) throw bad('file must be user.md or soul.md');
-    if (typeof content !== 'string' || content.length > 1024 * 1024) throw bad('content must be text under 1 MB');
-    if (summary !== undefined && typeof summary !== 'string') throw bad('summary must be text');
+    if (!SELF_FILES.has(file)) throw bad('File must be user.md or soul.md.');
+    if (typeof content !== 'string' || content.length > 1024 * 1024) throw bad('Content must be text under 1 MB.');
+    if (summary !== undefined && typeof summary !== 'string') throw bad('Summary must be text.');
     await ensureSelfRepo();
     const target = path.join(selfRepo, file);
     const before = (await readText(target)) ?? '';
@@ -386,10 +386,10 @@ export function createMemoryService(options = {}) {
 
   async function addCandidates({ store, runId, lines }) {
     const detail = await runDetail({ store, runId });
-    if (!Array.isArray(lines) || lines.length === 0 || lines.some((line) => typeof line !== 'string')) throw bad('choose at least one line');
+    if (!Array.isArray(lines) || lines.length === 0 || lines.some((line) => typeof line !== 'string')) throw bad('Choose at least one line.');
     const offered = new Set(detail.candidates.map((candidate) => candidate.text));
     const unknown = lines.filter((line) => !offered.has(line));
-    if (unknown.length > 0) throw bad('a chosen line is not in this run\'s candidates');
+    if (unknown.length > 0) throw bad('A chosen line is not in this run\'s candidates.');
     await ensureSelfRepo();
     const target = path.join(selfRepo, 'user.md');
     const before = (await readText(target)) ?? '';
@@ -416,7 +416,7 @@ export function createMemoryService(options = {}) {
     actions: Object.keys(actions),
     async handle(action, input) {
       const handler = Object.hasOwn(actions, action) ? actions[action] : undefined;
-      if (!handler) throw new MemoryRequestError(404, 'no-action', `unknown memory action ${action}`);
+      if (!handler) throw new MemoryRequestError(404, 'no-action', `Unknown memory action ${action}.`);
       return handler(input && typeof input === 'object' ? input : {});
     },
   };
@@ -427,9 +427,9 @@ export async function handleMemoryRequest(service, request) {
   const action = new URL(request.url).pathname.split('/').filter(Boolean).at(-1) ?? '';
   let input = {};
   if (request.method === 'POST') {
-    try { input = await request.json(); } catch { return Response.json({ error: { code: 'bad-request', message: 'body must be JSON' } }, { status: 400 }); }
+    try { input = await request.json(); } catch { return Response.json({ error: { code: 'bad-request', message: 'Request body must be JSON.' } }, { status: 400 }); }
   } else if (request.method !== 'GET') {
-    return Response.json({ error: { code: 'method', message: 'use GET or POST' } }, { status: 405 });
+    return Response.json({ error: { code: 'method', message: 'Use GET or POST.' } }, { status: 405 });
   }
   try {
     return Response.json(await service.handle(action, input));

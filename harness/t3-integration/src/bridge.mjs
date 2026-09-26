@@ -479,7 +479,7 @@ export class RubatoPiBridge {
       if (state?.isStreaming === true || state?.isCompacting === true) return;
       await delay(250);
     }
-    throw new Error('새 문맥 창 전환이 시작되지 않았어요. 작업 노트 저장이 막혔는지 대화를 확인해 주세요');
+    throw new Error('The new context window did not start. Check the conversation for a blocked working-notes save.');
   }
   compact(threadId, customInstructions) {
     const context = this.require(threadId);

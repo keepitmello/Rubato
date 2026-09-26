@@ -29,24 +29,28 @@ import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsL
 type EnvironmentId = ReturnType<typeof usePrimaryEnvironmentId>;
 
 const STATUS_LABEL: Record<string, { label: string; variant: "success" | "warning" | "error" | "info" | "secondary" | "outline" }> = {
-  merged: { label: "반영됨", variant: "success" },
-  pending: { label: "검토 대기", variant: "warning" },
-  noop: { label: "바뀐 것 없음", variant: "secondary" },
-  failed: { label: "실패", variant: "error" },
-  busy: { label: "이미 실행 중", variant: "secondary" },
-  trial: { label: "시험", variant: "info" },
+  merged: { label: "Merged", variant: "success" },
+  pending: { label: "Needs review", variant: "warning" },
+  noop: { label: "No changes", variant: "secondary" },
+  failed: { label: "Failed", variant: "error" },
+  busy: { label: "Already running", variant: "secondary" },
+  trial: { label: "Trial", variant: "info" },
 };
 
 function runLabel(run: Pick<DreamRunSummary, "status" | "review" | "pending">) {
-  if (run.review === "rejected") return { label: "버림", variant: "secondary" as const };
+  if (run.review === "rejected") return { label: "Rejected", variant: "secondary" as const };
   if (run.status === "pending" && run.review === "merged") return STATUS_LABEL.merged!;
-  if (run.status === "pending" && !run.pending) return { label: "검토 끝남", variant: "secondary" as const };
+  if (run.status === "pending" && !run.pending) return { label: "Reviewed", variant: "secondary" as const };
   return STATUS_LABEL[run.status] ?? { label: run.status, variant: "outline" as const };
 }
 
-const relativeFormat = new Intl.RelativeTimeFormat("ko", { numeric: "auto" });
+function count(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? "" : "s"}`;
+}
+
+const relativeFormat = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
 function ago(iso: string | undefined): string {
-  if (!iso) return "없음";
+  if (!iso) return "never";
   const then = Date.parse(iso);
   if (!Number.isFinite(then)) return iso;
   const seconds = Math.round((then - Date.now()) / 1000);
@@ -58,14 +62,14 @@ function ago(iso: string | undefined): string {
   for (const [unit, size] of units) {
     if (Math.abs(seconds) >= size) return relativeFormat.format(Math.round(seconds / size), unit);
   }
-  return "방금";
+  return "just now";
 }
 function stamp(iso: string | undefined): string {
   if (!iso) return "";
   const date = new Date(iso);
   return Number.isNaN(date.getTime())
     ? iso
-    : date.toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    : date.toLocaleString("en-US", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 function reportError(title: string, error: unknown) {
@@ -159,7 +163,7 @@ export function RubatoMemorySettingsPanel() {
       await rubatoMemory.config(environmentId, change);
     } catch (error) {
       setStatus(previous);
-      reportError("설정을 저장하지 못했어", error);
+      reportError("Could not save the setting", error);
     }
   };
 
@@ -168,13 +172,13 @@ export function RubatoMemorySettingsPanel() {
       await rubatoMemory.dream(environmentId, store);
       toastManager.add({
         type: "info",
-        title: `${store} 꿈을 시작했어`,
-        description: "몇 분에서 수십 분 걸려. 끝나면 기록에 나와.",
+        title: `Dream started for ${store}`,
+        description: "This can take several minutes. The result appears in the history.",
       });
       setSelectedStore(store);
       await refresh();
     } catch (error) {
-      reportError("꿈을 시작하지 못했어", error);
+      reportError("Could not start the dream", error);
     }
   };
 
@@ -192,36 +196,36 @@ export function RubatoMemorySettingsPanel() {
     <SettingsPageContainer>
       <SettingsSection
         id="memory-dream"
-        title="꿈"
+        title="Dreams"
         headerAction={
           <Button
             size="xs"
             variant="ghost"
             disabled={loading}
             onClick={() => void refresh()}
-            aria-label="다시 읽기"
+            aria-label="Refresh"
           >
             {loading ? <Spinner className="size-3.5" /> : <RefreshCwIcon className="size-3.5" />}
-            다시 읽기
+            Refresh
           </Button>
         }
       >
         {loadError ? (
-          <SettingsRow title="기억 상태를 읽지 못했어" description={loadError} />
+          <SettingsRow title="Could not load memory status" description={loadError} />
         ) : status === null ? (
           <SettingsRow
-            title="기억 상태를 읽는 중"
-            description="세션을 훑느라 몇 초 걸려."
+            title="Loading memory status"
+            description="Scanning sessions can take a few seconds."
             control={<Spinner className="size-4" />}
           />
         ) : (
           <>
             <SettingsRow
-              title="모델 사다리"
+              title="Model ladder"
               description={
                 ladder
-                  ? `위에서부터 시도해: ${ladder.models.join(" → ")}`
-                  : "이 카테고리의 모델을 rubato.jsonc 에서 찾지 못했어."
+                  ? `Tried in order: ${ladder.models.join(" → ")}`
+                  : "No models for this category in rubato.jsonc."
               }
               control={
                 <Select
@@ -231,7 +235,7 @@ export function RubatoMemorySettingsPanel() {
                     void updateConfig({ category: next }, (current) => ({ ...current, category: next }));
                   }}
                 >
-                  <SelectTrigger size="sm" aria-label="꿈 모델 사다리">
+                  <SelectTrigger size="sm" aria-label="Dream model ladder">
                     <SelectValue>{status.category}</SelectValue>
                   </SelectTrigger>
                   <SelectPopup align="end" alignItemWithTrigger={false}>
@@ -244,7 +248,7 @@ export function RubatoMemorySettingsPanel() {
                         {entry.models[0] ? (
                           <span className="ms-2 text-xs text-muted-foreground">
                             {entry.models[0]}
-                            {entry.models.length > 1 ? ` 외 ${entry.models.length - 1}` : ""}
+                            {entry.models.length > 1 ? ` +${entry.models.length - 1}` : ""}
                           </span>
                         ) : null}
                       </SelectItem>
@@ -254,11 +258,11 @@ export function RubatoMemorySettingsPanel() {
               }
             />
             <SettingsRow
-              title="결과 반영"
+              title="Publish"
               description={
                 status.publish === "review"
-                  ? "꿈이 고친 내용은 브랜치에서 기다리고, 아래 기록에서 승인해야 저장소에 들어가."
-                  : "꿈이 끝나면 고친 내용이 바로 저장소에 들어가."
+                  ? "Dream edits wait on a branch until you approve them in the history below."
+                  : "Dream edits are merged into the store as soon as the dream ends."
               }
               control={
                 <Select
@@ -269,12 +273,12 @@ export function RubatoMemorySettingsPanel() {
                     void updateConfig({ publish }, (current) => ({ ...current, publish }));
                   }}
                 >
-                  <SelectTrigger size="sm" aria-label="꿈 결과 반영 방식">
-                    <SelectValue>{status.publish === "review" ? "검토 후" : "바로"}</SelectValue>
+                  <SelectTrigger size="sm" aria-label="Dream publish mode">
+                    <SelectValue>{status.publish === "review" ? "After review" : "Automatically"}</SelectValue>
                   </SelectTrigger>
                   <SelectPopup align="end" alignItemWithTrigger={false}>
-                    <SelectItem value="review">검토 후</SelectItem>
-                    <SelectItem value="auto">바로</SelectItem>
+                    <SelectItem value="review">After review</SelectItem>
+                    <SelectItem value="auto">Automatically</SelectItem>
                   </SelectPopup>
                 </Select>
               }
@@ -284,9 +288,9 @@ export function RubatoMemorySettingsPanel() {
       </SettingsSection>
 
       {status ? (
-        <SettingsSection id="memory-stores" title="저장소">
+        <SettingsSection id="memory-stores" title="Stores">
           {visibleStores.length === 0 ? (
-            <SettingsRow title="쓰는 저장소가 없어" description="아래에서 전체를 펼쳐 켤 수 있어." />
+            <SettingsRow title="No stores in use" description="Show all stores below to turn one on." />
           ) : null}
           {visibleStores.map((store) => (
             <StoreRow
@@ -308,7 +312,7 @@ export function RubatoMemorySettingsPanel() {
           {hiddenCount > 0 ? (
             <div className="px-3 py-2 sm:px-4">
               <Button size="xs" variant="ghost-muted" onClick={() => setShowAll((value) => !value)}>
-                {showAll ? "쓰는 저장소만 보기" : `꺼져 있고 꿈을 꾼 적 없는 저장소 ${hiddenCount}개 더 보기`}
+                {showAll ? "Show stores in use" : `Show ${count(hiddenCount, "unused store")}`}
               </Button>
             </div>
           ) : null}
@@ -352,24 +356,24 @@ function StoreRow({
           {store.store}
         </button>
       }
-      description={`마지막 꿈 ${ago(store.lastDreamAt)} · 새 세션 ${store.newSessions}개`}
+      description={`${store.lastDreamAt ? `Last dream ${ago(store.lastDreamAt)}` : "No dreams yet"} · ${count(store.newSessions, "new session")}`}
       status={
         <span className="flex flex-wrap items-center gap-1.5">
           {store.running ? (
             <Badge variant="info">
               <Spinner className="size-3" />
-              실행 중 {store.running.startedAt ? `(${ago(store.running.startedAt)} 시작)` : ""}
+              Running {store.running.startedAt ? `(started ${ago(store.running.startedAt)})` : ""}
             </Badge>
           ) : null}
           {store.pendingRunId ? (
             <Badge variant="warning" render={<button type="button" onClick={onSelect} />}>
-              검토 대기
+              Needs review
             </Badge>
           ) : null}
-          {store.due && !store.running ? <Badge variant="secondary">오늘 꿀 차례</Badge> : null}
+          {store.due && !store.running ? <Badge variant="secondary">Due</Badge> : null}
           {!store.running && last && last.status === "failed" ? (
             <span className="text-destructive-foreground" title={last.reason}>
-              지난번 실행 실패: {(last.reason ?? "").split("\n")[0]}
+              Last run failed: {(last.reason ?? "").split("\n")[0]}
             </span>
           ) : null}
         </span>
@@ -381,13 +385,13 @@ function StoreRow({
             variant="outline"
             disabled={store.running !== null}
             onClick={onRun}
-            aria-label={`${store.store} 지금 실행`}
+            aria-label={`Run ${store.store} now`}
           >
             <PlayIcon className="size-3" />
-            지금 실행
+            Run now
           </Button>
           <Switch
-            aria-label={`${store.store} 꿈 켜기`}
+            aria-label={`Dreams for ${store.store}`}
             checked={store.enabled}
             onCheckedChange={(enabled) => onToggle(enabled)}
           />
@@ -432,12 +436,12 @@ function DreamHistory({
   }, [environmentId, store, signal, pendingRunId]);
 
   return (
-    <SettingsSection id="memory-history" title={`꿈 기록 · ${store}`}>
-      {error ? <SettingsRow title="기록을 읽지 못했어" description={error} /> : null}
+    <SettingsSection id="memory-history" title={`Dream history · ${store}`}>
+      {error ? <SettingsRow title="Could not load the history" description={error} /> : null}
       {runs === null && !error ? (
-        <SettingsRow title="기록을 읽는 중" control={<Spinner className="size-4" />} />
+        <SettingsRow title="Loading history" control={<Spinner className="size-4" />} />
       ) : null}
-      {runs?.length === 0 ? <SettingsRow title="아직 꿈을 꾼 적이 없어" /> : null}
+      {runs?.length === 0 ? <SettingsRow title="No dreams yet" /> : null}
       {runs?.map((run) => {
         const label = runLabel(run);
         const expanded = open === run.runId;
@@ -461,9 +465,9 @@ function DreamHistory({
               </button>
             }
             description={[
-              run.model ?? "모델 없음",
-              `세션 ${run.sessions}개 읽음`,
-              run.commits > 0 ? `커밋 ${run.commits}개` : null,
+              run.model ?? "No model",
+              `${count(run.sessions, "session")} read`,
+              run.commits > 0 ? count(run.commits, "commit") : null,
               run.reason ?? null,
             ]
               .filter(Boolean)
@@ -523,8 +527,8 @@ function RunDetail({
   const review = async (decision: "approve" | "reject") => {
     const ok = await confirm(
       decision === "approve"
-        ? `${store} 에 이 꿈의 변경을 합칠까?`
-        : `이 꿈의 변경을 버릴까? 꿈이 읽은 세션은 읽은 것으로 남아.`,
+        ? `Merge this dream's changes into ${store}?`
+        : "Discard this dream's changes? The sessions it read stay marked as read.",
       decision === "reject",
     );
     if (!ok) return;
@@ -533,12 +537,12 @@ function RunDetail({
       await rubatoMemory.review(environmentId, store, decision);
       toastManager.add({
         type: "success",
-        title: decision === "approve" ? "저장소에 합쳤어" : "꿈의 변경을 버렸어",
+        title: decision === "approve" ? "Changes merged" : "Changes discarded",
       });
       setSignal((value) => value + 1);
       onReviewed();
     } catch (cause) {
-      reportError(decision === "approve" ? "승인하지 못했어" : "버리지 못했어", cause);
+      reportError(decision === "approve" ? "Could not approve" : "Could not reject", cause);
     } finally {
       setBusy(null);
     }
@@ -550,13 +554,13 @@ function RunDetail({
       const result = await rubatoMemory.addCandidates(environmentId, store, runId, [...chosen]);
       toastManager.add({
         type: "success",
-        title: result.added > 0 ? `user.md 에 ${result.added}줄 넣었어` : "이미 다 들어 있어",
+        title: result.added > 0 ? `Added ${count(result.added, "line")} to user.md` : "Already in user.md",
       });
       setChosen(new Set());
       setSignal((value) => value + 1);
       window.dispatchEvent(new CustomEvent("rubato-memory-self-changed"));
     } catch (cause) {
-      reportError("user.md 에 넣지 못했어", cause);
+      reportError("Could not add to user.md", cause);
     } finally {
       setBusy(null);
     }
@@ -566,7 +570,7 @@ function RunDetail({
   if (!detail)
     return (
       <div className="flex items-center gap-2 pb-3 text-sm text-muted-foreground">
-        <Spinner className="size-3.5" /> 읽는 중
+        <Spinner className="size-3.5" /> Loading
       </div>
     );
 
@@ -575,10 +579,10 @@ function RunDetail({
     <div className="space-y-4 pt-1 pb-3">
       {detail.pending ? (
         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-warning/40 bg-warning/8 px-3 py-2">
-          <span className="me-auto text-sm">이 꿈은 검토를 기다리고 있어.</span>
+          <span className="me-auto text-sm">This dream is waiting for review.</span>
           <Button size="xs" disabled={busy !== null} onClick={() => void review("approve")}>
             {busy === "approve" ? <Spinner className="size-3" /> : null}
-            승인
+            Approve
           </Button>
           <Button
             size="xs"
@@ -587,17 +591,17 @@ function RunDetail({
             onClick={() => void review("reject")}
           >
             {busy === "reject" ? <Spinner className="size-3" /> : null}
-            버리기
+            Reject
           </Button>
         </div>
       ) : null}
 
       <div className="flex gap-1">
         <Button size="xs" variant={tab === "report" ? "secondary" : "ghost"} onClick={() => setTab("report")}>
-          보고서
+          Report
         </Button>
         <Button size="xs" variant={tab === "diff" ? "secondary" : "ghost"} onClick={() => setTab("diff")}>
-          바뀐 내용
+          Changes
         </Button>
       </div>
       {tab === "report" ? (
@@ -606,7 +610,7 @@ function RunDetail({
             <ChatMarkdown text={detail.report} cwd={undefined} />
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">이 꿈은 보고서를 남기지 않았어.</p>
+          <p className="text-sm text-muted-foreground">This dream left no report.</p>
         )
       ) : (
         <DiffView diff={detail.diff} note={detail.diffNote} />
@@ -614,12 +618,12 @@ function RunDetail({
 
       {detail.sessionList.length > 0 ? (
         <details className="text-xs text-muted-foreground">
-          <summary className="cursor-pointer">읽은 세션 {detail.sessionList.length}개</summary>
+          <summary className="cursor-pointer">{count(detail.sessionList.length, "session")} read</summary>
           <ul className="mt-1 space-y-0.5 ps-4">
             {detail.sessionList.map((session) => (
               <li key={session.id} className="truncate">
                 {session.name ?? session.id} {session.cwd ? `· ${session.cwd}` : ""}
-                {session.messages !== undefined ? ` · 메시지 ${session.messages}` : ""}
+                {session.messages !== undefined ? ` · ${count(session.messages, "message")}` : ""}
               </li>
             ))}
           </ul>
@@ -629,7 +633,7 @@ function RunDetail({
       {detail.candidates.length > 0 ? (
         <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <h4 className="me-auto text-sm font-medium">나에 대한 후보</h4>
+            <h4 className="me-auto text-sm font-medium">User candidates</h4>
             <Button
               size="xs"
               variant="outline"
@@ -637,7 +641,7 @@ function RunDetail({
               onClick={() => void addChosen()}
             >
               {busy === "candidates" ? <Spinner className="size-3" /> : null}
-              고른 {chosen.size}줄 user.md 에 넣기
+              Add {count(chosen.size, "line")} to user.md
             </Button>
           </div>
           <ul className="space-y-1.5">
@@ -659,13 +663,13 @@ function RunDetail({
                 />
                 <span className={cn(candidate.inUser && "text-muted-foreground")}>
                   {candidate.text}
-                  {candidate.inUser ? " (이미 있음)" : ""}
+                  {candidate.inUser ? " (in user.md)" : ""}
                 </span>
               </li>
             ))}
           </ul>
           {addable.length === 0 ? (
-            <p className="text-xs text-muted-foreground">후보가 모두 user.md 에 들어 있어.</p>
+            <p className="text-xs text-muted-foreground">Every candidate is already in user.md.</p>
           ) : null}
         </div>
       ) : null}
@@ -677,7 +681,7 @@ function DiffView({ diff, note }: { diff: string; note: string | null }) {
   if (!diff)
     return (
       <p className="text-sm text-muted-foreground">
-        {note && note !== "truncated" ? `바뀐 내용을 읽지 못했어: ${note}` : "바뀐 내용이 없어."}
+        {note && note !== "truncated" ? `Could not read the changes: ${note}` : "No changes."}
       </p>
     );
   return (
@@ -700,7 +704,7 @@ function DiffView({ diff, note }: { diff: string; note: string | null }) {
           </div>
         ))}
         {note === "truncated" ? (
-          <div className="mt-2 text-muted-foreground">… 너무 길어서 여기까지만 보여줘.</div>
+          <div className="mt-2 text-muted-foreground">… Truncated.</div>
         ) : null}
       </pre>
     </div>
@@ -753,13 +757,13 @@ function SelfFilesSection({ environmentId }: { environmentId: EnvironmentId }) {
       setSummary("");
       toastManager.add({
         type: "success",
-        title: result.commit ? `${file} 저장하고 커밋했어` : `${file} 는 바뀐 게 없어`,
+        title: result.commit ? `Saved and committed ${file}` : `No changes to ${file}`,
       });
       const content = drafts[file].length === 0 || drafts[file].endsWith("\n") ? drafts[file] : `${drafts[file]}\n`;
       setSaved((current) => (current ? { ...current, [file]: content } : current));
       setDrafts((current) => (current ? { ...current, [file]: content } : current));
     } catch (cause) {
-      reportError(`${file} 를 저장하지 못했어`, cause);
+      reportError(`Could not save ${file}`, cause);
     } finally {
       setSaving(false);
     }
@@ -768,7 +772,7 @@ function SelfFilesSection({ environmentId }: { environmentId: EnvironmentId }) {
   return (
     <SettingsSection
       id="memory-self"
-      title="나에 대해"
+      title="About you"
       headerAction={
         <div className="flex gap-1">
           {(["user.md", "soul.md"] as const).map((name) => (
@@ -786,13 +790,13 @@ function SelfFilesSection({ environmentId }: { environmentId: EnvironmentId }) {
       }
     >
       <SettingsRow
-        title={file === "user.md" ? "user.md — 내가 어떤 사람인지" : "soul.md — 에이전트가 어떤 태도로 일하는지"}
-        description="저장할 때마다 기억 self 저장소에 커밋으로 남아."
+        title={file === "user.md" ? "user.md — who you are" : "soul.md — how the agent works with you"}
+        description="Each save is committed to the self memory store."
       >
         {error ? <p className="pb-3 text-sm text-destructive-foreground">{error}</p> : null}
         {drafts === null && !error ? (
           <div className="flex items-center gap-2 pb-3 text-sm text-muted-foreground">
-            <Spinner className="size-3.5" /> 읽는 중
+            <Spinner className="size-3.5" /> Loading
           </div>
         ) : null}
         {drafts ? (
@@ -806,7 +810,7 @@ function SelfFilesSection({ environmentId }: { environmentId: EnvironmentId }) {
                 setDrafts((current) => (current ? { ...current, [file]: value } : current));
               }}
               rows={14}
-              placeholder={file === "user.md" ? "- 한국어 반말로 말한다" : "- 결론부터 말한다"}
+              placeholder={file === "user.md" ? "- Prefers short answers" : "- Lead with the conclusion"}
             />
             <div className="flex items-center gap-2">
               <Input
@@ -814,8 +818,8 @@ function SelfFilesSection({ environmentId }: { environmentId: EnvironmentId }) {
                 className="flex-1"
                 value={summary}
                 onChange={(event) => setSummary(event.currentTarget.value)}
-                placeholder="커밋 메시지 (비우면 바뀐 줄 수로 적어)"
-                aria-label="커밋 메시지"
+                placeholder="Commit message (optional)"
+                aria-label="Commit message"
               />
               <Button
                 size="xs"
@@ -825,11 +829,11 @@ function SelfFilesSection({ environmentId }: { environmentId: EnvironmentId }) {
                   setDrafts((current) => (current && saved ? { ...current, [file]: saved[file] } : current))
                 }
               >
-                되돌리기
+                Revert
               </Button>
               <Button size="xs" disabled={!dirty || saving} onClick={() => void save()}>
                 {saving ? <Spinner className="size-3" /> : null}
-                저장
+                Save
               </Button>
             </div>
           </div>

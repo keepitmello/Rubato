@@ -189,7 +189,7 @@
     projection.begin("turn-1");
     retry(failed(1, "Connection error."), 1);
     await harness.emitAndDrain(events.splice(0));
-    expect(warnings(await read())).toEqual(["재시도 중 (1/3): Connection error."]);
+    expect(warnings(await read())).toEqual(["Retrying (1/3): Connection error."]);
     retry(failed(2, "Request timed out."), 2);
     projection.message({ role: "assistant", timestamp: 3, model: "claude-opus-5-5", stopReason: "stop",
       content: [{ type: "text", text: "recovered answer" }] }, true);
@@ -198,7 +198,7 @@
     await harness.emitAndDrain(events.splice(0));
     let thread = await read();
     expect(answers(thread)).toEqual(["recovered answer"]);
-    expect(warnings(thread)).toEqual(["2번 재시도 끝에 이어감: Request timed out."]);
+    expect(warnings(thread)).toEqual(["Recovered after 2 retries: Request timed out."]);
     expect(thread.latestTurn.state).toBe("completed");
 
     projection.begin("turn-2");
@@ -209,7 +209,7 @@
     await harness.emitAndDrain(events.splice(0));
     thread = await read();
     expect(answers(thread)).toEqual(["recovered answer", "Connection error."]);
-    expect(warnings(thread)).toEqual(["2번 재시도 끝에 이어감: Request timed out.", "1번 재시도 모두 실패: Connection error."]);
+    expect(warnings(thread)).toEqual(["Recovered after 2 retries: Request timed out.", "Failed after 1 retry: Connection error."]);
     expect(thread.activities.filter((a: any) => a.kind === "runtime.error").map((a: any) => a.payload.message))
       .toEqual(["Connection error."]);
     expect(thread.latestTurn.state).toBe("error");

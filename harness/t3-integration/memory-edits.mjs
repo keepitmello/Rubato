@@ -18,7 +18,7 @@ export const memoryEdits = {
   ],
   'apps/web/src/components/settings/settingsSearch.ts': [
     ['  | "/settings/storage"\n', '  | "/settings/memory"\n'],
-    ['  "/settings/providers": "Providers",\n', '  "/settings/providers": "Providers",\n  "/settings/memory": "기억",\n', 'replace'],
+    ['  "/settings/providers": "Providers",\n', '  "/settings/providers": "Providers",\n  "/settings/memory": "Memory",\n', 'replace'],
     ['  "/settings/storage": "project-defaults",\n', '  "/settings/memory": null,\n'],
   ],
   'apps/web/src/components/settings/SettingsSidebarNav.tsx': [
