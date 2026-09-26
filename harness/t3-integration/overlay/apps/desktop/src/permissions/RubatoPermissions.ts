@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off globalConsole:off -- A plain Electron IPC module beside RubatoUpdates, outside the Effect runtime.
+// @effect-diagnostics nodeBuiltinImport:off globalConsole:off globalTimers:off -- A plain Electron IPC module beside RubatoUpdates, outside the Effect runtime.
 import { execFile } from "node:child_process";
 import { readdir } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -15,7 +15,7 @@ import { MAC_PERMISSION_SETTINGS_URLS, type MacPermission } from "./MacPermissio
 import { MacPermissionHelper, macAppBundlePath } from "./MacPermissionHelper.ts";
 
 // macOS privacy permissions for the Rubato app and everything it spawns.
-// Agent tools (screencapture, Peekaboo, osascript) run as children of this app,
+// Session commands (screencapture, osascript) run as children of this app,
 // so macOS checks the grant against Rubato.app, not against the tool.
 
 type ElectronServices = Pick<
@@ -27,7 +27,16 @@ const exec = promisify(execFile);
 const GET_CHANNEL = "rubato:permissions:get";
 const ACTION_CHANNEL = "rubato:permissions:action";
 const IDS: readonly RubatoPermissionId[] = ["screen", "accessibility", "fullDisk", "automation"];
-const ACTIONS: readonly RubatoPermissionAction[] = ["request", "open", "reset", "relaunch"];
+const ACTIONS: readonly RubatoPermissionAction[] = [
+  "request", "open", "reset", "relaunch", "cua-install", "cua-start", "cua-grant", "cua-update",
+];
+// Cua Driver is the computer-use backend. It runs as its own daemon app, so its
+// grants belong to CuaDriver.app, not to Rubato.
+const CUA_APP = "/Applications/CuaDriver.app";
+const CUA_BIN = `${CUA_APP}/Contents/MacOS/cua-driver`;
+// The vendor's documented installer: puts CuaDriver.app in /Applications and
+// cua-driver on PATH (~/.local/bin), preserving grants across compatible releases.
+const CUA_INSTALLER = 'curl -fsSL https://cua.ai/driver/install.sh | /bin/bash';
 const AUTOMATION_TARGET = "com.apple.systemevents";
 const AUTOMATION_SETTINGS_URL =
   "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation";
@@ -141,6 +150,61 @@ async function probeAutomation(): Promise<RubatoPermissionStatus> {
   }
 }
 
+// Output of a cua-driver command, including on a non-zero exit ("daemon is not running").
+const cuaText = (args: string[], timeout = 15_000) =>
+  exec(CUA_BIN, args, { timeout }).then(
+    ({ stdout, stderr }) => `${stdout}${stderr}`,
+    (error: { stdout?: unknown; stderr?: unknown }) => `${error.stdout ?? ""}${error.stderr ?? ""}`,
+  );
+
+async function cuaState(): Promise<RubatoPermissionsState["cua"]> {
+  const version = (await cuaText(["--version"])).match(/cua-driver\s+(\S+)/)?.[1] ?? null;
+  if (!version) {
+    return { installed: false, version: null, latest: null, running: false, accessibility: "unknown", screenRecording: "unknown" };
+  }
+  const running = /daemon is running/.test(await cuaText(["status"]));
+  let accessibility: RubatoPermissionStatus = "unknown";
+  let screenRecording: RubatoPermissionStatus = "unknown";
+  if (running) {
+    try {
+      const status = JSON.parse(await cuaText(["permissions", "status", "--json"])) as {
+        accessibility?: boolean; screen_recording?: boolean;
+      };
+      accessibility = status.accessibility ? "granted" : "denied";
+      screenRecording = status.screen_recording ? "granted" : "denied";
+    } catch {}
+  }
+  let latest: string | null = null;
+  try {
+    // Cached by the driver for 20h, so polling this page does not hit GitHub.
+    latest = (JSON.parse(await cuaText(["check-update", "--json"])) as { latest_version?: string }).latest_version ?? null;
+  } catch {}
+  return { installed: true, version, latest, running, accessibility, screenRecording };
+}
+
+let cuaTask: Promise<unknown> | undefined;
+async function startCua() {
+  // LaunchServices, so the daemon is its own responsible process and asks with its own identity.
+  await exec("/usr/bin/open", ["-g", "-a", CUA_APP]).catch(() => undefined);
+  for (let i = 0; i < 20 && !/daemon is running/.test(await cuaText(["status"])); i++) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+}
+
+async function cuaAction(action: RubatoPermissionAction) {
+  if (action === "cua-start") return startCua();
+  if (action === "cua-grant") {
+    await startCua();
+    // Walks the user through the prompts and waits for them; the page polls meanwhile.
+    cuaTask ??= exec(CUA_BIN, ["permissions", "grant"], { timeout: 600_000 })
+      .catch(() => undefined).finally(() => { cuaTask = undefined; });
+    return;
+  }
+  const command = action === "cua-install" ? CUA_INSTALLER : `${JSON.stringify(CUA_BIN)} update --apply`;
+  await exec("/bin/bash", ["-lc", command], { timeout: 600_000 });
+  await startCua();
+}
+
 async function readState(electron: ElectronServices): Promise<RubatoPermissionsState> {
   const { bundle, id } = await readBundleInfo(electron);
   const disk = await fullDiskAccess();
@@ -156,6 +220,7 @@ async function readState(electron: ElectronServices): Promise<RubatoPermissionsS
     automation,
   };
   return {
+    cua: await cuaState(),
     appPath: bundle,
     bundleId: id,
     signing: await signing(bundle),
@@ -228,6 +293,11 @@ export function attachRubatoPermissions(
   window.once("closed", () => windows.delete(windowId));
   if (registered) return;
   registered = true;
+  // Agents reach the computer-use daemon only while it runs; bring it up with the app.
+  void (async () => {
+    if (!(await cuaText(["--version"])).includes("cua-driver")) return;
+    if (!/daemon is running/.test(await cuaText(["status"]))) await startCua();
+  })();
   electron.ipcMain.handle(GET_CHANNEL, async (event) => {
     authorizedWindow(event);
     return readState(electron);
@@ -240,6 +310,10 @@ export function attachRubatoPermissions(
       // Screen Recording applies to this process only after a restart.
       electron.app.relaunch();
       electron.app.quit();
+      return readState(electron);
+    }
+    if (typeof action === "string" && action.startsWith("cua-")) {
+      await cuaAction(action as RubatoPermissionAction);
       return readState(electron);
     }
     if (!IDS.includes(id as RubatoPermissionId)) throw new Error("Invalid permission");
