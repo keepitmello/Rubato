@@ -290,7 +290,11 @@ export class EventProjection {
   message(message, complete) {
     if (message?.role !== 'assistant') return;
     const itemId = messageKey(this.sessionId, message);
-    for (const [type, cache, streamKind, suffix] of [['text', this.text, 'assistant_text', ''], ['thinking', this.thinking, 'reasoning_text', ':reasoning']]) {
+    // Thinking goes out before text, as Pi orders the content. T3 stamps a row
+    // when its first delta lands, and a message often reaches us whole (both
+    // blocks in one update): sending text first stored the thought after its
+    // answer, so the "Thought" row sat under the reply it led to.
+    for (const [type, cache, streamKind, suffix] of [['thinking', this.thinking, 'reasoning_text', ':reasoning'], ['text', this.text, 'assistant_text', '']]) {
       const streamId = suffix ? itemId + suffix : itemId;
       const full = textOf(message, type);
       const previous = cache.get(streamId) ?? '';
