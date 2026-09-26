@@ -75,7 +75,7 @@ export async function checkForUpdate({ root = repo, env = process.env } = {}) {
       // "network" for a checkout on another branch sent people the wrong way.
       const reason = String(error.stderr ?? '').replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
         .split('\n').map((line) => line.replace(/^\s*✗\s*/, '').trim()).filter(Boolean).at(-1);
-      throw new Error(reason || '업데이트를 확인하지 못했어요. 네트워크를 확인한 뒤 다시 시도해 주세요.', { cause: error });
+      throw new Error(reason || 'Could not check for updates. Check the network and try again.', { cause: error });
     }
     available = true;
   }
@@ -106,8 +106,8 @@ async function executeUpdate(command, args, options, timeoutMs, signal) {
     return await new Promise((resolve, reject) => {
       child.once('error', reject);
       child.once('exit', (code, exitSignal) => {
-        if (timedOut) reject(new Error('업데이트가 제한 시간 안에 끝나지 않아 중단했어요.'));
-        else if (code !== 0) reject(new Error(`업데이트를 마치지 못했어요 (${exitSignal || code}). 오류 기록을 확인해 주세요.`));
+        if (timedOut) reject(new Error('The update took too long and was stopped.'));
+        else if (code !== 0) reject(new Error(`The update did not finish (${exitSignal || code}). Check the log.`));
         else resolve();
       });
     });
@@ -162,7 +162,7 @@ export async function runUpdate({
       }
       await delay(200, undefined, { signal: controller.signal });
     }
-    if (!result) throw new Error('업데이트는 실행됐지만 앱이 다시 열렸는지 확인하지 못했어요. Rubato를 직접 열어 주세요.');
+    if (!result) throw new Error('The update ran, but the app did not confirm it reopened. Open Rubato yourself.');
   } catch (error) {
     result = { token, status: 'failed', message: error.message, finishedAt: Date.now() };
   } finally {
@@ -185,7 +185,7 @@ async function notifyFailure(message) {
   // The durable result is also displayed by the app on the next window load.
   if (process.platform !== 'darwin') return;
   await exec('/usr/bin/osascript', ['-e',
-    'on run argv\n display notification (item 1 of argv) with title "Rubato 업데이트 실패"\nend run', message],
+    'on run argv\n display notification (item 1 of argv) with title "Rubato update failed"\nend run', message],
   { timeout: 5000 });
 }
 

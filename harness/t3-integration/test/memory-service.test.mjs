@@ -1,4 +1,4 @@
-// The 기억 tab's server half against the real `rubato dream` CLI, on a throwaway
+// The Memory tab's server half against the real `rubato dream` CLI, on a throwaway
 // HOME: a store with a dream waiting for review, approved and rejected through
 // the CLI, plus the config and self-store writes the tab makes.
 import test from 'node:test';
@@ -107,7 +107,7 @@ test('status, review and diffs go through the real dream CLI', { skip: !bunAvail
   await assert.rejects(f.service.handle('review', { store: 'scratch', decision: 'approve' }), /waiting for review/);
   await assert.rejects(f.service.handle('runs', { store: '../scratch' }), /not valid/);
   await assert.rejects(f.service.handle('run', { store: 'scratch', runId: '../../x' }), /not valid/);
-  await assert.rejects(f.service.handle('runs', { store: 'ghost' }), /no memory store/);
+  await assert.rejects(f.service.handle('runs', { store: 'ghost' }), /No memory store/);
 });
 
 test('run now is detached and its result is read back', { skip: !bunAvailable && 'bun is not installed' }, async (t) => {
@@ -140,7 +140,7 @@ test('settings writes keep the user file and commit the self store', async (t) =
   assert.match(text, /"scratch": \{ "enabled": false \}|"scratch": \{\s*"enabled": false\s*\}/);
   assert.match(text, /"_migrations": \["2026-08-reasoning-unification"\]/);
   await assert.rejects(f.service.handle('config', { publish: 'sometimes' }), /review or auto/);
-  await assert.rejects(f.service.handle('config', { store: 'ghost', enabled: true }), /no memory store/);
+  await assert.rejects(f.service.handle('config', { store: 'ghost', enabled: true }), /No memory store/);
 
   const selfRepo = path.join(f.home, '.rubato', 'memory', 'self', 'repo');
   assert.deepEqual(await f.service.handle('self', {}), { user: '', soul: '', repo: false });

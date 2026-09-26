@@ -104,7 +104,7 @@ test('exit zero without a new loaded window is a failure, not update success', a
   const h = await fixture(t);
   const result = await runUpdate({ ...h.options, args: ['-e', ''], readyTimeoutMs: 50 });
   assert.equal(result.status, 'failed');
-  assert.match(result.message, /앱이 다시 열렸는지/);
+  assert.match(result.message, /did not confirm it reopened/);
   assert.equal(await readJson(path.join(h.directory, 'lock.json')), null);
 });
 
@@ -122,7 +122,7 @@ test('a timed-out updater is terminated and releases its lock', async (t) => {
   const result = await runUpdate({ ...h.options, updateTimeoutMs: 200,
     args: ['-e', `require('node:fs').writeFileSync(${JSON.stringify(pidFile)},String(process.pid)); setInterval(()=>{},1000);`] });
   assert.equal(result.status, 'failed');
-  assert.match(result.message, /제한 시간/);
+  assert.match(result.message, /took too long/);
   const pid = Number(await readFile(pidFile, 'utf8'));
   assert.equal(alive(pid), false);
   assert.equal(await readJson(path.join(h.directory, 'lock.json')), null);
@@ -224,7 +224,7 @@ test('in-app prompt: later never launches; repeated checks do not nag', async (t
   await ui.controller.tick();
   await ui.controller.tick();
   assert.equal(ui.dialogs.length, 1);
-  assert.deepEqual(ui.dialogs[0].buttons, ['업데이트', '나중에']);
+  assert.deepEqual(ui.dialogs[0].buttons, ['Update', 'Later']);
   assert.deepEqual(ui.launched, []);
   assert.equal((await readJson(path.join(h.directory, 'later.json'))).revision, 'revision-1');
 });

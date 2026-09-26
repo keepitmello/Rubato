@@ -13,42 +13,42 @@ import { searchableSetting } from "./settingsSearch";
 
 const PERMISSIONS: Record<RubatoPermissionId, { title: string; description: string }> = {
   screen: {
-    title: "화면 기록",
-    description: "에이전트가 화면을 찍어서 확인할 때 써요 (screencapture, Peekaboo).",
+    title: "Screen Recording",
+    description: "Lets agents capture the screen to check their work (screencapture, Peekaboo).",
   },
   accessibility: {
-    title: "손쉬운 사용",
-    description: "에이전트가 다른 앱의 버튼을 누르고 글자를 입력할 때 써요.",
+    title: "Accessibility",
+    description: "Lets agents click buttons and type in other apps.",
   },
   fullDisk: {
-    title: "전체 디스크 접근",
-    description: "메일·메시지·Safari 기록처럼 macOS가 보호하는 폴더를 읽을 때 써요.",
+    title: "Full Disk Access",
+    description: "Lets agents read folders macOS protects, such as Mail, Messages and Safari history.",
   },
   automation: {
-    title: "자동화 (System Events)",
+    title: "Automation (System Events)",
     description:
-      "AppleScript로 다른 앱을 조작할 때 써요. Finder·Safari 같은 다른 앱은 처음 쓸 때 macOS가 따로 물어봐요.",
+      "Lets agents control other apps with AppleScript. macOS asks separately the first time an agent uses another app, such as Finder or Safari.",
   },
 };
 
 const STATUS: Record<RubatoPermissionStatus, { label: string; variant: "success" | "warning" | "info" }> = {
-  granted: { label: "허용됨", variant: "success" },
-  denied: { label: "꺼져 있음", variant: "warning" },
-  unknown: { label: "확인 필요", variant: "info" },
+  granted: { label: "Allowed", variant: "success" },
+  denied: { label: "Off", variant: "warning" },
+  unknown: { label: "Unknown", variant: "info" },
 };
 
 // Shown when a permission is off here even though System Settings may show it on.
 const STALE_HINT =
-  "시스템 설정에는 켜져 있는데 여기서 꺼져 보이면 예전 빌드에 준 권한이에요. '다시 등록'을 누르면 옛 기록을 지우고 새로 물어봐요.";
+  "If System Settings shows this on but it looks off here, the permission belongs to an earlier build. Re-register clears the old entry and asks again.";
 
 function hint(id: RubatoPermissionId, status: RubatoPermissionStatus): string | null {
   if (status === "granted") return null;
   if (id === "screen")
-    return `허용한 뒤에는 앱을 다시 켜야 이 화면에 반영돼요. ${STALE_HINT}`;
+    return `Relaunch the app after allowing it to see the change here. ${STALE_HINT}`;
   if (id === "fullDisk")
-    return "목록에 Rubato가 없으면 시스템 설정 위에 뜨는 Rubato 아이콘을 목록으로 끌어다 놓으세요.";
+    return "If Rubato is not in the list, drag the Rubato icon shown over System Settings into the list.";
   if (id === "automation" && status === "unknown")
-    return "전체 디스크 접근이 없으면 상태를 미리 볼 수 없어요. '권한 요청'을 누르면 바로 확인해요.";
+    return "The status can't be read without Full Disk Access. Request checks it right away.";
   return STALE_HINT;
 }
 
@@ -95,7 +95,7 @@ export function RubatoPermissionsSettings() {
       setState(await bridge.act(id, action));
     } catch (cause) {
       console.warn("Rubato permissions:", cause);
-      setError("요청을 처리하지 못했어요. 시스템 설정 → 개인정보 보호 및 보안에서 직접 바꿔 주세요.");
+      setError("Could not complete the request. Change it in System Settings → Privacy & Security.");
     } finally {
       busyRef.current = false;
       setBusy(null);
@@ -105,8 +105,8 @@ export function RubatoPermissionsSettings() {
   if (!bridge || !isMac) {
     return (
       <SettingsPageContainer>
-        <SettingsSection title="macOS 권한">
-          <SettingsRow title="macOS 데스크톱 앱에서만 볼 수 있어요" />
+        <SettingsSection title="macOS Permissions">
+          <SettingsRow title="Available in the macOS desktop app only." />
         </SettingsSection>
       </SettingsPageContainer>
     );
@@ -119,21 +119,21 @@ export function RubatoPermissionsSettings() {
     <SettingsPageContainer>
       <SettingsSection
         {...searchableSetting("rubato-permissions")}
-        title="macOS 권한"
+        title="macOS Permissions"
         headerAction={
           <Button size="xs" variant="ghost" disabled={busy !== null} onClick={() => void refresh()}>
-            다시 확인
+            Refresh
           </Button>
         }
       >
         <SettingsRow
-          title="에이전트가 쓰는 권한"
-          description="에이전트가 돌리는 도구(screencapture, Peekaboo, osascript)는 Rubato 앱의 권한을 빌려 써요. 여기서 허용하면 모든 세션에 한 번에 적용돼요."
+          title="Agent permissions"
+          description="Tools agents run (screencapture, Peekaboo, osascript) use the Rubato app's permissions. Allowing them here applies to every session."
           status={
             state?.signing === "stable"
-              ? "이 앱은 고정 서명이라 rubato update·restart 뒤에도 권한이 유지돼요."
+              ? "This app has a stable signature, so permissions survive rubato update and restart."
               : state?.signing === "adhoc"
-                ? "이 앱은 임시 서명이라 다시 빌드할 때마다 권한이 풀려요. 터미널에서 rubato update 를 한 번 돌리면 고정 서명으로 바뀌어요."
+                ? "This app has an ad-hoc signature, so every rebuild resets permissions. Run rubato update once in a terminal to switch to a stable signature."
                 : undefined
           }
         />
@@ -163,7 +163,7 @@ export function RubatoPermissionsSettings() {
                     disabled={busy !== null}
                     onClick={() => void act(id, "open")}
                   >
-                    시스템 설정
+                    System Settings
                   </Button>
                 ) : (
                   <span className="flex flex-wrap justify-end gap-1.5">
@@ -172,7 +172,7 @@ export function RubatoPermissionsSettings() {
                       disabled={busy !== null}
                       onClick={() => void act(id, "request")}
                     >
-                      {busy === `${id}:request` ? "여는 중…" : "권한 요청"}
+                      {busy === `${id}:request` ? "Opening…" : "Request"}
                     </Button>
                     <Button
                       size="xs"
@@ -180,7 +180,7 @@ export function RubatoPermissionsSettings() {
                       disabled={busy !== null}
                       onClick={() => void act(id, "reset")}
                     >
-                      다시 등록
+                      Re-register
                     </Button>
                     {id === "screen" ? (
                       <Button
@@ -189,7 +189,7 @@ export function RubatoPermissionsSettings() {
                         disabled={busy !== null}
                         onClick={() => void act(null, "relaunch")}
                       >
-                        앱 다시 켜기
+                        Relaunch app
                       </Button>
                     ) : null}
                   </span>
@@ -198,7 +198,7 @@ export function RubatoPermissionsSettings() {
             />
           );
         })}
-        {error ? <SettingsRow title="오류" description={error} /> : null}
+        {error ? <SettingsRow title="Error" description={error} /> : null}
       </SettingsSection>
     </SettingsPageContainer>
   );
