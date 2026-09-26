@@ -196,6 +196,8 @@ export const windowFromModels = (identity, models) => {
 };
 
 /** Only T3-normalized events leave this boundary; no Pi protocol types in UI. */
+const retries = (count) => `${count} ${count === 1 ? 'retry' : 'retries'}`;
+
 export class EventProjection {
   constructor({ threadId, sessionId, instanceId, emit }) {
     Object.assign(this, { threadId, sessionId, instanceId, emit });
@@ -348,18 +350,18 @@ export class EventProjection {
     this.pendingError = undefined;
     this.retry ??= { eventId: randomUUID() };
     this.retry.error = errorDetail(event) ?? this.retry.error ?? 'Unknown error';
-    this.retryRow(`재시도 중 (${event.attempt}/${event.maxAttempts}): ${this.retry.error}`);
+    this.retryRow(`Retrying (${event.attempt}/${event.maxAttempts}): ${this.retry.error}`);
   }
   retryEnded(event) {
     if (!this.retry) return;
     const error = this.retry.error;
-    if (event.success) this.retryRow(`${event.attempt}번 재시도 끝에 이어감: ${error}`);
+    if (event.success) this.retryRow(`Recovered after ${retries(event.attempt)}: ${error}`);
     else if (event.finalError === 'Retry cancelled') {
       // The CLI's Escape cancels the backoff sleep. No message follows, so the
       // last errored attempt would otherwise close the turn as a failure.
       this.interrupted = true;
-      this.retryRow(`재시도 중단 (${event.attempt}번째에서): ${error}`);
-    } else this.retryRow(`${event.attempt}번 재시도 모두 실패: ${error}`);
+      this.retryRow(`Retry cancelled at attempt ${event.attempt}: ${error}`);
+    } else this.retryRow(`Failed after ${retries(event.attempt)}: ${error}`);
     this.retry = undefined;
   }
   question(request) {
@@ -379,7 +381,7 @@ export class EventProjection {
     const title = request.title || request.message || 'Rubato request';
     if (request.method === 'confirm') {
       this.event('request.opened', { requestType: 'mcp_elicitation_approval', detail: title,
-        options: [{ decision: 'accept', label: '승인' }, { decision: 'decline', label: '거절' }] }, { requestId: request.id });
+        options: [{ decision: 'accept', label: 'Approve' }, { decision: 'decline', label: 'Decline' }] }, { requestId: request.id });
     } else if (['select', 'input', 'editor'].includes(request.method)) {
       this.event('user-input.requested', { questions: [{ id: request.id, header: title, question: title,
         options: (request.options ?? []).map((value) => ({ label: value, description: '', value })),

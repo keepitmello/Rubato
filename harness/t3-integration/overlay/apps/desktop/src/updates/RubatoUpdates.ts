@@ -92,7 +92,7 @@ export function createRubatoUpdater(
     } catch (error) {
       // gui-update.mjs prints the reason (wrong branch, offline, …) as its last line.
       const reason = String((error as { stderr?: unknown }).stderr ?? "").trim().split("\n").at(-1);
-      throw new Error(reason || "업데이트를 확인하지 못했어요.", { cause: error });
+      throw new Error(reason || "Could not check for updates.", { cause: error });
     }
   });
   const launch = options.launch ?? (async (token: string) => {
@@ -110,9 +110,9 @@ export function createRubatoUpdater(
   });
   const showFailure = async (detail: string) => {
     await message({
-      type: "error", title: "Rubato 업데이트",
-      message: "업데이트를 마치지 못했어요.",
-      detail, buttons: ["오류 기록 보기", "확인"],
+      type: "error", title: "Rubato Update",
+      message: "The update did not finish",
+      detail, buttons: ["View Log", "OK"],
     });
   };
   const stopWatching = () => {
@@ -132,7 +132,7 @@ export function createRubatoUpdater(
       if (expectedToken && result?.token !== expectedToken) {
         if (now() < launchDeadline) return true;
         stopWatching();
-        await showFailure("업데이트 작업을 시작하지 못했어요. 오류 기록을 확인한 뒤 다시 시도해 주세요.");
+        await showFailure("Could not start the update. Check the log and try again.");
         return false;
       }
       if (!result) { stopWatching(); return false; }
@@ -144,7 +144,7 @@ export function createRubatoUpdater(
       stopWatching();
       if (seen?.token !== result.token) {
         if (result.status !== "succeeded") await showFailure(result.message ??
-          "업데이트 작업이 중단됐어요. 오류 기록을 확인한 뒤 다시 시도해 주세요.");
+          "The update stopped. Check the log and try again.");
         if (!stopped) await write(seenPath, { token: result.token });
       }
       return false;
@@ -175,17 +175,17 @@ export function createRubatoUpdater(
       finally { manual = manualRequested; manualRequested = false; }
       if (stopped) return;
       if (!update.available || !update.revision) {
-        if (manual) await notify({ type: "info", message: "최신 버전이에요." }).catch(console.warn);
+        if (manual) await notify({ type: "info", message: "Rubato is up to date" }).catch(console.warn);
         return;
       }
       const laterPath = path.join(stateDir, "later.json");
       const postponed = await read<{ revision: string; until: number }>(laterPath);
       if (!manual && postponed?.revision === update.revision && postponed.until > now()) return;
       const answer = await message({
-        type: "info", title: "Rubato 업데이트",
-        message: "새 업데이트가 있어요.",
-        detail: `새 변경 ${update.commits ?? 1}개를 받을 수 있어요.\n업데이트하면 앱이 닫혔다가 자동으로 다시 열려요. 진행 중인 작업이 끊길 수 있으니 먼저 마쳐 주세요.`,
-        buttons: ["업데이트", "나중에"],
+        type: "info", title: "Rubato Update",
+        message: "A Rubato update is available",
+        detail: `${update.commits ?? 1} new ${(update.commits ?? 1) === 1 ? "change" : "changes"}.\nUpdating closes and reopens the app, which can interrupt running work. Finish it first.`,
+        buttons: ["Update", "Later"],
       });
       if (answer.response !== UPDATE || stopped) {
         if (answer.response === LATER) {
@@ -208,7 +208,7 @@ export function createRubatoUpdater(
       console.warn("Rubato update check:", error);
       nextCheck = now() + 15 * 60_000;
       if (manual && !stopped) {
-        await notify({ type: "error", message: "업데이트를 확인하지 못했어요.",
+        await notify({ type: "error", message: "Could not check for updates",
           detail: error instanceof Error ? error.message : String(error) }).catch(console.warn);
       }
     } finally {
@@ -301,7 +301,7 @@ export function attachRubatoUpdates(window: BrowserWindow, electron: ElectronSer
       if (!pending || id !== pending.id) throw new Error("Expired update prompt");
       if (state.phase === "failed" && action === "log") {
         const file = await open(path.join(directory(), "update.log"), "r").catch(() => undefined);
-        let log = "오류 기록이 없어요.";
+        let log = "No log was recorded.";
         if (file) {
           try {
             const { size } = await file.stat();
@@ -345,8 +345,8 @@ export function attachRubatoUpdates(window: BrowserWindow, electron: ElectronSer
         notify: async (notice) => {
           if (window.isDestroyed()) return;
           await electron.dialog.showMessageBox(window, {
-            type: notice.type, title: "Rubato 업데이트", message: notice.message,
-            detail: notice.detail, buttons: ["확인"],
+            type: notice.type, title: "Rubato Update", message: notice.message,
+            detail: notice.detail, buttons: ["OK"],
           });
         },
         progress: (value) => {

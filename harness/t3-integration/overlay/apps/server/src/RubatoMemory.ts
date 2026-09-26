@@ -79,7 +79,7 @@ function handle(
         {
           error: {
             code: "memory-not-configured",
-            message: "Rubato provider is not configured on this machine",
+            message: "The Rubato provider is not configured on this Mac.",
           },
         },
         { status: 503 },
@@ -93,7 +93,7 @@ function handle(
     }).pipe(
       Effect.orElseSucceed(() =>
         Response.json(
-          { error: { code: "memory-failed", message: "Rubato memory service failed to load" } },
+          { error: { code: "memory-failed", message: "The Rubato memory service failed to load." } },
           { status: 500 },
         ),
       ),

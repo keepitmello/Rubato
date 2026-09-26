@@ -734,7 +734,7 @@ test('a notes cut that never starts fails instead of leaving T3 waiting ten minu
     if (command.type === 'get_state') return { isStreaming: false, isCompacting: false };
     return { ok: true };
   };
-  await assert.rejects(() => bridge.compact('ext-dead'), /문맥 창 전환이 시작되지 않았어요/);
+  await assert.rejects(() => bridge.compact('ext-dead'), /new context window did not start/);
 });
 
 test('compaction_end from Pi is thread.state.changed compacted', () => {
@@ -815,7 +815,7 @@ test('failed attempts that a retry recovers leave one retry row, not an error li
   p.project({ type:'auto_retry_end', success:true, attempt:2 });
   p.project({ type:'agent_settled' });
   assert.deepEqual(failedItems(), []);
-  assert.deepEqual(retryRows(), ['2번 재시도 끝에 이어감: Request timed out.']);
+  assert.deepEqual(retryRows(), ['Recovered after 2 retries: Request timed out.']);
   assert.equal(events.some((event) => event.type==='runtime.error'), false);
   assert.equal(events.find((event) => event.type==='turn.completed').payload.state, 'completed');
 });
@@ -831,7 +831,7 @@ test('an exhausted retry chain still ends on the provider error', () => {
   p.project({ type:'auto_retry_end', success:false, attempt:4, finalError:'Connection error.' });
   p.project({ type:'agent_settled' });
   assert.deepEqual(failedItems().map((event) => event.payload.detail), ['Connection error.']);
-  assert.deepEqual(retryRows(), ['4번 재시도 모두 실패: Connection error.']);
+  assert.deepEqual(retryRows(), ['Failed after 4 retries: Connection error.']);
   assert.deepEqual(events.filter((event) => event.type==='runtime.error').map((event) => event.payload.message), ['Connection error.']);
   assert.equal(events.find((event) => event.type==='turn.completed').payload.state, 'failed');
 });
@@ -844,7 +844,7 @@ test('a retry cancelled during backoff closes the turn as interrupted', () => {
   p.project({ type:'auto_retry_end', success:false, attempt:1, finalError:'Retry cancelled' });
   p.project({ type:'agent_settled' });
   assert.deepEqual(failedItems(), []);
-  assert.deepEqual(retryRows(), ['재시도 중단 (1번째에서): Connection error.']);
+  assert.deepEqual(retryRows(), ['Retry cancelled at attempt 1: Connection error.']);
   assert.equal(events.some((event) => event.type==='runtime.error'), false);
   assert.equal(events.find((event) => event.type==='turn.completed').payload.state, 'interrupted');
 });
