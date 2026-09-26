@@ -68,9 +68,16 @@ msearch --doctor     # 저장소와 검색 인덱스 상태 확인
 검색 인덱스가 멈춰도 기억 파일은 그대로 남는다. `msearch --doctor`의 안내에 따라
 인덱스를 다시 만들면 된다.
 
+## 상주 기억
+
+`~/.rubato/memory/self/repo/` 의 `user.md`(사람에 대한 오래가는 사실과 선호)와 `soul.md`(사용자가 덧붙이는
+에이전트 성격)는 세션이 시작할 때 통째로 시스템 프롬프트에 실린다. 세션 중에 고쳐도 그 세션에는
+반영되지 않고 다음 세션부터 실린다 — 캐시 접두를 깨지 않기 위해서다. 비어 있으면 아무것도 싣지 않는다.
+
 ## 꿈 — 기억 정리
 
 기억 저장소는 프로젝트 `.rubato/rubato.jsonc` 의 `memory.agent` 로 이름을 붙인 폴더에만 있다.
+이름이 없는 폴더에서는 memory 도구가 기억이 꺼져 있다고 답하고 저장소를 만들지 않는다.
 꿈은 켠 저장소마다 그 폴더에서 열린 세션(사용자 말과 턴마다 마지막 답)과 그사이 커밋을 읽고,
 "왜"만 현재 답으로 고치고 코드와 어긋난 결론을 바로잡는다. 결과는 브랜치로 기다린다.
 
@@ -82,7 +89,9 @@ rubato dream --approve <저장소> # 기다리는 결과를 저장소에 넣기 
 ```
 
 켜기·모델·발행 방식은 `~/.rubato/rubato.jsonc` 의 `memory.dream`(`stores.<이름>.enabled`,
-`category`, `publish: "review" | "auto"`)이다. 실행 기록은 저장소의 `runtime/dream/runs/` 에 남는다.
+`category`, `publish: "review" | "auto"`, `min_hours_between`)이다. 실행 기록은 저장소의 `runtime/dream/runs/` 에 남는다.
+사람이 쓰는 세션(TUI·GUI)은 시작과 끝에 `rubato dream --due` 를 백그라운드로 띄운다. 때가 된 저장소가
+없으면 바로 끝나고, 출력은 `~/.rubato/memory/dream-due.log` 에 남는다.
 
 ## 업데이트
 

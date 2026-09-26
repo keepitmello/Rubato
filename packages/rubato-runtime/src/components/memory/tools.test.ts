@@ -8,6 +8,7 @@ import {
   createMemoryTools,
   registerMemoryTools,
 } from "./tools"
+import { MEMORY_UNBOUND_MESSAGE } from "./tool-metadata"
 import { boundFixture, textOf } from "./tools.test-support"
 
 describe("memory tool registration", () => {
@@ -51,7 +52,7 @@ describe("memory tool registration", () => {
 })
 
 describe("memory tool activation", () => {
-  test("#given no bound identity #when either tool executes #then an actionable initialization error is returned", async () => {
+  test("#given no bound store #when either tool executes #then it says memory is off here and how to turn it on", async () => {
     // given
     const [memoryTool, applyPatchTool] = createMemoryTools(() => undefined)
 
@@ -61,10 +62,9 @@ describe("memory tool activation", () => {
 
     // then
     expect(memoryResult.isError).toBe(true)
-    expect(textOf(memoryResult)).toContain("no memory identity bound")
-    expect(textOf(memoryResult)).toContain("restart")
+    expect(textOf(memoryResult)).toContain(MEMORY_UNBOUND_MESSAGE)
     expect(patchResult.isError).toBe(true)
-    expect(textOf(patchResult)).toContain("no memory identity bound")
+    expect(textOf(patchResult)).toContain(MEMORY_UNBOUND_MESSAGE)
   })
 
   test("#given a resolver that binds after registration #when the tool executes #then activation follows binding", async () => {

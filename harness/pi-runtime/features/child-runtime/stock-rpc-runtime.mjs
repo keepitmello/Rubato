@@ -245,7 +245,7 @@ export function createPiRpcSpawnRuntime({
 }
 
 /**
- * How a memory reflection/dream child runs on this engine: the parent's Node,
+ * How the dream child (`rubato dream`) runs on this engine: the parent's Node,
  * the staged pi CLI, and the child provider extension. The child boots with
  * `--no-extensions`, which stops discovery but still loads explicit `-e`
  * entries, so the providers ride here and nothing else from the parent does.

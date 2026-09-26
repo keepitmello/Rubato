@@ -2,7 +2,6 @@ import { access, mkdir, readFile, unlink, writeFile } from "node:fs/promises"
 import { dirname, join, relative } from "node:path"
 
 import { NoEffectiveChangesError, type GitCommitAuthor, type GitMemoryRepo } from "../git"
-import { SOUL_EDIT_RESULT_LINE, touchesSoulPath } from "../soul"
 import type { MemoryToolCommit, MemoryToolProvenance } from "./memory"
 import { parseMemoryFile, renderMemoryFile } from "../memfs/frontmatter"
 import { MemoryPathError, validateMemoryPath } from "../memfs/paths"
@@ -83,7 +82,7 @@ export async function runMemoryApplyPatch(
         ? `memory_apply_patch committed locally (${shortSha}).`
         : `memory_apply_patch committed (${shortSha}); harness will sync after the turn.`
       return {
-        message: touchesSoulPath(paths) ? `${summary}\n${SOUL_EDIT_RESULT_LINE}` : summary,
+        message: summary,
         commit: {
           sha: result.sha,
           subject: reason.split(/\r?\n/, 1)[0] ?? reason,
@@ -246,7 +245,6 @@ function memoryCommitMessage(reason: string, provenance: MemoryToolProvenance | 
     "",
     "Rubato-Writer: memory-tool",
     `Rubato-Session: ${provenance.sessionId}`,
-    `Rubato-Turn: ${provenance.userTurns}`,
   ].join("\n")
 }
 

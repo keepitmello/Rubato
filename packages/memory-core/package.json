@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
-  "description": "Rubato agent memory engine with git-backed storage, tools, reflection, and search.",
+  "description": "Rubato agent memory engine: git-backed stores, the memory tools, and the self store layout.",
   "exports": {
     ".": {
       "import": "./src/index.ts"

@@ -4,13 +4,10 @@ export const BUNDLE_ENTRIES = Object.freeze({
   "extensions/rubato-task.js": "packages/rubato-runtime/src/extension/rubato-task.ts",
   "extensions/rubato-member.js": "packages/task/src/team/member-extension/index.ts",
   "extensions/rubato-memory-mcp.js": "packages/rubato-runtime/src/mcp/memory-server.ts",
-  "extensions/memory-run-supervisor.mjs": "packages/rubato-runtime/src/components/memory/worker/memory-run-supervisor.ts",
   "runtime/ast-grep-mcp/cli.js": "packages/ast-grep-mcp/src/cli.ts",
   "runtime/lsp-daemon/dist/cli.js": "packages/lsp-daemon/src/cli.ts",
 });
 export const SOURCE_ASSETS = Object.freeze({
-  "extensions/reflection-persona.md": "packages/memory-core/src/reflection/assets/reflection-persona.md",
-  "extensions/dream-persona.md": "packages/memory-core/src/reflection/assets/dream-persona.md",
   "LICENSE.md": "LICENSE.md",
   "THIRD-PARTY-NOTICES.md": "THIRD-PARTY-NOTICES.md",
   "LICENSE": "packages/rubato-runtime/LICENSE",

@@ -1,5 +1,5 @@
-import type { RubatoMemorySettings } from "@rubato/config-core"
-import { resolveMemoryIdentity } from "@rubato/memory-core"
+import { RubatoMemorySettingsSchema, type RubatoMemorySettings } from "@rubato/config-core"
+import { resolveMemoryIdentity, resolveMemoryRoot } from "@rubato/memory-core"
 
 import type { ComponentContext, RubatoComponent, SenpiExtensionAPI } from "../../extension/types"
 import { loadSenpiRubatoConfig, type SenpiRubatoConfigResult } from "../config-resolution"
@@ -11,11 +11,27 @@ import {
 } from "./binding"
 import { renderMemoryBindingEntry } from "./bindings/entry-renderer"
 import { hasMemoryCapabilities, missingMemoryCapabilities } from "./capabilities"
+import { registerMemoryRepositoryCommand } from "./commands/memory-repository"
 import { createMemoryIdentityContext, type MemoryIdentityContext } from "./context"
-import { shutdownDeadlineAt, type ShutdownReason } from "./shutdown-drain"
-import { resolveMemorySettings } from "./identity-runtime"
-import { memoryModuleSupervisor } from "./supervisor"
-import { createMemoryWiring, type MemoryWiringOptions } from "./wiring"
+import { createDreamLauncher, type DreamLauncher } from "./dream-launch"
+import { registerMemoryGuard } from "./guard"
+import { registerMemoryFilesystemPolicy } from "./policy-guard"
+import {
+  RESIDENT_ENTRY_TYPE,
+  ensureSelfRepo,
+  readResidentBlock,
+  recordedResidentSnapshot,
+  withResidentBlock,
+  type ResidentSnapshot,
+} from "./prompt"
+import {
+  MEMORY_APPLY_PATCH_TOOL_NAME,
+  MEMORY_MCP_APPLY_PATCH_TOOL_NAME,
+  MEMORY_MCP_TOOL_NAME,
+  MEMORY_TOOL_NAME,
+} from "./tool-metadata"
+import { registerMemoryToolSurface } from "./tools"
+import { isRecord, sessionIdFrom } from "./wiring-context"
 
 const GLOBAL_DISABLED_FLAG = "rubato-disabled"
 const MEMORY_DISABLED_FLAG = "rubato-memory-disabled"
@@ -27,13 +43,8 @@ export interface MemoryComponentOptions {
   readonly loadConfig?: (options?: { readonly cwd?: string }) => SenpiRubatoConfigResult
   readonly now?: () => number
   readonly resolveCwd?: () => string
-  readonly createRuntime?: MemoryWiringOptions["createRuntime"]
-  readonly refreshStatus?: MemoryWiringOptions["refreshStatus"]
-  /**
-   * How to spawn reflection/dream children. The host owns its engine, so it names the command;
-   * without one the worker falls back to resolving a senpi CLI.
-   */
-  readonly childLaunch?: MemoryWiringOptions["childLaunch"]
+  /** Starts `rubato dream --due` in the background; tests inject a recorder. */
+  readonly dreamLauncher?: DreamLauncher
 }
 
 type SessionUi = { notify(message: string, level: "error" | "warning"): void }
@@ -41,32 +52,29 @@ type SessionSurface = {
   readonly entries: readonly SessionEntryLike[]
   readonly id: string
   readonly ui?: SessionUi
+  readonly hasUI: boolean
 }
 type SessionState = {
-  readonly enabled: boolean
-  readonly ui?: SessionUi
   context?: MemoryIdentityContext
-  memoryStatusAttempted: boolean
+  resident?: ResidentSnapshot
 }
 
 export { MEMORY_BINDING_CUSTOM_TYPE } from "./binding"
-export { ensureIdentityRuntimeDirs, getMemoryRepo } from "./context"
-export type { MemoryIdentityContext, MemoryPendingLedger, MemoryRepoAccess } from "./context"
-export { memoryModuleSupervisor } from "./supervisor"
+export { ensureIdentityRuntimeDirs } from "./context"
+export type { MemoryIdentityContext } from "./context"
 
 export function createMemoryComponent(options: MemoryComponentOptions = {}): RubatoComponent {
   const loadConfig = options.loadConfig ?? loadSenpiRubatoConfig
   const resolveCwd = options.resolveCwd ?? (() => process.cwd())
   const now = options.now ?? Date.now
   const env = options.env ?? process.env
-  const sessions = new Map<string, SessionState>()
 
   return {
     name: "memory",
     register(pi: SenpiExtensionAPI, ctx: ComponentContext): void {
       const cwd = resolveCwd()
       const bootConfig = resolveMemoryConfig(loadConfig({ cwd }))
-      if (!isEnabled(bootConfig, ctx, env)) return
+      if (!isEnabled(bootConfig, ctx)) return
 
       const missing = missingMemoryCapabilities(pi)
       if (missing.length > 0 || !hasMemoryCapabilities(pi)) {
@@ -74,37 +82,73 @@ export function createMemoryComponent(options: MemoryComponentOptions = {}): Rub
         return
       }
 
-      const wiring = createMemoryWiring({
-        sessions,
-        loadConfig,
-        cwd: resolveCwd,
+      const sessions = new Map<string, SessionState>()
+      let activeSession: string | undefined
+      const activeContext = () => (activeSession === undefined ? undefined : sessions.get(activeSession)?.context)
+      const contextFor = (eventCtx: unknown) => {
+        const id = sessionIdFrom(eventCtx)
+        return id === undefined ? undefined : sessions.get(id)?.context
+      }
+      const memoryRoot = resolveMemoryRoot(env, cwd)
+      const dream = options.dreamLauncher ?? createDreamLauncher({
         env,
         now,
-        logger: ctx.logger,
-        ...(options.createRuntime === undefined ? {} : { createRuntime: options.createRuntime }),
-        ...(options.refreshStatus === undefined ? {} : { refreshStatus: options.refreshStatus }),
-        ...(options.childLaunch === undefined ? {} : { childLaunch: options.childLaunch }),
-        // Reuse the boot snapshot: registration must not add a loadConfig() call, because the
-        // enablement latch depends on the ORDER of reads across boot -> session_start -> reload.
-        toolExposure: bootConfig.tool_exposure,
+        log: (message, details) => ctx.logger.warn(message, details),
       })
-      wiring.registerStatic(pi, ctx)
+      // Only a session a person is at asks for the dream: print-mode workers (`rubato dispatch`) and
+      // hosts without a UI would otherwise fire it once per worker.
+      const launchDream = (reason: string, surface: SessionSurface) => {
+        if (surface.hasUI) dream.launch(reason)
+      }
+
       pi.registerEntryRenderer(MEMORY_BINDING_CUSTOM_TYPE, renderMemoryBindingEntry)
+      pi.registerEntryRenderer(RESIDENT_ENTRY_TYPE, renderMemoryBindingEntry)
+
+      // Boot snapshot: tool registration must not re-read config.
+      registerMemoryToolSurface(pi, activeContext, { exposure: bootConfig.tool_exposure })
+      pi.on("tool_call", (payload, eventCtx) => {
+        if (!isRecord(payload) || !isMemoryToolName(payload.toolName) || !isRecord(payload.input)) return
+        const sessionId = sessionIdFrom(eventCtx)
+        const context = contextFor(eventCtx)
+        if (sessionId === undefined || context === undefined) {
+          // Never trust model-supplied provenance: it would pick the store the write lands in.
+          delete payload.input.provenance
+          return
+        }
+        payload.input.provenance = { sessionId, identityId: context.identity, repoPath: context.identityPaths.repo }
+      })
+      registerMemoryGuard(pi, ctx, { getContext: contextFor, resolveCwd })
+      registerMemoryRepositoryCommand(pi, { contextForSession: (sessionId) => sessions.get(sessionId)?.context })
+
+      pi.on("system_prompt", (payload, eventCtx) => {
+        if (!isRecord(payload) || typeof payload.systemPrompt !== "string") return undefined
+        const id = sessionIdFrom(eventCtx)
+        const resident = id === undefined ? undefined : sessions.get(id)?.resident
+        const systemPrompt = withResidentBlock(payload.systemPrompt, resident)
+        return systemPrompt === undefined ? undefined : { systemPrompt }
+      })
+
       pi.on("session_start", (_payload, eventCtx) => {
         const surface = readSessionSurface(eventCtx)
-        wiring.clearStatus(eventCtx)
         const sessionConfig = resolveMemoryConfig(loadConfig({ cwd }))
-        const enabled = isEnabled(sessionConfig, ctx, env)
-        releaseSession(sessions.get(surface.id))
-        const state: SessionState = {
-          enabled,
-          memoryStatusAttempted: false,
-          ...(surface.ui === undefined ? {} : { ui: surface.ui }),
-        }
+        sessions.delete(surface.id)
+        if (!isEnabled(sessionConfig, ctx)) return
+        const state: SessionState = {}
         sessions.set(surface.id, state)
-        if (!enabled) return
+        activeSession = surface.id
 
+        state.resident = recordedResidentSnapshot(surface.entries) ?? { block: readResidentBlock(memoryRoot) }
+        if (recordedResidentSnapshot(surface.entries) === undefined && state.resident.block !== "") {
+          pi.appendEntry(RESIDENT_ENTRY_TYPE, state.resident)
+        }
+        void ensureSelfRepo(memoryRoot).catch((error: unknown) => {
+          ctx.logger.warn("memory self store could not be created", { error: String(error) })
+        })
+        launchDream("session_start", surface)
+
+        // A folder that names no store keeps no memory: nothing is bound and no repository is created.
         const identity = resolveMemoryIdentity(sessionConfig.agent, cwd, env)
+        if (identity === undefined) return
         const previous = findLatestMemoryBinding(surface.entries)
         if (previous !== undefined && previous.identity !== identity.id) {
           surface.ui?.notify(
@@ -113,98 +157,53 @@ export function createMemoryComponent(options: MemoryComponentOptions = {}): Rub
           )
           return
         }
-
         const binding = createMemoryBinding({ identity: identity.id, repoPath: identity.paths.repo, boundAt: now() })
-        state.context = createMemoryIdentityContext({
-          identity: identity.id,
-          identityPaths: identity.paths,
-          binding,
-        })
-        memoryModuleSupervisor.acquire()
+        state.context = createMemoryIdentityContext({ identity: identity.id, identityPaths: identity.paths, binding })
         pi.appendEntry(MEMORY_BINDING_CUSTOM_TYPE, binding)
-        // Bind-time reconcile floats past session_start by design, but its rejection must not
-        // float: an unhandled rejection is attributed to whatever code is running when it lands.
-        void wiring.afterBind(pi, surface.id, state.context, eventCtx).catch((error: unknown) => {
-          ctx.logger.warn("memory bind-time reconcile failed", { error: String(error) })
-        })
+        registerMemoryFilesystemPolicy(pi, state.context)
       })
 
-      pi.on("session_shutdown", async (payload, eventCtx) => {
-        const sessionId = readSessionSurface(eventCtx).id
-        // The drain runs BEFORE the session is released: its steps read the bound identity.
-        await wiring.onSessionShutdown({
-          reason: readShutdownReason(payload),
-          sessionId,
-          deadlineAt: shutdownDeadlineAt(now),
-          now,
-        })
-        wiring.clearStatus(eventCtx)
-        releaseSession(sessions.get(sessionId))
-        sessions.delete(sessionId)
+      pi.on("session_shutdown", (_payload, eventCtx) => {
+        const surface = readSessionSurface(eventCtx)
+        if (sessions.has(surface.id)) launchDream("session_end", surface)
+        sessions.delete(surface.id)
+        if (activeSession === surface.id) activeSession = undefined
       })
     },
   }
 }
 
 export function resolveMemoryConfig(loaded: SenpiRubatoConfigResult): ResolvedMemoryConfig {
-  return resolveMemorySettings(loaded.config.memory)
+  return loaded.config.memory ?? RubatoMemorySettingsSchema.parse({})
 }
 
-// A memory child carries one of these sentinels. Today the child also runs --no-extensions, so Rubato
-// never loads there; a fork-mode child cannot pass --no-extensions (its request prefix must match
-// the parent for the provider cache to hit), so the sentinel is the only thing standing between a
-// forked reflection and unbounded self-triggering recursion.
-const CHILD_SENTINELS = ["SENPI_MEMORY_REFLECTION", "SENPI_MEMORY_FACTS"] as const
-
-export function isMemoryChildProcess(env: Record<string, string | undefined>): boolean {
-  return CHILD_SENTINELS.some((sentinel) => env[sentinel] === "1")
-}
-
-function isEnabled(
-  config: ResolvedMemoryConfig,
-  ctx: ComponentContext,
-  env: Record<string, string | undefined>,
-): boolean {
+function isEnabled(config: ResolvedMemoryConfig, ctx: ComponentContext): boolean {
   return config.enabled
-    && !isMemoryChildProcess(env)
     && ctx.config.getFlag(GLOBAL_DISABLED_FLAG) !== true
     && ctx.config.getFlag(MEMORY_DISABLED_FLAG) !== true
 }
 
-function releaseSession(state: SessionState | undefined): void {
-  if (state?.context === undefined) return
-  memoryModuleSupervisor.release()
-  state.context = undefined
+function isMemoryToolName(value: unknown): boolean {
+  return value === MEMORY_TOOL_NAME
+    || value === MEMORY_APPLY_PATCH_TOOL_NAME
+    || value === MEMORY_MCP_TOOL_NAME
+    || value === MEMORY_MCP_APPLY_PATCH_TOOL_NAME
 }
 
 function readSessionSurface(value: unknown): SessionSurface {
-  if (!isRecord(value)) return { entries: [], id: "unknown-session" }
+  if (!isRecord(value)) return { entries: [], id: "unknown-session", hasUI: false }
   const manager = isRecord(value.sessionManager) ? value.sessionManager : undefined
-  const getSessionId = manager?.getSessionId
   const getEntries = manager?.getEntries
-  const id = typeof getSessionId === "function" ? Reflect.apply(getSessionId, manager, []) : "unknown-session"
   const entries = typeof getEntries === "function" ? Reflect.apply(getEntries, manager, []) : []
   const ui = isSessionUi(value.ui) ? value.ui : undefined
   return {
     entries: Array.isArray(entries) ? entries : [],
-    id: typeof id === "string" && id.length > 0 ? id : "unknown-session",
+    id: sessionIdFrom(value) ?? "unknown-session",
+    hasUI: value.hasUI === true,
     ...(ui === undefined ? {} : { ui }),
   }
 }
 
 function isSessionUi(value: unknown): value is SessionUi {
   return isRecord(value) && typeof value.notify === "function"
-}
-
-const SHUTDOWN_REASONS: readonly ShutdownReason[] = ["quit", "unload", "reload", "new", "resume", "fork"]
-
-/** An unknown or absent reason drains conservatively: flush and enqueue, launch nothing. */
-function readShutdownReason(payload: unknown): ShutdownReason {
-  if (!isRecord(payload)) return "reload"
-  const reason = payload.reason
-  return SHUTDOWN_REASONS.find((candidate) => candidate === reason) ?? "reload"
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
 }

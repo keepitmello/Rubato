@@ -6,7 +6,7 @@ import { MirrorSync } from "@rubato/memory-core"
 
 import type { SenpiExtensionAPI } from "../../../extension/types"
 import { parseCommandArgs } from "./args"
-import { requireExistingRepo } from "./memfs-shared"
+import { requireExistingRepo } from "./repo"
 import { requireIdentity, respond, type MemoryCommandContext, type MemoryCommandDeps } from "./types"
 
 const SUBCOMMANDS = ["set", "unset", "status", "push"] as const

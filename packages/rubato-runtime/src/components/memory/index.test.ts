@@ -1,15 +1,16 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { existsSync, mkdtempSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { rmSyncEfaultTolerant } from "./teardown.test-support"
 
-import { RubatoMemorySettingsSchema } from "@rubato/config-core"
+import { GitMemoryRepo } from "@rubato/memory-core"
+
 import { FakeExtensionAPI } from "../../../test-support/fake-extension-api"
-import { MEMORY_BINDING_CUSTOM_TYPE, createMemoryComponent, memoryModuleSupervisor, resolveMemoryConfig } from "./index"
+import { rmSyncEfaultTolerant } from "./teardown.test-support"
+import { MEMORY_BINDING_CUSTOM_TYPE, createMemoryComponent } from "./index"
 import { componentContext, loadedMemoryConfig, memorySettings, MemoryFakeExtensionAPI, sessionContext } from "./memory.test-support"
-import { MEMORY_WRITE_UPDATED_ENTRY_TYPE } from "./memory-notice-wiring"
-import { SOUL_UPDATED_ENTRY_TYPE } from "./soul-notice"
+import { RESIDENT_ENTRY_TYPE } from "./prompt"
+import { MEMORY_UNBOUND_MESSAGE } from "./tool-metadata"
 
 const roots: string[] = []
 afterEach(() => {
@@ -19,7 +20,44 @@ afterEach(() => {
 function fixture(): { cwd: string; memoryHome: string } {
   const root = mkdtempSync(join(tmpdir(), "rubato-memory-component-"))
   roots.push(root)
-  return { cwd: join(root, "project"), memoryHome: join(root, "memory") }
+  const cwd = join(root, "project")
+  mkdirSync(cwd, { recursive: true })
+  return { cwd, memoryHome: join(root, "memory") }
+}
+
+function recordingLauncher() {
+  const reasons: string[] = []
+  return { reasons, launch: (reason: string) => (reasons.push(reason), true) }
+}
+
+function setup(options: { readonly agent?: string; readonly hasUI?: boolean } = {}) {
+  const { cwd, memoryHome } = fixture()
+  const pi = new MemoryFakeExtensionAPI()
+  const dream = recordingLauncher()
+  createMemoryComponent({
+    env: { RUBATO_MEMORY_HOME: memoryHome },
+    loadConfig: () => loadedMemoryConfig(memorySettings(options.agent === undefined ? {} : { agent: options.agent })),
+    resolveCwd: () => cwd,
+    now: () => 123,
+    dreamLauncher: dream,
+  }).register(pi, componentContext())
+  const session = sessionContext({ hasUI: options.hasUI ?? true })
+  return { cwd, memoryHome, pi, dream, session }
+}
+
+async function executeMemory(pi: MemoryFakeExtensionAPI, session: unknown, params: Record<string, unknown>) {
+  const tool = pi.tools.find((candidate) => candidate.name === "memory") as {
+    execute(id: string, params: Record<string, unknown>): Promise<{ isError?: boolean; content: Array<{ text: string }> }>
+  }
+  const input = { ...params }
+  await pi.dispatch("tool_call", { toolName: "memory", toolCallId: "call-1", input }, session)
+  return tool.execute("call-1", input)
+}
+
+async function composedPrompt(pi: MemoryFakeExtensionAPI, session: unknown): Promise<string> {
+  const results = await pi.dispatch("system_prompt", { type: "system_prompt", systemPrompt: "BASE" }, session)
+  const result = results.find((value) => value !== undefined) as { systemPrompt: string } | undefined
+  return result?.systemPrompt ?? "BASE"
 }
 
 describe("createMemoryComponent", () => {
@@ -32,192 +70,139 @@ describe("createMemoryComponent", () => {
     createMemoryComponent({ loadConfig: () => loadedMemoryConfig(memorySettings()) }).register(pi, ctx)
 
     expect(ctx.logs.filter((entry) => entry.level === "warn")).toHaveLength(1)
-    expect(pi.handlers).toEqual([])
-    expect(pi.tools).toEqual([])
-    expect(pi.commands).toEqual([])
+    expect({ handlers: pi.handlers, tools: pi.tools, commands: pi.commands }).toEqual({ handlers: [], tools: [], commands: [] })
   })
 
-  test("#given no memory section #when config resolves #then memory defaults enabled with the auto identity", () => {
-    expect(resolveMemoryConfig({ config: {}, diagnostics: [], layers: [], sources: [] })).toEqual(memorySettings())
-  })
-
-  test("#given no memory key in config #when resolved through adapter fallback #then it matches parsing {} through the schema", () => {
-    // given
-    const emptyConfigResult = { config: {}, diagnostics: [] as const, layers: [] as const, sources: [] as const }
-    const schemaParsed = RubatoMemorySettingsSchema.parse({})
-
-    // when
-    const fallbackResolved = resolveMemoryConfig(emptyConfigResult)
-
-    // then
-    expect(fallbackResolved).toEqual(schemaParsed)
-    expect(fallbackResolved).toEqual(memorySettings())
-  })
-
-  test("#given disabled config or a global/component disable flag #when registered #then the host registration surface is byte-identical", () => {
+  test("#given disabled config or a disable flag #when registered #then nothing is registered", () => {
     for (const scenario of [
       { memory: memorySettings({ enabled: false }), flags: {} },
       { memory: memorySettings(), flags: { "rubato-disabled": true } },
       { memory: memorySettings(), flags: { "rubato-memory-disabled": true } },
     ]) {
       const pi = new MemoryFakeExtensionAPI()
-      const ctx = componentContext(scenario.flags)
-
-      createMemoryComponent({ loadConfig: () => loadedMemoryConfig(scenario.memory) }).register(pi, ctx)
-
-      expect({ handlers: pi.handlers, tools: pi.tools, commands: pi.commands, renderers: pi.entryRenderers }).toEqual({
-        handlers: [], tools: [], commands: [], renderers: [],
-      })
+      createMemoryComponent({ loadConfig: () => loadedMemoryConfig(scenario.memory) }).register(pi, componentContext(scenario.flags))
+      expect({ handlers: pi.handlers, tools: pi.tools, commands: pi.commands }).toEqual({ handlers: [], tools: [], commands: [] })
     }
   })
+})
 
-  test("#given a memory child sentinel in env #when registered #then memory registers nothing so a forked child cannot recurse", () => {
-    // A fork-mode child loads extensions (the request prefix must match its parent for the provider
-    // cache to hit), so --no-extensions no longer protects against recursion. The sentinel that the
-    // child already carries must therefore act as a hard disable.
-    for (const sentinel of ["SENPI_MEMORY_REFLECTION", "SENPI_MEMORY_FACTS"]) {
-      const pi = new MemoryFakeExtensionAPI()
-      const ctx = componentContext()
+describe("stores are named only", () => {
+  test("#given a folder whose config leaves memory.agent unset #when a session writes memory #then no store is created and the tool says how to turn memory on", async () => {
+    const { pi, session, memoryHome } = setup()
 
-      createMemoryComponent({
-        loadConfig: () => loadedMemoryConfig(memorySettings()),
-        env: { [sentinel]: "1" },
-      }).register(pi, ctx)
+    await pi.dispatch("session_start", {}, session)
+    const result = await executeMemory(pi, session, { command: "create", reason: "r", file_path: "decisions/x.md", description: "x" })
 
-      expect({ sentinel, handlers: pi.handlers, tools: pi.tools, commands: pi.commands, renderers: pi.entryRenderers }).toEqual({
-        sentinel, handlers: [], tools: [], commands: [], renderers: [],
-      })
-    }
+    expect(pi.entries.some((entry) => entry.customType === MEMORY_BINDING_CUSTOM_TYPE)).toBe(false)
+    expect(result.isError).toBe(true)
+    expect(result.content[0]?.text).toContain(MEMORY_UNBOUND_MESSAGE)
+    expect(existsSync(join(memoryHome, "agents"))).toBe(false)
   })
 
-  test("#given the sentinel is absent or not exactly 1 #when registered #then memory stays enabled", () => {
-    for (const env of [{}, { SENPI_MEMORY_REFLECTION: "0" }, { SENPI_MEMORY_REFLECTION: "" }]) {
-      const pi = new MemoryFakeExtensionAPI()
-      const ctx = componentContext()
+  test("#given a named store #when the first write lands #then the store starts from an empty commit with no seed files", async () => {
+    const { pi, session, memoryHome } = setup({ agent: "proj" })
 
-      createMemoryComponent({ loadConfig: () => loadedMemoryConfig(memorySettings()), env }).register(pi, ctx)
+    await pi.dispatch("session_start", {}, session)
+    const result = await executeMemory(pi, session, {
+      command: "create", reason: "why the cache key has the model", file_path: "decisions/cache-key.md", description: "Cache key",
+    })
 
-      expect(pi.handlers.length).toBeGreaterThan(0)
-    }
+    expect(result.isError).not.toBe(true)
+    const repo = new GitMemoryRepo({ dir: join(memoryHome, "agents", "proj", "repo"), agentId: "proj" })
+    const head = await repo.head()
+    expect(head).not.toBeNull()
+    expect(await repo.lsTree(head ?? undefined)).toEqual(["decisions/cache-key.md"])
+    const log = await repo.log()
+    expect(log).toHaveLength(2)
+    expect(log[0]?.trailers["Rubato-Session"]).toBe("session-1")
   })
 
-  test("#given enabled memory #when session_start binds an auto identity #then it appends a hidden binding and performs no filesystem writes", async () => {
-    const { cwd, memoryHome } = fixture()
-    const pi = new MemoryFakeExtensionAPI()
-    const ctx = componentContext()
-    const notifications: Array<{ message: string; level: string }> = []
-    createMemoryComponent({
-      env: { RUBATO_MEMORY_HOME: memoryHome },
-      loadConfig: () => loadedMemoryConfig(memorySettings()),
-      now: () => 123,
-      resolveCwd: () => cwd,
-      createRuntime: () => {
-        throw new Error("bind-only test does not create an identity runtime")
-      },
-    }).register(pi, ctx)
+  test("#given model-supplied provenance in an unnamed folder #when a memory call arrives #then the provenance is stripped", async () => {
+    const { pi, session } = setup()
+    await pi.dispatch("session_start", {}, session)
+    const input: Record<string, unknown> = { provenance: { identityId: "other", repoPath: "/elsewhere", sessionId: "s" } }
 
-    await pi.dispatch("session_start", {}, sessionContext({ notifications }))
+    await pi.dispatch("tool_call", { toolName: "mcp__rubato-memory_memory", toolCallId: "c", input }, session)
 
-    expect(pi.entryRenderers.map((entry) => entry.customType)).toEqual([
-      "senpi-memory.reflection-completion",
-      "senpi-memory.reflection-launched",
-      "senpi-memory.reflection-summary",
-      "senpi-memory.health",
-      SOUL_UPDATED_ENTRY_TYPE,
-      MEMORY_WRITE_UPDATED_ENTRY_TYPE,
-      MEMORY_BINDING_CUSTOM_TYPE,
-    ])
-    // Direct registration is the default surface so memory always works; the exposure-search MCP
-    // variant is an explicit opt-in asserted in tool-surface.test.ts.
-    expect(pi.tools.map((tool) => tool.name)).toEqual(["memory", "memory_apply_patch"])
-    expect(pi.mcpServers.map((server) => server.name)).toEqual([])
-    expect(pi.entries).toEqual([{
-      customType: MEMORY_BINDING_CUSTOM_TYPE,
-      data: expect.objectContaining({ identity: expect.stringMatching(/^project-[a-f0-9]{8}$/), boundAt: 123 }),
-    }])
-    expect(existsSync(memoryHome)).toBe(false)
-    expect(notifications).toEqual([])
-    memoryModuleSupervisor.release()
+    expect(input.provenance).toBeUndefined()
+  })
+})
+
+describe("resident user.md and soul.md", () => {
+  function writeSelf(memoryHome: string, files: Record<string, string>) {
+    const dir = join(memoryHome, "self", "repo")
+    mkdirSync(dir, { recursive: true })
+    for (const [name, content] of Object.entries(files)) writeFileSync(join(dir, name), content)
+  }
+
+  test("#given user.md and soul.md #when the prompt is composed #then both ride the system prompt, fixed at session start", async () => {
+    const { pi, session, memoryHome } = setup()
+    writeSelf(memoryHome, { "user.md": "Prefers Korean.\n", "soul.md": "Dry humour.\n" })
+
+    await pi.dispatch("session_start", {}, session)
+    const first = await composedPrompt(pi, session)
+    writeSelf(memoryHome, { "user.md": "Edited mid-session.\n" })
+    const second = await composedPrompt(pi, session)
+
+    expect(first).toContain("Prefers Korean.")
+    expect(first).toContain("Dry humour.")
+    expect(first.startsWith("BASE")).toBe(true)
+    expect(second).toBe(first)
   })
 
-  test("#given a resumed session bound to another identity #when session_start resolves fresh config #then it notifies an error and fails closed without rebinding", async () => {
-    const { cwd, memoryHome } = fixture()
-    const pi = new MemoryFakeExtensionAPI()
-    const notifications: Array<{ message: string; level: string }> = []
-    createMemoryComponent({
-      env: { RUBATO_MEMORY_HOME: memoryHome },
-      loadConfig: () => loadedMemoryConfig(memorySettings({ agent: "fresh" })),
-      resolveCwd: () => cwd,
-    }).register(pi, componentContext())
+  test("#given missing or empty files #when the prompt is composed #then memory adds nothing", async () => {
+    const { pi, session, memoryHome } = setup()
+    writeSelf(memoryHome, { "user.md": "  \n" })
 
-    await pi.dispatch("session_start", {}, sessionContext({
-      entries: [{
-        type: "custom",
-        customType: MEMORY_BINDING_CUSTOM_TYPE,
-        data: { identity: "different-identity", repoPathHash: "hash", boundAt: 1 },
-      }],
-      notifications,
-    }))
+    await pi.dispatch("session_start", {}, session)
 
-    expect(pi.entries).toEqual([])
-    expect(existsSync(memoryHome)).toBe(false)
-    expect(notifications).toEqual([{
-      message: expect.stringContaining("memory identity conflict"),
-      level: "error",
-    }])
+    expect(await composedPrompt(pi, session)).toBe("BASE")
+    expect(pi.entries.some((entry) => entry.customType === RESIDENT_ENTRY_TYPE)).toBe(false)
   })
 
-  test("#given per-instance module state #when session_shutdown fires #then the identity context and supervisor reference are released", async () => {
-    const { cwd, memoryHome } = fixture()
-    const pi = new MemoryFakeExtensionAPI()
-    const before = memoryModuleSupervisor.refCount
-    createMemoryComponent({
-      env: { RUBATO_MEMORY_HOME: memoryHome },
-      loadConfig: () => loadedMemoryConfig(memorySettings()),
-      resolveCwd: () => cwd,
-    }).register(pi, componentContext())
-    const live = sessionContext({ sessionId: "cleanup-session" })
-    await pi.dispatch("session_start", {}, live)
-    expect(memoryModuleSupervisor.refCount).toBe(before + 1)
+  test("#given a resumed session that recorded its snapshot #when it starts again after an edit #then it keeps the recorded block", async () => {
+    const { pi, memoryHome } = setup()
+    writeSelf(memoryHome, { "user.md": "Changed since.\n" })
+    const recorded = { type: "custom", customType: RESIDENT_ENTRY_TYPE, data: { block: "<memory>\n<user>Recorded.</user>\n</memory>" } }
+    const session = sessionContext({ entries: [recorded] })
 
-    await pi.dispatch("session_shutdown", {}, live)
+    await pi.dispatch("session_start", {}, session)
+    const prompt = await composedPrompt(pi, session)
 
-    expect(memoryModuleSupervisor.refCount).toBe(before)
+    expect(prompt).toContain("Recorded.")
+    expect(prompt).not.toContain("Changed since.")
   })
 
-  test("#given a stale footer #when session start exits disabled or conflicted #then the status is cleared first", async () => {
-    for (const scenario of ["disabled", "conflicted"] as const) {
-      const { cwd, memoryHome } = fixture()
-      const pi = new MemoryFakeExtensionAPI()
-      const statusCalls: Array<{ key: string; text: string | undefined }> = []
-      let reads = 0
-      createMemoryComponent({
-        env: { RUBATO_MEMORY_HOME: memoryHome },
-        loadConfig: () => loadedMemoryConfig(memorySettings({
-          enabled: scenario === "disabled" ? reads++ === 0 : true,
-          ...(scenario === "conflicted" ? { agent: "fresh" } : {}),
-        })),
-        resolveCwd: () => cwd,
-      }).register(pi, componentContext())
+  test("#given no self store #when a session starts #then it is created with an empty commit", async () => {
+    const { pi, session, memoryHome } = setup()
 
-      await pi.dispatch("session_start", {}, {
-        sessionManager: {
-          getEntries: () => scenario === "conflicted"
-            ? [{
-                type: "custom",
-                customType: MEMORY_BINDING_CUSTOM_TYPE,
-                data: { identity: "different-identity", repoPathHash: "hash", boundAt: 1 },
-              }]
-            : [],
-          getSessionId: () => `session-${scenario}`,
-        },
-        ui: {
-          notify: () => {},
-          setStatus: (key: string, text: string | undefined) => statusCalls.push({ key, text }),
-        },
-      })
+    await pi.dispatch("session_start", {}, session)
+    const dir = join(memoryHome, "self", "repo")
+    for (let attempt = 0; attempt < 100 && !existsSync(join(dir, ".git")); attempt += 1) await Bun.sleep(20)
+    const repo = new GitMemoryRepo({ dir, agentId: "self" })
+    for (let attempt = 0; attempt < 100 && (await repo.head().catch(() => null)) === null; attempt += 1) await Bun.sleep(20)
 
-      expect(statusCalls).toEqual([{ key: "memory", text: undefined }])
-    }
+    expect(await repo.head()).not.toBeNull()
+    expect(readdirSync(dir).filter((name) => name !== ".git")).toEqual([])
+  })
+})
+
+describe("automatic dream", () => {
+  test("#given a session a person is at #when it starts and ends #then rubato dream --due is asked both times", async () => {
+    const { pi, session, dream } = setup({ agent: "proj" })
+
+    await pi.dispatch("session_start", {}, session)
+    await pi.dispatch("session_shutdown", { reason: "quit" }, session)
+
+    expect(dream.reasons).toEqual(["session_start", "session_end"])
+  })
+
+  test("#given a session without a UI (print-mode worker) #when it starts and ends #then no dream is launched", async () => {
+    const { pi, session, dream } = setup({ agent: "proj", hasUI: false })
+
+    await pi.dispatch("session_start", {}, session)
+    await pi.dispatch("session_shutdown", { reason: "quit" }, session)
+
+    expect(dream.reasons).toEqual([])
   })
 })

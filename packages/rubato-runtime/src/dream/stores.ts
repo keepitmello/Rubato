@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, statSync } from "node:fs"
 import { join } from "node:path"
 
-import { isAutoAgentValue, resolveMemoryIdentity, type MemoryIdentityPaths } from "@rubato/memory-core"
+import { resolveMemoryIdentity, type MemoryIdentityPaths } from "@rubato/memory-core"
 
 import { readSessionHeader } from "./transcript"
 
@@ -32,8 +32,7 @@ export function createStoreNameResolver(
     if (cache.has(cwd)) return cache.get(cwd)
     let name: string | undefined
     if (existsSync(cwd)) {
-      const agent = readAgent(cwd)
-      if (!isAutoAgentValue(agent)) name = resolveMemoryIdentity(agent, cwd).id
+      name = resolveMemoryIdentity(readAgent(cwd), cwd)?.id
     }
     cache.set(cwd, name)
     return name
