@@ -50,7 +50,7 @@ def _file_id(path: Path, root: Path) -> str:
 def _corpus(root: Path) -> list[Path]:
     if not root.exists():
         return []
-    skip = ("/.git/", "/runtime/", "/backups/", "/backup/", "/_tech-notes/", "/diary/raw/")
+    skip = ("/.git/", "/runtime/", "/backups/", "/backup/", "/_tech-notes/")
     found: list[Path] = []
     for path in root.rglob("*.md"):
         marker = "/" + str(path) + "/"
