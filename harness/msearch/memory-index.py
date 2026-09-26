@@ -2,11 +2,9 @@
 """
 Index memory markdown files into Redis Stack.
 
-Sources:
-  - memory/*.md
-  - memory/diary/*.md
-  - docs/txgame/*.md
-  - 루트 상주 문서 (USER/SOUL/MEMORY/COMPANION/TOOLS/IDENTITY)
+색인 대상은 메모리 루트 아래 모든 마크다운이다. rubato 메모리에서는 각 저장소의
+`repo/` 아래(decisions/, reference/, skills/, system/ …)와 루트 상주 문서
+(USER.md 등)가 여기 들어온다.
 """
 
 from __future__ import annotations
@@ -26,9 +24,6 @@ from dotenv import load_dotenv
 from konlpy.tag import Okt
 from openai import OpenAI
 import redis
-
-import memory_affect
-import memory_entities
 
 
 from msearch_config import (
@@ -70,7 +65,6 @@ SLUG_ALIASES = {
     "reconnect": "재연결",
     "memory": "기억 메모리",
     "search": "검색",
-    "txgame": "txgame 티엑스게임",
     "profile": "프로필",
     "finance": "재정 자금",
     "finances": "재정 자금",
@@ -112,14 +106,10 @@ class MemoryChunk:
     title: str
     section: str
     content: str
-    source: str
     file_path: str
     rel_path: str
     chunk_idx: str
     mtime: float
-    subtype: str = ""
-    canonical: str = ""
-    date: str = ""  # 청크 단위 날짜 (archive 행 등). 비면 date_for(file) 사용.
 
 
 def get_okt() -> Okt:
@@ -152,13 +142,11 @@ def tokenize_ko(text: str) -> str:
 
 
 # 인덱스에서 제외할 경로 조각.
-#  · diary/raw — 민감 원문 (verbatim은 rg 직접 검색으로만)
 #  · _tech-notes — 기술 메타문서 (기억 아님, 검색 노이즈)
 #  · backups — 백업 사본 (중복·노이즈)
 #  · .git — 메모리 저장소는 git 레포라 객체/로그가 같이 잎힌다
 #  · runtime — 반사 실행 기록·큐·저널 (기억이 아니라 기계 상태)
 EXCLUDE_PATH_FRAGMENTS = (
-    "diary/raw/",
     "_tech-notes/",
     "/backups/",
     "/backup/",
@@ -210,46 +198,11 @@ def rel_path(file_path: Path) -> str:
     try:
         return str(resolved.relative_to(PROJECT_ROOT))
     except ValueError:
-        # External paths (roo repo, openclaw) — use home-relative or absolute
+        # External paths — use home-relative or absolute
         try:
             return str(resolved.relative_to(Path.home()))
         except ValueError:
             return str(resolved)
-
-
-def source_for(file_path: Path) -> str:
-    relative = rel_path(file_path)
-    if relative.startswith("memory/entities/"):
-        return "memory/entity"
-    if relative.startswith("memory/archive/"):
-        return "memory/archive"
-    if relative.startswith("memory/diary/"):
-        return "memory/diary"
-    if relative.startswith("memory/legacy/roo/"):
-        return "legacy-roo"
-    if relative.startswith("memory/legacy/openclaw/"):
-        return "legacy-openclaw"
-    if relative.startswith("memory/"):
-        return "memory"
-    if relative.startswith("docs/txgame/"):
-        return "docs/txgame"
-    if relative in RESIDENT_DOCS:
-        return "resident"
-    return "unknown"
-
-
-def date_for(file_path: Path) -> str:
-    relative = rel_path(file_path)
-    if relative.startswith("memory/legacy/roo/"):
-        # roo-memories는 전부 2026년(1~5월), 폴더명이 MM-DD — 계보 패스의 시간순 비교용
-        match = re.search(r"/(\d{2}-\d{2})/", relative)
-        return f"2026-{match.group(1)}" if match else ""
-    if relative.startswith("memory/legacy/openclaw/"):
-        match = re.search(r"(\d{4}-\d{2}-\d{2})", relative)
-        return match.group(1) if match else ""
-    if relative.startswith(("memory/", "memory/diary/")):
-        return file_path.stem
-    return ""
 
 
 def file_id(file_path: Path) -> str:
@@ -296,87 +249,12 @@ def metadata_terms(file_path: Path) -> str:
     return " ".join(dedupe_preserve_order(parts + aliases))
 
 
-ARCHIVE_MIN_ROW_CHARS = 12
-
-
-def archive_year(file_path: Path) -> str:
-    match = re.search(r"(\d{4})", file_path.stem)
-    return match.group(1) if match else ""
-
-
-def archive_row_date(date_cell: str, year: str) -> str:
-    match = re.search(r"(\d{1,2})-(\d{1,2})", date_cell)
-    if not (match and year):
-        return ""
-    return f"{year}-{int(match.group(1)):02d}-{int(match.group(2)):02d}"
-
-
-def chunk_archive(content: str, file_path: Path) -> list[MemoryChunk]:
-    """아카이브 타임라인 전용 청킹: 테이블 1행(=1일)을 1청크로.
-
-    섹션 통짜 청킹은 하루치 신호가 수십 행짜리 테이블에 희석돼 검색이 죽는다.
-    행 단위로 쪼개고 행 날짜를 date TAG로, 사건명을 title로 — '검색되는 장기기억'.
-    """
-    year = archive_year(file_path)
-    mtime = file_path.stat().st_mtime
-    source = source_for(file_path)
-    relative = rel_path(file_path)
-    resolved = str(file_path.resolve())
-    chunks: list[MemoryChunk] = []
-    section_title = ""
-    row_idx = 0
-
-    for line in content.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("## "):
-            section_title = stripped[3:].strip()
-            continue
-        if not (stripped.startswith("|") and stripped.endswith("|")):
-            continue
-        cells = [cell.strip() for cell in stripped.strip("|").split("|")]
-        if len(cells) < 2:
-            continue
-        if all(re.fullmatch(r"[-: ]*", cell) for cell in cells):
-            continue  # 테이블 구분선
-        if cells[0] in ("날짜",):
-            continue  # 헤더 행
-        date_cell = cells[0]
-        event_cell = re.sub(r"\*+", "", cells[1]).strip()
-        detail = " / ".join(cell for cell in cells[2:] if cell)
-        date_tag = archive_row_date(date_cell, year)
-        body = f"{date_tag or date_cell} {event_cell}" + (f" — {detail}" if detail else "")
-        if len(body) < ARCHIVE_MIN_ROW_CHARS:
-            continue
-        row_idx += 1
-        chunk_idx = f"r{row_idx}"
-        chunks.append(
-            MemoryChunk(
-                key=chunk_key(file_path, chunk_idx),
-                title=f"기억 아카이브 {date_tag or date_cell} {event_cell}"[:120],
-                section=section_title,
-                content=body,
-                source=source,
-                file_path=resolved,
-                rel_path=relative,
-                chunk_idx=chunk_idx,
-                mtime=mtime,
-                subtype=memory_entities.entity_subtype(relative, section_title),
-                date=date_tag,
-            )
-        )
-    return chunks
-
-
 def chunk_markdown(content: str, file_path: Path) -> list[MemoryChunk]:
-    if rel_path(file_path).startswith("memory/archive/"):
-        return chunk_archive(content, file_path)
     title = extract_title(content, file_path)
     sections = re.split(r"\n##\s+", content)
     chunks: list[MemoryChunk] = []
     mtime = file_path.stat().st_mtime
     relative = rel_path(file_path)
-    source = source_for(file_path)
-    canonical = memory_entities.entity_canonical(relative, content)
 
     for section_idx, section in enumerate(sections):
         if section_idx == 0:
@@ -400,13 +278,10 @@ def chunk_markdown(content: str, file_path: Path) -> list[MemoryChunk]:
                     title=title,
                     section=section_title,
                     content=part,
-                    source=source,
                     file_path=str(file_path.resolve()),
                     rel_path=relative,
                     chunk_idx=chunk_idx,
                     mtime=mtime,
-                    subtype=memory_entities.entity_subtype(relative, section_title),
-                    canonical=canonical,
                 )
             )
     return chunks
@@ -473,15 +348,8 @@ def create_index(r: redis.Redis, drop_existing: bool) -> None:
         "section", "TEXT", "WEIGHT", "2.0",
         "content", "TEXT", "NOINDEX",
         "channel", "TAG",
-        "source", "TAG",
-        "subtype", "TAG",
-        "canonical", "TAG",
         "rel_path", "TAG",
-        "date", "TAG",
         "meta", "TAG",
-        "affect_score", "NUMERIC",
-        "affect_flags", "TAG",
-        "affect_version", "TAG",
         "mtime", "NUMERIC",
         "file_path", "TEXT", "NOINDEX",
         "chunk_idx", "TAG",
@@ -497,11 +365,6 @@ def ensure_channel_schema(r: redis.Redis) -> None:
     for field, field_type in (
         ("channel", "TAG"),
         ("meta", "TAG"),
-        ("subtype", "TAG"),
-        ("canonical", "TAG"),
-        ("affect_score", "NUMERIC"),
-        ("affect_flags", "TAG"),
-        ("affect_version", "TAG"),
     ):
         try:
             r.execute_command("FT.ALTER", INDEX_NAME, "SCHEMA", "ADD", field, field_type)
@@ -511,15 +374,6 @@ def ensure_channel_schema(r: redis.Redis) -> None:
             if "already" in message or "exists" in message or "duplicate" in message:
                 continue
             raise
-
-
-def affect_mapping(memory: dict[str, object]) -> dict[str, str]:
-    signal = memory_affect.analyze_memory(memory)
-    return {
-        "affect_score": f"{signal.score:.4f}",
-        "affect_flags": ",".join(signal.flags),
-        "affect_version": signal.version,
-    }
 
 
 def index_file(file_path: Path, r: redis.Redis, client: OpenAI) -> int:
@@ -536,16 +390,6 @@ def index_file(file_path: Path, r: redis.Redis, client: OpenAI) -> int:
     pipe = r.pipeline(transaction=False)
     for chunk, embedding in zip(chunks, embeddings, strict=True):
         bm25_text = f"{chunk.title}\n{chunk.section}\n{chunk.rel_path}\n{metadata_terms(file_path)}\n{chunk.content}"
-        affect = affect_mapping(
-            {
-                "title": chunk.title,
-                "section": chunk.section,
-                "content": chunk.content,
-                "source": chunk.source,
-                "rel_path": chunk.rel_path,
-                "date": chunk.date or date_for(file_path),
-            }
-        )
         pipe.hset(
             chunk.key,
             mapping={
@@ -554,13 +398,8 @@ def index_file(file_path: Path, r: redis.Redis, client: OpenAI) -> int:
                 "section": chunk.section,
                 "content": chunk.content,
                 "channel": CHANNEL_ID,
-                "source": chunk.source,
-                "subtype": chunk.subtype,
-                "canonical": chunk.canonical,
                 "rel_path": chunk.rel_path,
-                "date": chunk.date or date_for(file_path),
                 "meta": meta_flag(chunk.rel_path, chunk.section),
-                **affect,
                 "mtime": chunk.mtime,
                 "file_path": chunk.file_path,
                 "chunk_idx": chunk.chunk_idx,
@@ -609,103 +448,28 @@ def cleanup_deleted_files(r: redis.Redis, current_files: set[str]) -> int:
 
 
 def heal_tags(r: redis.Redis) -> int:
-    """재임베딩 없이 파생 TAG(date/meta)를 현재 규칙에 맞춘다 (HSET만, idempotent).
+    """재임베딩 없이 파생 TAG(meta)를 현재 규칙에 맞춘다 (HSET만, idempotent).
 
-    파일이 안 바뀌면 인덱싱이 스킵되므로, 규칙 변경분(legacy date)과
-    meta-overrides 추가분은 매 실행 여기서 따라잡는다.
+    파일이 안 바뀌면 인덱싱이 스킵되므로, meta-overrides 추가분은 매 실행 여기서 따라잡는다.
     """
     override_rels = {rel for rel, _ in get_meta_overrides()}
-    manifest_rels = {
-        item.decode("utf-8") if isinstance(item, bytes) else item
-        for item in r.smembers(MANIFEST_KEY)
-    }
-    entity_rels = {
-        rel_path(path)
-        for path in discover_markdown_files()
-        if rel_path(path).startswith("memory/entities/")
-    }
     healed = 0
-    for rel in sorted(manifest_rels | entity_rels | override_rels):
-        needs_date = rel.startswith("memory/legacy/")
-        needs_entity_tags = rel.startswith("memory/entities/")
-        if not (needs_date or rel in override_rels or needs_entity_tags):
-            continue
+    for rel in sorted(override_rels):
         path = PROJECT_ROOT / rel
-        file_content = path.read_text(encoding="utf-8") if path.exists() else ""
-        file_date = date_for(path)
         cursor = 0
         pattern = f"{KEY_PREFIX}{file_id(path)}:*"
         while True:
             cursor, keys = r.scan(cursor, match=pattern, count=200)
             for key in keys:
-                updates: dict[str, str] = {}
-                if needs_date and file_date:
-                    current = r.hget(key, "date")
-                    current_text = current.decode("utf-8") if isinstance(current, bytes) else (current or "")
-                    if current_text != file_date:
-                        updates["date"] = file_date
                 section_raw = r.hget(key, "section")
                 section = section_raw.decode("utf-8") if isinstance(section_raw, bytes) else (section_raw or "")
-                if meta_flag(rel, section) == "1":
-                    meta_raw = r.hget(key, "meta")
-                    meta_text = meta_raw.decode("utf-8") if isinstance(meta_raw, bytes) else (meta_raw or "")
-                    if meta_text != "1":
-                        updates["meta"] = "1"
-                if needs_entity_tags:
-                    current_source = r.hget(key, "source")
-                    current_source_text = current_source.decode("utf-8") if isinstance(current_source, bytes) else (current_source or "")
-                    if current_source_text != "memory/entity":
-                        updates["source"] = "memory/entity"
-                    subtype = memory_entities.entity_subtype(rel, section)
-                    current_subtype = r.hget(key, "subtype")
-                    current_subtype_text = current_subtype.decode("utf-8") if isinstance(current_subtype, bytes) else (current_subtype or "")
-                    if current_subtype_text != subtype:
-                        updates["subtype"] = subtype
-                    canonical = memory_entities.entity_canonical(rel, file_content)
-                    current_canonical = r.hget(key, "canonical")
-                    current_canonical_text = current_canonical.decode("utf-8") if isinstance(current_canonical, bytes) else (current_canonical or "")
-                    if current_canonical_text != canonical:
-                        updates["canonical"] = canonical
-                if updates:
-                    r.hset(key, mapping=updates)
-                    healed += 1
-            if cursor == 0:
-                break
-    return healed
-
-
-def heal_affect(r: redis.Redis) -> int:
-    """Backfill affect fields without re-embedding existing documents."""
-    healed = 0
-    seen_keys: set[bytes | str] = set()
-    fields = ("title", "section", "content", "source", "rel_path", "date", "affect_version")
-    for pattern in dict.fromkeys((f"{KEY_PREFIX}*", "roo:memory:*")):
-        cursor = 0
-        while True:
-            cursor, keys = r.scan(cursor, match=pattern, count=500)
-            for key in keys:
-                if key in seen_keys:
+                if meta_flag(rel, section) != "1":
                     continue
-                seen_keys.add(key)
-                if r.type(key) not in (b"hash", "hash"):
+                meta_raw = r.hget(key, "meta")
+                meta_text = meta_raw.decode("utf-8") if isinstance(meta_raw, bytes) else (meta_raw or "")
+                if meta_text == "1":
                     continue
-                doc: dict[str, object] = {}
-                for field in fields:
-                    value = r.hget(key, field)
-                    doc[field] = value.decode("utf-8", errors="replace") if isinstance(value, bytes) else (value or "")
-                updates = affect_mapping(doc)
-                current_version = str(doc.get("affect_version", ""))
-                current_score_raw = r.hget(key, "affect_score")
-                current_score = current_score_raw.decode("utf-8") if isinstance(current_score_raw, bytes) else (current_score_raw or "")
-                current_flags_raw = r.hget(key, "affect_flags")
-                current_flags = current_flags_raw.decode("utf-8") if isinstance(current_flags_raw, bytes) else (current_flags_raw or "")
-                if (
-                    current_version == updates["affect_version"]
-                    and current_score == updates["affect_score"]
-                    and current_flags == updates["affect_flags"]
-                ):
-                    continue
-                r.hset(key, mapping=updates)
+                r.hset(key, mapping={"meta": "1"})
                 healed += 1
             if cursor == 0:
                 break
@@ -775,10 +539,7 @@ def main() -> int:
 
     healed = heal_tags(r)
     if healed:
-        print(f"healed tags (date/meta): {healed}")
-    healed_affect = heal_affect(r)
-    if healed_affect:
-        print(f"healed affect: {healed_affect}")
+        print(f"healed tags (meta): {healed}")
 
     print(f"done: processed={processed}, skipped={skipped}, chunks={total_chunks}, failures={len(failures)}")
     return 1 if failures else 0

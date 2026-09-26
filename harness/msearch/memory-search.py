@@ -15,7 +15,6 @@ import hashlib
 import json
 import os
 import re
-import subprocess
 import struct
 import sys
 from dataclasses import dataclass
@@ -23,9 +22,6 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 import redis
-
-import memory_affect
-import memory_entities
 
 
 from msearch_config import (
@@ -44,19 +40,9 @@ from msearch_config import (
     state_path,
 )
 
-# 원본은 스크립트가 곧 채널이라 PROJECT_ROOT 하나로 코드와 데이터를 함께 가리켰다.
-# 여기서는 둘이 갈라진다: 코드는 이 레포, 색인 대상은 사용자의 메모리 저장소.
-PROJECT_ROOT = MEMORY_ROOT
-INNER_THOUGHTS_PATH = state_path("inner-thoughts.json")
 RECALL_LOG_PATH = state_path("recall-log.jsonl")
-TERM_ORIGINS_PATH = state_path("term-origins.json")
-# 원문 전사 디렉터리는 roo 고유 레이아웃이라 기본으로는 없다. 없으면 verbatim 경로가
-# 조용히 건너뛴다(존재 검사를 이미 하고 있다).
-RAW_TRANSCRIPT_DIR = MEMORY_ROOT / "diary" / "raw"
 
-# 꿈 신호 (docs/memory/memory-consolidation-design.md)
 META_PENALTY = -2.5   # 기억에 대한 기억(검색 체험·골든셋 기록) — recency 보너스(+2.0)를 상쇄하고도 남게
-ORIGIN_BOOST = 2.5    # 계보 레지스트리의 원본 청크 — "원본은 최신만큼 강하다"
 load_dotenv(STATE_DIR / ".env")  # OPENAI_API_KEY
 CONTEXT_MESSAGES = 5
 SHORT_QUERY_LENGTH = 10
@@ -69,20 +55,12 @@ MIN_RESULT_TOKEN_OVERLAP = 0.34
 MAX_SEMANTIC_DISTANCE = 0.665
 MIN_SEMANTIC_DOCUMENT_GAP = 0.025
 RESULT_NEAR_TIE_DELTA = 1.0
-RAW_MATCH_LIMIT = 3
-RAW_CONTEXT_LINES = 1
 
 QUERY_WORD_RE = re.compile(r"\d{1,4}(?:년|월|일)|[A-Za-z0-9][A-Za-z0-9_.+/#:-]*|[가-힣]+")
 REDISEARCH_SPECIAL_CHARS = set(r"\,.<>{}[]\"':;!@#$%^&*()-+=~|")
 
 DEICTIC_HINTS = {"그거", "이거", "저거", "아까", "방금", "전에", "그때", "요즘"}
 META_HINTS = {"시스템", "검색", "테스트", "인덱스", "BM25", "bm25", "벡터", "vector", "메모리", "memory"}
-SENSITIVE_LIVE_QUEUE_RE = re.compile(r"바람|발정|프사|프로필\s*사진")
-LIVE_QUEUE_EXPLICIT_RE = re.compile(r"바람|발정|프사|프로필\s*사진|딸감|능욕|야한|섹스")
-VERBATIM_CUE_RE = re.compile(
-    r"정확히|원문|뭐라고\s*했|그때\s*말|그\s*말|인용|verbatim|보여줘",
-    re.IGNORECASE,
-)
 ANCHOR_STOPWORDS = {
     "기억", "기억나다", "기억나", "기억해", "기억하",
     "관련", "정도", "오늘", "어제", "내일",
@@ -326,98 +304,6 @@ def bm25_tokens(text: str, anchors: list[Anchor]) -> list[str]:
     return dedupe_preserve_order(tokens + anchor_list + date_tokens)
 
 
-def is_verbatim_query(query: str) -> bool:
-    return bool(VERBATIM_CUE_RE.search(query))
-
-
-def raw_verbatim_anchors(prompt: str) -> list[str]:
-    """Keep only literal content anchors; request words are not evidence."""
-    stripped = VERBATIM_CUE_RE.sub(" ", prompt)
-    anchors = [
-        anchor.token
-        for anchor in extract_anchors(stripped)
-        if anchor.token and len(anchor.token) >= 2 and anchor.score >= STRONG_ANCHOR_THRESHOLD
-    ]
-    if not anchors:
-        anchors = [
-            token
-            for token in re.findall(r"[A-Za-z0-9가-힣_-]{2,}", stripped)
-            if len(token) >= 3
-        ]
-    return dedupe_preserve_order(anchors)[:4]
-
-
-def strip_verbatim_cues(prompt: str) -> str:
-    return re.sub(r"\s+", " ", VERBATIM_CUE_RE.sub(" ", prompt)).strip()
-
-
-def raw_verbatim_candidates(prompt: str) -> list[dict[str, object]]:
-    """Search excluded raw transcripts only for an explicit verbatim request."""
-    anchors = raw_verbatim_anchors(prompt)
-    if not anchors or not RAW_TRANSCRIPT_DIR.is_dir():
-        return []
-
-    command = ["rg", "--json", "--fixed-strings"]
-    for anchor in anchors:
-        command.extend(["-e", anchor])
-    command.append(str(RAW_TRANSCRIPT_DIR))
-    try:
-        proc = subprocess.run(command, capture_output=True, text=True, timeout=1.0, check=False)
-    except (OSError, subprocess.TimeoutExpired):
-        return []
-    if proc.returncode not in (0, 1):
-        return []
-
-    matches: list[tuple[int, Path, int]] = []
-    seen: set[tuple[str, int]] = set()
-    for raw in proc.stdout.splitlines():
-        try:
-            event = json.loads(raw)
-            if event.get("type") != "match":
-                continue
-            data = event["data"]
-            path = Path(data["path"]["text"])
-            line_number = int(data["line_number"])
-            line = str(data["lines"]["text"]).strip()
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
-            continue
-        identity = (str(path), line_number)
-        if identity in seen:
-            continue
-        seen.add(identity)
-        hit_count = sum(1 for anchor in anchors if anchor in line)
-        if len(anchors) > 1 and hit_count < 2:
-            continue
-        matches.append((hit_count, path, line_number))
-
-    candidates: list[dict[str, object]] = []
-    for hit_count, path, line_number in sorted(
-        matches, key=lambda item: (-item[0], str(item[1]), item[2])
-    )[:RAW_MATCH_LIMIT]:
-        try:
-            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-            start = max(0, line_number - 1 - RAW_CONTEXT_LINES)
-            end = min(len(lines), line_number + RAW_CONTEXT_LINES)
-            excerpt = " / ".join(line.strip() for line in lines[start:end] if line.strip())
-            rel_path = str(path.relative_to(PROJECT_ROOT))
-        except (OSError, ValueError):
-            continue
-        candidates.append(
-            {
-                "title": path.stem,
-                "section": f"{rel_path}:L{start + 1}-L{end}",
-                "content": excerpt,
-                "source": "memory/diary/raw",
-                "rel_path": rel_path,
-                "key": f"raw-rg:{rel_path}:{line_number}",
-                "score": 0.0,
-                "rank_score": 20.0 + hit_count,
-                "rank_reasons": ["raw_rg", f"literal_anchors={hit_count}/{len(anchors)}"],
-            }
-        )
-    return candidates
-
-
 def normalize_memory(doc: dict[str, object], score_key: str) -> dict[str, object]:
     score = doc.get(score_key, 0)
     try:
@@ -430,18 +316,11 @@ def normalize_memory(doc: dict[str, object], score_key: str) -> dict[str, object
         "section": str(doc.get("section", "")),
         "content": content,
         "content_preview": content[:700],
-        "source": str(doc.get("source", "")),
-        "subtype": str(doc.get("subtype", "")),
-        "canonical": str(doc.get("canonical", "")),
-        "date": str(doc.get("date", "")),
         "mtime": str(doc.get("mtime", "")),
         "rel_path": str(doc.get("rel_path", "")),
         "key": str(doc.get("_key", "")),
         "score": score_value,
         "meta": str(doc.get("meta", "")),
-        "affect_score": str(doc.get("affect_score", "")),
-        "affect_flags": str(doc.get("affect_flags", "")),
-        "affect_version": str(doc.get("affect_version", "")),
     }
 
 
@@ -592,7 +471,7 @@ def search_bm25(r: redis.Redis, text_query: str, anchors: list[Anchor], limit: i
             "FT.SEARCH", INDEX_NAME,
             query,
             "WITHSCORES",
-            "RETURN", "14", "title", "section", "content", "source", "subtype", "canonical", "date", "rel_path", "mtime", "score", "meta", "affect_score", "affect_flags", "affect_version",
+            "RETURN", "7", "title", "section", "content", "rel_path", "mtime", "score", "meta",
             "LIMIT", "0", str(limit),
             "DIALECT", "2",
         )
@@ -650,7 +529,7 @@ def search_vector(r: redis.Redis, query_bytes: bytes, limit: int) -> list[dict[s
         "FT.SEARCH", INDEX_NAME,
         scoped_vector_query(f"KNN {limit} @vector $vec AS score"),
         "PARAMS", "2", "vec", query_bytes,
-        "RETURN", "14", "title", "section", "content", "source", "subtype", "canonical", "date", "rel_path", "mtime", "score", "meta", "affect_score", "affect_flags", "affect_version",
+        "RETURN", "7", "title", "section", "content", "rel_path", "mtime", "score", "meta",
         "SORTBY", "score",
         "LIMIT", "0", str(limit),
         "DIALECT", "2",
@@ -680,7 +559,7 @@ def search_hybrid(
             "KNN", "2", "K", str(limit),
             "COMBINE", "RRF", "4", "WINDOW", "20", "CONSTANT", "30",
             "LIMIT", "0", str(limit),
-            "LOAD", "14", "@title", "@section", "@content", "@source", "@subtype", "@canonical", "@date", "@rel_path", "@mtime", "@__score", "@meta", "@affect_score", "@affect_flags", "@affect_version",
+            "LOAD", "7", "@title", "@section", "@content", "@rel_path", "@mtime", "@__score", "@meta",
         )
     except redis.ResponseError as exc:
         if "unknown command" in str(exc).lower():
@@ -719,29 +598,6 @@ def parse_memory_datetime(memory: dict[str, object]) -> datetime | None:
     return None
 
 
-def source_weight(memory: dict[str, object]) -> float:
-    source = str(memory.get("source", ""))
-    rel_path = str(memory.get("rel_path", ""))
-    subtype = str(memory.get("subtype", ""))
-    if source == "memory/entity" and subtype == "entity_current":
-        return 2.8
-    if source == "memory/entity":
-        return 1.4
-    if source == "state/inner-thoughts" or rel_path == "state/inner-thoughts.json":
-        return 1.2
-    if rel_path.startswith("memory/archive/"):
-        return 1.8  # 장기기억: 최근 daily(2.0)보다 살짝 낮게, 충분히 경쟁 가능하게
-    if source in ("legacy-roo", "legacy-openclaw") or rel_path.startswith("memory/legacy/"):
-        return 1.0  # 오픈클로/roo 시절 장기기억 — 살아있되 최근 기억을 덮지 않게 (memory/ 분기보다 먼저)
-    if rel_path.startswith("memory/") and not rel_path.startswith("memory/diary/"):
-        return 2.0
-    if rel_path.startswith("memory/diary/"):
-        return 0.6
-    if rel_path.startswith("docs/"):
-        return -0.2
-    return 0.0
-
-
 def recency_weight(memory: dict[str, object]) -> float:
     dt = parse_memory_datetime(memory)
     if dt is None:
@@ -749,14 +605,6 @@ def recency_weight(memory: dict[str, object]) -> float:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     age_days = max(0.0, (datetime.now(dt.tzinfo) - dt).total_seconds() / 86400)
-    source = str(memory.get("source", ""))
-    rel_path = str(memory.get("rel_path", ""))
-    if source == "state/inner-thoughts" or rel_path == "state/inner-thoughts.json":
-        if age_days <= RECENT_DAYS_STRONG:
-            return 0.6
-        if age_days <= RECENT_DAYS_WEAK:
-            return 0.3
-        return 0.0
     if age_days <= RECENT_DAYS_STRONG:
         return 2.0
     if age_days <= RECENT_DAYS_WEAK:
@@ -916,21 +764,6 @@ def token_overlap_ratio(reasons: list[str]) -> float:
     return 0.0
 
 
-def sufficient_live_overlay_match(reasons: list[str]) -> bool:
-    if "exact_phrase" in reasons or "strong_anchor" in reasons:
-        return True
-    return token_overlap_ratio(reasons) >= 0.25
-
-
-def live_overlay_allowed(query: str, memory: dict[str, object], reasons: list[str]) -> bool:
-    if not sufficient_live_overlay_match(reasons):
-        return False
-    text = memory_text(memory)
-    if SENSITIVE_LIVE_QUEUE_RE.search(text) and not LIVE_QUEUE_EXPLICIT_RE.search(query):
-        return False
-    return True
-
-
 def redis_score_weight(
     memory: dict[str, object],
     conversational_recall: bool = False,
@@ -962,82 +795,16 @@ def redis_score_weight(
     return max(0.0, (MAX_VECTOR_DISTANCE - raw) * 2.5)
 
 
-def affect_rank_boost(query: str, memory: dict[str, object], is_entity_lookup: bool) -> tuple[float, list[str]]:
-    return memory_affect.affect_boost(
-        query,
-        memory,
-        is_entity_lookup=is_entity_lookup,
-        log_path=memory_affect.recall_log_path(RECALL_LOG_PATH),
-    )
-
-
-def entity_lookup_rank_adjustment(memory: dict[str, object], target_canonicals: set[str]) -> tuple[float, list[str]] | None:
-    source = str(memory.get("source", ""))
-    rel_path = str(memory.get("rel_path", ""))
-    subtype = str(memory.get("subtype", ""))
-    if subtype == "entity_fantasy":
-        return None
-    adjustment = 0.0
-    reasons: list[str] = []
-    canonical = str(memory.get("canonical", ""))
-    is_target_entity = source == "memory/entity" and canonical and canonical in target_canonicals
-    is_other_entity = source == "memory/entity" and bool(target_canonicals) and not is_target_entity
-    if is_target_entity:
-        adjustment += 8.0
-        reasons.append("entity_canonical_match")
-    if subtype == "entity_current":
-        if is_other_entity:
-            adjustment -= 2.0
-            reasons.append("entity_lookup_non_target")
-            return adjustment, reasons
-        adjustment += 12.0
-        reasons.append("entity_lookup")
-        return adjustment, reasons
-    if source == "memory/entity":
-        adjustment -= 2.0
-        return adjustment, reasons or ["entity_lookup"]
-    if source == "state/inner-thoughts" or rel_path == "state/inner-thoughts.json":
-        adjustment -= 6.0
-        return adjustment, reasons or ["entity_lookup"]
-    return adjustment, reasons
-
-
 def rank_memories(query: str, memories: list[dict[str, object]], anchors: list[Anchor], limit: int) -> list[dict[str, object]]:
     ranked: list[dict[str, object]] = []
-    is_entity_lookup = memory_entities.is_entity_lookup_query(query)
-    has_registered_origin = any(float(memory.get("_origin_boost", 0.0) or 0.0) > 0 for memory in memories)
-    conversational_recall = is_conversational_recall(query) and not has_registered_origin
-    target_canonicals = set(memory_entities.canonical_hits(query)) if is_entity_lookup else set()
+    conversational_recall = is_conversational_recall(query)
     for memory in memories:
-        source = str(memory.get("source", ""))
-        if not is_entity_lookup and source == "memory/entity":
-            continue
-        if is_entity_lookup:
-            adjustment_result = entity_lookup_rank_adjustment(memory, target_canonicals)
-            if adjustment_result is None:
-                continue
-            adjustment, adjustment_reasons = adjustment_result
-        else:
-            adjustment = 0.0
-            adjustment_reasons = []
         lexical, reasons = lexical_score(query, anchors, memory)
-        is_live_overlay = str(memory.get("source", "")) == "state/inner-thoughts"
-        if is_live_overlay and not live_overlay_allowed(query, memory, reasons):
-            continue
-        affect, affect_reasons = affect_rank_boost(query, memory, is_entity_lookup)
         recency = recency_weight(memory) * (0.5 if conversational_recall else 1.0)
-        total = lexical + source_weight(memory) + recency + redis_score_weight(memory, conversational_recall, reasons) + adjustment + affect
-        if affect_reasons:
-            reasons.extend(affect_reasons)
-        if is_entity_lookup and adjustment_reasons:
-            reasons.extend(reason for reason in adjustment_reasons if reason not in reasons)
+        total = lexical + recency + redis_score_weight(memory, conversational_recall, reasons)
         if str(memory.get("meta", "")) == "1":
             total += META_PENALTY
             reasons.append("meta_record")
-        origin_boost = float(memory.get("_origin_boost", 0.0) or 0.0)
-        if origin_boost:
-            total += origin_boost
-            reasons.append("term_origin")
         ranked_memory = dict(memory)
         ranked_memory["rank_score"] = round(total, 4)
         ranked_memory["rank_reasons"] = reasons
@@ -1047,142 +814,10 @@ def rank_memories(query: str, memories: list[dict[str, object]], anchors: list[A
         key=lambda memory: (
             float(memory.get("rank_score", 0.0)),
             recency_weight(memory),
-            source_weight(memory),
         ),
         reverse=True,
     )
     return dedupe_results(ranked, limit)
-
-
-def load_term_origins() -> dict[str, dict[str, object]]:
-    """계보 레지스트리 — maintainer 계보 패스 산출물 (git 추적, 감사 가능)."""
-    try:
-        data = json.loads(TERM_ORIGINS_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def origin_refs_for(query: str) -> list[dict[str, str]]:
-    """쿼리에 등장하는 등록 용어의 원본 청크 참조 목록.
-
-    앵커가 아니라 쿼리 원문 매칭 — 라틴 약어(TNCM 등)는 앵커로 안 뽑히므로.
-    """
-    origins = load_term_origins()
-    if not origins:
-        return []
-    query_lower = query.lower()
-    refs: list[dict[str, str]] = []
-    for term, info in origins.items():
-        if not isinstance(info, dict) or term.lower() not in query_lower:
-            continue
-        refs.extend(ref for ref in info.get("origins", []) if isinstance(ref, dict))
-    return refs
-
-
-def fetch_origin_memories(r: redis.Redis, refs: list[dict[str, str]]) -> list[dict[str, object]]:
-    """원본 직행 — 벡터/BM25 후보에 못 들어도 레지스트리 원본은 후보에 합류시킨다."""
-    results: list[dict[str, object]] = []
-    for ref in refs:
-        rel = str(ref.get("rel_path", ""))
-        section = str(ref.get("section", ""))
-        if not rel:
-            continue
-        file_id = hashlib.sha1(rel.encode("utf-8")).hexdigest()[:16]  # 인덱서 chunk_key와 동일 공식
-        for key in r.scan_iter(match=f"{KEY_PREFIX}{file_id}:*", count=200):
-            if r.type(key) not in (b"hash", "hash"):
-                continue
-            doc: dict[str, object] = {}
-            for field in ("title", "section", "content", "source", "subtype", "canonical", "date", "rel_path", "mtime", "meta", "affect_score", "affect_flags", "affect_version"):
-                value = r.hget(key, field)
-                doc[field] = value.decode("utf-8", errors="replace") if isinstance(value, bytes) else (value or "")
-            if not ref_matches(ref, doc):
-                continue
-            doc["_key"] = key.decode("utf-8") if isinstance(key, bytes) else key
-            results.append(normalize_memory(doc, "score"))
-    return results
-
-
-def fetch_canonical_entity_memories(r: redis.Redis, canonicals: list[str]) -> list[dict[str, object]]:
-    """정본 엔티티 파일 직행 — 검색 후보풀 누락 시에도 본인 페이지가 랭킹에 들어오게 한다."""
-    results: list[dict[str, object]] = []
-    for canonical in canonicals:
-        rel = f"memory/entities/{canonical}.md"
-        path = PROJECT_ROOT / rel
-        if not path.exists():
-            continue
-        file_id = hashlib.sha1(rel.encode("utf-8")).hexdigest()[:16]
-        for key in r.scan_iter(match=f"{KEY_PREFIX}{file_id}:*", count=200):
-            if r.type(key) not in (b"hash", "hash"):
-                continue
-            doc: dict[str, object] = {}
-            for field in ("title", "section", "content", "source", "subtype", "canonical", "date", "rel_path", "mtime", "meta", "affect_score", "affect_flags", "affect_version"):
-                value = r.hget(key, field)
-                doc[field] = value.decode("utf-8", errors="replace") if isinstance(value, bytes) else (value or "")
-            section = str(doc.get("section", ""))
-            doc["source"] = str(doc.get("source") or "memory/entity")
-            doc["subtype"] = str(doc.get("subtype") or memory_entities.entity_subtype(rel, section))
-            doc["canonical"] = str(doc.get("canonical") or canonical)
-            doc["rel_path"] = str(doc.get("rel_path") or rel)
-            doc["_key"] = key.decode("utf-8") if isinstance(key, bytes) else key
-            results.append(normalize_memory(doc, "score"))
-    return results
-
-
-def ref_matches(ref: dict[str, str], memory: dict[str, object]) -> bool:
-    if str(memory.get("rel_path", "")) != str(ref.get("rel_path", "")):
-        return False
-    section = str(ref.get("section", ""))
-    if section and str(memory.get("section", "")) != section:
-        return False
-    # archive 행은 section이 비유일(여러 행이 같은 섹션) — title 부분일치로 행을 특정
-    title_contains = str(ref.get("title_contains", ""))
-    if title_contains and title_contains not in str(memory.get("title", "")):
-        return False
-    return True
-
-
-def apply_origin_boost(candidates: list[dict[str, object]], refs: list[dict[str, str]]) -> None:
-    for memory in candidates:
-        if any(ref_matches(ref, memory) for ref in refs):
-            memory["_origin_boost"] = ORIGIN_BOOST
-
-
-def live_inner_thought_candidates() -> list[dict[str, object]]:
-    try:
-        thoughts = json.loads(INNER_THOUGHTS_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return []
-    if not isinstance(thoughts, list):
-        return []
-
-    candidates: list[dict[str, object]] = []
-    for index, thought in enumerate(thoughts):
-        if not isinstance(thought, dict):
-            continue
-        content = str(thought.get("thought", "")).strip()
-        if not content:
-            continue
-        context = str(thought.get("context", "")).strip()
-        category = str(thought.get("category", "큐")).strip() or "큐"
-        voice = str(thought.get("voice", "")).strip()
-        candidates.append(
-            {
-                "title": "inner-thoughts",
-                "section": f"{category} - {context}" if context else category,
-                "content": content[:700],
-                "source": "state/inner-thoughts",
-                "date": str(thought.get("createdAt", "")),
-                "createdAt": str(thought.get("createdAt", "")),
-                "category": category,
-                "voice": voice,
-                "mtime": "",
-                "rel_path": "state/inner-thoughts.json",
-                "key": f"inner-thoughts:{index}",
-                "score": 0.0,
-            }
-        )
-    return candidates
 
 
 def dedupe_results(memories: list[dict[str, object]], limit: int) -> list[dict[str, object]]:
@@ -1193,13 +828,11 @@ def dedupe_results(memories: list[dict[str, object]], limit: int) -> list[dict[s
         doc_key = str(memory.get("key", ""))
         if "backups/" in rel_path or "/backups/" in rel_path:
             continue
-        if "diary/raw/" in rel_path:
-            continue  # 민감 원문은 자동 인출 금지 (인덱스에서도 제외 — 이건 2중 방어)
-        if doc_key and not (doc_key.startswith(KEY_PREFIX) or doc_key.startswith("inner-thoughts:")):
+        if doc_key and not doc_key.startswith(KEY_PREFIX):
             continue
         if not rel_path:
             continue
-        # 내용 기반 dedupe — 같은 기억이 memory/와 .openclaw/에 쌍둥이로 존재(이사 때 복사).
+        # 내용 기반 dedupe — 같은 기억이 두 저장소에 쌍둥이로 존재할 수 있다(복사·이사).
         # 경로가 달라도 내용이 같으면 한 슬롯만. 공백 정규화 후 앞 160자로 동일성 판정.
         content_fp = re.sub(r"\s+", "", str(memory.get("content", "")))[:160]
         key = (content_fp, str(memory.get("section", "")))
@@ -1213,31 +846,20 @@ def dedupe_results(memories: list[dict[str, object]], limit: int) -> list[dict[s
 
 
 def search_memories(query: str, transcript_path: str = "", limit: int = RETURN_K) -> list[dict[str, object]]:
-    expanded_query = memory_entities.expand_entity_aliases(query)
-    is_entity_lookup = memory_entities.is_entity_lookup_query(query)
-    target_canonicals = memory_entities.canonical_hits(query) if is_entity_lookup else []
-    anchors = extract_anchors(expanded_query)
+    anchors = extract_anchors(query)
     # Embeddings need the user's complete clue. Reducing a vague recollection to
     # extracted anchors discards the very context semantic search is meant to use.
-    vector_query = get_recent_context(transcript_path, expanded_query, anchors)
+    vector_query = get_recent_context(transcript_path, query, anchors)
 
     r = redis.from_url(REDIS_URL, decode_responses=False)
-    candidates: list[dict[str, object]] = live_inner_thought_candidates()
+    candidates: list[dict[str, object]] = []
 
-    bm25_only = search_bm25(r, expanded_query, anchors, TOP_K)
+    bm25_only = search_bm25(r, query, anchors, TOP_K)
     if bm25_only:
         candidates.extend(bm25_only)
 
-    if target_canonicals:
-        candidates.extend(fetch_canonical_entity_memories(r, target_canonicals))
-
-    origin_refs = origin_refs_for(expanded_query)
-    if origin_refs:
-        candidates.extend(fetch_origin_memories(r, origin_refs))
-        apply_origin_boost(candidates, origin_refs)
-
     rank_limit = max(limit * 4, limit)
-    lexical_ranked = rank_memories(expanded_query, candidates, anchors, rank_limit)
+    lexical_ranked = rank_memories(query, candidates, anchors, rank_limit)
     if lexical_result_decisive(lexical_ranked):
         return lexical_ranked
 
@@ -1246,7 +868,7 @@ def search_memories(query: str, transcript_path: str = "", limit: int = RETURN_K
 
         client = OpenAI()
         query_bytes = query_embedding(client, vector_query)
-        memories = search_hybrid(r, expanded_query, query_bytes, anchors, TOP_K)
+        memories = search_hybrid(r, query, query_bytes, anchors, TOP_K)
         vector_results = search_vector(r, query_bytes, TOP_K)
         if not memories:
             memories = high_confidence_vector_results(vector_results)
@@ -1256,7 +878,7 @@ def search_memories(query: str, transcript_path: str = "", limit: int = RETURN_K
 
     candidates.extend(memories)
 
-    return rank_memories(expanded_query, candidates, anchors, rank_limit)
+    return rank_memories(query, candidates, anchors, rank_limit)
 
 
 def log_recall(query: str, memories: list[dict[str, object]], caller: str) -> None:
@@ -1347,46 +969,6 @@ def json_context(memories: list[dict[str, object]]) -> str:
     return json.dumps(serialized, ensure_ascii=False, indent=2)
 
 
-def output_gate_enabled() -> bool:
-    disabled_values = {"0", "false", "off", "no"}
-    return os.getenv("ROO_MEMORY_OUTPUT_GATE", "1").strip().lower() not in disabled_values
-
-
-def output_gate_lane(query: str, requested_lane: str | None = None) -> str:
-    """Reuse the established query intent; do not classify memory contents."""
-    if requested_lane is not None:
-        return requested_lane
-    return "quote" if is_verbatim_query(query) else "orient"
-
-
-def prepare_for_serialization(
-    memories: list[dict[str, object]],
-    *,
-    query: str = "",
-    lane: str | None = None,
-    enabled: bool | None = None,
-) -> tuple[list[dict[str, object]], dict[str, object], str]:
-    """Apply the typed gate once, after legacy ranking and selection are complete."""
-    should_gate = output_gate_enabled() if enabled is None else enabled
-    if not should_gate:
-        from memory_episode_adapter import gate_legacy_results
-
-        gated, metrics = gate_legacy_results(memories, content_policy_enabled=False)
-        metrics["gate_disabled"] = 1
-        return gated, metrics, ""
-    from memory_episode_adapter import gate_legacy_results, gate_notice
-
-    resolved_lane = output_gate_lane(query, lane)
-    gated, metrics = gate_legacy_results(memories, lane=resolved_lane)
-    metrics["lane"] = resolved_lane
-    notice = gate_notice(metrics)
-    if notice and gated:
-        first = dict(gated[0])
-        first["memory_gate_notice"] = notice
-        gated[0] = first
-    return gated, metrics, notice
-
-
 def result_worthy(memory: dict[str, object]) -> bool:
     try:
         rank_score = float(memory.get("rank_score", 0.0))
@@ -1396,10 +978,10 @@ def result_worthy(memory: dict[str, object]) -> bool:
         return False
 
     reasons = [str(reason) for reason in memory.get("rank_reasons", [])]
-    # Exact text and registered entity/origin paths are independently strong
-    # evidence. Generic Korean fuzzy matches and "strong" anchors are not: an
-    # unrelated technical query almost always shares one broad verb or noun.
-    if any(reason in reasons for reason in ("raw_rg", "exact_phrase", "entity_canonical_match", "term_origin")):
+    # Exact text is independently strong evidence. Generic Korean fuzzy matches and
+    # "strong" anchors are not: an unrelated technical query almost always shares
+    # one broad verb or noun.
+    if "exact_phrase" in reasons:
         return True
     return rank_score >= MIN_PARTIAL_LEXICAL_RANK_SCORE and token_overlap_ratio(reasons) >= MIN_RESULT_TOKEN_OVERLAP
 
@@ -1433,7 +1015,7 @@ def lexical_result_decisive(memories: list[dict[str, object]]) -> bool:
         return False
     reasons = [str(reason) for reason in top.get("rank_reasons", [])]
     overlap = token_overlap_ratio(reasons)
-    if "exact_phrase" in reasons or "entity_canonical_match" in reasons:
+    if "exact_phrase" in reasons:
         return True
     if "core_phrase" in reasons and overlap >= 0.75:
         return True
@@ -1453,13 +1035,13 @@ def select_result_amount(memories: list[dict[str, object]], limit: int) -> list[
     if not trusted or limit <= 0:
         return []
     selected = [trusted[0]]
-    used_groups = {str(trusted[0].get("canonical") or trusted[0].get("rel_path") or trusted[0].get("key", ""))}
+    used_groups = {str(trusted[0].get("rel_path") or trusted[0].get("key", ""))}
     top_score = float(trusted[0].get("rank_score", 0.0) or 0.0)
     for memory in trusted[1:]:
         score = float(memory.get("rank_score", 0.0) or 0.0)
         if top_score - score > RESULT_NEAR_TIE_DELTA:
             break
-        group = str(memory.get("canonical") or memory.get("rel_path") or memory.get("key", ""))
+        group = str(memory.get("rel_path") or memory.get("key", ""))
         if group and group in used_groups:
             continue
         selected.append(memory)
@@ -1493,16 +1075,6 @@ def search_results(
     # 좁힐 때는 후보를 떄떄하게 뽑아야 한다. 랭킹을 끝낸 뒤 걸러내면 다른 저장소가
     # 상위를 차지한 만큼 번째 손이가 빈다.
     fetch = limit if scope is None else max(limit * 8, 40)
-    if is_verbatim_query(query):
-        raw = scope_filter(raw_verbatim_candidates(query), scope)[:limit]
-        if raw:
-            return raw
-        # Literal wording is a fast path, not a requirement. When the user only
-        # remembers a topic, locate the memory semantically instead of rejecting it.
-        semantic_query = strip_verbatim_cues(query)
-        if semantic_query:
-            found = scope_filter(search_memories(semantic_query, limit=fetch), scope)
-            return select_result_amount(found, limit)
     found = scope_filter(search_memories(query, limit=fetch), scope)
     return select_result_amount(found, limit)
 
@@ -1626,31 +1198,19 @@ def run_cli(args: argparse.Namespace) -> int:
     if not query:
         print("query is required", file=sys.stderr)
         return 2
-    ensure_index_fresh(quiet=args.json or args.dual_run)
+    ensure_index_fresh(quiet=args.json)
     scope, widened = resolve_scope(args)
     memories = search_results(query, limit=args.limit, scope=scope)
     if not memories:
         log_recall(query, [], caller="cli")
         print("[]" if args.json else "NO RELEVANT MEMORY")
         return 0
-    gated, metrics, notice = prepare_for_serialization(memories, query=query, lane=args.lane)
-    if args.dual_run:
-        print(
-            json.dumps(
-                {"ungated": memories, "gated": gated, "gate_metrics": metrics},
-                ensure_ascii=False,
-                indent=2,
-            )
-        )
-        return 0
-    log_recall(query, gated, caller="cli")
-    gated = answer_symptom_hits(gated)
+    log_recall(query, memories, caller="cli")
+    memories = answer_symptom_hits(memories)
     if args.json:
-        print(json_context(gated))
+        print(json_context(memories))
     else:
-        rendered = format_context(gated, include_paths=True)
-        if notice:
-            rendered = f"{rendered}\n\n{notice}"
+        rendered = format_context(memories, include_paths=True)
         if widened:
             rendered = f"{rendered}\n\n{WIDENED_SCOPE_NOTICE}"
         print(rendered)
@@ -1678,17 +1238,6 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument("--limit", "-k", type=int, default=RETURN_K, help="number of results")
     parser.add_argument("--json", action="store_true", help="print structured search results")
-    parser.add_argument(
-        "--dual-run",
-        action="store_true",
-        help="print the same ranked results before and after the output gate",
-    )
-    parser.add_argument(
-        "--lane",
-        choices=("orient", "appraisal", "quote", "feel"),
-        default=None,
-        help="override the intent-selected typed recall surface for episode-v2",
-    )
     return parser.parse_args(argv)
 
 
