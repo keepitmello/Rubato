@@ -9,12 +9,6 @@ export type { AcquireLockOptions } from "./acquire"
 export {
   LOCK_DOMAINS,
   memoryWriterLockPath,
-  memoryUsageLockPath,
-  noticeLockPath,
-  reflectionSchedulerLockPath,
-  runFinalizationLockPath,
-  skillsUsageLockPath,
-  transcriptStateLockPath,
 } from "./domains"
 export type { LockDomain } from "./domains"
 export { createLockRecord, parseLockRecord } from "./lock-record"

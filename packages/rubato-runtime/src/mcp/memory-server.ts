@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Standalone stdio MCP server exposing the Rubato memory tools. The senpi extension registers this server
-// with exposure "search" so the tools surface through senpi's tool_search catalog instead of occupying
-// the always-on tool set. It runs under plain Node with no senpi runtime: the extension injects the
-// bound identity and accepted-turn provenance, with cwd-based auto identity retained for standalone calls.
+// with exposure "search" so the tools surface through the tool_search catalog instead of occupying
+// the always-on tool set. It runs under plain Node with no engine runtime: the extension's tool_call
+// bridge injects the session's bound store. A call without it comes from a folder that names no store.
 
 import { dirname, resolve } from "node:path"
 import type { Readable, Writable } from "node:stream"
@@ -22,10 +22,8 @@ import {
   MemoryPatchParseError,
   MemoryToolError,
   buildIdentityPaths,
-  resolveMemoryIdentity,
   runMemoryApplyPatch,
   runMemoryTool,
-  type MemoryToolCommit,
   type MemoryToolParams,
 } from "@rubato/memory-core"
 
@@ -35,8 +33,8 @@ import {
   MEMORY_APPLY_PATCH_TOOL_NAME,
   MEMORY_TOOL_DESCRIPTION,
   MEMORY_TOOL_NAME,
+  MEMORY_UNBOUND_MESSAGE,
 } from "../components/memory/tool-metadata"
-import { writeToolReceipt } from "../components/memory/tool-receipts"
 
 const SERVER_NAME = "rubato-memory"
 const SERVER_VERSION = "0.1.0"
@@ -81,7 +79,6 @@ const TOOLS = [
 
 export async function handleMemoryMcpRequest(
   input: unknown,
-  options: { cwd?: string; env?: Record<string, string | undefined> } = {},
 ): Promise<JsonRpcResponse | undefined> {
   if (!isPlainRecord(input)) return errorResponse(null, -32600, "Invalid Request")
   const id = jsonRpcId(input["id"])
@@ -101,7 +98,7 @@ export async function handleMemoryMcpRequest(
     const params = isPlainRecord(input["params"]) ? input["params"] : {}
     const name = typeof params["name"] === "string" ? params["name"] : ""
     const args = isPlainRecord(params["arguments"]) ? params["arguments"] : {}
-    return callMemoryTool(id, name, args, options)
+    return callMemoryTool(id, name, args)
   }
 
   return errorResponse(id, -32601, "Method not found")
@@ -111,34 +108,28 @@ async function callMemoryTool(
   id: string | number | null,
   name: string,
   args: Record<string, unknown>,
-  options: { cwd?: string; env?: Record<string, string | undefined> },
 ): Promise<JsonRpcResponse> {
   if (name !== MEMORY_TOOL_NAME && name !== MEMORY_APPLY_PATCH_TOOL_NAME) {
     return toolText(id, `Unknown ${SERVER_NAME} tool: ${name}`, true)
   }
   try {
-    const cwd = options.cwd ?? process.cwd()
     const provenance = readMcpProvenance(args)
-    const identity = provenance === undefined
-      ? resolveMemoryIdentity(undefined, cwd, options.env ?? process.env)
-      : {
-          id: provenance.identityId,
-          paths: buildIdentityPaths(dirname(dirname(dirname(provenance.repoPath))), provenance.identityId),
-        }
+    if (provenance === undefined) return toolText(id, `${name}: ${MEMORY_UNBOUND_MESSAGE}`, true)
+    const identity = {
+      id: provenance.identityId,
+      paths: buildIdentityPaths(dirname(dirname(dirname(provenance.repoPath))), provenance.identityId),
+    }
     const session = await prepareMemoryEngineSession(identity.id, identity.paths)
-    const toolProvenance = provenance === undefined
-      ? undefined
-      : { sessionId: provenance.sessionId, userTurns: provenance.userTurns }
+    const toolProvenance = { sessionId: provenance.sessionId }
     if (name === MEMORY_TOOL_NAME) {
       // Field-level validation lives in runMemoryTool's required() guards, so the MCP argument record
       // is asserted straight into the core param shape rather than re-validated here.
       const params = {
         ...args,
         author: session.author,
-        ...(toolProvenance === undefined ? {} : { provenance: toolProvenance }),
+        provenance: toolProvenance,
       } as MemoryToolParams
       const result = await runMemoryTool({ repo: session.repo, lock: session.lock, params })
-      await writeCommitReceipt(identity.paths.toolReceipts, provenance?.toolCallId, result.commit)
       return toolText(id, result.message)
     }
     const result = await runMemoryApplyPatch({
@@ -148,10 +139,9 @@ async function callMemoryTool(
         reason: typeof args.reason === "string" ? args.reason : "",
         input: typeof args.input === "string" ? args.input : "",
         author: session.author,
-        ...(toolProvenance === undefined ? {} : { provenance: toolProvenance }),
+        provenance: toolProvenance,
       },
     })
-    await writeCommitReceipt(identity.paths.toolReceipts, provenance?.toolCallId, result.commit)
     return toolText(id, result.message)
   } catch (error) {
     if (
@@ -168,11 +158,8 @@ async function callMemoryTool(
 
 interface McpMemoryProvenance {
   readonly sessionId: string
-  readonly userTurns: number
   readonly identityId: string
   readonly repoPath: string
-  /** Injected by the extension's tool_call bridge; keys the IC-17 out-of-band receipt. */
-  readonly toolCallId?: string
 }
 
 function readMcpProvenance(args: Record<string, unknown>): McpMemoryProvenance | undefined {
@@ -185,40 +172,8 @@ function readMcpProvenance(args: Record<string, unknown>): McpMemoryProvenance |
     || value.identityId.length === 0
     || typeof value.repoPath !== "string"
     || value.repoPath.length === 0
-    || typeof value.userTurns !== "number"
-    || !Number.isSafeInteger(value.userTurns)
-    || value.userTurns < 0
   ) return undefined
-  return {
-    sessionId: value.sessionId,
-    userTurns: value.userTurns,
-    identityId: value.identityId,
-    repoPath: resolve(value.repoPath),
-    ...(typeof value.toolCallId === "string" && value.toolCallId.length > 0
-      ? { toolCallId: value.toolCallId }
-      : {}),
-  }
-}
-
-// IC-17 outbound half: commit metadata reaches the extension through an identity-scoped receipt
-// file keyed by the injected toolCallId, never through the tool text (senpi's MCP output guard
-// truncates large results, which would silently drop the notice on exactly the largest edits).
-async function writeCommitReceipt(
-  receiptsDir: string,
-  toolCallId: string | undefined,
-  commit: MemoryToolCommit | undefined,
-): Promise<void> {
-  if (toolCallId === undefined || commit === undefined) return
-  try {
-    await writeToolReceipt(receiptsDir, { version: 1, toolCallId, ...commit })
-  } catch (error) {
-    // The commit is already durable; a lost receipt only drops the visible notice.
-    process.stderr.write(`rubato-memory: failed to write tool receipt: ${errorMessage(error)}\n`)
-  }
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
+  return { sessionId: value.sessionId, identityId: value.identityId, repoPath: resolve(value.repoPath) }
 }
 
 function toolText(id: string | number | null, text: string, isError = false): JsonRpcResponse {
@@ -237,7 +192,7 @@ export async function runMemoryMcpStdioServer(input: Readable, output: Writable)
     input,
     output,
     handler: handleMemoryMcpRequest,
-    handlerOptions: {},
+    handlerOptions: undefined,
     parentWatchdog: {},
     parseErrorResponse: () => errorResponse(null, -32601, "Method not found"),
   })

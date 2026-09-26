@@ -56,7 +56,7 @@ describe("memory tool execution", () => {
     expect(textOf(result)).toContain("block already exists")
     expect(result.details.message).toBe(textOf(result))
   }, 30_000)
-  test("#given no repo exists yet #when the memory tool executes #then it lazily initializes with hooks and seeds", async () => {
+  test("#given no repo exists yet #when the memory tool executes #then it lazily initializes with hooks and an empty first commit", async () => {
     // given
     const root = realpathSync.native(await mkdtemp(join(tmpdir(), "rubato-runtime-memory-lazy-init-")))
     roots.push(root)
@@ -79,9 +79,9 @@ describe("memory tool execution", () => {
     const repo = new GitMemoryRepo({ dir: identityPaths.repo, agentId: IDENTITY })
     expect(await repo.head()).not.toBeNull()
     const subjects = await git(repo, ["log", "--format=%s", "HEAD"])
-    expect(subjects).toContain("chore: initialize local memory")
+    expect(subjects.split("\n")).toHaveLength(2)
     expect(subjects).toContain("First memory")
-    expect(await git(repo, ["show", "HEAD~1:skills/memory-discipline/SKILL.md"])).toContain("name: memory-discipline")
+    expect(await git(repo, ["ls-tree", "-r", "--name-only", "HEAD~1"])).toBe("")
     const { existsSync } = await import("node:fs")
     expect(existsSync(join(identityPaths.repo, ".git", "hooks", "pre-commit"))).toBe(true)
     expect(existsSync(join(identityPaths.repo, ".git", "hooks", "post-commit"))).toBe(true)

@@ -163,13 +163,7 @@ function createProfile(stagedRoot) {
   writeFileSync(
     join(cwd, ".rubato/rubato.jsonc"),
     `${JSON.stringify({
-      memory: {
-        agent: "smoke-surface",
-        reflection: { enabled: false },
-        facts: { enabled: false },
-        dream: { enabled: false, shutdown_launch: false },
-        sync: { enabled: false },
-      },
+      memory: { agent: "smoke-surface" },
       task: { default_execution_mode: "in-process", max_depth: 2, default_concurrency: 4 },
       agents: {
         "smoke-rpc": {
@@ -556,11 +550,11 @@ async function checkMemory(session) {
   if (written?.isError === true) {
     return fail(surface, `memory create failed: ${toolText(written).slice(0, 300)}`);
   }
-  const status = await session.request("extension_request", { name: "rubato.memory.status" });
-  if (!status?.repo?.headSha) {
-    return fail(surface, `memory create did not produce a repo head; ${JSON.stringify(status).slice(0, 300)}`);
+  const sha = /committed(?: locally)? \(([0-9a-f]{7,})\)/.exec(toolText(written))?.[1];
+  if (!sha) {
+    return fail(surface, `memory create did not commit into the named store; ${toolText(written).slice(0, 300)}`);
   }
-  return pass(surface, `headSha=${String(status.repo.headSha).slice(0, 12)}`);
+  return pass(surface, `headSha=${sha}`);
 }
 
 async function checkSlash(session, surface, message, assertNotify) {

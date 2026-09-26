@@ -57,8 +57,7 @@ test("actual candidate main RPC binds Rubato against canonical services across n
   await mkdir(liveDir);
   await writeFile(join(liveDir, "untouched"), "live profile must remain untouched");
   await Promise.all([mkdir(agentDir, { recursive: true }), mkdir(join(cwd, ".rubato"), { recursive: true })]);
-  await writeFile(join(cwd, ".rubato/rubato.jsonc"), JSON.stringify({ memory: { agent: "candidate-fixture",
-    reflection: { enabled: false }, facts: { enabled: false }, dream: { enabled: false, shutdown_launch: false }, sync: { enabled: false } } }));
+  await writeFile(join(cwd, ".rubato/rubato.jsonc"), JSON.stringify({ memory: { agent: "candidate-fixture" } }));
   const waiters = new Set();
   const providerRequests = [];
   const wake = () => { for (const notify of waiters) notify(); };
@@ -198,8 +197,7 @@ test("actual candidate main RPC binds Rubato against canonical services across n
   const written = await request("extension_request", { name: "candidate.execute", data: { name: "memory", params: {
     command: "create", file_path: "facts/candidate.md", description: "CLI fixture", file_text: "actual candidate main", reason: "local proof" } } });
   assert.notEqual(written.isError, true, JSON.stringify(written));
-  const status = await request("extension_request", { name: "rubato.memory.status" });
-  assert.ok(status.repo.headSha, "existing RPC consumer observes the CLI tool commit");
+  assert.match(JSON.stringify(written), /committed(?: locally)? \([0-9a-f]{7,}\)/, "the CLI tool call commits into the named store");
   const sessionFile = state.sessionFile;
   const abortFrom = frames.length;
   const abortStarted = performance.now();

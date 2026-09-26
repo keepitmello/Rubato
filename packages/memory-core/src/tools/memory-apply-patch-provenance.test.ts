@@ -25,14 +25,13 @@ describe("memoryApplyPatch provenance and locks", () => {
     // when
     await memoryApplyPatch(repo, {
       ...params(locksDirectory, "remember patch provenance", input),
-      provenance: { sessionId: "session-patch", userTurns: 9 },
+      provenance: { sessionId: "session-patch" },
     })
 
     // then
     expect((await repo.log({ limit: 1 }))[0]?.trailers).toEqual({
       "Rubato-Writer": "memory-tool",
       "Rubato-Session": "session-patch",
-      "Rubato-Turn": "9",
     })
   }, { timeout: MEMORY_GIT_TEST_TIMEOUT_MS })
 

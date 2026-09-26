@@ -51,7 +51,9 @@ export function sessionContext(options: {
   readonly entries?: readonly SessionEntryFixture[]
   readonly notifications?: Array<{ message: string; level: string }>
   readonly sessionId?: string
+  readonly hasUI?: boolean
 } = {}): {
+  readonly hasUI: boolean
   readonly sessionManager: {
     getEntries(): readonly SessionEntryFixture[]
     getSessionId(): string
@@ -60,6 +62,7 @@ export function sessionContext(options: {
 } {
   const notifications = options.notifications ?? []
   return {
+    hasUI: options.hasUI ?? true,
     sessionManager: {
       getEntries: () => options.entries ?? [],
       getSessionId: () => options.sessionId ?? "session-1",

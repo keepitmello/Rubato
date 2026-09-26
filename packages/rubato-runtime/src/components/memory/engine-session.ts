@@ -4,7 +4,6 @@ import { join } from "node:path"
 import {
   GitMemoryRepo,
   MemoryToolError,
-  buildDefaultSeedFiles,
   createLockRecord,
   installHooks,
   memoryWriterLockPath,
@@ -43,7 +42,8 @@ export async function prepareMemoryEngineSession(
   if (!existsSync(join(identityPaths.repo, ".git"))) {
     await lock("memory-write", async () => {
       if (!existsSync(join(identityPaths.repo, ".git"))) {
-        await repo.init({ seedFiles: buildDefaultSeedFiles(), installHooks: (dir) => { installHooks(dir) } })
+        // A new store starts from one empty commit: what belongs in it is written when a thread of work closes.
+        await repo.init({ installHooks: (dir) => { installHooks(dir) } })
       }
     })
   }

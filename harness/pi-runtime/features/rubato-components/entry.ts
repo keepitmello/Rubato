@@ -7,7 +7,6 @@ import type { RubatoComponent } from "../../../../packages/rubato-runtime/src/ex
 export const createRubatoComponentExtension = (options: {
   resolveCwd?: () => string;
   createTaskOptions?: (module: any) => any;
-  memoryChildLaunch?: { command: string; prefixArgs: readonly string[]; env?: Readonly<Record<string, string>> };
 } = {}) => {
   const task: RubatoComponent = {
     name: "task",

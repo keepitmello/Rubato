@@ -1,13 +1,12 @@
-// Memory identity resolution: named agent profiles plus a deterministic
-// project-derived "auto" identity. Pure; no filesystem access.
+// Memory identity resolution. A store exists only under a name the project chose in
+// `memory.agent`; an unset or "auto" value means this folder keeps no memory. Pure; no
+// filesystem access.
 //
-// Every resolved id is "<safe-slug>-<sha256-8>" of the identity source
-// (trimmed explicit value, or the normalized project root path for auto),
-// so hostile inputs can never escape the layout root and two inputs that
-// sanitize to the same slug still map to distinct directories.
+// A slug-safe name is the directory name verbatim; anything else becomes
+// "<safe-slug>-<sha256-8>" of the trimmed value, so hostile inputs can never escape the
+// layout root and two inputs that sanitize to the same slug still map to distinct directories.
 
 import { createHash } from "node:crypto"
-import { basename, resolve as resolvePath } from "node:path"
 import { buildIdentityPaths, resolveMemoryRoot, type MemoryIdentityPaths } from "./layout"
 
 export const AUTO_AGENT_VALUE = "auto"
@@ -42,38 +41,32 @@ export function isAutoAgentValue(configAgentValue: string | null | undefined): b
   return trimmed === "" || trimmed === AUTO_AGENT_VALUE
 }
 
-function deriveAutoId(cwd: string): { id: string; safeSlug: string } {
-  const normalizedRoot = resolvePath(cwd)
-  const safeSlug = sanitizeToSlug(basename(normalizedRoot))
-  return { id: `${safeSlug}-${shortHash(normalizedRoot)}`, safeSlug }
-}
-
 function deriveExplicitId(trimmedValue: string): { id: string; safeSlug: string } {
   const safeSlug = sanitizeToSlug(trimmedValue)
   // An explicit agent name is operator-chosen, so it becomes the directory name verbatim
   // when it is already slug-safe: the id is what search results print, and a hash suffix
   // is noise a reader (human or model) cannot act on. Path safety does not depend on the
   // suffix -- sanitizeToSlug strips every character outside [a-z0-9-], so traversal is
-  // impossible either way. The suffix still disambiguates auto ids, where two distinct
-  // cwds can share a basename; a collision between two chosen names is operator error and
-  // is surfaced rather than silently split into separate stores.
+  // impossible either way. A collision between two chosen names is operator error and is
+  // surfaced rather than silently split into separate stores.
   if (trimmedValue === safeSlug) return { id: safeSlug, safeSlug }
   return { id: `${safeSlug}-${shortHash(trimmedValue)}`, safeSlug }
 }
 
+/**
+ * The store a folder writes to, or undefined when its config leaves `memory.agent` unset or
+ * "auto": unnamed folders keep no memory. `cwd` only anchors a relative RUBATO_MEMORY_HOME.
+ */
 export function resolveMemoryIdentity(
   configAgentValue: string | null | undefined,
   cwd: string,
   env: Record<string, string | undefined> = process.env,
-): MemoryIdentity {
+): MemoryIdentity | undefined {
   if (typeof cwd !== "string" || cwd.trim() === "") {
     throw new TypeError("resolveMemoryIdentity: cwd must be a non-empty path string")
   }
-  const trimmed = typeof configAgentValue === "string" ? configAgentValue.trim() : ""
-  const derived =
-    trimmed === "" || trimmed === AUTO_AGENT_VALUE
-      ? deriveAutoId(cwd)
-      : deriveExplicitId(trimmed)
+  if (isAutoAgentValue(configAgentValue)) return undefined
+  const derived = deriveExplicitId((configAgentValue ?? "").trim())
   const memoryRoot = resolveMemoryRoot(env, cwd)
   return { ...derived, paths: buildIdentityPaths(memoryRoot, derived.id) }
 }

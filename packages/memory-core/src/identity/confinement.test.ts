@@ -49,14 +49,14 @@ describe("resolveMemoryIdentity sanitization confinement", () => {
       // when
       const identity = resolveMemoryIdentity(input, "/repo/alpha", env)
       // then
-      expect(identity.id).toMatch(SAFE_ID_PATTERN)
-      expect(identity.id.length).toBeLessThanOrEqual(MAX_ID_LENGTH)
-      expect(identity.id).not.toContain("..")
-      expect(identity.id).not.toContain("/")
-      expect(identity.id).not.toContain("\\")
-      expect(identity.id).not.toContain("\0")
-      expect(identity.paths.root).toBe(join(OVERRIDE_ROOT, AGENTS_DIRNAME, identity.id))
-      for (const candidate of Object.values(identity.paths)) {
+      expect(identity!.id).toMatch(SAFE_ID_PATTERN)
+      expect(identity!.id.length).toBeLessThanOrEqual(MAX_ID_LENGTH)
+      expect(identity!.id).not.toContain("..")
+      expect(identity!.id).not.toContain("/")
+      expect(identity!.id).not.toContain("\\")
+      expect(identity!.id).not.toContain("\0")
+      expect(identity!.paths.root).toBe(join(OVERRIDE_ROOT, AGENTS_DIRNAME, identity!.id))
+      for (const candidate of Object.values(identity!.paths)) {
         expectConfined(OVERRIDE_ROOT, candidate)
       }
     }
@@ -66,9 +66,9 @@ describe("resolveMemoryIdentity sanitization confinement", () => {
     // given / when
     const identity = resolveMemoryIdentity("../evil", "/repo/alpha", env)
     // then
-    expect(identity.safeSlug).toBe("evil")
-    expect(identity.id).toBe(`evil-${expectedHash("../evil")}`)
-    expect(identity.paths.root).toBe(join(OVERRIDE_ROOT, AGENTS_DIRNAME, identity.id))
+    expect(identity!.safeSlug).toBe("evil")
+    expect(identity!.id).toBe(`evil-${expectedHash("../evil")}`)
+    expect(identity!.paths.root).toBe(join(OVERRIDE_ROOT, AGENTS_DIRNAME, identity!.id))
   })
 
   it("#given inputs that sanitize to the same slug #when resolved #then hash suffixes keep them distinct", () => {
@@ -76,9 +76,9 @@ describe("resolveMemoryIdentity sanitization confinement", () => {
     const hostile = resolveMemoryIdentity("../evil", "/repo/alpha", env)
     const honest = resolveMemoryIdentity("evil", "/repo/alpha", env)
     // then
-    expect(hostile.safeSlug).toBe("evil")
-    expect(honest.safeSlug).toBe("evil")
-    expect(hostile.id).not.toBe(honest.id)
-    expect(hostile.paths.root).not.toBe(honest.paths.root)
+    expect(hostile!.safeSlug).toBe("evil")
+    expect(honest!.safeSlug).toBe("evil")
+    expect(hostile!.id).not.toBe(honest!.id)
+    expect(hostile!.paths.root).not.toBe(honest!.paths.root)
   })
 })

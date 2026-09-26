@@ -2,6 +2,7 @@ import { describe, expect, setDefaultTimeout, test } from "bun:test"
 
 import { acquireLock, createLockRecord, memoryWriterLockPath, releaseLock } from "@rubato/memory-core"
 
+import { ensureIdentityRuntimeDirs } from "./context"
 import { createMemoryTools } from "./tools"
 import { boundFixture, git, textOf } from "./tools.test-support"
 
@@ -14,7 +15,7 @@ describe("memory tool execution", () => {
   test("#given the writer lock is held #when a tool executes #then the contention surfaces as an error result", async () => {
     // given
     const fixture = await boundFixture()
-    await fixture.context.repoAccess.ensureRuntimeDirs()
+    await ensureIdentityRuntimeDirs(fixture.context.identityPaths)
     const holder = await createLockRecord("contending test process")
     const lockPath = memoryWriterLockPath(fixture.locksDirectory)
     await acquireLock(lockPath, holder)

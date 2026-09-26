@@ -1,210 +1,58 @@
 import { describe, expect, test } from "bun:test"
 
-import {
-  RubatoMemoryDreamSchema,
-  RubatoMemorySettingsLayerSchema,
-  RubatoMemorySettingsSchema,
-  type RubatoMemorySettings,
-} from "./memory"
+import { RubatoMemorySettingsLayerSchema, RubatoMemorySettingsSchema } from "./memory"
 
-const FULL_DEFAULTS: RubatoMemorySettings = {
-  enabled: true,
-  agent: "auto",
-  tool_exposure: "direct",
-  reflection: {
-    enabled: true,
-    trigger: { step_count: 25, on_compaction: true },
-    merge: "auto",
-    category: "quick",
-    timeout_minutes: 15,
-    sandbox: "auto",
-  },
-  nudge: { enabled: true, every_user_turns: 10 },
-  dream: RubatoMemoryDreamSchema.parse({}),
-  soul: { edit_notice: true },
-  write_notice: { enabled: true },
-  sync: { enabled: true },
-  search: { enabled: true },
-  compile_warn_tokens: 30000,
-  project: [],
-  agents: {},
-}
-
-describe("RubatoMemorySettingsSchema defaults", () => {
-  test("#given an empty memory block #when parsed #then the pinned v2 defaults apply", () => {
-    // given
-    const input = {}
-
+describe("RubatoMemorySettingsSchema", () => {
+  test("#given an empty memory block #when parsed #then no store is named and the dream runs on the grok ladder under review", () => {
     // when
-    const parsed = RubatoMemorySettingsSchema.parse(input)
+    const parsed = RubatoMemorySettingsSchema.parse({})
 
     // then
-    expect(parsed).toEqual(FULL_DEFAULTS)
+    expect(parsed.agent).toBe("auto")
+    expect(parsed.dream.category).toBe("grok")
+    expect(parsed.dream.publish).toBe("review")
+    expect(parsed.dream.stores).toEqual({})
   })
 
-  test("#given a fully specified memory block #when parsed #then every explicit value is preserved", () => {
-    // given
-    const input: RubatoMemorySettings = {
-      enabled: false,
-      agent: "backend-lead",
-      tool_exposure: "search",
-      reflection: {
-        enabled: false,
-        trigger: { step_count: 25, on_compaction: false },
-        merge: "integration",
-        category: "deep",
-        timeout_minutes: 30,
-        sandbox: "required",
-      },
-      nudge: { enabled: false, every_user_turns: 5 },
+  test("#given a config written for the old memory runtime #when parsed #then its retired keys drop and the kept ones survive", () => {
+    // given: the shape ~/.rubato/rubato.jsonc and project configs carried before the cleanup
+    const input = {
+      agent: "rubato",
+      reflection: { enabled: false, category: "grok", trigger: { step_count: 25 } },
+      nudge: { enabled: true, every_user_turns: 10 },
+      soul: { edit_notice: true },
+      write_notice: { enabled: true },
+      sync: { enabled: true },
+      project: ["system/persona.md"],
+      projection: { enabled: true },
+      compile_warn_tokens: 30000,
+      agents: { rubato: { nudge: { enabled: false } } },
       dream: {
         enabled: false,
+        idle_minutes: 30,
+        shutdown_launch: true,
+        auto_select_max: 5,
+        auto_select_max_chars: 150000,
         publish: "auto",
-        stores: { demo: { enabled: true } },
-        idle_minutes: 0,
-        min_hours_between: 12,
-        shutdown_launch: false,
-        auto_select_max: 3,
-        auto_select_max_chars: 100000,
-      },
-      soul: { edit_notice: false },
-      write_notice: { enabled: false },
-      sync: { remote: "file:///tmp/memory-mirror.git", enabled: true },
-      search: { enabled: false },
-      compile_warn_tokens: 50000,
-      project: ["system/soul.md"],
-      agents: {
-        "backend-lead": {
-          enabled: true,
-          reflection: { trigger: { step_count: 10 }, category: "quick" },
-        },
+        stores: { rubato: { enabled: true } },
       },
     }
 
     // when
-    const parsed = RubatoMemorySettingsSchema.parse(input)
+    const full = RubatoMemorySettingsSchema.safeParse(input)
+    const layer = RubatoMemorySettingsLayerSchema.safeParse(input)
 
     // then
-    expect(parsed).toEqual(input)
+    expect(full.success).toBe(true)
+    expect(layer.success).toBe(true)
+    if (!full.success || !layer.success) return
+    expect(Object.keys(full.data).sort()).toEqual(["agent", "dream", "enabled", "search", "tool_exposure"])
+    expect(full.data.dream).toEqual({ category: "grok", publish: "auto", stores: { rubato: { enabled: true } }, min_hours_between: 20 })
+    expect(layer.data).toEqual({ agent: "rubato", dream: { publish: "auto", stores: { rubato: { enabled: true } } } })
   })
 
-  test("#given step_count default #when parsing empty #then reflection step_count defaults to 25", () => {
-    // given
-    const input = {}
-
-    // when
-    const parsed = RubatoMemorySettingsSchema.parse(input)
-
-    // then
-    expect(parsed.reflection.trigger.step_count).toBe(25)
-    expect(parsed.reflection.enabled).toBe(true)
-  })
-
-  test("#given an explicit step_count of 0 #when parsed #then 0 is preserved (disables trigger)", () => {
-    // given
-    const input = { reflection: { trigger: { step_count: 0 } } }
-
-    // when
-    const parsed = RubatoMemorySettingsSchema.parse(input)
-
-    // then
-    expect(parsed.reflection.trigger.step_count).toBe(0)
-  })
-
-  test("#given a negative reflection step count #when parsed #then validation fails at the trigger path", () => {
-    // given
-    const input = { reflection: { trigger: { step_count: -1 } } }
-
-    // when
-    const result = RubatoMemorySettingsSchema.safeParse(input)
-
-    // then
-    expect(result.success).toBe(false)
-    if (result.success) throw new Error("Expected memory settings parsing to fail")
-    expect(result.error.issues.map((issue) => issue.path.join(".")).join(",")).toContain("reflection.trigger.step_count")
-  })
-
-  test("#given a non-boolean compaction trigger #when parsed #then validation fails at the trigger path", () => {
-    // given
-    const input = { reflection: { trigger: { on_compaction: "yes" } } }
-
-    // when
-    const result = RubatoMemorySettingsSchema.safeParse(input)
-
-    // then
-    expect(result.success).toBe(false)
-    if (result.success) throw new Error("Expected memory settings parsing to fail")
-    expect(result.error.issues.map((issue) => issue.path.join(".")).join(",")).toContain("reflection.trigger.on_compaction")
-  })
-
-  test("#given write_notice defaults #when parsing empty #then the tool-result notice is enabled", () => {
-    // given
-    const input = {}
-
-    // when
-    const parsed = RubatoMemorySettingsSchema.parse(input)
-
-    // then
-    expect(parsed.write_notice).toEqual({ enabled: true })
-  })
-
-  test("#given write_notice disabled #when parsed #then the explicit value is preserved", () => {
-    // given
-    const input = { write_notice: { enabled: false } }
-
-    // when
-    const parsed = RubatoMemorySettingsSchema.parse(input)
-
-    // then
-    expect(parsed.write_notice.enabled).toBe(false)
-  })
-
-  test("#given write_notice with an unknown key #when parsed #then the strict schema rejects it", () => {
-    // given
-    const input = { write_notice: { bogus: true } }
-
-    // when
-    const result = RubatoMemorySettingsSchema.safeParse(input)
-
-    // then
-    expect(result.success).toBe(false)
-  })
-
-  test("#given a per-agent write_notice override #when parsed #then the layer accepts it as a deep-partial", () => {
-    // given
-    const input = { write_notice: { enabled: false }, agents: { "backend-lead": { write_notice: { enabled: true } } } }
-
-    // when
-    const parsed = RubatoMemorySettingsLayerSchema.parse(input)
-
-    // then
-    expect(parsed).toEqual(input)
-  })
-
-  test("#given a legacy projection boolean #when parsed #then it is dropped and the whitelist defaults empty", () => {
-    // given: machines that pull this change without editing rubato.jsonc still had
-    // `projection: false`. That key is gone; dropping it lands them on the safe empty whitelist.
-    const input = { projection: false }
-
-    // when
-    const parsed = RubatoMemorySettingsSchema.parse(input)
-
-    // then
-    expect(parsed.project).toEqual([])
-    expect("projection" in parsed).toBe(false)
-  })
-
-  test("#given unknown keys inside the memory block #when parsed #then the strict schema rejects them", () => {
-    // given
-    const rootUnknown = { enabled: true, bogus: true }
-    const nestedUnknown = { reflection: { bogus: true } }
-
-    // when
-    const rootResult = RubatoMemorySettingsSchema.safeParse(rootUnknown)
-    const nestedResult = RubatoMemorySettingsSchema.safeParse(nestedUnknown)
-
-    // then
-    expect(rootResult.success).toBe(false)
-    expect(nestedResult.success).toBe(false)
+  test("#given a key no memory runtime ever read #when parsed #then strict parsing still rejects it", () => {
+    expect(RubatoMemorySettingsSchema.safeParse({ bogus: 1 }).success).toBe(false)
+    expect(RubatoMemorySettingsLayerSchema.safeParse({ dream: { bogus: 1 } }).success).toBe(false)
   })
 })
