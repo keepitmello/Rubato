@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off globalConsole:off -- A plain Electron IPC module beside RubatoUpdates, outside the Effect runtime.
 import { execFile } from "node:child_process";
-import { open, readdir } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { readdir } from "node:fs/promises";
+import { homedir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { BrowserWindow, IpcMainInvokeEvent } from "electron";
@@ -61,7 +61,6 @@ let helper: MacPermissionHelper | undefined;
 // An Apple Event probe is the only status source without Full Disk Access.
 let automationProbe: RubatoPermissionStatus | undefined;
 let bundleInfo: Promise<{ bundle: string | null; id: string | null }> | undefined;
-let helperIcon: string | undefined;
 
 function authorizedWindow(event: IpcMainInvokeEvent) {
   const entry = windows.get(event.sender.id);
@@ -164,15 +163,16 @@ async function readState(electron: ElectronServices): Promise<RubatoPermissionsS
   };
 }
 
-async function iconPath(electron: ElectronServices, bundle: string) {
-  if (helperIcon) return helperIcon;
-  const image = await electron.app.getFileIcon(bundle, { size: "large" });
-  const file = path.join(tmpdir(), `rubato-permission-icon-${process.pid}.png`);
-  const handle = await open(file, "w", 0o600);
-  try { await handle.writeFile(image.toPNG()); } finally { await handle.close(); }
-  helperIcon = file;
-  return file;
-}
+// The helper takes PNG paths, like T3's own permission flow. Do not ask macOS
+// for the bundle icon: app.getFileIcon() crashed the whole app inside
+// IconLoader::ReadIcon (Electron 44, SIGTRAP on a pool thread) the moment a
+// grant opened this panel. install-gui.sh lays the Rubato PNG where T3 reads its
+// icon, so the source build carries it under assets/prod.
+const helperIconPaths = () => [
+  path.join(__dirname, "../resources/icon.png"),
+  path.join(__dirname, "../../../assets/prod/black-macos-1024.png"),
+  path.join(__dirname, "../../../assets/prod/black-universal-1024.png"),
+];
 
 async function openSettings(
   electron: ElectronServices,
@@ -189,7 +189,7 @@ async function openSettings(
   const isGranted = async () =>
     (await readState(electron)).items.find((item) => item.id === permission)?.status === "granted";
   await helper
-    .show(pane, path.join(__dirname, "mac-permission-preload.cjs"), owner, [await iconPath(electron, bundle)], isGranted)
+    .show(pane, path.join(__dirname, "mac-permission-preload.cjs"), owner, helperIconPaths(), isGranted)
     .catch((error) => console.warn("Rubato permission helper:", error));
 }
 
