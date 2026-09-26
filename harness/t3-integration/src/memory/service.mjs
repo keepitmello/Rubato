@@ -401,8 +401,172 @@ export function createMemoryService(options = {}) {
     return { file: 'user.md', added: fresh.length, commit };
   }
 
+  // --- Stores as the user sees them: which project each belongs to, what is in it.
+
+  async function listStores() {
+    let names = [];
+    try { names = await readdir(path.join(memoryRoot, 'agents')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    return names.filter((name) => STORE_NAME.test(name) && existsSync(path.join(storePaths(name).repo, '.git'))).sort();
+  }
+
+  // Everything in the store's working tree but git's own directory. Symlinks are
+  // not followed: a store holds files the agent wrote, not links out of it.
+  async function walk(repo, limit = 5000) {
+    const found = [];
+    const visit = async (relative) => {
+      let entries;
+      try { entries = await readdir(path.join(repo, relative), { withFileTypes: true }); } catch { return; }
+      for (const entry of entries) {
+        if (found.length >= limit) return;
+        if (relative === '' && entry.name === '.git') continue;
+        const child = relative === '' ? entry.name : `${relative}/${entry.name}`;
+        if (entry.isDirectory()) await visit(child);
+        else if (entry.isFile()) found.push(child);
+      }
+    };
+    await visit('');
+    return found.sort();
+  }
+
+  async function storeSummary(store, config) {
+    const paths = storePaths(store);
+    const meta = await readJson(path.join(paths.root, 'store.json'));
+    const roots = Array.isArray(meta?.roots) ? meta.roots.filter((root) => typeof root === 'string') : null;
+    const [files, last, pending, running] = await Promise.all([
+      walk(paths.repo),
+      git(paths.repo, ['log', '-1', '--format=%cI']),
+      readJson(path.join(paths.dream, 'pending.json')),
+      runningState(store),
+    ]);
+    return {
+      store,
+      roots,
+      home: meta ? meta.home === true : null,
+      files: files.length,
+      lastChangeAt: last.code === 0 && last.stdout.trim() !== '' ? last.stdout.trim() : null,
+      pendingRunId: typeof pending?.runId === 'string' ? pending.runId : null,
+      enabled: config.memory?.dream?.stores?.[store]?.enabled === true,
+      running,
+    };
+  }
+
+  /** Fast listing from the store directories; `status` adds what only the CLI knows. */
+  async function stores() {
+    const config = parseConfig((await readConfigText()).text);
+    const list = await Promise.all((await listStores()).map((store) => storeSummary(store, config)));
+    list.sort((a, b) => String(b.lastChangeAt ?? '').localeCompare(String(a.lastChangeAt ?? '')) || a.store.localeCompare(b.store));
+    return { memoryRoot, stores: list };
+  }
+
+  function descriptionOf(text) {
+    const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
+    if (!match) return null;
+    const line = match[1].split(/\r?\n/).find((entry) => /^description\s*:/.test(entry));
+    if (!line) return null;
+    const value = line.replace(/^description\s*:\s*/, '').trim().replace(/^(['"])(.*)\1$/, '$2');
+    return value === '' || value === '>' || value === '|' ? null : value;
+  }
+
+  async function files({ store }) {
+    const paths = storePaths(assertStore(store));
+    const list = await walk(paths.repo);
+    const entries = await Promise.all(list.map(async (file) => {
+      let description = null;
+      if (file.endsWith('.md')) {
+        const head = await readHead(path.join(paths.repo, file), 4096);
+        description = descriptionOf(head);
+      }
+      return { path: file, description };
+    }));
+    return { store, files: entries, truncated: list.length >= 5000 };
+  }
+
+  async function readHead(file, bytes) {
+    const { open } = await import('node:fs/promises');
+    const handle = await open(file, 'r');
+    try {
+      const buffer = Buffer.alloc(bytes);
+      const { bytesRead } = await handle.read(buffer, 0, bytes, 0);
+      return buffer.subarray(0, bytesRead).toString('utf8');
+    } finally { await handle.close(); }
+  }
+
+  // A path the page names inside a store: relative, inside the working tree,
+  // not git's directory, a regular file (not a link), and still inside after
+  // resolving any linked parent directory.
+  async function storeFile(store, relative) {
+    const paths = storePaths(assertStore(store));
+    if (typeof relative !== 'string' || relative === '' || relative.includes('\0') || relative.includes('\\')) throw bad('File path is not valid.');
+    const normal = path.posix.normalize(relative);
+    if (normal !== relative || path.posix.isAbsolute(normal) || normal.startsWith('../') || normal === '..' || normal === '.git' || normal.startsWith('.git/'))
+      throw bad('File path is not valid.');
+    const full = path.join(paths.repo, ...normal.split('/'));
+    let stat;
+    try { stat = await lstat(full); } catch { throw new MemoryRequestError(404, 'no-file', `No file ${normal} in ${store}.`); }
+    if (!stat.isFile()) throw bad('File path is not valid.');
+    const { realpath } = await import('node:fs/promises');
+    const [realRepo, realFull] = await Promise.all([realpath(paths.repo), realpath(full)]);
+    if (!realFull.startsWith(realRepo + path.sep)) throw bad('File path is not valid.');
+    return { paths, relative: normal, full, size: stat.size };
+  }
+
+  async function readStoreFile({ store, path: relative }) {
+    const file = await storeFile(store, relative);
+    const limit = 1024 * 1024;
+    const text = file.size > limit ? await readHead(file.full, limit) : await readFile(file.full, 'utf8');
+    return { store, path: file.relative, content: text, truncated: file.size > limit };
+  }
+
+  async function identityArgs(repo) {
+    return (await git(repo, ['config', 'user.email'])).stdout.trim() === ''
+      ? ['-c', 'user.name=Rubato', '-c', 'user.email=rubato@localhost'] : [];
+  }
+
+  async function deleteStoreFile({ store, path: relative }) {
+    const file = await storeFile(store, relative);
+    const repo = file.paths.repo;
+    const tracked = (await git(repo, ['ls-files', '--error-unmatch', '--', file.relative])).code === 0;
+    if (!tracked) {
+      await unlink(file.full);
+      return { store, path: file.relative, commit: null };
+    }
+    const removed = await git(repo, ['rm', '-q', '--', file.relative]);
+    if (removed.code !== 0) throw new MemoryRequestError(500, 'git-rm', removed.stderr.trim() || 'git rm failed.');
+    // Only this path: whatever else an agent has staged stays out of this commit.
+    const commit = await run(['git', '-C', repo, ...(await identityArgs(repo)), 'commit', '-q', '-m', `Delete ${file.relative} (Settings > Memory)`, '--', file.relative]);
+    if (commit.code !== 0) throw new MemoryRequestError(500, 'git-commit', commit.stderr.trim() || 'git commit failed.');
+    return { store, path: file.relative, commit: (await git(repo, ['rev-parse', 'HEAD'])).stdout.trim() };
+  }
+
+  // A whole store is archived, not erased: the archive is the undo.
+  async function deleteStore({ store, confirm }) {
+    const paths = storePaths(assertStore(store));
+    if (confirm !== store) throw bad('Type the store name to confirm.');
+    if (running.has(store) || (await runningState(store))) throw new MemoryRequestError(409, 'running', `A dream is running for ${store}. Try again when it ends.`);
+    const backups = path.join(home, '.rubato', 'backups');
+    await mkdir(backups, { recursive: true });
+    const archive = path.join(backups, `${store}-${new Date().toISOString().replace(/[:.]/g, '-')}.tgz`);
+    const agents = path.join(memoryRoot, 'agents');
+    const packed = await run(['tar', '-czf', archive, '-C', agents, store], { timeoutMs: 300_000 });
+    if (packed.code !== 0) {
+      await unlink(archive).catch(() => undefined);
+      throw new MemoryRequestError(500, 'archive', packed.stderr.trim() || 'Could not archive the store.');
+    }
+    const listed = await run(['tar', '-tzf', archive], { timeoutMs: 300_000, maxBuffer: 256 * 1024 * 1024 });
+    if (listed.code !== 0 || !listed.stdout.split('\n').some((line) => line.replace(/\/$/, '') === `${store}/repo/.git`))
+      throw new MemoryRequestError(500, 'archive', 'The archive could not be verified, so the store was kept.');
+    const { rm } = await import('node:fs/promises');
+    await rm(paths.root, { recursive: true, force: true });
+    return { store, archive };
+  }
+
   const actions = {
     status: () => status(),
+    stores: () => stores(),
+    files: (input) => files(input),
+    file: (input) => readStoreFile(input),
+    'delete-file': (input) => deleteStoreFile(input),
+    'delete-store': (input) => deleteStore(input),
     runs: (input) => runs(input),
     run: (input) => runDetail(input),
     dream: (input) => startDream(input),
