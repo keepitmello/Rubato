@@ -10,7 +10,8 @@ import { trimRequestImages } from "./request-images.mjs";
 import { SOURCE, INIT_ENTRY, NOTE_ENTRY, NUDGE_ENTRY, PREPARE_ENTRY, REMINDER_ENTRY, initialWindow, nextWindow,
   branchWindow, decodeBootstrap, encodeBootstrap, isWindowCompaction, lastUserId, messageText, notePath } from "./protocol.mjs";
 
-const NOTES_TOOLS_TEXT = `Use notes_write_file / notes_append_to_file to maintain the goal, decisions, progress,
+const NOTES_TOOLS_TEXT = `These tools start inactive: run tool_search("notes history") once before first use, and search new_context by name when you need it.
+Use notes_write_file / notes_append_to_file to maintain the goal, decisions, progress,
 failed approaches and why they failed, learnings, unresolved issues and next steps.
 Include window_id and item_id references to every active user request and important
 observations/tool results. history_list_windows, history_list_items,

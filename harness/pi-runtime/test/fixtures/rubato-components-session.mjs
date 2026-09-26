@@ -53,6 +53,9 @@ try {
   for (const name of ["Agent", "AgentCancel", "lsp_diagnostics", "lsp_symbols", "team_create", "bash_input", "bash_output", "bash_resize", "kill_bash", "monitor"]) {
     assert.ok(tools.includes(name), `existing Rubato tool missing: ${name}`);
   }
+  const active = session.getActiveToolNames();
+  assert.ok(active.includes("Agent"), "Agent is on from the first request");
+  assert.ok(!active.includes("AgentSend") && !active.includes("AgentCancel"), "the rest of the task family waits for tool_search");
   assert.equal(assembled.servers.list().some(({ name }) => name === "_ast_grep"), true);
   let memoryTool = "memory";
   if (exposure === "search") {
