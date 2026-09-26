@@ -69,6 +69,15 @@ test("a missing reminder anchor stops instead of rewriting the old prefix", (t) 
   const f = setup(t); near(f); prepared(f);
   assert.throws(() => f.c.prepareContext({ messages: [] }, f.ctx), /위치/);
 });
+test("a reminder anchored on an extension message survives the reload that re-times it", (t) => {
+  const f = setup(t); near(f);
+  // Live: queued at Date.now(). Reloaded: stamped when the session file recorded it.
+  const notice = { role: "custom", customType: "monitor", content: "watcher exited", display: false };
+  const live = f.c.prepareContext({ messages: [...f.build().messages, { ...notice, timestamp: 1000 }] }, f.ctx).messages;
+  const reloaded = f.c.prepareContext({ messages: [...f.build().messages, { ...notice, timestamp: 10373 }] }, f.ctx).messages;
+  assert.equal(messageText(live.at(-1)), REMINDER_TEXT);
+  assert.equal(messageText(reloaded.at(-1)), REMINDER_TEXT);
+});
 test("reminder durability failure fails before returning an input", (t) => {
   const f = setup(t); near(f); f.c.flushJournal = () => { throw new Error("flush-failed"); };
   assert.throws(() => prepared(f), /flush-failed/);

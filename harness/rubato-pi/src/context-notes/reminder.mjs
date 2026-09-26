@@ -22,7 +22,11 @@ export function findNudges(branch, windowId) {
 
 export function messageFingerprint(message) {
   // Restrict to stable model-message fields; never persist message content here.
-  return createHash("sha256").update(JSON.stringify([message?.role, message?.timestamp,
+  // An extension message carries Date.now() from when it was queued, but the session
+  // file records it when it is delivered, so its timestamp changes on reload. The
+  // occurrence count still tells identical ones apart.
+  const timestamp = message?.role === "custom" ? null : message?.timestamp;
+  return createHash("sha256").update(JSON.stringify([message?.role, timestamp,
     message?.toolCallId, message?.toolName, message?.content])).digest("hex");
 }
 
