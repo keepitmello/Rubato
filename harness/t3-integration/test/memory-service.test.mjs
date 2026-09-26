@@ -177,3 +177,58 @@ test('HTTP exchange maps actions, bodies and errors', async (t) => {
   assert.equal((await call('runs', 'not json')).status, 400);
   assert.equal((await call('self', undefined, 'DELETE')).status, 405);
 });
+
+test('stores are listed with their project, browsed, pruned and archived', async (t) => {
+  const f = await fixture(t);
+  await mkdir(path.join(f.repo, 'decisions'), { recursive: true });
+  await writeFile(path.join(f.repo, 'decisions', 'gui.md'), '---\ndescription: "Settings copy is English"\n---\n\n# GUI\n');
+  await writeFile(path.join(f.repo, 'decisions', 'plain.md'), '# no frontmatter\n');
+  git(f.repo, 'add', '-A');
+  git(f.repo, 'commit', '-q', '-m', 'decisions');
+  await writeFile(path.join(f.store, 'store.json'), JSON.stringify({ roots: ['/work/scratch'] }));
+  // An older store: no store.json, so where it belongs is unknown.
+  const older = path.join(f.home, '.rubato', 'memory', 'agents', 'older', 'repo');
+  await mkdir(older, { recursive: true });
+  execFileSync('git', ['init', '-q', '-b', 'main', older]);
+  // A directory that is not a store is not listed.
+  await mkdir(path.join(f.home, '.rubato', 'memory', 'agents', 'not-a-store'), { recursive: true });
+
+  const listed = await f.service.handle('stores', {});
+  assert.deepEqual(listed.stores.map((s) => [s.store, s.roots, s.home, s.files, s.enabled]), [
+    ['scratch', ['/work/scratch'], false, 3, true],
+    ['older', null, null, 0, false],
+  ]);
+
+  const browsed = await f.service.handle('files', { store: 'scratch' });
+  assert.deepEqual(browsed.files, [
+    { path: 'decisions/gui.md', description: 'Settings copy is English' },
+    { path: 'decisions/plain.md', description: null },
+    { path: 'notes.md', description: null },
+  ]);
+  assert.match((await f.service.handle('file', { store: 'scratch', path: 'decisions/gui.md' })).content, /# GUI/);
+  for (const bad of ['../older/repo/x.md', '/etc/passwd', '.git/config', 'decisions/../../x', 'decisions\\gui.md'])
+    await assert.rejects(f.service.handle('file', { store: 'scratch', path: bad }), /not valid|No file/, bad);
+  const { symlink } = await import('node:fs/promises');
+  await symlink('/etc/hosts', path.join(f.repo, 'link.md'));
+  await assert.rejects(f.service.handle('file', { store: 'scratch', path: 'link.md' }), /not valid/);
+
+  const removed = await f.service.handle('delete-file', { store: 'scratch', path: 'decisions/plain.md' });
+  assert.match(removed.commit, /^[0-9a-f]{40}$/);
+  assert.equal(git(f.repo, 'log', '-1', '--format=%s'), 'Delete decisions/plain.md (Settings > Memory)');
+  assert.equal(git(f.repo, 'ls-files', 'decisions/plain.md'), '');
+
+  await assert.rejects(f.service.handle('delete-store', { store: 'scratch', confirm: 'scratc' }), /Type the store name/);
+  const deleted = await f.service.handle('delete-store', { store: 'scratch', confirm: 'scratch' });
+  assert.match(deleted.archive, new RegExp(`^${f.home}/\\.rubato/backups/scratch-.*\\.tgz$`));
+  assert.equal((await f.service.handle('stores', {})).stores.some((s) => s.store === 'scratch'), false);
+  const archived = execFileSync('tar', ['-tzf', deleted.archive], { encoding: 'utf8' });
+  assert.match(archived, /^scratch\/repo\/decisions\/gui\.md$/m);
+  await assert.rejects(f.service.handle('delete-store', { store: 'scratch', confirm: 'scratch' }), /No memory store/);
+});
+
+test('a newcomer has no stores yet', async (t) => {
+  const home = await mkdtemp(path.join(tmpdir(), 'rb-memory-empty-'));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const service = createMemoryService({ env: { ...process.env, HOME: home, RUBATO_MEMORY_HOME: '' } });
+  assert.deepEqual((await service.handle('stores', {})).stores, []);
+});
