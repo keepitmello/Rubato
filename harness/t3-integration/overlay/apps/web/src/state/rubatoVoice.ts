@@ -9,6 +9,7 @@ import {
   type VoiceTranscriptionOptions,
 } from "@t3tools/client-runtime/voice-input";
 
+import { rubatoHttpAccess, type RubatoHttpAccess } from "./rubatoHttp";
 import { readPreparedConnection } from "./session";
 
 /** The route the Rubato voice service adds to the T3 server on this Mac. */
@@ -110,18 +111,13 @@ export class RubatoWebVoiceRecorder implements VoiceRecorder {
   }
 }
 
-type VoiceConnection = {
-  readonly httpBaseUrl: string;
-  readonly authorization: string | null;
-};
-
-function resolveVoiceConnection(environmentId: EnvironmentId | null): VoiceConnection {
+async function resolveVoiceConnection(environmentId: EnvironmentId | null): Promise<RubatoHttpAccess> {
   const prepared = environmentId === null ? null : readPreparedConnection(environmentId);
   if (!prepared) {
     throw new VoiceTranscriptionError("unavailable", "This Mac is not connected.");
   }
-  const authorization = prepared.httpAuthorization;
-  if (authorization?._tag === "Dpop") {
+  const access = await rubatoHttpAccess(prepared);
+  if (!access) {
     // A relay connection signs every request with a DPoP proof. The voice route
     // is not part of that signed surface, so refuse rather than post the
     // recording somewhere it cannot be accepted.
@@ -130,16 +126,7 @@ function resolveVoiceConnection(environmentId: EnvironmentId | null): VoiceConne
       "Voice input is not available on this connection yet.",
     );
   }
-  return {
-    httpBaseUrl: prepared.httpBaseUrl.replace(/\/+$/, ""),
-    authorization: authorization === null ? null : `Bearer ${authorization.token}`,
-  };
-}
-
-function headersFor(connection: VoiceConnection): Record<string, string> {
-  return connection.authorization === null
-    ? {}
-    : { authorization: connection.authorization };
+  return access;
 }
 
 /** Server codes mapped to something a person can act on. Never the raw body. */
@@ -171,17 +158,17 @@ async function failureMessage(response: Response): Promise<string> {
 export function createRubatoVoiceTranscriber(
   readEnvironmentId: () => EnvironmentId | null,
 ): VoiceTranscriber {
-  let session: { readonly connection: VoiceConnection; readonly sessionId: string } | null = null;
+  let session: { readonly connection: RubatoHttpAccess; readonly sessionId: string } | null = null;
   let spokenLanguage = "ko";
 
   const endSession = (): void => {
     const current = session;
     session = null;
     if (!current) return;
-    void fetch(`${current.connection.httpBaseUrl}${VOICE_ROUTE}/${current.sessionId}`, {
+    void fetch(`${current.connection.baseUrl}${VOICE_ROUTE}/${current.sessionId}`, {
       method: "DELETE",
-      credentials: "include",
-      headers: headersFor(current.connection),
+      credentials: current.connection.credentials,
+      headers: current.connection.headers,
     }).catch(() => {});
   };
 
@@ -198,12 +185,12 @@ export function createRubatoVoiceTranscriber(
     throwIfVoiceTranscriptionAborted(options.signal);
     const contentType = audio.type || "audio/webm";
     const response = await fetch(
-      `${current.connection.httpBaseUrl}${VOICE_ROUTE}/${current.sessionId}/transcribe`,
+      `${current.connection.baseUrl}${VOICE_ROUTE}/${current.sessionId}/transcribe`,
       {
         method: "POST",
-        credentials: "include",
+        credentials: current.connection.credentials,
         headers: {
-          ...headersFor(current.connection),
+          ...current.connection.headers,
           "content-type": contentType,
           "x-audio-filename": audioFilename(contentType),
         },
@@ -234,12 +221,12 @@ export function createRubatoVoiceTranscriber(
 
   return {
     async prepare({ signal }): Promise<PreparedVoiceTranscription> {
-      const connection = resolveVoiceConnection(readEnvironmentId());
+      const connection = await resolveVoiceConnection(readEnvironmentId());
       endSession();
-      const response = await fetch(`${connection.httpBaseUrl}${VOICE_ROUTE}`, {
+      const response = await fetch(`${connection.baseUrl}${VOICE_ROUTE}`, {
         method: "POST",
-        credentials: "include",
-        headers: { ...headersFor(connection), "content-type": "application/json" },
+        credentials: connection.credentials,
+        headers: { ...connection.headers, "content-type": "application/json" },
         body: JSON.stringify({ mode: "draft" }),
         signal,
       }).catch((cause: unknown) => {
