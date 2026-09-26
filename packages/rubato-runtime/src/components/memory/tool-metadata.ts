@@ -12,9 +12,9 @@ export const MEMORY_MCP_SERVER_NAME = "rubato-memory"
 export const MEMORY_MCP_TOOL_NAME = `mcp__${MEMORY_MCP_SERVER_NAME}_${MEMORY_TOOL_NAME}`
 export const MEMORY_MCP_APPLY_PATCH_TOOL_NAME = `mcp__${MEMORY_MCP_SERVER_NAME}_${MEMORY_APPLY_PATCH_TOOL_NAME}`
 
-/** What a memory tool says in a folder that names no store, and how to turn memory on there. */
+/** What a memory tool says in a folder that has no store, and how to turn memory on there. */
 export const MEMORY_UNBOUND_MESSAGE =
-  "memory is off in this folder: its config names no memory store. To turn it on, set `memory.agent` in `<project>/.rubato/rubato.jsonc` (for example `{ \"memory\": { \"agent\": \"<store-name>\" } }`) and start a new session."
+  "memory is off in this folder: it is not inside a git repository or the home directory, and its config names no memory store. To turn it on, run the session inside a git repository, or set `memory.agent` in `<folder>/.rubato/rubato.jsonc` (for example `{ \"memory\": { \"agent\": \"<store-name>\" } }`), then start a new session."
 
 export const MEMORY_TOOL_DESCRIPTION = [
   "Edits this project's Rubato memory store and commits each change with the reason you give.",

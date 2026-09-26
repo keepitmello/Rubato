@@ -119,7 +119,9 @@ async function callMemoryTool(
       id: provenance.identityId,
       paths: buildIdentityPaths(dirname(dirname(dirname(provenance.repoPath))), provenance.identityId),
     }
-    const session = await prepareMemoryEngineSession(identity.id, identity.paths)
+    const session = await prepareMemoryEngineSession(identity.id, identity.paths, {
+      origin: { ...(provenance.root === undefined ? {} : { root: provenance.root }), home: provenance.home },
+    })
     const toolProvenance = { sessionId: provenance.sessionId }
     if (name === MEMORY_TOOL_NAME) {
       // Field-level validation lives in runMemoryTool's required() guards, so the MCP argument record
@@ -160,6 +162,9 @@ interface McpMemoryProvenance {
   readonly sessionId: string
   readonly identityId: string
   readonly repoPath: string
+  /** Project root the session bound from; recorded in store.json on write. */
+  readonly root?: string
+  readonly home: boolean
 }
 
 function readMcpProvenance(args: Record<string, unknown>): McpMemoryProvenance | undefined {
@@ -173,7 +178,13 @@ function readMcpProvenance(args: Record<string, unknown>): McpMemoryProvenance |
     || typeof value.repoPath !== "string"
     || value.repoPath.length === 0
   ) return undefined
-  return { sessionId: value.sessionId, identityId: value.identityId, repoPath: resolve(value.repoPath) }
+  return {
+    sessionId: value.sessionId,
+    identityId: value.identityId,
+    repoPath: resolve(value.repoPath),
+    ...(typeof value.root === "string" && value.root.length > 0 ? { root: resolve(value.root) } : {}),
+    home: value.home === true,
+  }
 }
 
 function toolText(id: string | number | null, text: string, isError = false): JsonRpcResponse {

@@ -1,5 +1,5 @@
 import { RubatoMemorySettingsSchema, type RubatoMemorySettings } from "@rubato/config-core"
-import { resolveMemoryIdentity, resolveMemoryRoot } from "@rubato/memory-core"
+import { recordStoreRoot, resolveMemoryRoot, resolveProjectStore } from "@rubato/memory-core"
 
 import type { ComponentContext, RubatoComponent, SenpiExtensionAPI } from "../../extension/types"
 import { loadSenpiRubatoConfig, type SenpiRubatoConfigResult } from "../config-resolution"
@@ -115,7 +115,13 @@ export function createMemoryComponent(options: MemoryComponentOptions = {}): Rub
           delete payload.input.provenance
           return
         }
-        payload.input.provenance = { sessionId, identityId: context.identity, repoPath: context.identityPaths.repo }
+        payload.input.provenance = {
+          sessionId,
+          identityId: context.identity,
+          repoPath: context.identityPaths.repo,
+          ...(context.root === undefined ? {} : { root: context.root }),
+          home: context.home === true,
+        }
       })
       registerMemoryGuard(pi, ctx, { getContext: contextFor, resolveCwd })
       registerMemoryRepositoryCommand(pi, { contextForSession: (sessionId) => sessions.get(sessionId)?.context })
@@ -146,8 +152,9 @@ export function createMemoryComponent(options: MemoryComponentOptions = {}): Rub
         })
         launchDream("session_start", surface)
 
-        // A folder that names no store keeps no memory: nothing is bound and no repository is created.
-        const identity = resolveMemoryIdentity(sessionConfig.agent, cwd, env)
+        // Named by config, by the git project root, or the home directory; anywhere else there is no
+        // store. Binding creates nothing: the store directory appears with the first memory write.
+        const identity = resolveProjectStore(sessionConfig.agent, cwd, { env })
         if (identity === undefined) return
         const previous = findLatestMemoryBinding(surface.entries)
         if (previous !== undefined && previous.identity !== identity.id) {
@@ -158,7 +165,19 @@ export function createMemoryComponent(options: MemoryComponentOptions = {}): Rub
           return
         }
         const binding = createMemoryBinding({ identity: identity.id, repoPath: identity.paths.repo, boundAt: now() })
-        state.context = createMemoryIdentityContext({ identity: identity.id, identityPaths: identity.paths, binding })
+        state.context = createMemoryIdentityContext({
+          identity: identity.id,
+          identityPaths: identity.paths,
+          binding,
+          ...(identity.root === undefined ? {} : { root: identity.root }),
+          home: identity.home,
+        })
+        // An existing store learns a root it is now used from; a new one waits for its first write.
+        try {
+          recordStoreRoot(identity)
+        } catch (error) {
+          ctx.logger.warn("memory store.json could not be updated", { error: String(error) })
+        }
         pi.appendEntry(MEMORY_BINDING_CUSTOM_TYPE, binding)
         registerMemoryFilesystemPolicy(pi, state.context)
       })

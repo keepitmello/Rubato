@@ -27,6 +27,10 @@ msearch --doctor               설치 상태 진단
 기본은 **현재 디렉터리에 해당하는 메모리 저장소**다. 색인은 메모리 루트를 통째로 훑으므로
 여러 프로젝트의 기억이 한 인덱스에 같이 있고, 그중 현재 곳의 것만 보여준다. `-a` 로 전체를 본다.
 
+현재 저장소는 엔진과 같은 규칙으로 정한다(`msearch_scope.py`): 폴더 설정의 `memory.agent`,
+아니면 git 저장소 루트(그 루트를 `store.json` 의 `roots` 에 가진 저장소, 없으면 루트 이름),
+아니면 홈 디렉터리의 `home`. 셋 다 아니면 저장소가 없다.
+
 현재 디렉터리가 색인에 없으면(아직 안 쌓였거나 메모리 밖에서 실행 중) 조용히 0건을 주는 대신
 전체 검색으로 떨어진다.
 
@@ -163,6 +167,7 @@ MSEARCH_ROOT=~/notes MSEARCH_CHANNEL=notes msearch --index
 |------|------|
 | `msearch` | 진입점. 백엔드가 죽어 있으면 검색 대신 진단으로 보낸다 |
 | `msearch_config.py` | 모든 경로·이름 해석. 다른 파일은 여기서만 읽는다 |
+| `msearch_scope.py` | 현재 폴더가 쓰는 저장소 규칙 (엔진 `memory-core/src/identity/project.ts` 와 같다) |
 | `msearch_env.py` | Python·패키지가 두 잠금 파일과 일치하는지 판정한다 |
 | `runtime.lock` | 검증한 Python·Java·Redis·Search 버전의 정본 |
 | `requirements.lock` | 검증한 Python 패키지 전체 버전의 정본 |

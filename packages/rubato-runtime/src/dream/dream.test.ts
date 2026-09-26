@@ -200,3 +200,35 @@ describe("runDream", () => {
     expect(spawned).toBe(0)
   })
 })
+
+describe("scanStoreSessions store rule", () => {
+  test("groups sessions by git project root, home and config name; folders outside all three have no store", async () => {
+    const { mkdirSync, realpathSync } = await import("node:fs")
+    const { createStoreNameResolver, scanStoreSessions } = await import("./stores")
+    const root = realpathSync.native(tempDir())
+    const home = join(root, "home")
+    const repo = join(root, "work", "hash-game")
+    const plain = join(root, "scratch")
+    const named = join(root, "lab")
+    for (const dir of [home, join(repo, "src"), plain, named]) mkdirSync(dir, { recursive: true })
+    git(repo, "init", "-q")
+    const sessions = join(root, "sessions")
+    mkdirSync(sessions)
+    const write = (id: string, cwd: string) =>
+      writeFileSync(join(sessions, `${id}.jsonl`), JSON.stringify({ type: "session", id, cwd, timestamp: "2026-09-25T00:00:00.000Z" }))
+    write("in-repo", join(repo, "src"))
+    write("at-home", home)
+    write("plain", plain)
+    write("named", named)
+
+    const env = { RUBATO_MEMORY_HOME: join(root, "memory"), HOME: home }
+    const scan = scanStoreSessions({
+      sessionsRoot: sessions,
+      sinceMs: () => 0,
+      resolveStore: createStoreNameResolver((cwd) => (cwd === named ? "rubato" : undefined), env),
+    })
+
+    const byStore = Object.fromEntries([...scan.sessions].map(([store, list]) => [store, list.map((session) => session.id)]))
+    expect(byStore).toEqual({ "hash-game": ["in-repo"], home: ["at-home"], rubato: ["named"] })
+  })
+})

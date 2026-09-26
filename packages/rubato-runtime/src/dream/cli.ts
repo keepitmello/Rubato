@@ -16,7 +16,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { RubatoMemorySettingsSchema } from "@rubato/config-core"
-import { buildIdentityPaths, resolveMemoryRoot } from "@rubato/memory-core"
+import { buildIdentityPaths, readStoreRecord, resolveMemoryRoot } from "@rubato/memory-core"
 
 import { loadSenpiRubatoConfig } from "../components/config-resolution"
 import { dreamLadder } from "./ladder"
@@ -30,7 +30,7 @@ import {
   type DreamRunRecord,
   type DreamState,
 } from "./runner"
-import { createStoreNameResolver, listExistingStores, scanStoreSessions, type SessionFile } from "./stores"
+import { countStoreFiles, createStoreNameResolver, listExistingStores, scanStoreSessions, type SessionFile } from "./stores"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = join(here, "..", "..", "..", "..")
@@ -43,6 +43,12 @@ interface StoreStatus {
   readonly pendingRunId?: string
   readonly newSessions: number
   readonly due: boolean
+  /** Project roots the store is used from (store.json). */
+  readonly roots: readonly string[]
+  /** The home-directory store. */
+  readonly home: boolean
+  /** Markdown files in the store. */
+  readonly files: number
 }
 
 async function main(argv: readonly string[]): Promise<number> {
@@ -88,13 +94,14 @@ async function main(argv: readonly string[]): Promise<number> {
   const scan = scanStoreSessions({
     sessionsRoot: join(agentDir(env), "sessions"),
     sinceMs: (store, sessionId) => trialSinceMs ?? sessionSinceMs(states.get(store) ?? {}, sessionId, now),
-    resolveStore: createStoreNameResolver((cwd) => loadSenpiRubatoConfig({ cwd, env }).config.memory?.agent),
+    resolveStore: createStoreNameResolver((cwd) => loadSenpiRubatoConfig({ cwd, env }).config.memory?.agent, env),
   })
   const sessionsByStore = scan.sessions
   const minGapMs = dream.min_hours_between * 60 * 60_000
   const statuses: StoreStatus[] = []
   for (const [store, state] of states) {
     const pending = await readPendingReview(pathsOf(store))
+    const record = readStoreRecord(pathsOf(store).root)
     const enabled = dream.stores[store]?.enabled === true
     const newSessions = sessionsByStore.get(store)?.length ?? 0
     const lastMs = state.last_dream_at === undefined ? 0 : Date.parse(state.last_dream_at)
@@ -106,6 +113,9 @@ async function main(argv: readonly string[]): Promise<number> {
       ...(pending === undefined ? {} : { pendingRunId: pending.runId }),
       newSessions,
       due: enabled && pending === undefined && newSessions > 0 && now - lastMs >= minGapMs,
+      roots: record?.roots ?? [],
+      home: record?.home === true,
+      files: countStoreFiles(pathsOf(store).repo),
     })
   }
 
