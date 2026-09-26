@@ -9,6 +9,7 @@ const hashes = {
   "dist/core/extensions/runner.d.ts": "fc0f81468c51bacfc093ac09974aa8e8053ca463e205eb66a1c63b0b655f61b9",
   "dist/modes/rpc/rpc-mode.js": "bdd94e753e6d19731d9fb9ea370462d095d64f1e78bddd7651320663fa57c4ff",
   "dist/modes/rpc/rpc-types.d.ts": "e968e5be01dc7ad9615f938ae867ef136fa495f13dcf169942e9f781a299d9eb",
+  "dist/modes/print-mode.js": "f2eb170b9620c1d37e68b788ff71257a4402a23e7f3999575feee8e5d9e13b3f",
 };
 function once(source, before, after) {
   const index = source.indexOf(before);
@@ -28,13 +29,16 @@ const transforms = {
     return once(next, "export interface Extension {", "export interface Extension {\n    rpcHandlers?: Map<string, (data: unknown) => unknown | Promise<unknown>>;");
   },
   "dist/core/extensions/runner.js": (source) =>
-    `import { requestExtensionRpc } from "../../rubato-features/extension-rpc/runtime.mjs";\n` +
+    `import { collectPendingWork, requestExtensionRpc } from "../../rubato-features/extension-rpc/runtime.mjs";\n` +
     once(source, "    getCommand(name) {", `    requestRpc(name, data) {
         return requestExtensionRpc(this.extensions, () => this.assertActive(), name, data);
     }
+    pendingWork() {
+        return collectPendingWork(this.extensions, () => this.assertActive());
+    }
     getCommand(name) {`),
   "dist/core/extensions/runner.d.ts": (source) => once(source, "    getCommand(name: string): ResolvedCommand | undefined;",
-    "    requestRpc(name: string, data?: unknown): Promise<unknown>;\n    getCommand(name: string): ResolvedCommand | undefined;"),
+    "    requestRpc(name: string, data?: unknown): Promise<unknown>;\n    pendingWork(): Promise<{ active: number; undelivered: number }>;\n    getCommand(name: string): ResolvedCommand | undefined;"),
   "dist/modes/rpc/rpc-mode.js": (source) => {
     let next = `import { EXTENSION_RPC_CHANNEL } from "../../rubato-features/extension-rpc/runtime.mjs";\n${source}`;
     next = once(next, "    let unsubscribeBackpressure;", "    let unsubscribeBackpressure;\n    let unsubscribeExtensionRpc;");
@@ -57,6 +61,11 @@ const transforms = {
                 const unknownCommand = command;`);
     return once(next, "        await runtimeHost.dispose();\n        detachInput();", "        unsubscribeExtensionRpc?.();\n        await runtimeHost.dispose();\n        detachInput();");
   },
+  // A one-shot run stays until the session is idle with no `*.pending-work` left (runtime.mjs).
+  "dist/modes/print-mode.js": (source) =>
+    `import { holdForPendingWork } from "../rubato-features/extension-rpc/runtime.mjs";\n` +
+    once(source, "        for (const message of messages) {\n            await session.prompt(message);\n        }\n",
+      "        for (const message of messages) {\n            await session.prompt(message);\n        }\n        await holdForPendingWork(() => session);\n"),
   "dist/modes/rpc/rpc-types.d.ts": (source) => {
     let next = once(source, "export type RpcCommand = {", `export type RpcCommand = {
     id?: string;

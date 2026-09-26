@@ -8,7 +8,8 @@ import { acquireTerminalLease, releaseTerminalLease } from "./manifest-lease.ts"
 import { MonitorNotifier } from "./monitor-notify.ts";
 import { MONITOR_STATUS_KEY } from "./monitor-status.ts";
 import { MonitorStatusTicker } from "./monitor-status-ticker.ts";
-import { getTerminalNotificationDelivery, TerminalNotifier } from "./notify.ts";
+import { getTerminalNotificationDelivery, NON_INTERACTIVE_MODES, TerminalNotifier } from "./notify.ts";
+import { TERMINAL_PENDING_WORK_REQUEST, terminalPendingWork } from "./pending-work.ts";
 import { type RestoreDigest, type RestoreHandlers, type RestoreOutcome, restoreTerminalState } from "./restore.ts";
 import type { TerminalRuntimeSession } from "./runtime-session.ts";
 import {
@@ -160,8 +161,8 @@ function buildToolContext(pi: ExtensionAPI, state: TerminalExtensionState, host:
 		getSessionContext: () => state.ctx,
 		// Exit listeners registered before a reload reach the post-reload owner through the
 		// shared bundle, so this must dispatch via the bundle, never the instance notifier.
-		onBackgroundStart: (id: string, description: string, startedAtMs: number) => {
-			state.bundle?.notifyBackgroundStart(id, description, startedAtMs);
+		onBackgroundStart: (id: string, description: string, startedAtMs: number, bounded?: boolean) => {
+			state.bundle?.notifyBackgroundStart(id, description, startedAtMs, bounded);
 		},
 		onBackgroundExit: (id: string, runtime: TerminalRuntimeSession) => {
 			state.bundle?.notifyBackgroundExit(id, runtime);
@@ -200,8 +201,12 @@ function syncToolset(pi: ExtensionAPI, state: TerminalExtensionState): void {
 	pi.setActiveTools([...active]);
 }
 
-/** Send one model-visible terminal reminder; suppressed by notify `off` and non-interactive modes. */
+/**
+ * Send one model-visible terminal reminder; suppressed by notify `off` and in one-shot runs,
+ * where a startup reminder would start a turn ahead of the run's own prompt.
+ */
 function sendTerminalReminder(pi: ExtensionAPI, state: TerminalExtensionState, sentence: string): void {
+	if (state.ctx && NON_INTERACTIVE_MODES.has(state.ctx.mode)) return;
 	getTerminalNotificationDelivery({
 		sendMessage: (message, options) => pi.sendMessage(message, options),
 		getContext: () => state.ctx,
@@ -354,6 +359,27 @@ export function registerTerminalExtension(pi: ExtensionAPI, host: TerminalExtens
 	pi.registerTool(createBashResizeTool(toolCtx));
 	pi.registerTool(createKillBashTool(toolCtx));
 	pi.registerTool(createMonitorTool(toolCtx));
+
+	pi.rpc?.handle(TERMINAL_PENDING_WORK_REQUEST, () => {
+		const delivers =
+			state.notifier !== null &&
+			getTerminalNotificationDelivery({
+				sendMessage: () => {},
+				getContext: () => state.ctx,
+				getMode: () => state.settings.notify,
+			}) !== undefined;
+		return terminalPendingWork({
+			delivers,
+			backgrounds: state.bundle?.heldBackgrounds() ?? [],
+			monitors: (state.bundle?.monitors.snapshot() ?? []).map((entry) => ({
+				id: entry.id,
+				startedAtMs: entry.startedAtMs,
+				persistent: entry.persistent === true,
+			})),
+			queuedMonitorEvents: state.monitorNotifier?.hasQueuedEvents() ?? false,
+			nowMs: Date.now(),
+		});
+	});
 
 	pi.on("session_start", async (event, ctx) => {
 		state.ctx = ctx;

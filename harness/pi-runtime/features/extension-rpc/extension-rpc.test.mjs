@@ -9,7 +9,7 @@ import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { loadPiFeatures } from "../../feature-catalog.mjs";
 import { stagePiRuntime } from "../../stage-runtime.mjs";
-import { createExtensionRpc, requestExtensionRpc } from "./runtime.mjs";
+import { collectPendingWork, createExtensionRpc, holdForPendingWork, requestExtensionRpc } from "./runtime.mjs";
 
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -112,4 +112,83 @@ test("actual stock SDK and RPC carry extension requests/events across reload and
   assert.equal(replacementEvents.length, 1, "session replacement binds extensions exactly once");
   assert.equal(replacementEvents[0].data.reason, "new");
   assert.deepEqual((await request("echo3", "extension_request", { name: "echo", data: "replacement" })).data, { echo: "replacement" });
+});
+
+test("pending work sums every *.pending-work answer and a stuck delivery stops holding", async () => {
+  const a = {}, b = {}, c = {};
+  createExtensionRpc(a, () => {}, { emit() {} }).handle("a.pending-work", () => ({ active: 2, undelivered: 1 }));
+  createExtensionRpc(b, () => {}, { emit() {} }).handle("b.pending-work", () => { throw new Error("unanswerable"); });
+  createExtensionRpc(c, () => {}, { emit() {} }).handle("c.other", () => ({ active: 9 }));
+  assert.deepEqual(await collectPendingWork([a, b, c], () => {}), { active: 2, undelivered: 1 });
+
+  let clock = 0, polls = 0;
+  const session = { isIdle: true, waitForIdle: async () => {},
+    extensionRunner: { pendingWork: async () => { polls++; return { active: 0, undelivered: 1 }; } } };
+  await holdForPendingWork(() => session, { pollMs: 1000, stuckDeliveryMs: 5000, now: () => clock, sleep: async (ms) => { clock += ms; } });
+  assert.equal(polls, 6, "an undelivered completion that never lands holds only for the grace");
+
+  const answers = [1, 0, 1, 0, 0];
+  let asked = 0;
+  session.extensionRunner.pendingWork = async () => ({ active: answers[asked++], undelivered: 0 });
+  await holdForPendingWork(() => session, { settleMs: 3000, now: () => clock, sleep: async (ms) => { clock += ms; } });
+  assert.equal(asked, 5, "work that reappears within the settle window is waited for");
+});
+
+test("one-shot json run stays alive for pending work and takes its completion as a follow-up turn", async (t) => {
+  const scratch = await mkdtemp(join(tmpdir(), "rubato-print-hold-"));
+  t.after(() => rm(scratch, { recursive: true, force: true }));
+  const staged = await stagePiRuntime({ sourceRoot, outputRoot: join(scratch, "engine"), features: await loadPiFeatures(["extension-rpc"]) });
+  const packageRoot = dirname(dirname(staged.runtime.patchableCliEntry));
+  const streamUrl = pathToFileURL(join(packageRoot, "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js")).href;
+  const cwd = join(scratch, "project"), agentDir = join(scratch, "agent");
+  await Promise.all([mkdir(cwd), mkdir(agentDir)]);
+  const extension = join(scratch, "extension.mjs");
+  // The first turn starts background work and ends; the work finishes 700ms later and wakes the
+  // session. The provider's second reply proves the wake reached the model as a turn.
+  await writeFile(extension, `import { AssistantMessageEventStream } from ${JSON.stringify(streamUrl)};
+const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+export default (pi) => {
+  let pending = 0, started = false;
+  pi.rpc.handle("fixture.pending-work", () => ({ active: pending }));
+  pi.on("agent_end", () => {
+    if (started) return;
+    started = true; pending = 1;
+    setTimeout(() => {
+      pending = 0;
+      pi.sendMessage({ customType: "fixture.done", content: "BACKGROUND-RESULT 42", display: false }, { triggerTurn: true, deliverAs: "followUp" });
+    }, 700);
+  });
+  pi.registerProvider("fixture", {
+    baseUrl: "http://127.0.0.1:9/v1", api: "openai-completions", apiKey: "unused",
+    models: [{ id: "fake-model", input: ["text"] }],
+    streamSimple(model, context) {
+      const last = context.messages.at(-1);
+      const seen = JSON.stringify(last?.content ?? "").includes("BACKGROUND-RESULT 42");
+      const stream = new AssistantMessageEventStream();
+      const base = { role: "assistant", api: "openai-completions", provider: "fixture", model: model.id, usage, timestamp: Date.now() };
+      const text = seen ? "reported BACKGROUND-RESULT 42" : "started; completion will be reported";
+      setTimeout(() => stream.push({ type: "done", reason: "stop", message: { ...base, content: [{ type: "text", text }], stopReason: "stop" } }), 20);
+      return stream;
+    },
+  });
+};\n`);
+  const env = { ...process.env, HOME: agentDir, PI_CODING_AGENT_DIR: agentDir, PI_OFFLINE: "1", NO_COLOR: "1" };
+  delete env.NODE_OPTIONS; delete env.NODE_COMPILE_CACHE;
+  const started = Date.now();
+  const child = spawn(process.execPath, [staged.runtime.patchableCliEntry, "--offline", "--approve", "--provider", "fixture", "--model", "fake-model",
+    "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files", "--no-tools",
+    "--session-dir", join(scratch, "sessions"), "--extension", extension, "-p", "--mode", "json", "go"], { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
+  let stdout = "", stderr = "";
+  child.stdout.setEncoding("utf8").on("data", (data) => { stdout += data; });
+  child.stderr.setEncoding("utf8").on("data", (data) => { stderr += data; });
+  const timer = setTimeout(() => child.kill("SIGKILL"), 20_000);
+  const [code] = await once(child, "exit");
+  clearTimeout(timer);
+  assert.equal(code, 0, stderr);
+  const events = stdout.trim().split("\n").map((line) => JSON.parse(line));
+  const replies = events.filter((event) => event.type === "message_end" && event.message.role === "assistant")
+    .map((event) => event.message.content.map((part) => part.text).join(""));
+  assert.deepEqual(replies, ["started; completion will be reported", "reported BACKGROUND-RESULT 42"], stderr);
+  assert.equal(events.filter((event) => event.type === "agent_start").length, 2);
+  assert.ok(Date.now() - started < 15_000, "the run exits by itself once nothing is pending");
 });

@@ -4,7 +4,10 @@ import type { TerminalRuntimeSession } from "./runtime-session.ts";
 import type { NotifyMode } from "./settings.ts";
 import { describeExit } from "./tools/spawn.ts";
 
-/** Modes that never wake the agent: one-shot, non-interactive runs. */
+/**
+ * One-shot runs. Completions still wake them: the run stays alive while terminal work is
+ * pending (`rubato.terminal.pending-work`), so the wake arrives as a follow-up turn.
+ */
 export const NON_INTERACTIVE_MODES = new Set(["print", "json"]);
 export const TERMINAL_NOTIFICATION_CUSTOM_TYPE = "senpi-terminal:notification";
 
@@ -33,7 +36,7 @@ export function getTerminalNotificationDelivery(
 	const mode = deps.getMode();
 	if (mode === "off") return undefined;
 	const ctx = deps.getContext();
-	if (!ctx || NON_INTERACTIVE_MODES.has(ctx.mode) || !ctx.model) return undefined;
+	if (!ctx || !ctx.model) return undefined;
 	return {
 		send: (content, options) =>
 			deps.sendMessage(
@@ -64,11 +67,12 @@ function buildNotice(id: string, runtime: TerminalRuntimeSession): string {
 }
 
 /**
- * Notifies an interactive agent once when a background session completes.
+ * Notifies the agent once when a background session completes.
  *
- * Guards (todo 23): never wakes in one-shot `-p`/`--print`/`--mode json` runs; never wakes
- * without an active model (would spin an auth-less turn); `notify:"off"` suppresses entirely;
- * each session id fires at most once. `wake` steers immediately; `next-turn` queues a follow-up.
+ * Guards (todo 23): never wakes without an active model (would spin an auth-less turn);
+ * `notify:"off"` suppresses entirely; each session id fires at most once. `wake` steers
+ * immediately; `next-turn` queues a follow-up. One-shot runs are woken too: they stay alive
+ * until this completion has been delivered.
  */
 export class TerminalNotifier {
 	private readonly notified = new Set<string>();

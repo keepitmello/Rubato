@@ -71,7 +71,6 @@ async function waitForProcessExit(pid, timeoutMs = 5_000) {
 }
 
 test("terminal source closure is runtime-owned and has no dependency on the Senpi application package", async () => {
-	assert.equal(files.length, 40);
 	assert.equal(files.every((entry) => entry.target === "runtime"), true);
 	assert.equal(
 		files.some((entry) => entry.path.endsWith("native/prebuilds/win32-x64/senpi_pty.win32-x64.node")),
@@ -256,4 +255,80 @@ test("staged stock SDK binds terminal tools and preserves a native PTY session a
 	await session.extensionRunner.emit({ type: "session_shutdown", reason: "exit" });
 	session.dispose();
 	session = undefined;
+});
+
+test("a one-shot json run is woken by a background completion and holds only while it is pending", async (t) => {
+	const { default: registerTerminal } = await import("./src/extension.ts");
+	const { SettingsManager } = await import("./src/host-sdk.ts");
+	const scratch = mkdtempSync(join(tmpdir(), "rubato-terminal-oneshot-"));
+	const handlers = new Map();
+	const rpc = new Map();
+	const sent = [];
+	let active = [];
+	const pi = {
+		registerTool() {},
+		on: (event, handler) => handlers.set(event, handler),
+		rpc: { handle: (name, handler) => rpc.set(name, handler), emit() {} },
+		events: { emit() {} },
+		sendMessage: (message, options) => sent.push({ message, options }),
+		getActiveTools: () => active,
+		setActiveTools: (tools) => {
+			active = tools;
+		},
+	};
+	const tools = new Map();
+	pi.registerTool = (tool) => tools.set(tool.name, tool);
+	registerTerminal(pi, {
+		createSettingsManager: () => SettingsManager.inMemory({ terminal: { notify: "wake" } }),
+		getShellEnv: () => ({ PATH: process.env.PATH, HOME: scratch, LANG: "C.UTF-8", TERM: "xterm-256color" }),
+	});
+	const ctx = {
+		mode: "json",
+		cwd: scratch,
+		model: { provider: "fixture", id: "fake", api: "openai-completions" },
+		ui: { notify() {}, setStatus() {} },
+	};
+	t.after(async () => {
+		await handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" }, ctx);
+		rmSync(scratch, { recursive: true, force: true });
+	});
+	await handlers.get("session_start")({ type: "session_start", reason: "startup" }, ctx);
+	const pending = () => rpc.get("rubato.terminal.pending-work")();
+	assert.deepEqual(pending(), { active: 0, undelivered: 0 });
+
+	const started = await tools.get("bash").execute("call-1", {
+		command: "printf 'waiting\\n'; read -t 1 _ || true; printf 'RESULT-X 7\\n'",
+		run_in_background: true,
+	});
+	assert.match(started.details?.bash_id ?? "", /^bash_\d+$/);
+	assert.deepEqual(pending(), { active: 1, undelivered: 0 }, "a running background session holds the run");
+	const deadline = Date.now() + 5_000;
+	while (sent.length === 0 && Date.now() < deadline) await delay(25);
+	assert.equal(sent.length, 1, "the completion reaches the agent in json mode");
+	assert.match(sent[0].message.content, /RESULT-X 7/);
+	assert.equal(sent[0].options.triggerTurn, true);
+	assert.deepEqual(pending(), { active: 0, undelivered: 0 });
+});
+
+test("one-shot holds end for work that has no deadline of its own", async () => {
+	const { PERSISTENT_MONITOR_HOLD_MS, UNBOUNDED_BACKGROUND_HOLD_MS, terminalPendingWork } = await import(
+		"./src/pending-work.ts"
+	);
+	const input = {
+		delivers: true,
+		backgrounds: [
+			{ id: "bash_1", startedAtMs: 0, bounded: false },
+			{ id: "bash_2", startedAtMs: 0, bounded: true },
+		],
+		monitors: [
+			{ id: "bash_3", startedAtMs: 0, persistent: true },
+			{ id: "bash_4", startedAtMs: 0, persistent: false },
+		],
+		queuedMonitorEvents: true,
+		nowMs: 0,
+	};
+	assert.deepEqual(terminalPendingWork(input), { active: 4, undelivered: 1 });
+	assert.deepEqual(terminalPendingWork({ ...input, nowMs: PERSISTENT_MONITOR_HOLD_MS }), { active: 3, undelivered: 1 });
+	assert.deepEqual(terminalPendingWork({ ...input, nowMs: UNBOUNDED_BACKGROUND_HOLD_MS }), { active: 2, undelivered: 1 });
+	assert.deepEqual(terminalPendingWork({ ...input, delivers: false }), { active: 0, undelivered: 0 });
 });

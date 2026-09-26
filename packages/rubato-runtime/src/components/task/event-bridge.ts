@@ -40,7 +40,7 @@ export function wireEventBridge(
   state: EventBridgeState,
 ): void {
   const guidanceGuard = createOncePerSessionGuard()
-  const taskRpc = wireTaskRpcBridge(pi, engine)
+  const taskRpc = wireTaskRpcBridge(pi, engine, ctx.idleCoordinator)
   const unsubscribeTaskSnapshots = engine.onStoreMutation(() => taskRpc.sync())
   wireReloadGuard(pi, engine.manager)
 

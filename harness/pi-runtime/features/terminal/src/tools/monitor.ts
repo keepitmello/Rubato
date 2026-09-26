@@ -130,7 +130,13 @@ async function createMonitor(
 		...(input.persistent ? {} : { timeoutMs: resolveTimeoutMs(input.timeout_ms) }),
 	});
 	ctx.onMonitorRearmed?.(id);
-	const monitorId = registry.register({ id, description: input.description, runtime, filter });
+	const monitorId = registry.register({
+		id,
+		description: input.description,
+		runtime,
+		filter,
+		persistent: input.persistent === true,
+	});
 	ctx.manager.bindMonitorId(monitorId, id);
 	// The tool call site is the only place the branch inputs (command, persistent, filter)
 	// live; hand the captured spec to the session's manifest writer for durable recording.

@@ -23,6 +23,7 @@ type HarnessOptions = {
   readonly cleanupDeleted?: readonly string[]
   readonly resumptionChannelCount?: number
   readonly withRpc?: boolean | "emit-only"
+  readonly queuedInjections?: () => number
 }
 
 export function wireHarness(sessionId?: string, options: HarnessOptions = {}) {
@@ -219,6 +220,7 @@ export function wireHarness(sessionId?: string, options: HarnessOptions = {}) {
       error: () => {},
     },
     config: { getFlag: () => undefined },
+    ...(options.queuedInjections === undefined ? {} : { idleCoordinator: { pendingCount: options.queuedInjections } }),
   } as unknown as ComponentContext
 
   wireEventBridge(pi, ctx, engine, statusUi, transitions, state)
