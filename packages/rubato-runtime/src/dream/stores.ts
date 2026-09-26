@@ -1,12 +1,12 @@
 import { existsSync, readdirSync, statSync } from "node:fs"
 import { join } from "node:path"
 
-import { resolveMemoryIdentity, type MemoryIdentityPaths } from "@rubato/memory-core"
+import { resolveProjectStore, type MemoryIdentityPaths } from "@rubato/memory-core"
 
 import { readSessionHeader } from "./transcript"
 
-// A store is the memory of every project folder that names it in `memory.agent`. Folders without a
-// name have no store: the dream maintains only memory someone chose to keep.
+// A store is the memory of the folders that resolve to it: by `memory.agent`, by the git project
+// root, or the home directory (resolveProjectStore holds the one rule). Other folders have no store.
 
 export interface SessionFile {
   readonly id: string
@@ -23,17 +23,15 @@ export interface StoreSessions {
 
 export type StoreNameResolver = (cwd: string) => string | undefined
 
-/** Store name a folder writes to, or undefined when its config leaves memory.agent unnamed. */
+/** Store name a session folder writes to, or undefined when it has none (or no longer exists). */
 export function createStoreNameResolver(
   readAgent: (cwd: string) => string | undefined,
+  env: Record<string, string | undefined> = process.env,
 ): StoreNameResolver {
   const cache = new Map<string, string | undefined>()
   return (cwd) => {
     if (cache.has(cwd)) return cache.get(cwd)
-    let name: string | undefined
-    if (existsSync(cwd)) {
-      name = resolveMemoryIdentity(readAgent(cwd), cwd)?.id
-    }
+    const name = existsSync(cwd) ? resolveProjectStore(readAgent(cwd), cwd, { env })?.id : undefined
     cache.set(cwd, name)
     return name
   }
@@ -90,7 +88,7 @@ function sessionFiles(root: string): string[] {
   return files
 }
 
-/** Named stores that already exist on disk. */
+/** Stores that already exist on disk. */
 export function listExistingStores(memoryRoot: string): string[] {
   const agents = join(memoryRoot, "agents")
   if (!existsSync(agents)) return []
@@ -105,4 +103,24 @@ function safeIsDirectory(path: string): boolean {
   } catch {
     return false
   }
+}
+
+/** Markdown files the store holds (the GUI shows it next to each store). */
+export function countStoreFiles(repo: string): number {
+  let count = 0
+  const walk = (dir: string) => {
+    let entries
+    try {
+      entries = readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      if (entry.name === ".git") continue
+      if (entry.isDirectory()) walk(join(dir, entry.name))
+      else if (entry.isFile() && entry.name.endsWith(".md")) count += 1
+    }
+  }
+  walk(repo)
+  return count
 }
