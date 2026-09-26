@@ -203,8 +203,7 @@ test("isolated candidate install pipeline blocks Senpi and keeps CANDIDATE_FEATU
 
   await mkdir(join(scratch, "project", ".rubato"), { recursive: true });
   await writeFile(join(scratch, "project", ".rubato/rubato.jsonc"), JSON.stringify({
-    memory: { agent: "candidate-fixture", reflection: { enabled: false }, facts: { enabled: false },
-      dream: { enabled: false, shutdown_launch: false }, sync: { enabled: false } },
+    memory: { agent: "candidate-fixture" },
   }));
 
   await t.test("CLI --version under Senpi block", { skip: runtimeSkip }, async () => {

@@ -19,9 +19,9 @@ export const MEMORY_UNBOUND_MESSAGE =
 export const MEMORY_TOOL_DESCRIPTION = [
   "Edits this project's Rubato memory store and commits each change with the reason you give.",
   "",
-  "Write when a thread of work closes, and only what git cannot answer: why that approach, which candidates were rejected and why, how the cause was narrowed, what constraint forced the compromise, what is unresolved. One file answers one question with its current answer: find it with `msearch` first, overwrite its conclusion, delete it when it no longer matters. Never append a correction, a date or an outdated marker beside an old line; git keeps the history.",
+  "Before writing, read Skill(memory-discipline): it decides whether something is worth keeping and which file owns it. In short: write when a thread of work closes, only the why git cannot answer, and keep one current answer per file (overwrite or delete; never append corrections beside it).",
   "",
-  "Files live under `decisions/` (a judgement you would overwrite if it changed) or `reference/` (a fact you look up). Memory files are markdown documents with YAML frontmatter. Frontmatter carries a `description` (required on create; it is what search shows) and may set `read_only: \"true\"` to block modification. Edits preserve existing frontmatter.",
+  "Memory files are markdown documents with YAML frontmatter. Frontmatter carries a `description` (required on create; it is what search shows) and may set `read_only: \"true\"` to block modification. Edits preserve existing frontmatter.",
   "",
   "Supported operations on memory files:",
   "- `str_replace`",
