@@ -19,11 +19,14 @@ cd Rubato
 공식 GUI는 T3 Code다. `./install.sh --apply --gui` 또는 적용 때 묻는 선택으로
 설치하고, 화면 제공자 이름은 Rubato다. 터미널 실행기는 **Rubato CLI** (`rubato`)다.
 
-맥에서는 에이전트가 돌리는 도구(screencapture, Peekaboo, osascript)가 Rubato 앱의
-권한을 빌려 쓴다. 설정 → **macOS 권한**에서 화면 기록·손쉬운 사용·전체 디스크
-접근·자동화를 보고 요청한다. 앱은 머신마다 한 번 만드는 로컬 인증서
+맥에서는 세션이 돌리는 명령(screencapture, osascript)이 Rubato 앱의 권한을 빌려
+쓴다. 설정 → **macOS Permissions**에서 화면 기록·손쉬운 사용·전체 디스크 접근·
+자동화를 보고 요청한다. 앱은 머신마다 한 번 만드는 로컬 인증서
 (`~/.rubato/signing/`, `t3-integration/mac-signing.sh`)로 서명되므로
 `rubato update`·`rubato restart`가 앱을 다시 만들어도 준 권한이 유지된다.
+다른 앱을 조작하는 컴퓨터 유즈는 **Cua Driver**(`macos-computer-use` 스킬)가 맡고,
+같은 화면의 Computer use 칸에서 설치·실행·권한을 맞춘다. Cua Driver는 자기 데몬
+앱의 권한을 쓰고, Rubato 앱이 켜질 때 같이 켜진다.
 
 설치가 끝나면 새 셸을 열거나 안내된 rc 파일을 다시 읽는다.
 
