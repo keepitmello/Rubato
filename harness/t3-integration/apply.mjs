@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
 import { parseArgs } from 'node:util';
+import { memoryEdits, memoryOverlays } from './memory-edits.mjs';
 import { voiceEdits, voiceOverlays } from './voice-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -1488,6 +1489,11 @@ const edits = {
 };
 overlays.push(...voiceOverlays);
 for (const [relative, changes] of Object.entries(voiceEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Settings > 기억 (memory-edits.mjs) registers after the rest, so its anchors see their edits.
+overlays.push(...memoryOverlays);
+for (const [relative, changes] of Object.entries(memoryEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 function transform(text, changes) {
