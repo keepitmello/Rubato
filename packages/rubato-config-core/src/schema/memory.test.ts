@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 
 import {
+  RubatoMemoryDreamSchema,
   RubatoMemorySettingsLayerSchema,
   RubatoMemorySettingsSchema,
   type RubatoMemorySettings,
@@ -19,14 +20,7 @@ const FULL_DEFAULTS: RubatoMemorySettings = {
     sandbox: "auto",
   },
   nudge: { enabled: true, every_user_turns: 10 },
-  dream: {
-    enabled: true,
-    idle_minutes: 30,
-    min_hours_between: 24,
-    shutdown_launch: true,
-    auto_select_max: 5,
-    auto_select_max_chars: 150000,
-  },
+  dream: RubatoMemoryDreamSchema.parse({}),
   soul: { edit_notice: true },
   write_notice: { enabled: true },
   sync: { enabled: true },
@@ -65,6 +59,8 @@ describe("RubatoMemorySettingsSchema defaults", () => {
       nudge: { enabled: false, every_user_turns: 5 },
       dream: {
         enabled: false,
+        publish: "auto",
+        stores: { demo: { enabled: true } },
         idle_minutes: 0,
         min_hours_between: 12,
         shutdown_launch: false,

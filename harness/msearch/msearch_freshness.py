@@ -30,18 +30,21 @@ def _fingerprint(path: Path) -> str:
     return f"{FINGERPRINT_VERSION}:{hashlib.sha256(path.read_bytes()).hexdigest()}"
 
 
-def _file_id(path: Path, root: Path) -> str:
+def _rel(path: Path, root: Path) -> str:
+    # memory-index.py 의 rel_path 와 반드시 같아야 한다. 다르면 항상 stale 로 읽혀
+    # 검색마다 전체 재색인이 돈다.
     resolved = path.resolve()
     try:
-        rel = str(resolved.relative_to(root))
+        return str(resolved.relative_to(root))
     except ValueError:
         try:
-            rel = str(resolved.relative_to(Path.home()))
+            return str(resolved.relative_to(Path.home()))
         except ValueError:
-            rel = str(resolved)
-    # memory-index.py 의 file_id 와 반드시 같아야 한다. 다르면 항상 stale 로 읽혀
-    # 검색마다 전체 재색인이 돈다.
-    return hashlib.sha1(rel.encode("utf-8")).hexdigest()[:16]
+            return str(resolved)
+
+
+def _file_id(path: Path, root: Path) -> str:
+    return hashlib.sha1(_rel(path, root).encode("utf-8")).hexdigest()[:16]
 
 
 def _corpus(root: Path) -> list[Path]:
@@ -67,6 +70,15 @@ def is_stale(client) -> bool:
     root = config.MEMORY_ROOT
     try:
         files = _corpus(root)
+        # 지운 파일도 뒤처짐이다. 지문 대조는 지금 있는 파일만 보므로, 색인 목록에 남았는데
+        # 디스크에서 사라진 파일을 따로 찾는다. 이게 없으면 기억에서 지운 답이 검색에 계속 뜬다.
+        live = {_rel(path, root) for path in files}
+        indexed = {
+            item.decode("utf-8", "replace") if isinstance(item, bytes) else item
+            for item in client.smembers(config.MANIFEST_KEY)
+        }
+        if indexed - live:
+            return True
         if not files:
             return False
         stored = client.mget([f"{config.HASH_PREFIX}{_file_id(path, root)}" for path in files])
@@ -86,12 +98,19 @@ def refresh(quiet: bool = True) -> None:
     indexer = Path(__file__).resolve().parent / "memory-index.py"
     if not quiet:
         print("색인이 뒤처져 있어 갱신합니다...", file=sys.stderr)
-    subprocess.run(
+    result = subprocess.run(
         [sys.executable, str(indexer), "--incremental"],
         stdout=subprocess.DEVNULL if quiet else None,
-        stderr=subprocess.DEVNULL if quiet else None,
+        stderr=subprocess.PIPE if quiet else None,
+        text=True,
         check=False,
     )
+    # 갱신이 실패하면 검색은 낡은 색인으로 돈다. 그 사실을 숨기면 지운 답이나 옛 답이
+    # 최신인 척 돌아오므로, 결과는 그대로 주되 경고는 반드시 남긴다.
+    if result.returncode != 0:
+        tail = (result.stderr or "").strip().splitlines()[-1:] if quiet else []
+        detail = f": {tail[0]}" if tail else ""
+        print(f"msearch: 색인 갱신 실패 — 결과가 낡았을 수 있다{detail}", file=sys.stderr)
 
 
 def ensure_fresh(client, quiet: bool = True) -> bool:

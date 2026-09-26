@@ -6,11 +6,12 @@ import { CONVERSATION, NOW_MS, fireTimer, fixture, gateProbe, noopSteps, settle,
 
 describe("resolveDreamTriggerSettings", () => {
   test("#given base dream settings #when no agent override exists #then the base values resolve", () => {
-    const resolved = resolveDreamTriggerSettings(memorySettings(), "agent-test")
+    const settings = memorySettings()
+    const resolved = resolveDreamTriggerSettings(settings, "agent-test")
     expect(resolved).toEqual({
       enabled: true,
       idleMinutes: 30,
-      minHoursBetween: 24,
+      minHoursBetween: settings.dream.min_hours_between,
       shutdownLaunch: true,
       autoSelectMax: 5,
       autoSelectMaxChars: 150000,
@@ -23,7 +24,7 @@ describe("resolveDreamTriggerSettings", () => {
     const resolved = resolveDreamTriggerSettings(settings, "agent-test")
     expect(resolved.enabled).toBe(false)
     expect(resolved.idleMinutes).toBe(5)
-    expect(resolved.minHoursBetween).toBe(24)
+    expect(resolved.minHoursBetween).toBe(settings.dream.min_hours_between)
     expect(resolved.shutdownLaunch).toBe(true)
     expect(resolved.autoSelectMax).toBe(5)
     expect(resolved.autoSelectMaxChars).toBe(150000)

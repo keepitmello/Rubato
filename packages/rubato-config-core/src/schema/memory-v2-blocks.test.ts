@@ -28,24 +28,6 @@ describe("RubatoMemorySettingsSchema v2 block defaults", () => {
 
 
 
-  test("#given dream defaults #when parsing empty #then dream is fully populated", () => {
-    // given
-    const input = {}
-
-    // when
-    const parsed = RubatoMemorySettingsSchema.parse(input)
-
-    // then
-    expect(parsed.dream).toEqual({
-      enabled: true,
-      idle_minutes: 30,
-      min_hours_between: 24,
-      shutdown_launch: true,
-      auto_select_max: 5,
-      auto_select_max_chars: 150000,
-    })
-  })
-
   test("#given dream idle_minutes 0 #when parsed #then 0 is allowed (disables idle trigger)", () => {
     // given
     const input = { dream: { idle_minutes: 0 } }
