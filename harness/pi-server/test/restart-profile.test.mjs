@@ -66,3 +66,43 @@ test('a stale descriptor with a dead socket reports dead, not a successful resta
   assert.equal(cli.stdout.trim(), 'dead');
   await rm(root, { force: true, recursive: true });
 });
+
+// A build that replaces the install restarts a real (scratch) profile engine onto it, and refuses
+// to when the command runs inside a conversation that engine hosts.
+test('a rebuild through build-active-engine restarts the live profile engine; a hosted caller is refused', async (t) => {
+  const { buildActiveEngine } = await import('../../scripts/build-active-engine.mjs');
+  const { HOSTED_EXIT, replaceLiveEngine } = await import('../../scripts/replace-live-engine.mjs');
+  const { profileEngineHostsCaller } = await import('../../scripts/restart-profile-engine.mjs');
+  const { listenerPid } = await import('../../scripts/profile-engine-pid.mjs');
+  const root = await mkdtemp(path.join(tmpdir(), 'rb-rebuild-'));
+  t.after(() => rm(root, { force: true, recursive: true }));
+  const descriptorPath = path.join(root, 'server', 'connection.json');
+  const env = { ...process.env, HOME: root, RUBATO_PI_CODING_AGENT_DIR: root, RUBATO_STOCK_ENGINE_DIR: path.join(root, 'no-engine') };
+  for (const name of ['SENPI_CODING_AGENT_DIR', 'PI_CODING_AGENT_DIR', 'RUBATO_PROFILE_RESTART_OWNER']) delete env[name];
+  const first = await ensureProfileEngine({ descriptorPath, runtimeRoot: null, env, timeoutMs: 20000 });
+  t.after(async () => { await restartProfileEngine({ descriptorPath, waitMs: 4000 }).catch(() => {}); });
+  const pid = listenerPid(root);
+  assert.ok(pid, 'the scratch engine has a pid');
+
+  assert.equal(await profileEngineHostsCaller({ descriptorPath }), false, 'this test is not a conversation of that engine');
+  assert.equal(await profileEngineHostsCaller({ descriptorPath, ancestors: () => new Set([pid]) }), true);
+  let builds = 0;
+  const hosted = await replaceLiveEngine({ env, replace: async () => { builds += 1; }, stderr: { write() {} },
+    hostsCaller: () => profileEngineHostsCaller({ descriptorPath, ancestors: () => new Set([pid]) }) });
+  assert.equal(hosted, HOSTED_EXIT);
+  assert.equal(builds, 0);
+  assert.equal(await socketAlive(first.socketPath), true, 'a refused build leaves the engine alone');
+
+  const repo = path.join(root, 'repo');
+  await mkdir(repo);
+  const code = await buildActiveEngine({ env, repoRoot: repo, args: ['--force'], startSpeedData: () => {},
+    update: async () => { builds += 1; } });
+  assert.equal(code, 0);
+  assert.equal(builds, 1);
+  assert.equal(await socketAlive(first.socketPath), false, 'the engine running the old build is gone');
+  const second = await ensureProfileEngine({ descriptorPath, runtimeRoot: null, env, timeoutMs: 20000 });
+  assert.equal(await socketAlive(second.socketPath), true, 'the next client starts it again');
+  // Stop the respawned scratch engine before the directory goes; the after-hook above runs too late.
+  const stopped = await restartProfileEngine({ descriptorPath, waitMs: 8000 });
+  assert.equal(stopped.restarted, true, JSON.stringify(stopped));
+});

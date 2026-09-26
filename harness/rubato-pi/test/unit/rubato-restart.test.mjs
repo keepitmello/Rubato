@@ -74,7 +74,10 @@ function restartHarness(t, { engineToken = "restarted", engineExit = 0, hubPrese
   writeFileSync(log, "");
   const fakeNode = join(root, "fake-node");
   const checkExit = engineBuild === "fresh" ? 0 : 10;
-  const buildExit = engineBuild === "fail" ? 1 : 0;
+  const buildExit = engineBuild === "fail" ? 1 : engineBuild === "hosted" ? 20 : 0;
+  // Who restarts after a rebuild: the build itself, or the caller that set the owner flag.
+  const ownerLog = join(root, "build-owner.log");
+  writeFileSync(ownerLog, "");
   executable(
     fakeNode,
     "#!/bin/sh\n" +
@@ -82,6 +85,7 @@ function restartHarness(t, { engineToken = "restarted", engineExit = 0, hubPrese
       "case \"$1\" in\n" +
       `  *build-active-engine.mjs)\n` +
       `    if [ "$2" = "--check" ]; then exit ${checkExit}; fi\n` +
+      `    printf 'owner=%s\\n' "\${RUBATO_PROFILE_RESTART_OWNER-}" >> '${ownerLog}'\n` +
       `    exit ${buildExit} ;;\n` +
       `  *restart-profile-engine.mjs) printf 'ENGINE-STDERR-MARKER\\n' >&2; printf '%s\\n' '${engineToken}'; exit ${engineExit} ;;\n` +
       `  *rubato-hub-restart.mjs) printf '{"ok":true}\\n'; exit ${hubExit} ;;\n` +
@@ -161,11 +165,15 @@ function restartHarness(t, { engineToken = "restarted", engineExit = 0, hubPrese
   };
   mkdirSync(env.HOME, { recursive: true });
   return {
-    run(args) {
-      return spawnSync(launcher, args, { cwd: root, env, encoding: "utf8" });
+    root,
+    run(args, extraEnv = {}) {
+      return spawnSync(launcher, args, { cwd: root, env: { ...env, ...extraEnv }, encoding: "utf8" });
     },
     calls() {
       return readFileSync(log, "utf8");
+    },
+    buildOwners() {
+      return readFileSync(ownerLog, "utf8");
     },
     quitCalls() {
       return readFileSync(quitLog, "utf8");
@@ -437,4 +445,62 @@ test("updater hub step calls the hub helper directly, not the user-facing restar
   assert.doesNotMatch(updateSource, /rubato-pi\.sh" restart/);
   assert.match(updateSource, /rubato-hub-restart\.mjs/);
   assert.match(updateSource, /need_hub/);
+});
+
+// A rebuild restarts the profile engine exactly once. The build would do it on its own
+// (replace-live-engine.mjs); `restart` owns that step and tells the build so, or its own step
+// would find the engine already gone and report "이미 꺼져 있어요" after a real restart.
+test("restart rebuilds as the restart owner, so the engine restarts once and is reported as restarted", (t) => {
+  const harness = restartHarness(t, { engineBuild: "stale", engineToken: "restarted", hubPresent: false });
+  const result = harness.run(["restart"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(harness.buildOwners(), "owner=1\n");
+  assert.equal(harness.calls().match(/restart-profile-engine\.mjs/g)?.length, 1, harness.calls());
+  assert.match(result.stdout, /엔진을 다시 만들었어요/);
+  assert.match(result.stdout, /✓ 프로필 엔진/);
+});
+
+// Session start is the path that left pid 4902 running old code on a new install: the build
+// there owns the restart, so the launcher must not claim it.
+// `--print` is also what `rubato dispatch` runs from inside a conversation.
+function sessionStart(harness) {
+  mkdirSync(join(harness.root, "harness", "rubato-pi"), { recursive: true });
+  mkdirSync(join(harness.root, "harness", "prompts"), { recursive: true });
+  executable(join(harness.root, "harness", "prompts", "build.sh"), "#!/bin/sh\nexit 0\n");
+  return harness.run(["--print", "hello"], {
+    RUBATO_NO_UPDATE_CHECK: "1", RUBATO_NO_MSEARCH_CHECK: "1", RUBATO_NO_VAULT: "1", RUBATO_NO_KIRO_HEAL: "1",
+  });
+}
+
+test("session start lets a real rebuild restart the engine itself", (t) => {
+  const harness = restartHarness(t, { engineBuild: "stale", hubPresent: false });
+  const result = sessionStart(harness);
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.equal(harness.buildOwners(), "owner=\n", "the build is not told someone else restarts");
+  assert.doesNotMatch(harness.calls(), /restart-profile-engine\.mjs/, "the launcher adds no second restart");
+  assert.match(harness.calls(), /bin\/rubato-pi\.mjs --print hello/, "and the session still starts");
+});
+
+test("session start with a current engine builds nothing", (t) => {
+  const harness = restartHarness(t, { engineBuild: "fresh", hubPresent: false });
+  const result = sessionStart(harness);
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.equal(harness.buildOwners(), "");
+  assert.match(harness.calls(), /bin\/rubato-pi\.mjs --print hello/);
+});
+
+test("session start inside an engine conversation goes on with the unchanged engine", (t) => {
+  const harness = restartHarness(t, { engineBuild: "hosted", hubPresent: false });
+  const result = sessionStart(harness);
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.doesNotMatch(result.stderr, /pi 엔진을 맞추지 못했습니다/);
+  assert.match(harness.calls(), /bin\/rubato-pi\.mjs --print hello/);
+});
+
+test("session start stops when the build fails", (t) => {
+  const harness = restartHarness(t, { engineBuild: "fail", hubPresent: false });
+  const result = sessionStart(harness);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /pi 엔진을 맞추지 못했습니다/);
+  assert.doesNotMatch(harness.calls(), /bin\/rubato-pi\.mjs --print hello/);
 });

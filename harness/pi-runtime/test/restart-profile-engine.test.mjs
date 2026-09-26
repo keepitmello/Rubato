@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { listenerPid, processTable } from "../../scripts/profile-engine-pid.mjs";
+import { ancestorPids, listenerPid, processTable } from "../../scripts/profile-engine-pid.mjs";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -97,4 +97,24 @@ test("#given an engine for a different agent dir #when the listener pid is looke
   assert.equal(await waitForPid(otherDir, child.pid), true, "the fake engine must be visible to the lookup");
 
   assert.equal(listenerPid(agentDir), undefined);
+});
+
+test("#given a parent chain in ps #when ancestors are listed #then every parent up to init is named and the start pid is not", () => {
+  const run = (command, args) => (command === "ps" && args[0] === "-eo" && args[1] === "pid=,ppid="
+    ? { status: 0, stdout: ["  1     0", " 50     1", "400    50", "4902  400", "7000 4902", "7100 7000", "9999    1"].join("\n") }
+    : { status: 1, stdout: "" });
+  assert.deepEqual([...ancestorPids(7100, run)], [7000, 4902, 400, 50]);
+  assert.equal(ancestorPids(9999, run).size, 0);
+  assert.equal(ancestorPids(7100, () => ({ status: 1, stdout: "" })).size, 0, "an unreadable table hosts nothing");
+});
+
+test("#given this test process #when a child lists its ancestors #then this process is among them", async () => {
+  const moduleUrl = new URL("../../scripts/profile-engine-pid.mjs", import.meta.url).href;
+  const child = spawn(process.execPath, ["--input-type=module", "-e",
+    `import { ancestorPids } from ${JSON.stringify(moduleUrl)}; process.stdout.write(JSON.stringify([...ancestorPids()]));`],
+  { stdio: ["ignore", "pipe", "inherit"] });
+  let out = "";
+  child.stdout.on("data", (chunk) => { out += chunk; });
+  await once(child, "exit");
+  assert.ok(JSON.parse(out).includes(process.pid), out);
 });

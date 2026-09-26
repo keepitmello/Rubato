@@ -262,9 +262,21 @@ function parseArgs(argv) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const { outputRoot, sourceRoot, mode } = parseArgs(process.argv.slice(2));
-  const runInstall = mode === "rollback"
+  const run = () => mode === "rollback"
     ? rollbackRubatoCandidate({ outputRoot })
     : installRubatoCandidate({ outputRoot, sourceRoot, mode });
+  // Writing the install the profile engine runs restarts that engine onto it
+  // (harness/scripts/replace-live-engine.mjs). Any other output dir is a scratch candidate.
+  const runInstall = (async () => {
+    const { resolveLaunchEngine } = await import("../../rubato-pi/src/engine-selection.mjs");
+    if (resolve(outputRoot) !== resolve(resolveLaunchEngine({ env: process.env }).root)) return run();
+    const { replaceLiveEngine, HOSTED_EXIT } = await import("../../scripts/replace-live-engine.mjs");
+    let result;
+    const code = await replaceLiveEngine({ replace: async () => { result = await run(); } });
+    if (code === HOSTED_EXIT) throw new Error("live engine install left unchanged");
+    if (code !== 0) process.exitCode = code;
+    return result;
+  })();
   runInstall.then((result) => {
     process.stdout.write(`${JSON.stringify({
       root: result.root, node: result.receipt.node, stockVersion: result.receipt.stockVersion,

@@ -72,3 +72,23 @@ export function listenerPid(agentDir, run = spawnSync) {
     }
   }
 }
+
+/** Every pid above `start` in the parent chain, `start` itself excluded.
+ *
+ * A conversation hosted by the profile engine runs its tools as children of that engine, so a
+ * command such as `rubato dispatch` or `npm run build` started from a conversation has the
+ * engine among its ancestors. Restarting the engine from there cuts the conversation that asked.
+ */
+export function ancestorPids(start = process.pid, run = spawnSync) {
+  const parents = new Map();
+  const table = run('ps', ['-eo', 'pid=,ppid='], { encoding: 'utf8' });
+  if (table.status === 0) {
+    for (const line of table.stdout.split('\n')) {
+      const match = /^\s*(\d+)\s+(\d+)\s*$/.exec(line);
+      if (match) parents.set(Number(match[1]), Number(match[2]));
+    }
+  }
+  const ancestors = new Set();
+  for (let pid = parents.get(start); pid && pid > 1 && !ancestors.has(pid); pid = parents.get(pid)) ancestors.add(pid);
+  return ancestors;
+}
