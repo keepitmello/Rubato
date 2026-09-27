@@ -357,6 +357,44 @@ export async function rejectDream(paths: MemoryIdentityPaths, store: string, env
   return pending.runId
 }
 
+/**
+ * Take a landed dream back out: one revert of its merge commit, under the writer lock, so the store's
+ * history keeps both the dream and its undoing. What it read stays read.
+ */
+export async function revertDream(paths: MemoryIdentityPaths, store: string, runId: string, env: NodeJS.ProcessEnv): Promise<string> {
+  const record = await readJson<{ review?: string }>(join(dreamDir(paths), "runs", runId, "run.json"))
+  if (record === undefined) throw new Error(`no dream run ${runId} in ${store}`)
+  if (record.review === "reverted") throw new Error(`${runId} is already reverted`)
+  const exec = createNodeGitExec()
+  const git: Git = async (cwd, argv) => exec.run(argv, { cwd, timeoutMs: 60_000, env })
+  const merge = await landedMerge(git, paths.repo, runId)
+  if (merge === undefined) throw new Error(`${runId} has not landed in ${store}; nothing to revert`)
+  const lock = await createLockRecord(`dream revert (${store})`)
+  const reverted = await withLock(memoryWriterLockPath(paths.locks), lock, async (): Promise<true | string> => {
+    const dirty = await git(paths.repo, ["status", "--porcelain"])
+    if (dirty.stdout.trim() !== "") return "store has uncommitted changes"
+    const revert = await git(paths.repo, [...AS_DREAM, "revert", "--no-edit", "-m", "1", merge])
+    if (revert.code === 0) return true
+    await git(paths.repo, ["revert", "--abort"])
+    return `revert failed: ${(revert.stderr || revert.stdout).trim().split("\n")[0]}`
+  }, { waitTimeoutMs: 60_000 })
+  if (reverted !== true) throw new Error(`${reverted}; ${runId} is still in the store`)
+  await recordReview(paths, runId, "reverted")
+  return runId
+}
+
+/** The merge commit that landed the run, from the subject the runner writes. */
+async function landedMerge(git: Git, repoDir: string, runId: string): Promise<string | undefined> {
+  const log = await git(repoDir, ["log", "--merges", "--fixed-strings", `--grep=${runId}`, "--format=%H %s"])
+  if (log.code !== 0) return undefined
+  for (const line of log.stdout.split("\n")) {
+    const space = line.indexOf(" ")
+    const subject = line.slice(space + 1)
+    if (space > 0 && subject.startsWith("merge(dream): ") && subject.endsWith(` ${runId}`)) return line.slice(0, space)
+  }
+  return undefined
+}
+
 type Git = (cwd: string, argv: readonly string[]) => Promise<{ code: number; stdout: string; stderr: string }>
 
 function dreamLockPath(paths: MemoryIdentityPaths): string {
@@ -367,7 +405,7 @@ async function writePending(paths: MemoryIdentityPaths, pending: PendingReview):
   await writeFile(join(dreamDir(paths), "pending.json"), `${JSON.stringify(pending, null, 2)}\n`, "utf8")
 }
 
-async function recordReview(paths: MemoryIdentityPaths, runId: string, review: "merged" | "rejected"): Promise<void> {
+async function recordReview(paths: MemoryIdentityPaths, runId: string, review: "merged" | "rejected" | "reverted"): Promise<void> {
   const path = join(dreamDir(paths), "runs", runId, "run.json")
   const run = await readJson<Record<string, unknown>>(path)
   if (run === undefined) return

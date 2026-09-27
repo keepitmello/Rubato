@@ -46,20 +46,22 @@ cd "$MEMORY_DIR" && git add -A && git commit -m "dream: <one-line summary>" -m "
 
 If nothing needed writing or fixing, do not commit. Leave the worktree clean either way.
 
-Then write `$OUT_DIR/report.md`:
+Then write `$OUT_DIR/report.md`. The user reads it in Settings > Memory to decide, in about a minute, whether your changes go into the store; the page shows each changed file as a card with its diff, and puts every report line that names the file on that card. So write for that decision:
 
 ```markdown
 ## 요약
-<two or three sentences>
+<one or two sentences: what this dream changed in the store>
 ## 바꾼 것
-- <file>: <created|rewritten|merged into X|deleted> — <why>
+- `<file>`: <created|rewritten|merged into `X`|deleted> — <why, one sentence>
 ## 코드와 어긋나 고친 것
-- <file>: <claim> → <what the code shows>
+- `<file>`: <claim> → <what the code shows>
 ## 푼 모순
-- <file A> vs <file B>: kept <which>, because <evidence>
+- `<file A>` vs `<file B>`: kept <which>, because <evidence>
 ## 남긴 것
-- <considered but not written, and why>
+- <a judgement the user may expect in the store that you left out, and why; one line>
 ```
+
+One line per item, each starting with the file path as it sits in the store. Leave out a section that has nothing in it. `남긴 것` holds at most five lines and only judgements a reader could miss in the store; work you rightly passed over (finished tasks, status, fixes git already explains) is not listed, and neither is a tour of the sessions you read.
 
 Your final message is one line: `DREAM_DONE <n files changed>` or `DREAM_NOOP`.
 
