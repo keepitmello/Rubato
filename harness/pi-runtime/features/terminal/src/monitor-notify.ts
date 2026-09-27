@@ -85,6 +85,8 @@ export class MonitorNotifier {
 	#overflow = new Map<string, Overflow>();
 	#lastInjectionAt = new Map<string, number>();
 	#lastInjectedBatch = new Map<string, string>();
+	/** Monitors that have reported to the agent since they were created or last re-armed. */
+	#reported = new Set<string>();
 	#timer: unknown;
 	#scheduledAt: number | undefined;
 	#consecutiveWakes = 0;
@@ -121,6 +123,14 @@ export class MonitorNotifier {
 		return this.#events.length > 0 || this.#overflow.size > 0;
 	}
 
+	/**
+	 * Whether this monitor's events have reached the agent since it was created or re-armed.
+	 * A monitor that has reported no longer holds a one-shot run open (pending-work.ts).
+	 */
+	hasReported(id: string): boolean {
+		return this.#reported.has(id);
+	}
+
 	/** Any explicit user or tool activity breaks a consecutive monitor-only wake streak. */
 	noteActivity(): void {
 		this.#consecutiveWakes = 0;
@@ -131,6 +141,7 @@ export class MonitorNotifier {
 		for (const id of ids) {
 			this.#lastInjectionAt.delete(id);
 			this.#lastInjectedBatch.delete(id);
+			this.#reported.delete(id);
 		}
 		this.#consecutiveWakes = 0;
 	}
@@ -147,6 +158,7 @@ export class MonitorNotifier {
 		this.#eventChars = 0;
 		this.#overflow.clear();
 		this.#lastInjectedBatch.clear();
+		this.#reported.clear();
 	}
 
 	#recordOverflow(id: string): void {
@@ -221,6 +233,7 @@ export class MonitorNotifier {
 		delivery.send(content, reachesBudget ? { forceWake: true } : undefined);
 		this.#lastWakeAt = now;
 		for (const id of injectedIds) {
+			this.#reported.add(id);
 			this.#lastInjectionAt.set(id, now);
 			this.#overflow.delete(id);
 			const fingerprint = fingerprints.get(id);
