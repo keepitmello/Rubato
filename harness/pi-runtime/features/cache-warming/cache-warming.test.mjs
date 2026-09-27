@@ -155,3 +155,9 @@ test("a session switched off stays off in a new runtime", () => {
   assert.equal(warmer.status.state, "inactive");
   assert.equal(warmer.sessionDisabled(), true);
 });
+
+test("warming is on unless the person turned it off in settings", async () => {
+  const { SettingsManager } = await import(pathToFileURL(join(runtime.codingAgentDir, "dist/core/settings-manager.js")).href);
+  assert.equal(SettingsManager.inMemory({}).getCacheWarmingMode(), "idle");
+  assert.equal(SettingsManager.inMemory({ cacheWarming: "off" }).getCacheWarmingMode(), "off");
+});
