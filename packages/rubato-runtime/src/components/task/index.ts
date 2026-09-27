@@ -5,6 +5,7 @@ import {
   createTaskCancelTool,
   createTaskSendTool,
   createTaskTool,
+  listTeamTasks,
   liveModelCatalog,
   defaultResolveCallerSessionId,
   isTeamMemberProcess,
@@ -16,6 +17,8 @@ import {
   type TeamToolsService,
 } from "@rubato/task"
 
+import type { Task } from "@rubato/team-core/types"
+
 import type { ComponentContext, RubatoComponent, SenpiExtensionAPI } from "../../extension/types"
 import { registerTaskCommands } from "./commands"
 import { composeTaskEngine, type TaskEngine, type TaskRunnerFactories } from "./engine"
@@ -26,6 +29,7 @@ import { TASK_COMPLETION_MESSAGE_TYPE } from "./parent-notifier"
 import { renderTaskCompletion, renderTeamMemberLiveness } from "./renderers"
 import { createResumptionChannelEmitter } from "./resumption-channel-emitter"
 import { createTeamMailboxReconciler, createTeamService } from "./team-service"
+import { createTeamBoardRpcBridge, type TeamBoardRpcBridge } from "./team-board-rpc-bridge"
 import { createSessionTransitionBridge } from "./session-transition-bridge"
 import { createRuntimeTeamBatchWake } from "./team-batch-wake"
 import { wireSessionStartProcessSweep } from "./process-sweep"
@@ -145,12 +149,14 @@ export function createTaskComponent(options: TaskComponentOptions = {}): RubatoC
         engine.onStoreMutation(() => teamBatchWake.schedule())
         teamTools.leadPollers.onTick(() => teamBatchWake.schedule())
       }
+      const teamBoard = memberProcess ? undefined : wireTeamBoardRpcBridge(pi, ctx, engine, teamTools)
 
       wireEventBridge(pi, ctx, engine, statusUi, transitions, {
         reconcileTeamMailbox: teamTools.reconcileTeamMailbox,
         leadPollers: teamTools.leadPollers,
         resumptionChannels,
         teamBatchWake,
+        ...(teamBoard !== undefined ? { teamBoard } : {}),
       })
     },
   }
@@ -237,10 +243,11 @@ function createTeamToolContext(
     ...(engine.settings.state_dir !== undefined ? { task: { state_dir: engine.settings.state_dir } } : {}),
   }
   const deliveryJournal = createLeadDeliveryJournal()
+  const teamCoreConfig = toTeamCoreConfig(engine.settings, teamStorageBaseDir(stateDir))
   const leadPollers = createLeadPollerLifecycle({
     listTeams: service.listTeams,
     runtime: engine.runtime,
-    config: toTeamCoreConfig(engine.settings, teamStorageBaseDir(stateDir)),
+    config: teamCoreConfig,
     runtimeDir: (teamRunId) => resolveTeamRuntimeDirs(stateDir, teamRunId).runtimeDir,
     deliveryJournal,
     appendTaskEvent: engine.appendTaskEvent,
@@ -248,7 +255,37 @@ function createTeamToolContext(
     logger: ctx.logger,
     ...(ctx.idleCoordinator !== undefined ? { coordinator: ctx.idleCoordinator } : {}),
   })
-  return { service, models, reconcileTeamMailbox: createTeamMailboxReconciler(serviceDeps), deliveryJournal, leadPollers }
+  return {
+    service,
+    models,
+    reconcileTeamMailbox: createTeamMailboxReconciler(serviceDeps),
+    deliveryJournal,
+    leadPollers,
+    // Unscoped board read: the board bridge filters to led teams itself, so the service's per-call
+    // ownership check (another runtime-state scan) would only double the per-tick reads.
+    listBoardTasks: (teamRunId) => listTeamTasks({ teamRunId, config: teamCoreConfig }),
+  }
+}
+
+// The RPC host's view of the boards this session leads. Three edges feed it: session attach, task
+// record writes (team create/delete and member turn ends), and the existing 1s lead-poller tick,
+// which is the only edge that sees a member's board write from its own process.
+function wireTeamBoardRpcBridge(
+  pi: SenpiExtensionAPI,
+  ctx: ComponentContext,
+  engine: TaskEngine,
+  teamTools: TeamToolContext,
+): TeamBoardRpcBridge {
+  const bridge = createTeamBoardRpcBridge({
+    pi,
+    sessionId: () => engine.runtime.sessionId(),
+    listTeams: teamTools.service.listTeams,
+    listTasks: teamTools.listBoardTasks,
+    logger: ctx.logger,
+  })
+  engine.onStoreMutation(() => bridge.schedule())
+  teamTools.leadPollers.onTick(() => bridge.tick())
+  return bridge
 }
 
 type TeamToolContext = {
@@ -257,6 +294,7 @@ type TeamToolContext = {
   readonly reconcileTeamMailbox: () => Promise<void>
   readonly deliveryJournal: LeadDeliveryJournal
   readonly leadPollers: LeadPollerLifecycle
+  readonly listBoardTasks: (teamRunId: string) => Promise<readonly Task[]>
 }
 
 function registerTeamTools(pi: SenpiExtensionAPI, context: TeamToolContext): void {

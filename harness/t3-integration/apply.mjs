@@ -13,7 +13,7 @@ import { aboutEdits, aboutOverlays } from './about-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
-const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/server/src/provider/RubatoPiInventory.ts', 'apps/web/src/components/RubatoIcon.tsx', 'apps/web/src/components/DeepSeekIcon.tsx', 'apps/web/src/components/AgentResultDetails.tsx', 'apps/server/src/workspace/createWorkspaceFile.ts', 'apps/web/src/components/files/NewMarkdownNoteDialog.tsx', 'apps/desktop/src/updates/RubatoUpdates.ts', 'apps/web/src/components/desktop/RubatoUpdateDialog.tsx'];
+const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/server/src/provider/RubatoPiInventory.ts', 'apps/web/src/components/RubatoIcon.tsx', 'apps/web/src/components/DeepSeekIcon.tsx', 'apps/web/src/components/AgentResultDetails.tsx', 'apps/web/src/components/RubatoAgentsPanel.tsx', 'apps/web/src/components/RubatoAgentsPanel.test.tsx', 'apps/server/src/workspace/createWorkspaceFile.ts', 'apps/web/src/components/files/NewMarkdownNoteDialog.tsx', 'apps/desktop/src/updates/RubatoUpdates.ts', 'apps/web/src/components/desktop/RubatoUpdateDialog.tsx'];
 // 값이 [anchor, addition] 이면 anchor 앞에 붙이고, [from, to, 'replace'] 면 갈아끼운다.
 // 앱 이름·번들 id·상태 경로는 T3 가 const 로 박아둬서 앞에 덧붙이는 것으로는 못 바꾼다.
 //
@@ -632,6 +632,8 @@ const edits = {
   // Pi 자신의 follow_up 큐로 들어가 T3 가 보여주지도 취소하지도 못했다. 루바토에서는
   // 대기 메시지를 턴이 끝날 때까지 붙들어 둔다 — 그게 팔로업이고, ↑ 는 승격이다.
   'apps/web/src/components/ChatView.tsx': [
+    // The Agents tab renders Rubato's own panel (overlay RubatoAgentsPanel.tsx).
+    ['import { AgentsPanel } from "./AgentsPanel";', 'import { RubatoAgentsPanel as AgentsPanel } from "./RubatoAgentsPanel";', 'replace'],
     ...[10, 12].map((indent) => {
       const spaces = ' '.repeat(indent);
       return [
@@ -1075,7 +1077,40 @@ const edits = {
   'packages/contracts/src/providerRuntime.ts': [
     [
       '  toolUses: Schema.optional(NonNegativeInt),\n  durationMs: Schema.optional(NonNegativeInt),\n});\nexport type RuntimeTaskUsage = typeof RuntimeTaskUsage.Type;',
-      '  toolUses: Schema.optional(NonNegativeInt),\n  durationMs: Schema.optional(NonNegativeInt),\n  speedIndex: Schema.optional(NonNegativeInt),\n});\nexport type RuntimeTaskUsage = typeof RuntimeTaskUsage.Type;',
+      '  toolUses: Schema.optional(NonNegativeInt),\n  durationMs: Schema.optional(NonNegativeInt),\n  speedIndex: Schema.optional(NonNegativeInt),\n  turns: Schema.optional(NonNegativeInt),\n});\nexport type RuntimeTaskUsage = typeof RuntimeTaskUsage.Type;',
+      'replace',
+    ],
+    // Agents panel: the spawn's own words and the picker's model name. `title` stays
+    // the phone's one-line tag + label; the web paints these two on separate lines.
+    [
+      '  timelineBypass: Schema.optional(Schema.Boolean),\n} as const;',
+      '  timelineBypass: Schema.optional(Schema.Boolean),\n  label: Schema.optional(TrimmedNonEmptyStringSchema),\n  modelLabel: Schema.optional(TrimmedNonEmptyStringSchema),\n} as const;',
+      'replace',
+    ],
+    // A taskforce's shared board rides on its team task as a latest-state snapshot.
+    [
+      'const TaskProgressPayload = Schema.Struct({',
+      [
+        'export const RubatoTeamBoardTask = Schema.Struct({',
+        '  id: TrimmedNonEmptyStringSchema,',
+        '  subject: TrimmedNonEmptyStringSchema,',
+        '  description: Schema.String,',
+        '  descriptionTruncated: Schema.optional(Schema.Boolean),',
+        '  status: Schema.Literals(["pending", "claimed", "in_progress", "completed"]),',
+        '  owner: Schema.optional(TrimmedNonEmptyStringSchema),',
+        '  blockedBy: Schema.Array(TrimmedNonEmptyStringSchema),',
+        '  updatedAt: Schema.optional(Schema.String),',
+        '});',
+        'export type RubatoTeamBoardTask = typeof RubatoTeamBoardTask.Type;',
+        'export const RubatoTeamBoard = Schema.Struct({ tasks: Schema.Array(RubatoTeamBoardTask) });',
+        'export type RubatoTeamBoard = typeof RubatoTeamBoard.Type;',
+        '',
+        '',
+      ].join('\n'),
+    ],
+    [
+      '  error: Schema.optional(TrimmedNonEmptyStringSchema),\n  ...taskAgentLinkageFields,\n});\nexport type TaskProgressPayload',
+      '  error: Schema.optional(TrimmedNonEmptyStringSchema),\n  board: Schema.optional(RubatoTeamBoard),\n  ...taskAgentLinkageFields,\n});\nexport type TaskProgressPayload',
       'replace',
     ],
     [
@@ -1085,6 +1120,113 @@ const edits = {
     ],
   ],
   'packages/client-runtime/src/state/subagentRuntime.ts': [
+    // Agents panel (RubatoAgentsPanel): whole label, picker model name, taskforce board.
+    [
+      '  readonly recentActivity: ReadonlyArray<SubagentActivityEntry>;\n  /** First retained observation',
+      [
+        '  readonly recentActivity: ReadonlyArray<SubagentActivityEntry>;',
+        '  /** The spawn\'s own words, uncut (title may carry a phone-sized model tag). */',
+        '  readonly label: string | null;',
+        '  /** The model as the picker names it, with effort: "Opus 5.5 · High". */',
+        '  readonly modelLabel: string | null;',
+        '  /** A taskforce\'s shared board, latest snapshot. */',
+        '  readonly board: SubagentBoard | null;',
+        '  /** First retained observation',
+      ].join('\n'),
+      'replace',
+    ],
+    [
+      'export interface RuntimeSubagent {',
+      [
+        'export interface SubagentBoardTask {',
+        '  readonly id: string;',
+        '  readonly subject: string;',
+        '  readonly description: string;',
+        '  readonly descriptionTruncated: boolean;',
+        '  readonly status: "pending" | "claimed" | "in_progress" | "completed";',
+        '  readonly owner: string | null;',
+        '  readonly blockedBy: ReadonlyArray<string>;',
+        '  readonly updatedAt: string | null;',
+        '}',
+        '',
+        'export interface SubagentBoard {',
+        '  readonly tasks: ReadonlyArray<SubagentBoardTask>;',
+        '}',
+        '',
+        '',
+      ].join('\n'),
+    ],
+    [
+      '  recentActivity: ReadonlyArray<SubagentActivityEntry>;\n  firstSeenAt: string;',
+      '  recentActivity: ReadonlyArray<SubagentActivityEntry>;\n  label: string | null;\n  modelLabel: string | null;\n  board: SubagentBoard | null;\n  firstSeenAt: string;',
+      'replace',
+    ],
+    [
+      '    recentActivity: [],\n    firstSeenAt: at,',
+      '    recentActivity: [],\n    label: asString(payload.label) ?? null,\n    modelLabel: asString(payload.modelLabel) ?? null,\n    board: null,\n    firstSeenAt: at,',
+      'replace',
+    ],
+    [
+      '  const effort = asString(payload.effort);\n  if (effort) agent.effort = effort;',
+      '  const effort = asString(payload.effort);\n  if (effort) agent.effort = effort;\n  const label = asString(payload.label);\n  if (label) agent.label = label;\n  const modelLabel = asString(payload.modelLabel);\n  if (modelLabel) agent.modelLabel = modelLabel;',
+      'replace',
+    ],
+    [
+      '          (payload.usageSnapshot !== true || !existed) &&',
+      '          ((payload.usageSnapshot !== true && payload.boardSnapshot !== true) || !existed) &&',
+      'replace',
+    ],
+    [
+      '        agent.usage = mergeUsageMax(agent.usage, asUsage(payload.typedUsage));\n        agent.updatedAt = at;\n        break;\n      }\n      case "task.updated": {',
+      [
+        '        agent.usage = mergeUsageMax(agent.usage, asUsage(payload.typedUsage));',
+        '        if (payload.boardSnapshot === true) {',
+        '          agent.board = asBoard(payload.board) ?? agent.board;',
+        '          break;',
+        '        }',
+        '        agent.updatedAt = at;',
+        '        break;',
+        '      }',
+        '      case "task.updated": {',
+      ].join('\n'),
+      'replace',
+    ],
+    [
+      'export function formatSubagentModelLabel(',
+      [
+        'const BOARD_TASK_STATUSES = new Set(["pending", "claimed", "in_progress", "completed"]);',
+        '',
+        'function asBoard(value: unknown): SubagentBoard | undefined {',
+        '  if (typeof value !== "object" || value === null) return undefined;',
+        '  const raw = (value as { tasks?: unknown }).tasks;',
+        '  if (!Array.isArray(raw)) return undefined;',
+        '  const tasks: SubagentBoardTask[] = [];',
+        '  for (const entry of raw) {',
+        '    if (typeof entry !== "object" || entry === null) continue;',
+        '    const record = entry as Record<string, unknown>;',
+        '    const id = asString(record.id);',
+        '    const subject = asString(record.subject);',
+        '    const status = record.status;',
+        '    if (!id || !subject || typeof status !== "string" || !BOARD_TASK_STATUSES.has(status)) continue;',
+        '    tasks.push({',
+        '      id,',
+        '      subject,',
+        '      description: typeof record.description === "string" ? record.description : "",',
+        '      descriptionTruncated: record.descriptionTruncated === true,',
+        '      status: status as SubagentBoardTask["status"],',
+        '      owner: asString(record.owner) ?? null,',
+        '      blockedBy: Array.isArray(record.blockedBy)',
+        '        ? record.blockedBy.filter((item): item is string => typeof item === "string")',
+        '        : [],',
+        '      updatedAt: asString(record.updatedAt) ?? null,',
+        '    });',
+        '  }',
+        '  return { tasks };',
+        '}',
+        '',
+        '',
+      ].join('\n'),
+    ],
     // Completion detail retains the report; summaries and live activity stay bounded.
     [
       '        const summary = asString(payload.summary) ?? asString(payload.detail);',
@@ -1099,114 +1241,32 @@ const edits = {
     ].map((line) => [line, line.replace('bounded(summary)', 'summary'), 'replace']),
     [
       '  readonly toolUses?: number;\n  readonly durationMs?: number;\n}',
-      '  readonly toolUses?: number;\n  readonly durationMs?: number;\n  readonly speedIndex?: number;\n}',
+      '  readonly toolUses?: number;\n  readonly durationMs?: number;\n  readonly speedIndex?: number;\n  readonly turns?: number;\n}',
       'replace',
     ],
     [
       '    toolUses?: number;\n    durationMs?: number;\n  } = { totalTokens };',
-      '    toolUses?: number;\n    durationMs?: number;\n    speedIndex?: number;\n  } = { totalTokens };',
+      '    toolUses?: number;\n    durationMs?: number;\n    speedIndex?: number;\n    turns?: number;\n  } = { totalTokens };',
       'replace',
     ],
     [
       '  const durationMs = asCount(record.durationMs);\n  if (durationMs !== undefined) usage.durationMs = durationMs;\n  return usage;',
-      '  const durationMs = asCount(record.durationMs);\n  if (durationMs !== undefined) usage.durationMs = durationMs;\n  const speedIndex = asCount(record.speedIndex);\n  if (speedIndex !== undefined) usage.speedIndex = speedIndex;\n  return usage;',
+      '  const durationMs = asCount(record.durationMs);\n  if (durationMs !== undefined) usage.durationMs = durationMs;\n  const speedIndex = asCount(record.speedIndex);\n  if (speedIndex !== undefined) usage.speedIndex = speedIndex;\n  const turns = asCount(record.turns);\n  if (turns !== undefined) usage.turns = turns;\n  return usage;',
       'replace',
     ],
     [
       '    toolUses?: number;\n    durationMs?: number;\n  } = { totalTokens: Math.max(current.totalTokens, incoming.totalTokens) };',
-      '    toolUses?: number;\n    durationMs?: number;\n    speedIndex?: number;\n  } = { totalTokens: Math.max(current.totalTokens, incoming.totalTokens) };',
+      '    toolUses?: number;\n    durationMs?: number;\n    speedIndex?: number;\n    turns?: number;\n  } = { totalTokens: Math.max(current.totalTokens, incoming.totalTokens) };',
       'replace',
     ],
     [
       '  const durationMs = pick(current.durationMs, incoming.durationMs);\n  if (durationMs !== undefined) merged.durationMs = durationMs;\n  return merged;',
-      '  const durationMs = pick(current.durationMs, incoming.durationMs);\n  if (durationMs !== undefined) merged.durationMs = durationMs;\n  const speedIndex = incoming.speedIndex !== undefined ? incoming.speedIndex : current.speedIndex;\n  if (speedIndex !== undefined) merged.speedIndex = speedIndex;\n  return merged;',
+      '  const durationMs = pick(current.durationMs, incoming.durationMs);\n  if (durationMs !== undefined) merged.durationMs = durationMs;\n  const speedIndex = incoming.speedIndex !== undefined ? incoming.speedIndex : current.speedIndex;\n  if (speedIndex !== undefined) merged.speedIndex = speedIndex;\n  const turns = pick(current.turns, incoming.turns);\n  if (turns !== undefined) merged.turns = turns;\n  return merged;',
       'replace',
     ],
     [
       'export function formatSubagentTokenCount(totalTokens: number): string {',
       'export function formatSpeedLabel(score: number | null | undefined): string {\n  return typeof score === "number" && Number.isFinite(score) ? `Speed ${Math.round(score)}` : "Speed —";\n}\n\nexport function latestSessionSpeed(\n  activities: readonly { kind: string; payload: unknown }[],\n): number | null {\n  for (let index = activities.length - 1; index >= 0; index -= 1) {\n    const activity = activities[index];\n    if (!activity || activity.kind !== "session.speed.updated") continue;\n    const payload = activity.payload;\n    if (!payload || typeof payload !== "object") return null;\n    const score = (payload as { speedIndex?: unknown }).speedIndex;\n    return typeof score === "number" && Number.isFinite(score) ? Math.round(score) : null;\n  }\n  return null;\n}\n\nexport function formatSubagentTokenCount(totalTokens: number): string {',
-      'replace',
-    ],
-  ],
-  'apps/web/src/components/AgentsPanel.tsx': [
-    [
-      'import { useEffect, useRef, useState } from "react";',
-      'import { useEffect, useId, useRef, useState } from "react";\nimport { AgentResultDetails } from "./AgentResultDetails";',
-      'replace',
-    ],
-    [
-      '/** Flat, non-interactive agent status line. No unfold. */\nfunction AgentRow({ agent }: { agent: RuntimeSubagent }) {',
-      '/** Stable collapsed row with an inline report; opening never starts child work. */\nfunction AgentRow({ agent }: { agent: RuntimeSubagent }) {\n  const [open, setOpen] = useState(false);\n  const detailsId = useId();',
-      'replace',
-    ],
-    [
-      '    <div className="grid h-[3.875rem] grid-cols-[0.375rem_minmax(0,1fr)_auto] grid-rows-[1.25rem_1.125rem_1rem] items-center gap-x-2 rounded-md px-1.5 py-1">',
-      [
-        '    <div className="min-w-0">',
-        '    <button',
-        '      type="button"',
-        '      aria-expanded={open}',
-        '      aria-controls={detailsId}',
-        '      aria-label={`${agent.title}: ${open ? "Hide" : "Show"} report. ${statusLabel}`}',
-        '      onClick={() => setOpen((value) => !value)}',
-        '      className="grid h-[3.875rem] w-full cursor-pointer grid-cols-[0.375rem_minmax(0,1fr)_auto] grid-rows-[1.25rem_1.125rem_1rem] items-center gap-x-2 rounded-md px-1.5 py-1 text-left hover:bg-accent/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"',
-        '    >',
-      ].join('\n'),
-      'replace',
-    ],
-    [
-      '        {activity ?? statusLabel}',
-      '        {activity ? (activity.length > 180 ? `${activity.slice(0, 177)}...` : activity) : statusLabel}',
-      'replace',
-    ],
-    [
-      '          <AgentElapsed agent={agent} />',
-      '          <AgentElapsed agent={agent} />\n          {open ? <ChevronDown aria-hidden className="size-3" /> : <ChevronRight aria-hidden className="size-3" />}',
-      'replace',
-    ],
-    [
-      '      <span className="sr-only">{statusLabel}</span>\n    </div>',
-      [
-        '      <span className="sr-only">{statusLabel}</span>',
-        '    </button>',
-        '    {open ? (',
-        '      <div',
-        '        id={detailsId}',
-        '        role="region"',
-        '        aria-label={`${agent.title} report`}',
-        '        tabIndex={0}',
-        '        className="mx-1.5 mb-2 max-h-96 min-w-0 overflow-y-auto overscroll-contain rounded-md border border-border/60 bg-card/30 p-3 focus-visible:outline-2 focus-visible:outline-ring"',
-        '      >',
-        '        <AgentResultDetails agent={agent} />',
-        '      </div>',
-        '    ) : null}',
-        '    </div>',
-      ].join('\n'),
-      'replace',
-    ],
-    [
-      '  formatSubagentModelLabel,\n  formatSubagentTokenCount,\n} from "@t3tools/client-runtime/state/subagentRuntime";',
-      '  formatSubagentModelLabel,\n  formatSpeedLabel,\n} from "@t3tools/client-runtime/state/subagentRuntime";',
-      'replace',
-    ],
-    [
-      '    agent.usage ? `${formatSubagentTokenCount(agent.usage.totalTokens)} tok` : "— tok",',
-      '    formatSpeedLabel(agent.usage?.speedIndex),',
-      'replace',
-    ],
-    [
-      '  const members = workflowMembers(group);\n  const failed = members.filter((member) => member.status === "failed").length;\n  // Coordinator usage may already aggregate members (panel-footer rule):\n  // count it only when there are no member rows to sum.\n  const totalTokens = members.reduce(\n    (sum, member) => sum + (member.usage?.totalTokens ?? 0),\n    members.length === 0 ? (group.workflow.usage?.totalTokens ?? 0) : 0,\n  );\n  const elapsed =',
-      '  const members = workflowMembers(group);\n  const failed = members.filter((member) => member.status === "failed").length;\n  const elapsed =',
-      'replace',
-    ],
-    [
-      '          <span>{members.length} agents</span>\n          <span className="tabular-nums">· {formatSubagentTokenCount(totalTokens)} tok</span>\n          {elapsed ? <span className="tabular-nums">· {elapsed}</span> : null}',
-      '          <span>{members.length} agents</span>\n          {elapsed ? <span className="tabular-nums">· {elapsed}</span> : null}',
-      'replace',
-    ],
-    [
-      '          {model.settledCount > 0 ? <span>{model.settledCount} settled</span> : null}\n        </span>\n        <span className="tabular-nums">Σ {formatSubagentTokenCount(model.totalTokens)} tok</span>\n      </footer>',
-      '          {model.settledCount > 0 ? <span>{model.settledCount} settled</span> : null}\n        </span>\n      </footer>',
       'replace',
     ],
   ],
@@ -1321,6 +1381,48 @@ const edits = {
     ],
   ],
   'apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts': [
+    [
+      '    "timelineBypass",\n',
+      '    "timelineBypass",\n    "label",\n    "modelLabel",\n',
+      'replace',
+    ],
+    // A board snapshot is its own latest-state row (like usage): it must neither
+    // replace the team's activity line nor reopen a settled team.
+    [
+      '      const hasProgressState =\n        event.payload.typedUsage === undefined ||',
+      '      const hasProgressState =\n        (event.payload.typedUsage === undefined && event.payload.board === undefined) ||',
+      'replace',
+    ],
+    [
+      '          : []),\n      ];\n    }\n\n    case "task.updated": {',
+      [
+        '          : []),',
+        '        ...(event.payload.board !== undefined',
+        '          ? [',
+        '              {',
+        '                id: EventId.make(`task-board:${event.threadId}:${event.payload.taskId}`),',
+        '                createdAt: event.createdAt,',
+        '                tone: "info" as const,',
+        '                kind: "task.progress" as const,',
+        '                summary: "Taskforce board updated",',
+        '                payload: {',
+        '                  taskId: event.payload.taskId,',
+        '                  ...identityLinkage,',
+        '                  boardSnapshot: true,',
+        '                  board: event.payload.board,',
+        '                },',
+        '                turnId: toTurnId(event.turnId) ?? null,',
+        '                ...maybeSequence,',
+        '              },',
+        '            ]',
+        '          : []),',
+        '      ];',
+        '    }',
+        '',
+        '    case "task.updated": {',
+      ].join('\n'),
+      'replace',
+    ],
     [
       '        if (thread.titleState?.source !== "manual" && canReplaceThreadTitle(thread.title)) {',
       [
