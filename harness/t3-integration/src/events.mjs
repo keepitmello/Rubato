@@ -132,7 +132,8 @@ export const contextTokensOf = (usage) => {
     + (asInt(usage.cacheRead) ?? 0) + (asInt(usage.cacheWrite) ?? 0);
   return sum > 0 ? sum : undefined;
 };
-// The context ring's cache facts, from the engine's `get_cache_warming`. Times are epoch ms;
+// The context ring's cache facts, from the engine's `get_cache_warming`. `warming.mode` is the
+// global setting and `warming.enabled` this session's own switch. Times are epoch ms;
 // `expiresAt` already counts the refreshes a scheduled warmer will still send, because
 // T3 detaches an idle session and hears nothing from it after that.
 const CACHE_STATES = new Set(['warm', 'cold', 'unknown']);
@@ -140,17 +141,19 @@ const WARMING_MODES = new Set(['off', 'idle', 'streaming']);
 export const cacheFrom = (value) => {
   const cache = record(record(value).cache);
   const status = record(record(value).status);
-  const mode = record(value).mode;
+  const { mode, sessionEnabled, sessionId } = record(value);
   if (!CACHE_STATES.has(cache.state) || !WARMING_MODES.has(mode)) return;
   const hitPercent = asInt(cache.hitPercent);
   const expiresAt = asInt(cache.expiresAt);
   const until = asInt(status.until);
   return {
     state: cache.state,
+    ...(typeof sessionId === 'string' && sessionId ? { sessionId } : {}),
     ...(hitPercent !== undefined ? { hitPercent } : {}),
     ...(expiresAt !== undefined ? { expiresAt } : {}),
     warming: {
       mode,
+      enabled: sessionEnabled !== false,
       active: status.state === 'scheduled' || status.state === 'refreshing',
       ...(until !== undefined ? { until } : {}),
     },

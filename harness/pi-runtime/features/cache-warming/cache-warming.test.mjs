@@ -54,6 +54,7 @@ function harness(provider, userAt) {
   const sessionManager = {
     getBranch: () => branch,
     appendUsage: (kind, p, m, u, note) => { const entry = { kind, provider: p, note, at: Date.now() }; warms.push(entry); return entry; },
+    appendCustomEntry: (customType, data) => { branch.push({ type: "custom", customType, data }); },
   };
   const warmer = new CacheWarmer(models, sessionManager, () => "idle");
   return { warmer, warms, calls, branch };
@@ -116,4 +117,41 @@ test("a response that server-compacted ends warming instead of replaying the old
   await advance(40 * MIN);
   assert.equal(warms.length, 0);
   assert.match(warmer.status.reason, /server compaction replaced the prefix/);
+});
+
+test("a session's switch stops only its warmer, stays off across turns, and resumes from the last touch", async (t) => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+  t.after(() => mock.timers.reset());
+  const { warmer, warms, branch } = harness("anthropic", 0);
+  const request = { model: model("anthropic"), context: {}, options: {} };
+  warmer.start(request, () => true);
+  warmer.onAgentSettled();
+
+  await advance(10 * MIN);
+  warmer.setSessionEnabled(false);
+  assert.equal(warmer.status.state, "inactive");
+  assert.deepEqual(branch.at(-1), { type: "custom", customType: "rubato.cache-warming", data: { enabled: false } });
+  await advance(40 * MIN);
+  assert.equal(warms.length, 0);
+
+  // A later turn in the same session is not warmed either.
+  warmer.start(request, () => true);
+  warmer.onAgentSettled();
+  assert.equal(warmer.status.state, "inactive");
+
+  // Back on: the first refresh counts from that turn's request (50m), not from now.
+  await advance(20 * MIN);
+  warmer.setSessionEnabled(true);
+  assert.equal(warmer.status.state, "scheduled");
+  assert.equal(warmer.status.nextWarmAt, 90 * MIN);
+  await advance(20 * MIN);
+  assert.equal(warms.length, 1);
+});
+
+test("a session switched off stays off in a new runtime", () => {
+  const { warmer, branch } = harness("anthropic", 0);
+  branch.push({ type: "custom", customType: "rubato.cache-warming", data: { enabled: false } });
+  warmer.start({ model: model("anthropic"), context: {}, options: {} }, () => true);
+  assert.equal(warmer.status.state, "inactive");
+  assert.equal(warmer.sessionDisabled(), true);
 });

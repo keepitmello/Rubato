@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -117,7 +117,7 @@ test('idle unload waits while approved children still have work, then proceeds',
   assert.equal(env.host.metrics.runtimeStarts, 1);
 });
 
-test('a scheduled cache refresh keeps a detached runtime; turning warming off anywhere lets every one go', async (t) => {
+test('a scheduled cache refresh keeps a detached runtime; switching a session off lets only that one go', async (t) => {
   const env = await setup(t, { idleMs: 30, pollMs: 0 });
   const client = await env.client();
   const runtimeOf = async (id) => (await client.list()).find((entry) => entry.sessionId === id)?.runtimeId ?? null;
@@ -134,21 +134,12 @@ test('a scheduled cache refresh keeps a detached runtime; turning warming off an
   await delay(150);
   assert.ok(await runtimeOf(a), 'a detached runtime with a refresh due stays loaded');
   assert.ok(await runtimeOf(b));
-  await client.setCacheWarmingMode('off');
-  assert.deepEqual(await client.cacheWarming(), { mode: 'off' });
-  await until(async () => await runtimeOf(a) === null && await runtimeOf(b) === null);
-});
-
-test('with no runtime loaded the warming mode lives in the profile settings file', async (t) => {
-  const settingsFile = path.join(await mkdtemp(path.join(tmpdir(), 'rb-settings-')), 'settings.json');
-  await writeFile(settingsFile, JSON.stringify({ theme: 'dark' }));
-  const env = await setup(t, { idleMs: 30, pollMs: 0, settingsFile });
-  const client = await env.client();
-  assert.deepEqual(await client.cacheWarming(), { mode: 'idle' });
-  await client.setCacheWarmingMode('off');
-  assert.deepEqual(await client.cacheWarming(), { mode: 'off' });
-  assert.deepEqual(JSON.parse(await readFile(settingsFile, 'utf8')), { theme: 'dark', cacheWarming: 'off' });
-  await assert.rejects(client.setCacheWarmingMode('sometimes'));
+  await client.attach(a);
+  const off = await client.command({ type: 'set_session_cache_warming', enabled: false });
+  assert.equal(off.sessionEnabled, false);
+  await client.detach();
+  await until(async () => await runtimeOf(a) === null);
+  assert.ok(await runtimeOf(b), 'switching one session off leaves the others warming');
 });
 
 test('questions survive detach, validate exact offered answers, reject double replies', async (t) => {

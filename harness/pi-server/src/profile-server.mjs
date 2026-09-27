@@ -47,7 +47,7 @@ export async function serveProfile({ agentDir, socketPath, idleMs = 60000, runti
     if (hosted && !sessionDefaultsLookCurrent(agentDir)) ensureSessionDefaults(agentDir);
     const workerOptions = hosted ? await hosted.createWorkerOptions() : undefined;
     service = await startSessionServer({ sessionsDir: path.join(agentDir, 'sessions'), socketPath,
-      serverId: previous?.serverId ?? randomUUID(), idleMs, onError, settingsFile: path.join(agentDir, 'settings.json'),
+      serverId: previous?.serverId ?? randomUUID(), idleMs, onError,
       workerFactory: workerFactory ?? (hosted ? ((metadata, creation) => new SessionWorker(metadata, workerOptions(metadata, creation))) : ((metadata) => new RpcWorker(metadata, {
         env: { RUBATO_PI_CODING_AGENT_DIR: agentDir },
       }))),

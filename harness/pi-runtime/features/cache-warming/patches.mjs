@@ -83,6 +83,16 @@ export function lastResponseCompacted(entries) {
     }
     return false;
 }
+/** A session's own warmer switch, persisted as a custom entry (never sent to the model). */
+export const SESSION_WARMING_ENTRY = "rubato.cache-warming";
+export function sessionWarmingOff(entries) {
+    for (let index = entries.length - 1; index >= 0; index--) {
+        const entry = entries[index];
+        if (entry?.type === "custom" && entry.customType === SESSION_WARMING_ENTRY)
+            return entry.data?.enabled === false;
+    }
+    return false;
+}
 /** Timestamp of the latest user-authored message on the branch. */
 export function lastUserInputAt(entries) {
     for (let index = entries.length - 1; index >= 0; index--) {
@@ -131,6 +141,7 @@ export function lastUserInputAt(entries) {
         this.schedule(this.run);`,
     `            nextWarmAt: 0,
             extensionOverride: false,
+            firstTouchAt: touchedAt,
             anchoredUntil: rubatoIntervalMs === undefined
                 ? undefined
                 : (lastUserInputAt(this.sessionManager.getBranch()) ?? Date.now()) + RUBATO_WARMING_HORIZON_MS,
@@ -237,9 +248,69 @@ export function lastUserInputAt(entries) {
                 const note = [extensionOverride ? "extension override" : undefined, prefillOnly ? "stopped after prefill" : undefined]
                     .filter(Boolean).join("; ") || undefined;
                 const entry = this.sessionManager.appendUsage("cache_warm", message.provider ?? run.model.provider, message.responseModel ?? message.model ?? run.model.id, message.usage, note);
+                if (this.held)
+                    this.held.touchedAt = Date.now();
                 this.onWarmed?.(entry);
             }`,
     "refresh",
+  );
+  // A session can switch its own warmer off; to the warmer that reads as mode "off".
+  next = replaceOnce(
+    next,
+    `        this.getMode = getMode;`,
+    `        this.getMode = () => (this.sessionDisabled() ? "off" : getMode());`,
+    "session-mode",
+  );
+  // The latest request is held past a stop, so switching the session back on resumes from it.
+  next = replaceOnce(
+    next,
+    `    start(request, isCurrent) {
+        this.clearRun();`,
+    `    start(request, isCurrent, touchedAt) {
+        this.held = { request, isCurrent, touchedAt: touchedAt ?? Date.now() };
+        this.clearRun();`,
+    "start-held",
+  );
+  // A resumed run counts its first refresh from when the cache was last touched.
+  next = replaceOnce(
+    next,
+    `        run.nextWarmAt = Date.now() + run.delayMs;`,
+    `        run.nextWarmAt = (run.firstTouchAt ?? Date.now()) + run.delayMs;
+        run.firstTouchAt = undefined;`,
+    "schedule-first-touch",
+  );
+  next = replaceOnce(
+    next,
+    `    cancel() {
+        this.stop("inactive");
+    }`,
+    `    cancel() {
+        this.stop("inactive");
+    }
+    /** Whether this session switched its own warmer off (read once from the session). */
+    sessionDisabled() {
+        this.sessionOff ??= sessionWarmingOff(this.sessionManager.getBranch());
+        return this.sessionOff;
+    }
+    /**
+     * Switch this session's warmer. Off persists in the session, so later turns stay
+     * unwarmed; on resumes from the latest request, counting from when the cache was
+     * last touched. The two-hour window and the replay checks still apply.
+     */
+    setSessionEnabled(enabled) {
+        if (this.sessionDisabled() !== enabled)
+            return;
+        this.sessionManager.appendCustomEntry(SESSION_WARMING_ENTRY, { enabled });
+        this.sessionOff = !enabled;
+        if (!enabled) {
+            this.onModeChanged();
+            return;
+        }
+        const held = this.held;
+        if (held && !this.run && this.getMode() !== "off")
+            this.start(held.request, held.isCurrent, held.touchedAt);
+    }`,
+    "session-switch",
   );
   return replaceOnce(
     next,
@@ -289,22 +360,26 @@ export function patchSettingsWarmingDefault(source) {
 /**
  * The warmer's live state is in memory; a presentation (the app's context ring) and the
  * session host (which must not unload a runtime with a refresh still due) read it here.
- * `set_cache_warming_mode` persists the global mode and reconciles this runtime's warmer.
+ * `set_session_cache_warming` switches this session's warmer; the global mode stays a setting.
  */
 export function patchRpcCacheWarming(source) {
-  const next = `import { cacheSnapshot } from "../../rubato-features/statusline/statusline.mjs";\nimport { CACHE_WARMING_MODES } from "../../core/settings-manager.js";\n${source}`;
+  const next = `import { cacheSnapshot } from "../../rubato-features/statusline/statusline.mjs";\n${source}`;
   return replaceOnce(
     next,
     `            case "get_session_stats": {`,
     `            case "get_cache_warming":
-            case "set_cache_warming_mode": {
-                if (command.type === "set_cache_warming_mode") {
-                    if (!CACHE_WARMING_MODES.includes(command.mode))
-                        return error(id, command.type, \`Unknown cache warming mode: \${command.mode}\`);
-                    session.setCacheWarmingMode(command.mode);
+            case "set_session_cache_warming": {
+                const warmer = session._cacheWarmer;
+                if (command.type === "set_session_cache_warming") {
+                    if (typeof command.enabled !== "boolean")
+                        return error(id, command.type, "enabled must be a boolean");
+                    if (!warmer)
+                        return error(id, command.type, "This session has no cache warmer");
+                    warmer.setSessionEnabled(command.enabled);
                 }
                 return success(id, command.type, {
                     mode: session.settingsManager.getCacheWarmingMode(),
+                    sessionEnabled: warmer ? !warmer.sessionDisabled() : false,
                     status: session.cacheWarmingStatus ?? null,
                     cache: cacheSnapshot(session.sessionManager.getBranch(), session.model, Date.now(), session.cacheWarmingStatus),
                 });

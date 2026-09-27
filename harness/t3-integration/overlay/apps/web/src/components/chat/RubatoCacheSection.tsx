@@ -3,7 +3,7 @@ import { type ReactNode, useEffect, useState } from "react";
 
 import type { ContextWindowSnapshot } from "~/lib/contextWindow";
 import { cn } from "~/lib/utils";
-import { setCacheWarmingMode, type CacheWarmingMode } from "~/state/rubatoCacheWarming";
+import { setSessionCacheWarming } from "~/state/rubatoCacheWarming";
 import { Switch } from "../ui/switch";
 
 type RubatoCache = NonNullable<ContextWindowSnapshot["cache"]>;
@@ -58,44 +58,51 @@ function Row(props: { label: string; children: ReactNode }) {
   );
 }
 
-/** The cache half of the context ring's popover: lifetime, hit rate and the warmer. */
+/**
+ * The cache half of the context ring's popover: lifetime, hit rate and this thread's warmer.
+ * The switch answers for this thread only; the global mode is a setting (/settings in the CLI).
+ */
 export function RubatoCacheSection(props: {
   cache: RubatoCache | null | undefined;
   environmentId?: EnvironmentId | undefined;
 }) {
-  const { cache, environmentId } = props;
-  const now = useRubatoCacheNow(cache, true);
-  const [requestedMode, setRequestedMode] = useState<CacheWarmingMode | null>(null);
+  const now = useRubatoCacheNow(props.cache, true);
+  // The switch's answer stands in until the thread reports again. A thread T3 has let go
+  // of reports nothing new, so without it the popover would snap back to the old state.
+  const [answered, setAnswered] = useState<RubatoCache | null>(null);
+  const [pending, setPending] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const reportedMode = cache?.warming.mode;
-  useEffect(() => {
-    if (requestedMode !== null && reportedMode === requestedMode) setRequestedMode(null);
-  }, [reportedMode, requestedMode]);
+  useEffect(() => setAnswered(null), [props.cache]);
+  const cache = answered ?? props.cache;
   if (!cache) return null;
 
   const cold = rubatoCacheIsCold(cache, now);
-  const mode = requestedMode ?? cache.warming.mode;
-  const warmingOn = mode !== "off";
+  const globalOff = cache.warming.mode === "off";
+  const enabled = pending ?? cache.warming.enabled;
   const status = cold
     ? "Cold"
     : cache.state === "warm" && cache.expiresAt != null
       ? `Warm · ${formatRemaining(cache.expiresAt - now)} left`
       : "Lifetime not published";
-  const warmingNote = !warmingOn
-    ? "Off for every thread"
-    : cache.warming.active && cache.warming.until != null && requestedMode === null
-      ? `Refreshing until ${formatClock(cache.warming.until)}`
-      : "Not warming right now";
+  const warmingNote = globalOff
+    ? "Off in settings"
+    : !enabled
+      ? "Off for this thread"
+      : cache.warming.active && cache.warming.until != null && pending === null
+        ? `Refreshing until ${formatClock(cache.warming.until)}`
+        : "Not warming right now";
+  const canSwitch = Boolean(props.environmentId && cache.sessionId) && !globalOff;
 
   const toggle = (checked: boolean) => {
-    if (!environmentId) return;
-    const next: CacheWarmingMode = checked ? "idle" : "off";
-    setRequestedMode(next);
+    if (!props.environmentId || !cache.sessionId) return;
+    setPending(checked);
     setError(null);
-    setCacheWarmingMode(environmentId, next).catch((cause: unknown) => {
-      setRequestedMode(null);
-      setError(cause instanceof Error ? cause.message : "Could not change cache warming.");
-    });
+    setSessionCacheWarming(props.environmentId, cache.sessionId, checked)
+      .then((next) => setAnswered(next))
+      .catch((cause: unknown) =>
+        setError(cause instanceof Error ? cause.message : "Could not change cache warming."),
+      )
+      .finally(() => setPending(null));
   };
 
   return (
@@ -117,10 +124,10 @@ export function RubatoCacheSection(props: {
         </div>
         <Switch
           size="sm"
-          checked={warmingOn}
-          disabled={!environmentId}
+          checked={enabled && !globalOff}
+          disabled={!canSwitch || pending !== null}
           onCheckedChange={toggle}
-          aria-label="Keep the prompt cache warm"
+          aria-label="Keep this thread's prompt cache warm"
         />
       </div>
       {error ? <div className="text-pretty text-[11px] text-destructive">{error}</div> : null}
