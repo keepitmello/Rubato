@@ -159,6 +159,8 @@ export function wireHarness(sessionId?: string, options: HarnessOptions = {}) {
     },
   } as unknown as TaskEngine
 
+  const boardCalls: string[] = []
+
   const statusUi = {
     scheduleSync: () => {
       order.push("statusSync")
@@ -207,6 +209,12 @@ export function wireHarness(sessionId?: string, options: HarnessOptions = {}) {
     // The team batch wake runs on the same chain. It is exercised in team-batch-wake.test.ts; here it
     // only has to be present, and it stays out of the recorded order on purpose.
     teamBatchWake: { evaluate: async () => [] },
+    // Board lifecycle is recorded apart from `order` so the recovery-chain assertions stay exact.
+    teamBoard: {
+      attach: () => boardCalls.push("attach"),
+      detach: () => boardCalls.push("detach"),
+      dispose: () => boardCalls.push("dispose"),
+    },
   } as unknown as Parameters<typeof wireEventBridge>[5]
 
   const ctx = {
@@ -238,6 +246,7 @@ export function wireHarness(sessionId?: string, options: HarnessOptions = {}) {
     rpcHandlers,
     sendCalls,
     cancelCalls,
+    boardCalls,
     records,
     emitChildEvent: (taskId: string, event: ManagedChildEvent) => {
       for (const listener of childListeners.get(taskId) ?? []) listener(event)

@@ -10,6 +10,7 @@ import { wireReloadGuard } from "./reload-guard"
 import type { SessionTransitionBridge } from "./session-transition-bridge"
 import type { TaskStatusUi } from "./status-ui"
 import { wireTaskRpcBridge } from "./task-rpc-bridge"
+import type { TeamBoardRpcBridge } from "./team-board-rpc-bridge"
 import { createOncePerSessionGuard, TASK_USAGE_GUIDANCE } from "./usage-guidance"
 
 export const TASK_USAGE_HINT_FLAG = "rubato-task-usage-hint"
@@ -23,6 +24,8 @@ type EventBridgeState = {
   // mailbox tick (the last fact can arrive after every member already parked). Store mutations cover
   // the member turn ends themselves.
   readonly teamBatchWake: Pick<TeamBatchWake, "evaluate">
+  // Lead-only board snapshots for the RPC host; follows the same session lifecycle as task snapshots.
+  readonly teamBoard?: Pick<TeamBoardRpcBridge, "attach" | "detach" | "dispose">
 }
 
 // Session start runs the durable recovery chain in strict order: flush/drop buffered completions
@@ -78,10 +81,12 @@ export function wireEventBridge(
     await evaluateTeamBatchBestEffort(ctx, state)
     statusUi.scheduleSync()
     taskRpc.attach()
+    state.teamBoard?.attach()
   })
 
   pi.on("session_before_switch", (_payload, eventCtx) => {
     taskRpc.detach()
+    state.teamBoard?.detach()
     engine.runtime.captureFrom(asLiveContext(eventCtx))
     transitions.onBeforeSwitch(engine.runtime.sessionId())
     engine.runtime.clearUi()
@@ -101,6 +106,7 @@ export function wireEventBridge(
   pi.on("session_shutdown", async (payload, eventCtx) => {
     unsubscribeTaskSnapshots()
     taskRpc.dispose()
+    state.teamBoard?.dispose()
     engine.runtime.captureFrom(asLiveContext(eventCtx))
     transitions.onShutdown(engine.runtime.sessionId())
     engine.runtime.clearUi()

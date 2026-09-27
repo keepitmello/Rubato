@@ -21,6 +21,16 @@ const EFFORT_LABELS = {
   max: "Max",
 };
 
+/** The picker's name for a `provider/id` model plus its effort, e.g. "Opus 5.5 · High". */
+export function modelDisplayLabel(model, effort) {
+  if (typeof model !== "string" || !model.trim()) return undefined;
+  const slash = model.indexOf("/");
+  const item = slash === -1 ? { id: model } : { provider: model.slice(0, slash), id: model.slice(slash + 1) };
+  const name = productCatalogLabel(item);
+  if (typeof effort !== "string" || !effort.trim()) return name;
+  return `${name} · ${EFFORT_LABELS[effort] ?? effort}`;
+}
+
 // Keep aligned with harness/pi-runtime/features/service-tier/extension.mjs.
 const CODEX_RESPONSES_API = "openai-codex-responses";
 const SERVICE_TIER_APIS = new Set([

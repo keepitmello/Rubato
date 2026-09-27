@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 // The real T3 ingestion harness proves the stored report survives a fresh fold;
 // testing only EventProjection misses both downstream 180-character cuts.
-test('agent reports survive T3 storage and reload without truncating the final paragraph', {
+test('agent reports, taskforce boards and agent row facts survive T3 storage and reload', {
   skip: !process.env.T3_SOURCE, timeout: 120_000,
 }, async (t) => {
   const source = process.env.T3_SOURCE;
