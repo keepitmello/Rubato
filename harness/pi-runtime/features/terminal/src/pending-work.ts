@@ -26,6 +26,8 @@ export interface HeldMonitor {
 	readonly id: string;
 	readonly startedAtMs: number;
 	readonly persistent: boolean;
+	/** Its events have already reached the agent (MonitorNotifier.hasReported). */
+	readonly reported: boolean;
 }
 
 export interface TerminalPendingWork {
@@ -34,9 +36,15 @@ export interface TerminalPendingWork {
 }
 
 /**
- * Terminal work whose completion will still wake the session: background sessions and monitors
- * that notify on exit, plus monitor events queued for the next coalesced delivery. Nothing is
- * pending when notifications cannot reach the agent (`notify: "off"`, no model).
+ * Terminal work whose completion will still wake the session: background sessions that notify
+ * on exit, monitors that have not reported yet, plus monitor events queued for the next
+ * coalesced delivery. Nothing is pending when notifications cannot reach the agent
+ * (`notify: "off"`, no model).
+ *
+ * A monitor holds the run only until its first event reaches the agent. After that the agent
+ * has had the turn the monitor was set up to give it, and a watch such as `tail -f <log>` never
+ * exits by itself, so holding on would idle the run until the watcher's deadline. Its later
+ * events still arrive while other work holds the run; re-arming a paused monitor holds again.
  */
 export function terminalPendingWork(input: {
 	readonly delivers: boolean;
@@ -50,7 +58,8 @@ export function terminalPendingWork(input: {
 		(entry) => entry.bounded || input.nowMs < entry.startedAtMs + UNBOUNDED_BACKGROUND_HOLD_MS,
 	).length;
 	const monitors = input.monitors.filter(
-		(entry) => !entry.persistent || input.nowMs < entry.startedAtMs + PERSISTENT_MONITOR_HOLD_MS,
+		(entry) =>
+			!entry.reported && (!entry.persistent || input.nowMs < entry.startedAtMs + PERSISTENT_MONITOR_HOLD_MS),
 	).length;
 	return { active: backgrounds + monitors, undelivered: input.queuedMonitorEvents ? 1 : 0 };
 }

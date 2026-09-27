@@ -375,6 +375,7 @@ export function registerTerminalExtension(pi: ExtensionAPI, host: TerminalExtens
 				id: entry.id,
 				startedAtMs: entry.startedAtMs,
 				persistent: entry.persistent === true,
+				reported: state.monitorNotifier?.hasReported(entry.id) ?? false,
 			})),
 			queuedMonitorEvents: state.monitorNotifier?.hasQueuedEvents() ?? false,
 			nowMs: Date.now(),

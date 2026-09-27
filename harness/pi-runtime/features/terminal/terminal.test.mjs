@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { findPackageJSON } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -321,8 +321,9 @@ test("one-shot holds end for work that has no deadline of its own", async () => 
 			{ id: "bash_2", startedAtMs: 0, bounded: true },
 		],
 		monitors: [
-			{ id: "bash_3", startedAtMs: 0, persistent: true },
-			{ id: "bash_4", startedAtMs: 0, persistent: false },
+			{ id: "bash_3", startedAtMs: 0, persistent: true, reported: false },
+			{ id: "bash_4", startedAtMs: 0, persistent: false, reported: false },
+			{ id: "bash_5", startedAtMs: 0, persistent: false, reported: true },
 		],
 		queuedMonitorEvents: true,
 		nowMs: 0,
@@ -331,4 +332,62 @@ test("one-shot holds end for work that has no deadline of its own", async () => 
 	assert.deepEqual(terminalPendingWork({ ...input, nowMs: PERSISTENT_MONITOR_HOLD_MS }), { active: 3, undelivered: 1 });
 	assert.deepEqual(terminalPendingWork({ ...input, nowMs: UNBOUNDED_BACKGROUND_HOLD_MS }), { active: 2, undelivered: 1 });
 	assert.deepEqual(terminalPendingWork({ ...input, delivers: false }), { active: 0, undelivered: 0 });
+});
+
+test("a monitor holds a one-shot json run until it reports, not until its watch command exits", async (t) => {
+	const { default: registerTerminal } = await import("./src/extension.ts");
+	const { SettingsManager } = await import("./src/host-sdk.ts");
+	const scratch = mkdtempSync(join(tmpdir(), "rubato-terminal-oneshot-monitor-"));
+	const handlers = new Map();
+	const rpc = new Map();
+	const sent = [];
+	const tools = new Map();
+	let active = [];
+	const pi = {
+		registerTool: (tool) => tools.set(tool.name, tool),
+		on: (event, handler) => handlers.set(event, handler),
+		rpc: { handle: (name, handler) => rpc.set(name, handler), emit() {} },
+		events: { emit() {} },
+		sendMessage: (message, options) => sent.push({ message, options }),
+		getActiveTools: () => active,
+		setActiveTools: (next) => {
+			active = next;
+		},
+	};
+	registerTerminal(pi, {
+		createSettingsManager: () => SettingsManager.inMemory({ terminal: { notify: "wake" } }),
+		getShellEnv: () => ({ PATH: process.env.PATH, HOME: scratch, LANG: "C.UTF-8", TERM: "xterm-256color" }),
+	});
+	const ctx = {
+		mode: "json",
+		cwd: scratch,
+		model: { provider: "fixture", id: "fake", api: "openai-completions" },
+		ui: { notify() {}, setStatus() {} },
+	};
+	t.after(async () => {
+		await handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" }, ctx);
+		rmSync(scratch, { recursive: true, force: true });
+	});
+	await handlers.get("session_start")({ type: "session_start", reason: "startup" }, ctx);
+	const pending = () => rpc.get("rubato.terminal.pending-work")();
+
+	// The benchmark shape: a gate on a log line whose watch command (`tail -f`) never exits.
+	const gate = join(scratch, "gate");
+	const started = await tools.get("monitor").execute("call-1", {
+		description: "check completion",
+		command: `until [ -f '${gate}' ]; do sleep 0.05; done; printf 'EXIT 0\\n'; exec sleep 600`,
+		filter: "^EXIT",
+		timeout_ms: 600_000,
+	});
+	assert.match(started.details?.bash_id ?? "", /^bash_\d+$/);
+	await delay(300);
+	assert.equal(sent.length, 0);
+	assert.deepEqual(pending(), { active: 1, undelivered: 0 }, "a monitor the agent is waiting on holds the run");
+
+	writeFileSync(gate, "");
+	const deadline = Date.now() + 8_000;
+	while (sent.length === 0 && Date.now() < deadline) await delay(25);
+	assert.equal(sent.length, 1, "the waited-on event reaches the agent in json mode");
+	assert.match(sent[0].message.content, /Monitor event\(check completion\): EXIT 0/);
+	assert.deepEqual(pending(), { active: 0, undelivered: 0 }, "once it has reported, a still-running watch no longer holds the run");
 });
