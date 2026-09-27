@@ -1,8 +1,8 @@
 // The context ring shows the prompt cache. The bridge adds `cache` to the usage snapshot
 // (events.mjs cacheFrom); these edits let it through the contract and the web reader,
-// turn the ring red when the cache is cold, and put the cache facts and the warmer
-// switch in the ring's popover where the auto-compaction note used to be. The switch
-// posts to /rubato/cache-warming, which the bridge answers (bridge.mjs).
+// turn the ring red when the cache is cold, and put the cache facts and the thread's own
+// warmer switch in the ring's popover where the auto-compaction note used to be. The
+// switch posts to /rubato/cache-warming, which the bridge answers (bridge.mjs).
 export const cacheOverlays = [
   'apps/server/src/RubatoCacheWarming.ts',
   'apps/web/src/state/rubatoCacheWarming.ts',
@@ -18,10 +18,12 @@ export const cacheEdits = {
         '/** Rubato: the prompt cache behind the context ring. Times are epoch ms. */',
         'export const RubatoCacheSnapshot = Schema.Struct({',
         '  state: Schema.Literals(["warm", "cold", "unknown"]),',
+        '  sessionId: Schema.optional(Schema.String),',
         '  hitPercent: Schema.optional(NonNegativeInt),',
         '  expiresAt: Schema.optional(NonNegativeInt),',
         '  warming: Schema.Struct({',
         '    mode: Schema.Literals(["off", "idle", "streaming"]),',
+        '    enabled: Schema.Boolean,',
         '    active: Schema.Boolean,',
         '    until: Schema.optional(NonNegativeInt),',
         '  }),',

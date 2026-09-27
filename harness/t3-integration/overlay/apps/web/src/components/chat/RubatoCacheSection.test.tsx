@@ -1,4 +1,4 @@
-import { EventId, TurnId } from "@t3tools/contracts";
+import { type EnvironmentId, EventId, TurnId } from "@t3tools/contracts";
 import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vite-plus/test";
@@ -29,12 +29,14 @@ function meterWith(cache: Record<string, unknown>, usedTokens = 10_000) {
     },
   ]);
   if (!usage) throw new Error("The fixture did not produce a snapshot.");
-  return renderToStaticMarkup(<ContextWindowMeter usage={usage} modelDisplayName="Opus 5.5" />);
+  return renderToStaticMarkup(
+    <ContextWindowMeter usage={usage} modelDisplayName="Opus 5.5" environmentId={"env" as EnvironmentId} />,
+  );
 }
 
 describe("the context ring's prompt cache", () => {
   it("paints the ring red when the cache is cold", () => {
-    const markup = meterWith({ state: "cold", hitPercent: 92, warming: { mode: "idle", active: false } });
+    const markup = meterWith({ state: "cold", hitPercent: 92, warming: { mode: "idle", enabled: true, active: false } });
     expect(markup).toContain('stroke="var(--color-error)"');
     expect(markup).toContain("Cold");
   });
@@ -44,7 +46,7 @@ describe("the context ring's prompt cache", () => {
       state: "warm",
       hitPercent: 92,
       expiresAt: Date.now() + 2 * HOUR + 5 * 60_000,
-      warming: { mode: "idle", active: true, until: Date.now() + HOUR },
+      warming: { mode: "idle", enabled: true, active: true, until: Date.now() + HOUR },
     });
     expect(markup).not.toContain("var(--color-error)");
     expect(markup).toContain("Hit rate");
@@ -57,12 +59,16 @@ describe("the context ring's prompt cache", () => {
   });
 
   it("keeps a nearly full context out of red while the cache is warm", () => {
-    const markup = meterWith({ state: "warm", expiresAt: Date.now() + 2 * HOUR, warming: { mode: "idle", active: true } }, 195_000);
+    const markup = meterWith({ state: "warm", expiresAt: Date.now() + 2 * HOUR, warming: { mode: "idle", enabled: true, active: true } }, 195_000);
     expect(markup).not.toContain("var(--color-error)");
   });
 
-  it("says the warmer is off for every thread", () => {
-    const markup = meterWith({ state: "warm", expiresAt: Date.now() + HOUR, warming: { mode: "off", active: false } });
-    expect(markup).toContain("Off for every thread");
+  it("says whether this thread or the setting turned the warmer off", () => {
+    const thread = meterWith({ state: "warm", sessionId: "s1", expiresAt: Date.now() + HOUR, warming: { mode: "idle", enabled: false, active: false } });
+    expect(thread).toContain("Off for this thread");
+    expect(thread).not.toMatch(/data-disabled=""/);
+    const global = meterWith({ state: "warm", sessionId: "s1", expiresAt: Date.now() + HOUR, warming: { mode: "off", enabled: true, active: false } });
+    expect(global).toContain("Off in settings");
+    expect(global).toMatch(/data-disabled=""/);
   });
 });

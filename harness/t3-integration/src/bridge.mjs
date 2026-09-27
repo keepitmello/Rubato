@@ -1,7 +1,7 @@
 import { SessionClient } from '../../pi-server/src/client.mjs';
 import { readDescriptor } from '../../pi-server/src/descriptor.mjs';
 import { ensureProfileEngine } from '../../pi-server/src/discovery.mjs';
-import { EventProjection, importedId, messageKey, textOf, usageModelIdentity, windowFromModels } from './events.mjs';
+import { EventProjection, cacheFrom, importedId, messageKey, textOf, usageModelIdentity, windowFromModels } from './events.mjs';
 import { applySelectionOptions, catalogForPicker } from './model-catalog-order.mjs';
 import { controlCommandFor, rewriteSkillMentions, surfaceFromPiCommands } from './commands.mjs';
 import { readFile } from 'node:fs/promises';
@@ -627,17 +627,31 @@ export class RubatoPiBridge {
     let value;
     try { value = await context.client.command({ type: 'get_cache_warming' }); }
     catch { return; }
-    if (!context.stopped) context.projection.configureCache(value);
+    if (!context.stopped) context.projection.configureCache({ ...value, sessionId: context.sessionId });
   }
   cacheMoved(event) {
     return event?.type === 'agent_settled' || (event?.type === 'entry_appended' && event.entry?.kind === 'cache_warm');
   }
-  /** Warming is one global mode; every open thread's ring follows the change. */
-  async cacheWarming() { return this.viaInventory((client) => client.cacheWarming()); }
-  async setCacheWarmingMode(mode) {
-    const result = await this.viaInventory((client) => client.setCacheWarmingMode(mode));
-    await Promise.all([...this.sessions.values()].map((context) => this.refreshCache(context)));
-    return result;
+  /**
+   * The ring's switch turns one session's warmer off or on. A thread T3 has let go of
+   * after its idle half hour has no attachment here, so a short-lived one does the job
+   * (the engine keeps a warming runtime loaded, and loads a stored one for the switch).
+   */
+  async setSessionCacheWarming(sessionId, enabled) {
+    if (typeof sessionId !== 'string' || !sessionId || typeof enabled !== 'boolean') throw new Error('sessionId and enabled are required');
+    const command = { type: 'set_session_cache_warming', enabled };
+    const open = [...this.sessions.values()].find((context) => context.sessionId === sessionId && !context.stopped);
+    if (open) {
+      const value = await open.client.command(command);
+      open.projection.configureCache({ ...value, sessionId });
+      return cacheFrom({ ...value, sessionId });
+    }
+    await this.connection();
+    const client = await new SessionClient({ ...this.descriptor, onError: this.onError }).connect();
+    try {
+      await client.attach(sessionId);
+      return cacheFrom({ ...(await client.command(command)), sessionId });
+    } finally { await client.detach().catch(() => {}); await client.close(); }
   }
   rememberWindows(models) {
     this.modelWindows ??= new Map();
@@ -694,15 +708,14 @@ export const createBridge = (options) => { t3BridgeLog('createBridge', options?.
 /**
  * `/rubato/cache-warming` on the T3 server lands here (RubatoCacheWarming.ts imports this
  * module by the path the Rubato provider is wired to, so it is the same module instance
- * and sees the provider's bridge). GET reads the global mode; POST `{ mode }` sets it.
+ * and sees the provider's bridge). POST `{ sessionId, enabled }` switches that session's warmer.
  */
 export async function handleCacheWarmingRequest(request) {
   const bridge = [...liveBridges].find((item) => !item.closed);
   if (!bridge) return Response.json({ error: { code: 'unavailable', message: 'The Rubato provider is not running.' } }, { status: 503 });
   try {
-    if (request.method === 'GET') return Response.json(await bridge.cacheWarming());
     const body = await request.json().catch(() => ({}));
-    return Response.json(await bridge.setCacheWarmingMode(body?.mode));
+    return Response.json({ cache: await bridge.setSessionCacheWarming(body?.sessionId, body?.enabled) });
   } catch (error) {
     return Response.json({ error: { code: 'failed', message: String(error?.message ?? error) } }, { status: 500 });
   }

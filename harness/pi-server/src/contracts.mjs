@@ -12,7 +12,7 @@ export const COMMANDS = new Set([
   'get_commands', 'get_last_assistant_text', 'get_fork_messages', 'get_service_tier', 'set_model', 'set_thinking_level',
   'set_session_name', 'set_auto_compaction', 'set_auto_retry', 'abort_retry',
   'set_steering_mode', 'set_follow_up_mode', 'compact', 'fork', 'reload',
-  'get_cache_warming',
+  'get_cache_warming', 'set_session_cache_warming',
 ]);
 export const UI_METHODS = new Set(['select', 'confirm', 'input', 'editor']);
 export const json = (value) => JSON.parse(JSON.stringify(value));

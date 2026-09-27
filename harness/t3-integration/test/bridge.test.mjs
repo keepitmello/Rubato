@@ -913,17 +913,23 @@ test('a completed turn reports no runtime error', () => {
   assert.equal(events.some((event) => event.type==='runtime.error'), false);
 });
 
-test('the meter carries the cache and the warmer, and a mode change repaints every open thread', async (t) => {
+test('the meter carries the cache and the warmer, and the switch turns off only that session', async (t) => {
   const { root, events, bridge } = await setup(t);
   await bridge.startSession({ threadId:'cache-thread', runtimeMode:'full-access', cwd:root });
   await bridge.sendTurn({ threadId:'cache-thread', input:'usage' });
   const cacheOf = () => events.filter((event) => event.type==='thread.token-usage.updated').at(-1)?.payload.usage.cache;
   await until(() => cacheOf() !== undefined);
-  assert.deepEqual(cacheOf(), { state: 'warm', hitPercent: 90, expiresAt: 1_790_000_000_000, warming: { mode: 'idle', active: false } });
-  assert.deepEqual(await bridge.setCacheWarmingMode('off'), { mode: 'off' });
-  await until(() => cacheOf()?.warming.mode === 'off');
-  const response = await handleCacheWarmingRequest(new Request('http://t3/rubato/cache-warming'));
-  assert.deepEqual(await response.json(), { mode: 'off' });
+  const sessionId = cacheOf().sessionId;
+  assert.ok(sessionId);
+  assert.deepEqual(cacheOf(), { state: 'warm', sessionId, hitPercent: 90, expiresAt: 1_790_000_000_000, warming: { mode: 'idle', enabled: true, active: false } });
+  const response = await handleCacheWarmingRequest(new Request('http://t3/rubato/cache-warming', {
+    method: 'POST', body: JSON.stringify({ sessionId, enabled: false }) }));
+  assert.equal((await response.json()).cache.warming.enabled, false);
+  await until(() => cacheOf()?.warming.enabled === false);
+  // A thread T3 has let go of is switched through a short-lived attachment.
+  await bridge.stopSession('cache-thread');
+  const back = await bridge.setSessionCacheWarming(sessionId, true);
+  assert.equal(back.warming.enabled, true);
 });
 
 test('assistant usage becomes thread.token-usage.updated in the meter shape', async () => {

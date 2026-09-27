@@ -11,7 +11,7 @@ let timer;
 let ui;
 let pendingWork = 0;
 // The cache warmer's live state as `get_cache_warming` reports it.
-let warming = { mode: 'idle', state: 'inactive' };
+let warming = { enabled: true, state: 'inactive' };
 // The service-tier extension's live state; `/fast on|off` flips it like the real command.
 let fast = { active: false, supported: true };
 let blockMessages = false;
@@ -88,7 +88,7 @@ lines.on('line', (line) => {
         timer = setTimeout(settle, 10);
       }
       else if (command.message === 'warm-cache') {
-        warming = { ...warming, state: warming.mode === 'off' ? 'inactive' : 'scheduled' };
+        warming = { ...warming, state: warming.enabled ? 'scheduled' : 'inactive' };
         timer = setTimeout(settle, 10);
       }
       else if (command.message === 'lone') {
@@ -109,10 +109,12 @@ lines.on('line', (line) => {
     case 'set_session_name': manager.appendSessionInfo(command.name); break;
     case 'get_commands': data = { commands: [] }; break;
     case 'get_available_models': data = { models: [] }; break;
-    case 'set_cache_warming_mode':
-      warming = { mode: command.mode, state: command.mode === 'off' ? 'inactive' : warming.state };
-      data = { mode: warming.mode, status: { state: warming.state }, cache: { state: 'warm', hitPercent: 90, expiresAt: 1_790_000_000_000 } }; break;
-    case 'get_cache_warming': data = { mode: warming.mode, status: { state: warming.state }, cache: { state: 'warm', hitPercent: 90, expiresAt: 1_790_000_000_000 } }; break;
+    case 'set_session_cache_warming':
+      warming = { enabled: command.enabled, state: command.enabled ? warming.state : 'inactive' };
+      // falls through: the answer is the state after the switch
+    case 'get_cache_warming':
+      data = { mode: 'idle', sessionEnabled: warming.enabled, status: { state: warming.state },
+        cache: { state: 'warm', hitPercent: 90, expiresAt: 1_790_000_000_000 } }; break;
     case 'extension_request':
       if (command.name === 'rubato.service-tier.status') { data = fast; break; }
       if (command.name !== 'rubato.task.pending-work') { emit({ id: command.id, type: 'response', command: command.type, success: false, error: 'Unknown extension RPC request' }); return; }
