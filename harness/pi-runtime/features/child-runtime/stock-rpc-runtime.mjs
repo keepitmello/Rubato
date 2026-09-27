@@ -241,7 +241,13 @@ export function createPiRpcSpawnRuntime({
     resolveSenpiExecutable: () => null,
     // Path only. buildRpcSpawn appends it when that child requested a tier.
     serviceTierExtension: serviceTierExtensionPath(join(dirname(rpcEntry), "..", "..", "..", "..")),
+    // Path only. buildRpcSpawn boots every task child through it; rpcEntry stays the model probe's anchor.
+    childRpcEntry: childRpcEntryPath(join(dirname(rpcEntry), "..", "..", "..", "..")),
   }
+}
+
+export function childRpcEntryPath(root) {
+  return join(root, "rubato-features", "child-runtime", "child-rpc-entry.mjs")
 }
 
 /**

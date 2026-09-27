@@ -94,11 +94,13 @@ export function buildLeadTeamTools(deps: LeadTeamToolDeps): ToolDefinition[] {
   ]
 }
 
+// The lead reaches the board through tool_search; a member works on it every turn, so its copy is
+// direct (the member's team_send is declared the same way).
 export function buildMemberTeamBoardTools(deps: TeamToolDeps): ToolDefinition[] {
   return [
     createTeamTaskCreateTool(deps),
     createTeamTaskListTool(deps),
     createTeamTaskGetTool(deps),
     createTeamTaskUpdateTool(deps),
-  ]
+  ].map((tool) => ({ ...tool, exposure: "direct" }))
 }

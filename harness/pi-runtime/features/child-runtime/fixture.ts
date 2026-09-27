@@ -316,12 +316,12 @@ export default function fixtureProvider(pi) {
     apiKey: "fixture-rpc-auth",
     models: [{ id: "fixture-model", input: ["text"], contextWindow: 100000, maxTokens: 1024 }],
     streamSimple(model, context, options) {
-      appendFileSync(capturePath, JSON.stringify({ provider: model.provider, model: model.id, auth: "fixture-rpc-auth", text: context.messages.length }) + "\\n");
+      appendFileSync(capturePath, JSON.stringify({ provider: model.provider, model: model.id, auth: "fixture-rpc-auth", text: context.messages.length, tools: [...(context.tools ?? []), ...context.messages.flatMap((message) => message.toolsAdded ?? [])].map((tool) => tool.name) }) + "\\n");
       const stream = new AssistantMessageEventStream();
       const calls = (globalThis.__rubatoRpcCalls = (globalThis.__rubatoRpcCalls ?? 0) + 1);
       const usage = { input: 0, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 1, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
       const message = calls === 1
-        ? { role: "assistant", content: [{ type: "toolCall", id: "cwd-probe", name: "write", arguments: { path: "cwd-probe.txt", content: "rpc-child" } }], api: "openai-completions", provider: "fixture-provider", model: model.id, usage, stopReason: "toolUse", timestamp: Date.now() }
+        ? { role: "assistant", content: [{ type: "toolCall", id: "cwd-probe", name: "apply_patch", arguments: { input: "*** Begin Patch\\n*** Add File: cwd-probe.txt\\n+rpc-child\\n*** End Patch" } }], api: "openai-completions", provider: "fixture-provider", model: model.id, usage, stopReason: "toolUse", timestamp: Date.now() }
         : calls === 2
         ? { role: "assistant", content: [{ type: "toolCall", id: "bash-cwd", name: "bash", arguments: { command: "pwd > bash-cwd.txt && pwd" } }], api: "openai-completions", provider: "fixture-provider", model: model.id, usage, stopReason: "toolUse", timestamp: Date.now() }
         : calls >= 3 && calls <= 9
@@ -372,10 +372,13 @@ export default function fixtureProvider(pi) {
     assert.ok(captures.length >= 4, capturedText)
     assert.equal(captures[0].provider, "fixture-provider")
     assert.equal(captures[0].model, "fixture-model")
+    // The notes tools start behind tool_search; the child must carry the catalog that activates them.
+    assert.equal(captures[0].tools.includes("tool_search"), true, JSON.stringify(captures[0].tools))
     const childProbe = join(cwd, "cwd-probe.txt")
     const parentProbe = join(parentCwd, "cwd-probe.txt")
     assert.equal(existsSync(childProbe), true, "RPC child write must land in the child cwd")
-    assert.equal(await readFile(childProbe, "utf8"), "rpc-child")
+    // Like the lead, an RPC child edits through apply_patch.
+    assert.equal((await readFile(childProbe, "utf8")).trim(), "rpc-child")
     assert.equal(existsSync(parentProbe), false, "RPC child must not write into the parent cwd")
     const transcript = JSON.stringify(entries)
     assert.match(transcript, /rubato\.context-window\.init\.v1/)
@@ -413,6 +416,105 @@ export default function fixtureProvider(pi) {
 }
 
 const root = mkdtempSync(join(tmpdir(), "rubato-child-e2e-"))
+
+// A team member boots the child entry, whose task component gives it Agent.
+// The member's model must be offered Agent on its first request.
+async function runMemberFixture(root: string) {
+  const cwd = join(root, "member-cwd")
+  const stateDir = join(root, "member-state")
+  const agentDir = join(root, "member-agent")
+  await mkdir(cwd, { recursive: true })
+  await mkdir(agentDir, { recursive: true })
+  const capturePath = join(root, "member-provider-capture.jsonl")
+  const providerPath = join(root, "member-provider.mjs")
+  const childProfile = resolvePiChildProviderProfile({ root: runtimeRoot, includeContextNotes: true, includeGuards: true })
+  const eventStreamPath = pathToFileURL(join(
+    runtimeRoot,
+    "node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js",
+  )).href
+  await writeFile(providerPath, `
+import { appendFileSync } from "node:fs";
+import { AssistantMessageEventStream } from ${JSON.stringify(eventStreamPath)};
+export default function fixtureProvider(pi) {
+  pi.registerProvider("b-ai", {
+    baseUrl: "http://127.0.0.1:9/v1",
+    api: "openai-completions",
+    apiKey: "fixture-member-auth",
+    models: [{ id: "deepseek-v4.1-flash", input: ["text"], contextWindow: 100000, maxTokens: 1024 }],
+    streamSimple(model, context) {
+      const tools = [...(context.tools ?? []), ...context.messages.flatMap((message) => message.toolsAdded ?? [])].map((tool) => tool.name);
+      const text = JSON.stringify(context.messages);
+      // The subagent sees the delegated prompt but never the member's own Agent call.
+      const grandchild = text.includes("grandchild fixture") && !text.includes("member-agent");
+      appendFileSync(${JSON.stringify(capturePath)}, JSON.stringify({ tools, grandchild }) + "\\n");
+      const stream = new AssistantMessageEventStream();
+      const usage = { input: 0, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 1, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+      // The member delegates once; its subagent answers; everything else ends the turn.
+      const delegate = !grandchild && !text.includes("toolResult");
+      const content = delegate
+        ? [{ type: "toolCall", id: "member-agent", name: "Agent", arguments: { prompt: "grandchild fixture", model: "b-ai/deepseek-v4.1-flash", summary: "grandchild" } }]
+        : [{ type: "text", text: grandchild ? "fixture-grandchild-response" : "fixture-member-response" }];
+      const stopReason = delegate ? "toolUse" : "stop";
+      const message = { role: "assistant", content, api: "openai-completions", provider: "b-ai", model: model.id, usage, stopReason, timestamp: Date.now() };
+      queueMicrotask(() => { stream.push({ type: "start", partial: { ...message, content: [] } }); stream.push({ type: "done", reason: stopReason, message }); stream.end(message); });
+      return stream;
+    },
+  });
+}
+`)
+  const runtime = createPiRpcSpawnRuntime({
+    rpcEntry,
+    parentEnv: {
+      ...process.env,
+      HOME: join(root, "home"),
+      PI_CODING_AGENT_DIR: agentDir,
+      RUBATO_CONTEXT_MODE: "history-notes",
+    },
+  })
+  let descriptor: ReturnType<typeof buildRpcSpawn> | undefined
+  let handle: Awaited<ReturnType<RpcProcessRunner["start"]>> | undefined
+  const runner = new RpcProcessRunner({
+    modelAdmission: async () => {},
+    buildSpawn: (spec) => (descriptor = buildRpcSpawn(spec, runtime)),
+  })
+  try {
+    handle = await withTimeout(runner.start({
+      task_id: "member-task",
+      cwd,
+      state_dir: stateDir,
+      prompt: "member fixture",
+      model: "b-ai/deepseek-v4.1-flash",
+      // Agent admits product catalog models only, so the fixture stands in for a product provider
+      // and the real provider extension stays out.
+      extensions: [...childProfile.rpcExtensions.filter((entry) => basename(entry) !== "provider-extension.mjs"), providerPath],
+      memberEnv: {
+        RUBATO_TASK_MEMBER: "11111111-1111-4111-8111-111111111111::alice",
+        RUBATO_PI_ROLE: "owner",
+      },
+    }), "member runner start", 5_000)
+    assert.ok(descriptor)
+    assert.equal(basename(descriptor.args[0] ?? ""), "child-rpc-entry.mjs", JSON.stringify(descriptor.args))
+    await withTimeout(handle.waitForIdle(), "member fixture completion", 30_000)
+    assert.equal(handle.lastAssistantText(), "fixture-member-response")
+    const readCaptures = async () => (await readFile(capturePath, "utf8")).trim().split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line))
+    const tools: string[] = (await readCaptures())[0]?.tools ?? []
+    assert.equal(tools.includes("Agent"), true, JSON.stringify(tools))
+    // The Agent call must actually run a subagent: its own request reaches the provider.
+    let grandchildRan = false
+    for (let attempt = 0; attempt < 100 && !grandchildRan; attempt += 1) {
+      grandchildRan = (await readCaptures()).some((capture) => capture.grandchild === true)
+      if (!grandchildRan) await new Promise((resolve) => setTimeout(resolve, 200))
+    }
+    assert.equal(grandchildRan, true, JSON.stringify(await readCaptures()))
+    await withTimeout(handle.terminate({ sigkillDelayMs: 500 }), "member terminate", 2_000)
+    return { entry: basename(descriptor.args[0] ?? ""), tools, grandchildRan }
+  } finally {
+    if (handle?.exitOutcome() === undefined && handle?.pid !== undefined) {
+      try { process.kill(handle.pid, "SIGKILL") } catch {}
+    }
+  }
+}
+
 try {
   await mkdir(join(root, "home"), { recursive: true })
   process.env.HOME = join(root, "home")
@@ -420,7 +522,8 @@ try {
   process.env.RUBATO_CONTEXT_MODE = "history-notes"
   const inProcess = await runInProcessFixture(root)
   const rpc = await runRpcFixture(root)
-  console.log(JSON.stringify({ ok: true, runtimeRoot, rpcEntry, inProcess, rpc }))
+  const member = await runMemberFixture(root)
+  console.log(JSON.stringify({ ok: true, runtimeRoot, rpcEntry, inProcess, rpc, member }))
 } finally {
   await rm(root, { recursive: true, force: true })
 }
