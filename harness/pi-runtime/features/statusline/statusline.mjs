@@ -167,10 +167,24 @@ export function resolveCachePolicy(model) {
   return undefined;
 }
 
+/**
+ * 캐시 수명은 캐시를 건드린 마지막 요청부터 다시 센다. 도구 루프의 요청과 워머의 갱신
+ * 요청(`cache_warm` usage 엔트리)도 그 요청이다. 갱신이 cache 필드를 비워 돌려주면
+ * 아무것도 증명하지 못하니 건너뛴다.
+ */
 function latestCacheObservation(entries) {
   if (!Array.isArray(entries)) return undefined;
   for (let i = entries.length - 1; i >= 0; i -= 1) {
     const entry = entries[i];
+    if (entry?.type === "usage" && entry.kind === "cache_warm") {
+      const cacheRead = nonNegativeNumber(entry.usage?.cacheRead);
+      const cacheWrite = nonNegativeNumber(entry.usage?.cacheWrite);
+      const timestamp = Date.parse(entry.timestamp);
+      if ((cacheRead > 0 || cacheWrite > 0) && Number.isFinite(timestamp)) {
+        return { timestamp, hit: cacheRead > 0, wrote: cacheWrite > 0 };
+      }
+      continue;
+    }
     if (entry?.type !== "message" || entry.message?.role !== "assistant") continue;
     const usage = entry.message.usage;
     if (!usage) continue;
@@ -195,14 +209,53 @@ export function cacheStatus(entries, policy, nowMs = Date.now()) {
   }
   const ageSeconds = Math.max(0, nowMs - observation.timestamp) / 1000;
   const remainingSeconds = Math.ceil(policy.ttlSeconds - ageSeconds);
+  const expiresAt = observation.timestamp + policy.ttlSeconds * 1000;
   if (remainingSeconds <= 0) {
     return policy.kind === "minimum"
-      ? { text: "Cache Unknown", ticking: false, expired: false }
-      : { text: "Cache Expired", ticking: false, expired: true };
+      ? { text: "Cache Unknown", ticking: false, expired: false, expiresAt }
+      : { text: "Cache Expired", ticking: false, expired: true, expiresAt };
   }
   const time = remainingSeconds < 60 ? `${remainingSeconds}s` : `${Math.ceil(remainingSeconds / 60)}m`;
   const prefix = policy.kind === "minimum" ? "Cache ≥ " : "Cache ";
-  return { text: `${prefix}${time}`, ticking: true, expired: false };
+  return { text: `${prefix}${time}`, ticking: true, expired: false, expiresAt };
+}
+
+/**
+ * 캐시가 언제까지 살아 있을지. 워머가 예약돼 있으면 그 창(`until`) 안의 마지막 갱신에서
+ * 수명이 다시 시작하니, 그 시각에 수명을 더한 값이 된다. 앱은 T3 가 쉬는 세션을 떼어
+ * 낸 뒤로는 갱신 소식을 못 받으므로, 이 예측이 있어야 떼어진 스레드의 링이 제때 식는다.
+ */
+export function projectedCacheExpiry(expiresAt, ttlMs, warming) {
+  if (!Number.isFinite(expiresAt)) return undefined;
+  const { state, nextWarmAt, until, intervalMs } = warming ?? {};
+  if ((state !== "scheduled" && state !== "refreshing") || ![nextWarmAt, until, intervalMs].every(Number.isFinite) ||
+    intervalMs <= 0 || nextWarmAt >= until) return expiresAt;
+  const lastRefresh = nextWarmAt + Math.floor((until - 1 - nextWarmAt) / intervalMs) * intervalMs;
+  return Math.max(expiresAt, lastRefresh + ttlMs);
+}
+
+/**
+ * 상태줄 밖(앱의 컨텍스트 링)이 쓰는 같은 판정. `state` 는 warm(수명 안), cold(만료·미스),
+ * unknown(공개 TTL 없음·최소 보장 창 지남) 셋이다. `expiresAt` 은 sliding 정책에서만 있고
+ * 예약된 워머 갱신까지 넣은 값이다.
+ */
+export function cacheSnapshot(entries, model, nowMs = Date.now(), warming) {
+  const hitPercent = sessionCacheHitPercent(entries);
+  const policy = resolveCachePolicy(model);
+  const lifetime = cacheStatus(entries, policy, nowMs);
+  const expiresAt = policy?.kind === "sliding"
+    ? projectedCacheExpiry(lifetime?.expiresAt, policy.ttlSeconds * 1000, warming)
+    : undefined;
+  const state = !lifetime ? "unknown"
+    : lifetime.text === "Cache Miss" ? "cold"
+    : expiresAt !== undefined ? (expiresAt > nowMs ? "warm" : "cold")
+    : lifetime.ticking ? "warm"
+    : "unknown";
+  return {
+    state,
+    ...(hitPercent == null ? {} : { hitPercent }),
+    ...(expiresAt === undefined ? {} : { expiresAt }),
+  };
 }
 
 export function repoBasename(cwd) {

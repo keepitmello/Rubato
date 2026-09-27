@@ -16,6 +16,7 @@ export const ROUTINE_SETTINGS_KEYS = new Set([
   "tips",
   "retry",
   "promptCache",
+  "cacheWarming",
   "compaction",
 ]);
 

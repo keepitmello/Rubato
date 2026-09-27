@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -115,6 +115,40 @@ test('idle unload waits while approved children still have work, then proceeds',
     return item?.runtimeId === null;
   });
   assert.equal(env.host.metrics.runtimeStarts, 1);
+});
+
+test('a scheduled cache refresh keeps a detached runtime; turning warming off anywhere lets every one go', async (t) => {
+  const env = await setup(t, { idleMs: 30, pollMs: 0 });
+  const client = await env.client();
+  const runtimeOf = async (id) => (await client.list()).find((entry) => entry.sessionId === id)?.runtimeId ?? null;
+  const warm = async (title) => {
+    const session = await client.create({ cwd: env.root, title });
+    await client.attach(session.sessionId);
+    await client.command({ type: 'prompt', message: 'warm-cache' });
+    await until(async () => !(await client.snapshot()).state.isStreaming);
+    await client.detach();
+    return session.sessionId;
+  };
+  const a = await warm('Warm A');
+  const b = await warm('Warm B');
+  await delay(150);
+  assert.ok(await runtimeOf(a), 'a detached runtime with a refresh due stays loaded');
+  assert.ok(await runtimeOf(b));
+  await client.setCacheWarmingMode('off');
+  assert.deepEqual(await client.cacheWarming(), { mode: 'off' });
+  await until(async () => await runtimeOf(a) === null && await runtimeOf(b) === null);
+});
+
+test('with no runtime loaded the warming mode lives in the profile settings file', async (t) => {
+  const settingsFile = path.join(await mkdtemp(path.join(tmpdir(), 'rb-settings-')), 'settings.json');
+  await writeFile(settingsFile, JSON.stringify({ theme: 'dark' }));
+  const env = await setup(t, { idleMs: 30, pollMs: 0, settingsFile });
+  const client = await env.client();
+  assert.deepEqual(await client.cacheWarming(), { mode: 'idle' });
+  await client.setCacheWarmingMode('off');
+  assert.deepEqual(await client.cacheWarming(), { mode: 'off' });
+  assert.deepEqual(JSON.parse(await readFile(settingsFile, 'utf8')), { theme: 'dark', cacheWarming: 'off' });
+  await assert.rejects(client.setCacheWarmingMode('sometimes'));
 });
 
 test('questions survive detach, validate exact offered answers, reject double replies', async (t) => {

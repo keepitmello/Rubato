@@ -35,6 +35,24 @@ function patch(id, path, preimageSha256, apply) {
 export function patchCacheWarmer(source) {
   let next = replaceOnce(
     source,
+    `        return {
+            state: refreshing ? "refreshing" : "scheduled",
+            nextWarmAt: run.nextWarmAt,
+            decision,
+            extensionOverride: run.extensionOverride,
+        };`,
+    `        return {
+            state: refreshing ? "refreshing" : "scheduled",
+            nextWarmAt: run.nextWarmAt,
+            ...(run.anchoredUntil === undefined ? {} : { until: run.anchoredUntil }),
+            intervalMs: run.delayMs,
+            decision,
+            extensionOverride: run.extensionOverride,
+        };`,
+    "status-until",
+  );
+  next = replaceOnce(
+    next,
     `/** Refresh at 90% of the TTL while preserving at least ten seconds of margin. */`,
     `/** Rubato refresh interval per provider; the entry lifetime is 1h (Anthropic) and 30m (Codex). */
 export const RUBATO_WARMING_INTERVAL_MS = Object.freeze({
@@ -268,9 +286,38 @@ export function patchSettingsWarmingDefault(source) {
   );
 }
 
+/**
+ * The warmer's live state is in memory; a presentation (the app's context ring) and the
+ * session host (which must not unload a runtime with a refresh still due) read it here.
+ * `set_cache_warming_mode` persists the global mode and reconciles this runtime's warmer.
+ */
+export function patchRpcCacheWarming(source) {
+  const next = `import { cacheSnapshot } from "../../rubato-features/statusline/statusline.mjs";\nimport { CACHE_WARMING_MODES } from "../../core/settings-manager.js";\n${source}`;
+  return replaceOnce(
+    next,
+    `            case "get_session_stats": {`,
+    `            case "get_cache_warming":
+            case "set_cache_warming_mode": {
+                if (command.type === "set_cache_warming_mode") {
+                    if (!CACHE_WARMING_MODES.includes(command.mode))
+                        return error(id, command.type, \`Unknown cache warming mode: \${command.mode}\`);
+                    session.setCacheWarmingMode(command.mode);
+                }
+                return success(id, command.type, {
+                    mode: session.settingsManager.getCacheWarmingMode(),
+                    status: session.cacheWarmingStatus ?? null,
+                    cache: cacheSnapshot(session.sessionManager.getBranch(), session.model, Date.now(), session.cacheWarmingStatus),
+                });
+            }
+            case "get_session_stats": {`,
+    "rpc-commands",
+  );
+}
+
 export const patches = Object.freeze([
   patch("cache-warming:core/cache-warmer.js", "dist/core/cache-warmer.js", "cd488877ddf0bba1489ff6699bd8200ef645a9e6e028110ce675609bbe8fe556", patchCacheWarmer),
   patch("cache-warming:core/settings-manager.js", "dist/core/settings-manager.js", "5368b155ec26d88374cec9e66b8e588b5041a0fb0047414f70b34e13892c4f48", patchSettingsWarmingDefault),
+  patch("cache-warming:modes/rpc/rpc-mode.js", "dist/modes/rpc/rpc-mode.js", "bdd94e753e6d19731d9fb9ea370462d095d64f1e78bddd7651320663fa57c4ff", patchRpcCacheWarming),
 ]);
 export const files = Object.freeze([]);
 export const cacheWarmingFeature = Object.freeze({ id: "cache-warming", patches, files });

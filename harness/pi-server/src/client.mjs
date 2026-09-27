@@ -40,6 +40,8 @@ export class SessionClient {
   attach(id) { return this.call(Management, 'attach', [id]); }
   detach() { return this.call(Management, 'detach', []); }
   unload(id) { return this.call(Management, 'unload', [id]); }
+  cacheWarming() { return this.call(Management, 'cacheWarming', []); }
+  setCacheWarmingMode(mode) { return this.call(Management, 'setCacheWarmingMode', [mode]); }
   command(command) { return this.call(Control, 'command', [command], true); }
   snapshot() { return this.call(Control, 'snapshot', [], true); }
   reply(response) { return this.call(Control, 'reply', [response], true); }

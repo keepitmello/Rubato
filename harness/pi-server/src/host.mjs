@@ -1,4 +1,4 @@
-import { mkdtemp, rm, realpath, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, rename, rm, realpath, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -132,12 +132,21 @@ class RuntimeHandle {
     if (pending > 0) { this.deferredUnloads = (this.deferredUnloads ?? 0) + 1; this.scheduleUnload(); return; }
     void this.close();
   }
+  /**
+   * A due cache refresh is pending work too. A presentation detaching (T3 stops a
+   * provider session after 30 idle minutes) must not take the warmer with it: its
+   * first refresh is 40 minutes after the turn, so unloading on detach meant no
+   * refresh was ever sent from the app. The warmer stops on its own two hours after
+   * the latest user input, and the next idle check then unloads the runtime.
+   */
   async pendingWork() {
-    try {
-      const result = await this.worker.request({ type: 'extension_request', name: PENDING_WORK_REQUEST });
-      const active = Number(result?.active);
-      return Number.isFinite(active) && active > 0 ? active : 0;
-    } catch { return 0; }
+    const [tasks, warming] = await Promise.all([
+      this.worker.request({ type: 'extension_request', name: PENDING_WORK_REQUEST }).catch(() => undefined),
+      this.worker.request({ type: 'get_cache_warming' }).catch(() => undefined),
+    ]);
+    const active = Number(tasks?.active);
+    const warmingDue = ['scheduled', 'refreshing'].includes(warming?.status?.state) ? 1 : 0;
+    return (Number.isFinite(active) && active > 0 ? active : 0) + warmingDue;
   }
   async command(command) {
     if (!command || !COMMANDS.has(command.type)) throw invalid('Unsupported command for an attached session');
@@ -206,7 +215,7 @@ class RuntimeHandle {
 
 /** Official SessionRouter alone deduplicates runtime acquisition. */
 export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
-  workerFactory = (metadata) => new RpcWorker(metadata), pollMs = 2000, onError = () => {} } = {}) {
+  workerFactory = (metadata) => new RpcWorker(metadata), pollMs = 2000, onError = () => {}, settingsFile } = {}) {
   if (idleMs !== null && (!Number.isFinite(idleMs) || idleMs < 0)) throw new TypeError('Invalid idleMs');
   const files = new SessionFiles(sessionsDir);
   const handles = new Map();
@@ -221,6 +230,36 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
   let refreshing;
   let stopped = false;
   const metrics = { runtimeStarts: 0, lists: 0, totalOpenMs: 0 };
+  // The warming mode is one global setting, but every loaded runtime holds its own
+  // copy in memory (config-reload treats `cacheWarming` as routine, so a write does
+  // not reload anyone). A change goes to every loaded runtime, each of which
+  // persists it; with none loaded, nothing is warming and the file alone changes.
+  const loaded = () => [...handles.values()].filter((handle) => !handle.closed);
+  const readSettings = async () => {
+    try { return JSON.parse(await readFile(settingsFile, 'utf8')); }
+    catch (error) { if (error.code === 'ENOENT') return {}; throw error; }
+  };
+  const cacheWarming = async () => {
+    const [first] = loaded();
+    if (first) return { mode: (await first.worker.request({ type: 'get_cache_warming' })).mode };
+    if (!settingsFile) throw invalid('Cache warming mode is unavailable without a profile');
+    // Unset means the engine default; the cache-warming patch makes that "idle".
+    return { mode: (await readSettings()).cacheWarming ?? 'idle' };
+  };
+  const setCacheWarmingMode = async (mode) => {
+    if (!['off', 'idle', 'streaming'].includes(mode)) throw invalid('Unknown cache warming mode');
+    const runtimes = loaded();
+    if (runtimes.length) {
+      await Promise.all(runtimes.map((handle) => handle.worker.request({ type: 'set_cache_warming_mode', mode })));
+      return { mode };
+    }
+    if (!settingsFile) throw invalid('Cache warming mode is unavailable without a profile');
+    const settings = await readSettings();
+    const temporary = `${settingsFile}.${randomUUID()}.tmp`;
+    await writeFile(temporary, JSON.stringify({ ...settings, cacheWarming: mode }, null, 2) + '\n');
+    await rename(temporary, settingsFile);
+    return { mode };
+  };
   const publish = () => {
     const sessions = records.map(({ file: _file, id, ...item }) => {
       const handle = handles.get(id);
@@ -363,6 +402,8 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
               if (handle.running || handle.calls || handle.attachments || handle.pendingUi.size) throw invalid('Only idle, unattached sessions may be unloaded');
               await handle.close(); return null;
             },
+            cacheWarming: async () => cacheWarming(),
+            setCacheWarmingMode: async (mode) => setCacheWarmingMode(mode),
           }],
         ]);
       },
