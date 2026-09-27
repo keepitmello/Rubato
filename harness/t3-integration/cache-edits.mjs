@@ -25,6 +25,7 @@ export const cacheEdits = {
         '    mode: Schema.Literals(["off", "idle", "streaming"]),',
         '    enabled: Schema.Boolean,',
         '    hours: Schema.optional(NonNegativeInt),',
+        '    from: Schema.optional(NonNegativeInt),',
         '    active: Schema.Boolean,',
         '    until: Schema.optional(NonNegativeInt),',
         '  }),',

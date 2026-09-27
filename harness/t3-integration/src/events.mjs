@@ -143,6 +143,7 @@ export const cacheFrom = (value) => {
   const status = record(record(value).status);
   const { mode, sessionEnabled, sessionId } = record(value);
   const hours = asInt(record(value).sessionHours);
+  const from = asInt(record(value).lastInputAt);
   if (!CACHE_STATES.has(cache.state) || !WARMING_MODES.has(mode)) return;
   const hitPercent = asInt(cache.hitPercent);
   const expiresAt = asInt(cache.expiresAt);
@@ -156,6 +157,7 @@ export const cacheFrom = (value) => {
       mode,
       enabled: sessionEnabled !== false,
       ...(hours > 0 ? { hours } : {}),
+      ...(from !== undefined ? { from } : {}),
       active: status.state === 'scheduled' || status.state === 'refreshing',
       ...(until !== undefined ? { until } : {}),
     },
