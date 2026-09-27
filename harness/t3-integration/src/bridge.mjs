@@ -424,7 +424,10 @@ export class RubatoPiBridge {
       if (input.modelSelection) await this.selectModel(context, input.modelSelection);
       const message = rewriteSkillMentions(input.input ?? '', this.skillNames);
       const control = controlCommandFor(message);
-      const running = context.session.status === 'running';
+      // Pi's own state decides, not ours: a settle for an earlier run can arrive after
+      // a wake has started the next one, and trusting the stale 'ready' sent a prompt
+      // Pi rejects as already processing.
+      const running = context.session.status === 'running' || beforeSend?.isStreaming === true;
       if (control && running) throw new Error(`Interrupt the current turn before /${control.name}`);
       const turnId = context.projection.begin();
       context.session.status = 'running'; this.stateEvent(context);

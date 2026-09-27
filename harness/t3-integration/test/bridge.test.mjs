@@ -102,9 +102,9 @@ test('a message that reaches the bridge during a live turn is a steer, not a sec
   const bridge = Object.create(RubatoPiBridge.prototype);
   bridge.skillNames = new Set();
   const commands = [];
-  const state = {isStreaming:true,isCompacting:false,pendingMessageCount:0,requestTimeline:{pendingInputs:[]}};
+  const state = {isStreaming:false,isCompacting:false,pendingMessageCount:0,requestTimeline:{pendingInputs:[]}};
   const context = {sessionId:'busy-session',projection,session:{threadId:'busy-thread',status:'ready'},queue:Promise.resolve(),stopped:false,
-    client:{command:async(command)=>{commands.push(command); if(command.type==='get_state') return state;}}};
+    client:{command:async(command)=>{commands.push(command); if(command.type==='prompt') state.isStreaming=true; if(command.type==='get_state') return state;}}};
   bridge.sessions = new Map([['busy-thread',context]]);
   await bridge.sendTurn({threadId:'busy-thread',input:'first'});
   await bridge.sendTurn({threadId:'busy-thread',input:'promoted with Send now'});
@@ -117,6 +117,27 @@ test('a message that reaches the bridge during a live turn is a steer, not a sec
     {type:'get_state'},
     {type:'steer',message:'promoted with Send now'},
   ]);
+});
+
+test('a message steers into a run Pi is streaming even when the thread still reads ready', async () => {
+  const events = [];
+  const projection = new EventProjection({threadId:'woken-thread',sessionId:'woken-session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
+  const bridge = Object.create(RubatoPiBridge.prototype);
+  bridge.skillNames = new Set();
+  const commands = [];
+  // A wake started this run after a late settle for the previous one closed the
+  // thread's turn, so the thread says ready while Pi streams. A prompt here is
+  // refused as already processing and the user sees an internal server error.
+  const state = {isStreaming:true,isCompacting:false,pendingMessageCount:0,requestTimeline:{pendingInputs:[]}};
+  const context = {sessionId:'woken-session',projection,session:{threadId:'woken-thread',status:'ready'},queue:Promise.resolve(),stopped:false,
+    client:{command:async(command)=>{commands.push(command); if(command.type==='get_state') return state;}}};
+  bridge.sessions = new Map([['woken-thread',context]]);
+  await bridge.sendTurn({threadId:'woken-thread',input:'are you done?'});
+  assert.deepEqual(commands,[{type:'get_state'},{type:'steer',message:'are you done?'}]);
+  assert.equal(context.session.status,'running');
+  assert.equal(events.filter((event)=>event.type==='turn.started').length,1,'the run gets a turn the thread can close when Pi settles');
+  context.session.status='ready';
+  await assert.rejects(bridge.sendTurn({threadId:'woken-thread',input:'/compact'}),/Interrupt the current turn/);
 });
 
 test('a steer the stopped turn never read is drained back into the thread', async () => {
