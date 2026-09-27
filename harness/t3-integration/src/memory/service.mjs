@@ -6,8 +6,10 @@
 //   rubato dream --json                  every store's switch, clock and review marker
 //   rubato dream <store> --json          run now (minutes to tens of minutes: detached)
 //   rubato dream --approve|--reject <store> --json
+//   rubato dream --revert <store> <runId> --json   take a landed dream back out
 //   <memory>/agents/<store>/runtime/dream/runs/<runId>/{run.json,out/report.md,out/user-candidates.md}
 //   <memory>/agents/<store>/runtime/dream/pending.json   {runId, branch, baseRevision}
+//   <memory>/agents/<store>/runtime/dream/gui/seen.json  {runId}: the landed dream the user has looked at
 //   <memory>/agents/<store>/repo                          the store's git repository
 //   ~/.rubato/rubato.jsonc  memory.dream.{models,publish,stores.<name>.enabled}
 //   <project>/.rubato/rubato.jsonc  memory.agent       the store a project writes to
@@ -89,7 +91,11 @@ export function createMemoryService(options = {}) {
   async function cli(args, timeoutMs) {
     const result = await run([...rubato, 'dream', ...args], { timeoutMs });
     if (result.code !== 0) {
-      const detail = (result.stderr || result.stdout).trim().split('\n').slice(-6).join('\n');
+      // The CLI prints the stack of what failed; the page shows the sentence.
+      const detail = (result.stderr || result.stdout).trim().split('\n')
+        .filter((line) => !/^\s+at /.test(line))
+        .map((line) => line.replace(/^rubato dream: (Error: )?/, ''))
+        .slice(-6).join('\n');
       throw new MemoryRequestError(502, 'dream-cli-failed', detail || `rubato dream exited with code ${result.code}.`);
     }
     try { return JSON.parse(result.stdout); }
@@ -187,44 +193,101 @@ export function createMemoryService(options = {}) {
       sessions: Array.isArray(record.sessions) ? record.sessions.length : 0,
       commits: Array.isArray(record.commits) ? record.commits.length : 0,
       pending: pending?.runId === runId,
+      landed: landed(record),
     };
+  }
+
+  // In the store now: merged at the end of the run (auto) or approved later, and not reverted since.
+  function landed(record) {
+    if (record.review === 'reverted' || record.review === 'rejected') return false;
+    return record.status === 'merged' || record.review === 'merged';
+  }
+
+  async function runRecords(paths) {
+    let names = [];
+    try { names = await readdir(paths.runs); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    const records = [];
+    for (const name of names) {
+      if (!RUN_ID.test(name)) continue;
+      const record = await readJson(path.join(paths.runs, name, 'run.json'));
+      if (record) records.push([name, record]);
+    }
+    return records;
   }
 
   async function runs({ store }) {
     const paths = storePaths(assertStore(store));
     const pending = await readJson(path.join(paths.dream, 'pending.json'));
-    let names = [];
-    try { names = await readdir(paths.runs); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-    const items = [];
-    for (const name of names) {
-      if (!RUN_ID.test(name)) continue;
-      const record = await readJson(path.join(paths.runs, name, 'run.json'));
-      if (record) items.push(summarize(name, record, pending));
-    }
+    const items = (await runRecords(paths)).map(([name, record]) => summarize(name, record, pending));
     items.sort((a, b) => String(b.startedAt ?? b.runId).localeCompare(String(a.startedAt ?? a.runId)));
     return { store, pendingRunId: pending?.runId ?? null, runs: items };
   }
 
-  async function diffOf(paths, runId, record, pending) {
-    const range = (() => {
-      if (pending?.runId === runId && BRANCH.test(pending.branch ?? '') && SHA.test(pending.baseRevision ?? ''))
-        return [pending.baseRevision, pending.branch];
-      const commits = (Array.isArray(record.commits) ? record.commits : []).filter((sha) => SHA.test(sha));
-      if (record.status === 'trial' && BRANCH.test(record.branch ?? '') && SHA.test(record.baseRevision ?? ''))
-        return [record.baseRevision, record.branch];
-      if (commits.length === 0) return null;
-      const last = commits[commits.length - 1];
-      if (SHA.test(record.baseRevision ?? '')) return [record.baseRevision, last];
-      return [`${commits[0]}^`, last];
-    })();
-    if (range === null) return { diff: '', diffNote: null };
-    let result = await git(paths.repo, ['diff', '--no-color', '--no-ext-diff', range[0], range[1], '--'], { maxBuffer: 64 * 1024 * 1024 });
+  function rangeOf(runId, record, pending) {
+    if (pending?.runId === runId && BRANCH.test(pending.branch ?? '') && SHA.test(pending.baseRevision ?? ''))
+      return [pending.baseRevision, pending.branch];
+    const commits = (Array.isArray(record.commits) ? record.commits : []).filter((sha) => SHA.test(sha));
+    if (record.status === 'trial' && BRANCH.test(record.branch ?? '') && SHA.test(record.baseRevision ?? ''))
+      return [record.baseRevision, record.branch];
+    if (commits.length === 0) return null;
+    const last = commits[commits.length - 1];
+    if (SHA.test(record.baseRevision ?? '')) return [record.baseRevision, last];
+    return [`${commits[0]}^`, last];
+  }
+
+  // Paths stay as written (no octal quoting) so they match the name list and the report.
+  const DIFF = ['-c', 'core.quotePath=false', 'diff', '--no-color', '--no-ext-diff', '-M'];
+
+  async function uncommittedFiles(repo) {
+    const status = await git(repo, ['-c', 'core.quotePath=false', 'status', '--porcelain', '--untracked-files=all']);
+    return status.code === 0 ? status.stdout.split('\n').filter(Boolean).map((line) => line.slice(3)) : [];
+  }
+
+  async function diffOf(paths, range) {
+    if (range === null) return { range: null, diff: '', diffNote: null };
+    let from = range[0];
+    let result = await git(paths.repo, [...DIFF, from, range[1], '--'], { maxBuffer: 64 * 1024 * 1024 });
     // The first commit of a store has no parent: diff it against the empty tree.
-    if (result.code !== 0 && range[0].endsWith('^'))
-      result = await git(paths.repo, ['diff', '--no-color', '--no-ext-diff', EMPTY_TREE, range[1], '--'], { maxBuffer: 64 * 1024 * 1024 });
-    if (result.code !== 0) return { diff: '', diffNote: (result.stderr.trim() || 'git diff failed').split('\n')[0] };
+    if (result.code !== 0 && from.endsWith('^')) {
+      from = EMPTY_TREE;
+      result = await git(paths.repo, [...DIFF, from, range[1], '--'], { maxBuffer: 64 * 1024 * 1024 });
+    }
+    if (result.code !== 0) return { range: null, diff: '', diffNote: (result.stderr.trim() || 'git diff failed').split('\n')[0] };
     const truncated = result.stdout.length > DIFF_LIMIT;
-    return { diff: truncated ? result.stdout.slice(0, DIFF_LIMIT) : result.stdout, diffNote: truncated ? 'truncated' : null };
+    return { range: [from, range[1]], diff: truncated ? result.stdout.slice(0, DIFF_LIMIT) : result.stdout, diffNote: truncated ? 'truncated' : null };
+  }
+
+  // One card per file the run changed: what it is (its description), what the dream said about it
+  // (the report lines naming it), and its own slice of the diff.
+  async function changesOf(paths, range, diff, outline) {
+    if (range === null) return [];
+    const listed = await git(paths.repo, [...DIFF, '--name-status', range[0], range[1], '--']);
+    if (listed.code !== 0) return [];
+    const slices = splitDiff(diff);
+    const changes = [];
+    for (const line of listed.stdout.split('\n')) {
+      const [status = '', first, second] = line.split('\t');
+      if (!first) continue;
+      const change = status.startsWith('A') ? 'added' : status.startsWith('D') ? 'deleted' : status.startsWith('R') ? 'renamed' : 'modified';
+      const file = change === 'renamed' && second ? second : first;
+      let description = null;
+      if (file.endsWith('.md') && changes.length < 200) {
+        const shown = await git(paths.repo, ['show', `${change === 'deleted' ? range[0] : range[1]}:${file}`]);
+        if (shown.code === 0) description = descriptionOf(shown.stdout);
+      }
+      const slice = slices.get(file) ?? '';
+      changes.push({
+        path: file,
+        change,
+        ...(change === 'renamed' ? { from: first } : {}),
+        description,
+        added: slice.split('\n').filter((row) => row.startsWith('+') && !row.startsWith('+++')).length,
+        removed: slice.split('\n').filter((row) => row.startsWith('-') && !row.startsWith('---')).length,
+        notes: notesFor(outline, change === 'renamed' ? [file, first] : [file]),
+        diff: slice,
+      });
+    }
+    return changes;
   }
 
   function candidateLines(text) {
@@ -243,21 +306,36 @@ export function createMemoryService(options = {}) {
     const record = await readJson(path.join(dir, 'run.json'));
     if (!record) throw new MemoryRequestError(404, 'no-run', `No dream run ${runId} in ${store}.`);
     const pending = await readJson(path.join(paths.dream, 'pending.json'));
-    const [report, candidates, diff] = await Promise.all([
-      readText(path.join(dir, 'out', 'report.md')),
+    const reportPath = path.join(dir, 'out', 'report.md');
+    const [report, candidates, { range, diff, diffNote }] = await Promise.all([
+      readText(reportPath),
       readText(path.join(dir, 'out', 'user-candidates.md')),
-      diffOf(paths, runId, record, pending),
+      diffOf(paths, rangeOf(runId, record, pending)),
     ]);
     const userText = (await readText(path.join(selfRepo, 'user.md'))) ?? '';
+    const outline = reportOutline(report);
+    const summary = summarize(runId, record, pending);
     return {
       store,
-      ...summarize(runId, record, pending),
+      ...summary,
       sessionList: (Array.isArray(record.sessions) ? record.sessions : []).map((session) => ({
         id: session.id, name: session.name, cwd: session.cwd, messages: session.messages,
       })),
       report: report ?? null,
+      summary: outline.summary,
+      skipped: outline.skipped,
+      changes: await changesOf(paths, range, diff, outline),
+      diffNote,
+      // Approving and undoing both merge under the writer lock, which refuses a store with edits
+      // nobody committed (a session that wrote and stopped). Named here so the page can say so first.
+      uncommitted: summary.pending || summary.landed ? await uncommittedFiles(paths.repo) : [],
+      // Where an agent asked about this run reads it.
+      sources: {
+        report: report === undefined ? null : reportPath,
+        repo: paths.repo,
+        range: range && { base: range[0], head: range[1] },
+      },
       candidates: candidateLines(candidates).map((text) => ({ text, inUser: userText.includes(text) })),
-      ...diff,
     };
   }
 
@@ -289,7 +367,50 @@ export function createMemoryService(options = {}) {
   async function review({ store, decision }) {
     assertStore(store);
     if (decision !== 'approve' && decision !== 'reject') throw bad('Decision must be approve or reject.');
-    return cli([decision === 'approve' ? '--approve' : '--reject', store, '--json'], 180_000);
+    const result = await cli([decision === 'approve' ? '--approve' : '--reject', store, '--json'], 180_000);
+    // Approving here is looking at it: the run does not come back as news.
+    if (decision === 'approve' && typeof result?.runId === 'string') await markSeen(store, result.runId);
+    return result;
+  }
+
+  async function revert({ store, runId }) {
+    assertStore(store);
+    assertRunId(runId);
+    const result = await cli(['--revert', store, runId, '--json'], 180_000);
+    await markSeen(store, runId);
+    return result;
+  }
+
+  async function markSeen(store, runId) {
+    const paths = storePaths(store);
+    await mkdir(paths.gui, { recursive: true });
+    await atomicWrite(path.join(paths.gui, 'seen.json'), `${JSON.stringify({ runId, at: new Date().toISOString() }, null, 2)}\n`);
+  }
+
+  async function acknowledge({ store, runId }) {
+    assertStore(store);
+    assertRunId(runId);
+    await markSeen(store, runId);
+    return { store, runId };
+  }
+
+  // What the store asks of the user: the dream waiting for review, else the newest dream that landed
+  // on its own (publish "auto") since the user last looked. A run the user approved was looked at.
+  // The first look sets the mark: what landed before this page existed is history, not news.
+  async function inboxOf(store, pending) {
+    if (typeof pending?.runId === 'string') return { runId: pending.runId, kind: 'pending' };
+    const paths = storePaths(store);
+    const landedAt = (record) => String(record.finishedAt ?? record.startedAt ?? '');
+    const newest = (await runRecords(paths))
+      .filter(([, record]) => record.status === 'merged' && landed(record))
+      .sort(([, x], [, y]) => landedAt(y).localeCompare(landedAt(x)))[0];
+    if (!newest) return null;
+    const seen = await readJson(path.join(paths.gui, 'seen.json'));
+    if (typeof seen?.at !== 'string') {
+      await markSeen(store, newest[0]);
+      return null;
+    }
+    return landedAt(newest[1]) > seen.at ? { runId: newest[0], kind: 'landed' } : null;
   }
 
   async function atomicWrite(file, content) {
@@ -494,6 +615,7 @@ export function createMemoryService(options = {}) {
       files: files.length,
       lastChangeAt: last.code === 0 && last.stdout.trim() !== '' ? last.stdout.trim() : null,
       pendingRunId: typeof pending?.runId === 'string' ? pending.runId : null,
+      inbox: await inboxOf(store, pending),
       enabled: config.memory?.dream?.stores?.[store]?.enabled === true,
       running,
     };
@@ -620,6 +742,8 @@ export function createMemoryService(options = {}) {
     run: (input) => runDetail(input),
     dream: (input) => startDream(input),
     review: (input) => review(input),
+    revert: (input) => revert(input),
+    ack: (input) => acknowledge(input),
     config: (input) => setConfig(input),
     projects: (input) => projects(input),
     'project-store': (input) => setProjectStore(input),
@@ -635,6 +759,69 @@ export function createMemoryService(options = {}) {
       return handler(input && typeof input === 'object' ? input : {});
     },
   };
+}
+
+// --- The dream's report, read for the review cards. The headings are the ones dream-persona.md
+// asks for; a report that does not follow them still shows in full, it just adds nothing to a card.
+
+const NOTE_SECTIONS = [['바꾼 것', 'why'], ['코드와 어긋나 고친 것', 'code'], ['푼 모순', 'conflict']];
+
+function reportOutline(report) {
+  const sections = new Map();
+  let current = null;
+  for (const line of (report ?? '').split('\n')) {
+    const heading = /^##\s+(.+?)\s*$/.exec(line);
+    if (heading) {
+      current = heading[1];
+      sections.set(current, []);
+    } else if (current !== null) sections.get(current).push(line);
+  }
+  const bullets = (name) => (sections.get(name) ?? [])
+    .filter((line) => /^[-*]\s+/.test(line))
+    .map((line) => line.replace(/^[-*]\s+/, '').replaceAll('**', '').trim())
+    .filter(Boolean);
+  const summary = (sections.get('요약') ?? []).map((line) => line.trim()).filter(Boolean).join(' ');
+  return { summary: summary || null, skipped: bullets('남긴 것'), bullets };
+}
+
+function notesFor(outline, files) {
+  const mentions = (line, file) => {
+    if (line.includes(file)) return true;
+    const base = file.slice(file.lastIndexOf('/') + 1);
+    return base !== file && new RegExp(`(^|[\\s\`(])${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(line);
+  };
+  const notes = [];
+  for (const [section, kind] of NOTE_SECTIONS) {
+    for (const line of outline.bullets(section)) {
+      if (files.some((file) => mentions(line, file))) notes.push({ kind, text: noteText(line, kind) });
+    }
+  }
+  return notes;
+}
+
+// "`decisions/x.md`: rewritten — why" → "why". The card already shows the file and how it changed.
+function noteText(line, kind) {
+  const colon = line.indexOf(': ');
+  let text = colon > 0 && /[/.]/.test(line.slice(0, colon)) ? line.slice(colon + 2) : line;
+  const dash = text.indexOf(' — ');
+  if (kind === 'why' && dash > 0 && text.slice(0, dash).trim().split(/\s+/).length <= 4) text = text.slice(dash + 3);
+  return text.trim();
+}
+
+function splitDiff(diff) {
+  const slices = new Map();
+  let file = null;
+  let rows = [];
+  const flush = () => { if (file !== null) slices.set(file, rows.join('\n')); };
+  for (const row of diff.split('\n')) {
+    if (row.startsWith('diff --git ')) {
+      flush();
+      file = row.slice(row.lastIndexOf(' b/') + 3);
+      rows = [row];
+    } else if (file !== null) rows.push(row);
+  }
+  flush();
+  return slices;
 }
 
 /** One HTTP exchange: `/rubato/memory/<action>`, JSON in (POST) and JSON out. */
