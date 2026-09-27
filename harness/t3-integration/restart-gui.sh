@@ -79,8 +79,45 @@ restart_ssh_servers() {
   [ "$ssh_status" -ne 1 ]
 }
 
-# 어떻게 끝나든 그리던 줄과 커서는 되돌린다.
-trap 'progress_stop' EXIT INT TERM
+# 앱을 끄고·번들을 맞추고·켜는 일은 한 번에 하나만 한다. `rubato restart`,
+# `rubato update`, 앱의 업데이트·재시작이 모두 여기를 지나는데, 둘이 겹치면
+# 같은 dist 를 동시에 쓰거나 한쪽이 번들을 만드는 사이 다른 쪽이 앱을 켠다.
+# mkdir 이 원자적이라 잠금으로 쓴다. 치우는 것은 주인이 죽은 잠금뿐이고,
+# pid 를 아직 못 쓴 새 잠금은 1분이 지나기 전에는 비었다고 보지 않는다.
+APP_LOCK="${RUBATO_GUI_APP_LOCK:-$HOME/.rubato-pi/gui-update/app.lock}"
+APP_LOCK_HELD=0
+take_app_lock() {
+  mkdir -p "$(dirname "$APP_LOCK")" 2>/dev/null || true
+  if ! mkdir "$APP_LOCK" 2>/dev/null; then
+    lock_owner="$(cat "$APP_LOCK/pid" 2>/dev/null || true)"
+    case "$lock_owner" in
+      ''|*[!0-9]*)
+        [ -n "$(find "$APP_LOCK" -maxdepth 0 -mmin +1 2>/dev/null)" ] || return 1 ;;
+      *)
+        ! ps -p "$lock_owner" >/dev/null 2>&1 || return 1 ;;
+    esac
+    # 옮긴 뒤 다시 본다. 그사이 다른 쪽이 새로 잡았다면 그 잠금을 돌려놓는다.
+    mv "$APP_LOCK" "$APP_LOCK.$$" 2>/dev/null || return 1
+    if [ "$(cat "$APP_LOCK.$$/pid" 2>/dev/null || true)" != "$lock_owner" ]; then
+      mv "$APP_LOCK.$$" "$APP_LOCK" 2>/dev/null || true
+      return 1
+    fi
+    rm -rf "$APP_LOCK.$$"
+    mkdir "$APP_LOCK" 2>/dev/null || return 1
+  fi
+  printf '%s\n' "$$" > "$APP_LOCK/pid"
+  APP_LOCK_HELD=1
+}
+release_app_lock() {
+  [ "$APP_LOCK_HELD" = 1 ] || return 0
+  [ "$(cat "$APP_LOCK/pid" 2>/dev/null || true)" = "$$" ] && rm -rf "$APP_LOCK"
+  APP_LOCK_HELD=0
+}
+
+# 어떻게 끝나든 그리던 줄과 커서는 되돌리고 잠금을 푼다. 신호를 받으면 멈춘다 —
+# 트랩만 돌고 이어 가면 잠금 없이 앱을 다루게 된다.
+trap 'progress_stop; release_app_lock' EXIT
+trap 'exit 1' INT TERM
 
 if [ ! -e "$GUI_APP" ]; then
   # Darwin keeps the .app gate. Windows install never creates that path;
@@ -89,6 +126,11 @@ if [ ! -e "$GUI_APP" ]; then
     ui_skip "데스크톱 앱이 없어요"
     exit 2
   fi
+fi
+
+if ! take_app_lock; then
+  ui_fail "다른 재시작이나 업데이트가 데스크톱 앱을 다루는 중입니다. 끝난 뒤 다시 하세요 — 잠금: $APP_LOCK"
+  exit 1
 fi
 
 if ! "$PGREP_BIN" -f "$GUI_PROC_PATTERN" >/dev/null 2>&1; then

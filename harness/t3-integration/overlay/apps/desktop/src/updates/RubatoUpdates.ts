@@ -11,7 +11,8 @@ type Prompt = { type: "info" | "error"; title: string; message: string; detail: 
 type Notice = { type: "info" | "error"; message: string; detail?: string };
 type ElectronServices = Pick<typeof import("electron"), "ipcMain" | "dialog">;
 type Update = { available: boolean; revision?: string; commits?: number };
-type Result = { token: string; status: string; pid?: number; message?: string };
+// kind: Settings > About runs `rubato restart` through the same one-shot job.
+type Result = { token: string; kind?: "update" | "restart"; status: string; pid?: number; message?: string };
 const exec = promisify(execFile);
 const CHECK_INTERVAL = 4 * 60 * 60_000;
 // Prompt answers. The index is the button index; closing without choosing a
@@ -55,7 +56,8 @@ export function createRubatoUpdater(
     // Result of a check the user asked for from the menu. A background check
     // stays silent when there is nothing to update or the check fails.
     notify?: (notice: Notice) => Promise<unknown>;
-    progress?: (value: number) => void;
+    /** kind is the running job's; a restart keeps the app usable while it builds. */
+    progress?: (value: number, kind?: Result["kind"]) => void;
     check?: () => Promise<Update>;
     launch?: (token: string) => Promise<void>;
     now?: () => number;
@@ -74,9 +76,9 @@ export function createRubatoUpdater(
   let watching = false;
   let expectedToken: string | undefined;
   let launchDeadline = 0;
-  const progress = (value: number) => {
+  const progress = (value: number, kind?: Result["kind"]) => {
     if (!window.isDestroyed()) window.setProgressBar(value);
-    options.progress?.(value);
+    options.progress?.(value, kind);
   };
   // A prompt on screen already answers a menu request made meanwhile.
   let prompting = false;
@@ -108,10 +110,10 @@ export function createRubatoUpdater(
       child.unref();
     } finally { await log.close(); }
   });
-  const showFailure = async (detail: string) => {
+  const showFailure = async (detail: string, kind: Result["kind"] = "update") => {
     await message({
-      type: "error", title: "Rubato Update",
-      message: "The update did not finish",
+      type: "error", title: kind === "restart" ? "Rubato Restart" : "Rubato Update",
+      message: kind === "restart" ? "The restart did not finish" : "The update did not finish",
       detail, buttons: ["View Log", "OK"],
     });
   };
@@ -137,14 +139,14 @@ export function createRubatoUpdater(
       }
       if (!result) { stopWatching(); return false; }
       if (result.status === "running" && alive(result.pid)) {
-        progress(2);
+        progress(2, result.kind);
         return true;
       }
       const seen = await read<{ token: string }>(seenPath);
       stopWatching();
       if (seen?.token !== result.token) {
         if (result.status !== "succeeded") await showFailure(result.message ??
-          "The update stopped. Check the log and try again.");
+          `The ${result.kind ?? "update"} stopped. Check the log and try again.`, result.kind);
         if (!stopped) await write(seenPath, { token: result.token });
       }
       return false;
@@ -356,8 +358,10 @@ export function attachRubatoUpdates(window: BrowserWindow, electron: ElectronSer
             ...(notice.detail ? { detail: notice.detail } : {}), buttons: ["OK"],
           });
         },
-        progress: (value) => {
-          if (!pending) publish({ phase: value === 2 ? "running" : "idle" });
+        // A running update covers the app ("Updating Rubato"). A restart does not:
+        // it builds before it quits the app, so work can go on until then.
+        progress: (value, kind) => {
+          if (!pending) publish({ phase: value === 2 && kind !== "restart" ? "running" : "idle" });
         },
       });
       void controller.tick();

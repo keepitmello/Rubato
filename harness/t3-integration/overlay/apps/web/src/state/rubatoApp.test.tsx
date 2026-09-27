@@ -14,7 +14,7 @@ vi.mock("./session", async (importOriginal) => {
 
 const { __resetRubatoUpdateCheckForTests, checkRubatoUpdate, useRubatoUpdateCheck } = await import("./rubatoApp");
 const { renderToStaticMarkup } = await import("react-dom/server");
-const { RubatoUpdateDot } = await import("../components/settings/RubatoAboutSection");
+const { RubatoUpdateDot, waitForRestart } = await import("../components/settings/RubatoAboutSection");
 
 const mac = "mac" as EnvironmentId;
 const update = { available: true, commits: 2, changes: [] };
@@ -72,5 +72,35 @@ describe("the shared Rubato update check", () => {
 
     await checkRubatoUpdate(mac, true);
     expect(renderToStaticMarkup(<RubatoUpdateDot />)).toContain("Rubato update available: 2 new changes");
+  });
+});
+
+// About follows its restart until the job reports: a failure before the app quits
+// frees the button with the reason instead of leaving it spinning.
+describe("following a restart from About", () => {
+  const status = (result: object | null, busy = false) => ({ busy, result, log: "/logs/update.log" });
+  beforeEach(() => postRubato.mockReset());
+  afterEach(() => vi.useRealTimers());
+
+  it("reports the failure of its own job, not an older one", async () => {
+    postRubato
+      .mockResolvedValueOnce(status({ token: "old", kind: "update", status: "failed", message: "old failure" }, true))
+      .mockRejectedValueOnce(new Error("connection lost"))
+      .mockResolvedValueOnce(status({ token: "mine", kind: "restart", status: "failed", message: "The restart did not finish (1)." }));
+    const outcome = await waitForRestart(mac, "mine", 1);
+    expect(outcome).toEqual({ failed: true, message: "The restart did not finish (1).", log: "/logs/update.log" });
+  });
+
+  it("ends quietly when its job succeeds without an app to reopen", async () => {
+    postRubato.mockResolvedValue(status({ token: "mine", kind: "restart", status: "succeeded", message: null }));
+    expect((await waitForRestart(mac, "mine", 1)).failed).toBe(false);
+  });
+
+  it("says the restart never started when no job took the lock", async () => {
+    vi.useFakeTimers({ now: 0 });
+    postRubato.mockResolvedValue(status({ token: "other", kind: "update", status: "succeeded", message: null }));
+    const outcome = waitForRestart(mac, "mine", 1_000);
+    await vi.advanceTimersByTimeAsync(20_000);
+    await expect(outcome).resolves.toMatchObject({ failed: true, message: expect.stringContaining("did not start") });
   });
 });

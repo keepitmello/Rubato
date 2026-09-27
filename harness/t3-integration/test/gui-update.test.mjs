@@ -116,6 +116,46 @@ test('a stale acknowledgement from the old app cannot certify restart', async (t
   assert.equal(result.status, 'failed');
 });
 
+// Settings > About's restart runs through this job: same lock, same result file,
+// same reopen handshake, with its own words.
+test('a restart waits for the reopened app and records itself as a restart', async (t) => {
+  const h = await fixture(t);
+  const result = await runUpdate({ ...h.options, kind: 'restart' });
+  assert.equal(result.status, 'succeeded');
+  assert.equal(result.kind, 'restart');
+  assert.ok(alive(result.appPid));
+  assert.equal(await readJson(path.join(h.directory, 'lock.json')), null);
+});
+
+test('a restart that fails says so as a restart, in the result and the notice', async (t) => {
+  const h = await fixture(t);
+  const notices = [];
+  const result = await runUpdate({ ...h.options, kind: 'restart', args: ['-e', 'process.exit(1)'],
+    notify: async (message, title) => notices.push({ message, title }) });
+  assert.equal(result.status, 'failed');
+  assert.match(result.message, /^The restart did not finish \(1\)/);
+  assert.deepEqual(notices, [{ message: result.message, title: 'Rubato restart failed' }]);
+  assert.equal((await readJson(path.join(h.directory, 'result.json'))).kind, 'restart');
+});
+
+test('a restart with no app here succeeds on exit 0 and never asks for a reopen', async (t) => {
+  const h = await fixture(t);
+  const envFile = path.join(h.root, 'job-env.json');
+  const result = await runUpdate({ ...h.options, kind: 'restart', parentPid: 0, readyTimeoutMs: 60_000,
+    args: ['-e', `require('node:fs').writeFileSync(${JSON.stringify(envFile)},JSON.stringify(process.env))`] });
+  assert.equal(result.status, 'succeeded');
+  assert.equal(result.appPid, undefined);
+  const jobEnv = await readJson(envFile);
+  assert.equal(jobEnv.RUBATO_GUI_UPDATE_RELAUNCH, undefined, 'no app here, so none is opened');
+  assert.equal(jobEnv.RUBATO_GUI_UPDATE, undefined, 'the update-only mode stays off');
+});
+
+test('an update and a restart do not run at once', async (t) => {
+  const h = await fixture(t);
+  await writeFile(path.join(h.directory, 'lock.json'), JSON.stringify({ pid: process.pid, token: randomUUID() }));
+  assert.deepEqual(await runUpdate({ ...h.options, kind: 'restart' }), { duplicate: true });
+});
+
 test('a timed-out updater is terminated and releases its lock', async (t) => {
   const h = await fixture(t);
   const pidFile = path.join(h.root, 'updater.pid');
@@ -278,6 +318,31 @@ test('a failed job is visible once after reopening, with access to its log', asy
   assert.equal(ui.dialogs.filter((dialog) => dialog.type === 'error').length, 1);
   assert.equal(ui.dialogs[0].detail, 'test failure');
   assert.equal((await readJson(path.join(h.directory, 'seen.json'))).token, token);
+});
+
+test('a failed restart is shown as a restart after reopening', async (t) => {
+  const h = await fixture(t);
+  await writeFile(path.join(h.directory, 'result.json'),
+    JSON.stringify({ token: randomUUID(), kind: 'restart', status: 'failed', message: 'build failed' }));
+  const ui = uiHarness(t, h);
+  await ui.controller.tick();
+  const errors = ui.dialogs.filter((dialog) => dialog.type === 'error');
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0].message, 'The restart did not finish');
+  assert.equal(errors[0].detail, 'build failed');
+});
+
+// A restart builds before it quits the app so work goes on meanwhile; the update's
+// covering "Updating Rubato" dialog would block exactly that.
+test('a running restart reports its kind, so the app is not covered while it builds', async (t) => {
+  const h = await fixture(t);
+  await writeFile(path.join(h.directory, 'result.json'),
+    JSON.stringify({ token: randomUUID(), kind: 'restart', status: 'running', pid: process.pid }));
+  const kinds = [];
+  const ui = uiHarness(t, h, [1], { progress: (value, kind) => kinds.push([value, kind]) });
+  await ui.controller.tick();
+  assert.deepEqual(kinds, [[2, 'restart']]);
+  assert.equal(ui.dialogs.length, 0);
 });
 
 test('in-app prompt: closing without a choice does not snooze; the next launch asks again', async (t) => {

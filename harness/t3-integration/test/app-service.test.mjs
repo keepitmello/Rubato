@@ -1,10 +1,10 @@
 // Settings > General > About's server half: the checkout's version, an update
 // check (the rubato update --check call is injected; the rest is real git), and
-// a detached restart that refuses to start twice.
+// the restart handed to the one-shot updater, and that job's status.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createAppService, handleAppRequest } from '../src/app/service.mjs';
@@ -48,18 +48,51 @@ test('check lists what an available update brings', async (t) => {
   await assert.rejects(offline.handle('check'), /offline/);
 });
 
-test('restart runs `rubato restart` detached, once', async (t) => {
+// The restart goes through the one-shot updater: `restart TOKEN APP_PID`, detached,
+// without this server's ELECTRON_RUN_AS_NODE, which would reach the bundle rebuild.
+test('restart hands `rubato restart` to the updater, detached and without Electron node mode', async (t) => {
   const f = await checkout(t);
-  const marker = path.join(f.home, 'ran');
+  const seen = path.join(f.home, 'seen.json');
   const service = createAppService({
-    root: f.root, env: { ...process.env, HOME: f.home },
-    rubato: ['/bin/sh', '-c', `echo "$1" > '${marker}'`, 'rubato'],
+    root: f.root, appPid: 4242,
+    env: { ...process.env, HOME: f.home, ELECTRON_RUN_AS_NODE: '1' },
+    runner: [process.execPath, '-e',
+      `require('node:fs').writeFileSync(${JSON.stringify(seen)}, JSON.stringify({ argv: process.argv.slice(1), env: process.env }))`],
   });
   const started = await service.handle('restart');
-  assert.match(started.log, /rubato-restart-gui\.log$/);
-  for (let i = 0; i < 50 && !(await readFile(marker, 'utf8').catch(() => '')); i += 1) await new Promise((r) => setTimeout(r, 20));
-  assert.equal((await readFile(marker, 'utf8')).trim(), 'restart');
-  await assert.rejects(service.handle('restart'), /already running/);
+  assert.match(started.token, /^[a-f0-9-]{36}$/);
+  assert.match(started.log, /gui-update\/update\.log$/);
+  let ran = null;
+  for (let i = 0; i < 100 && !ran; i += 1) {
+    ran = JSON.parse(await readFile(seen, 'utf8').catch(() => 'null'));
+    if (!ran) await new Promise((r) => setTimeout(r, 20));
+  }
+  assert.deepEqual(ran.argv, ['restart', started.token, '4242']);
+  assert.equal(ran.env.ELECTRON_RUN_AS_NODE, undefined);
   const response = await handleAppRequest(service, new Request('http://x/rubato/app/nope', { method: 'POST' }));
   assert.equal(response.status, 404);
+});
+
+test('restart is refused while an update or restart holds the updater', async (t) => {
+  const f = await checkout(t);
+  const directory = path.join(f.home, '.rubato-pi', 'gui-update');
+  await mkdir(directory, { recursive: true });
+  await writeFile(path.join(directory, 'lock.json'), JSON.stringify({ pid: process.pid, token: 'x' }));
+  const service = createAppService({ root: f.root, env: { ...process.env, HOME: f.home }, runner: ['/usr/bin/false'] });
+  await assert.rejects(service.handle('restart'), /already running/);
+  const status = await service.handle('restart-status');
+  assert.equal(status.busy, true);
+});
+
+test('restart-status reports the job result the page waits for', async (t) => {
+  const f = await checkout(t);
+  const service = createAppService({ root: f.root, env: { ...process.env, HOME: f.home } });
+  assert.deepEqual((await service.handle('restart-status')).result, null);
+  const directory = path.join(f.home, '.rubato-pi', 'gui-update');
+  await mkdir(directory, { recursive: true });
+  await writeFile(path.join(directory, 'result.json'),
+    JSON.stringify({ token: 't1', kind: 'restart', status: 'failed', message: 'The restart did not finish (1). Check the log.' }));
+  const status = await service.handle('restart-status');
+  assert.equal(status.busy, false);
+  assert.deepEqual(status.result, { token: 't1', kind: 'restart', status: 'failed', message: 'The restart did not finish (1). Check the log.' });
 });
