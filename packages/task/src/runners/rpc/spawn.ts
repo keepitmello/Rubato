@@ -13,6 +13,7 @@ const require = createRequire(import.meta.url)
 
 const SESSION_DIR_ENV = "PI_CODING_AGENT_SESSION_DIR"
 const SERVICE_TIER_ENV = "RUBATO_SERVICE_TIER"
+const ROLE_ENV = "RUBATO_PI_ROLE"
 const PI_BIN_ENV = "RUBATO_PI_BIN"
 const SENPI_BIN_ENV = "SENPI_BIN"
 const RPC_ENTRY_SPECIFIER = "@code-yeongyu/senpi/rpc-entry"
@@ -45,6 +46,9 @@ export type RpcSpawnRuntime = {
   readonly resolveSenpiExecutable?: (runtime: RpcSpawnRuntime) => string | null
   // Staged service-tier extension. Appended only when this child requested a tier.
   readonly serviceTierExtension?: string
+  // Entry every task child boots instead of resolveRpcEntry(): the stock RPC entry plus the lead's
+  // working tools. resolveRpcEntry() stays the model catalog probe's anchor.
+  readonly childRpcEntry?: string
 }
 
 /**
@@ -214,6 +218,9 @@ function buildChildProfile(
   const base = tier === undefined ? spec : specWithoutServiceTierEnv(spec)
   const env: NodeJS.ProcessEnv = { ...resolved.parentEnv }
   for (const name of MEMBER_PROCESS_ENV_NAMES) delete env[name]
+  // A member's role (owner/verifier) belongs to that member; a subagent it spawns is an agent.
+  // memberEnv below sets the role again for a member.
+  delete env[ROLE_ENV]
   // An RPC child inherits the parent env and hands its own argv extensions to its children
   // (team-service `inheritedExtensions`), so without these two the tier of a fast child would
   // reach a grandchild that never asked for one. Both are re-applied below for this child only.
@@ -267,7 +274,8 @@ export function buildRpcSpawn(spec: RpcSpawnSpec, runtime?: Partial<RpcSpawnRunt
       env,
     }
   }
-  return { command: resolved.execPath, args: [resolved.resolveRpcEntry(), ...childArgs], cwd: spec.cwd, env }
+  const entry = resolved.childRpcEntry ?? resolved.resolveRpcEntry()
+  return { command: resolved.execPath, args: [entry, ...childArgs], cwd: spec.cwd, env }
 }
 
 export function buildRpcModelCatalogSpawn(

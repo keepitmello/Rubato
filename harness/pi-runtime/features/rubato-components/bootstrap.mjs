@@ -4,7 +4,7 @@ import { dirname, isAbsolute, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PI_VERSION } from "./pi-version.mjs";
 import { DefaultResourceLoader, SettingsManager, createAgentSession } from "../../node_modules/@earendil-works/pi-coding-agent/dist/index.js";
-import { createStockChildInProcessSession, createPiRpcSpawnRuntime, loadPiChildInProcessFactories, resolvePiChildProviderProfile } from "../child-runtime/stock-rpc-runtime.mjs";
+import { createPiRpcSpawnRuntime, createStockChildInProcessSession, loadPiChildInProcessFactories, resolvePiChildProviderProfile, resolveStockRpcEntry } from "../child-runtime/stock-rpc-runtime.mjs";
 import { createMcpProducerRegistry } from "../mcp-producers/index.mjs";
 import { createMcpExtension } from "../mcp/index.mjs";
 import { ToolSearchService, createToolSearchExtension } from "../tool-search/index.mjs";
@@ -17,10 +17,10 @@ import { createProvidersExtension } from "../../node_modules/@earendil-works/pi-
 import { createProviderExecution } from "../../node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/rubato-features/provider-execution/extension.mjs";
 import { createGptAccountExtension } from "../../node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/rubato-features/providers/auth-pool/gpt-account.mjs";
 import { createContextNotesExtension } from "../../node_modules/@earendil-works/pi-coding-agent/dist/rubato-features/context-notes/extension.mjs";
-import { createPromptRulesExtensionFactories } from "../prompt-rules/index.mjs";
+import { createPromptRulesExtensionFactories, createTodoExtension } from "../prompt-rules/index.mjs";
 import { createCompactionExtensionFactories } from "../compaction/index.mjs";
 import { createConfigReloadExtensionFactories } from "../config-reload/index.mjs";
-import { createUserCommandsAgentFactories } from "../user-commands-agent/index.mjs";
+import { createGoalExtension, createUserCommandsAgentFactories } from "../user-commands-agent/index.mjs";
 import { createUserCommandSessionFactories } from "../user-commands-session/index.mjs";
 import { createSessionTitleFactories } from "../session-title/index.mjs";
 import { createAdapterHookFactories } from "../adapter-hooks/index.mjs";
@@ -28,7 +28,7 @@ import { createRemoteSurfaceFactories } from "../remote-surface/index.mjs";
 import { createTuiInputFactories } from "../tui-input/index.mjs";
 import codemode from "../codemode/src/index.ts";
 import { createRemovedToolHintRegistrar } from "../codemode/src/extension/stock-host-adapter.ts";
-import { createRubatoComponentExtension } from "./extensions/rubato.js";
+import { createRubatoChildComponentExtension, createRubatoComponentExtension } from "./extensions/rubato.js";
 import { validateBuildReceipt } from "./payload-manifest.mjs";
 import { applyFeatureToggles, readDisabledFeatures } from "./feature-toggles.mjs";
 
@@ -58,32 +58,11 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
   const toolSearch = new ToolSearchService();
   const serviceTier = createServiceTierFeature({ agentDir, settingsManagerFactory: () => settings });
   const providerExecution = createProviderExecution({ cursorProviderFactory: providerOptions.routeFactories?.cursor });
-  const rpcSpawnRuntime = createPiRpcSpawnRuntime({
-    rpcEntry: fileURLToPath(new URL("../../node_modules/@earendil-works/pi-coding-agent/dist/rpc-entry.js", import.meta.url)),
-  });
-  const runtimeRoot = fileURLToPath(new URL("../..", import.meta.url));
-  const stockChildProfile = resolvePiChildProviderProfile({ root: runtimeRoot, agentDir, includeContextNotes: true, includeGuards: true, includeRolePrompt: true });
   const componentFactory = servers.wrapFactory(createRubatoComponentExtension({ resolveCwd: () => cwd, createTaskOptions: ({ createTaskRunnerFactories }) => ({
     // Stock ExtensionAPI does not expose Senpi's registration-time pi.cwd.
     // Bind task storage to this session, never the hosting process directory.
     resolveCwd: () => cwd,
-    runnerFactories: createTaskRunnerFactories({ rpcSpawnRuntime, stockChildProfile, stockModelRuntime: modelRuntime,
-      createInProcessSession: async (options) => {
-        // The factory list is per child. An unset tier must not pass serviceTier, or every
-        // in-process child would load the extension the parent profile deliberately omits.
-        const serviceTier = options.serviceTier;
-        return createStockChildInProcessSession(options, {
-          createAgentSession,
-          DefaultResourceLoader,
-          extensionFactories: await loadPiChildInProcessFactories({
-            root: runtimeRoot,
-            agentDir: options.agentDir ?? agentDir,
-            settingsManager: options.settingsManager,
-            propagateEnv: false,
-            ...(serviceTier === undefined ? {} : { serviceTier }),
-          }),
-        });
-      } }),
+    runnerFactories: createStockTaskRunnerFactories({ agentDir, modelRuntime, createTaskRunnerFactories }),
   }) }), { sourcePath: join(here, "extensions/rubato.js"), registrationCwd: cwd });
   const extensionFactories = [
     { name: "rubato-assets", factory: async () => validateRubatoBundleAssets() },
@@ -123,14 +102,7 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
     { name: "media-tools", factory: (pi) => mediaTools(pi, { createSettingsManager: () => settings }) },
     { name: "codemode", factory: (pi) => codemode(pi, codemodeOptions) },
     { name: "tool-search", factory: createToolSearchExtension(toolSearch) },
-    { name: "rubato-components", factory: async (pi) => {
-      const registerRemovedToolHint = createRemovedToolHintRegistrar(pi);
-      const host = new Proxy(pi, { get(target, key, receiver) {
-        if (key === "registerRemovedToolHint") return registerRemovedToolHint;
-        return Reflect.get(target, key, receiver);
-      } });
-      await componentFactory(host);
-    } },
+    { name: "rubato-components", factory: withRemovedToolHints(componentFactory) },
     { name: "mcp", factory: createMcpExtension({ ...mcpOptions, agentDir, servers, toolSearchService: toolSearch }) },
     { name: "rubato-tool-pair-guard", factory: toolPairGuardExtension },
     { name: "service-tier-consumers", factory: (pi) => {
@@ -150,4 +122,84 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
   const toggles = applyFeatureToggles(extensionFactories, readDisabledFeatures({ agentDir, env }));
   return { extensionFactories: toggles.extensionFactories, disabledFeatures: toggles.disabled, unknownDisabledFeatures: toggles.unknown,
     servers, toolSearch, serviceTier, settingsManager: settings };
+}
+
+const runtimeRoot = fileURLToPath(new URL("../..", import.meta.url));
+
+// Codemode owns the removed-tool hints; components reach them through the host they register on.
+function withRemovedToolHints(componentFactory) {
+  return async (pi) => {
+    const registerRemovedToolHint = createRemovedToolHintRegistrar(pi);
+    const host = new Proxy(pi, { get(target, key, receiver) {
+      if (key === "registerRemovedToolHint") return registerRemovedToolHint;
+      return Reflect.get(target, key, receiver);
+    } });
+    await componentFactory(host);
+  };
+}
+
+/**
+ * A task child's extensions: the lead's working tools. What stays with the lead is memory (bound
+ * to the lead's identity), team management and Agent (a team member keeps Agent), and the surfaces
+ * that serve a person at the lead (remote, titles, slash commands, UI status). The child profile in
+ * child-runtime (providers, notes, guards, role prompt, service tier) loads beside this.
+ *
+ * `sharesParentTools`: an in-process child already receives the lead's registered component tools
+ * (lsp) as shared parent tools, so it must not register a second copy.
+ */
+export function createRubatoChildExtensionFactories({ cwd, agentDir, settingsManager, env = process.env, member = false,
+  sharesParentTools = false, createTaskOptions } = {}) {
+  if (!cwd || !agentDir) throw new Error("Rubato child requires explicit cwd and agentDir");
+  if (member && createTaskOptions === undefined) throw new Error("A team member's Agent needs its task runners");
+  const settings = settingsManager ?? SettingsManager.create(cwd, agentDir);
+  const servers = createMcpProducerRegistry({ registrationCwd: cwd });
+  const toolSearch = new ToolSearchService();
+  const components = ["ast-grep", ...(sharesParentTools ? [] : ["lsp"]), ...(member ? ["task"] : [])];
+  const componentFactory = servers.wrapFactory(createRubatoChildComponentExtension({ resolveCwd: () => cwd, components,
+    ...(createTaskOptions === undefined ? {} : { createTaskOptions }) }), { sourcePath: join(here, "extensions/rubato.js"), registrationCwd: cwd });
+  const extensionFactories = [
+    { name: "rubato-gpt-apply-patch", factory: registerApplyPatchExtension },
+    { name: "rubato-todo", factory: createTodoExtension() },
+    { name: "rubato-goal", factory: createGoalExtension({ agentDir, env }) },
+    { name: "rubato-bash-timeout", factory: createBashTimeoutExtension() },
+    { name: "terminal", factory: (pi) => terminal(pi, { createSettingsManager: () => settings }) },
+    { name: "media-tools", factory: (pi) => mediaTools(pi, { createSettingsManager: () => settings }) },
+    { name: "codemode", factory: (pi) => codemode(pi) },
+    { name: "tool-search", factory: createToolSearchExtension(toolSearch) },
+    { name: "rubato-components", factory: withRemovedToolHints(componentFactory) },
+    { name: "mcp", factory: createMcpExtension({ agentDir, servers, toolSearchService: toolSearch }) },
+  ];
+  // A feature the user turned off stays off in the lead's children too.
+  return applyFeatureToggles(extensionFactories, readDisabledFeatures({ agentDir, env })).extensionFactories;
+}
+
+/**
+ * The task runners of a stock session, lead or team member. Every RPC child boots child-rpc-entry
+ * (the child extensions above) with the child profile; an in-process child shares this session's
+ * ModelRuntime and gets the same child extensions in-process.
+ */
+export function createStockTaskRunnerFactories({ agentDir, modelRuntime, createTaskRunnerFactories, env = process.env }) {
+  const rpcSpawnRuntime = createPiRpcSpawnRuntime({ rpcEntry: resolveStockRpcEntry({ root: runtimeRoot }) });
+  const stockChildProfile = resolvePiChildProviderProfile({ root: runtimeRoot, agentDir, includeContextNotes: true,
+    includeGuards: true, includeRolePrompt: true });
+  // An in-process child runs in this process, so it would read this process's role (a member's
+  // owner/verifier). Whoever spawns it, a task child is an agent.
+  const childEnv = { ...env, RUBATO_PI_ROLE: "agent" };
+  return createTaskRunnerFactories({ rpcSpawnRuntime, stockChildProfile, stockModelRuntime: modelRuntime,
+    createInProcessSession: async (options) => {
+      // The factory list is per child. An unset tier must not pass serviceTier, or every
+      // in-process child would load the extension the parent profile deliberately omits.
+      const serviceTier = options.serviceTier;
+      const childAgentDir = options.agentDir ?? agentDir;
+      return createStockChildInProcessSession(options, {
+        createAgentSession,
+        DefaultResourceLoader,
+        extensionFactories: [
+          ...await loadPiChildInProcessFactories({ root: runtimeRoot, agentDir: childAgentDir, settingsManager: options.settingsManager,
+            propagateEnv: false, env: childEnv, ...(serviceTier === undefined ? {} : { serviceTier }) }),
+          ...createRubatoChildExtensionFactories({ cwd: options.cwd, agentDir: childAgentDir, settingsManager: options.settingsManager,
+            env: childEnv, sharesParentTools: true }),
+        ],
+      });
+    } });
 }

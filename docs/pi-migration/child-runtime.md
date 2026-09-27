@@ -70,13 +70,16 @@ env -u NODE_OPTIONS -u NODE_COMPILE_CACHE node --test --test-timeout=30000 \
 
 This verifies the selected stock runtime seam, provider-only child profile,
 model/auth identity, and lifecycle. It still does not establish live paid
-provider behavior or full task/team orchestration parity. Under the current
-profile, codemode, terminal, loop/tool-pair guards, media-tools, MCP,
-service-tier, tool-search, task/team, and memory extensions are intentionally
-absent. In-process children additionally use an empty extension loader, so
-Senpi builtin compaction/goal/todo extensions are absent; adding any of these
-requires a separate child-safe profile rather than forwarding the parent
-assembly.
+provider behavior or full task/team orchestration parity.
+
+A task child works with the lead's tools. Every RPC child boots
+`child-rpc-entry.mjs`, and an in-process child loads the same set:
+`createRubatoChildExtensionFactories` in `rubato-components/bootstrap.mjs`
+(apply_patch, todo, goal, terminal, media-tools, codemode, tool-search, MCP,
+ast-grep, lsp) beside this profile. What stays with the lead is memory, team
+management, Agent (a team member keeps Agent) and the surfaces that serve a
+person at the lead. `test/fixtures/rubato-components-session.mjs` compares the
+lead's tool list with each child shape.
 
 ## A4 (2026-09-11)
 

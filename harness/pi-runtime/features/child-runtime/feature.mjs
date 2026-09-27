@@ -33,6 +33,12 @@ export const childRuntimeFeature = Object.freeze({
       path: "rubato-features/child-runtime/role-prompt-extension.mjs",
       sourcePath: join(featureDir, "role-prompt-extension.mjs"),
     },
+    {
+      target: "runtime",
+      version: PI_VERSION,
+      path: "rubato-features/child-runtime/child-rpc-entry.mjs",
+      sourcePath: join(featureDir, "child-rpc-entry.mjs"),
+    },
   ],
 })
 
