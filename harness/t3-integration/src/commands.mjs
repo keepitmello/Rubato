@@ -3,11 +3,16 @@
 // skills). Terminal-layer commands are not in that list; we add the ones we
 // can both execute and report back to T3.
 
-/** TUI / session-lifecycle names we will not put in the composer menu. */
+/**
+ * TUI / session-lifecycle names we will not put in the composer menu. The last
+ * row opens terminal-only panels (`ctx.ui.custom`); over RPC they only say "No
+ * UI available", and the app has its own diff and file panels.
+ */
 const HIDDEN = new Set([
   'model', 'thinking', 'fork', 'clone', 'new', 'resume', 'session', 'tree',
   'settings', 'login', 'logout', 'quit', 'hotkeys', 'changelog', 'copy',
   'share', 'export', 'import', 'trust', 'scoped-models', 'debug',
+  'diff', 'files', 'history',
 ]);
 
 /** Control commands the bridge intercepts instead of prompting. */

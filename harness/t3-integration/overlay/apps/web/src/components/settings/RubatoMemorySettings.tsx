@@ -1,21 +1,31 @@
 import {
+  ArrowDownIcon,
+  ArrowUpIcon,
   ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   PlayIcon,
+  PlusIcon,
   RefreshCwIcon,
   Trash2Icon,
+  XIcon,
 } from "lucide-react";
+import { useAtomValue } from "@effect/atom-react";
 import * as Option from "effect/Option";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { requestConfirmDialog } from "../../confirmDialog";
 import { cn } from "../../lib/utils";
+import { useProjects } from "../../state/entities";
 import { usePrimaryEnvironmentId } from "../../state/environments";
+import { primaryServerProvidersAtom } from "../../state/server";
 import { usePreparedConnection } from "../../state/session";
 import {
   rubatoMemory,
+  type DreamModel,
   type DreamPublish,
+  type DreamReasoning,
+  type ProjectStore,
   type DreamRunDetail,
   type DreamRunSummary,
   type MemoryFileEntry,
@@ -24,6 +34,7 @@ import {
   type MemoryStoreSummary,
 } from "../../state/rubatoMemory";
 import ChatMarkdown from "../ChatMarkdown";
+import { iconForProviderModel } from "../chat/providerIconUtils";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
@@ -219,10 +230,13 @@ export function RubatoMemorySettingsPanel() {
     }
   };
 
-  const setCategory = (category: string) => {
+  const setModels = (models: readonly DreamModel[]) => {
     const previous = status;
-    if (previous) setStatus({ ...previous, category });
-    void saveConfig({ category }, () => setStatus(previous));
+    if (previous) setStatus({ ...previous, models });
+    void saveConfig(
+      { models: models.map((entry) => (entry.reasoning ? { model: entry.model, reasoning: entry.reasoning } : { model: entry.model })) },
+      () => setStatus(previous),
+    );
   };
   const setPublish = (publish: DreamPublish) => {
     const previous = status;
@@ -287,7 +301,6 @@ export function RubatoMemorySettingsPanel() {
     );
   }
 
-  const ladder = status?.categories.find((entry) => entry.name === status.category);
   return (
     <SettingsPageContainer>
       <SettingsSection
@@ -321,6 +334,13 @@ export function RubatoMemorySettingsPanel() {
         ))}
       </SettingsSection>
 
+      <ProjectStoresSection
+        environmentId={environmentId}
+        home={home}
+        stores={stores?.map((store) => store.store) ?? []}
+        onChanged={() => void refresh()}
+      />
+
       <SettingsSection id="memory-dream" title="Dreams">
         {statusError ? (
           <SettingsRow title="Could not load dream settings" description={statusError} />
@@ -332,42 +352,7 @@ export function RubatoMemorySettingsPanel() {
           />
         ) : (
           <>
-            <SettingsRow
-              title="Model ladder"
-              description={
-                ladder
-                  ? `Tried in order: ${ladder.models.join(" → ")}`
-                  : "No models for this category in rubato.jsonc."
-              }
-              control={
-                <Select
-                  value={status.category}
-                  onValueChange={(next) => {
-                    if (typeof next === "string" && next !== status.category) setCategory(next);
-                  }}
-                >
-                  <SelectTrigger size="sm" aria-label="Dream model ladder">
-                    <SelectValue>{status.category}</SelectValue>
-                  </SelectTrigger>
-                  <SelectPopup align="end" alignItemWithTrigger={false}>
-                    {(status.categories.some((entry) => entry.name === status.category)
-                      ? status.categories
-                      : [{ name: status.category, models: [] }, ...status.categories]
-                    ).map((entry) => (
-                      <SelectItem key={entry.name} value={entry.name}>
-                        {entry.name}
-                        {entry.models[0] ? (
-                          <span className="ms-2 text-xs text-muted-foreground">
-                            {entry.models[0]}
-                            {entry.models.length > 1 ? ` +${entry.models.length - 1}` : ""}
-                          </span>
-                        ) : null}
-                      </SelectItem>
-                    ))}
-                  </SelectPopup>
-                </Select>
-              }
-            />
+            <DreamModelsEditor models={status.models} onChange={setModels} />
             <SettingsRow
               title="Publish"
               description={
@@ -1205,6 +1190,287 @@ function SelfFilesSection({ environmentId }: { environmentId: EnvironmentId }) {
           </div>
         ) : null}
       </SettingsRow>
+    </SettingsSection>
+  );
+}
+
+const REASONING_LEVELS: readonly DreamReasoning[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+const DEFAULT_REASONING = "__default__";
+
+/** The Rubato instance's catalogue: every model a dream could run on. */
+function useRubatoModels(): ReadonlyArray<{ slug: string; name: string }> {
+  const providers = useAtomValue(primaryServerProvidersAtom);
+  return providers.find((provider) => provider.driver === "rubato-pi")?.models ?? [];
+}
+
+function ModelIcon({ slug }: { slug: string }) {
+  const Icon = iconForProviderModel("rubato-pi" as never, { slug });
+  return Icon ? <Icon className="size-4 shrink-0" aria-hidden /> : null;
+}
+
+function DreamModelsEditor({
+  models,
+  onChange,
+}: {
+  models: readonly DreamModel[];
+  onChange: (next: readonly DreamModel[]) => void;
+}) {
+  const catalogue = useRubatoModels();
+  const nameOf = (slug: string) => catalogue.find((model) => model.slug === slug)?.name ?? slug;
+  const addable = catalogue.filter((model) => !models.some((entry) => entry.model === model.slug));
+  const move = (index: number, by: -1 | 1) => {
+    const next = [...models];
+    const [item] = next.splice(index, 1);
+    next.splice(index + by, 0, item!);
+    onChange(next);
+  };
+  const update = (index: number, reasoning: DreamReasoning | null) =>
+    onChange(models.map((entry, at) => (at === index ? { ...entry, reasoning } : entry)));
+  const remove = (index: number) => onChange(models.filter((_, at) => at !== index));
+
+  return (
+    <SettingsRow
+      title="Models"
+      description="The dream tries these in order and uses the first one that answers."
+    >
+      <ol className="mt-3 space-y-1.5">
+        {models.map((entry, index) => (
+          <li
+            key={entry.model}
+            className="flex items-center gap-2 rounded-lg border border-border/60 bg-background/40 px-2.5 py-1.5"
+          >
+            <span className="w-4 text-center text-xs text-muted-foreground tabular-nums">{index + 1}</span>
+            <ModelIcon slug={entry.model} />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm">{nameOf(entry.model)}</span>
+              {!catalogue.some((model) => model.slug === entry.model) ? (
+                <span className="block text-xs text-warning">Not in the current model list</span>
+              ) : null}
+            </span>
+            <Select
+              value={entry.reasoning ?? DEFAULT_REASONING}
+              onValueChange={(next) => {
+                if (typeof next !== "string") return;
+                update(index, next === DEFAULT_REASONING ? null : (next as DreamReasoning));
+              }}
+            >
+              <SelectTrigger size="sm" className="w-32" aria-label={`Reasoning for ${nameOf(entry.model)}`}>
+                <SelectValue>{entry.reasoning ?? "Default"}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem value={DEFAULT_REASONING}>Default</SelectItem>
+                {REASONING_LEVELS.map((level) => (
+                  <SelectItem key={level} value={level}>
+                    {level}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+            <Button size="icon-xs" variant="ghost" disabled={index === 0} aria-label="Move up" onClick={() => move(index, -1)}>
+              <ArrowUpIcon />
+            </Button>
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              disabled={index === models.length - 1}
+              aria-label="Move down"
+              onClick={() => move(index, 1)}
+            >
+              <ArrowDownIcon />
+            </Button>
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              disabled={models.length === 1}
+              aria-label={`Remove ${nameOf(entry.model)}`}
+              title={models.length === 1 ? "The dream needs at least one model" : undefined}
+              onClick={() => remove(index)}
+            >
+              <XIcon />
+            </Button>
+          </li>
+        ))}
+      </ol>
+      {addable.length > 0 && models.length < 8 ? (
+        <div className="mt-2">
+          <Select
+            value=""
+            onValueChange={(next) => {
+              if (typeof next === "string" && next) onChange([...models, { model: next, reasoning: null }]);
+            }}
+          >
+            <SelectTrigger size="sm" aria-label="Add a model to the dream">
+              <SelectValue>
+                <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                  <PlusIcon className="size-3.5" /> Add model
+                </span>
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup align="start" alignItemWithTrigger={false}>
+              {addable.map((model) => (
+                <SelectItem key={model.slug} value={model.slug}>
+                  <span className="inline-flex items-center gap-2">
+                    <ModelIcon slug={model.slug} />
+                    {model.name}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+        </div>
+      ) : null}
+    </SettingsRow>
+  );
+}
+
+const AUTOMATIC = "__automatic__";
+const NEW_STORE = "__new__";
+const STORE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+
+function projectStoreLabel(entry: ProjectStore | undefined): string {
+  if (!entry) return "Checking…";
+  if (entry.configured) return `Writes to ${entry.configured}, named in .rubato/rubato.jsonc.`;
+  if (entry.source === "git") return `Writes to ${entry.store}, found from its git repository.`;
+  if (entry.source === "home") return "Writes to home, the home folder's store.";
+  return "Keeps no memory: not a git repository and no store named.";
+}
+
+/** Each project in the app and the store its sessions write to; naming one writes memory.agent. */
+function ProjectStoresSection({
+  environmentId,
+  home,
+  stores,
+  onChanged,
+}: {
+  environmentId: EnvironmentId;
+  home: string | null;
+  stores: readonly string[];
+  onChanged: () => void;
+}) {
+  const allProjects = useProjects();
+  const projects = useMemo(
+    () =>
+      allProjects
+        .filter((project) => project.environmentId === environmentId)
+        .toSorted((a, b) => a.title.localeCompare(b.title)),
+    [allProjects, environmentId],
+  );
+  const dirsKey = projects.map((project) => project.workspaceRoot).join("\n");
+  const [resolved, setResolved] = useState<ReadonlyMap<string, ProjectStore>>(new Map());
+  const [error, setError] = useState<string | null>(null);
+  const [naming, setNaming] = useState<string | null>(null);
+  const [newName, setNewName] = useState("");
+  const [saving, setSaving] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (environmentId === null || dirsKey === "") return;
+    try {
+      const result = await rubatoMemory.projects(environmentId, dirsKey.split("\n"));
+      setResolved(new Map(result.projects.map((entry) => [entry.dir, entry])));
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }, [environmentId, dirsKey]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const save = async (dir: string, store: string | null) => {
+    setSaving(dir);
+    try {
+      await rubatoMemory.setProjectStore(environmentId, dir, store);
+      setNaming(null);
+      setNewName("");
+      await load();
+      onChanged();
+      toastManager.add({
+        type: "info",
+        title: store ? `Sessions here now write to ${store}` : "Back to the automatic store",
+        description: "New sessions pick this up; running ones keep their store.",
+      });
+    } catch (cause) {
+      reportError("Could not change the project's store", cause);
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  if (projects.length === 0) return null;
+  return (
+    <SettingsSection id="memory-projects" title="Projects">
+      {error ? <SettingsRow title="Could not read the projects' stores" description={error} /> : null}
+      {projects.map((project) => {
+        const dir = project.workspaceRoot;
+        const entry = resolved.get(dir);
+        const options = [...new Set([...stores, ...(entry?.configured ? [entry.configured] : [])])].toSorted();
+        return (
+          <SettingsRow
+            key={`${project.environmentId}:${project.id}`}
+            title={project.title}
+            description={
+              <span className="block truncate" title={dir}>
+                {tildePath(dir, home)}
+              </span>
+            }
+            status={projectStoreLabel(entry)}
+            control={
+              naming === dir ? (
+                <form
+                  className="flex items-center gap-1.5"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (STORE_NAME.test(newName.trim())) void save(dir, newName.trim());
+                  }}
+                >
+                  <Input
+                    autoFocus
+                    size="sm"
+                    className="w-40"
+                    placeholder="store name"
+                    value={newName}
+                    onChange={(event) => setNewName(event.currentTarget.value)}
+                    aria-label={`New memory store for ${project.title}`}
+                  />
+                  <Button size="sm" type="submit" disabled={saving === dir || !STORE_NAME.test(newName.trim())}>
+                    Save
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setNaming(null)}>
+                    Cancel
+                  </Button>
+                </form>
+              ) : (
+                <Select
+                  value={entry?.configured ?? AUTOMATIC}
+                  onValueChange={(next) => {
+                    if (typeof next !== "string") return;
+                    if (next === NEW_STORE) {
+                      setNaming(dir);
+                      setNewName("");
+                    } else if (next === AUTOMATIC) {
+                      if (entry?.configured) void save(dir, null);
+                    } else if (next !== entry?.configured) void save(dir, next);
+                  }}
+                >
+                  <SelectTrigger size="sm" className="w-44" aria-label={`Memory store for ${project.title}`} disabled={saving === dir || !entry}>
+                    <SelectValue>{entry?.configured ?? "Automatic"}</SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup align="end" alignItemWithTrigger={false}>
+                    <SelectItem value={AUTOMATIC}>Automatic</SelectItem>
+                    {options.map((store) => (
+                      <SelectItem key={store} value={store}>
+                        {store}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value={NEW_STORE}>New store…</SelectItem>
+                  </SelectPopup>
+                </Select>
+              )
+            }
+          />
+        );
+      })}
     </SettingsSection>
   );
 }
