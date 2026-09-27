@@ -638,28 +638,46 @@ test('a $skill chip is rewritten to /skill:name so Pi expands it', async (t) => 
   await until(() => events.some((event) => event.type==='turn.completed'));
 });
 
-// T3 paints the Fast toggle off on every attach, so a bridge that started from an unknown
-// belief sent a `/fast off` nobody asked for: a warning on models Pi cannot serve fast, and a
-// wiped remembered tier on the ones it can.
-test('a fresh attach sends no Fast command until the toggle actually moves', async (t) => {
+// Pi remembers fast per model, so a new session can start fast while T3 paints Off.
+// A bridge that trusted its own guess left that session sending `speed: fast`.
+test('the Fast toggle overrides what Pi remembered and stays quiet when they agree', async (t) => {
   const { root, bridge } = await setup(t);
   await bridge.startSession({ threadId:'fast-thread', runtimeMode:'full-access', cwd:root });
   const context = bridge.sessions.get('fast-thread');
   context.session.model = 'anthropic/claude-opus-5';
+  await context.client.command({ type:'prompt', message:'/fast on' });
   const calls = [];
   const original = context.client.command.bind(context.client);
   context.client.command = async (command) => { calls.push(command); return original(command); };
   const selection = (fast) => ({ model:'anthropic/claude-opus-5', options:[{ id:'fastMode', value:fast }] });
+  const sent = () => calls.filter((command) => command.type === 'prompt').map((command) => command.message);
 
   await bridge.selectModel(context, selection(false));
-  assert.deepEqual(calls, []);
-
-  await bridge.selectModel(context, selection(true));
-  assert.deepEqual(calls.map((command) => command.message), ['/fast on']);
+  assert.deepEqual(sent(), ['/fast off']);
+  assert.equal((await original({ type:'get_service_tier' })).active, false);
 
   calls.length = 0;
   await bridge.selectModel(context, selection(false));
-  assert.deepEqual(calls.map((command) => command.message), ['/fast off']);
+  assert.deepEqual(sent(), []);
+
+  await bridge.selectModel(context, selection(true));
+  assert.deepEqual(sent(), ['/fast on']);
+});
+
+// `/fast` on a model Pi cannot serve fast only warns; the toggle there has nothing to do.
+test('a model Pi cannot serve fast gets no Fast command either way', async (t) => {
+  const { root, bridge } = await setup(t);
+  await bridge.startSession({ threadId:'plain-thread', runtimeMode:'full-access', cwd:root });
+  const context = bridge.sessions.get('plain-thread');
+  context.session.model = 'anthropic/claude-haiku-4-5';
+  await context.client.command({ type:'prompt', message:'__fast_unsupported' });
+  const calls = [];
+  const original = context.client.command.bind(context.client);
+  context.client.command = async (command) => { calls.push(command); return original(command); };
+  const selection = (fast) => ({ model:'anthropic/claude-haiku-4-5', options:[{ id:'fastMode', value:fast }] });
+  await bridge.selectModel(context, selection(false));
+  await bridge.selectModel(context, selection(true));
+  assert.deepEqual(calls.filter((command) => command.type === 'prompt'), []);
 });
 
 test('native compact issues the compact RPC and reports compacted to T3', async (t) => {

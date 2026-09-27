@@ -194,13 +194,7 @@ export class RubatoPiBridge {
       provider: 'rubato-pi', providerInstanceId: this.instanceId, threadId: input.threadId, runtimeMode: input.runtimeMode,
       status: 'connecting', ...(input.cwd ? { cwd: input.cwd } : {}), resumeCursor: this.cursor(sessionId),
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-    }, sequence: 0, queue: Promise.resolve(), stopped: false,
-    // T3 paints the Fast toggle off on every attach (model-catalog-order.mjs
-    // `optionDescriptorsFor`), so an unknown belief here made the first selection
-    // differ from `false` and sent a `/fast off` nobody asked for: on a model Pi
-    // cannot serve fast that surfaced as a warning each session, and on one it can
-    // it overwrote the remembered tier with "auto". Start from what the toggle shows.
-    fastMode: false };
+    }, sequence: 0, queue: Promise.resolve(), stopped: false };
     try {
       this.sessions.set(input.threadId, context);
       await client.attach(sessionId);
@@ -363,6 +357,8 @@ export class RubatoPiBridge {
       const applied = await context.client.command({ type: 'set_model', provider, modelId });
       context.session.model = selection.model;
       context.usageModel = selection.model;
+      // Pi reloads the new model's remembered tier on model_select.
+      context.fastMode = undefined;
       context.projection.configureUsage({ maxTokens: applied?.contextWindow });
     }
     const { thinking, fast } = applySelectionOptions(selection.options);
@@ -372,11 +368,25 @@ export class RubatoPiBridge {
       await context.client.command({ type: 'set_thinking_level', level: thinking });
       context.thinkingLevel = thinking;
     }
-    if (fast !== undefined && fast !== context.fastMode) {
-      await context.client.command({ type: 'prompt', message: fast ? '/fast on' : '/fast off' });
-      context.fastMode = fast;
-    }
+    if (fast !== undefined) await this.applyFast(context, fast);
     context.projection.event('session.configured', { config: { model: context.session.model } });
+  }
+  /**
+   * T3 sends the toggle on every turn (an untouched one as an explicit false), so
+   * the toggle is the answer. Pi remembers fast per model across sessions, which
+   * T3 cannot paint: comparing against a guess let a remembered Opus fast keep
+   * sending `speed: fast` under an Off toggle. Compare against what Pi will send.
+   */
+  async applyFast(context, fast) {
+    let tier;
+    try { tier = await context.client.command({ type: 'get_service_tier' }); }
+    catch (error) { t3BridgeLog('service tier unreadable', String(error?.message ?? error)); }
+    // A model Pi cannot serve fast is already off; `/fast` there only warns.
+    // An engine older than `get_service_tier` falls back to the last value sent,
+    // which is unknown after attach and after a model change.
+    const active = tier ? (tier.supported === true ? tier.active === true : fast) : context.fastMode;
+    if (active !== fast) await context.client.command({ type: 'prompt', message: fast ? '/fast on' : '/fast off' });
+    context.fastMode = fast;
   }
   sendTurn(input) {
     const context = this.require(input.threadId);
