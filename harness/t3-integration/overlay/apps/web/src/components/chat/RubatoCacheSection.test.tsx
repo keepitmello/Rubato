@@ -41,21 +41,30 @@ describe("the context ring's prompt cache", () => {
     expect(markup).toContain("Cold");
   });
 
-  it("leaves a warm ring alone and lists hit rate, lifetime and the warmer instead of the compaction note", () => {
+  it("leaves a warm ring alone and lists hit rate, lifetime and the warming hours instead of the compaction note", () => {
+    const from = Date.now() - HOUR;
     const markup = meterWith({
       state: "warm",
+      sessionId: "s1",
       hitPercent: 92,
       expiresAt: Date.now() + 2 * HOUR + 5 * 60_000,
-      warming: { mode: "idle", enabled: true, hours: 4, active: true, until: Date.now() + HOUR },
+      warming: { mode: "idle", enabled: true, hours: 4, from, active: true, until: from + 4 * HOUR },
     });
     expect(markup).not.toContain("var(--color-error)");
     expect(markup).toContain("Hit rate");
     expect(markup).toContain("92%");
     expect(markup).toMatch(/Warm · 2h [45]m left/);
-    expect(markup).toContain("Refreshing until");
-    expect(markup).toMatch(/aria-pressed="true"[^>]*>4h</);
+    expect(markup).toContain("4h · until");
+    expect(markup).toMatch(/aria-valuenow="4"/);
+    expect(markup).not.toContain(">Off<");
     expect(markup).not.toContain("compacts automatically");
     expect(markup).toContain('data-close-delay="150"');
+  });
+
+  it("says when a window already ended", () => {
+    const from = Date.now() - 3 * HOUR;
+    const markup = meterWith({ state: "cold", sessionId: "s1", warming: { mode: "idle", enabled: true, hours: 2, from, active: false } });
+    expect(markup).toContain("2h · ended");
   });
 
   it("keeps a nearly full context out of red while the cache is warm", () => {
@@ -63,13 +72,9 @@ describe("the context ring's prompt cache", () => {
     expect(markup).not.toContain("var(--color-error)");
   });
 
-  it("says whether this thread or the setting turned the warmer off", () => {
-    const thread = meterWith({ state: "warm", sessionId: "s1", expiresAt: Date.now() + HOUR, warming: { mode: "idle", enabled: false, active: false } });
-    expect(thread).toContain("Off for this thread");
-    expect(thread).toMatch(/aria-pressed="true"[^>]*>Off</);
-    expect(thread).not.toMatch(/data-disabled=""/);
-    const global = meterWith({ state: "warm", sessionId: "s1", expiresAt: Date.now() + HOUR, warming: { mode: "off", enabled: true, active: false } });
-    expect(global).toContain("Off in settings");
-    expect(global).toMatch(/data-disabled=""/);
+  it("locks the slider when warming is off in settings", () => {
+    const markup = meterWith({ state: "warm", sessionId: "s1", expiresAt: Date.now() + HOUR, warming: { mode: "off", enabled: true, active: false } });
+    expect(markup).toContain("Off in settings");
+    expect(markup).toMatch(/data-disabled=""/);
   });
 });

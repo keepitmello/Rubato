@@ -4,7 +4,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import type { ContextWindowSnapshot } from "~/lib/contextWindow";
 import { cn } from "~/lib/utils";
 import { setSessionCacheWarming } from "~/state/rubatoCacheWarming";
-import { Toggle, ToggleGroup } from "../ui/toggle-group";
+import { Slider } from "@base-ui/react/slider";
 
 type RubatoCache = NonNullable<ContextWindowSnapshot["cache"]>;
 
@@ -58,21 +58,16 @@ function Row(props: { label: string; children: ReactNode }) {
   );
 }
 
-/** "off" or hours of warming after the thread's latest input. */
-const WARMING_CHOICES = ["off", "1", "2", "4", "8"] as const;
-type WarmingChoice = (typeof WARMING_CHOICES)[number];
+const HOUR = 3_600_000;
+const MIN_HOURS = 1;
+const MAX_HOURS = 12;
 const DEFAULT_HOURS = 2;
 
-function choiceOf(warming: RubatoCache["warming"]): WarmingChoice {
-  if (!warming.enabled) return "off";
-  const hours = String(warming.hours ?? DEFAULT_HOURS);
-  return (WARMING_CHOICES as readonly string[]).includes(hours) ? (hours as WarmingChoice) : "2";
-}
-
 /**
- * The cache half of the context ring's popover: lifetime, hit rate and how long this
- * thread keeps warming after its latest input. The choice answers for this thread only;
- * the global mode is a setting (/settings in the CLI).
+ * The cache half of the context ring's popover: lifetime, hit rate and how many hours
+ * after its latest input this thread keeps warming. Dragging shows the end time as it
+ * moves; letting go saves it. It answers for this thread only; the global mode is a
+ * setting (/settings in the CLI).
  */
 export function RubatoCacheSection(props: {
   cache: RubatoCache | null | undefined;
@@ -80,9 +75,10 @@ export function RubatoCacheSection(props: {
 }) {
   const now = useRubatoCacheNow(props.cache, true);
   // The answer stands in until the thread reports again. A thread T3 has let go of
-  // reports nothing new, so without it the popover would snap back to the old choice.
+  // reports nothing new, so without it the popover would snap back to the old hours.
   const [answered, setAnswered] = useState<RubatoCache | null>(null);
-  const [pending, setPending] = useState<WarmingChoice | null>(null);
+  const [draft, setDraft] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => setAnswered(null), [props.cache]);
   const cache = answered ?? props.cache;
@@ -90,7 +86,10 @@ export function RubatoCacheSection(props: {
 
   const cold = rubatoCacheIsCold(cache, now);
   const globalOff = cache.warming.mode === "off";
-  const choice = pending ?? choiceOf(cache.warming);
+  const saved = Math.min(MAX_HOURS, Math.max(MIN_HOURS, cache.warming.hours ?? DEFAULT_HOURS));
+  const hours = draft ?? saved;
+  const from = cache.warming.from;
+  const until = from != null ? from + hours * HOUR : null;
   const status = cold
     ? "Cold"
     : cache.state === "warm" && cache.expiresAt != null
@@ -98,27 +97,29 @@ export function RubatoCacheSection(props: {
       : "Lifetime not published";
   const warmingNote = globalOff
     ? "Off in settings"
-    : choice === "off"
-      ? "Off for this thread"
-      : pending !== null
-        ? "Saving…"
-        : cache.warming.active && cache.warming.until != null
-          ? `Refreshing until ${formatClock(cache.warming.until)}`
-          : `${choice}h after your last message`;
-  const canChoose = Boolean(props.environmentId && cache.sessionId) && !globalOff && pending === null;
+    : until == null
+      ? `${hours}h after your last message`
+      : until <= now
+        ? `${hours}h · ended ${formatClock(until)}`
+        : draft === null && !saving && !cache.warming.active
+          ? `${hours}h · resumes with the next reply`
+          : `${hours}h · until ${formatClock(until)}`;
+  const canChange = Boolean(props.environmentId && cache.sessionId) && !globalOff && !saving;
 
-  const choose = (next: WarmingChoice) => {
-    if (!props.environmentId || !cache.sessionId || next === choice) return;
-    setPending(next);
+  const save = (next: number) => {
+    setDraft(null);
+    if (!props.environmentId || !cache.sessionId || (next === saved && cache.warming.enabled)) return;
+    setSaving(true);
     setError(null);
-    const change = next === "off" ? { enabled: false } : { enabled: true, hours: Number(next) };
-    setSessionCacheWarming(props.environmentId, cache.sessionId, change)
+    setSessionCacheWarming(props.environmentId, cache.sessionId, { enabled: true, hours: next })
       .then((updated) => setAnswered(updated))
       .catch((cause: unknown) =>
         setError(cause instanceof Error ? cause.message : "Could not change cache warming."),
       )
-      .finally(() => setPending(null));
+      .finally(() => setSaving(false));
   };
+  const asHours = (value: number | readonly number[]) =>
+    Math.round(Array.isArray(value) ? (value[0] ?? saved) : (value as number));
 
   return (
     <div className="mt-1 flex flex-col gap-1.5 border-t border-border/60 pt-2">
@@ -134,25 +135,26 @@ export function RubatoCacheSection(props: {
       {cache.hitPercent != null ? <Row label="Hit rate">{cache.hitPercent}%</Row> : null}
       <div className="flex items-center justify-between gap-3 text-[11px] leading-4">
         <span className="text-secondary-label">Keep warm</span>
-        <span className="text-pretty text-right text-muted-foreground">{warmingNote}</span>
+        <span className="font-medium tabular-nums text-secondary-label">{warmingNote}</span>
       </div>
-      <ToggleGroup
-        aria-label="Keep this thread's prompt cache warm"
-        variant="segmented"
-        className="w-full"
-        value={globalOff ? [] : [choice]}
-        disabled={!canChoose}
-        onValueChange={(next) => {
-          const value = next[0];
-          if (value && (WARMING_CHOICES as readonly string[]).includes(value)) choose(value as WarmingChoice);
-        }}
+      <Slider.Root
+        min={MIN_HOURS}
+        max={MAX_HOURS}
+        step={1}
+        value={hours}
+        disabled={!canChange}
+        onValueChange={(value) => setDraft(asHours(value))}
+        onValueCommitted={(value) => save(asHours(value))}
+        aria-label="Hours to keep this thread's prompt cache warm"
+        className="py-1 data-disabled:opacity-50"
       >
-        {WARMING_CHOICES.map((value) => (
-          <Toggle key={value} value={value} className="flex-1">
-            {value === "off" ? "Off" : `${value}h`}
-          </Toggle>
-        ))}
-      </ToggleGroup>
+        <Slider.Control className="flex h-4 w-full touch-none items-center select-none">
+          <Slider.Track className="relative h-1.5 w-full rounded-full bg-muted/60">
+            <Slider.Indicator className="rounded-full bg-primary" />
+            <Slider.Thumb className="size-3.5 rounded-full border border-border bg-background shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+          </Slider.Track>
+        </Slider.Control>
+      </Slider.Root>
       {error ? <div className="text-pretty text-[11px] text-destructive">{error}</div> : null}
     </div>
   );

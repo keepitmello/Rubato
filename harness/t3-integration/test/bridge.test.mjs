@@ -921,7 +921,7 @@ test('the meter carries the cache and the warmer, and the switch turns off only 
   await until(() => cacheOf() !== undefined);
   const sessionId = cacheOf().sessionId;
   assert.ok(sessionId);
-  assert.deepEqual(cacheOf(), { state: 'warm', sessionId, hitPercent: 90, expiresAt: 1_790_000_000_000, warming: { mode: 'idle', enabled: true, hours: 2, active: false } });
+  assert.deepEqual(cacheOf(), { state: 'warm', sessionId, hitPercent: 90, expiresAt: 1_790_000_000_000, warming: { mode: 'idle', enabled: true, hours: 2, from: 1_789_990_000_000, active: false } });
   const response = await handleCacheWarmingRequest(new Request('http://t3/rubato/cache-warming', {
     method: 'POST', body: JSON.stringify({ sessionId, enabled: false }) }));
   assert.equal((await response.json()).cache.warming.enabled, false);

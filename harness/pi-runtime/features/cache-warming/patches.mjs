@@ -385,7 +385,7 @@ export function patchSettingsWarmingDefault(source) {
  * `set_session_cache_warming` sets this session's warmer (on/off, hours); the global mode stays a setting.
  */
 export function patchRpcCacheWarming(source) {
-  const next = `import { cacheSnapshot } from "../../rubato-features/statusline/statusline.mjs";\nimport { validWarmingHours } from "../../core/cache-warmer.js";\n${source}`;
+  const next = `import { cacheSnapshot } from "../../rubato-features/statusline/statusline.mjs";\nimport { lastUserInputAt, validWarmingHours } from "../../core/cache-warmer.js";\n${source}`;
   return replaceOnce(
     next,
     `            case "get_session_stats": {`,
@@ -405,6 +405,7 @@ export function patchRpcCacheWarming(source) {
                     mode: session.settingsManager.getCacheWarmingMode(),
                     sessionEnabled: warmer ? !warmer.sessionDisabled() : false,
                     ...(warmer ? { sessionHours: warmer.horizonMs() / 3_600_000 } : {}),
+                    lastInputAt: lastUserInputAt(session.sessionManager.getBranch()) ?? null,
                     status: session.cacheWarmingStatus ?? null,
                     cache: cacheSnapshot(session.sessionManager.getBranch(), session.model, Date.now(), session.cacheWarmingStatus),
                 });
