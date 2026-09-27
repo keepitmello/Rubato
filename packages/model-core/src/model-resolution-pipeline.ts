@@ -31,7 +31,6 @@ export type ModelResolutionRequest = {
     uiSelectedModel?: string
     userModel?: string
     userFallbackModels?: string[]
-    categoryDefaultModel?: string
   }
   constraints: {
     availableModels: Set<string>
@@ -45,7 +44,6 @@ export type ModelResolutionRequest = {
 
 export type ModelResolutionProvenance =
   | "override"
-  | "category-default"
   | "provider-fallback"
   | "system-default"
 
@@ -122,47 +120,6 @@ export function resolveModelPipeline(
     return inheritedVariant
       ? { model: normalizedUserModel, provenance: "override", variant: inheritedVariant }
       : { model: normalizedUserModel, provenance: "override" }
-  }
-
-  const normalizedCategoryDefault = normalizeModel(intent?.categoryDefaultModel)
-  if (normalizedCategoryDefault) {
-    attempted.push(normalizedCategoryDefault)
-    if (availableModels.size > 0) {
-      const parts = normalizedCategoryDefault.split("/")
-      const providerHint = parts.length >= 2 ? [parts[0]] : undefined
-      const match = deps.fuzzyMatchModel(normalizedCategoryDefault, availableModels, providerHint)
-      if (match) {
-        log("Model resolved via category default (fuzzy matched)", {
-          original: normalizedCategoryDefault,
-          matched: match,
-        })
-        return { model: match, provenance: "category-default", attempted }
-      }
-    } else {
-      const connectedProviders = constraints.connectedProviders ?? providerCache.readConnectedProvidersCache()
-      if (connectedProviders === null) {
-        log("Model resolved via category default (no cache, first run)", {
-          model: normalizedCategoryDefault,
-        })
-        return { model: normalizedCategoryDefault, provenance: "category-default", attempted }
-      }
-      const parts = normalizedCategoryDefault.split("/")
-      if (parts.length >= 2) {
-        const provider = parts[0]
-        if (connectedProviders.includes(provider)) {
-          const modelName = parts.slice(1).join("/")
-          const transformedModel = `${provider}/${deps.transformModelForProvider(provider, modelName)}`
-          log("Model resolved via category default (connected provider)", {
-            model: transformedModel,
-            original: normalizedCategoryDefault,
-          })
-          return { model: transformedModel, provenance: "category-default", attempted }
-        }
-      }
-    }
-    log("Category default model not available, falling through to fallback chain", {
-      model: normalizedCategoryDefault,
-    })
   }
 
   //#when - user configured fallback_models, try them before hardcoded fallback chain

@@ -25,7 +25,7 @@ function makeFixture(): {
 }
 
 describe("loadRubatoConfig", () => {
-  test("#given user and walked project rubato configs #when loading #then nearest project wins and keyed sections deep-merge", () => {
+  test("#given user and walked project rubato configs #when loading #then nearest project wins, keyed sections deep-merge and a legacy categories block loads without a diagnostic", () => {
     // given
     const fixture = makeFixture()
     writeJsonc(
@@ -48,10 +48,6 @@ describe("loadRubatoConfig", () => {
     writeJsonc(
       join(fixture.workDir, ".rubato", "rubato.jsonc"),
       `{
-        "categories": {
-          "quick": { "model": "far-model", "tools": { "bash": true } },
-          "deep": { "model": "deep-model" }
-        },
         "agents": { "reviewer": { "temperature": 0.3 } },
         "task": { "default_concurrency": 4, "wait": { "max_ms": 90000 } }
       }`,
@@ -59,7 +55,6 @@ describe("loadRubatoConfig", () => {
     writeJsonc(
       join(fixture.projectDir, ".rubato", "rubato.jsonc"),
       `{
-        "categories": { "quick": { "model": "near-model" } },
         "agents": { "reviewer": { "model": "near-agent" } },
         "task": { "default_concurrency": 7 }
       }`,
@@ -76,9 +71,7 @@ describe("loadRubatoConfig", () => {
     expect(result.config.task?.default_concurrency).toBe(7)
     expect(result.config.task?.wait.default_ms).toBe(11000)
     expect(result.config.task?.wait.max_ms).toBe(90000)
-    expect(result.config.categories?.quick?.model).toBe("near-model")
-    expect(result.config.categories?.quick?.tools).toEqual({ read: true, bash: true })
-    expect(result.config.categories?.deep?.model).toBe("deep-model")
+    expect("categories" in result.config).toBe(false)
     expect(result.config.agents?.reviewer?.model).toBe("near-agent")
     expect(result.config.agents?.reviewer?.temperature).toBe(0.3)
     expect(result.config.teams?.alpha?.members[0]?.name).toBe("one")

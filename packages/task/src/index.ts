@@ -89,17 +89,7 @@ export type {
   TeamRuntimeDirs,
   TeamSpecSource,
 } from "./team"
-export {
-  resolveAvailableCategoryNames,
-  resolveCategory,
-} from "./category"
-export type {
-  CategoryModelSelection,
-  CategoryResolutionResult,
-  ResolvedChildSpec,
-  SenpiModelPort,
-  SenpiModelRegistryPort,
-} from "./category"
+export type { SenpiModelPort, SenpiModelRegistryPort } from "./agents"
 export {
   DEFAULT_MAX_CHILD_DEPTH,
   InProcessRunner,

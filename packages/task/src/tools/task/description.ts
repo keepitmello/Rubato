@@ -1,7 +1,7 @@
 import type { RubatoConfig } from "@rubato/config-core"
 
 import type { AgentDefinition } from "../../agents"
-import { listTaskAgents } from "./categories"
+import { listTaskAgents } from "./agent-list"
 import type { TaskAgentInfo } from "./types"
 
 export const TASK_PROMPT_SNIPPET = "Start one child agent with exactly one of model or preset; use AgentSend to continue an existing child."

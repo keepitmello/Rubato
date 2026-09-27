@@ -12,6 +12,7 @@ export type {
   ResolvedAgentResult,
 } from "./resolve-agent"
 export type { AgentModelCandidate, AgentModelEntry } from "./agent-model-entry"
+export type { SenpiModelPort, SenpiModelRegistryPort } from "./agent-model-registry"
 export type {
   AgentDefinition,
   AgentDefinitionInput,

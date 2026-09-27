@@ -9,7 +9,7 @@ export type SubagentPromptInput = {
 }
 
 // Task envelope shape mirrors pi-task's buildSubagentPrompt: identity + ancestry lines,
-// then the agent/category instructions, then the task text.
+// then the agent instructions, then the task text.
 export function buildSubagentPrompt(input: SubagentPromptInput): string {
   const lines = [
     `You are running as a Rubato task child${input.preset ? ` "${input.preset}"` : ""}.`,

@@ -1,15 +1,19 @@
 import { describe, expect, test } from "bun:test"
 
-import { RubatoMemorySettingsLayerSchema, RubatoMemorySettingsSchema } from "./memory"
+import { DEFAULT_DREAM_MODELS, RubatoMemorySettingsLayerSchema, RubatoMemorySettingsSchema } from "./memory"
 
 describe("RubatoMemorySettingsSchema", () => {
-  test("#given an empty memory block #when parsed #then no store is named and the dream runs on the grok ladder under review", () => {
+  test("#given an empty memory block #when parsed #then no store is named and the dream runs on DeepSeek, then Grok, then Haiku under review", () => {
     // when
     const parsed = RubatoMemorySettingsSchema.parse({})
 
     // then
     expect(parsed.agent).toBe("auto")
-    expect(parsed.dream.category).toBe("grok")
+    expect(parsed.dream.models).toEqual([
+      { model: "b-ai/deepseek-v4.1-flash", reasoning: "medium" },
+      { model: "xai/grok-4.7", reasoning: "medium" },
+      { model: "anthropic/claude-haiku-4-5", reasoning: "off" },
+    ])
     expect(parsed.dream.publish).toBe("review")
     expect(parsed.dream.stores).toEqual({})
   })
@@ -29,6 +33,7 @@ describe("RubatoMemorySettingsSchema", () => {
       agents: { rubato: { nudge: { enabled: false } } },
       dream: {
         enabled: false,
+        category: "grok",
         idle_minutes: 30,
         shutdown_launch: true,
         auto_select_max: 5,
@@ -47,8 +52,21 @@ describe("RubatoMemorySettingsSchema", () => {
     expect(layer.success).toBe(true)
     if (!full.success || !layer.success) return
     expect(Object.keys(full.data).sort()).toEqual(["agent", "dream", "enabled", "search", "tool_exposure"])
-    expect(full.data.dream).toEqual({ category: "grok", publish: "auto", stores: { rubato: { enabled: true } }, min_hours_between: 20 })
+    expect(full.data.dream).toEqual({ models: [...DEFAULT_DREAM_MODELS], publish: "auto", stores: { rubato: { enabled: true } }, min_hours_between: 20 })
     expect(layer.data).toEqual({ agent: "rubato", dream: { publish: "auto", stores: { rubato: { enabled: true } } } })
+  })
+
+  test("#given dream models as bare ids and as model/reasoning pairs #when parsed #then both forms stay as written", () => {
+    // given
+    const models = ["xai/grok-4.7", { model: "anthropic/claude-haiku-4-5", reasoning: "off" as const }]
+
+    // when
+    const parsed = RubatoMemorySettingsSchema.parse({ dream: { models } })
+
+    // then
+    expect(parsed.dream.models).toEqual(models)
+    expect(RubatoMemorySettingsSchema.safeParse({ dream: { models: [{ model: "xai/grok-4.7", reasoning: "turbo" }] } }).success).toBe(false)
+    expect(RubatoMemorySettingsSchema.safeParse({ dream: { models: [{ model: "xai/grok-4.7", temperature: 1 }] } }).success).toBe(false)
   })
 
   test("#given a key no memory runtime ever read #when parsed #then strict parsing still rejects it", () => {

@@ -1,4 +1,5 @@
 export * from "./batch"
+export * from "./dream-models"
 export * from "./engine"
 export * from "./journal"
 export * from "./lock"

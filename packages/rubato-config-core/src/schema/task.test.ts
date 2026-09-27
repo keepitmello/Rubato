@@ -119,40 +119,18 @@ describe("RubatoTaskSettingsSchema zero-as-unlimited concurrency", () => {
   })
 })
 
-describe("RubatoTaskSettingsSchema warnings", () => {
-  test("#given no warning suppression override #when task settings parse #then unavailable categories warnings default on", () => {
+describe("RubatoTaskSettingsSchema legacy warnings", () => {
+  test("#given the categories warning toggle from before categories went away #when task settings parse #then it drops", () => {
     // given
-    const input = {}
+    const input = { warnings: { unavailable_categories: false }, max_depth: 2 }
 
     // when
-    const parsed: RubatoTaskSettings = RubatoTaskSettingsSchema.parse(input)
+    const full = RubatoTaskSettingsSchema.parse(input)
+    const layer = RubatoTaskSettingsLayerSchema.parse(input)
 
     // then
-    expect(parsed.warnings?.unavailable_categories).toBe(true)
-  })
-
-  test("#given an explicit warning suppression override #when task settings parse #then the false override is preserved", () => {
-    // given
-    const input = { warnings: { unavailable_categories: false } }
-
-    // when
-    const parsed = RubatoTaskSettingsSchema.parse(input)
-
-    // then
-    expect(parsed.warnings?.unavailable_categories).toBe(false)
-  })
-
-  test("#given a non-boolean warning suppression override #when task settings parse #then validation fails at the nested path", () => {
-    // given
-    const input = { warnings: { unavailable_categories: "nope" } }
-
-    // when
-    const result = RubatoTaskSettingsSchema.safeParse(input)
-
-    // then
-    expect(result.success).toBe(false)
-    if (result.success) throw new Error("Expected task settings parsing to fail")
-    expect(result.error.issues.map((issue) => issue.path.join(".")).join(",")).toContain("warnings.unavailable_categories")
+    expect("warnings" in full).toBe(false)
+    expect(layer).toEqual({ max_depth: 2 })
   })
 })
 

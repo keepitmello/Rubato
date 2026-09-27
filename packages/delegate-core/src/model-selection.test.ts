@@ -32,7 +32,7 @@ describe("resolveModelForDelegateTask", () => {
   test("#given no provider cache exists #when no user override is configured #then returns skipped sentinel", () => {
     const result = resolveModelForDelegateTask({
       availableModels: new Set(),
-      categoryDefaultModel: "openai/gpt-5.4",
+      fallbackChain: [{ providers: ["openai"], model: "gpt-5.4" }],
     }, noCacheDeps)
 
     expect(result).toEqual({ skipped: true })

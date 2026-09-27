@@ -17,8 +17,6 @@ export type DelegateFallbackEntry = {
 export type DelegateModelResolutionInput = {
   readonly userModel?: string
   readonly userFallbackModels?: readonly string[]
-  readonly categoryDefaultModel?: string
-  readonly isUserConfiguredCategoryModel?: boolean
   readonly fallbackChain?: readonly DelegateFallbackEntry[]
   readonly availableModels: ReadonlySet<string>
   readonly systemDefaultModel?: string
@@ -34,14 +32,6 @@ export type DelegateModelResolutionDeps = {
   readonly hasProviderModelsCache: boolean
   readonly hasConnectedProvidersCache: boolean
   readonly log?: (message: string, metadata?: Record<string, unknown>) => void
-}
-
-function isExplicitHighModel(model: string): boolean {
-  return /(?:^|\/)[^/]+-high$/.test(model)
-}
-
-function getExplicitHighBaseModel(model: string): string | null {
-  return isExplicitHighModel(model) ? model.replace(/-high$/, "") : null
 }
 
 function parseUserFallbackModel(fallbackModel: string): {
@@ -131,45 +121,6 @@ export function resolveModelForDelegateTask(
     return { skipped: true }
   }
 
-  const categoryDefault = normalizeModel(input.categoryDefaultModel)
-  const explicitHighBaseModel = categoryDefault ? getExplicitHighBaseModel(categoryDefault) : null
-  const explicitHighModel = explicitHighBaseModel ? categoryDefault : undefined
-  if (categoryDefault) {
-    if (input.isUserConfiguredCategoryModel) {
-      deps.log?.("[resolveModelForDelegateTask] using user-configured category model (bypass validation)", {
-        categoryDefaultModel: categoryDefault,
-      })
-      const parsed = parseUserFallbackModel(categoryDefault)
-      if (parsed?.variant) {
-        return { model: parsed.baseModel, variant: parsed.variant }
-      }
-      return { model: categoryDefault }
-    }
-
-    if (input.availableModels.size === 0) {
-      const categoryProvider = categoryDefault.includes("/") ? categoryDefault.split("/")[0] : undefined
-      if (!connectedProviders || !categoryProvider || connectedProviders.includes(categoryProvider)) {
-        return { model: categoryDefault }
-      }
-
-      deps.log?.("[resolveModelForDelegateTask] skipping disconnected category default on cold cache", {
-        categoryDefault,
-        connectedProviders,
-      })
-    }
-
-    const parts = categoryDefault.split("/")
-    const providerHint = parts.length >= 2 && parts[0] ? [parts[0]] : undefined
-    const match = fuzzyMatchModel(categoryDefault, new Set(input.availableModels), providerHint)
-    if (match) {
-      if (isExplicitHighModel(categoryDefault) && match !== categoryDefault) {
-        return { model: categoryDefault }
-      }
-
-      return { model: match }
-    }
-  }
-
   const userFallbackModels = input.userFallbackModels
   if (userFallbackModels && userFallbackModels.length > 0) {
     if (input.availableModels.size === 0) {
@@ -233,10 +184,6 @@ export function resolveModelForDelegateTask(
           const fullModel = `${provider}/${transformedModelId}`
           const match = fuzzyMatchModel(fullModel, new Set(input.availableModels), [provider])
           if (match) {
-            if (explicitHighModel && entry.variant === "high" && match === explicitHighBaseModel) {
-              return { model: explicitHighModel, fallbackEntry: entry, matchedFallback: true }
-            }
-
             return { model: match, variant: entry.variant, fallbackEntry: entry, matchedFallback: true }
           }
         }
@@ -255,10 +202,6 @@ export function resolveModelForDelegateTask(
         )
         const crossProviderMatch = fuzzyMatchModel(entry.model, crossProviderCandidates)
         if (crossProviderMatch) {
-          if (explicitHighModel && entry.variant === "high" && crossProviderMatch === explicitHighBaseModel) {
-            return { model: explicitHighModel, fallbackEntry: entry, matchedFallback: true }
-          }
-
           return { model: crossProviderMatch, variant: entry.variant, fallbackEntry: entry, matchedFallback: true }
         }
       }

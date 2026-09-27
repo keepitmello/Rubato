@@ -99,17 +99,29 @@ export function prepareTargetReplacement(input: {
   const marker = markerValue(input.target, input.migrationId, input.targetPath)
   const document = { ...input.document, _migrations: marker }
   validateTarget(input.targetPath, document)
-  const edits: { path: readonly string[]; value: unknown }[] = []
-  for (const key of Object.keys(input.target)) {
-    if (key !== "_migrations" && !Object.prototype.hasOwnProperty.call(input.document, key)) {
-      edits.push({ path: [key], value: undefined })
-    }
-  }
-  for (const [key, value] of Object.entries(input.document)) {
-    if (key !== "_migrations") edits.push({ path: [key], value })
-  }
-  edits.push({ path: ["_migrations"], value: marker })
+  const { _migrations: _targetMarker, ...target } = input.target
+  const { _migrations: _documentMarker, ...replacement } = input.document
+  const edits = [...replacementEdits(target, replacement, []), { path: ["_migrations"], value: marker }]
   return { diagnostics: [], document, edits }
+}
+
+// The smallest edit list that turns `from` into `to`: objects on both sides are walked key by key, so
+// untouched subtrees (and the comments inside them) stay as they are in the file.
+function replacementEdits(
+  from: Readonly<Record<string, unknown>>,
+  to: Readonly<Record<string, unknown>>,
+  path: readonly string[],
+): { readonly path: readonly string[]; readonly value: unknown }[] {
+  const edits: { path: readonly string[]; value: unknown }[] = []
+  for (const key of Object.keys(from)) {
+    if (!Object.prototype.hasOwnProperty.call(to, key)) edits.push({ path: [...path, key], value: undefined })
+  }
+  for (const [key, value] of Object.entries(to)) {
+    const current = Object.prototype.hasOwnProperty.call(from, key) ? from[key] : undefined
+    if (isPlainObject(current) && isPlainObject(value)) edits.push(...replacementEdits(current, value, [...path, key]))
+    else if (JSON.stringify(current) !== JSON.stringify(value)) edits.push({ path: [...path, key], value })
+  }
+  return edits
 }
 
 export function writePreparedTarget(input: {

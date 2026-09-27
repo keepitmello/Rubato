@@ -22,7 +22,7 @@ describe("memory config wiring", () => {
     // given
     const config = {
       memory: { dream: { min_hours_between: 12 } },
-      "[senpi]": { memory: { dream: { category: "deep" } } },
+      "[senpi]": { memory: { dream: { publish: "auto" } } },
       profiles: { focused: { memory: { search: { enabled: false } } } },
     }
 
@@ -32,7 +32,7 @@ describe("memory config wiring", () => {
     // then
     expect(result.success).toBe(true)
     if (!result.success) throw new Error(result.error.message)
-    expect(result.data["[senpi]"]?.memory).toEqual({ dream: { category: "deep" } })
+    expect(result.data["[senpi]"]?.memory).toEqual({ dream: { publish: "auto" } })
     expect(result.data.profiles.focused?.memory).toEqual({ search: { enabled: false } })
   })
 
@@ -52,8 +52,8 @@ describe("memory profile and harness deep-merge", () => {
   test("#given base and senpi memory blocks #when folding the harness view #then memory deep-merges", () => {
     // given
     const config = {
-      memory: { enabled: true, dream: { min_hours_between: 12, category: "deep" } },
-      "[senpi]": { memory: { dream: { category: "quick" } } },
+      memory: { enabled: true, dream: { min_hours_between: 12, models: ["xai/grok-4.7"] } },
+      "[senpi]": { memory: { dream: { models: [{ model: "anthropic/claude-haiku-4-5", reasoning: "off" }] } } },
     }
 
     // when
@@ -63,7 +63,7 @@ describe("memory profile and harness deep-merge", () => {
     expect(result.diagnostics).toEqual([])
     expect(result.config["memory"]).toEqual({
       enabled: true,
-      dream: { min_hours_between: 12, category: "quick" },
+      dream: { min_hours_between: 12, models: [{ model: "anthropic/claude-haiku-4-5", reasoning: "off" }] },
     })
   })
 
@@ -71,7 +71,7 @@ describe("memory profile and harness deep-merge", () => {
     // given
     const config = {
       memory: { agent: "auto", dream: { min_hours_between: 15 } },
-      "[senpi]": { memory: { dream: { category: "deep" } } },
+      "[senpi]": { memory: { dream: { publish: "auto" } } },
       profiles: {
         focused: {
           memory: { dream: { min_hours_between: 30 } },
@@ -87,7 +87,7 @@ describe("memory profile and harness deep-merge", () => {
     expect(result.diagnostics).toEqual([])
     expect(result.config["memory"]).toEqual({
       agent: "auto",
-      dream: { min_hours_between: 30, category: "deep" },
+      dream: { min_hours_between: 30, publish: "auto" },
       search: { enabled: false },
     })
   })

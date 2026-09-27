@@ -1,4 +1,4 @@
-export { listTaskAgents } from "./categories"
+export { listTaskAgents } from "./agent-list"
 export { TASK_PROMPT_GUIDELINES, TASK_PROMPT_SNIPPET, buildTaskToolDescription } from "./description"
 export { buildTaskExecute } from "./execute"
 export { TaskToolParams } from "./params"

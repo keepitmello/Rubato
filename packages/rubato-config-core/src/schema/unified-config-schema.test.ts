@@ -22,9 +22,6 @@ describe("unified rubato config schema", () => {
       },
       profiles: {
         focused: {
-          categories: {
-            deep: { model: "sol" },
-          },
           models: {
             sol: { model: "openai/gpt-5.6-sol", reasoningEffort: "high" },
           },

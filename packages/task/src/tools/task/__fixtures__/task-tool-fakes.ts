@@ -7,7 +7,7 @@ import type { TaskToolContext, TaskToolDeps } from "../types"
 
 export const LIVE_MODEL = "xai/grok-4.7"
 
-export const RUBATO_CONFIG: RubatoConfig = { categories: {}, agents: {} }
+export const RUBATO_CONFIG: RubatoConfig = { agents: {} }
 
 export const CTX: TaskToolContext = {
   cwd: "/work/project",

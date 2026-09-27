@@ -1,10 +1,8 @@
 import type {
   RubatoAgentDef,
   RubatoAgentModelEntry,
-  RubatoCategoryConfig,
   RubatoConfig,
   RubatoFallbackModelObject,
-  RubatoFallbackModels,
   RubatoModelCatalog,
   RubatoModelCatalogEntry,
   RubatoReasoning,
@@ -59,21 +57,6 @@ function resolveModelEntry(
   }
 }
 
-function resolveFallbackModels(
-  fallbackModels: RubatoFallbackModels | undefined,
-  catalog: RubatoModelCatalog | undefined,
-  cycleNames: ReadonlySet<string>,
-): RubatoFallbackModels | undefined {
-  if (fallbackModels === undefined) return undefined
-  if (typeof fallbackModels !== "string") {
-    return fallbackModels.map((entry) => resolveModelEntry(entry, catalog, cycleNames))
-  }
-
-  const resolved = catalogReference(fallbackModels, undefined, catalog, cycleNames)
-  if (resolved === undefined || resolved.reasoning === undefined) return resolved?.model ?? fallbackModels
-  return [resolved]
-}
-
 function resolveAgentDefinition(
   definition: RubatoAgentDef,
   catalog: RubatoModelCatalog | undefined,
@@ -92,30 +75,6 @@ function resolveAgentDefinition(
     ...(definition.models === undefined
       ? {}
       : { models: definition.models.map((entry) => resolveModelEntry(entry, catalog, cycleNames)) }),
-  }
-}
-
-function resolveCategoryDefinition(
-  definition: RubatoCategoryConfig,
-  catalog: RubatoModelCatalog | undefined,
-  cycleNames: ReadonlySet<string>,
-): RubatoCategoryConfig {
-  const resolvedModel = definition.model === undefined
-    ? undefined
-    : catalogReference(definition.model, definition.reasoning, catalog, cycleNames)
-
-  return {
-    ...definition,
-    ...(resolvedModel === undefined ? {} : { model: resolvedModel.model }),
-    ...(definition.reasoning === undefined && resolvedModel?.reasoning !== undefined
-      ? { reasoning: resolvedModel.reasoning }
-      : {}),
-    ...(definition.models === undefined
-      ? {}
-      : { models: definition.models.map((entry) => resolveModelEntry(entry, catalog, cycleNames)) }),
-    ...(definition.fallback_models === undefined
-      ? {}
-      : { fallback_models: resolveFallbackModels(definition.fallback_models, catalog, cycleNames) }),
   }
 }
 
@@ -143,19 +102,12 @@ export function resolveModelReferences(view: RubatoConfig): ResolveModelReferenc
       name,
       resolveAgentDefinition(definition, view.models, cycleNames),
     ]))
-  const categories = view.categories === undefined
-    ? undefined
-    : Object.fromEntries(Object.entries(view.categories).map(([name, definition]) => [
-      name,
-      resolveCategoryDefinition(definition, view.models, cycleNames),
-    ]))
 
   return {
     diagnostics,
     view: {
       ...view,
       ...(agents === undefined ? {} : { agents }),
-      ...(categories === undefined ? {} : { categories }),
     },
   }
 }

@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
 
-import { resolveCategory } from "../category"
 import { baseSpec, cleanupProjects, makeManager } from "./__fixtures__/manager-fakes"
 
 afterEach(() => {
@@ -8,7 +7,7 @@ afterEach(() => {
 })
 
 describe("TaskManager runtime fallback visibility", () => {
-  test("#given a running category child #when Senpi applies a fallback #then the task record exposes the actual model", async () => {
+  test("#given a running child #when Senpi applies a fallback #then the task record exposes the actual model", async () => {
     // given
     const { manager, store, inProcess } = makeManager({
       planner: () => ({
