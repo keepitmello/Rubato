@@ -65,13 +65,17 @@ help, save a current note and call new_context. Close to the physical limit the 
 asks for a checkpoint-only turn, then starts a new window without a summary.
 ${NEW_WINDOW_TEXT}`;
 
-/** System-prompt guidance for the model's context strategy. A pure function of the model. */
+/**
+ * System-prompt guidance for the model's context strategy. A pure function of the model:
+ * a lowered window target (RUBATO_CONTEXT_WINDOW_TOKENS) moves the lines, not the model's
+ * strategy, so the text is chosen from the model's own lines.
+ */
 export function guidanceFor(model, config = contextNotesConfig()) {
   const strategy = contextStrategy(model);
   if (strategy === "server-compaction") return SERVER_COMPACTION_GUIDANCE;
   if (strategy === "hard-safety") return HARD_SAFETY_GUIDANCE;
   let budget;
-  try { budget = windowBudget(model, config); } catch { return GUIDANCE; }
+  try { budget = windowBudget(model, { ...config, windowTokens: undefined }); } catch { return GUIDANCE; }
   return budget.soft < budget.target ? SOFT_ZONE_GUIDANCE : GUIDANCE;
 }
 
@@ -305,14 +309,12 @@ export class ContextNotesController {
       const index = reminderIndex(event.messages, entry);
       anchored.set(index, [...(anchored.get(index) ?? []), entry]);
     }
-    // Anthropic caps a request by bytes and every guard here counts tokens, so the pixels of
-    // the oldest images go before the request is assembled. The record keeps them; only the
-    // request loses them.
-    const carried = trimRequestImages(event.messages);
     const occurrences = new Map();
-    const annotated = carried.map((message) => {
-      if (message.role !== "user" && message.role !== "toolResult") return message;
-      if (messageText(message) === this.bootstrap) return message;
+    // Resolve history references on the original messages: trimming changes the content
+    // the identity lookup keys on.
+    const refs = event.messages.map((message) => {
+      if (message.role !== "user" && message.role !== "toolResult") return undefined;
+      if (messageText(message) === this.bootstrap) return undefined;
       const id = message.__piSessionContextEntryId;
       let ref = id ? this.referenceById.get(id) : undefined;
       if (!ref) {
@@ -321,8 +323,18 @@ export class ContextNotesController {
         ref = this.references.get(key)?.[at];
         occurrences.set(key, at + 1);
       }
+      return ref;
+    });
+    const refText = (ref) => `window_id=${JSON.stringify(ref.windowId)} item_id=${JSON.stringify(ref.itemId)}`;
+    // Anthropic caps a request by bytes and every guard here counts tokens, so the pixels of
+    // the oldest images go before the request is assembled. The record keeps them; only the
+    // request loses them, and the placeholder says where to read them back.
+    const carried = trimRequestImages(event.messages, undefined, (_message, index) =>
+      refs[index] ? refText(refs[index]) : undefined);
+    const annotated = carried.map((message, index) => {
+      const ref = refs[index];
       if (!ref) return message; // Never manufacture a reference we cannot read.
-      const marker = `[history: window_id=${JSON.stringify(ref.windowId)} item_id=${JSON.stringify(ref.itemId)}]`;
+      const marker = `[history: ${refText(ref)}]`;
       const content = typeof message.content === "string" ? [{ type: "text", text: message.content }] : [...(message.content ?? [])];
       return { ...message, content: [...content, { type: "text", text: marker }] };
     });

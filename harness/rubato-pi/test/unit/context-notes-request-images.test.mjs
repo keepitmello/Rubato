@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { fakeSession } from "../helpers/context-notes-fake.mjs";
+import { ContextNotesController } from "../../src/context-notes/controller.mjs";
+import { contextNotesConfig } from "../../src/context-notes/config.mjs";
+import { messageText } from "../../src/context-notes/protocol.mjs";
 import {
   REQUEST_IMAGE_BYTE_LIMIT,
   base64ByteLength,
@@ -70,4 +74,52 @@ test("#given the shipped cap #when it is compared with Anthropic's request limit
 
   assert.ok(REQUEST_IMAGE_BYTE_LIMIT > 0);
   assert.ok(REQUEST_IMAGE_BYTE_LIMIT < ANTHROPIC_REQUEST_CAP, "the image budget must sit under the provider cap");
+});
+
+test("#given two images in one message that each fit alone #when the pair exceeds the cap #then the later image stays", () => {
+  const limit = 4 * MB;
+  const message = {
+    role: "user",
+    timestamp: 1,
+    content: [
+      { type: "text", text: "two shots" },
+      { type: "image", data: payload(3 * MB), mimeType: "image/png" },
+      { type: "image", data: payload(3 * MB), mimeType: "image/png" },
+    ],
+  };
+
+  const [trimmed] = trimRequestImages([message], limit);
+
+  assert.equal(trimmed.content[2].type, "image", "the later image is the one the turn is about");
+  assert.match(trimmed.content[1].text, /image omitted/);
+  assert.ok(imageBytes([trimmed]) <= limit);
+});
+
+test("#given an image the request cannot carry #when the request is prepared #then the placeholder names a history item the tools can read", (t) => {
+  const previous = process.env.RUBATO_CONTEXT_MODE;
+  process.env.RUBATO_CONTEXT_MODE = "history-notes";
+  t.after(() => {
+    if (previous === undefined) delete process.env.RUBATO_CONTEXT_MODE;
+    else process.env.RUBATO_CONTEXT_MODE = previous;
+  });
+  const f = fakeSession(t);
+  f.ctx.getContextUsage = () => ({ tokens: 100 });
+  f.addMessage("user", [
+    { type: "text", text: "please look at this screenshot" },
+    { type: "image", data: payload(REQUEST_IMAGE_BYTE_LIMIT + 64), mimeType: "image/png" },
+  ]);
+  const c = new ContextNotesController(f.pi, f.ctx, { requireEngine: false, config: contextNotesConfig({}) });
+  t.after(() => c.close());
+
+  const prepared = c.prepareContext({ messages: f.build().messages }, f.ctx).messages;
+  const user = prepared.find((message) => messageText(message).includes("please look at this screenshot"));
+  const placeholder = user.content.find((block) => typeof block.text === "string" && block.text.startsWith("[image omitted"));
+  const ids = placeholder?.text.match(/window_id="([^"]+)" item_id="([^"]+)"/);
+
+  assert.ok(ids, placeholder?.text ?? "placeholder missing");
+  const read = c.store.readItem({ window_id: ids[1], item_id: ids[2] });
+  assert.match(read.content, /please look at this screenshot/);
+  assert.match(read.content, /image mime=image\/png/);
+  assert.match(messageText(user), new RegExp(`\\[history: window_id="${ids[1]}" item_id="${ids[2]}"\\]`));
+  assert.equal(user.content.some((block) => block.type === "image"), false);
 });
