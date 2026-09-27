@@ -322,6 +322,37 @@ const edits = {
       'replace',
     ],
   ],
+  // 웹 진입점의 이름. 데스크톱은 preload 가 위 DesktopEnvironment 의 이름을 넘겨서
+  // 이 기본값을 안 쓰지만, 아이폰·브라우저로 붙는 웹은 브리지가 없어 여기로 떨어진다
+  // — 페어링 화면·첫 화면·탭 제목이 "T3 Code (Alpha)" 였다. 데스크톱과 같게 단계
+  // 표시 없이 이름만 쓴다. formatAppDisplayName 은 "Latest" 단계에서 이름만 돌려준다.
+  'apps/web/src/branding.ts': [
+    [
+      'export const APP_BASE_NAME = injectedDesktopAppBranding?.baseName ?? "T3 Code";',
+      'export const APP_BASE_NAME = injectedDesktopAppBranding?.baseName ?? "Rubato";',
+      'replace',
+    ],
+    [
+      '  formatAppDisplayName({ baseName: APP_BASE_NAME, stageLabel: APP_STAGE_LABEL });',
+      '  formatAppDisplayName({ baseName: APP_BASE_NAME, stageLabel: "Latest" });',
+      'replace',
+    ],
+  ],
+  // React 가 뜨기 전의 첫 화면. 그림은 /apple-touch-icon.png 를 그대로 쓰고, 그 파일은
+  // 설치기가 assets/web 의 Rubato 것으로 깐다. 여기서는 그 앞뒤 글자만 바꾼다.
+  'apps/web/index.html': [
+    ['    <title>T3 Code (Alpha)</title>', '    <title>Rubato</title>', 'replace'],
+    [
+      '        <div id="boot-shell-card" aria-label="T3 Code splash screen">\n          <img id="boot-shell-logo" src="/apple-touch-icon.png" alt="T3 Code" />',
+      '        <div id="boot-shell-card" aria-label="Rubato splash screen">\n          <img id="boot-shell-logo" src="/apple-touch-icon.png" alt="Rubato" />',
+      'replace',
+    ],
+  ],
+  // 홈 화면에 추가했을 때 아이콘 밑에 붙는 이름. 원본 매니페스트에는 이름이 없어서
+  // 기기가 추가 순간의 문서 제목을 가져갔다.
+  'apps/web/public/manifest.webmanifest': [
+    ['  "id": "/",\n', '  "name": "Rubato",\n  "short_name": "Rubato",\n'],
+  ],
   // 메뉴 막대와 정보 창에 쓰는 이름. 번들 이름과 따로 논다.
   'apps/desktop/src/app/DesktopEnvironment.ts': [
     [

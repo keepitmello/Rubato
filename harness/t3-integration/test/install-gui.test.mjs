@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -100,4 +100,15 @@ test('Darwin finish still creates/links the app bundle via install-macos-app.sh'
 test('start-gui still execs T3 electron and only uses osascript on Darwin', () => {
   assert.match(startSrc, /exec "\$NODE" scripts\/start-electron\.mjs/);
   assert.match(startSrc, /\[ "\$\(uname -s\)" = Darwin \]/);
+});
+
+// 웹 아이콘은 upstream 의 같은 이름 파일 자리에 깔린다. upstream 이 이름을 바꾸면
+// 복사는 아무도 읽지 않는 새 파일을 만들고 T3 아이콘이 그대로 남는다.
+test('every web icon replaces a file the pinned T3 web app already serves', { skip: !process.env.T3_SOURCE }, () => {
+  const pin = JSON.parse(readFileSync(new URL('../upstream.json', import.meta.url), 'utf8')).upstreamCommit;
+  const served = spawnSync('git', ['-C', process.env.T3_SOURCE, 'ls-tree', '--name-only', pin, 'apps/web/public/'], { encoding: 'utf8' });
+  assert.equal(served.status, 0, served.stderr);
+  const icons = readdirSync(fileURLToPath(new URL('../assets/web', import.meta.url)));
+  assert.ok(icons.length > 0);
+  for (const icon of icons) assert.ok(served.stdout.split('\n').includes(`apps/web/public/${icon}`), icon);
 });
