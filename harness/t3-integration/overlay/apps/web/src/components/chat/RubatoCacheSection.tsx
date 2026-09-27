@@ -39,22 +39,22 @@ export function rubatoCacheIsCold(cache: RubatoCache | null | undefined, now: nu
   return cache.state === "warm" && cache.expiresAt != null && cache.expiresAt <= now;
 }
 
-function formatRemaining(ms: number): string {
+export function formatRemaining(ms: number): string {
   const minutes = Math.floor(ms / 60_000);
   if (minutes < 1) return "under 1m";
   if (minutes < 60) return `${minutes}m`;
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
-function formatClock(at: number): string {
+export function formatClock(at: number): string {
   return new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function Row(props: { label: string; children: ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-3 text-[11px] leading-4">
-      <span className="text-secondary-label">{props.label}</span>
-      <span className="font-medium tabular-nums text-secondary-label">{props.children}</span>
+      <span className="text-popover-foreground/65">{props.label}</span>
+      <span className="font-medium tabular-nums text-popover-foreground">{props.children}</span>
     </div>
   );
 }
@@ -150,9 +150,9 @@ export function RubatoCacheSection(props: {
   return (
     <div className="mt-1 flex flex-col gap-1.5 border-t border-border/60 pt-2">
       <div className="flex items-center justify-between gap-3">
-        <div className="font-medium text-muted-foreground text-xs">Prompt Cache</div>
+        <div className="font-medium text-popover-foreground text-xs">Prompt Cache</div>
         <div
-          className={cn("text-[11px] tabular-nums", cold ? "font-medium" : "text-secondary-label")}
+          className={cn("text-[11px] tabular-nums", cold ? "font-medium" : "text-popover-foreground")}
           style={cold ? { color: "var(--color-error)" } : undefined}
         >
           {status}
@@ -160,9 +160,9 @@ export function RubatoCacheSection(props: {
       </div>
       {cache.hitPercent != null ? <Row label="Hit rate">{cache.hitPercent}%</Row> : null}
       <div className="flex items-center justify-between gap-2 text-[11px] leading-4">
-        <span className="text-secondary-label">Keep warm</span>
+        <span className="text-popover-foreground/65">Keep warm</span>
         <div className="flex items-center gap-1.5">
-          {endNote ? <span className="tabular-nums text-muted-foreground">{endNote}</span> : null}
+          {endNote ? <span className="tabular-nums text-popover-foreground">{endNote}</span> : null}
           <div
             className="flex items-center rounded-md bg-muted/50"
             role="group"
@@ -177,7 +177,7 @@ export function RubatoCacheSection(props: {
             >
               <MinusIcon aria-hidden="true" />
             </Button>
-            <span className="w-6 text-center font-medium tabular-nums text-secondary-label" aria-live="polite">
+            <span className="w-6 text-center font-medium tabular-nums text-popover-foreground" aria-live="polite">
               {hours}h
             </span>
             <Button

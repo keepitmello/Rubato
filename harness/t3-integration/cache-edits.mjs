@@ -4,8 +4,8 @@
 // warmer switch in the ring's popover where the auto-compaction note used to be. The
 // switch posts to /rubato/cache-warming, which the bridge answers (bridge.mjs).
 export const cacheOverlays = [
-  'apps/web/src/components/sidebar/RubatoWarmArc.tsx',
-  'apps/web/src/components/sidebar/RubatoWarmArc.test.tsx',
+  'apps/web/src/components/sidebar/RubatoCacheCapsule.tsx',
+  'apps/web/src/components/sidebar/RubatoCacheCapsule.test.tsx',
   'apps/server/src/RubatoCacheWarming.ts',
   'apps/web/src/state/rubatoCacheWarming.ts',
   'apps/web/src/components/chat/RubatoCacheSection.tsx',
@@ -115,6 +115,34 @@ export const cacheEdits = {
       '          <RubatoCacheSection cache={usage.cache} environmentId={environmentId} />',
       'replace',
     ],
+    // The popover borrows the tooltip surface, where T3's muted greys sit close to the
+    // background and read as blurred. Headings and figures take the popover's own text
+    // colour and labels a softened one; RubatoCacheSection follows the same two tones.
+    [
+      '<div className="font-medium text-muted-foreground text-xs">Context Window</div>',
+      '<div className="font-medium text-popover-foreground text-xs">Context Window</div>',
+      'replace',
+    ],
+    [
+      '              <div className="text-secondary-label text-[11px] tabular-nums">\n                <span>{usedPercentage}</span>',
+      '              <div className="text-popover-foreground text-[11px] tabular-nums">\n                <span>{usedPercentage}</span>',
+      'replace',
+    ],
+    [
+      '              <div className="text-secondary-label text-[11px] tabular-nums">\n                {formatContextWindowTokens(usage.usedTokens)}',
+      '              <div className="text-popover-foreground text-[11px] tabular-nums">\n                {formatContextWindowTokens(usage.usedTokens)}',
+      'replace',
+    ],
+    [
+      '              <span className="text-secondary-label">Total processed</span>\n              <span className="font-medium tabular-nums text-secondary-label">',
+      '              <span className="text-popover-foreground/65">Total processed</span>\n              <span className="font-medium tabular-nums text-popover-foreground">',
+      'replace',
+    ],
+    [
+      '                <div className="text-pretty text-secondary-label text-[11px]">\n                  {compactDisabledReason}',
+      '                <div className="text-pretty text-popover-foreground/65 text-[11px]">\n                  {compactDisabledReason}',
+      'replace',
+    ],
   ],
   'apps/web/src/components/chat/ChatComposer.tsx': [
     [
@@ -133,17 +161,29 @@ export const cacheEdits = {
       'replace',
     ],
   ],
-  // The sidebar row shows an orange arc while its thread is kept warm: what is left of the
-  // hours it chose. Clicking it stops the window. It sits with the row's other signs, apart
-  // from the status dot, which already carries Working / Approval / Completed.
+  // The sidebar row shows a thin capsule under its time label while the thread's prompt
+  // cache is warm: what is left of the cache's life, orange while the warmer holds it.
+  // A line, not a ring, so it does not echo the status dot at the row's other end. The
+  // meta area fades to the archive button on hover, so the capsule only shows and the
+  // numbers (cache first, then the warmer) join the title's tooltip.
   'apps/web/src/components/LegacySidebar.tsx': [
     [
-      '          <ThreadWorktreeIndicator thread={thread} />\n',
-      '          <RubatoWarmArc environmentId={thread.environmentId} threadId={thread.id} />\n',
+      '            <span className={threadMetaClassName}>\n              <span className="inline-flex items-center gap-1">\n',
+      '            <span className={threadMetaClassName}>\n              <span className="relative inline-flex items-center gap-1">\n',
+      'replace',
+    ],
+    [
+      '              </span>\n            </span>\n          </div>\n        </div>\n      </SidebarMenuSubButton>\n',
+      '                <RubatoCacheCapsule environmentId={thread.environmentId} threadId={thread.id} />\n',
+    ],
+    [
+      '              <TooltipPopup side="top" className="max-w-80 whitespace-normal leading-tight">\n                {thread.title}\n              </TooltipPopup>\n',
+      '              <TooltipPopup side="top" className="max-w-80 whitespace-normal leading-tight">\n                {thread.title}\n                <RubatoCacheTooltip environmentId={thread.environmentId} threadId={thread.id} />\n              </TooltipPopup>\n',
+      'replace',
     ],
     [
       '} from "./ThreadStatusIndicators";\n',
-      '} from "./ThreadStatusIndicators";\nimport { RubatoWarmArc } from "./sidebar/RubatoWarmArc";\n',
+      '} from "./ThreadStatusIndicators";\nimport { RubatoCacheCapsule, RubatoCacheTooltip } from "./sidebar/RubatoCacheCapsule";\n',
       'replace',
     ],
   ],

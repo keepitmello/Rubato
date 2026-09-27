@@ -26,29 +26,37 @@ export async function setSessionCacheWarming(
     | { cache?: RubatoCacheSnapshot; error?: { message?: string } }
     | null;
   if (!response.ok || !payload?.cache) throw new Error(payload?.error?.message ?? `HTTP ${response.status}`);
-  void refreshWarmingThreads(environmentId).catch(() => undefined);
+  void refreshCachedThreads(environmentId).catch(() => undefined);
   return payload.cache;
 }
 
-/** A thread still warming, as the sidebar draws it. Times are epoch ms. */
-export interface WarmingThread {
+/**
+ * A thread whose prompt cache is still warm, as the sidebar draws it. Times are epoch ms.
+ * `expiresAt` is when the cache goes cold, counting the refreshes a scheduled warmer will
+ * still send; `from` is the latest input, where that lifetime started. `warmer` is what
+ * the warmer does for it: `on` holds the cache until `until`, `ended` means it has let go
+ * and the cache runs out on its own, `stopped` / `off` / `idle` mean it is not warming.
+ */
+export interface CachedThread {
   readonly sessionId: string;
-  readonly hours: number;
-  readonly from: number;
-  readonly until: number;
+  readonly expiresAt: number;
+  readonly from?: number;
+  readonly warmer: "on" | "ended" | "stopped" | "off" | "idle";
+  readonly hours?: number;
+  readonly until?: number;
 }
 
-type WarmingMap = Readonly<Record<string, WarmingThread>>;
-const EMPTY: WarmingMap = {};
+type CacheMap = Readonly<Record<string, CachedThread>>;
+const EMPTY: CacheMap = {};
 const POLL_MS = 60_000;
 
 /**
  * One poll per environment for every sidebar row. It re-reads each minute (which also
- * moves the arcs along) and when the window regains focus; with no row watching it stops.
+ * moves the capsules along) and when the window regains focus; with no row watching it stops.
  */
 const stores = new Map<
   EnvironmentId,
-  { threads: WarmingMap; listeners: Set<() => void>; stop: (() => void) | null }
+  { threads: CacheMap; listeners: Set<() => void>; stop: (() => void) | null }
 >();
 
 function storeOf(environmentId: EnvironmentId) {
@@ -60,18 +68,18 @@ function storeOf(environmentId: EnvironmentId) {
   return store;
 }
 
-export async function refreshWarmingThreads(environmentId: EnvironmentId): Promise<void> {
+export async function refreshCachedThreads(environmentId: EnvironmentId): Promise<void> {
   const store = storeOf(environmentId);
   const prepared = readPreparedConnection(environmentId);
   const access = prepared ? await rubatoHttpAccess(prepared).catch(() => null) : null;
-  let threads: WarmingMap = EMPTY;
+  let threads: CacheMap = EMPTY;
   if (access) {
     const response = await fetch(`${access.baseUrl}${CACHE_WARMING_ROUTE}`, {
       credentials: access.credentials,
       headers: access.headers,
     }).catch(() => null);
     const payload = response?.ok
-      ? ((await response.json().catch(() => null)) as { threads?: WarmingMap } | null)
+      ? ((await response.json().catch(() => null)) as { threads?: CacheMap } | null)
       : null;
     threads = payload?.threads ?? EMPTY;
   }
@@ -79,11 +87,11 @@ export async function refreshWarmingThreads(environmentId: EnvironmentId): Promi
   for (const listener of store.listeners) listener();
 }
 
-export function subscribeWarmingThreads(environmentId: EnvironmentId, listener: () => void): () => void {
+export function subscribeCachedThreads(environmentId: EnvironmentId, listener: () => void): () => void {
   const store = storeOf(environmentId);
   store.listeners.add(listener);
   if (store.stop === null) {
-    const refresh = () => void refreshWarmingThreads(environmentId).catch(() => undefined);
+    const refresh = () => void refreshCachedThreads(environmentId).catch(() => undefined);
     refresh();
     const timer = setInterval(refresh, POLL_MS);
     if (typeof window !== "undefined") window.addEventListener("focus", refresh);
@@ -101,6 +109,6 @@ export function subscribeWarmingThreads(environmentId: EnvironmentId, listener: 
   };
 }
 
-export function readWarmingThread(environmentId: EnvironmentId, threadId: string): WarmingThread | null {
+export function readCachedThread(environmentId: EnvironmentId, threadId: string): CachedThread | null {
   return stores.get(environmentId)?.threads[threadId] ?? null;
 }

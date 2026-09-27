@@ -632,21 +632,32 @@ export class RubatoPiBridge {
     this.rememberWarmth(context.session.threadId, cacheFrom({ ...value, sessionId: context.sessionId }));
   }
   /**
-   * The sidebar shows which threads are still warming, including those T3 has let go of.
-   * Their end time is known from the last report (latest input + hours), so the last
-   * snapshot per thread is enough; the sidebar works out what is left.
+   * The sidebar shows how long each thread's prompt cache stays warm, including threads
+   * T3 has let go of, and what the warmer is doing for it. `expiresAt` already counts the
+   * refreshes a scheduled warmer will still send, so the last snapshot per thread is
+   * enough; the sidebar works out what is left.
    */
   rememberWarmth(threadId, cache) {
     if (!threadId || !cache) return;
     (this.warmth ??= new Map()).set(threadId, cache);
   }
-  warmingThreads() {
+  cachedThreads() {
     const threads = {};
+    const now = Date.now();
     for (const [threadId, cache] of this.warmth ?? []) {
+      if (cache.state !== 'warm' || !(cache.expiresAt > now)) continue;
       const { mode, enabled, stopped, active, hours, from } = cache.warming;
-      if (mode === 'off' || !enabled || stopped || !active || !hours || from === undefined) continue;
-      const until = from + hours * 3_600_000;
-      if (until > Date.now()) threads[threadId] = { sessionId: cache.sessionId, hours, from, until };
+      const until = hours && from !== undefined ? from + hours * 3_600_000 : undefined;
+      const warmer = mode === 'off' || !enabled ? 'off'
+        : stopped ? 'stopped'
+        : until === undefined ? 'idle'
+        : until <= now ? 'ended'
+        : active ? 'on' : 'idle';
+      threads[threadId] = {
+        sessionId: cache.sessionId, expiresAt: cache.expiresAt, warmer,
+        ...(from !== undefined ? { from } : {}),
+        ...(until !== undefined ? { hours, until } : {}),
+      };
     }
     return threads;
   }
@@ -737,14 +748,15 @@ export const createBridge = (options) => { t3BridgeLog('createBridge', options?.
 /**
  * `/rubato/cache-warming` on the T3 server lands here (RubatoCacheWarming.ts imports this
  * module by the path the Rubato provider is wired to, so it is the same module instance
- * and sees the provider's bridge). GET lists the threads still warming (the sidebar's arcs);
+ * and sees the provider's bridge). GET lists the threads whose cache is still warm (the
+ * sidebar's capsules);
  * POST `{ sessionId, enabled?, hours?, stop? }` sets that session's warmer.
  */
 export async function handleCacheWarmingRequest(request) {
   const bridge = [...liveBridges].find((item) => !item.closed);
   if (!bridge) return Response.json({ error: { code: 'unavailable', message: 'The Rubato provider is not running.' } }, { status: 503 });
   try {
-    if (request.method === 'GET') return Response.json({ threads: bridge.warmingThreads() });
+    if (request.method === 'GET') return Response.json({ threads: bridge.cachedThreads() });
     const body = await request.json().catch(() => ({}));
     return Response.json({ cache: await bridge.setSessionCacheWarming(body?.sessionId, { enabled: body?.enabled, hours: body?.hours, stop: body?.stop }) });
   } catch (error) {
