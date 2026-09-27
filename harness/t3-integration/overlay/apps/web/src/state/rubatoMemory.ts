@@ -37,8 +37,15 @@ export interface MemoryStoreSummary {
   readonly files: number;
   readonly lastChangeAt: string | null;
   readonly pendingRunId: string | null;
+  /** What the store asks of the user: a dream waiting for review, or one that landed unseen. */
+  readonly inbox: StoreInbox | null;
   readonly enabled: boolean;
   readonly running: { readonly startedAt?: string; readonly source: "gui" | "other" } | null;
+}
+
+export interface StoreInbox {
+  readonly runId: string;
+  readonly kind: "pending" | "landed";
 }
 
 export interface MemoryFileEntry {
@@ -78,11 +85,31 @@ export interface DreamRunSummary {
   readonly finishedAt?: string;
   readonly model?: string;
   readonly reason?: string;
-  readonly review?: "merged" | "rejected";
+  readonly review?: "merged" | "rejected" | "reverted";
   readonly reviewedAt?: string;
   readonly sessions: number;
   readonly commits: number;
   readonly pending: boolean;
+  /** In the store now: merged and not reverted since. */
+  readonly landed: boolean;
+}
+
+export type DreamChangeKind = "added" | "modified" | "deleted" | "renamed";
+
+/** One file a dream changed, with what its report says about it. */
+export interface DreamChange {
+  readonly path: string;
+  readonly change: DreamChangeKind;
+  /** The old path of a renamed file. */
+  readonly from?: string;
+  /** The file's front-matter description (for a deleted file, as it was). */
+  readonly description: string | null;
+  readonly added: number;
+  readonly removed: number;
+  /** Report lines naming this file: why it changed, a claim fixed against code, a resolved conflict. */
+  readonly notes: ReadonlyArray<{ readonly kind: "why" | "code" | "conflict"; readonly text: string }>;
+  /** This file's part of the diff. */
+  readonly diff: string;
 }
 
 export interface DreamRunDetail extends DreamRunSummary {
@@ -94,9 +121,21 @@ export interface DreamRunDetail extends DreamRunSummary {
     readonly messages?: number;
   }>;
   readonly report: string | null;
-  readonly candidates: ReadonlyArray<{ readonly text: string; readonly inUser: boolean }>;
-  readonly diff: string;
+  /** The report's 요약. */
+  readonly summary: string | null;
+  /** The report's 남긴 것: what the dream considered and left out. */
+  readonly skipped: readonly string[];
+  readonly changes: readonly DreamChange[];
   readonly diffNote: string | null;
+  /** Files edited in the store and never committed; while any are there, adding and undoing fail. */
+  readonly uncommitted: readonly string[];
+  /** Where an agent asked about the run can read it. */
+  readonly sources: {
+    readonly report: string | null;
+    readonly repo: string;
+    readonly range: { readonly base: string; readonly head: string } | null;
+  };
+  readonly candidates: ReadonlyArray<{ readonly text: string; readonly inUser: boolean }>;
 }
 
 export interface SelfFiles {
@@ -179,6 +218,11 @@ export const rubatoMemory = {
     call<{ store: string; startedAt: string }>(env, "dream", { store }),
   review: (env: EnvironmentId | null, store: string, decision: "approve" | "reject") =>
     call<{ store: string; runId: string; review: string }>(env, "review", { store, decision }),
+  revert: (env: EnvironmentId | null, store: string, runId: string) =>
+    call<{ store: string; runId: string; review: string }>(env, "revert", { store, runId }),
+  /** The user has looked at a landed dream; it leaves the review list. */
+  ack: (env: EnvironmentId | null, store: string, runId: string) =>
+    call<{ store: string; runId: string }>(env, "ack", { store, runId }),
   config: (
     env: EnvironmentId | null,
     change:

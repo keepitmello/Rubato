@@ -47,7 +47,7 @@ async function fixture(t) {
 }
 
 // What the runner leaves for a dream under publish "review": a branch, a marker, a run record.
-async function pendingDream({ store, repo }, runId, line) {
+async function pendingDream({ store, repo }, runId, line, report = `## 요약\n\n${line}\n`) {
   const base = git(repo, 'rev-parse', 'HEAD');
   const branch = `dream/${runId}`;
   git(repo, 'branch', branch, base);
@@ -64,7 +64,7 @@ async function pendingDream({ store, repo }, runId, line) {
     status: 'pending', model: 'b-ai/deepseek-v4.1-flash',
     sessions: [{ id: 's1', cwd: '/tmp', messages: 3 }], commits: [commit], branch, baseRevision: base,
   }));
-  await writeFile(path.join(dir, 'out', 'report.md'), `## 요약\n\n${line}\n`);
+  await writeFile(path.join(dir, 'out', 'report.md'), report);
   await writeFile(path.join(dir, 'out', 'user-candidates.md'), '# user-candidates\n\n- 한국어 반말을 좋아한다\n- base 에 바로 푸시한다\n');
   await writeFile(path.join(store, 'runtime', 'dream', 'pending.json'), JSON.stringify({ runId, branch, baseRevision: base }));
   return { branch, base, commit };
@@ -90,7 +90,7 @@ test('status, review and diffs go through the real dream CLI', { skip: !bunAvail
 
   const detail = await f.service.handle('run', { store: 'scratch', runId: 'dream-a' });
   assert.match(detail.report, /second/);
-  assert.match(detail.diff, /^\+second$/m);
+  assert.match(detail.changes[0].diff, /^\+second$/m);
   assert.deepEqual(detail.candidates.map((c) => c.text), ['한국어 반말을 좋아한다', 'base 에 바로 푸시한다']);
 
   const approved = await f.service.handle('review', { store: 'scratch', decision: 'approve' });
@@ -99,7 +99,7 @@ test('status, review and diffs go through the real dream CLI', { skip: !bunAvail
   const merged = await f.service.handle('run', { store: 'scratch', runId: 'dream-a' });
   assert.equal(merged.review, 'merged');
   assert.equal(merged.pending, false);
-  assert.match(merged.diff, /^\+second$/m, 'a merged run still shows what it changed');
+  assert.match(merged.changes[0].diff, /^\+second$/m, 'a merged run still shows what it changed');
 
   await pendingDream(f, 'dream-b', 'third');
   const rejected = await f.service.handle('review', { store: 'scratch', decision: 'reject' });
@@ -111,6 +111,71 @@ test('status, review and diffs go through the real dream CLI', { skip: !bunAvail
   await assert.rejects(f.service.handle('runs', { store: '../scratch' }), /not valid/);
   await assert.rejects(f.service.handle('run', { store: 'scratch', runId: '../../x' }), /not valid/);
   await assert.rejects(f.service.handle('runs', { store: 'ghost' }), /No memory store/);
+});
+
+test('a run reads as one card per changed file, and the store says what needs the user', { skip: !bunAvailable && 'bun is not installed' }, async (t) => {
+  const f = await fixture(t);
+  const report = [
+    '## 요약', '노트 한 줄을 더했다.',
+    '## 바꾼 것', '- `notes.md`: rewritten — 두 번째 줄이 빠져 있었다',
+    '## 푼 모순', '- `notes.md` vs `other.md`: kept notes.md, because 최신',
+    '## 남긴 것', '- 상태 서술: git 이 이미 안다', '  - 들여쓴 줄은 따로 세지 않는다', '',
+  ].join('\n');
+  const { base } = await pendingDream(f, 'dream-a', 'second', report);
+  const inbox = async () => (await f.service.handle('stores', {})).stores.find((s) => s.store === 'scratch').inbox;
+
+  const detail = await f.service.handle('run', { store: 'scratch', runId: 'dream-a' });
+  assert.equal(detail.summary, '노트 한 줄을 더했다.');
+  assert.deepEqual(detail.skipped, ['상태 서술: git 이 이미 안다']);
+  assert.deepEqual(detail.changes.map(({ diff, ...card }) => card), [{
+    path: 'notes.md', change: 'modified', description: null, added: 1, removed: 0,
+    notes: [{ kind: 'why', text: '두 번째 줄이 빠져 있었다' }, { kind: 'conflict', text: 'kept notes.md, because 최신' }],
+  }]);
+  assert.equal(detail.sources.range.base, base);
+  assert.match(detail.sources.report, /dream-a\/out\/report\.md$/);
+  assert.deepEqual(await inbox(), { runId: 'dream-a', kind: 'pending' });
+  assert.deepEqual(detail.uncommitted, []);
+
+  // A session that wrote to the store and stopped blocks the merge; the page learns which file first,
+  // and the refusal reads as a sentence, not a stack.
+  await writeFile(path.join(f.repo, 'notes.md'), 'first\nleft by a session\n');
+  assert.deepEqual((await f.service.handle('run', { store: 'scratch', runId: 'dream-a' })).uncommitted, ['notes.md']);
+  await assert.rejects(f.service.handle('review', { store: 'scratch', decision: 'approve' }), (error) => {
+    assert.match(error.message, /^store has uncommitted changes; the branch dream\/dream-a is still waiting$/);
+    return true;
+  });
+  git(f.repo, 'checkout', '--', 'notes.md');
+
+  // Approving here counts as having looked at it.
+  await f.service.handle('review', { store: 'scratch', decision: 'approve' });
+  assert.equal(await inbox(), null);
+  assert.equal((await f.service.handle('runs', { store: 'scratch' })).runs[0].landed, true);
+
+  const reverted = await f.service.handle('revert', { store: 'scratch', runId: 'dream-a' });
+  assert.equal(reverted.review, 'reverted');
+  assert.equal(await readFile(path.join(f.repo, 'notes.md'), 'utf8'), 'first\n');
+  assert.equal((await f.service.handle('run', { store: 'scratch', runId: 'dream-a' })).landed, false);
+  await assert.rejects(f.service.handle('revert', { store: 'scratch', runId: 'dream-a' }), /already reverted/);
+
+  // An approved run was looked at, and undoing the newest does not bring an older one back as news.
+  await pendingDream(f, 'dream-b', 'third');
+  await f.service.handle('review', { store: 'scratch', decision: 'approve' });
+  assert.equal(await inbox(), null);
+
+  // A dream that landed on its own (publish "auto") after the user last looked is news until acknowledged.
+  const record = path.join(f.store, 'runtime', 'dream', 'runs', 'dream-b', 'run.json');
+  const { review: _review, ...run } = JSON.parse(await readFile(record, 'utf8'));
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await writeFile(record, JSON.stringify({ ...run, status: 'merged', finishedAt: new Date().toISOString() }));
+  assert.deepEqual(await inbox(), { runId: 'dream-b', kind: 'landed' });
+  await f.service.handle('ack', { store: 'scratch', runId: 'dream-b' });
+  assert.equal(await inbox(), null);
+
+  // The first look only sets the mark: what landed before the page existed is not news.
+  await rm(path.join(f.store, 'runtime', 'dream', 'gui', 'seen.json'));
+  assert.equal(await inbox(), null);
+  assert.equal(JSON.parse(await readFile(path.join(f.store, 'runtime', 'dream', 'gui', 'seen.json'), 'utf8')).runId, 'dream-b');
+  await assert.rejects(f.service.handle('ack', { store: 'scratch', runId: '../x' }), /not valid/);
 });
 
 test('run now is detached and its result is read back', { skip: !bunAvailable && 'bun is not installed' }, async (t) => {

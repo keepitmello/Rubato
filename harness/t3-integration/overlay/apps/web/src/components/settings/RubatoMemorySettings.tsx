@@ -1,20 +1,25 @@
 import {
   ArrowDownIcon,
   ArrowUpIcon,
-  ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  MessageSquareIcon,
   PlayIcon,
   PlusIcon,
   RefreshCwIcon,
+  SearchIcon,
   Trash2Icon,
+  Undo2Icon,
   XIcon,
 } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
+import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import * as Option from "effect/Option";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
+import { useComposerDraftStore } from "../../composerDraftStore";
 import { requestConfirmDialog } from "../../confirmDialog";
+import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
 import { cn } from "../../lib/utils";
 import { useProjects } from "../../state/entities";
 import { usePrimaryEnvironmentId } from "../../state/environments";
@@ -22,16 +27,18 @@ import { primaryServerProvidersAtom } from "../../state/server";
 import { usePreparedConnection } from "../../state/session";
 import {
   rubatoMemory,
+  type DreamChange,
   type DreamModel,
   type DreamPublish,
   type DreamReasoning,
-  type ProjectStore,
   type DreamRunDetail,
   type DreamRunSummary,
   type MemoryFileEntry,
   type MemoryStatus,
   type MemoryStoreStatus,
   type MemoryStoreSummary,
+  type ProjectStore,
+  type StoreInbox,
 } from "../../state/rubatoMemory";
 import ChatMarkdown from "../ChatMarkdown";
 import { iconForProviderModel } from "../chat/providerIconUtils";
@@ -44,32 +51,18 @@ import { Spinner } from "../ui/spinner";
 import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
+import { Toggle, ToggleGroup } from "../ui/toggle-group";
+import { addedContent, askPrompt, projectForStore, runLabel, type BadgeVariant } from "./RubatoMemorySettings.logic";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 
 type EnvironmentId = ReturnType<typeof usePrimaryEnvironmentId>;
-
-const STATUS_LABEL: Record<string, { label: string; variant: "success" | "warning" | "error" | "info" | "secondary" | "outline" }> = {
-  merged: { label: "Merged", variant: "success" },
-  pending: { label: "Needs review", variant: "warning" },
-  noop: { label: "No changes", variant: "secondary" },
-  failed: { label: "Failed", variant: "error" },
-  busy: { label: "Already running", variant: "secondary" },
-  trial: { label: "Trial", variant: "info" },
-};
-
-function runLabel(run: Pick<DreamRunSummary, "status" | "review" | "pending">) {
-  if (run.review === "rejected") return { label: "Rejected", variant: "secondary" as const };
-  if (run.status === "pending" && run.review === "merged") return STATUS_LABEL.merged!;
-  if (run.status === "pending" && !run.pending) return { label: "Reviewed", variant: "secondary" as const };
-  return STATUS_LABEL[run.status] ?? { label: run.status, variant: "outline" as const };
-}
 
 function count(n: number, noun: string): string {
   return `${n} ${noun}${n === 1 ? "" : "s"}`;
 }
 
 const relativeFormat = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
-function ago(iso: string | undefined): string {
+function ago(iso: string | undefined | null): string {
   if (!iso) return "never";
   const then = Date.parse(iso);
   if (!Number.isFinite(then)) return iso;
@@ -130,7 +123,6 @@ function mergeStores(summaries: readonly MemoryStoreSummary[], status: MemorySta
       roots: summary.roots ?? (cli.roots ? [...cli.roots] : null),
       home: summary.home ?? cli.home ?? null,
       enabled: cli.enabled,
-      pendingRunId: cli.pendingRunId ?? null,
       running: summary.running ?? cli.running,
       newSessions: cli.newSessions,
       due: cli.due,
@@ -155,6 +147,13 @@ function whereLabel(store: StoreView, home: string | null): string {
   return "Project folder unknown";
 }
 
+type Tab = "stores" | "you" | "dreams";
+const TABS: ReadonlyArray<{ value: Tab; label: string }> = [
+  { value: "stores", label: "Stores" },
+  { value: "you", label: "About you" },
+  { value: "dreams", label: "Dream settings" },
+];
+
 export function RubatoMemorySettingsPanel() {
   const environmentId = useReadyEnvironmentId();
   const [summaries, setSummaries] = useState<MemoryStoreSummary[] | null>(null);
@@ -164,6 +163,7 @@ export function RubatoMemorySettingsPanel() {
   const [statusError, setStatusError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedStore, setSelectedStore] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("stores");
   const [historySignal, setHistorySignal] = useState(0);
   const loadingRef = useRef(false);
 
@@ -221,6 +221,12 @@ export function RubatoMemorySettingsPanel() {
     return () => window.clearInterval(timer);
   }, [anyRunning, refresh]);
 
+  // After a review action the store list (what needs the user) and any open history are stale.
+  const changed = useCallback(() => {
+    setHistorySignal((value) => value + 1);
+    void loadStores();
+  }, [loadStores]);
+
   const saveConfig = async (change: Parameters<typeof rubatoMemory.config>[1], undo: () => void) => {
     try {
       await rubatoMemory.config(environmentId, change);
@@ -266,7 +272,7 @@ export function RubatoMemorySettingsPanel() {
       toastManager.add({
         type: "info",
         title: `Dream started for ${store}`,
-        description: "This can take several minutes. The result appears in the history.",
+        description: "This can take several minutes. What it changes shows up at the top of Memory.",
       });
       await refresh();
     } catch (error) {
@@ -291,7 +297,7 @@ export function RubatoMemorySettingsPanel() {
           onBack={() => setSelectedStore(null)}
           onToggle={(enabled) => setEnabled(selected.store, enabled)}
           onRun={() => void runNow(selected.store)}
-          onChanged={() => void refresh()}
+          onChanged={changed}
           onDeleted={() => {
             setSelectedStore(null);
             void refresh();
@@ -301,87 +307,130 @@ export function RubatoMemorySettingsPanel() {
     );
   }
 
+  const inbox = stores?.filter((store): store is StoreView & { inbox: StoreInbox } => store.inbox !== null) ?? [];
+
   return (
     <SettingsPageContainer>
-      <SettingsSection
-        id="memory-stores"
-        title="Stores"
-        headerAction={
-          <Button size="xs" variant="ghost" disabled={loading} onClick={() => void refresh()}>
-            {loading ? <Spinner className="size-3.5" /> : <RefreshCwIcon className="size-3.5" />}
-            Refresh
-          </Button>
-        }
-      >
-        {storesError ? <SettingsRow title="Could not load memory stores" description={storesError} /> : null}
-        {stores === null && !storesError ? (
-          <SettingsRow title="Loading memory stores" control={<Spinner className="size-4" />} />
-        ) : null}
-        {stores?.length === 0 ? (
-          <SettingsRow
-            title="No memory yet"
-            description="Memory is created automatically the first time the agent saves something in a project."
-          />
-        ) : null}
-        {stores?.map((store) => (
-          <StoreRow
-            key={store.store}
-            store={store}
-            home={home}
-            onOpen={() => setSelectedStore(store.store)}
-            onToggle={(enabled) => setEnabled(store.store, enabled)}
-          />
-        ))}
-      </SettingsSection>
+      {inbox.length > 0 ? (
+        <SettingsSection id="memory-review" title={inbox.length === 1 ? "To review" : `To review · ${inbox.length}`}>
+          {inbox.map((store) => (
+            <div key={`${store.store}:${store.inbox.runId}`} className="px-3 py-3 sm:px-4">
+              <RunView
+                environmentId={environmentId}
+                store={store}
+                home={home}
+                runId={store.inbox.runId}
+                inbox={store.inbox.kind}
+                showHeader
+                onChanged={changed}
+              />
+            </div>
+          ))}
+        </SettingsSection>
+      ) : null}
 
-      <ProjectStoresSection
-        environmentId={environmentId}
-        home={home}
-        stores={stores?.map((store) => store.store) ?? []}
-        onChanged={() => void refresh()}
-      />
+      <div className="px-3 sm:px-4">
+        <ToggleGroup
+          aria-label="Memory settings"
+          variant="segmented"
+          value={[tab]}
+          onValueChange={(next) => {
+            const value = TABS.find((entry) => entry.value === next[0])?.value;
+            if (value) setTab(value);
+          }}
+        >
+          {TABS.map((entry) => (
+            <Toggle key={entry.value} value={entry.value}>
+              {entry.label}
+            </Toggle>
+          ))}
+        </ToggleGroup>
+      </div>
 
-      <SettingsSection id="memory-dream" title="Dreams">
-        {statusError ? (
-          <SettingsRow title="Could not load dream settings" description={statusError} />
-        ) : status === null ? (
-          <SettingsRow
-            title="Loading dream settings"
-            description="Scanning sessions can take a few seconds."
-            control={<Spinner className="size-4" />}
-          />
-        ) : (
-          <>
-            <DreamModelsEditor models={status.models} onChange={setModels} />
+      {tab === "stores" ? (
+        <SettingsSection
+          id="memory-stores"
+          title="Stores"
+          headerAction={
+            <Button size="xs" variant="ghost" disabled={loading} onClick={() => void refresh()}>
+              {loading ? <Spinner className="size-3.5" /> : <RefreshCwIcon className="size-3.5" />}
+              Refresh
+            </Button>
+          }
+        >
+          {storesError ? <SettingsRow title="Could not load memory stores" description={storesError} /> : null}
+          {stores === null && !storesError ? (
+            <SettingsRow title="Loading memory stores" control={<Spinner className="size-4" />} />
+          ) : null}
+          {stores?.length === 0 ? (
             <SettingsRow
-              title="Publish"
-              description={
-                status.publish === "review"
-                  ? "Dream edits wait on a branch until you approve them in the store's history."
-                  : "Dream edits are merged into the store as soon as the dream ends."
-              }
-              control={
-                <Select
-                  value={status.publish}
-                  onValueChange={(next) => {
-                    if (next === "review" || next === "auto") setPublish(next);
-                  }}
-                >
-                  <SelectTrigger size="sm" aria-label="Dream publish mode">
-                    <SelectValue>{status.publish === "review" ? "After review" : "Automatically"}</SelectValue>
-                  </SelectTrigger>
-                  <SelectPopup align="end" alignItemWithTrigger={false}>
-                    <SelectItem value="review">After review</SelectItem>
-                    <SelectItem value="auto">Automatically</SelectItem>
-                  </SelectPopup>
-                </Select>
-              }
+              title="No memory yet"
+              description="Memory is created automatically the first time the agent saves something in a project."
             />
-          </>
-        )}
-      </SettingsSection>
+          ) : null}
+          {stores?.map((store) => (
+            <StoreRow
+              key={store.store}
+              store={store}
+              home={home}
+              onOpen={() => setSelectedStore(store.store)}
+              onToggle={(enabled) => setEnabled(store.store, enabled)}
+            />
+          ))}
+        </SettingsSection>
+      ) : null}
 
-      <SelfFilesSection environmentId={environmentId} />
+      {tab === "you" ? <SelfFilesSection environmentId={environmentId} /> : null}
+
+      {tab === "dreams" ? (
+        <>
+          <SettingsSection id="memory-dream" title="Dreams">
+            {statusError ? (
+              <SettingsRow title="Could not load dream settings" description={statusError} />
+            ) : status === null ? (
+              <SettingsRow
+                title="Loading dream settings"
+                description="Scanning sessions can take a few seconds."
+                control={<Spinner className="size-4" />}
+              />
+            ) : (
+              <>
+                <DreamModelsEditor models={status.models} onChange={setModels} />
+                <SettingsRow
+                  title="When a dream changes memory"
+                  description={
+                    status.publish === "review"
+                      ? "Its changes wait at the top of Memory until you accept or discard them."
+                      : "Its changes go into memory right away. They show at the top of Memory until you mark them seen, and you can undo them."
+                  }
+                  control={
+                    <Select
+                      value={status.publish}
+                      onValueChange={(next) => {
+                        if (next === "review" || next === "auto") setPublish(next);
+                      }}
+                    >
+                      <SelectTrigger size="sm" aria-label="Dream publish mode">
+                        <SelectValue>{status.publish === "review" ? "Ask me first" : "Apply, then show me"}</SelectValue>
+                      </SelectTrigger>
+                      <SelectPopup align="end" alignItemWithTrigger={false}>
+                        <SelectItem value="review">Ask me first</SelectItem>
+                        <SelectItem value="auto">Apply, then show me</SelectItem>
+                      </SelectPopup>
+                    </Select>
+                  }
+                />
+              </>
+            )}
+          </SettingsSection>
+          <ProjectStoresSection
+            environmentId={environmentId}
+            home={home}
+            stores={stores?.map((store) => store.store) ?? []}
+            onChanged={() => void refresh()}
+          />
+        </>
+      ) : null}
     </SettingsPageContainer>
   );
 }
@@ -396,7 +445,8 @@ function StoreBadges({ store }: { store: StoreView }) {
           Dreaming {store.running.startedAt ? `(started ${ago(store.running.startedAt)})` : ""}
         </Badge>
       ) : null}
-      {store.pendingRunId ? <Badge variant="warning">Needs review</Badge> : null}
+      {store.inbox?.kind === "pending" ? <Badge variant="warning">Needs review</Badge> : null}
+      {store.inbox?.kind === "landed" ? <Badge variant="info">New in memory</Badge> : null}
       {store.due && !store.running ? <Badge variant="secondary">Dream due</Badge> : null}
       {!store.running && last && last.status === "failed" ? (
         <span className="text-destructive-foreground" title={last.reason}>
@@ -545,15 +595,31 @@ function StoreDetail({
         />
       </SettingsSection>
 
-      <StoreFiles environmentId={environmentId} store={store.store} onChanged={onChanged} />
+      {store.inbox ? (
+        <SettingsSection id="memory-store-review" title="To review">
+          <div className="px-3 py-3 sm:px-4">
+            <RunView
+              key={`${store.inbox.runId}:${historySignal}`}
+              environmentId={environmentId}
+              store={store}
+              home={home}
+              runId={store.inbox.runId}
+              inbox={store.inbox.kind}
+              onChanged={onChanged}
+            />
+          </div>
+        </SettingsSection>
+      ) : null}
 
       <DreamHistory
         key={`${store.store}:${historySignal}`}
         environmentId={environmentId}
-        store={store.store}
-        pendingRunId={store.pendingRunId ?? undefined}
-        onReviewed={onChanged}
+        store={store}
+        home={home}
+        onChanged={onChanged}
       />
+
+      <StoreFiles environmentId={environmentId} store={store.store} onChanged={onChanged} />
 
       <SettingsSection id="memory-store-delete" title="Delete">
         <SettingsRow
@@ -573,6 +639,478 @@ function StoreDetail({
         />
       </SettingsSection>
     </>
+  );
+}
+
+/** Opens a new thread in the store's project with the run in the composer; the user picks a model and asks. */
+function useAskInChat(environmentId: EnvironmentId, store: StoreView, home: string | null) {
+  const projects = useProjects();
+  const newThread = useNewThreadHandler();
+  return async (detail: DreamRunDetail, file?: string) => {
+    const candidates = projects.filter((project) => project.environmentId === environmentId);
+    const project = projectForStore(candidates, store.home && home ? [home] : store.roots);
+    if (!project) {
+      toastManager.add({
+        type: "error",
+        title: "No project for this store",
+        description: `Add ${whereLabel(store, home)} as a project, then ask again.`,
+      });
+      return;
+    }
+    const opened = await newThread(scopeProjectRef(project.environmentId, project.id)).catch(() => null);
+    if (!opened) {
+      toastManager.add({ type: "error", title: "Could not open a thread", description: "Open one from the project, then ask again." });
+      return;
+    }
+    useComposerDraftStore.getState().setPrompt(opened.draftId, askPrompt(detail, file));
+  };
+}
+
+const CHANGE_LABEL: Record<DreamChange["change"], { label: string; variant: BadgeVariant }> = {
+  added: { label: "New", variant: "success" },
+  modified: { label: "Edited", variant: "info" },
+  deleted: { label: "Deleted", variant: "error" },
+  renamed: { label: "Moved", variant: "secondary" },
+};
+
+const NOTE_LABEL: Record<DreamChange["notes"][number]["kind"], string> = {
+  why: "Why",
+  code: "Fixed to match the code",
+  conflict: "Resolved",
+};
+
+const CARDS_SHOWN = 8;
+
+/**
+ * One dream as a decision: what it says it did, one card per file it changed, and the action the
+ * run is waiting for. The report, the sessions and what it left out stay folded below.
+ */
+function RunView({
+  environmentId,
+  store,
+  home,
+  runId,
+  inbox,
+  showHeader = false,
+  onChanged,
+}: {
+  environmentId: EnvironmentId;
+  store: StoreView;
+  home: string | null;
+  runId: string;
+  inbox?: StoreInbox["kind"];
+  showHeader?: boolean;
+  onChanged: () => void;
+}) {
+  const [detail, setDetail] = useState<DreamRunDetail | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<"approve" | "reject" | "revert" | "ack" | "candidates" | null>(null);
+  const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set());
+  const [showAll, setShowAll] = useState(false);
+  const [signal, setSignal] = useState(0);
+  const ask = useAskInChat(environmentId, store, home);
+
+  useEffect(() => {
+    let cancelled = false;
+    rubatoMemory
+      .run(environmentId, store.store, runId)
+      .then((result) => {
+        if (!cancelled) setDetail(result);
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [environmentId, store.store, runId, signal]);
+
+  const act = async (kind: "approve" | "reject" | "revert" | "ack") => {
+    if (kind === "reject" && !(await confirm("Discard this dream's changes? What it read stays marked as read.", true)))
+      return;
+    if (kind === "revert" && !(await confirm(`Undo this dream? One commit takes its changes back out of ${store.store}.`)))
+      return;
+    setBusy(kind);
+    try {
+      if (kind === "approve" || kind === "reject") await rubatoMemory.review(environmentId, store.store, kind);
+      else if (kind === "revert") await rubatoMemory.revert(environmentId, store.store, runId);
+      else await rubatoMemory.ack(environmentId, store.store, runId);
+      if (kind !== "ack")
+        toastManager.add({
+          type: "success",
+          title: kind === "approve" ? "Added to memory" : kind === "reject" ? "Changes discarded" : "Dream undone",
+        });
+      setSignal((value) => value + 1);
+      onChanged();
+    } catch (cause) {
+      reportError(
+        kind === "approve" ? "Could not add to memory" : kind === "reject" ? "Could not discard" : kind === "revert" ? "Could not undo" : "Could not mark as seen",
+        cause,
+      );
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const addChosen = async () => {
+    setBusy("candidates");
+    try {
+      const result = await rubatoMemory.addCandidates(environmentId, store.store, runId, [...chosen]);
+      toastManager.add({
+        type: "success",
+        title: result.added > 0 ? `Added ${count(result.added, "line")} to user.md` : "Already in user.md",
+      });
+      setChosen(new Set());
+      setSignal((value) => value + 1);
+      window.dispatchEvent(new CustomEvent("rubato-memory-self-changed"));
+    } catch (cause) {
+      reportError("Could not add to user.md", cause);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (error) return <p className="text-sm text-destructive-foreground">{error}</p>;
+  if (!detail)
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Spinner className="size-3.5" /> Loading
+      </div>
+    );
+
+  const cards = showAll ? detail.changes : detail.changes.slice(0, CARDS_SHOWN);
+  const label = runLabel(detail);
+  const blocked = detail.uncommitted.length > 0;
+  return (
+    <div className="space-y-3">
+      {showHeader ? (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="text-sm font-medium">{store.store}</span>
+          <Badge variant={inbox === "landed" ? "info" : label.variant}>{inbox === "landed" ? "New in memory" : label.label}</Badge>
+          <span className="text-xs text-muted-foreground">
+            {[stamp(detail.startedAt), `${count(detail.sessions, "session")} read`, detail.model]
+              .filter(Boolean)
+              .join(" · ")}
+          </span>
+        </div>
+      ) : null}
+
+      {detail.summary ? <p className="text-sm text-foreground/90">{detail.summary}</p> : null}
+
+      {detail.changes.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          {detail.diffNote && detail.diffNote !== "truncated"
+            ? `Could not read the changes: ${detail.diffNote}`
+            : "This dream changed no files."}
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {cards.map((change) => (
+            <ChangeCard key={change.path} change={change} onAsk={() => void ask(detail, change.path)} />
+          ))}
+        </ul>
+      )}
+      {detail.changes.length > CARDS_SHOWN ? (
+        <Button size="xs" variant="ghost" onClick={() => setShowAll(!showAll)}>
+          {showAll ? "Show fewer" : `Show all ${detail.changes.length} files`}
+        </Button>
+      ) : null}
+      {detail.diffNote === "truncated" ? (
+        <p className="text-xs text-muted-foreground">The changes are too large to show in full.</p>
+      ) : null}
+
+      {detail.candidates.length > 0 ? (
+        <div className="space-y-2 rounded-lg border border-border/60 px-3 py-2">
+          <div className="flex items-center gap-2">
+            <span className="me-auto text-sm">The dream noticed these about you</span>
+            <Button size="xs" variant="outline" disabled={chosen.size === 0 || busy !== null} onClick={() => void addChosen()}>
+              {busy === "candidates" ? <Spinner className="size-3" /> : null}
+              Add {count(chosen.size, "line")} to user.md
+            </Button>
+          </div>
+          <ul className="space-y-1.5">
+            {detail.candidates.map((candidate) => (
+              <li key={candidate.text} className="flex items-start gap-2 text-sm">
+                <Checkbox
+                  className="mt-0.5"
+                  aria-label={candidate.text}
+                  disabled={candidate.inUser}
+                  checked={candidate.inUser || chosen.has(candidate.text)}
+                  onCheckedChange={(checked) =>
+                    setChosen((current) => {
+                      const next = new Set(current);
+                      if (checked) next.add(candidate.text);
+                      else next.delete(candidate.text);
+                      return next;
+                    })
+                  }
+                />
+                <span className={cn(candidate.inUser && "text-muted-foreground")}>
+                  {candidate.text}
+                  {candidate.inUser ? " (in user.md)" : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      <div className="space-y-1 text-xs text-muted-foreground">
+        {detail.skipped.length > 0 ? (
+          <Fold label={`Left out · ${detail.skipped.length}`}>
+            <ul className="list-disc space-y-0.5 ps-4">
+              {detail.skipped.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          </Fold>
+        ) : null}
+        {detail.report ? (
+          <Fold label="Full report">
+            <div className="max-h-[28rem] overflow-y-auto rounded-lg border border-border/60 px-3 py-2 text-sm text-foreground">
+              <ChatMarkdown text={detail.report} cwd={undefined} />
+            </div>
+          </Fold>
+        ) : null}
+        {detail.sessionList.length > 0 ? (
+          <Fold label={`Sessions read · ${detail.sessionList.length}`}>
+            <ul className="space-y-0.5 ps-4">
+              {detail.sessionList.map((session) => (
+                <li key={session.id} className="truncate">
+                  {session.name ?? session.id}
+                  {session.messages !== undefined ? ` · ${count(session.messages, "message")}` : ""}
+                </li>
+              ))}
+            </ul>
+          </Fold>
+        ) : null}
+      </div>
+
+      {blocked ? (
+        <div className="rounded-lg border border-warning/40 bg-warning/8 px-3 py-2 text-sm">
+          <p>
+            {detail.pending ? "Can't add this yet" : "Can't undo this yet"}: {store.store} has edits that were never
+            committed, most likely from a session that stopped mid-write.
+          </p>
+          <ul className="mt-1 font-mono text-xs text-muted-foreground">
+            {detail.uncommitted.map((file) => (
+              <li key={file}>{file}</li>
+            ))}
+          </ul>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Commit or drop them first. Ask in chat hands them to an agent along with this dream.
+          </p>
+        </div>
+      ) : null}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="xs" variant="ghost" onClick={() => void ask(detail)}>
+          <MessageSquareIcon className="size-3.5" />
+          Ask in chat
+        </Button>
+        <span className="me-auto" />
+        {detail.pending ? (
+          <>
+            <Button size="xs" variant="outline" disabled={busy !== null} onClick={() => void act("reject")}>
+              {busy === "reject" ? <Spinner className="size-3" /> : null}
+              Discard
+            </Button>
+            <Button size="xs" disabled={busy !== null || blocked} onClick={() => void act("approve")}>
+              {busy === "approve" ? <Spinner className="size-3" /> : null}
+              Add to memory
+            </Button>
+          </>
+        ) : null}
+        {detail.landed ? (
+          <Button size="xs" variant="outline" disabled={busy !== null || blocked} onClick={() => void act("revert")}>
+            {busy === "revert" ? <Spinner className="size-3" /> : <Undo2Icon className="size-3" />}
+            Undo
+          </Button>
+        ) : null}
+        {inbox === "landed" && detail.landed ? (
+          <Button size="xs" disabled={busy !== null} onClick={() => void act("ack")}>
+            {busy === "ack" ? <Spinner className="size-3" /> : null}
+            Got it
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function Fold({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <details className="group">
+      <summary className="flex cursor-pointer list-none items-center gap-1 py-0.5 hover:text-foreground">
+        <ChevronRightIcon className="size-3 transition-transform group-open:rotate-90" />
+        {label}
+      </summary>
+      <div className="pt-1 pb-2">{children}</div>
+    </details>
+  );
+}
+
+function ChangeCard({ change, onAsk }: { change: DreamChange; onAsk: () => void }) {
+  const [open, setOpen] = useState(false);
+  const kind = CHANGE_LABEL[change.change];
+  const preview = change.change === "added" && change.path.endsWith(".md") ? addedContent(change.diff) : null;
+  return (
+    <li className="rounded-lg border border-border/60 bg-background/40">
+      <div className="flex items-start gap-2 px-3 pt-2 pb-1.5">
+        <button
+          type="button"
+          className="min-w-0 flex-1 text-left"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <ChevronRightIcon
+              className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform", open && "rotate-90")}
+            />
+            <Badge variant={kind.variant}>{kind.label}</Badge>
+            <span className="truncate font-mono text-xs" title={change.path}>
+              {change.path}
+            </span>
+            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+              {change.added > 0 ? `+${change.added}` : ""}
+              {change.added > 0 && change.removed > 0 ? " " : ""}
+              {change.removed > 0 ? `−${change.removed}` : ""}
+            </span>
+          </span>
+          {change.description ? <span className="mt-1 block text-sm">{change.description}</span> : null}
+          {change.from ? <span className="block text-xs text-muted-foreground">Moved from {change.from}</span> : null}
+        </button>
+        <Button size="icon-xs" variant="ghost" aria-label={`Ask in chat about ${change.path}`} title="Ask in chat" onClick={onAsk}>
+          <MessageSquareIcon className="size-3.5" />
+        </Button>
+      </div>
+      {change.notes.length > 0 ? (
+        <ul className="space-y-0.5 px-3 pb-2 ps-8 text-xs text-muted-foreground">
+          {change.notes.map((note, index) => (
+            // A report can say the same thing twice; position is the identity.
+            <li key={index}>
+              <span className="font-medium text-foreground/80">{NOTE_LABEL[note.kind]}:</span> {note.text}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {open ? (
+        <div className="border-t border-border/60 px-3 py-2">
+          {preview ? (
+            <div className="max-h-[28rem] overflow-y-auto text-sm">
+              <ChatMarkdown text={preview} cwd={undefined} />
+            </div>
+          ) : (
+            <DiffView diff={change.diff} />
+          )}
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
+function DreamHistory({
+  environmentId,
+  store,
+  home,
+  onChanged,
+}: {
+  environmentId: EnvironmentId;
+  store: StoreView;
+  home: string | null;
+  onChanged: () => void;
+}) {
+  const [runs, setRuns] = useState<DreamRunSummary[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    rubatoMemory
+      .runs(environmentId, store.store)
+      .then((result) => {
+        if (cancelled) return;
+        setRuns(result.runs);
+        setError(null);
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [environmentId, store.store]);
+
+  return (
+    <SettingsSection id="memory-history" title="Dream history">
+      {error ? <SettingsRow title="Could not load the history" description={error} /> : null}
+      {runs === null && !error ? (
+        <SettingsRow title="Loading history" control={<Spinner className="size-4" />} />
+      ) : null}
+      {runs?.length === 0 ? <SettingsRow title="No dreams yet" /> : null}
+      {runs?.map((run) => {
+        const label = runLabel(run);
+        const expanded = open === run.runId;
+        return (
+          <SettingsRow
+            key={run.runId}
+            title={
+              <button
+                type="button"
+                className="flex items-center gap-1.5 text-left"
+                aria-expanded={expanded}
+                onClick={() => setOpen(expanded ? null : run.runId)}
+              >
+                <ChevronRightIcon
+                  className={cn("size-3.5 text-muted-foreground transition-transform", expanded && "rotate-90")}
+                />
+                {stamp(run.startedAt) || run.runId}
+                <Badge variant={label.variant}>{label.label}</Badge>
+              </button>
+            }
+            description={[
+              run.model ?? "No model",
+              `${count(run.sessions, "session")} read`,
+              run.reason ?? null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          >
+            {expanded ? (
+              <div className="pt-1 pb-3">
+                <RunView environmentId={environmentId} store={store} home={home} runId={run.runId} onChanged={onChanged} />
+              </div>
+            ) : null}
+          </SettingsRow>
+        );
+      })}
+    </SettingsSection>
+  );
+}
+
+function DiffView({ diff }: { diff: string }) {
+  if (!diff) return <p className="text-sm text-muted-foreground">No changes.</p>;
+  return (
+    <div className="max-h-[28rem] overflow-auto rounded-md bg-muted/30">
+      <pre className="min-w-max px-3 py-2 font-mono text-xs leading-5">
+        {diff.split("\n").map((line, index) => (
+          <div
+            // Lines of a diff have no identity beyond their position.
+            key={index}
+            className={cn(
+              line.startsWith("diff --git") && "font-semibold text-foreground",
+              line.startsWith("@@") && "text-info-foreground",
+              line.startsWith("+") && !line.startsWith("+++") && "bg-success/10 text-success-foreground",
+              line.startsWith("-") && !line.startsWith("---") && "bg-destructive/10 text-destructive-foreground",
+              (line.startsWith("+++") || line.startsWith("---") || line.startsWith("index ")) &&
+                "text-muted-foreground",
+            )}
+          >
+            {line || " "}
+          </div>
+        ))}
+      </pre>
+    </div>
   );
 }
 
@@ -607,6 +1145,7 @@ function StoreFiles({
   const [truncated, setTruncated] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
   const [signal, setSignal] = useState(0);
 
   useEffect(() => {
@@ -644,16 +1183,41 @@ function StoreFiles({
     }
   };
 
+  const needle = query.trim().toLowerCase();
+  const shown = files?.filter(
+    (file) => needle === "" || `${file.path} ${file.description ?? ""}`.toLowerCase().includes(needle),
+  );
+
   return (
-    <SettingsSection id="memory-files" title={files ? `Files · ${files.length}` : "Files"}>
+    <SettingsSection
+      id="memory-files"
+      title={files ? `Files · ${files.length}` : "Files"}
+      headerAction={
+        files && files.length > 0 ? (
+          <div className="relative">
+            <SearchIcon className="pointer-events-none absolute start-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              size="sm"
+              className="w-48 ps-7"
+              placeholder="Find a file"
+              value={query}
+              onChange={(event) => setQuery(event.currentTarget.value)}
+              aria-label="Find a file"
+            />
+          </div>
+        ) : null
+      }
+    >
       {error ? <SettingsRow title="Could not load files" description={error} /> : null}
       {files === null && !error ? (
         <SettingsRow title="Loading files" control={<Spinner className="size-4" />} />
       ) : null}
       {files?.length === 0 ? <SettingsRow title="This store has no files yet" /> : null}
-      {files
-        ? groupFiles(files).map(([folder, entries]) => (
-            <details key={folder || "."} open className="group px-3 py-2 sm:px-4">
+      {shown && files && files.length > 0 && shown.length === 0 ? <SettingsRow title="No file matches" /> : null}
+      {shown
+        ? groupFiles(shown).map(([folder, entries]) => (
+            // Folders start closed; a search opens every folder it matches in.
+            <details key={`${folder || "."}:${needle !== ""}`} open={needle !== ""} className="group px-3 py-2 sm:px-4">
               <summary className="flex cursor-pointer list-none items-center gap-1.5 py-1 text-sm font-medium">
                 <ChevronRightIcon className="size-3.5 text-muted-foreground transition-transform group-open:rotate-90" />
                 {folder ? `${folder}/` : "Top level"}
@@ -752,316 +1316,6 @@ function FileViewer({
   );
 }
 
-function DreamHistory({
-  environmentId,
-  store,
-  pendingRunId,
-  onReviewed,
-}: {
-  environmentId: EnvironmentId;
-  store: string;
-  pendingRunId: string | undefined;
-  onReviewed: () => void;
-}) {
-  const [runs, setRuns] = useState<DreamRunSummary[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [open, setOpen] = useState<string | null>(null);
-  const [signal, setSignal] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    rubatoMemory
-      .runs(environmentId, store)
-      .then((result) => {
-        if (cancelled) return;
-        setRuns(result.runs);
-        setError(null);
-        setOpen((current) => current ?? result.pendingRunId ?? null);
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [environmentId, store, signal, pendingRunId]);
-
-  return (
-    <SettingsSection id="memory-history" title="Dream history">
-      {error ? <SettingsRow title="Could not load the history" description={error} /> : null}
-      {runs === null && !error ? (
-        <SettingsRow title="Loading history" control={<Spinner className="size-4" />} />
-      ) : null}
-      {runs?.length === 0 ? <SettingsRow title="No dreams yet" /> : null}
-      {runs?.map((run) => {
-        const label = runLabel(run);
-        const expanded = open === run.runId;
-        return (
-          <SettingsRow
-            key={run.runId}
-            title={
-              <button
-                type="button"
-                className="flex items-center gap-1.5 text-left"
-                aria-expanded={expanded}
-                onClick={() => setOpen(expanded ? null : run.runId)}
-              >
-                {expanded ? (
-                  <ChevronDownIcon className="size-3.5 text-muted-foreground" />
-                ) : (
-                  <ChevronRightIcon className="size-3.5 text-muted-foreground" />
-                )}
-                {stamp(run.startedAt) || run.runId}
-                <Badge variant={label.variant}>{label.label}</Badge>
-              </button>
-            }
-            description={[
-              run.model ?? "No model",
-              `${count(run.sessions, "session")} read`,
-              run.commits > 0 ? count(run.commits, "commit") : null,
-              run.reason ?? null,
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          >
-            {expanded ? (
-              <RunDetail
-                environmentId={environmentId}
-                store={store}
-                runId={run.runId}
-                onReviewed={() => {
-                  setSignal((value) => value + 1);
-                  onReviewed();
-                }}
-              />
-            ) : null}
-          </SettingsRow>
-        );
-      })}
-    </SettingsSection>
-  );
-}
-
-function RunDetail({
-  environmentId,
-  store,
-  runId,
-  onReviewed,
-}: {
-  environmentId: EnvironmentId;
-  store: string;
-  runId: string;
-  onReviewed: () => void;
-}) {
-  const [detail, setDetail] = useState<DreamRunDetail | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"approve" | "reject" | "candidates" | null>(null);
-  const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set());
-  const [tab, setTab] = useState<"report" | "diff">("report");
-  const [signal, setSignal] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    rubatoMemory
-      .run(environmentId, store, runId)
-      .then((result) => {
-        if (!cancelled) setDetail(result);
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [environmentId, store, runId, signal]);
-
-  const review = async (decision: "approve" | "reject") => {
-    const ok = await confirm(
-      decision === "approve"
-        ? `Merge this dream's changes into ${store}?`
-        : "Discard this dream's changes? The sessions it read stay marked as read.",
-      decision === "reject",
-    );
-    if (!ok) return;
-    setBusy(decision);
-    try {
-      await rubatoMemory.review(environmentId, store, decision);
-      toastManager.add({
-        type: "success",
-        title: decision === "approve" ? "Changes merged" : "Changes discarded",
-      });
-      setSignal((value) => value + 1);
-      onReviewed();
-    } catch (cause) {
-      reportError(decision === "approve" ? "Could not approve" : "Could not reject", cause);
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const addChosen = async () => {
-    setBusy("candidates");
-    try {
-      const result = await rubatoMemory.addCandidates(environmentId, store, runId, [...chosen]);
-      toastManager.add({
-        type: "success",
-        title: result.added > 0 ? `Added ${count(result.added, "line")} to user.md` : "Already in user.md",
-      });
-      setChosen(new Set());
-      setSignal((value) => value + 1);
-      window.dispatchEvent(new CustomEvent("rubato-memory-self-changed"));
-    } catch (cause) {
-      reportError("Could not add to user.md", cause);
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  if (error) return <p className="pb-3 text-sm text-destructive-foreground">{error}</p>;
-  if (!detail)
-    return (
-      <div className="flex items-center gap-2 pb-3 text-sm text-muted-foreground">
-        <Spinner className="size-3.5" /> Loading
-      </div>
-    );
-
-  const addable = detail.candidates.filter((candidate) => !candidate.inUser);
-  return (
-    <div className="space-y-4 pt-1 pb-3">
-      {detail.pending ? (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-warning/40 bg-warning/8 px-3 py-2">
-          <span className="me-auto text-sm">This dream is waiting for review.</span>
-          <Button size="xs" disabled={busy !== null} onClick={() => void review("approve")}>
-            {busy === "approve" ? <Spinner className="size-3" /> : null}
-            Approve
-          </Button>
-          <Button
-            size="xs"
-            variant="destructive-outline"
-            disabled={busy !== null}
-            onClick={() => void review("reject")}
-          >
-            {busy === "reject" ? <Spinner className="size-3" /> : null}
-            Reject
-          </Button>
-        </div>
-      ) : null}
-
-      <div className="flex gap-1">
-        <Button size="xs" variant={tab === "report" ? "secondary" : "ghost"} onClick={() => setTab("report")}>
-          Report
-        </Button>
-        <Button size="xs" variant={tab === "diff" ? "secondary" : "ghost"} onClick={() => setTab("diff")}>
-          Changes
-        </Button>
-      </div>
-      {tab === "report" ? (
-        detail.report ? (
-          <div className="max-h-[32rem] overflow-y-auto rounded-lg border border-border/60 px-4 py-3">
-            <ChatMarkdown text={detail.report} cwd={undefined} />
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">This dream left no report.</p>
-        )
-      ) : (
-        <DiffView diff={detail.diff} note={detail.diffNote} />
-      )}
-
-      {detail.sessionList.length > 0 ? (
-        <details className="text-xs text-muted-foreground">
-          <summary className="cursor-pointer">{count(detail.sessionList.length, "session")} read</summary>
-          <ul className="mt-1 space-y-0.5 ps-4">
-            {detail.sessionList.map((session) => (
-              <li key={session.id} className="truncate">
-                {session.name ?? session.id} {session.cwd ? `· ${session.cwd}` : ""}
-                {session.messages !== undefined ? ` · ${count(session.messages, "message")}` : ""}
-              </li>
-            ))}
-          </ul>
-        </details>
-      ) : null}
-
-      {detail.candidates.length > 0 ? (
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <h4 className="me-auto text-sm font-medium">User candidates</h4>
-            <Button
-              size="xs"
-              variant="outline"
-              disabled={chosen.size === 0 || busy !== null}
-              onClick={() => void addChosen()}
-            >
-              {busy === "candidates" ? <Spinner className="size-3" /> : null}
-              Add {count(chosen.size, "line")} to user.md
-            </Button>
-          </div>
-          <ul className="space-y-1.5">
-            {detail.candidates.map((candidate) => (
-              <li key={candidate.text} className="flex items-start gap-2 text-sm">
-                <Checkbox
-                  className="mt-0.5"
-                  aria-label={candidate.text}
-                  disabled={candidate.inUser}
-                  checked={candidate.inUser || chosen.has(candidate.text)}
-                  onCheckedChange={(checked) =>
-                    setChosen((current) => {
-                      const next = new Set(current);
-                      if (checked) next.add(candidate.text);
-                      else next.delete(candidate.text);
-                      return next;
-                    })
-                  }
-                />
-                <span className={cn(candidate.inUser && "text-muted-foreground")}>
-                  {candidate.text}
-                  {candidate.inUser ? " (in user.md)" : ""}
-                </span>
-              </li>
-            ))}
-          </ul>
-          {addable.length === 0 ? (
-            <p className="text-xs text-muted-foreground">Every candidate is already in user.md.</p>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function DiffView({ diff, note }: { diff: string; note: string | null }) {
-  if (!diff)
-    return (
-      <p className="text-sm text-muted-foreground">
-        {note && note !== "truncated" ? `Could not read the changes: ${note}` : "No changes."}
-      </p>
-    );
-  return (
-    <div className="max-h-[32rem] overflow-auto rounded-lg border border-border/60 bg-muted/30">
-      <pre className="min-w-max px-3 py-2 font-mono text-xs leading-5">
-        {diff.split("\n").map((line, index) => (
-          <div
-            // Lines of a diff have no identity beyond their position.
-            key={index}
-            className={cn(
-              line.startsWith("diff --git") && "mt-2 font-semibold text-foreground first:mt-0",
-              line.startsWith("@@") && "text-info-foreground",
-              line.startsWith("+") && !line.startsWith("+++") && "bg-success/10 text-success-foreground",
-              line.startsWith("-") && !line.startsWith("---") && "bg-destructive/10 text-destructive-foreground",
-              (line.startsWith("+++") || line.startsWith("---") || line.startsWith("index ")) &&
-                "text-muted-foreground",
-            )}
-          >
-            {line || " "}
-          </div>
-        ))}
-        {note === "truncated" ? (
-          <div className="mt-2 text-muted-foreground">… Truncated.</div>
-        ) : null}
-      </pre>
-    </div>
-  );
-}
-
 function SelfFilesSection({ environmentId }: { environmentId: EnvironmentId }) {
   const [file, setFile] = useState<"user.md" | "soul.md">("user.md");
   const [saved, setSaved] = useState<{ "user.md": string; "soul.md": string } | null>(null);
@@ -1142,7 +1396,7 @@ function SelfFilesSection({ environmentId }: { environmentId: EnvironmentId }) {
     >
       <SettingsRow
         title={file === "user.md" ? "user.md — who you are" : "soul.md — how the agent works with you"}
-        description="Each save is committed to the self memory store."
+        description="Every session starts with these. Each save is committed to the self memory store."
       >
         {error ? <p className="pb-3 text-sm text-destructive-foreground">{error}</p> : null}
         {drafts === null && !error ? (
@@ -1399,7 +1653,7 @@ function ProjectStoresSection({
 
   if (projects.length === 0) return null;
   return (
-    <SettingsSection id="memory-projects" title="Projects">
+    <SettingsSection id="memory-projects" title="Which store each project writes to">
       {error ? <SettingsRow title="Could not read the projects' stores" description={error} /> : null}
       {projects.map((project) => {
         const dir = project.workspaceRoot;

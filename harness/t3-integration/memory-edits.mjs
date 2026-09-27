@@ -8,6 +8,8 @@ export const memoryOverlays = [
   'apps/web/src/state/rubatoHttp.ts',
   'apps/web/src/state/rubatoHttp.test.ts',
   'apps/web/src/components/settings/RubatoMemorySettings.tsx',
+  'apps/web/src/components/settings/RubatoMemorySettings.logic.ts',
+  'apps/web/src/components/settings/RubatoMemorySettings.logic.test.ts',
   'apps/web/src/routes/settings.memory.tsx',
 ];
 
