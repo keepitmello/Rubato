@@ -8,6 +8,7 @@ import { memoryEdits, memoryOverlays } from './memory-edits.mjs';
 import { cacheEdits, cacheOverlays } from './cache-edits.mjs';
 import { voiceEdits, voiceOverlays } from './voice-edits.mjs';
 import { permissionEdits, permissionOverlays } from './permission-edits.mjs';
+import { providerEdits, providerOverlays } from './provider-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -1806,6 +1807,11 @@ for (const [relative, changes] of [...Object.entries(voiceEdits), ...Object.entr
 // Settings > 기억 (memory-edits.mjs) registers after the rest, so its anchors see their edits.
 overlays.push(...memoryOverlays);
 for (const [relative, changes] of Object.entries(memoryEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Settings > Providers (provider-edits.mjs) shares server.ts and settings.tsx anchors with memory.
+overlays.push(...providerOverlays);
+for (const [relative, changes] of Object.entries(providerEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 // The context ring's cache (cache-edits.mjs) anchors on the Speed Index and memory edits above.
