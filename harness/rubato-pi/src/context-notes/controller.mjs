@@ -100,6 +100,8 @@ function estimate(messages, systemPrompt = "") {
   return Math.ceil(bytes / 3);
 }
 
+class HardLineRefusal extends Error {}
+
 export class ContextNotesController {
   constructor(pi, ctx, options = {}) {
     this.pi = pi;
@@ -269,7 +271,7 @@ export class ContextNotesController {
       throw new Error(`체크포인트 턴을 안전하게 실행할 여유도 남지 않았어요. 기록은 보존했으니 더 큰 한도로 같은 세션을 다시 열어 주세요.`);
     }
     if (usage.hard !== undefined && usage.tokens >= usage.hard && !this.checkpointRequested) {
-      throw new Error(`현재 문맥이 창 한도 ${usage.hard}토큰에 도달했어요. 기록은 보존했으며 요약은 실행하지 않았어요. 체크포인트가 있으면 새 창으로 넘어갑니다.`);
+      throw new HardLineRefusal(`현재 문맥이 창 한도 ${usage.hard}토큰에 도달했어요. 기록은 보존했으며 요약은 실행하지 않았어요. 이어서 체크포인트 전용 턴을 요청해요. 새 창으로 넘어가지 않으면 /new-context를 실행해 주세요.`);
     }
     this.paused = null;
   }
@@ -348,7 +350,9 @@ export class ContextNotesController {
     try { this.record("paused", { reason: message }); } catch { /* original failure wins */ }
     this.ctx.ui?.notify?.(message, "error");
     this.showStatus();
-    if (this.checkpointRequested && !fatal) return;
+    // A hard-line refusal ends the run as an error, not an abort: turn_end then asks for
+    // the checkpoint turn, the only way forward from past the line.
+    if ((this.checkpointRequested || error instanceof HardLineRefusal) && !fatal) return;
     this.checkpointRequested = false;
     this.ctx.abort?.("system");
   }
@@ -577,6 +581,18 @@ export class ContextNotesController {
       if (fresh) return this.roll(ctx, "manual");
     }
     return this.requestCheckpoint();
+  }
+
+  /**
+   * The session moved to another branch. A scheduled transition or checkpoint request
+   * belongs to the branch it was made on: left armed here, turn_end never finds its
+   * request, /new-context only reports it as already pending, and the target and hard
+   * lines never ask again.
+   */
+  leaveBranch() {
+    this.pending = null;
+    this.checkpointRequested = false;
+    this.checkpointRetried = false;
   }
 
   close() {
