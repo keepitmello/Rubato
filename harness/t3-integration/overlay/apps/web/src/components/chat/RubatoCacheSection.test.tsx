@@ -54,8 +54,9 @@ describe("the context ring's prompt cache", () => {
     expect(markup).toContain("Hit rate");
     expect(markup).toContain("92%");
     expect(markup).toMatch(/Warm · 2h [45]m left/);
-    expect(markup).toContain("4h · until");
-    expect(markup).toMatch(/aria-valuenow="4"/);
+    expect(markup).toContain(">4h<");
+    expect(markup).toContain("until ");
+    expect(markup).not.toContain("after your last message");
     expect(markup).not.toContain(">Off<");
     expect(markup).not.toContain("compacts automatically");
     expect(markup).toContain('data-close-delay="150"');
@@ -64,7 +65,7 @@ describe("the context ring's prompt cache", () => {
   it("says when a window already ended", () => {
     const from = Date.now() - 3 * HOUR;
     const markup = meterWith({ state: "cold", sessionId: "s1", warming: { mode: "idle", enabled: true, hours: 2, from, active: false } });
-    expect(markup).toContain("2h · ended");
+    expect(markup).toContain("ended ");
   });
 
   it("keeps a nearly full context out of red while the cache is warm", () => {
@@ -72,9 +73,9 @@ describe("the context ring's prompt cache", () => {
     expect(markup).not.toContain("var(--color-error)");
   });
 
-  it("locks the slider when warming is off in settings", () => {
+  it("locks the hours when warming is off in settings", () => {
     const markup = meterWith({ state: "warm", sessionId: "s1", expiresAt: Date.now() + HOUR, warming: { mode: "off", enabled: true, active: false } });
     expect(markup).toContain("Off in settings");
-    expect(markup).toMatch(/data-disabled=""/);
+    expect(markup).toMatch(/aria-label="One hour more"[^>]*disabled=""|disabled=""[^>]*aria-label="One hour more"/);
   });
 });
