@@ -921,15 +921,16 @@ test('the meter carries the cache and the warmer, and the switch turns off only 
   await until(() => cacheOf() !== undefined);
   const sessionId = cacheOf().sessionId;
   assert.ok(sessionId);
-  assert.deepEqual(cacheOf(), { state: 'warm', sessionId, hitPercent: 90, expiresAt: 1_790_000_000_000, warming: { mode: 'idle', enabled: true, active: false } });
+  assert.deepEqual(cacheOf(), { state: 'warm', sessionId, hitPercent: 90, expiresAt: 1_790_000_000_000, warming: { mode: 'idle', enabled: true, hours: 2, active: false } });
   const response = await handleCacheWarmingRequest(new Request('http://t3/rubato/cache-warming', {
     method: 'POST', body: JSON.stringify({ sessionId, enabled: false }) }));
   assert.equal((await response.json()).cache.warming.enabled, false);
   await until(() => cacheOf()?.warming.enabled === false);
   // A thread T3 has let go of is switched through a short-lived attachment.
   await bridge.stopSession('cache-thread');
-  const back = await bridge.setSessionCacheWarming(sessionId, true);
+  const back = await bridge.setSessionCacheWarming(sessionId, { enabled: true, hours: 8 });
   assert.equal(back.warming.enabled, true);
+  assert.equal(back.warming.hours, 8);
 });
 
 test('assistant usage becomes thread.token-usage.updated in the meter shape', async () => {

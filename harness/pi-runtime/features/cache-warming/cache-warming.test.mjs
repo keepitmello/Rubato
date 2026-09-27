@@ -128,7 +128,7 @@ test("a session's switch stops only its warmer, stays off across turns, and resu
   warmer.onAgentSettled();
 
   await advance(10 * MIN);
-  warmer.setSessionEnabled(false);
+  warmer.setSessionWarming({ enabled: false });
   assert.equal(warmer.status.state, "inactive");
   assert.deepEqual(branch.at(-1), { type: "custom", customType: "rubato.cache-warming", data: { enabled: false } });
   await advance(40 * MIN);
@@ -141,7 +141,7 @@ test("a session's switch stops only its warmer, stays off across turns, and resu
 
   // Back on: the first refresh counts from that turn's request (50m), not from now.
   await advance(20 * MIN);
-  warmer.setSessionEnabled(true);
+  warmer.setSessionWarming({ enabled: true });
   assert.equal(warmer.status.state, "scheduled");
   assert.equal(warmer.status.nextWarmAt, 90 * MIN);
   await advance(20 * MIN);
@@ -160,4 +160,42 @@ test("warming is on unless the person turned it off in settings", async () => {
   const { SettingsManager } = await import(pathToFileURL(join(runtime.codingAgentDir, "dist/core/settings-manager.js")).href);
   assert.equal(SettingsManager.inMemory({}).getCacheWarmingMode(), "idle");
   assert.equal(SettingsManager.inMemory({ cacheWarming: "off" }).getCacheWarmingMode(), "off");
+});
+
+test("a session picks how many hours after its latest input to keep warming, and keeps that choice", async (t) => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+  t.after(() => mock.timers.reset());
+  const { warmer, warms, branch } = harness("anthropic", 0);
+  warmer.start({ model: model("anthropic"), context: {}, options: {} }, () => true);
+  warmer.onAgentSettled();
+  assert.equal(warmer.status.until, 2 * 60 * MIN);
+
+  await advance(10 * MIN);
+  warmer.setSessionWarming({ hours: 4 });
+  assert.deepEqual(branch.at(-1).data, { enabled: true, hours: 4 });
+  assert.equal(warmer.status.until, 4 * 60 * MIN);
+  assert.equal(warmer.status.nextWarmAt, 40 * MIN, "the refresh still counts from the last touch");
+  for (let step = 0; step < 6; step += 1) await advance(40 * MIN);
+  assert.equal(warms.length, 5, "40 … 200 minutes; 240 is the horizon");
+  assert.equal(warmer.status.state, "inactive");
+
+  // A new runtime of the same session reads the hours back.
+  const inputAt = Date.now();
+  const again = harness("anthropic", inputAt);
+  again.branch.push(...branch.filter((entry) => entry.type === "custom"));
+  again.warmer.start({ model: model("anthropic"), context: {}, options: {} }, () => true);
+  assert.equal(again.warmer.status.until, inputAt + 4 * 60 * MIN);
+});
+
+test("a shorter window than the time already passed ends warming", async (t) => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+  t.after(() => mock.timers.reset());
+  const { warmer, warms } = harness("anthropic", 0);
+  warmer.start({ model: model("anthropic"), context: {}, options: {} }, () => true);
+  warmer.onAgentSettled();
+  await advance(70 * MIN);
+  assert.equal(warms.length, 1);
+  warmer.setSessionWarming({ hours: 1 });
+  assert.equal(warmer.status.state, "inactive");
+  assert.match(warmer.status.reason, /since the latest user input/);
 });
