@@ -1270,15 +1270,47 @@ const edits = {
       'replace',
     ],
   ],
+  // Spawn rows in the conversation follow the Agents panel's row grammar
+  // (RubatoAgentsPanel): task first, activity, then role · model · Speed · turn.
   'apps/web/src/components/chat/MessagesTimeline.tsx': [
     [
       '  formatSubagentModelLabel,\n  formatSubagentTokenCount,\n  isActiveSubagentStatus,',
-      '  formatSubagentModelLabel,\n  formatSpeedLabel,\n  isActiveSubagentStatus,',
+      '  isActiveSubagentStatus,\n  // Rubato: row labels come from RubatoAgentsPanel (agentTaskLabel, agentMetaParts).',
       'replace',
     ],
     [
-      '    agent.usage && agent.usage.totalTokens > 0\n      ? `${formatSubagentTokenCount(agent.usage.totalTokens)} tok`\n      : null,',
-      '    formatSpeedLabel(agent.usage?.speedIndex),',
+      'import { formatDuration } from "@t3tools/shared/orchestrationTiming";',
+      'import { formatDuration } from "@t3tools/shared/orchestrationTiming";\nimport { agentMetaParts, agentTaskLabel } from "../RubatoAgentsPanel";',
+      'replace',
+    ],
+    [
+      '    durationMs !== null && durationMs >= 0 ? formatDuration(durationMs) : null,\n    agent.usage && agent.usage.totalTokens > 0\n      ? `${formatSubagentTokenCount(agent.usage.totalTokens)} tok`\n      : null,\n',
+      '    durationMs !== null && durationMs >= 0 ? formatDuration(durationMs) : null,\n    // Rubato: Speed and turns sit on the meta line below.\n',
+      'replace',
+    ],
+    [
+      '  const role =\n    agent.role && agent.role.trim().toLowerCase() !== agent.title.trim().toLowerCase()\n      ? agent.role\n      : null;\n',
+      '  const task = agentTaskLabel(agent);\n  const metaLine = agentMetaParts(agent).join(" · ");\n',
+      'replace',
+    ],
+    [
+      '  const body = [activity?.trim() || null, formatSubagentModelLabel(agent.model, agent.effort)]\n    .filter(Boolean)\n    .join("\\n\\n");',
+      '  const body = activity?.trim() ?? "";',
+      'replace',
+    ],
+    [
+      '      aria-label={canExpand ? `${agent.title}, ${statusLabel}` : undefined}',
+      '      aria-label={canExpand ? `${task}, ${statusLabel}` : undefined}',
+      'replace',
+    ],
+    [
+      '            {agent.title}\n          </span>\n          {role ? (\n            <span className="max-w-28 shrink-0 truncate rounded-sm border border-border/60 px-1 font-mono text-[.65rem] text-muted-foreground">\n              {role}\n            </span>\n          ) : null}\n',
+      '            {task}\n          </span>\n',
+      'replace',
+    ],
+    [
+      '      {!open && firstLine ? (\n        <p className="truncate text-xs text-muted-foreground">{firstLine}</p>\n      ) : null}\n',
+      '      {!open && firstLine ? (\n        <p className="truncate text-xs text-muted-foreground">{firstLine}</p>\n      ) : null}\n      {metaLine ? (\n        <p className="truncate font-mono text-[.7rem] tabular-nums text-muted-foreground/70">\n          {metaLine}\n        </p>\n      ) : null}\n',
       'replace',
     ],
   ],
