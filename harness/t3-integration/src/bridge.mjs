@@ -398,6 +398,9 @@ export class RubatoPiBridge {
     const operation = context.queue.then(async () => {
       if (context.stopped) throw new Error('Attachment closed before send');
       await this.restoreSession(context);
+      // A message sent during a stop belongs to the next turn. Steered into the run
+      // being aborted, Pi never reads it and the drain below hands it back as a warning.
+      if (context.interrupting) await context.interrupting.catch(() => {});
       if (input.continuation === true) {
         const state = await context.client.command({ type: 'get_state' });
         if (!state.isStreaming) {
@@ -521,11 +524,22 @@ export class RubatoPiBridge {
     return operation;
   }
   async interruptTurn(threadId) {
-    const context = this.require(threadId); context.projection.interrupted = true;
-    await context.client.command({ type: 'abort' });
-    context.projection.settle(); context.session.status = 'ready'; this.stateEvent(context);
-    const state = await context.client.command({ type: 'get_state' });
-    await this.drainStrandedQueue(context, state);
+    const context = this.require(threadId);
+    const stopping = context.projection.turnId;
+    context.projection.interrupted = true;
+    const interrupting = (async () => {
+      await context.client.command({ type: 'abort' });
+      // Pi announces the settle before it answers the abort, so a wake can open the
+      // next turn in between. Close only the turn this stop was aimed at.
+      if (context.projection.turnId === stopping) context.projection.settle();
+      if (!context.projection.turnId) context.session.status = 'ready';
+      this.stateEvent(context);
+      const state = await context.client.command({ type: 'get_state' });
+      await this.drainStrandedQueue(context, state);
+    })();
+    context.interrupting = interrupting;
+    try { await interrupting; }
+    finally { if (context.interrupting === interrupting) context.interrupting = undefined; }
   }
   async respondToRequest(threadId, requestId, decision) {
     const context = this.require(threadId);
