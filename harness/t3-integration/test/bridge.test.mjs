@@ -931,6 +931,19 @@ test('the meter carries the cache and the warmer, and the switch turns off only 
   const back = await bridge.setSessionCacheWarming(sessionId, { enabled: true, hours: 8 });
   assert.equal(back.warming.enabled, true);
   assert.equal(back.warming.hours, 8);
+  const stopped = await bridge.setSessionCacheWarming(sessionId, { stop: true });
+  assert.equal(stopped.warming.stopped, true);
+});
+
+test('the sidebar lists the threads still warming, by the end time each one chose', async () => {
+  const bridge = Object.create(RubatoPiBridge.prototype);
+  const now = Date.now();
+  const snap = (warming) => ({ state: 'warm', sessionId: 's', warming: { mode: 'idle', enabled: true, active: true, hours: 2, ...warming } });
+  bridge.rememberWarmth('warming', snap({ from: now - 3_600_000, hours: 4 }));
+  bridge.rememberWarmth('ended', snap({ from: now - 3 * 3_600_000 }));
+  bridge.rememberWarmth('stopped', snap({ from: now, stopped: true }));
+  bridge.rememberWarmth('idle', snap({ from: now, active: false }));
+  assert.deepEqual(bridge.warmingThreads(), { warming: { sessionId: 's', hours: 4, from: now - 3_600_000, until: now + 3 * 3_600_000 } });
 });
 
 test('assistant usage becomes thread.token-usage.updated in the meter shape', async () => {

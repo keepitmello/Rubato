@@ -4,6 +4,8 @@
 // warmer switch in the ring's popover where the auto-compaction note used to be. The
 // switch posts to /rubato/cache-warming, which the bridge answers (bridge.mjs).
 export const cacheOverlays = [
+  'apps/web/src/components/sidebar/RubatoWarmArc.tsx',
+  'apps/web/src/components/sidebar/RubatoWarmArc.test.tsx',
   'apps/server/src/RubatoCacheWarming.ts',
   'apps/web/src/state/rubatoCacheWarming.ts',
   'apps/web/src/components/chat/RubatoCacheSection.tsx',
@@ -26,6 +28,7 @@ export const cacheEdits = {
         '    enabled: Schema.Boolean,',
         '    hours: Schema.optional(NonNegativeInt),',
         '    from: Schema.optional(NonNegativeInt),',
+        '    stopped: Schema.optional(Schema.Boolean),',
         '    active: Schema.Boolean,',
         '    until: Schema.optional(NonNegativeInt),',
         '  }),',
@@ -127,6 +130,20 @@ export const cacheEdits = {
     [
       '                    reserveContextWindowMeter={reserveContextWindowMeter}\n',
       '                    reserveContextWindowMeter={reserveContextWindowMeter}\n                    cacheEnvironmentId={environmentId}\n',
+      'replace',
+    ],
+  ],
+  // The sidebar row shows an orange arc while its thread is kept warm: what is left of the
+  // hours it chose. Clicking it stops the window. It sits with the row's other signs, apart
+  // from the status dot, which already carries Working / Approval / Completed.
+  'apps/web/src/components/LegacySidebar.tsx': [
+    [
+      '          <ThreadWorktreeIndicator thread={thread} />\n',
+      '          <RubatoWarmArc environmentId={thread.environmentId} threadId={thread.id} />\n',
+    ],
+    [
+      '} from "./ThreadStatusIndicators";\n',
+      '} from "./ThreadStatusIndicators";\nimport { RubatoWarmArc } from "./sidebar/RubatoWarmArc";\n',
       'replace',
     ],
   ],

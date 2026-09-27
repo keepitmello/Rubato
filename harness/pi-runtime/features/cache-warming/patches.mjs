@@ -87,7 +87,8 @@ export function lastResponseCompacted(entries) {
 }
 /**
  * A session's own warmer choice, persisted as a custom entry (never sent to the model):
- * whether it warms and for how many hours after the latest user input.
+ * whether it warms, for how many hours after the latest user input, and stoppedFor, the
+ * input whose window the person stopped by hand (the next input warms again).
  */
 export const SESSION_WARMING_ENTRY = "rubato.cache-warming";
 export function validWarmingHours(hours) {
@@ -97,8 +98,12 @@ export function sessionWarming(entries) {
     for (let index = entries.length - 1; index >= 0; index--) {
         const entry = entries[index];
         if (entry?.type === "custom" && entry.customType === SESSION_WARMING_ENTRY) {
-            const hours = entry.data?.hours;
-            return { enabled: entry.data?.enabled !== false, ...(validWarmingHours(hours) ? { hours } : {}) };
+            const { hours, stoppedFor } = entry.data ?? {};
+            return {
+                enabled: entry.data?.enabled !== false,
+                ...(validWarmingHours(hours) ? { hours } : {}),
+                ...(Number.isFinite(stoppedFor) ? { stoppedFor } : {}),
+            };
         }
     }
     return { enabled: true };
@@ -303,24 +308,32 @@ export function lastUserInputAt(entries) {
         return this.sessionPref;
     }
     sessionDisabled() {
-        return !this.sessionPreference().enabled;
+        return !this.sessionPreference().enabled || this.sessionStopped();
+    }
+    /** Stopped by hand for the current input's window; a newer input warms again. */
+    sessionStopped() {
+        const { stoppedFor } = this.sessionPreference();
+        return stoppedFor !== undefined && stoppedFor === (lastUserInputAt(this.sessionManager.getBranch()) ?? 0);
     }
     horizonMs() {
         return (this.sessionPreference().hours ?? RUBATO_WARMING_HORIZON_MS / 3_600_000) * 3_600_000;
     }
     /**
-     * Change this session's warmer: on/off and hours after the latest user input. The
+     * Change this session's warmer: on/off, hours after the latest user input, or stop
+     * the current window (stop, until the next input). The
      * choice persists in the session, so later turns and a new runtime keep it. A warmer
      * that is on restarts from the latest request, counting from when the cache was last
      * touched, so a longer window picks up again and a shorter one ends where it should.
      */
-    setSessionWarming({ enabled, hours } = {}) {
+    setSessionWarming({ enabled, hours, stop } = {}) {
         const current = this.sessionPreference();
+        // Any other change resumes a window stopped by hand; stop ends the current one.
         const next = {
             enabled: typeof enabled === "boolean" ? enabled : current.enabled,
             ...(validWarmingHours(hours) ? { hours } : current.hours === undefined ? {} : { hours: current.hours }),
+            ...(stop === true ? { stoppedFor: lastUserInputAt(this.sessionManager.getBranch()) ?? 0 } : {}),
         };
-        if (next.enabled === current.enabled && next.hours === current.hours)
+        if (next.enabled === current.enabled && next.hours === current.hours && next.stoppedFor === current.stoppedFor)
             return;
         this.sessionManager.appendCustomEntry(SESSION_WARMING_ENTRY, next);
         this.sessionPref = next;
@@ -395,16 +408,18 @@ export function patchRpcCacheWarming(source) {
                 if (command.type === "set_session_cache_warming") {
                     if (command.enabled !== undefined && typeof command.enabled !== "boolean")
                         return error(id, command.type, "enabled must be a boolean");
+                    if (command.stop !== undefined && command.stop !== true)
+                        return error(id, command.type, "stop must be true");
                     if (command.hours !== undefined && !validWarmingHours(command.hours))
                         return error(id, command.type, "hours must be a whole number from 1 to 24");
                     if (!warmer)
                         return error(id, command.type, "This session has no cache warmer");
-                    warmer.setSessionWarming({ enabled: command.enabled, hours: command.hours });
+                    warmer.setSessionWarming({ enabled: command.enabled, hours: command.hours, stop: command.stop });
                 }
                 return success(id, command.type, {
                     mode: session.settingsManager.getCacheWarmingMode(),
                     sessionEnabled: warmer ? !warmer.sessionDisabled() : false,
-                    ...(warmer ? { sessionHours: warmer.horizonMs() / 3_600_000 } : {}),
+                    ...(warmer ? { sessionHours: warmer.horizonMs() / 3_600_000, sessionStopped: warmer.sessionStopped() } : {}),
                     lastInputAt: lastUserInputAt(session.sessionManager.getBranch()) ?? null,
                     status: session.cacheWarmingStatus ?? null,
                     cache: cacheSnapshot(session.sessionManager.getBranch(), session.model, Date.now(), session.cacheWarmingStatus),
