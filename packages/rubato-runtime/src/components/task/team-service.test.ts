@@ -80,9 +80,7 @@ function extensionOrderHarness(beforeStart?: (spec: ManagedStartSpec) => Promise
   const cwd = mkdtempSync(join(tmpdir(), "rubato-runtime-team-service-extensions-"))
   tempRoots.push(cwd)
   mkdirSync(join(cwd, ".rubato"), { recursive: true })
-  writeFileSync(join(cwd, ".rubato", "rubato.json"), `${JSON.stringify({
-    categories: { quick: { kind: "owner", model: TEST_MODEL } },
-  })}\n`)
+  writeFileSync(join(cwd, ".rubato", "rubato.json"), "{}\n")
   const started: ManagedStartSpec[] = []
   const runner: ManagedRunner = {
     start: async (spec) => {

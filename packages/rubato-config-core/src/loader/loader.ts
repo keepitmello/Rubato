@@ -37,7 +37,6 @@ function parseJsoncSafe<T>(content: string): JsoncParseResult<T> {
 
 const DEFAULT_RAW_CONFIG: Record<string, unknown> = {
   agents: {},
-  categories: {},
   codegraph: RubatoCodegraphSettingsSchema.parse({}),
   task: resolveRubatoTaskSettings({}),
   teams: {},

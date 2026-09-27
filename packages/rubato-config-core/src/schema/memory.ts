@@ -1,13 +1,15 @@
 import * as z from "zod"
 
+import { REASONING_LEVELS, type ReasoningLevel } from "./reasoning-vocabulary"
+
 // ---------------------------------------------------------------------------
 // Legacy keys
 // ---------------------------------------------------------------------------
 
 // Keys earlier memory runtimes read (the 25-turn reflection, the per-turn save nudge, the
 // system/ projection and its token warning, soul notices, per-agent overrides, the in-session
-// dream's triggers). Existing configs still carry them, so they are dropped on load instead of
-// failing strict parsing; anything else unknown still fails.
+// dream's triggers and its category name). Existing configs still carry them, so they are dropped
+// on load instead of failing strict parsing; anything else unknown still fails.
 const LEGACY_MEMORY_KEYS = [
   "projection",
   "reflection",
@@ -21,6 +23,7 @@ const LEGACY_MEMORY_KEYS = [
 ] as const
 
 const LEGACY_DREAM_KEYS = [
+  "category",
   "enabled",
   "idle_minutes",
   "shutdown_launch",
@@ -55,8 +58,23 @@ export const RubatoMemorySearchLayerSchema = z.object({
 // Dream
 // ---------------------------------------------------------------------------
 
-/** The user's model ladder the dream runs on when `dream.category` is unset (DeepSeek first). */
-export const DEFAULT_DREAM_CATEGORY = "grok"
+// One rung of the dream's model ladder: "<provider>/<id>", optionally with its reasoning level.
+export const RubatoMemoryDreamModelSchema = z.union([
+  z.string().min(1),
+  z.object({
+    model: z.string().min(1),
+    reasoning: z.enum(REASONING_LEVELS).optional(),
+  }).strict(),
+])
+
+/** The ladder the dream runs on when `dream.models` is unset: DeepSeek first, then Grok, then Haiku. */
+export const DEFAULT_DREAM_MODELS: readonly { readonly model: string; readonly reasoning: ReasoningLevel }[] = Object.freeze([
+  { model: "b-ai/deepseek-v4.1-flash", reasoning: "medium" },
+  { model: "xai/grok-4.7", reasoning: "medium" },
+  { model: "anthropic/claude-haiku-4-5", reasoning: "off" },
+])
+
+const defaultDreamModels = (): RubatoMemoryDreamModel[] => DEFAULT_DREAM_MODELS.map((rung) => ({ ...rung }))
 
 export const RubatoMemoryDreamStoreSchema = z.object({
   enabled: z.boolean().default(false),
@@ -65,8 +83,8 @@ export const RubatoMemoryDreamStoreSchema = z.object({
 export const RubatoMemoryDreamSchema = z.preprocess(
   dropLegacyDreamKeys,
   z.object({
-    // Category ladder the dream child runs on.
-    category: z.string().min(1).default(DEFAULT_DREAM_CATEGORY),
+    // Models the dream child runs on, in fallback order.
+    models: z.array(RubatoMemoryDreamModelSchema).default(defaultDreamModels),
     // "review": a dream's edits wait on a branch until the user approves them. "auto": they merge.
     publish: z.enum(["review", "auto"]).default("review"),
     // Stores the daily dream maintains, keyed by memory store name (memory.agent). Off unless listed.
@@ -78,7 +96,7 @@ export const RubatoMemoryDreamSchema = z.preprocess(
 export const RubatoMemoryDreamLayerSchema = z.preprocess(
   dropLegacyDreamKeys,
   z.object({
-    category: z.string().min(1).optional(),
+    models: z.array(RubatoMemoryDreamModelSchema).optional(),
     publish: z.enum(["review", "auto"]).optional(),
     stores: z.record(z.string(), RubatoMemoryDreamStoreSchema.partial()).optional(),
     min_hours_between: z.number().int().min(1).optional(),
@@ -99,7 +117,7 @@ export const RubatoMemorySettingsSchema = z.preprocess(
     // extension-declared MCP server surfaced through the tool_search catalog.
     tool_exposure: z.enum(["direct", "search"]).default("direct"),
     dream: RubatoMemoryDreamSchema.default({
-      category: DEFAULT_DREAM_CATEGORY,
+      models: defaultDreamModels(),
       publish: "review",
       stores: {},
       min_hours_between: 20,
@@ -123,6 +141,7 @@ export const RubatoMemorySettingsLayerSchema = z.preprocess(
 // Inferred types
 // ---------------------------------------------------------------------------
 
+export type RubatoMemoryDreamModel = z.infer<typeof RubatoMemoryDreamModelSchema>
 export type RubatoMemorySearch = z.infer<typeof RubatoMemorySearchSchema>
 export type RubatoMemoryDream = z.infer<typeof RubatoMemoryDreamSchema>
 export type RubatoMemorySettings = z.infer<typeof RubatoMemorySettingsSchema>

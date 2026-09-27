@@ -14,7 +14,6 @@ export type ModelResolutionInput = {
 
 export type ModelSource =
 	| "override"
-	| "category-default"
 	| "provider-fallback"
 	| "system-default"
 
@@ -28,7 +27,6 @@ export type ExtendedModelResolutionInput = {
 	uiSelectedModel?: string
 	userModel?: string
 	userFallbackModels?: string[]
-	categoryDefaultModel?: string
 	fallbackChain?: FallbackEntry[]
 	availableModels: Set<string>
 	systemDefaultModel?: string
@@ -47,9 +45,9 @@ export function resolveModelWithFallback(
 	input: ExtendedModelResolutionInput,
 	connectedProvidersAdapter: ConnectedProvidersAdapter = connectedProvidersCache,
 ): ModelResolutionResult | undefined {
-	const { uiSelectedModel, userModel, userFallbackModels, categoryDefaultModel, fallbackChain, availableModels, systemDefaultModel } = input
+	const { uiSelectedModel, userModel, userFallbackModels, fallbackChain, availableModels, systemDefaultModel } = input
 	const resolved = resolveModelPipeline({
-		intent: { uiSelectedModel, userModel, userFallbackModels, categoryDefaultModel },
+		intent: { uiSelectedModel, userModel, userFallbackModels },
 		constraints: { availableModels },
 		policy: { fallbackChain, systemDefaultModel },
 	}, connectedProvidersAdapter)

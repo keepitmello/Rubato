@@ -203,7 +203,7 @@ async function runLocked(options: RunDreamOptions, now: () => number): Promise<D
     return finish("failed", { reason: "a previous dream is waiting for review; approve or reject it first" })
   }
   if (picked.length === 0 && options.force !== true) return finish("noop", { reason: "no new sessions" })
-  if (options.ladder.length === 0) return finish("failed", { reason: "no model configured for the dream category" })
+  if (options.ladder.length === 0) return finish("failed", { reason: "no model configured in memory.dream.models" })
 
   const exec = createNodeGitExec()
   const git: Git = async (cwd, argv) => exec.run(argv, { cwd, timeoutMs: 60_000, env: options.env })

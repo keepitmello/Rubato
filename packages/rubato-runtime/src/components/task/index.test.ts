@@ -218,8 +218,7 @@ describe("rubato-runtime task component wiring", () => {
     expect(registered).toContain("team_send")
     // the /tasks and /task-kill commands registered
     expect(pi.commands.map((entry) => entry.name).sort()).toEqual([...TASK_COMMANDS].sort())
-    // Peer mail is a plain injected turn; completion, member liveness, and the dead-chain category
-    // warning use structured renderers.
+    // Peer mail is a plain injected turn; completion and member liveness use structured renderers.
     expect(pi.messageRenderers.map((entry) => entry.customType)).toEqual([
       "rubato.task.completion",
       "rubato.task.team-member-liveness",

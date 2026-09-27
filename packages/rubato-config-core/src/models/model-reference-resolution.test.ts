@@ -4,7 +4,7 @@ import { RubatoConfigSchema } from "../schema"
 import { resolveModelReferences } from "./model-reference-resolution"
 
 describe("resolveModelReferences", () => {
-  test("#given catalog references in agent and category model chains #when resolved #then ids and unset tuning come from the catalog without mutating the view", () => {
+  test("#given catalog references in agent model chains #when resolved #then ids and unset tuning come from the catalog without mutating the view", () => {
     // given
     const view = RubatoConfigSchema.parse({
       models: {
@@ -12,9 +12,6 @@ describe("resolveModelReferences", () => {
       },
       agents: {
         oracle: { model: "sol", models: ["sol"] },
-      },
-      categories: {
-        deep: { model: "sol", fallback_models: ["sol"] },
       },
     })
     const originalView = structuredClone(view)
@@ -28,11 +25,6 @@ describe("resolveModelReferences", () => {
       model: "openai/gpt-5.6-sol",
       reasoning: "xhigh",
       models: [{ model: "openai/gpt-5.6-sol", reasoning: "xhigh" }],
-    })
-    expect(result.view.categories?.deep).toEqual({
-      model: "openai/gpt-5.6-sol",
-      reasoning: "xhigh",
-      fallback_models: [{ model: "openai/gpt-5.6-sol", reasoning: "xhigh" }],
     })
     expect(view).toEqual(originalView)
   })
@@ -51,11 +43,6 @@ describe("resolveModelReferences", () => {
           models: [{ model: "sol", variant: "medium", reasoningEffort: "high" }],
         },
       },
-      categories: {
-        deep: {
-          fallback_models: [{ model: "sol", variant: "medium", reasoningEffort: "high" }],
-        },
-      },
     })
 
     // when
@@ -65,9 +52,6 @@ describe("resolveModelReferences", () => {
     expect(result.view.agents?.oracle?.model).toBe("openai/gpt-5.6-sol")
     expect(result.view.agents?.oracle?.reasoning).toBe("minimal")
     expect(result.view.agents?.oracle?.models).toEqual([
-      { model: "openai/gpt-5.6-sol", reasoning: "high" },
-    ])
-    expect(result.view.categories?.deep?.fallback_models).toEqual([
       { model: "openai/gpt-5.6-sol", reasoning: "high" },
     ])
   })
@@ -81,9 +65,6 @@ describe("resolveModelReferences", () => {
       agents: {
         oracle: { model: "anthropic/claude", models: ["openai/gpt-5"] },
       },
-      categories: {
-        deep: { model: "anthropic/claude", fallback_models: ["openai/gpt-5"] },
-      },
     })
 
     // when
@@ -93,8 +74,6 @@ describe("resolveModelReferences", () => {
     expect(result.diagnostics).toEqual([])
     expect(result.view.agents?.oracle?.model).toBe("anthropic/claude")
     expect(result.view.agents?.oracle?.models).toEqual(["openai/gpt-5"])
-    expect(result.view.categories?.deep?.model).toBe("anthropic/claude")
-    expect(result.view.categories?.deep?.fallback_models).toEqual(["openai/gpt-5"])
   })
 
   test("#given a self-referential catalog entry #when resolved #then a cycle diagnostic is returned without hanging", () => {

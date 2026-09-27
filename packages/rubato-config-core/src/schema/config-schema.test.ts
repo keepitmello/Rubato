@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import { RubatoConfigSchema } from "../index"
+import { RubatoConfigLayerSchema, RubatoConfigSchema } from "../index"
 
 describe("rubato config schema", () => {
-  test("#given a full rubato config #when parsed #then task defaults and deprecated category keys normalize", () => {
+  test("#given a full rubato config still carrying a categories block #when parsed #then task defaults apply and the block drops", () => {
     // given
     const config = {
       $schema: "https://example.com/rubato.schema.json",
@@ -63,12 +63,37 @@ describe("rubato config schema", () => {
     expect(result.data.task?.default_execution_mode).toBe("in-process")
     expect(result.data.task?.default_concurrency).toBe(5)
     expect(result.data.task?.residency_max_children).toBe(8)
-    expect(result.data.categories?.deep?.max_tokens).toBe(12000)
-    expect(result.data.categories?.deep?.reasoning).toBe("high")
-    expect(result.data.categories?.deep?.provider_options).toEqual({
-      thinking: { type: "enabled", budgetTokens: 2048 },
-      textVerbosity: "medium",
+    expect("categories" in result.data).toBe(false)
+  })
+
+  test("#given categories in every layer, a dream category and task warnings #when parsed #then they drop and the rest stays strict", () => {
+    // given: the shape configs carried while task categories existed
+    const legacy = {
+      categories: { grok: { models: ["xai/grok-4.7"] } },
+      task: { warnings: { unavailable_categories: false }, max_depth: 2 },
+      memory: { dream: { category: "grok", publish: "auto" } },
+      "[senpi]": { categories: { deep: { model: "xai/grok-4.7" } }, task: { warnings: { unavailable_categories: true } } },
+      "[codex]": { categories: {} },
+      profiles: { work: { categories: { quick: {} }, "[senpi]": { categories: {} } } },
+    }
+
+    // when
+    const full = RubatoConfigSchema.safeParse(legacy)
+    const layer = RubatoConfigLayerSchema.safeParse(legacy)
+
+    // then
+    expect(full.success).toBe(true)
+    expect(layer.success).toBe(true)
+    if (!full.success || !layer.success) return
+    expect(layer.data).toEqual({
+      task: { max_depth: 2 },
+      memory: { dream: { publish: "auto" } },
+      "[senpi]": { task: {} },
+      "[codex]": {},
+      profiles: { work: { "[senpi]": {} } },
     })
+    expect(full.data.memory?.dream.publish).toBe("auto")
+    expect(RubatoConfigSchema.safeParse({ ...legacy, "[senpi]": { bogus: 1 } }).success).toBe(false)
   })
 
   test("#given an empty codegraph config #when parsed #then daemon defaults on", () => {

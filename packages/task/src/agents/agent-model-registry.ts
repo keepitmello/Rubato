@@ -1,4 +1,13 @@
-import type { SenpiModelPort, SenpiModelRegistryPort } from "../category"
+/** A model as the host registry hands it over: only provider and id are read. */
+export type SenpiModelPort = {
+  readonly provider: string
+  readonly id: string
+}
+
+export type SenpiModelRegistryPort<TModel extends SenpiModelPort> = {
+  readonly getAvailable: () => readonly TModel[] | unknown
+  readonly find: (provider: string, modelId: string) => TModel | unknown
+}
 
 export type ParsedAgentModel = {
   readonly provider: string
@@ -30,7 +39,7 @@ export function parseAvailableAgentModels(models: unknown): readonly string[] | 
     .sort()
 }
 
-// Mirrors category/resolver.ts registry parsing so agent resolution preserves the same safe boundary.
+// Registry entries are untrusted host objects: secret-looking fields and accessor properties are refused.
 function parseRegistryModel(
   model: unknown,
   expected?: ParsedAgentModel,

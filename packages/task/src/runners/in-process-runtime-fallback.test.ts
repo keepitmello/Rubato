@@ -6,7 +6,6 @@ import { join } from "node:path"
 
 import type { CreateAgentSessionOptions } from "@code-yeongyu/senpi"
 
-import { resolveCategory } from "../category"
 import { InProcessRunner } from "./in-process"
 import type { ChildSession, ChildSpec } from "./in-process"
 

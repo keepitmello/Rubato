@@ -1,4 +1,3 @@
-import type { SenpiModelPort, SenpiModelRegistryPort } from "../category"
 import { buildRuntimeModelChain } from "../model-chain"
 import type { ResolvedModelRecord } from "../state"
 import { agentModelCandidates, type AgentModelCandidate } from "./agent-model-entry"
@@ -6,6 +5,8 @@ import {
   findExactAgentModel,
   parseAvailableAgentModels,
   type ParsedAgentModel,
+  type SenpiModelPort,
+  type SenpiModelRegistryPort,
 } from "./agent-model-registry"
 import type { AgentDefinition } from "./types"
 

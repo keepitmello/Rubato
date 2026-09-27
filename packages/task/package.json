@@ -9,10 +9,6 @@
       "types": "./src/index.ts",
       "import": "./src/index.ts"
     },
-    "./category-resolver": {
-      "types": "./src/category/resolver.ts",
-      "import": "./src/category/resolver.ts"
-    },
     "./renderer-text": {
       "types": "./src/renderer-text.ts",
       "import": "./src/renderer-text.ts"

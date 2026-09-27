@@ -7,7 +7,7 @@ import type { TaskManager } from "../../manager"
 import { buildTaskExecute } from "./execute"
 import type { TaskToolContext, TaskToolDeps } from "./types"
 
-const RUBATO_CONFIG: RubatoConfig = { categories: {}, agents: {} }
+const RUBATO_CONFIG: RubatoConfig = { agents: {} }
 
 function ctxFor(sessionId: string): TaskToolContext {
   return { cwd: "/work/project", sessionManager: { getSessionId: () => sessionId } }

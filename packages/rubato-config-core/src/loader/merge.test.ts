@@ -18,8 +18,8 @@ describe("mergeRubatoConfigRecords", () => {
   test("#given nested unsafe keys under newly assigned objects #when merging #then unsafe keys are removed and prototypes stay clean", () => {
     // given
     const parsed = parseJsoncSafe<Record<string, unknown>>(`{
-      "categories": {
-        "quick": {
+      "agents": {
+        "reviewer": {
           "tools": {
             "bash": true,
             "__proto__": { "polluted": true },
@@ -33,9 +33,9 @@ describe("mergeRubatoConfigRecords", () => {
 
     // when
     const merged = mergeRubatoConfigRecords({}, parsed.data)
-    const categories = toRecord(merged.categories, "categories")
-    const quick = toRecord(categories.quick, "quick")
-    const tools = toRecord(quick.tools, "tools")
+    const agents = toRecord(merged.agents, "agents")
+    const reviewer = toRecord(agents.reviewer, "reviewer")
+    const tools = toRecord(reviewer.tools, "tools")
 
     // then
     expect(tools.bash).toBe(true)

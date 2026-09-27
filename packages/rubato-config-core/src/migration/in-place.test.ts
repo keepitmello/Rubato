@@ -7,7 +7,7 @@ describe("runMigration replace-target mode", () => {
   test("#given a crash after journaling an in-place rewrite #when migration resumes #then deletions, additions, and the marker are replayed exactly", () => {
     // given
     const fileSystem = new MemoryMigrationFileSystem()
-    fileSystem.files.set(migrationFixture.targetPath, JSON.stringify({ categories: { deep: { variant: "high" } } }))
+    fileSystem.files.set(migrationFixture.targetPath, JSON.stringify({ task: { default_concurrency: 3 } }))
     const options = {
       env: migrationFixture.env,
       fileSystem,
@@ -15,7 +15,7 @@ describe("runMigration replace-target mode", () => {
       mode: "replace-target" as const,
       sources: [],
       targetPath: migrationFixture.targetPath,
-      transform: () => ({ categories: { deep: { reasoning: "high" } } }),
+      transform: () => ({ task: { default_concurrency: 4 } }),
     }
 
     // when
@@ -30,7 +30,7 @@ describe("runMigration replace-target mode", () => {
     // then
     expect(resumed.journalResumed).toBe(true)
     expect(parseFile(fileSystem, migrationFixture.targetPath)).toEqual({
-      categories: { deep: { reasoning: "high" } },
+      task: { default_concurrency: 4 },
       _migrations: ["replace-target-test"],
     })
   })

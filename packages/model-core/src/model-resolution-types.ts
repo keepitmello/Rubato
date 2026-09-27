@@ -17,7 +17,6 @@ export type ModelResolutionRequest = {
   intent?: {
     uiSelectedModel?: string
     userModel?: string
-    categoryDefaultModel?: string
   }
   constraints: {
     availableModels: Set<string>
@@ -30,7 +29,6 @@ export type ModelResolutionRequest = {
 
 export type ModelResolutionProvenance =
   | "override"
-  | "category-default"
   | "provider-fallback"
   | "system-default"
 

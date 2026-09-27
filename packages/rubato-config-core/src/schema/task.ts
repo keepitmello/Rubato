@@ -18,11 +18,15 @@ export const RubatoTaskTeamSettingsSchema = z.object({
   max_wall_clock_minutes: z.number().int().positive().default(120),
 }).strict()
 
-export const RubatoTaskWarningsSchema = z.object({
-  unavailable_categories: z.boolean().default(true),
-}).strict()
+// `warnings.unavailable_categories` toggled a notice about task categories, which no longer exist.
+// Existing configs still carry it, so `warnings` is dropped on load instead of failing strict parsing.
+function dropLegacyWarnings(value: unknown): unknown {
+  if (value === null || typeof value !== "object" || Array.isArray(value) || !("warnings" in value)) return value
+  const { warnings: _warnings, ...rest } = value as Record<string, unknown>
+  return rest
+}
 
-export const RubatoTaskSettingsSchema = z.object({
+export const RubatoTaskSettingsSchema = z.preprocess(dropLegacyWarnings, z.object({
   default_execution_mode: z.enum(["in-process", "process"]).default("in-process"),
   default_concurrency: z.number().int().nonnegative().default(5),
   global_concurrency: z.number().int().nonnegative().default(8),
@@ -34,14 +38,13 @@ export const RubatoTaskSettingsSchema = z.object({
   state_dir: z.string().optional(),
   reattach_on_reconcile: z.boolean().optional(),
   resume_children: z.boolean().default(true),
-  warnings: RubatoTaskWarningsSchema.default({ unavailable_categories: true }),
   wait: RubatoTaskWaitSchema.default({ min_ms: 5000, default_ms: 60000, max_ms: 600000 }),
   team: RubatoTaskTeamSettingsSchema.default({
     max_members: 8,
     max_parallel_members: 4,
     max_wall_clock_minutes: 120,
   }),
-}).strict()
+}).strict())
 
 export const RubatoTaskWaitLayerSchema = z.object({
   min_ms: z.number().int().positive().optional(),
@@ -55,11 +58,7 @@ export const RubatoTaskTeamSettingsLayerSchema = z.object({
   max_wall_clock_minutes: z.number().int().positive().optional(),
 }).strict()
 
-export const RubatoTaskWarningsLayerSchema = z.object({
-  unavailable_categories: z.boolean().optional(),
-}).strict()
-
-export const RubatoTaskSettingsLayerSchema = z.object({
+export const RubatoTaskSettingsLayerSchema = z.preprocess(dropLegacyWarnings, z.object({
   default_execution_mode: z.enum(["in-process", "process"]).optional(),
   default_concurrency: z.number().int().nonnegative().optional(),
   global_concurrency: z.number().int().nonnegative().optional(),
@@ -71,10 +70,9 @@ export const RubatoTaskSettingsLayerSchema = z.object({
   state_dir: z.string().optional(),
   reattach_on_reconcile: z.boolean().optional(),
   resume_children: z.boolean().optional(),
-  warnings: RubatoTaskWarningsLayerSchema.optional(),
   wait: RubatoTaskWaitLayerSchema.optional(),
   team: RubatoTaskTeamSettingsLayerSchema.optional(),
-}).strict()
+}).strict())
 
 export type RubatoTaskSettings = z.infer<typeof RubatoTaskSettingsSchema>
 export type RubatoTaskSettingsLayer = z.infer<typeof RubatoTaskSettingsLayerSchema>

@@ -15,7 +15,7 @@ import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
-import { RubatoMemorySettingsSchema } from "@rubato/config-core"
+import { migrateUserConfigDreamModels, RubatoMemorySettingsSchema } from "@rubato/config-core"
 import { buildIdentityPaths, readStoreRecord, resolveMemoryRoot } from "@rubato/memory-core"
 
 import { loadSenpiRubatoConfig } from "../components/config-resolution"
@@ -28,6 +28,7 @@ import {
   runDream,
   sessionSinceMs,
   type DreamRunRecord,
+  type DreamRung,
   type DreamState,
 } from "./runner"
 import { countStoreFiles, createStoreNameResolver, listExistingStores, scanStoreSessions, type SessionFile } from "./stores"
@@ -61,10 +62,17 @@ async function main(argv: readonly string[]): Promise<number> {
   const env = process.env
   const now = Date.now()
 
+  // Moves the old category ladder into memory.dream.models and drops the category keys, once,
+  // with a backup. Sessions start `dream --due`, so every install passes here. A failure only
+  // means the old keys stay; loading already ignores them.
+  try {
+    migrateUserConfigDreamModels({ env })
+  } catch {}
+
   const userConfig = loadSenpiRubatoConfig({ cwd: homedir(), env }).config
   const memory = userConfig.memory ?? RubatoMemorySettingsSchema.parse({})
   const dream = memory.dream
-  const category = dream.category
+  const models = dreamLadder(dream.models)
   const memoryRoot = resolveMemoryRoot(env, homedir())
   const pathsOf = (store: string) => buildIdentityPaths(memoryRoot, store)
 
@@ -120,8 +128,8 @@ async function main(argv: readonly string[]): Promise<number> {
   }
 
   if (!due && named.length === 0) {
-    if (json) process.stdout.write(`${JSON.stringify({ category, stores: statuses }, null, 2)}\n`)
-    else printStatuses(statuses, category)
+    if (json) process.stdout.write(`${JSON.stringify({ models, stores: statuses }, null, 2)}\n`)
+    else printStatuses(statuses, models)
     return 0
   }
 
@@ -136,7 +144,6 @@ async function main(argv: readonly string[]): Promise<number> {
     if (json) process.stdout.write(`${JSON.stringify({ runs: [] }, null, 2)}\n`)
     return 0
   }
-  const ladder = dreamLadder(userConfig, category)
   const launch = await resolveLaunch(env)
   const systemPrompt = [
     readFileSync(join(here, "dream-persona.md"), "utf8"),
@@ -150,7 +157,7 @@ async function main(argv: readonly string[]): Promise<number> {
       store,
       paths: pathsOf(store),
       sessions: sessionsByStore.get(store) ?? ([] as SessionFile[]),
-      ladder,
+      ladder: models,
       launch,
       systemPrompt,
       env: childEnv(env),
@@ -171,9 +178,10 @@ function optionValue(argv: readonly string[], name: string): string | undefined 
   return index >= 0 ? argv[index + 1] : undefined
 }
 
-function printStatuses(all: readonly StoreStatus[], category: string): void {
+function printStatuses(all: readonly StoreStatus[], models: readonly DreamRung[]): void {
   let statuses = all
-  process.stdout.write(`dream model category: ${category}\n\n`)
+  const ladder = models.map((rung) => rung.thinking === undefined ? rung.model : `${rung.model} (${rung.thinking})`)
+  process.stdout.write(`dream models: ${ladder.length === 0 ? "none" : ladder.join(" → ")}\n\n`)
   // Stores with nothing to show would bury the ones in use under test leftovers.
   statuses = statuses.filter((status) => status.enabled || status.lastDreamAt !== undefined || status.pendingRunId !== undefined)
   for (const status of statuses) {

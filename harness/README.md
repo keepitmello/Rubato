@@ -109,7 +109,9 @@ rubato dream --approve <저장소> # 기다리는 결과를 저장소에 넣기 
 ```
 
 켜기·모델·발행 방식은 `~/.rubato/rubato.jsonc` 의 `memory.dream`(`stores.<이름>.enabled`,
-`category`, `publish: "review" | "auto"`, `min_hours_between`)이다. 실행 기록은 저장소의 `runtime/dream/runs/` 에 남는다.
+`models`, `publish: "review" | "auto"`, `min_hours_between`)이다. `models` 는 꿈이 타는 모델 사다리로,
+앞에서부터 쓰고 막히면 다음으로 내려간다. 항목은 `"<provider>/<id>"` 또는 `{ "model": ..., "reasoning": ... }` 이고,
+비워 두면 DeepSeek V4.1 Flash → Grok 4.7 → Claude Haiku 4.5 순이다. 실행 기록은 저장소의 `runtime/dream/runs/` 에 남는다.
 사람이 쓰는 세션(TUI·GUI)은 시작과 끝에 `rubato dream --due` 를 백그라운드로 띄운다. 때가 된 저장소가
 없으면 바로 끝나고, 출력은 `~/.rubato/memory/dream-due.log` 에 남는다.
 
