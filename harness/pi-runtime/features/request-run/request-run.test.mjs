@@ -375,6 +375,107 @@ test("actual SDK keeps input identity and one request terminal across queue, cle
   assert.equal(terminalSnapshots.some(({ snapshot }) => snapshot.runs.some((run) => run.status === "failed")), true);
 });
 
+test("a settle that an extension held past the next run's start is not announced to clients", async () => {
+  const moduleUrl = pathToFileURL(join(patchedPackage, "dist/index.js")).href;
+  const streamUrl = pathToFileURL(
+    join(patchedPackage, "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js"),
+  ).href;
+  const { createAgentSession, DefaultResourceLoader, SessionManager, SettingsManager } = await import(moduleUrl);
+  const { AssistantMessageEventStream } = await import(streamUrl);
+  const cwd = join(scratchRoot, "stale-settle-cwd");
+  const agentDir = join(scratchRoot, "stale-settle-agent");
+  mkdirSync(cwd, { recursive: true });
+  mkdirSync(agentDir, { recursive: true });
+  writeFileSync(join(agentDir, "models.json"), JSON.stringify({
+    providers: {
+      "request-run-test": {
+        baseUrl: "http://127.0.0.1:9/v1",
+        api: "openai-completions",
+        apiKey: "unused-test-key",
+        models: [{ id: "fake-model", input: ["text"] }],
+      },
+    },
+  }));
+
+  // The first settle handler stands in for an extension that awaits a slow call
+  // (the title model); a wake starts the next run while it waits.
+  let holdFirstSettle;
+  const firstSettleHeld = new Promise((resolveHeld) => {
+    holdFirstSettle = resolveHeld;
+  });
+  let releaseFirstSettle;
+  const firstSettleReleased = new Promise((resolveRelease) => {
+    releaseFirstSettle = resolveRelease;
+  });
+  let settleHandlers = 0;
+  const extension = (pi) => {
+    pi.on("agent_settled", async () => {
+      settleHandlers += 1;
+      if (settleHandlers !== 1) return;
+      holdFirstSettle();
+      await firstSettleReleased;
+    });
+  };
+  const settingsManager = SettingsManager.inMemory();
+  const resourceLoader = new DefaultResourceLoader({
+    cwd,
+    agentDir,
+    settingsManager,
+    extensionFactories: [{ name: "slow-settle", factory: extension }],
+    noExtensions: true,
+    noSkills: true,
+    noPromptTemplates: true,
+    noThemes: true,
+    noContextFiles: true,
+  });
+  await resourceLoader.reload();
+  const { session } = await createAgentSession({
+    cwd,
+    agentDir,
+    settingsManager,
+    resourceLoader,
+    sessionManager: SessionManager.inMemory(cwd),
+    noTools: "all",
+  });
+  const announced = [];
+  session.subscribe((event) => {
+    if (event.type === "agent_start" || event.type === "agent_settled") announced.push(event.type);
+  });
+
+  let releaseSecondRun;
+  let secondRunStarted;
+  const secondRunStreaming = new Promise((resolveStart) => {
+    secondRunStarted = resolveStart;
+  });
+  let call = 0;
+  session.agent.streamFunction = () => {
+    call += 1;
+    const stream = new AssistantMessageEventStream();
+    stream.push({ type: "start", partial: assistant("pending", "pending", { content: [] }) });
+    const finish = () => stream.push({ type: "done", reason: "stop", message: assistant(`done-${call}`) });
+    if (call === 1) finish();
+    else {
+      releaseSecondRun = finish;
+      secondRunStarted();
+    }
+    return stream;
+  };
+
+  const firstRun = session.prompt("first");
+  await firstSettleHeld;
+  const secondRun = session.prompt("second");
+  await secondRunStreaming;
+  releaseFirstSettle();
+  await firstRun;
+  assert.equal(session.isStreaming, true);
+  assert.deepEqual(announced, ["agent_start", "agent_start"],
+    "clients must not hear the session go idle while the second run streams");
+
+  releaseSecondRun();
+  await secondRun;
+  assert.deepEqual(announced, ["agent_start", "agent_start", "agent_settled"]);
+});
+
 test("unbundled RPC get_state reads the same pending and completed request ids", async (t) => {
   const cwd = join(scratchRoot, "rpc-cwd");
   const agentDir = join(scratchRoot, "rpc-agent");

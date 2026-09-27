@@ -472,3 +472,45 @@ test("resume with an existing auto title skips the first settle, then fires on t
   assert.deepEqual(firedOn, [16]);
   assert.equal(paints.length, 16);
 });
+
+test("settle returns before the title model answers, and the title lands when it does", async () => {
+  const { handlers, settledCtx, names, paints } = settledHarness();
+  let answer;
+  settledCtx.modelRegistry.complete = () => new Promise((resolveAnswer) => {
+    answer = resolveAnswer;
+  });
+  // The engine awaits every settle handler before it tells clients the run ended;
+  // a handler that waits on the model keeps the session looking busy, then idle
+  // after the next run has already started.
+  await handlers.agent_settled(null, settledCtx);
+  assert.equal(typeof answer, "function");
+  assert.deepEqual(names, []);
+
+  paints.length = 0;
+  await handlers.agent_settled(null, settledCtx);
+  assert.equal(paints.length, 1, "a settle during the title call still paints the tab");
+
+  answer({ content: [{ type: "text", text: "<title>Late title</title>" }] });
+  await new Promise((resolveTick) => setImmediate(resolveTick));
+  assert.deepEqual(names, ["Late title"]);
+});
+
+test("a failed title call leaves no unhandled rejection", async () => {
+  const { handlers, settledCtx } = settledHarness();
+  settledCtx.modelRegistry.complete = async () => {
+    throw new Error("title model down");
+  };
+  settledCtx.ui.setTitle = () => {
+    throw new Error("stale ctx");
+  };
+  const unhandled = [];
+  const onUnhandled = (reason) => unhandled.push(reason);
+  process.on("unhandledRejection", onUnhandled);
+  try {
+    await handlers.agent_settled(null, settledCtx);
+    await new Promise((resolveTick) => setImmediate(resolveTick));
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
+  }
+  assert.deepEqual(unhandled, []);
+});

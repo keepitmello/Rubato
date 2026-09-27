@@ -80,11 +80,19 @@ function patchAgentSessionRuntime(source) {
     next,
     `        this._isAgentRunActive = false;
         try {
-            await this._extensionRunner.emit({ type: "agent_settled" });`,
+            await this._extensionRunner.emit({ type: "agent_settled" });
+            this._emit({ type: "agent_settled" });`,
     `        this._isAgentRunActive = false;
         try {
             this._requestRunTracker.onAgentSettled();
-            await this._extensionRunner.emit({ type: "agent_settled" });`,
+            await this._extensionRunner.emit({ type: "agent_settled" });
+            // A handler above can await long enough (the title model) for a wake to
+            // start the next run. That run announces its own settle; announcing this
+            // one now tells clients the session is idle while it streams, and they
+            // send a prompt the engine rejects as already processing.
+            if (!this._isAgentRunActive) {
+                this._emit({ type: "agent_settled" });
+            }`,
     "settled-terminal",
   );
   next = replaceOnce(

@@ -168,23 +168,35 @@ export function installSessionTitle(pi) {
     paintTabTitle(ctx, event?.name);
   });
 
-  pi.on("agent_settled", async (_event, ctx) => {
-    if (state.locked || state.inFlight) return;
+  pi.on("agent_settled", (_event, ctx) => {
+    if (state.locked) return;
     state.settled += 1;
-    if ((state.settled - 1) % TITLE_EVERY_N_SETTLED_TURNS !== 0 || (state.settled === 1 && state.skipFirst)) {
-      state.skipFirst = false;
-      paintTabTitle(ctx, currentName(pi, ctx));
+    const due = (state.settled - 1) % TITLE_EVERY_N_SETTLED_TURNS === 0 && !(state.settled === 1 && state.skipFirst);
+    state.skipFirst = false;
+    if (!due || state.inFlight) {
+      paintQuietly(pi, ctx);
       return;
     }
+    // The engine awaits every settle handler before it tells clients the run ended,
+    // and a wake can start the next run meanwhile. Awaiting the title model here held
+    // that signal for the whole call, so the title runs beside the session instead.
     state.inFlight = true;
-    try {
-      await refreshSessionTitle(pi, ctx, state);
-    } catch {
-      paintTabTitle(ctx, currentName(pi, ctx));
-    } finally {
-      state.inFlight = false;
-    }
+    void refreshSessionTitle(pi, ctx, state)
+      .catch(() => paintQuietly(pi, ctx))
+      .finally(() => {
+        state.inFlight = false;
+      });
   });
+}
+
+// A title that lands after a session switch holds a stale ctx; painting it must not
+// turn into an unhandled rejection.
+function paintQuietly(pi, ctx) {
+  try {
+    paintTabTitle(ctx, currentName(pi, ctx));
+  } catch {
+    // the tab keeps its previous title
+  }
 }
 
 export default function sessionTitleExtension(pi) {
