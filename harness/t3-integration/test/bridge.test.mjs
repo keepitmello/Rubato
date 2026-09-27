@@ -140,6 +140,58 @@ test('a message steers into a run Pi is streaming even when the thread still rea
   await assert.rejects(bridge.sendTurn({threadId:'woken-thread',input:'/compact'}),/Interrupt the current turn/);
 });
 
+function interruptHarness(threadId) {
+  const events = [];
+  const projection = new EventProjection({threadId,sessionId:`${threadId}-session`,instanceId:'instance',emit:event=>events.push(decodeEvent(event))});
+  const bridge = Object.create(RubatoPiBridge.prototype);
+  bridge.skillNames = new Set();
+  const commands = [];
+  const state = {isStreaming:true,isCompacting:false,pendingMessageCount:0,requestTimeline:{pendingInputs:[]}};
+  let finishAbort;
+  const abortReturned = new Promise((resolveAbort) => { finishAbort = resolveAbort; });
+  const context = {sessionId:`${threadId}-session`,projection,session:{threadId,status:'running'},queue:Promise.resolve(),stopped:false,
+    client:{command:async(command)=>{
+      commands.push(command);
+      if(command.type==='get_state') return state;
+      if(command.type==='prompt') state.isStreaming=true;
+      if(command.type==='abort') await abortReturned;
+    }}};
+  bridge.sessions = new Map([[threadId,context]]);
+  projection.project({type:'agent_start'});
+  // Pi announces the settle before it answers the abort command.
+  const settle = () => { state.isStreaming=false; projection.project({type:'agent_settled'}); };
+  return { bridge, context, projection, events, commands, state, settle, finishAbort };
+}
+
+test('an interrupt does not close the turn a wake started while the abort returned', async () => {
+  const { bridge, context, projection, events, state, settle, finishAbort } = interruptHarness('race-thread');
+  const stopped = bridge.interruptTurn('race-thread');
+  settle();
+  // A child's completion or a monitor event lands right after the stop and starts a run.
+  state.isStreaming = true;
+  projection.project({type:'agent_start'});
+  const next = projection.turnId;
+  assert.ok(next);
+  finishAbort();
+  await stopped;
+  assert.equal(projection.turnId, next, 'the new turn stays open');
+  assert.equal(context.session.status, 'running');
+  assert.deepEqual(events.filter((event)=>event.type==='turn.completed').map((event)=>event.payload.state), ['interrupted']);
+});
+
+test('a message sent while an interrupt is in flight starts the next turn instead of a dying steer', async () => {
+  const { bridge, commands, events, settle, finishAbort } = interruptHarness('promote-thread');
+  const stopped = bridge.interruptTurn('promote-thread');
+  const sent = bridge.sendTurn({threadId:'promote-thread',input:'send now after stop'});
+  await delay(10);
+  settle();
+  finishAbort();
+  await Promise.all([stopped, sent]);
+  assert.equal(commands.some((command)=>command.type==='steer'), false);
+  assert.deepEqual(commands.filter((command)=>command.type==='prompt'), [{type:'prompt',message:'send now after stop'}]);
+  assert.equal(events.some((event)=>event.type==='runtime.warning'), false);
+});
+
 test('a steer the stopped turn never read is drained back into the thread', async () => {
   const events = [];
   const projection = new EventProjection({threadId:'stale-thread',sessionId:'stale-session',instanceId:'instance',emit:event=>events.push(decodeEvent(event))});

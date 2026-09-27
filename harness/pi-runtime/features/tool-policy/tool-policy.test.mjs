@@ -277,3 +277,18 @@ test("candidate bootstrap registers tool-policy factories between loop-guard and
   assert.ok(indexOf("rubato-bash-timeout") < indexOf("terminal"));
   assert.ok(indexOf("terminal") < indexOf("rubato-tool-pair-guard"));
 });
+
+test("a permission prompt ends as a rejection when the run is interrupted", async () => {
+  const { showPermissionPrompt } = await import("./permission.mjs");
+  const controller = new AbortController();
+  // Pi's RPC and TUI dialogs settle on their signal and otherwise wait for a reply.
+  // Without the run's signal an interrupt left the tool call, and so the abort, waiting.
+  const dialog = (_title, _options, opts) => new Promise((resolveDialog) => {
+    opts?.signal?.addEventListener("abort", () => resolveDialog(undefined), { once: true });
+  });
+  const ctx = { signal: controller.signal, ui: { select: dialog, input: dialog } };
+  const reply = showPermissionPrompt(ctx, { permission: "bash", patterns: ["rm -rf build"], metadata: { command: "rm -rf build" } });
+  controller.abort();
+  const settled = await Promise.race([reply, new Promise((resolveLate) => setTimeout(() => resolveLate("still waiting"), 200))]);
+  assert.deepEqual(settled, { reply: "reject" });
+});

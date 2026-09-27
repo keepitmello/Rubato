@@ -273,9 +273,12 @@ function requestDisplay(request) {
 
 export async function showPermissionPrompt(ctx, request) {
   const options = ["Allow once", "Allow always", "Deny", "Deny with feedback"];
-  const choice = await ctx.ui.select(`Permission required: ${request.permission}\n\n${requestDisplay(request)}`, options);
+  // The run's signal closes the dialog on interrupt. Without it the tool call waited
+  // for an answer nobody would give, and the abort waited on the tool call.
+  const signal = ctx.signal;
+  const choice = await ctx.ui.select(`Permission required: ${request.permission}\n\n${requestDisplay(request)}`, options, { signal });
   if (choice === "Deny with feedback") {
-    const message = await ctx.ui.input("Feedback", "Why are you denying this permission? (optional)");
+    const message = await ctx.ui.input("Feedback", "Why are you denying this permission? (optional)", { signal });
     return { reply: "reject", ...(message ? { message } : {}) };
   }
   return { reply: choice === "Allow once" ? "once" : choice === "Allow always" ? "always" : "reject" };
