@@ -61,7 +61,8 @@ test('inventory uses real T3 decider/projector: groups stored history, preserves
       if(options?.onConflict==='ignore'&&bindings.has(value.threadId))return;
       bindings.set(value.threadId,value);
     })};
-    const query={getCommandReadModel:()=>Effect.sync(()=>model),getThreadDetailById:id=>Effect.sync(()=>Option.fromUndefinedOr(model.threads.find(thread=>thread.id===id)))};
+    let detailReads=0;
+    const query={getCommandReadModel:()=>Effect.sync(()=>model),getThreadDetailById:id=>Effect.sync(()=>{detailReads+=1;return Option.fromUndefinedOr(model.threads.find(thread=>thread.id===id));})};
     const service={startSession:(_id,input)=>instance.adapter.startSession(input)};
     const inventory=yield* makeRubatoPiInventory.pipe(
       Effect.provideService(ProviderInstanceRegistry,registry),Effect.provideService(ProviderSessionDirectory,directory),
@@ -74,8 +75,13 @@ test('inventory uses real T3 decider/projector: groups stored history, preserves
     assert.ok(imported);
     assert.equal(commands.filter((command)=>command.type==='thread.history.import' && command.threadId===imported.id).length,0);
     const count=commands.length;
+    const reads=detailReads;
     yield* inventory.sync;
-    assert.equal(commands.length,count);assert.equal(model.threads.length,3);assert.equal(bindings.size,3);
+    assert.equal(commands.length,count);
+    // The sync runs every five seconds over every stored session. A thread whose
+    // history was already checked must not load its whole detail again: 205 of
+    // them did, 369 SQL statements a second and a 10 MB trace file every 30 s.
+    assert.equal(detailReads,reads,'a checked thread is not read again');assert.equal(model.threads.length,3);assert.equal(bindings.size,3);
     assert.equal(server.host.metrics.runtimeStarts,1);
     yield* engine.dispatch({type:'thread.archive',commandId:contracts.CommandId.make('archive-test'),threadId:imported.id});
     yield* instance.adapter.stopSession(imported.id);

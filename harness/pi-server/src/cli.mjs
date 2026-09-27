@@ -4,6 +4,7 @@ import path from 'node:path';
 import { serveProfile } from './profile-server.mjs';
 import { resolveLaunchAgentDir } from '../../rubato-pi/src/launch.mjs';
 import { installedSharedRuntime } from './discovery.mjs';
+import { errorLog } from './error-log.mjs';
 
 try {
   const { values } = parseArgs({ options: {
@@ -17,7 +18,7 @@ try {
     }
     const idleMs = values['idle-ms'] === 'never' ? null : Number(values['idle-ms'] ?? 60000);
     const service = await serveProfile({ agentDir: path.resolve(values['agent-dir'] ?? resolveLaunchAgentDir()),
-      socketPath: values.socket, idleMs, runtimeRoot: values['runtime-root'] ?? installedSharedRuntime(), onError: (error) => console.error(error.message) });
+      socketPath: values.socket, idleMs, runtimeRoot: values['runtime-root'] ?? installedSharedRuntime(), onError: errorLog() });
     console.log(JSON.stringify({ ...service.descriptor, descriptorPath: service.descriptorPath }));
     let closing = false;
     const stop = async () => {

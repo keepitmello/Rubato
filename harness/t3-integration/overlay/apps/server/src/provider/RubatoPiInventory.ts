@@ -54,6 +54,12 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
   yield* Effect.forkScoped(Effect.forever(Effect.gen(function* () {
     yield* PubSub.take(changes); yield* bindReaders;
   })));
+  // Threads whose stored history this server has already checked. The check loads the
+  // whole thread (messages, activities, turns) and the sync repeats every five seconds
+  // over every stored session, so an imported thread — which keeps no turns and no
+  // session — was loaded again on every pass. Its history does not change while idle:
+  // new work makes the session live, and a live attach replays the snapshot instead.
+  const historyChecked = new Set<string>();
 
   const syncInstance = (instance: ProviderInstance) => Effect.gen(function* () {
     const bridge = rubatoBridgeFor(instance);
@@ -115,7 +121,7 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
         );
         // Live attach replays the snapshot as UI events. Importing the same
         // transcript first concatenates the assistant text on one message.
-        if (!live && thread.latestTurn===null && thread.session===null) {
+        if (!live && thread.latestTurn===null && thread.session===null && !historyChecked.has(threadId)) {
           const existing = yield* query.getThreadDetailById(threadId);
           if (Option.isSome(existing) && existing.value.messages.length===0) {
             const saved = yield* io("transcript", () => bridge.transcript(entry.sessionId));
@@ -123,6 +129,7 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
             if (messages.length) yield* engine.dispatch({type:"thread.history.import",commandId:yield* commandId,
               threadId,messages:messages.map((message) => ({messageId:MessageId.make(message.id),role:message.role,text:message.text,createdAt:message.createdAt}))});
           }
+          historyChecked.add(threadId);
         }
         if ((live || t3Live) && !bridge.hasSession(threadId) && !bridge.ownsSession(entry.sessionId)) {
           yield* service.startSession(threadId,{threadId,provider:instance.driverKind,providerInstanceId:instance.instanceId,
