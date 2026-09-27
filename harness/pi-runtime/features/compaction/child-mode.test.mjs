@@ -17,7 +17,6 @@ import { feature as contextWindowFeature } from "../context-window/patches.mjs";
 import { promptRulesFeature } from "../prompt-rules/feature.mjs";
 import { toolGuardsFeature } from "../tool-guards/feature.mjs";
 import { childRuntimeFeature } from "../child-runtime/feature.mjs";
-import { toolSearchFeature } from "../tool-search/patches.mjs";
 
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const scratch = mkdtempSync(join(tmpdir(), "rubato-child-mode-"));
@@ -42,7 +41,6 @@ const staged = await stagePiRuntime({
     contextWindowFeature,
     toolGuardsFeature,
     promptRulesFeature,
-    toolSearchFeature,
     childRuntimeFeature,
   ],
 });

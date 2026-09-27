@@ -9,16 +9,8 @@ import { fileURLToPath } from "node:url"
 
 import { buildRubatoComponents } from "../../build-rubato.mjs"
 import { stagePiRuntime } from "../../stage-runtime.mjs"
-import { providersFeature } from "../providers/patches.mjs"
-import { providerExecutionFeature } from "../provider-execution/patches.mjs"
-import { toolExecutionFeature } from "../tool-execution/patches.mjs"
-import { feature as contextNotesFeature } from "../context-notes/patches.mjs"
-import { feature as contextWindowFeature } from "../context-window/patches.mjs"
-import { toolGuardsFeature } from "../tool-guards/feature.mjs"
-import { childRuntimeFeature } from "./feature.mjs"
-import { promptRulesFeature } from "../prompt-rules/feature.mjs"
-import { toolSearchFeature } from "../tool-search/patches.mjs"
-import { patches as runtimeFactoriesPatches } from "../runtime-factories/patches.mjs"
+import { loadPiFeatures } from "../../feature-catalog.mjs"
+import { CANDIDATE_FEATURE_NAMES } from "../rubato-components/candidate-main.mjs"
 
 const run = promisify(execFile)
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..")
@@ -33,9 +25,8 @@ test("staged stock child fixture consumes the in-process and RPC runner seams", 
     const staged = await stagePiRuntime({
       sourceRoot,
       outputRoot: join(scratch, "stage"),
-      features: [toolExecutionFeature, providersFeature, providerExecutionFeature, contextNotesFeature, contextWindowFeature,
-        toolGuardsFeature, promptRulesFeature, toolSearchFeature, { id: "runtime-factories", patches: runtimeFactoriesPatches, files: [] },
-        childRuntimeFeature, build.feature],
+      // Every RPC child boots child-rpc-entry, which loads bootstrap.mjs and every candidate feature with it.
+      features: [...await loadPiFeatures(CANDIDATE_FEATURE_NAMES), build.feature],
     })
     const env = {
       HOME: join(scratch, "home"),
@@ -69,8 +60,7 @@ test("staged stock child fixture consumes the in-process and RPC runner seams", 
     assert.equal(receipt.rpc.rpcExtensions.includes("provider-extension.mjs"), true)
     assert.equal(receipt.rpc.rpcExtensions.includes("extension.mjs"), true)
     assert.equal(receipt.rpc.rpcExtensions.includes("guard-extension.mjs"), true)
-    assert.equal(receipt.rpc.rpcExtensions.includes("tool-search-extension.mjs"), true)
-    assert.equal(receipt.member.entry, "member-rpc-entry.mjs")
+    assert.equal(receipt.member.entry, "child-rpc-entry.mjs")
     assert.equal(receipt.member.tools.includes("Agent"), true)
     assert.equal(receipt.member.grandchildRan, true)
   } finally {

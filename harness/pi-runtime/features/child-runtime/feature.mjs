@@ -36,14 +36,8 @@ export const childRuntimeFeature = Object.freeze({
     {
       target: "runtime",
       version: PI_VERSION,
-      path: "rubato-features/child-runtime/tool-search-extension.mjs",
-      sourcePath: join(featureDir, "tool-search-extension.mjs"),
-    },
-    {
-      target: "runtime",
-      version: PI_VERSION,
-      path: "rubato-features/child-runtime/member-rpc-entry.mjs",
-      sourcePath: join(featureDir, "member-rpc-entry.mjs"),
+      path: "rubato-features/child-runtime/child-rpc-entry.mjs",
+      sourcePath: join(featureDir, "child-rpc-entry.mjs"),
     },
   ],
 })
