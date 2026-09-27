@@ -18,7 +18,7 @@ interface MemoryModule {
 }
 const modules = new Map<string, Promise<MemoryModule>>();
 
-function bridgeModuleOf(
+export function bridgeModuleOf(
   settings: { readonly providerInstances?: unknown },
   path: Path.Path,
 ): string | undefined {
