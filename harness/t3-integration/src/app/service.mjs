@@ -4,11 +4,14 @@
 //
 //   version   the checkout's commit, the pinned stock Pi, T3's upstream pin
 //   check     rubato update --check (via gui-update.mjs) and what the update brings
-//   restart   `rubato restart`, detached: it quits and reopens this very app
+//   restart   `rubato restart` through the one-shot updater (gui-update.mjs), detached:
+//             it quits and reopens this very app, under the updater's lock
+//   restart-status  that job's result, so the page can tell a failed restart
 //
 // Updating is not here: the desktop updater owns it (token, ready handshake, the
 // in-app confirm), and the page asks it over IPC.
 import { execFile, spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { mkdirSync, openSync, closeSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
@@ -18,7 +21,6 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..', '..', '..', '..');
 const integration = path.resolve(here, '..', '..');
 const CHANGES_SHOWN = 20;
-const RESTART_GRACE_MS = 10 * 60_000;
 
 export class AppRequestError extends Error {
   constructor(status, code, message) {
@@ -29,20 +31,24 @@ export class AppRequestError extends Error {
 }
 
 /**
- * @param {{ env?: NodeJS.ProcessEnv, root?: string, rubato?: readonly string[],
+ * runner: the updater's entry, given `restart TOKEN APP_PID`. appPid: the desktop app
+ * this server runs under, 0 when there is none.
+ * @param {{ env?: NodeJS.ProcessEnv, root?: string, runner?: readonly string[], appPid?: number,
  *   checkForUpdate?: (options: { root: string, env: NodeJS.ProcessEnv }) => Promise<{ available: boolean, revision?: string, commits?: number }> }} [options]
  */
 export function createAppService(options = {}) {
   const env = options.env ?? process.env;
   const home = env.HOME ?? env.USERPROFILE ?? homedir();
   const root = options.root ?? repoRoot;
-  const rubato = options.rubato ?? ['/bin/sh', path.join(root, 'harness', 'scripts', 'rubato-pi.sh')];
+  const runner = options.runner ?? ['/bin/bash', path.join(integration, 'gui-update.sh')];
+  // The desktop app starts this server as Electron in Node mode. That is the app
+  // the restart replaces; anywhere else (a remote server) there is none.
+  const appPid = options.appPid ?? (env.ELECTRON_RUN_AS_NODE === '1' ? process.ppid : 0);
   // The app is often launched from the Dock with a PATH of /usr/bin:/bin.
   const childEnv = { ...env, PATH: [
     path.join(home, '.bun', 'bin'), path.join(home, '.local', 'share', 'vite-plus', 'bin'), path.join(home, '.local', 'bin'),
     '/opt/homebrew/bin', '/usr/local/bin', env.PATH ?? '/usr/bin:/bin',
   ].join(path.delimiter) };
-  let restartStartedAt = 0;
 
   function git(args, timeout = 5000) {
     return new Promise((resolve) => {
@@ -87,7 +93,7 @@ export function createAppService(options = {}) {
 
   async function check() {
     const checkForUpdate = options.checkForUpdate
-      ?? (await import(pathToFileURL(path.join(integration, 'gui-update.mjs')).href)).checkForUpdate;
+      ?? (await updater()).checkForUpdate;
     let result;
     try { result = await checkForUpdate({ root, env: childEnv }); }
     catch (error) { throw new AppRequestError(502, 'check-failed', error instanceof Error ? error.message : String(error)); }
@@ -100,26 +106,50 @@ export function createAppService(options = {}) {
     return { available: true, commits: result.commits ?? changes.length, changes };
   }
 
+  const updater = () => import(pathToFileURL(path.join(integration, 'gui-update.mjs')).href);
+
   // Detached into its own session: the restart quits this app (and this server)
-  // before it reopens it, and must outlive both.
-  function restart() {
-    if (Date.now() - restartStartedAt < RESTART_GRACE_MS)
-      throw new AppRequestError(409, 'restarting', 'A restart is already running.');
-    const logDir = path.join(home, '.rubato-pi', 'logs');
-    mkdirSync(logDir, { recursive: true });
-    const log = path.join(logDir, 'rubato-restart-gui.log');
+  // before it reopens it, and must outlive both. The updater's lock is the one
+  // guard against a second restart or an update at the same time; checking it
+  // here only turns the common case into an answer instead of a silent no-op.
+  async function restart() {
+    const { stateDirectory, readJson, alive } = await updater();
+    const directory = stateDirectory(env);
+    const owner = await readJson(path.join(directory, 'lock.json'));
+    if (owner && alive(owner.pid))
+      throw new AppRequestError(409, 'restarting', 'An update or restart is already running.');
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
+    const log = path.join(directory, 'update.log');
+    const token = randomUUID();
+    // ELECTRON_RUN_AS_NODE belongs to this server alone. Handed down, it would
+    // reach the bundle rebuild and anything else that runs the Electron binary.
+    const { ELECTRON_RUN_AS_NODE: _serverOnly, ...restartEnv } = childEnv;
     const fd = openSync(log, 'a', 0o600);
     try {
-      const child = spawn(rubato[0], [...rubato.slice(1), 'restart'], {
-        cwd: root, env: childEnv, detached: true, stdio: ['ignore', fd, fd],
+      const child = spawn(runner[0], [...runner.slice(1), 'restart', token, String(appPid)], {
+        cwd: root, env: restartEnv, detached: true, stdio: ['ignore', fd, fd],
       });
       child.unref();
     } finally { closeSync(fd); }
-    restartStartedAt = Date.now();
-    return { startedAt: new Date(restartStartedAt).toISOString(), log };
+    return { token, startedAt: new Date().toISOString(), log };
   }
 
-  const actions = { version, check, restart };
+  // The updater's last result and whether a job holds its lock. The page matches
+  // the token it got from restart; a result for another token is not its answer.
+  async function restartStatus() {
+    const { stateDirectory, readJson, alive } = await updater();
+    const directory = stateDirectory(env);
+    const owner = await readJson(path.join(directory, 'lock.json'));
+    const result = await readJson(path.join(directory, 'result.json'));
+    return {
+      busy: Boolean(owner && alive(owner.pid)),
+      result: result ? { token: result.token ?? null, kind: result.kind ?? 'update', status: result.status ?? null,
+        message: result.message ?? null } : null,
+      log: path.join(directory, 'update.log'),
+    };
+  }
+
+  const actions = { version, check, restart, 'restart-status': restartStatus };
   return {
     async handle(action) {
       const handler = Object.hasOwn(actions, action) ? actions[action] : undefined;

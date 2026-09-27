@@ -26,6 +26,19 @@ export interface RubatoUpdateCheck {
   readonly changes: ReadonlyArray<{ readonly short: string; readonly subject: string; readonly committedAt: string }>;
 }
 
+/** The one-shot updater's last job, which also runs About's restart. */
+export interface RubatoRestartStatus {
+  /** A job holds the updater's lock. */
+  readonly busy: boolean;
+  readonly result: {
+    readonly token: string | null;
+    readonly kind: "update" | "restart";
+    readonly status: "running" | "succeeded" | "failed" | null;
+    readonly message: string | null;
+  } | null;
+  readonly log: string;
+}
+
 function call<T>(environmentId: EnvironmentId | null, action: string): Promise<T> {
   return postRubato<T>(environmentId, APP_ROUTE, action, {}, "Rubato settings");
 }
@@ -33,7 +46,8 @@ function call<T>(environmentId: EnvironmentId | null, action: string): Promise<T
 export const rubatoApp = {
   version: (env: EnvironmentId | null) => call<RubatoVersion>(env, "version"),
   check: (env: EnvironmentId | null) => call<RubatoUpdateCheck>(env, "check"),
-  restart: (env: EnvironmentId | null) => call<{ startedAt: string; log: string }>(env, "restart"),
+  restart: (env: EnvironmentId | null) => call<{ token: string; startedAt: string; log: string }>(env, "restart"),
+  restartStatus: (env: EnvironmentId | null) => call<RubatoRestartStatus>(env, "restart-status"),
 };
 
 export interface RubatoUpdateCheckState {

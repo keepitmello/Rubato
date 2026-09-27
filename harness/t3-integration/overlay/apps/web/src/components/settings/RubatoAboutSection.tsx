@@ -41,6 +41,43 @@ function useDesktopUpdater() {
   return bridge ? { bridge, state } : null;
 }
 
+const RESTART_POLL_MS = 2_000;
+// The job takes the updater's lock right after it is spawned. No lock and no
+// result for our token after this long means it never ran (another job held it).
+const RESTART_START_MS = 15_000;
+// The job's own limits: 30 minutes for the restart, then 90 seconds for the reopen.
+const RESTART_GIVE_UP_MS = 35 * 60_000;
+
+/**
+ * Follows a restart until its job reports. Only a job that stays on this side of
+ * the app's quit reports here: a failure before the quit, or a server without an
+ * app. A lost connection means the app is going down, which is the restart working.
+ */
+export async function waitForRestart(
+  environmentId: Parameters<typeof rubatoApp.restartStatus>[0],
+  token: string,
+  poll = RESTART_POLL_MS,
+): Promise<{ failed: boolean; message: string; log: string }> {
+  const startedAt = Date.now();
+  for (;;) {
+    await new Promise((resolve) => setTimeout(resolve, poll));
+    let status: Awaited<ReturnType<typeof rubatoApp.restartStatus>>;
+    try {
+      status = await rubatoApp.restartStatus(environmentId);
+    } catch {
+      if (Date.now() - startedAt > RESTART_GIVE_UP_MS)
+        return { failed: true, message: "This Mac has not answered since the restart began.", log: "~/.rubato-pi/gui-update/update.log" };
+      continue;
+    }
+    const result = status.result?.token === token ? status.result : null;
+    if (result?.status === "failed")
+      return { failed: true, message: result.message ?? "The restart did not finish.", log: status.log };
+    if (result?.status === "succeeded") return { failed: false, message: "", log: status.log };
+    if (!result && !status.busy && Date.now() - startedAt > RESTART_START_MS)
+      return { failed: true, message: "The restart did not start. Another update or restart may have been running.", log: status.log };
+  }
+}
+
 /** The Mac's environment once its connection is ready; null before that. */
 function useRubatoEnvironment() {
   const primary = usePrimaryEnvironmentId();
@@ -68,6 +105,7 @@ export function RubatoAboutSection() {
   const [versionError, setVersionError] = useState<string | null>(null);
   const { check, error: checkError, checking, refresh: runCheck } = useRubatoUpdateCheck(environmentId);
   const [restarting, setRestarting] = useState(false);
+  const [restartError, setRestartError] = useState<string | null>(null);
   const [showChanges, setShowChanges] = useState(false);
 
   useEffect(() => {
@@ -97,17 +135,25 @@ export function RubatoAboutSection() {
     const answer = requestConfirmDialog(message, { variant: "destructive" });
     if (!(answer ? await answer : window.confirm(message))) return;
     setRestarting(true);
+    setRestartError(null);
+    let started: Awaited<ReturnType<typeof rubatoApp.restart>>;
     try {
-      await rubatoApp.restart(environmentId);
-      toastManager.add({
-        type: "info",
-        title: "Restarting Rubato",
-        description: "The app closes and reopens by itself. A rebuild can take a few minutes.",
-      });
+      started = await rubatoApp.restart(environmentId);
     } catch (error) {
       setRestarting(false);
       reportError("Could not restart Rubato", error);
+      return;
     }
+    toastManager.add({
+      type: "info",
+      title: "Restarting Rubato",
+      description: "The app closes and reopens by itself. A rebuild can take a few minutes.",
+    });
+    const outcome = await waitForRestart(environmentId, started.token);
+    // A restart that reopens the app never gets here: this page goes with the app.
+    setRestarting(false);
+    if (outcome.failed) setRestartError(`${outcome.message} Log: ${outcome.log}`);
+    else toastManager.add({ type: "success", title: "Rubato restarted" });
   };
 
   const updating = updater?.state.phase === "running";
@@ -200,7 +246,15 @@ export function RubatoAboutSection() {
       </SettingsRow>
       <SettingsRow
         title="Restart"
-        description="Rebuild from this Mac's checkout and restart the engine, the remote hub and the app. Use it after changing Rubato's code; it does not download anything."
+        description={
+          restartError ? (
+            <span className="text-destructive">{restartError}</span>
+          ) : restarting ? (
+            "Restarting… the app closes and reopens when the rebuild is done."
+          ) : (
+            "Rebuild from this Mac's checkout and restart the engine, the remote hub and the app. Use it after changing Rubato's code; it does not download anything."
+          )
+        }
         control={
           <Button size="sm" variant="outline" disabled={restarting || environmentId === null} onClick={() => void restart()}>
             {restarting ? <Spinner className="size-3.5" /> : null}

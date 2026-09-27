@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -75,6 +75,7 @@ function harness(t, {
     RUBATO_RESTART_SSH_SERVERS: fakeSshServers,
   };
   return {
+    home,
     run(extraEnv = {}) {
       return spawnSync('sh', [restartGui], { cwd: root, env: { ...env, ...extraEnv }, encoding: 'utf8' });
     },
@@ -170,6 +171,31 @@ test('GUI update reopens an app the user closed during the update', (t) => {
   // The detached launcher may still be starting at shell exit; its success
   // is deliberately not reported as a loaded window by restart-gui.sh.
   assert.match(result.stdout, /창 준비는 GUI 업데이터가 확인/);
+});
+
+// `rubato restart`, `rubato update` and the app's own update and restart all quit,
+// rebuild and reopen the app here. Two at once would write the same bundle.
+test('a second restart does not touch the app while one holds it', (t) => {
+  const h = harness(t, { hostOs: 'Darwin', app: true, running: true });
+  const lock = join(h.home, '.rubato-pi', 'gui-update', 'app.lock');
+  mkdirSync(lock, { recursive: true });
+  writeFileSync(join(lock, 'pid'), `${process.pid}\n`);
+  const result = h.run();
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stderr, /다른 재시작이나 업데이트가 데스크톱 앱을 다루는 중/);
+  assert.equal(h.calls(), '');
+  assert.equal(readFileSync(join(lock, 'pid'), 'utf8').trim(), String(process.pid));
+});
+
+test('a lock left by a dead restart is taken over, and released at the end', (t) => {
+  const h = harness(t, { hostOs: 'Darwin', app: true, running: true });
+  const lock = join(h.home, '.rubato-pi', 'gui-update', 'app.lock');
+  mkdirSync(lock, { recursive: true });
+  writeFileSync(join(lock, 'pid'), '99999999\n');
+  const result = h.run();
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  assert.equal(h.relaunched(), 'relaunched');
+  assert.equal(existsSync(lock), false);
 });
 
 test('restart-gui keeps Darwin Electron pattern and has no force-quit happy path', () => {
