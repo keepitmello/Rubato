@@ -81,11 +81,26 @@ sign_adhoc() {
   "$CODESIGN" --force --deep --sign - --timestamp=none "$1" >/dev/null 2>&1 || true
 }
 
+# codesign 은 --keychain 을 주어도 사용자 키체인 검색 목록에 없는 키체인에서는
+# 인증서를 찾지 못한다("no identity found", macOS 26). 서명하는 동안만 전용 키체인을
+# 목록 끝에 붙였다가 원래 목록으로 되돌린다.
+codesign_with_identity() {
+  local bundle="$1" original=() line status=0
+  while IFS= read -r line; do
+    line="${line#"${line%%[![:space:]]*}"}"; line="${line#\"}"; line="${line%\"}"
+    [ -n "$line" ] && original+=("$line")
+  done < <("$SECURITY" list-keychains -d user)
+  "$SECURITY" list-keychains -d user -s "${original[@]}" "$KEYCHAIN" >/dev/null 2>&1 || return 1
+  "$CODESIGN" --force --deep --sign "$IDENTITY" --keychain "$KEYCHAIN" --timestamp=none "$bundle" >/dev/null 2>&1 || status=$?
+  "$SECURITY" list-keychains -d user -s "${original[@]}" >/dev/null 2>&1 || true
+  return "$status"
+}
+
 sign_bundle() {
   local bundle="$1"
   if ensure_identity \
     && "$SECURITY" unlock-keychain -p "$(cat "$PASS_FILE")" "$KEYCHAIN" >/dev/null 2>&1 \
-    && "$CODESIGN" --force --deep --sign "$IDENTITY" --keychain "$KEYCHAIN" --timestamp=none "$bundle" >/dev/null 2>&1; then
+    && codesign_with_identity "$bundle"; then
     return 0
   fi
   note "로컬 인증서로 서명하지 못해 애드혹으로 서명한다. 다시 만들 때마다 macOS 권한이 풀린다."
