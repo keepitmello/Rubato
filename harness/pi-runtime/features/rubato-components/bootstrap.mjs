@@ -106,7 +106,10 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
     { name: "provider-execution", factory: providerExecution.extension },
     { name: "service-tier", factory: serviceTier.extension },
     { name: "rubato-gpt-apply-patch", factory: registerApplyPatchExtension },
-    { name: "context-notes", factory: createContextNotesExtension({ agentDir, settingsManager: settings, env, propagateEnv: !hosted }) },
+    // The compaction overlay reads the session's resolved mode from `env`. A hosted worker's
+    // env is its own copy, so writing it reaches only this worker; the server's shared
+    // process.env is never written.
+    { name: "context-notes", factory: createContextNotesExtension({ agentDir, settingsManager: settings, env, propagateEnv: !hosted || env !== process.env }) },
     ...createCompactionExtensionFactories({ settingsManager: settings, env }),
     ...createPromptRulesExtensionFactories({ settingsManager: settings }),
     ...createConfigReloadExtensionFactories({ settingsManager: settings, agentDir, cwd }),
