@@ -61,11 +61,17 @@ export const cacheEdits = {
       'replace',
     ],
     [
-      '    : "color-mix(in oklab, var(--color-muted-foreground) 72%, transparent)";\n',
       [
+        '  const isOverloaded = normalizedPercentage > 90;',
+        '  const usageColor = isOverloaded',
+        '    ? "var(--color-error)"',
         '    : "color-mix(in oklab, var(--color-muted-foreground) 72%, transparent)";',
-        '  // Rubato: a red ring means the prompt cache is cold. The track turns too, since',
-        '  // a nearly empty context leaves almost no arc to see.',
+        '',
+      ].join('\n'),
+      [
+        '  const usageColor = "color-mix(in oklab, var(--color-muted-foreground) 72%, transparent)";',
+        '  // Rubato: red means one thing, a cold prompt cache (a full context compacts on its',
+        '  // own). The track turns too, since a nearly empty context leaves almost no arc to see.',
         '  const cacheNow = useRubatoCacheNow(usage.cache, false);',
         '  const cacheCold = rubatoCacheIsCold(usage.cache, cacheNow);',
         '  const ringColor = cacheCold ? "var(--color-error)" : usageColor;',
