@@ -43,18 +43,20 @@ function requestedServiceTier(value) {
 }
 
 /** Resolve the staged Rubato provider-only extension closure for RPC children. */
-export function resolvePiChildProviderProfile({ root, agentDir, includeContextNotes = false, includeGuards = false, includeRolePrompt = false, serviceTier } = {}) {
+export function resolvePiChildProviderProfile({ root, agentDir, includeContextNotes = false, includeGuards = false, includeRolePrompt = false, includeToolSearch = false, serviceTier } = {}) {
   if (typeof root !== "string" || root.length === 0) throw new Error("stock child provider profile requires the staged runtime root")
   const entries = [join(root, "rubato-features", "child-runtime", "provider-extension.mjs")]
   if (includeContextNotes) entries.push(join(root, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "rubato-features", "context-notes", "extension.mjs"))
   if (includeGuards) entries.push(join(root, "rubato-features", "child-runtime", "guard-extension.mjs"))
   if (includeRolePrompt) entries.push(join(root, "rubato-features", "child-runtime", "role-prompt-extension.mjs"))
+  if (includeToolSearch) entries.push(join(root, "rubato-features", "child-runtime", "tool-search-extension.mjs"))
   // Service-tier is not part of the default child closure. Only a requested tier loads it.
   if (requestedServiceTier(serviceTier) !== undefined) entries.push(serviceTierExtensionPath(root))
   const prerequisites = [join(root, "node_modules", "@earendil-works", "pi-coding-agent", "node_modules", "@earendil-works", "pi-ai", "dist", "rubato-features", "provider-execution", "extension.mjs")]
   if (includeContextNotes) prerequisites.push(join(root, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "rubato-features", "context-notes", "src", "extensions", "context-notes.mjs"))
   if (includeGuards) prerequisites.push(join(root, "rubato-features", "tool-guards", "index.mjs"))
   if (includeRolePrompt) prerequisites.push(join(root, "rubato-features", "prompt-rules", "role-prompt.mjs"))
+  if (includeToolSearch) prerequisites.push(join(root, "rubato-features", "tool-search", "index.mjs"))
   for (const entry of [...entries, ...prerequisites]) {
     if (!existsSync(entry)) throw new Error(`stock child provider profile entry is missing: ${entry}`)
   }
@@ -77,6 +79,10 @@ function isChildRolePromptExtensionPath(entry) {
   return typeof entry === "string" && entry.endsWith(`${sep}role-prompt-extension.mjs`)
 }
 
+function isChildToolSearchExtensionPath(entry) {
+  return typeof entry === "string" && entry.endsWith(`${sep}tool-search-extension.mjs`)
+}
+
 function isChildServiceTierExtensionPath(entry) {
   return typeof entry === "string" && entry.endsWith(`${sep}service-tier${sep}extension.mjs`)
 }
@@ -84,8 +90,8 @@ function isChildServiceTierExtensionPath(entry) {
 /**
  * Load the child-safe in-process factories that correspond to a full-candidate
  * profile. Provider registration stays on the injected parent ModelRuntime;
- * only notes owner, tool guards and the role system prompt are installed into
- * the child session.
+ * only notes owner, tool guards, the role system prompt and the tool catalog
+ * are installed into the child session.
  */
 export async function loadPiChildInProcessFactories({
   root,
@@ -93,6 +99,7 @@ export async function loadPiChildInProcessFactories({
   includeContextNotes = true,
   includeGuards = true,
   includeRolePrompt = true,
+  includeToolSearch = true,
   settingsManager,
   propagateEnv = false,
   env = process.env,
@@ -105,6 +112,7 @@ export async function loadPiChildInProcessFactories({
     includeContextNotes,
     includeGuards,
     includeRolePrompt,
+    includeToolSearch,
     ...(tier === undefined ? {} : { serviceTier: tier }),
   })
   const factories = []
@@ -125,6 +133,9 @@ export async function loadPiChildInProcessFactories({
     } else if (isChildRolePromptExtensionPath(entry)) {
       const { createStockChildRolePromptExtension } = await import(pathToFileURL(entry).href)
       factories.push({ name: "rubato-role-prompt", factory: createStockChildRolePromptExtension({ env }) })
+    } else if (isChildToolSearchExtensionPath(entry)) {
+      const { createStockChildToolSearchExtension } = await import(pathToFileURL(entry).href)
+      factories.push({ name: "tool-search", factory: createStockChildToolSearchExtension() })
     } else if (isChildServiceTierExtensionPath(entry)) {
       const { createServiceTierFeature } = await import(pathToFileURL(entry).href)
       // In-process children share the parent process. The tier rides the factory option,

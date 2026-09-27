@@ -92,6 +92,8 @@ export function createMemberTaskSendTool(
   return defineTool({
     name: "team_send",
     label: "Team Send",
+    // A member's work is team_send and the board, so they must be live from the first turn.
+    exposure: "direct",
     description: "Send a durable message to a peer. Technical defects, counterevidence and rechecks go directly to the responsible owner, even when the lead proposed the method. Send the lead intent/criterion/authority changes or an unresolvable execution failure, not routine technical relay. Enqueued is not evidence of receipt or action.",
     parameters: MemberTaskSendParams,
     execute: (_toolCallId, params) => runMemberTaskSend(deps, params),

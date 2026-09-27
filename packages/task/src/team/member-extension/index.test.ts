@@ -46,6 +46,7 @@ describe("member extension lifecycle", () => {
 
     const handlers = new Map<string, Array<() => unknown | Promise<unknown>>>()
     const toolNames: string[] = []
+    const exposures: Array<string | undefined> = []
     const injected: Array<{ message: Record<string, unknown>; options: Record<string, unknown> | undefined }> = []
     const visible: string[] = []
     let loading = true
@@ -55,8 +56,9 @@ describe("member extension lifecycle", () => {
         registered.push(handler)
         handlers.set(event, registered)
       },
-      registerTool(tool: { name: string }) {
+      registerTool(tool: { name: string; exposure?: string }) {
         toolNames.push(tool.name)
+        exposures.push(tool.exposure)
       },
       sendMessage(message: Record<string, unknown>, options?: Record<string, unknown>) {
         if (loading) throw new Error("runtime action called during extension loading")
@@ -83,6 +85,8 @@ describe("member extension lifecycle", () => {
       await registerMemberExtension(api)
       expect(injected).toEqual([])
       expect(toolNames).toEqual(["team_send", ...TEAM_BOARD_TOOL_NAMES])
+      // Undeclared extension tools start behind tool_search; every member tool must be live at once.
+      expect(exposures.every((exposure) => exposure === "direct")).toBe(true)
 
       loading = false
       await dispatch(handlers, "session_start")
