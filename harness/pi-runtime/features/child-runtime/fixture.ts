@@ -298,7 +298,7 @@ async function runRpcFixture(root: string) {
   await writeFile(join(parentCwd, "parent-only.txt"), "parent")
   const capturePath = join(root, "rpc-provider-capture.jsonl")
   const providerPath = join(root, "rpc-provider.mjs")
-  const childProfile = resolvePiChildProviderProfile({ root: runtimeRoot, includeContextNotes: true, includeGuards: true })
+  const childProfile = resolvePiChildProviderProfile({ root: runtimeRoot, includeContextNotes: true, includeGuards: true, includeToolSearch: true })
   assert.equal(childProfile.rpcExtensions.some((entry) => entry.endsWith(`${join("context-notes", "extension.mjs")}`)), true)
   assert.equal(childProfile.rpcExtensions.some((entry) => entry.endsWith(`${join("child-runtime", "guard-extension.mjs")}`)), true)
   const eventStreamPath = pathToFileURL(join(
@@ -316,7 +316,7 @@ export default function fixtureProvider(pi) {
     apiKey: "fixture-rpc-auth",
     models: [{ id: "fixture-model", input: ["text"], contextWindow: 100000, maxTokens: 1024 }],
     streamSimple(model, context, options) {
-      appendFileSync(capturePath, JSON.stringify({ provider: model.provider, model: model.id, auth: "fixture-rpc-auth", text: context.messages.length }) + "\\n");
+      appendFileSync(capturePath, JSON.stringify({ provider: model.provider, model: model.id, auth: "fixture-rpc-auth", text: context.messages.length, tools: [...(context.tools ?? []), ...context.messages.flatMap((message) => message.toolsAdded ?? [])].map((tool) => tool.name) }) + "\\n");
       const stream = new AssistantMessageEventStream();
       const calls = (globalThis.__rubatoRpcCalls = (globalThis.__rubatoRpcCalls ?? 0) + 1);
       const usage = { input: 0, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 1, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
@@ -372,6 +372,8 @@ export default function fixtureProvider(pi) {
     assert.ok(captures.length >= 4, capturedText)
     assert.equal(captures[0].provider, "fixture-provider")
     assert.equal(captures[0].model, "fixture-model")
+    // The notes tools start behind tool_search; the child must carry the catalog that activates them.
+    assert.equal(captures[0].tools.includes("tool_search"), true, JSON.stringify(captures[0].tools))
     const childProbe = join(cwd, "cwd-probe.txt")
     const parentProbe = join(parentCwd, "cwd-probe.txt")
     assert.equal(existsSync(childProbe), true, "RPC child write must land in the child cwd")
