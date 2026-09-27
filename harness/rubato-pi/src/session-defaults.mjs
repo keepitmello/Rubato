@@ -2,6 +2,9 @@ import { existsSync as existsSyncFs, readFileSync, writeFileSync } from "node:fs
 import { join } from "node:path";
 import { DEFAULT_MODEL_ID, DEFAULT_PROVIDER } from "./defaults.mjs";
 import { SUPPORTED_PROVIDER_IDS, builtinProviderIds, foreignProviderIds } from "./provider-ids.mjs";
+import { BAI_BASE_URL, BAI_FLASH_MODEL_ID, BAI_PROVIDER_ID, isBaiAllowedModelId } from "./bai-route.mjs";
+
+export { BAI_FLASH_MODEL_ID, BAI_PROVIDER_ID };
 
 export function settingsPath(agentDir) {
   return join(agentDir, "settings.json");
@@ -12,11 +15,9 @@ export function modelsPath(agentDir) {
 }
 
 /** Pi custom provider. The key stays local (`$BAI_API_KEY` or a literal apiKey). */
-export const BAI_PROVIDER_ID = "b-ai";
-export const BAI_FLASH_MODEL_ID = "deepseek-v4.1-flash";
 export const DEFAULT_BAI_PROVIDER = Object.freeze({
   name: "B.AI",
-  baseUrl: "https://api.b.ai/v1",
+  baseUrl: BAI_BASE_URL,
   api: "openai-completions",
   apiKey: "$BAI_API_KEY",
   authHeader: true,
@@ -60,6 +61,9 @@ export function baiProviderLooksCurrent(providers) {
   if (!hasBaiProvider(providers)) return false;
   const models = providers[BAI_PROVIDER_ID].models;
   if (!Array.isArray(models)) return false;
+  // b-ai 목록의 DeepSeek 아닌 행은 매 요청 거부된다(bai-route.mjs). 남겨 두면
+  // 피커에 고를 수 없는 모델이 보이니 현재가 아니다.
+  if (models.some((model) => !isBaiAllowedModelId(model?.id))) return false;
   const ours = models.find((model) => model?.id === BAI_FLASH_MODEL_ID);
   // id 만 보면 이미 설치된 파일이 영원히 현재로 남아, 능력을 고쳐도 그 기기는
   // 안 바뀐다. 이미지 능력을 현재성의 일부로 본다.
@@ -74,7 +78,9 @@ function ensureBaiProvider(providers) {
     return next;
   }
   const template = DEFAULT_BAI_PROVIDER.models[0];
-  const models = Array.isArray(existing.models) ? [...existing.models] : [];
+  const models = Array.isArray(existing.models)
+    ? existing.models.filter((model) => isBaiAllowedModelId(model?.id))
+    : [];
   const index = models.findIndex((model) => model?.id === BAI_FLASH_MODEL_ID);
   if (index === -1) models.push(structuredClone(template));
   else models[index] = { ...models[index], input: [...template.input] };

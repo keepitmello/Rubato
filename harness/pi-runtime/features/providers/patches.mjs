@@ -300,6 +300,7 @@ const rubatoSources = Object.freeze([
   "antigravity-oauth-login.mjs",
   "antigravity-route.mjs",
   "antigravity-state.mjs",
+  "bai-route.mjs",
   "cache-audit.mjs",
   "compaction-guidance.mjs",
   "context-budget.mjs",
