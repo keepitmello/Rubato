@@ -1,11 +1,11 @@
 import type { RubatoUpdateState } from "@t3tools/contracts";
 import * as Option from "effect/Option";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { APP_VERSION } from "../../branding";
 import { requestConfirmDialog } from "../../confirmDialog";
 import { usePrimaryEnvironmentId } from "../../state/environments";
-import { rubatoApp, type RubatoUpdateCheck, type RubatoVersion } from "../../state/rubatoApp";
+import { rubatoApp, useRubatoUpdateCheck, type RubatoVersion } from "../../state/rubatoApp";
 import { usePreparedConnection } from "../../state/session";
 import { RubatoIcon } from "../RubatoIcon";
 import { Badge } from "../ui/badge";
@@ -41,36 +41,34 @@ function useDesktopUpdater() {
   return bridge ? { bridge, state } : null;
 }
 
+/** The Mac's environment once its connection is ready; null before that. */
+function useRubatoEnvironment() {
+  const primary = usePrimaryEnvironmentId();
+  const prepared = usePreparedConnection(primary);
+  return Option.isSome(prepared) ? primary : null;
+}
+
+/** Settings nav: a dot next to General while a Rubato update is waiting. */
+export function RubatoUpdateDot() {
+  const { check } = useRubatoUpdateCheck(useRubatoEnvironment());
+  if (!check?.available) return null;
+  const label = `Rubato update available: ${check.commits} new ${check.commits === 1 ? "change" : "changes"}`;
+  return <span role="status" aria-label={label} className="ml-auto size-1.5 shrink-0 rounded-full bg-primary" />;
+}
+
 /**
- * Settings > General > About. The app is T3 built from source with Rubato on top,
+ * Settings > General > About, the first section of General. The app is T3 built from source with Rubato on top,
  * so "the version" that matters is the Rubato checkout's commit, and updating
  * means `rubato update`, not T3's own updater.
  */
 export function RubatoAboutSection() {
-  const primary = usePrimaryEnvironmentId();
-  const prepared = usePreparedConnection(primary);
-  const environmentId = Option.isSome(prepared) ? primary : null;
+  const environmentId = useRubatoEnvironment();
   const updater = useDesktopUpdater();
   const [version, setVersion] = useState<RubatoVersion | null>(null);
   const [versionError, setVersionError] = useState<string | null>(null);
-  const [check, setCheck] = useState<RubatoUpdateCheck | null>(null);
-  const [checkError, setCheckError] = useState<string | null>(null);
-  const [checking, setChecking] = useState(false);
+  const { check, error: checkError, checking, refresh: runCheck } = useRubatoUpdateCheck(environmentId);
   const [restarting, setRestarting] = useState(false);
   const [showChanges, setShowChanges] = useState(false);
-
-  const runCheck = useCallback(async () => {
-    if (environmentId === null) return;
-    setChecking(true);
-    try {
-      setCheck(await rubatoApp.check(environmentId));
-      setCheckError(null);
-    } catch (error) {
-      setCheckError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setChecking(false);
-    }
-  }, [environmentId]);
 
   useEffect(() => {
     if (environmentId === null) return;
@@ -81,8 +79,7 @@ export function RubatoAboutSection() {
       },
       (error: unknown) => setVersionError(error instanceof Error ? error.message : String(error)),
     );
-    void runCheck();
-  }, [environmentId, runCheck]);
+  }, [environmentId]);
 
   const update = async () => {
     if (!updater?.bridge.checkNow) return;
@@ -157,7 +154,7 @@ export function RubatoAboutSection() {
         description={updating ? "Updating… the app closes and reopens when it is done." : updateStatus}
         control={
           <span className="flex items-center gap-2">
-            <Button size="sm" variant="outline" disabled={checking || environmentId === null} onClick={() => void runCheck()}>
+            <Button size="sm" variant="outline" disabled={checking || environmentId === null} onClick={runCheck}>
               {checking ? <Spinner className="size-3.5" /> : null}
               Check
             </Button>
