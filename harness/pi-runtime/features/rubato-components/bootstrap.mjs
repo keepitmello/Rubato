@@ -4,7 +4,7 @@ import { dirname, isAbsolute, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PI_VERSION } from "./pi-version.mjs";
 import { DefaultResourceLoader, SettingsManager, createAgentSession } from "../../node_modules/@earendil-works/pi-coding-agent/dist/index.js";
-import { createStockChildInProcessSession, createPiRpcSpawnRuntime, loadPiChildInProcessFactories, resolvePiChildProviderProfile } from "../child-runtime/stock-rpc-runtime.mjs";
+import { createStockTaskRunnerFactories } from "../child-runtime/stock-rpc-runtime.mjs";
 import { createMcpProducerRegistry } from "../mcp-producers/index.mjs";
 import { createMcpExtension } from "../mcp/index.mjs";
 import { ToolSearchService, createToolSearchExtension } from "../tool-search/index.mjs";
@@ -58,32 +58,13 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
   const toolSearch = new ToolSearchService();
   const serviceTier = createServiceTierFeature({ agentDir, settingsManagerFactory: () => settings });
   const providerExecution = createProviderExecution({ cursorProviderFactory: providerOptions.routeFactories?.cursor });
-  const rpcSpawnRuntime = createPiRpcSpawnRuntime({
-    rpcEntry: fileURLToPath(new URL("../../node_modules/@earendil-works/pi-coding-agent/dist/rpc-entry.js", import.meta.url)),
-  });
   const runtimeRoot = fileURLToPath(new URL("../..", import.meta.url));
-  const stockChildProfile = resolvePiChildProviderProfile({ root: runtimeRoot, agentDir, includeContextNotes: true, includeGuards: true, includeRolePrompt: true, includeToolSearch: true });
   const componentFactory = servers.wrapFactory(createRubatoComponentExtension({ resolveCwd: () => cwd, createTaskOptions: ({ createTaskRunnerFactories }) => ({
     // Stock ExtensionAPI does not expose Senpi's registration-time pi.cwd.
     // Bind task storage to this session, never the hosting process directory.
     resolveCwd: () => cwd,
-    runnerFactories: createTaskRunnerFactories({ rpcSpawnRuntime, stockChildProfile, stockModelRuntime: modelRuntime,
-      createInProcessSession: async (options) => {
-        // The factory list is per child. An unset tier must not pass serviceTier, or every
-        // in-process child would load the extension the parent profile deliberately omits.
-        const serviceTier = options.serviceTier;
-        return createStockChildInProcessSession(options, {
-          createAgentSession,
-          DefaultResourceLoader,
-          extensionFactories: await loadPiChildInProcessFactories({
-            root: runtimeRoot,
-            agentDir: options.agentDir ?? agentDir,
-            settingsManager: options.settingsManager,
-            propagateEnv: false,
-            ...(serviceTier === undefined ? {} : { serviceTier }),
-          }),
-        });
-      } }),
+    runnerFactories: createStockTaskRunnerFactories({ root: runtimeRoot, agentDir, modelRuntime, createTaskRunnerFactories,
+      createAgentSession, DefaultResourceLoader }),
   }) }), { sourcePath: join(here, "extensions/rubato.js"), registrationCwd: cwd });
   const extensionFactories = [
     { name: "rubato-assets", factory: async () => validateRubatoBundleAssets() },

@@ -252,7 +252,63 @@ export function createPiRpcSpawnRuntime({
     resolveSenpiExecutable: () => null,
     // Path only. buildRpcSpawn appends it when that child requested a tier.
     serviceTierExtension: serviceTierExtensionPath(join(dirname(rpcEntry), "..", "..", "..", "..")),
+    // Path only. buildRpcSpawn launches team members through it instead of rpcEntry.
+    memberRpcEntry: memberRpcEntryPath(join(dirname(rpcEntry), "..", "..", "..", "..")),
   }
+}
+
+export function memberRpcEntryPath(root) {
+  return join(root, "rubato-features", "child-runtime", "member-rpc-entry.mjs")
+}
+
+/**
+ * The task runners of a stock session: RPC children boot the staged entry with the child
+ * profile, in-process children share this session's ModelRuntime. The lead's bootstrap and a
+ * team member's entry both build their runners here.
+ */
+export function createStockTaskRunnerFactories({
+  root,
+  agentDir,
+  modelRuntime,
+  createTaskRunnerFactories,
+  createAgentSession,
+  DefaultResourceLoader,
+  env = process.env,
+}) {
+  const rpcSpawnRuntime = createPiRpcSpawnRuntime({ rpcEntry: resolveStockRpcEntry({ root }) })
+  const stockChildProfile = resolvePiChildProviderProfile({
+    root,
+    agentDir,
+    includeContextNotes: true,
+    includeGuards: true,
+    includeRolePrompt: true,
+    includeToolSearch: true,
+  })
+  // An in-process child runs in this process, so it would read this process's role (a member's
+  // owner/verifier). Whoever spawns it, a task child is an agent.
+  const childEnv = { ...env, RUBATO_PI_ROLE: "agent" }
+  return createTaskRunnerFactories({
+    rpcSpawnRuntime,
+    stockChildProfile,
+    stockModelRuntime: modelRuntime,
+    createInProcessSession: async (options) => {
+      // The factory list is per child. An unset tier must not pass serviceTier, or every
+      // in-process child would load the extension the parent profile deliberately omits.
+      const serviceTier = options.serviceTier
+      return createStockChildInProcessSession(options, {
+        createAgentSession,
+        DefaultResourceLoader,
+        extensionFactories: await loadPiChildInProcessFactories({
+          root,
+          agentDir: options.agentDir ?? agentDir,
+          settingsManager: options.settingsManager,
+          propagateEnv: false,
+          env: childEnv,
+          ...(serviceTier === undefined ? {} : { serviceTier }),
+        }),
+      })
+    },
+  })
 }
 
 /**
