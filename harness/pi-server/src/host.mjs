@@ -14,6 +14,9 @@ import { wire, measure, EVENT_BUDGET, EVENTS_BUDGET } from './wire.mjs';
 const invalid = (message) => new RemoteServiceError('service_invalid_value', message);
 /** Answered by the task extension: how many approved children still have work to do. */
 export const PENDING_WORK_REQUEST = 'rubato.task.pending-work';
+// `get_service_tier` is not a Pi RPC command; it reads the service-tier extension's
+// live state so a presentation can see what the next request will carry.
+export const SERVICE_TIER_REQUEST = 'rubato.service-tier.status';
 function endpoint(entries) {
   const provider = new RemoteServiceProvider(entries.map(([service]) => service));
   for (const [service, implementation] of entries) provider.provide(service, implementation);
@@ -144,7 +147,8 @@ class RuntimeHandle {
     clearTimeout(this.timer);
     if (INPUT_COMMANDS.has(command.type) || command.type === 'compact') { this.running = true; this.publish(); }
     try {
-      const response = await this.worker.request(json(command));
+      const response = await this.worker.request(command.type === 'get_service_tier'
+        ? { type: 'extension_request', name: SERVICE_TIER_REQUEST } : json(command));
       if (command.type === 'get_state') this.acceptState(response);
       else if (!command.type.startsWith('get_')) await this.refresh();
       return wire(response);

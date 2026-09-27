@@ -10,6 +10,8 @@ let running = false;
 let timer;
 let ui;
 let pendingWork = 0;
+// The service-tier extension's live state; `/fast on|off` flips it like the real command.
+let fast = { active: false, supported: true };
 let blockMessages = false;
 const emit = (value) => process.stdout.write(JSON.stringify(value) + '\n');
 const settle = () => { clearTimeout(timer); running = false; emit({ type: 'agent_end', messages: [] }); emit({ type: 'agent_settled' }); };
@@ -55,6 +57,11 @@ lines.on('line', (line) => {
       break;
     }
     case 'prompt':
+      if (/^\/fast (?:on|off)$/.test(command.message)) {
+        fast = { ...fast, active: fast.supported && command.message === '/fast on' };
+        break;
+      }
+      if (command.message === '__fast_unsupported') { fast = { active: false, supported: false }; break; }
       if (command.message === '__block_messages') blockMessages = true;
       running = true;
       manager.appendMessage({ role: 'user', content: command.message, timestamp: Date.now() });
@@ -92,6 +99,7 @@ lines.on('line', (line) => {
     case 'get_commands': data = { commands: [] }; break;
     case 'get_available_models': data = { models: [] }; break;
     case 'extension_request':
+      if (command.name === 'rubato.service-tier.status') { data = fast; break; }
       if (command.name !== 'rubato.task.pending-work') { emit({ id: command.id, type: 'response', command: command.type, success: false, error: 'Unknown extension RPC request' }); return; }
       data = { active: pendingWork }; break;
     default: emit({ id: command.id, type: 'response', command: command.type, success: false, error: 'Unsupported fixture command' }); return;
