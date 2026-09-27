@@ -5,7 +5,8 @@
 // visibility switch that was the one T3 setting worth keeping. The route keeps
 // its search params so T3's links to it (with environmentId/instanceId) still land.
 export const providerOverlays = [
-  'apps/server/src/RubatoAuth.ts',
+  // Also serves Settings > General > About (/rubato/app); about-edits.mjs holds its page.
+  'apps/server/src/RubatoServiceRoute.ts',
   'apps/web/src/state/rubatoAuth.ts',
   'apps/web/src/components/settings/RubatoProvidersSettings.tsx',
 ];
@@ -44,8 +45,8 @@ const t3Route = [
 
 export const providerEdits = {
   'apps/server/src/server.ts': [
-    ['import { deviceHubProxyRouteLayer } from "./device/DeviceHubProxy.ts";', 'import { rubatoAuthRouteLayer } from "./RubatoAuth.ts";\n'],
-    ['    deviceHubProxyRouteLayer,\n', '    rubatoAuthRouteLayer,\n'],
+    ['import { deviceHubProxyRouteLayer } from "./device/DeviceHubProxy.ts";', 'import { rubatoAppRouteLayer, rubatoAuthRouteLayer } from "./RubatoServiceRoute.ts";\n'],
+    ['    deviceHubProxyRouteLayer,\n', '    rubatoAuthRouteLayer,\n    rubatoAppRouteLayer,\n'],
   ],
   'apps/web/src/routes/settings.providers.tsx': [
     [t3Route, 'import { RubatoProvidersSettingsPanel } from "../components/settings/RubatoProvidersSettings";\n', 'replace'],
