@@ -35,7 +35,12 @@ function dispatcherHarness(t) {
   const launcher = join(scripts, "rubato-pi.sh");
   copyFileSync(launcherSource, launcher);
   chmodSync(launcher, 0o755);
-  // `restart` sources this for its progress line and result shapes.
+  // `restart` sources these: which HOME may touch account-wide services, and
+  // its progress line and result shapes.
+  copyFileSync(
+    fileURLToPath(new URL("../../../scripts/account-home.sh", import.meta.url)),
+    join(scripts, "account-home.sh"),
+  );
   copyFileSync(
     fileURLToPath(new URL("../../../scripts/rubato-progress.sh", import.meta.url)),
     join(scripts, "rubato-progress.sh"),

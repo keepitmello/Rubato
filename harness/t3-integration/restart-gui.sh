@@ -26,6 +26,8 @@ HERE="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
 HOST_OS="${RUBATO_HOST_OS:-$(uname -s)}"
 is_darwin() { [ "$HOST_OS" = Darwin ]; }
 
+. "$HERE/../scripts/account-home.sh"
+
 PGREP_BIN="${RUBATO_PGREP_BIN:-/usr/bin/pgrep}"
 OSASCRIPT_BIN="${RUBATO_OSASCRIPT_BIN:-/usr/bin/osascript}"
 GUI_APP="${RUBATO_GUI_APP:-/Applications/Rubato.app}"
@@ -45,8 +47,13 @@ INSTALL_LOG="${RUBATO_GUI_INSTALL_LOG:-$HOME/.rubato-pi/logs/rubato-gui-install.
 # 건너뛰어진다. 내장 T3 서버도 같은 Contents/MacOS/Electron 경로를 쓰므로 이
 # 패턴으로 기다리면 그 자식까지 덮는다.
 # 비-Darwin 은 start-electron.mjs 가 넘기는 dist-electron/main.cjs 인자로 찾는다.
+# macOS pgrep leaves out its own ancestors. A restart pressed in the app runs as
+# the app's descendant, so without -a the running app looked closed: it was not
+# quit, and a second one was opened over it.
+PGREP_ARGS="-f"
 if is_darwin; then
   GUI_PROC_PATTERN="${RUBATO_GUI_PROC_PATTERN:-Rubato\\.app/Contents/MacOS/Electron}"
+  PGREP_ARGS="-af"
 else
   GUI_PROC_PATTERN="${RUBATO_GUI_PROC_PATTERN:-dist-electron/main.cjs}"
 fi
@@ -119,6 +126,12 @@ release_app_lock() {
 trap 'progress_stop; release_app_lock' EXIT
 trap 'exit 1' INT TERM
 
+# The app and /Applications are the account's, not this HOME's (account-home.sh).
+if is_darwin && [ -z "${RUBATO_GUI_APP-}" ] && ! rubato_home_is_account_home; then
+  ui_skip "이 HOME 은 이 계정의 홈이 아니라서 데스크톱 앱을 건드리지 않아요"
+  exit 2
+fi
+
 if [ ! -e "$GUI_APP" ]; then
   # Darwin keeps the .app gate. Windows install never creates that path;
   # presence is the T3 desktop build start-gui.sh already launches.
@@ -133,7 +146,7 @@ if ! take_app_lock; then
   exit 1
 fi
 
-if ! "$PGREP_BIN" -f "$GUI_PROC_PATTERN" >/dev/null 2>&1; then
+if ! "$PGREP_BIN" $PGREP_ARGS "$GUI_PROC_PATTERN" >/dev/null 2>&1; then
   # 꺼진 앱은 옛 코드로 돌고 있지는 않지만 번들은 여전히 낡을 수 있고, 그것을
   # 다시 만드는 것은 아무도 하지 않는다 — start-gui.sh 는 켜기만 한다. 번들만
   # 맞추고 앱은 그대로 둔다: 이 머신이 창을 띄우고 싶어하는지는 여기서 정할
@@ -198,12 +211,12 @@ fi
 # 정말 사라졌는지 보고 나서 다시 켠다 — 넘겨짚지 않는다.
 GUI_WAIT=0
 progress_start "데스크톱 앱이 닫히기를 기다리는 중"
-while "$PGREP_BIN" -f "$GUI_PROC_PATTERN" >/dev/null 2>&1 && [ "$GUI_WAIT" -lt "$GUI_WAIT_MAX" ]; do
+while "$PGREP_BIN" $PGREP_ARGS "$GUI_PROC_PATTERN" >/dev/null 2>&1 && [ "$GUI_WAIT" -lt "$GUI_WAIT_MAX" ]; do
   sleep 1
   GUI_WAIT=$((GUI_WAIT + 1))
 done
 progress_stop
-if "$PGREP_BIN" -f "$GUI_PROC_PATTERN" >/dev/null 2>&1; then
+if "$PGREP_BIN" $PGREP_ARGS "$GUI_PROC_PATTERN" >/dev/null 2>&1; then
   if is_darwin; then
     ui_fail "데스크톱 앱이 종료 요청을 받고도 끝나지 않았습니다. 옛 코드가 그대로입니다 — 다시 켜지 않았습니다. 손으로: osascript -e 'tell application \"Rubato\" to quit'"
   else

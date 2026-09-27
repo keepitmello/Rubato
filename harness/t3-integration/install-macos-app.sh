@@ -20,6 +20,7 @@ DESKTOP="$T3_DIR/apps/desktop"
 BUNDLE="$DESKTOP/.electron-runtime/Rubato.app"
 
 . "$HERE/../scripts/find-node.sh"
+. "$HERE/../scripts/account-home.sh"
 NODE="$(rubato_find_node)" || { printf 'Node 24+ 가 없다\n' >&2; exit 1; }
 
 # 번들은 T3 런처가 만든다. 여기서 직접 만들면 서명·헬퍼 번들 이름이 갈라진다.
@@ -63,13 +64,16 @@ bash "$HERE/mac-signing.sh" sign "$BUNDLE" || true
 # /Applications 이름은 Finder·Spotlight 용이다. 복사본이 아니라 링크라서
 # 업데이트로 번들이 바뀌어도 따라간다. Dock 고정은 실행 중 뜨는 아이콘으로 한다
 # — 링크를 고정하면 macOS 가 실행 중인 번들과 같은 앱으로 못 알아보고 둘로 띄운다.
-if [ ! -L "$APP" ] || [ "$(readlink "$APP")" != "$BUNDLE" ]; then
-  rm -rf "$APP"
-  ln -s "$BUNDLE" "$APP"
-fi
-
-if [ -d "/Applications/T3 Code.app" ]; then
-  rm -rf "/Applications/T3 Code.app"
+# /Applications is the account's. From another HOME (a test, a sandbox) the bundle
+# is still made, but the account's link and apps stay as they are (account-home.sh).
+if [ -n "${RUBATO_T3_APP-}" ] || rubato_home_is_account_home; then
+  if [ ! -L "$APP" ] || [ "$(readlink "$APP")" != "$BUNDLE" ]; then
+    rm -rf "$APP"
+    ln -s "$BUNDLE" "$APP"
+  fi
+  if [ -z "${RUBATO_T3_APP-}" ] && [ -d "/Applications/T3 Code.app" ]; then
+    rm -rf "/Applications/T3 Code.app"
+  fi
 fi
 
 printf '%s\n' "$BUNDLE"

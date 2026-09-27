@@ -23,6 +23,9 @@ function harness(t, {
   quitHang = false,
   installGui = true,
   sshServers = 2,
+  // The run is the app's descendant (a restart pressed in the app): like macOS
+  // pgrep, the fake leaves the app out unless -a asks for ancestors.
+  descendant = false,
 } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'rb-restart-gui-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -37,7 +40,9 @@ function harness(t, {
   const log = join(root, 'calls.log');
   writeFileSync(log, '');
   const fakePgrep = join(root, 'fake-pgrep');
-  executable(fakePgrep, `#!/bin/sh\nif [ "$(cat '${guiState}')" = running ]; then exit 0; else exit 1; fi\n`);
+  executable(fakePgrep, '#!/bin/sh\n' +
+    (descendant ? 'case "$1" in -a*) ;; *) exit 1 ;; esac\n' : '') +
+    `if [ "$(cat '${guiState}')" = running ]; then exit 0; else exit 1; fi\n`);
   const fakeOsascript = join(root, 'fake-osascript');
   executable(
     fakeOsascript,
@@ -76,8 +81,10 @@ function harness(t, {
   };
   return {
     home,
-    run(extraEnv = {}) {
-      return spawnSync('sh', [restartGui], { cwd: root, env: { ...env, ...extraEnv }, encoding: 'utf8' });
+    run(extraEnv = {}, drop = []) {
+      const runEnv = { ...env, ...extraEnv };
+      for (const name of drop) delete runEnv[name];
+      return spawnSync('sh', [restartGui], { cwd: root, env: runEnv, encoding: 'utf8' });
     },
     calls() {
       return readFileSync(log, 'utf8');
@@ -196,6 +203,26 @@ test('a lock left by a dead restart is taken over, and released at the end', (t)
   assert.equal(result.status, 0, result.stderr + result.stdout);
   assert.equal(h.relaunched(), 'relaunched');
   assert.equal(existsSync(lock), false);
+});
+
+// About's restart runs under the app it replaces. Without -a macOS pgrep did not
+// see it, so the app was not quit and a second one was opened over it.
+test('a restart pressed in the app still finds the app and quits it first', (t) => {
+  const h = harness(t, { hostOs: 'Darwin', app: true, running: true, descendant: true });
+  const result = h.run();
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  assert.match(h.calls(), /tell application "Rubato" to quit/);
+  assert.ok(h.calls().indexOf('tell application') < h.calls().indexOf('START-GUI'), h.calls());
+});
+
+// /Applications and the app belong to the account. From a temporary HOME (a test,
+// a sandbox) the default must not reach them; a named RUBATO_GUI_APP still does.
+test('from another HOME the account\'s app is left alone', (t) => {
+  const h = harness(t, { hostOs: 'Darwin', app: true, running: true });
+  const result = h.run({}, ['RUBATO_GUI_APP']);
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+  assert.match(result.stdout, /데스크톱 앱을 건드리지 않아요/);
+  assert.equal(h.calls(), '');
 });
 
 test('restart-gui keeps Darwin Electron pattern and has no force-quit happy path', () => {
