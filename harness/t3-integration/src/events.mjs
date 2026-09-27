@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { modelDisplayLabel } from './model-catalog-order.mjs';
 
 export const textOf = (message, type = 'text') => typeof message?.content === 'string'
   ? type === 'text' ? message.content : ''
@@ -98,7 +97,6 @@ const liveFacts = (item) => {
     totalTokens: live.total_tokens ?? live.totalTokens,
     outputTokens: live.output_tokens ?? live.outputTokens,
     toolCalls: live.tool_calls ?? live.toolCalls,
-    turns: live.turns,
   };
 };
 const taskUsageOf = (item, live) => {
@@ -107,38 +105,15 @@ const taskUsageOf = (item, live) => {
   if (total === undefined) return;
   const output = asInt(live.outputTokens) ?? asInt(stats.output_tokens);
   const tools = asInt(live.toolCalls) ?? asInt(stats.tool_calls);
-  const turns = asInt(live.turns) ?? asInt(stats.turns);
   const duration = asInt(stats.runtime_ms);
   const speed = asInt(stats.speed_index);
   return {
     totalTokens: total,
     ...(output !== undefined ? { outputTokens: output } : {}),
     ...(tools !== undefined ? { toolUses: tools } : {}),
-    ...(turns !== undefined ? { turns } : {}),
     ...(duration !== undefined ? { durationMs: duration } : {}),
     ...(speed !== undefined ? { speedIndex: speed } : {}),
   };
-};
-// The shared board of a taskforce, as the lead's runtime reports it
-// (rubato.team.board.updated). Only fields the Agents panel paints travel.
-const BOARD_STATUSES = new Set(['pending', 'claimed', 'in_progress', 'completed']);
-const boardOf = (team) => {
-  const tasks = [];
-  for (const raw of Array.isArray(team.tasks) ? team.tasks : []) {
-    const item = record(raw);
-    const id = nonempty(item.id);
-    const subject = nonempty(item.subject);
-    if (!id || !subject || !BOARD_STATUSES.has(item.status)) continue;
-    tasks.push({
-      id, subject, status: item.status,
-      description: typeof item.description === 'string' ? item.description : '',
-      ...(item.description_truncated === true ? { descriptionTruncated: true } : {}),
-      ...(nonempty(item.owner) ? { owner: nonempty(item.owner) } : {}),
-      blockedBy: Array.isArray(item.blocked_by) ? item.blocked_by.filter((value) => nonempty(value)) : [],
-      ...(nonempty(item.updated_at) ? { updatedAt: nonempty(item.updated_at) } : {}),
-    });
-  }
-  return { tasks };
 };
 const FAILED_STATUS = new Set(['failed', 'error', 'denied', 'lost']);
 const STOPPED_STATUS = new Set(['cancelled', 'aborted', 'interrupted']);
@@ -261,7 +236,6 @@ export class EventProjection {
     Object.assign(this, { threadId, sessionId, instanceId, emit });
     this.text = new Map(); this.thinking = new Map(); this.completed = new Set(); this.questions = new Map();
     this.tasks = new Map(); this.children = new Map(); this.spawns = new Map();
-    this.teams = new Map(); this.boards = new Map();
   }
   event(type, payload, fields = {}) {
     this.emit({ eventId: randomUUID(), provider: 'rubato-pi', providerInstanceId: this.instanceId,
@@ -272,7 +246,6 @@ export class EventProjection {
     this.sessionId = sessionId;
     this.text.clear(); this.thinking.clear(); this.completed.clear(); this.questions.clear();
     this.tasks.clear(); this.children.clear(); this.spawns.clear();
-    this.teams.clear(); this.boards.clear();
     this.turnId = undefined; this.failed = false; this.interrupted = false; this.lastUsage = undefined;
     this.lastError = undefined; this.pendingError = undefined; this.retry = undefined;
     this.maxTokens = undefined;
@@ -460,13 +433,8 @@ export class EventProjection {
   }
   linkage(task, extra = {}) {
     const title = displaySpawnTitle(task.label, task.model, task.effort);
-    // Mobile paints only `title`, so it keeps the model tag and a phone-sized cut.
-    // Web paints `label` whole and `modelLabel` on its own line, named as the picker names it.
-    const modelLabel = modelDisplayLabel(task.model, task.effort);
-    const label = typeof task.label === 'string' ? nonempty(task.label.replace(/\s+/g, ' ')) : undefined;
     return { taskType: task.taskType, agentKind: 'agent', toolUseId: task.toolUseId,
-      ...(title ? { title } : {}), ...(label ? { label } : {}),
-      ...(modelLabel ? { modelLabel } : {}), ...(task.role ? { role: task.role } : {}),
+      ...(title ? { title } : {}), ...(task.role ? { role: task.role } : {}),
       ...(task.model ? { model: task.model } : {}), ...(task.effort ? { effort: task.effort } : {}),
       ...(task.workflowName ? { workflowName: task.workflowName } : {}),
       ...(task.parentAgentId ? { parentAgentId: task.parentAgentId } : {}),
@@ -572,7 +540,6 @@ export class EventProjection {
     if (childId) this.rememberChild(childId, taskType === 'local_workflow' ? event.toolCallId : childId);
     const task = taskKey ? this.startTask(taskKey, { label, taskType, role, model, effort, workflowName,
       taskId: childId || taskKey, toolUseId: event.toolCallId }) : undefined;
-    if (task && taskType === 'local_workflow' && nonempty(details.team_run_id)) this.linkTeam(details.team_run_id, task);
     if (event.type === 'tool_execution_update' && task) {
       const lastToolName = nonempty(progress.currentTool) || nonempty(progress.current_tool);
       const lastLine = nonempty(progress.lastAssistantLine) || nonempty(progress.last_assistant_line);
@@ -611,42 +578,6 @@ export class EventProjection {
     const childId = nonempty(args.agentId) || nonempty(details.agentId);
     const task = this.taskForChild(childId) || this.tasks.get(event.toolCallId);
     if (task) this.completeTask(task, 'stopped');
-  }
-  // A board snapshot can arrive before team_create returns the run id, so it waits here.
-  linkTeam(teamRunId, task) {
-    if (this.teams.get(teamRunId) === task) return;
-    this.teams.set(teamRunId, task);
-    const pending = this.boards.get(teamRunId);
-    if (pending && !pending.sent) this.sendBoard(teamRunId, pending.board);
-  }
-  sendBoard(teamRunId, board) {
-    const task = this.teams.get(teamRunId);
-    const key = JSON.stringify(board);
-    const held = this.boards.get(teamRunId);
-    if (held?.sent && held.key === key) return;
-    this.boards.set(teamRunId, { board, key, sent: Boolean(task) });
-    if (!task) return;
-    this.taskEvent('task.progress', { taskId: task.taskId, description: 'Board updated', board,
-      ...this.linkage(task) }, task);
-  }
-  // pi.rpc.emit("rubato.team.board.updated"): every board of a team this lead owns.
-  boardUpdated(event) {
-    if (event.name !== 'rubato.team.board.updated') return;
-    const teams = record(event.data).teams;
-    if (!Array.isArray(teams)) return;
-    for (const raw of teams) {
-      const team = record(raw);
-      const teamRunId = nonempty(team.team_run_id);
-      if (!teamRunId) continue;
-      if (!this.teams.has(teamRunId)) {
-        // A reattached bridge never saw team_create; the team row carries the name.
-        const name = nonempty(team.team_name);
-        const known = name && [...new Set(this.tasks.values())]
-          .find((task) => task.taskType === 'local_workflow' && (task.workflowName === name || task.label === name));
-        if (known) this.teams.set(teamRunId, known);
-      }
-      this.sendBoard(teamRunId, boardOf(team));
-    }
   }
   // pi.rpc.emit("rubato.task.updated") leaves the worker as {type:"extension_event",name,data}.
   // Live child ticks live on that snapshot, not on the Agent tool call (which ends at spawn-ack).
@@ -718,7 +649,7 @@ export class EventProjection {
       case 'auto_retry_start': this.retryStarted(event); break;
       case 'auto_retry_end': this.retryEnded(event); break;
       case 'extension_ui_request': this.question(event); break;
-      case 'extension_event': this.speedUpdated(event); this.taskUpdated(event); this.boardUpdated(event); break;
+      case 'extension_event': this.speedUpdated(event); this.taskUpdated(event); break;
       case 'tool_execution_start': case 'tool_execution_update': case 'tool_execution_end': {
         const itemType = toolType(event.toolName);
         const spawn = SPAWN_TOOLS.has(event.toolName);
