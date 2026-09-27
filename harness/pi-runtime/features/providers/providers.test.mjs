@@ -320,6 +320,58 @@ test("stock lazy streams expose inner local-work", async () => {
   assert.equal(outer.hasPendingLocalWork(), false);
 });
 
+const openAICompletionsLazy = await import(pathToFileURL(join(piAiRoot, "dist/api/openai-completions.lazy.js")).href);
+const anthropicMessagesLazy = await import(pathToFileURL(join(piAiRoot, "dist/api/anthropic-messages.lazy.js")).href);
+
+async function withFetchCount(run) {
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; throw new Error("network forbidden in this test"); };
+  try {
+    return { value: await run(), calls: () => calls };
+  } finally {
+    globalThis.fetch = original;
+  }
+}
+
+test("b.ai key refuses a non-DeepSeek model before any request, whichever API or provider carries it", async () => {
+  const cases = [
+    // b-ai 목록에 claude 가 끼어든 경우 (models.json 수정)
+    { api: openAICompletionsLazy.openAICompletionsApi(), model: model({ provider: "b-ai", id: "claude-opus-5-5", api: "openai-completions", baseUrl: "https://api.b.ai/v1" }) },
+    // anthropic 의 주소가 b.ai 로 바뀐 경우
+    { api: anthropicMessagesLazy.anthropicMessagesApi(), model: model({ provider: "anthropic", id: "claude-opus-5-5", api: "anthropic-messages", baseUrl: "https://api.b.ai" }) },
+  ];
+  for (const { api, model: target } of cases) {
+    for (const method of ["stream", "streamSimple"]) {
+      const { value: settled, calls } = await withFetchCount(() =>
+        drain(api[method](target, { messages: [{ role: "user", content: "hi", timestamp: 0 }] }, { apiKey: "sk-test" })),
+      );
+      assert.equal(settled.result.stopReason, "error", `${target.provider}/${target.id} ${method}`);
+      assert.match(settled.result.errorMessage, /DeepSeek-only/);
+      assert.equal(calls(), 0);
+    }
+  }
+});
+
+test("b.ai guard lets DeepSeek through and leaves other hosts alone", async () => {
+  let loads = 0;
+  const inner = () => {
+    const stream = new stockEventStream.AssistantMessageEventStream();
+    stream.end({ role: "assistant", content: [], stopReason: "stop", usage: { ...ZERO_COST, totalTokens: 0, cost: { ...ZERO_COST, total: 0 } }, timestamp: 0 });
+    return stream;
+  };
+  const api = stockLazy.lazyApi(async () => { loads++; return { stream: inner, streamSimple: inner }; });
+  const allowed = [
+    model({ provider: "b-ai", id: "deepseek-v4.1-flash", api: "openai-completions", baseUrl: "https://api.b.ai/v1" }),
+    model({ provider: "anthropic", id: "claude-opus-5-5", api: "anthropic-messages", baseUrl: "https://api.anthropic.com" }),
+  ];
+  for (const target of allowed) {
+    const settled = await drain(api.streamSimple(target, { messages: [] }, {}));
+    assert.equal(settled.result.stopReason, "stop", `${target.provider}/${target.id}`);
+  }
+  assert.equal(loads, allowed.length);
+});
+
 test("actual stock SDK registers all seven and completes a Kiro Anthropic request", async (t) => {
   const captured = {};
   const server = http.createServer(async (request, response) => {

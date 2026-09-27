@@ -106,6 +106,32 @@ test("이미 있는 b-ai 키는 기본 템플릿이 덮지 않는다", () => {
   assert.equal(next.providers[BAI_PROVIDER_ID].models[0].id, BAI_FLASH_MODEL_ID);
 });
 
+// 회귀(2026-09-23~25): 같은 B.AI 키로 Opus 5.5 가 과금돼 크레딧이 바닥났다.
+// b-ai 목록에 끼어든 DeepSeek 아닌 행은 다음 기동에 걷히고, 키와 DeepSeek 행은 남는다.
+test("b-ai 목록에 끼어든 DeepSeek 아닌 모델은 다음 기동에 걷힌다", () => {
+  const current = {
+    providers: {
+      [BAI_PROVIDER_ID]: {
+        apiKey: "sk-local-keep",
+        models: [
+          { id: "claude-opus-5-5", api: "anthropic-messages" },
+          { id: BAI_FLASH_MODEL_ID, input: ["text", "image"] },
+        ],
+      },
+    },
+    disabledProviders: ["vercel-ai-gateway"],
+  };
+  assert.equal(baiProviderLooksCurrent(current.providers), false);
+  const next = ensureModelsConfig("/tmp/agent", {
+    exists: () => true,
+    readFile: () => JSON.stringify(current),
+    writeFile: () => {},
+  });
+  assert.deepEqual(next.providers[BAI_PROVIDER_ID].models.map((model) => model.id), [BAI_FLASH_MODEL_ID]);
+  assert.equal(next.providers[BAI_PROVIDER_ID].apiKey, "sk-local-keep");
+  assert.equal(baiProviderLooksCurrent(next.providers), true);
+});
+
 // 회귀: 설치된 파일이 `input: ["text"]` 로 굳어 있으면 read 툴이 이미지를 빼고
 // pi-ai 가 요청에서 자리표시자로 바꾼다 — 붙여넣은 스크린샷이 조용히 사라지고
 // 모델은 그게 왜 왔는지도 모른다. 실측으로 이 모델은 이미지를 읽으므로 능력은

@@ -59,5 +59,28 @@ export function patchEventStreamLocalWork(sourceText) {
 }
 
 export function patchLazyLocalWork(sourceText) {
-  return replaceOnce(sourceText, LAZY_NEEDLE, LAZY_REPLACEMENT, "lazy-local-work");
+  const next = replaceOnce(sourceText, LAZY_NEEDLE, LAZY_REPLACEMENT, "lazy-local-work");
+  return patchLazyBaiRoute(next);
+}
+
+// `lazyApi` 는 pi-ai 의 HTTP API(anthropic-messages, openai-completions, …)가 모두
+// 지나는 입구다. ModelRuntime 경로도, compat `completeSimple` 경로도 여기로 온다.
+// 모델을 불러오기 전에 b.ai 경계를 본다 — 걸리면 요청을 만들지 않고 에러 이벤트로
+// 끝난다. 규칙은 `rubato-pi/src/bai-route.mjs` 가 소유한다.
+const LAZY_IMPORT_NEEDLE = `import { AssistantMessageEventStream } from "../utils/event-stream.js";\n`;
+const LAZY_IMPORT_REPLACEMENT = `${LAZY_IMPORT_NEEDLE}import { assertBaiRoute } from "../rubato-features/providers/src/bai-route.mjs";\n`;
+const LAZY_API_NEEDLE = `        stream: (model, context, options) => lazyStream(model, async () => (await load()).stream(model, context, options)),
+        streamSimple: (model, context, options) => lazyStream(model, async () => (await load()).streamSimple(model, context, options)),`;
+const LAZY_API_REPLACEMENT = `        stream: (model, context, options) => lazyStream(model, async () => {
+            assertBaiRoute(model);
+            return (await load()).stream(model, context, options);
+        }),
+        streamSimple: (model, context, options) => lazyStream(model, async () => {
+            assertBaiRoute(model);
+            return (await load()).streamSimple(model, context, options);
+        }),`;
+
+export function patchLazyBaiRoute(sourceText) {
+  const withImport = replaceOnce(sourceText, LAZY_IMPORT_NEEDLE, LAZY_IMPORT_REPLACEMENT, "lazy-bai-route-import");
+  return replaceOnce(withImport, LAZY_API_NEEDLE, LAZY_API_REPLACEMENT, "lazy-bai-route");
 }
