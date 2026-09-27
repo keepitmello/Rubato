@@ -9,7 +9,7 @@ import { serveProfile } from '../../pi-server/src/profile-server.mjs';
 import { RpcWorker } from '../../pi-server/src/rpc-worker.mjs';
 import { SessionClient } from '../../pi-server/src/client.mjs';
 import { RubatoPiBridge } from '../src/bridge.mjs';
-import { userStartedSession } from '../src/bridge.mjs';
+import { handleCacheWarmingRequest, userStartedSession } from '../src/bridge.mjs';
 import { errorDetail, EventProjection } from '../src/events.mjs';
 import {t3Modules} from './t3-source.mjs';
 const fixture = fileURLToPath(new URL('../../pi-server/test/fixtures/rpc.mjs', import.meta.url));
@@ -911,6 +911,19 @@ test('a completed turn reports no runtime error', () => {
   p.project({type:'message_end', message:{role:'assistant', timestamp:1, stopReason:'stop', content:[{type:'text', text:'done'}]}});
   p.project({type:'agent_settled'});
   assert.equal(events.some((event) => event.type==='runtime.error'), false);
+});
+
+test('the meter carries the cache and the warmer, and a mode change repaints every open thread', async (t) => {
+  const { root, events, bridge } = await setup(t);
+  await bridge.startSession({ threadId:'cache-thread', runtimeMode:'full-access', cwd:root });
+  await bridge.sendTurn({ threadId:'cache-thread', input:'usage' });
+  const cacheOf = () => events.filter((event) => event.type==='thread.token-usage.updated').at(-1)?.payload.usage.cache;
+  await until(() => cacheOf() !== undefined);
+  assert.deepEqual(cacheOf(), { state: 'warm', hitPercent: 90, expiresAt: 1_790_000_000_000, warming: { mode: 'idle', active: false } });
+  assert.deepEqual(await bridge.setCacheWarmingMode('off'), { mode: 'off' });
+  await until(() => cacheOf()?.warming.mode === 'off');
+  const response = await handleCacheWarmingRequest(new Request('http://t3/rubato/cache-warming'));
+  assert.deepEqual(await response.json(), { mode: 'off' });
 });
 
 test('assistant usage becomes thread.token-usage.updated in the meter shape', async () => {

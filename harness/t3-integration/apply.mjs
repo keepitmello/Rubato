@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
 import { parseArgs } from 'node:util';
 import { memoryEdits, memoryOverlays } from './memory-edits.mjs';
+import { cacheEdits, cacheOverlays } from './cache-edits.mjs';
 import { voiceEdits, voiceOverlays } from './voice-edits.mjs';
 import { permissionEdits, permissionOverlays } from './permission-edits.mjs';
 
@@ -1805,6 +1806,11 @@ for (const [relative, changes] of [...Object.entries(voiceEdits), ...Object.entr
 // Settings > 기억 (memory-edits.mjs) registers after the rest, so its anchors see their edits.
 overlays.push(...memoryOverlays);
 for (const [relative, changes] of Object.entries(memoryEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// The context ring's cache (cache-edits.mjs) anchors on the Speed Index and memory edits above.
+overlays.push(...cacheOverlays);
+for (const [relative, changes] of Object.entries(cacheEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 function transform(text, changes) {

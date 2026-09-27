@@ -105,6 +105,8 @@ async function imagesFromAttachments(attachments) {
 }
 /** 확장 명령으로 보낼 때의 슬래시 문장. 남은 인자는 그대로 명령 인자가 된다. */
 const slashText = (control) => `/${control.name}${control.args ? ` ${control.args}` : ''}`;
+/** Open bridges, for the T3 server route that changes the global warming mode. */
+const liveBridges = new Set();
 export class RubatoPiBridge {
   constructor({ descriptorPath, instanceId, emit = () => {}, onError = () => {}, projectedMessages = async () => [],
     shows = userStartedSession }) {
@@ -113,6 +115,7 @@ export class RubatoPiBridge {
     this.skillNames = new Set();
     this.retryTimer = setInterval(() => { void this.recover().catch(onError); }, 1000);
     this.retryTimer.unref?.();
+    liveBridges.add(this);
   }
   async connection() {
     if (this.closed) throw new Error('T3 bridge is closed');
@@ -251,6 +254,7 @@ export class RubatoPiBridge {
       if (snapshot.state.model) context.session.model = `${snapshot.state.model.provider}/${snapshot.state.model.id}`;
       await this.configureUsage(context, snapshot.state, snapshot.messages);
       this.replayUsage(context, snapshot.messages);
+      await this.refreshCache(context);
       this.stateEvent(context);
       loading = false;
       for (const state of buffered) if (state.sequence > snapshot.sequence) this.applyState(context, state);
@@ -274,6 +278,7 @@ export class RubatoPiBridge {
     for (const record of records) {
       context.projection.project(record.event); context.sequence = record.sequence;
     }
+    if (records.some((record) => this.cacheMoved(record.event))) void this.refreshCache(context);
     for (const request of state.pendingUi) context.projection.question(request);
     // Host status lags agent_settled (refresh is async). A settled projection
     // with no turn is ready; trusting host 'running' here made rewind/sendTurn
@@ -610,7 +615,29 @@ export class RubatoPiBridge {
     context.session.updatedAt = new Date().toISOString();
     await this.configureUsage(context, snapshot.state, snapshot.messages);
     this.replayUsage(context, snapshot.messages);
+    await this.refreshCache(context);
     this.stateEvent(context);
+  }
+  /**
+   * The context ring shows the cache: its lifetime, hit rate and the warmer. They move
+   * when a turn settles and when the warmer refreshes, so those two events re-read them.
+   * An engine without `get_cache_warming` leaves the ring as it was.
+   */
+  async refreshCache(context) {
+    let value;
+    try { value = await context.client.command({ type: 'get_cache_warming' }); }
+    catch { return; }
+    if (!context.stopped) context.projection.configureCache(value);
+  }
+  cacheMoved(event) {
+    return event?.type === 'agent_settled' || (event?.type === 'entry_appended' && event.entry?.kind === 'cache_warm');
+  }
+  /** Warming is one global mode; every open thread's ring follows the change. */
+  async cacheWarming() { return this.viaInventory((client) => client.cacheWarming()); }
+  async setCacheWarmingMode(mode) {
+    const result = await this.viaInventory((client) => client.setCacheWarmingMode(mode));
+    await Promise.all([...this.sessions.values()].map((context) => this.refreshCache(context)));
+    return result;
   }
   rememberWindows(models) {
     this.modelWindows ??= new Map();
@@ -656,7 +683,7 @@ export class RubatoPiBridge {
   }
   async close() {
     if (this.closed) return;
-    this.closed = true; clearInterval(this.retryTimer);
+    this.closed = true; clearInterval(this.retryTimer); liveBridges.delete(this);
     await this.recovering?.catch(() => {});
     await Promise.allSettled([...this.openings.values()]);
     await Promise.all([...this.sessions.keys()].map((threadId) => this.stopSession(threadId)));
@@ -664,3 +691,19 @@ export class RubatoPiBridge {
   }
 }
 export const createBridge = (options) => { t3BridgeLog('createBridge', options?.descriptorPath); return new RubatoPiBridge(options); };
+/**
+ * `/rubato/cache-warming` on the T3 server lands here (RubatoCacheWarming.ts imports this
+ * module by the path the Rubato provider is wired to, so it is the same module instance
+ * and sees the provider's bridge). GET reads the global mode; POST `{ mode }` sets it.
+ */
+export async function handleCacheWarmingRequest(request) {
+  const bridge = [...liveBridges].find((item) => !item.closed);
+  if (!bridge) return Response.json({ error: { code: 'unavailable', message: 'The Rubato provider is not running.' } }, { status: 503 });
+  try {
+    if (request.method === 'GET') return Response.json(await bridge.cacheWarming());
+    const body = await request.json().catch(() => ({}));
+    return Response.json(await bridge.setCacheWarmingMode(body?.mode));
+  } catch (error) {
+    return Response.json({ error: { code: 'failed', message: String(error?.message ?? error) } }, { status: 500 });
+  }
+}

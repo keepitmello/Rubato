@@ -132,6 +132,30 @@ export const contextTokensOf = (usage) => {
     + (asInt(usage.cacheRead) ?? 0) + (asInt(usage.cacheWrite) ?? 0);
   return sum > 0 ? sum : undefined;
 };
+// The context ring's cache facts, from the engine's `get_cache_warming`. Times are epoch ms;
+// `expiresAt` already counts the refreshes a scheduled warmer will still send, because
+// T3 detaches an idle session and hears nothing from it after that.
+const CACHE_STATES = new Set(['warm', 'cold', 'unknown']);
+const WARMING_MODES = new Set(['off', 'idle', 'streaming']);
+export const cacheFrom = (value) => {
+  const cache = record(record(value).cache);
+  const status = record(record(value).status);
+  const mode = record(value).mode;
+  if (!CACHE_STATES.has(cache.state) || !WARMING_MODES.has(mode)) return;
+  const hitPercent = asInt(cache.hitPercent);
+  const expiresAt = asInt(cache.expiresAt);
+  const until = asInt(status.until);
+  return {
+    state: cache.state,
+    ...(hitPercent !== undefined ? { hitPercent } : {}),
+    ...(expiresAt !== undefined ? { expiresAt } : {}),
+    warming: {
+      mode,
+      active: status.state === 'scheduled' || status.state === 'refreshing',
+      ...(until !== undefined ? { until } : {}),
+    },
+  };
+};
 export const tokenUsageFrom = (usage, extras = {}) => {
   const usedTokens = contextTokensOf(usage);
   if (usedTokens === undefined) return;
@@ -149,6 +173,7 @@ export const tokenUsageFrom = (usage, extras = {}) => {
     ...(reasoningOutputTokens !== undefined ? { reasoningOutputTokens, lastReasoningOutputTokens: reasoningOutputTokens } : {}),
     ...(typeof extras.compactsAutomatically === 'boolean' ? { compactsAutomatically: extras.compactsAutomatically } : {}),
     ...(asInt(extras.speedIndex) !== undefined ? { speedIndex: asInt(extras.speedIndex) } : {}),
+    ...(extras.cache ? { cache: extras.cache } : {}),
   };
 };
 
@@ -217,6 +242,7 @@ export class EventProjection {
     this.lastError = undefined; this.pendingError = undefined; this.retry = undefined;
     this.maxTokens = undefined;
     this.speedIndex = undefined;
+    this.cache = undefined; this.lastRawUsage = undefined;
   }
   configureUsage({ maxTokens, compactsAutomatically, replaceWindow } = {}) {
     const window = asInt(maxTokens);
@@ -224,14 +250,23 @@ export class EventProjection {
     else if (replaceWindow) this.maxTokens = undefined;
     if (typeof compactsAutomatically === 'boolean') this.compactsAutomatically = compactsAutomatically;
   }
+  /** Cache facts ride on the usage snapshot, so a change re-sends the last usage. */
+  configureCache(value) {
+    const cache = cacheFrom(value);
+    if (!cache) return;
+    this.cache = cache;
+    if (this.lastRawUsage) this.usage(this.lastRawUsage);
+  }
   usage(raw, message) {
     if (message?.stopReason === 'error' || message?.stopReason === 'aborted') return;
     const snapshot = tokenUsageFrom(raw, {
       maxTokens: this.maxTokens,
       compactsAutomatically: this.compactsAutomatically,
       speedIndex: this.speedIndex,
+      cache: this.cache,
     });
     if (!snapshot) return;
+    this.lastRawUsage = raw;
     const key = JSON.stringify(snapshot);
     if (key === this.lastUsage) return;
     this.lastUsage = key;

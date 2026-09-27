@@ -1,0 +1,63 @@
+import { EventId, TurnId } from "@t3tools/contracts";
+import type { ReactNode } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it, vi } from "vite-plus/test";
+
+import { deriveLatestContextWindowSnapshot } from "~/lib/contextWindow";
+import { ContextWindowMeter } from "./ContextWindowMeter";
+
+vi.mock("../ui/popover", () => ({
+  Popover: ({ children }: { children: ReactNode }) => children,
+  PopoverPopup: ({ children }: { children: ReactNode }) => children,
+  PopoverTrigger: ({ closeDelay, render }: { closeDelay: number; render: ReactNode }) => (
+    <div data-close-delay={closeDelay}>{render}</div>
+  ),
+}));
+
+const HOUR = 60 * 60_000;
+
+function meterWith(cache: Record<string, unknown>) {
+  const usage = deriveLatestContextWindowSnapshot([
+    {
+      id: EventId.make("activity-1"),
+      tone: "info",
+      kind: "context-window.updated",
+      summary: "Context updated",
+      payload: { usedTokens: 10_000, maxTokens: 200_000, compactsAutomatically: true, cache },
+      turnId: TurnId.make("turn-1"),
+      createdAt: "2026-09-27T03:00:00.000Z",
+    },
+  ]);
+  if (!usage) throw new Error("The fixture did not produce a snapshot.");
+  return renderToStaticMarkup(<ContextWindowMeter usage={usage} modelDisplayName="Opus 5.5" />);
+}
+
+describe("the context ring's prompt cache", () => {
+  it("paints the ring red when the cache is cold", () => {
+    const markup = meterWith({ state: "cold", hitPercent: 92, warming: { mode: "idle", active: false } });
+    expect(markup).toContain('stroke="var(--color-error)"');
+    expect(markup).toContain("Cold");
+  });
+
+  it("leaves a warm ring alone and lists hit rate, lifetime and the warmer instead of the compaction note", () => {
+    const markup = meterWith({
+      state: "warm",
+      hitPercent: 92,
+      expiresAt: Date.now() + 2 * HOUR + 5 * 60_000,
+      warming: { mode: "idle", active: true, until: Date.now() + HOUR },
+    });
+    expect(markup).not.toContain("var(--color-error)");
+    expect(markup).toContain("Hit rate");
+    expect(markup).toContain("92%");
+    expect(markup).toMatch(/Warm · 2h [45]m left/);
+    expect(markup).toContain("Refreshing until");
+    expect(markup).toContain('role="switch"');
+    expect(markup).not.toContain("compacts automatically");
+    expect(markup).toContain('data-close-delay="150"');
+  });
+
+  it("says the warmer is off for every thread", () => {
+    const markup = meterWith({ state: "warm", expiresAt: Date.now() + HOUR, warming: { mode: "off", active: false } });
+    expect(markup).toContain("Off for every thread");
+  });
+});
