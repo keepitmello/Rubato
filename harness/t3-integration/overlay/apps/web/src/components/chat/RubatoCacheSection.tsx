@@ -69,9 +69,9 @@ const SAVE_AFTER_MS = 600;
 /**
  * The cache half of the context ring's popover: lifetime, hit rate and how many hours
  * after its latest input this thread keeps warming. − / + change the hours and the end
- * time at once; the value is saved once the clicks stop. Stop ends the current window
- * (the next message warms again; − / + resume it). It answers for this thread only;
- * the global mode is a setting (/settings in the CLI).
+ * time at once; the value is saved once the clicks stop. Stop turns this thread's warmer
+ * off and it stays off through later messages until Keep warm (or − / +) turns it back
+ * on. It answers for this thread only; the global mode is a setting (/settings in the CLI).
  */
 export function RubatoCacheSection(props: {
   cache: RubatoCache | null | undefined;
@@ -103,25 +103,26 @@ export function RubatoCacheSection(props: {
       ? `Warm · ${formatRemaining(cache.expiresAt - now)} left`
       : "Lifetime not published";
   const canChange = Boolean(props.environmentId && cache.sessionId) && !globalOff;
-  const stopped = cache.warming.stopped === true && draft === null;
+  const sessionOff = !cache.warming.enabled && draft === null;
   const endNote = globalOff
     ? "Off in settings"
-    : stopped
-      ? "stopped"
+    : sessionOff
+      ? "off"
       : until == null
         ? null
         : until <= now
           ? `ended ${formatClock(until)}`
           : `until ${formatClock(until)}`;
-  const canStop = canChange && !stopped && cache.warming.active && until != null && until > now;
+  const canStop = canChange && !sessionOff && cache.warming.active && until != null && until > now;
+  const canResume = canChange && sessionOff;
 
-  const stopNow = () => {
+  const switchWarming = (enabled: boolean) => {
     if (!props.environmentId || !cache.sessionId) return;
     setError(null);
-    setSessionCacheWarming(props.environmentId, cache.sessionId, { stop: true })
+    setSessionCacheWarming(props.environmentId, cache.sessionId, { enabled })
       .then((updated) => setAnswered(updated))
       .catch((cause: unknown) =>
-        setError(cause instanceof Error ? cause.message : "Could not stop cache warming."),
+        setError(cause instanceof Error ? cause.message : "Could not change cache warming."),
       );
   };
 
@@ -193,8 +194,12 @@ export function RubatoCacheSection(props: {
         </div>
       </div>
       {canStop ? (
-        <Button size="xs" variant="outline" className="w-full justify-center" onClick={stopNow}>
+        <Button size="xs" variant="outline" className="w-full justify-center" onClick={() => switchWarming(false)}>
           Stop warming this thread
+        </Button>
+      ) : canResume ? (
+        <Button size="xs" variant="outline" className="w-full justify-center" onClick={() => switchWarming(true)}>
+          Keep this thread warm
         </Button>
       ) : null}
       {error ? <div className="text-pretty text-[11px] text-destructive">{error}</div> : null}

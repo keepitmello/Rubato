@@ -78,11 +78,9 @@ export function cacheTooltipLines(cached: CachedThread, now: number): [string, s
       ? `Warmer on until ${formatClock(cached.until)}${cached.hours ? ` · ${cached.hours}h` : ""}`
       : cached.warmer === "ended" && cached.until != null
         ? `Warmer ended ${formatClock(cached.until)}`
-        : cached.warmer === "stopped"
-          ? "Warmer stopped"
-          : cached.warmer === "off"
-            ? "Warmer off"
-            : "Warmer not running";
+        : cached.warmer === "off"
+          ? "Warmer off"
+          : "Warmer not running";
   return [cache, warmer];
 }
 

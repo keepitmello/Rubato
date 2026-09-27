@@ -931,8 +931,6 @@ test('the meter carries the cache and the warmer, and the switch turns off only 
   const back = await bridge.setSessionCacheWarming(sessionId, { enabled: true, hours: 8 });
   assert.equal(back.warming.enabled, true);
   assert.equal(back.warming.hours, 8);
-  const stopped = await bridge.setSessionCacheWarming(sessionId, { stop: true });
-  assert.equal(stopped.warming.stopped, true);
 });
 
 test('the sidebar lists every thread whose cache is still warm, with what its warmer is doing', async () => {
@@ -943,14 +941,12 @@ test('the sidebar lists every thread whose cache is still warm, with what its wa
     warming: { mode: 'idle', enabled: true, active: true, hours: 2, ...warming } });
   bridge.rememberWarmth('warming', snap({ from: now - HOUR, hours: 4 }, { expiresAt: now + 4 * HOUR }));
   bridge.rememberWarmth('ended', snap({ from: now - 3 * HOUR }));
-  bridge.rememberWarmth('stopped', snap({ from: now, stopped: true }));
   bridge.rememberWarmth('off', { ...snap({ from: now }), warming: { mode: 'off', enabled: true, active: false } });
   bridge.rememberWarmth('expired', snap({ from: now - HOUR }, { expiresAt: now - 1 }));
   bridge.rememberWarmth('cold', snap({ from: now }, { state: 'cold' }));
   assert.deepEqual(bridge.cachedThreads(), {
     warming: { sessionId: 's', expiresAt: now + 4 * HOUR, warmer: 'on', from: now - HOUR, hours: 4, until: now + 3 * HOUR },
     ended: { sessionId: 's', expiresAt: now + HOUR, warmer: 'ended', from: now - 3 * HOUR, hours: 2, until: now - HOUR },
-    stopped: { sessionId: 's', expiresAt: now + HOUR, warmer: 'stopped', from: now, hours: 2, until: now + 2 * HOUR },
     off: { sessionId: 's', expiresAt: now + HOUR, warmer: 'off' },
   });
 });

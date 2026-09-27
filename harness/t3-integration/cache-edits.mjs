@@ -28,7 +28,6 @@ export const cacheEdits = {
         '    enabled: Schema.Boolean,',
         '    hours: Schema.optional(NonNegativeInt),',
         '    from: Schema.optional(NonNegativeInt),',
-        '    stopped: Schema.optional(Schema.Boolean),',
         '    active: Schema.Boolean,',
         '    until: Schema.optional(NonNegativeInt),',
         '  }),',

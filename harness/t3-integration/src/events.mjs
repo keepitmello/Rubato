@@ -166,7 +166,7 @@ const WARMING_MODES = new Set(['off', 'idle', 'streaming']);
 export const cacheFrom = (value) => {
   const cache = record(record(value).cache);
   const status = record(record(value).status);
-  const { mode, sessionEnabled, sessionStopped, sessionId } = record(value);
+  const { mode, sessionEnabled, sessionId } = record(value);
   const hours = asInt(record(value).sessionHours);
   const from = asInt(record(value).lastInputAt);
   if (!CACHE_STATES.has(cache.state) || !WARMING_MODES.has(mode)) return;
@@ -181,7 +181,6 @@ export const cacheFrom = (value) => {
     warming: {
       mode,
       enabled: sessionEnabled !== false,
-      ...(sessionStopped === true ? { stopped: true } : {}),
       ...(hours > 0 ? { hours } : {}),
       ...(from !== undefined ? { from } : {}),
       active: status.state === 'scheduled' || status.state === 'refreshing',
