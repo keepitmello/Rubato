@@ -9,7 +9,9 @@
 //   <memory>/agents/<store>/runtime/dream/runs/<runId>/{run.json,out/report.md,out/user-candidates.md}
 //   <memory>/agents/<store>/runtime/dream/pending.json   {runId, branch, baseRevision}
 //   <memory>/agents/<store>/repo                          the store's git repository
-//   ~/.rubato/rubato.jsonc  memory.dream.{category,publish,stores.<name>.enabled}
+//   ~/.rubato/rubato.jsonc  memory.dream.{models,publish,stores.<name>.enabled}
+//   <project>/.rubato/rubato.jsonc  memory.agent       the store a project writes to
+//   where.ts (bun)                                      which store each folder resolves to
 //   <memory>/self/repo/{user.md,soul.md}                  every save is a commit
 import { execFile, spawn } from 'node:child_process';
 import { existsSync, openSync, closeSync } from 'node:fs';
@@ -28,7 +30,10 @@ const jsonc = createRequire(path.join(repoRoot, 'packages', 'rubato-config-core'
 
 const STORE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-const CATEGORY = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const MODEL_ID = /^[a-z0-9][a-z0-9-]{0,63}\/[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const REASONING = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
+const LADDER_MAX = 8;
+const PROJECTS_MAX = 200;
 const SHA = /^[0-9a-f]{7,64}$/;
 const BRANCH = /^dream\/[A-Za-z0-9._-]+$/;
 const SELF_FILES = new Set(['user.md', 'soul.md']);
@@ -120,17 +125,11 @@ export function createMemoryService(options = {}) {
     const value = jsonc.parse(text, errors, { allowTrailingComma: true });
     return value && typeof value === 'object' ? value : {};
   }
-  function categoriesOf(config) {
-    const merged = { ...(config['[senpi]']?.categories ?? {}), ...(config.categories ?? {}) };
-    return Object.entries(merged)
-      .filter(([, entry]) => entry && typeof entry === 'object')
-      .map(([name, entry]) => ({
-        name,
-        models: [entry.model, ...(Array.isArray(entry.models) ? entry.models : [])]
-          .map((item) => (typeof item === 'string' ? item : item?.model))
-          .filter((model, index, all) => typeof model === 'string' && model.includes('/') && all.indexOf(model) === index),
-      }))
-      .filter((entry) => entry.models.length > 0);
+  // The dream CLI resolves the ladder (the default included); rungs are {model, thinking?}.
+  function ladderOf(cliStatus) {
+    return (Array.isArray(cliStatus.models) ? cliStatus.models : [])
+      .filter((rung) => typeof rung?.model === 'string')
+      .map((rung) => ({ model: rung.model, reasoning: REASONING.has(rung.thinking) ? rung.thinking : null }));
   }
 
   function alive(pid) {
@@ -169,9 +168,8 @@ export function createMemoryService(options = {}) {
       lastGuiRun: STORE_NAME.test(entry.store) ? await lastGuiRun(entry.store) : null,
     })));
     return {
-      category: cliStatus.category,
+      models: ladderOf(cliStatus),
       publish: dream.publish === 'auto' ? 'auto' : 'review',
-      categories: categoriesOf(config),
       stores,
     };
   }
@@ -304,14 +302,41 @@ export function createMemoryService(options = {}) {
     }
   }
 
-  // The user file owns these keys. Each edit goes through jsonc `modify`, so
-  // comments, other keys and their order stay as the user wrote them.
+  function ladderInput(models) {
+    if (!Array.isArray(models) || models.length === 0 || models.length > LADDER_MAX) throw bad(`The dream needs 1 to ${LADDER_MAX} models.`);
+    const seen = new Set();
+    return models.map((entry) => {
+      const model = entry?.model;
+      if (typeof model !== 'string' || !MODEL_ID.test(model)) throw bad('A model id is not valid.');
+      if (seen.has(model)) throw bad(`${model} is listed twice.`);
+      seen.add(model);
+      if (entry.reasoning === undefined || entry.reasoning === null) return { model };
+      if (!REASONING.has(entry.reasoning)) throw bad(`Reasoning for ${model} is not valid.`);
+      return { model, reasoning: entry.reasoning };
+    });
+  }
+
+  // A config file owns these keys. Each edit goes through jsonc `modify`, so
+  // comments, other keys and their order stay as the user wrote them. An
+  // undefined value removes the key.
+  async function editJsonc(file, edits) {
+    try { if ((await lstat(file)).isSymbolicLink()) throw new MemoryRequestError(409, 'config-symlink', `${file} is a symlink; edit it directly.`); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    const text = (await readText(file)) ?? '';
+    const errors = [];
+    if (text.trim() !== '') jsonc.parse(text, errors, { allowTrailingComma: true });
+    if (errors.length > 0) throw new MemoryRequestError(409, 'config-parse', `${file} does not parse. Fix it before saving here.`);
+    let next = text.trim() === '' ? '{\n}\n' : text;
+    for (const [keyPath, value] of edits) {
+      next = jsonc.applyEdits(next, jsonc.modify(next, keyPath, value, { formattingOptions: { insertSpaces: true, tabSize: 2, eol: '\n' } }));
+    }
+    await mkdir(path.dirname(file), { recursive: true });
+    await atomicWrite(file, next);
+  }
+
   async function setConfig(input) {
     const edits = [];
-    if (input.category !== undefined) {
-      if (typeof input.category !== 'string' || !CATEGORY.test(input.category)) throw bad('Category is not valid.');
-      edits.push([['memory', 'dream', 'category'], input.category]);
-    }
+    if (input.models !== undefined) edits.push([['memory', 'dream', 'models'], ladderInput(input.models)]);
     if (input.publish !== undefined) {
       if (input.publish !== 'review' && input.publish !== 'auto') throw bad('Publish must be review or auto.');
       edits.push([['memory', 'dream', 'publish'], input.publish]);
@@ -322,19 +347,43 @@ export function createMemoryService(options = {}) {
       edits.push([['memory', 'dream', 'stores', input.store, 'enabled'], input.enabled]);
     }
     if (edits.length === 0) throw bad('Nothing to change.');
-    const { file, text } = await readConfigText();
-    try { if ((await lstat(file)).isSymbolicLink()) throw new MemoryRequestError(409, 'config-symlink', 'rubato.jsonc is a symlink; edit it directly.'); }
-    catch (error) { if (error.code !== 'ENOENT') throw error; }
-    const errors = [];
-    jsonc.parse(text, errors, { allowTrailingComma: true });
-    if (errors.length > 0) throw new MemoryRequestError(409, 'config-parse', `${file} does not parse. Fix it before saving here.`);
-    let next = text.trim() === '' ? '{\n}\n' : text;
-    for (const [keyPath, value] of edits) {
-      next = jsonc.applyEdits(next, jsonc.modify(next, keyPath, value, { formattingOptions: { insertSpaces: true, tabSize: 2, eol: '\n' } }));
-    }
-    await mkdir(path.dirname(file), { recursive: true });
-    await atomicWrite(file, next);
+    await editJsonc(configPath(), edits);
     return { saved: edits.map(([keyPath, value]) => ({ key: keyPath.join('.'), value })) };
+  }
+
+  // --- Projects: which store each project folder writes to, and naming one.
+
+  async function projectDir(dir) {
+    if (typeof dir !== 'string' || !path.isAbsolute(dir) || dir.includes('\0')) throw bad('Project folder is not valid.');
+    const { realpath, stat } = await import('node:fs/promises');
+    let real;
+    try { real = await realpath(dir); } catch { throw new MemoryRequestError(404, 'no-folder', `${dir} does not exist on this Mac.`); }
+    if (!(await stat(real)).isDirectory()) throw bad('Project folder is not a directory.');
+    return real;
+  }
+
+  async function projects({ dirs }) {
+    if (!Array.isArray(dirs) || dirs.some((dir) => typeof dir !== 'string' || !path.isAbsolute(dir))) throw bad('Folders must be absolute paths.');
+    const unique = [...new Set(dirs)].slice(0, PROJECTS_MAX);
+    if (unique.length === 0) return { projects: [] };
+    const result = await run(['bun', path.join(here, 'where.ts'), ...unique], { timeoutMs: 60_000 });
+    if (result.code !== 0) throw new MemoryRequestError(502, 'where-failed', (result.stderr || result.stdout).trim().split('\n').slice(-4).join('\n') || 'Could not resolve project stores.');
+    try { return { projects: JSON.parse(result.stdout) }; }
+    catch { throw new MemoryRequestError(502, 'where-output', 'where.ts did not print JSON.'); }
+  }
+
+  // Writes memory.agent into the project's own config; null clears it so the
+  // folder goes back to the automatic store (its git repository, or none).
+  async function setProjectStore({ dir, store }) {
+    const real = await projectDir(dir);
+    if (store !== null && (typeof store !== 'string' || !STORE_NAME.test(store) || store === 'auto')) throw bad('Store name is not valid.');
+    const configDir = path.join(real, '.rubato');
+    const jsoncFile = path.join(configDir, 'rubato.jsonc');
+    const jsonFile = path.join(configDir, 'rubato.json');
+    const file = !existsSync(jsoncFile) && existsSync(jsonFile) ? jsonFile : jsoncFile;
+    if (store === null && !existsSync(file)) return { dir: real, store: null };
+    await editJsonc(file, [[['memory', 'agent'], store === null ? undefined : store]]);
+    return { dir: real, store };
   }
 
   async function ensureSelfRepo() {
@@ -572,6 +621,8 @@ export function createMemoryService(options = {}) {
     dream: (input) => startDream(input),
     review: (input) => review(input),
     config: (input) => setConfig(input),
+    projects: (input) => projects(input),
+    'project-store': (input) => setProjectStore(input),
     self: () => readSelf(),
     'self-save': (input) => saveSelf(input),
     'add-candidates': (input) => addCandidates(input),

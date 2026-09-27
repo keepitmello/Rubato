@@ -46,11 +46,29 @@ export interface MemoryFileEntry {
   readonly description: string | null;
 }
 
+export type DreamReasoning = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+
+/** One rung of the dream's model ladder; the dream tries them in order. */
+export interface DreamModel {
+  readonly model: string;
+  /** null: the model's own default. */
+  readonly reasoning: DreamReasoning | null;
+}
+
 export interface MemoryStatus {
-  readonly category: string;
+  readonly models: readonly DreamModel[];
   readonly publish: DreamPublish;
-  readonly categories: ReadonlyArray<{ readonly name: string; readonly models: readonly string[] }>;
   readonly stores: readonly MemoryStoreStatus[];
+}
+
+/** Which store a project folder writes to, and why. */
+export interface ProjectStore {
+  readonly dir: string;
+  readonly store: string | null;
+  /** config: named in the folder's .rubato/rubato.jsonc; git: its repository; home: the home folder. */
+  readonly source: "config" | "git" | "home" | null;
+  /** memory.agent as the folder's own config writes it. */
+  readonly configured: string | null;
 }
 
 export interface DreamRunSummary {
@@ -164,10 +182,14 @@ export const rubatoMemory = {
   config: (
     env: EnvironmentId | null,
     change:
-      | { category: string }
+      | { models: ReadonlyArray<{ model: string; reasoning?: DreamReasoning }> }
       | { publish: DreamPublish }
       | { store: string; enabled: boolean },
   ) => call<{ saved: unknown[] }>(env, "config", change),
+  projects: (env: EnvironmentId | null, dirs: readonly string[]) =>
+    call<{ projects: ProjectStore[] }>(env, "projects", { dirs }),
+  setProjectStore: (env: EnvironmentId | null, dir: string, store: string | null) =>
+    call<{ dir: string; store: string | null }>(env, "project-store", { dir, store }),
   self: (env: EnvironmentId | null) => call<SelfFiles>(env, "self"),
   saveSelf: (
     env: EnvironmentId | null,

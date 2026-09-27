@@ -14,20 +14,21 @@ const bunAvailable = (() => { try { execFileSync('bun', ['--version']); return t
 
 const CONFIG = `{
   // 사용자 주석은 남아야 한다
-  "[senpi]": {
-    "categories": {
-      "grok": { "models": [{ "model": "b-ai/deepseek-v4.1-flash" }, "xai/grok-4.7"] }
-    }
-  },
   "memory": {
     "dream": {
-      "category": "grok", // 꼬리 주석
+      "models": [{ "model": "b-ai/deepseek-v4.1-flash", "reasoning": "medium" }, "xai/grok-4.7"], // 꼬리 주석
       "stores": { "scratch": { "enabled": true } }
     }
   },
   "_migrations": ["2026-08-reasoning-unification"]
 }
 `;
+
+function jsoncModels(text) {
+  // The fixture's comments must survive; strip them only to read the value back.
+  const stripped = text.replace(/\/\/[^\n]*/g, '');
+  return JSON.parse(stripped).memory.dream.models;
+}
 
 async function fixture(t) {
   const home = await mkdtemp(path.join(tmpdir(), 'rb-memory-'));
@@ -74,9 +75,11 @@ test('status, review and diffs go through the real dream CLI', { skip: !bunAvail
   await pendingDream(f, 'dream-a', 'second');
 
   const status = await f.service.handle('status', {});
-  assert.equal(status.category, 'grok');
+  assert.deepEqual(status.models, [
+    { model: 'b-ai/deepseek-v4.1-flash', reasoning: 'medium' },
+    { model: 'xai/grok-4.7', reasoning: null },
+  ]);
   assert.equal(status.publish, 'review');
-  assert.deepEqual(status.categories, [{ name: 'grok', models: ['b-ai/deepseek-v4.1-flash', 'xai/grok-4.7'] }]);
   const scratch = status.stores.find((entry) => entry.store === 'scratch');
   assert.equal(scratch.enabled, true);
   assert.equal(scratch.pendingRunId, 'dream-a');
@@ -130,16 +133,20 @@ test('settings writes keep the user file and commit the self store', async (t) =
   const f = await fixture(t);
   const configFile = path.join(f.home, '.rubato', 'rubato.jsonc');
   await f.service.handle('config', { publish: 'auto' });
-  await f.service.handle('config', { category: 'fable' });
+  await f.service.handle('config', { models: [{ model: 'xai/grok-4.7', reasoning: 'high' }, { model: 'anthropic/claude-haiku-4-5' }] });
   await f.service.handle('config', { store: 'scratch', enabled: false });
   const text = await readFile(configFile, 'utf8');
   assert.match(text, /\/\/ 사용자 주석은 남아야 한다/);
   assert.match(text, /\/\/ 꼬리 주석/);
   assert.match(text, /"publish": "auto"/);
-  assert.match(text, /"category": "fable"/);
+  assert.deepEqual(jsoncModels(text), [{ model: 'xai/grok-4.7', reasoning: 'high' }, { model: 'anthropic/claude-haiku-4-5' }]);
   assert.match(text, /"scratch": \{ "enabled": false \}|"scratch": \{\s*"enabled": false\s*\}/);
   assert.match(text, /"_migrations": \["2026-08-reasoning-unification"\]/);
   await assert.rejects(f.service.handle('config', { publish: 'sometimes' }), /review or auto/);
+  await assert.rejects(f.service.handle('config', { models: [] }), /1 to 8 models/);
+  await assert.rejects(f.service.handle('config', { models: [{ model: 'grok' }] }), /not valid/);
+  await assert.rejects(f.service.handle('config', { models: [{ model: 'xai/grok-4.7' }, { model: 'xai/grok-4.7' }] }), /twice/);
+  await assert.rejects(f.service.handle('config', { models: [{ model: 'xai/grok-4.7', reasoning: 'huge' }] }), /Reasoning/);
   await assert.rejects(f.service.handle('config', { store: 'ghost', enabled: true }), /No memory store/);
 
   const selfRepo = path.join(f.home, '.rubato', 'memory', 'self', 'repo');
@@ -231,4 +238,34 @@ test('a newcomer has no stores yet', async (t) => {
   t.after(() => rm(home, { recursive: true, force: true }));
   const service = createMemoryService({ env: { ...process.env, HOME: home, RUBATO_MEMORY_HOME: '' } });
   assert.deepEqual((await service.handle('stores', {})).stores, []);
+});
+
+test('project folders resolve to their store and can name one', { skip: !bunAvailable && 'bun is not installed' }, async (t) => {
+  const f = await fixture(t);
+  const repoProject = path.join(f.home, 'code', 'app');
+  const plain = path.join(f.home, 'notes');
+  await mkdir(repoProject, { recursive: true });
+  await mkdir(plain, { recursive: true });
+  execFileSync('git', ['init', '-q', repoProject]);
+
+  const before = await f.service.handle('projects', { dirs: [repoProject, plain, f.home] });
+  const byDir = Object.fromEntries(before.projects.map((entry) => [entry.dir, entry]));
+  assert.deepEqual([byDir[repoProject].store, byDir[repoProject].source], ['app', 'git']);
+  assert.deepEqual([byDir[plain].store, byDir[plain].source], [null, null]);
+  assert.deepEqual([byDir[f.home].store, byDir[f.home].source], ['home', 'home']);
+
+  await f.service.handle('project-store', { dir: plain, store: 'scratch' });
+  const configFile = path.join(plain, '.rubato', 'rubato.jsonc');
+  assert.equal(JSON.parse(await readFile(configFile, 'utf8')).memory.agent, 'scratch');
+  const named = (await f.service.handle('projects', { dirs: [plain] })).projects[0];
+  assert.deepEqual([named.store, named.source, named.configured], ['scratch', 'config', 'scratch']);
+
+  await f.service.handle('project-store', { dir: plain, store: null });
+  assert.equal(JSON.parse(await readFile(configFile, 'utf8')).memory?.agent, undefined);
+  assert.equal((await f.service.handle('projects', { dirs: [plain] })).projects[0].store, null);
+
+  await assert.rejects(f.service.handle('project-store', { dir: 'relative/dir', store: 'x' }), /not valid/);
+  await assert.rejects(f.service.handle('project-store', { dir: path.join(f.home, 'missing'), store: 'x' }), /does not exist/);
+  await assert.rejects(f.service.handle('project-store', { dir: plain, store: '../x' }), /not valid/);
+  await assert.rejects(f.service.handle('projects', { dirs: ['relative'] }), /absolute/);
 });

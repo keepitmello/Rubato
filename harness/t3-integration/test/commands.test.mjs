@@ -9,6 +9,8 @@ test('catalogue commands become T3 slash commands and skills; TUI duplicates sta
     { name: 'skill:ship-it', description: 'Ship the change', source: 'skill', sourceInfo: { path: '/tmp/ship-it/SKILL.md', scope: 'user' } },
     { name: 'model', description: 'Should not appear', source: 'extension' },
     { name: 'fork', description: 'Should not appear', source: 'extension' },
+    { name: 'diff', description: 'Terminal-only panel', source: 'extension' },
+    { name: 'history', description: 'Terminal-only panel', source: 'extension' },
     { name: 'compact', description: 'Extension compact is ours', source: 'extension' },
   ]);
   assert.deepEqual(surface.slashCommands.map((item) => item.name), ['compact', 'name', 'reload', 'audit', 'draft']);
