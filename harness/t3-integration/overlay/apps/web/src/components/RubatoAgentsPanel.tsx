@@ -467,6 +467,102 @@ function TaskforceCard({ group }: { group: AgentPanelWorkflowGroup }) {
   );
 }
 
+/**
+ * Working agents stay on top; finished and idle ones fold away below, newest first.
+ * An idle agent that is resumed is live again and moves back up on its own.
+ */
+export function splitAgentsByActivity(agents: ReadonlyArray<RuntimeSubagent>): {
+  live: RuntimeSubagent[];
+  finished: RuntimeSubagent[];
+} {
+  const live = agents.filter((agent) => isLive(agent.status));
+  const finishedAt = (agent: RuntimeSubagent) => agent.completedAt ?? agent.updatedAt;
+  const finished = agents
+    .filter((agent) => !isLive(agent.status))
+    .sort((a, b) => finishedAt(b).localeCompare(finishedAt(a)));
+  return { live, finished };
+}
+
+function GroupToggle({
+  open,
+  onToggle,
+  label,
+  detail,
+  controls,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  label: string;
+  detail: string;
+  controls: string;
+}) {
+  return (
+    <button
+      type="button"
+      aria-expanded={open}
+      aria-controls={controls}
+      onClick={onToggle}
+      className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-accent/40 focus-visible:outline-2 focus-visible:outline-ring"
+    >
+      {open ? (
+        <ChevronDown aria-hidden className="size-3 shrink-0 text-muted-foreground" />
+      ) : (
+        <ChevronRight aria-hidden className="size-3 shrink-0 text-muted-foreground" />
+      )}
+      <span className="text-xs font-medium">{label}</span>
+      <span className="font-mono text-[.7rem] tabular-nums text-muted-foreground">{detail}</span>
+    </button>
+  );
+}
+
+function AgentGroups({ agents }: { agents: ReadonlyArray<RuntimeSubagent> }) {
+  const { live, finished } = splitAgentsByActivity(agents);
+  const [liveOpen, setLiveOpen] = useState(true);
+  const [finishedOpen, setFinishedOpen] = useState(false);
+  const liveId = useId();
+  const finishedId = useId();
+  return (
+    <>
+      {live.length > 0 ? (
+        <div>
+          <GroupToggle
+            open={liveOpen}
+            onToggle={() => setLiveOpen((value) => !value)}
+            label="In progress"
+            detail={String(live.length)}
+            controls={liveId}
+          />
+          {liveOpen ? (
+            <div id={liveId}>
+              {live.map((agent) => (
+                <AgentRow key={agent.id} agent={agent} />
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      {finished.length > 0 ? (
+        <div>
+          <GroupToggle
+            open={finishedOpen}
+            onToggle={() => setFinishedOpen((value) => !value)}
+            label="Finished"
+            detail={teamCountsLabel(finished)}
+            controls={finishedId}
+          />
+          {finishedOpen ? (
+            <div id={finishedId}>
+              {finished.map((agent) => (
+                <AgentRow key={agent.id} agent={agent} />
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 export function RubatoAgentsPanel({
   model,
 }: {
@@ -500,11 +596,9 @@ export function RubatoAgentsPanel({
             </section>
           ) : null}
           {model.directAgents.length > 0 ? (
-            <section>
+            <section className="flex flex-col gap-1">
               {hasTeams ? <SectionLabel>Agents</SectionLabel> : null}
-              {model.directAgents.map((agent) => (
-                <AgentRow key={agent.id} agent={agent} />
-              ))}
+              <AgentGroups agents={model.directAgents} />
             </section>
           ) : null}
         </div>

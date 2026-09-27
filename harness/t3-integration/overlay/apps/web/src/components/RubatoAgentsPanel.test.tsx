@@ -5,7 +5,13 @@ import {
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
-import { QUIET_AFTER_MS, RubatoAgentsPanel, agentMetaParts, quietLabel } from "./RubatoAgentsPanel";
+import {
+  QUIET_AFTER_MS,
+  RubatoAgentsPanel,
+  agentMetaParts,
+  quietLabel,
+  splitAgentsByActivity,
+} from "./RubatoAgentsPanel";
 
 const AT = "2026-09-27T03:00:00.000Z";
 
@@ -101,5 +107,30 @@ describe("RubatoAgentsPanel", () => {
     expect(quietLabel(live, start + QUIET_AFTER_MS - 1)).toBeNull();
     expect(quietLabel(live, start + 3 * 60_000)).toBe("quiet 3m");
     expect(quietLabel(agent({ id: "st_b", status: "completed" }), start + 10 * 60_000)).toBeNull();
+  });
+
+  it("working agents stay open on top; finished and idle ones fold below, newest first", () => {
+    const agents = [
+      agent({ id: "st_old", status: "completed", completedAt: "2026-09-27T03:05:00.000Z" }),
+      agent({ id: "st_live" }),
+      agent({ id: "st_idle", status: "idle", updatedAt: "2026-09-27T03:20:00.000Z" }),
+      agent({ id: "st_new", status: "failed", completedAt: "2026-09-27T03:10:00.000Z" }),
+    ];
+    const { live, finished } = splitAgentsByActivity(agents);
+    expect(live.map((item) => item.id)).toEqual(["st_live"]);
+    expect(finished.map((item) => item.id)).toEqual(["st_idle", "st_new", "st_old"]);
+    const html = render(agents);
+    expect(html).toContain("In progress");
+    expect(html).toContain("1 idle · 1 done · 1 failed");
+    expect(html).toContain("Now writing the script and helpers.");
+    expect(html.match(/aria-expanded="false"[^>]*>[^]*?Finished/)).not.toBeNull();
+    // Folded: only the live row is rendered.
+    expect(html.match(/Show report/g)?.length).toBe(1);
+  });
+
+  it("a resumed idle agent moves back to In progress", () => {
+    const resumed = splitAgentsByActivity([agent({ id: "st_idle", status: "running" })]);
+    expect(resumed.live.map((item) => item.id)).toEqual(["st_idle"]);
+    expect(resumed.finished).toEqual([]);
   });
 });
