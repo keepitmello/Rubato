@@ -46,7 +46,9 @@ Esc 뒤로, q 종료. 명령어를 칠 일은 API 키와 setup-token 붙여넣�
 차단 기록도 푼다.
 
 스크립트용 비대화 형태(`rubato auth login <provider> [oauth|token|key]`,
-`list`/`pin`/`unpin`/`remove`)는 그대로 남는다.
+`list`/`pin`/`unpin`/`remove`/`check`)는 그대로 남는다. 여기에 `--json`을 붙이면
+GUI 계약이 된다 — GUI 설정 → **Providers**가 이 계약 위에서 같은 상태·로그인·연결
+확인·고정·삭제를 보여 준다. 계약 정의는 `harness/scripts/rubato-auth.mjs`의 GUI 계약 절이다.
 
 ## 실행
 

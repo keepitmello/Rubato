@@ -129,6 +129,14 @@ export function accountState(slot, account) {
   return slotPresence(slot).state;
 }
 
+/** 슬롯이 무엇으로 들어왔나. 평평한 옛 항목은 `type` 없이 토큰만 들고 있다. */
+function credentialType(slot) {
+  if (!slot || typeof slot !== "object") return undefined;
+  if (typeof slot.access === "string" && slot.access) return "oauth";
+  if (typeof slot.key === "string" && slot.key) return "api_key";
+  return typeof slot.type === "string" ? slot.type : undefined;
+}
+
 const STATE_RANK = Object.freeze({ connected: 0, stale: 1, blocked: 2, absent: 3 });
 
 export function bestState(states) {
@@ -250,6 +258,7 @@ export async function collectStatus(ctx) {
     const slotByName = new Map(listSlots(entry).map((slot) => [slot.name, slot]));
     const accounts = (await listProviderAccounts(provider.id, ctx)).map((account) => ({
       ...account,
+      type: credentialType(slotByName.get(account.name)),
       state: accountState(slotByName.get(account.name), account),
     }));
     rows.push({
@@ -291,6 +300,8 @@ export function printUsage(stdout = process.stdout) {
   stdout.write("       rubato auth pin <provider> <name>\n");
   stdout.write("       rubato auth unpin <provider>\n");
   stdout.write("       rubato auth remove <provider> <name>\n");
+  stdout.write("       rubato auth check <provider> <name>\n");
+  stdout.write("       add --json to status, login, check, pin, unpin, remove for the GUI contract\n");
   stdout.write(`providers: ${PROVIDERS.map((provider) => provider.id).join(", ")}\n`);
   stdout.write("Anthropic: oauth or token (sk-ant-oat setup-token). Token stays in ~/.claude, not auth.json.\n");
 }
@@ -555,12 +566,20 @@ async function addSetupToken(ctx) {
   stdout.write(`${DIM}이 토큰은 ~/.claude 에만 있고 auth.json 으로 복사하지 않습니다.${RST}\n`);
 }
 
+/** 엔진을 거치지 않고 키를 auth.json 에 바로 넣는 provider. */
+const STORED_KEY_PROVIDERS = new Set(["kiro", "opencode", "b-ai"]);
+
+function apiKeyNotes(providerId) {
+  if (providerId === "kiro") return ["키 대신 이 스크립트를 써도 됩니다: harness/scripts/kiro-setup.sh"];
+  if (providerId === "opencode") return ["Keychain 서비스 opencode.ai 에 넣어 두어도 됩니다."];
+  if (providerId === "b-ai") return ["B.AI 키입니다. 모델은 DeepSeek V4.1 Flash."];
+  return [];
+}
+
 async function addStoredApiKey(providerId, ctx) {
   const stdout = ctx.stdout ?? process.stdout;
   stdout.write(`${LOGIN_LABELS[providerId] ?? providerId} API 키를 붙여넣어 주세요. 그냥 Enter 를 누르면 취소됩니다.\n`);
-  if (providerId === "kiro") stdout.write("키 대신 이 스크립트를 써도 됩니다: harness/scripts/kiro-setup.sh\n");
-  if (providerId === "opencode") stdout.write("Keychain 서비스 opencode.ai 에 넣어 두어도 됩니다.\n");
-  if (providerId === "b-ai") stdout.write("B.AI 키입니다. 모델은 DeepSeek V4.1 Flash.\n");
+  for (const note of apiKeyNotes(providerId)) stdout.write(`${note}\n`);
   const key = await readLine(ctx);
   if (!key) {
     stdout.write("취소했습니다.\n");
@@ -575,7 +594,7 @@ export async function defaultLogin(providerId, method, ctx) {
     await addSetupToken(ctx);
     return;
   }
-  if (method === "api_key" && (providerId === "kiro" || providerId === "opencode" || providerId === "b-ai")) {
+  if (method === "api_key" && STORED_KEY_PROVIDERS.has(providerId)) {
     await addStoredApiKey(providerId, ctx);
     return;
   }
@@ -661,10 +680,236 @@ export async function handleAuthArgs(argv, ctx) {
       await runRemoveCommand(id, rest[1], ctx);
       return "ok";
     }
+    if (cmd === "check") {
+      const id = await resolveProviderArg(rest[0], ctx);
+      if (!id || rest[1] === undefined) return "usage";
+      const result = await verifyAccount(id, rest[1], ctx);
+      writeError(ctx, describeCheck(result));
+      return result.kind === "ok" || result.kind === "unsupported" ? "ok" : "error";
+    }
     return "usage";
   } catch (error) {
     writeError(ctx, error instanceof Error ? error.message : String(error));
     return "error";
+  }
+}
+
+/** 연결 확인 결과를 한 문장으로. 방향키 화면과 `check` 명령이 같은 말을 한다. */
+export function describeCheck(result) {
+  if (result.kind === "ok") return "연결됐습니다.";
+  if (result.kind === "unsupported") return "이 계정은 미리 확인할 방법이 없습니다. 실제로 써 봐야 알 수 있습니다.";
+  if (result.kind === "stale") return `갱신이 실패했고 지금 토큰도 만료됐습니다. 다시 로그인해 주세요. (${result.reason})`;
+  return `지금 토큰은 쓸 수 있지만 갱신이 되지 않습니다. ${untilDate(result.expires)} 까지 쓰이고, 그 뒤에는 다시 로그인해야 합니다. (${result.reason})`;
+}
+
+// ── GUI 계약 (--json) ────────────────────────────────────────────────────────
+//
+// T3 설정의 Providers 화면이 서는 자리다. 화면은 경로도 파일도 모르고 이 계약만 안다:
+//   status --json                     공급자별 상태와 계정 한 덩어리
+//   check|pin|unpin|remove ... --json  결과 한 덩어리 ({ ok } 또는 { error })
+//   login <provider> <method> --json   stdout 으로 이벤트를 한 줄씩, stdin 으로 답을 한 줄씩
+//     out  {type:"auth_url",url,instructions} {type:"device_code",userCode,verificationUri}
+//          {type:"info",message} {type:"prompt",id,kind,message,placeholder?,options?}
+//          {type:"prompt_closed",id} {type:"done",message} {type:"error",message} {type:"cancelled"}
+//     in   {id,value}  {type:"cancel"}
+// 엔진이 stdout 에 쓰는 안내는 계약을 깨므로 JSON 모드에서는 stderr 로 돌린다.
+
+export async function statusJson(ctx) {
+  const rows = await collectStatus(ctx);
+  return {
+    providers: rows.map((row) => ({
+      id: row.provider.id,
+      label: row.provider.label,
+      methods: row.provider.methods,
+      state: row.state,
+      accounts: row.accounts.map((account) => ({
+        name: account.name,
+        source: account.source,
+        type: account.source === "setup-token" ? "setup-token" : account.type ?? null,
+        state: account.state,
+        pinned: Boolean(account.pinned),
+        removable: account.source !== "env" && account.source !== "setup-token",
+      })),
+    })),
+    setupToken: { path: claudeSetupTokenPath(ctx.env, ctx.home), account: claudeAccount(ctx.env) },
+  };
+}
+
+export function createJsonInteraction({ stdin = process.stdin, stdout = process.stdout } = {}) {
+  const cancel = new AbortController();
+  const pending = new Map();
+  let nextId = 0;
+  const emit = (event) => stdout.write(`${JSON.stringify(event)}\n`);
+  const cancelled = () => new Error("취소했습니다.");
+  const abortAll = () => {
+    if (!cancel.signal.aborted) cancel.abort(cancelled());
+    for (const waiter of pending.values()) waiter.reject(cancelled());
+    pending.clear();
+  };
+  const rl = createInterface({ input: stdin });
+  rl.on("line", (line) => {
+    let message;
+    try {
+      message = JSON.parse(line);
+    } catch {
+      return;
+    }
+    if (message?.type === "cancel") {
+      abortAll();
+      return;
+    }
+    const waiter = pending.get(message?.id);
+    if (!waiter) return;
+    pending.delete(message.id);
+    waiter.resolve(typeof message.value === "string" ? message.value : "");
+  });
+  // 부모가 사라지면 답할 사람도 없다. 브라우저 콜백을 기다리며 영영 떠 있지 않는다.
+  rl.on("close", abortAll);
+
+  const ask = (prompt) => new Promise((resolve, reject) => {
+    const id = ++nextId;
+    const signal = prompt.signal;
+    const onAbort = () => {
+      if (!pending.delete(id)) return;
+      emit({ type: "prompt_closed", id });
+      reject(signal?.reason ?? cancelled());
+    };
+    if (signal?.aborted || cancel.signal.aborted) {
+      reject(signal?.reason ?? cancelled());
+      return;
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
+    pending.set(id, {
+      resolve: (value) => {
+        signal?.removeEventListener("abort", onAbort);
+        // 빈 답은 취소다 — CLI 와 같은 이유(키 없는 계정이 생긴다). manual_code 만
+        // 예외인 것도 같다: 브라우저 콜백과 경주하는 자리라 던지면 로그인이 무너진다.
+        if (prompt.type !== "manual_code" && value.trim() === "") {
+          abortAll();
+          reject(cancelled());
+        } else resolve(value);
+      },
+      reject: (error) => {
+        signal?.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    });
+    emit({
+      type: "prompt",
+      id,
+      kind: prompt.type,
+      message: prompt.message,
+      ...(prompt.placeholder ? { placeholder: prompt.placeholder } : {}),
+      ...(Array.isArray(prompt.options)
+        ? { options: prompt.options.map((option) => ({ id: option.id, label: option.label })) }
+        : {}),
+    });
+  });
+
+  return {
+    signal: cancel.signal,
+    emit,
+    close() {
+      rl.off("close", abortAll);
+      rl.close();
+    },
+    interaction: {
+      signal: cancel.signal,
+      prompt: ask,
+      notify(event) {
+        if (event.type === "auth_url") emit({ type: "auth_url", url: event.url, instructions: event.instructions ?? null });
+        else if (event.type === "device_code") emit({ type: "device_code", userCode: event.userCode, verificationUri: event.verificationUri });
+        else if (event.type === "info" || event.type === "progress") emit({ type: "info", message: event.message });
+      },
+    },
+  };
+}
+
+export async function runJsonLogin(providerId, method, ctx) {
+  const io = createJsonInteraction({ stdin: ctx.stdin ?? process.stdin, stdout: ctx.stdout ?? process.stdout });
+  const label = LOGIN_LABELS[providerId] ?? providerId;
+  try {
+    if (method === "setup-token") {
+      const existing = setupTokenPresent(ctx);
+      const token = await io.interaction.prompt({
+        type: "secret",
+        message: [
+          "sk-ant-oat… 로 시작하는 토큰을 붙여넣어 주세요. 토큰이 없으면 터미널에서 `claude setup-token` 을 먼저 실행해 주세요.",
+          ...(existing ? [`기존 파일을 덮어씁니다: ${existing}`] : []),
+        ].join("\n"),
+        placeholder: "sk-ant-oat…",
+      });
+      const path = writeSetupToken(token, ctx);
+      io.emit({ type: "done", message: `setup-token 을 저장했습니다: ${path}` });
+    } else if (method === "api_key" && STORED_KEY_PROVIDERS.has(providerId)) {
+      const key = await io.interaction.prompt({
+        type: "secret",
+        message: [`${label} API 키를 붙여넣어 주세요.`, ...apiKeyNotes(providerId)].join("\n"),
+      });
+      await storeApiKey(credentialsOf(ctx), providerId, key);
+      io.emit({ type: "done", message: `${label} API 키를 저장했습니다.` });
+    } else {
+      const { runtime } = await engineRuntime(providerId, { ...ctx, stdout: ctx.stderr ?? process.stderr });
+      await loginWithRuntime(runtime, providerId, method === "api_key" ? "api_key" : "oauth", io.interaction);
+      io.emit({ type: "done", message: `${label} 에 로그인했습니다.` });
+    }
+    return "ok";
+  } catch (error) {
+    if (io.signal.aborted) io.emit({ type: "cancelled" });
+    else io.emit({ type: "error", message: error instanceof Error ? error.message : String(error) });
+    return "error";
+  } finally {
+    io.close();
+  }
+}
+
+export async function handleJsonArgs(argv, ctx) {
+  const stdout = ctx.stdout ?? process.stdout;
+  const reply = (value) => stdout.write(`${JSON.stringify(value)}\n`);
+  const fail = (code, message) => {
+    reply({ error: { code, message } });
+    return code === "usage" ? "usage" : "error";
+  };
+  const [cmd, ...rest] = argv;
+  const commands = new Set(["status", "list", "login", "add", "check", "pin", "unpin", "remove"]);
+  if (cmd !== undefined && !commands.has(cmd)) return fail("usage", `Unknown command: ${cmd}`);
+  try {
+    if (cmd === "status" || cmd === "list" || cmd === undefined) {
+      reply(await statusJson(ctx));
+      return "ok";
+    }
+    const resolved = resolveLoginProvider(rest[0]);
+    if (!resolved?.id) return fail("usage", `Unknown provider: ${rest[0] ?? ""}`);
+    const id = resolved.id;
+    if (cmd === "login" || cmd === "add") {
+      const method = resolveLoginMethod(id, rest[1]);
+      if (method.error) return fail("usage", `Unknown method for ${id}: ${rest[1] ?? ""}`);
+      return runJsonLogin(id, method.id, ctx);
+    }
+    if (cmd === "unpin") {
+      await runPinCommand(id, null, quietly(ctx));
+      reply({ ok: true });
+      return "ok";
+    }
+    if (rest[1] === undefined) return fail("usage", `${cmd} needs an account name`);
+    if (cmd === "check") {
+      const result = await verifyAccount(id, rest[1], { ...ctx, stdout: ctx.stderr ?? process.stderr });
+      reply({ ...result, message: describeCheck(result) });
+      return "ok";
+    }
+    if (cmd === "pin") {
+      await runPinCommand(id, rest[1], quietly(ctx));
+      reply({ ok: true });
+      return "ok";
+    }
+    if (cmd === "remove") {
+      await runRemoveCommand(id, rest[1], quietly(ctx));
+      reply({ ok: true });
+      return "ok";
+    }
+    return fail("usage", `Unknown command: ${cmd}`);
+  } catch (error) {
+    return fail("failed", error instanceof Error ? error.message : String(error));
   }
 }
 
@@ -873,6 +1118,7 @@ function withIo(io = {}) {
   const env = io.env ?? process.env;
   return {
     stdout: io.stdout ?? process.stdout,
+    stderr: io.stderr ?? process.stderr,
     stdin: io.stdin ?? process.stdin,
     env,
     home: io.home ?? env.HOME ?? homedir(),
@@ -891,6 +1137,12 @@ export async function main(argv = process.argv.slice(2), io = {}) {
   const stdout = ctx.stdout;
   if (argv[0] === "--help" || argv[0] === "-h" || argv[0] === "help") {
     printUsage(stdout);
+    return;
+  }
+  if (argv.includes("--json")) {
+    const result = await handleJsonArgs(argv.filter((arg) => arg !== "--json"), ctx);
+    if (result === "usage") process.exitCode = 2;
+    else if (result === "error") process.exitCode = 1;
     return;
   }
   if (argv[0] === "--status" || argv[0] === "status") {

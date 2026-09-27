@@ -11,6 +11,7 @@ import {
   createFileCredentials,
   describeState,
   handleAuthArgs,
+  handleJsonArgs,
   main,
   printStatus,
   resolveLoginMethod,
@@ -297,6 +298,80 @@ test("bare rubato auth is status-only when stdin is not a TTY", async () => {
   });
   assert.deepEqual(lines, []);
   assert.match(text(), /rubato auth/);
+});
+
+/** JSON 줄 계약을 몰고 다닌다: 이벤트가 올 때마다 `answer` 가 stdin 에 쓸 줄을 고른다. */
+function jsonSession(answer) {
+  const stdin = new PassThrough();
+  const events = [];
+  const stdout = {
+    write(chunk) {
+      for (const line of String(chunk).split("\n").filter(Boolean)) {
+        const event = JSON.parse(line);
+        events.push(event);
+        const reply = answer(event);
+        if (reply) setImmediate(() => stdin.write(`${JSON.stringify(reply)}\n`));
+      }
+    },
+  };
+  return { stdin, stdout, events };
+}
+
+test("status --json reports every provider with typed accounts", async () => {
+  const dir = tempHome();
+  const authPath = join(dir, "auth.json");
+  writeFileSync(authPath, JSON.stringify({
+    xai: { type: "oauth", access: "a", refresh: "r" },
+    "b-ai": { type: "api_key", key: "k" },
+  }));
+  const { stdout, text } = capture();
+  await main(["status", "--json"], { stdout, env: isolatedEnv(dir), home: dir });
+  const status = JSON.parse(text());
+  const byId = Object.fromEntries(status.providers.map((provider) => [provider.id, provider]));
+  assert.equal(byId.xai.state, "connected");
+  assert.equal(byId.xai.accounts[0].type, "oauth");
+  assert.equal(byId["b-ai"].accounts[0].type, "api_key");
+  assert.equal(byId.kiro.state, "absent");
+  assert.deepEqual(byId.anthropic.methods, ["oauth", "setup-token"]);
+  assert.match(status.setupToken.path, /missing-setup-token$/);
+});
+
+test("login --json asks for the key over the line contract and stores it", async () => {
+  const dir = tempHome();
+  const env = isolatedEnv(dir);
+  const session = jsonSession((event) => (event.type === "prompt" ? { id: event.id, value: "kiro-key" } : undefined));
+  await main(["login", "kiro", "key", "--json"], { ...session, env, home: dir });
+  assert.equal(session.events[0].kind, "secret");
+  assert.equal(session.events.at(-1).type, "done");
+  assert.equal(JSON.parse(readFileSync(env.RUBATO_AUTH_PATH, "utf8")).kiro.key, "kiro-key");
+});
+
+test("login --json setup-token stays out of auth.json", async () => {
+  const dir = tempHome();
+  const env = isolatedEnv(dir, { RUBATO_CLAUDE_SETUP_TOKEN_FILE: join(dir, "token") });
+  const session = jsonSession((event) => (event.type === "prompt" ? { id: event.id, value: "sk-ant-oat-gui" } : undefined));
+  await main(["login", "claude", "token", "--json"], { ...session, env, home: dir });
+  assert.equal(session.events.at(-1).type, "done");
+  assert.equal(readFileSync(join(dir, "token"), "utf8").trim(), "sk-ant-oat-gui");
+  assert.equal(existsOrMissing(env.RUBATO_AUTH_PATH), false);
+});
+
+test("login --json cancel and an empty answer both end as cancelled without a key", async () => {
+  for (const reply of [{ type: "cancel" }, { value: "" }]) {
+    const dir = tempHome();
+    const env = isolatedEnv(dir);
+    const session = jsonSession((event) => (event.type === "prompt" ? { id: event.id, ...reply } : undefined));
+    assert.equal(await handleJsonArgs(["login", "deepseek", "key"], { ...session, env, home: dir }), "error");
+    assert.equal(session.events.at(-1).type, "cancelled");
+    assert.equal(existsOrMissing(env.RUBATO_AUTH_PATH), false);
+  }
+});
+
+test("json errors come back as one object, not prose", async () => {
+  const dir = tempHome();
+  const { stdout, text } = capture();
+  assert.equal(await handleJsonArgs(["remove", "kiro", "nope"], { stdout, env: isolatedEnv(dir), home: dir }), "error");
+  assert.equal(JSON.parse(text()).error.code, "failed");
 });
 
 function existsOrMissing(path) {
