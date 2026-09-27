@@ -64,6 +64,10 @@ function restartHarness(t, { engineToken = "restarted", engineExit = 0, hubPrese
   chmodSync(launcher, 0o755);
   // The launcher sources this for the progress line and the ✓/·/✗ shapes.
   copyFileSync(
+    fileURLToPath(new URL("../../../scripts/account-home.sh", import.meta.url)),
+    join(scripts, "account-home.sh"),
+  );
+  copyFileSync(
     fileURLToPath(new URL("../../../scripts/rubato-progress.sh", import.meta.url)),
     join(scripts, "rubato-progress.sh"),
   );
@@ -166,8 +170,10 @@ function restartHarness(t, { engineToken = "restarted", engineExit = 0, hubPrese
   mkdirSync(env.HOME, { recursive: true });
   return {
     root,
-    run(args, extraEnv = {}) {
-      return spawnSync(launcher, args, { cwd: root, env: { ...env, ...extraEnv }, encoding: "utf8" });
+    run(args, extraEnv = {}, drop = []) {
+      const runEnv = { ...env, ...extraEnv };
+      for (const name of drop) delete runEnv[name];
+      return spawnSync(launcher, args, { cwd: root, env: runEnv, encoding: "utf8" });
     },
     calls() {
       return readFileSync(log, "utf8");
@@ -346,6 +352,21 @@ test("restart still reports the app when the relauncher stays up", (t) => {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /✓ 데스크톱 앱/);
   assert.equal(harness.relaunched(), "relaunched");
+});
+
+// launchctl services, /Applications and the app are the account's, not HOME's. A
+// test reached a real restart from a temporary HOME, quit the running app and
+// pointed /Applications/Rubato.app into /var/folders. Only a caller that names
+// them (the seams below) may reach them from another HOME.
+test("restart from another HOME leaves the account's hub and app alone", (t) => {
+  const harness = restartHarness(t, { engineToken: "restarted", engineExit: 0, hubPresent: true, hubExit: 0 });
+  const result = harness.run(["restart"], {}, ["RUBATO_LAUNCHCTL_BIN", "RUBATO_GUI_APP"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /remote hub 은 이 HOME 에서는 건드리지 않아요/);
+  assert.match(result.stdout, /데스크톱 앱을 건드리지 않아요/);
+  assert.doesNotMatch(harness.calls(), /rubato-hub-restart\.mjs/);
+  assert.equal(harness.quitCalls(), "");
+  assert.equal(harness.relaunched(), undefined);
 });
 
 test("restart skips cleanly when the app is installed but not running", (t) => {
