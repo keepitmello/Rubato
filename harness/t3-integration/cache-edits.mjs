@@ -111,7 +111,18 @@ export const cacheEdits = {
         '            </div>',
         '          ) : null}',
       ].join('\n'),
-      '          <RubatoCacheSection cache={usage.cache} environmentId={environmentId} />',
+      '          {/* Rubato: the prompt cache sits above the context (RubatoCacheSection). */}',
+      'replace',
+    ],
+    // Cache on top, context and its optimization below, so the two layers do not mix.
+    [
+      '        <div className="flex flex-col gap-2 p-[var(--floating-content-inset)]">\n',
+      '        <div className="flex flex-col gap-2 p-[var(--floating-content-inset)]">\n          <RubatoCacheSection cache={usage.cache} environmentId={environmentId} />\n',
+      'replace',
+    ],
+    [
+      '                <Minimize2Icon aria-hidden="true" />\n                Compact context',
+      '                <Minimize2Icon aria-hidden="true" />\n                Optimize context',
       'replace',
     ],
     // The popover borrows the tooltip surface, where T3's muted greys sit close to the
@@ -185,6 +196,11 @@ export const cacheEdits = {
       '} from "./ThreadStatusIndicators";\nimport { RubatoCacheCapsule, RubatoCacheTooltip } from "./sidebar/RubatoCacheCapsule";\n',
       'replace',
     ],
+  ],
+  // The compact button reads "Optimize context"; T3's own test names the button.
+  'apps/web/src/components/chat/ContextWindowMeter.test.tsx': [
+    ['    expect(markup).toContain("Compact context");', '    expect(markup).toContain("Optimize context");', 'replace'],
+    ['    expect(markup).not.toContain("Compact context");', '    expect(markup).not.toContain("Optimize context");', 'replace'],
   ],
   'apps/server/src/server.ts': [
     [

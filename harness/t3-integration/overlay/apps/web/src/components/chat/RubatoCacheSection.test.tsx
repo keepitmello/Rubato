@@ -15,6 +15,8 @@ vi.mock("../ui/popover", () => ({
 }));
 
 const HOUR = 60 * 60_000;
+/** The warmer switch's state as the server render marks it. */
+const switchOf = (markup: string) => markup.match(/<[^>]*data-(checked|unchecked)=""[^>]*role="switch"/)?.[1];
 
 function meterWith(cache: Record<string, unknown>, usedTokens = 10_000) {
   const usage = deriveLatestContextWindowSnapshot([
@@ -62,15 +64,21 @@ describe("the context ring's prompt cache", () => {
     expect(markup).toContain('data-close-delay="150"');
   });
 
-  it("offers Stop while warming, and once this thread is off says so and offers to keep it warm", () => {
+  it("switches this thread's warmer, with the hours and end time only while it is on", () => {
     const from = Date.now() - HOUR;
-    const warming = meterWith({ state: "warm", sessionId: "s1", expiresAt: Date.now() + HOUR, warming: { mode: "idle", enabled: true, hours: 2, from, active: true } });
-    expect(warming).toContain("Stop warming this thread");
-    expect(warming).not.toContain("Keep this thread warm");
+    const on = meterWith({ state: "warm", sessionId: "s1", expiresAt: Date.now() + HOUR, warming: { mode: "idle", enabled: true, hours: 2, from, active: true } });
+    expect(switchOf(on)).toBe("checked");
+    expect(on).toContain(">2h<");
+    expect(on).toContain("until ");
     const off = meterWith({ state: "warm", sessionId: "s1", expiresAt: Date.now() + HOUR, warming: { mode: "idle", enabled: false, hours: 2, from, active: false } });
-    expect(off).toContain(">off<");
-    expect(off).toContain("Keep this thread warm");
-    expect(off).not.toContain("Stop warming this thread");
+    expect(switchOf(off)).toBe("unchecked");
+    expect(off).not.toContain(">2h<");
+    expect(off).not.toContain("until ");
+  });
+
+  it("puts the prompt cache above the context window", () => {
+    const markup = meterWith({ state: "warm", sessionId: "s1", expiresAt: Date.now() + HOUR, warming: { mode: "idle", enabled: true, active: true } });
+    expect(markup.indexOf("Prompt Cache")).toBeLessThan(markup.indexOf("Context Window"));
   });
 
   it("says when a window already ended", () => {
@@ -84,9 +92,10 @@ describe("the context ring's prompt cache", () => {
     expect(markup).not.toContain("var(--color-error)");
   });
 
-  it("locks the hours when warming is off in settings", () => {
+  it("locks the switch and hides the hours when warming is off in settings", () => {
     const markup = meterWith({ state: "warm", sessionId: "s1", expiresAt: Date.now() + HOUR, warming: { mode: "off", enabled: true, active: false } });
     expect(markup).toContain("Off in settings");
-    expect(markup).toMatch(/aria-label="One hour more"[^>]*disabled=""|disabled=""[^>]*aria-label="One hour more"/);
+    expect(switchOf(markup)).toBe("unchecked");
+    expect(markup).not.toContain(">1h<");
   });
 });

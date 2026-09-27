@@ -6,6 +6,7 @@ import { cn } from "~/lib/utils";
 import { setSessionCacheWarming } from "~/state/rubatoCacheWarming";
 import { MinusIcon, PlusIcon } from "lucide-react";
 import { Button } from "../ui/button";
+import { Switch } from "../ui/switch";
 
 type RubatoCache = NonNullable<ContextWindowSnapshot["cache"]>;
 
@@ -67,11 +68,12 @@ const DEFAULT_HOURS = 2;
 const SAVE_AFTER_MS = 600;
 
 /**
- * The cache half of the context ring's popover: lifetime, hit rate and how many hours
- * after its latest input this thread keeps warming. − / + change the hours and the end
- * time at once; the value is saved once the clicks stop. Stop turns this thread's warmer
- * off and it stays off through later messages until Keep warm (or − / +) turns it back
- * on. It answers for this thread only; the global mode is a setting (/settings in the CLI).
+ * The cache half of the context ring's popover, on top of the context half: lifetime,
+ * hit rate and this thread's warmer. The switch turns the warmer on or off for this
+ * thread, and off stays off through later messages until it is switched back on. While
+ * it is on, − / + change how many hours after the latest input it keeps warming, with
+ * the end time beside them; the value is saved once the clicks stop. It answers for
+ * this thread only; the global mode is a setting (/settings in the CLI).
  */
 export function RubatoCacheSection(props: {
   cache: RubatoCache | null | undefined;
@@ -82,6 +84,7 @@ export function RubatoCacheSection(props: {
   // reports nothing new, so without it the popover would snap back to the old hours.
   const [answered, setAnswered] = useState<RubatoCache | null>(null);
   const [draft, setDraft] = useState<number | null>(null);
+  const [switching, setSwitching] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => setAnswered(null), [props.cache]);
@@ -103,27 +106,26 @@ export function RubatoCacheSection(props: {
       ? `Warm · ${formatRemaining(cache.expiresAt - now)} left`
       : "Lifetime not published";
   const canChange = Boolean(props.environmentId && cache.sessionId) && !globalOff;
-  const sessionOff = !cache.warming.enabled && draft === null;
+  // The switch moves at once; the thread's answer settles it.
+  const on = !globalOff && (switching ?? cache.warming.enabled);
   const endNote = globalOff
     ? "Off in settings"
-    : sessionOff
-      ? "off"
-      : until == null
-        ? null
-        : until <= now
-          ? `ended ${formatClock(until)}`
-          : `until ${formatClock(until)}`;
-  const canStop = canChange && !sessionOff && cache.warming.active && until != null && until > now;
-  const canResume = canChange && sessionOff;
+    : until == null
+      ? null
+      : until <= now
+        ? `ended ${formatClock(until)}`
+        : `until ${formatClock(until)}`;
 
   const switchWarming = (enabled: boolean) => {
     if (!props.environmentId || !cache.sessionId) return;
     setError(null);
+    setSwitching(enabled);
     setSessionCacheWarming(props.environmentId, cache.sessionId, { enabled })
       .then((updated) => setAnswered(updated))
       .catch((cause: unknown) =>
         setError(cause instanceof Error ? cause.message : "Could not change cache warming."),
-      );
+      )
+      .finally(() => setSwitching(null));
   };
 
   const change = (delta: number) => {
@@ -136,7 +138,7 @@ export function RubatoCacheSection(props: {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       saveTimer.current = null;
-      setSessionCacheWarming(environmentId, sessionId, { enabled: true, hours: next })
+      setSessionCacheWarming(environmentId, sessionId, { hours: next })
         .then((updated) => {
           setAnswered(updated);
           setDraft(null);
@@ -149,7 +151,7 @@ export function RubatoCacheSection(props: {
   };
 
   return (
-    <div className="mt-1 flex flex-col gap-1.5 border-t border-border/60 pt-2">
+    <div className="mb-1 flex flex-col gap-1.5 border-b border-border/60 pb-2.5">
       <div className="flex items-center justify-between gap-3">
         <div className="font-medium text-popover-foreground text-xs">Prompt Cache</div>
         <div
@@ -162,45 +164,51 @@ export function RubatoCacheSection(props: {
       {cache.hitPercent != null ? <Row label="Hit rate">{cache.hitPercent}%</Row> : null}
       <div className="flex items-center justify-between gap-2 text-[11px] leading-4">
         <span className="text-popover-foreground/65">Keep warm</span>
-        <div className="flex items-center gap-1.5">
-          {endNote ? <span className="tabular-nums text-popover-foreground">{endNote}</span> : null}
-          <div
-            className="flex items-center rounded-md bg-muted/50"
-            role="group"
-            aria-label="Hours to keep this thread's prompt cache warm"
-          >
-            <Button
-              size="icon-xs"
-              variant="ghost"
-              aria-label="One hour less"
-              disabled={!canChange || hours <= MIN_HOURS}
-              onClick={() => change(-1)}
-            >
-              <MinusIcon aria-hidden="true" />
-            </Button>
-            <span className="w-6 text-center font-medium tabular-nums text-popover-foreground" aria-live="polite">
-              {hours}h
-            </span>
-            <Button
-              size="icon-xs"
-              variant="ghost"
-              aria-label="One hour more"
-              disabled={!canChange || hours >= MAX_HOURS}
-              onClick={() => change(1)}
-            >
-              <PlusIcon aria-hidden="true" />
-            </Button>
-          </div>
+        <div className="flex items-center gap-2">
+          {globalOff ? <span className="text-popover-foreground/65">{endNote}</span> : null}
+          <Switch
+            size="sm"
+            checked={on}
+            disabled={!canChange}
+            onCheckedChange={(checked) => switchWarming(checked)}
+            aria-label="Keep this thread's prompt cache warm"
+          />
         </div>
       </div>
-      {canStop ? (
-        <Button size="xs" variant="outline" className="w-full justify-center" onClick={() => switchWarming(false)}>
-          Stop warming this thread
-        </Button>
-      ) : canResume ? (
-        <Button size="xs" variant="outline" className="w-full justify-center" onClick={() => switchWarming(true)}>
-          Keep this thread warm
-        </Button>
+      {on ? (
+        <div className="flex items-center justify-between gap-2 pl-2.5 text-[11px] leading-4">
+          <span className="text-popover-foreground/65">for</span>
+          <div className="flex items-center gap-2">
+            <div
+              className="flex items-center rounded-md bg-muted/50"
+              role="group"
+              aria-label="Hours to keep this thread's prompt cache warm"
+            >
+              <Button
+                size="icon-xs"
+                variant="ghost"
+                aria-label="One hour less"
+                disabled={!canChange || hours <= MIN_HOURS}
+                onClick={() => change(-1)}
+              >
+                <MinusIcon aria-hidden="true" />
+              </Button>
+              <span className="w-6 text-center font-medium tabular-nums text-popover-foreground" aria-live="polite">
+                {hours}h
+              </span>
+              <Button
+                size="icon-xs"
+                variant="ghost"
+                aria-label="One hour more"
+                disabled={!canChange || hours >= MAX_HOURS}
+                onClick={() => change(1)}
+              >
+                <PlusIcon aria-hidden="true" />
+              </Button>
+            </div>
+            {endNote ? <span className="w-[4.5rem] text-right tabular-nums text-popover-foreground/65">{endNote}</span> : null}
+          </div>
+        </div>
       ) : null}
       {error ? <div className="text-pretty text-[11px] text-destructive">{error}</div> : null}
     </div>
