@@ -5,10 +5,20 @@ export type ChildSessionEvent = {
 
 export type ChildSessionListener = (event: ChildSessionEvent) => void
 
+// The engine announces a session's end to its extensions (session_shutdown) before dispose();
+// extensions release per-session state there. A child session is disposed directly, so the handle
+// makes the same announcement itself.
+export type ChildSessionShutdownEvent = { readonly type: "session_shutdown"; readonly reason: "quit" }
+export type ChildExtensionRunner = {
+  hasHandlers(event: string): boolean
+  emit(event: ChildSessionShutdownEvent): Promise<unknown>
+}
+
 // Structural subset of senpi's AgentSession that the handle drives. The default seam returns a
 // live AgentSession; fakes implement only these members.
 export type ChildSession = {
   readonly sessionId: string
+  readonly extensionRunner?: ChildExtensionRunner
   prompt(text: string): Promise<void>
   steer(text: string): Promise<void>
   followUp(text: string): Promise<void>
@@ -47,7 +57,7 @@ export type ChildHandle = {
   subscribe(listener: ChildSessionListener): () => void
   waitForIdle(): Promise<RunnerOutcome>
   lastAssistantText(): string | undefined
-  dispose(): void
+  dispose(): Promise<void>
 }
 
 export type CreateChildHandleInput = {
@@ -167,6 +177,21 @@ function settledSessionOutcome(session: ChildSession): RunnerOutcome {
   }
 }
 
+// A child disposed without session_shutdown left its extensions' per-session registrations behind:
+// context-notes keeps a process-wide gate per session id, so the next child resumed under the same
+// id found the old gate, whose ctx the dispose had invalidated, and every revive after the parent
+// was unloaded failed with "This extension ctx is stale". A failing handler must neither keep the
+// session alive nor stop the caller's teardown of other children.
+async function shutdownChildSession(session: ChildSession): Promise<void> {
+  try {
+    const runner = session.extensionRunner
+    if (runner?.hasHandlers("session_shutdown")) await runner.emit({ type: "session_shutdown", reason: "quit" })
+  } catch {
+    // The engine reports extension handler failures itself; the dispose below is what matters here.
+  }
+  session.dispose()
+}
+
 type TrackedChildHandle = {
   readonly handle: ChildHandle
   beginTurn(text: string): void
@@ -221,11 +246,11 @@ function createTrackedChildHandle(taskId: string, session: ChildSession): Tracke
     subscribe: (listener) => session.subscribe(listener),
     waitForIdle: () => running,
     lastAssistantText: () => session.getLastAssistantText(),
-    dispose: () => {
+    dispose: async () => {
       if (disposed) return
       disposed = true
       unsubscribeObserver()
-      session.dispose()
+      await shutdownChildSession(session)
     },
   }
   return { handle, beginTurn }

@@ -31,7 +31,7 @@ function fakeInProcessHandle(outcome: RunnerOutcome): InProcessChildHandle {
     subscribe: () => () => {},
     waitForIdle: () => Promise.resolve(outcome),
     lastAssistantText: () => undefined,
-    dispose: () => {},
+    dispose: () => Promise.resolve(),
   }
 }
 
