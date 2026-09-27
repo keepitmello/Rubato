@@ -18,6 +18,7 @@ import { toolGuardsFeature } from "../tool-guards/feature.mjs"
 import { childRuntimeFeature } from "./feature.mjs"
 import { promptRulesFeature } from "../prompt-rules/feature.mjs"
 import { toolSearchFeature } from "../tool-search/patches.mjs"
+import { patches as runtimeFactoriesPatches } from "../runtime-factories/patches.mjs"
 
 const run = promisify(execFile)
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..")
@@ -33,7 +34,8 @@ test("staged stock child fixture consumes the in-process and RPC runner seams", 
       sourceRoot,
       outputRoot: join(scratch, "stage"),
       features: [toolExecutionFeature, providersFeature, providerExecutionFeature, contextNotesFeature, contextWindowFeature,
-        toolGuardsFeature, promptRulesFeature, toolSearchFeature, childRuntimeFeature, build.feature],
+        toolGuardsFeature, promptRulesFeature, toolSearchFeature, { id: "runtime-factories", patches: runtimeFactoriesPatches, files: [] },
+        childRuntimeFeature, build.feature],
     })
     const env = {
       HOME: join(scratch, "home"),
@@ -68,6 +70,9 @@ test("staged stock child fixture consumes the in-process and RPC runner seams", 
     assert.equal(receipt.rpc.rpcExtensions.includes("extension.mjs"), true)
     assert.equal(receipt.rpc.rpcExtensions.includes("guard-extension.mjs"), true)
     assert.equal(receipt.rpc.rpcExtensions.includes("tool-search-extension.mjs"), true)
+    assert.equal(receipt.member.entry, "member-rpc-entry.mjs")
+    assert.equal(receipt.member.tools.includes("Agent"), true)
+    assert.equal(receipt.member.grandchildRan, true)
   } finally {
     await rm(scratch, { recursive: true, force: true })
   }

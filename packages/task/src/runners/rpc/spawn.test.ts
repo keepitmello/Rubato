@@ -348,13 +348,18 @@ describe("buildRpcSpawn spawn strategy", () => {
           SENPI_TASK_MEMBER: "11111111-1111-4111-8111-111111111111::alice",
           RUBATO_TASK_MEMBER_TASK_ID: "st_00000001",
           RUBATO_TASK_TEAM_CONFIG: '{"members":["alice"]}',
+          RUBATO_PI_ROLE: "owner",
         },
         resolveRpcEntry: () => "/rpc-entry.js",
+        memberRpcEntry: "/member-rpc-entry.mjs",
         ...noExecutable,
       },
     )
 
     // then
+    // A member's subagent is an agent on the plain entry, not a second owner.
+    expect(descriptor.args[0]).toBe("/rpc-entry.js")
+    expect(descriptor.env.RUBATO_PI_ROLE).toBeUndefined()
     expect(descriptor.env.RUBATO_TASK_MEMBER).toBeUndefined()
     expect(descriptor.env.RUBATO_TASK_MEMBER_TASK_ID).toBeUndefined()
     expect(descriptor.env.RUBATO_TASK_TEAM_CONFIG).toBeUndefined()
@@ -380,11 +385,14 @@ describe("buildRpcSpawn spawn strategy", () => {
         platform: "linux",
         parentEnv: { PATH: "/usr/bin" },
         resolveRpcEntry: () => "/rpc-entry.js",
+        memberRpcEntry: "/member-rpc-entry.mjs",
         ...noExecutable,
       },
     )
 
     // then
+    // The member entry is what gives a member its Agent tools.
+    expect(descriptor.args[0]).toBe("/member-rpc-entry.mjs")
     expect(descriptor.env.RUBATO_TASK_MEMBER).toBe(memberEnv.RUBATO_TASK_MEMBER)
     expect(descriptor.env.RUBATO_TASK_MEMBER_TASK_ID).toBe(memberEnv.RUBATO_TASK_MEMBER_TASK_ID)
     expect(descriptor.env.RUBATO_TASK_TEAM_CONFIG).toBe(memberEnv.RUBATO_TASK_TEAM_CONFIG)
