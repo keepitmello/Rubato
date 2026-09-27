@@ -12,6 +12,7 @@ import {
   pickSessions,
   readDreamState,
   rejectDream,
+  revertDream,
   runDream,
   sessionSinceMs,
   type SpawnChild,
@@ -150,6 +151,26 @@ describe("runDream", () => {
     expect(record.reason).toBeUndefined()
     expect(record.status).toBe("merged")
     expect(readFileSync(join(paths.repo, "a.md"), "utf8")).toBe("new\n")
+  })
+
+  test("a landed dream reverts with one commit, once; a waiting one cannot", async () => {
+    const { root, paths } = store()
+    const waiting = await run(paths, [session(root, "s1", "2026-09-25T00:00:04.000Z")])
+    await expect(revertDream(paths, "demo", waiting.runId, process.env)).rejects.toThrow("has not landed")
+    await approveDream(paths, "demo", process.env)
+    await revertDream(paths, "demo", waiting.runId, process.env)
+    expect(readFileSync(join(paths.repo, "a.md"), "utf8")).toBe("old\n")
+    expect(git(paths.repo, "log", "-1", "--format=%s").trim()).toStartWith("Revert")
+    const recorded = JSON.parse(readFileSync(join(paths.runtime, "dream", "runs", waiting.runId, "run.json"), "utf8"))
+    expect(recorded.review).toBe("reverted")
+    await expect(revertDream(paths, "demo", waiting.runId, process.env)).rejects.toThrow("already reverted")
+  })
+
+  test("an auto-published dream reverts too", async () => {
+    const { root, paths } = store()
+    const record = await run(paths, [session(root, "s1", "2026-09-25T00:00:04.000Z")], { publish: "auto" })
+    await revertDream(paths, "demo", record.runId, process.env)
+    expect(readFileSync(join(paths.repo, "a.md"), "utf8")).toBe("old\n")
   })
 
   test("a child that committed and then failed publishes nothing and reads nothing", async () => {

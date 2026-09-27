@@ -6,6 +6,7 @@
 //   rubato dream <store>...   run those stores now, even with no new sessions
 //   --approve <store>         land the dream waiting for review in that store
 //   --reject <store>          drop it (what it read stays read)
+//   --revert <store> <runId>  take a landed dream back out with one revert commit
 //   --json                    machine-readable output (the GUI reads this)
 //   --trial [--base REV] [--since ISO] <store>
 //                             run without merging: result stays on a branch, the clock does not move
@@ -25,6 +26,7 @@ import {
   readDreamState,
   readPendingReview,
   rejectDream,
+  revertDream,
   runDream,
   sessionSinceMs,
   type DreamRunRecord,
@@ -92,6 +94,23 @@ async function main(argv: readonly string[]): Promise<number> {
     process.stdout.write(json
       ? `${JSON.stringify({ store, runId, review: flag === "--approve" ? "merged" : "rejected" })}\n`
       : `dream: ${store} ${runId} ${flag === "--approve" ? "merged" : "rejected"}\n`)
+    return 0
+  }
+  const revertStore = optionValue(argv, "--revert")
+  if (revertStore !== undefined) {
+    const runId = argv[argv.indexOf("--revert") + 2]
+    if (runId === undefined || runId.startsWith("--")) {
+      process.stderr.write("rubato dream: --revert needs a store and a run id\n")
+      return 2
+    }
+    if (!states.has(revertStore)) {
+      process.stderr.write(`rubato dream: no memory store named ${revertStore}\n`)
+      return 2
+    }
+    await revertDream(pathsOf(revertStore), revertStore, runId, env)
+    process.stdout.write(json
+      ? `${JSON.stringify({ store: revertStore, runId, review: "reverted" })}\n`
+      : `dream: ${revertStore} ${runId} reverted\n`)
     return 0
   }
   const trialSinceMs = sinceIso === undefined ? undefined : Date.parse(sinceIso)
