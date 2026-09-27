@@ -9,6 +9,7 @@ import { cacheEdits, cacheOverlays } from './cache-edits.mjs';
 import { voiceEdits, voiceOverlays } from './voice-edits.mjs';
 import { permissionEdits, permissionOverlays } from './permission-edits.mjs';
 import { providerEdits, providerOverlays } from './provider-edits.mjs';
+import { aboutEdits, aboutOverlays } from './about-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -95,6 +96,7 @@ const edits = {
         '  rubatoUpdate: {',
         '    getState: () => ipcRenderer.invoke("rubato:update:get"),',
         '    respond: (id, action) => ipcRenderer.invoke("rubato:update:action", { id, action }),',
+        '    checkNow: () => ipcRenderer.invoke("rubato:update:check"),',
         '    onState: (listener) => {',
         '      const handler = (_event: Electron.IpcRendererEvent, state: unknown) => {',
         '        if (!state || typeof state !== "object" || !("phase" in state)) return;',
@@ -126,6 +128,8 @@ const edits = {
         '  rubatoUpdate?: {',
         '    getState: () => Promise<RubatoUpdateState>;',
         '    respond: (id: string, action: RubatoUpdateAction) => Promise<void>;',
+        '    /** Checks now; when an update is available the in-app prompt asks to run it. False: no updater. */',
+        '    checkNow?: () => Promise<boolean>;',
         '    onState: (listener: (state: RubatoUpdateState) => void) => () => void;',
         '  };',
         '',
@@ -1812,6 +1816,11 @@ for (const [relative, changes] of Object.entries(memoryEdits)) {
 // Settings > Providers (provider-edits.mjs) shares server.ts and settings.tsx anchors with memory.
 overlays.push(...providerOverlays);
 for (const [relative, changes] of Object.entries(providerEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Settings > General > About (about-edits.mjs).
+overlays.push(...aboutOverlays);
+for (const [relative, changes] of Object.entries(aboutEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 // The context ring's cache (cache-edits.mjs) anchors on the Speed Index and memory edits above.

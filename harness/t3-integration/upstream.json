@@ -56,6 +56,7 @@
     "apps/web/src/components/settings/settingsSearch.ts": "6350dfb5208ae986426e416743476b769aee56da6fce491bf6ad15695f610c73",
     "apps/web/src/components/settings/SettingsSidebarNav.tsx": "02f6b7a283cc7d6db28913b626d5a095d4220e201270386af6cc26a03a055879",
     "apps/web/src/routes/settings.providers.tsx": "803dae1f1f6819ccc47c5b862eda9d35dc7fa4e3af67a0816c3158ea1215fb0e",
+    "apps/web/src/components/settings/SettingsPanels.tsx": "c191c6f653a7c803caaa3ba569cf3c644e2f4ed12c3c6b3c700b17c6d155908a",
     "apps/web/src/routes/settings.tsx": "0269e97687928ebc1ea38e9a95ba15ee7fe11eb94226c09c99472d8f1d399362",
     "apps/web/src/routeTree.gen.ts": "bae0e06c1ba534ca05bf9af20e3fd8eaff8230a972563c03d8afe16257ead8d6",
     "apps/web/src/components/chat/ContextWindowMeter.tsx": "1b0bf5481c2fb2149955888791ad93650bea1351f73ffa188dcde303c847e3e9"

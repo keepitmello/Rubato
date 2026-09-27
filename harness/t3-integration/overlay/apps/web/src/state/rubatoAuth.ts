@@ -1,7 +1,6 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 
-import { rubatoHttpAccess } from "./rubatoHttp";
-import { readPreparedConnection } from "./session";
+import { postRubato } from "./rubatoHttp";
 
 /** The route Rubato adds to the T3 server on this Mac for Settings > Providers. */
 const AUTH_ROUTE = "/rubato/auth";
@@ -58,50 +57,8 @@ export interface CheckResult {
   readonly message: string;
 }
 
-export class AuthRequestError extends Error {
-  constructor(
-    readonly code: string,
-    message: string,
-  ) {
-    super(message);
-  }
-}
-
-async function call<T>(
-  environmentId: EnvironmentId | null,
-  action: string,
-  body: Record<string, unknown> = {},
-): Promise<T> {
-  const prepared = environmentId === null ? null : readPreparedConnection(environmentId);
-  if (!prepared) throw new AuthRequestError("unavailable", "This Mac is not connected.");
-  const access = await rubatoHttpAccess(prepared);
-  if (!access)
-    throw new AuthRequestError("unavailable", "Provider accounts are not available on this connection.");
-  const response = await fetch(`${access.baseUrl}${AUTH_ROUTE}/${action}`, {
-    method: "POST",
-    credentials: access.credentials,
-    headers: { ...access.headers, "content-type": "application/json" },
-    body: JSON.stringify(body),
-  }).catch((cause: unknown) => {
-    throw new AuthRequestError(
-      "network",
-      cause instanceof Error ? `Could not reach this Mac: ${cause.message}` : "Could not reach this Mac.",
-    );
-  });
-  const payload = (await response.json().catch(() => null)) as
-    | (T & { error?: undefined })
-    | { error?: { code?: string; message?: string } }
-    | null;
-  if (!response.ok || payload === null || (payload as { error?: unknown }).error) {
-    const error = (payload as { error?: { code?: string; message?: string } } | null)?.error;
-    if (response.status === 401)
-      throw new AuthRequestError("unauthorized", "This connection is not allowed to change provider accounts.");
-    throw new AuthRequestError(
-      error?.code ?? `http-${response.status}`,
-      error?.message ?? `Request failed (HTTP ${response.status}).`,
-    );
-  }
-  return payload as T;
+function call<T>(environmentId: EnvironmentId | null, action: string, body: Record<string, unknown> = {}): Promise<T> {
+  return postRubato<T>(environmentId, AUTH_ROUTE, action, body, "provider accounts");
 }
 
 export const rubatoAuth = {

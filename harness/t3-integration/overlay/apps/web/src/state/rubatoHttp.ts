@@ -1,5 +1,5 @@
 import { readDesktopPrimaryBearerToken } from "../environments/primary/desktopAuth";
-import type { readPreparedConnection } from "./session";
+import { readPreparedConnection } from "./session";
 
 type PreparedConnection = NonNullable<ReturnType<typeof readPreparedConnection>>;
 
@@ -45,4 +45,57 @@ function isSameOriginPage(baseUrl: string): boolean {
   } catch {
     return false;
   }
+}
+
+export class RubatoRequestError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * One POST to a Rubato route on this Mac's T3 server: `<route>/<action>`, JSON
+ * both ways. Errors come back as RubatoRequestError with the server's code.
+ * `what` names the page's subject in the messages ("provider accounts").
+ */
+export async function postRubato<T>(
+  environmentId: Parameters<typeof readPreparedConnection>[0] | null,
+  route: string,
+  action: string,
+  body: Record<string, unknown>,
+  what: string,
+): Promise<T> {
+  const prepared = environmentId === null ? null : readPreparedConnection(environmentId);
+  if (!prepared) throw new RubatoRequestError("unavailable", "This Mac is not connected.");
+  const access = await rubatoHttpAccess(prepared);
+  if (!access)
+    throw new RubatoRequestError("unavailable", `${what[0]!.toUpperCase()}${what.slice(1)} are not available on this connection.`);
+  const response = await fetch(`${access.baseUrl}${route}/${action}`, {
+    method: "POST",
+    credentials: access.credentials,
+    headers: { ...access.headers, "content-type": "application/json" },
+    body: JSON.stringify(body),
+  }).catch((cause: unknown) => {
+    throw new RubatoRequestError(
+      "network",
+      cause instanceof Error ? `Could not reach this Mac: ${cause.message}` : "Could not reach this Mac.",
+    );
+  });
+  const payload = (await response.json().catch(() => null)) as
+    | (T & { error?: undefined })
+    | { error?: { code?: string; message?: string } }
+    | null;
+  if (!response.ok || payload === null || (payload as { error?: unknown }).error) {
+    const error = (payload as { error?: { code?: string; message?: string } } | null)?.error;
+    if (response.status === 401)
+      throw new RubatoRequestError("unauthorized", `This connection is not allowed to change ${what}.`);
+    throw new RubatoRequestError(
+      error?.code ?? `http-${response.status}`,
+      error?.message ?? `Request failed (HTTP ${response.status}).`,
+    );
+  }
+  return payload as T;
 }

@@ -241,6 +241,9 @@ let initializing: Promise<void> | undefined;
 const STATE_CHANNEL = "rubato:update:state";
 const ACTION_CHANNEL = "rubato:update:action";
 const GET_CHANNEL = "rubato:update:get";
+// Settings > About's "Update": the same check the app menu runs, so the confirm
+// prompt and the run are this updater's, not a second path.
+const CHECK_CHANNEL = "rubato:update:check";
 function publish(next: RubatoUpdateState) {
   state = next;
   for (const window of windows.values()) {
@@ -294,6 +297,10 @@ export function attachRubatoUpdates(window: BrowserWindow, electron: ElectronSer
       await initializing;
       return state;
     });
+    electron.ipcMain.handle(CHECK_CHANNEL, async (event) => {
+      authorizedUpdateWindow(event);
+      return checkRubatoUpdatesNow();
+    });
     electron.ipcMain.handle(ACTION_CHANNEL, async (event, input: unknown) => {
       authorizedUpdateWindow(event);
       if (!input || typeof input !== "object") throw new Error("Invalid update action");
@@ -346,7 +353,7 @@ export function attachRubatoUpdates(window: BrowserWindow, electron: ElectronSer
           if (window.isDestroyed()) return;
           await electron.dialog.showMessageBox(window, {
             type: notice.type, title: "Rubato Update", message: notice.message,
-            detail: notice.detail, buttons: ["OK"],
+            ...(notice.detail ? { detail: notice.detail } : {}), buttons: ["OK"],
           });
         },
         progress: (value) => {
