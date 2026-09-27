@@ -29,20 +29,24 @@ function formatBytes(bytes) {
   return `${bytes}B`;
 }
 
-function omittedBlock(block, bytes, message) {
+function omittedBlock(block, bytes, item) {
   const kind = typeof block.mimeType === "string" ? block.mimeType : "image";
-  const item = message.__piSessionContextEntryId ?? "unknown";
-  return { type: "text", text: `[image omitted from request: ${kind} ${formatBytes(bytes)} — history item ${item}]` };
+  return { type: "text", text: `[image omitted from request: ${kind} ${formatBytes(bytes)} — history ${item ?? "item unknown"}]` };
 }
+
+const defaultItemLabel = (message) =>
+  message.__piSessionContextEntryId ? `item ${message.__piSessionContextEntryId}` : undefined;
 
 /**
  * Keep the newest images and replace the rest with a text placeholder, so the request fits
  * the byte cap. Newest first because that is the image the turn is actually about; the older
- * ones are history the record still holds.
+ * ones are history the record still holds. Within one message the later image is the newer.
+ * `itemLabel(message, index)` names where the record keeps the original, so the reader can
+ * fetch the pixels back.
  *
  * Returns the input array unchanged when it already fits, and never mutates a message.
  */
-export function trimRequestImages(messages, limit = REQUEST_IMAGE_BYTE_LIMIT) {
+export function trimRequestImages(messages, limit = REQUEST_IMAGE_BYTE_LIMIT, itemLabel = defaultItemLabel) {
   let total = 0;
   for (const message of messages) {
     if (!Array.isArray(message?.content)) continue;
@@ -58,16 +62,18 @@ export function trimRequestImages(messages, limit = REQUEST_IMAGE_BYTE_LIMIT) {
     const message = messages[index];
     if (!Array.isArray(message?.content)) continue;
     let replaced = false;
-    const content = message.content.map((block) => {
-      if (block?.type !== "image") return block;
+    const content = [...message.content];
+    for (let at = content.length - 1; at >= 0; at -= 1) {
+      const block = content[at];
+      if (block?.type !== "image") continue;
       const bytes = base64ByteLength(block.data);
       if (kept + bytes <= limit) {
         kept += bytes;
-        return block;
+        continue;
       }
       replaced = true;
-      return omittedBlock(block, bytes, message);
-    });
+      content[at] = omittedBlock(block, bytes, itemLabel(message, index));
+    }
     if (replaced) trimmed[index] = { ...message, content };
   }
   return trimmed;
