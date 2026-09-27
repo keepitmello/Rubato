@@ -35,6 +35,10 @@ function sessionBranch(ctx) {
   return manager?.getEntries?.() ?? [];
 }
 
+function sessionEntries(ctx) {
+  return ctx?.sessionManager?.getEntries?.() ?? sessionBranch(ctx);
+}
+
 export async function installContextNotes(pi, options = {}) {
   if (installed.has(pi)) return installed.get(pi);
   const liveSwitch = options.enabled == null;
@@ -91,10 +95,11 @@ export async function installContextNotes(pi, options = {}) {
     if (liveSwitch) {
       const userExplicit = isUserExplicitContextMode(liveEnv);
       if (userExplicit) {
-        bindMode(contextMode(liveEnv), ctx);
-        if (liveMode === SUMMARY_MODE && hasNotesWindowEntries(branch)) {
+        const explicit = contextMode(liveEnv);
+        if (explicit === SUMMARY_MODE && hasNotesWindowEntries(branch)) {
           throw new Error(NOTES_RESUME_IN_SUMMARY);
         }
+        bindMode(explicit, ctx);
       } else {
         const mode = adoptContextMode({ env: liveEnv, branch, model: ctx.model, allowModelDefault });
         if (mode === HISTORY_NOTES_MODE && options.requireEngine !== false) assertEngineParts();
@@ -147,7 +152,7 @@ export async function installContextNotes(pi, options = {}) {
   pi.on("session_tree", async (_event, ctx) => {
     try {
       applyResolvedMode(ctx, { allowModelDefault: false });
-      if (notesActive() && controller) { controller.pending = null; controller.refresh(ctx, true); controller.showStatus(); }
+      if (notesActive() && controller) { controller.leaveBranch(); controller.refresh(ctx, true); controller.showStatus(); }
     } catch (error) { report(error, ctx, true); }
   });
   pi.on("model_select", async (event, ctx) => {
@@ -158,6 +163,8 @@ export async function installContextNotes(pi, options = {}) {
           source: event.source,
           currentMode: liveMode,
           branch: sessionBranch(ctx),
+          sessionEntries: sessionEntries(ctx),
+          readBranch: () => sessionBranch(ctx),
           confirm: ctx.ui?.confirm?.bind(ctx.ui),
           notify: ctx.ui?.notify?.bind(ctx.ui),
           declined: declinedPairs,

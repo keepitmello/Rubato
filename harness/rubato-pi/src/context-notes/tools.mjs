@@ -12,6 +12,8 @@ export const CONTEXT_NOTES_TOOL_NAMES = Object.freeze([
 // and the session-prompt projection keeps it there, so the cached prefix survives on
 // lanes with native tool additions. Keeping all eleven in every prefix instead
 // (2026-09-23) cost ~2.3k tokens per request for tools most windows never call.
+const parkedNotesTools = new WeakMap();
+
 export function syncNotesToolActivation(pi, enabled, definitions = []) {
   for (const definition of definitions) {
     if (definition.allowLazyActivation === enabled) continue;
@@ -21,8 +23,17 @@ export function syncNotesToolActivation(pi, enabled, definitions = []) {
   if (typeof pi.getActiveTools !== "function" || typeof pi.setActiveTools !== "function") return;
   const notes = new Set(CONTEXT_NOTES_TOOL_NAMES);
   const current = pi.getActiveTools();
-  const next = enabled ? current : current.filter((name) => !notes.has(name));
-  if (next.length !== current.length) pi.setActiveTools(next);
+  const parked = parkedNotesTools.get(pi) ?? new Set();
+  if (!enabled) {
+    for (const name of current) if (notes.has(name)) parked.add(name);
+    parkedNotesTools.set(pi, parked);
+    const next = current.filter((name) => !notes.has(name));
+    if (next.length !== current.length) pi.setActiveTools(next);
+    return;
+  }
+  const restore = [...parked].filter((name) => notes.has(name) && !current.includes(name));
+  parked.clear();
+  if (restore.length) pi.setActiveTools([...current, ...restore]);
 }
 
 // Flat tool names preserve the Codex operations across providers whose function
