@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { resolvePiRuntime } from "../../resolve-runtime.mjs";
 import { stagePiRuntime } from "../../stage-runtime.mjs";
+import { sessionPromptFeature } from "../session-prompt/patches.mjs";
 import { toolGuardsFeature } from "./feature.mjs";
 import {
   sanitizeAnthropicToolPairs,
@@ -24,6 +25,13 @@ const stagedRoot = join(scratchRoot, "runtime");
 after(() => rm(scratchRoot, { recursive: true, force: true }));
 
 await stagePiRuntime({ sourceRoot: runtimeRoot, outputRoot: stagedRoot, features: [toolGuardsFeature] });
+// The held-message delivery the loop guard relies on is an engine patch of session-prompt.
+const stagedWithPromptRoot = join(scratchRoot, "runtime-session-prompt");
+await stagePiRuntime({
+  sourceRoot: runtimeRoot,
+  outputRoot: stagedWithPromptRoot,
+  features: [toolGuardsFeature, sessionPromptFeature],
+});
 
 async function createFixture(t) {
   const runtime = resolvePiRuntime({ root: stagedRoot });
@@ -379,4 +387,108 @@ test("abort after move progress observes a completed move and never exposes a co
   assert.equal(result.details.result.failures[0]?.filePath, "later.txt");
   assert.equal(fixture.guards.getPendingMutationCount(), 0);
   assert.deepEqual((await readdir(fixture.cwd)).filter((name) => name.includes(".tmp.")), []);
+});
+
+test("a loop-guard notice is appended after the latest tool result and never rewrites an earlier request", async (t) => {
+  const runtime = resolvePiRuntime({ root: stagedWithPromptRoot });
+  const sdk = await import(`${pathToFileURL(runtime.sdkEntry).href}?prefix=${Math.random()}`);
+  const guards = await import(`${pathToFileURL(join(stagedWithPromptRoot, "rubato-features/tool-guards/index.mjs")).href}?prefix=${Math.random()}`);
+  const { AssistantMessageEventStream } = await import(pathToFileURL(join(
+    runtime.codingAgentDir,
+    "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js",
+  )).href);
+  const cwd = join(scratchRoot, `prefix-cwd-${Math.random()}`);
+  const agentDir = join(scratchRoot, `prefix-agent-${Math.random()}`);
+  await Promise.all([mkdir(cwd, { recursive: true }), mkdir(agentDir, { recursive: true })]);
+  await writeFile(join(cwd, "same.txt"), "unchanged\n");
+  await writeFile(join(cwd, "other.txt"), "other\n");
+  const model = {
+    provider: "tool-guards-test",
+    id: "fake-model",
+    name: "Offline loop guard fixture",
+    api: "openai-completions",
+    baseUrl: "http://127.0.0.1:9/v1",
+    reasoning: false,
+    input: ["text"],
+    contextWindow: 100_000,
+    maxTokens: 4096,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  };
+  await writeFile(join(agentDir, "models.json"), JSON.stringify({
+    providers: {
+      "tool-guards-test": {
+        baseUrl: model.baseUrl,
+        api: model.api,
+        apiKey: "offline-fixture-key",
+        models: [{ id: model.id, name: model.name, input: model.input, contextWindow: model.contextWindow, maxTokens: model.maxTokens }],
+      },
+    },
+  }));
+  const settingsManager = sdk.SettingsManager.inMemory();
+  const resourceLoader = new sdk.DefaultResourceLoader({
+    cwd,
+    agentDir,
+    settingsManager,
+    extensionFactories: guards.createToolGuardExtensionFactories(),
+    noExtensions: true,
+    noSkills: true,
+    noPromptTemplates: true,
+    noThemes: true,
+    noContextFiles: true,
+  });
+  await resourceLoader.reload();
+  const { session } = await sdk.createAgentSession({
+    cwd,
+    agentDir,
+    settingsManager,
+    resourceLoader,
+    model,
+    sessionManager: sdk.SessionManager.inMemory(cwd),
+  });
+  t.after(() => session.dispose());
+  await session.bindExtensions({});
+
+  const assistant = (content, stopReason) => ({
+    role: "assistant",
+    content,
+    api: model.api,
+    provider: model.provider,
+    model: model.id,
+    usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    stopReason,
+    timestamp: Date.now(),
+  });
+  const readSame = (index) => assistant([{ type: "toolCall", id: `read-${index}`, name: "read", arguments: { path: "same.txt" } }], "toolUse");
+  // Three identical reads fire the notice during the third call. The run keeps working for
+  // another tool turn, so a notice left at its old place would sit inside the next run's prefix.
+  const script = [readSame(1), readSame(2), readSame(3),
+    assistant([{ type: "toolCall", id: "read-other", name: "read", arguments: { path: "other.txt" } }], "toolUse"),
+    assistant([{ type: "text", text: "done" }], "stop"),
+    assistant([{ type: "text", text: "ok" }], "stop")];
+  const requests = [];
+  session.agent.streamFunction = (_model, context) => {
+    requests.push(structuredClone(context.messages));
+    const message = script[requests.length - 1];
+    const stream = new AssistantMessageEventStream();
+    stream.push({ type: "start", partial: { ...message, content: [], stopReason: "pending" } });
+    stream.push({ type: "done", reason: message.stopReason, message });
+    return stream;
+  };
+
+  await session.prompt("read it");
+  await session.prompt("again");
+
+  assert.equal(requests.length, 6);
+  const hasNotice = (messages) => messages.some((message) => JSON.stringify(message).includes("LOOP GUARD - IDENTICAL TOOL CALLS"));
+  assert.equal(hasNotice(requests[2]), false);
+  assert.equal(hasNotice(requests[3]), true, "the notice reaches the model in the run that triggered it");
+  const last = requests[3].at(-1);
+  assert.equal(last.role, "user", "the notice follows the tool result it was raised on");
+  assert.match(JSON.stringify(last), /LOOP GUARD/);
+  for (let index = 1; index < requests.length; index += 1) {
+    const previous = requests[index - 1];
+    const next = requests[index];
+    assert.ok(next.length > previous.length);
+    assert.deepEqual(next.slice(0, previous.length), previous, `request ${index} keeps request ${index - 1} as its prefix`);
+  }
 });
