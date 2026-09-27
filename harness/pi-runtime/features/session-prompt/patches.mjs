@@ -29,6 +29,16 @@
 // `toolsAdded`/`toolsRemoved` and drop their text, which the composed prompt already
 // renders. Replaying the result yields the same current tools, and a lane that cannot take
 // mid-conversation system messages still collapses it in the provider.
+//
+// A custom message sent with `triggerTurn: false` while a run streams (the loop guard's
+// notice, a compaction hook's context) is held until the turn's tool results are in. Stock then
+// pushed it into `agent.state.messages` at `turn_end`, but the running loop builds its
+// requests from its own copy of the context, so the model never saw it in that run. The next
+// run copied state again and found the message at its old place, deep in the history: every
+// token after it missed the prompt cache (bench 2026-09-26, sqlfmt: ~250k rewritten). The
+// held messages now go to the loop as the next turn's prepared messages, so the loop, state
+// and session all append them after the latest tool results; a run that ends first still
+// appends them at the end.
 
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
 const VERSION = "0.86.1";
@@ -195,9 +205,46 @@ export function patchAgentSession(source) {
   );
 }
 
+export function patchAgentSessionDeferredMessages(source) {
+  let next = replaceOnce(
+    source,
+    `        if (event.type === "turn_end") {
+            this._flushPendingCustomMessages();
+        }
+    };`,
+    `        // Custom messages held during the turn reach the running loop through
+        // prepareNextTurnWithContext; the run's finally appends any the loop did not take.
+    };`,
+    "deferred-custom-turn-end",
+  );
+  next = replaceOnce(
+    next,
+    `            const updateMessage = this._preparePromptAndToolLoadout(options, nextContext.messages);
+            // Keep session.systemPrompt and ctx.getSystemPrompt() in step with what the provider sees.
+            this._runSystemPromptOptions = options;`,
+    `            const updateMessage = this._preparePromptAndToolLoadout(options, nextContext.messages);
+            // Keep session.systemPrompt and ctx.getSystemPrompt() in step with what the provider sees.
+            this._runSystemPromptOptions = options;
+            // The loop emits these like any prepared message: it appends them to its own
+            // context, agent state and the session after the latest tool results.
+            const held = this._pendingCustomMessages;
+            this._pendingCustomMessages = [];`,
+    "deferred-custom-take",
+  );
+  return replaceOnce(
+    next,
+    `                messages: updateMessage
+                    ? [...(previousSnapshot?.messages ?? []), updateMessage]
+                    : previousSnapshot?.messages,`,
+    `                messages: [...held, ...(previousSnapshot?.messages ?? []), ...(updateMessage ? [updateMessage] : [])],`,
+    "deferred-custom-prepared",
+  );
+}
+
 export const patches = Object.freeze([
   patch("session-prompt:core/extensions/runner.js", "dist/core/extensions/runner.js", "07a94efe560e6a460a415b2188c1c3c69ca151bd163c9b5f05347caf8403ace2", patchRunner),
-  patch("session-prompt:core/agent-session.js", "dist/core/agent-session.js", "edaff7055ced7d49d25135c92415fbbfd9c14c4a29be5a79510ab9216045d6d9", patchAgentSession),
+  patch("session-prompt:core/agent-session.js", "dist/core/agent-session.js", "edaff7055ced7d49d25135c92415fbbfd9c14c4a29be5a79510ab9216045d6d9", (source) =>
+    patchAgentSessionDeferredMessages(patchAgentSession(source))),
 ]);
 
 export const files = Object.freeze([]);
