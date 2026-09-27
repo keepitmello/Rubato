@@ -8,7 +8,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { stagePiRuntime } from "../../stage-runtime.mjs";
 import { toolExecutionFeature } from "../tool-execution/index.mjs";
-import { feature as videoInFeature, patchAnthropicMessagesVideo } from "../video-in/patches.mjs";
 import {
 	feature,
 	patchAnthropicMessagesNative,
@@ -172,10 +171,7 @@ test("Codex custom_tool_call replay drops fc_ item ids so the wire can mint ctc_
 test("A10 convertContentBlocks anchors survive the anthropic native patch", () => {
 	const stock = readFileSync(join(stockPiAi, "api/anthropic-messages.js"), "utf8");
 	const patched = patchAnthropicMessagesNative(stock);
-	const composed = patchAnthropicMessagesVideo(patched);
 	assert.match(patched, /subtype: event.content_block.type/);
-	assert.match(composed, /type: "video"/);
-	assert.match(composed, /subtype: event.content_block.type/);
 	assert.match(patched, /function isAnthropicWebSearchReplayBlock/);
 	assert.match(patched, /!model\.compat\?\.supportsWebSearch && isAnthropicWebSearchReplayBlock\(raw\)/);
 });
@@ -240,7 +236,7 @@ test("staged stock SDK parses native image, web search, and anthropic bash from 
 	const staged = await stagePiRuntime({
 		sourceRoot: runtimeRoot,
 		outputRoot: join(scratch, "engine"),
-		features: [toolExecutionFeature, feature, videoInFeature],
+		features: [toolExecutionFeature, feature],
 	});
 	const outputRoot = join(scratch, "engine");
 	const piAiPath = join(outputRoot, "node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist");

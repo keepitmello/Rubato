@@ -1,8 +1,8 @@
 # Third-party notices
 
-The `/history`, `/help`, `/diff`, `/files`, and `/tui` modules preserve a bounded
+The `/history`, `/help`, `/diff`, and `/files` modules preserve a bounded
 subset of behavior from `@code-yeongyu/senpi` 2026.9.4-3 builtins
-`history-search`, `help`, `diff`, `files`, and `redraws`. Its installed
+`history-search`, `help`, `diff`, and `files`. Its installed
 `package.json` declares the MIT license. The published package does not include
 a root license file; this license text was checked against the license shipped
 by `@code-yeongyu/senpi-codemode` 2026.9.4-3 from the same source repository and

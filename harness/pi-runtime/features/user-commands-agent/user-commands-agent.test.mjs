@@ -16,7 +16,6 @@ import { WAKE_SOURCE_STATE_EVENT } from "./goal/extension.mjs";
 import { goalStoreRef } from "./goal/store.mjs";
 import { DEFAULT_TODO_NAG_TEXT } from "./goal/todo-nag.mjs";
 import { parseLoopArgs, intervalToMs } from "./loop/parse.mjs";
-import { parseRef, rewriteSessionCwd } from "./import-repro/extension.mjs";
 import {
   commandNames,
   createCommandSession,
@@ -61,10 +60,10 @@ test("feature is additive-only, stock-version locked, and named factories match 
   assert.match(readFileSync(files.find((file) => file.path.endsWith("THIRD_PARTY_NOTICES.md")).sourcePath, "utf8"), /MIT/);
 });
 
-test("stock slash-command API registers all six commands and rubato-features.json drops them", async () => {
+test("stock slash-command API registers all three commands and rubato-features.json drops them", async () => {
   const enabled = await session();
   const registered = commandNames(enabled.session);
-  for (const name of ["goal", "loop", "btw", "ttsr", "fallback", "ir"]) {
+  for (const name of ["goal", "loop", "btw"]) {
     assert.equal(registered.includes(name), true, name + " missing");
   }
   const disabledNames = USER_COMMAND_FACTORY_NAMES;
@@ -74,14 +73,11 @@ test("stock slash-command API registers all six commands and rubato-features.jso
   assert.deepEqual(toggled.extensionFactories, []);
   assert.deepEqual(toggled.disabled.sort(), [...disabledNames].sort());
 
-  const dropped = await session({ disabled: ["rubato-goal", "rubato-btw", "rubato-model-fallback"] });
+  const dropped = await session({ disabled: ["rubato-goal", "rubato-btw"] });
   const left = commandNames(dropped.session);
   assert.equal(left.includes("goal"), false);
   assert.equal(left.includes("btw"), false);
-  assert.equal(left.includes("fallback"), false);
   assert.equal(left.includes("loop"), true);
-  assert.equal(left.includes("ttsr"), true);
-  assert.equal(left.includes("ir"), true);
   const bootstrap = readFileSync(new URL("../rubato-components/bootstrap.mjs", import.meta.url), "utf8");
   assert.match(bootstrap, /createUserCommandsAgentFactories/);
   assert.match(bootstrap, /user-commands-agent\/index\.mjs/);
@@ -209,18 +205,6 @@ test("/btw answers a side question without appending it as the main user turn", 
   assert.equal(typeof before, "number");
 });
 
-test("/fallback saves a chain and /fallback now switches the model observed on the session", async () => {
-  const fixture = await session({ only: ["rubato-model-fallback"] });
-  assert.equal(fixture.session.model.id, "alpha");
-  await fixture.session.prompt("/fallback fixture/alpha fixture/beta");
-  assert.match(fixture.notices.at(-1).message, /Fallback chain saved/);
-  await fixture.session.prompt("/fallback now");
-  await waitIdle(fixture.session);
-  assert.equal(fixture.session.model.provider, "fixture");
-  assert.equal(fixture.session.model.id, "beta");
-  assert.match(fixture.notices.at(-1).message, /Switched to fallback model fixture\/beta/);
-});
-
 test("/loop arms a schedule and a fake clock fires the tick into the session", async () => {
   const pending = new Map();
   const timerPort = {
@@ -249,60 +233,7 @@ test("/loop arms a schedule and a fake clock fires the tick into the session", a
   assert.equal(intervalToMs({ value: 1, unit: "s" }), 1000);
 });
 
-test("/ttsr reports builtin stream-quality detectors", async () => {
-  const fixture = await session({ only: ["rubato-ttsr"] });
-  await fixture.session.prompt("/ttsr");
-  const text = fixture.notices.at(-1).message;
-  assert.match(text, /TTSR stream rules/);
-  assert.match(text, /collapse-repetition/);
-  assert.match(text, /control-token-leak/);
-  assert.match(text, /repetitive-turns/);
-});
-
-test("/ir imports a local jsonl repro into the session directory and switches to it", async () => {
-  const fixture = await session({ only: ["rubato-import-repro"], persisted: true });
-  const source = join(fixture.cwd, "repro.jsonl");
-  const header = { type: "session", id: "imported-repro", cwd: "/ci/pi-ci-0123456789abcdef0123456789abcdef", timestamp: new Date().toISOString(), version: 3 };
-  const user = { type: "message", id: "m1", parentId: null, timestamp: new Date().toISOString(), message: { role: "user", content: [{ type: "text", text: "imported hello" }], timestamp: Date.now() } };
-  writeFileSync(source, JSON.stringify(header) + "\n" + JSON.stringify(user) + "\n");
-  await fixture.session.prompt("/ir " + source);
-  await waitIdle(fixture.session);
-  assert.match(fixture.notices.map((n) => n.message).join("\n"), /Imported session imported-repro/);
-  assert.equal(fixture.switches.at(-1)?.id, "imported-repro");
-  assert.equal(fixture.switches.at(-1)?.cwd, fixture.cwd);
-  const parsed = parseRef("https://gist.github.com/mitsuhiko/b4d100022aefb12f25dd2d8485e0a82a");
-  assert.equal(parsed.type, "gist");
-  const rewritten = rewriteSessionCwd('{"cwd":"/old/path"}', "/old/path", "/new/path");
-  assert.match(rewritten, /\/new\/path/);
-});
-
-test("/ir gist import uses the injected local fetch mock, never the network", async () => {
-  const gistId = "b4d100022aefb12f25dd2d8485e0a82a";
-  const header = { type: "session", id: "gist-repro", cwd: "/ci/work", timestamp: new Date().toISOString(), version: 3 };
-  const user = { type: "message", id: "m1", parentId: null, timestamp: new Date().toISOString(), message: { role: "user", content: [{ type: "text", text: "from gist" }], timestamp: Date.now() } };
-  const jsonl = JSON.stringify(header) + "\n" + JSON.stringify(user) + "\n";
-  const fixture = await session({
-    only: ["rubato-import-repro"],
-    persisted: true,
-    fetch: async (url) => {
-      assert.match(String(url), /api\.github\.com\/gists\//);
-      return {
-        ok: true,
-        status: 200,
-        async json() {
-          return { files: { "session.jsonl": { filename: "session.jsonl", content: jsonl } } };
-        },
-        async text() { return jsonl; },
-      };
-    },
-  });
-  await fixture.session.prompt("/ir " + gistId);
-  await waitIdle(fixture.session);
-  assert.equal(fixture.switches.at(-1)?.id, "gist-repro");
-  assert.match(fixture.notices.map((n) => n.message).join("\n"), /Imported session gist-repro/);
-});
- 
-test("stock RPC get_commands lists the six commands and /fallback now is visible in get_state", async (t) => {
+test("stock RPC get_commands lists the three commands and /fallback is gone", async (t) => {
   const dirs = isolateHome("rubato-user-commands-rpc-");
   t.after(async () => {
     if (child?.exitCode === null && child.signalCode === null) {
@@ -362,15 +293,9 @@ test("stock RPC get_commands lists the six commands and /fallback now is visible
   const commands = await request("cmds", "get_commands");
   assert.equal(commands.success, true, stderr);
   const names = (commands.data?.commands ?? []).map((command) => command.name);
-  for (const name of ["goal", "loop", "btw", "ttsr", "fallback", "ir"]) {
+  for (const name of ["goal", "loop", "btw"]) {
     assert.equal(names.includes(name), true, name + " missing from RPC get_commands: " + names.join(","));
   }
-  const saved = await request("fb1", "prompt", { message: "/fallback fixture/alpha fixture/beta" });
-  assert.equal(saved.success, true, stderr);
-  const switched = await request("fb2", "prompt", { message: "/fallback now" });
-  assert.equal(switched.success, true, stderr);
-  const state = await request("state", "get_state");
-  assert.equal(state.success, true, stderr);
-  assert.equal(state.data.model.id, "beta");
+  assert.equal(names.includes("fallback"), false, "/fallback is not a Rubato command: " + names.join(","));
   child.kill("SIGTERM");
 });

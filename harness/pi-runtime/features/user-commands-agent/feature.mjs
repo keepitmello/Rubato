@@ -14,9 +14,6 @@ const RUNTIME_FILES = Object.freeze([
   "loop/parse.mjs",
   "btw/extension.mjs",
   "btw/side-query.mjs",
-  "ttsr/extension.mjs",
-  "model-fallback/extension.mjs",
-  "import-repro/extension.mjs",
 ]);
 
 export const patches = Object.freeze([]);
