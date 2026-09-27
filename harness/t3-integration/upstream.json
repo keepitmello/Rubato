@@ -61,6 +61,9 @@
     "apps/web/src/routeTree.gen.ts": "bae0e06c1ba534ca05bf9af20e3fd8eaff8230a972563c03d8afe16257ead8d6",
     "apps/web/src/components/chat/ContextWindowMeter.tsx": "1b0bf5481c2fb2149955888791ad93650bea1351f73ffa188dcde303c847e3e9",
     "apps/web/src/hooks/useHandleNewThread.ts": "ae0f1dd2f1b60899c0936f846ec9b00c7fba6db3c68ce85547831deeea496007",
-    "apps/web/src/hooks/useHandleNewThread.test.ts": "8718b2a81bcad619ccbaf3329da03f663000df5bf3b979146d91d37f0574b83b"
+    "apps/web/src/hooks/useHandleNewThread.test.ts": "8718b2a81bcad619ccbaf3329da03f663000df5bf3b979146d91d37f0574b83b",
+    "apps/web/src/branding.ts": "fe9d3b9370e8a6d6d3f1c2b7730a506e1be45ef5b7a301898d97ccdde1c198ee",
+    "apps/web/index.html": "7ec184f90b90efd82c1c3df29410242cf2c6bcc9487a469d4a9597b85996256f",
+    "apps/web/public/manifest.webmanifest": "55931d48395d2e90f0b59c09e9fb77392dae530426c0c7300adce44ac6ed87b7"
   }
 }

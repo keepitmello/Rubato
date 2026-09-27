@@ -106,6 +106,7 @@ build_fingerprint() {
     find "$HERE/overlay" -type f -exec shasum -a 256 {} + 2>/dev/null | sort
     shasum -a 256 "$HERE/apply.mjs" "$HERE/voice-edits.mjs" "$HERE/memory-edits.mjs" "$HERE/cache-edits.mjs" "$HERE/permission-edits.mjs" "$HERE/write-gui-settings.mjs" 2>/dev/null
     shasum -a 256 "$HERE/assets/Rubato.png" "$HERE/assets/Rubato.icns" 2>/dev/null
+    find "$HERE/assets/web" -type f -exec shasum -a 256 {} + 2>/dev/null | sort
   } | shasum -a 256 | cut -d' ' -f1
 }
 
@@ -149,6 +150,12 @@ for target in assets/prod/black-macos-1024.png assets/prod/black-universal-1024.
   if [ -f "$T3_DIR/$target" ]; then
     cp "$HERE/assets/Rubato.png" "$T3_DIR/$target" || warn "아이콘 교체 실패: $target"
   fi
+done
+# 웹 쪽 진입점 — 부트 스플래시, 브라우저 탭, 아이폰 홈 화면 — 은 apps/web/public 의
+# 같은 이름 파일을 읽는다. T3 원본처럼 모서리가 투명한 타일이고, Rubato.png 의
+# 여백을 잘라 크기별로 미리 만들어 둔 것이다(assets/web).
+for icon in "$HERE"/assets/web/*; do
+  cp "$icon" "$T3_DIR/apps/web/public/$(basename "$icon")" || warn "아이콘 교체 실패: $(basename "$icon")"
 done
 ok "아이콘 Rubato"
 
