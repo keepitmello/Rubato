@@ -41,11 +41,18 @@ function isScratchPrefix(name) {
   return name.endsWith("-") || name.length >= MIN_BARE_PREFIX_LENGTH;
 }
 
+// Only names actually handed to mkdtemp are scratch prefixes. The same
+// `join(tmpdir(), "...")` shape also builds one-off file and directory names,
+// and those are created at most once, so they never accumulate. Matching them
+// would let a literal like `join(tmpdir(), "project")` delete unrelated
+// directories. Both quote styles occur, and the prefix is reached through
+// `tmpdir()` either directly or as `path.join(tmpdir(), ...)`.
+//
 // `isolateHome(prefix)` takes its prefix from the caller, so the call sites are
 // the only place the literal appears.
 const PREFIX_PATTERNS = [
-  /(?:join|path\.join)\(\s*tmpdir\(\)\s*,\s*"([^"]+)"/g,
-  /isolateHome\(\s*"([^"]+)"/g,
+  /mkdtemp(?:Sync)?\(\s*(?:path\.)?join\(\s*tmpdir\(\)\s*,\s*["']([^"']+)["']/g,
+  /isolateHome\(\s*["']([^"']+)["']/g,
 ];
 
 // Roots that collect children for as long as anything keeps retiring into them
