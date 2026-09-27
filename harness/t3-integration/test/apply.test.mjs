@@ -40,6 +40,18 @@ test('overlay is guarded, idempotent, reversible and rejects dirty upstream befo
   await writeFile(path.join(root,'.rubato-pi-overlay.json'),JSON.stringify(priorManifest));
   assert.deepEqual((await applyIntegration({t3:root})).changes,[priorTarget]);
   assert.equal((await applyIntegration({t3:root})).changes.length,0);
+  // A target that left the list is reverted from the manifest. After the pin
+  // checkout it is already original; that is not a local change. An edited one is.
+  const dropped='apps/web/src/components/ThreadDropped.tsx';
+  const droppedManifest=JSON.parse(await readFile(path.join(root,'.rubato-pi-overlay.json'),'utf8'));
+  droppedManifest.files[dropped]={original:'upstream\n',installedHash:createHash('sha256').update('rubato\n').digest('hex')};
+  await writeFile(path.join(root,'.rubato-pi-overlay.json'),JSON.stringify(droppedManifest));
+  await writeFile(path.join(root,dropped),'user edit\n');
+  await assert.rejects(applyIntegration({t3:root}),/local changes: .*ThreadDropped/);
+  await writeFile(path.join(root,dropped),'upstream\n');
+  await applyIntegration({t3:root});
+  assert.equal(await readFile(path.join(root,dropped),'utf8'),'upstream\n');
+  assert.equal(JSON.parse(await readFile(path.join(root,'.rubato-pi-overlay.json'),'utf8')).files[dropped],undefined);
   const target=path.join(root,'apps/server/src/serverRuntimeStartup.ts');
   const good=await readFile(target,'utf8');
   await writeFile(target,good+'\n// user edit\n');

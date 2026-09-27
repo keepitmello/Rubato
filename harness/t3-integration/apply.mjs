@@ -2118,7 +2118,11 @@ export async function applyIntegration({t3,check=false,remove=false}) {
     if (manifest.files[relative]) continue;
     const destination = path.join(target,relative);
     const current = await existing(destination);
-    if (current!==null && hash(current)!==record.installedHash)
+    // Already back to its original: install-gui.sh checks out the pin before this
+    // runs, which restores every tracked file. Refusing it here stopped every
+    // install after a target left the list, half-applied (T3's own name and
+    // bundle id came back).
+    if (current!==null && current!==record.original && hash(current)!==record.installedHash)
       throw new Error(`Installed file has local changes: ${relative}`);
     planned.push({relative,destination,current,next:record.original});
   }
