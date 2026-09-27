@@ -46,14 +46,14 @@ describe("the context ring's prompt cache", () => {
       state: "warm",
       hitPercent: 92,
       expiresAt: Date.now() + 2 * HOUR + 5 * 60_000,
-      warming: { mode: "idle", enabled: true, active: true, until: Date.now() + HOUR },
+      warming: { mode: "idle", enabled: true, hours: 4, active: true, until: Date.now() + HOUR },
     });
     expect(markup).not.toContain("var(--color-error)");
     expect(markup).toContain("Hit rate");
     expect(markup).toContain("92%");
     expect(markup).toMatch(/Warm · 2h [45]m left/);
     expect(markup).toContain("Refreshing until");
-    expect(markup).toContain('role="switch"');
+    expect(markup).toMatch(/aria-pressed="true"[^>]*>4h</);
     expect(markup).not.toContain("compacts automatically");
     expect(markup).toContain('data-close-delay="150"');
   });
@@ -66,6 +66,7 @@ describe("the context ring's prompt cache", () => {
   it("says whether this thread or the setting turned the warmer off", () => {
     const thread = meterWith({ state: "warm", sessionId: "s1", expiresAt: Date.now() + HOUR, warming: { mode: "idle", enabled: false, active: false } });
     expect(thread).toContain("Off for this thread");
+    expect(thread).toMatch(/aria-pressed="true"[^>]*>Off</);
     expect(thread).not.toMatch(/data-disabled=""/);
     const global = meterWith({ state: "warm", sessionId: "s1", expiresAt: Date.now() + HOUR, warming: { mode: "off", enabled: true, active: false } });
     expect(global).toContain("Off in settings");

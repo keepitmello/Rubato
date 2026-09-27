@@ -4,7 +4,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import type { ContextWindowSnapshot } from "~/lib/contextWindow";
 import { cn } from "~/lib/utils";
 import { setSessionCacheWarming } from "~/state/rubatoCacheWarming";
-import { Switch } from "../ui/switch";
+import { Toggle, ToggleGroup } from "../ui/toggle-group";
 
 type RubatoCache = NonNullable<ContextWindowSnapshot["cache"]>;
 
@@ -58,19 +58,31 @@ function Row(props: { label: string; children: ReactNode }) {
   );
 }
 
+/** "off" or hours of warming after the thread's latest input. */
+const WARMING_CHOICES = ["off", "1", "2", "4", "8"] as const;
+type WarmingChoice = (typeof WARMING_CHOICES)[number];
+const DEFAULT_HOURS = 2;
+
+function choiceOf(warming: RubatoCache["warming"]): WarmingChoice {
+  if (!warming.enabled) return "off";
+  const hours = String(warming.hours ?? DEFAULT_HOURS);
+  return (WARMING_CHOICES as readonly string[]).includes(hours) ? (hours as WarmingChoice) : "2";
+}
+
 /**
- * The cache half of the context ring's popover: lifetime, hit rate and this thread's warmer.
- * The switch answers for this thread only; the global mode is a setting (/settings in the CLI).
+ * The cache half of the context ring's popover: lifetime, hit rate and how long this
+ * thread keeps warming after its latest input. The choice answers for this thread only;
+ * the global mode is a setting (/settings in the CLI).
  */
 export function RubatoCacheSection(props: {
   cache: RubatoCache | null | undefined;
   environmentId?: EnvironmentId | undefined;
 }) {
   const now = useRubatoCacheNow(props.cache, true);
-  // The switch's answer stands in until the thread reports again. A thread T3 has let go
-  // of reports nothing new, so without it the popover would snap back to the old state.
+  // The answer stands in until the thread reports again. A thread T3 has let go of
+  // reports nothing new, so without it the popover would snap back to the old choice.
   const [answered, setAnswered] = useState<RubatoCache | null>(null);
-  const [pending, setPending] = useState<boolean | null>(null);
+  const [pending, setPending] = useState<WarmingChoice | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => setAnswered(null), [props.cache]);
   const cache = answered ?? props.cache;
@@ -78,7 +90,7 @@ export function RubatoCacheSection(props: {
 
   const cold = rubatoCacheIsCold(cache, now);
   const globalOff = cache.warming.mode === "off";
-  const enabled = pending ?? cache.warming.enabled;
+  const choice = pending ?? choiceOf(cache.warming);
   const status = cold
     ? "Cold"
     : cache.state === "warm" && cache.expiresAt != null
@@ -86,19 +98,22 @@ export function RubatoCacheSection(props: {
       : "Lifetime not published";
   const warmingNote = globalOff
     ? "Off in settings"
-    : !enabled
+    : choice === "off"
       ? "Off for this thread"
-      : cache.warming.active && cache.warming.until != null && pending === null
-        ? `Refreshing until ${formatClock(cache.warming.until)}`
-        : "Not warming right now";
-  const canSwitch = Boolean(props.environmentId && cache.sessionId) && !globalOff;
+      : pending !== null
+        ? "Saving…"
+        : cache.warming.active && cache.warming.until != null
+          ? `Refreshing until ${formatClock(cache.warming.until)}`
+          : `${choice}h after your last message`;
+  const canChoose = Boolean(props.environmentId && cache.sessionId) && !globalOff && pending === null;
 
-  const toggle = (checked: boolean) => {
-    if (!props.environmentId || !cache.sessionId) return;
-    setPending(checked);
+  const choose = (next: WarmingChoice) => {
+    if (!props.environmentId || !cache.sessionId || next === choice) return;
+    setPending(next);
     setError(null);
-    setSessionCacheWarming(props.environmentId, cache.sessionId, checked)
-      .then((next) => setAnswered(next))
+    const change = next === "off" ? { enabled: false } : { enabled: true, hours: Number(next) };
+    setSessionCacheWarming(props.environmentId, cache.sessionId, change)
+      .then((updated) => setAnswered(updated))
       .catch((cause: unknown) =>
         setError(cause instanceof Error ? cause.message : "Could not change cache warming."),
       )
@@ -118,18 +133,26 @@ export function RubatoCacheSection(props: {
       </div>
       {cache.hitPercent != null ? <Row label="Hit rate">{cache.hitPercent}%</Row> : null}
       <div className="flex items-center justify-between gap-3 text-[11px] leading-4">
-        <div className="flex min-w-0 flex-col">
-          <span className="text-secondary-label">Keep warm</span>
-          <span className="text-pretty text-muted-foreground">{warmingNote}</span>
-        </div>
-        <Switch
-          size="sm"
-          checked={enabled && !globalOff}
-          disabled={!canSwitch || pending !== null}
-          onCheckedChange={toggle}
-          aria-label="Keep this thread's prompt cache warm"
-        />
+        <span className="text-secondary-label">Keep warm</span>
+        <span className="text-pretty text-right text-muted-foreground">{warmingNote}</span>
       </div>
+      <ToggleGroup
+        aria-label="Keep this thread's prompt cache warm"
+        variant="segmented"
+        className="w-full"
+        value={globalOff ? [] : [choice]}
+        disabled={!canChoose}
+        onValueChange={(next) => {
+          const value = next[0];
+          if (value && (WARMING_CHOICES as readonly string[]).includes(value)) choose(value as WarmingChoice);
+        }}
+      >
+        {WARMING_CHOICES.map((value) => (
+          <Toggle key={value} value={value} className="flex-1">
+            {value === "off" ? "Off" : `${value}h`}
+          </Toggle>
+        ))}
+      </ToggleGroup>
       {error ? <div className="text-pretty text-[11px] text-destructive">{error}</div> : null}
     </div>
   );

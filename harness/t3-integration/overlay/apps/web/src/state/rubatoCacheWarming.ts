@@ -6,11 +6,11 @@ import { readPreparedConnection } from "./session";
 /** The route Rubato adds to the T3 server for the context ring's warmer switch. */
 const CACHE_WARMING_ROUTE = "/rubato/cache-warming";
 
-/** Switches one session's warmer; answers with that session's cache after the switch. */
+/** Sets one session's warmer (on/off, hours); answers with that session's cache after it. */
 export async function setSessionCacheWarming(
   environmentId: EnvironmentId,
   sessionId: string,
-  enabled: boolean,
+  change: { readonly enabled?: boolean; readonly hours?: number },
 ): Promise<RubatoCacheSnapshot> {
   const prepared = readPreparedConnection(environmentId);
   if (!prepared) throw new Error("This Mac is not connected.");
@@ -20,7 +20,7 @@ export async function setSessionCacheWarming(
     method: "POST",
     credentials: access.credentials,
     headers: { ...access.headers, "content-type": "application/json" },
-    body: JSON.stringify({ sessionId, enabled }),
+    body: JSON.stringify({ sessionId, ...change }),
   });
   const payload = (await response.json().catch(() => null)) as
     | { cache?: RubatoCacheSnapshot; error?: { message?: string } }

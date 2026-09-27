@@ -24,6 +24,7 @@ export const cacheEdits = {
         '  warming: Schema.Struct({',
         '    mode: Schema.Literals(["off", "idle", "streaming"]),',
         '    enabled: Schema.Boolean,',
+        '    hours: Schema.optional(NonNegativeInt),',
         '    active: Schema.Boolean,',
         '    until: Schema.optional(NonNegativeInt),',
         '  }),',
