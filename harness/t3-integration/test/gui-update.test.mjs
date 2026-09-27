@@ -410,7 +410,10 @@ test('menu check: a prompt already on screen answers it; closing it does not re-
   });
   t.after(() => controller.stop());
   const shown = controller.tick();
-  await delay(0);
+  // The claim is about a click while the prompt is on screen. The tick reads the
+  // result and snooze files first, so wait for the prompt itself, not a timer turn.
+  for (let i = 0; i < 500 && dialogs.length === 0; i += 1) await delay(2);
+  assert.equal(dialogs.length, 1, 'the prompt is on screen before the menu click');
   await controller.tick(true);
   answer({ response: -1 });
   await shown;
