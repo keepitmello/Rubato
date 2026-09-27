@@ -1,10 +1,11 @@
 import type { EnvironmentId } from "@t3tools/contracts";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import type { ContextWindowSnapshot } from "~/lib/contextWindow";
 import { cn } from "~/lib/utils";
 import { setSessionCacheWarming } from "~/state/rubatoCacheWarming";
-import { Slider } from "@base-ui/react/slider";
+import { MinusIcon, PlusIcon } from "lucide-react";
+import { Button } from "../ui/button";
 
 type RubatoCache = NonNullable<ContextWindowSnapshot["cache"]>;
 
@@ -62,12 +63,14 @@ const HOUR = 3_600_000;
 const MIN_HOURS = 1;
 const MAX_HOURS = 12;
 const DEFAULT_HOURS = 2;
+/** Clicks land in a burst; the last value is saved once they stop. */
+const SAVE_AFTER_MS = 600;
 
 /**
  * The cache half of the context ring's popover: lifetime, hit rate and how many hours
- * after its latest input this thread keeps warming. Dragging shows the end time as it
- * moves; letting go saves it. It answers for this thread only; the global mode is a
- * setting (/settings in the CLI).
+ * after its latest input this thread keeps warming. − / + change the hours and the end
+ * time at once; the value is saved once the clicks stop. It answers for this thread only;
+ * the global mode is a setting (/settings in the CLI).
  */
 export function RubatoCacheSection(props: {
   cache: RubatoCache | null | undefined;
@@ -78,9 +81,12 @@ export function RubatoCacheSection(props: {
   // reports nothing new, so without it the popover would snap back to the old hours.
   const [answered, setAnswered] = useState<RubatoCache | null>(null);
   const [draft, setDraft] = useState<number | null>(null);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => setAnswered(null), [props.cache]);
+  useEffect(() => () => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+  }, []);
   const cache = answered ?? props.cache;
   if (!cache) return null;
 
@@ -95,31 +101,36 @@ export function RubatoCacheSection(props: {
     : cache.state === "warm" && cache.expiresAt != null
       ? `Warm · ${formatRemaining(cache.expiresAt - now)} left`
       : "Lifetime not published";
-  const warmingNote = globalOff
+  const endNote = globalOff
     ? "Off in settings"
     : until == null
-      ? `${hours}h after your last message`
+      ? null
       : until <= now
-        ? `${hours}h · ended ${formatClock(until)}`
-        : draft === null && !saving && !cache.warming.active
-          ? `${hours}h · resumes with the next reply`
-          : `${hours}h · until ${formatClock(until)}`;
-  const canChange = Boolean(props.environmentId && cache.sessionId) && !globalOff && !saving;
+        ? `ended ${formatClock(until)}`
+        : `until ${formatClock(until)}`;
+  const canChange = Boolean(props.environmentId && cache.sessionId) && !globalOff;
 
-  const save = (next: number) => {
-    setDraft(null);
-    if (!props.environmentId || !cache.sessionId || (next === saved && cache.warming.enabled)) return;
-    setSaving(true);
+  const change = (delta: number) => {
+    const next = Math.min(MAX_HOURS, Math.max(MIN_HOURS, hours + delta));
+    if (next === hours || !props.environmentId || !cache.sessionId) return;
+    const environmentId = props.environmentId;
+    const sessionId = cache.sessionId;
+    setDraft(next);
     setError(null);
-    setSessionCacheWarming(props.environmentId, cache.sessionId, { enabled: true, hours: next })
-      .then((updated) => setAnswered(updated))
-      .catch((cause: unknown) =>
-        setError(cause instanceof Error ? cause.message : "Could not change cache warming."),
-      )
-      .finally(() => setSaving(false));
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      saveTimer.current = null;
+      setSessionCacheWarming(environmentId, sessionId, { enabled: true, hours: next })
+        .then((updated) => {
+          setAnswered(updated);
+          setDraft(null);
+        })
+        .catch((cause: unknown) => {
+          setDraft(null);
+          setError(cause instanceof Error ? cause.message : "Could not change cache warming.");
+        });
+    }, SAVE_AFTER_MS);
   };
-  const asHours = (value: number | readonly number[]) =>
-    Math.round(Array.isArray(value) ? (value[0] ?? saved) : (value as number));
 
   return (
     <div className="mt-1 flex flex-col gap-1.5 border-t border-border/60 pt-2">
@@ -133,28 +144,39 @@ export function RubatoCacheSection(props: {
         </div>
       </div>
       {cache.hitPercent != null ? <Row label="Hit rate">{cache.hitPercent}%</Row> : null}
-      <div className="flex items-center justify-between gap-3 text-[11px] leading-4">
+      <div className="flex items-center justify-between gap-2 text-[11px] leading-4">
         <span className="text-secondary-label">Keep warm</span>
-        <span className="font-medium tabular-nums text-secondary-label">{warmingNote}</span>
+        <div className="flex items-center gap-1.5">
+          {endNote ? <span className="tabular-nums text-muted-foreground">{endNote}</span> : null}
+          <div
+            className="flex items-center rounded-md bg-muted/50"
+            role="group"
+            aria-label="Hours to keep this thread's prompt cache warm"
+          >
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              aria-label="One hour less"
+              disabled={!canChange || hours <= MIN_HOURS}
+              onClick={() => change(-1)}
+            >
+              <MinusIcon aria-hidden="true" />
+            </Button>
+            <span className="w-6 text-center font-medium tabular-nums text-secondary-label" aria-live="polite">
+              {hours}h
+            </span>
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              aria-label="One hour more"
+              disabled={!canChange || hours >= MAX_HOURS}
+              onClick={() => change(1)}
+            >
+              <PlusIcon aria-hidden="true" />
+            </Button>
+          </div>
+        </div>
       </div>
-      <Slider.Root
-        min={MIN_HOURS}
-        max={MAX_HOURS}
-        step={1}
-        value={hours}
-        disabled={!canChange}
-        onValueChange={(value) => setDraft(asHours(value))}
-        onValueCommitted={(value) => save(asHours(value))}
-        aria-label="Hours to keep this thread's prompt cache warm"
-        className="py-1 data-disabled:opacity-50"
-      >
-        <Slider.Control className="flex h-4 w-full touch-none items-center select-none">
-          <Slider.Track className="relative h-1.5 w-full rounded-full bg-muted/60">
-            <Slider.Indicator className="rounded-full bg-primary" />
-            <Slider.Thumb className="size-3.5 rounded-full border border-border bg-background shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
-          </Slider.Track>
-        </Slider.Control>
-      </Slider.Root>
       {error ? <div className="text-pretty text-[11px] text-destructive">{error}</div> : null}
     </div>
   );
