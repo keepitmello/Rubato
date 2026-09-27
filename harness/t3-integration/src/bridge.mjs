@@ -627,7 +627,28 @@ export class RubatoPiBridge {
     let value;
     try { value = await context.client.command({ type: 'get_cache_warming' }); }
     catch { return; }
-    if (!context.stopped) context.projection.configureCache({ ...value, sessionId: context.sessionId });
+    if (context.stopped) return;
+    context.projection.configureCache({ ...value, sessionId: context.sessionId });
+    this.rememberWarmth(context.session.threadId, cacheFrom({ ...value, sessionId: context.sessionId }));
+  }
+  /**
+   * The sidebar shows which threads are still warming, including those T3 has let go of.
+   * Their end time is known from the last report (latest input + hours), so the last
+   * snapshot per thread is enough; the sidebar works out what is left.
+   */
+  rememberWarmth(threadId, cache) {
+    if (!threadId || !cache) return;
+    (this.warmth ??= new Map()).set(threadId, cache);
+  }
+  warmingThreads() {
+    const threads = {};
+    for (const [threadId, cache] of this.warmth ?? []) {
+      const { mode, enabled, stopped, active, hours, from } = cache.warming;
+      if (mode === 'off' || !enabled || stopped || !active || !hours || from === undefined) continue;
+      const until = from + hours * 3_600_000;
+      if (until > Date.now()) threads[threadId] = { sessionId: cache.sessionId, hours, from, until };
+    }
+    return threads;
   }
   cacheMoved(event) {
     return event?.type === 'agent_settled' || (event?.type === 'entry_appended' && event.entry?.kind === 'cache_warm');
@@ -637,22 +658,29 @@ export class RubatoPiBridge {
    * after its idle half hour has no attachment here, so a short-lived one does the job
    * (the engine keeps a warming runtime loaded, and loads a stored one for the switch).
    */
-  async setSessionCacheWarming(sessionId, { enabled, hours } = {}) {
+  async setSessionCacheWarming(sessionId, { enabled, hours, stop } = {}) {
     if (typeof sessionId !== 'string' || !sessionId) throw new Error('sessionId is required');
-    if (enabled === undefined && hours === undefined) throw new Error('enabled or hours is required');
-    const command = { type: 'set_session_cache_warming', ...(enabled !== undefined ? { enabled } : {}), ...(hours !== undefined ? { hours } : {}) };
+    if (enabled === undefined && hours === undefined && stop === undefined) throw new Error('enabled, hours or stop is required');
+    const command = { type: 'set_session_cache_warming', ...(enabled !== undefined ? { enabled } : {}),
+      ...(hours !== undefined ? { hours } : {}), ...(stop !== undefined ? { stop } : {}) };
     const open = [...this.sessions.values()].find((context) => context.sessionId === sessionId && !context.stopped);
+    const threadId = open?.session.threadId
+      ?? [...(this.warmth ?? [])].find(([, cache]) => cache.sessionId === sessionId)?.[0];
+    let value;
     if (open) {
-      const value = await open.client.command(command);
+      value = await open.client.command(command);
       open.projection.configureCache({ ...value, sessionId });
-      return cacheFrom({ ...value, sessionId });
+    } else {
+      await this.connection();
+      const client = await new SessionClient({ ...this.descriptor, onError: this.onError }).connect();
+      try {
+        await client.attach(sessionId);
+        value = await client.command(command);
+      } finally { await client.detach().catch(() => {}); await client.close(); }
     }
-    await this.connection();
-    const client = await new SessionClient({ ...this.descriptor, onError: this.onError }).connect();
-    try {
-      await client.attach(sessionId);
-      return cacheFrom({ ...(await client.command(command)), sessionId });
-    } finally { await client.detach().catch(() => {}); await client.close(); }
+    const cache = cacheFrom({ ...value, sessionId });
+    this.rememberWarmth(threadId, cache);
+    return cache;
   }
   rememberWindows(models) {
     this.modelWindows ??= new Map();
@@ -709,14 +737,16 @@ export const createBridge = (options) => { t3BridgeLog('createBridge', options?.
 /**
  * `/rubato/cache-warming` on the T3 server lands here (RubatoCacheWarming.ts imports this
  * module by the path the Rubato provider is wired to, so it is the same module instance
- * and sees the provider's bridge). POST `{ sessionId, enabled?, hours? }` sets that session's warmer.
+ * and sees the provider's bridge). GET lists the threads still warming (the sidebar's arcs);
+ * POST `{ sessionId, enabled?, hours?, stop? }` sets that session's warmer.
  */
 export async function handleCacheWarmingRequest(request) {
   const bridge = [...liveBridges].find((item) => !item.closed);
   if (!bridge) return Response.json({ error: { code: 'unavailable', message: 'The Rubato provider is not running.' } }, { status: 503 });
   try {
+    if (request.method === 'GET') return Response.json({ threads: bridge.warmingThreads() });
     const body = await request.json().catch(() => ({}));
-    return Response.json({ cache: await bridge.setSessionCacheWarming(body?.sessionId, { enabled: body?.enabled, hours: body?.hours }) });
+    return Response.json({ cache: await bridge.setSessionCacheWarming(body?.sessionId, { enabled: body?.enabled, hours: body?.hours, stop: body?.stop }) });
   } catch (error) {
     return Response.json({ error: { code: 'failed', message: String(error?.message ?? error) } }, { status: 500 });
   }

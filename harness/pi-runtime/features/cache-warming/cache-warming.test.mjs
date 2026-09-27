@@ -199,3 +199,35 @@ test("a shorter window than the time already passed ends warming", async (t) => 
   assert.equal(warmer.status.state, "inactive");
   assert.match(warmer.status.reason, /since the latest user input/);
 });
+
+test("stopping by hand ends this input's window; the next input warms again", async (t) => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+  t.after(() => mock.timers.reset());
+  const { warmer, warms, branch } = harness("anthropic", 0);
+  const request = { model: model("anthropic"), context: {}, options: {} };
+  warmer.start(request, () => true);
+  warmer.onAgentSettled();
+  warmer.setSessionWarming({ stop: true });
+  assert.equal(warmer.status.state, "inactive");
+  assert.equal(warmer.sessionStopped(), true);
+  assert.deepEqual(branch.at(-1).data, { enabled: true, stoppedFor: 0 });
+  await advance(60 * MIN);
+  assert.equal(warms.length, 0);
+
+  branch.push({ type: "message", message: { role: "user", timestamp: Date.now() } });
+  warmer.start(request, () => true);
+  warmer.onAgentSettled();
+  assert.equal(warmer.sessionStopped(), false);
+  assert.equal(warmer.status.state, "scheduled");
+});
+
+test("changing the hours resumes a window stopped by hand", (t) => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+  t.after(() => mock.timers.reset());
+  const { warmer } = harness("anthropic", 0);
+  warmer.start({ model: model("anthropic"), context: {}, options: {} }, () => true);
+  warmer.setSessionWarming({ stop: true });
+  warmer.setSessionWarming({ hours: 4 });
+  assert.equal(warmer.sessionStopped(), false);
+  assert.equal(warmer.status.state, "scheduled");
+});
