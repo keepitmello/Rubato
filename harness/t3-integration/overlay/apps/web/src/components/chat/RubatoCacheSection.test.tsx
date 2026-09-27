@@ -62,13 +62,15 @@ describe("the context ring's prompt cache", () => {
     expect(markup).toContain('data-close-delay="150"');
   });
 
-  it("offers Stop while warming, and says stopped once it is", () => {
+  it("offers Stop while warming, and once this thread is off says so and offers to keep it warm", () => {
     const from = Date.now() - HOUR;
     const warming = meterWith({ state: "warm", sessionId: "s1", expiresAt: Date.now() + HOUR, warming: { mode: "idle", enabled: true, hours: 2, from, active: true } });
     expect(warming).toContain("Stop warming this thread");
-    const stopped = meterWith({ state: "warm", sessionId: "s1", expiresAt: Date.now() + HOUR, warming: { mode: "idle", enabled: true, hours: 2, from, active: false, stopped: true } });
-    expect(stopped).toContain(">stopped<");
-    expect(stopped).not.toContain("Stop warming this thread");
+    expect(warming).not.toContain("Keep this thread warm");
+    const off = meterWith({ state: "warm", sessionId: "s1", expiresAt: Date.now() + HOUR, warming: { mode: "idle", enabled: false, hours: 2, from, active: false } });
+    expect(off).toContain(">off<");
+    expect(off).toContain("Keep this thread warm");
+    expect(off).not.toContain("Stop warming this thread");
   });
 
   it("says when a window already ended", () => {

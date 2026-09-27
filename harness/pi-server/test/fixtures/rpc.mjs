@@ -11,7 +11,7 @@ let timer;
 let ui;
 let pendingWork = 0;
 // The cache warmer's live state as `get_cache_warming` reports it.
-let warming = { enabled: true, hours: 2, stopped: false, state: 'inactive' };
+let warming = { enabled: true, hours: 2, state: 'inactive' };
 // The service-tier extension's live state; `/fast on|off` flips it like the real command.
 let fast = { active: false, supported: true };
 let blockMessages = false;
@@ -110,11 +110,11 @@ lines.on('line', (line) => {
     case 'get_commands': data = { commands: [] }; break;
     case 'get_available_models': data = { models: [] }; break;
     case 'set_session_cache_warming':
-      warming = { enabled: command.enabled ?? warming.enabled, hours: command.hours ?? warming.hours, stopped: command.stop === true,
-        state: (command.enabled ?? warming.enabled) && command.stop !== true ? warming.state : 'inactive' };
+      warming = { enabled: command.enabled ?? warming.enabled, hours: command.hours ?? warming.hours,
+        state: (command.enabled ?? warming.enabled) ? warming.state : 'inactive' };
       // falls through: the answer is the state after the switch
     case 'get_cache_warming':
-      data = { mode: 'idle', sessionEnabled: warming.enabled, sessionHours: warming.hours, sessionStopped: warming.stopped, lastInputAt: 1_789_990_000_000, status: { state: warming.state },
+      data = { mode: 'idle', sessionEnabled: warming.enabled, sessionHours: warming.hours, lastInputAt: 1_789_990_000_000, status: { state: warming.state },
         cache: { state: 'warm', hitPercent: 90, expiresAt: 1_790_000_000_000 } }; break;
     case 'extension_request':
       if (command.name === 'rubato.service-tier.status') { data = fast; break; }

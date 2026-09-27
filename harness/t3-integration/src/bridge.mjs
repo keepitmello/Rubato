@@ -646,10 +646,9 @@ export class RubatoPiBridge {
     const now = Date.now();
     for (const [threadId, cache] of this.warmth ?? []) {
       if (cache.state !== 'warm' || !(cache.expiresAt > now)) continue;
-      const { mode, enabled, stopped, active, hours, from } = cache.warming;
+      const { mode, enabled, active, hours, from } = cache.warming;
       const until = hours && from !== undefined ? from + hours * 3_600_000 : undefined;
       const warmer = mode === 'off' || !enabled ? 'off'
-        : stopped ? 'stopped'
         : until === undefined ? 'idle'
         : until <= now ? 'ended'
         : active ? 'on' : 'idle';
@@ -669,11 +668,11 @@ export class RubatoPiBridge {
    * after its idle half hour has no attachment here, so a short-lived one does the job
    * (the engine keeps a warming runtime loaded, and loads a stored one for the switch).
    */
-  async setSessionCacheWarming(sessionId, { enabled, hours, stop } = {}) {
+  async setSessionCacheWarming(sessionId, { enabled, hours } = {}) {
     if (typeof sessionId !== 'string' || !sessionId) throw new Error('sessionId is required');
-    if (enabled === undefined && hours === undefined && stop === undefined) throw new Error('enabled, hours or stop is required');
+    if (enabled === undefined && hours === undefined) throw new Error('enabled or hours is required');
     const command = { type: 'set_session_cache_warming', ...(enabled !== undefined ? { enabled } : {}),
-      ...(hours !== undefined ? { hours } : {}), ...(stop !== undefined ? { stop } : {}) };
+      ...(hours !== undefined ? { hours } : {}) };
     const open = [...this.sessions.values()].find((context) => context.sessionId === sessionId && !context.stopped);
     const threadId = open?.session.threadId
       ?? [...(this.warmth ?? [])].find(([, cache]) => cache.sessionId === sessionId)?.[0];
@@ -750,7 +749,7 @@ export const createBridge = (options) => { t3BridgeLog('createBridge', options?.
  * module by the path the Rubato provider is wired to, so it is the same module instance
  * and sees the provider's bridge). GET lists the threads whose cache is still warm (the
  * sidebar's capsules);
- * POST `{ sessionId, enabled?, hours?, stop? }` sets that session's warmer.
+ * POST `{ sessionId, enabled?, hours? }` sets that session's warmer.
  */
 export async function handleCacheWarmingRequest(request) {
   const bridge = [...liveBridges].find((item) => !item.closed);
@@ -758,7 +757,7 @@ export async function handleCacheWarmingRequest(request) {
   try {
     if (request.method === 'GET') return Response.json({ threads: bridge.cachedThreads() });
     const body = await request.json().catch(() => ({}));
-    return Response.json({ cache: await bridge.setSessionCacheWarming(body?.sessionId, { enabled: body?.enabled, hours: body?.hours, stop: body?.stop }) });
+    return Response.json({ cache: await bridge.setSessionCacheWarming(body?.sessionId, { enabled: body?.enabled, hours: body?.hours }) });
   } catch (error) {
     return Response.json({ error: { code: 'failed', message: String(error?.message ?? error) } }, { status: 500 });
   }

@@ -10,7 +10,7 @@ const CACHE_WARMING_ROUTE = "/rubato/cache-warming";
 export async function setSessionCacheWarming(
   environmentId: EnvironmentId,
   sessionId: string,
-  change: { readonly enabled?: boolean; readonly hours?: number; readonly stop?: true },
+  change: { readonly enabled?: boolean; readonly hours?: number },
 ): Promise<RubatoCacheSnapshot> {
   const prepared = readPreparedConnection(environmentId);
   if (!prepared) throw new Error("This Mac is not connected.");
@@ -35,13 +35,14 @@ export async function setSessionCacheWarming(
  * `expiresAt` is when the cache goes cold, counting the refreshes a scheduled warmer will
  * still send; `from` is the latest input, where that lifetime started. `warmer` is what
  * the warmer does for it: `on` holds the cache until `until`, `ended` means it has let go
- * and the cache runs out on its own, `stopped` / `off` / `idle` mean it is not warming.
+ * and the cache runs out on its own, `off` (this thread or the setting) and `idle` mean it
+ * is not warming.
  */
 export interface CachedThread {
   readonly sessionId: string;
   readonly expiresAt: number;
   readonly from?: number;
-  readonly warmer: "on" | "ended" | "stopped" | "off" | "idle";
+  readonly warmer: "on" | "ended" | "off" | "idle";
   readonly hours?: number;
   readonly until?: number;
 }

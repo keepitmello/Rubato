@@ -41,7 +41,6 @@ describe("the sidebar's cache capsule", () => {
     );
     expect(cache).toBe("Cache warm · 2h 18m left");
     expect(warmer).toMatch(/^Warmer on until .+ · 2h$/);
-    expect(cacheTooltipLines(thread({ warmer: "stopped" }), now)[1]).toBe("Warmer stopped");
     expect(cacheTooltipLines(thread({ warmer: "off" }), now)[1]).toBe("Warmer off");
   });
 });
