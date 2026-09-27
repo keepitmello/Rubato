@@ -16,14 +16,14 @@ vi.mock("../ui/popover", () => ({
 
 const HOUR = 60 * 60_000;
 
-function meterWith(cache: Record<string, unknown>) {
+function meterWith(cache: Record<string, unknown>, usedTokens = 10_000) {
   const usage = deriveLatestContextWindowSnapshot([
     {
       id: EventId.make("activity-1"),
       tone: "info",
       kind: "context-window.updated",
       summary: "Context updated",
-      payload: { usedTokens: 10_000, maxTokens: 200_000, compactsAutomatically: true, cache },
+      payload: { usedTokens, maxTokens: 200_000, compactsAutomatically: true, cache },
       turnId: TurnId.make("turn-1"),
       createdAt: "2026-09-27T03:00:00.000Z",
     },
@@ -54,6 +54,11 @@ describe("the context ring's prompt cache", () => {
     expect(markup).toContain('role="switch"');
     expect(markup).not.toContain("compacts automatically");
     expect(markup).toContain('data-close-delay="150"');
+  });
+
+  it("keeps a nearly full context out of red while the cache is warm", () => {
+    const markup = meterWith({ state: "warm", expiresAt: Date.now() + 2 * HOUR, warming: { mode: "idle", active: true } }, 195_000);
+    expect(markup).not.toContain("var(--color-error)");
   });
 
   it("says the warmer is off for every thread", () => {
