@@ -44,7 +44,12 @@ export async function installContextNotes(pi, options = {}) {
   let liveMode = options.enabled == null
     ? contextMode(liveEnv)
     : (options.enabled ? HISTORY_NOTES_MODE : SUMMARY_MODE);
-  const notesActive = () => options.enabled ?? (liveMode === HISTORY_NOTES_MODE);
+  // A runtime's hooks can still fire after session_shutdown (an aborted turn ends
+  // while other extensions shut down). The hosted server keeps every session in one
+  // process, so a controller reopened then would hold the session's gate forever and
+  // the next runtime of the same session could never register its own.
+  let shutDown = false;
+  const notesActive = () => !shutDown && (options.enabled ?? (liveMode === HISTORY_NOTES_MODE));
   const bindMode = (mode, ctx) => {
     liveMode = setContextMode(mode, liveEnv, {
       sessionId: ctx?.sessionManager?.getSessionId?.(),
@@ -117,7 +122,7 @@ export async function installContextNotes(pi, options = {}) {
     try { applyResolvedMode(ctx, { persistIfMissing: true }); }
     catch (error) { report(error, ctx, true); throw error; }
   });
-  pi.on("session_shutdown", async () => api.close());
+  pi.on("session_shutdown", async () => { shutDown = true; api.close(); });
   pi.on("session_abort", async () => {
     if (controller) { controller.pending = null; controller.checkpointRequested = false; }
   });
