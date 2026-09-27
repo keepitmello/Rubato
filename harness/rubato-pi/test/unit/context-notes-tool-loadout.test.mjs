@@ -32,4 +32,8 @@ test("notes mode makes the notes tools searchable without activating them", () =
   syncNotesToolActivation(pi, false, definitions);
   assert.deepEqual(pi.active, ["read", "bash", "tool_search"]);
   assert.ok(definitions.every((definition) => definition.allowLazyActivation === false));
+
+  syncNotesToolActivation(pi, true, definitions);
+  assert.ok(pi.active.includes("notes_write_file"), "a tool removed for summary must return when notes returns");
+  assert.ok(pi.active.includes("read"));
 });

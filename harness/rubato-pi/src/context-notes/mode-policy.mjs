@@ -104,11 +104,18 @@ export function modePairKey(currentMode, model = {}) {
   return `${currentMode}|${model.provider ?? ""}/${model.id ?? ""}`;
 }
 
+export function hasConversation(entries = []) {
+  return entries.some((entry) => entry?.type === "message"
+    && (entry.message?.role === "user" || entry.message?.role === "assistant"));
+}
+
 export async function considerContextModeSwitch({
   model,
   source,
   currentMode,
   branch = [],
+  sessionEntries,
+  readBranch,
   confirm,
   notify,
   declined,
@@ -118,10 +125,14 @@ export async function considerContextModeSwitch({
   }
   const wanted = defaultContextModeForModel(model);
   if (!model || wanted === currentMode) return { action: "keep" };
-  // No recorded mode and no notes window: the first real model owns the
-  // default. Asking here would block T3 set_model before a provider binding
-  // exists, so the confirm can never be answered.
-  if (!recordedModeFromBranch(branch) && !hasNotesWindowEntries(branch)) {
+  // No conversation yet: the first real model owns the default, even if
+  // session_start already opened a provisional notes window. Asking here would
+  // block T3 set_model before a provider binding exists. A session that already
+  // has a user or assistant message — on this branch or anywhere else — always
+  // confirms, so a tree jump back to the root cannot silent-switch.
+  const seen = sessionEntries ?? branch;
+  const fresh = !recordedModeFromBranch(branch) && !hasConversation(branch) && !hasConversation(seen);
+  if (fresh && !(wanted === SUMMARY_MODE && hasNotesWindowBoundary(branch))) {
     return { action: "switch", mode: wanted };
   }
   const key = modePairKey(currentMode, model);
@@ -138,6 +149,11 @@ export async function considerContextModeSwitch({
   if (!ok) {
     declined?.add(key);
     return { action: "keep", declined: true };
+  }
+  const latest = typeof readBranch === "function" ? readBranch() : branch;
+  if (wanted === SUMMARY_MODE && hasNotesWindowBoundary(latest)) {
+    notify?.(NOTES_TO_SUMMARY_REFUSED, "warning");
+    return { action: "keep", refused: true };
   }
   return { action: "switch", mode: wanted };
 }
