@@ -590,36 +590,13 @@ async function checkSlashCommands(session, inspect) {
   const commands = await session.request("get_commands");
   const names = (commands?.commands ?? []).map((command) => command.name);
   const results = [];
-  for (const name of ["ttsr", "goal", "fallback"]) {
+  for (const name of ["goal"]) {
     if (shouldRun(`slash-${name}`) && !names.includes(name)) {
       results.push(fail(`slash-${name}`, `Rubato command /${name} missing from get_commands; listed=${names.slice(0, 24).join(",")}`));
     }
   }
-  if (shouldRun("slash-ttsr") && names.includes("ttsr")) {
-    results.push(await checkSlash(session, "slash-ttsr", "/ttsr", (blob) => /TTSR|collapse-repetition|stream rules/i.test(blob)));
-  }
   if (shouldRun("slash-goal") && names.includes("goal")) {
     results.push(await checkSlash(session, "slash-goal", "/goal", (blob) => /No goal|Usage: \/goal|goal/i.test(blob)));
-  }
-  if (shouldRun("slash-fallback") && names.includes("fallback")) {
-    const saved = await session.rpc(
-      { type: "prompt", message: "/fallback fixture/local-only fixture/local-alt" },
-      "prompt",
-      TURN_MS,
-    );
-    if (saved.success === false) {
-      results.push(fail("slash-fallback", `save failed: ${JSON.stringify(saved.error ?? saved).slice(0, 300)}`));
-    } else {
-      const switched = await session.rpc({ type: "prompt", message: "/fallback now" }, "prompt", TURN_MS);
-      const state = await session.request("get_state");
-      if (switched.success === false) {
-        results.push(fail("slash-fallback", `switch failed: ${JSON.stringify(switched.error ?? switched).slice(0, 300)}`));
-      } else if (state?.model?.id !== "local-alt") {
-        results.push(fail("slash-fallback", `expected model local-alt after /fallback now; got ${state?.model?.id ?? "none"}`));
-      } else {
-        results.push(pass("slash-fallback", "saved chain and switched to fixture/local-alt"));
-      }
-    }
   }
   return results.filter((result) => shouldRun(result.surface));
 }

@@ -105,7 +105,7 @@ async function startSession({ name, factories, sessionDir, cwd }) {
   const notices = [];
   const rendered = [];
   let editorText = "";
-  const tui = { requestRender() {}, terminal: { rows: 120, cols: 100 }, fullRedraws: 7 };
+  const tui = { requestRender() {}, terminal: { rows: 120, cols: 100 } };
   const theme = fakeTheme();
   const uiContext = {
     notify(message, type) { notices.push({ message, type }); },
@@ -162,12 +162,12 @@ async function startSession({ name, factories, sessionDir, cwd }) {
   };
 }
 
-test("feature manifest copies runtime files and names five toggleable factories", () => {
+test("feature manifest copies runtime files and names four toggleable factories", () => {
   assert.equal(feature.id, "user-commands-session");
   assert.equal(feature.patches.length, 0);
   assert.ok(feature.files.some((file) => file.path.endsWith("history-search/catalog-index.mjs")));
   assert.deepEqual([...USER_COMMAND_SESSION_FACTORY_NAMES], [
-    "rubato-history-search", "rubato-help", "rubato-diff", "rubato-files", "rubato-redraws",
+    "rubato-history-search", "rubato-help", "rubato-diff", "rubato-files",
   ]);
 });
 
@@ -195,18 +195,16 @@ test("extractPatchedPaths and collectSessionFiles follow the product file list",
 });
 
 
-test("stock AgentSession registers the five commands, renders them, and drops a disabled factory", async (t) => {
+test("stock AgentSession registers the four commands, renders them, and drops a disabled factory", async (t) => {
   const fixture = await startSession({ name: "all-commands", factories: createUserCommandSessionFactories() });
   t.after(() => fixture.close());
-  assert.deepEqual(commandNames(fixture.session), ["diff", "files", "help", "history", "tui"]);
+  assert.deepEqual(commandNames(fixture.session), ["diff", "files", "help", "history"]);
 
   await fixture.session.prompt("/help");
   const helpText = fixture.rendered.at(-1).text;
   assert.match(helpText, /Getting started/);
   assert.match(helpText, /Keybindings/);
   assert.match(helpText, /Type \/ for commands/);
-  await fixture.session.prompt("/tui");
-  assert.equal(fixture.notices.some((notice) => notice.message === "TUI full redraws: 7"), true);
 
   const agentDir = join(scratch, "disabled-agent");
   mkdirSync(agentDir, { recursive: true });
@@ -220,7 +218,7 @@ test("stock AgentSession registers the five commands, renders them, and drops a 
   const disabled = await startSession({ name: "disabled-help", factories: toggled.extensionFactories });
   t.after(() => disabled.close());
   assert.equal(commandNames(disabled.session).includes("help"), false);
-  assert.deepEqual(commandNames(disabled.session), ["diff", "files", "history", "tui"]);
+  assert.deepEqual(commandNames(disabled.session), ["diff", "files", "history"]);
 });
 
 test("/history pages the session catalog to Senpi recall and finds the oldest prompt", async (t) => {

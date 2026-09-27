@@ -31,7 +31,6 @@ const catalog = Object.freeze({
   providers: { requires: [], load: () => import("./features/providers/patches.mjs") },
   "runtime-factories": { requires: [], load: () => import("./features/runtime-factories/patches.mjs") },
   "media-tools": { requires: ["tool-execution", "session-prompt"], load: () => import("./features/media-tools/patches.mjs") },
-  "video-in": { requires: ["tool-execution", "session-prompt"], load: () => import("./features/video-in/patches.mjs") },
   "tool-guards": { requires: ["tool-execution"], load: async () => (await import("./features/tool-guards/feature.mjs")).toolGuardsFeature },
   "tool-policy": { requires: ["tool-execution"], load: async () => (await import("./features/tool-policy/feature.mjs")).toolPolicyFeature },
   "provider-execution": { requires: ["tool-execution", "providers"], load: async () => (await import("./features/provider-execution/patches.mjs")).providerExecutionFeature },

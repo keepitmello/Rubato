@@ -52,15 +52,15 @@ Senpi 등록 46행(`docs/pi-migration/builtin-inventory.json`, 2026-09-11). 등�
 | stock-pi | 1 | `reasoning` → stock `/thinking` (`pi-coding-agent/dist/core/slash-commands.js`) |
 | candidate-has | 20 | 후보 feature+테스트. `account`는 A6 `providers/auth-pool` `/account` |
 | rubato-disabled | 4 | `claude-sdk-oauth`, `cursor-cli-oauth`, `anthropic-web-search`, `websearch` (`session-defaults.mjs` `DISABLED_BUILTIN_EXTENSIONS`) |
-| needed-missing | 16 | stock/후보에 동등 표면 없음. 이번 단위에서 연결하지 않음 |
-| unused | 5 | 사용자 슬래시가 아님: `anthropic-bash`, `recommended-models`, `cache-keepalive`, `prompt-url-widget`, `tps` |
+| needed-missing | 11 | stock/후보에 동등 표면 없음. 이번 단위에서 연결하지 않음 |
+| unused | 10 | 사용자 슬래시가 아님: `anthropic-bash`, `recommended-models`, `cache-keepalive`, `prompt-url-widget`, `tps`. 옮겨 왔다가 쓰이지 않아 걷어낸 것: `model-fallback` `/fallback`(`retry.modelFallback` 이 꺼져 체인을 읽는 곳이 없다), `video-in`(유일한 대상 모델의 provider 가 꺼져 있다), `redraws` `/tui`, `import-repro` `/ir`, `ttsr`(감지하는 코드가 없다) |
 
-needed-missing 런타임(기존 large): `prompt-preset`, `compaction`, `video-in`, `goal`, `config-reload`.
+needed-missing 런타임(기존 large): `prompt-preset`, `compaction`, `goal`, `config-reload`.
 `goal` tracked 근거는 `harness/rubato-pi/src/codemode/index.ts`(goal builtin session_start 카운트). untracked `core-prompt-noise.mjs`는 인용하지 않는다.
 
-needed-missing 사용자 명령: `history-search` `/history`, `diff`, `files`, `help`, `redraws` `/tui`, `model-fallback` `/fallback`, `import-repro` `/ir`, `loop`, `ttsr`, `btw`, `gpt-account`(A6 Codex credential import와 짝, `/gpt-account` 자체는 후보에 없음).
+needed-missing 사용자 명령: `history-search` `/history`, `diff`, `files`, `help`, `loop`, `btw`, `gpt-account`(A6 Codex credential import와 짝, `/gpt-account` 자체는 후보에 없음).
 
-A12: `features/user-commands-agent/` — `/goal` `rubato-goal`, `/loop` `rubato-loop`, `/btw` `rubato-btw`, `/ttsr` `rubato-ttsr` (스트림 품질 규칙 감시·상태), `/fallback` `rubato-model-fallback` (수동 전환, 자동 retry.modelFallback 끔), `/ir` `rubato-import-repro`.
+A12: `features/user-commands-agent/` — `/goal` `rubato-goal`, `/loop` `rubato-loop`, `/btw` `rubato-btw`.
 
 ## 네 번째 단위 — CLI 조립과 남은 기능군
 

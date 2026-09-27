@@ -15,7 +15,6 @@ const RUNTIME_FILES = Object.freeze([
   "help/markdown.mjs",
   "diff/index.mjs",
   "files/index.mjs",
-  "redraws/index.mjs",
 ]);
 
 export const patches = Object.freeze([]);

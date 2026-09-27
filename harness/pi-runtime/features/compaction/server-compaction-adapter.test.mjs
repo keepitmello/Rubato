@@ -5,7 +5,6 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { patchAnthropicMessagesNative } from "../media-tools/patches.mjs";
-import { patchAnthropicMessagesVideo } from "../video-in/patches.mjs";
 import {
   ANTHROPIC_SERVER_COMPACTION_ADAPTER_MARKER,
   ANTHROPIC_SERVER_COMPACTION_LANE_MARKER,
@@ -21,11 +20,11 @@ const stockPiAi = join(
 function chainedAnthropicMessages() {
   const stock = readFileSync(join(stockPiAi, "api/anthropic-messages.js"), "utf8");
   return patchAnthropicMessagesServerCompaction(
-    patchAnthropicMessagesVideo(patchAnthropicMessagesNative(stock)),
+    patchAnthropicMessagesNative(stock),
   );
 }
 
-test("server compaction adapter survives media-tools and video-in chaining", () => {
+test("server compaction adapter survives media-tools chaining", () => {
   const patched = chainedAnthropicMessages();
   assert.match(patched, /else if \(event\.content_block\.type === "compaction"\)/);
   assert.match(patched, /event\.delta\.type === "compaction_delta"/);

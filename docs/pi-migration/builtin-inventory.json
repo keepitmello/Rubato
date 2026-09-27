@@ -88,13 +88,9 @@
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/redraws.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "needed-missing",
-      "verdict": "needed-missing",
-      "evidence": "User command /tui (redraw stats). No stock/candidate equivalent. Debug-only; still a user command so not unused.",
-      "size": "small",
-      "productUse": "TUI redraw diagnostics.",
-      "dependencies": "pi-tui",
-      "estimatedSize": "small debug; recommend skip unless requested"
+      "status": "unused",
+      "verdict": "unused",
+      "evidence": "/tui only reports a TUI redraw count and returns outside the TUI. Rubato does not ship it."
     },
     {
       "id": "anthropic-web-search",
@@ -146,13 +142,9 @@
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/model-fallback/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "needed-missing",
-      "verdict": "needed-missing",
-      "evidence": "User command /fallback. No stock/candidate equivalent. Product disables automatic retry.modelFallback in session-defaults.mjs; that is not a drop of the command.",
-      "size": "small",
-      "productUse": "View/manage fallback chains.",
-      "dependencies": "settings retry.modelFallback (currently false)",
-      "estimatedSize": "small command; confirm whether to keep given automatic fallback is off"
+      "status": "unused",
+      "verdict": "unused",
+      "evidence": "User command /fallback edits retry model fallback chains, but harness/rubato-pi/src/session-defaults.mjs forces retry.modelFallback false, so no chain is ever read. Rubato does not ship the command."
     },
     {
       "id": "recommended-models",
@@ -234,13 +226,9 @@
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/import-repro.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "needed-missing",
-      "verdict": "needed-missing",
-      "evidence": "User command /ir (pi.dev/CI gist import). No stock/candidate equivalent.",
-      "size": "small",
-      "productUse": "Import upstream Pi issue-analysis sessions.",
-      "dependencies": "none",
-      "estimatedSize": "small; upstream-Pi workflow, recommend skip unless requested"
+      "status": "unused",
+      "verdict": "unused",
+      "evidence": "/ir imports CI repro sessions; the issue-URL path throws by design. Rubato does not ship it."
     },
     {
       "id": "websearch",
@@ -265,13 +253,9 @@
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/video-in/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "needed-missing",
-      "verdict": "needed-missing",
-      "evidence": "Product uses Senpi video-in: harness/rubato-pi/src/transforms/core-tool-surface.mjs isModelGatedMediaUrl endsWith /video-in/index.js; tool-surface.test.mjs loads videoInExtension and read_video. Candidate media-tools has no video-in (docs/pi-migration/media-tools.md: stock Model.input and catalog lack video). Existing media-tools dir is not owned here.",
-      "size": "large",
-      "productUse": "Model-gated read_video for video-capable models (kimi k3 in Senpi).",
-      "dependencies": "stock Model.input video modality + catalog metadata; media-tools owner if folded there",
-      "estimatedSize": ">1 day because it needs a Pi type/catalog change, not a tool copy"
+      "status": "unused",
+      "verdict": "unused",
+      "evidence": "Video input is gated on kimi-coding/k3, a provider Rubato keeps off, so the tool never activates. Rubato does not ship it."
     },
     {
       "id": "look-at",
@@ -340,13 +324,9 @@
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/ttsr/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "needed-missing",
-      "verdict": "needed-missing",
-      "evidence": "User command /ttsr. No stock/candidate equivalent.",
-      "size": "large",
-      "productUse": "Stream-watch / nudge rules.",
-      "dependencies": "TUI + rule discovery",
-      "estimatedSize": ">1 day"
+      "status": "unused",
+      "verdict": "unused",
+      "evidence": "/ttsr prints the status of stream rules that no code in Rubato detects. Rubato does not ship it."
     },
     {
       "id": "btw",

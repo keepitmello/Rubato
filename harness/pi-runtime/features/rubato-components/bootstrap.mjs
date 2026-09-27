@@ -11,7 +11,6 @@ import { ToolSearchService, createToolSearchExtension } from "../tool-search/ind
 import { createServiceTierFeature } from "../service-tier/extension.mjs";
 import terminal from "../terminal/src/index.ts";
 import mediaTools from "../media-tools/src/index.mjs";
-import videoIn from "../video-in/src/index.mjs";
 import { loopGuardExtension, registerApplyPatchExtension, toolPairGuardExtension } from "../tool-guards/index.mjs";
 import { createBashTimeoutExtension, createHooksExtension, createPermissionExtension } from "../tool-policy/index.mjs";
 import { createProvidersExtension } from "../../node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/rubato-features/providers/extension.mjs";
@@ -122,7 +121,6 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
     { name: "rubato-bash-timeout", factory: createBashTimeoutExtension() },
     { name: "terminal", factory: (pi) => terminal(pi, { ...terminalOptions, createSettingsManager: () => settings }) },
     { name: "media-tools", factory: (pi) => mediaTools(pi, { createSettingsManager: () => settings }) },
-    { name: "rubato-video-in", factory: videoIn },
     { name: "codemode", factory: (pi) => codemode(pi, codemodeOptions) },
     { name: "tool-search", factory: createToolSearchExtension(toolSearch) },
     { name: "rubato-components", factory: async (pi) => {
