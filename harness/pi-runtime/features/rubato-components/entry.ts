@@ -34,9 +34,13 @@ export const createRubatoComponentExtension = (options: RubatoExtensionOptions =
   return composeRubatoExtension(createRubatoComponents(lazyTaskComponent(options), componentOptions), { logger: candidateLogger });
 };
 
-// A team member's Agent/AgentSend/AgentCancel, which its prompt promises. Memory stays out: it is
-// bound to the lead's identity (task children never inherit it either).
-export const createRubatoTaskExtension = (options: RubatoExtensionOptions = {}) =>
-  composeRubatoExtension([lazyTaskComponent(options)], { logger: candidateLogger });
+// A task child's components, by name. What a child leaves out (memory: the lead's identity; task:
+// everyone but a team member) is decided in bootstrap.mjs, next to the rest of the child surface.
+export const createRubatoChildComponentExtension = (options: RubatoExtensionOptions & { components: readonly string[] }) => {
+  const { createTaskOptions: _createTaskOptions, components, ...componentOptions } = options;
+  const selected = createRubatoComponents(lazyTaskComponent(options), componentOptions)
+    .filter((component) => components.includes(component.name));
+  return composeRubatoExtension(selected, { logger: candidateLogger });
+};
 
 export default createRubatoComponentExtension();

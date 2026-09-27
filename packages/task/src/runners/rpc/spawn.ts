@@ -46,9 +46,9 @@ export type RpcSpawnRuntime = {
   readonly resolveSenpiExecutable?: (runtime: RpcSpawnRuntime) => string | null
   // Staged service-tier extension. Appended only when this child requested a tier.
   readonly serviceTierExtension?: string
-  // Entry a team member boots instead of resolveRpcEntry(): the stock RPC entry plus the task
-  // component, which gives the member its Agent tools.
-  readonly memberRpcEntry?: string
+  // Entry every task child boots instead of resolveRpcEntry(): the stock RPC entry plus the lead's
+  // working tools. resolveRpcEntry() stays the model catalog probe's anchor.
+  readonly childRpcEntry?: string
 }
 
 /**
@@ -274,9 +274,7 @@ export function buildRpcSpawn(spec: RpcSpawnSpec, runtime?: Partial<RpcSpawnRunt
       env,
     }
   }
-  const entry = profile.spec.memberEnv !== undefined && resolved.memberRpcEntry !== undefined
-    ? resolved.memberRpcEntry
-    : resolved.resolveRpcEntry()
+  const entry = resolved.childRpcEntry ?? resolved.resolveRpcEntry()
   return { command: resolved.execPath, args: [entry, ...childArgs], cwd: spec.cwd, env }
 }
 

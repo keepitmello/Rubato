@@ -298,7 +298,7 @@ async function runRpcFixture(root: string) {
   await writeFile(join(parentCwd, "parent-only.txt"), "parent")
   const capturePath = join(root, "rpc-provider-capture.jsonl")
   const providerPath = join(root, "rpc-provider.mjs")
-  const childProfile = resolvePiChildProviderProfile({ root: runtimeRoot, includeContextNotes: true, includeGuards: true, includeToolSearch: true })
+  const childProfile = resolvePiChildProviderProfile({ root: runtimeRoot, includeContextNotes: true, includeGuards: true })
   assert.equal(childProfile.rpcExtensions.some((entry) => entry.endsWith(`${join("context-notes", "extension.mjs")}`)), true)
   assert.equal(childProfile.rpcExtensions.some((entry) => entry.endsWith(`${join("child-runtime", "guard-extension.mjs")}`)), true)
   const eventStreamPath = pathToFileURL(join(
@@ -321,7 +321,7 @@ export default function fixtureProvider(pi) {
       const calls = (globalThis.__rubatoRpcCalls = (globalThis.__rubatoRpcCalls ?? 0) + 1);
       const usage = { input: 0, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 1, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
       const message = calls === 1
-        ? { role: "assistant", content: [{ type: "toolCall", id: "cwd-probe", name: "write", arguments: { path: "cwd-probe.txt", content: "rpc-child" } }], api: "openai-completions", provider: "fixture-provider", model: model.id, usage, stopReason: "toolUse", timestamp: Date.now() }
+        ? { role: "assistant", content: [{ type: "toolCall", id: "cwd-probe", name: "apply_patch", arguments: { input: "*** Begin Patch\\n*** Add File: cwd-probe.txt\\n+rpc-child\\n*** End Patch" } }], api: "openai-completions", provider: "fixture-provider", model: model.id, usage, stopReason: "toolUse", timestamp: Date.now() }
         : calls === 2
         ? { role: "assistant", content: [{ type: "toolCall", id: "bash-cwd", name: "bash", arguments: { command: "pwd > bash-cwd.txt && pwd" } }], api: "openai-completions", provider: "fixture-provider", model: model.id, usage, stopReason: "toolUse", timestamp: Date.now() }
         : calls >= 3 && calls <= 9
@@ -377,7 +377,8 @@ export default function fixtureProvider(pi) {
     const childProbe = join(cwd, "cwd-probe.txt")
     const parentProbe = join(parentCwd, "cwd-probe.txt")
     assert.equal(existsSync(childProbe), true, "RPC child write must land in the child cwd")
-    assert.equal(await readFile(childProbe, "utf8"), "rpc-child")
+    // Like the lead, an RPC child edits through apply_patch.
+    assert.equal((await readFile(childProbe, "utf8")).trim(), "rpc-child")
     assert.equal(existsSync(parentProbe), false, "RPC child must not write into the parent cwd")
     const transcript = JSON.stringify(entries)
     assert.match(transcript, /rubato\.context-window\.init\.v1/)
@@ -416,7 +417,7 @@ export default function fixtureProvider(pi) {
 
 const root = mkdtempSync(join(tmpdir(), "rubato-child-e2e-"))
 
-// A team member boots the member entry, which adds the task component to the stock RPC child.
+// A team member boots the child entry, whose task component gives it Agent.
 // The member's model must be offered Agent on its first request.
 async function runMemberFixture(root: string) {
   const cwd = join(root, "member-cwd")
@@ -426,7 +427,7 @@ async function runMemberFixture(root: string) {
   await mkdir(agentDir, { recursive: true })
   const capturePath = join(root, "member-provider-capture.jsonl")
   const providerPath = join(root, "member-provider.mjs")
-  const childProfile = resolvePiChildProviderProfile({ root: runtimeRoot, includeContextNotes: true, includeGuards: true, includeToolSearch: true })
+  const childProfile = resolvePiChildProviderProfile({ root: runtimeRoot, includeContextNotes: true, includeGuards: true })
   const eventStreamPath = pathToFileURL(join(
     runtimeRoot,
     "node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js",
@@ -492,7 +493,7 @@ export default function fixtureProvider(pi) {
       },
     }), "member runner start", 5_000)
     assert.ok(descriptor)
-    assert.equal(basename(descriptor.args[0] ?? ""), "member-rpc-entry.mjs", JSON.stringify(descriptor.args))
+    assert.equal(basename(descriptor.args[0] ?? ""), "child-rpc-entry.mjs", JSON.stringify(descriptor.args))
     await withTimeout(handle.waitForIdle(), "member fixture completion", 30_000)
     assert.equal(handle.lastAssistantText(), "fixture-member-response")
     const readCaptures = async () => (await readFile(capturePath, "utf8")).trim().split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line))

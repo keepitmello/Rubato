@@ -7,7 +7,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { stagePiRuntime } from "../../stage-runtime.mjs";
 import { childRuntimeFeature } from "../child-runtime/feature.mjs";
-import { toolSearchFeature } from "../tool-search/patches.mjs";
 import { feature as contextNotesFeature } from "../context-notes/patches.mjs";
 import { feature as contextWindowFeature } from "../context-window/patches.mjs";
 import { providerExecutionFeature } from "../provider-execution/patches.mjs";
@@ -41,7 +40,6 @@ const staged = await stagePiRuntime({
     compactionFeature,
     toolGuardsFeature,
     promptRulesFeature,
-    toolSearchFeature,
     childRuntimeFeature,
   ],
 });

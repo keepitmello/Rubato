@@ -258,14 +258,12 @@ describe("child service-tier closure", () => {
       includeContextNotes: false,
       includeGuards: false,
       includeRolePrompt: false,
-      includeToolSearch: false,
     })
     const fastFactories = await loadPiChildInProcessFactories({
       root,
       includeContextNotes: false,
       includeGuards: false,
       includeRolePrompt: false,
-      includeToolSearch: false,
       serviceTier: "priority",
     })
     assert.equal(plainFactories.some((entry) => entry.name === "service-tier"), false)
