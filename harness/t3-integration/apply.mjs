@@ -68,6 +68,23 @@ const edits = {
       '  return { nodeScriptPath: ".rubato/t3-remote-server.mjs", nodeEngineRange: serverPackageJson.engines.node };',
       'replace'],
   ],
+  // macOS 에서도 단일 인스턴스 잠금을 잡는다. Clerk 는 macOS 에서 잠금을 건너뛴다 —
+  // LaunchServices 가 번들당 앱 하나를 지켜 주기 때문이다. 그런데 start-gui.sh 는
+  // Electron 바이너리를 직접 켜서 LaunchServices 를 지나지 않고, 그렇게 켠 앱과
+  // Dock 으로 켠 앱이 같은 상태 DB 에 둘이 되면 나중 앱의 데스크톱 로그인이 먼저
+  // 앱의 것을 갈아치워 먼저 앱이 페어링을 요구했다. 잠금을 못 잡은 두 번째 앱은
+  // 원래 다른 OS 에서처럼 스스로 끝나고, 먼저 앱의 second-instance 가 창을 올린다.
+  // 잠금 범위는 userData 라서 make 가 setPath 한 뒤인 여기서 잡는다.
+  'apps/desktop/src/app/DesktopClerk.ts': [
+    ['import * as Context from "effect/Context";', 'import * as ElectronMain from "electron";\n'],
+    ['function createDesktopClerkBridge(stateDir: string, isDevelopment: boolean) {\n',
+      'function createDesktopClerkBridge(stateDir: string, isDevelopment: boolean) {\n' +
+      '  if (process.platform === "darwin" && process.versions.electron && !ElectronMain.app.requestSingleInstanceLock()) {\n' +
+      '    ElectronMain.app.quit();\n' +
+      '    return { cleanup() {}, isPrimaryInstance: false } as ReturnType<typeof createClerkBridge>;\n' +
+      '  }\n',
+      'replace'],
+  ],
   'apps/desktop/src/window/DesktopWindow.ts': [
     // macOS 권한 설정 화면(permission-edits.mjs)의 IPC 도 여기서 건다.
     ['import * as Electron from "electron";', 'import { attachRubatoUpdates } from "../updates/RubatoUpdates.ts";\nimport { attachRubatoPermissions } from "../permissions/RubatoPermissions.ts";\n'],

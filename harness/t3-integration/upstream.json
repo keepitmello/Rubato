@@ -64,6 +64,7 @@
     "apps/web/src/branding.ts": "fe9d3b9370e8a6d6d3f1c2b7730a506e1be45ef5b7a301898d97ccdde1c198ee",
     "apps/web/index.html": "7ec184f90b90efd82c1c3df29410242cf2c6bcc9487a469d4a9597b85996256f",
     "apps/web/public/manifest.webmanifest": "55931d48395d2e90f0b59c09e9fb77392dae530426c0c7300adce44ac6ed87b7",
-    "apps/web/src/components/chat/ContextWindowMeter.test.tsx": "d2ba7c9d2d6946e0453b1ffb16b93aa70938c18215d9c32e4250a08ad4f16e8a"
+    "apps/web/src/components/chat/ContextWindowMeter.test.tsx": "d2ba7c9d2d6946e0453b1ffb16b93aa70938c18215d9c32e4250a08ad4f16e8a",
+    "apps/desktop/src/app/DesktopClerk.ts": "ed6ad961b5a92c93dab1d0cd2430414f87e56f849eb721b2b9f1224a8c50d9f5"
   }
 }
