@@ -8,7 +8,11 @@ import { BOOTSTRAP_PREFIX, bootstrapMessage, validateTransition } from "./protoc
 
 const KEY = Symbol.for("rubato.history-notes.sessions.v1");
 const DRIFT_KEY = Symbol.for("rubato.history-notes.drift.v1");
+const FAILURE_KEY = Symbol.for("rubato.history-notes.failures.v1");
 const sessions = globalThis[KEY] ??= new Map();
+// Why a session's manager could not start. The refusal below is what reaches the
+// transcript, so it carries the reason instead of leaving it in a passing notice.
+const failures = globalThis[FAILURE_KEY] ??= new Map();
 export const REQUIRED_MARKERS = ["lane", "messages", "session", "settings", "pipeline", "anthropic", "turn"];
 
 export function markEnginePart(name) {
@@ -32,7 +36,12 @@ export function registerSessionGate(id, gate) {
   if (!id || typeof gate !== "function") throw new Error("문맥 관리 세션을 등록하지 못했어요.");
   if (sessions.has(id)) throw new Error("같은 세션의 문맥 관리자가 이미 실행 중이에요.");
   sessions.set(id, gate);
+  failures.delete(id);
   return () => { if (sessions.get(id) === gate) sessions.delete(id); };
+}
+
+export function recordSessionFailure(id, error) {
+  if (id) failures.set(id, error?.message ?? String(error));
 }
 
 export function assertSessionReady(manager, messages, context) {
@@ -41,7 +50,8 @@ export function assertSessionReady(manager, messages, context) {
   const gate = sessions.get(id);
   if (!gate) {
     context?.abort?.("system");
-    throw new Error("새 문맥 관리 확장이 준비되지 않았어요. 요약 방식으로 전환하지 않고 요청을 중단했어요.");
+    const reason = failures.get(id);
+    throw new Error(`새 문맥 관리 확장이 준비되지 않았어요.${reason ? ` 원인: ${reason}` : ""} 요약 방식으로 전환하지 않고 요청을 중단했어요.`);
   }
   gate(messages);
 }

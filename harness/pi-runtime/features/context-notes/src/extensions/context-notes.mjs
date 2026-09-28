@@ -5,7 +5,7 @@ import {
   isUserExplicitContextMode, setContextMode,
 } from "../context-notes/config.mjs";
 import { ContextNotesController, guidanceFor } from "../context-notes/controller.mjs";
-import { assertEngineParts } from "../context-notes/engine-gate.mjs";
+import { assertEngineParts, recordSessionFailure } from "../context-notes/engine-gate.mjs";
 import {
   NOTES_RESUME_IN_SUMMARY,
   SUMMARY_SESSION_COMMAND_NOTICE,
@@ -75,6 +75,7 @@ export async function installContextNotes(pi, options = {}) {
   const report = (error, ctx, fatal = false) => {
     if (controller) controller.fail(error, fatal);
     else {
+      recordSessionFailure(ctx.sessionManager?.getSessionId?.(), error);
       ctx.ui?.notify?.(error?.message ?? String(error), "error");
       ctx.abort?.("system");
     }

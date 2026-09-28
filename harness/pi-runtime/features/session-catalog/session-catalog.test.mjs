@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  chmodSync,
   copyFileSync,
   cpSync,
   existsSync,
@@ -171,6 +172,39 @@ process.stdout.write(JSON.stringify({
       .filter((entry) => entry.type === "message")
       .map((entry) => entry.message.content[0].text),
     ["persist before provider"],
+  );
+});
+
+// A full disk once failed two appends; the engine kept them in memory, the next message
+// pointed at a parent the file never got, and after a restart the session refused to open.
+test("a failed transcript append is not kept in memory, so the next entry hangs from a persisted parent", async () => {
+  const { SessionManager } = await import(pathToFileURL(join(patchedPackage, "dist/index.js")).href);
+  const cwd = join(scratchRoot, "failed-append-cwd");
+  const sessionDir = join(scratchRoot, "failed-append-sessions");
+  mkdirSync(cwd, { recursive: true });
+  mkdirSync(sessionDir, { recursive: true });
+
+  const manager = SessionManager.create(cwd, sessionDir, { id: "failed-append" });
+  const firstId = manager.appendMessage(userMessage("written"));
+  const sessionFile = manager.getSessionFile();
+
+  chmodSync(sessionFile, 0o444);
+  try {
+    assert.throws(() => manager.appendMessage(userMessage("lost with the disk full")), { code: "EACCES" });
+  } finally {
+    chmodSync(sessionFile, 0o600);
+  }
+  assert.equal(manager.getLeafId(), firstId, "the leaf stays on the last entry the file has");
+
+  const nextId = manager.appendMessage(userMessage("after space came back"));
+  const next = manager.getEntries().find((entry) => entry.id === nextId);
+  assert.equal(next.parentId, firstId);
+
+  const reopened = SessionManager.open(sessionFile);
+  assert.deepEqual(reopened.getEntries(), manager.getEntries(), "memory and file hold the same history");
+  assert.deepEqual(
+    reopened.getBranch().filter((entry) => entry.type === "message").map((entry) => entry.message.content[0].text),
+    ["written", "after space came back"],
   );
 });
 
