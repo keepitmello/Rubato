@@ -77,6 +77,11 @@ test("note nudge interval is 20% of the window and configurable", () => {
   assert.equal(windowBudget(DEEPSEEK, contextNotesConfig({ RUBATO_CONTEXT_NOTE_NUDGE_RATIO: "0.1" })).nudgeTokens, 100000);
   assert.equal(windowBudget(DEEPSEEK, contextNotesConfig({ RUBATO_CONTEXT_NOTE_NUDGE_RATIO: "0" })).nudgeTokens, undefined);
   assert.throws(() => contextNotesConfig({ RUBATO_CONTEXT_NOTE_NUDGE_RATIO: "2" }));
+  // The early, user-turn interval scales with the configured one: a longer interval nudges less on both paths.
+  const wide = windowBudget(DEEPSEEK, contextNotesConfig({ RUBATO_CONTEXT_NOTE_NUDGE_RATIO: "0.4" }));
+  assert.ok(wide.nudgeUserTokens > windowBudget(DEEPSEEK).nudgeUserTokens);
+  assert.ok(wide.nudgeUserTokens < wide.nudgeTokens);
+  assert.equal(windowBudget(DEEPSEEK, contextNotesConfig({ RUBATO_CONTEXT_NOTE_NUDGE_RATIO: "0" })).nudgeUserTokens, undefined);
 });
 test("UUIDv7 chain and deterministic metadata carrier, never a generated summary", () => {
   const a = initialWindow(), b = nextWindow(a);

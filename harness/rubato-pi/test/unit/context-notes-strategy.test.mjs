@@ -241,7 +241,7 @@ test("a nudge stored with an earlier text still opens and is resent byte for byt
   assert.equal(count(messages, NUDGE_TEXT), 0);
 });
 
-test("system-prompt guidance is a pure function of the model; Astra's text is unchanged", () => {
+test("system-prompt guidance is a pure function of the model; the Codex lane shares Astra's", () => {
   assert.equal(guidanceFor(ASTRA), GUIDANCE);
   assert.equal(guidanceFor({ ...ASTRA, id: "gpt-6-astra-sub" }), GUIDANCE);
   assert.equal(guidanceFor({ ...ASTRA, id: "gpt-5.6-sol" }), GUIDANCE, "the Codex lane shares Astra's text");
@@ -256,7 +256,7 @@ test("a lowered window target keeps each model's own guidance", () => {
   const lowered = contextNotesConfig({ RUBATO_CONTEXT_WINDOW_TOKENS: "24000" });
   assert.equal(guidanceFor(GROK, lowered), guidanceFor(GROK), "Grok keeps its soft-zone text");
   assert.doesNotMatch(guidanceFor(GROK, lowered), /90%|95%/);
-  assert.equal(guidanceFor(ASTRA, lowered), GUIDANCE, "Astra's cached text does not change");
+  assert.equal(guidanceFor(ASTRA, lowered), GUIDANCE, "a lowered target does not change Astra's text");
 });
 
 test("an existing Claude session with a server compaction block opens in notes and keeps the block", async (t) => {

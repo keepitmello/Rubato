@@ -11,11 +11,11 @@ import { SOURCE, INIT_ENTRY, NOTE_ENTRY, NUDGE_ENTRY, PREPARE_ENTRY, REMINDER_EN
   branchWindow, decodeBootstrap, encodeBootstrap, isWindowCompaction, lastUserId, messageText, notePath } from "./protocol.mjs";
 
 const NOTES_TOOLS_TEXT = `These tools start inactive: run tool_search("notes history") once before first use, and search new_context by name when you need it.
-Write notes for yourself after this conversation is gone. Keep now.md short and rewrite it
-when it stops being true: the user's goal, their standing requirements and corrections,
-decisions in force, state and next steps, each with its window_id/item_id. Append to log.md
-what should not be retried: rejected options and failed approaches, with why. Update when
-the user adds or corrects something, not only when reminded. history_list_windows,
+Write notes for yourself after this conversation is gone. Keep now.md short, start it after
+the first unit of work, and rewrite it first whenever it stops being true: the user's goal,
+their standing requirements and corrections, decisions in force, state and next steps, each
+with its window_id/item_id. Only then, if useful, append to log.md what should not be retried,
+with why. Update when the user adds or corrects something, not only when reminded. history_list_windows,
 history_list_items, history_search_contents and history_read_item recover the original record.
 Search is case-sensitive literal substring search, not semantic search.`;
 
@@ -29,7 +29,8 @@ window is NOT a new session; filesystem state, jobs and pending user inputs rema
 Never use another model or compaction tool to summarize as a fallback. A storage,
 checkpoint or transition failure must be surfaced and must not discard the old window.`;
 
-// Astra's text is kept byte-for-byte: it is part of every Astra session's cached prefix.
+// Guidance text is part of every session's cached prefix: it must be stable between requests of
+// one build. Changing it in a release costs one cache miss per resumed session, not per request.
 export const GUIDANCE = `# Working across context windows
 This session uses history and working notes instead of conversation summarization.
 ${NOTES_TOOLS_TEXT}

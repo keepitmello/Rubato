@@ -34,10 +34,10 @@ export const ANTHROPIC_SERVER_COMPACTION_MODEL_IDS = Object.freeze([
 export const DEFAULT_REMINDER_TOKENS = 6144;
 export const DEFAULT_NOTE_NUDGE_RATIO = 0.2;
 // User turns are where requirements and corrections arrive, and the tail a note most
-// often misses. This many user messages since the last note, with at least this share
-// of the window's work, nudge before the full interval.
+// often misses. This many user messages since the last note, with at least
+// 1/NOTE_NUDGE_USER_DIVISOR of the regular interval, nudge before the full interval.
 export const NOTE_NUDGE_USER_TURNS = 4;
-export const NOTE_NUDGE_USER_RATIO = 0.02;
+export const NOTE_NUDGE_USER_DIVISOR = 10;
 export const DEFAULT_OUTPUT_RESERVE_TOKENS = 16_384;
 const OUTPUT_RESERVE_WINDOW_FRACTION = 0.04;
 const MAX_SCALED_OUTPUT_RESERVE_TOKENS = 49_152;
@@ -182,7 +182,7 @@ export function windowBudget(model, config = {}) {
     reminder,
     reminderAt: soft === undefined ? undefined : soft - reminder,
     nudgeTokens: ratio > 0 ? Math.floor(full * ratio) : undefined,
-    nudgeUserTokens: ratio > 0 ? Math.floor(full * NOTE_NUDGE_USER_RATIO) : undefined,
+    nudgeUserTokens: ratio > 0 ? Math.floor(full * ratio / NOTE_NUDGE_USER_DIVISOR) : undefined,
     nudgeUserTurns: NOTE_NUDGE_USER_TURNS,
     safetyLine,
   };
