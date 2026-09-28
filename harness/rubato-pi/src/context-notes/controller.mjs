@@ -11,11 +11,12 @@ import { SOURCE, INIT_ENTRY, NOTE_ENTRY, NUDGE_ENTRY, PREPARE_ENTRY, REMINDER_EN
   branchWindow, decodeBootstrap, encodeBootstrap, isWindowCompaction, lastUserId, messageText, notePath } from "./protocol.mjs";
 
 const NOTES_TOOLS_TEXT = `These tools start inactive: run tool_search("notes history") once before first use, and search new_context by name when you need it.
-Use notes_write_file / notes_append_to_file to maintain the goal, decisions, progress,
-failed approaches and why they failed, learnings, unresolved issues and next steps.
-Include window_id and item_id references to every active user request and important
-observations/tool results. history_list_windows, history_list_items,
-history_search_contents and history_read_item recover the original record.
+Write notes for yourself after this conversation is gone. Keep now.md short and rewrite it
+when it stops being true: the user's goal, their standing requirements and corrections,
+decisions in force, state and next steps, each with its window_id/item_id. Append to log.md
+what should not be retried: rejected options and failed approaches, with why. Update when
+the user adds or corrects something, not only when reminded. history_list_windows,
+history_list_items, history_search_contents and history_read_item recover the original record.
 Search is case-sensitive literal substring search, not semantic search.`;
 
 const NEW_WINDOW_TEXT = `Do not include a summary argument: new_context takes none.
@@ -229,6 +230,7 @@ export class ContextNotesController {
    * Context accumulated in this window since the latest note (or nudge, or window start).
    * Sums the increases of the provider's own context meter across responses, so a server
    * compaction that shrinks the context does not hide the work done before or after it.
+   * Also counts the user messages in the same range.
    */
   noteGrowth(liveTokens) {
     const branch = this.store.branch ?? [];
@@ -247,8 +249,10 @@ export class ContextNotesController {
       if (isWindowCompaction(entry) || (entry.type === "custom" && entry.customType === INIT_ENTRY)) { start = i; break; }
     }
     let growth = 0;
+    let userTurns = 0;
     for (const entry of branch.slice(start + 1)) {
       const message = entry.type === "message" ? entry.message : undefined;
+      if (message?.role === "user") userTurns += 1;
       if (message?.role !== "assistant" || ["error", "aborted"].includes(message.stopReason)) continue;
       const size = contextSize(message.usage);
       if (!(size > 0)) continue;
@@ -256,7 +260,7 @@ export class ContextNotesController {
       previous = size;
     }
     if (previous !== undefined && liveTokens > previous) growth += liveTokens - previous;
-    return growth;
+    return { growth, userTurns };
   }
 
   admit(messages) {
@@ -291,8 +295,9 @@ export class ContextNotesController {
       this.flush(ctx.sessionManager, this.reminderEntry.id);
       this.record("reminder_recorded", { window_id: this.window.windowId });
     } else if (!this.reminderEntry && !this.checkpointRequested && before.nudgeTokens && event.messages.length) {
-      const growth = this.noteGrowth(before.tokens);
-      if (growth >= before.nudgeTokens) {
+      const { growth, userTurns } = this.noteGrowth(before.tokens);
+      if (growth >= before.nudgeTokens ||
+          (userTurns >= before.nudgeUserTurns && growth >= before.nudgeUserTokens)) {
         const count = this.anchoredEntries.length;
         this.pi.appendEntry(NUDGE_ENTRY, { ...reminderAnchor(event.messages, this.window.windowId, NUDGE_TEXT),
           atTokens: before.tokens, growth });
@@ -301,7 +306,7 @@ export class ContextNotesController {
         if (this.anchoredEntries.length !== count + 1 || saved?.customType !== NUDGE_ENTRY) throw new Error("노트 갱신 안내를 저장하지 못했어요.");
         this.flush(ctx.sessionManager, saved.id);
         this.record("note_nudge_recorded", { window_id: this.window.windowId, tokens: before.tokens, growth,
-          interval: before.nudgeTokens });
+          user_turns: userTurns, interval: before.nudgeTokens });
       }
     }
     const anchored = new Map();

@@ -33,6 +33,11 @@ export const ANTHROPIC_SERVER_COMPACTION_MODEL_IDS = Object.freeze([
 
 export const DEFAULT_REMINDER_TOKENS = 6144;
 export const DEFAULT_NOTE_NUDGE_RATIO = 0.2;
+// User turns are where requirements and corrections arrive, and the tail a note most
+// often misses. This many user messages since the last note, with at least this share
+// of the window's work, nudge before the full interval.
+export const NOTE_NUDGE_USER_TURNS = 4;
+export const NOTE_NUDGE_USER_RATIO = 0.02;
 export const DEFAULT_OUTPUT_RESERVE_TOKENS = 16_384;
 const OUTPUT_RESERVE_WINDOW_FRACTION = 0.04;
 const MAX_SCALED_OUTPUT_RESERVE_TOKENS = 49_152;
@@ -134,6 +139,7 @@ export function hardSafetyLine(model, settings = contextBudgetSettings()) {
  *   hard       이 위의 새 요청은 체크포인트 턴이 아니면 막는다.
  *   reminderAt 마지막 안내를 한 번 붙이는 지점 (soft - reminder).
  *   nudgeTokens 마지막 노트 이후 이만큼 쌓이면 노트 갱신 안내를 붙인다.
+ *   nudgeUserTokens 사용자 메시지가 NOTE_NUDGE_USER_TURNS 개 이상 왔으면 이만큼만 쌓여도 붙인다.
  *   safetyLine 비상선 계산값. server-compaction 에서는 서버 trigger 로 나간다.
  */
 export function windowBudget(model, config = {}) {
@@ -176,6 +182,8 @@ export function windowBudget(model, config = {}) {
     reminder,
     reminderAt: soft === undefined ? undefined : soft - reminder,
     nudgeTokens: ratio > 0 ? Math.floor(full * ratio) : undefined,
+    nudgeUserTokens: ratio > 0 ? Math.floor(full * NOTE_NUDGE_USER_RATIO) : undefined,
+    nudgeUserTurns: NOTE_NUDGE_USER_TURNS,
     safetyLine,
   };
 }
