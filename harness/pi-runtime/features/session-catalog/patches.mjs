@@ -46,6 +46,34 @@ function patchSessionManagerRuntime(source) {
         if (!hasMessage) {`,
     "persist-first-user",
   );
+  // Stock records the entry in memory before writing it. When the write fails (a full
+  // disk), memory keeps an entry the file never got, the next entry takes it as parent,
+  // and after a restart that parent is missing from the file and the session will not open.
+  next = replaceOnce(
+    next,
+    `    _appendEntry(entry) {
+        this.fileEntries.push(entry);
+        this.byId.set(entry.id, entry);
+        this.leafId = entry.id;
+        this._persist(entry);
+    }`,
+    `    _appendEntry(entry) {
+        const previousLeafId = this.leafId;
+        this.fileEntries.push(entry);
+        this.byId.set(entry.id, entry);
+        this.leafId = entry.id;
+        try {
+            this._persist(entry);
+        }
+        catch (error) {
+            this.fileEntries.pop();
+            this.byId.delete(entry.id);
+            this.leafId = previousLeafId;
+            throw error;
+        }
+    }`,
+    "append-rollback",
+  );
   next = replaceOnce(
     next,
     `    static async listAll(sessionDirOrOnProgress, onProgressOrSignal, signal) {`,
