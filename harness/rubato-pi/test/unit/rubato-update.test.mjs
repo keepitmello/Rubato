@@ -47,7 +47,7 @@ function write(path, text) {
 const INSTALL_SKILLS_SRC = join(dirname(fileURLToPath(import.meta.url)), "../../../scripts/install-skills.sh");
 const SSH_HOSTS_SRC = join(dirname(fileURLToPath(import.meta.url)), "../../../scripts/ssh-remote-hosts.mjs");
 
-function setupFixture({ dirty = false, conflict = false, evidence = false, decoyStash = false, rebuildFailure = "", skillUpdate = false, profileSrc = false, profileTest = false, profileRuntimeSrc = false, staleEngine = false, gui = false, remoteChange = true, speedData = false, sshRemotes = false } = {}) {
+function setupFixture({ dirty = false, conflict = false, evidence = false, decoyStash = false, rebuildFailure = "", skillUpdate = false, profileSrc = false, profileTest = false, profileRuntimeSrc = false, staleEngine = false, gui = false, remoteChange = true, speedData = false, sshRemotes = false, localCommit = true } = {}) {
   const root = mkdtempSync(join(tmpdir(), "rubato-update-"));
   const bare = join(root, "origin.git");
   const seed = join(root, "seed");
@@ -163,9 +163,11 @@ function setupFixture({ dirty = false, conflict = false, evidence = false, decoy
     git(seed, ["push", "origin", "rubato/base"]);
   }
 
-  write(join(local, "extra.txt"), "local-only\n");
-  git(local, ["add", "extra.txt"]);
-  git(local, ["commit", "-m", "local-only"]);
+  if (localCommit) {
+    write(join(local, "extra.txt"), "local-only\n");
+    git(local, ["add", "extra.txt"]);
+    git(local, ["commit", "-m", "local-only"]);
+  }
   const localOnly = git(local, ["rev-parse", "HEAD"]).stdout.trim();
 
   let decoySha = "";
@@ -215,8 +217,8 @@ function runUpdate(fixture, { path = process.env.PATH, args = ["--yes"], env = {
   });
 }
 
-test("GUI update refuses dirty source without stash, reset, or rebuild", () => {
-  const fixture = setupFixture({ dirty: true, conflict: true });
+test("GUI update refuses overlapping local work without stash, reset, or rebuild", () => {
+  const fixture = setupFixture({ dirty: true, conflict: true, localCommit: false });
   const before = git(fixture.local, ["rev-parse", "HEAD"]).stdout;
   const result = runUpdate(fixture, { env: { RUBATO_GUI_UPDATE: "1" } });
   assert.equal(result.status, 1);
@@ -225,6 +227,19 @@ test("GUI update refuses dirty source without stash, reset, or rebuild", () => {
   assert.equal(git(fixture.local, ["stash", "list"]).stdout, "");
   assert.equal(readFileSync(join(fixture.local, "note.txt"), "utf8"), "local-wip\n");
   assert.equal(existsSync(fixture.trace), false);
+});
+
+// Several sessions share this checkout, so it is almost never clean. Stopping on
+// any local change meant the app's update never finished.
+test("GUI update fast-forwards over local work that does not overlap", () => {
+  const fixture = setupFixture({ dirty: true, localCommit: false });
+  const result = runUpdate(fixture, { env: { RUBATO_GUI_UPDATE: "1" } });
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.equal(git(fixture.local, ["rev-parse", "HEAD"]).stdout, git(fixture.local, ["rev-parse", "origin/rubato/base"]).stdout);
+  assert.equal(readFileSync(join(fixture.local, "note.txt"), "utf8"), "remote\n");
+  assert.equal(readFileSync(join(fixture.local, "keep.txt"), "utf8"), "keep dirty\n");
+  assert.equal(readFileSync(join(fixture.local, "scratch.txt"), "utf8"), "scratch\n");
+  assert.equal(git(fixture.local, ["stash", "list"]).stdout, "");
 });
 
 test("GUI update preserves divergent local commits instead of resetting", () => {
