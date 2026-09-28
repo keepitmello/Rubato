@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { readFile, writeFile, lstat, realpath, rename, unlink } from 'node:fs/promises';
+import { readFile, writeFile, lstat, realpath, rename, unlink, mkdir, copyFile, readdir } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
@@ -2186,10 +2187,48 @@ export async function applyIntegration({t3,check=false,remove=false}) {
   return {compatible:true,check,remove,changes:planned.filter((item)=>item.current!==item.next).map((item)=>item.relative),
     upstreamCommit:upstream.upstreamCommit};
 }
+// t3-source 는 핀 + overlay 로 만들어지는 산출물이고, 원본은 이 레포에 있다. 그래도
+// 누가 거기서 파일을 고쳤다면 말없이 잃으면 안 된다. install-gui.sh 가 핀으로
+// checkout --force 하기 전에 이것을 부른다: 지난 설치가 쓴 내용(매니페스트 해시)도,
+// upstream 원본도, 설치기가 까는 아이콘도 아닌 파일을 backupDir 로 옮겨 둔다.
+// 옮긴 추적 파일은 checkout 이 원본으로 되돌리고, 옮긴 overlay 파일은 지워서
+// applyIntegration 이 새로 쓴다. 전에는 그런 파일 하나가 이후 모든 설치를 막았다.
+export async function preserveLocalEdits({t3, backupDir}) {
+  const target = await realpath(t3);
+  const manifestText = await existing(path.join(target,'.rubato-pi-overlay.json'));
+  const files = manifestText ? JSON.parse(manifestText).files ?? {} : {};
+  const git = (...args) => execFileSync('git',['-C',target,...args],{encoding:'utf8',maxBuffer:64*1024*1024});
+  const tracked = new Set(git('diff','--name-only','-z','HEAD').split('\0').filter(Boolean));
+  const installerHashes = new Set();
+  for (const file of [path.join(root,'assets','Rubato.png'),
+    ...(await readdir(path.join(root,'assets','web')).catch(() => [])).map((name) => path.join(root,'assets','web',name))])
+    installerHashes.add(hash(await readFile(file).catch(() => '')));
+  const preserved = [];
+  for (const relative of new Set([...tracked,...Object.keys(files)])) {
+    const destination = path.join(target,relative);
+    let current;
+    try {
+      if ((await lstat(destination)).isSymbolicLink()) continue;
+      current = await readFile(destination);
+    } catch (error) { if (error.code === 'ENOENT') continue; throw error; }
+    const record = files[relative];
+    const digest = hash(current);
+    if (record && digest === record.installedHash) continue;
+    if (record && typeof record.original === 'string' && digest === hash(record.original)) continue;
+    if (!record && installerHashes.has(digest)) continue;
+    const saved = path.join(backupDir,relative);
+    await mkdir(path.dirname(saved),{recursive:true});
+    await copyFile(destination,saved);
+    if (record && record.original === null) await unlink(destination);
+    preserved.push(relative);
+  }
+  return {preserved, backupDir: preserved.length ? backupDir : null};
+}
 if (process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
   try {
-    const {values} = parseArgs({options:{t3:{type:'string'},check:{type:'boolean'},remove:{type:'boolean'}}});
-    if (!values.t3) throw new Error('Usage: node harness/t3-integration/apply.mjs --t3 /absolute/t3code [--check | --remove]');
-    console.log(JSON.stringify(await applyIntegration(values),null,2));
+    const {values} = parseArgs({options:{t3:{type:'string'},check:{type:'boolean'},remove:{type:'boolean'},'preserve-edits':{type:'string'}}});
+    if (!values.t3) throw new Error('Usage: node harness/t3-integration/apply.mjs --t3 /absolute/t3code [--check | --remove | --preserve-edits BACKUP_DIR]');
+    if (values['preserve-edits']) console.log(JSON.stringify(await preserveLocalEdits({t3:values.t3,backupDir:values['preserve-edits']})));
+    else console.log(JSON.stringify(await applyIntegration(values),null,2));
   } catch (error) { console.error(error.message); process.exitCode=1; }
 }

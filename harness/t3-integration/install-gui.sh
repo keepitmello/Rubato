@@ -136,6 +136,16 @@ fi
 if ! git -C "$T3_DIR" cat-file -e "$PIN^{commit}" 2>/dev/null; then
   git -C "$T3_DIR" fetch --depth 1 origin "$PIN" || { err "T3 fetch 실패"; exit 1; }
 fi
+# 아래 checkout --force 와 overlay 는 t3-source 를 핀 + overlay 로 되돌린다. 그 전에
+# 거기서 사람이 고친 파일을 옮겨 둔다 — 말없이 지우지도, 설치를 막지도 않는다.
+PRESERVE_DIR="$HOME/.rubato-pi/backups/t3-source/$(date +%Y%m%d-%H%M%S)"
+if [ -f "$T3_DIR/.rubato-pi-overlay.json" ]; then
+  PRESERVED="$("$NODE" "$HERE/apply.mjs" --t3 "$T3_DIR" --preserve-edits "$PRESERVE_DIR")" || { err "t3-source 수정 보존 실패"; exit 1; }
+  case "$PRESERVED" in
+    *'"preserved":[]'*) : ;;
+    *) warn "t3-source 에서 고친 파일을 옮겨 두고 핀으로 되돌렸다: $PRESERVE_DIR" ;;
+  esac
+fi
 git -C "$T3_DIR" checkout --force "$PIN" || { err "T3 checkout 실패"; exit 1; }
 ok "T3 $PIN"
 
