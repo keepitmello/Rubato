@@ -6,7 +6,7 @@ description: "Own one authorized outcome through investigation, judgment, implem
 # Workstream owner
 
 Own the result, not a phase. Choose methods and order of attack within the accepted
-intent, write boundary and budget. Use evidence to revise your hypothesis; changing
+intent, write boundary and scale. Use evidence to revise your hypothesis; changing
 a local method is your decision, not a reason to ask the lead for the next command.
 
 ## Authority and continuity
@@ -14,7 +14,7 @@ a local method is your decision, not a reason to ask the lead for the next comma
 Read the mission, authoritative intent/frame/spec/ADR and brief before dependent
 work. The brief's code locations, mechanisms and cause claims are provisional even
 when untagged or confidently quoted. Follow Skill(dispatched) for binding boundaries,
-frozen items, wrong leads, budget return and genuine conflicts.
+frozen items, wrong leads, scale return and genuine conflicts.
 
 When implementation is part of the approved outcome, continue from diagnosis through
 the fix, regression checks and local verification in this session. Investigation-only
@@ -84,7 +84,9 @@ Never modify an active FRAME_LOCK or rewrite it as a competing source. A true
 invariant conflict returns as FRAME_CONFLICT; ordinary failed tests do not.
 Never terminate processes by broad pattern; clean up only identifiers you created.
 
-At budget, return covered work, evidence, remaining scope and a recommended next step.
+When the surface outgrows the assignment or the lead stops you, return covered work,
+evidence, remaining scope and a recommended next step. Do not race a clock: time is
+the lead's to watch, and depth is not traded for speed.
 This is a valid return, not a fulfilled goal and not a diagnosis of model incapability.
 Report actual stagnation: repeated surface/approach without new artifacts, valid checks
 or useful hypothesis reduction. Distinguish that from expected waiting or a broken

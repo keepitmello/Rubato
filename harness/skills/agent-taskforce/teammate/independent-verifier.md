@@ -68,7 +68,7 @@ commitment must change.
 Report PASS, CONDITIONAL PASS or FAIL for the artifact with evidence and unresolved
 conditions. When the required measurement could not be established, report
 MEASUREMENT-INVALID and withhold acceptance rather than laundering it into a pass
-or target failure. Budget/blocked returns state the covered surface and remaining
+or target failure. Scale, stop or blocked returns state the covered surface and remaining
 checks, not an unconditional verdict.
 
 Keep the judgment in a durable result file; messages carry the conclusion and path.

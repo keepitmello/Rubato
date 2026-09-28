@@ -44,7 +44,7 @@ can support a direction and a useful ownership decision; do not solve the whole
 technical problem merely to estimate its difficulty.
 
 A bounded discovery agent may gather authorized evidence under a draft with a
-budget; it does not implement or become a continuing owner. Execution owners are
+stated scale; it does not implement or become a continuing owner. Execution owners are
 not relabeled as discovery subagents to skip the combined confirmation. Draft only when no
 existing source serves the purpose. Show the result, preserved behavior, non-goals,
 completion evidence, meaningful choices and smallest useful roster together in the
@@ -53,7 +53,7 @@ user's language, using the sibling `work-intent/templates/approval-message.md`.
 Wait for explicit acceptance of both intent and roster. Link the actual human reply
 to the proposal and reviewed intent revision; silence and generic earlier requests
 do not count. Follow work-intent for partial approval, accepted corrections and
-changed scope. Intent acceptance does not waive model, budget, frame or delivery
+changed scope. Intent acceptance does not waive model, spend, frame or delivery
 permissions. Carry exact `intent_ref` and canonical workspace into briefs and board
 metadata; the mission links these rather than duplicating intent.
 
@@ -80,8 +80,9 @@ ceremony and cannot bypass model approval.
 ## 5. Give a complete brief once
 
 Use Skill(dispatching) and `templates/task-brief.md`. Delegate the bounded result,
-authority, write ownership, source-backed constraints, budget and done evidence.
-A numeric budget is a return boundary, not a prediction of ability. Repository
+authority, write ownership, source-backed constraints, scale and done evidence.
+Scale tells the owner when the surface outgrows the assignment; it is not a clock.
+Time and spend are your own checks: a time limit in the brief trades depth for speed. Repository
 locations, causal guesses and suggested methods remain provisional, even when
 quoted exactly. Leave the approach to the owner.
 
@@ -100,7 +101,7 @@ of each owner's work.
 Owners settle technical choices within approved boundaries and contracts. When a
 shared surface needs one decision owner, identify the accountable owner rather than
 collecting every next command. An unresolved conflict returns with evidence, options
-and a recommendation. You handle changes to priorities, scope, budget or authority
+and a recommendation. You handle changes to priorities, scope, spend or authority
 and bring consequential user choices back to the user. Do not use escalation as a
 synonym for moving to a higher-tier model.
 
@@ -143,7 +144,7 @@ path rather than recursively adding reviews to reviewers.
 ## 8. Discuss fulfillment against the current intent
 
 Reread current intent and acceptance links before final communication. A finished
-turn, valid budget return, passed local test and fulfilled user goal are different
+turn, valid scale return or stop, passed local test and fulfilled user goal are different
 states. Accept only claims supported by the agreed evidence path. A required failed
 or unavailable check remains a gap, regardless of confidence.
 

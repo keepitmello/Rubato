@@ -92,7 +92,7 @@ advice or relevant peer evidence; then a scope/boundary change or explicit reass
 when warranted. A user goal or active-frame conflict goes to the lead and human.
 These are alternatives tied to causes, not a mandatory ladder of model tiers.
 
-Budget return is a control boundary, not model failure. A announced long-running
+A scale return or a lead's stop is a control boundary, not model failure. A announced long-running
 check is not silence-based evidence of a stall. A meaningful stall is resource use
 without new artifacts, valid checks or appropriate hypothesis reduction. Do not
 mistake broken measurement, missing permissions or a contradictory brief for lack
