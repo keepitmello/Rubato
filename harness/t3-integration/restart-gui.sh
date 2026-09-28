@@ -173,56 +173,60 @@ fi
 # 종료는 graceful 만 쓴다. osascript `quit` 은 Dock > 종료 와 같은 이벤트라
 # before-quit 핸들러가 먼저 흐른다. 내장 서버가 SQLite 를 들고 있어서 강제
 # 종료는 그 파일을 어긋난 채로 남길 수 있다. 그래서 이 경로에 kill 은 없다.
-if [ "${GUI_ALREADY_CLOSED-}" = 1 ]; then
-  :
-elif is_darwin; then
-  if "$OSASCRIPT_BIN" -e 'tell application "Rubato" to quit' >/dev/null 2>&1; then
-    :
-  elif "$OSASCRIPT_BIN" -e 'tell application id "app.rubato.t3" to quit' >/dev/null 2>&1; then
-    :
-  else
-    ui_fail "데스크톱 앱에 종료를 요청하지 못했습니다. 옛 코드가 그대로입니다 — 손으로: osascript -e 'tell application \"Rubato\" to quit'"
-    exit 1
-  fi
-elif [ -n "${RUBATO_QUIT_GUI_BIN-}" ]; then
-  if ! "$RUBATO_QUIT_GUI_BIN" >/dev/null 2>&1; then
-    ui_fail "데스크톱 앱에 종료를 요청하지 못했습니다. 옛 코드가 그대로입니다 — 손으로: 창을 닫은 뒤 sh \"$START_GUI\""
-    exit 1
-  fi
-else
-  # WM_CLOSE. Terminate/taskkill 은 SQLite 를 어긋나게 남길 수 있어 쓰지 않는다.
-  if ! command -v powershell.exe >/dev/null 2>&1; then
-    ui_fail "데스크톱 앱에 종료를 요청하지 못했습니다. 옛 코드가 그대로입니다 — 손으로: 창을 닫은 뒤 sh \"$START_GUI\""
-    exit 1
-  fi
-  if ! powershell.exe -NoProfile -Command '
-    $ok = $false
-    Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match "dist-electron[/\\]main\.cjs" } | ForEach-Object {
-      $p = Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue
-      if ($p) { if ($p.CloseMainWindow()) { $ok = $true } }
-    }
-    if (-not $ok) { exit 1 }
-  ' >/dev/null 2>&1; then
-    ui_fail "데스크톱 앱에 종료를 요청하지 못했습니다. 옛 코드가 그대로입니다 — 손으로: 창을 닫은 뒤 sh \"$START_GUI\""
-    exit 1
-  fi
-fi
-
-# 정말 사라졌는지 보고 나서 다시 켠다 — 넘겨짚지 않는다.
-GUI_WAIT=0
-progress_start "데스크톱 앱이 닫히기를 기다리는 중"
-while "$PGREP_BIN" $PGREP_ARGS "$GUI_PROC_PATTERN" >/dev/null 2>&1 && [ "$GUI_WAIT" -lt "$GUI_WAIT_MAX" ]; do
-  sleep 1
-  GUI_WAIT=$((GUI_WAIT + 1))
-done
-progress_stop
-if "$PGREP_BIN" $PGREP_ARGS "$GUI_PROC_PATTERN" >/dev/null 2>&1; then
+# 정말 사라졌는지 보고 나서 돌아온다 — 넘겨짚지 않는다.
+quit_app() {
   if is_darwin; then
-    ui_fail "데스크톱 앱이 종료 요청을 받고도 끝나지 않았습니다. 옛 코드가 그대로입니다 — 다시 켜지 않았습니다. 손으로: osascript -e 'tell application \"Rubato\" to quit'"
+    if "$OSASCRIPT_BIN" -e 'tell application "Rubato" to quit' >/dev/null 2>&1; then
+      :
+    elif "$OSASCRIPT_BIN" -e 'tell application id "app.rubato.t3" to quit' >/dev/null 2>&1; then
+      :
+    else
+      ui_fail "데스크톱 앱에 종료를 요청하지 못했습니다. 옛 코드가 그대로입니다 — 손으로: osascript -e 'tell application \"Rubato\" to quit'"
+      return 1
+    fi
+  elif [ -n "${RUBATO_QUIT_GUI_BIN-}" ]; then
+    if ! "$RUBATO_QUIT_GUI_BIN" >/dev/null 2>&1; then
+      ui_fail "데스크톱 앱에 종료를 요청하지 못했습니다. 옛 코드가 그대로입니다 — 손으로: 창을 닫은 뒤 sh \"$START_GUI\""
+      return 1
+    fi
   else
-    ui_fail "데스크톱 앱이 종료 요청을 받고도 끝나지 않았습니다. 옛 코드가 그대로입니다 — 다시 켜지 않았습니다. 손으로: 창을 닫은 뒤 sh \"$START_GUI\""
+    # WM_CLOSE. Terminate/taskkill 은 SQLite 를 어긋나게 남길 수 있어 쓰지 않는다.
+    if ! command -v powershell.exe >/dev/null 2>&1; then
+      ui_fail "데스크톱 앱에 종료를 요청하지 못했습니다. 옛 코드가 그대로입니다 — 손으로: 창을 닫은 뒤 sh \"$START_GUI\""
+      return 1
+    fi
+    if ! powershell.exe -NoProfile -Command '
+      $ok = $false
+      Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match "dist-electron[/\\]main\.cjs" } | ForEach-Object {
+        $p = Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue
+        if ($p) { if ($p.CloseMainWindow()) { $ok = $true } }
+      }
+      if (-not $ok) { exit 1 }
+    ' >/dev/null 2>&1; then
+      ui_fail "데스크톱 앱에 종료를 요청하지 못했습니다. 옛 코드가 그대로입니다 — 손으로: 창을 닫은 뒤 sh \"$START_GUI\""
+      return 1
+    fi
   fi
-  exit 1
+
+  GUI_WAIT=0
+  progress_start "데스크톱 앱이 닫히기를 기다리는 중"
+  while "$PGREP_BIN" $PGREP_ARGS "$GUI_PROC_PATTERN" >/dev/null 2>&1 && [ "$GUI_WAIT" -lt "$GUI_WAIT_MAX" ]; do
+    sleep 1
+    GUI_WAIT=$((GUI_WAIT + 1))
+  done
+  progress_stop
+  if "$PGREP_BIN" $PGREP_ARGS "$GUI_PROC_PATTERN" >/dev/null 2>&1; then
+    if is_darwin; then
+      ui_fail "데스크톱 앱이 종료 요청을 받고도 끝나지 않았습니다. 옛 코드가 그대로입니다 — 다시 켜지 않았습니다. 손으로: osascript -e 'tell application \"Rubato\" to quit'"
+    else
+      ui_fail "데스크톱 앱이 종료 요청을 받고도 끝나지 않았습니다. 옛 코드가 그대로입니다 — 다시 켜지 않았습니다. 손으로: 창을 닫은 뒤 sh \"$START_GUI\""
+    fi
+    return 1
+  fi
+}
+
+if [ "${GUI_ALREADY_CLOSED-}" != 1 ]; then
+  quit_app || exit 1
 fi
 if [ ! -x "$START_GUI" ]; then
   ui_fail "데스크톱 앱은 껐지만 다시 켤 진입점이 없습니다 ($START_GUI). 앱은 스스로 돌아오지 않습니다 — 손으로: sh \"$START_GUI\""
@@ -237,6 +241,19 @@ if ! sync_bundle; then
   RESTART_FAIL=1
 fi
 restart_ssh_servers || RESTART_FAIL=1
+
+# 번들을 맞추는 동안 앱은 내려가 있고, 그 사이 Dock 이나 Finder 로 앱을 연
+# 사람이 있다. 그 앱은 바꾸는 중이던 번들로 떠 있고, 여기서 하나를 더 켜면
+# 같은 상태 DB 에 앱이 둘이 된다 — 나중 앱의 데스크톱 로그인이 먼저 앱의 것을
+# 갈아치워서 먼저 앱은 페어링을 요구한다. macOS 에서는 T3 가 단일 인스턴스
+# 잠금을 잡지 않는다. 그 앱도 한 번 더 정상 종료시킨 뒤에 켠다.
+if "$PGREP_BIN" $PGREP_ARGS "$GUI_PROC_PATTERN" >/dev/null 2>&1; then
+  ui_note "번들을 맞추는 사이 열린 앱이 있어요. 새 번들로 다시 켜려고 닫습니다."
+  if ! quit_app; then
+    ui_fail "번들을 맞추는 사이 열린 앱이 닫히지 않아 새 앱을 켜지 않았습니다. 앱이 둘이 되면 먼저 앱이 페어링을 요구합니다."
+    exit 1
+  fi
+fi
 
 # nohup 으로 이 스크립트의 프로세스 그룹에서 떼어 놓는다. 그러지 않으면 앞단
 # 작업이 끝나면서 새로 뜬 앱에 SIGHUP 이 갈 수 있다.

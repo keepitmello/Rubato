@@ -26,6 +26,10 @@ function harness(t, {
   // The run is the app's descendant (a restart pressed in the app): like macOS
   // pgrep, the fake leaves the app out unless -a asks for ancestors.
   descendant = false,
+  // Someone opens the app (Dock, Finder) while the bundle is being rebuilt.
+  openDuringBuild = false,
+  // Only the first quit takes effect; later ones are ignored.
+  quitOnce = false,
 } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'rb-restart-gui-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -48,7 +52,9 @@ function harness(t, {
     fakeOsascript,
     '#!/bin/sh\n' +
       `printf '%s\\n' "$*" >> '${log}'\n` +
-      (quitFail ? 'exit 1\n' : quitHang ? 'exit 0\n' : `printf 'stopped' > '${guiState}'\nexit 0\n`),
+      (quitFail ? 'exit 1\n' : quitHang ? 'exit 0\n'
+        : quitOnce ? `[ "$(grep -c quit '${log}')" -gt 1 ] || printf 'stopped' > '${guiState}'\nexit 0\n`
+        : `printf 'stopped' > '${guiState}'\nexit 0\n`),
   );
   const fakeQuit = join(root, 'fake-quit');
   executable(
@@ -61,7 +67,8 @@ function harness(t, {
   const fakeStart = join(root, 'fake-start-gui.sh');
   executable(fakeStart, `#!/bin/sh\nprintf 'START-GUI\\n' >> '${log}'\nprintf 'relaunched' > '${relaunch}'\nexit 0\n`);
   const fakeInstall = join(root, 'fake-install-gui.sh');
-  executable(fakeInstall, `#!/bin/sh\nprintf 'INSTALL-GUI %s\\n' "$*" >> '${log}'\nexit 0\n`);
+  executable(fakeInstall, `#!/bin/sh\nprintf 'INSTALL-GUI %s\\n' "$*" >> '${log}'\n` +
+    (openDuringBuild ? `printf 'running' > '${guiState}'\n` : '') + 'exit 0\n');
   const fakeSshServers = join(root, 'fake-restart-ssh-servers.sh');
   executable(fakeSshServers, `#!/bin/sh\nprintf 'SSH-SERVERS\\n' >> '${log}'\nexit ${sshServers}\n`);
   const env = {
@@ -213,6 +220,28 @@ test('a restart pressed in the app still finds the app and quits it first', (t) 
   assert.equal(result.status, 0, result.stderr + result.stdout);
   assert.match(h.calls(), /tell application "Rubato" to quit/);
   assert.ok(h.calls().indexOf('tell application') < h.calls().indexOf('START-GUI'), h.calls());
+});
+
+// The app is down while the bundle is rebuilt, and a Dock click in that window
+// opened a second app next to the one the restart then launched. The later app's
+// desktop login replaced the earlier one's, which then asked to pair.
+test('an app opened during the rebuild is quit before the new one starts', (t) => {
+  const h = harness(t, { hostOs: 'Darwin', app: true, running: true, openDuringBuild: true });
+  const result = h.run();
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const calls = h.calls();
+  assert.equal(calls.match(/tell application "Rubato" to quit/g)?.length, 2, calls);
+  assert.ok(calls.indexOf('INSTALL-GUI') < calls.lastIndexOf('tell application'), calls);
+  assert.ok(calls.lastIndexOf('tell application') < calls.indexOf('START-GUI'), calls);
+  assert.match(result.stdout, /번들을 맞추는 사이 열린 앱이 있어요/);
+});
+
+test('an app opened during the rebuild that will not quit gets no second app', (t) => {
+  const h = harness(t, { hostOs: 'Darwin', app: true, running: true, openDuringBuild: true, quitOnce: true });
+  const result = h.run();
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stderr, /새 앱을 켜지 않았습니다/);
+  assert.equal(h.relaunched(), undefined);
 });
 
 // /Applications and the app belong to the account. From a temporary HOME (a test,
