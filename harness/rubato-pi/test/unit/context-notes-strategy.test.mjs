@@ -210,6 +210,37 @@ test("a server compaction that shrinks the context does not hide accumulated wor
   assert.equal(count(f.prepare(), NUDGE_TEXT), 1);
 });
 
+test("user turns since the last note nudge before the full interval", (t) => {
+  const f = setup(t, OPUS); // 200K interval; 4 user turns with 20K of work nudge early
+  f.work(10_000);
+  for (const text of ["use the staging bucket", "no, keep the old key names", "skip the CLI for now"]) {
+    f.addMessage("user", text); f.work(f.c.usage().tokens + 10_000);
+  }
+  assert.equal(count(f.prepare(), NUDGE_TEXT), 0, "three user turns are not enough");
+  f.addMessage("user", "and do not touch the migration file"); f.work(50_000);
+  assert.equal(count(f.prepare(), NUDGE_TEXT), 1);
+  // The nudge resets the count; turns with little work do not nudge again.
+  for (let i = 0; i < 4; i++) { f.addMessage("user", `ok ${i}`); f.work(52_000 + i * 1_000); }
+  assert.equal(count(f.prepare(), NUDGE_TEXT), 1, "four turns but under 20K of work");
+  f.save();
+  for (let i = 0; i < 4; i++) { f.addMessage("user", `next ${i}`); f.work(60_000 + i * 10_000); }
+  assert.equal(count(f.prepare(), NUDGE_TEXT), 2, "a note resets the count; four more turns nudge again");
+});
+
+test("a nudge stored with an earlier text still opens and is resent byte for byte", (t) => {
+  const f = setup(t, DEEPSEEK);
+  f.work(10_000); f.work(260_000);
+  f.prepare();
+  const old = "<context_notes_nudge>A substantial amount of work has accumulated since your working notes were last saved. If material state changed (goal, user requirements, decisions, progress, failed approaches and why, next steps, hard-to-recover IDs, commands or errors, window/item references), update your notes with the notes tools now, then continue. If nothing material changed, just continue. This is not a request to stop or to start a new context.</context_notes_nudge>";
+  f.branch().find((e) => e.customType === NUDGE_ENTRY).data.text = old;
+  f.c.close();
+  const again = new ContextNotesController(f.pi, f.ctx, { requireEngine: false, config: contextNotesConfig({}) });
+  t.after(() => again.close());
+  const messages = again.prepareContext({ messages: f.build().messages }, f.ctx).messages;
+  assert.equal(count(messages, old), 1);
+  assert.equal(count(messages, NUDGE_TEXT), 0);
+});
+
 test("system-prompt guidance is a pure function of the model; Astra's text is unchanged", () => {
   assert.equal(guidanceFor(ASTRA), GUIDANCE);
   assert.equal(guidanceFor({ ...ASTRA, id: "gpt-6-astra-sub" }), GUIDANCE);
