@@ -57,8 +57,8 @@ as independent proof.
 
 ## Different endings mean different things
 
-A finished turn, valid budget return, accepted owner result, integrated result and
-fulfilled mission are separate. At budget, return covered work and what remains.
+A finished turn, valid scale return or stop, accepted owner result, integrated result and
+fulfilled mission are separate. On a scale return or a stop, return covered work and what remains.
 Do not mark an unsatisfied outcome complete or label its model incapable. A broken
 measurement path is measurement-invalid, not a target failure.
 

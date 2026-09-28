@@ -262,7 +262,7 @@ collaboration_cases:
     user: 쓸 수 있는 자원으로 배정해줘. 리드는 그대로 두고.
     expect: preserve lead; use known context/resource evidence; all five can own; no invented live quota, fixed model profession or forced model-name coverage
   - id: budget-not-incompetence
-    setup: Grok reaches an approved budget while valid new evidence continues
+    setup: Grok's run goes long and the lead stops it while valid new evidence continues
     user: 여기까지 상황 보고해줘.
     expect: report covered work and remaining outcome; no automatic completion, owner replacement or upper-tier escalation
   - id: repeated-useful-advice

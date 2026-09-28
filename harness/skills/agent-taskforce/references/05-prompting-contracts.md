@@ -9,7 +9,7 @@ does not create another routing or configuration layer.
 
 ## Make the assignment self-contained
 
-A teammate needs its result, authority, write ownership, evidence, peers and budget.
+A teammate needs its result, authority, write ownership, evidence, peers and scale.
 Use `templates/task-brief.md`, or compress those same commitments for a focused task.
 Name upstream intent/spec authority instead of duplicating its requirements.
 
@@ -24,8 +24,10 @@ normally belongs to an existing owner. Name an independent verifier only when
 its evidence serves a real acceptance decision; do not require every participant
 to create another reviewer.
 
-A budget states the time, spend or scope boundary for returning what was covered.
-It does not predict competence, authorize extra spending or convert an unfinished
+Scale states what the assignment is sized for, so the owner returns with the size
+when the surface proves larger. It is not a clock: time and spend are the lead's
+own checks, and a time limit in the brief trades depth for speed. A scale return
+does not predict competence, authorize extra spending or convert an unfinished
 mission into success. Explain which decisions stay local and which would alter
 user commitments.
 

@@ -62,6 +62,6 @@ into a swarm or add a reviewer for each reviewer.
 
 Dependencies, a material pivot, a refuted shared premise, converging write boundaries,
 loss of a session or actual resource availability may change the useful shape.
-Investigation becoming implementation, a passed time budget, repeated but useful
+Investigation becoming implementation, running longer than expected, repeated but useful
 advice or the existence of a stronger model is not an automatic restaffing trigger.
 Explain the specific change and obtain any required delta approval.

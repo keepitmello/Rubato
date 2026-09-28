@@ -63,7 +63,7 @@ existing board metadata. Do not add unsupported arguments to `team_create` or
 `Agent`. The work-intent check is an explicit helper, not an automatic interceptor.
 A provisioned worktree is not a new intent.
 
-A session ending or returning at budget does not complete an unsatisfied board
+A session ending or returning on scale or a stop does not complete an unsatisfied board
 outcome. Keep its evidence, remaining work and return reason in existing metadata.
 Refresh references on accepted intent changes and tie prior evidence to the
 revision actually checked.

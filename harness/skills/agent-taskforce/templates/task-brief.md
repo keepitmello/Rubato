@@ -42,9 +42,11 @@ A helper can reason within this scope; the sender keeps the wider outcome.
 commitments, irreversible actions or unapproved resource use. Ordinary diagnosis
 and authorized technical integration belong to owners.
 
-**Budget:** a numeric time, spend or scope boundary. At that boundary, return evidence,
-covered work and what remains. This is a valid return, not proof of completion or
-model incapability. Expected long-running checks should be visible in status.
+**Scale:** what the assignment is sized for (areas, investigation or implementation),
+so the owner can tell when the real surface is larger and return with its size,
+evidence, covered work and what remains before going deep. No time, spend or call
+limit here; those are the lead's own checks. A scale return is valid, not proof of
+completion or model incapability. Expected long-running checks should be visible in status.
 
 **Result contract:** artifact path; outcome status separate from session status;
 checked revision; decisive evidence; remaining uncertainty; required peer or user

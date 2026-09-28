@@ -11,7 +11,7 @@ Run this when you start from a brief someone handed you, and again when a follow
 
 The brief mixes two kinds of content, and the kind — not the tone, not a tag — decides its force.
 
-Binding: the outcome and its done evidence, write ownership and off-limits paths, the budget, frozen items, and constraints with a named authority source — the user, a spec or frame, an external contract, another session's ownership. These hold regardless of what you infer, because another session may be holding the same repository.
+Binding: the outcome and its done evidence, write ownership and off-limits paths, the scale the assignment is sized for, frozen items, and constraints with a named authority source — the user, a spec or frame, an external contract, another session's ownership. These hold regardless of what you infer, because another session may be holding the same repository.
 
 Provisional: every claim about how the code is shaped — where things are, how a mechanism works, why it fails, which files matter. These are the sender's reading, not ground truth, however confidently written. Code, tests, and runtime evidence settle them.
 
@@ -41,7 +41,7 @@ When the brief names the decision an artifact (a screen, a sound, a control feel
 
 ## Other valid endings
 
-Reaching the budget with the surface still open: return what you covered, what remains, and the next cut you recommend.
+When the surface proves larger than that scale, or the sender stops you: return what you covered, what remains, and the next cut you recommend. Time is the sender's to watch; if a brief names a time or call limit anyway, do not trade depth for speed to meet it.
 
 Looked for something and it is not there: "not there," with what you checked and what that rules out, is the result. Do not manufacture a finding to justify the dispatch.
 

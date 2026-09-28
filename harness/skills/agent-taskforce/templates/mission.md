@@ -64,7 +64,7 @@ remaining capacity from a price table.
 - Locally satisfied outcomes and evidence:
 - Integrated result and evidence:
 - Independent verdict / remaining conditions:
-- Valid budget or blocked returns that remain incomplete:
+- Valid scale, stop or blocked returns that remain incomplete:
 - Fulfillment discussion against current intent:
 
 ## Material decisions and invalidated assumptions
