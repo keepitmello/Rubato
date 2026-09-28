@@ -103,13 +103,6 @@ if [ "$CURRENT" != "$BRANCH" ]; then
   exit 0
 fi
 
-# GUI에는 충돌을 해결할 터미널이 없다. 수정은 임의로 치우지 않고 앱을
-# 종료하기 전에 멈춘다. 기존 대화형 CLI의 업데이트 정책은 그대로 둔다.
-if [ "${RUBATO_GUI_UPDATE-}" = 1 ] && [ "$MODE" != check ]; then
-  gui_dirty="$(git status --porcelain -- . ':(exclude).rubato/evidence')" || fail "소스 상태를 확인하지 못했습니다."
-  [ -z "$gui_dirty" ] || fail "로컬 수정이 있어 자동 업데이트를 멈췄습니다. 수정 내용을 보존하거나 정리한 뒤 다시 시도해 주세요."
-fi
-
 fetch_now() {
   git fetch --quiet origin "$BRANCH" 2>/dev/null || return 1
   mkdir -p "$(dirname "$STAMP")"
@@ -386,6 +379,10 @@ printf '\n%s== 받는 중 ==%s\n' "$BOLD" "$RST"
 # 사람 작업은 손도 대지 않은 채 남는다 — 치웠다 되돌리는 것보다 안전하다.
 # 겹쳐서 거부당할 때만 잠시 치운다.
 if [ -n "$DIRTY" ] && ! git merge --ff-only "origin/$BRANCH" >/dev/null 2>&1; then
+  # GUI에는 충돌을 해결할 터미널이 없다. 겹치는 수정은 치우지 않고 앱을 끄기
+  # 전에 멈춘다. 겹치지 않는 수정은 위 fast-forward 가 그대로 두고 지나간다 —
+  # 여러 세션이 같이 쓰는 이 레포는 거의 늘 dirty 라서, 수정이 있다는 것만으로
+  # 멈추면 앱 업데이트는 한 번도 끝나지 않았다.
   [ "${RUBATO_GUI_UPDATE-}" != 1 ] || fail "로컬 수정과 업데이트가 겹칩니다. 수정을 치우지 않고 멈췄습니다."
   # pathspec 을 주지 않는다. `git stash push -- <경로>` 는 이미 스테이징된
   # 변경을 제대로 집지 못해서, 치운 줄 알았는데 실제로는 그대로 남고
