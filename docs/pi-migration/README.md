@@ -17,7 +17,7 @@ node scripts/switch-engine.mjs rollback
 
 senpi로 돌아가는 경로는 없다. 폐기 이전에 쓰인 마커가 `previous: "senpi"`를 들고 있으면 `rollback`은 그 사실을 말하며 거부한다. splash/boot chrome은 런처가 유지한다. 토큰 회전은 서버 측이라 이전 토큰은 돌아오지 않는다 — `refresh_token_reused`가 보이면 `/login`·`/gpt-account`로 재로그인한다.
 
-알려진 한계: `@code-yeongyu/senpi-pty`는 선언된 런타임 의존이며 교체는 사용자 보류. 후보는 `fullRubatoParity: false`. stock-pi 경로는 Senpi `-e` overlay·no-changelog 로더를 넘기지 않는다. `--system-prompt`와 `rubato-role-prompt` factory가 제품 role prompt를 주입하고, 후보 `prompt-preset`은 그 값에 양보한다. `~/.agents/skills`와 `--tui-mode fullscreen`은 그대로 argv로 넘긴다.
+알려진 한계: `@code-yeongyu/senpi-pty`는 아직 선언된 런타임 의존이고, 걷어낼 대상이다(senpi 는 보존하지 않는다). 후보는 `fullRubatoParity: false`. stock-pi 경로는 Senpi `-e` overlay·no-changelog 로더를 넘기지 않는다. `--system-prompt`와 `rubato-role-prompt` factory가 제품 role prompt를 주입하고, 후보 `prompt-preset`은 그 값에 양보한다. `~/.agents/skills`와 `--tui-mode fullscreen`은 그대로 argv로 넘긴다.
 
 
 ## A1 접점
@@ -290,7 +290,7 @@ node scripts/install-candidate.mjs --output /absolute/dir --rollback
 - 부모 `node_modules/@code-yeongyu/senpi{,-ai,-codemode,-tui}`는 읽기 불가 trap
 - 이 환경에서 CLI `--version`, RPC inspect→prompt→memory tool→abort, 자식 in-process/RPC seam, install→update→rollback
 
-`@code-yeongyu/senpi-pty`는 선언된 런타임 의존이다. 교체 여부는 사용자 보류. 사용처와 대체 요건은 [install-scan.json](install-scan.json)과 아래 장부 입력이다. 장부는 `RUBATO_WRITE_INSTALL_SCAN=1 node --test harness/pi-runtime/test/isolated-install.test.mjs` 로 다시 만든다 — 그냥 돌린 시험은 임시 폴더에만 쓴다.
+`@code-yeongyu/senpi-pty`는 아직 선언된 런타임 의존이고, 걷어낼 대상이다. 사용처와 대체 요건은 [install-scan.json](install-scan.json)과 아래 장부 입력이다. 장부는 `RUBATO_WRITE_INSTALL_SCAN=1 node --test harness/pi-runtime/test/isolated-install.test.mjs` 로 다시 만든다 — 그냥 돌린 시험은 임시 폴더에만 쓴다.
 
 2026-09-11 최종 재실행(`519cad3a4`): `npm ci`+stage **33 features** (`CANDIDATE_FEATURE_NAMES` 31 + `rubato-components`), Node v26.5.0. Senpi 차단 CLI/RPC/자식/update→rollback + 검출기 대조 **7/7 pass**, 27.6초. 로드 경로 **26254**개 중 install 안 **24234**, node-core **2018**, scratch 2, 바깥 0, Senpi 앱 0. 가짜 HOME `~/.senpi/agent`·`~/.rubato-pi/engine`와 상위 `node_modules/@code-yeongyu/senpi` 스텁은 존재했지만 로드되지 않음. 검출기는 조작 리포트에서 `Senpi app package loaded`와 `escaped the install` 둘 다 발화함을 테스트로 잠금.
 
