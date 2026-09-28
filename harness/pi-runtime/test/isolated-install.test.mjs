@@ -380,7 +380,10 @@ test("isolated candidate install pipeline blocks Senpi and keeps CANDIDATE_FEATU
       "Fake user HOME ~/.senpi/agent, ~/.rubato-pi/engine, and parent node_modules/@code-yeongyu/senpi stub were present and not loaded.",
       "@code-yeongyu/senpi-pty remains a declared runtime dependency; replacement is deferred by the user.",
     ];
-    await writeFile(join(docsDir, "install-scan.json"), `${JSON.stringify(scan, null, 2)}\n`);
+    // 추적되는 장부는 요청했을 때만 고친다. 매 실행마다 쓰면 레포가 늘 dirty 가 되고,
+    // 이 파일을 건드리는 커밋을 받을 때 앱 업데이트가 겹침으로 멈췄다.
+    const scanDir = process.env.RUBATO_WRITE_INSTALL_SCAN === "1" ? docsDir : scratch;
+    await writeFile(join(scanDir, "install-scan.json"), `${JSON.stringify(scan, null, 2)}\n`);
   });
 
   await t.test("install update then rollback", async () => {
