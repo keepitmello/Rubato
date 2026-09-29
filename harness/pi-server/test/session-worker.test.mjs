@@ -118,3 +118,23 @@ test('history with more inline images than one frame holds keeps the newest and 
   assert.equal(f.worker.closed, false);
   await f.worker.stop();
 });
+
+test('history whose text leaves too little room for its images still fits one frame', async () => {
+  // 22MB of text plus 3 x 4MB base64 images: the images fit their own budget, the frame does not.
+  const text = { role: 'user', content: [{ type: 'text', text: 'x'.repeat(22 * 1024 * 1024) }] };
+  const shot = (tag) => ({ role: 'toolResult', content: [{ type: 'text', text: tag }, { type: 'image', mimeType: 'image/png', data: tag.repeat(4 * 1024 * 1024) }] });
+  const messages = [text, shot('A'), shot('B'), shot('C')];
+  const f = fixture('text-heavy', {
+    runRpcMode: async (_runtime, transport) => ({
+      dispatch: async (command) => transport.output({ type: 'response', id: command.id, success: true,
+        data: command.type === 'get_state' ? { sessionId: 'text-heavy' } : { messages } }),
+      close: async () => transport.onClose(),
+    }),
+  });
+  await f.worker.start();
+  const { data } = await f.worker.request({ type: 'get_messages' }, { withBoundary: true });
+  assert.equal(data.messages.at(-1).content[1].type, 'image', 'the newest image stays');
+  assert.equal(data.messages[1].content[1].type, 'text', 'the oldest image gives way');
+  assert.equal(f.worker.closed, false);
+  await f.worker.stop();
+});
