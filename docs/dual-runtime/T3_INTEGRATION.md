@@ -67,8 +67,17 @@ pnpm --dir "$T3_SOURCE" --filter t3 build:bundle
 - 다른 client에서 생긴 저장/실행 상태를 inventory 동기화가 반영
 - archive된 T3 thread를 inventory가 임의로 되살리지 않음
 
+## 되감기
+
+T3 rewind는 Pi 세션을 바꾸지 않는다. 브리지가 T3에 남는 턴의 응답 지문과 되돌리는 사용자
+메시지를 Pi `rewind` RPC(`harness/pi-runtime/features/conversation-rewind`)로 넘기고, Pi는
+같은 세션 트리 안에서 그 지점으로 가지를 옮긴다(`/tree`와 같은 동작). 세션 ID가 그대로라
+돌던 에이전트·팀은 멈추지 않고 결과가 되감긴 대화로 들어오며, 되감긴 쪽 대화는 같은 파일에
+곁가지로 남는다. `fork`는 세션을 갈아치워 자식을 옛 세션 이름으로 정지시키므로 쓰지 않는다.
+T3 기록을 읽지 못하면 현재 가지의 사용자 메시지를 끝에서 세는 방식으로 물러선다.
+
 ## 의도적으로 지원하지 않는 부분
 
-T3 파일/그림 첨부, T3 plan mode, rewind, 자동 커밋 제목/메시지 생성은 이번 연결 범위에 넣지 않았다. Rubato에 대응 정책이 없는 T3 approval mode를 지원한다고 가장하지 않고 `full-access` 이외는 명시적으로 거부한다. 실제 외부 모델 인증과 유료 모델 호출, Desktop/Web 브라우저 수동 조작은 로컬 실환경 검증으로 남긴다.
+T3 파일/그림 첨부, T3 plan mode, 자동 커밋 제목/메시지 생성은 이번 연결 범위에 넣지 않았다. Rubato에 대응 정책이 없는 T3 approval mode를 지원한다고 가장하지 않고 `full-access` 이외는 명시적으로 거부한다. 실제 외부 모델 인증과 유료 모델 호출, Desktop/Web 브라우저 수동 조작은 로컬 실환경 검증으로 남긴다.
 
 T3는 presentation/control surface이며 Pi 세션의 source of truth가 아니다. 이 원칙을 바꾸기 위해 T3 core를 장기 fork하거나 별도 세션 DB를 추가하지 않는다.

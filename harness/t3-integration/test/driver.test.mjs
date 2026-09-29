@@ -49,7 +49,7 @@ test('actual T3 Driver factory, adapter contracts and scope cleanup use a non-ow
   assert.equal((await external.snapshot()).state.isStreaming,true);
 });
 
-test('T3 adapter rollback forks the Pi session and returns an updated resume cursor', {skip: !process.env.T3_SOURCE}, async (t) => {
+test('T3 adapter rollback rewinds inside the same Pi session', {skip: !process.env.T3_SOURCE}, async (t) => {
   const source = process.env.T3_SOURCE;
   const modules = t3Modules(source);
   const Effect = await modules.effect('Effect');
@@ -74,7 +74,7 @@ test('T3 adapter rollback forks the Pi session and returns an updated resume cur
     yield* Effect.promise(() => until(() => bridge.sessions.get(threadId)?.session.status === 'ready'));
     yield* instance.adapter.rollbackThread(threadId, 1);
     const live = (yield* instance.adapter.listSessions()).find((item) => item.threadId === threadId);
-    assert.notEqual(live.resumeCursor.sessionId, original);
+    assert.equal(live.resumeCursor.sessionId, original);
     const snapshot = yield* instance.adapter.readThread(threadId);
     const users = snapshot.turns[0].items.filter((message) => message.role==='user').map((message) =>
       typeof message.content === 'string' ? message.content : '');

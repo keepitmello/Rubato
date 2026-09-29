@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { RemoteServiceProvider, createRemoteServiceEndpoint, replicatedState, RemoteServiceError } from '@earendil-works/chord';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { createUnixServer } from '@earendil-works/pi-server/unix';
-import { Directory, Management, Control, COMMANDS, INPUT_COMMANDS, UI_METHODS, json } from './contracts.mjs';
+import { Directory, Management, Control, COMMANDS, INPUT_COMMANDS, UI_METHODS, PiCommandRejected, json } from './contracts.mjs';
 import { SessionFiles } from './session-files.mjs';
 import { readSessionMetadata } from './session-metadata.mjs';
 import { RpcWorker } from './rpc-worker.mjs';
@@ -163,7 +163,9 @@ class RuntimeHandle {
       return wire(response);
     } catch (error) {
       await this.refresh().catch(() => {});
-      throw error;
+      // A refusal carries Pi's reason ("Interrupt the current turn…"); left as a plain
+      // error the transport would replace it with "Internal server error".
+      throw error instanceof PiCommandRejected ? invalid(error.message) : error;
     } finally { this.calls--; this.scheduleUnload(); }
   }
   async snapshot() {

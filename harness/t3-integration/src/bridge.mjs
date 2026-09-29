@@ -107,10 +107,42 @@ async function imagesFromAttachments(attachments) {
 const slashText = (control) => `/${control.name}${control.args ? ` ${control.args}` : ''}`;
 /** Open bridges, for the T3 server route that changes the global warming mode. */
 const liveBridges = new Set();
+/** A T3 message id that came from a Pi message carries that message's fingerprint. */
+const PI_MESSAGE_KEY = /(?:^|:)pi:[^:]+:([0-9a-f]{24})(?=:|$)/;
+/**
+ * What a T3 rewind keeps, in terms Pi can find on its own branch. T3 drops the turns
+ * whose checkpoint count exceeds `current - numTurns`; the fingerprints of every Pi
+ * message T3 shows before the first dropped turn name the kept history, and the user
+ * message right before that turn is the prompt being taken back. Counting is left to
+ * Pi (`null`) when T3 has no checkpoints or nothing Pi-made survives on the kept side.
+ */
+export function rewindPlan(thread, numTurns) {
+  const checkpoints = thread?.checkpoints ?? [];
+  if (checkpoints.length === 0) return null;
+  const target = Math.max(...checkpoints.map((checkpoint) => checkpoint.checkpointTurnCount)) - numTurns;
+  if (target < 0) return null;
+  const removed = new Set(checkpoints.filter((checkpoint) => checkpoint.checkpointTurnCount > target)
+    .map((checkpoint) => checkpoint.turnId));
+  const messages = thread.messages ?? [];
+  const first = messages.findIndex((message) => message.turnId && removed.has(message.turnId));
+  if (first < 0) return null;
+  const keep = new Set();
+  let lastKept = -1;
+  for (let index = 0; index < first; index++) {
+    const key = PI_MESSAGE_KEY.exec(messages[index].id ?? '')?.[1];
+    if (key) { keep.add(key); lastKept = index; }
+  }
+  if (target > 0 && keep.size === 0) return null;
+  let text;
+  for (let index = first - 1; index > lastKept; index--) {
+    if (messages[index].role === 'user') { text = messages[index].text; break; }
+  }
+  return { keep: [...keep], ...(typeof text === 'string' && text.trim() ? { text } : {}) };
+}
 export class RubatoPiBridge {
   constructor({ descriptorPath, instanceId, emit = () => {}, onError = () => {}, projectedMessages = async () => [],
-    shows = userStartedSession }) {
-    Object.assign(this, { descriptorPath, instanceId, emit, onError, projectedMessages, shows });
+    projectedThread = async () => null, shows = userStartedSession }) {
+    Object.assign(this, { descriptorPath, instanceId, emit, onError, projectedMessages, projectedThread, shows });
     this.sessions = new Map(); this.openings = new Map(); this.catalogues = new Map(); this.claimed = new Set(); this.closed = false;
     this.skillNames = new Set();
     this.retryTimer = setInterval(() => { void this.recover().catch(onError); }, 1000);
@@ -570,9 +602,12 @@ export class RubatoPiBridge {
     const context = this.require(threadId); const snapshot = await context.client.snapshot();
     return { threadId, turns: [{ id: context.projection.turnId ?? `pi-history:${context.sessionId}`, items: snapshot.messages }] };
   }
-  // T3 drops N completed turns from the end. Pi fork(entryId, before) targets that
-  // user message's parent and writes a new session file. Rebind this attachment
-  // onto the forked id so resumeCursor/recover/listSessions follow it.
+  // T3 drops N completed turns from the end. Pi rewinds in place: the leaf moves
+  // back inside the same session tree, so the session id, its running children and
+  // teams, and the abandoned branch all stay. (A fork would replace the session and
+  // suspend its children under an id nothing resumes.) Where to land is named by
+  // what T3 keeps (`rewindPlan`), not by counting user messages: a turn a child's
+  // completion woke has none, and counting cut the model's history elsewhere.
   rollbackThread(threadId, numTurns) {
     const context = this.require(threadId);
     const operation = context.queue.then(async () => {
@@ -580,45 +615,20 @@ export class RubatoPiBridge {
       if (!Number.isInteger(numTurns) || numTurns < 1) throw new Error('numTurns must be an integer >= 1');
       if (context.syncing) await context.syncing;
       if (context.session.status === 'running') throw new Error('Interrupt the current turn before rewinding');
-      const listed = await context.client.command({ type: 'get_fork_messages' });
-      const messages = listed?.messages ?? listed;
-      if (!Array.isArray(messages) || messages.length === 0) throw new Error('This conversation has no user messages to rewind');
-      if (numTurns > messages.length) throw new Error('Cannot rewind more turns than this conversation has');
-      const target = messages[messages.length - numTurns];
-      if (typeof target?.entryId !== 'string') throw new Error('Pi fork boundary is missing');
-      await context.unsubscribe?.();
-      context.unsubscribe = undefined;
-      try {
-        const result = await context.client.command({ type: 'fork', entryId: target.entryId });
-        if (result?.cancelled) throw new Error('Rewind was cancelled');
-        const buffered = [];
-        let loading = true;
-        context.unsubscribe = await context.client.subscribeSession((state) => {
-          if (loading) { buffered.push(state); return; }
-          this.applyState(context, state);
-        });
-        const snapshot = await context.client.snapshot();
-        await this.adoptFork(context, snapshot);
-        loading = false;
-        for (const state of buffered) if (state.sequence > snapshot.sequence) this.applyState(context, state);
-        return { threadId, turns: [{ id: context.projection.turnId ?? `pi-history:${context.sessionId}`, items: snapshot.messages }] };
-      } catch (error) {
-        if (!context.unsubscribe) {
-          try { context.unsubscribe = await context.client.subscribeSession((state) => this.applyState(context, state)); }
-          catch { /* rewind failed; recover() will resubscribe */ }
-        }
-        throw error;
-      }
+      const plan = rewindPlan(await this.projectedThread(threadId).catch(() => null), numTurns);
+      const result = await context.client.command({ type: 'rewind', turns: numTurns,
+        ...(plan ? { keep: plan.keep, ...(plan.text ? { text: rewriteSkillMentions(plan.text, this.skillNames) } : {}) } : {}) });
+      if (result?.cancelled) throw new Error('Rubato declined the rewind; see its notice in the conversation');
+      const snapshot = await context.client.snapshot();
+      await this.adoptRewind(context, snapshot);
+      return { threadId, turns: [{ id: context.projection.turnId ?? `pi-history:${context.sessionId}`, items: snapshot.messages }] };
     });
     context.queue = operation.catch(() => {});
     return operation;
   }
-  async adoptFork(context, snapshot) {
+  async adoptRewind(context, snapshot) {
     const sessionId = snapshot.state?.sessionId ?? snapshot.sessionId;
-    if (typeof sessionId !== 'string' || !sessionId) throw new Error('Pi fork did not return a session identity');
-    this.claimed.add(sessionId);
-    context.sessionId = sessionId;
-    context.session.resumeCursor = this.cursor(sessionId);
+    if (sessionId !== context.sessionId) throw new Error('Rewind moved this conversation to another session');
     context.projection.reset(sessionId);
     for (const message of snapshot.messages ?? []) {
       if (message?.role !== 'assistant') continue;

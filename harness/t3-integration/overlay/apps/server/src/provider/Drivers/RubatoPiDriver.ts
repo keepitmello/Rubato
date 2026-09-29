@@ -38,6 +38,10 @@ export interface PiSummary {
 }
 export interface PiBridge {
   projectedMessages: (threadId: string) => Promise<ReadonlyArray<{id: string; text: string; streaming: boolean}>>;
+  projectedThread: (threadId: string) => Promise<{
+    messages: ReadonlyArray<{id: string; role: string; text: string; turnId: string | null}>;
+    checkpoints: ReadonlyArray<{turnId: string; checkpointTurnCount: number}>;
+  } | null>;
   inventory(): Promise<ReadonlyArray<PiSummary>>;
   cursor(id: string): {kind: string; serverId: string; sessionId: string};
   transcript(id: string): Promise<{messages: ReadonlyArray<unknown>}>;
