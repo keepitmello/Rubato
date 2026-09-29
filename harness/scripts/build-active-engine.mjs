@@ -8,7 +8,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readPiEngineReceipt, resolveLaunchEngine } from "../rubato-pi/src/engine-selection.mjs";
 import { nodeSatisfiesCandidate, selectNodeForEngine } from "../rubato-pi/src/select-node.mjs";
-import { sourceFingerprint } from "../pi-runtime/scripts/source-fingerprint.mjs";
+import { inputFingerprint, sourceFingerprint } from "../pi-runtime/scripts/source-fingerprint.mjs";
 import { startSpeedDataUpload } from "../rubato-pi/src/speed-data-auto.mjs";
 import { replaceLiveEngine } from "./replace-live-engine.mjs";
 
@@ -27,7 +27,10 @@ export async function buildActiveEngine({
       (args.includes("--force") && args.includes("--check"))) throw new Error("Usage: build-active-engine.mjs [--force|--check]");
   const selection = resolveLaunchEngine({ env });
   const receipt = readPiEngineReceipt(selection.root);
-  const current = selection.engine === "pi" && receipt?.sourceSha256 === await sourceFingerprint(repoRoot);
+  // A receipt that names its inputs is current while those inputs are; older
+  // receipts compare against the whole source tree.
+  const fingerprint = receipt?.sourceInputs ? await inputFingerprint(repoRoot, receipt.sourceInputs) : await sourceFingerprint(repoRoot);
+  const current = selection.engine === "pi" && typeof receipt?.sourceSha256 === "string" && receipt.sourceSha256 === fingerprint;
   if (args.includes("--check")) return current ? 0 : 10;
   // A real rebuild restarts the profile engine onto it (replace-live-engine.mjs); a current
   // install touches neither. Exit 20 means the rebuild was refused inside an engine conversation.
