@@ -134,7 +134,7 @@ export async function reconcileRun({ row, engine, update, log = () => {}, signal
   try { client = await engine.connect(); }
   catch (error) {
     log('reconcile deferred: engine unavailable', { runId: row.id, error: message(error) });
-    return undefined; // try again on the next start; the row stays running
+    return undefined; // the row stays running; the next tick tries again
   }
   try {
     const entry = (await client.list()).find((item) => item.sessionId === row.sessionId);

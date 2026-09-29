@@ -142,6 +142,18 @@ describe('refusing what the picker cannot express', () => {
   });
 });
 
+describe('next-run labels on DST days in a UTC+12 zone (Pacific/Auckland)', () => {
+  beforeAll(() => { process.env.TZ = 'Pacific/Auckland'; });
+  afterAll(() => { process.env.TZ = 'Asia/Seoul'; });
+
+  test('the day after a DST change is still "Tomorrow"', () => {
+    // NZ daylight time starts 2026-09-27 and ends 2026-04-05.
+    expect(formatNextRun(local(2026, 9, 28, 9), local(2026, 9, 27, 10))).toBe('Tomorrow at 9:00 AM');
+    expect(formatNextRun(local(2026, 4, 6, 9), local(2026, 4, 5, 10))).toBe('Tomorrow at 9:00 AM');
+    expect(formatNextRun(local(2026, 9, 27, 15), local(2026, 9, 27, 10))).toBe('Today at 3:00 PM');
+  });
+});
+
 describe('daylight saving time (America/New_York)', () => {
   beforeAll(() => { process.env.TZ = 'America/New_York'; });
   afterAll(() => { process.env.TZ = 'Asia/Seoul'; });

@@ -222,9 +222,18 @@ export function createScheduleStore(options = {}) {
     },
     async update(taskId, patch) {
       const now = clock();
-      const fields = validateTaskFields(patch, { partial: true, now });
       return mutate((state) => {
         const task = findTask(state, taskId);
+        // A form saves every field. A schedule equal to the current one is not an edit: it must
+        // not restart judging (a slot due seconds ago would vanish unrecorded), and a finished
+        // once-task must stay renamable although its time has passed.
+        let input = patch;
+        if (patch && typeof patch === 'object' && patch.schedule !== undefined) {
+          let same = false;
+          try { same = JSON.stringify(validateSchedule(patch.schedule, { now: new Date(0) })) === JSON.stringify(task.schedule); } catch {}
+          if (same) { const { schedule: _unchanged, ...rest } = patch; input = rest; }
+        }
+        const fields = validateTaskFields(input, { partial: true, now });
         const reenabled = fields.enabled === true && !task.enabled;
         if (reenabled && !fields.schedule && task.schedule.kind === 'once') validateSchedule(task.schedule, { now });
         Object.assign(task, fields, { updatedAt: now.toISOString() });
