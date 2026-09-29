@@ -2,11 +2,11 @@
  * Rubato's Agents panel. Replaces T3's AgentsPanel in ChatView (apply.mjs).
  *
  * Every agent row keeps three fixed lines, each with one job:
- *   1. what the agent is working on (the spawn's own words, uncut)
+ *   1. what the agent is working on (the spawn's own words, uncut), after its team name if any
  *   2. what it is doing now, or how it ended
  *   3. role · model as the picker names it · Speed · turn N (· quiet 3m when stalled)
- * Taskforces (team_create) sit above plain agents as cards with the shared board,
- * which unfolds to every board task and its description.
+ * Taskforces (team_create) sit above plain agents as cards: members first, then the shared
+ * board. A board row says its state and owner; the lead's brief to the agent unfolds on click.
  */
 import type {
   AgentPanelModel,
@@ -41,7 +41,7 @@ const STATUS_VISUALS: Record<RuntimeSubagent["status"], { dotClass: string; labe
   pending: { dotClass: "bg-info", label: "Working" },
   running: { dotClass: "bg-info", label: "Working" },
   waiting: { dotClass: "bg-info", label: "Working" },
-  idle: { dotClass: "bg-muted-foreground/50", label: "Idle · resumable" },
+  idle: { dotClass: "bg-transparent ring-1 ring-inset ring-muted-foreground", label: "Idle · resumable" },
   completed: { dotClass: "bg-success", label: "Completed" },
   failed: { dotClass: "bg-destructive", label: "Failed" },
   cancelled: { dotClass: "bg-muted-foreground/60", label: "Stopped" },
@@ -106,7 +106,7 @@ function AgentElapsed({ agent }: { agent: RuntimeSubagent }) {
   if (!startedAt) return null;
   return (
     <span ref={textRef} className="tabular-nums">
-      {elapsedBetween(startedAt, live ? null : agent.completedAt)}
+      {elapsedBetween(startedAt, live ? null : (agent.completedAt ?? agent.updatedAt))}
     </span>
   );
 }
@@ -173,13 +173,22 @@ export function agentMetaParts(agent: RuntimeSubagent): string[] {
   ].filter((value): value is string => value !== null);
 }
 
-function AgentRow({ agent }: { agent: RuntimeSubagent }) {
+/**
+ * A team member that ended its turn is still resident and wakes on mail or a notification,
+ * so inside a taskforce idle reads as Waiting, with what it last said.
+ */
+function AgentRow({ agent, inTeam = false }: { agent: RuntimeSubagent; inTeam?: boolean }) {
   const [open, setOpen] = useState(false);
   const detailsId = useId();
   const visuals = STATUS_VISUALS[agent.status];
-  const statusLabel =
-    agent.kind === "subagent_batch" && agent.status === "idle" ? "Idle" : visuals.label;
-  const activity = agentActivityText(agent);
+  const waiting = inTeam && agent.status === "idle";
+  const statusLabel = waiting
+    ? "Waiting"
+    : agent.kind === "subagent_batch" && agent.status === "idle"
+      ? "Idle"
+      : visuals.label;
+  const said = agentActivityText(agent);
+  const activity = waiting ? (said ? `Waiting · ${said}` : "Waiting") : said;
   const quiet = useQuietLabel(agent);
   const task = agentTaskLabel(agent);
   const meta = agentMetaParts(agent);
@@ -197,6 +206,9 @@ function AgentRow({ agent }: { agent: RuntimeSubagent }) {
           <StatusDot status={agent.status} />
         </span>
         <span className="col-start-2 row-start-1 min-w-0 truncate text-sm font-medium" title={task}>
+          {inTeam && agent.memberName ? (
+            <span className="mr-1.5 font-mono text-xs text-muted-foreground">{agent.memberName}</span>
+          ) : null}
           {task}
         </span>
         <span className="col-start-3 row-start-1 min-w-14 text-right font-mono text-[.7rem] text-muted-foreground/80">
@@ -254,12 +266,15 @@ function teamMembers(group: AgentPanelWorkflowGroup): ReadonlyArray<RuntimeSubag
 }
 
 /** "2 working · 1 idle · 1 done", nonzero parts only. */
-export function teamCountsLabel(members: ReadonlyArray<RuntimeSubagent>): string {
+export function teamCountsLabel(
+  members: ReadonlyArray<RuntimeSubagent>,
+  idleWord: "idle" | "waiting" = "idle",
+): string {
   const count = (predicate: (member: RuntimeSubagent) => boolean) =>
     members.filter(predicate).length;
   const parts = [
     [count((member) => isLive(member.status)), "working"],
-    [count((member) => member.status === "idle"), "idle"],
+    [count((member) => member.status === "idle"), idleWord],
     [count((member) => member.status === "completed"), "done"],
     [count((member) => member.status === "failed"), "failed"],
     [count((member) => member.status === "cancelled" || member.status === "interrupted"), "stopped"],
@@ -268,16 +283,20 @@ export function teamCountsLabel(members: ReadonlyArray<RuntimeSubagent>): string
   return shown.length > 0 ? shown.join(" · ") : "starting";
 }
 
-const BOARD_STATUS_LABEL: Record<SubagentBoardTask["status"], string> = {
-  pending: "Open",
-  claimed: "Claimed",
-  in_progress: "In progress",
-  completed: "Done",
-};
-
 function boardOwnerLabel(owner: string | null): string | null {
   if (!owner) return null;
   return owner === "lead" ? "Lead" : owner;
+}
+
+/** What a board row says at a glance: "claimed · backend", "waits on #1, #2", "done". */
+export function boardTaskStateLabel(task: SubagentBoardTask, waitingOn: ReadonlyArray<string>): string {
+  const owner = boardOwnerLabel(task.owner);
+  const withOwner = (word: string) => (owner ? `${word} · ${owner}` : word);
+  if (task.status === "completed") return withOwner("done");
+  if (task.status === "in_progress") return withOwner("in progress");
+  if (task.status === "claimed") return withOwner("claimed");
+  if (waitingOn.length > 0) return `waits on ${waitingOn.map((id) => `#${id}`).join(", ")}`;
+  return withOwner("open");
 }
 
 function BoardStatusIcon({ task, blocked }: { task: SubagentBoardTask; blocked: boolean }) {
@@ -294,21 +313,27 @@ function BoardStatusIcon({ task, blocked }: { task: SubagentBoardTask; blocked: 
   return <Circle aria-hidden className="size-3.5 shrink-0 text-muted-foreground/60" />;
 }
 
+/** The row carries state and owner; the description is the lead's brief to the agent, one click away. */
 function BoardTaskRow({ task, board }: { task: SubagentBoardTask; board: SubagentBoard }) {
   const [open, setOpen] = useState(false);
   const detailsId = useId();
   const done = new Set(board.tasks.filter((item) => item.status === "completed").map((item) => item.id));
   const waitingOn = task.blockedBy.filter((id) => !done.has(id));
   const blocked = task.status === "pending" && waitingOn.length > 0;
-  const owner = boardOwnerLabel(task.owner);
+  const state = boardTaskStateLabel(task, task.status === "pending" ? waitingOn : []);
+  const hasBrief = task.description.trim().length > 0;
   return (
     <li className="min-w-0">
       <button
         type="button"
-        aria-expanded={open}
-        aria-controls={detailsId}
-        onClick={() => setOpen((value) => !value)}
-        className="flex w-full min-w-0 items-center gap-2 rounded-sm px-1.5 py-1 text-left hover:bg-accent/40 focus-visible:outline-2 focus-visible:outline-ring"
+        aria-expanded={hasBrief ? open : undefined}
+        aria-controls={hasBrief ? detailsId : undefined}
+        aria-label={`#${task.id} ${task.subject}: ${state}${hasBrief ? `. ${open ? "Hide" : "Show"} brief` : ""}`}
+        onClick={() => setOpen((value) => hasBrief && !value)}
+        className={cn(
+          "flex w-full min-w-0 items-center gap-2 rounded-sm px-1.5 py-1 text-left focus-visible:outline-2 focus-visible:outline-ring",
+          hasBrief ? "hover:bg-accent/40" : "cursor-default",
+        )}
       >
         <BoardStatusIcon task={task} blocked={blocked} />
         <span
@@ -320,34 +345,20 @@ function BoardTaskRow({ task, board }: { task: SubagentBoardTask; board: Subagen
         >
           <span className="font-mono text-muted-foreground/70">#{task.id}</span> {task.subject}
         </span>
-        {owner ? (
-          <span className="max-w-24 shrink-0 truncate font-mono text-[.65rem] text-muted-foreground">
-            {owner}
-          </span>
-        ) : null}
+        <span className="max-w-36 shrink-0 truncate font-mono text-[.65rem] text-muted-foreground">
+          {state}
+        </span>
       </button>
-      {open ? (
+      {open && hasBrief ? (
         <div
           id={detailsId}
-          className="mb-1 ml-7 mr-1.5 space-y-1.5 rounded-md border border-border/50 bg-background/40 p-2 text-xs"
+          className="mb-1 ml-7 mr-1.5 space-y-1 rounded-md border border-border/50 bg-background/40 p-2 text-xs"
         >
-          <p className="font-mono text-[.65rem] text-muted-foreground">
-            {[
-              BOARD_STATUS_LABEL[task.status],
-              owner ? `owner ${owner}` : "unowned",
-              waitingOn.length > 0 ? `waits on ${waitingOn.map((id) => `#${id}`).join(", ")}` : null,
-            ]
-              .filter((value): value is string => value !== null)
-              .join(" · ")}
+          <p className="font-mono text-[.65rem] text-muted-foreground">Brief for the agent</p>
+          <p className="whitespace-pre-wrap text-muted-foreground [overflow-wrap:anywhere]">
+            {task.description}
+            {task.descriptionTruncated ? "…" : ""}
           </p>
-          {task.description.trim().length > 0 ? (
-            <p className="whitespace-pre-wrap [overflow-wrap:anywhere]">
-              {task.description}
-              {task.descriptionTruncated ? "…" : ""}
-            </p>
-          ) : (
-            <p className="text-muted-foreground">No description.</p>
-          )}
         </div>
       ) : null}
     </li>
@@ -445,7 +456,7 @@ function TaskforceCard({ group }: { group: AgentPanelWorkflowGroup }) {
         <StatusDot status={dotStatus} />
         <span className="min-w-0 truncate text-sm font-medium">{name}</span>
         <span className="ml-auto flex shrink-0 items-center gap-1 font-mono text-[.7rem] text-muted-foreground/80">
-          <span>{teamCountsLabel(members)}</span>
+          <span>{teamCountsLabel(members, "waiting")}</span>
           {team.startedAt ? (
             <>
               <span>·</span>
@@ -455,14 +466,18 @@ function TaskforceCard({ group }: { group: AgentPanelWorkflowGroup }) {
           <ChevronDown aria-hidden className="size-3" />
         </span>
       </button>
-      {team.board ? <TeamBoard board={team.board} /> : null}
       <div className="border-t border-border/40 pt-0.5">
         {members.length > 0 ? (
-          members.map((member) => <AgentRow key={member.id} agent={member} />)
+          members.map((member) => <AgentRow key={member.id} agent={member} inTeam />)
         ) : (
           <AgentRow agent={team} />
         )}
       </div>
+      {team.board ? (
+        <div className="border-t border-border/40 pt-0.5">
+          <TeamBoard board={team.board} />
+        </div>
+      ) : null}
     </section>
   );
 }

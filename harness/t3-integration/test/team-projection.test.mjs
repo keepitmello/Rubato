@@ -43,6 +43,7 @@ for (const [name, args] of [
     for (const event of events.filter(event => event.type.startsWith('task.') && event.payload.taskId.startsWith('st_'))) {
       assert.equal(event.payload.parentAgentId, 'call_team');
       assert.equal(event.payload.workflowName, 'mobile-team');
+      assert.equal(event.payload.memberName, event.payload.taskId.slice(3));
     }
     assert.equal(events.filter(event => event.type === 'task.completed' && event.payload.taskId === 'call_team').length, 1);
   });
@@ -80,6 +81,37 @@ for (const kind of ['invalid_arguments', 'spec_error', 'runtime_error']) {
     assert.equal(events.find(event => event.type === 'item.completed' && event.itemId === 'call_team').payload.title, 'Team');
   });
 }
+
+test('a member that ends its turn but stays resident is waiting, and wakes back up', () => {
+  const { events, projection, finish } = setup({ inline_spec: { name: 'mobile-team', members: [] } });
+  finish();
+  const snapshot = (item) => projection.project({ type: 'extension_event', name: 'rubato.task.updated', data: { tasks: [item] } });
+  const owner = (type) => events.filter(event => event.type === type && event.payload.taskId === 'st_owner');
+  const rest = { task_id: 'st_owner', status: 'completed', residency_state: 'resident',
+    final_response: 'Waiting on the build.\nDetails follow.' };
+  snapshot(rest);
+  snapshot(rest);
+  assert.equal(owner('task.completed').length, 0);
+  const waiting = owner('task.progress');
+  assert.equal(waiting.length, 1);
+  assert.equal(waiting[0].payload.status, 'idle');
+  assert.equal(waiting[0].payload.summary, 'Waiting on the build.');
+  snapshot({ task_id: 'st_owner', status: 'running' });
+  assert.equal(owner('task.progress').at(-1).payload.status, 'running');
+  snapshot({ task_id: 'st_verifier', status: 'completed', residency_state: 'disposed' });
+  snapshot({ task_id: 'st_owner', status: 'completed', residency_state: 'disposed', final_response: 'Done.' });
+  assert.equal(owner('task.completed').length, 1);
+  assert.equal(events.find(event => event.type === 'task.completed' && event.payload.taskId === 'call_team').payload.status, 'completed');
+});
+
+test('a direct agent that finishes resident still reads completed', () => {
+  const { events, projection } = setup({ team_name: 'unused' });
+  projection.project({ type: 'tool_execution_end', toolName: 'Agent', toolCallId: 'call_direct',
+    result: { details: { agentId: 'st_direct', status: 'running', task_summary: 'Independent work' } } });
+  projection.project({ type: 'extension_event', name: 'rubato.task.updated',
+    data: { tasks: [{ task_id: 'st_direct', status: 'completed', residency_state: 'resident', final_response: 'Report.' }] } });
+  assert.equal(events.find(event => event.type === 'task.completed' && event.payload.taskId === 'st_direct').payload.status, 'completed');
+});
 
 test('a schema-rejected team leaves no row, and the retry with the same name gets the board', () => {
   const { events, projection } = setup({ inline_spec: { name: 'mobile-team', members: [] } });
