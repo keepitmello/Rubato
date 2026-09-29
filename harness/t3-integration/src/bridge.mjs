@@ -111,33 +111,41 @@ const liveBridges = new Set();
 const PI_MESSAGE_KEY = /(?:^|:)pi:[^:]+:([0-9a-f]{24})(?=:|$)/;
 /**
  * What a T3 rewind keeps, in terms Pi can find on its own branch. T3 drops the turns
- * whose checkpoint count exceeds `current - numTurns`; the fingerprints of every Pi
- * message T3 shows before the first dropped turn name the kept history, and the user
- * message right before that turn is the prompt being taken back. Counting is left to
- * Pi (`null`) when T3 has no checkpoints or nothing Pi-made survives on the kept side.
+ * whose checkpoint count exceeds `current - numTurns`, and a user message goes with
+ * the turn of the reply after it, the same pairing T3 applies on revert
+ * (rubatoRevertRetention.ts in the overlay). Pi gets the fingerprints of every kept
+ * Pi message and the number of kept prompts after the last of them; a control
+ * command (/name, /compact) leaves no prompt in Pi, so it is not counted. Without
+ * T3's turns the rewind is refused: guessing cut the model's history elsewhere.
  */
+const leavesNoPrompt = (text) => { try { return Boolean(controlCommandFor(text)); } catch { return true; } };
 export function rewindPlan(thread, numTurns) {
   const checkpoints = thread?.checkpoints ?? [];
-  if (checkpoints.length === 0) return null;
+  if (checkpoints.length === 0) throw new Error("Rubato could not read this thread's turns to rewind it");
   const target = Math.max(...checkpoints.map((checkpoint) => checkpoint.checkpointTurnCount)) - numTurns;
-  if (target < 0) return null;
-  const removed = new Set(checkpoints.filter((checkpoint) => checkpoint.checkpointTurnCount > target)
+  if (target < 0) throw new Error('Cannot rewind more turns than this conversation has');
+  const kept = new Set(checkpoints.filter((checkpoint) => checkpoint.checkpointTurnCount <= target)
     .map((checkpoint) => checkpoint.turnId));
-  const messages = thread.messages ?? [];
-  const first = messages.findIndex((message) => message.turnId && removed.has(message.turnId));
-  if (first < 0) return null;
+  const messages = [...(thread.messages ?? [])].sort((left, right) =>
+    String(left.createdAt ?? '').localeCompare(String(right.createdAt ?? '')));
+  const turnOf = new Map();
+  let waiting = [];
+  for (const message of messages) {
+    if (message.role === 'user' && message.turnId == null) { waiting.push(message); continue; }
+    if (message.role === 'system') continue;
+    for (const prompt of message.turnId == null ? [] : waiting) turnOf.set(prompt.id, message.turnId);
+    waiting = [];
+  }
   const keep = new Set();
-  let lastKept = -1;
-  for (let index = 0; index < first; index++) {
-    const key = PI_MESSAGE_KEY.exec(messages[index].id ?? '')?.[1];
-    if (key) { keep.add(key); lastKept = index; }
+  let skip = 0;
+  for (const message of messages) {
+    const turnId = message.role === 'user' && message.turnId == null ? turnOf.get(message.id) : message.turnId;
+    if (!kept.has(turnId)) continue;
+    const key = PI_MESSAGE_KEY.exec(message.id ?? '')?.[1];
+    if (key) { keep.add(key); skip = 0; }
+    else if (message.role === 'user' && !leavesNoPrompt(message.text ?? '')) skip += 1;
   }
-  if (target > 0 && keep.size === 0) return null;
-  let text;
-  for (let index = first - 1; index > lastKept; index--) {
-    if (messages[index].role === 'user') { text = messages[index].text; break; }
-  }
-  return { keep: [...keep], ...(typeof text === 'string' && text.trim() ? { text } : {}) };
+  return { keep: [...keep], skip };
 }
 export class RubatoPiBridge {
   constructor({ descriptorPath, instanceId, emit = () => {}, onError = () => {}, projectedMessages = async () => [],
@@ -606,8 +614,7 @@ export class RubatoPiBridge {
   // back inside the same session tree, so the session id, its running children and
   // teams, and the abandoned branch all stay. (A fork would replace the session and
   // suspend its children under an id nothing resumes.) Where to land is named by
-  // what T3 keeps (`rewindPlan`), not by counting user messages: a turn a child's
-  // completion woke has none, and counting cut the model's history elsewhere.
+  // what T3 keeps (`rewindPlan`).
   rollbackThread(threadId, numTurns) {
     const context = this.require(threadId);
     const operation = context.queue.then(async () => {
@@ -615,30 +622,25 @@ export class RubatoPiBridge {
       if (!Number.isInteger(numTurns) || numTurns < 1) throw new Error('numTurns must be an integer >= 1');
       if (context.syncing) await context.syncing;
       if (context.session.status === 'running') throw new Error('Interrupt the current turn before rewinding');
-      const plan = rewindPlan(await this.projectedThread(threadId).catch(() => null), numTurns);
-      const result = await context.client.command({ type: 'rewind', turns: numTurns,
-        ...(plan ? { keep: plan.keep, ...(plan.text ? { text: rewriteSkillMentions(plan.text, this.skillNames) } : {}) } : {}) });
+      let thread;
+      try { thread = await this.projectedThread(threadId); }
+      catch (error) { throw new Error(`Rubato could not read this thread's turns to rewind it: ${error instanceof Error ? error.message : error}`); }
+      const plan = rewindPlan(thread, numTurns);
+      const result = await context.client.command({ type: 'rewind', keep: plan.keep, skip: plan.skip });
       if (result?.cancelled) throw new Error('Rubato declined the rewind; see its notice in the conversation');
       const snapshot = await context.client.snapshot();
-      await this.adoptRewind(context, snapshot);
+      await this.afterRewind(context, snapshot);
       return { threadId, turns: [{ id: context.projection.turnId ?? `pi-history:${context.sessionId}`, items: snapshot.messages }] };
     });
     context.queue = operation.catch(() => {});
     return operation;
   }
-  async adoptRewind(context, snapshot) {
+  // Same session and runtime: the live subscription keeps running, and so does
+  // whatever it tracks (a turn a child's completion just woke, children, teams).
+  // Only what the rewind changed is re-read: the context window and the cache.
+  async afterRewind(context, snapshot) {
     const sessionId = snapshot.state?.sessionId ?? snapshot.sessionId;
     if (sessionId !== context.sessionId) throw new Error('Rewind moved this conversation to another session');
-    context.projection.reset(sessionId);
-    for (const message of snapshot.messages ?? []) {
-      if (message?.role !== 'assistant') continue;
-      const itemId = messageKey(sessionId, message);
-      context.projection.text.set(itemId, textOf(message));
-      context.projection.completed.add(itemId);
-    }
-    context.runtimeId = snapshot.runtimeId;
-    context.sequence = snapshot.sequence;
-    context.session.status = snapshot.state?.isStreaming ? 'running' : 'ready';
     context.session.updatedAt = new Date().toISOString();
     await this.configureUsage(context, snapshot.state, snapshot.messages);
     this.replayUsage(context, snapshot.messages);

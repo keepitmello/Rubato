@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { CANDIDATE_FEATURE_NAMES } from "../features/rubato-components/candidate-main.mjs";
+import { messageFingerprint, REWIND_MARK } from "../features/conversation-rewind/rewind.mjs";
 import {
   chmodRestoreTraps,
   chmodSenpiTraps,
@@ -278,6 +279,7 @@ test("isolated candidate install pipeline blocks Senpi and keeps CANDIDATE_FEATU
         moduleLoadList: process.moduleLoadList ?? [],
       }));
       pi.rpc.handle("candidate.execute", ({ name, params }) => pi.executeTool(name, params));
+      pi.rpc.handle("candidate.note", () => { pi.sendMessage({ customType: "candidate.note", content: "note", display: true }, { triggerTurn: false }); return {}; });
     };\n`);
 
     const child = spawn(process.execPath, nodeArgs(traceFile, [
@@ -333,6 +335,41 @@ test("isolated candidate install pipeline blocks Senpi and keeps CANDIDATE_FEATU
     await waitFor((frame) => frame.type === "agent_end", abortFrom);
     assert.ok(performance.now() - abortStarted < 2000, "abort must settle before the fixture would complete");
     assert.equal((await request("get_state")).isStreaming, false);
+
+    // App rewind: keep the first answer, drop the memory turn and the aborted one,
+    // inside the same session and durably, since a reopened session resumes at its last entry.
+    const userTexts = (messages) => messages.filter((message) => message.role === "user")
+      .map((message) => typeof message.content === "string" ? message.content : message.content.map((part) => part.text ?? "").join(""));
+    const before = (await request("get_messages")).messages;
+    const firstAnswer = before.find((message) => message.role === "assistant");
+    const { sessionId, sessionFile } = await request("get_state");
+    const rewound = await request("rewind", { keep: [messageFingerprint(firstAnswer)], skip: 0 });
+    assert.equal(rewound.moved, true);
+    assert.deepEqual(userTexts((await request("get_messages")).messages), ["Use the isolated local fixture once."]);
+    assert.equal((await request("get_state")).sessionId, sessionId);
+    const reopened = async () => {
+      const entries = (await readFile(sessionFile, "utf8")).trim().split("\n").map((line) => JSON.parse(line)).filter((entry) => entry.type !== "session");
+      const byId = new Map(entries.map((entry) => [entry.id, entry]));
+      const branch = [];
+      for (let entry = entries.at(-1); entry; entry = byId.get(entry.parentId)) branch.unshift(entry);
+      return { last: entries.at(-1), users: userTexts(branch.filter((entry) => entry.type === "message").map((entry) => entry.message)), branch };
+    };
+    const saved = await reopened();
+    assert.equal(saved.last.customType, REWIND_MARK);
+    assert.deepEqual(saved.users, ["Use the isolated local fixture once."]);
+    // Nothing after the kept part: the rewind moves nothing and says so.
+    assert.equal((await request("rewind", { keep: [messageFingerprint(firstAnswer)], skip: 0 })).moved, false);
+    // The input to drop can be the current leaf, which navigateTree alone would ignore.
+    await request("extension_request", { name: "candidate.note" });
+    assert.equal((await reopened()).last.customType, "candidate.note");
+    assert.equal((await request("rewind", { keep: [messageFingerprint(firstAnswer)], skip: 0 })).moved, true);
+    assert.equal((await reopened()).branch.some((entry) => entry.customType === "candidate.note"), false);
+    // What the app cannot name is refused, not guessed.
+    const refusedId = String(++id);
+    child.stdin.write(`${JSON.stringify({ type: "rewind", id: refusedId, keep: ["000000000000000000000000"], skip: 0 })}\n`);
+    const refused = await waitFor((frame) => frame.type === "response" && frame.id === refusedId);
+    assert.equal(refused.success, false);
+    assert.match(refused.error, /not on the current branch/);
     assert.equal(await readFile(join(liveSentinel, "untouched"), "utf8"), "live profile must remain untouched");
     st.diagnostic(`inspect tools=${inspect.tools.length} providers=${inspect.providers.length}`);
   });

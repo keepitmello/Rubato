@@ -65,6 +65,10 @@
     "apps/web/index.html": "7ec184f90b90efd82c1c3df29410242cf2c6bcc9487a469d4a9597b85996256f",
     "apps/web/public/manifest.webmanifest": "55931d48395d2e90f0b59c09e9fb77392dae530426c0c7300adce44ac6ed87b7",
     "apps/web/src/components/chat/ContextWindowMeter.test.tsx": "d2ba7c9d2d6946e0453b1ffb16b93aa70938c18215d9c32e4250a08ad4f16e8a",
-    "apps/desktop/src/app/DesktopClerk.ts": "ed6ad961b5a92c93dab1d0cd2430414f87e56f849eb721b2b9f1224a8c50d9f5"
+    "apps/desktop/src/app/DesktopClerk.ts": "ed6ad961b5a92c93dab1d0cd2430414f87e56f849eb721b2b9f1224a8c50d9f5",
+    "packages/shared/package.json": "1e321258afa58f83744a548ecc3b76bfaaadd3120ff950e02571cc6dcb3c8c96",
+    "apps/server/src/orchestration/projector.ts": "829496437b51a6b5a2e4a1d9ecf8921be4e9457bee4df3a4707c98438a2ac460",
+    "apps/server/src/orchestration/Layers/ProjectionPipeline.ts": "bfa6d12ba3d4753b98e9f7aec0225819971c1b2dd0fb80ccb95ed24730b64800",
+    "packages/client-runtime/src/state/threadReducer.ts": "164cbe8e7959cbe9240c11d9f0713da17def8d57b6e1ff02dd4740555de760af"
   }
 }

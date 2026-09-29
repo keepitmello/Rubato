@@ -13,6 +13,7 @@ import { providerEdits, providerOverlays } from './provider-edits.mjs';
 import { aboutEdits, aboutOverlays } from './about-edits.mjs';
 import { scheduleEdits, scheduleOverlays } from './schedule-edits.mjs';
 import { sidebarPinEdits, sidebarPinOverlays } from './sidebar-pin-edits.mjs';
+import { rewindEdits, rewindOverlays } from './rewind-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -2109,6 +2110,11 @@ for (const [relative, changes] of Object.entries(scheduleEdits)) {
 // Pinning in the legacy sidebar (sidebar-pin-edits.mjs).
 overlays.push(...sidebarPinOverlays);
 for (const [relative, changes] of Object.entries(sidebarPinEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Which user messages survive a rewind (rewind-edits.mjs).
+overlays.push(...rewindOverlays);
+for (const [relative, changes] of Object.entries(rewindEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 function transform(text, changes) {
