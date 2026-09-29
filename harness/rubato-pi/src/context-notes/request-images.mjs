@@ -14,6 +14,16 @@
 /** Half of Anthropic's 32MB request cap, so the text and tool schemas around the images fit too. */
 export const REQUEST_IMAGE_BYTE_LIMIT = 16 * 1024 * 1024;
 
+/**
+ * The serialized message list as a whole. The image budget alone missed a history of 19MB
+ * text and 11MB images: nothing was dropped, and the list crossed both Anthropic's 32MB
+ * request cap and pi-server's 32MB frame. 4MB stays for the system prompt, tools and envelope.
+ */
+export const REQUEST_TOTAL_BYTE_LIMIT = 28 * 1024 * 1024;
+
+/** Room for each placeholder that replaces an image. */
+const PLACEHOLDER_BYTES = 256;
+
 const BASE64_BYTES_PER_CHAR = 3 / 4;
 
 /** Decoded size of a base64 payload, without decoding it. */
@@ -44,17 +54,31 @@ const defaultItemLabel = (message) =>
  * `itemLabel(message, index)` names where the record keeps the original, so the reader can
  * fetch the pixels back.
  *
+ * Two caps bound the images: their own decoded bytes (`limit`), and what is left of
+ * `totalLimit` once the rest of the serialized list is counted. Text is never dropped.
+ *
  * Returns the input array unchanged when it already fits, and never mutates a message.
  */
-export function trimRequestImages(messages, limit = REQUEST_IMAGE_BYTE_LIMIT, itemLabel = defaultItemLabel) {
+export function trimRequestImages(messages, limit = REQUEST_IMAGE_BYTE_LIMIT, itemLabel = defaultItemLabel,
+  totalLimit = REQUEST_TOTAL_BYTE_LIMIT) {
   let total = 0;
+  let encoded = 0;
+  let images = 0;
   for (const message of messages) {
     if (!Array.isArray(message?.content)) continue;
     for (const block of message.content) {
-      if (block?.type === "image") total += base64ByteLength(block.data);
+      if (block?.type !== "image") continue;
+      total += base64ByteLength(block.data);
+      encoded += typeof block.data === "string" ? block.data.length : 0;
+      images += 1;
     }
   }
-  if (total <= limit) return messages;
+  if (images === 0) return messages;
+  const serialized = Buffer.byteLength(JSON.stringify(messages));
+  if (total <= limit && serialized <= totalLimit) return messages;
+  // Base64 is ASCII, so each character of image data is one serialized byte.
+  const room = totalLimit - (serialized - encoded) - images * PLACEHOLDER_BYTES;
+  const budget = Math.min(limit, Math.max(0, Math.floor(room * 3 / 4)));
 
   let kept = 0;
   const trimmed = [...messages];
@@ -67,7 +91,7 @@ export function trimRequestImages(messages, limit = REQUEST_IMAGE_BYTE_LIMIT, it
       const block = content[at];
       if (block?.type !== "image") continue;
       const bytes = base64ByteLength(block.data);
-      if (kept + bytes <= limit) {
+      if (kept + bytes <= budget) {
         kept += bytes;
         continue;
       }
