@@ -36,12 +36,25 @@ export interface PiSummary {
   readonly status: string;
   readonly runtimeId: string | null;
 }
+/** A message another conversation sent into a Pi session (bridge events.mjs sessionMessageFrom). */
+export interface PiSessionMessage {
+  readonly id: string;
+  readonly role: "user";
+  readonly text: string;
+  readonly createdAt: string;
+  readonly context: unknown;
+}
+export type PiImportedMessage =
+  | {readonly id: string; readonly role: "user" | "assistant"; readonly text: string; readonly createdAt: string; readonly context?: undefined}
+  | PiSessionMessage;
 export interface PiBridge {
   projectedMessages: (threadId: string) => Promise<ReadonlyArray<{id: string; text: string; streaming: boolean}>>;
+  appendSessionMessage: (threadId: string, message: PiSessionMessage) => Promise<void>;
   inventory(): Promise<ReadonlyArray<PiSummary>>;
   cursor(id: string): {kind: string; serverId: string; sessionId: string};
   transcript(id: string): Promise<{messages: ReadonlyArray<unknown>}>;
-  importedMessages(id: string, messages: ReadonlyArray<unknown>): ReadonlyArray<{id:string; role:"user"|"assistant"; text:string; createdAt:string}>;
+  /** `threadId` is the T3 thread the history goes to; a session message's id names it. */
+  importedMessages(id: string, messages: ReadonlyArray<unknown>, threadId: string): ReadonlyArray<PiImportedMessage>;
   catalogue(cwd: string): Promise<{models: ReadonlyArray<{provider:string; id:string; name:string; reasoning?:boolean; capabilities?:{optionDescriptors?:ReadonlyArray<unknown>}|null}>; model:{provider:string;id:string}|null; slashCommands?: ReadonlyArray<{name:string; description?:string; input?:{hint:string}}>; skills?: ReadonlyArray<{name:string; description?:string; path:string; scope?:string; enabled:boolean; displayName?:string; shortDescription?:string}>}>;
   startSession(input: unknown): Promise<unknown>;
   sendTurn(input: unknown): Promise<unknown>;
@@ -90,10 +103,11 @@ export const RubatoPiDriver: ProviderDriver<RubatoPiConfig> = {
         const module: unknown = await import(/* @vite-ignore */ moduleHref);
         if (!module || typeof module !== "object" || !("createBridge" in module) || typeof module.createBridge !== "function")
           throw new Error("bridgeModule must export createBridge");
-        const factory = module.createBridge as (options: {descriptorPath:string; instanceId:string; emit:(event:unknown)=>void; projectedMessages:(id:string)=>Promise<never>}) => PiBridge;
+        const factory = module.createBridge as (options: {descriptorPath:string; instanceId:string; emit:(event:unknown)=>void; projectedMessages:(id:string)=>Promise<never>; appendSessionMessage:()=>Promise<never>}) => PiBridge;
         return factory({ descriptorPath: config.descriptorPath, instanceId,
           emit: (event) => { PubSub.publishUnsafe(events, decodeEvent(event)); },
           projectedMessages: async () => { throw new Error("T3's read-only transcript projection is not bound yet; retry after startup"); },
+          appendSessionMessage: async () => { throw new Error("T3's thread writer is not bound yet; the next attach replays the message"); },
         });
       }, catch: fail,
     });

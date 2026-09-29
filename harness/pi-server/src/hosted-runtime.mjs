@@ -3,10 +3,14 @@ import { realpath } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { buildStockPiArgs, stockPiSupportEnv } from '../../rubato-pi/src/launch.mjs';
+import { createSessionLink } from './session-link.mjs';
 
 // One engine process is a profile boundary. Do not let a second caller repin
 // process-level configuration while an existing profile has live runtimes.
 let identity;
+// Every runtime in this engine gets the same link; the profile server binds it to
+// the host and socket once they exist. Extensions see only the six methods.
+let sessionLink;
 
 const UNLOAD_DISPOSE = Symbol('rubato.hosted.unload-dispose');
 
@@ -36,6 +40,7 @@ export async function loadHostedRuntime({ runtimeRoot, agentDir }) {
   const key = JSON.stringify([root, agentDir]);
   if (identity && identity !== key) throw new Error('One engine process cannot host different runtime builds or profiles');
   identity = key;
+  sessionLink ??= createSessionLink();
   const load = file => import(pathToFileURL(path.join(root, file)).href);
   const { prepareRubatoCandidate } = await load('rubato-features/rubato-components/candidate-main.mjs');
   if (typeof prepareRubatoCandidate !== 'function') throw new Error('Build does not support hosted runtimes; rebuild the candidate');
@@ -62,6 +67,7 @@ export async function loadHostedRuntime({ runtimeRoot, agentDir }) {
   };
   const hosted = {
     bindHost(host) { sessionHost = host; },
+    sessionLink,
     runRpcMode,
     async loadTerminalApi() {
       const context = await load('rubato-features/session-ui/context.mjs');
@@ -76,7 +82,8 @@ export async function loadHostedRuntime({ runtimeRoot, agentDir }) {
           http.configureHttpDispatcher(settingsManager.getHttpIdleTimeoutMs());
         },
         releaseHttp: http.releaseScopedHttpDispatcher,
-        createExtensionFactories: ctx => createRubatoExtensionFactories({ ...ctx, env: context.uiProcess.env, hosted: true }).extensionFactories };
+        createExtensionFactories: ctx => createRubatoExtensionFactories({ ...ctx, env: context.uiProcess.env, hosted: true,
+          sessionLink: sessionLink.api }).extensionFactories };
     },
     async createRuntime(metadata) {
       runMigrations(metadata.cwd);

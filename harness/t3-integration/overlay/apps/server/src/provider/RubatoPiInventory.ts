@@ -1,15 +1,16 @@
-import {CommandId, MessageId, ProjectId, ThreadId} from "@t3tools/contracts";
+import {CommandId, MessageId, OrchestrationMessageContext, ProjectId, ThreadId} from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
+import * as Schema from "effect/Schema";
 import {OrchestrationEngineService} from "../orchestration/Services/OrchestrationEngine.ts";
 import {ProjectionSnapshotQuery} from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import {ProviderInstanceRegistry} from "./Services/ProviderInstanceRegistry.ts";
 import {ProviderSessionDirectory} from "./Services/ProviderSessionDirectory.ts";
 import {ProviderService} from "./Services/ProviderService.ts";
-import {isAbsoluteLocalPath, rubatoBridgeFor, type PiSummary} from "./Drivers/RubatoPiDriver.ts";
+import {isAbsoluteLocalPath, rubatoBridgeFor, type PiSessionMessage, type PiSummary} from "./Drivers/RubatoPiDriver.ts";
 import type {ProviderInstance} from "./ProviderDriver.ts";
 import {ProviderAdapterRequestError} from "./Errors.ts";
 
@@ -25,6 +26,7 @@ const FOREIGN_IMPORT = /^import:(?:codex|claudeAgent):/;
 const io = <A>(method: string, action: () => Promise<A>) => Effect.tryPromise({try:action,
   catch:(cause) => new ProviderAdapterRequestError({provider:"rubato-pi",method,
     detail:cause instanceof Error ? cause.message : String(cause),cause})});
+const decodeContext = Schema.decodeUnknownSync(OrchestrationMessageContext);
 
 /** Reuses T3's existing project/thread commands and durable provider bindings.
  * It never starts a model turn and never owns Pi workers or conversation files. */
@@ -38,6 +40,19 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
   const service = yield* ProviderService;
   const crypto = yield* Crypto.Crypto;
   const commandId = crypto.randomUUIDv4.pipe(Effect.map(CommandId.make));
+  // The bridge calls the thread writer from outside any Effect; it runs with the
+  // services the inventory was built with (command ids need Crypto).
+  const services = yield* Effect.context<Crypto.Crypto>();
+  // A message another conversation sent into a Pi session. It is a user message
+  // that starts no turn (T3's own "append without a turn"), carrying the context
+  // record the web timeline draws as the session-message bubble. Its id names the
+  // sender's message and this thread, so a replay into the same thread is refused
+  // as a duplicate while a fork's copy lands in the fork's own thread.
+  const appendSessionMessage = (threadId: string, message: PiSessionMessage) => Effect.gen(function* () {
+    yield* engine.dispatch({type:"thread.message.user.append",commandId:yield* commandId,threadId:ThreadId.make(threadId),
+      message:{messageId:MessageId.make(message.id),text:message.text,attachments:[],context:decodeContext(message.context)},
+      createdAt:message.createdAt});
+  });
   const bindReaders = Effect.gen(function* () {
     for (const instance of yield* registry.listInstances) {
       const bridge = rubatoBridgeFor(instance);
@@ -45,6 +60,7 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
       bridge.projectedMessages = (id) => Effect.runPromise(query.getThreadDetailById(ThreadId.make(id)).pipe(
         Effect.map((thread) => Option.isSome(thread) ? thread.value.messages : []),
       ));
+      bridge.appendSessionMessage = (id, message) => Effect.runPromiseWith(services)(appendSessionMessage(id, message));
     }
   });
   // Bind before native restart reconciliation can attempt a provider resume.
@@ -130,9 +146,14 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
           const existing = yield* query.getThreadDetailById(threadId);
           if (Option.isSome(existing) && existing.value.messages.length===0) {
             const saved = yield* io("transcript", () => bridge.transcript(entry.sessionId));
-            const messages = bridge.importedMessages(entry.sessionId,saved.messages);
-            if (messages.length) yield* engine.dispatch({type:"thread.history.import",commandId:yield* commandId,
-              threadId,messages:messages.map((message) => ({messageId:MessageId.make(message.id),role:message.role,text:message.text,createdAt:message.createdAt}))});
+            const messages = bridge.importedMessages(entry.sessionId,saved.messages,threadId);
+            const plain = messages.filter((message) => message.context === undefined);
+            if (plain.length) yield* engine.dispatch({type:"thread.history.import",commandId:yield* commandId,
+              threadId,messages:plain.map((message) => ({messageId:MessageId.make(message.id),role:message.role,text:message.text,createdAt:message.createdAt}))});
+            // History import takes no context, so session messages follow it; the
+            // thread orders by createdAt, which is when each one arrived in Pi.
+            for (const message of messages) if (message.context !== undefined)
+              yield* appendSessionMessage(threadId, message);
           }
           historyChecked.add(threadId);
         }

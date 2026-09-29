@@ -26,6 +26,7 @@ export async function serveProfile({ agentDir, socketPath, idleMs = 60000, runti
   let service;
   let terminalServer;
   let compromised;
+  let hosted;
   // 서버가 kill -9 로 죽으면 락은 stale 로 넘어갈 때까지 남고, 그 창이 그대로
   // 앱의 복구 지연이 된다. 실측 41초. 살아있는 서버는 update 마다 mtime 을 새로
   // 찍으므로 stale 은 update 의 세 배면 충분하다.
@@ -33,7 +34,7 @@ export async function serveProfile({ agentDir, socketPath, idleMs = 60000, runti
     stale: 15000, update: 5000, retries: 0,
     onCompromised(error) {
       compromised = error; onError(error);
-      void (async () => { await terminalServer?.close(); await service?.close(); })().catch(onError);
+      void (async () => { hosted?.sessionLink.close(); await terminalServer?.close(); await service?.close(); })().catch(onError);
     } });
   try {
     let previous;
@@ -41,18 +42,20 @@ export async function serveProfile({ agentDir, socketPath, idleMs = 60000, runti
     catch (error) { if (error.code !== 'ENOENT') throw error; }
     if (compromised) throw compromised;
     if (runtimeRoot && workerFactory) throw new TypeError('Choose an engine build or an explicit worker factory, not both');
-    const hosted = runtimeRoot ? await (await import('./hosted-runtime.mjs')).loadHostedRuntime({ runtimeRoot, agentDir }) : undefined;
+    hosted = runtimeRoot ? await (await import('./hosted-runtime.mjs')).loadHostedRuntime({ runtimeRoot, agentDir }) : undefined;
     // Only the engine holding the profile lock may bootstrap shared config.
     // Five simultaneous frontends must not truncate/read each other's JSON.
     if (hosted && !sessionDefaultsLookCurrent(agentDir)) ensureSessionDefaults(agentDir);
     const workerOptions = hosted ? await hosted.createWorkerOptions() : undefined;
-    service = await startSessionServer({ sessionsDir: path.join(agentDir, 'sessions'), socketPath,
+    const sessionsDir = path.join(agentDir, 'sessions');
+    service = await startSessionServer({ sessionsDir, socketPath,
       serverId: previous?.serverId ?? randomUUID(), idleMs, onError,
       workerFactory: workerFactory ?? (hosted ? ((metadata, creation) => new SessionWorker(metadata, workerOptions(metadata, creation))) : ((metadata) => new RpcWorker(metadata, {
         env: { RUBATO_PI_CODING_AGENT_DIR: agentDir },
       }))),
     });
     hosted?.bindHost(service.host);
+    hosted?.sessionLink.bind({ host: service.host, sessionsDir, socketPath, serverId: service.serverId, onError });
     if (compromised) throw compromised;
     const descriptor = { version: 1, serverId: service.serverId, socketPath };
     if (hosted) {
@@ -67,9 +70,11 @@ export async function serveProfile({ agentDir, socketPath, idleMs = 60000, runti
     await rename(temporary, descriptorPath);
     let closing;
     return { ...service, descriptorPath, descriptor, close: () => closing ??= (async () => {
+      hosted?.sessionLink.close();
       try { await terminalServer?.close(); await service.close(); } finally { if (!compromised) await release(); }
     })() };
   } catch (error) {
+    hosted?.sessionLink.close();
     await terminalServer?.close().catch(() => {});
     await service?.close().catch(() => {});
     if (!compromised) await release().catch(() => {});

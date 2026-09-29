@@ -23,6 +23,7 @@ import { createConfigReloadExtensionFactories } from "../config-reload/index.mjs
 import { createGoalExtension, createUserCommandsAgentFactories } from "../user-commands-agent/index.mjs";
 import { createUserCommandSessionFactories } from "../user-commands-session/index.mjs";
 import { createSessionTitleFactories } from "../session-title/index.mjs";
+import { createSessionLinkFactories } from "../session-link/index.mjs";
 import { createAdapterHookFactories } from "../adapter-hooks/index.mjs";
 import { createRemoteSurfaceFactories } from "../remote-surface/index.mjs";
 import { createTuiInputFactories } from "../tui-input/index.mjs";
@@ -50,7 +51,7 @@ export async function validateRubatoBundleAssets() {
 /** Explicit stock ExtensionFactory assembly; no session/agent-loop replacement.
  * Current selected features only. The stage receipt continues to deny full parity.
  */
-export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager, modelRuntime, codemodeOptions, mcpOptions = {}, terminalOptions = {}, providerOptions = {}, env = process.env, hosted = false } = {}) {
+export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager, modelRuntime, codemodeOptions, mcpOptions = {}, terminalOptions = {}, providerOptions = {}, env = process.env, hosted = false, sessionLink } = {}) {
   if (!cwd || !agentDir) throw new Error("Rubato candidate requires explicit cwd and agentDir");
   if (!modelRuntime || typeof modelRuntime.streamSimple !== "function") throw new Error("Rubato candidate requires the parent's canonical stock ModelRuntime");
   const settings = settingsManager ?? SettingsManager.create(cwd, agentDir);
@@ -94,6 +95,8 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
     ...createUserCommandsAgentFactories({ agentDir, env }),
     ...createUserCommandSessionFactories(),
     ...createSessionTitleFactories(),
+    // `sessionLink` comes from the engine (pi-server hosted-runtime.mjs); outside it the tools stay unregistered.
+    ...createSessionLinkFactories({ sessionLink }),
     ...createAdapterHookFactories(),
     ...createRemoteSurfaceFactories({ env, hosted }),
     ...createTuiInputFactories(),

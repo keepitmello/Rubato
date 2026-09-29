@@ -24,6 +24,9 @@ const catalog = Object.freeze({
   "request-run": { requires: ["input-lifecycle", "abort-provenance"], load: () => import("./features/request-run/patches.mjs") },
   "mcp-producers": { requires: ["mcp"], load: async () => (await import("./features/mcp-producers/feature.mjs")).mcpProducersFeature },
   "session-title": { requires: [], load: async () => (await import("./features/session-title/feature.mjs")).sessionTitleFeature },
+  // The deliver handler needs pi.rpc (extension-rpc); the six tools stay out of the request prefix
+  // only under the tool-search surface policy, which files them for tool_search.
+  "session-link": { requires: ["extension-rpc", "tool-search"], load: async () => (await import("./features/session-link/feature.mjs")).sessionLinkFeature },
  "adapter-hooks": { requires: [], load: async () => (await import("./features/adapter-hooks/feature.mjs")).adapterHooksFeature },
   "parity-gaps": { requires: [], load: () => import("./features/parity-gaps/feature.mjs") },
   "child-runtime": { requires: ["session-prompt", "tool-search", "runtime-factories"], load: async () => (await import("./features/child-runtime/feature.mjs")).childRuntimeFeature },
