@@ -60,7 +60,8 @@ export async function refreshSessionTitle(pi, ctx, state) {
     messages: [
       {
         role: "user",
-        content: [{ type: "text", text: buildTitlePrompt(texts) }],
+        // 엔진이 첫 메시지를 잘라 붙인 기본 이름은 제목이 아니므로, 자동 제목만 넘긴다.
+        content: [{ type: "text", text: buildTitlePrompt(texts, state.lastAuto) }],
         timestamp: Date.now(),
       },
     ],

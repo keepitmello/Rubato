@@ -29,7 +29,7 @@ function userEntry(text) {
   return { type: "message", message: { role: "user", content: [{ type: "text", text }] } };
 }
 
-test("user texts skip slash commands and keep the latest ones", () => {
+test("user texts skip slash commands and keep every message of a short session", () => {
   const texts = userTextsFromEntries(
     [
       userEntry("/name ignore me"),
@@ -37,9 +37,26 @@ test("user texts skip slash commands and keep the latest ones", () => {
       { type: "message", message: { role: "assistant", content: [{ type: "text", text: "ok" }] } },
       userEntry("now title by topic instead"),
     ],
-    { limit: 2 },
   );
-  assert.deepEqual(texts, ["first prompt about Pi", "now title by topic instead"]);
+  assert.deepEqual(texts, [
+    { n: 1, text: "first prompt about Pi" },
+    { n: 2, text: "now title by topic instead" },
+  ]);
+});
+
+test("a long session is sampled from its opening, middle and latest messages", () => {
+  const entries = Array.from({ length: 40 }, (_, index) => userEntry(`m${index + 1}`));
+  const picks = userTextsFromEntries(entries, { limit: 12, recent: 4 });
+  const numbers = picks.map(({ n }) => n);
+  assert.equal(picks.length, 12);
+  assert.equal(numbers[0], 1);
+  assert.deepEqual(numbers.slice(-4), [37, 38, 39, 40]);
+  assert.ok(numbers.some((n) => n > 12 && n < 30), "the middle of the session is represented");
+  assert.deepEqual(numbers, [...numbers].sort((a, b) => a - b));
+  const prompt = buildTitlePrompt(picks, "지원서 준비");
+  assert.match(prompt, /^Current title: 지원서 준비\n/);
+  assert.match(prompt, /\n1\. m1\n/);
+  assert.match(prompt, /\n40\. m40$/);
 });
 
 test("parseTitle reads the tag and drops none", () => {
@@ -63,7 +80,7 @@ test("tab title is the bare name, falling back to the folder", () => {
   assert.equal(tabTitle(undefined, undefined), "");
   assert.equal(tabTitle("Rubato", "agent-taskforce"), "Rubato");
   assert.equal(tabTitle("rubato", "agent-taskforce"), "rubato");
-  assert.equal(buildTitlePrompt(["a", "b"]), "Recent user messages:\n1. a\n2. b");
+  assert.doesNotMatch(buildTitlePrompt([{ n: 1, text: "a" }]), /Current title/);
   assert.equal(lastAutoTitle([{ type: "custom", customType: TITLE_ENTRY, data: { name: "kept" } }]), "kept");
   assert.equal(
     lastAutoTitle([
@@ -129,6 +146,30 @@ test("refreshSessionTitle names the topic and skips a later locked name", async 
   ctx.modelRegistry.complete = async () => ({ content: [{ type: "text", text: "<title>Should not apply</title>" }] });
   await refreshSessionTitle(pi, ctx, state);
   assert.deepEqual(names, ["Topic titles for tabs"]);
+});
+
+test("a retitle shows the model the last auto title, never the engine's first-message name", async () => {
+  const prompts = [];
+  const pi = {
+    getSessionName: () => "지금 보드에 잡힌 것중에 9/29-9/30 마감인 것들...",
+    setSessionName() {},
+    appendEntry() {},
+  };
+  const ctx = {
+    ui: { setTitle() {} },
+    modelRegistry: {
+      find: (provider, id) => ({ provider, id }),
+      async complete(_model, context) {
+        prompts.push(context.messages[0].content[0].text);
+        return { content: [{ type: "text", text: "<title>지원서 준비</title>" }] };
+      },
+    },
+    sessionManager: { getEntries: () => [userEntry("콜마 지원서 쓰자")] },
+  };
+  await refreshSessionTitle(pi, ctx, { lastAuto: undefined, locked: false });
+  assert.doesNotMatch(prompts[0], /Current title/);
+  await refreshSessionTitle(pi, ctx, { lastAuto: "지원서 준비", locked: false });
+  assert.match(prompts[1], /^Current title: 지원서 준비\n/);
 });
 
 test("/name locks later auto titles and survives resume", () => {
