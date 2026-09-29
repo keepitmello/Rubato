@@ -9,12 +9,12 @@ import { EnvironmentAuth } from "./auth/EnvironmentAuth.ts";
 import { bridgeModuleOf } from "./RubatoMemory.ts";
 import * as ServerSettings from "./serverSettings.ts";
 
-// Settings pages that talk to the Rubato checkout: Providers (`rubato auth`) and
-// About (version, update check, restart). The work happens in a module found
+// Settings pages that talk to the Rubato checkout: Providers (`rubato auth`),
+// About (version, update check, restart) and Scheduled Tasks (RubatoSchedule.ts). The work happens in a module found
 // next to the bridge module the Rubato provider is wired to: the checkout that
 // runs the sessions answers for them. A route only authenticates and hands the
 // request over.
-interface ServiceSpec {
+export interface ServiceSpec {
   /** Route prefix, e.g. "/rubato/auth". */
   readonly route: `/${string}`;
   /** Module path relative to the bridge module's directory. */
@@ -68,9 +68,27 @@ function handle(
 ) {
   return Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
-    const session = yield* auth.authenticateHttpRequest(request).pipe(Effect.option);
-    if (Option.isNone(session) || !session.value.scopes.includes(AuthOrchestrationOperateScope))
-      return HttpServerResponse.empty({ status: 401 });
+    if (!(yield* authorized(auth, request))) return HttpServerResponse.empty({ status: 401 });
+    return yield* answerFromService(spec, serverSettings, path, request);
+  });
+}
+
+/** Whether the request carries a session allowed to operate this environment. */
+export function authorized(auth: EnvironmentAuth["Service"], request: HttpServerRequest.HttpServerRequest) {
+  return auth.authenticateHttpRequest(request).pipe(
+    Effect.option,
+    Effect.map((session) => Option.isSome(session) && session.value.scopes.includes(AuthOrchestrationOperateScope)),
+  );
+}
+
+/** Hands an authenticated request to the spec's module in the Rubato checkout. */
+export function answerFromService(
+  spec: ServiceSpec,
+  serverSettings: ServerSettings.ServerSettingsService["Service"],
+  path: Path.Path,
+  request: HttpServerRequest.HttpServerRequest,
+) {
+  return Effect.gen(function* () {
     const settings = yield* serverSettings.getSettings.pipe(Effect.option);
     const bridgeModule = Option.isSome(settings) ? bridgeModuleOf(settings.value, path) : undefined;
     if (!bridgeModule)
