@@ -4,6 +4,7 @@ import { StringDecoder } from 'node:string_decoder';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { PiCommandRejected } from './contracts.mjs';
 
 const launcher = fileURLToPath(new URL('../../rubato-pi/bin/rubato-pi.mjs', import.meta.url));
 const guard = fileURLToPath(new URL('./worker-parent.mjs', import.meta.url));
@@ -71,7 +72,7 @@ export class RpcWorker extends EventEmitter {
           this.pending.delete(record.id); clearTimeout(pending.timer);
           if (record.success) pending.resolve(pending.withBoundary
             ? { data: record.data ?? null, eventSequence: this.eventSequence } : record.data ?? null);
-          else pending.reject(new Error(record.error || 'Pi RPC failed'));
+          else pending.reject(new PiCommandRejected(record.error || 'Pi RPC failed'));
         } else {
           this.eventSequence++;
           this.emit('event', record);

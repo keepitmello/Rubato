@@ -11,8 +11,10 @@ export const COMMANDS = new Set([
   'get_tree', 'get_session_stats', 'get_available_models', 'get_available_thinking_levels',
   'get_commands', 'get_last_assistant_text', 'get_fork_messages', 'get_service_tier', 'set_model', 'set_thinking_level',
   'set_session_name', 'set_auto_compaction', 'set_auto_retry', 'abort_retry',
-  'set_steering_mode', 'set_follow_up_mode', 'compact', 'fork', 'reload',
+  'set_steering_mode', 'set_follow_up_mode', 'compact', 'fork', 'rewind', 'reload',
   'get_cache_warming', 'set_session_cache_warming',
 ]);
+/** Pi answered the command and refused it; its reason is for the person, not a server fault. */
+export class PiCommandRejected extends Error {}
 export const UI_METHODS = new Set(['select', 'confirm', 'input', 'editor']);
 export const json = (value) => JSON.parse(JSON.stringify(value));

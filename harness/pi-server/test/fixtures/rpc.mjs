@@ -1,9 +1,8 @@
 // Deliberately fake MODEL/RUNTIME for lifecycle stress tests. The real Pi Server,
 // Client, socket and child process transport are never replaced in these tests.
 import { createInterface } from 'node:readline';
-import { existsSync, writeFileSync } from 'node:fs';
-import path from 'node:path';
 import { SessionManager } from '@earendil-works/pi-coding-agent';
+import { findRewindTarget, REWIND_MARK } from '../../../pi-runtime/features/conversation-rewind/rewind.mjs';
 const args = process.argv.slice(2);
 let manager = SessionManager.open(args[args.indexOf('--session') + 1]);
 let running = false;
@@ -21,15 +20,6 @@ const deliveries = [];
 const scripted = [];
 const emit = (value) => process.stdout.write(JSON.stringify(value) + '\n');
 const settle = () => { clearTimeout(timer); running = false; emit({ type: 'agent_end', messages: [] }); emit({ type: 'agent_settled' }); };
-const userText = (message) => typeof message?.content === 'string' ? message.content
-  : (message?.content ?? []).filter((part) => part.type === 'text').map((part) => part.text ?? '').join('');
-const persist = (next) => {
-  const file = next.getSessionFile();
-  if (file && !existsSync(file)) {
-    writeFileSync(file, [next.getHeader(), ...next.getEntries()].filter(Boolean).map((entry) => JSON.stringify(entry)).join('\n') + '\n');
-  }
-  return file;
-};
 const lines = createInterface({ input: process.stdin });
 lines.on('line', (line) => {
   const command = JSON.parse(line);
@@ -40,26 +30,17 @@ lines.on('line', (line) => {
     case 'get_messages':
       if (blockMessages) return;
       data = { messages: manager.getBranch().filter((item) => item.type === 'message').map((item) => item.message) }; break;
-    case 'get_fork_messages': data = { messages: manager.getEntries().filter((entry) => entry.type === 'message' && entry.message.role === 'user')
-      .map((entry) => ({ entryId: entry.id, text: userText(entry.message) })).filter((item) => item.text) }; break;
-    case 'fork': {
-      const selected = manager.getEntry(command.entryId);
-      if (!selected || selected.type !== 'message' || selected.message.role !== 'user') {
-        emit({ id: command.id, type: 'response', command: command.type, success: false, error: 'Invalid entry ID for forking' }); return;
-      }
-      const current = manager.getSessionFile();
-      const sessionDir = path.dirname(current);
-      if (!selected.parentId) {
-        const next = SessionManager.create(manager.getCwd(), sessionDir);
-        next.newSession({ parentSession: current });
-        persist(next);
-        manager = SessionManager.open(next.getSessionFile(), sessionDir);
-      } else {
-        const forked = manager.createBranchedSession(selected.parentId);
-        persist(manager);
-        manager = SessionManager.open(forked, sessionDir);
-      }
-      data = { text: userText(selected.message), cancelled: false };
+    case 'rewind': {
+      // The real rule picks the entry; moving the leaf and marking the landing is what the RPC does.
+      let targetId;
+      try { targetId = findRewindTarget(manager.getBranch(), { keep: command.keep, skip: command.skip }); }
+      catch (failure) { emit({ id: command.id, type: 'response', command: command.type, success: false, error: failure.message }); return; }
+      if (targetId === null) { data = { cancelled: false, moved: false, leafId: manager.getLeafId() }; break; }
+      const from = manager.getLeafId();
+      const target = manager.getEntry(targetId);
+      if (target.parentId) manager.branch(target.parentId); else manager.resetLeaf();
+      manager.appendCustomEntry(REWIND_MARK, { from });
+      data = { cancelled: false, moved: true, leafId: manager.getLeafId() };
       break;
     }
     case 'prompt':
@@ -85,6 +66,28 @@ lines.on('line', (line) => {
       else if (command.message === 'busy-children' || command.message === 'idle-children') {
         pendingWork = command.message === 'busy-children' ? 1 : 0;
         timer = setTimeout(settle, 10);
+      }
+      else if (command.message.startsWith('reply:') || command.message.startsWith('wake:')) {
+        // A turn that answers; `wake:` also has a child finish afterwards and wake the lead
+        // without a user message, as a completed task does.
+        const answer = (text) => {
+          const message = { role: 'assistant', timestamp: Date.now(), model: 'fixture', stopReason: 'stop', content: [{ type: 'text', text }] };
+          manager.appendMessage(message);
+          emit({ type: 'message_end', message });
+        };
+        const text = command.message.slice(command.message.indexOf(':') + 1);
+        timer = setTimeout(() => {
+          answer(`answer to ${text}`);
+          settle();
+          if (!command.message.startsWith('wake:')) return;
+          timer = setTimeout(() => {
+            running = true;
+            manager.appendCustomMessageEntry('rubato.task.completion', `child finished ${text}`, true);
+            emit({ type: 'agent_start' });
+            answer(`woke on ${text}`);
+            settle();
+          }, 30);
+        }, 20);
       }
       else if (command.message === 'usage') {
         emit({ type: 'message_end', message: { role: 'assistant', timestamp: Date.now(), stopReason: 'stop',

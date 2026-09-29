@@ -9,7 +9,7 @@ import { serveProfile } from '../../pi-server/src/profile-server.mjs';
 import { RpcWorker } from '../../pi-server/src/rpc-worker.mjs';
 import { SessionClient } from '../../pi-server/src/client.mjs';
 import { RubatoPiBridge } from '../src/bridge.mjs';
-import { handleCacheWarmingRequest, userStartedSession } from '../src/bridge.mjs';
+import { handleCacheWarmingRequest, rewindPlan, userStartedSession } from '../src/bridge.mjs';
 import { errorDetail, EventProjection, sessionMessageId } from '../src/events.mjs';
 import {t3Modules} from './t3-source.mjs';
 const fixture = fileURLToPath(new URL('../../pi-server/test/fixtures/rpc.mjs', import.meta.url));
@@ -624,33 +624,135 @@ test('a live child tick on rubato.task.updated reaches T3 as task.progress', asy
   assert.equal(progress.payload.description.includes('$0'), false);
 });
 
-test('rewinding a Rubato thread forks Pi history, rebinds the live session, and keeps the next prompt on that cursor', async (t) => {
+// T3's own view of a thread as the rewind reads it: its messages in order and the turn
+// each checkpoint closed. User messages are T3's (no turn yet); answers carry Pi ids.
+// `reverted` plays T3 applying a revert: the dropped turns and the prompt before them go.
+function t3Thread(log, reverted = []) {
+  let messages = []; let checkpoints = [];
+  for (const event of log) {
+    if (event.type === 'test.user') messages.push({ id: `user-${messages.length}`, role: 'user', text: event.text, turnId: null, createdAt: event.createdAt });
+    if (event.type === 'item.completed' && event.payload?.itemType === 'assistant_message')
+      messages.push({ id: `assistant:${event.itemId}`, role: 'assistant', text: event.payload.detail ?? '', turnId: event.turnId, createdAt: event.createdAt });
+    if (event.type === 'turn.completed') checkpoints.push({ turnId: event.turnId, checkpointTurnCount: checkpoints.length + 1 });
+    if (event.type === 'test.reverted') {
+      const dropped = new Set(checkpoints.slice(event.keep).map((checkpoint) => checkpoint.turnId));
+      let cut = messages.findIndex((message) => dropped.has(message.turnId));
+      if (cut < 0) cut = messages.length;
+      while (cut > 0 && messages[cut - 1].role === 'user') cut -= 1;
+      messages = messages.slice(0, cut);
+      checkpoints = checkpoints.slice(0, event.keep);
+    }
+  }
+  return { messages, checkpoints };
+}
+const piTexts = (items, role) => items.filter((message) => message.role === role).map(userContent);
+
+test('rewinding a Rubato thread stays in its Pi session and cuts where T3 does, even past a turn a child woke', async (t) => {
   const { root, service, events, bridge } = await setup(t);
+  bridge.projectedThread = async () => t3Thread(events);
   const session = await bridge.startSession({ threadId:'rewind-thread', runtimeMode:'full-access', cwd:root });
-  const originalId = session.resumeCursor.sessionId;
-  await bridge.sendTurn({ threadId:'rewind-thread', input:'first' });
-  await until(() => events.filter((event) => event.type==='turn.completed').length >= 1);
-  await bridge.sendTurn({ threadId:'rewind-thread', input:'second' });
-  await until(() => events.filter((event) => event.type==='turn.completed').length >= 2);
-  const before = await bridge.readThread('rewind-thread');
-  assert.deepEqual(before.turns[0].items.filter((message) => message.role==='user').map(userContent), ['first', 'second']);
+  const sessionId = session.resumeCursor.sessionId;
+  const turns = () => events.filter((event) => event.type==='turn.completed').length;
+  const send = async (input) => {
+    const before = turns();
+    events.push({ type: 'test.user', text: input, createdAt: new Date().toISOString() });
+    await bridge.sendTurn({ threadId:'rewind-thread', input });
+    await until(() => turns() > before);
+  };
+  // Rewind as T3 does: the rollback, then T3 applies the revert to its own view.
+  const rewind = async (numTurns) => {
+    const keep = t3Thread(events).checkpoints.length - numTurns;
+    const rolled = await bridge.rollbackThread('rewind-thread', numTurns);
+    events.push({ type: 'test.reverted', keep });
+    await until(() => !bridge.sessions.get('rewind-thread').holding);
+    return rolled;
+  };
+  await send('reply:one');
+  await send('task-tick'); // a live child the projection tracks
+  await send('wake:two');
+  await until(() => turns() >= 4); // its answer, then a child finishes and wakes the lead: a turn with no user message
+  await send('reply:three');
+  const tracked = bridge.sessions.get('rewind-thread').projection.tasks.size;
+  assert.ok(tracked > 0);
   await assert.rejects(bridge.rollbackThread('rewind-thread', 0), /integer >= 1/);
-  await assert.rejects(bridge.rollbackThread('rewind-thread', 3), /more turns/);
-  const rolled = await bridge.rollbackThread('rewind-thread', 1);
+  // T3 drops its last two turns: the wake and "three". Counting user messages would also take "two".
+  const rolled = await rewind(2);
+  assert.deepEqual(piTexts(rolled.turns[0].items, 'user'), ['reply:one', 'task-tick', 'wake:two']);
+  assert.deepEqual(piTexts(rolled.turns[0].items, 'assistant'), ['answer to one', 'answer to two']);
+  // Same session: nothing was replaced, so children and teams keep running and stay tracked.
   const live = bridge.listSessions().find((item) => item.threadId==='rewind-thread');
-  assert.notEqual(live.resumeCursor.sessionId, originalId, 'resume cursor stayed on the pre-fork session');
-  assert.equal(bridge.sessions.get('rewind-thread').sessionId, live.resumeCursor.sessionId);
-  assert.deepEqual(rolled.turns[0].items.filter((message) => message.role==='user').map(userContent), ['first']);
+  assert.equal(live.resumeCursor.sessionId, sessionId);
+  assert.equal(service.host.getSessionWorker(sessionId)?.metadata.id, sessionId);
+  assert.equal(bridge.sessions.get('rewind-thread').projection.tasks.size, tracked);
   assert.equal(events.filter((event) => event.type==='runtime.error').length, 0);
-  const completed = events.filter((event) => event.type==='turn.completed').length;
-  await bridge.sendTurn({ threadId:'rewind-thread', input:'edited' });
-  await until(() => events.filter((event) => event.type==='turn.completed').length >= completed + 1);
-  const after = await bridge.readThread('rewind-thread');
-  assert.deepEqual(after.turns[0].items.filter((message) => message.role==='user').map(userContent), ['first', 'edited']);
+  // Pi's events wait until T3 has applied the revert, and are not let through before it.
+  await send('/name Renamed');
+  await bridge.rollbackThread('rewind-thread', 1);
+  await delay(200);
+  assert.ok(bridge.sessions.get('rewind-thread').holding, 'released before T3 applied the revert');
+  events.push({ type: 'test.reverted', keep: t3Thread(events).checkpoints.length - 1 });
+  await until(() => !bridge.sessions.get('rewind-thread').holding);
+  // A /name turn left nothing in the model's history: rewinding it keeps every prompt.
+  assert.deepEqual(piTexts((await bridge.readThread('rewind-thread')).turns[0].items, 'user'), ['reply:one', 'task-tick', 'wake:two']);
+  // The next prompt continues the rewound branch.
+  await send('reply:edited');
+  assert.deepEqual(piTexts((await bridge.readThread('rewind-thread')).turns[0].items, 'user'), ['reply:one', 'task-tick', 'wake:two', 'reply:edited']);
+  // Rewinding the turn that started a live child keeps the child on screen: T3 dropped its
+  // rows with the turn, so it is announced again, without a turn.
+  await rewind(3);
+  const again = events.filter((event) => event.type === 'task.started' && event.payload.taskId === 'st_livechild');
+  assert.equal(again.length, 2);
+  assert.equal(again.at(-1).turnId, undefined);
+  assert.deepEqual(piTexts((await bridge.readThread('rewind-thread')).turns[0].items, 'user'), ['reply:one']);
+  // Without T3's turns there is nothing to name, and the rewind is refused rather than guessed.
+  bridge.projectedThread = async () => null;
+  await assert.rejects(bridge.rollbackThread('rewind-thread', 1), /could not read this thread's turns/);
+  bridge.projectedThread = async () => { throw new Error('projection offline'); };
+  await assert.rejects(bridge.rollbackThread('rewind-thread', 1), /projection offline/);
+  // Pi's refusal reaches the app with its reason, not as "Internal server error".
+  bridge.projectedThread = async () => ({ messages: [{ id: 'assistant:pi:x:000000000000000000000000', role: 'assistant', turnId: 't1', createdAt: '2026-01-01T00:00:00.000Z' }],
+    checkpoints: [{ turnId: 't1', checkpointTurnCount: 1 }, { turnId: 't2', checkpointTurnCount: 2 }] });
+  await assert.rejects(bridge.rollbackThread('rewind-thread', 1), /not on the current branch/);
+  assert.equal(bridge.sessions.get('rewind-thread').holding, undefined, 'a refused rewind left events held');
   await bridge.recover();
-  assert.equal(bridge.sessions.get('rewind-thread').sessionId, live.resumeCursor.sessionId);
-  assert.equal(service.host.getSessionWorker(live.resumeCursor.sessionId)?.metadata.id, live.resumeCursor.sessionId);
-  assert.equal(service.host.getSessionWorker(originalId), undefined, 'host kept the worker keyed on the abandoned session');
+  assert.equal(bridge.sessions.get('rewind-thread').sessionId, sessionId);
+});
+
+test('a rewind plan pairs each prompt with the reply after it, as T3 keeps them on revert', () => {
+  let clock = 0;
+  const at = () => `2026-09-01T00:00:${String(clock++).padStart(2, '0')}.000Z`;
+  const user = (text) => ({ id: `user-${clock}`, role: 'user', text, turnId: null, createdAt: at() });
+  const reply = (key, turnId) => ({ id: `assistant:pi:s:${key.padEnd(24, '0')}`, role: 'assistant', text: '', turnId, createdAt: at() });
+  const messages = [
+    user('ask'), reply('a1', 't1'), user('steer'), reply('a1b', 't1'), // a steer joins the kept turn
+    reply('b2', 't2'), // a turn a finished child woke
+    user('/name Renamed'), user('stopped before any answer'), // kept prompts with no Pi answer after them
+    reply('c3', 't3'),
+    user('rewound'), reply('d4', 't4'),
+  ];
+  const checkpoints = ['t1', 't2', 't3', 't4'].map((turnId, index) => ({ turnId, checkpointTurnCount: index + 1 }));
+  assert.deepEqual(rewindPlan({ messages, checkpoints }, 1),
+    { keep: ['a1', 'a1b', 'b2', 'c3'].map((key) => key.padEnd(24, '0')), skip: 0, dropped: ['t4'] });
+  // Dropping t3 as well: its two prompts go, the /name one never reached Pi.
+  assert.deepEqual(rewindPlan({ messages, checkpoints }, 2).keep, ['a1', 'a1b', 'b2'].map((key) => key.padEnd(24, '0')));
+  // A kept turn stopped before any answer shows only T3's placeholder; its prompt is counted for Pi to pass.
+  const stopped = [user('ask'), reply('a1', 't1'), user('stopped'), { id: 'assistant:t2', role: 'assistant', text: '', turnId: 't2', createdAt: at() },
+    user('next'), reply('f6', 't3')];
+  const three = ['t1', 't2', 't3'].map((turnId, index) => ({ turnId, checkpointTurnCount: index + 1 }));
+  assert.deepEqual(rewindPlan({ messages: stopped, checkpoints: three }, 1), { keep: ['a1'.padEnd(24, '0')], skip: 1, dropped: ['t3'] });
+  // T3 always keeps history imported from the CLI; so does Pi.
+  const imported = [{ id: `import:rubato:pi:s:${'c1'.padEnd(24, '0')}`, role: 'assistant', text: '', turnId: null, createdAt: at() },
+    user('first live prompt'), reply('d9', 't1')];
+  assert.deepEqual(rewindPlan({ messages: imported, checkpoints: [{ turnId: 't1', checkpointTurnCount: 1 }] }, 1),
+    { keep: ['c1'.padEnd(24, '0')], skip: 0, dropped: ['t1'] });
+  // A steer stamped the same millisecond as the reply after it still joins that reply's turn.
+  const ask = user('ask'); const first = reply('a1', 't1');
+  const steer = { id: 'zzz', role: 'user', text: 'steer', turnId: null, createdAt: at() };
+  const tied = [ask, first, { ...reply('a2', 't1'), createdAt: steer.createdAt }, steer, user('rewound'), reply('e3', 't2')];
+  assert.deepEqual(rewindPlan({ messages: tied, checkpoints: [{ turnId: 't1', checkpointTurnCount: 1 }, { turnId: 't2', checkpointTurnCount: 2 }] }, 1).keep,
+    ['a1', 'a2'].map((key) => key.padEnd(24, '0')));
+  assert.throws(() => rewindPlan({ messages, checkpoints: [] }, 1), /could not read this thread's turns/);
+  assert.throws(() => rewindPlan({ messages, checkpoints }, 5), /more turns/);
 });
 
 test('catalogue lists Rubato control commands and hides TUI duplicates', async (t) => {
