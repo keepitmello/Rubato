@@ -119,6 +119,9 @@ export const rubatoSchedule = {
     call<{ requestId: string }>(env, "run-now", fromRunId ? { taskId, fromRunId } : { taskId }),
   preview: (env: EnvironmentId | null, schedule: Schedule) =>
     call<SchedulePreview>(env, "preview", { schedule }),
+  /** Installs the scheduler's launchd agent if needed and starts it; resolves once it runs. */
+  startScheduler: (env: EnvironmentId | null) =>
+    call<{ scheduler: SchedulerState }>(env, "start-scheduler"),
   /** The T3 thread a run's session shows as; null while the app has not picked it up yet. */
   thread: (env: EnvironmentId | null, sessionId: string, serverId: string | null) =>
     call<{ threadId: string | null }>(env, "thread", { sessionId, serverId }),
