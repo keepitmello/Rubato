@@ -9,6 +9,7 @@ import {
   QUIET_AFTER_MS,
   RubatoAgentsPanel,
   agentMetaParts,
+  boardTaskStateLabel,
   quietLabel,
   splitAgentsByActivity,
 } from "./RubatoAgentsPanel";
@@ -21,6 +22,7 @@ function agent(overrides: Partial<RuntimeSubagent> & Pick<RuntimeSubagent, "id">
     title: "opus-5-5 · high · Isolated T3 sandbox for the…",
     label: "Isolated T3 sandbox for the Agents panel redesign",
     modelLabel: "Opus 5.5 · High",
+    memberName: null,
     board: null,
     role: null,
     model: "anthropic/claude-opus-5-5",
@@ -99,6 +101,44 @@ describe("RubatoAgentsPanel", () => {
     expect(html).toContain("1/2 done · 1 in progress");
     expect(html).toContain("Owner · Opus 5.5 · High");
     expect(html).toContain("Verifier · Opus 5.5 · High");
+  });
+
+  it("a resting team member reads Waiting with what it last said, and the members come before the board", () => {
+    const html = render([
+      agent({
+        id: "call_team",
+        kind: "workflow",
+        workflowName: "scheduled-tasks",
+        label: "scheduled-tasks",
+        board: {
+          tasks: [
+            { id: "1", subject: "Scheduler core", description: "Owner: backend. intent_ref {sha256:f993}",
+              descriptionTruncated: false, status: "claimed", owner: "backend", blockedBy: [], updatedAt: AT },
+            { id: "3", subject: "Independent verdict", description: "", descriptionTruncated: false,
+              status: "pending", owner: null, blockedBy: ["1"], updatedAt: AT },
+          ],
+        },
+      }),
+      agent({ id: "st_backend", kind: "workflow_agent", parentAgentId: "call_team", role: "owner" }),
+      agent({ id: "st_gui", kind: "workflow_agent", parentAgentId: "call_team", role: "owner", status: "idle",
+        memberName: "gui", progress: "Waiting on the build." }),
+    ]);
+    expect(html).toMatch(/>gui<\/span>Isolated T3 sandbox/);
+    expect(html).toContain("1 working · 1 waiting");
+    expect(html).toContain("Waiting · Waiting on the build.");
+    expect(html.indexOf("Waiting on the build.")).toBeLessThan(html.indexOf(">Board<"));
+    // The brief is the lead's instruction to the agent: folded until asked for.
+    expect(html).not.toContain("intent_ref");
+  });
+
+  it("a board row names its state at a glance", () => {
+    const task = (status: "pending" | "claimed" | "in_progress" | "completed", owner: string | null) => ({
+      id: "2", subject: "s", description: "", descriptionTruncated: false, status, owner, blockedBy: ["1"], updatedAt: AT,
+    });
+    expect(boardTaskStateLabel(task("in_progress", "gui"), [])).toBe("in progress · gui");
+    expect(boardTaskStateLabel(task("completed", "lead"), [])).toBe("done · Lead");
+    expect(boardTaskStateLabel(task("pending", null), ["1", "4"])).toBe("waits on #1, #4");
+    expect(boardTaskStateLabel(task("pending", null), [])).toBe("open");
   });
 
   it("a live agent reads quiet only after two minutes without an update", () => {

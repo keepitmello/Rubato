@@ -1,7 +1,9 @@
 import type { ToolDefinition } from "@code-yeongyu/senpi"
 import { Type, type Static } from "typebox"
 
-import { TASK_SUMMARY_MAX_LENGTH } from "../../task-summary"
+import { isPlainRecord } from "@rubato/utils"
+
+import { clampTaskSummary, TASK_SUMMARY_MAX_LENGTH } from "../../task-summary"
 import { SenpiTeamRuntimeError, SenpiTeamSpecError, TeamMemberReplacementError } from "../../team"
 import { toolResult } from "../control"
 import { stableModelEnum, TaskToolEffort } from "../task/params"
@@ -65,6 +67,15 @@ export function createTeamReplaceMemberTool(deps: TeamToolDeps): ToolDefinition 
     label: "Team Replace Member",
     description: "Lead-only recovery of a failed/unavailable member in the SAME team, preserving peer mail and board ownership. Do not create a separate replacement team or replace an idle/resident peer: continue it. Use only an approved model and carry the handoff artifacts, checked revisions and pending work. Model/cost/scope changes still require user approval. Old verdicts apply only to their checked revision. Returns replacement_rejected without silently changing models.",
     parameters,
+    prepareArguments: prepareTeamReplaceMemberArguments,
     execute: (_id, input: TeamReplaceMemberInput) => runTeamReplaceMember(deps.service, input),
   }
+}
+
+// Runs before schema validation: an over-long task_summary is truncated, not a rejected recovery.
+export function prepareTeamReplaceMemberArguments(raw: unknown): TeamReplaceMemberInput {
+  if (!isPlainRecord(raw) || typeof raw.task_summary !== "string") return raw as TeamReplaceMemberInput
+  const { task_summary: summary, ...rest } = raw
+  const clamped = clampTaskSummary(summary)
+  return (clamped === undefined ? rest : { ...rest, task_summary: clamped }) as TeamReplaceMemberInput
 }

@@ -17,6 +17,7 @@ const nonempty = (value) => {
   const text = value.trim();
   return text ? text : undefined;
 };
+const firstLine = (value) => nonempty(typeof value === 'string' ? value.trim().split('\n')[0] : undefined);
 // Provider errors arrive as `errorMessage`, often wrapping a JSON body. T3 paints
 // `item.completed.detail` and `turn.completed.errorMessage`; empty failed items
 // look like a hang because the spinner has nothing to replace.
@@ -468,6 +469,7 @@ export class EventProjection {
       ...(modelLabel ? { modelLabel } : {}), ...(task.role ? { role: task.role } : {}),
       ...(task.model ? { model: task.model } : {}), ...(task.effort ? { effort: task.effort } : {}),
       ...(task.workflowName ? { workflowName: task.workflowName } : {}),
+      ...(task.memberName ? { memberName: task.memberName } : {}),
       ...(task.parentAgentId ? { parentAgentId: task.parentAgentId } : {}),
       ...extra };
   }
@@ -477,7 +479,7 @@ export class EventProjection {
     if (held && held !== task) return;
     this.tasks.set(key, task);
   }
-  startTask(key, { label, taskType, role, model, effort, workflowName, parentAgentId, taskId = key, toolUseId = key } = {}) {
+  startTask(key, { label, taskType, role, model, effort, workflowName, memberName, parentAgentId, taskId = key, toolUseId = key } = {}) {
     const id = nonempty(taskId) || nonempty(key);
     if (!id) return;
     const existing = this.tasks.get(key) || this.tasks.get(id);
@@ -494,6 +496,7 @@ export class EventProjection {
       if (model && !existing.model) existing.model = model;
       if (effort && !existing.effort) existing.effort = effort;
       if (workflowName) existing.workflowName = workflowName;
+      if (memberName) existing.memberName = memberName;
       if (parentAgentId) existing.parentAgentId = parentAgentId;
       if (!existing.turnId && this.turnId) existing.turnId = this.turnId;
       // A child snapshot can precede team_create's response. Persist late
@@ -503,7 +506,7 @@ export class EventProjection {
       }
       return existing;
     }
-    const task = { taskId: id, toolUseId: nonempty(toolUseId) || id, taskType, label, role, model, workflowName, parentAgentId,
+    const task = { taskId: id, toolUseId: nonempty(toolUseId) || id, taskType, label, role, model, workflowName, memberName, parentAgentId,
       effort, turnId: this.turnId };
     this.indexTask(task, key);
     this.indexTask(task, id);
@@ -567,7 +570,11 @@ export class EventProjection {
     const childId = childIdOf(details, result);
     // Do not announce a row on tool_execution_start: Agent has no agentId yet.
     // Using the tool-call id there, then the snapshot's st_ id, is the duplicate.
-    const taskKey = childId || (taskType === 'local_workflow' ? event.toolCallId : undefined);
+    // A team row waits for the run id too: a rejected team_create never had a team,
+    // and a row announced at start stayed as a failed card and caught same-name boards.
+    const created = taskType === 'local_workflow' && event.type === 'tool_execution_end' && !event.isError
+      && nonempty(details.team_run_id);
+    const taskKey = childId || (created ? event.toolCallId : undefined);
     if (childId) this.rememberChild(childId, taskType === 'local_workflow' ? event.toolCallId : childId);
     const task = taskKey ? this.startTask(taskKey, { label, taskType, role, model, effort, workflowName,
       taskId: childId || taskKey, toolUseId: event.toolCallId }) : undefined;
@@ -582,9 +589,7 @@ export class EventProjection {
       const status = nonempty(details.status);
       // Agent spawn returns while the child is still running. Completing the
       // task here would tell mobile the subagent finished at ack time.
-      const teamFailed = taskType === 'local_workflow'
-        && ['invalid_arguments', 'spec_error', 'runtime_error'].includes(details.kind);
-      if (event.isError || FAILED_STATUS.has(status) || teamFailed) this.completeTask(task, 'failed', nonempty(details.reason) || label);
+      if (event.isError || FAILED_STATUS.has(status)) this.completeTask(task, 'failed', nonempty(details.reason) || label);
       else if (STOPPED_STATUS.has(status)) this.completeTask(task, 'stopped', label);
       else if (status === 'completed') this.completeTask(task, 'completed', label);
       for (const member of details.members ?? []) {
@@ -594,7 +599,7 @@ export class EventProjection {
         this.rememberChild(memberId, event.toolCallId);
         this.startTask(memberId, { taskId: memberId, label: memberLabel, taskType: 'subagent',
           role: nonempty(member.role), model: nonempty(member.model) || model, effort: effortOf(member, member) || effort,
-          workflowName: workflowName || label, parentAgentId: task.taskId, toolUseId: event.toolCallId });
+          workflowName: workflowName || label, memberName: nonempty(member.name), parentAgentId: task.taskId, toolUseId: event.toolCallId });
       }
       // Completion may have arrived before the create response linked members.
       for (const member of details.members ?? []) {
@@ -672,13 +677,26 @@ export class EventProjection {
       if (!task || task.done) continue;
       const status = nonempty(item.status);
       const typedUsage = taskUsageOf(item, live);
+      // A team member that ends its turn stays resident and wakes on mail or a
+      // notification. That is waiting, not done: settling it here froze a
+      // "Waiting on the build" member under a green check for good.
+      if (status === 'completed' && item.residency_state === 'resident' && task.parentAgentId) {
+        const said = live.lastAssistantLine || firstLine(item.final_response);
+        const key = `${said ?? ''}\n${JSON.stringify(typedUsage ?? null)}`;
+        if (task.restingKey === key) continue;
+        task.restingKey = key;
+        this.progressTask(task, { description: said || 'waiting', summary: said, status: 'idle', typedUsage });
+        continue;
+      }
+      const wasResting = task.restingKey !== undefined;
+      task.restingKey = undefined;
       if (FAILED_STATUS.has(status)) this.completeTask(task, 'failed', label, typedUsage);
       else if (STOPPED_STATUS.has(status)) this.completeTask(task, 'stopped', label);
       else if (status === 'completed') this.completeTask(task, 'completed', nonempty(item.final_response) || label, typedUsage);
       else {
         const doing = live.lastAssistantLine || live.currentTool;
         const mapped = LIVE_STATUS.has(status) ? status : 'running';
-        if (!doing && !typedUsage && mapped === 'running') continue;
+        if (!doing && !typedUsage && mapped === 'running' && !wasResting) continue;
         this.progressTask(task, { description: doing || 'running', summary: live.lastAssistantLine,
           lastToolName: live.currentTool, status: mapped, typedUsage });
       }

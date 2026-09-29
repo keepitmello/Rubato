@@ -1103,7 +1103,7 @@ const edits = {
     // the phone's one-line tag + label; the web paints these two on separate lines.
     [
       '  timelineBypass: Schema.optional(Schema.Boolean),\n} as const;',
-      '  timelineBypass: Schema.optional(Schema.Boolean),\n  label: Schema.optional(TrimmedNonEmptyStringSchema),\n  modelLabel: Schema.optional(TrimmedNonEmptyStringSchema),\n} as const;',
+      '  timelineBypass: Schema.optional(Schema.Boolean),\n  label: Schema.optional(TrimmedNonEmptyStringSchema),\n  modelLabel: Schema.optional(TrimmedNonEmptyStringSchema),\n  memberName: Schema.optional(TrimmedNonEmptyStringSchema),\n} as const;',
       'replace',
     ],
     // A taskforce's shared board rides on its team task as a latest-state snapshot.
@@ -1148,6 +1148,8 @@ const edits = {
         '  readonly label: string | null;',
         '  /** The model as the picker names it, with effort: "Opus 5.5 · High". */',
         '  readonly modelLabel: string | null;',
+        '  /** A taskforce member\'s name in its team: "backend". */',
+        '  readonly memberName: string | null;',
         '  /** A taskforce\'s shared board, latest snapshot. */',
         '  readonly board: SubagentBoard | null;',
         '  /** First retained observation',
@@ -1177,17 +1179,17 @@ const edits = {
     ],
     [
       '  recentActivity: ReadonlyArray<SubagentActivityEntry>;\n  firstSeenAt: string;',
-      '  recentActivity: ReadonlyArray<SubagentActivityEntry>;\n  label: string | null;\n  modelLabel: string | null;\n  board: SubagentBoard | null;\n  firstSeenAt: string;',
+      '  recentActivity: ReadonlyArray<SubagentActivityEntry>;\n  label: string | null;\n  modelLabel: string | null;\n  memberName: string | null;\n  board: SubagentBoard | null;\n  firstSeenAt: string;',
       'replace',
     ],
     [
       '    recentActivity: [],\n    firstSeenAt: at,',
-      '    recentActivity: [],\n    label: asString(payload.label) ?? null,\n    modelLabel: asString(payload.modelLabel) ?? null,\n    board: null,\n    firstSeenAt: at,',
+      '    recentActivity: [],\n    label: asString(payload.label) ?? null,\n    modelLabel: asString(payload.modelLabel) ?? null,\n    memberName: asString(payload.memberName) ?? null,\n    board: null,\n    firstSeenAt: at,',
       'replace',
     ],
     [
       '  const effort = asString(payload.effort);\n  if (effort) agent.effort = effort;',
-      '  const effort = asString(payload.effort);\n  if (effort) agent.effort = effort;\n  const label = asString(payload.label);\n  if (label) agent.label = label;\n  const modelLabel = asString(payload.modelLabel);\n  if (modelLabel) agent.modelLabel = modelLabel;',
+      '  const effort = asString(payload.effort);\n  if (effort) agent.effort = effort;\n  const label = asString(payload.label);\n  if (label) agent.label = label;\n  const modelLabel = asString(payload.modelLabel);\n  if (modelLabel) agent.modelLabel = modelLabel;\n  const memberName = asString(payload.memberName);\n  if (memberName) agent.memberName = memberName;',
       'replace',
     ],
     [
@@ -1434,7 +1436,7 @@ const edits = {
   'apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts': [
     [
       '    "timelineBypass",\n',
-      '    "timelineBypass",\n    "label",\n    "modelLabel",\n',
+      '    "timelineBypass",\n    "label",\n    "modelLabel",\n    "memberName",\n',
       'replace',
     ],
     // A board snapshot is its own latest-state row (like usage): it must neither
