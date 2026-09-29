@@ -2,14 +2,15 @@
 //
 // The app counts turns; Pi keeps a tree of entries. A turn is not a user message:
 // a finished child wakes the lead without one, and a steered message joins the
-// turn it interrupted. Counting user messages from the end therefore cut the
-// conversation somewhere other than where the app did, so the model kept what
-// the screen had dropped or lost what it still showed. The app instead names
-// what it keeps: the fingerprints of the
-// assistant messages in its surviving turns. The last of those on the current
-// branch closes the kept history, and the rewind lands just before the first
-// input after it (the removed turn's own user message when its text is given).
+// turn it interrupted. So the app names what it keeps instead: the fingerprints
+// of the assistant messages in its surviving turns, and how many of its user
+// messages it keeps after the last of those (a prompt stopped before any answer).
+// The rewind lands before the first input after that. Anything the app cannot
+// name is refused rather than guessed.
 import { createHash } from "node:crypto";
+
+/** Custom entry that records where a rewind landed. It never reaches the model. */
+export const REWIND_MARK = "rubato.rewind";
 
 /** Same identity the app bridge derives its message ids from. */
 export function messageFingerprint(message) {
@@ -19,59 +20,38 @@ export function messageFingerprint(message) {
     .slice(0, 24);
 }
 
-export function userText(message) {
-  const content = message?.content;
-  if (typeof content === "string") return content;
-  return (content ?? []).filter((part) => part?.type === "text").map((part) => part.text ?? "").join("");
-}
-
 const isUser = (entry) => entry.type === "message" && entry.message?.role === "user";
 const isInput = (entry) => isUser(entry) || entry.type === "custom_message";
 
 /**
- * Pick the entry to navigate to. Pi's navigateTree moves the leaf to the parent of
- * a user or custom message, so the returned entry is the first one the rewind drops.
+ * The first entry the rewind drops, or null when the removed turns left nothing in
+ * the model's history (a /name turn). Pi's navigateTree moves the leaf to the parent
+ * of a user or custom message, so that is the entry to navigate to.
  *
- * - `keep`: fingerprints of assistant messages the app keeps. An empty list keeps nothing.
- * - `text`: the removed turn's user message, preferred over any earlier input.
- * - `turns`: drop that many user messages from the end of the branch. Used without `keep`,
- *   or when none of the kept messages is on this branch (history the app never saw).
+ * - `keep`: fingerprints of the assistant messages the app keeps. Empty keeps none.
+ * - `skip`: user messages the app keeps after the last kept assistant message.
  */
-export function findRewindTarget(branch, { keep, text, turns } = {}) {
-  if (Array.isArray(keep)) {
-    const kept = new Set(keep);
-    let anchor = -1;
-    for (let index = branch.length - 1; index >= 0; index--) {
-      const entry = branch[index];
-      if (entry.type === "message" && entry.message?.role === "assistant" && kept.has(messageFingerprint(entry.message))) {
-        anchor = index;
-        break;
-      }
+export function findRewindTarget(branch, { keep, skip = 0 } = {}) {
+  if (!Array.isArray(keep)) throw new Error("A rewind must name the messages it keeps");
+  if (!Number.isInteger(skip) || skip < 0) throw new Error("skip must be an integer >= 0");
+  const kept = new Set(keep);
+  let anchor = -1;
+  for (let index = branch.length - 1; index >= 0; index--) {
+    const entry = branch[index];
+    if (entry.type === "message" && entry.message?.role === "assistant" && kept.has(messageFingerprint(entry.message))) {
+      anchor = index;
+      break;
     }
-    if (kept.size === 0 || anchor >= 0) return targetAfter(branch.slice(anchor + 1), text);
-    if (turns === undefined) throw new Error("The kept part of this conversation is not on the current branch");
   }
-  if (!Number.isInteger(turns) || turns < 1) throw new Error("turns must be an integer >= 1");
-  const users = branch.filter((entry) => isUser(entry) && userText(entry.message));
-  if (turns > users.length) throw new Error("Cannot rewind more turns than this conversation has");
-  return users[users.length - turns].id;
-}
-
-function targetAfter(rest, text) {
+  if (kept.size > 0 && anchor < 0) throw new Error("The kept part of this conversation is not on the current branch");
+  const rest = branch.slice(anchor + 1);
   // Inputs injected ahead of a prompt (usage notes, recalled memory) belong to its
-  // turn. So the turn opens at the first input after the previous user message,
-  // and a named prompt only skips an earlier prompt the app kept (one stopped
-  // before any answer).
-  const named = typeof text === "string" && text.trim()
-    ? rest.findIndex((entry) => isUser(entry) && userText(entry.message).trim() === text.trim())
-    : -1;
+  // turn, so the removed turn opens at the first input after the last kept prompt.
   let from = 0;
-  if (named >= 0) {
-    for (let index = named - 1; index >= 0; index--) {
-      if (isUser(rest[index])) { from = index + 1; break; }
-    }
+  let passed = 0;
+  for (let index = 0; passed < skip && index < rest.length; index++) {
+    if (isUser(rest[index])) { passed += 1; from = index + 1; }
   }
-  const target = rest.slice(from).find(isInput);
-  if (!target) throw new Error("Nothing after the kept part of this conversation to rewind");
-  return target.id;
+  if (passed < skip) throw new Error("The app keeps prompts this conversation does not have");
+  return rest.slice(from).find(isInput)?.id ?? null;
 }

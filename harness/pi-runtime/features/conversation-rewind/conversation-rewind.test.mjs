@@ -56,10 +56,7 @@ test("a turn a finished child woke counts as a turn, so the prompt before it sur
     ["user", "three"], ["assistant", "a3"],
   ]);
   // The app drops its last two turns: the wake and "three".
-  const target = findRewindTarget(branch, { keep: fingerprints(branch, "a1", "a2"), text: "three", turns: 2 });
-  assert.equal(target, idOf(branch, "wake", "child done"));
-  // Counting user messages would have dropped "two" as well.
-  assert.equal(findRewindTarget(branch, { turns: 2 }), idOf(branch, "user", "two"));
+  assert.equal(findRewindTarget(branch, { keep: fingerprints(branch, "a1", "a2"), skip: 0 }), idOf(branch, "wake", "child done"));
 });
 
 test("a message steered into a kept turn stays with it", () => {
@@ -68,8 +65,7 @@ test("a message steered into a kept turn stays with it", () => {
     ["user", "steer: also the header"], ["assistant", "a1b"],
     ["user", "two"], ["assistant", "a2"],
   ]);
-  const target = findRewindTarget(branch, { keep: fingerprints(branch, "a1", "a1b"), text: "two", turns: 1 });
-  assert.equal(target, idOf(branch, "user", "two"));
+  assert.equal(findRewindTarget(branch, { keep: fingerprints(branch, "a1", "a1b"), skip: 0 }), idOf(branch, "user", "two"));
 });
 
 test("inputs injected ahead of the removed prompt go with it", () => {
@@ -78,32 +74,35 @@ test("inputs injected ahead of the removed prompt go with it", () => {
     ["custom", "rubato.context-mode.v1"], ["wake", "usage note"],
     ["user", "two"], ["assistant", "a2"],
   ]);
-  const target = findRewindTarget(branch, { keep: fingerprints(branch, "a1"), text: "two", turns: 1 });
-  assert.equal(target, idOf(branch, "wake", "usage note"));
+  assert.equal(findRewindTarget(branch, { keep: fingerprints(branch, "a1"), skip: 0 }), idOf(branch, "wake", "usage note"));
 });
 
-test("a kept prompt stopped before any answer is not taken with the one after it", () => {
+test("a prompt the app keeps after its last kept answer is passed, whatever its text", () => {
   const branch = conversation([
     ["user", "one"], ["assistant", "a1"],
-    ["user", "oops, stopped"],
-    ["user", "two"], ["assistant", "a2"],
+    ["user", [{ type: "image", data: "", mimeType: "image/png" }]],
+    ["wake", "usage note"],
+    ["user", "one"], ["assistant", "a2"],
   ]);
-  const target = findRewindTarget(branch, { keep: fingerprints(branch, "a1"), text: "two", turns: 1 });
-  assert.equal(target, idOf(branch, "user", "two"));
-  // Without the prompt's text the rewind opens at the first input after the kept answers.
-  assert.equal(findRewindTarget(branch, { keep: fingerprints(branch, "a1") }), idOf(branch, "user", "oops, stopped"));
+  const target = findRewindTarget(branch, { keep: fingerprints(branch, "a1"), skip: 1 });
+  assert.equal(target, idOf(branch, "wake", "usage note"));
+  assert.throws(() => findRewindTarget(branch, { keep: fingerprints(branch, "a1"), skip: 3 }), /does not have/);
 });
 
 test("keeping nothing lands before the first input", () => {
   const branch = conversation([["custom", "session-info"], ["wake", "recalled memory"], ["user", "one"], ["assistant", "a1"]]);
-  assert.equal(findRewindTarget(branch, { keep: [], turns: 1 }), idOf(branch, "wake", "recalled memory"));
+  assert.equal(findRewindTarget(branch, { keep: [] }), idOf(branch, "wake", "recalled memory"));
 });
 
-test("history the app never saw falls back to counting user messages", () => {
+test("removed turns that left no model history rewind nothing", () => {
+  // A /name turn: T3 counts it, Pi stored only its session name.
+  const branch = conversation([["user", "one"], ["assistant", "a1"], ["custom", "session_info"]]);
+  assert.equal(findRewindTarget(branch, { keep: fingerprints(branch, "a1") }), null);
+});
+
+test("what the app cannot name is refused, not guessed", () => {
   const branch = conversation([["user", "one"], ["assistant", "a1"], ["user", "two"], ["assistant", "a2"]]);
-  assert.equal(findRewindTarget(branch, { keep: ["000000000000000000000000"], turns: 1 }), idOf(branch, "user", "two"));
   assert.throws(() => findRewindTarget(branch, { keep: ["000000000000000000000000"] }), /not on the current branch/);
-  assert.throws(() => findRewindTarget(branch, { turns: 3 }), /more turns/);
-  assert.throws(() => findRewindTarget(branch, { turns: 0 }), /integer >= 1/);
-  assert.throws(() => findRewindTarget(branch, { keep: fingerprints(branch, "a2") }), /Nothing after/);
+  assert.throws(() => findRewindTarget(branch, {}), /must name/);
+  assert.throws(() => findRewindTarget(branch, { keep: [], skip: -1 }), /integer >= 0/);
 });

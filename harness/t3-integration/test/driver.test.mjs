@@ -8,6 +8,7 @@ import { serveProfile } from '../../pi-server/src/profile-server.mjs';
 import { RpcWorker } from '../../pi-server/src/rpc-worker.mjs';
 import { SessionClient } from '../../pi-server/src/client.mjs';
 import {t3Modules} from './t3-source.mjs';
+import { messageKey } from '../src/events.mjs';
 const fixture = fileURLToPath(new URL('../../pi-server/test/fixtures/rpc.mjs', import.meta.url));
 
 test('actual T3 Driver factory, adapter contracts and scope cleanup use a non-owning Pi attachment', {skip: !process.env.T3_SOURCE}, async (t) => {
@@ -68,17 +69,26 @@ test('T3 adapter rollback rewinds inside the same Pi session', {skip: !process.e
     const threadId = ThreadId.make('driver-rewind');
     const session = yield* instance.adapter.startSession({threadId, runtimeMode:'full-access', cwd:root});
     const original = session.resumeCursor.sessionId;
-    yield* instance.adapter.sendTurn({threadId, input:'first'});
+    yield* instance.adapter.sendTurn({threadId, input:'reply:first'});
     yield* Effect.promise(() => until(() => bridge.sessions.get(threadId)?.session.status === 'ready'));
-    yield* instance.adapter.sendTurn({threadId, input:'second'});
+    yield* instance.adapter.sendTurn({threadId, input:'reply:second'});
     yield* Effect.promise(() => until(() => bridge.sessions.get(threadId)?.session.status === 'ready'));
+    // T3's view: a prompt, then the answer that closed its turn.
+    const answers = (yield* instance.adapter.readThread(threadId)).turns[0].items.filter((message) => message.role === 'assistant');
+    bridge.projectedThread = async () => ({
+      messages: answers.flatMap((answer, index) => [
+        {id:`user-${index}`, role:'user', text:'', turnId:null, createdAt:new Date(answer.timestamp - 1).toISOString()},
+        {id:`assistant:${messageKey(original, answer)}`, role:'assistant', text:'', turnId:`turn-${index}`, createdAt:new Date(answer.timestamp).toISOString()},
+      ]),
+      checkpoints: answers.map((_, index) => ({turnId:`turn-${index}`, checkpointTurnCount:index + 1})),
+    });
     yield* instance.adapter.rollbackThread(threadId, 1);
     const live = (yield* instance.adapter.listSessions()).find((item) => item.threadId === threadId);
     assert.equal(live.resumeCursor.sessionId, original);
     const snapshot = yield* instance.adapter.readThread(threadId);
     const users = snapshot.turns[0].items.filter((message) => message.role==='user').map((message) =>
       typeof message.content === 'string' ? message.content : '');
-    assert.deepEqual(users, ['first']);
+    assert.deepEqual(users, ['reply:first']);
   })));
 });
 

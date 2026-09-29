@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
 const VERSION = "0.86.1";
-const IMPORT = 'import { findRewindTarget } from "../../rubato-features/conversation-rewind/rewind.mjs";\n';
+const IMPORT = 'import { findRewindTarget, REWIND_MARK } from "../../rubato-features/conversation-rewind/rewind.mjs";\n';
 const ANCHOR = '            case "get_fork_messages": {';
 
 function replaceOnce(source, before, after, label) {
@@ -26,21 +26,29 @@ export function patchRpcRewind(source) {
   return replaceOnce(IMPORT + source, ANCHOR, `            case "rewind": {
                 if (session.isStreaming || session.isCompacting)
                     return error(id, "rewind", "Interrupt the current turn before rewinding");
+                const manager = session.sessionManager;
                 let targetId;
                 try {
-                    targetId = findRewindTarget(session.sessionManager.getBranch(), {
-                        keep: command.keep, text: command.text, turns: command.turns,
-                    });
+                    targetId = findRewindTarget(manager.getBranch(), { keep: command.keep, skip: command.skip });
                 }
                 catch (failure) {
                     return error(id, "rewind", failure instanceof Error ? failure.message : String(failure));
                 }
+                if (targetId === null)
+                    return success(id, "rewind", { cancelled: false, moved: false, leafId: manager.getLeafId() });
+                const from = manager.getLeafId();
+                // navigateTree does nothing when asked for the current leaf; give it a tip past it.
+                if (targetId === from)
+                    manager.appendCustomEntry(REWIND_MARK, { abandoned: true });
                 const result = await session.navigateTree(targetId, { summarize: false });
-                return success(id, "rewind", {
-                    cancelled: result.cancelled === true,
-                    text: result.editorText,
-                    leafId: session.sessionManager.getLeafId(),
-                });
+                if (result.cancelled)
+                    return success(id, "rewind", { cancelled: true, moved: false, leafId: manager.getLeafId() });
+                if (manager.getBranch().some((entry) => entry.id === targetId))
+                    return error(id, "rewind", "The rewind did not leave the removed turns");
+                // The leaf lives in memory, and a session reopened from its file resumes at
+                // its last entry. Writing the landing keeps the rewind across a restart.
+                manager.appendCustomEntry(REWIND_MARK, { from });
+                return success(id, "rewind", { cancelled: false, moved: true, leafId: manager.getLeafId() });
             }
 ${ANCHOR}`, "rpc-command");
 }

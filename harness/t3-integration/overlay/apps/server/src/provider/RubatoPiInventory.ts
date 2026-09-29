@@ -48,7 +48,7 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
       // Rewind names what T3 keeps: its messages in order and which turn each checkpoint closed.
       bridge.projectedThread = (id) => Effect.runPromise(query.getThreadDetailById(ThreadId.make(id), {activityKinds:[]}).pipe(
         Effect.map((thread) => Option.isSome(thread) ? {
-          messages: thread.value.messages.map(({id, role, text, turnId}) => ({id, role, text, turnId})),
+          messages: thread.value.messages.map(({id, role, text, turnId, createdAt}) => ({id, role, text, turnId, createdAt})),
           checkpoints: thread.value.checkpoints.map(({turnId, checkpointTurnCount}) => ({turnId, checkpointTurnCount})),
         } : null),
       ));

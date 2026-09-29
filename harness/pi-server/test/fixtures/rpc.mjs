@@ -2,7 +2,7 @@
 // Client, socket and child process transport are never replaced in these tests.
 import { createInterface } from 'node:readline';
 import { SessionManager } from '@earendil-works/pi-coding-agent';
-import { findRewindTarget } from '../../../pi-runtime/features/conversation-rewind/rewind.mjs';
+import { findRewindTarget, REWIND_MARK } from '../../../pi-runtime/features/conversation-rewind/rewind.mjs';
 const args = process.argv.slice(2);
 let manager = SessionManager.open(args[args.indexOf('--session') + 1]);
 let running = false;
@@ -27,13 +27,16 @@ lines.on('line', (line) => {
       if (blockMessages) return;
       data = { messages: manager.getBranch().filter((item) => item.type === 'message').map((item) => item.message) }; break;
     case 'rewind': {
-      // The real rule picks the entry; moving the leaf is what Pi's navigateTree does.
+      // The real rule picks the entry; moving the leaf and marking the landing is what the RPC does.
       let targetId;
-      try { targetId = findRewindTarget(manager.getBranch(), { keep: command.keep, text: command.text, turns: command.turns }); }
+      try { targetId = findRewindTarget(manager.getBranch(), { keep: command.keep, skip: command.skip }); }
       catch (failure) { emit({ id: command.id, type: 'response', command: command.type, success: false, error: failure.message }); return; }
+      if (targetId === null) { data = { cancelled: false, moved: false, leafId: manager.getLeafId() }; break; }
+      const from = manager.getLeafId();
       const target = manager.getEntry(targetId);
       if (target.parentId) manager.branch(target.parentId); else manager.resetLeaf();
-      data = { cancelled: false, leafId: manager.getLeafId() };
+      manager.appendCustomEntry(REWIND_MARK, { from });
+      data = { cancelled: false, moved: true, leafId: manager.getLeafId() };
       break;
     }
     case 'prompt':
