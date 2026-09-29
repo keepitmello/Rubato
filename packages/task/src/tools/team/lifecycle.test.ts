@@ -3,7 +3,7 @@ import { Value } from "typebox/value"
 
 import { SenpiTeamRuntimeError, SenpiTeamSpecError } from "../../team"
 import { createFakeTeamService, fakeCreateResult, fakeCreatedMember, fakeDeleteResult } from "./__fixtures__/team-tool-fakes"
-import { TeamCreateParams, buildTeamCreateParams, createTeamCreateTool, createTeamDeleteTool, runTeamCreate, runTeamDelete } from "./lifecycle"
+import { type TeamCreateInput, TeamCreateParams, buildTeamCreateParams, createTeamCreateTool, createTeamDeleteTool, runTeamCreate, runTeamDelete } from "./lifecycle"
 
 describe("team_create tool", () => {
   test("#given the team_create schema #when inspected #then it exposes no model-supplied lead_session_id override", () => {
@@ -78,6 +78,23 @@ describe("team_create tool", () => {
     // then
     expect(keys.indexOf("task_summary")).toBe(keys.indexOf("prompt") + 1)
     expect(memberSchema.properties.task_summary).toMatchObject({ maxLength: 80 })
+  })
+
+  test("#given a member task_summary over the limit #when the tool prepares arguments #then validation passes with a truncated summary", () => {
+    // given: the 83-char summary that rejected a whole team before prepareArguments existed
+    const tool = createTeamCreateTool({ service: createFakeTeamService() })
+    const summary = "Scheduler core: hub timer, skip detection, session launch, run log, agent tool, CLI"
+    const raw = { inline_spec: { name: "demo", members: [{ name: "a", kind: "owner", model: "m/x", prompt: "p", task_summary: summary }] } }
+    expect(Value.Check(tool.parameters, raw)).toBe(false)
+
+    // when
+    const prepared = tool.prepareArguments!(raw) as TeamCreateInput
+
+    // then
+    expect(Value.Check(tool.parameters, prepared)).toBe(true)
+    const member = (prepared.inline_spec as { members: Array<{ task_summary: string }> }).members[0]!
+    expect(member.task_summary.length).toBeLessThanOrEqual(80)
+    expect(summary.startsWith(member.task_summary.replace(/\.\.\.$/u, ""))).toBe(true)
   })
 
   test("#given a member with a taskSummary #when team_create runs #then the member view carries task_summary", async () => {
