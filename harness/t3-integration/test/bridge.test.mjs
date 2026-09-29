@@ -10,7 +10,7 @@ import { RpcWorker } from '../../pi-server/src/rpc-worker.mjs';
 import { SessionClient } from '../../pi-server/src/client.mjs';
 import { RubatoPiBridge } from '../src/bridge.mjs';
 import { handleCacheWarmingRequest, userStartedSession } from '../src/bridge.mjs';
-import { errorDetail, EventProjection } from '../src/events.mjs';
+import { errorDetail, EventProjection, sessionMessageId } from '../src/events.mjs';
 import {t3Modules} from './t3-source.mjs';
 const fixture = fileURLToPath(new URL('../../pi-server/test/fixtures/rpc.mjs', import.meta.url));
 const until = async (predicate) => { for (let i=0;i<500;i++) { if (await predicate()) return; await delay(10); } throw new Error('Condition did not settle'); };
@@ -1170,3 +1170,131 @@ test('sendTurn keeps working after the transcript snapshot path hangs', async (t
   await until(() => events.filter((event) => event.type === 'turn.completed').length >= 2);
 });
 
+
+// A message another conversation sent (Pi custom message, the engine's contract).
+const sessionMessage = (overrides = {}) => ({
+  role:'custom', customType:'rubato-session-message', display:true,
+  content:'<session-message from="Release notes">envelope the model reads</session-message>',
+  details:{ v:1, messageId:'msg-1', kind:'message', from:{ sessionId:'sess-a', title:'Release notes', cwd:'/work' },
+    text:'Please **check** the changelog.' },
+  timestamp:Date.parse('2026-09-30T01:02:03.000Z'), ...overrides,
+});
+const wake = { role:'custom', customType:'rubato-runtime:wake', display:false, content:'wake up', timestamp:5 };
+let decodeContext = (value) => value;
+if (process.env.T3_SOURCE) {
+  const { OrchestrationMessageContext } = await import(`${process.env.T3_SOURCE}/packages/contracts/src/composerContext.ts`);
+  const Schema = await t3Modules(process.env.T3_SOURCE).effect('Schema');
+  decodeContext = Schema.decodeUnknownSync(OrchestrationMessageContext);
+}
+const linkOf = (item) => {
+  const [record] = decodeContext(item.context).records;
+  return { kind:record.kind, label:record.label, from:record.payload.from, messageKind:record.payload.kind };
+};
+
+test('stored history keeps user and assistant as they were and brings a session message as its own bubble', async () => {
+  const bridge = new RubatoPiBridge({ descriptorPath:'/nonexistent/descriptor.json', instanceId:'rubato-test' });
+  try {
+    const items = bridge.importedMessages('session', [
+      { role:'user', content:'hi', timestamp:1 },
+      { role:'assistant', content:[{ type:'text', text:'hello' }], timestamp:2 },
+      sessionMessage(),
+      wake,
+      { role:'custom', customType:'rubato-session-message', display:false, content:'hidden', details:sessionMessage().details, timestamp:6 },
+      { role:'toolResult', content:'x', timestamp:7 },
+    ], 'thread');
+    assert.deepEqual(items.slice(0, 2).map(({ role, text, context }) => ({ role, text, context })),
+      [{ role:'user', text:'hi', context:undefined }, { role:'assistant', text:'hello', context:undefined }]);
+    assert.equal(items.length, 3);
+    const linked = items[2];
+    assert.equal(linked.role, 'user');
+    assert.equal(linked.text, 'Please **check** the changelog.');
+    assert.equal(linked.id, sessionMessageId('thread', 'msg-1'));
+    assert.equal(linked.createdAt, '2026-09-30T01:02:03.000Z');
+    assert.doesNotMatch(JSON.stringify(linked), /envelope the model reads/);
+    assert.deepEqual(linkOf(linked), { kind:'rubato-session', label:'Release notes',
+      from:{ sessionId:'sess-a', title:'Release notes', cwd:'/work' }, messageKind:'message' });
+    const [created] = bridge.importedMessages('session', [sessionMessage({ details:{ ...sessionMessage().details, kind:'create' } })], 'thread');
+    assert.equal(linkOf(created).messageKind, 'create');
+  } finally { await bridge.close(); }
+});
+
+test('a live session message goes to the thread once and emits no runtime event; other custom messages stay hidden', () => {
+  const events = []; const delivered = [];
+  const p = new EventProjection({ threadId:'thread', sessionId:'session', instanceId:'instance',
+    emit:(event) => events.push(decodeEvent(event)), sessionMessage:(item) => delivered.push(item) });
+  p.begin();
+  events.length = 0;
+  for (const type of ['message_start', 'message_end']) p.project({ type, message:sessionMessage() });
+  for (const type of ['message_start', 'message_end']) p.project({ type, message:wake });
+  assert.equal(delivered.length, 1);
+  assert.equal(delivered[0].text, 'Please **check** the changelog.');
+  assert.equal(linkOf(delivered[0]).from.title, 'Release notes');
+  assert.deepEqual(events, []);
+  // An attach seeded with what the thread already shows does not send it again.
+  const seeded = []; const again = new EventProjection({ threadId:'thread', sessionId:'session', instanceId:'instance',
+    emit:() => {}, sessionMessage:(item) => seeded.push(item) });
+  again.seed([{ id:sessionMessageId('thread', 'msg-1'), text:'Please **check** the changelog.', streaming:false }]);
+  again.message(sessionMessage(), true);
+  assert.deepEqual(seeded, []);
+});
+
+test('an attach snapshot taken while the session message opened the turn writes it into the thread', async () => {
+  const appended = [];
+  const { bridge, context } = reattachContext({
+    stateModel:{ provider:'anthropic', id:'claude-opus-5' },
+    messages:[{ role:'user', content:'hi', timestamp:1 }, sessionMessage(), wake],
+  });
+  bridge.appendSessionMessage = async (threadId, item) => { appended.push([threadId, item.id]); };
+  context.projection.sessionMessage = (item) => { void bridge.deliverSessionMessage(context, item); };
+  const snapshot = await context.client.snapshot();
+  snapshot.state.isStreaming = true;
+  await bridge.synchronize(context);
+  await until(() => appended.length === 1);
+  assert.deepEqual(appended, [['thread', sessionMessageId('thread', 'msg-1')]]);
+});
+
+test('a session message the thread refused is offered again on the next attach', async () => {
+  const { bridge, context } = reattachContext({ messages:[sessionMessage()] });
+  let calls = 0;
+  bridge.appendSessionMessage = async () => { calls += 1; if (calls === 1) throw new Error('not bound yet'); };
+  context.projection.sessionMessage = (item) => { void bridge.deliverSessionMessage(context, item); };
+  await bridge.synchronize(context);
+  await until(() => calls === 1 && !context.projection.delivered.has(sessionMessageId('thread', 'msg-1')));
+  await bridge.synchronize(context);
+  await until(() => calls === 2);
+});
+
+test('the bridge wires a live session message to the thread it is attached to', async (t) => {
+  const { root, bridge } = await setup(t);
+  const appended = [];
+  bridge.appendSessionMessage = async (threadId, item) => { appended.push({ threadId, item }); };
+  await bridge.startSession({ threadId:'linked-thread', runtimeMode:'full-access', cwd:root });
+  bridge.sessions.get('linked-thread').projection.project({ type:'message_end', message:sessionMessage() });
+  await until(() => appended.length === 1);
+  assert.equal(appended[0].threadId, 'linked-thread');
+  assert.equal(appended[0].item.text, 'Please **check** the changelog.');
+});
+
+// T3 keys a message by its id alone across every thread (SQLite), so the id of a
+// session message names its thread: inventory.test.mjs runs that against T3's store.
+test('a session message id names the thread: the same thread on another Pi session matches, another thread does not', async () => {
+  const liveIn = (threadId, sessionId) => {
+    const items = [];
+    new EventProjection({ threadId, sessionId, instanceId:'instance', emit:() => {}, sessionMessage:(item) => items.push(item) })
+      .message(sessionMessage(), true);
+    return items[0];
+  };
+  const idIn = (threadId, sessionId) => liveIn(threadId, sessionId).id;
+  assert.equal(idIn('thread', 'session'), idIn('thread', 'rewound-session'));
+  assert.notEqual(idIn('thread', 'session'), idIn('forked-thread', 'session'));
+  assert.equal(idIn('thread', 'session'), sessionMessageId('thread', 'msg-1'));
+  // Joined parts must not meet: the thread ids the inventory makes contain colons.
+  assert.notEqual(sessionMessageId('a:b', 'c'), sessionMessageId('a', 'b:c'));
+  const bridge = new RubatoPiBridge({ descriptorPath:'/nonexistent/descriptor.json', instanceId:'rubato-test' });
+  try {
+    // Loaded history (the engine's transcript row, D1: the live message plus entryId)
+    // becomes the same bubble the live path writes.
+    assert.deepEqual(bridge.importedMessages('session', [{ entryId:'e1', ...sessionMessage() }], 'thread'), [liveIn('thread', 'other')]);
+    assert.throws(() => bridge.importedMessages('session', [sessionMessage()]), /T3 thread/);
+  } finally { await bridge.close(); }
+});

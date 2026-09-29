@@ -1,7 +1,7 @@
 import { SessionClient } from '../../pi-server/src/client.mjs';
 import { readDescriptor } from '../../pi-server/src/descriptor.mjs';
 import { ensureProfileEngine } from '../../pi-server/src/discovery.mjs';
-import { EventProjection, cacheFrom, importedId, messageKey, textOf, usageModelIdentity, windowFromModels } from './events.mjs';
+import { EventProjection, cacheFrom, importedId, messageKey, sessionMessageFrom, textOf, usageModelIdentity, windowFromModels } from './events.mjs';
 import { applySelectionOptions, catalogForPicker } from './model-catalog-order.mjs';
 import { controlCommandFor, rewriteSkillMentions, surfaceFromPiCommands } from './commands.mjs';
 import { readFile } from 'node:fs/promises';
@@ -109,8 +109,10 @@ const slashText = (control) => `/${control.name}${control.args ? ` ${control.arg
 const liveBridges = new Set();
 export class RubatoPiBridge {
   constructor({ descriptorPath, instanceId, emit = () => {}, onError = () => {}, projectedMessages = async () => [],
-    shows = userStartedSession }) {
-    Object.assign(this, { descriptorPath, instanceId, emit, onError, projectedMessages, shows });
+    appendSessionMessage = async () => {}, shows = userStartedSession }) {
+    // appendSessionMessage(threadId, item) writes a session message into the T3
+    // thread; the T3 server binds it (RubatoPiInventory.ts), like projectedMessages.
+    Object.assign(this, { descriptorPath, instanceId, emit, onError, projectedMessages, appendSessionMessage, shows });
     this.sessions = new Map(); this.openings = new Map(); this.catalogues = new Map(); this.claimed = new Set(); this.closed = false;
     this.skillNames = new Set();
     this.retryTimer = setInterval(() => { void this.recover().catch(onError); }, 1000);
@@ -166,11 +168,27 @@ export class RubatoPiBridge {
     try { const value = await pending; t3BridgeLog('catalogue ok', String((value.models ?? []).length)); return value; } catch (error) { t3BridgeLog('catalogue fail', String(error?.message ?? error)); this.catalogues.delete(cwd); throw error; }
   }
   cursor(sessionId) { return { kind: 'rubato-pi', serverId: this.descriptor.serverId, sessionId }; }
-  importedMessages(sessionId, messages) {
-    return messages.filter((message) => ['user', 'assistant'].includes(message.role)).map((message) => ({
-      id: importedId(this.instanceId, sessionId, message), role: message.role, text: textOf(message),
-      createdAt: new Date(message.timestamp).toISOString(),
-    }));
+  // Stored history as T3 thread messages. A message another conversation sent
+  // carries its context record and an id that names `threadId`, the T3 thread the
+  // history goes to (see sessionMessageFrom); T3's history import takes no
+  // context, so the server appends those after the import.
+  importedMessages(sessionId, messages, threadId) {
+    return messages.flatMap((message) => {
+      if (['user', 'assistant'].includes(message.role)) return [{
+        id: importedId(this.instanceId, sessionId, message), role: message.role, text: textOf(message),
+        createdAt: new Date(message.timestamp).toISOString(),
+      }];
+      const linked = sessionMessageFrom(message, threadId);
+      return linked ? [linked] : [];
+    });
+  }
+  deliverSessionMessage(context, item) {
+    // A duplicate (the thread already holds it) is refused by T3 and changes nothing.
+    // Any refusal lets the next attach snapshot offer it again.
+    return Promise.resolve().then(() => this.appendSessionMessage(context.session.threadId, item)).catch((error) => {
+      context.projection.delivered.delete(item.id);
+      t3BridgeLog('session message not appended', `${item.id} ${String(error?.message ?? error)}`);
+    });
   }
   async startSession(input) {
     if (input.runtimeMode !== 'full-access') throw new Error('Rubato preserves its existing tool policy; T3 approval modes are not implemented. Select Full access.');
@@ -193,7 +211,8 @@ export class RubatoPiBridge {
     this.claimed.add(sessionId);
     const client = await new SessionClient({ ...this.descriptor, onError: this.onError }).connect();
     const context = { client, sessionId, projection: new EventProjection({ threadId: input.threadId, sessionId,
-      instanceId: this.instanceId, emit: this.emit }), session: {
+      instanceId: this.instanceId, emit: this.emit,
+      sessionMessage: (item) => { void this.deliverSessionMessage(context, item); } }), session: {
       provider: 'rubato-pi', providerInstanceId: this.instanceId, threadId: input.threadId, runtimeMode: input.runtimeMode,
       status: 'connecting', ...(input.cwd ? { cwd: input.cwd } : {}), resumeCursor: this.cursor(sessionId),
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),

@@ -15,6 +15,10 @@ let warming = { enabled: true, hours: 2, state: 'inactive' };
 // The service-tier extension's live state; `/fast on|off` flips it like the real command.
 let fast = { active: false, supported: true };
 let blockMessages = false;
+// What the session-link extension would have received: a steer while running, a new turn when idle.
+const deliveries = [];
+// Answers a test scripts for the next deliveries, as the real handler words them.
+const scripted = [];
 const emit = (value) => process.stdout.write(JSON.stringify(value) + '\n');
 const settle = () => { clearTimeout(timer); running = false; emit({ type: 'agent_end', messages: [] }); emit({ type: 'agent_settled' }); };
 const userText = (message) => typeof message?.content === 'string' ? message.content
@@ -118,6 +122,25 @@ lines.on('line', (line) => {
         cache: { state: 'warm', hitPercent: 90, expiresAt: 1_790_000_000_000 } }; break;
     case 'extension_request':
       if (command.name === 'rubato.service-tier.status') { data = fast; break; }
+      if (command.name === 'rubato.session-link.deliver') {
+        const mode = running ? 'steer' : 'turn';
+        deliveries.push({ data: command.data, mode });
+        if (scripted.length) { data = scripted.shift(); break; }
+        manager.appendCustomMessageEntry('rubato-session-message', `from ${command.data.from.title}: ${command.data.text}`, true, command.data);
+        const reply = () => manager.appendMessage({ role: 'assistant', content: [{ type: 'text', text: `reply: ${command.data.text}` }],
+          stopReason: 'stop', provider: 'fixture', model: 'local', timestamp: Date.now() });
+        // `instant`: the whole turn is written before the delivery is answered, the race a
+        // fast target makes with a sender that reads its cursor afterwards.
+        if (mode === 'turn' && command.data.text.startsWith('instant')) { emit({ type: 'agent_start' }); reply(); settle(); }
+        else if (mode === 'turn') {
+          running = true;
+          emit({ type: 'agent_start' });
+          timer = setTimeout(() => { reply(); settle(); }, 150);
+        }
+        data = { accepted: true }; break;
+      }
+      if (command.name === 'fixture.session-link.deliveries') { data = deliveries; break; }
+      if (command.name === 'fixture.session-link.answer') { scripted.push(command.data); data = null; break; }
       if (command.name !== 'rubato.task.pending-work') { emit({ id: command.id, type: 'response', command: command.type, success: false, error: 'Unknown extension RPC request' }); return; }
       data = { active: pendingWork }; break;
     default: emit({ id: command.id, type: 'response', command: command.type, success: false, error: 'Unsupported fixture command' }); return;

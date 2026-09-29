@@ -8,6 +8,57 @@ export const messageKey = (sessionId, message) => `pi:${sessionId}:${createHash(
   .update(JSON.stringify([message.role, message.timestamp, message.model ?? null])).digest('hex').slice(0, 24)}`;
 export const importedId = (instanceId, sessionId, message) => `import:${instanceId}:${messageKey(sessionId, message)}`;
 
+// A message another conversation sent into this one (Pi custom message
+// `rubato-session-message`). Its `content` is the envelope the model reads; the
+// thread shows `details.text` under the sender's title instead. T3 has no message
+// role for it, so it travels as a user message with one context record of an
+// open kind; the web timeline draws that record as its own bubble, and T3's
+// contract keeps unknown record kinds intact. Every other custom message
+// (wakes, notes) stays out of the thread.
+export const SESSION_MESSAGE_TYPE = 'rubato-session-message';
+export const SESSION_MESSAGE_CONTEXT_KIND = 'rubato-session';
+export const SESSION_MESSAGE_ID_PREFIX = 'rubato-session:';
+const CONTEXT_LABEL_MAX = 200;
+export const isSessionMessage = (message) => message?.role === 'custom'
+  && message.customType === SESSION_MESSAGE_TYPE && message.display !== false;
+const isoFrom = (timestamp) => {
+  const date = new Date(typeof timestamp === 'number' || typeof timestamp === 'string' ? timestamp : Number.NaN);
+  return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+};
+// The T3 message id of a session message. T3 keeps every thread's messages in one
+// table keyed by message id alone (SQLite `projection_thread_messages.message_id`,
+// whose upsert moves a row to the thread that wrote it last), so the id names the
+// thread as well as the sender's message: a fork of the conversation carries the
+// same messageId into another thread and must not take this thread's row, while a
+// rewind rebinds this same thread to a new Pi session and must find the bubble it
+// already shows. Hashed, because both parts may contain any character.
+export const sessionMessageId = (threadId, messageId) => `${SESSION_MESSAGE_ID_PREFIX}${createHash('sha256')
+  .update(JSON.stringify([threadId, messageId])).digest('hex').slice(0, 24)}`;
+export function sessionMessageFrom(message, threadId) {
+  if (!isSessionMessage(message)) return;
+  if (typeof threadId !== 'string' || !threadId) throw new TypeError('A session message needs the T3 thread it goes to');
+  const details = message.details && typeof message.details === 'object' ? message.details : {};
+  const messageId = typeof details.messageId === 'string' ? details.messageId.trim() : '';
+  if (!messageId || typeof details.text !== 'string') return;
+  const from = details.from && typeof details.from === 'object' ? details.from : {};
+  const title = (typeof from.title === 'string' ? from.title.trim() : '').slice(0, CONTEXT_LABEL_MAX);
+  return {
+    id: sessionMessageId(threadId, messageId),
+    role: 'user',
+    text: details.text,
+    createdAt: isoFrom(message.timestamp),
+    context: { version: 1, records: [{
+      version: 1, contextId: SESSION_MESSAGE_CONTEXT_KIND, kind: SESSION_MESSAGE_CONTEXT_KIND, label: title,
+      payload: { v: 1, kind: details.kind === 'create' ? 'create' : 'message', messageId,
+        from: {
+          ...(typeof from.sessionId === 'string' ? { sessionId: from.sessionId } : {}),
+          title,
+          ...(typeof from.cwd === 'string' ? { cwd: from.cwd } : {}),
+        } },
+    }] },
+  };
+}
+
 // Spawn opens a child. Peek/steer/board tools are ordinary calls even when the
 // name contains "agent". Do not copy Claude's includes("agent") heuristic.
 const SPAWN_TOOLS = new Set(['Agent', 'task', 'team_create']);
@@ -257,11 +308,14 @@ export const windowFromModels = (identity, models) => {
 const retries = (count) => `${count} ${count === 1 ? 'retry' : 'retries'}`;
 
 export class EventProjection {
-  constructor({ threadId, sessionId, instanceId, emit }) {
-    Object.assign(this, { threadId, sessionId, instanceId, emit });
+  constructor({ threadId, sessionId, instanceId, emit, sessionMessage = () => {} }) {
+    Object.assign(this, { threadId, sessionId, instanceId, emit, sessionMessage });
     this.text = new Map(); this.thinking = new Map(); this.completed = new Set(); this.questions = new Map();
     this.tasks = new Map(); this.children = new Map(); this.spawns = new Map();
     this.teams = new Map(); this.boards = new Map();
+    // Session messages the thread already holds. Kept across reset(): a rewind
+    // rebinds the session, not the thread, and the thread keeps what it showed.
+    this.delivered = new Set();
   }
   event(type, payload, fields = {}) {
     this.emit({ eventId: randomUUID(), provider: 'rubato-pi', providerInstanceId: this.instanceId,
@@ -331,6 +385,7 @@ export class EventProjection {
   }
   seed(projected) {
     for (const message of projected ?? []) {
+      if (message.id?.startsWith(SESSION_MESSAGE_ID_PREFIX)) this.delivered.add(message.id);
       if (message.id?.startsWith('assistant:pi:')) {
         const key = message.id.slice('assistant:'.length);
         const delivered = this.text.get(key) ?? '';
@@ -360,6 +415,15 @@ export class EventProjection {
     this.completed.add(itemId);
   }
   message(message, complete) {
+    // A session message lands whole, so `complete` does not apply: an attach
+    // snapshot taken while its turn streams has it last and "incomplete". It goes
+    // to the thread once, through the sink the T3 server binds (it is a message,
+    // not a provider runtime event).
+    if (isSessionMessage(message)) {
+      const item = sessionMessageFrom(message, this.threadId);
+      if (item && !this.delivered.has(item.id)) { this.delivered.add(item.id); this.sessionMessage(item); }
+      return;
+    }
     if (message?.role !== 'assistant') return;
     const itemId = messageKey(this.sessionId, message);
     // Thinking goes out before text, as Pi orders the content. T3 stamps a row

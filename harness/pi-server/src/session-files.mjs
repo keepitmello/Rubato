@@ -3,9 +3,18 @@ import path from 'node:path';
 import { SessionNotFoundError, SessionAmbiguousError } from '@earendil-works/pi-server';
 import { readSessionMetadata } from './session-metadata.mjs';
 import { TITLE_ENTRY } from '../../pi-runtime/features/session-title/session-title.mjs';
+import { SESSION_MESSAGE } from './session-link.mjs';
 
 const fingerprint = (stats) => [stats.dev, stats.ino, stats.size, stats.mtimeNs, stats.ctimeNs, stats.mode].join(':');
 const newestFirst = (a, b) => b.modifiedAt - a.modifiedAt;
+/**
+ * A message another conversation sent (session link) as Pi's live `get_messages` carries
+ * it: the custom message shape plus `entryId`. Every other custom message stays out.
+ */
+const receivedRow = (entry) => entry.type === 'custom_message' && entry.customType === SESSION_MESSAGE && entry.display !== false
+  ? { entryId: entry.id, role: 'custom', customType: entry.customType, content: entry.content, display: true,
+    details: entry.details, timestamp: new Date(entry.timestamp).getTime() }
+  : undefined;
 // One cap across all cwd folders, rather than Pi's per-folder cap multiplied
 // by the number of folders. Concurrent list/resolve calls share the same scan.
 async function mapFiles(items, read) {
@@ -100,8 +109,11 @@ export class SessionFiles {
     }
     const selected = branch.findLast((entry) => entry.type === 'model_change');
     return { sessionId: id, model: selected ? `${selected.provider}/${selected.modelId}` : null,
-      messages: branch.filter((entry) => entry.type === 'message')
-        .map((entry) => ({ entryId: entry.id, ...entry.message })) };
+      messages: branch.flatMap((entry) => {
+        if (entry.type === 'message') return [{ entryId: entry.id, ...entry.message }];
+        const received = receivedRow(entry);
+        return received ? [received] : [];
+      }) };
   }
   /**
    * `titleLocked` marks the title as chosen, so the session-title feature never replaces it
