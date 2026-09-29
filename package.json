@@ -18,6 +18,7 @@
     "packages/rubato-remote-protocol",
     "packages/rubato-terminal-bridge",
     "packages/rubato-runtime",
+    "packages/schedule-core",
     "packages/task",
     "packages/team-core",
     "packages/tmux-core",

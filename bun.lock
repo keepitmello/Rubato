@@ -158,6 +158,10 @@
         "node-pty": "1.1.0",
       },
     },
+    "packages/schedule-core": {
+      "name": "@rubato/schedule-core",
+      "version": "0.1.0",
+    },
     "packages/task": {
       "name": "@rubato/task",
       "version": "0.1.0",
@@ -522,6 +526,8 @@
     "@rubato/remote-protocol": ["@rubato/remote-protocol@workspace:packages/rubato-remote-protocol"],
 
     "@rubato/runtime": ["@rubato/runtime@workspace:packages/rubato-runtime"],
+
+    "@rubato/schedule-core": ["@rubato/schedule-core@workspace:packages/schedule-core"],
 
     "@rubato/task": ["@rubato/task@workspace:packages/task"],
 

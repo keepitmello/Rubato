@@ -1,0 +1,17 @@
+{
+  "name": "@rubato/schedule-core",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Scheduled tasks: schedule math, run judgment and the task store shared by the scheduler, the session tool, the CLI and the T3 settings route.",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./src/index.mjs"
+    }
+  },
+  "types": "./index.d.ts",
+  "scripts": {
+    "test": "bun test test"
+  }
+}
