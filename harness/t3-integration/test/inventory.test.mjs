@@ -73,7 +73,12 @@ test('inventory uses real T3 decider/projector: groups stored history, preserves
     assert.equal((yield* Effect.promise(()=>external.snapshot())).runtimeId,original.runtimeId);
     const imported=model.threads.find(thread=>bindings.get(thread.id).resumeCursor.sessionId===two.sessionId);
     assert.ok(imported);
-    assert.equal(commands.filter((command)=>command.type==='thread.history.import' && command.threadId===imported.id).length,0);
+    // A session already running when T3 first sees it still brings the prompt it
+    // was started with: the live replay carries assistant messages only.
+    const liveImports=commands.filter((command)=>command.type==='thread.history.import' && command.threadId===imported.id);
+    assert.equal(liveImports.length,1);
+    assert.deepEqual(liveImports[0].messages.map((message)=>[message.role,message.text]),[['user','background']]);
+    assert.deepEqual(model.threads.find((thread)=>thread.id===imported.id).messages.map((message)=>[message.role,message.text]),[['user','background']]);
     const count=commands.length;
     const reads=detailReads;
     yield* inventory.sync;

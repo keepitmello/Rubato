@@ -119,9 +119,14 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
           thread.session.status === "starting" ||
           thread.session.activeTurnId != null
         );
-        // Live attach replays the snapshot as UI events. Importing the same
-        // transcript first concatenates the assistant text on one message.
-        if (!live && thread.latestTurn===null && thread.session===null && !historyChecked.has(threadId)) {
+        // A session T3 sees for the first time brings its stored history, live or
+        // not. The live attach below replays the snapshot, but that replay carries
+        // assistant messages only (user messages normally come from T3's composer),
+        // so a session started elsewhere — the CLI, the scheduler — lost every
+        // prompt sent before T3 saw it. The attach seeds its projection from these
+        // imported messages and sends no text for them again; only the reply still
+        // in flight streams in.
+        if (thread.latestTurn===null && thread.session===null && !historyChecked.has(threadId)) {
           const existing = yield* query.getThreadDetailById(threadId);
           if (Option.isSome(existing) && existing.value.messages.length===0) {
             const saved = yield* io("transcript", () => bridge.transcript(entry.sessionId));
