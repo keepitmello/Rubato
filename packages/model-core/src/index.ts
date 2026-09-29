@@ -2,7 +2,6 @@ export * from "./model-requirements"
 export * from "./model-family-detectors"
 export * from "./model-capability-aliases"
 export * from "./model-capability-heuristics"
-export * from "./model-capability-guardrails"
 export * from "./model-settings-compatibility"
 export type {
   DelegatedModelConfig,
