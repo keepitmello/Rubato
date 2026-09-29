@@ -522,11 +522,34 @@ export class EventProjection {
   progressTask(task, { description, summary, lastToolName, status, error, typedUsage }) {
     const note = nonempty(summary);
     const doing = nonempty(description) || note || 'running';
+    task.lastProgress = { description, summary, lastToolName, status, error, typedUsage };
     this.taskEvent('task.progress', { taskId: task.taskId, description: doing,
       ...(note && note !== task.label ? { summary: note } : {}),
       ...(nonempty(lastToolName) ? { lastToolName } : {}),
       ...(status ? { status } : {}), ...(nonempty(error) ? { error } : {}),
       ...(typedUsage ? { typedUsage } : {}), ...this.linkage(task) }, task);
+  }
+  /**
+   * A rewind drops the turns a task was started in, and T3 drops that task's rows with
+   * them. A task still running is not part of the history that was taken back, so it
+   * is announced again without a turn: its row, where it was, and its team's board.
+   */
+  reannounce(droppedTurnIds) {
+    const live = [];
+    for (const task of new Set(this.tasks.values())) {
+      if (!droppedTurnIds.has(task.turnId)) continue;
+      task.turnId = undefined;
+      if (!task.done) live.push(task);
+    }
+    for (const task of live) {
+      this.taskEvent('task.started', { taskId: task.taskId, ...this.linkage(task) }, task);
+      if (task.lastProgress) this.progressTask(task, task.lastProgress);
+    }
+    for (const [teamRunId, held] of this.boards) {
+      if (!held.sent || !live.includes(this.teams.get(teamRunId))) continue;
+      held.sent = false;
+      this.sendBoard(teamRunId, held.board);
+    }
   }
   completeTask(task, status, summary, typedUsage) {
     if (task.done) return;

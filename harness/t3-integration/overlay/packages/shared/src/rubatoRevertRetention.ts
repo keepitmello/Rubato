@@ -28,12 +28,17 @@ export function retainUserMessagesAfterRevert(
   messages: ReadonlyArray<RevertMessageRef>,
   retainedTurnIds: ReadonlySet<string>,
 ): RetainedUserMessages {
+  // By time; a user message ahead of a reply stamped the same millisecond (a steer
+  // arriving as the reply starts), otherwise as listed. The bridge orders the same way.
   const ordered = messages
-    .slice()
+    .map((message, index) => ({ message, index }))
     .sort(
       (left, right) =>
-        compareDateTimeStrings(left.createdAt, right.createdAt) || left.id.localeCompare(right.id),
-    );
+        compareDateTimeStrings(left.message.createdAt, right.message.createdAt) ||
+        (left.message.role === "user" ? 0 : 1) - (right.message.role === "user" ? 0 : 1) ||
+        left.index - right.index,
+    )
+    .map(({ message }) => message);
   const retained = new Set<string>();
   const decided = new Set<string>();
   const promptedTurns = new Set<string>();
