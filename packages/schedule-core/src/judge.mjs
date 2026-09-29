@@ -8,7 +8,7 @@ export const RUNS_KEPT_PER_TASK = 100;
 /**
  * What the scheduler does with one enabled task at `now`. Pure: the caller owns the store.
  *
- * - Times in (task.evaluatedThrough, now] are judged once; afterwards the cursor is `now`.
+ * - Times in (task.evaluatedThrough, now] are judged once; once any is judged the cursor is `now`.
  * - A time within GRACE_MS of now runs, unless the task's previous run is still going
  *   (`overlap`). Only the latest time can be that close; older ones are skipped.
  * - A late time is skipped, never caught up. The reason is only what was observed:
@@ -22,6 +22,9 @@ export function judgeTask(task, { now, schedulerStartedAt, running = false, grac
   const from = task.evaluatedThrough ? new Date(task.evaluatedThrough) : null;
   if (!from || !(from < now)) return { fire: null, skips: [], evaluatedThrough: from && from > now ? from : now, disable: false };
   const due = occurrencesBetween(task.schedule, from, now);
+  // Nothing due keeps the cursor: the next tick re-reads the same empty span, and the store
+  // is not rewritten (nor its revision bumped) on every tick.
+  if (due.length === 0) return { fire: null, skips: [], evaluatedThrough: from, disable: false };
   const skips = [];
   let fire = null;
   due.forEach((at, index) => {

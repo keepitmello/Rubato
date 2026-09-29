@@ -2,6 +2,7 @@ import { mkdir, readdir, realpath, stat, writeFile, readFile } from 'node:fs/pro
 import path from 'node:path';
 import { SessionNotFoundError, SessionAmbiguousError } from '@earendil-works/pi-server';
 import { readSessionMetadata } from './session-metadata.mjs';
+import { TITLE_ENTRY } from '../../pi-runtime/features/session-title/session-title.mjs';
 
 const fingerprint = (stats) => [stats.dev, stats.ino, stats.size, stats.mtimeNs, stats.ctimeNs, stats.mode].join(':');
 const newestFirst = (a, b) => b.modifiedAt - a.modifiedAt;
@@ -102,7 +103,11 @@ export class SessionFiles {
       messages: branch.filter((entry) => entry.type === 'message')
         .map((entry) => ({ entryId: entry.id, ...entry.message })) };
   }
-  async create({ cwd, title } = {}) {
+  /**
+   * `titleLocked` marks the title as chosen, so the session-title feature never replaces it
+   * (its lock entry, read at session start). Scheduled runs use it for their "⏰ name" titles.
+   */
+  async create({ cwd, title, titleLocked = false } = {}) {
     if (typeof cwd !== 'string' || !path.isAbsolute(cwd)) throw new TypeError('cwd must be absolute');
     if (title !== undefined && (typeof title !== 'string' || title.length > 512)) throw new TypeError('Invalid title');
     cwd = await realpath(cwd);
@@ -117,7 +122,11 @@ export class SessionFiles {
     // Persist its PUBLIC header, exclusively, so an empty created session can be
     // discovered after restart. No fake conversation entry or private SDK call.
     await writeFile(file, JSON.stringify(manager.getHeader()) + '\n', { flag: 'wx', mode: 0o600 });
-    if (title) SessionManager.open(file, this.root).appendSessionInfo(title);
+    if (title) {
+      const opened = SessionManager.open(file, this.root);
+      opened.appendSessionInfo(title);
+      if (titleLocked === true) opened.appendCustomEntry(TITLE_ENTRY, { locked: true });
+    }
     const metadata = await this.#read(file, await realpath(this.root));
     if (!metadata) throw new SessionNotFoundError();
     return { ...metadata };

@@ -47,7 +47,7 @@ function write(path, text) {
 const INSTALL_SKILLS_SRC = join(dirname(fileURLToPath(import.meta.url)), "../../../scripts/install-skills.sh");
 const SSH_HOSTS_SRC = join(dirname(fileURLToPath(import.meta.url)), "../../../scripts/ssh-remote-hosts.mjs");
 
-function setupFixture({ dirty = false, conflict = false, evidence = false, decoyStash = false, rebuildFailure = "", skillUpdate = false, profileSrc = false, profileTest = false, profileRuntimeSrc = false, staleEngine = false, gui = false, remoteChange = true, speedData = false, sshRemotes = false, localCommit = true } = {}) {
+function setupFixture({ dirty = false, conflict = false, evidence = false, decoyStash = false, rebuildFailure = "", skillUpdate = false, profileSrc = false, profileTest = false, profileRuntimeSrc = false, staleEngine = false, gui = false, remoteChange = true, speedData = false, sshRemotes = false, localCommit = true, schedulerSrc = false } = {}) {
   const root = mkdtempSync(join(tmpdir(), "rubato-update-"));
   const bare = join(root, "origin.git");
   const seed = join(root, "seed");
@@ -138,6 +138,7 @@ function setupFixture({ dirty = false, conflict = false, evidence = false, decoy
 
   write(join(seed, "note.txt"), "remote\n");
   if (profileSrc) write(join(seed, "harness/pi-server/src/host.mjs"), "changed\n");
+  if (schedulerSrc) write(join(seed, "harness/scheduler/src/scheduler.mjs"), "changed\n");
   if (profileTest) write(join(seed, "harness/pi-server/test/x.test.mjs"), "changed\n");
   if (profileRuntimeSrc) write(join(seed, "harness/pi-runtime/features/providers/host.mjs"), "changed\n");
   if (skillUpdate) {
@@ -477,6 +478,22 @@ test("unattended update restarts the profile engine when pi-server source change
   const testResult = runUpdate(setupFixture({ profileTest: true }));
   const testOut = `${testResult.stdout}\n${testResult.stderr}`;
   assert.doesNotMatch(testOut, /프로필 엔진 재시작/);
+});
+
+test("a registered scheduler is restarted when its source changes, and left alone otherwise", () => {
+  const launchctl = (fixture) => {
+    const bin = join(fixture.root, "fake-launchctl");
+    write(bin, `#!/bin/sh\nprintf 'launchctl %s\\n' "$*" >> "$RUBATO_TEST_TRACE"\n`);
+    chmodSync(bin, 0o755);
+    return bin;
+  };
+  const changed = setupFixture({ schedulerSrc: true });
+  runUpdate(changed, { env: { RUBATO_LAUNCHCTL_BIN: launchctl(changed) } });
+  assert.match(readFileSync(changed.trace, "utf8"), /launchctl kickstart -k gui\/\d+\/com\.keepitmello\.rubato\.scheduler/);
+  const unrelated = setupFixture({});
+  runUpdate(unrelated, { env: { RUBATO_LAUNCHCTL_BIN: launchctl(unrelated) } });
+  const trace = existsSync(unrelated.trace) ? readFileSync(unrelated.trace, "utf8") : "";
+  assert.doesNotMatch(trace, /kickstart -k gui\/\d+\/com\.keepitmello\.rubato\.scheduler/);
 });
 
 test("a refreshed engine candidate restarts the engine even outside pi-server source", () => {

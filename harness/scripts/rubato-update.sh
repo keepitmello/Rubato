@@ -234,6 +234,14 @@ echo "$CHANGED" | grep -Eq '^(install\.sh$|harness/scripts/)' && need_shell=1
 # 이 기기에 등록돼 있을 때만.
 need_aside=0
 "$LAUNCHCTL_BIN" print "gui/$(id -u)/com.keepitmello.rubato.aside-cursor" >/dev/null 2>&1 && need_aside=1
+# 예약 작업 스케줄러도 launchd 상주로 체크아웃 소스를 돈다. 자기 코드와 그것이 읽는
+# 공용 모듈·엔진 클라이언트가 바뀌었고 이 기기에 등록돼 있을 때만 다시 띄운다. 실행 중인
+# 예약 세션은 엔진 안에 있어 끊기지 않고, 새 스케줄러가 그 기록을 이어받는다.
+need_scheduler=0
+SCHEDULER_LABEL="com.keepitmello.rubato.scheduler"
+if echo "$CHANGED" | grep -Eq '^(harness/scheduler/|packages/schedule-core/|harness/pi-server/src/)'; then
+  "$LAUNCHCTL_BIN" print "gui/$(id -u)/$SCHEDULER_LABEL" >/dev/null 2>&1 && need_scheduler=1
+fi
 # Remote hub 도 launchd 상주라 소스만 받으면 옛 프로세스가 GC/유휴 정책을
 # 계속 돈다. zmx 세션은 허브 밖이라 kickstart -k 로도 안 죽는다.
 # 허브 소스가 바뀌고, 이 기기에 허브가 등록돼 있을 때만.
@@ -559,6 +567,11 @@ if [ "$need_aside" = 1 ]; then
   ASIDE_LABEL="com.keepitmello.rubato.aside-cursor"
   "$LAUNCHCTL_BIN" kickstart -k "gui/$(id -u)/$ASIDE_LABEL" >/dev/null 2>&1 \
     && ok "Aside 프록시 재시작" || warn "Aside 프록시 재시작 경고 — 손으로: launchctl kickstart -k gui/\$(id -u)/$ASIDE_LABEL"
+fi
+
+if [ "$need_scheduler" = 1 ]; then
+  "$LAUNCHCTL_BIN" kickstart -k "gui/$(id -u)/$SCHEDULER_LABEL" >/dev/null 2>&1 \
+    && ok "예약 작업 스케줄러 재시작" || warn "예약 작업 스케줄러 재시작 경고 — 손으로: launchctl kickstart -k gui/\$(id -u)/$SCHEDULER_LABEL"
 fi
 
 # 허브 재시작은 세션이 있어도 한다. zmx 세션은 허브 프로세스가 아니라서

@@ -105,6 +105,7 @@ export declare const THINKING_LEVELS: readonly ThinkingLevel[]
 export declare const GRACE_MS: number
 export declare const RUNS_KEPT_PER_TASK: number
 export declare function createScheduleStore(options?: { env?: Record<string, string | undefined>; now?: () => Date; root?: string }): ScheduleStore
+export declare function findTask<T extends { id: string; name: string }>(tasks: T[], query: string | undefined): T
 export declare function scheduleHome(env?: Record<string, string | undefined>): string
 export declare function validateSchedule(input: unknown, options?: { now?: Date }): Schedule
 export declare function previewSchedule(input: unknown, options?: { now?: Date }): SchedulePreview
