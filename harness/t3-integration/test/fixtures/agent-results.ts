@@ -25,7 +25,7 @@
       } else {
         projection.completeTask(projection.tasks.get("st_report"), "failed", report);
       }
-      await harness.emitAndDrain(events);
+      await harness.emitAndDrain(events.splice(0));
       const thread = (await harness.readModel()).threads.find((item) => item.id === "thread-1")!;
       const completion = thread.activities.find((activity) =>
         activity.kind === "task.completed" && (activity.payload as any).taskId === "st_report")!;
@@ -34,6 +34,16 @@
       // A new fold, not the producer's in-memory task cache, is what a reload reads.
       const agent = foldSubagentActivities(thread.activities).find((item) => item.id === "st_report")!;
       expect(status === "completed" ? agent.result : agent.error).toBe(report);
+      if (status === "completed") {
+        // AgentSend revives the same id: the reload shows it working, as run 2.
+        projection.project({ type: "extension_event", name: "rubato.task.updated",
+          data: { tasks: [{ task_id: "st_report", status: "running" }] } });
+        await harness.emitAndDrain(events.splice(0));
+        const revived = foldSubagentActivities((await harness.readModel()).threads
+          .find((item) => item.id === "thread-1")!.activities).find((item) => item.id === "st_report")!;
+        expect(revived.status).toBe("running");
+        expect(revived.activationCount).toBe(2);
+      }
     });
   }
 

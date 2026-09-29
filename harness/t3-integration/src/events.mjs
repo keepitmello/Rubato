@@ -674,8 +674,13 @@ export class EventProjection {
       } else if (label && !task.label) task.label = label;
       if (nonempty(item.model) && !task.model) task.model = item.model;
       if (effortOf({}, item, item) && !task.effort) task.effort = effortOf({}, item, item);
-      if (!task || task.done) continue;
+      if (!task) continue;
       const status = nonempty(item.status);
+      // AgentSend revives a finished agent under the same id. Ignoring every
+      // snapshot after the first completion left a working agent under Finished.
+      const woke = task.done && (status === 'running' || status === 'pending');
+      if (task.done && !woke) continue;
+      if (woke) { task.done = false; task.terminal = undefined; }
       const typedUsage = taskUsageOf(item, live);
       // A team member that ends its turn stays resident and wakes on mail or a
       // notification. That is waiting, not done: settling it here froze a
@@ -696,7 +701,7 @@ export class EventProjection {
       else {
         const doing = live.lastAssistantLine || live.currentTool;
         const mapped = LIVE_STATUS.has(status) ? status : 'running';
-        if (!doing && !typedUsage && mapped === 'running' && !wasResting) continue;
+        if (!doing && !typedUsage && mapped === 'running' && !wasResting && !woke) continue;
         this.progressTask(task, { description: doing || 'running', summary: live.lastAssistantLine,
           lastToolName: live.currentTool, status: mapped, typedUsage });
       }
