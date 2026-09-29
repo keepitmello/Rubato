@@ -11,6 +11,7 @@
 export const rewindOverlays = [
   'packages/shared/src/rubatoRevertRetention.ts',
   'packages/shared/src/rubatoRevertRetention.test.ts',
+  'apps/web/src/components/rubatoRewindWait.test.ts',
 ];
 
 const IMPORT_ANCHOR = 'import { compareDateTimeStrings } from "@t3tools/shared/dateTime";\n';
@@ -53,6 +54,34 @@ const countingFor = (id) => [
 ];
 
 export const rewindEdits = {
+  // The wait for a rewind to show asked that no checkpoint lie past the rewound point.
+  // A child's completion can open a new turn on the rewound branch before the request's
+  // own acknowledgement lands, and then that never held: the rewind showed and the
+  // composer still failed two minutes later. What proves the revert is that the turns
+  // it removes are gone.
+  'apps/web/src/components/ChatView.logic.ts': [
+    [`  const previousFailures = new Set(
+    initial.activities
+      .filter((activity) => activity.kind === "checkpoint.revert.failed")`,
+    `  const removedTurnIds = new Set(
+    initial.checkpoints
+      .filter((checkpoint) => checkpoint.checkpointTurnCount > turnCount)
+      .map((checkpoint) => checkpoint.turnId),
+  );
+`],
+    [`        accepted &&
+        !thread.messages.some((message) => message.id === messageId) &&
+        thread.checkpoints.every((checkpoint) => checkpoint.checkpointTurnCount <= turnCount) &&
+        (turnCount === 0
+          ? thread.latestTurn === null
+          : thread.checkpoints.some(
+              (checkpoint) => checkpoint.turnId === thread.latestTurn?.turnId,
+            ))`,
+    `        accepted &&
+        !thread.messages.some((message) => message.id === messageId) &&
+        !thread.checkpoints.some((checkpoint) => removedTurnIds.has(checkpoint.turnId))`,
+    'replace'],
+  ],
   'packages/shared/package.json': [
     [`    "./dateTime": {
       "types": "./src/dateTime.ts",

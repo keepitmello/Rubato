@@ -69,6 +69,7 @@
     "packages/shared/package.json": "1e321258afa58f83744a548ecc3b76bfaaadd3120ff950e02571cc6dcb3c8c96",
     "apps/server/src/orchestration/projector.ts": "829496437b51a6b5a2e4a1d9ecf8921be4e9457bee4df3a4707c98438a2ac460",
     "apps/server/src/orchestration/Layers/ProjectionPipeline.ts": "bfa6d12ba3d4753b98e9f7aec0225819971c1b2dd0fb80ccb95ed24730b64800",
-    "packages/client-runtime/src/state/threadReducer.ts": "164cbe8e7959cbe9240c11d9f0713da17def8d57b6e1ff02dd4740555de760af"
+    "packages/client-runtime/src/state/threadReducer.ts": "164cbe8e7959cbe9240c11d9f0713da17def8d57b6e1ff02dd4740555de760af",
+    "apps/web/src/components/ChatView.logic.ts": "74c9501674389040eef447c9792cece0cfcff4ac709fc1a1ebb11236ece08e5c"
   }
 }

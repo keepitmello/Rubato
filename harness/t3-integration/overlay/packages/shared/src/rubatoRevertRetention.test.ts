@@ -23,6 +23,15 @@ describe("retainUserMessagesAfterRevert", () => {
     expect(result.promptlessTurns).toBe(1);
   });
 
+  it("keeps a steer stamped the same millisecond as the reply after it", () => {
+    const ask = user("ask");
+    const first = reply("a1", "t1");
+    const steer = { id: "zzz-steer", role: "user", turnId: null, createdAt: at() };
+    const answer = { id: "aaa-answer", role: "assistant", turnId: "t1", createdAt: steer.createdAt };
+    const result = retainUserMessagesAfterRevert([ask, first, answer, steer, user("next"), reply("a2", "t2")], new Set(["t1"]));
+    expect([...result.retained]).toEqual(["ask", "zzz-steer"]);
+  });
+
   it("leaves prompts without a following turn to the counting rule", () => {
     const messages = [user("ask"), reply("a1", "t1"), user("unanswered")];
     const result = retainUserMessagesAfterRevert(messages, new Set(["t1"]));
