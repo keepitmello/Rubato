@@ -19,6 +19,7 @@ harness/scripts/rubato-auth.sh
 harness/scripts/rubato-confirm.mjs
 harness/scripts/rubato-dispatch.sh
 harness/scripts/rubato-pi.sh
+harness/scripts/rubato-schedule.sh
 harness/scripts/rubato-soul.sh
 harness/scripts/rubato-splash.sh
 harness/scripts/rubato-update.sh

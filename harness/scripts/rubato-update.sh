@@ -237,10 +237,14 @@ need_aside=0
 # 예약 작업 스케줄러도 launchd 상주로 체크아웃 소스를 돈다. 자기 코드와 그것이 읽는
 # 공용 모듈·엔진 클라이언트가 바뀌었고 이 기기에 등록돼 있을 때만 다시 띄운다. 실행 중인
 # 예약 세션은 엔진 안에 있어 끊기지 않고, 새 스케줄러가 그 기록을 이어받는다.
+# 등록돼 있지 않으면 새로 켠다(need_scheduler=install) — 예약 작업은 기본으로 돌아야 하고,
+# 이 업데이트가 스케줄러를 처음 들여오는 경우도 여기서 켜진다. 계정 홈에서만(아래).
 need_scheduler=0
 SCHEDULER_LABEL="com.keepitmello.rubato.scheduler"
-if echo "$CHANGED" | grep -Eq '^(harness/scheduler/|packages/schedule-core/|harness/pi-server/src/)'; then
-  "$LAUNCHCTL_BIN" print "gui/$(id -u)/$SCHEDULER_LABEL" >/dev/null 2>&1 && need_scheduler=1
+if "$LAUNCHCTL_BIN" print "gui/$(id -u)/$SCHEDULER_LABEL" >/dev/null 2>&1; then
+  echo "$CHANGED" | grep -Eq '^(harness/scheduler/|packages/schedule-core/|harness/pi-server/src/)' && need_scheduler=1
+elif [ -f "$HERE/../scheduler/src/cli.mjs" ] && [ -z "${RUBATO_NO_SCHEDULER-}" ] && [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
+  need_scheduler=install
 fi
 # Remote hub 도 launchd 상주라 소스만 받으면 옛 프로세스가 GC/유휴 정책을
 # 계속 돈다. zmx 세션은 허브 밖이라 kickstart -k 로도 안 죽는다.
@@ -572,6 +576,17 @@ fi
 if [ "$need_scheduler" = 1 ]; then
   "$LAUNCHCTL_BIN" kickstart -k "gui/$(id -u)/$SCHEDULER_LABEL" >/dev/null 2>&1 \
     && ok "예약 작업 스케줄러 재시작" || warn "예약 작업 스케줄러 재시작 경고 — 손으로: launchctl kickstart -k gui/\$(id -u)/$SCHEDULER_LABEL"
+elif [ "$need_scheduler" = install ] && [ -f "$HERE/account-home.sh" ] && [ -f "$HERE/find-node.sh" ]; then
+  . "$HERE/account-home.sh"
+  if rubato_home_is_account_home; then
+    . "$HERE/find-node.sh"
+    SCHED_NODE="$(rubato_find_node 2>/dev/null || true)"
+    if [ -n "$SCHED_NODE" ] && "$SCHED_NODE" "$HERE/../scheduler/src/cli.mjs" install >/dev/null 2>&1; then
+      ok "예약 작업 스케줄러를 켰다"
+    else
+      warn "예약 작업 스케줄러를 켜지 못했다 — 손으로: rubato schedule install (앱 설정 > Scheduled Tasks 에서도 켤 수 있다)"
+    fi
+  fi
 fi
 
 # 허브 재시작은 세션이 있어도 한다. zmx 세션은 허브 프로세스가 아니라서

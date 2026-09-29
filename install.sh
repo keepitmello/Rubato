@@ -515,6 +515,28 @@ fi
 
 fi   # ONLY_SHELL 스킵 끝
 
+if [ "$ONLY_SHELL" -eq 0 ] && [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
+head_ "단계 6 · 예약 작업 스케줄러"
+# 예약 작업은 launchd 상주 스케줄러가 돌린다. 기본으로 켜 둬야 앱 설정 탭에서 등록한
+# 작업이 그냥 돈다 — 터미널 한 줄을 따로 요구하지 않는다. launchd 작업은 HOME 이 아니라
+# 계정에 하나라서, 시험·샌드박스 HOME 에서는 계정의 작업을 건드리지 않는다.
+. "$HARNESS/scripts/account-home.sh"
+if [ "$APPLY" -eq 0 ]; then
+  plan "rubato schedule install            (launchd com.keepitmello.rubato.scheduler)"
+elif [ -n "${RUBATO_NO_SCHEDULER-}" ]; then
+  say "건너뛴다 (RUBATO_NO_SCHEDULER)"
+elif ! rubato_home_is_account_home; then
+  say "건너뛴다 (이 HOME 은 이 계정의 홈이 아니다)"
+elif [ -z "$NODE24" ]; then
+  add_manual "예약 작업 스케줄러를 못 띄웠다(Node 24+ 없음). Node 를 깐 뒤: rubato schedule install"
+elif SCHED_OUT="$("$NODE24" "$HARNESS/scheduler/src/cli.mjs" install 2>&1)"; then
+  ok "$SCHED_OUT"
+else
+  warn "예약 작업 스케줄러를 못 띄웠다: $SCHED_OUT"
+  add_manual "예약 작업 스케줄러: rubato schedule install 을 다시 실행해라 (앱 설정 > Scheduled Tasks 에서도 켤 수 있다)"
+fi
+fi
+
 if [ "$ONLY_SHELL" -eq 0 ]; then
 head_ "단계 7 · 공식 GUI (T3)"
 if [ -z "$GUI" ] && [ "$APPLY" -eq 1 ] && [ -t 0 ]; then
