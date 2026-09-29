@@ -91,6 +91,16 @@
     expect(owner.modelLabel).toBe("Opus 5.5 · High");
     expect(owner.usage?.turns).toBe(7);
     expect(owner.role).toBe("owner");
+    expect(owner.memberName).toBe("owner");
+    // A member resting between turns reloads as waiting, not done.
+    projection.project({ type: "extension_event", name: "rubato.task.updated", data: { tasks: [{
+      task_id: "st_owner", status: "completed", residency_state: "resident", final_response: "Waiting on the build." }] } });
+    await harness.emitAndDrain(events.splice(0));
+    thread = (await harness.readModel()).threads.find((item) => item.id === "thread-1")!;
+    agents = foldSubagentActivities(thread.activities);
+    expect(agents.find((item) => item.id === "st_owner")?.status).toBe("idle");
+    expect(agents.find((item) => item.id === "st_owner")?.progress).toBe("Waiting on the build.");
+    expect(agents.find((item) => item.id === "call_team")?.status).toBe("running");
     // A board change after the team settled must not reopen it.
     projection.project({ type: "extension_event", name: "rubato.task.updated", data: { tasks: [{
       task_id: "st_owner", status: "completed", final_response: "Done." }] } });
