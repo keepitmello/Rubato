@@ -10,7 +10,7 @@ export const OPENCODE_PICKER_IDS = Object.freeze(["muse-spark-1.3-contributor-fr
 export const ANTHROPIC_PICKER_IDS = Object.freeze([
   "claude-fable-5-1",
   "claude-opus-5-5",
-  "claude-sonnet-5",
+  "claude-sonnet-5-5",
   "claude-haiku-4-5",
 ]);
 
@@ -26,8 +26,8 @@ export const CODEX_PICKER_IDS = Object.freeze([
 /** Codex `[sub]` 는 Sol 과 Astra 만. Terra/Luna/Daybreak 는 한 계정으로만 고른다. */
 export const CODEX_SUB_PICKER_IDS = Object.freeze(["gpt-6-sol", "gpt-6-astra"]);
 
-/** Anthropic `[sub]` 는 Fable 과 Opus 만. Sonnet/Haiku 는 한 계정으로만 고른다. */
-export const ANTHROPIC_SUB_PICKER_IDS = Object.freeze(["claude-fable-5-1", "claude-opus-5-5"]);
+/** Anthropic `[sub]` 는 Fable, Opus, Sonnet 만. Haiku 는 한 계정으로만 고른다. */
+export const ANTHROPIC_SUB_PICKER_IDS = Object.freeze(["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5"]);
 
 const SUB_PICKER_IDS = Object.freeze({
   "openai-codex": CODEX_SUB_PICKER_IDS,

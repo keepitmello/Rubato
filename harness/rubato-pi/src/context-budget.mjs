@@ -27,7 +27,7 @@ export const HARD_SAFETY_STRATEGY = "hard-safety";
 /** Anthropic 서버 컴팩션(compact_20260112)을 쓰는 Claude 모델. `-sub` 는 같은 모델의 두 번째 계정이다. */
 export const ANTHROPIC_SERVER_COMPACTION_MODEL_IDS = Object.freeze([
   "claude-opus-5-5",
-  "claude-sonnet-5",
+  "claude-sonnet-5-5",
   "claude-fable-5-1",
 ]);
 

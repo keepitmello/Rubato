@@ -178,6 +178,26 @@ export function opus55Models(nativeModels) {
   }];
 }
 
+const SONNET_55_ID = "claude-sonnet-5-5";
+const SONNET_55_TEMPLATE_ID = "claude-sonnet-5";
+
+/**
+ * Sonnet 5.5 는 pinned anthropic catalog 에 없어 pin 의 Sonnet 5 에서 파생한다.
+ * `GET /v1/models`(2026-09-29)의 창·출력·effort·adaptive thinking 이 Sonnet 5 와
+ * 같고, 공식 가격표도 같은 $2/$10 · cache hit $0.20 · 5m write $2.50 이라 id 와
+ * 표시명만 덮는다.
+ */
+export function sonnet55Models(nativeModels) {
+  if (nativeModels.some((model) => model.id === SONNET_55_ID)) return [];
+  const template = nativeModels.find((model) => model.id === SONNET_55_TEMPLATE_ID);
+  if (!template) throw new Error("pinned anthropic catalog has no claude-sonnet-5 to derive Sonnet 5.5 from");
+  return [{
+    ...template,
+    id: SONNET_55_ID,
+    name: "Sonnet 5.5",
+  }];
+}
+
 const GROK_47_ID = "grok-4.7";
 const GROK_47_TEMPLATE_ID = "grok-4.6";
 
@@ -451,14 +471,15 @@ export async function directProviders({
   );
 
   // Anthropic 은 pinned provider + setup-token fallback resolver 하나다. wire 와
-  // tool 이름 규칙은 pin 이 소유한다. Fable 5.1 과 Opus 5.5 만 pin 에 없어
-  // 각각 Fable 5·Opus 5 에서 파생한다.
-  // 피커는 현재 세대(fable 5.1, opus 5.5, sonnet 5, haiku 4.5)로 줄인다.
+  // tool 이름 규칙은 pin 이 소유한다. Fable 5.1·Opus 5.5·Sonnet 5.5 는 pin 에 없어
+  // 각각 Fable 5·Opus 5·Sonnet 5 에서 파생한다.
+  // 피커는 현재 세대(fable 5.1, opus 5.5, sonnet 5.5, haiku 4.5)로 줄인다.
   const anthropicBase = withClaudeSetupToken(anthropicProvider(), anthropic ?? { env });
   const anthropicNative = withPickerIds(
     withExtraModels(anthropicBase, [
       ...fable51Models(anthropicBase.getModels()),
       ...opus55Models(anthropicBase.getModels()),
+      ...sonnet55Models(anthropicBase.getModels()),
     ]),
     ANTHROPIC_PICKER_IDS,
   );
