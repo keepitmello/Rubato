@@ -12,6 +12,7 @@ import { permissionEdits, permissionOverlays } from './permission-edits.mjs';
 import { providerEdits, providerOverlays } from './provider-edits.mjs';
 import { aboutEdits, aboutOverlays } from './about-edits.mjs';
 import { scheduleEdits, scheduleOverlays } from './schedule-edits.mjs';
+import { sidebarPinEdits, sidebarPinOverlays } from './sidebar-pin-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -2103,6 +2104,11 @@ for (const [relative, changes] of Object.entries(cacheEdits)) {
 // Settings > Scheduled Tasks (schedule-edits.mjs) anchors on the memory edits above.
 overlays.push(...scheduleOverlays);
 for (const [relative, changes] of Object.entries(scheduleEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Pinning in the legacy sidebar (sidebar-pin-edits.mjs).
+overlays.push(...sidebarPinOverlays);
+for (const [relative, changes] of Object.entries(sidebarPinEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 function transform(text, changes) {
