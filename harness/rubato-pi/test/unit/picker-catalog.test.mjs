@@ -18,7 +18,7 @@ function model(id) {
 // 피커 명단의 현재 세대 id 는 `picker-catalog.mjs` 가 소유한다 — 여기서 손으로 적으면
 // 세대가 바뀔 때마다 깨진다.
 const CURRENT_XAI = XAI_PICKER_IDS[0];
-const [CURRENT_FABLE, CURRENT_OPUS] = ANTHROPIC_PICKER_IDS;
+const [CURRENT_FABLE, CURRENT_OPUS, CURRENT_SONNET] = ANTHROPIC_PICKER_IDS;
 const [CODEX_SOL, CODEX_LUNA, CODEX_ASTRA, CODEX_DAYBREAK] = CODEX_PICKER_IDS;
 const [CODEX_SOL_SUB, CODEX_ASTRA_SUB] = CODEX_SUB_PICKER_IDS;
 
@@ -37,6 +37,7 @@ test("Anthropic 이전 세대와 dated id 는 빠진다", () => {
       model("claude-sonnet-5"),
       model("claude-opus-4-8"),
       model(CURRENT_OPUS),
+      model(CURRENT_SONNET),
       model("claude-haiku-4-5-20251001"),
       model("claude-haiku-4-5"),
       model("claude-fable-5"),
@@ -150,16 +151,19 @@ test("Codex [sub] 는 Sol 과 Astra 만 붙는다", () => {
   assert.equal(stored.includes(`${CODEX_DAYBREAK}-sub`), false);
 });
 
-test("Anthropic [sub] 는 Fable 과 Opus 만 붙는다", () => {
+test("Anthropic [sub] 는 Fable, Opus, Sonnet 만 붙는다", () => {
   const provider = withSubAccountCopies({
     id: "anthropic",
-    getModels: () => [model(CURRENT_FABLE), model(CURRENT_OPUS), model("claude-sonnet-5"), model("claude-haiku-4-5")],
+    getModels: () => [model(CURRENT_FABLE), model(CURRENT_OPUS), model(CURRENT_SONNET), model("claude-sonnet-5"), model("claude-haiku-4-5")],
     filterModels: (models) => models,
   });
   const credential = { accounts: [{ name: "default" }, { name: "sub" }] };
   assert.deepEqual(
     provider.filterModels(provider.getModels(), credential).map((entry) => entry.id),
-    [CURRENT_FABLE, CURRENT_OPUS, "claude-sonnet-5", "claude-haiku-4-5", `${CURRENT_FABLE}-sub`, `${CURRENT_OPUS}-sub`],
+    [
+      CURRENT_FABLE, CURRENT_OPUS, CURRENT_SONNET, "claude-sonnet-5", "claude-haiku-4-5",
+      `${CURRENT_FABLE}-sub`, `${CURRENT_OPUS}-sub`, `${CURRENT_SONNET}-sub`,
+    ],
   );
   const stored = provider.getModels().map((entry) => entry.id);
   assert.equal(stored.includes("claude-sonnet-5-sub"), false);

@@ -19,6 +19,7 @@ import { directProviders } from "../../src/provider-direct.mjs";
 
 // 파생되는 현재 세대 opus 행은 피커 명단이 소유한다.
 const DERIVED_OPUS = ANTHROPIC_PICKER_IDS.find((id) => id.startsWith("claude-opus-5-"));
+const DERIVED_SONNET = ANTHROPIC_PICKER_IDS.find((id) => id.startsWith("claude-sonnet-5-"));
 
 /** 실제 token 과 겹칠 수 없는 값. 접두만 진짜와 같게 둔다 — 그 접두가 판정을 만든다. */
 const SETUP_TOKEN = `${CLAUDE_SETUP_TOKEN_PREFIX}-test-only-not-a-real-token`;
@@ -203,14 +204,19 @@ test("pinned Anthropic 모델 metadata 를 다시 적지 않았다", async () =>
   const derived = ours.filter((model) => !byId.has(model.id));
   assert.deepEqual(
     derived.map((model) => model.id).filter((id) => !id.endsWith("-sub")),
-    [DERIVED_OPUS],
+    [DERIVED_OPUS, DERIVED_SONNET],
   );
+  const derivedById = new Map(derived.map((model) => [model.id, model]));
 
-  // 파생 행의 틀도 손으로 적지 않았다. id·표시명·가격만 다르고 나머지는 틀 그대로다.
-  const template = byId.get("claude-opus-5");
-  const { id: _derivedId, name: _derivedName, cost: _derivedCost, ...derivedRest } = derived[0];
-  const { id: _templateId, name: _templateName, cost: _templateCost, ...templateRest } = template;
-  assert.deepEqual(derivedRest, templateRest);
+  // 파생 행의 틀도 손으로 적지 않았다. Opus 는 id·표시명·가격만 다르고 나머지는 틀 그대로다.
+  const { id: _opusId, name: _opusName, cost: _opusCost, ...opusRest } = derivedById.get(DERIVED_OPUS);
+  const { id: _opusTplId, name: _opusTplName, cost: _opusTplCost, ...opusTemplateRest } = byId.get("claude-opus-5");
+  assert.deepEqual(opusRest, opusTemplateRest);
+
+  // Sonnet 5.5 는 가격까지 Sonnet 5 와 같다 — id·표시명만 다르다.
+  const { id: _sonnetId, name: _sonnetName, ...sonnetRest } = derivedById.get(DERIVED_SONNET);
+  const { id: _sonnetTplId, name: _sonnetTplName, ...sonnetTemplateRest } = byId.get("claude-sonnet-5");
+  assert.deepEqual(sonnetRest, sonnetTemplateRest);
 });
 
 // -------------------------------------------------------------- Kiro wire

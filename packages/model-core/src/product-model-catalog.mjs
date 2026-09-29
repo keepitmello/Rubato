@@ -27,7 +27,7 @@ export const PRODUCT_MODEL_ORDER = Object.freeze({
   anthropic: Object.freeze([
     "claude-fable-5-1",
     "claude-opus-5-5",
-    "claude-sonnet-5",
+    "claude-sonnet-5-5",
     "claude-haiku-4-5",
   ]),
   xai: Object.freeze(["grok-4.7"]),
