@@ -163,3 +163,19 @@ test('real T3 schema and panel fold group members, preserve direct spawns and co
     assert.equal(model.workflows[0].workflow.status, 'completed');
   }
 });
+
+test('a finished agent revived by AgentSend is working again, and settles again', () => {
+  const { events, projection } = setup({ team_name: 'unused' });
+  projection.project({ type: 'tool_execution_end', toolName: 'Agent', toolCallId: 'call_direct',
+    result: { details: { agentId: 'st_direct', status: 'running', task_summary: 'Site review' } } });
+  const snapshot = (item) => projection.project({ type: 'extension_event', name: 'rubato.task.updated', data: { tasks: [item] } });
+  const rows = (type) => events.filter(event => event.type === type && event.payload.taskId === 'st_direct');
+  snapshot({ task_id: 'st_direct', status: 'completed', final_response: 'First report.' });
+  snapshot({ task_id: 'st_direct', status: 'completed', final_response: 'First report.' });
+  assert.equal(rows('task.completed').length, 1);
+  snapshot({ task_id: 'st_direct', status: 'running' });
+  assert.equal(rows('task.progress').at(-1).payload.status, 'running');
+  snapshot({ task_id: 'st_direct', status: 'completed', final_response: 'Second report.' });
+  assert.equal(rows('task.completed').length, 2);
+  assert.equal(rows('task.completed').at(-1).payload.summary, 'Second report.');
+});
