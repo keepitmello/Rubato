@@ -46,7 +46,7 @@ import { primaryServerProvidersAtom } from "../../state/server";
 import { usePreparedConnection } from "../../state/session";
 import { cn } from "../../lib/utils";
 import { iconForProviderModel } from "../chat/providerIconUtils";
-import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "../ui/alert";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -258,11 +258,7 @@ export function RubatoScheduleSettingsPanel() {
   return (
     <SettingsPageContainer>
       {list && !list.scheduler.running ? (
-        <Alert variant="warning">
-          <TriangleAlertIcon />
-          <AlertTitle>{COPY.schedulerOff}</AlertTitle>
-          <AlertDescription>{COPY.schedulerOffBody}</AlertDescription>
-        </Alert>
+        <SchedulerOffBanner environmentId={environmentId} onStarted={() => void load()} />
       ) : null}
       <SettingsSection
         id="scheduled-tasks"
@@ -306,6 +302,45 @@ export function RubatoScheduleSettingsPanel() {
         ))}
       </SettingsSection>
     </SettingsPageContainer>
+  );
+}
+
+/** The scheduler is off: say what that means and start it from here. */
+function SchedulerOffBanner({ environmentId, onStarted }: { environmentId: EnvironmentId; onStarted: () => void }) {
+  const [starting, setStarting] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  const start = async () => {
+    setStarting(true);
+    setFailure(null);
+    try {
+      await rubatoSchedule.startScheduler(environmentId);
+      toastManager.add({ type: "success", title: COPY.schedulerStarted });
+      onStarted();
+    } catch (error) {
+      setFailure(error instanceof Error ? error.message : String(error));
+    } finally {
+      setStarting(false);
+    }
+  };
+  return (
+    <Alert variant="warning" controlAlignment="first-line">
+      <TriangleAlertIcon />
+      <AlertTitle>{COPY.schedulerOff}</AlertTitle>
+      <AlertDescription>
+        <span>{COPY.schedulerOffBody}</span>
+        {failure ? (
+          <span className="text-destructive-foreground">
+            {COPY.schedulerStartFailed}: {failure} {COPY.schedulerTerminalHint}
+          </span>
+        ) : null}
+      </AlertDescription>
+      <AlertAction>
+        <Button size="xs" variant="outline" disabled={starting} onClick={() => void start()}>
+          {starting ? <Spinner className="size-3.5" /> : <PlayIcon className="size-3.5" />}
+          {starting ? COPY.startingScheduler : COPY.startScheduler}
+        </Button>
+      </AlertAction>
+    </Alert>
   );
 }
 

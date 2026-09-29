@@ -162,6 +162,7 @@ describe("run history", () => {
       "Didn’t run (Mac off or scheduler not running)",
     );
     expect(reasonLabel(run({ status: "skipped", reason: "overlap" }))).toBe("Previous run was still going");
+    expect(reasonLabel(run({ status: "failed", reason: "interrupted" }))).toBe("Interrupted");
     expect(reasonLabel(run({ status: "failed", reason: "brand-new-code" }))).toBe("brand-new-code");
     expect(reasonLabel(run({ status: "success" }))).toBeNull();
   });

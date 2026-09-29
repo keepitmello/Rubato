@@ -88,3 +88,28 @@ test('preview speaks the shared sentence; run now needs the scheduler', async (t
   assert.equal(refused.status, 409);
   assert.equal(refused.body.error.code, 'scheduler-offline');
 });
+
+test('the banner button starts the scheduler through the launchd module, and reports why it could not', async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'rb-schedule-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const env = { HOME: root, RUBATO_SCHEDULE_HOME: path.join(root, 'schedule') };
+  const calls = [];
+  const post = (service) => handleScheduleRequest(service, new Request('http://mac/rubato/schedule/start-scheduler', {
+    method: 'POST', body: '{}', headers: { 'content-type': 'application/json' },
+  }));
+
+  const started = createScheduleService({ env, launchd: { startScheduler: async (options) => { calls.push(options.env); return { running: true, pid: 4242, installed: true }; } } });
+  const ok = await post(started);
+  assert.equal(ok.status, 200);
+  const body = await ok.json();
+  assert.equal(body.installed, true);
+  assert.equal(typeof body.scheduler.running, 'boolean');
+  // The store location travels with the call, so the agent serves the same store.
+  assert.equal(calls[0].RUBATO_SCHEDULE_HOME, env.RUBATO_SCHEDULE_HOME);
+
+  const failure = Object.assign(new Error('The scheduler did not start.'), { code: 'scheduler-start-failed', detail: 'launchctl: bootstrap failed: 5' });
+  const failing = createScheduleService({ env, launchd: { startScheduler: async () => { throw failure; } } });
+  const bad = await post(failing);
+  assert.equal(bad.status, 500);
+  assert.deepEqual((await bad.json()).error, { code: 'scheduler-start-failed', message: 'The scheduler did not start.', detail: 'launchctl: bootstrap failed: 5' });
+});

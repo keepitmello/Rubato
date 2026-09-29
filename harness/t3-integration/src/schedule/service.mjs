@@ -13,6 +13,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const coreFile = path.resolve(here, '..', '..', '..', '..', 'packages', 'schedule-core', 'src', 'index.mjs');
+// Installs and starts the scheduler's launchd agent; `rubato schedule install` calls the same function.
+const launchdFile = path.resolve(here, '..', '..', '..', 'scheduler', 'src', 'launchd.mjs');
 
 export class ScheduleRequestError extends Error {
   constructor(status, code, message, field) {
@@ -34,6 +36,8 @@ const STATUS = {
   'scheduler-offline': 409,
   busy: 503,
   corrupt: 500,
+  'unsupported-platform': 501,
+  'scheduler-start-failed': 500,
 };
 
 function need(value, name) {
@@ -42,8 +46,9 @@ function need(value, name) {
 }
 
 /**
- * @param {{ core?: object, env?: NodeJS.ProcessEnv }} [options]
- *   `core` stands in for @rubato/schedule-core; `env.RUBATO_SCHEDULE_HOME` moves the store (tests).
+ * @param {{ core?: object, launchd?: object, env?: NodeJS.ProcessEnv }} [options]
+ *   `core` stands in for @rubato/schedule-core and `launchd` for the scheduler's
+ *   launchd module; `env.RUBATO_SCHEDULE_HOME` moves the store (tests).
  */
 export function createScheduleService(options = {}) {
   const env = options.env ?? process.env;
@@ -55,6 +60,7 @@ export function createScheduleService(options = {}) {
       loaded = undefined;
       throw new ScheduleRequestError(500, 'schedule-unavailable', `The schedule store could not load: ${error.message}`);
     }));
+  const launchd = () => (options.launchd ? Promise.resolve(options.launchd) : import(pathToFileURL(launchdFile).href));
   let store;
   const open = async () => (store ??= (await core()).createScheduleStore({ env }));
 
@@ -83,6 +89,12 @@ export function createScheduleService(options = {}) {
       case 'run-now':
         return store.runNow(need(input.taskId, 'taskId'),
           typeof input.fromRunId === 'string' ? { fromRunId: input.fromRunId } : {});
+      // The banner's button. Idempotent: an already running scheduler answers at once.
+      case 'start-scheduler': {
+        const { startScheduler } = await launchd();
+        const started = await startScheduler({ env });
+        return { scheduler: store.schedulerStatus(), installed: Boolean(started?.installed) };
+      }
       case 'preview':
         if (!input.schedule || typeof input.schedule !== 'object') throw bad('schedule is missing.', 'schedule');
         return store.preview(input.schedule);
@@ -100,7 +112,10 @@ function errorOf(error) {
   if (error && typeof error === 'object' && typeof error.code === 'string' && error.code in STATUS)
     return {
       status: STATUS[error.code],
-      body: typeof error.toJSON === 'function' ? error.toJSON() : { code: error.code, message: error.message },
+      body: {
+        ...(typeof error.toJSON === 'function' ? error.toJSON() : { code: error.code, message: error.message }),
+        ...(typeof error.detail === 'string' && error.detail ? { detail: error.detail } : {}),
+      },
     };
   return { status: 500, body: { code: 'failed', message: error instanceof Error ? error.message : String(error) } };
 }
