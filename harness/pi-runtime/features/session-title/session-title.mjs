@@ -10,7 +10,9 @@ export const TITLE_ENTRY = "rubato-pi.session-title";
 export const TITLE_SYSTEM_PROMPT = `Name this coding-agent session.
 
 Rules:
-- Title the current topic, not the opening message if they differ.
+- Title what the user is trying to get done across the whole session, not the subject currently being discussed.
+- The latest messages are often a step, detour, or example inside that goal. Change the title only when the session has clearly moved on to a different goal.
+- If a current title is given and still names the goal, return it unchanged.
 - Use at most 3 words, and prefer 2.
 - Prefer concrete nouns and verbs from the work.
 - Drop articles, filler, and any word the title still reads fine without.
@@ -30,7 +32,9 @@ export function textOfContent(content) {
     .join("");
 }
 
-export function userTextsFromEntries(entries, { limit = 6, maxChars = 400 } = {}) {
+// 제목은 세션 전체의 목적을 불러야 한다. 최근 메시지만 보이면 곁가지 하나가 제목을
+// 차지하므로, 처음·중간·최근을 고르게 뽑아 넘긴다. 번호는 세션 안의 원래 순번이다.
+export function userTextsFromEntries(entries, { limit = 12, recent = 4, maxChars = 300 } = {}) {
   const texts = [];
   for (const entry of entries ?? []) {
     const message = entry?.type === "message" ? entry.message : entry;
@@ -39,12 +43,19 @@ export function userTextsFromEntries(entries, { limit = 6, maxChars = 400 } = {}
     if (!text || text.startsWith("/")) continue;
     texts.push(text.length > maxChars ? `${text.slice(0, maxChars).trim()}…` : text);
   }
-  return texts.slice(-limit);
+  const all = texts.map((text, index) => ({ n: index + 1, text }));
+  if (all.length <= limit) return all;
+  const tail = all.slice(-recent);
+  const earlier = all.slice(0, -recent);
+  const spread = limit - recent;
+  const picked = Array.from({ length: spread }, (_, i) => earlier[Math.round((i * (earlier.length - 1)) / (spread - 1))]);
+  return [...picked, ...tail];
 }
 
-export function buildTitlePrompt(texts) {
-  const lines = texts.map((text, index) => `${index + 1}. ${text}`);
-  return `Recent user messages:\n${lines.join("\n")}`;
+export function buildTitlePrompt(picks, current) {
+  const lines = picks.map(({ n, text }) => `${n}. ${text}`);
+  const head = current ? `Current title: ${current}\n\n` : "";
+  return `${head}User messages sampled across the session, numbered in order:\n${lines.join("\n")}`;
 }
 
 export function sanitizeTitle(text) {
