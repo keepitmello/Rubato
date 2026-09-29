@@ -1,13 +1,14 @@
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { chmod, copyFile, lstat, mkdir, mkdtemp, readFile, rename, writeFile } from "node:fs/promises";
+import { registerHooks } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { stageAndPublishInstall, withInstallLock } from "./install-transaction.mjs";
 import { lockPublishedPayload, removeTree } from "./payload-lock.mjs";
-import { sourceFingerprint } from "./source-fingerprint.mjs";
+import { changedInputs, describeSourceInputs, inputFingerprint, snapshotFingerprint, snapshotSources } from "./source-fingerprint.mjs";
 
 const run = promisify(execFile);
 const here = dirname(fileURLToPath(import.meta.url));
@@ -109,6 +110,35 @@ async function requiredFeatures() {
   return [...CANDIDATE_FEATURE_NAMES, "rubato-components"];
 }
 
+// Which repo files one build consumed: modules the build process resolved while it
+// ran (the feature catalog and every patch module it imports), files the stage
+// copied by sourcePath, and Bun's own bundle inputs from the component receipt.
+function recordResolvedModules() {
+  const urls = new Set();
+  const hooks = registerHooks({
+    resolve(specifier, context, nextResolve) {
+      const result = nextResolve(specifier, context);
+      if (result?.url?.startsWith("file:")) urls.add(result.url);
+      return result;
+    },
+  });
+  let active = true;
+  return {
+    stop() { if (active) { active = false; hooks.deregister(); } },
+    paths: () => [...urls].map((url) => fileURLToPath(url)),
+  };
+}
+
+async function candidateSourceInputs(repo, stagingRoot, resolvedModules) {
+  const { loadPiFeatures } = await import("../feature-catalog.mjs");
+  const { CANDIDATE_FEATURE_NAMES } = await import("../features/rubato-components/candidate-main.mjs");
+  const staged = (await loadPiFeatures(CANDIDATE_FEATURE_NAMES)).flatMap((feature) => (feature.files ?? []).map((file) => file.sourcePath));
+  const build = JSON.parse(await readFile(join(stagingRoot, "rubato-features/rubato-components/rubato-build.json"), "utf8"));
+  const bundled = [...(build.sources ?? []).map((source) => source.path), ...(build.assets ?? []).map((asset) => asset.source)]
+    .filter((path) => typeof path === "string" && !path.startsWith("generated:"));
+  return describeSourceInputs(repo, [...resolvedModules, ...staged, ...bundled]);
+}
+
 async function writeInstallReceipt(outputRoot, receipt) {
   await writeFile(join(outputRoot, INSTALL_RECEIPT), `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o644 });
 }
@@ -157,20 +187,30 @@ export async function installRubatoCandidate({
           lockSha256: prior.hashes?.lock, stockVersion: prior.stockVersion, features: prior.features,
         };
       }
-      const sourceSha256 = await sourceFingerprint(repo);
+      const snapshot = await snapshotSources(repo);
       const npmRoot = await mkdtemp(join(tmpdir(), "rubato-candidate-npmci-"));
+      const resolved = recordResolvedModules();
       try {
         const ci = await npmCi({ sourceRoot: source, npmRoot, execPath });
         const { staged, isolation } = await stageCandidate({ sourceRoot: source, npmRoot, outputRoot: stagingRoot, bunExecutable, repoRoot: repo });
+        resolved.stop();
         const stageBytes = await readFile(join(stagingRoot, "rubato-pi-stage.json"));
-        if (await sourceFingerprint(repo) !== sourceSha256) throw new Error("Candidate sources changed during build; current install was not replaced");
+        // Only what this build read decides whether the sources moved under it. Another
+        // session editing a skill or a test while the engine builds is not a reason to
+        // throw the build away; an edit to anything it read still is.
+        const sourceInputs = await candidateSourceInputs(repo, stagingRoot, resolved.paths());
+        const sourceSha256 = snapshotFingerprint(snapshot, sourceInputs);
+        if (await inputFingerprint(repo, sourceInputs) !== sourceSha256) {
+          const changed = await changedInputs(repo, snapshot, sourceInputs);
+          throw new Error(`Candidate sources changed during build; current install was not replaced (${changed.slice(0, 5).join(", ")}${changed.length > 5 ? ", …" : ""})`);
+        }
         const receipt = {
           version: 1, state: "ready", mode: "isolated-candidate", fullRubatoParity: false,
           stockVersion: staged.receipt.stockVersion,
           node: { version: process.version, execPath },
           features: staged.receipt.features,
           candidateEntry: "rubato-features/rubato-components/candidate-main.mjs",
-          sourceSha256,
+          sourceSha256, sourceInputs,
           hashes: {
             package: staged.receipt.packageSha256, lock: staged.receipt.lockSha256,
             stageReceipt: sha256(stageBytes), npmLock: ci.lockSha256,
@@ -185,6 +225,7 @@ export async function installRubatoCandidate({
         await writeInstallReceipt(stagingRoot, receipt);
         return { root: dest, receipt, staged, previous };
       } finally {
+        resolved.stop();
         await retirePath(npmRoot);
       }
     },
