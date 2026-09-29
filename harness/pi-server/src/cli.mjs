@@ -5,6 +5,7 @@ import { serveProfile } from './profile-server.mjs';
 import { resolveLaunchAgentDir } from '../../rubato-pi/src/launch.mjs';
 import { installedSharedRuntime } from './discovery.mjs';
 import { errorLog } from './error-log.mjs';
+import { installExitGuard } from './exit-guard.mjs';
 
 try {
   const { values } = parseArgs({ options: {
@@ -16,6 +17,7 @@ try {
     if (values['runtime-root'] && !values['agent-dir']) {
       throw new Error('--runtime-root is an incomplete candidate and requires an explicit --agent-dir; the normal profile is not selected implicitly');
     }
+    installExitGuard();
     const idleMs = values['idle-ms'] === 'never' ? null : Number(values['idle-ms'] ?? 60000);
     const service = await serveProfile({ agentDir: path.resolve(values['agent-dir'] ?? resolveLaunchAgentDir()),
       socketPath: values.socket, idleMs, runtimeRoot: values['runtime-root'] ?? installedSharedRuntime(), onError: errorLog() });
