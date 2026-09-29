@@ -50,6 +50,10 @@ export type PiImportedMessage =
 export interface PiBridge {
   projectedMessages: (threadId: string) => Promise<ReadonlyArray<{id: string; text: string; streaming: boolean}>>;
   appendSessionMessage: (threadId: string, message: PiSessionMessage) => Promise<void>;
+  projectedThread: (threadId: string) => Promise<{
+    messages: ReadonlyArray<{id: string; role: string; text: string; turnId: string | null; createdAt: string}>;
+    checkpoints: ReadonlyArray<{turnId: string; checkpointTurnCount: number}>;
+  } | null>;
   inventory(): Promise<ReadonlyArray<PiSummary>>;
   cursor(id: string): {kind: string; serverId: string; sessionId: string};
   transcript(id: string): Promise<{messages: ReadonlyArray<unknown>}>;

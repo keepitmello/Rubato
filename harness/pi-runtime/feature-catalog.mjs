@@ -56,6 +56,7 @@ const catalog = Object.freeze({
   "thinking-levels": { requires: [], load: () => import("./features/thinking-levels/patches.mjs") },
   "transcript-cache": { requires: [], load: () => import("./features/transcript-cache/patches.mjs") },
   "title-guard": { requires: [], load: () => import("./features/title-guard/patches.mjs") },
+  "conversation-rewind": { requires: [], load: () => import("./features/conversation-rewind/patches.mjs") },
 });
 
 export const PI_FEATURE_NAMES = Object.freeze(Object.keys(catalog));
