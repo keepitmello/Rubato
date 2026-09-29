@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { Value } from "typebox/value"
 import { TeamMemberReplacementError } from "../../team"
 import { createFakeTeamService, fakeCreatedMember } from "./__fixtures__/team-tool-fakes"
-import { createTeamReplaceMemberTool, runTeamReplaceMember, TeamReplaceMemberParams } from "./replacement"
+import { type TeamReplaceMemberInput, createTeamReplaceMemberTool, runTeamReplaceMember, TeamReplaceMemberParams } from "./replacement"
 
 const input = {
   team_run_id: "00000000-0000-4000-8000-000000000000",
@@ -47,6 +47,17 @@ describe("team_replace_member tool", () => {
     expect(Value.Check(tool.parameters, input)).toBe(true)
     expect(Value.Check(tool.parameters, { ...input, model: "other/model" })).toBe(true)
     expect(tool.description).toContain("user approval")
+  })
+
+  test("truncates an over-long task_summary instead of rejecting the recovery", () => {
+    const tool = createTeamReplaceMemberTool({
+      service: createFakeTeamService(), models: { has: () => true, list: () => ["rubato-mock/mock-1"] },
+    })
+    const raw = { ...input, task_summary: "x".repeat(120) }
+    expect(Value.Check(tool.parameters, raw)).toBe(false)
+    const prepared = tool.prepareArguments!(raw) as TeamReplaceMemberInput
+    expect(Value.Check(tool.parameters, prepared)).toBe(true)
+    expect(prepared.task_summary!.length).toBeLessThanOrEqual(80)
   })
 
   test("reports rejected recovery without converting it into another team or model", async () => {
