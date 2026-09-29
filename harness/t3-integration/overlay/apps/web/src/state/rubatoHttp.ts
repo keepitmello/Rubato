@@ -51,6 +51,8 @@ export class RubatoRequestError extends Error {
   constructor(
     readonly code: string,
     message: string,
+    /** The input the server blamed, when it named one. */
+    readonly field?: string,
   ) {
     super(message);
   }
@@ -86,15 +88,16 @@ export async function postRubato<T>(
   });
   const payload = (await response.json().catch(() => null)) as
     | (T & { error?: undefined })
-    | { error?: { code?: string; message?: string } }
+    | { error?: { code?: string; message?: string; field?: string } }
     | null;
   if (!response.ok || payload === null || (payload as { error?: unknown }).error) {
-    const error = (payload as { error?: { code?: string; message?: string } } | null)?.error;
+    const error = (payload as { error?: { code?: string; message?: string; field?: string } } | null)?.error;
     if (response.status === 401)
       throw new RubatoRequestError("unauthorized", `This connection is not allowed to change ${what}.`);
     throw new RubatoRequestError(
       error?.code ?? `http-${response.status}`,
       error?.message ?? `Request failed (HTTP ${response.status}).`,
+      typeof error?.field === "string" ? error.field : undefined,
     );
   }
   return payload as T;

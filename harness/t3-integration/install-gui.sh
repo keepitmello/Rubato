@@ -104,7 +104,8 @@ build_fingerprint() {
   {
     printf '%s\n' "$PIN"
     find "$HERE/overlay" -type f -exec shasum -a 256 {} + 2>/dev/null | sort
-    shasum -a 256 "$HERE/apply.mjs" "$HERE/voice-edits.mjs" "$HERE/memory-edits.mjs" "$HERE/cache-edits.mjs" "$HERE/permission-edits.mjs" "$HERE/write-gui-settings.mjs" 2>/dev/null
+    # apply.mjs 가 읽는 *-edits.mjs 는 전부 넣는다. 이름으로 나열했더니 나중에 생긴 것이 빠졌다.
+    shasum -a 256 "$HERE/apply.mjs" "$HERE"/*-edits.mjs "$HERE/write-gui-settings.mjs" 2>/dev/null
     shasum -a 256 "$HERE/assets/Rubato.png" "$HERE/assets/Rubato.icns" 2>/dev/null
     find "$HERE/assets/web" -type f -exec shasum -a 256 {} + 2>/dev/null | sort
   } | shasum -a 256 | cut -d' ' -f1
