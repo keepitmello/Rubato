@@ -1,6 +1,7 @@
 import { createAstGrepComponent } from "../components/ast-grep"
 import { createLspComponent } from "../components/lsp"
 import { createMemoryComponent } from "../components/memory"
+import { createScheduleComponent } from "../components/schedule"
 import type { RubatoComponent } from "./types"
 
 export function createRubatoComponents(taskComponent: RubatoComponent, options: {
@@ -12,5 +13,6 @@ export function createRubatoComponents(taskComponent: RubatoComponent, options: 
     createLspComponent(shared),
     taskComponent,
     createMemoryComponent(shared),
+    createScheduleComponent(shared),
   ]
 }
