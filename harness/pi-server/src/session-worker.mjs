@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
+import { PiCommandRejected } from './contracts.mjs';
 import { trimRequestImages } from '../../rubato-pi/src/context-notes/request-images.mjs';
 
 // get_messages carries every image the session ever saw as inline base64, and the
@@ -70,7 +71,7 @@ export class SessionWorker extends EventEmitter {
     if (!pending) return;
     this.pending.delete(record.id);
     clearTimeout(pending.timer);
-    if (!record.success) pending.reject(new Error(record.error || 'Pi RPC failed'));
+    if (!record.success) pending.reject(new PiCommandRejected(record.error || 'Pi RPC failed'));
     else pending.resolve(pending.withBoundary
       ? { data: record.data ?? null, eventSequence: this.eventSequence } : record.data ?? null);
   }

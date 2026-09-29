@@ -45,6 +45,13 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
       bridge.projectedMessages = (id) => Effect.runPromise(query.getThreadDetailById(ThreadId.make(id)).pipe(
         Effect.map((thread) => Option.isSome(thread) ? thread.value.messages : []),
       ));
+      // Rewind names what T3 keeps: its messages in order and which turn each checkpoint closed.
+      bridge.projectedThread = (id) => Effect.runPromise(query.getThreadDetailById(ThreadId.make(id), {activityKinds:[]}).pipe(
+        Effect.map((thread) => Option.isSome(thread) ? {
+          messages: thread.value.messages.map(({id, role, text, turnId}) => ({id, role, text, turnId})),
+          checkpoints: thread.value.checkpoints.map(({turnId, checkpointTurnCount}) => ({turnId, checkpointTurnCount})),
+        } : null),
+      ));
     }
   });
   // Bind before native restart reconciliation can attempt a provider resume.
