@@ -1,0 +1,12 @@
+{
+  "name": "rubato-scheduler",
+  "private": true,
+  "type": "module",
+  "description": "Scheduled tasks: the resident scheduler that starts ordinary Rubato sessions, and `rubato schedule`.",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test --test-timeout=90000 test/*.test.mjs"
+  }
+}

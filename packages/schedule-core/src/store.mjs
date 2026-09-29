@@ -94,6 +94,17 @@ export function validateTaskFields(input, { partial = false, now = new Date() } 
   return out;
 }
 
+/** A task by id, exact name (any case), id prefix or unique part of its name. */
+export function findTask(tasks, query) {
+  if (!query) throw new ScheduleError('invalid', 'Name the task (its name or id).');
+  const lower = query.toLowerCase();
+  const exact = tasks.filter((task) => task.id === query || task.name.toLowerCase() === lower);
+  const matches = exact.length ? exact : tasks.filter((task) => task.id.startsWith(query) || task.name.toLowerCase().includes(lower));
+  if (matches.length === 1) return matches[0];
+  if (!matches.length) throw new ScheduleError('not-found', `No task matches "${query}".`);
+  throw new ScheduleError('invalid', `"${query}" matches ${matches.length} tasks: ${matches.map((task) => task.name).join(', ')}. Use the id.`);
+}
+
 /**
  * @param {{ env?: NodeJS.ProcessEnv, now?: () => Date, root?: string }} [options]
  */

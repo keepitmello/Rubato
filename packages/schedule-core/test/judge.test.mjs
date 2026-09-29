@@ -75,6 +75,11 @@ describe('judging a due time', () => {
   });
 });
 
+test('with nothing due the cursor stays put, so an idle tick changes nothing', () => {
+  const idle = task({ kind: 'daily', time: '09:00' }, local(2026, 9, 29, 10));
+  expect(judgeTask(idle, { now: local(2026, 9, 29, 10, 0, 15) }).evaluatedThrough).toEqual(local(2026, 9, 29, 10));
+});
+
 describe('skip rows', () => {
   const base = { taskId: 't1', cwd: '/tmp', newId, now: local(2026, 9, 29, 7, 40) };
 
