@@ -58,6 +58,26 @@ describe('tasks', () => {
     expect(store().read().tasks[0].evaluatedThrough).toBe(now.toISOString());
   });
 
+  test('saving a form that repeats the same schedule is not a schedule edit: judging is not restarted', async () => {
+    const task = await store().create(input());
+    const cursor = store().read().tasks[0].evaluatedThrough;
+    now = new Date('2026-09-29T00:00:03Z'); // 09:00:03 Seoul, a slot just due
+    // The settings form sends every field, the unchanged schedule included (key order and all).
+    await store().update(task.id, { ...input(), name: 'Renamed', schedule: { time: '09:00', kind: 'daily' } });
+    expect(store().read().tasks[0]).toMatchObject({ name: 'Renamed', evaluatedThrough: cursor });
+    await store().update(task.id, { schedule: { kind: 'daily', time: '10:00' } });
+    expect(store().read().tasks[0].evaluatedThrough).toBe(now.toISOString());
+  });
+
+  test('a finished once-task can be renamed through a form that resends its past schedule', async () => {
+    const once = { kind: 'once', date: '2026-09-29', time: '15:00' };
+    const task = await store().create(input({ schedule: once }));
+    await store().mutate((state) => { state.tasks[0].enabled = false; });
+    now = new Date('2026-09-30T00:00:00Z');
+    expect((await store().update(task.id, { ...input(), name: 'Renamed', schedule: once, enabled: false })).name).toBe('Renamed');
+    expect((await refusal(store().update(task.id, { schedule: once, enabled: true }))).code).toBe('schedule-in-past');
+  });
+
   test('a finished once-task keeps its fields editable but cannot be switched on at a past time', async () => {
     const task = await store().create(input({ schedule: { kind: 'once', date: '2026-09-29', time: '15:00' } }));
     await store().mutate((state) => { state.tasks[0].enabled = false; });

@@ -188,7 +188,9 @@ export function describeSchedule(schedule, { now = new Date() } = {}) {
 export function formatNextRun(date, now = new Date()) {
   if (!date) return null;
   const at = new Date(date);
-  const dayIndex = (value) => Math.round(new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime() / DAY_MS);
+  // Calendar days, not local midnights: a midnight's epoch is fractional in a UTC+12 zone and
+  // its rounding flips across a DST change.
+  const dayIndex = (value) => Date.UTC(value.getFullYear(), value.getMonth(), value.getDate()) / DAY_MS;
   const delta = dayIndex(at) - dayIndex(now);
   const clock = formatClock(at);
   if (delta === 0) return `Today at ${clock}`;

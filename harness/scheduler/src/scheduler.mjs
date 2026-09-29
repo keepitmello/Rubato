@@ -11,7 +11,8 @@ export const TICK_MS = 15_000;
  * skip — never catch up), takes queued run-now requests, and starts their sessions. Store
  * changes wake it at once so "Run now" does not wait for the next tick.
  */
-export function createScheduler({ store, engine, now = () => new Date(), tickMs = TICK_MS, log = () => {}, runOptions = {} }) {
+export function createScheduler({ store, engine, now = () => new Date(), tickMs = TICK_MS, log = () => {}, runOptions = {},
+  reconcileWaitMs = 20_000 }) {
   const startedAt = now();
   const inflight = new Map();
   const controller = new AbortController();
@@ -48,6 +49,10 @@ export function createScheduler({ store, engine, now = () => new Date(), tickMs 
   });
 
   async function tickOnce() {
+    // Settle unwatched `running` rows before judging, so a row whose session ended while no one
+    // watched it does not turn this tick's due time into an overlap skip. Bounded: a session
+    // that is genuinely still going keeps its row running, and the task stays busy.
+    await settleUnwatched();
     const at = now();
     const starts = [];
     await store.mutate((state) => {
@@ -93,12 +98,23 @@ export function createScheduler({ store, engine, now = () => new Date(), tickMs 
     return ticking;
   }
 
-  async function reconcile() {
-    const state = store.read();
-    for (const row of state.runs.filter((run) => run.status === 'running' && !inflight.has(run.id))) {
+  /**
+   * Every tick, a `running` row nobody here is watching (left by a previous scheduler process,
+   * or deferred because the engine was unreachable) is picked up again. Checking once at start
+   * left such a row blocking its task — overlap skips, run-now refused — until a restart.
+   */
+  async function settleUnwatched() {
+    if (stopped) return;
+    const launched = [];
+    for (const row of store.read().runs.filter((run) => run.status === 'running' && !inflight.has(run.id))) {
       log('reconciling run', { runId: row.id, sessionId: row.sessionId });
       launch(null, row, () => reconcileRun({ row, engine, update: update(row.id), log, signal: controller.signal, ...runOptions }));
+      launched.push(inflight.get(row.id).promise);
     }
+    if (!launched.length) return;
+    let timer;
+    await Promise.race([Promise.allSettled(launched), new Promise((resolve) => { timer = setTimeout(resolve, reconcileWaitMs); timer.unref?.(); })]);
+    clearTimeout(timer);
   }
 
   return {
@@ -108,7 +124,6 @@ export function createScheduler({ store, engine, now = () => new Date(), tickMs 
     async start() {
       mkdirSync(store.files.root, { recursive: true, mode: 0o700 });
       writeHeartbeat(startedAt);
-      await reconcile();
       await tick();
       const loop = () => { timer = setTimeout(async () => { await tick(); if (!stopped) loop(); }, tickMs); };
       loop();

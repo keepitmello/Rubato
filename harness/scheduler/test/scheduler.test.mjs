@@ -38,7 +38,7 @@ async function setup(t) {
   const schedulers = [];
   const scheduler = (options = {}) => {
     const instance = createScheduler({ store, engine, now: () => clock.value, tickMs: 60_000, log: (...entry) => logs.push(entry),
-      runOptions: { quietMs: 300, pollMs: 50 }, ...options });
+      runOptions: { quietMs: 300, pollMs: 50 }, reconcileWaitMs: 2000, ...options });
     schedulers.push(instance);
     return instance;
   };
@@ -240,4 +240,35 @@ test('an unreachable engine is a failure before any session', async (t) => {
   await scheduler.tick();
   const [run] = await settled(env.store, task.id);
   assert.deepEqual([run.status, run.reason, run.sessionId], ['failed', 'engine-unavailable', null]);
+});
+
+test('a running row left while the engine was unreachable is picked up once the engine is back', async (t) => {
+  const env = await setup(t);
+  env.clock.value = new Date('2026-09-28T23:59:00Z'); // 08:59
+  const task = await env.store.create({ name: 'Daily', cwd: env.project, prompt: 'hi', schedule: { kind: 'daily', time: '09:00' } });
+  // A row a previous scheduler process left behind, for a session that already finished.
+  const client = await env.engine.connect();
+  const created = await client.create({ cwd: env.project, title: 'earlier run' });
+  await client.attach(created.sessionId);
+  await client.command({ type: 'prompt', message: 'earlier' });
+  await delay(400);
+  await client.close();
+  await env.store.mutate((state) => {
+    state.runs.push({ id: 'orphan', taskId: task.id, trigger: 'schedule', scheduledFor: '2026-09-28T00:00:00.000Z', lastScheduledFor: null,
+      skipCount: 0, status: 'running', reason: null, detail: null, startedAt: '2026-09-28T00:00:01.000Z', finishedAt: null, model: null,
+      thinking: null, cwd: env.project, sessionId: created.sessionId, serverId: env.service.serverId, title: null, rerunOf: null });
+  });
+  // The engine cannot be reached when this scheduler starts (an old engine still up, a slow boot).
+  let down = true;
+  const scheduler = env.scheduler({ engine: { connect: async () => { if (down) throw new Error('connect ECONNREFUSED'); return env.engine.connect(); } } });
+  await scheduler.start();
+  await until(() => scheduler.inflight.size === 0);
+  assert.equal((await env.store.runs(task.id)).runs.find((run) => run.id === 'orphan').status, 'running');
+  // The engine is back and the next tick is the one at the task's time: the row is settled
+  // first, so the slot runs instead of being skipped as overlap.
+  down = false;
+  env.clock.value = new Date('2026-09-29T00:00:04Z');
+  await scheduler.tick();
+  const runs = await settled(env.store, task.id);
+  assert.deepEqual(runs.map((run) => [run.trigger, run.status, run.reason]), [['schedule', 'success', null], ['schedule', 'success', null]]);
 });
