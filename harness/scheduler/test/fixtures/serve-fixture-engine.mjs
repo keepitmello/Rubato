@@ -23,8 +23,18 @@ const scheduleHome = path.join(root, 'schedule');
 mkdirSync(path.join(agentDir, 'server'), { recursive: true, mode: 0o700 });
 const socketPath = path.join(agentDir, 'server', 'pi.sock');
 const agent = fileURLToPath(new URL('./agent.mjs', import.meta.url));
-const service = await startSessionServer({ socketPath, sessionsDir: path.join(agentDir, 'sessions'), idleMs: 60_000,
-  workerFactory: (metadata) => new RpcWorker(metadata, { cliPath: agent }), onError: (error) => console.error('engine:', error?.message ?? error) });
+let service;
+try {
+  service = await startSessionServer({ socketPath, sessionsDir: path.join(agentDir, 'sessions'), idleMs: 60_000,
+    workerFactory: (metadata) => new RpcWorker(metadata, { cliPath: agent }), onError: (error) => console.error('engine:', error?.message ?? error) });
+} catch (error) {
+  // A T3 bridge left attached to this root starts a normal engine here when the fixture one
+  // stops. Stop T3 (and that engine) first, then start this launcher, then T3.
+  console.error(`Could not start the fixture engine at ${socketPath}: ${error?.message ?? error}\n`
+    + 'Another engine owns this root — usually one a still-open T3 started after the fixture engine stopped. '
+    + 'Quit T3, stop that engine, start this launcher again, then open T3.');
+  process.exit(1);
+}
 const descriptorPath = path.join(agentDir, 'server', 'connection.json');
 writeFileSync(descriptorPath, JSON.stringify({ version: 1, serverId: service.serverId, socketPath }, null, 2) + '\n', { mode: 0o600 });
 const daemon = spawn(process.execPath, [fileURLToPath(new URL('../../src/daemon.mjs', import.meta.url)),

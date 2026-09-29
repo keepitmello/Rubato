@@ -2,10 +2,9 @@
 // `rubato schedule` — the small CLI. Registering and editing belong to the settings page and
 // the session tool; this lists tasks, starts one now, shows a task's history and manages the
 // scheduler's launchd job.
-import { realpathSync } from 'node:fs';
-import { homedir, userInfo } from 'node:os';
+import { homedir } from 'node:os';
 import { createScheduleStore, findTask, formatNextRun, ScheduleError } from '../../../packages/schedule-core/src/index.mjs';
-import { installSchedulerLaunchAgent, schedulerLaunchAgentLoaded, uninstallSchedulerLaunchAgent } from './launchd.mjs';
+import { schedulerLaunchAgentLoaded, startScheduler, uninstallSchedulerLaunchAgent } from './launchd.mjs';
 
 const USAGE = `usage: rubato schedule [list] [--json]
        rubato schedule run <task>          start a task now (name, id or id prefix)
@@ -26,10 +25,6 @@ export function describeRun(run) {
   }
   if (run.status === 'failed') return `failed · ${when} (${run.reason}${run.detail ? `: ${run.detail}` : ''})`;
   return `${run.status} · ${when}`;
-}
-
-function accountHome(env) {
-  try { return realpathSync(env.HOME ?? homedir()) === realpathSync(userInfo().homedir); } catch { return false; }
 }
 
 export async function main(argv, { env = process.env, out = (text) => process.stdout.write(text), store = createScheduleStore({ env }) } = {}) {
@@ -64,19 +59,16 @@ export async function main(argv, { env = process.env, out = (text) => process.st
     }
     case 'status': {
       const status = store.schedulerStatus();
-      const loaded = await schedulerLaunchAgentLoaded().catch(() => false);
+      const loaded = await schedulerLaunchAgentLoaded(env.RUBATO_LAUNCHCTL_BIN ? { launchctl: env.RUBATO_LAUNCHCTL_BIN } : {}).catch(() => false);
       print({ ...status, launchAgent: loaded, root: store.files.root },
         `${status.running ? `running (pid ${status.pid}, last check ${status.lastTickAt ? formatNextRun(new Date(status.lastTickAt), new Date()) : '—'})` : 'not running'}`
         + ` · launchd job ${loaded ? 'registered' : 'not registered'} · ${store.files.root}\n`);
       return 0;
     }
     case 'install': {
-      if (!env.RUBATO_LAUNCHCTL_BIN && !accountHome(env)) {
-        throw new ScheduleError('invalid', 'launchd jobs belong to the account, not this HOME; not installing from a temporary HOME.');
-      }
-      const result = await installSchedulerLaunchAgent({ home: env.HOME ?? homedir(), pathEnv: env.PATH, scheduleRoot: store.files.root,
-        ...(env.RUBATO_LAUNCHCTL_BIN ? { launchctl: env.RUBATO_LAUNCHCTL_BIN } : {}) });
-      print(result, `Scheduler registered with launchd (${result.label}). Log: ${result.logPath}\n`);
+      const result = await startScheduler({ env });
+      print(result, result.installed ? `Scheduler started (pid ${result.pid}) and registered with launchd, so it comes back after login.\n`
+        : `Scheduler is already running (pid ${result.pid}).\n`);
       return 0;
     }
     case 'uninstall': {
