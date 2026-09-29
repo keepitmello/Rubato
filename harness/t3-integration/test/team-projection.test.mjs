@@ -32,10 +32,10 @@ for (const [name, args] of [
 ]) {
   test(`${name}: the team has a readable name and all member events carry its parent id`, () => {
     const { events, finish, tick } = setup(args);
+    finish();
     const start = events.find(event => event.type === 'task.started');
     assert.equal(start.payload.title, 'mobile-team');
     assert.equal(start.payload.workflowName, 'mobile-team');
-    finish();
     tick('st_owner', 'running');
     tick('st_owner', 'completed');
     assert.equal(events.some(event => event.type === 'task.completed' && event.payload.taskId === 'call_team'), false);
@@ -48,14 +48,13 @@ for (const [name, args] of [
   });
 }
 
-test('a server-derived team name replaces the placeholder through a persisted metadata update', () => {
+test('the team row starts at the create response with the server-derived name', () => {
   const { events, finish } = setup({ team_name: 'ignored', inline_spec: { members: [] } });
-  assert.equal(events.find(event => event.type === 'task.started').payload.title, 'Team');
+  assert.equal(events.some(event => event.type.startsWith('task.')), false);
   finish();
-  const update = events.find(event => event.type === 'task.updated' && event.payload.taskId === 'call_team');
-  assert.equal(update.payload.title, 'mobile-team');
-  assert.equal(update.payload.workflowName, 'mobile-team');
-  assert.equal(update.payload.status, undefined);
+  const start = events.find(event => event.type === 'task.started' && event.payload.taskId === 'call_team');
+  assert.equal(start.payload.title, 'mobile-team');
+  assert.equal(start.payload.workflowName, 'mobile-team');
 });
 
 test('snapshots before the create response gain membership without reopening completed children', () => {
@@ -74,14 +73,29 @@ test('snapshots before the create response gain membership without reopening com
 });
 
 for (const kind of ['invalid_arguments', 'spec_error', 'runtime_error']) {
-  test(`${kind}: a rejected team does not remain Working`, () => {
+  test(`${kind}: a rejected team leaves no team row`, () => {
     const { events, finish } = setup({ inline_spec: '{invalid' });
     finish({ kind, reason: 'Team creation rejected' });
-    const done = events.find(event => event.type === 'task.completed');
-    assert.equal(done.payload.status, 'failed');
-    assert.equal(done.payload.summary, 'Team creation rejected');
+    assert.equal(events.some(event => event.type.startsWith('task.')), false);
+    assert.equal(events.find(event => event.type === 'item.completed' && event.itemId === 'call_team').payload.title, 'Team');
   });
 }
+
+test('a schema-rejected team leaves no row, and the retry with the same name gets the board', () => {
+  const { events, projection } = setup({ inline_spec: { name: 'mobile-team', members: [] } });
+  projection.project({ type: 'tool_execution_end', toolName: 'team_create', toolCallId: 'call_team', isError: true,
+    result: { content: [{ type: 'text', text: 'Validation failed for tool "team_create"' }], details: {} } });
+  projection.project({ type: 'tool_execution_start', toolName: 'team_create', toolCallId: 'call_retry',
+    args: { inline_spec: { name: 'mobile-team', members: [] } } });
+  projection.project({ type: 'extension_event', name: 'rubato.team.board.updated',
+    data: { teams: [{ team_run_id: 'run_team', team_name: 'mobile-team', tasks: [] }] } });
+  projection.project({ type: 'tool_execution_end', toolName: 'team_create', toolCallId: 'call_retry', isError: false,
+    result: { details: { kind: 'created', team_name: 'mobile-team', team_run_id: 'run_team', members } } });
+  const teamRows = new Set(events.filter(event => event.type.startsWith('task.') && event.payload.taskType === 'local_workflow')
+    .map(event => event.payload.taskId));
+  assert.deepEqual([...teamRows], ['call_retry']);
+  assert.ok(events.some(event => event.type === 'task.progress' && event.payload.taskId === 'call_retry' && event.payload.board));
+});
 
 test('real T3 schema and panel fold group members, preserve direct spawns and count completion', {
   skip: !process.env.T3_SOURCE,
