@@ -86,12 +86,15 @@ export async function waitForTurn(client, { startedSequence = 0, quietMs = 5000,
  * throw when the task was deleted meanwhile. Always resolves; the verdict is on the row.
  */
 export async function executeRun({ task, row, engine, update, log = () => {}, signal, quietMs, pollMs }) {
+  const finish = (patch) => {
+    log('run finished', { runId: row.id, status: patch.status, reason: patch.reason, ...(patch.detail ? { detail: patch.detail } : {}) });
+    return update({ ...patch, finishedAt: new Date().toISOString() });
+  };
   try { if (!statSync(task.cwd).isDirectory()) throw new Error('not a folder'); }
-  catch { return update({ ...failure('cwd-missing', `Folder not found: ${task.cwd}`), finishedAt: new Date().toISOString() }); }
+  catch { return finish(failure('cwd-missing', `Folder not found: ${task.cwd}`)); }
   let client;
   try { client = await engine.connect(); }
-  catch (error) { return update({ ...failure('engine-unavailable', message(error)), finishedAt: new Date().toISOString() }); }
-  const finish = (patch) => update({ ...patch, finishedAt: new Date().toISOString() });
+  catch (error) { return finish(failure('engine-unavailable', message(error))); }
   try {
     let created;
     try { created = await client.create({ cwd: task.cwd, title: row.title, titleLocked: true }); }
@@ -108,9 +111,7 @@ export async function executeRun({ task, row, engine, update, log = () => {}, si
     try { await client.command({ type: 'prompt', message: task.prompt }); }
     catch (error) { return await finish(failure(/model|auth|credential|api key|login/i.test(message(error)) ? 'model' : 'turn-error', message(error))); }
     await waitForTurn(client, { startedSequence: sequence, signal, quietMs, pollMs });
-    const verdict = verdictFromMessages(await client.command({ type: 'get_messages' }));
-    log('run finished', { runId: row.id, status: verdict.status, reason: verdict.reason });
-    return await finish(verdict);
+    return await finish(verdictFromMessages(await client.command({ type: 'get_messages' })));
   } catch (error) {
     if (signal?.aborted) return undefined; // the next scheduler start reconciles this row
     return await finish(failure('interrupted', message(error)));
