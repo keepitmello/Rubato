@@ -1,10 +1,12 @@
 import type { AgentToolResult, ToolDefinition } from "@code-yeongyu/senpi"
 import { Type } from "typebox"
 import type { Static } from "typebox"
+import { isPlainRecord } from "@rubato/utils"
 
 import { TASK_SUMMARY_MAX_LENGTH } from "../../task-summary"
 import { SenpiTeamRuntimeError, SenpiTeamSpecError } from "../../team"
 import type { CreatedMemberInfo } from "../../team"
+import { clampMemberTaskSummaries } from "../../team/normalize"
 import type { ResolvedModelRecord } from "../../state"
 import { formatTargetWithModel } from "../../status-line"
 import { toolResult } from "../control"
@@ -217,8 +219,21 @@ export function createTeamCreateTool(deps: TeamToolDeps): ToolDefinition {
     label: "Team Create",
     description: CREATE_DESCRIPTION,
     parameters,
+    prepareArguments: prepareTeamCreateArguments,
     execute: (_toolCallId: string, params: TeamCreateInput) => runTeamCreate(deps.service, params),
   }
+}
+
+// Runs before schema validation, like the Agent tool's: an over-long member task_summary is
+// truncated instead of rejecting the whole team. A JSON-string spec is clamped after parsing.
+export function prepareTeamCreateArguments(raw: unknown): TeamCreateInput {
+  if (!isPlainRecord(raw) || !isPlainRecord(raw.inline_spec) || !Array.isArray(raw.inline_spec.members)) {
+    return raw as TeamCreateInput
+  }
+  return {
+    ...raw,
+    inline_spec: { ...raw.inline_spec, members: clampMemberTaskSummaries(raw.inline_spec.members) },
+  } as TeamCreateInput
 }
 
 export function createTeamDeleteTool(deps: TeamToolDeps): ToolDefinition {

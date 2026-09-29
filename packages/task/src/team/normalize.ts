@@ -50,7 +50,8 @@ function assertNoRawLeadField(rawSpec: unknown, teamName: string): void {
 
 // Harness-side length enforcement mirroring the task tool: an over-limit member task_summary is
 // clamped BEFORE TeamSpecSchema.parse so it truncates instead of rejecting the whole spec.
-function clampMemberTaskSummaries(members: readonly unknown[]): unknown[] {
+// team_create's prepareArguments runs it too, ahead of the tool schema's maxLength.
+export function clampMemberTaskSummaries(members: readonly unknown[]): unknown[] {
   return members.map((member) => {
     if (!isPlainRecord(member) || typeof member.task_summary !== "string") return member
     const clamped = clampTaskSummary(member.task_summary)
