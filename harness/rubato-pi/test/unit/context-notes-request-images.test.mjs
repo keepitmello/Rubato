@@ -7,6 +7,7 @@ import { contextNotesConfig } from "../../src/context-notes/config.mjs";
 import { messageText } from "../../src/context-notes/protocol.mjs";
 import {
   REQUEST_IMAGE_BYTE_LIMIT,
+  REQUEST_TOTAL_BYTE_LIMIT,
   base64ByteLength,
   trimRequestImages,
 } from "../../src/context-notes/request-images.mjs";
@@ -74,6 +75,28 @@ test("#given the shipped cap #when it is compared with Anthropic's request limit
 
   assert.ok(REQUEST_IMAGE_BYTE_LIMIT > 0);
   assert.ok(REQUEST_IMAGE_BYTE_LIMIT < ANTHROPIC_REQUEST_CAP, "the image budget must sit under the provider cap");
+  assert.ok(REQUEST_TOTAL_BYTE_LIMIT < ANTHROPIC_REQUEST_CAP, "the whole message list must leave room for the system prompt and tools");
+});
+
+// The incident: 19MB of text and 11MB of images. The images alone sat under their own
+// budget, so none were dropped, and the history crossed the 32MB frame and request caps.
+test("#given text that leaves too little room #when images under their own budget are trimmed #then the whole list fits the total cap", () => {
+  const total = 8 * MB;
+  const text = { role: "user", timestamp: 1, content: [{ type: "text", text: "x".repeat(5 * MB) }] };
+  const messages = [text, toolResult("old", 1 * MB), toolResult("mid", 1 * MB), toolResult("new", 1 * MB)];
+
+  assert.ok(imageBytes(messages) < REQUEST_IMAGE_BYTE_LIMIT, "the images alone fit their own budget");
+  const trimmed = trimRequestImages(messages, undefined, undefined, total);
+
+  assert.ok(Buffer.byteLength(JSON.stringify(trimmed)) <= total, "the serialized list fits the total cap");
+  assert.equal(trimmed.at(-1).content.at(-1).type, "image", "the newest image stays");
+  assert.match(trimmed[1].content.at(-1).text, /image omitted/, "the oldest image goes first");
+});
+
+test("#given a list that already fits the total cap #when images are trimmed #then it is returned as-is", () => {
+  const messages = [{ role: "user", timestamp: 1, content: [{ type: "text", text: "x".repeat(1 * MB) }] }, toolResult("a", 1 * MB)];
+
+  assert.equal(trimRequestImages(messages, undefined, undefined, 8 * MB), messages);
 });
 
 test("#given two images in one message that each fit alone #when the pair exceeds the cap #then the later image stays", () => {
