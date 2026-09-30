@@ -251,8 +251,17 @@ test("Daybreak 파생은 틀이 없으면 조용히 넘어가지 않는다", () 
   assert.throws(() => daybreakModels([{ id: "gpt-5.4" }]), /gpt-5\.6-terra/);
 });
 
+test("GPT-6.1 Sol 은 6 Sol 과 같은 형태로 주입되고 피커의 6 Sol 자리를 잇는다", () => {
+  const [sol61] = gpt6CodexModels([{ id: "gpt-5.6-terra" }]);
+  assert.equal(sol61.id, "gpt-6.1-sol");
+  assert.equal(sol61.name, "GPT-6.1 Sol");
+  assert.equal(sol61.contextWindow, 272_000);
+  assert.deepEqual(sol61.cost, gpt6CodexModels([{ id: "gpt-5.6-terra" }])[1].cost);
+  assert.deepEqual(gpt6CodexModels([{ id: "gpt-6.1-sol" }, { id: "gpt-6-sol" }, { id: "gpt-6-luna" }]), []);
+});
+
 test("GPT-6 Sol·Luna 는 상류 0.87.1 정의 그대로 주입된다", () => {
-  const [sol, luna] = gpt6CodexModels([{ id: "gpt-5.6-terra" }]);
+  const [, sol, luna] = gpt6CodexModels([{ id: "gpt-5.6-terra" }]);
   assert.equal(sol.id, "gpt-6-sol");
   assert.equal(sol.name, "GPT-6 Sol");
   assert.equal(sol.api, "openai-codex-responses");
@@ -272,8 +281,11 @@ test("GPT-6 Sol·Luna 는 상류 0.87.1 정의 그대로 주입된다", () => {
   assert.equal(luna.id, "gpt-6-luna");
   assert.equal(luna.cost.input, 0.1);
   // pin 이 앞서면 주입은 스스로 빈다.
-  assert.deepEqual(gpt6CodexModels([{ id: "gpt-6-sol" }, { id: "gpt-6-luna" }]), []);
-  assert.deepEqual(gpt6CodexModels([{ id: "gpt-6-sol" }]).map((model) => model.id), ["gpt-6-luna"]);
+  assert.deepEqual(gpt6CodexModels([{ id: "gpt-6.1-sol" }, { id: "gpt-6-sol" }, { id: "gpt-6-luna" }]), []);
+  assert.deepEqual(
+    gpt6CodexModels([{ id: "gpt-6.1-sol" }, { id: "gpt-6-sol" }]).map((model) => model.id),
+    ["gpt-6-luna"],
+  );
 });
 
 test("Fable 5.1 은 pin 의 Fable 5에서 id·이름만 덮는다", () => {
