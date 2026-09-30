@@ -101,7 +101,31 @@ group averages are descriptive, not a fitted multi-device baseline. Explicit
 exported record IDs are deduplicated across input files; conflicting records with
 the same ID are rejected rather than counted twice.
 
-## One Speed: fixed delivery basket
+## Live Speed without a v2 profile
+
+With no `profile-v2.json` (the default), the footer answers "how fast is this
+model in this session, on the same ruler as every other model". Each call is
+compared with a frozen ruler, `3960 ms + 16.647 ms × output tokens`, and the
+session's score is the median ratio of its most recent 200 calls. The ruler was
+fit from Sol medium but no longer depends on Sol data. Opus-class calls land
+around 200.
+
+Output tokens are first converted to Anthropic-sized tokens, because a vendor
+with larger tokens writes the same text in fewer of them (`OUTPUT_TOKEN_SCALE`
+in `src/speed-index.mjs`). The factors were measured once by sending identical
+Korean prose, source code and tool-argument JSON through each route and
+differencing the reported input tokens, weighted 9% prose / 91% tool arguments
+as in real output: OpenAI 1.67, DeepSeek 1.51, Grok 1.54, Gemini 1.54.
+Anthropic models agreed within 1%. A family that reports no usage (Muse Spark)
+or is not listed keeps 1. Re-measure when a vendor changes tokenizer.
+
+The score still mixes wait and generation into one number, so a session of
+mostly short tool calls favours fast-starting models. Replaying 30 days showed
+session scores move about ±15% for the same model, mostly from real
+day-to-day service speed rather than call-length mix; normalizing the mix did
+not reduce that spread and was not adopted.
+
+## One Speed: fixed delivery basket (v2, opt-in)
 
 The UI still shows exactly one `Speed` number. The provider-side store computes
 it; task/agent hosts consume that same snapshot on the assistant message rather

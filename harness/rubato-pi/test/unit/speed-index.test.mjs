@@ -17,6 +17,7 @@ import {
   scoreGroup,
   speedRatio,
   referenceDurationFor,
+  outputTokenScale,
 } from "../../src/speed-index.mjs";
 
 const now = 1_700_000_000_000;
@@ -95,6 +96,19 @@ test("same output length is the work; half the time is twice as fast", () => {
   assert.equal(scoreFromRatios([2, 2, 2]), 200);
   assert.equal(scoreFromRatios([0.5, 0.5, 0.5]), 50);
   assert.equal(scoreFromRatios([0.5, 1, 2]), 100);
+});
+
+test("the same text written in the same time scores the same across tokenizers", () => {
+  const baseline = freezeBaseline(many(20), { now: () => now, minReferenceCalls: 20 });
+  const scale = outputTokenScale("gpt-6-astra");
+  assert.ok(scale > 1, "OpenAI tokens carry more text than Anthropic tokens");
+  const anthropicTokens = 600;
+  const openai = sample({ provider: "openai-codex", model: "gpt-6-astra", outputTokens: anthropicTokens / scale, clientDurationMs: 5000 });
+  const anthropic = sample({ provider: "anthropic", model: "claude-opus-5-5", outputTokens: anthropicTokens, clientDurationMs: 5000 });
+  assert.ok(Math.abs(speedRatio(openai, baseline) - speedRatio(anthropic, baseline)) < 1e-9);
+  // An unmeasured family is left as reported rather than guessed.
+  assert.equal(outputTokenScale("some-unknown-model"), 1);
+  assert.equal(outputTokenScale("claude-fable-5-1"), 1);
 });
 
 test("one matched call scores; zero matched is a dash; no baseline is unavailable", () => {
