@@ -27,3 +27,15 @@ test("a scheduled warmer keeps the cache until an hour after its last refresh in
 test("providers without a published lifetime stay unknown", () => {
   assert.deepEqual(cacheSnapshot([turn], { provider: "openai-codex", id: "gpt-6-sol" }, turnAt), { state: "unknown", hitPercent: 90 });
 });
+
+test("an interrupted turn with no reported usage leaves the cache as it was", () => {
+  const zero = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 };
+  const aborted = { type: "message", message: { role: "assistant", stopReason: "aborted", timestamp: turnAt + 5 * MIN, usage: zero } };
+  const errored = { type: "message", message: { role: "assistant", stopReason: "error", timestamp: turnAt + 6 * MIN, usage: zero } };
+  assert.deepEqual(cacheSnapshot([turn, aborted, errored], opus, turnAt + 10 * MIN), { state: "warm", hitPercent: 90, expiresAt: turnAt + 60 * MIN });
+});
+
+test("a request that read nothing from the cache is still a miss", () => {
+  const miss = { type: "message", message: { role: "assistant", timestamp: turnAt + 5 * MIN, usage: { input: 100, cacheRead: 0, cacheWrite: 0 } } };
+  assert.equal(cacheSnapshot([turn, miss], opus, turnAt + 10 * MIN).state, "cold");
+});
