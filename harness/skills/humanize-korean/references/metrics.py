@@ -21,6 +21,7 @@ import json
 import math
 import os
 import re
+import re as _re
 import sys
 from collections import Counter
 from typing import Any
@@ -96,8 +97,20 @@ def _strip_punct(token: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+# 천 단위 구분 콤마는 쉼표 문체가 아니다 — "1,200억"·"12,000명" 의 콤마를 세면
+# 숫자가 많은 문서(경제·통계 기사)가 쉼표 지표에서 최상위로 뜬다. 그 문서가 S1
+# 앵커로 뽑히면 윤문할 쉼표가 애초에 없으므로 게이트가 영구 미달한다(PR #94).
+_DIGIT_COMMA_RE = _re.compile(r"(?<=\d),(?=\d)")
+
+
+def _strip_digit_commas(text: str) -> str:
+    """숫자 내부 콤마만 제거한다. 문체 쉼표는 그대로 둔다."""
+    return _DIGIT_COMMA_RE.sub("", text)
+
+
 def comma_inclusion_rate(text: str) -> float:
     """Ratio of sentences containing 1+ commas (0~1)."""
+    text = _strip_digit_commas(text)
     sents = _split_sentences(text)
     if not sents:
         return 0.0
@@ -107,6 +120,7 @@ def comma_inclusion_rate(text: str) -> float:
 
 def comma_usage_rate(text: str) -> float:
     """Average comma count per sentence."""
+    text = _strip_digit_commas(text)
     sents = _split_sentences(text)
     if not sents:
         return 0.0
@@ -120,6 +134,7 @@ def ending_comma_rate(text: str) -> float:
     Numerator   = ending + comma matches.
     Returns 0.0 when the denominator is 0.
     """
+    text = _strip_digit_commas(text)
     if not text.strip():
         return 0.0
     # All occurrences of the endings (with optional trailing comma).
@@ -140,6 +155,7 @@ def ending_comma_rate(text: str) -> float:
 
 def comma_segment_length(text: str) -> float:
     """Average eojeol-count of comma-delimited segments across sentences."""
+    text = _strip_digit_commas(text)
     sents = _split_sentences(text)
     seg_lens: list[int] = []
     for s in sents:
@@ -258,22 +274,33 @@ def _z(value: float, human: float, ai: float, *, percent: bool) -> float | None:
 
 
 def _classify_risk(z_scores: dict[str, float | None], lexicon_hits: dict[str, int]) -> tuple[str, int]:
-    score = 0
+    """오탐 방지 원칙(ai-tell-taxonomy)의 판정기 구현.
+
+    쉼표(C-11) 계열은 필자 개인 습관 편차가 커서 단독으로는 증거가 못 된다
+    — 계열 기여를 3점으로 상한하고, high 는 독립 계열 2개 이상이 동시에
+    발화할 때만 부여한다 (Pebblous 티어다운 2026-08 반례 수용).
+    """
+    punct = 0
     for key in ("comma_inclusion_rate", "ending_comma_rate", "comma_segment_length"):
         z = z_scores.get(key)
         if z is not None and z > 1.0:
-            score += 2
+            punct += 2
+    punct = min(punct, 3)
+    lexical = 0
     ld = z_scores.get("lexical_diversity")
     if ld is not None and ld < -1.0:
-        score += 1
-    if lexicon_hits.get("conclusion_pivot_count", 0) >= 2:
-        score += 1
-    if lexicon_hits.get("safe_balance_count", 0) >= 2:
-        score += 1
+        lexical += 1
     hz = z_scores.get("hanja_nominalizer_density")
     if hz is not None and hz > 1.0:
-        score += 1
-    if score >= 6:
+        lexical += 1
+    rhetoric = 0
+    if lexicon_hits.get("conclusion_pivot_count", 0) >= 2:
+        rhetoric += 1
+    if lexicon_hits.get("safe_balance_count", 0) >= 2:
+        rhetoric += 1
+    score = punct + lexical + rhetoric
+    families = sum(1 for v in (punct, lexical, rhetoric) if v > 0)
+    if score >= 6 and families >= 2:
         band = "high"
     elif score >= 4:
         band = "medium"
