@@ -265,8 +265,10 @@ const GPT6_CODEX_IDS = Object.freeze(["gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"])
  * (2/10 대 5/30) thinkingLevelMap 이 off·low·medium 을 더 갖는다.
  *
  * `gpt-6.1-sol` 은 상류 카탈로그에 아직 없어서 Codex 백엔드 `/codex/models` 응답으로 확인했다:
- * 컨텍스트 272K·같은 effort 단계·같은 입력 형식. 가격은 응답에 없어 6-sol 값을 그대로 쓴다
- * ([Assumption] 상류가 6.1 값을 싣는 날 이 행은 스스로 빈다). 6-sol 행은 기존 세션·설정이
+ * 컨텍스트 272K·같은 effort 단계·같은 입력 형식. 가격은 응답에 없어 OpenAI 가격표
+ * (developers.openai.com/api/docs/pricing, 2026-09-30)에서 옮겼다 — 6-sol 과 캐시 읽기만
+ * 다르다(0.20 → 0.10, 272K 초과 0.40 → 0.20). 상류가 6.1 을 싣는 날 이 행은 스스로 빈다.
+ * 6-sol 행은 기존 세션·설정이
  * 그 id 를 가리켜도 풀리도록 남긴다 — 피커에서만 내렸다.
  *
  * `inputLimits`(0.87.0 신설)만 뺐다 — 0.86.1 은 그 필드를 읽지 않는다. 핀을 0.87 이상으로
@@ -309,6 +311,13 @@ const GPT6_SOL_COST = Object.freeze({
   ]),
 });
 
+/** 6.1 은 6 과 캐시 읽기만 다르다(반값). 입력·출력·캐시 쓰기는 같다. */
+const GPT61_SOL_COST = Object.freeze({
+  ...GPT6_SOL_COST,
+  cacheRead: 0.1,
+  tiers: Object.freeze([Object.freeze({ ...GPT6_SOL_COST.tiers[0], cacheRead: 0.2 })]),
+});
+
 const GPT6_LUNA_COST = Object.freeze({
   input: 0.1,
   output: 0.5,
@@ -329,7 +338,7 @@ const GPT6_CODEX_ROWS = Object.freeze([
     baseUrl: "https://chatgpt.com/backend-api",
     reasoning: true,
     input: ["text", "image"],
-    cost: GPT6_SOL_COST,
+    cost: GPT61_SOL_COST,
     contextWindow: 272_000,
     maxTokens: 128_000,
     thinkingLevelMap: GPT6_CODEX_THINKING_LEVEL_MAP,
