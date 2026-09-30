@@ -2,11 +2,11 @@
  * Pure Speed Index math. Scores are derived from samples + an immutable baseline.
  * They are never persisted.
  *
- * Higher is faster. 100 means this call took as long as Sol medium typically
- * takes to write the same number of output tokens. That typical time is a
- * fixed wait (first token and setup) plus a per-token generation cost, fit
- * from Sol medium calls and scaled so their median ratio is 1. Input size is
- * not a second axis: the wait is already in the clock.
+ * Higher is faster. 100 means this call took as long as a fixed ruler: a wait
+ * (first token and setup) plus a per-token generation cost. The ruler was fit
+ * from Sol medium calls; it is now a frozen constant, not a live reference.
+ * Output is counted in Anthropic-sized tokens so every vendor is measured with
+ * the same ruler. Input size is not a second axis: the wait is already in the clock.
  */
 
 export const SPEED_INDEX_METRIC_VERSION = 1;
@@ -24,6 +24,26 @@ export const REFERENCE_PACE = Object.freeze({
   ttftMs: 3960,
   msPerOutputToken: 16.647,
 });
+
+/**
+ * Tokenizers pack different amounts of text into one token, so a per-token
+ * ruler would call a vendor with larger tokens slow. Each factor converts that
+ * vendor's reported output tokens into Anthropic-sized tokens. Measured once by
+ * sending the same Korean prose, source code and tool-argument JSON through each
+ * route and differencing the reported input tokens, then mixing 9% prose / 91%
+ * tool arguments as observed in real output. Unlisted families keep 1.
+ */
+export const OUTPUT_TOKEN_SCALE = Object.freeze([
+  Object.freeze({ family: /gpt|codex/i, scale: 1.67 }),
+  Object.freeze({ family: /deepseek/i, scale: 1.51 }),
+  Object.freeze({ family: /grok/i, scale: 1.54 }),
+  Object.freeze({ family: /gemini/i, scale: 1.54 }),
+]);
+
+export function outputTokenScale(model) {
+  if (typeof model !== "string") return 1;
+  return OUTPUT_TOKEN_SCALE.find((entry) => entry.family.test(model))?.scale ?? 1;
+}
 
 export const MIN_REFERENCE_CALLS = 500;
 export const MIN_CELL_CALLS = 20;
@@ -380,7 +400,7 @@ export function mergeBaselines(preferred, fallback) {
 export function referenceDurationFor(sample, _baseline, _fallbackBaseline) {
   const output = sample?.outputTokens;
   if (!Number.isFinite(output) || output < 1) return undefined;
-  return REFERENCE_PACE.ttftMs + REFERENCE_PACE.msPerOutputToken * output;
+  return REFERENCE_PACE.ttftMs + REFERENCE_PACE.msPerOutputToken * output * outputTokenScale(sample.model);
 }
 
 export function speedRatio(sample, baseline, fallbackBaseline) {
