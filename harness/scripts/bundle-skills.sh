@@ -7,7 +7,7 @@
 #      `harness/skills` 가 정본이고, 설치기가 그것을 `~/.agents/skills/<name>`
 #      심링크로 건다. 그런 자리는 여기서 **건드리지 않는다** — 원본이 곧 목적지라
 #      담을 것이 없고, 담으려 들면 자기 자신을 지운다.
-#   2. 바깥에서 온 공유 스킬 (outpost, wy-server, find-skills, ...):
+#   2. 바깥에서 온 공유 스킬 (outpost, find-skills, ...):
 #      `~/.agents/skills` 가 정본이고 이 스크립트가 배포용 사본을 뜬다.
 #      심링크는 실체를 따라가 뜬다(`-L`) — 남의 레포를 가리키는 것도 내용이
 #      들어와야 새 기기에서 산다.
@@ -22,6 +22,10 @@ SRC="${AGENTS_SKILLS_DIR:-$HOME/.agents/skills}"
 DEST="$(cd "$(dirname "$0")/.." && pwd)/skills"
 
 [ -d "$SRC" ] || { echo "bundle-skills: 원본이 없다 - $SRC" >&2; exit 1; }
+
+# 개인 스킬은 담지 않는다. 사용자 장비의 주소·계정·경로가 들어 있어서 공개 레포에
+# 오르면 안 된다. 정본은 `~/.agents/skills` 실디렉터리로만 둔다.
+PERSONAL_SKILLS=" wy-server "
 
 mkdir -p "$DEST"
 
@@ -54,6 +58,7 @@ kept=0
 while IFS= read -r -d '' dir; do
   name="$(basename "$dir")"
   case "$name" in .*) continue ;; esac
+  case "$PERSONAL_SKILLS" in *" $name "*) continue ;; esac
   if is_owned "$name"; then
     kept=$((kept + 1))
     count=$((count + 1))
