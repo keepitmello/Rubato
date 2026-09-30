@@ -197,7 +197,7 @@ rubato update         # review changes, then update
 rubato update --check # just report whether an update exists
 rubato restart        # bring running pieces onto new code (engine, remote hub, GUI)
 rubato build          # rebuild system prompts and engine artifacts
-rubato dispatch <name> grok < brief.md   # non-interactive worker: grokfast|fast|sol|fable
+rubato dispatch <name> [alias] < brief.md   # non-interactive worker. aliases and models: dispatch --help
 msearch "<query>"     # search memory
 ```
 

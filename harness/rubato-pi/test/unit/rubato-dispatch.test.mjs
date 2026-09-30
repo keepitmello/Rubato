@@ -83,6 +83,13 @@ test("--effort replaces an alias's default level", (t) => {
   assert.match(box.args().at(-1), /^openai-codex\/[^:]+:low$/);
 });
 
+test("opussub runs Opus on the sub account", (t) => {
+  const box = harness(t);
+  const result = box.run(["job-a", "opussub"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(box.args().at(-1), /^anthropic\/claude-opus-[^:]+-sub(:|$)/);
+});
+
 test("the caller's Pi session env does not reach the worker", (t) => {
   const box = harness(t);
   const scripts = join(box.root, "scripts");
