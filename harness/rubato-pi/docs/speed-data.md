@@ -198,9 +198,10 @@ local append-only JSONL
 
 Each UTC day/device can have several immutable batches. Subsequent runs send only
 new rows, not a new snapshot of all previous rows. A batch contains at most 500
-rows and at most 750,000 compressed bytes. Each invocation scans at most 64 MiB
-and selects at most 2,000 new rows. If `rowLimitReached` is true, run again to drain
-the backlog; increase invocation frequency if daily volume consistently exceeds it.
+rows and at most 750,000 compressed bytes. Each round scans at most 64 MiB and
+selects at most 2,000 new rows. An `--upload` invocation repeats committed rounds
+while a round stops at the row or scan limit, up to 25 rounds (50,000 rows), and
+logs one line per round. A backlog beyond that continues on the next invocation.
 
 The private, mode-0600 local state contains the random identity/secret, source
 cursors, and exact pending compressed bytes. It is flushed and atomically replaced
