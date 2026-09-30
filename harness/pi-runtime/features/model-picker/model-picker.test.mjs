@@ -88,7 +88,8 @@ test("display labels and stock patch replace item.id", () => {
   assert.equal(modelPickerLabel({ provider: "cursor", id: CURSOR_GROK_BASE_ID, model: {} }), "Grok 4.7 fast");
   assert.equal(modelPickerLabel({ provider: "xai", id: "grok-4.7", model: {} }), "Grok 4.7");
   assert.equal(modelPickerLabel({ provider: "openai-codex", id: "gpt-6-astra", model: {} }), "Astra 6");
-  assert.equal(modelPickerLabel({ provider: "openai-codex", id: MODEL_ORDER["openai-codex"][0], model: {} }), "Sol 6");
+  assert.equal(modelPickerLabel({ provider: "openai-codex", id: MODEL_ORDER["openai-codex"][0], model: {} }), "Sol 6.1");
+  assert.equal(modelPickerLabel({ provider: "openai-codex", id: "gpt-6-sol", model: {} }), "Sol 6");
   assert.equal(modelPickerLabel({ provider: "openai-codex", id: "gpt-5.6-sol", model: {} }), "Sol 5.6");
   assert.equal(modelPickerLabel({ provider: "google-antigravity", id: PRODUCT_MODEL_ORDER["google-antigravity"][0], model: {} }), "Gemini 3.8 Flash");
   assert.equal(modelPickerLabel({ provider: "anthropic", id: "claude-fable-5-1", model: {} }), "Fable 5.1");

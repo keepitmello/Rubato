@@ -92,12 +92,12 @@ Evidence anchors:
 ## Model identity, aliases, effort, and `/fast`
 
 Provider prefix is routing identity, not decoration. Keep `xai/grok-4.7`,
-`cursor/grok-4.7`, `openai-codex/gpt-6-sol`, and similarly named models in other
+`cursor/grok-4.7`, `openai-codex/gpt-6.1-sol`, and similarly named models in other
 providers distinct; they use different credentials, quotas, and transports.
 
 The current picker policy is explicit (`picker-catalog.mjs:6-25`):
 
-- Codex: `gpt-6-sol`, `gpt-6-luna`, `gpt-6-astra`, and
+- Codex: `gpt-6.1-sol`, `gpt-6-luna`, `gpt-6-astra`, and
   `gpt-daybreak-blue-latest`;
 - xAI: `grok-4.7`;
 - Anthropic: `claude-fable-5-1`, `claude-opus-5-5`, `claude-sonnet-5-5`,

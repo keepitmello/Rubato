@@ -1,6 +1,6 @@
 import { findExactModelReferenceMatch, isValidThinkingLevel, parseModelPattern } from "../host/model-resolver.mjs";
 export const DEFAULT_LOOK_AT_CHAIN = [
-    "gpt-6-sol:off",
+    "gpt-6.1-sol:off",
     "gemini-3.1-pro-preview:low",
     "gemini-3.5-flash",
     "kimi-k3",

@@ -254,15 +254,20 @@ export function daybreakModels(nativeModels) {
   return [base, fast];
 }
 
-const GPT6_CODEX_IDS = Object.freeze(["gpt-6-sol", "gpt-6-luna"]);
+const GPT6_CODEX_IDS = Object.freeze(["gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"]);
 
 /**
- * 핀 카탈로그(pi-ai 0.86.1)에 아직 없는 GPT-6 두 행.
+ * 핀 카탈로그(pi-ai 0.86.1)에 아직 없는 GPT-6 세 행.
  *
  * 정의는 상류 0.87.1 의 `dist/providers/data/openai-codex.json` 에서 그대로 옮겼다.
  * `cost`·`thinkingLevelMap` 을 손으로 다시 적으면 조용히 달라지고, 5.6 에서 파생하지도
  * 않는다 — 6 은 개명이 아니라 다른 모델이다: 컨텍스트는 같은 272K 지만 가격이 절반이고
  * (2/10 대 5/30) thinkingLevelMap 이 off·low·medium 을 더 갖는다.
+ *
+ * `gpt-6.1-sol` 은 상류 카탈로그에 아직 없어서 Codex 백엔드 `/codex/models` 응답으로 확인했다:
+ * 컨텍스트 272K·같은 effort 단계·같은 입력 형식. 가격은 응답에 없어 6-sol 값을 그대로 쓴다
+ * ([Assumption] 상류가 6.1 값을 싣는 날 이 행은 스스로 빈다). 6-sol 행은 기존 세션·설정이
+ * 그 id 를 가리켜도 풀리도록 남긴다 — 피커에서만 내렸다.
  *
  * `inputLimits`(0.87.0 신설)만 뺐다 — 0.86.1 은 그 필드를 읽지 않는다. 핀을 0.87 이상으로
  * 올리면 네이티브가 이 id 를 갖게 되어 이 주입은 스스로 빈다.
@@ -316,6 +321,20 @@ const GPT6_LUNA_COST = Object.freeze({
 
 // 행 자체는 얼리지 않는다 — Daybreak 처럼 파생 단계가 `delete`·덮어쓰기로 손대는 자리다.
 const GPT6_CODEX_ROWS = Object.freeze([
+  {
+    id: "gpt-6.1-sol",
+    name: "GPT-6.1 Sol",
+    api: "openai-codex-responses",
+    provider: "openai-codex",
+    baseUrl: "https://chatgpt.com/backend-api",
+    reasoning: true,
+    input: ["text", "image"],
+    cost: GPT6_SOL_COST,
+    contextWindow: 272_000,
+    maxTokens: 128_000,
+    thinkingLevelMap: GPT6_CODEX_THINKING_LEVEL_MAP,
+    compat: GPT6_CODEX_COMPAT,
+  },
   {
     id: "gpt-6-sol",
     name: "GPT-6 Sol",
