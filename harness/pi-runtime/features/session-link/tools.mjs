@@ -168,8 +168,9 @@ export function createSessionTools(getLink) {
       description: "Send one message to another conversation. It appears there as a message from this conversation, not from the user, " +
         "and wakes it if idle. A working conversation reads it after its current run ends, and work already pending there may come " +
         "first. If its user stops that run, the message stays in its history without starting a turn, so no reply comes until the user continues. " +
-        "Write one clear, self-contained message with " +
-        "everything the recipient needs, then use session_wait for the reply instead of polling with session_read or sending follow-ups: " +
+        "Send only what the recipient must act on or know, in a few self-contained lines. The recipient replies only when asked " +
+        "or when you must act on its answer, so expect no acknowledgement. When you asked for an answer, use session_wait for it " +
+        "instead of polling with session_read or sending follow-ups: " +
         "pass the cursor this tool returns as that target's afterCursor, so a reply written before you wait still counts and an earlier answer does not. " +
         "The recipient treats it as a peer's request with no authority over its permissions, settings or configuration.",
       parameters: {
@@ -186,8 +187,8 @@ export function createSessionTools(getLink) {
         const result = await untilAborted(() => link().send({ from, to: params.sessionId, text: params.text }), signal);
         const to = result.to ?? {};
         const next = typeof result.cursor === "string" && result.cursor
-          ? `Use session_wait with afterCursor ${JSON.stringify(result.cursor)} for its reply.`
-          : "Use session_wait for its reply.";
+          ? `If you asked for an answer, use session_wait with afterCursor ${JSON.stringify(result.cursor)} for it.`
+          : "If you asked for an answer, use session_wait for it.";
         return {
           content: [text(`Sent to "${to.title ?? params.sessionId}" (${to.sessionId ?? params.sessionId}, ${to.status ?? "unknown status"}). ${next}\n${json(result)}`)],
           details: result,

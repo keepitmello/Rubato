@@ -95,7 +95,6 @@ test("the six tools carry the frozen names and descriptions that state the opera
   assert.match(describe("session_wait"), /Prefer this over repeated session_read/);
   assert.match(describe("session_wait"), /do not report the same snapshot again/);
   assert.match(describe("session_wait"), /already pending on a running target when the wait starts may not be seen/);
-  assert.match(describe("session_send"), /one clear, self-contained message/);
   assert.match(describe("session_send"), /instead of polling/);
   assert.match(describe("session_send"), /cursor this tool returns as that target's afterCursor/);
   assert.match(describe("session_create"), /only when the user explicitly asked/);
@@ -134,7 +133,7 @@ test("each tool calls its sessionLink method with this conversation's ids and re
 
   result = await execute(pi, "session_send", { sessionId: "01b", text: "status?" });
   assert.deepEqual(calls.at(-1), { method: "send", args: { from: SELF, to: "01b", text: "status?" } });
-  assert.match(result.content[0].text, /Sent to "B" \(01b, running\)\. Use session_wait with afterCursor "c-before" for its reply\./);
+  assert.match(result.content[0].text, /Sent to "B" \(01b, running\)\..*afterCursor "c-before"/);
   assert.equal(result.details.cursor, "c-before", "the cursor reaches the model to pass to session_wait");
 
   result = await execute(pi, "session_create", { text: "start here", title: "Docs" });
