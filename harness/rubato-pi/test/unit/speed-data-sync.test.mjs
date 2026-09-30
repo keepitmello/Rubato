@@ -9,7 +9,7 @@ import { gunzipSync } from "node:zlib";
 import test from "node:test";
 import { exportSpeedSample } from "../../src/speed-data-export.mjs";
 import { analyzeSpeedSamples } from "../../src/speed-analysis.mjs";
-import { collectSpeedRows, makeSpeedBatches, syncSpeedData } from "../../scripts/sync-speed-data.mjs";
+import { collectSpeedRows, drainSpeedData, makeSpeedBatches, syncSpeedData } from "../../scripts/sync-speed-data.mjs";
 
 const now = Date.parse("2026-09-22T12:00:00Z");
 const repo = "test-owner/private-speed";
@@ -203,6 +203,25 @@ test("row limits resume at the exact next byte, including UTF-8 and CRLF records
     assert.equal(new Set([...first.rows, ...second.rows, ...third.rows].map((r) => r.recordId)).size, 5);
     assert.equal(first.diagnostics.rowLimitReached, true);
     assert.equal(third.diagnostics.rowLimitReached, false);
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test("an upload drains a backlog larger than one round, and stops at the round bound", () => {
+  const f = fixture();
+  const remote = fakeGithub();
+  try {
+    writeFileSync(f.samplePath, Array.from({ length: 5 }, (_, i) =>
+      JSON.stringify(row({ outputTokens: i + 1 }))).join("\n") + "\n");
+    const bounded = drainSpeedData({ ...f, upload: true, api: remote.api, maxRows: 2 }, { maxRounds: 1 });
+    assert.equal(bounded.length, 1);
+    assert.equal(bounded[0].records, 2);
+    const rounds = drainSpeedData({ ...f, upload: true, api: remote.api, maxRows: 2 });
+    assert.deepEqual(rounds.map((r) => r.records), [2, 1]);
+    const sent = [...remote.blobs.values()].flatMap(({ bytes }) =>
+      gunzipSync(bytes).toString().trim().split("\n").map((line) => JSON.parse(line).outputTokens));
+    assert.deepEqual(sent.sort(), [1, 2, 3, 4, 5]);
+    const dry = drainSpeedData({ ...f, api: () => { throw new Error("dry run must not use network"); }, maxRows: 2 });
+    assert.equal(dry.length, 1);
   } finally { rmSync(f.dir, { recursive: true, force: true }); }
 });
 

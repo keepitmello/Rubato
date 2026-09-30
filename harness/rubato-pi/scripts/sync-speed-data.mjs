@@ -15,6 +15,7 @@ import { exportSpeedSample, SPEED_DATA_DISABLED_FILE } from "../src/speed-data-e
 import { resolveSpeedIndexAgentDir } from "../src/speed-index-store.mjs";
 
 const MAX_ROWS = 2000;
+const MAX_DRAIN_ROUNDS = 25;
 const MAX_SCAN_BYTES = 64 * 1024 * 1024;
 const READ_BYTES = 4 * 1024 * 1024;
 const BATCH_ROWS = 500;
@@ -31,7 +32,8 @@ Default is a local dry run: no writes or network requests.
 RUBATO_SPEED_DATA_UPLOAD=0 or a sibling github-sync.disabled file stops uploads.
 Uses your existing gh login; no credential is embedded or copied into state.
 Only capture-v1 main-stream rows from the last 30 days are exported.
-At most 2000 new rows / 64 MiB source scan per run; rerun to drain a backlog.
+Each round sends at most 2000 new rows / 64 MiB source scan. --upload repeats
+rounds (at most 25) until the backlog is drained.
 Do not delete state: it preserves device identity and duplicate prevention.`;
 
 function atomicJson(path, value) {
@@ -145,7 +147,8 @@ export function collectSpeedRows(state, { now = Date.now(), maxRows = MAX_ROWS }
   // Local sample retention may remove files; only stale cursor metadata is pruned.
   const present = new Set(names);
   for (const name of Object.keys(cursors)) if (!present.has(name)) delete cursors[name];
-  return { rows, cursors, diagnostics: { ...diagnostics, rowLimitReached: rows.length === maxRows } };
+  return { rows, cursors, diagnostics: { ...diagnostics, rowLimitReached: rows.length === maxRows,
+    scanLimitReached: diagnostics.scannedBytes >= MAX_SCAN_BYTES } };
 }
 
 export function makeSpeedBatches(rows, deviceId) {
@@ -215,7 +218,7 @@ function uploadBatch(api, repo, batch) {
   return "uploaded";
 }
 
-export function syncSpeedData({ repo, samplesDir, statePath, upload = false, now = Date.now(), api = githubApi() }) {
+export function syncSpeedData({ repo, samplesDir, statePath, upload = false, now = Date.now(), api = githubApi(), maxRows = MAX_ROWS }) {
   if (typeof repo !== "string" || !REPO.test(repo)) throw new Error("--repo OWNER/REPO is required");
   if (!Number.isFinite(now)) throw new Error("invalid sync clock");
   if (upload && existsSync(join(dirname(statePath), SPEED_DATA_DISABLED_FILE))) return { mode: "disabled", repo };
@@ -226,7 +229,7 @@ export function syncSpeedData({ repo, samplesDir, statePath, upload = false, now
     if (upload) assertPrivateRepo(api, repo);
     let collected;
     if (!state.pending) {
-      collected = collectSpeedRows(state, { now });
+      collected = collectSpeedRows(state, { now, maxRows });
       state.pending = { cursors: collected.cursors, batches: makeSpeedBatches(collected.rows, state.deviceId) };
     }
     const result = { mode: upload ? "upload" : "dry_run", repo, deviceId: state.deviceId,
@@ -250,6 +253,24 @@ export function syncSpeedData({ repo, samplesDir, statePath, upload = false, now
   } finally { release(); }
 }
 
+/**
+ * One upload round is bounded; a busy day can exceed it. Repeat committed rounds
+ * until a round stops at the end of the source, so the daily job keeps up.
+ * Every round persists its cursors before the next one starts.
+ */
+export function drainSpeedData(options, { maxRounds = MAX_DRAIN_ROUNDS, onRound = () => {} } = {}) {
+  const results = [];
+  for (let round = 0; round < maxRounds; round += 1) {
+    const result = syncSpeedData(options);
+    results.push(result);
+    onRound(result);
+    const diagnostics = result.diagnostics ?? {};
+    const more = diagnostics.resumedPending || diagnostics.rowLimitReached || diagnostics.scanLimitReached;
+    if (result.mode !== "upload" || !more) break;
+  }
+  return results;
+}
+
 export function main(argv = process.argv.slice(2)) {
   if (argv.includes("--help")) { process.stdout.write(`${HELP}\n`); return; }
   const args = {};
@@ -269,9 +290,11 @@ export function main(argv = process.argv.slice(2)) {
     process.stdout.write(`${JSON.stringify({ mode: "disabled", repo: args.repo })}\n`);
     return;
   }
-  const result = syncSpeedData({ repo: args.repo, samplesDir: args.samples ?? join(root, "samples"),
-    statePath: args.state ?? join(root, "github-sync.json"), upload: args.upload, api: githubApi(args.gh) });
-  process.stdout.write(`${JSON.stringify(result)}\n`);
+  const options = { repo: args.repo, samplesDir: args.samples ?? join(root, "samples"),
+    statePath: args.state ?? join(root, "github-sync.json"), upload: args.upload, api: githubApi(args.gh) };
+  const write = (result) => process.stdout.write(`${JSON.stringify(result)}\n`);
+  if (args.upload) drainSpeedData(options, { onRound: write });
+  else write(syncSpeedData(options));
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
