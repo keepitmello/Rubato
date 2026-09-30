@@ -170,7 +170,8 @@ export function resolveCachePolicy(model) {
 /**
  * 캐시 수명은 캐시를 건드린 마지막 요청부터 다시 센다. 도구 루프의 요청과 워머의 갱신
  * 요청(`cache_warm` usage 엔트리)도 그 요청이다. 갱신이 cache 필드를 비워 돌려주면
- * 아무것도 증명하지 못하니 건너뛴다.
+ * 아무것도 증명하지 못하니 건너뛴다. 입력이 하나도 안 찍힌 응답(제공자가 사용량을 돌려주기
+ * 전에 끊긴 인터럽트·오류)도 같은 이유로 건너뛴다.
  */
 function latestCacheObservation(entries) {
   if (!Array.isArray(entries)) return undefined;
@@ -188,8 +189,10 @@ function latestCacheObservation(entries) {
     if (entry?.type !== "message" || entry.message?.role !== "assistant") continue;
     const usage = entry.message.usage;
     if (!usage) continue;
+    const input = nonNegativeNumber(usage.input);
     const cacheRead = nonNegativeNumber(usage.cacheRead);
     const cacheWrite = nonNegativeNumber(usage.cacheWrite);
+    if (input === 0 && cacheRead === 0 && cacheWrite === 0) continue;
     const timestamp = Number(entry.message.timing?.sentAt ?? entry.message.timestamp);
     if (!Number.isFinite(timestamp) || timestamp < 0) continue;
     return { timestamp, hit: cacheRead > 0, wrote: cacheWrite > 0 };
