@@ -208,6 +208,67 @@ test("a failed transcript append is not kept in memory, so the next entry hangs 
   );
 });
 
+// A write the file size limit (or a full disk) cuts short must leave the file as it was.
+// Runs in a child under `ulimit -f` so the kernel, not a mock, stops the write.
+function underFileSizeLimit(blocks, script, sessionDir) {
+  const moduleUrl = pathToFileURL(join(patchedPackage, "dist/index.js")).href;
+  const child = spawnSync(
+    "/bin/bash",
+    ["-c", `ulimit -f ${blocks}; exec "$0" --input-type=module --eval "$1" "$2" "$3"`,
+      process.execPath, script, moduleUrl, sessionDir],
+    { encoding: "utf8", env: withoutNodeOptions(process.env) },
+  );
+  assert.equal(child.status, 0, child.stderr);
+  return JSON.parse(child.stdout);
+}
+
+const fileSizeLimitHelpers = `
+const { SessionManager } = await import(process.argv[1]);
+const { statSync, existsSync } = await import("node:fs");
+const sessionDir = process.argv[2];
+const user = (text) => ({ role: "user", content: [{ type: "text", text }], timestamp: 1 });
+const texts = (manager) => manager.getBranch().filter((e) => e.type === "message").map((e) => e.message.content[0].text);
+const codeOf = (fn) => { try { fn(); return null; } catch (error) { return error.code; } };
+`;
+
+test("a cut-short append leaves no torn line for the next append to glue onto", () => {
+  const sessionDir = join(scratchRoot, "torn-append-sessions");
+  mkdirSync(sessionDir, { recursive: true });
+  const result = underFileSizeLimit(8, fileSizeLimitHelpers + `
+const manager = SessionManager.create(sessionDir, sessionDir, { id: "torn-append" });
+manager.appendMessage(user("written"));
+const file = manager.getSessionFile();
+const before = statSync(file).size;
+const code = codeOf(() => manager.appendMessage(user("x".repeat(64 * 1024))));
+const after = statSync(file).size;
+manager.appendMessage(user("after space came back"));
+const reopened = SessionManager.open(file);
+process.stdout.write(JSON.stringify({ code, grew: after - before, texts: texts(reopened),
+  same: JSON.stringify(reopened.getEntries()) === JSON.stringify(manager.getEntries()) }));
+`, sessionDir);
+  assert.equal(result.code, "EFBIG");
+  assert.equal(result.grew, 0, "the failed append left no bytes behind");
+  assert.deepEqual(result.texts, ["written", "after space came back"]);
+  assert.equal(result.same, true, "memory and file hold the same history");
+});
+
+test("a cut-short first flush leaves no file, so the next message can create it", () => {
+  const sessionDir = join(scratchRoot, "torn-flush-sessions");
+  mkdirSync(sessionDir, { recursive: true });
+  const result = underFileSizeLimit(1, fileSizeLimitHelpers + `
+const manager = SessionManager.create(sessionDir, sessionDir, { id: "torn-flush" });
+const file = manager.getSessionFile();
+const code = codeOf(() => manager.appendMessage(user("x".repeat(64 * 1024))));
+const leftFile = existsSync(file);
+const retry = codeOf(() => manager.appendMessage(user("after space came back")));
+process.stdout.write(JSON.stringify({ code, leftFile, retry, texts: texts(SessionManager.open(file)) }));
+`, sessionDir);
+  assert.equal(result.code, "EFBIG");
+  assert.equal(result.leftFile, false, "the half-written new file was removed");
+  assert.equal(result.retry, null);
+  assert.deepEqual(result.texts, ["after space came back"]);
+});
+
 test("actual paged catalog is stable and only fully parses a normal result page", async () => {
   const moduleUrl = pathToFileURL(join(patchedPackage, "dist/index.js")).href;
   const { SessionManager } = await import(moduleUrl);

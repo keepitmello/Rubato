@@ -46,6 +46,62 @@ function patchSessionManagerRuntime(source) {
         if (!hasMessage) {`,
     "persist-first-user",
   );
+  // Rolling back memory is half of it; the file must lose the failed write too. A failed
+  // first flush left an empty file behind, so every later "wx" open hit EEXIST until a
+  // restart. A failed append can leave a torn line without a newline; the next append
+  // glued onto it, the reader skipped the joined line, and the entry after it pointed at
+  // a parent the file no longer had. truncate and unlink need no free space.
+  next = replaceOnce(
+    next,
+    `import { appendFileSync, closeSync, createReadStream, existsSync, mkdirSync, openSync, readdirSync, readSync, statSync, writeFileSync, } from "fs";`,
+    `import { appendFileSync, closeSync, createReadStream, existsSync, mkdirSync, openSync, readdirSync, readSync, rmSync, statSync, truncateSync, writeFileSync, } from "fs";`,
+    "file-rollback-imports",
+  );
+  next = replaceOnce(
+    next,
+    `            if (this.flushed) {
+                appendFileSync(this.sessionFile, \`\${JSON.stringify(entry)}\\n\`);
+            }`,
+    `            if (this.flushed) {
+                this._appendLine(entry);
+            }`,
+    "file-rollback-metadata-append",
+  );
+  next = replaceOnce(
+    next,
+    `            const fd = openSync(this.sessionFile, "wx");
+            try {
+                for (const e of this.fileEntries) {
+                    writeFileSync(fd, \`\${JSON.stringify(e)}\\n\`);
+                }
+            }
+            finally {
+                closeSync(fd);
+            }
+            this.flushed = true;
+        }
+        else {
+            appendFileSync(this.sessionFile, \`\${JSON.stringify(entry)}\\n\`);
+        }`,
+    `            const fd = openSync(this.sessionFile, "wx");
+            try {
+                for (const e of this.fileEntries) {
+                    writeFileSync(fd, \`\${JSON.stringify(e)}\\n\`);
+                }
+            }
+            catch (error) {
+                closeSync(fd);
+                rmSync(this.sessionFile, { force: true });
+                throw error;
+            }
+            closeSync(fd);
+            this.flushed = true;
+        }
+        else {
+            this._appendLine(entry);
+        }`,
+    "file-rollback-first-flush",
+  );
   // Stock records the entry in memory before writing it. When the write fails (a full
   // disk), memory keeps an entry the file never got, the next entry takes it as parent,
   // and after a restart that parent is missing from the file and the session will not open.
@@ -57,7 +113,20 @@ function patchSessionManagerRuntime(source) {
         this.leafId = entry.id;
         this._persist(entry);
     }`,
-    `    _appendEntry(entry) {
+    `    _appendLine(entry) {
+        const length = statSync(this.sessionFile, { throwIfNoEntry: false })?.size ?? 0;
+        try {
+            appendFileSync(this.sessionFile, \`\${JSON.stringify(entry)}\\n\`);
+        }
+        catch (error) {
+            try {
+                truncateSync(this.sessionFile, length);
+            }
+            catch { }
+            throw error;
+        }
+    }
+    _appendEntry(entry) {
         const previousLeafId = this.leafId;
         this.fileEntries.push(entry);
         this.byId.set(entry.id, entry);
