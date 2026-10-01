@@ -194,6 +194,16 @@ msearch "<query>"     # 기억 검색
 | 데스크톱 | **Rubato.app** (macOS). `rubato-gui`와 같은 것을 켠다 |
 | 아이폰 | [T3 Code](https://github.com/pingdotgg/t3code) 앱으로 T3 Connect. 맥에서 `rubato-gui`로 연 환경에 붙는다 |
 
+아이폰 알림(작업 완료·승인 요청)은 맥 서버가 T3 릴레이(`relay.t3.codes`)로 보내야 온다.
+맥에서 한 번 T3 계정에 링크하고, 폰 T3 앱도 같은 계정으로 로그인한 뒤 알림을 허용한다.
+접속은 지금처럼 Tailscale 이고 터널은 만들지 않는다. 다음 앱 재시작에서 링크가 마무리된다.
+
+```bash
+cd ~/.rubato/t3-source/apps/server/dist
+node bin.mjs connect link --publish-only --base-dir ~/.rubato/t3-home   # 브라우저 로그인
+node bin.mjs connect status --base-dir ~/.rubato/t3-home                # Relay: https://relay.t3.codes
+```
+
 앱이 주기적으로 새 커밋을 확인해 화면 안에서 알리고, 업데이트를 누르면 앱 밖 일회성
 작업이 앱을 다시 열어 새 창이 실제로 뜬 것까지 확인한다. 설정 → General 맨 위의 About 에서도
 지금 버전을 보고, 업데이트를 확인·실행하고, `rubato restart` 를 돌릴 수 있다. 받을 업데이트가
