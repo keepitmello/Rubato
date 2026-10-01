@@ -344,6 +344,28 @@ const edits = {
       'replace',
     ],
   ],
+  // 아이폰 알림은 서버 → T3 릴레이 → APNs 로만 온다. 앱스토어 앱에는 로컬 알림이 없다.
+  // 공식 빌드는 CI 가 릴레이 주소와 Clerk 공개값을 서버에 굽는데, 우리 소스 빌드는
+  // 빈 값으로 구워져서 `t3 connect` 가 링크할 곳이 없었고 게시가 매번 조용히 빠졌다.
+  // 서버에만 굽는다 — 웹(VITE_*)에 넣으면 데스크톱에 T3 로그인 화면이 열린다. 값은
+  // npm 의 공식 `t3` 실행파일에 박힌 공개값이고, 런타임 T3CODE_* 환경변수가 여전히 이긴다.
+  'apps/server/vite.config.ts': [
+    [
+      '        __T3CODE_BUILD_RELAY_URL__: JSON.stringify(repoEnv.T3CODE_RELAY_URL?.trim() ?? ""),',
+      '        __T3CODE_BUILD_RELAY_URL__: JSON.stringify(\n          repoEnv.T3CODE_RELAY_URL?.trim() || "https://relay.t3.codes",\n        ),',
+      'replace',
+    ],
+    [
+      '          repoEnv.T3CODE_CLERK_PUBLISHABLE_KEY?.trim() ?? "",',
+      '          repoEnv.T3CODE_CLERK_PUBLISHABLE_KEY?.trim() || "pk_live_Y2xlcmsudDMuY29kZXMk",',
+      'replace',
+    ],
+    [
+      '          repoEnv.T3CODE_CLERK_CLI_OAUTH_CLIENT_ID?.trim() ?? "",',
+      '          repoEnv.T3CODE_CLERK_CLI_OAUTH_CLIENT_ID?.trim() || "hzxSgY2cH10sDU2r",',
+      'replace',
+    ],
+  ],
   // 웹 진입점의 이름. 데스크톱은 preload 가 위 DesktopEnvironment 의 이름을 넘겨서
   // 이 기본값을 안 쓰지만, 아이폰·브라우저로 붙는 웹은 브리지가 없어 여기로 떨어진다
   // — 페어링 화면·첫 화면·탭 제목이 "T3 Code (Alpha)" 였다. 데스크톱과 같게 단계
