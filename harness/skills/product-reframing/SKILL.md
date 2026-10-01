@@ -1,6 +1,6 @@
 ---
 name: product-reframing
-description: "Escape an entrenched product frame when framing candidates all look alike: so-what chain in a blind session, bridge research, new frame candidates handed back to framing. Needs an existing product frame; not for debugging loops or task-level rethinking."
+description: "Escape an entrenched product frame when framing candidates all look alike: so-what chain in a blind session, bridge research, new frame candidates handed back to framing. Needs an existing product frame."
 
 ---
 

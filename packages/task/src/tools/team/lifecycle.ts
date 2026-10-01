@@ -34,7 +34,7 @@ function inlineTeamSpecMemberSchema(availableModels: AvailableModels) {
       }),
       model: teamMemberModelSchema(availableModels),
       effort: Type.Optional(TaskToolEffort),
-      prompt: Type.String({ description: "Member instructions; MUST be written in English." }),
+      prompt: Type.String({ description: "Member instructions." }),
       task_summary: Type.Optional(
         Type.String({
           maxLength: TASK_SUMMARY_MAX_LENGTH,

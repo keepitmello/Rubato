@@ -1,6 +1,6 @@
 ---
 name: insane-search
-description: "Bypass blocked sites when Twitter/Reddit/YouTube/GitHub/Naver will not open. Not for general search."
+description: "Bypass blocked sites when Twitter/Reddit/YouTube/GitHub/Naver will not open."
 
 ---
 

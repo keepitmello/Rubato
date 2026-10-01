@@ -1,13 +1,11 @@
 #!/bin/bash
 # rubato 시스템 프롬프트 합성.
 #
-# 정본은 이 폴더다. ~/.agents/rubato 는 여기를 가리키는 심링크일 뿐이다.
+# 정본은 이 폴더다. ~/.agents/rubato 는 여기를 가리키는 심링크다.
 # 산출물 .build/*.md 는 통째 주입되므로 역할마다 완결된 파일 하나여야 한다.
 # 고칠 때는 조각을 고치고 여기를 다시 돌린다. 클론한 사람은 한 번 돌리면 된다.
 #
 # 조각이 `.pi.md` 인 것은 이 프롬프트가 rubato-pi(Senpi 엔진) 전용이기 때문이다.
-# 예전에는 fx 런타임용 조각이 따로 있었고 두 벌을 만들었다. fx 는 폐기했으므로
-# pi 판만 남긴다. 이름의 `.pi` 는 계보를 남겨 두려고 유지한다.
 #
 # Claude Code 자세(~/.claude/tech-lead.md)와는 어떤 파일도 공유하지 않는다.
 set -euo pipefail
@@ -53,16 +51,16 @@ fresh() {
 # 달라지는 보고 계약은 core-*.pi.md 가 이미 갖고 있다. 둘로 나눠 두면 같은 문장
 # 규칙을 두 곳에서 고쳐야 해서 한쪽만 낙후된다.
 #
-# lead, owner, verifier 는 브리프를 받고 쓰는 실행 주체라 brief-exchange 계약을 공유한다.
+# 브리프를 주고받는 계약은 brief-exchange 한 곳에 두고 세 파일이 모두 싣는다.
+# 역할 조각에는 그 역할에만 해당하는 문장만 둔다.
 # owner 와 verifier 는 같은 teammate 파일을 쓴다. 검증도 하나의 워크스트림이고,
-# verifier 는 산출물이 판단인 owner 이기 때문이다. 순수 task Agent 는 브리프를 받아
-# 실행하고 반환하는 agent 파일을 쓴다.
+# verifier 는 산출물이 판단인 owner 이기 때문이다. 순수 task Agent 는 agent 파일을 쓴다.
 if ! fresh "$OUT/lead.pi.md" base.pi.md brief-exchange.pi.md core-lead.pi.md voice.md; then
   emit lead.pi.md     base.pi.md brief-exchange.pi.md core-lead.pi.md     voice.md
 fi
 if ! fresh "$OUT/teammate.pi.md" base.pi.md brief-exchange.pi.md core-teammate.pi.md voice.md; then
   emit teammate.pi.md base.pi.md brief-exchange.pi.md core-teammate.pi.md voice.md
 fi
-if ! fresh "$OUT/agent.pi.md" base.pi.md core-agent.pi.md voice.md; then
-  emit agent.pi.md    base.pi.md core-agent.pi.md    voice.md
+if ! fresh "$OUT/agent.pi.md" base.pi.md brief-exchange.pi.md core-agent.pi.md voice.md; then
+  emit agent.pi.md    base.pi.md brief-exchange.pi.md core-agent.pi.md    voice.md
 fi

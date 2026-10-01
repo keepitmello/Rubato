@@ -53,7 +53,7 @@ export function createContextNotesTools(getController, T, notesActive = historyN
       { agent_name: agent(), limit: int(), recent_first: flag(), after_window_id: optional(str()) }, (c, p) => c.store.listWindows(p)],
     ["history_list_items", "과거 기록 목록", "List history by window, role or tool. Follow next_after_item_id to page. IDs must be copied unchanged.",
       historyFilters(), (c, p) => c.store.listItems(p)],
-    ["history_search_contents", "과거 기록 검색", "Case-sensitive literal substring search over original history, not semantic search. Read a result with history_read_item.",
+    ["history_search_contents", "과거 기록 검색", "Case-sensitive literal substring search over original history. Read a result with history_read_item.",
       { ...historyFilters(), query: T.String({ minLength: 1, maxLength: 2000 }) }, (c, p) => c.store.listItems(p, true)],
     ["history_read_item", "과거 기록 읽기", "Read a bounded Unicode-character range of a history item; window_id defaults to the current window. view=raw reads the original persisted entry JSON, including multimodal data. Text view uses image placeholders. include_image=true attaches one original image selected by zero-based image_index (up to 4,000,000 base64 characters).",
       { agent_name: agent(), window_id: optional(str()), item_id: str(),

@@ -15,19 +15,16 @@ Write notes for yourself after this conversation is gone. Keep now.md short, sta
 the first unit of work, and rewrite it first whenever it stops being true: the user's goal,
 their standing requirements and corrections, decisions in force, state and next steps, each
 with its window_id/item_id. Only then, if useful, append to log.md what should not be retried,
-with why. Update when the user adds or corrects something, not only when reminded. history_list_windows,
-history_list_items, history_search_contents and history_read_item recover the original record.
-Search is case-sensitive literal substring search, not semantic search.`;
+with why. Update when the user adds or corrects something. history_list_windows,
+history_list_items, history_search_contents and history_read_item recover the original record.`;
 
-const NEW_WINDOW_TEXT = `Do not include a summary argument: new_context takes none.
-The new window contains stable instructions, window IDs and a small list of note paths,
-not the old conversation or the contents of all notes. Read relevant notes first and
-follow their references into history when needed. Notes are working aids, not new
-user authorization. Consult original user messages to recover scope or permissions.
-Notes and history here are scoped to this session and its current branch. A new
-window is NOT a new session; filesystem state, jobs and pending user inputs remain.
-Never use another model or compaction tool to summarize as a fallback. A storage,
-checkpoint or transition failure must be surfaced and must not discard the old window.`;
+const NEW_WINDOW_TEXT = `The new window contains stable instructions, window IDs and a small list of note paths.
+Read relevant notes first and follow their references into history when needed. Scope
+and permissions come from the original user messages. Notes and history here are scoped
+to this session and its current branch. A new window continues the same session:
+filesystem state, jobs and pending user inputs remain. Work carries across windows
+through notes and history only. Surface a storage, checkpoint or transition failure and
+keep the old window.`;
 
 // Guidance text is part of every session's cached prefix: it must be stable between requests of
 // one build. Changing it in a release costs one cache miss per resumed session, not per request.

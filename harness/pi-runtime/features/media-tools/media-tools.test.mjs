@@ -445,8 +445,6 @@ test("staged stock SDK executes webfetch, look_at, and client generate_image aga
 		realpathSync(imageSkill.filePath),
 		realpathSync(join(outputRoot, "rubato-features/media-tools/src/imagegen/skill/SKILL.md")),
 	);
-	const imagePrompt = await session.extensionRunner.emitSystemPrompt({ cwd });
-	assert.match(imagePrompt, /## Image Generation/);
 
 	const updates = [];
 	const fetched = await extensionApi.executeTool(

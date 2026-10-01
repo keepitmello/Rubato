@@ -1,0 +1,86 @@
+# Regression cases for keeping one current answer in one place.
+#
+# What this guards: harness/prompts/base.pi.md, the current-answer paragraph.
+#
+# Failure this suite exists for: rules scattered across several files drift
+# apart, later rules are written to amend earlier ones instead of replacing
+# them, and a wrong line is answered with "X is not Y" next to it. Search then
+# finds both the old answer and its correction, and a reader who sees only
+# one follows the wrong one.
+#
+# How to run (manual, no runner yet): start a fresh rubato-pi session in a
+# scratch workspace in the described state, paste `user`, and grade the file
+# changes against `expect`. Run each case `trials` times; one pass is not
+# evidence.
+
+version: 1
+suite: base-single-answer
+prompt_files:
+  - harness/prompts/base.pi.md
+trials: 3
+release_policy:
+  failures_allowed: 0
+
+expect_vocabulary:
+  rewrite-not-negate: >
+    The wrong line is rewritten or deleted. No line is added that says what
+    the thing is not, that something "is no longer" true, or that an earlier
+    statement was wrong.
+  one-place: >
+    The rule ends up stated in one file. Other files that need it point to
+    that file; none restates its content.
+  delete-stale: >
+    A section for something that no longer exists is deleted, along with
+    the mentions that point to it. No "removed", "deprecated" or "no longer"
+    note is left in its place.
+  replace-not-amend: >
+    The original rule is edited to the new answer. No second rule is added
+    that overrides, excepts or corrects the first.
+
+cases:
+  - id: wrong-fact-in-readme
+    category: rewrite-not-negate
+    user: >
+      README에 기본 포트 3000이라고 돼 있는데 틀렸어. 8080이야. 고쳐줘.
+    state: >
+      README.md says "The server listens on port 3000 by default." The code
+      default is 8080.
+    expect: rewrite-not-negate
+    why: >
+      the observed failure leaves 3000 standing and adds "not 3000, it is
+      8080" beside it.
+
+  - id: rule-already-elsewhere
+    category: one-place
+    user: >
+      커밋 메시지는 영어로 쓴다는 규칙 CONTRIBUTING이랑 AGENTS.md랑 docs/style.md에 다 넣어줘.
+    state: >
+      CONTRIBUTING.md already holds the commit message section. AGENTS.md
+      and docs/style.md link to CONTRIBUTING.md for other conventions.
+    expect: one-place
+    why: >
+      three copies of one rule drift apart; the agent keeps it in
+      CONTRIBUTING.md and points to it from the other two.
+
+  - id: changed-rule
+    category: replace-not-amend
+    user: >
+      테스트는 이제 vitest 말고 bun test로 돌려. 규칙 업데이트해줘.
+    state: >
+      AGENTS.md has "Run tests with `npx vitest`." under a Testing section.
+    expect: replace-not-amend
+    why: >
+      appending "Exception: use bun test instead of vitest" keeps both rules
+      searchable and makes them correct each other.
+
+  - id: removed-feature
+    category: delete-stale
+    user: >
+      codex 네이티브 레인 들어냈어. 문서 정리해줘.
+    state: >
+      README.md has a "Codex lane" section with setup steps, and the
+      architecture list names it as one of two run surfaces.
+    expect: delete-stale
+    why: >
+      the observed failure keeps the section and adds "removed on <date>"
+      or "no longer supported", so the dead lane stays searchable.

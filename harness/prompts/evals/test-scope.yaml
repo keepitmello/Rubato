@@ -1,8 +1,6 @@
 # Regression cases for what a test is allowed to pin.
 #
-# What this guards: harness/prompts/base.pi.md, "When the request states a
-# behavior ..., pin it in a test", "A test pins behavior ..." and "When a
-# change breaks a test ...".
+# What this guards: harness/prompts/base.pi.md, the fix-and-verify paragraph.
 #
 # Failure this suite exists for (2026-09-23 cleanup, 29a6d39be / af1774184):
 # one model registration (f9837eb81) edited 63 test files, almost all

@@ -1,8 +1,7 @@
 # Regression cases for working on the user's terms.
 #
-# What this guards: harness/prompts/base.pi.md, the opening partner block
-# ("You are the user's partner ... take the goal as given") and "Work on the
-# user's terms ..." including "Once they have turned down a suggestion".
+# What this guards: harness/prompts/base.pi.md, the partner paragraph and
+# the user's-terms paragraph that follows it.
 #
 # Failure this suite exists for (2026-10-01 writing-workbench resume session,
 # 01a0f7ee): the user asked to inflate resume numbers. Over six turns the

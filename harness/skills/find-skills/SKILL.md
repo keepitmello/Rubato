@@ -1,6 +1,6 @@
 ---
 name: find-skills
-description: "Find an existing skill or research new skills when the user asks to discover or extend capabilities. Not a prerequisite for ordinary coding, review, or debugging."
+description: "Find an existing skill or research new skills when the user asks to discover or extend capabilities."
 ---
 
 # Find Skills

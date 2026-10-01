@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
@@ -82,6 +82,113 @@ test("the skills listing stays pinned to the session until /reload", async () =>
   await handlers.session_start({ reason: "reload" }, ctx);
   assert.match(await compose(handlers, "edited on disk"), /edited on disk/);
   assert.match(await compose(handlers, "later edit"), /edited on disk/);
+});
+
+test("the role prompt file stays pinned to the session until /reload", async (t) => {
+  // The role prompt sits ahead of the whole history; rebuilding .build on disk must reach new
+  // sessions only, not rewrite the cached prefix of a running or resumed one.
+  const dir = mkdtempSync(join(tmpdir(), "rubato-role-pin-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, ".build"));
+  const write = (text) => writeFileSync(join(dir, ".build", "lead.pi.md"), `# Working agreement\n\n${text}\n\n# Lead\n`);
+  const env = {
+    RUBATO_PI_ROLE: "lead",
+    RUBATO_PROMPTS_DIR: dir,
+    RUBATO_ROLE_PROMPT_MODULE: promptHref,
+    RUBATO_ROLE_CONTRACT_MODULE: roleHref,
+  };
+  const branches = new Map();
+  const ctxFor = (id) => {
+    if (!branches.has(id)) branches.set(id, []);
+    return {
+      model: { id: "claude-opus-5", provider: "anthropic", name: "Claude Opus 5" },
+      sessionManager: { getSessionId: () => id, getBranch: () => branches.get(id) },
+    };
+  };
+  let current = "session-a";
+  const boot = async () => {
+    const handlers = {};
+    const pi = {
+      on(name, fn) { handlers[name] = fn; },
+      appendEntry(customType, data) { branches.get(current).push({ type: "custom", customType, data }); },
+    };
+    await createRolePromptExtensionFactories({ env })[0].factory(pi);
+    return handlers;
+  };
+  const compose = async (handlers, id) => {
+    current = id;
+    return (await handlers.system_prompt({ systemPrompt: "" }, ctxFor(id))).systemPrompt;
+  };
+
+  write("first version");
+  let handlers = await boot();
+  await handlers.session_start({ reason: "startup" }, ctxFor("session-a"));
+  assert.match(await compose(handlers, "session-a"), /first version/);
+
+  write("second version");
+  assert.match(await compose(handlers, "session-a"), /first version/, "a running session keeps its prompt");
+  assert.doesNotMatch(await compose(handlers, "session-a"), /second version/);
+
+  handlers = await boot();
+  await handlers.session_start({ reason: "resume" }, ctxFor("session-a"));
+  assert.match(await compose(handlers, "session-a"), /first version/, "a restart keeps the pinned prompt");
+
+  await handlers.session_start({ reason: "new" }, ctxFor("session-b"));
+  assert.match(await compose(handlers, "session-b"), /second version/, "a new session takes the current file");
+
+  await handlers.session_start({ reason: "reload" }, ctxFor("session-a"));
+  assert.match(await compose(handlers, "session-a"), /second version/, "/reload takes the current file");
+  write("third version");
+  assert.match(await compose(handlers, "session-a"), /second version/);
+});
+
+test("project instructions and rules stay pinned to the session until /reload", async () => {
+  // CLAUDE.md is read when the engine loads and static rules on every request; both sit ahead of
+  // the history, so an edit must reach new sessions only.
+  const env = { RUBATO_PI_ROLE: "lead", RUBATO_ROLE_PROMPT_MODULE: promptHref, RUBATO_ROLE_CONTRACT_MODULE: roleHref };
+  const branches = new Map();
+  let current = "session-a";
+  const ctxFor = (id) => {
+    if (!branches.has(id)) branches.set(id, []);
+    return {
+      model: { id: "claude-opus-5", provider: "anthropic", name: "Claude Opus 5" },
+      sessionManager: { getSessionId: () => id, getBranch: () => branches.get(id) },
+    };
+  };
+  const handlers = {};
+  await createRolePromptExtensionFactories({ env })[0].factory({
+    on(name, fn) { handlers[name] = fn; },
+    appendEntry(customType, data) { branches.get(current).push({ type: "custom", customType, data }); },
+  });
+  const base = (claude) => claude === undefined
+    ? "<cwd>\n/tmp/x\n</cwd>"
+    : `<project_context>\n${claude}\n</project_context>\n\n<cwd>\n/tmp/x\n</cwd>`;
+  const rules = (text) => `\n\n<!--senpi:project-rules:1:start-->\n<project_rules>\n${text}\n</project_rules>\n<!--senpi:project-rules:1:end-->`;
+  const compose = async (id, claude, rule) => {
+    current = id;
+    const basePrompt = base(claude);
+    const result = await handlers.system_prompt({ systemPrompt: basePrompt + (rule === undefined ? "" : rules(rule)), basePrompt }, ctxFor(id));
+    return result.systemPrompt;
+  };
+
+  await handlers.session_start({ reason: "startup" }, ctxFor("session-a"));
+  const first = await compose("session-a", "claude one", "rule one");
+  assert.match(first, /claude one/);
+  assert.match(first, /rule one/);
+  assert.equal(await compose("session-a", "claude two", "rule two"), first, "edits do not reach a running session");
+
+  await handlers.session_start({ reason: "resume" }, ctxFor("session-a"));
+  assert.equal(await compose("session-a", "claude two", "rule two"), first, "a restart keeps the pinned files");
+
+  await handlers.session_start({ reason: "new" }, ctxFor("session-b"));
+  const fresh = await compose("session-b", undefined, undefined);
+  assert.doesNotMatch(fresh, /project_context|project_rules/);
+  assert.equal(await compose("session-b", "claude added", "rule added"), fresh, "a file added mid-session waits for a new session");
+
+  await handlers.session_start({ reason: "reload" }, ctxFor("session-a"));
+  const reloaded = await compose("session-a", "claude two", "rule two");
+  assert.match(reloaded, /claude two/);
+  assert.match(reloaded, /rule two/);
 });
 
 test("contributions made before the role prompt survive its rebuild", async () => {

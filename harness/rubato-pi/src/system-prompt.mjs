@@ -91,18 +91,17 @@ export function loadRolePrompt(role, {
   return readPromptFile(path, { readFile, materialize });
 }
 
-// Owner and verifier intentionally share the common teammate file. Keep their
-// concrete responsibility explicit even with a custom prompt or a reused session.
-// This is role identity, not a model/effort selector or an additional permission.
+// Owner and verifier share teammate.pi.md, so the runtime says which one this session is.
+// Lead and agent have their own prompt files and get only the label.
 export function assignedRoleSection(role) {
   const contracts = {
-    lead: "Your primary responsibility is the conversation with the user: intent, framing and direction. With a team, owners perform technical execution/integration and verifiers hold independent verdicts.",
-    owner: "You own an assigned outcome through local judgment, authorized execution and evidence. Read the taskforce workstream-owner contract; technical integration belongs here when assigned.",
-    verifier: "You own an independent evidence-backed judgment. Read the taskforce independent-verifier contract. Do not implement the production change you will judge; the owner performs correction and integration.",
-    agent: "You are bounded support for the sending session, not a roster owner or lead. Reason inside the brief and return evidence; the sender retains its wider outcome.",
+    lead: "",
+    owner: "I own the assigned outcome under the workstream-owner contract, including its integration when assigned.",
+    verifier: "I give an independent, evidence-backed judgment under the independent-verifier contract; the owner makes the fix.",
+    agent: "",
   };
   if (!Object.hasOwn(contracts, role)) return "";
-  return `## Runtime-assigned role\n\nRole: ${role}\n${contracts[role]}`;
+  return [`## Runtime-assigned role`, "", `Role: ${role}`, contracts[role]].filter((line, i) => i < 3 || line).join("\n");
 }
 
 export function modelIdentityLine(model) {
@@ -114,7 +113,7 @@ export function modelIdentityLine(model) {
   const brandedName = provider === "anthropic" && !/^claude\b/i.test(displayName)
     ? `Claude ${displayName}`
     : displayName;
-  return `You are ${brandedName} (${catalogId}).`;
+  return `I am ${brandedName} (${catalogId}).`;
 }
 
 export function isNonInteractiveCli(argv = []) {
