@@ -71,6 +71,10 @@
     "apps/server/src/orchestration/projector.ts": "829496437b51a6b5a2e4a1d9ecf8921be4e9457bee4df3a4707c98438a2ac460",
     "apps/server/src/orchestration/Layers/ProjectionPipeline.ts": "bfa6d12ba3d4753b98e9f7aec0225819971c1b2dd0fb80ccb95ed24730b64800",
     "packages/client-runtime/src/state/threadReducer.ts": "164cbe8e7959cbe9240c11d9f0713da17def8d57b6e1ff02dd4740555de760af",
-    "apps/web/src/components/ChatView.logic.ts": "74c9501674389040eef447c9792cece0cfcff4ac709fc1a1ebb11236ece08e5c"
+    "apps/web/src/components/ChatView.logic.ts": "74c9501674389040eef447c9792cece0cfcff4ac709fc1a1ebb11236ece08e5c",
+    "packages/shared/src/filePreview.ts": "ffda73eddc45277fbabe0b2d0ba0686375a9974e545ae9a9ead529d63b5604be",
+    "apps/server/src/assets/AssetAccess.ts": "570be3214088711f4ef38253ae8bcfe3ddc4a0493bddf26a470dbff0842f81c6",
+    "apps/web/package.json": "e0c77087e04a733710894033532e584b2b9dcf1c9ac20b410a934510f6a378a0",
+    "pnpm-lock.yaml": "cdf7f23158631e7cb34b279a9792ef28eb3418c453ec58508e3d91919a4b5a12"
   }
 }
