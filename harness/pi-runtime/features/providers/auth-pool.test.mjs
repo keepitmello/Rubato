@@ -136,6 +136,16 @@ test("429 failovers; 401 blocks the account", () => {
   assert.equal(auth.block.reason, "auth_error");
 });
 
+// 2026-10-01: fast mode on the sub account (no usage credits) came back 429. Read as a rate
+// limit, it blocked the account and every later request said only "Account 'sub' is unavailable".
+test("fast mode refused for missing usage credits fails the request without blocking the account", () => {
+  const error = Object.assign(
+    new Error('429 {"type":"error","error":{"type":"rate_limit_error","message":"Usage credits are required for fast mode."}}'),
+    { status: 429 },
+  );
+  assert.deepEqual(classifyCredentialFailure(error), { kind: "fail_request" });
+});
+
 // 2026-09-25 핫스팟 세션: SDK 의 "Connection error." 와 undici 의 "terminated" 가 네트워크
 // 실패로 안 잡혀, 아무것도 안 나간 연결 실패도 풀 안의 즉시 재시도를 못 받았다.
 test("연결 단계 실패 문구는 같은 계정 즉시 재시도 대상이다", () => {

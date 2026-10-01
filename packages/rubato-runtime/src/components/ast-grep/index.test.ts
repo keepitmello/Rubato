@@ -7,7 +7,7 @@ import { join } from "node:path"
 
 import { FakeExtensionAPI } from "../../../test-support/fake-extension-api"
 import type { ComponentLogger } from "../../extension/types"
-import { createAstGrepComponent } from "./index"
+import { AST_GREP_STARTUP_TIMEOUT_MS, createAstGrepComponent } from "./index"
 
 const tempDirs: string[] = []
 
@@ -74,7 +74,7 @@ describe("createAstGrepComponent", () => {
           enabled: true,
           lifecycle: "lazy",
           idleTimeoutMin: 1,
-          startupTimeoutMs: 2000,
+          startupTimeoutMs: AST_GREP_STARTUP_TIMEOUT_MS,
           exposure: "search",
         },
       },

@@ -38,7 +38,8 @@ export function readAuthoritativeBranch(manager) {
     const entry = byId.get(id);
     if (!entry) {
       const from = child ? ` ${child.id} 이 가리키는 자리예요.` : " 마지막 항목이 가리키는 자리예요.";
-      throw new Error(`세션 원본에서 상위 항목 ${id} 을 찾지 못했어요.${from} 일부 기록을 누락시키지 않고 멈췄어요.`);
+      const repair = typeof manager.getSessionId === "function" ? ` 터미널에서 \`rubato repair-session ${manager.getSessionId()}\` 로 백업을 남기고 이을 수 있어요.` : "";
+      throw new Error(`세션 원본에서 상위 항목 ${id} 을 찾지 못했어요.${from} 일부 기록을 누락시키지 않고 멈췄어요.${repair}`);
     }
     if (entry.type !== "session") branch.push(entry);
     child = entry;

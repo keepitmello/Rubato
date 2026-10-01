@@ -8,6 +8,10 @@ const ACCOUNT_SCOPED_403_TEXT = /account|credential|token|api[ _-]?key|organizat
 const RATE_LIMIT_TEXT = /rate[ _-]?limit|too many requests|resource_exhausted/i;
 const BILLING_TEXT = /billing|credits?[ _-]?(?:required|exhausted|balance)|insufficient[ _-]?(?:funds|quota|credit)|payment[ _-]?required|quota[ _-]?exhausted/i;
 const OVERLOAD_TEXT = /overloaded/i;
+// Anthropic answers fast mode on an account without usage credits with 429
+// "Usage credits are required for fast mode." The account is fine for normal speed, so
+// blocking it as rate-limited hid that reason behind "Account 'sub' is unavailable".
+const FAST_MODE_CREDITS_TEXT = /required for fast mode/i;
 // `connection error` 는 Anthropic/OpenAI SDK 의 APIConnectionError("Connection error."),
 // `terminated`·`other side closed` 는 undici 가 소켓을 잃을 때 올리는 문구다. 빠져 있으면
 // 연결 단계 실패가 풀 안의 즉시 재시도를 못 받고 세션 백오프로 바로 넘어간다.
@@ -58,6 +62,9 @@ export function classifyCredentialFailure(error, context = {}) {
     return ACCOUNT_SCOPED_403_TEXT.test(text)
       ? { kind: "failover", block: { reason: "auth_error" } }
       : { kind: "fail_request" };
+  }
+  if (FAST_MODE_CREDITS_TEXT.test(text)) {
+    return { kind: "fail_request" };
   }
   if (status === 402 || BILLING_TEXT.test(text)) {
     return { kind: "failover", block: { reason: "account_disabled" } };

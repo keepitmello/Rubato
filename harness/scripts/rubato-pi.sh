@@ -235,6 +235,12 @@ case "${1-}" in
     NODE="$(live_node)" || exit $?
     exec "$NODE" "$LIVE_CLI" "$@"
     ;;
+  repair-session)
+    # 쓰다 끊긴 항목 때문에 열리지 않는 세션을 백업한 뒤 잇는다. 오류 문구가 이 명령을 알려 준다.
+    shift
+    NODE="$(live_node)" || exit $?
+    exec "$NODE" "$HERE/repair-session.mjs" "$@"
+    ;;
   internal-run)
     if [ "${2-}" != "--descriptor" ] || [ -z "${3-}" ] || [ "$#" -ne 3 ]; then
       echo "usage: rubato internal-run --descriptor <path>" >&2
