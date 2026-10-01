@@ -31,6 +31,6 @@ export function previewToolText(text, toolName, artifactPath) {
   const head = prefix(bytes, headOnly ? TOOL_OUTPUT_PREVIEW_BYTES : TOOL_OUTPUT_PREVIEW_BYTES / 2);
   const tail = headOnly ? "" : suffix(bytes, TOOL_OUTPUT_PREVIEW_BYTES / 2);
   const omitted = bytes.length - Buffer.byteLength(head) - Buffer.byteLength(tail);
-  const notice = `[Tool output preview; ${omitted} bytes omitted. Original tool-result text: ${JSON.stringify(artifactPath)}. Read with offset/limit for omitted content. Upstream truncation, if any, is unchanged.]`;
+  const notice = `[Preview; ${omitted} bytes omitted. Full text: ${JSON.stringify(artifactPath)} (read with offset/limit)]`;
   return `${notice}\n${head}\n[... ${omitted} bytes omitted ...]${tail ? `\n${tail}` : ""}`;
 }

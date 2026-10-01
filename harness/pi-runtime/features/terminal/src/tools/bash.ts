@@ -315,13 +315,13 @@ async function runForeground(
 		const partialOutput = formatTerminalToolOutput(delta.text).text || "(no output yet)";
 		const timeoutNote =
 			input.timeout !== undefined && Number.isFinite(input.timeout)
-				? `not killed; the original ${input.timeout}s timeout still applies`
-				: "not killed; it will run until exit or kill_bash";
+				? `its ${input.timeout}s timeout still applies`
+				: "it runs until exit or kill_bash";
 		const guidance = sleepWait
-			? `This command is a wait (${sleepWait.seconds}s sleep), so it detached immediately; the wait continues in the background. Do nothing and end your turn — completion will be reported automatically with exit status and output tail. Do NOT poll bash_output({ bash_id: "${id}" }) for it. When you are waiting for a pattern in a command's output, launch it with monitor({ command, filter }) instead so matching lines arrive as events. Use kill_bash({ bash_id: "${id}" }) to stop this session.`
-			: `Continue other work; completion will be reported automatically with exit status and output tail. Use bash_output({ bash_id: "${id}" }) only to peek at new output. monitor cannot attach to this session; use it for future event-driven launches. Use kill_bash({ bash_id: "${id}" }) to stop this session.`;
+			? `It is a ${sleepWait.seconds}s wait: end your turn, its completion will be reported. Do not poll it; to wait for a pattern in output, launch with monitor({ command, filter }).`
+			: "Its completion will be reported; bash_output peeks, kill_bash stops.";
 		return textResult(
-			`Command is still running; auto-detached to background with ID: ${id} (${timeoutNote}).\n\nPartial output:\n${partialOutput}\n\n${guidance}`,
+			`Still running in background as ${id} (${timeoutNote}). Partial output:\n${partialOutput}\n${guidance}`,
 			{
 				details: {
 					bash_id: id,

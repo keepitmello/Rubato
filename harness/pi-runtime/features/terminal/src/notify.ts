@@ -21,8 +21,8 @@ export interface TerminalNotifierDeps {
 	readonly getMode: () => NotifyMode;
 }
 
-/** Max chars of sanitized final output embedded in a completion notification. */
-export const NOTICE_TAIL_MAX_CHARS = 2000;
+/** Max chars of sanitized final output embedded in a completion notification; bash_output reads the rest. */
+export const NOTICE_TAIL_MAX_CHARS = 600;
 
 export interface TerminalNotificationDelivery {
 	readonly send: (content: string, options?: { readonly forceWake?: boolean }) => void;
@@ -59,7 +59,7 @@ function buildNotice(id: string, runtime: TerminalRuntimeSession): string {
 		const truncated = tail.length > NOTICE_TAIL_MAX_CHARS;
 		const shown = truncated ? tail.slice(tail.length - NOTICE_TAIL_MAX_CHARS) : tail;
 		const note = truncated
-			? `\n[Final output truncated to the last ${NOTICE_TAIL_MAX_CHARS} chars; the full history is still peekable.]`
+			? `\n[last ${NOTICE_TAIL_MAX_CHARS} chars; bash_output reads more]`
 			: "";
 		tailSection = `\nFinal output:\n${shown}${note}`;
 	}
@@ -84,6 +84,10 @@ export class TerminalNotifier {
 
 	notifyCompletion(id: string, runtime: TerminalRuntimeSession): void {
 		if (this.notified.has(id)) return;
+		if (runtime.killedByAgent) {
+			this.notified.add(id);
+			return;
+		}
 		const delivery = getTerminalNotificationDelivery(this.deps);
 		if (!delivery) return;
 

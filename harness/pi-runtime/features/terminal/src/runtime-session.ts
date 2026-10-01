@@ -25,6 +25,8 @@ export interface DeltaRead {
 export class TerminalRuntimeSession {
 	readonly session: TerminalSession;
 	readonly command: string;
+	/** Set by kill_bash: the agent stopped it itself, so its exit is not news to report. */
+	killedByAgent = false;
 	private readonly screen: TerminalScreen;
 	private readonly decoder = new TextDecoder("utf-8", { fatal: false });
 	private buffer = "";
