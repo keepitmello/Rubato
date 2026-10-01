@@ -102,6 +102,54 @@ test('start-gui still execs T3 electron and only uses osascript on Darwin', () =
   assert.match(startSrc, /\[ "\$\(uname -s\)" = Darwin \]/);
 });
 
+// 맥에서는 이 기계의 네이티브 바이너리만 받는다. 윈도우·리눅스는 upstream 의
+// supportedArchitectures 를 그대로 따른다(윈도우는 WSL 이 리눅스 것을 쓴다).
+function installArgs(hostOs) {
+  const root = mkdtempSync(path.join(tmpdir(), 'rb-install-gui-deps-'));
+  try {
+    const bin = path.join(root, 'bin');
+    const t3 = path.join(root, 't3');
+    mkdirSync(bin);
+    mkdirSync(t3);
+    writeFileSync(path.join(t3, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
+    const log = path.join(root, 'calls');
+    writeFileSync(path.join(bin, 'node'), `#!/bin/bash\nexec '${process.execPath}' "$@"\n`);
+    writeFileSync(path.join(bin, 'corepack'), `#!/bin/bash\nprintf '%s\\n' "$*" >> '${log}'\n`);
+    chmodSync(path.join(bin, 'node'), 0o755);
+    chmodSync(path.join(bin, 'corepack'), 0o755);
+    const start = src.indexOf('build_desktop() {');
+    const fn = src.slice(start, src.indexOf('\n}\n', start) + 3);
+    const wrapper = [
+      'set -uo pipefail',
+      `HOST_OS='${hostOs}'`,
+      'is_darwin() { [ "$HOST_OS" = Darwin ]; }',
+      `T3_DIR='${t3}'`,
+      `NODE='${path.join(bin, 'node')}'`,
+      `DEPS_STAMP='${path.join(t3, '.rubato-gui-deps')}'`,
+      fn,
+      'build_desktop',
+    ].join('\n');
+    const result = spawnSync('bash', ['-c', wrapper], {
+      encoding: 'utf8',
+      env: { ...process.env, PATH: `${bin}:/usr/bin:/bin` },
+    });
+    assert.equal(result.status, 0, result.stderr + result.stdout);
+    return readFileSync(log, 'utf8').split('\n').find((line) => line.startsWith('pnpm install'));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+test('Darwin installs T3 dependencies for this machine only', () => {
+  assert.equal(installArgs('Darwin'), `pnpm install --cpu=${process.arch} --os=darwin`);
+});
+
+test('non-Darwin installs keep upstream supportedArchitectures', () => {
+  for (const host of ['Linux', 'MINGW64_NT-10.0-19045']) {
+    assert.equal(installArgs(host), 'pnpm install');
+  }
+});
+
 // 웹 아이콘은 upstream 의 같은 이름 파일 자리에 깔린다. upstream 이 이름을 바꾸면
 // 복사는 아무도 읽지 않는 새 파일을 만들고 T3 아이콘이 그대로 남는다.
 test('every web icon replaces a file the pinned T3 web app already serves', { skip: !process.env.T3_SOURCE }, () => {
