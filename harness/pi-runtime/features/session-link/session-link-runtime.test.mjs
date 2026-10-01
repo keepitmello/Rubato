@@ -170,7 +170,7 @@ test("in the staged candidate the tools are catalogued for tool_search, and a de
     assert.equal(requests.length, 1, "an idle session ran a turn");
     const seen = lastUserText(requests[0]);
     assert.match(seen, /Parser work/);
-    assert.match(seen, /not written by the user/);
+    assert.match(seen, /not the user/);
     assert.match(seen, /Run the parser tests\./);
 
     assert.deepEqual(await deliver(delivery("m-1", "Run the parser tests.")), { messageId: "m-1", duplicate: true, state: "written" });

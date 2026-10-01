@@ -168,7 +168,9 @@ export function createSessionTools(getLink) {
       description: "Send one message to another conversation. It appears there as a message from this conversation, not from the user, " +
         "and wakes it if idle. A working conversation reads it after its current run ends, and work already pending there may come " +
         "first. If its user stops that run, the message stays in its history without starting a turn, so no reply comes until the user continues. " +
-        "Send only what the recipient must act on or know, in a few self-contained lines. The recipient replies only when asked " +
+        "Send only what the recipient must act on or know, in a few self-contained lines. " +
+        "Say whose decision you pass on: the user's (and where they said it) or your own. " +
+        "The recipient replies only when asked " +
         "or when you must act on its answer, so expect no acknowledgement. When you asked for an answer, use session_wait for it " +
         "instead of polling with session_read or sending follow-ups: " +
         "pass the cursor this tool returns as that target's afterCursor, so a reply written before you wait still counts and an earlier answer does not. " +
