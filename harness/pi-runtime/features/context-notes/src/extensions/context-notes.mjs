@@ -17,9 +17,19 @@ import {
   recordedModeFromBranch,
 } from "../context-notes/mode-policy.mjs";
 import { MODE_ENTRY } from "../context-notes/protocol.mjs";
+import { removeStaleDatabases } from "../context-notes/store.mjs";
 import { createContextNotesTools, syncNotesToolActivation } from "../context-notes/tools.mjs";
 
 const installed = new WeakMap();
+const swept = new Set();
+
+// 오래 쓰이지 않은 문맥 기록은 Rubato 가 뜰 때 정리한다. 한 프로세스가 세션을 여럿 열어도
+// 디렉터리는 처음 한 번만 훑는다. 정리가 실패해도 세션 시작은 막지 않는다.
+function sweepStaleDatabases(agentDir) {
+  if (typeof agentDir !== "string" || !agentDir || swept.has(agentDir)) return;
+  swept.add(agentDir);
+  try { removeStaleDatabases(agentDir); } catch { /* 다음 시작 때 다시 정리한다 */ }
+}
 
 async function loadTypebox() {
   const { senpiPackageJson } = await import("../engine-paths.mjs");
@@ -41,6 +51,7 @@ function sessionEntries(ctx) {
 
 export async function installContextNotes(pi, options = {}) {
   if (installed.has(pi)) return installed.get(pi);
+  sweepStaleDatabases(options.agentDir);
   const liveSwitch = options.enabled == null;
   const liveEnv = options.env ?? process.env;
   const propagateEnv = options.propagateEnv ?? true;
