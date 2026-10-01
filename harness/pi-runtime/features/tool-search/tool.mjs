@@ -1,6 +1,10 @@
 import { emitActivationMarker } from "./marker.mjs";
 
 export const TOOL_SEARCH_TOOL_NAME = "tool_search";
+// Each activation keeps its schema in every later request, so a search turns on only its best
+// few matches and names the rest.
+const ACTIVATE_LIMIT = 3;
+const SEARCH_LIMIT = 10;
 
 const PARAMETERS = Object.freeze({
   type: "object",
@@ -36,14 +40,20 @@ export function createToolSearchTool(service) {
         ...(params.source === undefined ? {} : { source: params.source }),
         ...(params.group === undefined ? {} : { group: params.group }),
       };
-      const matches = service.search(params.query, 10, options);
-      const activated = service.activate(matches);
+      const matches = service.search(params.query, SEARCH_LIMIT, options);
+      const top = matches.slice(0, ACTIVATE_LIMIT);
+      const activated = service.activate(top);
       return {
         content: [{ type: "text", text: buildToolSearchResultText(params.query, matches, params.source, params.group) }],
-        details: { activated, query: params.query },
+        // History rehydration reads this marker from the persisted message; the model never sees details.
+        details: { activated, query: params.query, marker: buildActivationMarker(top) },
       };
     },
   };
+}
+
+function buildActivationMarker(matches) {
+  return emitActivationMarker(matches.map((match) => ({ name: match.name, registrationId: match.doc.registrationId })));
 }
 
 export function buildToolSearchResultText(query, matches, source, group) {
@@ -52,18 +62,14 @@ export function buildToolSearchResultText(query, matches, source, group) {
   if (matches.length === 0) {
     return `No tools matched "${query}"${scopeText}. No tools were activated; try broader keywords.`;
   }
-  const bullets = matches.map((match) => `- ${match.name} — ${oneLine(match.doc.description)}`).join("\n");
-  const marker = emitActivationMarker(matches.map((match) => ({
-    name: match.name,
-    registrationId: match.doc.registrationId,
-  })));
-  return [
-    `Found ${matches.length} tool(s) matching "${query}"${scopeText}. They are active for the next model turn and callable immediately through executeTool:`,
-    "",
-    bullets,
-    "",
-    marker,
-  ].join("\n");
+  const top = matches.slice(0, ACTIVATE_LIMIT);
+  const rest = matches.slice(ACTIVATE_LIMIT);
+  const lines = [
+    `Activated for "${query}"${scopeText}:`,
+    ...top.map((match) => `- ${match.name} — ${oneLine(match.doc.description)}`),
+  ];
+  if (rest.length > 0) lines.push(`Also matched, not active (search its name to activate): ${rest.map((match) => match.name).join(", ")}`);
+  return lines.join("\n");
 }
 
 function oneLine(text) {

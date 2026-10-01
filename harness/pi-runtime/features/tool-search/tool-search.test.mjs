@@ -101,7 +101,7 @@ test("actual staged Pi discovers inactive MCP tools, invokes one in the same tur
 
   const search = await session.executeTool("tool_search", { query: "echo value", source: "mcp" });
   assert.deepEqual(search.details.activated, [echoName]);
-  assert.match(search.content[0].text, /\[tool_search:activated:v2\]/);
+  assert.doesNotMatch(search.content[0].text, /tool_search:activated|registrationId/, "the rehydration marker stays out of what the model reads");
   assert.ok(session.getActiveToolNames().includes(echoName));
 
   // This is intentionally the next host call in the same turn: it uses the
@@ -123,6 +123,7 @@ test("actual staged Pi discovers inactive MCP tools, invokes one in the same tur
   sessionManager.appendMessage({
     role: "user",
     content: [{ type: "text", text: search.content[0].text }],
+    details: search.details,
     timestamp: Date.now(),
   });
   session.setActiveToolsByName(["tool_search"]);
@@ -169,6 +170,7 @@ test("only the direct tool set starts active; other extension tools wait in the 
           pi.registerTool(tool("todo"));
           pi.registerTool(tool("team_create"));
           pi.registerTool(tool("mode_gated", { allowLazyActivation: false }));
+          for (const name of ["probe_a", "probe_b", "probe_c", "probe_d", "probe_e"]) pi.registerTool(tool(name));
         },
       },
     ],
@@ -189,4 +191,12 @@ test("only the direct tool set starts active; other extension tools wait in the 
   const search = await session.executeTool("tool_search", { query: "team_create" });
   assert.deepEqual(search.details.activated, ["team_create"]);
   assert.ok(session.getActiveToolNames().includes("team_create"));
+
+  // A broad search turns on only its best three; the rest are named, not activated.
+  const broad = await session.executeTool("tool_search", { query: "probe fixture capability" });
+  assert.equal(broad.details.activated.length, 3);
+  const probes = ["probe_a", "probe_b", "probe_c", "probe_d", "probe_e"];
+  assert.equal(session.getActiveToolNames().filter((name) => probes.includes(name)).length, 3);
+  const named = probes.filter((name) => !broad.details.activated.includes(name));
+  for (const name of named) assert.match(broad.content[0].text, new RegExp(`not active.*${name}`));
 });
