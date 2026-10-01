@@ -16,6 +16,8 @@ import { sidebarPinEdits, sidebarPinOverlays } from './sidebar-pin-edits.mjs';
 import { rewindEdits, rewindOverlays } from './rewind-edits.mjs';
 import { sessionMessageEdits, sessionMessageOverlays } from './session-message-edits.mjs';
 import { phoneEdits, phoneOverlays } from './phone-edits.mjs';
+import { officeEdits, officeOverlays } from './office-edits.mjs';
+import { surfaceMenuEdits, surfaceMenuOverlays } from './surface-menu-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -2151,6 +2153,16 @@ overlays.push(...phoneOverlays);
 for (const [relative, changes] of Object.entries(phoneEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
+// Word, Excel, PowerPoint and Hangul documents in the file viewer (office-edits.mjs).
+overlays.push(...officeOverlays);
+for (const [relative, changes] of Object.entries(officeEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Grouped surface launcher and "+" menu (surface-menu-edits.mjs).
+overlays.push(...surfaceMenuOverlays);
+for (const [relative, changes] of Object.entries(surfaceMenuEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
 function transform(text, changes) {
   for (const [anchor, addition, mode] of changes) {
     if (text.split(anchor).length !== 2) throw new Error(`T3 integration anchor is missing or ambiguous: ${anchor}`);
@@ -2186,7 +2198,8 @@ export async function applyIntegration({t3,check=false,remove=false}) {
   for (const relative of [...Object.keys(upstream.targets),...overlays]) {
     const destination = path.join(target,relative);
     const parent = await realpath(path.dirname(destination));
-    if (!parent.startsWith(target + path.sep)) throw new Error(`Target escapes T3 root: ${relative}`);
+    // Root files (pnpm-lock.yaml) live in the root itself; anything else must stay below it.
+    if (parent !== target && !parent.startsWith(target + path.sep)) throw new Error(`Target escapes T3 root: ${relative}`);
     const current = await existing(destination);
     let original;
     let next;
