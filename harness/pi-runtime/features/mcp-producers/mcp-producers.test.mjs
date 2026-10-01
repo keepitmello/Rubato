@@ -213,6 +213,7 @@ test("actual ast-grep producer and search producer reach staged Pi execution, ab
   sessionManager.appendMessage({
     role: "user",
     content: [{ type: "text", text: search.content[0].text }],
+    details: search.details,
     timestamp: Date.now(),
   });
   session.setActiveToolsByName(["tool_search", astEcho]);
