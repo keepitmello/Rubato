@@ -396,6 +396,7 @@ function loadCandidates({ cwd, targetPath, homeDir, staticLoad, nativePaths = ne
       continue;
     }
     const parsed = parseRule(content);
+    if (!parsed.body.trim()) continue; // an empty file would add only its header
     const rule = { ...candidate, ...parsed, contentHash: hash(content) };
     const matched = staticLoad
       ? rule.frontmatter.alwaysApply === true || rule.isSingleFile
@@ -550,6 +551,9 @@ export function createInstructionExtension({ settingsManager, env = process.env 
     const injectedBySession = new Map();
     const staticInjected = new Set();
     const dynamicInjected = new Set();
+    // Files the engine already put in the system prompt as project context; the static
+    // pass learns them, and a tool result must not attach them again.
+    let nativePaths = new Set();
     let latestRules = [];
     const config = {
       maxRuleChars: positiveInteger(env.PI_RULES_MAX_RULE_CHARS, DEFAULT_MAX_RULE_CHARS),
@@ -574,6 +578,7 @@ export function createInstructionExtension({ settingsManager, env = process.env 
     pi.on("session_shutdown", reset);
 
     pi.on("system_prompt", async (event, ctx) => {
+      nativePaths = nativeContextPaths(event);
       const mode = ruleMode();
       if (mode === "off" || mode === "dynamic") return undefined;
       const rules = loadCandidates({
@@ -581,7 +586,7 @@ export function createInstructionExtension({ settingsManager, env = process.env 
         targetPath: null,
         homeDir,
         staticLoad: true,
-        nativePaths: nativeContextPaths(event),
+        nativePaths,
       });
       latestRules = rules;
       for (const rule of rules) staticInjected.add(`${rule.realPath}\0${rule.contentHash}`);
@@ -609,7 +614,7 @@ export function createInstructionExtension({ settingsManager, env = process.env 
       const mode = ruleMode();
       if (mode !== "off" && mode !== "static") {
         for (const target of targets) {
-          const discovered = loadCandidates({ cwd: ctx.cwd, targetPath: target, homeDir, staticLoad: false });
+          const discovered = loadCandidates({ cwd: ctx.cwd, targetPath: target, homeDir, staticLoad: false, nativePaths });
           const fresh = discovered.filter((rule) => {
             const key = `${rule.realPath}\0${rule.contentHash}`;
             if (staticInjected.has(key) || dynamicInjected.has(key)) return false;
