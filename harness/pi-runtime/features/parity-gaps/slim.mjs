@@ -28,7 +28,7 @@ export const SLIM_DESCRIPTIONS = Object.freeze({
     "Subscribe instead of polling. Pass command XOR path, never both. command: PTY output lines matching filter become events; path: one file, fires once (create default; use modify if the file already exists); path takes no filter or persistent. Returns bash_id; peek bash_output, stop kill_bash. Identical consecutive line batches are deduped. Never subscribe to a delegate's or teammate's progress: its transcript, task state, logs, and result-file create/modify are not a completion signal — the runtime already sends the completion (with its result file path), failure, or permission notification.",
 
   tool_search:
-    "Search the catalog of available tools by capability; matched tools are activated and are callable immediately after this result.",
+    "Search the catalog of available tools by capability; matched tools are activated and are callable immediately after this result. Most tools start inactive: search before saying something cannot be done, and search for any tool you are told about but do not have.",
 });
 
 /**
