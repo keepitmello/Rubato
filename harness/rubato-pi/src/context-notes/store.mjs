@@ -1,6 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
-import { mkdirSync, lstatSync, chmodSync } from "node:fs";
+import { mkdirSync, lstatSync, chmodSync, readdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { INIT_ENTRY, NOTE_ENTRY, SOURCE, branchWindow, codepointSlice, isWindowCompaction,
   messageText, notePath, notePrefix, validateWindow } from "./protocol.mjs";
@@ -11,6 +11,66 @@ export function databasePath(agentDir, sessionId) {
   }
   const key = createHash("sha256").update(sessionId).digest("hex");
   return join(agentDir, "context-notes", `${key}.sqlite`);
+}
+
+// 14일 동안 쓰이지 않은 기록은 시작할 때 지운다 (2026-09-30 사용자 결정).
+export const DATABASE_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
+
+const databaseFiles = (path) => [path, `${path}-wal`, `${path}-shm`];
+
+// SQLite 는 같은 프로세스의 다른 연결도, 다른 프로세스의 연결도 잠금으로 안다. 배타 잠금을
+// 얻지 못하면 누군가 이 기록을 열어 둔 것이니 건드리지 않는다. 잠금을 쥔 채로 지워서 검사와
+// 삭제 사이에 다른 세션이 끼어들지 못하게 한다. -wal 이 남아 있는 것만으로는 판단하지 않는다:
+// 닫지 않고 끝난 프로세스도 -wal 을 남긴다.
+function discardUnusedDatabase(path, keep = () => false) {
+  let db;
+  try {
+    // 이미 없는 기록을 열면 빈 파일이 새로 생긴다.
+    if (!lstatSync(path).isFile()) return false;
+    db = new DatabaseSync(path);
+    db.exec("PRAGMA locking_mode=EXCLUSIVE; BEGIN EXCLUSIVE");
+  } catch { try { db?.close(); } catch {} return false; }
+  try {
+    if (keep(db)) { db.exec("ROLLBACK"); return false; }
+    // WAL 을 본체에 합치고 끈 다음 지운다. 그래야 닫을 때 SQLite 가 -wal 을 이름으로 다시
+    // 지우지 않아서, 그 사이 같은 이름으로 새로 생긴 기록을 건드리지 않는다.
+    db.exec("COMMIT; PRAGMA journal_mode=DELETE");
+    for (const file of databaseFiles(path)) rmSync(file, { force: true });
+    return true;
+  } catch { return false; }
+  finally { try { db.close(); } catch {} }
+}
+
+function lastUsedMs(path) {
+  let last = 0;
+  // -shm 은 읽기만 하려고 열어도 시각이 바뀌니 보지 않는다. 세션은 열 때부터 -wal 에 쓴다.
+  for (const file of [path, `${path}-wal`]) {
+    try { last = Math.max(last, lstatSync(file).mtimeMs); }
+    catch (error) { if (error.code !== "ENOENT") throw error; }
+  }
+  return last;
+}
+
+/**
+ * 본체와 -wal 가운데 늦은 수정 시각이 보존 기간을 넘긴 기록을 지운다. WAL 모드라 본체의
+ * 시각은 체크포인트 때만 바뀌므로 둘을 함께 본다. 지금 열린 세션의 기록은 잠금으로 걸러 남긴다.
+ * 세션 원본이 기준이라 지운 기록은 세션을 다시 열 때 원본에서 새로 만들어진다.
+ */
+export function removeStaleDatabases(agentDir, { now = Date.now(), maxAgeMs = DATABASE_RETENTION_MS } = {}) {
+  const directory = join(agentDir, "context-notes");
+  let names;
+  try { names = readdirSync(directory); }
+  catch (error) { if (error.code === "ENOENT") return []; throw error; }
+  const removed = [];
+  for (const name of names) {
+    if (!/^[0-9a-f]{64}\.sqlite$/.test(name)) continue;
+    const path = join(directory, name);
+    try {
+      if (!lstatSync(path).isFile() || now - lastUsedMs(path) < maxAgeMs) continue;
+    } catch { continue; }
+    if (discardUnusedDatabase(path)) removed.push(path);
+  }
+  return removed;
 }
 
 function safeInteger(value, fallback, min, max, name) {
@@ -375,5 +435,19 @@ export class ContextNotesStore {
       .run(new Date().toISOString(), event, JSON.stringify(data));
   }
   diagnostics() { return this.db.prepare("SELECT * FROM diagnostics ORDER BY ordinal").all(); }
-  close() { if (!this.closed) { this.closed = true; this.db.close(); } }
+
+  hasConversation(db = this.db) {
+    return db.prepare("SELECT EXISTS(SELECT 1 FROM items) OR EXISTS(SELECT 1 FROM notes) AS used").get().used === 1;
+  }
+
+  close() {
+    if (this.closed) return;
+    this.closed = true;
+    let empty = false;
+    try { empty = this.path !== ":memory:" && !this.hasConversation(); } catch { /* 닫기는 계속한다 */ }
+    this.db.close();
+    // 대화가 한 번도 들어오지 않은 세션은 기록을 남기지 않는다. 같은 세션을 다시 열면
+    // 세션 원본에서 새로 만든다. 다른 연결이 이 기록을 열어 두었으면 그쪽에 맡긴다.
+    if (empty) discardUnusedDatabase(this.path, (db) => this.hasConversation(db));
+  }
 }
