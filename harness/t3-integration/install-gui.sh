@@ -64,14 +64,21 @@ build_desktop() {
     cd "$T3_DIR" || exit 1
     export PATH="$(dirname "$NODE"):$PATH" COREPACK_ENABLE_DOWNLOAD_PROMPT=0
     want_deps="$(shasum -a 256 pnpm-lock.yaml 2>/dev/null | cut -d' ' -f1)"
+    # T3 의 pnpm-workspace.yaml 은 supportedArchitectures 에 linux 와 x64 를 더해 둬서,
+    # 맥에서도 workerd·tsgo·lightningcss 같은 네이티브 바이너리를 리눅스·인텔용까지
+    # 네 벌씩 받는다. 맥 설치는 그중 이 기계 것만 쓴다. 빈 저장소에서 새로 깔 때
+    # 받는 양이 여기서 갈린다. 윈도우는 WSL 쪽이 리눅스 것을 쓸 수 있어 upstream
+    # 설정을 그대로 둔다.
+    arch_flags=''
+    is_darwin && arch_flags="--cpu=$("$NODE" -p process.arch) --os=darwin"
     if [ ! -x node_modules/.bin/vp ] || [ -z "$want_deps" ] \
       || [ "$(cat "$DEPS_STAMP" 2>/dev/null || true)" != "$want_deps" ]; then
       if command -v vp >/dev/null 2>&1; then
-        vp i || exit 1
+        vp i -- $arch_flags || exit 1
       elif command -v corepack >/dev/null 2>&1; then
-        corepack pnpm install || exit 1
+        corepack pnpm install $arch_flags || exit 1
       elif command -v pnpm >/dev/null 2>&1; then
-        pnpm install || exit 1
+        pnpm install $arch_flags || exit 1
       else
         printf '  pnpm 도 vp 도 없다\n' >&2
         exit 1
