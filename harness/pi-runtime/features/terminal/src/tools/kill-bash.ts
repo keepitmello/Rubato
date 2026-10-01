@@ -26,6 +26,7 @@ export function createKillBashTool(ctx: TerminalToolContext) {
 			if (input.all) {
 				const terminalCount = ctx.manager.size;
 				const fileCount = (await ctx.monitorRegistry?.stopAllFiles()) ?? 0;
+				for (const { runtime } of ctx.manager.list()) runtime.killedByAgent = true;
 				await ctx.manager.teardown();
 				return textResult(`Killed ${terminalCount + fileCount} session(s).`);
 			}
@@ -34,6 +35,7 @@ export function createKillBashTool(ctx: TerminalToolContext) {
 			if (await ctx.monitorRegistry?.stopFile(sessionId)) return textResult(`Killed ${input.bash_id}.`);
 			const runtime = ctx.manager.get(sessionId);
 			if (!runtime) return errorResult(`No terminal session found with id: ${input.bash_id}`);
+			runtime.killedByAgent = true;
 			await ctx.manager.stop(sessionId);
 			return textResult(`Killed ${input.bash_id}.`);
 		},

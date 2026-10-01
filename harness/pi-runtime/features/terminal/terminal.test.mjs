@@ -310,6 +310,51 @@ test("a one-shot json run is woken by a background completion and holds only whi
 	assert.deepEqual(pending(), { active: 0, undelivered: 0 });
 });
 
+test("a session the agent stops with kill_bash sends no completion notice", async (t) => {
+	const { default: registerTerminal } = await import("./src/extension.ts");
+	const { SettingsManager } = await import("./src/host-sdk.ts");
+	const scratch = mkdtempSync(join(tmpdir(), "rubato-terminal-kill-"));
+	const handlers = new Map();
+	const rpc = new Map();
+	const sent = [];
+	const tools = new Map();
+	const pi = {
+		registerTool: (tool) => tools.set(tool.name, tool),
+		on: (event, handler) => handlers.set(event, handler),
+		rpc: { handle: (name, handler) => rpc.set(name, handler), emit() {} },
+		events: { emit() {} },
+		sendMessage: (message, options) => sent.push({ message, options }),
+		getActiveTools: () => [],
+		setActiveTools() {},
+	};
+	registerTerminal(pi, {
+		createSettingsManager: () => SettingsManager.inMemory({ terminal: { notify: "wake" } }),
+		getShellEnv: () => ({ PATH: process.env.PATH, HOME: scratch, LANG: "C.UTF-8", TERM: "xterm-256color" }),
+	});
+	const ctx = {
+		mode: "json",
+		cwd: scratch,
+		model: { provider: "fixture", id: "fake", api: "openai-completions" },
+		ui: { notify() {}, setStatus() {} },
+	};
+	t.after(async () => {
+		await handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" }, ctx);
+		rmSync(scratch, { recursive: true, force: true });
+	});
+	await handlers.get("session_start")({ type: "session_start", reason: "startup" }, ctx);
+	const pending = () => rpc.get("rubato.terminal.pending-work")();
+
+	const started = await tools.get("bash").execute("call-1", { command: "exec sleep 30", run_in_background: true });
+	const id = started.details?.bash_id;
+	assert.deepEqual(pending(), { active: 1, undelivered: 0 });
+	await tools.get("kill_bash").execute("call-2", { bash_id: id });
+	const deadline = Date.now() + 2_000;
+	while (pending().active > 0 && Date.now() < deadline) await delay(25);
+	await delay(100);
+	assert.deepEqual(pending(), { active: 0, undelivered: 0 }, "the stopped session no longer holds the run");
+	assert.equal(sent.length, 0, "the agent already knows it stopped the session");
+});
+
 test("one-shot holds end for work that has no deadline of its own", async () => {
 	const { PERSISTENT_MONITOR_HOLD_MS, UNBOUNDED_BACKGROUND_HOLD_MS, terminalPendingWork } = await import(
 		"./src/pending-work.ts"

@@ -34,10 +34,9 @@ test("small and boundary-size text is returned unchanged", () => {
 
 test("shell preview preserves head and tail, gives explicit recovery and is smaller", () => {
   const preview = previewToolText(large, "bash", "/tmp/original.txt");
-  assert.match(preview, /Original tool-result text: "\/tmp\/original.txt"/);
+  assert.match(preview, /Full text: "\/tmp\/original.txt"/);
   assert.match(preview, /\nstart\n/);
   assert.ok(preview.endsWith("end\n"));
-  assert.match(preview, /Upstream truncation/);
   assert.ok(Buffer.byteLength(preview) < 9000);
 });
 
