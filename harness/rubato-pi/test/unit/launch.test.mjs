@@ -9,7 +9,7 @@ test("pi argv replaces the system prompt and lets profile settings choose the de
   assert.match(args[promptAt + 1], /Working agreement/);
   // 생성물이 통째로 argv 에 실렸는지를 본다: 리드 조각과 말투 조각까지.
   assert.match(args[promptAt + 1], /# Lead\n/);
-  assert.match(args[promptAt + 1], /# 이 자리의 너/);
+  assert.match(args[promptAt + 1], /# 말하는 방식/);
   assert.doesNotMatch(args[promptAt + 1], /## Tool Guidelines/);
   assert.doesNotMatch(args[promptAt + 1], /operating inside pi/);
   assert.doesNotMatch(args[promptAt + 1], /## Rails — fx/);
