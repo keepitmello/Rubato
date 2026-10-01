@@ -432,6 +432,34 @@ test("freshly staged stock SDK consumes native root, static rule, nested AGENTS,
   assert.match(textOf(reloadedResult), /DYNAMIC_RULE_RELOADED/);
 });
 
+test("a CLAUDE.md already in the system prompt, or an empty one, is never attached to a tool result", async (t) => {
+  const project = createInstructionProject("native-claude");
+  rmSync(join(project.cwd, "AGENTS.md"));
+  writeFileSync(join(project.cwd, "CLAUDE.md"), "ROOT_CLAUDE_ONLY\n");
+  mkdirSync(join(project.homeDir, ".claude"), { recursive: true });
+  writeFileSync(join(project.homeDir, ".claude/CLAUDE.md"), "");
+  const fixture = await createFixture({ ...project, sessionManager: sdk.SessionManager.inMemory(project.cwd) });
+  t.after(() => fixture.session.dispose());
+  const contexts = [];
+  let call = 0;
+  fixture.session.agent.streamFunction = (_model, context) => {
+    contexts.push({ systemPrompt: getCurrentSystemPrompt(context.messages), messages: structuredClone(context.messages) });
+    const response = call === 0
+      ? assistant([{ type: "toolCall", id: "read-root", name: "read", arguments: { path: project.target } }], "toolUse")
+      : assistant("done");
+    call += 1;
+    return complete(response);
+  };
+
+  await fixture.session.prompt("Read the file");
+  assert.deepEqual(fixture.errors, []);
+  assert.equal(contexts[0].systemPrompt.match(/ROOT_CLAUDE_ONLY/g)?.length, 1);
+  const readText = textOf(contexts[1].messages.find((message) => message.toolCallId === "read-root"));
+  assert.match(readText, /export const value = 1/);
+  assert.doesNotMatch(readText, /ROOT_CLAUDE_ONLY/, "native CLAUDE.md stays in the system prompt only");
+  assert.doesNotMatch(readText, /\.claude\/CLAUDE\.md/, "an empty file adds nothing");
+});
+
 test("stock extension flags turn nested and rule injection off without disabling native context or todo", async (t) => {
   const project = createInstructionProject("instructions-off");
   const fixture = await createFixture({
