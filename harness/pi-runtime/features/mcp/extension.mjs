@@ -77,6 +77,10 @@ export function createMcpExtension(options) {
         search.maybeRehydrateFromHistory(ctx.sessionManager.getEntries());
       }
       })();
+      // Nobody awaits attach until a turn starts. Left unhandled, a failure here was an
+      // unhandled rejection, and the shared engine exited on it with every session inside
+      // (2026-10-01 16:13). Mark it handled; before_agent_start still awaits and rejects.
+      attach.catch(() => undefined);
     });
 
     // A run must not declare its tools before the MCP tools exist. before_run covers every

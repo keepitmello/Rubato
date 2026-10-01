@@ -170,8 +170,9 @@ test("a broken parent chain names the missing id and the entry that points at it
   const orphan = { ...leaf, parentId: "ce23ea13" };
   const entries = [...all.slice(0, -1), orphan];
   assert.throws(
-    () => readAuthoritativeBranch({ getEntries: () => entries, getLeafId: () => orphan.id }),
-    (error) => error.message.includes("ce23ea13") && error.message.includes(orphan.id),
+    () => readAuthoritativeBranch({ getEntries: () => entries, getLeafId: () => orphan.id, getSessionId: () => "session-x" }),
+    (error) => error.message.includes("ce23ea13") && error.message.includes(orphan.id)
+      && error.message.includes("rubato repair-session session-x"),
   );
 });
 test("window lineage must have consistent root, predecessor and sequence", () => {

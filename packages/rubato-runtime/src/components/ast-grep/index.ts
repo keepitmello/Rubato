@@ -13,6 +13,7 @@ export interface AstGrepComponentOptions {
 const AST_GREP_COMPONENT_NAME = "ast-grep"
 const AST_GREP_MCP_SERVER_NAME = "_ast_grep"
 const PROJECT_CWD_ENV = "RUBATO_AST_GREP_PROJECT_CWD"
+export const AST_GREP_STARTUP_TIMEOUT_MS = 10_000
 
 export function createAstGrepComponent(options: AstGrepComponentOptions = {}): RubatoComponent {
   const env = options.env ?? process.env
@@ -50,7 +51,9 @@ export function createAstGrepComponent(options: AstGrepComponentOptions = {}): R
         // The MCP owner reconnects transparently on the first structural query.
         lifecycle: "lazy",
         idleTimeoutMin: 1,
-        startupTimeoutMs: 2000,
+        // A normal start takes ~0.8s. 2s left no room on a busy machine: right after an
+        // engine restart every reopened session starts its own copy at once.
+        startupTimeoutMs: AST_GREP_STARTUP_TIMEOUT_MS,
         // Three schemas (~2.9k tokens) most turns never call; tool_search activates them.
         exposure: "search",
       })

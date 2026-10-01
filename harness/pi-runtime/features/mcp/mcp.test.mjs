@@ -118,23 +118,44 @@ test("real stdio initialize/list/call/progress/error/abort/shutdown contract", a
   assert.deepEqual((await markerLines(input.markerPath)).slice(0, 3), ["initialized", "list:first", "list:page-2"]);
 });
 
-test("startup errors are contextual and already-started stdio processes are rolled back", async (t) => {
+test("a server that fails to start is dropped with a contextual warning and the others still start", async (t) => {
   const input = await fixture(t, "healthy");
+  const warnings = [];
   const service = createMcpService({
     servers: [
       input.server,
       { name: "broken", type: "stdio", command: join(input.root, "does-not-exist"), requestTimeoutMs: 200 },
     ],
+    onWarning: (warning) => warnings.push(warning),
   });
 
-  await assert.rejects(
-    service.start(),
-    (error) => error instanceof McpServiceError && error.code === "MCP_SERVER_START_FAILED" && /broken/.test(error.message),
-  );
-  assert.equal(service.state, "failed");
-  await waitForMarker(input.markerPath, "exit");
+  const tools = await service.start();
+  assert.equal(service.state, "started");
+  assert.ok(tools.length > 0);
+  assert.ok(tools.every((tool) => tool.mcpServerName === "healthy"));
+  assert.ok(warnings.some((warning) => /'broken'/.test(warning) && /unavailable this session/.test(warning)), warnings.join("\n"));
   await service.close();
   assert.equal(service.state, "closed");
+  await waitForMarker(input.markerPath, "exit");
+});
+
+// 2026-10-01: MCP failed at session_start before any turn awaited it. The rejection went
+// unhandled and the shared engine exited, taking every open session with it.
+test("an MCP start failure before the first turn is not an unhandled rejection, and the turn still sees it", async () => {
+  const handlers = new Map();
+  const pi = { on: (name, handler) => handlers.set(name, handler) };
+  createMcpExtension({ servers: [{ name: "remote", type: "http", url: "http://127.0.0.1:9/mcp" }] })(pi);
+  const unhandled = [];
+  const onUnhandled = (reason) => unhandled.push(reason);
+  process.on("unhandledRejection", onUnhandled);
+  try {
+    handlers.get("session_start")({ type: "session_start" }, { sessionManager: { getEntries: () => [] } });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.deepEqual(unhandled, []);
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
+  }
+  await assert.rejects(handlers.get("before_agent_start")(), (error) => error.code === "MCP_SERVER_TRANSPORT_UNSUPPORTED");
 });
 
 test("session-expiry retry renews the mutable connection once", async (t) => {

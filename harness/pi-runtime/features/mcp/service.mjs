@@ -225,12 +225,14 @@ export class McpService {
           if (server.lifecycle === "lazy") await this.#disconnectServer(serverState);
         } catch (error) {
           if (error instanceof McpServiceError) throw error;
-          throw new McpServiceError(
-            "MCP_SERVER_START_FAILED",
-            `MCP server '${server.name}' failed to initialize or list tools: ${errorLabel(error)}`,
-            { serverName: server.name },
-            { cause: error },
-          );
+          // One server that does not come up in time must not take the session with it.
+          // Every server's failure used to reject the whole start, and that rejection
+          // failed the first turn: a reopened session died on "Rubato profile engine did
+          // not start" because ast-grep missed its 2s startup on a freshly restarted engine.
+          // Drop that server for this session and keep the others.
+          this.#warn(`MCP server '${server.name}' failed to initialize or list tools and is unavailable this session: ${errorLabel(error)}`);
+          await this.#disconnectServer(serverState).catch(() => undefined);
+          this.#serverStates.delete(server.name);
         }
       }
 
