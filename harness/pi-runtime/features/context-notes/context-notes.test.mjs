@@ -318,7 +318,7 @@ test("actual SDK injects stable history identity and keeps notes through reload 
   const deliveredUser = captured[0].messages.find((message) => textOf(message).includes("remember this exact request"));
   assert.ok(deliveredUser);
   assertNotesWindowPrecedes(captured[0].messages, deliveredUser);
-  assert.match(textOf(deliveredUser), /\[history: window_id="[^"]+" item_id="[^"]+"\]/);
+  assert.match(textOf(deliveredUser), /\[history: item_id="[^"]+"\]/);
 
   const sourceFile = host.session.sessionFile;
   assert.equal(existsSync(sourceFile), true, "first user turn makes INIT and transcript durable");
@@ -523,6 +523,6 @@ export default function contextNotesProvider(pi) {
   }
   assert.match(
     textOf(contexts.at(-1).messages.find((message) => textOf(message).includes("rpc original request"))),
-    /\[history: window_id="[^"]+" item_id="[^"]+"\]/,
+    /\[history: item_id="[^"]+"\]/,
   );
 });
