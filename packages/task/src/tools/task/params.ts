@@ -16,7 +16,7 @@ export const TaskToolEffort = Type.Union(
   ],
   {
     description:
-      "Manual effort override only. Omit normally; the configured model default applies. Set effort only when an explicit manual override is required.",
+      "Manual effort override; the configured model default applies when omitted.",
   },
 )
 
@@ -57,7 +57,7 @@ export function stableModelEnum(availableModels: () => readonly string[]): () =>
 function modelSchema(availableModels: AvailableModels) {
   const schema = Type.String({
     description:
-      "Complete provider/model id from the live host registry. Exactly one of model or preset is required. A missing model fails closed with no fallback.",
+      "Complete provider/model id from the live host registry. Exactly one of model or preset is required.",
   })
   if (typeof availableModels !== "function" && availableModels.length > 0) {
     Object.defineProperty(schema, "enum", { enumerable: true, value: [...availableModels].sort() })
@@ -67,7 +67,7 @@ function modelSchema(availableModels: AvailableModels) {
 
 export function buildTaskToolParams(availableModels: AvailableModels = []) {
   const schema = Type.Object({
-    prompt: Type.String({ description: "The instruction for the child agent. MUST be written in English." }),
+    prompt: Type.String({ description: "The instruction for the child agent." }),
     model: Type.Optional(modelSchema(availableModels)),
     preset: Type.Optional(
       Type.String({

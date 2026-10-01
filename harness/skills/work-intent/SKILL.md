@@ -1,6 +1,6 @@
 ---
 name: work-intent
-description: "Resolve and preserve the user's intended result: investigate available evidence first, recommend a direction, and combine remaining human decisions with intent/roster confirmation before staffing. Read for durable work, continuing owners or a referenced intent. Small local work stays inline; loading this skill does not start an interview or a team."
+description: "Resolve and preserve the user's intended result: investigate available evidence first, recommend a direction, and combine remaining human decisions with intent/roster confirmation before staffing. Read for durable work, continuing owners or a referenced intent. Small local work stays inline."
 ---
 
 # Work intent

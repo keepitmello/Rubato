@@ -60,11 +60,11 @@ export type ScheduleToolInput = Static<typeof ScheduleToolParams>
 export const SCHEDULE_TOOL_DESCRIPTION = [
   "Manages Rubato scheduled tasks: at a chosen local time, the scheduler on this Mac starts an ordinary session in a folder with a prompt and runs it unattended. Each run appears as its own thread in the app.",
   "",
-  "Schedules are one of five kinds (no cron): daily {time}, weekdays {time} (Mon–Fri), weekly {days, time}, interval {everyHours: 1|2|3|4|6|12, window?: {start, end}} and once {date, time}. Times are 24-hour HH:MM in the Mac's local time.",
-  "Nothing else exists: no monthly or day-of-month, no every N days or minutes, no intervals other than those six, no cron and no other scheduler. For such a request, offer only these kinds (e.g. monthly → weekly on one weekday, or a once task per date; every 30 minutes → every hour) and ask before registering. When a call is refused, the tool names the closest supported schedule.",
-  "Missed times (the Mac asleep or off) are skipped, not caught up; the settings page and `run_now` can start a skipped task.",
+  "Schedules are one of five kinds: daily {time}, weekdays {time} (Mon–Fri), weekly {days, time}, interval {everyHours: 1|2|3|4|6|12, window?: {start, end}} and once {date, time}. Times are 24-hour HH:MM in the Mac's local time.",
+  "Only these five kinds exist. For any other cadence (monthly, day-of-month, every N days or minutes, cron), offer the nearest of them (e.g. monthly → weekly on one weekday, or a once task per date; every 30 minutes → every hour) and ask before registering. When a call is refused, the tool names the closest supported schedule.",
+  "Missed times (the Mac asleep or off) are skipped; the settings page and `run_now` can start a skipped task.",
   "",
-  "create needs name, prompt and schedule; cwd defaults to this session's folder and model to the user's default (set model only when the user names one). update changes only the fields given. delete removes the task and its history, never its past sessions.",
+  "create needs name, prompt and schedule; cwd defaults to this session's folder and model to the user's default (set model only when the user names one). update changes only the fields given. delete removes the task and its history and keeps its past sessions.",
 ].join("\n")
 
 type ToolResult = { content: Array<{ type: "text"; text: string }>; details: Record<string, unknown>; isError?: boolean }

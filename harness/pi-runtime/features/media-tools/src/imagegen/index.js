@@ -10,12 +10,6 @@ const embeddedSkillPath = process.versions.bun
     ? import("./skill/SKILL.md", { with: { type: "file" } }).then((module) => module.default)
     : Promise.resolve(undefined);
 let loggedMissingSkill = false;
-export const IMAGE_GEN_SECTION = `
-## Image Generation
-
-When image generation tooling is present, read the gpt-image-gen skill before generating.
-Use the image generation tool currently available in this session.
-`;
 async function isImageGenActive(ctx) {
     const auth = await resolveImageGenAuth({ modelRegistry: imageGenRegistryOverride() ?? ctx.modelRegistry });
     return auth.kind !== "none";
@@ -40,11 +34,6 @@ export function registerImageGenExtension(pi, baseDir = IMAGEGEN_BASE_DIR) {
             return undefined;
         const skillPath = await bundledSkillPath(baseDir);
         return skillPath === undefined ? undefined : { skillPaths: [skillPath] };
-    });
-    pi.on("system_prompt", async (event, ctx) => {
-        if (!(await isImageGenActive(ctx)))
-            return undefined;
-        return { systemPrompt: `${event.systemPrompt}\n${IMAGE_GEN_SECTION}` };
     });
 }
 export default function imageGenExtension(pi) {

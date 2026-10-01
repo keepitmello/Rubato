@@ -25,7 +25,7 @@ test("roles share only the intended source fragments and preserve voice", () => 
     ["lead", ["base.pi.md", "brief-exchange.pi.md", "core-lead.pi.md"]],
     ["owner", ["base.pi.md", "brief-exchange.pi.md", "core-teammate.pi.md"]],
     ["verifier", ["base.pi.md", "brief-exchange.pi.md", "core-teammate.pi.md"]],
-    ["agent", ["base.pi.md", "core-agent.pi.md"]],
+    ["agent", ["base.pi.md", "brief-exchange.pi.md", "core-agent.pi.md"]],
   ];
   for (const [role, fragments] of cases) {
     for (const fragment of fragments) assert.ok(built(role).includes(source(fragment).trim()));

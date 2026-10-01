@@ -213,11 +213,9 @@ describe("stock Pi child RPC runtime", () => {
     const member = await childSystemPrompt({ SENPI_TASK_MEMBER: "1" })
     assert.match(member, /^# Teammate$/m)
     assert.match(member, /^Role: owner$/m)
-    assert.match(member, /technical integration belongs here when assigned/)
     const explicit = await childSystemPrompt({ RUBATO_PI_ROLE: "verifier" })
     assert.match(explicit, /^# Teammate$/m)
     assert.match(explicit, /^Role: verifier$/m)
-    assert.match(explicit, /Do not implement the production change you will judge/)
   })
 })
 

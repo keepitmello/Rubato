@@ -11,7 +11,7 @@ export const OPENAI_IMAGE_GEN_SECTION = `
 ## Image Generation
 
 Native image generation is available in this session.
-Generate images with the built-in image_generation tool instead of a client-side tool.
+Generate images with the built-in image_generation tool.
 `;
 
 const UNKNOWN_MODEL_REASON = "No model is selected, so image generation availability is unknown.";

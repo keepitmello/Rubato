@@ -22,7 +22,6 @@ export const TASK_MANAGEMENT_SECTION = `
 ## Todo Management
 
 Use the todo tool for multi-step work. Mark each item done when it finishes and reconcile the list against the newest user message before ending a turn.
-Write task and phase text in the user's conversational language.
 </Task_Management>
 `;
 

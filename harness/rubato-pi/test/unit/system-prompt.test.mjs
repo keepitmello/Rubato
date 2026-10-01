@@ -42,15 +42,15 @@ test("lead, teammates, and assigned agents receive their role prompt", () => {
 test("current model identity is stated in the system prompt", () => {
   assert.equal(
     modelIdentityLine({ provider: "openai-codex", id: "gpt-5.6-sol", name: "GPT-5.6 Sol" }),
-    "You are GPT-5.6 Sol (openai-codex/gpt-5.6-sol).",
+    "I am GPT-5.6 Sol (openai-codex/gpt-5.6-sol).",
   );
   assert.equal(
     modelIdentityLine({ provider: "anthropic", id: "claude-opus-5", name: "Opus 5" }),
-    "You are Claude Opus 5 (anthropic/claude-opus-5).",
+    "I am Claude Opus 5 (anthropic/claude-opus-5).",
   );
   assert.equal(
     modelIdentityLine({ provider: "xai", id: "grok-4.7", name: "Grok 4.7" }),
-    "You are Grok 4.7 (xai/grok-4.7).",
+    "I am Grok 4.7 (xai/grok-4.7).",
   );
   assert.equal(modelIdentityLine(undefined), "");
   const model = { provider: "openai-codex", id: "gpt-5.6-sol", name: "GPT-5.6 Sol" };
@@ -61,8 +61,8 @@ test("current model identity is stated in the system prompt", () => {
     "lead",
     loaders(),
   );
-  assert.match(next, /You are GPT-5\.6 Sol \(openai-codex\/gpt-5\.6-sol\)\./);
-  assert.doesNotMatch(next, /You are undefined/);
+  assert.match(next, /I am GPT-5\.6 Sol \(openai-codex\/gpt-5\.6-sol\)\./);
+  assert.doesNotMatch(next, /I am undefined/);
 });
 
 test("RUBATO_SYSTEM_PROMPT_FILE replaces role prompt assembly", () => {
