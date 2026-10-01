@@ -22,7 +22,7 @@ import type { Task } from "@rubato/team-core/types"
 import type { ComponentContext, RubatoComponent, SenpiExtensionAPI } from "../../extension/types"
 import { registerTaskCommands } from "./commands"
 import { composeTaskEngine, type TaskEngine, type TaskRunnerFactories } from "./engine"
-import { TASK_USAGE_HINT_FLAG, wireEventBridge } from "./event-bridge"
+import { wireEventBridge } from "./event-bridge"
 import { createLeadPollerLifecycle, type LeadPollerLifecycle } from "./lead-poller-lifecycle"
 import { TEAM_MEMBER_LIVENESS_MESSAGE_TYPE } from "./member-liveness"
 import { TASK_COMPLETION_MESSAGE_TYPE } from "./parent-notifier"
@@ -183,11 +183,6 @@ function registerTaskFlags(pi: SenpiExtensionAPI): void {
     type: "boolean",
     default: true,
     description: "Enable the Rubato task engine (use --no-rubato-task to disable).",
-  })
-  pi.registerFlag(TASK_USAGE_HINT_FLAG, {
-    type: "boolean",
-    default: true,
-    description: "Inject Rubato task usage guidance once per session.",
   })
 }
 
