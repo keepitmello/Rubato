@@ -15,6 +15,7 @@ import { scheduleEdits, scheduleOverlays } from './schedule-edits.mjs';
 import { sidebarPinEdits, sidebarPinOverlays } from './sidebar-pin-edits.mjs';
 import { rewindEdits, rewindOverlays } from './rewind-edits.mjs';
 import { sessionMessageEdits, sessionMessageOverlays } from './session-message-edits.mjs';
+import { phoneEdits, phoneOverlays } from './phone-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -2143,6 +2144,11 @@ for (const [relative, changes] of Object.entries(rewindEdits)) {
 // Messages from another conversation (session-message-edits.mjs).
 overlays.push(...sessionMessageOverlays);
 for (const [relative, changes] of Object.entries(sessionMessageEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Settings > Phone (phone-edits.mjs) anchors on the schedule and permission edits above.
+overlays.push(...phoneOverlays);
+for (const [relative, changes] of Object.entries(phoneEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 function transform(text, changes) {
