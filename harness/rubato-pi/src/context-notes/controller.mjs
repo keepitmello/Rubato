@@ -340,7 +340,11 @@ export class ContextNotesController {
     const annotated = carried.map((message, index) => {
       const ref = refs[index];
       if (!ref) return message; // Never manufacture a reference we cannot read.
-      const marker = `[history: ${refText(ref)}]`;
+      // Every message carries one, so the current window's id (the bootstrap names it, and
+      // history_read_item defaults to it) is left out.
+      const marker = ref.windowId === this.window.windowId
+        ? `[history: item_id=${JSON.stringify(ref.itemId)}]`
+        : `[history: ${refText(ref)}]`;
       const content = typeof message.content === "string" ? [{ type: "text", text: message.content }] : [...(message.content ?? [])];
       return { ...message, content: [...content, { type: "text", text: marker }] };
     });

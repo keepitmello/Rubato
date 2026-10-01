@@ -55,10 +55,11 @@ export function createContextNotesTools(getController, T, notesActive = historyN
       historyFilters(), (c, p) => c.store.listItems(p)],
     ["history_search_contents", "과거 기록 검색", "Case-sensitive literal substring search over original history, not semantic search. Read a result with history_read_item.",
       { ...historyFilters(), query: T.String({ minLength: 1, maxLength: 2000 }) }, (c, p) => c.store.listItems(p, true)],
-    ["history_read_item", "과거 기록 읽기", "Read a bounded Unicode-character range of a history item. view=raw reads the original persisted entry JSON, including multimodal data. Text view uses image placeholders. include_image=true attaches one original image selected by zero-based image_index (up to 4,000,000 base64 characters).",
-      { agent_name: agent(), window_id: str(), item_id: str(),
+    ["history_read_item", "과거 기록 읽기", "Read a bounded Unicode-character range of a history item; window_id defaults to the current window. view=raw reads the original persisted entry JSON, including multimodal data. Text view uses image placeholders. include_image=true attaches one original image selected by zero-based image_index (up to 4,000,000 base64 characters).",
+      { agent_name: agent(), window_id: optional(str()), item_id: str(),
         offset_chars: optional(T.Integer({ minimum: 0 })), limit_chars: int(20000),
-        view: optional(T.Union([T.Literal("text"), T.Literal("raw")])), include_image: flag(), image_index: optional(T.Integer({ minimum: 0 })) }, (c, p) => c.store.readItem(p)],
+        view: optional(T.Union([T.Literal("text"), T.Literal("raw")])), include_image: flag(), image_index: optional(T.Integer({ minimum: 0 })) },
+      (c, p) => c.store.readItem({ ...p, window_id: p.window_id ?? c.window.windowId })],
     ["notes_list_files_by_prefix", "작업 노트 목록", "List virtual note paths in the current session and branch. These are not filesystem paths.",
       { prefix: optional(str()), max_results: int(), after_path: optional(str()),
         file_order_by: optional(T.Union(["name", "created_at", "updated_at"].map((v) => T.Literal(v)))),
@@ -98,7 +99,8 @@ export function createContextNotesTools(getController, T, notesActive = historyN
       try {
         const value = await action(controller, params, ctx, id, signal);
         const text = JSON.stringify(value);
-        const image = name === "history_read_item" && params.include_image ? controller.store.readImage(params) : undefined;
+        const image = name === "history_read_item" && params.include_image
+          ? controller.store.readImage({ ...params, window_id: params.window_id ?? controller.window.windowId }) : undefined;
         controller.record("tool_completed", { name, window_id: controller.window.windowId, duration_ms: Date.now() - started, output_chars: text.length, output_utf8_bytes: Buffer.byteLength(text),
           image_base64_chars: image?.data.length ?? 0 });
         return { content: [{ type: "text", text }, ...(image ? [image] : [])], details: { contextNotes: true } };

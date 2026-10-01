@@ -106,7 +106,7 @@ test("near-limit request includes warning and stable, readable source IDs", (t)=
   const {messages}=f.c.prepareContext({messages:input},f.ctx);
   assert.equal(JSON.stringify(input),snapshot);
   assert.ok(messages.some(m=>messageText(m).includes("context_window_reminder")));
-  assert.ok(messages.some(m=>messageText(m).includes("[history: window_id=")));
+  assert.ok(messages.some(m=>messageText(m).includes(`[history: item_id=`)));
   assert.equal(messageText(messages[0]),f.c.bootstrap);
 });
 test("large notes enforce UTF-8 byte limit and append is exact", (t)=>{

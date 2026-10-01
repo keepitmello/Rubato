@@ -5,6 +5,7 @@ import { fakeSession } from "../helpers/context-notes-fake.mjs";
 import { ContextNotesController } from "../../src/context-notes/controller.mjs";
 import { contextNotesConfig } from "../../src/context-notes/config.mjs";
 import { messageText } from "../../src/context-notes/protocol.mjs";
+import { createContextNotesTools } from "../../src/context-notes/tools.mjs";
 import {
   REQUEST_IMAGE_BYTE_LIMIT,
   REQUEST_TOTAL_BYTE_LIMIT,
@@ -118,7 +119,7 @@ test("#given two images in one message that each fit alone #when the pair exceed
   assert.ok(imageBytes([trimmed]) <= limit);
 });
 
-test("#given an image the request cannot carry #when the request is prepared #then the placeholder names a history item the tools can read", (t) => {
+test("#given an image the request cannot carry #when the request is prepared #then the placeholder names a history item the tools can read", async (t) => {
   const previous = process.env.RUBATO_CONTEXT_MODE;
   process.env.RUBATO_CONTEXT_MODE = "history-notes";
   t.after(() => {
@@ -143,6 +144,12 @@ test("#given an image the request cannot carry #when the request is prepared #th
   const read = c.store.readItem({ window_id: ids[1], item_id: ids[2] });
   assert.match(read.content, /please look at this screenshot/);
   assert.match(read.content, /image mime=image\/png/);
-  assert.match(messageText(user), new RegExp(`\\[history: window_id="${ids[1]}" item_id="${ids[2]}"\\]`));
+  assert.match(messageText(user), new RegExp(`\\[history: item_id="${ids[2]}"\\]`), "the current window's id is not repeated on every message");
   assert.equal(user.content.some((block) => block.type === "image"), false);
+
+  // The marker's item_id alone is enough: history_read_item reads the current window by default.
+  const T = new Proxy({}, { get: () => (value) => value });
+  const readTool = createContextNotesTools(() => c, T, () => true).find((tool) => tool.name === "history_read_item");
+  const byItem = await readTool.execute("call-1", { item_id: ids[2] }, undefined, undefined, f.ctx);
+  assert.match(byItem.content[0].text, /please look at this screenshot/);
 });
