@@ -11,9 +11,6 @@ import type { SessionTransitionBridge } from "./session-transition-bridge"
 import type { TaskStatusUi } from "./status-ui"
 import { wireTaskRpcBridge } from "./task-rpc-bridge"
 import type { TeamBoardRpcBridge } from "./team-board-rpc-bridge"
-import { createOncePerSessionGuard, TASK_USAGE_GUIDANCE } from "./usage-guidance"
-
-export const TASK_USAGE_HINT_FLAG = "rubato-task-usage-hint"
 
 type EventBridgeState = {
   readonly reconcileTeamMailbox: () => Promise<void>
@@ -42,7 +39,6 @@ export function wireEventBridge(
   transitions: SessionTransitionBridge,
   state: EventBridgeState,
 ): void {
-  const guidanceGuard = createOncePerSessionGuard()
   const taskRpc = wireTaskRpcBridge(pi, engine, ctx.idleCoordinator)
   const unsubscribeTaskSnapshots = engine.onStoreMutation(() => taskRpc.sync())
   wireReloadGuard(pi, engine.manager)
@@ -143,13 +139,6 @@ export function wireEventBridge(
 
   pi.on("before_agent_start", (_payload, eventCtx) => {
     engine.runtime.captureFrom(asLiveContext(eventCtx))
-    if (ctx.config.getFlag(TASK_USAGE_HINT_FLAG) === false) return undefined
-    const sessionId = engine.runtime.sessionId() ?? "unknown-session"
-    if (!guidanceGuard(sessionId)) return undefined
-    pi.sendMessage(
-      { customType: "rubato.task.usage", content: TASK_USAGE_GUIDANCE, display: false, details: {} },
-      {},
-    )
     return undefined
   })
 }
