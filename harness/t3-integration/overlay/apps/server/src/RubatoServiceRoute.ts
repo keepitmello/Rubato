@@ -10,7 +10,8 @@ import { bridgeModuleOf } from "./RubatoMemory.ts";
 import * as ServerSettings from "./serverSettings.ts";
 
 // Settings pages that talk to the Rubato checkout: Providers (`rubato auth`),
-// About (version, update check, restart) and Scheduled Tasks (RubatoSchedule.ts). The work happens in a module found
+// About (version, update check, restart) and Scheduled Tasks (RubatoSchedule.ts), and
+// the Agents panel's conversations (`/rubato/agents`). The work happens in a module found
 // next to the bridge module the Rubato provider is wired to: the checkout that
 // runs the sessions answers for them. A route only authenticates and hands the
 // request over.
@@ -140,4 +141,13 @@ export const rubatoAppRouteLayer = serviceRouteLayer({
   service: "appService",
   handler: "handleAppRequest",
   name: "app",
+});
+
+// The Agents panel: one agent's conversation, and stopping or messaging it.
+export const rubatoAgentsRouteLayer = serviceRouteLayer({
+  route: "/rubato/agents",
+  file: "agents/service.mjs",
+  service: "agentsService",
+  handler: "handleAgentsRequest",
+  name: "agents",
 });

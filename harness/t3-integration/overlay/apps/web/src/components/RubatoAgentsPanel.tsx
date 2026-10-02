@@ -7,6 +7,8 @@
  *   3. role · model as the picker names it · Speed · turn N (· quiet 3m when stalled)
  * Taskforces (team_create) sit above plain agents as cards: members first, then the shared
  * board. A board row says its state and owner; the lead's brief to the agent unfolds on click.
+ * An agent row opens that agent's whole conversation in place of the list (RubatoAgentSession),
+ * where it can also be stopped or told something.
  */
 import type {
   AgentPanelModel,
@@ -30,11 +32,23 @@ import {
   CircleDot,
   Lock,
 } from "lucide-react";
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import { cn } from "~/lib/utils";
 import { ScrollArea } from "~/components/ui/scroll-area";
-import { AgentResultDetails } from "./AgentResultDetails";
+import { RubatoAgentSession } from "./RubatoAgentSession";
+
+/** A row opens its agent's conversation in place of the list. */
+const OpenAgentContext = createContext<(agentId: string) => void>(() => undefined);
 
 /** In-flight states all read as Working; only settled states differ. */
 const STATUS_VISUALS: Record<RuntimeSubagent["status"], { dotClass: string; label: string }> = {
@@ -177,16 +191,16 @@ export function agentMetaParts(agent: RuntimeSubagent): string[] {
  * A team member that ended its turn is still resident and wakes on mail or a notification,
  * so inside a taskforce idle reads as Waiting, with what it last said.
  */
+function agentStatusLabel(agent: RuntimeSubagent, inTeam: boolean): string {
+  if (inTeam && agent.status === "idle") return "Waiting";
+  if (agent.kind === "subagent_batch" && agent.status === "idle") return "Idle";
+  return STATUS_VISUALS[agent.status].label;
+}
+
 function AgentRow({ agent, inTeam = false }: { agent: RuntimeSubagent; inTeam?: boolean }) {
-  const [open, setOpen] = useState(false);
-  const detailsId = useId();
-  const visuals = STATUS_VISUALS[agent.status];
+  const openAgent = useContext(OpenAgentContext);
   const waiting = inTeam && agent.status === "idle";
-  const statusLabel = waiting
-    ? "Waiting"
-    : agent.kind === "subagent_batch" && agent.status === "idle"
-      ? "Idle"
-      : visuals.label;
+  const statusLabel = agentStatusLabel(agent, inTeam);
   const said = agentActivityText(agent);
   const activity = waiting ? (said ? `Waiting · ${said}` : "Waiting") : said;
   const quiet = useQuietLabel(agent);
@@ -196,10 +210,8 @@ function AgentRow({ agent, inTeam = false }: { agent: RuntimeSubagent; inTeam?: 
     <div className="min-w-0">
       <button
         type="button"
-        aria-expanded={open}
-        aria-controls={detailsId}
-        aria-label={`${task}: ${open ? "Hide" : "Show"} report. ${statusLabel}`}
-        onClick={() => setOpen((value) => !value)}
+        aria-label={`${task}: open conversation. ${statusLabel}`}
+        onClick={() => openAgent(agent.id)}
         className="grid h-[3.875rem] w-full cursor-pointer grid-cols-[0.375rem_minmax(0,1fr)_auto] grid-rows-[1.25rem_1.125rem_1rem] items-center gap-x-2 rounded-md px-1.5 py-1 text-left hover:bg-accent/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
       >
         <span className="col-start-1 row-start-1 flex items-center">
@@ -217,11 +229,7 @@ function AgentRow({ agent, inTeam = false }: { agent: RuntimeSubagent; inTeam?: 
             {agent.status === "completed" ? (
               <Check aria-hidden className="size-3 text-success" />
             ) : null}
-            {open ? (
-              <ChevronDown aria-hidden className="size-3" />
-            ) : (
-              <ChevronRight aria-hidden className="size-3" />
-            )}
+            <ChevronRight aria-hidden className="size-3" />
           </span>
         </span>
         <span
@@ -238,17 +246,6 @@ function AgentRow({ agent, inTeam = false }: { agent: RuntimeSubagent; inTeam?: 
         </span>
         <span className="sr-only">{statusLabel}</span>
       </button>
-      {open ? (
-        <div
-          id={detailsId}
-          role="region"
-          aria-label={`${task} report`}
-          tabIndex={0}
-          className="mx-1.5 mb-2 max-h-96 min-w-0 overflow-y-auto overscroll-contain rounded-md border border-border/60 bg-card/30 p-3 focus-visible:outline-2 focus-visible:outline-ring"
-        >
-          <AgentResultDetails agent={agent} />
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -578,13 +575,87 @@ function AgentGroups({ agents }: { agents: ReadonlyArray<RuntimeSubagent> }) {
   );
 }
 
+/** The agent a row opened, wherever it sits: a plain agent, a taskforce or one of its members. */
+export function findPanelAgent(
+  model: AgentPanelModel,
+  agentId: string,
+): { agent: RuntimeSubagent; inTeam: boolean } | null {
+  const direct = model.directAgents.find((agent) => agent.id === agentId);
+  if (direct) return { agent: direct, inTeam: false };
+  for (const group of model.workflows) {
+    if (group.workflow.id === agentId) return { agent: group.workflow, inTeam: false };
+    const member = teamMembers(group).find((agent) => agent.id === agentId);
+    if (member) return { agent: member, inTeam: true };
+  }
+  return null;
+}
+
+function AgentSessionHeader({ agent, inTeam }: { agent: RuntimeSubagent; inTeam: boolean }) {
+  const task = agentTaskLabel(agent);
+  const quiet = useQuietLabel(agent);
+  return (
+    <div className="min-w-0 py-0.5">
+      <p className="line-clamp-3 text-sm font-medium [overflow-wrap:anywhere]">
+        {inTeam && agent.memberName ? (
+          <span className="mr-1.5 font-mono text-xs text-muted-foreground">{agent.memberName}</span>
+        ) : null}
+        {task}
+      </p>
+      <p className="flex min-w-0 items-center gap-1.5 font-mono text-[.7rem] text-muted-foreground/80">
+        <StatusDot status={agent.status} />
+        <span>{agentStatusLabel(agent, inTeam)}</span>
+        {agent.startedAt ? (
+          <>
+            <span>·</span>
+            <AgentElapsed agent={agent} />
+          </>
+        ) : null}
+        {quiet ? <span className="text-warning-foreground">· {quiet}</span> : null}
+      </p>
+      <p className="truncate font-mono text-[.7rem] text-muted-foreground/70">
+        {agentMetaParts(agent).join(" · ")}
+      </p>
+    </div>
+  );
+}
+
 export function RubatoAgentsPanel({
   model,
+  environmentId,
+  threadId,
+  cwd,
 }: {
   model: AgentPanelModel;
   environmentId?: EnvironmentId | null;
   threadId?: ThreadId | null;
+  /** The thread's session directory; its children's conversations are read under it. */
+  cwd?: string | null;
 }) {
+  // Keyed by thread so switching threads goes back to that thread's list.
+  const [opened, setOpened] = useState<{ threadId: string | null; agentId: string } | null>(null);
+  const openedId = opened && opened.threadId === (threadId ?? null) ? opened.agentId : null;
+  const openAgent = useCallback(
+    (agentId: string) => setOpened({ threadId: threadId ?? null, agentId }),
+    [threadId],
+  );
+  const found = openedId ? findPanelAgent(model, openedId) : null;
+  if (found) {
+    const { agent, inTeam } = found;
+    return (
+      <RubatoAgentSession
+        key={agent.id}
+        target={
+          environmentId && threadId && cwd
+            ? { environmentId, threadId, cwd, taskId: agent.id }
+            : null
+        }
+        live={isLive(agent.status)}
+        revision={`${agent.status}|${agent.updatedAt}`}
+        header={<AgentSessionHeader agent={agent} inTeam={inTeam} />}
+        onBack={() => setOpened(null)}
+      />
+    );
+  }
   if (!model.hasAgents) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
@@ -599,6 +670,7 @@ export function RubatoAgentsPanel({
   }
   const hasTeams = model.workflows.length > 0;
   return (
+    <OpenAgentContext.Provider value={openAgent}>
     <div className="flex h-full min-h-0 flex-col">
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-3 p-2">
@@ -628,5 +700,6 @@ export function RubatoAgentsPanel({
         {model.settledCount > 0 ? <span>{model.settledCount} settled</span> : null}
       </footer>
     </div>
+    </OpenAgentContext.Provider>
   );
 }

@@ -10,6 +10,7 @@ import {
   RubatoAgentsPanel,
   agentMetaParts,
   boardTaskStateLabel,
+  findPanelAgent,
   quietLabel,
   splitAgentsByActivity,
 } from "./RubatoAgentsPanel";
@@ -164,13 +165,23 @@ describe("RubatoAgentsPanel", () => {
     expect(html).toContain("1 idle · 1 done · 1 failed");
     expect(html).toContain("Now writing the script and helpers.");
     expect(html.match(/aria-expanded="false"[^>]*>[^]*?Finished/)).not.toBeNull();
-    // Folded: only the live row is rendered.
-    expect(html.match(/Show report/g)?.length).toBe(1);
+    // Folded: only the live row is rendered, and a row opens its conversation.
+    expect(html.match(/open conversation/g)?.length).toBe(1);
   });
 
   it("a resumed idle agent moves back to In progress", () => {
     const resumed = splitAgentsByActivity([agent({ id: "st_idle", status: "running" })]);
     expect(resumed.live.map((item) => item.id)).toEqual(["st_idle"]);
     expect(resumed.finished).toEqual([]);
+  });
+
+  it("a row opens its agent wherever it sits: plain, a taskforce, or one of its members", () => {
+    const team = agent({ id: "team_1", kind: "workflow", workflowName: "review" });
+    const member = agent({ id: "st_m", kind: "workflow_agent", parentAgentId: "team_1", memberName: "critic" });
+    const model = deriveAgentPanelModel({ agents: [agent({ id: "st_a" }), team, member] });
+    expect(findPanelAgent(model, "st_a")).toMatchObject({ agent: { id: "st_a" }, inTeam: false });
+    expect(findPanelAgent(model, "team_1")).toMatchObject({ agent: { id: "team_1" }, inTeam: false });
+    expect(findPanelAgent(model, "st_m")).toMatchObject({ agent: { id: "st_m" }, inTeam: true });
+    expect(findPanelAgent(model, "st_gone")).toBeNull();
   });
 });
