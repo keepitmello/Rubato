@@ -163,6 +163,56 @@
       .toEqual(["Context Optimized", "Context compacted"]);
   });
 
+  // 답을 끝낸 뒤 알림이 같은 실행을 다시 깨우면 한 턴에 답이 둘이 된다. 도구 없이
+  // 끝난 Pi 답은 어느 것도 "Worked for" 안으로 접히지 않고, 도구를 부르며 한
+  // 혼잣말만 접힌다.
+  it("a Pi answer that ended its run stays visible when a wake continues the same turn", async () => {
+    const harness = await createHarness();
+    const events: any[] = [];
+    let sequence = 0;
+    const projection = new EventProjection({
+      threadId: "thread-1", sessionId: "wake", instanceId: "rubato",
+      emit: (event: any) => events.push({
+        ...event, createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, ++sequence)).toISOString(),
+      }),
+    });
+    const tool = (id: string) => {
+      projection.project({ type: "tool_execution_start", toolName: "bash", toolCallId: id, args: {} });
+      projection.project({ type: "tool_execution_end", toolName: "bash", toolCallId: id,
+        result: { content: [{ type: "text", text: "ok" }] }, isError: false });
+    };
+    const say = (timestamp: number, stopReason: string, content: any[]) => {
+      const message = { role: "assistant", timestamp, model: "claude-opus-5-5", stopReason, content };
+      projection.message(message, false);
+      projection.message(message, true);
+    };
+    projection.begin("turn-1");
+    say(1, "toolUse", [{ type: "text", text: "interim commentary" },
+      { type: "toolCall", id: "call-1", name: "bash", arguments: {} }]);
+    tool("call-1");
+    say(2, "stop", [{ type: "thinking", thinking: "done" }, { type: "text", text: "the real answer" }]);
+    // The wake: thought plus a tool call with no prose, right after the answer.
+    say(3, "toolUse", [{ type: "thinking", thinking: "a notification arrived" },
+      { type: "toolCall", id: "call-2", name: "bash", arguments: {} }]);
+    tool("call-2");
+    say(4, "stop", [{ type: "thinking", thinking: "nothing changed" }, { type: "text", text: "the wake reply" }]);
+    projection.settle();
+    await harness.emitAndDrain(events);
+    const thread = JSON.parse(JSON.stringify((await harness.readModel()).threads.find(t => t.id === "thread-1")!));
+    const web = deriveMessagesTimelineRows({
+      timelineEntries: deriveTimelineEntries(thread.messages, [], deriveWorkLogEntries(thread.activities)),
+      isWorking: false, activeTurnStartedAt: null, latestTurn: thread.latestTurn,
+      runningTurnId: null, expandedTurnIds: new Set(), turnDiffSummaries: [],
+      supportsConversationRollback: false,
+    });
+    const mobile = deriveThreadFeedPresentation(buildThreadFeed(thread), thread.latestTurn, new Set());
+    for (const rows of [web as any[], mobile as any[]]) {
+      expect(rows.some(r => r.kind === "turn-fold" || r.type === "turn-fold")).toBe(true);
+      expect(rows.filter(r => r.kind === "message" || r.type === "message")
+        .map(r => r.message?.text ?? r.text)).toEqual(["the real answer", "the wake reply"]);
+    }
+  });
+
   it("a retry chain is one updating work row; only the exhausted chain leaves an error answer", async () => {
     const harness = await createHarness();
     const events: any[] = [];
