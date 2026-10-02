@@ -5,6 +5,7 @@ import type { TaskRunStats } from "@rubato/task"
 
 import { taskRecord } from "./event-bridge.test-fixtures"
 import { wireHarness } from "./event-bridge.test-harness"
+import { USER_CHILD_MESSAGE_TYPE } from "./task-rpc-bridge"
 import { boundedTaskOutput } from "./task-rpc-codec"
 
 describe("event-bridge native task telemetry and controls", () => {
@@ -269,6 +270,36 @@ describe("event-bridge native task telemetry and controls", () => {
     expect(output.snapshot).not.toHaveProperty("agentId")
     expect(JSON.stringify(output)).not.toContain("known_agents")
     expect(JSON.stringify(output)).not.toContain("agentId")
+  })
+
+  it("#given a person messages a child from a panel #when the send reaches the child #then the lead gets a note without a turn", async () => {
+    const current = taskRecord({ task_id: "st_current", status: "running", task_summary: "Review the draft" })
+    const foreign = taskRecord({
+      task_id: "st_foreign",
+      status: "running",
+      parent_session_id: "other-session",
+      root_session_id: "other-session",
+    })
+    const { pi, invokeRpc } = wireHarness("parent-session", {
+      records: { [current.task_id]: current, [foreign.task_id]: foreign },
+      withRpc: true,
+    })
+    await pi.dispatch("session_start", {}, {})
+
+    await invokeRpc("rubato.task.send", { to: current.task_id, message: "Skip Q3, focus on Q4" })
+    await invokeRpc("rubato.task.send", { to: foreign.task_id, message: "not yours" })
+    await invokeRpc("rubato.task.send", { to: current.task_id })
+
+    expect(pi.messages).toHaveLength(1)
+    expect(pi.messages[0]?.options).toEqual({ triggerTurn: false })
+    expect(pi.messages[0]?.message).toMatchObject({
+      customType: USER_CHILD_MESSAGE_TYPE,
+      display: true,
+      details: { task_id: "st_current", kind: "steered" },
+    })
+    const content = String(pi.messages[0]?.message.content)
+    expect(content).toContain("st_current (Review the draft)")
+    expect(content).toContain("Skip Q3, focus on Q4")
   })
 
   it("#given a live child subscription #when the task settles #then the bridge unsubscribes and ignores later child events", async () => {

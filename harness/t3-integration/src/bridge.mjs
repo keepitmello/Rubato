@@ -823,6 +823,24 @@ export class RubatoPiBridge {
       return;
     }
   }
+  /** Whether this thread's session is attached, so its child agents can be stopped or messaged. */
+  controlsAgents(threadId) {
+    const context = this.sessions.get(threadId);
+    return Boolean(context && !context.stopped);
+  }
+  /**
+   * Stops (`stop`) or messages (`send`) one child agent of this thread's session, from the
+   * Agents panel. The session's task extension answers, and only for its own children.
+   * Not queued behind the thread's turns: a child is steered while its lead is busy.
+   */
+  async controlAgent(threadId, taskId, action, message) {
+    const context = this.sessions.get(threadId);
+    if (!context || context.stopped) throw Object.assign(new Error("This thread's Rubato session is not running."), { status: 409 });
+    const command = action === 'stop'
+      ? { type: 'task_cancel', taskId, reason: 'Stopped by the user from the Agents panel' }
+      : { type: 'task_send', taskId, message };
+    return context.client.command(command);
+  }
   async stopSession(threadId) {
     await this.openings.get(threadId)?.catch(() => {});
     const context = this.sessions.get(threadId);
@@ -842,6 +860,8 @@ export class RubatoPiBridge {
   }
 }
 export const createBridge = (options) => { t3BridgeLog('createBridge', options?.descriptorPath); return new RubatoPiBridge(options); };
+/** The Rubato provider's running bridge in this server, if any (one per T3 server). */
+export const liveBridge = () => [...liveBridges].find((item) => !item.closed);
 /**
  * `/rubato/cache-warming` on the T3 server lands here (RubatoCacheWarming.ts imports this
  * module by the path the Rubato provider is wired to, so it is the same module instance
@@ -850,7 +870,7 @@ export const createBridge = (options) => { t3BridgeLog('createBridge', options?.
  * POST `{ sessionId, enabled?, hours? }` sets that session's warmer.
  */
 export async function handleCacheWarmingRequest(request) {
-  const bridge = [...liveBridges].find((item) => !item.closed);
+  const bridge = liveBridge();
   if (!bridge) return Response.json({ error: { code: 'unavailable', message: 'The Rubato provider is not running.' } }, { status: 503 });
   try {
     if (request.method === 'GET') return Response.json({ threads: bridge.cachedThreads() });

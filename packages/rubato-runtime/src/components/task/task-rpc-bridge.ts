@@ -29,6 +29,13 @@ const TASK_UPDATED_EVENT = "rubato.task.updated"
  * A completed member waiting for mail is NOT work: it suspends cleanly and revives on resume.
  */
 export const PENDING_WORK_REQUEST = "rubato.task.pending-work"
+/**
+ * A message a person sends a child from a host panel bypasses the lead, which would otherwise
+ * read the child's next result against a brief that no longer holds. The lead gets a note in its
+ * own context, without a turn of its own: it reads the note on whatever turn comes next.
+ */
+export const USER_CHILD_MESSAGE_TYPE = "rubato.task.user-message"
+const DELIVERED_SEND_KINDS = new Set(["steered", "revived", "queued"])
 const NOTIFYING_TERMINAL_STATUSES = new Set<TaskRecord["status"]>(["completed", "error", "lost"])
 const MAX_TASK_SNAPSHOTS = 256
 
@@ -187,9 +194,16 @@ function registerTaskHandlers(
     if ("error" in input) return invalidArguments(input.error)
     const record = engine.manager.get(input.value.to)
     if (record === undefined || record.parent_session_id !== sessionId) return notFound()
-    return toRpcChildControlDetails(
-      (await runTaskSend(engine.manager, { agentId: input.value.to, message: input.value.message }, sessionId)).details,
-    )
+    const details = (await runTaskSend(engine.manager, { agentId: input.value.to, message: input.value.message }, sessionId)).details
+    if (DELIVERED_SEND_KINDS.has(details.kind)) {
+      pi.sendMessage({
+        customType: USER_CHILD_MESSAGE_TYPE,
+        content: `The user messaged ${record.task_id} (${record.task_summary ?? record.description ?? record.name ?? "agent"}) directly, outside your brief:\n\n${input.value.message}`,
+        display: true,
+        details: { task_id: record.task_id, kind: details.kind },
+      }, { triggerTurn: false })
+    }
+    return toRpcChildControlDetails(details)
   })
   handle("rubato.task.cancel", async (data) => {
     const sessionId = currentSessionId()
