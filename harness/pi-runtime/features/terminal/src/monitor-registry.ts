@@ -353,19 +353,20 @@ export class MonitorRegistry {
 	async stopFile(id: string): Promise<boolean> {
 		const record = this.#files.get(id);
 		if (!record) return false;
-		this.#settleFile(record, "watcher killed");
+		this.#settleFile(record, "watcher killed", { killedByAgent: true });
 		return true;
 	}
 
 	async stopAllFiles(): Promise<number> {
 		this.#lifecycle += 1;
 		const records = [...this.#files.values()];
-		for (const record of records) this.#settleFile(record, "watcher killed");
+		for (const record of records) this.#settleFile(record, "watcher killed", { killedByAgent: true });
 		for (const pending of [...this.#pending]) this.#finishPending(pending);
 		return records.length;
 	}
 
-	#settleFile(record: FileMonitorRecord, summary: string): void {
+	/** stopFile/stopAllFiles serve only kill_bash: the agent stopped the watch itself, so its end is not news. */
+	#settleFile(record: FileMonitorRecord, summary: string, options?: { readonly killedByAgent?: boolean }): void {
 		if (record.settled) return;
 		record.settled = true;
 		clearInterval(record.poll);
@@ -374,6 +375,7 @@ export class MonitorRegistry {
 		record.release();
 		this.#files.delete(record.id);
 		this.#notifyChange();
+		if (options?.killedByAgent) return;
 		this.#emit({ type: "summary", id: record.id, description: record.description, summary });
 	}
 
@@ -663,6 +665,8 @@ export class MonitorRegistry {
 		record.unsubscribeExit?.();
 		this.#records.delete(record.id);
 		this.#notifyChange();
+		// kill_bash marks the runtime before stopping it; the agent already knows the watch ended.
+		if (record.runtime.killedByAgent) return;
 		const status = describeExit(record.runtime) ?? "exited";
 		const code = record.runtime.exitResult?.exitCode;
 		const codeText = code === null || code === undefined ? "" : ` (exit code ${code})`;

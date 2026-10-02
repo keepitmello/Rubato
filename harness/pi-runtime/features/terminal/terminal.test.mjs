@@ -355,6 +355,76 @@ test("a session the agent stops with kill_bash sends no completion notice", asyn
 	assert.equal(sent.length, 0, "the agent already knows it stopped the session");
 });
 
+test("a monitor the agent stops with kill_bash sends no watcher-killed event", async (t) => {
+	const { default: registerTerminal } = await import("./src/extension.ts");
+	const { SettingsManager } = await import("./src/host-sdk.ts");
+	const scratch = mkdtempSync(join(tmpdir(), "rubato-terminal-kill-monitor-"));
+	const handlers = new Map();
+	const rpc = new Map();
+	const sent = [];
+	const tools = new Map();
+	const pi = {
+		registerTool: (tool) => tools.set(tool.name, tool),
+		on: (event, handler) => handlers.set(event, handler),
+		rpc: { handle: (name, handler) => rpc.set(name, handler), emit() {} },
+		events: { emit() {} },
+		sendMessage: (message, options) => sent.push({ message, options }),
+		getActiveTools: () => [],
+		setActiveTools() {},
+	};
+	registerTerminal(pi, {
+		createSettingsManager: () =>
+			SettingsManager.inMemory({ terminal: { notify: "wake", monitorCoalesceWindowMs: 20 } }),
+		getShellEnv: () => ({ PATH: process.env.PATH, HOME: scratch, LANG: "C.UTF-8", TERM: "xterm-256color" }),
+	});
+	const ctx = {
+		mode: "json",
+		cwd: scratch,
+		model: { provider: "fixture", id: "fake", api: "openai-completions" },
+		ui: { notify() {}, setStatus() {} },
+	};
+	t.after(async () => {
+		await handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" }, ctx);
+		rmSync(scratch, { recursive: true, force: true });
+	});
+	await handlers.get("session_start")({ type: "session_start", reason: "startup" }, ctx);
+	const pending = () => rpc.get("rubato.terminal.pending-work")();
+	const waitForIdle = async () => {
+		const deadline = Date.now() + 2_000;
+		while (pending().active > 0 && Date.now() < deadline) await delay(25);
+		await delay(200);
+	};
+
+	// Control: a watch that ends by itself still reports, so silence below means suppression.
+	await tools.get("monitor").execute("call-0", { description: "ends by itself", command: "exit 0" });
+	const reported = Date.now() + 2_000;
+	while (sent.length === 0 && Date.now() < reported) await delay(25);
+	assert.equal(sent.length, 1);
+	assert.match(sent[0].message.content, /Monitor event\(ends by itself\): watcher /);
+	sent.length = 0;
+
+	const single = await tools.get("monitor").execute("call-1", {
+		description: "stopped by id",
+		command: "exec sleep 30",
+		persistent: true,
+	});
+	await tools.get("kill_bash").execute("call-2", { bash_id: single.details.bash_id });
+	await waitForIdle();
+	assert.deepEqual(sent, [], "a command monitor stopped by id does not report");
+
+	await tools.get("monitor").execute("call-3", {
+		description: "stopped by all",
+		command: "exec sleep 30",
+		persistent: true,
+	});
+	await tools.get("monitor").execute("call-4", { description: "file stopped by all", path: join(scratch, "never") });
+	assert.equal(pending().active, 2);
+	await tools.get("kill_bash").execute("call-5", { all: true });
+	await waitForIdle();
+	assert.deepEqual(pending(), { active: 0, undelivered: 0 });
+	assert.deepEqual(sent, [], "command and file monitors stopped by kill_bash all:true do not report");
+});
+
 test("one-shot holds end for work that has no deadline of its own", async () => {
 	const { PERSISTENT_MONITOR_HOLD_MS, UNBOUNDED_BACKGROUND_HOLD_MS, terminalPendingWork } = await import(
 		"./src/pending-work.ts"
