@@ -489,6 +489,67 @@ test("a prompt sent while an extension holds agent_settled starts after it, and 
   assert.deepEqual(announced, ["agent_start", "agent_start", "agent_settled"]);
 });
 
+// The other branch of the held settle: work deferred during agent_settled that starts no run
+// (an extension command, a prompt that fails) must still end with exactly one announced
+// settle, or clients would wait for an idle that never comes.
+test("a held settle is announced once when the deferred work starts no run", async () => {
+  const moduleUrl = pathToFileURL(join(patchedPackage, "dist/index.js")).href;
+  const streamUrl = pathToFileURL(
+    join(scratchRoot, "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js"),
+  ).href;
+  const { createAgentSession, DefaultResourceLoader, SessionManager, SettingsManager } = await import(moduleUrl);
+  const { AssistantMessageEventStream } = await import(streamUrl);
+  const cwd = join(scratchRoot, "settle-no-run-cwd");
+  const agentDir = join(scratchRoot, "settle-no-run-agent");
+  mkdirSync(cwd, { recursive: true });
+  mkdirSync(agentDir, { recursive: true });
+  writeFileSync(join(agentDir, "models.json"), JSON.stringify({
+    providers: {
+      "request-run-test": {
+        baseUrl: "http://127.0.0.1:9/v1",
+        api: "openai-completions",
+        apiKey: "unused-test-key",
+        models: [{ id: "fake-model", input: ["text"] }],
+      },
+    },
+  }));
+  let commandRuns = 0;
+  let settles = 0;
+  let sessionRef;
+  const extension = (pi) => {
+    pi.registerCommand("noop-during-settle", { description: "handled without a run", handler: async () => { commandRuns += 1; } });
+    pi.on("agent_settled", async () => {
+      settles += 1;
+      if (settles === 1) await sessionRef.prompt("/noop-during-settle");
+    });
+  };
+  const settingsManager = SettingsManager.inMemory();
+  const resourceLoader = new DefaultResourceLoader({
+    cwd, agentDir, settingsManager,
+    extensionFactories: [{ name: "settle-no-run", factory: extension }],
+    noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+  });
+  await resourceLoader.reload();
+  const { session } = await createAgentSession({
+    cwd, agentDir, settingsManager, resourceLoader, sessionManager: SessionManager.inMemory(cwd), noTools: "all",
+  });
+  sessionRef = session;
+  const announced = [];
+  session.subscribe((event) => {
+    if (event.type === "agent_start" || event.type === "agent_settled") announced.push(event.type);
+  });
+  session.agent.streamFunction = () => {
+    const stream = new AssistantMessageEventStream();
+    stream.push({ type: "start", partial: assistant("pending", "pending", { content: [] }) });
+    stream.push({ type: "done", reason: "stop", message: assistant("done") });
+    return stream;
+  };
+  await session.prompt("only run");
+  assert.equal(commandRuns, 1, "the deferred command ran after the settle handlers");
+  assert.deepEqual(announced, ["agent_start", "agent_settled"]);
+  assert.equal(session.isIdle, true);
+});
+
 test("unbundled RPC get_state reads the same pending and completed request ids", async (t) => {
   const cwd = join(scratchRoot, "rpc-cwd");
   const agentDir = join(scratchRoot, "rpc-agent");
