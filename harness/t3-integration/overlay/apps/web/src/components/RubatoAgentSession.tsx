@@ -1,25 +1,28 @@
 /**
- * One child agent's conversation, opened from a row of the Agents panel: the brief it was
- * given, its words, its reasoning (folded), every tool call with its result (folded), and
- * at the bottom the controls to stop it or tell it something. The conversation is read
- * from the agent's own session file (src/agents/transcript.mjs), so a finished agent of a
- * thread that is not running can still be read; stopping and messaging need the thread's
- * session to be running.
+ * One child agent's conversation, opened from a row of the Agents panel, drawn by the same
+ * timeline as the thread itself (rubatoAgentTimeline.ts), with the controls to stop it or
+ * tell it something at the bottom. The conversation is read from the agent's own session
+ * file (src/agents/transcript.mjs), so a finished agent of a thread that is not running can
+ * still be read; stopping and messaging need the thread's session to be running.
  */
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { ThreadId } from "@t3tools/contracts";
+import type { LegendListRef } from "@legendapp/list/react";
 import { ArrowLeft, ArrowUp, Square } from "lucide-react";
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent,
   type ReactNode,
 } from "react";
 
-import { cn } from "~/lib/utils";
 import { Button } from "~/components/ui/button";
 import { Textarea } from "~/components/ui/textarea";
+import { useTheme } from "~/hooks/useTheme";
+import { useClientSettings } from "~/hooks/useSettings";
 import {
   messageAgent,
   readAgentTranscript,
@@ -27,7 +30,8 @@ import {
   type AgentTarget,
   type AgentTranscriptItem,
 } from "../state/rubatoAgents";
-import ChatMarkdown from "./ChatMarkdown";
+import { MessagesTimeline } from "./chat/MessagesTimeline";
+import { agentTimeline } from "./rubatoAgentTimeline";
 
 /** How often a working agent's conversation is read again. */
 export const LIVE_REFRESH_MS = 2_500;
@@ -103,124 +107,20 @@ export function useAgentTranscript(target: AgentTarget | null, live: boolean, re
   return { ...(state.key === key ? state : EMPTY), refresh };
 }
 
-function firstLine(text: string): string {
-  const line = text.split("\n").find((value) => value.trim().length > 0) ?? "";
-  return line.trim();
-}
+const NO_TURN_DIFFS: never[] = [];
+const ignore = () => undefined;
 
-/** "read · src/app.ts": the tool and the first line of what it was given. */
-export function toolSummary(item: Extract<AgentTranscriptItem, { kind: "tool" }>): string {
-  let detail = "";
-  try {
-    const args = JSON.parse(item.input) as Record<string, unknown>;
-    const first = [
-      "path",
-      "file_path",
-      "command",
-      "pattern",
-      "query",
-      "url",
-      "agentId",
-      "description",
-    ]
-      .map((name) => args[name])
-      .find((value) => typeof value === "string" && value.trim().length > 0);
-    detail = typeof first === "string" ? firstLine(first) : "";
-  } catch {
-    detail = firstLine(item.input);
-  }
-  return detail ? `${item.name} · ${detail}` : item.name;
-}
-
-function Folded({
-  summary,
-  tone = "muted",
-  children,
-}: {
-  summary: ReactNode;
-  tone?: "muted" | "error";
-  children: ReactNode;
-}) {
+/** Where there is no conversation to draw, why. */
+function AgentSessionNotice({ children, error = false }: { children: string; error?: boolean }) {
   return (
-    <details className="group min-w-0 rounded-md border border-border/40 bg-card/20">
-      <summary
-        className={cn(
-          "cursor-pointer list-none truncate px-2 py-1 font-mono text-[.7rem] hover:bg-accent/40",
-          tone === "error" ? "text-destructive-foreground" : "text-muted-foreground",
-        )}
-      >
-        <span className="mr-1 inline-block transition-transform group-open:rotate-90">▸</span>
-        {summary}
-      </summary>
-      <div className="space-y-1.5 border-t border-border/40 p-2">{children}</div>
-    </details>
-  );
-}
-
-function Pre({ children, tone = "muted" }: { children: string; tone?: "muted" | "error" }) {
-  return (
-    <pre
-      className={cn(
-        "max-h-64 overflow-auto whitespace-pre-wrap font-mono text-[.7rem] [overflow-wrap:anywhere]",
-        tone === "error" ? "text-destructive-foreground" : "text-muted-foreground",
-      )}
+    <p
+      className={
+        error ? "p-3 text-sm text-destructive-foreground" : "p-3 text-sm text-muted-foreground"
+      }
     >
       {children}
-    </pre>
+    </p>
   );
-}
-
-function TranscriptItemView({ item, first }: { item: AgentTranscriptItem; first: boolean }) {
-  switch (item.kind) {
-    case "user":
-      return (
-        <section className="rounded-md border border-border/60 bg-muted/40 p-2">
-          <p className="mb-1 font-mono text-[.65rem] text-muted-foreground">
-            {first ? "Brief" : "Message"}
-          </p>
-          <p className="whitespace-pre-wrap text-xs [overflow-wrap:anywhere]">{item.text}</p>
-        </section>
-      );
-    case "assistant":
-      return (
-        <ChatMarkdown
-          text={item.text}
-          cwd={undefined}
-          className="min-w-0 text-xs [overflow-wrap:anywhere] [&_pre]:max-w-full"
-        />
-      );
-    case "thinking":
-      return (
-        <Folded summary="Thinking">
-          <p className="whitespace-pre-wrap text-[.7rem] text-muted-foreground [overflow-wrap:anywhere]">
-            {item.text}
-          </p>
-        </Folded>
-      );
-    case "tool":
-      return (
-        <Folded summary={toolSummary(item)} tone={item.isError ? "error" : "muted"}>
-          {item.input ? <Pre>{item.input}</Pre> : null}
-          {item.output !== undefined ? (
-            <div className="border-t border-border/40 pt-1.5">
-              <Pre tone={item.isError ? "error" : "muted"}>{item.output || "(no output)"}</Pre>
-            </div>
-          ) : (
-            <p className="font-mono text-[.65rem] text-muted-foreground/70">Running…</p>
-          )}
-        </Folded>
-      );
-    case "compaction":
-      return (
-        <Folded summary="Context compacted">
-          <p className="whitespace-pre-wrap text-[.7rem] text-muted-foreground [overflow-wrap:anywhere]">
-            {item.text}
-          </p>
-        </Folded>
-      );
-    case "error":
-      return <p className="whitespace-pre-wrap text-xs text-destructive-foreground">{item.text}</p>;
-  }
 }
 
 export function RubatoAgentSession({
@@ -243,14 +143,21 @@ export function RubatoAgentSession({
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState<"stop" | "send" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const pinnedRef = useRef(true);
-
-  // Follow the end while the reader is at the end; leave them where they are otherwise.
-  useLayoutEffect(() => {
-    const element = scrollRef.current;
-    if (element && pinnedRef.current) element.scrollTop = element.scrollHeight;
-  }, [transcript.items]);
+  const listRef = useRef<LegendListRef | null>(null);
+  const { resolvedTheme } = useTheme();
+  const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
+  const taskId = target?.taskId ?? "";
+  const timeline = useMemo(
+    () => agentTimeline(transcript.items, { taskId, live }),
+    [transcript.items, taskId, live],
+  );
+  // Links resolve against the thread the agent works for; its scroll position is its own.
+  const threadKey = target
+    ? scopedThreadKey({
+        environmentId: target.environmentId,
+        threadId: ThreadId.make(target.threadId),
+      })
+    : "";
 
   const run = async (kind: "stop" | "send") => {
     if (!target || busy) return;
@@ -263,9 +170,9 @@ export function RubatoAgentSession({
       else {
         await messageAgent(target, message);
         setDraft("");
-        pinnedRef.current = true;
       }
       await transcript.refresh();
+      if (kind === "send") void listRef.current?.scrollToEnd({ animated: true });
     } catch (error) {
       setActionError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -279,7 +186,6 @@ export function RubatoAgentSession({
     void run("send");
   };
 
-  const firstUser = transcript.items.findIndex((item) => item.kind === "user");
   const canControl = target !== null && transcript.controllable;
 
   return (
@@ -296,35 +202,46 @@ export function RubatoAgentSession({
         </Button>
         <div className="min-w-0 flex-1">{header}</div>
       </div>
-      <div
-        ref={scrollRef}
-        onScroll={(event) => {
-          const element = event.currentTarget;
-          pinnedRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 48;
-        }}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
-      >
-        <div className="flex flex-col gap-2 p-2.5">
-          {!target ? (
-            <p className="text-xs text-muted-foreground">
-              This thread has no folder to read the agent from.
-            </p>
-          ) : !transcript.loaded ? (
-            <p className="text-xs text-muted-foreground">Loading the conversation…</p>
-          ) : transcript.error && transcript.items.length === 0 ? (
-            <p className="text-xs text-destructive-foreground">{transcript.error}</p>
-          ) : !transcript.found ? (
-            <p className="text-xs text-muted-foreground">
-              {live
-                ? "Starting. Nothing recorded yet."
-                : "This agent left no conversation to show."}
-            </p>
-          ) : (
-            transcript.items.map((item, index) => (
-              <TranscriptItemView key={index} item={item} first={index === firstUser} />
-            ))
-          )}
-        </div>
+      <div className="relative flex min-h-0 flex-1 flex-col bg-background">
+        {!target ? (
+          <AgentSessionNotice>This thread has no folder to read the agent from.</AgentSessionNotice>
+        ) : !transcript.loaded ? (
+          <AgentSessionNotice>Loading the conversation…</AgentSessionNotice>
+        ) : transcript.error && transcript.items.length === 0 ? (
+          <AgentSessionNotice error>{transcript.error}</AgentSessionNotice>
+        ) : !transcript.found || transcript.items.length === 0 ? (
+          <AgentSessionNotice>
+            {live ? "Starting. Nothing recorded yet." : "This agent left no conversation to show."}
+          </AgentSessionNotice>
+        ) : (
+          <MessagesTimeline
+            listRef={listRef}
+            timelineEntries={timeline.entries}
+            latestTurn={timeline.latestTurn}
+            runningTurnId={timeline.runningTurnId}
+            isWorking={live}
+            activeTurnStartedAt={timeline.activeTurnStartedAt}
+            turnDiffSummaries={NO_TURN_DIFFS}
+            routeThreadKey={threadKey}
+            displayThreadKey={`${threadKey}:agent:${target.taskId}`}
+            activeThreadEnvironmentId={target.environmentId}
+            markdownCwd={target.cwd}
+            workspaceRoot={target.cwd}
+            resolvedTheme={resolvedTheme}
+            timestampFormat={timestampFormat}
+            supportsConversationRollback={false}
+            isRevertingCheckpoint={false}
+            onOpenTurnDiff={ignore}
+            onRevertToTurnCount={ignore}
+            onImageExpand={ignore}
+            anchorMessageId={null}
+            onAnchorReady={ignore}
+            contentInsetEndAdjustment={0}
+            liveFollowEnabled
+            onIsAtEndChange={ignore}
+            onManualNavigation={ignore}
+          />
+        )}
       </div>
       <footer className="space-y-1.5 border-t border-border/60 p-2">
         {actionError ? <p className="text-xs text-destructive-foreground">{actionError}</p> : null}

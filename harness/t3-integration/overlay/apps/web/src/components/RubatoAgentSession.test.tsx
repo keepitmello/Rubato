@@ -1,26 +1,14 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import type { EnvironmentId } from "@t3tools/contracts";
-import { RubatoAgentSession, toolSummary } from "./RubatoAgentSession";
+import { RubatoAgentSession } from "./RubatoAgentSession";
 
-const tool = (name: string, input: string) => ({ kind: "tool" as const, id: "c", name, input });
+// The thread's timeline pulls in the diff worker, which a node test cannot load. What it
+// draws for an agent is rubatoAgentTimeline.test.ts.
+vi.mock("./chat/MessagesTimeline", () => ({ MessagesTimeline: () => null }));
 
 describe("RubatoAgentSession", () => {
-  it("a folded tool call names the tool and what it was given", () => {
-    expect(toolSummary(tool("read", JSON.stringify({ path: "src/app.ts", offset: 4 })))).toBe(
-      "read · src/app.ts",
-    );
-    expect(toolSummary(tool("bash", JSON.stringify({ command: "bun test\\nmore" })))).toBe(
-      "bash · bun test\\nmore",
-    );
-    expect(toolSummary(tool("bash", JSON.stringify({ command: "bun test\nmore" })))).toBe(
-      "bash · bun test",
-    );
-    expect(toolSummary(tool("todo", JSON.stringify({ op: "view" })))).toBe("todo");
-    expect(toolSummary(tool("raw", "plain text input"))).toBe("raw · plain text input");
-  });
-
   it("opens on the header and a way back, and reads before it offers controls", () => {
     const html = renderToStaticMarkup(
       <RubatoAgentSession

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { briefOf, readChildTranscript, taskStateDir, transcriptItems } from '../src/agents/transcript.mjs';
 import { createAgentsService, handleAgentsRequest } from '../src/agents/service.mjs';
+import { toolPresentation } from '../src/events.mjs';
 
 const line = (value) => JSON.stringify(value);
 const at = '2026-10-02T06:25:49.157Z';
@@ -36,11 +37,29 @@ test('a child conversation keeps what was said, thought and run, and drops the b
     ['user', 'thinking', 'assistant', 'tool', 'tool', 'compaction', 'user', 'tool']);
   assert.equal(items[0].text, 'Review Q1-Q5');
   assert.deepEqual({ ...items[3], at: undefined },
-    { kind: 'tool', id: 'call_1', name: 'read', input: '{\n  "path": "draft.md"\n}', output: '# Draft', at: undefined });
+    { kind: 'tool', id: 'call_1', name: 'read', ...toolPresentation('read', { path: 'draft.md' }),
+      input: '{\n  "path": "draft.md"\n}', output: '# Draft', message: 0, at: undefined });
+  assert.deepEqual(items.slice(1, 4).map((item) => item.message), [0, 0, 0], 'one model message, one number');
+  assert.equal(items[4].message, 1);
   assert.equal(items[4].isError, true);
   assert.equal(items[4].output, 'exit 1');
   assert.equal(items[6].text, 'Skip Q3');
   assert.equal(items[7].output, undefined, 'a call still running has no output yet');
+});
+
+test("a tool call reads as the lead's thread reads the same call", () => {
+  const items = transcriptItems([
+    line({ type: 'message', message: { role: 'assistant', content: [
+      { type: 'toolCall', id: 'b', name: 'bash', arguments: { command: 'ls' } },
+      { type: 'toolCall', id: 'a', name: 'Agent', arguments: { prompt: 'look around' } },
+    ] } }),
+    line({ type: 'message', message: { role: 'toolResult', toolCallId: 'a', content: [{ type: 'text', text: 'started' }],
+      details: { agentId: 'st_c', task_summary: 'Map the repo' } } }),
+  ].join('\n'));
+  assert.equal(items[0].itemType, 'command_execution');
+  assert.equal(items[0].title, 'bash');
+  assert.deepEqual([items[1].itemType, items[1].title, items[1].detail],
+    ['collab_agent_tool_call', 'Subagent task', 'Map the repo'], 'a spawn row names the task its result carries');
 });
 
 test("the brief is shown without the runner's envelope", () => {

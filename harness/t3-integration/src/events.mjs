@@ -197,6 +197,14 @@ const STOPPED_STATUS = new Set(['cancelled', 'aborted', 'interrupted']);
 const LIVE_STATUS = new Set(['pending', 'running', 'waiting', 'idle']);
 export const toolType = (name) => SPAWN_TOOLS.has(name) ? 'collab_agent_tool_call'
   : name === 'bash' ? 'command_execution' : ['write', 'edit'].includes(name) ? 'file_change' : 'dynamic_tool_call';
+/** How a tool call reads in the thread: its item type, row title and, for a spawn, the task it was given. */
+export const toolPresentation = (toolName, args, result) => {
+  const spawn = SPAWN_TOOLS.has(toolName);
+  const title = spawn ? (toolName === 'team_create' ? 'Team' : 'Subagent task') : (toolName || 'Tool');
+  const rawLabel = spawn ? spawnLabel(record(args), result ?? {}) : undefined;
+  const detail = rawLabel ? displaySpawnTitle(rawLabel) : undefined;
+  return { itemType: toolType(toolName), title, ...(detail ? { detail } : {}) };
+};
 
 // Meter usedTokens is last-assistant context size, not a chars/4 estimate and not
 // billed-session totals. maxTokens is the model's contextWindow when we have it.
@@ -829,15 +837,11 @@ export class EventProjection {
       case 'extension_ui_request': this.question(event); break;
       case 'extension_event': this.speedUpdated(event); this.taskUpdated(event); this.boardUpdated(event); break;
       case 'tool_execution_start': case 'tool_execution_update': case 'tool_execution_end': {
-        const itemType = toolType(event.toolName);
         const spawn = SPAWN_TOOLS.has(event.toolName);
-        const title = spawn ? (event.toolName === 'team_create' ? 'Team' : 'Subagent task') : (event.toolName || 'Tool');
-        const rawLabel = spawn ? spawnLabel(record(event.args), event.result ?? event.partialResult ?? {}) : undefined;
-        const detail = rawLabel ? displaySpawnTitle(rawLabel) : undefined;
+        const presentation = toolPresentation(event.toolName, event.args, event.result ?? event.partialResult);
         const type = event.type === 'tool_execution_start' ? 'item.started' : event.type === 'tool_execution_end' ? 'item.completed' : 'item.updated';
         const data = { ...record(event.result ?? event.partialResult ?? event.args ?? {}), toolCallId: event.toolCallId };
-        this.event(type, { itemType, title, status: event.type === 'tool_execution_end' ? event.isError ? 'failed' : 'completed' : 'inProgress',
-          ...(detail ? { detail } : {}), data },
+        this.event(type, { ...presentation, status: event.type === 'tool_execution_end' ? event.isError ? 'failed' : 'completed' : 'inProgress', data },
           { itemId: spawn ? event.toolCallId : `pi-tool:${this.sessionId}:${event.toolCallId}` });
         if (spawn) this.spawnTool(event);
         else if (CANCEL_TOOLS.has(event.toolName)) this.cancelTool(event);

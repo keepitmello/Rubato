@@ -10,6 +10,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
+import { toolPresentation } from '../events.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..', '..', '..', '..');
@@ -68,14 +69,17 @@ const timeOf = (entry) => {
 };
 
 /**
- * The conversation as the panel draws it, in file order: what the child was told (`user`:
- * the brief, then any follow-up), its words (`assistant`), its reasoning (`thinking`), each
- * tool call with its result once it lands (`tool`), and where its context was compacted.
- * System prompts, injected notices and bookkeeping entries are not part of the conversation.
+ * The conversation in file order: what the child was told (`user`: the brief, then any
+ * follow-up), its words (`assistant`), its reasoning (`thinking`), each tool call with its
+ * result once it lands (`tool`), and where its context was compacted. Pieces of one model
+ * message share `message`, and a tool carries the item type and title the lead's own thread
+ * gives the same call (toolPresentation), so the panel draws both alike. System prompts,
+ * injected notices and bookkeeping entries are not part of the conversation.
  */
 export function transcriptItems(text) {
   const items = [];
   const tools = new Map();
+  let messages = 0;
   for (const line of text.split('\n')) {
     if (!line.trim()) continue;
     let entry;
@@ -91,22 +95,28 @@ export function transcriptItems(text) {
       const body = briefOf(textOf(message.content));
       if (body.trim()) items.push({ kind: 'user', text: bounded(body, LIMITS.text), ...(at ? { at } : {}) });
     } else if (message.role === 'assistant' && Array.isArray(message.content)) {
+      const from = { message: messages++, ...(at ? { at } : {}) };
       for (const part of message.content) {
-        if (part?.type === 'text' && part.text?.trim()) items.push({ kind: 'assistant', text: bounded(part.text, LIMITS.text), ...(at ? { at } : {}) });
-        else if (part?.type === 'thinking' && part.thinking?.trim()) items.push({ kind: 'thinking', text: bounded(part.thinking, LIMITS.thinking) });
+        if (part?.type === 'text' && part.text?.trim()) items.push({ kind: 'assistant', text: bounded(part.text, LIMITS.text), ...from });
+        else if (part?.type === 'thinking' && part.thinking?.trim()) items.push({ kind: 'thinking', text: bounded(part.thinking, LIMITS.thinking), ...from });
         else if (part?.type === 'toolCall') {
-          const tool = { kind: 'tool', id: String(part.id ?? ''), name: String(part.name ?? 'tool'),
-            input: bounded(inputOf(part.arguments), LIMITS.toolInput), ...(at ? { at } : {}) };
+          const name = String(part.name ?? 'tool');
+          const tool = { kind: 'tool', id: String(part.id ?? ''), name, ...toolPresentation(name, part.arguments),
+            input: bounded(inputOf(part.arguments), LIMITS.toolInput), ...from };
           items.push(tool);
-          if (tool.id) tools.set(tool.id, tool);
+          if (tool.id) tools.set(tool.id, { tool, args: part.arguments });
         }
       }
       if (message.stopReason === 'error' && message.errorMessage)
-        items.push({ kind: 'error', text: bounded(String(message.errorMessage), LIMITS.toolOutput) });
+        items.push({ kind: 'error', text: bounded(String(message.errorMessage), LIMITS.toolOutput), ...from });
     } else if (message.role === 'toolResult') {
-      const tool = tools.get(String(message.toolCallId ?? ''));
-      const output = bounded(textOf(message.content), LIMITS.toolOutput);
-      if (tool) { tool.output = output; if (message.isError) tool.isError = true; }
+      const call = tools.get(String(message.toolCallId ?? ''));
+      if (!call) continue;
+      const { tool, args } = call;
+      // A spawn's row names the task, which its result may carry.
+      Object.assign(tool, toolPresentation(tool.name, args, { content: message.content, details: message.details }));
+      tool.output = bounded(textOf(message.content), LIMITS.toolOutput);
+      if (message.isError) tool.isError = true;
     }
   }
   return items;

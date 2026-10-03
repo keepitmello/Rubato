@@ -1,10 +1,13 @@
-// The Agents panel opens one agent's whole conversation (RubatoAgentSession.tsx) and can
-// stop it or tell it something. The conversation is read from the agent's own session
-// file under the thread's directory, so ChatView hands the panel that directory; the
-// server half is /rubato/agents (RubatoServiceRoute.ts → src/agents/service.mjs).
+// The Agents panel opens one agent's whole conversation (RubatoAgentSession.tsx), drawn by
+// the thread's own timeline (rubatoAgentTimeline.ts), and can stop it or tell it something.
+// The conversation is read from the agent's own session file under the thread's directory,
+// so ChatView hands the panel that directory; the server half is /rubato/agents
+// (RubatoServiceRoute.ts → src/agents/service.mjs).
 export const agentSessionOverlays = [
   'apps/web/src/components/RubatoAgentSession.tsx',
   'apps/web/src/components/RubatoAgentSession.test.tsx',
+  'apps/web/src/components/rubatoAgentTimeline.ts',
+  'apps/web/src/components/rubatoAgentTimeline.test.ts',
   'apps/web/src/state/rubatoAgents.ts',
 ];
 

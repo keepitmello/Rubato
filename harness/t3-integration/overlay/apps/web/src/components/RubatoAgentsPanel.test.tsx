@@ -3,7 +3,10 @@ import {
   type RuntimeSubagent,
 } from "@t3tools/client-runtime/state/subagentRuntime";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
+
+// The thread's timeline pulls in the diff worker, which a node test cannot load.
+vi.mock("./chat/MessagesTimeline", () => ({ MessagesTimeline: () => null }));
 
 import {
   QUIET_AFTER_MS,
