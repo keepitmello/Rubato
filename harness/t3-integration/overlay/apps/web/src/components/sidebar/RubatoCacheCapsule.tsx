@@ -30,7 +30,9 @@ const FLAME =
  * What is left of the cache's life: from the latest input to when it goes cold. A warmer
  * that is on stretches that life, so the capsule follows the cache, not the warmer's hours.
  * While the warmer holds the cache the capsule is thicker with a flame cut out of its
- * middle; otherwise it is a thin grey line. Both hang from the time label's line box.
+ * middle; otherwise it is a thin grey line. Both are a block above the time label, so
+ * the row reads capsule first and the time under it. The meta slot bottom-aligns the
+ * pair while the capsule is there, which puts the capsule on the row's own centre.
  */
 export function CacheCapsuleGlyph(props: { cached: CachedThread; now: number }) {
   const { cached, now } = props;
@@ -43,7 +45,8 @@ export function CacheCapsuleGlyph(props: { cached: CachedThread; now: number }) 
     return (
       <span
         aria-hidden="true"
-        className="pointer-events-none absolute top-full right-0 block h-[3px] w-4 overflow-hidden rounded-full bg-muted-foreground/20"
+        data-rubato-cache="thin"
+        className="pointer-events-none block h-[3px] w-4 overflow-hidden rounded-full bg-muted-foreground/20"
       >
         <span className="block h-full rounded-full bg-muted-foreground/70" style={{ width }} />
       </span>
@@ -53,8 +56,9 @@ export function CacheCapsuleGlyph(props: { cached: CachedThread; now: number }) 
     <svg
       aria-hidden="true"
       data-warming="true"
+      data-rubato-cache="warmer"
       viewBox="0 0 20 6"
-      className="pointer-events-none absolute top-[calc(100%-1.5px)] right-0 block h-1.5 w-5 text-foreground/85"
+      className="pointer-events-none block h-1.5 w-5 text-foreground/85"
     >
       <defs>
         <mask id={maskId}>
