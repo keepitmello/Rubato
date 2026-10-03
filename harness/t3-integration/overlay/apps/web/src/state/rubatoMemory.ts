@@ -6,14 +6,11 @@ import { readPreparedConnection } from "./session";
 /** The route Rubato adds to the T3 server on this Mac for Settings > Memory. */
 const MEMORY_ROUTE = "/rubato/memory";
 
-export type DreamPublish = "review" | "auto";
-
 export interface MemoryStoreStatus {
   readonly store: string;
   readonly enabled: boolean;
   readonly lastDreamAt?: string;
   readonly lastRunId?: string;
-  readonly pendingRunId?: string;
   readonly newSessions: number;
   readonly due: boolean;
   readonly roots?: readonly string[];
@@ -36,16 +33,17 @@ export interface MemoryStoreSummary {
   readonly home: boolean | null;
   readonly files: number;
   readonly lastChangeAt: string | null;
-  readonly pendingRunId: string | null;
-  /** What the store asks of the user: a dream waiting for review, or one that landed unseen. */
-  readonly inbox: StoreInbox | null;
+  /** The newest dream that ran to an end (not skipped, not a trial). */
+  readonly lastRun: {
+    readonly runId: string;
+    readonly status: string;
+    readonly startedAt?: string;
+    readonly finishedAt?: string;
+    readonly reason?: string;
+    readonly landed: boolean;
+  } | null;
   readonly enabled: boolean;
   readonly running: { readonly startedAt?: string; readonly source: "gui" | "other" } | null;
-}
-
-export interface StoreInbox {
-  readonly runId: string;
-  readonly kind: "pending" | "landed";
 }
 
 export interface MemoryFileEntry {
@@ -64,7 +62,6 @@ export interface DreamModel {
 
 export interface MemoryStatus {
   readonly models: readonly DreamModel[];
-  readonly publish: DreamPublish;
   readonly stores: readonly MemoryStoreStatus[];
 }
 
@@ -89,7 +86,6 @@ export interface DreamRunSummary {
   readonly reviewedAt?: string;
   readonly sessions: number;
   readonly commits: number;
-  readonly pending: boolean;
   /** In the store now: merged and not reverted since. */
   readonly landed: boolean;
 }
@@ -114,27 +110,11 @@ export interface DreamChange {
 
 export interface DreamRunDetail extends DreamRunSummary {
   readonly store: string;
-  readonly sessionList: ReadonlyArray<{
-    readonly id: string;
-    readonly name?: string;
-    readonly cwd?: string;
-    readonly messages?: number;
-  }>;
   readonly report: string | null;
   /** The report's 요약. */
   readonly summary: string | null;
-  /** The report's 남긴 것: what the dream considered and left out. */
-  readonly skipped: readonly string[];
   readonly changes: readonly DreamChange[];
   readonly diffNote: string | null;
-  /** Files edited in the store and never committed; while any are there, adding and undoing fail. */
-  readonly uncommitted: readonly string[];
-  /** Where an agent asked about the run can read it. */
-  readonly sources: {
-    readonly report: string | null;
-    readonly repo: string;
-    readonly range: { readonly base: string; readonly head: string } | null;
-  };
   readonly candidates: ReadonlyArray<{ readonly text: string; readonly inUser: boolean }>;
 }
 
@@ -200,6 +180,14 @@ export const rubatoMemory = {
       store,
       path,
     }),
+  /** Writes the whole file and commits it; the commit is null when nothing changed. */
+  saveFile: (env: EnvironmentId | null, store: string, path: string, content: string, message?: string) =>
+    call<{ store: string; path: string; content: string; commit: string | null }>(env, "save-file", {
+      store,
+      path,
+      content,
+      ...(message ? { message } : {}),
+    }),
   deleteFile: (env: EnvironmentId | null, store: string, path: string) =>
     call<{ store: string; path: string; commit: string | null }>(env, "delete-file", {
       store,
@@ -209,25 +197,17 @@ export const rubatoMemory = {
     call<{ store: string; archive: string }>(env, "delete-store", { store, confirm: store }),
   status: (env: EnvironmentId | null) => call<MemoryStatus>(env, "status"),
   runs: (env: EnvironmentId | null, store: string) =>
-    call<{ store: string; pendingRunId: string | null; runs: DreamRunSummary[] }>(env, "runs", {
+    call<{ store: string; runs: DreamRunSummary[] }>(env, "runs", {
       store,
     }),
   run: (env: EnvironmentId | null, store: string, runId: string) =>
     call<DreamRunDetail>(env, "run", { store, runId }),
   dream: (env: EnvironmentId | null, store: string) =>
     call<{ store: string; startedAt: string }>(env, "dream", { store }),
-  review: (env: EnvironmentId | null, store: string, decision: "approve" | "reject") =>
-    call<{ store: string; runId: string; review: string }>(env, "review", { store, decision }),
-  revert: (env: EnvironmentId | null, store: string, runId: string) =>
-    call<{ store: string; runId: string; review: string }>(env, "revert", { store, runId }),
-  /** The user has looked at a landed dream; it leaves the review list. */
-  ack: (env: EnvironmentId | null, store: string, runId: string) =>
-    call<{ store: string; runId: string }>(env, "ack", { store, runId }),
   config: (
     env: EnvironmentId | null,
     change:
       | { models: ReadonlyArray<{ model: string; reasoning?: DreamReasoning }> }
-      | { publish: DreamPublish }
       | { store: string; enabled: boolean },
   ) => call<{ saved: unknown[] }>(env, "config", change),
   projects: (env: EnvironmentId | null, dirs: readonly string[]) =>

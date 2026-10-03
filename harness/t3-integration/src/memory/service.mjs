@@ -3,15 +3,11 @@
 // page never names a path or a command, only a store, a run and the fields below.
 //
 // What it stands on is the dream contract, not the runner's internals:
-//   rubato dream --json                  every store's switch, clock and review marker
+//   rubato dream --json                  every store's switch and clock
 //   rubato dream <store> --json          run now (minutes to tens of minutes: detached)
-//   rubato dream --approve|--reject <store> --json
-//   rubato dream --revert <store> <runId> --json   take a landed dream back out
 //   <memory>/agents/<store>/runtime/dream/runs/<runId>/{run.json,out/report.md,out/user-candidates.md}
-//   <memory>/agents/<store>/runtime/dream/pending.json   {runId, branch, baseRevision}
-//   <memory>/agents/<store>/runtime/dream/gui/seen.json  {runId}: the landed dream the user has looked at
 //   <memory>/agents/<store>/repo                          the store's git repository
-//   ~/.rubato/rubato.jsonc  memory.dream.{models,publish,stores.<name>.enabled}
+//   ~/.rubato/rubato.jsonc  memory.dream.{models,stores.<name>.enabled}
 //   <project>/.rubato/rubato.jsonc  memory.agent       the store a project writes to
 //   where.ts (bun)                                      which store each folder resolves to
 //   <memory>/self/repo/{user.md,soul.md}                  every save is a commit
@@ -173,14 +169,10 @@ export function createMemoryService(options = {}) {
       running: STORE_NAME.test(entry.store) ? await runningState(entry.store) : null,
       lastGuiRun: STORE_NAME.test(entry.store) ? await lastGuiRun(entry.store) : null,
     })));
-    return {
-      models: ladderOf(cliStatus),
-      publish: dream.publish === 'auto' ? 'auto' : 'review',
-      stores,
-    };
+    return { models: ladderOf(cliStatus), stores };
   }
 
-  function summarize(runId, record, pending) {
+  function summarize(runId, record) {
     return {
       runId,
       status: record.status,
@@ -192,12 +184,12 @@ export function createMemoryService(options = {}) {
       reviewedAt: record.reviewedAt,
       sessions: Array.isArray(record.sessions) ? record.sessions.length : 0,
       commits: Array.isArray(record.commits) ? record.commits.length : 0,
-      pending: pending?.runId === runId,
       landed: landed(record),
     };
   }
 
-  // In the store now: merged at the end of the run (auto) or approved later, and not reverted since.
+  // In the store now: merged at the end of the run (or approved, before dreams landed on their own)
+  // and not reverted since.
   function landed(record) {
     if (record.review === 'reverted' || record.review === 'rejected') return false;
     return record.status === 'merged' || record.review === 'merged';
@@ -217,15 +209,12 @@ export function createMemoryService(options = {}) {
 
   async function runs({ store }) {
     const paths = storePaths(assertStore(store));
-    const pending = await readJson(path.join(paths.dream, 'pending.json'));
-    const items = (await runRecords(paths)).map(([name, record]) => summarize(name, record, pending));
+    const items = (await runRecords(paths)).map(([name, record]) => summarize(name, record));
     items.sort((a, b) => String(b.startedAt ?? b.runId).localeCompare(String(a.startedAt ?? a.runId)));
-    return { store, pendingRunId: pending?.runId ?? null, runs: items };
+    return { store, runs: items };
   }
 
-  function rangeOf(runId, record, pending) {
-    if (pending?.runId === runId && BRANCH.test(pending.branch ?? '') && SHA.test(pending.baseRevision ?? ''))
-      return [pending.baseRevision, pending.branch];
+  function rangeOf(record) {
     const commits = (Array.isArray(record.commits) ? record.commits : []).filter((sha) => SHA.test(sha));
     if (record.status === 'trial' && BRANCH.test(record.branch ?? '') && SHA.test(record.baseRevision ?? ''))
       return [record.baseRevision, record.branch];
@@ -237,11 +226,6 @@ export function createMemoryService(options = {}) {
 
   // Paths stay as written (no octal quoting) so they match the name list and the report.
   const DIFF = ['-c', 'core.quotePath=false', 'diff', '--no-color', '--no-ext-diff', '-M'];
-
-  async function uncommittedFiles(repo) {
-    const status = await git(repo, ['-c', 'core.quotePath=false', 'status', '--porcelain', '--untracked-files=all']);
-    return status.code === 0 ? status.stdout.split('\n').filter(Boolean).map((line) => line.slice(3)) : [];
-  }
 
   async function diffOf(paths, range) {
     if (range === null) return { range: null, diff: '', diffNote: null };
@@ -305,36 +289,20 @@ export function createMemoryService(options = {}) {
     const dir = path.join(paths.runs, runId);
     const record = await readJson(path.join(dir, 'run.json'));
     if (!record) throw new MemoryRequestError(404, 'no-run', `No dream run ${runId} in ${store}.`);
-    const pending = await readJson(path.join(paths.dream, 'pending.json'));
-    const reportPath = path.join(dir, 'out', 'report.md');
     const [report, candidates, { range, diff, diffNote }] = await Promise.all([
-      readText(reportPath),
+      readText(path.join(dir, 'out', 'report.md')),
       readText(path.join(dir, 'out', 'user-candidates.md')),
-      diffOf(paths, rangeOf(runId, record, pending)),
+      diffOf(paths, rangeOf(record)),
     ]);
     const userText = (await readText(path.join(selfRepo, 'user.md'))) ?? '';
     const outline = reportOutline(report);
-    const summary = summarize(runId, record, pending);
     return {
       store,
-      ...summary,
-      sessionList: (Array.isArray(record.sessions) ? record.sessions : []).map((session) => ({
-        id: session.id, name: session.name, cwd: session.cwd, messages: session.messages,
-      })),
+      ...summarize(runId, record),
       report: report ?? null,
       summary: outline.summary,
-      skipped: outline.skipped,
       changes: await changesOf(paths, range, diff, outline),
       diffNote,
-      // Approving and undoing both merge under the writer lock, which refuses a store with edits
-      // nobody committed (a session that wrote and stopped). Named here so the page can say so first.
-      uncommitted: summary.pending || summary.landed ? await uncommittedFiles(paths.repo) : [],
-      // Where an agent asked about this run reads it.
-      sources: {
-        report: report === undefined ? null : reportPath,
-        repo: paths.repo,
-        range: range && { base: range[0], head: range[1] },
-      },
       candidates: candidateLines(candidates).map((text) => ({ text, inUser: userText.includes(text) })),
     };
   }
@@ -362,55 +330,6 @@ export function createMemoryService(options = {}) {
     child.once('error', () => running.delete(store));
     child.unref();
     return { store, startedAt };
-  }
-
-  async function review({ store, decision }) {
-    assertStore(store);
-    if (decision !== 'approve' && decision !== 'reject') throw bad('Decision must be approve or reject.');
-    const result = await cli([decision === 'approve' ? '--approve' : '--reject', store, '--json'], 180_000);
-    // Approving here is looking at it: the run does not come back as news.
-    if (decision === 'approve' && typeof result?.runId === 'string') await markSeen(store, result.runId);
-    return result;
-  }
-
-  async function revert({ store, runId }) {
-    assertStore(store);
-    assertRunId(runId);
-    const result = await cli(['--revert', store, runId, '--json'], 180_000);
-    await markSeen(store, runId);
-    return result;
-  }
-
-  async function markSeen(store, runId) {
-    const paths = storePaths(store);
-    await mkdir(paths.gui, { recursive: true });
-    await atomicWrite(path.join(paths.gui, 'seen.json'), `${JSON.stringify({ runId, at: new Date().toISOString() }, null, 2)}\n`);
-  }
-
-  async function acknowledge({ store, runId }) {
-    assertStore(store);
-    assertRunId(runId);
-    await markSeen(store, runId);
-    return { store, runId };
-  }
-
-  // What the store asks of the user: the dream waiting for review, else the newest dream that landed
-  // on its own (publish "auto") since the user last looked. A run the user approved was looked at.
-  // The first look sets the mark: what landed before this page existed is history, not news.
-  async function inboxOf(store, pending) {
-    if (typeof pending?.runId === 'string') return { runId: pending.runId, kind: 'pending' };
-    const paths = storePaths(store);
-    const landedAt = (record) => String(record.finishedAt ?? record.startedAt ?? '');
-    const newest = (await runRecords(paths))
-      .filter(([, record]) => record.status === 'merged' && landed(record))
-      .sort(([, x], [, y]) => landedAt(y).localeCompare(landedAt(x)))[0];
-    if (!newest) return null;
-    const seen = await readJson(path.join(paths.gui, 'seen.json'));
-    if (typeof seen?.at !== 'string') {
-      await markSeen(store, newest[0]);
-      return null;
-    }
-    return landedAt(newest[1]) > seen.at ? { runId: newest[0], kind: 'landed' } : null;
   }
 
   async function atomicWrite(file, content) {
@@ -458,10 +377,6 @@ export function createMemoryService(options = {}) {
   async function setConfig(input) {
     const edits = [];
     if (input.models !== undefined) edits.push([['memory', 'dream', 'models'], ladderInput(input.models)]);
-    if (input.publish !== undefined) {
-      if (input.publish !== 'review' && input.publish !== 'auto') throw bad('Publish must be review or auto.');
-      edits.push([['memory', 'dream', 'publish'], input.publish]);
-    }
     if (input.store !== undefined || input.enabled !== undefined) {
       assertStore(input.store);
       if (typeof input.enabled !== 'boolean') throw bad('Enabled must be true or false.');
@@ -602,23 +517,29 @@ export function createMemoryService(options = {}) {
     const paths = storePaths(store);
     const meta = await readJson(path.join(paths.root, 'store.json'));
     const roots = Array.isArray(meta?.roots) ? meta.roots.filter((root) => typeof root === 'string') : null;
-    const [files, last, pending, running] = await Promise.all([
+    const [files, last, records, running] = await Promise.all([
       walk(paths.repo),
       git(paths.repo, ['log', '-1', '--format=%cI']),
-      readJson(path.join(paths.dream, 'pending.json')),
+      runRecords(paths),
       runningState(store),
     ]);
+    const finished = records
+      .filter(([, record]) => record.status !== 'busy' && record.status !== 'trial')
+      .sort(([a, x], [b, y]) => String(y.startedAt ?? b).localeCompare(String(x.startedAt ?? a)))[0];
     return {
       store,
       roots,
       home: meta ? meta.home === true : null,
       files: files.length,
       lastChangeAt: last.code === 0 && last.stdout.trim() !== '' ? last.stdout.trim() : null,
-      pendingRunId: typeof pending?.runId === 'string' ? pending.runId : null,
-      inbox: await inboxOf(store, pending),
+      lastRun: finished ? lastRunOf(summarize(...finished)) : null,
       enabled: config.memory?.dream?.stores?.[store]?.enabled === true,
       running,
     };
+  }
+
+  function lastRunOf({ runId, status, startedAt, finishedAt, reason, landed: inStore }) {
+    return { runId, status, startedAt, finishedAt, reason, landed: inStore };
   }
 
   /** Fast listing from the store directories; `status` adds what only the CLI knows. */
@@ -709,6 +630,23 @@ export function createMemoryService(options = {}) {
     return { store, path: file.relative, commit: (await git(repo, ['rev-parse', 'HEAD'])).stdout.trim() };
   }
 
+  // An edit from the page commits that path alone, under the message the user typed.
+  async function saveStoreFile({ store, path: relative, content, message }) {
+    if (typeof content !== 'string' || content.length > 1024 * 1024) throw bad('Content must be text under 1 MB.');
+    if (message !== undefined && typeof message !== 'string') throw bad('Message must be text.');
+    const file = await storeFile(store, relative);
+    const repo = file.paths.repo;
+    await atomicWrite(file.full, content);
+    const added = await git(repo, ['add', '--', file.relative]);
+    if (added.code !== 0) throw new MemoryRequestError(500, 'git-add', added.stderr.trim() || 'git add failed.');
+    if ((await git(repo, ['diff', '--cached', '--quiet', '--', file.relative])).code === 0) return { store, path: file.relative, content, commit: null };
+    const subject = message?.trim().split('\n')[0].slice(0, 120) || `Edit ${file.relative} (Settings > Memory)`;
+    // --no-verify: the person editing owns the file, frontmatter included; the agent-facing hook is not theirs.
+    const commit = await run(['git', '-C', repo, ...(await identityArgs(repo)), 'commit', '-q', '--no-verify', '-m', subject, '--', file.relative]);
+    if (commit.code !== 0) throw new MemoryRequestError(500, 'git-commit', commit.stderr.trim() || 'git commit failed.');
+    return { store, path: file.relative, content, commit: (await git(repo, ['rev-parse', 'HEAD'])).stdout.trim() };
+  }
+
   // A whole store is archived, not erased: the archive is the undo.
   async function deleteStore({ store, confirm }) {
     const paths = storePaths(assertStore(store));
@@ -736,14 +674,12 @@ export function createMemoryService(options = {}) {
     stores: () => stores(),
     files: (input) => files(input),
     file: (input) => readStoreFile(input),
+    'save-file': (input) => saveStoreFile(input),
     'delete-file': (input) => deleteStoreFile(input),
     'delete-store': (input) => deleteStore(input),
     runs: (input) => runs(input),
     run: (input) => runDetail(input),
     dream: (input) => startDream(input),
-    review: (input) => review(input),
-    revert: (input) => revert(input),
-    ack: (input) => acknowledge(input),
     config: (input) => setConfig(input),
     projects: (input) => projects(input),
     'project-store': (input) => setProjectStore(input),
@@ -781,7 +717,7 @@ function reportOutline(report) {
     .map((line) => line.replace(/^[-*]\s+/, '').replaceAll('**', '').trim())
     .filter(Boolean);
   const summary = (sections.get('요약') ?? []).map((line) => line.trim()).filter(Boolean).join(' ');
-  return { summary: summary || null, skipped: bullets('남긴 것'), bullets };
+  return { summary: summary || null, bullets };
 }
 
 function notesFor(outline, files) {

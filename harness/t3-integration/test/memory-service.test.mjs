@@ -1,6 +1,6 @@
 // The Memory tab's server half against the real `rubato dream` CLI, on a throwaway
-// HOME: a store with a dream waiting for review, approved and rejected through
-// the CLI, plus the config and self-store writes the tab makes.
+// HOME: a store with dreams that landed, failed or were skipped, plus the file,
+// config and self-store writes the tab makes.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -46,136 +46,98 @@ async function fixture(t) {
   return { home, store, repo, service };
 }
 
-// What the runner leaves for a dream under publish "review": a branch, a marker, a run record.
-async function pendingDream({ store, repo }, runId, line, report = `## 요약\n\n${line}\n`) {
+// What the runner leaves for a dream that landed: its branch merged into main, then deleted, and a run record.
+async function landedDream({ store, repo }, runId, line, report = `## 요약\n\n${line}\n`, extra = {}) {
   const base = git(repo, 'rev-parse', 'HEAD');
   const branch = `dream/${runId}`;
   git(repo, 'branch', branch, base);
   const work = path.join(store, 'runtime', 'worktrees', runId);
   git(repo, 'worktree', 'add', '-q', work, branch);
-  await writeFile(path.join(work, 'notes.md'), `first\n${line}\n`);
+  await writeFile(path.join(work, 'notes.md'), `${await readFile(path.join(work, 'notes.md'), 'utf8')}${line}\n`);
   git(work, 'commit', '-q', '-am', `dream: ${line}`);
   const commit = git(work, 'rev-parse', 'HEAD');
   git(repo, 'worktree', 'remove', '--force', work);
+  git(repo, 'merge', '-q', '--no-ff', '-m', `merge(dream): ${runId}`, branch);
+  git(repo, 'update-ref', '-d', `refs/heads/${branch}`);
+  await writeRun(store, runId, {
+    startedAt: '2026-09-26T01:00:00.000Z', finishedAt: '2026-09-26T01:10:00.000Z',
+    status: 'merged', commits: [commit], baseRevision: base, ...extra,
+  });
+  const dir = path.join(store, 'runtime', 'dream', 'runs', runId);
+  await writeFile(path.join(dir, 'out', 'report.md'), report);
+  await writeFile(path.join(dir, 'out', 'user-candidates.md'), '# user-candidates\n\n- 한국어 반말을 좋아한다\n- base 에 바로 푸시한다\n');
+  return { base, commit };
+}
+
+async function writeRun(store, runId, fields) {
   const dir = path.join(store, 'runtime', 'dream', 'runs', runId);
   await mkdir(path.join(dir, 'out'), { recursive: true });
   await writeFile(path.join(dir, 'run.json'), JSON.stringify({
-    runId, store: 'scratch', startedAt: '2026-09-26T01:00:00.000Z', finishedAt: '2026-09-26T01:10:00.000Z',
-    status: 'pending', model: 'b-ai/deepseek-v4.1-flash',
-    sessions: [{ id: 's1', cwd: '/tmp', messages: 3 }], commits: [commit], branch, baseRevision: base,
+    runId, store: 'scratch', model: 'b-ai/deepseek-v4.1-flash', sessions: [{ id: 's1', cwd: '/tmp', messages: 3 }], commits: [], ...fields,
   }));
-  await writeFile(path.join(dir, 'out', 'report.md'), report);
-  await writeFile(path.join(dir, 'out', 'user-candidates.md'), '# user-candidates\n\n- 한국어 반말을 좋아한다\n- base 에 바로 푸시한다\n');
-  await writeFile(path.join(store, 'runtime', 'dream', 'pending.json'), JSON.stringify({ runId, branch, baseRevision: base }));
-  return { branch, base, commit };
 }
 
-test('status, review and diffs go through the real dream CLI', { skip: !bunAvailable && 'bun is not installed' }, async (t) => {
+test('status, runs and diffs go through the real dream CLI', { skip: !bunAvailable && 'bun is not installed' }, async (t) => {
   const f = await fixture(t);
-  await pendingDream(f, 'dream-a', 'second');
+  await landedDream(f, 'dream-a', 'second');
 
   const status = await f.service.handle('status', {});
   assert.deepEqual(status.models, [
     { model: 'b-ai/deepseek-v4.1-flash', reasoning: 'medium' },
     { model: 'xai/grok-4.7', reasoning: null },
   ]);
-  assert.equal(status.publish, 'review');
+  assert.equal('publish' in status, false);
   const scratch = status.stores.find((entry) => entry.store === 'scratch');
   assert.equal(scratch.enabled, true);
-  assert.equal(scratch.pendingRunId, 'dream-a');
   assert.equal(scratch.running, null);
 
   const listed = await f.service.handle('runs', { store: 'scratch' });
-  assert.deepEqual(listed.runs.map((run) => [run.runId, run.status, run.pending, run.sessions]), [['dream-a', 'pending', true, 1]]);
+  assert.deepEqual(listed.runs.map((run) => [run.runId, run.status, run.landed, run.sessions]), [['dream-a', 'merged', true, 1]]);
 
   const detail = await f.service.handle('run', { store: 'scratch', runId: 'dream-a' });
   assert.match(detail.report, /second/);
-  assert.match(detail.changes[0].diff, /^\+second$/m);
+  assert.match(detail.changes[0].diff, /^\+second$/m, 'a landed run still shows what it changed');
   assert.deepEqual(detail.candidates.map((c) => c.text), ['한국어 반말을 좋아한다', 'base 에 바로 푸시한다']);
 
-  const approved = await f.service.handle('review', { store: 'scratch', decision: 'approve' });
-  assert.equal(approved.review, 'merged');
-  assert.equal(await readFile(path.join(f.repo, 'notes.md'), 'utf8'), 'first\nsecond\n');
-  const merged = await f.service.handle('run', { store: 'scratch', runId: 'dream-a' });
-  assert.equal(merged.review, 'merged');
-  assert.equal(merged.pending, false);
-  assert.match(merged.changes[0].diff, /^\+second$/m, 'a merged run still shows what it changed');
-
-  await pendingDream(f, 'dream-b', 'third');
-  const rejected = await f.service.handle('review', { store: 'scratch', decision: 'reject' });
-  assert.equal(rejected.review, 'rejected');
-  assert.equal(await readFile(path.join(f.repo, 'notes.md'), 'utf8'), 'first\nsecond\n');
-  assert.equal((await f.service.handle('status', {})).stores.find((entry) => entry.store === 'scratch').pendingRunId, undefined);
-
-  await assert.rejects(f.service.handle('review', { store: 'scratch', decision: 'approve' }), /waiting for review/);
+  for (const action of ['review', 'revert', 'ack']) await assert.rejects(f.service.handle(action, { store: 'scratch' }), /Unknown memory action/);
   await assert.rejects(f.service.handle('runs', { store: '../scratch' }), /not valid/);
   await assert.rejects(f.service.handle('run', { store: 'scratch', runId: '../../x' }), /not valid/);
   await assert.rejects(f.service.handle('runs', { store: 'ghost' }), /No memory store/);
 });
 
-test('a run reads as one card per changed file, and the store says what needs the user', { skip: !bunAvailable && 'bun is not installed' }, async (t) => {
+test('a run reads as one card per changed file, and the store says how its last dream went', { skip: !bunAvailable && 'bun is not installed' }, async (t) => {
   const f = await fixture(t);
   const report = [
     '## 요약', '노트 한 줄을 더했다.',
     '## 바꾼 것', '- `notes.md`: rewritten — 두 번째 줄이 빠져 있었다',
     '## 푼 모순', '- `notes.md` vs `other.md`: kept notes.md, because 최신',
-    '## 남긴 것', '- 상태 서술: git 이 이미 안다', '  - 들여쓴 줄은 따로 세지 않는다', '',
+    '## 남긴 것', '- 상태 서술: git 이 이미 안다', '',
   ].join('\n');
-  const { base } = await pendingDream(f, 'dream-a', 'second', report);
-  const inbox = async () => (await f.service.handle('stores', {})).stores.find((s) => s.store === 'scratch').inbox;
+  await landedDream(f, 'dream-a', 'second', report);
+  // Read as the page gets it: through JSON, where an absent reason is no key at all.
+  const lastRun = async () => JSON.parse(JSON.stringify((await f.service.handle('stores', {})).stores.find((s) => s.store === 'scratch').lastRun));
 
   const detail = await f.service.handle('run', { store: 'scratch', runId: 'dream-a' });
   assert.equal(detail.summary, '노트 한 줄을 더했다.');
-  assert.deepEqual(detail.skipped, ['상태 서술: git 이 이미 안다']);
   assert.deepEqual(detail.changes.map(({ diff, ...card }) => card), [{
     path: 'notes.md', change: 'modified', description: null, added: 1, removed: 0,
     notes: [{ kind: 'why', text: '두 번째 줄이 빠져 있었다' }, { kind: 'conflict', text: 'kept notes.md, because 최신' }],
   }]);
-  assert.equal(detail.sources.range.base, base);
-  assert.match(detail.sources.report, /dream-a\/out\/report\.md$/);
-  assert.deepEqual(await inbox(), { runId: 'dream-a', kind: 'pending' });
-  assert.deepEqual(detail.uncommitted, []);
-
-  // A session that wrote to the store and stopped blocks the merge; the page learns which file first,
-  // and the refusal reads as a sentence, not a stack.
-  await writeFile(path.join(f.repo, 'notes.md'), 'first\nleft by a session\n');
-  assert.deepEqual((await f.service.handle('run', { store: 'scratch', runId: 'dream-a' })).uncommitted, ['notes.md']);
-  await assert.rejects(f.service.handle('review', { store: 'scratch', decision: 'approve' }), (error) => {
-    assert.match(error.message, /^store has uncommitted changes; the branch dream\/dream-a is still waiting$/);
-    return true;
+  assert.deepEqual(await lastRun(), {
+    runId: 'dream-a', status: 'merged', startedAt: '2026-09-26T01:00:00.000Z', finishedAt: '2026-09-26T01:10:00.000Z', landed: true,
   });
-  git(f.repo, 'checkout', '--', 'notes.md');
 
-  // Approving here counts as having looked at it.
-  await f.service.handle('review', { store: 'scratch', decision: 'approve' });
-  assert.equal(await inbox(), null);
-  assert.equal((await f.service.handle('runs', { store: 'scratch' })).runs[0].landed, true);
+  // A newer run that failed is the news; a skipped or trial run says nothing about the store.
+  await writeRun(f.store, 'dream-b', { startedAt: '2026-09-27T01:00:00.000Z', status: 'failed', reason: 'merge failed: conflict' });
+  await writeRun(f.store, 'dream-c', { startedAt: '2026-09-28T01:00:00.000Z', status: 'busy' });
+  await writeRun(f.store, 'dream-d', { startedAt: '2026-09-29T01:00:00.000Z', status: 'trial' });
+  assert.deepEqual(await lastRun(), {
+    runId: 'dream-b', status: 'failed', startedAt: '2026-09-27T01:00:00.000Z', reason: 'merge failed: conflict', landed: false,
+  });
 
-  const reverted = await f.service.handle('revert', { store: 'scratch', runId: 'dream-a' });
-  assert.equal(reverted.review, 'reverted');
-  assert.equal(await readFile(path.join(f.repo, 'notes.md'), 'utf8'), 'first\n');
-  assert.equal((await f.service.handle('run', { store: 'scratch', runId: 'dream-a' })).landed, false);
-  await assert.rejects(f.service.handle('revert', { store: 'scratch', runId: 'dream-a' }), /already reverted/);
-
-  // An approved run was looked at, and undoing the newest does not bring an older one back as news.
-  await pendingDream(f, 'dream-b', 'third');
-  await f.service.handle('review', { store: 'scratch', decision: 'approve' });
-  assert.equal(await inbox(), null);
-
-  // A dream that landed on its own (publish "auto") after the user last looked is news until acknowledged.
-  const record = path.join(f.store, 'runtime', 'dream', 'runs', 'dream-b', 'run.json');
-  const { review: _review, ...run } = JSON.parse(await readFile(record, 'utf8'));
-  await new Promise((resolve) => setTimeout(resolve, 5));
-  await writeFile(record, JSON.stringify({ ...run, status: 'merged', finishedAt: new Date().toISOString() }));
-  assert.deepEqual(await inbox(), { runId: 'dream-b', kind: 'landed' });
-  await f.service.handle('ack', { store: 'scratch', runId: 'dream-b' });
-  assert.equal(await inbox(), null);
-
-  // The first look only sets the mark: what landed before the page existed is not news.
-  await rm(path.join(f.store, 'runtime', 'dream', 'gui', 'seen.json'));
-  assert.equal(await inbox(), null);
-  assert.equal(JSON.parse(await readFile(path.join(f.store, 'runtime', 'dream', 'gui', 'seen.json'), 'utf8')).runId, 'dream-b');
-  await assert.rejects(f.service.handle('ack', { store: 'scratch', runId: '../x' }), /not valid/);
+  // A dream an earlier version held for approval and that was never approved did not land.
+  await writeRun(f.store, 'dream-e', { startedAt: '2026-09-30T01:00:00.000Z', status: 'pending' });
+  assert.equal((await lastRun()).landed, false);
 });
 
 test('run now is detached and its result is read back', { skip: !bunAvailable && 'bun is not installed' }, async (t) => {
@@ -191,23 +153,21 @@ test('run now is detached and its result is read back', { skip: !bunAvailable &&
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
   assert.ok(last, 'the run finished and left a result');
-  assert.ok(['failed', 'noop', 'busy', 'merged', 'pending'].includes(last.status), JSON.stringify(last));
+  assert.ok(['failed', 'noop', 'busy', 'merged'].includes(last.status), JSON.stringify(last));
 });
 
 test('settings writes keep the user file and commit the self store', async (t) => {
   const f = await fixture(t);
   const configFile = path.join(f.home, '.rubato', 'rubato.jsonc');
-  await f.service.handle('config', { publish: 'auto' });
   await f.service.handle('config', { models: [{ model: 'xai/grok-4.7', reasoning: 'high' }, { model: 'anthropic/claude-haiku-4-5' }] });
   await f.service.handle('config', { store: 'scratch', enabled: false });
   const text = await readFile(configFile, 'utf8');
   assert.match(text, /\/\/ 사용자 주석은 남아야 한다/);
   assert.match(text, /\/\/ 꼬리 주석/);
-  assert.match(text, /"publish": "auto"/);
   assert.deepEqual(jsoncModels(text), [{ model: 'xai/grok-4.7', reasoning: 'high' }, { model: 'anthropic/claude-haiku-4-5' }]);
   assert.match(text, /"scratch": \{ "enabled": false \}|"scratch": \{\s*"enabled": false\s*\}/);
   assert.match(text, /"_migrations": \["2026-08-reasoning-unification"\]/);
-  await assert.rejects(f.service.handle('config', { publish: 'sometimes' }), /review or auto/);
+  await assert.rejects(f.service.handle('config', { publish: 'review' }), /Nothing to change/);
   await assert.rejects(f.service.handle('config', { models: [] }), /1 to 8 models/);
   await assert.rejects(f.service.handle('config', { models: [{ model: 'grok' }] }), /not valid/);
   await assert.rejects(f.service.handle('config', { models: [{ model: 'xai/grok-4.7' }, { model: 'xai/grok-4.7' }] }), /twice/);
@@ -225,7 +185,7 @@ test('settings writes keep the user file and commit the self store', async (t) =
   assert.equal(git(selfRepo, 'log', '-1', '--format=%s'), 'soul.md: 말투 정리');
   await assert.rejects(f.service.handle('self-save', { file: '../x.md', content: '' }), /user\.md or soul\.md/);
 
-  await pendingDream(f, 'dream-c', 'fourth');
+  await landedDream(f, 'dream-c', 'fourth');
   const added = await f.service.handle('add-candidates', { store: 'scratch', runId: 'dream-c', lines: ['base 에 바로 푸시한다'] });
   assert.equal(added.added, 1);
   assert.equal(await readFile(path.join(selfRepo, 'user.md'), 'utf8'), '# user\n\n- 첫 줄\n- base 에 바로 푸시한다\n');
@@ -283,6 +243,21 @@ test('stores are listed with their project, browsed, pruned and archived', async
   const { symlink } = await import('node:fs/promises');
   await symlink('/etc/hosts', path.join(f.repo, 'link.md'));
   await assert.rejects(f.service.handle('file', { store: 'scratch', path: 'link.md' }), /not valid/);
+
+  // An edit commits that file alone, under the user's words, or under a plain default.
+  await writeFile(path.join(f.repo, 'notes.md'), 'first\nleft by a session\n');
+  const edited = await f.service.handle('save-file', { store: 'scratch', path: 'decisions/gui.md', content: '---\ndescription: "Settings copy is English"\n---\n\n# GUI, edited\n', message: '설명 고침' });
+  assert.match(edited.commit, /^[0-9a-f]{40}$/);
+  assert.equal(git(f.repo, 'log', '-1', '--format=%s'), '설명 고침');
+  assert.equal(git(f.repo, 'show', '--name-only', '--format=', 'HEAD'), 'decisions/gui.md');
+  assert.ok(git(f.repo, 'status', '--porcelain').split('\n').includes('M notes.md'), 'the session edit stays out of the commit');
+  assert.equal((await f.service.handle('save-file', { store: 'scratch', path: 'decisions/gui.md', content: edited.content })).commit, null, 'no change, no commit');
+  await f.service.handle('save-file', { store: 'scratch', path: 'decisions/gui.md', content: 'no frontmatter at all\n' });
+  assert.equal(git(f.repo, 'log', '-1', '--format=%s'), 'Edit decisions/gui.md (Settings > Memory)');
+  await assert.rejects(f.service.handle('save-file', { store: 'scratch', path: '../older/repo/x.md', content: 'x' }), /not valid/);
+  await assert.rejects(f.service.handle('save-file', { store: 'scratch', path: 'decisions/new.md', content: 'x' }), /No file/);
+  await assert.rejects(f.service.handle('save-file', { store: 'scratch', path: 'decisions/gui.md', content: 7 }), /under 1 MB/);
+  git(f.repo, 'checkout', '--', 'notes.md');
 
   const removed = await f.service.handle('delete-file', { store: 'scratch', path: 'decisions/plain.md' });
   assert.match(removed.commit, /^[0-9a-f]{40}$/);

@@ -99,20 +99,23 @@ msearch --doctor     # 저장소와 검색 인덱스 상태 확인
 그 저장소를 쓰는 프로젝트 루트를 적은 기계 로컬 파일이다. msearch 도 같은 규칙으로 현재 저장소를 고른다.
 
 꿈은 켠 저장소마다 그 폴더에서 열린 세션(사용자 말과 턴마다 마지막 답)과 그사이 커밋을 읽고,
-"왜"만 현재 답으로 고치고 코드와 어긋난 결론을 바로잡는다. 발행이 `review` 면 결과는 브랜치로
-기다리고, `auto` 면 바로 들어간다. 어느 쪽이든 GUI 설정의 Memory 맨 위에 파일별 카드로 올라와
-넣기·버리기·되돌리기와 "채팅에서 묻기"(그 저장소 프로젝트에 새 스레드 초안을 연다)를 할 수 있다.
+"왜"만 현재 답으로 고치고 코드와 어긋난 결론을 바로잡는다. 결과는 승인 없이 바로 저장소에 들어간다.
+GUI 설정의 Memory 에서 프로젝트를 열면 저장소 파일을 읽고 고칠 수 있고(저장이 곧 커밋),
+꿈 실행마다 바꾼 파일과 이유를 볼 수 있다.
+
+세션이 memory 도구 말고 셸이나 파일 도구로 저장소를 고쳐 커밋이 없으면, 다음에 저장소를 쓰는 쪽
+(memory 도구, 꿈의 시작·반영·되돌리기)이 그 편집을 `memory: adopt edits written outside memory tools`
+커밋 하나로 먼저 받아들인다. 커밋 안 된 파일이 저장소를 잠그지 않게 하려는 것이다.
 
 ```bash
-rubato dream                  # 저장소별 켜짐·마지막 실행·새 세션·검토 대기
+rubato dream                  # 저장소별 켜짐·마지막 실행·새 세션
 rubato dream --due            # 켠 저장소 중 때가 된 것만 실행
 rubato dream <저장소>          # 지금 실행
-rubato dream --approve <저장소> # 기다리는 결과를 저장소에 넣기 (--reject 는 버리기)
 rubato dream --revert <저장소> <실행 id> # 들어간 결과를 revert 커밋 하나로 빼기
 ```
 
-켜기·모델·발행 방식은 `~/.rubato/rubato.jsonc` 의 `memory.dream`(`stores.<이름>.enabled`,
-`models`, `publish: "review" | "auto"`, `min_hours_between`)이다. `models` 는 꿈이 타는 모델 사다리로,
+켜기·모델은 `~/.rubato/rubato.jsonc` 의 `memory.dream`(`stores.<이름>.enabled`,
+`models`, `min_hours_between`)이다. `models` 는 꿈이 타는 모델 사다리로,
 앞에서부터 쓰고 막히면 다음으로 내려간다. 항목은 `"<provider>/<id>"` 또는 `{ "model": ..., "reasoning": ... }` 이고,
 비워 두면 DeepSeek V4.1 Flash → Grok 4.7 → Claude Haiku 4.5 순이다. 실행 기록은 저장소의 `runtime/dream/runs/` 에 남는다.
 사람이 쓰는 세션(TUI·GUI)은 시작과 끝에 `rubato dream --due` 를 백그라운드로 띄운다. 때가 된 저장소가
