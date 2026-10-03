@@ -25,7 +25,7 @@ worktrees; unrelated outcomes may have distinct active records.
 At resumption or a changed-direction handoff, check the current source, acceptance
 and revision before dependent execution. Refresh stale references through the lead,
 preserving the previous evidence's revision. A generated index is navigation only;
-read the record, and use the helper's live listing instead of trusting a stale index.
+read the record, and use the work-intent script's live listing instead of trusting a stale index.
 The latest user direction still comes first. Draft/closed/superseded records are
 not authorization to continue their old implementation.
 

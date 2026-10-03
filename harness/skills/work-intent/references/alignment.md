@@ -11,7 +11,7 @@ records; use official current web sources for external behavior or trade-offs. Y
 not browse for facts a local read settles, nor inspect every file before recommending.
 A reachable source the user already supplied is something to read, not ask them to repeat.
 
-Use focused discovery helpers when useful and authorized. Their brief names the fact to
+Use focused discovery subagents when useful and authorized. Their brief names the fact to
 resolve, read boundary, allowed disposable checks, budget and return evidence. No production
 changes, continuing-owner team, or materially costly/unapproved model use is hidden in
 "discovery". Existing allowed local tests or disposable experiments may verify a claim;

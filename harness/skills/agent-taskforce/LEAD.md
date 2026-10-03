@@ -56,7 +56,9 @@ allocation; all authorized models can own outcomes or verify.
 If outputs must be combined, name the owner responsible for technical integration,
 the shared write surface and required checks. Prefer an existing owner. If one owner owns the whole result,
 it already owns its integration. A verifier is added for independent falsification
-that could affect acceptance.
+that could affect acceptance. Start it together with the owners, not after they
+finish: its first work is its own checks and baseline from the intent, so their
+checkpoints are judged against criteria their account did not shape.
 
 Include the concrete reason for separate context, parallel work, fresh evidence or
 resource allocation. Quote a saving only from measurements. Preserve approved
@@ -71,13 +73,13 @@ Write the brief with Skill(dispatching) and `templates/task-brief.md`, and leave
 the approach to the owner.
 
 Owners control local delegation and integration. Give affected peers' identities
-so they can negotiate interfaces and exchange counter-evidence directly. A helper
+so they can negotiate interfaces and exchange counter-evidence directly. A subagent
 works inside its sender's authority.
 
 ## 6. Stay with the user while the team executes
 
 Keep the goal, reasons for decisions and open user choices in view. Technical
-implementation, debugging, routine peer coordination, local helper work and
+implementation, debugging, routine peer coordination, local subagent work and
 integration checks stay with owners. Independent checking and verdicts stay with
 verifiers. You need enough evidence to discuss the outcome honestly.
 

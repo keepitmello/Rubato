@@ -51,7 +51,7 @@ These are behavior scenarios, not claims of live runs. Static contract tests and
 - **owner-asks-lead-to-debug** — owner가 로그 전부를 보내고 다음 커맨드를 골라달라 함. → peer/verifier 직접 도움을 우선하고, 리드에게는 compact decision request만 허용한다.
 - **resume-with-lost-teammates** — 세션 resume 후 이전 팀원이 존재하지 않음. → 죽은 팀원에게 메시지하지 않고, canonical 상태를 읽는 fresh teammate를 spawn한다.
 - **long-silent-measurement-loop** — owner가 수십 분짜리 측정 루프를 시작하려 함. → 시작 전에 무엇을 돌리는지와 예상 소요를 메시지 채널로 통지한다. 통지된 침묵에 리드가 반복 상태 확인을 보내지 않는다.
-- **local-subagent-outside-the-bus** — 오너가 일부를 보조 세션에 맡기려 해. → 별도 문맥·병렬 진행·새 증거·승인된 자원 활용의 이익을 전달·재독·통합 비용과 비교해. 절감치를 지어내지 않고, 보조자도 배정된 범위 안에서는 판단해. 결과 책임은 오너가 유지해.
+- **local-subagent-outside-the-bus** — 오너가 일부를 서브에이전트에 맡기려 해. → 별도 문맥·병렬 진행·새 증거·승인된 자원 활용의 이익을 전달·재독·통합 비용과 비교해. 절감치를 지어내지 않고, 보조자도 배정된 범위 안에서는 판단해. 결과 책임은 오너가 유지해.
 - **owner-respawns-for-follow-up** — 조사 결과 뒤에 승인된 구현이 이어져. → 같은 세션을 이어 써. 다른 결과, 독립 검토, 풀리지 않는 잘못된 전제, 복구 불가능한 세션 또는 근거와 승인이 있는 재배정만 새 문맥을 정당화해.
 - **uncommitted-result-invisible** — 승인된 전달계약이 branch commit을 요구하는데 owner가 자기 worktree에 파일만 만들고 완료 보고 시도. → 보고 전에 그 계약에 맞춰 커밋한다. 전달계약이 없으면 커밋을 권한으로 추론하지 않고 합의된 artifact/evidence를 반환한다.
 - **oversized-surface-no-stop** — 브리프의 escalation 조건이 전부 불가능 사유인데 실제 표면이 브리프가 암시한 것보다 훨씬 크다. → owner는 깊이 들어가기 전에 규모를 근거로 올린다. 리드의 브리프는 불가능 트리거 옆에 노력·규모 트리거를 함께 적는다.
@@ -64,10 +64,13 @@ These are behavior scenarios, not claims of live runs. Static contract tests and
 - **lead-reads-child-body** — 팀이 있는 리드가 자식 전사·final을 읽으려 함. → 조회 도구를 모델 표면에서 제거한다. 완료는 status pointer와 결과 파일 경로이고 본문은 그 파일·보드에 있다. 리드와 오너 모두 전사를 재생하지 않고 결과 파일을 읽는다.
 - **member-turn-end-wakes-lead** — 팀원 한 명이 정상 턴을 끝냈는데 리드가 깨어남(2026-09-21 저장 기록에 정상 종료 ping 18건). → 팀원의 정상 종료는 침묵한다. 결과 본문은 파일로 남기고 epoch만 기록한다. 리드는 배정된 보드 작업이 전부 닫히고 팀원이 모두 park된 뒤 결과 경로를 담은 종합 알림으로 한 번 깨운다. 실패·취소·보드 미기록·대기 중 메일은 종합 완료로 오인하지 않는다.
 - **lead-takes-back-work** — 오너가 빈 답이나 막힘으로 돌아왔는데 리드가 제품 패치를 회수함. → 같은 오너에게 결정을 보내거나 피어를 붙이거나 교체한다. 리드가 다음 구현자가 되지 않는다. 팀 문서(mission, brief, 노트)를 쓰는 것은 회수가 아니다.
+- **subagent-open-item-dropped** — 서브에이전트가 반환문에 "아직 열려 있음" 항목을 적었는데 오너 최종 보고에서 빠짐. → 오너는 서브에이전트의 열린 항목을 해결함·이유와 함께 남김·넘김 중 하나로 자기 결과에 싣는다. (2026-10-03 pi 1.0 런: Antigravity 테스트 간헐 실패가 서브에이전트 반환에만 있고 오너 보고·검증 판정·사용자 요약 어디에도 오르지 않음)
 
 ## Verification and measurement
 
 - **completion-honesty** — task list는 전부 complete, end-to-end 증거는 없음. → 완료를 선언하지 않는다. 검증하거나 남은 gap을 명시한다.
+- **verifier-checks-before-owner-account** — 검증자가 오너와 함께 떴는데 오너 보고를 기다렸다가 거기 적힌 항목만 확인하려 해. → 첫 체크포인트 전에 목적과 실제 대상에서 자기 검사와 기존 실패 기준선을 먼저 세워 결과 파일에 남기고, 오너 목록은 나중에 대조한다. 리드는 승인된 검증자를 오너와 함께 띄운다. (2026-10-03 pi 1.0 런: 먼저 세운 위험 목록으로 오너 검사가 놓친 캐시 앞부분 결함을 잡음. 2026-09-29 포트폴리오 런: 먼저 세운 계산 기준으로 청산 결함을 잡음)
+- **fix-test-must-fail-without-fix** — 오너가 수정과 함께 회귀 테스트를 냈어. → 중요한 수정이면 검증자가 스크래치 복사본에서 수정을 빼고 테스트가 실패하는지 본다. 수정을 빼도 통과하는 테스트는 그 수정의 증거가 아니다. (2026-10-03: 이 확인으로 테스트 구멍 2개를 찾음)
 - **reviewer-overfinding** — verifier가 스타일 선호와 비현실적 edge case를 전부 blocker로 올림. → material correctness와 명시된 요구사항만 block하고 나머지는 optional로 분리한다.
 - **instrument-validity-before-sweep** — 새로 작성한 자동 판정 코드로 전수 측정 요청. → 전수 전에 라벨링된 표본으로 양방향(known-bad 발화, known-good 통과) 검증한다. 발화한 적 없는 탐지기의 0건을 건강의 증거로 읽지 않는다. 행 단위 원시값을 영속 경로에 남긴다.
 - **reported-gate-is-a-claim** — 오너가 검사를 통과했다고 보고했어. → 담당 오너나 검증자가 수용하려는 실제 개정에서 필수 검사가 실행됐다는 증거를 남겨. 리드는 그 증거로 판단하고 전체 검사를 의무적으로 재실행하지 않아. 검사 누락·실패·측정 오류·기대값 오류를 구분해.
@@ -85,7 +88,8 @@ These are behavior scenarios, not claims of live runs. Static contract tests and
 - **cross-model-verifier-soft-default** — 독립 검증이 필요해. → 별도 문맥, 실제 산출물과 수용 기준, 판정 책임으로 독립성을 확보해. 모델 계열 다양성은 선택 사항이며 승인과 실제 실행 식별자를 지켜.
 - **owner-different-verifier** — 구현자가 자신의 결과를 독립 검증했다고 하려 해. → 같은 구현 세션의 자체 검사는 독립 검증이 아니야. 같은 계열의 새 유능한 세션은 검증자가 될 수 있어.
 - **no-standing-fable-teammate** — 페이블이나 아스트라를 오너로 배정할 수 있어. → 처음부터 승인된 전체 결과를 맡길 수 있으며, 실패한 하위 모델이나 정식 프레이밍이 선행 조건이 아니야. 이름을 채우기 위한 상시 팀원은 만들지 않아.
-- **default-then-stronger** — 새 배정이야. → 서브에이전트·보조는 기본(DeepSeek)으로 바로 띄우고, 어려워 보이면 더 강한 모델을 써. 실패나 측정을 선행 조건으로 두지 않아. 팀은 기본 배치에 어려워 보이는 곳만 강한 모델을 한 줄 이유와 함께 제안하고, 일의 어려움을 가장 잘 아는 사용자의 수정이 결정해. (2026-09-24 사용자 합의)
+- **default-then-stronger** — 새 배정이야. → 서브에이전트는 기본(DeepSeek)으로 바로 띄우고, 어려워 보이면 더 강한 모델을 써. 실패나 측정을 선행 조건으로 두지 않아. 팀은 기본 배치에 어려워 보이는 곳만 강한 모델을 한 줄 이유와 함께 제안하고, 일의 어려움을 가장 잘 아는 사용자의 수정이 결정해. (2026-09-24 사용자 합의)
+- **default-verifier-astra** — 독립 검증자를 배정해. → 기본은 Astra xhigh야. 검증 역할로는 모델 승인을 따로 받지 않고, 팀이면 목적·팀 구성 묶음 승인에 그대로 포함돼. Grok은 사용자가 지목할 때만 써. (2026-10-04 사용자 합의: 세 런 연속 "검증은 아스트라 xhigh"로 고쳐야 했던 원인이 model-guide의 Grok 기본값이었음)
 
 ## Evidence-first alignment and combined confirmation
 

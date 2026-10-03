@@ -37,4 +37,4 @@ The user's optional product-value framing workflow belongs to `product-framing`.
 
 For continuing ownership, read the sibling `work-intent` and reuse existing
 user/frame/spec authority. A skill read is not a team decision. Small direct work
-and bounded support need no invented mission, board, interview or additional ceremony.
+and subagents need no invented mission, board, interview or additional ceremony.

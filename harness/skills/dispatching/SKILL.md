@@ -9,7 +9,7 @@ Run this when you are about to hand work to another session (a teammate, a subag
 
 ## Is a separate session worth it
 
-Name what the separate session contributes and what stays with you. Weigh that against briefing, duplicate reading, result integration, waiting and shared-resource contention, not token volume alone; a cheaper model being available is not a saving by itself. Coupled judgment and implementation can stay in one strong session, and a bounded helper still reasons inside its assignment.
+Name what the separate session contributes and what stays with you. Weigh that against briefing, duplicate reading, result integration, waiting and shared-resource contention, not token volume alone; a cheaper model being available is not a saving by itself. Coupled judgment and implementation can stay in one strong session, and a subagent still reasons inside its assignment.
 
 A focused subagent, or an owner delegating inside its accepted boundary, needs no team ceremony. A root lead weighing continuing owners, independent outcomes or a team reads Skill(agent-taskforce) first; that read may choose no team.
 

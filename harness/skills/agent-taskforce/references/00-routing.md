@@ -1,4 +1,4 @@
-# Choose direct work, bounded support or continuing ownership
+# Choose direct work, a subagent or continuing ownership
 
 *Lead.* Decide whether separate responsibility helps before staffing. This guidance
 uses the active runtime adapter; it is not a Claude Code-only team definition.
@@ -10,13 +10,13 @@ tightly coupled. A strong model is allowed to investigate, implement and check i
 own authorized outcome. File count, unfamiliarity and a model tier are not sufficient
 reasons to make a team. Reading this skill creates no staffing obligation.
 
-## Use bounded support
+## Use a subagent
 
 A separate session can isolate noisy investigation, provide genuinely parallel
 evidence, answer a local question or supply a fresh review. Name the result that
 will change the sender's work, the boundary and the return condition. Include
 briefing, duplicate reading and integration when weighing its value. Do not
-require a fabricated numeric saving. Continue the same support session on related work.
+require a fabricated numeric saving. Continue the same subagent on related work.
 
 ## Use continuing owners
 

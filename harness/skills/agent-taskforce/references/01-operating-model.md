@@ -24,7 +24,7 @@ technical integration or independently certify the team's work.
 
 An owner holds one bounded outcome through investigation, judgment, authorized
 implementation, correction, local verification and delivery. It chooses methods,
-manages local helpers and negotiates technical interfaces directly with peers.
+manages its subagents and negotiates technical interfaces directly with peers.
 A disproved hypothesis changes the method, not automatically the owner or frame.
 
 Where outputs must work together, name one accountable integration owner and its
@@ -67,14 +67,14 @@ trajectory is not a fresh milestone reviewer; reuse an already approved genuinel
 fresh evidence path where it serves the same decision. A reviewer does not recursively
 request a reviewer by default.
 
-## Peers and local support
+## Peers and subagents
 
 The team roles are lead, owner and verifier. They are peers. The runtime's spawn
 tree is parentage, not intelligence rank or decision authority. Subagents sit under
 their sender, are not roster members and do not own the wider outcome.
 
-Any teammate can use bounded support when its concrete benefit repays briefing,
-duplicate reading and integration. Helpers can investigate, test explanations and
+Any teammate can use a subagent when its concrete benefit repays briefing,
+duplicate reading and integration. Subagents can investigate, test explanations and
 propose solutions within their assignment; the sender retains its outcome and
 judges the evidence. Local delegation does not route through the lead.
 Continue related work in the same available session. New work, independent review,
@@ -122,7 +122,7 @@ No broadcast, no per-turn digest, and a changed observation grants no new author
 | User intent, direction and consequential trade-offs | Lead with human |
 | Initial ownership/model proposal | Lead, then combined confirmation |
 | Material staffing or resource changes | Lead, then required delta confirmation |
-| Local methods, diagnosis, correction and helpers | Assigned owner |
+| Local methods, diagnosis, correction and subagents | Assigned owner |
 | Shared technical interface within accepted authority | Affected owners; one accountable owner if needed |
 | Combining artifacts and checking combined behavior | Named integration owner |
 | Independent checks and technical verdict | Assigned verifier |

@@ -40,13 +40,13 @@ role contract supplies behavior.
 | Role | Primary responsibility |
 |---|---|
 | Lead | Direct user conversation, intent/framing/direction and fulfillment discussion |
-| Owner | A bounded result, local judgment/helpers, technical integration when assigned |
+| Owner | A bounded result, local judgment/subagents, technical integration when assigned |
 | Verifier | Independent evidence-backed judgment of the result and criterion |
 | Focused subagent | A bounded contribution; the sender retains the wider outcome |
 
 These are not model identities. The lead proposes supported assignments under
 model-guide and the existing combined approval path. A powerful owner can do its
-own execution; a helper can reason inside a bounded assignment. No role implies
+own execution; a subagent can reason inside a bounded assignment. No role implies
 a mandatory worker below it.
 
 ## Independence and identity
