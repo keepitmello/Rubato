@@ -83,8 +83,30 @@ class FakeRedis:
         self.kv: dict[str, object] = {}
         self.sets: dict[str, set[str]] = {}
         self.indexes: set[str] = set()
+        #: FT.SEARCH 가 돌려줄 거리. 조각 필드를 받아 거리를 준다. 실제 임베딩 대신이다.
+        self.distance = lambda fields: 0.95
+        self.hide_items = False
+
+    def ft_search(self, args):
+        names = list(args[args.index("RETURN") + 2:args.index("RETURN") + 2 + int(args[args.index("RETURN") + 1])])
+        docs = [
+            (key, value)
+            for key, value in self.kv.items()
+            if isinstance(value, dict) and key.startswith(config.INTENT_KEY_PREFIX)
+            and not (self.hide_items and value.get("part") == "item")
+        ]
+        reply: list[object] = [len(docs)]
+        for key, fields in docs:
+            flat: list[bytes] = []
+            for name in names:
+                value = self.distance(fields) if name == "distance" else fields.get(name, "")
+                flat += [name.encode(), str(value).encode()]
+            reply += [key.encode(), flat]
+        return reply
 
     def execute_command(self, *args):
+        if args[0] == "FT.SEARCH":
+            return self.ft_search(args)
         if args[0] == "FT.INFO":
             if args[1] not in self.indexes:
                 raise RuntimeError("Unknown index name")
@@ -174,7 +196,10 @@ class RecordTest(Workspace):
     def test_frontmatter_fields_reach_every_chunk(self) -> None:
         path = self.write(self.project, "old", record("old", "superseded", CACHE_BODY, revision=3, superseded_by="new"))
         chunks = intent.chunk(path)
-        self.assertEqual([item.section for item in chunks], ["Problem", "Constraints", "Open questions"])
+        self.assertEqual(
+            [(item.section, item.part) for item in chunks],
+            [("Problem", ""), ("Constraints", ""), ("Constraints", "item"), ("Constraints", "item"), ("Open questions", "")],
+        )
         for item in chunks:
             self.assertEqual(item.meta.intent_id, "old")
             self.assertEqual(item.meta.status, "superseded")
@@ -281,6 +306,113 @@ class RenderTest(unittest.TestCase):
 
     def test_nothing_found_leaves_memory_output_untouched(self) -> None:
         self.assertEqual(intent.render("NO RELEVANT MEMORY", []), "NO RELEVANT MEMORY")
+
+
+STOCK_PI_BODY = """# Intent: Rubato 엔진을 stock pi 0.86.1로 올린다
+
+## Problem
+
+핀이 0.85.1에 멈춰 있고 업스트림은 0.86.1이다. 패치 전체가 무효가 된다.
+
+## Constraints
+
+- **Rubato의 엔진은 pi다. senpi를 실행 경로에 되살리지 않는다.** 출처: 사용자, 2026-09-20.
+- pi를 먼저 올리고 senpi는 그다음에 본다. 출처: 사용자, 2026-09-20.
+- live 설치 `~/.rubato-pi/stock-engine`은 staged 복사본이다. 레포 편집이 도는 세션을 흔들지 않고, 재-stage는 의도적으로만 한다.
+- 0.86.0의 Breaking Changes 셋은 자동 수용 대상이 아니라 판정 대상이다.
+- **Rubato는 98~99% 프롬프트 캐시 히트를 지향한다.** 캐시 가능한 프리픽스(시스템 프롬프트, 툴 스키마, 초기 메시지)를 턴마다 흔드는 변경은 하지 않는다. 창마다 바뀌는 값을 프리픽스에 넣는 설계는 기각한다. 출처: 사용자, 2026-09-21.
+
+## Open questions
+
+0.86.0 의 Breaking Changes 중 우리 feature 가 실제로 의존하는 것은 조사하면서 판정한다.
+"""
+
+
+class ItemTest(unittest.TestCase):
+    def test_top_level_items_keep_their_continuation_lines(self) -> None:
+        content = "앞 문단은 어느 항목에도 붙지 않는다.\n- 첫 항목은 충분히 길게 적은 조건이다\n  이어지는 줄도 같은 항목이다\n\n- 둘째 항목도 충분히 길게 적은 조건이다\n뒤 문단은 붙지 않는다."
+        self.assertEqual(
+            intent._items(content),
+            ["- 첫 항목은 충분히 길게 적은 조건이다 이어지는 줄도 같은 항목이다", "- 둘째 항목도 충분히 길게 적은 조건이다"],
+        )
+
+    def test_a_single_item_or_plain_prose_adds_nothing(self) -> None:
+        self.assertEqual(intent._items("- 하나뿐인 항목은 절 조각과 같은 말이다."), [])
+        self.assertEqual(intent._items("목록이 없는 문단이다. 문장이 둘이다."), [])
+
+    def test_long_items_split_into_sentences_including_bold_ones(self) -> None:
+        items = intent._items(STOCK_PI_BODY.split("## Constraints")[1].split("## Open")[0])
+        self.assertIn("- **Rubato는 98~99% 프롬프트 캐시 히트를 지향한다.**", items)
+        self.assertIn("캐시 가능한 프리픽스(시스템 프롬프트, 툴 스키마, 초기 메시지)를 턴마다 흔드는 변경은 하지 않는다.", items)
+        self.assertIn("- pi를 먼저 올리고 senpi는 그다음에 본다. 출처: 사용자, 2026-09-20.", items)
+
+
+# 다른 기록들. 질의 단어가 범위 안에서 드문 단어로 남도록 그 단어들을 뺐다 (실제 코퍼스에서도 드물다).
+FILLER_BODY = (
+    CACHE_BODY.replace("캐시", "목록").replace("프리픽스", "순서").replace("지향", "선호").replace("히트", "결과")
+)
+
+
+class DilutedSectionTest(Workspace):
+    """절 하나를 통째로 재면 조건 여럿이 섞여 멀어진다. 항목 조각이 그 거리를 좁힌다.
+
+    거리는 실제 색인에서 잰 값이다(2026-10, text-embedding-3-small): 절 통째 vs 가장 가까운 항목.
+    """
+
+    CASES = (
+        # 질의 토큰, 절 거리, 가까운 항목을 고르는 표지, 항목 거리
+        (["캐시", "98"], 0.773, "98~99%", 0.676),
+        (["캐시", "히트율", "지향", "조건"], 0.752, "98~99%", 0.599),
+        (["프리픽스", "흔들지"], 0.804, "캐시 가능한 프리픽스", 0.694),
+    )
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.redis = FakeRedis()
+        self.write(self.project, "stock-pi-0-86-1", record("stock-pi-0-86-1", "fulfilled", STOCK_PI_BODY))
+        for index in range(5):
+            self.write(self.project, f"other-{index}", record(f"other-{index}", "active", FILLER_BODY))
+        intent.index(self.redis, lambda texts: [[0.0] for _ in texts], lambda text: text, False, self.agents, log=lambda _: None)
+
+    def search(self, tokens: list[str], section: float, marker: str, item: float) -> list[intent.Candidate]:
+        def distance(fields: dict) -> float:
+            if fields["intent_id"] != "stock-pi-0-86-1" or fields["section"] != "Constraints":
+                return 0.95
+            if fields.get("part") == "item":
+                return item if marker in fields["content"] else 0.85
+            return section
+        self.redis.distance = distance
+        return intent.search(self.redis, tokens, lambda: b"vec", None)
+
+    def test_focused_items_recover_constraints_the_whole_section_missed(self) -> None:
+        for tokens, section, marker, item in self.CASES:
+            with self.subTest(tokens=tokens):
+                found = self.search(tokens, section, marker, item)
+                self.assertEqual([(c.fields["intent_id"], c.fields["section"]) for c in found], [("stock-pi-0-86-1", "Constraints")])
+                self.assertAlmostEqual(found[0].distance, item)
+                self.assertNotEqual(found[0].fields.get("part"), "item")
+
+    def test_excerpt_shows_the_constraint_that_matched(self) -> None:
+        # "프리픽스" 와 "흔들지" 는 다른 줄에 하나씩 걸린다. 동점이면 가장 가까운 항목의 줄이다.
+        block = intent.format_block(self.search(*self.CASES[2]))
+        self.assertIn("Constraints: **Rubato는 98~99% 프롬프트 캐시 히트를 지향한다.**", block)
+        self.assertNotIn("live 설치", block)
+
+    def test_without_items_the_same_queries_miss(self) -> None:
+        self.redis.hide_items = True
+        for tokens, section, marker, item in self.CASES:
+            with self.subTest(tokens=tokens):
+                self.assertEqual(self.search(tokens, section, marker, item), [])
+
+    def test_excerpt_falls_back_to_the_nearest_item_when_no_word_matched(self) -> None:
+        def distance(fields: dict) -> float:
+            if fields.get("part") == "item" and "Breaking Changes 셋" in fields["content"]:
+                return 0.3
+            return 0.95
+        self.redis.distance = distance
+        found = intent.search(self.redis, ["upstream", "breaking"], lambda: b"vec", None)
+        self.assertEqual(found[0].fields["intent_id"], "stock-pi-0-86-1")
+        self.assertIn("Breaking Changes 셋은 자동 수용 대상이 아니라", intent.format_block(found))
 
 
 class IndexAndFreshnessTest(Workspace):
