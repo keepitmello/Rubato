@@ -33,6 +33,12 @@ const LADDER_MAX = 8;
 const SHA = /^[0-9a-f]{7,64}$/;
 const BRANCH = /^dream\/[A-Za-z0-9._-]+$/;
 const SELF_FILES = new Set(['user.md', 'soul.md']);
+const ACTIVITY_PAGE = 20;
+const ACTIVITY_MAX = 200;
+const SEARCH_MAX = 20;
+// The memory-core adopt commit (GitMemoryRepo.adoptStrayEdits) and the trailer this page signs its own commits with.
+export const ADOPT_SUBJECT = 'memory: adopt edits written outside memory tools';
+const SETTINGS_TRAILER = 'Rubato-Writer: settings';
 const DIFF_LIMIT = 512 * 1024;
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 
@@ -46,14 +52,16 @@ export class MemoryRequestError extends Error {
 const bad = (message) => new MemoryRequestError(400, 'bad-request', message);
 
 /**
- * @param {{ env?: NodeJS.ProcessEnv, rubato?: readonly string[] }} [options]
+ * @param {{ env?: NodeJS.ProcessEnv, rubato?: readonly string[], msearch?: string }} [options]
  *   `rubato` is the argv prefix that runs the CLI; default: this checkout's launcher.
+ *   `msearch` is the search entry point; default: this checkout's harness/msearch/msearch.
  */
 export function createMemoryService(options = {}) {
   const env = options.env ?? process.env;
   const home = env.HOME ?? env.USERPROFILE ?? homedir();
   const memoryRoot = env.RUBATO_MEMORY_HOME?.trim() ? path.resolve(home, env.RUBATO_MEMORY_HOME) : path.join(home, '.rubato', 'memory');
   const rubato = options.rubato ?? ['/bin/sh', path.join(repoRoot, 'harness', 'scripts', 'rubato-pi.sh')];
+  const msearchBin = options.msearch ?? path.join(repoRoot, 'harness', 'msearch', 'msearch');
   // The app is often launched from the Dock with a PATH of /usr/bin:/bin, and
   // `rubato dream` execs bun from PATH. Put the usual install places first.
   const childEnv = { ...env, PATH: [
@@ -538,8 +546,83 @@ export function createMemoryService(options = {}) {
     };
   }
 
-  function lastRunOf({ runId, status, startedAt, finishedAt, reason, landed: inStore }) {
-    return { runId, status, startedAt, finishedAt, reason, landed: inStore };
+  function lastRunOf({ runId, status, startedAt, finishedAt, reason, attempts, landed: inStore }) {
+    return { runId, status, startedAt, finishedAt, reason, attempts, landed: inStore };
+  }
+
+  // --- The overview: what changed lately across every store, and search over all of them.
+
+  // One entry per commit on each store's main line, newest first. Who wrote it comes from the commit:
+  // a dream's merge, a memory tool's trailer, this page's trailer, or the commit that adopted edits a
+  // session left uncommitted (which carries no reason).
+  async function activity({ limit } = {}) {
+    const count = Number.isInteger(limit) ? Math.min(Math.max(limit, 1), ACTIVITY_MAX) : ACTIVITY_PAGE;
+    const items = [];
+    for (const store of await listStores()) {
+      const paths = storePaths(store);
+      const log = await git(paths.repo, [
+        '-c', 'core.quotePath=false', 'log', '--first-parent', '--diff-merges=first-parent', '--name-status',
+        `-n${count}`, '--format=%x1e%H%x1f%cI%x1f%s%x1f%b%x1f',
+      ]);
+      if (log.code !== 0) continue;
+      for (const chunk of log.stdout.split('\x1e').slice(1)) {
+        const [sha, at, subject, body, rest = ''] = chunk.split('\x1f');
+        const files = rest.split('\n').filter(Boolean).map((line) => {
+          const [status = '', first, second] = line.split('\t');
+          const change = status.startsWith('A') ? 'added' : status.startsWith('D') ? 'deleted' : status.startsWith('R') ? 'renamed' : 'modified';
+          return { path: change === 'renamed' && second ? second : first, change };
+        });
+        if (files.length === 0) continue;
+        items.push({ store, sha, at, files, ...(await describeCommit(paths, subject, body)) });
+      }
+    }
+    items.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+    return { items: items.slice(0, count) };
+  }
+
+  async function describeCommit(paths, subject, body) {
+    if (subject.startsWith('merge(dream): ')) {
+      const runId = subject.slice('merge(dream): '.length).trim();
+      const report = RUN_ID.test(runId) ? await readText(path.join(paths.runs, runId, 'out', 'report.md')) : undefined;
+      return { kind: 'dream', runId, text: reportOutline(report).summary };
+    }
+    if (subject === ADOPT_SUBJECT) return { kind: 'session', text: null };
+    if (body.includes(SETTINGS_TRAILER)) return { kind: 'you', text: subject };
+    return { kind: 'session', text: subject };
+  }
+
+  // msearch is what agents search memory with; the page asks it too so both see the same answers.
+  // Without it (not installed, index down) the page falls back to matching names, descriptions and text.
+  async function search({ query }) {
+    if (typeof query !== 'string' || query.trim() === '' || query.length > 200) throw bad('Type something to search for.');
+    const msearch = await run([msearchBin, '-a', '--json', '-k', String(SEARCH_MAX), query.trim()], { cwd: home, timeoutMs: 30_000 });
+    if (msearch.code === 0) {
+      try {
+        const results = JSON.parse(msearch.stdout).flatMap((hit) => {
+          const match = /^([^/]+)\/repo\/(.+)$/.exec(String(hit.rel_path ?? ''));
+          if (!match || !STORE_NAME.test(match[1])) return [];
+          const content = String(hit.content ?? '');
+          return [{ store: match[1], path: match[2], description: descriptionOf(content), preview: previewOf(content) }];
+        });
+        return { engine: 'msearch', results: uniqueHits(results) };
+      } catch {}
+    }
+    return { engine: 'plain', results: await plainSearch(query.trim().toLowerCase()) };
+  }
+
+  async function plainSearch(needle) {
+    const results = [];
+    for (const store of await listStores()) {
+      const paths = storePaths(store);
+      for (const file of await walk(paths.repo)) {
+        if (!file.endsWith('.md')) continue;
+        const text = (await readText(path.join(paths.repo, file))) ?? '';
+        if (!`${file}\n${text}`.toLowerCase().includes(needle)) continue;
+        results.push({ store, path: file, description: descriptionOf(text), preview: previewOf(text) });
+        if (results.length >= SEARCH_MAX) return results;
+      }
+    }
+    return results;
   }
 
   /** Fast listing from the store directories; `status` adds what only the CLI knows. */
@@ -625,7 +708,7 @@ export function createMemoryService(options = {}) {
     const removed = await git(repo, ['rm', '-q', '--', file.relative]);
     if (removed.code !== 0) throw new MemoryRequestError(500, 'git-rm', removed.stderr.trim() || 'git rm failed.');
     // Only this path: whatever else an agent has staged stays out of this commit.
-    const commit = await run(['git', '-C', repo, ...(await identityArgs(repo)), 'commit', '-q', '-m', `Delete ${file.relative} (Settings > Memory)`, '--', file.relative]);
+    const commit = await run(['git', '-C', repo, ...(await identityArgs(repo)), 'commit', '-q', '-m', `Delete ${file.relative} (Settings > Memory)`, '-m', SETTINGS_TRAILER, '--', file.relative]);
     if (commit.code !== 0) throw new MemoryRequestError(500, 'git-commit', commit.stderr.trim() || 'git commit failed.');
     return { store, path: file.relative, commit: (await git(repo, ['rev-parse', 'HEAD'])).stdout.trim() };
   }
@@ -642,7 +725,7 @@ export function createMemoryService(options = {}) {
     if ((await git(repo, ['diff', '--cached', '--quiet', '--', file.relative])).code === 0) return { store, path: file.relative, content, commit: null };
     const subject = message?.trim().split('\n')[0].slice(0, 120) || `Edit ${file.relative} (Settings > Memory)`;
     // --no-verify: the person editing owns the file, frontmatter included; the agent-facing hook is not theirs.
-    const commit = await run(['git', '-C', repo, ...(await identityArgs(repo)), 'commit', '-q', '--no-verify', '-m', subject, '--', file.relative]);
+    const commit = await run(['git', '-C', repo, ...(await identityArgs(repo)), 'commit', '-q', '--no-verify', '-m', subject, '-m', SETTINGS_TRAILER, '--', file.relative]);
     if (commit.code !== 0) throw new MemoryRequestError(500, 'git-commit', commit.stderr.trim() || 'git commit failed.');
     return { store, path: file.relative, content, commit: (await git(repo, ['rev-parse', 'HEAD'])).stdout.trim() };
   }
@@ -685,6 +768,8 @@ export function createMemoryService(options = {}) {
     'self-save': (input) => saveSelf(input),
     suggestions: () => suggestions(),
     'add-suggestions': (input) => addSuggestions(input),
+    activity: (input) => activity(input),
+    search: (input) => search(input),
     'dismiss-suggestions': (input) => dismissSuggestions(input),
   };
   return {
@@ -718,6 +803,23 @@ function reportOutline(report) {
     .filter(Boolean);
   const summary = (sections.get('요약') ?? []).map((line) => line.trim()).filter(Boolean).join(' ');
   return { summary: summary || null, bullets };
+}
+
+// The text of a memory file without its front matter, cut to a line or two for a result list.
+function previewOf(text) {
+  const body = text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '').replace(/^#+\s.*$/gm, '').replace(/\s+/g, ' ').trim();
+  return body.length > 160 ? `${body.slice(0, 160)}…` : body;
+}
+
+// msearch returns a file once per matching section; the page lists files.
+function uniqueHits(results) {
+  const seen = new Set();
+  return results.filter((hit) => {
+    const key = `${hit.store}/${hit.path}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function notesFor(outline, files) {
