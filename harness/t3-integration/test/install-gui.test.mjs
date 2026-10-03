@@ -10,6 +10,7 @@ const installGui = fileURLToPath(new URL('../install-gui.sh', import.meta.url));
 const startGui = fileURLToPath(new URL('../start-gui.sh', import.meta.url));
 const src = readFileSync(installGui, 'utf8');
 const startSrc = readFileSync(startGui, 'utf8');
+const macAppSrc = readFileSync(fileURLToPath(new URL('../install-macos-app.sh', import.meta.url)), 'utf8');
 
 function plan(hostOs) {
   return spawnSync('bash', [installGui], {
@@ -99,7 +100,33 @@ test('Darwin finish still creates/links the app bundle via install-macos-app.sh'
 
 test('start-gui still execs T3 electron and only uses osascript on Darwin', () => {
   assert.match(startSrc, /exec "\$NODE" scripts\/start-electron\.mjs/);
-  assert.match(startSrc, /\[ "\$\(uname -s\)" = Darwin \]/);
+  assert.match(startSrc, /if \[ ! -t 2 \] && \[ "\$HOST_OS" = Darwin \]; then\n\s+"\$OSASCRIPT_BIN"/);
+});
+
+// A launch from a half-installed tree made "T3 Code (Alpha).app" next to the
+// Rubato bundle and registered it as com.t3tools.t3code. The next install
+// removes it, so Spotlight and Open With no longer offer a T3 app.
+test('install-macos-app removes other app bundles from the runtime directory', (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), 'rb-install-macos-app-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const runtime = path.join(root, '.electron-runtime');
+  const bundle = path.join(runtime, 'Rubato.app');
+  const alpha = path.join(runtime, 'T3 Code (Alpha).app');
+  for (const dir of [bundle, alpha]) mkdirSync(path.join(dir, 'Contents'), { recursive: true });
+  writeFileSync(path.join(runtime, 'metadata.json'), '{}\n');
+  const log = path.join(root, 'lsregister');
+  writeFileSync(log, '');
+  const lsregister = path.join(root, 'fake-lsregister');
+  writeFileSync(lsregister, `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\n`);
+  chmodSync(lsregister, 0o755);
+  const start = macAppSrc.indexOf('# 런타임 디렉터리의 앱은 이 번들 하나다.');
+  const step = macAppSrc.slice(start, macAppSrc.indexOf('\ndone\n', start) + 6);
+  assert.ok(start > 0 && step.includes('rm -rf'), step);
+  const result = spawnSync('bash', ['-c', ['set -euo pipefail', `BUNDLE='${bundle}'`, step].join('\n')],
+    { encoding: 'utf8', env: { ...process.env, RUBATO_LSREGISTER: lsregister } });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(readdirSync(runtime).sort(), ['Rubato.app', 'metadata.json']);
+  assert.equal(readFileSync(log, 'utf8'), `-u ${alpha}\n`);
 });
 
 // 맥에서는 이 기계의 네이티브 바이너리만 받는다. 윈도우·리눅스는 upstream 의

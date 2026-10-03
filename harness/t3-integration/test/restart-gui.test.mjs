@@ -30,6 +30,9 @@ function harness(t, {
   openDuringBuild = false,
   // Only the first quit takes effect; later ones are ignored.
   quitOnce = false,
+  // An app a half-done install opened under T3's own name ("T3 Code (Alpha).app")
+  // from our runtime directory. It is a real process, so a SIGTERM really lands.
+  stray = false,
 } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'rb-restart-gui-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -71,8 +74,35 @@ function harness(t, {
     (openDuringBuild ? `printf 'running' > '${guiState}'\n` : '') + 'exit 0\n');
   const fakeSshServers = join(root, 'fake-restart-ssh-servers.sh');
   executable(fakeSshServers, `#!/bin/sh\nprintf 'SSH-SERVERS\\n' >> '${log}'\nexit ${sshServers}\n`);
+  const runtime = join(root, 'runtime');
+  const processes = [];
+  // Not our child: a child of this test would stay a zombie while spawnSync
+  // blocks, and kill -0 would still find it after the SIGTERM.
+  const sleeper = () => {
+    const pid = Number(spawnSync('sh', ['-c', 'sleep 60 >/dev/null 2>&1 & echo $!'], { encoding: 'utf8' }).stdout);
+    t.after(() => { try { process.kill(pid, 'SIGKILL'); } catch {} });
+    return pid;
+  };
+  // The stray main process, and lookalikes that must be left alone: its helper,
+  // the T3 server it runs, and an app from another checkout's runtime directory.
+  const strayPid = stray ? sleeper() : undefined;
+  const otherPid = stray ? sleeper() : undefined;
+  if (stray) {
+    const alpha = `${runtime}/T3 Code (Alpha).app/Contents`;
+    processes.push(
+      [strayPid, `${alpha}/MacOS/Electron dist-electron/main.cjs`],
+      [otherPid, `${alpha}/Frameworks/Electron Helper.app/Contents/MacOS/Electron Helper --type=gpu-process`],
+      [otherPid, `${alpha}/MacOS/Electron /t3/apps/server/dist/bin.mjs --bootstrap-fd 3`],
+      [otherPid, `${root}/elsewhere/.electron-runtime/T3 Code (Dev).app/Contents/MacOS/Electron dist-electron/main.cjs`],
+    );
+  }
+  const fakePs = join(root, 'fake-ps');
+  executable(fakePs, '#!/bin/sh\n' + processes.map(([pid, command]) =>
+    `kill -0 ${pid} 2>/dev/null && printf '%5s %s\\n' ${pid} '${command}'\n`).join(''));
   const env = {
     ...process.env,
+    RUBATO_PS_BIN: fakePs,
+    RUBATO_GUI_RUNTIME_DIR: runtime,
     HOME: home,
     RUBATO_HOST_OS: hostOs,
     RUBATO_PGREP_BIN: fakePgrep,
@@ -99,6 +129,11 @@ function harness(t, {
     relaunched() {
       try { return readFileSync(relaunch, 'utf8'); } catch { return undefined; }
     },
+    alive(pid) {
+      try { process.kill(pid, 0); return true; } catch { return false; }
+    },
+    strayPid,
+    otherPid,
   };
 }
 
@@ -254,13 +289,56 @@ test('from another HOME the account\'s app is left alone', (t) => {
   assert.equal(h.calls(), '');
 });
 
+// A failed install used to reopen the app as "T3 Code (Alpha).app". The Rubato
+// pattern and the "Rubato" quit missed it, so the next restart opened a second
+// app over the same state, or `rubato restart` said the app was closed.
+test('an app left running under T3\'s name is quit before Rubato starts', async (t) => {
+  const h = harness(t, { hostOs: 'Darwin', app: true, running: false, stray: true });
+  const result = h.run();
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(h.alive(h.strayPid), false);
+  assert.equal(h.alive(h.otherPid), true);
+  assert.match(h.calls(), /INSTALL-GUI --apply\nSSH-SERVERS\nSTART-GUI/);
+  // Asking "Rubato" to quit is for a running Rubato; there is none.
+  assert.doesNotMatch(h.calls(), /tell application/);
+});
+
+test('a GUI update pressed in that stray app also quits it before reopening', async (t) => {
+  const h = harness(t, { hostOs: 'Darwin', app: true, running: false, stray: true });
+  const result = h.run({ RUBATO_GUI_UPDATE_RELAUNCH: '1', RUBATO_GUI_UPDATE_NODE: process.execPath });
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(h.alive(h.strayPid), false);
+  assert.equal(h.alive(h.otherPid), true);
+});
+
+test('a stray next to a running Rubato: both are asked to quit', async (t) => {
+  const h = harness(t, { hostOs: 'Darwin', app: true, running: true, stray: true });
+  const result = h.run();
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  assert.equal(h.alive(h.strayPid), false);
+  assert.match(h.calls(), /tell application "Rubato" to quit/);
+  assert.equal(h.relaunched(), 'relaunched');
+});
+
+test('off macOS no process is picked as a stray', (t) => {
+  const h = harness(t, { app: false, bundle: true, running: false, stray: true });
+  const result = h.run();
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  assert.equal(h.alive(h.strayPid), true);
+  assert.equal(h.relaunched(), undefined);
+});
+
 test('restart-gui keeps Darwin Electron pattern and has no force-quit happy path', () => {
   assert.match(restartSrc, /Rubato\\\\.app\/Contents\/MacOS\/Electron/);
   assert.match(restartSrc, /tell application "Rubato" to quit/);
   assert.match(restartSrc, /tell application id "app.rubato.t3" to quit/);
   assert.doesNotMatch(restartSrc, /killall|pkill|kill -9|taskkill \/T/);
+  // The one signal sent is SIGTERM to a stray app, which Electron handles as a
+  // normal quit (before-quit runs). Nothing else is killed.
   const guiCode = restartSrc.split('\n').filter((line) => !/^\s*#/.test(line)).join('\n');
-  assert.doesNotMatch(guiCode, /kill/);
+  assert.deepEqual(guiCode.match(/\bkill\b[^\n]*/g), ['kill -TERM $STRAYS 2>/dev/null || true']);
   assert.match(restartSrc, /CloseMainWindow/);
   assert.match(restartSrc, /dist-electron\/main\.cjs/);
 });

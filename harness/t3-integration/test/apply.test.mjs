@@ -6,7 +6,7 @@ import {fileURLToPath} from 'node:url';
 import {tmpdir} from 'node:os';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
-import {applyIntegration} from '../apply.mjs';
+import {applyIntegration,installedIntact} from '../apply.mjs';
 
 test('overlay is guarded, idempotent, reversible and rejects dirty upstream before writes', {skip:!process.env.T3_SOURCE}, async(t)=>{
   const source=process.env.T3_SOURCE;
@@ -96,4 +96,43 @@ test('a target that left the list across a pin bump is the new pin original, not
   await writeFile(path.join(root,'.rubato-pi-overlay.json'),JSON.stringify(manifest));
   await writeFile(path.join(root,dropped),'user edit\n');
   await assert.rejects(applyIntegration({t3:root}),/local changes: .*DroppedAcrossPins/);
+});
+
+// The launcher that names the app is read from the tree at every start. A tree
+// left between the pin checkout and the overlay has T3's own launcher, which
+// made and opened "T3 Code (Alpha).app". start-gui.sh asks this before using it.
+test('verify tells an installed tree from one the install left half-done', async(t)=>{
+  const root=await mkdtemp(path.join(tmpdir(),'rb-overlay-verify-'));
+  t.after(()=>rm(root,{recursive:true,force:true}));
+  const sha=(text)=>createHash('sha256').update(text).digest('hex');
+  const launcher='apps/desktop/scripts/electron-launcher.mjs';
+  const added='apps/web/src/components/RubatoIcon.tsx';
+  const removed='apps/web/src/components/Removed.tsx';
+  await mkdir(path.join(root,'apps/desktop/scripts'),{recursive:true});
+  await mkdir(path.join(root,'apps/web/src/components'),{recursive:true});
+  assert.deepEqual(await installedIntact({t3:root}),{intact:false,drifted:['.rubato-pi-overlay.json']});
+  const rubato='const APP_DISPLAY_NAME = "Rubato";\n';
+  const upstream='const APP_DISPLAY_NAME = "T3 Code (Alpha)";\n';
+  await writeFile(path.join(root,launcher),rubato);
+  await writeFile(path.join(root,added),'icon\n');
+  await writeFile(path.join(root,'.rubato-pi-overlay.json'),JSON.stringify({version:1,files:{
+    [launcher]:{original:upstream,installedHash:sha(rubato)},
+    [added]:{original:null,installedHash:sha('icon\n')},
+    [removed]:{original:'old\n',installedHash:null},
+  }}));
+  assert.deepEqual(await installedIntact({t3:root}),{intact:true,drifted:[]});
+  // install-gui.sh: checkout --force <pin> succeeded, apply.mjs then failed.
+  await writeFile(path.join(root,launcher),upstream);
+  assert.deepEqual(await installedIntact({t3:root}),{intact:false,drifted:[launcher]});
+  await writeFile(path.join(root,launcher),rubato);
+  await writeFile(path.join(root,removed),'old\n');
+  await rm(path.join(root,added));
+  assert.deepEqual((await installedIntact({t3:root})).drifted.sort(),[added,removed].sort());
+  // The CLI answers with its exit code; start-gui.sh only reads that.
+  const cli=fileURLToPath(new URL('../apply.mjs',import.meta.url));
+  await rm(path.join(root,removed));
+  await writeFile(path.join(root,added),'icon\n');
+  assert.doesNotThrow(()=>execFileSync(process.execPath,[cli,'--t3',root,'--verify'],{stdio:'pipe'}));
+  await writeFile(path.join(root,launcher),upstream);
+  assert.throws(()=>execFileSync(process.execPath,[cli,'--t3',root,'--verify'],{stdio:'pipe'}),(error)=>error.status===1);
 });
