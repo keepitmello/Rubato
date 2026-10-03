@@ -183,6 +183,24 @@ describe("runLanguageMigration", () => {
     expect(await languageMigrationDue(paths, Date.now(), 0)).toBe(false)
   })
 
+  test("#given a caller that read the marker before a run finished and was reverted #when it migrates #then the lock-side check stops it; only force runs again", async () => {
+    const { paths } = store()
+    expect(await languageMigrationDue(paths, Date.now(), 0)).toBe(true)
+    const first = await migrate(paths, child().spawn)
+    await revertDream(paths, "demo", first.runId, process.env)
+    const { spawn, calls } = child()
+    const stale = await migrate(paths, spawn)
+    expect(stale).toMatchObject({ status: "noop", reason: `already migrated by ${first.runId}` })
+    expect(calls).toEqual([])
+    expect(read(paths, "decisions/cache.md")).toBe(RECORDS["decisions/cache.md"]!.ko)
+    const forced = await runLanguageMigration({
+      store: "demo", paths, ladder: [{ model: "ok/model" }], spawnChild: spawn, force: true,
+      launch: { command: "unused", prefixArgs: [] }, systemPrompt: "p", env: process.env,
+    })
+    expect(forced.status).toBe("merged")
+    expect(read(paths, "decisions/cache.md")).toBe(RECORDS["decisions/cache.md"]!.en)
+  })
+
   test("#given many files #when batched #then batches stay near the budget and a big file goes alone", () => {
     expect(packBatches([{ path: "b", size: 10 }, { path: "a", size: 10 }, { path: "c", size: 50 }, { path: "d", size: 5 }], 25))
       .toEqual([["a", "b"], ["c"], ["d"]])

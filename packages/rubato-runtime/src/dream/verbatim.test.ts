@@ -83,3 +83,29 @@ describe("translation check", () => {
     expect(translationProblems(long, long).some((problem) => problem.startsWith("still mostly Korean"))).toBe(true)
   })
 })
+
+// Counterexamples from the verifier (checker, 2026-10-04): each one passed the first gate.
+describe("translation check, any language and every byte", () => {
+  test("#given a symptom whose trailing spaces or line endings changed #when checked #then it fails", () => {
+    const before = "## 결론\r\n캐시를 유지한다\r\n\r\n## 증상\r\n\r\n사용자 보고  \r\n\r\n"
+    expect(translationProblems(before, "## Conclusion\nKeep the cache.\n\n## Symptom\n사용자 보고\n")[0]).toStartWith("symptom text changed")
+    expect(translationProblems(before, "## Conclusion\r\nKeep the cache.\r\n\r\n## Symptom\r\n사용자 보고  \r\n")).toEqual([])
+  })
+
+  test("#given an English user quote reworded #when checked #then it fails", () => {
+    const before = '## 결론\n사용자는 "Do not create user.md or soul.md." 라고 말했다.\n'
+    expect(translationProblems(before, '## Conclusion\nThe user said "Creating user.md and soul.md is allowed."\n'))
+      .toEqual(["quoted text changed: Do not create user.md or soul.md."])
+  })
+
+  test("#given a single-quoted user quote changed #when checked #then it fails, while apostrophes inside words open nothing", () => {
+    const before = "## 결론\n사용자는 '자가 저장소는 건드리지 마' 라고 말했다.\n"
+    expect(translationProblems(before, "## Conclusion\nThe user said 'Feel free to change the self store.'\n"))
+      .toEqual(["quoted text changed: 자가 저장소는 건드리지 마"])
+    expect(verbatimSegments("the user's store isn't 'kept' here").quotes).toEqual(["kept"])
+  })
+
+  test("#given a kept quote whose surrounding meaning is reversed #when checked #then the mechanical check cannot see it (a reader must)", () => {
+    expect(translationProblems('## 결론\n자동 저장을 끄지 않는다. 사용자 원문 "기억은 남겨".\n', '## Conclusion\nDisable automatic saving. User original "기억은 남겨".\n')).toEqual([])
+  })
+})

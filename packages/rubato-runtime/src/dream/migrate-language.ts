@@ -96,6 +96,8 @@ export interface RunMigrationOptions {
   readonly spawnChild?: SpawnChild
   readonly batchChars?: number
   readonly childTimeoutMs?: number
+  /** Run even when the migration already finished (`rubato dream --migrate`, after a revert). */
+  readonly force?: boolean
   /** Runs verbatim-check.ts; defaults to this bun and the file next to this one. */
   readonly checkCommand?: readonly string[]
 }
@@ -137,6 +139,14 @@ export function packBatches(files: readonly { readonly path: string; readonly si
 async function migrateLocked(options: RunMigrationOptions, now: () => number): Promise<DreamRunRecord> {
   const { paths, store } = options
   const startedAt = new Date(now()).toISOString()
+  // The caller read the marker before taking the lock; a run that finished meanwhile wins.
+  const done = (await readMigrations(paths)).done?.[LANGUAGE_MIGRATION_ID]
+  if (done !== undefined && options.force !== true) {
+    return {
+      runId: "", kind: "language-migration", store, startedAt, finishedAt: startedAt, status: "noop",
+      reason: `already migrated by ${done.runId}`, sessions: [], commits: [],
+    }
+  }
   const runId = `migrate-${startedAt.replace(/[:.]/g, "-")}-${randomBytes(3).toString("hex")}`
   const runDir = join(dreamDir(paths), "runs", runId)
   const outDir = join(runDir, "out")

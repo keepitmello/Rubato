@@ -3,23 +3,23 @@
 // Memory is written in English, but what the user said stays in their language: the body of the
 // symptom section (`## Symptom`, or `## 증상` before migration) and quoted text, inline or as a
 // `>` block. "Quoted" is mechanical here so a runner can check it: a single-line span inside "…",
-// “…”, ‘…’ or 「…」, or a `>` line, that contains Hangul. Text without Hangul is already English
-// or code and is not at risk from a translation into English.
+// “…”, ‘…’, 「…」 or '…' (an apostrophe inside a word does not open one), or a `>` line, in any
+// language. All of it must survive byte for byte; a translation can only add English around it.
+// What the check cannot see is a sentence that keeps the quote and reverses its meaning.
 
-const HANGUL = /[\u1100-\u11FF\u3131-\u318E\uAC00-\uD7A3]/
 const HANGUL_ALL = /[\u1100-\u11FF\u3131-\u318E\uAC00-\uD7A3]/g
 export const SYMPTOM_HEADINGS = ["Symptom", "증상"] as const
-const QUOTED = /"([^"\n]*)"|“([^”\n]*)”|‘([^’\n]*)’|「([^」\n]*)」/g
+const QUOTED = /"([^"\n]*)"|“([^”\n]*)”|‘([^’\n]*)’|「([^」\n]*)」|(?<![\p{L}\p{N}])'([^'\n]*)'(?![\p{L}\p{N}])/gu
 const BLOCKQUOTE = /^\s{0,3}>\s?(.*)$/
 const FENCE = /^\s{0,3}(```|~~~)/
 const HEADING = /^(#{1,2})\s+(.*?)\s*#*\s*$/
 
 export interface VerbatimSegments {
-  /** Symptom section bodies, leading blank lines and trailing whitespace trimmed. */
+  /** Symptom section bodies, exact except for empty lines at either end. */
   readonly symptoms: readonly string[]
-  /** Quoted spans with Hangul, without their quote marks. */
+  /** Quoted spans, without their quote marks. */
   readonly quotes: readonly string[]
-  /** `>` lines with Hangul, without the marker. */
+  /** Non-empty `>` lines, without the marker. */
   readonly blockquotes: readonly string[]
 }
 
@@ -31,7 +31,8 @@ interface Line {
 function lines(source: string): Line[] {
   const out: Line[] = []
   let fence: string | undefined
-  for (const text of source.replace(/\r\n/g, "\n").split("\n")) {
+  // Line endings stay as written ("\r" included): a changed line ending is a changed byte.
+  for (const text of source.split("\n")) {
     const marker = FENCE.exec(text)?.[1]
     if (marker !== undefined && (fence === undefined || fence === marker)) {
       out.push({ text, inFence: true })
@@ -54,8 +55,13 @@ export function isSymptomHeading(title: string): boolean {
   return SYMPTOM_HEADINGS.some((name) => title === name || title.startsWith(`${name} `) || title.startsWith(`${name}(`))
 }
 
-function normalizeBody(body: string): string {
-  return body.replace(/^(?:[ \t]*\n)+/, "").replace(/\s+$/, "")
+/** Empty lines at either end belong to the layout between headings, not to the text. */
+function normalizeBody(lines: readonly string[]): string {
+  let start = 0
+  let end = lines.length
+  while (start < end && /^\r?$/.test(lines[start]!)) start += 1
+  while (end > start && /^\r?$/.test(lines[end - 1]!)) end -= 1
+  return lines.slice(start, end).join("\n")
 }
 
 /** Bodies of every symptom section, in order. A section ends at the next `#` or `##` heading. */
@@ -71,7 +77,7 @@ export function symptomBodies(text: string): string[] {
       if (headingOf(all[next]!) !== undefined) break
       body.push(all[next]!.text)
     }
-    bodies.push(normalizeBody(body.join("\n")))
+    bodies.push(normalizeBody(body))
     index = next - 1
   }
   return bodies
@@ -82,10 +88,10 @@ export function verbatimSegments(text: string): VerbatimSegments {
   const blockquotes: string[] = []
   for (const line of lines(text)) {
     const block = BLOCKQUOTE.exec(line.text)
-    if (!line.inFence && block !== null && HANGUL.test(block[1]!)) blockquotes.push(block[1]!.trimEnd())
+    if (!line.inFence && block !== null && block[1]!.trim() !== "") blockquotes.push(block[1]!)
     for (const match of line.text.matchAll(QUOTED)) {
-      const inner = match[1] ?? match[2] ?? match[3] ?? match[4] ?? ""
-      if (HANGUL.test(inner)) quotes.push(inner)
+      const inner = match[1] ?? match[2] ?? match[3] ?? match[4] ?? match[5] ?? ""
+      if (inner.trim() !== "") quotes.push(inner)
     }
   }
   return { symptoms: symptomBodies(text), quotes: unique(quotes), blockquotes: unique(blockquotes) }
