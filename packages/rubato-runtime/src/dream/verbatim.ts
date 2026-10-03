@@ -151,15 +151,38 @@ export function needsTranslation(text: string): boolean {
   return translatableHangul(text) > 0
 }
 
+/** Hangul outside code spans and quotes on one line. */
+function proseHangul(line: string): number {
+  return line.replace(/`[^`\n]*`/g, "").replace(QUOTED, "").match(HANGUL_ALL)?.length ?? 0
+}
+
+/** Headings and the frontmatter `description` that still carry Hangul outside quotes and code. */
+function untranslatedLabels(text: string): string[] {
+  const out: string[] = []
+  const all = lines(text)
+  const frontmatterEnd = all[0]?.text.replace(/\r$/, "") === "---" ? all.findIndex((line, index) => index > 0 && line.text.replace(/\r$/, "") === "---") : -1
+  for (const [index, line] of all.entries()) {
+    if (index < frontmatterEnd && /^description:/.test(line.text) && proseHangul(line.text) > 0) out.push("description")
+    const heading = headingOf(line)
+    if (heading !== undefined && proseHangul(heading.title) > 0) out.push(`heading "${heading.title}"`)
+  }
+  return out
+}
+
 /**
- * Problems with one file's translation: lost user words, a Korean symptom heading left behind, or
- * most of the prose still untranslated. Empty means the file passes.
+ * Problems with one file's translation: lost user words, a file left as it was, a Korean heading or
+ * description left behind, or more than a few words of prose still untranslated. Empty means it passes.
  */
 export function translationProblems(before: string, after: string): string[] {
   const problems = missingVerbatim(before, after)
-  if (lines(after).some((line) => /^증상(?:$|[ (])/.test(headingOf(line)?.title ?? ""))) problems.push("`## 증상` is still there; it becomes `## Symptom`")
   const was = translatableHangul(before)
+  if (was > 0 && after === before) {
+    problems.push("the file is unchanged; translate it")
+    return problems
+  }
+  const labels = untranslatedLabels(after)
+  if (labels.length > 0) problems.push(`still in Korean: ${labels.join(", ")}`)
   const left = translatableHangul(after)
-  if (left > Math.max(30, Math.floor(was * 0.1))) problems.push(`still mostly Korean: ${left} of ${was} Hangul characters outside quotes and code remain`)
+  if (left > Math.max(10, Math.floor(was * 0.1))) problems.push(`still mostly Korean: ${left} of ${was} Hangul characters outside quotes and code remain`)
   return problems
 }

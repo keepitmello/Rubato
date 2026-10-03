@@ -78,9 +78,10 @@ describe("translation check", () => {
   })
 
   test("#given an untouched file or a kept Korean heading #when checked #then it does not pass", () => {
-    expect(translationProblems(KOREAN, KOREAN)).toContain("`## 증상` is still there; it becomes `## Symptom`")
+    expect(translationProblems(KOREAN, KOREAN)).toContain("the file is unchanged; translate it")
+    expect(translationProblems(KOREAN, KOREAN.replace("## 결론", "## Conclusion"))).toContain('still in Korean: description, heading "증상"')
     const long = `## 결론\n${"한국어 문장이 길게 이어진다. ".repeat(20)}\n`
-    expect(translationProblems(long, long).some((problem) => problem.startsWith("still mostly Korean"))).toBe(true)
+    expect(translationProblems(long, long.replace("## 결론", "## Conclusion")).some((problem) => problem.startsWith("still mostly Korean"))).toBe(true)
   })
 })
 
@@ -107,5 +108,17 @@ describe("translation check, any language and every byte", () => {
 
   test("#given a kept quote whose surrounding meaning is reversed #when checked #then the mechanical check cannot see it (a reader must)", () => {
     expect(translationProblems('## 결론\n자동 저장을 끄지 않는다. 사용자 원문 "기억은 남겨".\n', '## Conclusion\nDisable automatic saving. User original "기억은 남겨".\n')).toEqual([])
+  })
+})
+
+describe("translation check, short files", () => {
+  // checker, 2026-10-04: a short Korean file passed untouched.
+  test("#given a short Korean file left as it was #when checked #then it fails", () => {
+    expect(translationProblems("## 결론\n엔진은 stock pi다.\n", "## 결론\n엔진은 stock pi다.\n")).toEqual(["the file is unchanged; translate it"])
+    expect(translationProblems("---\ndescription: 맥북 zmx 누수\n---\n## Conclusion\n- x\n", "---\ndescription: 맥북 zmx 누수\n---\n## Conclusion\n- x \n")).toEqual(["still in Korean: description"])
+  })
+
+  test("#given a short file translated with one Korean term left #when checked #then it passes", () => {
+    expect(translationProblems("## 결론\n엔진은 stock pi다.\n", "## Conclusion\nThe engine is stock pi (\"파이\").\n")).toEqual([])
   })
 })
