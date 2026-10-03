@@ -682,6 +682,20 @@ const edits = {
   // 내보내므로 ↑(Send now) 와 자동 방출이 같은 결과가 되고, Rubato 에서는 그 말이
   // Pi 자신의 follow_up 큐로 들어가 T3 가 보여주지도 취소하지도 못했다. 루바토에서는
   // 대기 메시지를 턴이 끝날 때까지 붙들어 둔다 — 그게 팔로업이고, ↑ 는 승격이다.
+  // 방출은 화면에 없는 스레드까지 맡는 QueuedMessageSender 한 곳에서 한다.
+  'apps/web/src/components/QueuedMessageSender.tsx': [
+    [
+      '  const due =\n    next !== undefined &&\n    !blocked &&\n    isQueuedMessageDue({ message: next, phase, latestToolActivityId });',
+      '  // Rubato: a queued message is a follow-up. It runs as its own turn once this one\n  // ends; releasing it at a tool boundary would make the row\'s Send now arrow, the\n  // promotion to a steer, mean nothing.\n  const heldAsFollowUp = phase === "running" && thread?.session?.providerName === "rubato-pi";\n  const due =\n    next !== undefined &&\n    !blocked &&\n    !heldAsFollowUp &&\n    isQueuedMessageDue({ message: next, phase, latestToolActivityId });',
+      'replace',
+    ],
+  ],
+  'apps/web/src/components/QueuedMessageSender.test.tsx': [
+    [
+      '  it("moves on to the next message after a failed one is cancelled", async () => {\n',
+      '  // Rubato: a queued message is a follow-up, so a tool boundary does not release it.\n  it("holds a Rubato follow-up past tool calls until the turn ends", async () => {\n    const rubato = (status: string, toolActivityIds: string[] = []) => {\n      const base = thread(status, { toolActivityIds });\n      return { ...base, session: { ...base.session, providerName: "rubato-pi" } };\n    };\n    enqueue();\n    io.thread = rubato("running");\n    await render();\n    io.thread = rubato("running", ["tool-1"]);\n    await render();\n    expect(commandsRun()).toEqual([]);\n\n    io.thread = rubato("ready", ["tool-1"]);\n    await render();\n    expect(commandsRun()).toEqual(["start"]);\n  });\n\n',
+    ],
+  ],
   'apps/web/src/components/ChatView.tsx': [
     // The Agents tab renders Rubato's own panel (overlay RubatoAgentsPanel.tsx).
     ['import { AgentsPanel } from "./AgentsPanel";', 'import { RubatoAgentsPanel as AgentsPanel } from "./RubatoAgentsPanel";', 'replace'],
@@ -693,11 +707,6 @@ const edits = {
         'replace',
       ];
     }),
-    [
-      '    if (!isQueuedMessageDue({ message: nextQueuedMessage, phase, latestToolActivityId })) return;\n    sendQueuedMessage(nextQueuedMessage);\n  }, [\n    isSendBusy,\n    latestToolActivityId,\n    nextQueuedMessage,\n    phase,\n    queueBlockedByPendingRequest,\n    queueSendGate,\n  ]);',
-      '    if (!isQueuedMessageDue({ message: nextQueuedMessage, phase, latestToolActivityId })) return;\n    // A queued message is a follow-up: it runs as its own turn once this one\n    // ends. Releasing it at a tool boundary would make the row\'s Send now\n    // arrow mean nothing — that arrow is the promotion to a steer.\n    if (phase === "running" && selectedProvider === ProviderDriverKind.make("rubato-pi")) return;\n    sendQueuedMessage(nextQueuedMessage);\n  }, [\n    isSendBusy,\n    latestToolActivityId,\n    nextQueuedMessage,\n    phase,\n    queueBlockedByPendingRequest,\n    queueSendGate,\n    selectedProvider,\n  ]);',
-      'replace',
-    ],
     [
       'import {\n  deriveAgentPanelModel,\n  foldSubagentActivities,\n} from "@t3tools/client-runtime/state/subagentRuntime";',
       'import {\n  deriveAgentPanelModel,\n  foldSubagentActivities,\n  formatSpeedLabel,\n  latestSessionSpeed,\n} from "@t3tools/client-runtime/state/subagentRuntime";',
@@ -867,7 +876,6 @@ const edits = {
         '            render={showMoreButtonRender}',
         '            data-thread-selection-safe',
         '            size="sm"',
-        '            className="h-8 w-full translate-x-0 justify-start px-2 text-left text-xs text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"',
         '            onClick={() => {',
         '              expandThreadListForProject(projectKey);',
         '            }}',
@@ -885,7 +893,6 @@ const edits = {
         '            render={showLessButtonRender}',
         '            data-thread-selection-safe',
         '            size="sm"',
-        '            className="h-8 w-full translate-x-0 justify-start px-2 text-left text-xs text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"',
         '            onClick={() => {',
         '              collapseThreadListForProject(projectKey);',
         '            }}',
@@ -903,7 +910,7 @@ const edits = {
         '              render={showMoreButtonRender}',
         '              data-thread-selection-safe',
         '              size="sm"',
-        '              className="h-8 min-w-0 flex-1 translate-x-0 justify-start px-2 text-left text-xs text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"',
+        '              className="min-w-0 flex-1 justify-start text-left"',
         '              onClick={() => {',
         '                expandThreadListForProject(projectKey);',
         '              }}',
@@ -921,9 +928,7 @@ const edits = {
         '              render={showLessButtonRender}',
         '              data-thread-selection-safe',
         '              size="sm"',
-        '              className={`h-8 translate-x-0 px-2 text-xs text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-sidebar-foreground ${',
-        '                hiddenThreadCount > 0 ? "shrink-0 justify-center" : "w-full justify-start text-left"',
-        '              }`}',
+        '              className={hiddenThreadCount > 0 ? "shrink-0 justify-center" : "w-full justify-start text-left"}',
         '              onClick={() => {',
         '                collapseThreadListForProject(projectKey);',
         '              }}',
@@ -1357,7 +1362,7 @@ const edits = {
       'replace',
     ],
     [
-      '            {agent.title}\n          </span>\n          {role ? (\n            <span className="max-w-28 shrink-0 truncate rounded-sm border border-border/60 px-1 font-mono text-[.65rem] text-muted-foreground">\n              {role}\n            </span>\n          ) : null}\n',
+      '            {agent.title}\n          </span>\n          {role ? (\n            <span className="max-w-28 shrink-0 truncate rounded-sm border border-border/60 px-1 font-mono text-3xs text-muted-foreground">\n              {role}\n            </span>\n          ) : null}\n',
       '            {task}\n          </span>\n',
       'replace',
     ],

@@ -17,8 +17,8 @@ const t3Route = [
   '',
   '/**',
   ' * Providers are machine state, so the page shows one environment at a time:',
-  ' * the chosen one, or the representative of the selection. A project crumb',
-  ' * narrows the candidates to the environments that project is registered on.',
+  ' * the chosen one from the settings scope selector.',
+  ' * A project crumb narrows candidates to where that project is registered.',
   ' */',
   'function SettingsProvidersRoute() {',
   '  const target = Route.useSearch();',
@@ -53,7 +53,7 @@ export const providerEdits = {
     ['  component: SettingsProvidersRoute,\n', '  component: RubatoProvidersSettingsPanel,\n', 'replace'],
   ],
   // The page reads the Mac this app runs on, so the scope selects have nothing to choose.
-  'apps/web/src/routes/settings.tsx': [
+  'apps/web/src/components/settings/SettingsScopeSentence.tsx': [
     ['  "/settings/connections",\n', '  "/settings/providers",\n'],
   ],
 };

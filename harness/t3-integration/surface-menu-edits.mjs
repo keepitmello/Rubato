@@ -20,8 +20,8 @@ export const surfaceMenuEdits = {
     ['                className="group relative"\n',
       '                className={cn("group relative", surfaceGroupStartClass(actions, index))}\n',
       'replace'],
-    ['                    className="flex h-8 w-full cursor-default items-center gap-2.5 rounded-[var(--control-radius)] px-2.5 text-left text-sm opacity-50"\n',
-      '                    className={cn(\n                      "flex h-8 w-full cursor-default items-center gap-2.5 rounded-[var(--control-radius)] px-2.5 text-left text-sm opacity-50",\n                      surfaceGroupStartClass(actions, index),\n                    )}\n',
+    ['                    className="flex h-8 w-full cursor-default items-center gap-2.5 rounded-(--control-radius) px-2.5 text-left text-sm opacity-50"\n',
+      '                    className={cn(\n                      "flex h-8 w-full cursor-default items-center gap-2.5 rounded-(--control-radius) px-2.5 text-left text-sm opacity-50",\n                      surfaceGroupStartClass(actions, index),\n                    )}\n',
       'replace'],
     // "+" menu
     ['                  {addSurfaceActions.map((action) => {\n                    const Icon = action.icon;\n',

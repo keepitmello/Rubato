@@ -27,7 +27,7 @@ export const memoryEdits = {
     ['  BotIcon,\n', '  BotIcon,\n  BrainIcon,\n', 'replace'],
     ['  "/settings/storage": HardDriveIcon,\n', '  "/settings/memory": BrainIcon,\n'],
   ],
-  'apps/web/src/routes/settings.tsx': [
+  'apps/web/src/components/settings/SettingsScopeSentence.tsx': [
     ['  "/settings/connections",\n]);', '  "/settings/connections",\n  "/settings/memory",\n]);', 'replace'],
   ],
   // The router plugin writes this file from routes/ at dev and build time; these

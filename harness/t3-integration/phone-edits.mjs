@@ -60,7 +60,7 @@ export const phoneEdits = {
     ['  CalendarClockIcon,\n', '  CalendarClockIcon,\n  SmartphoneIcon,\n', 'replace'],
     ['  "/settings/scheduled": CalendarClockIcon,\n', '  "/settings/scheduled": CalendarClockIcon,\n  "/settings/phone": SmartphoneIcon,\n', 'replace'],
   ],
-  'apps/web/src/routes/settings.tsx': [
+  'apps/web/src/components/settings/SettingsScopeSentence.tsx': [
     ['  "/settings/scheduled",\n]);', '  "/settings/scheduled",\n  "/settings/phone",\n]);', 'replace'],
   ],
   'apps/web/src/routeTree.gen.ts': routeTreeEdits,
