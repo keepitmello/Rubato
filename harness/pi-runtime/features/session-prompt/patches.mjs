@@ -60,8 +60,12 @@ function patch(id, path, preimageSha256, apply) {
 // requests (large tool output previews, history-notes markers, image limits), so a tool that
 // tool_search loaded mid-session moved into the leading tool list and the provider prefix
 // changed from token 0 (audit 2026-10-03, checks/collapse.mjs). This puts each system
-// message back in front of the conversation message it preceded. Messages a handler kept are
-// found by identity, a same-length rewrite by position. A system message whose follower was
+// message back in front of the conversation message it preceded. A returned message is matched
+// to the one it came from by identity, else by a forward search for the same role, timestamp
+// and call id (handlers rewrite content through \`{ ...message, content }\` copies, and
+// history-notes also inserts reminders, so lengths differ), else by position when the length
+// is unchanged. Inserted messages match nothing and stay where the handler put them. A system
+// message whose follower was
 // dropped goes before the next surviving one, so the replayed tool state is unchanged. Only
 // a reordering handler falls back to stock's single head.
 export function patchRunnerSystemSlots(source) {
@@ -90,11 +94,27 @@ export function patchRunnerSystemSlots(source) {
     }
     const indexOf = new Map(visible.map((message, index) => [message, index]));
     const positional = returned.length === visible.length;
+    const keyOf = (message) => \`\${message?.role}\\u0000\${message?.timestamp ?? ""}\\u0000\${message?.toolCallId ?? ""}\\u0000\${message?.customType ?? ""}\`;
+    const keys = visible.map(keyOf);
     const out = [...lead];
     let emitted = 0;
+    let searchFrom = 0;
     for (let index = 0; index < returned.length; index++) {
         const message = returned[index];
-        const anchor = indexOf.get(message) ?? (positional ? index : undefined);
+        let anchor = indexOf.get(message);
+        if (anchor === undefined) {
+            const key = keyOf(message);
+            for (let candidate = searchFrom; candidate < keys.length; candidate++) {
+                if (keys[candidate] === key) {
+                    anchor = candidate;
+                    break;
+                }
+            }
+        }
+        if (anchor === undefined && positional)
+            anchor = index;
+        if (anchor !== undefined)
+            searchFrom = anchor + 1;
         if (anchor !== undefined) {
             if (anchor < emitted)
                 return undefined;

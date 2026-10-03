@@ -119,6 +119,16 @@ for (const [label, rewrite] of [
     { role: "user", content: [{ type: "text", text: "INSERTED" }], timestamp: 1 },
     ...messages.slice(1),
   ]],
+  // history-notes: every message is re-created with an item-id marker and a reminder is
+  // inserted, so neither identity nor position matches (checker repro, 2026-10-03).
+  ["copies with markers plus an inserted reminder", (messages) => {
+    const marked = messages.map((message) => ({
+      ...message,
+      content: [...(typeof message.content === "string" ? [{ type: "text", text: message.content }] : message.content), { type: "text", text: "[history: item_id=x]" }],
+    }));
+    return [{ role: "user", content: [{ type: "text", text: "BOOTSTRAP" }], timestamp: 0 }, ...marked,
+      { role: "user", content: [{ type: "text", text: "<context_notes_nudge>notes</context_notes_nudge>" }], timestamp: Date.now() }];
+  }],
 ]) {
   test(`a mid-session tool declaration stays in place after ${label} by a context handler`, async () => {
     const cwd = join(scratchRoot, `slots-${label.replaceAll(" ", "-")}`);
@@ -168,6 +178,6 @@ for (const [label, rewrite] of [
     assert.ok(!toolNames(sent[0]).includes("late_tool"), "the leading tool list keeps only the first declaration");
     const lateIndex = sent.findIndex((message, index) => index > 0 && message.role === "system" && toolNames(message).includes("late_tool"));
     assert.ok(lateIndex > 0, "the mid-session declaration is still a later system message");
-    assert.equal(textOf(sent[lateIndex + 1]), "two", "it stays right before the message it preceded");
+    assert.match(textOf(sent[lateIndex + 1]), /^two/, "it stays right before the message it preceded");
   });
 }
