@@ -78,14 +78,16 @@ const migrationRuns = (memory: string, store: string) => {
 
 describe("rubato dream --due and the live memory root", () => {
   // 2026-10-03: a verifier's scratch copy ran `dream --due` against the live ~/.rubato/memory.
-  test("#given this copy is not the installed Rubato and no memory root is named #when --due runs #then it writes nothing under the default root", () => {
+  test("#given this copy is not the installed Rubato and no memory root is named #when --due runs #then it writes nothing under the default root, even when that root is named explicitly", () => {
     const home = mkdtempSync(join(tmpdir(), "dream-cli-test-"))
     dirs.push(home)
     const memory = join(home, ".rubato", "memory")
     koreanStore(memory, "demo")
-    const result = dreamDue({ PATH: process.env.PATH, HOME: home }, home)
-    expect(result.status).toBe(0)
-    expect(result.stderr).toContain("nothing ran")
+    for (const env of [{ PATH: process.env.PATH, HOME: home }, { PATH: process.env.PATH, HOME: home, RUBATO_MEMORY_HOME: memory }]) {
+      const result = dreamDue(env, home)
+      expect(result.status).toBe(0)
+      expect(result.stderr).toContain("nothing ran")
+    }
     expect(existsSync(join(memory, "agents", "demo", "runtime"))).toBe(false)
   })
 })

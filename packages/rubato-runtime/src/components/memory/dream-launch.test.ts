@@ -90,6 +90,10 @@ describe("createDreamLauncher", () => {
     ]
     const { calls, spawn } = recorder()
     for (const env of cases) expect(createDreamLauncher({ env, home, spawn }).launch("session_start")).toBe(false)
+    // Naming the live root explicitly is not isolation (checker, 2026-10-04).
+    for (const root of [join(home, ".rubato", "memory"), join(home, ".rubato", "memory", "")]) {
+      expect(createDreamLauncher({ env: { [DREAM_CLI_ENV]: cliIn(scratch), RUBATO_MEMORY_HOME: root }, home, spawn }).launch("session_start")).toBe(false)
+    }
     const bare = tempHome()
     expect(createDreamLauncher({ env: { [DREAM_CLI_ENV]: cliIn(scratch) }, home: bare, spawn }).launch("session_start")).toBe(false)
     expect(calls).toEqual([])
