@@ -25,7 +25,8 @@ export interface TerminalNotifierDeps {
 export const NOTICE_TAIL_MAX_CHARS = 600;
 
 export interface TerminalNotificationDelivery {
-	readonly send: (content: string, options?: { readonly forceWake?: boolean }) => void;
+	/** `quiet` records the notice in the conversation without starting a turn; the next turn reads it. */
+	readonly send: (content: string, options?: { readonly forceWake?: boolean; readonly quiet?: boolean }) => void;
 }
 
 /** Shared terminal-notification guard and notify-mode mapping. */
@@ -42,7 +43,7 @@ export function getTerminalNotificationDelivery(
 			deps.sendMessage(
 				{ customType, content, display: false },
 				{
-					triggerTurn: true,
+					triggerTurn: options?.quiet !== true,
 					deliverAs: mode === "wake" || options?.forceWake === true ? "steer" : "followUp",
 				},
 			),

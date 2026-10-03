@@ -12,6 +12,7 @@ import {
 	textResult,
 } from "./context.ts";
 import { renderMonitorCall } from "./render.ts";
+import { findSameWatch, findSessionHeldByPattern } from "./monitor-guards.ts";
 import { spawnCommandSession } from "./spawn.ts";
 
 export const DEFAULT_MONITOR_TIMEOUT_MS = 300_000;
@@ -122,12 +123,35 @@ async function createMonitor(
 		return errorResult(`Invalid monitor filter regex: ${input.filter}`);
 	}
 
+	const cwd = execCtx?.cwd ?? ctx.cwd;
+	const persistent = input.persistent === true;
+	const watches = registry.liveCommandWatches();
+	const same = findSameWatch(watches, { command: input.command, cwd, filter, persistent });
+	if (same) {
+		// Asking again means the agent wants this watch's next events, including how it ends.
+		if (same.paused) registry.rearm(same.id);
+		ctx.onMonitorRearmed?.(same.id);
+		return textResult(
+			`Monitor already watching this command with ID: ${same.monitorId}; reusing it, no second watcher started.`,
+			{ details: { monitor_id: same.monitorId, bash_id: same.id, monitor: true, reused: true } },
+		);
+	}
+	const held = findSessionHeldByPattern(input.command, ctx.manager.list(), watches);
+	if (held) {
+		const shown = held.command.length > 120 ? `${held.command.slice(0, 117)}...` : held.command;
+		return errorResult(
+			held.monitorId === undefined
+				? `Not started: pgrep -f "${held.pattern}" matches your own background session ${held.id} (\`${shown}\`), so this watch cannot fire before ${held.id} exits, and ${held.id}'s completion notification already wakes you. Do not watch it; keep working or end the turn.`
+				: `Not started: pgrep -f "${held.pattern}" matches the command line of your live monitor ${held.monitorId} (\`${shown}\`), so each watcher would keep the other alive until its deadline. Reuse ${held.monitorId}, or stop it with kill_bash first; bracketing one character (e.g. "[w]orker.py") keeps a watcher's own command line out of later matches.`,
+		);
+	}
+
 	const { id, runtime } = await spawnCommandSession(ctx, {
 		command: input.command,
 		cols: resolveDimension(undefined, ctx.defaultCols || DEFAULT_COLS),
 		rows: resolveDimension(undefined, ctx.defaultRows || DEFAULT_ROWS),
 		cwd: execCtx?.cwd,
-		...(input.persistent ? {} : { timeoutMs: resolveTimeoutMs(input.timeout_ms) }),
+		...(persistent ? {} : { timeoutMs: resolveTimeoutMs(input.timeout_ms) }),
 	});
 	ctx.onMonitorRearmed?.(id);
 	const monitorId = registry.register({
@@ -135,7 +159,7 @@ async function createMonitor(
 		description: input.description,
 		runtime,
 		filter,
-		persistent: input.persistent === true,
+		persistent,
 	});
 	ctx.manager.bindMonitorId(monitorId, id);
 	// The tool call site is the only place the branch inputs (command, persistent, filter)
