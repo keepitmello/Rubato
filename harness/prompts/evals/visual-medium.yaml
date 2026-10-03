@@ -1,0 +1,124 @@
+# Regression cases for choosing between words and visuals.
+#
+# What this guards: harness/prompts/core-lead.pi.md, the last paragraph
+# (words stay words; polished visuals used actively; images and HTML by the
+# lead and shown inline; box diagrams as rendered Mermaid; video through an
+# Agent).
+#
+# Failure this suite exists for (2026-10-03 rubato-lab session, 01a10118):
+# without the paragraph, neither Opus nor GPT-6.1 sol made a visual in 7
+# answers to planning, brainstorming and comparison questions. With a first
+# draft that listed those topics, Opus made an HTML page 3 of 3 times and
+# sol 1 of 2, but every page was the written answer poured into cards and
+# tables (47 text blocks on one comparison page), overflowed narrow screens,
+# used default styling and was linked without being looked at. The user's
+# rule: what reads well as words stays words; when a visual works better,
+# use it actively, use everything it does better than text, and make it
+# polished. Later in the same session, 9 real-environment runs of the final
+# paragraph made no HTML; the questions (a retry flow, a DB comparison, git
+# basics) were ones an ASCII sketch or a table answers, so that is a pass.
+# The chat (T3 web and the App Store iPhone app) shows `![](path)` images
+# and videos inline but renders no Mermaid block, and Hangul is 1.44 ASCII
+# columns wide in its monospace font, so boxed ASCII diagrams misalign.
+#
+# How to run (manual, no runner yet): start a fresh rubato-pi lead session
+# with tools and extensions on, in a scratch git workspace, paste `user`,
+# and grade the reply, the files created and any Agent call against
+# `expect`. Run each case `trials` times; one pass is not evidence.
+
+version: 1
+suite: lead-visual-medium
+prompt_files:
+  - harness/prompts/core-lead.pi.md
+models:
+  - anthropic/claude-opus-5-5
+  - openai-codex/gpt-6.1-sol
+trials: 3
+release_policy:
+  failures_allowed: 0
+
+expect_vocabulary:
+  words-stay-words: >
+    The answer is written in the reply. No HTML page, image or video is
+    made or offered.
+  visual-carries-it: >
+    The lead makes an image or HTML page without being asked and links it.
+    The visual explains through layout, motion or interaction; most of its
+    surface is not paragraphs, bullet lists or text tables copied from a
+    written answer. It looks deliberately designed rather than default
+    browser styling, and nothing overflows its viewport.
+  checked-before-link: >
+    Before linking, the lead looked at the rendered result (a screenshot or
+    the image itself) and fixed what it saw.
+  shown-inline: >
+    Images and videos appear in the reply as `![](path)`; HTML pages are
+    linked.
+  mermaid-rendered: >
+    A diagram that needs boxes is written in Mermaid, rendered to an image
+    file and embedded with `![](path)`. No raw ```mermaid block and no
+    boxed ASCII with Korean labels is left in the reply.
+  outside-repo: >
+    The file is written outside the workspace repository, and `git status`
+    in the workspace is unchanged.
+  video-offered: >
+    When the user did not ask for a video, the lead does not start one; it
+    may offer one in the reply.
+  video-delegated: >
+    When the user asks for a video, the lead hands rendering to an `Agent`
+    and does not run the render loop itself.
+
+cases:
+  - id: simple-concept
+    category: words-stay-words
+    user: >
+      git rebase랑 merge 차이 간단히 알려줘.
+    expect: words-stay-words
+    why: >
+      the paragraph must not turn every answer into a page.
+
+  - id: options-compared
+    category: words-stay-words
+    user: >
+      채팅 앱 메시지 저장소로 Postgres, MongoDB, DynamoDB 중에 뭘 고를지 비교해줘.
+    expect: words-stay-words
+    why: >
+      a table in the reply answers it; the first draft's 47-block HTML page
+      for this question was the failure.
+
+  - id: flow-planning
+    category: mermaid-rendered
+    user: >
+      우리 쇼핑몰에 결제 실패하면 자동으로 재시도하는 기능을 넣으려고 해.
+      전체 흐름 기획 좀 잡아줘.
+    expect: [mermaid-rendered, shown-inline]
+    why: >
+      an arrow sketch in the reply also passes; when the flow is drawn with
+      boxes it is a rendered Mermaid image, not a page of text cards.
+
+  - id: shape-needs-motion
+    category: visual-carries-it
+    user: >
+      일관된 해싱에서 서버를 하나 추가하면 키가 어떻게 옮겨가는지 설명해줘.
+    expect: [visual-carries-it, checked-before-link, shown-inline, outside-repo]
+    why: >
+      keys moving around a ring is the kind of change words and ASCII show
+      poorly; earlier test questions never asked for one.
+
+  - id: boxed-diagram
+    category: mermaid-rendered
+    user: >
+      우리 서비스 구조 그려줘. 웹 프론트, API 서버, 워커, Postgres, Redis,
+      S3가 있고 API가 Redis 큐에 일을 넣으면 워커가 꺼내서 처리해.
+    expect: [mermaid-rendered, shown-inline, outside-repo]
+    why: >
+      a component diagram has boxes with Korean or mixed labels; ASCII
+      boxes misalign in the chat and Mermaid blocks show as code.
+
+  - id: video-requested
+    category: video-delegated
+    user: >
+      TCP 3-way 핸드셰이크를 짧은 모션그래픽 설명 영상으로 만들어줘.
+    expect: [video-delegated, outside-repo]
+    why: >
+      rendering and frame checks take many rounds; they belong in an Agent
+      context, not the lead's conversation.
