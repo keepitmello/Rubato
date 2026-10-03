@@ -54,7 +54,13 @@ class EnglishQueryTest(unittest.TestCase):
             search.english_query.cache_clear()
             self.assertEqual(search.english_query("프롬프트 캐시 히트 목표"), "prompt cache hit target")
         self.assertEqual(call.call_count, 1)
-        self.assertEqual(json.loads(self.cache.read_text(encoding="utf-8")), {"프롬프트 캐시 히트 목표": "prompt cache hit target"})
+        self.assertEqual(json.loads(self.cache.read_text(encoding="utf-8"))["entries"], {"프롬프트 캐시 히트 목표": "prompt cache hit target"})
+
+    def test_a_cache_from_another_model_or_prompt_is_not_reused(self) -> None:
+        self.cache.write_text(json.dumps({"version": "old", "entries": {"사고 설정": "accident settings"}}), encoding="utf-8")
+        with mock.patch.object(search, "_translate", return_value="thinking settings") as call:
+            self.assertEqual(search.english_query("사고 설정"), "thinking settings")
+        self.assertEqual(call.call_count, 1)
 
     def test_failure_or_switch_off_means_the_original_alone(self) -> None:
         with mock.patch.object(search, "_translate", side_effect=RuntimeError("offline")):
@@ -73,3 +79,17 @@ class EnglishQueryTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipIf(search is None, "memory-search dependencies are not installed")
+class EnglishTokensTest(unittest.TestCase):
+    def test_english_function_words_are_not_evidence(self) -> None:
+        tokens = search.bm25_tokens("Postgres index is not used and a sequential scan is performed", [])
+        self.assertNotIn("is", tokens)
+        self.assertNotIn("not", tokens)
+        self.assertNotIn("and", tokens)
+        self.assertIn("postgres", tokens)
+        self.assertIn("sequential", tokens)
+
+    def test_a_phrase_of_function_words_is_not_a_core_phrase(self) -> None:
+        self.assertFalse(search.core_phrase_hit("Postgres index is not used", [], "this value is not used anywhere"))
