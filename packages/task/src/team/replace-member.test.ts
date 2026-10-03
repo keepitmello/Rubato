@@ -28,7 +28,7 @@ async function harness(manager = new FakeTeamManager()) {
   const deps: ReplaceTeamMemberDeps = {
     manager, stateDir, destruction: new FakeDestruction(), taskSettings: taskSettings(),
     leadSessionId: "lead-session", spawnDepth: 1,
-    memberPorts: { isModelAvailable: (model) => model === "rubato-mock/mock-1" },
+    memberPorts: { isModelAvailable: (model) => model === "rubato-mock/mock-1" || model === "rubato-mock/mock-2" },
     memberExtension: { entryPath: "/tmp/member-extension.mjs" },
   }
   const created = await createTeam(normalizeSenpiTeamSpec({
@@ -141,7 +141,83 @@ describe("same-team member recovery", () => {
     if (state === "disposed" || state === "evicted") h.manager.setResidency(h.input.expectedTaskId, state)
     const result = await replaceTeamMember(h.input, h.deps)
     expect(result.previousTaskId).toBe(h.input.expectedTaskId)
+    expect(result.reason).toBe("recovery")
     expect((await readMemberTaskMap(h.runtimeDir)).verifier).toBe(result.member.taskId)
+    expect(h.manager.started.at(-1)!.prompt).toContain("You replace failed/unavailable task")
+    expect(h.manager.cancelled).toEqual([])
+    expect((h.deps.destruction as FakeDestruction).calls).toEqual([{ taskId: h.input.expectedTaskId, cause: "reconcile_lost" }])
+  })
+
+  test("a blank approval reference does not unlock replacing a running member", async () => {
+    const h = await harness()
+    await expect(replaceTeamMember({ ...h.input, userApprovalRef: "  " }, h.deps)).rejects.toMatchObject({ code: "member_continuable" })
+    expect(h.manager.started).toHaveLength(2)
+    expect(h.manager.cancelled).toEqual([])
+  })
+
+  test("user-approved model change stops a running verifier first and keeps its mailbox, board and address", async () => {
+    const h = await harness()
+    const ctx = { teamRunId: h.teamRunId, config: h.config }
+    const board = await createTeamTask(ctx, { subject: "Verify C", description: "evidence.md", status: "pending" })
+    await claimTeamTask(ctx, board.id, "verifier")
+    const owner = endpoint(h, "owner", h.created.memberTaskIds.owner!)
+    const oldVerifier = endpoint(h, "verifier", h.input.expectedTaskId)
+    await owner.send("verifier", "Correction C is ready for recheck.")
+    // The old execution must be stopped before the replacement starts: never two live verifiers.
+    const statusAtStart: string[] = []
+    const start = h.manager.start.bind(h.manager)
+    h.manager.start = (spec) => {
+      statusAtStart.push(h.manager.get(h.input.expectedTaskId)!.status)
+      return start(spec)
+    }
+
+    const replaced = await replaceTeamMember({
+      ...h.input, model: "rubato-mock/mock-2", effort: "high", userApprovalRef: "user: \"switch the verifier to mock-2 high\"",
+    }, h.deps)
+
+    expect(replaced.reason).toBe("user_approved_change")
+    expect(statusAtStart).toEqual(["cancelled"])
+    expect(h.manager.cancelled.map((row) => row.taskId)).toEqual([h.input.expectedTaskId])
+    const launch = h.manager.started.at(-1)!
+    expect(launch.model).toBe("rubato-mock/mock-2")
+    expect(launch.reasoning).toBe("high")
+    expect(launch.name).toMatch(new RegExp(`^team:${h.teamRunId}:verifier@[0-9a-f-]{36}$`))
+    expect(launch.memberEnv?.RUBATO_PI_ROLE).toBe("verifier")
+    expect(launch.prompt).toContain("user approved a model change")
+    expect(launch.prompt).toContain("switch the verifier to mock-2 high")
+    expect(launch.prompt).not.toContain("failed/unavailable")
+    expect((await readMemberTaskMap(h.runtimeDir)).verifier).toBe(replaced.member.taskId)
+    expect((await getTeamTask(ctx, board.id)).owner).toBe("verifier")
+    const verifier = endpoint(h, "verifier", replaced.member.taskId)
+    await oldVerifier.poller.pollOnce()
+    expect(oldVerifier.injected).toEqual([])
+    await verifier.poller.pollOnce()
+    expect(verifier.injected[0]).toContain("Correction C")
+    await verifier.send("owner", "PASS: C holds on revision B.")
+    await owner.poller.pollOnce()
+    expect(owner.injected[0]).toContain("PASS: C")
+  })
+
+  test.each([
+    ["cancelled", "disposed"], ["completed", "resident"], ["completed", "persisted_only"],
+    ["completed", "rpc_detached"], ["interrupted", "resident"],
+  ] as const)("user-approved model change replaces a %s/%s member after tearing it down", async (status, residency) => {
+    const h = await harness()
+    h.manager.setStatus(h.input.expectedTaskId, status)
+    h.manager.setResidency(h.input.expectedTaskId, residency)
+    const result = await replaceTeamMember({ ...h.input, model: "rubato-mock/mock-2", userApprovalRef: "user message 42" }, h.deps)
+    expect(result.reason).toBe("user_approved_change")
+    expect((await readMemberTaskMap(h.runtimeDir)).verifier).toBe(result.member.taskId)
+    expect((h.deps.destruction as FakeDestruction).calls).toEqual([{ taskId: h.input.expectedTaskId, cause: "reconcile_lost" }])
+    expect(h.manager.started.at(-1)!.model).toBe("rubato-mock/mock-2")
+  })
+
+  test("an approved change with an unavailable model is rejected before the running member is stopped", async () => {
+    const h = await harness()
+    await expect(replaceTeamMember({ ...h.input, model: "missing/model", userApprovalRef: "user message 42" }, h.deps))
+      .rejects.toMatchObject({ code: "MODEL_UNAVAILABLE" })
+    expect(h.manager.cancelled).toEqual([])
+    expect(h.manager.get(h.input.expectedTaskId)?.status).toBe("running")
   })
 
   test("invalid route, empty handoff and foreign lead fail before teardown", async () => {

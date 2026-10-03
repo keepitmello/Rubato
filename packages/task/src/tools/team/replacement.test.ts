@@ -14,7 +14,7 @@ describe("team_replace_member tool", () => {
   test("maps the explicit recovery request without allowing a lead or role override", async () => {
     const service = createFakeTeamService({
       replaceMember: async () => ({
-        teamRunId: input.team_run_id, previousTaskId: input.expected_task_id,
+        teamRunId: input.team_run_id, previousTaskId: input.expected_task_id, reason: "recovery",
         member: fakeCreatedMember({ name: "beta", taskId: "st_new", role: { kind: "verifier", model: input.model } }),
       }),
     })
@@ -30,6 +30,22 @@ describe("team_replace_member tool", () => {
     expect(JSON.stringify(result.content)).toContain("not a completed verification")
     expect(TeamReplaceMemberParams.properties).not.toHaveProperty("lead_session_id")
     expect(TeamReplaceMemberParams.properties).not.toHaveProperty("kind")
+  })
+
+  test("passes the user's approval reference for a model change and reports that reason", async () => {
+    const service = createFakeTeamService({
+      replaceMember: async () => ({
+        teamRunId: input.team_run_id, previousTaskId: input.expected_task_id, reason: "user_approved_change",
+        member: fakeCreatedMember({ name: "beta", taskId: "st_new", role: { kind: "verifier", model: input.model } }),
+      }),
+    })
+    const result = await runTeamReplaceMember(service, { ...input, user_approval_ref: "user: switch beta to mock-1" })
+    expect(service.calls[0]!.args[0]).toMatchObject({ userApprovalRef: "user: switch beta to mock-1" })
+    expect(result.details).toMatchObject({ kind: "replaced", reason: "user_approved_change" })
+    expect(JSON.stringify(result.content)).toContain("User-approved model change")
+    const tool = createTeamReplaceMemberTool({ service, models: { has: () => true, list: () => [input.model] } })
+    expect(Value.Check(tool.parameters, { ...input, user_approval_ref: "" })).toBe(false)
+    expect(tool.description).toContain("user_approval_ref")
   })
 
   test("requires a handoff and exposes a model catalog that only grows", () => {

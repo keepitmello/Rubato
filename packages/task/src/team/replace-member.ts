@@ -21,11 +21,19 @@ export type ReplaceTeamMemberInput = {
   readonly prompt: string
   readonly effort?: "minimal" | "low" | "medium" | "high" | "xhigh" | "max"
   readonly taskSummary?: string
+  /**
+   * Reference to the user's explicit approval of this model/route change (quote or message id).
+   * Only with it may a running, idle/resident, suspended or cancelled member be replaced.
+   */
+  readonly userApprovalRef?: string
 }
+
+export type TeamMemberReplacementReason = "recovery" | "user_approved_change"
 
 export type ReplaceTeamMemberResult = {
   readonly teamRunId: string
   readonly previousTaskId: string
+  readonly reason: TeamMemberReplacementReason
   readonly member: CreatedMemberInfo
 }
 
@@ -41,8 +49,10 @@ export type ReplaceTeamMemberDeps = CreateTeamDeps & Pick<DeleteTeamDeps, "destr
 }
 
 /**
- * Recover an unusable execution without changing its logical team/member, mailbox or board owner.
- * This is explicit recovery, never a model fallback or a replacement for continuing an idle peer.
+ * Replace a member's execution without changing its logical team/member, mailbox or board owner.
+ * Two cases only: recovering an unusable (failed/lost/disposed) execution, or a model/route change
+ * the user approved (`userApprovalRef`). Never a silent model fallback, and never the lead's own
+ * call to swap out a working peer: without approval a continuable member must be continued.
  * Consumed history is not replayed: the required handoff prompt must name remaining work/artifacts.
  */
 export function replaceTeamMember(
@@ -78,8 +88,10 @@ export function replaceTeamMember(
     const failed = previous.status === "error" || previous.status === "lost"
     const finishedWithoutSession = previous.status === "completed"
       && (previous.residency_state === "disposed" || previous.residency_state === "evicted")
-    if (!failed && !finishedWithoutSession) {
-      deny("member_continuable", "Do not replace running, idle/resident, suspended or deliberately cancelled members. Continue or resume them.")
+    const approval = input.userApprovalRef?.trim() || undefined
+    const reason: TeamMemberReplacementReason = approval !== undefined ? "user_approved_change" : "recovery"
+    if (reason === "recovery" && !failed && !finishedWithoutSession) {
+      deny("member_continuable", "Do not replace running, idle/resident, suspended or deliberately cancelled members. Continue or resume them; a model change needs the user's approval reference.")
     }
     const spec = normalizeSenpiTeamSpec({
       name: runtime.teamName,
@@ -88,7 +100,9 @@ export function replaceTeamMember(
         kind: member.kind,
         model: input.model,
         prompt: [
-          `You replace failed/unavailable task ${previous.task_id} as '${member.name}' in this same team.`,
+          reason === "recovery"
+            ? `You replace failed/unavailable task ${previous.task_id} as '${member.name}' in this same team.`
+            : `You replace task ${previous.task_id} as '${member.name}' in this same team because the user approved a model change (approval: ${approval}). The previous execution was stopped; continue its work from the handoff.`,
           "Your peer address and board ownership are unchanged. Read the handoff artifacts and outstanding requests.",
           "Earlier verdicts cover only their checked revisions, not subsequent edits. Recheck changed claims from original evidence.",
           "Send technical defects and recheck requests directly to the responsible owner, even when a lead suggested the disproved method. Escalate intent, criterion, authority or resource changes to the lead.",
@@ -99,10 +113,10 @@ export function replaceTeamMember(
         ...(member.worktreePath !== undefined ? { worktreePath: member.worktreePath } : {}),
       }],
     }, runtime.teamName)
-    // Validate the exact route and handoff before destroying the failed execution.
+    // Validate the exact route and handoff before stopping the previous execution.
     if (input.prompt.trim().length === 0) deny("missing_handoff", "A replacement needs a handoff with artifacts, checked revisions and remaining work.")
     validateSenpiTeamMembers(spec, deps.memberPorts)
-    await deps.destruction.destroyResidentTask(previous.task_id, "reconcile_lost")
+    await stopPreviousExecution(previous.task_id, reason, deps)
 
     const now = deps.now ?? Date.now
     const spawned = await spawnTeamMembers({
@@ -175,6 +189,7 @@ export function replaceTeamMember(
     return {
       teamRunId: input.teamRunId,
       previousTaskId: previous.task_id,
+      reason,
       member: {
         name: member.name,
         taskId: next.taskId,
@@ -185,4 +200,22 @@ export function replaceTeamMember(
       },
     }
   })
+}
+
+/**
+ * Leave no live execution for the member before its replacement spawns. A failed execution only
+ * needs teardown. An approved change may hit a running/pending turn: cancel it first (steering then
+ * aborts and destroys it), and tear down whatever is left of an idle, suspended or cancelled one so
+ * it cannot be revived next to its replacement. "reconcile_lost" also kills a detached rpc process.
+ */
+async function stopPreviousExecution(
+  taskId: string,
+  reason: TeamMemberReplacementReason,
+  deps: ReplaceTeamMemberDeps,
+): Promise<void> {
+  if (reason === "user_approved_change") {
+    const outcome = await deps.manager.cancelTask(taskId, "team member model change approved by the user")
+    if (outcome.kind === "cancelled") return
+  }
+  await deps.destruction.destroyResidentTask(taskId, "reconcile_lost")
 }
