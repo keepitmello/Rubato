@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
-const PACKAGE_VERSION = "0.86.1";
+import { PI_VERSION as PACKAGE_VERSION } from "../../pi-version.mjs";
 const FEATURE_IMPORT = 'import { InputLifecycle } from "../rubato-features/input-lifecycle/state.mjs";';
 
 function replaceOnce(source, before, after, label) {
@@ -90,32 +90,46 @@ function patchAgentSessionRuntime(source) {
   );
   next = replaceOnce(
     next,
+    // 1.0 removed upstream's preflight try/catch (RPC now reports a thrown
+    // prompt itself), so the "rejected" disposition needs its own try. It spans
+    // the whole body; \`inputStarted\` keeps run-time failures after "started"
+    // from being reported as rejections, exactly like the old preflight scope.
     `    async prompt(text, options) {
+        if (this._isEmittingAgentSettled) {
+            this._deferredSettledActions.push(async () => await this.prompt(text, options));
+            return;
+        }
         const expandPromptTemplates = options?.expandPromptTemplates ?? true;
         const preflightResult = options?.preflightResult;
-        let messages;`,
+`,
     `    async prompt(text, options) {
+        if (this._isEmittingAgentSettled) {
+            this._deferredSettledActions.push(async () => await this.prompt(text, options));
+            return;
+        }
         const expandPromptTemplates = options?.expandPromptTemplates ?? true;
         const preflightResult = options?.preflightResult;
-        let messages;
-        let inputId;`,
+        let inputId;
+        let inputStarted = false;
+        try {
+`,
     "prompt-input-id",
   );
   next = replaceOnce(
     next,
-    `            const processedInput = await this._runInputHandlers(text, options?.images, options?.source ?? "interactive", this.isStreaming ? options?.streamingBehavior : undefined);
-            if (!processedInput) {
-                preflightResult?.(true);
-                return;
-            }
-            const { text: currentText, images: currentImages } = processedInput;`,
-    `            const processedInput = await this._runInputHandlers(text, options?.images, options?.source ?? "interactive", this.isStreaming ? options?.streamingBehavior : undefined);
-            if (!processedInput) {
-                preflightResult?.(true);
-                return;
-            }
-            const { text: currentText, images: currentImages } = processedInput;
-            inputId = processedInput.inputId;`,
+    `        const processedInput = await this._runInputHandlers(text, options?.images, options?.source ?? "interactive", this.isStreaming ? options?.streamingBehavior : undefined);
+        if (!processedInput) {
+            preflightResult?.("handled");
+            return;
+        }
+        const { text: currentText, images: currentImages } = processedInput;`,
+    `        const processedInput = await this._runInputHandlers(text, options?.images, options?.source ?? "interactive", this.isStreaming ? options?.streamingBehavior : undefined);
+        if (!processedInput) {
+            preflightResult?.("handled");
+            return;
+        }
+        const { text: currentText, images: currentImages } = processedInput;
+        inputId = processedInput.inputId;`,
     "prompt-input-id-binding",
   );
   // 0.86 moved the `input` emission into the shared `_runInputHandlers` helper that both
@@ -171,7 +185,7 @@ function patchAgentSessionRuntime(source) {
         }
         const processedInput = await this._runInputHandlers(text, images, source, this.isStreaming ? behavior : undefined);
         if (!processedInput)
-            return;
+            return "handled";
         let expandedText = this._expandSkillCommand(processedInput.text);
         expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
         if (behavior === "steer") {
@@ -180,6 +194,7 @@ function patchAgentSessionRuntime(source) {
         else {
             await this._queueFollowUp(expandedText, processedInput.images);
         }
+        return "queued";
     }`,
     `    async _queueUserInput(text, images, behavior, source) {
         if (text.startsWith("/")) {
@@ -187,7 +202,7 @@ function patchAgentSessionRuntime(source) {
         }
         const processedInput = await this._runInputHandlers(text, images, source, this.isStreaming ? behavior : undefined);
         if (!processedInput)
-            return;
+            return "handled";
         let expandedText = this._expandSkillCommand(processedInput.text);
         expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
         if (behavior === "steer") {
@@ -197,46 +212,47 @@ function patchAgentSessionRuntime(source) {
             await this._queueFollowUp(expandedText, processedInput.images, processedInput.inputId);
         }
         await this._emitInputDisposition(processedInput.inputId, "queued");
+        return "queued";
     }`,
     "queue-user-input-lifecycle",
   );
   next = replaceOnce(
     next,
-    `                if (options.streamingBehavior === "followUp") {
-                    await this._queueFollowUp(expandedText, currentImages);
-                }
-                else {
-                    await this._queueSteer(expandedText, currentImages);
-                }
-                preflightResult?.(true);`,
-    `                if (options.streamingBehavior === "followUp") {
-                    await this._queueFollowUp(expandedText, currentImages, inputId);
-                }
-                else {
-                    await this._queueSteer(expandedText, currentImages, inputId);
-                }
-                await this._emitInputDisposition(inputId, "queued");
-                preflightResult?.(true);`,
+    `            if (options.streamingBehavior === "followUp") {
+                await this._queueFollowUp(expandedText, currentImages);
+            }
+            else {
+                await this._queueSteer(expandedText, currentImages);
+            }
+            preflightResult?.("queued");`,
+    `            if (options.streamingBehavior === "followUp") {
+                await this._queueFollowUp(expandedText, currentImages, inputId);
+            }
+            else {
+                await this._queueSteer(expandedText, currentImages, inputId);
+            }
+            await this._emitInputDisposition(inputId, "queued");
+            preflightResult?.("queued");`,
     "prompt-queued",
   );
   next = replaceOnce(
     next,
-    `            messages.push({
-                role: "user",
-                content: userContent,
-                timestamp: Date.now(),
-            });`,
-    `            const userMessage = {
-                role: "user",
-                content: userContent,
-                timestamp: Date.now(),
-            };
-            this._inputLifecycle.bindMessage(inputId, userMessage, {
-                delivery: "submit",
-                text: expandedText,
-                images: currentImages,
-            });
-            messages.push(userMessage);`,
+    `        messages.push({
+            role: "user",
+            content: userContent,
+            timestamp: Date.now(),
+        });`,
+    `        const userMessage = {
+            role: "user",
+            content: userContent,
+            timestamp: Date.now(),
+        };
+        this._inputLifecycle.bindMessage(inputId, userMessage, {
+            delivery: "submit",
+            text: expandedText,
+            images: currentImages,
+        });
+        messages.push(userMessage);`,
     "prompt-message-identity",
   );
   // 0.86 renders the system prompt from options instead of assigning
@@ -244,33 +260,21 @@ function patchAgentSessionRuntime(source) {
   // still belongs at the point where the prompt is definitely about to run.
   next = replaceOnce(
     next,
-    `        if (!messages) {
-            return;
+    `        preflightResult?.("started");
+        await this._runAgentPrompt(messages);
+    }`,
+    `        await this._emitInputDisposition(inputId, "started");
+        inputStarted = true;
+        preflightResult?.("started");
+        await this._runAgentPrompt(messages);
         }
-        preflightResult?.(true);
-        await this._runAgentPrompt(messages);`,
-    `        if (!messages) {
-            return;
+        catch (error) {
+            if (!inputStarted)
+                await this._emitInputDisposition(inputId, "rejected");
+            throw error;
         }
-        await this._emitInputDisposition(inputId, "started");
-        preflightResult?.(true);
-        await this._runAgentPrompt(messages);`,
+    }`,
     "prompt-started",
-  );
-  next = replaceOnce(
-    next,
-    `        catch (error) {
-            preflightResult?.(false);
-            throw error;
-        }
-        if (!messages) {`,
-    `        catch (error) {
-            await this._emitInputDisposition(inputId, "rejected");
-            preflightResult?.(false);
-            throw error;
-        }
-        if (!messages) {`,
-    "prompt-rejected",
   );
   next = replaceOnce(
     next,
@@ -336,11 +340,7 @@ function patchAgentSessionRuntime(source) {
         if (images) {
             content.push(...images);
         }
-        this.agent.followUp({
-            role: "user",
-            content,
-            timestamp: Date.now(),
-        });
+        this.agent.followUp({ role: "user", content, timestamp: Date.now() });
     }`,
     `    async _queueFollowUp(text, images, inputId) {
         this._followUpMessages.push(text);
@@ -488,10 +488,10 @@ export const files = Object.freeze([
 ]);
 
 export const patches = Object.freeze([
-  patch("dist/core/agent-session.js", "edaff7055ced7d49d25135c92415fbbfd9c14c4a29be5a79510ab9216045d6d9", patchAgentSessionRuntime),
-  patch("dist/core/extensions/types.d.ts", "a4d5b8774fa8015b8a3274614f1398a6aeeffdd888c122910439666955dc2a52", patchExtensionTypes),
-  patch("dist/core/extensions/runner.js", "07a94efe560e6a460a415b2188c1c3c69ca151bd163c9b5f05347caf8403ace2", patchRunnerRuntime),
-  patch("dist/core/extensions/runner.d.ts", "fc0f81468c51bacfc093ac09974aa8e8053ca463e205eb66a1c63b0b655f61b9", patchRunnerTypes),
-  patch("dist/core/extensions/index.d.ts", "5b294bd70da0744cb18a45d1cfb774237986c047ec1996e03f24a9605efdd4ab", patchExtensionIndexTypes),
-  patch("dist/index.d.ts", "44bf19d2716cb18382aa6bd0ae88b7e03ee50ae75b56acb6d11beb40dfe99dea", patchPublicIndexTypes),
+  patch("dist/core/agent-session.js", "35ca1dabd54d98c236c9601b569c2856b726ade392d06b2eaaf50158f48913ab", patchAgentSessionRuntime),
+  patch("dist/core/extensions/types.d.ts", "abd9e9be0bf21b4c35621fe90b79af75c85b774e8b254b515d699785fda5962a", patchExtensionTypes),
+  patch("dist/core/extensions/runner.js", "258f142bc56cc84d953ef6146222e5ff3a94cc908592a1b3d075d34bbcd68b36", patchRunnerRuntime),
+  patch("dist/core/extensions/runner.d.ts", "6aef77e094e73abd7e508850e45c58e244ab2d5db6c4f6278d8652ea9ded2bb1", patchRunnerTypes),
+  patch("dist/core/extensions/index.d.ts", "fe5661c6cd9a948293f0f1d1db5a052dcc60493f6b1f68349a7ab96987b10e40", patchExtensionIndexTypes),
+  patch("dist/index.d.ts", "b254e36846b1dcc64ce1a8ba72e23fb410df4aa4408ba8c23e69e5b3f934e3cc", patchPublicIndexTypes),
 ]);

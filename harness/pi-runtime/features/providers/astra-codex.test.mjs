@@ -1,15 +1,17 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { patchOpenAiCodexResponsesAstra, patchTransformMessagesPreserve } from "./astra-codex.mjs";
 
-const stockPiAi = join(
-	dirname(fileURLToPath(import.meta.url)),
-	"../../node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist",
-);
+// 0.86.1 nested pi-ai under pi-coding-agent; 1.0.1 hoists it as a sibling.
+const runtimeModules = join(dirname(fileURLToPath(import.meta.url)), "../../node_modules/@earendil-works");
+const stockPiAi = [
+	join(runtimeModules, "pi-coding-agent/node_modules/@earendil-works/pi-ai/dist"),
+	join(runtimeModules, "pi-ai/dist"),
+].find(existsSync);
 
 test("Codex Responses freezes Astra effort as configuration_update and keeps WS thinking", () => {
 	const stock = readFileSync(join(stockPiAi, "api/openai-codex-responses.js"), "utf8");

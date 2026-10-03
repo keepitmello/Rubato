@@ -70,7 +70,9 @@ export class SessionFiles {
       .filter((entry) => entry.isDirectory()).map((entry) => path.join(this.root, entry.name))];
     const canonicalRoot = await realpath(this.root);
     const groups = await mapFiles(folders, async (dir) => {
-      try { return (await readdir(dir)).filter((name) => name.endsWith('.jsonl')).map((name) => path.join(dir, name)); }
+      try { return (await readdir(dir)).filter((name) => name.endsWith('.jsonl'))
+        // Pi 1.0 lists each folder newest-name-first before its stable date sort, which decides ties.
+        .sort((x, y) => y.localeCompare(x)).map((name) => path.join(dir, name)); }
       catch { return []; }
     });
     const present = new Set();

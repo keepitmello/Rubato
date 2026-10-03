@@ -63,18 +63,22 @@ class RuntimeHandle {
       clearTimeout(this.timer);
       for (const timer of this.uiTimers.values()) clearTimeout(timer);
       this.uiTimers.clear();
-      this.state.state.status = error ? 'error' : 'unloaded';
-      this.state.publish(BACKGROUND_CONTEXT);
+      this.state.change(BACKGROUND_CONTEXT, (draft) => { draft.status = error ? 'error' : 'unloaded'; });
       this.finish(error);
       this.changed();
     });
   }
   async start() { this.acceptState(await this.worker.start()); return this; }
-  publish() {
+  // One revision per call: status, pending UI and any caller edit commit together,
+  // so a subscriber never sees an event without the status it caused.
+  publish(edit) {
     const previousStatus = this.state.value.status;
-    this.state.state.status = this.closed ? 'unloaded' : this.running ? 'running' : this.pendingUi.size ? 'waiting' : 'idle';
-    this.state.state.pendingUi = [...this.pendingUi.values()].map((request) => wire(request, EVENT_BUDGET));
-    this.state.publish(BACKGROUND_CONTEXT);
+    const pendingUi = [...this.pendingUi.values()].map((request) => wire(request, EVENT_BUDGET));
+    this.state.change(BACKGROUND_CONTEXT, (draft) => {
+      edit?.(draft);
+      draft.status = this.closed ? 'unloaded' : this.running ? 'running' : this.pendingUi.size ? 'waiting' : 'idle';
+      draft.pendingUi = pendingUi;
+    });
     // Text deltas belong to the session stream, not the stored directory.
     if (previousStatus !== this.state.value.status) this.changed();
   }
@@ -88,26 +92,16 @@ class RuntimeHandle {
       this.adopt(this, { id: value.sessionId, file: value.sessionFile });
     }
     if (value.sessionId !== this.metadata.id) throw new Error('A runtime cannot switch the persisted session behind its route');
-    this.state.state.sessionId = this.metadata.id;
     this.running = Boolean(value.isStreaming || value.isCompacting || value.pendingMessageCount);
     this.latestState = json(value);
-    this.publish();
+    this.publish((draft) => { draft.sessionId = this.metadata.id; });
     this.scheduleUnload();
   }
   onEvent(event) {
     if (this.closed) return;
-    const sequence = ++this.state.state.sequence;
     const framed = measure(event, EVENT_BUDGET);
-    this.state.state.events.push({ sequence, event: framed.value });
     this.eventBytes.push(framed.bytes);
     this.eventTotal += framed.bytes;
-    // Bounded by bytes as well as by count: one screenshot-heavy turn would
-    // otherwise grow the published state past anything a frame can carry, and
-    // the transport answers that by closing the connection.
-    while (this.state.state.events.length > 256 || (this.eventTotal > EVENTS_BUDGET && this.state.state.events.length > 1)) {
-      this.state.state.events.shift();
-      this.eventTotal -= this.eventBytes.shift();
-    }
     if (event.type === 'agent_start' || event.type === 'auto_compaction_start' || event.type === 'auto_retry_start') this.running = true;
     if (event.type === 'extension_ui_request' && UI_METHODS.has(event.method)) {
       this.pendingUi.set(event.id, event);
@@ -116,7 +110,18 @@ class RuntimeHandle {
         this.uiTimers.set(event.id, timer);
       }
     }
-    this.publish();
+    this.publish((draft) => {
+      const sequence = draft.sequence + 1;
+      draft.sequence = sequence;
+      draft.events.push({ sequence, event: framed.value });
+      // Bounded by bytes as well as by count: one screenshot-heavy turn would
+      // otherwise grow the published state past anything a frame can carry, and
+      // the transport answers that by closing the connection.
+      while (draft.events.length > 256 || (this.eventTotal > EVENTS_BUDGET && draft.events.length > 1)) {
+        draft.events.shift();
+        this.eventTotal -= this.eventBytes.shift();
+      }
+    });
     if (event.type === 'agent_settled' || event.type === 'auto_compaction_end' || event.type === 'auto_retry_end') {
       void this.refresh().catch((error) => { this.lastError = error; });
     }
@@ -257,9 +262,7 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
       Object.keys(item).length === Object.keys(published[i]).length &&
       Object.keys(item).every((key) => Object.is(item[key], published[i][key])))) return;
     published = sessions;
-    directory.state.sessions = sessions;
-    directory.state.revision++;
-    directory.publish(BACKGROUND_CONTEXT);
+    directory.change(BACKGROUND_CONTEXT, (draft) => { draft.sessions = sessions; draft.revision += 1; });
   };
   const refresh = () => refreshing ??= (async () => { metrics.lists++; records = wire(await files.list()); publish(); return directory.value; })()
     .finally(() => { refreshing = undefined; });

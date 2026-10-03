@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { PI_VERSION } from "../../pi-version.mjs";
 import { createHash } from "node:crypto";
+import { findPackageJSON } from "node:module";
 import { mkdtempSync, readFileSync, writeFileSync, rmSync, cpSync, mkdirSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -7,15 +9,18 @@ import test, { after } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { loadPiFeatures, PI_FEATURE_NAMES } from "../../feature-catalog.mjs";
+import { resolvePiRuntime } from "../../resolve-runtime.mjs";
 import { CANDIDATE_FEATURE_NAMES } from "../rubato-components/candidate-main.mjs";
 import { feature, files, patches, patchTuiAutocomplete, patchTuiEditor } from "./patches.mjs";
 import { inlineSlashTokenAt, isInlineDollarToken, getDollarInvocationContext } from "./inline.mjs";
 
 const featureDir = dirname(fileURLToPath(import.meta.url));
-const tuiDist = join(featureDir, "../../node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist");
-// Stock 0.86 autocomplete.js imports ./utils.js, which imports get-east-asian-width.
+// Wherever the install puts pi-tui (nested under pi-coding-agent in 0.86.1, hoisted since 1.0).
+const tuiDir = resolvePiRuntime({ root: join(featureDir, "../..") }).packages["@earendil-works/pi-tui"].dir;
+const tuiDist = join(tuiDir, "dist");
+// Stock autocomplete.js imports ./utils.js, which imports get-east-asian-width.
 // The isolated fixture copies the module graph, so both must come along.
-const eastAsianWidthDir = join(tuiDist, "..", "..", "..", "get-east-asian-width");
+const eastAsianWidthDir = dirname(findPackageJSON("get-east-asian-width", pathToFileURL(join(tuiDir, "package.json"))));
 const scratch = mkdtempSync(join(tmpdir(), "rubato-tui-autocomplete-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -26,7 +31,7 @@ test("descriptor is stock-locked and listed on the candidate", async () => {
   assert.equal(CANDIDATE_FEATURE_NAMES.includes("tui-autocomplete"), true);
   assert.deepEqual((await loadPiFeatures(["tui-autocomplete"])).map((entry) => entry.id), ["tui-autocomplete"]);
   assert.equal(patches.length, 2);
-  assert.ok(patches.every((entry) => entry.version === "0.86.1"));
+  assert.ok(patches.every((entry) => entry.version === PI_VERSION));
   assert.deepEqual(files.map((entry) => entry.path), ["dist/rubato-features/tui-autocomplete/inline.mjs"]);
 });
 
@@ -45,7 +50,7 @@ test("stock editor only allows slash menu on line 0; patch allows line 1 /skill:
   const stock = readFileSync(join(tuiDist, "autocomplete.js"));
   assert.equal(sha256(stock), patches[0].preimageSha256);
   const patched = patchTuiAutocomplete(stock.toString("utf8"));
-  assert.match(patched, /cursorLine === 0 && textBeforeCursor.startsWith/);
+  assert.match(patched, /cursorLine === 0 && commandText.startsWith/);
   assert.match(patched, /inlineSlashTokenAt/);
   assert.match(patched, /getDollarInvocationContext/);
 
@@ -79,6 +84,24 @@ test("stock editor only allows slash menu on line 0; patch allows line 1 /skill:
   const dollar = await provider.getSuggestions(dollarLine, 1, dollarLine[1].length, { force: false });
   assert.ok(dollar);
   assert.ok(dollar.items.some((item) => item.value === "$web-search" || item.value === "$weather"));
+
+  // 1.0 (#10218) opens the command menu after leading whitespace. Kept: before the upgrade the
+  // stock check failed there and Rubato's inline path showed skills only, which no feature asked for.
+  const indented = ["  /res"];
+  const indentedPatched = await provider.getSuggestions(indented, 0, indented[0].length, { force: false });
+  assert.deepEqual(indentedPatched.items.map((item) => item.value), ["resume"]);
+  assert.equal(indentedPatched.prefix, "/res");
+  // The command menu stays on the first line; later lines only complete inline /skill: tokens.
+  const secondLine = ["first line", "/res"];
+  const secondPatched = await provider.getSuggestions(secondLine, 1, secondLine[1].length, { force: false });
+  assert.equal((secondPatched?.items ?? []).some((item) => item.value === "resume"), false);
+  // "/a/b" at the start is a path, not a command.
+  const slashPath = ["/usr/lo"];
+  assert.equal(await provider.getSuggestions(slashPath, 0, slashPath[0].length, { force: false }), null);
+  // A leading $ run offers commands and skills on line 0.
+  const leadingDollar = ["$re"];
+  const leading = await provider.getSuggestions(leadingDollar, 0, leadingDollar[0].length, { force: false });
+  assert.ok(leading.items.some((item) => item.value === "/resume"));
 });
 
 test("editor patch opens slash helpers on every line", () => {

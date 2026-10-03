@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
-const PACKAGE_VERSION = "0.86.1";
+import { PI_VERSION as PACKAGE_VERSION } from "../../pi-version.mjs";
 
 function replaceOnce(source, before, after, label) {
   const first = source.indexOf(before);
@@ -30,7 +30,7 @@ function patch(path, preimageSha256, apply, packageName = PACKAGE_NAME) {
 }
 
 function patchAgentSessionRuntime(source) {
-  const importLine = 'import { assertTransitionCommit, notesTurnMessages } from "../rubato-features/context-notes/src/context-notes/engine-gate.mjs";';
+  const importLine = 'import { assertTransitionCommit } from "../rubato-features/context-notes/src/context-notes/engine-gate.mjs";';
   unpatched(source, importLine, "agent-session-runtime");
   let next = replaceOnce(
     source,
@@ -93,39 +93,14 @@ function patchAgentSessionRuntime(source) {
     async _emitAgentSettled() {`,
     "revision-api",
   );
-  // 0.86 renders the system prompt from `systemPromptOptions` instead of passing a
-  // `context.systemPrompt` override here, so the old anchor's tail is gone. The intent is
-  // unchanged: swap the provider context's messages for the live history-notes window.
-  next = replaceOnce(
-    next,
-    `            const previousSnapshot = await previousPrepareNextTurnWithContext?.({ ...turn, context }, signal);
-            const nextContext = previousSnapshot?.context ?? context;`,
-    `            const previousSnapshot = await previousPrepareNextTurnWithContext?.({ ...turn, context }, signal);
-            const nextContext = previousSnapshot?.context ?? context;
-            const liveWindowMessages = notesTurnMessages(turn, this.agent.state.messages, this.sessionManager.getSessionId());`,
-    "next-turn-live-window",
-  );
-  next = replaceOnce(
-    next,
-    `            return {
-                ...previousSnapshot,
-                context: {
-                    ...nextContext,
-                    tools: this.agent.state.tools.slice(),
-                },`,
-    `            return {
-                ...previousSnapshot,
-                context: {
-                    ...nextContext,
-                    messages: liveWindowMessages ?? nextContext.messages,
-                    tools: this.agent.state.tools.slice(),
-                },`,
-    "next-turn-live-window-apply",
-  );
+  // The next-turn live-window swap (notesTurnMessages) was deleted in the 1.0.1 migration:
+  // since 0.87 every provider request is rebuilt from SessionManager.buildSessionProjection()
+  // (prepareRequest), so a committed window reaches the next request without it.
+  // context-window.test.mjs pins that on the immediate provider turn.
   next = replaceOnce(
     next,
     `    /** Generate Pi's built-in compaction summary for manual and automatic compaction. */
-    async _runDefaultCompaction(preparation, requestModel, apiKey, headers, customInstructions, signal, env, reason) {`,
+    async _runDefaultCompaction(preparation, model, customInstructions, signal, reason) {`,
     `    /**
      * Commit a controller-prepared context window without a summarizer/provider call.
      * No callback or await occurs between the final revision/leaf check and the
@@ -178,8 +153,10 @@ function patchAgentSessionRuntime(source) {
             if (compactionEntry?.type !== "compaction") {
                 throw new Error("Compaction entry was not saved");
             }
-            const sessionContext = this.sessionManager.buildSessionContext();
-            this.agent.state.messages = sessionContext.messages;
+            // 0.87: the SessionManager projection is what every request carries. Refresh the
+            // live state and entry ids from it the way stock compaction does after appending.
+            this._refreshFinalizedContext();
+            const sessionContext = { messages: this.agent.state.messages };
             if (precomputed.details?.source === "rubato-history-notes-v1") {
                 // Retire only checkpoint requests belonging to the completed
                 // window, before the loop can emit or persist queued messages.
@@ -235,7 +212,7 @@ function patchAgentSessionRuntime(source) {
         }
     }
     /** Generate Pi's built-in compaction summary for manual and automatic compaction. */
-    async _runDefaultCompaction(preparation, requestModel, apiKey, headers, customInstructions, signal, env, reason) {`,
+    async _runDefaultCompaction(preparation, model, customInstructions, signal, reason) {`,
     "atomic-apply",
   );
   next = replaceOnce(
@@ -607,9 +584,14 @@ function patchAgentQueueTypes(source) {
 
 function patchInteractivePresentation(source) {
   let next = replaceOnce(source,
-    'import { createCompactionSummaryMessage } from "../../core/messages.js";',
-    'import { createContextTransitionMessage } from "../../rubato-features/context-window/presentation.mjs";',
+    'import { createCompactionSummaryMessage, createCustomMessage } from "../../core/messages.js";',
+    'import { createCustomMessage } from "../../core/messages.js";\nimport { createContextTransitionMessage } from "../../rubato-features/context-window/presentation.mjs";',
     "presentation-import");
+  // 1.0 also renders a compaction that a boundary handler appended (entry_appended).
+  next = replaceOnce(next,
+    "this.addMessageToChat(createCompactionSummaryMessage(event.entry.summary, event.entry.tokensBefore, event.entry.timestamp));",
+    "this.addMessageToChat(createContextTransitionMessage(event.entry.summary, event.entry.tokensBefore, event.entry.timestamp));",
+    "appended-presentation");
   next = replaceOnce(next,
     "this.addMessageToChat(createCompactionSummaryMessage(event.result.summary, event.result.tokensBefore, new Date().toISOString()));",
     "this.addMessageToChat(createContextTransitionMessage(event.result.summary, event.result.tokensBefore, new Date().toISOString()));",
@@ -684,23 +666,23 @@ export const files = Object.freeze([
 ]);
 
 export const patches = Object.freeze([
-  patch("dist/modes/interactive/interactive-mode.js", "8c9275944466afe2df78dcf02f2f6c83f6bc46fb0fdbd7257a3ef9d1da1ed027", patchInteractivePresentation),
+  patch("dist/modes/interactive/interactive-mode.js", "14508d43f3dd47faa6b10c4a6537740f1cf238eee3fc873a9e0648125214bbcc", patchInteractivePresentation),
   patch("dist/modes/interactive/components/compaction-summary-message.js", "4b8858901b0182a85a7628313d398049ee23a27c00a2fe9416eeb14edae3c087", patchCompactionComponent),
   patch("dist/modes/interactive/components/status-indicator.js", "8b38a337bbe71204b3fc7dce61cd49195f18d176bfdab2fe2a92ff5120f54e71", patchCompactionStatus),
   patch("dist/modes/interactive/components/status-indicator.d.ts", "282b21352f9f6e2b607169db5c6e9e089a3f8d3ca6e8c464a1e7aff4c3e6bb30", patchCompactionStatusTypes),
-  patch("dist/agent.js", "d81d9c9b57d61e052542b70f772e2ac0ff7b9d9e43910583b42c47709cad39e6", patchAgentQueues, "@earendil-works/pi-agent-core"),
-  patch("dist/agent.d.ts", "baca5ee2e9ad8809848f64cee5c993323a107695a57bf68047cd9f5a9afcd2b4", patchAgentQueueTypes, "@earendil-works/pi-agent-core"),
-  patch("dist/core/agent-session.js", "edaff7055ced7d49d25135c92415fbbfd9c14c4a29be5a79510ab9216045d6d9", patchAgentSessionRuntime),
-  patch("dist/core/agent-session.d.ts", "423bdca09eabd78aa1e729136dd9a1e2fff3b8116c6bc2d3fee3337b269a8432", patchAgentSessionTypes),
+  patch("dist/agent.js", "163ad28551f1c38b8eb899a5c9dd89cd9d9005fb7dd9c4abeb008ee380e98c51", patchAgentQueues, "@earendil-works/pi-agent-core"),
+  patch("dist/agent.d.ts", "1ae9fb28e132a7d0c545c96b69bca5a69db1374695853d12921bc623709a7589", patchAgentQueueTypes, "@earendil-works/pi-agent-core"),
+  patch("dist/core/agent-session.js", "35ca1dabd54d98c236c9601b569c2856b726ade392d06b2eaaf50158f48913ab", patchAgentSessionRuntime),
+  patch("dist/core/agent-session.d.ts", "2e50b35a37f9c7149c6297ae554b2d965bd74dbfcb8ccd7be44f13226ce497e7", patchAgentSessionTypes),
   patch("dist/core/messages.js", "8688b3f6eb28865f779cac998bd4754d1a4f08703200dfe0dd5a799aa0d42ef6", patchMessagesRuntime),
   patch("dist/core/messages.d.ts", "fdd51b8371984b68f2631f9f64f1259ac77f2d5153068ce75d6158bca27e7a66", patchMessagesTypes),
-  patch("dist/core/sdk.js", "3417c58edc5c02a4ae71a3604bbd04688d1741e0203497bf082a748ca843d850", patchSdkRuntime),
-  patch("dist/core/settings-manager.js", "5368b155ec26d88374cec9e66b8e588b5041a0fb0047414f70b34e13892c4f48", patchSettingsRuntime),
-  patch("dist/core/extensions/types.d.ts", "a4d5b8774fa8015b8a3274614f1398a6aeeffdd888c122910439666955dc2a52", patchExtensionTypes),
-  patch("dist/core/extensions/runner.js", "07a94efe560e6a460a415b2188c1c3c69ca151bd163c9b5f05347caf8403ace2", patchRunnerRuntime),
-  patch("dist/core/extensions/runner.d.ts", "fc0f81468c51bacfc093ac09974aa8e8053ca463e205eb66a1c63b0b655f61b9", patchRunnerTypes),
-  patch("dist/core/extensions/index.d.ts", "5b294bd70da0744cb18a45d1cfb774237986c047ec1996e03f24a9605efdd4ab", patchExtensionIndexTypes),
-  patch("dist/index.d.ts", "44bf19d2716cb18382aa6bd0ae88b7e03ee50ae75b56acb6d11beb40dfe99dea", patchPublicIndexTypes),
+  patch("dist/core/sdk.js", "fe643170de3d259c7e06179d9e18270a009dfb54df915f6e3de515425b8d009b", patchSdkRuntime),
+  patch("dist/core/settings-manager.js", "b3a424ac1af9bd0c380796f9e5d812e2c61755ed3b31dd39982a57bbe0d5a391", patchSettingsRuntime),
+  patch("dist/core/extensions/types.d.ts", "abd9e9be0bf21b4c35621fe90b79af75c85b774e8b254b515d699785fda5962a", patchExtensionTypes),
+  patch("dist/core/extensions/runner.js", "258f142bc56cc84d953ef6146222e5ff3a94cc908592a1b3d075d34bbcd68b36", patchRunnerRuntime),
+  patch("dist/core/extensions/runner.d.ts", "6aef77e094e73abd7e508850e45c58e244ab2d5db6c4f6278d8652ea9ded2bb1", patchRunnerTypes),
+  patch("dist/core/extensions/index.d.ts", "fe5661c6cd9a948293f0f1d1db5a052dcc60493f6b1f68349a7ab96987b10e40", patchExtensionIndexTypes),
+  patch("dist/index.d.ts", "b254e36846b1dcc64ce1a8ba72e23fb410df4aa4408ba8c23e69e5b3f934e3cc", patchPublicIndexTypes),
 ]);
 
 export const feature = Object.freeze({ id: "context-window", patches, files });

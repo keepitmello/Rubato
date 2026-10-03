@@ -1,4 +1,4 @@
-import type { ToolDefinition } from "@code-yeongyu/senpi"
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent"
 import type { AgentSnapshot } from "@rubato/agent-core"
 import { Type } from "typebox"
 import type { Static } from "typebox"

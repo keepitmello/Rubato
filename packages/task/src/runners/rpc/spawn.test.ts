@@ -287,14 +287,14 @@ describe("buildRpcSpawn spawn strategy", () => {
         execPath: "/usr/bin/node",
         platform: "linux",
         parentEnv: {},
-        resolveRpcEntry: () => "/pkg/@code-yeongyu/senpi/dist/rpc-entry.js",
+        resolveRpcEntry: () => "/pkg/@earendil-works/pi-coding-agent/dist/bundle/rpc-entry.js",
         ...noExecutable,
       },
     )
     // then
     expect(descriptor.command).toBe("/usr/bin/node")
     expect(descriptor.args).toEqual([
-      "/pkg/@code-yeongyu/senpi/dist/rpc-entry.js",
+      "/pkg/@earendil-works/pi-coding-agent/dist/bundle/rpc-entry.js",
       "--no-extensions",
       "--extension",
       "/tmp/mock.ts",

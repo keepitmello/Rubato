@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
-const VERSION = "0.86.1";
+import { PI_VERSION as VERSION } from "../../pi-version.mjs";
 
 /**
  * The tools the model sees from the first request. Every other extension tool starts
@@ -53,15 +53,10 @@ export function defineTool(tool) {`,
 function patchTypesDeclarations(source) {
   let next = replaceOnce(
     source,
-    `/**
- * Tool definition for registerTool().
- */
-export interface ToolDefinition`,
-    `export type ToolExposure = "direct" | "search";
-/**
- * Tool definition for registerTool().
- */
-export interface ToolDefinition`,
+    // 0.99 declares its own ToolExposure; Rubato's \`search\` joins that union.
+    `export type ToolExposure = "direct" | "model-only" | "codemode" | "deferred" | "hidden";`,
+    `/** \`search\` (Rubato): catalogued for tool_search and inactive until it loads the tool. */
+export type ToolExposure = "direct" | "model-only" | "codemode" | "deferred" | "hidden" | "search";`,
     "exposure-type",
   );
   next = replaceOnce(
@@ -71,8 +66,6 @@ export interface ToolDefinition`,
     /** Optional one-line snippet`,
     `    /** Description for LLM */
     description: string;
-    /** Initial model exposure; search tools are catalogued but start inactive. */
-    exposure?: ToolExposure;
     /** Supplemental capability text indexed by tool_search. */
     searchText?: string;
     /** Synonyms indexed with tool names. */
@@ -99,12 +92,16 @@ export declare function defineTool<TParams`,
   );
   return replaceOnce(
     next,
-    `/** Tool info with name, description, parameter schema, prompt guidelines, and source metadata. */
-export type ToolInfo = Pick<ToolDefinition, "name" | "description" | "parameters" | "promptGuidelines"> & {
+    `export type ToolInfo = Pick<ToolDefinition, "name" | "description" | "parameters" | "promptGuidelines"> & {
+    exposure: ToolExposure;
+    namespace?: ToolNamespace;
+    annotations?: ToolAnnotations;
     sourceInfo: SourceInfo;
 };`,
     `/** Tool info with normalized exposure and source metadata. */
 export type ToolInfo = Pick<ToolDefinition, "name" | "label" | "description" | "parameters" | "promptGuidelines"> & {
+    namespace?: ToolNamespace;
+    annotations?: ToolAnnotations;
     sourceInfo: SourceInfo;
     /** Effective exposure after the Rubato tool surface policy. */
     exposure: ToolExposure;
@@ -132,6 +129,10 @@ function rubatoToolExposure(definition, sourceInfo) {
         return "direct";
     return RUBATO_DIRECT_TOOL_NAMES.has(definition.name) ? "direct" : "search";
 }
+// Measurement only (pi-1-0-upgrade outcome 4): with pi's built-in tool_search enabled through
+// RUBATO_PI_BUILTIN_EXTENSIONS, the tools our policy files for search are \`deferred\` to pi
+// instead, so the built-in searches the same set. Unset, nothing changes.
+const RUBATO_NATIVE_TOOL_SEARCH = (process.env.RUBATO_PI_BUILTIN_EXTENSIONS ?? "").split(",").some((name) => name.trim() === "tool-search");
 export class AgentSession {`,
     "surface-policy",
   );
@@ -142,16 +143,21 @@ export class AgentSession {`,
             description: definition.description,
             parameters: definition.parameters,
             promptGuidelines: definition.promptGuidelines,
+            exposure: this._getToolExposure(definition.name),
+            ...(definition.namespace ? { namespace: definition.namespace } : {}),
+            ...(definition.annotations ? { annotations: { ...definition.annotations } } : {}),
             sourceInfo,
         }));`,
     `        return Array.from(this._toolDefinitions.values()).map(({ definition, sourceInfo }) => {
-            const exposure = rubatoToolExposure(definition, sourceInfo);
+            const exposure = RUBATO_NATIVE_TOOL_SEARCH ? this._getToolExposure(definition.name) : rubatoToolExposure(definition, sourceInfo);
             return {
                 name: definition.name,
                 label: definition.label,
                 description: definition.description,
                 parameters: definition.parameters,
                 promptGuidelines: definition.promptGuidelines,
+                ...(definition.namespace ? { namespace: definition.namespace } : {}),
+                ...(definition.annotations ? { annotations: { ...definition.annotations } } : {}),
                 sourceInfo,
                 exposure,
                 declaredExposure: definition.exposure === "search" ? "search" : "direct",
@@ -165,41 +171,34 @@ export class AgentSession {`,
   );
   next = replaceOnce(
     next,
-    `        this._toolRegistry = toolRegistry;
-        const nextActiveToolNames =`,
-    `        this._toolRegistry = toolRegistry;
-        const isDirectlyExposed = (name) => {
+    `    _getToolExposure(name) {
+        return this._toolDefinitions.get(name)?.definition.exposure ?? "direct";
+    }`,
+    `    _getToolExposure(name) {
+        if (RUBATO_NATIVE_TOOL_SEARCH) {
             const entry = this._toolDefinitions.get(name);
-            return rubatoToolExposure(entry?.definition, entry?.sourceInfo) !== "search";
-        };
-        const nextActiveToolNames =`,
-    "direct-exposure-helper",
+            if (rubatoToolExposure(entry?.definition, entry?.sourceInfo) === "search")
+                return "deferred";
+        }
+        return this._toolDefinitions.get(name)?.definition.exposure ?? "direct";
+    }`,
+    "native-search-measurement",
   );
+  // 1.0 funnels both auto-activation paths (all extension tools at startup, tools new to a
+  // refresh) through _isActivatedOnRegistration, so the policy hooks there instead of the
+  // two loops 0.86 had. Explicitly named tools (--tools) still activate, as before.
   next = replaceOnce(
     next,
-    `        else if (options?.includeAllExtensionTools) {
-            for (const tool of wrappedExtensionTools) {
-                nextActiveToolNames.push(tool.name);
-            }
-        }`,
-    `        else if (options?.includeAllExtensionTools) {
-            for (const tool of wrappedExtensionTools) {
-                if (isDirectlyExposed(tool.name))
-                    nextActiveToolNames.push(tool.name);
-            }
-        }`,
-    "include-direct-only",
+    `    _isActivatedOnRegistration(name) {
+        return this._isDeclarable(name) && this._toolDefinitions.get(name)?.definition.defaultActive !== false;`,
+    `    _isActivatedOnRegistration(name) {
+        const entry = this._toolDefinitions.get(name);
+        if (rubatoToolExposure(entry?.definition, entry?.sourceInfo) === "search")
+            return false;
+        return this._isDeclarable(name) && this._toolDefinitions.get(name)?.definition.defaultActive !== false;`,
+    "registration-direct-only",
   );
-  return replaceOnce(
-    next,
-    `                if (!previousRegistryNames.has(toolName)) {
-                    nextActiveToolNames.push(toolName);
-                }`,
-    `                if (!previousRegistryNames.has(toolName) && isDirectlyExposed(toolName)) {
-                    nextActiveToolNames.push(toolName);
-                }`,
-    "new-direct-only",
-  );
+  return next;
 }
 
 function patchExtensionRuntimeIndex(source) {
@@ -216,8 +215,7 @@ function patchExtensionTypesIndex(source) {
   return replaceOnce(
     source,
     `export { wrapRegisteredTool, wrapRegisteredTools } from "./wrapper.ts";`,
-    `export type { ToolExposure } from "./types.ts";
-export { normalizeToolExposure } from "./types.ts";
+    `export { normalizeToolExposure } from "./types.ts";
 export { wrapRegisteredTool, wrapRegisteredTools } from "./wrapper.ts";`,
     "types-export",
   );
@@ -237,7 +235,7 @@ function patchRootTypesIndex(source) {
   return replaceOnce(
     source,
     `export type { ReadonlyFooterDataProvider }`,
-    `export type { ToolExposure } from "./core/extensions/index.ts";
+    `export { normalizeToolExposure } from "./core/extensions/index.ts";
 export type { ReadonlyFooterDataProvider }`,
     "type-export",
   );
@@ -254,12 +252,12 @@ export const files = Object.freeze(RUNTIME_FILES.map((name) => Object.freeze({
 
 export const patches = Object.freeze([
   patch("tool-search:core/extensions/types.js", "dist/core/extensions/types.js", "447039081a7808371e07d85bacc719a11eea7b66f291b9949de33ef952a809fc", patchTypesRuntime),
-  patch("tool-search:core/extensions/types.d.ts", "dist/core/extensions/types.d.ts", "a4d5b8774fa8015b8a3274614f1398a6aeeffdd888c122910439666955dc2a52", patchTypesDeclarations),
-  patch("tool-search:core/agent-session.js", "dist/core/agent-session.js", "edaff7055ced7d49d25135c92415fbbfd9c14c4a29be5a79510ab9216045d6d9", patchAgentSession),
+  patch("tool-search:core/extensions/types.d.ts", "dist/core/extensions/types.d.ts", "abd9e9be0bf21b4c35621fe90b79af75c85b774e8b254b515d699785fda5962a", patchTypesDeclarations),
+  patch("tool-search:core/agent-session.js", "dist/core/agent-session.js", "35ca1dabd54d98c236c9601b569c2856b726ade392d06b2eaaf50158f48913ab", patchAgentSession),
   patch("tool-search:core/extensions/index.js", "dist/core/extensions/index.js", "9a99fd14edb60079a3c604d6045cbad7d461c3ba1ce88331f5d549372f14c46d", patchExtensionRuntimeIndex),
-  patch("tool-search:core/extensions/index.d.ts", "dist/core/extensions/index.d.ts", "5b294bd70da0744cb18a45d1cfb774237986c047ec1996e03f24a9605efdd4ab", patchExtensionTypesIndex),
-  patch("tool-search:index.js", "dist/index.js", "82cb4ea864f3d8816c06bc8f2f2d9a8d82d883297af179dc69d287d042834844", patchRootRuntimeIndex),
-  patch("tool-search:index.d.ts", "dist/index.d.ts", "44bf19d2716cb18382aa6bd0ae88b7e03ee50ae75b56acb6d11beb40dfe99dea", patchRootTypesIndex),
+  patch("tool-search:core/extensions/index.d.ts", "dist/core/extensions/index.d.ts", "fe5661c6cd9a948293f0f1d1db5a052dcc60493f6b1f68349a7ab96987b10e40", patchExtensionTypesIndex),
+  patch("tool-search:index.js", "dist/index.js", "5482298b995db935f7b96f5d6056fa1c36ac6fc80456be594ef65b83c62b0d30", patchRootRuntimeIndex),
+  patch("tool-search:index.d.ts", "dist/index.d.ts", "b254e36846b1dcc64ce1a8ba72e23fb410df4aa4408ba8c23e69e5b3f934e3cc", patchRootTypesIndex),
 ]);
 
 export const toolSearchFeature = Object.freeze({ id: "tool-search", files, patches });

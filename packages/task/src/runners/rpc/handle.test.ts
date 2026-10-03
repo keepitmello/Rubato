@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events"
 import type { ChildProcess } from "node:child_process"
-import type { AgentSessionEvent } from "@code-yeongyu/senpi"
+import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent"
 import { describe, expect, test } from "bun:test"
 
 import type { RpcChildHandle } from "../types"

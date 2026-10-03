@@ -1,4 +1,4 @@
-import type { AgentToolResult, ToolDefinition } from "@code-yeongyu/senpi"
+import type { AgentToolResult, ToolDefinition } from "@earendil-works/pi-coding-agent"
 import { Type, type Static } from "typebox"
 
 import { SenpiShutdownError } from "../../team"

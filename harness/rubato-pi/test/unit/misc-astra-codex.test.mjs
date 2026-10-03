@@ -1,12 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
-import { senpiNested } from "../../src/engine-paths.mjs";
-import {
-  ASTRA_CODEX_PRELUDE,
-  injectAstraCodex,
-  isAstraCodexUrl,
-} from "../../src/transforms/misc-astra-codex.mjs";
+import { ASTRA_CODEX_PRELUDE } from "../../src/transforms/misc-astra-codex.mjs";
 
 const { applyAstraConfigurationUpdate, isAstraConfigurationUpdateModel } = new Function(
   `${ASTRA_CODEX_PRELUDE}; return { applyAstraConfigurationUpdate, isAstraConfigurationUpdateModel };`,
@@ -128,30 +122,6 @@ test("effort 가 바뀌어도 캐시 델타 비교 대상은 같다", () => {
   applyAstraConfigurationUpdate(high, ASTRA, "s-7", "high");
   high.input = withoutUpdate(high.input);
   assert.deepEqual(withoutInput(high), withoutInput(low));
-});
-
-test("실제 엔진 소스에 패치가 걸리고 두 번 걸면 던진다", () => {
-  const source = readFileSync(
-    senpiNested("@earendil-works/pi-ai/dist/api/openai-codex-responses.js"),
-    "utf8",
-  );
-  assert.match(source, /function buildRequestBody\(model, context, options, cacheSessionId/);
-  assert.match(source, /if \(options\?\.temperature !== undefined\) \{\n\s+body\.temperature = options\.temperature;\n\s+\}/);
-  const next = injectAstraCodex(source);
-  assert.match(next, /configuration_update/);
-  assert.match(next, /isAstraConfigurationUpdateModel\(model\)/);
-  assert.match(next, /preserveThinking: !!fullBody\.reasoning/);
-  assert.match(next, /preserveTextSignatures: true/);
-  assert.doesNotMatch(next, /if \(options\?\.temperature !== undefined\) \{\n\s+body\.temperature/);
-  assert.throws(() => injectAstraCodex(next));
-  assert.equal(
-    isAstraCodexUrl("file:///x/@earendil-works/pi-ai/dist/api/openai-codex-responses.js"),
-    true,
-  );
-  assert.equal(
-    isAstraCodexUrl("file:///x/@earendil-works/pi-ai/dist/api/openai-codex-responses.lazy.js"),
-    false,
-  );
 });
 
 test("같은 high 를 다음 유저에서도 유지하면 update 자리는 그대로다", () => {

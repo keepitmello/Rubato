@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 
 import { claimTeamTask, createTeamTask, listTeamTasks, updateTeamTaskStatus, type ActiveTeamSummary } from "@rubato/task"
-import type { SessionShutdownEvent } from "@code-yeongyu/senpi"
+import type { SessionShutdownEvent } from "@earendil-works/pi-coding-agent"
 import { TeamModeConfigSchema } from "@rubato/team-core/config"
 
 import { wireHarness } from "./event-bridge.test-harness"

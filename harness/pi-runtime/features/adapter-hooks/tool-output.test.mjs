@@ -53,11 +53,19 @@ test("multibyte boundaries do not corrupt Korean or emoji", () => {
   assert.ok(Buffer.byteLength(preview) < 9000);
 });
 
-test("source reads, unknown tools, assistant messages and failures are exempt", () => {
+test("source reads, unknown tools, assistant messages and non-shell failures are exempt", () => {
   for (const message of [
-    result("read"), result("unknown"), result("bash", large, { isError: true }),
+    result("read"), result("unknown"), result("grep", large, { isError: true }),
     result("bash", large, { role: "assistant" }),
   ]) assert.equal(canPreviewToolOutput(message), false);
+});
+
+// pi 0.99 sends a returned { isError: true } as an error result; on 0.86 a failing PTY bash or
+// eval cell was a plain result and its large output was shortened. Keep shortening it.
+test("a large failing shell or eval output is still previewed", () => {
+  for (const tool of ["bash", "powershell", "eval"]) {
+    assert.equal(canPreviewToolOutput(result(tool, large, { isError: true })), true, tool);
+  }
 });
 
 test("model context preview preserves original messages, details, images and raw recovery", async (t) => {
@@ -95,7 +103,7 @@ test("explicit reads of an artifact are not shortened again", async (t) => {
 
 test("failures and small output have zero artifact IO", async (t) => {
   const h = await harness(t);
-  assert.equal(await h.run([result("bash", "ok"), result("bash", large, { isError: true })]), undefined);
+  assert.equal(await h.run([result("bash", "ok"), result("grep", large, { isError: true })]), undefined);
   assert.deepEqual(await readdir(h.dir), []);
 });
 

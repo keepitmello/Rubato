@@ -1,14 +1,14 @@
 import { fileURLToPath } from "node:url";
 
 const packageName = "@earendil-works/pi-coding-agent";
-const version = "0.86.1";
+import { PI_VERSION as version } from "../../pi-version.mjs";
 const hashes = {
-  "dist/core/extensions/loader.js": "81106b07522aaf9197858c4679fecd7fbd23c346376d6e1f2cc3dd5294d543f4",
-  "dist/core/extensions/types.d.ts": "a4d5b8774fa8015b8a3274614f1398a6aeeffdd888c122910439666955dc2a52",
-  "dist/core/extensions/runner.js": "07a94efe560e6a460a415b2188c1c3c69ca151bd163c9b5f05347caf8403ace2",
-  "dist/core/extensions/runner.d.ts": "fc0f81468c51bacfc093ac09974aa8e8053ca463e205eb66a1c63b0b655f61b9",
-  "dist/modes/rpc/rpc-mode.js": "bdd94e753e6d19731d9fb9ea370462d095d64f1e78bddd7651320663fa57c4ff",
-  "dist/modes/rpc/rpc-types.d.ts": "e968e5be01dc7ad9615f938ae867ef136fa495f13dcf169942e9f781a299d9eb",
+  "dist/core/extensions/loader.js": "44a356da552c9cf2ea619c61944cfb28f81b45f09b325f152c91a914bfce1bc0",
+  "dist/core/extensions/types.d.ts": "abd9e9be0bf21b4c35621fe90b79af75c85b774e8b254b515d699785fda5962a",
+  "dist/core/extensions/runner.js": "258f142bc56cc84d953ef6146222e5ff3a94cc908592a1b3d075d34bbcd68b36",
+  "dist/core/extensions/runner.d.ts": "6aef77e094e73abd7e508850e45c58e244ab2d5db6c4f6278d8652ea9ded2bb1",
+  "dist/modes/rpc/rpc-mode.js": "631697cd35928fc827f4a423538c43ff227b8cbf63c2a2f11060616f55eba6db",
+  "dist/modes/rpc/rpc-types.d.ts": "68b6dc2e47a3969c09c961a40d0462473407b6786f3bd02715fa035e816e2af1",
   "dist/modes/print-mode.js": "f2eb170b9620c1d37e68b788ff71257a4402a23e7f3999575feee8e5d9e13b3f",
 };
 function once(source, before, after) {

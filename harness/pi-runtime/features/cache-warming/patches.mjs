@@ -17,7 +17,7 @@
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_AGENT = "@earendil-works/pi-coding-agent";
-const VERSION = "0.86.1";
+import { PI_VERSION as VERSION } from "../../pi-version.mjs";
 
 function replaceOnce(source, before, after, label) {
   const first = source.indexOf(before);
@@ -54,7 +54,15 @@ export function patchCacheWarmer(source) {
   next = replaceOnce(
     next,
     `/** Refresh at 90% of the TTL while preserving at least ten seconds of margin. */`,
-    `/** Rubato refresh interval per provider; the entry lifetime is 1h (Anthropic) and 30m (Codex). */
+    `/** How long a cache entry lives once written: Anthropic's 1h tier, Codex's 30m. */
+export const RUBATO_CACHE_LIFETIME_MS = Object.freeze({
+    anthropic: 60 * 60_000,
+    "openai-codex": 30 * 60_000,
+});
+/**
+ * Rubato refresh interval per provider. Stock gives a late timer half of the lifetime left
+ * after the interval (10m Anthropic, 5m Codex) before it calls the refresh a miss.
+ */
 export const RUBATO_WARMING_INTERVAL_MS = Object.freeze({
     anthropic: 40 * 60_000,
     "openai-codex": 20 * 60_000,
@@ -137,7 +145,9 @@ export function lastUserInputAt(entries) {
     `        const ttlMs = getPromptCacheTtlMs(request.model, request.options);
         if (ttlMs === undefined) {`,
     `        const rubatoIntervalMs = request.options?.cacheRetention === "none" ? undefined : rubatoWarmingIntervalMs(request.model);
-        const ttlMs = rubatoIntervalMs ?? getPromptCacheTtlMs(request.model, request.options);
+        const ttlMs = rubatoIntervalMs === undefined
+            ? getPromptCacheTtlMs(request.model, request.options)
+            : RUBATO_CACHE_LIFETIME_MS[request.model.provider];
         if (ttlMs === undefined) {`,
     "start-ttl",
   );
@@ -420,9 +430,9 @@ export function patchRpcCacheWarming(source) {
 }
 
 export const patches = Object.freeze([
-  patch("cache-warming:core/cache-warmer.js", "dist/core/cache-warmer.js", "cd488877ddf0bba1489ff6699bd8200ef645a9e6e028110ce675609bbe8fe556", patchCacheWarmer),
-  patch("cache-warming:core/settings-manager.js", "dist/core/settings-manager.js", "5368b155ec26d88374cec9e66b8e588b5041a0fb0047414f70b34e13892c4f48", patchSettingsWarmingDefault),
-  patch("cache-warming:modes/rpc/rpc-mode.js", "dist/modes/rpc/rpc-mode.js", "bdd94e753e6d19731d9fb9ea370462d095d64f1e78bddd7651320663fa57c4ff", patchRpcCacheWarming),
+  patch("cache-warming:core/cache-warmer.js", "dist/core/cache-warmer.js", "9c4b000930d6d3c567073102f6b6a52660110bb0f79cf78dd72c4dd1ebc87fc0", patchCacheWarmer),
+  patch("cache-warming:core/settings-manager.js", "dist/core/settings-manager.js", "b3a424ac1af9bd0c380796f9e5d812e2c61755ed3b31dd39982a57bbe0d5a391", patchSettingsWarmingDefault),
+  patch("cache-warming:modes/rpc/rpc-mode.js", "dist/modes/rpc/rpc-mode.js", "631697cd35928fc827f4a423538c43ff227b8cbf63c2a2f11060616f55eba6db", patchRpcCacheWarming),
 ]);
 export const files = Object.freeze([]);
 export const cacheWarmingFeature = Object.freeze({ id: "cache-warming", patches, files });

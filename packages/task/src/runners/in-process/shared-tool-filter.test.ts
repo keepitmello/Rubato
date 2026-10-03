@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 
-import { createReadToolDefinition, type ToolDefinition } from "@code-yeongyu/senpi"
+import { createReadToolDefinition, type ToolDefinition } from "@earendil-works/pi-coding-agent"
 
 import {
   filterSharedParentTools,

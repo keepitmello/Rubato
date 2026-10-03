@@ -1,4 +1,4 @@
-import type { ToolDefinition } from "@code-yeongyu/senpi"
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent"
 
 import { createTeamCreateTool, createTeamDeleteTool } from "./lifecycle"
 import { createTeamSendTool } from "./messaging"

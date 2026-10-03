@@ -1,3 +1,4 @@
+import { PI_VERSION } from "../../pi-version.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
@@ -164,7 +165,7 @@ test("descriptor is stock-locked, drift-failing, and composes at shared main/UI 
   assert.equal(patches.length, 6);
   assert.equal(new Set(patches.map((entry) => entry.path)).size, patches.length);
   assert.ok(patches.every((entry) => entry.packageName === "@earendil-works/pi-coding-agent"));
-  assert.ok(patches.every((entry) => entry.version === "0.86.1"));
+  assert.ok(patches.every((entry) => entry.version === PI_VERSION));
   assert.ok(patches.every((entry) => /^[a-f0-9]{64}$/.test(entry.preimageSha256)));
 
   const receiptEntries = staged.receipt.files.filter((entry) =>

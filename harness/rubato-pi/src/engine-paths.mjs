@@ -2,7 +2,7 @@
 //
 // 런처는 worktree 밖의 프로필 디렉터리에 만든 Rubato bundle을 읽는다.
 // 생성물을 소스 트리에 두지 않아서 세션별 빌드가 git 상태를 더럽히지 않는다.
-// 워크스페이스에 남은 @code-yeongyu/senpi 는 레거시 테스트·트랜스폼 픽스처다.
+// 저장소 코드가 읽는 pi 패키지는 테스트 때 스테이징된 엔진, 그 밖엔 워크스페이스의 stock pi 다.
 import { existsSync } from "node:fs";
 import { userInfo } from "node:os";
 import { dirname, join } from "node:path";
@@ -104,24 +104,39 @@ export const rubatoTaskExtension = join(enginePluginDir, "extensions", "rubato-t
 export const rubatoMemberExtension = join(enginePluginDir, "extensions", "rubato-member.js");
 export const enginePackageJson = join(enginePluginDir, "package.json");
 
-/** Workspace leftover of the retired fork; tests/transforms that still import its dist. */
-export const legacySenpiDir = join(repoRoot, "node_modules", "@code-yeongyu", "senpi");
-/** @deprecated Use legacySenpiDir. */
-export const senpiDir = legacySenpiDir;
-export const senpiCli = join(legacySenpiDir, "dist", "cli.js");
-export const senpiCliMain = join(legacySenpiDir, "dist", "cli-main.js");
-export const senpiPackageJson = join(legacySenpiDir, "package.json");
-export const senpiExtensionRunner = join(legacySenpiDir, "dist", "core", "extensions", "runner.js");
-export const senpiSkillsModule = join(legacySenpiDir, "dist", "core", "skills.js");
-export const senpiSystemPromptModule = join(legacySenpiDir, "dist", "core", "system-prompt.js");
-
 /**
- * Packages nested under the leftover senpi install, or hoisted into the workspace.
+ * Environment key naming a staged pi runtime root (stagePiRuntime output, the directory that holds
+ * node_modules/@earendil-works/*). scripts/run-unit-tests.mjs stages the candidate features into a
+ * temporary root and sets it, so tests read the same patched pi files the engine stages. Without it,
+ * paths fall back to the workspace's pristine stock pi, which lacks the files Rubato stages.
  */
+export const TEST_RUNTIME_ENV = "RUBATO_PI_TEST_RUNTIME";
+
+function piModulesRoot(env = process.env) {
+  const staged = env[TEST_RUNTIME_ENV];
+  return typeof staged === "string" && staged.trim() !== "" ? join(staged, "node_modules") : join(repoRoot, "node_modules");
+}
+
+/** The node_modules that holds @earendil-works/* for repository code: staged when set, else the workspace. */
+export const piModulesDir = piModulesRoot();
+
+/** The coding-agent package Rubato runs on. */
+export const codingAgentDir = join(piModulesDir, "@earendil-works", "pi-coding-agent");
+/** @deprecated Use codingAgentDir. Kept for transforms and tests written against the senpi fork. */
+export const legacySenpiDir = codingAgentDir;
+/** @deprecated Use codingAgentDir. */
+export const senpiDir = codingAgentDir;
+export const senpiCli = join(codingAgentDir, "dist", "cli.js");
+// Stock pi has no separate cli-main entry; cli.js is the whole CLI.
+export const senpiCliMain = senpiCli;
+export const senpiPackageJson = join(codingAgentDir, "package.json");
+export const senpiExtensionRunner = join(codingAgentDir, "dist", "core", "extensions", "runner.js");
+export const senpiSkillsModule = join(codingAgentDir, "dist", "core", "skills.js");
+export const senpiSystemPromptModule = join(codingAgentDir, "dist", "core", "system-prompt.js");
+
+/** A path inside the @earendil-works packages, e.g. workspaceNested("@earendil-works/pi-ai/dist/models.js"). */
 export function workspaceNested(...segments) {
-  const nested = join(legacySenpiDir, "node_modules", ...segments);
-  if (existsSync(nested)) return nested;
-  return join(repoRoot, "node_modules", ...segments);
+  return join(piModulesDir, ...segments);
 }
 
 /** @deprecated Use workspaceNested. */

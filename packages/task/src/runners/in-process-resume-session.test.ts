@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { CreateAgentSessionOptions } from "@code-yeongyu/senpi"
+import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent"
 
 import { InProcessRunner, RunnerError } from "./in-process"
 import type { ChildSession, ChildSpec } from "./in-process"

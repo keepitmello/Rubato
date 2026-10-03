@@ -1,4 +1,4 @@
-import type { ToolDefinition } from "@code-yeongyu/senpi"
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent"
 import type { RubatoTaskSettings } from "@rubato/config-core"
 
 import type { ResolvedModelRecord, TaskRecord, TaskRunStats, TaskStatus } from "../state"

@@ -12,12 +12,12 @@
     "node": "^24.15.0 || >=26.0.0"
   },
   "dependencies": {
-    "@earendil-works/chord": "0.85.1",
-    "@earendil-works/pi-agent-core": "0.85.1",
-    "@earendil-works/pi-client": "0.85.1",
-    "@earendil-works/pi-coding-agent": "0.85.1",
-    "@earendil-works/pi-protocol": "0.85.1",
-    "@earendil-works/pi-server": "0.85.1",
+    "@earendil-works/chord": "1.0.1",
+    "@earendil-works/pi-agent-core": "1.0.1",
+    "@earendil-works/pi-client": "1.0.1",
+    "@earendil-works/pi-coding-agent": "1.0.1",
+    "@earendil-works/pi-protocol": "1.0.1",
+    "@earendil-works/pi-server": "1.0.1",
     "proper-lockfile": "4.1.2"
   }
 }

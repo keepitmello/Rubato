@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { PI_VERSION } from "../../pi-version.mjs";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -15,7 +16,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import test, { after } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -49,6 +50,10 @@ function preparePatchedPackage() {
   cpSync(join(pristinePackage, "dist"), join(patchedPackage, "dist"), { recursive: true });
   copyFileSync(join(pristinePackage, "package.json"), join(patchedPackage, "package.json"));
   symlinkSync(join(pristinePackage, "node_modules"), join(patchedPackage, "node_modules"), "dir");
+  // npm hoists most of pi's dependencies (cross-spawn, ...) next to the package, not under
+  // it; link that level too so the scratch copy resolves them the way the install does.
+  const hoisted = resolve(pristinePackage, "../..");
+  if (basename(hoisted) === "node_modules") symlinkSync(hoisted, join(scratchRoot, "node_modules"), "dir");
   for (const file of files) {
     const target = join(patchedPackage, file.path);
     mkdirSync(dirname(target), { recursive: true });
@@ -100,7 +105,7 @@ test("manifest is stock-version locked, additive, drift-strict, and valid JavaSc
 
   for (const spec of patches) {
     assert.equal(spec.packageName, "@earendil-works/pi-coding-agent");
-    assert.equal(spec.version, "0.86.1");
+    assert.equal(spec.version, PI_VERSION);
     const pristine = readFileSync(join(pristinePackage, spec.path), "utf8");
     const output = readFileSync(join(patchedPackage, spec.path), "utf8");
     assert.equal(sha256(pristine), spec.preimageSha256);

@@ -1,4 +1,4 @@
-import type { RpcExtensionUIRequest, RpcExtensionUIResponse } from "@code-yeongyu/senpi"
+import type { RpcExtensionUIRequest, RpcExtensionUIResponse } from "@earendil-works/pi-coding-agent"
 
 /**
  * Auto-answer an extension UI request with a safe deny/cancel default so a

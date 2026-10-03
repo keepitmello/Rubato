@@ -1,4 +1,4 @@
-import type { AgentToolResult } from "@code-yeongyu/senpi"
+import type { AgentToolResult } from "@earendil-works/pi-coding-agent"
 
 import type { TaskStatus } from "../../state"
 

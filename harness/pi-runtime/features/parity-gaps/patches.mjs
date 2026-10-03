@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 
 const PI_AI = "@earendil-works/pi-ai";
 const AGENT = "@earendil-works/pi-coding-agent";
-const VERSION = "0.86.1";
+import { PI_VERSION as VERSION } from "../../pi-version.mjs";
 
 function replaceOnce(source, before, after, label) {
   const first = source.indexOf(before);
@@ -150,11 +150,11 @@ function patch(id, packageName, path, preimageSha256, apply) {
 }
 
 export const patches = Object.freeze([
-  patch("overflow", PI_AI, "dist/utils/overflow.js", "90a6616007318492a573cf4b298c6be8c6dedfb3c7512aecffd370c253d853e2", patchOverflow),
+  patch("overflow", PI_AI, "dist/utils/overflow.js", "85570a78e9ba3e0322fe1b3f14c991b6a439b1d3eb89af306e2e7e9ade3d53b4", patchOverflow),
   patch("google-input-guard", PI_AI, "dist/api/google-shared.js", "0254007d8b7f0ebeb2b00f6a940041012c45220369f604f999c8e7019d36972a", patchGoogleSharedInputGuard),
-  patch("prompt-cache-ttl", PI_AI, "dist/api/openai-responses.js", "3e95145f94ac2a255d1adc0ae65cf02c2e6d479f7a2dbf5c466db21885c29ec6", patchPromptCacheTtl),
+  patch("prompt-cache-ttl", PI_AI, "dist/api/openai-responses.js", "8a294f760ea70459c6d41c83878a8d0cda5dd4780c46b490c85e0d3495471e3e", patchPromptCacheTtl),
   patch("auth-storage", AGENT, "dist/core/auth-storage.js", "0b45029901579032b19273a1427f63b622df8e1aaf9ea185eb932c0d4898998c", patchAuthStorage),
-  patch("tool-descriptions", AGENT, "dist/core/tools/tool-definition-wrapper.js", "b08ccb77cf3664c3b42e5cee858e150925c0eedbaca397474c3af3de22030abd", patchToolDescriptions),
+  patch("tool-descriptions", AGENT, "dist/core/tools/tool-definition-wrapper.js", "02fe785c52294d14216605d40d5592ac2accd1a3125891523e2a6c87feb5810c", patchToolDescriptions),
 ]);
 
 export const files = Object.freeze([

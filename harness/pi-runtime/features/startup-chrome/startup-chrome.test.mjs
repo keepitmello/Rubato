@@ -108,3 +108,24 @@ test("rendered header capture (plain + themed)", async () => {
   assert.doesNotMatch(themed, /\bpi\b/);
   assert.match(themed, /\x1b\[/);
 });
+
+test("1.0 header renders the brand line with key hints below, not the pi logo", async () => {
+  // 1.0 draws the pi half-block logo (Apple Terminal: a colored "Pi") with the engine version
+  // and plays a 3D logo on click. Rubato keeps today's header: wordmark + product version.
+  const patched = patchStartupChrome(readFileSync(stockPath, "utf8"));
+  const start = patched.indexOf("            const showLogo = ");
+  const end = patched.indexOf("\n", patched.indexOf("            const withLogo = ", start));
+  assert.ok(start > 0 && end > start, "header builder is present");
+  const { initTheme, theme } = await import(pathToFileURL(join(
+    featureDir,
+    "../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js",
+  )).href);
+  initTheme("dark");
+  const build = new Function("theme", "BRAND_NAME", "startupDisplayVersion", "supportsPiLogo", "piLogoLines", "piWordmark",
+    `${patched.slice(start, end)}\nreturn { showLogo, header: withLogo("HINTS") };`);
+  const fail = () => { throw new Error("pi logo must not be drawn"); };
+  const { showLogo, header } = build.call({ version: "1.0.1" }, theme, BRAND_NAME, startupDisplayVersion, fail, fail, fail);
+  assert.equal(showLogo, false, "no logo, so no 3D logo click handler");
+  const brand = theme.bold(theme.fg("accent", BRAND_NAME)) + theme.fg("dim", ` v${startupDisplayVersion("1.0.1")}`);
+  assert.equal(header, `${brand}\nHINTS`);
+});

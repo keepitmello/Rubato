@@ -1,4 +1,4 @@
-import type { SessionShutdownEvent } from "@code-yeongyu/senpi"
+import type { SessionShutdownEvent } from "@earendil-works/pi-coding-agent"
 import type { TeamBatchWake } from "@rubato/task"
 
 import type { ComponentContext, SenpiExtensionAPI } from "../../extension/types"

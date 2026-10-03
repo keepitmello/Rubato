@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync, readFileSync, cpSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { resolvePiRuntime } from "../../resolve-runtime.mjs";
 import { patchTuiAutocomplete, patchTuiEditor, patches } from "./patches.mjs";
 import { patchModelSelector } from "../model-picker/patches.mjs";
 import { supportedThinkingLevels } from "../thinking-levels/thinking-levels.mjs";
@@ -10,7 +11,7 @@ import { installTitleGuard } from "../title-guard/title-guard.mjs";
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = process.env.RUBATO_A2A3_EVIDENCE_DIR || join(here, "evidence");
 mkdirSync(outDir, { recursive: true });
-const tuiDist = join(here, "../../node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist");
+const tuiDist = join(resolvePiRuntime({ root: join(here, "../..") }).packages["@earendil-works/pi-tui"].dir, "dist");
 const agentDist = join(here, "../../node_modules/@earendil-works/pi-coding-agent/dist");
 
 function stripAnsi(text) {

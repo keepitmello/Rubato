@@ -2,7 +2,13 @@ import { describe, expect, test } from "bun:test"
 
 import { CURSOR_GROK_BASE_ID, CURSOR_GROK_PRESENTED_ID } from "@rubato/model-core"
 
-import { ModelRegistry, ModelRuntime } from "@code-yeongyu/senpi"
+import { mkdtempSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+
+import { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent"
+
+import type { ChildModelRegistry } from "../senpi/legacy-session-options"
 
 import { createParentRegistrySessionContext, findModelReference, resolveResumeContext } from "./parent-registry-context"
 import type { ManagedStartSpec } from "./types"
@@ -21,8 +27,14 @@ function baseSpec(overrides: Partial<ManagedStartSpec> = {}): ManagedStartSpec {
   }
 }
 
-function registryWithMockProvider(): ModelRegistry {
-  const registry = new ModelRegistry(ModelRuntime.createSync())
+// Stock pi dropped the synchronous ModelRuntime factory; each registry gets its own empty runtime.
+async function freshModelRuntime(): Promise<ModelRuntime> {
+  const dir = mkdtempSync(join(tmpdir(), "rubato-parent-registry-"))
+  return ModelRuntime.create({ authPath: join(dir, "auth.json"), modelsPath: null })
+}
+
+async function registryWithMockProvider(): Promise<ChildModelRegistry> {
+  const registry = new ModelRegistry(await freshModelRuntime())
   registry.registerProvider("rubato-mock", {
     name: "rubato mock provider",
     baseUrl: "file://mock-provider",
@@ -125,9 +137,9 @@ describe("createParentRegistrySessionContext", () => {
     expect(context).toEqual({})
   })
 
-  test("#given a parent registry with a dynamically-registered provider #when a child spec names that model #then the registry, its auth storage, and the resolved Model are threaded", () => {
+  test("#given a parent registry with a dynamically-registered provider #when a child spec names that model #then the registry, its auth storage, and the resolved Model are threaded", async () => {
     // given
-    const registry = registryWithMockProvider()
+    const registry = await registryWithMockProvider()
     const modelRuntime = registry.modelRuntime
     const provide = createParentRegistrySessionContext(() => registry)
 
@@ -142,9 +154,9 @@ describe("createParentRegistrySessionContext", () => {
     expect(context.model?.id).toBe("mock-1")
   })
 
-  test("#given a parent registry but no model on the spec #when the context is built #then registry and auth are threaded with no model override", () => {
+  test("#given a parent registry but no model on the spec #when the context is built #then registry and auth are threaded with no model override", async () => {
     // given
-    const registry = registryWithMockProvider()
+    const registry = await registryWithMockProvider()
     const provide = createParentRegistrySessionContext(() => registry)
 
     // when
@@ -156,9 +168,9 @@ describe("createParentRegistrySessionContext", () => {
     expect(context.model).toBeUndefined()
   })
 
-  test("#given a spec carrying a valid resolved variant #when the context is built #then it maps to the senpi thinking level", () => {
+  test("#given a spec carrying a valid resolved variant #when the context is built #then it maps to the senpi thinking level", async () => {
     // given
-    const registry = registryWithMockProvider()
+    const registry = await registryWithMockProvider()
     const provide = createParentRegistrySessionContext(() => registry)
 
     // when
@@ -168,9 +180,9 @@ describe("createParentRegistrySessionContext", () => {
     expect(context.thinkingLevel).toBe("xhigh")
   })
 
-  test("#given a spec carrying an unknown variant #when the context is built #then no thinking level is threaded", () => {
+  test("#given a spec carrying an unknown variant #when the context is built #then no thinking level is threaded", async () => {
     // given
-    const registry = registryWithMockProvider()
+    const registry = await registryWithMockProvider()
     const provide = createParentRegistrySessionContext(() => registry)
 
     // when
@@ -180,9 +192,9 @@ describe("createParentRegistrySessionContext", () => {
     expect(context.thinkingLevel).toBeUndefined()
   })
 
-  test("#given a model reference absent from the parent registry #when the context is built #then registry is still threaded but no Model is set", () => {
+  test("#given a model reference absent from the parent registry #when the context is built #then registry is still threaded but no Model is set", async () => {
     // given
-    const registry = registryWithMockProvider()
+    const registry = await registryWithMockProvider()
     const provide = createParentRegistrySessionContext(() => registry)
 
     // when
@@ -195,9 +207,9 @@ describe("createParentRegistrySessionContext", () => {
 })
 
 describe("resolveResumeContext", () => {
-  test("#given a spec whose resolved_model provider+model_id exist in the live registry #when resolved #then it returns ok with the exact model and registry context", () => {
+  test("#given a spec whose resolved_model provider+model_id exist in the live registry #when resolved #then it returns ok with the exact model and registry context", async () => {
     // given
-    const registry = registryWithMockProvider()
+    const registry = await registryWithMockProvider()
     const resolvedModel: ResolvedModelRecord = {
       provider: "rubato-mock",
       model_id: "mock-1",
@@ -219,9 +231,9 @@ describe("resolveResumeContext", () => {
     }
   })
 
-  test("#given a spec whose resolved_model provider was removed from the live registry #when resolved #then it returns model_unavailable and never drifts to a substitute", () => {
+  test("#given a spec whose resolved_model provider was removed from the live registry #when resolved #then it returns model_unavailable and never drifts to a substitute", async () => {
     // given
-    const registry = registryWithMockProvider()
+    const registry = await registryWithMockProvider()
     const resolvedModel: ResolvedModelRecord = {
       provider: "rubato-mock",
       model_id: "does-not-exist",
@@ -242,9 +254,9 @@ describe("resolveResumeContext", () => {
     }
   })
 
-  test("#given a spec whose display string differs from the canonical provider/model_id #when resolved #then it keys on provider+model_id, not display, and resolves correctly", () => {
+  test("#given a spec whose display string differs from the canonical provider/model_id #when resolved #then it keys on provider+model_id, not display, and resolves correctly", async () => {
     // given
-    const registry = registryWithMockProvider()
+    const registry = await registryWithMockProvider()
     // display says something completely different from the registry id
     const resolvedModel: ResolvedModelRecord = {
       provider: "rubato-mock",
@@ -265,9 +277,9 @@ describe("resolveResumeContext", () => {
     }
   })
 
-  test("#given a spec whose provider+model_id match one model but display matches a DIFFERENT model in the registry #when resolved #then it resolves the provider+model_id match, never the display match", () => {
+  test("#given a spec whose provider+model_id match one model but display matches a DIFFERENT model in the registry #when resolved #then it resolves the provider+model_id match, never the display match", async () => {
     // given
-    const registry = new ModelRegistry(ModelRuntime.createSync())
+    const registry = new ModelRegistry(await freshModelRuntime())
     registry.registerProvider("rubato-mock", {
       name: "rubato mock provider",
       baseUrl: "file://mock-provider",
@@ -334,9 +346,9 @@ describe("resolveResumeContext", () => {
     }
   })
 
-  test("#given a spec with no resolved_model at all #when resolved #then it returns model_unavailable", () => {
+  test("#given a spec with no resolved_model at all #when resolved #then it returns model_unavailable", async () => {
     // given
-    const registry = registryWithMockProvider()
+    const registry = await registryWithMockProvider()
     const spec = baseSpec()
 
     // when

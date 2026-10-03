@@ -65,27 +65,69 @@ function toolResultText(content) {
   return "Tool output unavailable.";
 }
 
+// pi-ai 1.0.1 (inline-tools) fixes top-level `tools` to the initial loadout plus a deferred
+// placeholder and changes the loadout inside messages: `tool_addition` defines a tool by value
+// (`tool.definition`) or names one (`tool_reference`), `tool_removal` withdraws one. All names
+// on the wire are already mapped by the provider (OAuth: toClaudeCodeName for definitions,
+// removals and tool_use alike), so they compare directly.
+function toolChangeName(tool) {
+  if (!isRecord(tool)) return undefined;
+  if (tool.type === "tool_definition") {
+    return isRecord(tool.definition) && typeof tool.definition.name === "string" ? tool.definition.name : undefined;
+  }
+  if (tool.type === "tool_reference") {
+    if (typeof tool.name === "string") return tool.name;
+    if (typeof tool.tool_name === "string") return tool.tool_name;
+  }
+  return undefined;
+}
+
+function applyToolChange(block, definedNames, everDefinedNames) {
+  if (!isRecord(block)) return;
+  if (block.type === "tool_addition") {
+    const name = toolChangeName(block.tool);
+    if (name !== undefined) {
+      definedNames.add(name);
+      everDefinedNames.add(name);
+    }
+  } else if (block.type === "tool_removal") {
+    const name = toolChangeName(block.tool);
+    if (name !== undefined) definedNames.delete(name);
+  }
+}
+
 /**
- * Anthropic 400s when history still names a tool that is not in this request's
- * `tools` (and was not discovered via `tool_reference`). apply_patch hiding
- * edit/write is the live case. Demote those calls and matching results to text
- * so pair repair does not have to invent a still-named tool_use.
+ * Anthropic 400s when history still names a tool that is not defined at that point of the
+ * request (top-level `tools`, an earlier inline `tool_addition`, or a `tool_reference`
+ * discovered by server tool search). apply_patch hiding edit/write is the live case. Demote
+ * those calls and matching results to text so pair repair does not have to invent a
+ * still-named tool_use.
  */
 export function demoteUnavailableToolReferences(params) {
   if (!isRecord(params) || !Array.isArray(params.messages) || params.messages.length === 0) return params;
-  const definedNames = new Set();
+  const initialNames = new Set();
+  // Guidance lists only the fixed, callable top-level tools: it is baked into demoted history,
+  // so it must not change when tools load mid-conversation (cache prefix), and the deferred
+  // placeholder is not a tool the model can call.
+  const availableToolNames = [];
   if (Array.isArray(params.tools)) {
     for (const tool of params.tools) {
-      if (isRecord(tool) && typeof tool.name === "string") definedNames.add(tool.name);
+      if (!isRecord(tool) || typeof tool.name !== "string") continue;
+      initialNames.add(tool.name);
+      if (tool.defer_loading !== true) availableToolNames.push(tool.name);
     }
   }
   const discoveredNames = new Set();
   collectToolReferenceNames(params.messages, discoveredNames);
+  const definedNames = new Set(initialNames);
+  const everDefinedNames = new Set(initialNames);
   const demotedCallNames = new Map();
   for (const message of params.messages) {
-    if (message.role !== "assistant" || !Array.isArray(message.content)) continue;
+    if (!Array.isArray(message.content)) continue;
     for (const block of message.content) {
+      applyToolChange(block, definedNames, everDefinedNames);
       if (
+        message.role === "assistant" &&
         isRecord(block) &&
         block.type === "tool_use" &&
         typeof block.id === "string" &&
@@ -99,12 +141,11 @@ export function demoteUnavailableToolReferences(params) {
   }
   const danglingReferenceNames = new Set();
   for (const name of discoveredNames) {
-    if (!definedNames.has(name)) danglingReferenceNames.add(name);
+    if (!everDefinedNames.has(name)) danglingReferenceNames.add(name);
   }
   if (demotedCallNames.size === 0 && danglingReferenceNames.size === 0) return params;
 
   let changed = false;
-  const availableToolNames = [...definedNames];
   const seenDemotedCallNames = new Set();
   const rewrittenMessages = [];
   for (const message of params.messages) {

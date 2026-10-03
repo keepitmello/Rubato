@@ -1,3 +1,4 @@
+import { PI_VERSION } from "../../pi-version.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
@@ -11,7 +12,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import test, { after } from "node:test";
@@ -45,6 +46,10 @@ function preparePatchedPackage() {
   cpSync(join(pristinePackage, "dist"), join(patchedPackage, "dist"), { recursive: true });
   copyFileSync(join(pristinePackage, "package.json"), join(patchedPackage, "package.json"));
   symlinkSync(join(pristinePackage, "node_modules"), join(patchedPackage, "node_modules"), "dir");
+  // 1.0.1 ships no shrinkwrap: npm hoists pi's dependencies (cross-spawn, pi-ai, ...) next to
+  // the package. Link that level too so the scratch copy resolves them like the install.
+  const hoisted = resolve(pristinePackage, "../..");
+  if (basename(hoisted) === "node_modules") symlinkSync(hoisted, join(scratchRoot, "node_modules"), "dir");
   for (const file of files) {
     const target = join(patchedPackage, file.path);
     mkdirSync(dirname(target), { recursive: true });
@@ -68,7 +73,7 @@ test("manifest is stock-locked, additive, drift-strict, and syntactically valid"
   assert.equal(new Set(patches.map((patch) => patch.id)).size, patches.length);
   for (const spec of patches) {
     assert.equal(spec.packageName, "@earendil-works/pi-coding-agent");
-    assert.equal(spec.version, "0.86.1");
+    assert.equal(spec.version, PI_VERSION);
     const pristine = readFileSync(join(pristinePackage, spec.path), "utf8");
     assert.equal(sha256(pristine), spec.preimageSha256);
     const output = spec.apply(pristine);
@@ -87,7 +92,7 @@ test("manifest is stock-locked, additive, drift-strict, and syntactically valid"
 test("actual SDK emits one abort terminal across user/provider runs and retry/compaction gaps", async () => {
   const moduleUrl = pathToFileURL(join(patchedPackage, "dist/index.js")).href;
   const streamUrl = pathToFileURL(
-    join(patchedPackage, "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js"),
+    join(scratchRoot, "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js"),
   ).href;
   const { createAgentSession, DefaultResourceLoader, SessionManager, SettingsManager } = await import(moduleUrl);
   const { AssistantMessageEventStream } = await import(streamUrl);

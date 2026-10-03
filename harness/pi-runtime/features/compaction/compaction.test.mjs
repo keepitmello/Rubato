@@ -13,6 +13,7 @@ import { dirname, join, resolve } from "node:path";
 import test, { after } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { PI_VERSION } from "../../pi-version.mjs";
 import { resolvePiRuntime } from "../../resolve-runtime.mjs";
 import { stagePiRuntime } from "../../stage-runtime.mjs";
 import { runtimeFactoriesFeature } from "../runtime-factories/feature.mjs";
@@ -32,8 +33,8 @@ const staged = await stagePiRuntime({
 const runtime = resolvePiRuntime({ root: staged.root });
 const sdk = await import(pathToFileURL(runtime.sdkEntry));
 const { AssistantMessageEventStream } = await import(pathToFileURL(join(
-  runtime.codingAgentDir,
-  "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js",
+  runtime.packages["@earendil-works/pi-ai"].dir,
+  "dist/utils/event-stream.js",
 )).href);
 const compaction = await import(pathToFileURL(join(
   staged.root,
@@ -197,7 +198,7 @@ test("feature is additive-only and documents the notes vs summary relationship",
   assert.equal(compactionFeature.id, "compaction");
   assert.equal(patches.length, 3);
   assert.equal(new Set(patches.map((entry) => entry.path)).size, patches.length);
-  assert.ok(patches.every((entry) => entry.version === "0.86.1"));
+  assert.ok(patches.every((entry) => entry.version === PI_VERSION));
   assert.ok(patches.every((entry) => /^[a-f0-9]{64}$/.test(entry.preimageSha256)));
   assert.ok(files.every((entry) => existsSync(entry.sourcePath)));
   assert.match(readFileSync(join(staged.root, "rubato-features/compaction/relationship.md"), "utf8"), /history-notes/);
@@ -215,8 +216,8 @@ test("the staged engine sends the declared Claude Code identity, not stock's", (
   // 이 패치가 유일한 주입점이다. 빠지면 stock 2.1.251 이 그대로 나가 400 을 받는다
   // (2026-09-23 실측). 선언을 올려도 구운 엔진이 안 따라가면 여기서 깨진다.
   const wire = readFileSync(join(
-    runtime.codingAgentDir,
-    "node_modules/@earendil-works/pi-ai/dist/api/anthropic-messages.js",
+    runtime.packages["@earendil-works/pi-ai"].dir,
+    "dist/api/anthropic-messages.js",
   ), "utf8");
   assert.ok(wire.includes(`const claudeCodeVersion = "${CLAUDE_CODE_VERSION}";`));
   assert.ok(wire.includes(CLAUDE_CODE_BILLING_HEADER));

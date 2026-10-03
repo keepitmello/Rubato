@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
-const PACKAGE_VERSION = "0.86.1";
+import { PI_VERSION as PACKAGE_VERSION } from "../../pi-version.mjs";
 const CATALOG_IMPORT = 'import { listSessionCatalogPage } from "../rubato-features/session-catalog/catalog.mjs";';
 
 function replaceOnce(source, before, after, label) {
@@ -38,14 +38,8 @@ function patchSessionManagerRuntime(source) {
     `import { createBranchSummaryMessage, createCompactionSummaryMessage, createCustomMessage, } from "./messages.js";\n${CATALOG_IMPORT}`,
     "catalog-import",
   );
-  next = replaceOnce(
-    next,
-    `        const hasAssistant = this.fileEntries.some((e) => e.type === "message" && e.message.role === "assistant");
-        if (!hasAssistant) {`,
-    `        const hasMessage = this.fileEntries.some((e) => e.type === "message" && (e.message.role === "user" || e.message.role === "assistant"));
-        if (!hasMessage) {`,
-    "persist-first-user",
-  );
+  // Stock 1.0 writes the file at the first user message itself (_hasConversation, #10000),
+  // which is the rule Rubato used to patch in; nothing to change here any more.
   // Rolling back memory is half of it; the file must lose the failed write too. A failed
   // first flush left an empty file behind, so every later "wx" open hit EEXIST until a
   // restart. A failed append can leave a torn line without a newline; the next append
@@ -56,16 +50,6 @@ function patchSessionManagerRuntime(source) {
     `import { appendFileSync, closeSync, createReadStream, existsSync, mkdirSync, openSync, readdirSync, readSync, statSync, writeFileSync, } from "fs";`,
     `import { appendFileSync, closeSync, createReadStream, existsSync, mkdirSync, openSync, readdirSync, readSync, rmSync, statSync, truncateSync, writeFileSync, } from "fs";`,
     "file-rollback-imports",
-  );
-  next = replaceOnce(
-    next,
-    `            if (this.flushed) {
-                appendFileSync(this.sessionFile, \`\${JSON.stringify(entry)}\\n\`);
-            }`,
-    `            if (this.flushed) {
-                this._appendLine(entry);
-            }`,
-    "file-rollback-metadata-append",
   );
   next = replaceOnce(
     next,
@@ -229,8 +213,8 @@ export const files = Object.freeze([
 ]);
 
 export const patches = Object.freeze([
-  patch("dist/core/session-manager.js", "96bd76b298f3c0a6b6d9b57b727f0f9b1196fbfa83172071ac280a5a37f82a08", patchSessionManagerRuntime),
-  patch("dist/core/session-manager.d.ts", "4b39381623569d0ad6684a170966a092a078ef97359f6e9e7d215273655d15c8", patchSessionManagerTypes),
+  patch("dist/core/session-manager.js", "046b6a1109ac3f0ed893bb85bf0648709362fa926a5da75761216cf2fcf9d926", patchSessionManagerRuntime),
+  patch("dist/core/session-manager.d.ts", "2288b69c82272311dc877da61ff2057bb04df49038ddef7eef6c8753c09f5313", patchSessionManagerTypes),
 ]);
 
 export const feature = Object.freeze({ id: "session-catalog", patches, files });

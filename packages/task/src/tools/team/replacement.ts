@@ -1,4 +1,4 @@
-import type { ToolDefinition } from "@code-yeongyu/senpi"
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent"
 import { Type, type Static } from "typebox"
 
 import { isPlainRecord } from "@rubato/utils"

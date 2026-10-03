@@ -1,4 +1,4 @@
-import type { AgentToolResult } from "@code-yeongyu/senpi"
+import type { AgentToolResult } from "@earendil-works/pi-coding-agent"
 import type { AgentSnapshot } from "@rubato/agent-core"
 
 import type { TaskManager } from "../../manager"

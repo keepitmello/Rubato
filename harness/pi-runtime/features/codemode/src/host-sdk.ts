@@ -1,3 +1,4 @@
+import { findPackageJSON } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -7,9 +8,11 @@ export * from "@earendil-works/pi-coding-agent";
 
 // pi-ai is selected from coding-agent's own dependency edge rather than from a
 // top-level/global fallback. The codemode feature itself stays at the runtime root.
-const codingAgentEntry = fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"));
-const codingAgentDir = dirname(dirname(codingAgentEntry));
-const piAiCompatEntry = join(codingAgentDir, "node_modules/@earendil-works/pi-ai/dist/compat.js");
+// Resolving from the coding-agent entry finds its nested copy (0.86.1 layout) or the hoisted
+// sibling (1.0.1 layout) exactly as the coding agent itself does.
+const codingAgentEntry = pathToFileURL(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent")));
+const piAiDir = dirname(findPackageJSON("@earendil-works/pi-ai", codingAgentEntry) as string);
+const piAiCompatEntry = join(piAiDir, "dist/compat.js");
 const piAiCompat = await import(pathToFileURL(piAiCompatEntry).href);
 
 export const completeSimple: typeof piAiCompat.completeSimple = piAiCompat.completeSimple;

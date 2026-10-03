@@ -31,17 +31,15 @@
 // mid-conversation system messages still collapses it in the provider.
 //
 // A custom message sent with `triggerTurn: false` while a run streams (the loop guard's
-// notice, a compaction hook's context) is held until the turn's tool results are in. Stock then
-// pushed it into `agent.state.messages` at `turn_end`, but the running loop builds its
-// requests from its own copy of the context, so the model never saw it in that run. The next
-// run copied state again and found the message at its old place, deep in the history: every
-// token after it missed the prompt cache (bench 2026-09-26, sqlfmt: ~250k rewritten). The
-// held messages now go to the loop as the next turn's prepared messages, so the loop, state
-// and session all append them after the latest tool results; a run that ends first still
-// appends them at the end.
+// notice, a compaction hook's context) is held until the turn's tool results are in. Up to
+// 0.86 the running loop built requests from its own context copy, so this feature handed
+// held messages to the loop as prepared messages. Since 0.87 every request is built from
+// the SessionManager projection and stock's `turn_end` flush appends to the session, so the
+// next request of the same run already carries them right after the latest tool results.
+// That part was deleted in the 1.0.1 migration; session-prompt.test.mjs pins the behavior.
 
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
-const VERSION = "0.86.1";
+import { PI_VERSION as VERSION } from "../../pi-version.mjs";
 
 function replaceOnce(source, before, after, label) {
   const first = source.indexOf(before);
@@ -54,6 +52,71 @@ function replaceOnce(source, before, after, label) {
 
 function patch(id, path, preimageSha256, apply) {
   return Object.freeze({ id, packageName: PACKAGE_NAME, version: VERSION, path, preimageSha256, apply });
+}
+
+// 0.87 stopped showing system messages to \`context\` handlers. When a handler changes the
+// conversation, stock replaces every system message with one replayed head that carries the
+// current prompt and ALL current tools. Rubato's context handlers change messages on most
+// requests (large tool output previews, history-notes markers, image limits), so a tool that
+// tool_search loaded mid-session moved into the leading tool list and the provider prefix
+// changed from token 0 (audit 2026-10-03, checks/collapse.mjs). This puts each system
+// message back in front of the conversation message it preceded. Messages a handler kept are
+// found by identity, a same-length rewrite by position. A system message whose follower was
+// dropped goes before the next surviving one, so the replayed tool state is unchanged. Only
+// a reordering handler falls back to stock's single head.
+export function patchRunnerSystemSlots(source) {
+  return replaceOnce(
+    source,
+    `function restoreSystemMessages(current, visible, returned) {
+    if (sameMessages(returned, visible))
+        return current;
+    const head = getCurrentSystemMessage(current);`,
+    `function restoreSystemMessagesInPlace(current, visible, returned) {
+    const groups = visible.map(() => []);
+    const lead = [];
+    const tail = [];
+    let next = 0;
+    for (const message of current) {
+        if (message.role !== "system") {
+            next++;
+            continue;
+        }
+        if (next === 0)
+            lead.push(message);
+        else if (next < visible.length)
+            groups[next].push(message);
+        else
+            tail.push(message);
+    }
+    const indexOf = new Map(visible.map((message, index) => [message, index]));
+    const positional = returned.length === visible.length;
+    const out = [...lead];
+    let emitted = 0;
+    for (let index = 0; index < returned.length; index++) {
+        const message = returned[index];
+        const anchor = indexOf.get(message) ?? (positional ? index : undefined);
+        if (anchor !== undefined) {
+            if (anchor < emitted)
+                return undefined;
+            for (; emitted <= anchor; emitted++)
+                out.push(...groups[emitted]);
+        }
+        out.push(message);
+    }
+    for (; emitted < groups.length; emitted++)
+        out.push(...groups[emitted]);
+    out.push(...tail);
+    return out;
+}
+function restoreSystemMessages(current, visible, returned) {
+    if (sameMessages(returned, visible))
+        return current;
+    const inPlace = restoreSystemMessagesInPlace(current, visible, returned);
+    if (inPlace)
+        return inPlace;
+    const head = getCurrentSystemMessage(current);`,
+    "context-system-slots",
+  );
 }
 
 export function patchRunner(source) {
@@ -158,7 +221,9 @@ export function patchAgentSession(source) {
   );
   next = replaceOnce(
     next,
-    `    /** Restore the active tool loadout declared by the session transcript, if it declares one. */`,
+    `    /**
+     * Restore the active tool loadout declared by the session transcript, if it declares one.
+`,
     `    /**
      * The session's composed prompt for the next request. Every run shape reaches this
      * through the projection, so a wake-started run carries the same prompt as a prompted one.
@@ -172,19 +237,17 @@ export function patchAgentSession(source) {
         this._composedSystemPrompt = composed;
         return composed;
     }
-    /** Restore the active tool loadout declared by the session transcript, if it declares one. */`,
+    /**
+     * Restore the active tool loadout declared by the session transcript, if it declares one.
+`,
     "compose-method",
   );
   next = replaceOnce(
     next,
-    `    async _runAgentPrompt(messages) {
-        this._agentRunAbortRequested = false;
-        this._isAgentRunActive = true;
+    `        this._isAgentRunActive = true;
         try {
             await this.agent.prompt(messages);`,
-    `    async _runAgentPrompt(messages) {
-        this._agentRunAbortRequested = false;
-        this._isAgentRunActive = true;
+    `        this._isAgentRunActive = true;
         try {
             // Every run shape passes here before its tool loadout is declared, including a
             // wake started by sendCustomMessage(triggerTurn), which skips before_agent_start.
@@ -205,46 +268,9 @@ export function patchAgentSession(source) {
   );
 }
 
-export function patchAgentSessionDeferredMessages(source) {
-  let next = replaceOnce(
-    source,
-    `        if (event.type === "turn_end") {
-            this._flushPendingCustomMessages();
-        }
-    };`,
-    `        // Custom messages held during the turn reach the running loop through
-        // prepareNextTurnWithContext; the run's finally appends any the loop did not take.
-    };`,
-    "deferred-custom-turn-end",
-  );
-  next = replaceOnce(
-    next,
-    `            const updateMessage = this._preparePromptAndToolLoadout(options, nextContext.messages);
-            // Keep session.systemPrompt and ctx.getSystemPrompt() in step with what the provider sees.
-            this._runSystemPromptOptions = options;`,
-    `            const updateMessage = this._preparePromptAndToolLoadout(options, nextContext.messages);
-            // Keep session.systemPrompt and ctx.getSystemPrompt() in step with what the provider sees.
-            this._runSystemPromptOptions = options;
-            // The loop emits these like any prepared message: it appends them to its own
-            // context, agent state and the session after the latest tool results.
-            const held = this._pendingCustomMessages;
-            this._pendingCustomMessages = [];`,
-    "deferred-custom-take",
-  );
-  return replaceOnce(
-    next,
-    `                messages: updateMessage
-                    ? [...(previousSnapshot?.messages ?? []), updateMessage]
-                    : previousSnapshot?.messages,`,
-    `                messages: [...held, ...(previousSnapshot?.messages ?? []), ...(updateMessage ? [updateMessage] : [])],`,
-    "deferred-custom-prepared",
-  );
-}
-
 export const patches = Object.freeze([
-  patch("session-prompt:core/extensions/runner.js", "dist/core/extensions/runner.js", "07a94efe560e6a460a415b2188c1c3c69ca151bd163c9b5f05347caf8403ace2", patchRunner),
-  patch("session-prompt:core/agent-session.js", "dist/core/agent-session.js", "edaff7055ced7d49d25135c92415fbbfd9c14c4a29be5a79510ab9216045d6d9", (source) =>
-    patchAgentSessionDeferredMessages(patchAgentSession(source))),
+  patch("session-prompt:core/extensions/runner.js", "dist/core/extensions/runner.js", "258f142bc56cc84d953ef6146222e5ff3a94cc908592a1b3d075d34bbcd68b36", (source) => patchRunnerSystemSlots(patchRunner(source))),
+  patch("session-prompt:core/agent-session.js", "dist/core/agent-session.js", "35ca1dabd54d98c236c9601b569c2856b726ade392d06b2eaaf50158f48913ab", patchAgentSession),
 ]);
 
 export const files = Object.freeze([]);

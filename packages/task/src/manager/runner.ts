@@ -1,7 +1,8 @@
-import type { CreateAgentSessionOptions } from "@code-yeongyu/senpi"
+import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent"
 import { launchProductModel } from "@rubato/model-core"
 
 import type { ChildHandle as InProcessChildHandle } from "../runners/in-process/child-handle"
+import type { LegacyChildSessionFields } from "../senpi/legacy-session-options"
 import { RunnerError, type ChildSpec } from "../runners/in-process"
 import { resolveChildSessionDir } from "../runners/rpc/spawn"
 import type { RpcChildHandle, RpcRunnerSpec } from "../runners/types"
@@ -12,8 +13,8 @@ import type { ManagedRunner, ManagedStartSpec } from "./types"
 // and the parent's auth/model registry, which the string-typed ManagedStartSpec cannot carry.
 export type InProcessSessionContext = {
   readonly agentDir?: string
-  readonly authStorage?: CreateAgentSessionOptions["authStorage"]
-  readonly modelRegistry?: CreateAgentSessionOptions["modelRegistry"]
+  readonly authStorage?: LegacyChildSessionFields["authStorage"]
+  readonly modelRegistry?: LegacyChildSessionFields["modelRegistry"]
   readonly modelRuntime?: ChildSpec["modelRuntime"]
   readonly model?: CreateAgentSessionOptions["model"]
   readonly thinkingLevel?: CreateAgentSessionOptions["thinkingLevel"]

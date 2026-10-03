@@ -30,4 +30,7 @@ say "rubato-pi unit tests"
 # because undici happened to be hoisted into the root tree by the web layer;
 # removing that layer took it with it. Install what the package declares.
 npm --prefix harness/rubato-pi ci --workspaces=false --ignore-scripts
+# The unit runner stages the candidate engine features from harness/pi-runtime so the tests read
+# the same patched stock pi the engine runs (senpi's packages no longer stand in for it).
+npm --prefix harness/pi-runtime ci --workspaces=false --ignore-scripts
 npm --prefix harness/rubato-pi test

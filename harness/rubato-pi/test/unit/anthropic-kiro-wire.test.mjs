@@ -16,6 +16,23 @@ import { CLAUDE_CODE_BILLING_HEADER, CLAUDE_CODE_VERSION } from "../../src/trans
 import { KIRO_API_KEY_ENV } from "../../src/kiro-route.mjs";
 import { ANTHROPIC_PICKER_IDS } from "../../src/picker-catalog.mjs";
 import { directProviders } from "../../src/provider-direct.mjs";
+import { pathToFileURL } from "node:url";
+import { senpiNested } from "../../src/engine-paths.mjs";
+
+// pi-ai 1.0 providers take a transcript: Context.tools/systemPrompt ride the leading system
+// message. ModelRuntime runs normalizeContext before it calls a provider; these tests call the
+// provider directly, so they normalize the same way.
+const { normalizeContext } = await import(
+  pathToFileURL(senpiNested("@earendil-works/pi-ai/dist/index.js")).href
+);
+
+function viaRuntime(provider) {
+  return {
+    ...provider,
+    stream: (model, context, options) => provider.stream(model, normalizeContext(context), options),
+    streamSimple: (model, context, options) => provider.streamSimple(model, normalizeContext(context), options),
+  };
+}
 
 // 파생되는 현재 세대 opus 행은 피커 명단이 소유한다.
 const DERIVED_OPUS = ANTHROPIC_PICKER_IDS.find((id) => id.startsWith("claude-opus-5-"));
@@ -109,7 +126,7 @@ async function providers(options) {
   });
   assert.equal(anthropic.id, "anthropic");
   assert.equal(kiro.id, "kiro");
-  return { anthropic, kiro };
+  return { anthropic: viaRuntime(anthropic), kiro: viaRuntime(kiro) };
 }
 
 function modelById(provider, id) {
@@ -176,7 +193,10 @@ test("setup-token 이 아니면 x-api-key 경로이고 Claude 신원이 붙지 �
   assert.equal(captured.headers.authorization, undefined);
   assert.notEqual(captured.headers["user-agent"], `claude-cli/${CLAUDE_CODE_VERSION}`);
   assert.equal(captured.headers["x-app"], undefined);
-  assert.deepEqual(captured.body.tools.map((tool) => tool.name), ["read"], "OAuth 가 아닌 경로에서 이름을 바꿨다");
+  // pi 1.0 의 Anthropic wire 는 캐시 접두를 지키려고 숨은 deferred placeholder 를 덧붙인다.
+  // 모델이 보는 도구는 defer_loading 이 아닌 것뿐이다.
+  const visible = captured.body.tools.filter((tool) => tool.defer_loading !== true);
+  assert.deepEqual(visible.map((tool) => tool.name), ["read"], "OAuth 가 아닌 경로에서 이름을 바꿨다");
   assert.equal(captured.body.system?.[0]?.text, undefined, "Claude Code system prompt 가 새어 나갔다");
 });
 
@@ -199,14 +219,17 @@ test("pinned Anthropic 모델 metadata 를 다시 적지 않았다", async () =>
     pin,
   );
 
-  // pin 에 없는 파생 행은 여기서만 늘어난다. 늘어나면 이 목록도 같이 고쳐야 한다.
+  // pin 에 없는 파생 행은 피커 명단 중 pin 에 아직 없는 현재 세대뿐이다. pin 이 그 세대를
+  // 싣기 시작하면 파생은 사라지고 pin 행이 그대로 쓰인다 (pi 1.0.1 은 opus/sonnet 5.5 를 싣는다).
   // 두 번째 계정이 있는 기기에서는 파생 행마다 `[sub]` 사본도 함께 생긴다.
   const derived = ours.filter((model) => !byId.has(model.id));
+  const expectedDerived = [DERIVED_OPUS, DERIVED_SONNET].filter((id) => !byId.has(id));
   assert.deepEqual(
     derived.map((model) => model.id).filter((id) => !id.endsWith("-sub")),
-    [DERIVED_OPUS, DERIVED_SONNET],
+    expectedDerived,
   );
   const derivedById = new Map(derived.map((model) => [model.id, model]));
+  if (expectedDerived.length === 0) return;
 
   // 파생 행의 틀도 손으로 적지 않았다. Opus 는 id·표시명·가격만 다르고 나머지는 틀 그대로다.
   const { id: _opusId, name: _opusName, cost: _opusCost, ...opusRest } = derivedById.get(DERIVED_OPUS);
