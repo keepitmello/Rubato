@@ -30,6 +30,7 @@ import {
   type DreamRung,
   type DreamState,
 } from "./runner"
+import { agentDir, childEnv } from "./child-env"
 import { liveMemoryVerdict } from "./live-guard"
 import { languageMigrationDue, runLanguageMigration } from "./migrate-language"
 import { countStoreFiles, createStoreNameResolver, listExistingStores, scanStoreSessions, type SessionFile } from "./stores"
@@ -228,27 +229,6 @@ function printStatuses(all: readonly StoreStatus[], models: readonly DreamRung[]
     const flag = status.enabled ? "on " : "off"
     process.stdout.write(`${flag}  ${status.store.padEnd(28)} last ${last}  new sessions ${status.newSessions}${status.due ? "  due" : ""}\n`)
   }
-}
-
-function agentDir(env: NodeJS.ProcessEnv): string {
-  const pinned = env.RUBATO_PI_CODING_AGENT_DIR
-  return pinned !== undefined && pinned.trim() !== "" ? pinned : join(env.HOME ?? homedir(), ".rubato-pi", "agent")
-}
-
-// The dream child is a fresh engine process, not a child of whatever session ran this command:
-// drop the caller's session identity and pin the profile directory, as `rubato dispatch` does.
-function childEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const out: NodeJS.ProcessEnv = { ...env }
-  for (const key of [
-    "PI_CODING_AGENT_SESSION_DIR", "SENPI_CODING_AGENT_SESSION_DIR", "PI_SESSION_FILE", "PI_SESSION_ID",
-    "PI_MODEL", "PI_PROVIDER", "PI_REASONING_LEVEL", "PI_PACKAGE_DIR", "SENPI_PACKAGE_DIR",
-    "PI_MANAGED_INSTALL_ROOT", "PI_CODING_AGENT",
-  ]) delete out[key]
-  const dir = agentDir(env)
-  out.PI_CODING_AGENT_DIR = dir
-  out.RUBATO_PI_CODING_AGENT_DIR = dir
-  out.DO_NOT_TRACK = "1"
-  return out
 }
 
 async function resolveLaunch(env: NodeJS.ProcessEnv) {
