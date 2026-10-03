@@ -259,7 +259,13 @@ export function main(argv) {
   if (command === 'close') record = store.close(args.id, { expect: args.expect, status: args.status, evidence: args.evidence, supersededBy: args['superseded-by'] });
   return { intent_ref: reference(record), ...record.meta, body: record.body };
 }
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// Node resolves the main module's symlinks for import.meta.url, so compare real paths:
+// installs reach this file through ~/.agents/skills links.
+const invokedDirectly = () => {
+  try { return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); }
+  catch { return false; }
+};
+if (process.argv[1] && invokedDirectly()) {
   try { const output = main(process.argv.slice(2)); console.log(typeof output === 'string' ? output : JSON.stringify(output, null, 2)); }
   catch (error) { console.error(`intent: ${error.message}`); process.exitCode = 1; }
 }
