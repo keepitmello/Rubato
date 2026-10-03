@@ -79,7 +79,7 @@ export const DEFAULT_DREAM_MODELS: readonly { readonly model: string; readonly r
 const defaultDreamModels = (): RubatoMemoryDreamModel[] => DEFAULT_DREAM_MODELS.map((rung) => ({ ...rung }))
 
 export const RubatoMemoryDreamStoreSchema = z.object({
-  enabled: z.boolean().default(false),
+  enabled: z.boolean().default(true),
 }).strict()
 
 export const RubatoMemoryDreamSchema = z.preprocess(
@@ -87,7 +87,7 @@ export const RubatoMemoryDreamSchema = z.preprocess(
   z.object({
     // Models the dream child runs on, in fallback order.
     models: z.array(RubatoMemoryDreamModelSchema).default(defaultDreamModels),
-    // Stores the daily dream maintains, keyed by memory store name (memory.agent). Off unless listed.
+    // Per store, keyed by memory store name (memory.agent). Every store dreams unless it is set to false here.
     stores: z.record(z.string(), RubatoMemoryDreamStoreSchema).default({}),
     min_hours_between: z.number().int().min(1).default(20),
   }).strict(),

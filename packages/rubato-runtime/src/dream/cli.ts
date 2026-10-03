@@ -107,7 +107,7 @@ async function main(argv: readonly string[]): Promise<number> {
   const statuses: StoreStatus[] = []
   for (const [store, state] of states) {
     const record = readStoreRecord(pathsOf(store).root)
-    const enabled = dream.stores[store]?.enabled === true
+    const enabled = dream.stores[store]?.enabled !== false
     const newSessions = sessionsByStore.get(store)?.length ?? 0
     const lastMs = state.last_dream_at === undefined ? 0 : Date.parse(state.last_dream_at)
     statuses.push({

@@ -11,10 +11,11 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
-function dreamStatus(userConfig: string | undefined): unknown {
+function dreamStatus(userConfig: string | undefined, stores: readonly string[] = []): unknown {
   const home = mkdtempSync(join(tmpdir(), "dream-cli-test-"))
   dirs.push(home)
   mkdirSync(join(home, ".rubato", "memory"), { recursive: true })
+  for (const store of stores) mkdirSync(join(home, ".rubato", "memory", "agents", store, "repo", ".git"), { recursive: true })
   if (userConfig !== undefined) writeFileSync(join(home, ".rubato", "rubato.jsonc"), userConfig)
   const env: NodeJS.ProcessEnv = {
     PATH: process.env.PATH,
@@ -44,6 +45,14 @@ describe("rubato dream --json status", () => {
       models: [{ model: "xai/grok-4.7" }, { model: "anthropic/claude-haiku-4-5", thinking: "off" }],
       stores: [],
     })
+  })
+})
+
+describe("rubato dream store switch", () => {
+  test("#given stores the config does not name #when status is read #then they dream; only false turns one off", () => {
+    const config = JSON.stringify({ memory: { dream: { stores: { quiet: { enabled: false }, listed: { enabled: true } } } } })
+    const status = dreamStatus(config, ["fresh", "listed", "quiet"]) as { stores: { store: string; enabled: boolean }[] }
+    expect(Object.fromEntries(status.stores.map((entry) => [entry.store, entry.enabled]))).toEqual({ fresh: true, listed: true, quiet: false })
   })
 })
 
