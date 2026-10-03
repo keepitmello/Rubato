@@ -76,9 +76,14 @@ export function translationLosses(before, after) {
   const request = sectionOf(before, 'Originating request');
   if (request !== null && sectionOf(after, 'Originating request') !== request) losses.push('## Originating request must stay byte for byte');
   const kept = new Set();
+  // A `>` paragraph continues on following non-blank lines that start no other block (lazy continuation).
+  let inQuote = false;
   for (const line of before.split('\n')) {
     const quote = line.match(/^\s{0,3}>\s?(.*)$/);
+    if (quote) inQuote = true;
+    else if (!line.trim() || /^\s{0,3}(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|```|~~~|\|)/.test(line)) inQuote = false;
     if (quote && quote[1].trim()) kept.add(quote[1]);
+    else if (!quote && inQuote) kept.add(line);
     for (const match of line.matchAll(QUOTED)) {
       const inner = match[1] ?? match[2] ?? match[3] ?? match[4] ?? match[5];
       if (inner.trim()) kept.add(match[0]);

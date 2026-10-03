@@ -309,3 +309,11 @@ test('translation keeps quoted English and single-quoted user words too', t => {
   }
   assert.equal(store.translate('one', { expect: rec.sha256, source: authority, body: good }).meta.revision, 2);
 });
+test('translation keeps the lazy continuation lines of a > quote', t => {
+  const { store } = setup(t);
+  const before = korean.replace('## Problem\n에이전트가 요청한 결과를 잃는다.', '## Problem\n> 원문 첫째 줄\n원문 둘째 줄\n\n에이전트가 요청한 결과를 잃는다.');
+  const rec = store.create({ id: 'one', source: 'user:request-1', body: before });
+  const good = english.replace('## Problem\nAgents lose the requested result.', '## Problem\n> 원문 첫째 줄\n원문 둘째 줄\n\nAgents lose the requested result.');
+  assert.throws(() => store.translate('one', { expect: rec.sha256, source: authority, body: good.replace('원문 둘째 줄', 'second line') }), /changed the user's words/);
+  assert.equal(store.translate('one', { expect: rec.sha256, source: authority, body: good }).meta.revision, 2);
+});

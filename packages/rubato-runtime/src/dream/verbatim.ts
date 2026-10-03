@@ -19,7 +19,7 @@ export interface VerbatimSegments {
   readonly symptoms: readonly string[]
   /** Quoted spans, quote marks included. */
   readonly quotes: readonly string[]
-  /** Non-empty `>` lines, without the marker. */
+  /** Non-empty `>` lines without the marker, and their lazy continuation lines. */
   readonly blockquotes: readonly string[]
 }
 
@@ -83,12 +83,35 @@ export function symptomBodies(text: string): string[] {
   return bodies
 }
 
+const BLOCK_START = /^\s{0,3}(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|```|~~~|\|)/
+
+/**
+ * The text of each blockquote line, by line index: `>` lines and their lazy continuations (a
+ * following non-blank line without `>` that starts no other block belongs to the same quote).
+ */
+function quotedLines(all: readonly Line[]): Map<number, string> {
+  const out = new Map<number, string>()
+  let open = false
+  for (const [index, line] of all.entries()) {
+    const block = line.inFence ? null : BLOCKQUOTE.exec(line.text)
+    if (block !== null) {
+      out.set(index, block[1]!)
+      open = true
+    } else if (open && !line.inFence && line.text.trim() !== "" && !BLOCK_START.test(line.text)) {
+      out.set(index, line.text)
+    } else {
+      open = false
+    }
+  }
+  return out
+}
+
 export function verbatimSegments(text: string): VerbatimSegments {
   const quotes: string[] = []
   const blockquotes: string[] = []
-  for (const line of lines(text)) {
-    const block = BLOCKQUOTE.exec(line.text)
-    if (!line.inFence && block !== null && block[1]!.trim() !== "") blockquotes.push(block[1]!)
+  const all = lines(text)
+  for (const quoted of quotedLines(all).values()) if (quoted.trim() !== "") blockquotes.push(quoted)
+  for (const line of all) {
     for (const match of line.text.matchAll(QUOTED)) {
       const inner = match[1] ?? match[2] ?? match[3] ?? match[4] ?? match[5] ?? ""
       // With its quote marks: a translation that turns “…” into "…" changed the user's text too.
@@ -138,9 +161,10 @@ export function translatableHangul(text: string): number {
     if (heading === undefined || heading.level !== 2 || !isSymptomHeading(heading.title)) continue
     for (let next = index + 1; next < all.length && headingOf(all[next]!) === undefined; next += 1) symptomLines.add(next)
   }
+  const quoted = quotedLines(all)
   let count = 0
   for (const [index, line] of all.entries()) {
-    if (line.inFence || symptomLines.has(index) || BLOCKQUOTE.test(line.text)) continue
+    if (line.inFence || symptomLines.has(index) || quoted.has(index)) continue
     const prose = line.text.replace(/`[^`\n]*`/g, "").replace(QUOTED, "")
     count += prose.match(HANGUL_ALL)?.length ?? 0
   }

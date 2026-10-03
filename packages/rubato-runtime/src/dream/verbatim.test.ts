@@ -130,3 +130,15 @@ describe("translation check, quote marks", () => {
       .toEqual(["quoted text changed: “무엇이 아닌지”"])
   })
 })
+
+describe("translation check, lazy blockquote continuation", () => {
+  // checker, 2026-10-04: the second line of a `>` paragraph has no marker and was unprotected.
+  const before = "## 결론\n규칙을 유지한다.\n\n> 원문 첫째 줄\n원문 둘째 줄\n\n뒤 문단은 번역한다.\n"
+  test("#given a quote paragraph continued without > #when its second line is translated #then it fails", () => {
+    expect(translationProblems(before, "## Conclusion\nKeep the rule.\n\n> 원문 첫째 줄\nTranslated second line\n\nThe next paragraph is translated.\n"))
+      .toEqual(["> quote changed: 원문 둘째 줄"])
+  })
+  test("#given the same paragraph kept #when checked #then it passes, and a blank line ends the quote", () => {
+    expect(translationProblems(before, "## Conclusion\nKeep the rule.\n\n> 원문 첫째 줄\n원문 둘째 줄\n\nThe next paragraph is translated.\n")).toEqual([])
+  })
+})
