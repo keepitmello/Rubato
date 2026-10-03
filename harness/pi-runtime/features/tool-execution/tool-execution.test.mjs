@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { dirname } from "node:path";
@@ -36,6 +36,10 @@ async function createFixture(t) {
   const cwd = join(scratchRoot, `cwd-${Math.random()}`);
   const agentDir = join(scratchRoot, `agent-${Math.random()}`);
   await Promise.all([mkdir(cwd, { recursive: true }), mkdir(agentDir, { recursive: true })]);
+  // An offline model so a test can drive real agent turns through session.agent.streamFunction.
+  await writeFile(join(agentDir, "models.json"), JSON.stringify({ providers: { "tool-execution-test": {
+    baseUrl: "http://127.0.0.1:9/v1", api: "openai-completions", apiKey: "unused-test-key", models: [{ id: "fake-model" }],
+  } } }));
 
   const calls = [];
   const events = [];
@@ -224,4 +228,52 @@ test("a tool that returns isError without throwing is an error through executeTo
   assert.equal(result.isError, true);
   assert.deepEqual(result.content, [{ type: "text", text: "exit 3" }]);
   assert.deepEqual(fixture.events.filter(([kind, name]) => kind === "result" && name === "returns_error"), [["result", "returns_error", true]]);
+});
+
+// A model that knows a tool by name (from a skill, say) may call it before tool_search loaded
+// it. Stock pi answers "Tool X not found" and the model gives up although the tool is
+// registered. The session activates it on the spot, like tool_search would, and runs the call.
+test("a model call to a registered inactive tool activates it and runs; the next request declares it after the call", async (t) => {
+  const fixture = await createFixture(t);
+  const { session } = fixture;
+  const piAiDir = resolvePiRuntime({ root: stagedRoot }).packages["@earendil-works/pi-ai"].dir;
+  const { AssistantMessageEventStream } = await import(pathToFileURL(join(piAiDir, "dist/utils/event-stream.js")).href);
+  const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+  const requests = [];
+  const replies = [
+    [{ type: "toolCall", id: "call-lazy", name: "lazy", arguments: { value: "x" } },
+      { type: "toolCall", id: "call-no-lazy", name: "no_lazy", arguments: { value: "y" } },
+      { type: "toolCall", id: "call-missing", name: "missing", arguments: { value: "z" } }],
+    [{ type: "text", text: "done" }],
+  ];
+  session.agent.streamFunction = (model, context) => {
+    requests.push(structuredClone(context.messages));
+    const content = replies[requests.length - 1];
+    const message = { role: "assistant", content, api: model.api, provider: model.provider, model: model.id, usage,
+      stopReason: content[0].type === "toolCall" ? "toolUse" : "stop", timestamp: Date.now() };
+    const stream = new AssistantMessageEventStream();
+    stream.push({ type: "start", partial: { ...message, content: [] } });
+    stream.push({ type: "done", reason: message.stopReason, message });
+    return stream;
+  };
+  assert.ok(session.model, "the offline fixture model is selected");
+  await session.prompt("use it");
+
+  const results = Object.fromEntries(session.messages.filter((message) => message.role === "toolResult")
+    .map((message) => [message.toolName, { isError: message.isError, text: message.content[0]?.text }]));
+  assert.deepEqual(results.lazy, { isError: false, text: "lazy:x:mutated" }, "the inactive tool ran through the normal hooks");
+  assert.equal(results.no_lazy.isError, true, "an owner that forbids lazy activation keeps its tool off");
+  assert.match(results.no_lazy.text, /not found/);
+  assert.equal(results.missing.isError, true, "an unregistered name still fails");
+  assert.equal(fixture.activations, 1, "only the tool that allows lazy activation was activated");
+  assert.ok(session.getActiveToolNames().includes("lazy"));
+  assert.ok(!session.getActiveToolNames().includes("no_lazy"));
+
+  assert.equal(requests.length, 2);
+  const [first, second] = requests;
+  assert.deepEqual(second.slice(0, first.length), first, "the second request extends the first one unchanged");
+  const tail = second.slice(first.length);
+  const callIndex = tail.findIndex((message) => message.role === "assistant");
+  const declareIndex = tail.findIndex((message) => message.role === "system" && message.toolsAdded?.some((tool) => tool.name === "lazy"));
+  assert.ok(callIndex >= 0 && declareIndex > callIndex, "the activation is declared after the call, appended like a tool_search load");
 });

@@ -176,6 +176,23 @@ test("unavailable history tool_use names are demoted to text with matching resul
 // (tool_search) by value in `tool_addition` blocks inside messages. Feed the real payload the
 // staged Anthropic provider builds, for API-key and OAuth (Claude Code names) auth.
 async function anthropicWirePayload(apiKey) {
+  return anthropicWire(apiKey, ({ tool, assistant, call, result }) => [
+    { role: "system", content: "base prompt", toolsAdded: [tool("read"), tool("apply_patch")], timestamp: 1 },
+    { role: "user", content: "fix it", timestamp: 1 },
+    // edit/write were hidden by apply_patch from the start: never defined in this request.
+    assistant([call("toolu_write", "write"), call("toolu_edit", "edit"), call("toolu_read", "read")]),
+    result("toolu_write", "write", "wrote"),
+    result("toolu_edit", "edit", "edited"),
+    result("toolu_read", "read", "read ok"),
+    // tool_search loads grep mid-conversation (OAuth maps it to Claude Code's "Grep").
+    { role: "system", content: "", toolsAdded: [tool("grep")], timestamp: 1 },
+    assistant([call("toolu_grep", "grep")]),
+    result("toolu_grep", "grep", "grep hits"),
+    { role: "user", content: "continue", timestamp: 1 },
+  ]);
+}
+
+async function anthropicWire(apiKey, buildMessages) {
   const piAiDir = resolvePiRuntime({ root: stagedRoot }).packages["@earendil-works/pi-ai"].dir;
   const anthropic = await import(pathToFileURL(join(piAiDir, "dist/api/anthropic-messages.js")).href);
   const { anthropicProvider } = await import(pathToFileURL(join(piAiDir, "dist/providers/anthropic.js")).href);
@@ -192,20 +209,8 @@ async function anthropicWirePayload(apiKey) {
   const result = (toolCallId, toolName, text) => ({
     role: "toolResult", toolCallId, toolName, content: [{ type: "text", text }], isError: false, timestamp: 1,
   });
-  const messages = [
-    { role: "system", content: "base prompt", toolsAdded: [tool("read"), tool("apply_patch")], timestamp: 1 },
-    { role: "user", content: "fix it", timestamp: 1 },
-    // edit/write were hidden by apply_patch from the start: never defined in this request.
-    assistant([call("toolu_write", "write"), call("toolu_edit", "edit"), call("toolu_read", "read")]),
-    result("toolu_write", "write", "wrote"),
-    result("toolu_edit", "edit", "edited"),
-    result("toolu_read", "read", "read ok"),
-    // tool_search loads grep mid-conversation (OAuth maps it to Claude Code's "Grep").
-    { role: "system", content: "", toolsAdded: [tool("grep")], timestamp: 1 },
-    assistant([call("toolu_grep", "grep")]),
-    result("toolu_grep", "grep", "grep hits"),
-    { role: "user", content: "continue", timestamp: 1 },
-  ];
+  const text = (content) => assistant([{ type: "text", text: content }]);
+  const messages = buildMessages({ tool, assistant, call, result, text });
   let payload;
   const stream = anthropic.stream(model, { messages }, {
     apiKey,
@@ -254,6 +259,79 @@ for (const [label, apiKey, grepName, readName] of [
 function OAUTH_OR(label, oauthName, apiKeyName) {
   return label === "OAuth" ? oauthName : apiKeyName;
 }
+
+// A model may call a registered but inactive tool by name. The session activates it on the
+// spot, and the next request declares it after the call (transcript order). Anthropic 400s on
+// a call to a tool not yet defined, so the wire moves that declaration in front of the call —
+// the call was new in this request, so no earlier cached prefix changes.
+// pi-ai wraps the last user string in a text block to mark it for caching; both encode the same tokens.
+const stripCacheControl = (messages) => JSON.parse(JSON.stringify(messages, (key, v) => (key === "cache_control" ? undefined : v)))
+  .map((message) => typeof message.content === "string" ? { ...message, content: [{ type: "text", text: message.content }] } : message);
+function assertExtends(previous, next, label) {
+  const before = stripCacheControl(previous.messages);
+  const after = stripCacheControl(next.messages);
+  assert.ok(after.length >= before.length, `${label}: the later request is not shorter`);
+  assert.deepEqual(after.slice(0, before.length), before, `${label}: the earlier request is an exact prefix`);
+}
+function lastBlock(payload) {
+  const last = payload.messages.at(-1);
+  return Array.isArray(last.content) ? last.content.at(-1) : undefined;
+}
+
+for (const [label, apiKey, wireName] of [
+  ["API key", "sk-ant-api03-test-not-real", "AgentSend"],
+  ["OAuth", "sk-ant-oat01-test-not-real", "AgentSend"],
+]) {
+  test(`1.0.1 Anthropic payload (${label}): a direct call that activated its tool keeps the call and the cache prefix`, async () => {
+    const base = ({ tool, text }) => [
+      { role: "system", content: "base prompt", toolsAdded: [tool("read"), tool("tool_search")], timestamp: 1 },
+      { role: "user", content: "hand it off", timestamp: 1 },
+    ];
+    const called = (helpers) => [
+      ...base(helpers),
+      helpers.assistant([helpers.call("toolu_send", "AgentSend")]),
+      helpers.result("toolu_send", "AgentSend", "sent"),
+    ];
+    // declareToolChanges appends the activation after the tool result.
+    const activated = (helpers) => [...called(helpers), { role: "system", content: "", toolsAdded: [helpers.tool("AgentSend")], timestamp: 1 }];
+    const answered = (helpers) => [...activated(helpers), helpers.text("done"), { role: "user", content: "next", timestamp: 1 }];
+
+    const prior = demoteUnavailableToolReferences(await anthropicWire(apiKey, base));
+    const first = demoteUnavailableToolReferences(await anthropicWire(apiKey, activated));
+    const second = demoteUnavailableToolReferences(await anthropicWire(apiKey, answered));
+
+    for (const [name, payload] of [["first", first], ["second", second]]) {
+      assert.deepEqual(wireToolUseNames(payload), [wireName], `${name}: the call stays a real tool_use`);
+      const callIndex = payload.messages.findIndex((message) => Array.isArray(message.content) &&
+        message.content.some((block) => block.type === "tool_use" && block.name === wireName));
+      const additionIndex = payload.messages.findIndex((message) => Array.isArray(message.content) &&
+        message.content.some((block) => block.type === "tool_addition" && block.tool?.definition?.name === wireName));
+      assert.ok(additionIndex >= 0 && additionIndex < callIndex, `${name}: the tool is defined before its call`);
+      assert.ok(!JSON.stringify(payload).includes("unavailable-tool"), `${name}: nothing is demoted`);
+    }
+    assert.ok(lastBlock(first)?.cache_control, "the request that ran the tool still marks its end for caching");
+    assert.ok(lastBlock(second)?.cache_control, "the next request marks its end for caching");
+    assertExtends(prior, first, "prior -> first");
+    assertExtends(first, second, "first -> second");
+  });
+}
+
+test("a declaration far after an undefined call is not hoisted; the call is still demoted", () => {
+  const addition = (name) => ({ type: "tool_addition", tool: { type: "tool_definition", definition: { name } } });
+  const payload = {
+    tools: [{ name: "read" }],
+    messages: [
+      { role: "assistant", content: [{ type: "tool_use", id: "s1", name: "AgentSend", input: {} }] },
+      { role: "user", content: [{ type: "tool_result", tool_use_id: "s1", content: "Tool AgentSend not found" }] },
+      { role: "assistant", content: [{ type: "text", text: "no such tool" }] },
+      { role: "user", content: [{ type: "text", text: "later" }] },
+      { role: "system", content: [addition("AgentSend")] },
+    ],
+  };
+  const demoted = demoteUnavailableToolReferences(payload);
+  assert.match(demoted.messages[0].content[0].text, /unavailable-tool-call name="AgentSend"/);
+  assert.deepEqual(demoted.messages.at(-1), payload.messages.at(-1), "the later declaration stays where it was");
+});
 
 test("a call after its tool_removal is demoted; a call made while the tool was defined is kept", () => {
   const payload = {

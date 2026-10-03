@@ -12,6 +12,19 @@ function resolveActiveTool(session, name) {
 }
 
 /**
+ * Activate a registered tool that is not active, through the owners' lazy activators (tool_search
+ * registers one), and return it as the agent now runs it. Undefined when the name is not
+ * registered, its owner forbids lazy activation, or no activator takes it. Used by executeTool
+ * and by the agent loop for model calls to a tool the model knew by name before loading it.
+ */
+export function activateInactiveTool(session, toolName) {
+  if (!session._toolDefinitions.has(toolName)) return undefined;
+  if (session._toolDefinitions.get(toolName)?.definition?.allowLazyActivation === false) return undefined;
+  if (!session._lazyToolActivators.some((activate) => activate(toolName))) return undefined;
+  return resolveActiveTool(session, toolName);
+}
+
+/**
  * Execute one registered tool through the same validation and middleware hooks
  * used by stock Pi's agent loop. AgentSession owns lookup and activation state.
  * A provider may supply a trusted in-memory native file executor; model-visible
@@ -45,14 +58,9 @@ export async function executeRegisteredTool(
     tool = native;
   }
 
-  if (!tool && options.activateInactiveTool === true && session._toolDefinitions.has(toolName)) {
-    const definition = session._toolDefinitions.get(toolName)?.definition;
-    const canActivate = definition?.allowLazyActivation !== false;
-    const activated = canActivate && session._lazyToolActivators.some((activate) => activate(toolName));
-    if (activated) {
-      activeToolNames = session.getActiveToolNames();
-      tool = resolveActiveTool(session, toolName);
-    }
+  if (!tool && options.activateInactiveTool === true) {
+    tool = activateInactiveTool(session, toolName);
+    if (tool) activeToolNames = session.getActiveToolNames();
   }
 
   if (!tool) {
