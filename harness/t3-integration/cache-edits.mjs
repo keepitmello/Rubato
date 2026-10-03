@@ -94,7 +94,7 @@ export const cacheEdits = {
       'replace',
     ],
     [
-      '                  stroke="color-mix(in oklab, var(--color-muted-foreground) 24%, transparent)"',
+      '                  className="stroke-muted-foreground/24"',
       '                  stroke={trackColor}',
       'replace',
     ],
@@ -106,7 +106,7 @@ export const cacheEdits = {
     [
       [
         '          {usage.compactsAutomatically ? (',
-        '            <div className="mt-1 text-pretty text-secondary-label text-[11px] font-medium">',
+        '            <div className="mt-1 text-pretty text-secondary-label text-2xs font-medium">',
         '              {formatContextWindowCompactionMessage(modelDisplayName, usage.autoCompactThreshold)}',
         '            </div>',
         '          ) : null}',
@@ -116,8 +116,8 @@ export const cacheEdits = {
     ],
     // Cache on top, context and its optimization below, so the two layers do not mix.
     [
-      '        <div className="flex flex-col gap-2 p-[var(--floating-content-inset)]">\n',
-      '        <div className="flex flex-col gap-2 p-[var(--floating-content-inset)]">\n          <RubatoCacheSection cache={usage.cache} environmentId={environmentId} />\n',
+      '        <div className="flex flex-col gap-2 p-(--floating-content-inset)">\n',
+      '        <div className="flex flex-col gap-2 p-(--floating-content-inset)">\n          <RubatoCacheSection cache={usage.cache} environmentId={environmentId} />\n',
       'replace',
     ],
     [
@@ -134,13 +134,13 @@ export const cacheEdits = {
       'replace',
     ],
     [
-      '              <div className="text-secondary-label text-[11px] tabular-nums">\n                <span>{usedPercentage}</span>',
-      '              <div className="text-popover-foreground text-[11px] tabular-nums">\n                <span>{usedPercentage}</span>',
+      '              <div className="text-secondary-label text-2xs tabular-nums">\n                <span>{usedPercentage}</span>',
+      '              <div className="text-popover-foreground text-2xs tabular-nums">\n                <span>{usedPercentage}</span>',
       'replace',
     ],
     [
-      '              <div className="text-secondary-label text-[11px] tabular-nums">\n                {formatContextWindowTokens(usage.usedTokens)}',
-      '              <div className="text-popover-foreground text-[11px] tabular-nums">\n                {formatContextWindowTokens(usage.usedTokens)}',
+      '              <div className="text-secondary-label text-2xs tabular-nums">\n                {formatContextWindowTokens(usage.usedTokens)}',
+      '              <div className="text-popover-foreground text-2xs tabular-nums">\n                {formatContextWindowTokens(usage.usedTokens)}',
       'replace',
     ],
     [
@@ -149,8 +149,8 @@ export const cacheEdits = {
       'replace',
     ],
     [
-      '                <div className="text-pretty text-secondary-label text-[11px]">\n                  {compactDisabledReason}',
-      '                <div className="text-pretty text-popover-foreground/65 text-[11px]">\n                  {compactDisabledReason}',
+      '                <div className="text-pretty text-secondary-label text-2xs">\n                  {compactDisabledReason}',
+      '                <div className="text-pretty text-popover-foreground/65 text-2xs">\n                  {compactDisabledReason}',
       'replace',
     ],
   ],
@@ -183,12 +183,12 @@ export const cacheEdits = {
       'replace',
     ],
     [
-      '              </span>\n            </span>\n          </div>\n        </div>\n      </SidebarMenuSubButton>\n',
+      '              </span>\n            </span>\n          </div>\n        </div>\n      </div>\n    </SidebarMenuSubItem>\n',
       '                <RubatoCacheCapsule environmentId={thread.environmentId} threadId={thread.id} />\n',
     ],
     [
-      '              <TooltipPopup side="top" className="max-w-80 whitespace-normal leading-tight">\n                {thread.title}\n              </TooltipPopup>\n',
-      '              <TooltipPopup side="top" className="max-w-80 whitespace-normal leading-tight">\n                {thread.title}\n                <RubatoCacheTooltip environmentId={thread.environmentId} threadId={thread.id} />\n              </TooltipPopup>\n',
+      '              <TooltipPopup side="top">{thread.title}</TooltipPopup>\n',
+      '              <TooltipPopup side="top">\n                {thread.title}\n                <RubatoCacheTooltip environmentId={thread.environmentId} threadId={thread.id} />\n              </TooltipPopup>\n',
       'replace',
     ],
     [

@@ -129,7 +129,7 @@ export const permissionEdits = {
       ].join('\n'),
       'replace'],
   ],
-  'apps/web/src/routes/settings.tsx': [
+  'apps/web/src/components/settings/SettingsScopeSentence.tsx': [
     ['  "/settings/snap-shot",\n  "/settings/connections",\n',
       '  "/settings/snap-shot",\n  "/settings/permissions",\n  "/settings/connections",\n',
       'replace'],

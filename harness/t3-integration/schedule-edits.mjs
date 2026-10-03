@@ -63,7 +63,7 @@ export const scheduleEdits = {
     ['  BotIcon,\n', '  BotIcon,\n  CalendarClockIcon,\n', 'replace'],
     ['  "/settings/memory": BrainIcon,\n', '  "/settings/memory": BrainIcon,\n  "/settings/scheduled": CalendarClockIcon,\n', 'replace'],
   ],
-  'apps/web/src/routes/settings.tsx': [
+  'apps/web/src/components/settings/SettingsScopeSentence.tsx': [
     ['  "/settings/memory",\n]);', '  "/settings/memory",\n  "/settings/scheduled",\n]);', 'replace'],
   ],
   'apps/web/src/routeTree.gen.ts': routeTreeEdits,

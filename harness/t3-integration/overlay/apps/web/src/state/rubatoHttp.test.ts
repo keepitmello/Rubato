@@ -21,7 +21,7 @@ function stubWindow(origin: string, desktopToken?: string) {
 
 // The server answers CORS with a wildcard origin, so a cross-origin request
 // carrying credentials never reaches it ("Failed to fetch" in the desktop app).
-describe.sequential("Rubato route credentials", () => {
+describe("Rubato route credentials", () => {
   afterEach(() => {
     __resetDesktopPrimaryAuthForTests();
     Reflect.deleteProperty(globalThis, "window");
