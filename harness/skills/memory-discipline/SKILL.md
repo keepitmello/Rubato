@@ -54,7 +54,7 @@ description: <one line; search results show this>
 
 ## Language
 
-Write memory in English, whatever language the session used: every role searches in English, and English costs fewer tokens on every read. The user's own words stay verbatim in their original language: the `## Symptom` text, and any quoted request, correction or constraint (in quotation marks or a `>` block). Never translate, trim or reword a quote; write the English around it.
+Write memory in English, whatever language the session used: every role searches in English, and English costs fewer tokens on every read. The user's own words stay verbatim in their original language: the `## Symptom` text, and any quoted request, correction or constraint (in quotation marks or a `>` block). Never translate, trim or reword a quote; write the English around it. Words Rubato uses in Korean with a fixed meaning: 사고 = thinking (model reasoning), 꿈 = dream (the memory maintenance run), 기억 = memory, 의도/인텐트 = intent, 서브에이전트 = subagent, 팀원 = teammate, 센파이 = Senpi, 파이 = pi, 루바토 = Rubato.
 
 ## Current answer only
 
