@@ -5,6 +5,9 @@ Index memory markdown files into Redis Stack.
 색인 대상은 메모리 루트 아래 모든 마크다운이다. rubato 메모리에서는 각 저장소의
 `repo/` 아래(decisions/, reference/, skills/, system/ …)와 루트 상주 문서
 (USER.md 등)가 여기 들어온다.
+
+각 저장소의 프로젝트 루트에 있는 합의 기록(`intent/<id>/intent.md`)도 같은 실행에서
+색인하되, 인덱스와 키는 따로 둔다 (`msearch_intent.py`).
 """
 
 from __future__ import annotations
@@ -26,6 +29,7 @@ from openai import OpenAI
 import redis
 
 
+import msearch_intent
 from msearch_config import (
     CHANNEL_ID,
     CHANNEL_KEY_ID,
@@ -508,6 +512,8 @@ def main() -> int:
     if args.dry_run:
         for path in files:
             print(rel_path(path))
+        for path in msearch_intent.corpus():
+            print(f"intent {path}")
         return 0
 
     r = redis.from_url(REDIS_URL, decode_responses=False)
@@ -541,7 +547,18 @@ def main() -> int:
     if healed:
         print(f"healed tags (meta): {healed}")
 
-    print(f"done: processed={processed}, skipped={skipped}, chunks={total_chunks}, failures={len(failures)}")
+    intent_processed, intent_failures = msearch_intent.index(
+        r,
+        embed=lambda texts: get_embeddings(client, texts),
+        tokenize=tokenize_ko,
+        incremental=args.incremental,
+    )
+    failures.extend(intent_failures)
+
+    print(
+        f"done: processed={processed}, skipped={skipped}, chunks={total_chunks}, "
+        f"intents={intent_processed}, failures={len(failures)}"
+    )
     return 1 if failures else 0
 
 

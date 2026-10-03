@@ -23,6 +23,7 @@ from dotenv import load_dotenv
 import redis
 
 
+import msearch_intent
 from msearch_scope import resolve_store
 from msearch_config import (
     CHANNEL_ID,
@@ -524,6 +525,14 @@ def query_embedding(client, text: str) -> bytes:
     return vector_to_bytes(response.data[0].embedding)
 
 
+@lru_cache(maxsize=8)
+def cached_query_embedding(text: str) -> bytes:
+    """한 질의의 임베딩은 한 번만 받는다 — 기억 검색과 intent 검색이 같은 벡터를 쓴다."""
+    from openai import OpenAI
+
+    return query_embedding(OpenAI(), text)
+
+
 def search_vector(r: redis.Redis, query_bytes: bytes, limit: int) -> list[dict[str, object]]:
     result = r.execute_command(
         "FT.SEARCH", INDEX_NAME,
@@ -864,10 +873,7 @@ def search_memories(query: str, transcript_path: str = "", limit: int = RETURN_K
         return lexical_ranked
 
     try:
-        from openai import OpenAI
-
-        client = OpenAI()
-        query_bytes = query_embedding(client, vector_query)
+        query_bytes = cached_query_embedding(vector_query)
         memories = search_hybrid(r, query, query_bytes, anchors, TOP_K)
         vector_results = search_vector(r, query_bytes, TOP_K)
         if not memories:
@@ -1141,6 +1147,37 @@ def ensure_index_fresh(quiet: bool = True) -> None:
         pass
 
 
+def search_intents(query: str, scope: str | None) -> list[msearch_intent.Candidate]:
+    """현재 저장소의 프로젝트 루트들에 있는 합의 기록. 기억 랭킹과 섞지 않는다.
+
+    scope 가 None(전체 검색)이면 모든 저장소의 루트를 본다. intent 쪽이 실패해도 기억
+    결과는 그대로 나가야 하므로 오류는 빈 결과로 바꾼다.
+    """
+    anchors = extract_anchors(query)
+    tokens = [
+        token
+        for token in bm25_tokens(query, anchors)
+        if len(token) > 1 and not is_intent_only_token(token)
+    ]
+    root_ids = None
+    if scope is not None:
+        root_ids = [msearch_intent.root_id(root) for root in msearch_intent.store_roots(MEMORY_ROOT, scope)]
+        if not root_ids:
+            return []
+
+    def vector() -> bytes | None:
+        try:
+            return cached_query_embedding(query)
+        except Exception:
+            return None
+
+    try:
+        r = redis.from_url(REDIS_URL, decode_responses=False)
+        return msearch_intent.search(r, tokens, vector, root_ids)
+    except Exception:
+        return []
+
+
 def run_cli(args: argparse.Namespace) -> int:
     if args.list_scopes:
         scopes = indexed_scopes()
@@ -1158,9 +1195,11 @@ def run_cli(args: argparse.Namespace) -> int:
     ensure_index_fresh(quiet=args.json)
     scope, widened = resolve_scope(args)
     memories = search_results(query, limit=args.limit, scope=scope)
+    # --json 은 기억 목록 계약 그대로 둔다. intent 는 사람이 읽는 출력에만 따로 붙는다.
+    intents = [] if args.json else search_intents(query, scope)
     if not memories:
         log_recall(query, [], caller="cli")
-        print("[]" if args.json else "NO RELEVANT MEMORY")
+        print("[]" if args.json else msearch_intent.render("NO RELEVANT MEMORY", intents, Path.cwd()))
         return 0
     log_recall(query, memories, caller="cli")
     memories = answer_symptom_hits(memories)
@@ -1170,7 +1209,7 @@ def run_cli(args: argparse.Namespace) -> int:
         rendered = format_context(memories, include_paths=True)
         if widened:
             rendered = f"{rendered}\n\n{WIDENED_SCOPE_NOTICE}"
-        print(rendered)
+        print(msearch_intent.render(rendered, intents, Path.cwd()))
     return 0
 
 
