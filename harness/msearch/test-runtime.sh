@@ -8,9 +8,12 @@ fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 
 bash -n "$repo/install.sh"
 bash -n "$here/msearch"
-python3 -m py_compile "$here/msearch_env.py" "$here/msearch_doctor.py" "$here/msearch_scope.py"
+python3 -m py_compile "$here/msearch_env.py" "$here/msearch_doctor.py" "$here/msearch_scope.py" \
+  "$here/msearch_intent.py" "$here/msearch_freshness.py" "$here/memory-search.py" "$here/memory-index.py"
 # 저장소 규칙은 엔진(memory-core identity/project.ts)과 같아야 한다.
 (cd "$here" && python3 -m unittest -q test_msearch_scope)
+# 합의 기록(intent)은 기억과 따로 색인·검색·표시된다.
+(cd "$here" && python3 -m unittest -q test_msearch_intent)
 
 # --only-shell은 Python 환경을 읽거나 쓰지 않는다. 전체 apply 대신 실행 흐름을
 # 추적해 4.3 헤더와 venv 명령이 도달 불가능한지 고정한다.

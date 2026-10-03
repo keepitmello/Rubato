@@ -59,6 +59,13 @@ MANIFEST_KEY = _env(
     "MSEARCH_MANIFEST_KEY", "ROO_MEMORY_MANIFEST_KEY", f"msearch:memory:channel:{CHANNEL_KEY_ID}:manifest"
 )
 
+# 합의 기록(intent)은 기억과 다른 코퍼스라 인덱스·키를 따로 둔다. 기억 인덱스의 PREFIX 는
+# 만들 때 고정돼 바꿀 수 없고, 한 인덱스에 섞으면 기억 랭킹과 정리 로직이 intent 를 건드린다.
+INTENT_INDEX_NAME = os.getenv("MSEARCH_INTENT_INDEX") or f"{INDEX_NAME}_intent"
+INTENT_KEY_PREFIX = f"msearch:intent:channel:{CHANNEL_KEY_ID}:"
+INTENT_HASH_PREFIX = f"msearch:intent_hash:channel:{CHANNEL_KEY_ID}:"
+INTENT_MANIFEST_KEY = f"msearch:intent_manifest:channel:{CHANNEL_KEY_ID}"
+
 TOP_K = int(_env("MSEARCH_TOP_K", "ROO_MEMORY_TOP_K", "30"))
 RETURN_K = int(_env("MSEARCH_RETURN_K", "ROO_MEMORY_RETURN_K", "3"))
 MAX_VECTOR_DISTANCE = float(_env("MSEARCH_MAX_VECTOR_DISTANCE", "ROO_MEMORY_MAX_VECTOR_DISTANCE", "0.62"))
@@ -76,6 +83,7 @@ def describe() -> str:
             f"  state     {STATE_DIR}",
             f"  redis     {REDIS_URL}",
             f"  index     {INDEX_NAME}",
+            f"  intent    {INTENT_INDEX_NAME}",
             f"  channel   {CHANNEL_ID}",
             f"  embedding {EMBEDDING_MODEL}",
         ]

@@ -34,11 +34,41 @@ msearch --doctor               설치 상태 진단
 현재 디렉터리가 색인에 없으면(아직 안 쌓였거나 메모리 밖에서 실행 중) 조용히 0건을 주는 대신
 전체 검색으로 떨어진다.
 
+## 합의 기록(intent)도 같이 찾는다
+
+같은 질의로 현재 저장소에 묶인 프로젝트들의 합의 기록도 찾는다. 대상은 저장소 `store.json`
+의 `roots` 각각에 있는 `intent/<id>/intent.md` 다. `-a` 이거나 저장소가 없어 전체로 넓혔으면
+모든 저장소의 루트를 본다. 기록 형식의 정본은 work-intent 스킬이고, 여기서는 읽기만 한다.
+두 축을 왜 나눠 보여주는지는 [기억의 두 축](../../docs/philosophy/memory.md)에 있다.
+
+결과는 기억 랭킹에 섞지 않고 기억 출력 **뒤에** `=== 합의 기록 (intent)` 블록으로 따로 붙는다.
+기억이 0건이어도 `NO RELEVANT MEMORY` 뒤에 붙는다. 기록마다 이렇게 보인다:
+
+```
+intent stock-pi-0-86-1 · 지난 기록 · fulfilled (끝난 합의) · rev 1 · 2026-10-03 갱신
+  Rubato 엔진을 stock pi 0.86.1로 올린다
+  Constraints: **Rubato는 98~99% 프롬프트 캐시 히트를 지향한다.** ...
+  /Users/wy/Github-repos/rubato-lab/intent/stock-pi-0-86-1/intent.md
+```
+
+- 경로는 현재 폴더 안이면 상대경로, 밖이면 절대경로다.
+- `fulfilled`·`abandoned`·`superseded` 는 줄머리에 `지난 기록` 이 붙는다. `superseded` 는 뒤를 이은 id 도 보인다.
+- 블록 안의 어떤 줄도 `[` 로 시작하지 않는다. `[경로]` 줄은 기억 결과의 계약이고
+  `reference/memory-benchmark.sh` 가 그 줄로 상위 3개를 센다.
+- 범위 안 기록을 통째로 읽어 고른다. 범위 안 기록 1/3 이하에만 나오는 단어가 겹치고 의미 거리도
+  가까워야 하고, 의미가 아주 가까우면 그것만으로 된다. 한 기록은 가장 맞는 절 하나로만 나온다.
+  문턱 값과 그 근거는 `msearch_intent.py` 머리에 있다.
+- `--json` 은 지금처럼 기억 목록만 돌려준다.
+
+색인은 기억과 따로 둔다: 인덱스 `<MSEARCH_INDEX>_intent`, 키 `msearch:intent:channel:<채널>:`.
+기억 인덱스의 프리픽스는 만들 때 고정돼 바꿀 수 없고, 한 인덱스에 섞으면 기억 랭킹과 정리
+로직이 intent 를 건드린다.
+
 ## 색인은 알아서 따라온다
 
 검색할 때마다 색인이 실제 파일과 어긋나는지 보고, 뒤처졌으면 바뀐 파일만 다시 색인한다.
 메모리에 뭘 쓴 뒤의 검색은 반드시 최신을 본다 — 도구로 썼든 손으로 고쳤든 `git pull` 을 받았든
-상관없다.
+상관없다. 합의 기록도 같은 검사에 들어가고, `--index`/`--reindex` 도 둘을 함께 다룬다.
 
 변경이 없으면 검사는 20ms 안팎이다(로컬 해시 대조만 한다). 끄려면 `MSEARCH_NO_AUTOINDEX=1`.
 
@@ -148,6 +178,7 @@ API 키가 따로 필요하다. 비용은 `text-embedding-3-small` 기준 100만
 | `MSEARCH_STATE_DIR` | `<root>/../msearch-state` | 회상 로그·`.env` 등 런타임 상태 |
 | `MSEARCH_REDIS_URL` | `redis://localhost:6380` | |
 | `MSEARCH_INDEX` | `msearch_idx` | RediSearch 인덱스 이름 |
+| `MSEARCH_INTENT_INDEX` | `<MSEARCH_INDEX>_intent` | 합의 기록 인덱스 이름 |
 | `MSEARCH_CHANNEL` | `rubato` | 논리적 이름공간. 한 redis 에 여러 코퍼스를 나눠 담을 때 |
 | `MSEARCH_EMBEDDING_MODEL` | `text-embedding-3-small` | |
 
@@ -173,6 +204,8 @@ MSEARCH_ROOT=~/notes MSEARCH_CHANNEL=notes msearch --index
 | `requirements.lock` | 검증한 Python 패키지 전체 버전의 정본 |
 | `test-runtime.sh` | 설치 모드와 런처 환경 선택의 회귀 테스트 |
 | `msearch_freshness.py` | 색인이 뒤처졌는지 보고 따라잡는다 |
+| `msearch_intent.py` | 합의 기록(intent) 찾기·조각내기·색인·고르기·출력 블록 |
+| `test_msearch_intent.py` | intent 색인·신선도·고르기·출력 계약의 테스트 (표준 라이브러리만) |
 | `msearch_doctor.py` | 설치 진단 |
 | `memory-index.py` | 마크다운 → 청크 → 임베딩 → Redis |
 | `memory-search.py` | 하이브리드 검색과 랭킹 |

@@ -12,6 +12,8 @@ core.hooksPath 로 비키면 미러 푸시가 죽는다. 남의 자동 생성물
 
 이쪽이 훅보다 강하다. 어떤 경로로 메모리가 바뀌든 — 도구든 손편집이든 git pull 이든 —
 다음 검색이 반드시 최신을 본다.
+
+합의 기록(intent)도 같은 방식으로 대조한다. 대조 규칙은 `msearch_intent.is_stale` 에 있다.
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ import sys
 from pathlib import Path
 
 import msearch_config as config
+import msearch_intent
 
 FINGERPRINT_VERSION = "channel-v4"
 
@@ -67,30 +70,34 @@ def is_stale(client) -> bool:
     Redis 가 죽어 있거나 읽기에 실패하면 False 를 돌린다 — 판단이 안 서는데 재색인을
     시작하면 검색이 더 느려지기만 한다. 그 경우는 doctor 가 다룰 문제다.
     """
-    root = config.MEMORY_ROOT
     try:
-        files = _corpus(root)
-        # 지운 파일도 뒤처짐이다. 지문 대조는 지금 있는 파일만 보므로, 색인 목록에 남았는데
-        # 디스크에서 사라진 파일을 따로 찾는다. 이게 없으면 기억에서 지운 답이 검색에 계속 뜬다.
-        live = {_rel(path, root) for path in files}
-        indexed = {
-            item.decode("utf-8", "replace") if isinstance(item, bytes) else item
-            for item in client.smembers(config.MANIFEST_KEY)
-        }
-        if indexed - live:
-            return True
-        if not files:
-            return False
-        stored = client.mget([f"{config.HASH_PREFIX}{_file_id(path, root)}" for path in files])
-        for path, value in zip(files, stored):
-            if value is None:
-                return True
-            current = _fingerprint(path)
-            if value.decode("utf-8", "replace") != current:
-                return True
-        return False
+        return _memory_stale(client) or msearch_intent.is_stale(client)
     except Exception:
         return False
+
+
+def _memory_stale(client) -> bool:
+    root = config.MEMORY_ROOT
+    files = _corpus(root)
+    # 지운 파일도 뒤처짐이다. 지문 대조는 지금 있는 파일만 보므로, 색인 목록에 남았는데
+    # 디스크에서 사라진 파일을 따로 찾는다. 이게 없으면 기억에서 지운 답이 검색에 계속 뜬다.
+    live = {_rel(path, root) for path in files}
+    indexed = {
+        item.decode("utf-8", "replace") if isinstance(item, bytes) else item
+        for item in client.smembers(config.MANIFEST_KEY)
+    }
+    if indexed - live:
+        return True
+    if not files:
+        return False
+    stored = client.mget([f"{config.HASH_PREFIX}{_file_id(path, root)}" for path in files])
+    for path, value in zip(files, stored):
+        if value is None:
+            return True
+        current = _fingerprint(path)
+        if value.decode("utf-8", "replace") != current:
+            return True
+    return False
 
 
 def refresh(quiet: bool = True) -> None:
