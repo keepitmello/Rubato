@@ -17,6 +17,7 @@ A translation, not an edit:
 - Frontmatter keys stay; translate the value of `description`.
 - Headings: `결론` → `Conclusion`, `근거` → `Rationale`, `증상` → `Symptom` (a qualified one such as `증상 (수정 전)` → `Symptom (before the fix)`), `미결` → `Open`. Line labels: `기각:` → `Rejected:`, `미결:` → `Open:`. Translate other headings plainly.
 - Write plain, direct English. Use the project's own English terms where the record names a component or setting.
+- Words Rubato uses in Korean with a fixed meaning: 사고 = thinking (model reasoning), 꿈 = dream (the memory maintenance run), 기억 = memory, 의도/인텐트 = intent, 서브에이전트 = subagent, 팀원 = teammate, 센파이 = Senpi, 파이 = pi, 루바토 = Rubato. "사고" is never an accident or an incident here.
 
 ## The user's words stay byte for byte
 

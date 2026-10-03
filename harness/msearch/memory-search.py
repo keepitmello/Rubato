@@ -1109,6 +1109,7 @@ def scope_filter(memories: list[dict[str, object]], scope: str | None) -> list[d
 TRANSLATION_CACHE_PATH = state_path("query-translations.json")
 TRANSLATION_MODEL = os.getenv("MSEARCH_TRANSLATE_MODEL", "gpt-4.1-mini")
 # Words Rubato uses in Korean with a fixed meaning; without them "사고" (thinking) becomes "accident".
+# The same list is in memory-discipline (writers) and the dream's language-migration.md.
 TRANSLATION_PROMPT = (
     "You turn a search query into the English words its answer would be written in. "
     "The records are engineering notes about software built with AI coding agents.\n"
