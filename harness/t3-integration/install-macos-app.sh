@@ -30,6 +30,16 @@ NODE="$(rubato_find_node)" || { printf 'Node 24+ 가 없다\n' >&2; exit 1; }
 
 [ -d "$BUNDLE" ] || { printf '런타임 번들을 못 만들었다: %s\n' "$BUNDLE" >&2; exit 1; }
 
+# 런타임 디렉터리의 앱은 이 번들 하나다. 설치가 overlay 전에 멈춘 트리로 앱을 켜면
+# T3 원본 런처가 이 옆에 "T3 Code (Alpha).app" 을 만들고 com.t3tools.t3code 로
+# LaunchServices 에 등록했다. 그대로 두면 Spotlight·열기 메뉴에 T3 앱으로 남는다.
+LSREGISTER="${RUBATO_LSREGISTER:-/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister}"
+for OTHER in "$(dirname "$BUNDLE")"/*.app; do
+  [ -d "$OTHER" ] && [ "$OTHER" != "$BUNDLE" ] || continue
+  "$LSREGISTER" -u "$OTHER" >/dev/null 2>&1 || true
+  rm -rf "$OTHER"
+done
+
 # 기본값이 아닌 홈만 굽는다. 기본값은 진입점이 $HOME 에서 다시 만든다.
 if [ "$T3_HOME" = "$HOME/.rubato/t3-home" ]; then
   HOME_LINE='process.env.T3CODE_HOME ||= path.join(os.homedir(), ".rubato", "t3-home");'

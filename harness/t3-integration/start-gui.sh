@@ -10,12 +10,14 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 T3_DIR="${RUBATO_T3_SOURCE:-$HOME/.rubato/t3-source}"
 T3_HOME="${RUBATO_T3_HOME:-$HOME/.rubato/t3-home}"
 BUNDLE="$T3_DIR/apps/desktop/dist-electron/main.cjs"
+HOST_OS="${RUBATO_HOST_OS:-$(uname -s)}"
+OSASCRIPT_BIN="${RUBATO_OSASCRIPT_BIN:-/usr/bin/osascript}"
 
 # 더블클릭으로 켜면 stderr 를 아무도 안 본다. 실패는 창으로도 알린다.
 die() {
   printf 'Rubato GUI: %s\n' "$1" >&2
-  if [ ! -t 2 ] && [ "$(uname -s)" = Darwin ]; then
-    /usr/bin/osascript -e "display alert \"Rubato\" message \"$1\"" >/dev/null 2>&1
+  if [ ! -t 2 ] && [ "$HOST_OS" = Darwin ]; then
+    "$OSASCRIPT_BIN" -e "display alert \"Rubato\" message \"$1\"" >/dev/null 2>&1
   fi
   exit 1
 }
@@ -34,4 +36,19 @@ export PATH="$(dirname "$NODE"):$PATH"
 # 둘이 되고, 앱 번들을 바로 켜는 경로는 어차피 이 스크립트를 안 지난다.
 export T3CODE_HOME="$T3_HOME"
 cd "$T3_DIR/apps/desktop" || die "T3 소스가 없다. Rubato 클론에서 ./install.sh --apply --gui 를 돌려라."
+
+# 맥에서는 앱 이름과 번들 id 를 런처(scripts/electron-launcher.mjs)가 켤 때마다 이
+# 트리에서 읽어 번들을 만든다. 설치가 핀 checkout 과 overlay 사이에서 멈춘 트리는
+# 그 파일이 T3 원본이라, 그대로 켜면 "T3 Code (Alpha).app" 이 새로 만들어져 떴다 —
+# 재시작이 못 찾고 못 끄는 앱, 다른 권한과 다른 저장 상태. 그때는 런처를 돌리지 않고
+# 마지막으로 성공한 설치가 만든 Rubato 번들로 옛 번들을 켠다. 런처가 정상일 때
+# 띄우는 것과 같은 바이너리·인자·디렉터리다. 다음 설치가 트리를 다시 맞춘다.
+# 윈도우·리눅스는 런처가 번들을 만들지 않고, 이름은 빌드된 main.cjs 에서 온다.
+if [ "$HOST_OS" = Darwin ] && ! "$NODE" "$HERE/apply.mjs" --t3 "$T3_DIR" --verify >/dev/null 2>&1; then
+  APP_BIN="$T3_DIR/apps/desktop/.electron-runtime/Rubato.app/Contents/MacOS/Electron"
+  [ -x "$APP_BIN" ] || die "T3 소스가 설치 도중에 멈춘 상태다. Rubato 클론에서 ./install.sh --apply --gui 를 돌려라."
+  printf 'Rubato GUI: T3 소스가 마지막 설치와 달라서 런처를 건너뛰고 마지막 Rubato 번들로 켠다\n' >&2
+  unset ELECTRON_RUN_AS_NODE
+  exec "$APP_BIN" dist-electron/main.cjs
+fi
 exec "$NODE" scripts/start-electron.mjs

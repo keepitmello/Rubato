@@ -2317,11 +2317,34 @@ export async function preserveLocalEdits({t3, backupDir}) {
   }
   return {preserved, backupDir: preserved.length ? backupDir : null};
 }
+// 트리가 지난 설치가 쓴 그대로인지. 앱 이름과 번들 id 는 켤 때마다 이 트리의
+// scripts/electron-launcher.mjs 에서 읽히는데, install-gui.sh 가 핀 checkout 과
+// overlay 사이에서 멈추면(overlay 실패, 중간 종료) 그 파일은 T3 원본이다. 그대로
+// 켜면 "T3 Code (Alpha).app"(com.t3tools.t3code) 이 새로 만들어져 뜬다.
+// start-gui.sh 가 런처를 돌리기 전에 묻는다. 레포의 overlay 목록이 아니라 트리의
+// 매니페스트만 본다 — 새 커밋을 받고 아직 설치하지 않은 트리도 온전한 설치다.
+export async function installedIntact({t3}) {
+  const target = await realpath(t3);
+  const manifestText = await existing(path.join(target,'.rubato-pi-overlay.json'));
+  if (manifestText===null) return {intact:false,drifted:['.rubato-pi-overlay.json']};
+  const drifted = [];
+  for (const [relative,record] of Object.entries(JSON.parse(manifestText).files ?? {})) {
+    const current = await existing(path.join(target,relative));
+    const matches = record.installedHash===null ? current===null
+      : current!==null && hash(current)===record.installedHash;
+    if (!matches) drifted.push(relative);
+  }
+  return {intact:drifted.length===0,drifted};
+}
 if (process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
   try {
-    const {values} = parseArgs({options:{t3:{type:'string'},check:{type:'boolean'},remove:{type:'boolean'},'preserve-edits':{type:'string'}}});
-    if (!values.t3) throw new Error('Usage: node harness/t3-integration/apply.mjs --t3 /absolute/t3code [--check | --remove | --preserve-edits BACKUP_DIR]');
+    const {values} = parseArgs({options:{t3:{type:'string'},check:{type:'boolean'},remove:{type:'boolean'},verify:{type:'boolean'},'preserve-edits':{type:'string'}}});
+    if (!values.t3) throw new Error('Usage: node harness/t3-integration/apply.mjs --t3 /absolute/t3code [--check | --remove | --verify | --preserve-edits BACKUP_DIR]');
     if (values['preserve-edits']) console.log(JSON.stringify(await preserveLocalEdits({t3:values.t3,backupDir:values['preserve-edits']})));
-    else console.log(JSON.stringify(await applyIntegration(values),null,2));
+    else if (values.verify) {
+      const result = await installedIntact({t3:values.t3});
+      console.log(JSON.stringify(result));
+      if (!result.intact) process.exitCode=1;
+    } else console.log(JSON.stringify(await applyIntegration(values),null,2));
   } catch (error) { console.error(error.message); process.exitCode=1; }
 }

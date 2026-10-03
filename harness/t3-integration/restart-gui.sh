@@ -62,6 +62,27 @@ case "$GUI_WAIT_MAX" in
   ''|*[!0-9]*) GUI_WAIT_MAX=30 ;;
 esac
 
+# 설치가 핀 checkout 과 overlay 사이에서 멈춘 트리로 켜진 앱은 T3 원본 런처가 만든
+# "T3 Code (Alpha).app" 으로 떠 있다(start-gui.sh 가 이제는 막는다). 위 패턴과
+# "Rubato" 종료 요청은 그 앱을 못 보고 못 꺼서, 다시 켜면 같은 상태 DB 에 앱이 둘이
+# 됐다. 이름이나 번들 id 로는 찾지 않는다 — 사용자가 따로 깐 진짜 T3 Code 와 같다.
+# 우리 런타임 디렉터리 안 번들에서 dist-electron/main.cjs 로 뜬 메인 프로세스만
+# 고른다. 헬퍼와 내장 서버는 인자가 달라서 걸리지 않는다.
+PS_BIN="${RUBATO_PS_BIN:-/bin/ps}"
+RUNTIME_DIR="${RUBATO_GUI_RUNTIME_DIR:-$T3_DIR/apps/desktop/.electron-runtime}"
+stray_pids() {
+  is_darwin || return 0
+  "$PS_BIN" -axo pid=,command= 2>/dev/null | while read -r pid command; do
+    case "$command" in
+      "$RUNTIME_DIR/Rubato.app/"*) ;;
+      "$RUNTIME_DIR/"*".app/Contents/MacOS/Electron dist-electron/main.cjs"*) printf '%s\n' "$pid" ;;
+    esac
+  done
+}
+app_running() {
+  "$PGREP_BIN" $PGREP_ARGS "$GUI_PROC_PATTERN" >/dev/null 2>&1 || [ -n "$(stray_pids)" ]
+}
+
 sync_bundle() {
   [ -f "$INSTALL_GUI" ] || return 0
   mkdir -p "$(dirname "$INSTALL_LOG")" 2>/dev/null || true
@@ -146,7 +167,7 @@ if ! take_app_lock; then
   exit 1
 fi
 
-if ! "$PGREP_BIN" $PGREP_ARGS "$GUI_PROC_PATTERN" >/dev/null 2>&1; then
+if ! app_running; then
   # 꺼진 앱은 옛 코드로 돌고 있지는 않지만 번들은 여전히 낡을 수 있고, 그것을
   # 다시 만드는 것은 아무도 하지 않는다 — start-gui.sh 는 켜기만 한다. 번들만
   # 맞추고 앱은 그대로 둔다: 이 머신이 창을 띄우고 싶어하는지는 여기서 정할
@@ -176,7 +197,13 @@ fi
 # 정말 사라졌는지 보고 나서 돌아온다 — 넘겨짚지 않는다.
 quit_app() {
   if is_darwin; then
-    if "$OSASCRIPT_BIN" -e 'tell application "Rubato" to quit' >/dev/null 2>&1; then
+    # Electron 은 SIGTERM 을 Dock > 종료 와 같은 정상 종료로 받는다 — before-quit 와
+    # will-quit 가 흐른다 (Electron 44 에서 확인). 강제 종료가 아니다.
+    STRAYS="$(stray_pids)"
+    [ -z "$STRAYS" ] || kill -TERM $STRAYS 2>/dev/null || true
+    if [ -n "$STRAYS" ] && ! "$PGREP_BIN" $PGREP_ARGS "$GUI_PROC_PATTERN" >/dev/null 2>&1; then
+      :
+    elif "$OSASCRIPT_BIN" -e 'tell application "Rubato" to quit' >/dev/null 2>&1; then
       :
     elif "$OSASCRIPT_BIN" -e 'tell application id "app.rubato.t3" to quit' >/dev/null 2>&1; then
       :
@@ -210,12 +237,12 @@ quit_app() {
 
   GUI_WAIT=0
   progress_start "데스크톱 앱이 닫히기를 기다리는 중"
-  while "$PGREP_BIN" $PGREP_ARGS "$GUI_PROC_PATTERN" >/dev/null 2>&1 && [ "$GUI_WAIT" -lt "$GUI_WAIT_MAX" ]; do
+  while app_running && [ "$GUI_WAIT" -lt "$GUI_WAIT_MAX" ]; do
     sleep 1
     GUI_WAIT=$((GUI_WAIT + 1))
   done
   progress_stop
-  if "$PGREP_BIN" $PGREP_ARGS "$GUI_PROC_PATTERN" >/dev/null 2>&1; then
+  if app_running; then
     if is_darwin; then
       ui_fail "데스크톱 앱이 종료 요청을 받고도 끝나지 않았습니다. 옛 코드가 그대로입니다 — 다시 켜지 않았습니다. 손으로: osascript -e 'tell application \"Rubato\" to quit'"
     else
@@ -247,7 +274,7 @@ restart_ssh_servers || RESTART_FAIL=1
 # 같은 상태 DB 에 앱이 둘이 된다 — 나중 앱의 데스크톱 로그인이 먼저 앱의 것을
 # 갈아치워서 먼저 앱은 페어링을 요구한다. macOS 에서는 T3 가 단일 인스턴스
 # 잠금을 잡지 않는다. 그 앱도 한 번 더 정상 종료시킨 뒤에 켠다.
-if "$PGREP_BIN" $PGREP_ARGS "$GUI_PROC_PATTERN" >/dev/null 2>&1; then
+if app_running; then
   ui_note "번들을 맞추는 사이 열린 앱이 있어요. 새 번들로 다시 켜려고 닫습니다."
   if ! quit_app; then
     ui_fail "번들을 맞추는 사이 열린 앱이 닫히지 않아 새 앱을 켜지 않았습니다. 앱이 둘이 되면 먼저 앱이 페어링을 요구합니다."
