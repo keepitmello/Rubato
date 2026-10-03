@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,readFile,writeFile,rm} from 'node:fs/promises';
 import path from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {tmpdir} from 'node:os';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
@@ -62,4 +63,37 @@ test('overlay is guarded, idempotent, reversible and rejects dirty upstream befo
   await applyIntegration({t3:root,remove:true});
   assert.equal(await readFile(target,'utf8'),manifest.files['apps/server/src/serverRuntimeStartup.ts'].original);
   await assert.rejects(readFile(path.join(root,'apps/server/src/provider/Drivers/RubatoPiDriver.ts')), {code:'ENOENT'});
+});
+
+test('a target that left the list across a pin bump is the new pin original, not a local change', {skip:!process.env.T3_SOURCE}, async(t)=>{
+  const source=process.env.T3_SOURCE;
+  const pin=JSON.parse(await readFile(new URL('../upstream.json',import.meta.url),'utf8'));
+  const root=await mkdtemp(path.join(tmpdir(),'rb-overlay-pin-'));
+  t.after(()=>rm(root,{recursive:true,force:true}));
+  const git=(...args)=>execFileSync('git',['-C',root,...args],{encoding:'utf8'});
+  for(const relative of Object.keys(pin.targets)) {
+    await mkdir(path.dirname(path.join(root,relative)),{recursive:true});
+    await writeFile(path.join(root,relative),execFileSync('git',['-C',source,'show',`${pin.upstreamCommit}:${relative}`]));
+  }
+  // Overlay files land in directories the pin may not have yet.
+  const overlay=fileURLToPath(new URL('../overlay/',import.meta.url));
+  for(const relative of execFileSync('find',['.','-type','f'],{cwd:overlay,encoding:'utf8'}).split('\n').filter(Boolean))
+    await mkdir(path.dirname(path.join(root,relative)),{recursive:true});
+  // install-gui.sh checks the new pin out before applying: the dropped file is
+  // that pin's original, while the manifest still holds the previous pin's.
+  const dropped='apps/web/src/routes/DroppedAcrossPins.tsx';
+  await mkdir(path.dirname(path.join(root,dropped)),{recursive:true});
+  await writeFile(path.join(root,dropped),'new pin original\n');
+  git('init','-q'); git('add','-A'); git('-c','user.email=t@t','-c','user.name=t','commit','-qm','pin');
+  await writeFile(path.join(root,'.rubato-pi-overlay.json'),JSON.stringify({version:1,files:{[dropped]:{
+    original:'previous pin original\n',installedHash:createHash('sha256').update('rubato\n').digest('hex')}}}));
+  await applyIntegration({t3:root});
+  assert.equal(await readFile(path.join(root,dropped),'utf8'),'new pin original\n');
+  assert.equal(JSON.parse(await readFile(path.join(root,'.rubato-pi-overlay.json'),'utf8')).files[dropped],undefined);
+  // A human edit on top of the new pin is still refused.
+  const manifest=JSON.parse(await readFile(path.join(root,'.rubato-pi-overlay.json'),'utf8'));
+  manifest.files[dropped]={original:'previous pin original\n',installedHash:createHash('sha256').update('rubato\n').digest('hex')};
+  await writeFile(path.join(root,'.rubato-pi-overlay.json'),JSON.stringify(manifest));
+  await writeFile(path.join(root,dropped),'user edit\n');
+  await assert.rejects(applyIntegration({t3:root}),/local changes: .*DroppedAcrossPins/);
 });

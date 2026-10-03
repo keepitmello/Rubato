@@ -2200,6 +2200,12 @@ async function atomic(file, content) {
   try { await writeFile(temporary,content,{flag:'wx',mode:0o644}); await rename(temporary,file); }
   finally { await unlink(temporary).catch((error) => { if (error.code!=='ENOENT') throw error; }); }
 }
+// The file as the checked-out T3 commit has it, or null when untracked or no git.
+function checkedOut(target, relative) {
+  try { return execFileSync('git',['-C',target,'show',`HEAD:${relative}`],{encoding:'utf8',stdio:['ignore','pipe','ignore'],maxBuffer:64*1024*1024}); }
+  catch { return null; }
+}
+
 export async function applyIntegration({t3,check=false,remove=false}) {
   const target = await realpath(t3);
   const upstream = JSON.parse(await readFile(path.join(root,'upstream.json'),'utf8'));
@@ -2253,6 +2259,12 @@ export async function applyIntegration({t3,check=false,remove=false}) {
     // runs, which restores every tracked file. Refusing it here stopped every
     // install after a target left the list, half-applied (T3's own name and
     // bundle id came back).
+    // After a pin bump that checkout is the *new* pin's original, which the
+    // manifest (written under the previous pin) does not know. Keep it as is.
+    if (current!==null && current===checkedOut(target,relative)) {
+      planned.push({relative,destination,current,next:current});
+      continue;
+    }
     if (current!==null && current!==record.original && hash(current)!==record.installedHash)
       throw new Error(`Installed file has local changes: ${relative}`);
     planned.push({relative,destination,current,next:record.original});
