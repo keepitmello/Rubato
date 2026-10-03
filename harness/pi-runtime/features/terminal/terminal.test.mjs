@@ -605,6 +605,8 @@ test("a pgrep -f watch on one of the agent's own live sessions is refused", asyn
 		command: 'while ! pgrep -f "worker-zz" >/dev/null; do sleep 1; done; echo UP',
 	});
 	assert.equal(appears.isError, undefined, "a pattern no live session carries is a normal watch");
+	// The guard reads the real process table, where a just-forked watcher has not exec'd its shell yet.
+	await delay(300);
 	const gone = await tools.get("monitor").execute("call-4", {
 		description: "worker gone",
 		command: 'until ! pgrep -fl "worker-zz" >/dev/null; do sleep 1; done; echo GONE',
@@ -624,10 +626,42 @@ test("a pgrep -f watch on one of the agent's own live sessions is refused", asyn
 	assert.equal(later.isError, undefined, "a bracketed watcher's own command line does not match the plain pattern");
 });
 
-test("pgrep -f patterns are read from clustered, split and quoted flag forms", async () => {
+test("pgrep -f patterns are read only from real pgrep calls, past options and quoting", async () => {
 	const { pgrepFullPatterns } = await import("./src/tools/monitor-guards.ts");
 	assert.deepEqual(pgrepFullPatterns('while pgrep -f "a b" >/dev/null; do :; done'), ["a b"]);
 	assert.deepEqual(pgrepFullPatterns("kill -0 $(pgrep -fn 'x.py' | head -1)"), ["x.py"]);
-	assert.deepEqual(pgrepFullPatterns("pgrep -l -f judge.py; pgrep node"), ["judge.py"]);
-	assert.deepEqual(pgrepFullPatterns("pgrep -x node"), []);
+	assert.deepEqual(pgrepFullPatterns("until ! pgrep -l -f judge.py; do sleep 1; done; pgrep node"), ["judge.py"]);
+	assert.deepEqual(pgrepFullPatterns("pgrep -f -- worker"), ["worker"]);
+	assert.deepEqual(pgrepFullPatterns("pgrep -f -u root worker"), ["worker"]);
+	assert.deepEqual(pgrepFullPatterns("pgrep -fu root worker"), ["worker"]);
+	assert.deepEqual(pgrepFullPatterns("pgrep --full worker"), ["worker"]);
+	assert.deepEqual(pgrepFullPatterns("pgrep -x node"), [], "without -f pgrep matches names only");
+	assert.deepEqual(pgrepFullPatterns("printf '%s' 'pgrep -f worker'"), [], "a mention is not a call");
+	assert.deepEqual(pgrepFullPatterns('pgrep -f "$JOB"'), [], "an expanded pattern is unknown until it runs");
+});
+
+test("the pgrep guard judges processes as they really run", async (t) => {
+	const { tools } = await startTerminal(t, { notify: "wake" });
+	const replaced = await tools.get("bash").execute("call-1", {
+		command: "printf 'swap_marker_41\\n'; exec sleep 30",
+		run_in_background: true,
+	});
+	assert.match(replaced.details?.bash_id ?? "", /^bash_\d+$/);
+	await delay(300);
+	const external = await tools.get("monitor").execute("call-2", {
+		description: "external swap marker",
+		command: 'until ! pgrep -f "swap_marker_4[0-9]" >/dev/null; do sleep 1; done; echo GONE',
+	});
+	assert.equal(external.isError, undefined, "a session that exec'd away no longer carries the marker");
+
+	const job = await tools.get("bash").execute("call-3", {
+		command: "sleep 30; echo posix_marker_314",
+		run_in_background: true,
+	});
+	const posix = await tools.get("monitor").execute("call-4", {
+		description: "posix class",
+		command: 'while pgrep -f "posix_marker_[[:digit:]]+" >/dev/null; do sleep 1; done; echo DONE',
+	});
+	assert.equal(posix.isError, true, "pgrep's own ERE decides the match");
+	assert.match(textOf(posix), new RegExp(`your own background session ${job.details.bash_id}`));
 });

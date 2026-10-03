@@ -132,17 +132,19 @@ async function createMonitor(
 		if (same.paused) registry.rearm(same.id);
 		ctx.onMonitorRearmed?.(same.id);
 		return textResult(
-			`Monitor already watching this command with ID: ${same.monitorId}; reusing it, no second watcher started.`,
+			`Monitor already watching this command with ID: ${same.monitorId}; reusing it with its original description and remaining deadline; no second watcher started.`,
 			{ details: { monitor_id: same.monitorId, bash_id: same.id, monitor: true, reused: true } },
 		);
 	}
 	const held = findSessionHeldByPattern(input.command, ctx.manager.list(), watches);
 	if (held) {
 		const shown = held.command.length > 120 ? `${held.command.slice(0, 117)}...` : held.command;
+		const match = `pgrep -f "${held.pattern}" matches pid ${held.pid} (\`${shown}\`)`;
+		const session = held.session;
 		return errorResult(
-			held.monitorId === undefined
-				? `Not started: pgrep -f "${held.pattern}" matches your own background session ${held.id} (\`${shown}\`), so this watch cannot fire before ${held.id} exits, and ${held.id}'s completion notification already wakes you. Do not watch it; keep working or end the turn.`
-				: `Not started: pgrep -f "${held.pattern}" matches the command line of your live monitor ${held.monitorId} (\`${shown}\`), so each watcher would keep the other alive until its deadline. Reuse ${held.monitorId}, or stop it with kill_bash first; bracketing one character (e.g. "[w]orker.py") keeps a watcher's own command line out of later matches.`,
+			session?.monitorId !== undefined
+				? `Not started: ${match}, the watcher of your live monitor ${session.monitorId}, so each watcher would keep the other alive until its deadline. Reuse ${session.monitorId}, or stop it with kill_bash first; bracketing one character (e.g. "[w]orker.py") keeps a watcher's own command line out of later matches.`
+				: `Not started: ${match}, which is ${session ? `your own background session ${session.id}` : "the root of one of your own live sessions"}, so this watch cannot fire before that session exits, and its completion notification already wakes you. Do not watch it; keep working or end the turn.`,
 		);
 	}
 
