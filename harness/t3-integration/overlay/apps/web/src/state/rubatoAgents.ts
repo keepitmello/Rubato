@@ -1,26 +1,49 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId, ToolLifecycleItemType } from "@t3tools/contracts";
 
 import { postRubato } from "./rubatoHttp";
 
 /** The route Rubato adds to the T3 server for the Agents panel (src/agents/service.mjs). */
 const AGENTS_ROUTE = "/rubato/agents";
 
-/** One piece of a child agent's conversation, in the order it happened. */
+/**
+ * One piece of a child agent's conversation, in the order it happened. `at` is the epoch
+ * time of the entry it came from; pieces of one model message share `message`.
+ */
 export type AgentTranscriptItem =
   | { readonly kind: "user"; readonly text: string; readonly at?: number }
-  | { readonly kind: "assistant"; readonly text: string; readonly at?: number }
-  | { readonly kind: "thinking"; readonly text: string }
+  | {
+      readonly kind: "assistant";
+      readonly text: string;
+      readonly message: number;
+      readonly at?: number;
+    }
+  | {
+      readonly kind: "thinking";
+      readonly text: string;
+      readonly message: number;
+      readonly at?: number;
+    }
   | {
       readonly kind: "tool";
       readonly id: string;
       readonly name: string;
+      /** The item type and row title the lead's thread gives the same call. */
+      readonly itemType: ToolLifecycleItemType;
+      readonly title: string;
+      readonly detail?: string;
       readonly input: string;
       readonly output?: string;
       readonly isError?: boolean;
+      readonly message: number;
       readonly at?: number;
     }
   | { readonly kind: "compaction"; readonly text: string; readonly at?: number }
-  | { readonly kind: "error"; readonly text: string };
+  | {
+      readonly kind: "error";
+      readonly text: string;
+      readonly message: number;
+      readonly at?: number;
+    };
 
 export interface AgentTranscript {
   /** False when the agent left no session file (a team row, or a child that never started). */
