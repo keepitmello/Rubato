@@ -1,9 +1,9 @@
 import { spawn } from "node:child_process"
 import { closeSync, mkdirSync, openSync } from "node:fs"
 import { homedir } from "node:os"
-import { join } from "node:path"
+import { join, resolve } from "node:path"
 
-import { MEMORY_ROOT_ENV_VAR, resolveMemoryRoot } from "@rubato/memory-core"
+import { MEMORY_ROOT_ENV_VAR } from "@rubato/memory-core"
 
 import { liveMemoryVerdict } from "../../dream/live-guard"
 
@@ -55,9 +55,8 @@ export function createDreamLauncher(options: {
       }
       let logFd: number | undefined
       try {
-        const memoryRoot = options.env[MEMORY_ROOT_ENV_VAR]?.trim()
-          ? resolveMemoryRoot(options.env, home)
-          : join(home, ".rubato", "memory")
+        const override = options.env[MEMORY_ROOT_ENV_VAR]?.trim()
+        const memoryRoot = override ? resolve(home, override) : join(home, ".rubato", "memory")
         mkdirSync(memoryRoot, { recursive: true })
         logFd = openSync(join(memoryRoot, DREAM_LOG_NAME), "a")
         const child = spawnChild("bun", [cli, "--due"], {

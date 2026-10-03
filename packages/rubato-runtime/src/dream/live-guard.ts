@@ -8,7 +8,8 @@ import { MEMORY_ROOT_ENV_VAR } from "@rubato/memory-core"
 // would dream against the user's live memory with test code (seen 2026-10-03: a verifier's /tmp copy
 // logged into ~/.rubato/memory/dream-due.log). So the default memory root belongs to the installed
 // Rubato only: the copy `~/.local/bin/rubato` runs (install.sh writes that wrapper), on the default
-// profile. Any other copy or profile dreams only against a root named in RUBATO_MEMORY_HOME.
+// profile. Any other copy or profile dreams only against a root named in RUBATO_MEMORY_HOME that is
+// not the default one; naming the default root explicitly does not count as isolation.
 
 export const RUBATO_WRAPPER = join(".local", "bin", "rubato")
 const WRAPPER_TARGET = /exec \/bin\/sh "(.+)\/harness\/scripts\/rubato-pi\.sh"/
@@ -38,18 +39,18 @@ export function liveMemoryVerdict(options: {
 }): LiveMemoryVerdict {
   const { env, home } = options
   const override = env[MEMORY_ROOT_ENV_VAR]
-  if (override !== undefined && override.trim() !== "") return { allowed: true }
+  if (override !== undefined && override.trim() !== "" && real(resolve(home, override)) !== real(join(home, ".rubato", "memory"))) return { allowed: true }
   const profile = env.RUBATO_PI_CODING_AGENT_DIR
   if (profile !== undefined && profile.trim() !== "" && real(profile) !== real(join(home, ".rubato-pi", "agent"))) {
-    return { allowed: false, reason: `profile ${profile} is not the default one; set ${MEMORY_ROOT_ENV_VAR} to dream against another memory root` }
+    return { allowed: false, reason: `profile ${profile} is not the default one; set ${MEMORY_ROOT_ENV_VAR} to a memory root other than ~/.rubato/memory` }
   }
   const installed = installedRoot(home)
   const code = real(codeRootOf(options.cliPath))
   if (installed === undefined) {
-    return { allowed: false, reason: `no installed Rubato at ~/${RUBATO_WRAPPER}; set ${MEMORY_ROOT_ENV_VAR} to dream from ${code}` }
+    return { allowed: false, reason: `no installed Rubato at ~/${RUBATO_WRAPPER}; set ${MEMORY_ROOT_ENV_VAR} to a memory root other than ~/.rubato/memory to dream from ${code}` }
   }
   if (installed !== code) {
-    return { allowed: false, reason: `${code} is not the installed Rubato (${installed}); set ${MEMORY_ROOT_ENV_VAR} to dream from this copy` }
+    return { allowed: false, reason: `${code} is not the installed Rubato (${installed}); set ${MEMORY_ROOT_ENV_VAR} to a memory root other than ~/.rubato/memory to dream from this copy` }
   }
   return { allowed: true }
 }
