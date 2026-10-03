@@ -28,6 +28,8 @@ export interface MemoryStoreStatus {
 /** One store as its directory shows it; fast, no session scan. */
 export interface MemoryStoreSummary {
   readonly store: string;
+  /** The store's git working tree on this Mac. */
+  readonly repo: string;
   /** Project folders the store belongs to; null when the store predates store.json. */
   readonly roots: readonly string[] | null;
   readonly home: boolean | null;
@@ -121,6 +123,11 @@ export interface DreamRunDetail extends DreamRunSummary {
   readonly summary: string | null;
   readonly changes: readonly DreamChange[];
   readonly diffNote: string | null;
+  /** Where an agent asked about the run reads it. */
+  readonly sources: {
+    readonly report: string | null;
+    readonly range: { readonly base: string; readonly head: string } | null;
+  };
 }
 
 export interface SelfFiles {

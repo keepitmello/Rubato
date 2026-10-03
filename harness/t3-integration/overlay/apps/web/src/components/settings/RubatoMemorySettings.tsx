@@ -3,6 +3,7 @@ import {
   ArrowUpIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  MessageSquareIcon,
   PencilIcon,
   PlayIcon,
   PlusIcon,
@@ -12,11 +13,15 @@ import {
   XIcon,
 } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
+import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import * as Option from "effect/Option";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
+import { useComposerDraftStore } from "../../composerDraftStore";
 import { requestConfirmDialog } from "../../confirmDialog";
+import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
 import { cn } from "../../lib/utils";
+import { useProjects } from "../../state/entities";
 import { usePrimaryEnvironmentId } from "../../state/environments";
 import { primaryServerProvidersAtom } from "../../state/server";
 import { usePreparedConnection } from "../../state/session";
@@ -45,7 +50,15 @@ import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
-import { addedContent, fallbackNote, lastDreamLine, runLabel, type BadgeVariant } from "./RubatoMemorySettings.logic";
+import {
+  addedContent,
+  chatPrompt,
+  fallbackNote,
+  lastDreamLine,
+  projectForStore,
+  runLabel,
+  type BadgeVariant,
+} from "./RubatoMemorySettings.logic";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 
 type EnvironmentId = ReturnType<typeof usePrimaryEnvironmentId>;
@@ -454,6 +467,32 @@ function StoreRow({ store, home, onOpen }: { store: StoreView; home: string | nu
   );
 }
 
+type AskAbout = Parameters<typeof chatPrompt>[1];
+
+/** Opens a new thread in the memory's project with where it is in the composer; the user picks a model and asks. */
+function useAskInChat(environmentId: EnvironmentId, store: StoreView, home: string | null) {
+  const projects = useProjects();
+  const newThread = useNewThreadHandler();
+  return async (about: AskAbout = {}) => {
+    const candidates = projects.filter((project) => project.environmentId === environmentId);
+    const project = projectForStore(candidates, store.home && home ? [home] : store.roots);
+    if (!project) {
+      toastManager.add({
+        type: "error",
+        title: "No project for this memory",
+        description: `Add ${store.roots?.[0] ? tildePath(store.roots[0], home) : "its folder"} as a project, then ask again.`,
+      });
+      return;
+    }
+    const opened = await newThread(scopeProjectRef(project.environmentId, project.id)).catch(() => null);
+    if (!opened) {
+      toastManager.add({ type: "error", title: "Could not open a thread", description: "Open one from the project, then ask again." });
+      return;
+    }
+    useComposerDraftStore.getState().setPrompt(opened.draftId, chatPrompt(store, about));
+  };
+}
+
 function StoreDetail({
   environmentId,
   store,
@@ -476,6 +515,7 @@ function StoreDetail({
   onDeleted: () => void;
 }) {
   const [deleting, setDeleting] = useState(false);
+  const ask = useAskInChat(environmentId, store, home);
   const deleteStore = async () => {
     const ok = await confirm(
       `Delete the memory of "${store.store}"? It is archived to ~/.rubato/backups first. If an agent saves memory in this project again, a new empty one is created.`,
@@ -510,6 +550,12 @@ function StoreDetail({
         <SettingsRow
           title={whereLabel(store, home)}
           description={<StoreFacts store={store} />}
+          control={
+            <Button size="xs" variant="outline" onClick={() => void ask()}>
+              <MessageSquareIcon className="size-3" />
+              Ask in chat
+            </Button>
+          }
         />
         <SettingsRow
           title="Daily dream"
@@ -536,9 +582,19 @@ function StoreDetail({
         />
       </SettingsSection>
 
-      <StoreFiles environmentId={environmentId} store={store.store} onChanged={onChanged} />
+      <StoreFiles
+        environmentId={environmentId}
+        store={store.store}
+        onChanged={onChanged}
+        onAsk={(file) => void ask({ file })}
+      />
 
-      <DreamRuns key={`${store.store}:${historySignal}`} environmentId={environmentId} store={store} />
+      <DreamRuns
+        key={`${store.store}:${historySignal}`}
+        environmentId={environmentId}
+        store={store}
+        onAsk={(run) => void ask({ run })}
+      />
 
       <SettingsSection id="memory-store-delete" title="Delete">
         <SettingsRow
@@ -581,10 +637,12 @@ function RunView({
   environmentId,
   store,
   runId,
+  onAsk,
 }: {
   environmentId: EnvironmentId;
   store: StoreView;
   runId: string;
+  onAsk: (run: DreamRunDetail) => void;
 }) {
   const [detail, setDetail] = useState<DreamRunDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -664,6 +722,10 @@ function RunView({
           </Fold>
         </div>
       ) : null}
+      <Button size="xs" variant="ghost" onClick={() => onAsk(detail)}>
+        <MessageSquareIcon className="size-3.5" />
+        Ask in chat about this run
+      </Button>
     </div>
   );
 }
@@ -725,7 +787,15 @@ function ChangeCard({ change }: { change: DreamChange }) {
 }
 
 
-function DreamRuns({ environmentId, store }: { environmentId: EnvironmentId; store: StoreView }) {
+function DreamRuns({
+  environmentId,
+  store,
+  onAsk,
+}: {
+  environmentId: EnvironmentId;
+  store: StoreView;
+  onAsk: (run: DreamRunDetail) => void;
+}) {
   const [runs, setRuns] = useState<DreamRunSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
@@ -785,7 +855,7 @@ function DreamRuns({ environmentId, store }: { environmentId: EnvironmentId; sto
           >
             {expanded ? (
               <div className="pt-1 pb-3">
-                <RunView environmentId={environmentId} store={store} runId={run.runId} />
+                <RunView environmentId={environmentId} store={store} runId={run.runId} onAsk={onAsk} />
               </div>
             ) : null}
           </SettingsRow>
@@ -843,10 +913,12 @@ function StoreFiles({
   environmentId,
   store,
   onChanged,
+  onAsk,
 }: {
   environmentId: EnvironmentId;
   store: string;
   onChanged: () => void;
+  onAsk: (file: string) => void;
 }) {
   const [files, setFiles] = useState<MemoryFileEntry[] | null>(null);
   const [truncated, setTruncated] = useState(false);
@@ -964,6 +1036,7 @@ function StoreFiles({
                         environmentId={environmentId}
                         store={store}
                         path={file.path}
+                        onAsk={() => onAsk(file.path)}
                         onSaved={() => {
                           setSignal((value) => value + 1);
                           onChanged();
@@ -987,11 +1060,13 @@ function FileViewer({
   environmentId,
   store,
   path,
+  onAsk,
   onSaved,
 }: {
   environmentId: EnvironmentId;
   store: string;
   path: string;
+  onAsk: () => void;
   onSaved: () => void;
 }) {
   const [content, setContent] = useState<{ text: string; truncated: boolean } | null>(null);
@@ -1070,7 +1145,11 @@ function FileViewer({
   const body = path.endsWith(".md") ? content.text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "") : null;
   return (
     <div className="mx-2 mb-2 rounded-lg border border-border/60">
-      <div className="flex justify-end px-2 pt-2">
+      <div className="flex justify-end gap-1 px-2 pt-2">
+        <Button size="xs" variant="ghost" onClick={onAsk}>
+          <MessageSquareIcon className="size-3" />
+          Ask in chat
+        </Button>
         <Button
           size="xs"
           variant="ghost"
