@@ -9,6 +9,7 @@ CLI:
 from __future__ import annotations
 
 import argparse
+import hashlib
 from datetime import datetime, timezone
 from functools import lru_cache
 import json
@@ -139,8 +140,24 @@ def tokenize_ko_tokens(text: str) -> list[str]:
     return dedupe_preserve_order([token for token in tokens if token])
 
 
+# Records are English now: English function words in a query match every record and once let
+# "Postgres index is not used" score a phrase hit on "is not" in an unrelated file.
+ENGLISH_STOPWORDS = frozenset("""
+a an the and or but nor so yet if then than that this these those there here
+is am are was were be been being do does did doing done have has had having
+i me my we our you your he she it its they them their what which who whom whose why how when where
+to of in on at by for with without from into onto out over under up down off about after before
+again once all any both each few more most other some such no not only own same too very
+can could should would will shall may might must just also still even ever never not
+as per via vs etc s t don doesn didn isn aren wasn weren won can't don't doesn't isn't
+get gets got make makes made use used using one ones every
+""".split())
+
+
 def is_intent_only_token(token: str) -> bool:
     if token in ANCHOR_STOPWORDS or token in BM25_INTENT_STOPWORDS:
+        return True
+    if token.lower() in ENGLISH_STOPWORDS:
         return True
     return bool(re.fullmatch(r"(?:뭐|어때|어땠|언제|기억|했었|였)(?:는지|었지|더라|나)?", token))
 
@@ -1090,10 +1107,15 @@ def scope_filter(memories: list[dict[str, object]], scope: str | None) -> list[d
 # Korean question finds an English record. The original still runs: `## Symptom` and quotes keep
 # the user's own words. One small model call per new query, cached; without it, the original alone.
 TRANSLATION_CACHE_PATH = state_path("query-translations.json")
-TRANSLATION_MODEL = os.getenv("MSEARCH_TRANSLATE_MODEL", "gpt-4o-mini")
+TRANSLATION_MODEL = os.getenv("MSEARCH_TRANSLATE_MODEL", "gpt-4.1-mini")
+# Words Rubato uses in Korean with a fixed meaning; without them "사고" (thinking) becomes "accident".
 TRANSLATION_PROMPT = (
-    "Translate this memory-search query into a short English search query. "
-    "Keep code, paths, names and numbers as they are. Reply with the query only."
+    "You turn a search query into the English words its answer would be written in. "
+    "The records are engineering notes about software built with AI coding agents.\n"
+    "Rubato terms: 사고 = thinking (model reasoning), 꿈 = dream (memory maintenance run), 기억 = memory, "
+    "의도/인텐트 = intent, 서브에이전트 = subagent, 팀원 = teammate, 센파이 = Senpi, 파이 = pi, 루바토 = Rubato.\n"
+    "Keep code, paths, names and numbers as they are. Add no words the query does not have. "
+    "Reply with the English query only, no quotes."
 )
 HANGUL_RE = re.compile(r"[\u1100-\u11FF\u3131-\u318E\uAC00-\uD7A3]")
 
@@ -1104,7 +1126,7 @@ def _translate(query: str) -> str:
     response = OpenAI(timeout=10.0).chat.completions.create(
         model=TRANSLATION_MODEL,
         temperature=0,
-        messages=[{"role": "system", "content": TRANSLATION_PROMPT}, {"role": "user", "content": query[:500]}],
+        messages=[{"role": "system", "content": TRANSLATION_PROMPT}, {"role": "user", "content": f"<query>{query[:500]}</query>"}],
     )
     return (response.choices[0].message.content or "").strip().strip('"').strip()
 
@@ -1114,10 +1136,13 @@ def english_query(query: str) -> str | None:
     """The English rendering of a query with Hangul, or None (no Hangul, turned off, or it failed)."""
     if not HANGUL_RE.search(query) or os.getenv("MSEARCH_TRANSLATE", "1") == "0":
         return None
+    # The cache belongs to one model and prompt; a change starts it over.
+    version = hashlib.sha256(f"{TRANSLATION_MODEL}\n{TRANSLATION_PROMPT}".encode()).hexdigest()[:12]
     try:
-        cache = json.loads(TRANSLATION_CACHE_PATH.read_text(encoding="utf-8"))
+        stored = json.loads(TRANSLATION_CACHE_PATH.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        cache = {}
+        stored = {}
+    cache = stored.get("entries") if isinstance(stored, dict) and stored.get("version") == version else None
     if not isinstance(cache, dict):
         cache = {}
     found = cache.get(query)
@@ -1131,7 +1156,7 @@ def english_query(query: str) -> str | None:
         cache[query] = found
         try:
             TRANSLATION_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-            TRANSLATION_CACHE_PATH.write_text(json.dumps(cache, ensure_ascii=False, indent=1), encoding="utf-8")
+            TRANSLATION_CACHE_PATH.write_text(json.dumps({"version": version, "entries": cache}, ensure_ascii=False, indent=1), encoding="utf-8")
         except OSError:
             pass
     return found if found.strip() and found.strip() != query.strip() else None
