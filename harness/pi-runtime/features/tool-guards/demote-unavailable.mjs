@@ -96,6 +96,82 @@ function applyToolChange(block, definedNames, everDefinedNames) {
   }
 }
 
+function additionName(block) {
+  return isRecord(block) && block.type === "tool_addition" ? toolChangeName(block.tool) : undefined;
+}
+
+function withoutCacheControl(block) {
+  if (!isRecord(block) || !("cache_control" in block)) return block;
+  const { cache_control: _cacheControl, ...rest } = block;
+  return rest;
+}
+
+/**
+ * A model can call a registered tool that is not active yet; the session activates it while
+ * running the call, and the next request declares it after the call's result. Anthropic 400s on
+ * a call to a tool not defined at that point, so move that declaration in front of the call.
+ * Only the declarations right after that call's results move (the signature of activation on
+ * call). The call was new in the request that first carries the declaration, so everything
+ * before it — what earlier requests cached — keeps its bytes, and later requests repeat the
+ * same transform.
+ */
+function hoistAdditionsForCalls(params, initialNames) {
+  const messages = params.messages;
+  const definedNames = new Set(initialNames);
+  const replaced = new Map();
+  const output = [];
+  let movedCacheControl;
+  for (let index = 0; index < messages.length; index++) {
+    const message = replaced.has(index) ? replaced.get(index) : messages[index];
+    if (message === null) continue;
+    if (message.role === "assistant" && Array.isArray(message.content)) {
+      const missing = new Set();
+      for (const block of message.content) {
+        if (isRecord(block) && block.type === "tool_use" && typeof block.name === "string" && !definedNames.has(block.name)) {
+          missing.add(block.name);
+        }
+      }
+      const resultIndex = index + 1;
+      if (missing.size > 0 && messages[resultIndex]?.role === "user") {
+        const hoisted = [];
+        for (let later = resultIndex + 1; later < messages.length && messages[later].role === "system"; later++) {
+          const source = replaced.has(later) ? replaced.get(later) : messages[later];
+          if (!source || !Array.isArray(source.content)) continue;
+          const kept = [];
+          for (const block of source.content) {
+            const name = additionName(block);
+            if (name !== undefined && missing.has(name)) {
+              if (isRecord(block) && block.cache_control) movedCacheControl = block.cache_control;
+              hoisted.push(withoutCacheControl(block));
+            } else {
+              kept.push(block);
+            }
+          }
+          if (kept.length !== source.content.length) replaced.set(later, kept.length > 0 ? { ...source, content: kept } : null);
+        }
+        if (hoisted.length > 0) {
+          output.push({ role: "system", content: hoisted });
+          for (const block of hoisted) applyToolChange(block, definedNames, new Set());
+        }
+      }
+    }
+    if (Array.isArray(message.content)) {
+      for (const block of message.content) applyToolChange(block, definedNames, new Set());
+    }
+    output.push(message);
+  }
+  if (replaced.size === 0) return params;
+  // The moved block may have carried the request's last cache breakpoint; keep the end marked.
+  if (movedCacheControl) {
+    const last = output.at(-1);
+    const end = Array.isArray(last?.content) ? last.content.at(-1) : undefined;
+    if (isRecord(end) && !("cache_control" in end)) {
+      output[output.length - 1] = { ...last, content: [...last.content.slice(0, -1), { ...end, cache_control: movedCacheControl }] };
+    }
+  }
+  return { ...params, messages: output };
+}
+
 /**
  * Anthropic 400s when history still names a tool that is not defined at that point of the
  * request (top-level `tools`, an earlier inline `tool_addition`, or a `tool_reference`
@@ -117,6 +193,7 @@ export function demoteUnavailableToolReferences(params) {
       if (tool.defer_loading !== true) availableToolNames.push(tool.name);
     }
   }
+  params = hoistAdditionsForCalls(params, initialNames);
   const discoveredNames = new Set();
   collectToolReferenceNames(params.messages, discoveredNames);
   const definedNames = new Set(initialNames);

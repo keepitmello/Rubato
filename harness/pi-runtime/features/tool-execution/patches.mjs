@@ -200,8 +200,18 @@ function patchAgentSession(source) {
     next,
     `import { ExtensionRunner, wrapRegisteredTools, } from "./extensions/index.js";`,
     `import { ExecuteToolError, ExtensionRunner, wrapRegisteredTools, } from "./extensions/index.js";
-import { executeRegisteredTool } from "../../../../../rubato-features/tool-execution/runtime.mjs";`,
+import { activateInactiveTool, executeRegisteredTool } from "../../../../../rubato-features/tool-execution/runtime.mjs";`,
     "runtime-import",
+  );
+  next = replaceOnce(
+    next,
+    `    _installAgentToolHooks() {
+        this.agent.beforeToolCall = (context) => this._beforeToolCall(context);`,
+    `    _installAgentToolHooks() {
+        // A model call to a registered but inactive tool activates it like tool_search would.
+        this.agent.resolveInactiveTool = (toolName) => activateInactiveTool(this, toolName);
+        this.agent.beforeToolCall = (context) => this._beforeToolCall(context);`,
+    "resolve-inactive-hook",
   );
   next = replaceOnce(
     next,
@@ -269,6 +279,42 @@ import { executeRegisteredTool } from "../../../../../rubato-features/tool-execu
         this._lazyToolActivators = [];
         const autoResizeImages`,
     "runtime-reset",
+  );
+}
+
+const CORE_PACKAGE_NAME = "@earendil-works/pi-agent-core";
+
+function corePatch(id, path, preimageSha256, apply) {
+  return Object.freeze({ id, packageName: CORE_PACKAGE_NAME, version: PACKAGE_VERSION, path, preimageSha256, apply });
+}
+
+// Stock looks a model's tool call up only among active tools and answers "Tool X not found"
+// otherwise, even for a registered tool the model knew by name. Ask the session once.
+function patchAgentLoop(source) {
+  return replaceOnce(
+    source,
+    `async function prepareToolCall(currentContext, assistantMessage, toolCall, config, signal, tools = currentContext.tools ?? []) {
+    const tool = tools.find((t) => t.name === toolCall.name);
+    if (!tool) {`,
+    `async function prepareToolCall(currentContext, assistantMessage, toolCall, config, signal, tools = currentContext.tools ?? []) {
+    let tool = tools.find((t) => t.name === toolCall.name);
+    if (!tool && config.resolveInactiveTool) {
+        tool = await config.resolveInactiveTool(toolCall.name);
+    }
+    if (!tool) {`,
+    "resolve-inactive-tool",
+  );
+}
+
+function patchAgent(source) {
+  return replaceOnce(
+    source,
+    `            beforeToolCall: this.beforeToolCall,
+            afterToolCall: this.afterToolCall,`,
+    `            beforeToolCall: this.beforeToolCall,
+            afterToolCall: this.afterToolCall,
+            resolveInactiveTool: this.resolveInactiveTool,`,
+    "loop-config",
   );
 }
 
@@ -370,6 +416,8 @@ export const patches = Object.freeze([
   patch("tool-execution:core/extensions/index.js", "dist/core/extensions/index.js", "9a99fd14edb60079a3c604d6045cbad7d461c3ba1ce88331f5d549372f14c46d", patchExtensionRuntimeIndex),
   patch("tool-execution:core/extensions/index.d.ts", "dist/core/extensions/index.d.ts", "fe5661c6cd9a948293f0f1d1db5a052dcc60493f6b1f68349a7ab96987b10e40", patchExtensionTypesIndex),
   patch("tool-execution:index.js", "dist/index.js", "5482298b995db935f7b96f5d6056fa1c36ac6fc80456be594ef65b83c62b0d30", patchRootRuntimeIndex),
+  corePatch("tool-execution:agent-loop.js", "dist/agent-loop.js", "65def8c7f3fa01e38fe05467520efc8673c22ea8197833a3b04b29c8a60cb1e3", patchAgentLoop),
+  corePatch("tool-execution:agent.js", "dist/agent.js", "163ad28551f1c38b8eb899a5c9dd89cd9d9005fb7dd9c4abeb008ee380e98c51", patchAgent),
   patch("tool-execution:index.d.ts", "dist/index.d.ts", "b254e36846b1dcc64ce1a8ba72e23fb410df4aa4408ba8c23e69e5b3f934e3cc", patchRootTypesIndex),
 ]);
 
