@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
-const PACKAGE_VERSION = "0.86.1";
+import { PI_VERSION as PACKAGE_VERSION } from "../../pi-version.mjs";
 
 function replaceOnce(source, before, after, label) {
   const first = source.indexOf(before);
@@ -126,12 +126,12 @@ export type ModelServiceTier = "auto" | "flex" | "priority";
 export const patches = Object.freeze([
   patch(
     "dist/core/settings-manager.js",
-    "5368b155ec26d88374cec9e66b8e588b5041a0fb0047414f70b34e13892c4f48",
+    "b3a424ac1af9bd0c380796f9e5d812e2c61755ed3b31dd39982a57bbe0d5a391",
     patchSettingsRuntime,
   ),
   patch(
     "dist/core/settings-manager.d.ts",
-    "0531dc8f094401117e237cc97d71b5524b4ff76bf958bda4f552268d76af7d44",
+    "c836f841b87e2d9e23427859410fbc41cd1c99f291085837fa8c72f33bbe8024",
     patchSettingsTypes,
   ),
 ]);

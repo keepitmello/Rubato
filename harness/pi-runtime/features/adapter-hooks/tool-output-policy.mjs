@@ -5,9 +5,14 @@ export const TOOL_OUTPUT_PREVIEW_BYTES = 8 * 1024;
 const SEARCH_TOOLS = new Set(["grep", "find", "ls", "mcp__ast_grep_search", "mcp__ast_grep_scan"]);
 const PREVIEW_TOOLS = new Set(["bash", "powershell", "eval", "edit", "write", ...SEARCH_TOOLS]);
 
+// Shell and eval output keeps its preview when the run failed: pi 0.99 flags a returned
+// { isError: true } (a non-zero exit, a failed cell), which 0.86 sent as a plain result, and a
+// failing build log is exactly the large output this exists to shorten.
+const ERROR_PREVIEW_TOOLS = new Set(["bash", "powershell", "eval"]);
+
 export function canPreviewToolOutput(message) {
   return message?.role === "toolResult"
-    && message.isError !== true
+    && (message.isError !== true || ERROR_PREVIEW_TOOLS.has(message.toolName))
     && PREVIEW_TOOLS.has(message.toolName)
     && Array.isArray(message.content);
 }

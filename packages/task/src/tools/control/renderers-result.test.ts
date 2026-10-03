@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 
-import type { ThemeColor } from "@code-yeongyu/senpi"
+import type { ThemeColor } from "@earendil-works/pi-coding-agent"
 
 import { renderTaskCancelResult, renderTaskSendResult, type ControlRenderTheme } from "./renderers"
 import { toolResult } from "./tool-result"

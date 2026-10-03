@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { buildRubatoComponents } from "../../build-rubato.mjs";
 import { loadPiFeatures } from "../../feature-catalog.mjs";
+import { resolvePiRuntime } from "../../resolve-runtime.mjs";
 import { stagePiRuntime } from "../../stage-runtime.mjs";
 import { CANDIDATE_FEATURE_NAMES } from "../rubato-components/candidate-main.mjs";
 
@@ -29,9 +30,10 @@ const build = await buildRubatoComponents({ outputRoot: join(scratch, "build") }
 const features = await loadPiFeatures(CANDIDATE_FEATURE_NAMES.filter((name) => name !== "runtime-factories"));
 const staged = await stagePiRuntime({ sourceRoot, outputRoot: join(scratch, "engine"), features: [...features, build.feature] });
 const packageRoot = join(staged.root, "node_modules/@earendil-works/pi-coding-agent");
+const piAiDir = resolvePiRuntime({ root: staged.root }).packages["@earendil-works/pi-ai"].dir;
 const sdk = await import(pathToFileURL(join(packageRoot, "dist/index.js")));
-const { AssistantMessageEventStream } = await import(pathToFileURL(join(packageRoot, "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js")));
-const { kCursorExecResolved } = await import(pathToFileURL(join(packageRoot, "node_modules/@earendil-works/pi-ai/dist/utils/block-symbols.js")));
+const { AssistantMessageEventStream } = await import(pathToFileURL(join(piAiDir, "dist/utils/event-stream.js")));
+const { kCursorExecResolved } = await import(pathToFileURL(join(piAiDir, "dist/utils/block-symbols.js")));
 const { createRubatoExtensionFactories } = await import(pathToFileURL(join(staged.root, "rubato-features/rubato-components/bootstrap.mjs")));
 
 after(() => {
@@ -203,6 +205,11 @@ for (const [ending, end] of Object.entries(endings)) {
     const deliver = deliverTo(session);
     const streamingAtSettle = [];
     session.subscribe((event) => { if (event.type === "agent_settled") streamingAtSettle.push(session.isStreaming); });
+    // pi 0.87 runs work requested during agent_settled after the handlers, inside the same
+    // prompt() call, so the first run's requests end where the second run starts.
+    let starts = 0;
+    let firstRunRequests;
+    session.subscribe((event) => { if (event.type === "agent_start" && ++starts === 2) firstRunRequests = requests.length; });
     try {
       const held = hold();
       const run = session.prompt("Work");
@@ -210,9 +217,10 @@ for (const [ending, end] of Object.entries(endings)) {
       assert.deepEqual(await deliver(delivery("m-end", "Please answer this.")), { messageId: "m-end", duplicate: false, state: "queued" });
       await end(gate);
       await run;
-      const first = requests.length;
-      for (let i = 0; i < 200 && (requests.length === first || !session.isIdle); i++) await new Promise((r) => setTimeout(r, 10));
+      for (let i = 0; i < 200 && (firstRunRequests === undefined || requests.length === firstRunRequests || !session.isIdle); i++) await new Promise((r) => setTimeout(r, 10));
       await settle(session);
+      const first = firstRunRequests;
+      assert.notEqual(first, undefined, "a second run started");
       assert.equal(session.agent.hasQueuedMessages(), false, "nothing ever went to Pi's steering queue");
       assert.ok(requests.slice(0, first).every((request) => !mentions(request, "Please answer this.")), "no request of the running run carried it");
       assert.equal(requests.length, first + 1, "the next run made one request");

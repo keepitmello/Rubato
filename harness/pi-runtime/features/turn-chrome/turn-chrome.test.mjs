@@ -68,12 +68,13 @@ let staging;
 const staged = () => staging ??= (async () => {
   const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
   const root = (await stagePiRuntime({ sourceRoot, outputRoot: join(scratch, "stage"), features: [feature] })).root;
-  const agentDir = resolvePiRuntime({ root }).codingAgentDir;
+  const runtime = resolvePiRuntime({ root });
+  const agentDir = runtime.codingAgentDir;
   const load = (path) => import(pathToFileURL(join(agentDir, path)).href);
   (await load("dist/modes/interactive/theme/theme.js")).initTheme("dark");
   const { AssistantMessageComponent } = await load("dist/modes/interactive/components/assistant-message.js");
   const { InteractiveMode } = await load("dist/modes/interactive/interactive-mode.js");
-  const { Container } = await load("node_modules/@earendil-works/pi-tui/dist/index.js");
+  const { Container } = await import(pathToFileURL(join(runtime.packages["@earendil-works/pi-tui"].dir, "dist/index.js")).href);
   return { AssistantMessageComponent, InteractiveMode, Container };
 })();
 const errorLines = (component) => component.render(80)

@@ -1,3 +1,4 @@
+import { PI_VERSION } from "../../pi-version.mjs";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -13,7 +14,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import test, { after } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -49,6 +50,10 @@ function preparePatchedPackage() {
   cpSync(join(pristinePackage, "dist"), join(patchedPackage, "dist"), { recursive: true });
   copyFileSync(join(pristinePackage, "package.json"), join(patchedPackage, "package.json"));
   symlinkSync(join(pristinePackage, "node_modules"), join(patchedPackage, "node_modules"), "dir");
+  // 1.0.1 ships no shrinkwrap: npm hoists pi's dependencies (cross-spawn, pi-ai, ...) next to
+  // the package. Link that level too so the scratch copy resolves them like the install.
+  const hoisted = resolve(pristinePackage, "../..");
+  if (basename(hoisted) === "node_modules") symlinkSync(hoisted, join(scratchRoot, "node_modules"), "dir");
   const additions = [...inputFiles, ...abortFiles, ...files];
   for (const file of additions) {
     const target = join(patchedPackage, file.path);
@@ -161,7 +166,7 @@ test("manifest reuses the current Rubato tracker and composes strict stock patch
   for (const spec of patches) {
     const pristine = readFileSync(join(pristinePackage, spec.path), "utf8");
     assert.equal(spec.packageName, "@earendil-works/pi-coding-agent");
-    assert.equal(spec.version, "0.86.1");
+    assert.equal(spec.version, PI_VERSION);
     assert.equal(sha256(pristine), spec.preimageSha256);
     const composed = readFileSync(join(patchedPackage, spec.path), "utf8");
     assert.notEqual(composed, pristine);
@@ -183,7 +188,7 @@ test("manifest reuses the current Rubato tracker and composes strict stock patch
 test("actual SDK keeps input identity and one request terminal across queue, clear, reload, retry, and abort", async () => {
   const moduleUrl = pathToFileURL(join(patchedPackage, "dist/index.js")).href;
   const streamUrl = pathToFileURL(
-    join(patchedPackage, "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js"),
+    join(scratchRoot, "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js"),
   ).href;
   const { createAgentSession, DefaultResourceLoader, SessionManager, SettingsManager } = await import(moduleUrl);
   const { AssistantMessageEventStream } = await import(streamUrl);
@@ -375,10 +380,14 @@ test("actual SDK keeps input identity and one request terminal across queue, cle
   assert.equal(terminalSnapshots.some(({ snapshot }) => snapshot.runs.some((run) => run.status === "failed")), true);
 });
 
-test("a settle that an extension held past the next run's start is not announced to clients", async () => {
+// pi 0.87 defers runs requested while agent_settled handlers run (before, a wake started
+// the next run inside the handler). What clients rely on is unchanged: a settle that is
+// followed by more work is never announced, so they never hear "idle" between two runs or
+// while one streams; the run that really ends the work announces one settle.
+test("a prompt sent while an extension holds agent_settled starts after it, and only the last run's settle is announced", async () => {
   const moduleUrl = pathToFileURL(join(patchedPackage, "dist/index.js")).href;
   const streamUrl = pathToFileURL(
-    join(patchedPackage, "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js"),
+    join(scratchRoot, "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js"),
   ).href;
   const { createAgentSession, DefaultResourceLoader, SessionManager, SettingsManager } = await import(moduleUrl);
   const { AssistantMessageEventStream } = await import(streamUrl);
@@ -439,7 +448,8 @@ test("a settle that an extension held past the next run's start is not announced
   });
   const announced = [];
   session.subscribe((event) => {
-    if (event.type === "agent_start" || event.type === "agent_settled") announced.push(event.type);
+    if (event.type === "agent_start") announced.push("agent_start");
+    if (event.type === "agent_settled") announced.push(session.isStreaming ? "agent_settled:streaming" : "agent_settled");
   });
 
   let releaseSecondRun;
@@ -464,15 +474,18 @@ test("a settle that an extension held past the next run's start is not announced
   const firstRun = session.prompt("first");
   await firstSettleHeld;
   const secondRun = session.prompt("second");
-  await secondRunStreaming;
+  await secondRun;
+  assert.equal(call, 1, "the second run must not start while a settle handler is still running");
+  assert.equal(session.isStreaming, false);
+  assert.deepEqual(announced, ["agent_start"], "the held settle is not announced yet");
   releaseFirstSettle();
-  await firstRun;
+  await secondRunStreaming;
   assert.equal(session.isStreaming, true);
   assert.deepEqual(announced, ["agent_start", "agent_start"],
-    "clients must not hear the session go idle while the second run streams");
+    "clients must not hear the session go idle before the second run");
 
   releaseSecondRun();
-  await secondRun;
+  await firstRun;
   assert.deepEqual(announced, ["agent_start", "agent_start", "agent_settled"]);
 });
 
@@ -484,7 +497,7 @@ test("unbundled RPC get_state reads the same pending and completed request ids",
   mkdirSync(agentDir, { recursive: true });
   mkdirSync(sessionDir, { recursive: true });
   const streamUrl = pathToFileURL(
-    join(patchedPackage, "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js"),
+    join(scratchRoot, "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js"),
   ).href;
   const extensionPath = join(scratchRoot, "rpc-request-run-provider.mjs");
   writeFileSync(extensionPath, `

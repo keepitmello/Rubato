@@ -46,7 +46,7 @@ test("catalog model baseUrl follows the endpoint override", () => {
 
 test("well-formed catalog model survives pinned attribution .includes", async () => {
   const { mergeProviderAttributionHeaders } = await import(
-    pathToFileURL(join(senpiNested("@code-yeongyu/senpi"), "dist/core/provider-attribution.js")).href
+    pathToFileURL(join(senpiNested("@earendil-works/pi-coding-agent"), "dist/core/provider-attribution.js")).href
   );
   const flash = antigravityModels().find((entry) => entry.id === ANTIGRAVITY_FLASH);
   const settings = { getEnableInstallTelemetry: () => true };

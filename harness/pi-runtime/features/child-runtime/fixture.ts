@@ -303,7 +303,7 @@ async function runRpcFixture(root: string) {
   assert.equal(childProfile.rpcExtensions.some((entry) => entry.endsWith(`${join("child-runtime", "guard-extension.mjs")}`)), true)
   const eventStreamPath = pathToFileURL(join(
     runtimeRoot,
-    "node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js",
+    "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js",
   )).href
   await writeFile(providerPath, `
 import { appendFileSync } from "node:fs";
@@ -430,7 +430,7 @@ async function runMemberFixture(root: string) {
   const childProfile = resolvePiChildProviderProfile({ root: runtimeRoot, includeContextNotes: true, includeGuards: true })
   const eventStreamPath = pathToFileURL(join(
     runtimeRoot,
-    "node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js",
+    "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js",
   )).href
   await writeFile(providerPath, `
 import { appendFileSync } from "node:fs";

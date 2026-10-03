@@ -10,10 +10,12 @@ import { setTimeout as delay } from "node:timers/promises";
 import { loadPiFeatures, PI_FEATURE_NAMES } from "../../feature-catalog.mjs";
 import { CANDIDATE_FEATURE_NAMES } from "../rubato-components/candidate-main.mjs";
 import { feature, files, patches, patchInteractiveTranscript } from "./patches.mjs";
+import { resolvePiRuntime } from "../../resolve-runtime.mjs";
+const stockPackageDir = (name) => resolvePiRuntime({ root: fileURLToPath(new URL("../..", import.meta.url)) }).packages[`@earendil-works/${name}`].dir;
 
 const featureDir = dirname(fileURLToPath(import.meta.url));
 const stockPath = join(featureDir, "../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/interactive-mode.js");
-const tuiPackage = join(featureDir, "../../node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui");
+const tuiPackage = join(stockPackageDir("pi-tui"));
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const scratch = mkdtempSync(join(tmpdir(), "rubato-transcript-cache-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));

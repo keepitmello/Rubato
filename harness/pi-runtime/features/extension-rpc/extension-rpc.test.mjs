@@ -138,8 +138,7 @@ test("one-shot json run stays alive for pending work and takes its completion as
   const scratch = await mkdtemp(join(tmpdir(), "rubato-print-hold-"));
   t.after(() => rm(scratch, { recursive: true, force: true }));
   const staged = await stagePiRuntime({ sourceRoot, outputRoot: join(scratch, "engine"), features: await loadPiFeatures(["extension-rpc"]) });
-  const packageRoot = dirname(dirname(staged.runtime.patchableCliEntry));
-  const streamUrl = pathToFileURL(join(packageRoot, "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js")).href;
+  const streamUrl = pathToFileURL(join(staged.runtime.packages["@earendil-works/pi-ai"].dir, "dist/utils/event-stream.js")).href;
   const cwd = join(scratch, "project"), agentDir = join(scratch, "agent");
   await Promise.all([mkdir(cwd), mkdir(agentDir)]);
   const extension = join(scratch, "extension.mjs");

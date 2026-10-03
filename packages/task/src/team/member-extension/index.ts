@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url"
 
-import type { ExtensionAPI } from "@code-yeongyu/senpi"
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { TeamModeConfigSchema, type TeamModeConfig } from "@rubato/team-core/config"
 import { log } from "@rubato/utils"
 

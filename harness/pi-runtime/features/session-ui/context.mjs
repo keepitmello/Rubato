@@ -6,7 +6,7 @@ const current = new AsyncLocalStorage();
 const createState = () => ({ registeredThemes: new Map(), cellDimensions: { widthPx: 9, heightPx: 18 },
   cachedCapabilities: null, capabilityOverrides: {}, globalKeybindings: null,
   _kittyProtocolActive: false, _lastEventType: 'press', kittyTransmissionGeneration: 0,
-  rawStdoutWriteTail: Promise.resolve(),
+  rawStdoutWriteTail: Promise.resolve(), terminalColors: {}, terminalColorsPending: false, terminalColorScheme: undefined,
   trackedDetachedChildPids: new Set(), commandResultCache: new Map() });
 const standalone = createState();
 

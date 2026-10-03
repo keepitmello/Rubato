@@ -1,3 +1,4 @@
+import { PI_VERSION } from "../../pi-version.mjs";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
@@ -153,15 +154,11 @@ const staged = await stagePiRuntime({
 });
 const runtime = resolvePiRuntime({ root: staged.root });
 const sdk = await import(pathToFileURL(runtime.sdkEntry));
-const { AssistantMessageEventStream } = await import(pathToFileURL(join(
-  runtime.codingAgentDir,
-  "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js",
+const { AssistantMessageEventStream } = await import(pathToFileURL(join(runtime.packages["@earendil-works/pi-ai"].dir, "dist/utils/event-stream.js",
 )));
 // 0.86 hands providers a normalized transcript: the prompt and the tool loadout are
 // message deltas, not top-level `context.systemPrompt` / `context.tools` fields.
-const { getCurrentSystemPrompt, getCurrentTools } = await import(pathToFileURL(join(
-  runtime.codingAgentDir,
-  "node_modules/@earendil-works/pi-ai/dist/utils/transcript.js",
+const { getCurrentSystemPrompt, getCurrentTools } = await import(pathToFileURL(join(runtime.packages["@earendil-works/pi-ai"].dir, "dist/utils/transcript.js",
 )));
 const { createContextNotesExtension } = await import(pathToFileURL(join(
   runtime.codingAgentDir,
@@ -305,7 +302,7 @@ test("descriptor is stock-locked, drift-failing, and composes with shared core f
   assert.equal(patches.length, 17);
   assert.equal(new Set(patches.map((entry) => entry.path)).size, patches.length);
   assert.ok(patches.every((entry) => ["@earendil-works/pi-coding-agent", "@earendil-works/pi-agent-core"].includes(entry.packageName)));
-  assert.ok(patches.every((entry) => entry.version === "0.86.1"));
+  assert.ok(patches.every((entry) => entry.version === PI_VERSION));
   assert.ok(patches.every((entry) => /^[a-f0-9]{64}$/.test(entry.preimageSha256)));
   assert.equal(staged.receipt.files.filter((entry) => entry.patches.some((id) => id.startsWith("context-window/"))).length, 17);
   assert.equal(staged.receipt.addedFiles.filter((entry) => entry.feature === "context-window").length, 2);
@@ -672,9 +669,7 @@ test("actual unbundled RPC runs new_context and exposes stale/abort results with
   mkdirSync(agentDir);
   mkdirSync(sessionDir);
 
-  const streamUrl = pathToFileURL(join(
-    runtime.codingAgentDir,
-    "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js",
+  const streamUrl = pathToFileURL(join(runtime.packages["@earendil-works/pi-ai"].dir, "dist/utils/event-stream.js",
   )).href;
   const providerPath = join(scratch, "context-window-provider.mjs");
   writeFileSync(providerPath, `

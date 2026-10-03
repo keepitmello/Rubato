@@ -1,7 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process"
 import { EventEmitter } from "node:events"
 import { PassThrough } from "node:stream"
-import type { AgentSessionEvent } from "@code-yeongyu/senpi"
+import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent"
 import { afterEach, describe, expect, test } from "bun:test"
 
 import { RpcProcessRunner } from "../rpc-process"

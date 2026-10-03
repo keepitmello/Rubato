@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -11,11 +11,17 @@ import {
 } from "./anthropic-server-compaction.mjs";
 import { createCompactionExtension } from "./extension.mjs";
 import { patchAnthropicMessagesServerCompaction } from "./patches.mjs";
+import {
+  CLAUDE_CODE_BILLING_HEADER,
+  CLAUDE_CODE_VERSION,
+} from "../../../rubato-pi/src/transforms/misc-claude-code-version.mjs";
 
-const stockPiAi = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "../../node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist",
-);
+// 0.86.1 nested pi-ai under pi-coding-agent; 1.0.1 hoists it as a sibling.
+const runtimeModules = join(dirname(fileURLToPath(import.meta.url)), "../../node_modules/@earendil-works");
+const stockPiAi = [
+  join(runtimeModules, "pi-coding-agent/node_modules/@earendil-works/pi-ai/dist"),
+  join(runtimeModules, "pi-ai/dist"),
+].find(existsSync);
 
 function chainedAnthropicMessages() {
   const stock = readFileSync(join(stockPiAi, "api/anthropic-messages.js"), "utf8");
@@ -44,4 +50,16 @@ test("creating the compaction extension arms the server-compaction lane marker",
   const settingsManager = { getCompactionSettings() { return { enabled: true }; } };
   createCompactionExtension({ settingsManager });
   assert.equal(globalThis[Symbol.for(ANTHROPIC_SERVER_COMPACTION_LANE_MARKER)], true);
+});
+
+// 1.0.1 stock already ships 2.1.280, equal to our declaration, so a staged-engine check cannot
+// tell who wrote it. Whatever literal stock ships, the patch must bake the declared constant.
+test("Claude Code version bake replaces any stock literal with the declared constant", () => {
+  const stock = readFileSync(join(stockPiAi, "api/anthropic-messages.js"), "utf8");
+  const drifted = stock.replace(/const claudeCodeVersion = "[^"\n]*";/, 'const claudeCodeVersion = "0.0.0-stock-drift";');
+  assert.notEqual(drifted, stock);
+  const patched = patchAnthropicMessagesServerCompaction(drifted);
+  assert.ok(patched.includes(`const claudeCodeVersion = "${CLAUDE_CODE_VERSION}";`));
+  assert.ok(!patched.includes("0.0.0-stock-drift"));
+  assert.ok(patched.includes(CLAUDE_CODE_BILLING_HEADER));
 });

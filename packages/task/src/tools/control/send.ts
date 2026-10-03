@@ -1,4 +1,4 @@
-import { defineTool, type ToolDefinition } from "@code-yeongyu/senpi"
+import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent"
 
 import { createSenpiAgentHandle } from "../host/senpi-agent-host"
 import { defaultResolveCallerSessionId } from "./caller-session"

@@ -1,6 +1,6 @@
 import type { AgentError, AgentHost, ResolvedAgentSpec } from "@rubato/agent-core"
 import { resolveAgentRequest } from "@rubato/agent-core"
-import type { AgentToolResult, AgentToolUpdateCallback } from "@code-yeongyu/senpi"
+import type { AgentToolResult, AgentToolUpdateCallback } from "@earendil-works/pi-coding-agent"
 
 import { createSenpiAgentHost } from "../host/senpi-agent-host"
 import { agentPresetCatalog, closedModelCatalog } from "./catalogs"

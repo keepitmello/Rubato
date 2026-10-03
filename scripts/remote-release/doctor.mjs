@@ -6,6 +6,34 @@ import { HUB_LABEL, HUB_PORT_MAX, HUB_PORT_MIN, SUPPORTED_BUN_VERSION, ZMX_COMMI
 import { fileMode, pathExists, readJson, redact, run, SECRET_VALUE, sha256 } from "./lib.mjs"
 import { assertBunVersion, assertNoFunnel, assertNodeVersion, canonicalHubEntryPath, launchAgentNeedsRepair, listManagedZmxSessions, serveHasRubatoTarget, serveStatus, tailscaleIdentity, waitForHealth } from "./system.mjs"
 
+const STOCK_PI_PACKAGES = Object.freeze([
+  "@earendil-works/pi-agent-core",
+  "@earendil-works/pi-ai",
+  "@earendil-works/pi-coding-agent",
+  "@earendil-works/pi-tui",
+])
+
+/**
+ * The repository builds and tests on the stock pi the engine runs: every pi package is a direct,
+ * exact root pin of the engine's pi-coding-agent version, any root override agrees, and no npm
+ * alias points a pi package at another fork.
+ */
+export function assertStockPiPins({ root, engine }) {
+  const version = engine?.dependencies?.["@earendil-works/pi-coding-agent"]
+  if (typeof version !== "string" || !/^\d+\.\d+\.\d+$/.test(version)) {
+    throw new Error("harness/pi-runtime does not pin @earendil-works/pi-coding-agent to an exact version")
+  }
+  for (const name of STOCK_PI_PACKAGES) {
+    if (root?.devDependencies?.[name] !== version) throw new Error(`${name} is not exactly pinned to ${version}`)
+    const override = root?.overrides?.[name]
+    if (override !== undefined && override !== version) throw new Error(`${name} override ${override} differs from ${version}`)
+  }
+  for (const [name, spec] of Object.entries({ ...root?.dependencies, ...root?.devDependencies, ...root?.overrides })) {
+    if (typeof spec === "string" && spec.startsWith("npm:")) throw new Error(`${name} is aliased to ${spec}`)
+  }
+  return { version }
+}
+
 export async function doctor(paths, options = {}) {
   const runner = options.runner ?? run
   const checks = []
@@ -72,19 +100,11 @@ export async function doctor(paths, options = {}) {
   })
   await check("zmx-smoke-candidates", async () => ({ staleCandidates: await staleCandidates(paths) }), { warning: true })
   await check("pi-patch-pin", async () => {
-    const packageJson = await readJson(join(options.repository ?? process.cwd(), "package.json"))
-    const pins = {
-      "@earendil-works/pi-agent-core": "npm:@code-yeongyu/senpi-agent-core@2026.9.4-3",
-      "@earendil-works/pi-ai": "npm:@code-yeongyu/senpi-ai@2026.9.4-3",
-      "@earendil-works/pi-tui": "npm:@code-yeongyu/senpi-tui@2026.9.4-3",
-    }
-    for (const [name, version] of Object.entries(pins)) {
-      if (packageJson.overrides?.[name] !== version) throw new Error(`${name} is not exactly pinned to ${version}`)
-    }
-    if (packageJson.devDependencies?.["@code-yeongyu/senpi"] !== "2026.9.4-3") {
-      throw new Error("@code-yeongyu/senpi is not exactly pinned to 2026.9.4-3")
-    }
-    return { version: "2026.9.4-3" }
+    const repository = options.repository ?? process.cwd()
+    return assertStockPiPins({
+      root: await readJson(join(repository, "package.json")),
+      engine: await readJson(join(repository, "harness", "pi-runtime", "package.json")),
+    })
   })
   await check("tailscale-serve", async () => {
     if (!host) host = await readJson(paths.host)

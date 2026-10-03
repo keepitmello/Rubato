@@ -15,9 +15,7 @@ after(() => rmSync(scratch, { recursive: true, force: true }));
 const staged = await stagePiRuntime({ sourceRoot, outputRoot: join(scratch, "stage"), features: [cacheWarmingFeature] });
 const runtime = resolvePiRuntime({ root: staged.root });
 const { CacheWarmer } = await import(pathToFileURL(join(runtime.codingAgentDir, "dist/core/cache-warmer.js")).href);
-const { AssistantMessageEventStream } = await import(pathToFileURL(join(
-  runtime.codingAgentDir,
-  "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js",
+const { AssistantMessageEventStream } = await import(pathToFileURL(join(runtime.packages["@earendil-works/pi-ai"].dir, "dist/utils/event-stream.js",
 )).href);
 
 const MIN = 60_000;
@@ -193,7 +191,10 @@ test("a shorter window than the time already passed ends warming", async (t) => 
   const { warmer, warms } = harness("anthropic", 0);
   warmer.start({ model: model("anthropic"), context: {}, options: {} }, () => true);
   warmer.onAgentSettled();
-  await advance(70 * MIN);
+  // Two ticks, so the 40-minute timer fires on time. One 70-minute tick would make it 30 minutes
+  // late, and since 0.87 stock drops a refresh that late (see the late-timer test below).
+  await advance(40 * MIN);
+  await advance(30 * MIN);
   assert.equal(warms.length, 1);
   warmer.setSessionWarming({ hours: 1 });
   assert.equal(warmer.status.state, "inactive");
@@ -221,3 +222,31 @@ test("a session turned off stays off through later inputs until it is turned bac
   warmer.setSessionWarming({ enabled: true });
   assert.equal(warmer.status.state, "scheduled");
 });
+
+// Stock (0.87+) gives a late timer half of the lifetime left after the interval, then calls the
+// refresh a miss: a refresh that late would write a new cache at full price instead of warming.
+// Rubato passes the real entry lifetime, so that grace is 10 minutes for Claude and 5 for Codex.
+for (const [provider, intervalMin, graceMin] of [["anthropic", 40, 10], ["openai-codex", 20, 5]]) {
+  test(`${provider}: a timer that fires late still warms within ${graceMin} minutes, and stops after`, async (t) => {
+    t.after(() => mock.timers.reset());
+    // Each lateness on a fresh warmer: after a warm the next one counts from that warm.
+    for (const [lateMs, warmed] of [[5_000, true], [graceMin * MIN, true], [graceMin * MIN + 1, false]]) {
+      mock.timers.reset();
+      mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+      const { warmer, warms } = harness(provider, 0);
+      warmer.start({ model: model(provider), context: {}, options: {} }, () => true);
+      warmer.onAgentSettled();
+      assert.equal(warmer.status.nextWarmAt, intervalMin * MIN);
+      await advance(intervalMin * MIN + lateMs);
+      if (warmed) {
+        assert.equal(warms.length, 1, `${lateMs} ms late still warms`);
+        assert.equal(warmer.status.state, "scheduled");
+      } else {
+        assert.equal(warms.length, 0, `${lateMs} ms late is past the grace`);
+        assert.equal(warmer.status.state, "inactive");
+        assert.match(warmer.status.reason, /cache refresh deadline missed/);
+      }
+      warmer.cancel();
+    }
+  });
+}

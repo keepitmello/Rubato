@@ -7,6 +7,7 @@ const evidence = JSON.parse(readFileSync(
   "utf8",
 ));
 const rootPackage = JSON.parse(readFileSync(new URL("../../../../package.json", import.meta.url), "utf8"));
+const enginePackage = JSON.parse(readFileSync(new URL("../../../pi-runtime/package.json", import.meta.url), "utf8"));
 
 const PI_COMMIT = "914cf1472e715297caa30db4b9535d534a9eb718";
 const ZMX_COMMIT = "0266042ca8f399c9d76825739b93443e2d5bf47a";
@@ -18,7 +19,7 @@ function assertLicensePin(license) {
   if (license.sha256 !== undefined) assert.match(license.sha256, SHA256);
 }
 
-test("upstream Pi source evidence stays 0.84.2 and runtime overrides follow senpi 2026.9.4-3", () => {
+test("upstream Pi source evidence stays 0.84.2 and the root workspace runs on stock pi", () => {
   assert.equal(evidence.schemaVersion, 1);
   assert.deepEqual(
     {
@@ -43,18 +44,22 @@ test("upstream Pi source evidence stays 0.84.2 and runtime overrides follow senp
     "@earendil-works/pi-coding-agent",
     "@earendil-works/pi-tui",
   ];
-  const runtimeOverrides = {
-    "@earendil-works/pi-agent-core": "npm:@code-yeongyu/senpi-agent-core@2026.9.4-3",
-    "@earendil-works/pi-ai": "npm:@code-yeongyu/senpi-ai@2026.9.4-3",
-    "@earendil-works/pi-coding-agent": "0.84.2",
-    "@earendil-works/pi-tui": "npm:@code-yeongyu/senpi-tui@2026.9.4-3",
-  };
   assert.deepEqual(evidence.pi.packages.map((entry) => entry.name), names);
-  assert.equal(rootPackage.devDependencies["@code-yeongyu/senpi"], "2026.9.4-3");
+  // Repo tests must run on the same stock pi the engine runs: every pi package is a direct,
+  // exact, unaliased root pin of one version, and the retired senpi fork is gone.
+  const stockPi = rootPackage.devDependencies["@earendil-works/pi-coding-agent"];
+  assert.match(stockPi, /^\d+\.\d+\.\d+$/);
+  assert.equal(stockPi, enginePackage.dependencies["@earendil-works/pi-coding-agent"], "root pi matches the engine pi");
+  assert.equal(rootPackage.devDependencies["@code-yeongyu/senpi"], undefined);
   for (const entry of evidence.pi.packages) {
-    assert.equal(rootPackage.overrides[entry.name], runtimeOverrides[entry.name], `${entry.name} root override`);
+    assert.equal(rootPackage.devDependencies[entry.name], stockPi, `${entry.name} root devDependency`);
+    const override = rootPackage.overrides[entry.name];
+    if (override !== undefined) assert.equal(override, stockPi, `${entry.name} root override`);
     assert.match(entry.sourceSha256, SHA256, `${entry.name} source hash`);
     assert.match(entry.integrity, /^sha512-[A-Za-z0-9+/]+=*$/, `${entry.name} registry integrity`);
+  }
+  for (const [name, spec] of Object.entries({ ...rootPackage.devDependencies, ...rootPackage.overrides })) {
+    assert.doesNotMatch(String(spec), /^npm:@code-yeongyu\/senpi/, `${name} still aliases senpi`);
   }
   assertLicensePin(evidence.pi.license);
 });

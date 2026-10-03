@@ -1,5 +1,6 @@
-import type { CreateAgentSessionOptions, SessionManager, ToolDefinition } from "@code-yeongyu/senpi"
+import type { CreateAgentSessionOptions, SessionManager, ToolDefinition } from "@earendil-works/pi-coding-agent"
 
+import type { LegacyChildSessionFields } from "../../senpi/legacy-session-options"
 import type { ChildSpec } from "../in-process"
 import { createChildResourceLoader } from "./child-loader"
 import { RunnerError } from "./runner-error"
@@ -73,7 +74,7 @@ export function resolveMemberScopedToolNames(
  * the denylist on senpi's real deny field `excludeTools`
  * (`tools:` alone does NOT deny), runtime fallback settings, and model/auth/runtime passthroughs.
  */
-export type ChildSessionOptions = CreateAgentSessionOptions & {
+export type ChildSessionOptions = CreateAgentSessionOptions & LegacyChildSessionFields & {
   readonly serviceTier?: "priority" | "auto"
 }
 

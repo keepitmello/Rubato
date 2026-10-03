@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
-const PACKAGE_VERSION = "0.86.1";
+import { PI_VERSION as PACKAGE_VERSION } from "../../pi-version.mjs";
 const FEATURE_IMPORT = 'import { AbortProvenance } from "../rubato-features/abort-provenance/state.mjs";';
 
 function replaceOnce(source, before, after, label) {
@@ -42,18 +42,17 @@ function patchAgentSessionRuntime(source) {
     next,
     `    _retryAbortController = undefined;
     _retryAttempt = 0;
-    // Bash execution state`,
+`,
     `    _retryAbortController = undefined;
     _retryAttempt = 0;
     _abortProvenance = new AbortProvenance();
-    // Bash execution state`,
+`,
     "session-state",
   );
   next = replaceOnce(
     next,
-    `        // Emit to extensions first
+    `        // Emit to extensions first, then notify public listeners.
         await this._emitExtensionEvent(event);
-        // Notify all listeners
         this._emit(event.type === "agent_end" ? { ...event, willRetry: this._willRetryAfterAgentEnd(event) } : event);`,
     `        // Compute retry intent once so extensions and session listeners see one event object.
         const agentEndWillRetry = event.type === "agent_end" && this._willRetryAfterAgentEnd(event);
@@ -104,43 +103,47 @@ function patchAgentSessionRuntime(source) {
   next = replaceOnce(
     next,
     `    async _handlePostAgentRun() {
-        const msg = this._lastAssistantMessage;
+        const message = this._lastAssistantMessage;
+        const toolResults = this._lastAssistantToolResults;
         this._lastAssistantMessage = undefined;
+        this._lastAssistantToolResults = [];
         if (this._agentRunAbortRequested) {
             this._finishCancelledRetry();
             return false;
         }
-        if (!msg) {
-            return false;
-        }
-        if (this._isRetryableError(msg) && (await this._prepareRetry(msg))) {
+        if (!message)
+            return this.agent.hasQueuedMessages();
+        if (this._isRetryableError(message) && (await this._prepareRetry(message))) {
             if (this._agentRunAbortRequested)
                 this._finishCancelledRetry();
+            this._failedResponse = message;
             return !this._agentRunAbortRequested;
         }
         if (this._agentRunAbortRequested) {
             this._finishCancelledRetry();
             return false;
         }
-        if (msg.stopReason === "error" && this._retryAttempt > 0) {
+        if (message.stopReason === "error" && this._retryAttempt > 0) {
             this._emit({
                 type: "auto_retry_end",
                 success: false,
                 attempt: this._retryAttempt,
-                finalError: msg.errorMessage,
+                finalError: message.errorMessage,
             });
             this._retryAttempt = 0;
         }
-        if (await this._checkCompaction(msg)) {
+        if (await this._checkCompaction(message, true, toolResults)) {
             return !this._agentRunAbortRequested;
         }
-        // The agent loop drains both queues before emitting agent_end. Any messages
-        // here were queued by agent_end extension handlers and need a continuation.
+        // The low-level loop drains both queues before agent_end. Messages queued by
+        // agent_end handlers require a fresh run before pre-settlement handlers fire.
         return !this._agentRunAbortRequested && this.agent.hasQueuedMessages();
     }`,
     `    async _handlePostAgentRun() {
-        const msg = this._lastAssistantMessage;
+        const message = this._lastAssistantMessage;
+        const toolResults = this._lastAssistantToolResults;
         this._lastAssistantMessage = undefined;
+        this._lastAssistantToolResults = [];
         // The flag belongs to this post-run decision. Consume it up front so the early
         // returns below cannot leak it into the next run, then re-check it after every
         // await where a fresh abort can land.
@@ -149,11 +152,13 @@ function patchAgentSessionRuntime(source) {
             this._finishCancelledRetry();
             return false;
         }
-        if (!msg || stopContinuation) {
+        if (stopContinuation) {
             return false;
         }
-        if (this._isRetryableError(msg)) {
-            const retryPrepared = await this._prepareRetry(msg);
+        if (!message)
+            return this.agent.hasQueuedMessages();
+        if (this._isRetryableError(message)) {
+            const retryPrepared = await this._prepareRetry(message);
             if (this._abortProvenance.takeStopContinuation()) {
                 return false;
             }
@@ -162,6 +167,7 @@ function patchAgentSessionRuntime(source) {
                 return false;
             }
             if (retryPrepared) {
+                this._failedResponse = message;
                 return true;
             }
         }
@@ -169,27 +175,43 @@ function patchAgentSessionRuntime(source) {
             this._finishCancelledRetry();
             return false;
         }
-        if (msg.stopReason === "error" && this._retryAttempt > 0) {
+        if (message.stopReason === "error" && this._retryAttempt > 0) {
             this._emit({
                 type: "auto_retry_end",
                 success: false,
                 attempt: this._retryAttempt,
-                finalError: msg.errorMessage,
+                finalError: message.errorMessage,
             });
             this._retryAttempt = 0;
         }
-        const compacted = await this._checkCompaction(msg);
+        const compacted = await this._checkCompaction(message, true, toolResults);
         if (this._abortProvenance.takeStopContinuation()) {
             return false;
         }
         if (compacted) {
             return !this._agentRunAbortRequested;
         }
-        // The agent loop drains both queues before emitting agent_end. Any messages
-        // here were queued by agent_end extension handlers and need a continuation.
+        // The low-level loop drains both queues before agent_end. Messages queued by
+        // agent_end handlers require a fresh run before pre-settlement handlers fire.
         return !this._agentRunAbortRequested && this.agent.hasQueuedMessages();
     }`,
     "post-run-stop",
+  );
+  // 1.0 skips _handlePostAgentRun entirely once \`_agentRunAbortRequested\` is set, so a
+  // stop armed by an abort that joined this run's agent_end boundary was never consumed and
+  // silently cancelled the next run's first retry. The flag only governs this run.
+  next = replaceOnce(
+    next,
+    `        finally {
+            if (this._agentRunAbortRequested)
+                this._finishCancelledRetry();
+            this._failedResponse = undefined;`,
+    `        finally {
+            this._abortProvenance.takeStopContinuation();
+            if (this._agentRunAbortRequested)
+                this._finishCancelledRetry();
+            this._failedResponse = undefined;`,
+    "run-scoped-stop",
   );
   next = replaceOnce(
     next,
@@ -214,6 +236,8 @@ function patchAgentSessionRuntime(source) {
         this.abortRetry();
         this.abortCompaction();
         this.abortBranchSummary();
+        if (this._isBeforeSettle)
+            this._abortDuringBeforeSettle = true;
         this.agent.abort();
         await this.waitForIdle();
     }`,
@@ -242,6 +266,10 @@ function patchAgentSessionRuntime(source) {
             this.abortCompaction();
         }
         this.abortBranchSummary();
+        // 1.0: an abort during the agent_before_settle boundary must stop its continuation
+        // whether or not an agent request is still streaming.
+        if (this._isBeforeSettle)
+            this._abortDuringBeforeSettle = true;
         if (decision.abortCurrentAgent) {
             this.agent.abort();
         }
@@ -372,10 +400,10 @@ export interface SessionAbortEvent {
   next = replaceOnce(
     next,
     `    on(event: "session_shutdown", handler: ExtensionHandler<SessionShutdownEvent>): () => void;
-    on(event: "session_before_tree"`,
+`,
     `    on(event: "session_shutdown", handler: ExtensionHandler<SessionShutdownEvent>): () => void;
     on(event: "session_abort", handler: ExtensionHandler<SessionAbortEvent>): () => void;
-    on(event: "session_before_tree"`,
+`,
     "types-api-overload",
   );
   return next;
@@ -411,9 +439,9 @@ export const files = Object.freeze([
 ]);
 
 export const patches = Object.freeze([
-  patch("dist/core/agent-session.js", "edaff7055ced7d49d25135c92415fbbfd9c14c4a29be5a79510ab9216045d6d9", patchAgentSessionRuntime),
-  patch("dist/core/agent-session.d.ts", "423bdca09eabd78aa1e729136dd9a1e2fff3b8116c6bc2d3fee3337b269a8432", patchAgentSessionTypes),
-  patch("dist/core/extensions/types.d.ts", "a4d5b8774fa8015b8a3274614f1398a6aeeffdd888c122910439666955dc2a52", patchExtensionTypes),
-  patch("dist/core/extensions/index.d.ts", "5b294bd70da0744cb18a45d1cfb774237986c047ec1996e03f24a9605efdd4ab", patchExtensionIndexTypes),
-  patch("dist/index.d.ts", "44bf19d2716cb18382aa6bd0ae88b7e03ee50ae75b56acb6d11beb40dfe99dea", patchPublicIndexTypes),
+  patch("dist/core/agent-session.js", "35ca1dabd54d98c236c9601b569c2856b726ade392d06b2eaaf50158f48913ab", patchAgentSessionRuntime),
+  patch("dist/core/agent-session.d.ts", "2e50b35a37f9c7149c6297ae554b2d965bd74dbfcb8ccd7be44f13226ce497e7", patchAgentSessionTypes),
+  patch("dist/core/extensions/types.d.ts", "abd9e9be0bf21b4c35621fe90b79af75c85b774e8b254b515d699785fda5962a", patchExtensionTypes),
+  patch("dist/core/extensions/index.d.ts", "fe5661c6cd9a948293f0f1d1db5a052dcc60493f6b1f68349a7ab96987b10e40", patchExtensionIndexTypes),
+  patch("dist/index.d.ts", "b254e36846b1dcc64ce1a8ba72e23fb410df4aa4408ba8c23e69e5b3f934e3cc", patchPublicIndexTypes),
 ]);

@@ -1,5 +1,5 @@
 import type { ChildProcess } from "node:child_process"
-import type { RpcResponse, RpcSessionState } from "@code-yeongyu/senpi"
+import type { RpcResponse, RpcSessionState } from "@earendil-works/pi-coding-agent"
 import { log } from "@rubato/utils"
 
 import type { RunnerOutcome } from "../in-process/child-handle"

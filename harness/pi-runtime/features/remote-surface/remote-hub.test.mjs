@@ -10,11 +10,13 @@ import { createUnixConnector } from "./surface.mjs";
 import { createRemoteSurfaceExtension, REMOTE_SURFACE_FACTORY_NAME } from "./index.mjs";
 import { loadRemoteProtocol } from "./protocol-loader.mjs";
 import { defaultLiveHubSocketPath, HOST_ID, LIVE_SESSION_ID, startLocalHub } from "./local-hub.mjs";
+import { resolvePiRuntime } from "../../resolve-runtime.mjs";
+const stockPackageDir = (name) => resolvePiRuntime({ root: fileURLToPath(new URL("../..", import.meta.url)) }).packages[`@earendil-works/${name}`].dir;
 
 const here = dirname(fileURLToPath(import.meta.url));
 const runtimeRoot = join(here, "../..");
 const sdkEntry = join(runtimeRoot, "node_modules/@earendil-works/pi-coding-agent/dist/index.js");
-const streamEntry = join(runtimeRoot, "node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js");
+const streamEntry = join(stockPackageDir("pi-ai"), "dist/utils/event-stream.js");
 
 const emptyUsage = {
   input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,

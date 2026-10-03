@@ -69,7 +69,7 @@ test("stage keeps pristine source and records selected hooks on unbundled entrie
   assert.equal(await readFile(join(input.outputRoot, target), "utf8"), CODE.replace("stock", "adapted"));
   assert.equal(result.receipt.files[0].after, digest(CODE.replace("stock", "adapted")));
   assert.equal(JSON.parse(await readFile(join(input.outputRoot, "rubato-pi-stage.json"), "utf8")).state, "ready");
-  assert.equal(result.receipt.lockedPackages.length, 6);
+  assert.equal(result.receipt.lockedPackages.length, PI_PACKAGES.length);
   assert.deepEqual(result.receipt.directDependencies.map(({ name }) => name), [PI_PACKAGES[0]]);
   assert.equal(result.receipt.binShims.length, 3);
   for (const shim of result.receipt.binShims) {

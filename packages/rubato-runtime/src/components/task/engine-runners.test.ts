@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { CreateAgentSessionOptions, ToolDefinition } from "@code-yeongyu/senpi"
+import type { CreateAgentSessionOptions, ToolDefinition } from "@earendil-works/pi-coding-agent"
 import { RubatoTaskSettingsSchema } from "@rubato/config-core"
 import {
   InProcessRunner,

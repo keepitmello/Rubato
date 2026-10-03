@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test"
 
 import type { ResolvedModelRecord } from "../../state"
-import { createRuntimeFallbackSettings } from "./runtime-fallback-settings"
+import { createRuntimeFallbackSettings, type SenpiRetryFallbackSettings } from "./runtime-fallback-settings"
+
+function retryOf(settings: ReturnType<typeof createRuntimeFallbackSettings>): SenpiRetryFallbackSettings {
+  return settings.getSettings().retry as unknown as SenpiRetryFallbackSettings
+}
 
 describe("createRuntimeFallbackSettings", () => {
   test("#given no child fallback chain #when settings are created #then global model fallback is disabled", () => {
@@ -9,10 +13,7 @@ describe("createRuntimeFallbackSettings", () => {
     const settings = createRuntimeFallbackSettings("vendor/primary", undefined)
 
     // then
-    expect(settings.getRetryFallbackSettings()).toMatchObject({
-      modelFallback: false,
-      chains: {},
-    })
+    expect(retryOf(settings)).toEqual({ modelFallback: false })
   })
 
   test("#given an explicit child fallback chain #when settings are created #then only that chain is enabled", () => {
@@ -26,9 +27,9 @@ describe("createRuntimeFallbackSettings", () => {
     const settings = createRuntimeFallbackSettings("vendor/primary", [fallback])
 
     // then
-    expect(settings.getRetryFallbackSettings()).toMatchObject({
+    expect(retryOf(settings)).toEqual({
       modelFallback: true,
-      chains: {
+      fallbackChains: {
         "vendor/primary": ["vendor/fallback"],
       },
     })

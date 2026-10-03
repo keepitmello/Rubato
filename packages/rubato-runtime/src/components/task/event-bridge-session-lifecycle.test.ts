@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 
-import type { SessionShutdownEvent } from "@code-yeongyu/senpi"
+import type { SessionShutdownEvent } from "@earendil-works/pi-coding-agent"
 import type { TaskRecord } from "@rubato/task"
 
 import { wireHarness } from "./event-bridge.test-harness"

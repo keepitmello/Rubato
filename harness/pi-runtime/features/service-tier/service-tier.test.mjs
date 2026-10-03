@@ -1,3 +1,4 @@
+import { PI_VERSION } from "../../pi-version.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
@@ -10,7 +11,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import test, { after } from "node:test";
@@ -53,6 +54,10 @@ function preparePatchedPackage() {
   cpSync(join(pristinePackage, "dist"), join(patchedPackage, "dist"), { recursive: true });
   cpSync(join(pristinePackage, "package.json"), join(patchedPackage, "package.json"));
   symlinkSync(join(pristinePackage, "node_modules"), join(patchedPackage, "node_modules"), "dir");
+  // 1.0.1 ships no shrinkwrap: npm hoists pi's dependencies (cross-spawn, pi-ai, ...) next to
+  // the package. Link that level too so the scratch copy resolves them like the install.
+  const hoisted = resolve(pristinePackage, "../..");
+  if (basename(hoisted) === "node_modules") symlinkSync(hoisted, join(scratchRoot, "node_modules"), "dir");
 
   for (const spec of patches) {
     const target = join(patchedPackage, spec.path);
@@ -257,12 +262,12 @@ test("patch manifest is version-locked, drift-strict, and keeps SettingsManager 
     [
       {
         target: "runtime",
-        version: "0.86.1",
+        version: PI_VERSION,
         path: "rubato-features/service-tier/extension.mjs",
       },
       {
         target: "runtime",
-        version: "0.86.1",
+        version: PI_VERSION,
         path: "rubato-features/service-tier/THIRD_PARTY_NOTICES.md",
       },
     ],
@@ -271,7 +276,7 @@ test("patch manifest is version-locked, drift-strict, and keeps SettingsManager 
   assert.equal(new Set(patches.map((patch) => patch.id)).size, patches.length);
   for (const spec of patches) {
     assert.equal(spec.packageName, "@earendil-works/pi-coding-agent");
-    assert.equal(spec.version, "0.86.1");
+    assert.equal(spec.version, PI_VERSION);
     const pristine = readFileSync(join(pristinePackage, spec.path), "utf8");
     assert.equal(sha256(pristine), spec.preimageSha256, `${spec.path} hash`);
     const output = spec.apply(pristine);

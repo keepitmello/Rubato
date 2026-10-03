@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { materializeProtocolBundle } from "./protocol-loader.mjs";
 import { patches } from "./patches.mjs";
 
-const VERSION = "0.86.1";
+import { PI_VERSION as VERSION } from "../../pi-version.mjs";
 const PROTOCOL_BUNDLE = materializeProtocolBundle({
   dest: join(tmpdir(), "rubato-remote-protocol-feature-bundle", "protocol.mjs"),
 });

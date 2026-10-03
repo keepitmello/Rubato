@@ -27,8 +27,9 @@ export type ChildSession = {
   // No active agent run. A wake (a monitor event, a background exit) starts a run on an idle session.
   readonly isIdle?: boolean
   prompt(text: string): Promise<void>
-  steer(text: string): Promise<void>
-  followUp(text: string): Promise<void>
+  // Stock pi 1.0 resolves these with a "handled" | "queued" disposition; the runner does not need it.
+  steer(text: string): Promise<unknown>
+  followUp(text: string): Promise<unknown>
   abort(): Promise<void>
   subscribe(listener: ChildSessionListener): () => void
   getLastAssistantText(): string | undefined
@@ -329,7 +330,7 @@ function createTrackedChildHandle(
   // arrives while the run is held between turns opens the next turn itself. If the session cannot
   // take a prompt right now, the message stays queued for the next wake.
   const deliverWhileHeld = (text: string): void => {
-    const delivery = session.prompt(text).catch(() => session.followUp(text)).catch(() => undefined)
+    const delivery: Promise<void> = session.prompt(text).catch(() => session.followUp(text)).then(() => undefined, () => undefined)
     heldPrompts.add(delivery)
     void delivery.then(() => heldPrompts.delete(delivery))
   }

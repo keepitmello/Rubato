@@ -84,9 +84,12 @@ describe("rubato-runtime package shape", () => {
       typecheck: "tsgo --noEmit -p tsconfig.json",
       test: "bun test src/**/*.test.ts",
     })
-    expect(peerDependencies["@code-yeongyu/senpi"]).toBe("2026.9.4-3")
-    expect(peerDependenciesMeta["@code-yeongyu/senpi"]).toMatchObject({ optional: true })
-    expect(devDependencies["@code-yeongyu/senpi"]).toBe("2026.9.4-3")
+    // The adapter builds and tests against the same stock pi the root workspace pins.
+    const stockPi = readString(readStringRecord(rootManifest, "devDependencies"), "@earendil-works/pi-coding-agent")
+    expect(peerDependencies["@earendil-works/pi-coding-agent"]).toBe(stockPi)
+    expect(peerDependenciesMeta["@earendil-works/pi-coding-agent"]).toMatchObject({ optional: true })
+    expect(devDependencies["@earendil-works/pi-coding-agent"]).toBe(stockPi)
+    expect(dependencies["@earendil-works/pi-tui"]).toBe(stockPi)
     expect(dependencies).toMatchObject({
       "@rubato/utils": "workspace:*",
       "@rubato/lsp-core": "workspace:*",

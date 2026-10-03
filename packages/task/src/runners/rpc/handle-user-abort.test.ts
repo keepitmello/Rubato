@@ -1,6 +1,6 @@
 import type { ChildProcess } from "node:child_process"
 import { EventEmitter } from "node:events"
-import type { AgentSessionEvent } from "@code-yeongyu/senpi"
+import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent"
 import { describe, expect, it } from "bun:test"
 
 import type { RunnerOutcome } from "../in-process/child-handle"

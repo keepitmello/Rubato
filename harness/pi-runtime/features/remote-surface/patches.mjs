@@ -1,3 +1,4 @@
+import { PI_VERSION } from "../../pi-version.mjs";
 const IMPORT = 'import { bindStockUiHost, resetStockUiHost, invalidateStockUiHost } from "../../../../../../rubato-features/remote-surface/stock-ui-host.mjs";\n';
 function replaceOnce(source, before, after) {
   if (source.indexOf(before) < 0 || source.indexOf(before) !== source.lastIndexOf(before)) {
@@ -21,8 +22,8 @@ export function patchStockUiHost(source) {
 }
 
 export const patches = Object.freeze([Object.freeze({
-  id: 'stock-ui-host', packageName: '@earendil-works/pi-coding-agent', version: '0.86.1',
+  id: 'stock-ui-host', packageName: '@earendil-works/pi-coding-agent', version: PI_VERSION,
   path: 'dist/modes/interactive/interactive-mode.js',
-  preimageSha256: '8c9275944466afe2df78dcf02f2f6c83f6bc46fb0fdbd7257a3ef9d1da1ed027',
+  preimageSha256: '14508d43f3dd47faa6b10c4a6537740f1cf238eee3fc873a9e0648125214bbcc',
   apply: patchStockUiHost,
 })]);

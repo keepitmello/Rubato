@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs"
 
-import { createAgentSession, SessionManager, type CreateAgentSessionOptions, type ToolDefinition } from "@code-yeongyu/senpi"
+import { createAgentSession, SessionManager, type CreateAgentSessionOptions, type ToolDefinition } from "@earendil-works/pi-coding-agent"
 
+import type { LegacyChildSessionFields } from "../senpi/legacy-session-options"
 import type { ResolvedModelRecord } from "../state"
 import { createChildHandle, createRestoredChildHandle, type ChildHandle, type ChildSession } from "./in-process/child-handle"
 import { buildChildSessionOptions, requireChildSessionDir, resolveMemberScopedToolNames } from "./in-process/child-options"
@@ -30,8 +31,8 @@ export type DepthPolicy = {
   readonly maxDepth: number
 }
 
-// Per-child construction spec. `model`, `authStorage`, `modelRegistry` reuse senpi's own option
-// types so the parent's auth/models resolve normally against the parent's real agentDir.
+// Per-child construction spec. `model` and `modelRuntime` reuse stock pi's option types;
+// `authStorage` and `modelRegistry` are the legacy senpi fields (see senpi/legacy-session-options).
 export type ChildSpec = {
   readonly taskId: string
   readonly cwd: string
@@ -41,8 +42,8 @@ export type ChildSpec = {
   // typed session-create-failed, never a silent inMemory/default-dir fallback.
   readonly sessionDir: string
   readonly agentDir?: string
-  readonly authStorage?: CreateAgentSessionOptions["authStorage"]
-  readonly modelRegistry?: CreateAgentSessionOptions["modelRegistry"]
+  readonly authStorage?: LegacyChildSessionFields["authStorage"]
+  readonly modelRegistry?: LegacyChildSessionFields["modelRegistry"]
   readonly modelRuntime?: CreateAgentSessionOptions["modelRuntime"]
   readonly model?: CreateAgentSessionOptions["model"]
   readonly thinkingLevel?: CreateAgentSessionOptions["thinkingLevel"]

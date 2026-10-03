@@ -1,4 +1,4 @@
-import type { RpcExtensionUIRequest } from "@code-yeongyu/senpi"
+import type { RpcExtensionUIRequest } from "@earendil-works/pi-coding-agent"
 import { describe, expect, test } from "bun:test"
 
 import { buildAutoUiResponse } from "./ui-auto-answer"

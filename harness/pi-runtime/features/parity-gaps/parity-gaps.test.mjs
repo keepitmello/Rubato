@@ -12,9 +12,11 @@ import {
   files,
   patches,
 } from "./patches.mjs";
+import { resolvePiRuntime } from "../../resolve-runtime.mjs";
+const stockPackageDir = (name) => resolvePiRuntime({ root: fileURLToPath(new URL("../..", import.meta.url)) }).packages[`@earendil-works/${name}`].dir;
 
 const here = dirname(fileURLToPath(import.meta.url));
-const ai = join(here, "../../node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist");
+const ai = join(stockPackageDir("pi-ai"), "dist");
 const ag = join(here, "../../node_modules/@earendil-works/pi-coding-agent/dist");
 
 test("parity-gaps patches match stock preimages and apply", () => {

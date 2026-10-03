@@ -172,6 +172,110 @@ test("unavailable history tool_use names are demoted to text with matching resul
   assert.equal(demoteUnavailableToolReferences(alreadyAvailable), alreadyAvailable);
 });
 
+// pi-ai 1.0.1 (inline-tools) keeps top-level `tools` fixed and defines tools loaded later
+// (tool_search) by value in `tool_addition` blocks inside messages. Feed the real payload the
+// staged Anthropic provider builds, for API-key and OAuth (Claude Code names) auth.
+async function anthropicWirePayload(apiKey) {
+  const piAiDir = resolvePiRuntime({ root: stagedRoot }).packages["@earendil-works/pi-ai"].dir;
+  const anthropic = await import(pathToFileURL(join(piAiDir, "dist/api/anthropic-messages.js")).href);
+  const { anthropicProvider } = await import(pathToFileURL(join(piAiDir, "dist/providers/anthropic.js")).href);
+  const model = anthropicProvider().getModels().find((candidate) =>
+    candidate.compat?.supportsMidConvoSystemMessages && candidate.compat?.supportsMidConvoToolChanges);
+  assert.ok(model, "the 1.0.1 catalog has an Anthropic model with native mid-conversation tool changes");
+  const tool = (name) => ({ name, description: `${name} tool`, parameters: { type: "object", properties: {} } });
+  const assistant = (content) => ({
+    role: "assistant", content, api: model.api, provider: model.provider, model: model.id,
+    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    stopReason: "toolUse", timestamp: 1,
+  });
+  const call = (id, name) => ({ type: "toolCall", id, name, arguments: {} });
+  const result = (toolCallId, toolName, text) => ({
+    role: "toolResult", toolCallId, toolName, content: [{ type: "text", text }], isError: false, timestamp: 1,
+  });
+  const messages = [
+    { role: "system", content: "base prompt", toolsAdded: [tool("read"), tool("apply_patch")], timestamp: 1 },
+    { role: "user", content: "fix it", timestamp: 1 },
+    // edit/write were hidden by apply_patch from the start: never defined in this request.
+    assistant([call("toolu_write", "write"), call("toolu_edit", "edit"), call("toolu_read", "read")]),
+    result("toolu_write", "write", "wrote"),
+    result("toolu_edit", "edit", "edited"),
+    result("toolu_read", "read", "read ok"),
+    // tool_search loads grep mid-conversation (OAuth maps it to Claude Code's "Grep").
+    { role: "system", content: "", toolsAdded: [tool("grep")], timestamp: 1 },
+    assistant([call("toolu_grep", "grep")]),
+    result("toolu_grep", "grep", "grep hits"),
+    { role: "user", content: "continue", timestamp: 1 },
+  ];
+  let payload;
+  const stream = anthropic.stream(model, { messages }, {
+    apiKey,
+    onPayload: (params) => {
+      payload = structuredClone(params);
+      throw new Error("captured payload; no request is sent");
+    },
+  });
+  await stream.result();
+  assert.ok(payload, "onPayload received the request body");
+  return payload;
+}
+
+function wireToolUseNames(payload) {
+  return payload.messages.flatMap((message) => Array.isArray(message.content) ? message.content : [])
+    .filter((block) => block.type === "tool_use").map((block) => block.name);
+}
+
+for (const [label, apiKey, grepName, readName] of [
+  ["API key", "sk-ant-api03-test-not-real", "grep", "read"],
+  ["OAuth", "sk-ant-oat01-test-not-real", "Grep", "Read"],
+]) {
+  test(`1.0.1 Anthropic payload (${label}): a tool loaded mid-conversation keeps its call, hidden edit/write are demoted`, async () => {
+    const payload = await anthropicWirePayload(apiKey);
+    assert.ok(!payload.tools.some((tool) => tool.name === grepName), "grep is not a top-level tool on 1.0.1");
+    assert.ok(payload.messages.some((message) => Array.isArray(message.content) && message.content.some((block) =>
+      block.type === "tool_addition" && block.tool?.type === "tool_definition" && block.tool.definition?.name === grepName)),
+    "grep is defined inline by tool_addition");
+    assert.deepEqual(wireToolUseNames(payload), [OAUTH_OR(label, "Write", "write"), OAUTH_OR(label, "Edit", "edit"), readName, grepName]);
+
+    const demoted = demoteUnavailableToolReferences(payload);
+    assert.deepEqual(wireToolUseNames(demoted), [readName, grepName]);
+    const grepUse = demoted.messages.flatMap((message) => message.content).find((block) => block.type === "tool_use" && block.name === grepName);
+    const grepResult = demoted.messages.flatMap((message) => Array.isArray(message.content) ? message.content : [])
+      .find((block) => block.type === "tool_result" && block.tool_use_id === grepUse.id);
+    assert.ok(grepResult, "the grep tool_result stays paired");
+    const texts = demoted.messages.flatMap((message) => Array.isArray(message.content) ? message.content : [])
+      .filter((block) => block.type === "text").map((block) => block.text).join("\n");
+    assert.match(texts, new RegExp(`unavailable-tool-call name="${OAUTH_OR(label, "Write", "write")}"`));
+    assert.match(texts, new RegExp(`unavailable-tool-result name="${OAUTH_OR(label, "Edit", "edit")}"`));
+    assert.doesNotMatch(texts, /__pi_deferred_placeholder__/, "guidance never lists the deferred placeholder");
+    assert.doesNotMatch(texts, new RegExp(`name="${grepName}"`));
+  });
+}
+
+function OAUTH_OR(label, oauthName, apiKeyName) {
+  return label === "OAuth" ? oauthName : apiKeyName;
+}
+
+test("a call after its tool_removal is demoted; a call made while the tool was defined is kept", () => {
+  const payload = {
+    tools: [{ name: "read" }, { name: "__pi_deferred_placeholder__", defer_loading: true }],
+    messages: [
+      { role: "system", content: [{ type: "tool_addition", tool: { type: "tool_definition", definition: { name: "grep" } } }] },
+      { role: "assistant", content: [{ type: "tool_use", id: "g1", name: "grep", input: {} }] },
+      { role: "user", content: [{ type: "tool_result", tool_use_id: "g1", content: "hits" }] },
+      { role: "system", content: [{ type: "tool_removal", tool: { type: "tool_reference", name: "grep" } }] },
+      { role: "assistant", content: [{ type: "tool_use", id: "g2", name: "grep", input: {} }] },
+      { role: "user", content: [{ type: "tool_result", tool_use_id: "g2", content: "late" }] },
+    ],
+  };
+  const demoted = demoteUnavailableToolReferences(payload);
+  assert.deepEqual(demoted.messages[1], payload.messages[1]);
+  assert.deepEqual(demoted.messages[2], payload.messages[2]);
+  assert.equal(demoted.messages[4].content[0].type, "text");
+  assert.match(demoted.messages[4].content[0].text, /unavailable-tool-call name="grep"/);
+  assert.match(demoted.messages[4].content[0].text, /call your own tools: read\./);
+  assert.equal(demoted.messages[5].content[0].type, "text");
+});
+
 test("sanitizeToolPairs demotes missing names before inventing pair results", () => {
   const payload = {
     tools: [{ name: "apply_patch" }],
@@ -393,9 +497,7 @@ test("a loop-guard notice is appended after the latest tool result and never rew
   const runtime = resolvePiRuntime({ root: stagedWithPromptRoot });
   const sdk = await import(`${pathToFileURL(runtime.sdkEntry).href}?prefix=${Math.random()}`);
   const guards = await import(`${pathToFileURL(join(stagedWithPromptRoot, "rubato-features/tool-guards/index.mjs")).href}?prefix=${Math.random()}`);
-  const { AssistantMessageEventStream } = await import(pathToFileURL(join(
-    runtime.codingAgentDir,
-    "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js",
+  const { AssistantMessageEventStream } = await import(pathToFileURL(join(runtime.packages["@earendil-works/pi-ai"].dir, "dist/utils/event-stream.js",
   )).href);
   const cwd = join(scratchRoot, `prefix-cwd-${Math.random()}`);
   const agentDir = join(scratchRoot, `prefix-agent-${Math.random()}`);

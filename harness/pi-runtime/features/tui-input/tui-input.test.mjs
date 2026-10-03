@@ -1,3 +1,4 @@
+import { PI_VERSION } from "../../pi-version.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
@@ -32,6 +33,7 @@ import {
   setBusyEnterEnabled,
 } from "./busy-enter.mjs";
 import { feature, files, patches, patchStdinBufferUnicode } from "./patches.mjs";
+const stockPackageDir = (name) => resolvePiRuntime({ root: fileURLToPath(new URL("../..", import.meta.url)) }).packages[`@earendil-works/${name}`].dir;
 
 const featureDir = dirname(fileURLToPath(import.meta.url));
 const sourceRoot = resolve(featureDir, "../..");
@@ -76,7 +78,7 @@ test("descriptor is stock-locked and listed on the candidate", async () => {
   assert.deepEqual((await loadPiFeatures(["tui-input"])).map((entry) => entry.id), ["tui-input"]);
   assert.deepEqual(TUI_INPUT_FACTORY_NAMES, ["rubato-tui-unicode", "rubato-tui-images", "rubato-tui-busy-enter"]);
   assert.equal(patches.length, 2);
-  assert.ok(patches.every((entry) => entry.version === "0.86.1"));
+  assert.ok(patches.every((entry) => entry.version === PI_VERSION));
   assert.ok(patches.every((entry) => /^[a-f0-9]{64}$/.test(entry.preimageSha256)));
   assert.deepEqual(files.map((entry) => entry.path), [
     "rubato-features/tui-input/index.mjs",
@@ -99,7 +101,7 @@ test("rubato-features.json disables each rubato-tui-* factory by name", () => {
 });
 
 test("split Hangul UTF-8 becomes one character only after the stdin-buffer patch", async () => {
-  const stockPath = join(sourceRoot, "node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/stdin-buffer.js");
+  const stockPath = join(stockPackageDir("pi-tui"), "dist/stdin-buffer.js");
   const stockSource = readFileSync(stockPath, "utf8");
   assert.equal(stockSource.includes("StringDecoder"), false);
   const patched = patchStdinBufferUnicode(stockSource);
@@ -142,7 +144,7 @@ test("split Hangul UTF-8 becomes one character only after the stdin-buffer patch
 
 test("8-bit meta stays below 0xC2 so Hangul leads are not stolen as Alt+letter", async () => {
   const patchedFile = join(scratch, "stdin-patched-meta.mjs");
-  const stockPath = join(sourceRoot, "node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/stdin-buffer.js");
+  const stockPath = join(stockPackageDir("pi-tui"), "dist/stdin-buffer.js");
   writeFileSync(patchedFile, patchStdinBufferUnicode(readFileSync(stockPath, "utf8")));
   const { StdinBuffer } = await import(pathToFileURL(patchedFile).href + "?meta");
   const meta = [];
@@ -158,10 +160,7 @@ test("8-bit meta stays below 0xC2 so Hangul leads are not stolen as Alt+letter",
 });
 
 test("bracketed paste is one StdinBuffer event including newlines", async () => {
-  const { StdinBuffer } = await import(pathToFileURL(join(
-    sourceRoot,
-    "node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/stdin-buffer.js",
-  )));
+  const { StdinBuffer } = await import(pathToFileURL(join(stockPackageDir("pi-tui"), "dist/stdin-buffer.js")));
   const pastes = [];
   const buffer = new StdinBuffer({ timeout: 5, escapeTimeout: 5 });
   buffer.on("paste", (content) => pastes.push(content));
@@ -172,10 +171,7 @@ test("bracketed paste is one StdinBuffer event including newlines", async () => 
 });
 
 test("select cancel is Esc and Ctrl-C with no value", async () => {
-  const tui = await import(pathToFileURL(join(
-    sourceRoot,
-    "node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/index.js",
-  )));
+  const tui = await import(pathToFileURL(join(stockPackageDir("pi-tui"), "dist/index.js")));
   assert.deepEqual(tui.TUI_KEYBINDINGS[SELECT_CANCEL_BINDING].defaultKeys, [...SELECT_CANCEL_KEYS]);
   const list = new tui.SelectList(
     [{ value: "keep", label: "keep" }],

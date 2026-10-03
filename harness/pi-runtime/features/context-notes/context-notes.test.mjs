@@ -133,15 +133,11 @@ const staged = await stagePiRuntime({
 });
 const runtime = resolvePiRuntime({ root: staged.root });
 const sdk = await import(pathToFileURL(runtime.sdkEntry));
-const { AssistantMessageEventStream } = await import(pathToFileURL(join(
-  runtime.codingAgentDir,
-  "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js",
+const { AssistantMessageEventStream } = await import(pathToFileURL(join(runtime.packages["@earendil-works/pi-ai"].dir, "dist/utils/event-stream.js",
 )));
 // 0.86.0: provider stream 입력이 Context -> TranscriptContext 로 바뀌어
 // 시스템 프롬프트는 context.systemPrompt 가 아니라 messages 에서 읽는다.
-const { getCurrentSystemPrompt } = await import(pathToFileURL(join(
-  runtime.codingAgentDir,
-  "node_modules/@earendil-works/pi-ai/dist/utils/transcript.js",
+const { getCurrentSystemPrompt } = await import(pathToFileURL(join(runtime.packages["@earendil-works/pi-ai"].dir, "dist/utils/transcript.js",
 )).href);
 const contextExtensionUrl = pathToFileURL(join(
   runtime.codingAgentDir,
@@ -409,9 +405,7 @@ test("actual unbundled RPC preserves context entries and injection over reload a
   mkdirSync(agentDir);
   mkdirSync(sessionDir);
 
-  const streamUrl = pathToFileURL(join(
-    runtime.codingAgentDir,
-    "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js",
+  const streamUrl = pathToFileURL(join(runtime.packages["@earendil-works/pi-ai"].dir, "dist/utils/event-stream.js",
   )).href;
   const providerPath = join(scratch, "context-notes-provider.mjs");
   writeFileSync(providerPath, `
