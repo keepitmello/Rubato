@@ -299,3 +299,13 @@ test('the CLI translates with the same checks', t => {
   assert.equal(out.status, 0, out.stderr);
   assert.equal(JSON.parse(out.stdout).revision, 2);
 });
+test('translation keeps quoted English and single-quoted user words too', t => {
+  const { store } = setup(t);
+  const before = korean.replace('## Problem\n에이전트가', `## Problem\n사용자는 "Do not create user.md." 와 '자가 저장소는 건드리지 마' 를 말했다. 에이전트가`);
+  const rec = store.create({ id: 'one', source: 'user:request-1', body: before });
+  const good = english.replace('## Problem\nAgents', `## Problem\nThe user said "Do not create user.md." and '자가 저장소는 건드리지 마'. Agents`);
+  for (const bad of [good.replace('"Do not create user.md."', '"Creating user.md is fine."'), good.replace("'자가 저장소는 건드리지 마'", "'leave the self store'")]) {
+    assert.throws(() => store.translate('one', { expect: rec.sha256, source: authority, body: bad }), /changed the user's words/);
+  }
+  assert.equal(store.translate('one', { expect: rec.sha256, source: authority, body: good }).meta.revision, 2);
+});

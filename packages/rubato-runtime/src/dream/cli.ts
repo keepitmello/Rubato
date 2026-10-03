@@ -186,6 +186,7 @@ async function main(argv: readonly string[]): Promise<number> {
       launch,
       systemPrompt: readFileSync(join(here, "language-migration.md"), "utf8"),
       env: childEnv(env),
+      force: migrateStore !== undefined,
     })
     records.push(record)
     if (!json) process.stderr.write(`dream: ${store} English migration ${record.status}${record.reason === undefined ? "" : ` (${record.reason})`} ${record.commits.length} commit(s)${record.runId === "" ? "" : ` run ${record.runId}`}\n`)

@@ -67,7 +67,7 @@ A record written in another language becomes English with `translate` when the u
 the translation. Status and closure stay; the revision increments; `revision_source` and the new
 `approval` cite the translation's authority and name the revision and digest the content was
 approved under, so the earlier approval is never stretched over new wording. The helper refuses
-a translation that changes `## Originating request`, a quoted span or `>` line in another script,
+a translation that changes `## Originating request`, a quoted span or `>` line (in any language),
 or the number of sections, and refuses a record whose approved content was already edited.
 
 ```sh
