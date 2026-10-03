@@ -129,8 +129,29 @@ describe("runDream", () => {
     expect(record.reason).toBeUndefined()
     expect(record.status).toBe("merged")
     expect(record.model).toBe("ok/model")
+    expect(record.attempts?.map(({ model, ok }) => [model, ok])).toEqual([["dead/model", false], ["ok/model", true]])
     expect(readFileSync(join(paths.repo, "a.md"), "utf8")).toBe("new\n")
     expect(git(paths.repo, "branch", "--list", "dream/*").trim()).toBe("")
+  })
+
+  test("a model that fails says why: its last output line", async () => {
+    const { root, paths } = store()
+    const record = await run(paths, [session(root, "s1", "2026-09-25T00:00:04.000Z")], {
+      ladder: [{ model: "broke/model" }, { model: "silent/model" }, { model: "ok/model" }],
+      spawnChild: async (input) => {
+        if (input.args.includes("broke/model")) {
+          writeFileSync(input.logPath, '400: {"message":"credit insufficient balance"}\n\n')
+          return { code: 1 }
+        }
+        if (input.args.includes("silent/model")) return { code: null }
+        return fakeChild(input)
+      },
+    })
+    expect(record.attempts).toEqual([
+      { model: "broke/model", ok: false, error: '400: {"message":"credit insufficient balance"}' },
+      { model: "silent/model", ok: false, error: "stopped without output (timed out or killed)" },
+      { model: "ok/model", ok: true },
+    ])
   })
 
   test("edits a session never committed are adopted first, so the dream reads them and still lands", async () => {

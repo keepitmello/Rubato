@@ -66,12 +66,21 @@ export interface DreamRunRecord {
   readonly status: DreamStatus
   readonly reason?: string
   readonly model?: string
+  /** Every model tried, in ladder order: the ones that failed say why, so a fallback is not a mystery. */
+  readonly attempts?: readonly DreamAttempt[]
   readonly sessions: readonly { readonly id: string; readonly name?: string; readonly cwd: string; readonly messages: number }[]
   readonly commits: readonly string[]
   /** Branch holding a trial's result. */
   readonly branch?: string
   /** Store revision the dream started from. */
   readonly baseRevision?: string
+}
+
+export interface DreamAttempt {
+  readonly model: string
+  readonly ok: boolean
+  /** A failed rung's last output line (the provider's error, usually). */
+  readonly error?: string
 }
 
 export interface DreamState {
@@ -213,6 +222,7 @@ async function runLocked(options: RunDreamOptions, now: () => number): Promise<D
   const spawnChild = options.spawnChild ?? spawnLogged
   let usedModel: string | undefined
   let childOk = false
+  const attempts: DreamAttempt[] = []
   // A trial must not see what landed after its base: a worktree shares the store's refs, and a child
   // that finds the answer already on main writes nothing, so the comparison measures nothing. It gets
   // a clone holding only the base history instead, and its result is fetched back onto a branch.
@@ -271,11 +281,13 @@ async function runLocked(options: RunDreamOptions, now: () => number): Promise<D
       timeoutMs: options.childTimeoutMs ?? CHILD_TIMEOUT_MS,
     })
     if (result.code === 0) {
+      attempts.push({ model: rung.model, ok: true })
       childOk = true
       break
     }
+    attempts.push({ model: rung.model, ok: false, error: await failureLine(join(runDir, `child-${index + 1}.log`), result.code) })
   }
-  const modelField = usedModel === undefined ? {} : { model: usedModel }
+  const modelField = usedModel === undefined ? { attempts } : { model: usedModel, attempts }
   if (options.trial !== undefined) {
     if (childOk && (await git(worktree, ["status", "--porcelain"])).stdout.trim() !== "") {
       await git(worktree, ["add", "-A"])
@@ -466,6 +478,15 @@ export function pickSessions(
     used += session.markdown.length
   }
   return picked
+}
+
+const FAILURE_LINE_MAX = 240
+
+async function failureLine(logPath: string, code: number | null): Promise<string> {
+  const text = await readFile(logPath, "utf8").catch(() => "")
+  const last = text.split("\n").map((line) => line.trim()).filter(Boolean).at(-1)
+  if (last !== undefined) return last.length > FAILURE_LINE_MAX ? `${last.slice(0, FAILURE_LINE_MAX)}…` : last
+  return code === null ? "stopped without output (timed out or killed)" : `exited with code ${code} and no output`
 }
 
 const spawnLogged: SpawnChild = ({ command, args, cwd, env, logPath, timeoutMs }) =>
