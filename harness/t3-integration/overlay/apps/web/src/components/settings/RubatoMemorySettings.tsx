@@ -3,23 +3,19 @@ import {
   ArrowUpIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
-  MessageSquareIcon,
+  PencilIcon,
   PlayIcon,
   PlusIcon,
   RefreshCwIcon,
   SearchIcon,
   Trash2Icon,
-  Undo2Icon,
   XIcon,
 } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import * as Option from "effect/Option";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { useComposerDraftStore } from "../../composerDraftStore";
 import { requestConfirmDialog } from "../../confirmDialog";
-import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
 import { cn } from "../../lib/utils";
 import { useProjects } from "../../state/entities";
 import { usePrimaryEnvironmentId } from "../../state/environments";
@@ -29,7 +25,6 @@ import {
   rubatoMemory,
   type DreamChange,
   type DreamModel,
-  type DreamPublish,
   type DreamReasoning,
   type DreamRunDetail,
   type DreamRunSummary,
@@ -38,7 +33,6 @@ import {
   type MemoryStoreStatus,
   type MemoryStoreSummary,
   type ProjectStore,
-  type StoreInbox,
 } from "../../state/rubatoMemory";
 import ChatMarkdown from "../ChatMarkdown";
 import { iconForProviderModel } from "../chat/providerIconUtils";
@@ -52,7 +46,7 @@ import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
-import { addedContent, askPrompt, projectForStore, runLabel, type BadgeVariant } from "./RubatoMemorySettings.logic";
+import { addedContent, lastDreamLine, runLabel, type BadgeVariant } from "./RubatoMemorySettings.logic";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 
 type EnvironmentId = ReturnType<typeof usePrimaryEnvironmentId>;
@@ -142,16 +136,17 @@ function tildePath(value: string, home: string | null): string {
 }
 
 function whereLabel(store: StoreView, home: string | null): string {
-  if (store.home) return "Home folder";
-  if (store.roots && store.roots.length > 0) return store.roots.map((root) => tildePath(root, home)).join(", ");
-  return "Project folder unknown";
+  if (store.home) return "Used in your home folder";
+  if (store.roots && store.roots.length > 0)
+    return `Used in ${store.roots.map((root) => tildePath(root, home)).join(", ")}`;
+  return "No project folder recorded yet";
 }
 
-type Tab = "stores" | "you" | "dreams";
+type Tab = "projects" | "you" | "settings";
 const TABS: ReadonlyArray<{ value: Tab; label: string }> = [
-  { value: "stores", label: "Stores" },
+  { value: "projects", label: "Projects" },
   { value: "you", label: "About you" },
-  { value: "dreams", label: "Dream settings" },
+  { value: "settings", label: "Settings" },
 ];
 
 export function RubatoMemorySettingsPanel() {
@@ -163,7 +158,7 @@ export function RubatoMemorySettingsPanel() {
   const [statusError, setStatusError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedStore, setSelectedStore] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>("stores");
+  const [tab, setTab] = useState<Tab>("projects");
   const [historySignal, setHistorySignal] = useState(0);
   const loadingRef = useRef(false);
 
@@ -221,7 +216,7 @@ export function RubatoMemorySettingsPanel() {
     return () => window.clearInterval(timer);
   }, [anyRunning, refresh]);
 
-  // After a review action the store list (what needs the user) and any open history are stale.
+  // After a file edit the store list (file count, last change) and any open history are stale.
   const changed = useCallback(() => {
     setHistorySignal((value) => value + 1);
     void loadStores();
@@ -243,11 +238,6 @@ export function RubatoMemorySettingsPanel() {
       { models: models.map((entry) => (entry.reasoning ? { model: entry.model, reasoning: entry.reasoning } : { model: entry.model })) },
       () => setStatus(previous),
     );
-  };
-  const setPublish = (publish: DreamPublish) => {
-    const previous = status;
-    if (previous) setStatus({ ...previous, publish });
-    void saveConfig({ publish }, () => setStatus(previous));
   };
   const setEnabled = (store: string, enabled: boolean) => {
     const previousSummaries = summaries;
@@ -272,7 +262,7 @@ export function RubatoMemorySettingsPanel() {
       toastManager.add({
         type: "info",
         title: `Dream started for ${store}`,
-        description: "This can take several minutes. What it changes shows up at the top of Memory.",
+        description: "This can take several minutes. Its changes go into memory and show under Dream runs.",
       });
       await refresh();
     } catch (error) {
@@ -307,28 +297,8 @@ export function RubatoMemorySettingsPanel() {
     );
   }
 
-  const inbox = stores?.filter((store): store is StoreView & { inbox: StoreInbox } => store.inbox !== null) ?? [];
-
   return (
     <SettingsPageContainer>
-      {inbox.length > 0 ? (
-        <SettingsSection id="memory-review" title={inbox.length === 1 ? "To review" : `To review · ${inbox.length}`}>
-          {inbox.map((store) => (
-            <div key={`${store.store}:${store.inbox.runId}`} className="px-3 py-3 sm:px-4">
-              <RunView
-                environmentId={environmentId}
-                store={store}
-                home={home}
-                runId={store.inbox.runId}
-                inbox={store.inbox.kind}
-                showHeader
-                onChanged={changed}
-              />
-            </div>
-          ))}
-        </SettingsSection>
-      ) : null}
-
       <div className="px-3 sm:px-4">
         <ToggleGroup
           aria-label="Memory settings"
@@ -347,44 +317,44 @@ export function RubatoMemorySettingsPanel() {
         </ToggleGroup>
       </div>
 
-      {tab === "stores" ? (
-        <SettingsSection
-          id="memory-stores"
-          title="Stores"
-          headerAction={
-            <Button size="xs" variant="ghost" disabled={loading} onClick={() => void refresh()}>
-              {loading ? <Spinner className="size-3.5" /> : <RefreshCwIcon className="size-3.5" />}
-              Refresh
-            </Button>
-          }
-        >
-          {storesError ? <SettingsRow title="Could not load memory stores" description={storesError} /> : null}
-          {stores === null && !storesError ? (
-            <SettingsRow title="Loading memory stores" control={<Spinner className="size-4" />} />
-          ) : null}
-          {stores?.length === 0 ? (
-            <SettingsRow
-              title="No memory yet"
-              description="Memory is created automatically the first time the agent saves something in a project."
-            />
-          ) : null}
-          {stores?.map((store) => (
-            <StoreRow
-              key={store.store}
-              store={store}
-              home={home}
-              onOpen={() => setSelectedStore(store.store)}
-              onToggle={(enabled) => setEnabled(store.store, enabled)}
-            />
-          ))}
-        </SettingsSection>
+      {tab === "projects" ? (
+        <>
+          <p className="px-3 text-sm text-muted-foreground sm:px-4">
+            Agents keep what they learn in each project&apos;s memory. Once a day a dream reads the new sessions and
+            tidies it on its own. Open a project to read or edit what it keeps.
+          </p>
+          <SettingsSection
+            id="memory-stores"
+            title="Memory by project"
+            headerAction={
+              <Button size="xs" variant="ghost" disabled={loading} onClick={() => void refresh()}>
+                {loading ? <Spinner className="size-3.5" /> : <RefreshCwIcon className="size-3.5" />}
+                Refresh
+              </Button>
+            }
+          >
+            {storesError ? <SettingsRow title="Could not load memory" description={storesError} /> : null}
+            {stores === null && !storesError ? (
+              <SettingsRow title="Loading memory" control={<Spinner className="size-4" />} />
+            ) : null}
+            {stores?.length === 0 ? (
+              <SettingsRow
+                title="No memory yet"
+                description="A project's memory appears the first time an agent saves something in it."
+              />
+            ) : null}
+            {stores?.map((store) => (
+              <StoreRow key={store.store} store={store} home={home} onOpen={() => setSelectedStore(store.store)} />
+            ))}
+          </SettingsSection>
+        </>
       ) : null}
 
       {tab === "you" ? <SelfFilesSection environmentId={environmentId} /> : null}
 
-      {tab === "dreams" ? (
+      {tab === "settings" ? (
         <>
-          <SettingsSection id="memory-dream" title="Dreams">
+          <SettingsSection id="memory-dream" title="Dream">
             {statusError ? (
               <SettingsRow title="Could not load dream settings" description={statusError} />
             ) : status === null ? (
@@ -394,33 +364,7 @@ export function RubatoMemorySettingsPanel() {
                 control={<Spinner className="size-4" />}
               />
             ) : (
-              <>
-                <DreamModelsEditor models={status.models} onChange={setModels} />
-                <SettingsRow
-                  title="When a dream changes memory"
-                  description={
-                    status.publish === "review"
-                      ? "Its changes wait at the top of Memory until you accept or discard them."
-                      : "Its changes go into memory right away. They show at the top of Memory until you mark them seen, and you can undo them."
-                  }
-                  control={
-                    <Select
-                      value={status.publish}
-                      onValueChange={(next) => {
-                        if (next === "review" || next === "auto") setPublish(next);
-                      }}
-                    >
-                      <SelectTrigger size="sm" aria-label="Dream publish mode">
-                        <SelectValue>{status.publish === "review" ? "Ask me first" : "Apply, then show me"}</SelectValue>
-                      </SelectTrigger>
-                      <SelectPopup align="end" alignItemWithTrigger={false}>
-                        <SelectItem value="review">Ask me first</SelectItem>
-                        <SelectItem value="auto">Apply, then show me</SelectItem>
-                      </SelectPopup>
-                    </Select>
-                  }
-                />
-              </>
+              <DreamModelsEditor models={status.models} onChange={setModels} />
             )}
           </SettingsSection>
           <ProjectStoresSection
@@ -435,49 +379,43 @@ export function RubatoMemorySettingsPanel() {
   );
 }
 
-function StoreBadges({ store }: { store: StoreView }) {
+function StoreFacts({ store }: { store: StoreView }) {
+  // A run started here that died before writing a run record (no runId) shows only here.
   const last = store.lastGuiRun;
+  const guiFailed =
+    !store.running &&
+    last?.status === "failed" &&
+    !last.runId &&
+    (last.startedAt ?? "") > (store.lastRun?.startedAt ?? "");
   return (
-    <span className="flex flex-wrap items-center gap-1.5">
+    <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <span>
+        {[count(store.files, "file"), store.lastChangeAt ? `updated ${ago(store.lastChangeAt)}` : "no changes yet"].join(
+          " · ",
+        )}
+      </span>
       {store.running ? (
         <Badge variant="info">
           <Spinner className="size-3" />
-          Dreaming {store.running.startedAt ? `(started ${ago(store.running.startedAt)})` : ""}
+          Dreaming{store.running.startedAt ? ` (started ${ago(store.running.startedAt)})` : ""}
         </Badge>
-      ) : null}
-      {store.inbox?.kind === "pending" ? <Badge variant="warning">Needs review</Badge> : null}
-      {store.inbox?.kind === "landed" ? <Badge variant="info">New in memory</Badge> : null}
-      {store.due && !store.running ? <Badge variant="secondary">Dream due</Badge> : null}
-      {!store.running && last && last.status === "failed" ? (
-        <span className="text-destructive-foreground" title={last.reason}>
-          Last run failed: {(last.reason ?? "").split("\n")[0]}
+      ) : guiFailed ? (
+        <span className="text-destructive-foreground" title={last?.reason}>
+          Last dream failed: {(last?.reason ?? "").split("\n")[0]}
         </span>
-      ) : null}
+      ) : (
+        <DreamLine store={store} />
+      )}
     </span>
   );
 }
 
-function storeFacts(store: StoreView): string {
-  return [
-    count(store.files, "file"),
-    store.lastChangeAt ? `Updated ${ago(store.lastChangeAt)}` : "No changes yet",
-    store.lastDreamAt ? `Last dream ${ago(store.lastDreamAt)}` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+function DreamLine({ store }: { store: StoreView }) {
+  const line = lastDreamLine(store.enabled, store.lastRun, ago);
+  return <span className={cn(line.tone === "error" && "text-destructive-foreground")}>{line.text}</span>;
 }
 
-function StoreRow({
-  store,
-  home,
-  onOpen,
-  onToggle,
-}: {
-  store: StoreView;
-  home: string | null;
-  onOpen: () => void;
-  onToggle: (enabled: boolean) => void;
-}) {
+function StoreRow({ store, home, onOpen }: { store: StoreView; home: string | null; onOpen: () => void }) {
   return (
     <SettingsRow
       className="cursor-pointer hover:bg-accent/30"
@@ -488,28 +426,11 @@ function StoreRow({
           {whereLabel(store, home)}
         </span>
       }
-      status={
-        <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <span>{storeFacts(store)}</span>
-          <StoreBadges store={store} />
-        </span>
-      }
+      status={<StoreFacts store={store} />}
       control={
-        <span
-          className="flex items-center gap-2"
-          onClick={(event) => event.stopPropagation()}
-          onKeyDown={(event) => event.stopPropagation()}
-        >
-          <span className="text-xs text-muted-foreground">Dreams</span>
-          <Switch
-            aria-label={`Dreams for ${store.store}`}
-            checked={store.enabled}
-            onCheckedChange={(enabled) => onToggle(enabled)}
-          />
-          <Button size="icon-xs" variant="ghost" aria-label={`Open ${store.store}`} onClick={onOpen}>
-            <ChevronRightIcon className="size-4" />
-          </Button>
-        </span>
+        <Button size="icon-xs" variant="ghost" aria-label={`Open ${store.store}`} onClick={onOpen}>
+          <ChevronRightIcon className="size-4" />
+        </Button>
       }
     />
   );
@@ -539,7 +460,7 @@ function StoreDetail({
   const [deleting, setDeleting] = useState(false);
   const deleteStore = async () => {
     const ok = await confirm(
-      `Delete the memory store "${store.store}"? It is archived to ~/.rubato/backups first. If an agent saves memory in this project again, a new empty store is created.`,
+      `Delete the memory of "${store.store}"? It is archived to ~/.rubato/backups first. If an agent saves memory in this project again, a new empty one is created.`,
       true,
     );
     if (!ok) return;
@@ -553,7 +474,7 @@ function StoreDetail({
       });
       onDeleted();
     } catch (error) {
-      reportError("Could not delete the store", error);
+      reportError("Could not delete the memory", error);
     } finally {
       setDeleting(false);
     }
@@ -564,14 +485,17 @@ function StoreDetail({
       <div>
         <Button size="xs" variant="ghost" onClick={onBack}>
           <ChevronLeftIcon className="size-3.5" />
-          All stores
+          All projects
         </Button>
       </div>
       <SettingsSection id="memory-store" title={store.store}>
         <SettingsRow
           title={whereLabel(store, home)}
-          description={storeFacts(store)}
-          status={<StoreBadges store={store} />}
+          description={<StoreFacts store={store} />}
+        />
+        <SettingsRow
+          title="Daily dream"
+          description="Once a day, when there are new sessions, the dream reads them and updates this memory. Its changes go in right away; fix anything by editing the files below."
           control={
             <>
               <Button
@@ -584,9 +508,8 @@ function StoreDetail({
                 <PlayIcon className="size-3" />
                 Dream now
               </Button>
-              <span className="text-xs text-muted-foreground">Dreams</span>
               <Switch
-                aria-label={`Dreams for ${store.store}`}
+                aria-label={`Daily dream for ${store.store}`}
                 checked={store.enabled}
                 onCheckedChange={(enabled) => onToggle(enabled)}
               />
@@ -595,36 +518,14 @@ function StoreDetail({
         />
       </SettingsSection>
 
-      {store.inbox ? (
-        <SettingsSection id="memory-store-review" title="To review">
-          <div className="px-3 py-3 sm:px-4">
-            <RunView
-              key={`${store.inbox.runId}:${historySignal}`}
-              environmentId={environmentId}
-              store={store}
-              home={home}
-              runId={store.inbox.runId}
-              inbox={store.inbox.kind}
-              onChanged={onChanged}
-            />
-          </div>
-        </SettingsSection>
-      ) : null}
-
-      <DreamHistory
-        key={`${store.store}:${historySignal}`}
-        environmentId={environmentId}
-        store={store}
-        home={home}
-        onChanged={onChanged}
-      />
-
       <StoreFiles environmentId={environmentId} store={store.store} onChanged={onChanged} />
+
+      <DreamRuns key={`${store.store}:${historySignal}`} environmentId={environmentId} store={store} />
 
       <SettingsSection id="memory-store-delete" title="Delete">
         <SettingsRow
-          title="Delete store"
-          description="Archives the store to ~/.rubato/backups, then removes it from memory."
+          title="Delete this memory"
+          description="Archives it to ~/.rubato/backups, then removes it."
           control={
             <Button
               size="xs"
@@ -633,37 +534,13 @@ function StoreDetail({
               onClick={() => void deleteStore()}
             >
               {deleting ? <Spinner className="size-3" /> : <Trash2Icon className="size-3" />}
-              Delete store…
+              Delete…
             </Button>
           }
         />
       </SettingsSection>
     </>
   );
-}
-
-/** Opens a new thread in the store's project with the run in the composer; the user picks a model and asks. */
-function useAskInChat(environmentId: EnvironmentId, store: StoreView, home: string | null) {
-  const projects = useProjects();
-  const newThread = useNewThreadHandler();
-  return async (detail: DreamRunDetail, file?: string) => {
-    const candidates = projects.filter((project) => project.environmentId === environmentId);
-    const project = projectForStore(candidates, store.home && home ? [home] : store.roots);
-    if (!project) {
-      toastManager.add({
-        type: "error",
-        title: "No project for this store",
-        description: `Add ${whereLabel(store, home)} as a project, then ask again.`,
-      });
-      return;
-    }
-    const opened = await newThread(scopeProjectRef(project.environmentId, project.id)).catch(() => null);
-    if (!opened) {
-      toastManager.add({ type: "error", title: "Could not open a thread", description: "Open one from the project, then ask again." });
-      return;
-    }
-    useComposerDraftStore.getState().setPrompt(opened.draftId, askPrompt(detail, file));
-  };
 }
 
 const CHANGE_LABEL: Record<DreamChange["change"], { label: string; variant: BadgeVariant }> = {
@@ -681,34 +558,22 @@ const NOTE_LABEL: Record<DreamChange["notes"][number]["kind"], string> = {
 
 const CARDS_SHOWN = 8;
 
-/**
- * One dream as a decision: what it says it did, one card per file it changed, and the action the
- * run is waiting for. The report, the sessions and what it left out stay folded below.
- */
+/** One dream run: what it says it did, one card per file it changed, and its report folded below. */
 function RunView({
   environmentId,
   store,
-  home,
   runId,
-  inbox,
-  showHeader = false,
-  onChanged,
 }: {
   environmentId: EnvironmentId;
   store: StoreView;
-  home: string | null;
   runId: string;
-  inbox?: StoreInbox["kind"];
-  showHeader?: boolean;
-  onChanged: () => void;
 }) {
   const [detail, setDetail] = useState<DreamRunDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"approve" | "reject" | "revert" | "ack" | "candidates" | null>(null);
+  const [adding, setAdding] = useState(false);
   const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set());
   const [showAll, setShowAll] = useState(false);
   const [signal, setSignal] = useState(0);
-  const ask = useAskInChat(environmentId, store, home);
 
   useEffect(() => {
     let cancelled = false;
@@ -725,35 +590,8 @@ function RunView({
     };
   }, [environmentId, store.store, runId, signal]);
 
-  const act = async (kind: "approve" | "reject" | "revert" | "ack") => {
-    if (kind === "reject" && !(await confirm("Discard this dream's changes? What it read stays marked as read.", true)))
-      return;
-    if (kind === "revert" && !(await confirm(`Undo this dream? One commit takes its changes back out of ${store.store}.`)))
-      return;
-    setBusy(kind);
-    try {
-      if (kind === "approve" || kind === "reject") await rubatoMemory.review(environmentId, store.store, kind);
-      else if (kind === "revert") await rubatoMemory.revert(environmentId, store.store, runId);
-      else await rubatoMemory.ack(environmentId, store.store, runId);
-      if (kind !== "ack")
-        toastManager.add({
-          type: "success",
-          title: kind === "approve" ? "Added to memory" : kind === "reject" ? "Changes discarded" : "Dream undone",
-        });
-      setSignal((value) => value + 1);
-      onChanged();
-    } catch (cause) {
-      reportError(
-        kind === "approve" ? "Could not add to memory" : kind === "reject" ? "Could not discard" : kind === "revert" ? "Could not undo" : "Could not mark as seen",
-        cause,
-      );
-    } finally {
-      setBusy(null);
-    }
-  };
-
   const addChosen = async () => {
-    setBusy("candidates");
+    setAdding(true);
     try {
       const result = await rubatoMemory.addCandidates(environmentId, store.store, runId, [...chosen]);
       toastManager.add({
@@ -766,7 +604,7 @@ function RunView({
     } catch (cause) {
       reportError("Could not add to user.md", cause);
     } finally {
-      setBusy(null);
+      setAdding(false);
     }
   };
 
@@ -779,34 +617,18 @@ function RunView({
     );
 
   const cards = showAll ? detail.changes : detail.changes.slice(0, CARDS_SHOWN);
-  const label = runLabel(detail);
-  const blocked = detail.uncommitted.length > 0;
   return (
     <div className="space-y-3">
-      {showHeader ? (
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="text-sm font-medium">{store.store}</span>
-          <Badge variant={inbox === "landed" ? "info" : label.variant}>{inbox === "landed" ? "New in memory" : label.label}</Badge>
-          <span className="text-xs text-muted-foreground">
-            {[stamp(detail.startedAt), `${count(detail.sessions, "session")} read`, detail.model]
-              .filter(Boolean)
-              .join(" · ")}
-          </span>
-        </div>
-      ) : null}
-
       {detail.summary ? <p className="text-sm text-foreground/90">{detail.summary}</p> : null}
 
       {detail.changes.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          {detail.diffNote && detail.diffNote !== "truncated"
-            ? `Could not read the changes: ${detail.diffNote}`
-            : "This dream changed no files."}
-        </p>
+        detail.diffNote && detail.diffNote !== "truncated" ? (
+          <p className="text-sm text-muted-foreground">Could not read the changes: {detail.diffNote}</p>
+        ) : null
       ) : (
         <ul className="space-y-2">
           {cards.map((change) => (
-            <ChangeCard key={change.path} change={change} onAsk={() => void ask(detail, change.path)} />
+            <ChangeCard key={change.path} change={change} />
           ))}
         </ul>
       )}
@@ -822,9 +644,9 @@ function RunView({
       {detail.candidates.length > 0 ? (
         <div className="space-y-2 rounded-lg border border-border/60 px-3 py-2">
           <div className="flex items-center gap-2">
-            <span className="me-auto text-sm">The dream noticed these about you</span>
-            <Button size="xs" variant="outline" disabled={chosen.size === 0 || busy !== null} onClick={() => void addChosen()}>
-              {busy === "candidates" ? <Spinner className="size-3" /> : null}
+            <span className="me-auto text-sm">The dream noticed these about you. Add any you want every session to know.</span>
+            <Button size="xs" variant="outline" disabled={chosen.size === 0 || adding} onClick={() => void addChosen()}>
+              {adding ? <Spinner className="size-3" /> : null}
               Add {count(chosen.size, "line")} to user.md
             </Button>
           </div>
@@ -855,102 +677,20 @@ function RunView({
         </div>
       ) : null}
 
-      <div className="space-y-1 text-xs text-muted-foreground">
-        {detail.skipped.length > 0 ? (
-          <Fold label={`Left out · ${detail.skipped.length}`}>
-            <ul className="list-disc space-y-0.5 ps-4">
-              {detail.skipped.map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-          </Fold>
-        ) : null}
-        {detail.report ? (
-          <Fold label="Full report">
+      {detail.report ? (
+        <div className="text-xs text-muted-foreground">
+          <Fold label="The dream's report">
             <div className="max-h-[28rem] overflow-y-auto rounded-lg border border-border/60 px-3 py-2 text-sm text-foreground">
               <ChatMarkdown text={detail.report} cwd={undefined} />
             </div>
           </Fold>
-        ) : null}
-        {detail.sessionList.length > 0 ? (
-          <Fold label={`Sessions read · ${detail.sessionList.length}`}>
-            <ul className="space-y-0.5 ps-4">
-              {detail.sessionList.map((session) => (
-                <li key={session.id} className="truncate">
-                  {session.name ?? session.id}
-                  {session.messages !== undefined ? ` · ${count(session.messages, "message")}` : ""}
-                </li>
-              ))}
-            </ul>
-          </Fold>
-        ) : null}
-      </div>
-
-      {blocked ? (
-        <div className="rounded-lg border border-warning/40 bg-warning/8 px-3 py-2 text-sm">
-          <p>
-            {detail.pending ? "Can't add this yet" : "Can't undo this yet"}: {store.store} has edits that were never
-            committed, most likely from a session that stopped mid-write.
-          </p>
-          <ul className="mt-1 font-mono text-xs text-muted-foreground">
-            {detail.uncommitted.map((file) => (
-              <li key={file}>{file}</li>
-            ))}
-          </ul>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Commit or drop them first. Ask in chat hands them to an agent along with this dream.
-          </p>
         </div>
       ) : null}
-
-      <div className="flex flex-wrap items-center gap-2">
-        <Button size="xs" variant="ghost" onClick={() => void ask(detail)}>
-          <MessageSquareIcon className="size-3.5" />
-          Ask in chat
-        </Button>
-        <span className="me-auto" />
-        {detail.pending ? (
-          <>
-            <Button size="xs" variant="outline" disabled={busy !== null} onClick={() => void act("reject")}>
-              {busy === "reject" ? <Spinner className="size-3" /> : null}
-              Discard
-            </Button>
-            <Button size="xs" disabled={busy !== null || blocked} onClick={() => void act("approve")}>
-              {busy === "approve" ? <Spinner className="size-3" /> : null}
-              Add to memory
-            </Button>
-          </>
-        ) : null}
-        {detail.landed ? (
-          <Button size="xs" variant="outline" disabled={busy !== null || blocked} onClick={() => void act("revert")}>
-            {busy === "revert" ? <Spinner className="size-3" /> : <Undo2Icon className="size-3" />}
-            Undo
-          </Button>
-        ) : null}
-        {inbox === "landed" && detail.landed ? (
-          <Button size="xs" disabled={busy !== null} onClick={() => void act("ack")}>
-            {busy === "ack" ? <Spinner className="size-3" /> : null}
-            Got it
-          </Button>
-        ) : null}
-      </div>
     </div>
   );
 }
 
-function Fold({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <details className="group">
-      <summary className="flex cursor-pointer list-none items-center gap-1 py-0.5 hover:text-foreground">
-        <ChevronRightIcon className="size-3 transition-transform group-open:rotate-90" />
-        {label}
-      </summary>
-      <div className="pt-1 pb-2">{children}</div>
-    </details>
-  );
-}
-
-function ChangeCard({ change, onAsk }: { change: DreamChange; onAsk: () => void }) {
+function ChangeCard({ change }: { change: DreamChange }) {
   const [open, setOpen] = useState(false);
   const kind = CHANGE_LABEL[change.change];
   const preview = change.change === "added" && change.path.endsWith(".md") ? addedContent(change.diff) : null;
@@ -980,9 +720,6 @@ function ChangeCard({ change, onAsk }: { change: DreamChange; onAsk: () => void 
           {change.description ? <span className="mt-1 block text-sm">{change.description}</span> : null}
           {change.from ? <span className="block text-xs text-muted-foreground">Moved from {change.from}</span> : null}
         </button>
-        <Button size="icon-xs" variant="ghost" aria-label={`Ask in chat about ${change.path}`} title="Ask in chat" onClick={onAsk}>
-          <MessageSquareIcon className="size-3.5" />
-        </Button>
       </div>
       {change.notes.length > 0 ? (
         <ul className="space-y-0.5 px-3 pb-2 ps-8 text-xs text-muted-foreground">
@@ -1009,17 +746,8 @@ function ChangeCard({ change, onAsk }: { change: DreamChange; onAsk: () => void 
   );
 }
 
-function DreamHistory({
-  environmentId,
-  store,
-  home,
-  onChanged,
-}: {
-  environmentId: EnvironmentId;
-  store: StoreView;
-  home: string | null;
-  onChanged: () => void;
-}) {
+
+function DreamRuns({ environmentId, store }: { environmentId: EnvironmentId; store: StoreView }) {
   const [runs, setRuns] = useState<DreamRunSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
@@ -1042,12 +770,12 @@ function DreamHistory({
   }, [environmentId, store.store]);
 
   return (
-    <SettingsSection id="memory-history" title="Dream history">
-      {error ? <SettingsRow title="Could not load the history" description={error} /> : null}
+    <SettingsSection id="memory-history" title="Dream runs">
+      {error ? <SettingsRow title="Could not load the runs" description={error} /> : null}
       {runs === null && !error ? (
-        <SettingsRow title="Loading history" control={<Spinner className="size-4" />} />
+        <SettingsRow title="Loading runs" control={<Spinner className="size-4" />} />
       ) : null}
-      {runs?.length === 0 ? <SettingsRow title="No dreams yet" /> : null}
+      {runs?.length === 0 ? <SettingsRow title="No dream has run here yet" /> : null}
       {runs?.map((run) => {
         const label = runLabel(run);
         const expanded = open === run.runId;
@@ -1069,16 +797,16 @@ function DreamHistory({
               </button>
             }
             description={[
-              run.model ?? "No model",
-              `${count(run.sessions, "session")} read`,
-              run.reason ?? null,
+              `Read ${count(run.sessions, "session")}`,
+              run.model ?? null,
+              run.status === "failed" || run.status === "busy" ? (run.reason ?? null) : null,
             ]
               .filter(Boolean)
               .join(" · ")}
           >
             {expanded ? (
               <div className="pt-1 pb-3">
-                <RunView environmentId={environmentId} store={store} home={home} runId={run.runId} onChanged={onChanged} />
+                <RunView environmentId={environmentId} store={store} runId={run.runId} />
               </div>
             ) : null}
           </SettingsRow>
@@ -1168,7 +896,7 @@ function StoreFiles({
 
   const remove = async (file: string) => {
     const ok = await confirm(
-      `Delete ${file} from ${store}? The deletion is committed to the store, so git history keeps the old version.`,
+      `Delete ${file} from ${store}? The deletion is committed, so git history keeps the old version.`,
       true,
     );
     if (!ok) return;
@@ -1191,7 +919,7 @@ function StoreFiles({
   return (
     <SettingsSection
       id="memory-files"
-      title={files ? `Files · ${files.length}` : "Files"}
+      title={files ? `What it keeps · ${count(files.length, "file")}` : "What it keeps"}
       headerAction={
         files && files.length > 0 ? (
           <div className="relative">
@@ -1212,7 +940,7 @@ function StoreFiles({
       {files === null && !error ? (
         <SettingsRow title="Loading files" control={<Spinner className="size-4" />} />
       ) : null}
-      {files?.length === 0 ? <SettingsRow title="This store has no files yet" /> : null}
+      {files?.length === 0 ? <SettingsRow title="Nothing saved yet" /> : null}
       {shown && files && files.length > 0 && shown.length === 0 ? <SettingsRow title="No file matches" /> : null}
       {shown
         ? groupFiles(shown).map(([folder, entries]) => (
@@ -1253,7 +981,15 @@ function StoreFiles({
                       </Button>
                     </div>
                     {open === file.path ? (
-                      <FileViewer environmentId={environmentId} store={store} path={file.path} />
+                      <FileViewer
+                        environmentId={environmentId}
+                        store={store}
+                        path={file.path}
+                        onSaved={() => {
+                          setSignal((value) => value + 1);
+                          onChanged();
+                        }}
+                      />
                     ) : null}
                   </li>
                 ))}
@@ -1272,13 +1008,18 @@ function FileViewer({
   environmentId,
   store,
   path,
+  onSaved,
 }: {
   environmentId: EnvironmentId;
   store: string;
   path: string;
+  onSaved: () => void;
 }) {
   const [content, setContent] = useState<{ text: string; truncated: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [draft, setDraft] = useState<string | null>(null);
+  const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
   useEffect(() => {
     let cancelled = false;
     rubatoMemory
@@ -1294,6 +1035,23 @@ function FileViewer({
     };
   }, [environmentId, store, path]);
 
+  const save = async () => {
+    if (draft === null) return;
+    setSaving(true);
+    try {
+      const result = await rubatoMemory.saveFile(environmentId, store, path, draft, message.trim() || undefined);
+      toastManager.add({ type: "success", title: result.commit ? `Saved ${path}` : `No changes to ${path}` });
+      setContent({ text: result.content, truncated: false });
+      setDraft(null);
+      setMessage("");
+      onSaved();
+    } catch (cause) {
+      reportError(`Could not save ${path}`, cause);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (error) return <p className="px-2 pb-2 text-sm text-destructive-foreground">{error}</p>;
   if (!content)
     return (
@@ -1301,17 +1059,60 @@ function FileViewer({
         <Spinner className="size-3.5" /> Loading
       </div>
     );
+  if (draft !== null)
+    return (
+      <div className="mx-2 mb-2 space-y-2">
+        <Textarea
+          aria-label={`Edit ${path}`}
+          className="font-mono text-xs"
+          value={draft}
+          onChange={(event) => setDraft(event.currentTarget.value)}
+          rows={18}
+        />
+        <div className="flex items-center gap-2">
+          <Input
+            size="sm"
+            className="flex-1"
+            value={message}
+            onChange={(event) => setMessage(event.currentTarget.value)}
+            placeholder="What you changed (optional, kept in the history)"
+            aria-label="Commit message"
+          />
+          <Button size="xs" variant="ghost" disabled={saving} onClick={() => setDraft(null)}>
+            Cancel
+          </Button>
+          <Button size="xs" disabled={saving || draft === content.text} onClick={() => void save()}>
+            {saving ? <Spinner className="size-3" /> : null}
+            Save
+          </Button>
+        </div>
+      </div>
+    );
   const body = path.endsWith(".md") ? content.text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "") : null;
   return (
-    <div className="mx-2 mb-2 max-h-[32rem] overflow-auto rounded-lg border border-border/60 px-4 py-3">
-      {body !== null ? (
-        <ChatMarkdown text={body} cwd={undefined} />
-      ) : (
-        <pre className="font-mono text-xs whitespace-pre-wrap">{content.text}</pre>
-      )}
-      {content.truncated ? (
-        <p className="mt-2 text-xs text-muted-foreground">Showing the first 1 MB.</p>
-      ) : null}
+    <div className="mx-2 mb-2 rounded-lg border border-border/60">
+      <div className="flex justify-end px-2 pt-2">
+        <Button
+          size="xs"
+          variant="ghost"
+          disabled={content.truncated}
+          title={content.truncated ? "Too large to edit here" : undefined}
+          onClick={() => setDraft(content.text)}
+        >
+          <PencilIcon className="size-3" />
+          Edit
+        </Button>
+      </div>
+      <div className="max-h-[32rem] overflow-auto px-4 pb-3">
+        {body !== null ? (
+          <ChatMarkdown text={body} cwd={undefined} />
+        ) : (
+          <pre className="font-mono text-xs whitespace-pre-wrap">{content.text}</pre>
+        )}
+        {content.truncated ? (
+          <p className="mt-2 text-xs text-muted-foreground">Showing the first 1 MB.</p>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -1583,13 +1384,13 @@ const STORE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 function projectStoreLabel(entry: ProjectStore | undefined): string {
   if (!entry) return "Checking…";
-  if (entry.configured) return `Writes to ${entry.configured}, named in .rubato/rubato.jsonc.`;
-  if (entry.source === "git") return `Writes to ${entry.store}, found from its git repository.`;
-  if (entry.source === "home") return "Writes to home, the home folder's store.";
-  return "Keeps no memory: not a git repository and no store named.";
+  if (entry.configured) return "Chosen here; saved in this folder's .rubato/rubato.jsonc.";
+  if (entry.source === "git") return "Automatic: folders in the same git repository share one memory.";
+  if (entry.source === "home") return "Automatic: the home folder has its own memory.";
+  return "Automatic: no memory, because this folder is not in a git repository. Pick one to give it memory.";
 }
 
-/** Each project in the app and the store its sessions write to; naming one writes memory.agent. */
+/** Each project in the app and the memory its sessions use; picking one writes memory.agent. */
 function ProjectStoresSection({
   environmentId,
   home,
@@ -1641,11 +1442,11 @@ function ProjectStoresSection({
       onChanged();
       toastManager.add({
         type: "info",
-        title: store ? `Sessions here now write to ${store}` : "Back to the automatic store",
-        description: "New sessions pick this up; running ones keep their store.",
+        title: store ? `This project now uses ${store}` : "Back to automatic",
+        description: "New sessions pick this up; running ones keep the memory they started with.",
       });
     } catch (cause) {
-      reportError("Could not change the project's store", cause);
+      reportError("Could not change the project's memory", cause);
     } finally {
       setSaving(null);
     }
@@ -1653,12 +1454,14 @@ function ProjectStoresSection({
 
   if (projects.length === 0) return null;
   return (
-    <SettingsSection id="memory-projects" title="Which store each project writes to">
-      {error ? <SettingsRow title="Could not read the projects' stores" description={error} /> : null}
+    <SettingsSection id="memory-projects" title="Which memory each project uses">
+      {error ? <SettingsRow title="Could not read the projects' memory" description={error} /> : null}
       {projects.map((project) => {
         const dir = project.workspaceRoot;
         const entry = resolved.get(dir);
         const options = [...new Set([...stores, ...(entry?.configured ? [entry.configured] : [])])].toSorted();
+        // The automatic choice names the memory it lands on, so "Automatic" never hides where it goes.
+        const automatic = entry && !entry.configured ? (entry.store ?? "No memory") : null;
         return (
           <SettingsRow
             key={`${project.environmentId}:${project.id}`}
@@ -1682,10 +1485,10 @@ function ProjectStoresSection({
                     autoFocus
                     size="sm"
                     className="w-40"
-                    placeholder="store name"
+                    placeholder="new memory name"
                     value={newName}
                     onChange={(event) => setNewName(event.currentTarget.value)}
-                    aria-label={`New memory store for ${project.title}`}
+                    aria-label={`New memory for ${project.title}`}
                   />
                   <Button size="sm" type="submit" disabled={saving === dir || !STORE_NAME.test(newName.trim())}>
                     Save
@@ -1707,17 +1510,28 @@ function ProjectStoresSection({
                     } else if (next !== entry?.configured) void save(dir, next);
                   }}
                 >
-                  <SelectTrigger size="sm" className="w-44" aria-label={`Memory store for ${project.title}`} disabled={saving === dir || !entry}>
-                    <SelectValue>{entry?.configured ?? "Automatic"}</SelectValue>
+                  <SelectTrigger
+                    size="sm"
+                    className="w-48"
+                    aria-label={`Memory for ${project.title}`}
+                    disabled={saving === dir || !entry}
+                  >
+                    <SelectValue>
+                      {entry?.configured ?? (
+                        <span>
+                          {automatic ?? "…"} <span className="text-muted-foreground">· auto</span>
+                        </span>
+                      )}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectPopup align="end" alignItemWithTrigger={false}>
-                    <SelectItem value={AUTOMATIC}>Automatic</SelectItem>
+                    <SelectItem value={AUTOMATIC}>Automatic{automatic ? ` (${automatic})` : ""}</SelectItem>
                     {options.map((store) => (
                       <SelectItem key={store} value={store}>
                         {store}
                       </SelectItem>
                     ))}
-                    <SelectItem value={NEW_STORE}>New store…</SelectItem>
+                    <SelectItem value={NEW_STORE}>New memory…</SelectItem>
                   </SelectPopup>
                 </Select>
               )
@@ -1726,5 +1540,17 @@ function ProjectStoresSection({
         );
       })}
     </SettingsSection>
+  );
+}
+
+function Fold({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <details className="group">
+      <summary className="flex cursor-pointer list-none items-center gap-1 py-0.5 hover:text-foreground">
+        <ChevronRightIcon className="size-3 transition-transform group-open:rotate-90" />
+        {label}
+      </summary>
+      <div className="pt-1 pb-2">{children}</div>
+    </details>
   );
 }
