@@ -42,7 +42,7 @@ Do not create a separate team for its replacement: that splits peer addresses.
 Carry the same intent, artifact paths, checked revisions and outstanding requests
 in the English handoff. Unread mail and board ownership stay with the member;
 consumed requests need the handoff, and old verdicts do not cover later edits.
-Recovery does not authorize a model/cost change or reopening approved shutdown.
+Recovery does not authorize a model/cost change or reopening approved shutdown; a model change the user approved goes through the same tool with `user_approval_ref`.
 
 A team lead and an owner read the result artifact or board rather than replaying a
 child's transcript; a completion carries its result file path. A teammate's normal
