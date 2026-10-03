@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 
-import { addedContent, lastDreamLine, runLabel } from "./RubatoMemorySettings.logic";
+import { addedContent, fallbackNote, lastDreamLine, runLabel } from "./RubatoMemorySettings.logic";
 
 describe("addedContent", () => {
   it("reads a new file out of its diff without the front matter", () => {
@@ -52,5 +52,21 @@ describe("lastDreamLine", () => {
     );
     const failed = lastDreamLine(true, { ...run, status: "failed", landed: false, reason: "merge failed: x\nmore" }, ago);
     expect(failed).toEqual({ text: "Last dream 2 hours ago failed: merge failed: x", tone: "error" });
+  });
+});
+
+describe("fallbackNote", () => {
+  it("says nothing when the first model answered", () => {
+    expect(fallbackNote([])).toBeNull();
+    expect(fallbackNote([{ model: "b-ai/deepseek-v4.1-flash", ok: true }])).toBeNull();
+  });
+
+  it("names the models that failed before the one that answered, or that all failed", () => {
+    const deepseek = { model: "b-ai/deepseek-v4.1-flash", ok: false, error: "credit insufficient" };
+    const grok = { model: "xai/grok-4.7", ok: false, error: "Internal error" };
+    expect(fallbackNote([deepseek, grok, { model: "anthropic/claude-haiku-4-5", ok: true }])).toBe(
+      "Fell back after b-ai/deepseek-v4.1-flash, xai/grok-4.7 failed",
+    );
+    expect(fallbackNote([deepseek, grok])).toBe("Every model failed: b-ai/deepseek-v4.1-flash, xai/grok-4.7");
   });
 });

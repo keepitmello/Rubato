@@ -79,7 +79,9 @@ async function writeRun(store, runId, fields) {
 
 test('status, runs and diffs go through the real dream CLI', { skip: !bunAvailable && 'bun is not installed' }, async (t) => {
   const f = await fixture(t);
-  await landedDream(f, 'dream-a', 'second');
+  await landedDream(f, 'dream-a', 'second', undefined, {
+    attempts: [{ model: 'b-ai/deepseek-v4.1-flash', ok: false, error: 'credit insufficient' }, { model: 'xai/grok-4.7', ok: true }],
+  });
 
   const status = await f.service.handle('status', {});
   assert.deepEqual(status.models, [
@@ -93,11 +95,11 @@ test('status, runs and diffs go through the real dream CLI', { skip: !bunAvailab
 
   const listed = await f.service.handle('runs', { store: 'scratch' });
   assert.deepEqual(listed.runs.map((run) => [run.runId, run.status, run.landed, run.sessions]), [['dream-a', 'merged', true, 1]]);
+  assert.deepEqual(listed.runs[0].attempts, [{ model: 'b-ai/deepseek-v4.1-flash', ok: false, error: 'credit insufficient' }, { model: 'xai/grok-4.7', ok: true }]);
 
   const detail = await f.service.handle('run', { store: 'scratch', runId: 'dream-a' });
   assert.match(detail.report, /second/);
   assert.match(detail.changes[0].diff, /^\+second$/m, 'a landed run still shows what it changed');
-  assert.deepEqual(detail.candidates.map((c) => c.text), ['한국어 반말을 좋아한다', 'base 에 바로 푸시한다']);
 
   for (const action of ['review', 'revert', 'ack']) await assert.rejects(f.service.handle(action, { store: 'scratch' }), /Unknown memory action/);
   await assert.rejects(f.service.handle('runs', { store: '../scratch' }), /not valid/);
@@ -185,14 +187,20 @@ test('settings writes keep the user file and commit the self store', async (t) =
   assert.equal(git(selfRepo, 'log', '-1', '--format=%s'), 'soul.md: 말투 정리');
   await assert.rejects(f.service.handle('self-save', { file: '../x.md', content: '' }), /user\.md or soul\.md/);
 
+  // What the dreams noticed about the user: every run's lines in one list, each once, newest first.
   await landedDream(f, 'dream-c', 'fourth');
-  const added = await f.service.handle('add-candidates', { store: 'scratch', runId: 'dream-c', lines: ['base 에 바로 푸시한다'] });
+  await landedDream(f, 'dream-d', 'fifth', undefined, { startedAt: '2026-09-27T01:00:00.000Z' });
+  await writeFile(path.join(f.store, 'runtime', 'dream', 'runs', 'dream-d', 'out', 'user-candidates.md'), '- 짧은 답을 좋아한다\n- base 에 바로 푸시한다\n');
+  const texts = async () => (await f.service.handle('suggestions', {})).suggestions.map((entry) => entry.text);
+  assert.deepEqual(await texts(), ['짧은 답을 좋아한다', 'base 에 바로 푸시한다', '한국어 반말을 좋아한다']);
+  const added = await f.service.handle('add-suggestions', { lines: ['base 에 바로 푸시한다'] });
   assert.equal(added.added, 1);
   assert.equal(await readFile(path.join(selfRepo, 'user.md'), 'utf8'), '# user\n\n- 첫 줄\n- base 에 바로 푸시한다\n');
-  assert.match(git(selfRepo, 'log', '-1', '--format=%s'), /^user\.md: add 1 dream candidate from scratch dream-c$/);
-  const detail = await f.service.handle('run', { store: 'scratch', runId: 'dream-c' });
-  assert.deepEqual(detail.candidates.map((c) => c.inUser), [false, true]);
-  await assert.rejects(f.service.handle('add-candidates', { store: 'scratch', runId: 'dream-c', lines: ['지어낸 줄'] }), /not in this run/);
+  assert.equal(git(selfRepo, 'log', '-1', '--format=%s'), 'user.md: add 1 line the dream noticed');
+  await f.service.handle('dismiss-suggestions', { lines: ['짧은 답을 좋아한다'] });
+  assert.deepEqual(await texts(), ['한국어 반말을 좋아한다'], 'added and dismissed lines leave the list');
+  await assert.rejects(f.service.handle('add-suggestions', { lines: ['지어낸 줄'] }), /not among the suggestions/);
+  await assert.rejects(f.service.handle('dismiss-suggestions', { lines: [] }), /at least one/);
 });
 
 test('HTTP exchange maps actions, bodies and errors', async (t) => {
@@ -228,8 +236,11 @@ test('stores are listed with their project, browsed, pruned and archived', async
   const listed = await f.service.handle('stores', {});
   assert.deepEqual(listed.stores.map((s) => [s.store, s.roots, s.home, s.files, s.enabled]), [
     ['scratch', ['/work/scratch'], false, 3, true],
-    ['older', null, null, 0, false],
+    ['older', null, null, 0, true],
   ]);
+  // Every store dreams unless the config turns it off.
+  await f.service.handle('config', { store: 'older', enabled: false });
+  assert.equal((await f.service.handle('stores', {})).stores.find((s) => s.store === 'older').enabled, false);
 
   const browsed = await f.service.handle('files', { store: 'scratch' });
   assert.deepEqual(browsed.files, [

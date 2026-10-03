@@ -10,10 +10,17 @@ export const memoryOverlays = [
   'apps/web/src/components/settings/RubatoMemorySettings.tsx',
   'apps/web/src/components/settings/RubatoMemorySettings.logic.ts',
   'apps/web/src/components/settings/RubatoMemorySettings.logic.test.ts',
+  'apps/web/src/components/settings/RubatoMemoryIntro.tsx',
   'apps/web/src/routes/settings.memory.tsx',
 ];
 
 export const memoryEdits = {
+  // The one-time dream introduction sits with the app's other root dialogs.
+  'apps/web/src/routes/__root.tsx': [
+    ['import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";',
+      'import { RubatoMemoryIntro } from "../components/settings/RubatoMemoryIntro";\n'],
+    ['          <SshPasswordPromptDialog />', '          <RubatoMemoryIntro />\n'],
+  ],
   'apps/server/src/server.ts': [
     ['import { deviceHubProxyRouteLayer } from "./device/DeviceHubProxy.ts";', 'import { rubatoMemoryRouteLayer } from "./RubatoMemory.ts";\n'],
     ['    deviceHubProxyRouteLayer,\n', '    rubatoMemoryRouteLayer,\n'],
