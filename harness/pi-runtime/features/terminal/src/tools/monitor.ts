@@ -12,7 +12,7 @@ import {
 	textResult,
 } from "./context.ts";
 import { renderMonitorCall } from "./render.ts";
-import { findSameWatch, findSessionHeldByPattern } from "./monitor-guards.ts";
+import { findSameWatch } from "./same-watch.ts";
 import { spawnCommandSession } from "./spawn.ts";
 
 export const DEFAULT_MONITOR_TIMEOUT_MS = 300_000;
@@ -136,18 +136,6 @@ async function createMonitor(
 			{ details: { monitor_id: same.monitorId, bash_id: same.id, monitor: true, reused: true } },
 		);
 	}
-	const held = findSessionHeldByPattern(input.command, ctx.manager.list(), watches);
-	if (held) {
-		const shown = held.command.length > 120 ? `${held.command.slice(0, 117)}...` : held.command;
-		const match = `pgrep -f "${held.pattern}" matches pid ${held.pid} (\`${shown}\`)`;
-		const session = held.session;
-		return errorResult(
-			session?.monitorId !== undefined
-				? `Not started: ${match}, the watcher of your live monitor ${session.monitorId}, so each watcher would keep the other alive until its deadline. Reuse ${session.monitorId}, or stop it with kill_bash first; bracketing one character (e.g. "[w]orker.py") keeps a watcher's own command line out of later matches.`
-				: `Not started: ${match}, which is ${session ? `your own background session ${session.id}` : "the root of one of your own live sessions"}, so this watch cannot fire before that session exits, and its completion notification already wakes you. Do not watch it; keep working or end the turn.`,
-		);
-	}
-
 	const { id, runtime } = await spawnCommandSession(ctx, {
 		command: input.command,
 		cols: resolveDimension(undefined, ctx.defaultCols || DEFAULT_COLS),
