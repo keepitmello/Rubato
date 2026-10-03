@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { createMemoryService, handleMemoryRequest } from '../src/memory/service.mjs';
+import { ADOPT_SUBJECT, createMemoryService, handleMemoryRequest } from '../src/memory/service.mjs';
 
 const git = (cwd, ...args) => execFileSync('git', ['-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8' }).trim();
 const bunAvailable = (() => { try { execFileSync('bun', ['--version']); return true; } catch { return false; } })();
@@ -30,7 +30,9 @@ function jsoncModels(text) {
   return JSON.parse(stripped).memory.dream.models;
 }
 
-async function fixture(t) {
+// Tests never reach this machine's real search index: msearch is a path that does not exist
+// unless a test hands in its own.
+async function fixture(t, { msearch = '/nonexistent/msearch' } = {}) {
   const home = await mkdtemp(path.join(tmpdir(), 'rb-memory-'));
   t.after(() => rm(home, { recursive: true, force: true }));
   await mkdir(path.join(home, '.rubato'), { recursive: true });
@@ -42,7 +44,7 @@ async function fixture(t) {
   await writeFile(path.join(repo, 'notes.md'), 'first\n');
   git(repo, 'add', '-A');
   git(repo, 'commit', '-q', '-m', 'init');
-  const service = createMemoryService({ env: { ...process.env, HOME: home, RUBATO_MEMORY_HOME: '' } });
+  const service = createMemoryService({ env: { ...process.env, HOME: home, RUBATO_MEMORY_HOME: '' }, msearch });
   return { home, store, repo, service };
 }
 
@@ -129,7 +131,7 @@ test('a run reads as one card per changed file, and the store says how its last 
     notes: [{ kind: 'why', text: '두 번째 줄이 빠져 있었다' }, { kind: 'conflict', text: 'kept notes.md, because 최신' }],
   }]);
   assert.deepEqual(await lastRun(), {
-    runId: 'dream-a', status: 'merged', startedAt: '2026-09-26T01:00:00.000Z', finishedAt: '2026-09-26T01:10:00.000Z', landed: true,
+    runId: 'dream-a', status: 'merged', startedAt: '2026-09-26T01:00:00.000Z', finishedAt: '2026-09-26T01:10:00.000Z', attempts: [], landed: true,
   });
 
   // A newer run that failed is the news; a skipped or trial run says nothing about the store.
@@ -137,7 +139,7 @@ test('a run reads as one card per changed file, and the store says how its last 
   await writeRun(f.store, 'dream-c', { startedAt: '2026-09-28T01:00:00.000Z', status: 'busy' });
   await writeRun(f.store, 'dream-d', { startedAt: '2026-09-29T01:00:00.000Z', status: 'trial' });
   assert.deepEqual(await lastRun(), {
-    runId: 'dream-b', status: 'failed', startedAt: '2026-09-27T01:00:00.000Z', reason: 'merge failed: conflict', landed: false,
+    runId: 'dream-b', status: 'failed', startedAt: '2026-09-27T01:00:00.000Z', reason: 'merge failed: conflict', attempts: [], landed: false,
   });
 
   // A dream an earlier version held for approval and that was never approved did not land.
@@ -292,4 +294,53 @@ test('a newcomer has no stores yet', async (t) => {
   t.after(() => rm(home, { recursive: true, force: true }));
   const service = createMemoryService({ env: { ...process.env, HOME: home, RUBATO_MEMORY_HOME: '' } });
   assert.deepEqual((await service.handle('stores', {})).stores, []);
+});
+
+test('the overview reads who changed what across stores, newest first', async (t) => {
+  const f = await fixture(t);
+  // The subject the page reads as "saved without a reason" is the one memory-core writes.
+  const repoTs = await readFile(new URL('../../../packages/memory-core/src/git/repo.ts', import.meta.url), 'utf8');
+  assert.equal(/export const ADOPT_COMMIT = "([^"]+)"/.exec(repoTs)?.[1], ADOPT_SUBJECT);
+
+  const commitAt = (when, ...args) => execFileSync('git', ['-C', f.repo, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], {
+    env: { ...process.env, GIT_AUTHOR_DATE: when, GIT_COMMITTER_DATE: when },
+  });
+  await writeFile(path.join(f.repo, 'tool.md'), '---\ndescription: by a tool\n---\n');
+  git(f.repo, 'add', '-A');
+  commitAt('2026-09-20T00:00:00Z', 'commit', '-q', '-m', '왜 이렇게 했나', '-m', 'Rubato-Writer: memory-tool');
+  await writeFile(path.join(f.repo, 'shell.md'), 'written with a shell\n');
+  git(f.repo, 'add', '-A');
+  commitAt('2026-09-21T00:00:00Z', 'commit', '-q', '-m', ADOPT_SUBJECT);
+  await landedDream(f, 'dream-a', 'second', '## 요약\n\n노트를 정리했다.\n');
+  await f.service.handle('save-file', { store: 'scratch', path: 'tool.md', content: '---\ndescription: by me\n---\n', message: '내가 고침' });
+
+  const { items } = await f.service.handle('activity', {});
+  const read = items.map((item) => [item.kind, item.text, item.files.map((file) => `${file.change}:${file.path}`)]);
+  assert.deepEqual(read.toSorted(), [
+    ['dream', '노트를 정리했다.', ['modified:notes.md']],
+    ['session', 'init', ['added:notes.md']],
+    ['session', null, ['added:shell.md']],
+    ['session', '왜 이렇게 했나', ['added:tool.md']],
+    ['you', '내가 고침', ['modified:tool.md']],
+  ].toSorted());
+  assert.equal(items.find((item) => item.kind === 'dream').runId, 'dream-a');
+  // Newest first: of the two dated commits, the later one comes first.
+  assert.ok(read.findIndex(([, text]) => text === null) < read.findIndex(([, text]) => text === '왜 이렇게 했나'));
+  assert.equal((await f.service.handle('activity', { limit: 2 })).items.length, 2);
+});
+
+test('search asks msearch across every store and falls back to plain text without it', async (t) => {
+  const plain = await fixture(t);
+  await mkdir(path.join(plain.repo, 'decisions'), { recursive: true });
+  await writeFile(path.join(plain.repo, 'decisions', 'signing.md'), '---\ndescription: 앱 코드 서명\n---\n\n로컬 인증서로 서명한다.\n');
+  const found = await plain.service.handle('search', { query: '인증서' });
+  assert.deepEqual(found, { engine: 'plain', results: [{ store: 'scratch', path: 'decisions/signing.md', description: '앱 코드 서명', preview: '로컬 인증서로 서명한다.' }] });
+  await assert.rejects(plain.service.handle('search', { query: '  ' }), /Type something/);
+
+  // msearch names a file once per matching section and roots paths at the memory directory.
+  const bin = path.join(plain.home, 'fake-msearch');
+  const hit = (rel) => ({ rel_path: rel, content: '---\ndescription: 앱 코드 서명\n---\n## 결론\n로컬 인증서' });
+  await writeFile(bin, `#!/bin/sh\ncat <<'EOF'\n${JSON.stringify([hit('scratch/repo/decisions/signing.md'), hit('scratch/repo/decisions/signing.md'), hit('../escape.md')])}\nEOF\n`, { mode: 0o755 });
+  const viaMsearch = await createMemoryService({ env: { ...process.env, HOME: plain.home, RUBATO_MEMORY_HOME: '' }, msearch: bin }).handle('search', { query: '서명' });
+  assert.deepEqual(viaMsearch, { engine: 'msearch', results: [{ store: 'scratch', path: 'decisions/signing.md', description: '앱 코드 서명', preview: '로컬 인증서' }] });
 });

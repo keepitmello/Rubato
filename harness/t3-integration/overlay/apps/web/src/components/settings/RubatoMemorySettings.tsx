@@ -33,7 +33,9 @@ import {
   type DreamRunDetail,
   type DreamRunSummary,
   type DreamSuggestion,
+  type MemoryActivity,
   type MemoryFileEntry,
+  type MemorySearchHit,
   type MemoryStatus,
   type MemoryStoreStatus,
   type MemoryStoreSummary,
@@ -55,8 +57,10 @@ import {
   chatPrompt,
   fallbackNote,
   lastDreamLine,
+  overviewStatus,
   projectForStore,
   runLabel,
+  splitQuiet,
   type BadgeVariant,
 } from "./RubatoMemorySettings.logic";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
@@ -154,9 +158,9 @@ function whereLabel(store: StoreView, home: string | null): string {
   return "No project folder recorded yet";
 }
 
-type Tab = "projects" | "you" | "settings";
+type Tab = "overview" | "you" | "settings";
 const TABS: ReadonlyArray<{ value: Tab; label: string }> = [
-  { value: "projects", label: "Projects" },
+  { value: "overview", label: "Overview" },
   { value: "you", label: "About you" },
   { value: "settings", label: "Settings" },
 ];
@@ -169,8 +173,9 @@ export function RubatoMemorySettingsPanel() {
   const [storesError, setStoresError] = useState<string | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [selectedStore, setSelectedStore] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>("projects");
+  // A project open on its own page, with the file or dream run the user came for already unfolded.
+  const [opened, setOpened] = useState<OpenTarget | null>(null);
+  const [tab, setTab] = useState<Tab>("overview");
   const [historySignal, setHistorySignal] = useState(0);
   const [suggestions, setSuggestions] = useState<DreamSuggestion[] | null>(null);
   const loadingRef = useRef(false);
@@ -294,26 +299,29 @@ export function RubatoMemorySettingsPanel() {
     }
   };
 
-  const selected = selectedStore ? stores?.find((entry) => entry.store === selectedStore) : undefined;
-  if (selectedStore && stores && !selected) {
+  const selected = opened ? stores?.find((entry) => entry.store === opened.store) : undefined;
+  if (opened && stores && !selected) {
     // Deleted, or gone from disk since the list was read.
-    setSelectedStore(null);
+    setOpened(null);
   }
 
   if (selected) {
     return (
       <SettingsPageContainer>
         <StoreDetail
+          key={`${opened?.store}:${opened?.file ?? ""}:${opened?.runId ?? ""}`}
           environmentId={environmentId}
           store={selected}
           home={home}
           historySignal={historySignal}
-          onBack={() => setSelectedStore(null)}
+          initialFile={opened?.file ?? null}
+          initialRun={opened?.runId ?? null}
+          onBack={() => setOpened(null)}
           onToggle={(enabled) => setEnabled(selected.store, enabled)}
           onRun={() => void runNow(selected.store)}
           onChanged={changed}
           onDeleted={() => {
-            setSelectedStore(null);
+            setOpened(null);
             void refresh();
           }}
         />
@@ -343,37 +351,25 @@ export function RubatoMemorySettingsPanel() {
         </ToggleGroup>
       </div>
 
-      {tab === "projects" ? (
-        <>
-          <p className="px-3 text-sm text-muted-foreground sm:px-4">
-            Agents keep what they learn in each project&apos;s memory. Once a day a dream reads the new sessions and
-            tidies it on its own. Open a project to read or edit what it keeps.
-          </p>
-          <SettingsSection
-            id="memory-stores"
-            title="Memory by project"
-            headerAction={
-              <Button size="xs" variant="ghost" disabled={loading} onClick={() => void refresh()}>
-                {loading ? <Spinner className="size-3.5" /> : <RefreshCwIcon className="size-3.5" />}
-                Refresh
-              </Button>
-            }
-          >
-            {storesError ? <SettingsRow title="Could not load memory" description={storesError} /> : null}
-            {stores === null && !storesError ? (
-              <SettingsRow title="Loading memory" control={<Spinner className="size-4" />} />
-            ) : null}
-            {stores?.length === 0 ? (
-              <SettingsRow
-                title="No memory yet"
-                description="A project's memory appears the first time an agent saves something in it."
-              />
-            ) : null}
-            {stores?.map((store) => (
-              <StoreRow key={store.store} store={store} home={home} onOpen={() => setSelectedStore(store.store)} />
-            ))}
+      {tab === "overview" ? (
+        storesError ? (
+          <SettingsSection id="memory-overview" title="Memory">
+            <SettingsRow title="Could not load memory" description={storesError} />
           </SettingsSection>
-        </>
+        ) : stores === null ? (
+          <SettingsSection id="memory-overview" title="Memory">
+            <SettingsRow title="Loading memory" control={<Spinner className="size-4" />} />
+          </SettingsSection>
+        ) : (
+          <Overview
+            environmentId={environmentId}
+            stores={stores}
+            home={home}
+            loading={loading}
+            onRefresh={() => void refresh()}
+            onOpen={setOpened}
+          />
+        )
       ) : null}
 
       {tab === "you" ? (
@@ -467,6 +463,261 @@ function StoreRow({ store, home, onOpen }: { store: StoreView; home: string | nu
   );
 }
 
+/** What opening a project from the overview lands on. */
+type OpenTarget = { readonly store: string; readonly file?: string; readonly runId?: string };
+
+/** The landing page: is memory working, what changed lately, find anything, then the projects. */
+function Overview({
+  environmentId,
+  stores,
+  home,
+  loading,
+  onRefresh,
+  onOpen,
+}: {
+  environmentId: EnvironmentId;
+  stores: readonly StoreView[];
+  home: string | null;
+  loading: boolean;
+  onRefresh: () => void;
+  onOpen: (target: OpenTarget) => void;
+}) {
+  const status = overviewStatus(stores);
+  const { active, quiet } = splitQuiet(stores, Date.now());
+  const [showQuiet, setShowQuiet] = useState(false);
+  return (
+    <>
+      <SettingsSection id="memory-status" title="Status" hideTitle>
+        <SettingsRow
+          title={
+            stores.length === 0
+              ? "Memory is on. Nothing is saved yet."
+              : `Memory is on. Agents keep what they learn in ${count(status.projects, "project")}, ${count(status.notes, "note")} in all.`
+          }
+          description={
+            stores.length === 0
+              ? "A project's memory appears the first time an agent saves something in it. Once a day a dream tidies it on its own."
+              : [
+                  `Daily dream on for ${status.dreaming} of ${status.projects}`,
+                  status.newest
+                    ? `last ran ${ago(status.newest.run.finishedAt ?? status.newest.run.startedAt)} in ${status.newest.store}`
+                    : "no dream has run yet",
+                ].join(" · ")
+          }
+        />
+        {status.attention.map((item) => (
+          <SettingsRow
+            key={`${item.store}:${item.runId}`}
+            className="bg-warning/8"
+            title={<span className="text-warning-foreground">⚠ {item.title}</span>}
+            description={item.detail ?? undefined}
+            control={
+              <Button size="xs" variant="outline" onClick={() => onOpen({ store: item.store, runId: item.runId })}>
+                See run
+              </Button>
+            }
+          />
+        ))}
+      </SettingsSection>
+
+      <MemorySearch environmentId={environmentId} onOpen={onOpen} />
+
+      {stores.length > 0 ? <RecentChanges environmentId={environmentId} onOpen={onOpen} /> : null}
+
+      {stores.length > 0 ? (
+        <SettingsSection
+          id="memory-stores"
+          title="Projects"
+          headerAction={
+            <Button size="xs" variant="ghost" disabled={loading} onClick={onRefresh}>
+              {loading ? <Spinner className="size-3.5" /> : <RefreshCwIcon className="size-3.5" />}
+              Refresh
+            </Button>
+          }
+        >
+          {active.map((store) => (
+            <StoreRow key={store.store} store={store} home={home} onOpen={() => onOpen({ store: store.store })} />
+          ))}
+          {showQuiet
+            ? quiet.map((store) => (
+                <StoreRow key={store.store} store={store} home={home} onOpen={() => onOpen({ store: store.store })} />
+              ))
+            : null}
+          {quiet.length > 0 ? (
+            <SettingsRow
+              className="cursor-pointer hover:bg-accent/30"
+              onClick={() => setShowQuiet(!showQuiet)}
+              title={
+                <span className="text-sm font-normal text-muted-foreground">
+                  {showQuiet ? "Hide quiet projects" : `${count(quiet.length, "quiet project")} (no change in 3 weeks) · show`}
+                </span>
+              }
+            />
+          ) : null}
+        </SettingsSection>
+      ) : null}
+    </>
+  );
+}
+
+/** One search box over every project's memory; a result opens its file. */
+function MemorySearch({ environmentId, onOpen }: { environmentId: EnvironmentId; onOpen: (target: OpenTarget) => void }) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<{ query: string; hits: MemorySearchHit[] } | null>(null);
+  const [searching, setSearching] = useState(false);
+
+  const submit = async () => {
+    const text = query.trim();
+    if (text === "") return;
+    setSearching(true);
+    try {
+      const found = await rubatoMemory.search(environmentId, text);
+      setResults({ query: text, hits: found.results });
+    } catch (cause) {
+      reportError("Could not search memory", cause);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  return (
+    <SettingsSection id="memory-search" title="Search" hideTitle>
+      <form
+        className="relative px-3 py-2.5 sm:px-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void submit();
+        }}
+      >
+        <SearchIcon className="pointer-events-none absolute start-5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground sm:start-6" />
+        <Input
+          className="ps-8"
+          placeholder="Search all memory: a decision, an error, a file name…"
+          value={query}
+          onChange={(event) => {
+            setQuery(event.currentTarget.value);
+            if (event.currentTarget.value === "") setResults(null);
+          }}
+          aria-label="Search all memory"
+        />
+        {searching ? <Spinner className="absolute end-6 top-1/2 size-4 -translate-y-1/2" /> : null}
+      </form>
+      {results && results.hits.length === 0 ? (
+        <SettingsRow title={`Nothing in memory matches "${results.query}"`} />
+      ) : null}
+      {results?.hits.map((hit) => (
+        <SettingsRow
+          key={`${hit.store}/${hit.path}`}
+          className="cursor-pointer hover:bg-accent/30"
+          onClick={() => onOpen({ store: hit.store, file: hit.path })}
+          title={
+            <span className="flex min-w-0 items-baseline gap-2">
+              <span className="truncate font-mono text-xs">{hit.path}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">{hit.store}</span>
+            </span>
+          }
+          description={hit.description ?? hit.preview}
+        />
+      ))}
+    </SettingsSection>
+  );
+}
+
+const ACTIVITY_PAGE = 20;
+const ACTIVITY_KIND: Record<MemoryActivity["kind"], { label: string; variant: BadgeVariant }> = {
+  dream: { label: "Dream", variant: "info" },
+  session: { label: "Session", variant: "success" },
+  you: { label: "You", variant: "secondary" },
+};
+const CHANGE_MARK: Record<DreamChange["change"], string> = { added: "+", modified: "~", deleted: "−", renamed: "→" };
+const FILES_SHOWN = 3;
+
+/** Every project's recent commits in one list, newest first: who changed what, and why. */
+function RecentChanges({ environmentId, onOpen }: { environmentId: EnvironmentId; onOpen: (target: OpenTarget) => void }) {
+  const [limit, setLimit] = useState(ACTIVITY_PAGE);
+  const [items, setItems] = useState<MemoryActivity[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    rubatoMemory
+      .activity(environmentId, limit)
+      .then((result) => {
+        if (!cancelled) setItems(result.items);
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [environmentId, limit]);
+
+  const open = (item: MemoryActivity) => {
+    if (item.kind === "dream" && item.runId) return onOpen({ store: item.store, runId: item.runId });
+    const file = item.files.find((entry) => entry.change !== "deleted");
+    return onOpen(item.files.length === 1 && file ? { store: item.store, file: file.path } : { store: item.store });
+  };
+
+  return (
+    <SettingsSection id="memory-activity" title="Recent changes">
+      {error ? <SettingsRow title="Could not load recent changes" description={error} /> : null}
+      {items === null && !error ? <SettingsRow title="Loading" control={<Spinner className="size-4" />} /> : null}
+      {items?.map((item) => {
+        const kind = ACTIVITY_KIND[item.kind];
+        const more = item.files.length - FILES_SHOWN;
+        return (
+          <SettingsRow
+            key={`${item.store}:${item.sha}`}
+            title={
+              <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                <Badge variant={kind.variant}>{kind.label}</Badge>
+                <span className="text-xs font-normal text-muted-foreground">
+                  {item.store} · {ago(item.at)}
+                </span>
+              </span>
+            }
+            description={
+              <span className="block space-y-0.5">
+                <span className={cn("block", item.text === null && "italic")}>
+                  {item.text ?? "Saved by a session without a reason"}
+                </span>
+                <span className="block truncate font-mono text-xs">
+                  {item.files
+                    .slice(0, FILES_SHOWN)
+                    .map((file) => `${CHANGE_MARK[file.change]} ${file.path}`)
+                    .join("   ")}
+                  {more > 0 ? `   +${more} more` : ""}
+                </span>
+              </span>
+            }
+            control={
+              <Button size="xs" variant="outline" onClick={() => open(item)}>
+                Open
+              </Button>
+            }
+          />
+        );
+      })}
+      {items && items.length >= limit ? (
+        <SettingsRow
+          className="cursor-pointer hover:bg-accent/30"
+          onClick={() => setLimit(limit + ACTIVITY_PAGE)}
+          title={<span className="text-sm font-normal text-muted-foreground">Show older changes</span>}
+        />
+      ) : null}
+    </SettingsSection>
+  );
+}
+
+/** Scrolls the element carrying `attribute="value"` into view once it exists (null: nothing to do). */
+function useScrollIntoView(value: string | null, attribute: string) {
+  useEffect(() => {
+    if (value === null) return;
+    document.querySelector(`[${attribute}="${CSS.escape(value)}"]`)?.scrollIntoView({ block: "center" });
+  }, [value, attribute]);
+}
+
 type AskAbout = Parameters<typeof chatPrompt>[1];
 
 /** Opens a new thread in the memory's project with where it is in the composer; the user picks a model and asks. */
@@ -498,6 +749,8 @@ function StoreDetail({
   store,
   home,
   historySignal,
+  initialFile,
+  initialRun,
   onBack,
   onToggle,
   onRun,
@@ -508,6 +761,8 @@ function StoreDetail({
   store: StoreView;
   home: string | null;
   historySignal: number;
+  initialFile: string | null;
+  initialRun: string | null;
   onBack: () => void;
   onToggle: (enabled: boolean) => void;
   onRun: () => void;
@@ -543,7 +798,7 @@ function StoreDetail({
       <div>
         <Button size="xs" variant="ghost" onClick={onBack}>
           <ChevronLeftIcon className="size-3.5" />
-          All projects
+          Memory
         </Button>
       </div>
       <SettingsSection id="memory-store" title={store.store}>
@@ -585,6 +840,7 @@ function StoreDetail({
       <StoreFiles
         environmentId={environmentId}
         store={store.store}
+        initialOpen={initialFile}
         onChanged={onChanged}
         onAsk={(file) => void ask({ file })}
       />
@@ -593,6 +849,7 @@ function StoreDetail({
         key={`${store.store}:${historySignal}`}
         environmentId={environmentId}
         store={store}
+        initialOpen={initialRun}
         onAsk={(run) => void ask({ run })}
       />
 
@@ -790,15 +1047,18 @@ function ChangeCard({ change }: { change: DreamChange }) {
 function DreamRuns({
   environmentId,
   store,
+  initialOpen,
   onAsk,
 }: {
   environmentId: EnvironmentId;
   store: StoreView;
+  initialOpen: string | null;
   onAsk: (run: DreamRunDetail) => void;
 }) {
   const [runs, setRuns] = useState<DreamRunSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [open, setOpen] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(initialOpen);
+  useScrollIntoView(runs !== null ? initialOpen : null, "data-run");
 
   useEffect(() => {
     let cancelled = false;
@@ -835,6 +1095,7 @@ function DreamRuns({
                 type="button"
                 className="flex items-center gap-1.5 text-left"
                 aria-expanded={expanded}
+                data-run={run.runId}
                 onClick={() => setOpen(expanded ? null : run.runId)}
               >
                 <ChevronRightIcon
@@ -912,18 +1173,21 @@ function groupFiles(files: readonly MemoryFileEntry[]) {
 function StoreFiles({
   environmentId,
   store,
+  initialOpen,
   onChanged,
   onAsk,
 }: {
   environmentId: EnvironmentId;
   store: string;
+  initialOpen: string | null;
   onChanged: () => void;
   onAsk: (file: string) => void;
 }) {
   const [files, setFiles] = useState<MemoryFileEntry[] | null>(null);
   const [truncated, setTruncated] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [open, setOpen] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(initialOpen);
+  useScrollIntoView(files !== null ? initialOpen : null, "data-file");
   const [query, setQuery] = useState("");
   const [signal, setSignal] = useState(0);
 
@@ -995,8 +1259,12 @@ function StoreFiles({
       {shown && files && files.length > 0 && shown.length === 0 ? <SettingsRow title="No file matches" /> : null}
       {shown
         ? groupFiles(shown).map(([folder, entries]) => (
-            // Folders start closed; a search opens every folder it matches in.
-            <details key={`${folder || "."}:${needle !== ""}`} open={needle !== ""} className="group px-3 py-2 sm:px-4">
+            // Folders start closed; a search, or the file the user came for, opens the folder it is in.
+            <details
+              key={`${folder || "."}:${needle !== ""}`}
+              open={needle !== "" || (initialOpen !== null && entries.some((file) => file.path === initialOpen))}
+              className="group px-3 py-2 sm:px-4"
+            >
               <summary className="flex cursor-pointer list-none items-center gap-1.5 py-1 text-sm font-medium">
                 <ChevronRightIcon className="size-3.5 text-muted-foreground transition-transform group-open:rotate-90" />
                 {folder ? `${folder}/` : "Top level"}
@@ -1010,6 +1278,7 @@ function StoreFiles({
                         type="button"
                         className="min-w-0 flex-1 text-left"
                         aria-expanded={open === file.path}
+                        data-file={file.path}
                         onClick={() => setOpen(open === file.path ? null : file.path)}
                       >
                         <span className="block truncate font-mono text-xs text-foreground">
