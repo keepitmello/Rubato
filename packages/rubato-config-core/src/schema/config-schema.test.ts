@@ -87,12 +87,12 @@ describe("rubato config schema", () => {
     if (!full.success || !layer.success) return
     expect(layer.data).toEqual({
       task: { max_depth: 2 },
-      memory: { dream: { publish: "auto" } },
+      memory: { dream: {} },
       "[senpi]": { task: {} },
       "[codex]": {},
       profiles: { work: { "[senpi]": {} } },
     })
-    expect(full.data.memory?.dream.publish).toBe("auto")
+    expect(full.data.memory?.dream).not.toHaveProperty("publish")
     expect(RubatoConfigSchema.safeParse({ ...legacy, "[senpi]": { bogus: 1 } }).success).toBe(false)
   })
 

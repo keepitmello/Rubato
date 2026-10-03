@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { promisify } from "node:util"
-import { GitMemoryRepo, type GitCommitAuthor } from "../git"
+import { ADOPT_COMMIT, GitMemoryRepo, type GitCommitAuthor } from "../git"
 import { HERMETIC_GIT, createHermeticGitExec, hermeticGitEnv } from "./memory-apply-patch.test-support"
 import { parseMemoryFile, renderMemoryFile } from "../memfs/frontmatter"
 import { runMemoryTool, type MemoryToolLock, type MemoryToolParams } from "./memory"
@@ -198,13 +198,15 @@ describe("runMemoryTool", () => {
     })).rejects.toThrow(/memory: .*UTF-16.*convert.*UTF-8/i)
   })
 
-  it("#given unrelated dirty files #when a command starts #then cleanCheck fails first with porcelain listing", async () => {
+  it("#given unrelated dirty files #when a command starts #then they are adopted first and the command still commits", async () => {
     const setup = await fixture()
     await writeFile(join(setup.repo.dir, "dirty.md"), "dirty")
 
-    await expect(run(setup, {
-      command: "create", reason: "blocked", file_path: "new", description: "New",
-    })).rejects.toThrow(/memory: Memory repo has uncommitted changes[\s\S]*\?\? dirty\.md/)
-    expect(await readFile(join(setup.repo.dir, "dirty.md"), "utf8")).toBe("dirty")
+    const result = await run(setup, { command: "create", reason: "after a shell write", file_path: "new", description: "New" })
+
+    expect(result.commit?.affectedPaths).toEqual(["new.md"])
+    expect(await setup.repo.status()).toBe("")
+    const subjects = await exec("git", ["log", "--format=%s", "-2"], { cwd: setup.repo.dir })
+    expect(subjects.stdout.trim().split("\n")).toEqual(["after a shell write", ADOPT_COMMIT])
   })
 })

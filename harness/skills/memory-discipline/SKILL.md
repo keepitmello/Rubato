@@ -74,4 +74,5 @@ When a thread of work closes, not every turn: per-turn writes splinter one episo
 ## Commands
 
 - `msearch "<query>"`: search this project's memory; `-a` searches every store. Use short anchors (a component, an error, a decision).
+- `memory` and `memory_apply_patch`: how a session writes memory. Each change is committed with the `reason` you give, which is what `git log` shows later. Load them with `tool_search` when they are not active. A file written with a shell or a file tool is committed by the next writer under a generic message, so its reason is lost.
 - `rubato dream [<store>]`: run the dream now. It writes what the sessions left out, resolves contradictions and duplicates in place, and updates the user file.
