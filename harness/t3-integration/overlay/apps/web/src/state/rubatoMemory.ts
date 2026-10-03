@@ -42,6 +42,7 @@ export interface MemoryStoreSummary {
     readonly startedAt?: string;
     readonly finishedAt?: string;
     readonly reason?: string;
+    readonly attempts: ReadonlyArray<DreamAttempt>;
     readonly landed: boolean;
   } | null;
   readonly enabled: boolean;
@@ -96,6 +97,26 @@ export interface DreamSuggestion {
   readonly store: string;
   readonly runId: string;
   readonly at: string | null;
+}
+
+/** One commit on a store's main line, read for the overview: who wrote it and what it touched. */
+export interface MemoryActivity {
+  readonly store: string;
+  readonly sha: string;
+  readonly at: string;
+  /** dream: a dream's merge; you: an edit from this page; session: an agent's write. */
+  readonly kind: "dream" | "session" | "you";
+  /** The commit's reason (a dream's report summary); null when a session saved without one. */
+  readonly text: string | null;
+  readonly runId?: string;
+  readonly files: ReadonlyArray<{ readonly path: string; readonly change: DreamChangeKind }>;
+}
+
+export interface MemorySearchHit {
+  readonly store: string;
+  readonly path: string;
+  readonly description: string | null;
+  readonly preview: string;
 }
 
 export type DreamChangeKind = "added" | "modified" | "deleted" | "renamed";
@@ -208,6 +229,10 @@ export const rubatoMemory = {
   deleteStore: (env: EnvironmentId | null, store: string) =>
     call<{ store: string; archive: string }>(env, "delete-store", { store, confirm: store }),
   status: (env: EnvironmentId | null) => call<MemoryStatus>(env, "status"),
+  activity: (env: EnvironmentId | null, limit: number) =>
+    call<{ items: MemoryActivity[] }>(env, "activity", { limit }),
+  search: (env: EnvironmentId | null, query: string) =>
+    call<{ engine: "msearch" | "plain"; results: MemorySearchHit[] }>(env, "search", { query }),
   runs: (env: EnvironmentId | null, store: string) =>
     call<{ store: string; runs: DreamRunSummary[] }>(env, "runs", {
       store,

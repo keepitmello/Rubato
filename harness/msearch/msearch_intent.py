@@ -26,7 +26,7 @@ from typing import Callable, Iterable
 
 import msearch_config as config
 
-FINGERPRINT_VERSION = "intent-v1"
+FINGERPRINT_VERSION = "intent-v2"
 STORE_FILE = "store.json"
 INTENT_HOME = "intent"
 INTENT_FILE = "intent.md"
@@ -38,6 +38,9 @@ VECTOR_DIM = 1536
 MAX_CHUNK_CHARS = 2000
 CHUNK_OVERLAP = 200
 MIN_CHUNK_CHARS = 40
+MIN_ITEM_CHARS = 20
+#: 이보다 긴 목록 항목은 문장마다 따로 잰다. 조건 하나가 여러 문장이면 그 안에서도 묽어진다.
+ITEM_SPLIT_CHARS = 120
 
 # 관련성 문턱. 헛걸린 합의 기록 하나가 아무것도 안 보여주는 것보다 해로워서 어휘와 의미를
 # 함께 요구한다. 값은 실제 intent 18건(183조각)에 질의를 돌려 맞췄다: 맞는 기록은 거리
@@ -195,6 +198,8 @@ class IntentChunk:
     path: str
     root_id: str
     chunk_idx: str
+    #: "item" 이면 절 안 목록 항목 하나. 거리 증거로만 쓰고 고르기·표시는 절 조각이 맡는다.
+    part: str = ""
 
     def embedding_input(self) -> str:
         return f"{self.meta.title}\n{self.section}\n---\n{self.content}"[:8000]
@@ -209,6 +214,38 @@ def _split(content: str) -> list[str]:
     step = MAX_CHUNK_CHARS - CHUNK_OVERLAP
     pieces = [content[start:start + MAX_CHUNK_CHARS].strip() for start in range(0, len(content), step)]
     return [piece for piece in pieces if len(piece) >= MIN_CHUNK_CHARS]
+
+
+def _items(content: str) -> list[str]:
+    """절 안의 맨 윗단 목록 항목(들여쓴 이어지는 줄 포함). 항목이 둘 미만이면 빈 목록.
+
+    절 하나를 통째로 임베딩하면 조건 여섯 개가 한 벡터에 섞여 어느 하나에도 가깝지 않다.
+    "캐시 98% 조건" 이 Constraints 절과 거리 0.773 이었는데 항목으로 재면 0.676 이다.
+    "프리픽스 흔들지 않기" 는 항목으로도 0.748 이라 문장으로 한 번 더 나눈다(0.69 안팎).
+    """
+    items: list[list[str]] = []
+    current: list[str] | None = None
+    for line in content.splitlines():
+        if re.match(r"^(?:[-*+]|\d+[.)])\s+", line):
+            current = [line]
+            items.append(current)
+        elif current is not None and line.startswith((" ", "\t")) and line.strip():
+            current.append(line)
+        elif line.strip():
+            current = None  # 목록 밖 문단은 어느 항목에도 붙이지 않는다
+    found: list[str] = []
+    for lines in items:
+        found.extend(_sentences(re.sub(r"\s+", " ", " ".join(lines)).strip()))
+    found = [item for item in found if len(item) >= MIN_ITEM_CHARS]
+    return found if len(found) >= 2 else []
+
+
+def _sentences(item: str) -> list[str]:
+    """긴 항목은 문장으로 나눈다. "…지향한다.** 캐시 가능한…" 처럼 굵게 닫힌 문장 끝도 끝으로 본다."""
+    if len(item) <= ITEM_SPLIT_CHARS:
+        return [item]
+    parts = [part.strip() for part in re.split(r"(?<=[.!?])\s+|(?<=[.!?]\*\*)\s+", item) if part.strip()]
+    return parts if len(parts) >= 2 else [item]
 
 
 def chunk(path: Path) -> list[IntentChunk]:
@@ -234,6 +271,20 @@ def chunk(path: Path) -> list[IntentChunk]:
                     path=str(path),
                     root_id=root_id(root_of(path)),
                     chunk_idx=chunk_idx,
+                )
+            )
+        for item_idx, item in enumerate(_items(content)):
+            chunk_idx = f"{section_idx}.i{item_idx}"
+            chunks.append(
+                IntentChunk(
+                    key=f"{config.INTENT_KEY_PREFIX}{file_id(path)}:{chunk_idx}",
+                    meta=meta,
+                    section=title,
+                    content=item,
+                    path=str(path),
+                    root_id=root_id(root_of(path)),
+                    chunk_idx=chunk_idx,
+                    part="item",
                 )
             )
     return chunks
@@ -337,6 +388,7 @@ def index(
                         "path": item.path,
                         "root_id": item.root_id,
                         "chunk_idx": item.chunk_idx,
+                        "part": item.part,
                         "vector": struct.pack(f"{len(vector)}f", *vector),
                     },
                 )
@@ -373,6 +425,8 @@ class Candidate:
     hits: list[str] = field(default_factory=list)
     overlap: float = 0.0
     score: float = 0.0
+    #: 이 절에서 질의와 가장 가까운 목록 항목. 단어가 안 걸렸을 때 발췌로 쓴다.
+    focus: str = ""
 
 
 def _root_filter(root_ids: list[str] | None) -> str:
@@ -396,7 +450,9 @@ def _parse(reply) -> list[dict[str, str]]:
     return docs
 
 
-RETURN_FIELDS = ("title", "section", "content", "intent_id", "status", "revision", "updated", "superseded_by", "path")
+RETURN_FIELDS = (
+    "title", "section", "content", "intent_id", "status", "revision", "updated", "superseded_by", "path", "part",
+)
 #: 범위 안 조각을 통째로 읽는 상한. 지금 intent 18건이 183조각이다.
 MAX_CHUNKS = 5000
 
@@ -419,24 +475,33 @@ def search(
         "RETURN", str(len(RETURN_FIELDS)), *RETURN_FIELDS,
         "LIMIT", "0", str(MAX_CHUNKS), "DIALECT", "2",
     )
-    candidates = [Candidate(fields=doc) for doc in _parse(reply)]
+    docs = _parse(reply)
+    # 고르기·표시는 절 조각만 한다. 항목 조각은 그 절의 거리를 좁히는 증거로만 쓴다 —
+    # 항목만 보면 조건 둘에 걸친 질의의 단어 겹침이 쪼개진다.
+    candidates = [Candidate(fields=doc) for doc in docs if doc.get("part") != "item"]
     vector = query_vector()
-    if vector is not None and candidates:
+    if vector is not None and docs:
         reply = r.execute_command(
             "FT.SEARCH", config.INTENT_INDEX_NAME,
-            f"({scope})=>[KNN {len(candidates)} @vector $vec AS distance]",
+            f"({scope})=>[KNN {len(docs)} @vector $vec AS distance]",
             "PARAMS", "2", "vec", vector,
-            "RETURN", "3", "path", "section", "distance",
-            "LIMIT", "0", str(len(candidates)), "DIALECT", "2",
+            "RETURN", "5", "path", "section", "part", "content", "distance",
+            "LIMIT", "0", str(len(docs)), "DIALECT", "2",
         )
-        distances = {}
+        nearest: dict[tuple[str | None, str | None], tuple[float, str]] = {}
         for doc in _parse(reply):
             try:
-                distances[(doc.get("path"), doc.get("section"))] = float(doc.get("distance", ""))
+                distance = float(doc.get("distance", ""))
             except ValueError:
                 continue
+            key = (doc.get("path"), doc.get("section"))
+            focus = doc.get("content", "") if doc.get("part") == "item" else ""
+            if key not in nearest or distance < nearest[key][0]:
+                nearest[key] = (distance, focus)
         for item in candidates:
-            item.distance = distances.get((item.fields.get("path"), item.fields.get("section")))
+            found = nearest.get((item.fields.get("path"), item.fields.get("section")))
+            if found is not None:
+                item.distance, item.focus = found
     return select(candidates, tokens, limit)
 
 
@@ -524,11 +589,17 @@ def status_label(status: str, superseded_by: str = "") -> str:
     return "상태 불명"
 
 
-def _excerpt(content: str, hits: list[str]) -> str:
+def _excerpt(content: str, hits: list[str], focus: str = "") -> str:
+    """걸린 단어가 가장 많은 줄. 동점이면 질의와 가장 가까운 항목이 든 줄을 고른다."""
     lines = [line.strip() for line in content.splitlines() if line.strip()]
     if not lines:
         return ""
-    best = max(lines, key=lambda line: sum(token in line.lower() for token in hits)) if hits else lines[0]
+    anchor = re.sub(r"^[-*+]\s+", "", focus.strip())[:40]
+
+    def rank(line: str) -> tuple[int, bool]:
+        return sum(token in line.lower() for token in hits), bool(anchor) and anchor in line
+
+    best = max(lines, key=rank)
     best = re.sub(r"^[-*]\s+", "", best)
     return best if len(best) <= EXCERPT_CHARS else best[:EXCERPT_CHARS].rstrip() + "…"
 
@@ -555,7 +626,7 @@ def format_block(found: list[Candidate], cwd: Path | None = None) -> str:
             f" · rev {fields.get('revision', '?')} · {updated} 갱신"
         )
         section = fields.get("section", "")
-        excerpt = _excerpt(fields.get("content", ""), item.hits)
+        excerpt = _excerpt(fields.get("content", ""), item.hits, item.focus)
         body = [f"  {fields.get('title', '')}"]
         if excerpt:
             prefix = f"{section}: " if section else ""

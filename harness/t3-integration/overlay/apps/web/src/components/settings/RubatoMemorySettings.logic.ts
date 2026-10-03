@@ -103,3 +103,42 @@ export function fallbackNote(attempts: DreamRunSummary["attempts"]): string | nu
   const names = failed.map((attempt) => attempt.model).join(", ");
   return last?.ok ? `Fell back after ${names} failed` : `Every model failed: ${names}`;
 }
+
+type StoreLike = Pick<MemoryStoreSummary, "store" | "files" | "lastChangeAt" | "lastRun" | "enabled">;
+
+/** One thing on the overview the user should look at: a dream that failed or had to fall back. */
+export interface Attention {
+  readonly store: string;
+  readonly runId: string;
+  readonly title: string;
+  readonly detail: string | null;
+}
+
+/** The overview's status card: how much memory there is, the newest dream, and what needs a look. */
+export function overviewStatus(stores: readonly StoreLike[]) {
+  const notes = stores.reduce((sum, store) => sum + store.files, 0);
+  const dreaming = stores.filter((store) => store.enabled).length;
+  const newest = stores
+    .flatMap((store) => (store.lastRun ? [{ store: store.store, run: store.lastRun }] : []))
+    .toSorted((a, b) => String(b.run.startedAt ?? "").localeCompare(String(a.run.startedAt ?? "")))[0] ?? null;
+  const attention: Attention[] = [];
+  for (const store of stores) {
+    const run = store.lastRun;
+    if (!run) continue;
+    const failed = run.attempts.filter((attempt) => !attempt.ok);
+    const firstError = failed[0] ? `${failed[0].model}: ${failed[0].error ?? "failed"}` : null;
+    if (run.status === "failed")
+      attention.push({ store: store.store, runId: run.runId, title: `${store.store}'s last dream failed`, detail: run.reason?.split("\n")[0] ?? firstError });
+    else if (failed.length > 0 && run.attempts.at(-1)?.ok)
+      attention.push({ store: store.store, runId: run.runId, title: `${store.store}'s dream fell back to ${run.attempts.at(-1)!.model}`, detail: firstError });
+  }
+  return { projects: stores.length, notes, dreaming, newest, attention };
+}
+
+const QUIET_AFTER_MS = 21 * 24 * 60 * 60 * 1000;
+
+/** Projects with a change in the last three weeks stay in view; the rest fold under one line. */
+export function splitQuiet<S extends StoreLike>(stores: readonly S[], now: number): { active: S[]; quiet: S[] } {
+  const isQuiet = (store: S) => !store.lastChangeAt || now - Date.parse(store.lastChangeAt) > QUIET_AFTER_MS;
+  return { active: stores.filter((store) => !isQuiet(store)), quiet: stores.filter(isQuiet) };
+}

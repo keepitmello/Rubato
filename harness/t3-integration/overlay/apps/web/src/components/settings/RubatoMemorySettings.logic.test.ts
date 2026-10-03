@@ -1,6 +1,15 @@
 import { describe, expect, it } from "@effect/vitest";
 
-import { addedContent, chatPrompt, fallbackNote, lastDreamLine, projectForStore, runLabel } from "./RubatoMemorySettings.logic";
+import {
+  addedContent,
+  chatPrompt,
+  fallbackNote,
+  lastDreamLine,
+  overviewStatus,
+  projectForStore,
+  runLabel,
+  splitQuiet,
+} from "./RubatoMemorySettings.logic";
 
 describe("addedContent", () => {
   it("reads a new file out of its diff without the front matter", () => {
@@ -37,7 +46,7 @@ describe("runLabel", () => {
 
 describe("lastDreamLine", () => {
   const ago = () => "2 hours ago";
-  const run = { runId: "dream-1", status: "merged", finishedAt: "2026-10-03T00:00:00Z", landed: true } as const;
+  const run = { runId: "dream-1", status: "merged", finishedAt: "2026-10-03T00:00:00Z", attempts: [], landed: true } as const;
 
   it("says the daily dream is off, and when it last ran if it ever did", () => {
     expect(lastDreamLine(false, null, ago).text).toBe("Daily dream off");
@@ -112,5 +121,48 @@ describe("chatPrompt", () => {
     const prompt = chatPrompt(store, { run });
     expect(prompt).toContain("/m/runs/dream-1/out/report.md");
     expect(prompt).toContain("git -C /m/agents/rubato/repo diff abc123 def456");
+  });
+});
+
+describe("overviewStatus", () => {
+  const ok = { model: "b-ai/deepseek-v4.1-flash", ok: true };
+  const run = (fields: object) => ({ runId: "r", status: "merged", startedAt: "2026-10-01T00:00:00Z", attempts: [ok], landed: true, ...fields });
+  const store = (name: string, fields: object = {}) => ({ store: name, files: 10, lastChangeAt: null, enabled: true, lastRun: null, ...fields });
+
+  it("counts notes and dreaming projects and finds the newest dream", () => {
+    const status = overviewStatus([
+      store("a", { lastRun: run({ runId: "old", startedAt: "2026-09-01T00:00:00Z" }) }),
+      store("b", { files: 5, enabled: false, lastRun: run({ runId: "new" }) }),
+    ]);
+    expect([status.projects, status.notes, status.dreaming]).toEqual([2, 15, 1]);
+    expect(status.newest?.store).toBe("b");
+    expect(status.attention).toEqual([]);
+  });
+
+  it("asks for a look at a dream that failed or had to fall back", () => {
+    const deepseek = { model: "b-ai/deepseek-v4.1-flash", ok: false, error: "credit insufficient" };
+    const haiku = { model: "anthropic/claude-haiku-4-5", ok: true };
+    const status = overviewStatus([
+      store("rubato", { lastRun: run({ attempts: [deepseek, haiku] }) }),
+      store("home", { lastRun: run({ status: "failed", landed: false, reason: "merge failed: conflict\nmore", attempts: [haiku] }) }),
+    ]);
+    expect(status.attention).toEqual([
+      { store: "rubato", runId: "r", title: "rubato's dream fell back to anthropic/claude-haiku-4-5", detail: "b-ai/deepseek-v4.1-flash: credit insufficient" },
+      { store: "home", runId: "r", title: "home's last dream failed", detail: "merge failed: conflict" },
+    ]);
+  });
+});
+
+describe("splitQuiet", () => {
+  it("folds projects with no change in three weeks", () => {
+    const now = Date.parse("2026-10-04T00:00:00Z");
+    const stores = [
+      { store: "busy", files: 1, enabled: true, lastRun: null, lastChangeAt: "2026-10-03T00:00:00Z" },
+      { store: "old", files: 1, enabled: true, lastRun: null, lastChangeAt: "2026-09-01T00:00:00Z" },
+      { store: "empty", files: 0, enabled: true, lastRun: null, lastChangeAt: null },
+    ];
+    const { active, quiet } = splitQuiet(stores, now);
+    expect(active.map((entry) => entry.store)).toEqual(["busy"]);
+    expect(quiet.map((entry) => entry.store)).toEqual(["old", "empty"]);
   });
 });
