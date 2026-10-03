@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
-const PACKAGE_VERSION = "0.86.1";
+import { PI_VERSION as PACKAGE_VERSION } from "../../pi-version.mjs";
 const FEATURE_IMPORT = 'import { RequestRunTracker } from "../rubato-features/request-run/request-run-tracker.mjs";';
 
 function replaceOnce(source, before, after, label) {
@@ -69,30 +69,76 @@ function patchAgentSessionRuntime(source) {
   next = replaceOnce(
     next,
     `    _handleAgentEvent = async (event) => {
-        // When a user message starts, check if it's from either queue and remove it BEFORE emitting`,
+`,
     `    _handleAgentEvent = async (event) => {
         // Update the request ledger before extensions, RPC, or the TUI consume this event.
         this._requestRunTracker.observe(event);
-        // When a user message starts, check if it's from either queue and remove it BEFORE emitting`,
+`,
     "event-observer",
   );
+  // Clients (T3, the engine, a session-link sender) read an announced agent_settled as "the
+  // work is done". When a settle handler wakes the session (session-link delivers a held
+  // message, a background terminal finishes), the next run must start before this run's settle
+  // is announced, so clients only hear the settle of the run that really ends the work.
+  // 0.86 started that run inside the handler and skipped the announcement when a run was
+  // active. 0.87 defers runs requested during the dispatch until every handler returns, so
+  // the announcement is held while deferred work is pending and made after it only if that
+  // work started no run (an extension command, a failed prompt).
   next = replaceOnce(
     next,
     `        this._isAgentRunActive = false;
+        this._isEmittingAgentSettled = true;
         try {
             await this._extensionRunner.emit({ type: "agent_settled" });
-            this._emit({ type: "agent_settled" });`,
+            this._emit({ type: "agent_settled" });
+        }
+        finally {
+            this._isEmittingAgentSettled = false;
+        }
+        const deferred = this._deferredSettledActions.splice(0);
+        if (deferred.length > 0) {
+            try {
+                for (const action of deferred)
+                    await action();
+            }
+            finally {
+                this._resolveIdleWaitIfIdle();
+            }
+            return;
+        }`,
     `        this._isAgentRunActive = false;
+        this._isEmittingAgentSettled = true;
+        let settleHeld = false;
         try {
             this._requestRunTracker.onAgentSettled();
             await this._extensionRunner.emit({ type: "agent_settled" });
-            // A handler above can await long enough (the title model) for a wake to
-            // start the next run. That run announces its own settle; announcing this
-            // one now tells clients the session is idle while it streams, and they
-            // send a prompt the engine rejects as already processing.
-            if (!this._isAgentRunActive) {
+            if (!this._isAgentRunActive && this._deferredSettledActions.length === 0) {
+                this._settleAnnouncements = (this._settleAnnouncements ?? 0) + 1;
                 this._emit({ type: "agent_settled" });
-            }`,
+            }
+            else {
+                settleHeld = true;
+            }
+        }
+        finally {
+            this._isEmittingAgentSettled = false;
+        }
+        const deferred = this._deferredSettledActions.splice(0);
+        if (deferred.length > 0) {
+            const announcedBefore = this._settleAnnouncements ?? 0;
+            try {
+                for (const action of deferred)
+                    await action();
+            }
+            finally {
+                if (settleHeld && (this._settleAnnouncements ?? 0) === announcedBefore && !this._isAgentRunActive) {
+                    this._settleAnnouncements = announcedBefore + 1;
+                    this._emit({ type: "agent_settled" });
+                }
+                this._resolveIdleWaitIfIdle();
+            }
+            return;
+        }`,
     "settled-terminal",
   );
   next = replaceOnce(
@@ -121,19 +167,19 @@ function patchAgentSessionRuntime(source) {
   );
   next = replaceOnce(
     next,
-    `            this._inputLifecycle.bindMessage(inputId, userMessage, {
-                delivery: "submit",
-                text: expandedText,
-                images: currentImages,
-            });
-            messages.push(userMessage);`,
-    `            const inputRecord = this._inputLifecycle.bindMessage(inputId, userMessage, {
-                delivery: "submit",
-                text: expandedText,
-                images: currentImages,
-            });
-            this._requestRunTracker.attachRecord(userMessage, inputRecord);
-            messages.push(userMessage);`,
+    `        this._inputLifecycle.bindMessage(inputId, userMessage, {
+            delivery: "submit",
+            text: expandedText,
+            images: currentImages,
+        });
+        messages.push(userMessage);`,
+    `        const inputRecord = this._inputLifecycle.bindMessage(inputId, userMessage, {
+            delivery: "submit",
+            text: expandedText,
+            images: currentImages,
+        });
+        this._requestRunTracker.attachRecord(userMessage, inputRecord);
+        messages.push(userMessage);`,
     "submit-record",
   );
   next = replaceOnce(
@@ -390,8 +436,8 @@ function patchRpcTypes(source) {
   unpatched(source, "requestTimeline: RequestTimelineSnapshot", "rpc-types");
   let next = replaceOnce(
     source,
-    `import type { SessionStats } from "../../core/agent-session.ts";`,
-    `import type { RequestTimelineSnapshot, SessionStats } from "../../core/agent-session.ts";`,
+    `import type { PromptDisposition, QueuedInputDisposition, SessionStats } from "../../core/agent-session.ts";`,
+    `import type { PromptDisposition, QueuedInputDisposition, RequestTimelineSnapshot, SessionStats } from "../../core/agent-session.ts";`,
     "timeline-import",
   );
   next = replaceOnce(
@@ -424,10 +470,10 @@ export const files = Object.freeze([
 ]);
 
 export const patches = Object.freeze([
-  patch("dist/core/agent-session.js", "edaff7055ced7d49d25135c92415fbbfd9c14c4a29be5a79510ab9216045d6d9", patchAgentSessionRuntime),
-  patch("dist/core/agent-session.d.ts", "423bdca09eabd78aa1e729136dd9a1e2fff3b8116c6bc2d3fee3337b269a8432", patchAgentSessionTypes),
-  patch("dist/modes/rpc/rpc-mode.js", "bdd94e753e6d19731d9fb9ea370462d095d64f1e78bddd7651320663fa57c4ff", patchRpcRuntime),
-  patch("dist/modes/rpc/rpc-types.d.ts", "e968e5be01dc7ad9615f938ae867ef136fa495f13dcf169942e9f781a299d9eb", patchRpcTypes),
+  patch("dist/core/agent-session.js", "35ca1dabd54d98c236c9601b569c2856b726ade392d06b2eaaf50158f48913ab", patchAgentSessionRuntime),
+  patch("dist/core/agent-session.d.ts", "2e50b35a37f9c7149c6297ae554b2d965bd74dbfcb8ccd7be44f13226ce497e7", patchAgentSessionTypes),
+  patch("dist/modes/rpc/rpc-mode.js", "631697cd35928fc827f4a423538c43ff227b8cbf63c2a2f11060616f55eba6db", patchRpcRuntime),
+  patch("dist/modes/rpc/rpc-types.d.ts", "68b6dc2e47a3969c09c961a40d0462473407b6786f3bd02715fa035e816e2af1", patchRpcTypes),
 ]);
 
 export const feature = Object.freeze({ id: "request-run", patches, files });

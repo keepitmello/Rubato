@@ -1,4 +1,4 @@
-import type { AgentSessionEvent } from "@code-yeongyu/senpi"
+import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent"
 
 import type { RunnerOutcome } from "../in-process/child-handle"
 import type { ChildExitOutcome } from "../types"

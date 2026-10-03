@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { ThemeColor } from "@code-yeongyu/senpi"
+import type { ThemeColor } from "@earendil-works/pi-coding-agent"
 
 import { renderMemberScopedTaskSendCall, type ControlRenderTheme } from "./renderers"
 

@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_NAME = "@earendil-works/pi-agent-core";
-const PACKAGE_VERSION = "0.86.1";
+import { PI_VERSION as PACKAGE_VERSION } from "../../pi-version.mjs";
 const CODING_AGENT_PACKAGE_NAME = "@earendil-works/pi-coding-agent";
 
 function replaceOnce(source, before, after, label) {
@@ -26,6 +26,13 @@ import { getDefaultStreamFn } from "./stream-fn.js";`,
     `            const message = await streamAssistantResponse(currentContext, config, signal, emit, streamFunction);
             newMessages.push(message);
             if (message.stopReason === "error" || message.stopReason === "aborted") {
+                lastCompletedTurn = {
+                    message,
+                    toolResults: [],
+                    context: currentContext,
+                    newMessages,
+                };
+                await config.finishTurn?.(lastCompletedTurn, signal);
                 await emit({ type: "turn_end", message, toolResults: [] });
                 await emit({ type: "agent_end", messages: newMessages });
                 return;
@@ -47,6 +54,13 @@ import { getDefaultStreamFn } from "./stream-fn.js";`,
                 toolResults.push(result);
             }
             if (message.stopReason === "error" || message.stopReason === "aborted") {
+                lastCompletedTurn = {
+                    message,
+                    toolResults,
+                    context: currentContext,
+                    newMessages,
+                };
+                await config.finishTurn?.(lastCompletedTurn, signal);
                 await emit({ type: "turn_end", message, toolResults });
                 await emit({ type: "agent_end", messages: newMessages });
                 return;
@@ -74,9 +88,10 @@ import { getDefaultStreamFn } from "./stream-fn.js";`,
         ...config,
         apiKey: resolvedApiKey,
         signal,
-    });
-    let partialMessage = null;`,
-    `    // Provider-executed tools (Cursor exec channel) normally settle before
+    });`,
+    `    // 1.0.1 inserts a result() wrapper (requested thinking level) after this call; the anchor
+    // stops at the call so that wrapper stays as stock wrote it.
+    // Provider-executed tools (Cursor exec channel) normally settle before
     // the assistant turn completes. Abort releases the transport drain early,
     // so retain request-local ownership until a signal-aware tool publishes its
     // terminal pair. A hung tool is bounded and receives one synthetic pair.
@@ -140,8 +155,7 @@ import { getDefaultStreamFn } from "./stream-fn.js";`,
         onProviderToolExecutionStart: beginProviderTool,
         onProviderToolExecutionUpdate: (event) => emit(event),
         onProviderToolExecutionEnd: (event) => emit(event),
-    });
-    let partialMessage = null;`,
+    });`,
     "provider-lifecycle",
   );
   next = replaceOnce(
@@ -173,13 +187,13 @@ import { getDefaultStreamFn } from "./stream-fn.js";`,
 }
 
 export function patchCodingAgentSdk(source) {
+  // 1.0.1 builds the Agent as `const agent` after buildRequestOptions, so `let agent;` is gone.
+  // Declare the session binding right before buildRequestOptions; its closures read it per request.
   let next = replaceOnce(
     source,
-    `    let agent;
-    // Create convertToLlm wrapper`,
-    `    let agent;
-    let session;
-    // Create convertToLlm wrapper`,
+    `    const buildRequestOptions = (requestModel, options = {}) => {`,
+    `    let session;
+    const buildRequestOptions = (requestModel, options = {}) => {`,
     "session-closure",
   );
   next = replaceOnce(
@@ -222,23 +236,25 @@ export function patchExtensionToolResult(source) {
   );
   return replaceOnce(
     next,
-    `        return {\n            content: currentEvent.content,\n            details: currentEvent.details,\n            isError: currentEvent.isError,\n            usage: currentEvent.usage,\n        };`,
-    `        return {\n            content: currentEvent.content,\n            details: currentEvent.details,\n            isError: currentEvent.isError,\n            usage: currentEvent.usage,\n            addedToolNames: currentEvent.addedToolNames,\n        };`,
+    `            structuredContent: currentEvent.structuredContent,\n            isError: currentEvent.isError,\n            usage: currentEvent.usage,\n        };`,
+    `            structuredContent: currentEvent.structuredContent,\n            isError: currentEvent.isError,\n            usage: currentEvent.usage,\n            addedToolNames: currentEvent.addedToolNames,\n        };`,
     "return-added-tool-names",
   );
 }
 
+// 1.0.1 moved the afterToolCall body into AgentSession._afterToolCall (shared by model calls and
+// ctx.executeTool nested calls) and added structuredContent; the anchors follow that method.
 export function patchAgentSessionAfterToolCall(source) {
   let next = replaceOnce(
     source,
-    `                    usage: result.usage,\n                })`,
-    `                    usage: result.usage,\n                    addedToolNames: result.addedToolNames,\n                })`,
+    `                isError,\n                usage: result.usage,\n            })`,
+    `                isError,\n                usage: result.usage,\n                addedToolNames: result.addedToolNames,\n            })`,
     "emit-session-added-tool-names",
   );
   return replaceOnce(
     next,
-    `            return {\n                content: normalizedContent,\n                details: hookResult?.details,\n                isError: hookResult?.isError ?? isError,\n                usage: hookResult?.usage,\n            };`,
-    `            return {\n                content: normalizedContent,\n                details: hookResult?.details,\n                isError: hookResult?.isError ?? isError,\n                usage: hookResult?.usage,\n                addedToolNames: hookResult?.addedToolNames ?? result.addedToolNames,\n            };`,
+    `            isError: hookResult?.isError ?? isError,\n            usage: hookResult?.usage,\n        };`,
+    `            isError: hookResult?.isError ?? isError,\n            usage: hookResult?.usage,\n            addedToolNames: hookResult?.addedToolNames ?? result.addedToolNames,\n        };`,
     "return-session-added-tool-names",
   );
 }
@@ -280,7 +296,7 @@ export const patches = Object.freeze([
     packageName: CODING_AGENT_PACKAGE_NAME,
     version: PACKAGE_VERSION,
     path: "dist/core/sdk.js",
-    preimageSha256: "3417c58edc5c02a4ae71a3604bbd04688d1741e0203497bf082a748ca843d850",
+    preimageSha256: "fe643170de3d259c7e06179d9e18270a009dfb54df915f6e3de515425b8d009b",
     apply: patchCodingAgentSdk,
   }),
   Object.freeze({
@@ -288,7 +304,7 @@ export const patches = Object.freeze([
     packageName: CODING_AGENT_PACKAGE_NAME,
     version: PACKAGE_VERSION,
     path: "dist/core/extensions/runner.js",
-    preimageSha256: "07a94efe560e6a460a415b2188c1c3c69ca151bd163c9b5f05347caf8403ace2",
+    preimageSha256: "258f142bc56cc84d953ef6146222e5ff3a94cc908592a1b3d075d34bbcd68b36",
     apply: patchExtensionToolResult,
   }),
   Object.freeze({
@@ -296,7 +312,7 @@ export const patches = Object.freeze([
     packageName: CODING_AGENT_PACKAGE_NAME,
     version: PACKAGE_VERSION,
     path: "dist/core/agent-session.js",
-    preimageSha256: "edaff7055ced7d49d25135c92415fbbfd9c14c4a29be5a79510ab9216045d6d9",
+    preimageSha256: "35ca1dabd54d98c236c9601b569c2856b726ade392d06b2eaaf50158f48913ab",
     apply: patchAgentSessionAfterToolCall,
   }),
   Object.freeze({
@@ -304,7 +320,7 @@ export const patches = Object.freeze([
     packageName: PACKAGE_NAME,
     version: PACKAGE_VERSION,
     path: "dist/agent-loop.js",
-    preimageSha256: "aedd3264c31a3b9f1c3dc52826871894c0653718021583abbdfbe1e6763cd3e6",
+    preimageSha256: "65def8c7f3fa01e38fe05467520efc8673c22ea8197833a3b04b29c8a60cb1e3",
     apply: patchAgentLoop,
   }),
 ]);

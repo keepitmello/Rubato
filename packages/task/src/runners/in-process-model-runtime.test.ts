@@ -4,7 +4,7 @@ import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { CreateAgentSessionOptions } from "@code-yeongyu/senpi"
+import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent"
 
 import { InProcessRunner, type ChildSession, type ChildSpec } from "./in-process"
 

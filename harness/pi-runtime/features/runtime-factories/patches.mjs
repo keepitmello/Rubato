@@ -1,12 +1,12 @@
 const packageName = "@earendil-works/pi-coding-agent";
-const version = "0.86.1";
+import { PI_VERSION as version } from "../../pi-version.mjs";
 
 // These hashes are the selected stock Pi 0.86.1 files.  Runtime staging refuses
 // to apply this feature when a different package build is present.
 const hashes = {
-  "dist/core/agent-session-services.js": "3a4ee476b0596f346023398f52176381355f98dd621b8161f269c7ef3a57e28f",
+  "dist/core/agent-session-services.js": "20b7aa4b0657b53fb522ea051df26f72901802e03cc06c89e0a8926388bca601",
   "dist/core/agent-session-services.d.ts": "ab5dac8701f02587db54abc27d119ea44ebd3708f235d5daf8293abd7b2ea71e",
-  "dist/main.js": "e36837e55af695cbb95216763fbc929e87829ced837dd32f281bba8c8e50035c",
+  "dist/main.js": "060521b0b81f91948d8ded9139e423e5d0c9e6808a45c81750cc30519de4d2db",
   "dist/main.d.ts": "cf197873ee07f73d5682fe2236e24989714d1f5c1acf8820264e570a5c17dadc",
 };
 

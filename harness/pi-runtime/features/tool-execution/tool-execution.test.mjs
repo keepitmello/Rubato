@@ -64,6 +64,11 @@ async function createFixture(t) {
     pi.registerTool(definition("fails", async () => {
       throw new Error("fixture exploded");
     }));
+    pi.registerTool(definition("returns_error", async () => ({
+      content: [{ type: "text", text: "exit 3" }],
+      details: {},
+      isError: true,
+    })));
     pi.registerTool(definition("slow", async (_id, _args, signal) => {
       await new Promise((resolveWait, reject) => {
         const timer = setTimeout(resolveWait, 5_000);
@@ -130,7 +135,7 @@ async function createFixture(t) {
   });
   t.after(() => session.dispose());
   await session.bindExtensions({});
-  session.setActiveToolsByName(["mock", "fails", "slow"]);
+  session.setActiveToolsByName(["mock", "fails", "slow", "returns_error"]);
   return { session, ExecuteToolError, get api() { return extensionApi; }, calls, events, get activations() { return activations; } };
 }
 
@@ -209,4 +214,14 @@ test("reload binds one fresh lazy activator instead of retaining stale extension
   await fixture.api.executeTool("lazy", { value: "reload" }, { activateInactiveTool: true });
   assert.equal(fixture.activations, 1);
   assert.throws(() => firstApi.getActiveTools(), /stale after session replacement or reload/);
+});
+
+// pi 0.99 flags a returned { isError: true } in the agent loop (stock bash returns it on a
+// non-zero exit; our PTY bash and eval cells always returned it). A nested call must agree.
+test("a tool that returns isError without throwing is an error through executeTool too", async (t) => {
+  const fixture = await createFixture(t);
+  const result = await fixture.api.executeTool("returns_error", { value: "x" });
+  assert.equal(result.isError, true);
+  assert.deepEqual(result.content, [{ type: "text", text: "exit 3" }]);
+  assert.deepEqual(fixture.events.filter(([kind, name]) => kind === "result" && name === "returns_error"), [["result", "returns_error", true]]);
 });

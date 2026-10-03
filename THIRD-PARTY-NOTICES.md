@@ -64,11 +64,11 @@ or a retained package production dependency.
 
 These are declared `dependencies` of first-party packages under `packages/`, excluding nested skill `package.json` files. The complete transitive lockfile policy is machine-validated from `third_party/npm-license-policy.json`.
 
-### @earendil-works/pi-tui@0.84.2
+### @earendil-works/pi-tui@1.0.1
 - License: MIT, from package metadata. The inspected package did not include a separate LICENSE file.
 - Copyright: Mario Zechner and pi contributors.
 - Upstream URL: https://github.com/earendil-works/pi/tree/main/packages/tui
-- Where-bundled: `@rubato/runtime` production dependency.
+- Where-bundled: `@rubato/runtime` and `@rubato/live-cli` production dependency.
 
 ### js-yaml@5.3.0
 - License: MIT, from `node_modules/js-yaml/LICENSE`.

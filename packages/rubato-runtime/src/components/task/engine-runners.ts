@@ -1,4 +1,4 @@
-import type { ToolDefinition } from "@code-yeongyu/senpi"
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent"
 import type { RubatoConfig, RubatoTaskSettings } from "@rubato/config-core"
 import {
   InProcessRunner,

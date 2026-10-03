@@ -16,7 +16,10 @@ const SERVICE_TIER_ENV = "RUBATO_SERVICE_TIER"
 const ROLE_ENV = "RUBATO_PI_ROLE"
 const PI_BIN_ENV = "RUBATO_PI_BIN"
 const SENPI_BIN_ENV = "SENPI_BIN"
-const RPC_ENTRY_SPECIFIER = "@code-yeongyu/senpi/rpc-entry"
+const RPC_ENTRY_SPECIFIER = "@earendil-works/pi-coding-agent/rpc-entry"
+// Physical file behind RPC_ENTRY_SPECIFIER. The export carries only an `import` condition, so
+// require.resolve cannot see it; the model catalog probe reads `cli.js` from the same directory.
+const RPC_ENTRY_PATH = ["@earendil-works", "pi-coding-agent", "dist", "bundle", "rpc-entry.js"] as const
 
 export type RpcSpawnSpec = RpcRunnerSpec & {
   readonly memberEnv?: Readonly<Record<string, string>>
@@ -93,7 +96,7 @@ function canonicalExecutable(candidate: string): string | null {
 /**
  * Resolve the senpi EXECUTABLE to spawn the rpc child with (`<exe> --mode rpc`). Spawning the binary
  * directly bypasses module resolution, which senpi's own loader alias HIJACKS when Rubato runs as a senpi
- * extension: `require.resolve("@code-yeongyu/senpi/rpc-entry")` then resolves to the running dist entry
+ * extension: `require.resolve("@earendil-works/pi-coding-agent/rpc-entry")` then resolves to the running dist entry
  * instead of the child rpc entry and the child never boots. Preference order: an explicit `SENPI_BIN`
  * override, the sibling binary next to a Bun-compiled senpi, then a PATH scan. Returns null when no
  * executable is found so buildRpcSpawn can fall back to the documented `execPath + rpc-entry` path.
@@ -174,7 +177,7 @@ export function buildModelCatalogArgs(spec: RpcRunnerSpec): readonly string[] {
 
 function resolveRpcEntrySpecifier(): string {
   for (const modulesDir of require.resolve.paths(RPC_ENTRY_SPECIFIER) ?? []) {
-    const candidate = join(modulesDir, "@code-yeongyu", "senpi", "dist", "rpc-entry.js")
+    const candidate = join(modulesDir, ...RPC_ENTRY_PATH)
     if (existsSync(candidate)) return candidate
   }
   if (typeof Bun !== "undefined") {

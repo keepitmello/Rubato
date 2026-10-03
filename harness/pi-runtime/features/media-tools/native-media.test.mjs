@@ -6,6 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { resolvePiRuntime } from "../../resolve-runtime.mjs";
 import { stagePiRuntime } from "../../stage-runtime.mjs";
 import { toolExecutionFeature } from "../tool-execution/index.mjs";
 import {
@@ -24,7 +25,9 @@ import {
 } from "./src/openai-web-search/index.js";
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const stockPiAi = join(runtimeRoot, "node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist");
+// pi-ai is nested under pi-coding-agent on 0.86.1 and hoisted on 1.0.1; use the runtime resolver.
+const piAiDist = (root) => join(resolvePiRuntime({ root }).packages["@earendil-works/pi-ai"].dir, "dist");
+const stockPiAi = piAiDist(runtimeRoot);
 const PNG_DATA = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
@@ -239,7 +242,7 @@ test("staged stock SDK parses native image, web search, and anthropic bash from 
 		features: [toolExecutionFeature, feature],
 	});
 	const outputRoot = join(scratch, "engine");
-	const piAiPath = join(outputRoot, "node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist");
+	const piAiPath = piAiDist(outputRoot);
 	const { processResponsesStream } = await import(pathToFileURL(join(piAiPath, "api/openai-responses-shared.js")).href);
 	const { AssistantMessageEventStream } = await import(pathToFileURL(join(piAiPath, "utils/event-stream.js")).href);
 	const anthropic = await import(pathToFileURL(join(piAiPath, "api/anthropic-messages.js")).href);

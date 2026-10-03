@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { afterEach, describe, expect, test } from "bun:test"
 
-import type { Theme, ThemeColor } from "@code-yeongyu/senpi"
+import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent"
 
 import "./residency-unlimited.test"
 import { createTaskLifecycle } from "../lifecycle"

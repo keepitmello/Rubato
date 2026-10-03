@@ -1287,3 +1287,52 @@ test("Cursor exec write and bash on a child-like session with shared ModelRuntim
   assert.equal(existsSync(join(parentCwd, "cursor-bash-cwd.txt")), false);
   assert.ok(bashCwd.endsWith("child-session-cwd"), bashCwd);
 });
+
+// 1.0.1 runs finishTurn before turn_end on an error/aborted assistant turn. The re-cut keeps
+// provider-executed results paired first, then hands them to both finishTurn and turn_end.
+test("aborted turn pairs provider-executed results before finishTurn and turn_end", async () => {
+  const agentCore = await import(
+    pathToFileURL(join(runtime.packages["@earendil-works/pi-agent-core"].dir, "dist/index.js")).href
+  );
+  const piAi = await import(pathToFileURL(join(piAiRoot, "dist/index.js")).href);
+  const model = {
+    id: "fixture", name: "fixture", api: "fixture-api", provider: "fixture", baseUrl: "http://127.0.0.1:9",
+    reasoning: false, input: ["text"], cost: ZERO_COST, contextWindow: 1000, maxTokens: 100,
+  };
+  const aborted = {
+    role: "assistant", content: [], api: model.api, provider: model.provider, model: model.id,
+    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { ...ZERO_COST, total: 0 } },
+    stopReason: "aborted", errorMessage: "aborted", timestamp: Date.now(),
+  };
+  const providerResult = {
+    role: "toolResult", toolCallId: "cursor-1", toolName: "read",
+    content: [{ type: "text", text: "provider ran it" }], isError: false, timestamp: Date.now(),
+  };
+  const streamFn = async (_model, _context, options) => {
+    await options.onProviderToolExecutionStart({ type: "tool_execution_start", toolCallId: "cursor-1", toolName: "read", args: {} });
+    await options.onToolResult(providerResult);
+    const stream = new piAi.AssistantMessageEventStream();
+    queueMicrotask(() => stream.push({ type: "error", reason: "aborted", error: aborted }));
+    return stream;
+  };
+  const events = [];
+  const finished = [];
+  const messages = await agentCore.runAgentLoop(
+    [{ role: "user", content: [{ type: "text", text: "go" }], timestamp: Date.now() }],
+    { systemPrompt: "", messages: [], tools: [] },
+    {
+      model,
+      convertToLlm: (all) => all,
+      finishTurn: async (turn) => { finished.push(turn); },
+    },
+    async (event) => { events.push(event); },
+    undefined,
+    streamFn,
+  );
+  assert.equal(finished.length, 1);
+  assert.deepEqual(finished[0].toolResults, [providerResult]);
+  const turnEnd = events.find((event) => event.type === "turn_end");
+  assert.deepEqual(turnEnd.toolResults, [providerResult]);
+  assert.deepEqual(messages.map((message) => message.role), ["user", "assistant", "toolResult"]);
+  assert.ok(events.findIndex((event) => event.type === "turn_end") > events.findIndex((event) => event.type === "message_end" && event.message === providerResult));
+});

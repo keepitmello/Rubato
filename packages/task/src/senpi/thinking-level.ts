@@ -1,4 +1,4 @@
-import type { CreateAgentSessionOptions } from "@code-yeongyu/senpi"
+import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent"
 
 export type SenpiThinkingLevel = NonNullable<CreateAgentSessionOptions["thinkingLevel"]>
 

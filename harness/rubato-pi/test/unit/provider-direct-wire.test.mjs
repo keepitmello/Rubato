@@ -68,9 +68,20 @@ function textDone(text = "ok") {
   ];
 }
 
+// pi-ai 1.0 providers take a transcript: Context.tools ride the leading system message.
+// ModelRuntime runs normalizeContext before it calls a provider; these tests call the provider
+// directly, so they normalize the same way.
+const { normalizeContext } = await import(
+  pathToFileURL(senpiNested("@earendil-works/pi-ai/dist/index.js")).href
+);
+
 async function codexProvider() {
   const [codex] = await directProviders();
-  return codex;
+  return {
+    ...codex,
+    stream: (model, context, options) => codex.stream(model, normalizeContext(context), options),
+    streamSimple: (model, context, options) => codex.streamSimple(model, normalizeContext(context), options),
+  };
 }
 
 function modelById(provider, id) {
@@ -82,7 +93,14 @@ function modelById(provider, id) {
 
 // pinned provider 는 `options.apiKey` 를 본다(`openai-codex-responses.js:158`).
 // vendor 를 부르지 않으므로 값은 의미가 없다 — 자리만 채운다.
-const API_KEY = "test-only-not-a-real-token";
+// Codex reads the ChatGPT account id from the token's JWT claim before it builds headers, so the
+// stand-in must be JWT-shaped. Header and signature are never checked.
+const fakeJwtPart = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
+const API_KEY = [
+  fakeJwtPart({ alg: "none" }),
+  fakeJwtPart({ "https://api.openai.com/auth": { chatgpt_account_id: "acct-test-only" } }),
+  "test-only-not-a-real-signature",
+].join(".");
 
 async function drain(stream) {
   const events = [];
@@ -97,6 +115,8 @@ async function drain(stream) {
 
 // ---------------------------------------------------------------- Fast / tier
 
+// Stock pi 의 Codex catalog 에는 `-fast` 행이 없다 (/fast 는 service-tier 가 payload 에 싣는다).
+// Fast 행은 우리가 파생하는 Daybreak Fast 뿐이라 그 하나로 wire 계약을 본다.
 test("Fast 모델의 실제 body 에 canonical model ID 와 service_tier:priority 가 들어간다", async () => {
   const codex = await codexProvider();
   const captured = {};
@@ -137,20 +157,6 @@ test("base 모델의 body 에는 service_tier 가 없다", async () => {
   assert.ok(!("service_tier" in captured.body), "base 에 tier 가 붙으면 항상 우선 처리로 나간다");
 });
 
-test("Astra Fast 의 body 에 canonical model ID 와 service_tier:priority 가 들어간다", async () => {
-  const codex = await codexProvider();
-  const captured = {};
-  const fast = modelById(codex, "gpt-6-astra-fast");
-  const wireModel = { ...fast, id: fast.upstreamModelId ?? fast.id };
-  await drain(codex.stream(
-    wireModel,
-    { messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }] },
-    { fetch: capturingFetch(textDone(), captured), apiKey: API_KEY, maxRetries: 0, serviceTier: fast.serviceTier, env: {} },
-  ));
-  assert.equal(captured.body.model, "gpt-6-astra", "wire 에는 canonical ID 가 가야 한다");
-  assert.equal(captured.body.service_tier, "priority");
-});
-
 test("xAI 현재 grok streamSimple body 에 service_tier 가 없다", async () => {
   const [, xai] = await directProviders();
   const captured = {};
@@ -163,20 +169,6 @@ test("xAI 현재 grok streamSimple body 에 service_tier 가 없다", async () =
   ));
   assert.equal(captured.body.model, XAI_GROK);
   assert.ok(!("service_tier" in captured.body), "기본 차로에 priority 를 넣지 않는다");
-});
-
-test("pinned Sol Fast 도 같은 계약을 지킨다", async () => {
-  const codex = await codexProvider();
-  const captured = {};
-  const fast = modelById(codex, "gpt-5.6-sol-fast");
-  const wireModel = { ...fast, id: fast.upstreamModelId ?? fast.id };
-  await drain(codex.stream(
-    wireModel,
-    { messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }] },
-    { fetch: capturingFetch(textDone(), captured), apiKey: API_KEY, maxRetries: 0, serviceTier: fast.serviceTier, env: {} },
-  ));
-  assert.equal(captured.body.model, "gpt-5.6-sol");
-  assert.equal(captured.body.service_tier, "priority");
 });
 
 // ------------------------------------------------------------- image and tool
@@ -366,25 +358,5 @@ test("xAI xhigh 가 실제 body 에 실린다", async () => {
   assert.match(serialized, /xhigh/, `xhigh 가 wire 에서 사라졌다: ${serialized.slice(0, 300)}`);
 });
 
-test("음성 대조: reasoningEffort 없이 보내면 signed reasoning 이 평문으로 강등된다", async () => {
-  // 위 두 테스트가 무언가를 실제로 지키고 있음을 보이는 대조군이다. provider 는
-  // `preserveThinking` 을 `reasoningRequested` 에서 파생시키므로
-  // (`openai-codex-responses.js:396,407`), reasoningEffort 가 없으면 유지되지 않는다.
-  // 이 강등이 PR #5 회귀의 모양이고, 그래서 fixture 가 통과했다고 안심하면 안 된다.
-  const codex = await codexProvider();
-  const captured = {};
-  await drain(codex.stream(
-    modelById(codex, "gpt-daybreak-blue-latest"),
-    {
-      messages: [
-        { role: "user", content: [{ type: "text", text: "1턴" }] },
-        reasoningTurn(nativeReasoningSignature("rs_x", "enc-x"), "답", "gpt-daybreak-blue-latest"),
-        { role: "user", content: [{ type: "text", text: "2턴" }] },
-      ],
-    },
-    { fetch: capturingFetch(textDone(), captured), apiKey: API_KEY, maxRetries: 0, env: {} },
-  ));
-  const reasoningItems = captured.body.input.filter((item) => item.type === "reasoning");
-  assert.equal(reasoningItems.length, 0, "대조군이 실패했다 — 이 경로에서도 유지되면 위 테스트는 아무것도 증명하지 않는다");
-  assert.ok(!JSON.stringify(captured.body).includes("enc-x"), "encrypted content 가 남았다");
-});
+// 강등 대조군은 없다. pi 1.0 의 convertResponsesMessages 는 signed reasoning 을 조건 없이
+// native item 으로 다시 싣기 때문에, 위 테스트가 지키는 강등 경로가 stock 에 없다.

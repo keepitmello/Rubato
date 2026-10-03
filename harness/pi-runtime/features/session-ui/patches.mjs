@@ -1,36 +1,39 @@
 import { fileURLToPath } from 'node:url';
 const agent = '@earendil-works/pi-coding-agent', tui = '@earendil-works/pi-tui';
-const version = '0.86.1';
+import { PI_VERSION as version } from "../../pi-version.mjs";
 const manifest = [
   [agent, 'dist/main.d.ts', 'cf197873ee07f73d5682fe2236e24989714d1f5c1acf8820264e570a5c17dadc', 4],
   [agent, 'dist/core/agent-session-runtime.d.ts', '4a18c0f51669b62a297c83334731c8bb5fed58016619a14d42edce414ff8d105', 5],
   [agent, 'dist/core/http-dispatcher.d.ts', 'd0a2f111c02c3126178a992a88d4a82b3f2bd99f6ae762a8dbd8336403b0d1e9', 5],
-  [agent, 'dist/modes/interactive/interactive-mode.d.ts', '462632cf8748c9c230f71b5787457a077a73fed8250c25ddd13a42a6dc520811', 6],
-  [agent, 'dist/main.js', 'e36837e55af695cbb95216763fbc929e87829ced837dd32f281bba8c8e50035c', 4],
+  [agent, 'dist/modes/interactive/interactive-mode.d.ts', '2dec53d6ab8b53edf72e7df055b201f5aeddc7ee0439a1d7e523f87a632e3991', 6],
+  [agent, 'dist/main.js', '060521b0b81f91948d8ded9139e423e5d0c9e6808a45c81750cc30519de4d2db', 4],
   [agent, 'dist/cli/session-picker.js', 'b5b3cc89815cc11f4519af27b9abb5a972a110fcfa08096f70dc0623e763cd44', 5],
   [agent, 'dist/cli/file-processor.js', '4946f4e3e193713135a4924982d31c9403190befd421b7be9893d0e5c65055ae', 5],
-  [agent, 'dist/cli/startup-ui.js', '0c74df92c94ff3ede0ed65d811b1604b305c7636b898e5023995f15618ea697b', 5],
+  [agent, 'dist/cli/startup-ui.js', 'f0fa56d9aeb064abfc0c0b1370140e7ff1925cc707fe6952815a8b5d96649b48', 5],
   [agent, 'dist/migrations.js', '8514d2573b028baeba60635498a1c5f129a602abd203ea5c37a63df2eea3fb6b', 4],
-  [agent, 'dist/utils/paths.js', '09046a2443dfb6434e4c5c62656fb73edc33e776dc6cc35b785ef1dbf8483c93', 5],
-  [agent, 'dist/core/agent-session-runtime.js', '61375f59afc3395940c05832c3f992e8020139a2f4a53065cccacbc370b65f16', 5],
-  [agent, 'dist/core/session-manager.js', '96bd76b298f3c0a6b6d9b57b727f0f9b1196fbfa83172071ac280a5a37f82a08', 5],
+  [agent, 'dist/utils/paths.js', 'd5d48c2b2b2442c7e72aee6e98a79d828a52dce9526b152288186834c1dcf4a5', 5],
+  [agent, 'dist/core/agent-session-runtime.js', '928b6528bb17d26273af8f7023a4f98e5f440d5896a4280d060b9b3e1f9a6882', 5],
+  [agent, 'dist/core/session-manager.js', '046b6a1109ac3f0ed893bb85bf0648709362fa926a5da75761216cf2fcf9d926', 5],
   [agent, 'dist/core/http-dispatcher.js', 'f9aa2c81b0a5958ffba6368506f24c9b202904c234ada19494cdc9c4a1d0e97b', 5],
-  [agent, 'dist/core/model-runtime.js', 'bae3c3feb7928c7702c3d98a3454660bee1647064dd449472fc6308c354fbc25', 5],
+  [agent, 'dist/core/model-runtime.js', 'da26f76339a031456f6d239a249159231776f760ab4ac538c6b54c417dea6f67', 5],
   [agent, 'dist/core/resolve-config-value.js', '01fdb1673990635bb419c7418eefa298b6a1c6fbb3c6193d3b05a4902e51992d', 5],
   [agent, 'dist/core/output-guard.js', 'e860db94650c57e07582c300983671737bf9e796682193b498f75e3dd72e9024', 5],
   [agent, 'dist/modes/print-mode.js', 'f2eb170b9620c1d37e68b788ff71257a4402a23e7f3999575feee8e5d9e13b3f', 5],
-  [agent, 'dist/modes/rpc/rpc-mode.js', 'bdd94e753e6d19731d9fb9ea370462d095d64f1e78bddd7651320663fa57c4ff', 6],
-  [agent, 'dist/modes/interactive/interactive-mode.js', '8c9275944466afe2df78dcf02f2f6c83f6bc46fb0fdbd7257a3ef9d1da1ed027', 6],
-  [agent, 'dist/modes/interactive/theme/theme.js', '5ced0adb09ca8ce0f9b4eefcf89825755e9873cd53388825694025a4b046d1d5', 7],
+  [agent, 'dist/modes/rpc/rpc-mode.js', '631697cd35928fc827f4a423538c43ff227b8cbf63c2a2f11060616f55eba6db', 6],
+  [agent, 'dist/modes/interactive/interactive-mode.js', '14508d43f3dd47faa6b10c4a6537740f1cf238eee3fc873a9e0648125214bbcc', 6],
+  [agent, 'dist/modes/interactive/theme/theme.js', 'a7b93b9cc50d9f44c2a728c8df5de67dc41efead57d1554e0ff32b73bb358cf4', 7],
   [agent, 'dist/modes/interactive/external-editor.js', '27c7133602240acd07c849994a82058eb9ef3ae15299f386808c1dd0b85486d6', 6],
-  [agent, 'dist/utils/clipboard.js', '70bdfa46e024f1351a8dcdd7744242492315a5e3272031bebb5e50041efd493e', 5],
-  [agent, 'dist/utils/shell.js', '9874bbe8f6e26dd05029c3487d7789b160e92470696b2168424394f5dd00a34a', 5],
-  [agent, 'dist/core/agent-session.js', 'edaff7055ced7d49d25135c92415fbbfd9c14c4a29be5a79510ab9216045d6d9', 5],
-  [tui, 'dist/keys.js', '14b18205fd5e56ed3b183392c82bd72e41ba3dab1d345e47b2b17af6988493cc', 7],
-  [tui, 'dist/terminal.js', 'd9636fd679aed23830be7c8d248d9725883efd43469392228275dac6a85fcc68', 7],
-  [tui, 'dist/keybindings.js', '499582d22b576b7e73952ec9e8ad72e833e76fb72005d98bad499b0b7eb6d936', 7],
-  [tui, 'dist/terminal-image.js', '471f5ba18f5e23fd4f14358af615e1be0631f867189f428d023b069894130f62', 7],
+  [agent, 'dist/utils/clipboard.js', '9026155915928019229a3120119c76a4bf040a81b3792a09f04218f93ea0529b', 5],
+  [agent, 'dist/utils/shell.js', 'c8378f2b0566e35f90dfbb622a2214acf5cf45d15107c44b260cad897b539f72', 5],
+  [agent, 'dist/core/agent-session.js', '35ca1dabd54d98c236c9601b569c2856b726ade392d06b2eaaf50158f48913ab', 5],
+  [tui, 'dist/keys.js', '14b18205fd5e56ed3b183392c82bd72e41ba3dab1d345e47b2b17af6988493cc', 4],
+  [tui, 'dist/terminal.js', 'e3a594cb638d57da4e195bee6a4ad10e4ebeb3335dbf2bd9990d913ef03ee4fb', 4],
+  [tui, 'dist/keybindings.js', '499582d22b576b7e73952ec9e8ad72e833e76fb72005d98bad499b0b7eb6d936', 4],
+  [tui, 'dist/terminal-image.js', '5dd2e88f00fbd89b96a08ed4d7d83213f14c046f14f07725cac80bfe3229f5cb', 4],
 ];
+// Last column: how many `../` lead from the patched file to the stage root, where
+// rubato-features/ lives. npm hoists pi-tui next to pi-coding-agent since 1.0, so
+// its dist/ files sit four levels down (0.86.1 nested it under pi-coding-agent: seven).
 function once(source, before, after) {
   if (!source.includes(before) || source.indexOf(before) !== source.lastIndexOf(before)) throw new Error(`session-ui anchor mismatch: ${before}`);
   return source.replace(before, after);
@@ -51,7 +54,7 @@ export const patches = manifest.map(([packageName, path, preimageSha256, depth])
     const imports = `import { uiState, uiScope, uiProcess as process, uiConsole as console, bindUiCallback, bindUiContext, exitUiProcess } from "${'../'.repeat(depth)}rubato-features/session-ui/context.mjs";\n`;
     let next = source;
     if (path === 'dist/core/model-runtime.js') {
-      next = once(next, 'import { createModels,', 'import { defaultProviderAuthContext, createModels,');
+      next = once(next, ' createModels, lazyStream,', ' defaultProviderAuthContext, createModels, lazyStream,');
       next = once(next, 'this.models = createModels({ credentials, modelsStore });', `const context = defaultProviderAuthContext();
         const env = uiScope()?.env;
         const authContext = env ? { ...context, async env(name) {
@@ -199,6 +202,11 @@ export async function releaseScopedHttpDispatcher() {
         ...['currentThemeName', 'themeWatcher', 'themeReloadTimer', 'onThemeChangeCallback', 'cachedHighlightThemeFor', 'cachedCliHighlightTheme']
           .map(name => [name, `let ${name};`]),
         ['registeredThemes', 'const registeredThemes = new Map();'],
+        // 1.0 keeps the colors a terminal reported (OSC 10/11/4 replies, mode 2031) in module
+        // variables. Each hosted presentation is its own terminal, so they live in its scope.
+        ['terminalColors', 'let terminalColors = {};'],
+        ['terminalColorsPending', 'let terminalColorsPending = false;'],
+        ['terminalColorScheme', 'let terminalColorScheme;'],
       ]);
       next = once(next, 'const t = globalThis[THEME_KEY];', 'const t = uiScope() ? uiState().theme : globalThis[THEME_KEY];');
       next = once(next, 'function setGlobalTheme(t) {', 'function setGlobalTheme(t) {\n    if (uiScope()) { uiState().theme = t; return; }');

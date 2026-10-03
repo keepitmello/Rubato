@@ -2,11 +2,13 @@ import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { performance } from "node:perf_hooks";
+import { resolvePiRuntime } from "../../resolve-runtime.mjs";
+const stockPackageDir = (name) => resolvePiRuntime({ root: fileURLToPath(new URL("../..", import.meta.url)) }).packages[`@earendil-works/${name}`].dir;
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = process.env.RUBATO_A2A3_EVIDENCE_DIR || join(here, "evidence");
 mkdirSync(outDir, { recursive: true });
-const tuiPackage = join(here, "../../node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui");
+const tuiPackage = join(stockPackageDir("pi-tui"));
 const work = join(outDir, "transcript-work");
 mkdirSync(join(work, "node_modules/@earendil-works"), { recursive: true });
 try { symlinkSync(tuiPackage, join(work, "node_modules/@earendil-works/pi-tui")); } catch (error) {

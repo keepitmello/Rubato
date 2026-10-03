@@ -7,7 +7,9 @@ const quotaError =
   `"type":"access_terminated_error"}`
 
 describe("in-process access_terminated_error fallback", () => {
-  test("#given access_terminated_error makes the first category candidate unusable #when the child runs #then the next configured candidate produces the result", async () => {
+  // Senpi switched models inside the session (retry_fallback_applied). Stock pi has no model
+  // fallback and no Rubato engine feature ports it, so this stays a todo until one does.
+  test.todo("#given access_terminated_error makes the first category candidate unusable #when the child runs #then the next configured candidate produces the result", async () => {
     // given
     const harness = await createFallbackSessionHarness(quotaError)
 
@@ -18,7 +20,7 @@ describe("in-process access_terminated_error fallback", () => {
       // then
       expect(harness.calls).toEqual(["dead-primary", "healthy-fallback"])
       expect(harness.session.getLastAssistantText()).toBe("fallback completed")
-      expect(harness.events).toContainEqual({
+      expect(harness.events as readonly unknown[]).toContainEqual({
         type: "retry_fallback_applied",
         from: "runtime-fallback-test/dead-primary",
         to: "runtime-fallback-test/healthy-fallback",
@@ -42,7 +44,7 @@ describe("in-process access_terminated_error fallback", () => {
 
       // then
       expect(harness.calls).toEqual(["dead-primary"])
-      expect(harness.events.some((event) => event.type === "retry_fallback_applied")).toBe(false)
+      expect(harness.events.some((event) => String(event.type) === "retry_fallback_applied")).toBe(false)
       expect(harness.session.getLastAssistantText()).toBeUndefined()
     } finally {
       harness.dispose()

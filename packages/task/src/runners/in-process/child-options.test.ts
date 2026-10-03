@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { SessionManager } from "@code-yeongyu/senpi"
+import type { SessionManager } from "@earendil-works/pi-coding-agent"
 
 import type { ChildSpec } from "../in-process"
 import { buildChildSessionOptions } from "./child-options"

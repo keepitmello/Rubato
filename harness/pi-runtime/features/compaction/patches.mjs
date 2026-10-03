@@ -10,7 +10,7 @@ import {
 
 const PACKAGE_AGENT = "@earendil-works/pi-coding-agent";
 const PACKAGE_AI = "@earendil-works/pi-ai";
-const PACKAGE_VERSION = "0.86.1";
+import { PI_VERSION as PACKAGE_VERSION } from "../../pi-version.mjs";
 
 function replaceOnce(source, before, after, label) {
   const first = source.indexOf(before);
@@ -19,6 +19,14 @@ function replaceOnce(source, before, after, label) {
     throw new Error(`[compaction:${label}] expected anchor is ambiguous`);
   }
   return source.slice(0, first) + after + source.slice(first + before.length);
+}
+
+function replaceOncePattern(source, pattern, after, label) {
+  const matches = [...source.matchAll(pattern)];
+  if (matches.length === 0) throw new Error(`[compaction:${label}] expected anchor is missing`);
+  if (matches.length > 1) throw new Error(`[compaction:${label}] expected anchor is ambiguous`);
+  const [match] = matches;
+  return source.slice(0, match.index) + after + source.slice(match.index + match[0].length);
 }
 
 function unpatched(source, marker, label) {
@@ -100,10 +108,11 @@ export function patchSettingsCompactionKeys(source) {
 
 export function patchAnthropicMessagesServerCompaction(source) {
   unpatched(source, PARAMS_IMPORT, "anthropic-messages");
+  // 1.0.1 imports the SDK as `import Anthropic, {} from ...` (type-only names erased).
   let next = replaceOnce(
     source,
-    'import Anthropic from "@anthropic-ai/sdk";',
-    'import Anthropic from "@anthropic-ai/sdk";\n' + PARAMS_IMPORT,
+    'import Anthropic, {} from "@anthropic-ai/sdk";',
+    'import Anthropic, {} from "@anthropic-ai/sdk";\n' + PARAMS_IMPORT,
     "anthropic-import",
   );
   // Claude Code 신원(버전 상수·billing header)을 굽는 자리는 여기 하나다.
@@ -116,9 +125,11 @@ export function patchAnthropicMessagesServerCompaction(source) {
   // misc-vendor 의 load transform 에도 같은 주입이 있는데, 그쪽은 이 파일에 닿지
   // 않는다. 빌드가 stock `2.1.251` 을 그대로 남겨 두는 것을 확인했다
   // (2026-09-23: 주입을 들어내고 구웠더니 엔진이 2.1.251 로 나가 400).
-  next = replaceOnce(
+  // Stock bumps this literal on its own (0.86.1: 2.1.251, 1.0.1: 2.1.280), so match whatever
+  // literal stock ships and replace it with ours; the declared constant stays the only source.
+  next = replaceOncePattern(
     next,
-    'const claudeCodeVersion = "2.1.251";',
+    /const claudeCodeVersion = "[^"\n]*";/g,
     `const claudeCodeVersion = "${CLAUDE_CODE_VERSION}";`,
     "claude-code-version",
   );
@@ -393,9 +404,9 @@ function patch(packageName, path, preimageSha256, apply, id) {
 }
 
 export const patches = Object.freeze([
-  patch(PACKAGE_AGENT, "dist/core/compaction/compaction.js", "e304e621c33d8bb4f3ac8f2fa217f330492fc05fb49fc7a5b9572f6ff00f8319", patchCompactionPromptsAndThreshold, "compaction:prompts-threshold"),
-  patch(PACKAGE_AGENT, "dist/core/settings-manager.js", "5368b155ec26d88374cec9e66b8e588b5041a0fb0047414f70b34e13892c4f48", patchSettingsCompactionKeys, "compaction:settings-threshold-keys"),
-  patch(PACKAGE_AI, "dist/api/anthropic-messages.js", "54f32708dc88d951d4c1aacd9e2e531da098967cb61b98a726b43e99277e7754", patchAnthropicMessagesServerCompaction, "compaction:anthropic-server-params"),
+  patch(PACKAGE_AGENT, "dist/core/compaction/compaction.js", "573f0321e9a93a4e8dca8c327f6459082ac438d1bc8b6c3c171d90894dd1543c", patchCompactionPromptsAndThreshold, "compaction:prompts-threshold"),
+  patch(PACKAGE_AGENT, "dist/core/settings-manager.js", "b3a424ac1af9bd0c380796f9e5d812e2c61755ed3b31dd39982a57bbe0d5a391", patchSettingsCompactionKeys, "compaction:settings-threshold-keys"),
+  patch(PACKAGE_AI, "dist/api/anthropic-messages.js", "beb7ec1ad646151f73ee0199c2b30b944d4066e9ba0fa47421aa446ab3d7ec96", patchAnthropicMessagesServerCompaction, "compaction:anthropic-server-params"),
 ]);
 
 export default patches;

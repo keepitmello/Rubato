@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 import {
   credentialShapeWith,
@@ -31,6 +31,7 @@ import {
 } from "../../src/picker-catalog.mjs";
 import { PRODUCT_MODEL_ORDER } from "../../../../packages/model-core/src/product-model-catalog.mjs";
 import { kRubatoStream } from "../../src/rubato-stream.mjs";
+import { senpiNested } from "../../src/engine-paths.mjs";
 
 // 현재 세대 id 는 소스/카탈로그가 소유한다 — 여기서 손으로 적으면 세대가 바뀔 때마다 깨진다.
 const FABLE_ID = ANTHROPIC_PICKER_IDS[0];
@@ -195,20 +196,14 @@ test("Codex: native metadata 를 보존하되 Rubato context 상한은 272K 다"
   assert.equal(models.get("gpt-5.6-sol").contextWindow, 272_000);
   assert.equal(models.get("gpt-5.6-terra").contextWindow, 272_000);
   assert.equal(models.get("gpt-5.6-luna").contextWindow, 272_000);
-  assert.equal(models.get("gpt-5.6-sol-fast").contextWindow, 272_000);
   assert.ok([...models.values()].every((model) => model.contextWindow <= 272_000));
-
-  // Fast 변형의 wire 계약.
-  const solFast = models.get("gpt-5.6-sol-fast");
-  assert.equal(solFast.upstreamModelId, "gpt-5.6-sol", "Fast 는 canonical ID 로 나가야 한다");
-  assert.equal(solFast.serviceTier, "priority");
+  // Stock pi 의 catalog 에는 `-fast` 행이 없다. /fast 는 service-tier 가 payload 로 싣고,
+  // Fast 행은 아래 Daybreak 파생뿐이다.
   assert.equal(models.get("gpt-5.6-sol").serviceTier, undefined, "base 에는 tier 가 없다");
   assert.equal(models.get("gpt-5.6-sol").upstreamModelId, undefined);
 
   const astra = models.get("gpt-6-astra");
-  const astraFast = models.get("gpt-6-astra-fast");
   assert.ok(astra, "Astra 가 catalog 에 없다");
-  assert.ok(astraFast, "Astra Fast 가 catalog 에 없다");
   assert.equal(astra.name, "GPT-6 Astra");
   assert.equal(astra.contextWindow, 272_000);
   assert.equal(astra.maxTokens, 128_000);
@@ -219,12 +214,14 @@ test("Codex: native metadata 를 보존하되 Rubato context 상한은 272K 다"
   assert.equal(astra.thinkingLevelMap.xhigh, "xhigh");
   assert.equal(astra.thinkingLevelMap.max, "max");
   assert.equal(astra.thinkingLevelMap.off, null);
-  assert.equal(astra.thinkingLevelMap.minimal, null);
+  // 나머지 단계 매핑은 pin 값 그대로다.
+  const { openaiCodexProvider } = await import(
+    pathToFileURL(senpiNested("@earendil-works/pi-ai/dist/providers/openai-codex.js")).href
+  );
+  const nativeAstra = openaiCodexProvider().getModels().find((model) => model.id === "gpt-6-astra");
+  assert.deepEqual(astra.thinkingLevelMap, nativeAstra.thinkingLevelMap);
   assert.equal(astra.upstreamModelId, undefined, "base 에는 tier 가 없다");
   assert.equal(astra.serviceTier, undefined);
-  assert.equal(astraFast.upstreamModelId, "gpt-6-astra", "Fast 는 canonical ID 로 나가야 한다");
-  assert.equal(astraFast.serviceTier, "priority");
-  assert.equal(astraFast.contextWindow, 272_000);
 
   // Daybreak.
   const base = models.get("gpt-daybreak-blue-latest");
@@ -359,7 +356,6 @@ test("피커는 현재 세대만 남기고 getModels 저장분은 그대로다",
   assert.ok(!codexPicker.has("gpt-5.4"));
   // Daybreak 파생의 틀이다. 저장분에서 지우면 주입이 아니라 throw 로 바뀐다.
   assert.ok(codex.getModels().some((model) => model.id === "gpt-5.6-terra"), "Daybreak 파생 틀을 지우면 안 된다");
-  assert.ok(codex.getModels().some((model) => model.id === "gpt-6-astra-fast"), "/fast 가 쓸 Fast 변형을 저장분에서 지우면 안 된다");
 
   assert.equal(opencode.id, "opencode");
   assert.deepEqual(

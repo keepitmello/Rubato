@@ -3,7 +3,7 @@ import { patchOpenAiCodexResponsesAstra, patchTransformMessagesPreserve } from "
 import { patchEventStreamLocalWork, patchLazyLocalWork } from "./lazy-local-work.mjs";
 
 const PACKAGE_NAME = "@earendil-works/pi-ai";
-const PACKAGE_VERSION = "0.86.1";
+import { PI_VERSION as PACKAGE_VERSION } from "../../pi-version.mjs";
 
 const source = (relative) => fileURLToPath(new URL(relative, import.meta.url));
 const ownedFile = (path, sourcePath) => Object.freeze({
@@ -65,8 +65,8 @@ function patchRetrySuppression(sourceText) {
 function patchResolveAuth(sourceText) {
   let next = replaceOnce(
     sourceText,
-    'import { formatThrownValue } from "../utils/diagnostics.js";\n',
-    'import { formatThrownValue } from "../utils/diagnostics.js";\nimport { mergeRefreshed, mergeRefreshedSlot, projectSlot } from "../rubato-features/providers/auth-pool/slots.mjs";\n',
+    'import { ModelsError } from "../utils/models-error.js";\n',
+    'import { ModelsError } from "../utils/models-error.js";\nimport { mergeRefreshed, mergeRefreshedSlot, projectSlot } from "../rubato-features/providers/auth-pool/slots.mjs";\n',
     "resolve-pool-import",
   );
   next = replaceOnce(
@@ -204,29 +204,37 @@ function patchModelRuntimePool(sourceText) {
     `    stream(model, context, options) {
         const transcript = normalizeContext(context);
         return lazyStream(model, async () => {
+            assertChatModel(model);
             const prepared = await this.prepareRequest(model, options);
             return prepared.provider.stream(prepared.model, transcript, prepared.options);
         });
     }`,
     `    stream(model, context, options) {
         const transcript = normalizeContext(context);
-        return lazyStream(model, async () => streamWithCredentialPool(this, "stream", model, transcript, options));
+        return lazyStream(model, async () => {
+            assertChatModel(model);
+            return streamWithCredentialPool(this, "stream", model, transcript, options);
+        });
     }`,
     "runtime-stream-pool",
   );
+  // 1.0.1 routes virtual models first and then calls streamSimple again with the routed
+  // physical model, so only the physical branch (the last lazyStream) goes through the pool.
   next = replaceOnce(
     next,
-    `    streamSimple(model, context, options) {
-        const transcript = normalizeContext(context);
-        return lazyStream(model, async () => {
+    `        return lazyStream(model, async () => {
+            assertChatModel(model);
             const prepared = await this.prepareRequest(model, options);
             return prepared.provider.streamSimple(prepared.model, transcript, prepared.options);
         });
-    }`,
-    `    streamSimple(model, context, options) {
-        const transcript = normalizeContext(context);
-        return lazyStream(model, async () => streamWithCredentialPool(this, "streamSimple", model, transcript, options));
-    }`,
+    }
+    completeSimple(model, context, options) {`,
+    `        return lazyStream(model, async () => {
+            assertChatModel(model);
+            return streamWithCredentialPool(this, "streamSimple", model, transcript, options);
+        });
+    }
+    completeSimple(model, context, options) {`,
     "runtime-stream-simple-pool",
   );
   return replaceOnce(
@@ -268,10 +276,12 @@ function patchLoaderPendingUnregister(sourceText) {
 }
 
 function patchRunnerFlushUnregister(sourceText) {
+  // 1.0.1 flushes pending virtual-model registrations right after native providers; queued
+  // unregistrations still run right after provider registrations, as on 0.86.1.
   return replaceOnce(
     sourceText,
     `        this.runtime.pendingNativeProviderRegistrations = [];
-        // From this point on, provider registration/unregistration takes effect immediately`,
+        const registerVirtualModel = (definition) => {`,
     `        this.runtime.pendingNativeProviderRegistrations = [];
         for (const name of this.runtime.pendingProviderUnregistrations ?? []) {
             try {
@@ -287,7 +297,7 @@ function patchRunnerFlushUnregister(sourceText) {
             }
         }
         this.runtime.pendingProviderUnregistrations = [];
-        // From this point on, provider registration/unregistration takes effect immediately`,
+        const registerVirtualModel = (definition) => {`,
     "runner-flush-unregister",
   );
 }
@@ -368,7 +378,7 @@ export const patches = Object.freeze([
     packageName: PACKAGE_NAME,
     version: PACKAGE_VERSION,
     path: "dist/auth/resolve.js",
-    preimageSha256: "82ee45ecec319f59536759312a4de25313a8bb8cb7ce43db43d18edc10fef305",
+    preimageSha256: "571c448966e4dfe789ab7233a008e4c0ed9f083dedc418c49142a6b81fa3782a",
     apply: patchResolveAuth,
   }),
   Object.freeze({
@@ -376,7 +386,7 @@ export const patches = Object.freeze([
     packageName: PACKAGE_NAME,
     version: PACKAGE_VERSION,
     path: "dist/models.js",
-    preimageSha256: "75fa33149fb608bc4a7b7a0586c8ca8f0024465d580091b0c426c0baf3fbc80a",
+    preimageSha256: "2efdb7beab5730e2a77163c807b3648a97cd4593d0bda462eb79f69f0630613f",
     apply: patchModelsLogin,
   }),
   Object.freeze({
@@ -384,7 +394,7 @@ export const patches = Object.freeze([
     packageName: "@earendil-works/pi-coding-agent",
     version: PACKAGE_VERSION,
     path: "dist/core/model-runtime.js",
-    preimageSha256: "bae3c3feb7928c7702c3d98a3454660bee1647064dd449472fc6308c354fbc25",
+    preimageSha256: "da26f76339a031456f6d239a249159231776f760ab4ac538c6b54c417dea6f67",
     apply: patchModelRuntimePool,
   }),
   Object.freeze({
@@ -392,7 +402,7 @@ export const patches = Object.freeze([
     packageName: "@earendil-works/pi-coding-agent",
     version: PACKAGE_VERSION,
     path: "dist/core/extensions/loader.js",
-    preimageSha256: "81106b07522aaf9197858c4679fecd7fbd23c346376d6e1f2cc3dd5294d543f4",
+    preimageSha256: "44a356da552c9cf2ea619c61944cfb28f81b45f09b325f152c91a914bfce1bc0",
     apply: patchLoaderPendingUnregister,
   }),
   Object.freeze({
@@ -400,7 +410,7 @@ export const patches = Object.freeze([
     packageName: "@earendil-works/pi-coding-agent",
     version: PACKAGE_VERSION,
     path: "dist/core/extensions/runner.js",
-    preimageSha256: "07a94efe560e6a460a415b2188c1c3c69ca151bd163c9b5f05347caf8403ace2",
+    preimageSha256: "258f142bc56cc84d953ef6146222e5ff3a94cc908592a1b3d075d34bbcd68b36",
     apply: patchRunnerFlushUnregister,
   }),
   Object.freeze({
@@ -408,7 +418,7 @@ export const patches = Object.freeze([
     packageName: PACKAGE_NAME,
     version: PACKAGE_VERSION,
     path: "dist/api/openai-codex-responses.js",
-    preimageSha256: "6e69310d77278231cfc87d7f03ee815d4a0f2ff273e6c43fcee6835e7df2b0c7",
+    preimageSha256: "53b4abdad5f2af1e5e5c12605d96bf6651d4a4b847351d87898ebb67d04236f7",
     apply: patchOpenAiCodexResponsesAstra,
   }),
   Object.freeze({
@@ -440,7 +450,7 @@ export const patches = Object.freeze([
     packageName: PACKAGE_NAME,
     version: PACKAGE_VERSION,
     path: "dist/utils/retry.js",
-    preimageSha256: "292e2a6654fdd48d6f020eedb2084a70b3ccceb289c37c65ad2d41c45dc664dc",
+    preimageSha256: "8302372246b92d5047bb5715afeee374c672e1652d96a80268dc3b5758a7cae4",
     apply: patchRetrySuppression,
   }),
 ]);

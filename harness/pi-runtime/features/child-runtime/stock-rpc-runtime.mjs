@@ -51,7 +51,7 @@ export function resolvePiChildProviderProfile({ root, agentDir, includeContextNo
   if (includeRolePrompt) entries.push(join(root, "rubato-features", "child-runtime", "role-prompt-extension.mjs"))
   // Service-tier is not part of the default child closure. Only a requested tier loads it.
   if (requestedServiceTier(serviceTier) !== undefined) entries.push(serviceTierExtensionPath(root))
-  const prerequisites = [join(root, "node_modules", "@earendil-works", "pi-coding-agent", "node_modules", "@earendil-works", "pi-ai", "dist", "rubato-features", "provider-execution", "extension.mjs")]
+  const prerequisites = [join(root, "node_modules", "@earendil-works", "pi-ai", "dist", "rubato-features", "provider-execution", "extension.mjs")]
   if (includeContextNotes) prerequisites.push(join(root, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "rubato-features", "context-notes", "src", "extensions", "context-notes.mjs"))
   if (includeGuards) prerequisites.push(join(root, "rubato-features", "tool-guards", "index.mjs"))
   if (includeRolePrompt) prerequisites.push(join(root, "rubato-features", "prompt-rules", "role-prompt.mjs"))

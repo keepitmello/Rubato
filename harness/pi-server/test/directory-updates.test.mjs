@@ -74,3 +74,37 @@ test('real directory transport: unchanged lists stay quiet while external creati
   assert.equal(server.host.directory.value.revision, revision + 2);
   assert.equal(server.host.metrics.runtimeStarts, 0);
 });
+
+test('one event is one published revision: its sequence, its ring slot and the status it causes arrive together; the ring keeps the newest 256', async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'rb-directory-'));
+  let worker;
+  class Worker extends EventEmitter {
+    constructor(metadata) {
+      super(); this.id = 'fixture-runtime'; this.metadata = metadata;
+      this.terminated = new Promise((resolve) => { this.finish = resolve; });
+    }
+    start() { return Promise.resolve({ sessionId: this.metadata.id, isStreaming: false }); }
+    stop() { this.finish(); return this.terminated; }
+    request() { return this.start(); }
+    reply() {}
+  }
+  const metadata = await new SessionFiles(root).create({ cwd: root });
+  const host = createSessionHost({ sessionsDir: root, serverId: 'test', pollMs: 0, idleMs: null,
+    workerFactory: (value) => (worker = new Worker(value)) });
+  t.after(async () => { await host.close(); await rm(root, { recursive: true, force: true }); });
+  await host.start();
+  const handle = await host.openSession(await host.resolveSession(metadata.id));
+  const seen = [];
+  t.after(handle.state.subscribe((value, _context, delivery) => {
+    if (delivery.kind === 'update') seen.push({ sequence: value.sequence, last: value.events.at(-1)?.sequence, status: value.status });
+  }));
+  worker.emit('event', { type: 'agent_start' });
+  assert.deepEqual(seen, [{ sequence: 1, last: 1, status: 'running' }]);
+  for (let i = 0; i < 300; i++) worker.emit('event', { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'x' } });
+  assert.equal(seen.length, 301);
+  assert.ok(seen.every((row) => row.sequence === row.last));
+  const { events } = handle.state.value;
+  assert.equal(events.length, 256);
+  assert.equal(events[0].sequence, 301 - 255);
+  assert.equal(events.at(-1).sequence, 301);
+});

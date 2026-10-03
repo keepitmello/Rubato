@@ -1,8 +1,17 @@
-import type { ModelRegistry as SenpiModelRegistry } from "@code-yeongyu/senpi"
+import { mkdtempSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+
+import type { ModelRegistry as SenpiModelRegistry } from "@earendil-works/pi-coding-agent"
 import { ModelRegistry, ModelRuntime } from "../../senpi-test-runtime"
 
+// Stock pi only builds a ModelRuntime asynchronously. The callers are synchronous fixtures that never
+// mutate the registry, so they share one empty runtime and re-register the same providers.
+const runtimeDir = mkdtempSync(join(tmpdir(), "rubato-team-service-registry-"))
+const sharedModelRuntime = await ModelRuntime.create({ authPath: join(runtimeDir, "auth.json"), modelsPath: null })
+
 export function createTeamServiceTestModelRegistry(): SenpiModelRegistry {
-  const modelRegistry = new ModelRegistry(ModelRuntime.createSync())
+  const modelRegistry = new ModelRegistry(sharedModelRuntime)
   modelRegistry.registerProvider("xai", {
     api: "openai-completions",
     baseUrl: "https://example.test",

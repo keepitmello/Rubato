@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 const TUI_PACKAGE = "@earendil-works/pi-tui";
-const VERSION = "0.86.1";
+import { PI_VERSION as VERSION } from "../../pi-version.mjs";
 const INLINE_IMPORT = 'import { getDollarInvocationContext, getDollarInvocationSuggestions, getInlineSkillSuggestions, inlineSlashTokenAt, isInlineDollarToken } from "./rubato-features/tui-autocomplete/inline.mjs";';
 const EDITOR_INLINE_IMPORT = 'import { inlineSlashTokenAt, isInlineDollarToken } from "../rubato-features/tui-autocomplete/inline.mjs";';
 
@@ -25,8 +25,11 @@ function patch(id, path, preimageSha256, apply) {
 const AC_IMPORT_BEFORE = 'const PATH_DELIMITERS = new Set([" ", "\\t", \'"\', "\'", "="]);\n';
 const AC_IMPORT_AFTER = INLINE_IMPORT + '\n' + AC_IMPORT_BEFORE;
 
-const AC_LEADING_BEFORE = '        if (!options.force && textBeforeCursor.startsWith("/")) {\n            const spaceIndex = textBeforeCursor.indexOf(" ");\n            if (spaceIndex === -1) {\n                const prefix = textBeforeCursor.slice(1);';
-const AC_LEADING_AFTER = '        const dollarContext = getDollarInvocationContext(textBeforeCursor, cursorLine, this.commands);\n        if (dollarContext) {\n            const suggestions = getDollarInvocationSuggestions(this.commands, dollarContext.query, dollarContext.skillsOnly, fuzzyFilter);\n            if (suggestions.length === 0)\n                return null;\n            return {\n                items: suggestions,\n                prefix: dollarContext.prefix,\n            };\n        }\n        if (!options.force && cursorLine === 0 && textBeforeCursor.startsWith("/")) {\n            const spaceIndex = textBeforeCursor.indexOf(" ");\n            if (spaceIndex === -1) {\n                if (textBeforeCursor.slice(1).includes("/"))\n                    return null;\n                const prefix = textBeforeCursor.slice(1);';
+// 1.0 (#10218) matches slash commands after trimStart(), so leading whitespace still opens
+// the command menu; Rubato keeps that and adds $-invocations, the line-0 limit (the editor
+// opens the slash menu on every line for inline /skill:) and the "/a/b is a path" rule.
+const AC_LEADING_BEFORE = '        const commandText = textBeforeCursor.trimStart();\n        if (!options.force && commandText.startsWith("/")) {\n            const spaceIndex = commandText.indexOf(" ");\n            if (spaceIndex === -1) {\n                const prefix = commandText.slice(1);';
+const AC_LEADING_AFTER = '        const dollarContext = getDollarInvocationContext(textBeforeCursor, cursorLine, this.commands);\n        if (dollarContext) {\n            const suggestions = getDollarInvocationSuggestions(this.commands, dollarContext.query, dollarContext.skillsOnly, fuzzyFilter);\n            if (suggestions.length === 0)\n                return null;\n            return {\n                items: suggestions,\n                prefix: dollarContext.prefix,\n            };\n        }\n        const commandText = textBeforeCursor.trimStart();\n        if (!options.force && cursorLine === 0 && commandText.startsWith("/")) {\n            const spaceIndex = commandText.indexOf(" ");\n            if (spaceIndex === -1) {\n                if (commandText.slice(1).includes("/"))\n                    return null;\n                const prefix = commandText.slice(1);';
 
 const AC_INLINE_BEFORE = '            return {\n                items: argumentSuggestions,\n                prefix: argumentText,\n            };\n        }\n        const pathMatch = this.extractPathPrefix(textBeforeCursor, options.force ?? false);';
 const AC_INLINE_AFTER = '            return {\n                items: argumentSuggestions,\n                prefix: argumentText,\n            };\n        }\n        if (!options.force) {\n            const inlineToken = inlineSlashTokenAt(textBeforeCursor);\n            if (inlineToken) {\n                const filtered = getInlineSkillSuggestions(this.commands, inlineToken.slice(1), fuzzyFilter);\n                if (filtered.length > 0)\n                    return { items: filtered, prefix: inlineToken };\n            }\n        }\n        const pathMatch = this.extractPathPrefix(textBeforeCursor, options.force ?? false);';
@@ -68,8 +71,8 @@ export const files = Object.freeze([
 ]);
 
 export const patches = Object.freeze([
-  patch("tui-autocomplete:provider", "dist/autocomplete.js", "1b18b10ff6232f95b8fb5c57390e706686de31449a8f3bd45f34af1038b33e23", patchTuiAutocomplete),
-  patch("tui-autocomplete:editor", "dist/components/editor.js", "e6efdddb40ccf924616d1e61666c394ccd36d1db49e3a0fb11d555d81cf972a8", patchTuiEditor),
+  patch("tui-autocomplete:provider", "dist/autocomplete.js", "ae2966443cdea6f65445f181f5ef159abb362388afed69afd344b728b5dafb55", patchTuiAutocomplete),
+  patch("tui-autocomplete:editor", "dist/components/editor.js", "fde684babdeae2c1def1b3f7bb31ba8f7fcc7e4a0e038fd146b63f8f5be274b7", patchTuiEditor),
 ]);
 
 export const feature = Object.freeze({ id: "tui-autocomplete", patches, files });

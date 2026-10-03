@@ -1,4 +1,4 @@
-import type { MessageRenderer } from "@code-yeongyu/senpi"
+import type { MessageRenderer } from "@earendil-works/pi-coding-agent"
 import {
   formatTargetWithModel,
   linesComponent,

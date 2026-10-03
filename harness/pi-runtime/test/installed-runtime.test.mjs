@@ -18,17 +18,23 @@ const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // `npm install` 로는 락에 이 값이 안 채워지고, 채우는 사람이 여기를 잊으면
 // 이 테스트가 낡은 값을 들고 조용히 통과한다 (2026-09-20 0.86.1 에서 실측).
 // 값은 `curl -sL $(npm view <pkg>@<ver> dist.tarball) | openssl dgst -sha512 -binary | openssl base64 -A`.
+// 1.0.1 ships no npm-shrinkwrap.json, so pi's siblings are hoisted next to it and only our
+// lock pins them. Values are the registry's dist.integrity for 1.0.1.
 const expectedIntegrity = {
   "@earendil-works/chord":
-    "sha512-GzUr5n4tFBHUYxN9CjcRHK8QWo9tbxNrZu6iWPQ+PFiFrLASvSZOKeAVAgh3gHv/t0X5OvUpFlrMQ/nEFfCYpg==",
+    "sha512-woq15kjUZ38fUIMqFrFzTeT0fYYM0CfGS2ELCUE5Ufni32tdxfs0Av2+zz8PXFNxyiC3SB1EnyGPp63CLtp8Fg==",
   "@earendil-works/pi-agent-core":
-    "sha512-8TbBzhYsDeu5V1Zl2NsyrBqJAzX1EiEL3Np3ZjGpy0pSDdGRVOpcyW1qruLqfWmEqGcnxmvgnTMLS/wJNZO2XQ==",
+    "sha512-os85rJM2hgCOOLdtcQ5WxRRhAbQiTNq9+48/pj6dOUU7czJhU8NTdHmDs41hBfAXR/ZQgstIgrjowEICEXimbQ==",
   "@earendil-works/pi-ai":
-    "sha512-1XHhI6D/fyQdsBieHC/E/4zGKVOoGe4yDyX67VXvzoYkFsX/qE7NpZE7E1RC8e6Bz8B9oG/P+MQFXikv2/BGEg==",
+    "sha512-eSA53pdfDLuQTTJn3yz1VC8BBmcX33OKkk8WihOXdVBvbgqqC4zuR6Sf+TeeWuAmh8LuqARoK14R1s2HZqVcsw==",
+  "@earendil-works/pi-codemode":
+    "sha512-RpZKpdKceYmIODfqKLJtZWUvfkbDGmEHxEEEYN+i21OFm8uY0sTcBMP4oaLf6SkBVBMPae1Z9GtW27+dIRAYPw==",
+  "@earendil-works/pi-mcp":
+    "sha512-XuhcCpNT9FgsMQTzjmwy2hbakg9CODcDHtC+KeHfr37HjKdj4QsfOrOThxLXYRN4kmC5HDvFyLzthAnHe/T4jw==",
   "@earendil-works/pi-telemetry":
-    "sha512-SOcEqOS3oVGgKeahs2jHB906d8hFjuLP+RBee8xKYMRgw5KAeWHNg+YABfL0ALlp3Bt6tW4b632MLghc3vnTog==",
+    "sha512-SuJ/4KyqZ6j6Whlau710DmusWDKMWCxKXpWqZclY/Cl3tGUuX8IFmbTbW2VRoVuoJpZYVMg6DJmt1mwHMUt9uw==",
   "@earendil-works/pi-tui":
-    "sha512-FU/zU/zG4RWokcZt+BVXXcieWi5ggvYnWP2kkB5XXjMaHRoy5BDhcZJ9JAnLTN9MwrCRoXgPQxOI0bFqwYeZkQ==",
+    "sha512-Rk/pWLoDKWI7WvywhLxf+DTYppS7XWTN5IacpqlD+QF+CbrT/y5CCnAHqPEoF41y+XtQJKbNjjzUuJE4yq0Dfg==",
 };
 
 function cleanEnv(profile) {
@@ -52,12 +58,12 @@ function assertSuccess(result, label) {
   assert.equal(result.status, 0, `${label}: ${result.stderr}`);
 }
 
-test("lock pins nested stock Pi integrity and the Windows shim generator", () => {
+test("lock pins hoisted stock Pi integrity and the Windows shim generator", () => {
   const manifest = JSON.parse(readFileSync(join(runtimeRoot, "package.json"), "utf8"));
   const lock = JSON.parse(readFileSync(join(runtimeRoot, "package-lock.json"), "utf8"));
 
   for (const [packageName, integrity] of Object.entries(expectedIntegrity)) {
-    const path = `node_modules/@earendil-works/pi-coding-agent/node_modules/${packageName}`;
+    const path = `node_modules/${packageName}`;
     const entry = lock.packages[path];
     assert.equal(entry.version, PI_VERSION, packageName);
     assert.equal(entry.resolved, `https://registry.npmjs.org/${packageName}/-/${packageName.split("/")[1]}-${PI_VERSION}.tgz`);

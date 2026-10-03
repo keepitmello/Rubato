@@ -1,7 +1,7 @@
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
-import type { AgentToolResult, ToolDefinition } from "@code-yeongyu/senpi"
+import type { AgentToolResult, ToolDefinition } from "@earendil-works/pi-coding-agent"
 import {
   MemoryApplyPatchError,
   MemoryPatchHunkError,

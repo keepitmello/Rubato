@@ -104,6 +104,10 @@ export async function executeRegisteredTool(
   try {
     if (options.signal?.aborted) throw options.signal.reason ?? new DOMException("Operation aborted", "AbortError");
     result = await tool.execute(toolCall.id, args, options.signal, options.onUpdate);
+    // pi 0.99 lets a tool return { isError: true } instead of throwing (stock bash does on a
+    // non-zero exit, our PTY bash and eval cells always did). The agent loop honors it, so a
+    // nested call must report the same thing a direct one does.
+    isError = result?.isError === true;
   } catch (error) {
     result = errorResult(error);
     isError = true;

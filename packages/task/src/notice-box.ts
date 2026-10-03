@@ -1,4 +1,4 @@
-import type { Theme, ThemeColor } from "@code-yeongyu/senpi"
+import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent"
 import { Box, type Component, Text } from "@earendil-works/pi-tui"
 
 export type NoticeTone = "accent" | "warning" | "error" | "success" | "dim"
@@ -21,8 +21,8 @@ export type NoticeTheme = Pick<Theme, "fg" | "bg">
 const BOLD = "\u001b[1m"
 const BOLD_OFF = "\u001b[22m"
 
-// Canonical contract: senpi buildNoticeBox. Replace this local copy once the pinned
-// @code-yeongyu/senpi package exports that helper.
+// Canonical contract: senpi buildNoticeBox. Stock pi does not export that helper, so
+// Rubato keeps this local copy.
 export function buildNoticeBox(
   spec: NoticeSpec,
   options: { readonly expanded: boolean },

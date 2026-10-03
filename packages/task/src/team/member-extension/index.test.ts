@@ -3,7 +3,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { afterEach, describe, expect, test } from "bun:test"
-import type { ExtensionAPI } from "@code-yeongyu/senpi"
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { TeamModeConfigSchema } from "@rubato/team-core/config"
 import { sendMessage } from "@rubato/team-core/team-mailbox"
 

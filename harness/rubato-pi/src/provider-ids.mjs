@@ -54,6 +54,7 @@ export const BUILTIN_PROVIDER_IDS = Object.freeze([
   "qwen-token-plan-individual",
   "radius",
   "together",
+  "typesafe",
   "vercel-ai-gateway",
   "xai",
   "xiaomi",

@@ -9,9 +9,11 @@ import { loadPiFeatures, PI_FEATURE_NAMES } from "../../feature-catalog.mjs";
 import { CANDIDATE_FEATURE_NAMES } from "../rubato-components/candidate-main.mjs";
 import { supportedThinkingLevels } from "./thinking-levels.mjs";
 import { feature, files, patches, patchThinkingLevels } from "./patches.mjs";
+import { resolvePiRuntime } from "../../resolve-runtime.mjs";
+const stockPackageDir = (name) => resolvePiRuntime({ root: fileURLToPath(new URL("../..", import.meta.url)) }).packages[`@earendil-works/${name}`].dir;
 
 const featureDir = dirname(fileURLToPath(import.meta.url));
-const stockPath = join(featureDir, "../../node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/models.js");
+const stockPath = join(stockPackageDir("pi-ai"), "dist/models.js");
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 test("descriptor is stock-locked and listed on the candidate", async () => {

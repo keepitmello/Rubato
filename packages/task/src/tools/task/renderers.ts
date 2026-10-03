@@ -1,4 +1,4 @@
-import type { Theme, ThemeColor } from "@code-yeongyu/senpi"
+import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent"
 import { truncateToWidth } from "@earendil-works/pi-tui"
 
 import type { TaskToolDetails } from "./types"

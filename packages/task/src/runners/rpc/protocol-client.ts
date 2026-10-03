@@ -1,5 +1,5 @@
 import type { ChildProcess } from "node:child_process"
-import type { AgentSessionEvent, RpcCommand, RpcExtensionUIRequest, RpcResponse } from "@code-yeongyu/senpi"
+import type { AgentSessionEvent, RpcCommand, RpcExtensionUIRequest, RpcResponse } from "@earendil-works/pi-coding-agent"
 import { log } from "@rubato/utils"
 
 import type { ChildEventListener, RpcEntriesResult, RpcSwitchSessionResult } from "../types"

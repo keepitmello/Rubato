@@ -19,6 +19,7 @@ import { loadPiFeatures } from "../../feature-catalog.mjs";
 import { resolvePiRuntime } from "../../resolve-runtime.mjs";
 import { stagePiRuntime } from "../../stage-runtime.mjs";
 import { patchStdinBufferUnicode } from "./patches.mjs";
+const stockPackageDir = (name) => resolvePiRuntime({ root: fileURLToPath(new URL("../..", import.meta.url)) }).packages[`@earendil-works/${name}`].dir;
 
 const featureDir = dirname(fileURLToPath(import.meta.url));
 const sourceRoot = resolve(featureDir, "../..");
@@ -72,10 +73,7 @@ function collectStdinChunks(StdinBuffer, chunks) {
   return received;
 }
 
-const stockStdinPath = join(
-  sourceRoot,
-  "node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/stdin-buffer.js",
-);
+const stockStdinPath = join(stockPackageDir("pi-tui"), "dist/stdin-buffer.js");
 
 const bootFeatures = await loadPiFeatures([
   "reload",

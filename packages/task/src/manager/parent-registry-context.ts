@@ -1,6 +1,6 @@
-import type { CreateAgentSessionOptions } from "@code-yeongyu/senpi"
 import { launchProductModel } from "@rubato/model-core"
 
+import type { ChildModelRegistry } from "../senpi/legacy-session-options"
 import { asSenpiThinkingLevel } from "../senpi/thinking-level"
 import type {
   InProcessSessionContext,
@@ -12,7 +12,7 @@ import type { ManagedStartSpec } from "./types"
 // The concrete senpi ModelRegistry the parent session owns. `createAgentSession` needs this exact
 // class (not a structural port) so the child resolves the SAME provider set - including providers
 // registered dynamically on the parent (an -e extension provider, a runtime `registerProvider`).
-export type ChildModelRegistry = NonNullable<CreateAgentSessionOptions["modelRegistry"]>
+export type { ChildModelRegistry }
 
 // Returns the parent session's live model registry, captured from the senpi ExtensionContext. Returns
 // undefined before the first live context (headless / early unit runs) so the child falls back to
