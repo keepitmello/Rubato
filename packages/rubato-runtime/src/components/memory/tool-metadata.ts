@@ -56,7 +56,7 @@ export const MEMORY_TOOL_DESCRIPTION = [
   'memory(command="update_description", reason="Clarify scope", file_path="decisions/cache-key.md", description="What the prompt cache key is made of, and why")',
   "",
   "# Create a file for a new question",
-  'memory(command="create", reason="Record why the cache key includes the model", file_path="decisions/cache-key.md", description="What the prompt cache key is made of, and why", file_text="## 결론\\n- Key is the prompt hash plus the model id\\n\\n## 근거\\n- Rejected: prompt hash alone (two models shared one entry)")',
+  'memory(command="create", reason="Record why the cache key includes the model", file_path="decisions/cache-key.md", description="What the prompt cache key is made of, and why", file_text="## Conclusion\\n- Key is the prompt hash plus the model id\\n\\n## Rationale\\n- Rejected: prompt hash alone (two models shared one entry)")',
   "```",
 ].join("\n")
 

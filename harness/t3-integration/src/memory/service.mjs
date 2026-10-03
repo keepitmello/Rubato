@@ -784,8 +784,14 @@ export function createMemoryService(options = {}) {
 
 // --- The dream's report, read for the review cards. The headings are the ones dream-persona.md
 // asks for; a report that does not follow them still shows in full, it just adds nothing to a card.
+// Reports written before memory moved to English use the Korean headings, so both are read.
 
-const NOTE_SECTIONS = [['바꾼 것', 'why'], ['코드와 어긋나 고친 것', 'code'], ['푼 모순', 'conflict']];
+const NOTE_SECTIONS = [
+  [['Changed', '바꾼 것'], 'why'],
+  [['Fixed against the code', '코드와 어긋나 고친 것'], 'code'],
+  [['Resolved contradictions', '푼 모순'], 'conflict'],
+];
+const SUMMARY_SECTIONS = ['Summary', '요약'];
 
 function reportOutline(report) {
   const sections = new Map();
@@ -797,11 +803,12 @@ function reportOutline(report) {
       sections.set(current, []);
     } else if (current !== null) sections.get(current).push(line);
   }
-  const bullets = (name) => (sections.get(name) ?? [])
+  const lines = (names) => names.flatMap((name) => sections.get(name) ?? []);
+  const bullets = (names) => lines(names)
     .filter((line) => /^[-*]\s+/.test(line))
     .map((line) => line.replace(/^[-*]\s+/, '').replaceAll('**', '').trim())
     .filter(Boolean);
-  const summary = (sections.get('요약') ?? []).map((line) => line.trim()).filter(Boolean).join(' ');
+  const summary = lines(SUMMARY_SECTIONS).map((line) => line.trim()).filter(Boolean).join(' ');
   return { summary: summary || null, bullets };
 }
 

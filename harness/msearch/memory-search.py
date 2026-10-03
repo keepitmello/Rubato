@@ -916,8 +916,10 @@ def log_recall(query: str, memories: list[dict[str, object]], caller: str) -> No
         pass  # 신호 적재 실패가 검색을 막으면 안 됨
 
 
-SYMPTOM_SECTION = "증상"
-ANSWER_SECTION = "결론"
+# Records are written in English (`## Symptom`, `## Conclusion`); stores not yet migrated keep the
+# Korean headings, so both are read.
+SYMPTOM_SECTIONS = ("Symptom", "증상")
+ANSWER_SECTIONS = ("Conclusion", "결론")
 
 
 def _markdown_section(text: str, heading: str) -> str | None:
@@ -925,12 +927,20 @@ def _markdown_section(text: str, heading: str) -> str | None:
     return match.group(1).strip() if match else None
 
 
-def answer_symptom_hits(memories: list[dict[str, object]]) -> list[dict[str, object]]:
-    """증상 절로 걸린 결과는 그 파일의 결론으로 바꿔 돌려준다.
+def _first_section(text: str, headings: tuple[str, ...]) -> tuple[str, str] | None:
+    for heading in headings:
+        body = _markdown_section(text, heading)
+        if body:
+            return heading, body
+    return None
 
-    `## 증상` 은 다음 질문자가 들고 올 생 에러·원문과 어휘를 맞추려고 둔 검색 단서다.
-    찾은 사람에게 필요한 건 답이므로, 증상으로 걸리면 같은 파일의 결론을 보여 준다.
-    같은 파일이 이미 결과에 있으면 한 번만 둔다.
+
+def answer_symptom_hits(memories: list[dict[str, object]]) -> list[dict[str, object]]:
+    """A hit on the symptom section returns that file's conclusion instead.
+
+    `## Symptom` keeps the raw error or the user's own words so the next person, who arrives
+    with that text, finds the file. What they need is the answer, so a symptom hit shows the
+    same file's conclusion. A file already in the results appears once.
     """
     out: list[dict[str, object]] = []
     seen: set[str] = set()
@@ -938,13 +948,14 @@ def answer_symptom_hits(memories: list[dict[str, object]]) -> list[dict[str, obj
         rel = str(memory.get("rel_path", ""))
         if rel and rel in seen:
             continue
-        if str(memory.get("section", "")).strip() == SYMPTOM_SECTION and rel:
+        if str(memory.get("section", "")).strip() in SYMPTOM_SECTIONS and rel:
             try:
-                answer = _markdown_section((MEMORY_ROOT / rel).read_text(encoding="utf-8"), ANSWER_SECTION)
+                answer = _first_section((MEMORY_ROOT / rel).read_text(encoding="utf-8"), ANSWER_SECTIONS)
             except OSError:
                 answer = None
             if answer:
-                memory = {**memory, "section": f"{ANSWER_SECTION} (증상으로 찾음)", "content": answer, "content_preview": answer}
+                heading, body = answer
+                memory = {**memory, "section": f"{heading} (found by symptom)", "content": body, "content_preview": body}
         if rel:
             seen.add(rel)
         out.append(memory)

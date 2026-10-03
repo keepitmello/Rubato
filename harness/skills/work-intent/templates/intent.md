@@ -2,7 +2,7 @@
 
 ## Originating request
 
-<The user's relevant wording, or a retrievable request/review reference. Mark any interpretation.>
+<The user's relevant wording, quoted verbatim in their language, or a retrievable request/review reference. Mark any interpretation.>
 
 ## Problem
 
@@ -10,7 +10,7 @@
 
 ## Proposed outcome
 
-<What should be different when this work succeeds, in the user's language, without prescribing the implementation.>
+<What should be different when this work succeeds, in the user's terms, without prescribing the implementation.>
 
 ## Recommended direction and basis
 

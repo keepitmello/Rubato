@@ -63,9 +63,11 @@ Implementation methods remain revisable; avoid freezing guessed file layouts in 
 
 Preserve the originating request or an exact retrievable reference, its problem,
 proposed outcome, affected users/systems, constraints and material open decisions.
-Separate facts, inferences and proposals. Use the user's language for the body; translate
-technical mechanisms into their effect on the user. The fixed parser headings may stay
-English. The actual approval message is not a dump of parser headings, IDs or paths.
+Separate facts, inferences and proposals. Write the record in English, the language
+every role searches in; the user's own words (the originating request, quoted constraints
+and corrections) stay verbatim in their language. Translate technical mechanisms into
+their effect on the user. The approval message itself speaks the user's language and is
+not a dump of parser headings, IDs or paths.
 Link existing frame/spec clauses instead of duplicating what they own. Roster and run
 progress stay in the mission; brief discovery findings need no separate report.
 

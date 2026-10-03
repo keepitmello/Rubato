@@ -3,14 +3,18 @@ import { closeSync, mkdirSync, openSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 
-import { resolveMemoryRoot } from "@rubato/memory-core"
+import { MEMORY_ROOT_ENV_VAR, resolveMemoryRoot } from "@rubato/memory-core"
+
+import { liveMemoryVerdict } from "../../dream/live-guard"
 
 // Session start and end ask `rubato dream --due` whether a store is due. The dream CLI owns every
 // decision (which stores are on, the 20-hour gap, unread sessions, the per-store lock), so this
 // side only starts it: detached, output to a log, never awaited, never able to fail the session.
 // The launcher publishes the CLI path in RUBATO_DREAM_CLI; a host that does not (bare engine runs)
 // launches nothing, and neither does an offline run (PI_OFFLINE, which every test harness sets) or a
-// test runner: the dream needs a model on the network.
+// test runner: the dream needs a model on the network. A copy that is not the installed Rubato, or an
+// isolated profile, launches nothing either unless it names its own memory root (live-guard.ts): it
+// must not touch the live store, not even its log.
 
 export const DREAM_CLI_ENV = "RUBATO_DREAM_CLI"
 export const DREAM_LOG_NAME = "dream-due.log"
@@ -29,6 +33,8 @@ export function createDreamLauncher(options: {
   readonly now?: () => number
   readonly spawn?: SpawnDetached
   readonly log?: (message: string, details?: Record<string, unknown>) => void
+  /** Home the default memory root and the installed wrapper live under. */
+  readonly home?: string
 }): DreamLauncher {
   const now = options.now ?? Date.now
   const spawnChild = options.spawn ?? spawn
@@ -41,9 +47,17 @@ export function createDreamLauncher(options: {
       if (options.env.PI_OFFLINE === "1" || options.env.NODE_ENV === "test") return false
       if (now() - lastLaunchAt < RELAUNCH_GAP_MS) return false
       lastLaunchAt = now()
+      const home = options.home ?? homedir()
+      const verdict = liveMemoryVerdict({ env: options.env, home, cliPath: cli })
+      if (!verdict.allowed) {
+        options.log?.("rubato dream --due skipped", { reason: verdict.reason })
+        return false
+      }
       let logFd: number | undefined
       try {
-        const memoryRoot = resolveMemoryRoot(options.env, homedir())
+        const memoryRoot = options.env[MEMORY_ROOT_ENV_VAR]?.trim()
+          ? resolveMemoryRoot(options.env, home)
+          : join(home, ".rubato", "memory")
         mkdirSync(memoryRoot, { recursive: true })
         logFd = openSync(join(memoryRoot, DREAM_LOG_NAME), "a")
         const child = spawnChild("bun", [cli, "--due"], {
