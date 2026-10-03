@@ -246,3 +246,56 @@ test('Korean recommendation content keeps parser compatibility and is protected 
   assert.throws(() => store.check('korean',{ active:true }),/approved content changed/);
   assert.ok(accepted.meta.approved_sha256);
 });
+
+const korean = `# Intent: 하나의 기준을 지킨다\n\n## Originating request\n\n사용자: "기존 인텐트 번역 안하면 검색이 안되지 않아?"\n\n## Problem\n에이전트가 요청한 결과를 잃는다.\n\n## Proposed outcome\n재개된 작업이 같은 의도를 읽는다.\n\n## Constraints\n- 사용자: "센파이 쓰면 안 됨"\n\n## Open questions\n없음.\n`;
+const english = `# Intent: Keep one authority\n\n## Originating request\n\n사용자: "기존 인텐트 번역 안하면 검색이 안되지 않아?"\n\n## Problem\nAgents lose the requested result.\n\n## Proposed outcome\nResumed work reads the same intent.\n\n## Constraints\n- User: "센파이 쓰면 안 됨"\n\n## Open questions\nNone.\n`;
+const authority = 'user, session s1 item 99b31a36';
+function closedKorean(store) {
+  const rec = store.create({ id: 'one', source: 'user:request-1', body: korean });
+  const accepted = store.activate('one', { expect: rec.sha256, approval: 'user:acceptance-1' });
+  return store.close('one', { expect: accepted.sha256, status: 'fulfilled', evidence: 'commit abc' });
+}
+
+test('translation is a new revision that keeps status and closure and cites its own authority', t => {
+  const { store } = setup(t); const done = closedKorean(store);
+  const translated = store.translate('one', { expect: done.sha256, source: authority, body: english });
+  assert.equal(translated.meta.revision, 2);
+  assert.equal(translated.meta.status, 'fulfilled');
+  assert.equal(translated.meta.closure_evidence, 'commit abc');
+  assert.equal(translated.meta.source, 'user:request-1');
+  assert.match(translated.meta.revision_source, /^translation of revision 1, content unchanged: user, session s1 item 99b31a36$/);
+  assert.match(translated.meta.approval, /translation authorized by user, session s1 item 99b31a36; the user has not reviewed its wording\. Revision 1 approval: user:acceptance-1 \(approved digest [a-f0-9]{64}\)/);
+  assert.ok(translated.meta.approval.includes(done.meta.approved_sha256));
+  assert.notEqual(translated.meta.approved_sha256, done.meta.approved_sha256);
+  assert.equal(store.check('one', { expect: translated.sha256 }).meta.revision, 2);
+  assert.equal(store.list({ all: true }).length, 1);
+});
+test('a draft stays a draft without approval when translated', t => {
+  const { store } = setup(t); const rec = store.create({ id: 'one', source: 'user:request-1', body: korean });
+  const translated = store.translate('one', { expect: rec.sha256, source: authority, body: english });
+  assert.equal(translated.meta.status, 'draft'); assert.equal(translated.meta.approval, null); assert.equal(translated.meta.approved_sha256, null);
+});
+test('translation refuses to change the user words, the originating request or the sections', t => {
+  const { store } = setup(t); const done = closedKorean(store);
+  for (const changed of [
+    english.replace('"센파이 쓰면 안 됨"', '"do not use Senpi"'),
+    english.replace('사용자: "기존', 'User: "기존'),
+    english.replace('## Open questions\nNone.\n', '## Open questions\nNone.\n\n## Extra\nmore\n'),
+  ]) assert.throws(() => store.translate('one', { expect: done.sha256, source: authority, body: changed }), /changed the user's words/);
+  assert.throws(() => store.translate('one', { expect: done.sha256, source: '', body: english }), /authority/);
+  assert.equal(store.read('one').sha256, done.sha256);
+});
+test('translation refuses a record whose approved content was already edited by hand', t => {
+  const { dir, store } = setup(t); const done = closedKorean(store);
+  const file = path.join(dir, 'intent', 'one', 'intent.md');
+  writeFileSync(file, readFileSync(file, 'utf8').replace('에이전트가', '에이전트들이'));
+  const edited = store.read('one');
+  assert.throws(() => store.translate('one', { expect: edited.sha256, source: authority, body: english }), /approved content changed/);
+});
+test('the CLI translates with the same checks', t => {
+  const { dir, store } = setup(t); const done = closedKorean(store);
+  const file = path.join(dir, 'body.md'); writeFileSync(file, english);
+  const out = spawnSync(process.execPath, [helper, 'translate', '--workspace', dir, '--id', 'one', '--expect', done.sha256, '--source', authority, '--body', file], { encoding: 'utf8' });
+  assert.equal(out.status, 0, out.stderr);
+  assert.equal(JSON.parse(out.stdout).revision, 2);
+});
