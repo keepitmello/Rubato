@@ -100,6 +100,9 @@ test('status, runs and diffs go through the real dream CLI', { skip: !bunAvailab
   const detail = await f.service.handle('run', { store: 'scratch', runId: 'dream-a' });
   assert.match(detail.report, /second/);
   assert.match(detail.changes[0].diff, /^\+second$/m, 'a landed run still shows what it changed');
+  assert.match(detail.sources.report, /dream-a\/out\/report\.md$/);
+  assert.match(detail.sources.range.head, /^[0-9a-f]{40}$/);
+  assert.equal((await f.service.handle('stores', {})).stores.find((s) => s.store === 'scratch').repo, f.repo);
 
   for (const action of ['review', 'revert', 'ack']) await assert.rejects(f.service.handle(action, { store: 'scratch' }), /Unknown memory action/);
   await assert.rejects(f.service.handle('runs', { store: '../scratch' }), /not valid/);

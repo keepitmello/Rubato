@@ -288,8 +288,9 @@ export function createMemoryService(options = {}) {
     const dir = path.join(paths.runs, runId);
     const record = await readJson(path.join(dir, 'run.json'));
     if (!record) throw new MemoryRequestError(404, 'no-run', `No dream run ${runId} in ${store}.`);
+    const reportPath = path.join(dir, 'out', 'report.md');
     const [report, { range, diff, diffNote }] = await Promise.all([
-      readText(path.join(dir, 'out', 'report.md')),
+      readText(reportPath),
       diffOf(paths, rangeOf(record)),
     ]);
     const outline = reportOutline(report);
@@ -300,6 +301,11 @@ export function createMemoryService(options = {}) {
       summary: outline.summary,
       changes: await changesOf(paths, range, diff, outline),
       diffNote,
+      // Where an agent asked about this run reads it.
+      sources: {
+        report: report === undefined ? null : reportPath,
+        range: range && { base: range[0], head: range[1] },
+      },
     };
   }
 
@@ -520,6 +526,8 @@ export function createMemoryService(options = {}) {
       .sort(([a, x], [b, y]) => String(y.startedAt ?? b).localeCompare(String(x.startedAt ?? a)))[0];
     return {
       store,
+      // Where an agent asked about this memory reads and edits it.
+      repo: paths.repo,
       roots,
       home: meta ? meta.home === true : null,
       files: files.length,
