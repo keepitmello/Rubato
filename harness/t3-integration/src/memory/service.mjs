@@ -11,6 +11,7 @@
 //   <project>/.rubato/rubato.jsonc  memory.agent       the store a project writes to
 //   where.ts (bun)                                      which store each folder resolves to
 //   <memory>/self/repo/{user.md,soul.md}                  every save is a commit
+//   <memory>/self/dismissed-suggestions.json             {lines}: dream suggestions the user waved off
 import { execFile, spawn } from 'node:child_process';
 import { existsSync, openSync, closeSync } from 'node:fs';
 import { lstat, mkdir, readFile, readdir, rename, unlink, writeFile } from 'node:fs/promises';
@@ -184,6 +185,7 @@ export function createMemoryService(options = {}) {
       reviewedAt: record.reviewedAt,
       sessions: Array.isArray(record.sessions) ? record.sessions.length : 0,
       commits: Array.isArray(record.commits) ? record.commits.length : 0,
+      attempts: Array.isArray(record.attempts) ? record.attempts : [],
       landed: landed(record),
     };
   }
@@ -289,12 +291,10 @@ export function createMemoryService(options = {}) {
     const dir = path.join(paths.runs, runId);
     const record = await readJson(path.join(dir, 'run.json'));
     if (!record) throw new MemoryRequestError(404, 'no-run', `No dream run ${runId} in ${store}.`);
-    const [report, candidates, { range, diff, diffNote }] = await Promise.all([
+    const [report, { range, diff, diffNote }] = await Promise.all([
       readText(path.join(dir, 'out', 'report.md')),
-      readText(path.join(dir, 'out', 'user-candidates.md')),
       diffOf(paths, rangeOf(record)),
     ]);
-    const userText = (await readText(path.join(selfRepo, 'user.md'))) ?? '';
     const outline = reportOutline(report);
     return {
       store,
@@ -303,7 +303,6 @@ export function createMemoryService(options = {}) {
       summary: outline.summary,
       changes: await changesOf(paths, range, diff, outline),
       diffNote,
-      candidates: candidateLines(candidates).map((text) => ({ text, inUser: userText.includes(text) })),
     };
   }
 
@@ -469,21 +468,52 @@ export function createMemoryService(options = {}) {
     return { file, commit: await commitSelf(file, `${file}: ${note}`) };
   }
 
-  async function addCandidates({ store, runId, lines }) {
-    const detail = await runDetail({ store, runId });
+  // What the dreams noticed about the user, from every store's recent runs, in one list: lines already
+  // in user.md or dismissed here are left out, and a line several runs repeat shows once.
+  const dismissedFile = path.join(memoryRoot, 'self', 'dismissed-suggestions.json');
+  const SUGGESTION_RUNS = 30;
+  async function suggestions() {
+    const userText = (await readText(path.join(selfRepo, 'user.md'))) ?? '';
+    const dismissed = new Set((await readJson(dismissedFile))?.lines ?? []);
+    const found = new Map();
+    for (const store of await listStores()) {
+      const paths = storePaths(store);
+      const newest = (await runRecords(paths))
+        .sort(([a, x], [b, y]) => String(y.startedAt ?? b).localeCompare(String(x.startedAt ?? a)))
+        .slice(0, SUGGESTION_RUNS);
+      for (const [runId, record] of newest) {
+        for (const text of candidateLines(await readText(path.join(paths.runs, runId, 'out', 'user-candidates.md')))) {
+          if (found.has(text) || dismissed.has(text) || userText.includes(text)) continue;
+          found.set(text, { text, store, runId, at: record.startedAt ?? null });
+        }
+      }
+    }
+    return { suggestions: [...found.values()].sort((a, b) => String(b.at ?? '').localeCompare(String(a.at ?? ''))) };
+  }
+
+  function chosenLines(lines, offered) {
     if (!Array.isArray(lines) || lines.length === 0 || lines.some((line) => typeof line !== 'string')) throw bad('Choose at least one line.');
-    const offered = new Set(detail.candidates.map((candidate) => candidate.text));
-    const unknown = lines.filter((line) => !offered.has(line));
-    if (unknown.length > 0) throw bad('A chosen line is not in this run\'s candidates.');
+    if (lines.some((line) => !offered.has(line))) throw bad('A chosen line is not among the suggestions.');
+    return [...new Set(lines)];
+  }
+
+  async function addSuggestions({ lines }) {
+    const chosen = chosenLines(lines, new Set((await suggestions()).suggestions.map((entry) => entry.text)));
     await ensureSelfRepo();
     const target = path.join(selfRepo, 'user.md');
     const before = (await readText(target)) ?? '';
-    const fresh = [...new Set(lines)].filter((line) => !before.includes(line));
-    if (fresh.length === 0) return { file: 'user.md', added: 0, commit: null };
     const base = before === '' || before.endsWith('\n') ? before : `${before}\n`;
-    await atomicWrite(target, `${base}${fresh.map((line) => `- ${line}`).join('\n')}\n`);
-    const commit = await commitSelf('user.md', `user.md: add ${fresh.length} dream candidate${fresh.length === 1 ? '' : 's'} from ${store} ${runId}`);
-    return { file: 'user.md', added: fresh.length, commit };
+    await atomicWrite(target, `${base}${chosen.map((line) => `- ${line}`).join('\n')}\n`);
+    const commit = await commitSelf('user.md', `user.md: add ${chosen.length} line${chosen.length === 1 ? '' : 's'} the dream noticed`);
+    return { file: 'user.md', added: chosen.length, commit };
+  }
+
+  async function dismissSuggestions({ lines }) {
+    const chosen = chosenLines(lines, new Set((await suggestions()).suggestions.map((entry) => entry.text)));
+    const before = (await readJson(dismissedFile))?.lines ?? [];
+    await mkdir(path.dirname(dismissedFile), { recursive: true });
+    await atomicWrite(dismissedFile, `${JSON.stringify({ lines: [...before, ...chosen] }, null, 2)}\n`);
+    return { dismissed: chosen.length };
   }
 
   // --- Stores as the user sees them: which project each belongs to, what is in it.
@@ -533,7 +563,7 @@ export function createMemoryService(options = {}) {
       files: files.length,
       lastChangeAt: last.code === 0 && last.stdout.trim() !== '' ? last.stdout.trim() : null,
       lastRun: finished ? lastRunOf(summarize(...finished)) : null,
-      enabled: config.memory?.dream?.stores?.[store]?.enabled === true,
+      enabled: config.memory?.dream?.stores?.[store]?.enabled !== false,
       running,
     };
   }
@@ -685,7 +715,9 @@ export function createMemoryService(options = {}) {
     'project-store': (input) => setProjectStore(input),
     self: () => readSelf(),
     'self-save': (input) => saveSelf(input),
-    'add-candidates': (input) => addCandidates(input),
+    suggestions: () => suggestions(),
+    'add-suggestions': (input) => addSuggestions(input),
+    'dismiss-suggestions': (input) => dismissSuggestions(input),
   };
   return {
     actions: Object.keys(actions),

@@ -53,3 +53,12 @@ export function lastDreamLine(
   if (lastRun.landed) return { text: `Last dream ${when} changed memory`, tone: "muted" };
   return { text: `Last dream ${when}: nothing to change`, tone: "muted" };
 }
+
+/** Why a run ended on a later model: the models before it that failed. Null when the first one answered. */
+export function fallbackNote(attempts: DreamRunSummary["attempts"]): string | null {
+  const failed = attempts.filter((attempt) => !attempt.ok);
+  if (failed.length === 0) return null;
+  const last = attempts.at(-1);
+  const names = failed.map((attempt) => attempt.model).join(", ");
+  return last?.ok ? `Fell back after ${names} failed` : `Every model failed: ${names}`;
+}

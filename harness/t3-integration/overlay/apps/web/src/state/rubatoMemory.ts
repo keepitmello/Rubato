@@ -86,8 +86,24 @@ export interface DreamRunSummary {
   readonly reviewedAt?: string;
   readonly sessions: number;
   readonly commits: number;
+  /** Every model tried, in ladder order; a failed one carries its last output line. */
+  readonly attempts: ReadonlyArray<DreamAttempt>;
   /** In the store now: merged and not reverted since. */
   readonly landed: boolean;
+}
+
+export interface DreamAttempt {
+  readonly model: string;
+  readonly ok: boolean;
+  readonly error?: string;
+}
+
+/** A line a dream noticed about the user, not yet in user.md and not dismissed. */
+export interface DreamSuggestion {
+  readonly text: string;
+  readonly store: string;
+  readonly runId: string;
+  readonly at: string | null;
 }
 
 export type DreamChangeKind = "added" | "modified" | "deleted" | "renamed";
@@ -115,7 +131,6 @@ export interface DreamRunDetail extends DreamRunSummary {
   readonly summary: string | null;
   readonly changes: readonly DreamChange[];
   readonly diffNote: string | null;
-  readonly candidates: ReadonlyArray<{ readonly text: string; readonly inUser: boolean }>;
 }
 
 export interface SelfFiles {
@@ -226,6 +241,9 @@ export const rubatoMemory = {
       content,
       ...(summary ? { summary } : {}),
     }),
-  addCandidates: (env: EnvironmentId | null, store: string, runId: string, lines: string[]) =>
-    call<{ added: number; commit: string | null }>(env, "add-candidates", { store, runId, lines }),
+  suggestions: (env: EnvironmentId | null) => call<{ suggestions: DreamSuggestion[] }>(env, "suggestions"),
+  addSuggestions: (env: EnvironmentId | null, lines: readonly string[]) =>
+    call<{ added: number; commit: string | null }>(env, "add-suggestions", { lines }),
+  dismissSuggestions: (env: EnvironmentId | null, lines: readonly string[]) =>
+    call<{ dismissed: number }>(env, "dismiss-suggestions", { lines }),
 };

@@ -98,10 +98,12 @@ msearch --doctor     # 저장소와 검색 인덱스 상태 확인
 저장소 디렉터리(`~/.rubato/memory/agents/<이름>`)는 첫 기억 쓰기 때 생긴다. 옆의 `store.json` 은
 그 저장소를 쓰는 프로젝트 루트를 적은 기계 로컬 파일이다. msearch 도 같은 규칙으로 현재 저장소를 고른다.
 
-꿈은 켠 저장소마다 그 폴더에서 열린 세션(사용자 말과 턴마다 마지막 답)과 그사이 커밋을 읽고,
+꿈은 저장소마다(기본으로 켜져 있다) 그 폴더에서 열린 세션(사용자 말과 턴마다 마지막 답)과 그사이 커밋을 읽고,
 "왜"만 현재 답으로 고치고 코드와 어긋난 결론을 바로잡는다. 결과는 승인 없이 바로 저장소에 들어간다.
 GUI 설정의 Memory 에서 프로젝트를 열면 저장소 파일을 읽고 고칠 수 있고(저장이 곧 커밋),
-꿈 실행마다 바꾼 파일과 이유를 볼 수 있다.
+꿈 실행마다 바꾼 파일과 이유, 앞 모델이 실패해 다음 모델로 내려갔다면 그 실패 이유를 볼 수 있다.
+꿈이 사용자에 대해 알아챈 줄은 About you 탭 맨 위에 모여, 골라서 `user.md` 에 넣거나 치운다.
+앱은 기기마다 처음 한 번 꿈이 무엇인지 알리고 모델 사다리를 고르게 한다.
 
 세션이 memory 도구 말고 셸이나 파일 도구로 저장소를 고쳐 커밋이 없으면, 다음에 저장소를 쓰는 쪽
 (memory 도구, 꿈의 시작·반영·되돌리기)이 그 편집을 `memory: adopt edits written outside memory tools`
@@ -114,7 +116,7 @@ rubato dream <저장소>          # 지금 실행
 rubato dream --revert <저장소> <실행 id> # 들어간 결과를 revert 커밋 하나로 빼기
 ```
 
-켜기·모델은 `~/.rubato/rubato.jsonc` 의 `memory.dream`(`stores.<이름>.enabled`,
+끄기·모델은 `~/.rubato/rubato.jsonc` 의 `memory.dream`(`stores.<이름>.enabled: false`,
 `models`, `min_hours_between`)이다. `models` 는 꿈이 타는 모델 사다리로,
 앞에서부터 쓰고 막히면 다음으로 내려간다. 항목은 `"<provider>/<id>"` 또는 `{ "model": ..., "reasoning": ... }` 이고,
 비워 두면 DeepSeek V4.1 Flash → Grok 4.7 → Claude Haiku 4.5 순이다. 실행 기록은 저장소의 `runtime/dream/runs/` 에 남는다.

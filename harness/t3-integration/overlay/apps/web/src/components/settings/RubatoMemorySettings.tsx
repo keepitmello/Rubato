@@ -28,6 +28,7 @@ import {
   type DreamReasoning,
   type DreamRunDetail,
   type DreamRunSummary,
+  type DreamSuggestion,
   type MemoryFileEntry,
   type MemoryStatus,
   type MemoryStoreStatus,
@@ -46,7 +47,7 @@ import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
-import { addedContent, lastDreamLine, runLabel, type BadgeVariant } from "./RubatoMemorySettings.logic";
+import { addedContent, fallbackNote, lastDreamLine, runLabel, type BadgeVariant } from "./RubatoMemorySettings.logic";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 
 type EnvironmentId = ReturnType<typeof usePrimaryEnvironmentId>;
@@ -93,7 +94,7 @@ async function confirm(message: string, destructive = false): Promise<boolean> {
 }
 
 /** The primary environment's id once its HTTP connection is ready; null until then. */
-function useReadyEnvironmentId(): EnvironmentId {
+export function useReadyEnvironmentId(): EnvironmentId {
   const environmentId = usePrimaryEnvironmentId();
   const prepared = usePreparedConnection(environmentId);
   return Option.isSome(prepared) ? environmentId : null;
@@ -160,7 +161,18 @@ export function RubatoMemorySettingsPanel() {
   const [selectedStore, setSelectedStore] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("projects");
   const [historySignal, setHistorySignal] = useState(0);
+  const [suggestions, setSuggestions] = useState<DreamSuggestion[] | null>(null);
   const loadingRef = useRef(false);
+
+  const loadSuggestions = useCallback(async () => {
+    if (environmentId === null) return;
+    try {
+      setSuggestions((await rubatoMemory.suggestions(environmentId)).suggestions);
+    } catch {
+      // The list is optional; the About you tab says nothing rather than fail the page.
+      setSuggestions([]);
+    }
+  }, [environmentId]);
 
   const loadStores = useCallback(async () => {
     if (environmentId === null) return;
@@ -181,6 +193,7 @@ export function RubatoMemorySettingsPanel() {
     try {
       await Promise.all([
         loadStores(),
+        loadSuggestions(),
         rubatoMemory.status(environmentId).then(
           (next) => {
             setStatus(next);
@@ -193,7 +206,7 @@ export function RubatoMemorySettingsPanel() {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [environmentId, loadStores]);
+  }, [environmentId, loadStores, loadSuggestions]);
 
   useEffect(() => {
     void refresh();
@@ -311,7 +324,9 @@ export function RubatoMemorySettingsPanel() {
         >
           {TABS.map((entry) => (
             <Toggle key={entry.value} value={entry.value}>
-              {entry.label}
+              {entry.value === "you" && suggestions && suggestions.length > 0
+                ? `${entry.label} · ${suggestions.length}`
+                : entry.label}
             </Toggle>
           ))}
         </ToggleGroup>
@@ -350,7 +365,18 @@ export function RubatoMemorySettingsPanel() {
         </>
       ) : null}
 
-      {tab === "you" ? <SelfFilesSection environmentId={environmentId} /> : null}
+      {tab === "you" ? (
+        <>
+          {suggestions && suggestions.length > 0 ? (
+            <SuggestionsSection
+              environmentId={environmentId}
+              suggestions={suggestions}
+              onChanged={() => void loadSuggestions()}
+            />
+          ) : null}
+          <SelfFilesSection environmentId={environmentId} />
+        </>
+      ) : null}
 
       {tab === "settings" ? (
         <>
@@ -570,10 +596,7 @@ function RunView({
 }) {
   const [detail, setDetail] = useState<DreamRunDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
-  const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set());
   const [showAll, setShowAll] = useState(false);
-  const [signal, setSignal] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -588,25 +611,7 @@ function RunView({
     return () => {
       cancelled = true;
     };
-  }, [environmentId, store.store, runId, signal]);
-
-  const addChosen = async () => {
-    setAdding(true);
-    try {
-      const result = await rubatoMemory.addCandidates(environmentId, store.store, runId, [...chosen]);
-      toastManager.add({
-        type: "success",
-        title: result.added > 0 ? `Added ${count(result.added, "line")} to user.md` : "Already in user.md",
-      });
-      setChosen(new Set());
-      setSignal((value) => value + 1);
-      window.dispatchEvent(new CustomEvent("rubato-memory-self-changed"));
-    } catch (cause) {
-      reportError("Could not add to user.md", cause);
-    } finally {
-      setAdding(false);
-    }
-  };
+  }, [environmentId, store.store, runId]);
 
   if (error) return <p className="text-sm text-destructive-foreground">{error}</p>;
   if (!detail)
@@ -641,39 +646,20 @@ function RunView({
         <p className="text-xs text-muted-foreground">The changes are too large to show in full.</p>
       ) : null}
 
-      {detail.candidates.length > 0 ? (
-        <div className="space-y-2 rounded-lg border border-border/60 px-3 py-2">
-          <div className="flex items-center gap-2">
-            <span className="me-auto text-sm">The dream noticed these about you. Add any you want every session to know.</span>
-            <Button size="xs" variant="outline" disabled={chosen.size === 0 || adding} onClick={() => void addChosen()}>
-              {adding ? <Spinner className="size-3" /> : null}
-              Add {count(chosen.size, "line")} to user.md
-            </Button>
-          </div>
-          <ul className="space-y-1.5">
-            {detail.candidates.map((candidate) => (
-              <li key={candidate.text} className="flex items-start gap-2 text-sm">
-                <Checkbox
-                  className="mt-0.5"
-                  aria-label={candidate.text}
-                  disabled={candidate.inUser}
-                  checked={candidate.inUser || chosen.has(candidate.text)}
-                  onCheckedChange={(checked) =>
-                    setChosen((current) => {
-                      const next = new Set(current);
-                      if (checked) next.add(candidate.text);
-                      else next.delete(candidate.text);
-                      return next;
-                    })
-                  }
-                />
-                <span className={cn(candidate.inUser && "text-muted-foreground")}>
-                  {candidate.text}
-                  {candidate.inUser ? " (in user.md)" : ""}
+      {detail.attempts.some((attempt) => !attempt.ok) ? (
+        <div className="space-y-1 rounded-lg border border-border/60 px-3 py-2 text-xs">
+          <p className="text-muted-foreground">Models tried, in order</p>
+          <ol className="space-y-0.5">
+            {detail.attempts.map((attempt, index) => (
+              // The same model can sit on the ladder once; position is still the clearer key.
+              <li key={index} className="flex gap-2">
+                <span className={cn("shrink-0 font-mono", attempt.ok ? "text-success-foreground" : "text-destructive-foreground")}>
+                  {attempt.ok ? "✓" : "✗"} {attempt.model}
                 </span>
+                {attempt.error ? <span className="min-w-0 break-words text-muted-foreground">{attempt.error}</span> : null}
               </li>
             ))}
-          </ul>
+          </ol>
         </div>
       ) : null}
 
@@ -799,6 +785,7 @@ function DreamRuns({ environmentId, store }: { environmentId: EnvironmentId; sto
             description={[
               `Read ${count(run.sessions, "session")}`,
               run.model ?? null,
+              fallbackNote(run.attempts ?? []),
               run.status === "failed" || run.status === "busy" ? (run.reason ?? null) : null,
             ]
               .filter(Boolean)
@@ -1117,6 +1104,92 @@ function FileViewer({
   );
 }
 
+/** What the dreams noticed about the user, from every project, waiting to be added to user.md or dismissed. */
+function SuggestionsSection({
+  environmentId,
+  suggestions,
+  onChanged,
+}: {
+  environmentId: EnvironmentId;
+  suggestions: readonly DreamSuggestion[];
+  onChanged: () => void;
+}) {
+  const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set());
+  const [busy, setBusy] = useState<"add" | "dismiss" | null>(null);
+  const allChosen = chosen.size === suggestions.length;
+
+  const act = async (kind: "add" | "dismiss") => {
+    const lines = suggestions.map((entry) => entry.text).filter((text) => chosen.has(text));
+    setBusy(kind);
+    try {
+      if (kind === "add") {
+        const result = await rubatoMemory.addSuggestions(environmentId, lines);
+        toastManager.add({ type: "success", title: `Added ${count(result.added, "line")} to user.md` });
+        window.dispatchEvent(new CustomEvent("rubato-memory-self-changed"));
+      } else {
+        await rubatoMemory.dismissSuggestions(environmentId, lines);
+      }
+      setChosen(new Set());
+      onChanged();
+    } catch (cause) {
+      reportError(kind === "add" ? "Could not add to user.md" : "Could not dismiss", cause);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <SettingsSection
+      id="memory-suggestions"
+      title={`The dream noticed about you · ${suggestions.length}`}
+      headerAction={
+        <div className="flex gap-1">
+          <Button size="xs" variant="ghost" onClick={() => setChosen(allChosen ? new Set() : new Set(suggestions.map((entry) => entry.text)))}>
+            {allChosen ? "Select none" : "Select all"}
+          </Button>
+          <Button size="xs" variant="ghost" disabled={chosen.size === 0 || busy !== null} onClick={() => void act("dismiss")}>
+            {busy === "dismiss" ? <Spinner className="size-3" /> : null}
+            Dismiss
+          </Button>
+          <Button size="xs" disabled={chosen.size === 0 || busy !== null} onClick={() => void act("add")}>
+            {busy === "add" ? <Spinner className="size-3" /> : null}
+            Add {chosen.size > 0 ? count(chosen.size, "line") : ""} to user.md
+          </Button>
+        </div>
+      }
+    >
+      <SettingsRow
+        title="From your sessions"
+        description="Add the ones every session should know about you. Dismissed lines do not come back."
+      >
+        <ul className="space-y-1.5 pt-2 pb-3">
+          {suggestions.map((entry) => (
+            <li key={entry.text} className="flex items-start gap-2 text-sm">
+              <Checkbox
+                className="mt-0.5"
+                aria-label={entry.text}
+                checked={chosen.has(entry.text)}
+                onCheckedChange={(checked) =>
+                  setChosen((current) => {
+                    const next = new Set(current);
+                    if (checked) next.add(entry.text);
+                    else next.delete(entry.text);
+                    return next;
+                  })
+                }
+              />
+              <span className="min-w-0">
+                {entry.text}
+                <span className="ms-2 text-xs text-muted-foreground">{entry.store}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      </SettingsRow>
+    </SettingsSection>
+  );
+}
+
 function SelfFilesSection({ environmentId }: { environmentId: EnvironmentId }) {
   const [file, setFile] = useState<"user.md" | "soul.md">("user.md");
   const [saved, setSaved] = useState<{ "user.md": string; "soul.md": string } | null>(null);
@@ -1263,7 +1336,7 @@ function ModelIcon({ slug }: { slug: string }) {
   return Icon ? <Icon className="size-4 shrink-0" aria-hidden /> : null;
 }
 
-function DreamModelsEditor({
+export function DreamModelsEditor({
   models,
   onChange,
 }: {
