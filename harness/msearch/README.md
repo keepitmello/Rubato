@@ -34,6 +34,14 @@ msearch --doctor               설치 상태 진단
 현재 디렉터리가 색인에 없으면(아직 안 쌓였거나 메모리 밖에서 실행 중) 조용히 0건을 주는 대신
 전체 검색으로 떨어진다.
 
+## 질의 언어
+
+기억과 합의 기록은 영어로 쓰고 사용자 원문(`## Symptom` 본문, 인용)만 원래 언어로 둔다. 그래서
+영어로 묻는 게 기본이다. 한글이 든 질의는 원래 질의와 함께, 작은 모델(`gpt-4o-mini`,
+`MSEARCH_TRANSLATE_MODEL` 로 바꾼다)로 옮긴 영어 질의로도 찾아 파일·절마다 높은 점수로 합친다.
+원래 질의가 계속 도는 건 생 에러나 사용자 말이 `## Symptom` 에 원문 그대로 있어서다. 번역은
+`<state>/query-translations.json` 에 캐시하고, 실패하거나 `MSEARCH_TRANSLATE=0` 이면 원래 질의만 쓴다.
+
 ## 합의 기록(intent)도 같이 찾는다
 
 같은 질의로 현재 저장소에 묶인 프로젝트들의 합의 기록도 찾는다. 대상은 저장소 `store.json`
@@ -168,7 +176,7 @@ state 경로는 `--doctor` 가 알려준다.
 ChatGPT 구독의 OAuth 토큰(`~/.codex/auth.json`)으로는 안 된다 — 그 파일의
 `OPENAI_API_KEY` 는 `auth_mode` 가 `chatgpt` 이면 `null` 이다. platform.openai.com 의
 API 키가 따로 필요하다. 비용은 `text-embedding-3-small` 기준 100만 토큰에 $0.02 라
-기억 수십 개 규모에서는 사실상 0 이다.
+기억 수십 개 규모에서는 사실상 0 이다. 한글 질의 번역도 같은 키를 쓴다.
 
 ## 설정
 
