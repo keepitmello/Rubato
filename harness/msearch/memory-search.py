@@ -1086,6 +1086,68 @@ def scope_filter(memories: list[dict[str, object]], scope: str | None) -> list[d
     return kept
 
 
+# Records are written in English; a query with Hangul also runs as its English rendering, so a
+# Korean question finds an English record. The original still runs: `## Symptom` and quotes keep
+# the user's own words. One small model call per new query, cached; without it, the original alone.
+TRANSLATION_CACHE_PATH = state_path("query-translations.json")
+TRANSLATION_MODEL = os.getenv("MSEARCH_TRANSLATE_MODEL", "gpt-4o-mini")
+TRANSLATION_PROMPT = (
+    "Translate this memory-search query into a short English search query. "
+    "Keep code, paths, names and numbers as they are. Reply with the query only."
+)
+HANGUL_RE = re.compile(r"[\u1100-\u11FF\u3131-\u318E\uAC00-\uD7A3]")
+
+
+def _translate(query: str) -> str:
+    from openai import OpenAI
+
+    response = OpenAI(timeout=10.0).chat.completions.create(
+        model=TRANSLATION_MODEL,
+        temperature=0,
+        messages=[{"role": "system", "content": TRANSLATION_PROMPT}, {"role": "user", "content": query[:500]}],
+    )
+    return (response.choices[0].message.content or "").strip().strip('"').strip()
+
+
+@lru_cache(maxsize=8)
+def english_query(query: str) -> str | None:
+    """The English rendering of a query with Hangul, or None (no Hangul, turned off, or it failed)."""
+    if not HANGUL_RE.search(query) or os.getenv("MSEARCH_TRANSLATE", "1") == "0":
+        return None
+    try:
+        cache = json.loads(TRANSLATION_CACHE_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        cache = {}
+    if not isinstance(cache, dict):
+        cache = {}
+    found = cache.get(query)
+    if not isinstance(found, str):
+        try:
+            found = _translate(query)
+        except Exception:
+            return None
+        if not found:
+            return None
+        cache[query] = found
+        try:
+            TRANSLATION_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            TRANSLATION_CACHE_PATH.write_text(json.dumps(cache, ensure_ascii=False, indent=1), encoding="utf-8")
+        except OSError:
+            pass
+    return found if found.strip() and found.strip() != query.strip() else None
+
+
+def merge_ranked(*lists: list[dict[str, object]]) -> list[dict[str, object]]:
+    """One ranked list from the results of several renderings: per file and section, the best score."""
+    best: dict[tuple[str, str], dict[str, object]] = {}
+    for memories in lists:
+        for memory in memories:
+            key = (str(memory.get("rel_path", "")), str(memory.get("section", "")))
+            if key not in best or float(memory.get("rank_score", 0.0) or 0.0) > float(best[key].get("rank_score", 0.0) or 0.0):
+                best[key] = memory
+    return sorted(best.values(), key=lambda memory: float(memory.get("rank_score", 0.0) or 0.0), reverse=True)
+
+
 def search_results(
     query: str, limit: int = RETURN_K, scope: str | None = None
 ) -> list[dict[str, object]]:
@@ -1093,6 +1155,9 @@ def search_results(
     # 상위를 차지한 만큼 번째 손이가 빈다.
     fetch = limit if scope is None else max(limit * 8, 40)
     found = scope_filter(search_memories(query, limit=fetch), scope)
+    english = english_query(query)
+    if english is not None:
+        found = merge_ranked(found, scope_filter(search_memories(english, limit=fetch), scope))
     return select_result_amount(found, limit)
 
 
@@ -1189,6 +1254,20 @@ def search_intents(query: str, scope: str | None) -> list[msearch_intent.Candida
         return []
 
 
+def search_intents_any_language(query: str, scope: str | None) -> list[msearch_intent.Candidate]:
+    """Intents found by the query or its English rendering; per intent, the better score."""
+    found = search_intents(query, scope)
+    english = english_query(query)
+    if english is None:
+        return found
+    best = {item.fields.get("path", ""): item for item in found}
+    for item in search_intents(english, scope):
+        owner = item.fields.get("path", "")
+        if owner not in best or item.score > best[owner].score:
+            best[owner] = item
+    return sorted(best.values(), key=lambda item: item.score, reverse=True)[: msearch_intent.RETURN_K]
+
+
 def run_cli(args: argparse.Namespace) -> int:
     if args.list_scopes:
         scopes = indexed_scopes()
@@ -1207,7 +1286,7 @@ def run_cli(args: argparse.Namespace) -> int:
     scope, widened = resolve_scope(args)
     memories = search_results(query, limit=args.limit, scope=scope)
     # --json 은 기억 목록 계약 그대로 둔다. intent 는 사람이 읽는 출력에만 따로 붙는다.
-    intents = [] if args.json else search_intents(query, scope)
+    intents = [] if args.json else search_intents_any_language(query, scope)
     if not memories:
         log_recall(query, [], caller="cli")
         print("[]" if args.json else msearch_intent.render("NO RELEVANT MEMORY", intents, Path.cwd()))
