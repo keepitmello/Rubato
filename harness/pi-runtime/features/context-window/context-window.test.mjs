@@ -466,9 +466,16 @@ test("actual SDK commits new_context once and the immediate provider turn uses o
     },
     onError: (error) => errors.push(error),
   });
+  // Live state at the commit: compaction_start is published right after the atomic append, so
+  // the session's own messages (what the UI and estimatedTokensAfter read) must already be the
+  // new window there, not only the next provider projection.
+  const liveAtCommit = [];
   result.session.subscribe((event) => {
     if (event.type === "compaction_start" || event.type === "compaction_end") {
       compactionEvents.push(event);
+    }
+    if (event.type === "compaction_start" && event.reason === "extension") {
+      liveAtCommit.push(result.session.messages.filter((message) => message.role !== "system"));
     }
   });
   assert.equal(settingsManager.getCompactionSettings().enabled, false, "notes mode owns every stock automatic compaction entry");
@@ -526,6 +533,12 @@ test("actual SDK commits new_context once and the immediate provider turn uses o
     ["compaction_start", "extension", undefined],
     ["compaction_end", "extension", false],
   ]);
+  assert.equal(liveAtCommit.length, 1);
+  assert.equal(liveAtCommit[0].length, 1, "live state holds only the window carrier at the commit");
+  assert.match(textOf(liveAtCommit[0][0]), /^<rubato_context_window_v1>/);
+  const committed = compactionEvents.find((event) => event.type === "compaction_end")?.result;
+  assert.ok(Number.isFinite(committed.estimatedTokensAfter) && committed.estimatedTokensAfter > 0,
+    "estimatedTokensAfter is measured on the committed window");
 
   // Use the same public extension seam twice at one valid revision. JavaScript
   // enters the first call through commit before it can yield; the second call
