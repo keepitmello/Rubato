@@ -43,10 +43,13 @@ manual \`&\` backgrounding — use the built-in session tools:
     directory too. This branch takes no \`filter\` and no \`persistent\`.
   This is for ordinary external state; a delegate's or teammate's progress, logs, task state or
   result file is not a monitor target — its completion, failure or permission notification
-  already arrives. Identical updates are deduped; repeated monitor-only wakes pause the noisy
-  monitor(s) that caused them, not all monitors. Completion still wakes the session, and
-  \`${monitor}({ action: "rearm", bash_id })\` resumes one while \`${monitor}({ action: "rearm" })\`
-  resumes all paused monitors; real user input also resumes paused monitors.
+  already arrives. Neither is your own background \`bash\` session: its completion already wakes
+  you, so never wait for its process with \`pgrep\`. Identical updates are deduped; repeated
+  monitor-only wakes pause the noisy monitor(s) that caused them, not all monitors. A watcher
+  exiting still wakes the session; one that already reported and then only hits its deadline is
+  recorded without a wake. \`${monitor}({ action: "rearm", bash_id })\` resumes one while
+  \`${monitor}({ action: "rearm" })\` resumes all paused monitors; real user input also resumes
+  paused monitors.
 - \`bash_input({ bash_id, input, keys, submit })\` sends stdin or named keys (e.g.
   \`["ctrl+c"]\`, \`["enter"]\`) to steer a REPL or interrupt a process.
 - \`bash_resize({ bash_id, cols, rows })\` resizes the PTY so full-screen programs reflow.

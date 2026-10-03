@@ -506,3 +506,128 @@ test("a monitor holds a one-shot json run until it reports, not until its watch 
 	assert.match(sent[0].message.content, /Monitor event\(check completion\): EXIT 0/);
 	assert.deepEqual(pending(), { active: 0, undelivered: 0 }, "once it has reported, a still-running watch no longer holds the run");
 });
+
+async function startTerminal(t, terminalSettings) {
+	const { default: registerTerminal } = await import("./src/extension.ts");
+	const { SettingsManager } = await import("./src/host-sdk.ts");
+	const scratch = mkdtempSync(join(tmpdir(), "rubato-terminal-watch-"));
+	const handlers = new Map();
+	const rpc = new Map();
+	const sent = [];
+	const tools = new Map();
+	const pi = {
+		registerTool: (tool) => tools.set(tool.name, tool),
+		on: (event, handler) => handlers.set(event, handler),
+		rpc: { handle: (name, handler) => rpc.set(name, handler), emit() {} },
+		events: { emit() {} },
+		sendMessage: (message, options) => sent.push({ message, options }),
+		getActiveTools: () => [],
+		setActiveTools() {},
+	};
+	registerTerminal(pi, {
+		createSettingsManager: () => SettingsManager.inMemory({ terminal: terminalSettings }),
+		getShellEnv: () => ({ PATH: process.env.PATH, HOME: scratch, LANG: "C.UTF-8", TERM: "xterm-256color" }),
+	});
+	const ctx = {
+		mode: "interactive",
+		cwd: scratch,
+		model: { provider: "fixture", id: "fake", api: "openai-completions" },
+		ui: { notify() {}, setStatus() {} },
+	};
+	t.after(async () => {
+		await handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" }, ctx);
+		rmSync(scratch, { recursive: true, force: true });
+	});
+	await handlers.get("session_start")({ type: "session_start", reason: "startup" }, ctx);
+	const waitForSent = async (count, ms = 8_000) => {
+		const deadline = Date.now() + ms;
+		while (sent.length < count && Date.now() < deadline) await delay(25);
+		assert.equal(sent.length, count, `expected ${count} notification(s)`);
+	};
+	return { tools, sent, waitForSent, pending: () => rpc.get("rubato.terminal.pending-work")() };
+}
+
+test("a watch that already reported and then only hits its deadline is recorded without a wake", async (t) => {
+	const { tools, sent, waitForSent } = await startTerminal(t, { notify: "wake", monitorCoalesceWindowMs: 20 });
+
+	await tools.get("monitor").execute("call-1", {
+		description: "reports then idles",
+		command: "printf 'READY\\n'; exec sleep 30",
+		timeout_ms: 1_500,
+	});
+	await waitForSent(1);
+	assert.match(sent[0].message.content, /READY/);
+	assert.equal(sent[0].options.triggerTurn, true, "the reported line wakes the agent");
+	await waitForSent(2);
+	assert.match(sent[1].message.content, /watcher timed_out/);
+	assert.equal(sent[1].options.triggerTurn, false, "its deadline afterwards is only recorded");
+
+	// Control: a watch whose awaited event never came still wakes the agent at its deadline.
+	await tools.get("monitor").execute("call-2", {
+		description: "never fires",
+		command: "exec sleep 30",
+		timeout_ms: 500,
+	});
+	await waitForSent(3);
+	assert.match(sent[2].message.content, /never fires\): watcher timed_out/);
+	assert.equal(sent[2].options.triggerTurn, true);
+});
+
+test("asking for the same watch again reuses the live one", async (t) => {
+	const { tools, pending } = await startTerminal(t, { notify: "wake" });
+	const input = { description: "wait", command: "until [ -f nope ]; do sleep 1; done; echo DONE", filter: "DONE" };
+	const first = await tools.get("monitor").execute("call-1", input);
+	const second = await tools.get("monitor").execute("call-2", { ...input, description: "wait again" });
+	assert.equal(second.details.reused, true);
+	assert.equal(second.details.monitor_id, first.details.monitor_id);
+	assert.equal(pending().active, 1, "only one watcher runs");
+
+	const otherFilter = await tools.get("monitor").execute("call-3", { ...input, filter: "^DONE$" });
+	assert.notEqual(otherFilter.details.monitor_id, first.details.monitor_id, "a different filter is a different watch");
+});
+
+test("a pgrep -f watch on one of the agent's own live sessions is refused", async (t) => {
+	const { tools, pending } = await startTerminal(t, { notify: "wake" });
+	const job = await tools.get("bash").execute("call-1", {
+		command: "sleep 30; echo job-marker-77",
+		run_in_background: true,
+	});
+	const onJob = await tools.get("monitor").execute("call-2", {
+		description: "job exit",
+		command: 'while pgrep -f "job-marker-7[0-9]" >/dev/null; do sleep 1; done; echo DONE',
+	});
+	assert.equal(onJob.isError, true);
+	assert.match(textOf(onJob), new RegExp(`your own background session ${job.details.bash_id}`));
+	assert.equal(pending().active, 1, "no watcher was started");
+
+	const appears = await tools.get("monitor").execute("call-3", {
+		description: "worker up",
+		command: 'while ! pgrep -f "worker-zz" >/dev/null; do sleep 1; done; echo UP',
+	});
+	assert.equal(appears.isError, undefined, "a pattern no live session carries is a normal watch");
+	const gone = await tools.get("monitor").execute("call-4", {
+		description: "worker gone",
+		command: 'until ! pgrep -fl "worker-zz" >/dev/null; do sleep 1; done; echo GONE',
+	});
+	assert.equal(gone.isError, true);
+	assert.match(textOf(gone), new RegExp(`your live monitor ${appears.details.monitor_id}`));
+	await tools.get("kill_bash").execute("call-5", { bash_id: appears.details.bash_id });
+	const bracketed = await tools.get("monitor").execute("call-6", {
+		description: "worker gone",
+		command: 'until ! pgrep -fl "[w]orker-zz" >/dev/null; do sleep 1; done; echo GONE',
+	});
+	assert.equal(bracketed.isError, undefined, "with the other watcher stopped the watch starts");
+	const later = await tools.get("monitor").execute("call-7", {
+		description: "worker up again",
+		command: 'while ! pgrep -f "worker-zz" >/dev/null; do sleep 1; done; echo UP',
+	});
+	assert.equal(later.isError, undefined, "a bracketed watcher's own command line does not match the plain pattern");
+});
+
+test("pgrep -f patterns are read from clustered, split and quoted flag forms", async () => {
+	const { pgrepFullPatterns } = await import("./src/tools/monitor-guards.ts");
+	assert.deepEqual(pgrepFullPatterns('while pgrep -f "a b" >/dev/null; do :; done'), ["a b"]);
+	assert.deepEqual(pgrepFullPatterns("kill -0 $(pgrep -fn 'x.py' | head -1)"), ["x.py"]);
+	assert.deepEqual(pgrepFullPatterns("pgrep -l -f judge.py; pgrep node"), ["judge.py"]);
+	assert.deepEqual(pgrepFullPatterns("pgrep -x node"), []);
+});

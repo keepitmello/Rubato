@@ -27,6 +27,8 @@ export class TerminalRuntimeSession {
 	readonly command: string;
 	/** Set by kill_bash: the agent stopped it itself, so its exit is not news to report. */
 	killedByAgent = false;
+	/** The command line and cwd the agent asked for; set by spawnCommandSession, absent for other sessions. */
+	spawned: { readonly command: string; readonly cwd: string } | undefined = undefined;
 	private readonly screen: TerminalScreen;
 	private readonly decoder = new TextDecoder("utf-8", { fatal: false });
 	private buffer = "";

@@ -27,16 +27,18 @@ export async function spawnCommandSession(
 	const shell = getShellConfig(ctx.shellPath);
 	const useStdin = shell.commandTransport === "stdin";
 	const args = useStdin ? [...shell.args] : [...shell.args, request.command];
+	const cwd = request.cwd ?? ctx.cwd;
 
 	const created = await ctx.manager.create(shell.shell, {
 		command: shell.shell,
 		args,
-		cwd: request.cwd ?? ctx.cwd,
+		cwd,
 		env: { ...ctx.getEnv(), ...request.envOverrides } as Record<string, string | undefined>,
 		cols: request.cols,
 		rows: request.rows,
 		timeoutMs: request.timeoutMs,
 	});
+	created.runtime.spawned = { command: request.command, cwd };
 
 	if (useStdin) {
 		created.runtime.session.write(`${request.command}\n`);

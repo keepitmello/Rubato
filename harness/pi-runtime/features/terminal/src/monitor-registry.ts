@@ -17,6 +17,8 @@ export interface MonitorSummaryEvent {
 	readonly id: string;
 	readonly description: string;
 	readonly summary: string;
+	/** The watch hit its deadline or was killed instead of its command finishing: no news of its own. */
+	readonly cutShort: boolean;
 }
 
 export type MonitorEvent = MonitorLineEvent | MonitorSummaryEvent;
@@ -26,6 +28,16 @@ export type MonitorRearmResult = "rearmed" | "not_paused" | "not_found";
 export interface MonitorResumeResult {
 	readonly id: string;
 	readonly mutedDropped: number;
+}
+
+/** A live command watch as the monitor tool sees it when deciding whether a new watch repeats one. */
+export interface LiveCommandWatch {
+	readonly id: string;
+	readonly monitorId: string;
+	readonly runtime: TerminalRuntimeSession;
+	readonly filter: RegExp | undefined;
+	readonly persistent: boolean;
+	readonly paused: boolean;
 }
 
 const MONITOR_ID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -173,6 +185,19 @@ export class MonitorRegistry {
 		}));
 	}
 
+	liveCommandWatches(): readonly LiveCommandWatch[] {
+		return [...this.#records.values()]
+			.filter((record) => !record.settled)
+			.map((record) => ({
+				id: record.id,
+				monitorId: record.monitorId,
+				runtime: record.runtime,
+				filter: record.filter,
+				persistent: record.persistent,
+				paused: record.paused,
+			}));
+	}
+
 	async registerFile(options: RegisterFileMonitorOptions): Promise<{ id: string; monitorId: string }> {
 		if (this.#disposed) throw new Error("Cannot create file monitor: monitor registry is disposed.");
 		this.#pendingRegistrations += 1;
@@ -292,7 +317,13 @@ export class MonitorRegistry {
 			await initialHandle?.close();
 			initialHandle = undefined;
 			if (registrationError) {
-				this.#emit({ type: "summary", id, description: options.description, summary: registrationError });
+				this.#emit({
+					type: "summary",
+					id,
+					description: options.description,
+					summary: registrationError,
+					cutShort: false,
+				});
 				throw new Error(registrationError);
 			}
 			throw error;
@@ -301,7 +332,13 @@ export class MonitorRegistry {
 		initialHandle = undefined;
 		if (registrationError) {
 			cleanupRegistration();
-			this.#emit({ type: "summary", id, description: options.description, summary: registrationError });
+			this.#emit({
+				type: "summary",
+				id,
+				description: options.description,
+				summary: registrationError,
+				cutShort: false,
+			});
 			throw new Error(registrationError);
 		}
 		if (this.#disposed || lifecycle !== this.#lifecycle) {
@@ -376,7 +413,8 @@ export class MonitorRegistry {
 		this.#files.delete(record.id);
 		this.#notifyChange();
 		if (options?.killedByAgent) return;
-		this.#emit({ type: "summary", id: record.id, description: record.description, summary });
+		const cutShort = summary === "watcher timed_out" || summary === "watcher killed" || summary === "watcher disposed";
+		this.#emit({ type: "summary", id: record.id, description: record.description, summary, cutShort });
 	}
 
 	async #checkFile(id: string): Promise<void> {
@@ -675,6 +713,7 @@ export class MonitorRegistry {
 			id: record.id,
 			description: record.description,
 			summary: `watcher ${status}${codeText}`,
+			cutShort: status === "timed_out" || status === "killed",
 		});
 	}
 
