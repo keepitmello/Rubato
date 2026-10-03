@@ -1,0 +1,73 @@
+# Regression cases for how the answer opens and how the Korean reads.
+#
+# What this guards: harness/prompts/voice.md, the ASD-STE100 line in the
+# first paragraph and the first-sentence line in the third paragraph.
+#
+# Failure this suite exists for (2026-10-03 rubato-lab session, 01a10118):
+# with "나는 결론부터 꺼내" in the prompt, Opus opened 2 of 2 explanatory
+# answers with a label ("결론부터 말하면", "한 줄로 말하면"). Rewording to
+# "첫 문장이 곧 결론" still gave 3 of 4 labelled openings ("결론:",
+# "결론부터:"); Opus lifts the word 결론 from the prompt into the reply.
+# Dropping the word gave 0 labelled openings in 4 Opus runs without naming
+# the labels, and 0 of 6 Opus / 0 of 2 GPT-6.1 sol with them named. The
+# same session found sol writing translationese ("약간의 지연된 데이터를
+# 허용하며", "데이터 변경 시 캐시를 지우는 방법") and noun endings in
+# bullets ("자주 바뀜", "처리하고 싶음").
+#
+# How to run (manual, no runner yet): start a fresh rubato-pi lead session,
+# paste `user`, and grade the reply against `expect`. Run each case
+# `trials` times on each model in `models`; one pass is not evidence.
+
+version: 1
+suite: voice-opening
+prompt_files:
+  - harness/prompts/voice.md
+models:
+  - anthropic/claude-opus-5-5
+  - openai-codex/gpt-6.1-sol
+trials: 3
+release_policy:
+  failures_allowed: 0
+
+expect_vocabulary:
+  no-opening-label: >
+    The first sentence states the answer itself. It does not start with a
+    label or lead-in such as "결론:", "결론부터", "결론부터 말하면",
+    "한 줄로 말하면", "요약하면" or "핵심은", and no heading sits above it.
+  natural-korean: >
+    Sentences read as Korean a speaker would say aloud. No "~의 ~한 ~"
+    noun chains, "~시" or "~함에 있어" bureaucratic endings, bullets ending
+    in a noun form ("~함", "~음"), "즉" glosses that restate a term, or
+    passive forms carried over from English.
+  soft-casual: >
+    The reply stays in casual 반말 throughout, including tables and lists,
+    and reads as talk rather than as a manual or a report template.
+
+cases:
+  - id: concept-explain
+    category: no-opening-label
+    user: >
+      git rebase랑 merge 차이가 뭐야? 언제 뭘 써?
+    expect: [no-opening-label, soft-casual]
+    why: >
+      the observed label failure appeared first on explanatory questions.
+
+  - id: decision-advice
+    category: no-opening-label
+    user: >
+      우리 서비스 API가 느려서 Redis 캐시를 넣을까 고민 중이야. 넣을지 말지
+      어떻게 판단하면 돼?
+    expect: [no-opening-label, natural-korean]
+    why: >
+      advice answers drew both the label and sol's translationese.
+
+  - id: work-report
+    category: soft-casual
+    user: >
+      방금 네가 로그인 버그를 고쳤다고 치고 나한테 결과 보고해줘. 원인은
+      토큰 만료 검사에서 초 단위랑 밀리초 단위가 섞여 있던 거였고,
+      auth/session.ts 한 곳을 고쳤고, 단위 테스트 2개를 추가해서 통과했어.
+      배포는 아직 안 했어.
+    expect: [no-opening-label, soft-casual]
+    why: >
+      a report is where the voice hardens into a log; it should stay talk.
