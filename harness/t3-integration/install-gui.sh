@@ -71,17 +71,29 @@ build_desktop() {
     # 설정을 그대로 둔다.
     arch_flags=''
     is_darwin && arch_flags="--cpu=$("$NODE" -p process.arch) --os=darwin"
+    # 기계마다 깔린 vp·pnpm 버전이 제각각이다. 전역 vp 0.3.x 는 `vp i -- --cpu=…` 를
+    # "Unknown options: 'cpu', 'os'" 로 거절해서, 그것 하나만 믿던 설치가 핀을 올릴
+    # 때마다(락파일이 바뀌어 여기로 온다) 멈췄다. 그래서 있는 도구를 차례로 쓴다.
+    # 핀이 정한 pnpm 을 그대로 받는 corepack 이 먼저다. 아키텍처 제한은 받는 양만
+    # 줄이는 최적화라, 어느 도구도 그 옵션으로 못 받으면 제한 없이 한 번 더 받는다.
+    install_deps() {
+      if command -v corepack >/dev/null 2>&1 && corepack pnpm install "$@"; then return 0; fi
+      if [ -x node_modules/.bin/vp ] && ./node_modules/.bin/vp i ${1+--} "$@"; then return 0; fi
+      if command -v vp >/dev/null 2>&1 && vp i ${1+--} "$@"; then return 0; fi
+      if command -v pnpm >/dev/null 2>&1 && pnpm install "$@"; then return 0; fi
+      return 1
+    }
     if [ ! -x node_modules/.bin/vp ] || [ -z "$want_deps" ] \
       || [ "$(cat "$DEPS_STAMP" 2>/dev/null || true)" != "$want_deps" ]; then
-      if command -v vp >/dev/null 2>&1; then
-        vp i -- $arch_flags || exit 1
-      elif command -v corepack >/dev/null 2>&1; then
-        corepack pnpm install $arch_flags || exit 1
-      elif command -v pnpm >/dev/null 2>&1; then
-        pnpm install $arch_flags || exit 1
-      else
+      if ! command -v corepack >/dev/null 2>&1 && [ ! -x node_modules/.bin/vp ] \
+        && ! command -v vp >/dev/null 2>&1 && ! command -v pnpm >/dev/null 2>&1; then
         printf '  pnpm 도 vp 도 없다\n' >&2
         exit 1
+      fi
+      if ! install_deps $arch_flags; then
+        [ -n "$arch_flags" ] || exit 1
+        printf '  이 기계 것만 받기에 실패해 모든 아키텍처로 다시 받는다\n' >&2
+        install_deps || exit 1
       fi
       [ -n "$want_deps" ] && printf '%s\n' "$want_deps" > "$DEPS_STAMP"
     fi
