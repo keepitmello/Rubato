@@ -17,7 +17,7 @@ const HEADING = /^(#{1,2})\s+(.*?)\s*#*\s*$/
 export interface VerbatimSegments {
   /** Symptom section bodies, exact except for empty lines at either end. */
   readonly symptoms: readonly string[]
-  /** Quoted spans, without their quote marks. */
+  /** Quoted spans, quote marks included. */
   readonly quotes: readonly string[]
   /** Non-empty `>` lines, without the marker. */
   readonly blockquotes: readonly string[]
@@ -91,7 +91,8 @@ export function verbatimSegments(text: string): VerbatimSegments {
     if (!line.inFence && block !== null && block[1]!.trim() !== "") blockquotes.push(block[1]!)
     for (const match of line.text.matchAll(QUOTED)) {
       const inner = match[1] ?? match[2] ?? match[3] ?? match[4] ?? match[5] ?? ""
-      if (inner.trim() !== "") quotes.push(inner)
+      // With its quote marks: a translation that turns “…” into "…" changed the user's text too.
+      if (inner.trim() !== "") quotes.push(match[0])
     }
   }
   return { symptoms: symptomBodies(text), quotes: unique(quotes), blockquotes: unique(blockquotes) }

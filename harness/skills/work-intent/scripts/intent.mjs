@@ -64,7 +64,7 @@ function encode(meta, body) {
   return `---\n${KEYS.map(k => `${k}: ${JSON.stringify(meta[k])}`).join('\n')}\n---\n\n${canonicalBody(body)}`;
 }
 // A translation keeps the user's own words: the originating request section whole, and every quoted
-// span ("…", “…”, ‘…’, 「…」, '…' not opened by an in-word apostrophe) and `>` line, byte for byte.
+// span ("…", “…”, ‘…’, 「…」, '…' not opened by an in-word apostrophe; marks included) and `>` line, byte for byte.
 const QUOTED = /"([^"\n]*)"|“([^”\n]*)”|‘([^’\n]*)’|「([^」\n]*)」|(?<![\p{L}\p{N}])'([^'\n]*)'(?![\p{L}\p{N}])/gu;
 function sectionOf(body, heading) {
   const part = body.match(new RegExp(`^## ${heading}\\s*\\n([\\s\\S]*?)(?=^## |$(?![\\s\\S]))`, 'm'));
@@ -81,7 +81,7 @@ export function translationLosses(before, after) {
     if (quote && quote[1].trim()) kept.add(quote[1]);
     for (const match of line.matchAll(QUOTED)) {
       const inner = match[1] ?? match[2] ?? match[3] ?? match[4] ?? match[5];
-      if (inner.trim()) kept.add(inner);
+      if (inner.trim()) kept.add(match[0]);
     }
   }
   for (const text of kept) if (!after.includes(text)) losses.push(`quoted text changed: ${text.length > 80 ? `${text.slice(0, 80)}…` : text}`);
