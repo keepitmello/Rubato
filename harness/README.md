@@ -115,6 +115,7 @@ rubato dream                  # 저장소별 켜짐·마지막 실행·새 세�
 rubato dream --due            # 켠 저장소 중 때가 된 것만 실행
 rubato dream <저장소>          # 지금 실행
 rubato dream --revert <저장소> <실행 id> # 들어간 결과를 revert 커밋 하나로 빼기
+rubato dream --migrate <저장소> # 영어 전환을 그 저장소에 지금 실행
 ```
 
 끄기·모델은 `~/.rubato/rubato.jsonc` 의 `memory.dream`(`stores.<이름>.enabled: false`,
@@ -123,6 +124,15 @@ rubato dream --revert <저장소> <실행 id> # 들어간 결과를 revert 커�
 비워 두면 DeepSeek V4.1 Flash → Grok 4.7 → Claude Haiku 4.5 순이다. 실행 기록은 저장소의 `runtime/dream/runs/` 에 남는다.
 사람이 쓰는 세션(TUI·GUI)은 시작과 끝에 `rubato dream --due` 를 백그라운드로 띄운다. 때가 된 저장소가
 없으면 바로 끝나고, 출력은 `~/.rubato/memory/dream-due.log` 에 남는다.
+기본 기억 루트(`~/.rubato/memory`)는 설치된 Rubato(`~/.local/bin/rubato` 가 부르는 사본)가
+기본 프로필로 돌 때만 꿈을 돌린다. 스크래치 클론·워크트리·격리 프로필의 세션은 `RUBATO_MEMORY_HOME`
+으로 자기 루트를 정해야 꿈이 돈다 — 시험 코드가 실제 기억을 고치지 않게 하려는 것이다.
+
+기억은 영어로 쓰고 사용자 원문(`## Symptom` 본문, 따옴표·`>` 인용)만 원래 언어로 둔다. 그 전에 쓴
+저장소는 업데이트 뒤 다음 꿈에서 한 번 영어로 옮겨진다: 켠 저장소마다 새 세션이 없어도 돌고, 꿈과 같은
+잠금·모델 사다리를 쓰며, `merge(dream): migrate-…` 커밋 하나로 들어가 `--revert` 로 뺄 수 있다.
+러너가 파일마다 원문이 바이트 그대로인지 확인한 뒤에만 넣고, `system/` 은 건드리지 않는다. 끝나면
+`runtime/dream/migrations.json` 에 남아 되돌려도 다시 돌지 않는다. 실패하면 `min_hours_between` 뒤에 다시 한다.
 
 ## 업데이트
 

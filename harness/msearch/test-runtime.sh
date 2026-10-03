@@ -14,6 +14,8 @@ python3 -m py_compile "$here/msearch_env.py" "$here/msearch_doctor.py" "$here/ms
 (cd "$here" && python3 -m unittest -q test_msearch_scope)
 # 합의 기록(intent)은 기억과 따로 색인·검색·표시된다.
 (cd "$here" && python3 -m unittest -q test_msearch_intent)
+# 증상 절로 걸리면 결론을 돌려준다 — 영어 헤딩과 옮기기 전 한국어 헤딩 둘 다.
+(cd "$here" && python3 -m unittest -q test_msearch_symptom)
 
 # --only-shell은 Python 환경을 읽거나 쓰지 않는다. 전체 apply 대신 실행 흐름을
 # 추적해 4.3 헤더와 venv 명령이 도달 불가능한지 고정한다.

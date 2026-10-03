@@ -147,6 +147,23 @@ test('a run reads as one card per changed file, and the store says how its last 
   assert.equal((await lastRun()).landed, false);
 });
 
+test('an English report fills the same cards as a Korean one', { skip: !bunAvailable && 'bun is not installed' }, async (t) => {
+  const f = await fixture(t);
+  const report = [
+    '## Summary', 'Added one line to the notes.',
+    '## Changed', '- `notes.md`: rewritten — the second line was missing',
+    '## Fixed against the code', '- `notes.md`: old path → new path',
+    '## Left out', '- status talk: git already knows', '',
+  ].join('\n');
+  await landedDream(f, 'dream-en', 'second', report);
+  const detail = await f.service.handle('run', { store: 'scratch', runId: 'dream-en' });
+  assert.equal(detail.summary, 'Added one line to the notes.');
+  assert.deepEqual(detail.changes[0].notes, [
+    { kind: 'why', text: 'the second line was missing' },
+    { kind: 'code', text: 'old path → new path' },
+  ]);
+});
+
 test('run now is detached and its result is read back', { skip: !bunAvailable && 'bun is not installed' }, async (t) => {
   const f = await fixture(t);
   // This HOME has no auth and the run has no sessions: the CLI ends on its own quickly.

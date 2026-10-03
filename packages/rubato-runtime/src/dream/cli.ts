@@ -5,6 +5,8 @@
 //   rubato dream --due        run each enabled store whose last dream is old enough and has new sessions
 //   rubato dream <store>...   run those stores now, even with no new sessions
 //   --revert <store> <runId>  take a landed dream back out with one revert commit
+//   --migrate <store>         run the one-time English migration for that store now (it otherwise runs
+//                             on the store's next dream, once)
 //   --json                    machine-readable output (the GUI reads this)
 //   --trial [--base REV] [--since ISO] <store>
 //                             run without merging: result stays on a branch, the clock does not move
@@ -28,6 +30,8 @@ import {
   type DreamRung,
   type DreamState,
 } from "./runner"
+import { liveMemoryVerdict } from "./live-guard"
+import { languageMigrationDue, runLanguageMigration } from "./migrate-language"
 import { countStoreFiles, createStoreNameResolver, listExistingStores, scanStoreSessions, type SessionFile } from "./stores"
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -46,6 +50,8 @@ interface StoreStatus {
   readonly home: boolean
   /** Markdown files in the store. */
   readonly files: number
+  /** The one-time English migration has not run yet (or failed and may retry). */
+  readonly migrationDue: boolean
 }
 
 async function main(argv: readonly string[]): Promise<number> {
@@ -54,16 +60,29 @@ async function main(argv: readonly string[]): Promise<number> {
   const trial = argv.includes("--trial")
   const base = optionValue(argv, "--base")
   const sinceIso = optionValue(argv, "--since")
-  const named = argv.filter((arg, index) => !arg.startsWith("--") && !["--base", "--since"].includes(argv[index - 1] ?? ""))
+  const migrateStore = optionValue(argv, "--migrate")
+  const named = argv.filter((arg, index) => !arg.startsWith("--") && !["--base", "--since", "--migrate"].includes(argv[index - 1] ?? ""))
   const env = process.env
   const now = Date.now()
+  const revertStore = optionValue(argv, "--revert")
+  const writes = due || named.length > 0 || revertStore !== undefined || migrateStore !== undefined
+
+  // Only the installed Rubato on the default profile touches the default memory root (live-guard.ts).
+  // Any other copy may still read the status; it writes nothing, the user config included.
+  const verdict = liveMemoryVerdict({ env, home: homedir(), cliPath: fileURLToPath(import.meta.url) })
+  if (!verdict.allowed && writes) {
+    process.stderr.write(`rubato dream: ${verdict.reason}; nothing ran\n`)
+    return due ? 0 : 2
+  }
 
   // Moves the old category ladder into memory.dream.models and drops the category keys, once,
   // with a backup. Sessions start `dream --due`, so every install passes here. A failure only
   // means the old keys stay; loading already ignores them.
-  try {
-    migrateUserConfigDreamModels({ env })
-  } catch {}
+  if (verdict.allowed) {
+    try {
+      migrateUserConfigDreamModels({ env })
+    } catch {}
+  }
 
   const userConfig = loadSenpiRubatoConfig({ cwd: homedir(), env }).config
   const memory = userConfig.memory ?? RubatoMemorySettingsSchema.parse({})
@@ -75,7 +94,6 @@ async function main(argv: readonly string[]): Promise<number> {
   const states = new Map<string, DreamState>()
   for (const store of listExistingStores(memoryRoot)) states.set(store, await readDreamState(pathsOf(store)))
 
-  const revertStore = optionValue(argv, "--revert")
   if (revertStore !== undefined) {
     const runId = argv[argv.indexOf("--revert") + 2]
     if (runId === undefined || runId.startsWith("--")) {
@@ -105,6 +123,8 @@ async function main(argv: readonly string[]): Promise<number> {
   const sessionsByStore = scan.sessions
   const minGapMs = dream.min_hours_between * 60 * 60_000
   const statuses: StoreStatus[] = []
+  const migrationDue = new Map<string, boolean>()
+  for (const store of states.keys()) migrationDue.set(store, await languageMigrationDue(pathsOf(store), now, minGapMs))
   for (const [store, state] of states) {
     const record = readStoreRecord(pathsOf(store).root)
     const enabled = dream.stores[store]?.enabled !== false
@@ -120,23 +140,33 @@ async function main(argv: readonly string[]): Promise<number> {
       roots: record?.roots ?? [],
       home: record?.home === true,
       files: countStoreFiles(pathsOf(store).repo),
+      migrationDue: migrationDue.get(store) === true,
     })
   }
 
-  if (!due && named.length === 0) {
+  if (!due && named.length === 0 && migrateStore === undefined) {
     if (json) process.stdout.write(`${JSON.stringify({ models, stores: statuses }, null, 2)}\n`)
     else printStatuses(statuses, models)
     return 0
   }
 
-  const targets = due ? statuses.filter((status) => status.due).map((status) => status.store) : named
-  const unknown = targets.filter((store) => !states.has(store))
+  const targets = migrateStore !== undefined ? [] : due ? statuses.filter((status) => status.due).map((status) => status.store) : named
+  // The English migration runs once per store, before that store's next dream: every enabled store on
+  // `--due` (new sessions or not, so a quiet store migrates too), each named store, or `--migrate`.
+  const migrations = migrateStore !== undefined
+    ? [migrateStore]
+    : trial
+      ? []
+      : due
+        ? statuses.filter((status) => status.enabled && status.migrationDue).map((status) => status.store)
+        : named.filter((store) => migrationDue.get(store) === true)
+  const unknown = [...targets, ...migrations].filter((store) => !states.has(store))
   if (unknown.length > 0) {
     process.stderr.write(`rubato dream: no memory store named ${unknown.join(", ")}\n`)
     return 2
   }
   // Nothing due is the common answer to the session-start/end ask: finish before touching the engine.
-  if (targets.length === 0) {
+  if (targets.length === 0 && migrations.length === 0) {
     if (json) process.stdout.write(`${JSON.stringify({ runs: [] }, null, 2)}\n`)
     return 0
   }
@@ -147,6 +177,19 @@ async function main(argv: readonly string[]): Promise<number> {
   ].join("\n\n")
 
   const records: DreamRunRecord[] = []
+  for (const store of migrations) {
+    if (!json) process.stderr.write(`dream: ${store} English migration …\n`)
+    const record = await runLanguageMigration({
+      store,
+      paths: pathsOf(store),
+      ladder: models,
+      launch,
+      systemPrompt: readFileSync(join(here, "language-migration.md"), "utf8"),
+      env: childEnv(env),
+    })
+    records.push(record)
+    if (!json) process.stderr.write(`dream: ${store} English migration ${record.status}${record.reason === undefined ? "" : ` (${record.reason})`} ${record.commits.length} commit(s)${record.runId === "" ? "" : ` run ${record.runId}`}\n`)
+  }
   for (const store of targets) {
     if (!json) process.stderr.write(`dream: ${store} …\n`)
     const record = await runDream({

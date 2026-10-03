@@ -30,7 +30,7 @@ const CHILD_TIMEOUT_MS = 45 * 60_000
 const FIRST_DREAM_LOOKBACK_MS = 7 * 24 * 60 * 60_000
 const CURSOR_RETENTION_MS = 30 * 24 * 60 * 60_000
 // Commits the runner itself makes (merge, leftovers) are signed as the dream, whatever the store's config says.
-const AS_DREAM = ["-c", "user.name=dream", "-c", "user.email=dream@rubato.local"] as const
+export const AS_DREAM = ["-c", "user.name=dream", "-c", "user.email=dream@rubato.local"] as const
 
 export interface DreamRung {
   readonly model: string
@@ -60,6 +60,8 @@ export type DreamStatus = "merged" | "noop" | "failed" | "busy" | "trial"
 
 export interface DreamRunRecord {
   readonly runId: string
+  /** Set on one-time runs that are not a regular dream (the language migration). */
+  readonly kind?: "language-migration"
   readonly store: string
   readonly startedAt: string
   readonly finishedAt: string
@@ -249,20 +251,7 @@ async function runLocked(options: RunDreamOptions, now: () => number): Promise<D
     // Every rung starts from a clean branch at the same base: a rung that died leaves nothing behind.
     await prepare()
     usedModel = rung.model
-    const args = [
-      ...options.launch.prefixArgs,
-      "-p",
-      "--system-prompt", promptPath,
-      "--tools", "read,bash,edit,write",
-      "--no-extensions",
-      "--no-skills",
-      "--no-prompt-templates",
-      "--no-context-files",
-      "--session-dir", join(runDir, "session"),
-      "--model", launchProductModel(rung.model),
-      ...(rung.thinking === undefined ? [] : ["--thinking", rung.thinking]),
-      "Run the dream now.",
-    ]
+    const args = childArgs(options.launch, promptPath, join(runDir, "session"), rung, "Run the dream now.")
     const result = await spawnChild({
       command: options.launch.command,
       args,
@@ -325,6 +314,24 @@ async function runLocked(options: RunDreamOptions, now: () => number): Promise<D
   return finish("merged", { ...modelField, commits, baseRevision })
 }
 
+/** A dream child: a print-mode engine run with file tools only, no extensions, skills or context files. */
+export function childArgs(launch: ChildLaunch, promptPath: string, sessionDir: string, rung: DreamRung, message: string): string[] {
+  return [
+    ...launch.prefixArgs,
+    "-p",
+    "--system-prompt", promptPath,
+    "--tools", "read,bash,edit,write",
+    "--no-extensions",
+    "--no-skills",
+    "--no-prompt-templates",
+    "--no-context-files",
+    "--session-dir", sessionDir,
+    "--model", launchProductModel(rung.model),
+    ...(rung.thinking === undefined ? [] : ["--thinking", rung.thinking]),
+    message,
+  ]
+}
+
 async function landLeftoverReview(paths: MemoryIdentityPaths, store: string, git: Git): Promise<void> {
   const leftover = await readJson<{ runId?: string; branch?: string }>(join(dreamDir(paths), LEFTOVER_REVIEW))
   if (leftover === undefined) return
@@ -375,9 +382,9 @@ async function landedMerge(git: Git, repoDir: string, runId: string): Promise<st
   return undefined
 }
 
-type Git = (cwd: string, argv: readonly string[]) => Promise<{ code: number; stdout: string; stderr: string }>
+export type Git = (cwd: string, argv: readonly string[]) => Promise<{ code: number; stdout: string; stderr: string }>
 
-function dreamLockPath(paths: MemoryIdentityPaths): string {
+export function dreamLockPath(paths: MemoryIdentityPaths): string {
   return join(paths.locks, "dream.lock")
 }
 
@@ -392,17 +399,17 @@ async function settleRun(paths: MemoryIdentityPaths, runId: string, fields: Reco
   await writeFile(path, `${JSON.stringify({ ...run, ...fields }, null, 2)}\n`, "utf8")
 }
 
-async function commitsAhead(git: Git, repoDir: string, branch: string, base: string): Promise<string[]> {
+export async function commitsAhead(git: Git, repoDir: string, branch: string, base: string): Promise<string[]> {
   const result = await git(repoDir, ["rev-list", "--reverse", `${base}..${branch}`])
   return result.code === 0 ? result.stdout.split("\n").map((line) => line.trim()).filter(Boolean) : []
 }
 
-function underWriterLock<T>(paths: MemoryIdentityPaths, store: string, what: string, operation: () => Promise<T>): Promise<T> {
+export function underWriterLock<T>(paths: MemoryIdentityPaths, store: string, what: string, operation: () => Promise<T>): Promise<T> {
   return createLockRecord(`${what} (${store})`).then((record) =>
     withLock(memoryWriterLockPath(paths.locks), record, operation, { waitTimeoutMs: 60_000 }))
 }
 
-async function mergeUnderWriterLock(
+export async function mergeUnderWriterLock(
   paths: MemoryIdentityPaths,
   store: string,
   git: Git,
@@ -419,7 +426,7 @@ async function mergeUnderWriterLock(
   })
 }
 
-async function removeWorktree(repo: GitMemoryRepo, git: Git, worktree: string, branch: string): Promise<void> {
+export async function removeWorktree(repo: GitMemoryRepo, git: Git, worktree: string, branch: string): Promise<void> {
   if (existsSync(worktree)) await repo.worktreeRemove(worktree, true).catch(() => undefined)
   await rm(worktree, { recursive: true, force: true })
   await git(repo.dir, ["worktree", "prune"])
@@ -427,7 +434,7 @@ async function removeWorktree(repo: GitMemoryRepo, git: Git, worktree: string, b
 }
 
 // Plumbing, not `branch -D`: porcelain -D is blocked by some host git wrappers.
-async function deleteBranch(git: Git, repoDir: string, branch: string): Promise<void> {
+export async function deleteBranch(git: Git, repoDir: string, branch: string): Promise<void> {
   await git(repoDir, ["update-ref", "-d", `refs/heads/${branch}`])
 }
 
@@ -482,14 +489,14 @@ export function pickSessions(
 
 const FAILURE_LINE_MAX = 240
 
-async function failureLine(logPath: string, code: number | null): Promise<string> {
+export async function failureLine(logPath: string, code: number | null): Promise<string> {
   const text = await readFile(logPath, "utf8").catch(() => "")
   const last = text.split("\n").map((line) => line.trim()).filter(Boolean).at(-1)
   if (last !== undefined) return last.length > FAILURE_LINE_MAX ? `${last.slice(0, FAILURE_LINE_MAX)}…` : last
   return code === null ? "stopped without output (timed out or killed)" : `exited with code ${code} and no output`
 }
 
-const spawnLogged: SpawnChild = ({ command, args, cwd, env, logPath, timeoutMs }) =>
+export const spawnLogged: SpawnChild = ({ command, args, cwd, env, logPath, timeoutMs }) =>
   new Promise((resolve) => {
     const log = createWriteStream(logPath)
     const child = spawn(command, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"] })
@@ -506,7 +513,7 @@ const spawnLogged: SpawnChild = ({ command, args, cwd, env, logPath, timeoutMs }
     })
   })
 
-async function readJson<T>(path: string): Promise<T | undefined> {
+export async function readJson<T>(path: string): Promise<T | undefined> {
   try {
     const parsed: unknown = JSON.parse(await readFile(path, "utf8"))
     return parsed !== null && typeof parsed === "object" ? parsed as T : undefined

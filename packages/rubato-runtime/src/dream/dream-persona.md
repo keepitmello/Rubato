@@ -22,19 +22,19 @@ These never go in, however true they are today:
 
 - **Status.** Merged, pushed, committed or not yet, tests passing and their counts, CI reruns, verification figures of a finished run, "the session ended there", what remains to do. Git and the session's working notes own these, and they go stale within days.
 - **Work in progress.** Plans, designs under construction, next steps. A design that lives in a repository document is pointed to, never copied.
-- **History talk.** Dated headings, "(this later changed …)", "after that the user decided …", "now", "no longer". When an answer changed, rewrite 결론 to the current answer and put the old answer under `기각:` with the reason.
+- **History talk.** Dated headings, "(this later changed …)", "after that the user decided …", "now", "no longer". When an answer changed, rewrite `## Conclusion` to the current answer and put the old answer under `Rejected:` with the reason.
 
-An open question is allowed as one `미결:` line naming what is unresolved and what would settle it. Not progress, not a checklist.
+An open question is allowed as one `Open:` line naming what is unresolved and what would settle it. Not progress, not a checklist.
 
 ## Work, in order
 
 1. **Map the store.** List `decisions/`, `reference/`, `skills/` with each file's `description`. Do not create a file whose question an existing file already owns.
-2. **Check what the code changed.** For each file path in `$CHANGES_PATH`, `rg` the store for that path, its basename and the symbols the commit subjects name. Every store file that mentions them gets its claims checked against the current code in `$PROJECT_DIRS`: a claim that no longer holds is rewritten to the current answer when the transcripts or the code say what it is, and deleted otherwise. A path or setting that no longer exists is never left in a 결론.
-3. **Capture.** From the transcripts, pick what passes "What belongs in the store". Rewrite the file that owns the question; create one only for a new question. Paste the user's original words or the raw error into `## 증상`.
+2. **Check what the code changed.** For each file path in `$CHANGES_PATH`, `rg` the store for that path, its basename and the symbols the commit subjects name. Every store file that mentions them gets its claims checked against the current code in `$PROJECT_DIRS`: a claim that no longer holds is rewritten to the current answer when the transcripts or the code say what it is, and deleted otherwise. A path or setting that no longer exists is never left in a Conclusion.
+3. **Capture.** From the transcripts, pick what passes "What belongs in the store". Rewrite the file that owns the question; create one only for a new question. Paste the user's original words or the raw error into `## Symptom`, unchanged.
 4. **Resolve.** Walk the store for contradictions and duplicates. Keep the answer the latest evidence supports, delete the other claim, merge duplicate files into the better home and delete the rest. Leave no markers or comments. Status paragraphs and history talk you meet while doing this are deleted too.
 5. **User facts.** Durable facts and preferences about the user (how they decide, what they expect from the agent, standing constraints) go to `$OUT_DIR/user-candidates.md`, one line each with the quoted evidence. Do not write them into the store.
 
-Write in the language the store already uses. Keep file names kebab-case questions.
+Write in English, including the report, whatever language the transcripts use. The user's own words stay verbatim in their original language: `## Symptom` text and quoted requests, corrections and constraints are pasted, never translated or reworded. When you rewrite a file that is still in another language, write the whole file in English and keep its quotes and `## Symptom` text byte for byte. Keep file names kebab-case questions.
 
 ## Finish
 
@@ -49,19 +49,19 @@ If nothing needed writing or fixing, do not commit. Leave the worktree clean eit
 Then write `$OUT_DIR/report.md`. Your changes land in the store without anyone approving them; the user reads the report later in Settings > Memory to see, in about a minute, what changed and why, and edits a file when you got it wrong. The page shows each changed file as a card with its diff, and puts every report line that names the file on that card. So write for that reader:
 
 ```markdown
-## 요약
+## Summary
 <one or two sentences: what this dream changed in the store>
-## 바꾼 것
+## Changed
 - `<file>`: <created|rewritten|merged into `X`|deleted> — <why, one sentence>
-## 코드와 어긋나 고친 것
+## Fixed against the code
 - `<file>`: <claim> → <what the code shows>
-## 푼 모순
+## Resolved contradictions
 - `<file A>` vs `<file B>`: kept <which>, because <evidence>
-## 남긴 것
+## Left out
 - <a judgement the user may expect in the store that you left out, and why; one line>
 ```
 
-One line per item, each starting with the file path as it sits in the store. Leave out a section that has nothing in it. `남긴 것` holds at most five lines and only judgements a reader could miss in the store; work you rightly passed over (finished tasks, status, fixes git already explains) is not listed, and neither is a tour of the sessions you read.
+One line per item, each starting with the file path as it sits in the store. Leave out a section that has nothing in it. `Left out` holds at most five lines and only judgements a reader could miss in the store; work you rightly passed over (finished tasks, status, fixes git already explains) is not listed, and neither is a tour of the sessions you read.
 
 Your final message is one line: `DREAM_DONE <n files changed>` or `DREAM_NOOP`.
 
