@@ -171,20 +171,32 @@ export const cacheEdits = {
       'replace',
     ],
   ],
-  // The sidebar row shows a thin capsule under its time label while the thread's prompt
+  // The sidebar row shows a thin capsule above its time label while the thread's prompt
   // cache is warm: what is left of the cache's life, orange while the warmer holds it.
   // A line, not a ring, so it does not echo the status dot at the row's other end. The
   // meta area fades to the archive button on hover, so the capsule only shows and the
   // numbers (cache first, then the warmer) join the title's tooltip.
+  //
+  // The meta slot is a column, capsule first: centred while the cache is cold, and
+  // bottom-aligned while the capsule is there — the pair then hangs from the row's
+  // bottom, which is what puts the 3px capsule on the row's own centre with the time
+  // under it. `has` keys that on the capsule's own data attribute, so nothing else has
+  // to know whether the cache is warm.
   'apps/web/src/components/LegacySidebar.tsx': [
     [
       '            <span className={threadMetaClassName}>\n              <span className="inline-flex items-center gap-1">\n',
-      '            <span className={threadMetaClassName}>\n              <span className="relative inline-flex items-center gap-1">\n',
+      [
+        '            <span',
+        '              className={cn(',
+        '                threadMetaClassName,',
+        '                "flex flex-col items-center justify-center self-stretch [&:has(>[data-rubato-cache])]:justify-end",',
+        '              )}',
+        '            >',
+        '              <RubatoCacheCapsule environmentId={thread.environmentId} threadId={thread.id} />',
+        '              <span className="inline-flex items-center gap-1">',
+        '',
+      ].join('\n'),
       'replace',
-    ],
-    [
-      '              </span>\n            </span>\n          </div>\n        </div>\n      </div>\n    </SidebarMenuSubItem>\n',
-      '                <RubatoCacheCapsule environmentId={thread.environmentId} threadId={thread.id} />\n',
     ],
     [
       '              <TooltipPopup side="top">{thread.title}</TooltipPopup>\n',
