@@ -46,7 +46,7 @@ describe("verbatimSegments", () => {
   test("#given a Korean record #when read #then the symptom body, Hangul quotes and > lines are the user's words; fenced templates are not", () => {
     expect(verbatimSegments(KOREAN)).toEqual({
       symptoms: ["캐시가 또 깨졌다. `cacheRead 0`\n두 번째 줄"],
-      quotes: ["캐시 98% 를 지켜라"],
+      quotes: ['"캐시 98% 를 지켜라"'],
       blockquotes: ["센파이 쓰면 안 됨"],
     })
   })
@@ -72,7 +72,7 @@ describe("translation check", () => {
   test("#given a reworded quote or > line #when checked #then each is named", () => {
     const translated = ENGLISH.replace("캐시 98% 를 지켜라", "keep cache at 98%").replace("> 센파이 쓰면 안 됨", "> do not use Senpi")
     expect(missingVerbatim(KOREAN, translated)).toEqual([
-      "quoted text changed: 캐시 98% 를 지켜라",
+      'quoted text changed: "캐시 98% 를 지켜라"',
       "> quote changed: 센파이 쓰면 안 됨",
     ])
   })
@@ -96,14 +96,14 @@ describe("translation check, any language and every byte", () => {
   test("#given an English user quote reworded #when checked #then it fails", () => {
     const before = '## 결론\n사용자는 "Do not create user.md or soul.md." 라고 말했다.\n'
     expect(translationProblems(before, '## Conclusion\nThe user said "Creating user.md and soul.md is allowed."\n'))
-      .toEqual(["quoted text changed: Do not create user.md or soul.md."])
+      .toEqual(['quoted text changed: "Do not create user.md or soul.md."'])
   })
 
   test("#given a single-quoted user quote changed #when checked #then it fails, while apostrophes inside words open nothing", () => {
     const before = "## 결론\n사용자는 '자가 저장소는 건드리지 마' 라고 말했다.\n"
     expect(translationProblems(before, "## Conclusion\nThe user said 'Feel free to change the self store.'\n"))
-      .toEqual(["quoted text changed: 자가 저장소는 건드리지 마"])
-    expect(verbatimSegments("the user's store isn't 'kept' here").quotes).toEqual(["kept"])
+      .toEqual(["quoted text changed: '자가 저장소는 건드리지 마'"])
+    expect(verbatimSegments("the user's store isn't 'kept' here").quotes).toEqual(["'kept'"])
   })
 
   test("#given a kept quote whose surrounding meaning is reversed #when checked #then the mechanical check cannot see it (a reader must)", () => {
@@ -120,5 +120,13 @@ describe("translation check, short files", () => {
 
   test("#given a short file translated with one Korean term left #when checked #then it passes", () => {
     expect(translationProblems("## 결론\n엔진은 stock pi다.\n", "## Conclusion\nThe engine is stock pi (\"파이\").\n")).toEqual([])
+  })
+})
+
+describe("translation check, quote marks", () => {
+  // checker, 2026-10-04: the trial turned “…” into "…" around kept text.
+  test("#given curly quotes turned straight around unchanged text #when checked #then it fails", () => {
+    expect(translationProblems("## 결론\n사용자는 “무엇이 아닌지” 를 물었다.\n", '## Conclusion\nThe user asked "무엇이 아닌지".\n'))
+      .toEqual(["quoted text changed: “무엇이 아닌지”"])
   })
 })
