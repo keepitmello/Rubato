@@ -1,5 +1,3 @@
-import { realpathSync } from "node:fs";
-import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -298,17 +296,6 @@ export function loadBootChrome() {
   return import(pathToFileURL(join(repositoryRoot, "harness", "rubato-pi", "src", "boot-chrome.mjs")).href);
 }
 
-export async function loadPinnedPiTui() {
-  try {
-    return await import("@earendil-works/pi-tui");
-  } catch (directError) {
-    try {
-      const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-      const senpiRoot = realpathSync(join(repositoryRoot, "node_modules", "@code-yeongyu", "senpi"));
-      const nestedRequire = createRequire(join(senpiRoot, "package.json"));
-      return await import(pathToFileURL(nestedRequire.resolve("@earendil-works/pi-tui")).href);
-    } catch {
-      throw directError;
-    }
-  }
+export function loadPinnedPiTui() {
+  return import("@earendil-works/pi-tui");
 }

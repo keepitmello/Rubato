@@ -1,4 +1,4 @@
-import { createExtensionRuntime, DefaultResourceLoader, type ResourceLoader } from "@code-yeongyu/senpi"
+import { createExtensionRuntime, DefaultResourceLoader, type ResourceLoader } from "@earendil-works/pi-coding-agent"
 
 import { createMinimalSenpiResourceLoader } from "../../senpi/minimal-resource-loader"
 

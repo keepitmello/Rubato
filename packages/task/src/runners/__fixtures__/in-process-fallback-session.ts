@@ -9,7 +9,7 @@ import {
   ModelRuntime,
   SessionManager,
   type AgentSessionEvent,
-} from "@code-yeongyu/senpi"
+} from "@earendil-works/pi-coding-agent"
 
 import { createMinimalSenpiResourceLoader } from "../../senpi/minimal-resource-loader"
 import { createRuntimeFallbackSettings } from "../in-process/runtime-fallback-settings"
@@ -50,7 +50,7 @@ export type FallbackSessionHarness = {
 
 export async function createFallbackSessionHarness(errorMessage: string): Promise<FallbackSessionHarness> {
   const root = mkdtempSync(join(tmpdir(), "senpi-task-access-terminated-"))
-  const modelRuntime = ModelRuntime.createSync()
+  const modelRuntime = await ModelRuntime.create({ authPath: join(root, "auth.json"), modelsPath: null })
   const modelRegistry = new ModelRegistry(modelRuntime)
   const calls: string[] = []
   const provider = {
@@ -88,7 +88,6 @@ export async function createFallbackSessionHarness(errorMessage: string): Promis
     agentDir: join(root, "agent"),
     model: primary,
     modelRuntime,
-    modelRegistry,
     settingsManager,
     sessionManager: SessionManager.inMemory(),
     resourceLoader: createMinimalSenpiResourceLoader({
@@ -97,7 +96,6 @@ export async function createFallbackSessionHarness(errorMessage: string): Promis
     tools: [],
     customTools: [],
     scopedModels: [],
-    favoriteModels: [],
   })
   const events: AgentSessionEvent[] = []
   const unsubscribe = session.subscribe((event) => events.push(event))

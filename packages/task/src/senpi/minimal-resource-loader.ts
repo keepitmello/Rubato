@@ -2,7 +2,7 @@ import type {
   ExtensionRuntime,
   LoadExtensionsResult,
   ResourceLoader,
-} from "@code-yeongyu/senpi"
+} from "@earendil-works/pi-coding-agent"
 
 export type MinimalSenpiResourceLoaderOptions = {
   readonly runtime: ExtensionRuntime

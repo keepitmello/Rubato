@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 
-import type { MessageRenderer } from "@code-yeongyu/senpi"
+import type { MessageRenderer } from "@earendil-works/pi-coding-agent"
 import { normalizeRendererText, rendererVisibleWidth } from "@rubato/task"
 
 import { Theme } from "../../senpi-test-runtime"

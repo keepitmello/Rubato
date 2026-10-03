@@ -30,15 +30,11 @@ const staged = await stagePiRuntime({
 });
 const runtime = resolvePiRuntime({ root: staged.root });
 const sdk = await import(pathToFileURL(runtime.sdkEntry));
-const { AssistantMessageEventStream } = await import(pathToFileURL(join(
-  runtime.codingAgentDir,
-  "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js",
+const { AssistantMessageEventStream } = await import(pathToFileURL(join(runtime.packages["@earendil-works/pi-ai"].dir, "dist/utils/event-stream.js",
 )).href);
 // 0.86.0: provider stream 입력이 Context -> TranscriptContext 로 바뀌었다. TranscriptContext
 // 에는 messages 만 있으므로 시스템 프롬프트와 도구 목록을 messages 에서 되짚어 읽는다.
-const { getCurrentSystemPrompt, getCurrentTools } = await import(pathToFileURL(join(
-  runtime.codingAgentDir,
-  "node_modules/@earendil-works/pi-ai/dist/utils/transcript.js",
+const { getCurrentSystemPrompt, getCurrentTools } = await import(pathToFileURL(join(runtime.packages["@earendil-works/pi-ai"].dir, "dist/utils/transcript.js",
 )).href);
 const promptRules = await import(pathToFileURL(join(
   staged.root,

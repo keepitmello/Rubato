@@ -1,11 +1,11 @@
 // Preserve Pi's RPC command/UI implementation. A hosted session supplies only
 // transport and lifecycle; the existing executable still owns stdio/signals.
 const packageName = "@earendil-works/pi-coding-agent";
-const version = "0.86.1";
+import { PI_VERSION as version } from "../../pi-version.mjs";
 const hashes = {
-  "dist/core/agent-session.js": "edaff7055ced7d49d25135c92415fbbfd9c14c4a29be5a79510ab9216045d6d9",
-  "dist/core/agent-session.d.ts": "423bdca09eabd78aa1e729136dd9a1e2fff3b8116c6bc2d3fee3337b269a8432",
-  "dist/modes/rpc/rpc-mode.js": "bdd94e753e6d19731d9fb9ea370462d095d64f1e78bddd7651320663fa57c4ff",
+  "dist/core/agent-session.js": "35ca1dabd54d98c236c9601b569c2856b726ade392d06b2eaaf50158f48913ab",
+  "dist/core/agent-session.d.ts": "2e50b35a37f9c7149c6297ae554b2d965bd74dbfcb8ccd7be44f13226ce497e7",
+  "dist/modes/rpc/rpc-mode.js": "631697cd35928fc827f4a423538c43ff227b8cbf63c2a2f11060616f55eba6db",
   "dist/modes/rpc/rpc-mode.d.ts": "6c6799bca7017657b3e38e55638bf7233c157082aeb176b90b71343bda3482c4",
 };
 function once(source, before, after) {

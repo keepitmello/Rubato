@@ -3,86 +3,13 @@
   "generatedFrom": "bun.lock",
   "packages": [
     {
-      "name": "@anthropic-ai/claude-agent-sdk-darwin-arm64",
-      "version": "0.3.259",
-      "license": "SEE LICENSE IN LICENSE.md",
-      "approvedException": true,
-      "exceptionReason": "Pre-existing pinned Anthropic SDK platform payload; use and redistribution remain subject to the license shipped by Anthropic."
-    },
-    {
-      "name": "@anthropic-ai/claude-agent-sdk-darwin-x64",
-      "version": "0.3.259",
-      "license": "SEE LICENSE IN LICENSE.md",
-      "approvedException": true,
-      "exceptionReason": "Pre-existing pinned Anthropic SDK platform payload; use and redistribution remain subject to the license shipped by Anthropic."
-    },
-    {
-      "name": "@anthropic-ai/claude-agent-sdk-linux-arm64-musl",
-      "version": "0.3.259",
-      "license": "SEE LICENSE IN LICENSE.md",
-      "approvedException": true,
-      "exceptionReason": "Pre-existing pinned Anthropic SDK platform payload; use and redistribution remain subject to the license shipped by Anthropic."
-    },
-    {
-      "name": "@anthropic-ai/claude-agent-sdk-linux-arm64",
-      "version": "0.3.259",
-      "license": "SEE LICENSE IN LICENSE.md",
-      "approvedException": true,
-      "exceptionReason": "Pre-existing pinned Anthropic SDK platform payload; use and redistribution remain subject to the license shipped by Anthropic."
-    },
-    {
-      "name": "@anthropic-ai/claude-agent-sdk-linux-x64-musl",
-      "version": "0.3.259",
-      "license": "SEE LICENSE IN LICENSE.md",
-      "approvedException": true,
-      "exceptionReason": "Pre-existing pinned Anthropic SDK platform payload; use and redistribution remain subject to the license shipped by Anthropic."
-    },
-    {
-      "name": "@anthropic-ai/claude-agent-sdk-linux-x64",
-      "version": "0.3.259",
-      "license": "SEE LICENSE IN LICENSE.md",
-      "approvedException": true,
-      "exceptionReason": "Pre-existing pinned Anthropic SDK platform payload; use and redistribution remain subject to the license shipped by Anthropic."
-    },
-    {
-      "name": "@anthropic-ai/claude-agent-sdk-win32-arm64",
-      "version": "0.3.259",
-      "license": "SEE LICENSE IN LICENSE.md",
-      "approvedException": true,
-      "exceptionReason": "Pre-existing pinned Anthropic SDK platform payload; use and redistribution remain subject to the license shipped by Anthropic."
-    },
-    {
-      "name": "@anthropic-ai/claude-agent-sdk-win32-x64",
-      "version": "0.3.259",
-      "license": "SEE LICENSE IN LICENSE.md",
-      "approvedException": true,
-      "exceptionReason": "Pre-existing pinned Anthropic SDK platform payload; use and redistribution remain subject to the license shipped by Anthropic."
-    },
-    {
-      "name": "@anthropic-ai/claude-agent-sdk",
-      "version": "0.3.259",
-      "license": "SEE LICENSE IN README.md",
-      "approvedException": true,
-      "exceptionReason": "Pre-existing pinned Anthropic SDK platform payload; use and redistribution remain subject to the license shipped by Anthropic."
-    },
-    {
       "name": "@anthropic-ai/sdk",
-      "version": "0.123.0",
-      "license": "MIT"
-    },
-    {
-      "name": "@asamuzakjp/css-color",
-      "version": "6.0.7",
-      "license": "MIT"
-    },
-    {
-      "name": "@asamuzakjp/dom-selector",
-      "version": "8.3.2",
+      "version": "0.129.0",
       "license": "MIT"
     },
     {
       "name": "@aws-sdk/client-bedrock-runtime",
-      "version": "3.1116.0",
+      "version": "3.1127.0",
       "license": "Apache-2.0"
     },
     {
@@ -91,43 +18,48 @@
       "license": "Apache-2.0"
     },
     {
-      "name": "@aws-sdk/credential-provider-env",
-      "version": "3.972.70",
+      "name": "@aws-sdk/core",
+      "version": "3.978.1",
       "license": "Apache-2.0"
     },
     {
-      "name": "@aws-sdk/credential-provider-http",
+      "name": "@aws-sdk/credential-provider-env",
       "version": "3.972.72",
       "license": "Apache-2.0"
     },
     {
+      "name": "@aws-sdk/credential-provider-http",
+      "version": "3.972.74",
+      "license": "Apache-2.0"
+    },
+    {
       "name": "@aws-sdk/credential-provider-ini",
-      "version": "3.973.15",
+      "version": "3.973.17",
       "license": "Apache-2.0"
     },
     {
       "name": "@aws-sdk/credential-provider-login",
-      "version": "3.972.77",
+      "version": "3.972.79",
       "license": "Apache-2.0"
     },
     {
       "name": "@aws-sdk/credential-provider-node",
-      "version": "3.972.81",
+      "version": "3.972.84",
       "license": "Apache-2.0"
     },
     {
       "name": "@aws-sdk/credential-provider-process",
-      "version": "3.972.70",
+      "version": "3.972.72",
       "license": "Apache-2.0"
     },
     {
       "name": "@aws-sdk/credential-provider-sso",
-      "version": "3.973.14",
+      "version": "3.973.16",
       "license": "Apache-2.0"
     },
     {
       "name": "@aws-sdk/credential-provider-web-identity",
-      "version": "3.972.76",
+      "version": "3.972.78",
       "license": "Apache-2.0"
     },
     {
@@ -151,13 +83,28 @@
       "license": "Apache-2.0"
     },
     {
+      "name": "@aws-sdk/nested-clients",
+      "version": "3.997.46",
+      "license": "Apache-2.0"
+    },
+    {
       "name": "@aws-sdk/signature-v4-multi-region",
       "version": "3.996.46",
       "license": "Apache-2.0"
     },
     {
+      "name": "@aws-sdk/signature-v4-multi-region",
+      "version": "3.996.47",
+      "license": "Apache-2.0"
+    },
+    {
       "name": "@aws-sdk/token-providers",
-      "version": "3.1116.0",
+      "version": "3.1127.0",
+      "license": "Apache-2.0"
+    },
+    {
+      "name": "@aws-sdk/token-providers",
+      "version": "3.1138.0",
       "license": "Apache-2.0"
     },
     {
@@ -166,8 +113,18 @@
       "license": "Apache-2.0"
     },
     {
+      "name": "@aws-sdk/types",
+      "version": "3.974.6",
+      "license": "Apache-2.0"
+    },
+    {
       "name": "@aws-sdk/xml-builder",
       "version": "3.972.40",
+      "license": "Apache-2.0"
+    },
+    {
+      "name": "@aws-sdk/xml-builder",
+      "version": "3.972.41",
       "license": "Apache-2.0"
     },
     {
@@ -176,28 +133,8 @@
       "license": "Apache-2.0"
     },
     {
-      "name": "@babel/helper-string-parser",
-      "version": "8.0.0",
-      "license": "MIT"
-    },
-    {
-      "name": "@babel/helper-validator-identifier",
-      "version": "8.0.4",
-      "license": "MIT"
-    },
-    {
-      "name": "@babel/parser",
-      "version": "8.0.4",
-      "license": "MIT"
-    },
-    {
       "name": "@babel/runtime",
       "version": "7.29.2",
-      "license": "MIT"
-    },
-    {
-      "name": "@babel/types",
-      "version": "8.0.4",
       "license": "MIT"
     },
     {
@@ -246,82 +183,43 @@
       "license": "MIT OR Apache-2.0"
     },
     {
-      "name": "@bramus/specificity",
-      "version": "2.4.2",
+      "name": "@earendil-works/chord",
+      "version": "1.0.1",
       "license": "MIT"
     },
     {
-      "name": "@bufbuild/protobuf",
-      "version": "2.14.0",
-      "license": "Apache-2.0 AND BSD-3-Clause"
-    },
-    {
-      "name": "@code-yeongyu/senpi-agent-core",
-      "version": "2026.9.4-3",
+      "name": "@earendil-works/pi-agent-core",
+      "version": "1.0.1",
       "license": "MIT"
     },
     {
-      "name": "@code-yeongyu/senpi-ai",
-      "version": "2026.9.4-3",
+      "name": "@earendil-works/pi-ai",
+      "version": "1.0.1",
       "license": "MIT"
     },
     {
-      "name": "@code-yeongyu/senpi-codemode",
-      "version": "2026.9.4-3",
+      "name": "@earendil-works/pi-codemode",
+      "version": "1.0.1",
       "license": "MIT"
     },
     {
-      "name": "@code-yeongyu/senpi-pty",
-      "version": "2026.9.4-3",
+      "name": "@earendil-works/pi-coding-agent",
+      "version": "1.0.1",
       "license": "MIT"
     },
     {
-      "name": "@code-yeongyu/senpi-telemetry",
-      "version": "2026.9.4-3",
+      "name": "@earendil-works/pi-mcp",
+      "version": "1.0.1",
       "license": "MIT"
     },
     {
-      "name": "@code-yeongyu/senpi-tui",
-      "version": "2026.9.4-3",
+      "name": "@earendil-works/pi-telemetry",
+      "version": "1.0.1",
       "license": "MIT"
     },
     {
-      "name": "@code-yeongyu/senpi",
-      "version": "2026.9.4-3",
-      "license": "MIT"
-    },
-    {
-      "name": "@csstools/color-helpers",
-      "version": "6.1.1",
-      "license": "MIT-0",
-      "approvedException": true,
-      "exceptionReason": "Pre-existing lockfile dependency under a permissive non-copyleft license; retained as an explicit reviewed exception to the Stage 9 allowlist."
-    },
-    {
-      "name": "@csstools/css-calc",
-      "version": "3.3.0",
-      "license": "MIT"
-    },
-    {
-      "name": "@csstools/css-color-parser",
-      "version": "4.2.0",
-      "license": "MIT"
-    },
-    {
-      "name": "@csstools/css-parser-algorithms",
-      "version": "4.0.0",
-      "license": "MIT"
-    },
-    {
-      "name": "@csstools/css-syntax-patches-for-csstree",
-      "version": "1.1.8",
-      "license": "MIT-0",
-      "approvedException": true,
-      "exceptionReason": "Pre-existing lockfile dependency under a permissive non-copyleft license; retained as an explicit reviewed exception to the Stage 9 allowlist."
-    },
-    {
-      "name": "@csstools/css-tokenizer",
-      "version": "4.0.0",
+      "name": "@earendil-works/pi-tui",
+      "version": "1.0.1",
       "license": "MIT"
     },
     {
@@ -330,8 +228,18 @@
       "license": "MIT"
     },
     {
+      "name": "@esbuild/aix-ppc64",
+      "version": "0.28.2",
+      "license": "MIT"
+    },
+    {
       "name": "@esbuild/android-arm",
       "version": "0.25.9",
+      "license": "MIT"
+    },
+    {
+      "name": "@esbuild/android-arm",
+      "version": "0.28.2",
       "license": "MIT"
     },
     {
@@ -340,8 +248,18 @@
       "license": "MIT"
     },
     {
+      "name": "@esbuild/android-arm64",
+      "version": "0.28.2",
+      "license": "MIT"
+    },
+    {
       "name": "@esbuild/android-x64",
       "version": "0.25.9",
+      "license": "MIT"
+    },
+    {
+      "name": "@esbuild/android-x64",
+      "version": "0.28.2",
       "license": "MIT"
     },
     {
@@ -350,8 +268,18 @@
       "license": "MIT"
     },
     {
+      "name": "@esbuild/darwin-arm64",
+      "version": "0.28.2",
+      "license": "MIT"
+    },
+    {
       "name": "@esbuild/darwin-x64",
       "version": "0.25.9",
+      "license": "MIT"
+    },
+    {
+      "name": "@esbuild/darwin-x64",
+      "version": "0.28.2",
       "license": "MIT"
     },
     {
@@ -360,8 +288,18 @@
       "license": "MIT"
     },
     {
+      "name": "@esbuild/freebsd-arm64",
+      "version": "0.28.2",
+      "license": "MIT"
+    },
+    {
       "name": "@esbuild/freebsd-x64",
       "version": "0.25.9",
+      "license": "MIT"
+    },
+    {
+      "name": "@esbuild/freebsd-x64",
+      "version": "0.28.2",
       "license": "MIT"
     },
     {
@@ -370,8 +308,18 @@
       "license": "MIT"
     },
     {
+      "name": "@esbuild/linux-arm",
+      "version": "0.28.2",
+      "license": "MIT"
+    },
+    {
       "name": "@esbuild/linux-arm64",
       "version": "0.25.9",
+      "license": "MIT"
+    },
+    {
+      "name": "@esbuild/linux-arm64",
+      "version": "0.28.2",
       "license": "MIT"
     },
     {
@@ -380,8 +328,18 @@
       "license": "MIT"
     },
     {
+      "name": "@esbuild/linux-ia32",
+      "version": "0.28.2",
+      "license": "MIT"
+    },
+    {
       "name": "@esbuild/linux-loong64",
       "version": "0.25.9",
+      "license": "MIT"
+    },
+    {
+      "name": "@esbuild/linux-loong64",
+      "version": "0.28.2",
       "license": "MIT"
     },
     {
@@ -390,8 +348,18 @@
       "license": "MIT"
     },
     {
+      "name": "@esbuild/linux-mips64el",
+      "version": "0.28.2",
+      "license": "MIT"
+    },
+    {
       "name": "@esbuild/linux-ppc64",
       "version": "0.25.9",
+      "license": "MIT"
+    },
+    {
+      "name": "@esbuild/linux-ppc64",
+      "version": "0.28.2",
       "license": "MIT"
     },
     {
@@ -400,8 +368,18 @@
       "license": "MIT"
     },
     {
+      "name": "@esbuild/linux-riscv64",
+      "version": "0.28.2",
+      "license": "MIT"
+    },
+    {
       "name": "@esbuild/linux-s390x",
       "version": "0.25.9",
+      "license": "MIT"
+    },
+    {
+      "name": "@esbuild/linux-s390x",
+      "version": "0.28.2",
       "license": "MIT"
     },
     {
@@ -410,8 +388,18 @@
       "license": "MIT"
     },
     {
+      "name": "@esbuild/linux-x64",
+      "version": "0.28.2",
+      "license": "MIT"
+    },
+    {
       "name": "@esbuild/netbsd-arm64",
       "version": "0.25.9",
+      "license": "MIT"
+    },
+    {
+      "name": "@esbuild/netbsd-arm64",
+      "version": "0.28.2",
       "license": "MIT"
     },
     {
@@ -420,8 +408,18 @@
       "license": "MIT"
     },
     {
+      "name": "@esbuild/netbsd-x64",
+      "version": "0.28.2",
+      "license": "MIT"
+    },
+    {
       "name": "@esbuild/openbsd-arm64",
       "version": "0.25.9",
+      "license": "MIT"
+    },
+    {
+      "name": "@esbuild/openbsd-arm64",
+      "version": "0.28.2",
       "license": "MIT"
     },
     {
@@ -430,8 +428,18 @@
       "license": "MIT"
     },
     {
+      "name": "@esbuild/openbsd-x64",
+      "version": "0.28.2",
+      "license": "MIT"
+    },
+    {
       "name": "@esbuild/openharmony-arm64",
       "version": "0.25.9",
+      "license": "MIT"
+    },
+    {
+      "name": "@esbuild/openharmony-arm64",
+      "version": "0.28.2",
       "license": "MIT"
     },
     {
@@ -440,8 +448,18 @@
       "license": "MIT"
     },
     {
+      "name": "@esbuild/sunos-x64",
+      "version": "0.28.2",
+      "license": "MIT"
+    },
+    {
       "name": "@esbuild/win32-arm64",
       "version": "0.25.9",
+      "license": "MIT"
+    },
+    {
+      "name": "@esbuild/win32-arm64",
+      "version": "0.28.2",
       "license": "MIT"
     },
     {
@@ -450,24 +468,24 @@
       "license": "MIT"
     },
     {
+      "name": "@esbuild/win32-ia32",
+      "version": "0.28.2",
+      "license": "MIT"
+    },
+    {
       "name": "@esbuild/win32-x64",
       "version": "0.25.9",
       "license": "MIT"
     },
     {
-      "name": "@exodus/bytes",
-      "version": "1.15.1",
+      "name": "@esbuild/win32-x64",
+      "version": "0.28.2",
       "license": "MIT"
     },
     {
       "name": "@google/genai",
-      "version": "2.18.0",
+      "version": "2.21.0",
       "license": "Apache-2.0"
-    },
-    {
-      "name": "@hono/node-server",
-      "version": "2.1.1",
-      "license": "MIT"
     },
     {
       "name": "@jridgewell/gen-mapping",
@@ -493,81 +511,6 @@
       "name": "@jridgewell/trace-mapping",
       "version": "0.3.31",
       "license": "MIT"
-    },
-    {
-      "name": "@mariozechner/clipboard-darwin-arm64",
-      "version": "0.3.9",
-      "license": "MIT"
-    },
-    {
-      "name": "@mariozechner/clipboard-darwin-universal",
-      "version": "0.3.9",
-      "license": "MIT"
-    },
-    {
-      "name": "@mariozechner/clipboard-darwin-x64",
-      "version": "0.3.9",
-      "license": "MIT"
-    },
-    {
-      "name": "@mariozechner/clipboard-linux-arm64-gnu",
-      "version": "0.3.9",
-      "license": "MIT"
-    },
-    {
-      "name": "@mariozechner/clipboard-linux-arm64-musl",
-      "version": "0.3.9",
-      "license": "MIT"
-    },
-    {
-      "name": "@mariozechner/clipboard-linux-riscv64-gnu",
-      "version": "0.3.9",
-      "license": "MIT"
-    },
-    {
-      "name": "@mariozechner/clipboard-linux-x64-gnu",
-      "version": "0.3.9",
-      "license": "MIT"
-    },
-    {
-      "name": "@mariozechner/clipboard-linux-x64-musl",
-      "version": "0.3.9",
-      "license": "MIT"
-    },
-    {
-      "name": "@mariozechner/clipboard-win32-arm64-msvc",
-      "version": "0.3.9",
-      "license": "MIT"
-    },
-    {
-      "name": "@mariozechner/clipboard-win32-x64-msvc",
-      "version": "0.3.9",
-      "license": "MIT"
-    },
-    {
-      "name": "@mariozechner/clipboard",
-      "version": "0.3.9",
-      "license": "MIT"
-    },
-    {
-      "name": "@mixmark-io/domino",
-      "version": "2.2.0",
-      "license": "BSD-2-Clause"
-    },
-    {
-      "name": "@modelcontextprotocol/sdk",
-      "version": "1.30.0",
-      "license": "MIT"
-    },
-    {
-      "name": "@mozilla/readability",
-      "version": "0.6.0",
-      "license": "Apache-2.0"
-    },
-    {
-      "name": "@opentelemetry/api",
-      "version": "1.9.1",
-      "license": "Apache-2.0"
     },
     {
       "name": "@oxc-project/types",
@@ -710,6 +653,11 @@
       "license": "Apache-2.0"
     },
     {
+      "name": "@smithy/core",
+      "version": "3.35.1",
+      "license": "Apache-2.0"
+    },
+    {
       "name": "@smithy/credential-provider-imds",
       "version": "4.5.2",
       "license": "Apache-2.0"
@@ -720,8 +668,18 @@
       "license": "Apache-2.0"
     },
     {
+      "name": "@smithy/fetch-http-handler",
+      "version": "5.8.0",
+      "license": "Apache-2.0"
+    },
+    {
       "name": "@smithy/node-http-handler",
       "version": "4.11.3",
+      "license": "Apache-2.0"
+    },
+    {
+      "name": "@smithy/node-http-handler",
+      "version": "4.12.1",
       "license": "Apache-2.0"
     },
     {
@@ -732,6 +690,11 @@
     {
       "name": "@smithy/types",
       "version": "4.17.2",
+      "license": "Apache-2.0"
+    },
+    {
+      "name": "@smithy/types",
+      "version": "4.19.0",
       "license": "Apache-2.0"
     },
     {
@@ -945,16 +908,6 @@
       "license": "MIT"
     },
     {
-      "name": "@xterm/headless",
-      "version": "6.0.0",
-      "license": "MIT"
-    },
-    {
-      "name": "accepts",
-      "version": "2.0.0",
-      "license": "MIT"
-    },
-    {
       "name": "acorn",
       "version": "8.18.0",
       "license": "MIT"
@@ -967,16 +920,6 @@
     {
       "name": "agent-base",
       "version": "9.0.0",
-      "license": "MIT"
-    },
-    {
-      "name": "ajv-formats",
-      "version": "3.0.1",
-      "license": "MIT"
-    },
-    {
-      "name": "ajv",
-      "version": "8.20.0",
       "license": "MIT"
     },
     {
@@ -1002,23 +945,18 @@
       "license": "MIT"
     },
     {
-      "name": "bidi-js",
-      "version": "1.0.3",
-      "license": "MIT"
-    },
-    {
       "name": "bignumber.js",
       "version": "9.3.1",
       "license": "MIT"
     },
     {
-      "name": "body-parser",
-      "version": "2.3.0",
+      "name": "bowser",
+      "version": "2.14.1",
       "license": "MIT"
     },
     {
-      "name": "bowser",
-      "version": "2.14.1",
+      "name": "brace-expansion",
+      "version": "5.0.12",
       "license": "MIT"
     },
     {
@@ -1042,21 +980,6 @@
       "license": "MIT"
     },
     {
-      "name": "bytes",
-      "version": "3.1.2",
-      "license": "MIT"
-    },
-    {
-      "name": "call-bind-apply-helpers",
-      "version": "1.0.2",
-      "license": "MIT"
-    },
-    {
-      "name": "call-bound",
-      "version": "1.0.4",
-      "license": "MIT"
-    },
-    {
       "name": "chai",
       "version": "6.2.2",
       "license": "MIT"
@@ -1072,38 +995,8 @@
       "license": "MIT"
     },
     {
-      "name": "content-disposition",
-      "version": "1.1.0",
-      "license": "MIT"
-    },
-    {
-      "name": "content-type",
-      "version": "1.0.5",
-      "license": "MIT"
-    },
-    {
-      "name": "content-type",
-      "version": "2.1.0",
-      "license": "MIT"
-    },
-    {
       "name": "convert-source-map",
       "version": "2.0.0",
-      "license": "MIT"
-    },
-    {
-      "name": "cookie-signature",
-      "version": "1.2.2",
-      "license": "MIT"
-    },
-    {
-      "name": "cookie",
-      "version": "0.7.2",
-      "license": "MIT"
-    },
-    {
-      "name": "cors",
-      "version": "2.8.6",
       "license": "MIT"
     },
     {
@@ -1112,33 +1005,13 @@
       "license": "MIT"
     },
     {
-      "name": "css-tree",
-      "version": "3.2.1",
-      "license": "MIT"
-    },
-    {
       "name": "data-uri-to-buffer",
       "version": "4.0.1",
       "license": "MIT"
     },
     {
-      "name": "data-urls",
-      "version": "7.0.0",
-      "license": "MIT"
-    },
-    {
       "name": "debug",
       "version": "4.4.3",
-      "license": "MIT"
-    },
-    {
-      "name": "decimal.js",
-      "version": "10.6.0",
-      "license": "MIT"
-    },
-    {
-      "name": "depd",
-      "version": "2.0.0",
       "license": "MIT"
     },
     {
@@ -1148,13 +1021,13 @@
     },
     {
       "name": "diff",
-      "version": "9.0.0",
+      "version": "8.0.4",
       "license": "BSD-3-Clause"
     },
     {
-      "name": "dunder-proto",
-      "version": "1.0.1",
-      "license": "MIT"
+      "name": "diff",
+      "version": "9.0.0",
+      "license": "BSD-3-Clause"
     },
     {
       "name": "ecdsa-sig-formatter",
@@ -1162,38 +1035,8 @@
       "license": "Apache-2.0"
     },
     {
-      "name": "ee-first",
-      "version": "1.1.1",
-      "license": "MIT"
-    },
-    {
-      "name": "encodeurl",
-      "version": "2.0.0",
-      "license": "MIT"
-    },
-    {
-      "name": "entities",
-      "version": "8.0.0",
-      "license": "BSD-2-Clause"
-    },
-    {
-      "name": "es-define-property",
-      "version": "1.0.1",
-      "license": "MIT"
-    },
-    {
-      "name": "es-errors",
-      "version": "1.3.0",
-      "license": "MIT"
-    },
-    {
       "name": "es-module-lexer",
       "version": "2.3.2",
-      "license": "MIT"
-    },
-    {
-      "name": "es-object-atoms",
-      "version": "1.1.2",
       "license": "MIT"
     },
     {
@@ -1202,8 +1045,8 @@
       "license": "MIT"
     },
     {
-      "name": "escape-html",
-      "version": "1.0.3",
+      "name": "esbuild",
+      "version": "0.28.2",
       "license": "MIT"
     },
     {
@@ -1212,43 +1055,13 @@
       "license": "MIT"
     },
     {
-      "name": "etag",
-      "version": "1.8.1",
-      "license": "MIT"
-    },
-    {
-      "name": "eventsource-parser",
-      "version": "3.1.0",
-      "license": "MIT"
-    },
-    {
-      "name": "eventsource",
-      "version": "3.0.7",
-      "license": "MIT"
-    },
-    {
       "name": "expect-type",
       "version": "1.4.0",
       "license": "Apache-2.0"
     },
     {
-      "name": "express-rate-limit",
-      "version": "8.7.0",
-      "license": "MIT"
-    },
-    {
-      "name": "express",
-      "version": "5.2.1",
-      "license": "MIT"
-    },
-    {
       "name": "extend",
       "version": "3.0.2",
-      "license": "MIT"
-    },
-    {
-      "name": "fast-deep-equal",
-      "version": "3.1.3",
       "license": "MIT"
     },
     {
@@ -1257,11 +1070,6 @@
       "license": "Unlicense",
       "approvedException": true,
       "exceptionReason": "Pre-existing lockfile dependency under a permissive non-copyleft license; retained as an explicit reviewed exception to the Stage 9 allowlist."
-    },
-    {
-      "name": "fast-uri",
-      "version": "3.1.6",
-      "license": "BSD-3-Clause"
     },
     {
       "name": "fdir",
@@ -1274,33 +1082,13 @@
       "license": "MIT"
     },
     {
-      "name": "finalhandler",
-      "version": "2.1.1",
-      "license": "MIT"
-    },
-    {
       "name": "formdata-polyfill",
       "version": "4.0.10",
       "license": "MIT"
     },
     {
-      "name": "forwarded",
-      "version": "0.2.0",
-      "license": "MIT"
-    },
-    {
-      "name": "fresh",
-      "version": "2.0.0",
-      "license": "MIT"
-    },
-    {
       "name": "fsevents",
       "version": "2.3.3",
-      "license": "MIT"
-    },
-    {
-      "name": "function-bind",
-      "version": "1.1.2",
       "license": "MIT"
     },
     {
@@ -1319,23 +1107,6 @@
       "license": "MIT"
     },
     {
-      "name": "get-intrinsic",
-      "version": "1.3.0",
-      "license": "MIT"
-    },
-    {
-      "name": "get-proto",
-      "version": "1.0.1",
-      "license": "MIT"
-    },
-    {
-      "name": "glob",
-      "version": "13.0.6",
-      "license": "BlueOak-1.0.0",
-      "approvedException": true,
-      "exceptionReason": "Pre-existing lockfile dependency under a permissive non-copyleft license; retained as an explicit reviewed exception to the Stage 9 allowlist."
-    },
-    {
       "name": "google-auth-library",
       "version": "10.6.2",
       "license": "Apache-2.0"
@@ -1344,11 +1115,6 @@
       "name": "google-logging-utils",
       "version": "1.1.3",
       "license": "Apache-2.0"
-    },
-    {
-      "name": "gopd",
-      "version": "1.2.0",
-      "license": "MIT"
     },
     {
       "name": "graceful-fs",
@@ -1361,44 +1127,14 @@
       "license": "Apache-2.0"
     },
     {
-      "name": "has-symbols",
-      "version": "1.1.0",
-      "license": "MIT"
-    },
-    {
-      "name": "hasown",
-      "version": "2.0.3",
-      "license": "MIT"
-    },
-    {
       "name": "highlight.js",
-      "version": "11.12.0",
+      "version": "10.7.3",
       "license": "BSD-3-Clause"
     },
     {
-      "name": "hono",
-      "version": "4.12.27",
-      "license": "MIT"
-    },
-    {
-      "name": "hono",
-      "version": "4.13.5",
-      "license": "MIT"
-    },
-    {
       "name": "hosted-git-info",
-      "version": "10.1.1",
+      "version": "9.0.3",
       "license": "ISC"
-    },
-    {
-      "name": "html-encoding-sniffer",
-      "version": "6.0.0",
-      "license": "MIT"
-    },
-    {
-      "name": "http-errors",
-      "version": "2.0.1",
-      "license": "MIT"
     },
     {
       "name": "http-proxy-agent",
@@ -1416,38 +1152,8 @@
       "license": "MIT"
     },
     {
-      "name": "iconv-lite",
-      "version": "0.7.3",
-      "license": "MIT"
-    },
-    {
       "name": "ignore",
-      "version": "7.0.6",
-      "license": "MIT"
-    },
-    {
-      "name": "inherits",
-      "version": "2.0.4",
-      "license": "ISC"
-    },
-    {
-      "name": "ip-address",
-      "version": "10.2.0",
-      "license": "MIT"
-    },
-    {
-      "name": "ipaddr.js",
-      "version": "1.9.1",
-      "license": "MIT"
-    },
-    {
-      "name": "is-potential-custom-element-name",
-      "version": "1.0.1",
-      "license": "MIT"
-    },
-    {
-      "name": "is-promise",
-      "version": "4.0.0",
+      "version": "7.0.8",
       "license": "MIT"
     },
     {
@@ -1461,18 +1167,8 @@
       "license": "MIT"
     },
     {
-      "name": "jose",
-      "version": "6.2.3",
-      "license": "MIT"
-    },
-    {
       "name": "js-yaml",
       "version": "5.4.1",
-      "license": "MIT"
-    },
-    {
-      "name": "jsdom",
-      "version": "30.0.1",
       "license": "MIT"
     },
     {
@@ -1484,16 +1180,6 @@
       "name": "json-schema-to-ts",
       "version": "3.1.1",
       "license": "MIT"
-    },
-    {
-      "name": "json-schema-traverse",
-      "version": "1.0.0",
-      "license": "MIT"
-    },
-    {
-      "name": "json-schema-typed",
-      "version": "8.0.2",
-      "license": "BSD-2-Clause"
     },
     {
       "name": "jsonc-parser",
@@ -1589,51 +1275,12 @@
     },
     {
       "name": "marked",
-      "version": "18.0.10",
-      "license": "MIT"
-    },
-    {
-      "name": "math-intrinsics",
-      "version": "1.1.0",
-      "license": "MIT"
-    },
-    {
-      "name": "mdn-data",
-      "version": "2.27.1",
-      "license": "CC0-1.0",
-      "approvedException": true,
-      "exceptionReason": "Pre-existing lockfile dependency under a permissive non-copyleft license; retained as an explicit reviewed exception to the Stage 9 allowlist."
-    },
-    {
-      "name": "media-typer",
-      "version": "1.1.0",
-      "license": "MIT"
-    },
-    {
-      "name": "merge-descriptors",
-      "version": "2.0.0",
-      "license": "MIT"
-    },
-    {
-      "name": "mime-db",
-      "version": "1.54.0",
-      "license": "MIT"
-    },
-    {
-      "name": "mime-types",
-      "version": "3.0.2",
+      "version": "18.0.11",
       "license": "MIT"
     },
     {
       "name": "minimatch",
       "version": "10.2.6",
-      "license": "BlueOak-1.0.0",
-      "approvedException": true,
-      "exceptionReason": "Pre-existing lockfile dependency under a permissive non-copyleft license; retained as an explicit reviewed exception to the Stage 9 allowlist."
-    },
-    {
-      "name": "minipass",
-      "version": "7.1.3",
       "license": "BlueOak-1.0.0",
       "approvedException": true,
       "exceptionReason": "Pre-existing lockfile dependency under a permissive non-copyleft license; retained as an explicit reviewed exception to the Stage 9 allowlist."
@@ -1646,11 +1293,6 @@
     {
       "name": "nanoid",
       "version": "3.3.18",
-      "license": "MIT"
-    },
-    {
-      "name": "negotiator",
-      "version": "1.0.0",
       "license": "MIT"
     },
     {
@@ -1674,48 +1316,18 @@
       "license": "MIT"
     },
     {
-      "name": "object-assign",
-      "version": "4.1.1",
-      "license": "MIT"
-    },
-    {
-      "name": "object-inspect",
-      "version": "1.13.4",
-      "license": "MIT"
-    },
-    {
       "name": "obug",
       "version": "2.1.4",
       "license": "MIT"
     },
     {
-      "name": "on-finished",
-      "version": "2.4.1",
-      "license": "MIT"
-    },
-    {
-      "name": "once",
-      "version": "1.4.0",
-      "license": "ISC"
-    },
-    {
       "name": "openai",
-      "version": "6.26.0",
+      "version": "7.19.0",
       "license": "Apache-2.0"
     },
     {
       "name": "p-retry",
       "version": "4.6.2",
-      "license": "MIT"
-    },
-    {
-      "name": "parse5",
-      "version": "8.0.1",
-      "license": "MIT"
-    },
-    {
-      "name": "parseurl",
-      "version": "1.3.3",
       "license": "MIT"
     },
     {
@@ -1726,18 +1338,6 @@
     {
       "name": "path-key",
       "version": "3.1.1",
-      "license": "MIT"
-    },
-    {
-      "name": "path-scurry",
-      "version": "2.0.2",
-      "license": "BlueOak-1.0.0",
-      "approvedException": true,
-      "exceptionReason": "Pre-existing lockfile dependency under a permissive non-copyleft license; retained as an explicit reviewed exception to the Stage 9 allowlist."
-    },
-    {
-      "name": "path-to-regexp",
-      "version": "8.4.2",
       "license": "MIT"
     },
     {
@@ -1756,11 +1356,6 @@
       "license": "MIT"
     },
     {
-      "name": "pkce-challenge",
-      "version": "5.0.1",
-      "license": "MIT"
-    },
-    {
       "name": "postcss",
       "version": "8.5.26",
       "license": "MIT"
@@ -1776,23 +1371,8 @@
       "license": "BSD-3-Clause"
     },
     {
-      "name": "proxy-addr",
-      "version": "2.0.7",
-      "license": "MIT"
-    },
-    {
       "name": "proxy-agent-negotiate",
       "version": "1.1.0",
-      "license": "MIT"
-    },
-    {
-      "name": "proxy-from-env",
-      "version": "2.1.0",
-      "license": "MIT"
-    },
-    {
-      "name": "punycode",
-      "version": "2.3.1",
       "license": "MIT"
     },
     {
@@ -1801,23 +1381,8 @@
       "license": "Apache-2.0"
     },
     {
-      "name": "qs",
-      "version": "6.15.3",
-      "license": "BSD-3-Clause"
-    },
-    {
-      "name": "range-parser",
-      "version": "1.3.0",
-      "license": "MIT"
-    },
-    {
-      "name": "raw-body",
-      "version": "3.0.2",
-      "license": "MIT"
-    },
-    {
-      "name": "require-from-string",
-      "version": "2.0.2",
+      "name": "quickjs-wasi",
+      "version": "3.6.2",
       "license": "MIT"
     },
     {
@@ -1836,43 +1401,13 @@
       "license": "MIT"
     },
     {
-      "name": "router",
-      "version": "2.2.0",
-      "license": "MIT"
-    },
-    {
       "name": "safe-buffer",
       "version": "5.2.1",
       "license": "MIT"
     },
     {
-      "name": "safer-buffer",
-      "version": "2.1.2",
-      "license": "MIT"
-    },
-    {
-      "name": "saxes",
-      "version": "6.0.0",
-      "license": "ISC"
-    },
-    {
       "name": "semver",
       "version": "7.8.5",
-      "license": "ISC"
-    },
-    {
-      "name": "send",
-      "version": "1.2.1",
-      "license": "MIT"
-    },
-    {
-      "name": "serve-static",
-      "version": "2.2.1",
-      "license": "MIT"
-    },
-    {
-      "name": "setprototypeof",
-      "version": "1.2.0",
       "license": "ISC"
     },
     {
@@ -1883,26 +1418,6 @@
     {
       "name": "shebang-regex",
       "version": "3.0.0",
-      "license": "MIT"
-    },
-    {
-      "name": "side-channel-list",
-      "version": "1.0.1",
-      "license": "MIT"
-    },
-    {
-      "name": "side-channel-map",
-      "version": "1.0.1",
-      "license": "MIT"
-    },
-    {
-      "name": "side-channel-weakmap",
-      "version": "1.0.2",
-      "license": "MIT"
-    },
-    {
-      "name": "side-channel",
-      "version": "1.1.1",
       "license": "MIT"
     },
     {
@@ -1941,18 +1456,8 @@
       "license": "MIT"
     },
     {
-      "name": "statuses",
-      "version": "2.0.2",
-      "license": "MIT"
-    },
-    {
       "name": "std-env",
       "version": "4.2.0",
-      "license": "MIT"
-    },
-    {
-      "name": "symbol-tree",
-      "version": "3.2.4",
       "license": "MIT"
     },
     {
@@ -1981,31 +1486,6 @@
       "license": "MIT"
     },
     {
-      "name": "tldts-core",
-      "version": "7.4.10",
-      "license": "MIT"
-    },
-    {
-      "name": "tldts",
-      "version": "7.4.10",
-      "license": "MIT"
-    },
-    {
-      "name": "toidentifier",
-      "version": "1.0.1",
-      "license": "MIT"
-    },
-    {
-      "name": "tough-cookie",
-      "version": "6.0.2",
-      "license": "BSD-3-Clause"
-    },
-    {
-      "name": "tr46",
-      "version": "6.0.0",
-      "license": "MIT"
-    },
-    {
       "name": "ts-algebra",
       "version": "2.0.0",
       "license": "MIT"
@@ -2018,23 +1498,13 @@
       "exceptionReason": "Pre-existing lockfile dependency under a permissive non-copyleft license; retained as an explicit reviewed exception to the Stage 9 allowlist."
     },
     {
-      "name": "turndown",
-      "version": "7.2.4",
-      "license": "MIT"
-    },
-    {
-      "name": "type-is",
-      "version": "2.1.0",
-      "license": "MIT"
-    },
-    {
       "name": "typebox",
       "version": "1.3.16",
       "license": "MIT"
     },
     {
       "name": "typebox",
-      "version": "1.3.18",
+      "version": "1.3.27",
       "license": "MIT"
     },
     {
@@ -2054,17 +1524,7 @@
     },
     {
       "name": "undici",
-      "version": "8.10.0",
-      "license": "MIT"
-    },
-    {
-      "name": "unpipe",
-      "version": "1.0.0",
-      "license": "MIT"
-    },
-    {
-      "name": "vary",
-      "version": "1.1.2",
+      "version": "8.10.2",
       "license": "MIT"
     },
     {
@@ -2078,33 +1538,8 @@
       "license": "MIT"
     },
     {
-      "name": "w3c-xmlserializer",
-      "version": "5.0.0",
-      "license": "MIT"
-    },
-    {
       "name": "web-streams-polyfill",
       "version": "3.3.3",
-      "license": "MIT"
-    },
-    {
-      "name": "webidl-conversions",
-      "version": "8.0.1",
-      "license": "BSD-2-Clause"
-    },
-    {
-      "name": "whatwg-mimetype",
-      "version": "5.0.0",
-      "license": "MIT"
-    },
-    {
-      "name": "whatwg-url",
-      "version": "16.0.1",
-      "license": "MIT"
-    },
-    {
-      "name": "whatwg-url",
-      "version": "17.1.0",
       "license": "MIT"
     },
     {
@@ -2118,39 +1553,14 @@
       "license": "MIT"
     },
     {
-      "name": "wrappy",
-      "version": "1.0.2",
-      "license": "ISC"
-    },
-    {
       "name": "ws",
       "version": "8.21.3",
-      "license": "MIT"
-    },
-    {
-      "name": "xml-name-validator",
-      "version": "5.0.0",
-      "license": "Apache-2.0"
-    },
-    {
-      "name": "xmlchars",
-      "version": "2.2.0",
       "license": "MIT"
     },
     {
       "name": "yaml",
       "version": "2.9.0",
       "license": "ISC"
-    },
-    {
-      "name": "zod-to-json-schema",
-      "version": "3.25.2",
-      "license": "ISC"
-    },
-    {
-      "name": "zod",
-      "version": "4.4.3",
-      "license": "MIT"
     },
     {
       "name": "zod",

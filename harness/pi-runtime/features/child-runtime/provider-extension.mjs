@@ -1,5 +1,5 @@
-import { createProvidersExtension } from "../../node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/rubato-features/providers/extension.mjs"
-import { createProviderExecution } from "../../node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/rubato-features/provider-execution/extension.mjs"
+import { createProvidersExtension } from "../../node_modules/@earendil-works/pi-ai/dist/rubato-features/providers/extension.mjs"
+import { createProviderExecution } from "../../node_modules/@earendil-works/pi-ai/dist/rubato-features/provider-execution/extension.mjs"
 
 /**
  * Child-only provider closure. The parent passes this file with --extension;

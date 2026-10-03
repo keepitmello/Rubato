@@ -22,8 +22,8 @@ import { pathToFileURL } from "node:url";
 import { extractHarnessExtras, loadRolePrompt } from "../../src/system-prompt.mjs";
 import { senpiSystemPromptModule } from "../../src/engine-paths.mjs";
 
-// senpi 의 package.json exports 가 하위 경로를 막아서 require.resolve 로는 못 뚫는다.
-// 레포의 다른 테스트들과 같은 방식으로 dist 를 직접 가리킨다.
+// pi 의 package.json exports 가 하위 경로를 막아서 require.resolve 로는 못 뚫는다.
+// 레포의 다른 테스트들과 같은 방식으로 (스테이징된) 엔진 dist 를 직접 가리킨다.
 const ENGINE_SYSTEM_PROMPT = senpiSystemPromptModule;
 
 // Build the candidate checkout, not a stale installation in the developer's home.
@@ -48,14 +48,14 @@ const ENGINE_BLOCKS = [
     why: "base.pi.md 의 Working agreement 가 대체한다",
   },
   {
-    probe: "Available tools:",
+    probe: "<tools>",
     fate: "drop",
     why: "도구 스키마는 API 로 따로 간다. 프롬프트 목록은 중복이다",
   },
   {
     probe: "you may have access to other custom tools",
     fate: "drop",
-    why: "위 Available tools 목록의 꿀리. 목록을 버렸으니 같이 버린다",
+    why: "위 <tools> 목록의 꼬리. 목록을 버렸으니 같이 버린다",
   },
   {
     probe: "Use bash for file operations like ls, rg, find",
@@ -88,12 +88,14 @@ const ENGINE_BLOCKS = [
     why: "없으면 세션이 어떤 스킬이 있는지 못 본다. 한 번 샜던 자리다",
   },
   {
-    probe: "<skill_roots>",
+    probe: "<available_skills>",
     fate: "keep",
-    why: "senpi 2026.9.4-3 이 스킬 경로를 rN/ 접두로 펼친다. 우리 지시가 아니라 엔진 컨텍스트라 그대로 실어 나른다",
+    why: "스킬 목록 본문. 위 안내문과 빈 줄로 갈라져 나온다",
   },
   {
-    probe: "Current working directory:",
+    probe: "<cwd>",
+    // extractHarnessExtras 는 <cwd> 섹션을 옛 한 줄 형태로 정규화해 싣는다.
+    extracted: "Current working directory: /tmp/rubato-drift",
     fate: "keep",
     why: "런타임 컨텍스트",
   },
@@ -136,7 +138,7 @@ test("엔진 기본 프롬프트에 우리가 모르는 블록이 생기지 않�
   assert.deepEqual(
     unknown,
     [],
-    `상류 Senpi 가 시스템 프롬프트에 새 블록을 추가했다. 버릴지 역할 프롬프트에 넣을지 정하고 ENGINE_BLOCKS 에 사유와 함께 적어라:\n\n${unknown.join("\n---\n")}`,
+    `상류 pi 가 시스템 프롬프트에 새 블록을 추가했다. 버릴지 역할 프롬프트에 넣을지 정하고 ENGINE_BLOCKS 에 사유와 함께 적어라:\n\n${unknown.join("\n---\n")}`,
   );
 });
 
@@ -147,7 +149,7 @@ test("keep 으로 표시한 블록은 extras 로 실제로 건져진다", async 
 
   for (const block of ENGINE_BLOCKS.filter((b) => b.fate === "keep")) {
     assert.ok(
-      extras.includes(block.probe),
+      extras.includes(block.extracted ?? block.probe),
       `"${block.probe}" 는 keep 인데 extractHarnessExtras 가 놓쳤다 (${block.why})`,
     );
   }

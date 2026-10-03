@@ -14,6 +14,10 @@ export const PI_PACKAGES = Object.freeze([
   "@earendil-works/pi-tui",
   "@earendil-works/chord",
   "@earendil-works/pi-telemetry",
+  // 1.0 (0.99): the built-in codemode/mcp extensions import these at load, even while
+  // stock-defaults keeps them off.
+  "@earendil-works/pi-codemode",
+  "@earendil-works/pi-mcp",
 ]);
 
 const CODING_AGENT = PI_PACKAGES[0];
@@ -23,9 +27,9 @@ const DEPENDENCY_EDGES = Object.freeze([
   [CODING_AGENT, "@earendil-works/pi-ai"],
   [CODING_AGENT, "@earendil-works/pi-tui"],
   [CODING_AGENT, "@earendil-works/chord"],
+  [CODING_AGENT, "@earendil-works/pi-codemode"],
+  [CODING_AGENT, "@earendil-works/pi-mcp"],
   ["@earendil-works/pi-agent-core", "@earendil-works/pi-ai"],
-  ["@earendil-works/pi-agent-core", "@earendil-works/chord"],
-  ["@earendil-works/pi-agent-core", "@earendil-works/pi-telemetry"],
   ["@earendil-works/pi-ai", "@earendil-works/pi-telemetry"],
 ]);
 

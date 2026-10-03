@@ -1,4 +1,4 @@
-import type { Theme } from "@code-yeongyu/senpi";
+import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { DocumentSymbol, SymbolInfo } from "@rubato/lsp-core";
 
 import { Text } from "./rendering.js";

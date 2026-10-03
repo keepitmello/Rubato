@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, test } from "bun:test"
-import { loadSkillsFromDir } from "@code-yeongyu/senpi"
+import { loadSkillsFromDir } from "@earendil-works/pi-coding-agent"
 
 import { buildSkillPrepend, createFsSkillLoader } from "./skills"
 

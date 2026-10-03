@@ -1,5 +1,5 @@
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
-const PACKAGE_VERSION = "0.86.1";
+import { PI_VERSION as PACKAGE_VERSION } from "../../pi-version.mjs";
 
 function replaceOnce(source, before, after, label) {
   const first = source.indexOf(before);
@@ -396,16 +396,16 @@ function patchPublicIndexTypes(source) {
 }
 
 export const patches = Object.freeze([
-  patch("dist/core/extensions/types.d.ts", "a4d5b8774fa8015b8a3274614f1398a6aeeffdd888c122910439666955dc2a52", patchExtensionTypes),
-  patch("dist/core/extensions/runner.js", "07a94efe560e6a460a415b2188c1c3c69ca151bd163c9b5f05347caf8403ace2", patchRunnerRuntime),
-  patch("dist/core/extensions/runner.d.ts", "fc0f81468c51bacfc093ac09974aa8e8053ca463e205eb66a1c63b0b655f61b9", patchRunnerTypes),
-  patch("dist/core/extensions/index.d.ts", "5b294bd70da0744cb18a45d1cfb774237986c047ec1996e03f24a9605efdd4ab", patchExtensionIndexTypes),
-  patch("dist/core/agent-session.js", "edaff7055ced7d49d25135c92415fbbfd9c14c4a29be5a79510ab9216045d6d9", patchAgentSessionRuntime),
-  patch("dist/core/agent-session.d.ts", "423bdca09eabd78aa1e729136dd9a1e2fff3b8116c6bc2d3fee3337b269a8432", patchAgentSessionTypes),
-  patch("dist/modes/interactive/interactive-mode.js", "8c9275944466afe2df78dcf02f2f6c83f6bc46fb0fdbd7257a3ef9d1da1ed027", patchInteractiveRuntime),
-  patch("dist/modes/rpc/rpc-mode.js", "bdd94e753e6d19731d9fb9ea370462d095d64f1e78bddd7651320663fa57c4ff", patchRpcModeRuntime),
-  patch("dist/modes/rpc/rpc-types.d.ts", "e968e5be01dc7ad9615f938ae867ef136fa495f13dcf169942e9f781a299d9eb", patchRpcTypes),
-  patch("dist/modes/rpc/rpc-client.js", "5be2be46c82959fdc452a06cb64c4412098193d33b67c26a4a99b8fbf70f2f26", patchRpcClientRuntime),
-  patch("dist/modes/rpc/rpc-client.d.ts", "467fbcf2e2922c2f260bd66ad438f8ca2955718aca353ed75cf9586d5bc1ec86", patchRpcClientTypes),
-  patch("dist/index.d.ts", "44bf19d2716cb18382aa6bd0ae88b7e03ee50ae75b56acb6d11beb40dfe99dea", patchPublicIndexTypes),
+  patch("dist/core/extensions/types.d.ts", "abd9e9be0bf21b4c35621fe90b79af75c85b774e8b254b515d699785fda5962a", patchExtensionTypes),
+  patch("dist/core/extensions/runner.js", "258f142bc56cc84d953ef6146222e5ff3a94cc908592a1b3d075d34bbcd68b36", patchRunnerRuntime),
+  patch("dist/core/extensions/runner.d.ts", "6aef77e094e73abd7e508850e45c58e244ab2d5db6c4f6278d8652ea9ded2bb1", patchRunnerTypes),
+  patch("dist/core/extensions/index.d.ts", "fe5661c6cd9a948293f0f1d1db5a052dcc60493f6b1f68349a7ab96987b10e40", patchExtensionIndexTypes),
+  patch("dist/core/agent-session.js", "35ca1dabd54d98c236c9601b569c2856b726ade392d06b2eaaf50158f48913ab", patchAgentSessionRuntime),
+  patch("dist/core/agent-session.d.ts", "2e50b35a37f9c7149c6297ae554b2d965bd74dbfcb8ccd7be44f13226ce497e7", patchAgentSessionTypes),
+  patch("dist/modes/interactive/interactive-mode.js", "14508d43f3dd47faa6b10c4a6537740f1cf238eee3fc873a9e0648125214bbcc", patchInteractiveRuntime),
+  patch("dist/modes/rpc/rpc-mode.js", "631697cd35928fc827f4a423538c43ff227b8cbf63c2a2f11060616f55eba6db", patchRpcModeRuntime),
+  patch("dist/modes/rpc/rpc-types.d.ts", "68b6dc2e47a3969c09c961a40d0462473407b6786f3bd02715fa035e816e2af1", patchRpcTypes),
+  patch("dist/modes/rpc/rpc-client.js", "6cbb7d183db13468af61af733013a97ee6f5547ccd44edb1f85647f8bd6f218c", patchRpcClientRuntime),
+  patch("dist/modes/rpc/rpc-client.d.ts", "85ec53b3f019e0176bdbb8f843a213d8ae8aa0bba937dce40291e1315b762b1b", patchRpcClientTypes),
+  patch("dist/index.d.ts", "b254e36846b1dcc64ce1a8ba72e23fb410df4aa4408ba8c23e69e5b3f934e3cc", patchPublicIndexTypes),
 ]);

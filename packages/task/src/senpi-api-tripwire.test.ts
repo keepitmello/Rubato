@@ -14,11 +14,16 @@ import {
   type RpcCommand,
   type RpcResponse,
   type ToolDefinition,
-} from "@code-yeongyu/senpi"
+} from "@earendil-works/pi-coding-agent"
 
 import * as senpiTask from "./index"
 import { createMinimalSenpiResourceLoader } from "./index"
 import type { AgentResolutionResult, ResolveAgentOptions } from "./index"
+
+function rootStockPiVersion(): string {
+  const root = JSON.parse(readFileSync(join(import.meta.dir, "..", "..", "..", "package.json"), "utf8"))
+  return root.devDependencies["@earendil-works/pi-coding-agent"]
+}
 
 function acceptRpcTypes(command: RpcCommand, response: RpcResponse, event: AgentSessionEvent): readonly string[] {
   return [typeof command, typeof response, event.type]
@@ -99,7 +104,6 @@ describe("pinned Senpi API surface", () => {
         model: undefined,
         resourceLoader: loader,
         scopedModels: [],
-        favoriteModels: [],
       })
 
       // then
@@ -124,7 +128,7 @@ describe("pinned Senpi API surface", () => {
 
   test("#given pinned artifact #when package metadata and rpc entry are checked #then expected public contract exists", async () => {
     // given
-    const packageRoot = dirname(dirname(Bun.resolveSync("@code-yeongyu/senpi", import.meta.dir)))
+    const packageRoot = dirname(dirname(Bun.resolveSync("@earendil-works/pi-coding-agent", import.meta.dir)))
     const packageJson = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"))
     const command: RpcCommand = { type: "get_commands" }
     const response: RpcResponse = {
@@ -136,14 +140,15 @@ describe("pinned Senpi API surface", () => {
     const event: AgentSessionEvent = { type: "auto_retry_end", success: true, attempt: 1 }
 
     // when
-    const rpcEntry = Bun.resolveSync("@code-yeongyu/senpi/rpc-entry", import.meta.dir)
+    const rpcEntry = Bun.resolveSync("@earendil-works/pi-coding-agent/rpc-entry", import.meta.dir)
     const values = acceptRpcTypes(command, response, event)
 
     // then
     expect(SessionManager.inMemory()).toBeInstanceOf(SessionManager)
     expect(createExtensionRuntime().flagValues).toBeInstanceOf(Map)
     expect(rpcEntry).toContain("rpc-entry.js")
-    expect(packageJson.piConfig.name).toBe("senpi")
+    expect(packageJson.name).toBe("@earendil-works/pi-coding-agent")
+    expect(packageJson.version).toBe(rootStockPiVersion())
     expect(values).toEqual(["object", "object", "auto_retry_end"])
   })
 })

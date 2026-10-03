@@ -2,7 +2,7 @@ import { type ChildProcess, type SpawnOptions, spawn } from "node:child_process"
 import { mkdtempSync, rmSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
-import type { AgentSessionEvent } from "@code-yeongyu/senpi"
+import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent"
 import { afterEach, describe, expect, test } from "bun:test"
 
 import type { RpcSpawnDescriptor } from "./rpc/spawn"

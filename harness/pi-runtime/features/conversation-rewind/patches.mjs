@@ -8,7 +8,7 @@
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
-const VERSION = "0.86.1";
+import { PI_VERSION as VERSION } from "../../pi-version.mjs";
 const IMPORT = 'import { findRewindTarget, REWIND_MARK } from "../../rubato-features/conversation-rewind/rewind.mjs";\n';
 const ANCHOR = '            case "get_fork_messages": {';
 
@@ -68,7 +68,7 @@ export const patches = Object.freeze([
     packageName: PACKAGE_NAME,
     version: VERSION,
     path: "dist/modes/rpc/rpc-mode.js",
-    preimageSha256: "bdd94e753e6d19731d9fb9ea370462d095d64f1e78bddd7651320663fa57c4ff",
+    preimageSha256: "631697cd35928fc827f4a423538c43ff227b8cbf63c2a2f11060616f55eba6db",
     apply: patchRpcRewind,
   }),
 ]);

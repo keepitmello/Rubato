@@ -1,4 +1,4 @@
-import type { AgentToolResult, Theme, ThemeColor, ToolRenderResultOptions } from "@code-yeongyu/senpi"
+import type { AgentToolResult, Theme, ThemeColor, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent"
 import type { AgentSnapshot } from "@rubato/agent-core"
 
 import {

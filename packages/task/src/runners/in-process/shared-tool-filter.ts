@@ -1,4 +1,4 @@
-import type { ToolDefinition } from "@code-yeongyu/senpi"
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent"
 
 // The shared-MCP-client mechanism: sharedParentTools are the parent extension's own
 // registered ToolDefinitions (same process, same execute closures, same client instances).

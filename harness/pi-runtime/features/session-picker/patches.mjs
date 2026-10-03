@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
-const PACKAGE_VERSION = "0.86.1";
+import { PI_VERSION as PACKAGE_VERSION } from "../../pi-version.mjs";
 const PAGER_IMPORT = 'import { SessionPickerPager } from "../../../rubato-features/session-picker/pager.mjs";';
 
 function replaceOnce(source, before, after, label) {
@@ -436,8 +436,8 @@ export const files = Object.freeze([
 export const patches = Object.freeze([
   patch("dist/modes/interactive/components/session-selector.js", "926e788829f9cb8eb1792f56b5b23e74f575db88606968a60948e2ce45806296", patchSelectorRuntime),
   patch("dist/modes/interactive/components/session-selector.d.ts", "b2c8a390ad9a001c93ee0e035525ade3300d6f2d2233bb58b59691f5f8392f39", patchSelectorTypes),
-  patch("dist/modes/interactive/interactive-mode.js", "8c9275944466afe2df78dcf02f2f6c83f6bc46fb0fdbd7257a3ef9d1da1ed027", patchInteractiveRuntime),
-  patch("dist/main.js", "e36837e55af695cbb95216763fbc929e87829ced837dd32f281bba8c8e50035c", patchMainRuntime),
+  patch("dist/modes/interactive/interactive-mode.js", "14508d43f3dd47faa6b10c4a6537740f1cf238eee3fc873a9e0648125214bbcc", patchInteractiveRuntime),
+  patch("dist/main.js", "060521b0b81f91948d8ded9139e423e5d0c9e6808a45c81750cc30519de4d2db", patchMainRuntime),
   patch("dist/cli/session-picker.js", "b5b3cc89815cc11f4519af27b9abb5a972a110fcfa08096f70dc0623e763cd44", patchPickerRuntime),
   patch("dist/cli/session-picker.d.ts", "ceb19ff55fbeea924167a77fb7cb373e03a265226b6abec580c4f7046a831734", patchPickerTypes),
 ]);

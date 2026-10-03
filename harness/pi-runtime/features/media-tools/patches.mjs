@@ -2,7 +2,7 @@ import { readdirSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const VERSION = "0.86.1";
+import { PI_VERSION as VERSION } from "../../pi-version.mjs";
 const featureDir = dirname(fileURLToPath(import.meta.url));
 
 function replaceOnce(source, before, after, label) {
@@ -367,13 +367,17 @@ export function patchAnthropicMessagesNative(source) {
 	);
 	next = replaceOnce(
 		next,
-		`    const converted = convertMessages(conversationMessages, isOAuthToken, cacheControl, compat.allowEmptySignature, model.compat?.supportsMidConvoEffort === true ? model.provider : undefined, nativeToolChanges);`,
-		`    const converted = convertMessages(conversationMessages, isOAuthToken, cacheControl, compat.allowEmptySignature, model.compat?.supportsMidConvoEffort === true ? model.provider : undefined, nativeToolChanges, model);`,
+		// 1.0.1 passes a tool-definition converter (inline tool_addition definitions) as the
+		// sixth argument instead of a nativeToolChanges flag; the model still goes last.
+		`        ? (tools) => convertTools(tools, isOAuthToken, compat.supportsEagerToolInputStreaming, compat.supportsStrictTools)
+        : undefined);`,
+		`        ? (tools) => convertTools(tools, isOAuthToken, compat.supportsEagerToolInputStreaming, compat.supportsStrictTools)
+        : undefined, model);`,
 		"convert-messages-model",
 	);
 	next = replaceOnce(
 		next,
-		`function convertMessages(transformedMessages, isOAuthToken, cacheControl, allowEmptySignature = false, managedProvider, nativeToolChanges = false) {`,
+		`function convertMessages(transformedMessages, isOAuthToken, cacheControl, allowEmptySignature = false, managedProvider, \n/** Converts tool definitions for native \`tool_addition\` blocks; undefined when tool changes are not native. */\nconvertToolDefinitions) {`,
 		`const REPLAYABLE_ANTHROPIC_PROVIDER_NATIVE_TYPES = new Set([
     "server_tool_use",
     "web_search_tool_result",
@@ -410,7 +414,7 @@ function isAnthropicWebSearchReplayBlock(raw) {
         return true;
     return raw.type === "server_tool_use" && raw.name === "web_search";
 }
-function convertMessages(transformedMessages, isOAuthToken, cacheControl, allowEmptySignature = false, managedProvider, nativeToolChanges = false, model) {`,
+function convertMessages(transformedMessages, isOAuthToken, cacheControl, allowEmptySignature = false, managedProvider, \n/** Converts tool definitions for native \`tool_addition\` blocks; undefined when tool changes are not native. */\nconvertToolDefinitions, model) {`,
 		"convert-messages-helpers",
 	);
 	next = replaceOnce(
@@ -489,7 +493,7 @@ export const patches = Object.freeze([
 		packageName: "@earendil-works/pi-ai",
 		version: VERSION,
 		path: "dist/api/openai-responses-shared.js",
-		preimageSha256: "7846279b34c2a569bda2b0753c8b083f8b976204b4fdd7586095ebbb6a643410",
+		preimageSha256: "8744ad2ce9ce2512993360600760f5bcdbeb520d0a641c655b2a0b7cbe9db10a",
 		apply: patchOpenAiResponsesShared,
 	}),
 	Object.freeze({
@@ -497,7 +501,7 @@ export const patches = Object.freeze([
 		packageName: "@earendil-works/pi-ai",
 		version: VERSION,
 		path: "dist/types.d.ts",
-		preimageSha256: "2527dc035a85e40708478ba1349f35cf7e71c64c4ba50ae547a4188950b1b22b",
+		preimageSha256: "c1cad96358be23269443a25171c76d6456c00dcc2ec7ef7b1dad812bcb2ea0f0",
 		apply: patchPiAiTypes,
 	}),
 	Object.freeze({
@@ -505,7 +509,7 @@ export const patches = Object.freeze([
 		packageName: "@earendil-works/pi-ai",
 		version: VERSION,
 		path: "dist/api/anthropic-messages.js",
-		preimageSha256: "54f32708dc88d951d4c1aacd9e2e531da098967cb61b98a726b43e99277e7754",
+		preimageSha256: "beb7ec1ad646151f73ee0199c2b30b944d4066e9ba0fa47421aa446ab3d7ec96",
 		apply: patchAnthropicMessagesNative,
 	}),
 ]);

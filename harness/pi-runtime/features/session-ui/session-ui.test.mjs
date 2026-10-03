@@ -57,7 +57,8 @@ test('real theme, keybindings and keyboard/capabilities stay local across concur
   const load = file => import(pathToFileURL(path.join(staged.root, file)).href);
   const { createUiScope, bindUiCallback, bindUiContext, uiProcess } = await load('rubato-features/session-ui/context.mjs');
   const agent = 'node_modules/@earendil-works/pi-coding-agent/';
-  const tui = agent + 'node_modules/@earendil-works/pi-tui/dist/';
+  // Wherever the install puts pi-tui (nested under pi-coding-agent in 0.86.1, hoisted since 1.0).
+  const tui = path.relative(staged.root, resolvePiRuntime({ root: staged.root }).packages['@earendil-works/pi-tui'].dir) + '/dist/';
   const themes = await load(agent + 'dist/modes/interactive/theme/theme.js');
   const keys = await load(tui + 'keys.js');
   const bindings = await load(tui + 'keybindings.js');
@@ -85,6 +86,15 @@ test('real theme, keybindings and keyboard/capabilities stay local across concur
   assert.equal(scopes[1].run(() => ui.notify()), 0);
   assert.equal(themes.theme.fg('accent', 'baseline'), baseline);
   assert.equal(uiProcess.stdout, process.stdout);
+  // 1.0 stores what the terminal reported about its colors (OSC replies, mode 2031) in
+  // theme.js module variables. Each hosted presentation is a different terminal.
+  const outsideTerminal = themes.getTerminalTheme();
+  scopes[0].run(() => { themes.setTerminalColors({ background: { r: 0, g: 0, b: 0 } }); themes.setTerminalColorScheme('dark'); });
+  scopes[1].run(() => { themes.setTerminalColors({ background: { r: 255, g: 255, b: 255 } }); themes.setTerminalColorScheme('light'); });
+  assert.deepEqual(scopes.map(scope => scope.run(() => themes.getTerminalTheme())), ['dark', 'light']);
+  scopes[1].run(() => themes.markTerminalColorsPending());
+  assert.deepEqual(scopes.map(scope => scope.state.terminalColorsPending), [false, true]);
+  assert.equal(themes.getTerminalTheme(), outsideTerminal);
   const rendered = [];
   const firstUi = scopes[0].run(() => bindUiContext({ setWidget(key, value) { rendered.push([uiProcess.stdout.marker, key, value]); } }));
   const captured = firstUi.setWidget;

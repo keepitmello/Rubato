@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events"
 import type { ChildProcess } from "node:child_process"
-import type { RpcCommand, RpcResponse } from "@code-yeongyu/senpi"
+import type { RpcCommand, RpcResponse } from "@earendil-works/pi-coding-agent"
 import { describe, expect, test } from "bun:test"
 
 import type { RpcChildHandle } from "../types"

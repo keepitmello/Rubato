@@ -1,4 +1,4 @@
-import type { Theme } from "@code-yeongyu/senpi";
+import type { Theme } from "@earendil-works/pi-coding-agent";
 
 import type { Location, LocationLink } from "@rubato/lsp-core"
 

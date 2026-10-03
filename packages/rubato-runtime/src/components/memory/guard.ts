@@ -1,7 +1,7 @@
 import { lstatSync, readdirSync, realpathSync } from "node:fs"
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path"
 
-import type { ToolCallEventResult } from "@code-yeongyu/senpi"
+import type { ToolCallEventResult } from "@earendil-works/pi-coding-agent"
 
 import type { ComponentContext, SenpiExtensionAPI } from "../../extension/types"
 import type { MemoryIdentityContext } from "./context"

@@ -1,4 +1,4 @@
-import type { AgentSessionEvent, SessionEntry } from "@code-yeongyu/senpi"
+import type { AgentSessionEvent, SessionEntry } from "@earendil-works/pi-coding-agent"
 import type { RunnerOutcome } from "./in-process/child-handle"
 
 export type RpcSwitchSessionResult = { readonly cancelled: boolean }

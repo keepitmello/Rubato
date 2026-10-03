@@ -228,7 +228,7 @@ function stageChildRoot() {
   touch(join(root, "rubato-features", "child-runtime", "provider-extension.mjs"))
   touch(join(
     root,
-    "node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/rubato-features/provider-execution/extension.mjs",
+    "node_modules/@earendil-works/pi-ai/dist/rubato-features/provider-execution/extension.mjs",
   ))
   const tierExtension = serviceTierExtensionPath(root)
   mkdirSync(dirname(tierExtension), { recursive: true })

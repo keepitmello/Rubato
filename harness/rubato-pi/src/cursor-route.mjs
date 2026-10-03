@@ -690,6 +690,9 @@ export function withCursorActivationCanary(provider, {
       // discovery 가 없으면(복원분 publish 만 있었다) 저장분을 canary 근거로 쓴다.
       // pinned 복원 publication 에는 `persist` 가 없으므로 목록은 `context.stored` 에서 읽는다.
       const models = discovered.length > 0 ? discovered : storedCursorModels(context);
+      // Stock pi publishes an empty discovery too. With no catalog there is nothing to verify
+      // and nothing to show, so publish nothing and never send the canary Run.
+      if (models.length === 0) return;
       await gate({ models, credential: context.credential, signal: context.signal });
       const marker = issueCursorActivationMarker({
         credential: context.credential,

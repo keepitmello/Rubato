@@ -1,3 +1,4 @@
+import { PI_VERSION } from "../../pi-version.mjs";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
@@ -153,15 +154,11 @@ const staged = await stagePiRuntime({
 });
 const runtime = resolvePiRuntime({ root: staged.root });
 const sdk = await import(pathToFileURL(runtime.sdkEntry));
-const { AssistantMessageEventStream } = await import(pathToFileURL(join(
-  runtime.codingAgentDir,
-  "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js",
+const { AssistantMessageEventStream } = await import(pathToFileURL(join(runtime.packages["@earendil-works/pi-ai"].dir, "dist/utils/event-stream.js",
 )));
 // 0.86 hands providers a normalized transcript: the prompt and the tool loadout are
 // message deltas, not top-level `context.systemPrompt` / `context.tools` fields.
-const { getCurrentSystemPrompt, getCurrentTools } = await import(pathToFileURL(join(
-  runtime.codingAgentDir,
-  "node_modules/@earendil-works/pi-ai/dist/utils/transcript.js",
+const { getCurrentSystemPrompt, getCurrentTools } = await import(pathToFileURL(join(runtime.packages["@earendil-works/pi-ai"].dir, "dist/utils/transcript.js",
 )));
 const { createContextNotesExtension } = await import(pathToFileURL(join(
   runtime.codingAgentDir,
@@ -305,7 +302,7 @@ test("descriptor is stock-locked, drift-failing, and composes with shared core f
   assert.equal(patches.length, 17);
   assert.equal(new Set(patches.map((entry) => entry.path)).size, patches.length);
   assert.ok(patches.every((entry) => ["@earendil-works/pi-coding-agent", "@earendil-works/pi-agent-core"].includes(entry.packageName)));
-  assert.ok(patches.every((entry) => entry.version === "0.86.1"));
+  assert.ok(patches.every((entry) => entry.version === PI_VERSION));
   assert.ok(patches.every((entry) => /^[a-f0-9]{64}$/.test(entry.preimageSha256)));
   assert.equal(staged.receipt.files.filter((entry) => entry.patches.some((id) => id.startsWith("context-window/"))).length, 17);
   assert.equal(staged.receipt.addedFiles.filter((entry) => entry.feature === "context-window").length, 2);
@@ -469,9 +466,16 @@ test("actual SDK commits new_context once and the immediate provider turn uses o
     },
     onError: (error) => errors.push(error),
   });
+  // Live state at the commit: compaction_start is published right after the atomic append, so
+  // the session's own messages (what the UI and estimatedTokensAfter read) must already be the
+  // new window there, not only the next provider projection.
+  const liveAtCommit = [];
   result.session.subscribe((event) => {
     if (event.type === "compaction_start" || event.type === "compaction_end") {
       compactionEvents.push(event);
+    }
+    if (event.type === "compaction_start" && event.reason === "extension") {
+      liveAtCommit.push(result.session.messages.filter((message) => message.role !== "system"));
     }
   });
   assert.equal(settingsManager.getCompactionSettings().enabled, false, "notes mode owns every stock automatic compaction entry");
@@ -529,6 +533,12 @@ test("actual SDK commits new_context once and the immediate provider turn uses o
     ["compaction_start", "extension", undefined],
     ["compaction_end", "extension", false],
   ]);
+  assert.equal(liveAtCommit.length, 1);
+  assert.equal(liveAtCommit[0].length, 1, "live state holds only the window carrier at the commit");
+  assert.match(textOf(liveAtCommit[0][0]), /^<rubato_context_window_v1>/);
+  const committed = compactionEvents.find((event) => event.type === "compaction_end")?.result;
+  assert.ok(Number.isFinite(committed.estimatedTokensAfter) && committed.estimatedTokensAfter > 0,
+    "estimatedTokensAfter is measured on the committed window");
 
   // Use the same public extension seam twice at one valid revision. JavaScript
   // enters the first call through commit before it can yield; the second call
@@ -672,9 +682,7 @@ test("actual unbundled RPC runs new_context and exposes stale/abort results with
   mkdirSync(agentDir);
   mkdirSync(sessionDir);
 
-  const streamUrl = pathToFileURL(join(
-    runtime.codingAgentDir,
-    "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js",
+  const streamUrl = pathToFileURL(join(runtime.packages["@earendil-works/pi-ai"].dir, "dist/utils/event-stream.js",
   )).href;
   const providerPath = join(scratch, "context-window-provider.mjs");
   writeFileSync(providerPath, `

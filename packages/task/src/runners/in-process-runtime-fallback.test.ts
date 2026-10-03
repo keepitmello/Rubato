@@ -4,7 +4,7 @@ import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { CreateAgentSessionOptions } from "@code-yeongyu/senpi"
+import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent"
 
 import { InProcessRunner } from "./in-process"
 import type { ChildSession, ChildSpec } from "./in-process"
@@ -34,14 +34,9 @@ function baseSpec(): ChildSpec {
   }
 }
 
+// The child's settings carry senpi's retry fallback keys (see runtime-fallback-settings.ts).
 function capturedRetrySettings(options: CreateAgentSessionOptions | undefined): unknown {
-  if (options === undefined) return undefined
-  const settingsManager = Reflect.get(options, "settingsManager")
-  if (typeof settingsManager !== "object" || settingsManager === null) return undefined
-  const getRetryFallbackSettings = Reflect.get(settingsManager, "getRetryFallbackSettings")
-  return typeof getRetryFallbackSettings === "function"
-    ? Reflect.apply(getRetryFallbackSettings, settingsManager, [])
-    : undefined
+  return options?.settingsManager?.getSettings().retry
 }
 
 describe("InProcessRunner runtime fallback", () => {
@@ -83,7 +78,7 @@ describe("InProcessRunner runtime fallback", () => {
     // then
     expect(capturedRetrySettings(captured)).toMatchObject({
       modelFallback: true,
-      chains: {
+      fallbackChains: {
         "kimi-coding/kimi-for-coding-highspeed-unlocked": [
           "quotio-openai/gpt-5.6-luna-fast:minimal",
           "example-gateway/z-ai/glm-5.2-ultrafast-unlocked:none",
@@ -122,7 +117,7 @@ describe("InProcessRunner runtime fallback", () => {
 
     // then
     expect(capturedRetrySettings(captured)).toMatchObject({
-      chains: {
+      fallbackChains: {
         "kimi-coding/kimi-for-coding-highspeed-unlocked": ["quotio-openai/gpt-5.6-luna-fast:high"],
       },
     })
@@ -143,9 +138,6 @@ describe("InProcessRunner runtime fallback", () => {
     await handle.waitForIdle()
 
     // then
-    expect(capturedRetrySettings(captured)).toMatchObject({
-      modelFallback: false,
-      chains: {},
-    })
+    expect(capturedRetrySettings(captured)).toEqual({ modelFallback: false })
   })
 })

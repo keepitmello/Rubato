@@ -47,7 +47,7 @@ jobs:
           node scripts/check-third-party-notices.mjs
           node --test scripts/check-third-party-notices.test.mjs scripts/license-policy.test.mjs scripts/check-executables.test.mjs
       - name: Release and selective-uninstall security tests
-        run: node --test scripts/remote-release/release-security.test.mjs
+        run: node --test scripts/remote-release/release-security.test.mjs scripts/remote-release/doctor-pi-pin.test.mjs
       - name: Hub and terminal adversarial boundary tests
         run: |
           bun test packages/rubato-remote-hub/test/path-security.test.ts packages/rubato-remote-hub/test/tickets-pairing.test.ts
