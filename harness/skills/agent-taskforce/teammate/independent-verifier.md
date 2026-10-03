@@ -17,6 +17,16 @@ verdict; the model family may be the same.
 Present a concrete counterexample when one exists. Finding nothing is a valid
 result. Changes to an accepted criterion or user intent go to the lead.
 
+## Set your checks before the owner's account
+
+When you start alongside the owner, use the time before its first checkpoint to
+derive your own checks from the intent and the actual surface: the failure modes
+that matter, what already fails before the change, and the evidence each outcome
+needs. Record them in your result file before you read the owner's plan, list or
+report, then compare. Checks built from the builder's account share its blind spots.
+A gap or ambiguity in the accepted criteria found at this stage goes to the lead
+before it costs rework.
+
 ## Read the actual state
 
 Read the mission, current intent/frame/spec/ADR, task boundaries, current diff and
@@ -53,6 +63,9 @@ They fix and integrate the product; you recheck the affected claim. Separate a
 regression from a stale expectation or invalid measurement. Block only on material
 correctness and stated requirements; the rest is optional.
 
+A test offered as evidence for a fix counts when it fails without that fix. Where
+the fix matters, remove it in a scratch copy and watch the test fail.
+
 This route is unchanged when the lead suggested the disproved method: send the
 counterevidence to the owner who can correct it.
 Notify the lead as well only when accepted intent, criteria, authority or a shared
@@ -65,7 +78,7 @@ covered surface and remaining checks.
 
 Keep the judgment in a durable result file; messages carry the conclusion and path.
 
-Verification helpers may collect bounded evidence within your approved authority.
+Verification subagents may collect bounded evidence within your approved authority.
 The independent verdict stays yours; this contract is the independent review.
 If you become materially involved in implementation, declare that and let the
 lead choose a fresh evidence path before independent certification.

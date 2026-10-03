@@ -7,7 +7,7 @@ and responsibility. These are the Pi edition's surfaces, not Codex role files.
 |---|---|
 | Lead | Current user-facing rubato-pi session |
 | Continuing owner/verifier | `team_create` member after combined intent/roster approval |
-| Bounded support | `Agent`, continued with `AgentSend` |
+| Subagent | `Agent`, continued with `AgentSend` |
 | Agent status/results | Completion pointer plus its result file; the notification is not work acceptance |
 | Team communication | Direct peer `team_send` mailbox |
 | Shared assignments/evidence | Team board/tasklist, including existing `metadata` |
@@ -47,7 +47,7 @@ Recovery does not authorize a model/cost change or reopening approved shutdown.
 A team lead and an owner read the result artifact or board rather than replaying a
 child's transcript; a completion carries its result file path. A teammate's normal
 turn end does not wake the lead — one aggregate wake arrives when the run's assigned
-board work is closed. The lead's own bounded discovery helper is distinct from a
+board work is closed. The lead's own discovery subagent is distinct from a
 continuing owner.
 A read of taskforce may choose direct work instead of `team_create`.
 
@@ -60,7 +60,7 @@ alternative session manager or become the technical integrator.
 
 Carry the same `intent_ref` and canonical workspace through mission, briefs and
 existing board metadata. Do not add unsupported arguments to `team_create` or
-`Agent`. The work-intent check is an explicit helper, not an automatic interceptor.
+`Agent`. The work-intent check is an explicit script, not an automatic interceptor.
 A provisioned worktree is not a new intent.
 
 A session ending or returning on scale or a stop does not complete an unsatisfied board

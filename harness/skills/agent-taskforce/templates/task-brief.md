@@ -1,6 +1,6 @@
 # Teammate task brief
 
-**Role and outcome:** owner, verifier or bounded support; the specific result
+**Role and outcome:** owner, verifier or subagent; the specific result
 assigned end to end. A verifier's result is a judgment, not a production patch.
 
 **Intent reference (when durable):** canonical workspace, path/URI, ID and revision;
@@ -35,8 +35,8 @@ actual permission. Absence of a contract grants no external delivery authority.
 and the accountable integration owner when outputs must be combined. The lead is
 not the technical message relay.
 
-**Local authority:** methods, local correction and helpers inside approved limits.
-A helper can reason within this scope; the sender keeps the wider outcome.
+**Local authority:** methods, local correction and subagents inside approved limits.
+A subagent can reason within this scope; the sender keeps the wider outcome.
 
 **Return decisions:** changes to intent, write boundaries, freezes, shared public
 commitments, irreversible actions or unapproved resource use. Ordinary diagnosis

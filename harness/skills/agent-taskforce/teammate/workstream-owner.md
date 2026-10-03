@@ -45,14 +45,14 @@ When evidence invalidates a premise shared with other owners, notify them and th
 lead promptly. The lead can recall affected claims; you still own the technical
 investigation or correction assigned to you.
 
-## Local support
+## Subagents
 
-You may do the whole outcome directly, regardless of model tier. Use a helper only
+You may do the whole outcome directly, regardless of model tier. Use a subagent only
 for a concrete benefit in isolated context, useful parallel work, fresh evidence or
 approved resource use that repays briefing, repeated reading and integration.
 Quote a saving only from measurements.
 
-Helpers may reason, investigate and propose solutions inside their scope. Keep the
+Subagents may reason, investigate and propose solutions inside their scope. Keep the
 coupled outcome and accountability here. Pass every binding boundary and the same
 intent reference; use Skill(dispatching) and Skill(model-guide). Related support
 continues through `AgentSend`. Record locally spawned support in your existing result
@@ -66,8 +66,11 @@ refuted approach. An approved larger model can be an initial owner.
 ## Verify and communicate
 
 Run checks appropriate to changed behavior at meaningful checkpoints. An approved
-verifier adds a separate judgment on top of your local checks; coordinate with it.
-Only a separate session's check counts as independent.
+verifier adds a separate judgment on top of your local checks. It usually starts
+with you and sets its own checks first; send it each checkpoint as it lands
+(revision, what changed, how to reproduce) rather than one package at the end, and
+take its defects and rechecks directly. Only a separate session's check counts as
+independent.
 
 Send actionable findings directly to named peers. Keep trial-and-error and long logs
 in the artifact. Notify the status surface or affected peers before a long-running
@@ -94,3 +97,5 @@ artifact/evidence without inventing external delivery permission.
 Leave a reproducible result: changed or established facts, artifact state, commands
 and decisive output, intent/criterion revision, remaining uncertainty, peer dependencies
 and any required decision. Preserve honest no-finding and conflict returns.
+Carry every open item your subagents returned into this result: resolved, left open
+with its reason, or handed on. A subagent's open item does not disappear in your summary.

@@ -22,7 +22,7 @@
 
 ## Constraints
 
-<Conditions with their named authority. Reference existing frame/spec clauses instead of copying them.>
+<Conditions with their named authority, including still-binding user constraints inherited from earlier intents on the same systems, each with its source. Reference existing frame/spec clauses instead of copying them.>
 
 ## Non-goals
 
