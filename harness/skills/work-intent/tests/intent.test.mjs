@@ -189,6 +189,15 @@ test('CLI round trip exercises the real executable with JSON output and failure 
   const stale = run('check', '--id', 'roundtrip', '--expect', draft.intent_ref.sha256, '--active');
   assert.equal(stale.status, 1); assert.match(stale.stderr, /stale/);
 });
+test('CLI runs when invoked through a symlinked install path', t => {
+  // Installs reach the helper as ~/.agents/skills/work-intent -> bundle; Node resolves
+  // import.meta.url to the real path while argv[1] keeps the link.
+  const { dir } = setup(t); const linked = path.join(dir, 'linked-skill');
+  symlinkSync(path.dirname(path.dirname(helper)), linked);
+  const result = spawnSync(process.execPath, [path.join(linked, 'scripts/intent.mjs'), 'list', '--workspace', dir], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), []);
+});
 
 test('revisions preserve the originating request and record their own reason separately', t => {
   const { store } = setup(t); const rec = active(store);
