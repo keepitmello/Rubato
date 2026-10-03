@@ -63,6 +63,31 @@ function encode(meta, body) {
   validateMeta(meta); validateBody(body);
   return `---\n${KEYS.map(k => `${k}: ${JSON.stringify(meta[k])}`).join('\n')}\n---\n\n${canonicalBody(body)}`;
 }
+// A translation keeps the user's own words: the originating request section whole, and every quoted
+// span or `>` line written in another script (non-ASCII), byte for byte.
+const QUOTED = /"([^"\n]*)"|“([^”\n]*)”|‘([^’\n]*)’|「([^」\n]*)」/g;
+function sectionOf(body, heading) {
+  const part = body.match(new RegExp(`^## ${heading}\\s*\\n([\\s\\S]*?)(?=^## |$(?![\\s\\S]))`, 'm'));
+  return part ? part[1].trim() : null;
+}
+function headings(body) { return body.match(/^#{1,2} .*$/gm)?.filter(h => !h.startsWith('# Intent:')) ?? []; }
+export function translationLosses(before, after) {
+  const losses = [];
+  const request = sectionOf(before, 'Originating request');
+  if (request !== null && sectionOf(after, 'Originating request') !== request) losses.push('## Originating request must stay byte for byte');
+  const kept = new Set();
+  for (const line of before.split('\n')) {
+    const quote = line.match(/^\s{0,3}>\s?(.*)$/);
+    if (quote && /[^\x00-\x7f]/.test(quote[1])) kept.add(quote[1].trimEnd());
+    for (const match of line.matchAll(QUOTED)) {
+      const inner = match[1] ?? match[2] ?? match[3] ?? match[4];
+      if (/[^\x00-\x7f]/.test(inner)) kept.add(inner);
+    }
+  }
+  for (const text of kept) if (!after.includes(text)) losses.push(`quoted text changed: ${text.length > 80 ? `${text.slice(0, 80)}…` : text}`);
+  if (headings(before).length !== headings(after).length) losses.push('the translation must keep the same sections');
+  return losses;
+}
 function approvalDigest({ meta, body }) {
   return sha256(JSON.stringify({ id: meta.id, revision: meta.revision, source: meta.source, revision_source: meta.revision_source, body }));
 }
@@ -172,6 +197,25 @@ export class IntentStore {
         revision_source: source, approval: null, approved_sha256: null, closure_evidence: null, superseded_by: null } };
     });
   }
+  // A new revision that says the same thing in another language. Status and closure stay; the
+  // previous approval is not stretched over the new text: the record now cites the translation's own
+  // authority and names the revision and digest the content was approved under.
+  translate(id, { expect, source, body }) {
+    if (!nonempty(source)) fail('translation needs the authority that asked for it (a user instruction reference)');
+    body = canonicalBody(body); validateBody(body);
+    return this.change(id, expect, rec => {
+      verifyApproval(rec);
+      const losses = translationLosses(rec.body, body);
+      if (losses.length) fail(`translation changed the user's words: ${losses.join('; ')}`);
+      const revision = rec.meta.revision + 1;
+      const meta = { ...rec.meta, revision, revision_source: `translation of revision ${rec.meta.revision}, content unchanged: ${source}` };
+      if (rec.meta.approval !== null) {
+        meta.approval = `revision ${revision} is a translation authorized by ${source}; the user has not reviewed its wording. Revision ${rec.meta.revision} approval: ${rec.meta.approval}${rec.meta.approved_sha256 ? ` (approved digest ${rec.meta.approved_sha256})` : ''}`;
+        meta.approved_sha256 = rec.meta.approved_sha256 === null ? null : approvalDigest({ meta, body });
+      }
+      return { meta, body };
+    });
+  }
   activate(id, { expect, approval }) {
     if (!nonempty(approval)) fail('approval must cite the actual human instruction/review, never silence');
     return this.change(id, expect, rec => {
@@ -225,6 +269,7 @@ const HELP = `Usage: node intent.mjs COMMAND --workspace /project [--home intent
   read --id ID                      Record, body and exact intent_ref
   create --id ID --source REF --body FILE
   revise --id ID --expect SHA --source REF --body FILE
+  translate --id ID --expect SHA --source REF --body FILE   Same content in another language
   activate --id ID --expect SHA --approval REF
   check --id ID [--expect SHA] [--active]
   close --id ID --expect SHA --status fulfilled|abandoned|superseded --evidence REF [--superseded-by ID]
@@ -236,6 +281,7 @@ export function main(argv) {
   const command = argv.shift(), args = {};
   const allowed = {
     list: ['all'], read: ['id'], create: ['id', 'source', 'body'], revise: ['id', 'expect', 'source', 'body'],
+    translate: ['id', 'expect', 'source', 'body'],
     activate: ['id', 'expect', 'approval'], check: ['id', 'expect', 'active'],
     close: ['id', 'expect', 'status', 'evidence', 'superseded-by'], index: ['write'],
   };
@@ -255,6 +301,7 @@ export function main(argv) {
   if (command === 'check') record = store.check(args.id, { expect: args.expect, active: args.active });
   if (command === 'create') record = store.create({ id: args.id, source: args.source, body: body() });
   if (command === 'revise') record = store.revise(args.id, { expect: args.expect, source: args.source, body: body() });
+  if (command === 'translate') record = store.translate(args.id, { expect: args.expect, source: args.source, body: body() });
   if (command === 'activate') record = store.activate(args.id, { expect: args.expect, approval: args.approval });
   if (command === 'close') record = store.close(args.id, { expect: args.expect, status: args.status, evidence: args.evidence, supersededBy: args['superseded-by'] });
   return { intent_ref: reference(record), ...record.meta, body: record.body };

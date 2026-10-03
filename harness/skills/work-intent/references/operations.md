@@ -63,6 +63,18 @@ edited. `read` still exposes such a record for recovery; use its current SHA wit
 to return to draft. A superseded intent cannot be revived: follow its replacement.
 An unavailable source or failed check is not permission to make a replacement record.
 
+A record written in another language becomes English with `translate` when the user asked for
+the translation. Status and closure stay; the revision increments; `revision_source` and the new
+`approval` cite the translation's authority and name the revision and digest the content was
+approved under, so the earlier approval is never stretched over new wording. The helper refuses
+a translation that changes `## Originating request`, a quoted span or `>` line in another script,
+or the number of sections, and refuses a record whose approved content was already edited.
+
+```sh
+node "$HELPER" translate --workspace "$PROJECT" --id document-authority \
+  --expect '<current sha256>' --source 'user instruction asking for the translation' --body /path/to/english.md
+```
+
 ```sh
 node "$HELPER" close --workspace "$PROJECT" --id document-authority \
   --expect '<current sha256>' --status fulfilled --evidence 'accepted tests/artifacts/delivery reference'
