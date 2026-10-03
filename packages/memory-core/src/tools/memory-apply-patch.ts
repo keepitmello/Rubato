@@ -60,7 +60,7 @@ export async function runMemoryApplyPatch(
     }
 
     return await lock("memory-write", async () => {
-      await repo.cleanCheck()
+      await repo.adoptStrayEdits()
       const paths = await applyOperations(repo.dir, parseMemoryPatch(params.input))
       let result
       try {

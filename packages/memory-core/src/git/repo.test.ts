@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { GitExec, GitExecOptions, GitExecResult } from "./index"
 import {
-  DirtyRepoError,
+  ADOPT_COMMIT,
   GitMemoryRepo,
   NoEffectiveChangesError,
   createNodeGitExec,
@@ -95,32 +95,40 @@ describe("GitMemoryRepo", () => {
     expect(await rejectedError(operation)).toBeInstanceOf(NoEffectiveChangesError)
   })
 
-  it("#given unrelated uncommitted files #when cleanCheck runs #then it rejects with the porcelain listing", async () => {
+  it("#given edits nobody committed #when adoptStrayEdits runs #then one commit takes them all and the tree is clean", async () => {
     // given
     const { dir, repo } = await createRepo()
-    await repo.init()
-    await writeFile(join(dir, "dirty.md"), "dirty\n")
+    await repo.init({ seedFiles: [{ relativePath: "notes/kept.md", content: "---\ndescription: Kept\n---\nold\n" }] })
+    await writeFile(join(dir, "notes/kept.md"), "---\ndescription: Kept\n---\nedited by a shell\n")
+    await writeFile(join(dir, "stray.md"), "no frontmatter, which the commit hook would refuse\n")
+    const before = await repo.head()
 
     // when
-    const operation = repo.cleanCheck()
+    const sha = await repo.adoptStrayEdits()
 
     // then
-    const error = await rejectedError(operation)
-    expect(error).toBeInstanceOf(DirtyRepoError)
-    expect(error.message).toContain("?? dirty.md")
+    const exec = createNodeGitExec()
+    const log = await exec.run(["log", "-1", "--format=%H%n%s%n%an", "--name-only"], { cwd: dir, timeoutMs: 30_000 })
+    const [head, subject, author, , ...files] = log.stdout.trim().split("\n")
+    expect(head).toBe(sha!)
+    expect(head).not.toBe(before!)
+    expect(subject).toBe(ADOPT_COMMIT)
+    expect(author).toBe("rubato")
+    expect(files.toSorted()).toEqual(["notes/kept.md", "stray.md"])
+    expect(await repo.status()).toBe("")
   })
 
-  it("#given a UTF-16 markdown file is dirty #when cleanCheck runs #then its encoding problem is readable", async () => {
+  it("#given a clean store #when adoptStrayEdits runs #then it commits nothing", async () => {
     // given
-    const { dir, repo } = await createRepo()
-    await repo.init()
-    await writeFile(join(dir, "utf16.md"), Buffer.from([0xff, 0xfe, 0x68, 0x00, 0x69, 0x00]))
+    const { repo } = await createRepo()
+    const before = await repo.init()
 
     // when
-    const operation = repo.cleanCheck()
+    const sha = await repo.adoptStrayEdits()
 
     // then
-    expect((await rejectedError(operation)).message).toContain("utf16.md has UTF-16 LE BOM")
+    expect(sha).toBeNull()
+    expect(await repo.head()).toBe(before)
   })
 
   it("#given local identity overrides #when init reconciles config #then email is preserved and agent identity is updated", async () => {

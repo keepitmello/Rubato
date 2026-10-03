@@ -14,7 +14,6 @@ describe("RubatoMemorySettingsSchema", () => {
       { model: "xai/grok-4.7", reasoning: "medium" },
       { model: "anthropic/claude-haiku-4-5", reasoning: "off" },
     ])
-    expect(parsed.dream.publish).toBe("review")
     expect(parsed.dream.stores).toEqual({})
   })
 
@@ -52,8 +51,8 @@ describe("RubatoMemorySettingsSchema", () => {
     expect(layer.success).toBe(true)
     if (!full.success || !layer.success) return
     expect(Object.keys(full.data).sort()).toEqual(["agent", "dream", "enabled", "search", "tool_exposure"])
-    expect(full.data.dream).toEqual({ models: [...DEFAULT_DREAM_MODELS], publish: "auto", stores: { rubato: { enabled: true } }, min_hours_between: 20 })
-    expect(layer.data).toEqual({ agent: "rubato", dream: { publish: "auto", stores: { rubato: { enabled: true } } } })
+    expect(full.data.dream).toEqual({ models: [...DEFAULT_DREAM_MODELS], stores: { rubato: { enabled: true } }, min_hours_between: 20 })
+    expect(layer.data).toEqual({ agent: "rubato", dream: { stores: { rubato: { enabled: true } } } })
   })
 
   test("#given dream models as bare ids and as model/reasoning pairs #when parsed #then both forms stay as written", () => {

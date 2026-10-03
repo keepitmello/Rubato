@@ -2,9 +2,8 @@ import { existsSync } from "node:fs"
 import { mkdir, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { withGitLockRetry, withSerializedGitConfigMutation } from "./config-lock"
-import { DirtyRepoError, NoEffectiveChangesError } from "./errors"
+import { NoEffectiveChangesError } from "./errors"
 import { createNodeGitExec, type GitExec, type GitExecResult } from "./exec"
-import { describeDirtyMarkdownEncodingIssues } from "./porcelain"
 import { GitPathStateStore } from "./path-state"
 import { authorFlags, commandError, normalizePathspecs, normalizeSeedPath } from "./repo-arguments"
 import { parseLogOutput, parseNulPaths } from "./repo-log"
@@ -29,6 +28,9 @@ export type {
 const GIT_TIMEOUT_MS = 30_000
 const INITIAL_COMMIT = "chore: initialize local memory"
 const EMPTY_INITIAL_COMMIT = "chore: initialize empty local memory"
+export const ADOPT_COMMIT = "memory: adopt edits written outside memory tools"
+// Adopted edits have no author we know of: a session wrote them with a shell or a file tool.
+const AS_ADOPTER = ["-c", "user.name=rubato", "-c", "user.email=memory@rubato.local"] as const
 
 export class GitMemoryRepo {
   readonly dir: string
@@ -83,11 +85,21 @@ export class GitMemoryRepo {
     return this.requireHead()
   }
 
-  async cleanCheck(): Promise<void> {
+  /**
+   * Commits whatever is in the store but not in a commit, and returns that commit (null when clean).
+   *
+   * Sessions also write memory with a shell or a file tool, and nothing commits those edits. Every
+   * writer (memory tools, the dream, its merge and revert) calls this under the writer lock first,
+   * so such an edit lands as memory instead of blocking every later write. The frontmatter hook is
+   * skipped here: an invalid file must not lock the store again; the next tool edit of that file
+   * meets the hook.
+   */
+  async adoptStrayEdits(): Promise<string | null> {
     await this.hookInstaller(this.dir)
-    const porcelain = await this.status()
-    if (!porcelain.trim()) return
-    throw new DirtyRepoError(porcelain, describeDirtyMarkdownEncodingIssues(this.dir, porcelain))
+    if (!(await this.status()).trim()) return null
+    await withGitLockRetry(() => this.git(["add", "-A"]))
+    await withGitLockRetry(() => this.git([...AS_ADOPTER, "commit", "--no-verify", "-m", ADOPT_COMMIT]))
+    return this.requireHead()
   }
 
   async commitWrite(

@@ -64,7 +64,7 @@ export async function runMemoryTool(options: RunMemoryToolOptions): Promise<Memo
   try {
     const reason = required(params.reason, "reason").trim()
     return await lock("memory-write", async () => {
-      await repo.cleanCheck()
+      await repo.adoptStrayEdits()
       const { affectedPaths } = await applyCommand(repo.dir, params)
       if (affectedPaths.length === 0) {
         throw toolError(`${params.command} made no changes`)

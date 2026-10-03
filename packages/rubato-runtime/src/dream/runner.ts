@@ -19,10 +19,10 @@ import { condenseSession, type CondensedSession } from "./transcript"
 import type { SessionFile } from "./stores"
 
 // One dream = one store. The child edits a worktree branch so the working agent can keep writing to
-// the store meanwhile. What happens to the branch is the publish policy: under "review" it waits for
-// the user (`rubato dream --approve`), under "auto" it lands with one merge under the writer lock the
-// memory tool takes. Memory that is wrong costs more than memory that is missing, so a failed child
-// never publishes, even when it committed something.
+// the store meanwhile, and the branch lands with one merge under the writer lock the memory tool
+// takes. Nobody approves it: the user reads and edits memory afterwards. Memory that is wrong costs
+// more than memory that is missing, so a failed child never lands, even when it committed something.
+// A dream that cannot land leaves its sessions unread, so the next one reads them again.
 
 export const DEFAULT_TRANSCRIPT_BUDGET_CHARS = 250_000
 // A 12-session backlog on DeepSeek ran past 20 minutes mid-edit; a killed rung publishes nothing.
@@ -31,8 +31,6 @@ const FIRST_DREAM_LOOKBACK_MS = 7 * 24 * 60 * 60_000
 const CURSOR_RETENTION_MS = 30 * 24 * 60 * 60_000
 // Commits the runner itself makes (merge, leftovers) are signed as the dream, whatever the store's config says.
 const AS_DREAM = ["-c", "user.name=dream", "-c", "user.email=dream@rubato.local"] as const
-
-export type DreamPublish = "review" | "auto"
 
 export interface DreamRung {
   readonly model: string
@@ -58,7 +56,7 @@ export type SpawnChild = (input: {
   readonly timeoutMs: number
 }) => Promise<ChildResult>
 
-export type DreamStatus = "merged" | "pending" | "noop" | "failed" | "busy" | "trial"
+export type DreamStatus = "merged" | "noop" | "failed" | "busy" | "trial"
 
 export interface DreamRunRecord {
   readonly runId: string
@@ -70,7 +68,7 @@ export interface DreamRunRecord {
   readonly model?: string
   readonly sessions: readonly { readonly id: string; readonly name?: string; readonly cwd: string; readonly messages: number }[]
   readonly commits: readonly string[]
-  /** Branch holding the result while it waits for review, or a trial's result. */
+  /** Branch holding a trial's result. */
   readonly branch?: string
   /** Store revision the dream started from. */
   readonly baseRevision?: string
@@ -84,13 +82,6 @@ export interface DreamState {
   readonly cursors?: Readonly<Record<string, string>>
 }
 
-export interface PendingReview {
-  readonly runId: string
-  readonly branch: string
-  readonly baseRevision: string
-  readonly reason?: string
-}
-
 export interface RunDreamOptions {
   readonly store: string
   readonly paths: MemoryIdentityPaths
@@ -99,7 +90,6 @@ export interface RunDreamOptions {
   readonly launch: ChildLaunch
   readonly systemPrompt: string
   readonly env: NodeJS.ProcessEnv
-  readonly publish?: DreamPublish
   /** Folders the store's sessions ran in; their git repositories are what claims are checked against. */
   readonly projectFolders?: readonly string[]
   /** Run the resolve pass even when no session is new (manual runs). */
@@ -123,9 +113,9 @@ export async function readDreamState(paths: MemoryIdentityPaths): Promise<DreamS
   return (await readJson<DreamState>(join(dreamDir(paths), "state.json"))) ?? {}
 }
 
-export async function readPendingReview(paths: MemoryIdentityPaths): Promise<PendingReview | undefined> {
-  return readJson<PendingReview>(join(dreamDir(paths), "pending.json"))
-}
+// Earlier versions could leave a dream waiting for approval here. Nothing approves anymore, so the
+// next run lands it (or drops it when it no longer merges) before dreaming again.
+const LEFTOVER_REVIEW = "pending.json"
 
 /** Read floor for a session: its own cursor, else the last dream, else a week back. */
 export function sessionSinceMs(state: DreamState, sessionId: string, now: number): number {
@@ -195,19 +185,18 @@ async function runLocked(options: RunDreamOptions, now: () => number): Promise<D
   const finish = async (status: DreamStatus, extra: Partial<DreamRunRecord> = {}): Promise<DreamRunRecord> => {
     const result: DreamRunRecord = { ...base, finishedAt: new Date(now()).toISOString(), status, commits: [], ...extra }
     await writeFile(join(runDir, "run.json"), `${JSON.stringify(result, null, 2)}\n`, "utf8")
-    if (status === "merged" || status === "pending" || status === "noop") await consume()
+    if (status === "merged" || status === "noop") await consume()
     return result
   }
-
-  if (options.trial === undefined && (await readPendingReview(options.paths)) !== undefined) {
-    return finish("failed", { reason: "a previous dream is waiting for review; approve or reject it first" })
-  }
-  if (picked.length === 0 && options.force !== true) return finish("noop", { reason: "no new sessions" })
-  if (options.ladder.length === 0) return finish("failed", { reason: "no model configured in memory.dream.models" })
 
   const exec = createNodeGitExec()
   const git: Git = async (cwd, argv) => exec.run(argv, { cwd, timeoutMs: 60_000, env: options.env })
   const repo = new GitMemoryRepo({ dir: options.paths.repo, agentId: options.store, exec })
+  if (options.trial === undefined) await landLeftoverReview(options.paths, options.store, git)
+  if (picked.length === 0 && options.force !== true) return finish("noop", { reason: "no new sessions" })
+  if (options.ladder.length === 0) return finish("failed", { reason: "no model configured in memory.dream.models" })
+  // The dream starts from the store as sessions left it, edits nobody committed included.
+  if (options.trial === undefined) await underWriterLock(options.paths, options.store, "dream adopt", () => repo.adoptStrayEdits())
   const baseResolved = await git(options.paths.repo, ["rev-parse", "--verify", `${options.trial?.baseRevision ?? "HEAD"}^{commit}`])
   if (baseResolved.code !== 0) return finish("failed", { reason: "store has no commits" })
   const baseRevision = baseResolved.stdout.trim()
@@ -318,43 +307,23 @@ async function runLocked(options: RunDreamOptions, now: () => number): Promise<D
     return finish("failed", { ...modelField, commits, reason: "the dream committed but wrote no report; nothing published" })
   }
 
-  const pending: PendingReview = { runId, branch, baseRevision }
-  if ((options.publish ?? "review") === "review") {
-    await writePending(options.paths, pending)
-    return finish("pending", { ...modelField, commits, branch, baseRevision })
-  }
   const merged = await mergeUnderWriterLock(options.paths, options.store, git, branch, runId)
-  if (merged !== true) {
-    await writePending(options.paths, { ...pending, reason: merged })
-    return finish("pending", { ...modelField, commits, branch, baseRevision, reason: `${merged}; left for review` })
-  }
   await deleteBranch(git, options.paths.repo, branch)
+  if (merged !== true) return finish("failed", { ...modelField, commits, baseRevision, reason: `${merged}; its sessions stay unread for the next dream` })
   return finish("merged", { ...modelField, commits, baseRevision })
 }
 
-/** Land the dream waiting for review. */
-export async function approveDream(paths: MemoryIdentityPaths, store: string, env: NodeJS.ProcessEnv): Promise<string> {
-  const pending = await readPendingReview(paths)
-  if (pending === undefined) throw new Error(`no dream is waiting for review in ${store}`)
-  const exec = createNodeGitExec()
-  const git: Git = async (cwd, argv) => exec.run(argv, { cwd, timeoutMs: 60_000, env })
-  const merged = await mergeUnderWriterLock(paths, store, git, pending.branch, pending.runId)
-  if (merged !== true) throw new Error(`${merged}; the branch ${pending.branch} is still waiting`)
-  await deleteBranch(git, paths.repo, pending.branch)
-  await rm(join(dreamDir(paths), "pending.json"), { force: true })
-  await recordReview(paths, pending.runId, "merged")
-  return pending.runId
-}
-
-/** Drop the dream waiting for review. What it read stays read; its edits are discarded. */
-export async function rejectDream(paths: MemoryIdentityPaths, store: string, env: NodeJS.ProcessEnv): Promise<string> {
-  const pending = await readPendingReview(paths)
-  if (pending === undefined) throw new Error(`no dream is waiting for review in ${store}`)
-  const exec = createNodeGitExec()
-  await deleteBranch(async (cwd, argv) => exec.run(argv, { cwd, timeoutMs: 60_000, env }), paths.repo, pending.branch)
-  await rm(join(dreamDir(paths), "pending.json"), { force: true })
-  await recordReview(paths, pending.runId, "rejected")
-  return pending.runId
+async function landLeftoverReview(paths: MemoryIdentityPaths, store: string, git: Git): Promise<void> {
+  const leftover = await readJson<{ runId?: string; branch?: string }>(join(dreamDir(paths), LEFTOVER_REVIEW))
+  if (leftover === undefined) return
+  if (typeof leftover.runId === "string" && typeof leftover.branch === "string") {
+    const merged = await mergeUnderWriterLock(paths, store, git, leftover.branch, leftover.runId)
+    await deleteBranch(git, paths.repo, leftover.branch)
+    await settleRun(paths, leftover.runId, merged === true
+      ? { status: "merged" }
+      : { status: "failed", reason: `${merged}; dropped instead of waiting for approval` })
+  }
+  await rm(join(dreamDir(paths), LEFTOVER_REVIEW), { force: true })
 }
 
 /**
@@ -369,15 +338,14 @@ export async function revertDream(paths: MemoryIdentityPaths, store: string, run
   const git: Git = async (cwd, argv) => exec.run(argv, { cwd, timeoutMs: 60_000, env })
   const merge = await landedMerge(git, paths.repo, runId)
   if (merge === undefined) throw new Error(`${runId} has not landed in ${store}; nothing to revert`)
-  const lock = await createLockRecord(`dream revert (${store})`)
-  const reverted = await withLock(memoryWriterLockPath(paths.locks), lock, async (): Promise<true | string> => {
-    const dirty = await git(paths.repo, ["status", "--porcelain"])
-    if (dirty.stdout.trim() !== "") return "store has uncommitted changes"
+  const repo = new GitMemoryRepo({ dir: paths.repo, agentId: store, exec })
+  const reverted = await underWriterLock(paths, store, "dream revert", async (): Promise<true | string> => {
+    await repo.adoptStrayEdits()
     const revert = await git(paths.repo, [...AS_DREAM, "revert", "--no-edit", "-m", "1", merge])
     if (revert.code === 0) return true
     await git(paths.repo, ["revert", "--abort"])
     return `revert failed: ${(revert.stderr || revert.stdout).trim().split("\n")[0]}`
-  }, { waitTimeoutMs: 60_000 })
+  })
   if (reverted !== true) throw new Error(`${reverted}; ${runId} is still in the store`)
   await recordReview(paths, runId, "reverted")
   return runId
@@ -401,20 +369,25 @@ function dreamLockPath(paths: MemoryIdentityPaths): string {
   return join(paths.locks, "dream.lock")
 }
 
-async function writePending(paths: MemoryIdentityPaths, pending: PendingReview): Promise<void> {
-  await writeFile(join(dreamDir(paths), "pending.json"), `${JSON.stringify(pending, null, 2)}\n`, "utf8")
+async function recordReview(paths: MemoryIdentityPaths, runId: string, review: "reverted"): Promise<void> {
+  await settleRun(paths, runId, { review, reviewedAt: new Date().toISOString() })
 }
 
-async function recordReview(paths: MemoryIdentityPaths, runId: string, review: "merged" | "rejected" | "reverted"): Promise<void> {
+async function settleRun(paths: MemoryIdentityPaths, runId: string, fields: Record<string, unknown>): Promise<void> {
   const path = join(dreamDir(paths), "runs", runId, "run.json")
   const run = await readJson<Record<string, unknown>>(path)
   if (run === undefined) return
-  await writeFile(path, `${JSON.stringify({ ...run, review, reviewedAt: new Date().toISOString() }, null, 2)}\n`, "utf8")
+  await writeFile(path, `${JSON.stringify({ ...run, ...fields }, null, 2)}\n`, "utf8")
 }
 
 async function commitsAhead(git: Git, repoDir: string, branch: string, base: string): Promise<string[]> {
   const result = await git(repoDir, ["rev-list", "--reverse", `${base}..${branch}`])
   return result.code === 0 ? result.stdout.split("\n").map((line) => line.trim()).filter(Boolean) : []
+}
+
+function underWriterLock<T>(paths: MemoryIdentityPaths, store: string, what: string, operation: () => Promise<T>): Promise<T> {
+  return createLockRecord(`${what} (${store})`).then((record) =>
+    withLock(memoryWriterLockPath(paths.locks), record, operation, { waitTimeoutMs: 60_000 }))
 }
 
 async function mergeUnderWriterLock(
@@ -424,15 +397,14 @@ async function mergeUnderWriterLock(
   branch: string,
   runId: string,
 ): Promise<true | string> {
-  const record = await createLockRecord(`dream merge (${store})`)
-  return withLock(memoryWriterLockPath(paths.locks), record, async () => {
-    const dirty = await git(paths.repo, ["status", "--porcelain"])
-    if (dirty.stdout.trim() !== "") return "store has uncommitted changes"
+  const repo = new GitMemoryRepo({ dir: paths.repo, agentId: store })
+  return underWriterLock(paths, store, "dream merge", async () => {
+    await repo.adoptStrayEdits()
     const merge = await git(paths.repo, [...AS_DREAM, "merge", "--no-ff", "-m", `merge(dream): ${runId}`, branch])
     if (merge.code === 0) return true
     await git(paths.repo, ["merge", "--abort"])
     return `merge failed: ${(merge.stderr || merge.stdout).trim().split("\n")[0]}`
-  }, { waitTimeoutMs: 60_000 })
+  })
 }
 
 async function removeWorktree(repo: GitMemoryRepo, git: Git, worktree: string, branch: string): Promise<void> {

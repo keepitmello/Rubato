@@ -46,7 +46,7 @@ cd "$MEMORY_DIR" && git add -A && git commit -m "dream: <one-line summary>" -m "
 
 If nothing needed writing or fixing, do not commit. Leave the worktree clean either way.
 
-Then write `$OUT_DIR/report.md`. The user reads it in Settings > Memory to decide, in about a minute, whether your changes go into the store; the page shows each changed file as a card with its diff, and puts every report line that names the file on that card. So write for that decision:
+Then write `$OUT_DIR/report.md`. Your changes land in the store without anyone approving them; the user reads the report later in Settings > Memory to see, in about a minute, what changed and why, and edits a file when you got it wrong. The page shows each changed file as a card with its diff, and puts every report line that names the file on that card. So write for that reader:
 
 ```markdown
 ## 요약

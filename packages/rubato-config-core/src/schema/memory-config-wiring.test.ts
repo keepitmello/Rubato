@@ -22,7 +22,7 @@ describe("memory config wiring", () => {
     // given
     const config = {
       memory: { dream: { min_hours_between: 12 } },
-      "[senpi]": { memory: { dream: { publish: "auto" } } },
+      "[senpi]": { memory: { dream: { min_hours_between: 8 } } },
       profiles: { focused: { memory: { search: { enabled: false } } } },
     }
 
@@ -32,7 +32,7 @@ describe("memory config wiring", () => {
     // then
     expect(result.success).toBe(true)
     if (!result.success) throw new Error(result.error.message)
-    expect(result.data["[senpi]"]?.memory).toEqual({ dream: { publish: "auto" } })
+    expect(result.data["[senpi]"]?.memory).toEqual({ dream: { min_hours_between: 8 } })
     expect(result.data.profiles.focused?.memory).toEqual({ search: { enabled: false } })
   })
 
@@ -71,7 +71,7 @@ describe("memory profile and harness deep-merge", () => {
     // given
     const config = {
       memory: { agent: "auto", dream: { min_hours_between: 15 } },
-      "[senpi]": { memory: { dream: { publish: "auto" } } },
+      "[senpi]": { memory: { dream: { stores: { rubato: { enabled: true } } } } },
       profiles: {
         focused: {
           memory: { dream: { min_hours_between: 30 } },
@@ -87,7 +87,7 @@ describe("memory profile and harness deep-merge", () => {
     expect(result.diagnostics).toEqual([])
     expect(result.config["memory"]).toEqual({
       agent: "auto",
-      dream: { min_hours_between: 30, publish: "auto" },
+      dream: { min_hours_between: 30, stores: { rubato: { enabled: true } } },
       search: { enabled: false },
     })
   })

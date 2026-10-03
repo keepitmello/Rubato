@@ -22,8 +22,10 @@ const LEGACY_MEMORY_KEYS = [
   "agents",
 ] as const
 
+// "publish" chose between landing a dream and holding it for approval; dreams always land now.
 const LEGACY_DREAM_KEYS = [
   "category",
+  "publish",
   "enabled",
   "idle_minutes",
   "shutdown_launch",
@@ -85,8 +87,6 @@ export const RubatoMemoryDreamSchema = z.preprocess(
   z.object({
     // Models the dream child runs on, in fallback order.
     models: z.array(RubatoMemoryDreamModelSchema).default(defaultDreamModels),
-    // "review": a dream's edits wait on a branch until the user approves them. "auto": they merge.
-    publish: z.enum(["review", "auto"]).default("review"),
     // Stores the daily dream maintains, keyed by memory store name (memory.agent). Off unless listed.
     stores: z.record(z.string(), RubatoMemoryDreamStoreSchema).default({}),
     min_hours_between: z.number().int().min(1).default(20),
@@ -97,7 +97,6 @@ export const RubatoMemoryDreamLayerSchema = z.preprocess(
   dropLegacyDreamKeys,
   z.object({
     models: z.array(RubatoMemoryDreamModelSchema).optional(),
-    publish: z.enum(["review", "auto"]).optional(),
     stores: z.record(z.string(), RubatoMemoryDreamStoreSchema.partial()).optional(),
     min_hours_between: z.number().int().min(1).optional(),
   }).strict(),
@@ -118,7 +117,6 @@ export const RubatoMemorySettingsSchema = z.preprocess(
     tool_exposure: z.enum(["direct", "search"]).default("direct"),
     dream: RubatoMemoryDreamSchema.default({
       models: defaultDreamModels(),
-      publish: "review",
       stores: {},
       min_hours_between: 20,
     }),

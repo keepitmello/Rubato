@@ -4,8 +4,6 @@
 //   rubato dream              show every store: dream on/off, last run, new sessions
 //   rubato dream --due        run each enabled store whose last dream is old enough and has new sessions
 //   rubato dream <store>...   run those stores now, even with no new sessions
-//   --approve <store>         land the dream waiting for review in that store
-//   --reject <store>          drop it (what it read stays read)
 //   --revert <store> <runId>  take a landed dream back out with one revert commit
 //   --json                    machine-readable output (the GUI reads this)
 //   --trial [--base REV] [--since ISO] <store>
@@ -22,10 +20,7 @@ import { buildIdentityPaths, readStoreRecord, resolveMemoryRoot } from "@rubato/
 import { loadSenpiRubatoConfig } from "../components/config-resolution"
 import { dreamLadder } from "./ladder"
 import {
-  approveDream,
   readDreamState,
-  readPendingReview,
-  rejectDream,
   revertDream,
   runDream,
   sessionSinceMs,
@@ -43,7 +38,6 @@ interface StoreStatus {
   readonly enabled: boolean
   readonly lastDreamAt?: string
   readonly lastRunId?: string
-  readonly pendingRunId?: string
   readonly newSessions: number
   readonly due: boolean
   /** Project roots the store is used from (store.json). */
@@ -60,7 +54,7 @@ async function main(argv: readonly string[]): Promise<number> {
   const trial = argv.includes("--trial")
   const base = optionValue(argv, "--base")
   const sinceIso = optionValue(argv, "--since")
-  const named = argv.filter((arg, index) => !arg.startsWith("--") && !["--base", "--since", "--approve", "--reject"].includes(argv[index - 1] ?? ""))
+  const named = argv.filter((arg, index) => !arg.startsWith("--") && !["--base", "--since"].includes(argv[index - 1] ?? ""))
   const env = process.env
   const now = Date.now()
 
@@ -81,21 +75,6 @@ async function main(argv: readonly string[]): Promise<number> {
   const states = new Map<string, DreamState>()
   for (const store of listExistingStores(memoryRoot)) states.set(store, await readDreamState(pathsOf(store)))
 
-  for (const flag of ["--approve", "--reject"] as const) {
-    const store = optionValue(argv, flag)
-    if (store === undefined) continue
-    if (!states.has(store)) {
-      process.stderr.write(`rubato dream: no memory store named ${store}\n`)
-      return 2
-    }
-    const runId = flag === "--approve"
-      ? await approveDream(pathsOf(store), store, env)
-      : await rejectDream(pathsOf(store), store, env)
-    process.stdout.write(json
-      ? `${JSON.stringify({ store, runId, review: flag === "--approve" ? "merged" : "rejected" })}\n`
-      : `dream: ${store} ${runId} ${flag === "--approve" ? "merged" : "rejected"}\n`)
-    return 0
-  }
   const revertStore = optionValue(argv, "--revert")
   if (revertStore !== undefined) {
     const runId = argv[argv.indexOf("--revert") + 2]
@@ -127,7 +106,6 @@ async function main(argv: readonly string[]): Promise<number> {
   const minGapMs = dream.min_hours_between * 60 * 60_000
   const statuses: StoreStatus[] = []
   for (const [store, state] of states) {
-    const pending = await readPendingReview(pathsOf(store))
     const record = readStoreRecord(pathsOf(store).root)
     const enabled = dream.stores[store]?.enabled === true
     const newSessions = sessionsByStore.get(store)?.length ?? 0
@@ -137,9 +115,8 @@ async function main(argv: readonly string[]): Promise<number> {
       enabled,
       ...(state.last_dream_at === undefined ? {} : { lastDreamAt: state.last_dream_at }),
       ...(state.lastRunId === undefined ? {} : { lastRunId: state.lastRunId }),
-      ...(pending === undefined ? {} : { pendingRunId: pending.runId }),
       newSessions,
-      due: enabled && pending === undefined && newSessions > 0 && now - lastMs >= minGapMs,
+      due: enabled && newSessions > 0 && now - lastMs >= minGapMs,
       roots: record?.roots ?? [],
       home: record?.home === true,
       files: countStoreFiles(pathsOf(store).repo),
@@ -180,7 +157,6 @@ async function main(argv: readonly string[]): Promise<number> {
       launch,
       systemPrompt,
       env: childEnv(env),
-      publish: dream.publish,
       projectFolders: [...(scan.folders.get(store) ?? [])],
       force: !due,
       ...(trial ? { trial: { ...(base === undefined ? {} : { baseRevision: base }), ...(trialSinceMs === undefined ? {} : { sinceMs: trialSinceMs }) } } : {}),
@@ -202,12 +178,11 @@ function printStatuses(all: readonly StoreStatus[], models: readonly DreamRung[]
   const ladder = models.map((rung) => rung.thinking === undefined ? rung.model : `${rung.model} (${rung.thinking})`)
   process.stdout.write(`dream models: ${ladder.length === 0 ? "none" : ladder.join(" → ")}\n\n`)
   // Stores with nothing to show would bury the ones in use under test leftovers.
-  statuses = statuses.filter((status) => status.enabled || status.lastDreamAt !== undefined || status.pendingRunId !== undefined)
+  statuses = statuses.filter((status) => status.enabled || status.lastDreamAt !== undefined)
   for (const status of statuses) {
     const last = status.lastDreamAt === undefined ? "never" : status.lastDreamAt
     const flag = status.enabled ? "on " : "off"
-    const review = status.pendingRunId === undefined ? "" : `  waiting for review: ${status.pendingRunId}`
-    process.stdout.write(`${flag}  ${status.store.padEnd(28)} last ${last}  new sessions ${status.newSessions}${status.due ? "  due" : ""}${review}\n`)
+    process.stdout.write(`${flag}  ${status.store.padEnd(28)} last ${last}  new sessions ${status.newSessions}${status.due ? "  due" : ""}\n`)
   }
 }
 

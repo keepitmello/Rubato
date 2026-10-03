@@ -4,14 +4,12 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { buildIdentityPaths } from "@rubato/memory-core"
+import { ADOPT_COMMIT, buildIdentityPaths } from "@rubato/memory-core"
 
 import { condenseSession } from "./transcript"
 import {
-  approveDream,
   pickSessions,
   readDreamState,
-  rejectDream,
   revertDream,
   runDream,
   sessionSinceMs,
@@ -120,62 +118,104 @@ describe("runDream", () => {
       systemPrompt: "p",
       env: process.env,
       spawnChild: fakeChild,
+      // The sessions below are dated; a first dream reads a week back from now, so now is pinned.
+      now: () => Date.parse("2026-09-26T00:00:00.000Z"),
       ...extra,
     })
 
-  test("under review the edits wait on a branch; approval lands them", async () => {
+  test("a dream lands on its own, on the first model that answers", async () => {
     const { root, paths } = store()
     const record = await run(paths, [session(root, "s1", "2026-09-25T00:00:04.000Z")], { ladder: [{ model: "dead/model" }, { model: "ok/model" }] })
-    expect(record.status).toBe("pending")
+    expect(record.reason).toBeUndefined()
+    expect(record.status).toBe("merged")
     expect(record.model).toBe("ok/model")
-    expect(readFileSync(join(paths.repo, "a.md"), "utf8")).toBe("old\n")
-    await approveDream(paths, "demo", process.env)
     expect(readFileSync(join(paths.repo, "a.md"), "utf8")).toBe("new\n")
     expect(git(paths.repo, "branch", "--list", "dream/*").trim()).toBe("")
   })
 
-  test("rejecting drops the edits and a new dream can run", async () => {
+  test("edits a session never committed are adopted first, so the dream reads them and still lands", async () => {
     const { root, paths } = store()
-    await run(paths, [session(root, "s1", "2026-09-25T00:00:04.000Z")])
-    const later = new Date(Date.now() + 60_000).toISOString()
-    const blocked = await run(paths, [session(root, "s2", later)])
-    expect(blocked.status).toBe("failed")
-    await rejectDream(paths, "demo", process.env)
-    expect(readFileSync(join(paths.repo, "a.md"), "utf8")).toBe("old\n")
-    expect((await run(paths, [session(root, "s2", later)])).status).toBe("pending")
+    writeFileSync(join(paths.repo, "b.md"), "written with a shell\n")
+    let seen = ""
+    const record = await run(paths, [session(root, "s1", "2026-09-25T00:00:04.000Z")], {
+      spawnChild: async (input) => {
+        seen = readFileSync(join(input.cwd, "b.md"), "utf8")
+        return fakeChild(input)
+      },
+    })
+    expect(seen).toBe("written with a shell\n")
+    expect(record.status).toBe("merged")
+    expect(git(paths.repo, "status", "--porcelain")).toBe("")
+    expect(git(paths.repo, "log", "--format=%s").split("\n")).toContain(ADOPT_COMMIT)
   })
 
-  test("auto publish merges", async () => {
+  test("an edit left uncommitted while the dream ran does not stop it landing", async () => {
     const { root, paths } = store()
-    const record = await run(paths, [session(root, "s1", "2026-09-25T00:00:04.000Z")], { publish: "auto" })
-    expect(record.reason).toBeUndefined()
+    const record = await run(paths, [session(root, "s1", "2026-09-25T00:00:04.000Z")], {
+      spawnChild: async (input) => {
+        writeFileSync(join(paths.repo, "c.md"), "written mid-dream\n")
+        return fakeChild(input)
+      },
+    })
     expect(record.status).toBe("merged")
     expect(readFileSync(join(paths.repo, "a.md"), "utf8")).toBe("new\n")
+    expect(git(paths.repo, "show", "HEAD:c.md")).toBe("written mid-dream\n")
   })
 
-  test("a landed dream reverts with one commit, once; a waiting one cannot", async () => {
+  test("a dream that no longer merges fails, keeps the store as it is and leaves its sessions unread", async () => {
     const { root, paths } = store()
-    const waiting = await run(paths, [session(root, "s1", "2026-09-25T00:00:04.000Z")])
-    await expect(revertDream(paths, "demo", waiting.runId, process.env)).rejects.toThrow("has not landed")
-    await approveDream(paths, "demo", process.env)
-    await revertDream(paths, "demo", waiting.runId, process.env)
-    expect(readFileSync(join(paths.repo, "a.md"), "utf8")).toBe("old\n")
-    expect(git(paths.repo, "log", "-1", "--format=%s").trim()).toStartWith("Revert")
-    const recorded = JSON.parse(readFileSync(join(paths.runtime, "dream", "runs", waiting.runId, "run.json"), "utf8"))
-    expect(recorded.review).toBe("reverted")
-    await expect(revertDream(paths, "demo", waiting.runId, process.env)).rejects.toThrow("already reverted")
+    const record = await run(paths, [session(root, "s1", "2026-09-25T00:00:04.000Z")], {
+      spawnChild: async (input) => {
+        writeFileSync(join(paths.repo, "a.md"), "changed on main meanwhile\n")
+        git(paths.repo, "commit", "-qam", "meanwhile")
+        return fakeChild(input)
+      },
+    })
+    expect(record.status).toBe("failed")
+    expect(record.reason).toContain("merge failed")
+    expect(readFileSync(join(paths.repo, "a.md"), "utf8")).toBe("changed on main meanwhile\n")
+    expect(git(paths.repo, "status", "--porcelain")).toBe("")
+    expect(git(paths.repo, "branch", "--list", "dream/*").trim()).toBe("")
+    expect(await readDreamState(paths)).toEqual({})
   })
 
-  test("an auto-published dream reverts too", async () => {
+  test("a dream an earlier version left waiting for approval lands at the next run", async () => {
+    const { paths } = store()
+    const runId = "dream-old"
+    const wt = join(paths.root, "wt")
+    git(paths.repo, "worktree", "add", "-q", "-b", `dream/${runId}`, wt)
+    writeFileSync(join(wt, "a.md"), "waited\n")
+    git(wt, "commit", "-qam", "dream: old")
+    git(paths.repo, "worktree", "remove", "--force", wt)
+    const dream = join(paths.runtime, "dream")
+    execFileSync("mkdir", ["-p", join(dream, "runs", runId)])
+    writeFileSync(join(dream, "runs", runId, "run.json"), JSON.stringify({ runId, status: "pending" }))
+    writeFileSync(join(dream, "pending.json"), JSON.stringify({ runId, branch: `dream/${runId}`, baseRevision: "x" }))
+
+    expect((await run(paths, [])).status).toBe("noop")
+
+    expect(readFileSync(join(paths.repo, "a.md"), "utf8")).toBe("waited\n")
+    expect(git(paths.repo, "branch", "--list", "dream/*").trim()).toBe("")
+    expect(JSON.parse(readFileSync(join(dream, "runs", runId, "run.json"), "utf8")).status).toBe("merged")
+    expect(() => readFileSync(join(dream, "pending.json"))).toThrow()
+  })
+
+  test("a landed dream reverts with one commit, once, past an uncommitted edit", async () => {
     const { root, paths } = store()
-    const record = await run(paths, [session(root, "s1", "2026-09-25T00:00:04.000Z")], { publish: "auto" })
+    const record = await run(paths, [session(root, "s1", "2026-09-25T00:00:04.000Z")])
+    writeFileSync(join(paths.repo, "d.md"), "written with a shell\n")
     await revertDream(paths, "demo", record.runId, process.env)
     expect(readFileSync(join(paths.repo, "a.md"), "utf8")).toBe("old\n")
+    expect(git(paths.repo, "log", "-1", "--format=%s").trim()).toStartWith("Revert")
+    expect(git(paths.repo, "status", "--porcelain")).toBe("")
+    const recorded = JSON.parse(readFileSync(join(paths.runtime, "dream", "runs", record.runId, "run.json"), "utf8"))
+    expect(recorded.review).toBe("reverted")
+    await expect(revertDream(paths, "demo", record.runId, process.env)).rejects.toThrow("already reverted")
   })
 
   test("a child that committed and then failed publishes nothing and reads nothing", async () => {
     const { root, paths } = store()
-    const record = await run(paths, [session(root, "s1", "2026-09-25T00:00:04.000Z")], { ladder: [{ model: "half/model" }], publish: "auto" })
+    const record = await run(paths, [session(root, "s1", "2026-09-25T00:00:04.000Z")], { ladder: [{ model: "half/model" }] })
     expect(record.status).toBe("failed")
     expect(readFileSync(join(paths.repo, "a.md"), "utf8")).toBe("old\n")
     expect(git(paths.repo, "branch", "--list", "dream/*").trim()).toBe("")
@@ -186,7 +226,7 @@ describe("runDream", () => {
     const { root, paths } = store()
     const early = session(root, "early", "2026-09-25T00:00:01.000Z", "a".repeat(100))
     const late = session(root, "late", "2026-09-25T00:00:09.000Z", "b".repeat(100))
-    const first = await run(paths, [early, late], { transcriptBudgetChars: 150, publish: "auto" })
+    const first = await run(paths, [early, late], { transcriptBudgetChars: 150 })
     expect(first.sessions.map((s) => s.id)).toEqual(["early"])
     const state = await readDreamState(paths)
     const second = pickSessions([late], (id) => sessionSinceMs(state, id, Date.now()), 10_000)
