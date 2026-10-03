@@ -8,8 +8,6 @@
 //   <memory>/agents/<store>/runtime/dream/runs/<runId>/{run.json,out/report.md,out/user-candidates.md}
 //   <memory>/agents/<store>/repo                          the store's git repository
 //   ~/.rubato/rubato.jsonc  memory.dream.{models,stores.<name>.enabled}
-//   <project>/.rubato/rubato.jsonc  memory.agent       the store a project writes to
-//   where.ts (bun)                                      which store each folder resolves to
 //   <memory>/self/repo/{user.md,soul.md}                  every save is a commit
 //   <memory>/self/dismissed-suggestions.json             {lines}: dream suggestions the user waved off
 import { execFile, spawn } from 'node:child_process';
@@ -32,7 +30,6 @@ const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const MODEL_ID = /^[a-z0-9][a-z0-9-]{0,63}\/[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const REASONING = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
 const LADDER_MAX = 8;
-const PROJECTS_MAX = 200;
 const SHA = /^[0-9a-f]{7,64}$/;
 const BRANCH = /^dream\/[A-Za-z0-9._-]+$/;
 const SELF_FILES = new Set(['user.md', 'soul.md']);
@@ -386,41 +383,6 @@ export function createMemoryService(options = {}) {
     return { saved: edits.map(([keyPath, value]) => ({ key: keyPath.join('.'), value })) };
   }
 
-  // --- Projects: which store each project folder writes to, and naming one.
-
-  async function projectDir(dir) {
-    if (typeof dir !== 'string' || !path.isAbsolute(dir) || dir.includes('\0')) throw bad('Project folder is not valid.');
-    const { realpath, stat } = await import('node:fs/promises');
-    let real;
-    try { real = await realpath(dir); } catch { throw new MemoryRequestError(404, 'no-folder', `${dir} does not exist on this Mac.`); }
-    if (!(await stat(real)).isDirectory()) throw bad('Project folder is not a directory.');
-    return real;
-  }
-
-  async function projects({ dirs }) {
-    if (!Array.isArray(dirs) || dirs.some((dir) => typeof dir !== 'string' || !path.isAbsolute(dir))) throw bad('Folders must be absolute paths.');
-    const unique = [...new Set(dirs)].slice(0, PROJECTS_MAX);
-    if (unique.length === 0) return { projects: [] };
-    const result = await run(['bun', path.join(here, 'where.ts'), ...unique], { timeoutMs: 60_000 });
-    if (result.code !== 0) throw new MemoryRequestError(502, 'where-failed', (result.stderr || result.stdout).trim().split('\n').slice(-4).join('\n') || 'Could not resolve project stores.');
-    try { return { projects: JSON.parse(result.stdout) }; }
-    catch { throw new MemoryRequestError(502, 'where-output', 'where.ts did not print JSON.'); }
-  }
-
-  // Writes memory.agent into the project's own config; null clears it so the
-  // folder goes back to the automatic store (its git repository, or none).
-  async function setProjectStore({ dir, store }) {
-    const real = await projectDir(dir);
-    if (store !== null && (typeof store !== 'string' || !STORE_NAME.test(store) || store === 'auto')) throw bad('Store name is not valid.');
-    const configDir = path.join(real, '.rubato');
-    const jsoncFile = path.join(configDir, 'rubato.jsonc');
-    const jsonFile = path.join(configDir, 'rubato.json');
-    const file = !existsSync(jsoncFile) && existsSync(jsonFile) ? jsonFile : jsoncFile;
-    if (store === null && !existsSync(file)) return { dir: real, store: null };
-    await editJsonc(file, [[['memory', 'agent'], store === null ? undefined : store]]);
-    return { dir: real, store };
-  }
-
   async function ensureSelfRepo() {
     await mkdir(selfRepo, { recursive: true });
     if (existsSync(path.join(selfRepo, '.git'))) return;
@@ -711,8 +673,6 @@ export function createMemoryService(options = {}) {
     run: (input) => runDetail(input),
     dream: (input) => startDream(input),
     config: (input) => setConfig(input),
-    projects: (input) => projects(input),
-    'project-store': (input) => setProjectStore(input),
     self: () => readSelf(),
     'self-save': (input) => saveSelf(input),
     suggestions: () => suggestions(),

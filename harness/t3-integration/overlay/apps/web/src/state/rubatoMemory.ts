@@ -65,16 +65,6 @@ export interface MemoryStatus {
   readonly stores: readonly MemoryStoreStatus[];
 }
 
-/** Which store a project folder writes to, and why. */
-export interface ProjectStore {
-  readonly dir: string;
-  readonly store: string | null;
-  /** config: named in the folder's .rubato/rubato.jsonc; git: its repository; home: the home folder. */
-  readonly source: "config" | "git" | "home" | null;
-  /** memory.agent as the folder's own config writes it. */
-  readonly configured: string | null;
-}
-
 export interface DreamRunSummary {
   readonly runId: string;
   readonly status: string;
@@ -225,10 +215,6 @@ export const rubatoMemory = {
       | { models: ReadonlyArray<{ model: string; reasoning?: DreamReasoning }> }
       | { store: string; enabled: boolean },
   ) => call<{ saved: unknown[] }>(env, "config", change),
-  projects: (env: EnvironmentId | null, dirs: readonly string[]) =>
-    call<{ projects: ProjectStore[] }>(env, "projects", { dirs }),
-  setProjectStore: (env: EnvironmentId | null, dir: string, store: string | null) =>
-    call<{ dir: string; store: string | null }>(env, "project-store", { dir, store }),
   self: (env: EnvironmentId | null) => call<SelfFiles>(env, "self"),
   saveSelf: (
     env: EnvironmentId | null,

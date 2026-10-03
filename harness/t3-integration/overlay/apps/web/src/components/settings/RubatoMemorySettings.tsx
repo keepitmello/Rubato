@@ -17,7 +17,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 
 import { requestConfirmDialog } from "../../confirmDialog";
 import { cn } from "../../lib/utils";
-import { useProjects } from "../../state/entities";
 import { usePrimaryEnvironmentId } from "../../state/environments";
 import { primaryServerProvidersAtom } from "../../state/server";
 import { usePreparedConnection } from "../../state/session";
@@ -33,7 +32,6 @@ import {
   type MemoryStatus,
   type MemoryStoreStatus,
   type MemoryStoreSummary,
-  type ProjectStore,
 } from "../../state/rubatoMemory";
 import ChatMarkdown from "../ChatMarkdown";
 import { iconForProviderModel } from "../chat/providerIconUtils";
@@ -393,12 +391,6 @@ export function RubatoMemorySettingsPanel() {
               <DreamModelsEditor models={status.models} onChange={setModels} />
             )}
           </SettingsSection>
-          <ProjectStoresSection
-            environmentId={environmentId}
-            home={home}
-            stores={stores?.map((store) => store.store) ?? []}
-            onChanged={() => void refresh()}
-          />
         </>
       ) : null}
     </SettingsPageContainer>
@@ -1448,171 +1440,6 @@ export function DreamModelsEditor({
         </div>
       ) : null}
     </SettingsRow>
-  );
-}
-
-const AUTOMATIC = "__automatic__";
-const NEW_STORE = "__new__";
-const STORE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-
-function projectStoreLabel(entry: ProjectStore | undefined): string {
-  if (!entry) return "Checking…";
-  if (entry.configured) return "Chosen here; saved in this folder's .rubato/rubato.jsonc.";
-  if (entry.source === "git") return "Automatic: folders in the same git repository share one memory.";
-  if (entry.source === "home") return "Automatic: the home folder has its own memory.";
-  return "Automatic: no memory, because this folder is not in a git repository. Pick one to give it memory.";
-}
-
-/** Each project in the app and the memory its sessions use; picking one writes memory.agent. */
-function ProjectStoresSection({
-  environmentId,
-  home,
-  stores,
-  onChanged,
-}: {
-  environmentId: EnvironmentId;
-  home: string | null;
-  stores: readonly string[];
-  onChanged: () => void;
-}) {
-  const allProjects = useProjects();
-  const projects = useMemo(
-    () =>
-      allProjects
-        .filter((project) => project.environmentId === environmentId)
-        .toSorted((a, b) => a.title.localeCompare(b.title)),
-    [allProjects, environmentId],
-  );
-  const dirsKey = projects.map((project) => project.workspaceRoot).join("\n");
-  const [resolved, setResolved] = useState<ReadonlyMap<string, ProjectStore>>(new Map());
-  const [error, setError] = useState<string | null>(null);
-  const [naming, setNaming] = useState<string | null>(null);
-  const [newName, setNewName] = useState("");
-  const [saving, setSaving] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    if (environmentId === null || dirsKey === "") return;
-    try {
-      const result = await rubatoMemory.projects(environmentId, dirsKey.split("\n"));
-      setResolved(new Map(result.projects.map((entry) => [entry.dir, entry])));
-      setError(null);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    }
-  }, [environmentId, dirsKey]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const save = async (dir: string, store: string | null) => {
-    setSaving(dir);
-    try {
-      await rubatoMemory.setProjectStore(environmentId, dir, store);
-      setNaming(null);
-      setNewName("");
-      await load();
-      onChanged();
-      toastManager.add({
-        type: "info",
-        title: store ? `This project now uses ${store}` : "Back to automatic",
-        description: "New sessions pick this up; running ones keep the memory they started with.",
-      });
-    } catch (cause) {
-      reportError("Could not change the project's memory", cause);
-    } finally {
-      setSaving(null);
-    }
-  };
-
-  if (projects.length === 0) return null;
-  return (
-    <SettingsSection id="memory-projects" title="Which memory each project uses">
-      {error ? <SettingsRow title="Could not read the projects' memory" description={error} /> : null}
-      {projects.map((project) => {
-        const dir = project.workspaceRoot;
-        const entry = resolved.get(dir);
-        const options = [...new Set([...stores, ...(entry?.configured ? [entry.configured] : [])])].toSorted();
-        // The automatic choice names the memory it lands on, so "Automatic" never hides where it goes.
-        const automatic = entry && !entry.configured ? (entry.store ?? "No memory") : null;
-        return (
-          <SettingsRow
-            key={`${project.environmentId}:${project.id}`}
-            title={project.title}
-            description={
-              <span className="block truncate" title={dir}>
-                {tildePath(dir, home)}
-              </span>
-            }
-            status={projectStoreLabel(entry)}
-            control={
-              naming === dir ? (
-                <form
-                  className="flex items-center gap-1.5"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    if (STORE_NAME.test(newName.trim())) void save(dir, newName.trim());
-                  }}
-                >
-                  <Input
-                    autoFocus
-                    size="sm"
-                    className="w-40"
-                    placeholder="new memory name"
-                    value={newName}
-                    onChange={(event) => setNewName(event.currentTarget.value)}
-                    aria-label={`New memory for ${project.title}`}
-                  />
-                  <Button size="sm" type="submit" disabled={saving === dir || !STORE_NAME.test(newName.trim())}>
-                    Save
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => setNaming(null)}>
-                    Cancel
-                  </Button>
-                </form>
-              ) : (
-                <Select
-                  value={entry?.configured ?? AUTOMATIC}
-                  onValueChange={(next) => {
-                    if (typeof next !== "string") return;
-                    if (next === NEW_STORE) {
-                      setNaming(dir);
-                      setNewName("");
-                    } else if (next === AUTOMATIC) {
-                      if (entry?.configured) void save(dir, null);
-                    } else if (next !== entry?.configured) void save(dir, next);
-                  }}
-                >
-                  <SelectTrigger
-                    size="sm"
-                    className="w-48"
-                    aria-label={`Memory for ${project.title}`}
-                    disabled={saving === dir || !entry}
-                  >
-                    <SelectValue>
-                      {entry?.configured ?? (
-                        <span>
-                          {automatic ?? "…"} <span className="text-muted-foreground">· auto</span>
-                        </span>
-                      )}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectPopup align="end" alignItemWithTrigger={false}>
-                    <SelectItem value={AUTOMATIC}>Automatic{automatic ? ` (${automatic})` : ""}</SelectItem>
-                    {options.map((store) => (
-                      <SelectItem key={store} value={store}>
-                        {store}
-                      </SelectItem>
-                    ))}
-                    <SelectItem value={NEW_STORE}>New memory…</SelectItem>
-                  </SelectPopup>
-                </Select>
-              )
-            }
-          />
-        );
-      })}
-    </SettingsSection>
   );
 }
 

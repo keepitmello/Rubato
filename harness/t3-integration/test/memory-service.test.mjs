@@ -290,33 +290,3 @@ test('a newcomer has no stores yet', async (t) => {
   const service = createMemoryService({ env: { ...process.env, HOME: home, RUBATO_MEMORY_HOME: '' } });
   assert.deepEqual((await service.handle('stores', {})).stores, []);
 });
-
-test('project folders resolve to their store and can name one', { skip: !bunAvailable && 'bun is not installed' }, async (t) => {
-  const f = await fixture(t);
-  const repoProject = path.join(f.home, 'code', 'app');
-  const plain = path.join(f.home, 'notes');
-  await mkdir(repoProject, { recursive: true });
-  await mkdir(plain, { recursive: true });
-  execFileSync('git', ['init', '-q', repoProject]);
-
-  const before = await f.service.handle('projects', { dirs: [repoProject, plain, f.home] });
-  const byDir = Object.fromEntries(before.projects.map((entry) => [entry.dir, entry]));
-  assert.deepEqual([byDir[repoProject].store, byDir[repoProject].source], ['app', 'git']);
-  assert.deepEqual([byDir[plain].store, byDir[plain].source], [null, null]);
-  assert.deepEqual([byDir[f.home].store, byDir[f.home].source], ['home', 'home']);
-
-  await f.service.handle('project-store', { dir: plain, store: 'scratch' });
-  const configFile = path.join(plain, '.rubato', 'rubato.jsonc');
-  assert.equal(JSON.parse(await readFile(configFile, 'utf8')).memory.agent, 'scratch');
-  const named = (await f.service.handle('projects', { dirs: [plain] })).projects[0];
-  assert.deepEqual([named.store, named.source, named.configured], ['scratch', 'config', 'scratch']);
-
-  await f.service.handle('project-store', { dir: plain, store: null });
-  assert.equal(JSON.parse(await readFile(configFile, 'utf8')).memory?.agent, undefined);
-  assert.equal((await f.service.handle('projects', { dirs: [plain] })).projects[0].store, null);
-
-  await assert.rejects(f.service.handle('project-store', { dir: 'relative/dir', store: 'x' }), /not valid/);
-  await assert.rejects(f.service.handle('project-store', { dir: path.join(f.home, 'missing'), store: 'x' }), /does not exist/);
-  await assert.rejects(f.service.handle('project-store', { dir: plain, store: '../x' }), /not valid/);
-  await assert.rejects(f.service.handle('projects', { dirs: ['relative'] }), /absolute/);
-});
