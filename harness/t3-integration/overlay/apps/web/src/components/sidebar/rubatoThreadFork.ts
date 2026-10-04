@@ -14,9 +14,9 @@ import { environmentServerConfigsAtom } from "~/state/server";
 import { readPreparedConnection } from "~/state/session";
 import { environmentThreadShells } from "~/state/threads";
 
-// "Fork thread" in the legacy sidebar's thread menu. The server half is
-// /rubato/thread-fork (RubatoThreadFork.ts): it copies the thread's Rubato
-// conversation into a new one and answers with the thread that shows it.
+// "Fork thread" in the sidebar's thread menu (the thread action menu and the legacy
+// sidebar's). The server half is /rubato/thread-fork (RubatoThreadFork.ts): it copies
+// the thread's Rubato conversation into a new one and answers with the thread that shows it.
 
 const FORK_ROUTE = "/rubato/thread-fork";
 
@@ -25,14 +25,21 @@ function rubatoDriverOf(environmentId: EnvironmentId, instanceId: string): boole
   return providers.some((provider) => provider.instanceId === instanceId && provider.driver === "rubato-pi");
 }
 
+type ForkableThread = { readonly environmentId: EnvironmentId; readonly modelSelection: ModelSelection };
+
 /** Fork is offered for a thread that runs on Rubato; other providers keep their own history. */
+export function threadRunsOnRubato(
+  thread: ForkableThread,
+  runsOnRubato: (environmentId: EnvironmentId, instanceId: string) => boolean = rubatoDriverOf,
+): boolean {
+  return runsOnRubato(thread.environmentId, thread.modelSelection.instanceId);
+}
+
 export function forkMenuItems(
-  thread: { readonly environmentId: EnvironmentId; readonly modelSelection: ModelSelection },
+  thread: ForkableThread,
   runsOnRubato: (environmentId: EnvironmentId, instanceId: string) => boolean = rubatoDriverOf,
 ): ContextMenuItem<"fork">[] {
-  return runsOnRubato(thread.environmentId, thread.modelSelection.instanceId)
-    ? [{ id: "fork", label: "Fork thread" }]
-    : [];
+  return threadRunsOnRubato(thread, runsOnRubato) ? [{ id: "fork", label: "Fork thread" }] : [];
 }
 
 /** Resolves when the thread reaches the live client store; the route sends a missing thread home. */
