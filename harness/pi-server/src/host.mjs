@@ -155,8 +155,9 @@ class RuntimeHandle {
    * A due cache refresh is pending work too. A presentation detaching (T3 stops a
    * provider session after 30 idle minutes) must not take the warmer with it: its
    * first refresh is 40 minutes after the turn, so unloading on detach meant no
-   * refresh was ever sent from the app. The warmer stops on its own two hours after
-   * the latest user input, and the next idle check then unloads the runtime.
+   * refresh was ever sent from the app. The warmer stops on its own at its window's
+   * end (two hours after the latest user input, or the end the person set), and the
+   * next idle check then unloads the runtime.
    */
   async pendingWork() {
     const [tasks, warming] = await Promise.all([

@@ -6,7 +6,7 @@ import { readPreparedConnection } from "./session";
 /** The route Rubato adds to the T3 server for the context ring's warmer switch. */
 const CACHE_WARMING_ROUTE = "/rubato/cache-warming";
 
-/** Sets one session's warmer (on/off, hours); answers with that session's cache after it. */
+/** Sets one session's warmer (on/off, hours from now); answers with that session's cache after it. */
 export async function setSessionCacheWarming(
   environmentId: EnvironmentId,
   sessionId: string,
@@ -33,8 +33,8 @@ export async function setSessionCacheWarming(
 /**
  * A thread whose prompt cache is still warm, as the sidebar draws it. Times are epoch ms.
  * `expiresAt` is when the cache goes cold, counting the refreshes a scheduled warmer will
- * still send; `from` is the latest input, where that lifetime started. `warmer` is what
- * the warmer does for it: `on` holds the cache until `until`, `ended` means it has let go
+ * still send; `from` is the latest input, where that lifetime started. `until` is when the
+ * engine stops warming it. `warmer` is what the warmer does for it: `on` holds the cache until `until`, `ended` means it has let go
  * and the cache runs out on its own, `off` (this thread or the setting) and `idle` mean it
  * is not warming.
  */
@@ -43,7 +43,6 @@ export interface CachedThread {
   readonly expiresAt: number;
   readonly from?: number;
   readonly warmer: "on" | "ended" | "off" | "idle";
-  readonly hours?: number;
   readonly until?: number;
 }
 

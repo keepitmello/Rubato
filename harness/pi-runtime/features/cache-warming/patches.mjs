@@ -11,6 +11,10 @@
 // 20 minutes (30m tier). Inside that window every refresh is sent; outside it none is. Other
 // providers keep stock behaviour.
 //
+// The person can also set the end directly ("warm for N hours from now"). The latest action wins:
+// an end set after the latest input stands as set, shorter than two hours too; a later input
+// still gets its two hours unless the set end reaches further (`warmingDeadline`).
+//
 // Codex has no output-token cap on the wire, so a replay would generate a whole turn. Its refresh
 // stops at the first output event instead: by then the prompt prefix has been processed, which is
 // what refreshes the cache entry.
@@ -67,9 +71,9 @@ export const RUBATO_WARMING_INTERVAL_MS = Object.freeze({
     anthropic: 40 * 60_000,
     "openai-codex": 20 * 60_000,
 });
-/** Rubato keeps warming this long after the latest user input, unless the session chose its own hours. */
+/** Rubato keeps warming this long after the latest user input, unless the session set its own end. */
 export const RUBATO_WARMING_HORIZON_MS = 2 * 60 * 60_000;
-/** The longest a session may ask for: warming keeps its runtime loaded that long. */
+/** The longest a session may ask for from now: warming keeps its runtime loaded that long. */
 export const RUBATO_WARMING_MAX_HOURS = 24;
 export function rubatoWarmingIntervalMs(model) {
     return RUBATO_WARMING_INTERVAL_MS[model?.provider];
@@ -95,8 +99,8 @@ export function lastResponseCompacted(entries) {
 }
 /**
  * A session's own warmer choice, persisted as a custom entry (never sent to the model):
- * whether it warms and for how many hours after the latest user input. Off stays off
- * across later inputs until the person turns it back on.
+ * whether it warms, and the end the person set (until) with when they set it (setAt),
+ * both epoch ms. Off stays off across later inputs until the person turns it back on.
  */
 export const SESSION_WARMING_ENTRY = "rubato.cache-warming";
 export function validWarmingHours(hours) {
@@ -106,10 +110,10 @@ export function sessionWarming(entries) {
     for (let index = entries.length - 1; index >= 0; index--) {
         const entry = entries[index];
         if (entry?.type === "custom" && entry.customType === SESSION_WARMING_ENTRY) {
-            const { hours } = entry.data ?? {};
+            const { until, setAt } = entry.data ?? {};
             return {
                 enabled: entry.data?.enabled !== false,
-                ...(validWarmingHours(hours) ? { hours } : {}),
+                ...(Number.isFinite(until) && Number.isFinite(setAt) ? { until, setAt } : {}),
             };
         }
     }
@@ -125,6 +129,20 @@ export function lastUserInputAt(entries) {
         }
     }
     return undefined;
+}
+/**
+ * When warming ends: two hours after the latest user input, or the end the person set.
+ * The latest action wins: an end set after that input stands as set (shorter too), and a
+ * later input keeps the set end only if it reaches further. Undefined with neither.
+ */
+export function warmingDeadline(entries, preference = sessionWarming(entries)) {
+    const inputAt = lastUserInputAt(entries);
+    const fromInput = inputAt === undefined ? undefined : inputAt + RUBATO_WARMING_HORIZON_MS;
+    if (preference.until === undefined)
+        return fromInput;
+    if (inputAt === undefined || preference.setAt >= inputAt)
+        return preference.until;
+    return Math.max(preference.until, fromInput);
 }
 /** Refresh at 90% of the TTL while preserving at least ten seconds of margin. */`,
     "policy",
@@ -168,7 +186,7 @@ export function lastUserInputAt(entries) {
             firstTouchAt: touchedAt,
             anchoredUntil: rubatoIntervalMs === undefined
                 ? undefined
-                : (lastUserInputAt(this.sessionManager.getBranch()) ?? Date.now()) + this.horizonMs(),
+                : this.deadline() ?? Date.now() + RUBATO_WARMING_HORIZON_MS,
         };
         this.schedule(this.run);`,
     "start-anchor",
@@ -183,7 +201,7 @@ export function lastUserInputAt(entries) {
     `        run.phase = "idle";
         const deadline = run.anchoredUntil ?? run.startedAt + MAX_IDLE_WARMING_AGE_MS;
         if (run.nextWarmAt > deadline || Date.now() >= deadline || (run.anchoredUntil !== undefined && run.nextWarmAt >= deadline)) {
-            this.stop(run.anchoredUntil === undefined ? "30-minute idle safety limit reached" : "two hours since the latest user input");
+            this.stop(run.anchoredUntil === undefined ? "30-minute idle safety limit reached" : "warming window ended");
         }`,
     "settled-deadline",
   );
@@ -195,10 +213,10 @@ export function lastUserInputAt(entries) {
             return;
         }`,
     `        const deadline = run.anchoredUntil ?? run.startedAt + (run.phase === "idle" ? MAX_IDLE_WARMING_AGE_MS : MAX_WARMING_AGE_MS);
-        // The window is "up to two hours": a refresh due exactly at the horizon is not sent.
+        // The window runs up to its end: a refresh due exactly at the end is not sent.
         if (run.nextWarmAt > deadline || Date.now() >= deadline || (run.anchoredUntil !== undefined && run.nextWarmAt >= deadline)) {
             this.stop(run.anchoredUntil !== undefined
-                ? "two hours since the latest user input"
+                ? "warming window ended"
                 : run.phase === "idle" ? "30-minute idle safety limit reached" : "one-hour safety limit reached");
             return;
         }`,
@@ -319,22 +337,30 @@ export function lastUserInputAt(entries) {
     sessionDisabled() {
         return !this.sessionPreference().enabled;
     }
-    horizonMs() {
-        return (this.sessionPreference().hours ?? RUBATO_WARMING_HORIZON_MS / 3_600_000) * 3_600_000;
+    /** When warming ends for this session (warmingDeadline), or undefined before any input. */
+    deadline() {
+        return warmingDeadline(this.sessionManager.getBranch(), this.sessionPreference());
     }
     /**
-     * Change this session's warmer: on/off and hours after the latest user input. The
-     * choice persists in the session, so later turns and a new runtime keep it. A warmer
-     * that is on restarts from the latest request, counting from when the cache was last
-     * touched, so a longer window picks up again and a shorter one ends where it should.
+     * Change this session's warmer: on/off, and hours from now to end warming. Turning it
+     * on after its window ended starts a new two-hour window from now. The choice persists
+     * in the session, so later turns and a new runtime keep it. A warmer that is on restarts
+     * from the latest request, counting from when the cache was last touched, so a longer
+     * window picks up again and a shorter one ends where it should.
      */
     setSessionWarming({ enabled, hours } = {}) {
         const current = this.sessionPreference();
+        const now = Date.now();
+        const ended = !(this.deadline() > now);
+        const until = validWarmingHours(hours) ? now + hours * 3_600_000
+            : enabled === true && !current.enabled && ended ? now + RUBATO_WARMING_HORIZON_MS
+                : undefined;
         const next = {
             enabled: typeof enabled === "boolean" ? enabled : current.enabled,
-            ...(validWarmingHours(hours) ? { hours } : current.hours === undefined ? {} : { hours: current.hours }),
+            ...(until !== undefined ? { until, setAt: now }
+                : current.until === undefined ? {} : { until: current.until, setAt: current.setAt }),
         };
-        if (next.enabled === current.enabled && next.hours === current.hours)
+        if (next.enabled === current.enabled && next.until === current.until)
             return;
         this.sessionManager.appendCustomEntry(SESSION_WARMING_ENTRY, next);
         this.sessionPref = next;
@@ -396,7 +422,7 @@ export function patchSettingsWarmingDefault(source) {
 /**
  * The warmer's live state is in memory; a presentation (the app's context ring) and the
  * session host (which must not unload a runtime with a refresh still due) read it here.
- * `set_session_cache_warming` sets this session's warmer (on/off, hours); the global mode stays a setting.
+ * `set_session_cache_warming` sets this session's warmer (on/off, hours from now); the global mode stays a setting.
  */
 export function patchRpcCacheWarming(source) {
   const next = `import { cacheSnapshot } from "../../rubato-features/statusline/statusline.mjs";\nimport { lastUserInputAt, validWarmingHours } from "../../core/cache-warmer.js";\n${source}`;
@@ -410,7 +436,7 @@ export function patchRpcCacheWarming(source) {
                     if (command.enabled !== undefined && typeof command.enabled !== "boolean")
                         return error(id, command.type, "enabled must be a boolean");
                     if (command.hours !== undefined && !validWarmingHours(command.hours))
-                        return error(id, command.type, "hours must be a whole number from 1 to 24");
+                        return error(id, command.type, "hours (from now) must be a whole number from 1 to 24");
                     if (!warmer)
                         return error(id, command.type, "This session has no cache warmer");
                     warmer.setSessionWarming({ enabled: command.enabled, hours: command.hours });
@@ -418,7 +444,7 @@ export function patchRpcCacheWarming(source) {
                 return success(id, command.type, {
                     mode: session.settingsManager.getCacheWarmingMode(),
                     sessionEnabled: warmer ? !warmer.sessionDisabled() : false,
-                    ...(warmer ? { sessionHours: warmer.horizonMs() / 3_600_000 } : {}),
+                    sessionUntil: warmer?.deadline() ?? null,
                     lastInputAt: lastUserInputAt(session.sessionManager.getBranch()) ?? null,
                     status: session.cacheWarmingStatus ?? null,
                     cache: cacheSnapshot(session.sessionManager.getBranch(), session.model, Date.now(), session.cacheWarmingStatus),

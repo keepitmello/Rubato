@@ -1096,7 +1096,7 @@ test('the meter carries the cache and the warmer, and the switch turns off only 
   await until(() => cacheOf() !== undefined);
   const sessionId = cacheOf().sessionId;
   assert.ok(sessionId);
-  assert.deepEqual(cacheOf(), { state: 'warm', sessionId, hitPercent: 90, expiresAt: 1_790_000_000_000, warming: { mode: 'idle', enabled: true, hours: 2, from: 1_789_990_000_000, active: false } });
+  assert.deepEqual(cacheOf(), { state: 'warm', sessionId, hitPercent: 90, expiresAt: 1_790_000_000_000, warming: { mode: 'idle', enabled: true, from: 1_789_990_000_000, active: false, until: 1_790_000_000_000 + 2 * 3_600_000 } });
   const response = await handleCacheWarmingRequest(new Request('http://t3/rubato/cache-warming', {
     method: 'POST', body: JSON.stringify({ sessionId, enabled: false }) }));
   assert.equal((await response.json()).cache.warming.enabled, false);
@@ -1105,7 +1105,7 @@ test('the meter carries the cache and the warmer, and the switch turns off only 
   await bridge.stopSession('cache-thread');
   const back = await bridge.setSessionCacheWarming(sessionId, { enabled: true, hours: 8 });
   assert.equal(back.warming.enabled, true);
-  assert.equal(back.warming.hours, 8);
+  assert.equal(back.warming.until, 1_790_000_000_000 + 8 * 3_600_000);
 });
 
 test('the sidebar lists every thread whose cache is still warm, with what its warmer is doing', async () => {
@@ -1113,15 +1113,16 @@ test('the sidebar lists every thread whose cache is still warm, with what its wa
   const now = Date.now();
   const HOUR = 3_600_000;
   const snap = (warming, cache = {}) => ({ state: 'warm', sessionId: 's', expiresAt: now + HOUR, ...cache,
-    warming: { mode: 'idle', enabled: true, active: true, hours: 2, ...warming } });
-  bridge.rememberWarmth('warming', snap({ from: now - HOUR, hours: 4 }, { expiresAt: now + 4 * HOUR }));
-  bridge.rememberWarmth('ended', snap({ from: now - 3 * HOUR }));
+    warming: { mode: 'idle', enabled: true, active: true, ...warming } });
+  // `until` is the engine's own end, read as is: here one set later than the input allows.
+  bridge.rememberWarmth('warming', snap({ from: now - 5 * HOUR, until: now + 3 * HOUR }, { expiresAt: now + 4 * HOUR }));
+  bridge.rememberWarmth('ended', snap({ from: now - 3 * HOUR, until: now - HOUR }));
   bridge.rememberWarmth('off', { ...snap({ from: now }), warming: { mode: 'off', enabled: true, active: false } });
   bridge.rememberWarmth('expired', snap({ from: now - HOUR }, { expiresAt: now - 1 }));
   bridge.rememberWarmth('cold', snap({ from: now }, { state: 'cold' }));
   assert.deepEqual(bridge.cachedThreads(), {
-    warming: { sessionId: 's', expiresAt: now + 4 * HOUR, warmer: 'on', from: now - HOUR, hours: 4, until: now + 3 * HOUR },
-    ended: { sessionId: 's', expiresAt: now + HOUR, warmer: 'ended', from: now - 3 * HOUR, hours: 2, until: now - HOUR },
+    warming: { sessionId: 's', expiresAt: now + 4 * HOUR, warmer: 'on', from: now - 5 * HOUR, until: now + 3 * HOUR },
+    ended: { sessionId: 's', expiresAt: now + HOUR, warmer: 'ended', from: now - 3 * HOUR, until: now - HOUR },
     off: { sessionId: 's', expiresAt: now + HOUR, warmer: 'off' },
   });
 });

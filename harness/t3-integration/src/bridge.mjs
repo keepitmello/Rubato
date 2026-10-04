@@ -744,8 +744,7 @@ export class RubatoPiBridge {
     const now = Date.now();
     for (const [threadId, cache] of this.warmth ?? []) {
       if (cache.state !== 'warm' || !(cache.expiresAt > now)) continue;
-      const { mode, enabled, active, hours, from } = cache.warming;
-      const until = hours && from !== undefined ? from + hours * 3_600_000 : undefined;
+      const { mode, enabled, active, from, until } = cache.warming;
       const warmer = mode === 'off' || !enabled ? 'off'
         : until === undefined ? 'idle'
         : until <= now ? 'ended'
@@ -753,7 +752,7 @@ export class RubatoPiBridge {
       threads[threadId] = {
         sessionId: cache.sessionId, expiresAt: cache.expiresAt, warmer,
         ...(from !== undefined ? { from } : {}),
-        ...(until !== undefined ? { hours, until } : {}),
+        ...(until !== undefined ? { until } : {}),
       };
     }
     return threads;
@@ -762,7 +761,7 @@ export class RubatoPiBridge {
     return event?.type === 'agent_settled' || (event?.type === 'entry_appended' && event.entry?.kind === 'cache_warm');
   }
   /**
-   * The ring's control sets one session's warmer: on/off and hours. A thread T3 has let go of
+   * The ring's control sets one session's warmer: on/off and hours from now. A thread T3 has let go of
    * after its idle half hour has no attachment here, so a short-lived one does the job
    * (the engine keeps a warming runtime loaded, and loads a stored one for the switch).
    */
@@ -867,7 +866,7 @@ export const liveBridge = () => [...liveBridges].find((item) => !item.closed);
  * module by the path the Rubato provider is wired to, so it is the same module instance
  * and sees the provider's bridge). GET lists the threads whose cache is still warm (the
  * sidebar's capsules);
- * POST `{ sessionId, enabled?, hours? }` sets that session's warmer.
+ * POST `{ sessionId, enabled?, hours? }` sets that session's warmer (`hours` from now).
  */
 export async function handleCacheWarmingRequest(request) {
   const bridge = liveBridge();

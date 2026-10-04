@@ -19,7 +19,7 @@ describe("the sidebar's cache capsule", () => {
   it("fills by what is left of the cache's life since the latest input, not the warmer's hours", () => {
     // Warmer on for 2h, 1h in, the cache lasting 1h past the warmer: 2h of 3h left.
     const warmed = renderToStaticMarkup(
-      <CacheCapsuleGlyph cached={thread({ warmer: "on", hours: 2, until: now + HOUR, expiresAt: now + 2 * HOUR })} now={now} />,
+      <CacheCapsuleGlyph cached={thread({ warmer: "on", until: now + HOUR, expiresAt: now + 2 * HOUR })} now={now} />,
     );
     expect(widthOf(warmed)).toBeCloseTo(66.667, 2);
     // No warmer: half of a cache that dies on its own.
@@ -36,11 +36,11 @@ describe("the sidebar's cache capsule", () => {
 
   it("tells how long the cache stays warm first, then what the warmer does", () => {
     const [cache, warmer] = cacheTooltipLines(
-      thread({ warmer: "on", hours: 2, until: now + HOUR, expiresAt: now + 2 * HOUR + 18 * 60_000 }),
+      thread({ warmer: "on", until: now + HOUR, expiresAt: now + 2 * HOUR + 18 * 60_000 }),
       now,
     );
     expect(cache).toBe("Cache warm · 2h 18m left");
-    expect(warmer).toMatch(/^Warmer on until .+ · 2h$/);
+    expect(warmer).toMatch(/^Warmer on until [^·]+$/);
     expect(cacheTooltipLines(thread({ warmer: "off" }), now)[1]).toBe("Warmer off");
   });
 });
