@@ -121,7 +121,7 @@ lines.on('line', (line) => {
         state: (command.enabled ?? warming.enabled) ? warming.state : 'inactive' };
       // falls through: the answer is the state after the switch
     case 'get_cache_warming':
-      data = { mode: 'idle', sessionEnabled: warming.enabled, sessionHours: warming.hours, lastInputAt: 1_789_990_000_000, status: { state: warming.state },
+      data = { mode: 'idle', sessionEnabled: warming.enabled, sessionUntil: warming.hours ? 1_790_000_000_000 + warming.hours * 3_600_000 : null, lastInputAt: 1_789_990_000_000, status: { state: warming.state },
         cache: { state: 'warm', hitPercent: 90, expiresAt: 1_790_000_000_000 } }; break;
     case 'extension_request':
       if (command.name === 'rubato.service-tier.status') { data = fast; break; }

@@ -219,20 +219,21 @@ export const contextTokensOf = (usage) => {
 };
 // The context ring's cache facts, from the engine's `get_cache_warming`. `warming.mode` is the
 // global setting and `warming.enabled` this session's own switch. Times are epoch ms;
-// `expiresAt` already counts the refreshes a scheduled warmer will still send, because
-// T3 detaches an idle session and hears nothing from it after that.
+// `warming.until` is when the engine stops warming this session (its one answer, read
+// as is), `warming.from` the latest input. `expiresAt` already counts the refreshes a
+// scheduled warmer will still send, because T3 detaches an idle session and hears
+// nothing from it after that.
 const CACHE_STATES = new Set(['warm', 'cold', 'unknown']);
 const WARMING_MODES = new Set(['off', 'idle', 'streaming']);
 export const cacheFrom = (value) => {
   const cache = record(record(value).cache);
   const status = record(record(value).status);
   const { mode, sessionEnabled, sessionId } = record(value);
-  const hours = asInt(record(value).sessionHours);
   const from = asInt(record(value).lastInputAt);
   if (!CACHE_STATES.has(cache.state) || !WARMING_MODES.has(mode)) return;
   const hitPercent = asInt(cache.hitPercent);
   const expiresAt = asInt(cache.expiresAt);
-  const until = asInt(status.until);
+  const until = asInt(record(value).sessionUntil) ?? asInt(status.until);
   return {
     state: cache.state,
     ...(typeof sessionId === 'string' && sessionId ? { sessionId } : {}),
@@ -241,7 +242,6 @@ export const cacheFrom = (value) => {
     warming: {
       mode,
       enabled: sessionEnabled !== false,
-      ...(hours > 0 ? { hours } : {}),
       ...(from !== undefined ? { from } : {}),
       active: status.state === 'scheduled' || status.state === 'refreshing',
       ...(until !== undefined ? { until } : {}),

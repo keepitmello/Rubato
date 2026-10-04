@@ -61,19 +61,30 @@ function Row(props: { label: string; children: ReactNode }) {
 }
 
 const HOUR = 3_600_000;
-const MIN_HOURS = 1;
 const MAX_HOURS = 12;
-const DEFAULT_HOURS = 2;
 /** Clicks land in a burst; the last value is saved once they stop. */
 const SAVE_AFTER_MS = 600;
+
+/**
+ * What the stepper shows: the time left until the warmer stops, in whole hours (minutes
+ * under one hour). `base` is the whole-hour value − / + step from.
+ */
+export function warmingLeft(until: number | null | undefined, now: number): { label: string; base: number } {
+  const left = until != null ? until - now : 0;
+  if (left <= 0) return { label: "0h", base: 0 };
+  if (left < HOUR) return { label: `${Math.max(1, Math.floor(left / 60_000))}m`, base: 1 };
+  const base = Math.round(left / HOUR);
+  return { label: `${base}h`, base };
+}
 
 /**
  * The cache half of the context ring's popover, on top of the context half: lifetime,
  * hit rate and this thread's warmer. The switch turns the warmer on or off for this
  * thread, and off stays off through later messages until it is switched back on. While
- * it is on, − / + change how many hours after the latest input it keeps warming, with
- * the end time beside them; the value is saved once the clicks stop. It answers for
- * this thread only; the global mode is a setting (/settings in the CLI).
+ * it is on, the stepper shows the time left and − / + set it in hours from now, with the
+ * end time beside them; the value is saved once the clicks stop. The end is the engine's
+ * (`warming.until`): a later message still gets two hours. It answers for this thread
+ * only; the global mode is a setting (/settings in the CLI).
  */
 export function RubatoCacheSection(props: {
   cache: RubatoCache | null | undefined;
@@ -96,10 +107,9 @@ export function RubatoCacheSection(props: {
 
   const cold = rubatoCacheIsCold(cache, now);
   const globalOff = cache.warming.mode === "off";
-  const saved = Math.min(MAX_HOURS, Math.max(MIN_HOURS, cache.warming.hours ?? DEFAULT_HOURS));
-  const hours = draft ?? saved;
-  const from = cache.warming.from;
-  const until = from != null ? from + hours * HOUR : null;
+  const left = warmingLeft(cache.warming.until, now);
+  const hours = draft ?? left.base;
+  const until = draft != null ? now + draft * HOUR : (cache.warming.until ?? null);
   const status = cold
     ? "Cold"
     : cache.state === "warm" && cache.expiresAt != null
@@ -129,7 +139,7 @@ export function RubatoCacheSection(props: {
   };
 
   const change = (delta: number) => {
-    const next = Math.min(MAX_HOURS, Math.max(MIN_HOURS, hours + delta));
+    const next = Math.min(MAX_HOURS, Math.max(1, hours + delta));
     if (next === hours || !props.environmentId || !cache.sessionId) return;
     const environmentId = props.environmentId;
     const sessionId = cache.sessionId;
@@ -188,13 +198,13 @@ export function RubatoCacheSection(props: {
                 size="icon-xs"
                 variant="ghost"
                 aria-label="One hour less"
-                disabled={!canChange || hours <= MIN_HOURS}
+                disabled={!canChange || hours <= 1}
                 onClick={() => change(-1)}
               >
                 <MinusIcon aria-hidden="true" />
               </Button>
-              <span className="w-6 text-center font-medium tabular-nums text-popover-foreground" aria-live="polite">
-                {hours}h
+              <span className="w-7 text-center font-medium tabular-nums text-popover-foreground" aria-live="polite">
+                {draft != null ? `${draft}h` : left.label}
               </span>
               <Button
                 size="icon-xs"
@@ -208,6 +218,11 @@ export function RubatoCacheSection(props: {
             </div>
             {endNote ? <span className="w-[4.5rem] text-right tabular-nums text-popover-foreground/65">{endNote}</span> : null}
           </div>
+        </div>
+      ) : null}
+      {on && cold ? (
+        <div className="pl-2.5 text-pretty text-[11px] text-popover-foreground/65">
+          Warms again after your next message.
         </div>
       ) : null}
       {error ? <div className="text-pretty text-[11px] text-destructive">{error}</div> : null}
