@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url"
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { TeamModeConfigSchema, type TeamModeConfig } from "@rubato/team-core/config"
+import { loadRuntimeState } from "@rubato/team-core/team-state-store"
 import { log } from "@rubato/utils"
 
 import { parseTaskId, type TaskId } from "../../state"
@@ -244,15 +245,40 @@ function runSafely(operation: string, promise: Promise<void>): void {
   })
 }
 
-function createMemberBoardService(parsed: ParsedMemberExtensionEnv): TeamToolsService {
+export function createMemberBoardService(parsed: ParsedMemberExtensionEnv): TeamToolsService {
   const ctx: TeamTasklistContext = { teamRunId: parsed.teamRunId, config: parsed.config }
   const unused = (name: string) => (): never => {
     throw new Error(`${name} is not available on the member board`)
   }
-  const assertOwnTeam = (teamRunId: string): void => {
-    if (teamRunId !== parsed.teamRunId) {
-      throw new Error(`Team ${teamRunId} is not this member's team.`)
-    }
+  // Members reach the board by the run id team_create returned, but a member never sees that id:
+  // it knows the team by the name it was spawned under and often passes that instead. Resolve the
+  // name from this run's own state file — a member may only ever see its own team, so this read is
+  // the only source. A missing or unreadable state file costs the name alias, never the run id, and
+  // is retried on the next call so a state file written after startup is still picked up.
+  let ownTeamNameCache: string | undefined
+  let ownTeamNameInFlight: Promise<string | undefined> | undefined
+  const ownTeamName = (): Promise<string | undefined> => {
+    if (ownTeamNameCache !== undefined) return Promise.resolve(ownTeamNameCache)
+    ownTeamNameInFlight ??= loadRuntimeState(parsed.teamRunId, parsed.config)
+      .then((runtimeState) => {
+        ownTeamNameCache = runtimeState.teamName
+        return runtimeState.teamName
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        ownTeamNameInFlight = undefined
+      })
+    return ownTeamNameInFlight
+  }
+  const assertOwnTeam = async (teamRunId: string): Promise<void> => {
+    if (teamRunId === parsed.teamRunId) return
+    const ownName = await ownTeamName()
+    if (ownName !== undefined && teamRunId === ownName) return
+    // Name both handles so a member that passed the other one can retry with the value it has.
+    const belongsTo = ownName === undefined
+      ? `run id ${parsed.teamRunId}`
+      : `team ${ownName} (run id ${parsed.teamRunId})`
+    throw new Error(`Team ${teamRunId} is not this member's team. This member belongs to ${belongsTo}.`)
   }
   return {
     createTeam: unused("createTeam"),
@@ -265,19 +291,19 @@ function createMemberBoardService(parsed: ParsedMemberExtensionEnv): TeamToolsSe
     approveShutdown: unused("approveShutdown"),
     rejectShutdown: unused("rejectShutdown"),
     createTask: async (teamRunId, input) => {
-      assertOwnTeam(teamRunId)
+      await assertOwnTeam(teamRunId)
       return createTeamTask(ctx, input)
     },
     listTasks: async (teamRunId, filter) => {
-      assertOwnTeam(teamRunId)
+      await assertOwnTeam(teamRunId)
       return listTeamTasks(ctx, filter)
     },
     getTask: async (teamRunId, taskId) => {
-      assertOwnTeam(teamRunId)
+      await assertOwnTeam(teamRunId)
       return getTeamTask(ctx, taskId)
     },
     updateTask: async (input) => {
-      assertOwnTeam(input.teamRunId)
+      await assertOwnTeam(input.teamRunId)
       const owner = input.owner ?? parsed.memberName
       return input.status === "claimed"
         ? claimTeamTask(ctx, input.taskId, owner)
