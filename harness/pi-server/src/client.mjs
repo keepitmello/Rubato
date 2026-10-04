@@ -37,6 +37,7 @@ export class SessionClient {
   transcript(id) { return this.call(Directory, 'transcript', [id]); }
   catalogue(cwd) { return this.call(Directory, 'catalogue', [cwd]); }
   create(options) { return this.call(Management, 'create', [options]); }
+  fork(id, options = {}) { return this.call(Management, 'fork', [id, options]); }
   attach(id) { return this.call(Management, 'attach', [id]); }
   detach() { return this.call(Management, 'detach', []); }
   unload(id) { return this.call(Management, 'unload', [id]); }

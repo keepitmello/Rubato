@@ -8,6 +8,7 @@ import { createUnixServer } from '@earendil-works/pi-server/unix';
 import { Directory, Management, Control, COMMANDS, INPUT_COMMANDS, UI_METHODS, PiCommandRejected, json } from './contracts.mjs';
 import { SessionFiles } from './session-files.mjs';
 import { readSessionMetadata } from './session-metadata.mjs';
+import { forkSessionFile } from './session-link.mjs';
 import { RpcWorker } from './rpc-worker.mjs';
 import { wire, measure, EVENT_BUDGET, EVENTS_BUDGET } from './wire.mjs';
 
@@ -373,6 +374,16 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
               if (refreshing) await refreshing;
               await refresh();
               return directory.value.sessions.find((item) => item.sessionId === created.id);
+            },
+            // A new conversation from the completed history of `id`'s live branch (a
+            // running turn stays behind), idle or running. `title` names the copy.
+            fork: async (id, { title } = {}) => {
+              if (title !== undefined && (typeof title !== 'string' || !title.trim() || title.length > 512)) throw invalid('Invalid title');
+              const source = handles.get(id)?.metadata.file ?? (await host.resolveSession(id)).file;
+              const { metadata } = await forkSessionFile({ source, sessionsDir, title: title?.trim() });
+              if (refreshing) await refreshing;
+              await refresh();
+              return directory.value.sessions.find((item) => item.sessionId === metadata.id);
             },
             attach: async (id, context) => {
               try { await presentation.attachSession(id, context); return null; }

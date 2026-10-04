@@ -1,6 +1,7 @@
 import {CommandId, MessageId, OrchestrationMessageContext, ProjectId, ThreadId} from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
@@ -27,6 +28,28 @@ const io = <A>(method: string, action: () => Promise<A>) => Effect.tryPromise({t
   catch:(cause) => new ProviderAdapterRequestError({provider:"rubato-pi",method,
     detail:cause instanceof Error ? cause.message : String(cause),cause})});
 const decodeContext = Schema.decodeUnknownSync(OrchestrationMessageContext);
+
+/** The thread that shows a Pi session no thread is bound to yet. */
+export const importedPiThreadId = (instanceId: string, serverId: string, sessionId: string) =>
+  ThreadId.make(`import:${instanceId}:${serverId}:${sessionId}`);
+// The loop below passes every five seconds. A fork (RubatoThreadFork.ts) wants its new
+// session shown now: it cuts the wait short, or, asked during a pass that may have listed
+// the sessions before the fork existed, lets the next pass start without waiting.
+let wake: Deferred.Deferred<void> | undefined;
+let wakePending = false;
+export const syncRubatoInventoryNow = Effect.suspend(() => {
+  if (wake) return Effect.asVoid(Deferred.succeed(wake, undefined));
+  wakePending = true;
+  return Effect.void;
+});
+const nextPass = Effect.gen(function* () {
+  if (wakePending) { wakePending = false; return; }
+  const current = yield* Deferred.make<void>();
+  wake = current;
+  yield* Effect.race(Effect.sleep("5 seconds"), Deferred.await(current)).pipe(
+    Effect.ensuring(Effect.sync(() => { if (wake === current) wake = undefined; })),
+  );
+});
 
 /** Reuses T3's existing project/thread commands and durable provider bindings.
  * It never starts a model turn and never owns Pi workers or conversation files. */
@@ -99,7 +122,7 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
         // A T3 composer thread claims the Pi session before its binding lands.
         // Importing it as a second thread duplicates the sidebar and the reply text.
         if (!binding && bridge.ownsSession(entry.sessionId)) return;
-        const threadId = binding?.threadId ?? ThreadId.make(`import:${instance.instanceId}:${entry.serverId}:${entry.sessionId}`);
+        const threadId = binding?.threadId ?? importedPiThreadId(instance.instanceId, entry.serverId, entry.sessionId);
         let thread = readModel.threads.find((item) => item.id === threadId);
         if (thread?.deletedAt !== null && thread?.deletedAt !== undefined) return;
         if (thread?.archivedAt !== null && thread?.archivedAt !== undefined) return;
@@ -196,7 +219,7 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
       // is activated. There is never a hidden synthetic prompt in this loop.
       yield* dropForeignImports.pipe(Effect.catch((cause) =>
         Effect.logWarning("Imported Codex/Claude threads could not be removed",{cause})));
-      yield* Effect.forkScoped(Effect.forever(sync.pipe(Effect.andThen(Effect.sleep("5 seconds")))));
+      yield* Effect.forkScoped(Effect.forever(sync.pipe(Effect.andThen(nextPass))));
     }),
   };
 });

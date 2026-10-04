@@ -53,6 +53,17 @@ test('T3 discovers stored/live sessions and attaches without a duplicate worker;
   await bridge.interruptTurn(input.threadId);
   assert.equal((await external.snapshot()).state.isStreaming, false);
 });
+test('a fork is a new session the inventory shows under the asked name, not claimed by this bridge', async (t) => {
+  const { root, bridge, external } = await setup(t);
+  const source = await external.create({ cwd: root, title: 'Source' });
+  const forked = await bridge.forkSession(source.sessionId, 'Source (fork)');
+  assert.notEqual(forked.sessionId, source.sessionId);
+  assert.equal(forked.title, 'Source (fork)');
+  assert.equal(forked.cwd, source.cwd);
+  assert.equal(bridge.ownsSession(forked.sessionId), false, 'the inventory imports it as a thread of its own');
+  assert.ok((await bridge.inventory()).some((entry) => entry.sessionId === forked.sessionId));
+  await assert.rejects(bridge.forkSession('absent', 'x'), /not found/i);
+});
 test('T3 creates a new Pi session, forwards questions, reconnects and continues the same worker', async (t) => {
   const { root, service, events, bridge } = await setup(t);
   const session = await bridge.startSession({ threadId:'new-thread', runtimeMode:'full-access', cwd:root });

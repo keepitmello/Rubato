@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -168,6 +168,38 @@ test('directory subscriptions receive another client creation without runtime sp
   await until(() => states.some((state) => state.sessions.some((entry) => entry.sessionId === created.sessionId)));
   assert.equal(env.host.metrics.runtimeStarts, 0);
   await unsubscribe();
+});
+
+test('management fork publishes a titled copy of the completed history and leaves the source alone', async (t) => {
+  const env = await setup(t);
+  const client = await env.client();
+  await mkdir(env.sessionsDir, { recursive: true });
+  const id = '01a10319-8c59-7244-a427-5634c2442bc2';
+  const stamp = new Date().toISOString();
+  const file = path.join(env.sessionsDir, `${stamp.replace(/[:.]/g, '-')}_${id}.jsonl`);
+  const message = (role, text, extra = {}) => ({ type: 'message', message: { role, content: [{ type: 'text', text }], timestamp: Date.now(), ...extra } });
+  const entries = [
+    message('user', 'question'),
+    message('assistant', 'answer', { stopReason: 'stop', provider: 'fixture', model: 'local' }),
+    { type: 'session_info', name: 'Source' },
+    message('user', 'still running'),
+  ].map((entry, index) => ({ id: `e${index}`, parentId: index ? `e${index - 1}` : null, timestamp: stamp, ...entry }));
+  const original = [{ type: 'session', version: 3, id, timestamp: stamp, cwd: env.root }, ...entries].map((entry) => JSON.stringify(entry)).join('\n') + '\n';
+  await writeFile(file, original);
+  await until(async () => (await client.list()).some((entry) => entry.sessionId === id));
+
+  const forked = await client.fork(id, { title: 'Source (fork)' });
+  assert.notEqual(forked.sessionId, id);
+  assert.equal(forked.title, 'Source (fork)');
+  assert.equal(forked.cwd, env.root);
+  assert.equal(forked.status, 'stored');
+  assert.deepEqual((await client.transcript(forked.sessionId)).messages.map((entry) => [entry.role, entry.content[0].text]),
+    [['user', 'question'], ['assistant', 'answer']], 'the running turn stays behind');
+  assert.equal(await readFile(file, 'utf8'), original, 'the source is never rewritten');
+  assert.equal((await client.fork(id)).title, 'Source', 'without a title the copy keeps the source title');
+  assert.equal(env.host.metrics.runtimeStarts, 0, 'forking loads no runtime');
+  await assert.rejects(client.fork(id, { title: ' ' }), /Invalid title/);
+  await assert.rejects(client.fork('absent'), /not found/i);
 });
 
 test('client cleanup is idempotent after an explicit transport disconnect', async (t) => {
