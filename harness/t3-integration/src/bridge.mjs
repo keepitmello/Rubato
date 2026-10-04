@@ -204,6 +204,9 @@ export class RubatoPiBridge {
     return sessions.filter((entry) => this.claimed.has(entry.sessionId) || this.shows(entry));
   }
   async transcript(id) { return this.viaInventory((client) => client.transcript(id)); }
+  // A new Pi session holding `sessionId`'s completed history (a running turn stays behind),
+  // named `title`. The inventory shows it as a thread like any session started elsewhere.
+  async forkSession(sessionId, title) { return this.viaInventory((client) => client.fork(sessionId, { title })); }
   async catalogue(cwd) {
     const cached = this.catalogues.get(cwd);
     if (cached && Date.now() - cached.at < 60000) return cached.value;

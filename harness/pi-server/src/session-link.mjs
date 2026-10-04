@@ -146,6 +146,35 @@ export function completedHistory(branch) {
 }
 
 /**
+ * Writes a new conversation holding the completed history of `source`'s live branch, next to
+ * it with Pi's own header and file naming (`parentSession` names the source). The source is
+ * never rewritten. `title` names the copy; without one it keeps the source's title.
+ * `admit(sessionId)` runs before the file exists and returns a release; it may refuse by
+ * throwing, so a refused fork leaves nothing behind. The session link's fork and the
+ * engine's Management fork (host.mjs) both copy through here.
+ */
+export async function forkSessionFile({ source, sessionsDir, title, admit = () => () => {} }) {
+  const { parseSessionEntries, migrateSessionEntries, SessionManager } = await import('@earendil-works/pi-coding-agent');
+  const entries = parseSessionEntries(await readFile(source, 'utf8'));
+  const header = entries.find((entry) => entry.type === 'session');
+  if (!header) throw fail('invalid', `Conversation ${source} has no session header`);
+  migrateSessionEntries(entries);
+  const copied = completedHistory(branchOf(entries).branch);
+  const dir = path.dirname(source);
+  const root = await realpath(sessionsDir);
+  if (dir !== root && !dir.startsWith(root + path.sep)) throw fail('invalid', 'Source conversation is outside this profile');
+  const manager = SessionManager.create(header.cwd, dir, { parentSession: source });
+  const file = manager.getSessionFile();
+  const release = admit(manager.getSessionId());
+  try {
+    await writeFile(file, [manager.getHeader(), ...copied].map((entry) => JSON.stringify(entry)).join('\n') + '\n', { flag: 'wx', mode: 0o600 });
+  } catch (error) { release(); throw error; }
+  if (title) SessionManager.open(file, dir).appendSessionInfo(title);
+  const metadata = await readSessionMetadata(file, await stat(file, { bigint: true }));
+  return { metadata, release, copiedMessages: copied.filter((entry) => entry.type === 'message').length };
+}
+
+/**
  * One engine-wide link between the conversations of this profile. The holder exists
  * before the host does (extension factories receive it at runtime creation) and is
  * bound once the server listens; until then every method refuses.
@@ -471,25 +500,9 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS } = {}) {
       await describe(sessionId);
       const source = await locate(sessionId);
       const origin = text === undefined ? undefined : await sender(from ?? sessionId);
-      const { parseSessionEntries, migrateSessionEntries, SessionManager } = await import('@earendil-works/pi-coding-agent');
-      const entries = parseSessionEntries(await readFile(source, 'utf8'));
-      const header = entries.find((entry) => entry.type === 'session');
-      if (!header) throw fail('invalid', `Conversation ${sessionId} has no session header`);
-      migrateSessionEntries(entries);
-      const copied = completedHistory(branchOf(entries).branch);
-      // Pi's own fork writes next to its source with Pi's header and file naming.
-      const dir = path.dirname(source);
-      const root = await realpath(sessionsDir);
-      if (dir !== root && !dir.startsWith(root + path.sep)) throw fail('invalid', 'Source conversation is outside this profile');
-      const manager = SessionManager.create(header.cwd, dir, { parentSession: source });
-      const file = manager.getSessionFile();
-      // Refuse before the file exists: a refused fork leaves nothing behind.
-      const release = text === undefined ? () => {} : admit(origin.sessionId, manager.getSessionId(), text);
-      try {
-        await writeFile(file, [manager.getHeader(), ...copied].map((entry) => JSON.stringify(entry)).join('\n') + '\n', { flag: 'wx', mode: 0o600 });
-      } catch (error) { release(); throw error; }
-      const metadata = await readSessionMetadata(file, await stat(file, { bigint: true }));
-      files.set(metadata.id, file);
+      const { metadata, release, copiedMessages } = await forkSessionFile({ source, sessionsDir,
+        admit: (id) => text === undefined ? () => {} : admit(origin.sessionId, id, text) });
+      files.set(metadata.id, metadata.file);
       // Publish it now rather than at the next directory poll.
       await withClient((client) => client.list()).catch(() => {});
       if (text !== undefined) {
@@ -499,8 +512,7 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS } = {}) {
           throw fail(error.code ?? 'delivery_failed', `Forked conversation ${metadata.id}, but its first message was not delivered: ${error.message}`);
         }
       }
-      return { sessionId: metadata.id, title: metadata.title, cwd: metadata.cwd,
-        copiedMessages: copied.filter((entry) => entry.type === 'message').length };
+      return { sessionId: metadata.id, title: metadata.title, cwd: metadata.cwd, copiedMessages };
     },
   };
   // Availability is checked before arguments, so an unbound engine answers the same way to every call.
