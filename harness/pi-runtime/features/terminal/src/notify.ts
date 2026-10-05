@@ -93,6 +93,7 @@ export class TerminalNotifier {
 		if (!delivery) return;
 
 		this.notified.add(id);
-		delivery.send(buildNotice(id, runtime));
+		// A wait set while the agent's own background session ran: that completion already woke it.
+		delivery.send(buildNotice(id, runtime), runtime.waitOvertaken ? { quiet: true } : undefined);
 	}
 }

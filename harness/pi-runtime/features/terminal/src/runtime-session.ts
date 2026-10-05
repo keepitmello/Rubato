@@ -27,6 +27,12 @@ export class TerminalRuntimeSession {
 	readonly command: string;
 	/** Set by kill_bash: the agent stopped it itself, so its exit is not news to report. */
 	killedByAgent = false;
+	/**
+	 * Set when bash detached a sleep-wait: the agent's other background sessions still running
+	 * at that moment. The wait usually stands in for one of them, and each of them reports its own
+	 * completion, so once any has exited this wait's completion no longer wakes the agent.
+	 */
+	waitingOn: readonly TerminalRuntimeSession[] | undefined = undefined;
 	/** The command line and cwd the agent asked for; set by spawnCommandSession, absent for other sessions. */
 	spawned: { readonly command: string; readonly cwd: string } | undefined = undefined;
 	private readonly screen: TerminalScreen;
@@ -70,6 +76,11 @@ export class TerminalRuntimeSession {
 
 	get exitResult(): TerminalSessionExit | null {
 		return this.session.exitResult;
+	}
+
+	/** A sleep-wait one of whose background sessions has already exited and reported. */
+	get waitOvertaken(): boolean {
+		return this.waitingOn?.some((other) => other.exited) === true;
 	}
 
 	/** Total decoded chars produced so far (including any dropped from the front). */
