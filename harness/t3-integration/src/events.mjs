@@ -315,9 +315,27 @@ export const windowFromModels = (identity, models) => {
 /** Only T3-normalized events leave this boundary; no Pi protocol types in UI. */
 const retries = (count) => `${count} ${count === 1 ? 'retry' : 'retries'}`;
 
+// An agent that hands a long command to the background (or sets a monitor) ends its run
+// and is woken by the completion a little later. Announcing that settle as the end of the
+// turn sent "Thread completed" with only "Waiting for the tests…" on screen, and the answer
+// came a minute after the notification. While Pi names a wait that will wake the agent, the
+// turn stays open with a row saying what it waits on; the wake continues the same turn.
+export const AWAIT_POLL_MS = 2_000;
+/** The wait that ended starts the agent's next run a moment later; the turn waits that long. */
+export const AWAIT_GRACE_MS = 3_000;
+export const AWAIT_TITLE = 'Waiting on background work';
+const AWAIT_ITEM_TYPE = 'dynamic_tool_call';
+const unref = (timer) => { timer?.unref?.(); return timer; };
+
 export class EventProjection {
-  constructor({ threadId, sessionId, instanceId, emit, sessionMessage = () => {} }) {
-    Object.assign(this, { threadId, sessionId, instanceId, emit, sessionMessage });
+  /**
+   * `awaitedWakes` asks Pi for the waits that will wake the idle agent (`{ items }`); without
+   * it every settle ends the turn at once. `released` hears a turn the projection closed on
+   * its own after such a wait, outside any event the bridge is applying.
+   */
+  constructor({ threadId, sessionId, instanceId, emit, sessionMessage = () => {}, awaitedWakes, released = () => {},
+    awaitTimings = { pollMs: AWAIT_POLL_MS, graceMs: AWAIT_GRACE_MS } }) {
+    Object.assign(this, { threadId, sessionId, instanceId, emit, sessionMessage, awaitedWakes, released, awaitTimings });
     this.text = new Map(); this.thinking = new Map(); this.completed = new Set(); this.questions = new Map();
     this.tasks = new Map(); this.children = new Map(); this.spawns = new Map();
     this.teams = new Map(); this.boards = new Map();
@@ -340,6 +358,7 @@ export class EventProjection {
     this.maxTokens = undefined;
     this.speedIndex = undefined;
     this.cache = undefined; this.lastRawUsage = undefined;
+    this.stopAwaiting();
   }
   configureUsage({ maxTokens, compactsAutomatically, replaceWindow } = {}) {
     const window = asInt(maxTokens);
@@ -370,12 +389,15 @@ export class EventProjection {
     this.event('thread.token-usage.updated', { usage: snapshot });
   }
   begin(turnId = randomUUID()) {
+    // A wake (or the person's own message) during a wait continues the turn that waited.
+    this.endAwaiting();
     if (this.turnId) return this.turnId;
     this.turnId = turnId; this.failed = false; this.interrupted = false; this.lastError = undefined;
     this.pendingError = undefined; this.retry = undefined;
     this.event('turn.started', {}); return turnId;
   }
   settle() {
+    this.endAwaiting();
     if (!this.turnId) return;
     this.flushError();
     this.retry = undefined;
@@ -390,6 +412,59 @@ export class EventProjection {
     }
     this.event('turn.completed', { state, ...(state === 'failed' && this.lastError ? { errorMessage: this.lastError } : {}) });
     this.turnId = undefined;
+  }
+  /** Pi's agent_settled: the turn ends, unless the agent ended its run on a wait that will wake it. */
+  settled() {
+    if (!this.turnId || this.awaiting) return;
+    if (typeof this.awaitedWakes !== 'function' || this.interrupted || this.failed) { this.settle(); return; }
+    const hold = { turnId: this.turnId };
+    this.awaiting = hold;
+    void this.checkAwaiting(hold);
+  }
+  async checkAwaiting(hold) {
+    let labels = [];
+    try {
+      const answer = await this.awaitedWakes();
+      const items = Array.isArray(answer?.items) ? answer.items : [];
+      labels = [...new Set(items.map((item) => nonempty(item?.description) || nonempty(item?.id)).filter(Boolean))];
+    } catch { /* A runtime that cannot answer has nothing the turn should wait for. */ }
+    if (this.awaiting !== hold) return;
+    if (labels.length > 0) {
+      hold.emptySince = undefined;
+      this.showAwaiting(hold, labels.join(' · '));
+      hold.timer = unref(setTimeout(() => { void this.checkAwaiting(hold); }, this.awaitTimings.pollMs));
+      return;
+    }
+    if (hold.itemId && hold.emptySince === undefined) {
+      hold.emptySince = Date.now();
+      hold.timer = unref(setTimeout(() => { void this.checkAwaiting(hold); }, this.awaitTimings.graceMs));
+      return;
+    }
+    this.settle();
+    this.released();
+  }
+  showAwaiting(hold, detail) {
+    if (hold.detail === detail) return;
+    const started = !hold.itemId;
+    hold.itemId ??= `rubato-wait:${this.sessionId}:${randomUUID()}`;
+    hold.detail = detail;
+    this.event(started ? 'item.started' : 'item.updated',
+      { itemType: AWAIT_ITEM_TYPE, title: AWAIT_TITLE, detail, status: 'inProgress' }, { itemId: hold.itemId });
+  }
+  /** Close the wait: its row is done and the turn carries on (a wake) or ends (a settle). */
+  endAwaiting() {
+    const hold = this.stopAwaiting();
+    if (!hold?.itemId) return;
+    this.event('item.completed', { itemType: AWAIT_ITEM_TYPE, title: AWAIT_TITLE, detail: hold.detail, status: 'completed' },
+      { itemId: hold.itemId });
+  }
+  /** Forget the wait without a word (the presentation detached or the session changed). */
+  stopAwaiting() {
+    const hold = this.awaiting;
+    if (!hold) return;
+    clearTimeout(hold.timer);
+    this.awaiting = undefined;
+    return hold;
   }
   seed(projected) {
     for (const message of projected ?? []) {
@@ -815,7 +890,7 @@ export class EventProjection {
   project(event) {
     switch (event.type) {
       case 'agent_start': this.begin(); break;
-      case 'agent_settled': this.settle(); break;
+      case 'agent_settled': this.settled(); break;
       // Pi 세션은 첫 턴이 끝날 때 제목 확장이 주제를 보고 스스로 이름을 짓는다.
       // 그 이름이 CLI 탭과 세션 목록에 뜨는 값이고, 앱 스레드 제목도 같은 것을
       // 써야 두 화면이 갈라지지 않는다. /name 도 이 이벤트로 돌아온다.

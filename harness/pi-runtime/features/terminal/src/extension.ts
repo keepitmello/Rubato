@@ -9,7 +9,12 @@ import { MonitorNotifier } from "./monitor-notify.ts";
 import { MONITOR_STATUS_KEY } from "./monitor-status.ts";
 import { MonitorStatusTicker } from "./monitor-status-ticker.ts";
 import { getTerminalNotificationDelivery, NON_INTERACTIVE_MODES, TerminalNotifier } from "./notify.ts";
-import { TERMINAL_PENDING_WORK_REQUEST, terminalPendingWork } from "./pending-work.ts";
+import {
+	TERMINAL_AWAITED_WAKES_REQUEST,
+	TERMINAL_PENDING_WORK_REQUEST,
+	terminalAwaitedWakes,
+	terminalPendingWork,
+} from "./pending-work.ts";
 import { type RestoreDigest, type RestoreHandlers, type RestoreOutcome, restoreTerminalState } from "./restore.ts";
 import type { TerminalRuntimeSession } from "./runtime-session.ts";
 import {
@@ -361,7 +366,8 @@ export function registerTerminalExtension(pi: ExtensionAPI, host: TerminalExtens
 	pi.registerTool(createKillBashTool(toolCtx));
 	pi.registerTool(createMonitorTool(toolCtx));
 
-	pi.rpc?.handle(TERMINAL_PENDING_WORK_REQUEST, () => {
+	/** What may still wake the agent; an overtaken wait ends without a wake, so it is left out. */
+	const heldWork = () => {
 		const delivers =
 			state.notifier !== null &&
 			getTerminalNotificationDelivery({
@@ -369,9 +375,8 @@ export function registerTerminalExtension(pi: ExtensionAPI, host: TerminalExtens
 				getContext: () => state.ctx,
 				getMode: () => state.settings.notify,
 			}) !== undefined;
-		return terminalPendingWork({
+		return {
 			delivers,
-			// An overtaken wait ends without a wake, so it gives the run nothing to wait for.
 			backgrounds: (state.bundle?.heldBackgrounds() ?? []).filter(
 				(entry) => state.bundle?.manager.get(entry.id)?.waitOvertaken !== true,
 			),
@@ -382,11 +387,18 @@ export function registerTerminalExtension(pi: ExtensionAPI, host: TerminalExtens
 					startedAtMs: entry.startedAtMs,
 					persistent: entry.persistent === true,
 					reported: state.monitorNotifier?.hasReported(entry.id) ?? false,
+					description: entry.description,
 				})),
+		};
+	};
+	pi.rpc?.handle(TERMINAL_PENDING_WORK_REQUEST, () =>
+		terminalPendingWork({
+			...heldWork(),
 			queuedMonitorEvents: state.monitorNotifier?.hasQueuedEvents() ?? false,
 			nowMs: Date.now(),
-		});
-	});
+		}),
+	);
+	pi.rpc?.handle(TERMINAL_AWAITED_WAKES_REQUEST, () => ({ items: terminalAwaitedWakes(heldWork()) }));
 
 	pi.on("session_start", async (event, ctx) => {
 		state.ctx = ctx;
