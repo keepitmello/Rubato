@@ -8,13 +8,14 @@
 // The old `chatWidth` preset is gone. A saved "wide" or "full" is ignored on
 // load and the width falls back to the 65% default.
 //
-// The width resolves against the chat column, not against each user's parent.
-// The composer stack, its form and the composer shell all cap themselves with
+// The width is resolved once, to a length, and inherited. The composer stack,
+// the composer shell and the form inside it all cap themselves with
 // --chat-max-width, one inside the other, and so do the timeline rows and the
-// compaction separator inside them. A `%` inside a custom property resolves
-// where it is used, so 65% compounded to 65% of 65% of 65% at the shell. The
-// chat column is an inline-size container and the width is in `cqi` (1% of
-// that container), so every depth gets the same length.
+// compaction separator inside them. An unregistered custom property is resolved
+// where it is used: a `%` compounded at every depth, and a `cqi` inside the
+// shell (itself a container) measured the shell, not the chat column. So the
+// property is registered as a <length>, declared on the chat column's children
+// where cqi is the column's width, and every depth below inherits that length.
 export const chatWidthOverlays = [];
 
 const SETTINGS_TEST_OLD = [
@@ -179,10 +180,20 @@ export const chatWidthEdits = {
       [
         '/* Chat timeline and composer column width. --chat-width-percent comes from the',
         '   Chat width setting (__root.tsx); the floor keeps a narrow pane readable.',
-        '   The unit is cqi, a share of the chat column container (ChatView.tsx), so',
-        '   nested elements that all cap at this width get the same length. */',
+        '   Registered as a <length> so it is resolved where it is declared, on the',
+        '   chat column\'s children (cqi = the column, ChatView.tsx), and inherited as',
+        '   that length by every nested box that caps at it. */',
+        '@property --chat-max-width {',
+        '  syntax: "<length>";',
+        '  inherits: true;',
+        '  initial-value: 768px;',
+        '}',
+        '',
         ':root {',
         '  --chat-width-percent: 65;',
+        '}',
+        '',
+        '[data-chat-column] > * {',
         '  --chat-max-width: max(min(100cqi, 24rem), calc(var(--chat-width-percent) * 1cqi));',
         '}',
         '',
@@ -193,7 +204,7 @@ export const chatWidthEdits = {
   'apps/web/src/components/ChatView.tsx': [
     [
       '          {/* Chat column */}\n          <div\n            className="relative flex min-h-0 min-w-0 flex-1 flex-col"\n',
-      '          {/* Chat column */}\n          <div\n            className="@container/chat-column relative flex min-h-0 min-w-0 flex-1 flex-col"\n',
+      '          {/* Chat column */}\n          <div\n            className="@container/chat-column relative flex min-h-0 min-w-0 flex-1 flex-col"\n            data-chat-column="true"\n',
       'replace',
     ],
   ],
