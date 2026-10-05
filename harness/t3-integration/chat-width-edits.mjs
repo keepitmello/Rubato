@@ -7,6 +7,14 @@
 //
 // The old `chatWidth` preset is gone. A saved "wide" or "full" is ignored on
 // load and the width falls back to the 65% default.
+//
+// The width resolves against the chat column, not against each user's parent.
+// The composer stack, its form and the composer shell all cap themselves with
+// --chat-max-width, one inside the other, and so do the timeline rows and the
+// compaction separator inside them. A `%` inside a custom property resolves
+// where it is used, so 65% compounded to 65% of 65% of 65% at the shell. The
+// chat column is an inline-size container and the width is in `cqi` (1% of
+// that container), so every depth gets the same length.
 export const chatWidthOverlays = [];
 
 const SETTINGS_TEST_OLD = [
@@ -170,13 +178,22 @@ export const chatWidthEdits = {
       ].join('\n'),
       [
         '/* Chat timeline and composer column width. --chat-width-percent comes from the',
-        '   Chat width setting (__root.tsx); the floor keeps a narrow pane readable. */',
+        '   Chat width setting (__root.tsx); the floor keeps a narrow pane readable.',
+        '   The unit is cqi, a share of the chat column container (ChatView.tsx), so',
+        '   nested elements that all cap at this width get the same length. */',
         ':root {',
         '  --chat-width-percent: 65;',
-        '  --chat-max-width: max(min(100%, 24rem), calc(var(--chat-width-percent) * 1%));',
+        '  --chat-max-width: max(min(100cqi, 24rem), calc(var(--chat-width-percent) * 1cqi));',
         '}',
         '',
       ].join('\n'),
+      'replace',
+    ],
+  ],
+  'apps/web/src/components/ChatView.tsx': [
+    [
+      '          {/* Chat column */}\n          <div\n            className="relative flex min-h-0 min-w-0 flex-1 flex-col"\n',
+      '          {/* Chat column */}\n          <div\n            className="@container/chat-column relative flex min-h-0 min-w-0 flex-1 flex-col"\n',
       'replace',
     ],
   ],
