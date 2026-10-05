@@ -167,6 +167,7 @@ function buildToolContext(pi: ExtensionAPI, state: TerminalExtensionState, host:
 		onBackgroundExit: (id: string, runtime: TerminalRuntimeSession) => {
 			state.bundle?.notifyBackgroundExit(id, runtime);
 		},
+		runningBackgroundIds: () => state.bundle?.heldBackgrounds().map((entry) => entry.id) ?? [],
 		onMonitorRearmed: (id: string) => state.monitorNotifier?.rearm(id),
 		onMonitorsResumed: (ids: readonly string[]) => state.monitorNotifier?.resume(ids),
 	};
@@ -370,7 +371,10 @@ export function registerTerminalExtension(pi: ExtensionAPI, host: TerminalExtens
 			}) !== undefined;
 		return terminalPendingWork({
 			delivers,
-			backgrounds: state.bundle?.heldBackgrounds() ?? [],
+			// An overtaken wait ends without a wake, so it gives the run nothing to wait for.
+			backgrounds: (state.bundle?.heldBackgrounds() ?? []).filter(
+				(entry) => state.bundle?.manager.get(entry.id)?.waitOvertaken !== true,
+			),
 			monitors: (state.bundle?.monitors.snapshot() ?? []).map((entry) => ({
 				id: entry.id,
 				startedAtMs: entry.startedAtMs,

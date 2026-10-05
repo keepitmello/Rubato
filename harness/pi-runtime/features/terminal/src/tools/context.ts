@@ -27,6 +27,8 @@ export interface TerminalToolContext {
 	readonly onBackgroundStart?: (id: string, description: string, startedAtMs: number, bounded?: boolean) => void;
 	/** Notified when a background session exits, so the notify layer can wake the agent. */
 	readonly onBackgroundExit?: (id: string, runtime: TerminalRuntimeSession) => void;
+	/** Ids of the background sessions that will report their own completion. */
+	readonly runningBackgroundIds?: () => readonly string[];
 	/** Session-scoped monitor state, sharing the terminal manager's bash-id namespace. */
 	readonly monitorRegistry?: MonitorRegistry;
 	/** Receives filtered monitor line and terminal-summary events. */

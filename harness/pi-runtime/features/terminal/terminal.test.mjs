@@ -355,6 +355,82 @@ test("a session the agent stops with kill_bash sends no completion notice", asyn
 	assert.equal(sent.length, 0, "the agent already knows it stopped the session");
 });
 
+test("a sleep-wait set while a background session runs ends without a wake once that session reports", async (t) => {
+	const { default: registerTerminal } = await import("./src/extension.ts");
+	const { SettingsManager } = await import("./src/host-sdk.ts");
+	const scratch = mkdtempSync(join(tmpdir(), "rubato-terminal-overtaken-"));
+	const handlers = new Map();
+	const rpc = new Map();
+	const sent = [];
+	const tools = new Map();
+	const pi = {
+		registerTool: (tool) => tools.set(tool.name, tool),
+		on: (event, handler) => handlers.set(event, handler),
+		rpc: { handle: (name, handler) => rpc.set(name, handler), emit() {} },
+		events: { emit() {} },
+		sendMessage: (message, options) => sent.push({ message, options }),
+		getActiveTools: () => [],
+		setActiveTools() {},
+	};
+	registerTerminal(pi, {
+		createSettingsManager: () => SettingsManager.inMemory({ terminal: { notify: "wake" } }),
+		getShellEnv: () => ({ PATH: process.env.PATH, HOME: scratch, LANG: "C.UTF-8", TERM: "xterm-256color" }),
+	});
+	const ctx = {
+		mode: "json",
+		cwd: scratch,
+		model: { provider: "fixture", id: "fake", api: "openai-completions" },
+		ui: { notify() {}, setStatus() {} },
+	};
+	const priorWindow = process.env.PI_BASH_FOREGROUND_SECONDS;
+	process.env.PI_BASH_FOREGROUND_SECONDS = "0.3";
+	t.after(async () => {
+		if (priorWindow === undefined) delete process.env.PI_BASH_FOREGROUND_SECONDS;
+		else process.env.PI_BASH_FOREGROUND_SECONDS = priorWindow;
+		await handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" }, ctx);
+		rmSync(scratch, { recursive: true, force: true });
+	});
+	await handlers.get("session_start")({ type: "session_start", reason: "startup" }, ctx);
+	const pending = () => rpc.get("rubato.terminal.pending-work")();
+	const flag = (name) => join(scratch, name);
+	const waitForNotice = async (pattern) => {
+		const deadline = Date.now() + 10_000;
+		while (Date.now() < deadline) {
+			const found = sent.find((entry) => pattern.test(entry.message.content));
+			if (found) return found;
+			await delay(25);
+		}
+		assert.fail(`no notice matched ${pattern}`);
+	};
+
+	const tests = await tools.get("bash").execute("call-1", {
+		command: `while [ ! -f ${flag("tests")} ]; do sleep 0.1; done; echo TESTS-DONE`,
+		run_in_background: true,
+	});
+	const testsId = tests.details?.bash_id;
+	const wait = await tools.get("bash").execute("call-2", {
+		command: `while [ ! -f ${flag("wait")} ]; do sleep 2; done; echo WAIT-DONE`,
+	});
+	assert.equal(wait.details?.sleep_wait, true);
+	assert.match(textOf(wait), new RegExp(`while ${testsId} still running`));
+
+	writeFileSync(flag("tests"), "");
+	const testsNotice = await waitForNotice(/TESTS-DONE/);
+	assert.equal(testsNotice.options.triggerTurn, true, "the session the agent waited on wakes it");
+	assert.deepEqual(pending(), { active: 0, undelivered: 0 }, "the overtaken wait no longer holds the run");
+	writeFileSync(flag("wait"), "");
+	const waitNotice = await waitForNotice(/WAIT-DONE/);
+	assert.equal(waitNotice.options.triggerTurn, false, "the wait is recorded without a second wake");
+
+	const alone = await tools.get("bash").execute("call-3", {
+		command: `while [ ! -f ${flag("alone")} ]; do sleep 2; done; echo ALONE-DONE`,
+	});
+	assert.doesNotMatch(textOf(alone), /still running/);
+	writeFileSync(flag("alone"), "");
+	const aloneNotice = await waitForNotice(/ALONE-DONE/);
+	assert.equal(aloneNotice.options.triggerTurn, true, "a wait with nothing else running still wakes the agent");
+});
+
 test("a monitor the agent stops with kill_bash sends no watcher-killed event", async (t) => {
 	const { default: registerTerminal } = await import("./src/extension.ts");
 	const { SettingsManager } = await import("./src/host-sdk.ts");
