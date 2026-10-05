@@ -47,7 +47,8 @@ changes it.
 - Grok has fallen behind the others; use it only when the user names it.
 - Any approved model can own or verify.
 
-Exact ids: DeepSeek V4.1 Flash `b-ai/deepseek-v4.1-flash`, Astra
+Exact ids: DeepSeek V4.1 Flash `opengateway/deepseek/deepseek-v4.1-flash-ultrafast`,
+or b.ai as `b-ai/deepseek-v4.1-flash`; Astra
 `openai-codex/gpt-6-astra`, Opus 5.5 `anthropic/claude-opus-5-5`, Fable 5.1
 `anthropic/claude-fable-5-1`, Grok 4.7 via xAI `xai/grok-4.7` or Cursor
 `cursor/grok-4.7`. The
