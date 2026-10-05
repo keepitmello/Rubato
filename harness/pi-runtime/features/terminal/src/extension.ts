@@ -375,12 +375,14 @@ export function registerTerminalExtension(pi: ExtensionAPI, host: TerminalExtens
 			backgrounds: (state.bundle?.heldBackgrounds() ?? []).filter(
 				(entry) => state.bundle?.manager.get(entry.id)?.waitOvertaken !== true,
 			),
-			monitors: (state.bundle?.monitors.snapshot() ?? []).map((entry) => ({
-				id: entry.id,
-				startedAtMs: entry.startedAtMs,
-				persistent: entry.persistent === true,
-				reported: state.monitorNotifier?.hasReported(entry.id) ?? false,
-			})),
+			monitors: (state.bundle?.monitors.snapshot() ?? [])
+				.filter((entry) => state.bundle?.manager.get(entry.id)?.waitOvertaken !== true)
+				.map((entry) => ({
+					id: entry.id,
+					startedAtMs: entry.startedAtMs,
+					persistent: entry.persistent === true,
+					reported: state.monitorNotifier?.hasReported(entry.id) ?? false,
+				})),
 			queuedMonitorEvents: state.monitorNotifier?.hasQueuedEvents() ?? false,
 			nowMs: Date.now(),
 		});

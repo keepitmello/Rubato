@@ -10,7 +10,14 @@ import {
 	KILLED_SESSION_EXIT_GRACE_MS,
 	TERMINAL_BASH_TOOL,
 } from "../shared.ts";
-import { errorResult, type TerminalToolContext, type TerminalToolResult, textResult } from "./context.ts";
+import {
+	errorResult,
+	overtakenWaitNote,
+	runningBackgroundSessions,
+	type TerminalToolContext,
+	type TerminalToolResult,
+	textResult,
+} from "./context.ts";
 import { createForegroundDetachGate } from "./foreground-detach.ts";
 import { resolveForegroundWindowSeconds, SLEEP_WAIT_WINDOW_SECONDS } from "./foreground-window.ts";
 import { classifySleepWait, type SleepWaitClassification } from "./sleep-wait.ts";
@@ -227,14 +234,6 @@ function scheduleDetachedSweep(
 	return true;
 }
 
-/** Background sessions that will report their own completion; other waits are not among them. */
-function runningBackgroundSessions(ctx: TerminalToolContext): { id: string; runtime: TerminalRuntimeSession }[] {
-	return (ctx.runningBackgroundIds?.() ?? []).flatMap((id) => {
-		const runtime = ctx.manager.get(id);
-		return runtime && !runtime.exited && runtime.waitingOn === undefined ? [{ id, runtime }] : [];
-	});
-}
-
 async function runForeground(
 	ctx: TerminalToolContext,
 	input: PtyBashInput,
@@ -327,11 +326,10 @@ async function runForeground(
 			input.timeout !== undefined && Number.isFinite(input.timeout)
 				? `its ${input.timeout}s timeout still applies`
 				: "it runs until exit or kill_bash";
-		const waitingIds = waitingOn.map((entry) => entry.id).join(", ");
 		const guidance = !sleepWait
 			? "Its completion will be reported; bash_output peeks, kill_bash stops."
 			: waitingOn.length > 0
-				? `It is a ${sleepWait.seconds}s wait while ${waitingIds} still running: end your turn. Their completion wakes you; once one ends, this wait finishes without a wake. Do not poll it; to wait for a pattern in output, launch with monitor({ command, filter }).`
+				? `${overtakenWaitNote(waitingOn)} End your turn; do not poll it.`
 				: `It is a ${sleepWait.seconds}s wait: end your turn, its completion will be reported. Do not poll it; to wait for a pattern in output, launch with monitor({ command, filter }).`;
 		return textResult(
 			`Still running in background as ${id} (${timeoutNote}). Partial output:\n${partialOutput}\n${guidance}`,

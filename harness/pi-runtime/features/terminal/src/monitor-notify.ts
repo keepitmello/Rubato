@@ -225,11 +225,16 @@ export class MonitorNotifier {
 		}
 		const deliversSummary = selected.some((event) => event.type === "summary");
 		// A watch that already reported and then only hit its deadline or got killed brings no news:
-		// waking an idle session for it buys a turn that says "nothing to do".
+		// waking an idle session for it buys a turn that says "nothing to do". Neither does a wait
+		// whose background session already ended and woke the agent itself.
 		const quiet =
 			overflowCount === 0 &&
 			selected.length > 0 &&
-			selected.every((event) => event.type === "summary" && event.cutShort && this.#reported.has(event.id));
+			selected.every(
+				(event) =>
+					event.overtaken === true ||
+					(event.type === "summary" && event.cutShort && this.#reported.has(event.id)),
+			);
 		const reachesBudget = !deliversSummary && this.#consecutiveWakes + 1 >= settings.wakeBudget;
 		const pauseNotice = reachesBudget
 			? "Monitor paused after repeated updates. Completion still wakes this session; peek bash_output or re-arm only for intermediate events."
