@@ -47,7 +47,9 @@ manual \`&\` backgrounding — use the built-in session tools:
   you, so never wait for its process with \`pgrep\`. Identical updates are deduped; repeated
   monitor-only wakes pause the noisy monitor(s) that caused them, not all monitors. A watcher
   exiting still wakes the session; one that already reported and then only hits its deadline or
-  is killed is recorded without a wake. Asking again for a watch that is still running reuses
+  is killed is recorded without a wake. A wait (a \`sleep\` or poll loop, in \`bash\` or a monitor)
+  set while your own background sessions run ends without a wake once one of them has ended,
+  because that completion already woke you. Asking again for a watch that is still running reuses
   it. \`${monitor}({ action: "rearm", bash_id })\` resumes one while
   \`${monitor}({ action: "rearm" })\` resumes all paused monitors; real user input also resumes
   paused monitors.

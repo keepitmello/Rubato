@@ -6,13 +6,16 @@ import { DEFAULT_COLS, DEFAULT_ROWS, TERMINAL_MONITOR_TOOL } from "../shared.ts"
 import type { MonitorRegistration, TerminalManifestWriter } from "../terminal-manifest.ts";
 import {
 	errorResult,
+	overtakenWaitNote,
 	resolveTerminalId,
+	runningBackgroundSessions,
 	type TerminalToolContext,
 	type TerminalToolResult,
 	textResult,
 } from "./context.ts";
 import { renderMonitorCall } from "./render.ts";
 import { findSameWatch } from "./same-watch.ts";
+import { classifySleepWait } from "./sleep-wait.ts";
 import { spawnCommandSession } from "./spawn.ts";
 
 export const DEFAULT_MONITOR_TIMEOUT_MS = 300_000;
@@ -143,6 +146,8 @@ async function createMonitor(
 		cwd: execCtx?.cwd,
 		...(persistent ? {} : { timeoutMs: resolveTimeoutMs(input.timeout_ms) }),
 	});
+	const waitingOn = classifySleepWait(input.command) ? runningBackgroundSessions(ctx) : [];
+	if (waitingOn.length > 0) runtime.waitingOn = waitingOn.map((entry) => entry.runtime);
 	ctx.onMonitorRearmed?.(id);
 	const monitorId = registry.register({
 		id,
@@ -165,7 +170,8 @@ async function createMonitor(
 			persistent: input.persistent === true,
 		},
 	});
-	return textResult(`Monitor started with ID: ${monitorId}`, {
+	const note = waitingOn.length > 0 ? `\n${overtakenWaitNote(waitingOn)}` : "";
+	return textResult(`Monitor started with ID: ${monitorId}${note}`, {
 		details: { monitor_id: monitorId, bash_id: id, monitor: true },
 	});
 }

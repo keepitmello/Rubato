@@ -10,6 +10,8 @@ export interface MonitorLineEvent {
 	readonly id: string;
 	readonly description: string;
 	readonly line: string;
+	/** From a wait watch set while the agent's own background session ran, and that session has since ended. */
+	readonly overtaken?: boolean;
 }
 
 export interface MonitorSummaryEvent {
@@ -19,6 +21,8 @@ export interface MonitorSummaryEvent {
 	readonly summary: string;
 	/** The watch hit its deadline or was killed instead of its command finishing: no news of its own. */
 	readonly cutShort: boolean;
+	/** A wait watch set while the agent's own background session ran, and that session has since ended. */
+	readonly overtaken?: boolean;
 }
 
 export type MonitorEvent = MonitorLineEvent | MonitorSummaryEvent;
@@ -691,7 +695,13 @@ export class MonitorRegistry {
 				record.mutedDropped += 1;
 				continue;
 			}
-			this.#emit({ type: "line", id: record.id, description: record.description, line });
+			this.#emit({
+				type: "line",
+				id: record.id,
+				description: record.description,
+				line,
+				overtaken: record.runtime.waitOvertaken,
+			});
 		}
 		record.lineBuffer = remaining;
 	}
@@ -714,6 +724,7 @@ export class MonitorRegistry {
 			description: record.description,
 			summary: `watcher ${status}${codeText}`,
 			cutShort: status === "timed_out" || status === "killed",
+			overtaken: record.runtime.waitOvertaken,
 		});
 	}
 

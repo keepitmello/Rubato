@@ -60,6 +60,25 @@ export function resolveTerminalId(
 	return manager.resolveId?.(id) ?? id;
 }
 
+/**
+ * The background sessions a wait set now stands next to: still running, reporting their own
+ * completion, and not themselves waits. Recorded on the wait as `runtime.waitingOn`.
+ */
+export function runningBackgroundSessions(
+	ctx: TerminalToolContext,
+): { id: string; runtime: TerminalRuntimeSession }[] {
+	return (ctx.runningBackgroundIds?.() ?? []).flatMap((id) => {
+		const runtime = ctx.manager.get(id);
+		return runtime && !runtime.exited && runtime.waitingOn === undefined ? [{ id, runtime }] : [];
+	});
+}
+
+/** Tool-result line telling the agent which sessions make a wait end without a wake. */
+export function overtakenWaitNote(waitingOn: readonly { id: string }[]): string {
+	const ids = waitingOn.map((entry) => entry.id).join(", ");
+	return `It is a wait while ${ids} still running: their completion wakes you, and once one ends this wait finishes without a wake.`;
+}
+
 export function textResult(
 	text: string,
 	extra?: { details?: Record<string, unknown>; isError?: boolean },

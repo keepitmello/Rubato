@@ -355,7 +355,7 @@ test("a session the agent stops with kill_bash sends no completion notice", asyn
 	assert.equal(sent.length, 0, "the agent already knows it stopped the session");
 });
 
-test("a sleep-wait set while a background session runs ends without a wake once that session reports", async (t) => {
+test("a wait (bash sleep or monitor) set while a background session runs ends without a wake once that session reports", async (t) => {
 	const { default: registerTerminal } = await import("./src/extension.ts");
 	const { SettingsManager } = await import("./src/host-sdk.ts");
 	const scratch = mkdtempSync(join(tmpdir(), "rubato-terminal-overtaken-"));
@@ -429,6 +429,35 @@ test("a sleep-wait set while a background session runs ends without a wake once 
 	writeFileSync(flag("alone"), "");
 	const aloneNotice = await waitForNotice(/ALONE-DONE/);
 	assert.equal(aloneNotice.options.triggerTurn, true, "a wait with nothing else running still wakes the agent");
+
+	const build = await tools.get("bash").execute("call-4", {
+		command: `while [ ! -f ${flag("build")} ]; do sleep 0.1; done; echo BUILD-DONE`,
+		run_in_background: true,
+	});
+	const buildId = build.details?.bash_id;
+	const watch = await tools.get("monitor").execute("call-5", {
+		description: "wait for the build",
+		command: `while [ ! -f ${flag("watch")} ]; do sleep 2; done; echo WATCH-DONE`,
+	});
+	assert.match(textOf(watch), new RegExp(`while ${buildId} still running`));
+	writeFileSync(flag("build"), "");
+	assert.equal((await waitForNotice(/BUILD-DONE/)).options.triggerTurn, true);
+	assert.deepEqual(pending(), { active: 0, undelivered: 0 }, "the overtaken watch no longer holds the run");
+	writeFileSync(flag("watch"), "");
+	await waitForNotice(/wait for the build\): [\s\S]*watcher/);
+	const watchNotices = sent.filter((entry) => /wait for the build/.test(entry.message.content));
+	assert.ok(watchNotices.length > 0);
+	for (const notice of watchNotices) {
+		assert.equal(notice.options.triggerTurn, false, "neither the watch's line nor its end wakes the agent again");
+	}
+
+	await tools.get("monitor").execute("call-6", {
+		description: "lonely watch",
+		command: `while [ ! -f ${flag("lonely")} ]; do sleep 2; done; echo LONELY-DONE`,
+	});
+	writeFileSync(flag("lonely"), "");
+	const lonely = await waitForNotice(/lonely watch/);
+	assert.equal(lonely.options.triggerTurn, true, "a watch with nothing else running still wakes the agent");
 });
 
 test("a monitor the agent stops with kill_bash sends no watcher-killed event", async (t) => {
