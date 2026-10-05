@@ -22,6 +22,8 @@ set -u
 HERE="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
 # 진행 표시. tty 가 아니면 스스로 빠지므로 파이프·테스트가 보는 것은 그대로다.
 . "$HERE/../scripts/rubato-progress.sh"
+. "$HERE/gui-agent-guard.sh"
+refuse_from_agent || exit 1
 
 HOST_OS="${RUBATO_HOST_OS:-$(uname -s)}"
 is_darwin() { [ "$HOST_OS" = Darwin ]; }
