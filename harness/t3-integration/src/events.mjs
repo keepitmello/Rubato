@@ -704,7 +704,7 @@ export class EventProjection {
     this.taskEvent('task.completed', { taskId: task.taskId, status,
       ...(nonempty(summary) && summary !== task.label ? { summary } : {}),
       ...(typedUsage ? { typedUsage } : {}), ...this.linkage(task) }, task);
-    this.maybeCompleteTeam(task);
+    this.syncTeam(task);
   }
   // Member ids map at children[st_…] → the team spawn key. Prefer a task stored
   // under the child id so a member tick cannot land on the team row.
@@ -713,13 +713,39 @@ export class EventProjection {
     if (!id) return;
     return this.tasks.get(id) || this.tasks.get(this.children.get(id));
   }
-  maybeCompleteTeam(member) {
+  // Members map to the team_create call id, which is also the team row's toolUseId.
+  teamMembers(spawnKey, team) {
+    return [...this.children.entries()].filter(([, key]) => key === spawnKey).map(([id]) => this.tasks.get(id))
+      .filter((task) => task && task !== team);
+  }
+  // The team row follows its members. All settled: it settles. All settled or resting: it rests,
+  // which T3 reads as no background work (a team waiting for mail runs nothing). Anyone awake: it works.
+  syncTeam(member) {
     const spawnKey = this.children.get(member.taskId);
     const team = this.tasks.get(spawnKey);
     if (!team || team === member || team.taskType !== 'local_workflow' || team.done) return;
-    const members = [...this.children.entries()].filter(([, key]) => key === spawnKey).map(([id]) => this.tasks.get(id)).filter((task) => task && task !== team);
-    if (members.length === 0 || members.some((task) => !task.done)) return;
-    this.completeTask(team, members.some((task) => task.terminal === 'failed') ? 'failed' : 'completed');
+    const members = this.teamMembers(spawnKey, team);
+    if (members.length === 0) return;
+    if (members.every((task) => task.done)) {
+      this.completeTask(team, members.some((task) => task.terminal === 'failed') ? 'failed' : 'completed');
+      return;
+    }
+    const resting = members.every((task) => task.done || task.restingKey !== undefined);
+    if (resting === Boolean(team.resting)) return;
+    team.resting = resting;
+    this.progressTask(team, resting ? { description: 'waiting', status: 'idle' } : { description: 'running', status: 'running' });
+  }
+  // team_delete cancels the members still working and lets the resting ones go.
+  teamDeleted(event) {
+    if (event.type !== 'tool_execution_end' || event.isError) return;
+    const details = detailsOf(event.result ?? {});
+    if (details.kind !== 'deleted') return;
+    const team = this.teams.get(nonempty(details.team_run_id));
+    if (!team) return;
+    for (const member of this.teamMembers(team.toolUseId, team)) {
+      if (!member.done) this.completeTask(member, member.restingKey !== undefined ? 'completed' : 'stopped');
+    }
+    if (!team.done) this.completeTask(team, 'completed');
   }
   rememberChild(childId, toolCallId) {
     const id = nonempty(childId);
@@ -774,7 +800,7 @@ export class EventProjection {
       // Completion may have arrived before the create response linked members.
       for (const member of details.members ?? []) {
         const child = this.tasks.get(nonempty(member.task_id));
-        if (child) this.maybeCompleteTeam(child);
+        if (child) this.syncTeam(child);
       }
     }
   }
@@ -861,6 +887,7 @@ export class EventProjection {
         if (task.restingKey === key) continue;
         task.restingKey = key;
         this.progressTask(task, { description: said || 'waiting', summary: said, status: 'idle', typedUsage });
+        this.syncTeam(task);
         continue;
       }
       const wasResting = task.restingKey !== undefined;
@@ -874,6 +901,7 @@ export class EventProjection {
         if (!doing && !typedUsage && mapped === 'running' && !wasResting && !woke) continue;
         this.progressTask(task, { description: doing || 'running', summary: live.lastAssistantLine,
           lastToolName: live.currentTool, status: mapped, typedUsage });
+        this.syncTeam(task);
       }
     }
   }
@@ -920,6 +948,7 @@ export class EventProjection {
           { itemId: spawn ? event.toolCallId : `pi-tool:${this.sessionId}:${event.toolCallId}` });
         if (spawn) this.spawnTool(event);
         else if (CANCEL_TOOLS.has(event.toolName)) this.cancelTool(event);
+        else if (event.toolName === 'team_delete') this.teamDeleted(event);
         break;
       }
       case 'compaction_end':

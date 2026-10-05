@@ -113,6 +113,82 @@ test('a direct agent that finishes resident still reads completed', () => {
   assert.equal(events.find(event => event.type === 'task.completed' && event.payload.taskId === 'st_direct').payload.status, 'completed');
 });
 
+const rest = (task_id) => ({ task_id, status: 'completed', residency_state: 'resident', final_response: 'Done; waiting.' });
+const deleteTeam = (projection, details = { kind: 'deleted', team_run_id: 'run_team', cancelled_task_ids: [] }) => {
+  projection.project({ type: 'tool_execution_start', toolName: 'team_delete', toolCallId: 'call_delete',
+    args: { team_run_id: 'run_team' } });
+  projection.project({ type: 'tool_execution_end', toolName: 'team_delete', toolCallId: 'call_delete',
+    isError: false, result: { details } });
+};
+
+test('a team whose members all rest is waiting, not working, and a wake brings it back', () => {
+  const { events, projection, finish } = setup({ inline_spec: { name: 'mobile-team', members: [] } });
+  finish();
+  const snapshot = (item) => projection.project({ type: 'extension_event', name: 'rubato.task.updated', data: { tasks: [item] } });
+  const team = () => events.filter(event => event.type.startsWith('task.') && event.payload.taskId === 'call_team'
+    && event.payload.status !== undefined).map(event => event.payload.status);
+  snapshot(rest('st_owner'));
+  assert.deepEqual(team(), []);
+  snapshot(rest('st_verifier'));
+  snapshot(rest('st_verifier'));
+  assert.deepEqual(team(), ['idle']);
+  snapshot({ task_id: 'st_owner', status: 'running' });
+  assert.deepEqual(team(), ['idle', 'running']);
+  snapshot(rest('st_owner'));
+  assert.deepEqual(team(), ['idle', 'running', 'idle']);
+  assert.equal(events.some(event => event.type === 'task.completed' && event.payload.taskId === 'call_team'), false);
+});
+
+test('deleting the team settles its row and its resting members', () => {
+  const { events, projection, finish } = setup({ inline_spec: { name: 'mobile-team', members: [] } });
+  finish();
+  projection.project({ type: 'extension_event', name: 'rubato.task.updated', data: { tasks: [rest('st_owner')] } });
+  deleteTeam(projection, { kind: 'invalid_state', team_run_id: 'run_team', reason: 'members still live' });
+  assert.equal(events.some(event => event.type === 'task.completed'), false);
+  deleteTeam(projection);
+  const completed = (taskId) => events.filter(event => event.type === 'task.completed' && event.payload.taskId === taskId);
+  assert.equal(completed('st_owner')[0].payload.status, 'completed');
+  assert.equal(completed('st_verifier')[0].payload.status, 'stopped');
+  assert.equal(completed('call_team').length, 1);
+});
+
+test('the real T3 background banner hides for a resting team and shows for a woken one', {
+  skip: !process.env.T3_SOURCE,
+}, async () => {
+  const { make } = await t3Modules(process.env.T3_SOURCE).source('apps/server/src/orchestration/ThreadBackgroundLiveness.ts');
+  const kinds = { 'task.started': 'started', 'task.progress': 'progress', 'task.updated': 'updated', 'task.completed': 'completed' };
+  const { events, projection, finish } = setup({ inline_spec: { name: 'mobile-team', members: [] } });
+  const liveness = make();
+  let fed = 0;
+  // What ProviderRuntimeIngestion hands the registry for every task row; null is "no banner".
+  const banner = () => {
+    for (const { type, payload } of events.slice(fed)) {
+      if (!kinds[type]) continue;
+      liveness.recordTaskLiveness({ threadId: 'thread', taskId: payload.taskId, taskType: payload.taskType,
+        status: payload.status, agentId: payload.agentId, kind: kinds[type] });
+    }
+    fed = events.length;
+    return liveness.getThreadBackgroundLiveness('thread');
+  };
+  const snapshot = (item) => projection.project({ type: 'extension_event', name: 'rubato.task.updated', data: { tasks: [item] } });
+  const board = () => projection.project({ type: 'extension_event', name: 'rubato.team.board.updated',
+    data: { teams: [{ team_run_id: 'run_team', team_name: 'mobile-team', tasks: [{ id: '1', subject: 'Ship', status: 'completed' }] }] } });
+  finish();
+  assert.equal(banner(), 'working');
+  board();
+  snapshot(rest('st_owner'));
+  snapshot(rest('st_verifier'));
+  assert.equal(banner(), null);
+  board();
+  assert.equal(banner(), null);
+  snapshot({ task_id: 'st_owner', status: 'running' });
+  assert.equal(banner(), 'working');
+  snapshot(rest('st_owner'));
+  assert.equal(banner(), null);
+  deleteTeam(projection);
+  assert.equal(banner(), null);
+});
+
 test('a schema-rejected team leaves no row, and the retry with the same name gets the board', () => {
   const { events, projection } = setup({ inline_spec: { name: 'mobile-team', members: [] } });
   projection.project({ type: 'tool_execution_end', toolName: 'team_create', toolCallId: 'call_team', isError: true,

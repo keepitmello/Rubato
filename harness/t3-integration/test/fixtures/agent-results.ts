@@ -110,7 +110,8 @@
     agents = foldSubagentActivities(thread.activities);
     expect(agents.find((item) => item.id === "st_owner")?.status).toBe("idle");
     expect(agents.find((item) => item.id === "st_owner")?.progress).toBe("Waiting on the build.");
-    expect(agents.find((item) => item.id === "call_team")?.status).toBe("running");
+    // A team whose members all rest waits too: nothing runs, so no background work shows.
+    expect(agents.find((item) => item.id === "call_team")?.status).toBe("idle");
     // A board change after the team settled must not reopen it.
     projection.project({ type: "extension_event", name: "rubato.task.updated", data: { tasks: [{
       task_id: "st_owner", status: "completed", final_response: "Done." }] } });
