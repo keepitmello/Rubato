@@ -67,6 +67,7 @@ export class TerminalSessionBundle {
 			id: entry.id,
 			startedAtMs: entry.startedAtMs,
 			bounded: this.#boundedBackgrounds.has(entry.id),
+			description: entry.description,
 		}));
 	}
 

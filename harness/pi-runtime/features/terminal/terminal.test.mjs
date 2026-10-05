@@ -10,6 +10,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { stagePiRuntime } from "../../stage-runtime.mjs";
 import { toolExecutionFeature } from "../tool-execution/index.mjs";
 import { feature, files } from "./patches.mjs";
+import { TERMINAL_AWAITED_WAKES_REQUEST } from "./src/pending-work.ts";
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -649,7 +650,13 @@ async function startTerminal(t, terminalSettings) {
 		while (sent.length < count && Date.now() < deadline) await delay(25);
 		assert.equal(sent.length, count, `expected ${count} notification(s)`);
 	};
-	return { tools, sent, waitForSent, pending: () => rpc.get("rubato.terminal.pending-work")() };
+	return {
+		tools,
+		sent,
+		waitForSent,
+		pending: () => rpc.get("rubato.terminal.pending-work")(),
+		awaited: () => rpc.get(TERMINAL_AWAITED_WAKES_REQUEST)(),
+	};
 }
 
 test("a watch that already reported and then only hits its deadline is recorded without a wake", async (t) => {
@@ -689,4 +696,65 @@ test("asking for the same watch again reuses the live one", async (t) => {
 
 	const otherFilter = await tools.get("monitor").execute("call-3", { ...input, filter: "^DONE$" });
 	assert.notEqual(otherFilter.details.monitor_id, first.details.monitor_id, "a different filter is a different watch");
+});
+
+test("an idle agent's awaited wakes name only the waits that end on their own", async () => {
+	const { terminalAwaitedWakes } = await import("./src/pending-work.ts");
+	const input = {
+		delivers: true,
+		backgrounds: [
+			{ id: "bash_1", startedAtMs: 0, bounded: false, description: "npm run dev" },
+			{ id: "bash_2", startedAtMs: 0, bounded: true, description: "cd repo && python3 - <<'EOF'\nprint(1)\nEOF" },
+		],
+		monitors: [
+			{ id: "bash_3", startedAtMs: 0, persistent: true, reported: false, description: "server log" },
+			{ id: "bash_4", startedAtMs: 0, persistent: false, reported: false, description: "wait for unittest run" },
+			{ id: "bash_5", startedAtMs: 0, persistent: false, reported: true, description: "already said" },
+			{ id: "bash_6", startedAtMs: 0, persistent: false, reported: false, description: "x".repeat(200) },
+		],
+	};
+	const awaited = terminalAwaitedWakes(input);
+	assert.deepEqual(
+		awaited.map((entry) => entry.id),
+		["bash_4", "bash_6", "bash_2"],
+		"monitors first, then sessions with a deadline",
+	);
+	assert.equal(awaited[0].description, "wait for unittest run");
+	assert.equal(awaited[1].description.length, 80, "a long label is cut");
+	assert.equal(awaited[2].description, "cd repo && python3 - <<'EOF'", "a command reads by its first line");
+	assert.deepEqual(terminalAwaitedWakes({ ...input, delivers: false }), [], "nothing wakes an agent that hears nothing");
+});
+
+test("a command that outgrew the foreground window is awaited; a server left in the background is not", async (t) => {
+	const previous = process.env.PI_BASH_FOREGROUND_SECONDS;
+	process.env.PI_BASH_FOREGROUND_SECONDS = "0.2";
+	t.after(() => {
+		if (previous === undefined) delete process.env.PI_BASH_FOREGROUND_SECONDS;
+		else process.env.PI_BASH_FOREGROUND_SECONDS = previous;
+	});
+	const { tools, awaited } = await startTerminal(t, { notify: "wake" });
+	assert.deepEqual(awaited(), { items: [] });
+
+	const detached = await tools.get("bash").execute("call-1", {
+		command: "exec sleep 30",
+		description: "unit tests",
+		timeout: 20,
+	});
+	assert.equal(detached.details?.auto_detached, true);
+	await tools.get("bash").execute("call-2", { command: "exec sleep 30", description: "dev server", run_in_background: true });
+	await tools.get("monitor").execute("call-3", { description: "wait for build", command: "exec sleep 30", timeout_ms: 20_000 });
+	await tools.get("monitor").execute("call-4", {
+		description: "tail server log",
+		command: "exec sleep 30",
+		persistent: true,
+	});
+	assert.deepEqual(
+		awaited().items.map((entry) => entry.description),
+		["wait for build", "unit tests"],
+	);
+
+	await tools.get("kill_bash").execute("call-5", { all: true });
+	const deadline = Date.now() + 2_000;
+	while (awaited().items.length > 0 && Date.now() < deadline) await delay(25);
+	assert.deepEqual(awaited(), { items: [] });
 });

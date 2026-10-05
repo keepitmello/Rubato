@@ -266,7 +266,12 @@ export class RubatoPiBridge {
     const client = await new SessionClient({ ...this.descriptor, onError: this.onError }).connect();
     const context = { client, sessionId, projection: new EventProjection({ threadId: input.threadId, sessionId,
       instanceId: this.instanceId, emit: this.emit,
-      sessionMessage: (item) => { void this.deliverSessionMessage(context, item); } }), session: {
+      sessionMessage: (item) => { void this.deliverSessionMessage(context, item); },
+      awaitedWakes: () => context.client.command({ type: 'get_awaited_wakes' }),
+      released: () => {
+        if (context.stopped || context.projection.turnId || context.session.status !== 'running') return;
+        context.session.status = 'ready'; this.stateEvent(context);
+      } }), session: {
       provider: 'rubato-pi', providerInstanceId: this.instanceId, threadId: input.threadId, runtimeMode: input.runtimeMode,
       status: 'connecting', ...(input.cwd ? { cwd: input.cwd } : {}), resumeCursor: this.cursor(sessionId),
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
@@ -314,8 +319,10 @@ export class RubatoPiBridge {
         !(snapshot.state.isStreaming && index === snapshot.messages.length - 1 && !message.stopReason)));
       for (const request of snapshot.pendingUi) context.projection.question(request);
       await this.drainStrandedQueue(context, snapshot.state);
-      context.session.status = snapshot.state.isStreaming ? 'running' : 'ready';
-      if (!snapshot.state.isStreaming && context.projection.turnId) {
+      // A turn waiting on a background completion is still open while Pi idles.
+      const waiting = Boolean(context.projection.awaiting);
+      context.session.status = snapshot.state.isStreaming || waiting ? 'running' : 'ready';
+      if (!snapshot.state.isStreaming && !waiting && context.projection.turnId) {
         context.projection.interrupted = true;
         context.projection.settle();
       }
@@ -504,7 +511,9 @@ export class RubatoPiBridge {
       // Pi's own state decides, not ours: a settle for an earlier run can arrive after
       // a wake has started the next one, and trusting the stale 'ready' sent a prompt
       // Pi rejects as already processing.
-      const running = context.session.status === 'running' || beforeSend?.isStreaming === true;
+      // A turn held open on a background wait has no run to steer: Pi idles, so it is a prompt.
+      const running = beforeSend?.isStreaming === true
+        || (context.session.status === 'running' && !context.projection.awaiting);
       if (control && running) throw new Error(`Interrupt the current turn before /${control.name}`);
       const turnId = context.projection.begin();
       context.session.status = 'running'; this.stateEvent(context);
@@ -848,6 +857,7 @@ export class RubatoPiBridge {
     const context = this.sessions.get(threadId);
     if (!context) return;
     context.stopped = true; this.sessions.delete(threadId);
+    context.projection.stopAwaiting();
     if (![...this.sessions.values()].some((open) => open.sessionId === context.sessionId)) this.claimed.delete(context.sessionId);
     await context.client.close();
     context.projection.event('session.exited', { exitKind: 'graceful', recoverable: true, reason: 'Presentation detached; Pi work is unchanged' });

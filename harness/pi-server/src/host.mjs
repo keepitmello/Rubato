@@ -18,13 +18,15 @@ export const PENDING_WORK_REQUEST = 'rubato.task.pending-work';
 // `get_service_tier` is not a Pi RPC command; it reads the service-tier extension's
 // live state so a presentation can see what the next request will carry.
 export const SERVICE_TIER_REQUEST = 'rubato.service-tier.status';
+export const AWAITED_WAKES_REQUEST = 'rubato.terminal.awaited-wakes';
 /**
- * The Pi request an attached command becomes. `get_service_tier`, `task_send` and
- * `task_cancel` are not Pi RPC commands: they ask the extensions that own them. The task
- * ones reach the session's own children only (the task extension checks the parent).
+ * The Pi request an attached command becomes. `get_service_tier`, `get_awaited_wakes`,
+ * `task_send` and `task_cancel` are not Pi RPC commands: they ask the extensions that own
+ * them. The task ones reach the session's own children only (the task extension checks the parent).
  */
 export function workerRequest(command) {
   if (command.type === 'get_service_tier') return { type: 'extension_request', name: SERVICE_TIER_REQUEST };
+  if (command.type === 'get_awaited_wakes') return { type: 'extension_request', name: AWAITED_WAKES_REQUEST };
   if (command.type === 'task_send')
     return { type: 'extension_request', name: 'rubato.task.send', data: { to: command.taskId, message: command.message } };
   if (command.type === 'task_cancel')
