@@ -23,6 +23,7 @@ import { threadForkEdits, threadForkOverlays } from './thread-fork-edits.mjs';
 import { fileExplorerEdits, fileExplorerOverlays } from './file-explorer-edits.mjs';
 import { rightPanelEdits, rightPanelOverlays } from './right-panel-edits.mjs';
 import { chatWidthEdits, chatWidthOverlays } from './chat-width-edits.mjs';
+import { sidebarRailEdits, sidebarRailOverlays } from './sidebar-rail-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -2203,6 +2204,11 @@ for (const [relative, changes] of Object.entries(rightPanelEdits)) {
 // Chat width as a percentage slider (chat-width-edits.mjs).
 overlays.push(...chatWidthOverlays);
 for (const [relative, changes] of Object.entries(chatWidthEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// 레거시 사이드바 스레드 목록의 세로선을 다시 지운다 (sidebar-rail-edits.mjs).
+overlays.push(...sidebarRailOverlays);
+for (const [relative, changes] of Object.entries(sidebarRailEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 function transform(text, changes) {
