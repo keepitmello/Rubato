@@ -9,7 +9,7 @@ DEFAULT_STDOUT_MAX=8192
 
 usage() {
   cat <<'USAGE'
-Usage: rubato dispatch <name> [deepseek|grok|grokfast|fable|astra|opus|opussub] [--model PROVIDER/MODEL[:THINKING]] [--effort LEVEL] [--cwd DIR] < brief.md
+Usage: rubato dispatch <name> [ultrafast|deepseek|grok|grokfast|fable|astra|opus|opussub] [--model PROVIDER/MODEL[:THINKING]] [--effort LEVEL] [--cwd DIR] < brief.md
        rubato dispatch <name> --continue < followup.md
 
 `dispatch` on PATH is the same command.
@@ -24,7 +24,8 @@ so a Pi-based caller's extensions do not load into the worker.
 --effort sets :LEVEL (senpi --model form). It replaces an alias's default level;
 with --model it is appended only when the id has no :suffix yet.
 
-Models (no alias = deepseek):
+Models (no alias = ultrafast):
+  ultrafast opengateway/deepseek/deepseek-v4.1-flash-ultrafast:high
   deepseek  b-ai/deepseek-v4.1-flash:high
   grok      xai/grok-4.7
   grokfast  cursor/grok-4.7
@@ -48,6 +49,7 @@ resolve_script_dir() {
 
 alias_to_model() {
   case "$1" in
+    ultrafast) echo "opengateway/deepseek/deepseek-v4.1-flash-ultrafast:high" ;;
     deepseek) echo "b-ai/deepseek-v4.1-flash:high" ;;
     grok) echo "xai/grok-4.7" ;;
     grokfast) echo "cursor/grok-4.7" ;;
@@ -162,7 +164,7 @@ while [[ $# -gt 0 ]]; do
       CWD="$2"
       shift 2
       ;;
-    deepseek|grok|grokfast|fable|astra|opus|opussub)
+    ultrafast|deepseek|grok|grokfast|fable|astra|opus|opussub)
       if [[ -n "$MODEL_ALIAS" ]]; then
         echo "rubato dispatch: model already set to $MODEL_ALIAS" >&2
         exit 2
@@ -187,7 +189,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-MODEL_ALIAS="${MODEL_ALIAS:-deepseek}"
+MODEL_ALIAS="${MODEL_ALIAS:-ultrafast}"
 if [[ -n "$MODEL_DIRECT" ]]; then
   MODEL="$MODEL_DIRECT"
 else
