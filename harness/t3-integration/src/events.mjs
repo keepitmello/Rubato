@@ -69,6 +69,20 @@ const nonempty = (value) => {
   return text ? text : undefined;
 };
 const firstLine = (value) => nonempty(typeof value === 'string' ? value.trim().split('\n')[0] : undefined);
+// T3 validates `detail` and `title` as trimmed non-empty strings, so a value that is only
+// whitespace fails the whole event, and an event that fails to decode takes the session
+// down with it: startSession rejected, resume impossible, stop failed. OpenGateway's
+// DeepSeek sends an assistant message whose text is "\n\n" next to a tool call, which
+// reached here as `detail: "\n\n"`. A blank label means nothing to show, so it is omitted;
+// a real one is left exactly as it came.
+const withoutBlankLabels = (payload) => {
+  if (!payload || typeof payload !== 'object') return payload;
+  const next = { ...payload };
+  for (const key of ['detail', 'title']) {
+    if (typeof next[key] === 'string' && next[key].trim() === '') delete next[key];
+  }
+  return next;
+};
 // Provider errors arrive as `errorMessage`, often wrapping a JSON body. T3 paints
 // `item.completed.detail` and `turn.completed.errorMessage`; empty failed items
 // look like a hang because the spinner has nothing to replace.
@@ -346,7 +360,7 @@ export class EventProjection {
   event(type, payload, fields = {}) {
     this.emit({ eventId: randomUUID(), provider: 'rubato-pi', providerInstanceId: this.instanceId,
       threadId: this.threadId, createdAt: new Date().toISOString(),
-      ...(this.turnId ? { turnId: this.turnId } : {}), ...fields, type, payload });
+      ...(this.turnId ? { turnId: this.turnId } : {}), ...fields, type, payload: withoutBlankLabels(payload) });
   }
   reset(sessionId = this.sessionId) {
     this.sessionId = sessionId;
