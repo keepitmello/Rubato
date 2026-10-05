@@ -20,6 +20,7 @@ import { officeEdits, officeOverlays } from './office-edits.mjs';
 import { surfaceMenuEdits, surfaceMenuOverlays } from './surface-menu-edits.mjs';
 import { agentSessionEdits, agentSessionOverlays } from './agent-session-edits.mjs';
 import { threadForkEdits, threadForkOverlays } from './thread-fork-edits.mjs';
+import { fileExplorerEdits, fileExplorerOverlays } from './file-explorer-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -2181,6 +2182,11 @@ for (const [relative, changes] of Object.entries(agentSessionEdits)) {
 // Fork thread in the legacy sidebar (thread-fork-edits.mjs) anchors on the pin edits above.
 overlays.push(...threadForkOverlays);
 for (const [relative, changes] of Object.entries(threadForkEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Explorer on the left, back and forward in the file surface (file-explorer-edits.mjs).
+overlays.push(...fileExplorerOverlays);
+for (const [relative, changes] of Object.entries(fileExplorerEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 function transform(text, changes) {
