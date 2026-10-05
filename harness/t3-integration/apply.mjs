@@ -21,6 +21,7 @@ import { surfaceMenuEdits, surfaceMenuOverlays } from './surface-menu-edits.mjs'
 import { agentSessionEdits, agentSessionOverlays } from './agent-session-edits.mjs';
 import { threadForkEdits, threadForkOverlays } from './thread-fork-edits.mjs';
 import { fileExplorerEdits, fileExplorerOverlays } from './file-explorer-edits.mjs';
+import { rightPanelEdits, rightPanelOverlays } from './right-panel-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -2187,6 +2188,11 @@ for (const [relative, changes] of Object.entries(threadForkEdits)) {
 // Explorer on the left, back and forward in the file surface (file-explorer-edits.mjs).
 overlays.push(...fileExplorerOverlays);
 for (const [relative, changes] of Object.entries(fileExplorerEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Closing the right panel's last tab returns to its launcher (right-panel-edits.mjs).
+overlays.push(...rightPanelOverlays);
+for (const [relative, changes] of Object.entries(rightPanelEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 function transform(text, changes) {
