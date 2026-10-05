@@ -39,6 +39,7 @@ export const PROVIDERS = Object.freeze([
   { id: "google-antigravity", label: "Antigravity", aliases: ["google-antigravity", "antigravity"], methods: ["oauth"] },
   { id: "opencode", label: "OpenCode", aliases: ["opencode"], methods: ["api_key"] },
   { id: "b-ai", label: "DeepSeek", aliases: ["b-ai", "deepseek"], methods: ["api_key"] },
+  { id: "opengateway", label: "OpenGateway", aliases: ["opengateway"], methods: ["api_key"] },
 ]);
 
 const METHOD_ALIASES = Object.freeze({
@@ -567,12 +568,13 @@ async function addSetupToken(ctx) {
 }
 
 /** 엔진을 거치지 않고 키를 auth.json 에 바로 넣는 provider. */
-const STORED_KEY_PROVIDERS = new Set(["kiro", "opencode", "b-ai"]);
+const STORED_KEY_PROVIDERS = new Set(["kiro", "opencode", "b-ai", "opengateway"]);
 
 function apiKeyNotes(providerId) {
   if (providerId === "kiro") return ["키 대신 이 스크립트를 써도 됩니다: harness/scripts/kiro-setup.sh"];
   if (providerId === "opencode") return ["Keychain 서비스 opencode.ai 에 넣어 두어도 됩니다."];
   if (providerId === "b-ai") return ["B.AI 키입니다. 모델은 DeepSeek V4.1 Flash."];
+  if (providerId === "opengateway") return ["opengateway.ai 대시보드(API Keys → Create Key)에서 만든 키입니다. 모델은 DeepSeek V4.1 Flash Ultrafast."];
   return [];
 }
 

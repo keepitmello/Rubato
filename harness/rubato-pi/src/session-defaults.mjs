@@ -1,10 +1,16 @@
 import { existsSync as existsSyncFs, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DEFAULT_MODEL_ID, DEFAULT_PROVIDER } from "./defaults.mjs";
-import { SUPPORTED_PROVIDER_IDS, builtinProviderIds, foreignProviderIds } from "./provider-ids.mjs";
+import {
+  CUSTOM_PROVIDER_IDS,
+  OPENGATEWAY_PROVIDER_ID,
+  SUPPORTED_PROVIDER_IDS,
+  builtinProviderIds,
+  foreignProviderIds,
+} from "./provider-ids.mjs";
 import { BAI_BASE_URL, BAI_FLASH_MODEL_ID, BAI_PROVIDER_ID, isBaiAllowedModelId } from "./bai-route.mjs";
 
-export { BAI_FLASH_MODEL_ID, BAI_PROVIDER_ID };
+export { BAI_FLASH_MODEL_ID, BAI_PROVIDER_ID, OPENGATEWAY_PROVIDER_ID };
 
 export function settingsPath(agentDir) {
   return join(agentDir, "settings.json");
@@ -14,6 +20,37 @@ export function modelsPath(agentDir) {
   return join(agentDir, "models.json");
 }
 
+/**
+ * DeepSeek V4.1 Flash 계열의 능력. b.ai 와 OpenGateway 가 같은 모델을 서로 다른 주소로
+ * 판다. 능력은 벤더 사실이라 템플릿이 소유하고, 두 프로바이더가 이 한 벌을 나눠 쓴다.
+ *
+ * 이미지: 실측으로 두 주소 모두 이미지 블록을 그대로 보내면 읽는다. `["text"]` 로 두면
+ * read 툴이 이미지를 빼고 안내 문구만 돌려주고, pi-ai 는 요청에서 이미지를
+ * 자리표시자로 바꾼다 — 붙여넣은 스크린샷이 조용히 사라지고 모델은 그게
+ * 왜 왔는지도 모른다.
+ */
+const DEEPSEEK_FLASH_CAPABILITIES = Object.freeze({
+  contextWindow: 1_000_000,
+  maxTokens: 384_000,
+  input: Object.freeze(["text", "image"]),
+  reasoning: true,
+  thinkingLevelMap: Object.freeze({
+    minimal: null,
+    low: "low",
+    medium: null,
+    high: "high",
+    max: "max",
+  }),
+  compat: Object.freeze({
+    supportsStore: false,
+    supportsDeveloperRole: false,
+    supportsReasoningEffort: true,
+    maxTokensField: "max_tokens",
+    requiresReasoningContentOnAssistantMessages: true,
+    thinkingFormat: "deepseek",
+  }),
+});
+
 /** Pi custom provider. The key stays local (`$BAI_API_KEY` or a literal apiKey). */
 export const DEFAULT_BAI_PROVIDER = Object.freeze({
   name: "B.AI",
@@ -22,32 +59,26 @@ export const DEFAULT_BAI_PROVIDER = Object.freeze({
   apiKey: "$BAI_API_KEY",
   authHeader: true,
   models: Object.freeze([
+    Object.freeze({ id: BAI_FLASH_MODEL_ID, name: "v4.1 Flash", ...DEEPSEEK_FLASH_CAPABILITIES }),
+  ]),
+});
+
+export const OPENGATEWAY_BASE_URL = "https://apis.opengateway.ai/v1";
+/** OpenGateway 모델 id 는 `제작사/모델` 이라 슬래시를 품는다. 피커 슬러그는 `opengateway/deepseek/…`. */
+export const OPENGATEWAY_FLASH_ULTRAFAST_MODEL_ID = "deepseek/deepseek-v4.1-flash-ultrafast";
+
+/** Pi custom provider. 키는 `rubato auth` 가 auth.json 에 두고, 환경변수는 대체 경로다. */
+export const DEFAULT_OPENGATEWAY_PROVIDER = Object.freeze({
+  name: "OpenGateway",
+  baseUrl: OPENGATEWAY_BASE_URL,
+  api: "openai-completions",
+  apiKey: "$OPENGATEWAY_API_KEY",
+  authHeader: true,
+  models: Object.freeze([
     Object.freeze({
-      id: BAI_FLASH_MODEL_ID,
-      name: "v4.1 Flash",
-      contextWindow: 1_000_000,
-      maxTokens: 384_000,
-      // 실측: api.b.ai 에 이미지 블록을 그대로 보내면 읽는다. `["text"]` 로 두면
-      // read 툴이 이미지를 빼고 안내 문구만 돌려주고, pi-ai 는 요청에서 이미지를
-      // 자리표시자로 바꾼다 — 붙여넣은 스크린샷이 조용히 사라지고 모델은 그게
-      // 왜 왔는지도 모른다. 능력은 벤더 사실이라 템플릿이 소유한다.
-      input: Object.freeze(["text", "image"]),
-      reasoning: true,
-      thinkingLevelMap: Object.freeze({
-        minimal: null,
-        low: "low",
-        medium: null,
-        high: "high",
-        max: "max",
-      }),
-      compat: Object.freeze({
-        supportsStore: false,
-        supportsDeveloperRole: false,
-        supportsReasoningEffort: true,
-        maxTokensField: "max_tokens",
-        requiresReasoningContentOnAssistantMessages: true,
-        thinkingFormat: "deepseek",
-      }),
+      id: OPENGATEWAY_FLASH_ULTRAFAST_MODEL_ID,
+      name: "v4.1 Flash Ultrafast",
+      ...DEEPSEEK_FLASH_CAPABILITIES,
     }),
   ]),
 });
@@ -85,6 +116,36 @@ function ensureBaiProvider(providers) {
   if (index === -1) models.push(structuredClone(template));
   else models[index] = { ...models[index], input: [...template.input] };
   next[BAI_PROVIDER_ID] = { ...structuredClone(DEFAULT_BAI_PROVIDER), ...existing, models };
+  return next;
+}
+
+function isPlainObject(value) {
+  return value != null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** 템플릿이 소유한 필드가 전부 같아야 현재다. 사용자가 덧붙인 필드는 보지 않는다. */
+function rowMatchesTemplate(row, template) {
+  return Object.entries(template).every(([key, value]) => JSON.stringify(row?.[key]) === JSON.stringify(value));
+}
+
+export function openGatewayProviderLooksCurrent(providers) {
+  const provider = providers?.[OPENGATEWAY_PROVIDER_ID];
+  if (!isPlainObject(provider) || !Array.isArray(provider.models)) return false;
+  const template = DEFAULT_OPENGATEWAY_PROVIDER.models[0];
+  return provider.models.some((model) => model?.id === template.id && rowMatchesTemplate(model, template));
+}
+
+// b.ai 와 달리 OpenGateway 는 다른 모델 행을 걷지 않는다 — 이 키로 나가는 요청의 모델
+// 경계는 피커 카탈로그가 정한다. 우리 행만 템플릿으로 맞추고 나머지는 사용자 몫이다.
+function ensureOpenGatewayProvider(providers) {
+  const next = { ...providers };
+  const existing = isPlainObject(next[OPENGATEWAY_PROVIDER_ID]) ? next[OPENGATEWAY_PROVIDER_ID] : null;
+  const template = DEFAULT_OPENGATEWAY_PROVIDER.models[0];
+  const models = Array.isArray(existing?.models) ? [...existing.models] : [];
+  const index = models.findIndex((model) => model?.id === template.id);
+  if (index === -1) models.push(structuredClone(template));
+  else models[index] = { ...models[index], ...structuredClone(template) };
+  next[OPENGATEWAY_PROVIDER_ID] = { ...structuredClone(DEFAULT_OPENGATEWAY_PROVIDER), ...existing, models };
   return next;
 }
 
@@ -176,8 +237,9 @@ export function modelsLookCurrent(current) {
   // 남은 이유가 그것이다 — foreign 전부를 끄고 우리 id 는 끄지 않았는지를 본다.
   const required = foreignProviderIds(builtinProviderIds());
   if (!required.every((id) => current.disabledProviders.includes(id))) return false;
-  if (SUPPORTED_PROVIDER_IDS.some((id) => current.disabledProviders.includes(id))) return false;
-  return baiProviderLooksCurrent(current.providers);
+  const ours = [...SUPPORTED_PROVIDER_IDS, ...CUSTOM_PROVIDER_IDS];
+  if (ours.some((id) => current.disabledProviders.includes(id))) return false;
+  return baiProviderLooksCurrent(current.providers) && openGatewayProviderLooksCurrent(current.providers);
 }
 
 export function sessionDefaultsLookCurrent(
@@ -253,18 +315,14 @@ export function ensureModelsConfig(
 ) {
   const path = modelsPath(agentDir);
   const current = exists(path) ? JSON.parse(readFile(path, "utf8")) : {};
-  const providers = ensureBaiProvider(
-    current.providers && typeof current.providers === "object" && !Array.isArray(current.providers)
-      ? current.providers
-      : {},
-  );
+  const providers = ensureOpenGatewayProvider(ensureBaiProvider(isPlainObject(current.providers) ? current.providers : {}));
   const next = {
     ...current,
     providers,
     disabledProviders: mergeDisabledProviders(
       current,
       foreignProviderIds(builtinProviderIds()),
-      SUPPORTED_PROVIDER_IDS,
+      [...SUPPORTED_PROVIDER_IDS, ...CUSTOM_PROVIDER_IDS],
     ),
   };
   writeFile(path, `${JSON.stringify(next, null, 2)}\n`);

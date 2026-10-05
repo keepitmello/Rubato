@@ -20,6 +20,7 @@ import {
 // 테스트가 먼저 깨지고, 고치는 일은 값을 다시 베끼는 일이 된다.
 const XAI_GROK = PRODUCT_MODEL_ORDER.xai[0]
 const BAI_FLASH = PRODUCT_MODEL_ORDER["b-ai"][0]
+const OPENGATEWAY_FLASH = PRODUCT_MODEL_ORDER.opengateway[0]
 const [FABLE, OPUS] = PRODUCT_MODEL_ORDER.anthropic
 const [SOL] = PRODUCT_MODEL_ORDER["openai-codex"]
 const pick = (item: { provider: string; id: string }) => `${item.provider}/${item.id}`
@@ -89,6 +90,13 @@ describe("product model catalog", () => {
     expect(catalogSlugs()[0]).toBe(`openai-codex/${SOL}`)
     expect(catalogSlugs()).toContain(`b-ai/${BAI_FLASH}`)
     expect(productCatalogLabel({ provider: "b-ai", id: BAI_FLASH })).toBe("v4.1 Flash")
+    // OpenGateway 의 모델 id 는 슬래시를 품는다: 슬러그에서 프로바이더는 첫 슬래시까지다.
+    expect(catalogSlugs()).toContain(`opengateway/${OPENGATEWAY_FLASH}`)
+    expect(isProductCatalogSlug(`opengateway/${OPENGATEWAY_FLASH}`)).toBe(true)
+    expect(productCatalogLabel({ provider: "opengateway", id: OPENGATEWAY_FLASH })).toBe("v4.1 Flash Ultrafast")
+    expect(admitProductCatalogItems([{ provider: "opengateway", id: OPENGATEWAY_FLASH }, { provider: "opengateway", id: "z-ai/glm-5.3" }]).map(pick)).toEqual([
+      `opengateway/${OPENGATEWAY_FLASH}`,
+    ])
     expect(PRODUCT_MODEL_ORDER.cursor).toContain("composer-2.5")
   })
 

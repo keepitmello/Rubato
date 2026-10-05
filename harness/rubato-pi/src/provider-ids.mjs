@@ -69,8 +69,17 @@ export function builtinProviderIds() {
   return BUILTIN_PROVIDER_IDS;
 }
 
+/**
+ * models.json 에 우리가 직접 등록하는 custom provider 중 Pi builtin 과 이름이 같은 id
+ * (b-ai 는 builtin 에 없어 해당 없음). foreign 으로 분류되면 disabledProviders 에 박히고
+ * 기동 때 unregister 되어, 방금 등록한 우리 provider 가 사라진다. 여기 적은 id 는
+ * foreign 이 아니다.
+ */
+export const OPENGATEWAY_PROVIDER_ID = "opengateway";
+export const CUSTOM_PROVIDER_IDS = Object.freeze([OPENGATEWAY_PROVIDER_ID]);
+
 export function foreignProviderIds(builtinIds = BUILTIN_PROVIDER_IDS) {
-  const ours = new Set(SUPPORTED_PROVIDER_IDS);
+  const ours = new Set([...SUPPORTED_PROVIDER_IDS, ...CUSTOM_PROVIDER_IDS]);
   return [...new Set(builtinIds)].filter((id) => typeof id === "string" && id.length > 0 && !ours.has(id));
 }
 
