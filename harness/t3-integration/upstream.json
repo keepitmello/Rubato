@@ -82,6 +82,9 @@
     "apps/web/src/components/threadActionMenu.logic.ts": "d1d44b0c4e3e58d9d64139c011c546e3381ffc4b4229300ed95fe96823502894",
     "apps/web/src/components/files/FileBrowserPanel.tsx": "08be0b74bbeabfd41c83a895d81e9fc61057271e46305ff5aca4fc01ece54f28",
     "apps/web/src/rightPanelStore.ts": "9221cc41153068bfe2e48b15433762cc82d7d5fdaf660f7e541470dc3dc9ccc9",
-    "apps/web/src/rightPanelStore.test.ts": "8a971bef64916e16737389c0e35206c065fdb84e4d2710f759db7e07937f7992"
+    "apps/web/src/rightPanelStore.test.ts": "8a971bef64916e16737389c0e35206c065fdb84e4d2710f759db7e07937f7992",
+    "packages/contracts/src/settings.ts": "460f356f2f9192dc1c8730d073f69b3f7f815ed13cb27f564cd68ce34bfa4ce4",
+    "packages/contracts/src/settings.test.ts": "9166d22aca53e48a6282b25b7df32b33cbefcfcda39e917e9d7b3b288c7c2e4a",
+    "apps/web/src/index.css": "c09915f36b1aeba8957fb3922dccfd7281fa25354dbf08ceac8a15d5b9dbf924"
   }
 }

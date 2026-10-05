@@ -22,6 +22,7 @@ import { agentSessionEdits, agentSessionOverlays } from './agent-session-edits.m
 import { threadForkEdits, threadForkOverlays } from './thread-fork-edits.mjs';
 import { fileExplorerEdits, fileExplorerOverlays } from './file-explorer-edits.mjs';
 import { rightPanelEdits, rightPanelOverlays } from './right-panel-edits.mjs';
+import { chatWidthEdits, chatWidthOverlays } from './chat-width-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -2195,6 +2196,11 @@ for (const [relative, changes] of Object.entries(fileExplorerEdits)) {
 // Closing the right panel's last tab returns to its launcher (right-panel-edits.mjs).
 overlays.push(...rightPanelOverlays);
 for (const [relative, changes] of Object.entries(rightPanelEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Chat width as a percentage slider (chat-width-edits.mjs).
+overlays.push(...chatWidthOverlays);
+for (const [relative, changes] of Object.entries(chatWidthEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 function transform(text, changes) {
