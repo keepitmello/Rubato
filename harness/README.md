@@ -175,6 +175,12 @@ rubato restart        # 도는 것을 새 코드로 올린다
 일은 `t3-integration/restart-gui.sh` 하나가 쥐고 있고 두 동사가 같이 부르므로, 어느 쪽을
 쳐도 앱까지 간다. 설치 스크립트를 직접 찾아 칠 일은 없다.
 
+**에이전트 세션은 이 두 동사로 자기 앱을 못 껐다 켠다.** 에이전트의 셸에는 `PI_SESSION_ID`가
+있고, `restart-gui.sh`와 `start-gui.sh`는 그걸 보면 아무것도 건드리지 않고 거절한다
+(`t3-integration/gui-agent-guard.sh`). 세션이 도는 중에 앱이 내려가면 화면이 이벤트를 못
+받아 스레드가 "Thinking"으로 굳기 때문이다. 사람이 터미널에서 치거나 앱의 업데이트 버튼이
+돌리는 경로는 막지 않는다. 정말 필요하면 `RUBATO_ALLOW_AGENT_GUI_RESTART=1`을 붙인다.
+
 ## 다시 빌드
 
 ```bash

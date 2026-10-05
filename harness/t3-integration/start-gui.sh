@@ -7,6 +7,11 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
+. "$HERE/gui-agent-guard.sh"
+refuse_from_agent || exit 1
+# 앱은 에이전트가 아니다. 에이전트 셸에서 허용돼 켜진 앱이 그 세션의 신원을 물려받으면
+# 앱의 업데이트 버튼이 돌리는 재시작이 에이전트로 오인돼 막힌다.
+unset PI_SESSION_ID PI_SESSION_FILE
 T3_DIR="${RUBATO_T3_SOURCE:-$HOME/.rubato/t3-source}"
 T3_HOME="${RUBATO_T3_HOME:-$HOME/.rubato/t3-home}"
 BUNDLE="$T3_DIR/apps/desktop/dist-electron/main.cjs"

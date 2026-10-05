@@ -39,9 +39,11 @@ function tree(t, { launcher = RUBATO_LAUNCHER, bundle = true } = {}) {
   }
   return {
     desktop,
-    run(hostOs = 'Darwin') {
+    run(hostOs = 'Darwin', extraEnv = {}) {
+      // A test run from an agent shell must not look like an agent restarting its own app.
+      const { PI_SESSION_ID: _agent, RUBATO_ALLOW_AGENT_GUI_RESTART: _allow, ...cleanEnv } = process.env;
       const result = spawnSync('bash', [startGui], { encoding: 'utf8', env: {
-        ...process.env,
+        ...cleanEnv,
         HOME: root,
         RUBATO_NODE: process.execPath,
         RUBATO_T3_SOURCE: t3,
@@ -49,6 +51,7 @@ function tree(t, { launcher = RUBATO_LAUNCHER, bundle = true } = {}) {
         RUBATO_HOST_OS: hostOs,
         RUBATO_OSASCRIPT_BIN: '/usr/bin/true',
         ELECTRON_RUN_AS_NODE: '1',
+        ...extraEnv,
       } });
       let started;
       try { started = readFileSync(log, 'utf8'); } catch { started = undefined; }
@@ -86,4 +89,24 @@ test('off macOS the launcher still starts whatever the tree holds', (t) => {
   const result = tree(t, { launcher: T3_LAUNCHER }).run('Linux');
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.started, 'T3 launcher');
+});
+
+// start-gui.sh is what an agent called twice during the 2026-10-06 incident.
+test('an agent session cannot launch the app directly', (t) => {
+  const result = tree(t, { launcher: T3_LAUNCHER }).run('Linux', { PI_SESSION_ID: 'agent-session' });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /에이전트 세션에서는 데스크톱 앱을 직접 껐다 켜지 않습니다/);
+  assert.equal(result.started, undefined);
+});
+
+test('an allowed launch does not hand the agent session id to the app', (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), 'rb-start-env-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const out = path.join(root, 'env');
+  const t3run = tree(t, { launcher: T3_LAUNCHER });
+  writeFileSync(path.join(t3run.desktop, 'scripts/start-electron.mjs'),
+    `import { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(out)}, String(process.env.PI_SESSION_ID));\n`);
+  const result = t3run.run('Linux', { PI_SESSION_ID: 'agent-session', RUBATO_ALLOW_AGENT_GUI_RESTART: '1' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readFileSync(out, 'utf8'), 'undefined');
 });

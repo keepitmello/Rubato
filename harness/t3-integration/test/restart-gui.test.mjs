@@ -99,8 +99,10 @@ function harness(t, {
   const fakePs = join(root, 'fake-ps');
   executable(fakePs, '#!/bin/sh\n' + processes.map(([pid, command]) =>
     `kill -0 ${pid} 2>/dev/null && printf '%5s %s\\n' ${pid} '${command}'\n`).join(''));
+  // A test run from an agent shell must not look like an agent restarting its own app.
+  const { PI_SESSION_ID: _agent, RUBATO_ALLOW_AGENT_GUI_RESTART: _allow, ...cleanEnv } = process.env;
   const env = {
-    ...process.env,
+    ...cleanEnv,
     RUBATO_PS_BIN: fakePs,
     RUBATO_GUI_RUNTIME_DIR: runtime,
     HOME: home,
@@ -220,6 +222,31 @@ test('GUI update reopens an app the user closed during the update', (t) => {
   // The detached launcher may still be starting at shell exit; its success
   // is deliberately not reported as a loaded window by restart-gui.sh.
   assert.match(result.stdout, /창 준비는 GUI 업데이터가 확인/);
+});
+
+// An agent that restarts the app it runs inside cuts its own thread's event stream; the
+// 2026-10-06 incident restarted twice in 20 seconds and left the thread stuck on "Thinking".
+test('an agent session cannot restart the app: nothing is quit, built or launched', (t) => {
+  const h = harness(t, { hostOs: 'Darwin', app: true, running: true });
+  const result = h.run({ PI_SESSION_ID: 'agent-session' });
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stderr, /에이전트 세션에서는 데스크톱 앱을 직접 껐다 켜지 않습니다/);
+  assert.equal(h.calls(), '');
+  assert.equal(h.relaunched(), undefined);
+});
+
+test('an agent session may restart the app when it says so explicitly', (t) => {
+  const h = harness(t, { hostOs: 'Darwin', app: true, running: true });
+  const result = h.run({ PI_SESSION_ID: 'agent-session', RUBATO_ALLOW_AGENT_GUI_RESTART: '1' });
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  assert.notEqual(h.calls(), '');
+});
+
+test('a restart pressed in the app is not an agent even if the app inherited a session id', (t) => {
+  const h = harness(t, { hostOs: 'Darwin', app: true, running: true, descendant: true });
+  const result = h.run({ PI_SESSION_ID: 'inherited', RUBATO_GUI_UPDATE_RELAUNCH: '1' });
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  assert.notEqual(h.calls(), '');
 });
 
 // `rubato restart`, `rubato update` and the app's own update and restart all quit,
