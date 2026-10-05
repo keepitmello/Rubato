@@ -42,7 +42,7 @@ const DISPLAY_NAME: Record<string, string> = {
   "openai-codex": "Codex",
   xai: "Grok",
   cursor: "Cursor",
-  "b-ai": "DeepSeek",
+  "b-ai": "b.ai",
   opengateway: "OpenGateway",
   kiro: "Kiro",
   "google-antigravity": "Antigravity",
