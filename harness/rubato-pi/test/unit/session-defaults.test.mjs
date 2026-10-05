@@ -4,7 +4,11 @@ import {
   BAI_FLASH_MODEL_ID,
   BAI_PROVIDER_ID,
   DEFAULT_BAI_PROVIDER,
+  DEFAULT_OPENGATEWAY_PROVIDER,
   DISABLED_BUILTIN_EXTENSIONS,
+  OPENGATEWAY_FLASH_ULTRAFAST_MODEL_ID,
+  OPENGATEWAY_PROVIDER_ID,
+  openGatewayProviderLooksCurrent,
   baiProviderLooksCurrent,
   ensureModelsConfig,
   ensureSessionDefaults,
@@ -15,6 +19,7 @@ import {
 } from "../../src/session-defaults.mjs";
 import { foreignProviderIds } from "../../src/provider-ids.mjs";
 import { DEFAULT_MODEL_ID } from "../../src/defaults.mjs";
+import { PRODUCT_MODEL_ORDER } from "../../../../packages/model-core/src/product-model-catalog.mjs";
 
 test("session defaults preserve a selected model without dropping other settings", () => {
   const written = {};
@@ -183,7 +188,7 @@ test("already-current session files are left untouched", () => {
     theme: "dark",
   };
   const models = {
-    providers: { [BAI_PROVIDER_ID]: DEFAULT_BAI_PROVIDER },
+    providers: { [BAI_PROVIDER_ID]: DEFAULT_BAI_PROVIDER, [OPENGATEWAY_PROVIDER_ID]: DEFAULT_OPENGATEWAY_PROVIDER },
     disabledProviders: foreignProviderIds(),
   };
   const files = {
@@ -208,7 +213,7 @@ test("already-current session files are left untouched", () => {
 // 이제 지원 목록이 정적이라 판정도 그 목록만 본다.
 test("지원하지 않는 id 를 끈 파일은 그대로 현재로 본다", () => {
   assert.equal(modelsLookCurrent({
-    providers: { [BAI_PROVIDER_ID]: DEFAULT_BAI_PROVIDER },
+    providers: { [BAI_PROVIDER_ID]: DEFAULT_BAI_PROVIDER, [OPENGATEWAY_PROVIDER_ID]: DEFAULT_OPENGATEWAY_PROVIDER },
     disabledProviders: [...foreignProviderIds(), "newco"],
   }), true);
 });
@@ -410,4 +415,64 @@ test("옛 safety buffer 만 있는 설정은 현재가 아니다", () => {
   };
   assert.equal(settingsLookCurrent({ ...base, promptCache: { cacheAwareTimeouts: true, safetyBufferSeconds: 30 } }), false);
   assert.equal(settingsLookCurrent({ ...base, promptCache: { cacheAwareTimeouts: true, safetyBufferSeconds: 300 } }), true);
+});
+
+// OpenGateway: 피커 카탈로그와 models.json 템플릿이 같은 모델 id 를 가리켜야 피커에 행이 뜬다.
+test("opengateway 템플릿의 모델 id 는 피커 카탈로그가 소유한 id 와 같다", () => {
+  assert.deepEqual([...PRODUCT_MODEL_ORDER[OPENGATEWAY_PROVIDER_ID]], [OPENGATEWAY_FLASH_ULTRAFAST_MODEL_ID]);
+  assert.deepEqual(DEFAULT_OPENGATEWAY_PROVIDER.models.map((model) => model.id), [OPENGATEWAY_FLASH_ULTRAFAST_MODEL_ID]);
+});
+
+test("opengateway 를 foreign 으로 끈 옛 파일은 다음 기동에 회수되고 행이 생긴다", () => {
+  // 회귀: opengateway 는 Pi builtin id 와 같아 foreign 목록에 있었다. 끈 채로 두면 등록한 provider 가 숨는다.
+  const stale = {
+    providers: { [BAI_PROVIDER_ID]: DEFAULT_BAI_PROVIDER },
+    disabledProviders: [...foreignProviderIds(), OPENGATEWAY_PROVIDER_ID],
+  };
+  assert.equal(modelsLookCurrent(stale), false);
+  let next = ensureModelsConfig("/tmp/agent", {
+    exists: () => true,
+    readFile: () => JSON.stringify(stale),
+    writeFile: () => {},
+  });
+  assert.equal(next.disabledProviders.includes(OPENGATEWAY_PROVIDER_ID), false);
+  const provider = next.providers[OPENGATEWAY_PROVIDER_ID];
+  assert.equal(provider.baseUrl, "https://apis.opengateway.ai/v1");
+  assert.equal(provider.api, "openai-completions");
+  assert.equal(provider.models[0].id, OPENGATEWAY_FLASH_ULTRAFAST_MODEL_ID);
+  assert.ok(provider.models[0].input.includes("image"));
+  assert.equal(modelsLookCurrent(next), true);
+  assert.equal(foreignProviderIds().includes(OPENGATEWAY_PROVIDER_ID), false);
+});
+
+test("opengateway 키와 사용자가 추가한 행은 템플릿이 덮지 않고, 우리 행의 능력은 템플릿이 고친다", () => {
+  const next = ensureModelsConfig("/tmp/agent", {
+    exists: () => true,
+    readFile: () => JSON.stringify({
+      providers: {
+        [OPENGATEWAY_PROVIDER_ID]: {
+          apiKey: "local-keep",
+          models: [
+            { id: "z-ai/glm-5.3-ultrafast", name: "mine" },
+            { id: OPENGATEWAY_FLASH_ULTRAFAST_MODEL_ID, input: ["text"] },
+          ],
+        },
+      },
+      disabledProviders: ["vercel-ai-gateway"],
+    }),
+    writeFile: () => {},
+  });
+  const provider = next.providers[OPENGATEWAY_PROVIDER_ID];
+  assert.equal(provider.apiKey, "local-keep");
+  assert.deepEqual(provider.models.map((model) => model.id), ["z-ai/glm-5.3-ultrafast", OPENGATEWAY_FLASH_ULTRAFAST_MODEL_ID]);
+  assert.deepEqual(provider.models[1].input, ["text", "image"]);
+  assert.equal(openGatewayProviderLooksCurrent(next.providers), true);
+});
+
+test("opengateway 행이 없으면 models.json 은 현재가 아니다", () => {
+  assert.equal(openGatewayProviderLooksCurrent({}), false);
+  assert.equal(modelsLookCurrent({
+    providers: { [BAI_PROVIDER_ID]: DEFAULT_BAI_PROVIDER },
+    disabledProviders: foreignProviderIds(),
+  }), false);
 });

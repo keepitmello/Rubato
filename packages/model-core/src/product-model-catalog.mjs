@@ -11,6 +11,7 @@ export const PRODUCT_PROVIDER_ORDER = Object.freeze([
   "cursor",
   "opencode",
   "b-ai",
+  "opengateway",
 ]);
 
 /**
@@ -36,6 +37,8 @@ export const PRODUCT_MODEL_ORDER = Object.freeze({
   cursor: Object.freeze(["gpt-5.6-sol", "claude-fable-5-1", "claude-opus-5", CURSOR_GROK_BASE_ID, "gemini-3.8-flash", "kimi-k3", "composer-2.5"]),
   opencode: Object.freeze(["muse-spark-1.3-contributor-free"]),
   "b-ai": Object.freeze(["deepseek-v4.1-flash"]),
+  // OpenGateway 의 id 는 `제작사/모델` 이라 슬래시를 품는다. 슬러그는 첫 슬래시에서만 프로바이더를 가른다.
+  opengateway: Object.freeze(["deepseek/deepseek-v4.1-flash-ultrafast"]),
 });
 
 export const CURSOR_GROK_PRESENTED_ID = `cursor/${CURSOR_GROK_BASE_ID}`;

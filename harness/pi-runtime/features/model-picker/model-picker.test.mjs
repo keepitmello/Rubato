@@ -78,7 +78,7 @@ test("picker admits only the product providers, current model excepted", () => {
   );
   assert.deepEqual(keptOutside.map((item) => `${item.provider}/${item.id}`), ["openai-codex/gpt-5.4"]);
   assert.deepEqual([...PROVIDER_ORDER], [
-    "openai-codex", "anthropic", "xai", "google-antigravity", "kiro", "cursor", "opencode", "b-ai",
+    "openai-codex", "anthropic", "xai", "google-antigravity", "kiro", "cursor", "opencode", "b-ai", "opengateway",
   ]);
 });
 
@@ -88,6 +88,8 @@ test("display labels and stock patch replace item.id", () => {
   assert.equal(modelPickerLabel({ provider: "cursor", id: CURSOR_GROK_BASE_ID, model: {} }), "Grok 4.7 fast");
   assert.equal(modelPickerLabel({ provider: "xai", id: "grok-4.7", model: {} }), "Grok 4.7");
   assert.equal(modelPickerLabel({ provider: "openai-codex", id: "gpt-6-astra", model: {} }), "Astra 6");
+  // OpenGateway 의 id 는 `제작사/모델` 이라 슬래시를 품어도 라벨은 모델 이름만 읽는다.
+  assert.equal(modelPickerLabel({ provider: "opengateway", id: MODEL_ORDER.opengateway[0], model: {} }), "v4.1 Flash Ultrafast");
   assert.equal(modelPickerLabel({ provider: "openai-codex", id: MODEL_ORDER["openai-codex"][0], model: {} }), "Sol 6.1");
   assert.equal(modelPickerLabel({ provider: "openai-codex", id: "gpt-6-sol", model: {} }), "Sol 6");
   assert.equal(modelPickerLabel({ provider: "openai-codex", id: "gpt-5.6-sol", model: {} }), "Sol 5.6");

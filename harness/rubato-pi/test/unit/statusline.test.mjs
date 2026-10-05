@@ -36,7 +36,7 @@ import {
 } from "../../src/statusline.mjs";
 import { BRAND_NAME } from "../../src/brand.mjs";
 import { CURSOR_GROK_ID } from "../../src/cursor-grok-fast.mjs";
-import { BAI_FLASH_MODEL_ID } from "../../src/session-defaults.mjs";
+import { BAI_FLASH_MODEL_ID, OPENGATEWAY_FLASH_ULTRAFAST_MODEL_ID } from "../../src/session-defaults.mjs";
 import { installStatusline, extensionStatusLine, canSetFooter, hookExtensionRunnerFooter, ctxFromHostSession, paintStatusLines, registerFooterHost, footerHost, fallbackStatusLines, RUBATO_FOOTER_HOST } from "../../src/extensions/statusline.mjs";
 import { createBackgroundTracker } from "../../src/background-tracker.mjs";
 
@@ -101,6 +101,8 @@ test("shortens Claude-style model ids the way the statusline does", () => {
   assert.equal(shortModelLabel("Muse Spark 1.3 Free"), "Muse Spark 1.3");
   assert.equal(shortModelLabel(`b-ai/${BAI_FLASH_MODEL_ID}`), "v4.1 Flash");
   assert.equal(shortModelLabel(`b-ai/${BAI_FLASH_MODEL_ID}:high`), "v4.1 Flash");
+  assert.equal(shortModelLabel(`opengateway/${OPENGATEWAY_FLASH_ULTRAFAST_MODEL_ID}`), "v4.1 Flash Ultrafast");
+  assert.equal(shortModelLabel(`opengateway/${OPENGATEWAY_FLASH_ULTRAFAST_MODEL_ID}:high`), "v4.1 Flash Ultrafast");
   assert.equal(shortModelLabel("unknown-model:high"), "unknown-model");
 });
 

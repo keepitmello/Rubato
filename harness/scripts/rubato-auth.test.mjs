@@ -67,6 +67,8 @@ test("login aliases map to engine provider ids", () => {
   assert.deepEqual(resolveLoginProvider("opencode"), { id: "opencode" });
   assert.deepEqual(resolveLoginProvider("deepseek"), { id: "b-ai" });
   assert.deepEqual(resolveLoginProvider("b-ai"), { id: "b-ai" });
+  assert.deepEqual(resolveLoginProvider("opengateway"), { id: "opengateway" });
+  assert.deepEqual(resolveLoginMethod("opengateway"), { id: "api_key" });
   assert.equal(resolveLoginProvider("nope").error, "unknown");
 });
 
@@ -179,6 +181,21 @@ test("login deepseek key goes to the b-ai api_key method", async () => {
   };
   assert.equal(await handleAuthArgs(["login", "deepseek", "key"], ctx), "ok");
   assert.deepEqual(calls, [{ id: "b-ai", method: "api_key" }]);
+});
+
+test("login opengateway key goes to the opengateway api_key method and stores it", async () => {
+  const dir = tempHome();
+  const authPath = join(dir, "auth.json");
+  const ctx = {
+    ...capture(),
+    env: { HOME: dir, RUBATO_AUTH_PATH: authPath },
+    home: dir,
+    readLine: async () => "apik_test_key",
+  };
+  assert.equal(await handleAuthArgs(["login", "opengateway", "key"], ctx), "ok");
+  const stored = JSON.parse(readFileSync(authPath, "utf8")).opengateway;
+  assert.equal(stored.type, "api_key");
+  assert.equal(stored.key, "apik_test_key");
 });
 
 test("login anthropic oauth and token go through the same command", async () => {

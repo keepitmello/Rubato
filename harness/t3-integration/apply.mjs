@@ -430,7 +430,7 @@ const edits = {
   // 모델 선택기와 목록 행의 제공자 글리프. 매핑에 없는 드라이버는 이름 앞
   // 두 글자로 떨어져서 Rubato 가 "RU" 로 보였다.
   'apps/web/src/components/chat/providerIconUtils.ts': [
-    ['import {\n  AntigravityIcon,', 'import { RubatoIcon } from "../RubatoIcon";\nimport { DeepSeekIcon } from "../DeepSeekIcon";\n'],
+    ['import {\n  AntigravityIcon,', 'import { RubatoIcon } from "../RubatoIcon";\nimport { DeepSeekIcon } from "../DeepSeekIcon";\nimport { OpenGatewayIcon } from "../OpenGatewayIcon";\n'],
     [
       '  CursorIcon,\n  GrokIcon,\n  Icon,\n  OpenAI,\n  OpenCodeIcon,\n} from "../Icons";',
       '  CursorIcon,\n  GrokIcon,\n  Icon,\n  KiroIcon,\n  OpenAI,\n  OpenCodeIcon,\n} from "../Icons";',
@@ -452,6 +452,7 @@ const edits = {
         '  cursor: CursorIcon,',
         '  opencode: OpenCodeIcon,',
         '  "b-ai": DeepSeekIcon,',
+        '  opengateway: OpenGatewayIcon,',
         '};',
         'const VENDOR_LABELS: Record<string, string> = {',
         '  "openai-codex": "OpenAI",',
@@ -462,6 +463,7 @@ const edits = {
         '  cursor: "Cursor",',
         '  opencode: "OpenCode",',
         '  "b-ai": "DeepSeek(b.ai)",',
+        '  opengateway: "DeepSeek(OpenGateway)",',
         '};',
         '',
         'export function vendorForModel(model: Pick<ModelEsque, "slug" | "subProvider">): string | undefined {',
