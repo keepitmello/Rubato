@@ -1,21 +1,20 @@
 // Chat width as a percentage. T3 offers three presets (Comfortable / Wide / Full)
 // whose pixel caps the settings screen never states, so nobody can tell what
 // "Wide" means or aim between two of them. The setting is now the share of the
-// chat pane the messages and the composer may fill, 40-100%, set with a slider
-// like Glass opacity. A floor (24rem, or the whole pane when it is narrower)
-// keeps a small window readable at the low end.
+// window the messages and the composer may fill, 40-100%, set with a slider
+// like Glass opacity. A 24rem floor keeps a small window readable at the low end.
 //
 // The old `chatWidth` preset is gone. A saved "wide" or "full" is ignored on
 // load and the width falls back to the 65% default.
 //
-// The width is resolved once, to a length, and inherited. The composer stack,
-// the composer shell and the form inside it all cap themselves with
-// --chat-max-width, one inside the other, and so do the timeline rows and the
-// compaction separator inside them. An unregistered custom property is resolved
-// where it is used: a `%` compounded at every depth, and a `cqi` inside the
-// shell (itself a container) measured the shell, not the chat column. So the
-// property is registered as a <length>, declared on the chat column's children
-// where cqi is the column's width, and every depth below inherits that length.
+// The width is a share of the window (vw), not of the chat column. Opening or
+// resizing the right panel or the sidebar narrows the column; a share of the
+// column made the messages shrink with it while empty margins stayed, and the
+// width only stays put if its base does not move. When the column gets narrower
+// than the width, the column bounds it, as it did the old fixed 48rem.
+// The value holds no `%` on purpose: the composer stack, shell and form and the
+// timeline rows and separator all cap at it one inside the other, and a `%` (or a
+// `cqi` inside the shell, itself a container) resolves at each of them again.
 export const chatWidthOverlays = [];
 
 const SETTINGS_TEST_OLD = [
@@ -135,7 +134,7 @@ export const chatWidthEdits = {
     [
       '/** Maximum width of the chat timeline and composer on wide screens. */\nexport const ChatWidth = Schema.Literals(["comfortable", "wide", "full"]);\nexport type ChatWidth = typeof ChatWidth.Type;\n',
       [
-        '/** Share of the chat pane the timeline and composer may fill, in percent. */',
+        '/** Share of the window width the timeline and composer may fill, in percent. */',
         'export const MIN_CHAT_WIDTH_PERCENT = 40;',
         'export const MAX_CHAT_WIDTH_PERCENT = 100;',
         'export const DEFAULT_CHAT_WIDTH_PERCENT = 65;',
@@ -179,32 +178,15 @@ export const chatWidthEdits = {
       ].join('\n'),
       [
         '/* Chat timeline and composer column width. --chat-width-percent comes from the',
-        '   Chat width setting (__root.tsx); the floor keeps a narrow pane readable.',
-        '   Registered as a <length> so it is resolved where it is declared, on the',
-        '   chat column\'s children (cqi = the column, ChatView.tsx), and inherited as',
-        '   that length by every nested box that caps at it. */',
-        '@property --chat-max-width {',
-        '  syntax: "<length>";',
-        '  inherits: true;',
-        '  initial-value: 768px;',
-        '}',
-        '',
+        '   Chat width setting (__root.tsx) and is a share of the window, so side panels',
+        '   and the sidebar leave it alone until the chat column is narrower. No % here:',
+        '   nested boxes cap at this value and a % would resolve at each of them. */',
         ':root {',
         '  --chat-width-percent: 65;',
-        '}',
-        '',
-        '[data-chat-column] > * {',
-        '  --chat-max-width: max(min(100cqi, 24rem), calc(var(--chat-width-percent) * 1cqi));',
+        '  --chat-max-width: max(24rem, calc(var(--chat-width-percent) * 1vw));',
         '}',
         '',
       ].join('\n'),
-      'replace',
-    ],
-  ],
-  'apps/web/src/components/ChatView.tsx': [
-    [
-      '          {/* Chat column */}\n          <div\n            className="relative flex min-h-0 min-w-0 flex-1 flex-col"\n',
-      '          {/* Chat column */}\n          <div\n            className="@container/chat-column relative flex min-h-0 min-w-0 flex-1 flex-col"\n            data-chat-column="true"\n',
       'replace',
     ],
   ],
@@ -263,6 +245,6 @@ export const chatWidthEdits = {
     ],
     [ROW_OLD, ROW_NEW, 'replace'],
     ['  description="Set how wide messages and the composer can grow on large screens."\n',
-      '  description="Set how much of the chat area messages and the composer fill."\n', 'replace'],
+      '  description="Set how much of the window width messages and the composer can fill."\n', 'replace'],
   ],
 };
