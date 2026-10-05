@@ -79,6 +79,8 @@
     "apps/web/package.json": "35853b4b67cdedc584c92912936b083c48d8ac8a771564d321ef13899e56ee1d",
     "pnpm-lock.yaml": "2a4aeb033e6b839ac4e041f1317825e3f3d632cbdfb355715802d19c503a7f14",
     "apps/web/src/components/Sidebar.tsx": "a7e65d442e21c1f249d1994d69d0256b8d9bf687fd45f5716674610564d5fdc5",
-    "apps/web/src/components/threadActionMenu.logic.ts": "d1d44b0c4e3e58d9d64139c011c546e3381ffc4b4229300ed95fe96823502894"
+    "apps/web/src/components/threadActionMenu.logic.ts": "d1d44b0c4e3e58d9d64139c011c546e3381ffc4b4229300ed95fe96823502894",
+    "apps/web/src/components/files/FileBrowserPanel.tsx": "08be0b74bbeabfd41c83a895d81e9fc61057271e46305ff5aca4fc01ece54f28",
+    "apps/web/src/rightPanelStore.ts": "9221cc41153068bfe2e48b15433762cc82d7d5fdaf660f7e541470dc3dc9ccc9"
   }
 }
