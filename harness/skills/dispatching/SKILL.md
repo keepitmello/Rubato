@@ -36,6 +36,8 @@ A quality concern you invented yourself is not a constraint. State it as somethi
 
 Keep read scope apart from write scope. "Look at these files" is a lead; "do not write these files" is a fence. Do not mix them in one list.
 
+When the worker must work in a different root than its session folder (a worktree, a scratch copy), name that root by absolute path and have it write by absolute path: file tools resolve relative paths against the worker's session folder, which is usually your checkout (2026-10-06: a replay worker meant for `/tmp/<worktree>` overwrote and then deleted a file in the parent repository).
+
 Two boundary cases, drawn from a real incident:
 
 - Invented constraint → observable: "Do not widen the cache invalidation" forbade the only fix. "Widen it if you must; measure the repaint delta and report it" keeps the same performance concern and lets the worker move.
