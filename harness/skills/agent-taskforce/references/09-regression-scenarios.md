@@ -88,7 +88,7 @@ These are behavior scenarios, not claims of live runs. Static contract tests and
 - **cross-model-verifier-soft-default** — 독립 검증이 필요해. → 별도 문맥, 실제 산출물과 수용 기준, 판정 책임으로 독립성을 확보해. 모델 계열 다양성은 선택 사항이며 승인과 실제 실행 식별자를 지켜.
 - **owner-different-verifier** — 구현자가 자신의 결과를 독립 검증했다고 하려 해. → 같은 구현 세션의 자체 검사는 독립 검증이 아니야. 같은 계열의 새 유능한 세션은 검증자가 될 수 있어.
 - **no-standing-fable-teammate** — 페이블이나 아스트라를 오너로 배정할 수 있어. → 처음부터 승인된 전체 결과를 맡길 수 있으며, 실패한 하위 모델이나 정식 프레이밍이 선행 조건이 아니야. 이름을 채우기 위한 상시 팀원은 만들지 않아.
-- **default-then-stronger** — 새 배정이야. → 오너·서브에이전트는 DeepSeek와 Opus 중에 골라 바로 띄워. 난이도로 등급을 나누지 않고, 실패나 측정을 선행 조건으로 두지 않아. 팀은 팀원마다 모델을 한 줄 이유와 함께 제안하고, 사용자의 수정이 결정해. (2026-09-24 사용자 합의, 2026-10-06 "딥시크/오푸스 중에 고르는 거임 — 시작 전엔 다 어려워 보이고 제대로 안 해도 되는 일은 없다"로 개정)
+- **default-then-stronger** — 새 배정이야. → 서브에이전트는 DeepSeek나 Opus, 오너는 Opus나 DeepSeek 중에 골라. 순서가 역할별 기울기야. 난이도로 등급을 나누지 않고, 실패나 측정을 선행 조건으로 두지 않아. 팀은 팀원마다 모델을 한 줄 이유와 함께 제안하고, 사용자의 수정이 결정해. (2026-09-24 사용자 합의, 2026-10-06 "딥시크/오푸스 중에 고르는 거임 — 시작 전엔 다 어려워 보이고 제대로 안 해도 되는 일은 없다"로 개정, 같은 날 "에이전트는 deepseek or opus, 오너는 opus or deepseek"로 역할을 가름)
 - **default-verifier-astra** — 독립 검증자를 배정해. → 기본은 Astra xhigh야. 검증 역할로는 모델 승인을 따로 받지 않고, 팀이면 목적·팀 구성 묶음 승인에 그대로 포함돼. Grok은 사용자가 지목할 때만 써. (2026-10-04 사용자 합의: 세 런 연속 "검증은 아스트라 xhigh"로 고쳐야 했던 원인이 model-guide의 Grok 기본값이었음)
 
 ## Evidence-first alignment and combined confirmation
