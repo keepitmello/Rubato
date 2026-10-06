@@ -40,11 +40,6 @@ Acceptance criteria stay the same whichever model runs.
 This is the product rule, drawn from the user's experience so far. Update it here
 when new experience changes it.
 
-Where things stand now: quality runs Opus 5.5 > Astra ≈ Fable > DeepSeek >> Grok.
-DeepSeek writes about 700–800 tokens per second, Opus about 200, Astra and Fable
-about 100. Cost runs Astra ≈ Fable >>> Opus >>> DeepSeek. So DeepSeek carries the
-volume, and work that has to be done right goes to Opus.
-
 Each role lists models in order of preference; take the first one the `Agent`
 catalog offers.
 
@@ -52,18 +47,14 @@ catalog offers.
 - Work that looks hard or has to be done right: **Opus** → **Fable** or **Astra**,
   with explicit approval.
 - Verifier: **Astra** at `xhigh` → **Opus** → any other capable model.
-- Grok only when the user names it.
 - Any approved model can own or verify.
 
 The `Agent` catalog lists only models from providers this user has signed in to,
 and it is the source of exact ids. A family missing from it is one this user does
-not have, not a failure: move to the next entry and say which one ran. When one
-model shows up on several routes, prefer the direct provider: DeepSeek via
-opengateway before b.ai, Anthropic models via anthropic before cursor, Grok via
-xai before cursor.
+not have, not a failure: move to the next entry and say which one ran.
 
-A `-sub` id is the same model on the user's second account. It is a separate route
-with its own availability, so record which route actually ran.
+A model registered on several accounts appears once per account, such as Opus 5.5
+and Opus 5.5 [sub]; spread work across them.
 
 ## Use the pool for real work
 
@@ -104,8 +95,8 @@ still goes through the combined intent/roster approval.
 
 Corrections, retries and re-verification by the same approved owner on the same
 outcome keep that approval. A new outcome, a materially changed roster or a higher
-restricted-model effort needs the relevant confirmation. DeepSeek, Opus and Grok
-have no model-specific gate; team formation, write boundaries and delivery
+restricted-model effort needs the relevant confirmation. Other models have no
+model-specific gate; team formation, write boundaries and delivery
 permissions still apply, and a subagent does not bypass any approval.
 
 ## Advice and independent verification
