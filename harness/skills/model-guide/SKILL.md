@@ -31,29 +31,36 @@ For a team, put the defaults in the combined intent/roster proposal and name a
 stronger model where the work looks hard, with a one-line reason. The user knows
 best how hard the work is; their correction to the roster decides.
 
-If a chosen route is unavailable or out of quota, pick another approved one and
-say which ran. A registered label is not proof that a route works. Acceptance
-criteria stay the same whichever model runs.
+If a chosen route is unavailable or out of quota, take the next one in its list
+below and say which ran. A registered label is not proof that a route works.
+Acceptance criteria stay the same whichever model runs.
 
 ## Default allocation
 
-This records the user's experience so far. Update it here when new experience
-changes it.
+This is the product rule, drawn from the user's experience so far. Update it here
+when new experience changes it.
 
-- Default for owners and subagents: **DeepSeek**. Default verifier: **Astra** at
-  `xhigh`.
-- Stronger owner: **Opus**. **Fable**, or **Astra** as an owner or subagent, with
-  explicit approval.
-- Grok has fallen behind the others; use it only when the user names it.
+Where things stand now: quality runs Opus 5.5 > Astra ≈ Fable > DeepSeek >> Grok.
+DeepSeek writes about 700–800 tokens per second, Opus about 200, Astra and Fable
+about 100. Cost runs Astra ≈ Fable >>> Opus >>> DeepSeek. So DeepSeek carries the
+volume, and work that has to be done right goes to Opus.
+
+Each role lists models in order of preference; take the first one the `Agent`
+catalog offers.
+
+- Owners and subagents: **DeepSeek** → **Opus** → the lead's own model.
+- Work that looks hard or has to be done right: **Opus** → **Fable** or **Astra**,
+  with explicit approval.
+- Verifier: **Astra** at `xhigh` → **Opus** → any other capable model.
+- Grok only when the user names it.
 - Any approved model can own or verify.
 
-Exact ids: DeepSeek V4.1 Flash `opengateway/deepseek/deepseek-v4.1-flash-ultrafast`,
-or b.ai as `b-ai/deepseek-v4.1-flash`; Astra
-`openai-codex/gpt-6-astra`, Opus 5.5 `anthropic/claude-opus-5-5`, Fable 5.1
-`anthropic/claude-fable-5-1`, Grok 4.7 via xAI `xai/grok-4.7` or Cursor
-`cursor/grok-4.7`. The
-`Agent` schema lists the live catalog; resolve other routes there. A stale or
-unavailable id fails closed.
+The `Agent` catalog lists only models from providers this user has signed in to,
+and it is the source of exact ids. A family missing from it is one this user does
+not have, not a failure: move to the next entry and say which one ran. When one
+model shows up on several routes, prefer the direct provider: DeepSeek via
+opengateway before b.ai, Anthropic models via anthropic before cursor, Grok via
+xai before cursor.
 
 A `-sub` id is the same model on the user's second account. It is a separate route
 with its own availability, so record which route actually ran.
