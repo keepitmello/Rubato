@@ -38,7 +38,8 @@ Acceptance criteria stay the same whichever model runs.
 This is the product rule, drawn from the user's experience so far. Update it here
 when new experience changes it.
 
-- Owners and subagents: **DeepSeek** or **Opus**, your choice for each assignment.
+- Owners and subagents: **DeepSeek** (ultrafast) or **Opus**, your choice for each
+  assignment.
   **Fable** or **Astra** with explicit approval.
 - Verifier: **Astra** at `xhigh`, then **Opus**, then any other capable model.
 - Any approved model can own or verify.
