@@ -5,9 +5,9 @@ description: "Use when selecting an agent model, provider route or effort settin
 
 # Model guide
 
-Start from the default allocation and use a stronger model when the work looks
-hard. Owner and verifier are responsibility boundaries, not model tiers: any
-approved model can own a bounded result end to end or hold an independent judgment.
+Choose from the default allocation. Owner and verifier are responsibility
+boundaries, not model tiers: any approved model can own a bounded result end to
+end or hold an independent judgment.
 
 The user chooses the lead model, and it stays until the user changes it. Models for
 owners, verifiers and subagents are a separate choice you make here.
@@ -23,15 +23,13 @@ Choose a model only once a new session is justified.
 Explicit user choices come first: a selected model, approvals, allowed providers
 and effort.
 
-For a subagent, use the default below without further deliberation.
-If the work looks hard to you, use a stronger model instead; that call needs no
-measurement or prior failure.
+For a subagent, pick from the default allocation below and spawn it; the choice
+needs no measurement or prior failure.
 
-For a team, put the defaults in the combined intent/roster proposal and name a
-stronger model where the work looks hard, with a one-line reason. The user knows
-best how hard the work is; their correction to the roster decides.
+For a team, put each member's model in the combined intent/roster proposal with a
+one-line reason; the user's correction to the roster decides.
 
-If a chosen route is unavailable or out of quota, take the next one in its list
+If a chosen route is unavailable or out of quota, choose another from the list
 below and say which ran. A registered label is not proof that a route works.
 Acceptance criteria stay the same whichever model runs.
 
@@ -40,18 +38,15 @@ Acceptance criteria stay the same whichever model runs.
 This is the product rule, drawn from the user's experience so far. Update it here
 when new experience changes it.
 
-Each role lists models in order of preference; take the first one the `Agent`
-catalog offers.
-
-- Owners and subagents: **DeepSeek** → **Opus** → the lead's own model.
-- Work that looks hard or has to be done right: **Opus** → **Fable** or **Astra**,
-  with explicit approval.
-- Verifier: **Astra** at `xhigh` → **Opus** → any other capable model.
+- Owners and subagents: **DeepSeek** or **Opus**, your choice for each assignment.
+  **Fable** or **Astra** with explicit approval.
+- Verifier: **Astra** at `xhigh`, then **Opus**, then any other capable model.
 - Any approved model can own or verify.
 
 The `Agent` catalog lists only models from providers this user has signed in to,
 and it is the source of exact ids. A family missing from it is one this user does
-not have, not a failure: move to the next entry and say which one ran.
+not have, not a failure: choose among the rest, falling back to the lead's own
+model, and say which one ran.
 
 A model registered on several accounts appears once per account, such as Opus 5.5
 and Opus 5.5 [sub]; spread work across them.
