@@ -28,7 +28,7 @@ Use this only when the normal `agbrowse web-ai` path is blocked by login, MFA, C
 1. Explain why `agbrowse` could not complete the workflow.
 2. Open ChatGPT in a normal visible browser session.
 3. Enter the Work project and verify its project marker and composer. If Work is not visible or cannot be verified, stop before sending.
-4. Select GPT-5.6 High, Extra High, or Pro according to the main session's chosen quality tier. If the exact selection is unavailable, stop; do not fall back to Instant.
+4. Select GPT-6 Extra High or Pro according to the main session's chosen quality tier. If the exact selection is unavailable, stop; do not fall back to Instant.
 5. Paste `.outpost/chatgpt-web-prompt.md` or upload `.outpost/outpost-packet.md` and paste `.outpost/chatgpt-upload-instructions.md`.
 6. Wait until the response is complete.
 7. Copy the final answer with the visible copy control.

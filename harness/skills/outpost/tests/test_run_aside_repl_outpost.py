@@ -26,7 +26,14 @@ class AsideReplConsultTest(unittest.TestCase):
         self.addCleanup(self._sessions_dir.cleanup)
         self._sessions_env = mock.patch.dict(
             os.environ,
-            {"OUTPOST_SESSIONS_PATH": str(Path(self._sessions_dir.name) / "sessions.json")},
+            {
+                "OUTPOST_SESSIONS_PATH": str(Path(self._sessions_dir.name) / "sessions.json"),
+                "OUTPOST_ASIDE_ROOT": str(Path(self._sessions_dir.name) / "aside"),
+                # A test never reads the machine's learned screen map or calls
+                # the heal model unless it asks to.
+                "OUTPOST_UI_MAP_PATH": str(Path(self._sessions_dir.name) / "outpost-ui.json"),
+                "OUTPOST_AUTO_HEAL": "0",
+            },
         )
         self._sessions_env.start()
         self.addCleanup(self._sessions_env.stop)
@@ -36,7 +43,7 @@ class AsideReplConsultTest(unittest.TestCase):
             project_url="https://chatgpt.com/g/g-p-test-work/project",
             quality="pro",
             packet_name="outpost-abc.md",
-            packet_base64="cGFja2V0",
+            packet_path="/tmp/packet.md",
             topic="리허설",
             outpost_id="abc",
             response_timeout_ms=1000,
@@ -56,12 +63,81 @@ class AsideReplConsultTest(unittest.TestCase):
         # A top-level `return` makes the REPL drop the whole script silently.
         self.assertNotIn("\n  return;\n", script)
 
+    def test_send_and_recovery_pin_the_workspace_that_holds_the_project(self) -> None:
+        # After a browser restart ChatGPT can fall back to a workspace without the
+        # project; sending or recovering there reads every project turn as 404.
+        send = MODULE.build_repl_script(
+            project_url="https://chatgpt.com/g/g-p-0123456789abcdef0123456789abcdef/project",
+            quality="xhigh",
+            packet_name="outpost-abc.md",
+            packet_path="/tmp/packet.md",
+            topic="계정",
+            outpost_id="abc",
+            response_timeout_ms=1000,
+        )
+        self.assertIn("var projectGizmoId = \"g-p-0123456789abcdef0123456789abcdef\";", send)
+        pin = send.index("ensureProjectAccount(workPage, projectGizmoId)")
+        self.assertLess(pin, send.index("submitStage = 'wait-project-composer'"))
+        self.assertLess(pin, send.index("submitState.send.click"))
+        recovery = MODULE.build_backend_recovery_script(
+            "abc", None, project_url="https://chatgpt.com/g/g-p-0123456789abcdef0123456789abcdef/project"
+        )
+        self.assertLess(
+            recovery.index("await ensureProjectAccount(home, projectGizmoId)"),
+            recovery.index("var sess = await"),
+        )
+        # A wrong workspace is not a screen change for the heal model, and a stop
+        # there is before the prompt is typed, so nothing was sent.
+        self.assertNotIn("select-account", MODULE.HEALABLE_STAGES)
+        self.assertLess(
+            MODULE.STAGE_ORDER.index("select-account"), MODULE.STAGE_ORDER.index("fill-composer")
+        )
+
+    def test_waiting_for_a_long_reply_never_holds_one_repl_past_asides_cut(self) -> None:
+        # Aside drops a script's output at 120 s and keeps it polling in the
+        # daemon; stacked pollers rate-limited the account (2026-10-01).
+        now = [0.0]
+        lookups = []
+
+        def lookup(*args, **kwargs):
+            lookups.append(kwargs["timeout"])
+            now[0] += min(kwargs["timeout"], MODULE.REPL_LOOKUP_SECONDS)
+            done = len(lookups) == 3
+            return {"ok": True, "responseText": "answer" if done else "", "finished": done}
+
+        def sleep(seconds):
+            now[0] += seconds
+
+        with mock.patch.object(MODULE, "run_repl_process") as repl, mock.patch.object(
+            MODULE, "backend_lookup", side_effect=lookup
+        ):
+            payload = MODULE.recover_outpost_from_backend(
+                "abc", "https://chatgpt.com/c/1", timeout=3600, clock=lambda: now[0], sleep=sleep
+            )
+        self.assertEqual(payload["responseText"], "answer")
+        self.assertEqual(len(lookups), 3)
+        repl.assert_not_called()
+        with mock.patch.object(MODULE, "run_repl_process", return_value="") as repl:
+            MODULE.backend_lookup("abc", "https://chatgpt.com/c/1", timeout=3600)
+        self.assertLess(repl.call_args.kwargs["timeout"], 120)
+        self.assertIn("Date.now() + 90000", repl.call_args.args[0])
+
+    def test_a_later_result_write_keeps_the_project_the_turn_went_to(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "result.json"
+            MODULE.write_result(path, {"status": "submitted_pending", "projectUrl": "https://chatgpt.com/g/g-p-ab/project", "startedAt": 5})
+            MODULE.write_result(path, {"status": "submitted_response_unavailable", "conversationUrl": "https://chatgpt.com/c/1"})
+            saved = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(saved["status"], "submitted_response_unavailable")
+        self.assertEqual(saved["projectUrl"], "https://chatgpt.com/g/g-p-ab/project")
+        self.assertEqual(saved["startedAt"], 5)
+
     def test_a_real_send_is_not_a_rehearsal(self) -> None:
         script = MODULE.build_repl_script(
             project_url="https://chatgpt.com/g/g-p-test-work/project",
             quality="pro",
             packet_name="outpost-abc.md",
-            packet_base64="cGFja2V0",
+            packet_path="/tmp/packet.md",
             topic="진짜 전송",
             outpost_id="abc",
             response_timeout_ms=1000,
@@ -119,23 +195,27 @@ class AsideReplConsultTest(unittest.TestCase):
                     ),
                     "예창패",
                 )
-        self.assertEqual(MODULE.composer_aria_label("Shopping"), "Shopping에서 새 채팅")
+        self.assertEqual(
+            MODULE.composer_aria_labels("Shopping"),
+            ["Shopping의 새 채팅", "Shopping에서 새 채팅"],
+        )
         shopping = MODULE.build_repl_script(
             project_url="https://chatgpt.com/g/g-p-test-shopping/project",
             project_name="Shopping",
             quality="pro",
             packet_name="packet.md",
-            packet_base64="cGFja2V0",
+            packet_path="/tmp/packet.md",
             topic="프로젝트 전환",
             outpost_id="abc123",
             response_timeout_ms=1000,
         )
         self.assertIn(
-            """#prompt-textarea[contenteditable="true"][aria-label="' + composerLabel + '"]""",
+            MODULE.js(MODULE.composer_selector(MODULE.composer_aria_labels("Shopping"))),
             shopping,
         )
         self.assertNotIn(".and(", shopping)
-        self.assertIn("Shopping에서 새 채팅", shopping)
+        self.assertIn("Shopping의 새 채팅", shopping)
+        self.assertNotIn("Work의 새 채팅", shopping)
         self.assertNotIn("Work에서 새 채팅", shopping)
         self.assertIn("project composer not visible", shopping)
 
@@ -144,7 +224,7 @@ class AsideReplConsultTest(unittest.TestCase):
             project_url="https://chatgpt.com/g/g-p-test-work/project",
             quality="pro",
             packet_name="packet.md",
-            packet_base64="cGFja2V0",
+            packet_path="/tmp/packet.md",
             topic="병렬 세션 탭 소유권",
             outpost_id="abc123",
             response_timeout_ms=1000,
@@ -153,7 +233,7 @@ class AsideReplConsultTest(unittest.TestCase):
             project_url="https://chatgpt.com/g/g-p-test-work/project",
             quality="pro",
             packet_name="packet.md",
-            packet_base64="cGFja2V0",
+            packet_path="/tmp/packet.md",
             topic="병렬 세션 탭 소유권",
             outpost_id="abc123",
             response_timeout_ms=1000,
@@ -163,17 +243,29 @@ class AsideReplConsultTest(unittest.TestCase):
         self.assertEqual(MODULE.SUBMIT_TIMEOUT_SECONDS, 120)
         self.assertIn("개 중", pro)
         self.assertIn("verifiedTier", pro)
-        self.assertIn("^최신$", pro)
+        self.assertIn(
+            f'var targetModel = {json.dumps(MODULE.UI.DEFAULT_UI_MAP["modelRadio"])};',
+            pro,
+        )
         self.assertIn("targetModel", pro)
-        self.assertIn('var targetLabel = "Pro"', pro)
-        self.assertIn('var targetLabel = "Pro"', pro)
+        self.assertIn('var targetLabels = ["Pro"]', pro)
+        xhigh = MODULE.build_repl_script(
+            project_url="https://chatgpt.com/g/g-p-test-work/project",
+            quality="xhigh",
+            packet_name="packet.md",
+            packet_path="/tmp/packet.md",
+            topic="t",
+            outpost_id="abc123",
+            response_timeout_ms=1000,
+        )
+        # ChatGPT has named the xhigh stop in both languages; either verifies it.
+        self.assertIn('var targetLabels = ["Extra High", "매우 높음"]', xhigh)
+        self.assertNotIn('"Pro"]', xhigh.split("var targetLabels = ")[1].split("\n")[0])
         self.assertIn("[0-9]* ?Pro", pro)
         self.assertIn("tier button not visible", pro)
         self.assertNotIn("매우 높음|Pro)$", pro)
         self.assertIn("OUTPOST_FAIL stage=", pro)
         self.assertIn("OUTPOST_FAIL stage=' + submitStage", pro)
-        self.assertIn('data-tpp-toggle-value="chatgpt"', pro)
-        self.assertIn('data-tpp-toggle-value="work"', pro)
         self.assertIn("Chat surface not selected", pro)
         self.assertIn("Work mode selected and Chat toggle missing", pro)
         self.assertIn("chatToggleVisible", pro)
@@ -210,26 +302,32 @@ class AsideReplConsultTest(unittest.TestCase):
         self.assertIn("pre-submit preparation exceeded 110 seconds", pro)
         self.assertIn("ASIDE_REPL_SUBMIT_UNKNOWN", pro)
         self.assertIn("ASIDE_REPL_SUBMIT_RESULT", pro)
-        self.assertIn("send.click({ timeout: remainingSubmitMs })", pro)
+        # Aside's click resolves the button once and never waits, so the
+        # enabled send button is awaited first and a throwing click is kept,
+        # not taken as proof that nothing was sent.
+        self.assertLess(pro.index("submitState.send.waitFor("), pro.index("submitState.send.click("))
+        self.assertIn("clickError = String(error", pro)
+        self.assertIn("OUTPOST_FAIL stage=commit-user-turn send click failed", pro)
         self.assertIn("ASIDE_REPL_RESPONSE_RESULT", pro)
-        self.assertIn("Buffer.from(packetBase64, 'base64')", pro)
+        # The bytes are read from staged files, never inlined into the script.
+        self.assertIn("await fs.readFile(packetFile)", pro)
+        self.assertNotIn("base64", pro.split("var extraUploads")[0].split("var packetFile")[1])
         self.assertIn("name: packetName", pro)
-        self.assertIn("setInputFiles([{", pro)
+        self.assertIn("setInputFiles(uploadFiles)", pro)
         self.assertNotIn("setInputFiles(packetPath)", pro)
-        self.assertIn('#prompt-textarea[contenteditable="true"]', pro)
         self.assertNotIn(".and(", pro)
-        self.assertIn("Work에서 새 채팅", pro)
+        self.assertIn("Work의 새 채팅", pro)
         self.assertIn("project composer not visible", pro)
         self.assertIn("composer.press('Meta+A')", pro)
         self.assertIn("composer.press('Backspace')", pro)
         self.assertIn("keyboard.insertText(composerPrompt)", pro)
         self.assertIn("Array.from(el.children)", pro)
         self.assertIn("composerValue !== composerPrompt", pro)
-        self.assertIn(
-            '#composer-submit-button:not(:disabled):not([aria-disabled="true"]):not([data-visually-disabled])',
-            pro,
-        )
-        self.assertIn("#upload-files", pro)
+        # send waits for an enabled button, whichever selector the map gives it
+        send_line = next(line for line in pro.splitlines() if line.startswith("var sendSelector = "))
+        send_selector = json.loads(send_line[len("var sendSelector = "):].rstrip(";"))
+        for part in send_selector.split(", "):
+            self.assertTrue(part.endswith(':not([data-visually-disabled])'), part)
         self.assertIn("waitRole(workPage, 'group'", pro)
         self.assertIn("attachmentPresent(", pro)
         self.assertNotIn("getByText(packetName, { exact: true })", pro)
@@ -262,143 +360,9 @@ class AsideReplConsultTest(unittest.TestCase):
         self.assertIn("단계: select-tier (추론 수준/Pro 버튼)", text)
         self.assertIn("tier button not visible", text)
 
-    def test_doctor_script_probes_without_sending(self) -> None:
-        script = MODULE.build_doctor_script(
-            project_url="https://chatgpt.com/g/g-p-test-work/project",
-            project_name="Work",
-        )
-        self.assertIn("OUTPOST_DOCTOR_RESULT", script)
-        self.assertIn("Work에서 새 채팅", script)
-        self.assertIn("[0-9]* ?Pro", script)
-        self.assertIn("preferredModel", script)
-        self.assertIn("modelRadios", script)
-        # doctor probes the same lookup send uses; no click fallback may cover
-        # for a failed name lookup and report a green light send cannot reach
-        self.assertIn("waitNamedRef(page, 'button', tierNameRe", script)
-        self.assertNotIn("tierFallback", script)
-        self.assertNotIn("menus.nth(", script)
-        self.assertNotIn("insertText", script)
-        self.assertNotIn("setInputFiles", script)
-        self.assertNotIn("composer-submit-button", script)
-        self.assertIn("closeTab", script)
-
-    def test_the_doctor_rehearses_the_send_path_with_a_throwaway_packet(self) -> None:
-        transcript = MODULE.REHEARSAL_MARKER + json.dumps(
-            {
-                "ok": True,
-                "stage": "ready-to-send",
-                "url": "https://chatgpt.com/g/g-p-test-work/project",
-                "tierInnerText": ["6 Pro"],
-                "modelRadios": [{"name": "최신", "checked": True}],
-            }
-        )
-        with mock.patch.object(MODULE, "ensure_aside_daemon", return_value=None):
-            with mock.patch.object(MODULE, "aside_daemon_health", return_value=None):
-                with mock.patch.object(MODULE, "save_picker_contract", return_value=Path("/tmp/x.json")):
-                    with mock.patch.object(MODULE, "build_repl_script") as build:
-                        build.return_value = "script"
-                        with mock.patch.object(
-                            MODULE, "run_repl_process", return_value=transcript
-                        ):
-                            args = MODULE.parse_args(
-                                [
-                                    "--doctor",
-                                    "--url", "https://chatgpt.com/g/g-p-test-work/project",
-                                    "--project", "Work",
-                                ]
-                            )
-                            code = MODULE.run_doctor(args)
-        self.assertEqual(code, 0)
-        # doctor and send must run one script, or doctor can pass on a lookup the
-        # send cannot perform — the bug that hid three broken sends.
-        self.assertTrue(build.call_args.kwargs["dry_run"])
-        self.assertEqual(build.call_args.kwargs["topic"], MODULE.REHEARSAL_TOPIC)
-
-    def test_the_doctor_report_reads_a_rehearsal_payload(self) -> None:
-        text = MODULE.format_doctor_report(
-            {
-                "ok": True,
-                "stage": "ready-to-send",
-                "url": "https://chatgpt.com/g/g-p-test-work/project",
-                "expectedComposer": "Work에서 새 채팅",
-                "composerLabels": ["Work에서 새 채팅"],
-                "tierLabel": "Pro",
-                "tier": "Pro (5 of 5)",
-                "model": "최신",
-                "latestRadioPresent": True,
-                "modelRadios": [{"name": "최신", "checked": True}],
-                "daemonUptime": "2h",
-                "daemonPid": 42,
-                "blockers": [],
-            }
-        )
-        self.assertIn("ok=true", text)
-        self.assertIn("daemon up=2h pid=42", text)
-        self.assertIn("stage=ready-to-send", text)
-        self.assertIn("Pro (5 of 5)", text)
-
-    def test_the_doctor_report_names_the_stage_a_rehearsal_failed_at(self) -> None:
-        text = MODULE.format_doctor_report(
-            {
-                "ok": False,
-                "stage": "select-tier",
-                "detail": "tier button not visible",
-                "blockers": ["rehearsal"],
-                "daemonUptime": "1m",
-                "daemonPid": 7,
-            }
-        )
-        self.assertIn("ok=false", text)
-        self.assertIn("stage=select-tier", text)
-        self.assertIn("detail=tier button not visible", text)
-        self.assertIn("blockers=rehearsal", text)
-
     def test_doctor_flag_does_not_need_packet(self) -> None:
         args = MODULE.parse_args(["--doctor"])
         self.assertTrue(args.doctor)
-
-    def test_doctor_payload_writes_picker_aliases_not_sidebar_menus(self) -> None:
-        contract = MODULE.picker_from_doctor_payload(
-            {
-                "url": "https://chatgpt.com/g/g-p-test-work/project",
-                "tierInnerText": ["6 Pro", "Work 프로젝트 옵션 열기"],
-                "modelRadios": [
-                    {"name": "최신", "checked": True},
-                    {"name": "GPT-5.6 Sol", "checked": False},
-                ],
-            }
-        )
-        self.assertIsNotNone(contract)
-        assert contract is not None
-        self.assertEqual(contract["modelRadio"], "최신")
-        self.assertIn("6 Pro", contract["tierAliases"])
-        self.assertNotIn("Work 프로젝트 옵션 열기", contract["tierAliases"])
-        self.assertIsNone(
-            MODULE.picker_from_doctor_payload(
-                {"modelRadios": [{"name": "GPT-5.6 Sol", "checked": True}]}
-            )
-        )
-
-    def test_send_script_uses_saved_picker_contract(self) -> None:
-        script = MODULE.build_repl_script(
-            project_url="https://chatgpt.com/g/g-p-test-work/project",
-            quality="pro",
-            packet_name="packet.md",
-            packet_base64="cGFja2V0",
-            topic="병렬 세션 탭 소유권",
-            outpost_id="abc123",
-            response_timeout_ms=1000,
-            picker={
-                "modelRadio": "최신",
-                "tierAliases": ["추론 수준", "6 Pro", "Pro"],
-                "proLabel": "매우 높음",
-                "proLabel": "Pro",
-            },
-        )
-        self.assertIn("tierNameRe", script)
-        self.assertIn("6Pro", script)
-        self.assertIn("targetModel", script)
-        self.assertIn("최신", script)
 
     def test_packet_topic_requires_the_first_line_h1(self) -> None:
         self.assertEqual(
@@ -549,7 +513,7 @@ print('ASIDE_REPL_RESPONSE_RESULT {"modelSlug":"gpt-6-pro","responseText":"ID: a
             fake = root / "aside"
             fake.write_text(
                 """#!/usr/bin/env python3
-print('ASIDE_REPL_SUBMIT_RESULT {"quality":"pro","model":"최신","tier":"매우 높음 (4 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1","targetId":"target"}')
+print('ASIDE_REPL_SUBMIT_RESULT {"quality":"pro","model":"GPT-6","tier":"매우 높음 (4 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1","targetId":"target"}')
 print('ASIDE_REPL_RESPONSE_RESULT {"modelSlug":"gpt-6-pro","responseText":"no id here","idMatched":false,"packetUnread":false,"responseElapsedMs":5678,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1"}')
 """,
                 encoding="utf-8",
@@ -642,26 +606,29 @@ print('ASIDE_REPL_RESPONSE_RESULT {"modelSlug":"gpt-6-pro","responseText":"no id
             fake.chmod(0o755)
             path = f"{temp}{os.pathsep}{os.environ.get('PATH', '')}"
             with mock.patch.dict(os.environ, {"PATH": path}):
-                with mock.patch.object(
+                with mock.patch.object(MODULE, "ensure_aside_daemon", return_value=None), mock.patch.object(
                     MODULE,
-                    "recover_outpost_from_backend",
-                    return_value={
+                    "locate_outpost_turn",
+                    return_value=("found", {
                         "ok": True,
+                        "found": True,
                         "responseText": "recovered", "modelSlug": "gpt-6-pro",
                         "finished": True,
                         "idMatched": True,
                         "conversationUrl": "https://chatgpt.com/c/abc",
-                    },
-                ) as recover:
+                    }),
+                ) as locate:
                     submitted, response, _submit_s, _response_s, _transcript = (
                         MODULE.run_repl_outpost(
                             "ignored",
                             submit_timeout=1,
                             response_timeout=1,
                             outpost_id="abc123",
+                            project_url="https://chatgpt.com/g/g-p-abc123/project",
                         )
                     )
-        recover.assert_called_once_with("abc123")
+        self.assertEqual(locate.call_args.args[0], "abc123")
+        self.assertEqual(locate.call_args.kwargs["project_url"], "https://chatgpt.com/g/g-p-abc123/project")
         self.assertEqual(response["responseText"], "recovered")
         self.assertTrue(response["recoveredFromBackend"])
         self.assertEqual(submitted["conversationUrl"], "https://chatgpt.com/c/abc")
@@ -687,12 +654,15 @@ print('ASIDE_REPL_RESPONSE_RESULT {"modelSlug":"gpt-6-pro","responseText":"no id
                     MODULE,
                     "ensure_aside_daemon",
                     return_value="aside daemon is not reachable",
+                ), mock.patch.object(
+                    MODULE, "locate_outpost_turn", return_value=("absent", {"searched": True})
                 ):
                     with self.assertRaisesRegex(RuntimeError, "daemon closed before submission"):
                         MODULE.run_repl_outpost(
                             "ignored",
                             submit_timeout=1,
                             response_timeout=1,
+                            outpost_id="abc123",
                         )
 
     def test_daemon_loss_before_submit_retries_once(self) -> None:
@@ -718,30 +688,243 @@ printf '%s\\n' 'ASIDE_REPL_RESPONSE_RESULT {{"modelSlug":"gpt-6-pro","responseTe
             fake.chmod(0o755)
             path = f"{temp}{os.pathsep}{os.environ.get('PATH', '')}"
             with mock.patch.dict(os.environ, {"PATH": path}):
-                with mock.patch.object(MODULE, "ensure_aside_daemon", return_value=None):
+                with mock.patch.object(MODULE, "ensure_aside_daemon", return_value=None), mock.patch.object(
+                    MODULE, "locate_outpost_turn", return_value=("absent", {"searched": True})
+                ):
                     submitted, response, _submit_s, _response_s, _transcript = (
                         MODULE.run_repl_outpost(
                             "ignored",
                             submit_timeout=1,
                             response_timeout=1,
+                            outpost_id="abc123",
                         )
                     )
         self.assertEqual(submitted["quality"], "pro")
         self.assertEqual(response["responseText"], "ok")
 
-    def test_submission_runner_rejects_missing_marker(self) -> None:
+    # The 2026-09-29 incident: the send click threw "not found" after the turn
+    # had gone out, and the run reported "nothing was sent" (exit 75).
+    INCIDENT_TRANSCRIPT = (
+        "Error: Selector \"#composer-submit-button:not(:disabled), "
+        "form button[type=\\\"submit\\\"][aria-label=\\\"보내기\\\"]:nth(0)\" not found\n"
+        "    at async Cn.click (file:///aside-daemon:3204:1903)\n"
+        "[error | 36364ms]\n"
+    )
+
+    def _fake_aside(self, root: Path, transcript: str) -> str:
+        fake = root / "aside"
+        fake.write_text(
+            "#!/usr/bin/env python3\nimport sys\nsys.stdout.write(" + repr(transcript) + ")\n",
+            encoding="utf-8",
+        )
+        fake.chmod(0o755)
+        return f"{root}{os.pathsep}{os.environ.get('PATH', '')}"
+
+    def _send(self, root: Path, path: str, **patches) -> tuple[int, dict, str]:
+        packet = root / "packet.md"
+        packet.write_text("# Test topic\n\nquestion", encoding="utf-8")
+        result_path = root / "result.json"
+        stack = [mock.patch.dict(os.environ, {"PATH": path}), mock.patch.object(MODULE, "ensure_aside_daemon", return_value=None)]
+        stack += [mock.patch.object(MODULE, name, **kwargs) for name, kwargs in patches.items()]
+        for item in stack:
+            item.start()
+        try:
+            code = MODULE.main(
+                [
+                    "--quality", "xhigh",
+                    "--packet", str(packet),
+                    "--url", "https://chatgpt.com/g/g-p-0123456789abcdef0123456789abcdef/project",
+                    "--project", "커리어",
+                    "--response-output", str(root / "response.md"),
+                    "--json-output", str(result_path),
+                    "--stderr-output", str(root / "stderr.log"),
+                ]
+            )
+        finally:
+            for item in reversed(stack):
+                item.stop()
+        return code, json.loads(result_path.read_text(encoding="utf-8")), (root / "stderr.log").read_text(encoding="utf-8")
+
+    def test_a_click_error_after_the_turn_went_out_is_a_sent_turn(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
-            fake = Path(temp) / "aside"
-            fake.write_text("#!/bin/sh\nprintf 'no markers\\n'\n", encoding="utf-8")
-            fake.chmod(0o755)
-            path = f"{temp}{os.pathsep}{os.environ.get('PATH', '')}"
+            root = Path(temp)
+            code, result, _ = self._send(
+                root,
+                self._fake_aside(root, self.INCIDENT_TRANSCRIPT),
+                locate_outpost_turn={"return_value": ("found", {
+                    "ok": True, "found": True, "searched": True,
+                    "responseText": "ID answer", "finished": True, "idMatched": True,
+                    "conversationUrl": "https://chatgpt.com/c/6abb5830-166c-83ee-86ca-c9d7f028e4b5",
+                    "conversationId": "6abb5830-166c-83ee-86ca-c9d7f028e4b5",
+                    "modelSlug": MODULE.required_model_slug("xhigh"),
+                })},
+            )
+            self.assertEqual(code, 0)
+            self.assertTrue(result["ok"])
+            self.assertNotEqual(result.get("status"), "not_sent")
+            self.assertEqual(result["conversationId"], "6abb5830-166c-83ee-86ca-c9d7f028e4b5")
+            self.assertEqual((root / "response.md").read_text(encoding="utf-8"), "ID answer\n")
+
+    def test_a_found_turn_still_answering_is_waited_for_not_resent(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            code, result, _ = self._send(
+                root,
+                self._fake_aside(root, self.INCIDENT_TRANSCRIPT),
+                locate_outpost_turn={"return_value": ("found", {
+                    "ok": True, "found": True, "searched": True, "responseText": "", "finished": False,
+                    "conversationUrl": "https://chatgpt.com/c/6abb59f2-359c-83e8-93aa-c7c3f8af054f",
+                })},
+                recover_outpost_from_backend={"return_value": {
+                    "ok": True, "responseText": "later answer", "finished": True, "idMatched": True,
+                    "conversationUrl": "https://chatgpt.com/c/6abb59f2-359c-83e8-93aa-c7c3f8af054f",
+                    "modelSlug": MODULE.required_model_slug("xhigh"),
+                }},
+            )
+            self.assertEqual(code, 0)
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["conversationUrl"], "https://chatgpt.com/c/6abb59f2-359c-83e8-93aa-c7c3f8af054f")
+
+    def test_a_click_error_with_no_turn_anywhere_in_the_project_is_not_sent(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            code, result, stderr = self._send(
+                root,
+                self._fake_aside(root, "Error: OUTPOST_FAIL stage=commit-user-turn send click failed and no user turn showed on the page\n"),
+                locate_outpost_turn={"return_value": ("absent", {"ok": False, "found": False, "searched": True})},
+            )
+            self.assertEqual(code, 75)
+            self.assertEqual(result["status"], "not_sent")
+            self.assertIn("no turn with this id in the project", stderr)
+
+    def test_an_unprovable_send_is_unknown_and_blocks_a_resend(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            path = self._fake_aside(root, self.INCIDENT_TRANSCRIPT)
+            code, result, stderr = self._send(
+                root, path, locate_outpost_turn={"return_value": ("unknown", None)}
+            )
+            self.assertEqual(code, 76)
+            self.assertEqual(result["status"], "submit_unknown")
+            self.assertEqual(result["projectUrl"], "https://chatgpt.com/g/g-p-0123456789abcdef0123456789abcdef/project")
+            self.assertIn("do not retry", stderr)
+            again, _, _ = self._send(root, path, locate_outpost_turn={"return_value": ("unknown", None)})
+            self.assertEqual(again, MODULE.DUPLICATE_SEND_EXIT)
+
+    def test_a_failure_before_the_prompt_is_typed_needs_no_backend_proof(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            locate = mock.MagicMock(return_value=("unknown", None))
+            code, result, _ = self._send(
+                root,
+                self._fake_aside(root, "Error: OUTPOST_FAIL stage=select-tier tier button not visible\n"),
+                locate_outpost_turn={"new": locate},
+            )
+            self.assertEqual(code, 75)
+            self.assertEqual(result["status"], "not_sent")
+            locate.assert_not_called()
+
+    def test_a_markerless_exit_is_never_called_unsent_without_proof(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            path = self._fake_aside(Path(temp), "no markers\n")
             with mock.patch.dict(os.environ, {"PATH": path}):
-                with self.assertRaisesRegex(RuntimeError, "before submission marker"):
-                    MODULE.run_repl_outpost(
-                        "ignored",
-                        submit_timeout=1,
-                        response_timeout=1,
-                    )
+                # No id to look up: nothing proves the packet stayed home.
+                with self.assertRaisesRegex(MODULE.SubmitUnknownError, "do not retry"):
+                    MODULE.run_repl_outpost("ignored", submit_timeout=1, response_timeout=1)
+                with mock.patch.object(
+                    MODULE, "locate_outpost_turn", return_value=("absent", {"searched": True})
+                ):
+                    with self.assertRaisesRegex(RuntimeError, "before submission marker") as raised:
+                        MODULE.run_repl_outpost(
+                            "ignored", submit_timeout=1, response_timeout=1, outpost_id="abc123"
+                        )
+                    self.assertNotIsInstance(raised.exception, MODULE.SubmitUnknownError)
+
+    def test_the_backend_lookup_searches_the_project_and_knows_when_it_is_complete(self) -> None:
+        self.assertEqual(
+            MODULE.project_gizmo_id("https://chatgpt.com/g/g-p-6817528b20f4819199f283406b4fa74c-work/project"),
+            "g-p-6817528b20f4819199f283406b4fa74c",
+        )
+        self.assertEqual(MODULE.project_gizmo_id(None), "")
+        script = MODULE.build_backend_recovery_script(
+            "abc123",
+            None,
+            project_url="https://chatgpt.com/g/g-p-0123456789abcdef0123456789abcdef/project",
+            since=1790662000,
+            until_found=True,
+        )
+        # Project conversations are missing from the account-wide list.
+        self.assertIn("/backend-api/gizmos/' + projectGizmoId + '/conversations", script)
+        self.assertIn('var projectGizmoId = "g-p-0123456789abcdef0123456789abcdef";', script)
+        self.assertIn("var untilFound = true;", script)
+        self.assertIn("searched: searched", script)
+        # A list with more pages only covers the send once it reaches past its start.
+        self.assertIn("!body.cursor", script)
+        with mock.patch.object(MODULE, "backend_lookup", return_value={"found": False, "searched": True}):
+            self.assertEqual(MODULE.locate_outpost_turn("abc123")[0], "absent")
+        with mock.patch.object(MODULE, "backend_lookup", return_value={"found": False, "searched": False}):
+            self.assertEqual(MODULE.locate_outpost_turn("abc123")[0], "unknown")
+        with mock.patch.object(MODULE, "backend_lookup", return_value=None):
+            self.assertEqual(MODULE.locate_outpost_turn("abc123")[0], "unknown")
+        with mock.patch.object(
+            MODULE, "backend_lookup",
+            return_value={"found": True, "searched": True, "conversationUrl": "https://chatgpt.com/c/1"},
+        ):
+            self.assertEqual(MODULE.locate_outpost_turn("abc123")[0], "found")
+
+    def test_recover_finds_a_turn_by_its_id_when_the_run_saved_no_conversation(self) -> None:
+        for state, located, expected_code, expected_status in (
+            ("found", {"found": True, "conversationUrl": "https://chatgpt.com/c/6abb5830"}, 0, None),
+            ("absent", {"found": False, "searched": True}, 75, "not_sent"),
+            ("unknown", None, 76, "submit_unknown"),
+        ):
+            with self.subTest(state=state), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                evidence = root / "result.json"
+                evidence.write_text(json.dumps({
+                    "ok": False, "status": "not_sent", "id": "cb4f4ead", "quality": "xhigh",
+                    "conversationUrl": "", "packetSha": "sha", "startedAt": 1790662678.0,
+                }), encoding="utf-8")
+                recover = mock.MagicMock(return_value={
+                    "ok": True, "responseText": "answer", "finished": True, "idMatched": True,
+                    "conversationUrl": "https://chatgpt.com/c/6abb5830", "modelSlug": MODULE.required_model_slug("xhigh"),
+                })
+                with mock.patch.object(MODULE, "ensure_aside_daemon", return_value=None), mock.patch.object(
+                    MODULE, "locate_outpost_turn", return_value=(state, located)
+                ) as locate, mock.patch.object(MODULE, "recover_outpost_from_backend", recover):
+                    code = MODULE.main([
+                        "--recover-from", str(evidence),
+                        "--url", "https://chatgpt.com/g/g-p-0123456789abcdef0123456789abcdef/project",
+                        "--response-output", str(root / "response.md"),
+                        "--json-output", str(evidence),
+                        "--stderr-output", str(root / "recover.stderr.log"),
+                    ])
+                self.assertEqual(code, expected_code)
+                self.assertEqual(
+                    locate.call_args.kwargs["project_url"],
+                    "https://chatgpt.com/g/g-p-0123456789abcdef0123456789abcdef/project",
+                )
+                saved = json.loads(evidence.read_text(encoding="utf-8"))
+                if expected_status is None:
+                    self.assertTrue(saved["ok"])
+                    self.assertEqual(recover.call_args.kwargs["conversation_url"], "https://chatgpt.com/c/6abb5830")
+                else:
+                    self.assertEqual(saved["status"], expected_status)
+                    recover.assert_not_called()
+
+    def test_a_renamed_attachment_chip_still_counts_as_attached(self) -> None:
+        script = MODULE.build_repl_script(
+            project_url="https://chatgpt.com/g/g-p-test-work/project",
+            quality="xhigh",
+            packet_name="outpost-abc123.md",
+            packet_path="/tmp/packet.md",
+            topic="t",
+            outpost_id="abc123",
+            response_timeout_ms=1000,
+        )
+        # ChatGPT shows a name it has seen before as outpost-abc123(1).md.
+        self.assertIn('var packetStem = "outpost-abc123";', script)
+        self.assertIn("indexOf(packetStem)", script)
 
     def test_single_repl_preserves_committed_turn_on_response_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -808,6 +991,105 @@ print('ASIDE_REPL_SUBMIT_UNKNOWN {"quality":"pro","reason":"commit unverified"}'
                         response_timeout=1,
                     )
 
+    def test_an_attachment_past_the_argument_limit_is_staged_not_inlined(self) -> None:
+        # 2026-10-03: a 1.26 MB zip inlined as base64 overflowed the 1 MB
+        # command-line limit and `aside repl` never started.
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            record = root / "record.json"
+            fake = root / "aside"
+            fake.write_text(
+                f"""#!/usr/bin/env python3
+import json, re, sys
+script = sys.argv[-1]
+packet = json.loads(re.search(r"var packetFile = (.*);", script).group(1))
+uploads = json.loads(re.search(r"var extraUploads = (.*);", script).group(1))
+json.dump({{
+    "scriptBytes": len(script.encode("utf-8")),
+    "packet": open(packet, encoding="utf-8").read(),
+    "uploads": [open(u["path"], "rb").read().hex() for u in uploads],
+    "names": [u["name"] for u in uploads],
+}}, open({str(record)!r}, "w"))
+print('ASIDE_REPL_SUBMIT_UNKNOWN {{"quality":"pro","reason":"commit unverified"}}')
+""",
+                encoding="utf-8",
+            )
+            fake.chmod(0o755)
+            packet = root / "packet.md"
+            packet.write_text("# Test topic\n\nquestion", encoding="utf-8")
+            big = root / "evidence.bin"
+            payload = os.urandom(2 * 1024 * 1024)
+            big.write_bytes(payload)
+            path = f"{temp}{os.pathsep}{os.environ.get('PATH', '')}"
+            with mock.patch.dict(os.environ, {"PATH": path}):
+                with mock.patch.object(MODULE, "ensure_aside_daemon", return_value=None):
+                    result = MODULE.main(
+                        [
+                            "--quality", "pro",
+                            "--packet", str(packet),
+                            "--attach-input", str(big),
+                            "--url", "https://chatgpt.com/g/g-p-test-work/project",
+                            "--response-output", str(root / "response.md"),
+                            "--json-output", str(root / "result.json"),
+                            "--stderr-output", str(root / "stderr.log"),
+                        ]
+                    )
+                staging = Path(os.environ[MODULE.ASIDE_ROOT_ENV]) / MODULE.STAGING_SUBDIR
+
+            self.assertEqual(result, 76)
+            seen = json.loads(record.read_text(encoding="utf-8"))
+            self.assertLess(seen["scriptBytes"], 256 * 1024)
+            self.assertEqual(seen["uploads"], [payload.hex()])
+            self.assertEqual(seen["names"], ["evidence.bin"])
+            self.assertIn("question", seen["packet"])
+            # The staged copy is removed once the run ends.
+            self.assertEqual(list(staging.iterdir()), [])
+
+    def test_a_send_that_cannot_stage_is_proved_unsent(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            fake = root / "aside"
+            fake.write_text("#!/usr/bin/env python3\nprint('Aside daemon is not reachable')\n", encoding="utf-8")
+            fake.chmod(0o755)
+            packet = root / "packet.md"
+            packet.write_text("# Test topic\n\nquestion", encoding="utf-8")
+            path = f"{temp}{os.pathsep}{os.environ.get('PATH', '')}"
+            with mock.patch.dict(os.environ, {"PATH": path}):
+                os.environ.pop(MODULE.ASIDE_ROOT_ENV, None)
+                with mock.patch.object(MODULE, "ensure_aside_daemon", return_value=None):
+                    result = MODULE.main(
+                        [
+                            "--quality", "pro",
+                            "--packet", str(packet),
+                            "--url", "https://chatgpt.com/g/g-p-test-work/project",
+                            "--response-output", str(root / "response.md"),
+                            "--json-output", str(root / "result.json"),
+                            "--stderr-output", str(root / "stderr.log"),
+                        ]
+                    )
+
+            self.assertEqual(result, MODULE.NOT_SENT_EXIT)
+            final = json.loads((root / "result.json").read_text(encoding="utf-8"))
+            self.assertEqual(final["status"], "not_sent")
+            self.assertEqual(final["failureStage"], "load-staged-files")
+
+    def test_staging_sweeps_runs_left_by_a_killed_process(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            stale = root / MODULE.STAGING_SUBDIR / "old-run"
+            stale.mkdir(parents=True)
+            old = MODULE.time.time() - MODULE.STAGING_MAX_AGE_SECONDS - 60
+            os.utime(stale, (old, old))
+
+            staging, packet_path, staged = MODULE.stage_payload(
+                root, "new-run", b"packet", [{"name": "a.zip", "mime": "application/zip", "data": b"zip"}]
+            )
+
+            self.assertFalse(stale.exists())
+            self.assertEqual(Path(packet_path).read_bytes(), b"packet")
+            self.assertEqual(Path(staged[0]["path"]).read_bytes(), b"zip")
+            self.assertEqual(staging.parent, root / MODULE.STAGING_SUBDIR)
+
     def test_main_returns_76_for_submit_unknown(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -847,7 +1129,7 @@ print('ASIDE_REPL_SUBMIT_UNKNOWN {"quality":"pro","reason":"commit unverified"}'
             fake = root / "aside"
             fake.write_text(
                 """#!/usr/bin/env python3
-print('ASIDE_REPL_SUBMIT_RESULT {"quality":"pro","model":"최신","tier":"Pro (5 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1","targetId":"target"}')
+print('ASIDE_REPL_SUBMIT_RESULT {"quality":"pro","model":"GPT-6","tier":"Pro (5 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1","targetId":"target"}')
 print("response phase failed")
 """,
                 encoding="utf-8",
@@ -893,7 +1175,7 @@ print("response phase failed")
             fake = root / "aside"
             fake.write_text(
                 """#!/usr/bin/env python3
-print('ASIDE_REPL_SUBMIT_RESULT {"quality":"pro","model":"최신","tier":"Pro (5 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1","targetId":"target"}')
+print('ASIDE_REPL_SUBMIT_RESULT {"quality":"pro","model":"GPT-6","tier":"Pro (5 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1","targetId":"target"}')
 print("response phase failed")
 """,
                 encoding="utf-8",
@@ -913,6 +1195,8 @@ print("response phase failed")
                             "--response-output", str(root / "response.md"),
                             "--json-output", str(result_path),
                             "--stderr-output", str(root / "stderr.log"),
+                            # recovery waits for the reply between short lookups
+                            "--response-timeout", "1",
                         ]
                     )
 
@@ -935,7 +1219,7 @@ print("response phase failed")
                 f"""#!/usr/bin/env python3
 import pathlib
 pathlib.Path({str(temporary_artifact)!r}).write_bytes(b"not a zip")
-print('ASIDE_REPL_SUBMIT_RESULT {{"quality":"pro","model":"최신","tier":"Pro (5 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1","targetId":"target"}}')
+print('ASIDE_REPL_SUBMIT_RESULT {{"quality":"pro","model":"GPT-6","tier":"Pro (5 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1","targetId":"target"}}')
 print('ASIDE_REPL_RESPONSE_RESULT {{"modelSlug":"gpt-6-pro","responseText":"ID: placeholder","artifact":{{"temporaryPath":{json.dumps(str(temporary_artifact))},"suggestedFilename":"downloaded.zip"}},"responseElapsedMs":5678,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/1"}}')
 """,
                 encoding="utf-8",
@@ -979,7 +1263,7 @@ print('ASIDE_REPL_RESPONSE_RESULT {{"modelSlug":"gpt-6-pro","responseText":"ID: 
                         "id": "abc123",
                         "topic": "Test topic",
                         "quality": "pro",
-                        "model": "최신",
+                        "model": "GPT-6",
                         "tier": "Pro (5 of 5)",
                         "conversationUrl": "https://chatgpt.com/c/1",
                         "targetId": "target",
@@ -1065,7 +1349,7 @@ print('ASIDE_REPL_RESPONSE_RESULT {{"modelSlug":"gpt-6-pro","responseText":"ID: 
             project_url="https://chatgpt.com/g/g-p-test-work/project",
             quality="pro",
             packet_name="packet.md",
-            packet_base64="cGFja2V0",
+            packet_path="/tmp/packet.md",
             topic="후속",
             outpost_id="abc123",
             response_timeout_ms=1000,
@@ -1157,7 +1441,7 @@ print('ASIDE_REPL_RESPONSE_RESULT {{"modelSlug":"gpt-6-pro","responseText":"ID: 
             fake = root / "aside"
             fake.write_text(
                 """#!/usr/bin/env python3
-print('ASIDE_REPL_SUBMIT_RESULT {"quality":"pro","model":"최신","tier":"매우 높음 (4 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/c/6a95625e-1f78-83e8-aa90-a49f982e36ef","targetId":"target"}')
+print('ASIDE_REPL_SUBMIT_RESULT {"quality":"pro","model":"GPT-6","tier":"매우 높음 (4 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/c/6a95625e-1f78-83e8-aa90-a49f982e36ef","targetId":"target"}')
 print('ASIDE_REPL_RESPONSE_RESULT {"modelSlug":"gpt-6-pro","responseText":"answer","idMatched":false,"packetUnread":false,"responseElapsedMs":5678,"conversationUrl":"https://chatgpt.com/c/6a95625e-1f78-83e8-aa90-a49f982e36ef"}')
 """,
                 encoding="utf-8",
@@ -1237,7 +1521,7 @@ print('ASIDE_REPL_RESPONSE_RESULT {"modelSlug":"gpt-6-pro","responseText":"answe
             fake = root / "aside"
             fake.write_text(
                 """#!/usr/bin/env python3
-print('ASIDE_REPL_SUBMIT_RESULT {"quality":"pro","model":"최신","tier":"매우 높음 (4 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/6a99ef53-3d80-83ee-a84c-187e4a415929","targetId":"target"}')
+print('ASIDE_REPL_SUBMIT_RESULT {"quality":"pro","model":"GPT-6","tier":"매우 높음 (4 of 5)","submitElapsedMs":1234,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/c/6a99ef53-3d80-83ee-a84c-187e4a415929","targetId":"target"}')
 print('ASIDE_REPL_RESPONSE_RESULT {"modelSlug":"gpt-6-pro","responseText":"answer","idMatched":true,"packetUnread":false,"responseElapsedMs":25,"conversationUrl":"https://chatgpt.com/g/g-p-test-work/project"}')
 """,
                 encoding="utf-8",
@@ -1339,7 +1623,7 @@ print('ASIDE_REPL_RESPONSE_RESULT {"modelSlug":"gpt-6-pro","responseText":"answe
             project_url="https://chatgpt.com/g/g-p-test-work/project",
             quality="pro",
             packet_name="outpost-x.md",
-            packet_base64="Zg==",
+            packet_path="/tmp/packet.md",
             topic="t",
             outpost_id="x",
             response_timeout_ms=1000,

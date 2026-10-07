@@ -100,6 +100,7 @@ class ConsultCodeChromeRouteTest(unittest.TestCase):
         self.assertEqual(invocation["cdpPort"], "9222")
         self.assertEqual(invocation["autoStart"], "0")
         self.assertIn("--parallel", invocation["argv"])
+        self.assertEqual(invocation["argv"][invocation["argv"].index("--family") + 1], "gpt-6")
 
     def test_work_url_validator_rejects_global_chat(self) -> None:
         spec = importlib.util.spec_from_file_location("run_agbrowse_code_url_test", HELPER)

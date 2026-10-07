@@ -155,7 +155,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--conversation", default=None, help="Continue a ChatGPT conversation id or URL.")
     parser.add_argument("--session", default=None, help="Continue an agbrowse web-ai session.")
     parser.add_argument("--config", default=str(DEFAULT_CONFIG))
-    parser.add_argument("--quality", choices=tuple(QUALITY_PRESETS), default=None, help="Required GPT-5.6 code tier: xhigh or pro.")
+    parser.add_argument("--quality", choices=tuple(QUALITY_PRESETS), default=None, help="Required GPT-6 code tier: xhigh or pro.")
     parser.add_argument("--timeout", type=int, default=3600)
     parser.add_argument("--context-refresh", action="store_true")
     parser.add_argument("--extract-only", action="store_true", help="Recover zip artifacts from an existing conversation without sending a new prompt.")
@@ -200,6 +200,7 @@ def main(argv: Sequence[str]) -> int:
             "--vendor", "chatgpt",
             "--url", chatgpt_url,
             "--model", selected_model,
+            "--family", "gpt-6",
             "--timeout", str(args.timeout),
             "--trace-dir", args.trace_dir,
             "--prompt", prompt,

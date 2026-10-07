@@ -60,8 +60,8 @@ This is parallelism across tabs, not across browser profiles. Initial calls rece
 The helper has no default tier. Every call must choose exactly one:
 
 ```bash
---quality pro    # GPT-5.6 Pro
---quality xhigh  # GPT-5.6 Thinking / Extra High
+--quality pro    # GPT-6 Pro
+--quality xhigh  # GPT-6 Thinking / Extra High
 ```
 
 Selection is fail-closed, but the enforcement point is **after submit and before polling**, not before sending. agbrowse itself fails *open* on model selection: when it cannot drive the visible picker it keeps whatever model the tab was showing, records a `warnings` entry such as `requested pro was not enforced, continuing with current ChatGPT model: ...`, and still returns `ok: true` / `status: "sent"`. The helper therefore inspects the submit payload (`warnings`, `usedFallbacks`, `modelSelection.status|verified|normalizedModel`) and, on any sign the requested tier was not applied, exits `4` with history status `model-not-enforced` — it saves the session and refuses to poll, so a lesser model's answer is never returned as the requested tier. The prompt has already been submitted at that point; recover by selecting the model manually in the browser and resuming the reported session id.

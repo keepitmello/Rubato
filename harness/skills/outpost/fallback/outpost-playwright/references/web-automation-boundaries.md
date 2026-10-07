@@ -8,7 +8,7 @@ This skill is deliberately web-only and uses `agbrowse web-ai` as its browser ex
 - Use the user's already logged-in ChatGPT web session in the shared profile at `~/.codex/browser-profiles/outpost-agbrowse/browser-profile`.
 - Keep that single profile and browser instance. Run independent outpost queries concurrently with agbrowse `--parallel` in invocation-owned tabs; serialize only calls targeting the same saved provider session. Each helper closes its exact session target and stops the owner when no nonblank task tab remains. Saved sessions recover from `conversationUrl` on follow-up. Do not clone profiles, auto-start Chrome from `agbrowse`, or start parallel headed browsers.
 - Submit inline prompts or upload `.outpost/outpost-packet.md` through `agbrowse`.
-- Use GPT-5.6 Pro by default, GPT-5.6 Extra High for difficult lower-latency work, or GPT-5.6 High when Pro latency is disproportionate. Stop before sending if the visible selector cannot verify the requested family/tier.
+- Use GPT-6 Pro by default or GPT-6 Extra High for difficult lower-latency work. Stop before sending if the visible selector cannot verify the requested family/tier.
 - Wait for ChatGPT completion through `agbrowse web-ai query`, `send`/`poll`, or `watch`.
 - Continue a saved outpost conversation through `agbrowse web-ai query --session <sessionId>` when a follow-up is useful.
 - Save the answer into `.outpost/outpost-response.md`.
