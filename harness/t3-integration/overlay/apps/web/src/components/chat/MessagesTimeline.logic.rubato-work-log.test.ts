@@ -171,4 +171,27 @@ describe("rubato work log", () => {
         ),
     ).toBe("Reading src/a.ts");
   });
+
+  it("shows a wait the agent ended its run on as the live line, not Thinking", () => {
+    const waiting = rows(
+      [
+        message("user", 0, "user", "Go"),
+        message("note", 1, "assistant", "Started the build; I'll pick up when it ends.", "commentary"),
+        work("wait", 2, {
+          label: "Waiting on background work",
+          toolTitle: "Waiting on background work",
+          itemType: "dynamic_tool_call",
+          toolLifecycleStatus: "inProgress",
+          rubatoActivity: { kind: "wait", target: "cargo build" },
+        }),
+      ],
+      true,
+    );
+    expect(waiting.some((row) => row.kind === "thinking")).toBe(false);
+    const row = waiting.find((candidate) => candidate.kind === "work-live");
+    expect(row?.kind === "work-live" && row.active).toBe(true);
+    expect(row?.kind === "work-live" && liveWorkEntryLabel(row.entry, "/repo", row.active)).toBe(
+      "Waiting on cargo build",
+    );
+  });
 });

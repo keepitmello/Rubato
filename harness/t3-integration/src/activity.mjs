@@ -291,3 +291,14 @@ export function toolActivityOf(toolName, args) {
   }
   return { kind: 'other' };
 }
+
+// A wait the agent ended its run on is named by its description, which is a monitor's
+// sentence or a background command's first line; a bare session id names nothing a
+// reader knows.
+const BARE_SESSION_ID = /^(?:bash|mon|monitor|task|terminal)_[A-Za-z0-9]+$/;
+
+/** What an idle agent waits on, for the live line ("Waiting on the test run"). */
+export function waitActivityOf(labels) {
+  const named = (Array.isArray(labels) ? labels : []).map(string).filter((label) => label && !BARE_SESSION_ID.test(label));
+  return { kind: 'wait', ...(named.length > 0 ? { target: named.join(' · ') } : {}) };
+}

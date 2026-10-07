@@ -53,6 +53,10 @@ describe("rubato work log activity", () => {
       "Searched the web for effect schema",
     );
     expect(rubatoActivityLabel({ kind: "other" }, "inProgress")).toBeUndefined();
+    expect(rubatoActivityLabel({ kind: "wait", target: "the test run" }, "inProgress")).toBe(
+      "Waiting on the test run",
+    );
+    expect(rubatoActivityLabel({ kind: "wait" }, "completed")).toBe("Waited on background work");
   });
 
   it("groups reading, searching and listing as exploration", () => {
