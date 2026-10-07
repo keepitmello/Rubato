@@ -3,3 +3,5 @@ PYTHON_VERSION=3.13.2
 JAVA_MAJOR=17
 REDIS_VERSION=8.4.0
 SEARCH_VERSION=8.4.2
+# redis/redis tap 에서 위 Redis·Search 를 담은 cask 의 커밋 (redis-service.sh 가 깐다).
+REDIS_CASK_COMMIT=eb1de700eae6b3a2c398f2c287ed9650c6710cea
