@@ -1,6 +1,6 @@
 ---
 name: dispatching
-description: "Handing work to another session, or sending the next task to an existing one: decide continue-versus-fresh, separate binding from hints, carry scale and return contract, handle blocks and short returns. Read before every Agent spawn or AgentSend."
+description: "Handing work to another session, or sending the next task to an existing one: decide continue-versus-fresh, separate binding from hints, carry scale and return contract, handle blocks and short returns. Read before every Agent spawn or AgentSend; before a second session toward the same goal, read agent-taskforce too."
 ---
 
 # Dispatching
@@ -11,7 +11,7 @@ Run this when you are about to hand work to another session (a teammate, a subag
 
 Name what the separate session contributes and what stays with you. Weigh that against briefing, duplicate reading, result integration, waiting and shared-resource contention, not token volume alone; a cheaper model being available is not a saving by itself. Coupled judgment and implementation can stay in one strong session, and a subagent still reasons inside its assignment.
 
-A focused subagent, or an owner delegating inside its accepted boundary, needs no team ceremony. A root lead weighing continuing owners, independent outcomes or a team reads Skill(agent-taskforce) first; that read may choose no team.
+A focused subagent, or an owner delegating inside its accepted boundary, needs no team ceremony. A root lead about to send a second session toward the same goal, or holding work that splits into outcomes that can move on their own, reads Skill(agent-taskforce) first.
 
 ## What binds, and what is a lead
 

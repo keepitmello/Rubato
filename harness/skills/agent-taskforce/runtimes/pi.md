@@ -49,7 +49,6 @@ child's transcript; a completion carries its result file path. A teammate's norm
 turn end does not wake the lead — one aggregate wake arrives when the run's assigned
 board work is closed. The lead's own discovery subagent is distinct from a
 continuing owner.
-A read of taskforce may choose direct work instead of `team_create`.
 
 `worktreePath` provisions an actual worktree. It does not isolate ports, processes,
 memory or quotas. Allocate shared resources when contention matters. The integration

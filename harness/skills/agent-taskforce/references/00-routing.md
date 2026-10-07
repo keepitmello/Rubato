@@ -7,8 +7,7 @@ uses the active runtime adapter; it is not a Claude Code-only team definition.
 
 Use direct work when the needed state is already here and the next decisions are
 tightly coupled. A strong model is allowed to investigate, implement and check its
-own authorized outcome. File count, unfamiliarity and a model tier are not sufficient
-reasons to make a team. Reading this skill creates no staffing obligation.
+own authorized outcome.
 
 ## Use a subagent
 
@@ -22,9 +21,8 @@ require a fabricated numeric saving. Continue the same subagent on related work.
 
 A team can be useful when one deep execution context should stay separate from the
 user's evolving conversation, when independent outcomes can progress, or when peers
-need sustained interface and evidence exchange. One owner is allowed; multiple
-owners are not a success metric. A continuing owner is not a short subagent used
-to bypass intent/roster approval.
+need sustained interface and evidence exchange. One owner is allowed. A continuing
+owner is not a short subagent used to bypass intent/roster approval.
 
 Keep coupled state and local judgment together. Assign an integration owner only
 where outputs must be combined, normally an existing owner. Independent competing

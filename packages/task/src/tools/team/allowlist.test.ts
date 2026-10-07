@@ -38,6 +38,15 @@ describe("member child team-tool allowlist", () => {
     expect(names.filter((name) => name === "AgentSend")).toEqual([])
   })
 
+  test("#given the lead team tools #when built #then only team_create is visible from the first request", () => {
+    // given / when
+    const tools = buildLeadTeamTools(leadToolDeps())
+
+    // then: the lead sees team_create next to Agent; the rest of the team surface stays behind tool_search
+    const direct = tools.filter((tool) => tool.exposure === "direct").map((tool) => tool.name)
+    expect(direct).toEqual(["team_create"])
+  })
+
   test("#given the lead team tools as shared parent tools #when filtered for a child #then all are excluded", () => {
     // given
     const teamTools = buildLeadTeamTools(leadToolDeps())
