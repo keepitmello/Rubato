@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { modelDisplayLabel } from './model-catalog-order.mjs';
+import { assistantPhaseOf, toolActivityOf } from './activity.mjs';
 
 export const textOf = (message, type = 'text') => typeof message?.content === 'string'
   ? type === 'text' ? message.content : ''
@@ -339,6 +340,13 @@ export const AWAIT_POLL_MS = 2_000;
 export const AWAIT_GRACE_MS = 3_000;
 export const AWAIT_TITLE = 'Waiting on background work';
 const AWAIT_ITEM_TYPE = 'dynamic_tool_call';
+// The live line names the command it runs; the label truncates long before this.
+const ACTIVITY_TARGET_MAX = 1_000;
+const activityFor = (toolName, args) => {
+  const activity = toolActivityOf(toolName, args);
+  return typeof activity.target === 'string' && activity.target.length > ACTIVITY_TARGET_MAX
+    ? { ...activity, target: `${activity.target.slice(0, ACTIVITY_TARGET_MAX)}…` } : activity;
+};
 const unref = (timer) => { timer?.unref?.(); return timer; };
 
 export class EventProjection {
@@ -352,7 +360,7 @@ export class EventProjection {
     Object.assign(this, { threadId, sessionId, instanceId, emit, sessionMessage, awaitedWakes, released, awaitTimings });
     this.text = new Map(); this.thinking = new Map(); this.completed = new Set(); this.questions = new Map();
     this.tasks = new Map(); this.children = new Map(); this.spawns = new Map();
-    this.teams = new Map(); this.boards = new Map();
+    this.teams = new Map(); this.boards = new Map(); this.toolArgs = new Map();
     // Session messages the thread already holds. Kept across reset(): a rewind
     // rebinds the session, not the thread, and the thread keeps what it showed.
     this.delivered = new Set();
@@ -366,7 +374,7 @@ export class EventProjection {
     this.sessionId = sessionId;
     this.text.clear(); this.thinking.clear(); this.completed.clear(); this.questions.clear();
     this.tasks.clear(); this.children.clear(); this.spawns.clear();
-    this.teams.clear(); this.boards.clear();
+    this.teams.clear(); this.boards.clear(); this.toolArgs.clear();
     this.turnId = undefined; this.failed = false; this.interrupted = false; this.lastUsage = undefined;
     this.lastError = undefined; this.pendingError = undefined; this.retry = undefined;
     this.maxTokens = undefined;
@@ -549,8 +557,12 @@ export class EventProjection {
       this.pendingError = undefined;
       const text = textOf(message);
       const detail = text || (message.stopReason === 'error' ? errorDetail(message) : undefined);
+      // The timeline keeps the final answer in sight and folds commentary with the
+      // work when the turn ends (activity.mjs assistantPhaseOf).
+      const phase = assistantPhaseOf(message);
       const payload = { itemType: 'assistant_message',
-        status: message.stopReason === 'error' ? 'failed' : 'completed', ...(detail ? { detail } : {}) };
+        status: message.stopReason === 'error' ? 'failed' : 'completed', ...(detail ? { detail } : {}),
+        ...(phase ? { data: { rubatoPhase: phase } } : {}) };
       // An empty errored message is only an answer if nothing retries it. Pi
       // stores every failed attempt, and painting each as its own assistant row
       // stacked "Connection error." lines under a turn that went on to succeed.
@@ -958,8 +970,27 @@ export class EventProjection {
         const presentation = toolPresentation(event.toolName, event.args, event.result ?? event.partialResult);
         const type = event.type === 'tool_execution_start' ? 'item.started' : event.type === 'tool_execution_end' ? 'item.completed' : 'item.updated';
         const data = { ...record(event.result ?? event.partialResult ?? event.args ?? {}), toolCallId: event.toolCallId };
-        this.event(type, { ...presentation, status: event.type === 'tool_execution_end' ? event.isError ? 'failed' : 'completed' : 'inProgress', data },
-          { itemId: spawn ? event.toolCallId : `pi-tool:${this.sessionId}:${event.toolCallId}` });
+        const status = event.type === 'tool_execution_end' ? event.isError ? 'failed' : 'completed' : 'inProgress';
+        const itemId = spawn ? event.toolCallId : `pi-tool:${this.sessionId}:${event.toolCallId}`;
+        if (spawn) this.event(type, { ...presentation, status, data }, { itemId });
+        else {
+          // Only the start carries the call's arguments, and T3 draws a tool row from
+          // its updates and completion alone (session-logic skips tool.started). So the
+          // row would not exist until a quiet tool finished, and once it did it had lost
+          // the command: a live line that read "Bash". The start is followed at once by
+          // an update holding what the call does; the completion repeats the command.
+          if (event.args) this.toolArgs.set(event.toolCallId, record(event.args));
+          const args = this.toolArgs.get(event.toolCallId) ?? record(event.args);
+          if (event.type === 'tool_execution_end') this.toolArgs.delete(event.toolCallId);
+          const rubatoActivity = activityFor(event.toolName, args);
+          const command = event.toolName === 'bash' ? nonempty(args.command) : undefined;
+          this.event(type, { ...presentation, status, data: { ...data, rubatoActivity,
+            ...(command && event.type === 'tool_execution_end' ? { command } : {}) } }, { itemId });
+          if (event.type === 'tool_execution_start') {
+            this.event('item.updated', { ...presentation, status, data: { toolCallId: event.toolCallId, rubatoActivity,
+              ...(command ? { command } : {}) } }, { itemId });
+          }
+        }
         if (spawn) this.spawnTool(event);
         else if (CANCEL_TOOLS.has(event.toolName)) this.cancelTool(event);
         else if (event.toolName === 'team_delete') this.teamDeleted(event);

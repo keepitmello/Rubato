@@ -25,6 +25,7 @@ test('Pi events survive T3 ingestion, persisted snapshots and web/mobile folds',
     `import { EventProjection } from ${JSON.stringify(bridge)};`,
     'import { deriveMessagesTimelineRows } from "../../../../web/src/components/chat/MessagesTimeline.logic.ts";',
     'import { deriveTimelineEntries, deriveWorkLogEntries } from "../../../../web/src/session-logic.ts";',
+    'import { projectActivityPayload } from "../ActivityPayloadProjection.ts";',
     'import { buildThreadFeed, deriveThreadFeedPresentation } from "../../../../mobile/src/lib/threadActivity.ts";',
   ].join('\n');
   await writeFile(generated, imports + '\n' + upstream.slice(0, boundary) + fixture + '\n});\n', { flag: 'wx' });

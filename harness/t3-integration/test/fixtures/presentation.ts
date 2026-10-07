@@ -87,10 +87,20 @@
         }
         expect(prose(webRows(thread, true))).toContain(intermediate);
         expect(prose(mobileRows(thread, true))).toContain(intermediate);
+        // The bridge's phases ride on the stored messages (work-log-edits.mjs), and the
+        // tool row keeps its command though T3 never reads the start that carried it.
+        const phases = (current: any) => current.messages.filter((m: any) => m.role === "assistant")
+          .map((m: any) => m.context?.records?.find((r: any) => r.kind === "rubato-phase")?.payload?.phase);
+        expect(phases(thread)).toEqual(["commentary", "final_answer"]);
+        // What a client gets: the server slims every activity payload before sending it.
+        const bashRow = deriveWorkLogEntries(thread.activities.map(projectActivityPayload))
+          .find((entry: any) => entry.toolTitle === "bash");
+        expect(bashRow).toMatchObject({ command: "pwd", rubatoActivity: { kind: "command", target: "pwd" } });
 
         // A fresh query and JSON round trip exercise what reload actually gets,
         // independent of live client object identity or stream caches.
         const reloaded = JSON.parse(JSON.stringify(await read()));
+        expect(phases(reloaded)).toEqual(["commentary", "final_answer"]);
         expect(prose(webRows(reloaded))).toBe(prose(webRows(thread)));
         expect(prose(mobileRows(reloaded))).toBe(prose(mobileRows(thread)));
 

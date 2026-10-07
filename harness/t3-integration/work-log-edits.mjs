@@ -1,0 +1,391 @@
+// The work log in Codex's shape, for Rubato's own rows (other providers keep T3's
+// behavior and its tests). While a turn runs, each group of tool calls between
+// two pieces of commentary is one live line naming the call that runs ("Reading
+// events.mjs", "Running npm test", else "Thinking"), ticking over no faster than once
+// a second; once the group is done it is one summary line ("Read files and ran
+// commands"). When the turn ends, everything but the final answer folds behind
+// "Worked for …".
+//
+// The facts come from the bridge (src/activity.mjs): each tool row's
+// `data.rubatoActivity` says what the call does, and each completed assistant
+// message's `data.rubatoPhase` says whether it is commentary or the final answer.
+// The phase rides on the message as a `rubato-phase` context record, which the
+// server, its database and the client already keep, so only the assistant-complete
+// command learns to carry one.
+export const workLogOverlays = [
+  'packages/client-runtime/src/work-log/rubatoActivity.ts',
+  'packages/client-runtime/src/work-log/rubatoActivity.test.ts',
+  'apps/web/src/components/chat/rubatoLiveLine.ts',
+  'apps/web/src/components/chat/rubatoLiveLine.test.tsx',
+  'apps/web/src/components/chat/MessagesTimeline.logic.rubato-work-log.test.ts',
+];
+
+const lines = (...parts) => parts.join('\n');
+
+export const workLogEdits = {
+  // --- The phase travels with the assistant message ---------------------------
+  'packages/contracts/src/orchestration.ts': [
+    [lines(
+      'const ThreadMessageAssistantCompleteCommand = Schema.Struct({',
+      '  type: Schema.Literal("thread.message.assistant.complete"),',
+      '  commandId: CommandId,',
+      '  threadId: ThreadId,',
+      '  messageId: MessageId,',
+      '  turnId: Schema.optional(TurnId),',
+      ''),
+    lines(
+      'const ThreadMessageAssistantCompleteCommand = Schema.Struct({',
+      '  type: Schema.Literal("thread.message.assistant.complete"),',
+      '  commandId: CommandId,',
+      '  threadId: ThreadId,',
+      '  messageId: MessageId,',
+      '  turnId: Schema.optional(TurnId),',
+      '  // Rubato: the message\'s phase (commentary or final answer) as a context record.',
+      '  context: Schema.optional(OrchestrationMessageContext),',
+      ''),
+    'replace'],
+  ],
+  'apps/server/src/orchestration/decider.ts': [
+    [lines(
+      '          role: command.type === "thread.message.reasoning.complete" ? "reasoning" : "assistant",',
+      '          text: "",',
+      ''),
+    lines(
+      '          role: command.type === "thread.message.reasoning.complete" ? "reasoning" : "assistant",',
+      '          text: "",',
+      '          ...(command.type === "thread.message.assistant.complete" && command.context !== undefined',
+      '            ? { context: command.context }',
+      '            : {}),',
+      ''),
+    'replace'],
+  ],
+  'apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts': [
+    ['import * as Cache from "effect/Cache";\n',
+      'import type { OrchestrationMessage as RubatoOrchestrationMessage } from "@t3tools/contracts";\n'],
+    ['function toTurnId(value: TurnId | string | undefined): TurnId | undefined {\n',
+      lines(
+        '// Rubato: the bridge says whether an assistant message is commentary or the final',
+        '// answer (`data.rubatoPhase`); the message keeps it as a context record',
+        '// (client-runtime work-log/rubatoActivity.ts reads it back).',
+        'function rubatoPhaseContextOf(data: unknown): RubatoOrchestrationMessage["context"] {',
+        '  const phase =',
+        '    data !== null && typeof data === "object" ? (data as Record<string, unknown>).rubatoPhase : undefined;',
+        '  if (phase !== "commentary" && phase !== "final_answer") return undefined;',
+        '  return {',
+        '    version: 1,',
+        '    records: [',
+        '      {',
+        '        version: 1,',
+        '        contextId: "rubato-phase",',
+        '        kind: "rubato-phase",',
+        '        label: phase === "commentary" ? "Commentary" : "Final answer",',
+        '        payload: { v: 1, phase },',
+        '      },',
+        '    ],',
+        '  } as unknown as RubatoOrchestrationMessage["context"];',
+        '}',
+        '',
+        '')],
+    [lines('    fallbackText?: string;', '    hasProjectedMessage?: boolean;', '  }) =>', ''),
+      lines('    fallbackText?: string;', '    hasProjectedMessage?: boolean;',
+        '    context?: RubatoOrchestrationMessage["context"];', '  }) =>', ''),
+      'replace'],
+    [lines(
+      '            : "thread.message.assistant.complete",',
+      '          commandId: yield* providerCommandId(input.event, input.commandTag),',
+      '          threadId: input.threadId,',
+      '          messageId: input.messageId,',
+      ''),
+    lines(
+      '            : "thread.message.assistant.complete",',
+      '          commandId: yield* providerCommandId(input.event, input.commandTag),',
+      '          threadId: input.threadId,',
+      '          messageId: input.messageId,',
+      '          ...(!isReasoning && input.context !== undefined ? { context: input.context } : {}),',
+      ''),
+    'replace'],
+    ['              fallbackText: event.payload.detail,\n',
+      '              fallbackText: event.payload.detail,\n              context: rubatoPhaseContextOf(event.payload.data),\n',
+      'replace'],
+    ['            hasProjectedMessage: existingAssistantMessage !== undefined,\n',
+      lines(
+        '            hasProjectedMessage: existingAssistantMessage !== undefined,',
+        '            ...(assistantCompletion.context !== undefined',
+        '              ? { context: assistantCompletion.context }',
+        '              : {}),',
+        ''),
+      'replace'],
+  ],
+
+  // --- Each tool row knows what its call does ----------------------------------
+  'packages/client-runtime/src/work-log/presentation.ts': [
+    ['import {\n  isToolLifecycleItemType,\n',
+      lines(
+        'import {',
+        '  rubatoActivityGroupAction,',
+        '  rubatoSummaryLabel,',
+        '  rubatoSummaryOrder,',
+        '  type RubatoActivity,',
+        '} from "./rubatoActivity.ts";',
+        'export * from "./rubatoActivity.ts";',
+        '')],
+    ['export interface WorkLogPresentationEntry {\n  readonly label: string;\n',
+      lines(
+        'export interface WorkLogPresentationEntry {',
+        '  readonly label: string;',
+        '  /** Rubato: what a Pi tool call does, from the bridge (rubatoActivity.ts). */',
+        '  readonly rubatoActivity?: RubatoActivity;',
+        ''),
+      'replace'],
+    ['    return "update";\n  }\n  const presentation = resolveWorkEntryToolPresentation(entry);\n',
+      lines(
+        '    return "update";',
+        '  }',
+        '  if (entry.rubatoActivity) return rubatoActivityGroupAction(entry.rubatoActivity);',
+        '  const presentation = resolveWorkEntryToolPresentation(entry);',
+        ''),
+      'replace'],
+    // Codex names what a group did, in a fixed order, without counting it. Only a
+    // group the bridge tagged reads this way; other providers keep T3's words.
+    [lines(
+      '  const labels = [...groupedEntries].map(([action, actionEntries]) =>',
+      '    toolGroupActionLabel(action, toolGroupActionCount(action, actionEntries)),',
+      '  );',
+      ''),
+    lines(
+      '  const codexWords = summaryEntries.some((entry) => entry.rubatoActivity !== undefined);',
+      '  const labels = [...groupedEntries]',
+      '    .sort(([left], [right]) =>',
+      '      codexWords ? rubatoSummaryOrder(left) - rubatoSummaryOrder(right) : 0,',
+      '    )',
+      '    .map(([action, actionEntries]) => {',
+      '      const count = toolGroupActionCount(action, actionEntries);',
+      '      return (',
+      '        (codexWords ? rubatoSummaryLabel(action, count) : undefined) ??',
+      '        toolGroupActionLabel(action, count)',
+      '      );',
+      '    });',
+      ''),
+    'replace'],
+  ],
+  // The server slims activity payloads to the fields clients read, both when it
+  // stores a streaming update and before any payload reaches a client; the tag is one.
+  'apps/server/src/orchestration/ActivityPayloadProjection.ts': [
+    [lines(
+      '  if ("toolName" in data) {',
+      '    projectedData.toolName = data.toolName;',
+      '  }',
+      '',
+      '  const rawOutput =',
+      ''),
+    lines(
+      '  if ("toolName" in data) {',
+      '    projectedData.toolName = data.toolName;',
+      '  }',
+      '  if ("rubatoActivity" in data) {',
+      '    projectedData.rubatoActivity = data.rubatoActivity;',
+      '  }',
+      '',
+      '  const rawOutput =',
+      ''),
+    'replace'],
+  ],
+  'apps/web/src/session-logic.ts': [
+    ['import { isBackgroundTaskActivity } from "@t3tools/client-runtime/state/subagentRuntime";\n',
+      'import { rubatoActivityOf, type RubatoActivity } from "@t3tools/client-runtime/work-log/presentation";\n'],
+    ['  toolData?: unknown;\n',
+      '  /** Rubato: what a Pi tool call does, from the bridge. */\n  rubatoActivity?: RubatoActivity;\n'],
+    ['  if (viewedImagePath) {\n    entry.viewedImagePath = viewedImagePath;\n  }\n',
+      lines(
+        '  if (viewedImagePath) {',
+        '    entry.viewedImagePath = viewedImagePath;',
+        '  }',
+        '  const rubatoActivity = rubatoActivityOf(payload?.data);',
+        '  if (rubatoActivity) {',
+        '    entry.rubatoActivity = rubatoActivity;',
+        '  }',
+        ''),
+      'replace'],
+  ],
+
+  // --- Live lines, summaries and the fold ---------------------------------------
+  'apps/web/src/components/chat/MessagesTimeline.logic.ts': [
+    ['import {\n  liveActivityToolStatus,\n  normalizeCompactToolLabel,\n',
+      'import {\n  liveActivityToolStatus,\n  normalizeCompactToolLabel,\n  rubatoActivityLabel,\n  rubatoPhaseOf,\n',
+      'replace'],
+    ['const TIMELINE_MINIMAP_ITEM_SPACING = 8;\n',
+      lines(
+        '// Rubato: a file reads relative to the workspace, as Codex shows it; outside it,',
+        '// by its last two parts.',
+        'function rubatoDisplayPath(path: string, workspaceRoot: string | undefined): string {',
+        '  const root = workspaceRoot?.replace(/\\/+$/, "");',
+        '  if (root && path.startsWith(`${root}/`)) return path.slice(root.length + 1);',
+        '  if (!path.startsWith("/") && !path.startsWith("~")) return path;',
+        '  const parts = path.split("/").filter(Boolean);',
+        '  return parts.length > 2 ? parts.slice(-2).join("/") : path;',
+        '}',
+        '',
+        '')],
+    ['function singleToolCallLabel(entry: WorkLogEntry): string {\n',
+      lines(
+        'function singleToolCallLabel(entry: WorkLogEntry): string {',
+        '  const rubatoLabel =',
+        '    entry.rubatoActivity &&',
+        '    rubatoActivityLabel(',
+        '      entry.rubatoActivity,',
+        '      entry.toolLifecycleStatus === "stopped" ? "stopped" : "completed",',
+        '      (path) => rubatoDisplayPath(path, undefined),',
+        '    );',
+        '  if (rubatoLabel) return rubatoLabel;',
+        ''),
+      'replace'],
+    ['  const status = liveActivityToolStatus(entry.toolLifecycleStatus, active);\n',
+      lines(
+        '  const status = liveActivityToolStatus(entry.toolLifecycleStatus, active);',
+        '  const rubatoLabel =',
+        '    entry.rubatoActivity &&',
+        '    rubatoActivityLabel(entry.rubatoActivity, status, (path) =>',
+        '      rubatoDisplayPath(path, workspaceRoot),',
+        '    );',
+        '  if (rubatoLabel) return rubatoLabel;',
+        ''),
+      'replace'],
+    // A row in an opened group names its file or search; a command row keeps its command.
+    ['export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string | undefined) {\n',
+      lines(
+        'export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string | undefined) {',
+        '  const rubatoLabel =',
+        '    entry.rubatoActivity && entry.rubatoActivity.kind !== "command"',
+        '      ? rubatoActivityLabel(entry.rubatoActivity, "completed", (path) =>',
+        '          rubatoDisplayPath(path, workspaceRoot),',
+        '        )',
+        '      : undefined;',
+        '  if (rubatoLabel) return rubatoLabel;',
+        ''),
+      'replace'],
+    // Codex shows no thought rows. Thinking reads as the live line while it happens.
+    // Only Pi's thoughts (ids the bridge mints) go; other providers keep their rows.
+    [lines(
+      '        const groupId =',
+      '          timelineEntry.kind === "work"',
+      '            ? workGroupId(timelineEntry.id, timelineEntry.entry)',
+      '            : `activity-group:${timelineEntry.id}`;',
+      ''),
+    lines(
+      '        if (',
+      '          !active &&',
+      '          entries.every(',
+      '            (entry) => entry.kind === "message" && /^reasoning:[a-z]+:pi:/.test(entry.message.id),',
+      '          )',
+      '        ) {',
+      '          index = cursor - 1;',
+      '          continue;',
+      '        }',
+      '')],
+    // With phases, the final answer stays in sight and commentary folds with the work.
+    // A turn that never reached an answer keeps the guess below.
+    [lines(
+      '    for (const [index, entry] of group.entries.entries()) {',
+      '      if (',
+      '        settledPiAnswerIds.has(entry.id) ||',
+      ''),
+    lines(
+      '    const hasFinalAnswer = group.entries.some(',
+      '      (entry) =>',
+      '        entry.kind === "message" &&',
+      '        entry.message.role === "assistant" &&',
+      '        rubatoPhaseOf(entry.message) === "final_answer",',
+      '    );',
+      '    for (const [index, entry] of group.entries.entries()) {',
+      '      const rubatoPhase =',
+      '        hasFinalAnswer && entry.kind === "message" && entry.message.role === "assistant"',
+      '          ? rubatoPhaseOf(entry.message)',
+      '          : undefined;',
+      '      if (rubatoPhase === "commentary") {',
+      '        hiddenEntryIds.add(entry.id);',
+      '        continue;',
+      '      }',
+      '      if (',
+      '        rubatoPhase === "final_answer" ||',
+      '        settledPiAnswerIds.has(entry.id) ||',
+      ''),
+    'replace'],
+  ],
+  'apps/web/src/components/chat/MessagesTimeline.tsx': [
+    ['import { deriveAgentSpawnSummary } from "./agentSpawnSummary";\n',
+      'import { useRubatoLiveLine } from "./rubatoLiveLine";\n'],
+    ['function LiveWorkEntryTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "work-live" }> }) {\n',
+      lines(
+        '// Rubato: a live line ticks over no faster than Codex\'s (rubatoLiveLine.ts).',
+        'function DwellingLiveActivityRow({',
+        '  dwellKey,',
+        '  ...props',
+        '}: Parameters<typeof LiveActivityRow>[0] & { dwellKey: string | null }) {',
+        '  const shown = useRubatoLiveLine(dwellKey, props);',
+        '  return <LiveActivityRow {...shown} />;',
+        '}',
+        '',
+        '')],
+    // A Rubato live line names a call only while it runs; between calls the agent is thinking.
+    ['  const label = questionHeading || liveWorkEntryLabel(row.entry, ctx.workspaceRoot, row.active);\n',
+      lines(
+        '  const thinking =',
+        '    row.active &&',
+        '    !questionHeading &&',
+        '    row.entry.rubatoActivity !== undefined &&',
+        '    !workEntryIsActiveTurnActivity(row.entry);',
+        '  const label =',
+        '    questionHeading ||',
+        '    (thinking ? "Thinking" : liveWorkEntryLabel(row.entry, ctx.workspaceRoot, row.active));',
+        ''),
+      'replace'],
+    [lines(
+      '      <LiveActivityRow',
+      '        label={',
+      '          row.entry.questionAnswer && hasQuestionAnswer(row.entry.questionAnswer) ? (',
+      ''),
+    lines(
+      '      <DwellingLiveActivityRow',
+      '        dwellKey={row.active && typeof label === "string" ? label : null}',
+      '        label={',
+      '          row.entry.questionAnswer && hasQuestionAnswer(row.entry.questionAnswer) ? (',
+      ''),
+    'replace'],
+    [lines(
+      '        iconName={workEntryIconName(row.entry)}',
+      '        toolIcon={row.entry.toolIcon ?? row.entry.toolSource?.icon}',
+      '        failed={failed}',
+      '        active={row.active}',
+      '      />',
+      ''),
+    lines(
+      '        iconName={thinking ? "brain" : workEntryIconName(row.entry)}',
+      '        toolIcon={thinking ? undefined : (row.entry.toolIcon ?? row.entry.toolSource?.icon)}',
+      '        failed={failed}',
+      '        active={row.active}',
+      '        shimmer={thinking}',
+      '      />',
+      ''),
+    'replace'],
+    ['  const liveWork = trailingWork.findLast(workEntryIsActiveTurnActivity) ?? trailingWork.at(-1);\n',
+      lines(
+        '  const lastWork = trailingWork.at(-1);',
+        '  const liveWork =',
+        '    trailingWork.findLast(workEntryIsActiveTurnActivity) ??',
+        '    (lastWork?.rubatoActivity === undefined ? lastWork : undefined);',
+        ''),
+      'replace'],
+    [lines(
+      '        <LiveActivityRow',
+      '          label={label}',
+      '          iconName={iconWork ? workEntryIconName(iconWork) : "brain"}',
+      ''),
+    lines(
+      '        <DwellingLiveActivityRow',
+      '          dwellKey={row.active ? label : null}',
+      '          label={label}',
+      '          iconName={iconWork ? workEntryIconName(iconWork) : "brain"}',
+      ''),
+    'replace'],
+  ],
+};
