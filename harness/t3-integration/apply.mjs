@@ -24,6 +24,7 @@ import { fileExplorerEdits, fileExplorerOverlays } from './file-explorer-edits.m
 import { rightPanelEdits, rightPanelOverlays } from './right-panel-edits.mjs';
 import { chatWidthEdits, chatWidthOverlays } from './chat-width-edits.mjs';
 import { sidebarRailEdits, sidebarRailOverlays } from './sidebar-rail-edits.mjs';
+import { workLogEdits, workLogOverlays } from './work-log-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -2209,6 +2210,11 @@ for (const [relative, changes] of Object.entries(chatWidthEdits)) {
 // 레거시 사이드바 스레드 목록의 세로선을 다시 지운다 (sidebar-rail-edits.mjs).
 overlays.push(...sidebarRailOverlays);
 for (const [relative, changes] of Object.entries(sidebarRailEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// The work log in Codex's shape: live lines, summaries, phase folds (work-log-edits.mjs).
+overlays.push(...workLogOverlays);
+for (const [relative, changes] of Object.entries(workLogEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 function transform(text, changes) {

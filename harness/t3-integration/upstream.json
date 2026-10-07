@@ -85,6 +85,9 @@
     "apps/web/src/rightPanelStore.test.ts": "8a971bef64916e16737389c0e35206c065fdb84e4d2710f759db7e07937f7992",
     "packages/contracts/src/settings.ts": "460f356f2f9192dc1c8730d073f69b3f7f815ed13cb27f564cd68ce34bfa4ce4",
     "packages/contracts/src/settings.test.ts": "9166d22aca53e48a6282b25b7df32b33cbefcfcda39e917e9d7b3b288c7c2e4a",
-    "apps/web/src/index.css": "c09915f36b1aeba8957fb3922dccfd7281fa25354dbf08ceac8a15d5b9dbf924"
+    "apps/web/src/index.css": "c09915f36b1aeba8957fb3922dccfd7281fa25354dbf08ceac8a15d5b9dbf924",
+    "apps/server/src/orchestration/decider.ts": "f78b642fe2d7d391056dff5cfc7d3d61e173fc0f38f437f060cd82c08ccc2245",
+    "packages/client-runtime/src/work-log/presentation.ts": "42292f5d8724d660d8ab3ad824f1dc0ff7f239e7bbdf8e0dc934408b78318aad",
+    "apps/server/src/orchestration/ActivityPayloadProjection.ts": "cc06dc64f34a69e1672b70a2496cabdd0f2c10cdecc1fe8defd0349f104bee24"
   }
 }
