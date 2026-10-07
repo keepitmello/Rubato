@@ -25,7 +25,6 @@ import { rightPanelEdits, rightPanelOverlays } from './right-panel-edits.mjs';
 import { chatWidthEdits, chatWidthOverlays } from './chat-width-edits.mjs';
 import { sidebarRailEdits, sidebarRailOverlays } from './sidebar-rail-edits.mjs';
 import { workLogEdits, workLogOverlays } from './work-log-edits.mjs';
-import { stateRetentionEdits, stateRetentionOverlays } from './state-retention-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -2140,11 +2139,6 @@ for (const [relative, changes] of Object.entries(sidebarRailEdits)) {
 // The work log in Codex's shape: live lines, summaries, phase folds (work-log-edits.mjs).
 overlays.push(...workLogOverlays);
 for (const [relative, changes] of Object.entries(workLogEdits)) {
-  edits[relative] = [...(edits[relative] ?? []), ...changes];
-}
-// State DB retention and one-time compaction; tsgo checker count (state-retention-edits.mjs).
-overlays.push(...stateRetentionOverlays);
-for (const [relative, changes] of Object.entries(stateRetentionEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 function transform(text, changes) {
