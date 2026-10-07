@@ -14,6 +14,8 @@
 # words and drew which resume section carries which one; that one landed.
 # The user also rejected the first fix idea: glossing each label in
 # parentheses still reads as abstraction. The rule is to not coin the name.
+# The reader standard is the user who stepped away and is reading only this
+# reply; the user does not watch a session turn by turn.
 #
 # How to run (manual, no runner yet): start a fresh rubato-pi lead session in
 # a scratch workspace, seed it with the turns in `state`, paste `user`, and
@@ -44,9 +46,7 @@ expect_vocabulary:
     for things that have a plain name.
   user-words-stay: >
     Words the user already uses in the thread ("해체", "JD", "이력서") appear
-    as is, without a gloss. The reply is not longer than the same answer
-    would be without the voice.md paragraph; compare character counts
-    against a run on the previous voice.md.
+    as is, without a gloss.
 
 cases:
   - id: summary-after-long-thread
